@@ -1,0 +1,36 @@
+{
+  "name": "node-bridge-fallback-final-closure-fixture",
+  "policyGate": "HFM_NODE_BRIDGE_FALLBACK=1",
+  "modes": [
+    { "rustFullMigration": true, "nodeBridgeFallback": false, "mode": "disabled", "allowed": false },
+    { "rustFullMigration": true, "nodeBridgeFallback": true, "mode": "explicit-compatibility", "allowed": true },
+    { "rustFullMigration": false, "nodeBridgeFallback": false, "mode": "legacy-node", "allowed": true }
+  ],
+  "gatedSources": [
+    {
+      "source": "preview-render-directwrite",
+      "file": "src/main/preview/native-renderer/previewNativeRendererRuntime.ts",
+      "requires": ["nodeBridgeFallbackCompatibilityAllowed", "nodeBridgeFallbackDeniedMessage", "logNodeBridgeFallbackDisabled", "logNodeBridgeFallbackUsed"]
+    },
+    {
+      "source": "preview-render-powershell",
+      "file": "src/main/preview/native-renderer/previewNativeRendererRuntime.ts",
+      "requires": ["powershell-gdi fallback is policy-gated", "HFM_NODE_BRIDGE_FALLBACK=1"]
+    },
+    {
+      "source": "activation-copy",
+      "file": "src/main/activation/runtime/fontActivationCopyRuntime.ts",
+      "requires": ["nodeBridgeFallbackCompatibilityAllowed", "nodeBridgeFallbackDeniedMessage", "logNodeBridgeFallbackDisabled", "logNodeBridgeFallbackUsed"]
+    },
+    {
+      "source": "activation-delete-inline",
+      "file": "src/main/activation/runtime/fontActivationCleanupRuntime.ts",
+      "requires": ["nodeBridgeFallbackCompatibilityAllowed", "nodeBridgeFallbackDeniedMessage", "logNodeBridgeFallbackDisabled", "logNodeBridgeFallbackUsed"]
+    },
+    {
+      "source": "activation-delete-async",
+      "file": "src/main/activation/temporaryFontDeleteQueue.ts",
+      "requires": ["nodeBridgeFallbackCompatibilityAllowed", "logNodeBridgeFallbackDisabled", "logNodeBridgeFallbackUsed"]
+    }
+  ]
+}

@@ -1,0 +1,180 @@
+
+@media (max-width: 980px) {
+  .font-virtual-scroller.font-list-scroller {
+    padding: 10px 12px 12px;
+  }
+
+  .font-virtual-page.font-list-rows {
+    left: 12px;
+    right: 12px;
+  }
+
+  .font-card.font-list-row.font-list-row-simple,
+  .font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple,
+  .font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
+    grid-template-columns: 28px minmax(0, 1fr);
+    height: 240px !important;
+    min-height: 240px !important;
+    align-items: center;
+  }
+
+  .font-card.font-list-row.font-list-row-simple .font-row-select,
+  .font-row-name-simple {
+    transform: none;
+  }
+
+  .font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple {
+    height: 212px !important;
+    min-height: 212px !important;
+  }
+
+  .font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
+    height: 280px !important;
+    min-height: 280px !important;
+  }
+
+  .font-card.font-list-row.font-list-row-simple .font-row-preview-wide {
+    grid-column: 2;
+  }
+
+  .font-row-preview-wide .font-row-preview-box {
+    height: 140px;
+    min-height: 0;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .font-row-preview-wide .font-sample-line:first-child {
+    font-size: 2.5rem;
+  }
+}
+
+/* v2.0 list polish: keep wide preview visually centered and avoid scroll jumps while filtered pages swap. */
+.font-list-panel.simple-wide-list-mode .font-virtual-scroller {
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
+}
+
+.font-card.font-list-row.font-list-row-simple {
+  content-visibility: visible !important;
+  contain: layout paint;
+}
+
+.font-row-preview-wide .font-row-preview-box {
+  text-align: center;
+}
+
+.font-row-preview-wide .font-sample-image,
+.font-row-preview-wide .font-sample-image.compact {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  object-fit: contain;
+  object-position: center center;
+}
+
+/* v2.0 preview layout box model: keep list previews visually consistent like a fixed text box. */
+.font-row-preview-wide .preview-layout-text {
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12em;
+  overflow: hidden;
+  text-align: center;
+  white-space: normal;
+}
+
+.font-row-preview-wide .preview-layout-text .font-sample-line {
+  max-width: 100%;
+  min-height: 0;
+  padding-block: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-row-preview-wide .preview-layout-text .font-sample-latin {
+  margin-top: 0;
+  color: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+
+/* v2.0 limit-box preview: list rows use a fixed text frame; children inherit the calculated base size. */
+.font-row-preview-wide .preview-layout-text {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.font-row-preview-wide .preview-layout-text .font-sample-line {
+  width: 100%;
+  max-width: 100%;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  letter-spacing: inherit;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.font-row-preview-wide .font-sample-image,
+.font-row-preview-wide .font-sample-image.compact {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center center;
+}
+
+/* v2.0 1080p list layout: keep rows horizontal and compact until the card pool is truly narrow. */
+.font-card.font-list-row.font-list-row-simple {
+  min-height: 140px !important;
+  height: 140px !important;
+  padding: 10px 16px;
+  grid-template-columns: 28px minmax(190px, 270px) minmax(0, 1fr);
+  gap: 14px;
+  contain-intrinsic-size: 640px 140px;
+}
+
+.font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple {
+  min-height: 118px !important;
+  height: 118px !important;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  contain-intrinsic-size: 640px 118px;
+}
+
+.font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
+  min-height: 176px !important;
+  height: 176px !important;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  contain-intrinsic-size: 640px 176px;
+}
+
+.font-row-preview-wide .font-row-preview-box {
+  height: 108px;
+  padding: 10px 22px;
+  border-radius: 18px;
+}
+
+.font-virtual-page.view-compact .font-row-preview-wide .font-row-preview-box {
+  height: 88px;
+  padding: 8px 18px;
+}
+
+.font-virtual-page.view-large .font-row-preview-wide .font-row-preview-box {
+  height: 142px;
+  padding: 12px 24px;
+}

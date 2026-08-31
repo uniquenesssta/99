@@ -1,0 +1,2 @@
+out/renderer/assets/index-CeKXz863.css
+out/renderer/assets/index-mmN6zj0U.js

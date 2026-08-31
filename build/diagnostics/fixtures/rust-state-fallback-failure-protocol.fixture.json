@@ -1,0 +1,96 @@
+{
+  "name": "rust-state-fallback-failure-protocol-fixture",
+  "policyGate": "HFM_NODE_STATE_FALLBACK=1",
+  "scenarios": [
+    {
+      "name": "root-index-incremental-write-rust-failed",
+      "command": "--root-index-apply-changes",
+      "runtimeFile": "src/main/indexing/rootIndexRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "root-index-write",
+      "expectedDefaultDecision": "throw-denied",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "nodeStateFallbackDeniedMessage", "logNodeStateFallbackDisabled"]
+    },
+    {
+      "name": "install-status-read-rust-failed",
+      "command": "--install-status-read",
+      "runtimeFile": "src/main/install/status/installStatusReadRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "install-status-read",
+      "expectedDefaultDecision": "return-misses",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "logNodeStateFallbackDisabled"]
+    },
+    {
+      "name": "install-status-save-rust-failed",
+      "command": "--install-status-save",
+      "runtimeFile": "src/main/install/status/installStatusWriteRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "install-status-write",
+      "expectedDefaultDecision": "throw-denied",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "nodeStateFallbackDeniedMessage", "logNodeStateFallbackDisabled"]
+    },
+    {
+      "name": "local-tags-read-rust-failed",
+      "command": "--local-tags-read",
+      "runtimeFile": "src/main/library/runtime/localFontTagsRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "local-tags-read",
+      "expectedDefaultDecision": "return-empty-or-original",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "logNodeStateFallbackDisabled"]
+    },
+    {
+      "name": "local-tags-write-rust-failed",
+      "command": "--local-tags-set",
+      "runtimeFile": "src/main/library/runtime/localFontTagsRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "local-tags-write",
+      "expectedDefaultDecision": "return-denied-result",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "nodeStateFallbackDeniedMessage", "logNodeStateFallbackDisabled"]
+    },
+    {
+      "name": "local-tags-delete-rust-failed",
+      "command": "--local-tags-delete-tag",
+      "runtimeFile": "src/main/library/runtime/localFontTagsRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "local-tags-delete",
+      "expectedDefaultDecision": "return-denied-result",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "nodeStateFallbackDeniedMessage", "logNodeStateFallbackDisabled"]
+    },
+    {
+      "name": "shared-metadata-apply-rust-failed",
+      "command": "--shared-metadata-apply",
+      "runtimeFile": "src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "shared-metadata-apply",
+      "expectedDefaultDecision": "throw-denied",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "nodeStateFallbackDeniedMessage", "logNodeStateFallbackDisabled"]
+    },
+    {
+      "name": "shared-metadata-remove-tag-rust-failed",
+      "command": "--shared-metadata-remove-tag",
+      "runtimeFile": "src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "shared-metadata-remove-tag",
+      "expectedDefaultDecision": "throw-denied",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "nodeStateFallbackDeniedMessage", "logNodeStateFallbackDisabled"]
+    },
+    {
+      "name": "shared-known-tags-read-rust-failed",
+      "command": "--shared-metadata-known-tags",
+      "runtimeFile": "src/main/library/sharedKnownTagsRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "shared-known-tags-read",
+      "expectedDefaultDecision": "return-existing-known-tags",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "logNodeStateFallbackDisabled"]
+    },
+    {
+      "name": "shared-metadata-overlay-rust-failed",
+      "command": "--shared-metadata-overlay-read",
+      "runtimeFile": "src/main/indexing/shared-metadata/sharedMetadataOverlayRuntime.ts",
+      "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "fallbackSource": "shared-metadata-overlay-read",
+      "expectedDefaultDecision": "return-original-rows",
+      "requires": ["nodeStateFallbackCompatibilityAllowed", "logNodeStateFallbackDisabled"]
+    }
+  ]
+}

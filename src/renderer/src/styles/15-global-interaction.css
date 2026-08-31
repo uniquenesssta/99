@@ -1,0 +1,16 @@
+html,
+body,
+#root,
+.app-shell {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+select,
+[contenteditable="true"],
+.allow-text-selection {
+  -webkit-user-select: text;
+  user-select: text;
+}

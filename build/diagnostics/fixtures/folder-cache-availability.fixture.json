@@ -1,0 +1,16 @@
+{
+  "name": "folder-cache-availability-fixture",
+  "sourceLog": "startup-2026-07-02_15-29-09-793-20792.log",
+  "symptoms": {
+    "startupSchemaAuditElapsedMs": 2022,
+    "libraryLoadShellDurationMs": 21099,
+    "fontMetricsDurationMs": 20910,
+    "unavailableRoot": "\\\\192.168.4.38\\14t共享盘\\字体\\字体-小薇"
+  },
+  "expectedPolicy": {
+    "schemaAuditDeadlineMs": 2000,
+    "libraryShellSkipsUnavailableRoots": true,
+    "fontMetricsSkipsUnavailableRoots": true,
+    "loadFolderCacheSkipsUnavailableRoots": true
+  }
+}

@@ -1,0 +1,162 @@
+.sidebar,
+.font-list,
+.font-waterfall,
+.font-virtual-scroller,
+.detail-panel {
+  overflow-y: overlay;
+}
+
+.toolbar-left {
+  overflow-x: overlay;
+}
+
+/* 字体卡片只保留即时高亮，不做位移、缩放、滤镜或阴影动画 */
+.font-card {
+  transition: border-color 60ms linear, background-color 60ms linear !important;
+  transform: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  will-change: auto !important;
+  contain: layout paint style;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-card:hover,
+.font-card.active {
+  transform: none !important;
+  filter: none !important;
+}
+
+.font-card.active {
+  border-color: rgba(122, 162, 255, 0.82) !important;
+  background: rgba(122, 162, 255, 0.08) !important;
+  box-shadow: inset 0 0 0 1px rgba(122, 162, 255, 0.28) !important;
+}
+
+.font-card,
+.font-card *,
+.detail-panel,
+.detail-panel * {
+  animation: none !important;
+}
+
+.font-virtual-page.waterfall,
+.font-virtual-scroller.waterfall,
+.font-sample,
+.font-sample-image,
+.native-preview-image,
+.large-preview-image {
+  backface-visibility: hidden;
+}
+
+.font-virtual-page {
+  will-change: auto !important;
+}
+
+.font-sample,
+.font-sample-image,
+.native-preview-image,
+.large-preview-image {
+  transform: none !important;
+  filter: none !important;
+}
+
+
+
+/* v0.7.9: 取消详情栏常驻占位，同时恢复明确点击反馈 */
+.layout.detail-hidden {
+  grid-template-columns: 250px minmax(520px, 1fr);
+}
+
+.layout.detail-hidden .font-list-panel {
+  border-right: 0;
+}
+
+.font-card {
+  cursor: pointer;
+}
+
+.font-card.pressed {
+  border-color: rgba(122, 162, 255, 0.95) !important;
+  background: rgba(122, 162, 255, 0.13) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(122, 162, 255, 0.42),
+    0 0 0 2px rgba(122, 162, 255, 0.10) !important;
+}
+
+.font-card:focus-visible {
+  outline: 2px solid rgba(122, 162, 255, 0.86);
+  outline-offset: 2px;
+}
+
+.sidebar-tabs .tab.active {
+  box-shadow: inset 0 0 0 1px rgba(122, 162, 255, 0.32);
+}
+
+
+/* v0.8.0: 详情改为浮层，不再挤压瀑布流；未打开时不占位 */
+.layout.detail-overlay-layout {
+  grid-template-columns: 250px minmax(520px, 1fr) !important;
+  position: relative;
+}
+
+.layout.detail-overlay-layout .font-list-panel {
+  border-right: 0 !important;
+}
+
+.detail-overlay-panel {
+  position: fixed !important;
+  top: 92px;
+  right: 18px;
+  bottom: 18px;
+  width: min(520px, calc(100vw - 300px));
+  z-index: 80;
+  border: 1px solid rgba(122, 162, 255, 0.28);
+  border-radius: 18px;
+  box-shadow: var(--shadow-strong);
+  background: var(--detail-overlay-bg);
+}
+
+.detail-header-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-close-button {
+  width: 42px;
+  height: 42px;
+  font-size: 1.375rem;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.detail-close-button:hover {
+  color: var(--text);
+  border-color: rgba(122, 162, 255, 0.45);
+}
+
+/* 覆盖旧版 detail-hidden / 常驻占位规则，保证开关详情不触发布局重排 */
+.layout.detail-hidden,
+.layout.detail-overlay-layout.detail-hidden {
+  grid-template-columns: 250px minmax(520px, 1fr) !important;
+}
+
+.layout.detail-hidden .font-list-panel,
+.layout.detail-overlay-layout .font-list-panel {
+  border-right: 0 !important;
+}
+
+/* 字体卡即时反馈 */
+.font-card {
+  cursor: pointer;
+  transition: border-color 45ms linear, background-color 45ms linear, box-shadow 45ms linear !important;
+  transform: none !important;
+  filter: none !important;
+  will-change: auto !important;
+  contain: layout paint style;
+}
+
+.font-card:hover {
+  border-color: rgba(122, 162, 255, 0.38);
+}

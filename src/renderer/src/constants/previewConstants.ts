@@ -1,0 +1,10 @@
+export const DEFAULT_PREVIEW = '中文字体预览 字体管理器\nAaBbCc 0123456789\n春眠不觉晓，处处闻啼鸟。'
+export const MAX_CONCURRENT_PREVIEW_LOADS = 5
+export const SCROLLING_PREVIEW_LOADS = 1
+export const INDEXING_PREVIEW_LOADS = 1
+export const PREVIEW_PREFETCH_LIMIT = 18
+export const PREVIEW_SCROLL_IDLE_MS = 160
+export const AUTO_PREVIEW_CACHE_TEXT = '字体预览 AaBb 123'
+export const AUTO_PREVIEW_CACHE_FONT_SIZE = 34
+export const AUTO_PREVIEW_CACHE_WIDTH = 520
+export const AUTO_PREVIEW_CACHE_HEIGHT = 150

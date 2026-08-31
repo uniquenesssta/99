@@ -1,0 +1,143 @@
+
+.font-card.pressed {
+  border-color: rgba(122, 162, 255, 0.98) !important;
+  background: rgba(122, 162, 255, 0.14) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(122, 162, 255, 0.45),
+    0 0 0 2px rgba(122, 162, 255, 0.12) !important;
+}
+
+.font-card.active {
+  border-color: rgba(122, 162, 255, 0.86) !important;
+  background: rgba(122, 162, 255, 0.09) !important;
+  box-shadow: inset 0 0 0 1px rgba(122, 162, 255, 0.32) !important;
+}
+
+.detail-panel,
+.detail-panel * {
+  animation: none !important;
+}
+
+.detail-panel {
+  transition: none !important;
+  transform: translateZ(0);
+}
+
+@media (max-width: 980px) {
+  .detail-overlay-panel {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    top: 86px;
+    bottom: 12px;
+  }
+}
+
+/* v1.0.104: 详情改为停靠面板，不再覆盖字体卡片预览。 */
+.layout.detail-docked-layout {
+  grid-template-columns: 250px minmax(560px, 1fr) minmax(360px, 420px) !important;
+  position: relative;
+}
+
+.layout.detail-docked-layout.detail-hidden {
+  grid-template-columns: 250px minmax(520px, 1fr) !important;
+}
+
+.layout.detail-docked-layout .font-list-panel {
+  border-right: 1px solid var(--line) !important;
+  min-width: 0;
+}
+
+.layout.detail-docked-layout.detail-hidden .font-list-panel {
+  border-right: 0 !important;
+}
+
+.detail-dock-panel {
+  position: relative !important;
+  inset: auto !important;
+  width: auto !important;
+  min-width: 0;
+  z-index: 1;
+  border-left: 1px solid var(--line);
+  border-right: 0;
+  border-top: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--detail-bg);
+}
+
+@media (max-width: 1360px) {
+  .layout.detail-docked-layout {
+    grid-template-columns: 250px minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) minmax(280px, 38vh);
+  }
+
+  .layout.detail-docked-layout.detail-hidden {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .layout.detail-docked-layout .sidebar {
+    grid-row: 1 / -1;
+  }
+
+  .layout.detail-docked-layout .font-list-panel {
+    grid-column: 2;
+    grid-row: 1;
+    border-right: 0 !important;
+  }
+
+  .layout.detail-docked-layout .detail-dock-panel {
+    grid-column: 2;
+    grid-row: 2;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+
+/* v1.0.106/v1.0.107: 详情右停靠在中窄窗口会挤压列表顶部工具栏；搜索框改为短入口、聚焦展开。 */
+.layout.detail-docked-layout .list-toolbar {
+  min-width: 0;
+  overflow: hidden;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.layout.detail-docked-layout .toolbar-left {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.layout.detail-docked-layout .search-input {
+  width: 140px;
+  min-width: 128px;
+  max-width: 100%;
+}
+
+.layout.detail-docked-layout .search-input:focus,
+.layout.detail-docked-layout .search-input:not(:placeholder-shown) {
+  width: clamp(240px, 28vw, 360px);
+}
+
+@media (max-width: 1360px) {
+  .layout.detail-docked-layout .list-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (max-width: 1040px) {
+  .layout.detail-docked-layout .list-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .layout.detail-docked-layout .search-input {
+    width: 148px;
+    justify-self: end;
+  }
+
+  .layout.detail-docked-layout .search-input:focus,
+  .layout.detail-docked-layout .search-input:not(:placeholder-shown) {
+    width: 100%;
+    justify-self: stretch;
+  }
+}

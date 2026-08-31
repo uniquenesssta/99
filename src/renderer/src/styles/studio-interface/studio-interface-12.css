@@ -1,0 +1,385 @@
+
+.font-family-group-summary {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 16px;
+  background: var(--studio-glass);
+  color: var(--muted);
+  font-size: 0.82rem;
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+}
+
+.font-family-group-summary span {
+  color: var(--text);
+  font-weight: 750;
+}
+
+.font-family-group-summary em {
+  font-style: normal;
+  color: var(--muted);
+}
+
+.font-family-group-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 20px;
+  background: var(--studio-surface);
+  overflow: hidden;
+}
+
+.font-family-group-card.expanded {
+  border-color: rgba(122, 162, 255, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(122, 162, 255, 0.12);
+}
+
+.font-family-group-head {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1.2fr) minmax(180px, 0.8fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 74px;
+  padding: 12px 14px;
+}
+
+.font-family-group-toggle {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--studio-hairline);
+  color: var(--studio-primary-strong);
+  background: rgba(122, 162, 255, 0.10);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.font-family-group-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.font-family-group-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.font-family-group-title span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.font-family-group-style-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.font-family-group-style-chip {
+  max-width: 118px;
+  padding: 3px 8px;
+  border: 1px solid rgba(122, 162, 255, 0.20);
+  border-radius: 999px;
+  background: rgba(122, 162, 255, 0.08);
+  color: var(--studio-primary-strong);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-family-group-preview {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 750;
+  text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.font-family-group-fonts {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 14px 14px 64px;
+}
+
+.font-family-group-card:not(.expanded) .font-family-group-fonts {
+  display: none;
+}
+
+.font-family-group-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 280px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.font-family-group-empty strong {
+  color: var(--text);
+}
+
+@media (max-width: 1180px) {
+  .font-family-group-head {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .font-family-group-preview {
+    grid-column: 2 / -1;
+    text-align: left;
+  }
+
+  .font-family-group-fonts {
+    padding-left: 14px;
+  }
+}
+
+.font-family-group-primary {
+  min-width: 0;
+}
+
+.font-family-group-primary .font-card.font-list-row.font-list-row-simple,
+.font-family-group-fonts .font-card.font-list-row.font-list-row-simple {
+  min-height: 118px;
+  height: auto !important;
+}
+
+/* Detail dock: favorite action is kept with the other action buttons to avoid header overflow. */
+.detail-dock-panel .primary-actions .detail-favorite-action {
+  font-size: 1.1rem !important;
+  color: var(--muted) !important;
+}
+
+.detail-dock-panel .primary-actions .detail-favorite-action.active {
+  color: var(--warn) !important;
+  border-color: var(--warn-border) !important;
+  background: var(--warn-bg) !important;
+}
+
+/* Sidebar icon refresh: use consistent vector glyphs for library/tag/favorite navigation. */
+.sidebar-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+}
+
+.sidebar-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.nav-label,
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nav-label .sidebar-icon {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid rgba(122, 162, 255, 0.14);
+  background: rgba(122, 162, 255, 0.08);
+}
+
+.nav.active .nav-label .sidebar-icon {
+  border-color: rgba(122, 162, 255, 0.32);
+  background: rgba(122, 162, 255, 0.14);
+}
+
+.sidebar-rail-button .sidebar-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab::after {
+  content: none !important;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab,
+.sidebar:not(.collapsed) .sidebar-tabs .tab:nth-child(5),
+.sidebar:not(.collapsed) .sidebar-tabs .dev-tab {
+  font-size: 0.75rem !important;
+  line-height: 1 !important;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab .tab-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab .tab-label > span:last-child {
+  display: none;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab .sidebar-icon {
+  width: 17px;
+  height: 17px;
+}
+
+/* Sidebar tab layout: six page icons read left-to-right, then second row left-to-right. */
+.sidebar:not(.collapsed) .sidebar-expanded-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.sidebar:not(.collapsed) .sidebar-expanded-header .sidebar-identity-card {
+  margin: 0 !important;
+  min-width: 0;
+}
+
+.sidebar:not(.collapsed) .sidebar-expanded-header .sidebar-collapse-button {
+  align-self: stretch;
+  width: 34px;
+  height: auto;
+  min-height: 100%;
+  margin: 0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(122, 162, 255, 0.12), rgba(122, 162, 255, 0.04));
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs {
+  display: grid !important;
+  grid-template-columns: repeat(4, 38px) !important;
+  justify-content: center !important;
+  align-content: start !important;
+  gap: 8px !important;
+  padding: 6px !important;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab,
+.sidebar:not(.collapsed) .sidebar-tabs .tab:nth-child(5),
+.sidebar:not(.collapsed) .sidebar-tabs .dev-tab {
+  position: relative !important;
+  flex: none !important;
+  width: 38px !important;
+  min-width: 38px !important;
+  max-width: 38px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+}
+
+.sidebar-tabs .tab[data-tooltip]::before,
+.sidebar-rail-button[data-tooltip]::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 2600;
+  top: calc(100% + 9px);
+  left: 50%;
+  max-width: 220px;
+  padding: 7px 10px;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 11px;
+  color: var(--text);
+  background: rgba(20, 26, 40, 0.96);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.26);
+  font-size: 0.72rem;
+  font-weight: 760;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  transform: translate(-50%, -5px) scale(0.96);
+  transform-origin: 50% 0;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.sidebar-tabs .tab[data-tooltip]:hover::before,
+.sidebar-tabs .tab[data-tooltip]:focus-visible::before,
+.sidebar-rail-button[data-tooltip]:hover::before,
+.sidebar-rail-button[data-tooltip]:focus-visible::before {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+:root[data-theme="light"] .sidebar-tabs .tab[data-tooltip]::before,
+:root[data-theme="light"] .sidebar-rail-button[data-tooltip]::before {
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 14px 32px rgba(76, 91, 120, 0.18);
+}
+
+.sidebar-rail-button {
+  position: relative;
+}
+
+.sidebar.collapsed .sidebar-rail-button[data-tooltip]::before {
+  top: 50%;
+  left: calc(100% + 10px);
+  transform: translate(-5px, -50%) scale(0.96);
+  transform-origin: 0 50%;
+}
+
+.sidebar.collapsed .sidebar-rail-button[data-tooltip]:hover::before,
+.sidebar.collapsed .sidebar-rail-button[data-tooltip]:focus-visible::before {
+  transform: translate(0, -50%) scale(1);
+}
+
+@media (max-width: 1280px) {
+  .sidebar:not(.collapsed) .sidebar-tabs {
+    grid-template-columns: repeat(4, 36px) !important;
+    gap: 7px !important;
+  }
+}
+
+/* Keep the red-frame toolbar area visually identical in grid/list/family modes. */
+.font-list-panel .list-toolbar {
+  height: 72px !important;
+  min-height: 72px !important;
+  box-sizing: border-box;
+  align-items: center !important;
+  align-content: center !important;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+
+.font-list-panel .toolbar-left.toolbar-icon-controls {
+  min-height: 34px;
+  align-items: center;
+}
+
+.font-list-panel .list-preview-size-control {
+  height: 34px;
+  min-height: 34px;
+  box-sizing: border-box;
+}
+
+@media (max-height: 860px) {
+  .font-list-panel .list-toolbar {
+    height: 72px !important;
+    min-height: 72px !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "preview-request-scheduler-fixture",
+  "sourceLog": "startup-2026-07-02_14-45-25-245-28088.log",
+  "symptoms": {
+    "slowChannel": "fonts:getCachedPreviewImages",
+    "slowCallCount": 209,
+    "maxDurationMs": 21128,
+    "overTenSeconds": 115,
+    "overTwentySeconds": 77,
+    "cause": "first-screen preview cache IPC storm after NAS/root lookup failures were suppressed"
+  },
+  "expectedPolicy": {
+    "batchLimit": 100,
+    "maxInFlight": 1,
+    "requestTimeoutMs": 2000,
+    "lateResultDropped": true,
+    "mainProcessScheduler": true
+  }
+}

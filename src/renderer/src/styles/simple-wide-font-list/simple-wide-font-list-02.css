@@ -1,0 +1,186 @@
+
+.font-row-name-simple .font-row-postscript {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-2, var(--muted));
+  font-size: 0.72rem;
+}
+
+.font-row-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  max-height: 54px;
+  overflow: hidden;
+}
+
+.font-row-state-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.font-row-state-chip.installed {
+  color: var(--ok, #07945d);
+  border: 1px solid rgba(46, 188, 125, 0.32);
+  background: rgba(46, 188, 125, 0.10);
+}
+
+.font-row-state-chip.active {
+  color: var(--studio-primary-strong, var(--accent));
+  border: 1px solid rgba(122, 162, 255, 0.34);
+  background: rgba(122, 162, 255, 0.10);
+}
+
+.font-row-state-chip.idle {
+  color: var(--warn, #b8860b);
+  border: 1px solid rgba(246, 207, 114, 0.34);
+  background: rgba(246, 207, 114, 0.12);
+}
+
+.font-row-state-chip.error {
+  color: var(--danger, #d14c4c);
+  border: 1px solid rgba(255, 120, 120, 0.42);
+  background: rgba(255, 120, 120, 0.12);
+}
+
+.font-row-preview-wide {
+  min-width: 0;
+  height: 100%;
+  align-self: center;
+  display: flex;
+  align-items: center;
+}
+
+.font-row-preview-wide .font-row-preview-box {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 122px;
+  padding: 12px 28px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(122, 162, 255, 0.16);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(122, 162, 255, 0.12), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.24));
+}
+
+:root:not([data-theme="light"]) .font-row-preview-wide .font-row-preview-box {
+  background:
+    radial-gradient(circle at 14% 0%, rgba(122, 162, 255, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+}
+
+.font-virtual-page.view-compact .font-row-preview-wide .font-row-preview-box {
+  height: 104px;
+  min-height: 0;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.font-virtual-page.view-large .font-row-preview-wide .font-row-preview-box {
+  height: 166px;
+  min-height: 0;
+  padding-top: 14px;
+  padding-bottom: 14px;
+  padding-left: 30px;
+  padding-right: 30px;
+}
+
+.font-row-preview-wide .font-sample {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: center;
+}
+
+.font-row-preview-wide .font-sample.compact {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  line-height: 1.25;
+  white-space: normal;
+  text-overflow: clip;
+  overflow: visible;
+}
+
+.font-row-preview-wide .font-sample-line {
+  display: block;
+  width: 100%;
+  min-height: 1.22em;
+  padding-block: 0.08em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-row-preview-wide .font-sample.compact .font-sample-line + .font-sample-line::before {
+  content: none;
+}
+
+.font-row-preview-wide .font-sample-line:first-child {
+  color: var(--text);
+  font-size: 2.5rem;
+  line-height: 1.22;
+  letter-spacing: -0.035em;
+}
+
+.font-virtual-page.view-compact .font-row-preview-wide .font-sample-line:first-child {
+  font-size: 2.5rem;
+}
+
+.font-virtual-page.view-large .font-row-preview-wide .font-sample-line:first-child {
+  font-size: 2.5rem;
+}
+
+.font-row-preview-wide .font-sample-latin {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+
+.font-row-preview-wide .font-sample-image {
+  width: 100%;
+  height: 100%;
+  max-height: 92px;
+  object-fit: contain;
+  object-position: center center;
+}
+
+.font-virtual-page.view-large .font-row-preview-wide .font-sample-image {
+  max-height: 138px;
+}
+
+.font-list-row-simple .font-row-path,
+.font-list-row-simple .font-row-meta,
+.font-list-row-simple .font-row-tags,
+.font-list-row-simple .font-row-status,
+.font-list-row-simple .font-row-actions {
+  display: none !important;
+}
+
+@media (max-width: 1280px) {
+  .font-card.font-list-row.font-list-row-simple {
+    grid-template-columns: 30px minmax(210px, 280px) minmax(0, 1fr);
+    gap: 16px;
+  }
+}

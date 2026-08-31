@@ -1,0 +1,188 @@
+/*
+ * Simple wide font list layout.
+ * Manual integration for the card pool list mode: keep the existing app shell,
+ * remove the patch-style table container, and render each row as a clean wide card.
+ */
+
+.font-list-panel.simple-wide-list-mode {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.font-list-panel.simple-wide-list-mode.has-selection-actionbar {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.font-list-panel.simple-wide-list-mode .selection-actionbar {
+  grid-row: 2;
+}
+
+.font-list-table-head.font-list-table-head-simple {
+  display: none !important;
+}
+
+.font-virtual-scroller.font-list-scroller {
+  grid-row: 2;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.font-list-panel.simple-wide-list-mode.has-selection-actionbar .font-list-scroller {
+  grid-row: 3;
+}
+
+.font-virtual-page.font-list-rows {
+  left: 14px;
+  right: 14px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.font-card.font-list-row.font-list-row-simple {
+  min-height: 156px !important;
+  height: 156px !important;
+  padding: 12px 18px;
+  display: grid;
+  grid-template-columns: 30px minmax(220px, 300px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  text-align: left;
+  border-radius: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 78% 0%, rgba(122, 162, 255, 0.075), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.58));
+  contain-intrinsic-size: 640px 156px;
+}
+
+:root:not([data-theme="light"]) .font-card.font-list-row.font-list-row-simple {
+  background:
+    radial-gradient(circle at 78% 0%, rgba(122, 162, 255, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(24, 30, 44, 0.92), rgba(18, 22, 32, 0.74));
+}
+
+.font-card.font-list-row.font-list-row-simple:hover {
+  transform: translateY(-1px);
+}
+
+.font-card.font-list-row.font-list-row-simple.active,
+.font-card.font-list-row.font-list-row-simple.selected {
+  background:
+    radial-gradient(circle at 80% 0%, rgba(122, 162, 255, 0.20), transparent 36%),
+    linear-gradient(180deg, rgba(122, 162, 255, 0.18), rgba(255, 255, 255, 0.62)) !important;
+}
+
+:root:not([data-theme="light"]) .font-card.font-list-row.font-list-row-simple.active,
+:root:not([data-theme="light"]) .font-card.font-list-row.font-list-row-simple.selected {
+  background:
+    radial-gradient(circle at 80% 0%, rgba(122, 162, 255, 0.25), transparent 36%),
+    linear-gradient(180deg, rgba(122, 162, 255, 0.24), rgba(18, 22, 32, 0.72)) !important;
+}
+
+.font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple {
+  min-height: 132px !important;
+  height: 132px !important;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  contain-intrinsic-size: 640px 132px;
+}
+
+.font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
+  min-height: 204px !important;
+  height: 204px !important;
+  padding-top: 16px;
+  padding-bottom: 16px;
+  contain-intrinsic-size: 640px 204px;
+}
+
+.font-card.font-list-row.font-list-row-simple .font-row-select {
+  align-self: center;
+  justify-self: center;
+  transform: none;
+}
+
+.font-card.font-list-row.font-list-row-simple .font-row-checkbox {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(104, 119, 148, 0.30);
+  border-radius: 7px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.30);
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+:root:not([data-theme="light"]) .font-card.font-list-row.font-list-row-simple .font-row-checkbox {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.font-card.font-list-row.font-list-row-simple.selected .font-row-checkbox,
+.font-card.font-list-row.font-list-row-simple.active .font-row-checkbox {
+  border-color: transparent;
+  background: var(--studio-primary, var(--accent));
+  box-shadow: 0 0 0 4px rgba(122, 162, 255, 0.14);
+}
+
+.font-row-name-simple {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  align-self: center;
+  transform: none;
+}
+
+.font-row-name-simple .font-row-title-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.font-row-name-simple .font-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 950;
+  letter-spacing: -0.025em;
+}
+
+.font-row-name-simple .font-row-favorite {
+  flex: 0 0 auto;
+  color: var(--studio-amber, #f6cf72);
+  font-size: 0.78rem;
+}
+
+.font-row-name-simple .font-row-mini.protect {
+  flex: 0 0 auto;
+  min-height: 20px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 120, 120, 0.42);
+  border-radius: 999px;
+  color: var(--danger, #ff9d9d);
+  background: rgba(255, 120, 120, 0.10);
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.font-row-name-simple .font-row-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--studio-primary-strong, var(--accent));
+  font-size: 0.79rem;
+  font-weight: 780;
+}

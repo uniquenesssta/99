@@ -1,0 +1,23 @@
+{
+  "name": "library-db-handle-lifecycle-fixture",
+  "sourceLog": "startup-2026-07-02_15-36-05-902-9712.log",
+  "symptoms": {
+    "startupSchemaAuditElapsedMs": 19,
+    "firstFontsGetMetricsDurationMs": 48,
+    "firstFontsGetMetricsError": "The database connection is not open",
+    "sharedKnownTagsStartupRefreshError": "The database connection is not open",
+    "loadCleanSharedLibraryShellError": "The database connection is not open",
+    "libraryLoadShellRecoveredDurationMs": 2035
+  },
+  "rootCause": {
+    "startupSchemaAuditClosedSharedLibraryHandle": true,
+    "sharedKnownTagsRuntimeClosedSharedLibraryHandle": true,
+    "openLibraryDbReturnedClosedSingleton": true
+  },
+  "expectedPolicy": {
+    "startupSchemaAuditMustNotCloseSharedLibraryHandle": true,
+    "sharedKnownTagsMustNotCloseSharedLibraryHandle": true,
+    "openLibraryDbMustDiscardClosedSingletonBeforeReturning": true,
+    "getOpenLibraryDbMustReturnNullForClosedSingleton": true
+  }
+}

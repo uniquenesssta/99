@@ -1,0 +1,35 @@
+{
+  "name": "node-fontkit-scan-fallback-policy-fixture",
+  "policyGate": "HFM_NODE_FONTKIT_SCAN_FALLBACK=1",
+  "modes": [
+    { "rustFullMigration": true, "nodeFontkitScanFallback": false, "mode": "disabled", "allowed": false },
+    { "rustFullMigration": true, "nodeFontkitScanFallback": true, "mode": "explicit-compatibility", "allowed": true },
+    { "rustFullMigration": false, "nodeFontkitScanFallback": false, "mode": "legacy-node", "allowed": true }
+  ],
+  "gatedSources": [
+    {
+      "name": "scan orchestrator worker pool fallback",
+      "runtimeFile": "src/main/indexing/scanOrchestrator.ts",
+      "requires": [
+        "nodeFontkitScanFallbackCompatibilityAllowed",
+        "logNodeFontkitScanFallbackDisabled",
+        "logNodeFontkitScanFallbackUsed",
+        "source: 'scan-fontkit-worker'"
+      ]
+    },
+    {
+      "name": "rust parse batch runtime skipped-or-failed log",
+      "runtimeFile": "src/main/indexing/scan-orchestrator/rustParseBatchFastPathRuntime.ts",
+      "requires": [
+        "nodeFontkitScanFallbackFailureLogSuffix"
+      ]
+    },
+    {
+      "name": "rust worker parse batch failure log",
+      "runtimeFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "requires": [
+        "nodeFontkitScanFallbackFailureLogSuffix"
+      ]
+    }
+  ]
+}

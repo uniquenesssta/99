@@ -1,0 +1,186 @@
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.toolbar-filter {
+  display: inline-block;
+  min-width: 128px;
+}
+
+.toolbar-filter select {
+  width: 100%;
+  background: var(--subtle-bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.list-toolbar {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.search-input {
+  width: 148px;
+  min-width: 128px;
+  justify-self: end;
+  transition: width 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.search-input:focus,
+.search-input:not(:placeholder-shown) {
+  width: clamp(260px, 34vw, 420px);
+}
+
+.font-virtual-page.view-compact .font-card {
+  min-height: 252px;
+  height: 252px;
+  contain-intrinsic-size: 218px 252px;
+}
+
+.font-virtual-page.view-compact .font-sample {
+  font-size: 28px;
+  min-height: 82px;
+}
+
+.font-virtual-page.view-large .font-card {
+  min-height: 372px;
+  height: 372px;
+  contain-intrinsic-size: 292px 372px;
+}
+
+.font-virtual-page.view-large .font-sample {
+  font-size: 40px;
+  min-height: 152px;
+}
+
+@media (max-width: 980px) {
+  .list-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .search-input {
+    width: 148px;
+    justify-self: end;
+  }
+
+  .search-input:focus,
+  .search-input:not(:placeholder-shown) {
+    width: 100%;
+    justify-self: stretch;
+  }
+}
+
+
+
+
+
+
+.detail-panel {
+  transition: none !important;
+  animation: none !important;
+  transform: translateZ(0);
+  contain: paint style;
+}
+
+html,
+body,
+.font-virtual-scroller {
+  scroll-behavior: auto !important;
+}
+
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover,
+*:focus-within {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: transparent;
+  background-clip: content-box;
+}
+
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* v2.0 FontVault-style list toolbar: first icon cycles smart/A-Z/Z-A, and
+   list mode exposes a lightweight preview-size slider without opening a panel. */
+.toolbar-icon-button.name-sort-cycle {
+  min-width: 40px;
+  padding-inline: 8px;
+}
+
+.toolbar-icon-button .name-sort-icon {
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.list-preview-size-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.52);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+:root:not([data-theme="light"]) .list-preview-size-control {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.list-preview-size-control input[type="range"] {
+  width: 108px;
+  accent-color: var(--studio-primary, var(--accent));
+}
+
+.list-preview-size-control em {
+  min-width: 34px;
+  color: var(--text);
+  font-style: normal;
+  text-align: right;
+}
+
+@media (max-width: 980px) {
+  .list-preview-size-control {
+    max-width: 190px;
+  }
+
+  .list-preview-size-control input[type="range"] {
+    width: 86px;
+  }
+}

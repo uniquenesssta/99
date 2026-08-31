@@ -1,0 +1,51 @@
+{
+  "name": "font-tag-ipc-state-fallback-fixture",
+  "channels": [
+    {
+      "channel": "fonts:setLocalTags",
+      "runtimeMethod": "setLocalFontTags",
+      "args": [
+        { "id": "fixture-local-font", "path": "C:/Fonts/local.otf", "fileName": "local.otf" },
+        ["标题", "正文"]
+      ]
+    },
+    {
+      "channel": "fonts:setLocalTagsBatch",
+      "runtimeMethod": "setLocalFontTagsBatch",
+      "args": [
+        [
+          { "item": { "id": "fixture-local-batch", "path": "C:/Fonts/batch.otf", "fileName": "batch.otf" }, "tagNames": ["批量"] }
+        ]
+      ]
+    },
+    {
+      "channel": "fonts:deleteLocalTag",
+      "runtimeMethod": "deleteLocalFontTag",
+      "args": ["正文"]
+    },
+    {
+      "channel": "fonts:setSharedTags",
+      "runtimeMethod": "setSharedFontTagsInIndex",
+      "args": [
+        [{ "id": "fixture-shared-font", "path": "Z:/Design/Fonts/shared.otf", "fileName": "shared.otf" }],
+        ["Z:/Design/Fonts"],
+        ["共享标题"]
+      ]
+    },
+    {
+      "channel": "fonts:setSharedTagsBatch",
+      "runtimeMethod": "setSharedFontTagsBatchInIndex",
+      "args": [
+        [
+          { "item": { "id": "fixture-shared-batch", "path": "Z:/Design/Fonts/batch.otf", "fileName": "batch.otf" }, "tagNames": ["共享批量"] }
+        ],
+        ["Z:/Design/Fonts"]
+      ]
+    },
+    {
+      "channel": "fonts:deleteSharedTag",
+      "runtimeMethod": "deleteSharedFontTagInIndex",
+      "args": ["共享标题", ["Z:/Design/Fonts"]]
+    }
+  ]
+}

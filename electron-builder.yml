@@ -1,0 +1,51 @@
+appId: cn.local.hanfontmanager
+productName: 字体管理器
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+  - node_modules/better-sqlite3/**
+  - node_modules/bindings/**
+  - node_modules/file-uri-to-path/**
+
+asar: true
+afterPack: build/after-pack-security.cjs
+asarUnpack:
+  - node_modules/better-sqlite3/**
+  - node_modules/bindings/**
+  - node_modules/file-uri-to-path/**
+
+artifactName: "字体管理器.${ext}"
+
+win:
+  executableName: 字体管理器
+  publisherName:
+    - Xie Ele
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/app.ico
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 字体管理器
+  uninstallDisplayName: "字体管理器"
+  installerIcon: build/installerIcon.ico
+  uninstallerIcon: build/uninstallerIcon.ico
+  installerHeaderIcon: build/installerIcon.ico
+  include: build/installer.nsh
+extraResources:
+  - from: build/app.ico
+    to: app.ico
+  - from: build/native
+    to: native

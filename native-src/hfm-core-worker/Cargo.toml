@@ -1,0 +1,17 @@
+[package]
+name = "hfm-core-worker"
+version = "0.8.0"
+edition = "2021"
+description = "Han Font Manager Rust core worker sidecar"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[dependencies]
+rusqlite = { version = "0.32.1", features = ["bundled", "functions"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha1 = "0.10"

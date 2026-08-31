@@ -1,0 +1,23 @@
+mod category;
+mod font_row;
+mod library_shell;
+mod local_tags;
+mod metrics;
+mod rebuild;
+mod shared_metadata;
+mod search_text;
+pub(crate) mod path_utils;
+mod query_ids;
+mod query_page;
+mod snapshot;
+mod sqlite_params;
+mod sync;
+mod tag_revision;
+mod types;
+
+pub use metrics::query_merged_index_metrics;
+pub use rebuild::rebuild_merged_index;
+pub use query_ids::query_merged_index_ids;
+pub use query_page::query_merged_index_page;
+pub use sync::sync_merged_index;
+pub use types::{MergedIndexIdsQueryConfig, MergedIndexMetricsQueryConfig, MergedIndexPageQueryConfig, MergedIndexRebuildConfig, MergedIndexSyncConfig};

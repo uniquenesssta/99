@@ -1,0 +1,10 @@
+{
+  "sample": "安盛aaaa",
+  "candidates": ["安盛aaaa", "安盛aaa", "安盛aa", "安盛a", "安盛"],
+  "policy": {
+    "scope": "grid css text preview only",
+    "trigger": "real rendered line overflow",
+    "nativePngPreview": "unchanged",
+    "maxCandidates": 5
+  }
+}

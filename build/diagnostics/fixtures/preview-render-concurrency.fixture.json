@@ -1,0 +1,16 @@
+{
+  "regression": "fonts:renderPreviewImage outer duration was dominated by scheduler queue wait while rust preview render itself was fast.",
+  "before": {
+    "rendererVisiblePreviewConcurrency": 3,
+    "rustPreviewRenderMaxConcurrency": 1,
+    "rustGlobalMaxConcurrency": 3,
+    "schedulerDrainStartsOneTaskPerLanePerPass": true
+  },
+  "after": {
+    "rendererVisiblePreviewConcurrency": 5,
+    "rustPreviewRenderMaxConcurrency": 5,
+    "rustGlobalMaxConcurrencyFloor": 6,
+    "schedulerDrainCanFillSameLaneCapacity": true,
+    "cacheQueryInFlightRemainsSerialized": true
+  }
+}

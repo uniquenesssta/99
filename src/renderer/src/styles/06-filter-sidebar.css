@@ -1,0 +1,150 @@
+.context-menu {
+  min-width: 150px;
+}
+
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.nav.mini {
+  min-height: 34px;
+  padding: 8px 10px;
+  font-size: 0.75rem;
+}
+
+.script-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 20px;
+  margin-top: -2px;
+  margin-bottom: 8px;
+}
+
+.script-pill {
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--soft-surface);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 0.6875rem;
+  line-height: 1.3;
+}
+
+
+.sidebar-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sidebar-tabs .tab {
+  min-height: 34px;
+  padding: 8px 9px;
+  font-size: 0.75rem;
+  border-radius: 10px;
+}
+
+.sidebar-tabs .tab.active {
+  border-color: rgba(122, 162, 255, 0.55);
+  background: var(--accent-bg);
+  color: var(--accent-2);
+}
+
+.sidebar-page {
+  display: grid;
+  align-content: start;
+}
+
+.filter-note {
+  color: var(--muted-2);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  background: var(--subtle-bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px;
+  margin: 10px 0;
+}
+
+.clear-filter-button {
+  width: 100%;
+  margin: 4px 0 10px;
+  border-style: dashed;
+  color: var(--accent-2);
+}
+
+.filter-dropdown {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--subtle-bg);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.filter-dropdown summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 12px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filter-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.filter-dropdown summary span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.check-list {
+  display: grid;
+  gap: 2px;
+  padding: 0 8px 8px;
+}
+
+.check-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+
+.check-item:hover {
+  background: var(--hover-bg);
+}
+
+.check-item input {
+  width: auto;
+}
+
+.check-item em {
+  color: var(--muted-2);
+  font-style: normal;
+  font-size: 0.75rem;
+}
+
+.font-card-head,
+.script-row,
+.tag-row.small,
+.font-meta,
+.install-badge,
+.preview-badge {
+  flex-shrink: 0;
+}
+
+.cache-card { display: none; }
+
+.sidebar-tabs .tab:nth-child(5) { grid-column: span 2; }

@@ -1,0 +1,17 @@
+{
+  "name": "startup-nas-deadline-policy-fixture",
+  "sourceLog": "startup-2026-07-02_15-11-31-990-21304.log",
+  "symptoms": {
+    "startupAuditElapsedMs": 39159,
+    "sharedKnownTagsElapsedMs": 39186,
+    "badRoot": "\\\\192.168.4.38\\14t共享盘\\字体\\字体-小薇",
+    "blockedPhase": "before-renderer-load"
+  },
+  "expectedPolicy": {
+    "schemaAuditBlocksWindow": false,
+    "sharedKnownTagsStartupDelayMs": 1500,
+    "uncProbeTimeoutMs": 500,
+    "sharedMetadataQueryTimeoutMs": 500,
+    "unavailableRootTtlMs": 30000
+  }
+}

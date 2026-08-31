@@ -1,0 +1,202 @@
+
+.index-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--studio-green);
+  box-shadow: 0 0 0 4px rgba(130, 231, 187, 0.11);
+}
+
+.index-status-chip.busy .index-status-dot {
+  background: var(--studio-amber);
+  box-shadow: 0 0 0 4px rgba(246, 207, 114, 0.13);
+}
+
+.cache-menu-wrap {
+  z-index: 1300;
+}
+
+.cache-menu {
+  z-index: 1500;
+  transform: translateZ(0);
+}
+
+.cache-more-button {
+  position: relative;
+  z-index: 1;
+}
+
+.cache-menu,
+.context-menu,
+.tag-suggestion-list {
+  border-color: var(--studio-hairline);
+  background: var(--studio-glass-solid);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+}
+
+.layout.detail-docked-layout {
+  gap: 12px;
+  padding: 12px;
+  grid-template-columns: 270px minmax(560px, 1fr) minmax(372px, 444px) !important;
+}
+
+.layout.detail-docked-layout.detail-hidden {
+  grid-template-columns: 270px minmax(520px, 1fr) !important;
+}
+
+.sidebar,
+.font-list-panel,
+.detail-panel {
+  border: 1px solid var(--studio-hairline) !important;
+  border-radius: var(--studio-radius-xl);
+  box-shadow: var(--shadow-soft);
+}
+
+.sidebar {
+  background: var(--studio-glass);
+  padding: 14px;
+  backdrop-filter: blur(18px) saturate(1.18);
+  -webkit-backdrop-filter: blur(18px) saturate(1.18);
+}
+
+.sidebar-identity-card {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(122, 162, 255, 0.13), rgba(94, 234, 212, 0.055)),
+    var(--studio-surface);
+}
+
+.sidebar-identity-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.sidebar-identity-title span:last-child {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.sidebar-identity-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.sidebar-tabs {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.10);
+}
+
+:root[data-theme="light"] .sidebar-tabs {
+  background: rgba(255, 255, 255, 0.50);
+}
+
+.sidebar-tabs .tab,
+.sidebar-tabs .tab:nth-child(5) {
+  grid-column: auto;
+  min-height: 34px;
+  padding: 7px 6px;
+  border: 0;
+  background: transparent;
+  border-radius: 12px;
+  color: var(--muted);
+}
+
+.sidebar-tabs .tab.active {
+  color: var(--studio-primary-strong);
+  background: var(--studio-surface-strong);
+  box-shadow: var(--shadow-card), inset 0 0 0 1px rgba(122, 162, 255, 0.16);
+}
+
+.sidebar-tabs .dev-tab {
+  grid-column: 1 / -1 !important;
+}
+
+.section-title {
+  margin-top: 8px;
+  color: var(--muted-2);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+}
+
+.nav,
+.folder-row,
+.category-filter,
+.check-item {
+  border-radius: 14px;
+}
+
+.nav {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--studio-hairline);
+  background: rgba(255, 255, 255, 0.028);
+}
+
+:root[data-theme="light"] .nav {
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.nav:hover,
+.folder-row:hover,
+.category-filter:hover,
+.check-item:hover {
+  border-color: rgba(122, 162, 255, 0.26);
+  background: var(--studio-surface);
+}
+
+.nav.active,
+.folder-row.active,
+.category-filter.active {
+  border-color: rgba(122, 162, 255, 0.36);
+  color: var(--studio-primary-strong);
+  background: linear-gradient(135deg, rgba(122, 162, 255, 0.18), rgba(122, 162, 255, 0.06));
+}
+
+.filter-note,
+.watch-hint,
+.filter-dropdown,
+.folder-row,
+.developer-card,
+.tag-box {
+  border-color: var(--studio-hairline);
+  background: var(--studio-surface);
+}
+
+.font-list-panel {
+  background: var(--studio-glass);
+  overflow: visible;
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+}
+
+.list-toolbar {
+  grid-template-columns: auto minmax(128px, auto);
+  justify-content: start;
+  align-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom-color: var(--studio-hairline);
+  background:
+    linear-gradient(90deg, rgba(122, 162, 255, 0.055), transparent 46%),
+    rgba(255, 255, 255, 0.018);
+}
+
+.toolbar-summary {
+  min-width: 0;
+}

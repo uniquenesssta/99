@@ -1,0 +1,17 @@
+{
+  "name": "io-deadline-policy-fixture",
+  "sourceLog": "startup-2026-07-02_13-58-59-334-27844.log",
+  "symptoms": {
+    "unreachableRoot": "\\\\192.168.4.38\\14t共享盘\\字体\\字体-小薇",
+    "slowChannel": "fonts:getCachedPreviewImages",
+    "slowCallCount": 42,
+    "slowDurationMsRange": [8971, 13192]
+  },
+  "requirements": [
+    "UNC/NAS root probe must have a 500ms default deadline",
+    "preview cache batch/query must be deadline guarded",
+    "timed out root preview cache queries must return misses instead of falling through to slow Node sqlite paths",
+    "sync UNC canonical stat/realpath must be skipped by default",
+    "preview image reads and font file stat/read must drop timed out files"
+  ]
+}

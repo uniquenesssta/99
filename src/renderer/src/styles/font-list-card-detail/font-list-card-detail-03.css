@@ -1,0 +1,185 @@
+
+.info-grid > div:nth-child(odd) {
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.info-grid > div:nth-child(even) {
+  word-break: break-all;
+  background: var(--table-value-bg);
+}
+
+.info-grid > div:nth-last-child(-n + 2) {
+  border-bottom: none;
+}
+
+.path {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 260px;
+  text-align: center;
+  color: var(--muted);
+  padding: 28px;
+}
+
+.empty-state > div {
+  color: var(--text);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.empty-state p {
+  margin: 8px 0 0;
+}
+
+.statusbar {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+  background: var(--subtle-bg-2);
+}
+
+.load-more {
+  width: 100%;
+  min-height: 54px;
+  border-style: dashed;
+  color: var(--accent-2);
+  background: rgba(122, 162, 255, 0.08);
+}
+
+.font-waterfall .load-more {
+  grid-column: 1 / -1;
+}
+
+.bridge-error {
+  max-width: 820px;
+  margin: 80px auto;
+  background: var(--modal-bg);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 28px;
+  color: var(--text);
+}
+
+.bridge-error h1 {
+  margin: 0 0 12px;
+}
+
+.bridge-error p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.bridge-error pre {
+  background: var(--subtle-bg-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+/* v1.0.105: 详情主操作按钮紧凑化，一行显示 5 个。 */
+.primary-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(58px, 1fr));
+  gap: 8px;
+}
+
+.primary-actions button {
+  min-width: 0;
+  height: 38px;
+  padding: 0 8px;
+  font-size: 0.8125rem;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .primary-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* v2.0 preview layout box model: grid card previews use a fixed text box. */
+.font-card .preview-layout-text {
+  height: 112px;
+  min-height: 112px;
+  max-height: 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12em;
+  overflow: hidden;
+  margin-top: 12px;
+  text-align: center;
+  white-space: normal;
+}
+
+.font-card .preview-layout-text .font-sample-line {
+  max-width: 100%;
+  min-height: 0;
+  padding-block: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-card .preview-layout-text .font-sample-latin {
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+
+/* v2.0 limit-box preview: grid cards keep a stable text frame and clip inside it. */
+.font-card .preview-layout-text {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.font-card .preview-layout-text .font-sample-line {
+  width: 100%;
+  max-width: 100%;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  letter-spacing: inherit;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+/* Grid native PNG previews already contain a fixed preview canvas.
+   Keep their glyphs at native render size instead of shrinking the whole canvas
+   into the card, otherwise grid cards mix tiny PNG previews with normal CSS text previews. */
+.font-card .font-sample-image.grid-native-preview-image {
+  object-fit: none;
+  object-position: center center;
+}
+
+/* Clip-safe grid native previews: transparent margins are trimmed in the renderer.
+   Keep the native visual size when it fits, but scale down only when the actual
+   ink box would hit the card edge. */
+.font-card .font-sample-image.grid-native-preview-image.grid-native-preview-image-clip-safe {
+  object-fit: scale-down;
+  object-position: center center;
+  box-sizing: border-box;
+  padding-inline: 10px;
+}
+
+/* Grid visual fit: script/handwriting fonts with long latin tails are shortened
+   in the renderer only after the real rendered line overflows the card box. */
+.font-card .preview-layout-grid.grid-preview-visual-fit-active .font-sample-line {
+  max-width: 100%;
+}

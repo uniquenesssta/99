@@ -1,0 +1,205 @@
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab::first-letter {
+  font-size: 0 !important;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab::after {
+  content: attr(data-compact-label) !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 100% !important;
+  color: inherit !important;
+  font-size: 0.82rem !important;
+  font-weight: 780 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+}
+
+@media (max-width: 1280px) {
+  .sidebar:not(.collapsed) .sidebar-tabs {
+    gap: 7px !important;
+  }
+
+  .sidebar:not(.collapsed) .sidebar-tabs .tab,
+  .sidebar:not(.collapsed) .sidebar-tabs .tab:nth-child(5),
+  .sidebar:not(.collapsed) .sidebar-tabs .dev-tab {
+    flex-basis: 36px !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+  }
+}
+
+/* v2.0: detail panel no longer contains the large preview area. */
+.detail-dock-panel .detail-header + .detail-actions {
+  margin-top: 2px;
+}
+
+
+/* v2.0: keep wrapped normal sidebar tab rows visually centered. */
+.sidebar:not(.collapsed) .sidebar-tabs {
+  justify-content: center !important;
+  align-content: center !important;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab::after {
+  display: grid !important;
+  place-items: center !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* v2.0: center compact sidebar tab label inside the circular button itself. */
+.sidebar:not(.collapsed) .sidebar-tabs .tab,
+.sidebar:not(.collapsed) .sidebar-tabs .tab:nth-child(5),
+.sidebar:not(.collapsed) .sidebar-tabs .dev-tab {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab::first-letter {
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+
+.sidebar:not(.collapsed) .sidebar-tabs .tab::after {
+  position: absolute !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  content: attr(data-compact-label) !important;
+  font-size: 13px !important;
+  font-weight: 780 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  text-indent: 0 !important;
+  transform: translateY(0.5px);
+  pointer-events: none;
+}
+
+@media (max-width: 1280px) {
+  .sidebar:not(.collapsed) .sidebar-tabs .tab::after {
+    font-size: 12px !important;
+    transform: translateY(0.5px);
+  }
+}
+
+/* v2.0: override older 1360px stacked-detail rule.
+   1080p-width windows still have enough horizontal room for the detail actions panel,
+   so keep the detail module docked on the right until the truly narrow 1280px breakpoint. */
+@media (min-width: 1281px) and (max-width: 1360px) {
+  .layout.detail-docked-layout {
+    grid-template-columns: 220px minmax(520px, 1fr) minmax(300px, 336px) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+    gap: 10px !important;
+    padding: 10px !important;
+  }
+
+  .layout.detail-docked-layout.detail-hidden {
+    grid-template-columns: 220px minmax(520px, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  .layout.detail-docked-layout.sidebar-collapsed {
+    grid-template-columns: 64px minmax(560px, 1fr) minmax(300px, 336px) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  .layout.detail-docked-layout.sidebar-collapsed.detail-hidden {
+    grid-template-columns: 64px minmax(560px, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  .layout.detail-docked-layout .sidebar,
+  .layout.detail-docked-layout.sidebar-collapsed .sidebar {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+
+  .layout.detail-docked-layout .font-list-panel,
+  .layout.detail-docked-layout.sidebar-collapsed .font-list-panel {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    border-right: 1px solid var(--studio-hairline) !important;
+  }
+
+  .layout.detail-docked-layout .detail-dock-panel,
+  .layout.detail-docked-layout.sidebar-collapsed .detail-dock-panel {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+    border-left: 1px solid var(--studio-hairline) !important;
+    border-top: 0 !important;
+  }
+}
+
+/* v2.0: detail action buttons spacing and narrow-width wrapping fix. */
+.detail-dock-panel .detail-header + .detail-actions,
+.detail-dock-panel .primary-actions {
+  margin-top: 12px !important;
+}
+
+.detail-dock-panel .primary-actions {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(82px, 1fr)) !important;
+  gap: 8px !important;
+  align-items: stretch !important;
+}
+
+.detail-dock-panel .primary-actions button {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 38px !important;
+  padding: 0 10px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  line-height: 1 !important;
+  justify-content: center !important;
+}
+
+@media (max-width: 1440px) {
+  .detail-dock-panel .primary-actions {
+    grid-template-columns: repeat(auto-fit, minmax(82px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1280px) {
+  .detail-dock-panel .detail-header + .detail-actions,
+  .detail-dock-panel .primary-actions {
+    margin-top: 12px !important;
+  }
+
+  .detail-dock-panel .primary-actions button {
+    min-height: 38px !important;
+    padding: 0 10px !important;
+  }
+}
+
+/* v2.0: FontVault-style family grouping view. */
+.pool-view-toggle button {
+  min-width: 34px;
+}
+
+.font-family-group-scroller {
+  overflow: auto;
+  padding: 18px 18px 26px;
+}
+
+.font-family-group-page {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}

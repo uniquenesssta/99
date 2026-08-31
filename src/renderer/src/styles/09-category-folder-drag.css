@@ -1,0 +1,120 @@
+/* v0.8.2 字体分类筛选 */
+.category-filter-list {
+  display: grid;
+  gap: 3px;
+  padding: 0 8px 8px;
+}
+
+.category-filter {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+}
+
+.category-filter:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.category-filter.active {
+  background: var(--accent-bg-strong);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(122, 162, 255, 0.28);
+}
+
+.category-filter em {
+  color: var(--muted-2);
+  font-style: normal;
+  font-size: 0.75rem;
+}
+
+.category-filter.active em {
+  color: var(--accent-2);
+}
+
+
+/* v0.8.3 监听文件夹管理 / 物理拖放 */
+.folder-list {
+  display: grid;
+  gap: 6px;
+}
+
+.folder-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--row-bg);
+  color: var(--muted);
+  text-align: left;
+}
+
+.folder-row .folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-toggle {
+  color: var(--muted-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 18px;
+  line-height: 1;
+  border-radius: 6px;
+}
+
+.folder-toggle:not(.placeholder) {
+  color: var(--accent-2);
+  cursor: pointer;
+}
+
+.folder-toggle:not(.placeholder):hover {
+  background: var(--accent-bg);
+}
+
+.folder-row em {
+  color: var(--muted-2);
+  font-style: normal;
+  font-size: 0.75rem;
+}
+
+.folder-row:hover,
+.folder-row.active {
+  color: var(--text);
+  border-color: rgba(122, 162, 255, 0.45);
+  background: rgba(122, 162, 255, 0.10);
+}
+
+.folder-row.drop-hover {
+  border-color: rgba(139, 231, 178, 0.75);
+  background: rgba(139, 231, 178, 0.13);
+}
+
+.folder-row.virtual {
+  background: var(--subtle-bg);
+}
+
+.font-card[draggable="true"] {
+  user-select: none;
+}
+
+.font-card[draggable="true"]:active {
+  cursor: grabbing;
+}

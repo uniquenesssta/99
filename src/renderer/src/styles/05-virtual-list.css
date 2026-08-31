@@ -1,0 +1,87 @@
+.font-virtual-scroller {
+  grid-row: 3;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  contain: strict;
+  overflow-anchor: none;
+  will-change: auto;
+}
+
+.font-virtual-inner {
+  position: relative;
+  min-height: 100%;
+}
+
+.font-virtual-page {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 0;
+  will-change: transform;
+}
+
+.font-virtual-page.waterfall {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.font-virtual-page.list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-content: start;
+}
+
+.font-virtual-page.waterfall .font-card {
+  min-height: 328px;
+  height: 328px;
+  overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: 245px 328px;
+}
+
+.font-virtual-page.list .font-card {
+  height: 166px;
+  overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: 640px 166px;
+}
+
+.virtual-empty {
+  position: absolute;
+  inset: 0;
+  min-height: 360px;
+}
+
+.font-card {
+  transform: none;
+}
+
+.font-sample,
+.font-sample-image,
+.large-preview-image {
+  contain: content;
+}
+
+
+.layout.detail-hidden {
+  grid-template-columns: 250px minmax(420px, 1fr);
+}
+
+.layout.detail-hidden .font-list-panel {
+  border-right: none;
+}
+
+.watch-hint {
+  color: var(--muted-2);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  margin: -2px 0 8px;
+}
+
+.font-card[title] {
+  cursor: pointer;
+}

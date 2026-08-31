@@ -1,0 +1,265 @@
+
+.sidebar-rail-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+}
+
+.sidebar-rail-separator {
+  width: 26px;
+  height: 1px;
+  background: var(--studio-hairline);
+}
+
+.sidebar-rail-button {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 14px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 140ms ease, color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.sidebar-rail-button:hover {
+  transform: translateY(-1px);
+  color: var(--studio-primary-strong);
+  border-color: rgba(122, 162, 255, 0.45);
+  background: var(--accent-bg);
+}
+
+.sidebar-rail-button.active {
+  color: var(--studio-primary-strong);
+  border-color: rgba(122, 162, 255, 0.55);
+  background: var(--accent-bg-strong);
+}
+
+@media (max-width: 1360px) {
+  .layout.detail-docked-layout.sidebar-collapsed {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 1080px) {
+  .layout.detail-docked-layout.sidebar-collapsed,
+  .layout.detail-docked-layout.sidebar-collapsed.detail-hidden {
+    grid-template-columns: 58px minmax(0, 1fr) !important;
+  }
+
+  .sidebar.collapsed {
+    width: 58px;
+    min-width: 58px;
+    padding: 10px 8px;
+  }
+
+  .sidebar-collapse-button {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+  }
+}
+
+/* v2.0 preview layout box model: detail preview behaves like a fixed design text box. */
+.large-preview.preview-layout-detail {
+  min-height: 260px;
+  max-height: 320px;
+  padding: 28px 34px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.large-preview.preview-layout-detail .large-preview-image {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center center;
+}
+
+/* v2.0: collapsed sidebar top divider between toggle and first icon. */
+.sidebar.collapsed .sidebar-collapse-button {
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.sidebar.collapsed .sidebar-collapse-button::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: -6px;
+  height: 1px;
+  background: var(--studio-hairline);
+}
+
+.sidebar.collapsed .sidebar-collapsed-rail {
+  padding-top: 2px;
+}
+
+/* v2.0 preview box model correction: detail text uses a fixed centered text frame instead of raw wrapping. */
+.large-preview.preview-layout-detail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  max-height: 320px;
+  padding: 28px 34px;
+  overflow: hidden;
+  text-align: center;
+  white-space: normal;
+}
+
+.large-preview.preview-layout-detail .detail-preview-text {
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.08em;
+  overflow: hidden;
+}
+
+.large-preview.preview-layout-detail .detail-preview-text .font-sample-line {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.large-preview.preview-layout-detail .detail-preview-text[data-multiline="true"] .font-sample-line {
+  white-space: nowrap;
+}
+
+.large-preview.preview-layout-detail .large-preview-image {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center center;
+}
+
+
+/* v2.0 limit-box preview: detail panel behaves like a fixed design text box. */
+.large-preview.preview-layout-detail {
+  overflow: hidden;
+}
+
+.large-preview.preview-layout-detail .detail-preview-text {
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.large-preview.preview-layout-detail .detail-preview-text .font-sample-line {
+  width: 100%;
+  max-width: 100%;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  letter-spacing: inherit;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.large-preview.preview-layout-detail .detail-preview-text[data-multiline="true"] {
+  white-space: normal;
+}
+
+/* v2.0 1080p shell tuning: reduce desktop chrome/panels before falling back to stacked detail. */
+@media (max-width: 1600px) {
+  .topbar {
+    min-height: 74px;
+    height: 74px;
+    padding: 10px 14px 10px 16px;
+  }
+
+  .brand {
+    font-size: 1.16rem;
+  }
+
+  .brand span {
+    font-size: 0.78rem;
+  }
+
+  .subtitle {
+    font-size: 0.70rem;
+    margin-top: 2px;
+  }
+
+  .topbar-right {
+    gap: 10px;
+  }
+
+  .layout.detail-docked-layout {
+    gap: 10px;
+    padding: 10px;
+    grid-template-columns: 244px minmax(500px, 1fr) minmax(316px, 360px) !important;
+  }
+
+  .layout.detail-docked-layout.detail-hidden {
+    grid-template-columns: 244px minmax(500px, 1fr) !important;
+  }
+
+  .layout.detail-docked-layout.sidebar-collapsed {
+    grid-template-columns: 64px minmax(500px, 1fr) minmax(316px, 360px) !important;
+  }
+
+  .layout.detail-docked-layout.sidebar-collapsed.detail-hidden {
+    grid-template-columns: 64px minmax(500px, 1fr) !important;
+  }
+
+  .sidebar {
+    padding: 12px;
+  }
+
+  .font-list-panel,
+  .detail-panel {
+    border-radius: 22px;
+  }
+
+  .detail-dock-panel {
+    padding: 12px;
+  }
+
+  .detail-header {
+    padding: 12px 14px;
+  }
+
+  .large-preview.preview-layout-detail,
+  .large-preview {
+    min-height: 220px;
+    max-height: 260px;
+    padding: 22px 26px;
+  }
+
+  .detail-actions {
+    gap: 8px;
+  }
+
+  .detail-actions button {
+    min-height: 40px;
+    padding: 0 13px;
+  }
+}
