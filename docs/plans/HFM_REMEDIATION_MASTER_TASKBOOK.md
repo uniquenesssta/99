@@ -32,6 +32,7 @@
 - 不降低现有诊断强度，不删除失败用例，不用静态文本匹配冒充行为验证。
 - 不在未确认前增加生产依赖；本计划默认使用现有 TypeScript、React 和 Node 能力。
 - 不因重构改变缓存键、数据库格式、IPC channel、Rust CLI 参数或用户可见行为；确需改变时先写兼容与迁移方案。
+- 每个 Stage 使用一个独立分支，命名为 `stage/NN-<scope>`；当前阶段通过并被接受后，再以其完成基线创建下一阶段分支。一个阶段内仍按 Atomic Task 独立提交。
 
 ## 2. 本次 `git pull` 的本地影响
 
@@ -476,7 +477,7 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 
 | 阶段 | 状态 | 完成提交 | 验证摘要 | 备注 |
 | --- | --- | --- | --- | --- |
-| Stage 0 | 待执行 | - | - | 当前阶段 |
+| Stage 0 | 进行中 | - | AT-0.1：typecheck、63 项诊断、Electron/Vite build 通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 实机待验证 |
 | Stage 1 | 阻塞于 Stage 0 | - | - | - |
 | Stage 2 | 阻塞于 Stage 1 | - | - | - |
 | Stage 3 | 阻塞于 Stage 2 | - | - | - |

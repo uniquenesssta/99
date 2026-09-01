@@ -54,6 +54,7 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-01：Stage 0 使用独立分支 `stage/00-baseline-behavior-locks` 启动；AT-0.1 固化修复前环境、架构与安全基线。TypeScript、63 项诊断和 Electron/Vite build 通过；生产依赖漏洞为 0，Rust/Windows 实机验证待补。
 - 2026-09-01：建立 HFM 修复与编排重构总任务书及 Stage 0 当前任务书；完成三个巨型编排文件的二次职责审计，明确按状态所有权和领域边界拆分，不以行数或机械搬文件作为验收标准。本次仅更新文档，未修改运行时代码。
 - 2026-09-01：删除误留的任务书、开发私钥、可重建输出与 Rust 构建缓存；完善忽略规则，并将锁文件中的内部制品地址改回公共 npm registry，使新环境可正常执行 `npm ci`。
 - 本次验证：`npm ci`、TypeScript 类型检查、63 项诊断、Electron/Vite 构建及混淆通过。审查环境缺少 Cargo，未完成 Rust worker 与 Windows 安装包的全量重建。

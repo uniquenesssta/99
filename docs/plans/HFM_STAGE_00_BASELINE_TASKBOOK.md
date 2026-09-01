@@ -3,8 +3,9 @@
 ## 1. 阶段信息
 
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
-- 基线提交：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 阶段状态：待执行
+- 基线提交：`9d9be77b4761a3c1e169ffe15fbda059b556064f`
+- 阶段状态：进行中（AT-0.1 已完成）
+- 阶段分支：`stage/00-baseline-behavior-locks`
 - 目标：建立能稳定复现已确认问题的行为门禁，并固定三大编排文件拆分前的公开契约。
 - 本阶段禁止：修复生产逻辑、搬迁模块、升级依赖、改数据库/IPC/Rust 协议。
 
@@ -34,14 +35,14 @@ Stage 0 结束时必须新增或更新：
 
 执行：
 
-- [ ] 记录 `git status --short --branch`、HEAD、远端 HEAD。
-- [ ] 记录 `node --version`、`npm --version`、`rustc --version`、`cargo --version`。
-- [ ] Windows 执行机记录 OS build、PowerShell、MSVC/Windows SDK 版本。
-- [ ] 干净执行 `npm ci`，确认锁文件未改变。
-- [ ] 执行 `npm run typecheck` 与 `npm run diagnostics:all`，记录实际通过项数量。
-- [ ] 执行 Electron/Vite build；有 Cargo 时执行 `npm run rust:build`。
-- [ ] 分别保存 `npm audit` 与 `npm audit --omit=dev` 的摘要。
-- [ ] 确认仓库当前版本无私钥标记、`out/`、Rust `target/` 和受跟踪 `hfm-core-worker.exe`。
+- [x] 记录 `git status --short --branch`、HEAD、远端 HEAD。
+- [x] 记录 `node --version`、`npm --version`、`rustc --version`、`cargo --version`。
+- [x] Windows 执行机记录 OS build、PowerShell、MSVC/Windows SDK 版本；当前 Linux 环境明确记为待补。
+- [x] 执行干净 `npm ci` 并确认锁文件未改变；Electron 二进制 postinstall 因当前容器下载阻塞而人工终止，不能记为完整成功。
+- [x] 执行 `npm run typecheck` 与 `npm run diagnostics:all`，记录实际通过项数量。
+- [x] 执行 Electron/Vite build；当前无 Cargo，Rust build 与完整 `npm run build` 待补。
+- [x] 分别保存 `npm audit` 与 `npm audit --omit=dev` 的摘要。
+- [x] 确认仓库当前版本无私钥标记、`out/`、Rust `target/` 和受跟踪 `hfm-core-worker.exe`。
 
 通过标准：每个命令都有日期、环境和真实结果；缺失工具写作环境阻塞，不伪造通过。
 
@@ -177,4 +178,40 @@ npm run build
 
 | 日期 | Atomic Task | 提交 | 自动验证 | Windows 实机 | 结论/阻塞 |
 | --- | --- | --- | --- | --- | --- |
-| - | - | - | - | - | 待执行 |
+| 2026-09-01 | AT-0.1 | 本提交 | typecheck 通过；63 项诊断通过；Electron/Vite 三端 build 通过 | 当前执行环境非 Windows；Rust/Cargo、PowerShell、MSVC/SDK 均不可用 | 自动基线已记录；`npm ci` 卡在 Electron 35.7.5 binary postinstall 后终止，lock hash 未变 |
+
+## 8. AT-0.1 基线详情
+
+### 仓库与环境
+
+- Stage 分支：`stage/00-baseline-behavior-locks`
+- HEAD 与阶段起点：`9d9be77b4761a3c1e169ffe15fbda059b556064f`
+- 起点时 `origin/main`：`9d9be77b4761a3c1e169ffe15fbda059b556064f`
+- `package-lock.json` SHA-256：`44eba34d7229f2629fbfdd25398014dcc752994f082ab7ab48ac967faaced58f`
+- Node.js：`v24.19.0`
+- npm：`11.9.0`
+- OS：Linux x86_64，kernel `6.18.35`
+- Rust/Cargo：未安装。
+- Windows/PowerShell/MSVC/Windows SDK：当前环境不可用，必须在 Stage 0 收口前由 Windows 执行机补充，或明确保留为外部验收阻塞。
+
+### 验证结果
+
+| 项目 | 结果 | 说明 |
+| --- | --- | --- |
+| `npm ci` | 环境阻塞 | registry 包已下载，better-sqlite3 安装成功；停在 Electron 35.7.5 binary postinstall，人工终止；锁文件未变化 |
+| `npm run typecheck` | 通过 | TypeScript strict 检查通过 |
+| `npm run diagnostics:all` | 通过 | 63/63 |
+| Electron/Vite build | 通过 | main 326 modules、preload 1 module、renderer 181 modules |
+| `npm run rust:build` | 未执行 | 当前环境没有 Cargo |
+| 完整 `npm run build` | 未执行 | required Rust build 必然受 Cargo 缺失阻塞，不能描述为完整 build 通过 |
+| `npm audit` | 风险已记录 | 19 high、1 critical，共 20；位于含开发/构建依赖的完整树 |
+| `npm audit --omit=dev` | 通过 | 生产依赖 0 vulnerability |
+
+### 架构与安全快照
+
+- `src/main/index.ts`：2036 行。
+- `src/main/rust-core/rustCoreWorkerRuntime.ts`：2994 行；89 个导出 type、43 个 `runRust*` 内部函数、38 个公开 `runRust*` 方法。
+- `src/renderer/src/App.tsx`：1397 行。
+- `src/renderer/src/components/app/AppRootView.tsx`：386 行，169 个平铺解构属性，入口参数为 `any`。
+- 当前受跟踪文件中未发现 private key PEM 标记。
+- 当前受跟踪文件中未发现 `out/`、Rust `target/` 或 `build/native/hfm-core-worker(.exe)`。
