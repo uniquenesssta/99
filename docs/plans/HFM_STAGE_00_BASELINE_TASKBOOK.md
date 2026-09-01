@@ -4,7 +4,7 @@
 
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
 - 基线提交：`9d9be77b4761a3c1e169ffe15fbda059b556064f`
-- 阶段状态：进行中（AT-0.1、AT-0.2 已完成）
+- 阶段状态：进行中（AT-0.1、AT-0.2、AT-0.3 已完成）
 - 阶段分支：`stage/00-baseline-behavior-locks`
 - 目标：建立能稳定复现已确认问题的行为门禁，并固定三大编排文件拆分前的公开契约。
 - 本阶段禁止：修复生产逻辑、搬迁模块、升级依赖、改数据库/IPC/Rust 协议。
@@ -106,10 +106,10 @@ Stage 0 结束时必须新增或更新：
 
 实现要求：
 
-- [ ] 读取授权与写/删授权分别断言，不共用“能读即能删”。
-- [ ] 测试 Windows 大小写、UNC 和分隔符语义；非 Windows 环境只跑可移植子集并明确标记。
-- [ ] 协议测试覆盖 `hfm-font://` 与 `readPreviewFontData` 的一致性。
-- [ ] 失败用例验证没有发生 read/copy/unlink/registry 调用。
+- [x] 读取授权与写/删授权分别断言，不共用“能读即能删”。
+- [x] 当前 Linux 环境执行可移植子集；Windows 大小写、UNC、设备路径、junction 和分隔符语义明确标为待补。
+- [x] 协议测试覆盖 `hfm-font://` 与 `readPreviewFontData` 对同一越界 symlink 的当前一致行为。
+- [x] 对当前已经安全拒绝的畸形 URL、超大预览、非字体移动和缺少托管元数据用例，断言没有发生后续 read/move/unlink/registry 调用；已知缺陷用例则精确断言当前越界副作用，供 Stage 2 反转为拒绝断言。
 
 通过标准：至少一个现有越界读取在旧实现上被基线观察命令命中；命令暂不进入 `diagnostics:all`。Stage 2 修复时将其转换为长期门禁，要求全部非法用例稳定拒绝。
 
@@ -180,6 +180,7 @@ npm run build
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-01 | AT-0.1 | 本提交 | typecheck 通过；63 项诊断通过；Electron/Vite 三端 build 通过 | 当前执行环境非 Windows；Rust/Cargo、PowerShell、MSVC/SDK 均不可用 | 自动基线已记录；`npm ci` 卡在 Electron 35.7.5 binary postinstall 后终止，lock hash 未变 |
 | 2026-09-01 | AT-0.2 | 本提交 | `--baseline-observe` 8/8；7 个 `KNOWN_DEFECT`、1 个 `BEHAVIOR_LOCK` | 使用纯替身，不接触真实注册表和系统字体 | Stage 1 必须把同一脚本转换为正确性硬门禁并纳入 `diagnostics:all` |
+| 2026-09-01 | AT-0.3 | 本提交 | `--baseline-observe` 8/8；6 个 `KNOWN_DEFECT`、2 个 `BEHAVIOR_LOCK` | 可移植文件系统夹具通过；Windows 路径语义待实机补充 | 临时目录已自动清理；未接触真实字体库、注册表或用户目录；Stage 2 必须反转缺陷断言并纳入 `diagnostics:all` |
 
 ## 8. AT-0.1 基线详情
 
@@ -231,3 +232,20 @@ npm run build
 | A8 | `KNOWN_DEFECT` | 已提前 abort 的 signal 不被批量 API 接收，整个批次仍复制并提交 |
 
 观察脚本：`build/diagnostics/check-font-activation-transaction.cjs`。无 `--baseline-observe` 时脚本必须失败，避免被误当作“当前行为正确”的绿色门禁。
+
+## 10. AT-0.3 路径授权观察结果
+
+| 用例 | 观察类型 | 当前真实行为 |
+| --- | --- | --- |
+| P1 | `BEHAVIOR_LOCK` | watched root 内的普通 `.ttf` 文件可以正常解析 |
+| P2 | `KNOWN_DEFECT` | resolver 接受 `.txt/.db/.pem/.woff/.woff2`，预览数据接口可返回 PEM 内容 |
+| P3 | `KNOWN_DEFECT` | preview stat 即使表明目标不是普通文件，仍继续调用 `readFile` |
+| P4 | `KNOWN_DEFECT` | watched root 内的 `.ttf` symlink 指向根外文件时，preview 与 `hfm-font://` 都会返回根外内容 |
+| P5 | `BEHAVIOR_LOCK` | 畸形协议编码在 resolver 前返回 400；超过 80MB 的预览在 `readFile` 前拒绝 |
+| P6 | `KNOWN_DEFECT` | renderer 提供的任意父目录可直接创建物理子目录，不要求属于 watched root |
+| P7 | `KNOWN_DEFECT` | 仅凭字体扩展名即可在两个未授权目录之间物理移动；现有非字体拒绝仍不产生移动副作用 |
+| P8 | `KNOWN_DEFECT` | 仅 basename 前缀即可授权根外文件 unlink 和任意 registry name 删除；缺少受管元数据时会在副作用前拒绝 |
+
+观察脚本：`build/diagnostics/check-font-path-authorization.cjs`。脚本只在系统临时目录内创建夹具，退出时递归清理该次 `mkdtemp` 产生的精确目录；注册表调用使用纯替身。无 `--baseline-observe` 时脚本必须失败。
+
+当前 Windows 待补矩阵：盘符大小写、UNC share、设备路径、`..` 与 Windows 分隔符组合、junction 越界。它们不能由 Linux 路径实现可靠模拟，Stage 2 的中央授权策略必须提供数据驱动的 Windows 语义测试，并在 Windows 执行机补充真实 junction/UNC 验证。
