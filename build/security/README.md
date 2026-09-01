@@ -2,7 +2,11 @@
 
 此目录用于构建期签名，不会被 `electron-builder.yml` 打进正式安装包。
 
-当前随包提供的是开发密钥，方便本地直接构建与验证流程。正式发布前必须替换为你自己的密钥，并且不要把私钥提交到公开仓库或发给第三方。
+仓库只保留公钥，不包含任何私钥。私钥必须通过环境变量或本机被 `.gitignore` 排除的文件提供，不得提交到仓库或发给第三方。
+
+任何曾进入 Git 历史的私钥都应视为已经泄露，不得继续用于正式签名；请生成新密钥并替换对应公钥。
+
+正式发布前，必须替换为自己的完整密钥对，并运行 `npm run security:sync-keys` 将对应公钥同步到应用源码。私钥与仓库中的公钥不匹配时，打包结果无法通过客户端校验。
 
 ## 完整性清单签名
 
@@ -10,7 +14,7 @@
 
 1. 环境变量 `HFM_INTEGRITY_PRIVATE_KEY_PEM`
 2. 环境变量 `HFM_INTEGRITY_PRIVATE_KEY_FILE`
-3. 默认文件 `build/security/hfm-integrity-private.pem`
+3. 本机文件 `build/security/hfm-integrity-private.pem`（已被 Git 忽略）
 
 客户端只内置完整性公钥，打包后会验证：
 
@@ -26,7 +30,7 @@
 
 1. 环境变量 `HFM_LICENSE_PRIVATE_KEY_PEM`
 2. 环境变量 `HFM_LICENSE_PRIVATE_KEY_FILE`
-3. 默认文件 `build/security/hfm-license-private.pem`
+3. 本机文件 `build/security/hfm-license-private.pem`（已被 Git 忽略）
 
 生成示例：
 
