@@ -41,11 +41,19 @@ npm run build:win
 - `native-src`：Rust/C/C++ 原生组件源码
 - `build`：诊断、构建、打包与安全脚本
 
+## 当前工程任务
+
+- [修复与编排重构总任务书](docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md)
+- [当前 Stage 0：基线与行为锁任务书](docs/plans/HFM_STAGE_00_BASELINE_TASKBOOK.md)
+
+任务书按 Atomic Task 执行：先建立行为锁，再依次修复事务正确性、路径边界和文件一致性，之后才拆分主进程组合根、Rust Worker 门面与 React 根组件。任何阶段硬门禁失败都阻塞后续阶段。
+
 ## 安全说明
 
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
 
+- 2026-09-01：建立 HFM 修复与编排重构总任务书及 Stage 0 当前任务书；完成三个巨型编排文件的二次职责审计，明确按状态所有权和领域边界拆分，不以行数或机械搬文件作为验收标准。本次仅更新文档，未修改运行时代码。
 - 2026-09-01：删除误留的任务书、开发私钥、可重建输出与 Rust 构建缓存；完善忽略规则，并将锁文件中的内部制品地址改回公共 npm registry，使新环境可正常执行 `npm ci`。
 - 本次验证：`npm ci`、TypeScript 类型检查、63 项诊断、Electron/Vite 构建及混淆通过。审查环境缺少 Cargo，未完成 Rust worker 与 Windows 安装包的全量重建。
