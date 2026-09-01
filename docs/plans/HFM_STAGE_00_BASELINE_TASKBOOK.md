@@ -4,7 +4,7 @@
 
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
 - 基线提交：`9d9be77b4761a3c1e169ffe15fbda059b556064f`
-- 阶段状态：进行中（AT-0.1、AT-0.2、AT-0.3 已完成）
+- 阶段状态：已完成（AT-0.1 至 AT-0.4 均已原子提交；Windows 实机矩阵作为外部验收项保留）
 - 阶段分支：`stage/00-baseline-behavior-locks`
 - 目标：建立能稳定复现已确认问题的行为门禁，并固定三大编排文件拆分前的公开契约。
 - 本阶段禁止：修复生产逻辑、搬迁模块、升级依赖、改数据库/IPC/Rust 协议。
@@ -128,11 +128,11 @@ Stage 0 结束时必须新增或更新：
 
 需要锁定：
 
-- [ ] `index.ts` 注册给主进程的 capability 键集合及 lifecycle hook 必需项。
-- [ ] Rust facade 的公开方法集合、Input/Result TypeScript 可赋值性。
-- [ ] Rust 命令的 capability 名、CLI 参数、不可用返回 `null` 与已提交失败抛错边界。
-- [ ] `AppRootView` 的目标分组契约：`topbar/sidebar/content/detail/overlays/developer`。
-- [ ] UI 关键流程清单：搜索、筛选、滚动、选择、详情、标签、文件夹、批量系统操作、冲突提示、关闭 flush。
+- [x] `index.ts` 注册给主进程的 capability 键集合及 lifecycle hook 必需项。
+- [x] Rust facade 的公开方法集合、Input/Result TypeScript 可赋值性。
+- [x] Rust 命令的 capability 名、CLI 参数、不可用返回 `null` 与写任务已提交失败抛错边界。
+- [x] `AppRootView` 的目标分组契约：`topbar/sidebar/content/detail/overlays/developer`。
+- [x] UI 关键流程清单：搜索、筛选、滚动、选择、详情、标签、文件夹、批量系统操作、冲突提示、关闭 flush。
 
 快照质量要求：
 
@@ -167,12 +167,12 @@ npm run build
 
 ## 6. Stage 0 退出条件
 
-- [ ] AT-0.1 至 AT-0.4 均有独立提交和记录。
-- [ ] F-01 至 F-07 都有修复前行为锁或明确的 Windows 待补验证项。
-- [ ] 三大编排文件的公开边界已有结构化门禁。
-- [ ] `npm run verify` 完整通过；基线观察命令不属于全量门禁，不能让主分支保持失败状态。
-- [ ] 总任务书 Stage 0 标为完成，Stage 1 解锁。
-- [ ] 工作区无生成物、私钥、字体资产和无关改动。
+- [x] AT-0.1 至 AT-0.4 均有独立提交和记录。
+- [x] F-01 至 F-05 已由可移植行为锁复现；F-06 跨卷移动与 F-07 原生预览回退限额明确保留为 Windows 实机待补项。
+- [x] 三大编排文件的公开边界已有结构化门禁。
+- [x] `npm run verify` 完整通过；两个基线观察命令没有进入 `diagnostics:all`。
+- [x] 总任务书 Stage 0 标为完成，Stage 1 解锁但尚未创建分支。
+- [x] 提交前差异复核确认无生成物、私钥、字体资产和无关改动。
 
 ## 7. 执行记录
 
@@ -181,6 +181,7 @@ npm run build
 | 2026-09-01 | AT-0.1 | 本提交 | typecheck 通过；63 项诊断通过；Electron/Vite 三端 build 通过 | 当前执行环境非 Windows；Rust/Cargo、PowerShell、MSVC/SDK 均不可用 | 自动基线已记录；`npm ci` 卡在 Electron 35.7.5 binary postinstall 后终止，lock hash 未变 |
 | 2026-09-01 | AT-0.2 | 本提交 | `--baseline-observe` 8/8；7 个 `KNOWN_DEFECT`、1 个 `BEHAVIOR_LOCK` | 使用纯替身，不接触真实注册表和系统字体 | Stage 1 必须把同一脚本转换为正确性硬门禁并纳入 `diagnostics:all` |
 | 2026-09-01 | AT-0.3 | 本提交 | `--baseline-observe` 8/8；6 个 `KNOWN_DEFECT`、2 个 `BEHAVIOR_LOCK` | 可移植文件系统夹具通过；Windows 路径语义待实机补充 | 临时目录已自动清理；未接触真实字体库、注册表或用户目录；Stage 2 必须反转缺陷断言并纳入 `diagnostics:all` |
+| 2026-09-01 | AT-0.4 | 本提交 | 编排契约定向门禁通过；`npm run verify` 通过；`diagnostics:all` 64/64 | 使用 AST、TypeScript 类型程序和纯 Rust 传输替身 | 未修改三大编排文件；Stage 4/5/6 拆分时必须保持或显式迁移这些契约 |
 
 ## 8. AT-0.1 基线详情
 
@@ -249,3 +250,24 @@ npm run build
 观察脚本：`build/diagnostics/check-font-path-authorization.cjs`。脚本只在系统临时目录内创建夹具，退出时递归清理该次 `mkdtemp` 产生的精确目录；注册表调用使用纯替身。无 `--baseline-observe` 时脚本必须失败。
 
 当前 Windows 待补矩阵：盘符大小写、UNC share、设备路径、`..` 与 Windows 分隔符组合、junction 越界。它们不能由 Linux 路径实现可靠模拟，Stage 2 的中央授权策略必须提供数据驱动的 Windows 语义测试，并在 Windows 执行机补充真实 junction/UNC 验证。
+
+## 11. AT-0.4 编排契约与 Stage 0 收口
+
+结构化契约门禁：`build/diagnostics/check-orchestration-contracts.cjs`；数据快照：`build/diagnostics/fixtures/orchestration-contracts.fixture.json`；类型可赋值性夹具：`build/diagnostics/fixtures/orchestration-contract-types.fixture.ts`。
+
+| 契约面 | 已锁定内容 | 拆分时的失败条件 |
+| --- | --- | --- |
+| 主进程组合根 | `createMainRuntimeRegistrationPayload` 的 115 个注册键；7 个 app 生命周期事件、2 个 process 异常事件；ready/before-quit/will-quit 必需调用 | 能力丢失/改名、启动顺序入口消失、退出 flush/关闭数据库/Rust daemon 清理遗漏 |
+| Rust 门面 | 45 个公开方法、38 条 command-capability-CLI 参数映射、所有公开 Input/Result 的双向类型等价 | 门面方法或参数改变、capability/CLI flag 漂移、返回类型不再兼容 |
+| Rust 失败边界 | capability 不可用时返回 `null`；写任务已提交 daemon 后失败时原错误抛出，one-shot scheduler 调用数保持 0 | 把不可用误当异常，或已提交写任务又重复执行 fallback |
+| React 根组件 | 当前调用方与接收方 169 个平铺属性完全一致；10 条关键 UI 流程仍有真实标识符 | 搜索/筛选/滚动/选择/详情/标签/文件夹/批量操作/冲突/关闭 flush 任一链路消失 |
+| Stage 6 目标 | 类型夹具定义 `topbar/sidebar/content/detail/overlays/developer` 六组契约 | 不能继续把 `props: any` 当成合法结果；Stage 6 必须让真实组件接入分组强类型 |
+
+```mermaid
+flowchart TD
+  A["index.ts 组合根"] --> B["注册载荷 115 键"] --> C["生命周期与 IPC 注册"]
+  A --> D["Rust 门面 45 方法"] --> E["38 条 CLI 路由"]
+  F["App.tsx 状态组合"] --> G["AppRootView 169 属性"] --> H["5 个界面组件与开发状态"]
+```
+
+Stage 0 总门禁实际结果：激活观察 8/8、路径观察 8/8、编排契约通过、TypeScript 通过、`diagnostics:all` 64/64。`npm run verify` 完整通过。当前容器仍无 Cargo/Windows 工具链，因此 Rust 编译、Windows junction/UNC、跨卷移动和原生预览限额继续作为 Windows 外部验收项，不伪报通过。

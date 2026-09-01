@@ -5,7 +5,7 @@
 - 文档版本：1.0
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 0「基线与行为锁」
+- 当前阶段：Stage 0「基线与行为锁」已完成；Stage 1 待在独立分支启动
 - 当前阶段任务书：[`HFM_STAGE_00_BASELINE_TASKBOOK.md`](HFM_STAGE_00_BASELINE_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -477,8 +477,8 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 
 | 阶段 | 状态 | 完成提交 | 验证摘要 | 备注 |
 | --- | --- | --- | --- | --- |
-| Stage 0 | 进行中 | - | AT-0.1 通过；AT-0.2 复现 7 个事务缺陷并锁定 1 个安全行为；AT-0.3 复现 6 个路径缺陷并锁定 2 个安全行为 | 分支 `stage/00-baseline-behavior-locks`；AT-0.4、Rust/Windows 实机待验证 |
-| Stage 1 | 阻塞于 Stage 0 | - | - | - |
+| Stage 0 | 完成 | 本阶段分支（AT-0.1 至 AT-0.4） | `npm run verify` 通过，64/64 长期诊断；事务观察 8/8、路径观察 8/8；三大编排契约通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 专属矩阵作为外部验收项保留 |
+| Stage 1 | 待启动 | - | Stage 0 已解锁 | 接受 Stage 0 后新建 `stage/01-activation-transactions` |
 | Stage 2 | 阻塞于 Stage 1 | - | - | - |
 | Stage 3 | 阻塞于 Stage 2 | - | - | - |
 | Stage 4 | 阻塞于 Stage 3 | - | - | - |
