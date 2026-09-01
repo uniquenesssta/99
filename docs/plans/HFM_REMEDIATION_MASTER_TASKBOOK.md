@@ -477,7 +477,7 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 
 | 阶段 | 状态 | 完成提交 | 验证摘要 | 备注 |
 | --- | --- | --- | --- | --- |
-| Stage 0 | 进行中 | - | AT-0.1：typecheck、63 项诊断、Electron/Vite build 通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 实机待验证 |
+| Stage 0 | 进行中 | - | AT-0.1 通过；AT-0.2 复现 7 个事务缺陷并锁定 1 个安全行为 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 实机待验证 |
 | Stage 1 | 阻塞于 Stage 0 | - | - | - |
 | Stage 2 | 阻塞于 Stage 1 | - | - | - |
 | Stage 3 | 阻塞于 Stage 2 | - | - | - |

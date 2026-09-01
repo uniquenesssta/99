@@ -4,7 +4,7 @@
 
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
 - 基线提交：`9d9be77b4761a3c1e169ffe15fbda059b556064f`
-- 阶段状态：进行中（AT-0.1 已完成）
+- 阶段状态：进行中（AT-0.1、AT-0.2 已完成）
 - 阶段分支：`stage/00-baseline-behavior-locks`
 - 目标：建立能稳定复现已确认问题的行为门禁，并固定三大编排文件拆分前的公开契约。
 - 本阶段禁止：修复生产逻辑、搬迁模块、升级依赖、改数据库/IPC/Rust 协议。
@@ -73,11 +73,11 @@ Stage 0 结束时必须新增或更新：
 
 实现要求：
 
-- [ ] 测试替身记录调用顺序、参数与结果，不接触真实系统。
-- [ ] 断言最终文件/注册表/resource/session/delete-queue 状态，而非仅匹配日志。
-- [ ] 基线观察命令退出成功的含义只能是“精确复现了已知缺陷”，并输出 `KNOWN_DEFECT` 与命中的用例；不能把它表述为生产行为正确。
-- [ ] 基线观察命令暂不进入 `diagnostics:all`，因此主分支全量门禁保持绿色。
-- [ ] Stage 1 的对应修复任务必须移除基线观察语义，改为断言正确结果，并把同一诊断纳入 `diagnostics:all`。
+- [x] 测试替身记录调用顺序、参数与结果，不接触真实系统。
+- [x] 断言最终文件/注册表/resource/session/delete-queue 状态，而非仅匹配日志。
+- [x] 基线观察命令退出成功的含义只能是“精确复现了已知缺陷”，并输出 `KNOWN_DEFECT` 与命中的用例；不能把它表述为生产行为正确。
+- [x] 基线观察命令暂不进入 `diagnostics:all`，因此主分支全量门禁保持绿色。
+- [x] Stage 1 的对应修复任务必须移除基线观察语义，改为断言正确结果，并把同一诊断纳入 `diagnostics:all`。
 
 通过标准：A1-A8 均可独立复现，失败消息指向具体事务步骤。
 
@@ -179,6 +179,7 @@ npm run build
 | 日期 | Atomic Task | 提交 | 自动验证 | Windows 实机 | 结论/阻塞 |
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-01 | AT-0.1 | 本提交 | typecheck 通过；63 项诊断通过；Electron/Vite 三端 build 通过 | 当前执行环境非 Windows；Rust/Cargo、PowerShell、MSVC/SDK 均不可用 | 自动基线已记录；`npm ci` 卡在 Electron 35.7.5 binary postinstall 后终止，lock hash 未变 |
+| 2026-09-01 | AT-0.2 | 本提交 | `--baseline-observe` 8/8；7 个 `KNOWN_DEFECT`、1 个 `BEHAVIOR_LOCK` | 使用纯替身，不接触真实注册表和系统字体 | Stage 1 必须把同一脚本转换为正确性硬门禁并纳入 `diagnostics:all` |
 
 ## 8. AT-0.1 基线详情
 
@@ -215,3 +216,18 @@ npm run build
 - `src/renderer/src/components/app/AppRootView.tsx`：386 行，169 个平铺解构属性，入口参数为 `any`。
 - 当前受跟踪文件中未发现 private key PEM 标记。
 - 当前受跟踪文件中未发现 `out/`、Rust `target/` 或 `build/native/hfm-core-worker(.exe)`。
+
+## 9. AT-0.2 激活事务观察结果
+
+| 用例 | 观察类型 | 当前真实行为 |
+| --- | --- | --- |
+| A1 | `KNOWN_DEFECT` | Rust 单项 remove 返回 `ok: false` 时仍 resolve，且不进入 native fallback |
+| A2 | `KNOWN_DEFECT` | 批量 remove 一成一败仍汇总为成功 2、失败 0，两个持久记录均被删除并进入文件删除队列 |
+| A3 | `BEHAVIOR_LOCK` | copy 抛错时会在 registry/resource/session state 之前停止，没有前置系统副作用 |
+| A4 | `KNOWN_DEFECT` | registry 写失败后复制文件仍保留，没有补偿 |
+| A5 | `KNOWN_DEFECT` | resource add 失败后复制文件与 registry value 均保留 |
+| A6 | `KNOWN_DEFECT` | session state 保存失败后文件、registry 和活动 resource 均成为无持久记录的孤儿 |
+| A7 | `KNOWN_DEFECT` | 当前没有补偿尝试，也没有记录补偿失败的持久清理入口 |
+| A8 | `KNOWN_DEFECT` | 已提前 abort 的 signal 不被批量 API 接收，整个批次仍复制并提交 |
+
+观察脚本：`build/diagnostics/check-font-activation-transaction.cjs`。无 `--baseline-observe` 时脚本必须失败，避免被误当作“当前行为正确”的绿色门禁。
