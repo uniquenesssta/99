@@ -52,7 +52,10 @@ export interface FontActivationRuntimeDeps {
   }) => Promise<void>;
   safeTemporaryActiveFontName: (item: FontItem) => string;
   temporaryActiveRegistryNameFor: (item: FontItem) => string;
-  removeFontResourceSession: (fontPath: string) => Promise<unknown>;
+  removeFontResourceSession: (
+    fontPath: string,
+    options?: { notify?: boolean; reason?: string },
+  ) => Promise<unknown>;
   removeFontResourceSessionBatch: (
     fontPaths: string[],
   ) => Promise<FontResourceBatchResult>;

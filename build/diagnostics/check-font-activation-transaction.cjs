@@ -7,8 +7,8 @@ const root = path.resolve(__dirname, '..', '..')
 const baselineObserve = process.argv.includes('--baseline-observe')
 const correctnessCase = process.argv.find((arg) => arg.startsWith('--case='))?.slice('--case='.length) || ''
 
-if (baselineObserve === Boolean(correctnessCase) || (correctnessCase && !['A1', 'A2'].includes(correctnessCase))) {
-  console.error('[diagnostics:font-activation-transaction] use either --baseline-observe or --case=A1/--case=A2')
+if (baselineObserve === Boolean(correctnessCase) || (correctnessCase && !['A1', 'A2', 'A3-A7'].includes(correctnessCase))) {
+  console.error('[diagnostics:font-activation-transaction] use either --baseline-observe or --case=A1/--case=A2/--case=A3-A7')
   process.exit(1)
 }
 
@@ -72,12 +72,44 @@ const sessionFsStub = {
   },
 }
 
+let compensationFiles = new Map()
+const compensationFsStub = {
+  __esModule: true,
+  promises: {
+    readFile: async (filePath) => {
+      if (compensationFiles.has(filePath)) return compensationFiles.get(filePath)
+      throw Object.assign(new Error(`missing diagnostic file: ${filePath}`), { code: 'ENOENT' })
+    },
+    mkdir: async () => undefined,
+    writeFile: async (filePath, content) => {
+      compensationFiles.set(filePath, String(content))
+    },
+  },
+}
+const compensationQueueModule = loadTypeScriptModule(
+  'src/main/activation/runtime/fontActivationCompensationQueue.ts',
+  (id) => (id === 'node:fs' ? compensationFsStub : require(id)),
+)
+const compensationModule = loadTypeScriptModule(
+  'src/main/activation/runtime/fontActivationCompensationRuntime.ts',
+  (id) => {
+    if (id === './fontActivationCompensationQueue') return compensationQueueModule
+    return require(id)
+  },
+)
+
 const sessionModule = loadTypeScriptModule(
   'src/main/activation/runtime/fontActivationSessionRuntime.ts',
-  (id) => (id === 'node:fs' ? sessionFsStub : require(id)),
+  (id) => {
+    if (id === 'node:fs') return sessionFsStub
+    if (id === './fontActivationCompensationRuntime') return compensationModule
+    return require(id)
+  },
 )
 
 function createSessionHarness(failureStage) {
+  compensationFiles = new Map()
+  let activeFailureStage = failureStage
   const effects = {
     copiedFiles: new Set(),
     registryNames: new Set(),
@@ -86,15 +118,24 @@ function createSessionHarness(failureStage) {
     savedInstallStatuses: [],
     cleanupCalls: [],
     refreshCalls: [],
+    pendingCompensations: () => {
+      const raw = compensationFiles.get('/diagnostic/pending-font-activation-compensations.json')
+      return raw ? JSON.parse(raw).records || [] : []
+    },
   }
   const currentState = { version: 1, records: [] }
 
   const deps = {
+    dataPath: (name) => `/diagnostic/${name}`,
+    dataRoot: () => '/diagnostic',
+    appendStartupLog: () => undefined,
     ensureWindows: () => undefined,
     currentUserFontsDir: () => 'C:/Users/Test/AppData/Local/Microsoft/Windows/Fonts',
     loadTemporaryActiveFonts: async () => ({ version: 1, records: currentState.records.slice() }),
     saveTemporaryActiveFonts: async (state) => {
-      if (failureStage === 'save-state') throw new Error('injected session state failure')
+      if (activeFailureStage === 'save-state' || activeFailureStage === 'compensation-fails' || activeFailureStage === 'file-compensation-fails') {
+        throw new Error('injected session state failure')
+      }
       effects.savedSessionStates.push(state)
       currentState.records = state.records.slice()
     },
@@ -102,23 +143,23 @@ function createSessionHarness(failureStage) {
     temporaryActiveRegistryNameFor: (item) => `HFM_ACTIVE_${item.id} (TrueType)`,
     removeFontResourceSession: async (fontPath) => {
       effects.cleanupCalls.push(`resource:${fontPath}`)
-      if (failureStage === 'compensation-fails') throw new Error('injected resource compensation failure')
+      if (activeFailureStage === 'compensation-fails') throw new Error('injected resource compensation failure')
       effects.resourcePaths.delete(fontPath)
     },
     addFontResourceSession: async (fontPath) => {
-      if (failureStage === 'add-resource' || failureStage === 'compensation-fails') {
+      if (activeFailureStage === 'add-resource') {
         throw new Error('injected resource add failure')
       }
       effects.resourcePaths.add(fontPath)
       return 1
     },
     writeFontRegistryValuesHKCUBatch: async (records) => {
-      if (failureStage === 'write-registry') throw new Error('injected registry write failure')
+      if (activeFailureStage === 'write-registry') throw new Error('injected registry write failure')
       for (const record of records) effects.registryNames.add(record.name)
     },
     deleteRegistryValueHKCU: async (name) => {
       effects.cleanupCalls.push(`registry:${name}`)
-      if (failureStage === 'compensation-fails') throw new Error('injected registry compensation failure')
+      if (activeFailureStage === 'compensation-fails') throw new Error('injected registry compensation failure')
       effects.registryNames.delete(name)
     },
     requestFontRefresh: (...args) => effects.refreshCalls.push(args),
@@ -139,14 +180,31 @@ function createSessionHarness(failureStage) {
   }
   const cleanupRuntime = {
     removeTemporaryActiveRecord: async () => true,
+    queueTemporaryFontFileDeletes: async (records) => {
+      for (const record of records) {
+        effects.cleanupCalls.push(`file:${record.installPath}`)
+        if (activeFailureStage === 'file-compensation-fails') continue
+        effects.copiedFiles.delete(record.installPath)
+      }
+      return Object.fromEntries(records.map((record) => [
+        record.installPath,
+        activeFailureStage === 'file-compensation-fails'
+          ? { ok: false, message: 'injected file compensation failure' }
+          : { ok: true, message: 'queued by diagnostic' },
+      ]))
+    },
   }
   const copyRuntime = {
     copyTemporaryActiveFontWithTrace: async (_item, dest) => {
-      if (failureStage === 'copy') throw new Error('injected copy failure')
+      if (activeFailureStage === 'copy') throw new Error('injected copy failure')
       effects.copiedFiles.add(dest)
       return 'copied'
     },
   }
+  const compensationRuntime = compensationModule.createFontActivationCompensationRuntime(
+    deps,
+    cleanupRuntime,
+  )
 
   const runtime = sessionModule.createFontActivationSessionRuntime(
     deps,
@@ -155,8 +213,15 @@ function createSessionHarness(failureStage) {
     statusRuntime,
     cleanupRuntime,
     copyRuntime,
+    compensationRuntime,
   )
-  return { runtime, effects, currentState }
+  return {
+    runtime,
+    effects,
+    currentState,
+    compensationRuntime,
+    setFailureStage: (next) => { activeFailureStage = next },
+  }
 }
 
 async function expectReject(caseId, task, messagePart) {
@@ -267,6 +332,7 @@ async function caseA1() {
     { saveActivationInstallStatus: async () => { installStatusSaves += 1 } },
     cleanupRuntime,
     {},
+    { compensateFailedFontActivation: async () => fail('A1', 'deactivation unexpectedly requested activation compensation') },
   )
   await expectReject(
     'A1',
@@ -591,42 +657,66 @@ async function caseA3() {
   assert('A3', effects.copiedFiles.size === 0, 'copy failure left a copied file in the harness')
   assert('A3', effects.registryNames.size === 0 && effects.resourcePaths.size === 0, 'copy failure reached registry or resource side effects')
   assert('A3', effects.savedSessionStates.length === 0, 'copy failure committed session state')
-  return 'copy failure currently stops before registry/resource/state side effects'
+  return 'copy failure stops before registry, resource, state, or compensation side effects'
 }
 
 async function caseA4() {
   const { runtime, effects } = createSessionHarness('write-registry')
   await expectReject('A4', () => runtime.activateFontSession(fontItem('font-registry')), 'injected registry write failure')
-  assert('A4', effects.copiedFiles.size === 1, 'known defect changed: copied file no longer remains after registry failure')
-  assert('A4', effects.cleanupCalls.length === 0, 'known defect changed: compensation unexpectedly ran')
+  assert('A4', effects.copiedFiles.size === 0, 'registry failure left the copied file behind')
+  assert('A4', effects.cleanupCalls.length === 1 && effects.cleanupCalls[0].startsWith('file:'), 'registry failure did not compensate only the copied file')
   assert('A4', effects.savedSessionStates.length === 0, 'registry failure committed session state')
-  return 'registry write failure leaves the copied file without compensation'
+  return 'registry write failure compensates the copied file without advancing other stages'
 }
 
 async function caseA5() {
   const { runtime, effects } = createSessionHarness('add-resource')
   await expectReject('A5', () => runtime.activateFontSession(fontItem('font-resource')), 'injected resource add failure')
-  assert('A5', effects.copiedFiles.size === 1 && effects.registryNames.size === 1, 'known defect changed: pre-resource side effects no longer remain')
-  assert('A5', effects.cleanupCalls.length === 0, 'known defect changed: rollback unexpectedly ran')
+  assert('A5', effects.copiedFiles.size === 0 && effects.registryNames.size === 0, 'resource add failure left file or registry side effects')
+  assert('A5', effects.cleanupCalls.length === 2 && effects.cleanupCalls[0].startsWith('registry:') && effects.cleanupCalls[1].startsWith('file:'), 'resource add failure compensation order was not registry then file')
   assert('A5', effects.savedSessionStates.length === 0, 'resource add failure committed session state')
-  return 'resource add failure leaves copied file and registry value'
+  return 'resource add failure compensates registry then copied file'
 }
 
 async function caseA6() {
   const { runtime, effects } = createSessionHarness('save-state')
   await expectReject('A6', () => runtime.activateFontSession(fontItem('font-state')), 'injected session state failure')
-  assert('A6', effects.copiedFiles.size === 1 && effects.registryNames.size === 1 && effects.resourcePaths.size === 1, 'known defect changed: activated side effects no longer remain after state save failure')
-  assert('A6', effects.cleanupCalls.length === 0, 'known defect changed: state-save rollback unexpectedly ran')
+  assert('A6', effects.copiedFiles.size === 0 && effects.registryNames.size === 0 && effects.resourcePaths.size === 0, 'state save failure left an orphan side effect')
+  assert('A6', effects.cleanupCalls.length === 3 && effects.cleanupCalls[0].startsWith('resource:') && effects.cleanupCalls[1].startsWith('registry:') && effects.cleanupCalls[2].startsWith('file:'), 'state save compensation was not resource then registry then file')
   assert('A6', effects.savedInstallStatuses.length === 0, 'install status should not be committed after session state failure')
-  return 'session state failure leaves file, registry, and active resource orphaned'
+  return 'session state failure compensates resource, registry, and copied file in reverse order'
 }
 
 async function caseA7() {
-  const { runtime, effects } = createSessionHarness('compensation-fails')
-  const error = await expectReject('A7', () => runtime.activateFontSession(fontItem('font-compensation')), 'injected resource add failure')
-  assert('A7', effects.cleanupCalls.length === 0, 'known defect changed: compensation hooks unexpectedly ran')
-  assert('A7', !error.message.includes('compensation'), 'known defect changed: error unexpectedly includes compensation outcome')
-  return 'no compensation attempt or durable cleanup record exists for compensation failure'
+  const {
+    runtime,
+    effects,
+    compensationRuntime,
+    setFailureStage,
+  } = createSessionHarness('compensation-fails')
+  const error = await expectReject('A7', () => runtime.activateFontSession(fontItem('font-compensation')), 'injected session state failure')
+  assert('A7', effects.cleanupCalls.length >= 2 && effects.cleanupCalls[0].startsWith('resource:') && effects.cleanupCalls[1].startsWith('registry:'), 'compensation did not continue in reverse order after an earlier cleanup failure')
+  assert('A7', error.message.includes('injected resource compensation failure') && error.message.includes('injected registry compensation failure'), 'combined error lost one or more compensation failures')
+  assert('A7', error.message.includes('未完成阶段已写入持久清理队列'), 'combined error did not disclose durable retry state')
+  assert('A7', effects.pendingCompensations().length === 1, 'failed compensation was not written to durable cleanup state')
+  setFailureStage(null)
+  const retry = await compensationRuntime.cleanupPendingFontActivationCompensations('startup')
+  assert('A7', retry.cleaned === 1 && retry.remaining === 0, 'durable resource/registry compensation did not retry to completion')
+  assert('A7', effects.pendingCompensations().length === 0, 'completed durable compensation record was not removed')
+  assert('A7', effects.copiedFiles.size === 0 && effects.registryNames.size === 0 && effects.resourcePaths.size === 0, 'durable compensation retry left an orphan side effect')
+
+  const fileHarness = createSessionHarness('file-compensation-fails')
+  const fileError = await expectReject(
+    'A7',
+    () => fileHarness.runtime.activateFontSession(fontItem('font-file-compensation')),
+    'injected session state failure',
+  )
+  assert('A7', fileError.message.includes('injected file compensation failure'), 'combined error lost the file-queue compensation failure')
+  assert('A7', fileHarness.effects.pendingCompensations()[0]?.pending?.file === true, 'file compensation failure did not persist the remaining file stage')
+  fileHarness.setFailureStage(null)
+  const fileRetry = await fileHarness.compensationRuntime.cleanupPendingFontActivationCompensations('startup')
+  assert('A7', fileRetry.cleaned === 1 && fileRetry.remaining === 0 && fileHarness.effects.copiedFiles.size === 0, 'durable file compensation did not retry to completion')
+  return 'compensation failures preserve the root cause, aggregate cleanup errors, and persist retry state'
 }
 
 async function caseA8() {
@@ -696,14 +786,16 @@ async function main() {
   const cases = [
     ['A1', 'CORRECTNESS_LOCK', caseA1],
     ['A2', 'CORRECTNESS_LOCK', caseA2],
-    ['A3', 'BEHAVIOR_LOCK', caseA3],
-    ['A4', 'KNOWN_DEFECT', caseA4],
-    ['A5', 'KNOWN_DEFECT', caseA5],
-    ['A6', 'KNOWN_DEFECT', caseA6],
-    ['A7', 'KNOWN_DEFECT', caseA7],
+    ['A3', 'CORRECTNESS_LOCK', caseA3],
+    ['A4', 'CORRECTNESS_LOCK', caseA4],
+    ['A5', 'CORRECTNESS_LOCK', caseA5],
+    ['A6', 'CORRECTNESS_LOCK', caseA6],
+    ['A7', 'CORRECTNESS_LOCK', caseA7],
     ['A8', 'KNOWN_DEFECT', caseA8],
   ]
-  const selectedCases = correctnessCase ? cases.filter(([caseId]) => caseId === correctnessCase) : cases
+  const selectedCases = correctnessCase
+    ? cases.filter(([caseId]) => correctnessCase === 'A3-A7' ? /^A[3-7]$/.test(caseId) : caseId === correctnessCase)
+    : cases
   let defects = 0
   let locks = 0
   for (const [caseId, kind, run] of selectedCases) {

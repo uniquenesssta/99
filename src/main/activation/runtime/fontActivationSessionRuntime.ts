@@ -3,6 +3,11 @@ import { basename,join } from "node:path";
 import type { FontItem,InstallResult } from "../../../shared/types";
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
 import type { FontActivationCleanupRuntime } from "./fontActivationCleanupRuntime";
+import {
+  fontActivationFailureWithCompensation,
+  type FontActivationCompensationRuntime,
+  type FontActivationCompletedStages,
+} from "./fontActivationCompensationRuntime";
 import type { FontActivationCopyRuntime } from "./fontActivationCopyRuntime";
 import type { FontActivationInstallStatusRuntime } from "./fontActivationInstallStatusRuntime";
 import type { FontActivationTraceRuntime } from "./fontActivationTraceRuntime";
@@ -16,6 +21,7 @@ export function createFontActivationSessionRuntime(
   statusRuntime: FontActivationInstallStatusRuntime,
   cleanupRuntime: FontActivationCleanupRuntime,
   copyRuntime: FontActivationCopyRuntime,
+  compensationRuntime: FontActivationCompensationRuntime,
 ) {
   const {
     ensureWindows,
@@ -40,6 +46,7 @@ export function createFontActivationSessionRuntime(
   } = statusRuntime;
   const { removeTemporaryActiveRecord } = cleanupRuntime;
   const { copyTemporaryActiveFontWithTrace } = copyRuntime;
+  const { compensateFailedFontActivation } = compensationRuntime;
 
   async function activateFontSession(item: FontItem): Promise<InstallResult> {
     // v0.8.7：界面文案仍叫“激活”，但底层改为“临时安装”。
@@ -122,25 +129,7 @@ export function createFontActivationSessionRuntime(
 
     const copyName = safeTemporaryActiveFontName(item);
     const dest = join(fontsDir, copyName);
-    const copyMode = await activationTraceStep(
-      "copy-to-user-fonts",
-      item.id,
-      () => copyTemporaryActiveFontWithTrace(item, dest),
-    );
-
     const regName = temporaryActiveRegistryNameFor(item);
-    await activationTraceStep("write-hkcu-registry", item.id, () =>
-      writeFontRegistryValuesHKCUBatch([{ name: regName, path: dest }]),
-    );
-
-    await activationTraceStep("add-font-resource", item.id, () =>
-      addFontResourceSession(dest, { notify: true, reason: "activate" }),
-    );
-    requestFontRefresh("activate-photoshop-tail", "strong", {
-      delayMs: 900,
-      force: true,
-    });
-
     const record: TemporaryActiveFontRecord = {
       fontId: item.id,
       sourcePath: item.path,
@@ -149,12 +138,48 @@ export function createFontActivationSessionRuntime(
       activatedAt: new Date().toISOString(),
       fileName: basename(dest),
     };
+    const completed: FontActivationCompletedStages = {
+      file: false,
+      registry: false,
+      resource: false,
+    };
+    let copyMode: Awaited<
+      ReturnType<typeof copyTemporaryActiveFontWithTrace>
+    > = "copied";
+    try {
+      copyMode = await activationTraceStep(
+        "copy-to-user-fonts",
+        item.id,
+        () => copyTemporaryActiveFontWithTrace(item, dest),
+      );
+      completed.file = copyMode !== "skipped-same-path";
 
-    const nextRecords = state.records.filter((old) => old.fontId !== item.id);
-    nextRecords.push(record);
-    await activationTraceStep("save-session-state", item.id, () =>
-      saveTemporaryActiveFonts({ version: 1, records: nextRecords }),
-    );
+      await activationTraceStep("write-hkcu-registry", item.id, () =>
+        writeFontRegistryValuesHKCUBatch([{ name: regName, path: dest }]),
+      );
+      completed.registry = true;
+
+      await activationTraceStep("add-font-resource", item.id, () =>
+        addFontResourceSession(dest, { notify: true, reason: "activate" }),
+      );
+      completed.resource = true;
+      requestFontRefresh("activate-photoshop-tail", "strong", {
+        delayMs: 900,
+        force: true,
+      });
+
+      const nextRecords = state.records.filter((old) => old.fontId !== item.id);
+      nextRecords.push(record);
+      await activationTraceStep("save-session-state", item.id, () =>
+        saveTemporaryActiveFonts({ version: 1, records: nextRecords }),
+      );
+    } catch (error) {
+      const compensation = await compensateFailedFontActivation(
+        record,
+        completed,
+      );
+      throw fontActivationFailureWithCompensation(error, compensation);
+    }
     await saveActivationInstallStatus(item, {
       installed: true,
       by: "managed",

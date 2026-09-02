@@ -2,11 +2,11 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.1
+- 文档版本：1.2
 - 建立日期：2026-09-01
 - Stage 分支：`stage/01-activation-transactions`
 - 起始提交：`d35ba6f89b7966427a8a671ff0016bff3d7f5d9c`
-- 当前 Atomic Task：AT-1.1、AT-1.2 已完成；AT-1.3 待启动
+- 当前 Atomic Task：AT-1.1 至 AT-1.3 已完成；AT-1.4 待启动
 - 前置阶段：Stage 0 已完成；事务观察 A1-A8 和编排公开契约均已固化
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
 
@@ -124,29 +124,30 @@ npm run diagnostics:all
 
 ### AT-1.3 单项激活逆序补偿
 
-状态：待启动。
+状态：已完成。
 
-预计范围：
+实际范围：
 
 - `src/main/activation/runtime/fontActivationSessionRuntime.ts`
-- 既有 copy、cleanup、delete queue 运行时及必要窄类型
-- 同一事务诊断中的 A3-A7
+- `src/main/activation/runtime/fontActivationCompensationRuntime.ts`
+- `src/main/activation/runtime/fontActivationCompensationQueue.ts`
+- `src/main/activation/fontActivationRuntime.ts`
+- `src/main/activation/runtime/fontActivationTypes.ts`
+- `build/diagnostics/check-font-activation-transaction.cjs`
+- `package.json`
 - 两级任务书与 README
 
-事务步骤：
+完成项：
 
-1. 校验源文件并复制到当前用户字体目录。
-2. 写入 HKCU Fonts 注册表值。
-3. 添加字体资源并触发必要通知。
-4. 最后保存临时激活状态与安装状态。
-
-失败补偿：
-
-- resource 已添加：先移除 resource。
-- registry 已写：再删除 registry value。
-- 文件已复制：最后删除或进入持久删除队列。
-- 状态保存失败同样执行全部适用补偿。
-- 原始错误与所有补偿错误合并返回；不能用补偿错误覆盖根因，也不能吞掉补偿失败。
+- [x] 新激活严格按复制文件 -> 写注册表 -> 添加 resource -> 保存临时会话状态提交，安装状态只在会话状态成功后更新。
+- [x] 每个成功阶段设置独立补偿标记；复制本身失败时不推进注册表、resource、状态或补偿副作用。
+- [x] 后续阶段失败前先将补偿意图写入独立持久队列，再按 resource -> registry -> copied file 逆序执行。
+- [x] resource 或 registry 补偿失败时继续尝试其余适用补偿，但阻止文件进入删除队列，避免活动资源指向已删除文件。
+- [x] 文件只有成功写入既有持久删除队列后才完成文件补偿；入队失败保留 file 阶段供重试。
+- [x] 原始失败始终位于复合错误首部，所有补偿与持久化错误均被汇总；未完成阶段是否已持久登记会明确返回。
+- [x] 持久补偿队列按安装路径串行更新，并接入既有启动/退出清理入口；诊断证明 resource/registry 和 file queue 补偿失败均可在后续重试中清空。
+- [x] 将队列持久化与事务结算拆为两个明确所有者，分别为 114/243 行；单项会话运行时为 260 行，未触碰三大巨型编排文件。
+- [x] A3-A7 全部反转为 `CORRECTNESS_LOCK` 并纳入 `diagnostics:all`；当前 A1-A7 为 7 个正确性锁，仅 A8 保留为 AT-1.4 已知缺陷。
 
 硬门禁：A3-A7 全部成为正确性门禁；每个故障点结束后都不存在无记录的孤儿 resource、registry 或文件。
 
@@ -154,7 +155,7 @@ npm run diagnostics:all
 
 ### AT-1.4 批量激活复用单项事务
 
-状态：阻塞于 AT-1.3。
+状态：待启动。
 
 预计范围：
 
@@ -226,3 +227,4 @@ Stage 1 不移动三大编排文件，但每个 Atomic Task 必须运行 `diagno
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-02 | AT-1.1 | 本提交 | A1 定向门禁通过；`npm run verify` 通过，65/65 长期诊断；Electron/Vite main、preload、renderer build 通过；剩余观察为 6 个 `KNOWN_DEFECT`、2 个正确/行为锁 | 当前执行环境非 Windows；Cargo 不可用，未重复构建未改动的 Rust worker | 已完成；失败时 registry/file cleanup、会话状态与安装状态均未推进 |
 | 2026-09-02 | AT-1.2 | 本提交 | A2 混合批次及 resource 缺失、registry 失败、file queue 失败定向门禁通过；`npm run verify` 通过，66/66 长期诊断；Electron/Vite main、preload、renderer build 通过；三大编排公开契约未变 | 当前执行环境非 Windows；Cargo 不可用，未重复构建未改动的 Rust worker | 已完成；每条记录只有 resource、registry、持久文件队列均成功后才删除会话状态，失败项可重试 |
+| 2026-09-02 | AT-1.3 | 本提交 | A3-A7 复制、注册表、resource、状态保存和补偿失败门禁通过；`npm run verify` 通过，67/67 长期诊断；Electron/Vite main、preload、renderer build 通过；三大编排公开契约未变 | 当前执行环境非 Windows；Cargo 不可用，未重复构建未改动的 Rust worker | 已完成；适用副作用按 resource -> registry -> file 逆序补偿，失败阶段持久登记并由启动/退出清理重试 |
