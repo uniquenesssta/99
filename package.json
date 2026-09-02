@@ -75,6 +75,7 @@
     "diagnostics:window-close-flush": "node build/diagnostics/check-window-close-flush.cjs",
     "diagnostics:window-corner-clipping": "node build/diagnostics/check-frameless-window-corner-clipping.cjs",
     "diagnostics:orchestration-contracts": "node build/diagnostics/check-orchestration-contracts.cjs",
+    "diagnostics:font-path-policy": "node build/diagnostics/check-font-path-authorization.cjs --case=POLICY",
     "diagnostics:font-resource-session-result": "node build/diagnostics/check-font-activation-transaction.cjs --case=A1",
     "diagnostics:font-deactivation-batch-settlement": "node build/diagnostics/check-font-activation-transaction.cjs --case=A2",
     "diagnostics:font-activation-compensation": "node build/diagnostics/check-font-activation-transaction.cjs --case=A3-A7",

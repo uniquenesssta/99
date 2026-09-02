@@ -6,9 +6,10 @@ const ts = require('typescript')
 
 const root = path.resolve(__dirname, '..', '..')
 const baselineObserve = process.argv.includes('--baseline-observe')
+const correctnessCase = process.argv.find((arg) => arg.startsWith('--case='))?.slice('--case='.length) || ''
 
-if (!baselineObserve) {
-  console.error('[diagnostics:font-path-authorization] Stage 0 only supports --baseline-observe; Stage 2 must convert this script into a correctness gate')
+if (baselineObserve === (correctnessCase === 'POLICY')) {
+  console.error('[diagnostics:font-path-authorization] use exactly one selector: --baseline-observe or --case=POLICY')
   process.exit(1)
 }
 
@@ -55,6 +56,13 @@ async function expectReject(caseId, task, messagePart) {
     assert(caseId, error.message.includes(messagePart), `unexpected rejection: ${error.message}`)
   }
   return error
+}
+
+function assertResult(caseId, result, expectedOk, expectedReason) {
+  assert(caseId, result?.ok === expectedOk, `expected ok=${expectedOk}, got ${JSON.stringify(result)}`)
+  if (!expectedOk && expectedReason) {
+    assert(caseId, result.reason === expectedReason, `expected reason=${expectedReason}, got ${result.reason}`)
+  }
 }
 
 const fontExtensions = new Set(['.ttf', '.otf', '.ttc', '.otc'])
@@ -352,6 +360,170 @@ async function caseP8() {
   return 'basename prefix alone authorizes outside unlink and arbitrary registry deletion'
 }
 
+async function runPolicyCorrectness() {
+  const boundaryModule = loadTypeScriptModule('src/main/path/pathBoundaryPolicy.ts')
+  const authorizationModule = loadTypeScriptModule(
+    'src/main/path/fontPathAuthorizationRuntime.ts',
+    (id) => (id === './pathBoundaryPolicy' ? boundaryModule : require(id)),
+  )
+
+  const lexicalCases = [
+    { id: 'drive casing', candidate: 'c:\\Fonts\\Family\\A.TTF', root: 'C:\\fonts', expected: true },
+    { id: 'drive prefix collision', candidate: 'C:\\Fonts-Backup\\A.ttf', root: 'C:\\Fonts', expected: false },
+    { id: 'drive traversal', candidate: 'C:\\Fonts\\..\\Secrets\\A.ttf', root: 'C:\\Fonts', expected: false },
+    { id: 'UNC casing', candidate: '\\\\SERVER\\Share\\Fonts\\A.ttf', root: '\\\\server\\share\\fonts', expected: true },
+    { id: 'UNC different share', candidate: '\\\\server\\share-copy\\A.ttf', root: '\\\\server\\share', expected: false },
+    { id: 'long drive path', candidate: '\\\\?\\C:\\Fonts\\A.ttf', root: 'c:\\fonts', expected: true },
+    { id: 'long UNC path', candidate: '\\\\?\\UNC\\Server\\Share\\Fonts\\A.ttf', root: '\\\\server\\share', expected: true },
+  ]
+  for (const row of lexicalCases) {
+    assert('P0.1', boundaryModule.isPathInsideAbsoluteBoundary(row.candidate, row.root) === row.expected, `lexical case failed: ${row.id}`)
+  }
+
+  const invalidPaths = [
+    ['relative', 'Fonts\\A.ttf'],
+    ['drive relative', 'C:A.ttf'],
+    ['device namespace', '\\\\.\\PhysicalDrive0'],
+    ['unsupported extended namespace', '\\\\?\\GLOBALROOT\\Device\\HarddiskVolume1\\A.ttf'],
+    ['NUL', 'C:\\Fonts\\A.ttf\0secret'],
+    ['control character', 'C:\\Fonts\\A.ttf\n'],
+  ]
+  for (const [id, candidate] of invalidPaths) {
+    assert('P0.1', boundaryModule.canonicalizeAbsolutePath(candidate) === null, `invalid path accepted: ${id}`)
+  }
+
+  const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'hfm-path-policy-'))
+  const watchedRoot = path.join(tempRoot, 'watched')
+  const appOwnedRoot = path.join(tempRoot, 'managed')
+  const appOwnedSimilarRoot = `${appOwnedRoot}-copy`
+  const indexedRoot = path.join(tempRoot, 'indexed-outside-roots')
+  const outsideRoot = path.join(tempRoot, 'outside')
+  const similarRoot = `${watchedRoot}-copy`
+  const watchedChild = path.join(watchedRoot, 'child')
+  const indexedRealPaths = new Set()
+  let indexedLookups = 0
+
+  try {
+    await Promise.all([
+      fs.promises.mkdir(watchedChild, { recursive: true }),
+      fs.promises.mkdir(appOwnedRoot),
+      fs.promises.mkdir(appOwnedSimilarRoot),
+      fs.promises.mkdir(indexedRoot),
+      fs.promises.mkdir(outsideRoot),
+      fs.promises.mkdir(similarRoot),
+    ])
+
+    const watchedFont = path.join(watchedChild, 'legitimate.TTF')
+    const unindexedWatchedFont = path.join(watchedChild, 'unindexed.otf')
+    const managedFont = path.join(appOwnedRoot, 'HanFontManager_owned.otf')
+    const managedPrefixCollision = path.join(appOwnedSimilarRoot, 'HanFontManager_prefix.ttf')
+    const indexedFont = path.join(indexedRoot, 'indexed.ttc')
+    const outsideFont = path.join(outsideRoot, 'outside.otc')
+    const similarFont = path.join(similarRoot, 'prefix.ttf')
+    const invalidExtension = path.join(watchedRoot, 'secret.pem')
+    const unsupportedWebFont = path.join(watchedRoot, 'webfont.woff2')
+    const directoryNamedFont = path.join(watchedRoot, 'directory.ttf')
+    const oversizedFont = path.join(watchedRoot, 'oversized.ttf')
+    const inRootAlias = path.join(watchedRoot, 'in-root-alias.ttf')
+    const escapingAlias = path.join(watchedRoot, 'escape.ttf')
+    const disguisedNonFontAlias = path.join(watchedRoot, 'disguised.ttf')
+    const escapingDirectory = path.join(watchedRoot, 'escape-dir')
+
+    await Promise.all([
+      fs.promises.writeFile(watchedFont, 'font'),
+      fs.promises.writeFile(unindexedWatchedFont, 'font'),
+      fs.promises.writeFile(managedFont, 'font'),
+      fs.promises.writeFile(managedPrefixCollision, 'font'),
+      fs.promises.writeFile(indexedFont, 'font'),
+      fs.promises.writeFile(outsideFont, 'font'),
+      fs.promises.writeFile(similarFont, 'font'),
+      fs.promises.writeFile(invalidExtension, 'secret'),
+      fs.promises.writeFile(unsupportedWebFont, 'woff'),
+      fs.promises.mkdir(directoryNamedFont),
+      fs.promises.writeFile(oversizedFont, Buffer.alloc(1025)),
+    ])
+    await fs.promises.symlink(watchedFont, inRootAlias)
+    await fs.promises.symlink(outsideFont, escapingAlias)
+    await fs.promises.symlink(invalidExtension, disguisedNonFontAlias)
+    await fs.promises.symlink(outsideRoot, escapingDirectory, 'dir')
+    indexedRealPaths.add(await fs.promises.realpath(indexedFont))
+    indexedRealPaths.add(await fs.promises.realpath(watchedFont))
+
+    const policy = authorizationModule.createFontPathAuthorizationRuntime({
+      fontExtensions,
+      maxFontReadBytes: 1024,
+      readRoots: () => [watchedRoot, appOwnedRoot],
+      watchedRoots: () => [watchedRoot],
+      appOwnedRoots: () => [appOwnedRoot],
+      isMainProcessIndexedFont: async ({ realPath }) => {
+        indexedLookups += 1
+        return indexedRealPaths.has(realPath)
+      },
+    })
+
+    for (const [id, candidate, expectedSource] of [
+      ['watched root font', watchedFont, 'authorized-root'],
+      ['in-root symlink', inRootAlias, 'authorized-root'],
+      ['app-owned font', managedFont, 'authorized-root'],
+      ['main-process indexed font', indexedFont, 'main-process-index'],
+    ]) {
+      const result = await policy.authorizeFontRead(candidate)
+      assertResult('P0.2', result, true)
+      assert('P0.2', result.value.source === expectedSource, `${id} used ${result.value.source}`)
+    }
+
+    for (const [id, candidate, reason] of [
+      ['non-font extension', invalidExtension, 'unsupported-extension'],
+      ['unsupported webfont', unsupportedWebFont, 'unsupported-extension'],
+      ['font-named directory', directoryNamedFont, 'not-regular-file'],
+      ['oversized font', oversizedFont, 'file-too-large'],
+      ['root escaping symlink', escapingAlias, 'outside-authorized-roots'],
+      ['font alias to non-font target', disguisedNonFontAlias, 'unsupported-extension'],
+      ['similar prefix root', similarFont, 'outside-authorized-roots'],
+      ['unindexed outside font', outsideFont, 'outside-authorized-roots'],
+      ['renderer authorization claim', { path: outsideFont, authorized: true }, 'invalid-path'],
+    ]) {
+      const result = await policy.authorizeFontRead(candidate)
+      assertResult('P0.3', result, false, reason)
+    }
+
+    assert('P0.3', indexedLookups > 0, 'main-process index lookup was not consulted')
+
+    for (const candidate of [watchedRoot, watchedChild]) {
+      assertResult('P0.4', await policy.authorizePhysicalFolderParent(candidate), true)
+      assertResult('P0.4', await policy.authorizeFontMoveTarget(candidate), true)
+    }
+    assertResult('P0.4', await policy.authorizePhysicalFolderRename(watchedChild), true)
+    assertResult('P0.4', await policy.authorizePhysicalFolderRename(watchedRoot), false, 'root-operation-forbidden')
+    assertResult('P0.4', await policy.authorizePhysicalFolderParent(outsideRoot), false, 'outside-authorized-roots')
+    assertResult('P0.4', await policy.authorizePhysicalFolderParent(escapingDirectory), false, 'outside-authorized-roots')
+
+    assertResult('P0.5', await policy.authorizeFontMoveSource(watchedFont), true)
+    assertResult('P0.5', await policy.authorizeFontMoveSource(unindexedWatchedFont), false, 'not-main-process-indexed')
+    assertResult('P0.5', await policy.authorizeFontMoveSource(indexedFont), false, 'outside-authorized-roots')
+    assertResult('P0.5', await policy.authorizeManagedFontDelete(managedFont), true)
+    assertResult('P0.5', await policy.authorizeManagedFontDelete(managedPrefixCollision), false, 'outside-authorized-roots')
+
+    const failClosedPolicy = authorizationModule.createFontPathAuthorizationRuntime({
+      fontExtensions,
+      readRoots: () => { throw new Error('root provider unavailable') },
+      watchedRoots: () => [],
+      appOwnedRoots: () => [],
+      isMainProcessIndexedFont: async () => { throw new Error('index unavailable') },
+    })
+    assertResult('P0.5', await failClosedPolicy.authorizeFontRead(outsideFont), false, 'outside-authorized-roots')
+
+    console.log('[diagnostics:font-path-authorization] CORRECTNESS_LOCK P0.1: Windows drive/UNC/long-path boundaries are component-aware and reject device/control paths')
+    console.log('[diagnostics:font-path-authorization] CORRECTNESS_LOCK P0.2: authorized roots and main-process index identity admit regular supported fonts')
+    console.log('[diagnostics:font-path-authorization] CORRECTNESS_LOCK P0.3: extension, type, size, realpath escape, prefix collision, and renderer claims are rejected')
+    console.log('[diagnostics:font-path-authorization] CORRECTNESS_LOCK P0.4: watched-directory operations enforce real roots and operation-specific root rules')
+    console.log('[diagnostics:font-path-authorization] CORRECTNESS_LOCK P0.5: move sources and managed deletes use distinct indexed/watched/app-owned authority')
+    console.log('[diagnostics:font-path-authorization] policy correctness passed: cases=5')
+  } finally {
+    await fs.promises.rm(tempRoot, { recursive: true, force: true })
+  }
+}
+
 async function createContext() {
   const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'hfm-path-auth-'))
   const watchedRoot = path.join(tempRoot, 'watched')
@@ -404,6 +576,11 @@ async function createContext() {
 }
 
 async function main() {
+  if (correctnessCase === 'POLICY') {
+    await runPolicyCorrectness()
+    return
+  }
+
   const context = await createContext()
   const cases = [
     ['P1', 'BEHAVIOR_LOCK', () => caseP1(context)],

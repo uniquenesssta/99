@@ -1,8 +1,18 @@
 import { resolve } from "node:path";
 import { isIgnoredInternalDirectoryName } from "../cache/cachePaths";
-import { pathInsideFolder } from "../folders/physicalFolders";
-import { normalizePathForCacheCompare } from "./cachePath";
+import {
+  canonicalizeAbsolutePath,
+  isPathInsideAbsoluteBoundary,
+} from "./pathBoundaryPolicy";
 import { canonicalWatchedFolderPath,dedupeWatchedFolderRoots,watchedFolderCompareKey } from "./watchedFolderCanonicalRuntime";
+
+export {
+  canonicalizeAbsolutePath,
+  extensionForCanonicalPath,
+  isCanonicalPathInsideBoundary,
+  isPathInsideAbsoluteBoundary,
+  sameCanonicalAbsolutePath,
+} from "./pathBoundaryPolicy";
 
 export type PathPolicyLogger = (message: string) => void;
 
@@ -59,13 +69,14 @@ export function findBestWatchedRootForFile(
   filePath: string,
   folders: string[],
 ): string | null {
-  const resolvedFile = resolve(filePath);
+  const resolvedFile = canonicalizeAbsolutePath(filePath)?.path || resolve(filePath);
   let best: string | null = null;
 
   for (const folder of folders || []) {
     if (!folder) continue;
-    const resolvedFolder = resolve(folder);
-    if (!pathInsideFolder(resolvedFile, resolvedFolder)) continue;
+    const resolvedFolder =
+      canonicalizeAbsolutePath(folder)?.path || resolve(folder);
+    if (!isPathInsideAbsoluteBoundary(resolvedFile, resolvedFolder)) continue;
     if (!best || resolvedFolder.length > best.length) best = resolvedFolder;
   }
 
@@ -76,9 +87,9 @@ export function isPathInsideAnyRoot(
   filePath: string,
   roots: string[],
 ): boolean {
-  const file = normalizePathForCacheCompare(resolve(filePath));
+  const file = canonicalizeAbsolutePath(filePath)?.path || resolve(filePath);
   return (roots || []).some((root) => {
-    const normalizedRoot = normalizePathForCacheCompare(resolve(root));
-    return file === normalizedRoot || file.startsWith(`${normalizedRoot}\\`);
+    const normalizedRoot = canonicalizeAbsolutePath(root)?.path || resolve(root);
+    return isPathInsideAbsoluteBoundary(file, normalizedRoot);
   });
 }

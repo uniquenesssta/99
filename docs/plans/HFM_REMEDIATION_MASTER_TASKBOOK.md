@@ -2,11 +2,11 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.4
+- 文档版本：1.5
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 1「激活、停用与托管安装事务正确性」已完成；Windows 系统集成矩阵作为外部验收项保留
-- 当前阶段任务书：[`HFM_STAGE_01_ACTIVATION_TASKBOOK.md`](HFM_STAGE_01_ACTIVATION_TASKBOOK.md)
+- 当前阶段：Stage 2「字体读取与破坏性操作的路径边界」执行中；AT-2.1 已完成，AT-2.2 待开始
+- 当前阶段任务书：[`HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md`](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
 
@@ -199,6 +199,8 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 ### Stage 2：字体读取与破坏性操作的路径边界
 
 #### AT-2.1 建立中央路径授权策略
+
+状态：已完成。中央纯路径边界与文件系统授权运行时已建立，P0.1-P0.5 成为第 69 项长期诊断；详细边界、Windows 语义和逐任务转换顺序见 Stage 2 任务书。
 
 目标文件：扩展 `src/main/path/fontPathPolicy.ts`，必要时增加同目录的窄职责模块。
 
@@ -479,7 +481,7 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 | --- | --- | --- | --- | --- |
 | Stage 0 | 完成 | 本阶段分支（AT-0.1 至 AT-0.4） | `npm run verify` 通过，64/64 长期诊断；事务观察 8/8、路径观察 8/8；三大编排契约通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 专属矩阵作为外部验收项保留 |
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
-| Stage 2 | 待启动 | - | - | 需从 Stage 1 完成基线新建独立分支 |
+| Stage 2 | 执行中（AT-2.1 已完成） | 本阶段分支 AT-2.1 独立提交 | P0.1-P0.5、`npm run verify` 69/69、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；协议/预览、物理操作和托管卸载分别留给 AT-2.2 至 AT-2.4；Windows 真实 UNC/长路径/junction 为外部验收项 |
 | Stage 3 | 阻塞于 Stage 2 | - | - | - |
 | Stage 4 | 阻塞于 Stage 3 | - | - | - |
 | Stage 5 | 阻塞于 Stage 3 | - | - | - |

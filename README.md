@@ -44,7 +44,8 @@ npm run build:win
 ## 当前工程任务
 
 - [修复与编排重构总任务书](docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md)
-- [当前 Stage 1：激活与停用事务任务书](docs/plans/HFM_STAGE_01_ACTIVATION_TASKBOOK.md)
+- [当前 Stage 2：字体路径授权任务书](docs/plans/HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)
+- [已完成 Stage 1：激活与停用事务任务书](docs/plans/HFM_STAGE_01_ACTIVATION_TASKBOOK.md)
 - [已完成 Stage 0：基线与行为锁任务书](docs/plans/HFM_STAGE_00_BASELINE_TASKBOOK.md)
 
 任务书按 Atomic Task 执行：先建立行为锁，再依次修复事务正确性、路径边界和文件一致性，之后才拆分主进程组合根、Rust Worker 门面与 React 根组件。任何阶段硬门禁失败都阻塞后续阶段。
@@ -55,6 +56,7 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-02：Stage 2 在独立分支 `stage/02-font-path-boundaries` 启动；AT-2.1 建立纯路径组件边界与文件系统授权运行时，统一盘符/UNC/长路径、真实路径、允许字体扩展名、普通文件、80 MiB 上限、主进程索引身份、watched root 和应用自有目录规则，并移除 `fontPathPolicy` 对物理文件操作模块的反向依赖。P0.1-P0.5 已成为第 69 项长期门禁，`npm run verify` 与 Electron/Vite 三端 build/混淆通过；协议/预览、物理操作和托管卸载尚未接入，分别留给 AT-2.2 至 AT-2.4，三大巨型编排文件及公开契约未变。
 - 2026-09-02：Stage 1 AT-1.4 将单项与批量临时激活统一到同一个串行事务所有者：批量层只负责去重、逐项调度、取消、结果汇总和一次最终刷新；提前取消不会进入事务，处理中取消保留已提交项并将未开始项标为可重试取消，混合失败与重试均保留稳定 ID 和真实原因。A1-A8 已全部转为长期正确性门禁，`npm run verify` 增至 68/68 并与 Electron/Vite 三端 build 通过；Stage 1 自动门禁收口，三大巨型编排文件及其公开契约未变，Windows 实机矩阵仍为外部验收项。
 - 2026-09-02：Stage 1 AT-1.3 为单项临时字体激活加入阶段化逆序补偿：注册表、resource 或会话状态失败时按 resource -> registry -> file 回滚，保留原始根因并汇总全部补偿错误；未完成阶段写入独立持久队列，由启动/退出清理继续重试，且 resource/registry 未清理前不会误删字体文件。A3-A7 已成为长期正确性门禁，`npm run verify` 增至 67/67 并与 Electron/Vite 三端 build 通过；三大巨型编排文件及其公开契约未变。
 - 2026-09-02：Stage 1 AT-1.2 将批量字体停用改为逐记录三阶段结算：只有字体资源、注册表和持久文件删除队列均明确成功后才删除临时会话状态；混合失败、缺失 helper 结果及后续清理失败均保留可重试状态和逐项原因。A2 已反转为第 66 项长期正确性门禁，`npm run verify` 与 Electron/Vite 三端 build 通过；三大巨型编排文件及其公开契约未变，Windows 实机与未改动的 Rust worker 构建保留为外部验收项。
