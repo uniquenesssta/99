@@ -14,6 +14,16 @@ export interface PendingTemporaryFontDeleteRecord extends TemporaryActiveFontRec
   attempts: number;
 }
 
+export interface TemporaryFontDeleteQueueEntry {
+  ok: boolean;
+  message: string;
+}
+
+export type TemporaryFontDeleteQueueResult = Record<
+  string,
+  TemporaryFontDeleteQueueEntry
+>;
+
 export interface TemporaryFontDeleteQueueDeps {
   appName: string;
   dataPath: (name: string) => string;
@@ -74,13 +84,19 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
   async function queueTemporaryFontFileDeletes(
     records: TemporaryActiveFontRecord[],
     reason: string,
-  ): Promise<void> {
-    const safeRecords = records.filter((record) => {
-      if (isSafeTemporaryActiveFontPath(record.installPath)) return true;
+  ): Promise<TemporaryFontDeleteQueueResult> {
+    const results: TemporaryFontDeleteQueueResult = {};
+    const safeRecords: TemporaryActiveFontRecord[] = [];
+    for (const record of records) {
+      if (isSafeTemporaryActiveFontPath(record.installPath)) {
+        safeRecords.push(record);
+        continue;
+      }
+      const message = "安全保护：临时字体文件不在允许的删除范围内。";
+      results[record.installPath] = { ok: false, message };
       deps.appendStartupLog(`skip unsafe temporary font delete queue: ${record.installPath}`);
-      return false;
-    });
-    if (!safeRecords.length) return;
+    }
+    if (!safeRecords.length) return results;
 
     const existing = await loadPendingTemporaryFontDeletes();
     const merged = new Map<string, PendingTemporaryFontDeleteRecord>();
@@ -97,15 +113,22 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
     }
 
     await savePendingTemporaryFontDeletes(Array.from(merged.values()));
+    for (const record of safeRecords) {
+      results[record.installPath] = {
+        ok: true,
+        message: "临时字体文件已进入持久删除队列。",
+      };
+    }
     deps.appendStartupLog(
       `temporary font async delete queued: reason=${reason}, rows=${safeRecords.length}, pending=${merged.size}`,
     );
 
-    if (deleteTimer) return;
+    if (deleteTimer) return results;
     deleteTimer = setTimeout(() => {
       deleteTimer = null;
       void flushPendingTemporaryFontDeletes("timer");
     }, flushDelayMs);
+    return results;
   }
 
   async function flushPendingTemporaryFontDeletes(reason: string): Promise<void> {

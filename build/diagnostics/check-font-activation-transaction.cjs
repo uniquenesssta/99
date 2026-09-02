@@ -7,8 +7,8 @@ const root = path.resolve(__dirname, '..', '..')
 const baselineObserve = process.argv.includes('--baseline-observe')
 const correctnessCase = process.argv.find((arg) => arg.startsWith('--case='))?.slice('--case='.length) || ''
 
-if (baselineObserve === Boolean(correctnessCase) || (correctnessCase && correctnessCase !== 'A1')) {
-  console.error('[diagnostics:font-activation-transaction] use either --baseline-observe or --case=A1')
+if (baselineObserve === Boolean(correctnessCase) || (correctnessCase && !['A1', 'A2'].includes(correctnessCase))) {
+  console.error('[diagnostics:font-activation-transaction] use either --baseline-observe or --case=A1/--case=A2')
   process.exit(1)
 }
 
@@ -206,7 +206,13 @@ async function caseA1() {
         return {
           createTemporaryFontDeleteQueue: () => ({
             isSafeTemporaryActiveFontPath: () => true,
-            queueTemporaryFontFileDeletes: async () => { queuedDeletes += 1 },
+            queueTemporaryFontFileDeletes: async (records) => {
+              queuedDeletes += 1
+              return Object.fromEntries(records.map((record) => [
+                record.installPath,
+                { ok: true, message: 'queued by diagnostic' },
+              ]))
+            },
             flushPendingTemporaryFontDeletes: async () => undefined,
           }),
         }
@@ -382,6 +388,9 @@ async function caseA2() {
     'src/main/activation/runtime/fontDeactivationBatchRuntime.ts',
     (id) => {
       if (id === './fontActivationInstallStatusRuntime') return { uniqueFontItems }
+      if (id === './fontDeactivationSettlementRuntime') {
+        return loadTypeScriptModule('src/main/activation/runtime/fontDeactivationSettlementRuntime.ts')
+      }
       return require(id)
     },
   )
@@ -396,6 +405,9 @@ async function caseA2() {
   }))
   let savedState = null
   let queued = []
+  let deletedRegistryNames = []
+  let statusUpdates = null
+  let refreshTails = 0
   const runtime = module.createFontDeactivationBatchRuntime(
     {
       ensureWindows: () => undefined,
@@ -405,20 +417,172 @@ async function caseA2() {
         [records[0].installPath]: { ok: true, count: 1 },
         [records[1].installPath]: { ok: false, count: 0, message: 'injected batch remove failure' },
       }),
-      deleteFontRegistryValuesHKCUBatch: async () => undefined,
+      deleteFontRegistryValuesHKCUBatch: async (names) => { deletedRegistryNames = names.slice() },
+      scheduleActivationInstallStatusSave: (updates) => { statusUpdates = updates },
+      scheduleBackgroundFontRefreshTail: () => { refreshTails += 1 },
+      appendStartupLog: () => undefined,
+    },
+    {
+      queueTemporaryFontFileDeletes: async (targets) => {
+        queued = targets.slice()
+        return Object.fromEntries(targets.map((target) => [
+          target.installPath,
+          { ok: true, message: 'queued by diagnostic' },
+        ]))
+      },
+    },
+  )
+  const result = await runtime.deactivateFontSessionsBatch(items)
+  assert('A2', result.ok === false && result.failed === 1 && result.deactivated === 1, 'partial remove failure did not settle as one success and one failure')
+  assert('A2', result.results[items[0].id]?.ok === true, 'successful remove item was not reported as deactivated')
+  assert('A2', result.results[items[1].id]?.ok === false, 'failed remove item was reported as success')
+  assert('A2', result.results[items[1].id]?.message.includes('injected batch remove failure'), 'failed item lost the helper failure reason')
+  assert('A2', savedState?.records?.length === 1 && savedState.records[0].fontId === items[1].id, 'failed target persistent state was not retained')
+  assert('A2', deletedRegistryNames.length === 1 && deletedRegistryNames[0] === records[0].registryName, 'registry cleanup advanced beyond the resource-success item')
+  assert('A2', queued.length === 1 && queued[0].fontId === items[0].id, 'file cleanup queue advanced beyond the fully cleaned item')
+  assert('A2', statusUpdates?.[items[0].id]?.installed === false && !statusUpdates?.[items[1].id], 'install status updates did not contain only the committed item')
+  assert('A2', refreshTails === 1, 'resource removal did not schedule exactly one refresh tail')
+
+  async function assertFailureBoundary(stage, expectedMessage) {
+    const item = fontItem(`font-${stage}`)
+    const record = {
+      fontId: item.id,
+      sourcePath: item.path,
+      installPath: `C:/Managed/${item.id}.ttf`,
+      registryName: `HFM_${item.id}`,
+      activatedAt: '2026-09-01T00:00:00.000Z',
+      fileName: item.fileName,
+    }
+    let registryCalls = 0
+    let queueCalls = 0
+    let stateSaves = 0
+    let boundaryRefreshTails = 0
+    const boundaryRuntime = module.createFontDeactivationBatchRuntime(
+      {
+        ensureWindows: () => undefined,
+        loadTemporaryActiveFonts: async () => ({ version: 1, records: [record] }),
+        saveTemporaryActiveFonts: async () => { stateSaves += 1 },
+        removeFontResourceSessionBatch: async () => stage === 'missing-result'
+          ? {}
+          : { [record.installPath]: { ok: true, count: 1, message: '' } },
+        deleteFontRegistryValuesHKCUBatch: async () => {
+          registryCalls += 1
+          if (stage === 'registry') throw new Error('injected registry cleanup failure')
+        },
+        scheduleActivationInstallStatusSave: () => fail('A2', `${stage} unexpectedly saved inactive install status`),
+        scheduleBackgroundFontRefreshTail: () => { boundaryRefreshTails += 1 },
+        appendStartupLog: () => undefined,
+      },
+      {
+        queueTemporaryFontFileDeletes: async () => {
+          queueCalls += 1
+          return {
+            [record.installPath]: stage === 'queue'
+              ? { ok: false, message: 'injected persistent queue rejection' }
+              : { ok: true, message: 'queued by diagnostic' },
+          }
+        },
+      },
+    )
+    const boundaryResult = await boundaryRuntime.deactivateFontSessionsBatch([item])
+    assert('A2', boundaryResult.ok === false && boundaryResult.failed === 1 && boundaryResult.deactivated === 0, `${stage} failure was not reported`)
+    assert('A2', boundaryResult.results[item.id]?.ok === false, `${stage} item was reported as success`)
+    assert('A2', boundaryResult.results[item.id]?.message.includes(expectedMessage), `${stage} failure reason was lost`)
+    assert('A2', stateSaves === 0, `${stage} failure discarded persistent activation state`)
+    assert('A2', registryCalls === (stage === 'missing-result' ? 0 : 1), `${stage} crossed the registry stage boundary`)
+    assert('A2', queueCalls === (stage === 'queue' ? 1 : 0), `${stage} crossed the persistent queue stage boundary`)
+    assert('A2', boundaryRefreshTails === (stage === 'missing-result' ? 0 : 1), `${stage} scheduled an incorrect refresh count`)
+  }
+
+  await assertFailureBoundary('missing-result', '批量结果缺少')
+  await assertFailureBoundary('registry', 'injected registry cleanup failure')
+  await assertFailureBoundary('queue', 'injected persistent queue rejection')
+
+  const registryItems = [fontItem('font-registry-ok'), fontItem('font-registry-fail')]
+  const registryRecords = registryItems.map((item) => ({
+    fontId: item.id,
+    sourcePath: item.path,
+    installPath: `C:/Managed/${item.id}.ttf`,
+    registryName: `HFM_${item.id}`,
+    activatedAt: '2026-09-01T00:00:00.000Z',
+    fileName: item.fileName,
+  }))
+  let mixedRegistryState = null
+  let mixedRegistryQueue = []
+  const mixedRegistryCalls = []
+  const mixedRegistryRuntime = module.createFontDeactivationBatchRuntime(
+    {
+      ensureWindows: () => undefined,
+      loadTemporaryActiveFonts: async () => ({ version: 1, records: registryRecords }),
+      saveTemporaryActiveFonts: async (state) => { mixedRegistryState = state },
+      removeFontResourceSessionBatch: async () => Object.fromEntries(
+        registryRecords.map((record) => [
+          record.installPath,
+          { ok: true, count: 1, message: '' },
+        ]),
+      ),
+      deleteFontRegistryValuesHKCUBatch: async (names) => {
+        mixedRegistryCalls.push(names.slice())
+        if (names[0] === registryRecords[1].registryName) {
+          throw new Error('injected second registry failure')
+        }
+      },
       scheduleActivationInstallStatusSave: () => undefined,
       scheduleBackgroundFontRefreshTail: () => undefined,
       appendStartupLog: () => undefined,
     },
     {
-      queueTemporaryFontFileDeletes: async (targets) => { queued = targets.slice() },
+      queueTemporaryFontFileDeletes: async (targets) => {
+        mixedRegistryQueue = targets.slice()
+        return Object.fromEntries(targets.map((target) => [
+          target.installPath,
+          { ok: true, message: 'queued by diagnostic' },
+        ]))
+      },
     },
   )
-  const result = await runtime.deactivateFontSessionsBatch(items)
-  assert('A2', result.ok === true && result.failed === 0 && result.deactivated === 2, 'known defect changed: partial remove failure is no longer reported as full success')
-  assert('A2', savedState?.records?.length === 0, 'known defect changed: failed target state is no longer discarded')
-  assert('A2', queued.length === 2, 'known defect changed: failed target is no longer queued for deletion')
-  return 'batch remove partial failure reports 2/0 success and discards both records'
+  const mixedRegistryResult = await mixedRegistryRuntime.deactivateFontSessionsBatch(registryItems)
+  assert('A2', mixedRegistryResult.deactivated === 1 && mixedRegistryResult.failed === 1, 'mixed registry cleanup did not settle one success and one failure')
+  assert('A2', mixedRegistryCalls.length === 2 && mixedRegistryCalls.every((names) => names.length === 1), 'registry cleanup was not isolated per value')
+  assert('A2', mixedRegistryQueue.length === 1 && mixedRegistryQueue[0].fontId === registryItems[0].id, 'registry-failed item advanced to the file queue')
+  assert('A2', mixedRegistryState?.records?.length === 1 && mixedRegistryState.records[0].fontId === registryItems[1].id, 'registry-failed item state was not retained independently')
+
+  const { promisify } = require('node:util')
+  const regCalls = []
+  function execFileStub() {
+    throw new Error('callback execFile path must not be used by A2')
+  }
+  execFileStub[promisify.custom] = async (_file, args) => {
+    regCalls.push(args.slice())
+    if (args[0] === 'delete') {
+      throw Object.assign(new Error('injected reg.exe delete failure'), { code: 1 })
+    }
+    if (args[0] === 'query') return { stdout: 'value still exists', stderr: '' }
+    throw new Error(`unexpected reg.exe command: ${args.join(' ')}`)
+  }
+  const resourceModule = loadTypeScriptModule(
+    'src/main/windows/runtime/fontResourceSessionRuntime.ts',
+    (id) => id === 'node:child_process' ? { execFile: execFileStub } : require(id),
+  )
+  let nativeRegistryCalls = 0
+  const registryRuntime = resourceModule.createFontResourceSessionRuntime({
+    appendStartupLog: () => undefined,
+    fontRefreshRuntimeStats: { lastBroadcastAt: 0 },
+    runNativeFontHelper: async () => {
+      nativeRegistryCalls += 1
+      return { ok: true, count: 0, failed: 1, message: 'injected native partial registry failure' }
+    },
+    nativeFontHelperBatchResult: () => null,
+    runRustFontRegistryDelete: async () => ({ ok: true, count: 0, failed: 1 }),
+  })
+  await expectReject(
+    'A2',
+    () => registryRuntime.deleteFontRegistryValuesHKCUBatch(['HFM_STILL_EXISTS']),
+    'injected reg.exe delete failure',
+  )
+  assert('A2', nativeRegistryCalls === 1, 'Rust partial registry failure did not advance to the idempotent native delete fallback')
+  assert('A2', regCalls.length === 2 && regCalls[0][0] === 'delete' && regCalls[1][0] === 'query', 'reg.exe fallback did not verify that the failed delete target still exists')
+  return 'resource, registry, and persistent file-queue stages settle per item without false success'
 }
 
 async function caseA3() {
@@ -531,7 +695,7 @@ async function caseA8() {
 async function main() {
   const cases = [
     ['A1', 'CORRECTNESS_LOCK', caseA1],
-    ['A2', 'KNOWN_DEFECT', caseA2],
+    ['A2', 'CORRECTNESS_LOCK', caseA2],
     ['A3', 'BEHAVIOR_LOCK', caseA3],
     ['A4', 'KNOWN_DEFECT', caseA4],
     ['A5', 'KNOWN_DEFECT', caseA5],

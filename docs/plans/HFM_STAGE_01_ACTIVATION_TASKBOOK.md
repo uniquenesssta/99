@@ -2,11 +2,11 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.0
+- 文档版本：1.1
 - 建立日期：2026-09-01
 - Stage 分支：`stage/01-activation-transactions`
 - 起始提交：`d35ba6f89b7966427a8a671ff0016bff3d7f5d9c`
-- 当前 Atomic Task：AT-1.1 已完成；AT-1.2 待启动
+- 当前 Atomic Task：AT-1.1、AT-1.2 已完成；AT-1.3 待启动
 - 前置阶段：Stage 0 已完成；事务观察 A1-A8 和编排公开契约均已固化
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
 
@@ -92,23 +92,31 @@ npm run diagnostics:all
 
 ### AT-1.2 批量停用逐项结算
 
-状态：阻塞于 AT-1.1。
+状态：已完成。
 
-预计范围：
+实际范围：
 
 - `src/main/activation/runtime/fontDeactivationBatchRuntime.ts`
-- 必要的窄结果类型
-- 同一事务诊断中的 A2
+- `src/main/activation/runtime/fontDeactivationSettlementRuntime.ts`
+- `src/main/activation/runtime/fontActivationCleanupRuntime.ts`
+- `src/main/activation/runtime/fontActivationTypes.ts`
+- `src/main/activation/temporaryFontDeleteQueue.ts`
+- `src/main/windows/runtime/fontResourceSessionRuntime.ts`
+- `build/diagnostics/check-font-activation-transaction.cjs`
+- `package.json`
 - 两级任务书与 README
 
-执行顺序：
+完成项：
 
-1. 建立 `installPath -> resource result` 的逐项映射，缺失条目按失败处理。
-2. 对每条临时激活记录分别记录 resource、registry、file queue 三阶段结果。
-3. 资源移除失败时保留注册表、文件和持久会话记录，不报告停用成功。
-4. 资源已移除但后续清理失败时，保留足以重试的持久信息并写入清理队列。
-5. 由逐项结果计算 `deactivated`、`failed` 和用户消息，禁止固定失败数或整批吞错。
-6. A2 反转为混合批次正确性门禁并加入长期诊断。
+- [x] 建立大小写不敏感的 `installPath -> resource result` 逐项映射；缺失条目按失败处理。
+- [x] 对每条临时激活记录分别结算 resource、registry、file queue 三阶段结果。
+- [x] 资源移除失败时不推进注册表、文件队列或持久状态，并返回原始逐项原因。
+- [x] 注册表按唯一 value 单独调用并结算；单个删除失败不阻塞其他成功项，但失败项不排队删除文件且保留持久会话记录。
+- [x] 文件只有写入持久删除队列后才视为该记录提交成功；队列拒绝或保存失败时状态保留。
+- [x] 由逐项结果计算 `deactivated`、`failed`、安装状态更新和用户消息，不再固定失败数或整批吞错。
+- [x] Rust/native 注册表批量结果只在全部成功时接受；`reg.exe` 删除失败只有经查询确认值已不存在时才按幂等完成处理。
+- [x] A2 反转为混合批次正确性门禁并加入长期诊断；Stage 0 观察现为 5 个已知缺陷、3 个正确/行为锁。
+- [x] 将逐记录事务结算从批量调度器中拆为独立职责模块，生产文件分别为 183/202 行；未触碰三大巨型编排文件。
 
 硬门禁：一成一败的批次只能提交成功项；失败项仍在会话状态中，且不会进入错误的文件删除路径。
 
@@ -116,7 +124,7 @@ npm run diagnostics:all
 
 ### AT-1.3 单项激活逆序补偿
 
-状态：阻塞于 AT-1.2。
+状态：待启动。
 
 预计范围：
 
@@ -217,3 +225,4 @@ Stage 1 不移动三大编排文件，但每个 Atomic Task 必须运行 `diagno
 | 日期 | Atomic Task | 提交 | 自动验证 | Windows 实机 | 结论/阻塞 |
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-02 | AT-1.1 | 本提交 | A1 定向门禁通过；`npm run verify` 通过，65/65 长期诊断；Electron/Vite main、preload、renderer build 通过；剩余观察为 6 个 `KNOWN_DEFECT`、2 个正确/行为锁 | 当前执行环境非 Windows；Cargo 不可用，未重复构建未改动的 Rust worker | 已完成；失败时 registry/file cleanup、会话状态与安装状态均未推进 |
+| 2026-09-02 | AT-1.2 | 本提交 | A2 混合批次及 resource 缺失、registry 失败、file queue 失败定向门禁通过；`npm run verify` 通过，66/66 长期诊断；Electron/Vite main、preload、renderer build 通过；三大编排公开契约未变 | 当前执行环境非 Windows；Cargo 不可用，未重复构建未改动的 Rust worker | 已完成；每条记录只有 resource、registry、持久文件队列均成功后才删除会话状态，失败项可重试 |

@@ -6,6 +6,7 @@ SystemInstalledFont,
 } from "../../../shared/types";
 import type { GlobalIoOptions } from "../../performance/ioScheduler";
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
+import type { FontResourceBatchResult } from "../../windows/runtime/fontRuntimeTypes";
 
 export interface ActivationInstallStatusSnapshotResult {
   results: Record<string, InstallCompareResult>;
@@ -52,7 +53,9 @@ export interface FontActivationRuntimeDeps {
   safeTemporaryActiveFontName: (item: FontItem) => string;
   temporaryActiveRegistryNameFor: (item: FontItem) => string;
   removeFontResourceSession: (fontPath: string) => Promise<unknown>;
-  removeFontResourceSessionBatch: (fontPaths: string[]) => Promise<unknown>;
+  removeFontResourceSessionBatch: (
+    fontPaths: string[],
+  ) => Promise<FontResourceBatchResult>;
   addFontResourceSessionBatch: (
     fontPaths: string[],
     options?: { notify?: boolean; reason?: string },

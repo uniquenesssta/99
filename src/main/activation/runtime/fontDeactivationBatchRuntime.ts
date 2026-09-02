@@ -1,6 +1,17 @@
-import type { FontActivationBatchResult,FontItem,InstallCompareResult } from "../../../shared/types";
+import type {
+  FontActivationBatchResult,
+  FontItem,
+  InstallCompareResult,
+} from "../../../shared/types";
+import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
 import type { FontActivationCleanupRuntime } from "./fontActivationCleanupRuntime";
 import { uniqueFontItems } from "./fontActivationInstallStatusRuntime";
+import {
+  fontDeactivationPathKey,
+  fontDeactivationSettlementFailureMessage,
+  settleFontDeactivationRecords,
+} from "./fontDeactivationSettlementRuntime";
+import type { DeactivationRecordTarget } from "./fontDeactivationSettlementRuntime";
 import type { FontActivationRuntimeDeps } from "./fontActivationTypes";
 
 export function createFontDeactivationBatchRuntime(
@@ -27,63 +38,91 @@ export function createFontDeactivationBatchRuntime(
     const results: FontActivationBatchResult["results"] = {};
     const state = await loadTemporaryActiveFonts();
     const targetIds = new Set(unique.map((item) => item.id));
-    const targetPaths = new Set(unique.map((item) => item.path.toLowerCase()));
+    const targetPaths = new Set(
+      unique.map((item) => fontDeactivationPathKey(item.path)),
+    );
     const targets = state.records.filter(
       (record) =>
         targetIds.has(record.fontId) ||
-        targetPaths.has(record.sourcePath.toLowerCase()),
+        targetPaths.has(fontDeactivationPathKey(record.sourcePath)),
     );
-    const targetRecordIds = new Set(
-      targets.map((record) => `${record.fontId}\u0000${record.installPath}`),
-    );
-    for (const item of unique) {
-      const itemTargets = targets.filter(
-        (record) =>
-          record.fontId === item.id ||
-          record.sourcePath.toLowerCase() === item.path.toLowerCase(),
-      );
-      if (!itemTargets.length) {
-        results[item.id] = {
-          id: item.id,
-          fileName: item.fileName,
-          ok: true,
-          temporaryActivated: false,
-          message:
-            "没有找到这个字体的临时安装记录；如果它是永久安装字体，不会被移除。",
-        };
-      }
+    const recordsByItemId = new Map<string, TemporaryActiveFontRecord[]>();
+    const settlementTargets: DeactivationRecordTarget[] = [];
+
+    for (const record of targets) {
+      const item =
+        unique.find((candidate) => candidate.id === record.fontId) ||
+        unique.find(
+          (candidate) =>
+            fontDeactivationPathKey(candidate.path) ===
+            fontDeactivationPathKey(record.sourcePath),
+        );
+      if (!item) continue;
+      const itemRecords = recordsByItemId.get(item.id) || [];
+      itemRecords.push(record);
+      recordsByItemId.set(item.id, itemRecords);
+      settlementTargets.push({ item, record });
     }
 
-    if (targets.length) {
-      await removeFontResourceSessionBatch(
-        targets.map((record) => record.installPath),
-      ).catch((error) =>
-        appendStartupLog(
-          `batch deactivate resource remove failed: ${error instanceof Error ? error.message : String(error)}`,
-        ),
+    for (const item of unique) {
+      if (recordsByItemId.has(item.id)) continue;
+      results[item.id] = {
+        id: item.id,
+        fileName: item.fileName,
+        ok: true,
+        temporaryActivated: false,
+        message:
+          "没有找到这个字体的临时安装记录；如果它是永久安装字体，不会被移除。",
+      };
+    }
+
+    const settlements = await settleFontDeactivationRecords(
+      settlementTargets,
+      {
+        removeFontResourceSessionBatch,
+        deleteFontRegistryValuesHKCUBatch,
+        queueTemporaryFontFileDeletes,
+        appendStartupLog,
+      },
+    );
+    const committedRecords = new Set(
+      settlements
+        .filter((settlement) => settlement.fileQueue.ok)
+        .map((settlement) => settlement.record),
+    );
+    if (committedRecords.size) {
+      const remaining = state.records.filter(
+        (record) => !committedRecords.has(record),
       );
-      await deleteFontRegistryValuesHKCUBatch(
-        targets.map((record) => record.registryName),
-      ).catch((error) =>
-        appendStartupLog(
-          `batch deactivate registry delete failed: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      );
+      await saveTemporaryActiveFonts({ version: 1, records: remaining });
     }
 
     let deactivated = 0;
     let failed = 0;
-    if (targets.length) {
-      await queueTemporaryFontFileDeletes(targets, "batch-deactivate");
-    }
-    for (const record of targets) {
-      const item = unique.find(
-        (font) =>
-          font.id === record.fontId ||
-          font.path.toLowerCase() === record.sourcePath.toLowerCase(),
+    for (const item of unique) {
+      const itemSettlements = settlements.filter(
+        (settlement) => settlement.item.id === item.id,
       );
-      deactivated += 1;
-      if (item) {
+      if (!itemSettlements.length) continue;
+      const failedSettlements = itemSettlements.filter(
+        (settlement) => !settlement.fileQueue.ok,
+      );
+      if (failedSettlements.length) {
+        failed += 1;
+        results[item.id] = {
+          id: item.id,
+          fileName: item.fileName,
+          ok: false,
+          temporaryActivated: true,
+          message: `取消激活未完成：${failedSettlements
+            .map(
+              (settlement) =>
+                `${settlement.record.fileName || settlement.record.installPath}：${fontDeactivationSettlementFailureMessage(settlement)}`,
+            )
+            .join("；")}`,
+        };
+      } else {
+        deactivated += 1;
         results[item.id] = {
           id: item.id,
           fileName: item.fileName,
@@ -94,47 +133,51 @@ export function createFontDeactivationBatchRuntime(
       }
     }
 
-    const remaining = state.records.filter((record) => {
-      const recordKey = `${record.fontId}\u0000${record.installPath}`;
-      return !targetRecordIds.has(recordKey);
-    });
-    await saveTemporaryActiveFonts({ version: 1, records: remaining });
-    if (targets.length) {
-      const deactivatedStatusUpdates: Record<string, InstallCompareResult> = {};
-      const deactivatedItemsById = new Map<string, FontItem>();
-      for (const item of unique) {
-        const result = results[item.id];
-        if (!result?.ok || result.temporaryActivated !== false) continue;
-        deactivatedStatusUpdates[item.id] = {
-          installed: false,
-          by: "none",
-          matches: [],
-        };
-        deactivatedItemsById.set(item.id, item);
-      }
-      if (Object.keys(deactivatedStatusUpdates).length) {
-        scheduleActivationInstallStatusSave(
-          deactivatedStatusUpdates,
-          deactivatedItemsById,
-          "batch-deactivate",
-        );
-      }
+    const deactivatedStatusUpdates: Record<string, InstallCompareResult> = {};
+    const deactivatedItemsById = new Map<string, FontItem>();
+    for (const item of unique) {
+      const result = results[item.id];
+      if (!result?.ok || result.temporaryActivated !== false) continue;
+      if (!recordsByItemId.has(item.id)) continue;
+      deactivatedStatusUpdates[item.id] = {
+        installed: false,
+        by: "none",
+        matches: [],
+      };
+      deactivatedItemsById.set(item.id, item);
+    }
+    if (Object.keys(deactivatedStatusUpdates).length) {
+      scheduleActivationInstallStatusSave(
+        deactivatedStatusUpdates,
+        deactivatedItemsById,
+        "batch-deactivate",
+      );
+    }
+    if (settlements.some((settlement) => settlement.resource.ok)) {
       scheduleBackgroundFontRefreshTail("batch-deactivate-tail", 80);
     }
 
+    const skippedInactive = unique.filter(
+      (item) => !recordsByItemId.has(item.id),
+    ).length;
+    appendStartupLog(
+      `deactivation batch summary: total=${unique.length}, records=${settlements.length}, deactivated=${deactivated}, skippedInactive=${skippedInactive}, failed=${failed}`,
+    );
     return {
       ok: failed === 0,
       activated: 0,
       deactivated,
       skippedInstalled: 0,
-      skippedAlreadyActive: unique.length - targets.length,
+      skippedAlreadyActive: skippedInactive,
       failed,
       results,
-      message: `批量取消激活完成：移除临时激活 ${deactivated} 项，未找到临时记录 ${Math.max(0, unique.length - targets.length)} 个，失败 ${failed} 个。`,
+      message: `批量取消激活完成：移除临时激活 ${deactivated} 项，未找到临时记录 ${skippedInactive} 个，失败 ${failed} 个。`,
     };
   }
 
   return { deactivateFontSessionsBatch };
 }
 
-export type FontDeactivationBatchRuntime = ReturnType<typeof createFontDeactivationBatchRuntime>;
+export type FontDeactivationBatchRuntime = ReturnType<
+  typeof createFontDeactivationBatchRuntime
+>;

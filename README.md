@@ -55,6 +55,7 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-02：Stage 1 AT-1.2 将批量字体停用改为逐记录三阶段结算：只有字体资源、注册表和持久文件删除队列均明确成功后才删除临时会话状态；混合失败、缺失 helper 结果及后续清理失败均保留可重试状态和逐项原因。A2 已反转为第 66 项长期正确性门禁，`npm run verify` 与 Electron/Vite 三端 build 通过；三大巨型编排文件及其公开契约未变，Windows 实机与未改动的 Rust worker 构建保留为外部验收项。
 - 2026-09-02：Stage 1 在独立分支 `stage/01-activation-transactions` 启动；AT-1.1 修复单项字体资源 add/remove 的结果传播，区分 helper 不可用与 helper 已执行失败，禁止 `ok:false` 静默成功或重复 fallback，并将 A1 反转为第 65 项长期正确性门禁。`npm run verify` 与 Electron/Vite main、preload、renderer build 通过；Windows 实机与未改动的 Rust worker 构建保留为外部验收项。
 - 2026-09-01：Stage 0 AT-0.4 固化三大编排契约：主进程 115 个注册键与生命周期、Rust 45 个公开方法和 38 条命令路由、Input/Result 类型及失败边界、React 10 条关键流程和六组目标视图契约。Stage 0 总门禁通过，`diagnostics:all` 增至 64 项；生产编排代码未修改。
 - 2026-09-01：Stage 0 AT-0.3 新增字体路径授权基线观察，在自动清理的临时目录和纯注册表替身中覆盖 8 个场景；稳定复现非字体读取、symlink 越界读取、任意目录写入/移动和前缀式托管卸载等 6 个缺陷，并锁定 2 个现有安全停止行为；未修改生产逻辑。

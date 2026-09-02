@@ -66,8 +66,18 @@ async function deleteFontRegistryValuesHKCUWithRegExe(names: string[]): Promise<
   for (const name of names) {
     try {
       await runRegExe(['delete', HKCU_FONT_REGISTRY_KEY, '/v', name, '/f'], 3000)
-    } catch {
-      // Value may already be missing.
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error
+        ? String((error as NodeJS.ErrnoException).code || '')
+        : ''
+      if (code === 'ENOENT') throw error
+      try {
+        await runRegExe(['query', HKCU_FONT_REGISTRY_KEY, '/v', name], 3000)
+      } catch {
+        // The value is already missing, so deletion is idempotently complete.
+        continue
+      }
+      throw error
     }
   }
 }
@@ -163,7 +173,7 @@ export function createFontResourceSessionRuntime(options: FontResourceSessionRun
     if (!clean.length) return
 
     const rustResult = await options.runRustFontRegistryDelete?.(clean)
-    if (rustResult?.ok) {
+    if (rustResult?.ok && Number(rustResult.failed || 0) === 0) {
       appendStartupLog(`rust font registry delete ok: count=${rustResult.count}`)
       return
     }
@@ -172,7 +182,7 @@ export function createFontResourceSessionRuntime(options: FontResourceSessionRun
       reason: 'deleteFontRegistryValuesHKCUBatch',
       timeout: Math.max(5000, 800 + clean.length * 60)
     })
-    if (nativePayload?.ok) return
+    if (nativePayload?.ok && Number(nativePayload.failed || 0) === 0) return
 
     appendStartupLog(`native font helper unavailable for registry delete; using reg.exe fallback, count=${clean.length}`)
     await deleteFontRegistryValuesHKCUWithRegExe(clean)

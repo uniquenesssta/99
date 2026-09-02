@@ -63,7 +63,14 @@ export function createFontActivationCleanupRuntime(
     await deleteRegistryValueHKCU(record.registryName);
 
     if (options.deleteFileMode === "background") {
-      await queueTemporaryFontFileDeletes([record], "deactivate");
+      const queueResult = await queueTemporaryFontFileDeletes([record], "deactivate");
+      const queued = queueResult[record.installPath];
+      if (!queued?.ok) {
+        appendStartupLog(
+          `temporary font file queue rejected: ${record.installPath} ${queued?.message || "missing queue result"}`,
+        );
+        return false;
+      }
     } else {
       try {
         if (!isSafeTemporaryActiveFontPath(record.installPath)) {
