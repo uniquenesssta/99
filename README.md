@@ -44,7 +44,8 @@ npm run build:win
 ## 当前工程任务
 
 - [修复与编排重构总任务书](docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md)
-- [当前 Stage 0：基线与行为锁任务书](docs/plans/HFM_STAGE_00_BASELINE_TASKBOOK.md)
+- [当前 Stage 1：激活与停用事务任务书](docs/plans/HFM_STAGE_01_ACTIVATION_TASKBOOK.md)
+- [已完成 Stage 0：基线与行为锁任务书](docs/plans/HFM_STAGE_00_BASELINE_TASKBOOK.md)
 
 任务书按 Atomic Task 执行：先建立行为锁，再依次修复事务正确性、路径边界和文件一致性，之后才拆分主进程组合根、Rust Worker 门面与 React 根组件。任何阶段硬门禁失败都阻塞后续阶段。
 
@@ -54,6 +55,7 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-02：Stage 1 在独立分支 `stage/01-activation-transactions` 启动；AT-1.1 修复单项字体资源 add/remove 的结果传播，区分 helper 不可用与 helper 已执行失败，禁止 `ok:false` 静默成功或重复 fallback，并将 A1 反转为第 65 项长期正确性门禁。`npm run verify` 与 Electron/Vite main、preload、renderer build 通过；Windows 实机与未改动的 Rust worker 构建保留为外部验收项。
 - 2026-09-01：Stage 0 AT-0.4 固化三大编排契约：主进程 115 个注册键与生命周期、Rust 45 个公开方法和 38 条命令路由、Input/Result 类型及失败边界、React 10 条关键流程和六组目标视图契约。Stage 0 总门禁通过，`diagnostics:all` 增至 64 项；生产编排代码未修改。
 - 2026-09-01：Stage 0 AT-0.3 新增字体路径授权基线观察，在自动清理的临时目录和纯注册表替身中覆盖 8 个场景；稳定复现非字体读取、symlink 越界读取、任意目录写入/移动和前缀式托管卸载等 6 个缺陷，并锁定 2 个现有安全停止行为；未修改生产逻辑。
 - 2026-09-01：Stage 0 AT-0.2 新增激活/停用事务基线观察，使用真实运行时与纯替身覆盖 8 个故障场景，稳定复现 7 个已知缺陷并锁定复制失败的安全停止行为；未修改生产逻辑。

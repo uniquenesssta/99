@@ -22,6 +22,22 @@ function failedFontResourceBatch(paths: string[], message: string): FontResource
   return result
 }
 
+function requireSuccessfulFontResourceEntry(
+  result: FontResourceBatchResult,
+  filePath: string,
+  source: 'rust' | 'native',
+  operation: 'add' | 'remove'
+) {
+  const entry = result[filePath]
+  if (!entry) {
+    throw new Error(`${source} font resource ${operation} returned no result for ${filePath}`)
+  }
+  if (!entry.ok) {
+    throw new Error(entry.message || `${source} font resource ${operation} failed for ${filePath}`)
+  }
+  return entry
+}
+
 async function runRegExe(args: string[], timeout: number): Promise<void> {
   await execFileAsync('reg', args, {
     windowsHide: true,
@@ -164,8 +180,8 @@ export function createFontResourceSessionRuntime(options: FontResourceSessionRun
 
   async function addFontResourceSession(filePath: string, sessionOptions: { notify?: boolean; reason?: string } = {}): Promise<number> {
     const rustResult = await options.runRustFontResourceAdd?.([filePath], sessionOptions)
-    const rustEntry = rustResult?.[filePath]
-    if (rustEntry?.ok) {
+    if (rustResult != null) {
+      const rustEntry = requireSuccessfulFontResourceEntry(rustResult, filePath, 'rust', 'add')
       if (sessionOptions.notify) {
         fontRefreshRuntimeStats.lastBroadcastAt = Date.now()
         appendStartupLog(`rust font resource notify sent: ${sessionOptions.reason || 'addFontResourceSession'}, path=${filePath}`)
@@ -178,13 +194,16 @@ export function createFontResourceSessionRuntime(options: FontResourceSessionRun
       { reason: sessionOptions.reason || 'addFontResourceSession', timeout: 5000 }
     )
     const nativeResult = nativeFontHelperBatchResult(nativePayload)
-    const nativeEntry = nativeResult?.[filePath]
-    if (nativeEntry?.ok) {
+    if (nativeResult != null) {
+      const nativeEntry = requireSuccessfulFontResourceEntry(nativeResult, filePath, 'native', 'add')
       if (sessionOptions.notify) {
         fontRefreshRuntimeStats.lastBroadcastAt = Date.now()
         appendStartupLog(`native font resource notify sent: ${sessionOptions.reason || 'addFontResourceSession'}, path=${filePath}`)
       }
       return nativeEntry.count > 0 ? nativeEntry.count : 1
+    }
+    if (nativePayload != null) {
+      throw new Error(nativePayload.message || `native font resource add returned no result for ${filePath}`)
     }
 
     const message = 'native font helper unavailable; AddFontResourceEx has no safe cmd.exe fallback'
@@ -194,9 +213,9 @@ export function createFontResourceSessionRuntime(options: FontResourceSessionRun
 
   async function removeFontResourceSession(filePath: string, sessionOptions: { notify?: boolean; reason?: string } = {}): Promise<void> {
     const rustResult = await options.runRustFontResourceRemove?.([filePath], sessionOptions)
-    const rustEntry = rustResult?.[filePath]
-    if (rustEntry) {
-      if (sessionOptions.notify && rustEntry.ok) {
+    if (rustResult != null) {
+      const rustEntry = requireSuccessfulFontResourceEntry(rustResult, filePath, 'rust', 'remove')
+      if (sessionOptions.notify) {
         fontRefreshRuntimeStats.lastBroadcastAt = Date.now()
         appendStartupLog(`rust font resource notify sent: ${sessionOptions.reason || 'removeFontResourceSession'}, path=${filePath}`)
       }
@@ -209,17 +228,22 @@ export function createFontResourceSessionRuntime(options: FontResourceSessionRun
       { reason: sessionOptions.reason || 'removeFontResourceSession', timeout: 5000 }
     )
     const nativeResult = nativeFontHelperBatchResult(nativePayload)
-    const nativeEntry = nativeResult?.[filePath]
-    if (nativeEntry) {
-      if (sessionOptions.notify && nativeEntry.ok) {
+    if (nativeResult != null) {
+      const nativeEntry = requireSuccessfulFontResourceEntry(nativeResult, filePath, 'native', 'remove')
+      if (sessionOptions.notify) {
         fontRefreshRuntimeStats.lastBroadcastAt = Date.now()
         appendStartupLog(`native font resource notify sent: ${sessionOptions.reason || 'removeFontResourceSession'}, path=${filePath}`)
       }
       appendStartupLog(`native RemoveFontResourceEx removed=${nativeEntry.count || 0} path=${filePath}`)
       return
     }
+    if (nativePayload != null) {
+      throw new Error(nativePayload.message || `native font resource remove returned no result for ${filePath}`)
+    }
 
+    const message = 'native font helper unavailable; RemoveFontResourceEx has no safe cmd.exe fallback'
     appendStartupLog(`native font helper unavailable for removeFontResourceSession; skipped PowerShell fallback, path=${filePath}`)
+    throw new Error(message)
   }
 
   async function deleteRegistryValueHKCU(name: string): Promise<void> {

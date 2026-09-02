@@ -5,9 +5,10 @@ const ts = require('typescript')
 
 const root = path.resolve(__dirname, '..', '..')
 const baselineObserve = process.argv.includes('--baseline-observe')
+const correctnessCase = process.argv.find((arg) => arg.startsWith('--case='))?.slice('--case='.length) || ''
 
-if (!baselineObserve) {
-  console.error('[diagnostics:font-activation-transaction] Stage 0 only supports --baseline-observe; Stage 1 must convert this script into a correctness gate')
+if (baselineObserve === Boolean(correctnessCase) || (correctnessCase && correctnessCase !== 'A1')) {
+  console.error('[diagnostics:font-activation-transaction] use either --baseline-observe or --case=A1')
   process.exit(1)
 }
 
@@ -172,12 +173,13 @@ async function expectReject(caseId, task, messagePart) {
 
 async function caseA1() {
   const module = loadTypeScriptModule('src/main/windows/runtime/fontResourceSessionRuntime.ts')
-  let nativeCalls = 0
-  const runtime = module.createFontResourceSessionRuntime({
+  const rustStats = { lastBroadcastAt: 0 }
+  let rustNativeCalls = 0
+  const rustFailureRuntime = module.createFontResourceSessionRuntime({
     appendStartupLog: () => undefined,
-    fontRefreshRuntimeStats: { lastBroadcastAt: 0 },
+    fontRefreshRuntimeStats: rustStats,
     runNativeFontHelper: async () => {
-      nativeCalls += 1
+      rustNativeCalls += 1
       return null
     },
     nativeFontHelperBatchResult: () => null,
@@ -185,15 +187,194 @@ async function caseA1() {
       [paths[0]]: { ok: false, count: 0, message: 'injected remove failure' },
     }),
   })
-  let rejected = false
-  try {
-    await runtime.removeFontResourceSession('C:/Fonts/A.ttf')
-  } catch {
-    rejected = true
+  await expectReject(
+    'A1',
+    () => rustFailureRuntime.removeFontResourceSession('C:/Fonts/A.ttf', { notify: true }),
+    'injected remove failure',
+  )
+  assert('A1', rustNativeCalls === 0, 'Rust ok=false incorrectly attempted native fallback')
+  assert('A1', rustStats.lastBroadcastAt === 0, 'Rust ok=false updated the notify timestamp')
+
+  let registryDeletes = 0
+  let queuedDeletes = 0
+  let sessionStateSaves = 0
+  let installStatusSaves = 0
+  const cleanupModule = loadTypeScriptModule(
+    'src/main/activation/runtime/fontActivationCleanupRuntime.ts',
+    (id) => {
+      if (id === '../temporaryFontDeleteQueue') {
+        return {
+          createTemporaryFontDeleteQueue: () => ({
+            isSafeTemporaryActiveFontPath: () => true,
+            queueTemporaryFontFileDeletes: async () => { queuedDeletes += 1 },
+            flushPendingTemporaryFontDeletes: async () => undefined,
+          }),
+        }
+      }
+      if (id === '../../rust-core/nodeBridgeFallbackCompatibilityRuntime') {
+        return {
+          logNodeBridgeFallbackDisabled: () => undefined,
+          logNodeBridgeFallbackUsed: () => undefined,
+          nodeBridgeFallbackCompatibilityAllowed: () => false,
+          nodeBridgeFallbackDeniedMessage: () => 'fallback denied',
+        }
+      }
+      return require(id)
+    },
+  )
+  const cleanupRuntime = cleanupModule.createFontActivationCleanupRuntime(
+    {
+      appName: 'HFM',
+      dataPath: () => 'C:/Data',
+      dataRoot: () => 'C:/Data',
+      currentUserFontsDir: () => 'C:/Fonts',
+      removeFontResourceSession: rustFailureRuntime.removeFontResourceSession,
+      deleteRegistryValueHKCU: async () => { registryDeletes += 1 },
+      advancedFontRefresh: async () => undefined,
+      clearInstalledFontsMemoryCache: () => undefined,
+      saveTemporaryActiveFonts: async () => undefined,
+      loadTemporaryActiveFonts: async () => ({ version: 1, records: [] }),
+      withGlobalIo: async (_label, task) => task(),
+      delayToEventLoop: async () => undefined,
+      appendStartupLog: () => undefined,
+    },
+    { temporaryActiveRecordStillVisible: async () => false },
+  )
+  const item = fontItem('font-a1-state')
+  const record = {
+    fontId: item.id,
+    sourcePath: item.path,
+    installPath: 'C:/Fonts/A.ttf',
+    registryName: 'HFM_A1',
+    activatedAt: '2026-09-01T00:00:00.000Z',
+    fileName: 'A.ttf',
   }
-  assert('A1', !rejected, 'known defect changed: single remove no longer resolves on ok=false')
-  assert('A1', nativeCalls === 0, 'known defect changed: ok=false unexpectedly attempted native fallback')
-  return 'single remove resolves when Rust returns ok=false'
+  const sessionRuntime = sessionModule.createFontActivationSessionRuntime(
+    {
+      ensureWindows: () => undefined,
+      loadTemporaryActiveFonts: async () => ({ version: 1, records: [record] }),
+      saveTemporaryActiveFonts: async () => { sessionStateSaves += 1 },
+      scheduleBackgroundFontRefreshTail: () => undefined,
+    },
+    { activationTraceStep: async (_step, _fontId, task) => task() },
+    {},
+    { saveActivationInstallStatus: async () => { installStatusSaves += 1 } },
+    cleanupRuntime,
+    {},
+  )
+  await expectReject(
+    'A1',
+    () => sessionRuntime.deactivateFontSession(item),
+    'injected remove failure',
+  )
+  assert('A1', registryDeletes === 0 && queuedDeletes === 0, 'failed resource remove advanced to registry or file cleanup')
+  assert('A1', sessionStateSaves === 0 && installStatusSaves === 0, 'failed resource remove discarded persistent activation state')
+
+  const nativeStats = { lastBroadcastAt: 0 }
+  let nativeCalls = 0
+  const nativeFailureRuntime = module.createFontResourceSessionRuntime({
+    appendStartupLog: () => undefined,
+    fontRefreshRuntimeStats: nativeStats,
+    runNativeFontHelper: async () => {
+      nativeCalls += 1
+      return { ok: false, results: [] }
+    },
+    nativeFontHelperBatchResult: () => ({
+      'C:/Fonts/B.ttf': { ok: false, count: 0, message: 'injected native remove failure' },
+    }),
+    runRustFontResourceRemove: async () => null,
+  })
+  await expectReject(
+    'A1',
+    () => nativeFailureRuntime.removeFontResourceSession('C:/Fonts/B.ttf', { notify: true }),
+    'injected native remove failure',
+  )
+  assert('A1', nativeCalls === 1, 'Rust unavailable did not attempt native helper exactly once')
+  assert('A1', nativeStats.lastBroadcastAt === 0, 'native ok=false updated the notify timestamp')
+
+  const nativePayloadFailureRuntime = module.createFontResourceSessionRuntime({
+    appendStartupLog: () => undefined,
+    fontRefreshRuntimeStats: { lastBroadcastAt: 0 },
+    runNativeFontHelper: async () => ({ ok: false, message: 'injected native payload failure' }),
+    nativeFontHelperBatchResult: () => null,
+    runRustFontResourceRemove: async () => null,
+  })
+  await expectReject(
+    'A1',
+    () => nativePayloadFailureRuntime.removeFontResourceSession('C:/Fonts/Payload.ttf'),
+    'injected native payload failure',
+  )
+
+  let missingResultNativeCalls = 0
+  const missingResultRuntime = module.createFontResourceSessionRuntime({
+    appendStartupLog: () => undefined,
+    fontRefreshRuntimeStats: { lastBroadcastAt: 0 },
+    runNativeFontHelper: async () => {
+      missingResultNativeCalls += 1
+      return null
+    },
+    nativeFontHelperBatchResult: () => null,
+    runRustFontResourceRemove: async () => ({}),
+  })
+  await expectReject(
+    'A1',
+    () => missingResultRuntime.removeFontResourceSession('C:/Fonts/Missing.ttf'),
+    'returned no result',
+  )
+  assert('A1', missingResultNativeCalls === 0, 'malformed Rust result incorrectly attempted native fallback')
+
+  const unavailableRuntime = module.createFontResourceSessionRuntime({
+    appendStartupLog: () => undefined,
+    fontRefreshRuntimeStats: { lastBroadcastAt: 0 },
+    runNativeFontHelper: async () => null,
+    nativeFontHelperBatchResult: () => null,
+    runRustFontResourceRemove: async () => null,
+  })
+  await expectReject(
+    'A1',
+    () => unavailableRuntime.removeFontResourceSession('C:/Fonts/Unavailable.ttf'),
+    'RemoveFontResourceEx has no safe cmd.exe fallback',
+  )
+
+  const successStats = { lastBroadcastAt: 0 }
+  let successNativeCalls = 0
+  const successRuntime = module.createFontResourceSessionRuntime({
+    appendStartupLog: () => undefined,
+    fontRefreshRuntimeStats: successStats,
+    runNativeFontHelper: async () => {
+      successNativeCalls += 1
+      return null
+    },
+    nativeFontHelperBatchResult: () => null,
+    runRustFontResourceRemove: async (paths) => ({
+      [paths[0]]: { ok: true, count: 1, message: '' },
+    }),
+  })
+  await successRuntime.removeFontResourceSession('C:/Fonts/Success.ttf', { notify: true })
+  assert('A1', successNativeCalls === 0, 'successful Rust remove attempted native fallback')
+  assert('A1', successStats.lastBroadcastAt > 0, 'successful notified remove did not update the notify timestamp')
+
+  let addNativeCalls = 0
+  const addFailureRuntime = module.createFontResourceSessionRuntime({
+    appendStartupLog: () => undefined,
+    fontRefreshRuntimeStats: { lastBroadcastAt: 0 },
+    runNativeFontHelper: async () => {
+      addNativeCalls += 1
+      return null
+    },
+    nativeFontHelperBatchResult: () => null,
+    runRustFontResourceAdd: async (paths) => ({
+      [paths[0]]: { ok: false, count: 0, message: 'injected add failure' },
+    }),
+  })
+  await expectReject(
+    'A1',
+    () => addFailureRuntime.addFontResourceSession('C:/Fonts/C.ttf'),
+    'injected add failure',
+  )
+  assert('A1', addNativeCalls === 0, 'Rust add ok=false incorrectly attempted native fallback')
+
+  return 'single add/remove failures reject with the helper reason and never trigger duplicate fallback'
 }
 
 async function caseA2() {
@@ -349,7 +530,7 @@ async function caseA8() {
 
 async function main() {
   const cases = [
-    ['A1', 'KNOWN_DEFECT', caseA1],
+    ['A1', 'CORRECTNESS_LOCK', caseA1],
     ['A2', 'KNOWN_DEFECT', caseA2],
     ['A3', 'BEHAVIOR_LOCK', caseA3],
     ['A4', 'KNOWN_DEFECT', caseA4],
@@ -358,15 +539,20 @@ async function main() {
     ['A7', 'KNOWN_DEFECT', caseA7],
     ['A8', 'KNOWN_DEFECT', caseA8],
   ]
+  const selectedCases = correctnessCase ? cases.filter(([caseId]) => caseId === correctnessCase) : cases
   let defects = 0
   let locks = 0
-  for (const [caseId, kind, run] of cases) {
+  for (const [caseId, kind, run] of selectedCases) {
     const message = await run()
     if (kind === 'KNOWN_DEFECT') defects += 1
     else locks += 1
     console.log(`[diagnostics:font-activation-transaction] ${kind} ${caseId}: ${message}`)
   }
-  console.log(`[diagnostics:font-activation-transaction] baseline observed: knownDefects=${defects}, behaviorLocks=${locks}, cases=${cases.length}`)
+  if (baselineObserve) {
+    console.log(`[diagnostics:font-activation-transaction] baseline observed: knownDefects=${defects}, behaviorLocks=${locks}, cases=${selectedCases.length}`)
+  } else {
+    console.log(`[diagnostics:font-activation-transaction] correctness passed: cases=${selectedCases.length}`)
+  }
 }
 
 main().catch((error) => {
