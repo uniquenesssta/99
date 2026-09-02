@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.3
+- 文档版本：1.4
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 1「激活、停用与托管安装事务正确性」执行中；AT-1.1 至 AT-1.3 已完成，AT-1.4 待启动
+- 当前阶段：Stage 1「激活、停用与托管安装事务正确性」已完成；Windows 系统集成矩阵作为外部验收项保留
 - 当前阶段任务书：[`HFM_STAGE_01_ACTIVATION_TASKBOOK.md`](HFM_STAGE_01_ACTIVATION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -478,8 +478,8 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 | 阶段 | 状态 | 完成提交 | 验证摘要 | 备注 |
 | --- | --- | --- | --- | --- |
 | Stage 0 | 完成 | 本阶段分支（AT-0.1 至 AT-0.4） | `npm run verify` 通过，64/64 长期诊断；事务观察 8/8、路径观察 8/8；三大编排契约通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 专属矩阵作为外部验收项保留 |
-| Stage 1 | 执行中（AT-1.1 至 AT-1.3 完成） | 本阶段分支 AT-1.1、AT-1.2、AT-1.3 独立提交 | A1-A7 正确性门禁与 `npm run verify` 通过，67/67 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；AT-1.4 待启动，Windows 实机验收保留 |
-| Stage 2 | 阻塞于 Stage 1 | - | - | - |
+| Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
+| Stage 2 | 待启动 | - | - | 需从 Stage 1 完成基线新建独立分支 |
 | Stage 3 | 阻塞于 Stage 2 | - | - | - |
 | Stage 4 | 阻塞于 Stage 3 | - | - | - |
 | Stage 5 | 阻塞于 Stage 3 | - | - | - |

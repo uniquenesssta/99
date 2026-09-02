@@ -57,6 +57,8 @@ export interface InstallResult {
 export interface FontActivationBatchItemResult extends InstallResult {
   id: string
   fileName?: string
+  status?: 'activated' | 'already-active' | 'already-installed' | 'failed' | 'cancelled'
+  retryable?: boolean
 }
 
 export interface FontActivationBatchResult {
@@ -66,6 +68,7 @@ export interface FontActivationBatchResult {
   skippedInstalled: number
   skippedAlreadyActive: number
   failed: number
+  cancelled?: number
   results: Record<string, FontActivationBatchItemResult>
   message: string
 }

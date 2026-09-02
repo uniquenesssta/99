@@ -102,10 +102,4 @@ export interface FontActivationRuntimeDeps {
   } | null>;
 }
 
-export interface PreparedTemporaryActivation {
-  item: FontItem;
-  record: TemporaryActiveFontRecord;
-  created: boolean;
-}
-
 export type FontActivationBatchResults = FontActivationBatchResult["results"];

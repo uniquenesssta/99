@@ -55,6 +55,7 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-02：Stage 1 AT-1.4 将单项与批量临时激活统一到同一个串行事务所有者：批量层只负责去重、逐项调度、取消、结果汇总和一次最终刷新；提前取消不会进入事务，处理中取消保留已提交项并将未开始项标为可重试取消，混合失败与重试均保留稳定 ID 和真实原因。A1-A8 已全部转为长期正确性门禁，`npm run verify` 增至 68/68 并与 Electron/Vite 三端 build 通过；Stage 1 自动门禁收口，三大巨型编排文件及其公开契约未变，Windows 实机矩阵仍为外部验收项。
 - 2026-09-02：Stage 1 AT-1.3 为单项临时字体激活加入阶段化逆序补偿：注册表、resource 或会话状态失败时按 resource -> registry -> file 回滚，保留原始根因并汇总全部补偿错误；未完成阶段写入独立持久队列，由启动/退出清理继续重试，且 resource/registry 未清理前不会误删字体文件。A3-A7 已成为长期正确性门禁，`npm run verify` 增至 67/67 并与 Electron/Vite 三端 build 通过；三大巨型编排文件及其公开契约未变。
 - 2026-09-02：Stage 1 AT-1.2 将批量字体停用改为逐记录三阶段结算：只有字体资源、注册表和持久文件删除队列均明确成功后才删除临时会话状态；混合失败、缺失 helper 结果及后续清理失败均保留可重试状态和逐项原因。A2 已反转为第 66 项长期正确性门禁，`npm run verify` 与 Electron/Vite 三端 build 通过；三大巨型编排文件及其公开契约未变，Windows 实机与未改动的 Rust worker 构建保留为外部验收项。
 - 2026-09-02：Stage 1 在独立分支 `stage/01-activation-transactions` 启动；AT-1.1 修复单项字体资源 add/remove 的结果传播，区分 helper 不可用与 helper 已执行失败，禁止 `ok:false` 静默成功或重复 fallback，并将 A1 反转为第 65 项长期正确性门禁。`npm run verify` 与 Electron/Vite main、preload、renderer build 通过；Windows 实机与未改动的 Rust worker 构建保留为外部验收项。

@@ -2,11 +2,11 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.2
+- 文档版本：1.3
 - 建立日期：2026-09-01
 - Stage 分支：`stage/01-activation-transactions`
 - 起始提交：`d35ba6f89b7966427a8a671ff0016bff3d7f5d9c`
-- 当前 Atomic Task：AT-1.1 至 AT-1.3 已完成；AT-1.4 待启动
+- 当前 Atomic Task：AT-1.1 至 AT-1.4 已完成；Stage 1 自动门禁已收口
 - 前置阶段：Stage 0 已完成；事务观察 A1-A8 和编排公开契约均已固化
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
 
@@ -155,23 +155,28 @@ npm run diagnostics:all
 
 ### AT-1.4 批量激活复用单项事务
 
-状态：待启动。
+状态：已完成。
 
-预计范围：
+实际范围：
 
 - `src/main/activation/runtime/fontActivationBatchRuntime.ts`
-- 单项事务的窄内部接口与批量结果类型
+- `src/main/activation/runtime/fontActivationTransactionRuntime.ts`
+- `src/main/activation/runtime/fontActivationSessionRuntime.ts`
+- `src/main/activation/fontActivationRuntime.ts`
+- `src/main/activation/runtime/fontActivationTypes.ts`
+- `src/shared/types/installTypes.ts`
 - 同一事务诊断中的 A8 和完整 Stage 1 正确性模式
 - 两级任务书与 README
 
-执行要求：
+完成项：
 
-1. 提取可供单项和批量共同调用的一次性事务函数；状态所有权保持单一。
-2. 批量层只负责去重、并发/串行策略、取消、汇总和最终耐久性等待。
-3. 每项开始前检查取消信号；已提交项保留成功，未开始项标记取消。
-4. 单项失败不污染其他项，结果中保留稳定 ID 和可重试原因。
-5. 保存队列和后台删除队列在 API 返回或关闭前满足既有耐久性门禁。
-6. 删除 Stage 0 的 `--baseline-observe` 事务语义，A1-A8 统一作为长期正确性诊断运行。
+- [x] 提取 `fontActivationTransactionRuntime.ts` 作为 copy -> registry -> resource -> state 与逆序补偿的唯一所有者；单项和批量调用同一个窄事务端口。
+- [x] 事务入口以串行 tail 保护会话状态，两个并发单项请求不会相互覆盖；批量层只保留去重、逐项串行、取消、汇总和最终刷新。
+- [x] 每项开始前检查取消信号；处理中取消时当前事务安全结算，已提交项保持成功，所有未开始项明确返回 `status: cancelled` 与稳定 ID。
+- [x] 混合失败继续处理后续项，失败项返回 `status: failed`、`retryable: true` 和原始可重试原因；重新提交该 ID 可得到新的权威结果。
+- [x] 每个真实共享事务在批量 API 返回前完成会话状态保存并登记安装状态；安装状态保存队列和后台删除队列的退出耐久性门禁保持通过。
+- [x] 删除事务脚本的 Stage 0 `--baseline-observe` 运行语义，A1-A8 全部统一为 `CORRECTNESS_LOCK`，A8 作为第 68 项长期诊断进入 `diagnostics:all`。
+- [x] 生产模块按职责收敛为事务所有者 228 行、单项会话包装 104 行、批量调度 127 行；未修改三大巨型编排文件。
 
 硬门禁：提前取消、处理中取消、混合失败和重试均无假成功；A1-A8 全部进入 `diagnostics:all`。
 
@@ -213,13 +218,13 @@ Stage 1 不移动三大编排文件，但每个 Atomic Task 必须运行 `diagno
 
 ## 7. Stage 1 退出条件
 
-- [ ] AT-1.1 至 AT-1.4 均有独立提交和执行记录。
-- [ ] A1-A8 全部由正确性断言覆盖并纳入 `diagnostics:all`。
-- [ ] 单项/批量激活与停用没有已知假成功或无记录孤儿资产。
-- [ ] `npm run verify`、Electron/Vite build 和编排契约门禁通过。
-- [ ] Windows 实机矩阵完成，或以明确外部验收阻塞项记录且未伪报通过。
-- [ ] 工作树不含私钥、字体资产、输出目录、Rust `target/` 或无关改动。
-- [ ] Stage 1 分支已推送，`main` 未被直接修改。
+- [x] AT-1.1 至 AT-1.4 均有独立提交和执行记录。
+- [x] A1-A8 全部由正确性断言覆盖并纳入 `diagnostics:all`。
+- [x] 单项/批量激活与停用没有已知假成功或无记录孤儿资产。
+- [x] `npm run verify`、Electron/Vite build 和编排契约门禁通过。
+- [x] Windows 实机矩阵以明确外部验收项保留，当前非 Windows 环境未伪报系统集成通过。
+- [x] 工作树不含私钥、字体资产、受跟踪输出目录、Rust `target/` 或无关改动。
+- [x] Stage 1 分支已推送，`main` 未被直接修改。
 
 ## 8. 执行记录
 
@@ -228,3 +233,4 @@ Stage 1 不移动三大编排文件，但每个 Atomic Task 必须运行 `diagno
 | 2026-09-02 | AT-1.1 | 本提交 | A1 定向门禁通过；`npm run verify` 通过，65/65 长期诊断；Electron/Vite main、preload、renderer build 通过；剩余观察为 6 个 `KNOWN_DEFECT`、2 个正确/行为锁 | 当前执行环境非 Windows；Cargo 不可用，未重复构建未改动的 Rust worker | 已完成；失败时 registry/file cleanup、会话状态与安装状态均未推进 |
 | 2026-09-02 | AT-1.2 | 本提交 | A2 混合批次及 resource 缺失、registry 失败、file queue 失败定向门禁通过；`npm run verify` 通过，66/66 长期诊断；Electron/Vite main、preload、renderer build 通过；三大编排公开契约未变 | 当前执行环境非 Windows；Cargo 不可用，未重复构建未改动的 Rust worker | 已完成；每条记录只有 resource、registry、持久文件队列均成功后才删除会话状态，失败项可重试 |
 | 2026-09-02 | AT-1.3 | 本提交 | A3-A7 复制、注册表、resource、状态保存和补偿失败门禁通过；`npm run verify` 通过，67/67 长期诊断；Electron/Vite main、preload、renderer build 通过；三大编排公开契约未变 | 当前执行环境非 Windows；Cargo 不可用，未重复构建未改动的 Rust worker | 已完成；适用副作用按 resource -> registry -> file 逆序补偿，失败阶段持久登记并由启动/退出清理重试 |
+| 2026-09-02 | AT-1.4 | 本提交 | A8 提前取消、处理中取消、混合失败、去重、状态耐久与重试门禁通过；`npm run verify` 通过，68/68 长期诊断；Electron/Vite main、preload、renderer build 通过；三大编排公开契约未变 | 当前执行环境非 Windows；Cargo 不可用，Rust 源码未修改；Windows 故障注入与 Photoshop 行为保留为外部验收项 | 已完成；单项和批量共用一个串行事务所有者，批量只调度、取消、汇总和最终刷新，取消项与失败项均无假成功 |

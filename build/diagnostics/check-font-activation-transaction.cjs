@@ -4,11 +4,10 @@ const path = require('node:path')
 const ts = require('typescript')
 
 const root = path.resolve(__dirname, '..', '..')
-const baselineObserve = process.argv.includes('--baseline-observe')
 const correctnessCase = process.argv.find((arg) => arg.startsWith('--case='))?.slice('--case='.length) || ''
 
-if (baselineObserve === Boolean(correctnessCase) || (correctnessCase && !['A1', 'A2', 'A3-A7'].includes(correctnessCase))) {
-  console.error('[diagnostics:font-activation-transaction] use either --baseline-observe or --case=A1/--case=A2/--case=A3-A7')
+if (process.argv.includes('--baseline-observe') || (correctnessCase && !['A1', 'A2', 'A3-A7', 'A8'].includes(correctnessCase))) {
+  console.error('[diagnostics:font-activation-transaction] use --case=A1/--case=A2/--case=A3-A7/--case=A8 or no selector for all correctness cases')
   process.exit(1)
 }
 
@@ -98,13 +97,16 @@ const compensationModule = loadTypeScriptModule(
   },
 )
 
-const sessionModule = loadTypeScriptModule(
-  'src/main/activation/runtime/fontActivationSessionRuntime.ts',
+const transactionModule = loadTypeScriptModule(
+  'src/main/activation/runtime/fontActivationTransactionRuntime.ts',
   (id) => {
     if (id === 'node:fs') return sessionFsStub
     if (id === './fontActivationCompensationRuntime') return compensationModule
     return require(id)
   },
+)
+const sessionModule = loadTypeScriptModule(
+  'src/main/activation/runtime/fontActivationSessionRuntime.ts',
 )
 
 function createSessionHarness(failureStage) {
@@ -206,20 +208,26 @@ function createSessionHarness(failureStage) {
     cleanupRuntime,
   )
 
-  const runtime = sessionModule.createFontActivationSessionRuntime(
+  const transactionRuntime = transactionModule.createFontActivationTransactionRuntime(
     deps,
     traceRuntime,
     verifyRuntime,
     statusRuntime,
-    cleanupRuntime,
     copyRuntime,
     compensationRuntime,
+  )
+  const runtime = sessionModule.createFontActivationSessionRuntime(
+    deps,
+    statusRuntime,
+    cleanupRuntime,
+    transactionRuntime,
   )
   return {
     runtime,
     effects,
     currentState,
     compensationRuntime,
+    transactionRuntime,
     setFailureStage: (next) => { activeFailureStage = next },
   }
 }
@@ -327,12 +335,9 @@ async function caseA1() {
       saveTemporaryActiveFonts: async () => { sessionStateSaves += 1 },
       scheduleBackgroundFontRefreshTail: () => undefined,
     },
-    { activationTraceStep: async (_step, _fontId, task) => task() },
-    {},
     { saveActivationInstallStatus: async () => { installStatusSaves += 1 } },
     cleanupRuntime,
-    {},
-    { compensateFailedFontActivation: async () => fail('A1', 'deactivation unexpectedly requested activation compensation') },
+    { activateFontSessionTransaction: async () => fail('A1', 'deactivation unexpectedly requested activation transaction') },
   )
   await expectReject(
     'A1',
@@ -720,19 +725,9 @@ async function caseA7() {
 }
 
 async function caseA8() {
-  const batchFsStub = {
-    __esModule: true,
-    default: { existsSync: () => false },
-    promises: {
-      access: async () => undefined,
-      mkdir: async () => undefined,
-      rm: async () => undefined,
-    },
-  }
   const module = loadTypeScriptModule(
     'src/main/activation/runtime/fontActivationBatchRuntime.ts',
     (id) => {
-      if (id === 'node:fs') return batchFsStub
       if (id === './fontActivationInstallStatusRuntime') return { uniqueFontItems }
       if (id === './fontDeactivationBatchRuntime') {
         return { createFontDeactivationBatchRuntime: () => ({ deactivateFontSessionsBatch: async () => ({}) }) }
@@ -740,46 +735,126 @@ async function caseA8() {
       return require(id)
     },
   )
-  const items = [fontItem('font-cancel-a'), fontItem('font-cancel-b')]
-  let savedState = null
-  const copied = []
-  const deps = {
-    ensureWindows: () => undefined,
-    currentUserFontsDir: () => 'C:/Managed',
-    loadTemporaryActiveFonts: async () => ({ version: 1, records: [] }),
-    saveTemporaryActiveFonts: async (state) => { savedState = state },
-    safeTemporaryActiveFontName: (item) => `${item.id}.ttf`,
-    temporaryActiveRegistryNameFor: (item) => `HFM_${item.id}`,
-    removeFontResourceSessionBatch: async () => ({}),
-    addFontResourceSessionBatch: async (paths) => Object.fromEntries(paths.map((fontPath) => [fontPath, { ok: true, count: 1 }])),
-    writeFontRegistryValuesHKCUBatch: async () => undefined,
-    deleteFontRegistryValuesHKCUBatch: async () => undefined,
-    scheduleActivationInstallStatusSave: () => undefined,
-    requestFontRefresh: () => undefined,
-    withGlobalIo: async (_label, task) => task(),
-    appendStartupLog: () => undefined,
-  }
-  const runtime = module.createFontActivationBatchRuntime(
-    deps,
-    { activationTraceStep: async (_step, _fontId, task) => task() },
-    {
-      readActivationInstallStatusBatch: async () => Object.fromEntries(items.map((item) => [item.id, { installed: false, by: 'none', matches: [] }])),
-      temporaryActiveRecordToInstalledRecord: (record) => ({ path: record.installPath }),
-    },
-    {},
-    {
-      copyTemporaryActiveFontWithTrace: async (item) => {
-        copied.push(item.id)
-        return 'copied'
+  function transactionSuccess(outcome = 'activated') {
+    return {
+      outcome,
+      result: {
+        ok: true,
+        temporaryActivated: outcome !== 'already-installed',
+        message: `diagnostic ${outcome}`,
       },
-    },
+    }
+  }
+
+  function createBatchHarness(activateFontSessionTransaction) {
+    const refreshes = []
+    const runtime = module.createFontActivationBatchRuntime(
+      {
+        ensureWindows: () => undefined,
+        requestFontRefresh: (...args) => refreshes.push(args),
+        appendStartupLog: () => undefined,
+      },
+      {},
+      { activateFontSessionTransaction },
+    )
+    return { runtime, refreshes }
+  }
+
+  const earlyItems = [fontItem('font-cancel-a'), fontItem('font-cancel-b')]
+  let earlyCalls = 0
+  const earlyHarness = createBatchHarness(async () => {
+    earlyCalls += 1
+    return transactionSuccess()
+  })
+  const earlyController = new AbortController()
+  earlyController.abort('early-cancel')
+  const earlyResult = await earlyHarness.runtime.activateFontSessionsBatch(
+    earlyItems,
+    { signal: earlyController.signal },
   )
-  const controller = new AbortController()
-  controller.abort('baseline-cancel')
-  const result = await runtime.activateFontSessionsBatch(items, { signal: controller.signal })
-  assert('A8', result.activated === 2 && result.failed === 0, 'known defect changed: an already-aborted request no longer processes the entire batch')
-  assert('A8', copied.length === 2 && savedState?.records?.length === 2, 'known defect changed: cancelled batch no longer commits every item')
-  return 'already-aborted signal is ignored and the full batch is committed'
+  assert('A8', earlyResult.ok === false && earlyResult.activated === 0 && earlyResult.failed === 0 && earlyResult.cancelled === 2, 'an already-aborted request did not cancel every unstarted item')
+  assert('A8', earlyCalls === 0 && earlyHarness.refreshes.length === 0, 'an already-aborted request still entered the transaction or refresh path')
+  for (const item of earlyItems) {
+    assert('A8', earlyResult.results[item.id]?.id === item.id, 'cancelled item lost its stable id')
+    assert('A8', earlyResult.results[item.id]?.status === 'cancelled' && earlyResult.results[item.id]?.ok === false, 'unstarted item was not reported explicitly as cancelled')
+  }
+
+  const midItems = [
+    fontItem('font-mid-committed'),
+    fontItem('font-mid-unstarted-a'),
+    fontItem('font-mid-unstarted-b'),
+  ]
+  const midController = new AbortController()
+  const midCalls = []
+  const midHarness = createBatchHarness(async (item) => {
+    midCalls.push(item.id)
+    midController.abort('mid-batch-cancel')
+    return transactionSuccess()
+  })
+  const midResult = await midHarness.runtime.activateFontSessionsBatch(
+    midItems,
+    { signal: midController.signal },
+  )
+  assert('A8', midCalls.length === 1 && midCalls[0] === midItems[0].id, 'mid-batch cancellation started an item after the signal was aborted')
+  assert('A8', midResult.activated === 1 && midResult.cancelled === 2 && midResult.failed === 0, 'mid-batch cancellation did not preserve one committed item and cancel two unstarted items')
+  assert('A8', midResult.results[midItems[0].id]?.status === 'activated' && midResult.results[midItems[0].id]?.ok === true, 'the transaction committed during cancellation was rolled back or reported as cancelled')
+  assert('A8', midResult.results[midItems[1].id]?.status === 'cancelled' && midResult.results[midItems[2].id]?.status === 'cancelled', 'unstarted items were not marked cancelled after an in-flight commit')
+  assert('A8', midHarness.refreshes.length === 1, 'a partially committed batch did not schedule exactly one final refresh')
+
+  const durableHarness = createSessionHarness(null)
+  const durableItems = [fontItem('font-durable-a'), fontItem('font-durable-b')]
+  const durableBatch = createBatchHarness(
+    durableHarness.transactionRuntime.activateFontSessionTransaction,
+  )
+  const durableResult = await durableBatch.runtime.activateFontSessionsBatch(
+    durableItems,
+  )
+  assert('A8', durableResult.ok === true && durableResult.activated === 2, 'the real shared transaction port did not commit both batch items')
+  assert('A8', durableHarness.effects.savedSessionStates.length === 2 && durableHarness.currentState.records.length === 2, 'batch returned before each shared transaction durably saved its session state')
+  assert('A8', durableHarness.effects.savedInstallStatuses.length === 2, 'batch returned before the shared transaction scheduled each committed install status')
+
+  const concurrentHarness = createSessionHarness(null)
+  await Promise.all([
+    concurrentHarness.runtime.activateFontSession(fontItem('font-concurrent-a')),
+    concurrentHarness.runtime.activateFontSession(fontItem('font-concurrent-b')),
+  ])
+  assert('A8', concurrentHarness.currentState.records.length === 2, 'concurrent single-item callers overwrote the transaction state owner')
+  assert('A8', concurrentHarness.effects.savedSessionStates[0]?.records?.length === 1 && concurrentHarness.effects.savedSessionStates[1]?.records?.length === 2, 'single-item transactions were not serialized through one state owner')
+
+  const successItem = fontItem('font-mixed-success')
+  const retryItem = fontItem('font-mixed-retry')
+  const installedItem = fontItem('font-mixed-installed')
+  const mixedCalls = []
+  let retryShouldFail = true
+  const mixedHarness = createBatchHarness(async (item) => {
+    mixedCalls.push(item.id)
+    if (item.id === retryItem.id && retryShouldFail) {
+      throw new Error('injected retryable activation failure')
+    }
+    return transactionSuccess(
+      item.id === installedItem.id ? 'already-installed' : 'activated',
+    )
+  })
+  const mixedResult = await mixedHarness.runtime.activateFontSessionsBatch([
+    successItem,
+    retryItem,
+    retryItem,
+    installedItem,
+  ])
+  assert('A8', mixedCalls.length === 3, 'batch de-duplication did not invoke the shared transaction exactly once per stable id')
+  assert('A8', mixedResult.ok === false && mixedResult.activated === 1 && mixedResult.failed === 1 && mixedResult.cancelled === 0 && mixedResult.skippedInstalled === 1, 'mixed failure did not settle each item independently')
+  assert('A8', mixedResult.results[retryItem.id]?.id === retryItem.id && mixedResult.results[retryItem.id]?.status === 'failed' && mixedResult.results[retryItem.id]?.retryable === true, 'failed item lost its stable retry identity')
+  assert('A8', mixedResult.results[retryItem.id]?.message.includes('injected retryable activation failure'), 'failed item lost its retry reason')
+  assert('A8', mixedResult.results[installedItem.id]?.status === 'already-installed' && mixedResult.results[installedItem.id]?.ok === true, 'one item failure polluted a later successful outcome')
+
+  retryShouldFail = false
+  const retryResult = await mixedHarness.runtime.activateFontSessionsBatch([
+    retryItem,
+  ])
+  assert('A8', retryResult.ok === true && retryResult.activated === 1 && retryResult.failed === 0 && retryResult.cancelled === 0, 'retry did not replace the earlier failure with an explicit committed result')
+  assert('A8', retryResult.results[retryItem.id]?.status === 'activated' && retryResult.results[retryItem.id]?.ok === true, 'retry returned false success or retained the stale failed outcome')
+
+  return 'shared durable state ownership, early and in-flight cancellation, mixed failure, de-duplication, and retry settle without false success'
 }
 
 async function main() {
@@ -791,24 +866,18 @@ async function main() {
     ['A5', 'CORRECTNESS_LOCK', caseA5],
     ['A6', 'CORRECTNESS_LOCK', caseA6],
     ['A7', 'CORRECTNESS_LOCK', caseA7],
-    ['A8', 'KNOWN_DEFECT', caseA8],
+    ['A8', 'CORRECTNESS_LOCK', caseA8],
   ]
   const selectedCases = correctnessCase
     ? cases.filter(([caseId]) => correctnessCase === 'A3-A7' ? /^A[3-7]$/.test(caseId) : caseId === correctnessCase)
     : cases
-  let defects = 0
   let locks = 0
   for (const [caseId, kind, run] of selectedCases) {
     const message = await run()
-    if (kind === 'KNOWN_DEFECT') defects += 1
-    else locks += 1
+    locks += 1
     console.log(`[diagnostics:font-activation-transaction] ${kind} ${caseId}: ${message}`)
   }
-  if (baselineObserve) {
-    console.log(`[diagnostics:font-activation-transaction] baseline observed: knownDefects=${defects}, behaviorLocks=${locks}, cases=${selectedCases.length}`)
-  } else {
-    console.log(`[diagnostics:font-activation-transaction] correctness passed: cases=${selectedCases.length}`)
-  }
+  console.log(`[diagnostics:font-activation-transaction] correctness passed: behaviorLocks=${locks}, cases=${selectedCases.length}`)
 }
 
 main().catch((error) => {

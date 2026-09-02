@@ -5,6 +5,7 @@ import { createFontActivationCopyRuntime } from "./runtime/fontActivationCopyRun
 import { createFontActivationInstallStatusRuntime } from "./runtime/fontActivationInstallStatusRuntime";
 import { createFontActivationSessionRuntime } from "./runtime/fontActivationSessionRuntime";
 import { createFontActivationTraceRuntime } from "./runtime/fontActivationTraceRuntime";
+import { createFontActivationTransactionRuntime } from "./runtime/fontActivationTransactionRuntime";
 import type { FontActivationRuntimeDeps } from "./runtime/fontActivationTypes";
 import { createFontActivationVerifyRuntime } from "./runtime/fontActivationVerifyRuntime";
 
@@ -27,21 +28,24 @@ export function createFontActivationRuntime(deps: FontActivationRuntimeDeps) {
     deps,
     cleanupRuntime,
   );
-  const sessionRuntime = createFontActivationSessionRuntime(
+  const transactionRuntime = createFontActivationTransactionRuntime(
     deps,
     traceRuntime,
     verifyRuntime,
     installStatusRuntime,
-    cleanupRuntime,
     copyRuntime,
     compensationRuntime,
   );
-  const batchRuntime = createFontActivationBatchRuntime(
+  const sessionRuntime = createFontActivationSessionRuntime(
     deps,
-    traceRuntime,
     installStatusRuntime,
     cleanupRuntime,
-    copyRuntime,
+    transactionRuntime,
+  );
+  const batchRuntime = createFontActivationBatchRuntime(
+    deps,
+    cleanupRuntime,
+    transactionRuntime,
   );
 
   async function cleanupTemporaryActiveFontsUntilEmpty(
