@@ -2,11 +2,11 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.2
+- 文档版本：1.3
 - 建立日期：2026-09-02
 - Stage 分支：`stage/02-font-path-boundaries`
 - 起始提交：`0c62b2ef49934e2d5aca2b040353b8e09b972618`
-- 当前 Atomic Task：AT-2.1 至 AT-2.2 已完成；AT-2.3 待开始
+- 当前 Atomic Task：AT-2.1 至 AT-2.3 已完成；AT-2.4 待开始
 - 前置阶段：Stage 1 自动门禁已完成；Windows 系统集成矩阵仍是外部验收项
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
 
@@ -95,6 +95,7 @@ flowchart TD
 - `authorizePhysicalFolderRename`：watched root 内部目录，不允许直接重命名根。
 - `authorizeFontMoveSource`：watched root 内、允许扩展名、普通文件且有主进程索引身份。
 - `authorizeFontMoveTarget`：已存在的 watched 目标目录。
+- `authorizeFontMoveDestination`：移动副作用后的普通字体仍位于 watched root；不要求旧索引已经提前认识新路径。
 - `authorizeManagedFontDelete`：应用自有目录中的普通字体；文件命名和注册表身份仍由 AT-2.4 叠加验证。
 
 ## 5. 权威根与操作矩阵
@@ -209,7 +210,7 @@ flowchart TD
 
 ### AT-2.3 收紧物理文件夹与字体移动 IPC
 
-状态：阻塞于 AT-2.2。
+状态：已完成。
 
 预期范围：
 
@@ -220,22 +221,48 @@ flowchart TD
 
 执行要求：
 
-- `create` 的 parent 与 `move` 的 target 必须调用对应 watched-directory 授权入口。
-- `rename` 只允许 watched root 内部目录，不允许直接重命名 root；新名称继续走 Windows 名称校验。
-- 移动源必须由主进程索引身份解析，且真实普通字体仍在 watched root 内。
-- 不读取 renderer 自报的根集合；目标不能落入相似前缀、其他盘符或其他 UNC share。
-- 在取得 lease lock 后、执行 rename/copy/unlink 前重新授权 source/target；操作后对新真实路径复核并触发既有索引对账。
-- symlink/junction 或目录替换导致边界变化时停止副作用并返回可重试失败。
-- 本任务只收紧边界；跨卷部分成功语义留给 Stage 3，不混入本提交。
-- P6/P7 反转为正确性锁并进入长期门禁。
+- [x] `create` 的 parent 与 `move` 的 target 调用对应 watched-directory 授权入口。
+- [x] `rename` 只允许 watched root 内部目录，不允许直接重命名 root；新名称继续走 Windows 名称校验。
+- [x] 移动源由主进程索引身份解析，且真实普通字体仍在 watched root 内。
+- [x] 不读取 renderer 自报的根集合；相似前缀、根外真实目标和越界目录链接均拒绝。
+- [x] create/rename/single move/batch move 的 lease lock 均由授权 watched root 锚定，避免根级资源把 `.hfm-locks` 写到根外。
+- [x] 在取得 lease lock 后、执行 mkdir/rename/copy/unlink 前重新授权 source/target；跨卷 copy 完成后在 unlink 源文件前再次验证目标普通字体。
+- [x] 操作后复核新真实路径，并由主进程使用授权结果中的 root 身份安排既有 watched-root 索引对账。
+- [x] symlink/junction 或等待锁期间的目录/文件替换导致身份变化时停止后续副作用并返回明确的可重试失败。
+- [x] 保留既有跨卷 copy/unlink 语义，部分成功提交协议仍留给 Stage 3。
+- [x] P6/P7 反转为正确性锁并成为第 71 项长期诊断；阶段观察只剩 P8。
+
+实际落地链路：
+
+```mermaid
+flowchart TD
+  A["renderer IPC 候选路径"] --> B["中央窄权限预授权"]
+  B -->|"通过"| C["授权根锚定 lease lock"]
+  B -->|"拒绝"| X["无文件副作用"]
+  C --> D["锁内重取 roots 与索引身份"]
+  D -->|"身份稳定"| E["mkdir / rename / copy / unlink"]
+  D -->|"边界变化"| X
+  E --> F["新真实路径与普通字体复核"]
+  F --> G["主进程安排 watched-root 对账"]
+  F -->|"复核失败"| H["返回可重试失败"]
+  H --> G
+  G --> I["返回真实操作结果"]
+```
+
+实施记录：
+
+- `fontPathAuthorizationRuntime.ts` 为授权文件/目录返回只用于本次操作比较的真实路径与根身份键，并增加移动后目标复核入口；这些字段不是可跨调用缓存的能力票据。
+- `physicalFolders.ts` 对 create、rename、单项 move 和批量 move 统一执行预授权、授权根锚定锁、锁内身份复核、文件副作用、操作后复核与主进程索引对账。
+- 跨卷 fallback 在 rename 返回 `EXDEV` 后仍使用原有 copy/unlink；但 copy 前重新授权，copy 后且 unlink 前确认源、目标目录和已复制普通字体仍在授权边界内。
+- 红色门禁先在旧实现上以任意 renderer parent 成功 mkdir 失败；修复后合法创建/重命名/单项和批量移动保持成功，未索引源、非字体、相似前缀、根外链接、锁内替换及操作后复核失败均有副作用与对账断言。
 
 硬门禁：任意 renderer parent、未索引源、非字体源、相似前缀目标、越界 junction 均不能产生 mkdir/rename/copy/unlink。
 
-提交建议：`security: 收紧物理字体操作路径边界`
+提交：`security: 收紧物理字体操作路径边界`
 
 ### AT-2.4 收紧托管字体卸载
 
-状态：阻塞于 AT-2.3。
+状态：待开始；前置 AT-2.3 已完成。
 
 预期范围：
 
@@ -318,6 +345,17 @@ Stage 2 起点快照：
 
 每个 Stage 2 Atomic Task 都必须记录是否触碰这些文件、是否新增耦合以及编排契约结果。发现本任务引入的新耦合必须当场收回；既有拆分机会只更新 Stage 4/5/6 审计，不在安全修复中机械搬迁。
 
+AT-2.3 再审计结果：
+
+| 文件 | AT-2.2 后 | AT-2.3 后 | 本任务变化 | 拆分判断 |
+| --- | ---: | ---: | --- | --- |
+| `src/main/index.ts` | 2045 | 2056 | 仅解构 5 个窄授权函数并注入 1 个 watched-root 对账适配器；无路径、锁或错误映射算法 | Stage 4 的 Core/Data/Mutation/Operations/Application 五段组合边界仍成立，没有新增隐藏 owner |
+| `rustCoreWorkerRuntime.ts` | 2994 | 2994 | 未修改 | Stage 5 的 contracts/payload/transport/clients/facade 顺序不变 |
+| `App.tsx` | 1397 | 1397 | 未修改 | Stage 6 仍应先消除视图边界 `any`，再按状态所有权提控制器 |
+| `AppRootView.tsx` | 386 / 169 个平铺属性 | 386 / 169 个平铺属性 | 未修改 | 六组强类型 view model 目标不变，不能直接再提 God Hook |
+
+`physicalFolders.ts` 因本任务完整承载授权事务由 396 行增至 614 行。它不是三大原始编排文件，但 Stage 3 重写跨卷提交协议时应把“字体移动事务”作为独立领域 owner 提取，目录树读取与 create/rename 不随之搬迁；本任务不提前制造兼容 facade 或双架构。
+
 ## 12. Stage 2 退出条件
 
 - [ ] AT-2.1 至 AT-2.4 各有独立提交并全部通过硬门禁。
@@ -334,3 +372,4 @@ Stage 2 起点快照：
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-02 | AT-2.1 | 本提交 | 红色诊断已复现；P0.1-P0.5、TypeScript、69/69 长期诊断、编排契约和 Electron/Vite 三端 build/混淆通过 | 当前环境非 Windows；真实 UNC、长路径和 junction 矩阵待补 | 中央策略已完成；未接入的协议/预览、物理操作和托管卸载仍由 AT-2.2 至 AT-2.4 处理，P1-P8 阶段观察保留 |
 | 2026-09-02 | AT-2.2 | 本提交 | 红色诊断已复现；P1-P5、TypeScript、70/70 长期诊断、I/O deadline、编排契约和 Electron/Vite 三端 build/混淆通过 | 当前环境非 Windows；系统/用户/临时字体以可移植夹具验证，真实 UNC、长路径和 junction 矩阵待补 | 协议与预览读取已收紧；P6-P8 仍是明确观察，物理操作和托管卸载由 AT-2.3/2.4 处理 |
+| 2026-09-03 | AT-2.3 | 本提交 | 红色诊断已复现；P6/P7、TypeScript、71/71 长期诊断、lease lock、索引对账、编排契约和 Electron/Vite 三端 build/混淆通过 | 当前环境非 Windows；真实 UNC、跨盘、长路径和操作中 junction 替换待实机补充 | 物理操作已收紧；P8 仍是明确观察并由 AT-2.4 处理；Rust 未改且未在本环境重建 |

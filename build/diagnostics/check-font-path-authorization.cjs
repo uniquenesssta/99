@@ -8,9 +8,9 @@ const root = path.resolve(__dirname, '..', '..')
 const stagedObservation = process.argv.includes('--observe-destructive')
 const correctnessCase = process.argv.find((arg) => arg.startsWith('--case='))?.slice('--case='.length) || ''
 
-const validCorrectnessCases = new Set(['POLICY', 'READ'])
+const validCorrectnessCases = new Set(['POLICY', 'READ', 'PHYSICAL'])
 if ((stagedObservation ? 1 : 0) + (correctnessCase ? 1 : 0) !== 1 || (correctnessCase && !validCorrectnessCases.has(correctnessCase))) {
-  console.error('[diagnostics:font-path-authorization] use exactly one selector: --case=POLICY, --case=READ, or --observe-destructive')
+  console.error('[diagnostics:font-path-authorization] use exactly one selector: --case=POLICY, --case=READ, --case=PHYSICAL, or --observe-destructive')
   process.exit(1)
 }
 
@@ -91,15 +91,21 @@ function fontItem(id, filePath) {
   }
 }
 
-function loadPhysicalFolderModule() {
+function loadPhysicalFolderModule(lockHooks = {}) {
   return loadTypeScriptModule(
     'src/main/folders/physicalFolders.ts',
     (id) => {
       if (id === '../cache/cachePaths') return { isIgnoredInternalDirectoryName: () => false }
       if (id === '../storage/runtime/sharedLeaseLockRuntime') {
         return {
-          withSharedLeaseLock: async (_options, task) => task(),
-          withSharedLeaseLocks: async (_options, task) => task(),
+          withSharedLeaseLock: async (options, task) => {
+            await lockHooks.beforeSingle?.(options)
+            return task()
+          },
+          withSharedLeaseLocks: async (options, task) => {
+            await lockHooks.beforeMany?.(options)
+            return task()
+          },
         }
       }
       return require(id)
@@ -107,39 +113,201 @@ function loadPhysicalFolderModule() {
   )
 }
 
-async function caseP6(context) {
-  const physicalModule = loadPhysicalFolderModule()
-  const actions = physicalModule.createPhysicalFolderActions({
-    ensureWindows: () => undefined,
-    resolveExistingFontFilePath: async (rawPath) => rawPath,
-    windowsFontsDir: () => path.join(context.tempRoot, 'system-fonts'),
-    appendStartupLog: () => undefined,
-    fontExtensions,
-  })
-  const created = await actions.createPhysicalFolder(context.untrustedRoot, 'renderer-created')
-  assert('P6', created === path.join(context.untrustedRoot, 'renderer-created'), `unexpected created path: ${created}`)
-  assert('P6', fs.statSync(created).isDirectory(), 'known defect changed: raw renderer parent no longer creates a directory')
-  return 'raw renderer parent path creates a directory outside every configured font root'
+function authorizationDenied(message = '文件系统状态已变化，请重试。') {
+  return { ok: false, reason: 'outside-authorized-roots', message }
 }
 
-async function caseP7(context) {
-  const physicalModule = loadPhysicalFolderModule()
-  const actions = physicalModule.createPhysicalFolderActions({
-    ensureWindows: () => undefined,
-    resolveExistingFontFilePath: async (rawPath) => rawPath,
-    windowsFontsDir: () => path.join(context.tempRoot, 'system-fonts'),
-    appendStartupLog: () => undefined,
-    fontExtensions,
+async function runPhysicalCorrectness() {
+  const boundaryModule = loadTypeScriptModule('src/main/path/pathBoundaryPolicy.ts')
+  const authorizationModule = loadTypeScriptModule(
+    'src/main/path/fontPathAuthorizationRuntime.ts',
+    (id) => (id === './pathBoundaryPolicy' ? boundaryModule : require(id)),
+  )
+  const observedLockOptions = []
+  const physicalModule = loadPhysicalFolderModule({
+    beforeSingle: async (options) => { observedLockOptions.push(options) },
+    beforeMany: async (options) => { observedLockOptions.push(options) },
   })
-  const result = await actions.moveFontFileToFolder(fontItem('renderer-move', context.untrustedSource), context.untrustedTarget)
-  const destination = path.join(context.untrustedTarget, path.basename(context.untrustedSource))
-  assert('P7', result.ok === true && result.newPath === destination, `known defect changed: arbitrary move failed: ${result.message}`)
-  assert('P7', !fs.existsSync(context.untrustedSource) && fs.readFileSync(destination, 'utf8') === 'move-me', 'known defect changed: arbitrary move side effect did not occur')
+  const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'hfm-font-physical-'))
+  const watchedRoot = path.join(tempRoot, 'watched')
+  const protectedRoot = path.join(tempRoot, 'protected-root')
+  const sourceFolder = path.join(watchedRoot, 'source')
+  const targetFolder = path.join(watchedRoot, 'target')
+  const outsideRoot = path.join(tempRoot, 'outside')
+  const outsideTarget = path.join(outsideRoot, 'target')
+  const similarTarget = path.join(`${watchedRoot}-copy`, 'target')
+  const escapingTarget = path.join(watchedRoot, 'escape-target')
+  const indexedRealPaths = new Set()
+  const reconciledRoots = []
 
-  const rejected = await actions.moveFontFileToFolder(fontItem('non-font-move', context.nonFontSource), context.untrustedTarget)
-  assert('P7', rejected.ok === false, 'non-font source unexpectedly moved')
-  assert('P7', fs.existsSync(context.nonFontSource), 'rejected non-font source was changed')
-  return 'font-extension source moves across untrusted roots; non-font rejection remains side-effect free'
+  try {
+    await Promise.all([
+      fs.promises.mkdir(sourceFolder, { recursive: true }),
+      fs.promises.mkdir(targetFolder, { recursive: true }),
+      fs.promises.mkdir(protectedRoot),
+      fs.promises.mkdir(outsideTarget, { recursive: true }),
+      fs.promises.mkdir(similarTarget, { recursive: true }),
+    ])
+    await fs.promises.symlink(outsideTarget, escapingTarget, 'dir')
+
+    const sourcePaths = {
+      legitimate: path.join(sourceFolder, 'legitimate.ttf'),
+      unindexed: path.join(sourceFolder, 'unindexed.otf'),
+      outside: path.join(outsideRoot, 'outside.ttc'),
+      prefixTarget: path.join(sourceFolder, 'prefix-target.otc'),
+      escapeTarget: path.join(sourceFolder, 'escape-target.ttf'),
+      lockChanged: path.join(sourceFolder, 'lock-changed.ttf'),
+      lockTargetChanged: path.join(sourceFolder, 'lock-target-changed.ttf'),
+      postVerify: path.join(sourceFolder, 'post-verify.ttf'),
+      batchA: path.join(sourceFolder, 'batch-a.ttf'),
+      batchB: path.join(sourceFolder, 'batch-b.otf'),
+      nonFont: path.join(sourceFolder, 'notes.txt'),
+    }
+    await Promise.all(Object.entries(sourcePaths).map(([name, filePath]) =>
+      fs.promises.writeFile(filePath, name === 'nonFont' ? 'not-font' : `font-${name}`)
+    ))
+    for (const [name, filePath] of Object.entries(sourcePaths)) {
+      if (name !== 'unindexed' && name !== 'outside' && name !== 'nonFont') {
+        indexedRealPaths.add(await fs.promises.realpath(filePath))
+      }
+    }
+
+    const policy = authorizationModule.createFontPathAuthorizationRuntime({
+      fontExtensions,
+      readRoots: () => [watchedRoot],
+      watchedRoots: () => [watchedRoot, protectedRoot],
+      appOwnedRoots: () => [],
+      isMainProcessIndexedFont: async ({ realPath }) => indexedRealPaths.has(realPath),
+    })
+    const deps = {
+      ensureWindows: () => undefined,
+      resolveExistingFontFilePath: async (rawPath) => rawPath,
+      windowsFontsDir: () => path.join(tempRoot, 'system-fonts'),
+      appendStartupLog: () => undefined,
+      fontExtensions,
+      ...policy,
+      reconcileWatchedRoot: async (rootPath) => { reconciledRoots.push(rootPath) },
+    }
+    const actions = physicalModule.createPhysicalFolderActions(deps)
+
+    const outsideCreated = path.join(outsideRoot, 'renderer-created')
+    await expectReject('P6', () => actions.createPhysicalFolder(outsideRoot, 'renderer-created'), '授权')
+    assert('P6', !fs.existsSync(outsideCreated), 'arbitrary renderer parent caused mkdir outside watched roots')
+
+    const escapedCreated = path.join(outsideTarget, 'escaped-created')
+    await expectReject('P6', () => actions.createPhysicalFolder(escapingTarget, 'escaped-created'), '授权')
+    assert('P6', !fs.existsSync(escapedCreated), 'root-escaping directory link caused mkdir outside watched roots')
+
+    const escapedRename = await actions.renamePhysicalFolder(escapingTarget, 'escaped-renamed')
+    assert('P6', escapedRename.ok === false && fs.lstatSync(escapingTarget).isSymbolicLink(), 'root-escaping directory link was renamed')
+
+    const created = await actions.createPhysicalFolder(watchedRoot, 'created-safe')
+    assert('P6', created === path.join(watchedRoot, 'created-safe') && fs.statSync(created).isDirectory(), 'authorized folder create failed')
+
+    const rootRename = await actions.renamePhysicalFolder(protectedRoot, 'renamed-root')
+    assert('P6', rootRename.ok === false && fs.statSync(protectedRoot).isDirectory(), 'watched root itself was renamed')
+
+    const renameSource = await actions.createPhysicalFolder(watchedRoot, 'rename-source')
+    const renamed = await actions.renamePhysicalFolder(renameSource, 'rename-safe')
+    assert('P6', renamed.ok === true && fs.statSync(path.join(watchedRoot, 'rename-safe')).isDirectory(), 'authorized child rename failed')
+
+    let createAuthorizationCalls = 0
+    const raceActions = loadPhysicalFolderModule().createPhysicalFolderActions({
+      ...deps,
+      authorizePhysicalFolderParent: async (rawPath) => {
+        createAuthorizationCalls += 1
+        if (createAuthorizationCalls === 2) return authorizationDenied()
+        return policy.authorizePhysicalFolderParent(rawPath)
+      },
+    })
+    await expectReject('P6', () => raceActions.createPhysicalFolder(watchedRoot, 'lock-race-create'), '重试')
+    assert('P6', !fs.existsSync(path.join(watchedRoot, 'lock-race-create')), 'lock-time parent authorization failure still caused mkdir')
+
+    const renameRaceSource = await actions.createPhysicalFolder(watchedRoot, 'lock-race-rename')
+    let renameAuthorizationCalls = 0
+    const renameRaceActions = loadPhysicalFolderModule().createPhysicalFolderActions({
+      ...deps,
+      authorizePhysicalFolderRename: async (rawPath) => {
+        renameAuthorizationCalls += 1
+        if (renameAuthorizationCalls === 2) return authorizationDenied()
+        return policy.authorizePhysicalFolderRename(rawPath)
+      },
+    })
+    const renameRace = await renameRaceActions.renamePhysicalFolder(renameRaceSource, 'lock-race-renamed')
+    assert('P6', renameRace.ok === false && renameRace.message.includes('重试'), 'lock-time rename replacement did not return retryable failure')
+    assert('P6', fs.existsSync(renameRaceSource) && !fs.existsSync(path.join(watchedRoot, 'lock-race-renamed')), 'lock-time rename authorization failure still caused rename')
+    assert('P6', reconciledRoots.includes(watchedRoot), 'successful folder mutation did not request watched-root reconciliation')
+
+    const legitimateMove = await actions.moveFontFileToFolder(fontItem('legitimate', sourcePaths.legitimate), targetFolder)
+    assert('P7', legitimateMove.ok === true && legitimateMove.newPath && fs.existsSync(legitimateMove.newPath), 'authorized indexed font move failed')
+
+    const unindexedMove = await actions.moveFontFileToFolder(fontItem('unindexed', sourcePaths.unindexed), targetFolder)
+    assert('P7', unindexedMove.ok === false && fs.existsSync(sourcePaths.unindexed), 'unindexed watched font caused rename/copy/unlink')
+
+    const outsideMove = await actions.moveFontFileToFolder(fontItem('outside', sourcePaths.outside), targetFolder)
+    assert('P7', outsideMove.ok === false && fs.existsSync(sourcePaths.outside), 'outside source caused rename/copy/unlink')
+
+    const prefixMove = await actions.moveFontFileToFolder(fontItem('prefix-target', sourcePaths.prefixTarget), similarTarget)
+    assert('P7', prefixMove.ok === false && fs.existsSync(sourcePaths.prefixTarget), 'similar-prefix target caused rename/copy/unlink')
+
+    const escapedMove = await actions.moveFontFileToFolder(fontItem('escape-target', sourcePaths.escapeTarget), escapingTarget)
+    assert('P7', escapedMove.ok === false && fs.existsSync(sourcePaths.escapeTarget), 'root-escaping target link caused rename/copy/unlink')
+
+    const nonFontMove = await actions.moveFontFileToFolder(fontItem('non-font', sourcePaths.nonFont), targetFolder)
+    assert('P7', nonFontMove.ok === false && fs.existsSync(sourcePaths.nonFont), 'non-font source caused rename/copy/unlink')
+
+    let moveSourceAuthorizationCalls = 0
+    const moveRaceActions = loadPhysicalFolderModule().createPhysicalFolderActions({
+      ...deps,
+      authorizeFontMoveSource: async (rawPath) => {
+        moveSourceAuthorizationCalls += 1
+        if (moveSourceAuthorizationCalls === 2) return authorizationDenied()
+        return policy.authorizeFontMoveSource(rawPath)
+      },
+    })
+    const raceMove = await moveRaceActions.moveFontFileToFolder(fontItem('lock-changed', sourcePaths.lockChanged), targetFolder)
+    assert('P7', raceMove.ok === false && raceMove.message.includes('重试'), 'lock-time source replacement did not return retryable failure')
+    assert('P7', fs.existsSync(sourcePaths.lockChanged), 'lock-time source authorization failure still caused rename/copy/unlink')
+
+    let moveTargetAuthorizationCalls = 0
+    const targetRaceActions = loadPhysicalFolderModule().createPhysicalFolderActions({
+      ...deps,
+      authorizeFontMoveTarget: async (rawPath) => {
+        moveTargetAuthorizationCalls += 1
+        if (moveTargetAuthorizationCalls === 2) return authorizationDenied()
+        return policy.authorizeFontMoveTarget(rawPath)
+      },
+    })
+    const targetRaceMove = await targetRaceActions.moveFontFileToFolder(fontItem('lock-target-changed', sourcePaths.lockTargetChanged), targetFolder)
+    assert('P7', targetRaceMove.ok === false && targetRaceMove.message.includes('重试'), 'lock-time target replacement did not return retryable failure')
+    assert('P7', fs.existsSync(sourcePaths.lockTargetChanged), 'lock-time target authorization failure still caused rename/copy/unlink')
+
+    const reconciliationCountBeforePostFailure = reconciledRoots.length
+    const postVerifyActions = loadPhysicalFolderModule().createPhysicalFolderActions({
+      ...deps,
+      authorizeFontMoveDestination: async () => authorizationDenied(),
+    })
+    const postVerifyMove = await postVerifyActions.moveFontFileToFolder(fontItem('post-verify', sourcePaths.postVerify), targetFolder)
+    const postVerifyDestination = path.join(targetFolder, path.basename(sourcePaths.postVerify))
+    assert('P7', postVerifyMove.ok === false && postVerifyMove.message.includes('重试'), 'post-move boundary change did not return retryable failure')
+    assert('P7', !fs.existsSync(sourcePaths.postVerify) && fs.existsSync(postVerifyDestination), 'post-verification fixture did not commit the expected rename before failing closed')
+    assert('P7', reconciledRoots.length > reconciliationCountBeforePostFailure, 'post-verification failure did not trigger authoritative root reconciliation')
+
+    const batchMove = await actions.moveFontFilesToFolder([
+      fontItem('batch-a', sourcePaths.batchA),
+      fontItem('batch-b', sourcePaths.batchB),
+    ], targetFolder)
+    assert('P7', batchMove.ok === true && batchMove.movedCount === 2, 'authorized indexed batch move failed')
+    assert('P7', reconciledRoots.filter((rootPath) => rootPath === watchedRoot).length >= 3, 'physical moves did not request authoritative root reconciliation')
+    assert('P7', observedLockOptions.length >= 5, 'physical mutations did not acquire the expected lease locks')
+    assert('P7', observedLockOptions.every((options) => Array.isArray(options.roots) && options.roots.length > 0), 'lease lock storage was not anchored to authoritative watched roots')
+
+    console.log('[diagnostics:font-path-authorization] CORRECTNESS_LOCK P6: create/rename use watched-directory authority, forbid root rename, reauthorize under lock, and reconcile authoritative roots')
+    console.log('[diagnostics:font-path-authorization] CORRECTNESS_LOCK P7: single/batch moves require indexed watched sources, authorized real targets, lock-time reauthorization, post-verification, and reconciliation')
+    console.log('[diagnostics:font-path-authorization] physical correctness passed: cases=2')
+  } finally {
+    await fs.promises.rm(tempRoot, { recursive: true, force: true })
+  }
 }
 
 async function caseP8() {
@@ -325,6 +493,9 @@ async function runPolicyCorrectness() {
     assertResult('P0.5', await policy.authorizeFontMoveSource(watchedFont), true)
     assertResult('P0.5', await policy.authorizeFontMoveSource(unindexedWatchedFont), false, 'not-main-process-indexed')
     assertResult('P0.5', await policy.authorizeFontMoveSource(indexedFont), false, 'outside-authorized-roots')
+    assertResult('P0.5', await policy.authorizeFontMoveDestination(watchedFont), true)
+    assertResult('P0.5', await policy.authorizeFontMoveDestination(unindexedWatchedFont), true)
+    assertResult('P0.5', await policy.authorizeFontMoveDestination(indexedFont), false, 'outside-authorized-roots')
     assertResult('P0.5', await policy.authorizeManagedFontDelete(managedFont), true)
     assertResult('P0.5', await policy.authorizeManagedFontDelete(managedPrefixCollision), false, 'outside-authorized-roots')
 
@@ -566,29 +737,6 @@ async function runReadCorrectness() {
   }
 }
 
-async function createContext() {
-  const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'hfm-path-auth-'))
-  const untrustedRoot = path.join(tempRoot, 'renderer-root')
-  const untrustedTarget = path.join(tempRoot, 'renderer-target')
-  await Promise.all([
-    fs.promises.mkdir(untrustedRoot),
-    fs.promises.mkdir(untrustedTarget),
-  ])
-
-  const untrustedSource = path.join(tempRoot, 'renderer-source.ttf')
-  const nonFontSource = path.join(tempRoot, 'renderer-source.txt')
-  await fs.promises.writeFile(untrustedSource, 'move-me')
-  await fs.promises.writeFile(nonFontSource, 'do-not-move')
-
-  return {
-    tempRoot,
-    untrustedRoot,
-    untrustedTarget,
-    untrustedSource,
-    nonFontSource,
-  }
-}
-
 async function main() {
   if (correctnessCase === 'POLICY') {
     await runPolicyCorrectness()
@@ -598,27 +746,24 @@ async function main() {
     await runReadCorrectness()
     return
   }
+  if (correctnessCase === 'PHYSICAL') {
+    await runPhysicalCorrectness()
+    return
+  }
 
-  const context = await createContext()
   const cases = [
-    ['P6', 'KNOWN_DEFECT', () => caseP6(context)],
-    ['P7', 'KNOWN_DEFECT', () => caseP7(context)],
     ['P8', 'KNOWN_DEFECT', caseP8],
   ]
   let defects = 0
   let locks = 0
-  try {
-    for (const [caseId, kind, run] of cases) {
-      const message = await run()
-      if (kind === 'KNOWN_DEFECT') defects += 1
-      else locks += 1
-      console.log(`[diagnostics:font-path-authorization] ${kind} ${caseId}: ${message}`)
-    }
-    console.log(`[diagnostics:font-path-authorization] WINDOWS_PENDING: drive-letter casing, UNC/device paths, junctions, and Windows separator semantics require a Windows runner`)
-    console.log(`[diagnostics:font-path-authorization] destructive observations retained: knownDefects=${defects}, behaviorLocks=${locks}, windowsPending=1, cases=${cases.length}`)
-  } finally {
-    await fs.promises.rm(context.tempRoot, { recursive: true, force: true })
+  for (const [caseId, kind, run] of cases) {
+    const message = await run()
+    if (kind === 'KNOWN_DEFECT') defects += 1
+    else locks += 1
+    console.log(`[diagnostics:font-path-authorization] ${kind} ${caseId}: ${message}`)
   }
+  console.log(`[diagnostics:font-path-authorization] WINDOWS_PENDING: drive-letter casing, UNC/device paths, junctions, and Windows separator semantics require a Windows runner`)
+  console.log(`[diagnostics:font-path-authorization] destructive observations retained: knownDefects=${defects}, behaviorLocks=${locks}, windowsPending=1, cases=${cases.length}`)
 }
 
 main().catch((error) => {

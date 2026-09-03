@@ -32,17 +32,21 @@ export type FontPathAuthorizationResult<T> =
 export type AuthorizedFontFile = {
   requestedPath: string;
   realPath: string;
+  realComparePath: string;
   ioPath: string;
   size: number;
   source: "authorized-root" | "main-process-index";
   rootPath?: string;
+  rootComparePath?: string;
 };
 
 export type AuthorizedFontDirectory = {
   requestedPath: string;
   realPath: string;
+  realComparePath: string;
   ioPath: string;
   rootPath: string;
+  rootComparePath: string;
 };
 
 export type MainProcessIndexedFontIdentity = {
@@ -256,10 +260,12 @@ export function createFontPathAuthorizationRuntime(
         value: {
           requestedPath: file.value.requested.path,
           realPath: file.value.real.path,
+          realComparePath: file.value.real.comparePath,
           ioPath: file.value.real.ioPath,
           size: file.value.size,
           source: "authorized-root",
           rootPath: root.path,
+          rootComparePath: root.comparePath,
         },
       };
     }
@@ -270,6 +276,7 @@ export function createFontPathAuthorizationRuntime(
         value: {
           requestedPath: file.value.requested.path,
           realPath: file.value.real.path,
+          realComparePath: file.value.real.comparePath,
           ioPath: file.value.real.ioPath,
           size: file.value.size,
           source: "main-process-index",
@@ -325,8 +332,10 @@ export function createFontPathAuthorizationRuntime(
       value: {
         requestedPath: resolved.value.requested.path,
         realPath: resolved.value.real.path,
+        realComparePath: resolved.value.real.comparePath,
         ioPath: resolved.value.real.ioPath,
         rootPath: root.path,
+        rootComparePath: root.comparePath,
       },
     };
   }
@@ -357,10 +366,42 @@ export function createFontPathAuthorizationRuntime(
       value: {
         requestedPath: file.value.requested.path,
         realPath: file.value.real.path,
+        realComparePath: file.value.real.comparePath,
         ioPath: file.value.real.ioPath,
         size: file.value.size,
         source: "authorized-root",
         rootPath: root.path,
+        rootComparePath: root.comparePath,
+      },
+    };
+  }
+
+  async function authorizeFontMoveDestination(
+    rawPath: unknown,
+  ): Promise<FontPathAuthorizationResult<AuthorizedFontFile>> {
+    const file = await resolveFontFile(rawPath);
+    if (!file.ok) return file;
+    const root = containingRoot(
+      file.value.real,
+      await resolveAuthorizedRoots(options.watchedRoots),
+    );
+    if (!root) {
+      return denied(
+        "outside-authorized-roots",
+        "移动后的字体不属于当前 watched root。",
+      );
+    }
+    return {
+      ok: true,
+      value: {
+        requestedPath: file.value.requested.path,
+        realPath: file.value.real.path,
+        realComparePath: file.value.real.comparePath,
+        ioPath: file.value.real.ioPath,
+        size: file.value.size,
+        source: "authorized-root",
+        rootPath: root.path,
+        rootComparePath: root.comparePath,
       },
     };
   }
@@ -385,10 +426,12 @@ export function createFontPathAuthorizationRuntime(
       value: {
         requestedPath: file.value.requested.path,
         realPath: file.value.real.path,
+        realComparePath: file.value.real.comparePath,
         ioPath: file.value.real.ioPath,
         size: file.value.size,
         source: "authorized-root",
         rootPath: root.path,
+        rootComparePath: root.comparePath,
       },
     };
   }
@@ -402,6 +445,7 @@ export function createFontPathAuthorizationRuntime(
     authorizeFontMoveSource,
     authorizeFontMoveTarget: (rawPath: unknown) =>
       authorizeDirectory(rawPath, options.watchedRoots, true),
+    authorizeFontMoveDestination,
     authorizeManagedFontDelete,
   };
 }

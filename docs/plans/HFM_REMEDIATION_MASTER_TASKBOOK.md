@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.6
+- 文档版本：1.7
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 2「字体读取与破坏性操作的路径边界」执行中；AT-2.1 至 AT-2.2 已完成，AT-2.3 待开始
+- 当前阶段：Stage 2「字体读取与破坏性操作的路径边界」执行中；AT-2.1 至 AT-2.3 已完成，AT-2.4 待开始
 - 当前阶段任务书：[`HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md`](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -224,6 +224,8 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 
 #### AT-2.3 收紧物理文件夹和字体移动 IPC
 
+状态：已完成。create/rename/single move/batch move 已统一使用主进程窄授权、授权根锚定 lease lock、锁内复核、操作后复核和 watched-root 索引对账；P6/P7 成为第 71 项长期诊断，P8 留给 AT-2.4。
+
 - 主进程重新解析当前 watched roots，不信任 renderer 传入的根集合。
 - 创建/重命名目标必须位于授权根下；移动源必须是已索引的允许字体，目标必须是授权目录。
 - 操作前后均校验真实路径；对竞态中的替换/junction 变化返回失败。
@@ -231,6 +233,8 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 硬门禁：相似前缀目录、跨根越界、非字体源和目录替换均不能产生写操作。
 
 #### AT-2.4 收紧托管字体卸载
+
+状态：待开始；前置 AT-2.3 已完成。
 
 - 同时验证规范化真实路径位于应用自有字体目录，文件名满足应用生成规则，并能与注册表记录对应。
 - 任何一项不满足时拒绝删除，不以 basename 前缀作为唯一所有权证明。
@@ -242,6 +246,7 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 
 #### AT-3.1 重写跨卷移动提交协议
 
+- 先把 AT-2.3 后已达 614 行的 `physicalFolders.ts` 中“字体移动事务”提取为独立 owner；目录树读取与 create/rename 保持原职责，不建立只转发万能依赖的空壳。
 - 在目标目录写入唯一临时文件，完成 copy、flush/close 和尺寸/必要摘要校验后原子 rename。
 - 目标提交成功后再删除源文件。
 - 源删除失败时返回“目标已提交、源仍存在”的部分成功状态，触发索引对账；禁止报告完全成功。
@@ -483,7 +488,7 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 | --- | --- | --- | --- | --- |
 | Stage 0 | 完成 | 本阶段分支（AT-0.1 至 AT-0.4） | `npm run verify` 通过，64/64 长期诊断；事务观察 8/8、路径观察 8/8；三大编排契约通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 专属矩阵作为外部验收项保留 |
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
-| Stage 2 | 执行中（AT-2.1 至 AT-2.2 已完成） | 本阶段分支 AT-2.1/2.2 各自独立提交 | P0.1-P0.5、P1-P5、`npm run verify` 70/70、I/O deadline、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；物理操作和托管卸载分别留给 AT-2.3/2.4；Windows 真实 UNC/长路径/junction 为外部验收项 |
+| Stage 2 | 执行中（AT-2.1 至 AT-2.3 已完成） | 本阶段分支 AT-2.1/2.2/2.3 各自独立提交 | P0.1-P0.5、P1-P7、`npm run verify` 71/71、lease lock、索引对账、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；托管卸载留给 AT-2.4；Windows 真实 UNC/跨盘/长路径/junction 为外部验收项 |
 | Stage 3 | 阻塞于 Stage 2 | - | - | - |
 | Stage 4 | 阻塞于 Stage 3 | - | - | - |
 | Stage 5 | 阻塞于 Stage 3 | - | - | - |

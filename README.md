@@ -56,6 +56,7 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-03：Stage 2 AT-2.3 将物理目录 create/rename、单项和批量字体 move 统一接入主进程窄路径授权：renderer 路径先由当前 watched roots 与主进程索引身份解析，lease lock 由授权根锚定，锁内及 rename/copy/unlink 前重新授权，跨卷 copy 后在 unlink 前验证目标普通字体，操作后复核新真实路径并由主进程安排根索引对账。任意 parent、watched root 重命名、未索引/非字体源、相似前缀、根外链接和锁内替换均拒绝；P6/P7 已成为第 71 项长期门禁，`npm run verify` 与 Electron/Vite 三端 build/混淆通过，P8 托管卸载仍留给 AT-2.4。巨型编排复审确认 `index.ts` 只增加窄组合 11 行，Rust Worker、`App.tsx`、`AppRootView` 与 115/45/38/10 项公开契约均未漂移；Windows 真实 UNC/跨盘/junction 和未改动 Rust 构建仍为外部验收项。
 - 2026-09-02：Stage 2 AT-2.2 将 `hfm-font://` 与 FontFace 预览数据读取统一接入中央授权：协议只接受一次严格 base64url/百分号解码，拒绝畸形、双重编码、控制字符、非字体、目录、超限和 realpath 越界，两个消费者均只读取授权 `ioPath`。watched、Windows Fonts、当前用户/临时字体与主进程索引例外保持可用，预览授权保留 NAS I/O deadline。P1-P5 已成为第 70 项长期门禁，`npm run verify` 与 Electron/Vite 三端 build/混淆通过；`windowRuntime.ts` 的协议领域逻辑已拆入独立运行时，`index.ts` 只新增窄组合与索引桥，Rust/前端巨型编排文件未改。
 - 2026-09-02：Stage 2 在独立分支 `stage/02-font-path-boundaries` 启动；AT-2.1 建立纯路径组件边界与文件系统授权运行时，统一盘符/UNC/长路径、真实路径、允许字体扩展名、普通文件、80 MiB 上限、主进程索引身份、watched root 和应用自有目录规则，并移除 `fontPathPolicy` 对物理文件操作模块的反向依赖。P0.1-P0.5 已成为第 69 项长期门禁，`npm run verify` 与 Electron/Vite 三端 build/混淆通过；协议/预览、物理操作和托管卸载尚未接入，分别留给 AT-2.2 至 AT-2.4，三大巨型编排文件及公开契约未变。
 - 2026-09-02：Stage 1 AT-1.4 将单项与批量临时激活统一到同一个串行事务所有者：批量层只负责去重、逐项调度、取消、结果汇总和一次最终刷新；提前取消不会进入事务，处理中取消保留已提交项并将未开始项标为可重试取消，混合失败与重试均保留稳定 ID 和真实原因。A1-A8 已全部转为长期正确性门禁，`npm run verify` 增至 68/68 并与 Electron/Vite 三端 build 通过；Stage 1 自动门禁收口，三大巨型编排文件及其公开契约未变，Windows 实机矩阵仍为外部验收项。
