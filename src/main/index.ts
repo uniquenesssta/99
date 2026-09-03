@@ -338,7 +338,6 @@ const { licenseRuntime, featureGateRuntime } = createMainLicenseBootstrap({
 
 const mainWindowAndFontRuntime = createMainWindowAndFontRuntime({
   appName: APP_NAME,
-  BUILD_MARKER,
   fontExtensions: FONT_EXTENSIONS,
   appInstallDir,
   dataRoot,
@@ -351,6 +350,8 @@ const mainWindowAndFontRuntime = createMainWindowAndFontRuntime({
   runRustFontRegistryApply: rustCoreWorkerRuntime.runRustFontRegistryApply,
   runRustFontRegistryDelete: rustCoreWorkerRuntime.runRustFontRegistryDelete,
   runRustFontChangeNotify: rustCoreWorkerRuntime.runRustFontChangeNotify,
+  loadWatchedFontRoots: appWatchedFolders,
+  isMainProcessIndexedFont: mainProcessFontIndexContains,
 });
 
 const {
@@ -367,6 +368,7 @@ const {
   currentUserFontsDir,
   windowsFontsDir,
   resolveExistingFontFilePath,
+  authorizeFontRead,
   missingFontPreviewDataUri,
   loadTemporaryActiveFonts,
   saveTemporaryActiveFonts,
@@ -1158,6 +1160,12 @@ const rootIndexCoordinator = createRootIndexCoordinator({
 const { findFontItemInRootIndexes, queryFontPageFromRootIndexes } =
   rootIndexCoordinator;
 
+async function mainProcessFontIndexContains(identity: {
+  comparePath: string;
+}): Promise<boolean> {
+  return Boolean(await findFontItemInRootIndexes("", identity.comparePath));
+}
+
 async function queryFontPageInLibraryUncached(
   request: FontQueryRequest,
   limit: number,
@@ -1777,6 +1785,7 @@ const {
   loadLibraryShell,
   ensureWindows,
   resolveExistingFontFilePath,
+  authorizeFontRead,
   previewTaskKey,
   completeBackgroundTask,
   skipBackgroundTask,

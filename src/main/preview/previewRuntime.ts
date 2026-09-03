@@ -25,6 +25,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     sha1,
     ensureWindows,
     resolveExistingFontFilePath,
+    authorizeFontRead,
     previewTaskKey,
     completeBackgroundTask,
     skipBackgroundTask,
@@ -78,7 +79,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
 
   const readPreviewFontData = createPreviewFontDataRuntime({
     ensureWindows,
-    resolveExistingFontFilePath,
+    authorizeFontRead,
     withGlobalIo
   })
 

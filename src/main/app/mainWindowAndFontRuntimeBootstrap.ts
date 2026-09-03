@@ -1,10 +1,34 @@
 import { runtimePreloadSource } from "../preload/runtimePreloadSource";
 import { loadErrorHtml } from "../ui/loadErrorPage";
-import { createMainWindowsFontRuntime } from "../windows/mainWindowsFontRuntime";
+import {
+  createMainWindowsFontRuntime,
+  type MainWindowsFontRuntimeOptions,
+} from "../windows/mainWindowsFontRuntime";
+import {
+  createFontPathAuthorizationRuntime,
+  type FontPathRootProvider,
+  type MainProcessIndexedFontIdentity,
+} from "../path/fontPathAuthorizationRuntime";
 import { createProgressEventRuntime } from "./progressEventRuntime";
 import { createWindowRuntime } from "./windowRuntime";
 
-export function createMainWindowAndFontRuntime(deps: any): any {
+export type MainWindowAndFontRuntimeOptions = Omit<
+  MainWindowsFontRuntimeOptions,
+  "dataPath"
+> & {
+  appInstallDir: () => string;
+  dataPath: (...parts: string[]) => string;
+  verboseRendererLogs: boolean;
+  indexProgressMinIntervalMs: number;
+  loadWatchedFontRoots: FontPathRootProvider;
+  isMainProcessIndexedFont: (
+    identity: MainProcessIndexedFontIdentity,
+  ) => boolean | Promise<boolean>;
+};
+
+export function createMainWindowAndFontRuntime(
+  deps: MainWindowAndFontRuntimeOptions,
+) {
   const windowsFontRuntime = createMainWindowsFontRuntime({
     appName: deps.appName,
     fontExtensions: deps.fontExtensions,
@@ -18,6 +42,18 @@ export function createMainWindowAndFontRuntime(deps: any): any {
     runRustFontChangeNotify: deps.runRustFontChangeNotify,
   });
 
+  const fontPathAuthorizationRuntime = createFontPathAuthorizationRuntime({
+    fontExtensions: deps.fontExtensions,
+    readRoots: async () => [
+      ...(await deps.loadWatchedFontRoots()),
+      windowsFontRuntime.windowsFontsDir(),
+      windowsFontRuntime.currentUserFontsDir(),
+    ],
+    watchedRoots: deps.loadWatchedFontRoots,
+    appOwnedRoots: () => [windowsFontRuntime.currentUserFontsDir()],
+    isMainProcessIndexedFont: deps.isMainProcessIndexedFont,
+  });
+
   const windowRuntime = createWindowRuntime({
     appName: deps.appName,
     appInstallDir: deps.appInstallDir,
@@ -26,8 +62,7 @@ export function createMainWindowAndFontRuntime(deps: any): any {
     loadErrorHtml,
     appendLog: deps.appendStartupLog,
     verboseRendererLogs: deps.verboseRendererLogs,
-    resolveExistingFontFilePath: (filePath) =>
-      windowsFontRuntime.resolveExistingFontFilePath(filePath),
+    authorizeFontRead: fontPathAuthorizationRuntime.authorizeFontRead,
   });
 
   const progressEventRuntime = createProgressEventRuntime({
@@ -39,5 +74,6 @@ export function createMainWindowAndFontRuntime(deps: any): any {
     ...windowRuntime,
     ...progressEventRuntime,
     ...windowsFontRuntime,
+    ...fontPathAuthorizationRuntime,
   };
 }

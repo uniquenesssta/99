@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.5
+- 文档版本：1.6
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 2「字体读取与破坏性操作的路径边界」执行中；AT-2.1 已完成，AT-2.2 待开始
+- 当前阶段：Stage 2「字体读取与破坏性操作的路径边界」执行中；AT-2.1 至 AT-2.2 已完成，AT-2.3 待开始
 - 当前阶段任务书：[`HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md`](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -212,6 +212,8 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 硬门禁：所有合法根与越界变体通过数据驱动测试；策略不依赖 renderer 提供“我已授权”的标志。
 
 #### AT-2.2 收紧 `hfm-font://` 与预览数据读取
+
+状态：已完成。协议严格解码与预览数据读取均只使用中央授权后 `ioPath`，P1-P5 成为第 70 项长期诊断；P6-P8 仍保留阶段观察。
 
 - 协议和预览 IPC 共用中央字体读取授权器。
 - 优先使用主进程维护的字体 ID/授权令牌解析路径；兼容期若仍接收路径，也必须经主进程授权根与真实文件校验。
@@ -481,7 +483,7 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 | --- | --- | --- | --- | --- |
 | Stage 0 | 完成 | 本阶段分支（AT-0.1 至 AT-0.4） | `npm run verify` 通过，64/64 长期诊断；事务观察 8/8、路径观察 8/8；三大编排契约通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 专属矩阵作为外部验收项保留 |
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
-| Stage 2 | 执行中（AT-2.1 已完成） | 本阶段分支 AT-2.1 独立提交 | P0.1-P0.5、`npm run verify` 69/69、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；协议/预览、物理操作和托管卸载分别留给 AT-2.2 至 AT-2.4；Windows 真实 UNC/长路径/junction 为外部验收项 |
+| Stage 2 | 执行中（AT-2.1 至 AT-2.2 已完成） | 本阶段分支 AT-2.1/2.2 各自独立提交 | P0.1-P0.5、P1-P5、`npm run verify` 70/70、I/O deadline、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；物理操作和托管卸载分别留给 AT-2.3/2.4；Windows 真实 UNC/长路径/junction 为外部验收项 |
 | Stage 3 | 阻塞于 Stage 2 | - | - | - |
 | Stage 4 | 阻塞于 Stage 3 | - | - | - |
 | Stage 5 | 阻塞于 Stage 3 | - | - | - |

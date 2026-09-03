@@ -51,6 +51,14 @@ export type MainProcessIndexedFontIdentity = {
   comparePath: string;
 };
 
+export type FontPathRootProvider = () =>
+  | readonly string[]
+  | Promise<readonly string[]>;
+
+export type AuthorizeFontRead = (
+  rawPath: unknown,
+) => Promise<FontPathAuthorizationResult<AuthorizedFontFile>>;
+
 export type FontPathAuthorizationFileSystem = {
   realpath: (filePath: string) => Promise<string>;
   stat: (
@@ -60,9 +68,9 @@ export type FontPathAuthorizationFileSystem = {
 
 export type FontPathAuthorizationRuntimeOptions = {
   fontExtensions: ReadonlySet<string>;
-  readRoots: () => readonly string[];
-  watchedRoots: () => readonly string[];
-  appOwnedRoots: () => readonly string[];
+  readRoots: FontPathRootProvider;
+  watchedRoots: FontPathRootProvider;
+  appOwnedRoots: FontPathRootProvider;
   isMainProcessIndexedFont?: (
     identity: MainProcessIndexedFontIdentity,
   ) => boolean | Promise<boolean>;
@@ -176,11 +184,11 @@ export function createFontPathAuthorizationRuntime(
   }
 
   async function resolveAuthorizedRoots(
-    provider: () => readonly string[],
+    provider: FontPathRootProvider,
   ): Promise<CanonicalAbsolutePath[]> {
     let configuredRoots: readonly string[] = [];
     try {
-      configuredRoots = provider() || [];
+      configuredRoots = (await provider()) || [];
     } catch {
       return [];
     }
@@ -277,7 +285,7 @@ export function createFontPathAuthorizationRuntime(
 
   async function authorizeDirectory(
     rawPath: unknown,
-    rootsProvider: () => readonly string[],
+    rootsProvider: FontPathRootProvider,
     allowRoot: boolean,
   ): Promise<FontPathAuthorizationResult<AuthorizedFontDirectory>> {
     const resolved = await resolveRealPath(rawPath);

@@ -1,19 +1,10 @@
 import { app,BrowserWindow,dialog,ipcMain,protocol } from 'electron'
 import { createWindowRoundedShapeRuntime } from './windowRoundedShapeRuntime'
 import fs from 'node:fs'
-import { Buffer } from 'node:buffer'
-import { dirname,extname,join } from 'node:path'
+import { dirname,join } from 'node:path'
 import { productionDevToolsEnabled, registerWindowSecurityGuards, resolveRendererDevUrl } from '../security/appSecurityRuntime'
-
-
-function fontContentType(filePath: string): string {
-  const ext = extname(filePath).toLowerCase()
-  if (ext === '.otf' || ext === '.otc') return 'font/otf'
-  if (ext === '.ttc') return 'font/collection'
-  if (ext === '.woff') return 'font/woff'
-  if (ext === '.woff2') return 'font/woff2'
-  return 'font/ttf'
-}
+import type { AuthorizeFontRead } from '../path/fontPathAuthorizationRuntime'
+import { createFontProtocolRuntime } from './fontProtocolRuntime'
 
 export interface WindowRuntimeOptions {
   appName: string
@@ -23,7 +14,7 @@ export interface WindowRuntimeOptions {
   loadErrorHtml: (title: string, detail: string) => string
   appendLog: (message: string) => void
   verboseRendererLogs: boolean
-  resolveExistingFontFilePath: (filePath: string) => Promise<string | undefined>
+  authorizeFontRead: AuthorizeFontRead
 }
 
 export interface WindowRuntime {
@@ -48,6 +39,10 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
     completion: Promise<boolean>
     resolveCompletion: (closed: boolean) => void
   }>()
+  const fontProtocolRuntime = createFontProtocolRuntime({
+    authorizeFontRead: options.authorizeFontRead,
+    appendLog: options.appendLog
+  })
 
   protocol.registerSchemesAsPrivileged([
     {
@@ -244,47 +239,7 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
   }
 
   function registerFontProtocol(): void {
-    protocol.handle('hfm-font', async (request) => {
-      const prefix = 'hfm-font://local/'
-      if (!request.url.startsWith(prefix)) {
-        return new Response('Bad font request', { status: 400 })
-      }
-
-      const rawToken = request.url.slice(prefix.length)
-      let filePath = ''
-      try {
-        if (rawToken.startsWith('b64/')) {
-          filePath = Buffer.from(rawToken.slice(4), 'base64url').toString('utf8')
-        } else {
-          filePath = decodeURIComponent(rawToken)
-        }
-      } catch (error) {
-        options.appendLog(`font protocol bad path token: ${error instanceof Error ? error.message : String(error)}`)
-        return new Response('Bad font request path', { status: 400 })
-      }
-
-      const resolvedPath = await options.resolveExistingFontFilePath(filePath)
-      if (!resolvedPath) {
-        options.appendLog(`font protocol file not found: ${filePath}`)
-        return new Response('Font file not found', { status: 404 })
-      }
-
-      try {
-        const data = await fs.promises.readFile(resolvedPath)
-        const body = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-        return new Response(body as unknown as BodyInit, {
-          status: 200,
-          headers: {
-            'Content-Type': fontContentType(resolvedPath),
-            'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'no-store'
-          }
-        })
-      } catch (error) {
-        options.appendLog(`font protocol read failed: ${resolvedPath}; ${error instanceof Error ? error.message : String(error)}`)
-        return new Response('Font file read failed', { status: 500 })
-      }
-    })
+    protocol.handle('hfm-font', fontProtocolRuntime.handleRequest)
   }
 
   async function loadRenderer(window: BrowserWindow): Promise<void> {

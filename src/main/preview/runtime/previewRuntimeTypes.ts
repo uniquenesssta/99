@@ -1,4 +1,5 @@
 import type { LibraryState } from '../../../shared/types'
+import type { AuthorizeFontRead } from '../../path/fontPathAuthorizationRuntime'
 import type { PreviewCacheIndexStatus,PreviewCacheRow } from '../previewCacheRuntime'
 
 export interface PreviewSharedCacheStorage {
@@ -46,6 +47,7 @@ export interface PreviewRuntimeOptions {
   loadLibraryShell: () => Promise<LibraryState>
   ensureWindows: () => void
   resolveExistingFontFilePath: (rawPath?: string, options?: { logMissing?: boolean; logResolved?: boolean }) => Promise<string | undefined>
+  authorizeFontRead: AuthorizeFontRead
   previewTaskKey: (key: string) => string
   completeBackgroundTask: (taskKey: string, message?: string) => Promise<void>
   skipBackgroundTask: (taskKey: string, message?: string) => Promise<void>

@@ -2,11 +2,11 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.1
+- 文档版本：1.2
 - 建立日期：2026-09-02
 - Stage 分支：`stage/02-font-path-boundaries`
 - 起始提交：`0c62b2ef49934e2d5aca2b040353b8e09b972618`
-- 当前 Atomic Task：AT-2.1 已完成；AT-2.2 待开始
+- 当前 Atomic Task：AT-2.1 至 AT-2.2 已完成；AT-2.3 待开始
 - 前置阶段：Stage 1 自动门禁已完成；Windows 系统集成矩阵仍是外部验收项
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
 
@@ -160,7 +160,7 @@ flowchart TD
 
 ### AT-2.2 收紧 `hfm-font://` 与预览数据读取
 
-状态：阻塞于 AT-2.1 提交完成。
+状态：已完成。
 
 预期范围：
 
@@ -172,13 +172,36 @@ flowchart TD
 
 执行要求：
 
-- 协议只做一次明确的 base64url 或百分号解码；畸形、双重编码、NUL/控制字符在 resolver/read 前拒绝。
-- 协议和预览都调用 `authorizeFontRead`，并且只读取返回的 `ioPath`。
-- read roots 由主进程组合 watched roots、Windows Fonts、当前用户 Fonts 和应用实际拥有的字体目录。
-- 索引例外必须调用主进程查询验证真实路径身份，不直接信任 `FontItem.path`。
-- `unsupported/unauthorized` 返回不泄露具体文件内容的 403/404 语义；超限使用明确的 413 或等价应用错误。
-- 授权前不调用 `readFile`；Content-Type 只按已授权字体扩展名设置。
-- P1-P5 反转为正确性锁并进入长期门禁；P6-P8 保留明确的阶段观察，不伪报完成。
+- [x] 协议只做一次明确的 base64url 或百分号解码；畸形、双重编码、NUL/控制字符在 resolver/read 前拒绝。
+- [x] 协议和预览都调用 `authorizeFontRead`，并且只读取返回的 `ioPath`。
+- [x] read roots 由主进程组合 watched roots、Windows Fonts、当前用户 Fonts 和应用实际拥有的字体目录。
+- [x] 索引例外必须调用主进程查询验证真实路径身份，不直接信任 `FontItem.path`。
+- [x] `unsupported/unauthorized` 返回不泄露具体文件内容的 403/404 语义；超限使用明确的 413 或等价应用错误。
+- [x] 授权前不调用 `readFile`；Content-Type 只按已授权字体扩展名设置。
+- [x] P1-P5 反转为正确性锁并进入长期门禁；P6-P8 保留明确的阶段观察，不伪报完成。
+
+实际落地链路：
+
+```mermaid
+flowchart TD
+  A["renderer 字体路径"] --> B{"protocol / preview"}
+  B --> C["fontProtocolRuntime 严格解码"]
+  B --> D["previewFontDataRuntime"]
+  C --> E["authorizeFontRead"]
+  D --> E
+  F["watched / Windows / user roots"] --> E
+  G["主进程 root index"] --> E
+  E --> H["授权 ioPath"]
+  H --> I["readFile"]
+```
+
+实施记录：
+
+- 新增 `fontProtocolRuntime.ts`，独立拥有严格解码、拒绝状态映射、字体 MIME 和授权后读取；`windowRuntime.ts` 只保留 Electron 协议注册。
+- `mainWindowAndFontRuntimeBootstrap.ts` 每次读取主进程当前 watched roots，并组合 Windows Fonts、当前用户 Fonts 与 root index 身份查询；未将根集合下发 renderer。
+- 预览将整个 `realpath + stat + roots/index` 授权包在既有 I/O deadline 中，不恢复重复 `stat`，且仅读取授权 `ioPath`。
+- 已复审 `fontPathResolverRuntime.ts`：它仍作为安装/原生预览等旧链路的定位器；本任务的两个读取消费者不再将它的返回值当作授权，因此不扩大修改面。
+- 红色门禁先因独立协议运行时缺失而失败；实现后 P1-P5 全部转绿并成为第 70 项长期诊断。
 
 硬门禁：正常 watched/system/current-user/temporary 字体仍可预览；PEM、数据库、目录、超限文件和真实路径逃逸在读取前停止。
 
@@ -310,3 +333,4 @@ Stage 2 起点快照：
 | 日期 | Atomic Task | 提交 | 自动验证 | Windows 实机 | 结论/阻塞 |
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-02 | AT-2.1 | 本提交 | 红色诊断已复现；P0.1-P0.5、TypeScript、69/69 长期诊断、编排契约和 Electron/Vite 三端 build/混淆通过 | 当前环境非 Windows；真实 UNC、长路径和 junction 矩阵待补 | 中央策略已完成；未接入的协议/预览、物理操作和托管卸载仍由 AT-2.2 至 AT-2.4 处理，P1-P8 阶段观察保留 |
+| 2026-09-02 | AT-2.2 | 本提交 | 红色诊断已复现；P1-P5、TypeScript、70/70 长期诊断、I/O deadline、编排契约和 Electron/Vite 三端 build/混淆通过 | 当前环境非 Windows；系统/用户/临时字体以可移植夹具验证，真实 UNC、长路径和 junction 矩阵待补 | 协议与预览读取已收紧；P6-P8 仍是明确观察，物理操作和托管卸载由 AT-2.3/2.4 处理 |
