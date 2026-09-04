@@ -63,6 +63,10 @@ export type AuthorizeFontRead = (
   rawPath: unknown,
 ) => Promise<FontPathAuthorizationResult<AuthorizedFontFile>>;
 
+export type AuthorizeManagedFontDelete = (
+  rawPath: unknown,
+) => Promise<FontPathAuthorizationResult<AuthorizedFontFile>>;
+
 export type FontPathAuthorizationFileSystem = {
   realpath: (filePath: string) => Promise<string>;
   stat: (

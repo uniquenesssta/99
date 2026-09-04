@@ -2,11 +2,11 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.3
+- 文档版本：1.4
 - 建立日期：2026-09-02
 - Stage 分支：`stage/02-font-path-boundaries`
 - 起始提交：`0c62b2ef49934e2d5aca2b040353b8e09b972618`
-- 当前 Atomic Task：AT-2.1 至 AT-2.3 已完成；AT-2.4 待开始
+- 当前 Atomic Task：AT-2.1 至 AT-2.4 已完成；Stage 2 自动门禁已收口
 - 前置阶段：Stage 1 自动门禁已完成；Windows 系统集成矩阵仍是外部验收项
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)
 
@@ -262,7 +262,7 @@ flowchart TD
 
 ### AT-2.4 收紧托管字体卸载
 
-状态：待开始；前置 AT-2.3 已完成。
+状态：已完成。
 
 预期范围：
 
@@ -272,16 +272,38 @@ flowchart TD
 
 执行要求：
 
-- `managedInstallPath` 必须先通过应用自有目录真实路径授权。
-- basename 必须等于本应用生成规则的权威结果，不能只检查 `startsWith(appName + "_")`。
-- `managedRegistryName` 必须与本应用保存/推导的记录身份一致；路径、文件名、注册表三项缺一即拒绝。
-- 所有验证在 registry delete、unlink 和 broadcast 前完成；拒绝时三类副作用调用数均为 0。
-- registry 与文件清理的部分失败返回真实结果，不再无条件成功。
-- P8 反转为正确性锁；删除 Stage 0 基线观察语义，P1-P8 全部成为 `diagnostics:all` 长期门禁。
+- [x] `managedInstallPath` 必须先通过应用自有目录真实路径授权。
+- [x] basename 必须等于本应用生成规则的权威结果，不能只检查 `startsWith(appName + "_")`。
+- [x] `managedRegistryName` 必须与主进程索引记录推导的身份一致；路径、文件名、注册表三项缺一即拒绝。
+- [x] 所有验证在 registry delete、unlink 和 broadcast 前完成；拒绝时三类副作用调用数均为 0。
+- [x] registry 删除失败保留文件并返回失败；文件删除失败恢复 registry，补偿失败返回真实部分失败。
+- [x] P8 反转为正确性锁；删除 Stage 0 基线观察语义，P1-P8 全部成为 `diagnostics:all` 长期门禁。
+
+实际落地链路：
+
+```mermaid
+flowchart TD
+  A["renderer FontItem"] --> B["主进程 root index 还原权威字体"]
+  B --> C["应用自有目录 realpath / stat 授权"]
+  C --> D["精确目标路径、文件名、注册表身份校验"]
+  D -->|"拒绝"| X["零 registry / unlink / broadcast 副作用"]
+  D -->|"通过"| E["删除 HKCU 注册表记录"]
+  E -->|"失败"| F["保留字体文件并返回失败"]
+  E -->|"成功"| G["unlink 授权真实文件"]
+  G -->|"失败"| H["恢复注册表并广播最终状态"]
+  G -->|"成功"| I["广播 WM_FONTCHANGE 并返回成功"]
+  H --> J["返回失败或部分失败"]
+```
+
+实施记录：
+
+- 新增 `managedFontOwnershipRuntime.ts`，独立拥有主进程 root index 身份恢复、应用生成路径/文件名/注册表三重所有权证明；renderer 传入的 `id/path/fullName/managed*` 不能自行构成授权。
+- `currentUserManagedInstallRuntime.ts` 只在所有权运行时返回授权真实路径后执行卸载；registry 失败停止在 unlink 前，unlink 失败使用既有 registry writer 恢复记录，并把恢复或刷新失败合并为 `ok: false`。
+- P8 红灯先在旧前缀实现上失败；修复后合法受管卸载、根外前缀、同名系统字体、根内伪路径、伪造 registry、伪造 renderer 字段、缺失索引身份及三类清理结果共 12 组行为全部锁定。
 
 硬门禁：同名系统字体、根外前缀文件、伪造 registry name 和缺少受管身份均不能被删除。
 
-提交建议：`security: 校验托管字体卸载所有权`
+提交：`security: 校验托管字体卸载所有权`
 
 ## 8. 诊断逐步转换表
 
@@ -297,7 +319,7 @@ flowchart TD
 | P7 未授权字体移动 | 已知缺陷观察 | 观察 | 正确性锁 | 保持 |
 | P8 前缀式托管卸载 | 已知缺陷观察 | 观察 | 观察 | 正确性锁 |
 
-`diagnostics:all` 只能包含已转绿的长期正确性 selector。阶段观察 selector 退出成功只表示已知旧行为被精确复现，不能在 README 或交付中写作安全通过。
+P0.1-P0.5 与 P1-P8 均已由独立正确性 selector 纳入 `diagnostics:all`；Stage 0 路径缺陷观察 selector 已删除，`--observe-destructive` 不再是有效入口。
 
 ## 9. 每个 Atomic Task 的验证顺序
 
@@ -356,15 +378,26 @@ AT-2.3 再审计结果：
 
 `physicalFolders.ts` 因本任务完整承载授权事务由 396 行增至 614 行。它不是三大原始编排文件，但 Stage 3 重写跨卷提交协议时应把“字体移动事务”作为独立领域 owner 提取，目录树读取与 create/rename 不随之搬迁；本任务不提前制造兼容 facade 或双架构。
 
+AT-2.4 再审计结果：
+
+| 文件 | AT-2.3 后 | AT-2.4 后 | 本任务变化 | 拆分判断 |
+| --- | ---: | ---: | --- | --- |
+| `src/main/index.ts` | 2056 | 2068 | 新增 1 个 ownership runtime 构造、1 个授权能力解构和窄依赖注入，共 12 行；没有索引匹配、路径或补偿分支 | Stage 4 的 Mutation 组合边界更明确；正式拆分时整体迁入 `mainMutationCompositionRuntime`，不再拆成纯转发层 |
+| `rustCoreWorkerRuntime.ts` | 2994 | 2994 | 未修改 | Stage 5 的 contracts/payload/transport/clients/facade 边界与 45/38 公开契约不变 |
+| `App.tsx` | 1397 | 1397 | 未修改 | Stage 6 仍先消除 `AppRootView(props: any)`，再按状态所有权提控制器；本阶段未新增 Hook 或状态 owner |
+| `AppRootView.tsx` | 386 / 169 个平铺属性 | 386 / 169 个平铺属性 | 未修改 | 六组强类型 view model 目标不变，不能把现有平铺包整体搬入一个 God Object |
+
+本任务把 105 行“所有权证明”放入独立领域模块，把 138 行安装/卸载副作用与补偿留在原运行时；两者通过单一强类型授权结果单向连接，无循环 import、重复状态或兼容 facade。这是本阶段必要的职责分离，不替代 Stage 4/5/6 对三大巨型编排文件的正式拆分。
+
 ## 12. Stage 2 退出条件
 
-- [ ] AT-2.1 至 AT-2.4 各有独立提交并全部通过硬门禁。
-- [ ] `hfm-font://` 与预览只读取中央策略授权后的真实普通字体。
-- [ ] 文件夹创建/重命名、字体移动和托管卸载均按窄操作权限执行。
-- [ ] P1-P8 全部反转为长期正确性门禁，Stage 0 路径缺陷观察模式删除。
-- [ ] Windows 实机矩阵完成，或逐项保留为明确外部验收项而不伪报通过。
-- [ ] 三大巨型编排文件没有新增领域耦合，结构化公开契约保持通过。
-- [ ] 差异中没有锁文件漂移、私钥、字体资产、构建输出或无关修改。
+- [x] AT-2.1 至 AT-2.4 各有独立提交并全部通过硬门禁。
+- [x] `hfm-font://` 与预览只读取中央策略授权后的真实普通字体。
+- [x] 文件夹创建/重命名、字体移动和托管卸载均按窄操作权限执行。
+- [x] P1-P8 全部反转为长期正确性门禁，Stage 0 路径缺陷观察模式删除。
+- [x] Windows 实机矩阵逐项保留为明确外部验收项，没有伪报通过。
+- [x] 三大巨型编排文件没有新增领域耦合，结构化公开契约保持通过。
+- [x] 差异中没有锁文件漂移、私钥、字体资产、构建输出或无关修改。
 
 ## 13. 执行记录
 
@@ -373,3 +406,4 @@ AT-2.3 再审计结果：
 | 2026-09-02 | AT-2.1 | 本提交 | 红色诊断已复现；P0.1-P0.5、TypeScript、69/69 长期诊断、编排契约和 Electron/Vite 三端 build/混淆通过 | 当前环境非 Windows；真实 UNC、长路径和 junction 矩阵待补 | 中央策略已完成；未接入的协议/预览、物理操作和托管卸载仍由 AT-2.2 至 AT-2.4 处理，P1-P8 阶段观察保留 |
 | 2026-09-02 | AT-2.2 | 本提交 | 红色诊断已复现；P1-P5、TypeScript、70/70 长期诊断、I/O deadline、编排契约和 Electron/Vite 三端 build/混淆通过 | 当前环境非 Windows；系统/用户/临时字体以可移植夹具验证，真实 UNC、长路径和 junction 矩阵待补 | 协议与预览读取已收紧；P6-P8 仍是明确观察，物理操作和托管卸载由 AT-2.3/2.4 处理 |
 | 2026-09-03 | AT-2.3 | 本提交 | 红色诊断已复现；P6/P7、TypeScript、71/71 长期诊断、lease lock、索引对账、编排契约和 Electron/Vite 三端 build/混淆通过 | 当前环境非 Windows；真实 UNC、跨盘、长路径和操作中 junction 替换待实机补充 | 物理操作已收紧；P8 仍是明确观察并由 AT-2.4 处理；Rust 未改且未在本环境重建 |
+| 2026-09-04 | AT-2.4 | 本提交 | 红色诊断已复现；P8 十二组所有权/故障行为、TypeScript、72/72 长期诊断、编排契约和 Electron/Vite 三端 build/混淆通过 | 当前环境非 Windows；真实 HKCU registry、Windows Fonts 同名项和占用文件补偿待实机补充 | 托管卸载已收紧，P1-P8 全部成为长期门禁；Stage 2 自动门禁完成，Rust 未改且未在本环境重建 |

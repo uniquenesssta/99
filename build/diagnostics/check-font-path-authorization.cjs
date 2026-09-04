@@ -5,12 +5,11 @@ const path = require('node:path')
 const ts = require('typescript')
 
 const root = path.resolve(__dirname, '..', '..')
-const stagedObservation = process.argv.includes('--observe-destructive')
 const correctnessCase = process.argv.find((arg) => arg.startsWith('--case='))?.slice('--case='.length) || ''
 
-const validCorrectnessCases = new Set(['POLICY', 'READ', 'PHYSICAL'])
-if ((stagedObservation ? 1 : 0) + (correctnessCase ? 1 : 0) !== 1 || (correctnessCase && !validCorrectnessCases.has(correctnessCase))) {
-  console.error('[diagnostics:font-path-authorization] use exactly one selector: --case=POLICY, --case=READ, --case=PHYSICAL, or --observe-destructive')
+const validCorrectnessCases = new Set(['POLICY', 'READ', 'PHYSICAL', 'MANAGED'])
+if (!correctnessCase || !validCorrectnessCases.has(correctnessCase)) {
+  console.error('[diagnostics:font-path-authorization] use exactly one selector: --case=POLICY, --case=READ, --case=PHYSICAL, or --case=MANAGED')
   process.exit(1)
 }
 
@@ -310,46 +309,170 @@ async function runPhysicalCorrectness() {
   }
 }
 
-async function caseP8() {
-  const effects = { registryDeletes: [], unlinks: [], broadcasts: 0 }
+async function runManagedUninstallCorrectness() {
+  const boundaryModule = loadTypeScriptModule('src/main/path/pathBoundaryPolicy.ts')
+  const authorizationModule = loadTypeScriptModule(
+    'src/main/path/fontPathAuthorizationRuntime.ts',
+    (id) => (id === './pathBoundaryPolicy' ? boundaryModule : require(id)),
+  )
+  const effects = { registryDeletes: [], registryWrites: [], unlinks: [], broadcasts: 0 }
+  const failures = { registryDelete: null, registryWrite: null, unlink: null }
   const installFsStub = {
     promises: {
       access: async () => undefined,
       mkdir: async () => undefined,
       copyFile: async () => undefined,
-      unlink: async (filePath) => { effects.unlinks.push(filePath) },
+      unlink: async (filePath) => {
+        effects.unlinks.push(filePath)
+        if (failures.unlink) throw failures.unlink
+      },
     },
   }
   const installModule = loadTypeScriptModule(
     'src/main/install/currentUserManagedInstallRuntime.ts',
     (id) => (id === 'node:fs' ? installFsStub : require(id)),
   )
-  const runtime = installModule.createCurrentUserManagedInstallRuntime({
-    appName: 'HanFontManager',
-    ensureWindows: () => undefined,
-    currentUserFontsDir: () => 'C:/Users/Test/AppData/Local/Microsoft/Windows/Fonts',
-    safeManagedFontName: () => 'unused.ttf',
-    registryNameFor: () => 'unused',
-    writeFontRegistryValuesHKCUBatch: async () => undefined,
-    deleteFontRegistryValuesHKCUBatch: async (names) => { effects.registryDeletes.push(...names) },
-    broadcastFontChange: async () => { effects.broadcasts += 1 },
-  })
-  const outsidePath = 'D:/Untrusted/HanFontManager_unrelated.ttf'
-  const arbitraryRegistryName = 'Unrelated System Font (TrueType)'
-  const result = await runtime.uninstallManagedFont({
-    ...fontItem('prefix-only', outsidePath),
-    managedInstallPath: outsidePath,
-    managedRegistryName: arbitraryRegistryName,
-  })
-  assert('P8', result.ok === true, 'known defect changed: prefix-only uninstall no longer returns success')
-  assert('P8', effects.registryDeletes[0] === arbitraryRegistryName, 'known defect changed: arbitrary registry identity was not deleted')
-  assert('P8', effects.unlinks[0] === outsidePath && effects.broadcasts === 1, 'known defect changed: outside file unlink/broadcast did not occur')
+  const ownershipModule = loadTypeScriptModule('src/main/install/managedFontOwnershipRuntime.ts')
+  const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'hfm-font-managed-uninstall-'))
+  const currentUserFontsRoot = path.join(tempRoot, 'current-user-fonts')
+  const windowsFontsRoot = path.join(tempRoot, 'windows-fonts')
+  const outsideRoot = path.join(tempRoot, 'outside')
+  const sourceRoot = path.join(tempRoot, 'source')
+  const nestedRoot = path.join(currentUserFontsRoot, 'nested')
+  const authoritative = {
+    ...fontItem('0123456789abcdef-managed', path.join(sourceRoot, 'Authoritative.ttf')),
+    family: 'Authoritative Family',
+    fullName: 'Authoritative Font',
+  }
+  const safeManagedFontName = (item) => `HanFontManager_${item.id.slice(0, 12)}_Authoritative.ttf`
+  const registryNameFor = (item) => `${item.fullName} (TrueType)`
+  const expectedName = safeManagedFontName(authoritative)
+  const expectedRegistryName = registryNameFor(authoritative)
+  const managedPath = path.join(currentUserFontsRoot, expectedName)
+  const outsidePrefixPath = path.join(outsideRoot, expectedName)
+  const systemSameNamePath = path.join(windowsFontsRoot, expectedName)
+  const nestedManagedPath = path.join(nestedRoot, expectedName)
+  const wrongManagedNamePath = path.join(currentUserFontsRoot, 'HanFontManager_unrelated.ttf')
 
-  effects.registryDeletes.length = 0
-  effects.unlinks.length = 0
-  await expectReject('P8', () => runtime.uninstallManagedFont(fontItem('unmanaged', 'D:/Untrusted/ordinary.ttf')), '不是由本工具安装')
-  assert('P8', effects.registryDeletes.length === 0 && effects.unlinks.length === 0, 'missing managed metadata rejection caused side effects')
-  return 'basename prefix alone authorizes outside unlink and arbitrary registry deletion'
+  function resetEffects() {
+    effects.registryDeletes.length = 0
+    effects.registryWrites.length = 0
+    effects.unlinks.length = 0
+    effects.broadcasts = 0
+    failures.registryDelete = null
+    failures.registryWrite = null
+    failures.unlink = null
+  }
+
+  function assertNoEffects(label) {
+    assert('P8', effects.registryDeletes.length === 0, `${label} reached registry delete`)
+    assert('P8', effects.registryWrites.length === 0, `${label} reached registry write`)
+    assert('P8', effects.unlinks.length === 0, `${label} reached unlink`)
+    assert('P8', effects.broadcasts === 0, `${label} reached broadcast`)
+  }
+
+  try {
+    await Promise.all([
+      fs.promises.mkdir(currentUserFontsRoot, { recursive: true }),
+      fs.promises.mkdir(windowsFontsRoot, { recursive: true }),
+      fs.promises.mkdir(outsideRoot, { recursive: true }),
+      fs.promises.mkdir(sourceRoot, { recursive: true }),
+      fs.promises.mkdir(nestedRoot, { recursive: true }),
+    ])
+    await Promise.all([
+      fs.promises.writeFile(authoritative.path, 'source-font'),
+      fs.promises.writeFile(managedPath, 'managed-font'),
+      fs.promises.writeFile(outsidePrefixPath, 'outside-font'),
+      fs.promises.writeFile(systemSameNamePath, 'system-font'),
+      fs.promises.writeFile(nestedManagedPath, 'nested-font'),
+      fs.promises.writeFile(wrongManagedNamePath, 'wrong-managed-font'),
+    ])
+
+    const policy = authorizationModule.createFontPathAuthorizationRuntime({
+      fontExtensions,
+      readRoots: async () => [],
+      watchedRoots: async () => [],
+      appOwnedRoots: async () => [currentUserFontsRoot],
+    })
+    const ownershipRuntime = ownershipModule.createManagedFontOwnershipRuntime({
+      currentUserFontsDir: () => currentUserFontsRoot,
+      safeManagedFontName,
+      registryNameFor,
+      normalizePathForCompare: (filePath) => path.resolve(filePath),
+      findFontItemInRootIndexes: async (_fontId, normalizedPath) => normalizedPath === path.resolve(authoritative.path) ? authoritative : null,
+      authorizeManagedFontDelete: (filePath) => policy.authorizeManagedFontDelete(filePath),
+    })
+    const runtime = installModule.createCurrentUserManagedInstallRuntime({
+      ensureWindows: () => undefined,
+      currentUserFontsDir: () => currentUserFontsRoot,
+      safeManagedFontName,
+      registryNameFor,
+      authorizeManagedFontRemoval: ownershipRuntime.authorizeManagedFontRemoval,
+      writeFontRegistryValuesHKCUBatch: async (values) => {
+        effects.registryWrites.push(...values)
+        if (failures.registryWrite) throw failures.registryWrite
+      },
+      deleteFontRegistryValuesHKCUBatch: async (names) => {
+        effects.registryDeletes.push(...names)
+        if (failures.registryDelete) throw failures.registryDelete
+      },
+      broadcastFontChange: async () => { effects.broadcasts += 1 },
+    })
+    const managedItem = {
+      ...authoritative,
+      managedInstallPath: managedPath,
+      managedRegistryName: expectedRegistryName,
+    }
+
+    for (const [label, item, messagePart] of [
+      ['missing managed identity', authoritative, '不是由本工具安装'],
+      ['outside prefix file', { ...managedItem, managedInstallPath: outsidePrefixPath }, '应用自有目录'],
+      ['same-named system font', { ...managedItem, managedInstallPath: systemSameNamePath }, '应用自有目录'],
+      ['nested prefix file', { ...managedItem, managedInstallPath: nestedManagedPath }, '安装路径不一致'],
+      ['wrong managed basename', { ...managedItem, managedInstallPath: wrongManagedNamePath }, '文件名不一致'],
+      ['forged registry name', { ...managedItem, managedRegistryName: 'Forged System Font (TrueType)' }, '注册表身份不一致'],
+      ['forged renderer font fields', { ...managedItem, fullName: 'Forged System Font', managedRegistryName: 'Forged System Font (TrueType)' }, '注册表身份不一致'],
+      ['missing authoritative source', { ...managedItem, id: 'not-indexed' }, '主进程字体索引'],
+    ]) {
+      resetEffects()
+      await expectReject('P8', () => runtime.uninstallManagedFont(item), messagePart)
+      assertNoEffects(label)
+    }
+
+    resetEffects()
+    const success = await runtime.uninstallManagedFont(managedItem)
+    assert('P8', success.ok === true, `authorized managed uninstall failed: ${JSON.stringify(success)}`)
+    assert('P8', effects.registryDeletes.length === 1 && effects.registryDeletes[0] === expectedRegistryName, 'authorized uninstall deleted the wrong registry identity')
+    assert('P8', effects.unlinks.length === 1 && effects.unlinks[0] === managedPath, 'authorized uninstall did not use the authorized real path')
+    assert('P8', effects.broadcasts === 1 && effects.registryWrites.length === 0, 'authorized uninstall side effects changed')
+
+    resetEffects()
+    failures.registryDelete = new Error('registry locked')
+    const registryFailure = await runtime.uninstallManagedFont(managedItem)
+    assert('P8', registryFailure.ok === false && registryFailure.message.includes('注册表'), 'registry failure was not returned truthfully')
+    assert('P8', effects.registryDeletes.length === 1 && effects.unlinks.length === 0 && effects.broadcasts === 0, 'registry failure did not stop before file removal')
+
+    resetEffects()
+    failures.unlink = new Error('file in use')
+    const fileFailure = await runtime.uninstallManagedFont(managedItem)
+    assert('P8', fileFailure.ok === false && fileFailure.message.includes('文件'), 'file failure was not returned truthfully')
+    assert('P8', effects.registryDeletes.length === 1 && effects.unlinks.length === 1, 'file failure did not preserve cleanup stage results')
+    assert('P8', effects.registryWrites.length === 1 && effects.registryWrites[0].name === expectedRegistryName && effects.registryWrites[0].path === managedPath, 'file failure did not restore the removed registry identity')
+    assert('P8', effects.broadcasts === 1, 'file failure compensation did not broadcast the final registry state')
+
+    resetEffects()
+    failures.unlink = new Error('file in use')
+    failures.registryWrite = new Error('registry restore failed')
+    const partialFailure = await runtime.uninstallManagedFont(managedItem)
+    assert('P8', partialFailure.ok === false && partialFailure.message.includes('恢复失败'), 'partial cleanup failure was reported as success')
+    assert('P8', effects.registryDeletes.length === 1 && effects.unlinks.length === 1 && effects.registryWrites.length === 1 && effects.broadcasts === 1, 'partial cleanup result did not reflect attempted compensation')
+
+    console.log('[diagnostics:font-path-authorization] CORRECTNESS_LOCK P8: managed uninstall requires main-index identity, authorized exact install path/name, and derived registry identity before side effects')
+    console.log('[diagnostics:font-path-authorization] CORRECTNESS_LOCK P8.1: registry/file failures return false; file failure restores registry when possible and reports incomplete compensation')
+    console.log('[diagnostics:font-path-authorization] managed uninstall correctness passed: cases=12')
+  } finally {
+    await fs.promises.rm(tempRoot, { recursive: true, force: true })
+  }
 }
 
 async function runPolicyCorrectness() {
@@ -750,20 +873,10 @@ async function main() {
     await runPhysicalCorrectness()
     return
   }
-
-  const cases = [
-    ['P8', 'KNOWN_DEFECT', caseP8],
-  ]
-  let defects = 0
-  let locks = 0
-  for (const [caseId, kind, run] of cases) {
-    const message = await run()
-    if (kind === 'KNOWN_DEFECT') defects += 1
-    else locks += 1
-    console.log(`[diagnostics:font-path-authorization] ${kind} ${caseId}: ${message}`)
+  if (correctnessCase === 'MANAGED') {
+    await runManagedUninstallCorrectness()
+    return
   }
-  console.log(`[diagnostics:font-path-authorization] WINDOWS_PENDING: drive-letter casing, UNC/device paths, junctions, and Windows separator semantics require a Windows runner`)
-  console.log(`[diagnostics:font-path-authorization] destructive observations retained: knownDefects=${defects}, behaviorLocks=${locks}, windowsPending=1, cases=${cases.length}`)
 }
 
 main().catch((error) => {

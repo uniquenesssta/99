@@ -102,6 +102,7 @@ import {
   scanWorkerSource,
 } from "./indexing/workerSources";
 import { createCurrentUserManagedInstallRuntime } from "./install/currentUserManagedInstallRuntime";
+import { createManagedFontOwnershipRuntime } from "./install/managedFontOwnershipRuntime";
 import { createInstallStatusRefreshRuntime } from "./install/installStatusRefreshRuntime";
 import {
   createInstallStatusRefreshStarterRuntime,
@@ -374,6 +375,7 @@ const {
   authorizeFontMoveSource,
   authorizeFontMoveTarget,
   authorizeFontMoveDestination,
+  authorizeManagedFontDelete,
   missingFontPreviewDataUri,
   loadTemporaryActiveFonts,
   saveTemporaryActiveFonts,
@@ -1698,13 +1700,23 @@ async function deleteSharedFontTagInIndex(
   });
 }
 
+const managedFontOwnershipRuntime = createManagedFontOwnershipRuntime({
+  currentUserFontsDir,
+  safeManagedFontName,
+  registryNameFor,
+  normalizePathForCompare: normalizePathForCacheCompare,
+  findFontItemInRootIndexes,
+  authorizeManagedFontDelete,
+});
+
 const { installFontForCurrentUser, uninstallManagedFont } =
   createCurrentUserManagedInstallRuntime({
-    appName: APP_NAME,
     ensureWindows,
     currentUserFontsDir,
     safeManagedFontName,
     registryNameFor,
+    authorizeManagedFontRemoval:
+      managedFontOwnershipRuntime.authorizeManagedFontRemoval,
     writeFontRegistryValuesHKCUBatch,
     deleteFontRegistryValuesHKCUBatch,
     broadcastFontChange,

@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.7
+- 文档版本：1.8
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 2「字体读取与破坏性操作的路径边界」执行中；AT-2.1 至 AT-2.3 已完成，AT-2.4 待开始
+- 当前阶段：Stage 2「字体读取与破坏性操作的路径边界」自动门禁已完成；Windows 外部验收保留，Stage 3 待开始
 - 当前阶段任务书：[`HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md`](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -234,11 +234,11 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 
 #### AT-2.4 收紧托管字体卸载
 
-状态：待开始；前置 AT-2.3 已完成。
+状态：已完成。主进程索引身份、应用自有目录真实路径、权威文件名与注册表身份构成完整所有权证明，P8 成为第 72 项长期诊断。
 
-- 同时验证规范化真实路径位于应用自有字体目录，文件名满足应用生成规则，并能与注册表记录对应。
-- 任何一项不满足时拒绝删除，不以 basename 前缀作为唯一所有权证明。
-- 失败必须向 UI 返回真实结果。
+- 从主进程 root index 还原字体来源后推导唯一目标文件名和 registry name，不信任 renderer 自报的身份字段。
+- 同时验证真实路径位于应用自有目录、等于直接安装目标且 basename 精确匹配；任何一项不满足时三类删除副作用均为 0。
+- registry 删除失败保留文件；unlink 失败恢复 registry，补偿失败返回真实部分失败，不再无条件成功。
 
 硬门禁：无法卸载同名但不属于应用管理的系统/用户字体。
 
@@ -488,8 +488,8 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 | --- | --- | --- | --- | --- |
 | Stage 0 | 完成 | 本阶段分支（AT-0.1 至 AT-0.4） | `npm run verify` 通过，64/64 长期诊断；事务观察 8/8、路径观察 8/8；三大编排契约通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 专属矩阵作为外部验收项保留 |
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
-| Stage 2 | 执行中（AT-2.1 至 AT-2.3 已完成） | 本阶段分支 AT-2.1/2.2/2.3 各自独立提交 | P0.1-P0.5、P1-P7、`npm run verify` 71/71、lease lock、索引对账、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；托管卸载留给 AT-2.4；Windows 真实 UNC/跨盘/长路径/junction 为外部验收项 |
-| Stage 3 | 阻塞于 Stage 2 | - | - | - |
+| Stage 2 | 完成（AT-2.1 至 AT-2.4） | 本阶段分支四个独立 Atomic Task 提交 | P0.1-P0.5、P1-P8、`npm run verify` 72/72、路径/副作用/补偿行为、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；Windows 真实 UNC/跨盘/长路径/junction/HKCU registry 为外部验收项，未伪报通过 |
+| Stage 3 | 待开始 | - | - | Stage 2 自动门禁已完成；必须从 Stage 2 完成基线创建独立分支 |
 | Stage 4 | 阻塞于 Stage 3 | - | - | - |
 | Stage 5 | 阻塞于 Stage 3 | - | - | - |
 | Stage 6 | 阻塞于 Stage 3 | - | - | - |

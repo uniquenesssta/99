@@ -1,21 +1,29 @@
 import { promises as fsp } from "node:fs";
-import { basename,join } from "node:path";
+import { join } from "node:path";
 import type { FontItem,InstallResult } from "../../shared/types";
+import type {
+  AuthorizedManagedFontRemoval,
+  ManagedFontOwnershipRuntime,
+} from "./managedFontOwnershipRuntime";
 
 type RegistryValue = { name: string; path: string };
 
 export type CurrentUserManagedInstallRuntimeOptions = {
-  appName: string;
   ensureWindows: () => void;
   currentUserFontsDir: () => string;
   safeManagedFontName: (item: FontItem) => string;
   registryNameFor: (item: FontItem) => string;
+  authorizeManagedFontRemoval: ManagedFontOwnershipRuntime["authorizeManagedFontRemoval"];
   writeFontRegistryValuesHKCUBatch: (
     values: RegistryValue[],
   ) => Promise<void>;
   deleteFontRegistryValuesHKCUBatch: (names: string[]) => Promise<void>;
   broadcastFontChange: () => Promise<void>;
 };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export type CurrentUserManagedInstallRuntime = {
   installFontForCurrentUser: (item: FontItem) => Promise<InstallResult>;
@@ -58,29 +66,64 @@ export function createCurrentUserManagedInstallRuntime(
   async function uninstallManagedFont(item: FontItem): Promise<InstallResult> {
     options.ensureWindows();
 
-    if (!item.managedInstallPath || !item.managedRegistryName) {
-      throw new Error("这个字体不是由本工具安装的，已跳过。");
-    }
-
-    if (!basename(item.managedInstallPath).startsWith(options.appName + "_")) {
-      throw new Error("安全保护：不会移除非本工具安装的字体文件。");
-    }
+    const removal: AuthorizedManagedFontRemoval =
+      await options.authorizeManagedFontRemoval(item);
 
     try {
       await options.deleteFontRegistryValuesHKCUBatch([
-        item.managedRegistryName,
+        removal.registryName,
       ]);
-    } catch {
-      // 注册表项可能已不存在，继续清理文件。
+    } catch (error) {
+      return {
+        ok: false,
+        message: `未移除字体：注册表记录清理失败，字体文件已保留。${errorMessage(error)}`,
+      };
     }
 
     try {
-      await fsp.unlink(item.managedInstallPath);
-    } catch {
-      // 文件可能已不存在。
+      await fsp.unlink(removal.installPath);
+    } catch (fileError) {
+      let registryRestored = false;
+      let registryRestoreError: unknown = null;
+      try {
+        await options.writeFontRegistryValuesHKCUBatch([
+          { name: removal.registryName, path: removal.installPath },
+        ]);
+        registryRestored = true;
+      } catch (error) {
+        registryRestoreError = error;
+      }
+
+      let broadcastError: unknown = null;
+      try {
+        await options.broadcastFontChange();
+      } catch (error) {
+        broadcastError = error;
+      }
+
+      const details = [
+        `字体文件删除失败：${errorMessage(fileError)}`,
+        registryRestored
+          ? "注册表记录已恢复。"
+          : `注册表记录恢复失败：${errorMessage(registryRestoreError)}`,
+        broadcastError
+          ? `字体刷新失败：${errorMessage(broadcastError)}`
+          : "",
+      ].filter(Boolean);
+      return {
+        ok: false,
+        message: `未能完整移除本工具安装的字体副本。${details.join(" ")}`,
+      };
     }
 
-    await options.broadcastFontChange();
+    try {
+      await options.broadcastFontChange();
+    } catch (error) {
+      return {
+        ok: false,
+        message: `字体副本和注册表记录已移除，但字体刷新失败：${errorMessage(error)}`,
+      };
+    }
 
     return {
       ok: true,
