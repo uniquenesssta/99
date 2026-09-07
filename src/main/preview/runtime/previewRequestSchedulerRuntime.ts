@@ -1,4 +1,5 @@
 import type { FontItem } from '../../../shared/types'
+import { validatePreviewInput } from './previewInputPolicy'
 import { previewCacheQueryTimeoutMs,withIoDeadlineResult } from '../../path/ioDeadlineRuntime'
 
 const DEFAULT_PREVIEW_SCHEDULER_BATCH_LIMIT = 100
@@ -87,7 +88,7 @@ function itemSignature(item: FontItem): string {
 }
 
 function schedulerGroupKey(text: string, fontSize: number, width: number, height: number): string {
-  return [text || '', Math.round(Number(fontSize || 0)), Math.round(Number(width || 0)), Math.round(Number(height || 0))].join('::')
+  return JSON.stringify([text, fontSize, width, height])
 }
 
 function uniqueValidItems(items: FontItem[]): FontItem[] {
@@ -285,6 +286,11 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
   }
 
   function readCachedPreviewImages(items: FontItem[], text: string, fontSize = 34, width = 520, height = 150): Promise<Record<string, string>> {
+    try {
+      text = validatePreviewInput({ text, fontSize, width, height }, options.appendStartupLog).text
+    } catch (error) {
+      return Promise.reject(error)
+    }
     const validItems = uniqueValidItems(items || [])
     if (!validItems.length) return Promise.resolve({})
 

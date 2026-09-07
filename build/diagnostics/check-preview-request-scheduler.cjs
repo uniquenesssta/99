@@ -101,6 +101,7 @@ async function testSplitBatchResultsAreAggregated() {
             withIoDeadlineResult: async (_label, operation) => ({ ok: true, value: await operation() })
           }
         }
+        if (id === './previewInputPolicy') return loadTypeScriptModule('src/main/preview/runtime/previewInputPolicy.ts')
         return require(id)
       }
     )

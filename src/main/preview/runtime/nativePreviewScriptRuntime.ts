@@ -1,3 +1,38 @@
+import { DEFAULT_PREVIEW_TEXT, PREVIEW_INPUT_LIMITS } from './previewInputPolicy'
+
+// Also executable without GDI+ in the native boundary diagnostics.
+export function buildPreviewInputPowerShellValidation(): string {
+  const limits = PREVIEW_INPUT_LIMITS
+  return `
+function Assert-PreviewNumber($value, $min, $max, $integer) {
+  if (($value -isnot [int]) -and ($value -isnot [long]) -and ($value -isnot [double]) -and ($value -isnot [decimal])) {
+    throw "PREVIEW_INPUT_INVALID: numeric type"
+  }
+  $number = [double]$value
+  if ([double]::IsNaN($number) -or [double]::IsInfinity($number) -or $number -lt $min -or $number -gt $max -or ($integer -and [Math]::Truncate($number) -ne $number)) {
+    throw "PREVIEW_INPUT_INVALID: numeric range"
+  }
+}
+Assert-PreviewNumber $inputJson.width ${limits.minWidth} ${limits.maxWidth} $true
+Assert-PreviewNumber $inputJson.height ${limits.minHeight} ${limits.maxHeight} $true
+Assert-PreviewNumber $inputJson.fontSize ${limits.minFontSize} ${limits.maxFontSize} $false
+if ($inputJson.text -isnot [string] -or $inputJson.text.Length -gt ${limits.maxTextLength}) {
+  throw "PREVIEW_INPUT_INVALID: text"
+}
+$text = $inputJson.text
+for ($i = 0; $i -lt $text.Length; $i++) {
+  if ([char]::IsHighSurrogate($text[$i])) {
+    $i++
+    if ($i -ge $text.Length -or -not [char]::IsLowSurrogate($text[$i])) { throw "PREVIEW_INPUT_INVALID: text Unicode" }
+  } elseif ([char]::IsLowSurrogate($text[$i])) { throw "PREVIEW_INPUT_INVALID: text Unicode" }
+}
+if ($text.Length -eq 0) { $text = '${DEFAULT_PREVIEW_TEXT}' }
+$fontSize = [float]$inputJson.fontSize
+$width = [int]$inputJson.width
+$height = [int]$inputJson.height
+`
+}
+
 export function buildNativePreviewPowerShellScript(inputPath: string): string {
   return `
 $ErrorActionPreference = "Stop"
@@ -5,14 +40,11 @@ Add-Type -AssemblyName System.Drawing
 
 $inputJsonPath = '${inputPath.replaceAll("'", "''")}'
 $inputJson = Get-Content -Raw -Encoding UTF8 -LiteralPath $inputJsonPath | ConvertFrom-Json
+${buildPreviewInputPowerShellValidation()}
 
 $fontPath = [string]$inputJson.fontPath
 $preferSystemFont = [bool]$inputJson.preferSystemFont
 $systemFontFamilyCandidates = @($inputJson.systemFontFamilyCandidates)
-$text = [string]$inputJson.text
-$fontSize = [float]$inputJson.fontSize
-$width = [int]$inputJson.width
-$height = [int]$inputJson.height
 $outputPath = [string]$inputJson.outputPath
 
 $pfc = $null

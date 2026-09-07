@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { validatePreviewInput } from '../runtime/previewInputPolicy'
 import type { PreviewNativeRenderRequest,PreviewNativeRenderResult,PreviewNativeRendererOptions } from './previewNativeRenderTypes'
 import { findDirectWritePreviewHelperPath } from './directwrite/directWritePreviewHelperPathRuntime'
 import { renderWithDirectWritePreviewHelper } from './directwrite/directWritePreviewRequestRuntime'
@@ -33,6 +34,10 @@ export function createPreviewNativeRenderer(options: PreviewNativeRendererOption
   }
 
   async function renderNativePreview(request: PreviewNativeRenderRequest, inputPath: string): Promise<PreviewNativeRenderResult> {
+    // Validate before helper discovery, Rust invocation, or fallback selection.
+    request = { ...request, ...validatePreviewInput(request, options.appendStartupLog) }
+    // All file-based backends consume the exact same validated payload as Rust.
+    await fs.promises.writeFile(inputPath, JSON.stringify(request, null, 2), 'utf-8')
     logHelperAvailabilityOnce()
 
     if (options.runRustPreviewRenderImage) {

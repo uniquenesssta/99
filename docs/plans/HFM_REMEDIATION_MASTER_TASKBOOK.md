@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.9
+- 文档版本：1.10
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 3「文件移动一致性与预览限额」执行中；AT-3.1 自动验证完成，AT-3.2 待开始，Windows/NAS 外部验收保留
+- 当前阶段：Stage 3「文件移动一致性与预览限额」实现及本环境门禁通过；AT-3.2 Rust/PowerShell 校验执行、Windows 位图与 NAS 外部验收待补，尚未完整收口
 - 当前阶段任务书：[`HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md`](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -258,6 +258,8 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 
 #### AT-3.2 统一所有预览后端输入限额
 
+状态：实现和本环境门禁通过。统一拒绝策略、精确调度组键、版本化缓存兼容、限频日志及原生第二道校验已落地。175 个 JS 行为用例、C++ 实际输入策略 59 用例、typecheck、74/74 长期诊断与 Electron 三端构建/混淆通过。Rust/PowerShell 校验执行和 Windows 位图验收未在本环境完成，三后端硬门禁保留为待补；重建原生组件和旧缓存按需重生成的操作见 Stage 3 任务书。
+
 - 在进入 Rust/C++/PowerShell 之前统一 clamp 或拒绝 width、height、fontSize、text length。
 - Rust 侧保留第二道防线；C++ 和 PowerShell 回退路径采用同一常量契约。
 - 记录被修正或拒绝的异常请求，避免无限日志。
@@ -491,7 +493,7 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 | Stage 0 | 完成 | 本阶段分支（AT-0.1 至 AT-0.4） | `npm run verify` 通过，64/64 长期诊断；事务观察 8/8、路径观察 8/8；三大编排契约通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 专属矩阵作为外部验收项保留 |
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
 | Stage 2 | 完成（AT-2.1 至 AT-2.4） | 本阶段分支四个独立 Atomic Task 提交 | P0.1-P0.5、P1-P8、`npm run verify` 72/72、路径/副作用/补偿行为、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；Windows 真实 UNC/跨盘/长路径/junction/HKCU registry 为外部验收项，未伪报通过 |
-| Stage 3 | 进行中（AT-3.1 自动验证完成） | 本阶段分支 AT-3.1 独立提交 | 29 个移动事务/中断场景、73/73 长期诊断、三端 build/混淆及编排契约通过 | 分支 `stage/03-file-preview-consistency` 源于 Stage 2 同树完成基线；AT-3.2 未开始，Windows/NAS 实机与不支持硬链接的卷兼容边界详见阶段任务书 |
+| Stage 3 | 实现及本环境门禁通过，原生完整验收待补 | 本阶段分支 AT-3.1、AT-3.2 两个独立提交 | 29 个移动场景、175 个预览 JS 场景、C++ 输入策略 59 场景、74/74 长期诊断、三端 build/混淆及编排契约通过 | 分支 `stage/03-file-preview-consistency`；Rust/PowerShell 校验执行、Windows/NAS 与最大位图内存仍待补。需重建 Rust/C++，预览缓存按新渲染版本重生成；不支持硬链接的卷兼容边界仍保留 |
 | Stage 4 | 阻塞于 Stage 3 | - | - | - |
 | Stage 5 | 阻塞于 Stage 3 | - | - | - |
 | Stage 6 | 阻塞于 Stage 3 | - | - | - |

@@ -52,6 +52,7 @@
     "diagnostics:nas-cache": "node build/diagnostics/check-nas-cache-summary.cjs",
     "diagnostics:preview-cache-manifest": "node build/diagnostics/check-preview-cache-manifest.cjs",
     "diagnostics:preview-cache-key-policy": "node build/diagnostics/check-preview-cache-key-policy.cjs",
+    "diagnostics:preview-input-boundary": "node build/diagnostics/check-preview-input-boundary.cjs",
     "diagnostics:shared-metadata-field-merge": "node build/diagnostics/check-shared-metadata-field-merge.cjs",
     "diagnostics:shared-tag-ops-replay": "node build/diagnostics/check-shared-tag-ops-replay.cjs",
     "diagnostics:shared-lease-lock": "node build/diagnostics/check-shared-lease-lock.cjs",

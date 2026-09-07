@@ -1,8 +1,11 @@
 import { hasDirectWritePreviewHelper } from '../native-renderer/directwrite/directWritePreviewHelperPathRuntime'
 
-export const DEFAULT_PREVIEW_TEXT = '字体预览 AaBb 123'
-export const POWERSHELL_PREVIEW_RENDERER_VERSION = 'native-preview-powershell-center-v6'
-export const DIRECTWRITE_PREVIEW_RENDERER_VERSION = 'native-preview-private-gdi-inkbox-v7'
+import { DEFAULT_PREVIEW_TEXT } from './previewInputPolicy'
+export { DEFAULT_PREVIEW_TEXT } from './previewInputPolicy'
+// Input text is now preserved consistently (including whitespace and JSON
+// escapes). Do not reuse images produced with the former backend semantics.
+export const POWERSHELL_PREVIEW_RENDERER_VERSION = 'native-preview-powershell-center-v7'
+export const DIRECTWRITE_PREVIEW_RENDERER_VERSION = 'native-preview-private-gdi-inkbox-v8'
 export const PREVIEW_CACHE_KEY_SCHEMA_VERSION = 'preview-cache-key-v2'
 export const PREVIEW_CACHE_OUTPUT_FORMAT = 'png'
 

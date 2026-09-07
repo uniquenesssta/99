@@ -232,7 +232,7 @@ fn create_preview_font(request: &PreviewRenderRequest) -> Result<PreviewFont, St
     if request.prefer_system_font {
         for family_name in &request.system_font_family_candidates {
             match create_system_font_family(family_name).and_then(|family| {
-                let font = create_font(family.0, request.font_size)?;
+                let font = create_font(family.0, request.font_size as f32)?;
                 Ok(PreviewFont {
                     font,
                     _private_collection: None,
@@ -249,7 +249,7 @@ fn create_preview_font(request: &PreviewRenderRequest) -> Result<PreviewFont, St
         let font_path = wide_null(&request.font_path);
         let collection = create_private_font_collection(&font_path)?;
         let family = first_font_family(collection.0)?;
-        let font = create_font(family, request.font_size)?;
+        let font = create_font(family, request.font_size as f32)?;
         return Ok(PreviewFont {
             font,
             _private_collection: Some(collection),

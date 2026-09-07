@@ -1,4 +1,5 @@
 import { promises as fsp } from "node:fs";
+import { validatePreviewInput } from "./previewInputPolicy";
 import { dirname, join, resolve } from "node:path";
 import type { FontItem, LibraryState } from "../../../shared/types";
 import { findBestWatchedRootForFile } from "../../path/fontPathPolicy";
@@ -8,7 +9,6 @@ import {
 } from "../../path/ioDeadlineRuntime";
 import type { PreviewCacheIndexStatus } from "../previewCacheRuntime";
 import {
-  DEFAULT_PREVIEW_TEXT,
   previewCacheKey,
   previewCacheTextHash,
   previewFontSignature,
@@ -726,7 +726,7 @@ export function createPreviewCacheStorageRuntime(
     width = 520,
     height = 150,
   ): Promise<Record<string, boolean>> {
-    const normalizedText = text || DEFAULT_PREVIEW_TEXT;
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, options.appendStartupLog);
     const libraryShell = await loadLibraryShellCached();
     const groups = new Map<
       string,
@@ -938,7 +938,7 @@ export function createPreviewCacheStorageRuntime(
     width = 520,
     height = 150,
   ): Promise<Record<string, string>> {
-    const normalizedText = text || DEFAULT_PREVIEW_TEXT;
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, options.appendStartupLog);
     const libraryShell = await loadLibraryShellCached();
     const groups = new Map<
       string,

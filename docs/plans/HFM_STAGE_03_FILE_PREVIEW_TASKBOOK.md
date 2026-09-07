@@ -2,21 +2,22 @@
 
 ## 0. 状态与基线
 
-- 日期：2026-09-07；文档版本：1.0；应用版本保持 3.0.0。
+- 日期：2026-09-07；文档版本：1.1；应用版本保持 3.0.0。
 - 分支：`stage/03-file-preview-consistency`；每个 Atomic Task 独立提交，不直接修改 main。
 - Stage 2 完成基线：远端 `a2b9ef95a957d9ddf1ef72599572166036769beb`；本地 `cc001eb3770675ca1c6bdfb33d10388b3ee3f934`。
 - 两个基线提交的代码树相同：`7d14bc2999155dc8cf36a3d9ecf59fdce38bec5b`。提交 ID 不同来自既有 GitHub 连接发布方式，不代表代码差异。
-- 当前：AT-3.1 自动验证完成；AT-3.2 尚未开始；Windows/NAS 实机矩阵仍为外部验收。
+- 当前：AT-3.1 自动验证完成；AT-3.2 实现和本环境门禁完成，Rust/PowerShell 原生校验执行及 Windows 位图验收待补；Stage 3 不标为完整验收通过。
+- AT-3.2 起点：远端 `e5f8d131786875b2bba591b2d01cf5c81b29a0ca`、本地 `cba6e011ce98496031dc673f56917b1402f42fd1`，同树 `e814ea2981bde6db5096ccf4fb562af4371f2be4`。
 - 上级：[修复与编排重构总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。
 
 ## 1. 阶段目标与范围
 
 | 原子任务 | 目标 | 状态 |
 | --- | --- | --- |
-| AT-3.1 | 跨卷移动先完成可验证的目标提交，再删除源；如实结算部分失败 | 自动验证完成，本提交 |
-| AT-3.2 | Rust/C++/PowerShell 预览入口统一 width、height、fontSize、text 长度边界 | 未开始 |
+| AT-3.1 | 跨卷移动先完成可验证的目标提交，再删除源；如实结算部分失败 | 自动验证完成，前一独立提交 |
+| AT-3.2 | Rust/C++/PowerShell 预览入口统一 width、height、fontSize、text 长度边界 | 实现及本环境门禁通过，原生完整验收待补 |
 
-本次允许修改字体移动领域、文件提交协议、其主进程接线、共享结果类型、直接前端消费者和相应诊断。目录树读取及 create/rename 留在原模块，不改变其行为。禁止混入预览限额、数据库迁移、Rust 命令、新生产依赖、通用 PowerShell 回退或 Stage 4/5/6 全文件搬迁。
+AT-3.1 修改字体移动领域、文件提交协议、其主进程接线、共享结果类型、直接前端消费者和相应诊断；目录树读取及 create/rename 留在原模块。AT-3.2 只修改预览输入策略、其缓存/调度/IPC 日志消费者、直接相关原生校验与诊断。两个原子任务独立提交；不混入数据库迁移、Rust 命令、新生产依赖、通用 PowerShell 回退或 Stage 4/5/6 全文件搬迁。
 
 ## 2. AT-3.1 修复前证据
 
@@ -148,7 +149,7 @@ flowchart TD
 - Windows 占用文件、关闭句柄、刷盘、源删除失败及 UI 最终状态。
 - NAS 断线/恢复、确认响应丢失后的实物状态，以及大批量文件移动时延。
 - 机器断电、内核崩溃和设备/网络存储缓存持久性。文件 sync 不是目录元数据、控制器缓存或 NAS 断电持久性的保证。
-- Rust/Cargo 未在此环境重建，Rust 源码没有变化。
+- AT-3.1 未修改或重建 Rust；AT-3.2 的原生变更验收见第 10 节。
 
 ## 9. 巨型编排文件再审计
 
@@ -164,7 +165,7 @@ flowchart TD
 
 拆分依据是状态、副作用及变化原因，不是行数。目录代码不导入移动 owner；磁盘 owner 不知道 FontItem、watched roots 或 UI；前端不解释底层文件副作用。该结果不等于已完成三大编排文件拆分，更不能承诺“完美”或无回归；Stage 4/5/6 仍必须沿既定契约审计后实施。
 
-## 10. AT-3.2 详细执行任务（未开始）
+## 10. AT-3.2 执行与验收记录
 
 1. 读取三条真实预览调用链与现有 Rust/C++/PowerShell 尺寸限制，确认当前常量、默认值及缓存键关系。
 2. 先建立三个后端的可执行输入边界测试，覆盖最小/最大、上下越界、NaN/Infinity、非整数、空文本和超长文本；在旧实现上复现不一致。
@@ -175,6 +176,91 @@ flowchart TD
 7. 跑定向输入边界、预览缓存/布局/调度门禁、typecheck、完整 diagnostics 与可用构建；需 Rust 构建而环境不可用时明确保留外部验证。
 8. 重审 index.ts、Rust facade、App.tsx 的职责变化，补充本任务书、总任务书、README；单独提交在本 Stage 3 分支，不新建子任务分支。
 
+### 10.1 修复前证据与统一契约
+
+旧 Rust 会 clamp width 64–4096、height 32–2048、fontSize 8–320；C++ 仅下限保护，且在检查前转 unsigned；PowerShell 直接转型后分配。三者均无文本长度上限。旧 C++ 数值扫描会误读 null、指数形式和后续字段；Rust 将纯空白文本替换为默认文字，而其他后端保留空白。
+
+新增真实调度模块行为测试后，旧实现首先复现非法 NaN width 被送入 Rust；可重复的三路旧树验证如下（均应退出 1，超长 text 进入后端）。测试只替换后端执行器，不启动 Windows 程序：
+
+```bash
+node build/diagnostics/check-preview-input-boundary.cjs --baseline=cba6e01 --engine=rust-directwrite
+node build/diagnostics/check-preview-input-boundary.cjs --baseline=cba6e01 --engine=directwrite
+node build/diagnostics/check-preview-input-boundary.cjs --baseline=cba6e01 --engine=powershell-gdi
+```
+
+从 GitHub 拉取者可将 baseline 换成同树远端提交 `e5f8d131`。
+
+| 字段 | 统一策略 |
+| --- | --- |
+| width | number、有限整数，64–4096，含边界 |
+| height | number、有限整数，32–2048，含边界 |
+| fontSize | number、有限值，8–320，保留合法小数字号 |
+| text | 字符串，最多 4096 个 UTF-16 code units；一个补充平面字符占两个单位；拒绝孤立代理项 |
+| 空文本 | 仅空字符串转换为 `字体预览 AaBb 123`；空格、换行及其他实际内容保留，不截断 |
+| 非法输入 | NaN/Infinity、错误类型、越界、非整数尺寸、超长文本明确拒绝，错误前缀 `PREVIEW_INPUT_INVALID` |
+| 默认参数 | 保留公开运行时原默认值：即时预览 44/720/260，缓存 34/520/150；原生内部 JSON 必须显式提供上述四字段 |
+
+选择拒绝而不是 clamp：缓存、任务参数与实际位图维持一致，不把超限输入静默变成另一请求。Rust 使用 `encode_utf16()` 计数，依据 [Rust 标准库文档](https://doc.rust-lang.org/std/primitive.str.html#method.encode_utf16)，不能用 UTF-8 字节数替代 Windows 文本长度。Context7 未检索到匹配片段，已使用该官方文档核对。
+
+### 10.2 真实落位与错误链路
+
+- `previewInputPolicy.ts` 是应用输入策略 owner；TS 常量由 PowerShell 脚本直接引用，Rust/C++ 镜像由长期诊断逐项锁定。
+- 即时生成、单项/批量缓存读、缓存状态与调度入队都在写文件、建缓存键或创建任务前校验；非法请求不会写 failed 字体索引或污染 miss cache。
+- 原生调度入口复核并写入同一 UTF-8 JSON；Rust 回调接到的对象与 C++/PowerShell 文件载荷相同。原生校验位于位图分配前，数值检查先于窄化转换。
+- C++ 输入策略头文件独立于 Windows，可编译执行真实数字/文本解析与边界函数；JSON 转义、UTF-16 代理对及指数数字正确解析，数字 token 长度也有界。
+- 合法小数字号不被调度器 Math.round 合并。组键改用精确参数数组 JSON，避免旧组键冲突。
+- 策略日志按 sink 合并，每 5 秒最多一条并带已抑制数，不记录请求文本/路径；IPC 保留原异常但不重复展开该类错误。其他 IPC 错误日志保持原行为，显式开启的详细性能跟踪仍按原设置运行。
+- 不新增缓存存储层、daemon、Rust facade、全局 React 状态或生产依赖；回退开关 `HFM_NODE_BRIDGE_FALLBACK=1` 的政策未改。
+
+### 10.3 缓存与位图兼容影响
+
+统一文本语义修复了 Rust 纯空白替换和 C++ JSON 转义误读。为避免命中旧语义生成的图，渲染版本提升为 PowerShell `center-v7`、DirectWrite/private GDI `inkbox-v8`；legacy 和 strict 两套 key 公式、schema 与存储格式不变。旧缓存不原地删除，新请求按新版本键读取并按需生成；首次浏览可能变慢并暂时占用更多缓存空间，旧文件继续由现有清理机制处理。共享元数据版本校验沿用原机制。
+
+输出位图最多 4096×2048，32bpp 原始像素约 32 MiB。C++ 保留原 scratch 画布算法和正常布局，最大 scratch 为 12288×6144，约 288 MiB；两张原始位图合计最多约 320 MiB/请求，不代表整个进程 RSS 上限。现有并发限制继续生效，Windows 峰值内存仍需实测；本任务没有通过降低既有可用尺寸来伪造性能改善。
+
+### 10.4 门禁、外部补验与 pull 后操作
+
+- `npm --offline run verify`：typecheck 与 74/74 长期诊断通过。
+- `diagnostics:preview-input-boundary`：175 个 JS 行为用例，包括三条分派路径、输入 JSON 一致、非法请求零后端调用、缓存读拦截、小数字号并发、100 次 IPC 拒绝的日志限频与缓存版本隔离。
+- C++17 实际输入策略已通过 g++ 编译，59 个用例通过；不是 Windows GDI+ 渲染测试。
+- Rust 与 PowerShell 共用输入 fixture，诊断会在工具可用时执行真实校验。当前缺 Cargo/PowerShell，明确打印 `EXTERNAL VERIFICATION REQUIRED`；不得解释为这两条原生测试已通过。
+- 既有预览缓存/发布/元数据/布局/调度/并发门禁与编排契约通过；Electron/Vite main、preload、renderer 构建及混淆通过。
+
+pull 后不需迁移字体库或更改依赖版本；**运行/打包前必须重建这次改动的 Rust 与 C++ 原生程序**，不要继续使用仓库中旧 C++ exe 来验收新文本语义。在已安装 VS 2022 C++ 工具链、Rust/Cargo 和依赖的 Windows 终端执行：
+
+```bat
+call native-src\preview-renderer\build-win.cmd
+npm run rust:build
+node build/diagnostics/check-preview-input-boundary.cjs --require-native
+npm run verify
+npm run build
+```
+
+原 C++ 构建脚本新增 `/utf-8`，避免编译默认代码页改变中文默认文本。严格诊断要求 C++ 编译器、PowerShell 与 Cargo 全部可执行；缺任何一项退出失败。Cargo 测试使用已有离线依赖。
+
+Windows 后续还需分别以 Rust、显式允许的 C++/PowerShell 路径渲染边界尺寸、中文/emoji/空白/转义文本，检查非法输入没有输出 PNG，合法输出尺寸准确，失败不伪报成功，以及最大尺寸时的内存与关闭释放；旧/新缓存及共享缓存首次重建也需实机检查。缺少这些结果前，三条原生后端硬门禁和 Stage 3 完整验收仍待完成。
+
+### 10.5 编排再审计与链路图
+
+AT-3.2 未修改 `index.ts`（2075 行）、`rustCoreWorkerRuntime.ts`（2994 行）、`App.tsx`（1397 行）或 `AppRootView.tsx`（386 行、169 平铺属性）。115 注册键、7/2 生命周期、45 方法/38 命令及 10 条 UI 流程仍通过。输入规则放入独立 64 行策略模块，现有预览 runtime 仅调用该策略；跨后端依赖未倒灌进组合根。Stage 4/5/6 的拆分目标与验收要求保留，本任务不宣称巨型文件已拆完或达到“完美”。
+
+```mermaid
+flowchart TD
+ A["预览、缓存与批量请求"] --> B["统一策略：类型、范围、UTF-16 长度"]
+ B -->|"非法输入"| C["限频记录并返回原错误"]
+ B -->|"合法输入"| D["精确分组与版本化缓存键"]
+ D -->|"命中"| J["读取缓存图片"]
+ D -->|"未命中"| E["调度入口复核，写入同一 JSON"]
+ E --> F["Rust 原生校验"]
+ E -->|"兼容开关允许回退"| G["C++ 原生校验"]
+ E -->|"兼容开关允许回退"| H["PowerShell 原生校验"]
+ F --> I["通过校验后分配有界位图"]
+ G --> I
+ H --> I
+ I --> K["图片与缓存元数据"]
+ K --> D
+```
+
 ## 11. 退出、回滚与记录
 
 - AT-3.1 和 AT-3.2 均通过各自硬门禁后才可结束 Stage 3。
@@ -182,4 +268,5 @@ flowchart TD
 - 每个原子任务一个可回退提交。回滚 AT-3.1 时同时回滚两个 owner、组合、结果消费者及对应门禁，不保留半套协议。
 - 没有数据库或持久配置迁移；回退代码不会自动删除磁盘上已经移动的字体或清理中断遗留文件。
 - 本任务不删除用户字体资产、私钥或无关文件，不改 package-lock.json。
-- 提交说明：`fix: 建立可恢复的字体移动提交协议`。
+- AT-3.1 提交说明：`fix: 建立可恢复的字体移动提交协议`。
+- AT-3.2 提交说明：`fix: 统一原生预览输入边界与缓存语义`。回滚时整组回滚策略、原生源码、调用方、缓存版本与门禁，并重建原生程序；不要只回退单一后端。

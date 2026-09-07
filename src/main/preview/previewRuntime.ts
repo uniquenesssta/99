@@ -1,4 +1,5 @@
 import { promises as fsp } from 'node:fs'
+import { validatePreviewInput } from './runtime/previewInputPolicy'
 import { join,resolve } from 'node:path'
 import type { FontItem } from '../../shared/types'
 import { findBestWatchedRootForFile } from '../path/fontPathPolicy'
@@ -87,6 +88,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     readCachedFontPreviewImage,
     readCachedFontPreviewImages
   } = createCachedPreviewReadRuntime({
+    appendStartupLog,
     ensureWindows,
     sha1,
     previewCacheStorageForFont,
@@ -106,7 +108,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     ensureWindows()
 
     const resolvedFontPath = resolve(item.path)
-    const normalizedText = text || DEFAULT_PREVIEW_TEXT
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog)
     const installedRoute = resolveInstalledFontPreviewRoute(item)
     const previewCache = await previewCacheStorageForFont(resolvedFontPath)
     let stat = previewCacheStatForInstalledRoute(
@@ -219,8 +221,6 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       preferSystemFont?: boolean
       systemFontFamilyCandidates?: string[]
     }): Promise<void> {
-      // JSON 明确按 UTF-8 写入；PowerShell / DirectWrite helper 读取时也指定 UTF-8。
-      await fsp.writeFile(inputPath, JSON.stringify(request, null, 2), 'utf-8')
       const renderResult = await nativePreviewRenderer.renderNativePreview(request, inputPath)
       if (!renderResult.ok || !(await fileExistsWithDeadline(renderResult.outputPath || outputPath))) {
         throw new Error(renderResult.message || `${renderResult.engine} preview renderer did not create output.`)
@@ -343,6 +343,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     width = 720,
     height = 260
   ): Promise<string> {
+    text = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog).text
     const requestKey = previewImageMemoryRuntime.requestKey(item, text, fontSize, width, height)
     const cachedDataUri = previewImageMemoryRuntime.get(requestKey)
     if (cachedDataUri) return cachedDataUri

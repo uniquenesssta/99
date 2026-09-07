@@ -28,7 +28,7 @@ if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 if errorlevel 1 goto fail
 
 echo [hfm-preview-renderer] compiling...
-cl /nologo /EHsc /std:c++17 /O2 hfm-preview-renderer.cpp /Fe:"%OUTPUT_EXE%" /link gdiplus.lib gdi32.lib user32.lib
+cl /nologo /EHsc /std:c++17 /utf-8 /O2 hfm-preview-renderer.cpp /Fe:"%OUTPUT_EXE%" /link gdiplus.lib gdi32.lib user32.lib
 if errorlevel 1 goto fail
 
 if not exist "%OUTPUT_EXE%" (

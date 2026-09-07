@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include "preview-input-policy.h"
 
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -82,63 +83,33 @@ static std::string readFileUtf8(const std::wstring& path) {
 }
 
 static std::string jsonStringValue(const std::string& json, const char* key) {
-  std::string needle = std::string("\"") + key + "\"";
-  size_t p = json.find(needle);
-  if (p == std::string::npos) return "";
-  p = json.find(':', p + needle.size());
-  if (p == std::string::npos) return "";
-  p = json.find('"', p + 1);
-  if (p == std::string::npos) return "";
   std::string out;
-  bool escape = false;
-  for (size_t i = p + 1; i < json.size(); ++i) {
-    char c = json[i];
-    if (escape) {
-      if (c == 'n') out.push_back('\n');
-      else if (c == 'r') out.push_back('\r');
-      else if (c == 't') out.push_back('\t');
-      else out.push_back(c);
-      escape = false;
-      continue;
-    }
-    if (c == '\\') { escape = true; continue; }
-    if (c == '"') break;
-    out.push_back(c);
-  }
-  return out;
-}
-
-static double jsonNumberValue(const std::string& json, const char* key, double fallback) {
-  std::string needle = std::string("\"") + key + "\"";
-  size_t p = json.find(needle);
-  if (p == std::string::npos) return fallback;
-  p = json.find(':', p + needle.size());
-  if (p == std::string::npos) return fallback;
-  size_t start = json.find_first_of("-0123456789", p + 1);
-  if (start == std::string::npos) return fallback;
-  size_t end = json.find_first_not_of("0123456789.-", start);
-  try {
-    return std::stod(json.substr(start, end == std::string::npos ? std::string::npos : end - start));
-  } catch (...) {
-    return fallback;
-  }
+  return preview_input::stringValue(json, key, out) ? out : "";
 }
 
 static bool parseRequest(const std::wstring& inputPath, Request& request, std::wstring& error) {
   std::string json = readFileUtf8(inputPath);
   request.fontPath = widenUtf8(jsonStringValue(json, "fontPath"));
-  request.text = widenUtf8(jsonStringValue(json, "text"));
+  std::string text;
+  const bool textValid = preview_input::stringValue(json, "text", text);
+  request.text = widenUtf8(text);
   request.outputPath = widenUtf8(jsonStringValue(json, "outputPath"));
-  request.fontSize = (float)jsonNumberValue(json, "fontSize", 72.0);
-  request.width = (UINT)jsonNumberValue(json, "width", 900.0);
-  request.height = (UINT)jsonNumberValue(json, "height", 260.0);
+  const double fontSize = preview_input::numberValue(json, "fontSize");
+  const double width = preview_input::numberValue(json, "width");
+  const double height = preview_input::numberValue(json, "height");
+  if (!textValid
+      || !preview_input::valid(width, height, fontSize, request.text.size())) {
+    error = L"PREVIEW_INPUT_INVALID: preview limits exceeded";
+    return false;
+  }
+  // Cast only after finite/range/integer validation; never wrap negative dimensions.
+  request.fontSize = (float)fontSize;
+  request.width = (UINT)width;
+  request.height = (UINT)height;
 
   if (request.fontPath.empty()) { error = L"fontPath is empty"; return false; }
   if (request.outputPath.empty()) { error = L"outputPath is empty"; return false; }
   if (request.text.empty()) request.text = L"字体预览 AaBb 123";
-  if (request.width < 64) request.width = 64;
-  if (request.height < 32) request.height = 32;
-  if (request.fontSize < 8.0f) request.fontSize = 8.0f;
   return true;
 }
 

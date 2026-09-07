@@ -18,7 +18,7 @@ pub fn render_preview_image(config: &PreviewRenderCommandConfig) -> Result<Strin
         .map_err(|error| format!("failed to read preview render input: {}", error))?;
     let request: PreviewRenderRequest = serde_json::from_str(&input)
         .map_err(|error| format!("failed to parse preview render input: {}", error))?;
-    let request = request.normalized();
+    let request = request.normalized()?;
     validate_request(&request)?;
 
     platform_render_preview_image(&request)?;

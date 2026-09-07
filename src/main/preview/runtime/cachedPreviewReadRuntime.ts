@@ -2,13 +2,15 @@ import fs from 'node:fs'
 import { promises as fsp } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { FontItem } from '../../../shared/types'
-import { DEFAULT_PREVIEW_TEXT, previewCacheKey } from './previewCacheKeyRuntime'
+import { previewCacheKey } from './previewCacheKeyRuntime'
+import { validatePreviewInput } from './previewInputPolicy'
 import { previewCacheIdentityForInstalledRoute, previewCacheStatForInstalledRoute, resolveInstalledFontPreviewRoute } from './previewInstalledFontRouteRuntime'
 import { createCachedPreviewReadCoalescerRuntime } from './cachedPreviewReadCoalescerRuntime'
 import { createCachedPreviewImageDataUriCacheRuntime } from './cachedPreviewImageDataUriCacheRuntime'
 import { createCachedPreviewMissCacheRuntime } from './cachedPreviewMissCacheRuntime'
 
 export function createCachedPreviewReadRuntime(args: {
+  appendStartupLog?: (message: string) => void
   ensureWindows: () => void
   sha1: (value: string) => string
   previewCacheStorageForFont: (fontPath: string) => Promise<any>
@@ -27,7 +29,7 @@ export function createCachedPreviewReadRuntime(args: {
     width = 520,
     height = 150
   ): Promise<string> {
-    const normalizedText = text || DEFAULT_PREVIEW_TEXT
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, args.appendStartupLog)
     const memoryKey = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height)
     const memoryHit = dataUriCache.get(memoryKey)
     if (memoryHit) return memoryHit
@@ -75,7 +77,7 @@ export function createCachedPreviewReadRuntime(args: {
     width = 520,
     height = 150
   ): Promise<Record<string, string>> {
-    const normalizedText = text || DEFAULT_PREVIEW_TEXT
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, args.appendStartupLog)
     const result: Record<string, string> = {}
     const misses: FontItem[] = []
 

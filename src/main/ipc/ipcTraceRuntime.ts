@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { PreviewInputError } from "../preview/runtime/previewInputPolicy";
 import { assertTrustedIpcSender } from "../security/ipcSenderValidation";
 import { detailedStartupLogsEnabled } from "../logging/startupLogPolicy";
 import type { IpcHandlerRuntime,IpcInvokeHandler } from "./ipcHandlerTypes";
@@ -265,6 +266,9 @@ export function registerTracedIpcHandler(runtime: IpcHandlerRuntime, channel: st
       }
       return result
     } catch (error) {
+      // The preview policy already records these through its bounded log sink.
+      // Preserve the rejection without a second per-request error/argument log.
+      if (error instanceof PreviewInputError) throw error
       const elapsed = Date.now() - startedAt
       const cpu = process.cpuUsage(cpuStarted)
       runtime.appendLog?.(

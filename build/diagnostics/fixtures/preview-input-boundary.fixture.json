@@ -1,0 +1,258 @@
+{
+  "base": {
+    "fontPath": "font.ttf",
+    "text": "字体 Aa",
+    "fontSize": 44,
+    "width": 720,
+    "height": 260,
+    "outputPath": "out.png"
+  },
+  "cases": [
+    {
+      "patch": {},
+      "ok": true
+    },
+    {
+      "patch": {
+        "width": 64,
+        "height": 32,
+        "fontSize": 8
+      },
+      "ok": true
+    },
+    {
+      "patch": {
+        "width": 4096,
+        "height": 2048,
+        "fontSize": 320
+      },
+      "ok": true
+    },
+    {
+      "patch": {
+        "fontSize": 34.5
+      },
+      "ok": true
+    },
+    {
+      "patch": {
+        "text": ""
+      },
+      "ok": true
+    },
+    {
+      "patch": {
+        "text": " \n\t "
+      },
+      "ok": true
+    },
+    {
+      "patch": {
+        "text": "width \"height\" \\ \u0000 \b \f 😀"
+      },
+      "ok": true
+    },
+    {
+      "patch": {
+        "text": "汉"
+      },
+      "repeat": 4096,
+      "ok": true
+    },
+    {
+      "patch": {
+        "text": "😀"
+      },
+      "repeat": 2048,
+      "ok": true
+    },
+    {
+      "patch": {
+        "text": "汉"
+      },
+      "repeat": 4097,
+      "ok": false
+    },
+    {
+      "patch": {
+        "text": "😀"
+      },
+      "repeat": 2049,
+      "ok": false
+    },
+    {
+      "patch": {
+        "width": null
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "width": "100"
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "width": true
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "width": -1
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "width": 0
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "width": 1e+100
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "height": null
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "height": "100"
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "height": true
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "height": -1
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "height": 0
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "height": 1e+100
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "fontSize": null
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "fontSize": "100"
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "fontSize": true
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "fontSize": -1
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "fontSize": 0
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "fontSize": 1e+100
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "width": 63
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "width": 4097
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "width": 720.5
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "height": 31
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "height": 2049
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "height": 260.5
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "fontSize": 7.99
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "fontSize": 320.01
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "fontSize": 320.000001
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "text": null
+      },
+      "ok": false
+    },
+    {
+      "patch": {
+        "text": 123
+      },
+      "ok": false
+    }
+  ]
+}
