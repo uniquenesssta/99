@@ -12,17 +12,16 @@ function assert(condition, message) { if (!condition) throw new Error(message) }
 function includes(relativePath, needle) { assert(read(relativePath).includes(needle), `${relativePath} missing ${needle}`) }
 
 function testBatchMoveRuntime() {
-  const text = read('src/main/folders/physicalFolders.ts')
+  const text = read('src/main/folders/fontMoveTransactionRuntime.ts')
   for (const needle of [
     'moveFontFilesToFolder',
     "operation: 'move-font-batch'",
-    'resourcePaths: [target.targetFolder, ...prepared.map((row) => row.sourcePath)]',
-    'moveFileWithCrossDeviceFallback',
-    'uniqueDestinationPath(target.targetFolder',
+    'resourcePaths: [target.targetFolder, ...preparedRows.map((row) => row.sourcePath)]',
+    'fileCommitRuntime.moveFile(prepared.sourcePath, target.targetFolder',
     'withSharedLeaseLocks',
     'batchFailureMessage',
     '失败原因：${batchFailureMessage}',
-  ]) includes('src/main/folders/physicalFolders.ts', needle)
+  ]) assert(text.includes(needle), `fontMoveTransactionRuntime.ts missing ${needle}`)
 }
 
 function testBatchMoveIpcAndPreload() {

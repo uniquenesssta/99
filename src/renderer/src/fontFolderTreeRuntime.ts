@@ -77,7 +77,15 @@ export function createFontFolderTreeRuntime(options: FontFolderTreeRuntimeOption
     try {
       const result = await options.hfm.moveFontFileToFolder(font, targetPhysicalPath)
       if (!result.ok) {
-        setStatus(result.message)
+        const refreshReport = result.outcome === 'commit-uncertain' || result.outcome?.startsWith('target-committed-')
+          ? await refreshIndexesAfterPhysicalMutation({
+            hfm: options.hfm,
+            watchedFolders: options.getCurrentLibrary().folders || [],
+            affectedPaths: [result.oldPath || font.path, result.newPath || '']
+          })
+          : null
+        options.setDraggingFontId('')
+        setStatus(`${result.message}${refreshReport ? physicalMutationIndexRefreshSuffix(refreshReport) : ''}`)
         return
       }
 
@@ -175,17 +183,25 @@ export function createFontFolderTreeRuntime(options: FontFolderTreeRuntimeOption
 
       try {
         const result = await options.hfm.moveFontFilesToFolder(fontsToMove, targetPhysicalPath)
-        const movedUpdates: Array<{ id: string; result: MoveFontFileResult }> = result.moved || []
+        const movedUpdates: Array<{ id: string; result: MoveFontFileResult }> = (result.moved || []).filter((row) => row.result.ok)
+        const partialResults = (result.failed || [])
+          .map((row) => row.result)
+          .filter((row): row is MoveFontFileResult => row?.outcome === 'commit-uncertain' || !!row?.outcome?.startsWith('target-committed-'))
 
         let saved = true
         let refreshReport = null
         if (movedUpdates.length) {
           const nextLibrary = options.commitLibraryUpdate((prev) => applyMovedFontsToLibrary(prev, movedUpdates))
           saved = await options.saveLibraryImmediately(nextLibrary)
+        }
+        if (movedUpdates.length || partialResults.length) {
           refreshReport = await refreshIndexesAfterPhysicalMutation({
             hfm: options.hfm,
-            watchedFolders: nextLibrary.folders || [],
-            affectedPaths: movedUpdates.flatMap((update) => [update.result.oldPath || '', update.result.newPath || ''])
+            watchedFolders: options.getCurrentLibrary().folders || [],
+            affectedPaths: [
+              ...movedUpdates.flatMap((update) => [update.result.oldPath || '', update.result.newPath || '']),
+              ...partialResults.flatMap((row) => [row.oldPath || '', row.newPath || ''])
+            ]
           })
         }
 

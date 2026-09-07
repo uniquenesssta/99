@@ -112,6 +112,25 @@ function loadPhysicalFolderModule(lockHooks = {}) {
   )
 }
 
+function loadFontMoveTransactionModule(lockHooks = {}) {
+  const fileCommitModule = loadTypeScriptModule('src/main/folders/fontFileMoveCommitRuntime.ts')
+  return loadTypeScriptModule(
+    'src/main/folders/fontMoveTransactionRuntime.ts',
+    (id) => {
+      if (id === './fontFileMoveCommitRuntime') return fileCommitModule
+      if (id === '../storage/runtime/sharedLeaseLockRuntime') {
+        return {
+          withSharedLeaseLocks: async (options, task) => {
+            await lockHooks.beforeMany?.(options)
+            return task()
+          },
+        }
+      }
+      return require(id)
+    },
+  )
+}
+
 function authorizationDenied(message = '文件系统状态已变化，请重试。') {
   return { ok: false, reason: 'outside-authorized-roots', message }
 }
@@ -125,6 +144,9 @@ async function runPhysicalCorrectness() {
   const observedLockOptions = []
   const physicalModule = loadPhysicalFolderModule({
     beforeSingle: async (options) => { observedLockOptions.push(options) },
+    beforeMany: async (options) => { observedLockOptions.push(options) },
+  })
+  const moveModule = loadFontMoveTransactionModule({
     beforeMany: async (options) => { observedLockOptions.push(options) },
   })
   const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'hfm-font-physical-'))
@@ -187,7 +209,13 @@ async function runPhysicalCorrectness() {
       ...policy,
       reconcileWatchedRoot: async (rootPath) => { reconciledRoots.push(rootPath) },
     }
-    const actions = physicalModule.createPhysicalFolderActions(deps)
+    const actions = {
+      ...physicalModule.createPhysicalFolderActions(deps),
+      ...moveModule.createFontMoveTransactionRuntime({
+        ...deps,
+        isProtectedFontPath: (filePath) => filePath.startsWith(path.join(tempRoot, 'system-fonts')),
+      }),
+    }
 
     const outsideCreated = path.join(outsideRoot, 'renderer-created')
     await expectReject('P6', () => actions.createPhysicalFolder(outsideRoot, 'renderer-created'), '授权')
@@ -256,8 +284,9 @@ async function runPhysicalCorrectness() {
     assert('P7', nonFontMove.ok === false && fs.existsSync(sourcePaths.nonFont), 'non-font source caused rename/copy/unlink')
 
     let moveSourceAuthorizationCalls = 0
-    const moveRaceActions = loadPhysicalFolderModule().createPhysicalFolderActions({
+    const moveRaceActions = loadFontMoveTransactionModule().createFontMoveTransactionRuntime({
       ...deps,
+      isProtectedFontPath: () => false,
       authorizeFontMoveSource: async (rawPath) => {
         moveSourceAuthorizationCalls += 1
         if (moveSourceAuthorizationCalls === 2) return authorizationDenied()
@@ -269,8 +298,9 @@ async function runPhysicalCorrectness() {
     assert('P7', fs.existsSync(sourcePaths.lockChanged), 'lock-time source authorization failure still caused rename/copy/unlink')
 
     let moveTargetAuthorizationCalls = 0
-    const targetRaceActions = loadPhysicalFolderModule().createPhysicalFolderActions({
+    const targetRaceActions = loadFontMoveTransactionModule().createFontMoveTransactionRuntime({
       ...deps,
+      isProtectedFontPath: () => false,
       authorizeFontMoveTarget: async (rawPath) => {
         moveTargetAuthorizationCalls += 1
         if (moveTargetAuthorizationCalls === 2) return authorizationDenied()
@@ -282,14 +312,16 @@ async function runPhysicalCorrectness() {
     assert('P7', fs.existsSync(sourcePaths.lockTargetChanged), 'lock-time target authorization failure still caused rename/copy/unlink')
 
     const reconciliationCountBeforePostFailure = reconciledRoots.length
-    const postVerifyActions = loadPhysicalFolderModule().createPhysicalFolderActions({
+    const postVerifyActions = loadFontMoveTransactionModule().createFontMoveTransactionRuntime({
       ...deps,
+      isProtectedFontPath: () => false,
       authorizeFontMoveDestination: async () => authorizationDenied(),
     })
     const postVerifyMove = await postVerifyActions.moveFontFileToFolder(fontItem('post-verify', sourcePaths.postVerify), targetFolder)
     const postVerifyDestination = path.join(targetFolder, path.basename(sourcePaths.postVerify))
     assert('P7', postVerifyMove.ok === false && postVerifyMove.message.includes('重试'), 'post-move boundary change did not return retryable failure')
-    assert('P7', !fs.existsSync(sourcePaths.postVerify) && fs.existsSync(postVerifyDestination), 'post-verification fixture did not commit the expected rename before failing closed')
+    assert('P7', fs.existsSync(sourcePaths.postVerify) && fs.existsSync(postVerifyDestination), 'failed target verification must retain the source after exclusive publication')
+    assert('P7', postVerifyMove.outcome === 'target-committed-source-retained' && postVerifyMove.newPath === postVerifyDestination, 'post-verification failure must report both recoverable paths')
     assert('P7', reconciledRoots.length > reconciliationCountBeforePostFailure, 'post-verification failure did not trigger authoritative root reconciliation')
 
     const batchMove = await actions.moveFontFilesToFolder([

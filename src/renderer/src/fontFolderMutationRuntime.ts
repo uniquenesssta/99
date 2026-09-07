@@ -93,6 +93,7 @@ export function applyMovedFontToLibrary(
   fontId: string,
   result: MoveFontFileResult
 ): LibraryState {
+  if (!result.ok) return library
   const nextFonts = { ...library.fonts }
   const nextFontFolderIds = { ...(library.fontFolderIds || {}) }
   if (nextFonts[fontId]) {
@@ -114,6 +115,7 @@ export function applyMovedFontsToLibrary(
   const nextFonts = { ...library.fonts }
   const nextFontFolderIds = { ...(library.fontFolderIds || {}) }
   for (const update of movedUpdates) {
+    if (!update.result.ok) continue
     if (nextFonts[update.id]) {
       nextFonts[update.id] = updateMovedFontPath(nextFonts[update.id], update.result)
     }

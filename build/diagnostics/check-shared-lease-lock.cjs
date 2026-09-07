@@ -62,14 +62,15 @@ function testDeleteUsesLeaseLock() {
 }
 
 function testMoveAndRenameUseLeaseLock() {
-  const text = readText('src/main/folders/physicalFolders.ts')
+  assertIncludes('src/main/folders/physicalFolders.ts', 'withSharedLeaseLock')
+  assertIncludes('src/main/folders/physicalFolders.ts', "operation: 'rename-folder'")
+  assertIncludes('src/main/folders/fontFileMoveCommitRuntime.ts', 'destination: await uniqueDestinationPath')
+  const text = readText('src/main/folders/fontMoveTransactionRuntime.ts')
   for (const needle of [
     'withSharedLeaseLock',
     'withSharedLeaseLocks',
-    "operation: 'rename-folder'",
     "operation: 'move-font'",
     'resourcePaths: [prepared.sourcePath, target.targetFolder]',
-    'destination = await uniqueDestinationPath',
     'batchFailureMessage',
     '失败原因：${batchFailureMessage}',
   ]) {

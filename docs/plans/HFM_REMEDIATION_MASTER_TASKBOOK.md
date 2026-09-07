@@ -2,11 +2,11 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.8
+- 文档版本：1.9
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 2「字体读取与破坏性操作的路径边界」自动门禁已完成；Windows 外部验收保留，Stage 3 待开始
-- 当前阶段任务书：[`HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md`](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)
+- 当前阶段：Stage 3「文件移动一致性与预览限额」执行中；AT-3.1 自动验证完成，AT-3.2 待开始，Windows/NAS 外部验收保留
+- 当前阶段任务书：[`HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md`](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
 
@@ -246,13 +246,15 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 
 #### AT-3.1 重写跨卷移动提交协议
 
+状态：自动验证完成。具体协议、返回契约、兼容边界及中断恢复见 Stage 3 任务书。
+
 - 先把 AT-2.3 后已达 614 行的 `physicalFolders.ts` 中“字体移动事务”提取为独立 owner；目录树读取与 create/rename 保持原职责，不建立只转发万能依赖的空壳。
-- 在目标目录写入唯一临时文件，完成 copy、flush/close 和尺寸/必要摘要校验后原子 rename。
+- 在目标目录写入唯一临时文件，完成排他 copy、flush/close 和尺寸/SHA-256 校验后原子排他发布。因 Node rename 可覆盖竞态目标，实际采用 link 发布后清理旧名称；不支持硬链接的文件系统明确拒绝，不静默退回覆盖式提交。
 - 目标提交成功后再删除源文件。
-- 源删除失败时返回“目标已提交、源仍存在”的部分成功状态，触发索引对账；禁止报告完全成功。
+- 源删除失败时返回“目标已提交、源仍存在”的部分成功状态，触发索引对账；NAS 确认丢失或源状态未知也有独立失败结果，禁止报告完全成功。
 - 任何预提交失败清理临时文件；已存在目标文件不得静默覆盖。
 
-硬门禁：复制失败、目标 rename 失败、源 unlink 失败和进程中断场景都有可恢复结果。
+硬门禁：复制失败、目标排他发布失败、源 unlink 失败和真实进程中断场景都有可恢复结果。29 场景门禁、73/73 全量诊断及三端构建通过；Windows/NAS 硬链接能力、性能和断电持久性仍为外部验收项。
 
 #### AT-3.2 统一所有预览后端输入限额
 
@@ -489,7 +491,7 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 | Stage 0 | 完成 | 本阶段分支（AT-0.1 至 AT-0.4） | `npm run verify` 通过，64/64 长期诊断；事务观察 8/8、路径观察 8/8；三大编排契约通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 专属矩阵作为外部验收项保留 |
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
 | Stage 2 | 完成（AT-2.1 至 AT-2.4） | 本阶段分支四个独立 Atomic Task 提交 | P0.1-P0.5、P1-P8、`npm run verify` 72/72、路径/副作用/补偿行为、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；Windows 真实 UNC/跨盘/长路径/junction/HKCU registry 为外部验收项，未伪报通过 |
-| Stage 3 | 待开始 | - | - | Stage 2 自动门禁已完成；必须从 Stage 2 完成基线创建独立分支 |
+| Stage 3 | 进行中（AT-3.1 自动验证完成） | 本阶段分支 AT-3.1 独立提交 | 29 个移动事务/中断场景、73/73 长期诊断、三端 build/混淆及编排契约通过 | 分支 `stage/03-file-preview-consistency` 源于 Stage 2 同树完成基线；AT-3.2 未开始，Windows/NAS 实机与不支持硬链接的卷兼容边界详见阶段任务书 |
 | Stage 4 | 阻塞于 Stage 3 | - | - | - |
 | Stage 5 | 阻塞于 Stage 3 | - | - | - |
 | Stage 6 | 阻塞于 Stage 3 | - | - | - |

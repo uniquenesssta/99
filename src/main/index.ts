@@ -80,6 +80,7 @@ import {
   createPhysicalFolderActions,
   pathInsideFolder,
 } from "./folders/physicalFolders";
+import { createFontMoveTransactionRuntime } from "./folders/fontMoveTransactionRuntime";
 import {
   createCachedFontRuntime,
   fontItemFromPath,
@@ -1830,22 +1831,28 @@ const {
   createPhysicalFolder,
   renamePhysicalFolder,
   listPhysicalFolderTree,
-  moveFontFileToFolder,
-  moveFontFilesToFolder,
 } = createPhysicalFolderActions({
   ensureWindows,
-  resolveExistingFontFilePath,
-  windowsFontsDir,
   appendStartupLog,
-  fontExtensions: FONT_EXTENSIONS,
   authorizePhysicalFolderParent,
   authorizePhysicalFolderRename,
-  authorizeFontMoveSource,
-  authorizeFontMoveTarget,
-  authorizeFontMoveDestination,
   reconcileWatchedRoot: (rootPath) => refreshWatchedFolder(rootPath, rootPath),
   runRustPhysicalFolderTree: rustCoreWorkerRuntime.runRustPhysicalFolderTree,
 });
+
+const { moveFontFileToFolder, moveFontFilesToFolder } =
+  createFontMoveTransactionRuntime({
+    ensureWindows,
+    resolveExistingFontFilePath,
+    isProtectedFontPath: (filePath) =>
+      pathInsideFolder(filePath, windowsFontsDir()),
+    appendStartupLog,
+    fontExtensions: FONT_EXTENSIONS,
+    authorizeFontMoveSource,
+    authorizeFontMoveTarget,
+    authorizeFontMoveDestination,
+    reconcileWatchedRoot: (rootPath) => refreshWatchedFolder(rootPath, rootPath),
+  });
 
 const watchedFolderIndexRuntime = createWatchedFolderIndexRuntime({
   appendStartupLog,

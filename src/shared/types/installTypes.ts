@@ -128,16 +128,19 @@ export interface FontDeleteResult {
 
 export interface MoveFontFileResult {
   ok: boolean
+  outcome?: 'unchanged' | 'moved' | 'not-moved' | 'target-committed-source-retained' | 'target-committed-source-removed' | 'target-committed-source-unknown' | 'commit-uncertain'
   message: string
   oldPath?: string
   newPath?: string
+  /** Exact owned temporary file left only when cleanup could not finish. */
+  recoveryPath?: string
 }
 
 export interface MoveFontFilesResult {
   ok: boolean
   moved: Array<{ id: string; result: MoveFontFileResult }>
   movedCount: number
-  failed: Array<{ id: string; fileName: string; message: string }>
+  failed: Array<{ id: string; fileName: string; message: string; result?: MoveFontFileResult }>
   message: string
 }
 
