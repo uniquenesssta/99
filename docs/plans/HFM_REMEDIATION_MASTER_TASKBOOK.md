@@ -2,11 +2,11 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.14
+- 文档版本：1.15
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 3 实现、自动门禁及 Windows 完整构建验收完成；下一项 AT-4.1 在新 Stage 4 分支推进，位图/峰值内存与 NAS 等外部验收继续跟踪
-- 当前阶段任务书：[`HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md`](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md)
+- 当前阶段：Stage 4 AT-4.1 强类型组合契约与延迟绑定审计完成；AT-4.2 尚未开始，位图/峰值内存与 NAS 等外部验收继续跟踪
+- 当前阶段任务书：[`HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md`](HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
 
@@ -287,6 +287,8 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 
 #### AT-4.1 定义组合层强类型契约
 
+当前实施、资源归属、八处延迟绑定及真实回调循环见 [Stage 4 任务书](HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)。本项只建立契约并强化注册入口，尚未搬迁巨型文件实现。
+
 - 为上述每个 runtime 定义最小返回接口与显式生命周期所有权。
 - 消除新增边界上的 `any`；先不搬实现。
 - 对当前延迟绑定 Ref 和回调环建立依赖图，区分真正循环与初始化顺序问题。
@@ -496,8 +498,8 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
 | Stage 2 | 完成（AT-2.1 至 AT-2.4） | 本阶段分支四个独立 Atomic Task 提交 | P0.1-P0.5、P1-P8、`npm run verify` 72/72、路径/副作用/补偿行为、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；Windows 真实 UNC/跨盘/长路径/junction/HKCU registry 为外部验收项，未伪报通过 |
 | Stage 3 | 完成（实现、自动门禁及 Windows 构建） | 本阶段分支 AT-3.1、AT-3.2 及独立回归修复提交 | 用户快进至 `476c5d6` 后 Windows verify 75/75、换行 24、三后端输入、Rust release、三端 build、混淆 3/3 通过 | 分支 `stage/03-file-preview-consistency`；NAS、实际位图与最大内存等明确留作外部验收；不支持硬链接的卷兼容边界保留 |
-| Stage 4 | 待开始 AT-4.1，前置工程门禁已满足 | - | - | 从 Stage 3 完成基线新建分支，外部验收项继续跟踪 |
-| Stage 5 | 阻塞于 Stage 3 | - | - | - |
-| Stage 6 | 阻塞于 Stage 3 | - | - | - |
+| Stage 4 | AT-4.1 完成；AT-4.2 至 AT-4.4 未开始 | 当前阶段分支 AT-4.1 原子提交 | 115 项强类型注册、125 项编译负例、八处延迟绑定审计；verify 76/76、三端 build/混淆通过 | 分支 `stage/04-main-composition`；未搬迁巨型编排实现，外部验收项继续跟踪 |
+| Stage 5 | 待开始，Stage 3 工程前置门禁已满足 | - | - | 当前串行推进 Stage 4 |
+| Stage 6 | 待开始，Stage 3 工程前置门禁已满足 | - | - | 当前串行推进 Stage 4 |
 | Stage 7 | 阻塞于 Stage 4/5/6 | - | - | - |
 | Stage 8 | 阻塞于 Stage 7 | - | - | - |

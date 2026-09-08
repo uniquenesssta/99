@@ -1,7 +1,7 @@
-import type { MainProcessRuntimeRegistrationOptions } from '../app/mainProcessRuntimeRegistration'
+import type { MainApplicationRegistration } from './mainCompositionContracts'
 
 export function createMainRuntimeRegistrationPayload(
-  options: MainProcessRuntimeRegistrationOptions
-): MainProcessRuntimeRegistrationOptions {
+  options: MainApplicationRegistration
+): MainApplicationRegistration {
   return options
 }

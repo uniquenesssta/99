@@ -1,0 +1,116 @@
+import type { MainProcessRuntimeRegistrationOptions } from '../app/mainProcessRuntimeRegistration'
+import type { ApplicationCacheDbLabel } from '../cache/architecture/cacheArchitectureTypes'
+
+// The application provides every existing registration capability. The legacy IPC
+// consumer keeps its optional hooks; appendLog is supplied by the registrar itself.
+type RegistrationSurface = Required<Omit<MainProcessRuntimeRegistrationOptions, 'appendLog'>>
+
+export type MainCoreLifecycle = Pick<RegistrationSurface,
+  | 'beginStartupSessionSync' | 'ensureDataRootSync' | 'migrateLegacyUserDataIfNeeded'
+  | 'diagnoseRustCoreWorker' | 'requestRendererWindowsCloseForQuit'
+  | 'startPerformanceLogSampler' | 'stopPerformanceLogSampler' | 'flushPerformanceLogs'
+  | 'stopRustCoreDaemon' | 'markCleanShutdownSync' | 'flushStartupLogAsync' | 'flushStartupLogSync'
+>
+
+export interface MainCoreCompositionRuntime {
+  readonly capabilities: Pick<RegistrationSurface,
+    | 'appName' | 'appId' | 'buildMarker' | 'logSchemaVersion' | 'cacheArchitectureVersion'
+    | 'watcherStartupGraceMs' | 'editionLogLine' | 'scanTuningLogLine'
+    | 'dataRoot' | 'dataRootErrorMessage' | 'logPath' | 'ioLaneSummary' | 'appendStartupLog'
+    | 'showExistingWindow' | 'registerFontProtocol' | 'createWindow'
+    | 'assertFeatureForChannel' | 'getLicenseStatus' | 'reportPerformanceEvent'
+    | 'markRendererUserActivity' | 'reportRendererLongTask'
+    | 'getMigrationDiagnostics' | 'clearMigrationDiagnostics'
+  >
+  readonly lifecycle: MainCoreLifecycle
+}
+
+export type MainDataLifecycle = Pick<RegistrationSurface,
+  | 'initializeCacheArchitecture' | 'runStartupCriticalSchemaAudit' | 'dbQueryWorkerShutdown'
+>
+
+// Close/checkpoint remain owned by the runtime that created the handle. Watcher
+// and maintenance receive these operations, never a duplicate handle owner.
+export interface MainDataResourceLifecycle {
+  readonly closeLibraryDb: () => void
+  readonly closePreviewDb: () => void
+  readonly clearLocalPreviewDbHandle: () => void
+  readonly checkpointOpenCacheDbs: () => void
+  readonly closeCacheDb: (label: ApplicationCacheDbLabel) => void
+}
+
+export interface MainDataCompositionRuntime {
+  readonly capabilities: Pick<RegistrationSurface,
+    | 'loadLibrary' | 'loadLibraryShell' | 'loadFolderCache'
+    | 'searchFontsInLibrary' | 'queryFontsInLibrary' | 'queryFontPageInLibrary'
+    | 'checkSharedMetadataUpdates' | 'getFontMetricsFromLibrary'
+    | 'getCacheStats' | 'cacheArchitectureInfo' | 'clearScanCache' | 'clearPreviewCache' | 'setCacheKvs'
+    | 'getSystemInstalledFonts' | 'scanSystemInstalledFonts' | 'getInstallStatusIndexSnapshot'
+    | 'readPreviewFontData' | 'renderFontPreviewImage' | 'readCachedFontPreviewImage'
+    | 'readCachedFontPreviewImages' | 'ensureFontPreviewCache' | 'getPreviewCacheStatus'
+    | 'listPhysicalFolderTree'
+  >
+  readonly lifecycle: MainDataLifecycle
+  readonly resources: MainDataResourceLifecycle
+}
+
+export type MainMutationLifecycle = Pick<RegistrationSurface,
+  | 'cleanupTemporaryActiveFontsUntilEmpty' | 'flushPendingTemporaryFontDeletes'
+  | 'flushActivationInstallStatusSave' | 'hasPendingActivationInstallStatusSave'
+  | 'hasInFlightActivationInstallStatusSave'
+>
+
+export interface MainMutationCompositionRuntime {
+  readonly capabilities: Pick<RegistrationSurface,
+    | 'saveLibrary' | 'installFontSystemWide' | 'uninstallFontSystemWide' | 'deleteFontFilesToTrash'
+    | 'setFontDeleteProtectionInIndex' | 'setSharedFontFavoriteInIndex'
+    | 'setLocalFontTags' | 'setLocalFontTagsBatch' | 'deleteLocalFontTag'
+    | 'setSharedFontTagsInIndex' | 'setSharedFontTagsBatchInIndex'
+    | 'renameSharedFontTagInIndex' | 'deleteSharedFontTagInIndex'
+    | 'activateFontSession' | 'activateFontSessionsBatch' | 'deactivateFontSession' | 'deactivateFontSessionsBatch'
+    | 'installFontForCurrentUser' | 'uninstallManagedFont'
+    | 'createPhysicalFolder' | 'renamePhysicalFolder' | 'moveFontFileToFolder' | 'moveFontFilesToFolder'
+  >
+  readonly lifecycle: MainMutationLifecycle
+}
+
+export type MainOperationsLifecycle = Pick<RegistrationSurface,
+  | 'runStartupDatabaseMaintenance' | 'startBackgroundTaskScheduler'
+  | 'stopBackgroundTaskScheduler' | 'stopFolderWatchers'
+>
+
+export interface MainOperationsResourceLifecycle {
+  readonly closeTasksDb: () => void
+  readonly checkpointTasksDb: () => void
+}
+
+export interface MainOperationsCompositionRuntime {
+  readonly capabilities: Pick<RegistrationSurface,
+    | 'scanFoldersManaged' | 'cancelActiveFontScan' | 'activeFontScanStatus'
+    | 'startWatchingFolders' | 'refreshWatchedFolder'
+    | 'readSharedMetadataFrontendDiagnostics' | 'repairSharedMetadataFromFrontend'
+    | 'readSharedIndexSnapshotFrontendDiagnostics' | 'repairSharedIndexSnapshotFromFrontend'
+    | 'runDatabaseHealthCheck' | 'createDatabaseBackup' | 'runDatabaseMaintenance' | 'restoreLatestApplicationDatabase'
+    | 'listBackgroundTaskSummaries' | 'runBackgroundTaskSchedulerOnce' | 'backgroundTaskSchedulerStatus'
+    | 'compareFontInstalled' | 'compareFontsInstalled' | 'refreshInstallStatusIndex' | 'startInstallStatusRefreshIndex'
+    | 'startupDbMaintenanceIdleDelayMs' | 'startupBackgroundTasksEnabled'
+  >
+  readonly lifecycle: MainOperationsLifecycle
+  readonly resources: MainOperationsResourceLifecycle
+}
+
+// AT-4.1 defines the outputs only. Factories and ordered composition are extracted
+// in AT-4.2/4.3; no new startup/stop calls or runtime containers are created here.
+export type MainApplicationRegistration =
+  MainCoreCompositionRuntime['capabilities'] & MainCoreLifecycle &
+  MainDataCompositionRuntime['capabilities'] & MainDataLifecycle &
+  MainMutationCompositionRuntime['capabilities'] & MainMutationLifecycle &
+  MainOperationsCompositionRuntime['capabilities'] & MainOperationsLifecycle
+
+export interface MainApplicationRuntime {
+  readonly registration: MainApplicationRegistration
+}
+
+type AssertNever<T extends never> = T
+type MissingRegistrationCapabilities = AssertNever<Exclude<keyof RegistrationSurface, keyof MainApplicationRegistration>>
+type UnexpectedRegistrationCapabilities = AssertNever<Exclude<keyof MainApplicationRegistration, keyof RegistrationSurface>>
