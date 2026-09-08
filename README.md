@@ -57,6 +57,7 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-08：Stage 3 Windows 完整构建验收通过：拉取 `476c5d6` 后，typecheck、75/75 诊断、三后端预览输入、Rust release、公钥同步、Electron 三端与混淆 3/3 全部成功。NAS、实际位图/峰值内存及安装包验收仍单列为外部项；下一项为新 Stage 4 分支上的 AT-4.1，见 [Stage 3 第 10.9 节](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#109-windows-完整构建通过与阶段交接)。
 - 2026-09-08：Windows 管理员窗口已通过路径 POLICY/PHYSICAL/READ 检查，symlink 权限阻塞解除；后续 io-deadline 暴露源码换行匹配问题。修复六项诊断的 CRLF 误报/漏报，新增 LF/CRLF 正反例 24 场景；typecheck 与本环境 75/75 诊断通过。应用源码和依赖版本未改，**本次需先 pull 再重跑 Windows build**，步骤见 [Stage 3 第 10.8 节](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#108-windows-权限问题已解决修复诊断的-crlf-兼容性)。
 - 2026-09-08：记录 Stage 3 Windows 复验：C++ 68、PowerShell 68、Rust shared fixtures、JS 190 的预览严格诊断全部通过；类型检查和移动事务 29 用例通过。完整 verify/build 仍因测试 symlink EPERM 中止，阶段尚未完整验收；管理员终端重试步骤与下一项 AT-4.1 的前置条件见 [Stage 3 第 10.7 节](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#107-windows-严格诊断复验通过完整构建仍受阻)。
 - 2026-09-08：修复 Stage 3 Windows 补验暴露的 PowerShell 孤立代理项漏检：先检查 JSON 原文再解析，保留合法 U+FFFD、emoji 和字面量反斜杠；诊断与生产共用解析校验。symlink EPERM/EACCES 改为明确提示所需 Windows 权限，保持门禁失败。190 个 JS 行为用例、68 个 C++ 输入策略用例、typecheck、74/74 本环境诊断及三端构建/混淆通过。用户 C++/Rust 原生构建已成功；PowerShell 修复和 Windows 完整门禁仍需复验，操作见 [Stage 3 第 10.6 节](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#106-windows-日志反馈与回归修复)。

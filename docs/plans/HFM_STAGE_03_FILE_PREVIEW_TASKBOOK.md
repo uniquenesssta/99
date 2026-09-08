@@ -2,11 +2,11 @@
 
 ## 0. 状态与基线
 
-- 日期：2026-09-08；文档版本：1.4；应用版本保持 3.0.0。
+- 日期：2026-09-08；文档版本：1.5；应用版本保持 3.0.0。
 - 分支：`stage/03-file-preview-consistency`；每个 Atomic Task 独立提交，不直接修改 main。
 - Stage 2 完成基线：远端 `a2b9ef95a957d9ddf1ef72599572166036769beb`；本地 `cc001eb3770675ca1c6bdfb33d10388b3ee3f934`。
 - 两个基线提交的代码树相同：`7d14bc2999155dc8cf36a3d9ecf59fdce38bec5b`。提交 ID 不同来自既有 GitHub 连接发布方式，不代表代码差异。
-- 当前：AT-3.1 自动验证完成；AT-3.2 三后端原生输入严格诊断已获 Windows 通过证据；管理员窗口已通过路径 POLICY/PHYSICAL/READ 诊断。完整 verify/build 随后停在 io-deadline 的源码匹配断言；CRLF 同根诊断修复已通过本环境 75 项门禁，待 Windows 复验，位图与 NAS 验收仍待补。最新状态见第 10.8 节。
+- 当前：AT-3.1/AT-3.2 自动门禁及 Windows 完整构建验收完成，可作为 Stage 4 起点；实际位图/峰值内存、跨卷/NAS 与断电持久性继续作为外部验收项，不标为已通过。最新证据见第 10.9 节。
 - AT-3.2 起点：远端 `e5f8d131786875b2bba591b2d01cf5c81b29a0ca`、本地 `cba6e011ce98496031dc673f56917b1402f42fd1`，同树 `e814ea2981bde6db5096ccf4fb562af4371f2be4`。
 - AT-3.2 Windows 回归修复起点：远端 `e5e6ca0b364de3f26bda770f9d28468993ce53d4`、本地 `b63cca94bcb9c6ddbaed56b6ecfe81185d50be3b`，同树 `16f0ccd387e9c504c8aa88360a828d77f0791506`。用户已完成 C++/Rust Windows 原生构建，但预览严格诊断失败、完整 verify/build 被 symlink 权限阻断；后续状态以第 10.6 节为准。
 - 上级：[修复与编排重构总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。
@@ -16,7 +16,7 @@
 | 原子任务 | 目标 | 状态 |
 | --- | --- | --- |
 | AT-3.1 | 跨卷移动先完成可验证的目标提交，再删除源；如实结算部分失败 | 自动验证完成，前一独立提交 |
-| AT-3.2 | Rust/C++/PowerShell 预览入口统一 width、height、fontSize、text 长度边界 | Windows 三后端输入严格诊断通过；完整构建和位图验收待补 |
+| AT-3.2 | Rust/C++/PowerShell 预览入口统一 width、height、fontSize、text 长度边界 | Windows 三后端严格诊断及完整构建通过；位图/内存外部验收保留 |
 
 AT-3.1 修改字体移动领域、文件提交协议、其主进程接线、共享结果类型、直接前端消费者和相应诊断；目录树读取及 create/rename 留在原模块。AT-3.2 只修改预览输入策略、其缓存/调度/IPC 日志消费者、直接相关原生校验与诊断。两个原子任务独立提交；不混入数据库迁移、Rust 命令、新生产依赖、通用 PowerShell 回退或 Stage 4/5/6 全文件搬迁。
 
@@ -350,6 +350,17 @@ git pull --ff-only origin stage/03-file-preview-consistency && npm run build
 ```
 
 无需额外安装依赖、单独重编 C++ 或重跑已通过的严格预览命令。完整 build 按原流程执行 verify/Rust/公钥同步/Electron/混淆；仍以此次 Windows 实际输出判定通过，不跳过门禁。Stage 3 保持待验收，AT-4.1 未开始。
+
+### 10.9 Windows 完整构建通过与阶段交接
+
+2026-09-08 用户提供的连续终端日志先保留了一次旧版 io-deadline 失败，随后明确显示 `git pull --ff-only` 从 `d4b7728` 快进到 `476c5d6`。应以拉取后的第二次完整构建为验收证据，不将前面的旧错误误判为修复仍失败。
+
+- 类型检查与 `diagnostics:all` 75/75 全部通过；换行回归 24/24，原生输入 C++ 68、PowerShell 68、Rust shared fixtures、JS 190 通过。
+- Cargo 1.97.1 完成 release 构建，worker 复制到 `build/native/hfm-core-worker.exe`；公钥同步完成。
+- Electron/Vite main（337 模块）、preload（1 模块）、renderer（181 模块）构建完成，混淆 3/3 完成并返回命令提示符。
+- 此为完整 `npm run build` 成功，不等于 Windows 安装包 `build:win` 或实际应用/NAS/位图内存验收成功。
+
+Stage 3 的实现、自动门禁和 Windows 构建验收完成。按第 11 节约定，将实际跨卷/UNC/NAS、多客户端与断电持久性、GDI+ 输出及最大内存矩阵明确保留为外部项，沿后续阶段跟踪，不以替身或编译成功替代实测。用户此前已要求通过后推进；下一原子任务是 AT-4.1，在新 Stage 4 分支上建立组合层强类型契约，不修改这些领域算法。
 
 ## 11. 退出、回滚与记录
 
