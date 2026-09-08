@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.12
+- 文档版本：1.13
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 3「文件移动一致性与预览限额」三后端输入严格诊断已在 Windows 通过；Windows 完整 verify/build 仍被 symlink EPERM 阻断，位图与 NAS 外部验收待补，尚未完整收口
+- 当前阶段：Stage 3「文件移动一致性与预览限额」三后端输入严格诊断及路径 POLICY/PHYSICAL/READ 已在 Windows 通过；完整 verify/build 随后停在 io-deadline 源码匹配断言，CRLF 同根诊断修复已通过本环境 75 项门禁，待 Windows 复验；位图与 NAS 外部验收待补，尚未完整收口
 - 当前阶段任务书：[`HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md`](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -260,7 +260,7 @@ Stage 4、5、6 在 Stage 3 完成后可以分别推进，但同一工作区仍�
 
 状态：实现和本环境门禁通过，三后端输入严格诊断已获 Windows 实机通过证据。统一拒绝策略、精确调度组键、版本化缓存兼容、限频日志及原生第二道校验已落地。修复后的 190 个 JS 行为用例、68 个 C++ 输入策略用例、typecheck、74/74 本环境长期诊断与 Electron 三端构建/混淆通过；Windows 完整构建与位图验收待补，最新证据见 Stage 3 第 10.7 节。
 
-Windows 补验反馈：用户的 C++/Rust 原生构建成功；PowerShell 孤立代理项漏检已通过 JSON 原文校验修复。2026-09-08 新日志确认 C++ 68、PowerShell 68、Rust shared fixtures 和 JS 190 的严格诊断全部通过，Windows 类型检查与移动事务 29 用例通过。完整 verify/build 仍在创建路径策略测试 symlink 时 EPERM 退出；后续构建没有执行。权限重试与证据边界见 Stage 3 第 10.7 节。Stage 3 没有 AT-3.3；下一项 AT-4.1 保持未开始，待本阶段门禁及外部验收状态收口。
+Windows 补验反馈：用户的 C++/Rust 原生构建成功；PowerShell 孤立代理项修复已获 C++ 68、PowerShell 68、Rust shared fixtures 和 JS 190 严格诊断通过证据。2026-09-08 管理员窗口解决 symlink EPERM，路径 POLICY/PHYSICAL/READ、类型检查与移动事务 29 用例通过；完整 verify/build 随后停在 io-deadline 源码匹配断言。已复现 CRLF 导致五项诊断误报及一项漏报，六处读取统一换行，新增 24 场景门禁，本环境 verify 75/75 通过；Windows 完整构建待拉取修复后复验，见 Stage 3 第 10.8 节。Stage 3 没有 AT-3.3；下一项 AT-4.1 保持未开始。
 
 - 在进入 Rust/C++/PowerShell 之前统一 clamp 或拒绝 width、height、fontSize、text length。
 - Rust 侧保留第二道防线；C++ 和 PowerShell 回退路径采用同一常量契约。
@@ -495,7 +495,7 @@ Windows 补验反馈：用户的 C++/Rust 原生构建成功；PowerShell 孤立
 | Stage 0 | 完成 | 本阶段分支（AT-0.1 至 AT-0.4） | `npm run verify` 通过，64/64 长期诊断；事务观察 8/8、路径观察 8/8；三大编排契约通过 | 分支 `stage/00-baseline-behavior-locks`；Rust/Windows 专属矩阵作为外部验收项保留 |
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
 | Stage 2 | 完成（AT-2.1 至 AT-2.4） | 本阶段分支四个独立 Atomic Task 提交 | P0.1-P0.5、P1-P8、`npm run verify` 72/72、路径/副作用/补偿行为、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；Windows 真实 UNC/跨盘/长路径/junction/HKCU registry 为外部验收项，未伪报通过 |
-| Stage 3 | Windows 三后端输入严格诊断通过，完整构建与外部验收待补 | 本阶段分支 AT-3.1、AT-3.2 及独立回归修复提交 | Windows：C++ 68、PowerShell 68、Rust shared fixtures、JS 190、typecheck、移动 29 用例通过；另有 74/74 本环境诊断、三端 build/混淆及编排契约通过 | 分支 `stage/03-file-preview-consistency`；Windows 完整 verify/build 仍因 symlink EPERM 中止。NAS、实际位图与最大内存等仍待补；不支持硬链接的卷兼容边界保留 |
+| Stage 3 | Windows 输入与路径诊断通过，CRLF 诊断修复待 Windows 完整构建复验 | 本阶段分支 AT-3.1、AT-3.2 及独立回归修复提交 | Windows：C++ 68、PowerShell 68、Rust shared fixtures、JS 190、typecheck、移动 29、路径 POLICY/PHYSICAL/READ 通过；最新本环境 verify 75/75，换行回归 24/24；历史三端 build/混淆证据保留 | 分支 `stage/03-file-preview-consistency`；symlink 权限问题解决，需拉取 CRLF 诊断修复后重跑 Windows build。NAS、实际位图与最大内存等仍待补；不支持硬链接的卷兼容边界保留 |
 | Stage 4 | 阻塞于 Stage 3 | - | - | - |
 | Stage 5 | 阻塞于 Stage 3 | - | - | - |
 | Stage 6 | 阻塞于 Stage 3 | - | - | - |

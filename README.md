@@ -57,6 +57,7 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-08：Windows 管理员窗口已通过路径 POLICY/PHYSICAL/READ 检查，symlink 权限阻塞解除；后续 io-deadline 暴露源码换行匹配问题。修复六项诊断的 CRLF 误报/漏报，新增 LF/CRLF 正反例 24 场景；typecheck 与本环境 75/75 诊断通过。应用源码和依赖版本未改，**本次需先 pull 再重跑 Windows build**，步骤见 [Stage 3 第 10.8 节](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#108-windows-权限问题已解决修复诊断的-crlf-兼容性)。
 - 2026-09-08：记录 Stage 3 Windows 复验：C++ 68、PowerShell 68、Rust shared fixtures、JS 190 的预览严格诊断全部通过；类型检查和移动事务 29 用例通过。完整 verify/build 仍因测试 symlink EPERM 中止，阶段尚未完整验收；管理员终端重试步骤与下一项 AT-4.1 的前置条件见 [Stage 3 第 10.7 节](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#107-windows-严格诊断复验通过完整构建仍受阻)。
 - 2026-09-08：修复 Stage 3 Windows 补验暴露的 PowerShell 孤立代理项漏检：先检查 JSON 原文再解析，保留合法 U+FFFD、emoji 和字面量反斜杠；诊断与生产共用解析校验。symlink EPERM/EACCES 改为明确提示所需 Windows 权限，保持门禁失败。190 个 JS 行为用例、68 个 C++ 输入策略用例、typecheck、74/74 本环境诊断及三端构建/混淆通过。用户 C++/Rust 原生构建已成功；PowerShell 修复和 Windows 完整门禁仍需复验，操作见 [Stage 3 第 10.6 节](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#106-windows-日志反馈与回归修复)。
 - 2026-09-07：Stage 3 AT-3.2 统一预览输入边界：width 64–4096、height 32–2048（整数）、fontSize 8–320（保留小数）、text 最多 4096 UTF-16 单位。非法请求在缓存/任务/后端分派前拒绝，Rust/C++/PowerShell 保留分配前校验，拒绝日志限频；修复小数字号调度合并、C++ 数值/JSON 转义解析与空白文本后端差异。预览渲染版本提升，旧缓存按需重生成，不迁移字体库。175 个 JS 行为场景、C++ 输入策略 59 场景、typecheck、74/74 长期诊断及三端构建/混淆通过；巨型编排与公开契约保持原状。**pull 后需重建 Rust 与 C++ 原生程序**；Rust/PowerShell 实际校验执行、Windows 位图/峰值内存与 NAS 验收仍待补，Stage 3 未标为完整验收。操作与边界见 [Stage 3 任务书](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md)。

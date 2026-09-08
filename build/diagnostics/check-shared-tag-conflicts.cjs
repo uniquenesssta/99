@@ -8,7 +8,7 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '..', '..')
 
 function readText(relativePath) {
-  return fs.readFileSync(path.join(root, relativePath), 'utf8')
+  return fs.readFileSync(path.join(root, relativePath), 'utf8').replace(/\r\n/g, '\n')
 }
 
 function readJson(relativePath) {

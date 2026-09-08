@@ -2,11 +2,11 @@
 
 ## 0. 状态与基线
 
-- 日期：2026-09-08；文档版本：1.3；应用版本保持 3.0.0。
+- 日期：2026-09-08；文档版本：1.4；应用版本保持 3.0.0。
 - 分支：`stage/03-file-preview-consistency`；每个 Atomic Task 独立提交，不直接修改 main。
 - Stage 2 完成基线：远端 `a2b9ef95a957d9ddf1ef72599572166036769beb`；本地 `cc001eb3770675ca1c6bdfb33d10388b3ee3f934`。
 - 两个基线提交的代码树相同：`7d14bc2999155dc8cf36a3d9ecf59fdce38bec5b`。提交 ID 不同来自既有 GitHub 连接发布方式，不代表代码差异。
-- 当前：AT-3.1 自动验证完成；AT-3.2 三后端原生输入严格诊断已获 Windows 通过证据；Windows 完整 verify/build 仍被 symlink EPERM 阻断，位图与 NAS 验收待补；Stage 3 不标为完整验收通过。最新状态见第 10.7 节。
+- 当前：AT-3.1 自动验证完成；AT-3.2 三后端原生输入严格诊断已获 Windows 通过证据；管理员窗口已通过路径 POLICY/PHYSICAL/READ 诊断。完整 verify/build 随后停在 io-deadline 的源码匹配断言；CRLF 同根诊断修复已通过本环境 75 项门禁，待 Windows 复验，位图与 NAS 验收仍待补。最新状态见第 10.8 节。
 - AT-3.2 起点：远端 `e5f8d131786875b2bba591b2d01cf5c81b29a0ca`、本地 `cba6e011ce98496031dc673f56917b1402f42fd1`，同树 `e814ea2981bde6db5096ccf4fb562af4371f2be4`。
 - AT-3.2 Windows 回归修复起点：远端 `e5e6ca0b364de3f26bda770f9d28468993ce53d4`、本地 `b63cca94bcb9c6ddbaed56b6ecfe81185d50be3b`，同树 `16f0ccd387e9c504c8aa88360a828d77f0791506`。用户已完成 C++/Rust Windows 原生构建，但预览严格诊断失败、完整 verify/build 被 symlink 权限阻断；后续状态以第 10.6 节为准。
 - 上级：[修复与编排重构总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。
@@ -309,6 +309,47 @@ npm run build
 已通过的预览严格诊断不因本次权限问题重复要求执行；build 会按现有完整门禁正常运行。此次记录只修改文档，不需要为此重新生成原生程序。若管理员窗口仍出现相同 EPERM，需进一步核对 Windows 创建符号链接权限、安全策略和临时目录所在文件系统；不将其直接归因为应用逻辑错误，也不跳过测试。权限依据见 [Microsoft 的符号链接说明](https://blogs.windows.com/windowsdeveloper/2016/12/02/symlinks-windows-10/)。
 
 当前任务书只有 AT-3.1、AT-3.2，没有 AT-3.3。下一开发项为 AT-4.1；在 Stage 3 硬门禁与剩余外部验收状态收口前保持未开始，不新造 3.3 或将条件未满足解释为允许跳阶段。
+
+### 10.8 Windows 权限问题已解决，修复诊断的 CRLF 兼容性
+
+2026-09-08 新日志来自 Windows 10 10.0.19045.5917、VS 2022 17.14.35 x64、Node 24.16.0。以管理员身份启动后，路径 POLICY P0.1–P0.5 全部通过；完整 verify 继续通过 PHYSICAL P6/P7、READ P1–P5、移动事务 29 用例及类型检查。此前 symlink EPERM 的阻塞已解除。随后在 `diagnostics:io-deadline` 报 `status batch timeout does not return deterministic misses`，因此本次完整诊断与后续构建仍未成功。
+
+根因与复现：现有 `previewCacheStorageRuntime.ts` 包含批量超时设置 `result[row.id] = false` 的代码；旧诊断以包含固定 `\n` 的字符串查找它。将读取到的同一源码转换为 CRLF 后，在本环境复现了与用户日志完全相同的失败。该日志没有直接展示用户文件字节，因此 CRLF 是结合源码与受控复现得到的根因判断，不能从日志推断真实 NAS 超时行为已出错。
+
+同根检查与修复范围：
+
+| 诊断 | 旧版 CRLF 问题 | 修复 |
+| --- | --- | --- |
+| io-deadline | 存在的超时 miss 分支被误报缺失 | 读取文本时 CRLF 统一为 LF |
+| preview-cache-root | 存在的共享根可用性检查被误报缺失 | 同上 |
+| scan-lifecycle-durability | signal 接线被误报缺失 | 同上，异步扫描行为测试保留 |
+| shared-tag-conflicts | 空操作避免重同步的条件被误报缺失 | 同上 |
+| folder-cache-availability | 根过滤/启动延迟多行匹配可能误报缺失 | 同上 |
+| destructive-batch-lease-lock | 被禁止的逐项移动代码在 CRLF 下可能漏报 | 同上，保留负向断言 |
+
+新增 `diagnostics:line-endings`，由现有 run-all 自动纳入第 75 项门禁。驱动实际六个诊断，分别提供 LF/CRLF 的正常源码与故意破坏契约的源码，共 24 场景；只替换读取，不修改磁盘业务源码。修复前锁定五个误报和一个漏报；修复后 24/24 通过，证明正常源码不因换行误报，违规源码在两种换行下仍被原有断言拒绝。VM 执行会等待扫描诊断返回的 Promise，不提前记为通过；API 已按 Node 24 文档经 Context7 核对。
+
+```mermaid
+flowchart TD
+ A["真实源码"] --> B["回归驱动：LF 或 CRLF"]
+ B --> C["六项诊断读取：统一换行"]
+ B --> D["注入已知违规代码"]
+ D --> C
+ C --> E["执行原有契约断言"]
+ E -->|"正常源码"| F["必须通过"]
+ E -->|"违规源码"| G["必须失败"]
+```
+
+验证：本环境 Node 24.19.0 上 `npm --offline run verify` 退出 0，typecheck 与 75/75 长期诊断通过；新增 24 场景同时覆盖异步扫描行为。此次只修改诊断、package.json 的诊断入口及文档，依赖版本、锁文件、应用源码、三大编排、原生源码、构建链及 Git 换行配置均未改动；不重跑未受影响的 Electron/Rust 编译，也不将历史构建结果记为本次 Windows 构建通过。
+
+这次包含诊断代码修复，必须先拉取。在刚才已初始化 VS 工具链的管理员窗口执行；拉取失败时不会继续构建：
+
+```bat
+cd /d F:\Electron+Rust\HanFontManager_Electron_rust
+git pull --ff-only origin stage/03-file-preview-consistency && npm run build
+```
+
+无需额外安装依赖、单独重编 C++ 或重跑已通过的严格预览命令。完整 build 按原流程执行 verify/Rust/公钥同步/Electron/混淆；仍以此次 Windows 实际输出判定通过，不跳过门禁。Stage 3 保持待验收，AT-4.1 未开始。
 
 ## 11. 退出、回滚与记录
 

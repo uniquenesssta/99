@@ -4,7 +4,7 @@ const path = require('node:path')
 const ts = require('typescript')
 
 const root = path.resolve(__dirname, '..', '..')
-function read(rel) { return fs.readFileSync(path.join(root, rel), 'utf8') }
+function read(rel) { return fs.readFileSync(path.join(root, rel), 'utf8').replace(/\r\n/g, '\n') }
 function assert(condition, message) {
   if (!condition) {
     console.error(`[diagnostics:scan-lifecycle-durability] ${message}`)

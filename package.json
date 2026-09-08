@@ -30,6 +30,7 @@
     "diagnostics:final-migration": "node build/diagnostics/check-final-migration-closure.cjs",
     "diagnostics:preview-cache-root": "node build/diagnostics/check-preview-cache-unavailable-root.cjs",
     "diagnostics:io-deadline": "node build/diagnostics/check-io-deadline-policy.cjs",
+    "diagnostics:line-endings": "node build/diagnostics/check-diagnostic-line-endings.cjs",
     "diagnostics:preview-scheduler": "node build/diagnostics/check-preview-request-scheduler.cjs",
     "diagnostics:startup-nas-deadline": "node build/diagnostics/check-startup-nas-deadline-policy.cjs",
     "diagnostics:folder-cache-availability": "node build/diagnostics/check-folder-cache-availability.cjs",

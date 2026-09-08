@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.resolve(__dirname, '..', '..')
-function read(relativePath) { return fs.readFileSync(path.join(root, relativePath), 'utf8') }
+function read(relativePath) { return fs.readFileSync(path.join(root, relativePath), 'utf8').replace(/\r\n/g, '\n') }
 function readJson(relativePath) { return JSON.parse(read(relativePath)) }
 function assert(condition, message) { if (!condition) throw new Error(message) }
 function includes(relativePath, needle) { assert(read(relativePath).includes(needle), `${relativePath} missing ${needle}`) }
