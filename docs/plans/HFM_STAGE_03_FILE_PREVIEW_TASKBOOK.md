@@ -2,11 +2,11 @@
 
 ## 0. 状态与基线
 
-- 日期：2026-09-08；文档版本：1.2；应用版本保持 3.0.0。
+- 日期：2026-09-08；文档版本：1.3；应用版本保持 3.0.0。
 - 分支：`stage/03-file-preview-consistency`；每个 Atomic Task 独立提交，不直接修改 main。
 - Stage 2 完成基线：远端 `a2b9ef95a957d9ddf1ef72599572166036769beb`；本地 `cc001eb3770675ca1c6bdfb33d10388b3ee3f934`。
 - 两个基线提交的代码树相同：`7d14bc2999155dc8cf36a3d9ecf59fdce38bec5b`。提交 ID 不同来自既有 GitHub 连接发布方式，不代表代码差异。
-- 当前：AT-3.1 自动验证完成；AT-3.2 实现和本环境门禁完成，Rust/PowerShell 原生校验执行及 Windows 位图验收待补；Stage 3 不标为完整验收通过。
+- 当前：AT-3.1 自动验证完成；AT-3.2 三后端原生输入严格诊断已获 Windows 通过证据；Windows 完整 verify/build 仍被 symlink EPERM 阻断，位图与 NAS 验收待补；Stage 3 不标为完整验收通过。最新状态见第 10.7 节。
 - AT-3.2 起点：远端 `e5f8d131786875b2bba591b2d01cf5c81b29a0ca`、本地 `cba6e011ce98496031dc673f56917b1402f42fd1`，同树 `e814ea2981bde6db5096ccf4fb562af4371f2be4`。
 - AT-3.2 Windows 回归修复起点：远端 `e5e6ca0b364de3f26bda770f9d28468993ce53d4`、本地 `b63cca94bcb9c6ddbaed56b6ecfe81185d50be3b`，同树 `16f0ccd387e9c504c8aa88360a828d77f0791506`。用户已完成 C++/Rust Windows 原生构建，但预览严格诊断失败、完整 verify/build 被 symlink 权限阻断；后续状态以第 10.6 节为准。
 - 上级：[修复与编排重构总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。
@@ -16,7 +16,7 @@
 | 原子任务 | 目标 | 状态 |
 | --- | --- | --- |
 | AT-3.1 | 跨卷移动先完成可验证的目标提交，再删除源；如实结算部分失败 | 自动验证完成，前一独立提交 |
-| AT-3.2 | Rust/C++/PowerShell 预览入口统一 width、height、fontSize、text 长度边界 | 实现及本环境门禁通过，原生完整验收待补 |
+| AT-3.2 | Rust/C++/PowerShell 预览入口统一 width、height、fontSize、text 长度边界 | Windows 三后端输入严格诊断通过；完整构建和位图验收待补 |
 
 AT-3.1 修改字体移动领域、文件提交协议、其主进程接线、共享结果类型、直接前端消费者和相应诊断；目录树读取及 create/rename 留在原模块。AT-3.2 只修改预览输入策略、其缓存/调度/IPC 日志消费者、直接相关原生校验与诊断。两个原子任务独立提交；不混入数据库迁移、Rust 命令、新生产依赖、通用 PowerShell 回退或 Stage 4/5/6 全文件搬迁。
 
@@ -285,6 +285,30 @@ npm run build
 ```
 
 `npm run build` 已包含完整 verify。用户先前成功生成的 C++/Rust exe 无须为此次脚本修复单独重编；Rust 测试会编译新增 fixture，正式 build 仍按原脚本检查/构建 Rust。若仍因组织策略或文件系统拒绝 symlink，应保留环境失败并解决实际权限，不能绕过门禁。此补丁未修改原生源码、renderer 版本、缓存键、数据库、锁文件或三大编排文件；作为 Stage 3 上独立的回归修复提交，不启动新阶段。
+
+### 10.7 Windows 严格诊断复验通过，完整构建仍受阻
+
+2026-09-08 用户在 VS 2022 Developer Command Prompt 17.14.35（x64）拉取后提供的新日志，覆盖第 10.6 节中“PowerShell 修复待复验、Rust 输入测试未执行”的状态。已发布修复为 `d4b772894aecd5b3f96ad84ab44b6c5d361d5680`；日志显示 pull 为 Already up to date，但没有提供本机 HEAD，故不额外声称已核验用户本机提交 SHA。
+
+| 验证项 | 用户日志结果 | 结论边界 |
+| --- | --- | --- |
+| `check-preview-input-boundary.cjs --require-native` | C++ 68、PowerShell 68、Rust shared fixtures、JS 190 全部通过 | 关闭三后端实际输入校验待补项；不等同于 GDI+ 位图渲染/内存验收 |
+| `typecheck` | 通过并进入 diagnostics:all | Windows 类型检查通过 |
+| `diagnostics:font-move-transaction` | 29 cases passed | 本诊断在 Windows 通过；实际跨卷/NAS 矩阵仍待补 |
+| `diagnostics:font-path-policy` | 创建第一个测试 symlink 时 EPERM，退出 1 | 测试准备被系统拒绝，路径策略尚未获得本次 Windows 通过证据 |
+| `npm run build` | verify 中止，后续命令未执行 | Windows 完整诊断、Rust 构建阶段、公钥同步、Electron 构建和混淆均不能据本次日志记为通过；此前成功的原生构建记录保留 |
+
+`Environment initialized for: 'x64'` 仅说明工具链架构，日志本身不能证明终端已获得管理员令牌。请在开始菜单找到 **x64 Native Tools Command Prompt for VS 2022**，右键“以管理员身份运行”，确认 UAC 提示后，在新窗口依次执行；第一项诊断失败时不继续构建：
+
+```bat
+cd /d F:\Electron+Rust\HanFontManager_Electron_rust
+npm run diagnostics:font-path-policy
+npm run build
+```
+
+已通过的预览严格诊断不因本次权限问题重复要求执行；build 会按现有完整门禁正常运行。此次记录只修改文档，不需要为此重新生成原生程序。若管理员窗口仍出现相同 EPERM，需进一步核对 Windows 创建符号链接权限、安全策略和临时目录所在文件系统；不将其直接归因为应用逻辑错误，也不跳过测试。权限依据见 [Microsoft 的符号链接说明](https://blogs.windows.com/windowsdeveloper/2016/12/02/symlinks-windows-10/)。
+
+当前任务书只有 AT-3.1、AT-3.2，没有 AT-3.3。下一开发项为 AT-4.1；在 Stage 3 硬门禁与剩余外部验收状态收口前保持未开始，不新造 3.3 或将条件未满足解释为允许跳阶段。
 
 ## 11. 退出、回滚与记录
 
