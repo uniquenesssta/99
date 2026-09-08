@@ -2,12 +2,13 @@
 
 ## 0. 状态与基线
 
-- 日期：2026-09-07；文档版本：1.1；应用版本保持 3.0.0。
+- 日期：2026-09-08；文档版本：1.2；应用版本保持 3.0.0。
 - 分支：`stage/03-file-preview-consistency`；每个 Atomic Task 独立提交，不直接修改 main。
 - Stage 2 完成基线：远端 `a2b9ef95a957d9ddf1ef72599572166036769beb`；本地 `cc001eb3770675ca1c6bdfb33d10388b3ee3f934`。
 - 两个基线提交的代码树相同：`7d14bc2999155dc8cf36a3d9ecf59fdce38bec5b`。提交 ID 不同来自既有 GitHub 连接发布方式，不代表代码差异。
 - 当前：AT-3.1 自动验证完成；AT-3.2 实现和本环境门禁完成，Rust/PowerShell 原生校验执行及 Windows 位图验收待补；Stage 3 不标为完整验收通过。
 - AT-3.2 起点：远端 `e5f8d131786875b2bba591b2d01cf5c81b29a0ca`、本地 `cba6e011ce98496031dc673f56917b1402f42fd1`，同树 `e814ea2981bde6db5096ccf4fb562af4371f2be4`。
+- AT-3.2 Windows 回归修复起点：远端 `e5e6ca0b364de3f26bda770f9d28468993ce53d4`、本地 `b63cca94bcb9c6ddbaed56b6ecfe81185d50be3b`，同树 `16f0ccd387e9c504c8aa88360a828d77f0791506`。用户已完成 C++/Rust Windows 原生构建，但预览严格诊断失败、完整 verify/build 被 symlink 权限阻断；后续状态以第 10.6 节为准。
 - 上级：[修复与编排重构总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。
 
 ## 1. 阶段目标与范围
@@ -253,13 +254,37 @@ flowchart TD
  D -->|"未命中"| E["调度入口复核，写入同一 JSON"]
  E --> F["Rust 原生校验"]
  E -->|"兼容开关允许回退"| G["C++ 原生校验"]
- E -->|"兼容开关允许回退"| H["PowerShell 原生校验"]
+ E -->|"兼容开关允许回退"| H["PowerShell 原文检查、JSON 解析与字段校验"]
  F --> I["通过校验后分配有界位图"]
  G --> I
  H --> I
  I --> K["图片与缓存元数据"]
  K --> D
 ```
+
+### 10.6 Windows 日志反馈与回归修复
+
+用户日志提供的实机证据：VS 2022 17.14.35 x64 开发者终端中 C++ helper 构建成功；Cargo 1.97.1 完成 Rust release 构建并复制 worker；C++ 实际输入策略 59 个旧版用例通过。随后 PowerShell 将两个孤立代理项用例输出为 `1 efbfbd`，预期应为拒绝 `0`；严格诊断在该处中止，尚未执行 Rust 输入单元测试。`npm run verify` 和 `npm run build` 都因创建测试 symlink 时 EPERM 中止，Windows Electron 构建未完成。
+
+本次修复：
+
+1. PowerShell 脚本保留原始 `$inputJsonText`。共享校验构造器先按 JSON 字符串和转义单位检查代理对，再调用 `ConvertFrom-Json`；解析器即使会替换非法字符，也无法抹去输入无效的证据。解析后仍检查 text、尺寸、字号，检查失败前不进入 GDI+ 分配。
+2. 合法 U+FFFD 字符、转义形式 `\uFFFD`、合法 emoji 代理对、字面量 `\\ud800` 保留。拒绝孤立高/低代理项、颠倒/重复高代理项、代理项后跟普通字符、跨字符串配对及用转义反斜杠伪装的低代理项；没有修改原来失败用例的预期。
+3. 诊断和生产脚本使用同一段原文解析校验代码。失败输出改为定位到具体 fixture，避免长数组差异隐藏失败用例。
+4. symlink 的 EPERM/EACCES 增加 `ENVIRONMENT_BLOCKED` 提示，继续以退出码 1 结束；不跳过测试、不改成 hardlink/junction、不把环境失败标为通过。
+
+本环境结果：190 个 JS 行为用例、68 个编译执行的 C++ 输入策略用例、typecheck、74/74 长期诊断、Electron main/preload/renderer 构建和混淆通过。当前仍无 PowerShell/Cargo；本次 PowerShell 修复未经本机真实执行，不能据此关闭 Windows 严格门禁。获取临时 PowerShell 工具的网络批准未完成，未继续改变下载路径；官方文档已核对 [ConvertFrom-Json 5.1](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-5.1) 和 [Windows symlink 权限](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createsymboliclinkw)，Context7 另用于核对大小写敏感比较和正则语法。
+
+在当前 Stage 3 分支拉取补丁后，用**以管理员身份运行的 x64 Native Tools Command Prompt for VS 2022** 重试；已开启 Windows 开发者模式且进程能创建 symlink 的普通开发者终端也可用。这里只说明测试所需权限，不自动调整系统权限。每条命令成功后再执行下一条：
+
+```bat
+cd /d F:\Electron+Rust\HanFontManager_Electron_rust
+git pull --ff-only origin stage/03-file-preview-consistency
+node build/diagnostics/check-preview-input-boundary.cjs --require-native
+npm run build
+```
+
+`npm run build` 已包含完整 verify。用户先前成功生成的 C++/Rust exe 无须为此次脚本修复单独重编；Rust 测试会编译新增 fixture，正式 build 仍按原脚本检查/构建 Rust。若仍因组织策略或文件系统拒绝 symlink，应保留环境失败并解决实际权限，不能绕过门禁。此补丁未修改原生源码、renderer 版本、缓存键、数据库、锁文件或三大编排文件；作为 Stage 3 上独立的回归修复提交，不启动新阶段。
 
 ## 11. 退出、回滚与记录
 

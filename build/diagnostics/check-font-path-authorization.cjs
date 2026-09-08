@@ -912,6 +912,9 @@ async function main() {
 }
 
 main().catch((error) => {
+  if (process.platform === 'win32' && error?.syscall === 'symlink' && (error.code === 'EPERM' || error.code === 'EACCES')) {
+    console.error('[diagnostics:font-path-authorization] ENVIRONMENT_BLOCKED: Windows refused symlink creation. Enable Windows Developer Mode or run the VS 2022 x64 developer command prompt as Administrator, then rerun this diagnostic. No test was skipped; this gate remains failed.')
+  }
   console.error(`[diagnostics:font-path-authorization] ${error instanceof Error ? error.stack || error.message : String(error)}`)
   process.exit(1)
 })

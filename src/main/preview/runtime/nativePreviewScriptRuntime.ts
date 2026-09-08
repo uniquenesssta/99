@@ -1,9 +1,43 @@
 import { DEFAULT_PREVIEW_TEXT, PREVIEW_INPUT_LIMITS } from './previewInputPolicy'
 
+// Owns parsing as well as validation. Callers supply the original $inputJsonText,
+// because ConvertFrom-Json can replace lone surrogate escapes before inspection.
 // Also executable without GDI+ in the native boundary diagnostics.
 export function buildPreviewInputPowerShellValidation(): string {
   const limits = PREVIEW_INPUT_LIMITS
-  return `
+  return String.raw`
+foreach ($token in [regex]::Matches($inputJsonText, '"(?:\\.|[^"\\])*"')) {
+  $raw = $token.Value
+  $pendingHigh = $false
+  for ($i = 1; $i -lt $raw.Length - 1; $i++) {
+    $unit = [int][char]$raw[$i]
+    if ($unit -eq 92) {
+      $i++
+      if ($raw[$i] -ceq 'u') {
+        if ($i + 4 -ge $raw.Length - 1) { throw "PREVIEW_INPUT_INVALID: JSON Unicode" }
+        $hex = $raw.Substring($i + 1, 4)
+        if ($hex -cnotmatch '^[0-9a-fA-F]{4}$') { throw "PREVIEW_INPUT_INVALID: JSON Unicode" }
+        $unit = [Convert]::ToInt32($hex, 16)
+        $i += 4
+      } else {
+        # Escaped backslash/quote/control is a non-surrogate code unit. In
+        # particular, a literal backslash followed by 'ud800' is valid text.
+        $unit = 0
+      }
+    }
+    if ($pendingHigh) {
+      if ($unit -lt 0xdc00 -or $unit -gt 0xdfff) { throw "PREVIEW_INPUT_INVALID: JSON Unicode" }
+      $pendingHigh = $false
+    } elseif ($unit -ge 0xd800 -and $unit -le 0xdbff) {
+      $pendingHigh = $true
+    } elseif ($unit -ge 0xdc00 -and $unit -le 0xdfff) {
+      throw "PREVIEW_INPUT_INVALID: JSON Unicode"
+    }
+  }
+  if ($pendingHigh) { throw "PREVIEW_INPUT_INVALID: JSON Unicode" }
+}
+$inputJson = ConvertFrom-Json -InputObject $inputJsonText
+
 function Assert-PreviewNumber($value, $min, $max, $integer) {
   if (($value -isnot [int]) -and ($value -isnot [long]) -and ($value -isnot [double]) -and ($value -isnot [decimal])) {
     throw "PREVIEW_INPUT_INVALID: numeric type"
@@ -39,7 +73,7 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
 $inputJsonPath = '${inputPath.replaceAll("'", "''")}'
-$inputJson = Get-Content -Raw -Encoding UTF8 -LiteralPath $inputJsonPath | ConvertFrom-Json
+$inputJsonText = Get-Content -Raw -Encoding UTF8 -LiteralPath $inputJsonPath
 ${buildPreviewInputPowerShellValidation()}
 
 $fontPath = [string]$inputJson.fontPath

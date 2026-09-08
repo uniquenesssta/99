@@ -35,7 +35,8 @@ function loader(mocks = {}) {
 const fixture = JSON.parse(fs.readFileSync(path.join(root, 'build/diagnostics/fixtures/preview-input-boundary.fixture.json'), 'utf8'))
 const cases = fixture.cases.map(({ patch, repeat, ok }) => ({ patch: repeat ? { ...patch, text: patch.text.repeat(repeat) } : patch, ok }))
 cases.push(...['width', 'height', 'fontSize'].flatMap((field) => [NaN, Infinity, -Infinity, undefined].map((value) => ({ patch: { [field]: value }, ok: false }))))
-cases.push({ patch: { text: '\ud800' }, ok: false }, { patch: { text: '\udc00' }, ok: false }, { patch: { text: undefined }, ok: false })
+cases.push(...['\ud800', '\udc00', '\ud800x', '\ud800\ud800', '\udc00\ud800'].map((text) => ({ patch: { text }, ok: false })))
+cases.push({ patch: { text: undefined }, ok: false })
 const valid = cases.filter(({ ok }) => ok).map(({ patch }) => patch)
 const invalid = cases.filter(({ ok }) => !ok).map(({ patch }) => patch)
 
@@ -108,15 +109,23 @@ function nativeTests() {
     '{"width":null,"height":260,"fontSize":44,"text":"width"}',
     '{"width":1e999,"height":260,"fontSize":44,"text":"a"}',
     '{"width":"720","height":260,"fontSize":44,"text":"a"}',
+    '{"width":720,"height":260,"fontSize":44,"text":"\\uD83D\\uDE00"}',
+    '{"width":720,"height":260,"fontSize":44,"text":"\\uFFFD"}',
+    '{"width":720,"height":260,"fontSize":44,"text":"\\uD800\\\\udc00"}',
+    '{"width":720,"height":260,"fontSize":44,"text":"\\uD800","ignored":"\\uDC00"}',
   ]
   const allInput = input + alternate.join('\n') + '\n'
-  const allExpected = [...expected, '1 ' + Buffer.from('汉😀').toString('hex'), '0', '0', '0']
+  const allExpected = [...expected, '1 ' + Buffer.from('汉😀').toString('hex'), '0', '0', '0', '1 ' + Buffer.from('😀').toString('hex'), '1 efbfbd', '0', '0']
   function run(command, args, options = {}) {
     return spawnSync(command, args, { cwd: root, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, ...options })
   }
   function verifyLines(result, label) {
     assert.equal(result.status, 0, `${label}: ${result.stderr}`)
-    assert.deepEqual(result.stdout.trimEnd().split(/\r?\n/), allExpected, label)
+    const actual = result.stdout.trimEnd().split(/\r?\n/)
+    assert.equal(actual.length, allExpected.length, `${label}: result count`)
+    for (let i = 0; i < allExpected.length; i++) {
+      assert.equal(actual[i], allExpected[i], `${label}: fixture ${i + 1} (${i < cases.length ? Object.keys(cases[i].patch).join(',') : 'alternate JSON'})`)
+    }
     console.log(`${label}: ${allExpected.length} cases passed`)
   }
   const skipped = []
@@ -136,7 +145,7 @@ function nativeTests() {
     const shell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh'
     if (!run(shell, ['-NoProfile', '-Command', '$PSVersionTable.PSVersion']).error) {
       const validation = load('src/main/preview/runtime/nativePreviewScriptRuntime.ts').buildPreviewInputPowerShellValidation()
-      const script = `$ErrorActionPreference = 'Stop'\nwhile ($null -ne ($line = [Console]::ReadLine())) {\ntry {\n$inputJson = $line | ConvertFrom-Json\n${validation}\n'1 ' + ([BitConverter]::ToString([Text.Encoding]::UTF8.GetBytes($text))).Replace('-', '').ToLowerInvariant()\n} catch { '0' }\n}`
+      const script = `$ErrorActionPreference = 'Stop'\nwhile ($null -ne ($line = [Console]::ReadLine())) {\ntry {\n$inputJsonText = $line\n${validation}\n'1 ' + ([BitConverter]::ToString([Text.Encoding]::UTF8.GetBytes($text))).Replace('-', '').ToLowerInvariant()\n} catch { '0' }\n}`
       // Console input is ASCII JSON, avoiding Windows console codepage differences.
       const asciiInput = allInput.replace(/[\u0080-\uffff]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
       verifyLines(run(shell, ['-NoProfile', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { input: asciiInput }), 'PowerShell actual generated validation (no GDI+)')

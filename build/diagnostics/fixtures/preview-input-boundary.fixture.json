@@ -9,6 +9,14 @@
   },
   "cases": [
     {
+      "patch": { "text": "�" },
+      "ok": true
+    },
+    {
+      "patch": { "text": "\\ud800 \\udc00" },
+      "ok": true
+    },
+    {
       "patch": {},
       "ok": true
     },
