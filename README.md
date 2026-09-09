@@ -58,6 +58,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-09：完成 AT-4.2：提取 Core/Data 组合工厂及 storage/query 所有者，`index.ts` 2075→1222 行；保留句柄单一所有权和成功保存后的预览失效通知，收窄 Rust/后台任务端口，消除一处前向同步占位。115 项注册与 14 条基线流程等价、429 个操作表面类型及 6 种错误接线反例通过；typecheck、77/77 长期诊断、Electron 三端构建和三份新 JS 混淆通过。更新两处旧诊断的源码定位，原断言保留。仍在 `stage/04-main-composition`，下一项 AT-4.3 未开始；本次不改数据库、依赖版本、字体文件或原生源码，pull 后按通常流程 build。边界与操作见 [Stage 4 任务书第 8 节](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)。
+
 - 2026-09-08：Stage 4 在 `stage/04-main-composition` 分支完成 AT-4.1：为 Core/Data/Mutation/Operations 与 Application 建立只含类型的组合返回契约，现有 115 项注册能力全部必填，明确 24 项生命周期和 7 项数据库资源操作的所有权。新增编译器门禁覆盖 125 项负例，验证旧入口遗漏可选能力的问题及适配器运行时等价；typecheck、76/76 长期诊断、Electron 三端构建和混淆通过。复审并记录 8 处延迟绑定、真实回调循环与后续拆分顺序；三大巨型编排文件未改，AT-4.2 尚未开始。详见 [Stage 4 任务书](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)，本项无需迁移字体库或额外重建原生程序。
 - 2026-09-08：Stage 3 Windows 完整构建验收通过：拉取 `476c5d6` 后，typecheck、75/75 诊断、三后端预览输入、Rust release、公钥同步、Electron 三端与混淆 3/3 全部成功。NAS、实际位图/峰值内存及安装包验收仍单列为外部项；下一项为新 Stage 4 分支上的 AT-4.1，见 [Stage 3 第 10.9 节](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#109-windows-完整构建通过与阶段交接)。
 - 2026-09-08：Windows 管理员窗口已通过路径 POLICY/PHYSICAL/READ 检查，symlink 权限阻塞解除；后续 io-deadline 暴露源码换行匹配问题。修复六项诊断的 CRLF 误报/漏报，新增 LF/CRLF 正反例 24 场景；typecheck 与本环境 75/75 诊断通过。应用源码和依赖版本未改，**本次需先 pull 再重跑 Windows build**，步骤见 [Stage 3 第 10.8 节](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#108-windows-权限问题已解决修复诊断的-crlf-兼容性)。

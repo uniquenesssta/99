@@ -2,10 +2,10 @@
 
 ## 0. 状态与执行边界
 
-- 版本：1.0；日期：2026-09-08；软件：HanFontManager 3.0.0。
+- 版本：1.1；日期：2026-09-09；软件：HanFontManager 3.0.0。
 - 分支：`stage/04-main-composition`，由 Stage 3 验收提交 `c8a6c39cc47059a42704003e00fe28ee4bc450a8` 创建；不合并到 main。
 - 共同基线树：`e7db517757b201f9bea0313cf9b64d2395f55973`。连接器发布与本地提交的 SHA 可不同，以树一致性核对内容。
-- 当前任务：AT-4.1 已完成，typecheck、76 项长期诊断及 Electron 三端构建/混淆通过；AT-4.2 至 AT-4.4 尚未开始。
+- 当前任务：AT-4.1、AT-4.2 已完成；本轮 typecheck、77 项长期诊断及 Electron 三端构建/混淆通过。AT-4.3、AT-4.4 尚未开始。
 - 前置证据：用户 Windows 拉取 `476c5d6` 后完整 build 成功，详见 [Stage 3 第 10.9 节](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#109-windows-完整构建通过与阶段交接)。没有 AT-3.3。
 - 本文是 Stage 4 的执行记录；阶段顺序和不可妥协项以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。每个 Atomic Task 单独提交、单独回退，一个 Stage 共用一个分支。
 
@@ -16,7 +16,7 @@
 | 任务 | 最小交付 | 硬门禁 | 当前状态 |
 | --- | --- | --- | --- |
 | AT-4.1 | 四个组合阶段和 Application 的返回契约、生命周期归属、延迟绑定审计；接入现有注册适配器 | 真实 TypeScript 编译拒绝遗漏任一注册能力或 shutdown hook；运行时输出等价 | 完成 |
-| AT-4.2 | 在 `src/main/bootstrap` 提取 Core、Data 工厂，按实际依赖定义输入端口 | 导入不新增副作用；路径、日志、DB/schema audit 顺序一致；句柄创建/关闭单一所有者 | 未开始 |
+| AT-4.2 | 在 `src/main/bootstrap` 提取 Core、Data 工厂，按实际依赖定义输入端口 | 导入不新增副作用；路径、日志、DB/schema audit 顺序一致；句柄创建/关闭单一所有者 | 完成，见第 8 节 |
 | AT-4.3 | 提取 Mutation、Operations；给必要循环建立显式绑定点 | 绑定完成前不启任务；启动、索引、刷新、退出/取消退出及异常退出保持原义 | 未开始 |
 | AT-4.4 | 收敛 `index.ts` 和 Application；按 lifecycle/query/mutation/maintenance/preview 分组注册 | 115 项能力、7 个 app 事件、2 个 process 事件和完整行为门禁不丢失 | 未开始 |
 
@@ -144,3 +144,85 @@ npm run verify
 AT-4.1 只更改 TypeScript 类型与诊断/文档，不改依赖版本、数据库/schema、缓存键、字体文件或原生源码。无需为本项迁移字体库或额外重建 C++/Rust；要运行新版应用仍按通常流程构建。Linux 审查环境不能代替 Windows 安装包、GDI+ 实际位图/峰值内存、NAS 多客户端/断电、真实跨卷和字体占用验收；这些项仍承接 Stage 1–3 记录，未勾选为通过。
 
 回退使用当前 Atomic Task 提交的独立 revert，并重新执行 verify；不执行破坏性 reset，不清理用户本地数据。出现注册遗漏、初始化提前执行、双重资源所有权或退出语义改变时，停止当前搬迁并修复，不进入下一 Atomic Task。
+
+## 8. AT-4.2：Core/Data 工厂提取与验收
+
+### 8.1 基线与实际边界
+
+本项从 AT-4.1 远端提交 `d8f17f01e2f72473fb60c3a88302a9791ee45092` 的内容继续；共同树为 `68478e90b034d7edd42b4598e94adbcdcba0030c`。仍在 `stage/04-main-composition`，不新建小任务分支，不合并 main。
+
+| 文件 | 实际职责 | 资源和副作用边界 |
+| --- | --- | --- |
+| `mainCoreCompositionRuntime.ts`（392 行） | 日志、路径、授权/窗口、Rust、性能、启动/退出标记、存储介质检测的组合 | 创建原有运行时；保留原有启动策略日志。窗口、协议、采样、daemon 和 marker 写入仍由原生命周期调用；不打开业务 DB |
+| `mainDataStorageCompositionRuntime.ts`（760 行） | 应用与共享数据库、字体库、安装状态索引、目录缓存、缓存路径的组合 | library/preview/cache 的句柄和 close 函数继续由原领域运行时唯一持有；不拥有 tasks DB，不新增启动时 open |
+| `mainDataQueryCompositionRuntime.ts`（368 行） | 根/合并索引查询、搜索、统计、内存缓存和失效回调的组合 | 同一 query facade 和缓存所有者；保留索引提交后失效的反馈关系 |
+| `mainDataCompositionRuntime.ts`（429 行） | 组装 storage/query/preview，发布 Data 契约、资源钩子和下游实际需要的端口 | 成功保存库后通知 preview；后台任务用延迟端口接入既有 Operations 所有者 |
+| `mainDataTaskPorts.ts`、`mainDatabasePorts.ts` | 定义任务函数与不透明数据库句柄端口 | 仅类型，无运行时容器、句柄副本或新 close 调用 |
+
+输入逐字段声明，不传递整个 Core/Data 上下文。Rust 输入按用途限定：storage 11 项、query 8 项、preview 7 项，Data 合计 26 项。NodeRequire 保留 SQLite 加载所需的既有标准接口；业务 DB 句柄在新组合边界为 `unknown`，不能在组合层随意执行 SQL。`mainPerformanceRuntimeBootstrap` 只把旧 `any` 输入/输出改为实际端口类型及返回推导，函数体未改。
+
+构造阶段重排的是已有运行时组装；转译后的实际领域模块导入集合与 AT-4.1 完全相同。Core 的 clean-shutdown 对象现在在 Core 阶段捕获会话起始时间，但 marker 仍在原 `beginStartupSessionSync` 阶段写入，退出标记语义不变。没有新增 import 阶段的任务、DB 打开或应用注册。
+
+### 8.2 延迟绑定与巨型编排复审
+
+`index.ts` 从 2075 行降至 1222 行。本项按所有权提取，仍保留 Mutation/Operations 组合和 115 项显式注册，尚未达到 AT-4.4 的最终入口目标。Storage 仍有 760 行，包含已有组装、参数和转发声明；后续审计应看职责和实际调用者，不能继续向其堆入扫描、安装事务或维护算法。
+
+- `folderCacheRuntimeRef` 移入 storage，保留共享元数据与目录缓存之间的真实读循环和唯一赋值。
+- `fontQueryFacadeRuntimeRef` 移入 query，保留查询/失效反馈和未初始化保护。
+- `notifyPreviewLibraryShellChanged` 由 Data 外层唯一绑定；保存失败不失效预览缓存。
+- `syncMergedIndexAfterInstallStatusRefreshRuntime` 占位变量删除：先完成 Data，再构造激活保存队列，直接使用实际同步函数。
+- 入口仍有四处 Operations 可变绑定：后台 scheduler、刷新 starter、scan orchestrator、watcher 通知。AT-4.3 负责其显式绑定与 start/stop 时机。
+- Core 的索引授权、daemon 状态反馈与性能状态，以及 Data 的后台任务回调均延迟读取；工厂创建时不执行这些尚未就绪的回调。
+
+`rustCoreWorkerRuntime.ts` 2994 行、`App.tsx` 1397 行、`AppRootView` 386 行/169 props 均未改；Rust 45 项公开方法/38 条命令、React 10 条流程和原 115 项注册契约未漂移。本项没有重写安装、扫描、物理移动、查询或预览算法。
+
+```mermaid
+flowchart TD
+  E["主进程入口"] --> C["Core 工厂"]
+  E --> D["Data 工厂"]
+  C -->|"路径、授权、Rust 窄端口"| D
+  D --> S["存储与数据库所有者"]
+  D --> Q["查询与失效所有者"]
+  D --> P["预览运行时"]
+  Q -->|"索引与库读取"| S
+  S -->|"保存成功通知"| P
+  P -->|"读取库摘要"| S
+  E --> O["既有后台与监听运行时"]
+  P -.->|"延迟任务端口"| O
+  O -->|"调用唯一关闭函数"| S
+  C -.->|"延迟授权查询"| Q
+```
+
+### 8.3 长期门禁与结果
+
+新增 `diagnostics:main-composition-runtime`。基线 fixture 来自 AT-4.1 真实入口在记录型领域端口下的执行结果；不保存旧入口副本，日后运行不依赖 Git 历史。测试执行当前真实入口和四个组合工厂，领域端口不启动 Electron、Windows 字体系统或后台线程。记录路径采用固定 POSIX 测试环境，真实 Windows 路径规则仍由既有 POLICY/READ/PHYSICAL 门禁验证。
+
+| 验证 | 结果与范围 |
+| --- | --- |
+| 组合行为对照 | 115 项注册、每个领域工厂单一实例、6 项路径与 14 条流程匹配 AT-4.1；包括成功/失败保存、索引提交、外部元数据变化、授权、状态读取、标签/daemon 信号、任务、schema audit 接线、生命周期钩子和关闭异常 |
+| 资源所有权 | Data 的五项 close/clear/checkpoint 直接引用 storage 所有者；preview → tasks → library 的关闭次序保持，preview close 抛错不阻止后续关闭；cache label 不串用 |
+| 实际连接运行时 | preview owner 在并发 open 时只建一个句柄和一次 schema，重复 close 不重复关闭实际句柄，clear 清表并释放，schema 失败释放句柄且可重试；library 的真实句柄门禁继续执行 |
+| 类型边界 | 用项目 TypeScript 5.9.3 检查四个工厂的 429 个操作表面，参数、返回值及 Promise/元组类型实参无直接 `any`；这不是对全部旧领域内部类型的清理声明 |
+| 故障反例 | 提前 open、错接 close、保存失败仍通知、丢失任务接线、丢失 worker shutdown、schema audit 接错库共 6 种修改均被拒绝 |
+| 换行与旧诊断 | 新行为 fixture 的 CRLF 场景通过；folder-cache 与 inflight-cache 两处旧诊断更新到实际函数位置，原断言保留，补充 storage → preview 绑定断言 |
+| 完整门禁 | `npm --offline run verify` 通过：typecheck + 77/77；新门禁最后补强的 schema 反例和 CRLF 场景另行复验通过 |
+| 构建 | Electron/Vite main/preload/renderer 341/1/181 模块通过，三份新 JS 产物混淆成功；日志 3/5，另两份旧产物已有混淆标记 |
+
+生命周期轨迹验证的是组合层接线；真实 Electron 关闭取消/失败流程继续由原实现与既有门禁约束，不能据此声称执行了 Windows GUI 全流程。预览 JS 190、C++ 输入策略 68 继续通过；本环境没有 Cargo/PowerShell，严格原生构建与这些外部执行不伪报成功。Stage 3 用户 Windows 完整构建成功记录保留，NAS、实际位图/峰值内存和安装包矩阵继续单列。
+
+插件记录：Context7 检索 TypeScript 5.9.3 元组推导与严格函数类型资料，并以实际编译器结果验证端口；Mermaid Chart 已渲染本节的实际组合图。Create State 只作交接辅助，Git、README 和任务书继续承担正式记录。
+
+### 8.4 pull 后与下一项
+
+在已具备 symlink 测试权限的 VS 2022 x64 开发者终端中，先切到本阶段分支再更新：
+
+```bat
+cd /d F:\Electron+Rust\HanFontManager_Electron_rust
+git switch stage/04-main-composition
+git pull --ff-only origin stage/04-main-composition
+npm run build
+```
+
+本次 pull 会更新源码、诊断和任务书；未改依赖版本、数据库/schema、缓存键、字体文件和原生源码，无需迁移字体库或为此另行重建 C++。`npm run build` 会照原流程验证并构建 Rust 和应用。首次切分支按第 7 节操作；若存在本地改动，先保存自己的修改。
+
+下一项是 **AT-4.3：Mutation 与 Operations 提取**，仍沿用本阶段分支；本轮未开始该任务。回退以本次 AT-4.2 提交为单位 revert，重新 verify，不清理用户数据。

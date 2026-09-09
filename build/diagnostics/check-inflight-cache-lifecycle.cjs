@@ -147,9 +147,11 @@ function testStaticGenerationAndWiring() {
   assert(rootAvailability.includes('probeToken?: object'), 'shared preview root probe is missing a lifecycle token')
   assert(rootAvailability.includes('entries.get(key)?.probeToken !== probeToken'), 'stale shared-root probe can still overwrite a newer availability decision')
 
-  const main = read('src/main/index.ts')
-  assert(main.includes('notifyPreviewLibraryShellChanged = invalidatePreviewLibraryShellCache'), 'library save is not wired to preview shell invalidation')
-  assert(main.includes('if (saved) notifyPreviewLibraryShellChanged()'), 'successful library save does not invalidate preview routing cache')
+  const data = read('src/main/bootstrap/mainDataCompositionRuntime.ts')
+  const dataStorage = read('src/main/bootstrap/mainDataStorageCompositionRuntime.ts')
+  assert(data.includes('notifyPreviewLibraryShellChanged = invalidatePreviewLibraryShellCache'), 'library save is not wired to preview shell invalidation')
+  assert(data.includes('notifyPreviewLibraryShellChanged: () => notifyPreviewLibraryShellChanged()'), 'storage notification is not bound to the preview owner')
+  assert(dataStorage.includes('if (saved) notifyPreviewLibraryShellChanged()'), 'successful library save does not invalidate preview routing cache')
 
   const signature = read('src/main/indexing/shared-metadata/sharedMetadataSignatureRuntime.ts')
   assert(signature.includes('if (signatureInFlight.get(dbPath) === task)'), 'shared metadata signature cleanup is not identity-safe')

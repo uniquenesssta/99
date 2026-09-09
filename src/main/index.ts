@@ -1,107 +1,26 @@
-import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
-import { promisify } from "node:util";
-import type {
-  FontIndexChangePayload,
-  FontItem,
-  FontMetricsResult,
-  FontQueryPageResult,
-  FontQueryRequest,
-  FontQueryResult,
-  FontSearchResult,
-  FontTagBatchItem,
-  FontTagUpdateResult,
-  InstallCompareResult,
-  LibraryState,
-  ScanResult,
-} from "../shared/types";
+import type { FontIndexChangePayload, FontItem, FontTagBatchItem, FontTagUpdateResult, InstallCompareResult } from "../shared/types";
 import { createFontActivationRuntime } from "./activation/fontActivationRuntime";
 import { createMainActivationInstallStatusSaveRuntime } from "./activation/mainActivationInstallStatusSaveRuntime";
-import { createAppDataPaths } from "./app/appDataPaths";
-import { createCleanShutdownRuntime } from "./app/cleanShutdownRuntime";
 import { registerMainProcessRuntime } from "./app/mainProcessRuntimeRegistration";
-import { createMainWindowAndFontRuntime } from "./app/mainWindowAndFontRuntimeBootstrap";
-import { createMainLoggingBootstrap } from "./bootstrap/mainLoggingBootstrap";
-import { createMainFontInstallCompareRuntime } from "./bootstrap/mainFontInstallCompareBootstrap";
-import {
-  FONT_EXTENSIONS,
-  FONT_SEARCH_RESULT_LIMIT_DEFAULT,
-  INSTALLED_FONTS_TTL_MS,
-  SQLITE_BUSY_TIMEOUT_MS,
-  SQLITE_MMAP_SIZE_BYTES,
-} from "./bootstrap/mainIndexConstants";
+import { FONT_EXTENSIONS } from "./bootstrap/mainIndexConstants";
 import { createMainRuntimeRegistrationPayload } from "./bootstrap/mainRuntimeRegistrationPayload";
-import { createCacheArchitectureRuntime } from "./cache/cacheArchitectureRuntime";
-import {
-  cacheKeyForPath,
-  createCachePathHelpers,
-  fileCacheSignature,
-  isRootIndexDbPath,
-  sqliteSidecarPaths,
-} from "./cache/cachePaths";
+import { fileCacheSignature, isRootIndexDbPath } from "./cache/cachePaths";
 import {
   CACHE_ARCHITECTURE_VERSION,
-  EVENTS_SQLITE_SCHEMA_VERSION,
-  HASH_SQLITE_SCHEMA_VERSION,
-  KVS_SQLITE_SCHEMA_VERSION,
   MAINTENANCE_SQLITE_SCHEMA_VERSION,
-  METRICS_SQLITE_SCHEMA_VERSION,
-  PREVIEW_CACHE_DB_DIR_NAME,
-  PREVIEW_CACHE_DB_FILE_NAME,
-  PREVIEW_CACHE_IMAGES_DIR_NAME,
   PREVIEW_SQLITE_SCHEMA_VERSION,
-  ROOT_CACHE_DIR_NAME,
-  ROOT_INDEX_DB_DIR_NAME,
-  ROOT_INDEX_DB_FILE_NAME,
-  ROOT_PREVIEW_CACHE_DIR_NAME,
   TASKS_SQLITE_SCHEMA_VERSION,
 } from "./cache/constants";
-import { writeJsonAtomic } from "./cache/jsonAtomic";
-import { createRootArchitectureDatabasesRuntime } from "./cache/rootArchitectureDatabasesRuntime";
-import { createScanCacheStorageRuntime } from "./cache/scanCacheStorageRuntime";
-import { createApplicationDatabasePaths } from "./db/appDatabasePaths";
-import { createDbQueryWorkerRuntime } from "./db/dbQueryWorkerRuntime";
-import {
-  ensureSqliteColumn as ensureSqliteColumnRuntime,
-  getSqliteMeta,
-  parseSqliteJson,
-  setSqliteMeta,
-  sqliteTableExists,
-} from "./db/sqliteHelpers";
-import { createSqliteRuntime } from "./db/sqliteRuntime";
-import { runStartupCriticalSchemaAudit } from "./diagnostics/startupSchemaAudit";
-import { createMigrationDiagnosticsRuntime } from "./diagnostics/migrationDiagnosticsRuntime";
-import {
-  createFolderCacheRuntime,
-  type FolderCacheRuntime,
-  type FolderCacheSource,
-} from "./folders/folderCacheRuntime";
-import {
-  createPhysicalFolderActions,
-  pathInsideFolder,
-} from "./folders/physicalFolders";
+import { setSqliteMeta, sqliteTableExists } from "./db/sqliteHelpers";
+
+import { createPhysicalFolderActions, pathInsideFolder } from "./folders/physicalFolders";
 import { createFontMoveTransactionRuntime } from "./folders/fontMoveTransactionRuntime";
-import {
-  createCachedFontRuntime,
-  fontItemFromPath,
-  hasValidFontSignature,
-  readFontMetadata,
-  sha1,
-} from "./fonts/fontRuntime";
+import { fontItemFromPath, hasValidFontSignature, sha1 } from "./fonts/fontRuntime";
 import { createFontScanWorkers } from "./indexing/fontScanWorkers";
-import { createMergedIndexPageRuntime } from "./indexing/mergedIndexPageRuntime";
-import { createRootIndexCoordinator } from "./indexing/rootIndexCoordinator";
-import { createSharedFontMetadataRuntime } from "./indexing/shared-metadata/sharedFontMetadataRuntime";
 import { createSharedMetadataFrontendDiagnosticsRuntime } from "./indexing/shared-metadata/sharedMetadataFrontendDiagnosticsRuntime";
-import { createRootIndexRuntime } from "./indexing/rootIndexRuntime";
-import {
-  createScanOrchestrator,
-  type ScanOrchestratorRuntime,
-} from "./indexing/scanOrchestrator";
-import {
-  indexListWorkerSource,
-  scanWorkerSource,
-} from "./indexing/workerSources";
+import { createScanOrchestrator, type ScanOrchestratorRuntime } from "./indexing/scanOrchestrator";
+import { indexListWorkerSource, scanWorkerSource } from "./indexing/workerSources";
 import { createCurrentUserManagedInstallRuntime } from "./install/currentUserManagedInstallRuntime";
 import { createManagedFontOwnershipRuntime } from "./install/managedFontOwnershipRuntime";
 import { createInstallStatusRefreshRuntime } from "./install/installStatusRefreshRuntime";
@@ -109,54 +28,23 @@ import {
   createInstallStatusRefreshStarterRuntime,
   type InstallStatusRefreshStarterRuntime,
 } from "./install/installStatusRefreshStarterRuntime";
-import { createInstallStatusRuntime } from "./install/installStatusRuntime";
 import { createSystemFontInstallRuntime } from "./install/systemFontInstallRuntime";
-import { createMainSystemInstalledFontsBootstrap } from "./bootstrap/mainSystemInstalledFontsBootstrap";
-import {
-  isCleanWindowsDefaultCandidate,
-  isCleanWindowsDefaultFontName,
-  isCleanWindowsDefaultItem,
-} from "./install/windowsDefaultFonts";
-import { createFontMemoryQueryRuntime } from "./library/fontMemoryQueryRuntime";
-import { createFontMetricsRuntime } from "./library/fontMetricsRuntime";
-import { createFontPageQueryCacheRuntime } from "./library/fontPageQueryCacheRuntime";
-import {
-  createFontQueryFacadeRuntime,
-  type FontQueryFacadeRuntime,
-} from "./library/fontQueryFacadeRuntime";
-import { createFontSearchRuntime } from "./library/fontSearchRuntime";
-import { createLibraryRuntime } from "./library/libraryRuntime";
+import { isCleanWindowsDefaultCandidate, isCleanWindowsDefaultFontName, isCleanWindowsDefaultItem } from "./install/windowsDefaultFonts";
 import { createSharedFontMetadataMutations } from "./library/sharedFontMetadataMutations";
 import { createSharedKnownTagsRuntime } from "./library/sharedKnownTagsRuntime";
 import { createSharedMetadataMergedIndexSyncRuntime } from "./library/sharedMetadataMergedIndexSyncRuntime";
 import { createTagMetadataRevisionBarrierRuntime } from "./library/tagMetadataRevisionBarrierRuntime";
 import { createTagMutationStateSignalRuntime } from "./library/tagMutationStateSignalRuntime";
 import { createTagMutationWriteProtocolRuntime } from "./library/tagMutationWriteProtocolRuntime";
-import { createMainLicenseBootstrap } from "./bootstrap/mainLicenseBootstrap";
 import { createApplicationDatabaseMaintenanceRuntime } from "./maintenance/applicationDatabaseMaintenanceRuntime";
 import { createSharedIndexSnapshotFrontendRuntime } from "./maintenance/sharedIndexSnapshotFrontendRuntime";
 import { normalizePathForCacheCompare } from "./path/cachePath";
-import {
-  findBestWatchedRootForFile,
-  isPathInsideAnyRoot,
-  normalizeWatchedFontFolders,
-  uniqueResolvedFolders,
-} from "./path/fontPathPolicy";
-import { createMainPerformanceRuntime } from "./performance/mainPerformanceRuntimeBootstrap";
-import { createStorageProfileRuntime } from "./performance/storageProfileRuntime";
-import {
-  normalizePreviewCacheIndexStatus,
-  upsertPreviewCacheRows,
-} from "./preview/previewCacheRuntime";
-import { createPreviewDbRuntime } from "./preview/previewDbRuntime";
-import { createPreviewRuntime } from "./preview/previewRuntime";
-import { createRustCoreWorkerRuntime } from "./rust-core/rustCoreWorkerRuntime";
+import { findBestWatchedRootForFile, isPathInsideAnyRoot, normalizeWatchedFontFolders, uniqueResolvedFolders } from "./path/fontPathPolicy";
 import { createMainBackgroundRuntime } from "./tasks/mainBackgroundRuntimeBootstrap";
 import type { MainBackgroundTaskSchedulerRuntime } from "./tasks/mainBackgroundTaskSchedulerRuntime";
 import { createFolderWatcherRuntime } from "./watcher/folderWatcherRuntime";
 import { createManualFolderRefreshRuntime } from "./watcher/manualFolderRefreshRuntime";
 import { createWatchedFolderIndexRuntime } from "./watcher/watchedFolderIndexRuntime";
-
 import {
   APP_ID,
   APP_NAME,
@@ -168,25 +56,14 @@ import {
   BACKGROUND_TASK_SCHEDULER_START_DELAY_MS,
   COMPLETED_TASK_RETENTION_MS,
   CPU_COUNT,
-  DATA_DIR_NAME,
-  DATA_LAYOUT_VERSION,
   LOG_SCHEMA_VERSION,
   DATABASE_BACKUP_RETENTION_COUNT,
-  DATABASE_CORRUPT_RETENTION_COUNT,
   FAILED_TASK_RETENTION_MS,
-  FAST_OPEN_SHARED_CACHE_DBS,
-  FONT_QUERY_PAGE_CACHE_MAX,
-  FONT_QUERY_PAGE_CACHE_TTL_MS,
-  FONT_QUERY_RESULT_CACHE_MAX,
-  FONT_QUERY_RESULT_CACHE_TTL_MS,
   FONT_SCAN_CACHE_VERSION,
   INDEX_PROGRESS_EVENT_MIN_INTERVAL_MS,
   INSTALL_STATUS_LIGHTWEIGHT_MISSING_THRESHOLD,
   INSTALL_STATUS_REFRESH_BATCH_SIZE,
   LOCAL_SCAN_WORKERS,
-  MERGED_INDEX_BACKGROUND_VALIDATE_INTERVAL_MS,
-  MERGED_INDEX_SCHEMA_VERSION,
-  MERGED_INDEX_STALE_FIRST_PAGE_ENABLED,
   NETWORK_SCAN_WORKERS,
   PREVIEW_OK_RETENTION_MS,
   SAFE_STARTUP_TASK_TYPES,
@@ -194,27 +71,33 @@ import {
   SCAN_STAT_CONCURRENCY,
   SCAN_WORKER_BATCH_SIZE,
   SCAN_WORKER_VERSION,
-  RUST_CORE_WORKER_ENABLED,
-  RUST_CORE_WORKER_REQUIRED,
   SCRIPT_DETECTION_VERSION,
-  SHARED_FONT_MEMORY_CACHE_TTL_MS,
-  SQLITE_QUICK_CHECK_INTERVAL_MS,
   STARTUP_BACKGROUND_TASKS_ENABLED,
   STARTUP_DB_MAINTENANCE_IDLE_DELAY_MS,
   STARTUP_RECOVER_SCAN_TASKS_ENABLED,
-  SYSTEM_FONT_RESOLVE_BATCH_SIZE,
   TASK_ERROR_RETENTION_MS,
   TASK_LOCK_STALE_MS,
   VERBOSE_RENDERER_LOGS,
-  VERBOSE_SQLITE_LOGS,
   WATCHER_FLUSH_DEBOUNCE_MS,
   WATCHER_STARTUP_GRACE_MS,
   WINDOWS_STORAGE_MEDIA_DETECT_ENABLED,
-  WINDOWS_STORAGE_MEDIA_DETECT_TIMEOUT_MS,
 } from "./app/appRuntimeConfig";
-const execFileAsync = promisify(execFile);
+import { createMainCoreCompositionRuntime } from './bootstrap/mainCoreCompositionRuntime';
+import { createMainDataCompositionRuntime } from './bootstrap/mainDataCompositionRuntime';
 const nodeRequire = createRequire(import.meta.url);
 
+const coreComposition = createMainCoreCompositionRuntime({
+  isIndexingActive: () => Boolean(scanOrchestratorRuntime?.isActive()),
+  activeScanJobId: () => scanOrchestratorRuntime?.activeJobId() || "",
+  isInstallStatusRefreshActive: () => Boolean(installStatusRefreshStarterRuntimeRef?.activeInstallStatusRefreshJob()),
+  activeBackgroundTaskCount: () => backgroundTaskSchedulerRuntimeRef?.activeCount() || 0,
+  onDaemonDomainEvent: (event) => tagMutationStateSignalRuntime.handleRustCoreDaemonDomainEvent(event),
+  loadWatchedFontRoots: () => appWatchedFolders(),
+  isMainProcessIndexedFont: (identity) => mainProcessFontIndexContains(identity),
+});
+const { execFileAsync, delayToEventLoop, migrationDiagnosticsRuntime, rustCoreWorkerRuntime } = coreComposition;
+const { dataRoot, dataPath, exists } = coreComposition.paths;
+const { appendStartupLog, logPath, flushStartupLogAsync, flushStartupLogSync } = coreComposition.logging;
 const {
   safeManagedFontName,
   registryNameFor,
@@ -229,67 +112,7 @@ const {
   isSystemInstalledRecord,
   isCleanWindowsDefaultCompareResult,
   compareFontInstalledWithList,
-} = createMainFontInstallCompareRuntime(APP_NAME);
-
-const { logPath, flushStartupLogAsync, flushStartupLogSync, appendStartupLog } =
-  createMainLoggingBootstrap({ logsDir: () => dataPath("logs") });
-
-const migrationDiagnosticsRuntime = createMigrationDiagnosticsRuntime({
-  appendStartupLog,
-});
-migrationDiagnosticsRuntime.logStartupPolicy();
-
-const tagMetadataRevisionBarrier = createTagMetadataRevisionBarrierRuntime({
-  appendStartupLog,
-});
-
-const tagMutationStateSignalRuntime = createTagMutationStateSignalRuntime({
-  tagMetadataRevisionBarrier,
-  clearFontQueryCaches,
-  appendStartupLog,
-});
-
-const tagMutationWriteProtocolRuntime = createTagMutationWriteProtocolRuntime({
-  tagMetadataRevisionBarrier,
-  clearFontQueryCaches,
-  appendStartupLog,
-});
-
-let backgroundTaskSchedulerRuntimeRef: MainBackgroundTaskSchedulerRuntime | null =
-  null;
-let folderCacheRuntimeRef: FolderCacheRuntime | null = null;
-let installStatusRefreshStarterRuntimeRef: InstallStatusRefreshStarterRuntime | null =
-  null;
-let scanOrchestratorRuntime: ScanOrchestratorRuntime | null = null;
-let fontQueryFacadeRuntimeRef: FontQueryFacadeRuntime | null = null;
-
-function requireFontQueryFacadeRuntime(): FontQueryFacadeRuntime {
-  if (!fontQueryFacadeRuntimeRef)
-    throw new Error("font query facade runtime is not initialized");
-  return fontQueryFacadeRuntimeRef;
-}
-const rustCoreWorkerRuntime = createRustCoreWorkerRuntime({
-  appendStartupLog,
-  enabled: RUST_CORE_WORKER_ENABLED,
-  required: RUST_CORE_WORKER_REQUIRED,
-  onDaemonDomainEvent:
-    tagMutationStateSignalRuntime.handleRustCoreDaemonDomainEvent,
-});
-
-const mainPerformanceRuntime = createMainPerformanceRuntime({
-  env: process.env,
-  localScanWorkers: LOCAL_SCAN_WORKERS,
-  appendStartupLog,
-  isIndexingActive: () => Boolean(scanOrchestratorRuntime?.isActive()),
-  activeScanJobId: () => scanOrchestratorRuntime?.activeJobId() || "",
-  storageProfileForPath: (filePath: string) => storageProfileForPath(filePath),
-  isInstallStatusRefreshActive: () =>
-    Boolean(
-      installStatusRefreshStarterRuntimeRef?.activeInstallStatusRefreshJob(),
-    ),
-  activeBackgroundTaskCount: () =>
-    backgroundTaskSchedulerRuntimeRef?.activeCount() || 0,
-});
+} = coreComposition.comparison;
 const {
   markRendererUserActivity,
   reportRendererLongTask,
@@ -305,57 +128,7 @@ const {
   startPerformanceLogSampler,
   stopPerformanceLogSampler,
   flushPerformanceLogs,
-} = mainPerformanceRuntime;
-
-function scanFoldersRuntime(): ScanOrchestratorRuntime {
-  if (!scanOrchestratorRuntime)
-    throw new Error("scan orchestrator runtime is not initialized");
-  return scanOrchestratorRuntime;
-}
-
-function delayToEventLoop(): Promise<void> {
-  return new Promise((resolveDelay) => setImmediate(resolveDelay));
-}
-
-const {
-  appInstallDir,
-  dataRoot,
-  dataPath,
-  ensureDataRootSync,
-  exists,
-  migrateLegacyUserDataIfNeeded,
-  dataRootErrorMessage,
-} = createAppDataPaths({
-  appName: APP_NAME,
-  dataDirName: DATA_DIR_NAME,
-  dataLayoutVersion: DATA_LAYOUT_VERSION,
-  cacheArchitectureVersion: CACHE_ARCHITECTURE_VERSION,
-  appendLog: appendStartupLog,
-});
-
-const { licenseRuntime, featureGateRuntime } = createMainLicenseBootstrap({
-  dataPath,
-  appendStartupLog,
-});
-
-const mainWindowAndFontRuntime = createMainWindowAndFontRuntime({
-  appName: APP_NAME,
-  fontExtensions: FONT_EXTENSIONS,
-  appInstallDir,
-  dataRoot,
-  dataPath,
-  appendStartupLog,
-  verboseRendererLogs: VERBOSE_RENDERER_LOGS,
-  indexProgressMinIntervalMs: INDEX_PROGRESS_EVENT_MIN_INTERVAL_MS,
-  runRustFontResourceAdd: rustCoreWorkerRuntime.runRustFontResourceAdd,
-  runRustFontResourceRemove: rustCoreWorkerRuntime.runRustFontResourceRemove,
-  runRustFontRegistryApply: rustCoreWorkerRuntime.runRustFontRegistryApply,
-  runRustFontRegistryDelete: rustCoreWorkerRuntime.runRustFontRegistryDelete,
-  runRustFontChangeNotify: rustCoreWorkerRuntime.runRustFontChangeNotify,
-  loadWatchedFontRoots: appWatchedFolders,
-  isMainProcessIndexedFont: mainProcessFontIndexContains,
-});
-
+} = coreComposition.performance;
 const {
   showExistingWindow,
   registerFontProtocol,
@@ -391,71 +164,97 @@ const {
   broadcastFontChange,
   scheduleBackgroundFontRefreshTail,
   advancedFontRefresh,
-} = mainWindowAndFontRuntime;
+} = coreComposition.windows;
+const { storageProfileForPath, scanWorkerCount } = coreComposition.storage;
+const { beginStartupSessionSync, markCleanShutdownSync, ensureDataRootSync, migrateLegacyUserDataIfNeeded } = coreComposition.lifecycle;
+const { dataRootErrorMessage } = coreComposition.capabilities;
 
-const {
-  systemInstalledFontsRuntime,
-  clearInstalledFontsMemoryCache,
-  getSystemInstalledFonts,
-  getSystemInstalledFontsCached,
-  scanSystemInstalledFonts,
-} = createMainSystemInstalledFontsBootstrap({
+const tagMetadataRevisionBarrier = createTagMetadataRevisionBarrierRuntime({
+  appendStartupLog,
+});
+
+const tagMutationStateSignalRuntime = createTagMutationStateSignalRuntime({
+  tagMetadataRevisionBarrier,
+  clearFontQueryCaches: () => clearFontQueryCaches(),
+  appendStartupLog,
+});
+
+const tagMutationWriteProtocolRuntime = createTagMutationWriteProtocolRuntime({
+  tagMetadataRevisionBarrier,
+  clearFontQueryCaches: () => clearFontQueryCaches(),
+  appendStartupLog,
+});
+
+let backgroundTaskSchedulerRuntimeRef: MainBackgroundTaskSchedulerRuntime | null =
+  null;
+
+let installStatusRefreshStarterRuntimeRef: InstallStatusRefreshStarterRuntime | null =
+  null;
+
+let scanOrchestratorRuntime: ScanOrchestratorRuntime | null = null;
+
+function scanFoldersRuntime(): ScanOrchestratorRuntime {
+  if (!scanOrchestratorRuntime)
+    throw new Error("scan orchestrator runtime is not initialized");
+  return scanOrchestratorRuntime;
+}
+
+const dataComposition = createMainDataCompositionRuntime({
   execFileAsync,
-  fontExtensions: FONT_EXTENSIONS,
-  installedFontsTtlMs: INSTALLED_FONTS_TTL_MS,
-  systemFontResolveBatchSize: SYSTEM_FONT_RESOLVE_BATCH_SIZE,
   windowsFontsDir,
   currentUserFontsDir,
   resolveExistingFontFilePath,
-  hasValidFontSignature,
-  fontItemFromPath,
-  readFontMetadata,
-  runRustSystemInstalledFonts:
-    rustCoreWorkerRuntime.runRustSystemInstalledFonts,
-  sha1,
+  rustCoreWorkerRuntime,
   normalizeCompareText,
   isUsableInstalledNameCandidate,
   withGlobalIo,
   delayToEventLoop,
   appendStartupLog,
-  platform: process.platform,
-  env: process.env,
+  dataPath,
+  nodeRequire,
+  exists,
+  tagMutationStateSignalRuntime,
+  dataRoot,
+  isCleanWindowsDefaultCompareResult,
+  completeBackgroundTask: (key, message) => completeBackgroundTask(key, message),
+  isSystemInstalledRecord,
+  isPathInWindowsFonts,
+  tagMetadataRevisionBarrier,
+  migrationDiagnosticsRuntime,
+  ensureWindows,
+  authorizeFontRead,
+  previewTaskKey: (key) => previewTaskKey(key),
+  skipBackgroundTask: (key, message) => skipBackgroundTask(key, message),
+  upsertBackgroundTask: (key, name, priority, data, status, message, taskOptions) => upsertBackgroundTask(key, name, priority, data, status, message, taskOptions),
+  startBackgroundTask: (key, workerId) => startBackgroundTask(key, workerId),
+  heartbeatBackgroundTask: (key, progress, message) => heartbeatBackgroundTask(key, progress, message),
+  failBackgroundTask: (key, message, stack) => failBackgroundTask(key, message, stack),
+  missingFontPreviewDataUri,
+  listPhysicalFolderTree: (folders) => listPhysicalFolderTree(folders),
 });
-
 const {
-  legacyScanCachePath,
-  fallbackCacheRootDir,
-  fallbackScanCachePath,
-  fallbackLegacyScanCachePath,
+  clearInstalledFontsMemoryCache,
+  getSystemInstalledFonts,
+  getSystemInstalledFontsCached,
+  scanSystemInstalledFonts,
   rootCacheDir,
-  rootScanCachePath,
-  rootLegacyScanCachePath,
   rootIndexDbDir,
   rootIndexDbPath,
   rootEventsDbPath,
   rootHashDbPath,
   rootMetricsDbPath,
   rootCacheLockDir,
-  rootIndexLockPath,
-  fallbackIndexDbPath,
   rootPreviewCacheDir,
   legacyRootPreviewCacheDir,
   rootPreviewImageDir,
   rootPreviewDbPath,
-  fallbackPreviewCacheDir,
   fallbackPreviewImageDir,
-  fallbackPreviewDbPath,
   localPreviewImageDir,
   cacheKeyForRootFile,
-  sharedFontId,
   isIgnoredWatcherPath,
-} = createCachePathHelpers({ dataPath, sha1, fontExtensions: FONT_EXTENSIONS });
-const { sanitizeCachedFont, cachedFontForRuntime, cacheEntryRuntimePath } =
-  createCachedFontRuntime({ sharedFontId });
-
-const applicationDatabasePaths = createApplicationDatabasePaths(dataPath);
-const {
-  appSqlitePath,
+  sanitizeCachedFont,
+  cachedFontForRuntime,
+  cacheEntryRuntimePath,
   librarySqlitePath,
   tasksSqlitePath,
   previewSqlitePath,
@@ -463,36 +262,8 @@ const {
   eventsSqlitePath,
   hashSqlitePath,
   metricsSqlitePath,
-  cacheIdentityPath,
   backupsRootPath,
-  corruptDatabasesRootPath,
   maintenanceStatePath,
-} = applicationDatabasePaths;
-
-const dbQueryWorkerRuntime = createDbQueryWorkerRuntime({
-  dataPath,
-  appendStartupLog,
-  resolveModulePath: (moduleName: string) => nodeRequire.resolve(moduleName),
-});
-
-const sqliteRuntime = createSqliteRuntime({
-  appName: APP_NAME,
-  nodeRequire,
-  normalizePath: normalizePathForCacheCompare,
-  sqliteSidecarPaths,
-  appendLog: appendStartupLog,
-  exists,
-  backupsRootPath,
-  corruptDatabasesRootPath,
-  quickCheckIntervalMs: SQLITE_QUICK_CHECK_INTERVAL_MS,
-  fastOpenSharedCacheDbs: FAST_OPEN_SHARED_CACHE_DBS,
-  verboseSqliteLogs: VERBOSE_SQLITE_LOGS,
-  busyTimeoutMs: SQLITE_BUSY_TIMEOUT_MS,
-  mmapSizeBytes: SQLITE_MMAP_SIZE_BYTES,
-  corruptRetentionCount: DATABASE_CORRUPT_RETENTION_COUNT,
-});
-
-const {
   closeSqliteDb,
   recoveryMessage,
   sqliteQuickCheck,
@@ -500,40 +271,9 @@ const {
   quarantineSqliteFiles,
   restoreLatestDatabaseBackupForLabel,
   openRecoverableApplicationSqliteDb,
-} = sqliteRuntime;
-
-const sharedFontMetadataRuntime = createSharedFontMetadataRuntime({
-  exists,
-  openStableSqliteDb,
-  closeSqliteDb,
-  appendStartupLog,
-  uniqueResolvedFolders,
-  findBestWatchedRootForFile,
-  cacheKeyForRootFile,
-  cacheEntryRuntimePath,
-  normalizePathForCacheCompare,
-  loadExistingFolderCache,
-  runRustSharedMetadataApply: rustCoreWorkerRuntime.runRustSharedMetadataApply,
-  runRustSharedMetadataRemoveTag:
-    rustCoreWorkerRuntime.runRustSharedMetadataRemoveTag,
-  runRustSharedMetadataSignature:
-    rustCoreWorkerRuntime.runRustSharedMetadataSignature,
-  runRustSharedMetadataOverlayRead:
-    rustCoreWorkerRuntime.runRustSharedMetadataOverlayRead,
-  onSharedMetadataMutationStateSignal: (signal) =>
-    tagMutationStateSignalRuntime.handleSharedMetadataMutationStateSignal(
-      signal,
-      "rust-worker",
-    ),
-});
-
-const {
-  applySharedMetadataOverlay,
-  applySharedMetadataToMergedRows,
   updateSharedFontMetadataEntries,
   renameSharedTagInMetadataIndexes,
   removeSharedTagFromMetadataIndexes,
-  sharedMetadataSignatureForRoot,
   sharedMetadataDbPathForRoot,
   openSharedMetadataDb,
   ensureSharedTagOpsBackfilledInOpenDb,
@@ -542,7 +282,82 @@ const {
   readSharedTagOpsConflictReportInOpenDb,
   readSharedMetadataMigrationDiagnosticsInOpenDb,
   repairSharedMetadataInOpenDb,
-} = sharedFontMetadataRuntime;
+  initializeRootEventsDb,
+  initializeRootHashDb,
+  initializeRootMetricsDb,
+  initializePreviewDb,
+  openPreviewDb,
+  getOpenPreviewDb,
+  closePreviewDb,
+  openLibraryDb,
+  getOpenLibraryDb,
+  closeLibraryDb,
+  loadLibraryShellFromSqlite,
+  setLocalFontTagsBase,
+  setLocalFontTagsBatchBase,
+  deleteLocalFontTagBase,
+  loadLibrary,
+  loadLibraryShell,
+  saveLibrary,
+  openKvsDb,
+  setCacheKvs,
+  openEventsDb,
+  recordCacheEvent,
+  openHashDb,
+  upsertFontHashIndex,
+  openMetricsDb,
+  cacheArchitectureInfo,
+  initializeCacheArchitectureV2,
+  checkpointOpenCacheDbs,
+  closeCacheDb,
+  rootForFontPath,
+  saveInstalledTotalSummaryForRoots,
+  readInstalledTotalSummaryForRoots,
+  readInstallStatusIndex,
+  getInstallStatusIndexSnapshot,
+  saveInstallStatusIndex,
+  openRootIndexDb,
+  saveRootIndexSqliteChanges,
+  writeRootCacheManifest,
+  withRootCacheWriteLock,
+  resolveActiveRootIndexDbPath,
+  inspectRootIndexSnapshotMaintenance,
+  cleanupRootIndexSnapshotMaintenance,
+  loadLegacyScanCache,
+  hideDirectoryOnWindows,
+  writeRootPreviewCacheManifest,
+  ensureRootScanCacheStorage,
+  saveScanCacheFile,
+  getCacheStats,
+  clearScanCache,
+  clearPreviewCache,
+  ensureSqliteColumn,
+  loadFolderCache,
+  invalidateSharedFontRuntimeCaches,
+  loadSharedFontsForFolders,
+  appWatchedFolders,
+} = dataComposition.storage;
+const {
+  queryFontPageInLibrary,
+  clearFontQueryCaches,
+  searchFontsInLibrary,
+  syncMergedIndexAfterInstallStatusRefresh,
+  syncMergedIndexForRootIncremental,
+  syncMergedIndexForRootSnapshot,
+  findFontItemInRootIndexes,
+  mainProcessFontIndexContains,
+  queryFontsInLibrary,
+  getFontMetricsFromLibrary,
+} = dataComposition.query;
+const {
+  getPreviewCacheStatus,
+  ensureFontPreviewImageFile,
+  readPreviewFontData,
+  renderFontPreviewImage,
+  readCachedFontPreviewImage,
+  readCachedFontPreviewImages,
+  ensureFontPreviewCache,
+} = dataComposition.preview;
 
 const sharedMetadataFrontendDiagnosticsRuntime =
   createSharedMetadataFrontendDiagnosticsRuntime({
@@ -565,86 +380,6 @@ const {
   readSharedMetadataFrontendDiagnostics,
   repairSharedMetadataFromFrontend,
 } = sharedMetadataFrontendDiagnosticsRuntime;
-
-const rootArchitectureDatabasesRuntime = createRootArchitectureDatabasesRuntime(
-  {
-    rootIndexDbDir,
-    rootEventsDbPath,
-    rootHashDbPath,
-    rootMetricsDbPath,
-    openStableSqliteDb,
-    closeSqliteDb,
-    setSqliteMeta,
-  },
-);
-
-const {
-  initializeRootEventsDb,
-  initializeRootHashDb,
-  initializeRootMetricsDb,
-  ensureRootArchitectureDatabases,
-} = rootArchitectureDatabasesRuntime;
-
-const previewDbRuntime = createPreviewDbRuntime({
-  previewSqliteSchemaVersion: PREVIEW_SQLITE_SCHEMA_VERSION,
-  previewSqlitePath,
-  openRecoverableApplicationSqliteDb,
-  closeSqliteDb,
-  ensureSqliteColumn: (db, table, column, declaration) =>
-    ensureSqliteColumn(db, table, column, declaration),
-  setSqliteMeta,
-});
-
-const {
-  initializePreviewDb,
-  openPreviewDb,
-  getOpenPreviewDb,
-  closePreviewDb,
-  clearLocalPreviewDbHandle,
-} = previewDbRuntime;
-
-let notifyPreviewLibraryShellChanged = (): void => undefined;
-
-const libraryRuntime = createLibraryRuntime({
-  librarySqlitePath,
-  openRecoverableApplicationSqliteDb,
-  closeSqliteDb,
-  ensureSqliteColumn: (db, table, column, declaration) =>
-    ensureSqliteColumnRuntime(db, table, column, declaration, appendStartupLog),
-  loadSharedFontsForFolders,
-  countSharedFontsForFolders,
-  invalidateSharedFontRuntimeCaches,
-  appendStartupLog,
-  runRustLocalTagsRead: rustCoreWorkerRuntime.runRustLocalTagsRead,
-  runRustLocalTagsSet: rustCoreWorkerRuntime.runRustLocalTagsSet,
-  runRustLocalTagsDeleteTag: rustCoreWorkerRuntime.runRustLocalTagsDeleteTag,
-  onLocalTagsMutationStateSignal: (signal) =>
-    tagMutationStateSignalRuntime.handleLocalTagsMutationStateSignal(
-      signal,
-      "rust-worker",
-    ),
-});
-
-const {
-  openLibraryDb,
-  getOpenLibraryDb,
-  closeLibraryDb,
-  loadLibraryShellFromSqlite,
-  hydrateLocalTagsForFonts,
-  localTagsByFontIds,
-  setLocalFontTags: setLocalFontTagsBase,
-  setLocalFontTagsBatch: setLocalFontTagsBatchBase,
-  deleteLocalFontTag: deleteLocalFontTagBase,
-  loadLibrary,
-  loadLibraryShell,
-  saveLibrary: saveLibraryBase,
-} = libraryRuntime;
-
-async function saveLibrary(state: LibraryState): Promise<boolean> {
-  const saved = await saveLibraryBase(state);
-  if (saved) notifyPreviewLibraryShellChanged();
-  return saved;
-}
 
 async function setLocalFontTags(
   item: FontItem,
@@ -682,119 +417,6 @@ async function deleteLocalFontTag(
     afterCommit: () => invalidateSharedFontRuntimeCaches(),
   });
 }
-
-const fontSearchRuntime = createFontSearchRuntime();
-
-const { inferFontSearchCategory } = fontSearchRuntime;
-
-const fontMemoryQueryRuntime = createFontMemoryQueryRuntime({
-  resultCacheMax: FONT_QUERY_RESULT_CACHE_MAX,
-  resultCacheTtlMs: FONT_QUERY_RESULT_CACHE_TTL_MS,
-  appWatchedFolders,
-  loadSharedFontsForFolders,
-  loadSharedFontsForFoldersFresh,
-  hydrateLocalTagsForFonts,
-  hydrateInstallStatusForFonts,
-  normalizePathForCacheCompare,
-  isSystemInstalledRecord,
-  isPathInWindowsFonts,
-  inferFontSearchCategory,
-});
-
-const {
-  invalidateFontQueryResultCache,
-  sharedFontMatchesPathPrefixes,
-  compareSharedFonts,
-  cleanSharedFontsForQuery,
-} = fontMemoryQueryRuntime;
-
-const fontPageQueryCacheRuntime = createFontPageQueryCacheRuntime({
-  pageCacheMax: FONT_QUERY_PAGE_CACHE_MAX,
-  pageCacheTtlMs: FONT_QUERY_PAGE_CACHE_TTL_MS,
-  queryUncached: queryFontPageInLibraryUncached,
-  appendStartupLog,
-  cacheKeySuffix: (request) =>
-    tagMetadataRevisionBarrier.cacheKeySuffixForRequest(request),
-});
-
-const { invalidateFontQueryPageCache, queryFontPageInLibrary } =
-  fontPageQueryCacheRuntime;
-
-function clearFontQueryCaches(): void {
-  invalidateFontQueryResultCache();
-  invalidateFontQueryPageCache();
-  rustCoreWorkerRuntime.invalidateRustCoreSchedulerCaches([
-    "--merged-index-query-page",
-    "--merged-index-query-metrics",
-    "--merged-index-query-ids",
-    "--shared-metadata-signature",
-  ]);
-  rustCoreWorkerRuntime.cancelRustCoreSchedulerScopes([
-    "page-query",
-    "metrics",
-    "ids-query",
-    "shared-metadata-signature",
-  ]);
-  fontQueryFacadeRuntimeRef?.clearFontMetricsQueryCache();
-  rustCoreWorkerRuntime.noteRustCoreSchedulerInteractiveActivity(
-    "font-query-cache-clear",
-  );
-  migrationDiagnosticsRuntime.record({
-    source: "font-query-cache",
-    kind: "cache-clear",
-    reason: "global-font-query-cache-clear",
-  });
-}
-
-const cacheArchitectureRuntime = createCacheArchitectureRuntime({
-  appName: APP_NAME,
-  cacheArchitectureVersion: CACHE_ARCHITECTURE_VERSION,
-  kvsSqliteSchemaVersion: KVS_SQLITE_SCHEMA_VERSION,
-  eventsSqliteSchemaVersion: EVENTS_SQLITE_SCHEMA_VERSION,
-  hashSqliteSchemaVersion: HASH_SQLITE_SCHEMA_VERSION,
-  metricsSqliteSchemaVersion: METRICS_SQLITE_SCHEMA_VERSION,
-  watcherStartupGraceMs: WATCHER_STARTUP_GRACE_MS,
-  rootCacheDirName: ROOT_CACHE_DIR_NAME,
-  rootIndexDbDirName: ROOT_INDEX_DB_DIR_NAME,
-  rootIndexDbFileName: ROOT_INDEX_DB_FILE_NAME,
-  rootPreviewCacheDirName: ROOT_PREVIEW_CACHE_DIR_NAME,
-  previewCacheDbDirName: PREVIEW_CACHE_DB_DIR_NAME,
-  previewCacheDbFileName: PREVIEW_CACHE_DB_FILE_NAME,
-  previewCacheImagesDirName: PREVIEW_CACHE_IMAGES_DIR_NAME,
-  appSqlitePath,
-  previewSqlitePath,
-  kvsSqlitePath,
-  eventsSqlitePath,
-  hashSqlitePath,
-  metricsSqlitePath,
-  cacheIdentityPath,
-  dataRoot,
-  exists,
-  writeJsonAtomic,
-  openRecoverableApplicationSqliteDb,
-  closeSqliteDb,
-  setSqliteMeta,
-  normalizePathForCacheCompare,
-  fileCacheSignature,
-  sha1,
-  appendStartupLog,
-});
-
-const {
-  openKvsDb,
-  setCacheKvs,
-  openEventsDb,
-  recordCacheEvent,
-  openHashDb,
-  upsertFontHashIndex,
-  openMetricsDb,
-  saveMetricsSnapshot,
-  cacheArchitectureInfo,
-  ensureCacheIdentity,
-  initializeCacheArchitectureV2,
-  checkpointOpenCacheDbs,
-  closeCacheDb,
-} = cacheArchitectureRuntime;
 
 const backgroundRuntime = createMainBackgroundRuntime({
   tasksSqlitePath,
@@ -859,7 +481,9 @@ const backgroundRuntime = createMainBackgroundRuntime({
   rendererIdleInMs,
   rendererActivityReason,
 });
+
 backgroundTaskSchedulerRuntimeRef = backgroundRuntime.schedulerRuntime;
+
 const {
   openTasksDb,
   closeTasksDb,
@@ -879,69 +503,6 @@ const {
   stopBackgroundTaskScheduler,
 } = backgroundRuntime;
 
-const installStatusRuntime = createInstallStatusRuntime({
-  rootCacheDir,
-  dataPath,
-  cacheIdentityPath,
-  ensureCacheIdentity,
-  appWatchedFolders,
-  findBestWatchedRootForFile,
-  openStableSqliteDb,
-  closeSqliteDb,
-  setSqliteMeta,
-  getSqliteMeta,
-  parseSqliteJson,
-  exists,
-  sha1,
-  normalizePathForCacheCompare,
-  isCleanWindowsDefaultCompareResult,
-  completeBackgroundTask,
-  appendStartupLog,
-  readInstallStatusIndexInWorker: async (groups) => {
-    const rustResult =
-      await rustCoreWorkerRuntime.runRustInstallStatusRead(groups);
-    if (rustResult) {
-      appendStartupLog(
-        `machine install status rust read: groups=${groups.length}, known=${Object.keys(rustResult.results || {}).length}, missing=${rustResult.missingIds.length}, elapsed=${rustResult.timings?.elapsed || 0}ms`,
-      );
-      return rustResult;
-    }
-    const result = await dbQueryWorkerRuntime.readInstallStatusIndex({
-      groups,
-    });
-    appendStartupLog(
-      `machine install status db worker read: groups=${groups.length}, known=${Object.keys(result.results || {}).length}, missing=${result.missingIds.length}, elapsed=${result.timings?.elapsed || 0}ms`,
-    );
-    return result;
-  },
-  saveInstallStatusIndexInWorker: async (groups) => {
-    const rustResult =
-      await rustCoreWorkerRuntime.runRustInstallStatusSave(groups);
-    if (rustResult) {
-      appendStartupLog(
-        `machine install status rust write: groups=${rustResult.groups}, rows=${rustResult.written}, elapsed=${rustResult.timings?.elapsed || 0}ms`,
-      );
-      return rustResult;
-    }
-    return dbQueryWorkerRuntime.saveInstallStatusIndex({ groups });
-  },
-});
-
-const {
-  installStatusDbPathForRoot,
-  rootForFontPath,
-  saveInstalledTotalSummaryForRoots,
-  readInstalledTotalSummaryForRoots,
-  openMachineInstallDbForRoot,
-  readInstallStatusIndex,
-  getInstallStatusIndexSnapshot,
-  saveInstallStatusIndex,
-} = installStatusRuntime;
-
-let syncMergedIndexAfterInstallStatusRefreshRuntime = async (
-  _folders: string[],
-): Promise<void> => undefined;
-
 const {
   scheduleActivationInstallStatusSave,
   flushActivationInstallStatusSave,
@@ -952,289 +513,10 @@ const {
     appWatchedFolders,
     rootForFontPath,
     syncMergedIndexAfterInstallStatusRefresh: (folders) =>
-      syncMergedIndexAfterInstallStatusRefreshRuntime(folders),
+      syncMergedIndexAfterInstallStatusRefresh(folders),
     clearFontQueryCaches,
     appendStartupLog,
   });
-
-const rootIndexRuntime = createRootIndexRuntime({
-  appName: APP_NAME,
-  fontScanCacheVersion: FONT_SCAN_CACHE_VERSION,
-  scriptDetectionVersion: SCRIPT_DETECTION_VERSION,
-  exists,
-  openStableSqliteDb,
-  closeSqliteDb,
-  appendStartupLog,
-  withGlobalIo,
-  invalidateSharedFontRuntimeCaches,
-  recordCacheEvent,
-  runRustRootIndexApplyChanges:
-    rustCoreWorkerRuntime.runRustRootIndexApplyChanges,
-});
-
-const {
-  openRootIndexDb,
-  readRootIndexSqliteFile,
-  saveRootIndexSqliteFile,
-  saveRootIndexSqliteChanges,
-  writeRootCacheManifest,
-  withRootCacheWriteLock,
-  resolveActiveRootIndexDbPath,
-  inspectRootIndexSnapshotMaintenance,
-  cleanupRootIndexSnapshotMaintenance,
-  listRootIndexDatabaseFiles,
-  sqliteRowToScanEntry,
-} = rootIndexRuntime;
-
-const scanCacheStorageRuntime = createScanCacheStorageRuntime({
-  appName: APP_NAME,
-  fontScanCacheVersion: FONT_SCAN_CACHE_VERSION,
-  previewSqliteSchemaVersion: PREVIEW_SQLITE_SCHEMA_VERSION,
-  legacyScanCachePath,
-  fallbackCacheRootDir,
-  fallbackScanCachePath,
-  fallbackLegacyScanCachePath,
-  rootCacheDir,
-  rootScanCachePath,
-  rootLegacyScanCachePath,
-  rootIndexDbDir,
-  rootIndexDbPath,
-  rootCacheLockDir,
-  rootIndexLockPath,
-  fallbackIndexDbPath,
-  rootPreviewCacheDir,
-  legacyRootPreviewCacheDir,
-  rootPreviewImageDir,
-  rootPreviewDbPath,
-  fallbackPreviewCacheDir,
-  fallbackPreviewImageDir,
-  fallbackPreviewDbPath,
-  localPreviewImageDir,
-  previewSqlitePath,
-  loadLibraryShell,
-  exists,
-  sha1,
-  appendStartupLog,
-  ensureRootArchitectureDatabases,
-  resolveActiveRootIndexDbPath,
-  readRootIndexSqliteFile,
-  saveRootIndexSqliteFile,
-  writeRootCacheManifest,
-  withRootCacheWriteLock,
-  listRootIndexDatabaseFiles,
-  openStableSqliteDb,
-  closeSqliteDb,
-  initializePreviewDb,
-  recoveryMessage,
-  quarantineSqliteFiles,
-  clearLocalPreviewDbHandle,
-});
-
-const {
-  loadLegacyScanCache,
-  hideDirectoryOnWindows,
-  writeRootPreviewCacheManifest,
-  ensureRootScanCacheStorage,
-  saveScanCacheFile,
-  getCacheStats,
-  clearScanCache,
-  clearPreviewCache,
-} = scanCacheStorageRuntime;
-
-folderCacheRuntimeRef = createFolderCacheRuntime({
-  fontScanCacheVersion: FONT_SCAN_CACHE_VERSION,
-  sharedFontMemoryCacheTtlMs: SHARED_FONT_MEMORY_CACHE_TTL_MS,
-  exists,
-  rootCacheDir,
-  rootIndexDbPath,
-  fallbackIndexDbPath,
-  fallbackCacheRootDir,
-  resolveActiveRootIndexDbPath,
-  readRootIndexSqliteFile,
-  saveRootIndexSqliteFile,
-  saveRootIndexSqliteChanges,
-  saveScanCacheFile,
-  applySharedMetadataOverlay,
-  cacheEntryRuntimePath,
-  cachedFontForRuntime,
-  sha1,
-  recoveryMessage,
-  quarantineSqliteFiles,
-  appendStartupLog,
-  clearExternalFontQueryCaches: clearFontQueryCaches,
-});
-
-function ensureSqliteColumn(
-  db: any,
-  table: string,
-  column: string,
-  declaration: string,
-): void {
-  ensureSqliteColumnRuntime(db, table, column, declaration, appendStartupLog);
-}
-
-async function searchFontsInLibrary(
-  keywordInput: string,
-  limitInput?: number,
-): Promise<FontSearchResult> {
-  return requireFontQueryFacadeRuntime().searchFontsInLibrary(
-    keywordInput,
-    limitInput,
-  );
-}
-
-async function hydrateInstallStatusForFonts(
-  items: FontItem[],
-): Promise<FontItem[]> {
-  return requireFontQueryFacadeRuntime().hydrateInstallStatusForFonts(items);
-}
-
-const mergedIndexPageRuntime = createMergedIndexPageRuntime({
-  dataPath,
-  exists,
-  openStableSqliteDb,
-  openRootIndexDb,
-  closeSqliteDb,
-  getSqliteMeta,
-  setSqliteMeta,
-  sqliteTableExists,
-  appendStartupLog,
-  schemaVersion: MERGED_INDEX_SCHEMA_VERSION,
-  staleFirstPageEnabled: MERGED_INDEX_STALE_FIRST_PAGE_ENABLED,
-  backgroundValidateIntervalMs: MERGED_INDEX_BACKGROUND_VALIDATE_INTERVAL_MS,
-  appWatchedFolders,
-  activeRootIndexDbPathForRoot: (rootPath) =>
-    rootIndexCoordinator.activeRootIndexDbPathForRoot(rootPath),
-  installStatusDbPathForRoot,
-  attachInstallStatusDbIfAvailable: (db, rootPath) =>
-    rootIndexCoordinator.attachInstallStatusDbIfAvailable(db, rootPath),
-  cacheKeyForRootFile,
-  pathInsideFolder,
-  normalizePathForCacheCompare,
-  dbQueryWorkerRuntime,
-  rustCoreWorkerRuntime,
-  librarySqlitePath,
-  openLibraryDb,
-  rootIndexSqliteJsonAvailable: (db) =>
-    rootIndexCoordinator.rootIndexSqliteJsonAvailable(db),
-  fontFromRootIndexPageRow: (rootPath, row) =>
-    rootIndexCoordinator.fontFromRootIndexPageRow(rootPath, row),
-  hydrateLocalTagsForFonts,
-  applySharedMetadataToMergedRows,
-  sharedMetadataSignatureForRoot,
-  delayToEventLoop,
-  tagRevisionSnapshotForRequest: (request) =>
-    tagMetadataRevisionBarrier.snapshotForRequest(request),
-  onMergedIndexCommitted: ({ reason, sequence, revision }) => {
-    clearFontQueryCaches();
-    appendStartupLog(
-      `local merged index commit invalidated query caches: reason=${reason}, sequence=${sequence}, revision=${revision}`,
-    );
-  },
-});
-
-const {
-  mergedIndexDbPath,
-  openMergedIndexDb,
-  scheduleMergedIndexBackgroundValidation,
-  checkMergedIndexExternalChanges,
-  syncMergedIndexAfterInstallStatusRefresh,
-  syncMergedIndexForRootIncremental,
-  syncMergedIndexForRootSnapshot,
-  queryFontPageFromMergedIndexWorker,
-  queryFontPageFromMergedIndex,
-} = mergedIndexPageRuntime;
-syncMergedIndexAfterInstallStatusRefreshRuntime =
-  syncMergedIndexAfterInstallStatusRefresh;
-
-const rootIndexCoordinator = createRootIndexCoordinator({
-  exists,
-  rootCacheDir,
-  rootIndexDbPath,
-  resolveActiveRootIndexDbPath,
-  installStatusDbPathForRoot,
-  openMachineInstallDbForRoot,
-  closeSqliteDb,
-  openRootIndexDb,
-  sqliteRowToScanEntry,
-  cachedFontForRuntime,
-  cacheEntryRuntimePath,
-  hydrateLocalTagsForFonts,
-  compareSharedFonts,
-  appWatchedFolders,
-  appendStartupLog,
-});
-
-const { findFontItemInRootIndexes, queryFontPageFromRootIndexes } =
-  rootIndexCoordinator;
-
-async function mainProcessFontIndexContains(identity: {
-  comparePath: string;
-}): Promise<boolean> {
-  return Boolean(await findFontItemInRootIndexes("", identity.comparePath));
-}
-
-async function queryFontPageInLibraryUncached(
-  request: FontQueryRequest,
-  limit: number,
-  offset: number,
-): Promise<FontQueryPageResult> {
-  return requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(
-    request,
-    limit,
-    offset,
-  );
-}
-
-async function queryFontsInLibrary(
-  requestInput: FontQueryRequest,
-): Promise<FontQueryResult> {
-  return requireFontQueryFacadeRuntime().queryFontsInLibrary(requestInput);
-}
-
-const fontMetricsFallbackRuntime = createFontMetricsRuntime({
-  appWatchedFolders,
-  loadSharedFontsForFolders,
-  hydrateInstallStatusForFonts,
-  getInstallStatusIndexSnapshot,
-  localTagsByFontIds,
-  openLibraryDb,
-  loadLibraryShellFromSqlite,
-  saveMetricsSnapshot,
-  inferFontSearchCategory,
-  sharedFontMatchesPathPrefixes,
-});
-
-fontQueryFacadeRuntimeRef = createFontQueryFacadeRuntime({
-  fontSearchResultLimitDefault: FONT_SEARCH_RESULT_LIMIT_DEFAULT,
-  mergedIndexSchemaVersion: MERGED_INDEX_SCHEMA_VERSION,
-  appendLog: appendStartupLog,
-  appWatchedFolders,
-  cleanSharedFontsForQuery,
-  hydrateLocalTagsForFonts,
-  readInstallStatusIndex,
-  queryFontPageFromMergedIndexWorker,
-  queryFontPageFromMergedIndex,
-  queryFontPageFromRootIndexes,
-  scheduleMergedIndexBackgroundValidation,
-  dbQueryWorkerRuntime,
-  rustCoreWorkerRuntime,
-  mergedIndexDbPath,
-  librarySqlitePath,
-  fontMetricsFallbackRuntime,
-  tagMetadataRevisionBarrier,
-  migrationDiagnostics: migrationDiagnosticsRuntime,
-});
-
-async function getFontMetricsFromLibrary(): Promise<FontMetricsResult> {
-  return requireFontQueryFacadeRuntime().getFontMetricsFromLibrary();
-}
-
-const { beginStartupSessionSync, markCleanShutdownSync } = createCleanShutdownRuntime({
-  dataPath,
-  cacheArchitectureVersion: CACHE_ARCHITECTURE_VERSION,
-  appendLog: appendStartupLog,
-});
 
 const databaseMaintenanceRuntime = createApplicationDatabaseMaintenanceRuntime({
   appName: APP_NAME,
@@ -1310,20 +592,6 @@ const {
   appendStartupLog,
 });
 
-const storageProfileRuntime = createStorageProfileRuntime({
-  platform: process.platform,
-  env: process.env,
-  localWorkers: LOCAL_SCAN_WORKERS,
-  networkWorkers: NETWORK_SCAN_WORKERS,
-  windowsMediaDetectEnabled: WINDOWS_STORAGE_MEDIA_DETECT_ENABLED,
-  windowsMediaDetectTimeoutMs: WINDOWS_STORAGE_MEDIA_DETECT_TIMEOUT_MS,
-  verbose: VERBOSE_RENDERER_LOGS,
-  logger: appendStartupLog,
-});
-
-const storageProfileForPath = storageProfileRuntime.storageProfileForPath;
-const scanWorkerCount = storageProfileRuntime.scanWorkerCount;
-
 const { runFontIndexListWorker, runFontParseWorkerPool } =
   createFontScanWorkers({
     dataPath,
@@ -1370,59 +638,6 @@ scanOrchestratorRuntime = createScanOrchestrator({
   runFontParseWorkerPool,
   scanWorkerCount,
 });
-
-function requireFolderCacheRuntime(): FolderCacheRuntime {
-  if (!folderCacheRuntimeRef) {
-    throw new Error("folder cache runtime is not initialized");
-  }
-  return folderCacheRuntimeRef;
-}
-
-async function loadExistingFolderCache(
-  rootPath: string,
-): Promise<FolderCacheSource | null> {
-  return requireFolderCacheRuntime().loadExistingFolderCache(rootPath);
-}
-
-async function loadFolderCache(folders: string[]): Promise<ScanResult> {
-  return requireFolderCacheRuntime().loadFolderCache(folders);
-}
-
-function invalidateSharedFontRuntimeCaches(): void {
-  folderCacheRuntimeRef?.invalidateSharedFontRuntimeCaches();
-  clearFontQueryCaches();
-}
-
-async function loadSharedFontsForFolders(
-  folders: string[],
-): Promise<FontItem[]> {
-  return requireFolderCacheRuntime().loadSharedFontsForFolders(folders);
-}
-
-async function loadSharedFontsForFoldersFresh(
-  folders: string[],
-): Promise<FontItem[]> {
-  const runtime = requireFolderCacheRuntime();
-  return typeof runtime.loadSharedFontsForFoldersFresh === "function"
-    ? runtime.loadSharedFontsForFoldersFresh(folders)
-    : runtime.loadSharedFontsForFolders(folders);
-}
-
-async function countSharedFontsForFolders(folders: string[]): Promise<number> {
-  return requireFolderCacheRuntime().countSharedFontsForFolders(folders);
-}
-
-async function appWatchedFolders(): Promise<string[]> {
-  const db = await openLibraryDb();
-  return normalizeWatchedFontFolders(
-    (
-      db
-        .prepare("SELECT path FROM folders ORDER BY sort_order")
-        .all() as Array<{ path: string }>
-    ).map((row) => row.path),
-    appendStartupLog,
-  );
-}
 
 let sendFontIndexChanged: (payload: FontIndexChangePayload) => void = () =>
   undefined;
@@ -1604,11 +819,13 @@ const sharedKnownTagsStartupRefreshTimer = setTimeout(() => {
       ),
     );
 }, 1500);
+
 (
   sharedKnownTagsStartupRefreshTimer as ReturnType<typeof setTimeout> & {
     unref?: () => void;
   }
 ).unref?.();
+
 appendStartupLog(
   "shared known tags startup refresh scheduled: non-blocking delayMs=1500",
 );
@@ -1769,63 +986,9 @@ installStatusRefreshStarterRuntimeRef =
     emitInstallStatusProgress,
     appendLog: appendStartupLog,
   });
+
 const { startInstallStatusRefreshIndex } =
   installStatusRefreshStarterRuntimeRef;
-
-const {
-  getPreviewCacheStatus,
-  ensureFontPreviewImageFile,
-  readPreviewFontData,
-  renderFontPreviewImage,
-  readCachedFontPreviewImage,
-  readCachedFontPreviewImages,
-  ensureFontPreviewCache,
-  invalidateLibraryShellCache: invalidatePreviewLibraryShellCache,
-} = createPreviewRuntime({
-  cacheKeyForRootFile,
-  rootPreviewCacheDir,
-  rootPreviewImageDir,
-  rootPreviewDbPath,
-  hideDirectoryOnWindows,
-  writeRootPreviewCacheManifest,
-  appendStartupLog,
-  localPreviewImageDir,
-  cacheKeyForPath,
-  sha1,
-  openPreviewDb,
-  previewSqlitePath,
-  openStableSqliteDb,
-  initializePreviewDb,
-  closeSqliteDb,
-  normalizePathForCacheCompare,
-  normalizePreviewCacheIndexStatus,
-  upsertPreviewCacheRows,
-  loadLibraryShell,
-  ensureWindows,
-  resolveExistingFontFilePath,
-  authorizeFontRead,
-  previewTaskKey,
-  completeBackgroundTask,
-  skipBackgroundTask,
-  upsertBackgroundTask,
-  startBackgroundTask,
-  heartbeatBackgroundTask,
-  failBackgroundTask,
-  legacyRootPreviewCacheDir,
-  execFileAsync,
-  withGlobalIo,
-  missingFontPreviewDataUri,
-  previewSqliteSchemaVersion: PREVIEW_SQLITE_SCHEMA_VERSION,
-  runRustPreviewCacheReadStatus:
-    rustCoreWorkerRuntime.runRustPreviewCacheReadStatus,
-  runRustPreviewCacheApply: rustCoreWorkerRuntime.runRustPreviewCacheApply,
-  runRustPreviewCacheDelete: rustCoreWorkerRuntime.runRustPreviewCacheDelete,
-  runRustPreviewCacheQuery: rustCoreWorkerRuntime.runRustPreviewCacheQuery,
-  runRustPreviewCacheTouch: rustCoreWorkerRuntime.runRustPreviewCacheTouch,
-  runRustPreviewCacheBatch: rustCoreWorkerRuntime.runRustPreviewCacheBatch,
-  runRustPreviewRenderImage: rustCoreWorkerRuntime.runRustPreviewRenderImage,
-});
-notifyPreviewLibraryShellChanged = invalidatePreviewLibraryShellCache;
 
 const {
   createPhysicalFolder,
@@ -1916,8 +1079,11 @@ const folderWatcherRuntime = createFolderWatcherRuntime({
 });
 
 const stopFolderWatchers = folderWatcherRuntime.stopFolderWatchers;
+
 sendFontIndexChanged = folderWatcherRuntime.sendFontIndexChanged;
+
 const startWatchingFoldersUnsafe = folderWatcherRuntime.startWatchingFolders;
+
 function startWatchingFolders(folders: string[]): Promise<boolean> {
   return startWatchingFoldersUnsafe(
     normalizeWatchedFontFolders(folders, appendStartupLog),
@@ -1947,17 +1113,7 @@ registerMainProcessRuntime(
     ioLaneSummary,
     cleanupTemporaryActiveFontsUntilEmpty,
     flushPendingTemporaryFontDeletes,
-    runStartupCriticalSchemaAudit: () =>
-      runStartupCriticalSchemaAudit({
-        openMergedIndexDb,
-        openMachineInstallDbForRoot,
-        openLibraryDb,
-        closeSqliteDb,
-        getSqliteMeta,
-        appWatchedFolders,
-        delayToEventLoop,
-        appendStartupLog,
-      }),
+    runStartupCriticalSchemaAudit: dataComposition.lifecycle.runStartupCriticalSchemaAudit,
     registerFontProtocol,
     startPerformanceLogSampler,
     stopPerformanceLogSampler,
@@ -1973,14 +1129,14 @@ registerMainProcessRuntime(
     hasPendingActivationInstallStatusSave,
     hasInFlightActivationInstallStatusSave,
     setCacheKvs,
-    dbQueryWorkerShutdown: () => dbQueryWorkerRuntime.shutdown(),
+    dbQueryWorkerShutdown: dataComposition.lifecycle.dbQueryWorkerShutdown,
     stopRustCoreDaemon: rustCoreWorkerRuntime.stopRustCoreDaemon,
     markCleanShutdownSync,
     flushStartupLogAsync,
     flushStartupLogSync,
     appendStartupLog,
-    assertFeatureForChannel: featureGateRuntime.assertFeatureForChannel,
-    getLicenseStatus: licenseRuntime.getStatus,
+    assertFeatureForChannel: coreComposition.capabilities.assertFeatureForChannel,
+    getLicenseStatus: coreComposition.capabilities.getLicenseStatus,
     reportPerformanceEvent,
     loadLibrary,
     loadLibraryShell,
@@ -2003,16 +1159,7 @@ registerMainProcessRuntime(
     searchFontsInLibrary,
     queryFontsInLibrary,
     queryFontPageInLibrary,
-    checkSharedMetadataUpdates: async (reason?: string) => {
-      const result = await checkMergedIndexExternalChanges(reason);
-      if (result?.changed || result?.rebuilt) {
-        invalidateSharedFontRuntimeCaches();
-        appendStartupLog(
-          `shared metadata external sync invalidated font query caches: reason=${reason || "shared-metadata-poll"}, changed=${!!result.changed}, rebuilt=${!!result.rebuilt}`,
-        );
-      }
-      return result;
-    },
+    checkSharedMetadataUpdates: dataComposition.capabilities.checkSharedMetadataUpdates,
     getFontMetricsFromLibrary,
     startWatchingFolders,
     refreshWatchedFolder,

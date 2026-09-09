@@ -1,0 +1,851 @@
+{
+  "sourceTree": "68478e90b034d7edd42b4598e94adbcdcba0030c",
+  "description": "AT-4.1 real entry observed with recording domain ports. No old source copy or Git dependency at test time.",
+  "observations": {
+    "registrations": [
+      "activateFontSession",
+      "activateFontSessionsBatch",
+      "activeFontScanStatus",
+      "appId",
+      "appName",
+      "appendStartupLog",
+      "assertFeatureForChannel",
+      "backgroundTaskSchedulerStatus",
+      "beginStartupSessionSync",
+      "buildMarker",
+      "cacheArchitectureInfo",
+      "cacheArchitectureVersion",
+      "cancelActiveFontScan",
+      "checkSharedMetadataUpdates",
+      "cleanupTemporaryActiveFontsUntilEmpty",
+      "clearMigrationDiagnostics",
+      "clearPreviewCache",
+      "clearScanCache",
+      "compareFontInstalled",
+      "compareFontsInstalled",
+      "createDatabaseBackup",
+      "createPhysicalFolder",
+      "createWindow",
+      "dataRoot",
+      "dataRootErrorMessage",
+      "dbQueryWorkerShutdown",
+      "deactivateFontSession",
+      "deactivateFontSessionsBatch",
+      "deleteFontFilesToTrash",
+      "deleteLocalFontTag",
+      "deleteSharedFontTagInIndex",
+      "diagnoseRustCoreWorker",
+      "editionLogLine",
+      "ensureDataRootSync",
+      "ensureFontPreviewCache",
+      "flushActivationInstallStatusSave",
+      "flushPendingTemporaryFontDeletes",
+      "flushPerformanceLogs",
+      "flushStartupLogAsync",
+      "flushStartupLogSync",
+      "getCacheStats",
+      "getFontMetricsFromLibrary",
+      "getInstallStatusIndexSnapshot",
+      "getLicenseStatus",
+      "getMigrationDiagnostics",
+      "getPreviewCacheStatus",
+      "getSystemInstalledFonts",
+      "hasInFlightActivationInstallStatusSave",
+      "hasPendingActivationInstallStatusSave",
+      "initializeCacheArchitecture",
+      "installFontForCurrentUser",
+      "installFontSystemWide",
+      "ioLaneSummary",
+      "listBackgroundTaskSummaries",
+      "listPhysicalFolderTree",
+      "loadFolderCache",
+      "loadLibrary",
+      "loadLibraryShell",
+      "logPath",
+      "logSchemaVersion",
+      "markCleanShutdownSync",
+      "markRendererUserActivity",
+      "migrateLegacyUserDataIfNeeded",
+      "moveFontFileToFolder",
+      "moveFontFilesToFolder",
+      "queryFontPageInLibrary",
+      "queryFontsInLibrary",
+      "readCachedFontPreviewImage",
+      "readCachedFontPreviewImages",
+      "readPreviewFontData",
+      "readSharedIndexSnapshotFrontendDiagnostics",
+      "readSharedMetadataFrontendDiagnostics",
+      "refreshInstallStatusIndex",
+      "refreshWatchedFolder",
+      "registerFontProtocol",
+      "renamePhysicalFolder",
+      "renameSharedFontTagInIndex",
+      "renderFontPreviewImage",
+      "repairSharedIndexSnapshotFromFrontend",
+      "repairSharedMetadataFromFrontend",
+      "reportPerformanceEvent",
+      "reportRendererLongTask",
+      "requestRendererWindowsCloseForQuit",
+      "restoreLatestApplicationDatabase",
+      "runBackgroundTaskSchedulerOnce",
+      "runDatabaseHealthCheck",
+      "runDatabaseMaintenance",
+      "runStartupCriticalSchemaAudit",
+      "runStartupDatabaseMaintenance",
+      "saveLibrary",
+      "scanFoldersManaged",
+      "scanSystemInstalledFonts",
+      "scanTuningLogLine",
+      "searchFontsInLibrary",
+      "setCacheKvs",
+      "setFontDeleteProtectionInIndex",
+      "setLocalFontTags",
+      "setLocalFontTagsBatch",
+      "setSharedFontFavoriteInIndex",
+      "setSharedFontTagsBatchInIndex",
+      "setSharedFontTagsInIndex",
+      "showExistingWindow",
+      "startBackgroundTaskScheduler",
+      "startInstallStatusRefreshIndex",
+      "startPerformanceLogSampler",
+      "startWatchingFolders",
+      "startupBackgroundTasksEnabled",
+      "startupDbMaintenanceIdleDelayMs",
+      "stopBackgroundTaskScheduler",
+      "stopFolderWatchers",
+      "stopPerformanceLogSampler",
+      "stopRustCoreDaemon",
+      "uninstallFontSystemWide",
+      "uninstallManagedFont",
+      "watcherStartupGraceMs"
+    ],
+    "owners": [
+      [
+        "createAppDataPaths",
+        1
+      ],
+      [
+        "createApplicationDatabaseMaintenanceRuntime",
+        1
+      ],
+      [
+        "createCacheArchitectureRuntime",
+        1
+      ],
+      [
+        "createCachedFontRuntime",
+        1
+      ],
+      [
+        "createCleanShutdownRuntime",
+        1
+      ],
+      [
+        "createCurrentUserManagedInstallRuntime",
+        1
+      ],
+      [
+        "createDbQueryWorkerRuntime",
+        1
+      ],
+      [
+        "createFolderCacheRuntime",
+        1
+      ],
+      [
+        "createFolderWatcherRuntime",
+        1
+      ],
+      [
+        "createFontActivationRuntime",
+        1
+      ],
+      [
+        "createFontMemoryQueryRuntime",
+        1
+      ],
+      [
+        "createFontMetricsRuntime",
+        1
+      ],
+      [
+        "createFontMoveTransactionRuntime",
+        1
+      ],
+      [
+        "createFontPageQueryCacheRuntime",
+        1
+      ],
+      [
+        "createFontQueryFacadeRuntime",
+        1
+      ],
+      [
+        "createFontScanWorkers",
+        1
+      ],
+      [
+        "createFontSearchRuntime",
+        1
+      ],
+      [
+        "createInstallStatusRefreshRuntime",
+        1
+      ],
+      [
+        "createInstallStatusRefreshStarterRuntime",
+        1
+      ],
+      [
+        "createInstallStatusRuntime",
+        1
+      ],
+      [
+        "createLibraryRuntime",
+        1
+      ],
+      [
+        "createMainActivationInstallStatusSaveRuntime",
+        1
+      ],
+      [
+        "createMainBackgroundRuntime",
+        1
+      ],
+      [
+        "createMainFontInstallCompareRuntime",
+        1
+      ],
+      [
+        "createMainLicenseBootstrap",
+        1
+      ],
+      [
+        "createMainLoggingBootstrap",
+        1
+      ],
+      [
+        "createMainPerformanceRuntime",
+        1
+      ],
+      [
+        "createMainSystemInstalledFontsBootstrap",
+        1
+      ],
+      [
+        "createMainWindowAndFontRuntime",
+        1
+      ],
+      [
+        "createManagedFontOwnershipRuntime",
+        1
+      ],
+      [
+        "createManualFolderRefreshRuntime",
+        1
+      ],
+      [
+        "createMergedIndexPageRuntime",
+        1
+      ],
+      [
+        "createMigrationDiagnosticsRuntime",
+        1
+      ],
+      [
+        "createPhysicalFolderActions",
+        1
+      ],
+      [
+        "createPreviewDbRuntime",
+        1
+      ],
+      [
+        "createPreviewRuntime",
+        1
+      ],
+      [
+        "createRootArchitectureDatabasesRuntime",
+        1
+      ],
+      [
+        "createRootIndexCoordinator",
+        1
+      ],
+      [
+        "createRootIndexRuntime",
+        1
+      ],
+      [
+        "createRustCoreWorkerRuntime",
+        1
+      ],
+      [
+        "createScanCacheStorageRuntime",
+        1
+      ],
+      [
+        "createScanOrchestrator",
+        1
+      ],
+      [
+        "createSharedFontMetadataMutations",
+        1
+      ],
+      [
+        "createSharedFontMetadataRuntime",
+        1
+      ],
+      [
+        "createSharedIndexSnapshotFrontendRuntime",
+        1
+      ],
+      [
+        "createSharedKnownTagsRuntime",
+        1
+      ],
+      [
+        "createSharedMetadataFrontendDiagnosticsRuntime",
+        1
+      ],
+      [
+        "createSharedMetadataMergedIndexSyncRuntime",
+        1
+      ],
+      [
+        "createSqliteRuntime",
+        1
+      ],
+      [
+        "createStorageProfileRuntime",
+        1
+      ],
+      [
+        "createSystemFontInstallRuntime",
+        1
+      ],
+      [
+        "createTagMetadataRevisionBarrierRuntime",
+        1
+      ],
+      [
+        "createTagMutationStateSignalRuntime",
+        1
+      ],
+      [
+        "createTagMutationWriteProtocolRuntime",
+        1
+      ],
+      [
+        "createWatchedFolderIndexRuntime",
+        1
+      ]
+    ],
+    "construction": [
+      [
+        "createMigrationDiagnosticsRuntime.logStartupPolicy",
+        []
+      ],
+      [
+        "timer",
+        [
+          1500
+        ]
+      ],
+      [
+        "timer.unref",
+        []
+      ],
+      [
+        "log",
+        [
+          "shared known tags startup refresh scheduled: non-blocking delayMs=1500"
+        ]
+      ]
+    ],
+    "paths": {
+      "backups": "/application/data/backups",
+      "corrupt": "/application/data/db/corrupt",
+      "preview": "/application/data/preview-fallback.sqlite",
+      "previewImages": "/application/data/preview-cache",
+      "log": "/application/data/logs/launch.log",
+      "library": "/application/data/app.sqlite"
+    },
+    "flows": {
+      "saveSuccess": {
+        "result": true,
+        "calls": [
+          [
+            "library.save",
+            [
+              {
+                "folders": [
+                  "/fonts"
+                ]
+              }
+            ]
+          ],
+          [
+            "createPreviewRuntime.invalidateLibraryShellCache",
+            []
+          ]
+        ]
+      },
+      "saveFailure": {
+        "result": false,
+        "calls": [
+          [
+            "library.save",
+            [
+              {
+                "folders": [
+                  "/fonts"
+                ]
+              }
+            ]
+          ]
+        ]
+      },
+      "externalChange": {
+        "result": {
+          "changed": true
+        },
+        "calls": [
+          [
+            "merged.external",
+            [
+              "poll"
+            ]
+          ],
+          [
+            "createFolderCacheRuntime.invalidateSharedFontRuntimeCaches",
+            []
+          ],
+          [
+            "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
+            []
+          ],
+          [
+            "createFontPageQueryCacheRuntime.invalidateFontQueryPageCache",
+            []
+          ],
+          [
+            "createRustCoreWorkerRuntime.invalidateRustCoreSchedulerCaches",
+            [
+              [
+                "--merged-index-query-page",
+                "--merged-index-query-metrics",
+                "--merged-index-query-ids",
+                "--shared-metadata-signature"
+              ]
+            ]
+          ],
+          [
+            "createRustCoreWorkerRuntime.cancelRustCoreSchedulerScopes",
+            [
+              [
+                "page-query",
+                "metrics",
+                "ids-query",
+                "shared-metadata-signature"
+              ]
+            ]
+          ],
+          [
+            "createFontQueryFacadeRuntime.clearFontMetricsQueryCache",
+            []
+          ],
+          [
+            "createRustCoreWorkerRuntime.noteRustCoreSchedulerInteractiveActivity",
+            [
+              "font-query-cache-clear"
+            ]
+          ],
+          [
+            "createMigrationDiagnosticsRuntime.record",
+            [
+              {
+                "source": "font-query-cache",
+                "kind": "cache-clear",
+                "reason": "global-font-query-cache-clear"
+              }
+            ]
+          ],
+          [
+            "log",
+            [
+              "shared metadata external sync invalidated font query caches: reason=poll, changed=true, rebuilt=false"
+            ]
+          ]
+        ]
+      },
+      "mergedCommit": {
+        "result": "<undefined>",
+        "calls": [
+          [
+            "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
+            []
+          ],
+          [
+            "createFontPageQueryCacheRuntime.invalidateFontQueryPageCache",
+            []
+          ],
+          [
+            "createRustCoreWorkerRuntime.invalidateRustCoreSchedulerCaches",
+            [
+              [
+                "--merged-index-query-page",
+                "--merged-index-query-metrics",
+                "--merged-index-query-ids",
+                "--shared-metadata-signature"
+              ]
+            ]
+          ],
+          [
+            "createRustCoreWorkerRuntime.cancelRustCoreSchedulerScopes",
+            [
+              [
+                "page-query",
+                "metrics",
+                "ids-query",
+                "shared-metadata-signature"
+              ]
+            ]
+          ],
+          [
+            "createFontQueryFacadeRuntime.clearFontMetricsQueryCache",
+            []
+          ],
+          [
+            "createRustCoreWorkerRuntime.noteRustCoreSchedulerInteractiveActivity",
+            [
+              "font-query-cache-clear"
+            ]
+          ],
+          [
+            "createMigrationDiagnosticsRuntime.record",
+            [
+              {
+                "source": "font-query-cache",
+                "kind": "cache-clear",
+                "reason": "global-font-query-cache-clear"
+              }
+            ]
+          ],
+          [
+            "log",
+            [
+              "local merged index commit invalidated query caches: reason=fixture, sequence=1, revision=2"
+            ]
+          ]
+        ]
+      },
+      "authorization": {
+        "result": [
+          [
+            "/fonts"
+          ],
+          true
+        ],
+        "calls": [
+          [
+            "library.open",
+            []
+          ],
+          [
+            "index.find",
+            [
+              "",
+              "/fonts/font.ttf"
+            ]
+          ]
+        ]
+      },
+      "activity": {
+        "result": [
+          true,
+          "scan-job",
+          true,
+          2,
+          {
+            "type": "ssd",
+            "path": "/fonts"
+          }
+        ],
+        "calls": []
+      },
+      "daemonSignal": {
+        "result": "<undefined>",
+        "calls": [
+          [
+            "createTagMutationStateSignalRuntime.handleRustCoreDaemonDomainEvent",
+            [
+              {
+                "event": "fixture"
+              }
+            ]
+          ]
+        ]
+      },
+      "localSignal": {
+        "result": "<undefined>",
+        "calls": [
+          [
+            "createTagMutationStateSignalRuntime.handleLocalTagsMutationStateSignal",
+            [
+              {
+                "changedIds": [
+                  "font"
+                ]
+              },
+              "rust-worker"
+            ]
+          ]
+        ]
+      },
+      "sharedSignal": {
+        "result": "<undefined>",
+        "calls": [
+          [
+            "createTagMutationStateSignalRuntime.handleSharedMetadataMutationStateSignal",
+            [
+              {
+                "changedIds": [
+                  "font"
+                ]
+              },
+              "rust-worker"
+            ]
+          ]
+        ]
+      },
+      "previewTasks": {
+        "result": "<undefined>",
+        "calls": [
+          [
+            "createMainBackgroundRuntime.previewTaskKey",
+            [
+              "task"
+            ]
+          ],
+          [
+            "createMainBackgroundRuntime.completeBackgroundTask",
+            [
+              "task",
+              "done"
+            ]
+          ],
+          [
+            "createMainBackgroundRuntime.skipBackgroundTask",
+            [
+              "task",
+              "skipped"
+            ]
+          ],
+          [
+            "createMainBackgroundRuntime.upsertBackgroundTask",
+            [
+              "task",
+              "preview",
+              1,
+              "{}",
+              "pending",
+              "queued",
+              {
+                "maxAttempts": 3
+              }
+            ]
+          ],
+          [
+            "createMainBackgroundRuntime.startBackgroundTask",
+            [
+              "task",
+              "started"
+            ]
+          ],
+          [
+            "createMainBackgroundRuntime.heartbeatBackgroundTask",
+            [
+              "task",
+              1,
+              "heartbeat"
+            ]
+          ],
+          [
+            "createMainBackgroundRuntime.failBackgroundTask",
+            [
+              "task",
+              "failure",
+              "fixture stack"
+            ]
+          ]
+        ]
+      },
+      "schemaAudit": {
+        "result": "<undefined>",
+        "calls": [
+          [
+            "runStartupCriticalSchemaAudit",
+            [
+              {
+                "openMergedIndexDb": "createMergedIndexPageRuntime.openMergedIndexDb",
+                "openMachineInstallDbForRoot": "createInstallStatusRuntime.openMachineInstallDbForRoot",
+                "openLibraryDb": "library.open",
+                "closeSqliteDb": "createSqliteRuntime.closeSqliteDb",
+                "getSqliteMeta": "getSqliteMeta",
+                "appWatchedFolders": "<function>",
+                "delayToEventLoop": "<function>",
+                "appendStartupLog": "log"
+              }
+            ]
+          ]
+        ]
+      },
+      "lifecycle": {
+        "result": "<undefined>",
+        "calls": [
+          [
+            "createAppDataPaths.ensureDataRootSync",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createCleanShutdownRuntime.beginStartupSessionSync",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createAppDataPaths.migrateLegacyUserDataIfNeeded",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createCacheArchitectureRuntime.initializeCacheArchitectureV2",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createRustCoreWorkerRuntime.diagnoseRustCoreWorker",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createMainWindowAndFontRuntime.registerFontProtocol",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createMainPerformanceRuntime.startPerformanceLogSampler",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createMainWindowAndFontRuntime.createWindow",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createMainActivationInstallStatusSaveRuntime.flushActivationInstallStatusSave",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createFolderWatcherRuntime.stopFolderWatchers",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createMainPerformanceRuntime.stopPerformanceLogSampler",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createMainPerformanceRuntime.flushPerformanceLogs",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createMainLoggingBootstrap.flushStartupLogAsync",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createRustCoreWorkerRuntime.stopRustCoreDaemon",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createDbQueryWorkerRuntime.shutdown",
+            []
+          ],
+          [
+            "createCleanShutdownRuntime.markCleanShutdownSync",
+            [
+              "fixture"
+            ]
+          ],
+          [
+            "createMainLoggingBootstrap.flushStartupLogSync",
+            [
+              "fixture"
+            ]
+          ]
+        ]
+      },
+      "closeDatabases": {
+        "result": "<undefined>",
+        "calls": [
+          [
+            "createPreviewDbRuntime.closePreviewDb",
+            []
+          ],
+          [
+            "createMainBackgroundRuntime.closeTasksDb",
+            []
+          ],
+          [
+            "createLibraryRuntime.closeLibraryDb",
+            []
+          ]
+        ]
+      },
+      "closeAfterPreviewFailure": {
+        "result": "<undefined>",
+        "calls": [
+          [
+            "createPreviewDbRuntime.closePreviewDb",
+            []
+          ],
+          [
+            "createMainBackgroundRuntime.closeTasksDb",
+            []
+          ],
+          [
+            "createLibraryRuntime.closeLibraryDb",
+            []
+          ]
+        ]
+      }
+    }
+  }
+}

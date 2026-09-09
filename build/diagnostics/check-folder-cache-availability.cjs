@@ -63,8 +63,8 @@ function testSharedFontLoadAndCountSkipUnavailableRoots() {
 function testLibraryShellAndMetricsUseFolderCacheRuntime() {
   assertIncludes('src/main/library/runtime/libraryLoadRuntime.ts', 'countSharedFontsForFolders(shell.folders || [])')
   assertIncludes('src/main/library/fontMetricsRuntime.ts', 'options.loadSharedFontsForFolders(folders)')
-  assertIncludes('src/main/index.ts', 'countSharedFontsForFolders')
-  assertIncludes('src/main/index.ts', 'loadSharedFontsForFolders')
+  assertIncludes('src/main/bootstrap/mainDataStorageCompositionRuntime.ts', 'countSharedFontsForFolders')
+  assertIncludes('src/main/bootstrap/mainDataQueryCompositionRuntime.ts', 'loadSharedFontsForFolders')
 }
 
 function testStartupMaintenanceDefaultIsTwoSeconds() {

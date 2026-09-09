@@ -1,8 +1,17 @@
-import { createGlobalIoRuntime } from "./globalIoRuntime";
+import { createGlobalIoRuntime, type GlobalIoRuntimeOptions } from "./globalIoRuntime";
 import { createRendererInteractionRuntime } from "./rendererInteractionRuntime";
 import { createRuntimePerformanceSampler } from "./runtimePerformanceSampler";
 
-export function createMainPerformanceRuntime(deps: any): any {
+export type MainPerformanceRuntimeOptions = Pick<GlobalIoRuntimeOptions,
+  'env' | 'localScanWorkers' | 'isIndexingActive' | 'storageProfileForPath'
+> & {
+  appendStartupLog: (message: string) => void;
+  activeScanJobId: () => string;
+  isInstallStatusRefreshActive: () => boolean;
+  activeBackgroundTaskCount: () => number;
+};
+
+export function createMainPerformanceRuntime(deps: MainPerformanceRuntimeOptions) {
   let recheckGlobalIoQueuesRef: () => void = () => undefined;
 
   const rendererInteractionRuntime = createRendererInteractionRuntime({
