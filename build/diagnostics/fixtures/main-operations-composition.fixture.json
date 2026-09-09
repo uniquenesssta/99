@@ -1,0 +1,956 @@
+{
+  "sourceTree": "8416375b9a67907d1325c133d8ee5e6ee2e7e0a2",
+  "operations": {
+    "managedScan": {
+      "result": {
+        "folders": [
+          "/fonts/a",
+          "/fonts/b"
+        ],
+        "fonts": []
+      },
+      "calls": [
+        [
+          "createScanOrchestrator.scanFoldersManaged",
+          [
+            [
+              "/fonts"
+            ],
+            []
+          ]
+        ],
+        [
+          "createMergedIndexPageRuntime.syncMergedIndexForRootSnapshot",
+          [
+            "/fonts/a",
+            "scan-finished"
+          ]
+        ],
+        [
+          "createMergedIndexPageRuntime.syncMergedIndexForRootSnapshot",
+          [
+            "/fonts/b",
+            "scan-finished"
+          ]
+        ]
+      ]
+    },
+    "backgroundScan": {
+      "result": {
+        "folders": [
+          "/fonts/a",
+          "/fonts/b"
+        ],
+        "fonts": []
+      },
+      "calls": [
+        [
+          "createScanOrchestrator.scanFolders",
+          [
+            [
+              "/fonts"
+            ],
+            []
+          ]
+        ],
+        [
+          "createMergedIndexPageRuntime.syncMergedIndexForRootSnapshot",
+          [
+            "/fonts/a",
+            "scan-finished"
+          ]
+        ],
+        [
+          "createMergedIndexPageRuntime.syncMergedIndexForRootSnapshot",
+          [
+            "/fonts/b",
+            "scan-finished"
+          ]
+        ]
+      ]
+    },
+    "failedScan": {
+      "result": "fixture failure: createScanOrchestrator.scanFoldersManaged",
+      "calls": [
+        [
+          "createScanOrchestrator.scanFoldersManaged",
+          [
+            [
+              "/fonts"
+            ],
+            []
+          ]
+        ]
+      ]
+    },
+    "cancelScan": {
+      "result": true,
+      "calls": [
+        [
+          "createScanOrchestrator.cancelActiveFontScan",
+          [
+            "user cancelled"
+          ]
+        ]
+      ]
+    },
+    "scanNotification": {
+      "result": "<undefined>",
+      "calls": [
+        [
+          "createFolderWatcherRuntime.sendFontIndexChanged",
+          [
+            {
+              "reason": "scan"
+            }
+          ]
+        ]
+      ]
+    },
+    "watcherScanStatus": {
+      "result": true,
+      "calls": []
+    },
+    "manualNotification": {
+      "result": "<undefined>",
+      "calls": [
+        [
+          "createFolderWatcherRuntime.sendFontIndexChanged",
+          [
+            {
+              "reason": "manual-refresh"
+            }
+          ]
+        ]
+      ]
+    },
+    "sharedNotification": {
+      "result": "<undefined>",
+      "calls": [
+        [
+          "createFolderWatcherRuntime.sendFontIndexChanged",
+          [
+            {
+              "reason": "tags"
+            }
+          ]
+        ]
+      ]
+    },
+    "physicalReconciliation": {
+      "result": {
+        "ok": true
+      },
+      "calls": [
+        [
+          "createManualFolderRefreshRuntime.refreshWatchedFolder",
+          [
+            "/fonts",
+            "/fonts"
+          ]
+        ]
+      ]
+    },
+    "moveReconciliation": {
+      "result": {
+        "ok": true
+      },
+      "calls": [
+        [
+          "createManualFolderRefreshRuntime.refreshWatchedFolder",
+          [
+            "/fonts",
+            "/fonts"
+          ]
+        ]
+      ]
+    },
+    "refreshInvalidation": {
+      "result": "<undefined>",
+      "calls": [
+        [
+          "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
+          []
+        ],
+        [
+          "createFontPageQueryCacheRuntime.invalidateFontQueryPageCache",
+          []
+        ],
+        [
+          "createRustCoreWorkerRuntime.invalidateRustCoreSchedulerCaches",
+          [
+            [
+              "--merged-index-query-page",
+              "--merged-index-query-metrics",
+              "--merged-index-query-ids",
+              "--shared-metadata-signature"
+            ]
+          ]
+        ],
+        [
+          "createRustCoreWorkerRuntime.cancelRustCoreSchedulerScopes",
+          [
+            [
+              "page-query",
+              "metrics",
+              "ids-query",
+              "shared-metadata-signature"
+            ]
+          ]
+        ],
+        [
+          "createFontQueryFacadeRuntime.clearFontMetricsQueryCache",
+          []
+        ],
+        [
+          "createRustCoreWorkerRuntime.noteRustCoreSchedulerInteractiveActivity",
+          [
+            "font-query-cache-clear"
+          ]
+        ],
+        [
+          "createMigrationDiagnosticsRuntime.record",
+          [
+            {
+              "source": "font-query-cache",
+              "kind": "cache-clear",
+              "reason": "global-font-query-cache-clear"
+            }
+          ]
+        ]
+      ]
+    },
+    "refreshStart": {
+      "result": "<undefined>",
+      "calls": [
+        [
+          "createInstallStatusRefreshStarterRuntime.startInstallStatusRefreshIndex",
+          [
+            {
+              "force": true,
+              "incremental": true
+            }
+          ]
+        ]
+      ]
+    },
+    "schedulerPauseResume": {
+      "result": "<undefined>",
+      "calls": [
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.runBackgroundTaskSchedulerOnce",
+          []
+        ]
+      ]
+    },
+    "sharedTagsStartup": {
+      "result": "<undefined>",
+      "calls": [
+        [
+          "library.open",
+          []
+        ],
+        [
+          "createSharedKnownTagsRuntime.refreshKnownSharedTagsFromMetadata",
+          [
+            [
+              "/fonts"
+            ]
+          ]
+        ]
+      ]
+    }
+  },
+  "startup": {
+    "trace": [
+      [
+        "log",
+        "startup identity: buildMarker=ui_logfix_round3aa, logSchema=3, appVersion=fixture, packaged=false, pid=1, platform=win32/x64, electron=undefined, chrome=undefined, node=undefined"
+      ],
+      [
+        "log",
+        "startup paths: exe=/app/exe, appPath=/app, resources=/app/resources, cwd=/app, electronUserData=/app/userdata"
+      ],
+      [
+        "log",
+        "startup env: NODE_ENV=, ELECTRON_RENDERER_URL=, VITE_DEV_SERVER_URL=, HFM_DATA_DIR=, HFM_LOG_DETAIL=normal, HFM_RUST_CORE=auto, HFM_RUST_CORE_REQUIRED=0"
+      ],
+      [
+        "session.security"
+      ],
+      [
+        "log",
+        "data root ready: /application/data"
+      ],
+      [
+        "log",
+        "cache architecture v3 ready: startupAutoScan=false watcherGraceMs=15000"
+      ],
+      [
+        "log",
+        "app ready"
+      ],
+      [
+        "log",
+        "edition v3.0.0 stable release"
+      ],
+      [
+        "log",
+        "fixture scan tuning"
+      ],
+      [
+        "log",
+        "undefined"
+      ],
+      [
+        "log",
+        "current log file: /application/data/logs/launch.log"
+      ],
+      [
+        "lifecycle.timer",
+        1000
+      ],
+      [
+        "log",
+        "startup critical schema audit scheduled: non-blocking delayMs=1000"
+      ],
+      [
+        "ipc.register"
+      ],
+      [
+        "lifecycle.timer",
+        2000
+      ]
+    ],
+    "calls": [
+      [
+        "createAppDataPaths.ensureDataRootSync",
+        []
+      ],
+      [
+        "createCleanShutdownRuntime.beginStartupSessionSync",
+        []
+      ],
+      [
+        "createAppDataPaths.migrateLegacyUserDataIfNeeded",
+        []
+      ],
+      [
+        "createCacheArchitectureRuntime.initializeCacheArchitectureV2",
+        []
+      ],
+      [
+        "createRustCoreWorkerRuntime.diagnoseRustCoreWorker",
+        []
+      ],
+      [
+        "createMainPerformanceRuntime.ioLaneSummary",
+        []
+      ],
+      [
+        "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+        [
+          "startup",
+          6
+        ]
+      ],
+      [
+        "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
+        [
+          "startup"
+        ]
+      ],
+      [
+        "createMainWindowAndFontRuntime.registerFontProtocol",
+        []
+      ],
+      [
+        "createMainPerformanceRuntime.startPerformanceLogSampler",
+        []
+      ],
+      [
+        "createMainWindowAndFontRuntime.createWindow",
+        []
+      ],
+      [
+        "createMainBackgroundRuntime.startBackgroundTaskScheduler",
+        []
+      ],
+      [
+        "createCacheArchitectureRuntime.setCacheKvs",
+        [
+          "app.main_window_created_at",
+          "2026-01-01T00:00:00.000Z",
+          "string"
+        ]
+      ],
+      [
+        "runStartupCriticalSchemaAudit",
+        [
+          {
+            "openMergedIndexDb": "createMergedIndexPageRuntime.openMergedIndexDb",
+            "openMachineInstallDbForRoot": "createInstallStatusRuntime.openMachineInstallDbForRoot",
+            "openLibraryDb": "library.open",
+            "closeSqliteDb": "createSqliteRuntime.closeSqliteDb",
+            "getSqliteMeta": "getSqliteMeta",
+            "appWatchedFolders": "<function>",
+            "delayToEventLoop": "<function>",
+            "appendStartupLog": "log"
+          }
+        ]
+      ],
+      [
+        "createApplicationDatabaseMaintenanceRuntime.runStartupDatabaseMaintenance",
+        []
+      ]
+    ]
+  },
+  "events": [
+    "activate",
+    "before-quit",
+    "gpu-info-update",
+    "second-instance",
+    "will-quit",
+    "window-all-closed"
+  ],
+  "processEvents": [
+    "uncaughtException",
+    "unhandledRejection"
+  ],
+  "shutdown": {
+    "normal": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested: windows=1"
+        ],
+        [
+          "log",
+          "before-quit renderer flush completed"
+        ],
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
+        ],
+        [
+          "log",
+          "before-quit cleanup completed: activationPending=undefined, activationInFlight=undefined"
+        ],
+        [
+          "app.quit"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.flushActivationInstallStatusSave",
+          [
+            "before-quit"
+          ]
+        ],
+        [
+          "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createMainPerformanceRuntime.stopPerformanceLogSampler",
+          []
+        ],
+        [
+          "createMainPerformanceRuntime.flushPerformanceLogs",
+          [
+            "before-quit"
+          ]
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainLoggingBootstrap.flushStartupLogAsync",
+          []
+        ],
+        [
+          "createRustCoreWorkerRuntime.stopRustCoreDaemon",
+          []
+        ],
+        [
+          "createDbQueryWorkerRuntime.shutdown",
+          []
+        ],
+        [
+          "createCleanShutdownRuntime.markCleanShutdownSync",
+          []
+        ],
+        [
+          "createMainLoggingBootstrap.flushStartupLogSync",
+          []
+        ]
+      ],
+      "finished": true,
+      "windows": 0
+    },
+    "renderer-cancel": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested: windows=1"
+        ],
+        [
+          "log",
+          "before-quit renderer flush cancelled; application remains open"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ]
+      ],
+      "finished": false,
+      "windows": 1
+    },
+    "renderer-error": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested: windows=1"
+        ],
+        [
+          "log",
+          "before-quit renderer flush failed: Error: renderer flush failed"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createMainLoggingBootstrap.flushStartupLogSync",
+          []
+        ]
+      ],
+      "finished": false,
+      "windows": 1
+    },
+    "cleanup-remains": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested: windows=1"
+        ],
+        [
+          "log",
+          "before-quit renderer flush completed"
+        ],
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
+        ],
+        [
+          "window.focus"
+        ],
+        [
+          "dialog.error",
+          "临时激活字体仍未完全移除"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.createWindow",
+          []
+        ]
+      ],
+      "finished": false,
+      "windows": 1
+    },
+    "cleanup-error": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested: windows=1"
+        ],
+        [
+          "log",
+          "before-quit renderer flush completed"
+        ],
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
+        ],
+        [
+          "log",
+          "before-quit cleanup failed: Error: cleanup failed"
+        ],
+        [
+          "window.focus"
+        ],
+        [
+          "dialog.error",
+          "退出清理失败"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createMainLoggingBootstrap.flushStartupLogSync",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.createWindow",
+          []
+        ]
+      ],
+      "finished": false,
+      "windows": 1
+    },
+    "flush-return": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested: windows=1"
+        ],
+        [
+          "log",
+          "before-quit renderer flush completed"
+        ],
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
+        ],
+        [
+          "log",
+          "before-quit activation status flush failed: Error: activation flush failed"
+        ],
+        [
+          "dialog.choice",
+          "flush-return"
+        ],
+        [
+          "window.focus"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.flushActivationInstallStatusSave",
+          [
+            "before-quit"
+          ]
+        ],
+        [
+          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.createWindow",
+          []
+        ]
+      ],
+      "finished": false,
+      "windows": 1
+    },
+    "flush-force-quit": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested: windows=1"
+        ],
+        [
+          "log",
+          "before-quit renderer flush completed"
+        ],
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
+        ],
+        [
+          "log",
+          "before-quit activation status flush failed: Error: activation flush failed"
+        ],
+        [
+          "dialog.choice",
+          "flush-force-quit"
+        ],
+        [
+          "log",
+          "before-quit activation status flush force-skipped by user"
+        ],
+        [
+          "log",
+          "before-quit cleanup completed: activationPending=undefined, activationInFlight=undefined"
+        ],
+        [
+          "app.quit"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.flushActivationInstallStatusSave",
+          [
+            "before-quit"
+          ]
+        ],
+        [
+          "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createMainPerformanceRuntime.stopPerformanceLogSampler",
+          []
+        ],
+        [
+          "createMainPerformanceRuntime.flushPerformanceLogs",
+          [
+            "before-quit"
+          ]
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainLoggingBootstrap.flushStartupLogAsync",
+          []
+        ],
+        [
+          "createRustCoreWorkerRuntime.stopRustCoreDaemon",
+          []
+        ],
+        [
+          "createDbQueryWorkerRuntime.shutdown",
+          []
+        ],
+        [
+          "createCleanShutdownRuntime.markCleanShutdownSync",
+          []
+        ],
+        [
+          "createMainLoggingBootstrap.flushStartupLogSync",
+          []
+        ]
+      ],
+      "finished": true,
+      "windows": 0
+    },
+    "exception": {
+      "trace": [
+        [
+          "log",
+          "main uncaught exception captured: Error: fixture exception"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainLoggingBootstrap.flushStartupLogSync",
+          []
+        ]
+      ],
+      "finished": false,
+      "windows": 1
+    },
+    "rejection": {
+      "trace": [
+        [
+          "log",
+          "main unhandled rejection captured: fixture rejection"
+        ]
+      ],
+      "calls": [],
+      "finished": false,
+      "windows": 1
+    }
+  }
+}

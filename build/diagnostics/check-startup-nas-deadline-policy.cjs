@@ -58,7 +58,7 @@ function testStartupAuditNoLongerBlocksWindowAndSkipsUnavailableRoots() {
 }
 
 function testSharedKnownTagsRefreshIsDelayedAndDeadlineBound() {
-  assertIncludes('src/main/index.ts', 'shared known tags startup refresh scheduled: non-blocking delayMs=1500')
+  assertIncludes('src/main/bootstrap/mainOperationsCompositionRuntime.ts', 'shared known tags startup refresh scheduled: non-blocking delayMs=1500')
   assertIncludes('src/main/library/sharedKnownTagsRuntime.ts', 'filterStartupAvailableRoots')
   assertIncludes('src/main/library/sharedKnownTagsRuntime.ts', "'shared-metadata-known-tags'")
   assertIncludes('src/main/library/sharedKnownTagsRuntime.ts', 'sharedMetadataQueryTimeoutMs()')

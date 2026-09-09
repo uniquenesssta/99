@@ -79,6 +79,7 @@
     "diagnostics:orchestration-contracts": "node build/diagnostics/check-orchestration-contracts.cjs",
     "diagnostics:main-composition-contracts": "node build/diagnostics/check-main-composition-contracts.cjs",
     "diagnostics:main-composition-runtime": "node build/diagnostics/check-main-composition-runtime.cjs",
+    "diagnostics:main-operations-composition": "node build/diagnostics/check-main-operations-composition.cjs",
     "diagnostics:font-path-policy": "node build/diagnostics/check-font-path-authorization.cjs --case=POLICY",
     "diagnostics:font-read-authorization": "node build/diagnostics/check-font-path-authorization.cjs --case=READ",
     "diagnostics:font-physical-path-authorization": "node build/diagnostics/check-font-path-authorization.cjs --case=PHYSICAL",

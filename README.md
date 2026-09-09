@@ -58,6 +58,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-09：完成 AT-4.3：提取 Mutation/Operations 及扫描、维护组合，入口 1222→715 行；四处 Operations 可变引用改为唯一实例和显式反馈绑定，全部绑定后才允许启动扫描、刷新、后台任务及共享标签定时刷新。任务库仍由后台运行时唯一持有，补强任务端口类型。新增 12 个提前启动拒绝场景、14 条操作流程与 9 种真实生命周期场景，包含退出取消/失败恢复和异常退出；typecheck、78/78 诊断、三端构建与混淆通过，原 115/45/38/10 项契约保持。沿用 `stage/04-main-composition`，下一项 AT-4.4；无依赖、数据库或原生源码变更，pull 后正常 build。详见 [Stage 4 任务书第 9 节](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)。
+
 - 2026-09-09：完成 AT-4.2：提取 Core/Data 组合工厂及 storage/query 所有者，`index.ts` 2075→1222 行；保留句柄单一所有权和成功保存后的预览失效通知，收窄 Rust/后台任务端口，消除一处前向同步占位。115 项注册与 14 条基线流程等价、429 个操作表面类型及 6 种错误接线反例通过；typecheck、77/77 长期诊断、Electron 三端构建和三份新 JS 混淆通过。更新两处旧诊断的源码定位，原断言保留。仍在 `stage/04-main-composition`，下一项 AT-4.3 未开始；本次不改数据库、依赖版本、字体文件或原生源码，pull 后按通常流程 build。边界与操作见 [Stage 4 任务书第 8 节](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)。
 
 - 2026-09-08：Stage 4 在 `stage/04-main-composition` 分支完成 AT-4.1：为 Core/Data/Mutation/Operations 与 Application 建立只含类型的组合返回契约，现有 115 项注册能力全部必填，明确 24 项生命周期和 7 项数据库资源操作的所有权。新增编译器门禁覆盖 125 项负例，验证旧入口遗漏可选能力的问题及适配器运行时等价；typecheck、76/76 长期诊断、Electron 三端构建和混淆通过。复审并记录 8 处延迟绑定、真实回调循环与后续拆分顺序；三大巨型编排文件未改，AT-4.2 尚未开始。详见 [Stage 4 任务书](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)，本项无需迁移字体库或额外重建原生程序。

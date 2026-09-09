@@ -14,7 +14,7 @@ const bootstrap = path.join(root, 'src/main/bootstrap')
 // Domain correctness continues to be checked by its existing dedicated gates.
 function createHarness(overrides = new Map()) {
   const calls = [], constructors = new Map(), modules = new Map()
-  const state = { calls, constructors, compositions: new Map(), payload: null, saveSucceeds: true, failOperations: new Set() }
+  const state = { calls, constructors, compositions: new Map(), timers: [], payload: null, saveSucceeds: true, failOperations: new Set() }
   const clean = value => {
     if (typeof value === 'function') return value.fixtureOperation || '<function>'
     if (value === undefined) return '<undefined>'
@@ -51,7 +51,13 @@ function createHarness(overrides = new Map()) {
       featureGateRuntime: { assertFeatureForChannel: operation('license.assert') },
     })
     if (name === 'createMainBackgroundRuntime') specific.schedulerRuntime = { activeCount: () => 2 }
-    if (name === 'createScanOrchestrator') Object.assign(specific, { isActive: () => true, activeJobId: () => 'scan-job' })
+    if (name === 'createScanOrchestrator') Object.assign(specific, {
+      isActive: () => true, activeJobId: () => 'scan-job',
+      scanFolders: operation(`${name}.scanFolders`, async () => ({ folders: ['/fonts/a', '/fonts/b'], fonts: [] })),
+      scanFoldersManaged: operation(`${name}.scanFoldersManaged`, async () => ({ folders: ['/fonts/a', '/fonts/b'], fonts: [] })),
+      cancelActiveFontScan: operation(`${name}.cancelActiveFontScan`, () => true),
+    })
+    if (name === 'createManualFolderRefreshRuntime') specific.refreshWatchedFolder = operation(`${name}.refreshWatchedFolder`, async () => ({ ok: true }))
     if (name === 'createInstallStatusRefreshStarterRuntime') specific.activeInstallStatusRefreshJob = () => 'refresh-job'
     if (name === 'createStorageProfileRuntime') specific.storageProfileForPath = file => ({ type: 'ssd', path: file })
     if (name === 'createLibraryRuntime') Object.assign(specific, {
@@ -91,7 +97,7 @@ function createHarness(overrides = new Map()) {
   ].map(file => path.join(root, file)))
   function load(file) {
     if (modules.has(file)) return modules.get(file).exports
-    const real = file === entry || actual.has(file) || (file.startsWith(bootstrap + path.sep) && /main(?:Core|Data\w*)CompositionRuntime\.ts$|mainRuntimeRegistrationPayload\.ts$/.test(file))
+    const real = file === entry || actual.has(file) || (file.startsWith(bootstrap + path.sep) && /main(?:Core|Data\w*|Mutation|Operations|Maintenance|Scan)CompositionRuntime\.ts$|mainRuntimeRegistrationPayload\.ts$|mainCompositionFeedback\.ts$/.test(file))
     if (!real) { const exports = leaf(); modules.set(file, { exports }); return exports }
     const source = (overrides.get(file) ?? fs.readFileSync(file, 'utf8')).replace(/\r\n/g, '\n')
     const code = ts.transpileModule(source.replaceAll('import.meta.url', JSON.stringify(pathToFileURL(file).href)), {
@@ -109,12 +115,12 @@ function createHarness(overrides = new Map()) {
     }
     const context = { exports: module.exports, module, require: requireLocal, __filename: file, __dirname: path.dirname(file),
       process: { env: {}, platform: 'win32', versions: { node: 'fixture' }, pid: 1 }, console,
-      setTimeout: (_fn, ms) => { record('timer', [ms]); return { unref: () => record('timer.unref', []) } },
+      setTimeout: (fn, ms) => { state.timers.push({ fn, ms }); record('timer', [ms]); return { unref: () => record('timer.unref', []) } },
       setImmediate: fn => fn(), Buffer, URL,
     }
     vm.runInNewContext(code, context, { filename: file, timeout: 5000 })
     for (const [name, implementation] of Object.entries(module.exports)) {
-      if (/^createMain(?:Core|Data\w*)CompositionRuntime$/.test(name)) {
+      if (/^createMain(?:Core|Data\w*|Mutation|Operations|Maintenance|Scan)CompositionRuntime$/.test(name) || name === 'createMainCompositionFeedback') {
         module.exports[name] = (...args) => {
           assert(!state.compositions.has(name), `${name} was constructed twice`)
           const runtime = implementation(...args)

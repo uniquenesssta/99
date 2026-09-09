@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.16
+- 文档版本：1.17
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 4 AT-4.1、AT-4.2 完成；Core/Data 已提取，下一项 AT-4.3。位图/峰值内存与 NAS 等外部验收继续跟踪
+- 当前阶段：Stage 4 AT-4.1 至 AT-4.3 完成；四个组合阶段已提取，下一项 AT-4.4。位图/峰值内存与 NAS 等外部验收继续跟踪
 - 当前阶段任务书：[`HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md`](HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -313,6 +313,8 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 
 硬门禁：启动、索引、刷新、退出、异常退出路径与基线一致。
 
+2026-09-09 完成：Mutation/Operations、扫描/维护组合落地，入口 1222→715 行；Operations 四处可变绑定由唯一实例与显式反馈绑定取代，绑定前阻止任务执行。12 个提前启动入口、14 条操作流程、9 种真实生命周期场景及 5 种错误接线反例通过；原组合类型门禁扩展到 8 个工厂/505 个操作表面。typecheck、78/78 诊断、三端 build/混淆通过；AT-4.4 尚未开始，细节见 Stage 4 第 9 节。
+
 #### AT-4.4 收敛入口和注册 payload
 
 - `index.ts` 最终只显示组合顺序和应用注册，读者能在一屏内理解启动拓扑。
@@ -500,7 +502,7 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
 | Stage 2 | 完成（AT-2.1 至 AT-2.4） | 本阶段分支四个独立 Atomic Task 提交 | P0.1-P0.5、P1-P8、`npm run verify` 72/72、路径/副作用/补偿行为、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；Windows 真实 UNC/跨盘/长路径/junction/HKCU registry 为外部验收项，未伪报通过 |
 | Stage 3 | 完成（实现、自动门禁及 Windows 构建） | 本阶段分支 AT-3.1、AT-3.2 及独立回归修复提交 | 用户快进至 `476c5d6` 后 Windows verify 75/75、换行 24、三后端输入、Rust release、三端 build、混淆 3/3 通过 | 分支 `stage/03-file-preview-consistency`；NAS、实际位图与最大内存等明确留作外部验收；不支持硬链接的卷兼容边界保留 |
-| Stage 4 | AT-4.1、AT-4.2 完成；AT-4.3、AT-4.4 未开始 | 当前阶段分支两个独立原子提交 | 强类型契约、Core/Data 提取、115 项注册/14 条基线流程、资源所有权、6 种错误接线反例；verify 77/77、三端 build/混淆通过 | 分支 `stage/04-main-composition`；入口 2075→1222 行，Mutation/Operations 待提取，外部验收继续跟踪 |
+| Stage 4 | AT-4.1 至 AT-4.3 完成；AT-4.4 未开始 | 当前阶段分支三个独立原子提交 | 四阶段组合、资源归属、显式绑定、操作与真实生命周期基线；verify 78/78、三端 build/混淆通过 | 分支 `stage/04-main-composition`；入口 2075→715 行，注册分组待 AT-4.4，外部验收继续跟踪 |
 | Stage 5 | 待开始，Stage 3 工程前置门禁已满足 | - | - | 当前串行推进 Stage 4 |
 | Stage 6 | 待开始，Stage 3 工程前置门禁已满足 | - | - | 当前串行推进 Stage 4 |
 | Stage 7 | 阻塞于 Stage 4/5/6 | - | - | - |

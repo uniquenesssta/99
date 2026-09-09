@@ -1,8 +1,11 @@
+import type { BackgroundTaskRuntimeApi, TaskRuntimeOptions } from './background-runtime/backgroundTaskTypes';
+import type { BackgroundTaskRunnersRuntimeOptions } from './backgroundTaskRunnersRuntime';
 import { createBackgroundTaskRunnersRuntime } from "./backgroundTaskRunnersRuntime";
 import { createBackgroundTaskRuntime } from "./backgroundTasks";
+import type { MainBackgroundTaskSchedulerRuntimeOptions } from './mainBackgroundTaskSchedulerRuntime';
 import {
-createMainBackgroundTaskSchedulerRuntime,
-type MainBackgroundTaskSchedulerRuntime,
+  createMainBackgroundTaskSchedulerRuntime,
+  type MainBackgroundTaskSchedulerRuntime,
 } from "./mainBackgroundTaskSchedulerRuntime";
 
 type BackgroundTaskEventType =
@@ -13,20 +16,14 @@ type BackgroundTaskEventType =
   | "skipped"
   | "scheduler";
 
-export type MainBackgroundRuntime = {
+export type MainBackgroundRuntime = Pick<BackgroundTaskRuntimeApi,
+  'closeTasksDb' | 'checkpointTasksDb' | 'upsertBackgroundTask' | 'startBackgroundTask' |
+  'heartbeatBackgroundTask' | 'completeBackgroundTask' | 'skipBackgroundTask' |
+  'failBackgroundTask' | 'listBackgroundTaskSummaries' | 'runTaskMaintenance'
+> & {
   schedulerRuntime: MainBackgroundTaskSchedulerRuntime;
-  openTasksDb: (...args: any[]) => any;
-  closeTasksDb: (...args: any[]) => any;
-  getOpenTasksDb: (...args: any[]) => any;
-  checkpointTasksDb: (...args: any[]) => any;
-  upsertBackgroundTask: (...args: any[]) => any;
-  startBackgroundTask: (...args: any[]) => any;
-  heartbeatBackgroundTask: (...args: any[]) => any;
-  completeBackgroundTask: (...args: any[]) => any;
-  skipBackgroundTask: (...args: any[]) => any;
-  failBackgroundTask: (...args: any[]) => any;
-  listBackgroundTaskSummaries: (...args: any[]) => any;
-  runTaskMaintenance: (...args: any[]) => any;
+  openTasksDb: () => Promise<unknown>;
+  getOpenTasksDb: () => unknown;
   previewTaskKey: (previewKey: string) => string;
   runBackgroundTaskSchedulerOnce: () => Promise<void>;
   backgroundTaskSchedulerStatus: () => unknown;
@@ -38,7 +35,17 @@ export type MainBackgroundRuntime = {
   ) => void;
 };
 
-export function createMainBackgroundRuntime(deps: any): MainBackgroundRuntime {
+export type MainBackgroundRuntimeOptions = Omit<TaskRuntimeOptions, 'getLibraryDb'> &
+  Omit<BackgroundTaskRunnersRuntimeOptions, 'skipBackgroundTask' | 'heartbeatBackgroundTask' | 'completeBackgroundTask'> &
+  Pick<MainBackgroundTaskSchedulerRuntimeOptions, 'sendToRendererWindows' | 'isRendererUserActive' | 'rendererIdleInMs' | 'rendererActivityReason'> & {
+    getOpenLibraryDb: () => unknown;
+    backgroundTaskSchedulerIntervalMs: number;
+    backgroundTaskSchedulerConcurrency: number;
+    backgroundTaskSchedulerBatchSize: number;
+    backgroundTaskSchedulerStartDelayMs: number;
+  };
+
+export function createMainBackgroundRuntime(deps: MainBackgroundRuntimeOptions): MainBackgroundRuntime {
   const backgroundTaskRuntime = createBackgroundTaskRuntime({
     tasksSqlitePath: deps.tasksSqlitePath,
     openRecoverableApplicationSqliteDb: deps.openRecoverableApplicationSqliteDb,

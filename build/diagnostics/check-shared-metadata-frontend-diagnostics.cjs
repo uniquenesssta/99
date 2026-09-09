@@ -20,7 +20,7 @@ function testFrontendDiagnosticsRuntime() {
   ]) assert(text.includes(needle), `frontend diagnostics runtime missing ${needle}`)
 }
 function testMainRuntimeWiring() {
-  const text = read('src/main/index.ts')
+  const text = read('src/main/bootstrap/mainMaintenanceCompositionRuntime.ts')
   for (const needle of [
     'createSharedMetadataFrontendDiagnosticsRuntime',
     'readSharedMetadataFrontendDiagnostics',

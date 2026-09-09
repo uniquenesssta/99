@@ -2,10 +2,10 @@
 
 ## 0. 状态与执行边界
 
-- 版本：1.1；日期：2026-09-09；软件：HanFontManager 3.0.0。
+- 版本：1.2；日期：2026-09-09；软件：HanFontManager 3.0.0。
 - 分支：`stage/04-main-composition`，由 Stage 3 验收提交 `c8a6c39cc47059a42704003e00fe28ee4bc450a8` 创建；不合并到 main。
 - 共同基线树：`e7db517757b201f9bea0313cf9b64d2395f55973`。连接器发布与本地提交的 SHA 可不同，以树一致性核对内容。
-- 当前任务：AT-4.1、AT-4.2 已完成；本轮 typecheck、77 项长期诊断及 Electron 三端构建/混淆通过。AT-4.3、AT-4.4 尚未开始。
+- 当前任务：AT-4.1 至 AT-4.3 已完成；本轮 typecheck、78 项长期诊断及 Electron 三端构建/混淆通过。AT-4.4 尚未开始。
 - 前置证据：用户 Windows 拉取 `476c5d6` 后完整 build 成功，详见 [Stage 3 第 10.9 节](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#109-windows-完整构建通过与阶段交接)。没有 AT-3.3。
 - 本文是 Stage 4 的执行记录；阶段顺序和不可妥协项以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。每个 Atomic Task 单独提交、单独回退，一个 Stage 共用一个分支。
 
@@ -17,7 +17,7 @@
 | --- | --- | --- | --- |
 | AT-4.1 | 四个组合阶段和 Application 的返回契约、生命周期归属、延迟绑定审计；接入现有注册适配器 | 真实 TypeScript 编译拒绝遗漏任一注册能力或 shutdown hook；运行时输出等价 | 完成 |
 | AT-4.2 | 在 `src/main/bootstrap` 提取 Core、Data 工厂，按实际依赖定义输入端口 | 导入不新增副作用；路径、日志、DB/schema audit 顺序一致；句柄创建/关闭单一所有者 | 完成，见第 8 节 |
-| AT-4.3 | 提取 Mutation、Operations；给必要循环建立显式绑定点 | 绑定完成前不启任务；启动、索引、刷新、退出/取消退出及异常退出保持原义 | 未开始 |
+| AT-4.3 | 提取 Mutation、Operations；给必要循环建立显式绑定点 | 绑定完成前不启任务；启动、索引、刷新、退出/取消退出及异常退出保持原义 | 完成，见第 9 节 |
 | AT-4.4 | 收敛 `index.ts` 和 Application；按 lifecycle/query/mutation/maintenance/preview 分组注册 | 115 项能力、7 个 app 事件、2 个 process 事件和完整行为门禁不丢失 | 未开始 |
 
 ## 2. AT-4.1 实际变更与契约边界
@@ -226,3 +226,90 @@ npm run build
 本次 pull 会更新源码、诊断和任务书；未改依赖版本、数据库/schema、缓存键、字体文件和原生源码，无需迁移字体库或为此另行重建 C++。`npm run build` 会照原流程验证并构建 Rust 和应用。首次切分支按第 7 节操作；若存在本地改动，先保存自己的修改。
 
 下一项是 **AT-4.3：Mutation 与 Operations 提取**，仍沿用本阶段分支；本轮未开始该任务。回退以本次 AT-4.2 提交为单位 revert，重新 verify，不清理用户数据。
+
+## 9. AT-4.3：Mutation/Operations 提取与显式反馈绑定
+
+### 9.1 基线与职责
+
+本项基于 AT-4.2 远端提交 `a1148f9c3274679c393a77495a94cda1a872eb09`，共同树 `8416375b9a67907d1325c133d8ee5e6ee2e7e0a2`。继续使用 `stage/04-main-composition`；每个 Atomic Task 独立提交，main 不合并。
+
+| 文件 | 职责 | 公开边界 |
+| --- | --- | --- |
+| `mainMutationCompositionRuntime.ts`（475 行） | 激活保存队列、激活/安装、标签写协议、托管卸载与物理操作的组合 | 原 23 项能力、5 项生命周期；额外提供既有目录树读取和已知标签刷新端口 |
+| `mainOperationsCompositionRuntime.ts`（616 行） | 后台任务、刷新 starter、扫描/维护组合与启动调度 | 原 22 项能力、4 项生命周期、2 项 tasks DB 资源钩子；反馈端口只含真实调用者需要的方法 |
+| `mainScanCompositionRuntime.ts`（379 行） | scan workers、scan orchestrator、手动刷新、watcher 的唯一实例和接线 | 扫描/取消/状态、索引通知、目录刷新、监听 start/stop；内部回调只捕获同一实例 |
+| `mainMaintenanceCompositionRuntime.ts`（234 行） | 数据库维护及共享索引/元数据维护前端入口的组合 | 原维护函数；通过已有 close/checkpoint 端口操作资源，不复制 DB 所有权 |
+| `mainCompositionFeedback.ts`（77 行） | Core/Data/Mutation/Operations 之间真实反馈方向的创建与一次性绑定 | `bindTags`、`bindData`、`bindMutation`、`bindOperations` 和 `assertReady`；不拥有数据库、缓存或任务状态 |
+
+组合输入按真实使用逐字段声明。Mutation 的 Rust 端口为 3 项；Operations 为 8 项，内部再分别限定扫描 3 项、维护 3 项。没有传递完整 Core/Data 容器，也没有重写领域算法。Operations 仍有大量明确参数，这是现有多个职责的组合输入；不得继续向其中追加事务、SQL 或扫描算法。
+
+`mainBackgroundRuntimeBootstrap.ts` 原先把任务 API 标为任意参数/任意返回，本次改为既有 `BackgroundTaskRuntimeApi`、runner 和 scheduler 类型；导出的任务句柄为 `unknown`。对比转译后的 JS token，运行时实现完全一致。旧领域内部 SQLite 驱动类型不在本项全量清理范围。
+
+### 9.2 绑定与启动顺序
+
+入口依次完成：反馈端口创建 → Core → 共享标签状态基础设施 → Data → Mutation → Operations → 全部反馈绑定检查 → 安排已有启动任务 → 应用注册。共享标签 barrier/signal/write-protocol 是多个阶段共用的单一状态对象，本项仍在入口显式组装；Application 的最终收口留给 AT-4.4。
+
+原四处 Operations 可变引用不再存在于入口：
+
+- 后台 scheduler 和刷新 starter 由 Operations 唯一创建，Core 通过绑定后的只读状态端口观察；未绑定时仍返回原来的空闲默认值。
+- scan orchestrator 与 watcher 均归扫描组合所有；内部前向回调捕获唯一常量实例，不再写入顶层可变 Ref。
+- `sendFontIndexChanged` 从空操作占位与事后赋值，改为调用唯一 watcher 的明确端口；跨阶段通知必须通过已就绪反馈绑定。
+- Mutation 的物理操作后刷新，以及 Data 的后台任务操作，在全部相关 owner 绑定前拒绝执行。重复绑定会报错，不允许静默替换实例。
+
+原有共享标签 `1500 ms`/`unref` 定时刷新移入 Operations 的 `startStartupTasks`，绑定完成后、应用注册前安排一次；构造工厂本身不启动任务。后台 scheduler 的正式 start/stop 仍由原 lifecycle 控制，没有提前自动启动。
+
+```mermaid
+flowchart TD
+  E["应用入口"] --> C["Core"]
+  E --> D["Data"]
+  E --> M["Mutation"]
+  E --> O["Operations"]
+  E --> F["一次性反馈绑定"]
+  C -.->|"活动状态"| F
+  D -.->|"预览任务"| F
+  M -.->|"物理操作后索引刷新"| F
+  F -->|"绑定完成后调用"| O
+  O --> S["扫描与监听所有者"]
+  O --> H["维护组合"]
+  O --> B["后台任务与任务库所有者"]
+  D -->|"数据库关闭端口"| H
+  M -->|"已知标签刷新"| O
+  F -->|"就绪检查"| T["安排启动任务并注册应用"]
+```
+
+### 9.3 行为门禁与结果
+
+新增 `diagnostics:main-operations-composition`。新 fixture 由 AT-4.2 真实入口执行产生，不保存旧源码副本、不依赖本地 Git 历史运行。测试执行当前组合代码，以及未修改的真实 `mainProcessLifecycleRuntime.ts`；Electron、进程事件、时钟、系统字体/DB 工作和用户对话框由受控端口替代。
+
+生命周期场景启用后台调度以覆盖退出后的暂停/恢复分支；应用原有默认启动策略没有改变。
+
+| 验证 | 结果与界限 |
+| --- | --- |
+| 提前启动 | 12 个入口在绑定完成前拒绝并且零领域调用，覆盖 scheduler、扫描、监听、刷新、维护、任务状态操作和启动定时调度 |
+| 绑定与资源 | 四个 owner 均只能绑定一次；只绑定 Operations 不能启用任务；启动刷新只能安排一个定时器；tasks close 与维护传入函数保持同一引用 |
+| 14 条操作流程 | 手动/后台扫描后逐根同步、扫描失败不继续同步、取消、scan/manual/shared 通知、watcher 状态读取、物理操作对账、刷新失效、刷新启动、scheduler 暂停/恢复及启动标签刷新均与 AT-4.2 相同 |
+| 9 种真实生命周期场景 | 正常退出、renderer 取消、renderer 报错、临时字体仍残留、退出清理异常、状态保存失败后返回、用户选择仍然退出、uncaughtException、unhandledRejection；共同启动轨迹及 7 app/2 process 事件也锁定 |
+| 错误接线反例 | 遗漏绑定、丢失扫描后同步、丢失 watcher 通知、退出丢失状态 flush、取消退出丢失 scheduler 恢复，共 5 种修改均被检测 |
+| 原有门禁 | AT-4.2 的 115 项注册/14 条组合流程、资源检查与 6 种反例继续通过；输出类型检查扩展到 8 个工厂、505 个操作表面；旧冻结 115/45/38/10 契约不改 |
+| 诊断位置与换行 | 三处旧诊断改读实际维护/启动调度所有者，保留原断言；新操作 fixture 的 CRLF 场景通过 |
+| 全量验证 | `npm --offline run verify`：typecheck、78/78 长期诊断通过；最后调整为合法刷新参数的专项用例另行复验通过 |
+| 应用构建 | Electron/Vite main/preload/renderer 346/1/181 模块通过；三份新 JS 混淆成功，日志 3/5，另两份旧产物已带混淆标记 |
+
+这些生命周期用例执行实际控制流，并验证对真实组合钩子的调用；不等于已在 Windows GUI、HKCU 或真实字体占用条件下运行。既有 JS 190/C++ 输入策略 68 场景继续通过；本环境 Cargo/PowerShell 仍不可用，日志明确保留外部验证要求。Stage 3 用户 Windows 完整构建证据保留，NAS、实际位图/峰值内存和安装包矩阵仍未宣称通过。
+
+Context7 按 TypeScript 5.9.3 查询回调返回类型兼容性，并用实际编译器确认内部对账端口保留 Promise 签名；Mermaid Chart 已渲染真实组合/反馈关系。Git、README 与任务书是正式记录，Create State 仅辅助交接。
+
+### 9.4 巨型编排复审、pull 与下一项
+
+`index.ts` 本项 **1222→715 行**，相对 Stage 4 开始的 2075 行已经去除大部分领域组装；入口仍明确列出依赖、共享标签状态和 115 项注册，因此尚未达到一屏可读的最终目标。四个组合阶段已经有独立契约与实际工厂，必要循环通过窄反馈端口保留；不以“没有循环”或行数宣称完美拆分。Rust facade 2994 行、App 1397 行及 AppRootView 386 行/169 props 均未修改。
+
+本项不改依赖版本、schema、缓存键、字体数据或原生源码；无需字体库迁移。使用之前具备 symlink 权限的 VS 2022 x64 终端：
+
+```bat
+cd /d F:\Electron+Rust\HanFontManager_Electron_rust
+git switch stage/04-main-composition
+git pull --ff-only origin stage/04-main-composition
+npm run build
+```
+
+下一项 **AT-4.4：收敛 Application 与入口注册分组**，尚未开始，继续沿用 Stage 4 分支。回退使用本次 AT-4.3 提交的独立 revert，并重新 verify；不改写 Git 历史或清理用户字体数据。

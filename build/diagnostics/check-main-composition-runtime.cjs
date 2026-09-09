@@ -11,7 +11,7 @@ const compositionFile = owner => path.join(bootstrap, `main${owner}CompositionRu
 
 function checkImportAndOwnership() {
   const h = createHarness()
-  for (const owner of ['Core', 'Data', 'DataStorage', 'DataQuery']) h.load(compositionFile(owner))
+  for (const owner of ['Core', 'Data', 'DataStorage', 'DataQuery', 'Mutation', 'Operations', 'Maintenance', 'Scan']) h.load(compositionFile(owner))
   assert.equal(h.constructors.size, 0, 'import constructed a domain runtime')
   assert.equal(h.compositions.size, 0, 'import constructed a composition')
   assert.deepEqual(h.calls, [], 'import opened resources or scheduled work')
@@ -99,7 +99,7 @@ function checkOutputTypes() {
   const config = ts.readConfigFile(path.join(root, 'tsconfig.json'), ts.sys.readFile)
   assert.equal(config.error, undefined)
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root)
-  const files = ['Core', 'Data', 'DataStorage', 'DataQuery'].map(compositionFile)
+  const files = ['Core', 'Data', 'DataStorage', 'DataQuery', 'Mutation', 'Operations', 'Maintenance', 'Scan'].map(compositionFile)
   const program = ts.createProgram({ rootNames: [...files, ...parsed.fileNames.filter(file => file.endsWith('.d.ts'))], options: parsed.options })
   const errors = ts.getPreEmitDiagnostics(program)
   assert.equal(errors.length, 0, errors.map(error => ts.flattenDiagnosticMessageText(error.messageText, '\n')).join('\n'))
@@ -139,7 +139,7 @@ function checkOutputTypes() {
 async function checkRejectedMutations() {
   const mutations = [
     ['eager DB open', compositionFile('Data'), '  const query = createMainDataQueryCompositionRuntime({', '  void storage.openLibraryDb();\n  const query = createMainDataQueryCompositionRuntime({'],
-    ['wrong close owner', entry, '      closeLibraryDb();', '      closePreviewDb();'],
+    ['wrong close owner', compositionFile('Scan'), 'closeLibraryDb();', 'closePreviewDb();'],
     ['false-save notification', compositionFile('DataStorage'), 'if (saved) notifyPreviewLibraryShellChanged()', 'notifyPreviewLibraryShellChanged()'],
     ['lost preview task binding', compositionFile('Data'), '    completeBackgroundTask,\n    skipBackgroundTask,', '    completeBackgroundTask: () => undefined,\n    skipBackgroundTask,'],
     ['missing DB worker shutdown', compositionFile('Data'), 'dbQueryWorkerShutdown: () => dbQueryWorkerRuntime.shutdown()', 'dbQueryWorkerShutdown: () => undefined'],
