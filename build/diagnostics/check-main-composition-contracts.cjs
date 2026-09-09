@@ -50,18 +50,25 @@ createMainRuntimeRegistrationPayload(complete)
 `
 
 function compile(source, overrides = new Map()) {
-  const sources = new Map(overrides)
-  sources.set(virtualPath, source)
   const host = ts.createCompilerHost(parsed.options)
+  // TypeScript normalizes Windows separators before calling the host. Use the
+  // same identity for overlays and diagnostic locations, preserving host casing.
+  const fileKey = file => host.getCanonicalFileName(file.replace(/\\/g, '/'))
+  const sources = new Map([...overrides].map(([file, text]) => [fileKey(file), text]))
+  sources.set(fileKey(virtualPath), source)
+  const readFile = host.readFile.bind(host)
+  const fileExists = host.fileExists.bind(host)
   const getSourceFile = host.getSourceFile.bind(host)
-  host.getSourceFile = (file, languageVersion, onError, shouldCreateNewSourceFile) => sources.has(file)
-    ? ts.createSourceFile(file, sources.get(file), languageVersion, true)
+  host.readFile = file => sources.has(fileKey(file)) ? sources.get(fileKey(file)) : readFile(file)
+  host.fileExists = file => sources.has(fileKey(file)) || fileExists(file)
+  host.getSourceFile = (file, languageVersion, onError, shouldCreateNewSourceFile) => sources.has(fileKey(file))
+    ? ts.createSourceFile(file, sources.get(fileKey(file)), languageVersion, true)
     : getSourceFile(file, languageVersion, onError, shouldCreateNewSourceFile)
   const program = ts.createProgram({
     rootNames: [virtualPath, ...parsed.fileNames.filter(file => file.endsWith('.d.ts'))],
     options: parsed.options, host,
   })
-  return { program, errors: ts.getPreEmitDiagnostics(program) }
+  return { program, errors: ts.getPreEmitDiagnostics(program), fileKey }
 }
 
 function diagnosticText(errors) {
@@ -156,10 +163,11 @@ function checkOmissions() {
   addFailure('', 'createMainRuntimeRegistrationPayload({ ...complete, flushActivationInstallStatusSave: () => {} })', 'Promise<void>')
   addFailure('', 'createMainRuntimeRegistrationPayload({ ...complete, dbQueryWorkerShutdown: "missing" })', 'void')
   addFailure('', 'const badLabel: C.MainDataResourceLifecycle = { ...dataResources, closeCacheDb: (label: "tasks") => {} }', 'ApplicationCacheDbLabel')
-  const { errors } = compile(source)
+  const { errors, fileKey } = compile(source)
   assert.equal(errors.length, expected.size, diagnosticText(errors))
   for (const error of errors) {
-    assert.equal(error.file?.fileName, virtualPath, diagnosticText([error]))
+    assert(error.file, diagnosticText([error]))
+    assert.equal(fileKey(error.file.fileName), fileKey(virtualPath), diagnosticText([error]))
     const line = error.file.getLineAndCharacterOfPosition(error.start).line
     const key = expected.get(line)
     assert(key, `unexpected compiler error: ${diagnosticText([error])}`)

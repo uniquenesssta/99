@@ -78,6 +78,7 @@
     "diagnostics:window-corner-clipping": "node build/diagnostics/check-frameless-window-corner-clipping.cjs",
     "diagnostics:orchestration-contracts": "node build/diagnostics/check-orchestration-contracts.cjs",
     "diagnostics:main-composition-contracts": "node build/diagnostics/check-main-composition-contracts.cjs",
+    "diagnostics:main-composition-compiler-paths": "node build/diagnostics/check-main-composition-compiler-paths.cjs",
     "diagnostics:main-composition-runtime": "node build/diagnostics/check-main-composition-runtime.cjs",
     "diagnostics:main-operations-composition": "node build/diagnostics/check-main-operations-composition.cjs",
     "diagnostics:font-path-policy": "node build/diagnostics/check-font-path-authorization.cjs --case=POLICY",

@@ -2,10 +2,10 @@
 
 ## 0. 状态与执行边界
 
-- 版本：1.2；日期：2026-09-09；软件：HanFontManager 3.0.0。
+- 版本：1.3；日期：2026-09-09；软件：HanFontManager 3.0.0。
 - 分支：`stage/04-main-composition`，由 Stage 3 验收提交 `c8a6c39cc47059a42704003e00fe28ee4bc450a8` 创建；不合并到 main。
 - 共同基线树：`e7db517757b201f9bea0313cf9b64d2395f55973`。连接器发布与本地提交的 SHA 可不同，以树一致性核对内容。
-- 当前任务：AT-4.1 至 AT-4.3 已完成；本轮 typecheck、78 项长期诊断及 Electron 三端构建/混淆通过。AT-4.4 尚未开始。
+- 当前任务：AT-4.1 至 AT-4.3 实现完成；用户 Windows 复验发现诊断编译宿主路径不兼容，修复与复验状态见第 9.5 节。AT-4.4 尚未开始，待 Windows build 复验通过后继续。
 - 前置证据：用户 Windows 拉取 `476c5d6` 后完整 build 成功，详见 [Stage 3 第 10.9 节](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#109-windows-完整构建通过与阶段交接)。没有 AT-3.3。
 - 本文是 Stage 4 的执行记录；阶段顺序和不可妥协项以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。每个 Atomic Task 单独提交、单独回退，一个 Stage 共用一个分支。
 
@@ -313,3 +313,25 @@ npm run build
 ```
 
 下一项 **AT-4.4：收敛 Application 与入口注册分组**，尚未开始，继续沿用 Stage 4 分支。回退使用本次 AT-4.3 提交的独立 revert，并重新 verify；不改写 Git 历史或清理用户字体数据。
+
+### 9.5 Windows 编译宿主路径兼容修复
+
+用户在 Windows 成功快进至 `302deb7d94860f1a4fd73d9fed4cbe93240c0c50` 后执行 build：typecheck 与字体路径权限检查通过，但 `diagnostics:main-composition-contracts` 报虚拟文件不存在。该次 build **失败**，不能用第 9.3 节的 Linux 结果替代这次实机结果。
+
+根因是诊断脚本的内存源 Map 使用 Windows 反斜杠路径，而 TypeScript 5.9.3 传给 CompilerHost 的路径使用正斜杠。相同问题也影响旧适配器替身的匹配，以及负例错误位置的字符串比较。
+
+- `check-main-composition-contracts.cjs` 在内存源、替身源、readFile/fileExists/getSourceFile 及错误位置比较中统一分隔符，再遵循编译宿主原有大小写规则；保留真实磁盘读取回退。
+- 新增 `diagnostics:main-composition-compiler-paths`，用实际编译器和原诊断运行正斜杠、反斜杠、混合写法 × LF/CRLF 六组用例。全部保留 115 项注册能力、7 项资源能力和 3 项错误签名共 125 项编译拒绝，以及旧适配器对照和运行时等价断言。
+- 三个退化反例覆盖不统一 Map 键、不统一错误位置、丢失旧适配器替身；用例分别在独立进程执行，避免累积编译器对象。严格对象比较不放宽，诊断不生成实体虚拟源码文件。
+- 只改诊断和 npm 诊断入口；依赖版本、应用行为、字体路径授权、数据库和原生程序均未修改。用户本地已重建的 `hfm-preview-renderer.exe` 不属于此次补丁。
+
+修复前已在 Linux 使用反斜杠输入稳定复现同样的文件缺失；修复后 `npm --offline run verify` exit 0：typecheck、79/79 长期诊断通过，六组路径/换行用例和三个退化反例均通过；原 125 项编译拒绝与运行时等价断言保持。本项不改应用源码，因此没有重复构建三端产物。此测试覆盖路径拼写差异，仍需用户在 Windows 运行完整 build；当前环境 PowerShell/Rust 门禁继续明确保留外部验证要求。Context7 已按 TypeScript 5.9.3 查询相关路径语义，并结合实际编译器验证；本项没有架构变更。
+
+仍使用现有 Stage 4 分支，以独立诊断修复提交交付。拉取后在原有具备符号链接权限的 VS 2022 x64 终端执行：
+
+```bat
+git pull --ff-only origin stage/04-main-composition
+npm run build
+```
+
+此轮先修复已确认的门禁失败，AT-4.4 保持未开始；不删除或跳过任何失败检查。
