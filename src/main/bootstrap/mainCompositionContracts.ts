@@ -99,8 +99,8 @@ export interface MainOperationsCompositionRuntime {
   readonly resources: MainOperationsResourceLifecycle
 }
 
-// AT-4.1 defines the outputs only. Factories and ordered composition are extracted
-// in AT-4.2/4.3; no new startup/stop calls or runtime containers are created here.
+// The composition owners retain their existing flat capability contracts.
+// Application partitions registration by consumer responsibility below.
 export type MainApplicationRegistration =
   MainCoreCompositionRuntime['capabilities'] & MainCoreLifecycle &
   MainDataCompositionRuntime['capabilities'] & MainDataLifecycle &
@@ -114,3 +114,138 @@ export interface MainApplicationRuntime {
 type AssertNever<T extends never> = T
 type MissingRegistrationCapabilities = AssertNever<Exclude<keyof RegistrationSurface, keyof MainApplicationRegistration>>
 type UnexpectedRegistrationCapabilities = AssertNever<Exclude<keyof MainApplicationRegistration, keyof RegistrationSurface>>
+
+export interface MainApplicationRegistrationGroups {
+  readonly lifecycle: Pick<MainApplicationRegistration,
+    | 'appendStartupLog'
+    | 'appName'
+    | 'appId'
+    | 'buildMarker'
+    | 'logSchemaVersion'
+    | 'cacheArchitectureVersion'
+    | 'watcherStartupGraceMs'
+    | 'editionLogLine'
+    | 'scanTuningLogLine'
+    | 'dataRoot'
+    | 'dataRootErrorMessage'
+    | 'showExistingWindow'
+    | 'logPath'
+    | 'ioLaneSummary'
+    | 'registerFontProtocol'
+    | 'createWindow'
+    | 'beginStartupSessionSync'
+    | 'ensureDataRootSync'
+    | 'migrateLegacyUserDataIfNeeded'
+    | 'diagnoseRustCoreWorker'
+    | 'requestRendererWindowsCloseForQuit'
+    | 'startPerformanceLogSampler'
+    | 'stopPerformanceLogSampler'
+    | 'flushPerformanceLogs'
+    | 'stopRustCoreDaemon'
+    | 'markCleanShutdownSync'
+    | 'flushStartupLogAsync'
+    | 'flushStartupLogSync'
+    | 'setCacheKvs'
+    | 'initializeCacheArchitecture'
+    | 'runStartupCriticalSchemaAudit'
+    | 'dbQueryWorkerShutdown'
+    | 'cleanupTemporaryActiveFontsUntilEmpty'
+    | 'flushPendingTemporaryFontDeletes'
+    | 'flushActivationInstallStatusSave'
+    | 'hasPendingActivationInstallStatusSave'
+    | 'hasInFlightActivationInstallStatusSave'
+    | 'startupDbMaintenanceIdleDelayMs'
+    | 'startupBackgroundTasksEnabled'
+    | 'runStartupDatabaseMaintenance'
+    | 'startBackgroundTaskScheduler'
+    | 'stopBackgroundTaskScheduler'
+    | 'stopFolderWatchers'
+  >
+  readonly query: Pick<MainApplicationRegistration,
+    | 'reportPerformanceEvent'
+    | 'assertFeatureForChannel'
+    | 'getLicenseStatus'
+    | 'markRendererUserActivity'
+    | 'reportRendererLongTask'
+    | 'loadLibrary'
+    | 'loadLibraryShell'
+    | 'loadFolderCache'
+    | 'searchFontsInLibrary'
+    | 'queryFontsInLibrary'
+    | 'queryFontPageInLibrary'
+    | 'checkSharedMetadataUpdates'
+    | 'getFontMetricsFromLibrary'
+    | 'getSystemInstalledFonts'
+    | 'scanSystemInstalledFonts'
+    | 'getInstallStatusIndexSnapshot'
+    | 'listPhysicalFolderTree'
+    | 'activeFontScanStatus'
+    | 'compareFontInstalled'
+    | 'compareFontsInstalled'
+  >
+  readonly mutation: Pick<MainApplicationRegistration,
+    | 'saveLibrary'
+    | 'installFontSystemWide'
+    | 'uninstallFontSystemWide'
+    | 'deleteFontFilesToTrash'
+    | 'setFontDeleteProtectionInIndex'
+    | 'setSharedFontFavoriteInIndex'
+    | 'setLocalFontTags'
+    | 'setLocalFontTagsBatch'
+    | 'deleteLocalFontTag'
+    | 'setSharedFontTagsInIndex'
+    | 'setSharedFontTagsBatchInIndex'
+    | 'renameSharedFontTagInIndex'
+    | 'deleteSharedFontTagInIndex'
+    | 'activateFontSession'
+    | 'activateFontSessionsBatch'
+    | 'deactivateFontSession'
+    | 'deactivateFontSessionsBatch'
+    | 'installFontForCurrentUser'
+    | 'uninstallManagedFont'
+    | 'createPhysicalFolder'
+    | 'renamePhysicalFolder'
+    | 'moveFontFileToFolder'
+    | 'moveFontFilesToFolder'
+    | 'scanFoldersManaged'
+    | 'cancelActiveFontScan'
+    | 'startWatchingFolders'
+    | 'refreshWatchedFolder'
+    | 'refreshInstallStatusIndex'
+    | 'startInstallStatusRefreshIndex'
+  >
+  readonly maintenance: Pick<MainApplicationRegistration,
+    | 'getMigrationDiagnostics'
+    | 'clearMigrationDiagnostics'
+    | 'getCacheStats'
+    | 'cacheArchitectureInfo'
+    | 'clearScanCache'
+    | 'clearPreviewCache'
+    | 'readSharedMetadataFrontendDiagnostics'
+    | 'repairSharedMetadataFromFrontend'
+    | 'readSharedIndexSnapshotFrontendDiagnostics'
+    | 'repairSharedIndexSnapshotFromFrontend'
+    | 'runDatabaseHealthCheck'
+    | 'createDatabaseBackup'
+    | 'runDatabaseMaintenance'
+    | 'restoreLatestApplicationDatabase'
+    | 'listBackgroundTaskSummaries'
+    | 'runBackgroundTaskSchedulerOnce'
+    | 'backgroundTaskSchedulerStatus'
+  >
+  readonly preview: Pick<MainApplicationRegistration,
+    | 'readPreviewFontData'
+    | 'renderFontPreviewImage'
+    | 'readCachedFontPreviewImage'
+    | 'readCachedFontPreviewImages'
+    | 'ensureFontPreviewCache'
+    | 'getPreviewCacheStatus'
+  >
+}
+
+type GroupName = keyof MainApplicationRegistrationGroups
+type GroupKeys = { [G in GroupName]: keyof MainApplicationRegistrationGroups[G] }
+type MissingGroupedCapabilities = AssertNever<Exclude<keyof MainApplicationRegistration, GroupKeys[GroupName]>>
+type DuplicateGroupedCapabilities = AssertNever<{
+  [G in GroupName]: Extract<GroupKeys[G], GroupKeys[Exclude<GroupName, G>]>
+}[GroupName]>

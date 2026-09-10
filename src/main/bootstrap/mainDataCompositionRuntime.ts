@@ -16,78 +16,91 @@ type Core = ReturnType<typeof createMainCoreCompositionRuntime>;
 import { createMainDataStorageCompositionRuntime, type MainDataStorageOptions } from './mainDataStorageCompositionRuntime';
 import { createMainDataQueryCompositionRuntime, type MainDataQueryOptions } from './mainDataQueryCompositionRuntime';
 export interface MainDataCompositionOptions {
-  execFileAsync: Core['execFileAsync'];
-  windowsFontsDir: Core['windows']['windowsFontsDir'];
-  currentUserFontsDir: Core['windows']['currentUserFontsDir'];
-  resolveExistingFontFilePath: Core['windows']['resolveExistingFontFilePath'];
+  host: {
+    execFileAsync: Core['execFileAsync'];
+    delayToEventLoop: Core['delayToEventLoop'];
+    nodeRequire: NodeRequire;
+  };
+  windows: Pick<Core['windows'],
+    | 'windowsFontsDir'
+    | 'currentUserFontsDir'
+    | 'resolveExistingFontFilePath'
+    | 'ensureWindows'
+    | 'authorizeFontRead'
+    | 'missingFontPreviewDataUri'
+  >;
+  comparison: Pick<Core['comparison'],
+    | 'normalizeCompareText'
+    | 'isUsableInstalledNameCandidate'
+    | 'isCleanWindowsDefaultCompareResult'
+    | 'isSystemInstalledRecord'
+    | 'isPathInWindowsFonts'
+  >;
+  performance: Pick<Core['performance'],
+    | 'withGlobalIo'
+  >;
+  logging: Pick<Core['logging'],
+    | 'appendStartupLog'
+  >;
+  paths: Pick<Core['paths'],
+    | 'dataPath'
+    | 'exists'
+    | 'dataRoot'
+  >;
+  tags: {
+    tagMutationStateSignalRuntime: Pick<ReturnType<typeof createTagMutationStateSignalRuntime>, 'handleSharedMetadataMutationStateSignal' | 'handleLocalTagsMutationStateSignal'>;
+    tagMetadataRevisionBarrier: TagMetadataRevisionBarrierRuntime;
+  };
+  tasks: Pick<MainDataTaskPorts,
+    | 'completeBackgroundTask'
+    | 'previewTaskKey'
+    | 'skipBackgroundTask'
+    | 'upsertBackgroundTask'
+    | 'startBackgroundTask'
+    | 'heartbeatBackgroundTask'
+    | 'failBackgroundTask'
+  >;
   rustCoreWorkerRuntime: MainDataStorageOptions['rustCoreWorkerRuntime'] &
   MainDataQueryOptions['rustCoreWorkerRuntime'] & Pick<Core['rustCoreWorkerRuntime'],
     'runRustPreviewCacheReadStatus' | 'runRustPreviewCacheApply' |
     'runRustPreviewCacheDelete' | 'runRustPreviewCacheQuery' |
     'runRustPreviewCacheTouch' | 'runRustPreviewCacheBatch' | 'runRustPreviewRenderImage'
   >;
-  normalizeCompareText: Core['comparison']['normalizeCompareText'];
-  isUsableInstalledNameCandidate: Core['comparison']['isUsableInstalledNameCandidate'];
-  withGlobalIo: Core['performance']['withGlobalIo'];
-  delayToEventLoop: Core['delayToEventLoop'];
-  appendStartupLog: Core['logging']['appendStartupLog'];
-  dataPath: Core['paths']['dataPath'];
-  nodeRequire: NodeRequire;
-  exists: Core['paths']['exists'];
-  tagMutationStateSignalRuntime: Pick<ReturnType<typeof createTagMutationStateSignalRuntime>, 'handleSharedMetadataMutationStateSignal' | 'handleLocalTagsMutationStateSignal'>;
-  dataRoot: Core['paths']['dataRoot'];
-  isCleanWindowsDefaultCompareResult: Core['comparison']['isCleanWindowsDefaultCompareResult'];
-  completeBackgroundTask: MainDataTaskPorts['completeBackgroundTask'];
-  isSystemInstalledRecord: Core['comparison']['isSystemInstalledRecord'];
-  isPathInWindowsFonts: Core['comparison']['isPathInWindowsFonts'];
-  tagMetadataRevisionBarrier: TagMetadataRevisionBarrierRuntime;
   migrationDiagnosticsRuntime: Core['migrationDiagnosticsRuntime'];
-  ensureWindows: Core['windows']['ensureWindows'];
-  authorizeFontRead: Core['windows']['authorizeFontRead'];
-  previewTaskKey: MainDataTaskPorts['previewTaskKey'];
-  skipBackgroundTask: MainDataTaskPorts['skipBackgroundTask'];
-  upsertBackgroundTask: MainDataTaskPorts['upsertBackgroundTask'];
-  startBackgroundTask: MainDataTaskPorts['startBackgroundTask'];
-  heartbeatBackgroundTask: MainDataTaskPorts['heartbeatBackgroundTask'];
-  failBackgroundTask: MainDataTaskPorts['failBackgroundTask'];
-  missingFontPreviewDataUri: Core['windows']['missingFontPreviewDataUri'];
   listPhysicalFolderTree: MainDataCompositionRuntime['capabilities']['listPhysicalFolderTree'];
 }
 
 export function createMainDataCompositionRuntime(options: MainDataCompositionOptions) {
+  const { execFileAsync, delayToEventLoop, nodeRequire } = options.host;
   const {
-    execFileAsync,
     windowsFontsDir,
     currentUserFontsDir,
     resolveExistingFontFilePath,
-    rustCoreWorkerRuntime,
-    normalizeCompareText,
-    isUsableInstalledNameCandidate,
-    withGlobalIo,
-    delayToEventLoop,
-    appendStartupLog,
-    dataPath,
-    nodeRequire,
-    exists,
-    tagMutationStateSignalRuntime,
-    dataRoot,
-    isCleanWindowsDefaultCompareResult,
-    completeBackgroundTask,
-    isSystemInstalledRecord,
-    isPathInWindowsFonts,
-    tagMetadataRevisionBarrier,
-    migrationDiagnosticsRuntime,
     ensureWindows,
     authorizeFontRead,
+    missingFontPreviewDataUri,
+  } = options.windows;
+  const {
+    normalizeCompareText,
+    isUsableInstalledNameCandidate,
+    isCleanWindowsDefaultCompareResult,
+    isSystemInstalledRecord,
+    isPathInWindowsFonts,
+  } = options.comparison;
+  const { withGlobalIo } = options.performance;
+  const { appendStartupLog } = options.logging;
+  const { dataPath, exists, dataRoot } = options.paths;
+  const { tagMutationStateSignalRuntime, tagMetadataRevisionBarrier } = options.tags;
+  const {
+    completeBackgroundTask,
     previewTaskKey,
     skipBackgroundTask,
     upsertBackgroundTask,
     startBackgroundTask,
     heartbeatBackgroundTask,
     failBackgroundTask,
-    missingFontPreviewDataUri,
-    listPhysicalFolderTree,
-  } = options;
+  } = options.tasks;
+  const { rustCoreWorkerRuntime, migrationDiagnosticsRuntime, listPhysicalFolderTree } = options;
   let notifyPreviewLibraryShellChanged = (): void => undefined;
   const storage = createMainDataStorageCompositionRuntime({
     execFileAsync,

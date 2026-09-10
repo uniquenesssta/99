@@ -10,6 +10,8 @@ const contractsPath = path.join(root, 'src/main/bootstrap/mainCompositionContrac
 const adapterPath = path.join(root, 'src/main/bootstrap/mainRuntimeRegistrationPayload.ts')
 const virtualPath = path.join(root, 'build/diagnostics/fixtures/main-composition.virtual.ts')
 const fixture = require('./fixtures/orchestration-contracts.fixture.json')
+const groups = require('./fixtures/main-application-registration.fixture.json')
+const groupFor = key => Object.keys(groups).find(group => groups[group].includes(key))
 const config = ts.readConfigFile(path.join(root, 'tsconfig.json'), ts.sys.readFile)
 assert.equal(config.error, undefined)
 const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root)
@@ -23,15 +25,13 @@ const resourceKeys = {
 const positive = `
 import { createMainRuntimeRegistrationPayload } from '../../../src/main/bootstrap/mainRuntimeRegistrationPayload'
 import type * as C from '../../../src/main/bootstrap/mainCompositionContracts'
+import { createMainApplicationRuntime } from '../../../src/main/bootstrap/mainApplicationRuntime'
 import type { createLibraryDbConnectionRuntime } from '../../../src/main/library/runtime/libraryDbConnectionRuntime'
 import type { createPreviewDbRuntime } from '../../../src/main/preview/previewDbRuntime'
 import type { createCacheArchitectureRuntime } from '../../../src/main/cache/cacheArchitectureRuntime'
 import type { createBackgroundTaskRuntime } from '../../../src/main/tasks/backgroundTasks'
 ${owners.map(owner => `declare const ${owner.toLowerCase()}: C.Main${owner}CompositionRuntime`).join('\n')}
-const registration = createMainRuntimeRegistrationPayload({
-  ...core.capabilities, ...core.lifecycle, ...data.capabilities, ...data.lifecycle,
-  ...mutation.capabilities, ...mutation.lifecycle, ...operations.capabilities, ...operations.lifecycle
-})
+const registration = createMainApplicationRuntime({ core, data, mutation, operations }).registration
 const application: C.MainApplicationRuntime = { registration }
 declare const library: ReturnType<typeof createLibraryDbConnectionRuntime>
 declare const preview: ReturnType<typeof createPreviewDbRuntime>
@@ -46,7 +46,8 @@ const operationsResources: C.MainOperationsResourceLifecycle = {
   closeTasksDb: tasks.closeTasksDb, checkpointTasksDb: tasks.checkpointTasksDb
 }
 declare const complete: C.MainApplicationRegistration
-createMainRuntimeRegistrationPayload(complete)
+declare const completeGroups: C.MainApplicationRegistrationGroups
+createMainRuntimeRegistrationPayload(completeGroups)
 `
 
 function compile(source, overrides = new Map()) {
@@ -94,6 +95,17 @@ function checkOwnership(program) {
     assert(property, `missing property ${name}`)
     return checker.getTypeOfSymbolAtLocation(property, file)
   }
+  const groupType = exportedType('MainApplicationRegistrationGroups')
+  assert.deepEqual(groupType.getProperties().map(property => property.name).sort(), Object.keys(groups).sort())
+  const groupedKeys = []
+  for (const [name, keys] of Object.entries(groups)) {
+    const fields = propertyType(groupType, name).getProperties()
+    assertRequired(fields, name)
+    assert.deepEqual(fields.map(field => field.name).sort(), [...keys].sort(), name + ' group drifted')
+    groupedKeys.push(...keys)
+  }
+  assert.equal(new Set(groupedKeys).size, groupedKeys.length, 'duplicate grouped capability')
+  assert.deepEqual(groupedKeys.sort(), [...fixture.mainRegistrationKeys].sort())
   const ownedKeys = []
   const lifecycleKeys = []
   for (const owner of owners) {
@@ -151,8 +163,9 @@ function checkOmissions() {
     expected.set(line, name)
   }
   for (const key of fixture.mainRegistrationKeys) {
-    addFailure(`declare const missing_${key}: Omit<C.MainApplicationRegistration, '${key}'>`,
-      `createMainRuntimeRegistrationPayload(missing_${key})`, key)
+    const group = groupFor(key)
+    addFailure(`declare const missing_${key}: Omit<C.MainApplicationRegistrationGroups['${group}'], '${key}'>`,
+      `createMainRuntimeRegistrationPayload({ ...completeGroups, ${group}: missing_${key} })`, key)
   }
   for (const [name, keys] of Object.entries(resourceKeys)) {
     for (const key of keys) {
@@ -160,8 +173,8 @@ function checkOmissions() {
         `const reject_${key}: C.${name} = missing_${key}`, key)
     }
   }
-  addFailure('', 'createMainRuntimeRegistrationPayload({ ...complete, flushActivationInstallStatusSave: () => {} })', 'Promise<void>')
-  addFailure('', 'createMainRuntimeRegistrationPayload({ ...complete, dbQueryWorkerShutdown: "missing" })', 'void')
+  addFailure('', 'createMainRuntimeRegistrationPayload({ ...completeGroups, lifecycle: { ...completeGroups.lifecycle, flushActivationInstallStatusSave: () => {} } })', 'Promise<void>')
+  addFailure('', 'createMainRuntimeRegistrationPayload({ ...completeGroups, lifecycle: { ...completeGroups.lifecycle, dbQueryWorkerShutdown: "missing" } })', 'void')
   addFailure('', 'const badLabel: C.MainDataResourceLifecycle = { ...dataResources, closeCacheDb: (label: "tasks") => {} }', 'ApplicationCacheDbLabel')
   const { errors, fileKey } = compile(source)
   assert.equal(errors.length, expected.size, diagnosticText(errors))
@@ -190,19 +203,16 @@ function checkRuntimeErasure() {
   const emit = text => ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.trim()
   assert.equal(emit(source), 'export {};', 'contract module introduced runtime work')
   const adapter = fs.readFileSync(adapterPath, 'utf8')
-  const baseline = 'export function createMainRuntimeRegistrationPayload(options) { return options }'
-  const tokens = text => {
-    const scanner = ts.createScanner(ts.ScriptTarget.ES2022, true, ts.LanguageVariant.Standard, text)
-    const result = []
-    while (scanner.scan() !== ts.SyntaxKind.EndOfFileToken) result.push(scanner.getTokenText())
-    return result
-  }
-  assert.deepEqual(tokens(emit(adapter)), tokens(emit(baseline)), 'registration adapter gained runtime behavior')
   const exports = {}
   const js = ts.transpileModule(adapter, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
   vm.runInNewContext(js, { exports }, { timeout: 1000 })
-  const payload = Object.freeze(Object.fromEntries(fixture.mainRegistrationKeys.map(key => [key, Object.freeze({ key })])))
-  assert.equal(exports.createMainRuntimeRegistrationPayload(payload), payload, 'adapter changed payload identity')
+  const flat = Object.freeze(Object.fromEntries(fixture.mainRegistrationKeys.map(key => [key, Object.freeze({ key })])))
+  const grouped = Object.freeze(Object.fromEntries(Object.entries(groups).map(([name, keys]) => [name,
+    Object.freeze(Object.fromEntries(keys.map(key => [key, flat[key]])))
+  ])))
+  const payload = exports.createMainRuntimeRegistrationPayload(grouped)
+  assert.deepEqual(Object.keys(payload).sort(), Object.keys(flat).sort(), 'adapter changed registered keys')
+  for (const key of Object.keys(flat)) assert.equal(payload[key], flat[key], key + ' changed capability identity')
 }
 
 function main() {

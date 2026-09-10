@@ -2,10 +2,10 @@
 
 ## 0. 状态与执行边界
 
-- 版本：1.3；日期：2026-09-09；软件：HanFontManager 3.0.0。
+- 版本：1.4；日期：2026-09-10；软件：HanFontManager 3.0.0。
 - 分支：`stage/04-main-composition`，由 Stage 3 验收提交 `c8a6c39cc47059a42704003e00fe28ee4bc450a8` 创建；不合并到 main。
 - 共同基线树：`e7db517757b201f9bea0313cf9b64d2395f55973`。连接器发布与本地提交的 SHA 可不同，以树一致性核对内容。
-- 当前任务：AT-4.1 至 AT-4.3 实现完成；用户 Windows 复验发现诊断编译宿主路径不兼容，修复与复验状态见第 9.5 节。AT-4.4 尚未开始，待 Windows build 复验通过后继续。
+- 当前任务：AT-4.1 至 AT-4.4 实现及自动验证完成；本轮 typecheck、80/80 诊断、三端构建与混淆通过。Windows 前置基线 `c981777` 已通过，见第 9.6 节；新提交的本机复验待补，Stage 5 未开始。
 - 前置证据：用户 Windows 拉取 `476c5d6` 后完整 build 成功，详见 [Stage 3 第 10.9 节](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md#109-windows-完整构建通过与阶段交接)。没有 AT-3.3。
 - 本文是 Stage 4 的执行记录；阶段顺序和不可妥协项以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。每个 Atomic Task 单独提交、单独回退，一个 Stage 共用一个分支。
 
@@ -18,7 +18,7 @@
 | AT-4.1 | 四个组合阶段和 Application 的返回契约、生命周期归属、延迟绑定审计；接入现有注册适配器 | 真实 TypeScript 编译拒绝遗漏任一注册能力或 shutdown hook；运行时输出等价 | 完成 |
 | AT-4.2 | 在 `src/main/bootstrap` 提取 Core、Data 工厂，按实际依赖定义输入端口 | 导入不新增副作用；路径、日志、DB/schema audit 顺序一致；句柄创建/关闭单一所有者 | 完成，见第 8 节 |
 | AT-4.3 | 提取 Mutation、Operations；给必要循环建立显式绑定点 | 绑定完成前不启任务；启动、索引、刷新、退出/取消退出及异常退出保持原义 | 完成，见第 9 节 |
-| AT-4.4 | 收敛 `index.ts` 和 Application；按 lifecycle/query/mutation/maintenance/preview 分组注册 | 115 项能力、7 个 app 事件、2 个 process 事件和完整行为门禁不丢失 | 未开始 |
+| AT-4.4 | 收敛 `index.ts` 和 Application；按 lifecycle/query/mutation/maintenance/preview 分组注册 | 115 项能力、7 个 app 事件、2 个 process 事件和完整行为门禁不丢失 | 完成，见第 10 节；新版本 Windows 复验待补 |
 
 ## 2. AT-4.1 实际变更与契约边界
 
@@ -335,3 +335,75 @@ npm run build
 ```
 
 此轮先修复已确认的门禁失败，AT-4.4 保持未开始；不删除或跳过任何失败检查。
+
+### 9.6 Windows 前置验收通过
+
+用户最新日志显示成功快进 `302deb7..c981777`，随后完整 `npm run build` 成功：typecheck、79/79 诊断、六组正反/混合斜杠与换行用例、125 个编译拒绝及三个退化反例全部通过；C++/PowerShell 输入各 68 场景、Rust 共享输入 fixture 和 JS 190 场景通过。Cargo 1.97.1 完成 release 并复制 worker，公钥同步、三端构建（346/1/181 模块）和混淆 3/3 成功。第 9.5 节的 Windows 编译路径阻塞已解除，可以进入 AT-4.4。这是本项开始前的实机基线，不代替新提交的本机复验。
+
+## 10. AT-4.4：入口与 Application 注册收敛
+
+### 10.1 基线、职责与依赖
+
+基于远端 `c98177750bb49a42fbef75df45400e8db8b44ebd`、共同树 `c8820f93a03dc498af431f50281eeb99019020f4` 继续；仍使用 `stage/04-main-composition`，单独提交和回退，不合并 main。
+
+| 模块 | 本项职责 | 保持的边界 |
+| --- | --- | --- |
+| `index.ts`，715→77 行 | 显示 Core、标签协调、Data、Mutation、Operations 的创建、反馈绑定、启动安排与唯一注册顺序 | 不再逐项重述 115 项能力；没有字体、数据库或维护算法 |
+| `mainTagCompositionRuntime.ts`，25 行 | 组装原来的共享标签 barrier、signal、write protocol；提供 daemon 事件回调 | 唯一 barrier 和信号所有者，不执行标签写入、不启动任务 |
+| Data/Mutation/Operations 工厂输入 | 按 paths、windows、comparison、performance、storage、query、tags 等实际消费者分组 | 用 Pick 或明确字段保留原有 31/65/118 项输入；未遗漏、未增加能力，不传递全局服务容器 |
+| `mainApplicationRuntime.ts`，144 行 | 从四个公开组合契约生成五组注册参数 | 只输出 `registration`，不重新暴露 DB、worker、反馈对象或全部内部服务，不执行 start/stop |
+| `mainRuntimeRegistrationPayload.ts`，14 行 | 把五组参数转换为原注册方的扁平 115 项接口 | 旧无操作转发实现已替换；保持所有能力的值和函数引用，不加权限、事务或调度逻辑 |
+
+输入分组直接从真实 Core/Data 类型选择所需字段，删除根入口中重复解构和逐字段传递。运行时的同一个资源对象仍可由原拥有者提供多个窄端口；分组不创建新句柄或新的所有权。现有 `mainProcessRuntimeRegistration`、IPC、生命周期实现、Rust 门面和 React 根组件未修改。
+
+### 10.2 注册分组与兼容
+
+| 组 | 数量 | 范围 |
+| --- | ---: | --- |
+| lifecycle | 43 | 启动配置、日志、窗口/协议、初始化、调度、退出 flush 和 shutdown |
+| query | 20 | 字体/目录/安装状态读取、查询、授权状态和 renderer 活动报告 |
+| mutation | 29 | 字体、标签和物理文件写操作，以及扫描/刷新控制 |
+| maintenance | 17 | 缓存、数据库、共享索引/元数据维护、后台任务和迁移诊断 |
+| preview | 6 | 预览数据、渲染、缓存读取/生成与状态 |
+
+共 115 项，仍包含原有 24 项生命周期钩子；按消费者分组不改变四个阶段各自的所有权。类型层拒绝遗漏或交叠的分组键，真实编译器逐项拒绝 115 项注册能力遗漏、7 项资源遗漏和 3 项错误签名，保持 125 个反例。旧入口遗漏可选能力的对照仍通过内存源替身验证。
+
+```mermaid
+flowchart TD
+  E["入口"] --> C["Core 基础设施"]
+  E --> T["标签协调"]
+  E --> D["Data"]
+  E --> M["Mutation"]
+  E --> O["Operations"]
+  T -->|"共享状态信号"| D
+  T -->|"写入协议"| M
+  D -->|"查询与存储端口"| M
+  D -->|"查询与存储端口"| O
+  M --> F["显式反馈绑定"]
+  O --> F
+  F --> S["就绪后安排启动任务"]
+  S --> A["Application 五组参数"]
+  A --> R["兼容原有 115 项注册接口"]
+```
+
+### 10.3 验证与巨型编排复审
+
+- 新增 `diagnostics:main-application-runtime`：五组键和 115 项值/函数引用全部对应原所有者；导入不构造服务或注册应用，不暴露内部资源。八个反例检测遗漏能力、错误激活路由、分组重复、漏传预览组、重复注册、重复启动定时器、重复 scheduler start 和重复 watcher stop；CRLF 通过。
+- 原 115 项注册键、7 app/2 process 事件、Rust 45/38 和 React 10 项冻结契约不改；旧 14 条组合流程、14 条操作流程、9 种真实生命周期场景、12 个绑定前拒绝及旧反例继续验证。
+- 两个共享索引诊断改读真实的 Maintenance/Application 所有者；原断言全部保留。编排 AST 检查改读 Application 的结构化分组，并新增重复键检测，不用删除失败用例适应迁移。
+- `index.ts` 在整个 Stage 4 从 2075→77 行；Application 只承担契约映射，复杂领域组装仍在原职责工厂。Data/Mutation/Operations 文件变动来自端口分组，没有机械复制出第二套业务实现。仍保留真实的窄反馈循环，不宣称所有循环都被消除或凭行数达到“完美拆分”。
+- 本轮 `npm --offline run verify` exit 0：typecheck、80/80 长期诊断通过；三端构建 348/1/181 模块通过，混淆 3/5 成功（另两份既有产物已有标记）。真实 TypeScript 检查确认分组后的输入仍为原 31/65/118 项；剔除输入解构后，三个工厂原组装主体的代码 token 与前一提交完全一致。
+
+Context7 按 TypeScript 5.9.3 核对 mapped types/Extract/Exclude 的分组键约束，结合真实编译器验证；Mermaid Chart 已渲染实际组合关系。Git、README 和任务书保存正式结果，Create State 只作交接。
+
+### 10.4 pull 后操作与下一阶段
+
+本项不改依赖版本、数据库/schema、缓存键、字体数据和原生源码。使用已有具备符号链接权限的 VS 2022 x64 终端，进入项目目录后执行：
+
+```bat
+git switch stage/04-main-composition
+git pull --ff-only origin stage/04-main-composition
+npm run build
+```
+
+Linux 审查环境没有 Cargo/PowerShell，本轮相关原生输入门禁明确保留外部验证要求；新的 Windows 完整 build、GUI 实际退出、NAS 多客户端、位图/内存与安装包验收不伪报通过。待本项本机复验和阶段接受后，下一大阶段 Stage 5 按用户规则创建新分支，从 AT-5.1 开始；本轮不推进 Stage 5。回退使用本次 AT-4.4 的独立 revert，不改写历史或清理用户本地文件。

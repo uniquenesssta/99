@@ -58,6 +58,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-10：完成 AT-4.4：入口 715→77 行，Application 按五组发布原 115 项注册能力；标签协调独立归属，Data/Mutation/Operations 分组输入保持原 31/65/118 项端口。新增逐项能力引用与八个错误接线/重复启动退出反例；typecheck、80/80 诊断、三端构建及混淆通过。Windows 前置 `c981777` 已完整验证，新提交 pull 后正常 build 复验；无依赖版本、数据库或原生源码变更。Stage 4 实现收尾，Stage 5 未开始，详见 [Stage 4 第 10 节](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)。
+
 - 2026-09-09：修复 Windows 编译契约诊断将正反斜杠视为不同文件的问题，虚拟源、旧适配器替身和错误位置采用一致路径匹配。新增正斜杠/反斜杠/混合写法与 LF/CRLF 六组用例和三个退化反例，保留原 125 项编译拒绝；typecheck、79/79 诊断通过。沿用 Stage 4 分支，pull 后重新 build；应用、依赖版本与原生源码不变。用户上一轮 Windows build 确实失败，AT-4.4 待本机复验通过再推进，详见 [Stage 4 第 9.5 节](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)。
 
 - 2026-09-09：完成 AT-4.3：提取 Mutation/Operations 及扫描、维护组合，入口 1222→715 行；四处 Operations 可变引用改为唯一实例和显式反馈绑定，全部绑定后才允许启动扫描、刷新、后台任务及共享标签定时刷新。任务库仍由后台运行时唯一持有，补强任务端口类型。新增 12 个提前启动拒绝场景、14 条操作流程与 9 种真实生命周期场景，包含退出取消/失败恢复和异常退出；typecheck、78/78 诊断、三端构建与混淆通过，原 115/45/38/10 项契约保持。沿用 `stage/04-main-composition`，下一项 AT-4.4；无依赖、数据库或原生源码变更，pull 后正常 build。详见 [Stage 4 任务书第 9 节](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)。

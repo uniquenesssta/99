@@ -83,7 +83,7 @@ function createHarness(overrides = new Map()) {
       if (key === '__esModule') return true
       if (typeof key !== 'string') return undefined
       if (key in target) return target[key]
-      if (key === 'registerMainProcessRuntime') return options => { state.payload = options }
+      if (key === 'registerMainProcessRuntime') return options => { assert.equal(state.payload, null, 'application registered twice'); state.payload = options }
       if (key === 'normalizeWatchedFontFolders') return folders => folders
       if (key === 'normalizePathForCacheCompare') return value => value
       if (key === 'sha1') return value => require('node:crypto').createHash('sha1').update(value).digest('hex')
@@ -97,7 +97,7 @@ function createHarness(overrides = new Map()) {
   ].map(file => path.join(root, file)))
   function load(file) {
     if (modules.has(file)) return modules.get(file).exports
-    const real = file === entry || actual.has(file) || (file.startsWith(bootstrap + path.sep) && /main(?:Core|Data\w*|Mutation|Operations|Maintenance|Scan)CompositionRuntime\.ts$|mainRuntimeRegistrationPayload\.ts$|mainCompositionFeedback\.ts$/.test(file))
+    const real = file === entry || actual.has(file) || (file.startsWith(bootstrap + path.sep) && /main(?:Core|Data\w*|Mutation|Operations|Maintenance|Scan|Tag)CompositionRuntime\.ts$|mainRuntimeRegistrationPayload\.ts$|mainCompositionFeedback\.ts$|mainApplicationRuntime\.ts$/.test(file))
     if (!real) { const exports = leaf(); modules.set(file, { exports }); return exports }
     const source = (overrides.get(file) ?? fs.readFileSync(file, 'utf8')).replace(/\r\n/g, '\n')
     const code = ts.transpileModule(source.replaceAll('import.meta.url', JSON.stringify(pathToFileURL(file).href)), {
@@ -120,7 +120,14 @@ function createHarness(overrides = new Map()) {
     }
     vm.runInNewContext(code, context, { filename: file, timeout: 5000 })
     for (const [name, implementation] of Object.entries(module.exports)) {
-      if (/^createMain(?:Core|Data\w*|Mutation|Operations|Maintenance|Scan)CompositionRuntime$/.test(name) || name === 'createMainCompositionFeedback') {
+      if (name === 'createMainRuntimeRegistrationPayload') {
+        module.exports[name] = groups => {
+          assert(!state.registrationGroups, 'registration payload constructed twice');
+          state.registrationGroups = groups;
+          return implementation(groups);
+        };
+      }
+      if (/^createMain(?:Core|Data\w*|Mutation|Operations|Maintenance|Scan|Tag)CompositionRuntime$/.test(name) || name === 'createMainCompositionFeedback' || name === 'createMainApplicationRuntime') {
         module.exports[name] = (...args) => {
           assert(!state.compositions.has(name), `${name} was constructed twice`)
           const runtime = implementation(...args)

@@ -22,7 +22,7 @@ function testMainRuntime() {
 
 function testMainWiringAndIpc() {
   includes('src/main/bootstrap/mainMaintenanceCompositionRuntime.ts', 'createSharedIndexSnapshotFrontendRuntime')
-  includes('src/main/index.ts', 'readSharedIndexSnapshotFrontendDiagnostics')
+  includes('src/main/bootstrap/mainApplicationRuntime.ts', 'readSharedIndexSnapshotFrontendDiagnostics')
   includes('src/main/ipc/ipcHandlerTypes.ts', 'readSharedIndexSnapshotFrontendDiagnostics?:')
   includes('src/main/ipc/handlers/maintenanceIpcHandlers.ts', 'sharedIndexSnapshots:getDiagnostics')
   includes('src/main/ipc/handlers/maintenanceIpcHandlers.ts', 'sharedIndexSnapshots:repair')

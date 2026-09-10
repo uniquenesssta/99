@@ -49,7 +49,7 @@ function testSnapshotCleanupKeepsActiveAndHandlesResidue() {
   ]) assert(text.includes(needle), `snapshot cleanup missing ${needle}`)
 }
 function testIndexWiringAndPackageScript() {
-  const indexText = read('src/main/index.ts')
+  const indexText = read('src/main/bootstrap/mainMaintenanceCompositionRuntime.ts')
   for (const needle of [
     'inspectRootIndexSnapshotMaintenance',
     'cleanupRootIndexSnapshotMaintenance',

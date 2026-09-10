@@ -23,76 +23,96 @@ type Core = ReturnType<typeof createMainCoreCompositionRuntime>;
 type Data = ReturnType<typeof createMainDataCompositionRuntime>;
 
 export interface MainMutationCompositionOptions {
-  tagMutationWriteProtocolRuntime: ReturnType<typeof createTagMutationWriteProtocolRuntime>;
-  setLocalFontTagsBase: Data['storage']['setLocalFontTagsBase'];
-  invalidateSharedFontRuntimeCaches: Data['storage']['invalidateSharedFontRuntimeCaches'];
-  setLocalFontTagsBatchBase: Data['storage']['setLocalFontTagsBatchBase'];
-  deleteLocalFontTagBase: Data['storage']['deleteLocalFontTagBase'];
-  saveInstallStatusIndex: Data['storage']['saveInstallStatusIndex'];
-  appWatchedFolders: Data['storage']['appWatchedFolders'];
-  rootForFontPath: Data['storage']['rootForFontPath'];
-  syncMergedIndexAfterInstallStatusRefresh: Data['query']['syncMergedIndexAfterInstallStatusRefresh'];
-  clearFontQueryCaches: Data['query']['clearFontQueryCaches'];
-  appendStartupLog: Core['logging']['appendStartupLog'];
-  dataPath: Core['paths']['dataPath'];
-  dataRoot: Core['paths']['dataRoot'];
-  ensureWindows: Core['windows']['ensureWindows'];
-  currentUserFontsDir: Core['windows']['currentUserFontsDir'];
-  isTemporaryActiveInstalledRecord: Core['comparison']['isTemporaryActiveInstalledRecord'];
-  compareFontInstalledWithList: Core['comparison']['compareFontInstalledWithList'];
-  clearInstalledFontsMemoryCache: Data['storage']['clearInstalledFontsMemoryCache'];
-  getSystemInstalledFontsCached: Data['storage']['getSystemInstalledFontsCached'];
-  readInstallStatusIndex: Data['storage']['readInstallStatusIndex'];
-  loadTemporaryActiveFonts: Core['windows']['loadTemporaryActiveFonts'];
-  saveTemporaryActiveFonts: Core['windows']['saveTemporaryActiveFonts'];
-  safeTemporaryActiveFontName: Core['comparison']['safeTemporaryActiveFontName'];
-  temporaryActiveRegistryNameFor: Core['comparison']['temporaryActiveRegistryNameFor'];
-  removeFontResourceSession: Core['windows']['removeFontResourceSession'];
-  removeFontResourceSessionBatch: Core['windows']['removeFontResourceSessionBatch'];
-  addFontResourceSessionBatch: Core['windows']['addFontResourceSessionBatch'];
-  writeFontRegistryValuesHKCUBatch: Core['windows']['writeFontRegistryValuesHKCUBatch'];
-  deleteFontRegistryValuesHKCUBatch: Core['windows']['deleteFontRegistryValuesHKCUBatch'];
-  deleteRegistryValueHKCU: Core['windows']['deleteRegistryValueHKCU'];
-  requestFontRefresh: Core['windows']['requestFontRefresh'];
-  advancedFontRefresh: Core['windows']['advancedFontRefresh'];
-  addFontResourceSession: Core['windows']['addFontResourceSession'];
-  scheduleBackgroundFontRefreshTail: Core['windows']['scheduleBackgroundFontRefreshTail'];
-  withGlobalIo: Core['performance']['withGlobalIo'];
-  delayToEventLoop: Core['delayToEventLoop'];
+  tags: {
+    tagMutationWriteProtocolRuntime: ReturnType<typeof createTagMutationWriteProtocolRuntime>;
+  };
+  storage: Pick<Data['storage'],
+    | 'setLocalFontTagsBase'
+    | 'invalidateSharedFontRuntimeCaches'
+    | 'setLocalFontTagsBatchBase'
+    | 'deleteLocalFontTagBase'
+    | 'saveInstallStatusIndex'
+    | 'appWatchedFolders'
+    | 'rootForFontPath'
+    | 'clearInstalledFontsMemoryCache'
+    | 'getSystemInstalledFontsCached'
+    | 'readInstallStatusIndex'
+    | 'getSystemInstalledFonts'
+    | 'sharedMetadataDbPathForRoot'
+    | 'openStableSqliteDb'
+    | 'closeSqliteDb'
+    | 'openLibraryDb'
+    | 'loadLibraryShellFromSqlite'
+    | 'updateSharedFontMetadataEntries'
+    | 'removeSharedTagFromMetadataIndexes'
+    | 'renameSharedTagInMetadataIndexes'
+    | 'saveLibrary'
+  >;
+  query: Pick<Data['query'],
+    | 'syncMergedIndexAfterInstallStatusRefresh'
+    | 'clearFontQueryCaches'
+    | 'syncMergedIndexForRootIncremental'
+    | 'syncMergedIndexForRootSnapshot'
+    | 'findFontItemInRootIndexes'
+  >;
+  logging: Pick<Core['logging'],
+    | 'appendStartupLog'
+  >;
+  paths: Pick<Core['paths'],
+    | 'dataPath'
+    | 'dataRoot'
+    | 'exists'
+  >;
+  windows: Pick<Core['windows'],
+    | 'ensureWindows'
+    | 'currentUserFontsDir'
+    | 'loadTemporaryActiveFonts'
+    | 'saveTemporaryActiveFonts'
+    | 'removeFontResourceSession'
+    | 'removeFontResourceSessionBatch'
+    | 'addFontResourceSessionBatch'
+    | 'writeFontRegistryValuesHKCUBatch'
+    | 'deleteFontRegistryValuesHKCUBatch'
+    | 'deleteRegistryValueHKCU'
+    | 'requestFontRefresh'
+    | 'advancedFontRefresh'
+    | 'addFontResourceSession'
+    | 'scheduleBackgroundFontRefreshTail'
+    | 'windowsFontsDir'
+    | 'authorizeManagedFontDelete'
+    | 'broadcastFontChange'
+    | 'authorizePhysicalFolderParent'
+    | 'authorizePhysicalFolderRename'
+    | 'resolveExistingFontFilePath'
+    | 'authorizeFontMoveSource'
+    | 'authorizeFontMoveTarget'
+    | 'authorizeFontMoveDestination'
+  >;
+  comparison: Pick<Core['comparison'],
+    | 'isTemporaryActiveInstalledRecord'
+    | 'compareFontInstalledWithList'
+    | 'safeTemporaryActiveFontName'
+    | 'temporaryActiveRegistryNameFor'
+    | 'registryNameFor'
+    | 'normalizeCompareText'
+    | 'safeManagedFontName'
+  >;
+  performance: Pick<Core['performance'],
+    | 'withGlobalIo'
+  >;
+  host: Pick<Core,
+    | 'delayToEventLoop'
+  >;
+  feedback: {
+    refreshWatchedFolder: MainOperationsFeedback['refreshWatchedFolder'];
+    sendFontIndexChanged: (payload: FontIndexChangePayload) => void;
+  };
   rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustFontActivationFiles' | 'runRustSharedMetadataKnownTags' | 'runRustPhysicalFolderTree'>;
-  windowsFontsDir: Core['windows']['windowsFontsDir'];
-  registryNameFor: Core['comparison']['registryNameFor'];
-  normalizeCompareText: Core['comparison']['normalizeCompareText'];
-  getSystemInstalledFonts: Data['storage']['getSystemInstalledFonts'];
-  sharedMetadataDbPathForRoot: Data['storage']['sharedMetadataDbPathForRoot'];
-  exists: Core['paths']['exists'];
-  openStableSqliteDb: Data['storage']['openStableSqliteDb'];
-  closeSqliteDb: Data['storage']['closeSqliteDb'];
-  openLibraryDb: Data['storage']['openLibraryDb'];
-  loadLibraryShellFromSqlite: Data['storage']['loadLibraryShellFromSqlite'];
-  syncMergedIndexForRootIncremental: Data['query']['syncMergedIndexForRootIncremental'];
-  syncMergedIndexForRootSnapshot: Data['query']['syncMergedIndexForRootSnapshot'];
-  updateSharedFontMetadataEntries: Data['storage']['updateSharedFontMetadataEntries'];
-  removeSharedTagFromMetadataIndexes: Data['storage']['removeSharedTagFromMetadataIndexes'];
-  renameSharedTagInMetadataIndexes: Data['storage']['renameSharedTagInMetadataIndexes'];
-  safeManagedFontName: Core['comparison']['safeManagedFontName'];
-  findFontItemInRootIndexes: Data['query']['findFontItemInRootIndexes'];
-  authorizeManagedFontDelete: Core['windows']['authorizeManagedFontDelete'];
-  broadcastFontChange: Core['windows']['broadcastFontChange'];
-  authorizePhysicalFolderParent: Core['windows']['authorizePhysicalFolderParent'];
-  authorizePhysicalFolderRename: Core['windows']['authorizePhysicalFolderRename'];
-  refreshWatchedFolder: MainOperationsFeedback['refreshWatchedFolder'];
-  resolveExistingFontFilePath: Core['windows']['resolveExistingFontFilePath'];
-  authorizeFontMoveSource: Core['windows']['authorizeFontMoveSource'];
-  authorizeFontMoveTarget: Core['windows']['authorizeFontMoveTarget'];
-  authorizeFontMoveDestination: Core['windows']['authorizeFontMoveDestination'];
-  saveLibrary: Data['storage']['saveLibrary'];
-  sendFontIndexChanged: (payload: FontIndexChangePayload) => void;
 }
 
 export function createMainMutationCompositionRuntime(options: MainMutationCompositionOptions) {
+  const { tagMutationWriteProtocolRuntime } = options.tags;
   const {
-    tagMutationWriteProtocolRuntime,
     setLocalFontTagsBase,
     invalidateSharedFontRuntimeCaches,
     setLocalFontTagsBatchBase,
@@ -100,22 +120,34 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     saveInstallStatusIndex,
     appWatchedFolders,
     rootForFontPath,
-    syncMergedIndexAfterInstallStatusRefresh,
-    clearFontQueryCaches,
-    appendStartupLog,
-    dataPath,
-    dataRoot,
-    ensureWindows,
-    currentUserFontsDir,
-    isTemporaryActiveInstalledRecord,
-    compareFontInstalledWithList,
     clearInstalledFontsMemoryCache,
     getSystemInstalledFontsCached,
     readInstallStatusIndex,
+    getSystemInstalledFonts,
+    sharedMetadataDbPathForRoot,
+    openStableSqliteDb,
+    closeSqliteDb,
+    openLibraryDb,
+    loadLibraryShellFromSqlite,
+    updateSharedFontMetadataEntries,
+    removeSharedTagFromMetadataIndexes,
+    renameSharedTagInMetadataIndexes,
+    saveLibrary,
+  } = options.storage;
+  const {
+    syncMergedIndexAfterInstallStatusRefresh,
+    clearFontQueryCaches,
+    syncMergedIndexForRootIncremental,
+    syncMergedIndexForRootSnapshot,
+    findFontItemInRootIndexes,
+  } = options.query;
+  const { appendStartupLog } = options.logging;
+  const { dataPath, dataRoot, exists } = options.paths;
+  const {
+    ensureWindows,
+    currentUserFontsDir,
     loadTemporaryActiveFonts,
     saveTemporaryActiveFonts,
-    safeTemporaryActiveFontName,
-    temporaryActiveRegistryNameFor,
     removeFontResourceSession,
     removeFontResourceSessionBatch,
     addFontResourceSessionBatch,
@@ -126,38 +158,29 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     advancedFontRefresh,
     addFontResourceSession,
     scheduleBackgroundFontRefreshTail,
-    withGlobalIo,
-    delayToEventLoop,
-    rustCoreWorkerRuntime,
     windowsFontsDir,
-    registryNameFor,
-    normalizeCompareText,
-    getSystemInstalledFonts,
-    sharedMetadataDbPathForRoot,
-    exists,
-    openStableSqliteDb,
-    closeSqliteDb,
-    openLibraryDb,
-    loadLibraryShellFromSqlite,
-    syncMergedIndexForRootIncremental,
-    syncMergedIndexForRootSnapshot,
-    updateSharedFontMetadataEntries,
-    removeSharedTagFromMetadataIndexes,
-    renameSharedTagInMetadataIndexes,
-    safeManagedFontName,
-    findFontItemInRootIndexes,
     authorizeManagedFontDelete,
     broadcastFontChange,
     authorizePhysicalFolderParent,
     authorizePhysicalFolderRename,
-    refreshWatchedFolder,
     resolveExistingFontFilePath,
     authorizeFontMoveSource,
     authorizeFontMoveTarget,
     authorizeFontMoveDestination,
-    saveLibrary,
-    sendFontIndexChanged,
-  } = options;
+  } = options.windows;
+  const {
+    isTemporaryActiveInstalledRecord,
+    compareFontInstalledWithList,
+    safeTemporaryActiveFontName,
+    temporaryActiveRegistryNameFor,
+    registryNameFor,
+    normalizeCompareText,
+    safeManagedFontName,
+  } = options.comparison;
+  const { withGlobalIo } = options.performance;
+  const { delayToEventLoop } = options.host;
+  const { refreshWatchedFolder, sendFontIndexChanged } = options.feedback;
+  const { rustCoreWorkerRuntime } = options;
 
   async function setLocalFontTags(
     item: FontItem,

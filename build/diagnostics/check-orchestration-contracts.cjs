@@ -101,10 +101,19 @@ function findWhenReadyCallback(file) {
 }
 
 function testMainRegistrationContract() {
-  const indexFile = sourceFile('src/main/index.ts')
-  const payload = findCallObjectArgument(indexFile, 'createMainRuntimeRegistrationPayload')
-  assert(payload, 'src/main/index.ts no longer passes a structural object to createMainRuntimeRegistrationPayload')
-  assertExactSet('main registration capability keys', objectPropertyKeys(payload), fixture.mainRegistrationKeys)
+  const applicationFile = sourceFile('src/main/bootstrap/mainApplicationRuntime.ts')
+  let groups
+  visit(applicationFile, node => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(applicationFile) === 'groups') groups = node.initializer
+  })
+  assert(groups && ts.isObjectLiteralExpression(groups), 'Application lost its structural registration groups')
+  assertExactSet('registration groups', objectPropertyKeys(groups), ['lifecycle', 'query', 'mutation', 'maintenance', 'preview'])
+  const keys = groups.properties.flatMap(property => {
+    assert(ts.isPropertyAssignment(property) && ts.isObjectLiteralExpression(property.initializer), 'registration group is not explicit')
+    return objectPropertyKeys(property.initializer)
+  })
+  assert(keys.length === new Set(keys).size, 'registration capability appears in multiple groups')
+  assertExactSet('main registration capability keys', keys, fixture.mainRegistrationKeys)
   console.log(`[diagnostics:orchestration-contracts] main registration keys locked (${fixture.mainRegistrationKeys.length})`)
 }
 

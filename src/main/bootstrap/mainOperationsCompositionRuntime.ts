@@ -34,124 +34,144 @@ type Core = ReturnType<typeof createMainCoreCompositionRuntime>;
 type Data = ReturnType<typeof createMainDataCompositionRuntime>;
 
 export interface MainOperationsCompositionOptions {
-  tasksSqlitePath: Data['storage']['tasksSqlitePath'];
-  openRecoverableApplicationSqliteDb: Data['storage']['openRecoverableApplicationSqliteDb'];
-  closeSqliteDb: Data['storage']['closeSqliteDb'];
-  ensureSqliteColumn: Data['storage']['ensureSqliteColumn'];
-  getOpenLibraryDb: Data['storage']['getOpenLibraryDb'];
-  appendStartupLog: Core['logging']['appendStartupLog'];
-  findFontItemInRootIndexes: Data['query']['findFontItemInRootIndexes'];
-  getSystemInstalledFontsCached: Data['storage']['getSystemInstalledFontsCached'];
-  compareFontInstalledWithList: Core['comparison']['compareFontInstalledWithList'];
-  saveInstallStatusIndex: Data['storage']['saveInstallStatusIndex'];
-  ensureFontPreviewImageFile: Data['preview']['ensureFontPreviewImageFile'];
-  withGlobalIo: Core['performance']['withGlobalIo'];
-  syncMergedIndexForRootSnapshot: Data['query']['syncMergedIndexForRootSnapshot'];
-  delayToEventLoop: Core['delayToEventLoop'];
-  sendToRendererWindows: Core['windows']['sendToRendererWindows'];
-  isRendererUserActive: Core['performance']['isRendererUserActive'];
-  rendererIdleInMs: Core['performance']['rendererIdleInMs'];
-  rendererActivityReason: Core['performance']['rendererActivityReason'];
-  appWatchedFolders: Data['storage']['appWatchedFolders'];
-  loadSharedFontsForFolders: Data['storage']['loadSharedFontsForFolders'];
-  readInstallStatusIndex: Data['storage']['readInstallStatusIndex'];
-  readInstalledTotalSummaryForRoots: Data['storage']['readInstalledTotalSummaryForRoots'];
-  saveInstalledTotalSummaryForRoots: Data['storage']['saveInstalledTotalSummaryForRoots'];
+  storage: Pick<Data['storage'],
+    | 'tasksSqlitePath'
+    | 'openRecoverableApplicationSqliteDb'
+    | 'closeSqliteDb'
+    | 'ensureSqliteColumn'
+    | 'getOpenLibraryDb'
+    | 'getSystemInstalledFontsCached'
+    | 'saveInstallStatusIndex'
+    | 'appWatchedFolders'
+    | 'loadSharedFontsForFolders'
+    | 'readInstallStatusIndex'
+    | 'readInstalledTotalSummaryForRoots'
+    | 'saveInstalledTotalSummaryForRoots'
+    | 'rootForFontPath'
+    | 'sharedMetadataDbPathForRoot'
+    | 'openSharedMetadataDb'
+    | 'ensureSharedTagOpsBackfilledInOpenDb'
+    | 'ensureSharedTagOpsReplayedInOpenDb'
+    | 'readSharedTagOpsDiagnosticsInOpenDb'
+    | 'readSharedTagOpsConflictReportInOpenDb'
+    | 'readSharedMetadataMigrationDiagnosticsInOpenDb'
+    | 'repairSharedMetadataInOpenDb'
+    | 'backupsRootPath'
+    | 'maintenanceStatePath'
+    | 'librarySqlitePath'
+    | 'previewSqlitePath'
+    | 'kvsSqlitePath'
+    | 'eventsSqlitePath'
+    | 'hashSqlitePath'
+    | 'metricsSqlitePath'
+    | 'openLibraryDb'
+    | 'openPreviewDb'
+    | 'openKvsDb'
+    | 'openEventsDb'
+    | 'openHashDb'
+    | 'openMetricsDb'
+    | 'closeLibraryDb'
+    | 'closePreviewDb'
+    | 'closeCacheDb'
+    | 'checkpointOpenCacheDbs'
+    | 'getOpenPreviewDb'
+    | 'loadLibraryShell'
+    | 'localPreviewImageDir'
+    | 'rootPreviewImageDir'
+    | 'rootCacheDir'
+    | 'rootIndexDbPath'
+    | 'legacyRootPreviewCacheDir'
+    | 'fallbackPreviewImageDir'
+    | 'restoreLatestDatabaseBackupForLabel'
+    | 'quarantineSqliteFiles'
+    | 'recoveryMessage'
+    | 'inspectRootIndexSnapshotMaintenance'
+    | 'cleanupRootIndexSnapshotMaintenance'
+    | 'cacheKeyForRootFile'
+    | 'cacheEntryRuntimePath'
+    | 'sanitizeCachedFont'
+    | 'cachedFontForRuntime'
+    | 'ensureRootScanCacheStorage'
+    | 'loadLegacyScanCache'
+    | 'saveScanCacheFile'
+    | 'writeRootCacheManifest'
+    | 'openRootIndexDb'
+    | 'withRootCacheWriteLock'
+    | 'saveRootIndexSqliteChanges'
+    | 'upsertFontHashIndex'
+    | 'recordCacheEvent'
+    | 'invalidateSharedFontRuntimeCaches'
+    | 'rootIndexDbDir'
+    | 'rootCacheLockDir'
+    | 'resolveActiveRootIndexDbPath'
+    | 'sqliteQuickCheck'
+    | 'hideDirectoryOnWindows'
+    | 'initializeRootEventsDb'
+    | 'initializeRootHashDb'
+    | 'initializeRootMetricsDb'
+    | 'rootEventsDbPath'
+    | 'rootHashDbPath'
+    | 'rootMetricsDbPath'
+    | 'openStableSqliteDb'
+    | 'initializePreviewDb'
+    | 'writeRootPreviewCacheManifest'
+    | 'rootPreviewCacheDir'
+    | 'rootPreviewDbPath'
+    | 'isIgnoredWatcherPath'
+  >;
+  logging: Pick<Core['logging'],
+    | 'appendStartupLog'
+  >;
+  query: Pick<Data['query'],
+    | 'findFontItemInRootIndexes'
+    | 'syncMergedIndexForRootSnapshot'
+    | 'syncMergedIndexAfterInstallStatusRefresh'
+    | 'clearFontQueryCaches'
+    | 'syncMergedIndexForRootIncremental'
+  >;
+  comparison: Pick<Core['comparison'],
+    | 'compareFontInstalledWithList'
+    | 'buildInstalledFontLookupIndex'
+    | 'compareFontInstalledWithLookupIndex'
+  >;
+  preview: Pick<Data['preview'],
+    | 'ensureFontPreviewImageFile'
+  >;
+  performance: Pick<Core['performance'],
+    | 'withGlobalIo'
+    | 'isRendererUserActive'
+    | 'rendererIdleInMs'
+    | 'rendererActivityReason'
+    | 'waitForRendererIdle'
+    | 'recheckGlobalIoQueues'
+    | 'globalIoSnapshot'
+  >;
+  host: {
+    delayToEventLoop: Core['delayToEventLoop'];
+    execFileAsync: Core['execFileAsync'];
+    nodeRequire: NodeRequire;
+  };
+  windows: Pick<Core['windows'],
+    | 'sendToRendererWindows'
+    | 'emitInstallStatusProgress'
+    | 'windowsFontsDir'
+    | 'currentUserFontsDir'
+    | 'createInstallStatusRefreshJobId'
+    | 'emitFontIndexProgress'
+    | 'createFontScanJobId'
+  >;
+  paths: Pick<Core['paths'],
+    | 'exists'
+    | 'dataRoot'
+    | 'dataPath'
+  >;
+  storagePolicy: Pick<Core['storage'],
+    | 'storageProfileForPath'
+    | 'scanWorkerCount'
+  >;
   rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustSystemInstalledFonts' | 'runRustInstallStatusCompare' | 'runRustDatabaseHealthCheck' | 'runRustDatabaseBackup' | 'runRustPreviewCacheMaintenance' | 'runRustFontIndexListWorker' | 'runRustFontParseBatch' | 'runRustWatcherPreflight'>;
-  buildInstalledFontLookupIndex: Core['comparison']['buildInstalledFontLookupIndex'];
-  compareFontInstalledWithLookupIndex: Core['comparison']['compareFontInstalledWithLookupIndex'];
-  rootForFontPath: Data['storage']['rootForFontPath'];
-  syncMergedIndexAfterInstallStatusRefresh: Data['query']['syncMergedIndexAfterInstallStatusRefresh'];
-  clearFontQueryCaches: Data['query']['clearFontQueryCaches'];
-  emitInstallStatusProgress: Core['windows']['emitInstallStatusProgress'];
-  waitForRendererIdle: Core['performance']['waitForRendererIdle'];
-  execFileAsync: Core['execFileAsync'];
-  windowsFontsDir: Core['windows']['windowsFontsDir'];
-  currentUserFontsDir: Core['windows']['currentUserFontsDir'];
-  createInstallStatusRefreshJobId: Core['windows']['createInstallStatusRefreshJobId'];
   assertFeedbackReady: () => void;
   refreshKnownSharedTagsFromMetadata: ReturnType<typeof createSharedKnownTagsRuntime>['refreshKnownSharedTagsFromMetadata'];
-  exists: Core['paths']['exists'];
-  sharedMetadataDbPathForRoot: Data['storage']['sharedMetadataDbPathForRoot'];
-  openSharedMetadataDb: Data['storage']['openSharedMetadataDb'];
-  ensureSharedTagOpsBackfilledInOpenDb: Data['storage']['ensureSharedTagOpsBackfilledInOpenDb'];
-  ensureSharedTagOpsReplayedInOpenDb: Data['storage']['ensureSharedTagOpsReplayedInOpenDb'];
-  readSharedTagOpsDiagnosticsInOpenDb: Data['storage']['readSharedTagOpsDiagnosticsInOpenDb'];
-  readSharedTagOpsConflictReportInOpenDb: Data['storage']['readSharedTagOpsConflictReportInOpenDb'];
-  readSharedMetadataMigrationDiagnosticsInOpenDb: Data['storage']['readSharedMetadataMigrationDiagnosticsInOpenDb'];
-  repairSharedMetadataInOpenDb: Data['storage']['repairSharedMetadataInOpenDb'];
-  backupsRootPath: Data['storage']['backupsRootPath'];
-  maintenanceStatePath: Data['storage']['maintenanceStatePath'];
-  dataRoot: Core['paths']['dataRoot'];
-  librarySqlitePath: Data['storage']['librarySqlitePath'];
-  previewSqlitePath: Data['storage']['previewSqlitePath'];
-  kvsSqlitePath: Data['storage']['kvsSqlitePath'];
-  eventsSqlitePath: Data['storage']['eventsSqlitePath'];
-  hashSqlitePath: Data['storage']['hashSqlitePath'];
-  metricsSqlitePath: Data['storage']['metricsSqlitePath'];
-  openLibraryDb: Data['storage']['openLibraryDb'];
-  openPreviewDb: Data['storage']['openPreviewDb'];
-  openKvsDb: Data['storage']['openKvsDb'];
-  openEventsDb: Data['storage']['openEventsDb'];
-  openHashDb: Data['storage']['openHashDb'];
-  openMetricsDb: Data['storage']['openMetricsDb'];
-  closeLibraryDb: Data['storage']['closeLibraryDb'];
-  closePreviewDb: Data['storage']['closePreviewDb'];
-  closeCacheDb: Data['storage']['closeCacheDb'];
-  checkpointOpenCacheDbs: Data['storage']['checkpointOpenCacheDbs'];
-  getOpenPreviewDb: Data['storage']['getOpenPreviewDb'];
-  loadLibraryShell: Data['storage']['loadLibraryShell'];
-  localPreviewImageDir: Data['storage']['localPreviewImageDir'];
-  rootPreviewImageDir: Data['storage']['rootPreviewImageDir'];
-  rootCacheDir: Data['storage']['rootCacheDir'];
-  rootIndexDbPath: Data['storage']['rootIndexDbPath'];
-  legacyRootPreviewCacheDir: Data['storage']['legacyRootPreviewCacheDir'];
-  fallbackPreviewImageDir: Data['storage']['fallbackPreviewImageDir'];
-  restoreLatestDatabaseBackupForLabel: Data['storage']['restoreLatestDatabaseBackupForLabel'];
-  quarantineSqliteFiles: Data['storage']['quarantineSqliteFiles'];
-  recoveryMessage: Data['storage']['recoveryMessage'];
-  inspectRootIndexSnapshotMaintenance: Data['storage']['inspectRootIndexSnapshotMaintenance'];
-  cleanupRootIndexSnapshotMaintenance: Data['storage']['cleanupRootIndexSnapshotMaintenance'];
-  dataPath: Core['paths']['dataPath'];
-  nodeRequire: NodeRequire;
-  storageProfileForPath: Core['storage']['storageProfileForPath'];
-  scanWorkerCount: Core['storage']['scanWorkerCount'];
-  emitFontIndexProgress: Core['windows']['emitFontIndexProgress'];
-  recheckGlobalIoQueues: Core['performance']['recheckGlobalIoQueues'];
-  globalIoSnapshot: Core['performance']['globalIoSnapshot'];
-  cacheKeyForRootFile: Data['storage']['cacheKeyForRootFile'];
-  cacheEntryRuntimePath: Data['storage']['cacheEntryRuntimePath'];
-  sanitizeCachedFont: Data['storage']['sanitizeCachedFont'];
-  cachedFontForRuntime: Data['storage']['cachedFontForRuntime'];
-  ensureRootScanCacheStorage: Data['storage']['ensureRootScanCacheStorage'];
-  loadLegacyScanCache: Data['storage']['loadLegacyScanCache'];
-  saveScanCacheFile: Data['storage']['saveScanCacheFile'];
-  writeRootCacheManifest: Data['storage']['writeRootCacheManifest'];
-  openRootIndexDb: Data['storage']['openRootIndexDb'];
-  withRootCacheWriteLock: Data['storage']['withRootCacheWriteLock'];
-  saveRootIndexSqliteChanges: Data['storage']['saveRootIndexSqliteChanges'];
-  upsertFontHashIndex: Data['storage']['upsertFontHashIndex'];
-  recordCacheEvent: Data['storage']['recordCacheEvent'];
-  invalidateSharedFontRuntimeCaches: Data['storage']['invalidateSharedFontRuntimeCaches'];
-  createFontScanJobId: Core['windows']['createFontScanJobId'];
-  rootIndexDbDir: Data['storage']['rootIndexDbDir'];
-  rootCacheLockDir: Data['storage']['rootCacheLockDir'];
-  resolveActiveRootIndexDbPath: Data['storage']['resolveActiveRootIndexDbPath'];
-  sqliteQuickCheck: Data['storage']['sqliteQuickCheck'];
-  hideDirectoryOnWindows: Data['storage']['hideDirectoryOnWindows'];
-  initializeRootEventsDb: Data['storage']['initializeRootEventsDb'];
-  initializeRootHashDb: Data['storage']['initializeRootHashDb'];
-  initializeRootMetricsDb: Data['storage']['initializeRootMetricsDb'];
-  rootEventsDbPath: Data['storage']['rootEventsDbPath'];
-  rootHashDbPath: Data['storage']['rootHashDbPath'];
-  rootMetricsDbPath: Data['storage']['rootMetricsDbPath'];
-  openStableSqliteDb: Data['storage']['openStableSqliteDb'];
-  initializePreviewDb: Data['storage']['initializePreviewDb'];
-  writeRootPreviewCacheManifest: Data['storage']['writeRootPreviewCacheManifest'];
-  rootPreviewCacheDir: Data['storage']['rootPreviewCacheDir'];
-  rootPreviewDbPath: Data['storage']['rootPreviewDbPath'];
-  syncMergedIndexForRootIncremental: Data['query']['syncMergedIndexForRootIncremental'];
-  isIgnoredWatcherPath: Data['storage']['isIgnoredWatcherPath'];
 }
 
 export function createMainOperationsCompositionRuntime(options: MainOperationsCompositionOptions) {
@@ -161,39 +181,14 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     closeSqliteDb,
     ensureSqliteColumn,
     getOpenLibraryDb,
-    appendStartupLog,
-    findFontItemInRootIndexes,
     getSystemInstalledFontsCached,
-    compareFontInstalledWithList,
     saveInstallStatusIndex,
-    ensureFontPreviewImageFile,
-    withGlobalIo,
-    syncMergedIndexForRootSnapshot,
-    delayToEventLoop,
-    sendToRendererWindows,
-    isRendererUserActive,
-    rendererIdleInMs,
-    rendererActivityReason,
     appWatchedFolders,
     loadSharedFontsForFolders,
     readInstallStatusIndex,
     readInstalledTotalSummaryForRoots,
     saveInstalledTotalSummaryForRoots,
-    rustCoreWorkerRuntime,
-    buildInstalledFontLookupIndex,
-    compareFontInstalledWithLookupIndex,
     rootForFontPath,
-    syncMergedIndexAfterInstallStatusRefresh,
-    clearFontQueryCaches,
-    emitInstallStatusProgress,
-    waitForRendererIdle,
-    execFileAsync,
-    windowsFontsDir,
-    currentUserFontsDir,
-    createInstallStatusRefreshJobId,
-    assertFeedbackReady,
-    refreshKnownSharedTagsFromMetadata,
-    exists,
     sharedMetadataDbPathForRoot,
     openSharedMetadataDb,
     ensureSharedTagOpsBackfilledInOpenDb,
@@ -204,7 +199,6 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     repairSharedMetadataInOpenDb,
     backupsRootPath,
     maintenanceStatePath,
-    dataRoot,
     librarySqlitePath,
     previewSqlitePath,
     kvsSqlitePath,
@@ -234,13 +228,6 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     recoveryMessage,
     inspectRootIndexSnapshotMaintenance,
     cleanupRootIndexSnapshotMaintenance,
-    dataPath,
-    nodeRequire,
-    storageProfileForPath,
-    scanWorkerCount,
-    emitFontIndexProgress,
-    recheckGlobalIoQueues,
-    globalIoSnapshot,
     cacheKeyForRootFile,
     cacheEntryRuntimePath,
     sanitizeCachedFont,
@@ -255,7 +242,6 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     upsertFontHashIndex,
     recordCacheEvent,
     invalidateSharedFontRuntimeCaches,
-    createFontScanJobId,
     rootIndexDbDir,
     rootCacheLockDir,
     resolveActiveRootIndexDbPath,
@@ -272,9 +258,44 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     writeRootPreviewCacheManifest,
     rootPreviewCacheDir,
     rootPreviewDbPath,
-    syncMergedIndexForRootIncremental,
     isIgnoredWatcherPath,
-  } = options;
+  } = options.storage;
+  const { appendStartupLog } = options.logging;
+  const {
+    findFontItemInRootIndexes,
+    syncMergedIndexForRootSnapshot,
+    syncMergedIndexAfterInstallStatusRefresh,
+    clearFontQueryCaches,
+    syncMergedIndexForRootIncremental,
+  } = options.query;
+  const {
+    compareFontInstalledWithList,
+    buildInstalledFontLookupIndex,
+    compareFontInstalledWithLookupIndex,
+  } = options.comparison;
+  const { ensureFontPreviewImageFile } = options.preview;
+  const {
+    withGlobalIo,
+    isRendererUserActive,
+    rendererIdleInMs,
+    rendererActivityReason,
+    waitForRendererIdle,
+    recheckGlobalIoQueues,
+    globalIoSnapshot,
+  } = options.performance;
+  const { delayToEventLoop, execFileAsync, nodeRequire } = options.host;
+  const {
+    sendToRendererWindows,
+    emitInstallStatusProgress,
+    windowsFontsDir,
+    currentUserFontsDir,
+    createInstallStatusRefreshJobId,
+    emitFontIndexProgress,
+    createFontScanJobId,
+  } = options.windows;
+  const { exists, dataRoot, dataPath } = options.paths;
+  const { storageProfileForPath, scanWorkerCount } = options.storagePolicy;
+  const { rustCoreWorkerRuntime, assertFeedbackReady, refreshKnownSharedTagsFromMetadata } = options;
 
   const backgroundRuntime = createMainBackgroundRuntime({
     tasksSqlitePath,

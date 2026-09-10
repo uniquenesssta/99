@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.18
+- 文档版本：1.19
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 4 AT-4.1 至 AT-4.3 实现完成；诊断编译宿主路径兼容修复已通过 typecheck 与 79 项诊断，待 Windows build 复验通过后进入 AT-4.4。位图/峰值内存与 NAS 等外部验收继续跟踪
+- 当前阶段：Stage 4 AT-4.1 至 AT-4.4 实现和自动验证完成，入口 77 行；typecheck、80 项诊断及三端构建/混淆通过。Windows 前置 `c981777` 已完整通过，新提交本机复验待补；Stage 5 尚未开始，位图/峰值内存与 NAS 等外部验收继续跟踪
 - 当前阶段任务书：[`HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md`](HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -323,6 +323,8 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 
 验收以职责和依赖方向为准；行数只作为提示，不把“低于某个数字”设为通过条件。
 
+2026-09-10 完成：入口 715→77 行，只显示分组依赖的创建、绑定、启动和注册。标签协调归入单一组合所有者；Application 按 lifecycle/query/mutation/maintenance/preview 分为 43/20/29/17/6 项，并适配原 115 项注册接口。31/65/118 个输入端口不变；逐项能力引用、八个错误接线/重复 start-stop 反例、旧生命周期和编排门禁通过，verify 80/80、三端构建与混淆通过。用户前置 Windows build 已成功，新版实机复验待补；详见 Stage 4 第 9.6、10 节。
+
 ### Stage 5：拆分 `rustCoreWorkerRuntime.ts`
 
 #### 二次审计结论
@@ -502,8 +504,8 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 | Stage 1 | 完成（AT-1.1 至 AT-1.4） | 本阶段分支四个独立 Atomic Task 提交 | A1-A8 正确性门禁与 `npm run verify` 通过，68/68 长期诊断；Electron/Vite 三端 build 通过；三大编排公开契约未变 | 分支 `stage/01-activation-transactions`；Windows 故障注入、Photoshop 和系统字体集成矩阵作为外部验收项保留，未伪报通过 |
 | Stage 2 | 完成（AT-2.1 至 AT-2.4） | 本阶段分支四个独立 Atomic Task 提交 | P0.1-P0.5、P1-P8、`npm run verify` 72/72、路径/副作用/补偿行为、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；Windows 真实 UNC/跨盘/长路径/junction/HKCU registry 为外部验收项，未伪报通过 |
 | Stage 3 | 完成（实现、自动门禁及 Windows 构建） | 本阶段分支 AT-3.1、AT-3.2 及独立回归修复提交 | 用户快进至 `476c5d6` 后 Windows verify 75/75、换行 24、三后端输入、Rust release、三端 build、混淆 3/3 通过 | 分支 `stage/03-file-preview-consistency`；NAS、实际位图与最大内存等明确留作外部验收；不支持硬链接的卷兼容边界保留 |
-| Stage 4 | AT-4.1 至 AT-4.3 实现完成；AT-4.4 待 Windows 复验 | 三个独立原子提交，另补诊断路径兼容修复 | 原三端 build/混淆通过；用户 Windows 虚拟源路径失败已修复，Linux verify 79/79 通过，实机复验待补；见 Stage 4 第 9.5 节 | 分支 `stage/04-main-composition`；入口 2075→715 行；正反及混合斜杠兼容，不降低原门禁 |
-| Stage 5 | 待开始，Stage 3 工程前置门禁已满足 | - | - | 当前串行推进 Stage 4 |
+| Stage 4 | AT-4.1 至 AT-4.4 实现及自动门禁完成 | 四个独立原子提交，另补诊断路径兼容修复 | 用户前置 Windows `c981777` build 通过；本项 verify 80/80、三端 build/混淆通过；新提交实机复验待补 | 分支 `stage/04-main-composition`；入口 2075→77 行，五组注册保持 115 项能力；见 Stage 4 第 10 节 |
+| Stage 5 | 待开始，Stage 3 工程前置门禁已满足 | - | - | Stage 4 本机复验及阶段接受后新建阶段分支，从 AT-5.1 开始 |
 | Stage 6 | 待开始，Stage 3 工程前置门禁已满足 | - | - | 当前串行推进 Stage 4 |
 | Stage 7 | 阻塞于 Stage 4/5/6 | - | - | - |
 | Stage 8 | 阻塞于 Stage 7 | - | - | - |
