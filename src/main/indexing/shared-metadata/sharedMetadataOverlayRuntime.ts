@@ -1,5 +1,5 @@
 import type { FontItem } from '../../../shared/types'
-import type { RustSharedMetadataOverlayReadInput, RustSharedMetadataOverlayReadResult } from '../../rust-core/rustCoreWorkerRuntime'
+import type { RustSharedMetadataOverlayReadInput, RustSharedMetadataOverlayReadResult } from '../../rust-core/rustCoreWorkerContracts'
 import {
   logNodeStateFallbackDisabled,
   logNodeStateFallbackUsed,

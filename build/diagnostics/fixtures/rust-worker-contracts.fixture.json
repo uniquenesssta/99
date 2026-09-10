@@ -1,0 +1,218 @@
+{
+  "baseline": "d316b44dc8561876bab277ecc8b886f925b7c6b8",
+  "publicTypes": {
+    "RustCoreWorkerStatus": "5ac0784567a9d93aa66f16a8afc824c47a76b5d71b6e07d2b138a268ec6f7c46",
+    "RustFontScriptHint": "4a0354feaef3f57447e75d29dd097198492c9376730408c6b1b93191eb66660e",
+    "RustFontStyleHint": "cbea8fdd5f58598e4c4dc6fd10ebb75ac68bc531f58b3fa67b06e8a7db95c50b",
+    "RustFontFamilyHint": "265b556159c561d03c250be798597de47598a84bd4617cfc3100e26ee8abbf40",
+    "RustFontNameHint": "d1386f6f0540f3d3fff9b9a5854d1b225129f6da8be77470a25c2fc810bb0728",
+    "RustListedFontFile": "86e3a847f795a8df5fee100f7acb6db0e5e57ada84ec225f197833b54c1608fc",
+    "RustListedDirectory": "3282a313b90b8a5c14637c03ca530371f3fbf75207549ac2bfa57cdbfe57731f",
+    "RustFontIndexListResult": "ecf1e4b8766e6928c42d2326d8ae13275b999450d19a06e77455470c67a4f1b2",
+    "RustFontParseBatchResult": "fe4588ed3e94b91f2523ab6335b3615c6af378155ce7706a59eaa4443544a31b",
+    "RustRootIndexApplyChangesInput": "8d9bdaf076bab24970fd306475e6a1493ba844f700c7528ab418e537e19dc99d",
+    "RustRootIndexApplyChangesResult": "40182ccc16678aa266949f4bb9b3b386558f2019b01655220a4ff1559539ff2b",
+    "RustMergedIndexPageQueryInput": "406f742cef708fb7e78765b9c5c7d725029b85eaca3b5133e1c7565af6af7f91",
+    "RustMergedIndexPageQueryResult": "464aaf5c734b96c1eba7cffb681de02e46d0f9dfdf3ecfab6ca1aa858513f6eb",
+    "RustMergedIndexIdsQueryInput": "9da6dd57cd06960a99f6b8420c8ac5b81c0cf4971c505c6e4f2a46b7990955be",
+    "RustMergedIndexIdsQueryResult": "d75e98325061c8b66b41bd727903f53aa259624d2e22fabb2c421adf0f236d03",
+    "RustMergedIndexMetricsQueryInput": "5528cc361a409601fadc2af2ab23cccbf95fb1cbc2de3eaa6138443246deea9f",
+    "RustMergedIndexMetricsQueryResult": "7b539e2b2656bc785a8ec0dc4ccec17866a6fb5dab41c8fda04c3ff3acde0991",
+    "RustMergedIndexMutationProtocol": "5e43e00103f4db80b6340c4aee7609808820902c9189542ac2b018a6db4e8928",
+    "RustMergedIndexRebuildSource": "b570bd648e5ee25bbab6fa10f4554fe6cef11656d257fe78399326a9f06d22f7",
+    "RustMergedIndexRebuildInput": "c4eef4d163a97e81fdd82ae808b611f64f2fe95cc950224c44afa22fb144fd7e",
+    "RustMergedIndexRebuildResult": "3838d240d64999266066db34aded8bb7ae8201057458de73c8b6a14773dfacdb",
+    "RustMergedIndexSyncInput": "1f0ecdba92a7439bccbac10be69d77e37321caef80f129a29e1bc07d84ad35d0",
+    "RustMergedIndexSyncResult": "d38ec5d9c46fa75ba739edb25d1513dc229d02e0d749c6603ec39448ea4537de",
+    "RustSystemInstalledFontsInput": "d761f1ca2ce1c2b8f6d2be203c711aa67b6c670c2d7af082c77219969a39c9a2",
+    "RustSystemInstalledFontsResult": "0653c979c3abd76def1a774bfa60b50b3daa5438cf329f8a5ce0dc91ff0f30f9",
+    "RustWatcherPreflightInput": "748b6a329ee6ccd40262df20c0dea5d8e8ebc55d994e68d3522af73b5c1cfca2",
+    "RustWatcherPreflightResult": "6b620ec72059c3ddad344bd1c55929af3c387c83cc785f0fd50e9ce3aba90ee0",
+    "RustInstallStatusReadResult": "ed92937f945116d5ebde90e0e57e6b49a8395551500e64b9b9328efe601e580e",
+    "RustInstallStatusSaveResult": "098a1edb76875415621eb546fef1275365b9e69b4017f8f94f808237b219fc92",
+    "RustInstallStatusCompareInput": "4bf6ae3761d3eb99857b72fe81ae4d81c49f56a5090133ff841e90f11f4ed03c",
+    "RustInstallStatusCompareResult": "ac951ffd74aab6d7b6c0ac98d17f443af1888aa0585884eb7823c695f8fb654c",
+    "RustLocalTagsSetRow": "83a859f1b6fd9392b37bb131717d16fb8fc9a15dd3872e15e17295d95e14b70c",
+    "RustLocalTagsReadRow": "218bd86fa42d715a1c0ce2df9d057327590914dfc5b446b99e81e050a707572d",
+    "RustLocalTagsReadInput": "fd81aadb46a69827d5d2fbf670d5af1aeacf144a045047e89e47bd04bcbd7267",
+    "RustLocalTagsReadResult": "a89f811b97ebb910d071c45b368e1f7b262566407d4f84c397d2511fee88f35f",
+    "RustLocalTagsSetInput": "d79720338ac2e740b1af1cf70034c59ec9be59768da30e8dce2e97a508f716df",
+    "RustLocalTagsDeleteTagInput": "905c9631c71084a11225360e6b2af51626d2ccd9f8bd1d87a7a4d059168aa270",
+    "RustLocalTagsMutationStateSignal": "17498a418d715f991a4af6abea93bb5de109a72ef51f74c4f54b86e764054657",
+    "RustLocalTagsSetResult": "547f727e8d0e48f27bf129216089675a562b2b47ac903a036208c5eebefc3139",
+    "RustLocalTagsDeleteTagResult": "52c8c45c427627b84cf0e336927518bf21bb97c4c7514e49c09b3a7e2f3a0e37",
+    "RustSharedMetadataApplyRow": "deb86587ff4715c7c7b3ed457fc1a8be4ae5edda1049f26bbc9d4bd0e92e1a30",
+    "RustSharedMetadataApplyInput": "5e974c382d5e9eea21e6f6364dbbb0104456c1d45c022a834be18f61308b6420",
+    "RustSharedMetadataMutationStateSignal": "d3aa1de72767d9848285297108ebe841413fd631e8b4b21442a98d59107ba4af",
+    "RustTagMutationProtocolResult": "ee91d6a4c75299e735ce05e75618739cae94718344e4c0f62c581fcc8d869973",
+    "RustSharedMetadataApplyResult": "bfa0c7dd992d36181837428bbd65e7647bb0707c7766b1a9b1e56a94945b6828",
+    "RustSharedMetadataRemoveTagInput": "c93ff5af011a854ec31e3b4d4817b63ce744a66961f1fe7d3561a46196476666",
+    "RustSharedMetadataRemoveTagResult": "7e8b2e10c5c7d69cd2710bbd122137f68f26fc5752e5ffb2ac26efd677883d29",
+    "RustSharedMetadataSignatureInput": "98fe1bda6d10f6740a159aa795b38dbd3f985ce03f1e42df049eee383a430fb5",
+    "RustSharedMetadataKnownTagsInput": "b63238e8190d00b0cced5d8a11a2672c689ec5306ddb9debc0c6f3eedab44d42",
+    "RustSharedMetadataKnownTagsResult": "53bc260f948d23236a4b8fb56c6f40992be969b6e1fe775ff330574b62d7d1f2",
+    "RustSharedMetadataOverlayReadEntry": "139c03cb25d60e64ccda6cd812b1453e1fc955b2fd144115ccf935fc2d3cf6d6",
+    "RustSharedMetadataOverlayReadInput": "8e20eebe179ea3936240135c79a8f91fa5875d6de00207381fb87c8d577338ef",
+    "RustSharedMetadataOverlayMatchedEntry": "5496578b56d61b54d536bcfcd4b7d279fdb751097dd2f2b4e730f7b827e5a3ed",
+    "RustSharedMetadataOverlayReadResult": "720d522e22d360a07ee2fbfbcbe6c12e91e4ccc07aa63307e1260c574b4225d4",
+    "RustSharedMetadataSignatureResult": "8e8711868b13d5ca42096e0b77f62e8198a5c1417c662449bd2df1ff6c346ea4",
+    "RustPreviewCacheReadStatusInput": "924b96082ff3ddc4792f63058dccc8d7dafd64a4e6c9da836ddfb1720c1f4cb5",
+    "RustPreviewCacheReadStatusResult": "010068b999f5cd4f01aad2f5bb98b9110f1570e384e0429c9826d67b72b0c788",
+    "RustPreviewCacheApplyInput": "417cca0b8dc8c3904894687079dce31dc84ec0b6b58cc8fd8acb33ea12c87bf8",
+    "RustPreviewCacheApplyResult": "aba19baaf0da46eac918dd80cc500b67e2f9d0145c9b668927e88a7d2e30fcca",
+    "RustPreviewCacheDeleteInput": "6d71c9f122e7cc7cac75b1f8fec9431ed6a74cdb34832af7f266298a85c754ce",
+    "RustPreviewCacheDeleteResult": "ead473a55018f483666d5698eb6a2231c1dc923b466b4677012dc50cf38d827a",
+    "RustPreviewCacheQueryRow": "8ebfaa40c8b7bd7ef191122005d7cee4757d54ec51f67900a48170640a2d729b",
+    "RustPreviewCacheQueryInput": "54cad5d9c1e44ed6224e035edc1c689bf2dd8fd88905a4d6e7f11dd2b3afc75f",
+    "RustPreviewCacheQueryMatch": "67208c913a8ee58e58e96d3c2757855c8611e7ec4dd04e6d949d943bfe374a34",
+    "RustPreviewCacheQueryResult": "a9ac137bebd12b863a0f1f6eb9ef1e7d71cf351f4b6357cf994d649d14bae20e",
+    "RustPreviewCacheTouchInput": "4ddaf3b924adc841b4e3da11eafbaa3166b1a6cb66b405029a4a67c7e6ced894",
+    "RustPreviewCacheTouchResult": "879731783a6f5cab880b6cc73a410d4e773f8fd6ae98da08f065e82cc5d8bf6e",
+    "RustPreviewCacheBatchInput": "05f74ab47236ba5cf20186825f7f677a4790647c9c3ae85698e82a5e08dd6c29",
+    "RustPreviewCacheBatchMatch": "f5306a5c230eb9e144b843749d26730d0523457f52f43cca0b16e1d729e6c805",
+    "RustPreviewCacheBatchResult": "55216184ba728866a8ed875d3ecdabcad633841dc674407c9ab3377bfde1364c",
+    "RustPreviewCacheMaintenanceInput": "ee27b80fa34f39476bcea11a177bc58682e6ef07c25145eb7083d20f543e0515",
+    "RustPreviewCacheMaintenanceResult": "ecdddcc42660473be3c41a610a8c134f4674b2e5b71581857eda9d27082537c6",
+    "RustPhysicalFolderTreeInput": "c6279beb3cda75a150a05fc4d71b4cfa81695e43b9ccdb9c0a554e6abba42d1a",
+    "RustPhysicalFolderTreeResult": "3a6c518782eaa35bdb21c6d97dc452a2545a95c7c68b34b20cc9fe4ce20e1f4a",
+    "RustFontActivationFileCopy": "8ae081b50a80a522ebf34bdc6cd53a499b139d3ed9a1dd9a5435ef92e2bb6eaf",
+    "RustFontActivationFilesInput": "a171899b075519a1cda416c01f1519af01ae90964d37335e9ba951269c17b4ec",
+    "RustFontActivationFilesResult": "5f1bf38cff529faa0aca04e3a2fb043d6d3f2f2cad6889babdbc4a4028fadf95",
+    "RustDatabaseMaintenanceFileItem": "8e76ffd3ba55b489a06b589719222ab652edbf7f6a99ed4244071b4ab2d9de36",
+    "RustDatabaseHealthCheckInput": "33415c415914028b6dad8b66e0a00942e3261feb4b4857e6198906699d735da6",
+    "RustDatabaseHealthCheckResult": "36f873ccc291d076227431649853dadf0634d528f857eace0d50c78db7cbe8de",
+    "RustDatabaseBackupInput": "21701820d6893464e53f3bd652a473f60a6b518b59230115712f15ee79fb2c0b",
+    "RustDatabaseBackupResult": "28cdc5555eeec0c75a84b617f6946331887ebe5cf0044cd3bc67bd725c632444",
+    "RustFontResourceBatchEntry": "117fb2228267820ad7986953730658bad4d663a9318246edbfe97dfca2255d8c",
+    "RustFontResourceBatchResult": "8f7de28087518de03f2048ab076890fb76f8e5d658ca2effe8bfc332561a6508",
+    "RustFontRegistryResult": "1a6671031790cb57c7c32e963ce2e58a213b7050951f8399c83a6190c0b01c00",
+    "RustFontNotifyResult": "94f455f5f2f33e7f6b9b52a749d474f0a58e9dec9abe943f251f8b253a916c33",
+    "RustPreviewRenderImageInput": "4b685cc410b08b16a684228dcf1e19ff5e3eec02082cc739b3aaa4814ce20241",
+    "RustPreviewRenderImageResult": "9c09f8603373c4500dc9c3a4116c7ce52094b1a8d283e1be725610380cd70c0b",
+    "RustCoreWorkerRuntimeOptions": "86f86a0f98f515e8ff5e63da6f912bd6b1171af0e7c58768085e8d1d4b0d731f"
+  },
+  "payloadTypes": {
+    "RustCoreWorkerHandshake": "5dfe78eb801492564a156a1a8a566de02bb997a17a2d91a17ae10369cff6ade1",
+    "RustCoreSchedulerProfilePayload": "75615a38791e0fbe3c38e3c2c5c7109d6f90e628a981b2d3c1690391785fd9b5",
+    "RustListFontFilesPayload": "c87559a915bcd2bda66edbbe73195f8799d133a0f75d7c34ccd43e1e2450fa00",
+    "RustFontParseBatchPayload": "806975a3156a987416a5f51bf8e3c48fca2f4cbf43cd2f5e0a6a070a152aa963",
+    "RustApplyRootIndexPayload": "88a7cf882b2fbd432b6e91500f1607ee15ad0b761afabf3e5b7b6423aa15d592",
+    "RustMergedIndexPageQueryPayload": "6c05c146078de7a4e6c90fb3e2dcba3638b5c6e6f003bacce46ed42637559073",
+    "RustMergedIndexMetricsQueryPayload": "deefafa6f5018ef31f8fa456d9ca7bb4ef766cedfb3162a81b8533ee30210ac2",
+    "RustMergedIndexIdsQueryPayload": "edeeb74bf732063fa9b5d2a8f088eaf602bfcaf2254fdd75109575d68edc738b",
+    "RustMergedIndexRebuildPayload": "f8c17d9bfff710cfc276cfd53a6c366b7808adb5ec21124a3bc68442da5e2179",
+    "RustMergedIndexSyncPayload": "fef9a56c3b1bf6b5cfd41a39df576c2ee0adb13faa7ae2fd73adcdebd4f762e4",
+    "RustSystemInstalledFontsPayload": "f85947b72a82a41915d0dcef2f704dac679a41bd73d6348a3e757abb8deff37a",
+    "RustWatcherPreflightPayload": "5dcdf5a9b15caa793651fd8a641a7119cfaafabfb3fe9a96a0ae81833f16fc3e",
+    "RustInstallStatusReadPayload": "f2df572290502d10153ba39a4f29cf4faac1f221b5e7d55f435941964473b706",
+    "RustInstallStatusSavePayload": "34fbf7ac810868bbd51bf77e3e8f0d11de75e44c926dfeee1c6b4f6eec029af2",
+    "RustInstallStatusComparePayload": "f8d221e23041c31681310a5e9319bb55c5bee31a8eed692fb5bf5b8e32ff447c",
+    "RustLocalTagsReadPayload": "63695db13a51bfc7e0bfad18e63f7b3518a594b0e15df6c3dec410646a565ebb",
+    "RustLocalTagsSetPayload": "9d3bc162dd78c528ff40aa8215ed1e630cdf0ba34a3762f496da61c66500c707",
+    "RustLocalTagsDeleteTagPayload": "4d61bd366154686691249a227fa3c3683c387a6be97e7862109a37ad45f867dd",
+    "RustSharedMetadataApplyPayload": "364a815f4fecc7bd47f93ab6e09215560ebfc9a93e068c643e1128fa906ada5c",
+    "RustSharedMetadataRemoveTagPayload": "8da218333d797dec0b74b16ea571bce04a1f8b04fcd46ab61e6e6b72a52f965a",
+    "RustSharedMetadataKnownTagsPayload": "b4b981701cf6978a7cdd6f3010646fc50e4afafd885114d5643697eb6d18cf04",
+    "RustSharedMetadataOverlayReadPayload": "56551340db63adc0242506a9c89cf05421ac46c576a6dfa96c2816206f00942f",
+    "RustSharedMetadataSignaturePayload": "ee2106916496984db8ec17d5971cd64dc85d0b9fb33ec5aaad8a71c42b6a585f",
+    "RustPreviewCacheReadStatusPayload": "631ae7ea581c138b213d95a7740735b996bf9c545d4e17c2d2564ea38b11be28",
+    "RustPreviewCacheApplyPayload": "f42144bbbf0e9a54e966e04ab9a20a1317b69d8208f0139dfaa1a4fcac775d6b",
+    "RustPreviewCacheDeletePayload": "e611b146a3fa56ba88b5a363d330ad019f395bec25799c48c6cd4d4bce747d00",
+    "RustPreviewCacheQueryPayload": "16be28f245db62d40852584e5c658507259b0e9ea603917b4da6819500b2a00a",
+    "RustPreviewCacheTouchPayload": "4fef4494e29711c69a07c8566107b083835a090682176ef619757ecb62f70b7d",
+    "RustPreviewCacheBatchPayload": "4b8874e69bf8660a2d14010577fbfbc7294c6579fd9dc42bf7fedf9d064ac566",
+    "RustPreviewCacheMaintenancePayload": "57a0bcb434b624b6b403be7453c0ecaa92d119de3e212834a2fa1279fa2b3407",
+    "RustPhysicalFolderTreePayload": "a3a005aa17510f560ea478cf6bffe1864985992757b7e58e87d4ee3296d56121",
+    "RustFontActivationFilesPayload": "f31c4ea917f122dc291b72b8ac1c7d9772a18e2d7d96763ca7ad92b19faa1117",
+    "RustDatabaseHealthCheckPayload": "e04f9d868c694c74e84afb009c71ca07c9b8df1cde24d4a90d8bec306e427035",
+    "RustDatabaseBackupPayload": "1eb29290251a8de94b42384f399a9c3ad2f4ea40910b75a95bd43ad5857aa15c",
+    "RustFontResourceBatchPayload": "88973bfbb39085c0729378216cffb8749cd2a64a4076ea2931717858168db8f5",
+    "RustFontRegistryPayload": "60c88d979038f6e406b8ead808eef2ca90e9da75aff6761c1673733d67b4d5d7",
+    "RustFontNotifyPayload": "9e1636b05644b5b6c79db5efb66640d29e81ac8f0876a6c876814dab5b9c02cd",
+    "RustPreviewRenderImagePayload": "91645f8f7ef8e4b743a09a6707efa2adfa14fc9d5db15e2d06082fe7c23d0f90"
+  },
+  "publicDependencies": [
+    {
+      "name": "CachedFontStatLike",
+      "imported": "CachedFontStatLike",
+      "module": "../fonts/fontRuntime"
+    },
+    {
+      "name": "FontMetricsResult",
+      "imported": "FontMetricsResult",
+      "module": "../../shared/types"
+    },
+    {
+      "name": "FontQueryPageResult",
+      "imported": "FontQueryPageResult",
+      "module": "../../shared/types"
+    },
+    {
+      "name": "FontQueryRequest",
+      "imported": "FontQueryRequest",
+      "module": "../../shared/types"
+    },
+    {
+      "name": "FontItem",
+      "imported": "FontItem",
+      "module": "../../shared/types"
+    },
+    {
+      "name": "InstallCompareResult",
+      "imported": "InstallCompareResult",
+      "module": "../../shared/types"
+    },
+    {
+      "name": "SystemInstalledFont",
+      "imported": "SystemInstalledFont",
+      "module": "../../shared/types"
+    },
+    {
+      "name": "FontTagRevisionMetadata",
+      "imported": "FontTagRevisionMetadata",
+      "module": "../../shared/types"
+    },
+    {
+      "name": "PreviewCacheIndexStatus",
+      "imported": "PreviewCacheIndexStatus",
+      "module": "../preview/previewCacheRuntime"
+    },
+    {
+      "name": "PreviewCacheRow",
+      "imported": "PreviewCacheRow",
+      "module": "../preview/previewCacheRuntime"
+    },
+    {
+      "name": "FontParseJob",
+      "imported": "FontParseJob",
+      "module": "../indexing/fontScanWorkers"
+    },
+    {
+      "name": "DatabaseBackupReport",
+      "imported": "DatabaseBackupReport",
+      "module": "../maintenance/databaseMaintenanceTypes"
+    },
+    {
+      "name": "DatabaseHealthItem",
+      "imported": "DatabaseHealthItem",
+      "module": "../maintenance/databaseMaintenanceTypes"
+    },
+    {
+      "name": "RustCoreDaemonDomainEvent",
+      "imported": "RustCoreDaemonDomainEvent",
+      "module": "./rustCoreDaemonRuntime"
+    }
+  ],
+  "payloadDependencies": [
+    {
+      "name": "FontTagRevisionMetadata",
+      "imported": "FontTagRevisionMetadata",
+      "module": "../../shared/types"
+    },
+    {
+      "name": "FontParseJob",
+      "imported": "FontParseJob",
+      "module": "../indexing/fontScanWorkers"
+    }
+  ]
+}

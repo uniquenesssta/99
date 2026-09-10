@@ -59,7 +59,7 @@ function testHighLevelMutationsDeclarePolicies() {
 }
 
 function testRustWorkerCarriesMergePolicy() {
-  const ts = readText('src/main/rust-core/rustCoreWorkerRuntime.ts')
+  const ts = readText('src/main/rust-core/rustCoreWorkerContracts.ts')
   const types = readText('native-src/hfm-core-worker/src/shared_metadata/types.rs')
   const stateMachine = readText('native-src/hfm-core-worker/src/shared_metadata/state_machine.rs')
   const schema = readText('native-src/hfm-core-worker/src/shared_metadata/schema.rs')

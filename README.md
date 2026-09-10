@@ -44,7 +44,8 @@ npm run build:win
 ## 当前工程任务
 
 - [修复与编排重构总任务书](docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md)
-- [当前 Stage 4：主进程组合根拆分任务书](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)
+- [当前 Stage 5：Rust Worker 门面拆分任务书](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)
+- [Stage 4：主进程组合根拆分任务书](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)
 - [已完成 Stage 3 工程验收：文件移动一致性与预览限额任务书](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md)
 - [已完成 Stage 2：字体路径授权任务书](docs/plans/HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)
 - [已完成 Stage 1：激活与停用事务任务书](docs/plans/HFM_STAGE_01_ACTIVATION_TASKBOOK.md)
@@ -57,6 +58,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-10：完成 AT-5.1：提取 89 个 Rust Worker 公开契约和 38 个内部 payload，5 个类型调用方迁至 contracts，旧门面类型导出保持兼容。6 个既有生产文件编译后 JS 不变，门面 2994→2195 行。新增类型身份、私有边界、循环依赖、41 项编译拒绝和 9 个反例门禁；typecheck、81/81 诊断、三端构建及混淆通过。新分支 `stage/05-rust-worker-composition`；无需数据迁移或更新依赖，切换后正常 build 复验。下一项 5.2 尚未开始，Windows 最后已收回执仍为 `c981777`。详见 [Stage 5 任务书](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
 
 - 2026-09-10：完成 AT-4.4：入口 715→77 行，Application 按五组发布原 115 项注册能力；标签协调独立归属，Data/Mutation/Operations 分组输入保持原 31/65/118 项端口。新增逐项能力引用与八个错误接线/重复启动退出反例；typecheck、80/80 诊断、三端构建及混淆通过。Windows 前置 `c981777` 已完整验证，新提交 pull 后正常 build 复验；无依赖版本、数据库或原生源码变更。Stage 4 实现收尾，Stage 5 未开始，详见 [Stage 4 第 10 节](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)。
 

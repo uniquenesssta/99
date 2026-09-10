@@ -1,4 +1,4 @@
-import type { RustSharedMetadataMutationStateSignal } from '../../rust-core/rustCoreWorkerRuntime'
+import type { RustSharedMetadataMutationStateSignal } from '../../rust-core/rustCoreWorkerContracts'
 
 export type SharedMetadataMutationSignalSource = 'rust-worker' | 'node-fallback'
 export type SharedMetadataMutationStateSignalHandler = (signal: RustSharedMetadataMutationStateSignal) => void

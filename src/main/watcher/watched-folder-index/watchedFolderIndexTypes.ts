@@ -3,7 +3,7 @@ import type { CachedFontStatLike } from '../../fonts/fontRuntime'
 import type { FontScanCacheEntry, FontScanCacheFile } from '../../indexing/rootIndexRuntime'
 import type { GlobalIoOptions } from '../../performance/ioScheduler'
 import type { PendingFolderChange } from '../folderWatcherRuntime'
-import type { RustWatcherPreflightInput, RustWatcherPreflightResult } from '../../rust-core/rustCoreWorkerRuntime'
+import type { RustWatcherPreflightInput, RustWatcherPreflightResult } from '../../rust-core/rustCoreWorkerContracts'
 
 export interface RootDirectorySignature {
   modifiedAt: number

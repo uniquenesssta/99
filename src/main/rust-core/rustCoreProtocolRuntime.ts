@@ -1,4 +1,4 @@
-import type { RustCoreWorkerStatus } from './rustCoreWorkerRuntime'
+import type { RustCoreWorkerStatus } from './rustCoreWorkerContracts'
 
 export const EXPECTED_RUST_CORE_WORKER_VERSION = '0.42.0'
 export const EXPECTED_RUST_CORE_PROTOCOL_VERSION = 42

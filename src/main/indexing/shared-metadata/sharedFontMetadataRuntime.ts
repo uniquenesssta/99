@@ -1,6 +1,6 @@
 import type { FontItem } from '../../../shared/types'
 import type { SharedMetadataMergePolicy } from './sharedMetadataFieldMergeRuntime'
-import type { RustSharedMetadataApplyInput, RustSharedMetadataApplyResult, RustSharedMetadataMutationStateSignal, RustSharedMetadataRemoveTagInput, RustSharedMetadataRemoveTagResult, RustSharedMetadataSignatureInput, RustSharedMetadataOverlayReadInput, RustSharedMetadataOverlayReadResult, RustSharedMetadataSignatureResult } from '../../rust-core/rustCoreWorkerRuntime'
+import type { RustSharedMetadataApplyInput, RustSharedMetadataApplyResult, RustSharedMetadataMutationStateSignal, RustSharedMetadataRemoveTagInput, RustSharedMetadataRemoveTagResult, RustSharedMetadataSignatureInput, RustSharedMetadataOverlayReadInput, RustSharedMetadataOverlayReadResult, RustSharedMetadataSignatureResult } from '../../rust-core/rustCoreWorkerContracts'
 import type { FontScanCacheFile } from '../rootIndexRuntime'
 import { createSharedMetadataDbRuntime } from './sharedMetadataDbRuntime'
 import { createSharedMetadataLegacyImportRuntime } from './sharedMetadataLegacyImportRuntime'

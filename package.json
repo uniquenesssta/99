@@ -99,6 +99,7 @@
     "diagnostics:query-cache-generation": "node build/diagnostics/check-query-cache-invalidation-generation.cjs",
     "diagnostics:scan-lifecycle-durability": "node build/diagnostics/check-scan-lifecycle-durability.cjs",
     "diagnostics:rust-scheduler-cache-generation": "node build/diagnostics/check-rust-scheduler-cache-generation.cjs",
+    "diagnostics:rust-worker-contracts": "node build/diagnostics/check-rust-worker-contracts.cjs",
     "diagnostics:inflight-cache-lifecycle": "node build/diagnostics/check-inflight-cache-lifecycle.cjs",
     "diagnostics:shutdown-log-durability": "node build/diagnostics/check-shutdown-log-durability.cjs",
     "diagnostics:database-maintenance-serialization": "node build/diagnostics/check-database-maintenance-serialization.cjs",
