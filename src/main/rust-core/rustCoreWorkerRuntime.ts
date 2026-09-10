@@ -1,26 +1,16 @@
-import { execFile } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { promises as fsp } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { promisify } from 'node:util'
+import { createRustCoreWorkerTransportRuntime, parseJsonLine, hasCapability } from './rustCoreWorkerTransportRuntime'
 import type { CachedFontStatLike } from '../fonts/fontRuntime'
 import type { SystemInstalledFont } from '../../shared/types'
 import type { InstallStatusReadWorkerGroup, InstallStatusSaveWorkerGroup } from '../install/status/installStatusTypes'
 import type { PreviewCacheIndexStatus } from '../preview/previewCacheRuntime'
 import type { FontParseJob } from '../indexing/fontScanWorkers'
 
-import { tryBuildRustCoreWorkerForDevelopment } from './rustCoreWorkerAutoBuildRuntime'
-import { EXPECTED_RUST_CORE_PROTOCOL_VERSION, rustCoreWorkerIsCompatible } from './rustCoreProtocolRuntime'
-import { resolveRustCoreWorkerPathWithDiagnostics } from './rustCoreWorkerPathRuntime'
-import { createRustCoreSchedulerRuntime } from './rustCoreSchedulerRuntime'
-import { createRustCoreDaemonRuntime, isRustCoreDaemonSubmittedError, type RustCoreDaemonSubmittedError } from './rustCoreDaemonRuntime'
+import { isRustCoreDaemonSubmittedError, type RustCoreDaemonSubmittedError } from './rustCoreDaemonRuntime'
 import { rethrowRustCoreDaemonSubmittedJob } from './rustCoreDaemonWriteBoundaryRuntime'
 import { rustStateFallbackFailureLogSuffix } from './rustStateFallbackFailureProtocolRuntime'
 import { nodeFontkitScanFallbackFailureLogSuffix } from './nodeFontkitScanFallbackCompatibilityRuntime'
 
 import type {
-  RustCoreWorkerStatus,
   RustFontScriptHint,
   RustFontStyleHint,
   RustFontFamilyHint,
@@ -98,8 +88,6 @@ import type {
   RustCoreWorkerRuntimeOptions,
 } from './rustCoreWorkerContracts'
 import type {
-  RustCoreWorkerHandshake,
-  RustCoreSchedulerProfilePayload,
   RustListFontFilesPayload,
   RustFontParseBatchPayload,
   RustApplyRootIndexPayload,
@@ -231,26 +219,11 @@ export type {
   RustCoreWorkerRuntimeOptions,
 } from './rustCoreWorkerContracts'
 
-const execFileAsync = promisify(execFile)
-
-type RustCoreExecOptions = {
-  timeout?: number
-  windowsHide?: boolean
-  maxBuffer?: number
-  signal?: AbortSignal
-}
-
 function markRustCoreDaemonSubmittedError(error: Error, command: string): RustCoreDaemonSubmittedError {
   const submitted = error as RustCoreDaemonSubmittedError
   submitted.daemonSubmitted = true
   submitted.command = command
   return submitted
-}
-
-function parseJsonLine<T>(stdout: string): T {
-  const line = stdout.split(/\r?\n/).map((entry) => entry.trim()).find(Boolean)
-  if (!line) throw new Error('empty rust worker output')
-  return JSON.parse(line) as T
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -307,14 +280,6 @@ function normalizeRustTagMutationProtocolResult(
     timings,
     workerMode: typeof protocol.workerMode === 'string' && protocol.workerMode ? protocol.workerMode : fallback.workerMode,
   }
-}
-
-function parseHandshake(stdout: string): RustCoreWorkerHandshake {
-  return parseJsonLine<RustCoreWorkerHandshake>(stdout)
-}
-
-function hasCapability(status: RustCoreWorkerStatus, capability: string): boolean {
-  return Boolean(status.available && Array.isArray(status.capabilities) && status.capabilities.includes(capability))
 }
 
 function normalizePreviewCacheStatusPayload(value: unknown): PreviewCacheIndexStatus | null {
@@ -411,32 +376,6 @@ function normalizeFamilyHint(input: unknown): RustFontFamilyHint | undefined {
   return Object.keys(result).length ? result : undefined
 }
 
-function mergeAbortSignals(primary: AbortSignal, secondary?: AbortSignal): { signal: AbortSignal; cleanup: () => void } {
-  if (!secondary) return { signal: primary, cleanup: () => undefined }
-  const controller = new AbortController()
-  const abort = (signal: AbortSignal) => {
-    if (!controller.signal.aborted) controller.abort(signal.reason)
-  }
-  const onPrimaryAbort = () => abort(primary)
-  const onSecondaryAbort = () => abort(secondary)
-  if (primary.aborted) abort(primary)
-  else primary.addEventListener('abort', onPrimaryAbort, { once: true })
-  if (secondary.aborted) abort(secondary)
-  else secondary.addEventListener('abort', onSecondaryAbort, { once: true })
-  return {
-    signal: controller.signal,
-    cleanup: () => {
-      primary.removeEventListener('abort', onPrimaryAbort)
-      secondary.removeEventListener('abort', onSecondaryAbort)
-    },
-  }
-}
-
-function execOptionsWithoutExternalSignal(options: RustCoreExecOptions): Omit<RustCoreExecOptions, 'signal'> {
-  const { signal: _signal, ...rest } = options
-  return rest
-}
-
 function statFromRustFile(item: NonNullable<RustListFontFilesPayload['files']>[number]): CachedFontStatLike {
   const modifiedMs = Number(item.modifiedMs || 0)
   const createdMs = Number(item.createdMs || item.changedMs || modifiedMs || 0)
@@ -478,188 +417,14 @@ function normalizeRustParseBatchJob(input: Partial<FontParseJob>): FontParseJob 
 }
 
 export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOptions) {
-  let cachedStatus: RustCoreWorkerStatus | null = null
-  const rustCoreScheduler = createRustCoreSchedulerRuntime({ appendStartupLog: options.appendStartupLog })
-  const rustCoreDaemon = createRustCoreDaemonRuntime({
-    appendStartupLog: options.appendStartupLog,
-    onDomainEvent: options.onDaemonDomainEvent,
-  })
-  const previewCacheFailureLogState = new Map<string, { at: number; suppressed: number }>()
-  const daemonCommandFailureLogState = new Map<string, { at: number; suppressed: number }>()
+  const transport = createRustCoreWorkerTransportRuntime(options)
+  const {
+    diagnoseRustCoreWorker,
+    invalidateRustCoreSchedulerCaches, cancelRustCoreSchedulerScopes,
+    noteRustCoreSchedulerInteractiveActivity, runRustCoreScheduledCommand,
+    appendPreviewCacheFailureLog, createTemporaryJsonFile,
+  } = transport
 
-  function normalizePreviewCacheFailureMessage(message: string): string {
-    return message
-      .replace(/generation=\d+->\d+/g, 'generation=*')
-      .replace(/maxQueued=\d+/g, 'maxQueued=*')
-      .replace(/code=[^,;]+, signal=[^,;]+/g, 'daemon-exited')
-      .slice(0, 180)
-  }
-
-
-
-  function appendDaemonCommandFailureLog(message: string, submitted: boolean): void {
-    const normalized = normalizePreviewCacheFailureMessage(message)
-    const key = `${submitted ? 'submitted' : 'fallback'}:${normalized}`
-    const now = Date.now()
-    const previous = daemonCommandFailureLogState.get(key)
-    if (previous && now - previous.at < 8000) {
-      previous.suppressed += 1
-      return
-    }
-    const suppressedText = previous?.suppressed ? `, suppressed=${previous.suppressed}` : ''
-    daemonCommandFailureLogState.set(key, { at: now, suppressed: 0 })
-    options.appendStartupLog(submitted
-      ? `rust core daemon command failed after submit: ${message}${suppressedText}; one-shot worker fallback blocked`
-      : `rust core daemon command failed: ${message}${suppressedText}; one-shot worker fallback remains active`)
-  }
-
-  function appendPreviewCacheFailureLog(label: string, message: string): void {
-    const key = `${label}:${normalizePreviewCacheFailureMessage(message)}`
-    const now = Date.now()
-    const previous = previewCacheFailureLogState.get(key)
-    if (previous && now - previous.at < 8000) {
-      previous.suppressed += 1
-      return
-    }
-    const suppressedText = previous?.suppressed ? `, suppressed=${previous.suppressed}` : ''
-    previewCacheFailureLogState.set(key, { at: now, suppressed: 0 })
-    options.appendStartupLog(`rust preview cache ${label} failed: ${message}${suppressedText}; Node fallback remains active`)
-  }
-
-  async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean }> {
-    const daemonResult = await rustCoreDaemon.tryRun(workerPath, args, execOptions).catch((error) => {
-      if (error instanceof Error && error.name === 'AbortError') throw error
-      if (isRustCoreDaemonSubmittedError(error)) {
-        appendDaemonCommandFailureLog(error.message, true)
-        throw error
-      }
-      appendDaemonCommandFailureLog(error instanceof Error ? error.message : String(error), false)
-      return null
-    })
-    if (daemonResult) return { ...daemonResult, daemon: true }
-    const result = await rustCoreScheduler.run(args, async (schedulerSignal) => {
-      const mergedSignal = mergeAbortSignals(schedulerSignal, execOptions.signal)
-      try {
-        return await execFileAsync(workerPath, args, { ...execOptionsWithoutExternalSignal(execOptions), signal: mergedSignal.signal }) as { stdout: string; stderr: string }
-      } finally {
-        mergedSignal.cleanup()
-      }
-    })
-    return { ...result, daemon: false }
-  }
-
-  function invalidateRustCoreSchedulerCaches(commands?: string[]): number {
-    return rustCoreScheduler.invalidate(commands)
-  }
-
-  function cancelRustCoreSchedulerScopes(scopes: string[]): number {
-    return rustCoreScheduler.cancelScopes(scopes)
-  }
-
-  function noteRustCoreSchedulerInteractiveActivity(reason?: string): void {
-    rustCoreScheduler.markInteractiveActivity(reason || 'external')
-  }
-
-  async function loadRustCoreSchedulerProfile(workerPath: string): Promise<void> {
-    try {
-      const startedAt = Date.now()
-      const { stdout } = await execFileAsync(workerPath, ['--core-scheduler-profile'], {
-        timeout: 1500,
-        windowsHide: true,
-        maxBuffer: 512 * 1024,
-      })
-      const payload = parseJsonLine<RustCoreSchedulerProfilePayload>(stdout)
-      if (!payload.ok) throw new Error(payload.message || 'scheduler profile returned ok=false')
-      const applied = rustCoreScheduler.applyProfiles(payload.profiles || [], `rust-worker:${payload.schedulerVersion || 'unknown'}`, payload.queuePolicy)
-      options.appendStartupLog(`rust core scheduler profile loaded from worker: applied=${applied}, schedulerVersion=${payload.schedulerVersion || 'unknown'}, elapsedMs=${Date.now() - startedAt}`)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      options.appendStartupLog(`rust core scheduler profile load failed: ${message}; node-default profile remains active`)
-    }
-  }
-
-  async function diagnoseRustCoreWorker(): Promise<RustCoreWorkerStatus> {
-    if (cachedStatus) return cachedStatus
-
-    if (!options.enabled) {
-      cachedStatus = { available: false, message: 'disabled by HFM_RUST_CORE=0' }
-      options.appendStartupLog(`rust core worker: disabled, message=${cachedStatus.message}`)
-      return cachedStatus
-    }
-
-    let pathResolution = resolveRustCoreWorkerPathWithDiagnostics()
-    let workerPath = pathResolution.path
-    if (!workerPath) {
-      const autoBuild = tryBuildRustCoreWorkerForDevelopment()
-      if (autoBuild.attempted || autoBuild.built) {
-        options.appendStartupLog(`rust core worker auto-build: built=${autoBuild.built}, message=${autoBuild.message}${autoBuild.targetPath ? `, target=${autoBuild.targetPath}` : ''}`)
-        pathResolution = resolveRustCoreWorkerPathWithDiagnostics()
-        workerPath = pathResolution.path
-      }
-    }
-
-    if (!workerPath) {
-      const candidates = pathResolution.candidates.slice(0, 8).join(' | ')
-      const message = 'not found; JS/Node scan and query fallback remains active'
-      cachedStatus = { available: false, message }
-      options.appendStartupLog(`rust core worker: unavailable, ${message}; run npm run rust:build or keep HFM_RUST_CORE_AUTOBUILD=1; candidates=${candidates}`)
-      if (options.required) throw new Error(`Rust core worker required but ${message}`)
-      return cachedStatus
-    }
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const startedAt = Date.now()
-        const { stdout } = await execFileAsync(workerPath, ['--handshake'], {
-          timeout: 1500,
-          windowsHide: true,
-          maxBuffer: 256 * 1024,
-        })
-        const handshake = parseHandshake(stdout)
-        if (!handshake.ok) {
-          throw new Error(handshake.message || 'handshake returned ok=false')
-        }
-        const status: RustCoreWorkerStatus = {
-          available: true,
-          path: workerPath,
-          version: handshake.version || 'unknown',
-          protocolVersion: handshake.protocolVersion || 0,
-          capabilities: Array.isArray(handshake.capabilities) ? handshake.capabilities : [],
-        }
-        const compatibility = rustCoreWorkerIsCompatible(status)
-        if (!compatibility.ok) {
-          if (attempt === 0) {
-            options.appendStartupLog(`rust core worker stale: ${compatibility.message}, path=${workerPath}; attempting development auto-build`)
-            const autoBuild = tryBuildRustCoreWorkerForDevelopment()
-            options.appendStartupLog(`rust core worker auto-build: built=${autoBuild.built}, message=${autoBuild.message}${autoBuild.targetPath ? `, target=${autoBuild.targetPath}` : ''}`)
-            if (autoBuild.built) {
-              pathResolution = resolveRustCoreWorkerPathWithDiagnostics()
-              workerPath = pathResolution.path || workerPath
-              continue
-            }
-          }
-          cachedStatus = { ...status, available: false, message: compatibility.message }
-          options.appendStartupLog(`rust core worker incompatible: ${compatibility.message}, path=${workerPath}; JS/Node scan fallback remains active`)
-          if (options.required) throw new Error(`Rust core worker required but ${compatibility.message}`)
-          return cachedStatus
-        }
-        cachedStatus = status
-        await loadRustCoreSchedulerProfile(workerPath)
-        options.appendStartupLog(`rust core worker ready: version=${cachedStatus.version}, protocol=${cachedStatus.protocolVersion}, expectedProtocol>=${EXPECTED_RUST_CORE_PROTOCOL_VERSION}, capabilities=${cachedStatus.capabilities?.join(',') || 'none'}, path=${workerPath}, handshakeMs=${Date.now() - startedAt}`)
-        return cachedStatus
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        cachedStatus = { available: false, path: workerPath, message }
-        options.appendStartupLog(`rust core worker failed: ${message}, path=${workerPath}; JS/Node fallback remains active`)
-        if (options.required) throw error
-        return cachedStatus
-      }
-    }
-
-    cachedStatus = { available: false, path: workerPath, message: 'incompatible rust worker after auto-build retry' }
-    if (options.required) throw new Error(cachedStatus.message)
-    return cachedStatus
-  }
 
   async function runRustFontIndexListWorker(
     folders: string[],
@@ -679,7 +444,8 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
 
     for (const rootPath of folders) {
       if (signal?.aborted) throw new Error('Rust listing cancelled')
-      const outputPath = join(tmpdir(), `hfm-rust-list-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+      const outputFile = createTemporaryJsonFile(`hfm-rust-list`)
+      const outputPath = outputFile.path
       try {
         const args = [
           '--list-font-files',
@@ -705,7 +471,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
         })
         const written = parseJsonLine<{ ok?: boolean; message?: string }>(stdout)
         if (!written.ok) throw new Error(written.message || 'rust listing output write failed')
-        const raw = await fsp.readFile(outputPath, 'utf-8')
+        const raw = await outputFile.readText()
         const payload = JSON.parse(raw) as RustListFontFilesPayload
         if (!payload.ok) throw new Error(payload.message || 'rust listing returned ok=false')
 
@@ -722,7 +488,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
         truncated = truncated || Boolean(payload.truncated)
         progress?.({ files: files.length, foldersScanned })
       } finally {
-        await fsp.rm(outputPath, { force: true }).catch(() => undefined)
+        await outputFile.dispose()
       }
     }
 
@@ -738,12 +504,13 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (signal?.aborted) throw new Error('Rust parse batch cancelled')
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-parse-batch-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-parse-batch`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify({
+      await inputFile.writeJson({
         jobs,
         fullHash: rustFullHashEnabled(),
-      }), 'utf-8')
+      })
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--font-parse-batch',
         '--input', inputPath,
@@ -773,7 +540,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust font parse batch failed: ${error instanceof Error ? error.message : String(error)}; ${nodeFontkitScanFallbackFailureLogSuffix()}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -783,12 +550,13 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'root-index-sqlite-apply-changes')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-root-index-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-root-index`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify({
+      await inputFile.writeJson({
         upserts: input.upserts.map(([relativePath, entry]) => ({ relativePath, entry })),
         deletes: input.deletes,
-      }), 'utf-8')
+      })
 
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--root-index-apply-changes',
@@ -827,7 +595,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust root index apply failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--root-index-apply-changes')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -837,9 +605,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'merged-index-page-query')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-merged-page-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-merged-page`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--merged-index-query-page',
         '--input', inputPath,
@@ -867,7 +636,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust merged index page query finished: roots=${input.roots.length}, total=${result.total}, items=${result.items.length}, offset=${result.offset}, limit=${result.limit}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms, timings=${JSON.stringify(result.timings || {})}`)
       return result
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -878,9 +647,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'merged-index-ids-query')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-merged-ids-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-merged-ids`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--merged-index-query-ids',
         '--input', inputPath,
@@ -907,7 +677,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust merged index ids query finished: roots=${input.roots.length}, ids=${result.ids.length}, truncated=${result.truncated}, limit=${result.limit}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms, timings=${JSON.stringify(result.timings || {})}`)
       return result
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -916,9 +686,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'merged-index-metrics-query')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-merged-metrics-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-merged-metrics`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--merged-index-query-metrics',
         '--input', inputPath,
@@ -958,7 +729,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust merged index metrics query finished: roots=${input.roots.length}, total=${result.total}, installed=${result.installedCount}, notInstalled=${result.notInstalledCount}, folderKeys=${Object.keys(result.folderCounts || {}).length}, folderNonZero=${nonZeroFolderCounts}, folderCountTotal=${folderCountTotal}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms, timings=${JSON.stringify(result.timings || {})}`)
       return result
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -968,9 +739,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'merged-index-rebuild')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-merged-rebuild-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-merged-rebuild`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--merged-index-rebuild',
         '--input', inputPath,
@@ -1003,7 +775,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust merged index rebuild failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1013,9 +785,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'merged-index-sync')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-merged-sync-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-merged-sync`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--merged-index-sync',
         '--input', inputPath,
@@ -1050,7 +823,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust merged index sync failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1060,9 +833,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'watcher-batch-preflight')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-watcher-preflight-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-watcher-preflight`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--watcher-batch-preflight',
         '--input', inputPath,
@@ -1088,7 +862,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust watcher preflight failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1098,9 +872,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'install-status-index-read')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-install-status-read-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-install-status-read`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify({ groups }), 'utf-8')
+      await inputFile.writeJson({ groups })
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--install-status-read',
         '--input', inputPath,
@@ -1124,7 +899,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust install status read failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--install-status-read')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1133,9 +908,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'install-status-index-save')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-install-status-save-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-install-status-save`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify({ groups }), 'utf-8')
+      await inputFile.writeJson({ groups })
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--install-status-save',
         '--input', inputPath,
@@ -1163,7 +939,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust install status save failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--install-status-save')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1175,13 +951,14 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!cleanItems.length) return { results: {}, count: 0, elapsedMs: 0, workerMode: 'rust-install-status-compare' }
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-install-status-compare-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-install-status-compare`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify({
+      await inputFile.writeJson({
         appName: input.appName,
         items: cleanItems,
         installed: input.installed || [],
-      }), 'utf-8')
+      })
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--install-status-compare',
         '--input', inputPath,
@@ -1205,7 +982,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust install status compare failed: ${error instanceof Error ? error.message : String(error)}; Node compare fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1215,9 +992,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'local-tags-read')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-local-tags-read-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-local-tags-read`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--local-tags-read',
         '--input', inputPath,
@@ -1249,7 +1027,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust local tags read failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--local-tags-read')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1258,9 +1036,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'local-tags-set')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-local-tags-set-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-local-tags-set`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--local-tags-set',
         '--input', inputPath,
@@ -1306,7 +1085,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust local tags set failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--local-tags-set')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1315,9 +1094,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'local-tags-delete-tag')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-local-tags-delete-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-local-tags-delete`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--local-tags-delete-tag',
         '--input', inputPath,
@@ -1362,7 +1142,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust local tags delete failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--local-tags-delete-tag')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1371,9 +1151,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'shared-metadata-apply')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-shared-metadata-apply-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-apply`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--shared-metadata-apply',
         '--input', inputPath,
@@ -1416,7 +1197,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust shared metadata apply failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--shared-metadata-apply')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1425,9 +1206,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'shared-metadata-remove-tag')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-shared-metadata-remove-tag-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-remove-tag`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--shared-metadata-remove-tag',
         '--input', inputPath,
@@ -1469,7 +1251,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust shared metadata remove tag failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--shared-metadata-remove-tag')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1478,9 +1260,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'shared-metadata-known-tags')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-shared-metadata-known-tags-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-known-tags`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--shared-metadata-known-tags',
         '--input', inputPath,
@@ -1513,7 +1296,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust shared metadata known tags failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--shared-metadata-known-tags')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1543,13 +1326,14 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     }
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-shared-metadata-overlay-read-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-overlay-read`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify({
+      await inputFile.writeJson({
         rootPath: input.rootPath,
         dbPath: input.dbPath,
         entries: cleanEntries,
-      }), 'utf-8')
+      })
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--shared-metadata-overlay-read',
         '--input', inputPath,
@@ -1586,7 +1370,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust shared metadata overlay read failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--shared-metadata-overlay-read')}`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1595,9 +1379,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'shared-metadata-signature')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-shared-metadata-signature-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-signature`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--shared-metadata-signature',
         '--input', inputPath,
@@ -1623,7 +1408,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust shared metadata signature failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1748,9 +1533,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-preview-cache-${label}-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-preview-cache-${label}`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const { stdout } = await runRustCoreScheduledCommand(status.path, [command, '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_PREVIEW_CACHE_DB_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
@@ -1767,7 +1553,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       appendPreviewCacheFailureLog(label, error instanceof Error ? error.message : String(error))
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1820,9 +1606,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-db-maintenance-${label}-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-db-maintenance-${label}`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [command, '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_DATABASE_MAINTENANCE_TIMEOUT_MS || 5 * 60 * 1000) || 5 * 60 * 1000),
         windowsHide: true,
@@ -1840,7 +1627,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust database maintenance ${label} failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1866,9 +1653,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!cleanPaths.length) return {}
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-font-resource-${label}-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-font-resource-${label}`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify({ paths: cleanPaths, notify: Boolean(batchOptions.notify), strong: Boolean(batchOptions.strong) }), 'utf-8')
+      await inputFile.writeJson({ paths: cleanPaths, notify: Boolean(batchOptions.notify), strong: Boolean(batchOptions.strong) })
       const commandOutput = await runRustCoreScheduledCommand(status.path, [command, '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_FONT_RESOURCE_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
@@ -1899,7 +1687,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust font resource ${label} failed: ${error instanceof Error ? error.message : String(error)}; native helper fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1921,9 +1709,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, capability)) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-font-registry-${label}-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-font-registry-${label}`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [command, '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_FONT_REGISTRY_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
@@ -1948,7 +1737,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust font registry ${label} failed: ${error instanceof Error ? error.message : String(error)}; native helper fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1957,9 +1746,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'font-resource-notify')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-font-notify-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-font-notify`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify({ strong: Boolean(input.strong) }), 'utf-8')
+      await inputFile.writeJson({ strong: Boolean(input.strong) })
       const commandOutput = await runRustCoreScheduledCommand(status.path, ['--font-resource-notify', '--input', inputPath], {
         timeout: Math.max(1000, Number(process.env.HFM_RUST_FONT_NOTIFY_TIMEOUT_MS || 3000) || 3000),
         windowsHide: true,
@@ -1982,7 +1772,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust WM_FONTCHANGE failed: ${error instanceof Error ? error.message : String(error)}; native helper fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -1992,9 +1782,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'physical-folder-tree')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-folder-tree-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-folder-tree`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const { stdout } = await runRustCoreScheduledCommand(status.path, ['--physical-folder-tree', '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_FOLDER_TREE_TIMEOUT_MS || 2 * 60 * 1000) || 2 * 60 * 1000),
         windowsHide: true,
@@ -2021,7 +1812,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust physical folder tree failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -2030,9 +1821,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'font-activation-files')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-activation-files-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-activation-files`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, ['--font-activation-files', '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_ACTIVATION_FILES_TIMEOUT_MS || 2 * 60 * 1000) || 2 * 60 * 1000),
         windowsHide: true,
@@ -2061,7 +1853,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust font activation files failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -2070,9 +1862,10 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     if (!status.available || !status.path || !hasCapability(status, 'preview-render-image')) return null
 
     const startedAt = Date.now()
-    const inputPath = join(tmpdir(), `hfm-rust-preview-render-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+    const inputFile = createTemporaryJsonFile(`hfm-rust-preview-render`)
+    const inputPath = inputFile.path
     try {
-      await fsp.writeFile(inputPath, JSON.stringify(input), 'utf-8')
+      await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, ['--preview-render-image', '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_PREVIEW_RENDER_TIMEOUT_MS || 30 * 1000) || 30 * 1000),
         windowsHide: true,
@@ -2097,7 +1890,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
       options.appendStartupLog(`rust preview render failed: ${error instanceof Error ? error.message : String(error)}; directwrite helper fallback remains active`)
       return null
     } finally {
-      await fsp.rm(inputPath, { force: true }).catch(() => undefined)
+      await inputFile.dispose()
     }
   }
 
@@ -2144,15 +1937,12 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
 
   return {
     diagnoseRustCoreWorker,
-    rustCoreWorkerStatus: () => cachedStatus,
+    rustCoreWorkerStatus: transport.rustCoreWorkerStatus,
     invalidateRustCoreSchedulerCaches,
     cancelRustCoreSchedulerScopes,
     noteRustCoreSchedulerInteractiveActivity,
-    rustCoreDaemonStatus: () => {
-      rustCoreDaemon.pollStatus()
-      return rustCoreDaemon.status()
-    },
-    stopRustCoreDaemon: rustCoreDaemon.stop,
+    rustCoreDaemonStatus: transport.rustCoreDaemonStatus,
+    stopRustCoreDaemon: transport.stopRustCoreDaemon,
     runRustFontIndexListWorker,
     runRustFontParseBatch,
     runRustRootIndexApplyChanges,

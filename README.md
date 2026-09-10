@@ -59,6 +59,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-10：完成 AT-5.2：提取 Rust Worker transport，统一诊断、daemon/scheduler、取消与日志状态，28 处临时文件集中管理并保留原释放时序；门面 2195→1985 行，45 个方法/38 条命令及旧类型导出保持。新增 369 个基线用例、7 组状态/并发序列、真实 Node 进程边界和 10 个退化反例；typecheck、82/82 诊断、三端构建及混淆通过。5.1 流程的 Windows 构建成功回执已收；沿用 Stage 5 分支，pull 后执行 `npm run build` 复验，无依赖升级或数据迁移。下一项 5.3 尚未开始，详见 [Stage 5 第 6 节](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
+
 - 2026-09-10：完成 AT-5.1：提取 89 个 Rust Worker 公开契约和 38 个内部 payload，5 个类型调用方迁至 contracts，旧门面类型导出保持兼容。6 个既有生产文件编译后 JS 不变，门面 2994→2195 行。新增类型身份、私有边界、循环依赖、41 项编译拒绝和 9 个反例门禁；typecheck、81/81 诊断、三端构建及混淆通过。新分支 `stage/05-rust-worker-composition`；无需数据迁移或更新依赖，切换后正常 build 复验。下一项 5.2 尚未开始，Windows 最后已收回执仍为 `c981777`。详见 [Stage 5 任务书](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
 
 - 2026-09-10：完成 AT-4.4：入口 715→77 行，Application 按五组发布原 115 项注册能力；标签协调独立归属，Data/Mutation/Operations 分组输入保持原 31/65/118 项端口。新增逐项能力引用与八个错误接线/重复启动退出反例；typecheck、80/80 诊断、三端构建及混淆通过。Windows 前置 `c981777` 已完整验证，新提交 pull 后正常 build 复验；无依赖版本、数据库或原生源码变更。Stage 4 实现收尾，Stage 5 未开始，详见 [Stage 4 第 10 节](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)。

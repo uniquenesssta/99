@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.20
+- 文档版本：1.21
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 5 AT-5.1 实现及自动验证完成：89 个公开契约、38 个内部 payload 分离，旧导出兼容，6 个既有文件运行时 JS 不变；typecheck、81 项诊断与三端构建/混淆通过。用户明确要求进入 Stage 5；Windows 最后回执为 `c981777`，之后提交的实机复验仍待补，位图/峰值内存与 NAS 等外部验收继续跟踪
+- 当前阶段：Stage 5 AT-5.2 实现及自动验证完成：transport 唯一持有诊断/调度/daemon/日志状态，28 处临时文件集中管理且保持原释放时序；45/38 公开方法与命令不变，369 用例、7 组序列、82 项诊断及三端构建/混淆通过。已收 5.1 流程 Windows 81 项诊断与完整构建成功回执（片段无 HEAD）；5.2 本机复验及 GUI/NAS/位图等外部验收仍待补。5.3 未开始
 - 当前阶段任务书：[`HFM_STAGE_05_RUST_WORKER_TASKBOOK.md`](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -356,6 +356,7 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 
 #### AT-5.2 提取 transport
 
+- 状态：实现及自动验证完成，基线 `e7b3d8a`；新 transport 283 行，门面 2195→1985 行。28 处临时文件由 transport 创建文件对象，在领域原 finally 点释放；369 个冻结命令用例、7 组状态/并发序列与真实子进程边界通过。详见 [Stage 5 第 6 节](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
 - transport 统一拥有 worker 诊断缓存、scheduler/daemon、abort 合并、命令执行和临时文件清理。
 - 明确区分：能力不可用、命令未提交、daemon 已提交后失败、Rust 返回 `ok: false`。
 - 领域 client 不能自行调用 `execFile` 或复制临时文件模板。
@@ -506,7 +507,7 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 | Stage 2 | 完成（AT-2.1 至 AT-2.4） | 本阶段分支四个独立 Atomic Task 提交 | P0.1-P0.5、P1-P8、`npm run verify` 72/72、路径/副作用/补偿行为、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；Windows 真实 UNC/跨盘/长路径/junction/HKCU registry 为外部验收项，未伪报通过 |
 | Stage 3 | 完成（实现、自动门禁及 Windows 构建） | 本阶段分支 AT-3.1、AT-3.2 及独立回归修复提交 | 用户快进至 `476c5d6` 后 Windows verify 75/75、换行 24、三后端输入、Rust release、三端 build、混淆 3/3 通过 | 分支 `stage/03-file-preview-consistency`；NAS、实际位图与最大内存等明确留作外部验收；不支持硬链接的卷兼容边界保留 |
 | Stage 4 | AT-4.1 至 AT-4.4 实现及自动门禁完成 | 四个独立原子提交，另补诊断路径兼容修复 | 用户前置 Windows `c981777` build 通过；本项 verify 80/80、三端 build/混淆通过；新提交实机复验待补 | 分支 `stage/04-main-composition`；入口 2075→77 行，五组注册保持 115 项能力；见 Stage 4 第 10 节 |
-| Stage 5 | AT-5.1 实现及自动门禁完成，5.2 未开始 | 本阶段 AT-5.1 独立提交 | 89/38 类型边界、41 编译拒绝、9 反例、81/81 诊断及三端 build/混淆通过，6 文件运行时 JS 等价 | 新分支 `stage/05-rust-worker-composition`，基于 `d316b44`；用户明确要求推进，后续 Windows 回执仍待补 |
+| Stage 5 | AT-5.1、AT-5.2 实现及自动门禁完成，5.3 未开始 | 每个 AT 独立提交；5.2 父提交 `e7b3d8a` | 原 89/38 类型与 45/38 方法/命令不变；369 命令用例、7 组序列、10 退化反例、82/82 诊断及三端 build/混淆通过 | 沿用 `stage/05-rust-worker-composition`；5.1 流程 Windows 成功回执已收，5.2 本机复验待补 |
 | Stage 6 | 待开始，Stage 3 工程前置门禁已满足 | - | - | 当前串行推进 Stage 5 |
 | Stage 7 | 阻塞于 Stage 4/5/6 | - | - | - |
 | Stage 8 | 阻塞于 Stage 7 | - | - | - |

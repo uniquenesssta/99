@@ -252,7 +252,9 @@ function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    localRequire,
+    id => id === './rustCoreWorkerTransportRuntime'
+      ? loadTypeScriptModule('src/main/rust-core/rustCoreWorkerTransportRuntime.ts', localRequire)
+      : localRequire(id),
     module,
     path.join(root, rel),
     path.dirname(path.join(root, rel)),

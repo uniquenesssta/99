@@ -2,10 +2,10 @@
 
 ## 0. 状态与执行边界
 
-- 版本：1.0；日期：2026-09-10；软件：HanFontManager 3.0.0。
+- 版本：1.1；日期：2026-09-10；软件：HanFontManager 3.0.0。
 - 分支：`stage/05-rust-worker-composition`，由 Stage 4 远端提交 `d316b44dc8561876bab277ecc8b886f925b7c6b8` 创建；基线树 `52ac20e65d2a960eee5b255c3d5a80072d857308`。
-- 当前任务：AT-5.1 公开契约与内部 payload 提取实现及自动验证完成，typecheck、81/81 项诊断、三端构建和混淆通过；AT-5.2 至 AT-5.4 未实施。
-- 进入依据：用户明确要求开始 5.1，Stage 4 自动验证已通过。最后收到的 Windows 完整 build 回执是 `c981777`；`d316b44` 的 Windows 复验回执尚未提供，继续记为外部待验，不将其写成通过，也没有已知新失败被跳过。
+- 当前任务：AT-5.2 transport 提取实现及自动验证完成；唯一诊断/调度/daemon/日志状态和 28 处临时文件协议已归入 transport。typecheck、82/82 项诊断、三端构建和混淆通过；AT-5.3、AT-5.4 未实施。
+- 进入依据：用户提供 5.1 流程的 Windows 成功回执（81 项诊断、Cargo release、三端 Vite 构建、混淆 3/3），并要求无问题则开始 5.2。该日志片段未包含 Git HEAD，不声称核验了用户本地精确 SHA；本项源码基线已核实为远端 `e7b3d8a02081465b8932128d164f365c756d1746`，树 `a3359a8b56206a448e638726022c05be44e57356`。
 - 本文是 Stage 5 执行明细，上级与顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。每个 Atomic Task 独立提交和回退，Stage 内沿用本分支；不修改 main。
 
 ## 1. 目标与兼容约束
@@ -36,7 +36,7 @@
 
 contracts 继续以类型引用复用 `CachedFontStatLike`、共享字体模型、`FontParseJob`、预览缓存行、维护报告和 daemon domain event。没有复制这些既有声明，也没有把领域模块或 daemon 实例加载到运行时。旧扫描模块中原本存在的相似 hint 定义不属于本项搬迁范围，本项不另外统一它们。
 
-### 2.2 仍在门面内的实际运行时职责
+### 2.2 AT-5.2 开始前的实际运行时职责
 
 | 职责 | 当前状态/调用链 | 后续归属与限制 |
 | --- | --- | --- |
@@ -66,13 +66,14 @@ contracts 继续以类型引用复用 `CachedFontStatLike`、共享字体模型�
 
 允许修改：两个类型模块、门面类型定义/导入导出、5 个类型引用方、诊断及必要任务书。不得迁移、重排或修改可执行逻辑。
 
-### AT-5.2 提取 transport（未开始）
+### AT-5.2 提取 transport（实现及自动验证完成）
 
-1. 先为实际门面补齐可控 worker/daemon/scheduler/时钟/临时文件替身，记录基线行为。
-2. 定义窄 transport 接口，覆盖诊断、命令执行、缓存失效、scope 取消、交互活动、daemon 状态和停止；类型以已实现需求为准。
-3. 搬迁唯一状态所有者和临时文件生命周期；保留不同领域的校验、payload 归一化与返回组装。
-4. 覆盖 worker 缺失、required 失败、握手不兼容、profile 失败、daemon 不可用、提交前失败、提交后失败、取消、超时、JSON 失败及清理失败。
-5. 对比原命令调用顺序、fallback 次数、临时文件清理和 8000 ms 日志节流；保持当前 45/38 门禁、全量 verify 和 build。
+- [x] 使用实际门面和边界替身，先从 `e7b3d8a` 固化 369 个命令用例及 7 组状态/生命周期序列；基线 fixture 不随新实现更新。
+- [x] 提取 10 项内部 transport 端口；公开门面保持原 45 个方法，领域仍有 38 条命令。
+- [x] 搬迁唯一 scheduler、daemon、诊断缓存和两组失败日志 Map；握手/重试、required/enabled、事件、8000 ms 节流和取消监听行为不变。
+- [x] 28 处临时文件统一由 transport 创建文件对象，领域在原 try 中读写、原 finally 中释放；领域参数、结果、异常/fallback 判断保留。
+- [x] 对比未提交/已提交失败、主动取消、超时、maxBuffer、JSON/文件故障、失败清理、并发释放时序及缓存状态；真实 Node 子进程与 10 个退化反例通过。
+- [x] 完整 verify、三端构建、混淆、差异复审、README 与任务书更新；独立提交和回退，沿用 Stage 5 分支。
 
 ### AT-5.3 按领域提取 client（未开始）
 
@@ -90,20 +91,25 @@ contracts 继续以类型引用复用 `CachedFontStatLike`、共享字体模型�
 - 审计全部所有者、依赖图、方法签名、错误/fallback 与退出行为；记录将来的协议升级入口，不在本阶段升级协议。
 - 完整自动门禁和 Windows 实机验收完成后再接受 Stage 5，进入 Stage 6 时新建分支。
 
-## 4. 已实现的类型依赖关系
+## 4. 已实现的传输与状态关系
 
-实线为运行时调用，虚线为类型依赖；图中不包含尚未实现的 transport/client 文件。
+图中只包含已实现的调用；公开契约与私有 payload 仍为仅类型依赖，领域 client 尚未提取。
 
 ```mermaid
 flowchart TD
-  A["业务类型调用方"] -. "仅类型引用" .-> C["公开契约 Contracts"]
-  B["应用组合入口"] --> F["现有 Rust Worker 门面"]
-  F -. "类型使用及兼容导出" .-> C
-  F -. "内部解析类型" .-> P["内部载荷 Payload Types"]
-  P -. "复用公开结果形状" .-> C
-  F --> T["现有调度器与 Daemon"]
-  C -. "复用既有领域类型" .-> D["字体、预览、维护和事件类型"]
+  A["应用组合入口"] --> F["Rust Worker 门面：38 条领域命令"]
+  F --> T["唯一 Transport 实例"]
+  T --> D["唯一 Daemon：优先执行"]
+  D -->|"未提交且可回退"| S["唯一 Scheduler"]
+  S --> E["execFile 与取消信号合并"]
+  D -->|"已提交失败或主动取消"| X["原错误向上抛出"]
+  T --> C["诊断缓存与两组日志节流状态"]
+  T --> J["临时 JSON 文件对象"]
+  F -->|"原 try 内读写；原 finally 内释放"| J
+  E -->|"finally 解绑取消监听"| L["取消监听清理"]
 ```
+
+领域继续决定如何处理 transport 抛出的错误；transport 不统一各领域的 null、throw 或 `ok: false` 返回。
 
 ## 5. AT-5.1 验证记录
 
@@ -133,7 +139,50 @@ flowchart TD
 
 本项未改变 Rust/C++ 源码、依赖版本、锁文件、数据库结构、缓存键或字体资产。当前 Linux 审查环境缺少 Cargo/PowerShell，不能在这里证明 Windows 完整 build、GUI/退出、NAS 多客户端、实际预览位图/峰值内存或安装包通过。上一版 Windows 回执仅作为已有证据保留。
 
-## 6. 拉取、复验与回退
+## 6. AT-5.2 实施与验证记录
+
+### 6.1 状态与文件所有权
+
+| 模块 | 已落实的职责 | 保持的边界 |
+| --- | --- | --- |
+| `rustCoreWorkerTransportRuntime.ts`（283 行） | 路径探测、自动构建/握手/兼容判断、scheduler profile、命令路由、取消合并、诊断缓存、daemon/scheduler、两组日志节流 Map、临时文件 API | 每个门面只创建一个 transport；每个 transport 只创建一套状态；不解释领域结果 |
+| `rustCoreWorkerRuntime.ts`（2195→1985 行） | 38 条领域命令、领域输入/输出归一化、原失败与 fallback 语义、45 项公开方法、89 个兼容类型导出 | 仍是中间状态，不能把本项称为纯组合门面或 Stage 5 已全部完成 |
+| `RustCoreJsonFile` 文件对象 | `path`、`writeJson`、`readText`、`dispose`；路径生成、UTF-8 JSON 和 best-effort 删除只有一个实现 | 命令保留原 finally 释放点；并发请求不共享文件，删除失败不覆盖原结果或根因 |
+
+transport 的 10 个端口是原有 7 个状态/控制入口，加上命令执行、preview 失败日志与临时文件对象创建。JSON 首行解析和 capability 判断为无状态函数；执行选项随 transport 搬迁，未混入 payload。`RustCoreWorkerTransportRuntime` 为内部推导类型，不扩展公共门面。
+
+原状态缓存行为（包括 required 首次失败后读取已缓存状态）、domain event 接线、daemon poll/stop、日志归一化键与 suppressed 计数均保留。没有因搬迁增加失败重试或第二次有副作用的执行。
+
+### 6.2 行为基线与反例
+
+新增 `diagnostics:rust-worker-transport`，使用真实编译后的门面和 transport，只替换进程/文件/时钟以及既有 daemon/scheduler 边界：
+
+- 369 个冻结命令用例：38 条命令分别执行 one-shot、daemon、提交前失败、已提交失败、两路 `ok:false`、非法 JSON、写入失败、清理失败；另覆盖 worker 缺失、required/enabled、兼容重建、握手/profile 故障、缺 capability、domain event、空输出、超时、maxBuffer、调度失败及取消/读取错误。
+- 7 组连续或并发序列：诊断缓存、required 缺失缓存、控制与事件、8000 ms 节流临界点、并发临时文件、序列化失败和 health `ok:false` 行为。逐项比较结果、错误形状、完整有序调用轨迹的 SHA-256 和残留文件数。
+- 同前缀并发文件对象的读写/释放互不覆盖；28 处文件对象创建和原 finally 释放点由 AST 与行为共同约束。并发测试有期限，避免回归后等待未进入的 exec 而导致 Node 提前以成功状态退出。
+- 实际启动 Node 子进程验证成功、timeout、maxBuffer、AbortError 四条路径和取消监听解绑；这是实际 execFile 验证，不等同于 Windows Rust worker/GDI+ 集成验证。
+- 10 个退化反例必须被拒绝：已提交后 fallback、取消后 fallback、漏解绑、丢诊断缓存、重复 scheduler、提前/遗漏清理、清理错误覆盖结果、改变节流阈值、丢执行选项。
+- 使用独立 fixture，不提供自动重录入口。原 45/38/115/10 编排与类型 fixture 保持不变；旧编排诊断仅增加新 transport 的真实模块加载路径，原断言保留。
+- 新诊断读取源码时统一 LF 后生成反例，同时在真实 CRLF 门面/transport 上重放 76 个 one-shot/已提交失败用例；不依赖宿主 Windows 路径分隔符或 V8 非法 JSON 错误措辞。
+
+### 6.3 拆分审计与失败尝试
+
+最初尝试 `withTemporaryJsonFile(prefix, async callback)`，个别并发请求的清理与日志先后因新增 Promise 交接发生变化。冻结序列检出后放弃该结构，改用文件对象，在命令原 finally 位置调用 `dispose`。未修改基线 fixture 迁就新实现。
+
+差异复核将 28 处文件 API 适配机械还原后，**58 个领域/辅助函数声明的全部 token 与基线一致**；另 **14 个搬迁的 transport 函数声明 token 一致**（忽略新增模块 export）。状态变量初始化顺序、执行选项、日志和 catch/finally 边界保持。没有混入领域行为修复、公开类型修改或原生协议升级。
+
+### 6.4 门禁、构建与外部验收
+
+- `npm --offline run verify`：typecheck 与 **82/82** 项诊断通过，包括原 Stage 0–5.1 契约、事务、路径、预览、索引及退出门禁。
+- `electron-vite build`：main/preload/renderer 分别 **349/1/181** 个模块构建通过；混淆成功处理 3 份新输出，另外 2 份已有标记的输出保留（日志 3/5）。
+- 用户本轮 Windows 回执：81 checks、Cargo 1.97.1 release 成功且 worker 已复制、public keys 同步、Vite 348/1/181、混淆 3/3；可支持推进 5.2，不能替代本次改动后的复验。
+- 本项未改 Rust/C++、依赖版本、锁文件、数据库、缓存、IPC 或字体数据。当前审查环境缺少 Cargo/PowerShell；5.2 的 Windows 完整 build、GUI/退出、实际 NAS 与位图/峰值内存验证仍需本机执行。pull 后执行现有 `npm run build`，无额外迁移步骤。
+
+Context7 结合项目 Electron 35.7.5 / Node 22 类型环境查证 promisified execFile 的取消、超时与输出错误契约，并用实际 Node 子进程验证；Mermaid Chart 已呈现第 4 节真实架构。阶段决定及验证通过 Create State 保存，Git/README/任务书仍为权威记录。
+
+下一项为 AT-5.3 的 maintenance client，必须单独提交、单独验证，然后按 preview → Windows → metadata → indexing 顺序推进。AT-5.4 最后收敛门面，本轮均未启动。
+
+## 7. 拉取、复验与回退
 
 在已有依赖的 Windows VS 2022 x64 开发者终端、项目目录执行：
 
@@ -147,4 +196,4 @@ npm run build
 
 首次切换时，Git 可从唯一的同名远端分支建立本地跟踪分支；如出现同名分支歧义，使用 `git switch --track origin/stage/05-rust-worker-composition`。本项无额外依赖安装或数据迁移要求。保留用户此前在本机重建的原生 exe；如 Git 报本地改动冲突，按实际文件处理，不使用 hard reset、clean 或丢弃用户改动。
 
-回退单位是 AT-5.1 独立提交的 `git revert`。后续 AT-5.2 沿用本 Stage 5 分支；不为每个原子任务再开分支。
+回退单位是对应 Atomic Task 独立提交的 `git revert`。本次 AT-5.2 的父提交为 `e7b3d8a`；具体交付 SHA 以分支 Git 记录为准。后续 AT-5.3 沿用本 Stage 5 分支；不为每个原子任务再开分支。

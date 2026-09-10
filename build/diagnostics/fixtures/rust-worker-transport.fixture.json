@@ -1,0 +1,5481 @@
+{
+  "baseline": "e7b3d8a02081465b8932128d164f365c756d1746",
+  "cases": [
+    {
+      "id": "runRustFontIndexListWorker/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "files": [
+            {
+              "file": "C:/fonts/a.ttf",
+              "rootPath": "C:/fonts",
+              "stat": {
+                "size": 2,
+                "mtimeMs": 1,
+                "birthtimeMs": 1,
+                "ctimeMs": 1
+              }
+            }
+          ],
+          "directories": [],
+          "errors": [],
+          "foldersScanned": 1,
+          "truncated": false,
+          "durationMs": 0
+        }
+      },
+      "traceHash": "b8ca652946c3021180a8b6d33b6fb0f09d6e3a2c39880a716ad2f2aec69789e0",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "files": [
+            {
+              "file": "C:/fonts/a.ttf",
+              "rootPath": "C:/fonts",
+              "stat": {
+                "size": 2,
+                "mtimeMs": 1,
+                "birthtimeMs": 1,
+                "ctimeMs": 1
+              }
+            }
+          ],
+          "directories": [],
+          "errors": [],
+          "foldersScanned": 1,
+          "truncated": false,
+          "durationMs": 0
+        }
+      },
+      "traceHash": "a85d05bcd21da71818c45d798732f24fd3ae1f0bdd205b247768eaae68b61d34",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "files": [
+            {
+              "file": "C:/fonts/a.ttf",
+              "rootPath": "C:/fonts",
+              "stat": {
+                "size": 2,
+                "mtimeMs": 1,
+                "birthtimeMs": 1,
+                "ctimeMs": 1
+              }
+            }
+          ],
+          "directories": [],
+          "errors": [],
+          "foldersScanned": 1,
+          "truncated": false,
+          "durationMs": 0
+        }
+      },
+      "traceHash": "9b0020663b06a6ddbd0726f5c53e138222051da0617cb704c3a45ec369a1476f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--list-font-files"
+      },
+      "traceHash": "6772cd90d038ee9740e08e22959184bde7a8961d82012935b812b3eff70eeb8b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/false-oneshot",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
+      },
+      "traceHash": "028b991d0e37297aa2988082c9d3b517eda877454c7b21e4cd91c84c3fe69537",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
+      },
+      "traceHash": "aa3ece4e1adb04e2eadad6c3d473ec8a61bcfb4885a29b593f75906a62222294",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/bad-json",
+      "outcome": {
+        "kind": "error",
+        "name": "SyntaxError",
+        "message": "fixture invalid JSON",
+        "submitted": false
+      },
+      "traceHash": "028b991d0e37297aa2988082c9d3b517eda877454c7b21e4cd91c84c3fe69537",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/write-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "files": [
+            {
+              "file": "C:/fonts/a.ttf",
+              "rootPath": "C:/fonts",
+              "stat": {
+                "size": 2,
+                "mtimeMs": 1,
+                "birthtimeMs": 1,
+                "ctimeMs": 1
+              }
+            }
+          ],
+          "directories": [],
+          "errors": [],
+          "foldersScanned": 1,
+          "truncated": false,
+          "durationMs": 0
+        }
+      },
+      "traceHash": "b8ca652946c3021180a8b6d33b6fb0f09d6e3a2c39880a716ad2f2aec69789e0",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "files": [
+            {
+              "file": "C:/fonts/a.ttf",
+              "rootPath": "C:/fonts",
+              "stat": {
+                "size": 2,
+                "mtimeMs": 1,
+                "birthtimeMs": 1,
+                "ctimeMs": 1
+              }
+            }
+          ],
+          "directories": [],
+          "errors": [],
+          "foldersScanned": 1,
+          "truncated": false,
+          "durationMs": 0
+        }
+      },
+      "traceHash": "b8ca652946c3021180a8b6d33b6fb0f09d6e3a2c39880a716ad2f2aec69789e0",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustFontParseBatch/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": [
+            {
+              "jobId": "j",
+              "rootPath": "C:/fonts",
+              "filePath": "C:/fonts/a.ttf",
+              "cacheKey": "k",
+              "signature": "s",
+              "fileSize": 0,
+              "modifiedAt": 0,
+              "createdAt": 0
+            }
+          ],
+          "errors": [],
+          "count": 1,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-parse-batch"
+        }
+      },
+      "traceHash": "ef802d7436b6c7d09a00abd1fd6af3924fab9c56d9bd29836c1530152fe7c805",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": [
+            {
+              "jobId": "j",
+              "rootPath": "C:/fonts",
+              "filePath": "C:/fonts/a.ttf",
+              "cacheKey": "k",
+              "signature": "s",
+              "fileSize": 0,
+              "modifiedAt": 0,
+              "createdAt": 0
+            }
+          ],
+          "errors": [],
+          "count": 1,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-parse-batch"
+        }
+      },
+      "traceHash": "dd774b515d1490a8deb3846ada8c0799e01fff72e2caf2dc5d77624340ce848f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": [
+            {
+              "jobId": "j",
+              "rootPath": "C:/fonts",
+              "filePath": "C:/fonts/a.ttf",
+              "cacheKey": "k",
+              "signature": "s",
+              "fileSize": 0,
+              "modifiedAt": 0,
+              "createdAt": 0
+            }
+          ],
+          "errors": [],
+          "count": 1,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-parse-batch"
+        }
+      },
+      "traceHash": "26eefd18b62b635e61fed73bdc1f318503db172671b416326065cf42af9cbd18",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "9472102dd930be4e3e1b5eefbcc79848c1a4ec4d7a70af43f4bb5359e4ae9e5d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "2ce22a46d2945c713a838e471627d73a48d11d99c552cd78ae69fb0d8b7b3ba6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "917d27532500c0ac6fbc5ebb28b4c3ca7b03b4d5e606d684b29c21a7135feeff",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "20ec4ccf47b632b2822fbcb9b3d05fbf2cd451a47efaeedc70d00f4c07abf84f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "31169172e8c5bce282436e7575409e2515415ae4cb4e13f9a79780c6f41dd466",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": [
+            {
+              "jobId": "j",
+              "rootPath": "C:/fonts",
+              "filePath": "C:/fonts/a.ttf",
+              "cacheKey": "k",
+              "signature": "s",
+              "fileSize": 0,
+              "modifiedAt": 0,
+              "createdAt": 0
+            }
+          ],
+          "errors": [],
+          "count": 1,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-parse-batch"
+        }
+      },
+      "traceHash": "ef802d7436b6c7d09a00abd1fd6af3924fab9c56d9bd29836c1530152fe7c805",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustRootIndexApplyChanges/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "applied": true,
+          "count": 1,
+          "upserts": 0,
+          "deletes": 0,
+          "durationMs": 0
+        }
+      },
+      "traceHash": "5c55bbb848df0b1960b07c0b60bf892a827816f8ab86a4bff270bb401941d546",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustRootIndexApplyChanges/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "applied": true,
+          "count": 1,
+          "upserts": 0,
+          "deletes": 0,
+          "durationMs": 0
+        }
+      },
+      "traceHash": "b46baeee6b5e0a090652d0c6b0e4acf5b3e6f0d84b833673fa0885029afd5ff8",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustRootIndexApplyChanges/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "applied": true,
+          "count": 1,
+          "upserts": 0,
+          "deletes": 0,
+          "durationMs": 0
+        }
+      },
+      "traceHash": "0dd2344eef43343b03de791a472130f6802d4f370fd63e0da03808e7f399b168",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustRootIndexApplyChanges/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--root-index-apply-changes"
+      },
+      "traceHash": "010785b70f3fb9d3ec5f5d6f25b1dad34e226b2cafe4c4c0026aae5025ff9001",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustRootIndexApplyChanges/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "693ed4d217d98f171cb356dc784fa96783868a2c8943d7413085a4af32459fe1",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustRootIndexApplyChanges/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--root-index-apply-changes"
+      },
+      "traceHash": "b48e1ab95afbce87e6447141bbbf87d3f926375857e193d8b9337cc00971df40",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustRootIndexApplyChanges/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "fcba6d58600f3fd7ecf15c95dd03087ed5a7a72a0950a3dbcbad9fc595fa99b4",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustRootIndexApplyChanges/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "a64a15afb6044fa96a8944e705dd7275c04cb0888876f107e62fb7a40c6f22cd",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustRootIndexApplyChanges/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "applied": true,
+          "count": 1,
+          "upserts": 0,
+          "deletes": 0,
+          "durationMs": 0
+        }
+      },
+      "traceHash": "5c55bbb848df0b1960b07c0b60bf892a827816f8ab86a4bff270bb401941d546",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustMergedIndexPageQuery/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "queryKey": "q",
+          "items": [
+            {
+              "id": "f",
+              "source": "registry",
+              "registryName": "Font",
+              "value": "a.ttf"
+            }
+          ],
+          "total": 1,
+          "offset": 0,
+          "limit": 20,
+          "truncated": false,
+          "engine": "sql",
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-page",
+          "timings": {}
+        }
+      },
+      "traceHash": "6a9a41309ec2d86e23384b1579aad15dee2c85a210e7561c883be860300d4a6b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexPageQuery/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "queryKey": "q",
+          "items": [
+            {
+              "id": "f",
+              "source": "registry",
+              "registryName": "Font",
+              "value": "a.ttf"
+            }
+          ],
+          "total": 1,
+          "offset": 0,
+          "limit": 20,
+          "truncated": false,
+          "engine": "sql",
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-page",
+          "timings": {}
+        }
+      },
+      "traceHash": "14b5610bfbaa439798300cbd1ed25d9ab540531dc57027bfe81a975e4309e7ae",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexPageQuery/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "queryKey": "q",
+          "items": [
+            {
+              "id": "f",
+              "source": "registry",
+              "registryName": "Font",
+              "value": "a.ttf"
+            }
+          ],
+          "total": 1,
+          "offset": 0,
+          "limit": 20,
+          "truncated": false,
+          "engine": "sql",
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-page",
+          "timings": {}
+        }
+      },
+      "traceHash": "228702a99cb5481fc2f907dcd4093621478691e452521a1128616aa7d7d9a52f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexPageQuery/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--merged-index-query-page"
+      },
+      "traceHash": "993f4526a25149353c494106bd0deccbf93c8c18194252e001aab2b643581993",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexPageQuery/false-oneshot",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
+      },
+      "traceHash": "aef0d17fea8581c133cfa4012d0b80b5599536cee87e49de920631695118db22",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexPageQuery/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
+      },
+      "traceHash": "f2dcbda7ef63ddc7bfb2c07694c4ca8423badf47703db14ac45361f4500488b1",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexPageQuery/bad-json",
+      "outcome": {
+        "kind": "error",
+        "name": "SyntaxError",
+        "message": "fixture invalid JSON",
+        "submitted": false
+      },
+      "traceHash": "aef0d17fea8581c133cfa4012d0b80b5599536cee87e49de920631695118db22",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexPageQuery/write-fail",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "write failed",
+        "submitted": false
+      },
+      "traceHash": "63a2ff089a5df25b1940434816c989c35e77a56199cabb3155aafac742e2a4b8",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexPageQuery/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "queryKey": "q",
+          "items": [
+            {
+              "id": "f",
+              "source": "registry",
+              "registryName": "Font",
+              "value": "a.ttf"
+            }
+          ],
+          "total": 1,
+          "offset": 0,
+          "limit": 20,
+          "truncated": false,
+          "engine": "sql",
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-page",
+          "timings": {}
+        }
+      },
+      "traceHash": "6a9a41309ec2d86e23384b1579aad15dee2c85a210e7561c883be860300d4a6b",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustMergedIndexIdsQuery/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "queryKey": "q",
+          "ids": [
+            "f"
+          ],
+          "total": 1,
+          "limit": 20,
+          "truncated": false,
+          "engine": "sql",
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-ids",
+          "timings": {}
+        }
+      },
+      "traceHash": "b8782856a7acd1ea587dcd33a120278a1facb9bfe2e5f4bf9143fe4bcfbc475d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexIdsQuery/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "queryKey": "q",
+          "ids": [
+            "f"
+          ],
+          "total": 1,
+          "limit": 20,
+          "truncated": false,
+          "engine": "sql",
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-ids",
+          "timings": {}
+        }
+      },
+      "traceHash": "434d0e8691b2738030b9a792f9e460617f3c4b7f9fe3950a61088a12445ee098",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexIdsQuery/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "queryKey": "q",
+          "ids": [
+            "f"
+          ],
+          "total": 1,
+          "limit": 20,
+          "truncated": false,
+          "engine": "sql",
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-ids",
+          "timings": {}
+        }
+      },
+      "traceHash": "894eeb4f5c263bcaa1f84fa0c1415575b3280090a338c3a4a15c9315d2984922",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexIdsQuery/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--merged-index-query-ids"
+      },
+      "traceHash": "7be6abb417aaf1b9b59126c6d838d521dd82b3ab985dc52ae4faec7f30fbb4be",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexIdsQuery/false-oneshot",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
+      },
+      "traceHash": "4150d1d4e146e71009500face57a92c351c709d710ffc6d8519bcef6bb6861b2",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexIdsQuery/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
+      },
+      "traceHash": "c878ef43ac09d4e7597a83bba44637667ad059222ca26708589b23133132f284",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexIdsQuery/bad-json",
+      "outcome": {
+        "kind": "error",
+        "name": "SyntaxError",
+        "message": "fixture invalid JSON",
+        "submitted": false
+      },
+      "traceHash": "4150d1d4e146e71009500face57a92c351c709d710ffc6d8519bcef6bb6861b2",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexIdsQuery/write-fail",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "write failed",
+        "submitted": false
+      },
+      "traceHash": "d51250f105b5a480c2c38ad893752fcbb6f19368580875c2383e1e4c7079f0a8",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexIdsQuery/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "queryKey": "q",
+          "ids": [
+            "f"
+          ],
+          "total": 1,
+          "limit": 20,
+          "truncated": false,
+          "engine": "sql",
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-ids",
+          "timings": {}
+        }
+      },
+      "traceHash": "b8782856a7acd1ea587dcd33a120278a1facb9bfe2e5f4bf9143fe4bcfbc475d",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustMergedIndexMetricsQuery/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "total": 1,
+          "favoriteCount": 0,
+          "installedCount": 0,
+          "notInstalledCount": 0,
+          "installStatusKnownCount": 0,
+          "installStatusMissingCount": 0,
+          "installStatusReady": true,
+          "activeCount": 0,
+          "systemDefaultCount": 0,
+          "formatCounts": {
+            "ttf": 0,
+            "otf": 0,
+            "ttc": 0,
+            "otc": 0,
+            "unknown": 0
+          },
+          "categoryCounts": {
+            "all": 0,
+            "serif": 0,
+            "slabSerif": 0,
+            "sansSerif": 0,
+            "script": 0,
+            "monospace": 0,
+            "handwriting": 0,
+            "hei": 0,
+            "art": 0
+          },
+          "scriptCounts": {},
+          "collectionCounts": {},
+          "tagCounts": {},
+          "localTagCounts": {},
+          "sharedTagCounts": {},
+          "folderCounts": {},
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-metrics",
+          "timings": {}
+        }
+      },
+      "traceHash": "4bcf27310f88ded627cdb7d5b40aeae120a4dbccfe9cda82e76e03f9a15d800e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexMetricsQuery/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "total": 1,
+          "favoriteCount": 0,
+          "installedCount": 0,
+          "notInstalledCount": 0,
+          "installStatusKnownCount": 0,
+          "installStatusMissingCount": 0,
+          "installStatusReady": true,
+          "activeCount": 0,
+          "systemDefaultCount": 0,
+          "formatCounts": {
+            "ttf": 0,
+            "otf": 0,
+            "ttc": 0,
+            "otc": 0,
+            "unknown": 0
+          },
+          "categoryCounts": {
+            "all": 0,
+            "serif": 0,
+            "slabSerif": 0,
+            "sansSerif": 0,
+            "script": 0,
+            "monospace": 0,
+            "handwriting": 0,
+            "hei": 0,
+            "art": 0
+          },
+          "scriptCounts": {},
+          "collectionCounts": {},
+          "tagCounts": {},
+          "localTagCounts": {},
+          "sharedTagCounts": {},
+          "folderCounts": {},
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-metrics",
+          "timings": {}
+        }
+      },
+      "traceHash": "097a1ace41201c4513ee1849e5982e8441ac6d1191590615fe85c43488da9db8",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexMetricsQuery/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "total": 1,
+          "favoriteCount": 0,
+          "installedCount": 0,
+          "notInstalledCount": 0,
+          "installStatusKnownCount": 0,
+          "installStatusMissingCount": 0,
+          "installStatusReady": true,
+          "activeCount": 0,
+          "systemDefaultCount": 0,
+          "formatCounts": {
+            "ttf": 0,
+            "otf": 0,
+            "ttc": 0,
+            "otc": 0,
+            "unknown": 0
+          },
+          "categoryCounts": {
+            "all": 0,
+            "serif": 0,
+            "slabSerif": 0,
+            "sansSerif": 0,
+            "script": 0,
+            "monospace": 0,
+            "handwriting": 0,
+            "hei": 0,
+            "art": 0
+          },
+          "scriptCounts": {},
+          "collectionCounts": {},
+          "tagCounts": {},
+          "localTagCounts": {},
+          "sharedTagCounts": {},
+          "folderCounts": {},
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-metrics",
+          "timings": {}
+        }
+      },
+      "traceHash": "46ea22ae075ab7b2111fea44979c03ece18fed601c58f5c5e974196959d84c85",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexMetricsQuery/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--merged-index-query-metrics"
+      },
+      "traceHash": "24328b872d91c64d57935abaa8ed8daca56bd01f8f8d73d470c2ddb4c0898fed",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexMetricsQuery/false-oneshot",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
+      },
+      "traceHash": "d9d775751065704435cd97ce3ac0042e6fc9732aa5543f55951e43d72ed72228",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexMetricsQuery/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
+      },
+      "traceHash": "ddd98d8ddf63427d7469d74642fadbbfade17effda8b7364b9160ad26536b5cd",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexMetricsQuery/bad-json",
+      "outcome": {
+        "kind": "error",
+        "name": "SyntaxError",
+        "message": "fixture invalid JSON",
+        "submitted": false
+      },
+      "traceHash": "d9d775751065704435cd97ce3ac0042e6fc9732aa5543f55951e43d72ed72228",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexMetricsQuery/write-fail",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "write failed",
+        "submitted": false
+      },
+      "traceHash": "6e7c4b5b28491a8acd84797baa39ab8abe1dc747a86f926cba8e7a62372396cd",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexMetricsQuery/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "total": 1,
+          "favoriteCount": 0,
+          "installedCount": 0,
+          "notInstalledCount": 0,
+          "installStatusKnownCount": 0,
+          "installStatusMissingCount": 0,
+          "installStatusReady": true,
+          "activeCount": 0,
+          "systemDefaultCount": 0,
+          "formatCounts": {
+            "ttf": 0,
+            "otf": 0,
+            "ttc": 0,
+            "otc": 0,
+            "unknown": 0
+          },
+          "categoryCounts": {
+            "all": 0,
+            "serif": 0,
+            "slabSerif": 0,
+            "sansSerif": 0,
+            "script": 0,
+            "monospace": 0,
+            "handwriting": 0,
+            "hei": 0,
+            "art": 0
+          },
+          "scriptCounts": {},
+          "collectionCounts": {},
+          "tagCounts": {},
+          "localTagCounts": {},
+          "sharedTagCounts": {},
+          "folderCounts": {},
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-metrics",
+          "timings": {}
+        }
+      },
+      "traceHash": "4bcf27310f88ded627cdb7d5b40aeae120a4dbccfe9cda82e76e03f9a15d800e",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustMergedIndexRebuild/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rebuilt": true,
+          "rows": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-rebuild",
+          "timings": {}
+        }
+      },
+      "traceHash": "b7ba4c48fe6c11e338c62d0dc45c533eff5944067b30ef7848db40782f8fcb76",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexRebuild/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rebuilt": true,
+          "rows": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-rebuild",
+          "timings": {}
+        }
+      },
+      "traceHash": "ed80e55846c90879af536edcef19ba34ed6f0f676ea8ddbc4b39cc13fe2a18d4",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexRebuild/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rebuilt": true,
+          "rows": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-rebuild",
+          "timings": {}
+        }
+      },
+      "traceHash": "9363e834ba23d9c679d74f97e8441ae32363a3f9731dae8e4116d873109a3610",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexRebuild/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--merged-index-rebuild"
+      },
+      "traceHash": "2f77c417e80e945a90bc446f8533ef5c953c8f44b8788e010c8aa9e3f2d27c0b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexRebuild/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "68f4906f5009560346422d762391ba9f0da5d07bbcde1ddfb1ea7270e6b194a8",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexRebuild/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--merged-index-rebuild"
+      },
+      "traceHash": "df4b2a78cecc6f1e77553616d033e74e5c1dcec20f624a2b52e0603bca62d838",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexRebuild/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "398a21f6947d745bf22703cad0808c7e44598fb11ce4b7399a9c0cf23e829a3a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexRebuild/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "9a8887dd58f5280013e218d6f749254f7009cc9dc9102d619e81b8037af91405",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexRebuild/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rebuilt": true,
+          "rows": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-rebuild",
+          "timings": {}
+        }
+      },
+      "traceHash": "b7ba4c48fe6c11e338c62d0dc45c533eff5944067b30ef7848db40782f8fcb76",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustMergedIndexSync/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "synced": true,
+          "changed": 0,
+          "rows": 0,
+          "fullSnapshot": false,
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-sync",
+          "timings": {}
+        }
+      },
+      "traceHash": "d6c0804bf9b6c551401dfc5604dc3b62d40758692a1ace303b49a258c937bfe1",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexSync/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "synced": true,
+          "changed": 0,
+          "rows": 0,
+          "fullSnapshot": false,
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-sync",
+          "timings": {}
+        }
+      },
+      "traceHash": "8ad1a5260e11b7d80213544490544c264d93eb27214119ea7da2e7e5733b7f03",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexSync/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "synced": true,
+          "changed": 0,
+          "rows": 0,
+          "fullSnapshot": false,
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-sync",
+          "timings": {}
+        }
+      },
+      "traceHash": "615cb869aa23d3b66eb879908469374c59c4feba87024ac640ff0b444a7298b6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexSync/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--merged-index-sync"
+      },
+      "traceHash": "513219e96ac5568a6332f1b8d57653c82785d1ee950d68d7e0cb907e60ed2873",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexSync/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "d4b9eb3f3702963194d3da3d9a8c9ef3f7f6967a830c33639cf2366f5f431749",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexSync/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--merged-index-sync"
+      },
+      "traceHash": "534b64839824bed2d3bbd0e04d02ad6cf73e33832617e502ebaeb6bacce3203a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexSync/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "f2fba9b21a51c21cb9b1a19c84f346aa66cfce36aee0dee5cb8c5adbe51868a3",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexSync/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "7edf15e87b4e883b277ea047b055aa946938fe9b9e10e61b6b918c5f9e9a43ea",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustMergedIndexSync/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "synced": true,
+          "changed": 0,
+          "rows": 0,
+          "fullSnapshot": false,
+          "elapsedMs": 0,
+          "workerMode": "rust-merged-index-sync",
+          "timings": {}
+        }
+      },
+      "traceHash": "d6c0804bf9b6c551401dfc5604dc3b62d40758692a1ace303b49a258c937bfe1",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustWatcherPreflight/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "unchanged": true,
+          "reason": "",
+          "checkedFiles": 0,
+          "checkedDirs": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-watcher-preflight"
+        }
+      },
+      "traceHash": "b583fe655a4433ca05a05084e55376d42c21a52ecb46488df222bf2d544ec4df",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustWatcherPreflight/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "unchanged": true,
+          "reason": "",
+          "checkedFiles": 0,
+          "checkedDirs": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-watcher-preflight"
+        }
+      },
+      "traceHash": "574632b362aceda934542afa78efcf4ac8350364018c4f983f5441fd248238b6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustWatcherPreflight/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "unchanged": true,
+          "reason": "",
+          "checkedFiles": 0,
+          "checkedDirs": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-watcher-preflight"
+        }
+      },
+      "traceHash": "c7bd8c89881a96c51dc62f7a25f0aa3a4864ce3981bab58cd4d9907c5166ae1a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustWatcherPreflight/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "f5709baa1044ef8bee9b6b4f4b133a8263218a217eaaea0e7ce4d877639f5a43",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustWatcherPreflight/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "0a971884dab69ab1c4039edd333ae13da1644429bd0dadc6d9ba422238f51fd8",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustWatcherPreflight/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "cd63c3e5aa5797c3deac7bd19074f88ec29997970bda10dc10f56362bdfe51d3",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustWatcherPreflight/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "e6e1ee8a3f4477af29fcbf620d2116fdcccf7d7c95d60c47476c409cb6651ffb",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustWatcherPreflight/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "8b2c14bb88dc5119da479cd7cd69cbd1017f8ae284f4099e34116b75cf412a93",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustWatcherPreflight/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "unchanged": true,
+          "reason": "",
+          "checkedFiles": 0,
+          "checkedDirs": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-watcher-preflight"
+        }
+      },
+      "traceHash": "b583fe655a4433ca05a05084e55376d42c21a52ecb46488df222bf2d544ec4df",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustInstallStatusRead/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": {
+            "f": {
+              "installed": true
+            }
+          },
+          "missingIds": [],
+          "timings": {},
+          "workerMode": "rust-install-status-read"
+        }
+      },
+      "traceHash": "9b9387e0584312f86198c0afaee09dd20dd34870c0831c60a95f7b67780e9242",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusRead/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": {
+            "f": {
+              "installed": true
+            }
+          },
+          "missingIds": [],
+          "timings": {},
+          "workerMode": "rust-install-status-read"
+        }
+      },
+      "traceHash": "f109367fe53a192047f69cf0b1308bf059aadaa2b33d9910f53622a5419501ce",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusRead/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": {
+            "f": {
+              "installed": true
+            }
+          },
+          "missingIds": [],
+          "timings": {},
+          "workerMode": "rust-install-status-read"
+        }
+      },
+      "traceHash": "bb0227081f572644088d65149bea77265d4340dc830e396c7913de46b8f46a69",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusRead/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "1ee7e3f03c4cb75c1e31928ff1d617389c8ae79868e1bd3b8e7ea4b31ac31d0d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusRead/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3794b540f099a99bc1359ec12ca1e3863de0f7b25340a1e63ed83fa97883a033",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusRead/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "7ea6d849b2695dea35f0bfff0e30a079a2b2ac16d025b2122a6fa3992697dbc4",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusRead/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "373f7a8e393d1c9f34542f8164c1f68eb662bb4e4a2db25b7a027dd478400313",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusRead/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "c10da9566d26f1d014f2bfd70905aadf26bbac8af7d04022012698cca86fcc00",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusRead/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": {
+            "f": {
+              "installed": true
+            }
+          },
+          "missingIds": [],
+          "timings": {},
+          "workerMode": "rust-install-status-read"
+        }
+      },
+      "traceHash": "9b9387e0584312f86198c0afaee09dd20dd34870c0831c60a95f7b67780e9242",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustInstallStatusSave/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "groups": 0,
+          "timings": {},
+          "workerMode": "rust-install-status-save"
+        }
+      },
+      "traceHash": "e46a239d04db061c9451258e24c6ae09a4638459bd3330f87ab0357218085487",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusSave/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "groups": 0,
+          "timings": {},
+          "workerMode": "rust-install-status-save"
+        }
+      },
+      "traceHash": "68d3ebf914b518830912d9c4b639c66a5f8d631b7df92e9b80e6a62336ab7fdf",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusSave/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "groups": 0,
+          "timings": {},
+          "workerMode": "rust-install-status-save"
+        }
+      },
+      "traceHash": "3e5fd37e39378c7b218f5d73d2b41112fa04c1f0994e48705c40ce830e49114b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusSave/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--install-status-save"
+      },
+      "traceHash": "3608626d3e0321c8d61713693cc33a22d1500c5d5fce9148062908f187abc7e5",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusSave/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "fe5af7df34b11a67368ed055fe84de0e80e590e07d472594ebc17c25bd89338b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusSave/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--install-status-save"
+      },
+      "traceHash": "d0123f5342804bc70acd2d4e90b43d18911570254efd51abb4b3c26f7806ca7e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusSave/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "946200da17d4c4b54862389b5eb5678a1ceff80ac4c834e7b367305c2befff0c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusSave/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "afed08f99d842fd1c6aa4c051df98e2893385c2abf787d537498f7e7437f794e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusSave/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "groups": 0,
+          "timings": {},
+          "workerMode": "rust-install-status-save"
+        }
+      },
+      "traceHash": "e46a239d04db061c9451258e24c6ae09a4638459bd3330f87ab0357218085487",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustInstallStatusCompare/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": {
+            "f": {
+              "installed": true
+            }
+          },
+          "count": 1,
+          "elapsedMs": 0,
+          "workerMode": "rust-install-status-compare"
+        }
+      },
+      "traceHash": "2823b85605ddcb545ad4d6959842b70ccae8cbbf704509e1d44a4c7e6f2e34ea",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusCompare/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": {
+            "f": {
+              "installed": true
+            }
+          },
+          "count": 1,
+          "elapsedMs": 0,
+          "workerMode": "rust-install-status-compare"
+        }
+      },
+      "traceHash": "b58e27ab82c9c5a9f6d9ecc22ebf934953941379b938aa0f33c2e7571dd81699",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusCompare/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": {
+            "f": {
+              "installed": true
+            }
+          },
+          "count": 1,
+          "elapsedMs": 0,
+          "workerMode": "rust-install-status-compare"
+        }
+      },
+      "traceHash": "a82dbb404c030a756a08f50de8bda30e352e7edb30be76002e38e7951e8f97c0",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusCompare/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "e23b61ebf2f17643ae44c79765db19a2b764548d3a7d27bb655d9721175539dd",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusCompare/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "8400ed29ebd04f3bce0234c202a4b54265fdc833ddae6feab190f0ce1cbbb45e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusCompare/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "add462ed70c0563448b125ac6ed183cc710977872319f294aaff982cff7c9ac8",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusCompare/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "7074c26f90eda105cb3e48acaa979339c703b0ea7752c859721b92e819150312",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusCompare/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "e78a272dbab106e9627ffe3aab10349874cbd615da6c6cc62f4cea45c009f231",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustInstallStatusCompare/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": {
+            "f": {
+              "installed": true
+            }
+          },
+          "count": 1,
+          "elapsedMs": 0,
+          "workerMode": "rust-install-status-compare"
+        }
+      },
+      "traceHash": "2823b85605ddcb545ad4d6959842b70ccae8cbbf704509e1d44a4c7e6f2e34ea",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustLocalTagsRead/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "tagMap": {
+            "f": [
+              "tag"
+            ]
+          },
+          "knownTags": [
+            "tag"
+          ],
+          "signature": "s",
+          "timings": {},
+          "workerMode": "rust-local-tags-read"
+        }
+      },
+      "traceHash": "f356d29ad66d9efee2d3d79db48763a5df6e13d281adbd0953c70093d934e60a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsRead/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "tagMap": {
+            "f": [
+              "tag"
+            ]
+          },
+          "knownTags": [
+            "tag"
+          ],
+          "signature": "s",
+          "timings": {},
+          "workerMode": "rust-local-tags-read"
+        }
+      },
+      "traceHash": "a8127f846f0c0d5e98d412988c6eabb585c3d4372e7ddbb8de05bda8d8f07f91",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsRead/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "tagMap": {
+            "f": [
+              "tag"
+            ]
+          },
+          "knownTags": [
+            "tag"
+          ],
+          "signature": "s",
+          "timings": {},
+          "workerMode": "rust-local-tags-read"
+        }
+      },
+      "traceHash": "b79886340aaf858df22897b63b4bda5bfa0b74ecd4d07c62b87902c35b056bf2",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsRead/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "20751b24178f19b79a7245dbdaaddd8a909d16813993ed8de6f612c56f6f35ac",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsRead/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "9980796c310329a3a4daa4f35e9191b77f5b6d6c01081778e88fbbc82e64958e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsRead/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "8faac2dd46d18641bb0268c34b9fe398eb736615e1becd25492bee0e55cccf20",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsRead/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "cf87a8508191bbac5c31a905a821d4f451b4af1ca4b0a48fb5c92b85a541df2c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsRead/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "e57f7387cc2482cd1dd72d633e50168588bce5ffa326167d7b7ae24d5199d732",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsRead/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "tagMap": {
+            "f": [
+              "tag"
+            ]
+          },
+          "knownTags": [
+            "tag"
+          ],
+          "signature": "s",
+          "timings": {},
+          "workerMode": "rust-local-tags-read"
+        }
+      },
+      "traceHash": "f356d29ad66d9efee2d3d79db48763a5df6e13d281adbd0953c70093d934e60a",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustLocalTagsSet/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "written": 1,
+          "knownTags": [
+            "tag"
+          ],
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--local-tags-set",
+            "domain": "localTags",
+            "mutationKind": "set",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [
+              "tag"
+            ],
+            "workerMode": "rust-local-tags-set"
+          },
+          "timings": {},
+          "workerMode": "rust-local-tags-set"
+        }
+      },
+      "traceHash": "41c3a71f321aff85cf1e9515dc787b28796668f6b521fd9399598106109fcfee",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsSet/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "written": 1,
+          "knownTags": [
+            "tag"
+          ],
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--local-tags-set",
+            "domain": "localTags",
+            "mutationKind": "set",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [
+              "tag"
+            ],
+            "workerMode": "rust-local-tags-set"
+          },
+          "timings": {},
+          "workerMode": "rust-local-tags-set"
+        }
+      },
+      "traceHash": "0dd0fc5ae58ce3f331e8394b31617083eba9dd4d001f1664f44b8ff3286e5ca9",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsSet/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "written": 1,
+          "knownTags": [
+            "tag"
+          ],
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--local-tags-set",
+            "domain": "localTags",
+            "mutationKind": "set",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [
+              "tag"
+            ],
+            "workerMode": "rust-local-tags-set"
+          },
+          "timings": {},
+          "workerMode": "rust-local-tags-set"
+        }
+      },
+      "traceHash": "340b9f9844bbbcc44ad1ff985cd5cd9d6f81ab31c80bcca1292c27288f2ea1b0",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsSet/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--local-tags-set"
+      },
+      "traceHash": "463e9e7b0b3c2e747dbfbe8636e4d71e8eb3a63ffbd19b2651028fade1f478c1",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsSet/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "f9176736cc509d932d6c989bfff289399f089b73de91cfe1490d0b43b25c1e44",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsSet/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--local-tags-set"
+      },
+      "traceHash": "597e653a32b207c6288f713ed7a44e65865b95a31012f2e8334a2829994e9ff3",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsSet/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "9e35c71929aae72195a2ed9471dad9f70d66bc3cf724f686f3183a853468ada9",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsSet/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "fbe0864534330ea7461b56d68ae66247498c54830f50d18909dc16e80679fba7",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsSet/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "written": 1,
+          "knownTags": [
+            "tag"
+          ],
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--local-tags-set",
+            "domain": "localTags",
+            "mutationKind": "set",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [
+              "tag"
+            ],
+            "workerMode": "rust-local-tags-set"
+          },
+          "timings": {},
+          "workerMode": "rust-local-tags-set"
+        }
+      },
+      "traceHash": "41c3a71f321aff85cf1e9515dc787b28796668f6b521fd9399598106109fcfee",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustLocalTagsDeleteTag/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "updated": 0,
+          "knownTags": [
+            "tag"
+          ],
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--local-tags-delete-tag",
+            "domain": "localTags",
+            "mutationKind": "deleteTag",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [
+              "tag"
+            ],
+            "workerMode": "rust-local-tags-delete"
+          },
+          "timings": {},
+          "workerMode": "rust-local-tags-delete"
+        }
+      },
+      "traceHash": "9f93dbbc372002ba7119756b2574e6982f8cf6c1ed96444c28df9c4216f116f7",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsDeleteTag/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "updated": 0,
+          "knownTags": [
+            "tag"
+          ],
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--local-tags-delete-tag",
+            "domain": "localTags",
+            "mutationKind": "deleteTag",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [
+              "tag"
+            ],
+            "workerMode": "rust-local-tags-delete"
+          },
+          "timings": {},
+          "workerMode": "rust-local-tags-delete"
+        }
+      },
+      "traceHash": "95e3e50d171eea6bc7200bfaa153d5c07554f969f428bb5d4c1d5753c2931906",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsDeleteTag/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "updated": 0,
+          "knownTags": [
+            "tag"
+          ],
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--local-tags-delete-tag",
+            "domain": "localTags",
+            "mutationKind": "deleteTag",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [
+              "tag"
+            ],
+            "workerMode": "rust-local-tags-delete"
+          },
+          "timings": {},
+          "workerMode": "rust-local-tags-delete"
+        }
+      },
+      "traceHash": "1c39bcfd365d0bf72ded5433ec4bb2c55a7d5b3a473af9d4fc98e7c998af6174",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsDeleteTag/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--local-tags-delete-tag"
+      },
+      "traceHash": "35124a28ec4bfac20704e7096edfcd129795a199a14f95de0b44eb40cab98684",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsDeleteTag/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "7cac28fabd40f53ee73d039f2a2e7de5d8aaadb6966f7959d924f10a24ede56a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsDeleteTag/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--local-tags-delete-tag"
+      },
+      "traceHash": "d42c2bff314a0a66183db08c2cadce6f1652524e3bf51941cdcbf48765b30b2a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsDeleteTag/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "34954d59d37aae9b36abf39ca0ec979e867c9e8479f9167e70fe1d5351d4ce2f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsDeleteTag/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3888c920710145c5dd99d3621413acf14a7ee1a9305eb407f5f3c19dbe2bf893",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustLocalTagsDeleteTag/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "updated": 0,
+          "knownTags": [
+            "tag"
+          ],
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--local-tags-delete-tag",
+            "domain": "localTags",
+            "mutationKind": "deleteTag",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [
+              "tag"
+            ],
+            "workerMode": "rust-local-tags-delete"
+          },
+          "timings": {},
+          "workerMode": "rust-local-tags-delete"
+        }
+      },
+      "traceHash": "9f93dbbc372002ba7119756b2574e6982f8cf6c1ed96444c28df9c4216f116f7",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustSharedMetadataApply/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "events": 0,
+          "changedIds": [],
+          "signature": "s",
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--shared-metadata-apply",
+            "domain": "sharedMetadata",
+            "mutationKind": "apply",
+            "source": "rust-worker",
+            "changedIds": [],
+            "knownTags": [],
+            "signature": "s",
+            "workerMode": "rust-shared-metadata-apply"
+          },
+          "timings": {},
+          "workerMode": "rust-shared-metadata-apply"
+        }
+      },
+      "traceHash": "7d6be9ed67c8cf339af3dc18de0759c65cfc80f12090ec2d01ff94f675c23d6a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataApply/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "events": 0,
+          "changedIds": [],
+          "signature": "s",
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--shared-metadata-apply",
+            "domain": "sharedMetadata",
+            "mutationKind": "apply",
+            "source": "rust-worker",
+            "changedIds": [],
+            "knownTags": [],
+            "signature": "s",
+            "workerMode": "rust-shared-metadata-apply"
+          },
+          "timings": {},
+          "workerMode": "rust-shared-metadata-apply"
+        }
+      },
+      "traceHash": "0b7ab13df6a04cdcd338d50fed64732308c815909f6def1e84cc35e150d622b2",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataApply/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "events": 0,
+          "changedIds": [],
+          "signature": "s",
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--shared-metadata-apply",
+            "domain": "sharedMetadata",
+            "mutationKind": "apply",
+            "source": "rust-worker",
+            "changedIds": [],
+            "knownTags": [],
+            "signature": "s",
+            "workerMode": "rust-shared-metadata-apply"
+          },
+          "timings": {},
+          "workerMode": "rust-shared-metadata-apply"
+        }
+      },
+      "traceHash": "38eb3b0973eface25fcb85ca76bb4fe3d1d4a1f0f03d25f044596cc97fcd2452",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataApply/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--shared-metadata-apply"
+      },
+      "traceHash": "cec483e1d56de0f069d9a2f21e1f2d7980f877031b8c6d59be806ed9bb2a5207",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataApply/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3b82ca2180d030f197d7fe1fa802820716c309cd5949ebbd22b261b42b833de5",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataApply/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--shared-metadata-apply"
+      },
+      "traceHash": "a038431a78bc77546d5165a03d84a177202916ae38f9be2106a0ce791a88ab1b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataApply/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "4989d2e359e3eb5145efa77590077f39ac0ffa94f592927a2708b40f1ca2c3cd",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataApply/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "4355121b66ec6b99338810db91f350b31da13f9abcaa847ff41f63664364eace",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataApply/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "events": 0,
+          "changedIds": [],
+          "signature": "s",
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--shared-metadata-apply",
+            "domain": "sharedMetadata",
+            "mutationKind": "apply",
+            "source": "rust-worker",
+            "changedIds": [],
+            "knownTags": [],
+            "signature": "s",
+            "workerMode": "rust-shared-metadata-apply"
+          },
+          "timings": {},
+          "workerMode": "rust-shared-metadata-apply"
+        }
+      },
+      "traceHash": "7d6be9ed67c8cf339af3dc18de0759c65cfc80f12090ec2d01ff94f675c23d6a",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustSharedMetadataRemoveTag/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "updated": 0,
+          "signature": "s",
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--shared-metadata-remove-tag",
+            "domain": "sharedMetadata",
+            "mutationKind": "removeTag",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [],
+            "signature": "s",
+            "workerMode": "rust-shared-metadata-remove-tag"
+          },
+          "timings": {},
+          "workerMode": "rust-shared-metadata-remove-tag"
+        }
+      },
+      "traceHash": "240ace0b6b4e04145355ed1524f385b915a2273b702ab76b9319c087b9235940",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataRemoveTag/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "updated": 0,
+          "signature": "s",
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--shared-metadata-remove-tag",
+            "domain": "sharedMetadata",
+            "mutationKind": "removeTag",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [],
+            "signature": "s",
+            "workerMode": "rust-shared-metadata-remove-tag"
+          },
+          "timings": {},
+          "workerMode": "rust-shared-metadata-remove-tag"
+        }
+      },
+      "traceHash": "a3d6f1f211a9da1d0d713df7567692f8cd35ed55e8177d6a53c3b80ec4f4c708",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataRemoveTag/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "updated": 0,
+          "signature": "s",
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--shared-metadata-remove-tag",
+            "domain": "sharedMetadata",
+            "mutationKind": "removeTag",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [],
+            "signature": "s",
+            "workerMode": "rust-shared-metadata-remove-tag"
+          },
+          "timings": {},
+          "workerMode": "rust-shared-metadata-remove-tag"
+        }
+      },
+      "traceHash": "a450bd471227058e88ecb1cbaa57f2b61c60f04c527b1ba67ad485f540293790",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataRemoveTag/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--shared-metadata-remove-tag"
+      },
+      "traceHash": "74b1d905b626f13e96fceac7aa1ebbf9a0d438b7095770e309c733f213c52a12",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataRemoveTag/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "65c4515b3be97ddcb18f712f4fb7e4a2920b58d8add1ae7ad295dbd805cc211a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataRemoveTag/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--shared-metadata-remove-tag"
+      },
+      "traceHash": "63041e7db135b243ea9948e1b2a1afafe715e8a5a9384bc72f405c7f1f22039c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataRemoveTag/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3b9b289375f546fbb9e90d1137351f56877d67a5c74a3600276530c292974382",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataRemoveTag/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "28d306650115a0f2cf32adae7db0d09d210277498e4e025ce78b7c58fbfc8014",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataRemoveTag/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "updatedIds": [
+            "f"
+          ],
+          "updated": 0,
+          "signature": "s",
+          "mutationProtocol": {
+            "ok": true,
+            "command": "--shared-metadata-remove-tag",
+            "domain": "sharedMetadata",
+            "mutationKind": "removeTag",
+            "source": "rust-worker",
+            "changedIds": [
+              "f"
+            ],
+            "knownTags": [],
+            "signature": "s",
+            "workerMode": "rust-shared-metadata-remove-tag"
+          },
+          "timings": {},
+          "workerMode": "rust-shared-metadata-remove-tag"
+        }
+      },
+      "traceHash": "240ace0b6b4e04145355ed1524f385b915a2273b702ab76b9319c087b9235940",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustSharedMetadataKnownTags/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "knownTags": [
+            "tag"
+          ],
+          "roots": [],
+          "timings": {},
+          "workerMode": "rust-shared-metadata-known-tags"
+        }
+      },
+      "traceHash": "c9a979ed4836eaf53b29593ddf0d021b0aec44b56ff38682069831a1a191a66d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataKnownTags/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "knownTags": [
+            "tag"
+          ],
+          "roots": [],
+          "timings": {},
+          "workerMode": "rust-shared-metadata-known-tags"
+        }
+      },
+      "traceHash": "4a542d81996e06c04e924dceef6135612f715c9c9908f868b6b42094f54a9fd1",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataKnownTags/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "knownTags": [
+            "tag"
+          ],
+          "roots": [],
+          "timings": {},
+          "workerMode": "rust-shared-metadata-known-tags"
+        }
+      },
+      "traceHash": "22a8b7c0ce18be4efac90a7c69e2ba461daf21a2b46708a4586f0b9a12855097",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataKnownTags/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "05af3da48ad9391681f96b643a9f595099b4f3ef67ff4e48f69a4cde46232cbe",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataKnownTags/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3f2a4e0a57285201167cb4a80c18a694b4e3594c62a7373651cddad54a9bfde5",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataKnownTags/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "e27a3630c2d9fd76b2ecb4178e853be0279ed58ce3f9e3a34613751f686f9b51",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataKnownTags/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "2eeec7ec8d217fc5dbcb6778c2a10db76c6b03438703a4e62de26c90e7b1902b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataKnownTags/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "cf77119bb95dc1bf4f09413bf4c952eb95ebd474ef3cb611312b84cfa054a28f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataKnownTags/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "knownTags": [
+            "tag"
+          ],
+          "roots": [],
+          "timings": {},
+          "workerMode": "rust-shared-metadata-known-tags"
+        }
+      },
+      "traceHash": "c9a979ed4836eaf53b29593ddf0d021b0aec44b56ff38682069831a1a191a66d",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustSharedMetadataOverlayRead/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rootPath": "C:/fonts",
+          "dbPath": "C:/index.db",
+          "signature": "s",
+          "matched": [],
+          "rows": 0,
+          "requested": 1,
+          "timings": {},
+          "workerMode": "rust-shared-metadata-overlay-read"
+        }
+      },
+      "traceHash": "376ae6c40d5c9ebacb7a7055158c98cf49281868bd15e0a406bdfe997ddab576",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataOverlayRead/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rootPath": "C:/fonts",
+          "dbPath": "C:/index.db",
+          "signature": "s",
+          "matched": [],
+          "rows": 0,
+          "requested": 1,
+          "timings": {},
+          "workerMode": "rust-shared-metadata-overlay-read"
+        }
+      },
+      "traceHash": "ecadd1df747fab167b5a60fec93d87fcbd4fc48289e27dd55957140ce29aa825",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataOverlayRead/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rootPath": "C:/fonts",
+          "dbPath": "C:/index.db",
+          "signature": "s",
+          "matched": [],
+          "rows": 0,
+          "requested": 1,
+          "timings": {},
+          "workerMode": "rust-shared-metadata-overlay-read"
+        }
+      },
+      "traceHash": "089701301f1b6470777a62fdc90d96d899c413e96be86e8c4f61f80c8a38bab1",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataOverlayRead/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "98dfc61a0d4b55a56b0888468a961d950830d943d6744dc99a616c56c6303a50",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataOverlayRead/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "73264ed7cfbd810b98716f32047a5ad3f3be86cd26855c1ca695d83306769194",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataOverlayRead/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "278c67737935b16b997b728c4efc3885c384f85b5bf0703289c15d3a6013200d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataOverlayRead/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "d9dded92bf0ab25b9571d3a1c2a80c43701a98dbcbedf655b6eeee0646ab974d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataOverlayRead/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "8b40cd354ea6fd80c1d211fba0e40e135ae788b13b378a3f0c3b2cda35ce4ef1",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataOverlayRead/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rootPath": "C:/fonts",
+          "dbPath": "C:/index.db",
+          "signature": "s",
+          "matched": [],
+          "rows": 0,
+          "requested": 1,
+          "timings": {},
+          "workerMode": "rust-shared-metadata-overlay-read"
+        }
+      },
+      "traceHash": "376ae6c40d5c9ebacb7a7055158c98cf49281868bd15e0a406bdfe997ddab576",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustSharedMetadataSignature/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "signature": "s",
+          "timings": {},
+          "workerMode": "rust-shared-metadata-signature"
+        }
+      },
+      "traceHash": "12e71c605cdc6dc6cb10aafb34851ecfd4ccf246d2425d225fe50fd227b1d4e4",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataSignature/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "signature": "s",
+          "timings": {},
+          "workerMode": "rust-shared-metadata-signature"
+        }
+      },
+      "traceHash": "cd78ba92865cc0b6aa991343097db3e284e4b5e60d512fffbbf81a522901d27c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataSignature/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "signature": "s",
+          "timings": {},
+          "workerMode": "rust-shared-metadata-signature"
+        }
+      },
+      "traceHash": "0aeb6b989f83bf1d18b62015eb0f2341dcb63163861b589c16c6e97bf5b1e384",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataSignature/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "b0d3b8eed5e946e9a8e3d59cff844ff4d26a14000aa8a049aede5810be5bd315",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataSignature/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "f08017d7121e9aa3a3a2d2acd6116ee031df15f20df3ce64247ccd2962de29eb",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataSignature/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "be0d1a346caffccec0b9406a38409952757c7e4666ded8c09267676a81e3e8d3",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataSignature/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "f291ea44c9eb4e9be0ddd65cf5edad846413a2c6818903d0e42945d46081695c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataSignature/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "20a4ece8d6565c2884128ee84f9f9a22fc36ec7f2f58c98d5877485ca43f4d80",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSharedMetadataSignature/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "signature": "s",
+          "timings": {},
+          "workerMode": "rust-shared-metadata-signature"
+        }
+      },
+      "traceHash": "12e71c605cdc6dc6cb10aafb34851ecfd4ccf246d2425d225fe50fd227b1d4e4",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustPreviewCacheReadStatus/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "status": null,
+          "matched": true,
+          "touched": true,
+          "timings": {},
+          "workerMode": "rust-preview-cache-read-status"
+        }
+      },
+      "traceHash": "8a8f67271978044b8b381e68871778fe2d24162cb626a766bc650069a9e3ff48",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheReadStatus/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "status": null,
+          "matched": true,
+          "touched": true,
+          "timings": {},
+          "workerMode": "rust-preview-cache-read-status"
+        }
+      },
+      "traceHash": "d36658f6fc2516b37d2ba99e66e9ae1b263bd893fa944ba7cb3c060703ea83cf",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheReadStatus/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "status": null,
+          "matched": true,
+          "touched": true,
+          "timings": {},
+          "workerMode": "rust-preview-cache-read-status"
+        }
+      },
+      "traceHash": "f733371a435428091b0b655db4ad327f9e60ce2d2e3cd63753b2893605155f25",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheReadStatus/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "383a926fbdee1ab039f646a1cff57cf669a994622d43366a0e621f7a6d537f60",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheReadStatus/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "189499e9daee515d3ecca5c792653504d1c7d084dc98bfa8e62acff52c49e7db",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheReadStatus/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "7d373e044650fc258b8110f5a598665f2917155ba0b9569a08284bd2ddf3b86a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheReadStatus/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "212bd1452d318814b1d59feb12ba4d74145add263475665ab02e8e548709d71f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheReadStatus/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "6ed942651981bb38e93ed9aeb19112a96181e5f28bc770eb363bd6946cfdbba0",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheReadStatus/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "status": null,
+          "matched": true,
+          "touched": true,
+          "timings": {},
+          "workerMode": "rust-preview-cache-read-status"
+        }
+      },
+      "traceHash": "8a8f67271978044b8b381e68871778fe2d24162cb626a766bc650069a9e3ff48",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustPreviewCacheApply/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-apply"
+        }
+      },
+      "traceHash": "bb1dfdaee1e3f9858c53d158ad0d74dc9939c51b625427059bf239026293caaa",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheApply/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-apply"
+        }
+      },
+      "traceHash": "0a9cb15918a86e92046290264820ee1c982d4f060376a01ae52348dbd17a08d0",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheApply/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-apply"
+        }
+      },
+      "traceHash": "47521e55deb9c540f6270a560331a06b9401d0634decad986876788773e3c4dd",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheApply/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "769c674ef228461fc1aaec9aae1562a0d8167d4703d7734738b8f249bd488126",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheApply/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "f9f4f4b6e39b0be44e16094c30fef56eb131bdbee2a41dd8c941bbdde4ec34a4",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheApply/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3396760d4c4c3fda0851e809a56f5822faf13a476649e045d4514c3a8f65ff58",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheApply/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "ead2790cd9ad00b594c048f4d646798a3c981b06c73e15ca5c17a9720030ce89",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheApply/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "2f0185562e52643595117a05f187b3f0858e95ea7bfaa0c1776983e45062da0c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheApply/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "written": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-apply"
+        }
+      },
+      "traceHash": "bb1dfdaee1e3f9858c53d158ad0d74dc9939c51b625427059bf239026293caaa",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustPreviewCacheDelete/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "deleted": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-delete"
+        }
+      },
+      "traceHash": "f1408e4d032f710aaf8a94d402a8933fc8faf547a6eebe55ff7b5fb6f15910ac",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheDelete/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "deleted": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-delete"
+        }
+      },
+      "traceHash": "eed1879e3f217068d90351e57adfd2c3220c776947ca96ac6c53193aaff65fd2",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheDelete/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "deleted": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-delete"
+        }
+      },
+      "traceHash": "fd8e7ae359300c170afc9ba12e5a4a2357579193d36422596fd048da5f3e4555",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheDelete/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "aa0df957e510e28ef256385ebee52e2c7764d52d56aa65ed1039db1efc72eb6e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheDelete/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "f6c2912fb0a485877430a2bcb1af7a93bfd7fad96ca56a7f2554813d8ed92b86",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheDelete/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3fa03dddf5a800d0f1a02af8d2bf1308f5ddec345d9f42620667e261a43ff866",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheDelete/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "67a4c2f735b0b7b513bde29e5dc61702d3b2790d12f3d3bc75bba6b2deb222a6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheDelete/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "7fef2aeebb650aee4ca9c8f58011281419ce7af5dee4ab4e3556647a421a8d82",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheDelete/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "deleted": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-delete"
+        }
+      },
+      "traceHash": "f1408e4d032f710aaf8a94d402a8933fc8faf547a6eebe55ff7b5fb6f15910ac",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustPreviewCacheQuery/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rows": [],
+          "matched": 0,
+          "touched": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-query"
+        }
+      },
+      "traceHash": "bf3d64e004e3cc85a71c9c623d50423eb1ca1e8e7486c2a267b96e7a75520fcd",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheQuery/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rows": [],
+          "matched": 0,
+          "touched": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-query"
+        }
+      },
+      "traceHash": "107207ee8bb61ffe28ec00590373d92dea3f0f5278f2321d7913f5dc772e50fa",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheQuery/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rows": [],
+          "matched": 0,
+          "touched": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-query"
+        }
+      },
+      "traceHash": "97f9173a0092fa607ee15feb046134cd7593175e495a682465318c3b6fb9749b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheQuery/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "eab69d6c660f5fba2aa9b0d7815e69c1199a1ac685bbb37d58022de28715bb70",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheQuery/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "aa90099c26b9f2714544bb432a0537ab81d0fdb5be1551a1e08c9dc3af22f999",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheQuery/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "8944aa6e6ddbb54cb9d944ec14237aa50ec1ce370aba1f556e43ddacbfa02b55",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheQuery/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "4c669eab04d0366cff0bd172c05b15cb68a48f893b8beb6ee5bbb7df93310fb3",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheQuery/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "cdd60fc7b8da6edb44ab6eb13f89636de7511c00454a7bce657a6ddff81d9a65",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheQuery/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rows": [],
+          "matched": 0,
+          "touched": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-query"
+        }
+      },
+      "traceHash": "bf3d64e004e3cc85a71c9c623d50423eb1ca1e8e7486c2a267b96e7a75520fcd",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustPreviewCacheTouch/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "touched": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-touch"
+        }
+      },
+      "traceHash": "58eacf10b69473fdadaf4cc4591db8aba5267ef5f7a8fffa5616dc9f03497844",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheTouch/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "touched": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-touch"
+        }
+      },
+      "traceHash": "36094793dba2da8bd089ee82d14fb9d5e1bc67ee24493b49ba8e1ae716203016",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheTouch/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "touched": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-touch"
+        }
+      },
+      "traceHash": "26743e263f7f24004fea9483dd4cbf6e29a10d3c4d639783a31f36ef17b1597d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheTouch/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "881f3352e41a9d2ac5eaae010a1791a2875bca2fd08eec1e909a4df505d4abc5",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheTouch/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3f3472ce88e83ef73f1bee9319a7cf14bb32c07b79db5316668b036359b63388",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheTouch/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "8e2bc29a246324f4d4db17996fc6ab5757b06df0642ff84d2874bd2a07ed90d7",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheTouch/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "d53bfe19014cfab9b9c70efb2a71167f62025a972c5c9af6d01bd5a72d1b4806",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheTouch/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "deb855ea56a1712c9151319043d073596c7aa8ddf66cf10b3a88faad430ee7d6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheTouch/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "touched": 1,
+          "timings": {},
+          "workerMode": "rust-preview-cache-touch"
+        }
+      },
+      "traceHash": "58eacf10b69473fdadaf4cc4591db8aba5267ef5f7a8fffa5616dc9f03497844",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustPreviewCacheBatch/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rows": [],
+          "matched": 0,
+          "touched": 1,
+          "missingIds": [],
+          "timings": {},
+          "workerMode": "rust-preview-cache-batch"
+        }
+      },
+      "traceHash": "86ccf9d0ce4dc3f0aca2d948110640bc8509014922a64cb243c8db445325d0a6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheBatch/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rows": [],
+          "matched": 0,
+          "touched": 1,
+          "missingIds": [],
+          "timings": {},
+          "workerMode": "rust-preview-cache-batch"
+        }
+      },
+      "traceHash": "149aba964ecdf57a2346329d770d8fbcdcc44bc451fa6cf41dea536aa6163500",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheBatch/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rows": [],
+          "matched": 0,
+          "touched": 1,
+          "missingIds": [],
+          "timings": {},
+          "workerMode": "rust-preview-cache-batch"
+        }
+      },
+      "traceHash": "85a48c1929eec9939a9cc6fbd1d4cf223ff1a4bc1ab122b2bf62a7d143a0e8d4",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheBatch/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "0e75738d25afbb845a440fdf531fab6e55950d0ce45258c50b789e8dd9a74a7c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheBatch/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "d2822adb99c9d8d1551c8eb0fdca1c9b4954f85bf123ac264082a632630f687c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheBatch/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "358f9bf93ce4682563acfb07f4288c505450548a546a8a4710a04302d94b62b3",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheBatch/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "4818a3a65d359b0589ae995df0bcf16db52944391d3087a004ff90f65f2f8bf9",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheBatch/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "4a40ba890a550e46adb41e7a9305743870be81bb72de0d925f734167932a1120",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheBatch/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "rows": [],
+          "matched": 0,
+          "touched": 1,
+          "missingIds": [],
+          "timings": {},
+          "workerMode": "rust-preview-cache-batch"
+        }
+      },
+      "traceHash": "86ccf9d0ce4dc3f0aca2d948110640bc8509014922a64cb243c8db445325d0a6",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustPreviewCacheMaintenance/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "checkedRows": 0,
+          "staleRows": 0,
+          "removedFiles": 0,
+          "removedOrphanFiles": 0,
+          "errors": [],
+          "timings": {},
+          "workerMode": "rust-preview-cache-maintenance"
+        }
+      },
+      "traceHash": "0b3c23a18bfecdd3b5d9a4a14407db308122976e40e5c9a464ceae0cc5ad00fa",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheMaintenance/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "checkedRows": 0,
+          "staleRows": 0,
+          "removedFiles": 0,
+          "removedOrphanFiles": 0,
+          "errors": [],
+          "timings": {},
+          "workerMode": "rust-preview-cache-maintenance"
+        }
+      },
+      "traceHash": "a37a98c79fa5b8e79883e6f0e54175fedd65647f94b48da9c91d8f740b30caed",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheMaintenance/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "checkedRows": 0,
+          "staleRows": 0,
+          "removedFiles": 0,
+          "removedOrphanFiles": 0,
+          "errors": [],
+          "timings": {},
+          "workerMode": "rust-preview-cache-maintenance"
+        }
+      },
+      "traceHash": "c13764e52716e95a020f26da7bfc6d82225397c3456da6fae58ada3402e405ea",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheMaintenance/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "e5fb514a2a6c2e08b907bb8eedd6170d327417fbdc126e39951d07badffc9e9e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheMaintenance/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "5953e0218e2fa4cc376adfb96e0025b2479a0d34ac4e4c957043b5a5b4a7b596",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheMaintenance/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "2cf42d489cec3f738a073d1999c439ff0a9f6764a9d79be54eddf8014d2bffb0",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheMaintenance/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "fe60936f625fa13fb0334f543bd63ec8fa249db0f963b1d47a36aff5e16373fb",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheMaintenance/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "4b4ebac699946fb394bece2eda69aef4d18a7bf7f01afcfa458f8bd25034274c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewCacheMaintenance/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "checkedRows": 0,
+          "staleRows": 0,
+          "removedFiles": 0,
+          "removedOrphanFiles": 0,
+          "errors": [],
+          "timings": {},
+          "workerMode": "rust-preview-cache-maintenance"
+        }
+      },
+      "traceHash": "0b3c23a18bfecdd3b5d9a4a14407db308122976e40e5c9a464ceae0cc5ad00fa",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustDatabaseHealthCheck/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "items": [
+            {
+              "label": "",
+              "filePath": "",
+              "ok": false,
+              "message": ""
+            }
+          ],
+          "elapsedMs": 0,
+          "workerMode": "rust-database-health-check"
+        }
+      },
+      "traceHash": "1736bff7808f96cbcbeb0fd8af7febeb3440fe825a351d4e5533aa3b7b0667af",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseHealthCheck/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "items": [
+            {
+              "label": "",
+              "filePath": "",
+              "ok": false,
+              "message": ""
+            }
+          ],
+          "elapsedMs": 0,
+          "workerMode": "rust-database-health-check"
+        }
+      },
+      "traceHash": "5a49fa0133f152c06838c531d3177c6d8918b3b3c97839d6f48302dbfe119e43",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseHealthCheck/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "items": [
+            {
+              "label": "",
+              "filePath": "",
+              "ok": false,
+              "message": ""
+            }
+          ],
+          "elapsedMs": 0,
+          "workerMode": "rust-database-health-check"
+        }
+      },
+      "traceHash": "06f3d404de4900fccd7ab5e4f43dbfa9e5ff677fca16916ff57a987bacbd604c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseHealthCheck/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--database-health-check"
+      },
+      "traceHash": "eadc6808900558d3079a7e572c7ba594e2f0715e86bdeffc673d0993df737daf",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseHealthCheck/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "1736bff7808f96cbcbeb0fd8af7febeb3440fe825a351d4e5533aa3b7b0667af",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseHealthCheck/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "5a49fa0133f152c06838c531d3177c6d8918b3b3c97839d6f48302dbfe119e43",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseHealthCheck/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "ae9620a0d874c68cc94b226243bafe39bd09c6e9e41d91364d23c1132e14c1f0",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseHealthCheck/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "88e1df3d784a4be95dfbf4c07fcc9e1804eb866331ce574a607aae61a03ca310",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseHealthCheck/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "items": [
+            {
+              "label": "",
+              "filePath": "",
+              "ok": false,
+              "message": ""
+            }
+          ],
+          "elapsedMs": 0,
+          "workerMode": "rust-database-health-check"
+        }
+      },
+      "traceHash": "1736bff7808f96cbcbeb0fd8af7febeb3440fe825a351d4e5533aa3b7b0667af",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustDatabaseBackup/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "reason": "undefined",
+          "backupDir": "C:/backup",
+          "items": [
+            {
+              "label": "",
+              "sourcePath": "",
+              "ok": false,
+              "sizeBytes": 0,
+              "message": ""
+            }
+          ],
+          "createdAt": "undefined",
+          "elapsedMs": 0,
+          "workerMode": "rust-database-backup"
+        }
+      },
+      "traceHash": "97492dbb0fa8e4f8a27dfe553d7288c142fa1b11c725f7b31a28aaefe1d15b24",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseBackup/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "reason": "undefined",
+          "backupDir": "C:/backup",
+          "items": [
+            {
+              "label": "",
+              "sourcePath": "",
+              "ok": false,
+              "sizeBytes": 0,
+              "message": ""
+            }
+          ],
+          "createdAt": "undefined",
+          "elapsedMs": 0,
+          "workerMode": "rust-database-backup"
+        }
+      },
+      "traceHash": "90ed030ab48af3166a47b2df74ea01ab2334bcca8b753aceccb97909bba05ee5",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseBackup/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "reason": "undefined",
+          "backupDir": "C:/backup",
+          "items": [
+            {
+              "label": "",
+              "sourcePath": "",
+              "ok": false,
+              "sizeBytes": 0,
+              "message": ""
+            }
+          ],
+          "createdAt": "undefined",
+          "elapsedMs": 0,
+          "workerMode": "rust-database-backup"
+        }
+      },
+      "traceHash": "338fdaadeb7842a0dc25f850982c80171675752f533ada944f5d99825bb61645",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseBackup/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--database-backup"
+      },
+      "traceHash": "af4569c25dedbf0586ee53e5a99c1a450cf7392ce2185e0634185eafaaab2057",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseBackup/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "5d2bb19ba5e7a241ef919a501d6129db912d86f452a9575b44843d40b7bcf785",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseBackup/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--database-backup"
+      },
+      "traceHash": "6a8bfccf71dc3ef71c90d65e355c694d8baa2b839a0ccdf74d7558975aebf4d6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseBackup/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "fa014338f8764e528ca2ac2fef075633537012a5cf1129e69fd197af5ff982e5",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseBackup/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "32c0f9ee13531d4cfe42049ffb05a3afb99c0e87ed894b574a224e4a6884a843",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustDatabaseBackup/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "reason": "undefined",
+          "backupDir": "C:/backup",
+          "items": [
+            {
+              "label": "",
+              "sourcePath": "",
+              "ok": false,
+              "sizeBytes": 0,
+              "message": ""
+            }
+          ],
+          "createdAt": "undefined",
+          "elapsedMs": 0,
+          "workerMode": "rust-database-backup"
+        }
+      },
+      "traceHash": "97492dbb0fa8e4f8a27dfe553d7288c142fa1b11c725f7b31a28aaefe1d15b24",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustFontResourceAdd/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "C:/fonts/a.ttf": {
+            "ok": true,
+            "count": 1,
+            "message": ""
+          }
+        }
+      },
+      "traceHash": "64eefd2aa0d60dd3a80bd9f4be777a5fdfa619a7a60643f02c622a72cb88edf7",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceAdd/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "C:/fonts/a.ttf": {
+            "ok": true,
+            "count": 1,
+            "message": ""
+          }
+        }
+      },
+      "traceHash": "841a84848867a775a691ed6e61c7ed57855926df862a0dbb1e792f417edc1164",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceAdd/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "C:/fonts/a.ttf": {
+            "ok": true,
+            "count": 1,
+            "message": ""
+          }
+        }
+      },
+      "traceHash": "92ed5664a267b6b7b29a507dce4388c61e5cda79e7ab981ae777a22e6a60fad0",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceAdd/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--font-resource-add"
+      },
+      "traceHash": "8e2fa202b1811d6816cfa378e7ebaa6527e7b12c070ece8f5b007cd9376ada33",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceAdd/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "c9aef0356203691f97e70ba2305b96157776f0a12d9614a2e951dbe7434043ad",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceAdd/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--font-resource-add"
+      },
+      "traceHash": "31f3e338a6064867b41d21ccdebae040ba0b74b7f1bc1e97d90a8a86d252c0aa",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceAdd/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "df85a64a28a67bedd9e2bd116dec6b2ae8afd0548a732955fd522e90a7c54837",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceAdd/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "91a15f1937579c0a04a94fb12c699394ca53b9abb4fbcd216e41dd657803366e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceAdd/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "C:/fonts/a.ttf": {
+            "ok": true,
+            "count": 1,
+            "message": ""
+          }
+        }
+      },
+      "traceHash": "64eefd2aa0d60dd3a80bd9f4be777a5fdfa619a7a60643f02c622a72cb88edf7",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustFontResourceRemove/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "C:/fonts/a.ttf": {
+            "ok": true,
+            "count": 1,
+            "message": ""
+          }
+        }
+      },
+      "traceHash": "cdee43cad276c2e276dfd28b5a177dce73d744e71f7d96eaf6f05b7a92e9b02b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceRemove/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "C:/fonts/a.ttf": {
+            "ok": true,
+            "count": 1,
+            "message": ""
+          }
+        }
+      },
+      "traceHash": "b48c83f9f371ab9a785573503e25fac6edec8aa0fd95ebc18ec324e5770a53ec",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceRemove/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "C:/fonts/a.ttf": {
+            "ok": true,
+            "count": 1,
+            "message": ""
+          }
+        }
+      },
+      "traceHash": "6e4a57b86d4c49bf28cdb0c4b12bb261de6e61e5f5258112e4e012f4fd77e7ce",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceRemove/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--font-resource-remove"
+      },
+      "traceHash": "90b2712e487548dc2636e158bdfe2bc66b2dfd0917cdeee95de0e7e24fe081c1",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceRemove/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "50d2d9d36d0574a3c7bc1455c1add5c189a239937f45909fc9d9c6ce4075cd68",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceRemove/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--font-resource-remove"
+      },
+      "traceHash": "557d8e7976d28f5ee2a98ba3bd547fc64b02c21d1a0ce88e11691f960c3b4211",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceRemove/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "ad048a8408331f66fd42c3d179c713a230dbb5cd8ee03523ac595572b959741e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceRemove/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "a9a6861c050f3d46388f1340a378deb21e2debb7f8c10978aa09257d5ad39e9d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontResourceRemove/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "C:/fonts/a.ttf": {
+            "ok": true,
+            "count": 1,
+            "message": ""
+          }
+        }
+      },
+      "traceHash": "cdee43cad276c2e276dfd28b5a177dce73d744e71f7d96eaf6f05b7a92e9b02b",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustFontRegistryApply/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "count": 1,
+          "failed": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-registry-apply"
+        }
+      },
+      "traceHash": "5dd2227a8e6ee92046f4e2643114b8dfefe52c587b83ff1248a7c33b3d146ce7",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryApply/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "count": 1,
+          "failed": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-registry-apply"
+        }
+      },
+      "traceHash": "9cf5ce84689d14a59e282ed547203fca2bfb5f43d74750d5d9c0e9e6df28e159",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryApply/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "count": 1,
+          "failed": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-registry-apply"
+        }
+      },
+      "traceHash": "fcbc9a58e38d5aaffcbbcae6d89fa244f5458c5f9b0ac2f292230a998a0292db",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryApply/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--font-registry-apply"
+      },
+      "traceHash": "b78785980e1b6576811040fc542ecc9c0b4a7d42fdde2a4e29e6460f2300aaf6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryApply/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "ea992077d969db8c5d647335b8ed32f55bde86dc0d6f402eb7930fd96926f41c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryApply/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--font-registry-apply"
+      },
+      "traceHash": "7880cdfe20f8aea864f9e786e94bf05275d93fc8960df90570e6bcb3b154122c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryApply/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "61897d27cdb5c0580a61605dc0a68f9e8f439e3eb06dbcef049a8d8ef7a17faf",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryApply/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3cfbed298469486cae1a973b731ab342ce5a540cad256316aa578d0819e61012",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryApply/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "count": 1,
+          "failed": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-registry-apply"
+        }
+      },
+      "traceHash": "5dd2227a8e6ee92046f4e2643114b8dfefe52c587b83ff1248a7c33b3d146ce7",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustFontRegistryDelete/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "count": 1,
+          "failed": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-registry-delete"
+        }
+      },
+      "traceHash": "61233c86e4a96d0c322ab1a635eea00073efcb5e7ac2d7a0e3b5ea59e402a5d7",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryDelete/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "count": 1,
+          "failed": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-registry-delete"
+        }
+      },
+      "traceHash": "07e6cfdae144239b04d0f585934aa6244456525d2f64be5c56159d47af77693f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryDelete/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "count": 1,
+          "failed": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-registry-delete"
+        }
+      },
+      "traceHash": "c0971b39e1f7a2fea717da2c188d844d80b064b39858fd558928cf1f3d0082fd",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryDelete/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--font-registry-delete"
+      },
+      "traceHash": "4ef9b1b700966e775d5faa5c03bfe647a941ae3b9f5529fba841a1c9c767ae1d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryDelete/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "59a4f6bc614f72aff2082a33c94cc5e5577c7fd9d5201506047af4c7b725a30d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryDelete/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--font-registry-delete"
+      },
+      "traceHash": "b5d84177300f871aaf2f250b2eb781b76c48f88acc7fb54efa931b0d6bed43ae",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryDelete/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "255fe72be3707b0314f00860b2bc5ca45da1169898652437903a612453425209",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryDelete/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "fccaaf3b196854f52a44848c59261700eb4846109a7905af86cbb2c41b336956",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontRegistryDelete/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "count": 1,
+          "failed": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-registry-delete"
+        }
+      },
+      "traceHash": "61233c86e4a96d0c322ab1a635eea00073efcb5e7ac2d7a0e3b5ea59e402a5d7",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustFontChangeNotify/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-change-notify"
+        }
+      },
+      "traceHash": "3850b5e1007fa83da406ae6a31bf0aefd3e9b0a1b1eb6f0df21f843ced522f79",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontChangeNotify/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-change-notify"
+        }
+      },
+      "traceHash": "f5cebf39b152a9a34d2a22a0fd57456a719ea2878a65ddb40eaf0b035bf3544b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontChangeNotify/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-change-notify"
+        }
+      },
+      "traceHash": "9d598e5e90d8dccaab819fd65c8b8b78864179fe8aee7130d1413a853be295ea",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontChangeNotify/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--font-resource-notify"
+      },
+      "traceHash": "5c54a2d546162d0cb37e25f23cfb369f6b71f7a6abece8ed38f0d42f2a79d8bc",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontChangeNotify/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "84bf99e82de83744aba9e0b988086a732ab07f7b405c422495d29ba0ded28995",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontChangeNotify/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--font-resource-notify"
+      },
+      "traceHash": "e12ded49453af4298bf629aecadb4f4499c669852e7e216bc605d2ebe252f560",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontChangeNotify/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3f17649889aab61a108f5d9ef4b44b46524d01730d0e4eb342a07ff5ba30a837",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontChangeNotify/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "70f9f282d0d23ba4f674b28960447fd59b8199f16cb6e621df334f383083f32c",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontChangeNotify/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-change-notify"
+        }
+      },
+      "traceHash": "3850b5e1007fa83da406ae6a31bf0aefd3e9b0a1b1eb6f0df21f843ced522f79",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustPhysicalFolderTree/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "folders": [
+            "C:/fonts"
+          ],
+          "nodes": [],
+          "errors": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-physical-folder-tree"
+        }
+      },
+      "traceHash": "9b38c081ef2d82099393135b191e020cf405a113a4a80caf98bdfc39a16d1c71",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPhysicalFolderTree/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "folders": [
+            "C:/fonts"
+          ],
+          "nodes": [],
+          "errors": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-physical-folder-tree"
+        }
+      },
+      "traceHash": "6592182b68efa47971dc73bf94fb43dd6583f0c800fb1cfaa0aac98a457f45be",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPhysicalFolderTree/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "folders": [
+            "C:/fonts"
+          ],
+          "nodes": [],
+          "errors": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-physical-folder-tree"
+        }
+      },
+      "traceHash": "33620fb7b4e709f1879276c8d8ceb4772f1861be13e17c19dc0750f0d67fd4ab",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPhysicalFolderTree/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "5ce7717d69af8ba91c4faf0fd8e0d40aa562dd9fdc84ada3886b9b6ec190f117",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPhysicalFolderTree/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "7aef038705e6f8c556e5a2b1ec5afa75db22b08156c8e58eec43c584ba78f324",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPhysicalFolderTree/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "2b411f371f1e94ea8cb0f0578efe179e07e44f778d929d1216b45daaf5f26466",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPhysicalFolderTree/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "bf76b0b231e01aa1bf5392fa0fca00e22aa4e04f9756f14050ff374463ab4809",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPhysicalFolderTree/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "8f25e56b44a4e395e4db4e20b5cff04502d61d2d14946ed2e30a9fe588a4d7ba",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPhysicalFolderTree/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "folders": [
+            "C:/fonts"
+          ],
+          "nodes": [],
+          "errors": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-physical-folder-tree"
+        }
+      },
+      "traceHash": "9b38c081ef2d82099393135b191e020cf405a113a4a80caf98bdfc39a16d1c71",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustFontActivationFiles/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "copied": 1,
+          "reused": 0,
+          "deleted": 1,
+          "failed": 0,
+          "copyResults": [],
+          "deleteResults": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-font-activation-files"
+        }
+      },
+      "traceHash": "a75007d76352b0f058d1e6e8344824d164ec105b1e7a1926f79a22831994b506",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontActivationFiles/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "copied": 1,
+          "reused": 0,
+          "deleted": 1,
+          "failed": 0,
+          "copyResults": [],
+          "deleteResults": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-font-activation-files"
+        }
+      },
+      "traceHash": "51a90bbdc45637cfbfa7fdcd07e151927a02f69d77f4cc0af431a094ff9d6432",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontActivationFiles/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "copied": 1,
+          "reused": 0,
+          "deleted": 1,
+          "failed": 0,
+          "copyResults": [],
+          "deleteResults": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-font-activation-files"
+        }
+      },
+      "traceHash": "1620aec8c6dc3ae8fa6803b785dbbda07c57862832c81249db78708cd5cf3a8d",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontActivationFiles/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--font-activation-files"
+      },
+      "traceHash": "a9cb96038d6b40b8400f7550678b846a7339c5a97b414e932a238d70a65aba9b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontActivationFiles/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "ca9a0e2eea2d7b054a99eae6940b7d09e54d5ab7d2e74a4e444f0e8a97f563ba",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontActivationFiles/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--font-activation-files"
+      },
+      "traceHash": "6d16864c3e4fef63128af2aff17be7c866f08da63a27c26ed4612b882db39c00",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontActivationFiles/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "bf7ecc15a1ea7f63ccb78ebec49082b2bf05b8b6b909ccf13a2f16183e82c2f6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontActivationFiles/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "43a7d704352573d627639f1a573af6ab23a39312aebbf60e7519d63eb916c41f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontActivationFiles/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "copied": 1,
+          "reused": 0,
+          "deleted": 1,
+          "failed": 0,
+          "copyResults": [],
+          "deleteResults": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-font-activation-files"
+        }
+      },
+      "traceHash": "a75007d76352b0f058d1e6e8344824d164ec105b1e7a1926f79a22831994b506",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustPreviewRenderImage/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "engine": "rust-directwrite",
+          "outputPath": "C:/preview.png",
+          "elapsedMs": 0,
+          "workerMode": "rust-preview-render-image"
+        }
+      },
+      "traceHash": "140b4a247fbe31fc1c6a4c1e7d715a524a40c78ebf5080e3a1411f2a4613e0f2",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewRenderImage/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "engine": "rust-directwrite",
+          "outputPath": "C:/preview.png",
+          "elapsedMs": 0,
+          "workerMode": "rust-preview-render-image"
+        }
+      },
+      "traceHash": "56c677f41378f8ef6dd265f733fc8f5b5ce0d7cc41368967789c20b52dba76f4",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewRenderImage/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "engine": "rust-directwrite",
+          "outputPath": "C:/preview.png",
+          "elapsedMs": 0,
+          "workerMode": "rust-preview-render-image"
+        }
+      },
+      "traceHash": "5b4f5ef9adff1635fa10d564c33f6b2d20d9c9210d0a51766f8bd95daefc2e37",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewRenderImage/submitted",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--preview-render-image"
+      },
+      "traceHash": "01e0f8ae5a7cbb6d2f5a0ace11b9b6e5289f37e80c6dd1df897c5e3176ddd747",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewRenderImage/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "aff4898e8d3cefe74703715a63645bf870cf76d15034f56989c770e42309aedc",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewRenderImage/false-daemon",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": true,
+        "command": "--preview-render-image"
+      },
+      "traceHash": "ba17d85a09be3148b34457be105f6059053e8303281f9fb5baf993397666aa43",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewRenderImage/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3c4b41099b1cbafd66fefc094805988aa1797b6b5bd01c363fa5f8561fa942e6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewRenderImage/write-fail",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "4667a8354d35ef4a3ee3125f9a850abb20723eb879e16d53d5099cc95fb3fbd6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustPreviewRenderImage/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "engine": "rust-directwrite",
+          "outputPath": "C:/preview.png",
+          "elapsedMs": 0,
+          "workerMode": "rust-preview-render-image"
+        }
+      },
+      "traceHash": "140b4a247fbe31fc1c6a4c1e7d715a524a40c78ebf5080e3a1411f2a4613e0f2",
+      "pendingFiles": 1
+    },
+    {
+      "id": "runRustSystemInstalledFonts/oneshot",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "items": [
+            {
+              "id": "f",
+              "source": "registry",
+              "registryName": "Font",
+              "value": "a.ttf"
+            }
+          ],
+          "count": 1,
+          "registryCount": 0,
+          "folderCount": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-system-installed-fonts"
+        }
+      },
+      "traceHash": "6dbcfd27b9547452b28e7ce59f9e0390db4ade4132b1b0e73d7baa0b77305407",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSystemInstalledFonts/daemon",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "items": [
+            {
+              "id": "f",
+              "source": "registry",
+              "registryName": "Font",
+              "value": "a.ttf"
+            }
+          ],
+          "count": 1,
+          "registryCount": 0,
+          "folderCount": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-system-installed-fonts"
+        }
+      },
+      "traceHash": "9ddd16851baa4bf6f4993909710ea7931e119b757b0d6160baa96a824a700f40",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSystemInstalledFonts/pre-failure",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "items": [
+            {
+              "id": "f",
+              "source": "registry",
+              "registryName": "Font",
+              "value": "a.ttf"
+            }
+          ],
+          "count": 1,
+          "registryCount": 0,
+          "folderCount": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-system-installed-fonts"
+        }
+      },
+      "traceHash": "0bd7f5d5be068d6b06ef85ace5f75573775da116680c88d2b36691a22691fde4",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSystemInstalledFonts/submitted",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3bf66b16663757df739711151de8b61488652e4f737d129ac20ff434cc5bacba",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSystemInstalledFonts/false-oneshot",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "c295193e80f61ebc54f09ed480b33499283aa66e857459fedd7db680c1dde19e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSystemInstalledFonts/false-daemon",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "7b245ca1d8ba2caf2113b0e3387ab1baa8d2932475ae79cecc4b695e0d8ea0a8",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSystemInstalledFonts/bad-json",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "e17dbfbb408e6dee25f4c8750190fb727b64cb7dbf31399843222a16f92cc3ea",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSystemInstalledFonts/write-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "items": [
+            {
+              "id": "f",
+              "source": "registry",
+              "registryName": "Font",
+              "value": "a.ttf"
+            }
+          ],
+          "count": 1,
+          "registryCount": 0,
+          "folderCount": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-system-installed-fonts"
+        }
+      },
+      "traceHash": "6dbcfd27b9547452b28e7ce59f9e0390db4ade4132b1b0e73d7baa0b77305407",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustSystemInstalledFonts/cleanup-fail",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "items": [
+            {
+              "id": "f",
+              "source": "registry",
+              "registryName": "Font",
+              "value": "a.ttf"
+            }
+          ],
+          "count": 1,
+          "registryCount": 0,
+          "folderCount": 0,
+          "elapsedMs": 0,
+          "workerMode": "rust-system-installed-fonts"
+        }
+      },
+      "traceHash": "6dbcfd27b9547452b28e7ce59f9e0390db4ade4132b1b0e73d7baa0b77305407",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"enabled\":false}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "935f6071c7815bbcecf8eb94adf90fa6bba904ce8d715fb2f3a41e15fa1861af",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"enabled\":false,\"required\":true}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "935f6071c7815bbcecf8eb94adf90fa6bba904ce8d715fb2f3a41e15fa1861af",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"missing\":true}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "edfb4a528ec2a2ddf5316b49ab0655ed9ffca2ea3b75843b046c3fc76df30dba",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"missing\":true,\"required\":true}",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "Rust core worker required but not found; JS/Node scan and query fallback remains active",
+        "submitted": false
+      },
+      "traceHash": "edfb4a528ec2a2ddf5316b49ab0655ed9ffca2ea3b75843b046c3fc76df30dba",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"missing\":true,\"autoBuild\":true}",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "copied": 1,
+          "reused": 0,
+          "deleted": 1,
+          "failed": 0,
+          "copyResults": [],
+          "deleteResults": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-font-activation-files"
+        }
+      },
+      "traceHash": "f1d40b99ddee62d27707a342ae1fb8d75a411b3af88f0f99953a096444eefe01",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"stale\":true}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "22eee8309a1d598777b1d342968c3a48ff533d3f8e4c8d1bce701a663dca8401",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"stale\":true,\"autoBuild\":true}",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "copied": 1,
+          "reused": 0,
+          "deleted": 1,
+          "failed": 0,
+          "copyResults": [],
+          "deleteResults": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-font-activation-files"
+        }
+      },
+      "traceHash": "7719858595528b1316c28c7927be751a602fab6c58193e47ba8ab54d3ded4af9",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"handshake\":\"false\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "3092b811570fb789943d09c099626f060687ca4c14d9d54008e9b0ee3ed97029",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"handshake\":\"throw\",\"required\":true}",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "handshake failed",
+        "submitted": false
+      },
+      "traceHash": "88e51582aeb41c1a2dd9023ad66f2bea51e6e966a2a810590528ce5e7bf19d68",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"handshake\":\"invalid-json\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "71a6282f497b73084621bdee89dcb8fa7f16e1f05eea67eb11769475f79c9e8f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"profileFailure\":true}",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "copied": 1,
+          "reused": 0,
+          "deleted": 1,
+          "failed": 0,
+          "copyResults": [],
+          "deleteResults": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-font-activation-files"
+        }
+      },
+      "traceHash": "cdea75f51377a6adcc5f361aae80d47991d0dd607e2ba997265962d99acb6e96",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"noCapabilities\":true}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "1a25a713c5ad778ae4697fbf4af6adbcfb7b14f346562dfca900a18baecb2d88",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"domainEvent\":true}",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "ok": true,
+          "copied": 1,
+          "reused": 0,
+          "deleted": 1,
+          "failed": 0,
+          "copyResults": [],
+          "deleteResults": [],
+          "elapsedMs": 0,
+          "workerMode": "rust-font-activation-files"
+        }
+      },
+      "traceHash": "03945d4e377d6c09d712771b0f8757df97eb7b06e59cd85007b870cb31d1989f",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"mode\":\"empty-json\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "fd62691f8fd3a379e9ecaf58c39920c6d6016275c77fdf77fa3c8ea012c3972a",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"mode\":\"timeout\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "a901aaa8ca604103d029ef5690a1fb7f91cf79a00d0824648bba9cc4a4b79521",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"mode\":\"max-buffer\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "bc23bfa8dd888e0144e3f78907698b8b792a9f7e28c71bd9199d4cdfb23a0b51",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"mode\":\"exec-fail\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "274404fbeca1ad8456f129a1fe3bed2968c0af883e7f185d9da0faff3c12b874",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"mode\":\"schedule-fail\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "d3c4b6fb675242419b76db1c7bedaedd769bc8ac32f835d27c484cd23b3a29b2",
+      "pendingFiles": 0
+    },
+    {
+      "id": "activation/{\"mode\":\"daemon-abort\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "a6b02a49135471989d64c38a8842970789849a5f16e9a0f3ef3c31cb9699f0e6",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/{\"preAbort\":true}",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "Rust parse batch cancelled",
+        "submitted": false
+      },
+      "traceHash": "af1bb6ed36bc13cd39939464ed3f036fa3cb793004c03e0713652163c6ccb55b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/{\"mode\":\"external-abort\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "0b4589025107c67eb7ed9ed331e9522ae62960b8b32ac30a8a45675d1bc5ea38",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/{\"mode\":\"scheduler-abort\"}",
+      "outcome": {
+        "kind": "null",
+        "value": null
+      },
+      "traceHash": "6e720e1f7442cab0773ed908cded8ac61e2eb4d9bf54a5724e02575c10d37ad3",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontParseBatch/{\"mode\":\"read-fail\"}",
+      "outcome": {
+        "kind": "result",
+        "value": {
+          "results": [
+            {
+              "jobId": "j",
+              "rootPath": "C:/fonts",
+              "filePath": "C:/fonts/a.ttf",
+              "cacheKey": "k",
+              "signature": "s",
+              "fileSize": 0,
+              "modifiedAt": 0,
+              "createdAt": 0
+            }
+          ],
+          "errors": [],
+          "count": 1,
+          "elapsedMs": 0,
+          "workerMode": "rust-font-parse-batch"
+        }
+      },
+      "traceHash": "ef802d7436b6c7d09a00abd1fd6af3924fab9c56d9bd29836c1530152fe7c805",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/{\"preAbort\":true}",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "Rust listing cancelled",
+        "submitted": false
+      },
+      "traceHash": "af1bb6ed36bc13cd39939464ed3f036fa3cb793004c03e0713652163c6ccb55b",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/{\"mode\":\"external-abort\"}",
+      "outcome": {
+        "kind": "error",
+        "name": "AbortError",
+        "message": "cancelled",
+        "submitted": false
+      },
+      "traceHash": "01eab70e23d234b24489b8e0e220a5b909338dadda201a028de23cad8256a12e",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/{\"mode\":\"scheduler-abort\"}",
+      "outcome": {
+        "kind": "error",
+        "name": "AbortError",
+        "message": "cancelled",
+        "submitted": false
+      },
+      "traceHash": "fdc8e0f80d6b8b25fdd796b025f7e2070c298ac4563fcc9187c3784f459ff221",
+      "pendingFiles": 0
+    },
+    {
+      "id": "runRustFontIndexListWorker/{\"mode\":\"read-fail\"}",
+      "outcome": {
+        "kind": "error",
+        "name": "Error",
+        "message": "read failed",
+        "submitted": false
+      },
+      "traceHash": "f3da7eeca67078ff5b604c4f95b67dc2137164922745d4130c346908f0237b1d",
+      "pendingFiles": 0
+    }
+  ],
+  "sequences": [
+    {
+      "name": "cached-ready",
+      "results": [
+        {
+          "kind": "result",
+          "value": {
+            "available": true,
+            "path": "C:/worker.exe",
+            "version": "fixture",
+            "protocolVersion": 1,
+            "capabilities": [
+              "font-family-hint-probe",
+              "font-full-fingerprint",
+              "font-name-table-probe",
+              "font-script-table-probe",
+              "font-style-table-probe",
+              "list-font-files",
+              "font-parse-batch",
+              "root-index-sqlite-apply-changes",
+              "merged-index-page-query",
+              "merged-index-ids-query",
+              "merged-index-metrics-query",
+              "merged-index-rebuild",
+              "merged-index-sync",
+              "watcher-batch-preflight",
+              "install-status-index-read",
+              "install-status-index-save",
+              "install-status-compare",
+              "local-tags-read",
+              "local-tags-set",
+              "local-tags-delete-tag",
+              "shared-metadata-apply",
+              "shared-metadata-remove-tag",
+              "shared-metadata-known-tags",
+              "shared-metadata-overlay-read",
+              "shared-metadata-signature",
+              "preview-cache-index-read",
+              "preview-cache-index-apply",
+              "preview-cache-index-delete",
+              "preview-cache-index-query",
+              "preview-cache-index-touch",
+              "preview-cache-batch",
+              "preview-cache-maintenance",
+              "database-health-check",
+              "database-backup",
+              "font-resource-add",
+              "font-resource-remove",
+              "font-registry-apply",
+              "font-registry-delete",
+              "font-resource-notify",
+              "physical-folder-tree",
+              "font-activation-files",
+              "preview-render-image",
+              "system-installed-fonts"
+            ]
+          }
+        },
+        {
+          "kind": "result",
+          "value": {
+            "available": true,
+            "path": "C:/worker.exe",
+            "version": "fixture",
+            "protocolVersion": 1,
+            "capabilities": [
+              "font-family-hint-probe",
+              "font-full-fingerprint",
+              "font-name-table-probe",
+              "font-script-table-probe",
+              "font-style-table-probe",
+              "list-font-files",
+              "font-parse-batch",
+              "root-index-sqlite-apply-changes",
+              "merged-index-page-query",
+              "merged-index-ids-query",
+              "merged-index-metrics-query",
+              "merged-index-rebuild",
+              "merged-index-sync",
+              "watcher-batch-preflight",
+              "install-status-index-read",
+              "install-status-index-save",
+              "install-status-compare",
+              "local-tags-read",
+              "local-tags-set",
+              "local-tags-delete-tag",
+              "shared-metadata-apply",
+              "shared-metadata-remove-tag",
+              "shared-metadata-known-tags",
+              "shared-metadata-overlay-read",
+              "shared-metadata-signature",
+              "preview-cache-index-read",
+              "preview-cache-index-apply",
+              "preview-cache-index-delete",
+              "preview-cache-index-query",
+              "preview-cache-index-touch",
+              "preview-cache-batch",
+              "preview-cache-maintenance",
+              "database-health-check",
+              "database-backup",
+              "font-resource-add",
+              "font-resource-remove",
+              "font-registry-apply",
+              "font-registry-delete",
+              "font-resource-notify",
+              "physical-folder-tree",
+              "font-activation-files",
+              "preview-render-image",
+              "system-installed-fonts"
+            ]
+          }
+        },
+        {
+          "available": true,
+          "path": "C:/worker.exe",
+          "version": "fixture",
+          "protocolVersion": 1,
+          "capabilities": [
+            "font-family-hint-probe",
+            "font-full-fingerprint",
+            "font-name-table-probe",
+            "font-script-table-probe",
+            "font-style-table-probe",
+            "list-font-files",
+            "font-parse-batch",
+            "root-index-sqlite-apply-changes",
+            "merged-index-page-query",
+            "merged-index-ids-query",
+            "merged-index-metrics-query",
+            "merged-index-rebuild",
+            "merged-index-sync",
+            "watcher-batch-preflight",
+            "install-status-index-read",
+            "install-status-index-save",
+            "install-status-compare",
+            "local-tags-read",
+            "local-tags-set",
+            "local-tags-delete-tag",
+            "shared-metadata-apply",
+            "shared-metadata-remove-tag",
+            "shared-metadata-known-tags",
+            "shared-metadata-overlay-read",
+            "shared-metadata-signature",
+            "preview-cache-index-read",
+            "preview-cache-index-apply",
+            "preview-cache-index-delete",
+            "preview-cache-index-query",
+            "preview-cache-index-touch",
+            "preview-cache-batch",
+            "preview-cache-maintenance",
+            "database-health-check",
+            "database-backup",
+            "font-resource-add",
+            "font-resource-remove",
+            "font-registry-apply",
+            "font-registry-delete",
+            "font-resource-notify",
+            "physical-folder-tree",
+            "font-activation-files",
+            "preview-render-image",
+            "system-installed-fonts"
+          ]
+        }
+      ],
+      "traceHash": "af1bb6ed36bc13cd39939464ed3f036fa3cb793004c03e0713652163c6ccb55b",
+      "pendingFiles": 0
+    },
+    {
+      "name": "cached-required-missing",
+      "results": [
+        {
+          "kind": "error",
+          "name": "Error",
+          "message": "Rust core worker required but not found; JS/Node scan and query fallback remains active",
+          "submitted": false
+        },
+        {
+          "kind": "result",
+          "value": {
+            "available": false,
+            "message": "not found; JS/Node scan and query fallback remains active"
+          }
+        },
+        {
+          "available": false,
+          "message": "not found; JS/Node scan and query fallback remains active"
+        }
+      ],
+      "traceHash": "edfb4a528ec2a2ddf5316b49ab0655ed9ffca2ea3b75843b046c3fc76df30dba",
+      "pendingFiles": 0
+    },
+    {
+      "name": "controls-events",
+      "results": [
+        null,
+        {
+          "kind": "result",
+          "value": {
+            "ok": true,
+            "copied": 1,
+            "reused": 0,
+            "deleted": 1,
+            "failed": 0,
+            "copyResults": [],
+            "deleteResults": [],
+            "elapsedMs": 0,
+            "workerMode": "rust-font-activation-files"
+          }
+        },
+        2,
+        3,
+        {
+          "running": true
+        }
+      ],
+      "traceHash": "c7f22e53c6540fd55c89ded0839b326cb26ca9c628bf1a19261b9757e56fc6f2",
+      "pendingFiles": 0
+    },
+    {
+      "name": "throttled-preview-daemon",
+      "results": [
+        {
+          "kind": "null",
+          "value": null
+        },
+        {
+          "kind": "null",
+          "value": null
+        },
+        {
+          "kind": "null",
+          "value": null
+        },
+        {
+          "kind": "null",
+          "value": null
+        },
+        {
+          "kind": "null",
+          "value": null
+        }
+      ],
+      "traceHash": "38c8ccecec7a763dc61a3736b31cc0dc9c7c5be25582af50cac4f759ca031ea1",
+      "pendingFiles": 0
+    },
+    {
+      "name": "concurrent-files",
+      "results": [
+        {
+          "kind": "result",
+          "value": {
+            "ok": true,
+            "copied": 1,
+            "reused": 0,
+            "deleted": 1,
+            "failed": 0,
+            "copyResults": [],
+            "deleteResults": [],
+            "elapsedMs": 0,
+            "workerMode": "rust-font-activation-files"
+          }
+        },
+        {
+          "kind": "result",
+          "value": {
+            "ok": true,
+            "engine": "rust-directwrite",
+            "outputPath": "C:/preview.png",
+            "elapsedMs": 0,
+            "workerMode": "rust-preview-render-image"
+          }
+        }
+      ],
+      "traceHash": "984dbed4ccb11ff723f1e1e89ceb5aafc4c1b6900d72ef15abc2aad0f04d3dae",
+      "pendingFiles": 0
+    },
+    {
+      "name": "serialization-error",
+      "results": [
+        {
+          "kind": "null",
+          "value": null
+        }
+      ],
+      "traceHash": "71e8d9b744d441bae2730d2da2cfea7c19f69d8c135262fc4c9d2faf4bce3a2b",
+      "pendingFiles": 0
+    },
+    {
+      "name": "partial-health-report",
+      "results": [
+        {
+          "kind": "null",
+          "value": null
+        }
+      ],
+      "traceHash": "5a49fa0133f152c06838c531d3177c6d8918b3b3c97839d6f48302dbfe119e43",
+      "pendingFiles": 0
+    }
+  ]
+}
