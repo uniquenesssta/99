@@ -47,9 +47,11 @@ function testProtocolModuleListsEveryFixtureCommand() {
 function testRustWorkerFailureLogsArePolicyGated() {
   const data = fixture()
   const worker = read('src/main/rust-core/rustCoreWorkerRuntime.ts')
+  const metadata = read('src/main/rust-core/clients/rustMetadataClientRuntime.ts')
   assert(worker.includes('rustStateFallbackFailureLogSuffix'), 'rust worker does not use policy-gated log helper')
   for (const scenario of data.scenarios) {
-    assert(worker.includes(`rustStateFallbackFailureLogSuffix('${scenario.command}')`), `rust worker failure log is not policy-gated for ${scenario.command}`)
+    const source = scenario.command === '--root-index-apply-changes' ? worker : metadata
+    assert(source.includes(`rustStateFallbackFailureLogSuffix('${scenario.command}')`), `rust worker failure log is not policy-gated for ${scenario.command}`)
   }
 }
 

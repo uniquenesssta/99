@@ -87,6 +87,46 @@
         "runRustFontResourceRemove": "40ba47e4aa58c14f9fa034fb5b0a3c36d3f2ae5e0942f8ff3df7f03777dfb8ca",
         "runRustFontResourceAdd": "75e934e8003886072e742ee4974212dbc68a8831a0279cb3ce66f37464cb03fe"
       }
+    },
+    {
+      "name": "Metadata",
+      "path": "src/main/rust-core/clients/rustMetadataClientRuntime.ts",
+      "factory": "createRustMetadataClientRuntime",
+      "methods": [
+        "runRustInstallStatusRead",
+        "runRustInstallStatusSave",
+        "runRustInstallStatusCompare",
+        "runRustLocalTagsRead",
+        "runRustLocalTagsSet",
+        "runRustLocalTagsDeleteTag",
+        "runRustSharedMetadataApply",
+        "runRustSharedMetadataRemoveTag",
+        "runRustSharedMetadataKnownTags",
+        "runRustSharedMetadataOverlayRead",
+        "runRustSharedMetadataSignature"
+      ],
+      "ports": [
+        "diagnoseRustCoreWorker",
+        "runRustCoreScheduledCommand",
+        "createTemporaryJsonFile",
+        "appendStartupLog"
+      ],
+      "functions": {
+        "runRustSharedMetadataSignature": "8dd833f258f8cd8656e8fe1ab3578678964bc722eb97104b0cb30a6c0bcb0299",
+        "runRustSharedMetadataOverlayRead": "6622c74f2a971b7b3d47a5481771e7dadd413370d0911aaa01edaf62091194e8",
+        "runRustSharedMetadataKnownTags": "8c58ad99ba1547f23a9958010139cf2cb7ddeb0d1368bc1037c0a5c9bc0edf4a",
+        "runRustSharedMetadataRemoveTag": "762428db7749107cafcc0857a909a395097df3e9fbca2a5c7b37cd9ec9ddd7ab",
+        "runRustSharedMetadataApply": "844e4cc9eebea840cc4c2d89683d22b5c6e6b5c9a51924dcbf35c1613f516948",
+        "runRustLocalTagsDeleteTag": "684e7384e12b8773785ab55161e807e005cb9b31b25988a40323d4dd5a0ced32",
+        "runRustLocalTagsSet": "73a50cbd9cf6a37c5d58cb8aa79c9ef61481c5f899778fbc8239c81f92d49108",
+        "runRustLocalTagsRead": "e0f0271c197ef98bbcc4d263bc90b9051708e23da436b3984ef22568be2f35d0",
+        "runRustInstallStatusCompare": "cee3bf4746f9421652f9ade35e098458196e696202212844d9f3218354b4c679",
+        "runRustInstallStatusSave": "f3a4cbe3836b3164a1bc12d0ac156ed4b8508ac6311e2fd9b155541072657850",
+        "runRustInstallStatusRead": "1de68dfa8d54c40abf5e64843e77b29e2b351c97e3b73a4345a7b33c8d255c40",
+        "normalizeRustTagMutationProtocolResult": "34fbf99745f27921524676ffc2ac6559263d54f7f4842b8c227a4546453aab58",
+        "cleanRustStringArray": "929e28495b80ee57c97d1b367a639a97928b63eac0d607083ed2a9bfe56a3949",
+        "isRecord": "217772246fcbbf08de1db417b47409002c256da5c63f047c76fadfc12f5c2e00"
+      }
     }
   ]
 }

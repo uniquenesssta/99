@@ -351,7 +351,7 @@ function testProtocolWiring() {
   assertIncludes('src/main/library/tagMutationProtocolResultRuntime.ts', 'createTagMutationProtocolResult');
   assertIncludes('src/main/library/tagMutationWriteProtocolRuntime.ts', 'result.mutationProtocol?.changedIds');
   assertIncludes('src/main/library/tagMutationStateSignalRuntime.ts', 'font-tags:stateSignal');
-  assertIncludes('src/main/rust-core/rustCoreWorkerRuntime.ts', 'mutationProtocol');
+  assertIncludes('src/main/rust-core/clients/rustMetadataClientRuntime.ts', 'mutationProtocol');
   assertIncludes('src/main/rust-core/rustCoreWorkerRuntime.ts', 'runRustLocalTagsRead');
   assertIncludes('src/main/rust-core/rustCoreWorkerRuntime.ts', 'runRustSharedMetadataOverlayRead');
   assertIncludes('native-src/hfm-core-worker/src/mutation_protocol.rs', 'MutationProtocolResult');
