@@ -1,0 +1,25 @@
+{
+  "baseline": "dd6f8d7ef4536bfbaa52a9f2b5180d5e4f422e5b",
+  "groups": [
+    {
+      "name": "Maintenance",
+      "path": "src/main/rust-core/clients/rustMaintenanceClientRuntime.ts",
+      "factory": "createRustMaintenanceClientRuntime",
+      "methods": [
+        "runRustDatabaseHealthCheck",
+        "runRustDatabaseBackup"
+      ],
+      "ports": [
+        "diagnoseRustCoreWorker",
+        "runRustCoreScheduledCommand",
+        "createTemporaryJsonFile",
+        "appendStartupLog"
+      ],
+      "functions": {
+        "runRustDatabaseMaintenanceInputCommand": "053a8a729b1a56f6b1afe2d13e8b45cbbd40ae818b6f42015e7fbd1016acb34a",
+        "runRustDatabaseBackup": "f2292635a1072d476f6f03be96e26d1724c813a1dee13a7a579f4eaac985b6a0",
+        "runRustDatabaseHealthCheck": "ffada28ca2e0ce63839838f459d8a495acf5b233dacf161feeac152ded9f1b6f"
+      }
+    }
+  ]
+}

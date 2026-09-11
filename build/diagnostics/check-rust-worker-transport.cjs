@@ -11,6 +11,11 @@ const workerPath = h.core + 'rustCoreWorkerRuntime.ts'
 // Git may check out CRLF on Windows; mutation anchors use canonical LF.
 const transport = fs.readFileSync(path.join(root, transportPath), 'utf8').replace(/\r\n/g, '\n')
 const worker = fs.readFileSync(path.join(root, workerPath), 'utf8').replace(/\r\n/g, '\n')
+const clientDir = path.join(root, h.core, 'clients')
+const clients = fs.existsSync(clientDir) ? fs.readdirSync(clientDir).filter(name => name.endsWith('.ts')).map(name => {
+  const rel = h.core + 'clients/' + name
+  return [rel, fs.readFileSync(path.join(root, rel), 'utf8').replace(/\r\n/g, '\n')]
+}) : []
 const cases = new Map(fixture.cases.map(s => [s.id, s]))
 const sequences = new Map(fixture.sequences.map(s => [s.name, s]))
 
@@ -25,12 +30,12 @@ async function checkSequence(name, overrides) {
 }
 
 function checkOwnership() {
-  const file = ts.createSourceFile(workerPath, worker, ts.ScriptTarget.Latest, true)
+  let file
   let factories = 0, scopes = 0, disposals = 0
   const visit = node => {
     if (ts.isImportDeclaration(node)) {
       assert(!['node:child_process', 'node:fs', 'node:crypto', 'node:os', 'node:path'].includes(node.moduleSpecifier.text), 'facade still owns process or file transport')
-      assert(!['./rustCoreSchedulerRuntime', './rustCoreWorkerPathRuntime', './rustCoreWorkerAutoBuildRuntime'].includes(node.moduleSpecifier.text), 'facade still owns transport construction/diagnostics')
+      assert(!['rustCoreSchedulerRuntime', 'rustCoreWorkerPathRuntime', 'rustCoreWorkerAutoBuildRuntime'].includes(path.posix.basename(node.moduleSpecifier.text)), 'domain still owns transport construction/diagnostics')
     }
     if (ts.isCallExpression(node)) {
       const name = node.expression.getText(file)
@@ -41,7 +46,10 @@ function checkOwnership() {
     }
     ts.forEachChild(node, visit)
   }
-  visit(file)
+  for (const [rel, text] of [[workerPath, worker], ...clients]) {
+    file = ts.createSourceFile(rel, text, ts.ScriptTarget.Latest, true)
+    visit(file)
+  }
   assert.equal(factories, 1, 'facade must construct exactly one transport')
   assert.equal(scopes, 28, 'an existing temporary-file path was not migrated')
   assert.equal(disposals, scopes, 'temporary-file disposal call was dropped')
@@ -118,7 +126,7 @@ async function main() {
   await checkFileScope()
   await checkRealChildProcess()
   const mutants = await checkMutants()
-  const crlf = new Map([[transportPath, transport.replace(/\r?\n/g, '\r\n')], [workerPath, worker.replace(/\r?\n/g, '\r\n')]])
+  const crlf = new Map([[transportPath, transport], [workerPath, worker], ...clients].map(([rel, text]) => [rel, text.replace(/\r?\n/g, '\r\n')]))
   for (const scenario of scenarios.filter(s => ['oneshot', 'submitted'].includes(s.settings.mode))) await checkCase(scenario, crlf)
   console.log(`[diagnostics:rust-worker-transport] ${scenarios.length} frozen command cases, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
 }

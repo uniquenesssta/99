@@ -1,4 +1,4 @@
-import { isRustCoreDaemonSubmittedError } from './rustCoreDaemonRuntime'
+import { isRustCoreDaemonSubmittedError, type RustCoreDaemonSubmittedError } from './rustCoreDaemonRuntime'
 
 export function rethrowRustCoreDaemonSubmittedJob(error: unknown, appendStartupLog?: (message: string) => void, context?: string): void {
   if (!isRustCoreDaemonSubmittedError(error)) return
@@ -9,4 +9,11 @@ export function rethrowRustCoreDaemonSubmittedJob(error: unknown, appendStartupL
 
 export function rethrowRustCoreDaemonSubmittedWrite(error: unknown, appendStartupLog?: (message: string) => void, context?: string): void {
   rethrowRustCoreDaemonSubmittedJob(error, appendStartupLog, context)
+}
+
+export function markRustCoreDaemonSubmittedError(error: Error, command: string): RustCoreDaemonSubmittedError {
+  const submitted = error as RustCoreDaemonSubmittedError
+  submitted.daemonSubmitted = true
+  submitted.command = command
+  return submitted
 }

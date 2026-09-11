@@ -28,6 +28,7 @@ function createHarness(settings = {}, overrides = new Map()) {
   const optionsView = options => ({ timeout: options.timeout, windowsHide: options.windowsHide, maxBuffer: options.maxBuffer, signal: options.signal ? { aborted: options.signal.aborted, reason: options.signal.reason?.message } : undefined })
   const job = { jobId: 'j', rootPath: 'C:/fonts', filePath: 'C:/fonts/a.ttf', cacheKey: 'k', signature: 's' }
   function payload(command) {
+    if (settings.payloads && Object.hasOwn(settings.payloads, command)) return settings.payloads[command]
     if (mode === 'false-daemon' || mode === 'false-oneshot') return { ok: false, message: 'worker said no' }
     return {
       ok: true, applied: true, rebuilt: true, synced: true, unchanged: true, written: 1, deleted: 1, touched: 1,
@@ -122,7 +123,12 @@ function createHarness(settings = {}, overrides = new Map()) {
     const module = { exports: {} }; modules.set(rel, module)
     const requireLocal = id => {
       if (Object.hasOwn(stubs, id)) return stubs[id]
-      if (id.startsWith('.')) return load(path.posix.normalize(path.posix.join(path.posix.dirname(rel), id)) + '.ts')
+      if (id.startsWith('.')) {
+        const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
+        const stub = './' + target.slice(core.length)
+        if (target.startsWith(core) && Object.hasOwn(stubs, stub)) return stubs[stub]
+        return load(target + '.ts')
+      }
       assert.equal(id, 'node:util', 'unexpected runtime dependency: ' + id)
       return require(id)
     }

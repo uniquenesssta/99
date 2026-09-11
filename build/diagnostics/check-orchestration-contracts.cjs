@@ -252,9 +252,15 @@ function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    id => id === './rustCoreWorkerTransportRuntime'
-      ? loadTypeScriptModule('src/main/rust-core/rustCoreWorkerTransportRuntime.ts', localRequire)
-      : localRequire(id),
+    id => {
+      if (!id.startsWith('.')) return localRequire(id)
+      const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
+      const core = 'src/main/rust-core/'
+      if (target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime') {
+        return loadTypeScriptModule(target + '.ts', localRequire)
+      }
+      return localRequire(target.startsWith(core) ? './' + target.slice(core.length) : id)
+    },
     module,
     path.join(root, rel),
     path.dirname(path.join(root, rel)),
