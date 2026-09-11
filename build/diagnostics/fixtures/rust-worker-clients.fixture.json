@@ -20,6 +20,40 @@
         "runRustDatabaseBackup": "f2292635a1072d476f6f03be96e26d1724c813a1dee13a7a579f4eaac985b6a0",
         "runRustDatabaseHealthCheck": "ffada28ca2e0ce63839838f459d8a495acf5b233dacf161feeac152ded9f1b6f"
       }
+    },
+    {
+      "name": "Preview",
+      "path": "src/main/rust-core/clients/rustPreviewClientRuntime.ts",
+      "factory": "createRustPreviewClientRuntime",
+      "methods": [
+        "runRustPreviewCacheReadStatus",
+        "runRustPreviewCacheApply",
+        "runRustPreviewCacheDelete",
+        "runRustPreviewCacheQuery",
+        "runRustPreviewCacheTouch",
+        "runRustPreviewCacheBatch",
+        "runRustPreviewCacheMaintenance",
+        "runRustPreviewRenderImage"
+      ],
+      "ports": [
+        "diagnoseRustCoreWorker",
+        "runRustCoreScheduledCommand",
+        "createTemporaryJsonFile",
+        "appendPreviewCacheFailureLog",
+        "appendStartupLog"
+      ],
+      "functions": {
+        "runRustPreviewRenderImage": "da98f37eaf33ed9f734f5d2d131afce54816937313887ed362083371610a21cf",
+        "runRustPreviewCacheInputCommand": "3406d56541725092fd76f45a2dc014c170d89154a22e681cfbfc1531472168b8",
+        "runRustPreviewCacheMaintenance": "eaad38eb2f51486894612442a9e33196207bc6e22274455ceec7d129ac4da9b2",
+        "runRustPreviewCacheBatch": "eea2b11ed1aed52b27b194d86b1d724af66181d3478635f9a0aecff633aeffca",
+        "runRustPreviewCacheTouch": "8c60eb153bef9986a4115c358bb316f08256cef394ad517dde8aa054c155f666",
+        "runRustPreviewCacheQuery": "73f4b317875cfe133fbe73dbec527b6167e3025723bc4c647ff1bccef7179a33",
+        "runRustPreviewCacheDelete": "2e4a4afacf51066756b25d8cb43d38fcbfa4236c4e351d6e647b8091a6b6c5dc",
+        "runRustPreviewCacheApply": "9fb7c4412e349add75e5344ec940d379762701ab07e4aea342da5fdc6ec1fe5a",
+        "runRustPreviewCacheReadStatus": "73bfabfb6cc68c7e422b60ca933e743157e7b6ef344e6fad5a6abd9a60dab290",
+        "normalizePreviewCacheStatusPayload": "8321aec286939c11575bee7bd1f189fa77810665455d26b03007a0ff87ecb4ef"
+      }
     }
   ]
 }

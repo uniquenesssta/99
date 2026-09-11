@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行边界
 
-- 版本：1.2；日期：2026-09-11；软件：HanFontManager 3.0.0。
+- 版本：1.3；日期：2026-09-11；软件：HanFontManager 3.0.0。
 - 分支：`stage/05-rust-worker-composition`，由 Stage 4 远端提交 `d316b44dc8561876bab277ecc8b886f925b7c6b8` 创建；基线树 `52ac20e65d2a960eee5b255c3d5a80072d857308`。
-- 当前任务：AT-5.3 已完成 1/5 组领域 client（2/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。下一组 preview 尚未开始。
+- 当前任务：AT-5.3 已完成 2/5 组领域 client（10/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。下一组 Windows 尚未开始。
 - 进入依据：用户提供 5.2 流程的 Windows 成功日志（Cargo 1.97.1 release、worker 复制、公钥同步、Vite 349/1/181 与混淆 3/3）并明确要求开始 5.3；该片段没有 diagnostics 汇总或 HEAD，不额外声称核验这些内容。本项源码基线已核实为 `dd6f8d7ef4536bfbaa52a9f2b5180d5e4f422e5b`，树 `9877b50295efc481fdcc1dc237fdb0cb2fcfb1b0`。
 - 本文是 Stage 5 执行明细，上级与顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。每个 Atomic Task 独立提交和回退，Stage 内沿用本分支；不修改 main。
 
@@ -101,6 +101,8 @@ flowchart TD
   F --> T["唯一 Transport 状态所有者"]
   F --> C0["Maintenance 领域 client"]
   C0 -->|"命令、诊断及文件端口"| T
+  F --> C1["Preview 领域 client"]
+  C1 -->|"命令、诊断及文件端口"| T
   F --> R["门面内剩余领域命令"]
   R --> T
   T --> D["Daemon 优先执行"]
@@ -192,8 +194,9 @@ Context7 结合项目 Electron 35.7.5 / Node 22 类型环境查证 promisified e
 | 已完成 client | 命令数 | 原函数/辅助函数数 | 输入端口数 | 行数 | 验证 |
 | --- | --- | --- | --- | --- | --- |
 | Maintenance | 2 | 3 | 4 | 87 | 83/83，定向诊断与三端 build/混淆通过 |
+| Preview | 8 | 10 | 5 | 240 | 83/83，定向诊断与三端 build/混淆通过 |
 
-当前门面 **1985→1903 行**；共迁出 2/38 条命令。所有 client 只接收明确列出的传输方法及日志函数，使用 `Pick` 复用既有权威类型；没有传入整包 options、daemon、scheduler、停止/取消权限或其他领域 client。45 个公开方法按原顺序显式组合，复用 client 方法引用，不增加 async 包装层。
+当前门面 **1985→1698 行**；共迁出 10/38 条命令。所有 client 只接收明确列出的传输方法及日志函数，使用 `Pick` 复用既有权威类型；没有传入整包 options、daemon、scheduler、停止/取消权限或其他领域 client。45 个公开方法按原顺序显式组合，复用 client 方法引用，不增加 async 包装层。
 
 领域归一化与本领域 payload 使用随命令移动；不复制公开类型、状态或原生协议。跨领域 `markRustCoreDaemonSubmittedError` 原样归入已有 `rustCoreDaemonWriteBoundaryRuntime.ts`，与现有 submitted 错误识别/重抛配合；没有额外新建通用工具包。transport 本身未改动，原 28 处文件生命周期、缓存/取消/日志 owner 保持。
 
@@ -201,19 +204,19 @@ Context7 结合项目 Electron 35.7.5 / Node 22 类型环境查证 promisified e
 
 - 原 369 个冻结命令用例、7 组状态/生命周期序列、真实 Node execFile 四条路径及 10 个 transport 退化反例持续通过；原 fixture 不修改。
 - 新增 `diagnostics:rust-worker-clients`：每组迁移前固化实际领域函数与 helper 的 token SHA-256；验证搬迁后内容一致、函数仅归属于对应 client、禁止反向依赖门面/其他 client，禁止直接 I/O 或另建 transport。
-- 使用真实门面和真实 transport、仅替换 client 出口，逐项确认构造输入键、共享方法身份、公开方法引用和无构造副作用。当前覆盖 1 个 client、2 个方法、3 个反例（函数变化、反向依赖、门面包装/错接）；LF/CRLF 等价。
+- 使用真实门面和真实 transport、仅替换 client 出口，逐项确认构造输入键、共享方法身份、公开方法引用和无构造副作用。当前覆盖 2 个 client、10 个方法、6 个反例（函数变化、反向依赖、门面包装/错接）；LF/CRLF 等价。
 - 新增真实运行时的 maintenance 边界用例：health `ok:false` 仍保留每项失败明细；backup `ok:false` 且 daemon 已提交时抛出原消息与 submitted 标记，清理文件且不进入 one-shot scheduler。
 - 原 orchestration 诊断改为加载实际 client/transport/共享错误边界；transport 所有权扫描扩展至实际 client，28 处创建/释放断言保留；边界替身按模块解析路径匹配，避免嵌套目录使替身失效。诊断定位随职责迁移，原能力/CLI/类型/失败断言不删减。
 
 ### 7.3 本次验证与环境边界
 
-每个表内已完成组均单独运行 `npm --offline run verify`（typecheck + **83/83**）、定向 client/transport 行为门禁及 Electron/Vite 三端构建/混淆。main 每新增一个实际 client 模块增加 1，当前为 **350/1/181** 个模块；混淆成功，实际日志为 3/3 files。
+每个表内已完成组均单独运行 `npm --offline run verify`（typecheck + **83/83**）、定向 client/transport 行为门禁及 Electron/Vite 三端构建/混淆。main 每新增一个实际 client 模块增加 1，当前为 **351/1/181** 个模块；混淆成功，实际日志为 3/3 files。
 
 `npm --offline run rust:build` 实际尝试后因 **cargo is not installed or not in PATH** 被环境阻塞；不将其描述为通过。本次 Rust/C++、依赖版本/锁文件、数据库/缓存格式、IPC 未改，5.2 Windows 成功回执仅是进入依据，5.3 后的完整 Windows build、GUI/退出、NAS、位图/峰值内存仍需本机验收。
 
 任务书与 README 保留 Git 权威状态；本项只复用前项已查证的 TypeScript/Node API，没有新增第三方或系统 API。按项目要求更新实际 Mermaid 架构并通过 Create State 保存阶段交接。
 
-下一项：preview。其余领域组仍按既定顺序独立验证提交。
+下一项：Windows。其余领域组仍按既定顺序独立验证提交。
 
 ## 8. 拉取、复验与回退
 
