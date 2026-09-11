@@ -54,6 +54,39 @@
         "runRustPreviewCacheReadStatus": "73bfabfb6cc68c7e422b60ca933e743157e7b6ef344e6fad5a6abd9a60dab290",
         "normalizePreviewCacheStatusPayload": "8321aec286939c11575bee7bd1f189fa77810665455d26b03007a0ff87ecb4ef"
       }
+    },
+    {
+      "name": "Windows",
+      "path": "src/main/rust-core/clients/rustWindowsClientRuntime.ts",
+      "factory": "createRustWindowsClientRuntime",
+      "methods": [
+        "runRustFontResourceAdd",
+        "runRustFontResourceRemove",
+        "runRustFontRegistryApply",
+        "runRustFontRegistryDelete",
+        "runRustFontChangeNotify",
+        "runRustPhysicalFolderTree",
+        "runRustFontActivationFiles",
+        "runRustSystemInstalledFonts"
+      ],
+      "ports": [
+        "diagnoseRustCoreWorker",
+        "runRustCoreScheduledCommand",
+        "createTemporaryJsonFile",
+        "appendStartupLog"
+      ],
+      "functions": {
+        "runRustSystemInstalledFonts": "1496a084b3ef5e9be400a52a55d4bdf9e48f19d26254dc45772e799afcf2b79e",
+        "runRustFontActivationFiles": "e159bf51dceacf30f4b595750fa2c875279b7262846070700ab6977f2d7cdb7b",
+        "runRustPhysicalFolderTree": "283c9260ed6e85eb6b3ce2b2bedbb013ee9fdf77414729b94a96a8913b0d0524",
+        "runRustFontChangeNotify": "1f8a4da967d8af944e06b6794ca64d3ae1679595b0316756715c6403918dc7bb",
+        "runRustFontRegistryCommand": "9ba310d6c487a836bd8be533f3a7452b17fc93661f28c012fe53821bbbc3b270",
+        "runRustFontRegistryDelete": "7b3fb5d8b0e7eeb66f3cef67ba0000e7edcb10ee6724c02a51fed264afdeefe5",
+        "runRustFontRegistryApply": "99407b0f0d3cb315ecbef170e57375af6a1c8f864113698153bcfc749e52dd11",
+        "runRustFontResourceBatch": "2fef98b683d5d0631f7d91c644d22f8251c18b9f2e0d27ad70803b82f0d5b2d5",
+        "runRustFontResourceRemove": "40ba47e4aa58c14f9fa034fb5b0a3c36d3f2ae5e0942f8ff3df7f03777dfb8ca",
+        "runRustFontResourceAdd": "75e934e8003886072e742ee4974212dbc68a8831a0279cb3ce66f37464cb03fe"
+      }
     }
   ]
 }
