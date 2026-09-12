@@ -165,6 +165,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
   const pending = new Map<string, PendingDaemonJob>()
   let child: ChildProcessWithoutNullStreams | null = null
   let lineReader: Interface | null = null
+  const stoppingChildren = new Map<ChildProcessWithoutNullStreams, () => void>()
   let childPath = ''
   let stderrTail = ''
   let loggedDisabled = false
@@ -207,14 +208,48 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
     childPath = ''
     rustState = undefined
     recentEvents.length = 0
-    if (active && !active.killed) {
-      try {
-        writeDaemonLine(JSON.stringify({ type: 'shutdown' }))
-      } catch {
-        // ignore shutdown write failures; kill below is the fallback
-      }
-      active.kill()
+    // Settle this generation before another worker can own the shared pending map.
+    rejectAll('rust core daemon stopped before job completion')
+    if (!active || active.killed) return
+
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const cleanup = () => {
+      if (timer) clearTimeout(timer)
+      timer = null
+      stoppingChildren.delete(active)
+      active.removeListener('exit', cleanup)
     }
+    const kill = () => {
+      cleanup()
+      if (!active.killed && active.exitCode === null && active.signalCode === null) {
+        try {
+          active.kill()
+        } catch (error) {
+          options.appendStartupLog(`rust core daemon stop kill failed: ${safeMessage(error)}`)
+        }
+      }
+    }
+    stoppingChildren.set(active, kill)
+    active.once('exit', cleanup)
+    timer = setTimeout(kill, 1000)
+    // Use the captured process, not the now-detached current child.
+    try {
+      if (active.stdin.destroyed || !active.stdin.writable) {
+        kill()
+        return
+      }
+      active.stdin.write(`${JSON.stringify({ type: 'shutdown' })}\n`, (error) => {
+        if (error) kill()
+      })
+    } catch {
+      kill()
+    }
+  }
+
+  function stopImmediately(): void {
+    stop()
+    // process.exit cannot wait for timers; replacement must not keep old jobs alive.
+    for (const kill of [...stoppingChildren.values()]) kill()
   }
 
   function rejectJob(job: PendingDaemonJob, message: string): void {
@@ -373,7 +408,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
 
     if (child && childPath === workerPath && !child.killed) return true
 
-    stop()
+    stopImmediately()
     stderrTail = ''
     loggedReady = false
 
@@ -382,21 +417,26 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       })
+      const active = child
       childPath = workerPath
       lineReader = createInterface({ input: child.stdout })
-      lineReader.on('line', handleLine)
+      lineReader.on('line', line => { if (child === active) handleLine(line) })
       child.stderr.on('data', (chunk: Buffer) => {
+        if (child !== active) return
         stderrTail = `${stderrTail}${chunk.toString('utf-8')}`.slice(-4096)
       })
       child.stdin.on('error', (error) => {
+        if (child !== active) { stoppingChildren.get(active)?.(); return }
         logDaemonStdinError(error)
         if (pending.size) rejectAll(`rust core daemon stdin error: ${safeMessage(error)}`)
       })
       child.on('error', (error) => {
+        if (child !== active) { stoppingChildren.get(active)?.(); return }
         options.appendStartupLog(`rust core daemon process error: ${safeMessage(error)}; one-shot worker fallback remains active`)
         rejectAll(`rust core daemon process error: ${safeMessage(error)}`)
       })
       child.on('exit', (code, signal) => {
+        if (child !== active) return
         const message = `rust core daemon exited: code=${code ?? 'null'}, signal=${signal ?? 'null'}${stderrTail ? `, stderr=${stderrTail.replace(/\s+/g, ' ').slice(0, 300)}` : ''}`
         if (pending.size) rejectAll(message)
         child = null
@@ -404,12 +444,12 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
         lineReader = null
         childPath = ''
         rustState = undefined
-      recentEvents.length = 0
+        recentEvents.length = 0
         options.appendStartupLog(`${message}; one-shot worker fallback remains active`)
       })
       if (!exitHookInstalled) {
         exitHookInstalled = true
-        process.once('exit', stop)
+        process.once('exit', stopImmediately)
       }
       return true
     } catch (error) {

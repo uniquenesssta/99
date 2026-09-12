@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行边界
 
-- 版本：1.7；日期：2026-09-12；软件：HanFontManager 3.0.0。
+- 版本：1.8；日期：2026-09-12；软件：HanFontManager 3.0.0。
 - 分支：`stage/05-rust-worker-composition`，由 Stage 4 远端提交 `d316b44dc8561876bab277ecc8b886f925b7c6b8` 创建；基线树 `52ac20e65d2a960eee5b255c3d5a80072d857308`。
-- 当前任务：AT-5.4 门面收敛及收尾审计已实现，typecheck、83/83 诊断、Electron 三端构建与混淆通过。Stage 5 实现收尾；本次 Windows 复验与外部验收仍待补，daemon 原有 shutdown 问题见第 9.3 节，Stage 6 未开始。
+- 当前任务：AT-5.4 门面收敛及收尾审计已实现，typecheck、83/83 诊断、Electron 三端构建与混淆通过。Stage 5 实现收尾；本次 Windows 复验与外部验收仍待补，daemon shutdown 问题已按第 10 节独立修复，Stage 6 未开始。
 - 进入依据：用户提供 5.2 流程的 Windows 成功日志（Cargo 1.97.1 release、worker 复制、公钥同步、Vite 349/1/181 与混淆 3/3）并明确要求开始 5.3；该片段没有 diagnostics 汇总或 HEAD，不额外声称核验这些内容。本项源码基线已核实为 `dd6f8d7ef4536bfbaa52a9f2b5180d5e4f422e5b`，树 `9877b50295efc481fdcc1dc237fdb0cb2fcfb1b0`。
 - 本文是 Stage 5 执行明细，上级与顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。每个 Atomic Task 独立提交和回退，Stage 内沿用本分支；不修改 main。
 
@@ -269,7 +269,7 @@ npm run build
 
 已核对真实链路：`mainCoreCompositionRuntime` → `mainApplicationRuntime` → 生命周期注册 → `mainProcessLifecycleRuntime`。before-quit 先处理 renderer 关闭、临时激活字体清理及状态落盘，再停止 watcher/性能采样并刷日志；will-quit 依次调用 daemon stop、数据库查询 worker shutdown、干净退出标记与同步刷日志。用户取消退出或保存失败返回软件的分支仍保留。
 
-**AUD-5.4-01（原有行为，待独立修复）：** `rustCoreDaemonRuntime.stop()` 保存 active 后先令 `child = null`，再调用 `writeDaemonLine(shutdown)`；后者重新读取 child，因为空而直接返回 false。因此该路径不会实际写出 shutdown 消息，随后执行 active.kill()；pending jobs 在进程 exit/error 回调中清理和拒绝。Rust 端确实实现了 shutdown 请求处理。此问题不是本次拆分引入，也不能把当前停止描述为已完成优雅关闭或已证明无数据风险。
+**AUD-5.4-01（发现时记录；后续修复见第 10 节）：** `rustCoreDaemonRuntime.stop()` 保存 active 后先令 `child = null`，再调用 `writeDaemonLine(shutdown)`；后者重新读取 child，因为空而直接返回 false。因此该路径不会实际写出 shutdown 消息，随后执行 active.kill()；pending jobs 在进程 exit/error 回调中清理和拒绝。Rust 端确实实现了 shutdown 请求处理。此问题不是本次拆分引入，也不能把当前停止描述为已完成优雅关闭或已证明无数据风险。
 
 本原子任务遵守“行为修复与搬迁分开”的总约束，保留该行为。后续独立任务应先复现真实 child 的 shutdown 写入缺失，再明确有界等待、kill 兜底、pending settlement、重复 stop 和退出中途取消策略，补充提交后失败不得再次执行的行为测试，并在 Windows 验证实际退出。单纯把置空语句后移仍会立即 kill，不能据此宣称优雅关闭已修复。该审计项未解决及实机证据不足，Stage 5 不标为无遗留问题的完整验收通过。
 
@@ -282,3 +282,30 @@ npm run build
 - 沿用 `stage/05-rust-worker-composition`，AT-5.4 独立提交和回退；pull 后正常 `npm run build` 复验。Stage 6 未开始，开始时另建阶段分支。
 
 Mermaid Chart 已呈现真实门面和退出链路；本项未引入新 API，复用前项已查证的依赖行为。阶段交接通过 Create State 保存，Git 与本任务书仍为权威记录。
+
+
+## 10. AUD-5.4-01 daemon shutdown 独立修复
+
+用户在收到 5.4 Windows Rust/Vite/混淆成功回执后明确授权修复。基线 `92648320b5332b273abb4d9bdb2d28d154a90374`，沿用 Stage 5 分支，独立提交。本节覆盖第 9.3 节的“待修”状态；Stage 6 未开始。
+
+### 10.1 修复与边界
+
+- 使用捕获的旧进程直接写出 shutdown，不再通过已清空的当前 child 引用发送。正常 stop 给子进程最多 1000 ms 退出机会，exit 事件取消期限；stdin 不可写、同步异常或异步写错误立即执行 kill 兜底。
+- stop 先摘除当前进程并结算该代 pending：清理任务计时器及取消监听，未完成写任务保留 daemonSubmitted/command，不能误报成功或自动重写。结果表示未知/未完成，不声称 Rust 事务已经回滚。
+- 正在停止的进程由原 daemon 模块持有；重复 stop 不重复发通知。进程替换与主进程最终 exit 同步终止残留进程，避免依赖最终 exit 阶段无法运行的异步计时器。公开 stop 仍为 void，原 45 项公开契约及上层退出顺序保持。
+- 子进程 stdout/stderr、stdin error、process error/exit 都校验进程身份；旧回调不能清空新实例或拒绝新任务。
+- **能力限制：** 1000 ms 是正常运行时 stop 的等待上限，不承诺 Electron 在 will-quit 后保留完整等待窗口。主进程最终退出可提前触发同步 kill。此修复保证尝试发送通知并提供有界兜底，不等同于应用退出必定等待所有 Rust 工作完成。Rust 原协议未改；实机退出仍需验收。
+
+### 10.2 验证证据
+
+新增 `diagnostics:rust-daemon-shutdown`，加载真实 TypeScript daemon 与命令策略，替换进程/时钟边界。修复前实际失败于 `stop must actually send shutdown`（实际 0 次，期望 1 次）；修复后通过通知、正常退出、超时、同步/异步写失败、pending 结算、重复 stop、替换进程延迟事件、AbortSignal 解绑及父进程同步退出路径。
+
+另使用真实 Node 子进程执行两条路径：收到 shutdown 后正常退出且 kill 为 0；收到通知但持续不退出，在期限后 kill 为 1。诊断有总期限，未结算 Promise 不能导致静默通过。这是实际管道/子进程验证，不冒充 Windows Rust worker 实机结果。
+
+- `npm --offline run verify`：typecheck 与 **84/84** 诊断通过，既有 369+7 命令/生命周期基线、45/38 契约及旧退出门禁保持通过。
+- Electron 三端构建与混淆退出码 0：354/1/181 个模块、混淆 3/3。
+- required Rust 构建尝试因当前环境缺 Cargo 阻塞；本项未改 Rust/C++、依赖版本、锁文件或数据格式。用户先前日志只证明 5.4 所列 Windows 构建步骤成功，不替代修复版实机退出测试。
+
+Context7 查证 Node 22 的 exit 同步限制及 child kill/exit 区别，并结合 Electron 35.7.5 与本机实际测试应用；Mermaid Chart 更新真实停止链路。README/总任务书同步，Create State 保存交接。
+
+拉取本分支后执行 `npm run build`，然后正常打开/关闭软件，检查是否残留 hfm-core-worker 进程；存在运行任务时也应测试关闭与重新打开，反馈异常或日志。无额外安装依赖或迁移步骤。

@@ -101,6 +101,7 @@
     "diagnostics:rust-scheduler-cache-generation": "node build/diagnostics/check-rust-scheduler-cache-generation.cjs",
     "diagnostics:rust-worker-contracts": "node build/diagnostics/check-rust-worker-contracts.cjs",
     "diagnostics:rust-worker-transport": "node build/diagnostics/check-rust-worker-transport.cjs",
+    "diagnostics:rust-daemon-shutdown": "node build/diagnostics/check-rust-daemon-shutdown.cjs",
     "diagnostics:rust-worker-clients": "node build/diagnostics/check-rust-worker-clients.cjs",
     "diagnostics:inflight-cache-lifecycle": "node build/diagnostics/check-inflight-cache-lifecycle.cjs",
     "diagnostics:shutdown-log-durability": "node build/diagnostics/check-shutdown-log-durability.cjs",
