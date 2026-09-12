@@ -59,6 +59,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-12：完成 AT-5.4 兼容门面收尾：219→185 行，45 项方法直接归属 transport/五组 client，89 个类型导出保持；强化纯组合边界和 7 项控制引用检查，20 个退化反例、typecheck、83/83 诊断及三端构建/混淆通过。5.3 Windows 构建回执已收，本次 pull 后正常 `npm run build` 复验；审计另发现原有 daemon shutdown 写入未执行、实际走 kill，列为独立待修 AUD-5.4-01。Stage 5 拆分实现收尾，实机/退出验收与该问题尚未关闭，Stage 6 未开始。详见 [Stage 5 第 9 节](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
+
 - 2026-09-11：AT-5.3 完成 Indexing client（9 条命令），累计 5/5 组；领域函数与结果/失败语义保持，使用同一个 transport 和显式窄端口。原 369+7 行为基线、38 项 client 方法身份、typecheck、83/83 诊断及三端构建/混淆通过。沿用 Stage 5 分支，pull 后正常 `npm run build` 复验；Cargo 在审查环境不可用，未宣称本项 Windows 完整构建通过。下一项 AT-5.4，详见 [Stage 5 第 7 节](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
 
 - 2026-09-11：AT-5.3 完成 Metadata client（11 条命令），累计 4/5 组；领域函数与结果/失败语义保持，使用同一个 transport 和显式窄端口。原 369+7 行为基线、29 项 client 方法身份、typecheck、83/83 诊断及三端构建/混淆通过。沿用 Stage 5 分支，pull 后正常 `npm run build` 复验；Cargo 在审查环境不可用，未宣称本项 Windows 完整构建通过。下一项 indexing，详见 [Stage 5 第 7 节](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。

@@ -59,6 +59,87 @@ function checkComposition(overrides = new Map()) {
     for (const name of group.methods) assert.equal(env.runtime[name], methods[name], 'facade changed method identity: ' + name)
   }
 }
+// A compatibility facade may only construct owners and publish their references.
+function checkFacadeClosure(text = read(facade)) {
+  const file = ts.createSourceFile(facade, text, ts.ScriptTarget.Latest, true)
+  const expectedImports = new Set(['./rustCoreWorkerContracts', './rustCoreWorkerTransportRuntime', ...fixture.groups.map(g => './clients/' + path.posix.basename(g.path, '.ts'))])
+  const functions = []
+  for (const statement of file.statements) {
+    if (ts.isImportDeclaration(statement)) {
+      assert(expectedImports.delete(statement.moduleSpecifier.text), 'unexpected or duplicate facade import')
+    } else if (ts.isExportDeclaration(statement)) {
+      assert(statement.isTypeOnly && statement.moduleSpecifier.text === './rustCoreWorkerContracts', 'facade leaks runtime or private exports')
+    } else {
+      assert(ts.isFunctionDeclaration(statement) && statement.name.text === 'createRustCoreWorkerRuntime', 'facade owns module state or extra implementation')
+      functions.push(statement)
+    }
+  }
+  assert.equal(expectedImports.size, 0)
+  assert.equal(functions.length, 1)
+  const statements = functions[0].body.statements
+  assert.equal(statements.length, 7, 'facade must only create six owners and return')
+  const factories = new Set(['createRustCoreWorkerTransportRuntime', ...fixture.groups.map(g => g.factory)])
+  const owners = new Set()
+  for (const statement of statements.slice(0, -1)) {
+    assert(ts.isVariableStatement(statement) && statement.declarationList.flags & ts.NodeFlags.Const, 'mutable facade owner')
+    assert.equal(statement.declarationList.declarations.length, 1)
+    const declaration = statement.declarationList.declarations[0], call = declaration.initializer
+    assert(ts.isIdentifier(declaration.name) && ts.isCallExpression(call) && ts.isIdentifier(call.expression), 'facade owns non-composition logic')
+    assert(factories.delete(call.expression.text), 'duplicate or unexpected owner factory')
+    owners.add(declaration.name.text)
+    assert.equal(call.arguments.length, 1)
+    const argument = call.arguments[0]
+    if (call.expression.text === 'createRustCoreWorkerTransportRuntime') {
+      assert(ts.isIdentifier(argument) && argument.text === 'options', 'transport options changed')
+    } else {
+      assert(ts.isObjectLiteralExpression(argument), 'client receives entire options/transport')
+      for (const port of argument.properties) {
+        assert(ts.isPropertyAssignment(port) && ts.isPropertyAccessExpression(port.initializer), 'client receives broad or computed dependency')
+        assert(['transport', 'options'].includes(port.initializer.expression.getText(file)))
+        assert.equal(port.name.text, port.initializer.name.text, 'client port renamed or miswired')
+      }
+    }
+  }
+  assert.equal(factories.size, 0)
+  const returned = statements.at(-1)
+  assert(ts.isReturnStatement(returned) && ts.isObjectLiteralExpression(returned.expression))
+  for (const property of returned.expression.properties) {
+    assert(ts.isPropertyAssignment(property) && ts.isPropertyAccessExpression(property.initializer), 'facade must publish direct references, without spread or wrappers')
+    assert(owners.has(property.initializer.expression.getText(file)), 'unknown method owner')
+    assert.equal(property.name.text, property.initializer.name.text, 'method renamed or miswired')
+  }
+  assert.deepEqual(returned.expression.properties.map(p => p.name.text).sort(), require('./fixtures/orchestration-contracts.fixture.json').rustFacadeMethods)
+}
+function checkControlIdentities(overrides = new Map()) {
+  const transportPath = h.core + 'rustCoreWorkerTransportRuntime.ts'
+  // Wrap construction only: the captured ports belong to the real transport.
+  const source = read(transportPath).replace('export function createRustCoreWorkerTransportRuntime(', 'function createActualTransport(')
+    + '\nexport let captured: any; export function createRustCoreWorkerTransportRuntime(options: any) { captured = createActualTransport(options); return captured }'
+  const env = h.createHarness({}, new Map(overrides).set(transportPath, source))
+  const { captured } = env.load(transportPath)
+  const domainMethods = new Set(fixture.groups.flatMap(g => g.methods))
+  for (const method of require('./fixtures/orchestration-contracts.fixture.json').rustFacadeMethods) {
+    if (!domainMethods.has(method)) assert.equal(env.runtime[method], captured[method], 'control identity changed: ' + method)
+  }
+  env.runtime.stopRustCoreDaemon()
+  assert.equal(env.trace.filter(e => e[0] === 'stop').length, 1, 'stop must reach the sole daemon once')
+}
+function checkClosureMutations() {
+  const original = read(facade)
+  const changes = [
+    ['module state', 'export function createRustCoreWorkerRuntime', 'const cache = new Map()\nexport function createRustCoreWorkerRuntime'],
+    ['duplicate transport', '  return {', '  const duplicate = createRustCoreWorkerTransportRuntime(options)\n  return {'],
+    ['broad client ports', 'createRustIndexingClientRuntime({', 'createRustIndexingClientRuntime({ ...transport,'],
+    ['extra public port', '  return {', '  return { runRustCoreScheduledCommand: transport.runRustCoreScheduledCommand,'],
+    ['wrapped stop', 'stopRustCoreDaemon: transport.stopRustCoreDaemon,', 'stopRustCoreDaemon: () => transport.stopRustCoreDaemon(),'],
+  ]
+  for (const [name, before, after] of changes) {
+    const altered = original.replace(before, after)
+    assert.notEqual(altered, original, 'closure mutant did not apply: ' + name)
+    assert.throws(() => checkFacadeClosure(altered), undefined, 'closure regression accepted: ' + name)
+    if (name === 'wrapped stop') assert.throws(() => checkControlIdentities(new Map([[facade, altered]])), /control identity changed/)
+  }
+}
 async function checkMaintenanceFailureReports() {
   const item = { label: 'index', filePath: 'C:/index.db', ok: false, message: 'integrity failed' }
   const health = h.createHarness({ mode: 'false-daemon', payloads: { '--database-health-check': { ok: false, items: [item], elapsedMs: 12 } } })
@@ -72,6 +153,9 @@ async function checkMaintenanceFailureReports() {
 }
 async function main() {
   checkFunctions()
+  checkFacadeClosure()
+  checkControlIdentities()
+  checkClosureMutations()
   checkComposition()
   await checkMaintenanceFailureReports()
   for (const group of fixture.groups) {
@@ -86,12 +170,16 @@ async function main() {
     assert.throws(() => checkFunctions(badImport), undefined, 'reverse client dependency accepted')
     const method = group.methods[0]
     const originalFacade = read(facade)
-    const altered = originalFacade.replace(new RegExp('    ' + method + ',(?=\\n)'), '    ' + method + ': () => null,')
+    const altered = originalFacade.replace(new RegExp('    ' + method + ': [^\\n]+,(?=\\n)'), '    ' + method + ': () => null,')
     assert.notEqual(altered, originalFacade, 'facade mutant did not apply')
     assert.throws(() => checkComposition(new Map([[facade, altered]])), undefined, 'facade wrapper/identity drift accepted')
   }
   const crlf = new Map([...sources].map(([rel, text]) => [rel, text.replace(/\n/g, '\r\n')]))
   checkFunctions(crlf)
-  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies, narrow shared ports, partial health report and submitted backup, ${fixture.groups.length * 3} rejected mutations, CRLF passed`)
+  const facadeCRLF = read(facade).replace(/\n/g, '\r\n')
+  checkFacadeClosure(facadeCRLF)
+  checkControlIdentities(new Map([[facade, facadeCRLF]]))
+  checkComposition(new Map([[facade, facadeCRLF]]))
+  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies, narrow shared ports, partial health report and submitted backup, ${fixture.groups.length * 3 + 5} rejected mutations, facade closure and 7 control identities, CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-clients]', error.stack || error); process.exitCode = 1 })

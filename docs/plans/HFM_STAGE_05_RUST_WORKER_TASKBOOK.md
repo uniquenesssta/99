@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行边界
 
-- 版本：1.6；日期：2026-09-11；软件：HanFontManager 3.0.0。
+- 版本：1.7；日期：2026-09-12；软件：HanFontManager 3.0.0。
 - 分支：`stage/05-rust-worker-composition`，由 Stage 4 远端提交 `d316b44dc8561876bab277ecc8b886f925b7c6b8` 创建；基线树 `52ac20e65d2a960eee5b255c3d5a80072d857308`。
-- 当前任务：AT-5.3 已完成 5/5 组领域 client（38/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。AT-5.3 实现及自动验证完成，AT-5.4 未开始。
+- 当前任务：AT-5.4 门面收敛及收尾审计已实现，typecheck、83/83 诊断、Electron 三端构建与混淆通过。Stage 5 实现收尾；本次 Windows 复验与外部验收仍待补，daemon 原有 shutdown 问题见第 9.3 节，Stage 6 未开始。
 - 进入依据：用户提供 5.2 流程的 Windows 成功日志（Cargo 1.97.1 release、worker 复制、公钥同步、Vite 349/1/181 与混淆 3/3）并明确要求开始 5.3；该片段没有 diagnostics 汇总或 HEAD，不额外声称核验这些内容。本项源码基线已核实为 `dd6f8d7ef4536bfbaa52a9f2b5180d5e4f422e5b`，树 `9877b50295efc481fdcc1dc237fdb0cb2fcfb1b0`。
 - 本文是 Stage 5 执行明细，上级与顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。每个 Atomic Task 独立提交和回退，Stage 内沿用本分支；不修改 main。
 
@@ -84,7 +84,7 @@ contracts 继续以类型引用复用 `CachedFontStatLike`、共享字体模型�
 - 每组必须保留 null/throw/`ok: false` 行为、CLI/capability 和结果字面量，不能在搬迁时顺便“统一”不同语义。
 - 每组运行定向诊断、完整 verify、Rust build 与 Electron build；实际无法运行的环境门禁明确保留，不写成通过。
 
-### AT-5.4 收敛兼容门面（未开始）
+### AT-5.4 收敛兼容门面（实现及自动验证完成）
 
 - 门面只创建 transport、创建各 client、组合原有方法，保留公开类型兼容导出。
 - 删除本阶段失去用途的旧声明、实现和导入；禁止创建整包透传 options 或第二套状态。
@@ -220,7 +220,7 @@ indexing 第一次全量 verify 在 `scan-fallback` 停止：其 fixture 的 `ru
 
 任务书与 README 保留 Git 权威状态；本项只复用前项已查证的 TypeScript/Node API，没有新增第三方或系统 API。按项目要求更新实际 Mermaid 架构并通过 Create State 保存阶段交接。
 
-下一项：AT-5.4。5.4 将继续审计并收敛兼容门面；本轮未执行 5.4，也未宣称 Stage 5 全部验收完成。
+AT-5.3 交付时的下一项为 AT-5.4；本次收尾记录见第 9 节。
 
 ## 8. 拉取、复验与回退
 
@@ -237,3 +237,48 @@ npm run build
 首次切换时，Git 可从唯一的同名远端分支建立本地跟踪分支；如出现同名分支歧义，使用 `git switch --track origin/stage/05-rust-worker-composition`。本项无额外依赖安装或数据迁移要求。保留用户此前在本机重建的原生 exe；如 Git 报本地改动冲突，按实际文件处理，不使用 hard reset、clean 或丢弃用户改动。
 
 回退单位是对应领域组独立提交的 `git revert`。AT-5.3 起点为 `dd6f8d7`，逐组提交身份以分支 Git 记录为准；本轮继续使用 `stage/05-rust-worker-composition`。
+
+
+## 9. AT-5.4 兼容门面与最终所有权审计
+
+### 9.1 进入依据与实现范围
+
+基线为 `c9f5a74653f3af2a26319c5bdc81623d00822033`，树 `88d6bd414c107630c34b7f7de493414dc6cd46f4`。用户提供 5.3 Windows 日志尾部：Rust release 完成、worker 复制、公钥同步、Vite 354/1/181（main 1,147.94 kB）及混淆 3/3 成功。该片段未包含 HEAD 或 diagnostics 汇总，仅作为对应构建步骤成功的回执。
+
+门面由 219 行收敛为 185 行；Stage 5 起点为 2994 行。删除仅用于二次转发的解构变量，保留一个 transport、五个具名 client、原顺序的 45 项直接方法引用及 89 个显式类型兼容导出。每个方法在公开出口直接标明所有者；不使用整对象 spread，不增加包装函数或 Promise 层。五个 client 的构造顺序不变。
+
+生产改动仅限门面；transport、五组 client、领域辅助函数、contracts/payload、Rust/C++、调用方及原 fixture 均未改动。没有新增依赖、协议、数据迁移或配置。
+
+### 9.2 所有者与依赖方向
+
+| 所有者 | 资源或职责 | 审计结论 |
+| --- | --- | --- |
+| 兼容门面 | 组合六个实例、发布 45 项引用、重导出 89 个类型 | 不拥有可变状态、I/O、计时器、结果转换或退出监听 |
+| transport | 一份 cachedStatus、一份 scheduler、一份 daemon、两份日志节流 Map、JSON 文件 API | 每次门面构造唯一；7 项公开控制与 3 项内部端口不混合公开 |
+| indexing / metadata / Windows / preview / maintenance | 9 / 11 / 8 / 8 / 2 条领域命令及所属归一化函数 | 保持 57 个领域/辅助函数 token 基线；只拿 4 或 5 项明确端口，无跨 client 依赖 |
+| daemon | 子进程、pending jobs、lineReader、domain events、process exit hook | 仍由原模块持有；门面与 client 不复制；原 stop 的问题单列于下节 |
+| scheduler | 队列、取消、缓存、交互活动状态 | 控制入口仍直接到原实例；不因拆分新增 stop 或另一套队列 |
+| contracts / payload | 89 个公开类型 / 38 个内部载荷类型 | 实际编译擦除；旧类型路径兼容，payload 不向领域外扩散 |
+| 应用生命周期 | renderer/激活保存、watcher/采样停止与 will-quit | 仍由 `mainProcessLifecycleRuntime.ts` 统一编排；只转交原 stop 引用 |
+
+从实际编译后的门面遍历相对运行时 require：18 个模块、31 条引用，无运行时循环。类型依赖另由原 contracts 门禁验证，不能把类型边当作运行时实例。当前 client 会复用 transport 的纯 JSON/capability 函数和既有 daemon 错误判别/标记函数；这些导入没有构造第二个资源所有者，无需为降低文件行数再造公共工具层。
+
+将来协议升级的权威入口：`rustCoreProtocolRuntime.ts` 的版本/capability 要求，与 `native-src/hfm-core-worker/src/protocol.rs` 的 Rust 声明同步审查；当前协议仍为 42、worker 0.42.0。字段调整落入 contracts/payload 和对应 client/Rust handler，再通过 transport 握手、兼容判断与领域失败门禁。门面不承载协议版本或兼容判断。
+
+### 9.3 退出链路与独立待修问题
+
+已核对真实链路：`mainCoreCompositionRuntime` → `mainApplicationRuntime` → 生命周期注册 → `mainProcessLifecycleRuntime`。before-quit 先处理 renderer 关闭、临时激活字体清理及状态落盘，再停止 watcher/性能采样并刷日志；will-quit 依次调用 daemon stop、数据库查询 worker shutdown、干净退出标记与同步刷日志。用户取消退出或保存失败返回软件的分支仍保留。
+
+**AUD-5.4-01（原有行为，待独立修复）：** `rustCoreDaemonRuntime.stop()` 保存 active 后先令 `child = null`，再调用 `writeDaemonLine(shutdown)`；后者重新读取 child，因为空而直接返回 false。因此该路径不会实际写出 shutdown 消息，随后执行 active.kill()；pending jobs 在进程 exit/error 回调中清理和拒绝。Rust 端确实实现了 shutdown 请求处理。此问题不是本次拆分引入，也不能把当前停止描述为已完成优雅关闭或已证明无数据风险。
+
+本原子任务遵守“行为修复与搬迁分开”的总约束，保留该行为。后续独立任务应先复现真实 child 的 shutdown 写入缺失，再明确有界等待、kill 兜底、pending settlement、重复 stop 和退出中途取消策略，补充提交后失败不得再次执行的行为测试，并在 Windows 验证实际退出。单纯把置空语句后移仍会立即 kill，不能据此宣称优雅关闭已修复。该审计项未解决及实机证据不足，Stage 5 不标为无遗留问题的完整验收通过。
+
+### 9.4 验证与交付状态
+
+- 强化已有 `diagnostics:rust-worker-clients`，不新增重复门禁：纯组合 AST 边界、原 38 个领域方法与新增 7 个控制方法的真实引用身份、单次 stop 委托；20 个退化反例（原 15 + 新 5）被拒绝。CRLF 门面也执行结构、控制和 client 引用检查。
+- 继续使用既有 369 个命令与 7 组生命周期/并发冻结轨迹、57 个函数指纹、45/38 编排契约、89/38 类型与真实 Node 子进程测试；不重录基线来适配新实现。
+- `npm --offline run verify` 退出码 0：typecheck 与 **83/83** 诊断全部通过。`electron-vite build` 与混淆退出码均为 0：main/preload/renderer 为 **354/1/181** 个模块，main **1,147.89 kB**，混淆 **3/3**。上述仅为实际执行的步骤，不等同于当前环境的完整 `npm run build`。
+- required Rust 构建已尝试，环境返回 `cargo is not installed or not in PATH`。不声称本环境完成 Windows Rust 构建、GUI/退出、NAS、多客户端、位图/峰值内存或安装包验收。
+- 沿用 `stage/05-rust-worker-composition`，AT-5.4 独立提交和回退；pull 后正常 `npm run build` 复验。Stage 6 未开始，开始时另建阶段分支。
+
+Mermaid Chart 已呈现真实门面和退出链路；本项未引入新 API，复用前项已查证的依赖行为。阶段交接通过 Create State 保存，Git 与本任务书仍为权威记录。
