@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行边界
 
-- 版本：1.5；日期：2026-09-11；软件：HanFontManager 3.0.0。
+- 版本：1.6；日期：2026-09-11；软件：HanFontManager 3.0.0。
 - 分支：`stage/05-rust-worker-composition`，由 Stage 4 远端提交 `d316b44dc8561876bab277ecc8b886f925b7c6b8` 创建；基线树 `52ac20e65d2a960eee5b255c3d5a80072d857308`。
-- 当前任务：AT-5.3 已完成 4/5 组领域 client（29/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。下一组 indexing 尚未开始。
+- 当前任务：AT-5.3 已完成 5/5 组领域 client（38/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。AT-5.3 实现及自动验证完成，AT-5.4 未开始。
 - 进入依据：用户提供 5.2 流程的 Windows 成功日志（Cargo 1.97.1 release、worker 复制、公钥同步、Vite 349/1/181 与混淆 3/3）并明确要求开始 5.3；该片段没有 diagnostics 汇总或 HEAD，不额外声称核验这些内容。本项源码基线已核实为 `dd6f8d7ef4536bfbaa52a9f2b5180d5e4f422e5b`，树 `9877b50295efc481fdcc1dc237fdb0cb2fcfb1b0`。
 - 本文是 Stage 5 执行明细，上级与顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。每个 Atomic Task 独立提交和回退，Stage 内沿用本分支；不修改 main。
 
@@ -75,7 +75,7 @@ contracts 继续以类型引用复用 `CachedFontStatLike`、共享字体模型�
 - [x] 对比未提交/已提交失败、主动取消、超时、maxBuffer、JSON/文件故障、失败清理、并发释放时序及缓存状态；真实 Node 子进程与 10 个退化反例通过。
 - [x] 完整 verify、三端构建、混淆、差异复审、README 与任务书更新；独立提交和回退，沿用 Stage 5 分支。
 
-### AT-5.3 按领域提取 client（进行中）
+### AT-5.3 按领域提取 client（实现及自动验证完成）
 
 顺序：maintenance → preview → Windows → metadata → indexing。每组独立提交、独立验证，工厂与文件名按总任务书约定落位。
 
@@ -97,17 +97,16 @@ contracts 继续以类型引用复用 `CachedFontStatLike`、共享字体模型�
 
 ```mermaid
 flowchart TD
-  A["应用组合入口"] --> F["兼容 Rust Worker 门面"]
-  F --> T["唯一 Transport 状态所有者"]
-  F --> C["已提取的 4 组领域 client"]
-  C -->|"命令、诊断及文件端口"| T
-  F --> R["门面内剩余领域命令"]
-  R --> T
+  A["应用组合入口"] --> F["兼容门面：45 个公开方法"]
+  F --> C["五组领域 client：38 条命令"]
+  F --> T["唯一传输状态所有者"]
+  C -->|"诊断、命令、文件和日志端口"| T
   T --> D["Daemon 优先执行"]
-  D -->|"未提交且可回退"| S["Scheduler 与 execFile"]
-  D -->|"已提交失败"| E["原错误向上传播"]
+  D -->|"未提交且允许回退"| S["调度器与 execFile"]
+  D -->|"已提交失败"| E["原错误交回领域处理"]
   T --> J["临时 JSON 文件对象"]
   J --> L["领域原 finally 释放"]
+  T --> Q["唯一诊断缓存与日志节流状态"]
 ```
 
 领域继续决定如何处理 transport 抛出的错误；transport 不统一各领域的 null、throw 或 `ok: false` 返回。
@@ -195,8 +194,9 @@ Context7 结合项目 Electron 35.7.5 / Node 22 类型环境查证 promisified e
 | Preview | 8 | 10 | 5 | 240 | 83/83，定向诊断与三端 build/混淆通过 |
 | Windows | 8 | 10 | 4 | 311 | 83/83，定向诊断与三端 build/混淆通过 |
 | Metadata | 11 | 14 | 4 | 672 | 83/83，定向诊断与三端 build/混淆通过 |
+| Indexing | 9 | 20 | 4 | 624 | 83/83，定向诊断与三端 build/混淆通过 |
 
-当前门面 **1985→790 行**；共迁出 29/38 条命令。所有 client 只接收明确列出的传输方法及日志函数，使用 `Pick` 复用既有权威类型；没有传入整包 options、daemon、scheduler、停止/取消权限或其他领域 client。45 个公开方法按原顺序显式组合，复用 client 方法引用，不增加 async 包装层。
+当前门面 **1985→219 行**；共迁出 38/38 条命令。所有 client 只接收明确列出的传输方法及日志函数，使用 `Pick` 复用既有权威类型；没有传入整包 options、daemon、scheduler、停止/取消权限或其他领域 client。45 个公开方法按原顺序显式组合，复用 client 方法引用，不增加 async 包装层。
 
 领域归一化与本领域 payload 使用随命令移动；不复制公开类型、状态或原生协议。跨领域 `markRustCoreDaemonSubmittedError` 原样归入已有 `rustCoreDaemonWriteBoundaryRuntime.ts`，与现有 submitted 错误识别/重抛配合；没有额外新建通用工具包。transport 本身未改动，原 28 处文件生命周期、缓存/取消/日志 owner 保持。
 
@@ -204,19 +204,23 @@ Context7 结合项目 Electron 35.7.5 / Node 22 类型环境查证 promisified e
 
 - 原 369 个冻结命令用例、7 组状态/生命周期序列、真实 Node execFile 四条路径及 10 个 transport 退化反例持续通过；原 fixture 不修改。
 - 新增 `diagnostics:rust-worker-clients`：每组迁移前固化实际领域函数与 helper 的 token SHA-256；验证搬迁后内容一致、函数仅归属于对应 client、禁止反向依赖门面/其他 client，禁止直接 I/O 或另建 transport。
-- 使用真实门面和真实 transport、仅替换 client 出口，逐项确认构造输入键、共享方法身份、公开方法引用和无构造副作用。当前覆盖 4 个 client、29 个方法、12 个反例（函数变化、反向依赖、门面包装/错接）；LF/CRLF 等价。
+- 使用真实门面和真实 transport、仅替换 client 出口，逐项确认构造输入键、共享方法身份、公开方法引用和无构造副作用。当前覆盖 5 个 client、38 个方法、15 个反例（函数变化、反向依赖、门面包装/错接）；LF/CRLF 等价。
 - 新增真实运行时的 maintenance 边界用例：health `ok:false` 仍保留每项失败明细；backup `ok:false` 且 daemon 已提交时抛出原消息与 submitted 标记，清理文件且不进入 one-shot scheduler。
 - 原 orchestration 诊断改为加载实际 client/transport/共享错误边界；transport 所有权扫描扩展至实际 client，28 处创建/释放断言保留；边界替身按模块解析路径匹配，避免嵌套目录使替身失效。诊断定位随职责迁移，原能力/CLI/类型/失败断言不删减。
 
+复审额外以 `git show dd6f8d7:src/main/rust-core/rustCoreWorkerRuntime.ts` 核对全部 57 个迁出的领域/辅助函数：冻结指纹逐一一致，38 条公开领域方法无重复；transport 源文件与 5.2 基线逐字节一致。共享 submitted 标记 helper 也保持原函数文本，只增加模块 export。
+
+indexing 第一次全量 verify 在 `scan-fallback` 停止：其 fixture 的 `runtimeFile` 仍指向原门面。仅将该定位改为 `clients/rustIndexingClientRuntime.ts`，原三种模式、策略开关和 requires 断言不变，修正后重新执行完整 verify 并通过 83/83。该定位变更不涉及 369+7 冻结行为 fixture 或原公开类型/编排 fixture。
+
 ### 7.3 本次验证与环境边界
 
-每个表内已完成组均单独运行 `npm --offline run verify`（typecheck + **83/83**）、定向 client/transport 行为门禁及 Electron/Vite 三端构建/混淆。main 每新增一个实际 client 模块增加 1，当前为 **353/1/181** 个模块；混淆成功，实际日志为 3/3 files。
+每个表内已完成组均单独运行 `npm --offline run verify`（typecheck + **83/83**）、定向 client/transport 行为门禁及 Electron/Vite 三端构建/混淆。main 每新增一个实际 client 模块增加 1，当前为 **354/1/181** 个模块；混淆成功，实际日志为 3/3 files。
 
 `npm --offline run rust:build` 实际尝试后因 **cargo is not installed or not in PATH** 被环境阻塞；不将其描述为通过。本次 Rust/C++、依赖版本/锁文件、数据库/缓存格式、IPC 未改，5.2 Windows 成功回执仅是进入依据，5.3 后的完整 Windows build、GUI/退出、NAS、位图/峰值内存仍需本机验收。
 
 任务书与 README 保留 Git 权威状态；本项只复用前项已查证的 TypeScript/Node API，没有新增第三方或系统 API。按项目要求更新实际 Mermaid 架构并通过 Create State 保存阶段交接。
 
-下一项：indexing。其余领域组仍按既定顺序独立验证提交。
+下一项：AT-5.4。5.4 将继续审计并收敛兼容门面；本轮未执行 5.4，也未宣称 Stage 5 全部验收完成。
 
 ## 8. 拉取、复验与回退
 

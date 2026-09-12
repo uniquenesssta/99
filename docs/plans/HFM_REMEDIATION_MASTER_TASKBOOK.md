@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.25
+- 文档版本：1.26
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 5 AT-5.3 已完成 4/5 组领域 client（29/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。下一组 indexing 尚未开始。 5.2 流程 Windows Rust/Electron/混淆成功回执已收；5.3 本机与 GUI/NAS 等外部验收待补。
+- 当前阶段：Stage 5 AT-5.3 已完成 5/5 组领域 client（38/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。AT-5.3 实现及自动验证完成，AT-5.4 未开始。 5.2 流程 Windows Rust/Electron/混淆成功回执已收；5.3 本机与 GUI/NAS 等外部验收待补。
 - 当前阶段任务书：[`HFM_STAGE_05_RUST_WORKER_TASKBOOK.md`](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -365,7 +365,7 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 
 #### AT-5.3 按领域逐个提取 client
 
-- 状态：AT-5.3 已完成 4/5 组领域 client（29/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。下一组 indexing 尚未开始。 详见 [Stage 5 第 7 节](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
+- 状态：AT-5.3 已完成 5/5 组领域 client（38/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。AT-5.3 实现及自动验证完成，AT-5.4 未开始。 详见 [Stage 5 第 7 节](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
 - 提取顺序：maintenance -> preview -> Windows -> metadata -> indexing。
 - 每个提交只迁移一个 client 组，门面的方法名和调用签名保持不变。
 - 归一化函数与其 payload 同领域放置；真正跨领域的纯函数才进入 shared。
@@ -508,7 +508,7 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 | Stage 2 | 完成（AT-2.1 至 AT-2.4） | 本阶段分支四个独立 Atomic Task 提交 | P0.1-P0.5、P1-P8、`npm run verify` 72/72、路径/副作用/补偿行为、编排契约和 Electron/Vite 三端 build/混淆通过 | 分支 `stage/02-font-path-boundaries`；Windows 真实 UNC/跨盘/长路径/junction/HKCU registry 为外部验收项，未伪报通过 |
 | Stage 3 | 完成（实现、自动门禁及 Windows 构建） | 本阶段分支 AT-3.1、AT-3.2 及独立回归修复提交 | 用户快进至 `476c5d6` 后 Windows verify 75/75、换行 24、三后端输入、Rust release、三端 build、混淆 3/3 通过 | 分支 `stage/03-file-preview-consistency`；NAS、实际位图与最大内存等明确留作外部验收；不支持硬链接的卷兼容边界保留 |
 | Stage 4 | AT-4.1 至 AT-4.4 实现及自动门禁完成 | 四个独立原子提交，另补诊断路径兼容修复 | 用户前置 Windows `c981777` build 通过；本项 verify 80/80、三端 build/混淆通过；新提交实机复验待补 | 分支 `stage/04-main-composition`；入口 2075→77 行，五组注册保持 115 项能力；见 Stage 4 第 10 节 |
-| Stage 5 | AT-5.3 已完成 4/5 组领域 client（29/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。下一组 indexing 尚未开始。 | AT-5.3 各领域组独立提交，起点 `dd6f8d7` | 45/38 方法/命令不变；369+7 基线、29 client 方法身份、83/83 诊断和三端 build/混淆通过 | 沿用 Stage 5 分支；Cargo 环境阻塞，5.3 Windows 复验待补 |
+| Stage 5 | AT-5.3 已完成 5/5 组领域 client（38/38 条命令），各组独立提交；typecheck、83/83 项诊断、Electron 三端构建及混淆通过。AT-5.3 实现及自动验证完成，AT-5.4 未开始。 | AT-5.3 各领域组独立提交，起点 `dd6f8d7` | 45/38 方法/命令不变；369+7 基线、38 client 方法身份、83/83 诊断和三端 build/混淆通过 | 沿用 Stage 5 分支；Cargo 环境阻塞，5.3 Windows 复验待补 |
 | Stage 6 | 待开始，Stage 3 工程前置门禁已满足 | - | - | 当前串行推进 Stage 5 |
 | Stage 7 | 阻塞于 Stage 4/5/6 | - | - | - |
 | Stage 8 | 阻塞于 Stage 7 | - | - | - |

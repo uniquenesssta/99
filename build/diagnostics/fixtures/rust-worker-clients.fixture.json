@@ -127,6 +127,50 @@
         "cleanRustStringArray": "929e28495b80ee57c97d1b367a639a97928b63eac0d607083ed2a9bfe56a3949",
         "isRecord": "217772246fcbbf08de1db417b47409002c256da5c63f047c76fadfc12f5c2e00"
       }
+    },
+    {
+      "name": "Indexing",
+      "path": "src/main/rust-core/clients/rustIndexingClientRuntime.ts",
+      "factory": "createRustIndexingClientRuntime",
+      "methods": [
+        "runRustFontIndexListWorker",
+        "runRustFontParseBatch",
+        "runRustRootIndexApplyChanges",
+        "runRustMergedIndexPageQuery",
+        "runRustMergedIndexIdsQuery",
+        "runRustMergedIndexMetricsQuery",
+        "runRustMergedIndexRebuild",
+        "runRustMergedIndexSync",
+        "runRustWatcherPreflight"
+      ],
+      "ports": [
+        "diagnoseRustCoreWorker",
+        "runRustCoreScheduledCommand",
+        "createTemporaryJsonFile",
+        "appendStartupLog"
+      ],
+      "functions": {
+        "runRustWatcherPreflight": "267d86fc6a1bb48b511d4047706651184ec5734a9deca6908e7a797b2081326b",
+        "runRustMergedIndexSync": "ca14d3d0d257c402da6513e08410f14bd94f771cfc452c8e4554d70b9d060f8b",
+        "runRustMergedIndexRebuild": "1a04fa79b57e79ccc84ef56e4961edc2cfa06646effa4df8ba57e81f97f3db7e",
+        "runRustMergedIndexMetricsQuery": "16b791c379885144176010748b3134804437a0e176353534d1e056ecc9963b51",
+        "runRustMergedIndexIdsQuery": "b1388e8909986918a6cfba96b5d60397ef8ed201de88084f3b7ca04d5af8e31c",
+        "runRustMergedIndexPageQuery": "4a0ce107d234e31c805d5165c42835f0004a0603f1ff57894db0c6e7c61f8769",
+        "runRustRootIndexApplyChanges": "969ddb5bb22cf1135f9326b6b60a6f07bcbb301ea2f2e285230d889b0adecb2a",
+        "runRustFontParseBatch": "cb3d7e025ef4057bd268408fc4576a1625bd9a22373a46bbc411e88112610084",
+        "runRustFontIndexListWorker": "2e16375894d6c5d59daec347001e29634ef70743d640d785fece72feb2d0c75b",
+        "normalizeRustParseBatchJob": "9d6df67524c061bc5e2723253fe8efd9eb6871b49972918a03cdd8f3a996ee73",
+        "statFromRustFile": "35415cd340f9b4be989486e1c4e3bb8e13941a35b99d1b521dd8b9100ffe268b",
+        "normalizeFamilyHint": "e659a53fbb5b687c55dfe60709dd5897405a0a9fa833f7d185f9da5ae9d34c96",
+        "normalizeStyleHint": "64d595d2551acaa19427e17bbef2889629208623aba28c1aae7979e9551bcec6",
+        "normalizeScriptHint": "4e1c4a6a4a3fe5dabb498e79976da3aaed25dda96c0d3e8df6857ee37a03577c",
+        "normalizeNameHint": "4d0eb92545e4f6792b7d5df9855430b72a8e28442d0481c9b6c513165800adfb",
+        "rustFullHashEnabled": "fe340d4fff1bcca4819e20d8c4f3872519d2c09d56ea1f58d9831d906995dfd6",
+        "rustFamilyProbeEnabled": "199a91593ae80efd7e5de914d9a16ca58f197e899fb91a814ef9558f8b9cb003",
+        "rustStyleProbeEnabled": "9dd7961c6b9819ac36e008749740d828e592703a17217cf5312e66cebec151e2",
+        "rustScriptProbeEnabled": "5d53037caf849fd31df5b3d1192317ebaf89e566e7317501e22e9676c686bbcf",
+        "rustNameProbeEnabled": "39a72868c5a62a36675fafdd0abd02750288ed6264d665d5647e4662d44c2883"
+      }
     }
   ]
 }

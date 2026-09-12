@@ -59,6 +59,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-11：AT-5.3 完成 Indexing client（9 条命令），累计 5/5 组；领域函数与结果/失败语义保持，使用同一个 transport 和显式窄端口。原 369+7 行为基线、38 项 client 方法身份、typecheck、83/83 诊断及三端构建/混淆通过。沿用 Stage 5 分支，pull 后正常 `npm run build` 复验；Cargo 在审查环境不可用，未宣称本项 Windows 完整构建通过。下一项 AT-5.4，详见 [Stage 5 第 7 节](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
+
 - 2026-09-11：AT-5.3 完成 Metadata client（11 条命令），累计 4/5 组；领域函数与结果/失败语义保持，使用同一个 transport 和显式窄端口。原 369+7 行为基线、29 项 client 方法身份、typecheck、83/83 诊断及三端构建/混淆通过。沿用 Stage 5 分支，pull 后正常 `npm run build` 复验；Cargo 在审查环境不可用，未宣称本项 Windows 完整构建通过。下一项 indexing，详见 [Stage 5 第 7 节](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
 
 - 2026-09-11：AT-5.3 完成 Windows client（8 条命令），累计 3/5 组；领域函数与结果/失败语义保持，使用同一个 transport 和显式窄端口。原 369+7 行为基线、18 项 client 方法身份、typecheck、83/83 诊断及三端构建/混淆通过。沿用 Stage 5 分支，pull 后正常 `npm run build` 复验；Cargo 在审查环境不可用，未宣称本项 Windows 完整构建通过。下一项 metadata，详见 [Stage 5 第 7 节](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。

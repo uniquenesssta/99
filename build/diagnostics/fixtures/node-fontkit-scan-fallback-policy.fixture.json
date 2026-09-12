@@ -26,7 +26,7 @@
     },
     {
       "name": "rust worker parse batch failure log",
-      "runtimeFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
+      "runtimeFile": "src/main/rust-core/clients/rustIndexingClientRuntime.ts",
       "requires": [
         "nodeFontkitScanFallbackFailureLogSuffix"
       ]
