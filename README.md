@@ -44,7 +44,8 @@ npm run build:win
 ## 当前工程任务
 
 - [修复与编排重构总任务书](docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md)
-- [当前 Stage 5：Rust Worker 门面拆分任务书](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)
+- [Stage 5：Rust Worker 门面拆分任务书](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)
+- [当前 Stage 6：React 根组件拆分任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)
 - [Stage 4：主进程组合根拆分任务书](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)
 - [已完成 Stage 3 工程验收：文件移动一致性与预览限额任务书](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md)
 - [已完成 Stage 2：字体路径授权任务书](docs/plans/HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)
@@ -58,6 +59,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-13：AT-6.1 将 AppRootView 的 169 个平铺 any 参数改为六组强类型，补齐侧栏/列表/弹层直接边界，删除 App 的六个无用组件 import；原状态与 UI 接线保持。18 个编译拒绝、四种渲染组合及 CRLF 基线、typecheck、85/85 诊断和三端构建/混淆通过。新分支 `stage/06-react-composition`；详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
 
 - 2026-09-12：独立修复 AUD-5.4-01：daemon 通过捕获的进程发送 shutdown，正常 stop 提供 1 秒退出期限，写入失败/超时及父进程最终退出保留 kill 兜底；未完成写任务保留已提交错误，旧进程事件不再影响替代进程。typecheck、84/84 诊断、三端构建与混淆通过，包含真实 Node 正常/超时退出测试。公开接口与原生协议保持，pull 后 `npm run build` 并验证实际关闭，详见 [Stage 5 第 10 节](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
 

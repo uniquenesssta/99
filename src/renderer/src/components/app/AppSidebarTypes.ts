@@ -1,16 +1,18 @@
+import type { FontItem, FontFormat, FontScript, LibraryState, FontQueryPageResult, FontQueryResult } from '@shared/types'
+import type { SidebarPage, ActiveFilter, FilterGroupId, FontCategory, MenuTarget, DeveloperStatusEntry, flattenFolderNodes } from '../../appRuntime'
 import type { DragEvent, MouseEvent } from 'react'
 
 export type AppSidebarProps = {
   sidebarCollapsed: boolean
   setSidebarCollapsed: (value: boolean) => void
-  sidebarPage: any
-  setSidebarPage: (value: any) => void
-  activeFilter: any
-  setActiveFilter: (value: any) => void
+  sidebarPage: SidebarPage
+  setSidebarPage: (value: SidebarPage) => void
+  activeFilter: ActiveFilter
+  setActiveFilter: (value: ActiveFilter) => void
   advancedFilterCount: number
   refreshDeveloperStatusDetails: () => Promise<void>
   categoryCounts: Record<string, number>
-  allFonts: unknown[]
+  allFonts: FontItem[]
   favoriteCount: number
   installedCount: number
   notInstalledCount: number
@@ -20,20 +22,20 @@ export type AppSidebarProps = {
   installStatusReady: boolean
   installStatusMissingCount: number
   installStatusSyncSuffix: string
-  expandedFilterGroups: any
-  setFilterGroupExpanded: (groupId: any, expanded: boolean) => void
+  expandedFilterGroups: Partial<Record<FilterGroupId, true>>
+  setFilterGroupExpanded: (groupId: FilterGroupId, expanded: boolean) => void
   selectedWatchedFolders: string[]
   setSelectedWatchedFolders: (updater: (prev: string[]) => string[]) => void
-  library: any
+  library: LibraryState
   folderCounts: Record<string, number>
-  selectedFormats: any[]
-  setSelectedFormats: (updater: (prev: any[]) => any[]) => void
+  selectedFormats: FontFormat[]
+  setSelectedFormats: (updater: (prev: FontFormat[]) => FontFormat[]) => void
   formatCounts: Record<string, number>
-  selectedScripts: any[]
-  setSelectedScripts: (updater: (prev: any[]) => any[]) => void
+  selectedScripts: FontScript[]
+  setSelectedScripts: (updater: (prev: FontScript[]) => FontScript[]) => void
   scriptCounts: Record<string, number>
-  selectedCategory: any
-  setSelectedCategory: (value: any) => void
+  selectedCategory: FontCategory
+  setSelectedCategory: (value: FontCategory) => void
   clearAdvancedFilters: () => void
   newSharedTagName: string
   setNewSharedTagName: (value: string) => void
@@ -53,17 +55,17 @@ export type AppSidebarProps = {
   localTagCounts: Record<string, number>
   addFolder: () => Promise<void>
   selectedFolderId: string
-  setDatabasePageResult: (value: any) => void
-  setDatabaseQueryResult: (value: any) => void
+  setDatabasePageResult: (value: FontQueryPageResult | null) => void
+  setDatabaseQueryResult: (value: FontQueryResult | null) => void
   setSelectedFolderId: (value: string) => void
   expandedFolderIds: Record<string, true>
   dropHoverFolderId: string
   setDropHoverFolderId: (value: string) => void
   selectFolderFilter: (folderId: string) => void
-  openFolderMenu: (event: MouseEvent, target: any) => void
+  openFolderMenu: (event: MouseEvent, target: Extract<MenuTarget, { kind: 'folder' }>) => void
   fontIdsFromDropEvent: (event: DragEvent) => string[]
   assignFontsToFolder: (fontIds: string[], folderId: string) => Promise<void>
   toggleFolderExpanded: (folderId: string) => void
-  flatFolderNodes: any[]
-  setDeveloperStatusLog: (entries: any[]) => void
+  flatFolderNodes: ReturnType<typeof flattenFolderNodes>
+  setDeveloperStatusLog: (entries: DeveloperStatusEntry[]) => void
 }

@@ -1,25 +1,26 @@
+import type { EditableMenuTarget, MenuTarget, SelectionRectState, ContextMenuState } from '../../appRuntime'
 import type { FontItem } from '@shared/types'
 import { isKeyboardCompositionEvent } from '../../fontTagInputRuntime'
 import type { LeaseLockConflictNotice as LeaseLockConflictNoticeState } from '../../runtime/lease-lock/leaseLockConflictNoticeRuntime'
 import { LeaseLockConflictNotice } from './LeaseLockConflictNotice'
 
 type AppOverlaysProps = {
-  renameTarget: any
-  setRenameTarget: (value: any) => void
+  renameTarget: EditableMenuTarget | null
+  setRenameTarget: (value: EditableMenuTarget | null) => void
   renameValue: string
   setRenameValue: (value: string) => void
   confirmRename: () => Promise<void>
-  deleteTarget: any
-  setDeleteTarget: (value: any) => void
+  deleteTarget: EditableMenuTarget | null
+  setDeleteTarget: (value: EditableMenuTarget | null) => void
   confirmDelete: () => Promise<void>
-  folderChildTarget: any
-  setFolderChildTarget: (value: any) => void
+  folderChildTarget: Extract<MenuTarget, { kind: 'folder' }> | null
+  setFolderChildTarget: (value: Extract<MenuTarget, { kind: 'folder' }> | null) => void
   newFolderName: string
   setNewFolderName: (value: string) => void
-  createSubfolder: (target: any, name: string) => Promise<void>
-  selectionRect: any
-  normalizedSelectionRect: (rect: any) => DOMRect
-  contextMenu: any
+  createSubfolder: (target: Extract<MenuTarget, { kind: 'folder' }>, name: string) => Promise<void>
+  selectionRect: SelectionRectState | null
+  normalizedSelectionRect: (rect: SelectionRectState) => DOMRect
+  contextMenu: ContextMenuState | null
   contextSelectedFonts: FontItem[]
   selectionLabel: (fonts: FontItem[]) => string
   runFontContextAction: (action: 'install' | 'remove' | 'activate' | 'deactivate' | 'deleteFile' | 'protectToggle') => Promise<void>

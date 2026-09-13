@@ -81,7 +81,7 @@ export function AppSidebarFilterPage({
               <input
                 type="checkbox"
                 checked={selectedFormats.includes(item.id)}
-                onChange={() => setSelectedFormats((prev: any[]) => toggleArrayValue(prev, item.id))}
+                onChange={() => setSelectedFormats((prev) => toggleArrayValue(prev, item.id))}
               />
               <span>{item.label}</span>
               <em>{formatCounts[item.id]}</em>
@@ -98,7 +98,7 @@ export function AppSidebarFilterPage({
               <input
                 type="checkbox"
                 checked={selectedScripts.includes(script)}
-                onChange={() => setSelectedScripts((prev: any[]) => toggleArrayValue(prev, script))}
+                onChange={() => setSelectedScripts((prev) => toggleArrayValue(prev, script))}
               />
               <span>{SCRIPT_LANGUAGE_LABELS[script] || script}</span>
               <em>{scriptCounts[script] || 0}</em>

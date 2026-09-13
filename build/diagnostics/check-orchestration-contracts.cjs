@@ -422,8 +422,8 @@ function testAppRootViewContract() {
       .filter(Boolean)
   })
 
-  assert(propsType === fixture.appRootView.currentPropType, `AppRootView current prop type changed from the recorded Stage 0 gap: ${propsType}`)
-  assert(destructuredProps.length === fixture.appRootView.currentPropCount, `AppRootView flattened prop count changed: ${destructuredProps.length}`)
+  assert(propsType === 'AppRootViewProps', `AppRootView must close the Stage 0 any gap: ${propsType}`)
+  assertExactSet('AppRootView grouped boundary', destructuredProps, Object.keys(fixture.appRootView.targetGroups))
   assertExactSet('AppRootView caller/callee prop keys', callerProps, destructuredProps)
 
   const targetGroupNames = Object.keys(fixture.appRootView.targetGroups)
@@ -442,7 +442,7 @@ function testAppRootViewContract() {
     const missing = flow.identifiers.filter((identifier) => !flowIdentifiers.has(identifier))
     assert(!missing.length, `UI flow ${flow.name} lost identifiers: ${missing.join(', ')}`)
   }
-  console.log(`[diagnostics:orchestration-contracts] UI flows locked (${fixture.appRootView.flows.length}); TARGET_GAP AppRootView props:any, flattened=${destructuredProps.length}, targetGroups=${targetGroupNames.join('/')}`)
+  console.log(`[diagnostics:orchestration-contracts] UI flows locked (${fixture.appRootView.flows.length}); AppRootView props:AppRootViewProps, groups=${destructuredProps.length}, targetGroups=${targetGroupNames.join('/')}`)
 }
 
 function testPackageRegistration() {

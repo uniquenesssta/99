@@ -1,10 +1,10 @@
-import type { FontItem } from '@shared/types'
+import type { FontItem, LibraryState } from '@shared/types'
 import type { RefObject, UIEvent, MouseEvent } from 'react'
-import type { CardPoolViewMode, SortMode } from '../../appRuntime'
+import type { CardPoolViewMode, SortMode, SidebarPage, ActiveFilter, PageToolbarState, DeveloperStatusEntry, VirtualLayout, VIEW_MODE_LAYOUT } from '../../appRuntime'
 import type { FontFamilyGroupResult } from '../../runtime/family/fontFamilyGroupingRuntime'
 
 export type FontListPanelProps = {
-  sidebarPage: any
+  sidebarPage: SidebarPage
   refreshDeveloperStatusDetails: () => Promise<void>
   status: string
   latestIndexProgress: unknown
@@ -15,20 +15,20 @@ export type FontListPanelProps = {
   setDeveloperSharedMetadataDiagnostics: (value: unknown) => void
   latestBackgroundTaskEvent: unknown
   developerTasks: unknown[]
-  developerStatusLog: any[]
-  timeSortMode: any
+  developerStatusLog: DeveloperStatusEntry[]
+  timeSortMode: PageToolbarState['timeSortMode']
   sortMode: SortMode
-  viewMode: any
+  viewMode: PageToolbarState['viewMode']
   cardPoolViewMode: CardPoolViewMode
-  activeFilter: any
+  activeFilter: ActiveFilter
   setCardPoolViewMode: (mode: CardPoolViewMode) => void
   listPreviewFontSize: number
   setListPreviewFontSize: (value: number) => void
-  updatePageToolbar: (key: any, value: any) => void
-  updateViewModeWithScroll: (viewMode: any) => void
+  updatePageToolbar: <K extends keyof PageToolbarState>(key: K, value: PageToolbarState[K]) => void
+  updateViewModeWithScroll: (viewMode: PageToolbarState['viewMode']) => void
   search: string
   selectedFontIds: string[]
-  library: any
+  library: LibraryState
   activateFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   deactivateFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   deleteFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
@@ -39,8 +39,8 @@ export type FontListPanelProps = {
   fontScrollerRef: RefObject<HTMLDivElement>
   handleFontScroll: (event: UIEvent<HTMLDivElement>) => void
   beginMarqueeSelection: (event: MouseEvent<HTMLDivElement>) => void
-  virtualLayout: any
-  viewLayout: any
+  virtualLayout: VirtualLayout
+  viewLayout: (typeof VIEW_MODE_LAYOUT)[keyof typeof VIEW_MODE_LAYOUT]
   renderFontCard: (font: FontItem, compact?: boolean) => JSX.Element
   databasePageReady: boolean
   visibleFontTotal: number

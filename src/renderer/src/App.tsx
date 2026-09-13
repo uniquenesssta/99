@@ -51,14 +51,8 @@ WRITE_BEHIND_DELAY_MS,
 WRITE_BEHIND_MAX_BUFFER_BYTES,
 WRITE_BEHIND_MAX_ITEMS
 } from './appRuntime'
-import { AppLayout } from './components/app/AppLayout'
-import { AppOverlays } from './components/app/AppOverlays'
-import { AppSidebar } from './components/app/AppSidebar'
 import { AppRootView } from './components/app/AppRootView'
-import { AppTopbar } from './components/app/AppTopbar'
 import { createFontCardRenderer } from './components/app/FontCardRenderer'
-import { FontDetailPanel } from './components/app/FontDetailPanel'
-import { FontListPanel } from './components/app/FontListPanel'
 import { refreshDatabaseDerivedStateRuntime,scheduleDatabaseDerivedStateRefreshRuntime } from './databaseDerivedStateRuntime'
 import { createFontContextActionRuntime } from './fontContextActionRuntime'
 import { createFontDetailPanelRuntime } from './fontDetailPanelRuntime'
@@ -1223,175 +1217,197 @@ export default function App(): JSX.Element {
 
   return (
     <AppRootView
-      IS_DEVELOPMENT={IS_DEVELOPMENT}
-      status={status}
-      themeMode={themeMode}
-      setThemeMode={setThemeMode}
-      indexingActive={indexingActive}
-      cacheMenuOpen={cacheMenuOpen}
-      setCacheMenuOpen={setCacheMenuOpen}
-      rescan={rescan}
-      cancelIndexing={cancelIndexing}
-      rebuildScanCache={rebuildScanCache}
-      clearAllCacheAction={clearAllCacheAction}
-      detailVisible={detailVisible}
-      sidebarPage={sidebarPage}
-      setSidebarPage={setSidebarPage}
-      activeFilter={activeFilter}
-      setActiveFilter={setActiveFilter}
-      advancedFilterCount={advancedFilterCount}
-      refreshDeveloperStatusDetails={refreshDeveloperStatusDetails}
-      categoryCounts={categoryCounts}
-      allFonts={allFonts}
-      favoriteCount={favoriteCount}
-      installedCount={installedCount}
-      notInstalledCount={notInstalledCount}
-      activeCount={activeCount}
-      library={library}
-      setPreviewText={setPreviewText}
-      installStatusReady={installStatusReady}
-      installStatusMissingCount={installStatusMissingCount}
-      installStatusSyncSuffix={installStatusSyncSuffix}
-      expandedFilterGroups={expandedFilterGroups}
-      setFilterGroupExpanded={setFilterGroupExpanded}
-      selectedWatchedFolders={selectedWatchedFolders}
-      setSelectedWatchedFolders={setSelectedWatchedFolders}
-      folderCounts={folderCounts}
-      selectedFormats={selectedFormats}
-      setSelectedFormats={setSelectedFormats}
-      formatCounts={formatCounts}
-      selectedScripts={selectedScripts}
-      setSelectedScripts={setSelectedScripts}
-      scriptCounts={scriptCounts}
-      selectedCategory={selectedCategory}
-      setSelectedCategory={setSelectedCategory}
-      clearAdvancedFilters={clearAdvancedFilters}
-      newSharedTagName={newSharedTagName}
-      setNewSharedTagName={setNewSharedTagName}
-      createSharedTagOnlyFromInput={createSharedTagOnlyFromInput}
-      sharedTagList={sharedTagList}
-      selectedSharedTagName={selectedSharedTagName}
-      setSelectedSharedTagName={setSelectedSharedTagName}
-      openSharedTagMenu={openSharedTagMenu}
-      sharedTagCounts={sharedTagCounts}
-      newTagName={newTagName}
-      setNewTagName={setNewTagName}
-      createTagOnlyFromInput={createTagOnlyFromInput}
-      localTagList={localTagList}
-      selectedTagName={selectedTagName}
-      setSelectedTagName={setSelectedTagName}
-      openTagMenu={openTagMenu}
-      localTagCounts={localTagCounts}
-      addFolder={addFolder}
-      selectedFolderId={selectedFolderId}
-      setDatabasePageResult={setDatabasePageResult}
-      setDatabaseQueryResult={setDatabaseQueryResult}
-      setSelectedFolderId={setSelectedFolderId}
-      expandedFolderIds={expandedFolderIds}
-      dropHoverFolderId={dropHoverFolderId}
-      setDropHoverFolderId={setDropHoverFolderId}
-      selectFolderFilter={selectFolderFilter}
-      openFolderMenu={openFolderMenu}
-      fontIdsFromDropEvent={fontIdsFromDropEvent}
-      assignFontsToFolder={assignFontsToFolder}
-      toggleFolderExpanded={toggleFolderExpanded}
-      flatFolderNodes={flatFolderNodes}
-      setDeveloperStatusLog={setDeveloperStatusLog}
-      latestIndexProgress={latestIndexProgress}
-      developerArchitecture={developerArchitecture}
-      developerSchedulerStatus={developerSchedulerStatus}
-      developerMigrationDiagnostics={developerMigrationDiagnostics}
-      developerSharedMetadataDiagnostics={developerSharedMetadataDiagnostics}
-      setDeveloperSharedMetadataDiagnostics={setDeveloperSharedMetadataDiagnostics}
-      latestBackgroundTaskEvent={latestBackgroundTaskEvent}
-      developerTasks={developerTasks}
-      developerStatusLog={developerStatusLog}
-      timeSortMode={timeSortMode}
-      sortMode={sortMode}
-      viewMode={viewMode}
-      cardPoolViewMode={cardPoolViewMode}
-      setCardPoolViewMode={setCardPoolViewMode}
-      listPreviewFontSize={listPreviewFontSize}
-      setListPreviewFontSize={setListPreviewFontSize}
-      updatePageToolbar={updatePageToolbar}
-      updateViewModeWithScroll={updateViewModeWithScroll}
-      search={search}
-      selectedFontIds={selectedFontIds}
-      activateFontsBatch={activateFontsBatch}
-      deactivateFontsBatch={deactivateFontsBatch}
-      deleteFontsBatch={deleteFontsBatch}
-      uninstallFontsBatch={uninstallFontsBatch}
-      toggleFontDeleteProtection={toggleFontDeleteProtection}
-      setSelectedFontIds={setSelectedFontIds}
-      closeDetail={closeDetail}
-      fontScrollerRef={fontScrollerRef}
-      handleFontScroll={handleFontScroll}
-      beginMarqueeSelection={beginMarqueeSelection}
-      virtualLayout={virtualLayout}
-      cardPoolViewLayout={cardPoolViewLayout}
-      renderFontCard={renderFontCard}
-      databasePageReady={displayDatabasePageReady}
-      visibleFontTotal={visibleFontTotal}
-      visibleFonts={visibleFonts}
-      fontFamilyGroupResult={fontFamilyGroupResult}
-      fontFamilyGroupLoading={fontFamilyGroupLoading}
-      fontFamilyGroupError={fontFamilyGroupError}
-      expandedFontFamilyIds={expandedFontFamilyIds}
-      toggleFontFamilyExpanded={toggleFontFamilyExpanded}
-      leaseLockConflictNotice={leaseLockConflictNotice}
-      setLeaseLockConflictNotice={setLeaseLockConflictNotice}
-      selectedFont={selectedFont}
-      previewFamilies={previewFamilies}
-      selectedPreviewFamily={selectedPreviewFamily}
-      nativeDetailImage={nativeDetailImage}
-      toggleFontFavorite={toggleFontFavorite}
-      installSelected={installSelected}
-      removeSelected={removeSelected}
-      activateSelected={activateSelected}
-      deactivateSelected={deactivateSelected}
-      assignTagName={assignTagName}
-      setAssignTagName={setAssignTagName}
-      handleLocalTagInputKeyDown={handleLocalTagInputKeyDown}
-      localTagSuggestions={localTagSuggestions}
-      activeLocalTagSuggestionIndex={activeLocalTagSuggestionIndex}
-      setActiveLocalTagSuggestionIndex={setActiveLocalTagSuggestionIndex}
-      addTagToSelectedByName={addTagToSelectedByName}
-      removeTagFromSelected={removeTagFromSelected}
-      assignSharedTagName={assignSharedTagName}
-      setAssignSharedTagName={setAssignSharedTagName}
-      handleSharedTagInputKeyDown={handleSharedTagInputKeyDown}
-      sharedTagSuggestions={sharedTagSuggestions}
-      activeSharedTagSuggestionIndex={activeSharedTagSuggestionIndex}
-      setActiveSharedTagSuggestionIndex={setActiveSharedTagSuggestionIndex}
-      addSharedTagToSelectedByName={addSharedTagToSelectedByName}
-      removeSharedTagFromSelected={removeSharedTagFromSelected}
-      updateFont={updateFont}
-      applyInstallCompareToFont={applyInstallCompareToFont}
-      renameTarget={renameTarget}
-      setRenameTarget={setRenameTarget}
-      renameValue={renameValue}
-      setRenameValue={setRenameValue}
-      confirmRename={confirmRename}
-      deleteTarget={deleteTarget}
-      setDeleteTarget={setDeleteTarget}
-      confirmDelete={confirmDelete}
-      folderChildTarget={folderChildTarget}
-      setFolderChildTarget={setFolderChildTarget}
-      newFolderName={newFolderName}
-      setNewFolderName={setNewFolderName}
-      createSubfolder={createSubfolder}
-      selectionRect={selectionRect}
-      normalizedSelectionRect={normalizedSelectionRect}
-      contextMenu={contextMenu}
-      contextSelectedFonts={contextSelectedFonts}
-      selectionLabel={selectionLabel}
-      runFontContextAction={runFontContextAction}
-      runContextBatchActivate={runContextBatchActivate}
-      runContextBatchDeactivate={runContextBatchDeactivate}
-      runContextRefreshFolder={runContextRefreshFolder}
-      runContextRename={runContextRename}
-      runContextAddSubfolder={runContextAddSubfolder}
-      runContextDelete={runContextDelete}
+      topbar={{
+        themeMode: themeMode,
+        setThemeMode: setThemeMode,
+        indexingActive: indexingActive,
+        cacheMenuOpen: cacheMenuOpen,
+        setCacheMenuOpen: setCacheMenuOpen,
+        rescan: rescan,
+        cancelIndexing: cancelIndexing,
+        rebuildScanCache: rebuildScanCache,
+        clearAllCacheAction: clearAllCacheAction,
+      }}
+      sidebar={{
+        sidebarPage: sidebarPage,
+        setSidebarPage: setSidebarPage,
+        activeFilter: activeFilter,
+        setActiveFilter: setActiveFilter,
+        advancedFilterCount: advancedFilterCount,
+        refreshDeveloperStatusDetails: refreshDeveloperStatusDetails,
+        categoryCounts: categoryCounts,
+        allFonts: allFonts,
+        favoriteCount: favoriteCount,
+        installedCount: installedCount,
+        notInstalledCount: notInstalledCount,
+        activeCount: activeCount,
+        previewText: library.previewText,
+        setPreviewText: setPreviewText,
+        installStatusReady: installStatusReady,
+        installStatusMissingCount: installStatusMissingCount,
+        installStatusSyncSuffix: installStatusSyncSuffix,
+        expandedFilterGroups: expandedFilterGroups,
+        setFilterGroupExpanded: setFilterGroupExpanded,
+        selectedWatchedFolders: selectedWatchedFolders,
+        setSelectedWatchedFolders: setSelectedWatchedFolders,
+        library: library,
+        folderCounts: folderCounts,
+        selectedFormats: selectedFormats,
+        setSelectedFormats: setSelectedFormats,
+        formatCounts: formatCounts,
+        selectedScripts: selectedScripts,
+        setSelectedScripts: setSelectedScripts,
+        scriptCounts: scriptCounts,
+        selectedCategory: selectedCategory,
+        setSelectedCategory: setSelectedCategory,
+        clearAdvancedFilters: clearAdvancedFilters,
+        newSharedTagName: newSharedTagName,
+        setNewSharedTagName: setNewSharedTagName,
+        createSharedTagOnlyFromInput: createSharedTagOnlyFromInput,
+        sharedTagList: sharedTagList,
+        selectedSharedTagName: selectedSharedTagName,
+        setSelectedSharedTagName: setSelectedSharedTagName,
+        openSharedTagMenu: openSharedTagMenu,
+        sharedTagCounts: sharedTagCounts,
+        newTagName: newTagName,
+        setNewTagName: setNewTagName,
+        createTagOnlyFromInput: createTagOnlyFromInput,
+        localTagList: localTagList,
+        selectedTagName: selectedTagName,
+        setSelectedTagName: setSelectedTagName,
+        openTagMenu: openTagMenu,
+        localTagCounts: localTagCounts,
+        addFolder: addFolder,
+        selectedFolderId: selectedFolderId,
+        setDatabasePageResult: setDatabasePageResult,
+        setDatabaseQueryResult: setDatabaseQueryResult,
+        setSelectedFolderId: setSelectedFolderId,
+        expandedFolderIds: expandedFolderIds,
+        dropHoverFolderId: dropHoverFolderId,
+        setDropHoverFolderId: setDropHoverFolderId,
+        selectFolderFilter: selectFolderFilter,
+        openFolderMenu: openFolderMenu,
+        fontIdsFromDropEvent: fontIdsFromDropEvent,
+        assignFontsToFolder: assignFontsToFolder,
+        toggleFolderExpanded: toggleFolderExpanded,
+        flatFolderNodes: flatFolderNodes,
+        setDeveloperStatusLog: setDeveloperStatusLog,
+      }}
+      content={{
+        sidebarPage: sidebarPage,
+        timeSortMode: timeSortMode,
+        sortMode: sortMode,
+        viewMode: viewMode,
+        cardPoolViewMode: cardPoolViewMode,
+        activeFilter: activeFilter,
+        setCardPoolViewMode: setCardPoolViewMode,
+        listPreviewFontSize: listPreviewFontSize,
+        setListPreviewFontSize: setListPreviewFontSize,
+        updatePageToolbar: updatePageToolbar,
+        updateViewModeWithScroll: updateViewModeWithScroll,
+        search: search,
+        selectedFontIds: selectedFontIds,
+        library: library,
+        activateFontsBatch: activateFontsBatch,
+        deactivateFontsBatch: deactivateFontsBatch,
+        deleteFontsBatch: deleteFontsBatch,
+        uninstallFontsBatch: uninstallFontsBatch,
+        toggleFontDeleteProtection: toggleFontDeleteProtection,
+        setSelectedFontIds: setSelectedFontIds,
+        closeDetail: closeDetail,
+        fontScrollerRef: fontScrollerRef,
+        handleFontScroll: handleFontScroll,
+        beginMarqueeSelection: beginMarqueeSelection,
+        virtualLayout: virtualLayout,
+        viewLayout: cardPoolViewLayout,
+        renderFontCard: renderFontCard,
+        databasePageReady: displayDatabasePageReady,
+        visibleFontTotal: visibleFontTotal,
+        visibleFonts: visibleFonts,
+        fontFamilyGroupResult: fontFamilyGroupResult,
+        fontFamilyGroupLoading: fontFamilyGroupLoading,
+        fontFamilyGroupError: fontFamilyGroupError,
+        expandedFontFamilyIds: expandedFontFamilyIds,
+        toggleFontFamilyExpanded: toggleFontFamilyExpanded,
+      }}
+      detail={{
+        visible: detailVisible,
+        selectedFont: selectedFont,
+        previewText: library.previewText,
+        previewFamilies: previewFamilies,
+        selectedPreviewFamily: selectedPreviewFamily,
+        nativeDetailImage: nativeDetailImage,
+        toggleFontFavorite: toggleFontFavorite,
+        installSelected: installSelected,
+        removeSelected: removeSelected,
+        activateSelected: activateSelected,
+        deactivateSelected: deactivateSelected,
+        toggleFontDeleteProtection: toggleFontDeleteProtection,
+        assignTagName: assignTagName,
+        setAssignTagName: setAssignTagName,
+        handleLocalTagInputKeyDown: handleLocalTagInputKeyDown,
+        localTagSuggestions: localTagSuggestions,
+        activeLocalTagSuggestionIndex: activeLocalTagSuggestionIndex,
+        setActiveLocalTagSuggestionIndex: setActiveLocalTagSuggestionIndex,
+        addTagToSelectedByName: addTagToSelectedByName,
+        removeTagFromSelected: removeTagFromSelected,
+        assignSharedTagName: assignSharedTagName,
+        setAssignSharedTagName: setAssignSharedTagName,
+        handleSharedTagInputKeyDown: handleSharedTagInputKeyDown,
+        sharedTagSuggestions: sharedTagSuggestions,
+        activeSharedTagSuggestionIndex: activeSharedTagSuggestionIndex,
+        setActiveSharedTagSuggestionIndex: setActiveSharedTagSuggestionIndex,
+        addSharedTagToSelectedByName: addSharedTagToSelectedByName,
+        removeSharedTagFromSelected: removeSharedTagFromSelected,
+        updateFont: updateFont,
+        applyCompare: applyInstallCompareToFont,
+      }}
+      overlays={{
+        renameTarget: renameTarget,
+        setRenameTarget: setRenameTarget,
+        renameValue: renameValue,
+        setRenameValue: setRenameValue,
+        confirmRename: confirmRename,
+        deleteTarget: deleteTarget,
+        setDeleteTarget: setDeleteTarget,
+        confirmDelete: confirmDelete,
+        folderChildTarget: folderChildTarget,
+        setFolderChildTarget: setFolderChildTarget,
+        newFolderName: newFolderName,
+        setNewFolderName: setNewFolderName,
+        createSubfolder: createSubfolder,
+        selectionRect: selectionRect,
+        normalizedSelectionRect: normalizedSelectionRect,
+        contextMenu: contextMenu,
+        contextSelectedFonts: contextSelectedFonts,
+        selectionLabel: selectionLabel,
+        runFontContextAction: runFontContextAction,
+        deleteFontsBatch: deleteFontsBatch,
+        uninstallFontsBatch: uninstallFontsBatch,
+        toggleFontDeleteProtection: toggleFontDeleteProtection,
+        runContextBatchActivate: runContextBatchActivate,
+        runContextBatchDeactivate: runContextBatchDeactivate,
+        runContextRefreshFolder: runContextRefreshFolder,
+        runContextRename: runContextRename,
+        runContextAddSubfolder: runContextAddSubfolder,
+        runContextDelete: runContextDelete,
+        leaseLockConflictNotice: leaseLockConflictNotice,
+        setLeaseLockConflictNotice: setLeaseLockConflictNotice,
+      }}
+      developer={{
+        IS_DEVELOPMENT: IS_DEVELOPMENT,
+        status: status,
+        refreshDeveloperStatusDetails: refreshDeveloperStatusDetails,
+        latestIndexProgress: latestIndexProgress,
+        developerArchitecture: developerArchitecture,
+        developerSchedulerStatus: developerSchedulerStatus,
+        developerMigrationDiagnostics: developerMigrationDiagnostics,
+        developerSharedMetadataDiagnostics: developerSharedMetadataDiagnostics,
+        setDeveloperSharedMetadataDiagnostics: setDeveloperSharedMetadataDiagnostics,
+        latestBackgroundTaskEvent: latestBackgroundTaskEvent,
+        developerTasks: developerTasks,
+        developerStatusLog: developerStatusLog,
+      }}
     />
   )
 }

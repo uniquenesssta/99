@@ -1,0 +1,82 @@
+#!/usr/bin/env node
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const vm = require('node:vm')
+const ts = require('typescript')
+const crypto = require('node:crypto')
+const root = path.resolve(__dirname, '../..')
+const appPath = 'src/renderer/src/App.tsx', viewPath = 'src/renderer/src/components/app/AppRootView.tsx'
+const read = rel => fs.readFileSync(path.join(root, rel), 'utf8')
+function jsx(text) {
+  const file = ts.createSourceFile('App.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  let found
+  function walk(n) { if(ts.isJsxSelfClosingElement(n) && n.tagName.getText(file)==='AppRootView') found=n; ts.forEachChild(n,walk) }
+  walk(file); assert(found); return { file, found }
+}
+function snapshot(app, view, bindings, development, collapsed) {
+  const runtime = { jsx: (type, props) => typeof type === 'function' ? type(props) : ({type, props}), jsxs: (type, props) => runtime.jsx(type, props) }
+  function compile(text, imports) {
+    const module = { exports: {} }
+    const code = ts.transpileModule(text, {compilerOptions:{ module:ts.ModuleKind.CommonJS, target:ts.ScriptTarget.ES2022, jsx:ts.JsxEmit.ReactJSX }}).outputText
+    vm.runInNewContext('(function(require,exports){'+code+'\n})')((id) => id==='react/jsx-runtime' ? runtime : imports(id), module.exports)
+    return module.exports
+  }
+  const actual = compile(view, id => { const name=path.posix.basename(id); return {[name]:name} }).AppRootView
+  const {file,found} = jsx(app)
+  // The extracted caller uses the actual AppRootView function, not an emulated prop mapping.
+  const source='import { AppRootView } from "./root"; export function render({'+bindings.join(',')+'}: any) { return '+found.getText(file)+' }'
+  const caller=compile(source,()=>({AppRootView:actual}))
+  const values=Object.fromEntries(bindings.map(name=>[name,'binding:'+name]))
+  values.IS_DEVELOPMENT=development; values.library={previewText:'binding:library.previewText'}
+  const tree=caller.render(values)
+  function normalize(value) {
+    if(Array.isArray(value))return value.map(normalize)
+    if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,v])=>[key,normalize(key==='renderSidebar'?v(collapsed,'collapse-callback'):v)]))
+    return value
+  }
+  return crypto.createHash('sha256').update(JSON.stringify(normalize(tree))).digest('hex')
+}
+function compilerGate() {
+  const config=ts.readConfigFile(path.join(root,'tsconfig.json'),ts.sys.readFile)
+  const parsed=ts.parseJsonConfigFileContent(config.config,ts.sys,root)
+  const filename=path.join(root,'src/renderer/src/appRootViewContractDiagnostic.ts')
+  const fields={topbar:'themeMode',sidebar:'sidebarPage',content:'search',detail:'visible',overlays:'renameValue',developer:'IS_DEVELOPMENT'}
+  let source='import type { AppRootViewProps } from "./components/app/AppRootView"; declare const p: AppRootViewProps;\n'
+  let count=0
+  for(const [group,field] of Object.entries(fields)) {
+    source+=`const { ${field}: omitted${count}, ...rest${count} } = p.${group};\n`
+    source+=`// @ts-expect-error required property must not be omitted\nconst missing${count}: AppRootViewProps['${group}'] = rest${count};\n`
+    source+=`// @ts-expect-error wrong property must not be accepted\nconst unknown${count}: AppRootViewProps['${group}'] = { ...p.${group}, wrongProperty: true };\n`
+    source+=`// @ts-expect-error wrong value must not be accepted\nconst bad${count}: AppRootViewProps['${group}'] = { ...p.${group}, ${field}: 42 };\n`
+    count++
+  }
+  const host=ts.createCompilerHost(parsed.options), originalRead=host.readFile, originalExists=host.fileExists
+  const same = file => path.resolve(file).replace(/\\/g,'/')===filename.replace(/\\/g,'/')
+  host.readFile=file=>same(file)?source:originalRead(file);host.fileExists=file=>same(file)||originalExists(file)
+  const program=ts.createProgram([...parsed.fileNames,filename],parsed.options,host)
+  const diagnostics=ts.getPreEmitDiagnostics(program)
+  assert.equal(diagnostics.length,0,ts.formatDiagnosticsWithColorAndContext(diagnostics,{getCurrentDirectory:()=>root,getCanonicalFileName:f=>f,getNewLine:()=> '\n'}))
+  for(const rel of [viewPath,'src/renderer/src/components/app/AppSidebarTypes.ts','src/renderer/src/components/app/FontListPanelTypes.ts','src/renderer/src/components/app/AppOverlays.tsx']) {
+    const file=program.getSourceFile(path.join(root,rel));let any=0
+    function walk(n){if(n.kind===ts.SyntaxKind.AnyKeyword)any++;ts.forEachChild(n,walk)}walk(file)
+    assert.equal(any,0,rel+' reintroduced any')
+  }
+}
+function main() {
+  const fixture=require('./fixtures/app-root-view-wiring.fixture.json')
+  const app=read(appPath),view=read(viewPath)
+  const groupNames=jsx(app).found.attributes.properties.map(p=>p.name?.text)
+  assert.deepEqual(groupNames,['topbar','sidebar','content','detail','overlays','developer'])
+  for(const entry of fixture.cases) {
+    assert.equal(snapshot(app,view,fixture.bindings,entry.development,entry.collapsed),entry.hash,'UI wiring changed')
+    assert.equal(snapshot(app.replace(/\r?\n/g,'\r\n'),view.replace(/\r?\n/g,'\r\n'),fixture.bindings,entry.development,entry.collapsed),entry.hash,'CRLF wiring changed')
+  }
+  const broken=app.replace('search: search,','search: status,')
+  assert.notEqual(broken,app)
+  assert.notEqual(snapshot(broken,view,fixture.bindings,false,false),fixture.cases.find(c=>!c.development&&!c.collapsed).hash,'wrong wiring was not detected')
+  compilerGate()
+  console.log('[diagnostics:app-root-view-contracts] six groups; 18 compiler negatives; frozen UI wiring in four modes, wiring mutation and CRLF passed')
+}
+module.exports={snapshot,jsx}
+if(require.main===module)main()

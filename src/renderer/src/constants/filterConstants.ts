@@ -1,4 +1,4 @@
-import type { FontFormat } from '@shared/types'
+import type { FontFormat, FontScript } from '@shared/types'
 import type { FontCategory,InstallStatusFilter,SortMode,TimeSortMode,ViewMode } from '../appTypes'
 
 export const FORMAT_FILTERS: Array<{ id: FontFormat; label: string }> = [
@@ -52,7 +52,7 @@ export const SCRIPT_LANGUAGE_LABELS: Record<string, string> = {
   vietnamese: '越南文'
 }
 
-export const SCRIPT_LANGUAGE_ORDER = [
+export const SCRIPT_LANGUAGE_ORDER: FontScript[] = [
   'chinese',
   'japanese',
   'korean',
