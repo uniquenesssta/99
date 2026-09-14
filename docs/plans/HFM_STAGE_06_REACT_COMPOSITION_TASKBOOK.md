@@ -2,10 +2,11 @@
 
 ## 0. 状态与边界
 
-- 版本：1.0；日期：2026-09-13；软件：HanFontManager 3.0.0。
+- 版本：1.1；日期：2026-09-14；软件：HanFontManager 3.0.0。
 - 分支：`stage/06-react-composition`；基线为 Stage 5 修复提交 `1e129e2d5360d9f5f9afbba0336d73ff1eb9555a`，树 `5c285b64c91f13c737a5bfcf3034c45c0bc08ef1`。
 - 用户明确要求开始 6.1，因此按大阶段创建新分支。本项不修改 Stage 5 或 main。Stage 5 修复版 Windows 实际退出证据仍待补，不把进入本阶段视为补齐旧验收。
-- AT-6.1 实现及自动验证完成：typecheck、85/85 诊断、三端构建与混淆通过。AT-6.2–6.5 未开始。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
+- AT-6.1 已完成自动验证，并收到用户 Windows 完整构建回执：85/85 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/181 模块及混淆 3/3 通过；GUI 与实际退出观察仍单列。
+- AT-6.2 已在 `f3ed225bcb3981950f0df900e8c269d0229fa251`（树 `d9825b4d9af48985fc65c357d11d2e3106f4aed2`）上实现并完成自动验证。AT-6.3–6.5 未开始。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
 
 ## 1. AT-6.1 二次审计
 
@@ -48,16 +49,52 @@ SCRIPT_LANGUAGE_ORDER 补充 FontScript[] 类型，筛选回调恢复上下文�
 
 `npm --offline run verify` 退出码 0，typecheck 与 **85/85** 诊断通过。Electron/Vite main、preload、renderer **354/1/181** 个模块构建通过，renderer JS **389.88 kB**，CSS **106.02 kB**，混淆 **3/3**。required Rust 构建实际尝试后因缺 Cargo 阻塞；没有将本环境分步构建描述为完整 Windows build。
 
-## 4. 后续 Atomic Task
+## 4. AT-6.2 Browse 状态所有权与只读派生
 
-- AT-6.2：先只读派生，再 Browse 最小状态；保持 deferred search、分页、家族视图、虚拟布局与滚动恢复。
+### 4.1 审计结论与拆分边界
+
+本项按所有权拆分，而不是把所有浏览相关代码机械塞入一个 God Hook。`useBrowseController` 独占用户直接修改、并且必须跨 render 保持的浏览状态与引用；`useBrowseDerivedRuntime` 只做无副作用派生。已有数据库分页运行时、family 分组运行时、虚拟布局/预览/选择组合继续留在其原所有者，避免形成第二套查询状态或改变 effect 时序。
+
+| 所有者 | 本项拥有内容 | 明确保留在原处的边界 |
+| --- | --- | --- |
+| `useBrowseController` | 16 个 state 槽：侧栏、逐页 toolbar、组合筛选、标签/目录选择、分页结果/失败键/指标、viewport；7 个 ref：分页/指标请求序号、滚动容器/RAF/追踪时间、最新可见字体与布局 | 不发 IPC、不拥有 effect、不读取整个 library |
+| `useBrowseDerivedRuntime` | 字体索引、指标回退、本地/共享标签计数与列表、目录扁平化、高级筛选计数、可见字体；共 9 个只读结果 | 不拥有 state/ref/effect，不触发预览或选择写入 |
+| `useRendererDatabasePageRuntime` | 原数据库查询参数、分页请求和竞态序号消费 | 不复制进 Browse，继续是分页副作用唯一所有者 |
+| `useFontFamilyGroupsRuntime` | 原 family 查询/结果时序 | 不并入 BrowseController，防止查询所有权重叠 |
+| `useAppFontDerivedRuntime` | 最新可见列表/布局 ref 的 layout effect、虚拟布局、预览预取、详情和选择派生 | 本项不改变 preview/selection effect 顺序 |
+| `App.tsx` | 以原顺序组合 deferred search、滚动恢复/重置、分页、family、Browse 派生与视图 | 不引入全局 store，不改变渲染结构 |
+
+因此，本次得到的是可继续拆分的稳定边界，而不是声称一次就把 `App.tsx` “完美拆空”。`App.tsx` 由 1413 行降至 1408 行并非验收指标；真正结果是 16 个状态槽、7 个引用和 9 个只读派生有了单一所有者。Selection、Folder、Preview、Operations、Library、Developer 仍严格留给后续 AT。
+
+### 4.2 行为保持与长期门禁
+
+新增 `diagnostics:browse-controller` 并纳入 `diagnostics:all`：
+
+- 从 AT-6.1 不可变基线冻结 16 个 state 和 7 个 ref 的初始化 token，拒绝重复所有者或默认值漂移。
+- 冻结 `useDeferredValue`、数据库分页、family、滚动快照/重置/viewport 与 shell 派生调用及顺序；只读派生的函数体、memo 依赖，以及预览/选择/布局的剩余函数体也逐段冻结。
+- 使用真实 Browse Controller、逐页 toolbar 和筛选运行时，验证页面间搜索/视图/排序隔离、组合筛选、展开状态、清空筛选不清空搜索、分页状态与滚动 ref 跨 render 保持。
+- 明确拒绝 viewport 默认高度漂移和 deferred search 错接两种变异；LF/CRLF 均通过。
+- wrapper 到只读派生只允许 19 项逐名显式端口，拒绝整包下传、计算型端口和同类型错接。
+
+现有 `tag-consistency` 只把原断言定位更新到新的只读派生所有者，断言语义未放宽。没有升级依赖、修改数据库结构、原生协议、CSS 或视图 JSX。
+
+### 4.3 自动验证结果
+
+- `node build/diagnostics/check-browse-controller.cjs`：16 states/7 refs、逐页 toolbar/filters、查询/滚动/deferred 调用基线、派生/预览/选择函数体、两项变异与 CRLF 全部通过。
+- `npm --offline run verify`：退出码 0；typecheck 与 **86/86** 长期诊断通过。
+- Electron/Vite main、preload、renderer **354/1/183** 个模块构建通过；main **1148.87 kB**，renderer JS **392.89 kB**、CSS **106.02 kB**；混淆 **3/3** 通过。renderer 比 6.1 增加的两个模块就是本项新增的 Browse Controller 与只读派生模块。
+- required Rust 构建已实际尝试，但当前审查环境没有 Cargo，明确保持为环境阻塞。本项未改 Rust 源码；不得把分步 Electron 构建描述为本项 Windows 完整 build。
+- 6.1 的 Windows 构建回执不能替代 6.2 的 pull 后复验；6.2 GUI 搜索、筛选、排序、列表/网格/family 与滚动位置仍待用户实机确认。
+
+## 5. 后续 Atomic Task
+
 - AT-6.3：Selection、Folder、Preview 各自拥有最小状态/ref；跨域只传窄命令，保留竞态序号。
 - AT-6.4：Operations、Library、Developer；写队列、autosave、关闭 flush 与数据库刷新保持唯一所有者。
 - AT-6.5：测量对象稳定性、重复渲染与虚拟滚动；按数据优化，不以文件行数或 memo 数量验收。
 
-每个 AT 独立提交，整个 Stage 6 沿用新阶段分支。当前没有提前开始 6.2。
+每个 AT 独立提交，整个 Stage 6 沿用新阶段分支。当前没有提前开始 6.3。
 
-## 5. 拉取与实机验收
+## 6. 拉取与实机验收
 
 ```bat
 git status --short
@@ -67,6 +104,6 @@ git pull --ff-only origin stage/06-react-composition
 npm run build
 ```
 
-无需依赖升级或数据迁移。若本地修改阻止切换，保留修改并按实际冲突处理，不执行 hard reset/clean。构建后检查顶栏主题/缓存菜单、侧栏折叠与组合筛选、列表/网格/家族视图、详情标签、菜单/弹层，以及关闭软件后 worker 是否残留。构建回执与 GUI 回执分开记录。
+无需依赖升级或数据迁移。若本地修改阻止切换，保留修改并按实际冲突处理，不执行 hard reset/clean。构建后重点检查各侧栏页面的搜索/视图/排序互不串值、组合筛选清空后搜索仍保留、列表/网格/家族视图切换，以及滚动后筛选重置和返回时定位；同时回归顶栏、详情、菜单/弹层和关闭后 worker 是否残留。构建回执与 GUI 回执分开记录。
 
 Context7 查询 React 18 类型文档，并以本地 React 18.3.1、@types/react 18.3.18、TypeScript 5.9.3 实际编译验证。Mermaid Chart 已呈现真实六组边界；Create State 保存交接，Git/README/任务书仍为权威记录。

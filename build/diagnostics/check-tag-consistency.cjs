@@ -317,7 +317,7 @@ function testLocalKnownTagLifecycleLoggingWiring() {
   assertIncludes('src/main/library/runtime/localFontTagsRuntime.ts', 'local known tag deleted:');
   assertNotIncludes('src/main/library/runtime/localFontTagsRuntime.ts', 'local known tag zero-bind removed:');
   assertIncludes('src/renderer/src/fontTagStateAuthorityRuntime.ts', 'if (hasKnownTags)');
-  assertIncludes('src/renderer/src/runtime/app/useAppFontDerivedRuntime.ts', "isLibraryTagAuthorityKnown(library, 'local')");
+  assertIncludes('src/renderer/src/runtime/app/useBrowseDerivedRuntime.ts', "isLibraryTagAuthorityKnown(library, 'local')");
   assertIncludes('src/renderer/src/fontTagStateAuthorityRuntime.ts', '__localTagAuthorityKnown: true');
   assertIncludes('src/renderer/src/fontViewRuntime.ts', 'filterFontByLibraryTagAuthority');
 }

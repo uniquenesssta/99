@@ -1,25 +1,19 @@
-import type { CacheStats,FontFormat,FontIndexChangePayload,FontIndexProgressPayload,FontItem,FontQueryPageResult,FontQueryResult,FontScript,InstallStatusProgressPayload,LibraryState } from '@shared/types'
+import type { CacheStats,FontIndexChangePayload,FontIndexProgressPayload,FontItem,InstallStatusProgressPayload,LibraryState } from '@shared/types'
 import { normalizePreviewText,previewTextLines } from '@shared/preview-layout/previewTextFitRuntime'
 import { useDeferredValue,useEffect,useLayoutEffect,useMemo,useRef,useState } from 'react'
+import { useBrowseController } from './runtime/app/useBrowseController'
 import type {
-ActiveFilter,
 ContextMenuState,
 CardPoolViewMode,
 DeveloperStatusEntry,
 EditableMenuTarget,
-FilterGroupId,
-FontCategory,
 FontComputedIndex,
-FontMetrics,
 MenuTarget,
-PageToolbarState,
 PreviewQueueEntry,
 QueuedFontWriteState,
 SelectionRectState,
-SidebarPage,
 ThemeMode,
 VirtualLayout,
-VirtualViewport
 } from './appRuntime'
 import {
 applyFontIndexChangeToLibrary,
@@ -27,7 +21,6 @@ buildFontComputedIndex,
 buildFontMetrics,
 CONTEXT_MENU_MAX_HEIGHT,
 CONTEXT_MENU_WIDTH,
-createDefaultPageToolbarStates,
 createEmptyLibrary,
 createEmptyQueuedFontWriteState,
 flattenFolderNodes,
@@ -69,7 +62,6 @@ applyInstallCompareToFont
 import {
 normalizedSelectionRect
 } from './fontSelectionRuntime'
-import { createFontToolbarFilterRuntime } from './fontToolbarFilterRuntime'
 import { buildTagSuggestions,buildVirtualLayout,buildVisibleFonts } from './fontViewRuntime'
 import type { FontFamilyGroupResult } from './runtime/family/fontFamilyGroupingRuntime'
 import { fontFamilyQueryScopeKey,loadFontFamilyGroups } from './runtime/family/fontFamilyGroupingRuntime'
@@ -142,22 +134,60 @@ export default function App(): JSX.Element {
   useRendererReadyNotification()
 
   const [library, setLibraryState] = useState<LibraryState>(createEmptyLibrary())
-  const [activeFilter, setActiveFilter] = useState<ActiveFilter>({ kind: 'all', name: '全部字体' })
-  const [sidebarPage, setSidebarPage] = useState<SidebarPage>('library')
-  const [selectedFormats, setSelectedFormats] = useState<FontFormat[]>([])
-  const [selectedScripts, setSelectedScripts] = useState<FontScript[]>([])
-  const [selectedCategory, setSelectedCategory] = useState<FontCategory>('all')
-  const [selectedWatchedFolders, setSelectedWatchedFolders] = useState<string[]>([])
-  const [expandedFilterGroups, setExpandedFilterGroups] = useState<Partial<Record<FilterGroupId, true>>>({})
-  const [selectedTagName, setSelectedTagName] = useState<string>('')
-  const [selectedSharedTagName, setSelectedSharedTagName] = useState<string>('')
-  const [selectedFolderId, setSelectedFolderId] = useState<string>('')
+  const {
+    activeFilter,
+    setActiveFilter,
+    sidebarPage,
+    setSidebarPage,
+    selectedFormats,
+    setSelectedFormats,
+    selectedScripts,
+    setSelectedScripts,
+    selectedCategory,
+    setSelectedCategory,
+    selectedWatchedFolders,
+    setSelectedWatchedFolders,
+    expandedFilterGroups,
+    selectedTagName,
+    setSelectedTagName,
+    selectedSharedTagName,
+    setSelectedSharedTagName,
+    selectedFolderId,
+    setSelectedFolderId,
+    setDatabaseQueryResult,
+    databasePageResult,
+    setDatabasePageResult,
+    databaseQueryFailedKey,
+    setDatabaseQueryFailedKey,
+    databaseFontMetrics,
+    setDatabaseFontMetrics,
+    virtualViewport,
+    setVirtualViewport,
+    databasePageRequestSeqRef,
+    fontMetricsRequestSeqRef,
+    fontScrollerRef,
+    scrollRafRef,
+    lastScrollTraceAtRef,
+    latestVisibleFontsRef,
+    latestViewLayoutRef,
+    search,
+    installStatus,
+    timeSortMode,
+    sortMode,
+    viewMode,
+    selectedWatchedFoldersKey,
+    selectedFormatsKey,
+    selectedScriptsKey,
+    activeFilterKey,
+    updatePageToolbar,
+    clearAdvancedFilters,
+    setFilterGroupExpanded,
+  } = useBrowseController({ reportUserActivity })
   const [expandedFolderIds, setExpandedFolderIds] = useState<Record<string, true>>({})
   const [newFolderName, setNewFolderName] = useState('')
   const [folderChildTarget, setFolderChildTarget] = useState<Extract<MenuTarget, { kind: 'folder' }> | null>(null)
   const [draggingFontId, setDraggingFontId] = useState('')
   const [dropHoverFolderId, setDropHoverFolderId] = useState('')
-  const [pageToolbarStates, setPageToolbarStates] = useState<Record<SidebarPage, PageToolbarState>>(() => createDefaultPageToolbarStates())
   const [selectedFontId, setSelectedFontId] = useState<string>('')
   const selectedFontIdRef = useRef('')
   selectedFontIdRef.current = selectedFontId
@@ -187,16 +217,11 @@ export default function App(): JSX.Element {
   const [developerSharedMetadataDiagnostics, setDeveloperSharedMetadataDiagnostics] = useState<unknown>(null)
   const [developerTasks, setDeveloperTasks] = useState<unknown[]>([])
   const [databaseRefreshToken, setDatabaseRefreshToken] = useState(0)
-  const [, setDatabaseQueryResult] = useState<FontQueryResult | null>(null)
-  const [databasePageResult, setDatabasePageResult] = useState<FontQueryPageResult | null>(null)
-  const [databaseQueryFailedKey, setDatabaseQueryFailedKey] = useState('')
-  const [databaseFontMetrics, setDatabaseFontMetrics] = useState<FontMetrics | null>(null)
   const [previewFamilies, setPreviewFamilies] = useState<Record<string, string>>({})
   const [nativePreviewImages, setNativePreviewImages] = useState<Record<string, string>>({})
   const [nativeDetailImage, setNativeDetailImage] = useState<string>('')
   const detailNativePreviewRequestSeqRef = useRef(0)
   const [failedPreviewFontIds, setFailedPreviewFontIds] = useState<Record<string, true>>({})
-  const [virtualViewport, setVirtualViewport] = useState<VirtualViewport>({ scrollTop: 0, height: 640, width: 760 })
   const [, setCacheStats] = useState<CacheStats | null>(null)
   const [cacheMenuOpen, setCacheMenuOpen] = useState(false)
   const [newTagName, setNewTagName] = useState('')
@@ -221,8 +246,6 @@ export default function App(): JSX.Element {
   const fontWriteFlushActiveRef = useRef(false)
   const fontWriteFlushActivePromiseRef = useRef<Promise<boolean> | null>(null)
   const databaseRefreshTimerRef = useRef<number | null>(null)
-  const databasePageRequestSeqRef = useRef(0)
-  const fontMetricsRequestSeqRef = useRef(0)
   const fontListScrollingRef = useRef(false)
   const fontListScrollIdleTimerRef = useRef<number | null>(null)
   const activePreviewLoads = useRef(0)
@@ -239,11 +262,6 @@ export default function App(): JSX.Element {
   const lazyInstallDetectTimerRef = useRef<number | null>(null)
   const lazyInstallDetectRunId = useRef(0)
   const activeOperationFontIds = useRef<Set<string>>(new Set())
-  const fontScrollerRef = useRef<HTMLDivElement | null>(null)
-  const scrollRafRef = useRef<number | null>(null)
-  const lastScrollTraceAtRef = useRef(0)
-  const latestVisibleFontsRef = useRef<FontItem[]>([])
-  const latestViewLayoutRef = useRef(VIEW_MODE_LAYOUT.comfortable)
   const lastUserActivityReportAtRef = useRef(0)
   const rendererUserActiveUntilRef = useRef(0)
   const indexOperationRunIdRef = useRef(0)
@@ -256,17 +274,7 @@ export default function App(): JSX.Element {
   const developerStatusRefreshInFlightRef = useRef<Promise<void> | null>(null)
   const sharedMetadataSyncInFlightRef = useRef<Promise<void> | null>(null)
   const lastSharedMetadataSyncCheckAtRef = useRef(0)
-  const pageToolbar = pageToolbarStates[sidebarPage]
-  const search = pageToolbar.search
-  const installStatus = pageToolbar.installStatus || 'all'
-  const timeSortMode = pageToolbar.timeSortMode
-  const sortMode = pageToolbar.sortMode
-  const viewMode = pageToolbar.viewMode
-  const selectedWatchedFoldersKey = selectedWatchedFolders.join('\u0000')
   const libraryFoldersKey = (library.folders || []).join('\u0000')
-  const selectedFormatsKey = selectedFormats.join('\u0000')
-  const selectedScriptsKey = selectedScripts.join('\u0000')
-  const activeFilterKey = `${activeFilter.kind}\u0000${activeFilter.id || ''}\u0000${activeFilter.name || ''}`
   const libraryShellSaveKey = useMemo(
     () => libraryShellPersistenceKey(library),
     [library.folders, library.folderAliases, library.folderNodes, library.collections, library.tags, library.localCollections, library.localTags, library.previewText, library.previewMode]
@@ -509,21 +517,6 @@ export default function App(): JSX.Element {
   })
   const startBackgroundInstallStatusRefresh = installStatusRuntime.startBackgroundInstallStatusRefresh
   const stopLazyInstallStatusDetect = installStatusRuntime.stopLazyInstallStatusDetect
-
-  const toolbarFilterRuntime = createFontToolbarFilterRuntime({
-    sidebarPage,
-    setPageToolbarStates,
-    reportUserActivity,
-    userActivityIdleWindowMs: USER_ACTIVITY_IDLE_WINDOW_MS,
-    setSelectedWatchedFolders,
-    setSelectedFormats,
-    setSelectedScripts,
-    setSelectedCategory,
-    setExpandedFilterGroups
-  })
-  const updatePageToolbar = toolbarFilterRuntime.updatePageToolbar
-  const clearAdvancedFilters = toolbarFilterRuntime.clearAdvancedFilters
-  const setFilterGroupExpanded = toolbarFilterRuntime.setFilterGroupExpanded
 
   const {
     captureFontScrollSnapshot,

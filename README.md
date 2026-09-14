@@ -60,6 +60,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-14：AT-6.2 将 16 个浏览 state、7 个持久 ref 收入 `useBrowseController`，并把字体索引/指标、标签/目录、可见字体等 9 项无副作用计算提取为只读派生；数据库分页、family、滚动、preview/selection 的原所有权和时序保持。新增真实逐页 toolbar/筛选行为、初始化与调用顺序、派生函数体、显式端口、两项变异和 CRLF 门禁；typecheck、86/86 诊断、三端构建及混淆通过。6.1 Windows 完整构建回执已收；6.2 pull 后 Windows/GUI 复验待补，6.3 未开始。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
+
 - 2026-09-13：AT-6.1 将 AppRootView 的 169 个平铺 any 参数改为六组强类型，补齐侧栏/列表/弹层直接边界，删除 App 的六个无用组件 import；原状态与 UI 接线保持。18 个编译拒绝、四种渲染组合及 CRLF 基线、typecheck、85/85 诊断和三端构建/混淆通过。新分支 `stage/06-react-composition`；详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
 
 - 2026-09-12：独立修复 AUD-5.4-01：daemon 通过捕获的进程发送 shutdown，正常 stop 提供 1 秒退出期限，写入失败/超时及父进程最终退出保留 kill 兜底；未完成写任务保留已提交错误，旧进程事件不再影响替代进程。typecheck、84/84 诊断、三端构建与混淆通过，包含真实 Node 正常/超时退出测试。公开接口与原生协议保持，pull 后 `npm run build` 并验证实际关闭，详见 [Stage 5 第 10 节](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)。
