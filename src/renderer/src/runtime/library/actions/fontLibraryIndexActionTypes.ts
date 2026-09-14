@@ -20,9 +20,6 @@ export type FontLibraryIndexActionRuntimeOptions = {
   setDatabaseFontMetrics: Dispatch<SetStateAction<FontMetrics | null>>
   setDatabaseRefreshToken: Dispatch<SetStateAction<number>>
   setIndexingActive: Dispatch<SetStateAction<boolean>>
-  setFailedPreviewFontIds: Dispatch<SetStateAction<Record<string, true>>>
-  setNativePreviewImages: Dispatch<SetStateAction<Record<string, string>>>
-  setNativeDetailImage: Dispatch<SetStateAction<string>>
   nextIndexOperationRunId: () => number
   isCurrentIndexOperation: (runId: number) => boolean
   captureFontScrollSnapshot: () => FontScrollRestoreSnapshot

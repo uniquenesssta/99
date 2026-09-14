@@ -87,7 +87,7 @@ export type RendererDatabasePageRuntimeOptions = {
   installStatus: InstallStatusFilter
   timeSortMode: TimeSortMode
   sortMode: SortMode
-  fontListScrollingRef: MutableRefObject<boolean>
+  fontListScrollingRef: Readonly<{ current: boolean }>
   fontMetricsRequestSeqRef: MutableRefObject<number>
   databasePageRequestSeqRef: MutableRefObject<number>
   rendererUserActive: () => boolean

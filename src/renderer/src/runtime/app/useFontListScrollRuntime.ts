@@ -10,13 +10,10 @@ export function useFontListScrollRuntime(options: {
   visibleFontsLength: number
   scrollRafRef: MutableRefObject<number | null>
   lastScrollTraceAtRef: MutableRefObject<number>
-  fontListScrollingRef: MutableRefObject<boolean>
-  fontListScrollIdleTimerRef: MutableRefObject<number | null>
+  beginFontListScroll: (previewScrollIdleMs: number) => void
   previewScrollIdleMs: number
   userActivityIdleWindowMs: number
   reportUserActivity: (reason?: string, durationMs?: number) => void
-  processPreviewQueue: () => void
-  processAutoPreviewCacheQueue: () => void
   reportTrace: (payload: RendererPerformanceEventPayload, label: string) => void
   setVirtualViewport: Dispatch<SetStateAction<VirtualViewport>>
 }): (event: UIEvent<HTMLDivElement>) => void {
@@ -28,13 +25,10 @@ export function useFontListScrollRuntime(options: {
     visibleFontsLength,
     scrollRafRef,
     lastScrollTraceAtRef,
-    fontListScrollingRef,
-    fontListScrollIdleTimerRef,
+    beginFontListScroll,
     previewScrollIdleMs,
     userActivityIdleWindowMs,
     reportUserActivity,
-    processPreviewQueue,
-    processAutoPreviewCacheQueue,
     reportTrace,
     setVirtualViewport
   } = options
@@ -42,15 +36,7 @@ export function useFontListScrollRuntime(options: {
   return useCallback((event: UIEvent<HTMLDivElement>): void => {
     const node = event.currentTarget
     reportUserActivity('scroll', userActivityIdleWindowMs)
-    fontListScrollingRef.current = true
-
-    if (fontListScrollIdleTimerRef.current !== null) window.clearTimeout(fontListScrollIdleTimerRef.current)
-    fontListScrollIdleTimerRef.current = window.setTimeout(() => {
-      fontListScrollingRef.current = false
-      fontListScrollIdleTimerRef.current = null
-      processPreviewQueue()
-      processAutoPreviewCacheQueue()
-    }, previewScrollIdleMs)
+    beginFontListScroll(previewScrollIdleMs)
 
     if (scrollRafRef.current !== null) return
 
@@ -91,13 +77,10 @@ export function useFontListScrollRuntime(options: {
     visibleFontsLength,
     scrollRafRef,
     lastScrollTraceAtRef,
-    fontListScrollingRef,
-    fontListScrollIdleTimerRef,
+    beginFontListScroll,
     previewScrollIdleMs,
     userActivityIdleWindowMs,
     reportUserActivity,
-    processPreviewQueue,
-    processAutoPreviewCacheQueue,
     reportTrace,
     setVirtualViewport
   ])

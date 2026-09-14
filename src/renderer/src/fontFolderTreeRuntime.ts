@@ -1,7 +1,7 @@
 import type { FontItem,LibraryState,MoveFontFileResult,PhysicalFolderTreeResult } from '@shared/types'
 import type React from 'react'
-import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
-import type { FontMetrics,MenuTarget,PreviewQueueEntry } from './appRuntime'
+import type { Dispatch,SetStateAction } from 'react'
+import type { FontMetrics,MenuTarget } from './appRuntime'
 import {
 applyFolderTreeToLibrary,
 folderPhysicalPath,
@@ -19,18 +19,9 @@ removeFolderTargetFromLibrary
 
 export type FontFolderTreeRuntimeOptions = {
   selectedFolderId: string
-  selectedFontId: string
   draggingFontId: string
-  autoRefreshTimerRef: MutableRefObject<number | null>
-  previewQueue: MutableRefObject<PreviewQueueEntry[]>
-  autoPreviewCacheQueue: MutableRefObject<FontItem[]>
-  lazyInstallQueue: MutableRefObject<FontItem[]>
-  queuedPreviewFontIds: MutableRefObject<Set<string>>
-  queuedAutoPreviewCacheIds: MutableRefObject<Set<string>>
-  queuedLazyInstallIds: MutableRefObject<Set<string>>
-  seenLazyInstallIds: MutableRefObject<Set<string>>
-  loadingFonts: MutableRefObject<Set<string>>
-  clearTimeout: typeof window.clearTimeout
+  clearAutoRefreshTimer: () => void
+  cleanupRemovedFontState: (removedFontIds: Set<string>) => void
   hfm: typeof window.hfm
   readPhysicalFolderTree: (folders: string[]) => Promise<PhysicalFolderTreeResult>
   getCurrentLibrary: () => LibraryState
@@ -39,12 +30,6 @@ export type FontFolderTreeRuntimeOptions = {
   setExpandedFolderIds: Dispatch<SetStateAction<Record<string, true>>>
   setSelectedFolderId: Dispatch<SetStateAction<string>>
   setDraggingFontId: Dispatch<SetStateAction<string>>
-  setSelectedFontId: Dispatch<SetStateAction<string>>
-  setSelectedFontIds: Dispatch<SetStateAction<string[]>>
-  setDetailVisible: Dispatch<SetStateAction<boolean>>
-  setNativeDetailImage: Dispatch<SetStateAction<string>>
-  setNativePreviewImages: Dispatch<SetStateAction<Record<string, string>>>
-  setFailedPreviewFontIds: Dispatch<SetStateAction<Record<string, true>>>
   setDatabasePageResult: Dispatch<SetStateAction<any>>
   setDatabaseQueryResult: Dispatch<SetStateAction<any>>
   setDatabaseFontMetrics: Dispatch<SetStateAction<FontMetrics | null>>
@@ -235,33 +220,10 @@ export function createFontFolderTreeRuntime(options: FontFolderTreeRuntimeOption
         options.setDatabaseRefreshToken((value) => value + 1)
       }
 
-      if (options.autoRefreshTimerRef.current !== null) {
-        options.clearTimeout(options.autoRefreshTimerRef.current)
-        options.autoRefreshTimerRef.current = null
-      }
+      options.clearAutoRefreshTimer()
 
       const removedIds = Array.from(removedFontIds)
-      if (removedIds.length) {
-        options.previewQueue.current = options.previewQueue.current.filter((entry) => !removedFontIds.has(entry.font.id))
-        options.autoPreviewCacheQueue.current = options.autoPreviewCacheQueue.current.filter((font) => !removedFontIds.has(font.id))
-        options.lazyInstallQueue.current = options.lazyInstallQueue.current.filter((font) => !removedFontIds.has(font.id))
-        for (const id of removedIds) {
-          options.queuedPreviewFontIds.current.delete(id)
-          options.queuedAutoPreviewCacheIds.current.delete(id)
-          options.queuedLazyInstallIds.current.delete(id)
-          options.seenLazyInstallIds.current.delete(id)
-          options.loadingFonts.current.delete(id)
-        }
-        options.setSelectedFontIds((prev) => prev.filter((id) => !removedFontIds.has(id)))
-        options.setNativePreviewImages((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !removedFontIds.has(id))))
-        options.setFailedPreviewFontIds((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !removedFontIds.has(id))))
-      }
-
-      if (removedFontIds.has(options.selectedFontId)) {
-        options.setSelectedFontId('')
-        options.setDetailVisible(false)
-        options.setNativeDetailImage('')
-      }
+      if (removedIds.length) options.cleanupRemovedFontState(removedFontIds)
       if (childIds.has(options.selectedFolderId)) options.setSelectedFolderId('')
       const successText = target.virtual ? `已从列表移除物理子文件夹记录：${target.name}，同步移除 ${removedFontIds.size} 个字体记录。磁盘文件夹和共享索引没有被删除。` : `已移除监听文件夹：${target.name}，同步移除 ${removedFontIds.size} 个字体记录。磁盘文件夹和共享索引没有被删除。`
       setStatus(saved ? successText : `${successText} 但库状态保存失败，数据库视图暂未刷新。`)

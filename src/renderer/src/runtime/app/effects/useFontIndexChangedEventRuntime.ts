@@ -1,18 +1,12 @@
 import { useEffect, useRef } from 'react'
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import type { FontIndexChangePayload, FontItem, LibraryState } from '@shared/types'
 import { applyFontIndexChangeToLibrary } from '../../../appRuntime'
-import { cleanupRemovedIndexedFontsFromRendererState, fontIndexChangeStatusText } from '../../../fontIndexEventRuntime'
-import type { PreviewQueueEntry } from '../../../appRuntime'
+import { fontIndexChangeStatusText } from '../../../fontIndexEventRuntime'
 
 export function useFontIndexChangedEventRuntime(args: {
   hfm: Window['hfm']
-  selectedFontId: string
-  previewQueue: MutableRefObject<PreviewQueueEntry[]>
-  autoPreviewCacheQueue: MutableRefObject<FontItem[]>
-  queuedPreviewFontIds: MutableRefObject<Set<string>>
-  queuedAutoPreviewCacheIds: MutableRefObject<Set<string>>
-  loadingFonts: MutableRefObject<Set<string>>
+  cleanupRemovedFontState: (removedFontIds: string[]) => void
   captureFontScrollSnapshot: () => unknown
   restoreFontScrollSnapshot: (snapshot: any) => void
   getCurrentLibrary: () => LibraryState
@@ -21,12 +15,6 @@ export function useFontIndexChangedEventRuntime(args: {
   requestPreviewFont: (font: FontItem) => void
   loadCacheStats: () => Promise<void> | void
   refreshDatabaseDerivedState: () => void
-  setSelectedFontIds: Dispatch<SetStateAction<string[]>>
-  setNativePreviewImages: Dispatch<SetStateAction<Record<string, string>>>
-  setFailedPreviewFontIds: Dispatch<SetStateAction<Record<string, true>>>
-  setSelectedFontId: Dispatch<SetStateAction<string>>
-  setDetailVisible: Dispatch<SetStateAction<boolean>>
-  setNativeDetailImage: Dispatch<SetStateAction<string>>
   setStatus: Dispatch<SetStateAction<string>>
 }): void {
   const argsRef = useRef(args)
@@ -47,21 +35,7 @@ export function useFontIndexChangedEventRuntime(args: {
       current.restoreFontScrollSnapshot(scrollSnapshot)
 
       if (!earlyVisibleOnly || removedIds.length > 0) {
-        cleanupRemovedIndexedFontsFromRendererState({
-          removedIds,
-          selectedFontId: current.selectedFontId,
-          previewQueue: current.previewQueue,
-          autoPreviewCacheQueue: current.autoPreviewCacheQueue,
-          queuedPreviewFontIds: current.queuedPreviewFontIds,
-          queuedAutoPreviewCacheIds: current.queuedAutoPreviewCacheIds,
-          loadingFonts: current.loadingFonts,
-          setSelectedFontIds: current.setSelectedFontIds,
-          setNativePreviewImages: current.setNativePreviewImages,
-          setFailedPreviewFontIds: current.setFailedPreviewFontIds,
-          setSelectedFontId: current.setSelectedFontId,
-          setDetailVisible: current.setDetailVisible,
-          setNativeDetailImage: current.setNativeDetailImage
-        })
+        current.cleanupRemovedFontState(removedIds)
       }
 
       if (payload.source !== 'scan-stream') {

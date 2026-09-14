@@ -1,17 +1,11 @@
 import type { CacheStats,FontIndexChangePayload,FontIndexProgressPayload,FontItem,InstallStatusProgressPayload,LibraryState } from '@shared/types'
-import { normalizePreviewText,previewTextLines } from '@shared/preview-layout/previewTextFitRuntime'
 import { useDeferredValue,useEffect,useLayoutEffect,useMemo,useRef,useState } from 'react'
 import { useBrowseController } from './runtime/app/useBrowseController'
 import type {
-ContextMenuState,
 CardPoolViewMode,
 DeveloperStatusEntry,
-EditableMenuTarget,
 FontComputedIndex,
-MenuTarget,
-PreviewQueueEntry,
 QueuedFontWriteState,
-SelectionRectState,
 ThemeMode,
 VirtualLayout,
 } from './appRuntime'
@@ -54,8 +48,6 @@ import {
 pruneExpandedFolderIds,
 pruneSelectedWatchedFolders
 } from './fontFilterStateRuntime'
-import { createFontFolderTreeRuntime } from './fontFolderTreeRuntime'
-import { cleanupRemovedIndexedFontsFromRendererState,fontIndexChangeStatusText,isIndexProgressActive } from './fontIndexEventRuntime'
 import {
 applyInstallCompareToFont
 } from './fontInstallStateRuntime'
@@ -84,11 +76,11 @@ import { useRendererReadyNotification } from './runtime/app/useRendererReadyNoti
 import { useAppFontShellDerivedRuntime } from './runtime/app/useAppFontShellDerivedRuntime'
 import { useAppFontDerivedRuntime } from './runtime/app/useAppFontDerivedRuntime'
 import { createAppFontScrollRestoreRuntime } from './runtime/app/useFontScrollRestoreRuntime'
-import { createAppFontSelectionInteractionRuntime } from './runtime/app/useFontSelectionInteractionRuntime'
+import { useFolderController } from './runtime/app/useFolderController'
+import { usePreviewController } from './runtime/app/usePreviewController'
+import { useSelectionController } from './runtime/app/useSelectionController'
 import { useRendererDatabasePageRuntime } from './runtime/database/useRendererDatabasePageRuntime'
 import { createFontLibraryIndexActionRuntime } from './runtime/library/fontLibraryIndexActionRuntime'
-import { createFontPreviewQueueRuntime } from './runtime/preview/fontPreviewQueueRuntime'
-import { clampListPreviewFontSize,listPreviewFontSizeRowHeightPadding } from './runtime/preview/listPreviewSizeRuntime'
 import { createFontInstallStatusRuntime } from './runtime/system/fontInstallStatusRuntime'
 import { createFontSystemActionRuntime } from './runtime/system/fontSystemActionRuntime'
 import { setupFloatingScrollbars } from './utils/floatingScrollbars'
@@ -115,7 +107,6 @@ import { useIndexOperationRunRuntime } from './runtime/app/effects/useIndexOpera
 import { useContextMenuDismissRuntime } from './runtime/app/effects/useContextMenuDismissRuntime'
 import { useFontFilterScrollResetRuntime } from './runtime/app/effects/useFontFilterScrollResetRuntime'
 import { useFontViewportResizeObserverRuntime } from './runtime/app/effects/useFontViewportResizeObserverRuntime'
-import { usePreviewTextResetRuntime } from './runtime/app/effects/usePreviewTextResetRuntime'
 import { useTagSuggestionResetRuntime } from './runtime/app/effects/useTagSuggestionResetRuntime'
 import { useFontFamilyGroupsRuntime } from './runtime/app/useFontFamilyGroupsRuntime'
 import { hydrateFontForSelectionDetail } from './runtime/app/fontSelectionHydrationRuntime'
@@ -183,20 +174,52 @@ export default function App(): JSX.Element {
     clearAdvancedFilters,
     setFilterGroupExpanded,
   } = useBrowseController({ reportUserActivity })
-  const [expandedFolderIds, setExpandedFolderIds] = useState<Record<string, true>>({})
-  const [newFolderName, setNewFolderName] = useState('')
-  const [folderChildTarget, setFolderChildTarget] = useState<Extract<MenuTarget, { kind: 'folder' }> | null>(null)
-  const [draggingFontId, setDraggingFontId] = useState('')
-  const [dropHoverFolderId, setDropHoverFolderId] = useState('')
-  const [selectedFontId, setSelectedFontId] = useState<string>('')
-  const selectedFontIdRef = useRef('')
-  selectedFontIdRef.current = selectedFontId
-  const [selectedFontIds, setSelectedFontIds] = useState<string[]>([])
-  const [selectionAnchorFontId, setSelectionAnchorFontId] = useState<string>('')
-  const [selectionRect, setSelectionRect] = useState<SelectionRectState | null>(null)
-  const [detailVisible, setDetailVisible] = useState(false)
-  const detailCardClickLockUntilRef = useRef(0)
-  const [pendingDetailRevealFontId, setPendingDetailRevealFontId] = useState('')
+  const {
+    expandedFolderIds,
+    setExpandedFolderIds,
+    newFolderName,
+    setNewFolderName,
+    folderChildTarget,
+    setFolderChildTarget,
+    draggingFontId,
+    setDraggingFontId,
+    dropHoverFolderId,
+    setDropHoverFolderId,
+    clearAutoRefreshTimer,
+    createRuntime: createFolderRuntime
+  } = useFolderController()
+  const {
+    selectedFontId,
+    selectedFontIdRef,
+    setSelectedFontId,
+    selectedFontIds,
+    setSelectedFontIds,
+    selectionAnchorFontId,
+    setSelectionAnchorFontId,
+    selectionRect,
+    detailVisible,
+    setDetailVisible,
+    pendingDetailRevealFontId,
+    setPendingDetailRevealFontId,
+    assignTagName,
+    setAssignTagName,
+    assignSharedTagName,
+    setAssignSharedTagName,
+    activeLocalTagSuggestionIndex,
+    setActiveLocalTagSuggestionIndex,
+    activeSharedTagSuggestionIndex,
+    setActiveSharedTagSuggestionIndex,
+    contextMenu,
+    setContextMenu,
+    renameTarget,
+    setRenameTarget,
+    renameValue,
+    setRenameValue,
+    deleteTarget,
+    setDeleteTarget,
+    removeFontIds: removeSelectedFontIds,
+    createInteractionRuntime: createSelectionInteractionRuntime
+  } = useSelectionController()
   const {
     themeMode,
     setThemeMode,
@@ -217,28 +240,10 @@ export default function App(): JSX.Element {
   const [developerSharedMetadataDiagnostics, setDeveloperSharedMetadataDiagnostics] = useState<unknown>(null)
   const [developerTasks, setDeveloperTasks] = useState<unknown[]>([])
   const [databaseRefreshToken, setDatabaseRefreshToken] = useState(0)
-  const [previewFamilies, setPreviewFamilies] = useState<Record<string, string>>({})
-  const [nativePreviewImages, setNativePreviewImages] = useState<Record<string, string>>({})
-  const [nativeDetailImage, setNativeDetailImage] = useState<string>('')
-  const detailNativePreviewRequestSeqRef = useRef(0)
-  const [failedPreviewFontIds, setFailedPreviewFontIds] = useState<Record<string, true>>({})
   const [, setCacheStats] = useState<CacheStats | null>(null)
   const [cacheMenuOpen, setCacheMenuOpen] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newSharedTagName, setNewSharedTagName] = useState('')
-  const [assignTagName, setAssignTagName] = useState('')
-  const [assignSharedTagName, setAssignSharedTagName] = useState('')
-  const [activeLocalTagSuggestionIndex, setActiveLocalTagSuggestionIndex] = useState(0)
-  const [activeSharedTagSuggestionIndex, setActiveSharedTagSuggestionIndex] = useState(0)
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
-  const [renameTarget, setRenameTarget] = useState<EditableMenuTarget | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<EditableMenuTarget | null>(null)
-  const loadingFonts = useRef<Set<string>>(new Set())
-  const previewRequestTokenRef = useRef('')
-  previewRequestTokenRef.current = `${normalizePreviewText(library.previewText)}::${clampListPreviewFontSize(listPreviewFontSize)}`
-  const previewQueue = useRef<PreviewQueueEntry[]>([])
-  const queuedPreviewFontIds = useRef<Set<string>>(new Set())
   const fontWriteQueue = useRef<QueuedFontWriteState>(createEmptyQueuedFontWriteState())
   const fontWriteFlushTimerRef = useRef<number | null>(null)
   const fontWriteRetryTimerRef = useRef<number | null>(null)
@@ -246,14 +251,6 @@ export default function App(): JSX.Element {
   const fontWriteFlushActiveRef = useRef(false)
   const fontWriteFlushActivePromiseRef = useRef<Promise<boolean> | null>(null)
   const databaseRefreshTimerRef = useRef<number | null>(null)
-  const fontListScrollingRef = useRef(false)
-  const fontListScrollIdleTimerRef = useRef<number | null>(null)
-  const activePreviewLoads = useRef(0)
-  const autoPreviewCacheQueue = useRef<FontItem[]>([])
-  const queuedAutoPreviewCacheIds = useRef<Set<string>>(new Set())
-  const activeAutoPreviewCacheLoads = useRef(0)
-  const autoPreviewCacheRunId = useRef(0)
-  const autoPreviewCacheStats = useRef({ total: 0, done: 0, cached: 0, generated: 0, failed: 0 })
   const lazyInstallQueue = useRef<FontItem[]>([])
   const queuedLazyInstallIds = useRef<Set<string>>(new Set())
   const seenLazyInstallIds = useRef<Set<string>>(new Set())
@@ -265,8 +262,6 @@ export default function App(): JSX.Element {
   const lastUserActivityReportAtRef = useRef(0)
   const rendererUserActiveUntilRef = useRef(0)
   const indexOperationRunIdRef = useRef(0)
-  const autoRefreshTimerRef = useRef<number | null>(null)
-  const selectionBaseFontIdsRef = useRef<string[]>([])
   const libraryLoadedRef = useRef(false)
   const autoInstallStatusRefreshStartedRef = useRef(false)
   const autoInstallStatusRefreshSignatureRef = useRef('')
@@ -457,45 +452,33 @@ export default function App(): JSX.Element {
   const deactivateFontByCard = systemActionRuntime.deactivateFontByCard
   const deactivateFontsBatch = systemActionRuntime.deactivateFontsBatch
 
-  const previewQueueRuntime = createFontPreviewQueueRuntime({
-    hfm: window.hfm,
+  const {
     previewFamilies,
     nativePreviewImages,
+    nativeDetailImage,
+    setNativeDetailImage,
+    detailNativePreviewRequestSeqRef,
     failedPreviewFontIds,
+    resetPreviewRuntimeState,
+    processPreviewQueue,
+    requestPreviewFont,
+    processAutoPreviewCacheQueue,
+    removeFontIds: removePreviewFontIds,
+    beginFontListScroll,
+    clearFontListScrollIdleTimer,
+    fontListScrollingRef,
+    isFontListScrolling
+  } = usePreviewController({
+    hfm: window.hfm,
     previewText: library.previewText,
     listPreviewFontSize,
-    previewRequestTokenRef,
     selectedFontId,
     selectedFontIds,
     indexingActive,
-    fontListScrollingRef,
-    loadingFonts,
-    previewQueue,
-    queuedPreviewFontIds,
-    activePreviewLoads,
-    autoPreviewCacheQueue,
-    queuedAutoPreviewCacheIds,
-    activeAutoPreviewCacheLoads,
-    autoPreviewCacheRunId,
-    autoPreviewCacheStats,
     rendererUserActive,
     isBadFontRecord: isDefinitelyBadFontRecord,
-    setPreviewFamilies,
-    setFailedPreviewFontIds,
-    setNativePreviewImages,
-    setNativeDetailImage,
     setStatus,
     updateFont
-  })
-  const resetPreviewRuntimeState = previewQueueRuntime.resetPreviewRuntimeState
-  const processPreviewQueue = previewQueueRuntime.processPreviewQueue
-  const requestPreviewFont = previewQueueRuntime.requestPreviewFont
-  const processAutoPreviewCacheQueue = previewQueueRuntime.processAutoPreviewCacheQueue
-
-  usePreviewTextResetRuntime({
-    previewText: library.previewText,
-    listPreviewFontSize,
-    resetPreviewRuntimeState
   })
 
   const installStatusRuntime = createFontInstallStatusRuntime({
@@ -554,9 +537,6 @@ export default function App(): JSX.Element {
     setDatabaseFontMetrics,
     setDatabaseRefreshToken,
     setIndexingActive,
-    setFailedPreviewFontIds,
-    setNativePreviewImages,
-    setNativeDetailImage,
     nextIndexOperationRunId,
     isCurrentIndexOperation,
     captureFontScrollSnapshot,
@@ -605,34 +585,15 @@ export default function App(): JSX.Element {
   const openFontMenu = contextActionRuntime.openFontMenu
   const runFontContextAction = contextActionRuntime.runFontContextAction
 
-  const folderTreeRuntime = createFontFolderTreeRuntime({
+  const folderTreeRuntime = createFolderRuntime({
     selectedFolderId,
-    selectedFontId,
-    draggingFontId,
-    autoRefreshTimerRef,
-    previewQueue,
-    autoPreviewCacheQueue,
-    lazyInstallQueue,
-    queuedPreviewFontIds,
-    queuedAutoPreviewCacheIds,
-    queuedLazyInstallIds,
-    seenLazyInstallIds,
-    loadingFonts,
-    clearTimeout: window.clearTimeout,
+    cleanupRemovedFontState: cleanupRemovedFolderFontState,
     hfm: window.hfm,
     readPhysicalFolderTree,
     getCurrentLibrary,
     commitLibraryUpdate,
     saveLibraryImmediately,
-    setExpandedFolderIds,
     setSelectedFolderId,
-    setDraggingFontId,
-    setSelectedFontId,
-    setSelectedFontIds,
-    setDetailVisible,
-    setNativeDetailImage,
-    setNativePreviewImages,
-    setFailedPreviewFontIds,
     setDatabasePageResult,
     setDatabaseQueryResult,
     setDatabaseFontMetrics,
@@ -648,6 +609,21 @@ export default function App(): JSX.Element {
 
   const deferredSearch = useDeferredValue(search)
 
+  function cleanupRemovedFontViewState(removedFontIds: string[]): void {
+    if (!removedFontIds.length) return
+    const removed = new Set(removedFontIds)
+    const selectedFontRemoved = removeSelectedFontIds(removed)
+    removePreviewFontIds(removed, selectedFontRemoved)
+  }
+
+  function cleanupRemovedFolderFontState(removedFontIds: Set<string>): void {
+    cleanupRemovedFontViewState(Array.from(removedFontIds))
+    lazyInstallQueue.current = lazyInstallQueue.current.filter((font) => !removedFontIds.has(font.id))
+    for (const id of removedFontIds) {
+      queuedLazyInstallIds.current.delete(id)
+      seenLazyInstallIds.current.delete(id)
+    }
+  }
 
   async function toggleFontDeleteProtection(fontIds: string[], protect?: boolean): Promise<void> {
     setContextMenu(null)
@@ -716,7 +692,7 @@ export default function App(): JSX.Element {
   useAppFlushOnUnloadRuntime({
     hfm: window.hfm,
     databaseRefreshTimerRef,
-    fontListScrollIdleTimerRef,
+    clearFontListScrollIdleTimer,
     clearQueuedFontWriteTimer,
     flushFontWriteQueue,
     flushLibraryPersistence
@@ -740,7 +716,7 @@ export default function App(): JSX.Element {
   useFoldersChangedEventRuntime({
     hfm: window.hfm,
     folders: library.folders || [],
-    autoRefreshTimerRef,
+    clearAutoRefreshTimer,
     setStatus
   })
 
@@ -783,12 +759,7 @@ export default function App(): JSX.Element {
 
   useFontIndexChangedEventRuntime({
     hfm: window.hfm,
-    selectedFontId,
-    previewQueue,
-    autoPreviewCacheQueue,
-    queuedPreviewFontIds,
-    queuedAutoPreviewCacheIds,
-    loadingFonts,
+    cleanupRemovedFontState: cleanupRemovedFontViewState,
     captureFontScrollSnapshot,
     restoreFontScrollSnapshot,
     getCurrentLibrary,
@@ -797,12 +768,6 @@ export default function App(): JSX.Element {
     requestPreviewFont,
     loadCacheStats,
     refreshDatabaseDerivedState,
-    setSelectedFontIds,
-    setNativePreviewImages,
-    setFailedPreviewFontIds,
-    setSelectedFontId,
-    setDetailVisible,
-    setNativeDetailImage,
     setStatus
   })
 
@@ -1129,38 +1094,16 @@ export default function App(): JSX.Element {
     startBackgroundInstallStatusRefresh
   })
 
-  const selectionRuntime = createAppFontSelectionInteractionRuntime({
+  const selectionRuntime = createSelectionInteractionRuntime({
     visibleFonts,
-    selectedFontId,
-    selectionAnchorFontId,
-    selectedFontIds,
-    selectionBaseFontIdsRef,
-    setSelectedFontIds,
-    setSelectionAnchorFontId,
-    setSelectedFontId,
-    setDetailVisible,
-    detailVisible,
-    detailCardClickLockUntilRef,
-    setSelectionRect,
     setStatus,
     setSingleFontSelection,
-    requestDetailReveal: setPendingDetailRevealFontId,
     toggleFontDetail,
+    hydrateFont: (font) => hydrateFontForSelectionDetail(font, setLibrary),
     reportUserActivity,
     userActivityIdleWindowMs: USER_ACTIVITY_IDLE_WINDOW_MS
   })
-
-  function handleFontSelect(event: Parameters<typeof selectionRuntime.handleFontSelect>[0], font: FontItem): void {
-    hydrateFontForSelectionDetail(font, setLibrary)
-    selectionRuntime.handleFontSelect(event, font)
-  }
-
-  function handleFontOpenDetail(event: Parameters<typeof selectionRuntime.handleFontOpenDetail>[0], font: FontItem): void {
-    hydrateFontForSelectionDetail(font, setLibrary)
-    selectionRuntime.handleFontOpenDetail(event, font)
-  }
-
-  const { beginMarqueeSelection } = selectionRuntime
+  const { handleFontSelect, handleFontOpenDetail, beginMarqueeSelection } = selectionRuntime
 
   const handleFontScroll = useFontListScrollRuntime({
     sidebarPage,
@@ -1170,13 +1113,10 @@ export default function App(): JSX.Element {
     visibleFontsLength: visibleFonts.length,
     scrollRafRef,
     lastScrollTraceAtRef,
-    fontListScrollingRef,
-    fontListScrollIdleTimerRef,
+    beginFontListScroll,
     previewScrollIdleMs: PREVIEW_SCROLL_IDLE_MS,
     userActivityIdleWindowMs: USER_ACTIVITY_IDLE_WINDOW_MS,
     reportUserActivity,
-    processPreviewQueue,
-    processAutoPreviewCacheQueue,
     reportTrace: reportRendererTrace,
     setVirtualViewport
   })
@@ -1203,7 +1143,7 @@ export default function App(): JSX.Element {
     handleFontSelect,
     handleFontOpenDetail,
     requestPreviewFont,
-    fontListScrolling: () => fontListScrollingRef.current,
+    fontListScrolling: isFontListScrolling,
     openFontMenu,
     setDraggingFontId
   })

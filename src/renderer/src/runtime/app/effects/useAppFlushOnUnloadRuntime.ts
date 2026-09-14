@@ -4,7 +4,7 @@ import type { MutableRefObject } from 'react'
 export function useAppFlushOnUnloadRuntime(args: {
   hfm: Window['hfm']
   databaseRefreshTimerRef: MutableRefObject<number | null>
-  fontListScrollIdleTimerRef: MutableRefObject<number | null>
+  clearFontListScrollIdleTimer: () => void
   clearQueuedFontWriteTimer: () => void
   flushFontWriteQueue: (reason: string) => Promise<boolean> | boolean | void
   flushLibraryPersistence: () => Promise<boolean>
@@ -20,10 +20,7 @@ export function useAppFlushOnUnloadRuntime(args: {
         window.clearTimeout(current.databaseRefreshTimerRef.current)
         current.databaseRefreshTimerRef.current = null
       }
-      if (current.fontListScrollIdleTimerRef.current !== null) {
-        window.clearTimeout(current.fontListScrollIdleTimerRef.current)
-        current.fontListScrollIdleTimerRef.current = null
-      }
+      current.clearFontListScrollIdleTimer()
     }
 
     const flushApplicationState = async (reason: string): Promise<boolean> => {

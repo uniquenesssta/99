@@ -2,11 +2,12 @@
 
 ## 0. 状态与边界
 
-- 版本：1.1；日期：2026-09-14；软件：HanFontManager 3.0.0。
+- 版本：1.2；日期：2026-09-14；软件：HanFontManager 3.0.0。
 - 分支：`stage/06-react-composition`；基线为 Stage 5 修复提交 `1e129e2d5360d9f5f9afbba0336d73ff1eb9555a`，树 `5c285b64c91f13c737a5bfcf3034c45c0bc08ef1`。
 - 用户明确要求开始 6.1，因此按大阶段创建新分支。本项不修改 Stage 5 或 main。Stage 5 修复版 Windows 实际退出证据仍待补，不把进入本阶段视为补齐旧验收。
 - AT-6.1 已完成自动验证，并收到用户 Windows 完整构建回执：85/85 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/181 模块及混淆 3/3 通过；GUI 与实际退出观察仍单列。
-- AT-6.2 已在 `f3ed225bcb3981950f0df900e8c269d0229fa251`（树 `d9825b4d9af48985fc65c357d11d2e3106f4aed2`）上实现并完成自动验证。AT-6.3–6.5 未开始。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
+- AT-6.2 已在 `f3ed225bcb3981950f0df900e8c269d0229fa251`（树 `d9825b4d9af48985fc65c357d11d2e3106f4aed2`）上实现；用户在 Windows 拉取后完成 86/86 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/183 模块及混淆 3/3 的完整构建。
+- AT-6.3 已在 `2d43d14` 基线上实现并完成自动验证。AT-6.4–6.5 未开始。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
 
 ## 1. AT-6.1 二次审计
 
@@ -64,7 +65,7 @@ SCRIPT_LANGUAGE_ORDER 补充 FontScript[] 类型，筛选回调恢复上下文�
 | `useAppFontDerivedRuntime` | 最新可见列表/布局 ref 的 layout effect、虚拟布局、预览预取、详情和选择派生 | 本项不改变 preview/selection effect 顺序 |
 | `App.tsx` | 以原顺序组合 deferred search、滚动恢复/重置、分页、family、Browse 派生与视图 | 不引入全局 store，不改变渲染结构 |
 
-因此，本次得到的是可继续拆分的稳定边界，而不是声称一次就把 `App.tsx` “完美拆空”。`App.tsx` 由 1413 行降至 1408 行并非验收指标；真正结果是 16 个状态槽、7 个引用和 9 个只读派生有了单一所有者。Selection、Folder、Preview、Operations、Library、Developer 仍严格留给后续 AT。
+因此，本次得到的是可继续拆分的稳定边界，而不是声称一次就把 `App.tsx` “完美拆空”。`App.tsx` 由 1413 行降至 1406 行并非验收指标；真正结果是 16 个状态槽、7 个引用和 9 个只读派生有了单一所有者。Selection、Folder、Preview、Operations、Library、Developer 仍严格留给后续 AT。
 
 ### 4.2 行为保持与长期门禁
 
@@ -86,15 +87,50 @@ SCRIPT_LANGUAGE_ORDER 补充 FontScript[] 类型，筛选回调恢复上下文�
 - required Rust 构建已实际尝试，但当前审查环境没有 Cargo，明确保持为环境阻塞。本项未改 Rust 源码；不得把分步 Electron 构建描述为本项 Windows 完整 build。
 - 6.1 的 Windows 构建回执不能替代 6.2 的 pull 后复验；6.2 GUI 搜索、筛选、排序、列表/网格/family 与滚动位置仍待用户实机确认。
 
-## 5. 后续 Atomic Task
+## 5. AT-6.3 Selection、Folder 与 Preview 控制器
 
-- AT-6.3：Selection、Folder、Preview 各自拥有最小状态/ref；跨域只传窄命令，保留竞态序号。
+### 5.1 状态所有权与协作端口
+
+本项把三组会跨 render 保持、且已经存在明确领域归属的状态/ref 从 `App.tsx` 移入控制器。没有把 effect、数据库分页或字体写操作一起吞进新的 God Hook；`App.tsx` 仍只按原顺序组合既有运行时，并在删除事件处协调两个窄清理命令。
+
+| 所有者 | 独占状态/ref | 对外边界 |
+| --- | --- | --- |
+| `useSelectionController` | 14 个 state、3 个 ref：当前/批量选择、锚点、框选、详情显示与点击锁、待显示详情、标签/共享输入、菜单及重命名/删除目标 | 选择/详情只读模型、原交互运行时工厂、按字体 ID 清理命令 |
+| `useFolderController` | 5 个 state、1 个 ref：展开、新建/子目录目标、拖放字体/悬停目录、自动刷新计时器 | 目录模型、原目录运行时工厂、清理刷新计时器命令 |
+| `usePreviewController` | 4 个 state、13 个 ref：family/native/detail 结果、失败集合、详情竞态序号、可见/自动队列、任务集合、滚动暂停/恢复 | 预览只读模型、滚动开始/清理和按字体 ID 清理命令；可变队列不向 App 暴露 |
+| `App.tsx` | 组合三个控制器与既有 effect/runtime | 删除字体时只协调 Selection/Preview 清理；目录删除额外协调原 lazy-install 队列 |
+
+`selectedFolderId` 继续由 Browse Controller 独占，因为它同时是当前页面筛选输入；Folder Controller 只接收该只读值和既有 setter。数据库分页只得到 `fontListScrollingRef` 的只读类型；滚动运行时只能调用 `beginFontListScroll`，卸载 effect 只能调用计时器清理命令。目录和索引事件不再拿到 Preview 的 queue/set/ref。
+
+选择运行时仍先执行字体 hydration，再分派单击、Ctrl/Shift、框选或详情动作；详情预览的 request sequence、token、scroll idle 延迟和队列调度算法均保持原函数体与顺序。目录拖放仍复用原 `parseFontDragData` 与 `createFontFolderTreeRuntime`。
+
+### 5.2 行为锁与自动验证
+
+新增 `diagnostics:react-composition-controllers` 并纳入 `diagnostics:all`：
+
+- 从 AT-6.2 提交 `2d43d1451ef2c39fba6b1ecc339da43f0177c0f8` 冻结 40 个初始化槽，验证拆分后 App 为 0、Selection/Folder/Preview 分别为 17/6/17，且不存在重复所有者或默认值漂移。
+- 运行真实选择交互，覆盖单击、Ctrl/Shift 多选、框选、双击详情和移除清理；验证 hydration 发生在交互分派前。
+- 运行真实目录拖放数据解析和目录删除清理端口；验证 Preview 清理、滚动暂停/恢复、request token 与失败集合行为。
+- 冻结 selection/detail race、preview queue/scheduler 及目录关键方法；拒绝可变 preview 队列泄漏、错误清理接线等两项变异，LF/CRLF 均通过。
+- 既有 Browse 调用哈希、AppRootView 接线、预览调度、物理目录和关闭 flush 门禁保持原断言并继续通过。
+
+验证结果：
+
+- `npm --offline run verify`：退出码 0；typecheck 与 **87/87** 长期诊断通过。
+- Electron/Vite main、preload、renderer **354/1/186** 个模块构建通过；main **1148.87 kB**，renderer JS **393.76 kB**、CSS **106.02 kB**；混淆 **3/3** 通过。新增的三个 renderer 模块就是三个控制器。
+- required Rust 构建已实际尝试，但当前审查环境没有 Cargo；本项未改 Rust/原生源码，仍需 Windows pull 后执行完整 `npm run build`，不得用 Electron 分步构建替代该结论。
+- `App.tsx` 从 AT-6.2 的 1406 行降至 1346 行；行数不是门禁，验收依据仍是 40 个状态/ref 的单一所有权、窄端口和行为锁。
+
+本项没有升级依赖，没有修改数据库结构、IPC channel、原生协议、CSS、视图 JSX 或用户数据。
+
+## 6. 后续 Atomic Task
+
 - AT-6.4：Operations、Library、Developer；写队列、autosave、关闭 flush 与数据库刷新保持唯一所有者。
 - AT-6.5：测量对象稳定性、重复渲染与虚拟滚动；按数据优化，不以文件行数或 memo 数量验收。
 
-每个 AT 独立提交，整个 Stage 6 沿用新阶段分支。当前没有提前开始 6.3。
+每个 AT 独立提交，整个 Stage 6 沿用当前阶段分支。当前没有提前开始 6.4。
 
-## 6. 拉取与实机验收
+## 7. 拉取与实机验收
 
 ```bat
 git status --short
@@ -104,6 +140,6 @@ git pull --ff-only origin stage/06-react-composition
 npm run build
 ```
 
-无需依赖升级或数据迁移。若本地修改阻止切换，保留修改并按实际冲突处理，不执行 hard reset/clean。构建后重点检查各侧栏页面的搜索/视图/排序互不串值、组合筛选清空后搜索仍保留、列表/网格/家族视图切换，以及滚动后筛选重置和返回时定位；同时回归顶栏、详情、菜单/弹层和关闭后 worker 是否残留。构建回执与 GUI 回执分开记录。
+无需依赖升级或数据迁移。若本地修改阻止切换，保留修改并按实际冲突处理，不执行 hard reset/clean。构建后重点回归单击、Ctrl/Shift 多选、框选、双击详情、目录拖放/删除与快速滚动预览；同时确认搜索/筛选/排序、列表/网格/family、顶栏、菜单/弹层和关闭后 worker 行为未变。构建回执与 GUI 回执分开记录。
 
-Context7 查询 React 18 类型文档，并以本地 React 18.3.1、@types/react 18.3.18、TypeScript 5.9.3 实际编译验证。Mermaid Chart 已呈现真实六组边界；Create State 保存交接，Git/README/任务书仍为权威记录。
+AT-6.3 未引入新依赖或版本敏感 API，因此不重复查询 Context7；本地 React 18.3.1、@types/react 18.3.18、TypeScript 5.9.3 已实际编译验证。Mermaid Chart 更新为三个控制器的真实所有权与窄清理链；Create State 保存交接，Git/README/任务书仍为权威记录。

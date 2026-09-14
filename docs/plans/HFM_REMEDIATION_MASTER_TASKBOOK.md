@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.30
+- 文档版本：1.31
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 6 AT-6.2 Browse 状态所有权与只读派生已实现，typecheck、86/86 诊断、三端构建与混淆通过；沿用 `stage/06-react-composition`，实现基线 `f3ed225`。AT-6.1 Windows 完整构建回执已收，6.2 Windows/GUI 复验与 Stage 5 实际退出观察仍待补，6.3 未开始。
+- 当前阶段：Stage 6 AT-6.3 Selection、Folder、Preview 控制器已在 `2d43d14` 基线上实现，40 个 state/ref 归入 17/6/17 的单一所有者，typecheck、87/87 诊断、三端构建与混淆通过；沿用 `stage/06-react-composition`。AT-6.2 Windows 完整构建回执已收；6.3 Windows/GUI 复验与 Stage 5 实际退出观察仍待补，6.4 未开始。
 - 当前阶段任务书：[`HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md`](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -420,6 +420,8 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 
 #### AT-6.3 提取 Selection、Folder 与 Preview 控制器
 
+- 状态：已从 App 提取 40 个 state/ref，Preview 可变队列保持私有，跨域删除/滚动/计时器只经窄命令或只读 ref；选择 hydration、详情竞态、目录拖放和预览调度顺序由新长期门禁冻结。typecheck、87/87 诊断、三端构建与混淆通过；Windows 完整构建和 GUI 硬门禁待 pull 后复验。详见 [Stage 6 任务书](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
+
 - 每一份 state/ref 只能有一个所有者；跨控制器通过窄命令或只读值协作。
 - preview 队列不得依赖整个 App 状态对象。
 - selection 与详情 hydration 的竞态序号保持不变。
@@ -515,6 +517,6 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 | Stage 3 | 完成（实现、自动门禁及 Windows 构建） | 本阶段分支 AT-3.1、AT-3.2 及独立回归修复提交 | 用户快进至 `476c5d6` 后 Windows verify 75/75、换行 24、三后端输入、Rust release、三端 build、混淆 3/3 通过 | 分支 `stage/03-file-preview-consistency`；NAS、实际位图与最大内存等明确留作外部验收；不支持硬链接的卷兼容边界保留 |
 | Stage 4 | AT-4.1 至 AT-4.4 实现及自动门禁完成 | 四个独立原子提交，另补诊断路径兼容修复 | 用户前置 Windows `c981777` build 通过；本项 verify 80/80、三端 build/混淆通过；新提交实机复验待补 | 分支 `stage/04-main-composition`；入口 2075→77 行，五组注册保持 115 项能力；见 Stage 4 第 10 节 |
 | Stage 5 | AT-5.4 实现及自动验证完成 | 基线 `c9f5a74`，本项独立提交 | 45 项引用/38 条命令、89 个类型保持；20 个 client/门面反例、83/83 诊断及三端构建/混淆通过 | 本次 Windows 复验与外部验收待补；AUD-5.4-01 已修复，84/84 诊断通过；Stage 6 未开始 |
-| Stage 6 | AT-6.1、AT-6.2 实现及自动验证完成 | `stage/06-react-composition`；6.2 基线 `f3ed225` | 六组强类型；16 state/7 ref/9 派生单一所有权；86/86 诊断及 build/混淆 | 6.1 Windows build 已收；6.2 Windows/GUI 与 Stage 5 退出复验待补，6.3 未开始 |
+| Stage 6 | AT-6.1 至 AT-6.3 实现及自动验证完成 | `stage/06-react-composition`；6.3 基线 `2d43d14` | 六组强类型；Browse 16 state/7 ref/9 派生；Selection/Folder/Preview 40 state/ref 单一所有权；87/87 诊断及 build/混淆 | 6.2 Windows build 已收；6.3 Windows/GUI 与 Stage 5 退出复验待补，6.4 未开始 |
 | Stage 7 | 阻塞于 Stage 4/5/6 | - | - | - |
 | Stage 8 | 阻塞于 Stage 7 | - | - | - |

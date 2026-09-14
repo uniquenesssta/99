@@ -102,6 +102,7 @@
     "diagnostics:rust-worker-contracts": "node build/diagnostics/check-rust-worker-contracts.cjs",
     "diagnostics:rust-worker-transport": "node build/diagnostics/check-rust-worker-transport.cjs",
     "diagnostics:browse-controller": "node build/diagnostics/check-browse-controller.cjs",
+    "diagnostics:react-composition-controllers": "node build/diagnostics/check-react-composition-controllers.cjs",
     "diagnostics:app-root-view-contracts": "node build/diagnostics/check-app-root-view-contracts.cjs",
     "diagnostics:rust-daemon-shutdown": "node build/diagnostics/check-rust-daemon-shutdown.cjs",
     "diagnostics:rust-worker-clients": "node build/diagnostics/check-rust-worker-clients.cjs",
