@@ -63,7 +63,7 @@ function mergeIncrementalDatabasePage(previous: FontQueryPageResult | null, resu
 export type RendererDatabasePageRuntimeOptions = {
   hfm: typeof window.hfm
   library: LibraryState
-  libraryLoadedRef: MutableRefObject<boolean>
+  libraryLoadedRef: Readonly<{ current: boolean }>
   databaseRefreshToken: number
   databasePageResult: FontQueryPageResult | null
   databaseQueryFailedKey: string

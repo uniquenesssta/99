@@ -2,12 +2,13 @@
 
 ## 0. 状态与边界
 
-- 版本：1.3；日期：2026-09-15；软件：HanFontManager 3.0.0。
+- 版本：1.4；日期：2026-09-15；软件：HanFontManager 3.0.0。
 - 分支：`stage/06-react-composition`；基线为 Stage 5 修复提交 `1e129e2d5360d9f5f9afbba0336d73ff1eb9555a`，树 `5c285b64c91f13c737a5bfcf3034c45c0bc08ef1`。
 - 用户明确要求开始 6.1，因此按大阶段创建新分支。本项不修改 Stage 5 或 main。Stage 5 修复版 Windows 实际退出证据仍待补，不把进入本阶段视为补齐旧验收。
 - AT-6.1 已完成自动验证，并收到用户 Windows 完整构建回执：85/85 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/181 模块及混淆 3/3 通过；GUI 与实际退出观察仍单列。
 - AT-6.2 已在 `f3ed225bcb3981950f0df900e8c269d0229fa251`（树 `d9825b4d9af48985fc65c357d11d2e3106f4aed2`）上实现；用户在 Windows 拉取后完成 86/86 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/183 模块及混淆 3/3 的完整构建。
-- AT-6.3 已在 `2d43d14` 基线上实现并完成自动验证。Windows 首轮复验正确拦截了远端提交中一项冻结哈希录入错误；该 fixture 已按真实基线重算修正，生产源码不变。AT-6.4–6.5 未开始。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
+- AT-6.3 已在 `2d43d14` 基线上实现并完成自动验证。Windows 首轮复验正确拦截的冻结哈希录入错误已修正；用户随后完成 87/87 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/186 模块及混淆 3/3 的完整构建。GUI 回执仍单列。
+- AT-6.4 已在 `8425146` 基线上实现并完成自动验证；Windows 完整构建与 GUI 复验待 pull 后补齐。AT-6.5 未开始。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
 
 ## 1. AT-6.1 二次审计
 
@@ -127,14 +128,49 @@ Windows 在 `diagnostics:react-composition-controllers` 正确报告 `fontPrevie
 
 本项没有升级依赖，没有修改数据库结构、IPC channel、原生协议、CSS、视图 JSX 或用户数据。
 
-## 6. 后续 Atomic Task
+## 6. AT-6.4 Operations、Library 与 Developer 控制器
 
-- AT-6.4：Operations、Library、Developer；写队列、autosave、关闭 flush 与数据库刷新保持唯一所有者。
+### 6.1 状态所有权与窄协作端口
+
+本项把剩余具有明确领域归属的 42 个 state/ref 从 `App.tsx` 移入三个控制器，保持已有 Selection、Folder、Preview、Browse 和视图接线不变。三个控制器仍组合原有小型 runtime；没有复制写队列、数据库刷新或开发诊断实现，也没有引入全局 store。
+
+| 所有者 | 独占状态/ref | 对外边界 |
+| --- | --- | --- |
+| `useLibraryController` | 6 个 state、5 个 ref：library/status、租约冲突、索引状态、数据库刷新 token/cache，以及刷新计时器、初始化/loaded、共享元数据同步与限频 | library 持久化命令、数据库刷新命令、只读 `libraryLoadedRef`；刷新计时器只通过清理命令提供给关闭流程 |
+| `useFontOperationsController` | 3 个 state、19 个 ref：cache/tag 输入、字体写队列与重试、lazy install/status、批量操作集合、renderer 活跃窗口、索引 run id、自动安装状态刷新 | 系统/安装/索引/写队列动作与字体删除清理命令；所有可变队列和集合保持私有 |
+| `useDeveloperController` | 8 个 state、1 个 ref：诊断日志、索引/后台事件、架构/调度/迁移/共享元数据/任务结果，以及刷新中的 Promise | 开发视图模型、追加日志和刷新命令；生产态在任何 IPC 或日志写入前短路 |
+| `App.tsx` | 不再直接声明 AT-6.4 的 state/ref | 依次组合 Browse、Folder、Selection、Library、Preview、Operations、Developer，并只传逐名端口 |
+
+Library Controller 继续独占 autosave、初始 shell、前台共享元数据检查和数据库派生刷新。Operations Controller 组合原字体写、系统操作、安装状态、索引、用户活跃和关闭运行时；写成功仍通过 Library 的 `scheduleDatabaseDerivedStateRefresh` 窄命令失效数据库派生，删除目录中的字体仍通过单一清理命令移除 lazy install 状态。
+
+关闭路径保持原严格顺序：清除写计时器、清除数据库刷新计时器、清除预览/滚动计时器、flush 字体写队列、flush library 持久化，最后才发送关闭完成确认。关闭运行时不再接收 Library 的可变 timer ref。`libraryLoadedRef` 只以 readonly 端口交给数据库分页运行时。
+
+### 6.2 行为锁与自动验证
+
+新增 `diagnostics:react-composition-domain-controllers` 并纳入 `diagnostics:all`：
+
+- 从不可变 AT-6.3 基线 `8425146728f37ee8d0c270b947fcad9c10239236` 冻结 42 个初始化槽，验证 App 为 0、Library/Operations/Developer 分别为 11/22/9，拒绝重复所有者或初始化漂移。
+- 冻结 autosave、数据库刷新、共享元数据、字体写、系统操作、安装状态、索引与开发诊断的既有函数体和组合顺序；验证写成功调用 Library 刷新端口。
+- 运行真实 Library 刷新/计时器/租约提示、Operations 删除保护与 lazy install 清理、共享安装状态 refs，以及关闭 flush/确认顺序。
+- 运行 Developer 生产禁用、日志去重和并发刷新行为；拒绝 raw ref 泄漏、错误关闭次序和生产态 eager 诊断三项变异，LF/CRLF 均通过。
+- 更新三项既有诊断的源码所有者定位；原持久化顺序、关闭 flush 和租约提示断言未放宽。
+
+验证结果：
+
+- `npm --offline run verify`：退出码 0；typecheck 与 **88/88** 长期诊断通过。
+- Electron/Vite main、preload、renderer **354/1/190** 个模块构建通过；main **1148.87 kB**，renderer JS **399.69 kB**、CSS **106.02 kB**；混淆 **3/3** 通过。
+- required Rust 构建已实际尝试，但当前审查环境没有 Cargo；本项未改 Rust/原生源码，仍需 Windows pull 后执行完整 `npm run build`，不得用 Electron 分步构建替代该结论。
+- `App.tsx` 从 AT-6.3 的 1346 行降至 1062 行；行数不是门禁，验收依据是 42 个状态/ref 的单一所有权、窄端口与生命周期行为锁。
+
+本项没有升级依赖，没有修改数据库结构、IPC channel、原生协议、CSS、视图 JSX 或用户数据。
+
+## 7. 后续 Atomic Task
+
 - AT-6.5：测量对象稳定性、重复渲染与虚拟滚动；按数据优化，不以文件行数或 memo 数量验收。
 
-每个 AT 独立提交，整个 Stage 6 沿用当前阶段分支。当前没有提前开始 6.4。
+每个 AT 独立提交，整个 Stage 6 沿用当前阶段分支。当前没有提前开始 6.5。
 
-## 7. 拉取与实机验收
+## 8. 拉取与实机验收
 
 ```bat
 git status --short
@@ -144,6 +180,6 @@ git pull --ff-only origin stage/06-react-composition
 npm run build
 ```
 
-无需依赖升级或数据迁移。若本地修改阻止切换，保留修改并按实际冲突处理，不执行 hard reset/clean。构建后重点回归单击、Ctrl/Shift 多选、框选、双击详情、目录拖放/删除与快速滚动预览；同时确认搜索/筛选/排序、列表/网格/family、顶栏、菜单/弹层和关闭后 worker 行为未变。构建回执与 GUI 回执分开记录。
+无需依赖升级或数据迁移。若本地修改阻止切换，保留修改并按实际冲突处理，不执行 hard reset/clean。构建后重点回归标签/收藏/删除保护写入、批量安装/卸载/激活/停用/删除、添加目录/重扫/清缓存、共享标签冲突提示，以及关闭窗口后重新打开的持久化状态；同时确认选择、目录、预览、搜索/筛选/排序、列表/网格/family 与开发页未变。构建回执与 GUI 回执分开记录。
 
-AT-6.3 未引入新依赖或版本敏感 API，因此不重复查询 Context7；本地 React 18.3.1、@types/react 18.3.18、TypeScript 5.9.3 已实际编译验证。Mermaid Chart 更新为三个控制器的真实所有权与窄清理链；Create State 保存交接，Git/README/任务书仍为权威记录。
+AT-6.4 未引入新依赖或版本敏感 API，因此不重复查询 Context7；本地 React 18.3.1、@types/react 18.3.18、TypeScript 5.9.3 已实际编译验证。Mermaid Chart 更新为 Library/Operations/Developer 的真实所有权、刷新端口与关闭链；Create State 保存交接，Git/README/任务书仍为权威记录。

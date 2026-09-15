@@ -1,9 +1,8 @@
 import { useEffect, useRef } from 'react'
-import type { MutableRefObject } from 'react'
 
 export function useAppFlushOnUnloadRuntime(args: {
   hfm: Window['hfm']
-  databaseRefreshTimerRef: MutableRefObject<number | null>
+  clearDatabaseRefreshTimer: () => void
   clearFontListScrollIdleTimer: () => void
   clearQueuedFontWriteTimer: () => void
   flushFontWriteQueue: (reason: string) => Promise<boolean> | boolean | void
@@ -16,10 +15,7 @@ export function useAppFlushOnUnloadRuntime(args: {
     const clearPendingTimers = (): void => {
       const current = argsRef.current
       current.clearQueuedFontWriteTimer()
-      if (current.databaseRefreshTimerRef.current !== null) {
-        window.clearTimeout(current.databaseRefreshTimerRef.current)
-        current.databaseRefreshTimerRef.current = null
-      }
+      current.clearDatabaseRefreshTimer()
       current.clearFontListScrollIdleTimer()
     }
 

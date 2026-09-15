@@ -22,7 +22,7 @@ function testParserRuntime() {
 function testNoticeComponentWiring() {
   includes('src/renderer/src/components/app/LeaseLockConflictNotice.tsx', '复制锁信息')
   includes('src/renderer/src/components/app/AppOverlays.tsx', 'LeaseLockConflictNotice')
-  includes('src/renderer/src/App.tsx', 'parseLeaseLockConflictNotice(status)')
+  includes('src/renderer/src/runtime/app/useLibraryController.ts', 'parseLeaseLockConflictNotice(status)')
   includes('src/renderer/src/App.tsx', 'leaseLockConflictNotice')
   includes('src/renderer/src/styles/12-developer-tags.css', 'lease-lock-notice')
 }

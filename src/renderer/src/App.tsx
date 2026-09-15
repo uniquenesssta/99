@@ -1,46 +1,23 @@
-import type { CacheStats,FontIndexChangePayload,FontIndexProgressPayload,FontItem,InstallStatusProgressPayload,LibraryState } from '@shared/types'
-import { useDeferredValue,useEffect,useLayoutEffect,useMemo,useRef,useState } from 'react'
+import type { FontItem } from '@shared/types'
+import { useDeferredValue } from 'react'
 import { useBrowseController } from './runtime/app/useBrowseController'
 import type {
 CardPoolViewMode,
-DeveloperStatusEntry,
-FontComputedIndex,
-QueuedFontWriteState,
-ThemeMode,
-VirtualLayout,
 } from './appRuntime'
 import {
-applyFontIndexChangeToLibrary,
-buildFontComputedIndex,
-buildFontMetrics,
 CONTEXT_MENU_MAX_HEIGHT,
 CONTEXT_MENU_WIDTH,
-createEmptyLibrary,
-createEmptyQueuedFontWriteState,
-flattenFolderNodes,
 getVirtualGridColumns,
 IS_DEVELOPMENT,
 isDefinitelyBadFontRecord,
-markPartialLibrary,
-normalizeLibrary,
 PREVIEW_PREFETCH_LIMIT,
 PREVIEW_SCROLL_IDLE_MS,
-rendererMemoryPressure,
-normalizeFontMetricsResult,
 reportRendererTrace,
-requestIdleWindow,
-traceRendererSyncComputation,
 USER_ACTIVITY_IDLE_WINDOW_MS,
-USER_ACTIVITY_REPORT_INTERVAL_MS,
-VIEW_MODE_LAYOUT,
 VIRTUAL_PANEL_PADDING,
-WRITE_BEHIND_DELAY_MS,
-WRITE_BEHIND_MAX_BUFFER_BYTES,
-WRITE_BEHIND_MAX_ITEMS
 } from './appRuntime'
 import { AppRootView } from './components/app/AppRootView'
 import { createFontCardRenderer } from './components/app/FontCardRenderer'
-import { refreshDatabaseDerivedStateRuntime,scheduleDatabaseDerivedStateRefreshRuntime } from './databaseDerivedStateRuntime'
 import { createFontContextActionRuntime } from './fontContextActionRuntime'
 import { createFontDetailPanelRuntime } from './fontDetailPanelRuntime'
 import { createFontDialogRuntime } from './fontDialogRuntime'
@@ -57,16 +34,6 @@ normalizedSelectionRect
 import { buildTagSuggestions,buildVirtualLayout,buildVisibleFonts } from './fontViewRuntime'
 import type { FontFamilyGroupResult } from './runtime/family/fontFamilyGroupingRuntime'
 import { fontFamilyQueryScopeKey,loadFontFamilyGroups } from './runtime/family/fontFamilyGroupingRuntime'
-import { createRendererFontWriteQueueRuntime } from './fontWriteQueueRuntime'
-import {
-isRendererUserActive,
-registerRendererActivityListeners,
-reportRendererUserActivity,
-startRendererLongTaskMonitor
-} from './rendererActivityRuntime'
-import { appendDeveloperStatusEntry,refreshDeveloperStatusDetailsRuntime } from './rendererDeveloperStatusRuntime'
-import { runSharedMetadataSyncCheckRuntime } from './sharedMetadataSyncRuntime'
-import { useAutoInstallStatusRefreshRuntime } from './runtime/app/useAutoInstallStatusRefreshRuntime'
 import { useFontDetailNativePreviewRuntime } from './runtime/app/useFontDetailNativePreviewRuntime'
 import { useFontDetailSelectionEffectsRuntime } from './runtime/app/useFontDetailSelectionEffectsRuntime'
 import { useFontListScrollRuntime } from './runtime/app/useFontListScrollRuntime'
@@ -77,33 +44,22 @@ import { useAppFontShellDerivedRuntime } from './runtime/app/useAppFontShellDeri
 import { useAppFontDerivedRuntime } from './runtime/app/useAppFontDerivedRuntime'
 import { createAppFontScrollRestoreRuntime } from './runtime/app/useFontScrollRestoreRuntime'
 import { useFolderController } from './runtime/app/useFolderController'
+import { useDeveloperController } from './runtime/app/useDeveloperController'
+import { useFontOperationsController } from './runtime/app/useFontOperationsController'
+import { useLibraryController } from './runtime/app/useLibraryController'
 import { usePreviewController } from './runtime/app/usePreviewController'
 import { useSelectionController } from './runtime/app/useSelectionController'
 import { useRendererDatabasePageRuntime } from './runtime/database/useRendererDatabasePageRuntime'
-import { createFontLibraryIndexActionRuntime } from './runtime/library/fontLibraryIndexActionRuntime'
-import { createFontInstallStatusRuntime } from './runtime/system/fontInstallStatusRuntime'
-import { createFontSystemActionRuntime } from './runtime/system/fontSystemActionRuntime'
 import { setupFloatingScrollbars } from './utils/floatingScrollbars'
 import { useAppThemeRuntime } from './runtime/app/effects/useAppThemeRuntime'
-import { useRendererDeveloperStatusLogRuntime } from './runtime/app/effects/useRendererDeveloperStatusLogRuntime'
-import type { LeaseLockConflictNotice } from './runtime/lease-lock/leaseLockConflictNoticeRuntime'
-import { parseLeaseLockConflictNotice } from './runtime/lease-lock/leaseLockConflictNoticeRuntime'
 import { useFolderFilterPruneRuntime } from './runtime/app/effects/useFolderFilterPruneRuntime'
 import { useTagSelectionPruneRuntime } from './runtime/app/effects/useTagSelectionPruneRuntime'
-import { useInitialLibraryShellRuntime } from './runtime/app/effects/useInitialLibraryShellRuntime'
-import { useSharedMetadataSyncForegroundRuntime } from './runtime/app/effects/useSharedMetadataSyncForegroundRuntime'
-import { useAppFlushOnUnloadRuntime } from './runtime/app/effects/useAppFlushOnUnloadRuntime'
-import { useRendererActivityRuntime } from './runtime/app/effects/useRendererActivityRuntime'
 import { useWatchedFoldersRuntime } from './runtime/app/effects/useWatchedFoldersRuntime'
 import { useFoldersChangedEventRuntime } from './runtime/app/effects/useFoldersChangedEventRuntime'
 import { useFontIndexProgressEventRuntime } from './runtime/app/effects/useFontIndexProgressEventRuntime'
-import { useInstallStatusProgressEventRuntime } from './runtime/app/effects/useInstallStatusProgressEventRuntime'
 import { usePreviewQueueResumeRuntime } from './runtime/app/effects/usePreviewQueueResumeRuntime'
-import { useBackgroundTaskEventsRuntime } from './runtime/app/effects/useBackgroundTaskEventsRuntime'
 import { useFontIndexChangedEventRuntime } from './runtime/app/effects/useFontIndexChangedEventRuntime'
 import { useFontTagStateSignalEventRuntime } from './runtime/app/effects/useFontTagStateSignalEventRuntime'
-import { libraryShellPersistenceKey,useLibraryAutosaveRuntime } from './runtime/app/effects/useLibraryAutosaveRuntime'
-import { useIndexOperationRunRuntime } from './runtime/app/effects/useIndexOperationRunRuntime'
 import { useContextMenuDismissRuntime } from './runtime/app/effects/useContextMenuDismissRuntime'
 import { useFontFilterScrollResetRuntime } from './runtime/app/effects/useFontFilterScrollResetRuntime'
 import { useFontViewportResizeObserverRuntime } from './runtime/app/effects/useFontViewportResizeObserverRuntime'
@@ -124,7 +80,6 @@ export default function App(): JSX.Element {
 
   useRendererReadyNotification()
 
-  const [library, setLibraryState] = useState<LibraryState>(createEmptyLibrary())
   const {
     activeFilter,
     setActiveFilter,
@@ -228,229 +183,55 @@ export default function App(): JSX.Element {
     listPreviewFontSize,
     setListPreviewFontSize,
   } = useRendererDisplayPreferences()
-  const [status, setStatus] = useState('准备就绪')
-  const [leaseLockConflictNotice, setLeaseLockConflictNotice] = useState<LeaseLockConflictNotice | null>(null)
-  const [developerStatusLog, setDeveloperStatusLog] = useState<DeveloperStatusEntry[]>([])
-  const [latestIndexProgress, setLatestIndexProgress] = useState<FontIndexProgressPayload | null>(null)
-  const [indexingActive, setIndexingActive] = useState(false)
-  const [latestBackgroundTaskEvent, setLatestBackgroundTaskEvent] = useState<unknown>(null)
-  const [developerArchitecture, setDeveloperArchitecture] = useState<unknown>(null)
-  const [developerSchedulerStatus, setDeveloperSchedulerStatus] = useState<unknown>(null)
-  const [developerMigrationDiagnostics, setDeveloperMigrationDiagnostics] = useState<unknown>(null)
-  const [developerSharedMetadataDiagnostics, setDeveloperSharedMetadataDiagnostics] = useState<unknown>(null)
-  const [developerTasks, setDeveloperTasks] = useState<unknown[]>([])
-  const [databaseRefreshToken, setDatabaseRefreshToken] = useState(0)
-  const [, setCacheStats] = useState<CacheStats | null>(null)
-  const [cacheMenuOpen, setCacheMenuOpen] = useState(false)
-  const [newTagName, setNewTagName] = useState('')
-  const [newSharedTagName, setNewSharedTagName] = useState('')
-  const fontWriteQueue = useRef<QueuedFontWriteState>(createEmptyQueuedFontWriteState())
-  const fontWriteFlushTimerRef = useRef<number | null>(null)
-  const fontWriteRetryTimerRef = useRef<number | null>(null)
-  const fontWriteRetryAttemptRef = useRef(0)
-  const fontWriteFlushActiveRef = useRef(false)
-  const fontWriteFlushActivePromiseRef = useRef<Promise<boolean> | null>(null)
-  const databaseRefreshTimerRef = useRef<number | null>(null)
-  const lazyInstallQueue = useRef<FontItem[]>([])
-  const queuedLazyInstallIds = useRef<Set<string>>(new Set())
-  const seenLazyInstallIds = useRef<Set<string>>(new Set())
-  const knownInstallStatusIds = useRef<Set<string>>(new Set())
-  const activeLazyInstallDetect = useRef(false)
-  const lazyInstallDetectTimerRef = useRef<number | null>(null)
-  const lazyInstallDetectRunId = useRef(0)
-  const activeOperationFontIds = useRef<Set<string>>(new Set())
-  const lastUserActivityReportAtRef = useRef(0)
-  const rendererUserActiveUntilRef = useRef(0)
-  const indexOperationRunIdRef = useRef(0)
-  const libraryLoadedRef = useRef(false)
-  const autoInstallStatusRefreshStartedRef = useRef(false)
-  const autoInstallStatusRefreshSignatureRef = useRef('')
-  const initialLibraryLoadStartedRef = useRef(false)
-  const developerStatusRefreshInFlightRef = useRef<Promise<void> | null>(null)
-  const sharedMetadataSyncInFlightRef = useRef<Promise<void> | null>(null)
-  const lastSharedMetadataSyncCheckAtRef = useRef(0)
-  const libraryFoldersKey = (library.folders || []).join('\u0000')
-  const libraryShellSaveKey = useMemo(
-    () => libraryShellPersistenceKey(library),
-    [library.folders, library.folderAliases, library.folderNodes, library.collections, library.tags, library.localCollections, library.localTags, library.previewText, library.previewMode]
-  )
-
   const {
+    library,
     setLibrary,
     getCurrentLibrary,
     commitLibraryUpdate,
     saveLibraryImmediately,
-    flushLibraryPersistence
-  } = useLibraryAutosaveRuntime({
-    hfm: window.hfm,
-    library,
-    libraryShellSaveKey,
-    libraryLoadedRef,
-    setLibrary: setLibraryState,
+    flushLibraryPersistence,
+    status,
     setStatus,
-    onPersistenceRecovered: refreshDatabaseDerivedState
-  })
-
-  function appendDeveloperStatus(source: string, message: string, payload?: unknown): void {
-    if (!IS_DEVELOPMENT) return
-    setDeveloperStatusLog((prev) => appendDeveloperStatusEntry(prev, source, message, payload))
-  }
-
-  function reportUserActivity(reason = 'interaction', durationMs = USER_ACTIVITY_IDLE_WINDOW_MS): void {
-    reportRendererUserActivity({
-      activeUntilRef: rendererUserActiveUntilRef,
-      lastReportAtRef: lastUserActivityReportAtRef,
-      hfm: window.hfm,
-      reason,
-      durationMs,
-      reportIntervalMs: USER_ACTIVITY_REPORT_INTERVAL_MS
-    })
-  }
-
-  function rendererUserActive(): boolean {
-    return isRendererUserActive(rendererUserActiveUntilRef)
-  }
-
-  function setCardPoolViewMode(mode: CardPoolViewMode): void {
-    if (mode === cardPoolViewMode) return
-    runAfterScrollPreservingMutation(
-      () => setStoredCardPoolViewMode(mode),
-      selectedFontId || selectedFontIds[0] || ''
-    )
-  }
-
-  function refreshDeveloperStatusDetails(): Promise<void> {
-    if (!IS_DEVELOPMENT) return Promise.resolve()
-    if (developerStatusRefreshInFlightRef.current) return developerStatusRefreshInFlightRef.current
-
-    const task = refreshDeveloperStatusDetailsRuntime({
-      enabled: IS_DEVELOPMENT,
-      hfm: window.hfm,
-      setArchitecture: setDeveloperArchitecture,
-      setSchedulerStatus: setDeveloperSchedulerStatus,
-      setMigrationDiagnostics: setDeveloperMigrationDiagnostics,
-      setSharedMetadataDiagnostics: setDeveloperSharedMetadataDiagnostics,
-      setTasks: setDeveloperTasks,
-      appendStatus: appendDeveloperStatus
-    }).finally(() => {
-      if (developerStatusRefreshInFlightRef.current === task) {
-        developerStatusRefreshInFlightRef.current = null
-      }
-    })
-
-    developerStatusRefreshInFlightRef.current = task
-    return task
-  }
-
-  function refreshDatabaseDerivedState(): void {
-    refreshDatabaseDerivedStateRuntime({
-      timerRef: databaseRefreshTimerRef,
-      clearTimeout: window.clearTimeout,
+    leaseLockConflictNotice,
+    setLeaseLockConflictNotice,
+    indexingActive,
+    setIndexingActive,
+    databaseRefreshToken,
+    setDatabaseRefreshToken,
+    setCacheStats,
+    libraryLoadedRef,
+    refreshDatabaseDerivedState,
+    scheduleDatabaseDerivedStateRefresh,
+    refreshDatabaseMetricsNow,
+    clearDatabaseRefreshTimer
+  } = useLibraryController({
+    hfm: window.hfm,
+    database: {
       setDatabasePageResult,
       setDatabaseQueryResult,
       setDatabaseFontMetrics,
-      setDatabaseRefreshToken,
       databasePageRequestSeqRef,
       fontMetricsRequestSeqRef
-    })
-  }
-
-  function scheduleDatabaseDerivedStateRefresh(delay = 420): void {
-    scheduleDatabaseDerivedStateRefreshRuntime({
-      timerRef: databaseRefreshTimerRef,
-      delay,
-      clearTimeout: window.clearTimeout,
-      setTimeout: window.setTimeout,
-      requestIdleWindow,
-      rendererUserActive,
-      scheduleAgain: scheduleDatabaseDerivedStateRefresh,
-      setDatabaseRefreshToken
-    })
-  }
-
-  function refreshDatabaseMetricsNow(): void {
-    if (typeof window.hfm.getFontMetrics !== 'function') {
-      setDatabaseFontMetrics(null)
-      return
-    }
-
-    void window.hfm.getFontMetrics()
-      .then((metrics) => {
-        setDatabaseFontMetrics(normalizeFontMetricsResult(metrics))
-      })
-      .catch(() => setDatabaseFontMetrics(null))
-  }
-
-  function checkSharedMetadataUpdates(reason: string, minIntervalMs = 5000): Promise<void> | null {
-    return runSharedMetadataSyncCheckRuntime({
-      hfm: window.hfm,
-      reason,
-      foldersLength: library.folders.length,
-      indexingActive,
-      libraryLoadedRef,
-      inFlightRef: sharedMetadataSyncInFlightRef,
-      lastCheckedAtRef: lastSharedMetadataSyncCheckAtRef,
-      minIntervalMs,
-      refreshDatabaseDerivedState,
-      setStatus,
-      appendDeveloperStatus
-    })
-  }
-
-  const fontWriteQueueRuntime = createRendererFontWriteQueueRuntime({
-    queueRef: fontWriteQueue,
-    timerRef: fontWriteFlushTimerRef,
-    retryTimerRef: fontWriteRetryTimerRef,
-    retryAttemptRef: fontWriteRetryAttemptRef,
-    activeRef: fontWriteFlushActiveRef,
-    activePromiseRef: fontWriteFlushActivePromiseRef,
-    hfm: window.hfm,
-    getFolders: () => getCurrentLibrary().folders || [],
-    writeBehindDelayMs: WRITE_BEHIND_DELAY_MS,
-    writeBehindMaxItems: WRITE_BEHIND_MAX_ITEMS,
-    writeBehindMaxBufferBytes: WRITE_BEHIND_MAX_BUFFER_BYTES,
-    memoryPressure: rendererMemoryPressure,
-    setTimeout: window.setTimeout,
-    clearTimeout: window.clearTimeout,
-    setStatus,
-    scheduleDatabaseDerivedStateRefresh
+    },
+    rendererUserActive,
+    appendDeveloperStatus
   })
 
-  const clearQueuedFontWriteTimer = fontWriteQueueRuntime.clearTimer
-  const queueLocalTagsWrite = fontWriteQueueRuntime.queueLocalTagsWrite
-  const queueSharedTagsWrite = fontWriteQueueRuntime.queueSharedTagsWrite
-  const queueFavoriteWrite = fontWriteQueueRuntime.queueFavoriteWrite
-  const queueProtectionWrite = fontWriteQueueRuntime.queueProtectionWrite
-  const flushFontWriteQueue = fontWriteQueueRuntime.flush
+  function appendDeveloperStatus(source: string, message: string, payload?: unknown): void {
+    developerController.appendDeveloperStatus(source, message, payload)
+  }
 
-  const systemActionRuntime = createFontSystemActionRuntime({
-    hfm: window.hfm,
-    library,
-    getCurrentLibrary,
-    getCurrentSelectedFontId: () => selectedFontIdRef.current,
-    selectedFontId,
-    activeOperationFontIds,
-    setLibrary,
-    setStatus,
-    setSelectedFontIds,
-    setSelectedFontId,
-    setDetailVisible,
-    setContextMenu,
-    setDatabaseFontMetrics,
-    refreshDatabaseDerivedState,
-    queueFavoriteWrite
-  })
-  const updateFont = systemActionRuntime.updateFont
-  const toggleFontFavorite = systemActionRuntime.toggleFontFavorite
-  const fontsForTag = systemActionRuntime.fontsForTag
-  const installFontByCard = systemActionRuntime.installFontByCard
-  const removeFontByCard = systemActionRuntime.removeFontByCard
-  const deleteFontsBatch = systemActionRuntime.deleteFontsBatch
-  const uninstallFontsBatch = systemActionRuntime.uninstallFontsBatch
-  const activateFontByCard = systemActionRuntime.activateFontByCard
-  const activateFontsBatch = systemActionRuntime.activateFontsBatch
-  const deactivateFontByCard = systemActionRuntime.deactivateFontByCard
-  const deactivateFontsBatch = systemActionRuntime.deactivateFontsBatch
+  function reportUserActivity(reason = 'interaction', durationMs = USER_ACTIVITY_IDLE_WINDOW_MS): void {
+    operationsController.reportUserActivity(reason, durationMs)
+  }
+
+  function rendererUserActive(): boolean {
+    return operationsController.rendererUserActive()
+  }
+
+  function updateFontFromOperations(fontId: string, updater: (font: FontItem) => FontItem): void {
+    operationsController.updateFont(fontId, updater)
+  }
 
   const {
     previewFamilies,
@@ -478,28 +259,8 @@ export default function App(): JSX.Element {
     rendererUserActive,
     isBadFontRecord: isDefinitelyBadFontRecord,
     setStatus,
-    updateFont
+    updateFont: updateFontFromOperations
   })
-
-  const installStatusRuntime = createFontInstallStatusRuntime({
-    hfm: window.hfm,
-    library,
-    lazyInstallQueue,
-    queuedLazyInstallIds,
-    seenLazyInstallIds,
-    knownInstallStatusIds,
-    activeLazyInstallDetect,
-    lazyInstallDetectTimerRef,
-    lazyInstallDetectRunId,
-    setLibrary,
-    setStatus,
-    setDatabasePageResult,
-    setDatabaseQueryResult,
-    setDatabaseFontMetrics,
-    setDatabaseRefreshToken
-  })
-  const startBackgroundInstallStatusRefresh = installStatusRuntime.startBackgroundInstallStatusRefresh
-  const stopLazyInstallStatusDetect = installStatusRuntime.stopLazyInstallStatusDetect
 
   const {
     captureFontScrollSnapshot,
@@ -519,42 +280,111 @@ export default function App(): JSX.Element {
     updatePageToolbar
   })
 
-  const libraryIndexActionRuntime = createFontLibraryIndexActionRuntime({
+  function setCardPoolViewMode(mode: CardPoolViewMode): void {
+    if (mode === cardPoolViewMode) return
+    runAfterScrollPreservingMutation(
+      () => setStoredCardPoolViewMode(mode),
+      selectedFontId || selectedFontIds[0] || ''
+    )
+  }
+
+  const operationsController = useFontOperationsController({
     hfm: window.hfm,
-    library,
-    selectedFolderId,
-    autoInstallStatusRefreshStartedRef,
-    knownInstallStatusIds,
-    setLibrary,
-    getCurrentLibrary,
-    commitLibraryUpdate,
-    setStatus,
-    setCacheStats,
-    setContextMenu,
-    setSelectedFolderId,
-    setDatabasePageResult,
-    setDatabaseQueryResult,
-    setDatabaseFontMetrics,
-    setDatabaseRefreshToken,
-    setIndexingActive,
-    nextIndexOperationRunId,
-    isCurrentIndexOperation,
-    captureFontScrollSnapshot,
-    restoreFontScrollSnapshot,
-    saveLibraryImmediately,
-    stopLazyInstallStatusDetect,
-    startBackgroundInstallStatusRefresh,
-    resetPreviewRuntimeState,
-    isBadFontRecord: isDefinitelyBadFontRecord
+    library: {
+      library,
+      getCurrentLibrary,
+      setLibrary,
+      commitLibraryUpdate,
+      saveLibraryImmediately,
+      flushLibraryPersistence,
+      setStatus,
+      selectedFolderId,
+      setSelectedFolderId,
+      indexingActive,
+      setIndexingActive,
+      setCacheStats,
+      clearDatabaseRefreshTimer,
+      refreshDatabaseDerivedState,
+      scheduleDatabaseDerivedStateRefresh,
+      refreshDatabaseMetricsNow
+    },
+    database: {
+      databaseFontMetrics,
+      setDatabasePageResult,
+      setDatabaseQueryResult,
+      setDatabaseFontMetrics,
+      setDatabaseRefreshToken
+    },
+    selection: {
+      selectedFontId,
+      getCurrentSelectedFontId: () => selectedFontIdRef.current,
+      setSelectedFontIds,
+      setSelectedFontId,
+      setDetailVisible,
+      setContextMenu
+    },
+    index: {
+      captureFontScrollSnapshot,
+      restoreFontScrollSnapshot,
+      resetPreviewRuntimeState,
+      isBadFontRecord: isDefinitelyBadFontRecord
+    },
+    sidebarPage,
+    clearFontListScrollIdleTimer,
+    appendDeveloperStatus
   })
-  const loadCacheStats = libraryIndexActionRuntime.loadCacheStats
-  const readPhysicalFolderTree = libraryIndexActionRuntime.readPhysicalFolderTree
-  const clearAllCacheAction = libraryIndexActionRuntime.clearAllCacheAction
-  const addFolder = libraryIndexActionRuntime.addFolder
-  const cancelIndexing = libraryIndexActionRuntime.cancelIndexing
-  const rescan = libraryIndexActionRuntime.rescan
-  const rebuildScanCache = libraryIndexActionRuntime.rebuildScanCache
-  const refreshFolderTarget = libraryIndexActionRuntime.refreshFolderTarget
+  const {
+    cacheMenuOpen,
+    setCacheMenuOpen,
+    newTagName,
+    setNewTagName,
+    newSharedTagName,
+    setNewSharedTagName,
+    updateFont,
+    toggleFontFavorite,
+    fontsForTag,
+    installFontByCard,
+    removeFontByCard,
+    deleteFontsBatch,
+    uninstallFontsBatch,
+    activateFontByCard,
+    activateFontsBatch,
+    deactivateFontByCard,
+    deactivateFontsBatch,
+    loadCacheStats,
+    readPhysicalFolderTree,
+    clearAllCacheAction,
+    addFolder,
+    cancelIndexing,
+    rescan,
+    rebuildScanCache,
+    refreshFolderTarget,
+    queueLocalTagsWrite,
+    queueSharedTagsWrite,
+    flushFontWriteQueue,
+    toggleFontDeleteProtection,
+    removeFontIds: removeOperationFontIds
+  } = operationsController
+
+  const developerController = useDeveloperController({
+    enabled: IS_DEVELOPMENT,
+    hfm: window.hfm,
+    status
+  })
+  const {
+    developerStatusLog,
+    setDeveloperStatusLog,
+    latestIndexProgress,
+    setLatestIndexProgress,
+    latestBackgroundTaskEvent,
+    developerArchitecture,
+    developerSchedulerStatus,
+    developerMigrationDiagnostics,
+    developerSharedMetadataDiagnostics,
+    setDeveloperSharedMetadataDiagnostics,
+    developerTasks,
+    refreshDeveloperStatusDetails
+  } = developerController
 
   const contextActionRuntime = createFontContextActionRuntime({
     library,
@@ -618,42 +448,10 @@ export default function App(): JSX.Element {
 
   function cleanupRemovedFolderFontState(removedFontIds: Set<string>): void {
     cleanupRemovedFontViewState(Array.from(removedFontIds))
-    lazyInstallQueue.current = lazyInstallQueue.current.filter((font) => !removedFontIds.has(font.id))
-    for (const id of removedFontIds) {
-      queuedLazyInstallIds.current.delete(id)
-      seenLazyInstallIds.current.delete(id)
-    }
-  }
-
-  async function toggleFontDeleteProtection(fontIds: string[], protect?: boolean): Promise<void> {
-    setContextMenu(null)
-    const ids = Array.from(new Set(fontIds)).filter((id) => !!library.fonts[id])
-    if (!ids.length) return
-    const nextValue = typeof protect === 'boolean' ? protect : !ids.every((id) => !!library.fonts[id]?.deleteProtected)
-    const targetFonts = ids.map((id) => library.fonts[id]).filter((font): font is FontItem => !!font)
-
-    setLibrary((prev) => {
-      const nextFonts = { ...prev.fonts }
-      for (const id of ids) {
-        const font = nextFonts[id]
-        if (!font) continue
-        nextFonts[id] = { ...font, deleteProtected: nextValue }
-      }
-      return { ...prev, fonts: nextFonts }
-    })
-
-    for (const font of targetFonts) queueProtectionWrite(font, nextValue)
-    setStatus(`${nextValue ? '加入保护' : '取消保护'}已在界面生效，后台队列写入 ${targetFonts.length} 个。`)
+    removeOperationFontIds(removedFontIds)
   }
 
   useAppThemeRuntime(themeMode)
-
-  useRendererDeveloperStatusLogRuntime(status, appendDeveloperStatus)
-
-  useEffect(() => {
-    const notice = parseLeaseLockConflictNotice(status)
-    if (notice) setLeaseLockConflictNotice(notice)
-  }, [status])
 
   useFolderFilterPruneRuntime({
     library,
@@ -669,43 +467,6 @@ export default function App(): JSX.Element {
     setSelectedSharedTagName,
     refreshDatabaseDerivedState
   })
-
-
-  useInitialLibraryShellRuntime({
-    hfm: window.hfm,
-    initialLibraryLoadStartedRef,
-    libraryLoadedRef,
-    setLibrary,
-    setStatus,
-    setDatabasePageResult,
-    setDatabaseQueryResult,
-    setDatabaseRefreshToken
-  })
-
-  useSharedMetadataSyncForegroundRuntime({
-    enabled: typeof window.hfm.checkSharedMetadataUpdates === 'function',
-    libraryFoldersKey,
-    indexingActive,
-    checkSharedMetadataUpdates
-  })
-
-  useAppFlushOnUnloadRuntime({
-    hfm: window.hfm,
-    databaseRefreshTimerRef,
-    clearFontListScrollIdleTimer,
-    clearQueuedFontWriteTimer,
-    flushFontWriteQueue,
-    flushLibraryPersistence
-  })
-
-
-  useRendererActivityRuntime({
-    hfm: window.hfm,
-    sidebarPage,
-    reportUserActivity
-  })
-
-
   useWatchedFoldersRuntime({
     hfm: window.hfm,
     folders: library.folders || [],
@@ -728,35 +489,11 @@ export default function App(): JSX.Element {
     setStatus,
     appendDeveloperStatus
   })
-
-
-  useInstallStatusProgressEventRuntime({
-    hfm: window.hfm,
-    knownInstallStatusIds,
-    autoInstallStatusRefreshStartedRef,
-    appendDeveloperStatus,
-    setStatus,
-    refreshDatabaseDerivedState,
-    refreshDatabaseMetricsNow
-  })
-
-
   usePreviewQueueResumeRuntime({
     indexingActive,
     processPreviewQueue,
     processAutoPreviewCacheQueue
   })
-
-
-  useBackgroundTaskEventsRuntime({
-    enabled: IS_DEVELOPMENT,
-    hfm: window.hfm,
-    setLatestBackgroundTaskEvent,
-    appendDeveloperStatus,
-    refreshDeveloperStatusDetails
-  })
-
-
   useFontIndexChangedEventRuntime({
     hfm: window.hfm,
     cleanupRemovedFontState: cleanupRemovedFontViewState,
@@ -780,17 +517,6 @@ export default function App(): JSX.Element {
     refreshDatabaseDerivedState,
     setStatus
   })
-
-
-  function nextIndexOperationRunId(): number {
-    indexOperationRunIdRef.current += 1
-    return indexOperationRunIdRef.current
-  }
-
-  function isCurrentIndexOperation(runId: number): boolean {
-    return indexOperationRunIdRef.current === runId
-  }
-
   useContextMenuDismissRuntime(setContextMenu)
 
   useFontFilterScrollResetRuntime({
@@ -1082,16 +808,6 @@ export default function App(): JSX.Element {
     requestSeqRef: detailNativePreviewRequestSeqRef,
     setNativeDetailImage,
     isBadFontRecord: isDefinitelyBadFontRecord
-  })
-
-  useAutoInstallStatusRefreshRuntime({
-    hfm: window.hfm,
-    databaseFontMetrics,
-    libraryFolders: library.folders,
-    indexingActive,
-    startedRef: autoInstallStatusRefreshStartedRef,
-    signatureRef: autoInstallStatusRefreshSignatureRef,
-    startBackgroundInstallStatusRefresh
   })
 
   const selectionRuntime = createSelectionInteractionRuntime({

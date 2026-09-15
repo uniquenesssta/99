@@ -47,7 +47,10 @@ for (const needle of [
 ]) assert(rendererFlush.includes(needle), `renderer close flush runtime missing ${needle}`)
 
 const app = read('src/renderer/src/App.tsx')
-assert(app.includes('flushLibraryPersistence'), 'App must pass the library flush into the close lifecycle')
-assert(app.includes('hfm: window.hfm'), 'App close lifecycle must receive the preload close protocol')
+const operationsController = read('src/renderer/src/runtime/app/useFontOperationsController.ts')
+assert(app.includes('flushLibraryPersistence'), 'App must connect the library flush to the operations controller')
+assert(operationsController.includes('useAppFlushOnUnloadRuntime({'), 'Operations controller must own the close lifecycle composition')
+assert(operationsController.includes('flushLibraryPersistence: options.library.flushLibraryPersistence'), 'Close lifecycle must receive the library persistence flush')
+assert(operationsController.includes('hfm: options.hfm'), 'Close lifecycle must receive the preload close protocol')
 
 console.log('[diagnostics:window-close-flush] ok')
