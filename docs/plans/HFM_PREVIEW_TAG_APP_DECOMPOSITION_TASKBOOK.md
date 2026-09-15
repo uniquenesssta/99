@@ -474,7 +474,7 @@ Windows 仅使用 npm run dev，在隔离测试目录执行 Y-01/Y-02/Y-03，GUI
 | --- | --- | --- | --- | --- |
 | W-01 | 基线完成（四故障未修复） | 第 12 节同一提交 | typecheck / 93 项通过 | 隔离测试；下一项 W-02 |
 | W-02 | 完成 | 第 13 节同一提交 | 93/93；三端构建通过 | Windows 开发模式待复验 |
-| A-01 | 实施中 | — | 待验证 | 主进程/界面分别提交 |
+| A-01 | 完成 | 第 14 节两笔独立提交 | 两侧联合 93/93，构建通过 | Windows 开发模式待复验 |
 | W-03 | 未开始 | — | — | — |
 | A-02 | 未开始 | — | — | — |
 
@@ -707,3 +707,39 @@ Create State 本轮返回无 active world model，未取得项目级持久化确
 失败先行证据：旧实现返回 true 而预期 false。初次尝试捕获清理 reject 被原 `font-resource-session-result` 门拒绝，已撤销该尝试，保留原异常契约；没有调整旧门禁。真实批量 A2 门继续通过。主进程提交的全量结果见下方收尾记录。
 
 主进程独立提交验证：TypeScript 与全量 93/93 通过；新主进程矩阵、两个变异及原事务 A1/A2 通过。改动 5 个已允许文件；renderer 尚未改动，A-01 仍实施中。
+
+
+### 14.2 renderer 独立修复与跨层结算
+
+主进程独立提交远端对象：`098ac5b87e1c897b335c2b1f10620926f33e8f11`（对应本地 `29f8873`，同一文件树）。renderer 基于此继续；两笔提交联合验证后统一快进发布。
+
+单项 `deactivateFontByCard` 将 ok:false 转入既有失败恢复分支，恢复 active/activeSince/managedInstallPath/managedRegistryName 与一次计数增量；finally 释放 busy 后调用既有 `refreshDatabaseDerivedState`。成功也触发权威重查，不重复执行停用。无新增 owner、IPC 或状态镜像。
+
+刷新入口真实行为：清空旧 page/query/metrics，递增 page/metrics 请求序号并更新 refresh token。计数随后重新查询，旧请求通过已有序号检查被拒绝；不将累计的乐观增减当最终权威计数。默认单项隔离测试保留可观察的即时恢复计数；乱序测试额外执行真实刷新函数和真实 metrics effect，验证刷新期间 metrics=null、新结果恢复正确 count、旧响应不覆盖。
+
+| 必测项 | 证据 |
+| --- | --- |
+| resolve ok:false / reject | 两者恢复四个激活字段、计数，busy 释放；标签/收藏/保护保持 |
+| 多记录部分失败 | 真实 IPC handler→session→renderer，保留一个失败记录、返回失败、不清空安装状态，界面恢复 |
+| 全部成功 / 无记录幂等 | 主进程全部成功保存 remaining，正确清空状态；再次调用不重复清理；无目标不触碰其他记录 |
+| 保存失败 | 原异常传播，不先清空安装状态；不得返回成功 |
+| 重复点击 | pending 中只一次 IPC、一次乐观扣减、一次恢复/查询刷新 |
+| 计数与停用响应乱序 | 旧计数先于结果和晚于新计数两种顺序，结算失效后新 count=1；旧返回不覆盖 |
+| 原批量 A2 | 保留原门禁和生产批量路径；未把缺项语义改成新协议 |
+
+metrics 隔离测试运行实际 hook 的第一个 effect，仅替换 React 调度、IPC Promise、时钟与指标格式化；后续页面布局 hook 以显式哨兵终止，不冒充完整 React 挂载。第一次夹具缺 viewport 参数导致 TypeError，已补齐输入，不放宽断言。
+
+新增两项 renderer 变异：删除 result.ok 检查、删除结算查询失效，均必须失败；加上主进程两项和原六项，共十项变异。F-A1/F-A2 均为默认必过用例；历史 `baseline:watcher-activation-observe` 名称为命令兼容保留，现在输出修复后的正确结果并断言相等；两项 probe 也应退出 0。F-W1/F-W2 的 W-02 门继续保持。
+
+原 X 跨字段与 Y-04 单项结果路径由本轮自动门加强；Y-05 全索引事件权威合并留 W-03，Y-06/07 完整筛选/计数/重启 GUI 留 A-02。不宣称旧合并或批量缺项风险已解决。部分原生清理抛错沿用保守保留已持久化记录；没有擅自重写资源清理事务。
+
+
+### 14.3 联合验证与收尾
+
+- 主进程独立版、最终联合版各自 `npm run verify` 退出 0，TypeScript / 93 项全量诊断通过；原生清理 A1 和批量 A2 旧门保持，新门十项变异被拒绝。F-A1/F-A2 正确性 probe 均退出 0。
+- Electron/Vite 354/1/190 模块构建通过。Linux 隔离测试使用真实业务函数和可控边界，不等于 Windows 原生资源/正式字体库验收；未重编未变的 Rust，未提供安装包流程。
+- Windows 仅以 `npm run dev` 检查安全的单项激活/停用、详情时间、计数与列表；清理拒绝/资源错误由自动注入覆盖，不要求损坏系统字体。W-02 的 Windows 回执仍未在本轮补验。
+- 两个独立提交各 5 文件、合并共实施前允许的 6 文件。生产仅 main session 与 renderer action，fixture 分别迁移这两个条目；无标签/收藏/保护写入、接口或依赖变化，`git diff --check` 通过。
+- 主进程提交 `098ac5b87e1c897b335c2b1f10620926f33e8f11`；renderer 随本执行卡提交，可用 `git log -1 --format=%H -- src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts` 查询发布 SHA。发布按主进程→renderer 两提交快进并核对文件树；回滚按逆序 revert，不重写历史。
+- Mermaid 已更新真实结果/结算链路。Create State 返回无 active world model，未取得项目级保存确认；Git 与任务书为权威交接。
+- A-01 完成，可进入 W-03：监听增量错误与界面合并一致性。不启动 Stage 8，不将完整已激活页面/计数展示回归 A-02 冒充本轮完成。

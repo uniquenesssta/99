@@ -117,7 +117,7 @@
         "deactivateFontByCard",
         "deactivateFontsBatch"
       ],
-      "sha256": "4338d1174807489400460517a6ce46e513d5dc03bae6a064bf5d33d74e1985fa"
+      "sha256": "4960301cfa56a0b4784b4fee960f3f92534f58fb65ee2573493f6e9b1d5835a8"
     },
     "src/renderer/src/runtime/system/actions/fontSystemStateRuntime.ts": {
       "exports": [
@@ -172,6 +172,12 @@
       "parent": "8a4eddfe828fe22b927e811cd3df07009b178905",
       "file": "src/main/activation/runtime/fontActivationSessionRuntime.ts",
       "reason": "failure results and retained records; no status clearing on partial cleanup"
+    },
+    {
+      "task": "A-01-renderer",
+      "parent": "098ac5b87e1c897b335c2b1f10620926f33e8f11",
+      "file": "src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts",
+      "reason": "resolved failure rollback and settled query invalidation; existing owner preserved"
     }
   ]
 }

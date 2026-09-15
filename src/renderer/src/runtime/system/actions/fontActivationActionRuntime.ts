@@ -173,6 +173,7 @@ export function createFontActivationActionRuntime(
 
     try {
       const result = await options.hfm.deactivateFont(font)
+      if (!result.ok) throw new Error(result.message || '临时激活记录未能完成清理。')
       stateRuntime.setFontActiveRuntime(font.id, false)
       options.setStatus(result.message)
     } catch (error) {
@@ -187,6 +188,7 @@ export function createFontActivationActionRuntime(
       options.setStatus(`取消激活失败：${error instanceof Error ? error.message : String(error)}`)
     } finally {
       options.activeOperationFontIds.current.delete(font.id)
+      options.refreshDatabaseDerivedState()
     }
   }
 

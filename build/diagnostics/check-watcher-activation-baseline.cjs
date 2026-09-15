@@ -149,15 +149,17 @@ async function observeW2() {
   h.runtime.stopFolderWatchers(); return result
 }
 const font = { id: 'a', path: '/a.ttf', fileName: 'a.ttf', active: true, activeSince: '2026-01-01', managedInstallPath: '/managed/a.ttf', managedRegistryName: 'A', favorite: true, localTagNames: ['L'], tagNames: ['S'], deleteProtected: true }
-function actionHarness(deactivateFont, transform = x => x) {
+function actionHarness(deactivateFont, transform = x => x, refresh = () => {}) {
+  let refreshCount = 0
   let library = { fonts: { a: { ...font } } }, metrics = { activeCount: 1, favoriteCount: 1 }
   const messages = [], busy = new Set()
   const display = load('src/renderer/src/fontDisplay.ts')
   const options = { get library() { return library }, hfm: { deactivateFont }, activeOperationFontIds: { current: busy }, setStatus: s => messages.push(s),
+    refreshDatabaseDerivedState: () => { refreshCount++; refresh() },
     setLibrary: update => { library = update(library) }, setDatabaseFontMetrics: update => { metrics = update(metrics) } }
   const state = load('src/renderer/src/runtime/system/actions/fontSystemStateRuntime.ts').createFontSystemStateRuntime(options)
   const runtime = load(actionFile, { '../../../appRuntime': display }, {}, transform).createFontActivationActionRuntime(options, state)
-  return { runtime, busy, messages, snapshot: () => plain({ font: library.fonts.a, metrics }) }
+  return { runtime, busy, messages, refreshes: () => refreshCount, setMetrics: value => { metrics = value }, snapshot: () => plain({ font: library.fonts.a, metrics }) }
 }
 function sessionHarness(remove, config = {}, transform = x => x) {
   let saved = null
@@ -228,6 +230,7 @@ async function activationHealthy(transform = x => x) {
   assert.equal(session.snapshot().saved.records.length, 0)
   assert.equal(session.snapshot().statuses.length, 1)
   assert.equal(success.snapshot().font.active, false); assert.equal(success.snapshot().metrics.activeCount, 0)
+  assert.equal(success.refreshes(), 1)
   for (const key of ['favorite', 'localTagNames', 'tagNames', 'deleteProtected']) assert.deepEqual(success.snapshot().font[key], font[key])
   const display = load('src/renderer/src/fontDisplay.ts')
   assert.equal(display.installLabel({ ...font, active: false, systemInstalled: true }), '系统已安装')
@@ -235,6 +238,66 @@ async function activationHealthy(transform = x => x) {
   const route = load('src/main/library/fontQueryWorkerRouteRuntime.ts')
   assert.equal(route.shouldUseMergedIndexWorkerForPage({ activeFilter: { kind: 'active' } }), false)
   assert.equal(route.shouldUseMergedIndexWorkerForPage({ activeFilter: { kind: 'all' } }), true)
+}
+async function rendererDeactivationCheck(transform = x => x) {
+  for (const rejected of [false, true]) {
+    let calls = 0
+    const gate = deferred(), h = actionHarness(() => { calls++; return gate.promise }, transform)
+    const task = h.runtime.deactivateFontByCard(font)
+    await h.runtime.deactivateFontByCard(font)
+    assert.equal(calls, 1); assert.equal(h.snapshot().metrics.activeCount, 0)
+    if (rejected) gate.reject(Error('rejected'))
+    else gate.resolve({ ok: false, message: 'not removed' })
+    await task
+    assert.deepEqual(h.snapshot(), { font, metrics: { activeCount: 1, favoriteCount: 1 } })
+    assert.equal(h.busy.size, 0); assert.equal(h.refreshes(), 1)
+  }
+  const partial = sessionHarness(async record => record.registryName === 'one', { records: [
+    { fontId: 'a', sourcePath: '/a.ttf', registryName: 'one' }, { fontId: 'a', sourcePath: '/a.ttf', registryName: 'two' }
+  ] })
+  const handlers = new Map()
+  load('src/main/ipc/handlers/fontSystemIpcHandlers.ts').registerFontSystemIpcHandlers((name, fn) => handlers.set(name, fn), partial.runtime)
+  const h = actionHarness(item => handlers.get('fonts:deactivateFont')({}, item), transform)
+  await h.runtime.deactivateFontByCard(font)
+  assert.deepEqual(h.snapshot(), { font, metrics: { activeCount: 1, favoriteCount: 1 } })
+  assert.equal(partial.snapshot().saved.records.length, 1); assert.equal(partial.snapshot().statuses.length, 0)
+}
+async function metricsResponseOrderCheck(transform = x => x) {
+  // Capture and run the actual metrics effect; remaining page hooks are outside this test.
+  for (const oldFirst of [false, true]) {
+    const seq = { current: 0 }, pageSeq = { current: 0 }, gate = deferred()
+    let effects = [], timers = [], refreshToken = 0
+    const stop = {}
+    const hooks = { useState: () => [0, () => {}], useEffect: fn => effects.push(fn), useMemo: () => { throw stop } }
+    const page = load('src/renderer/src/runtime/database/useRendererDatabasePageRuntime.ts', {
+      react: hooks,
+      '../../appRuntime': { normalizeFontMetricsResult: x => x, METRICS_IDLE_DELAY_MS: 0 },
+      '../../fontViewRuntime': {}, './rendererDatabasePageWindowRuntime': {}
+    }, { window: { setTimeout: fn => { timers.push(fn); return timers.length }, clearTimeout() {} }, performance: { now: () => 0 } })
+    const derived = load('src/renderer/src/databaseDerivedStateRuntime.ts')
+    const h = actionHarness(() => gate.promise, transform, () => derived.refreshDatabaseDerivedStateRuntime({
+      timerRef: { current: null }, clearTimeout() {}, setDatabasePageResult() {}, setDatabaseQueryResult() {},
+      setDatabaseFontMetrics: value => h.setMetrics(value), setDatabaseRefreshToken: fn => { refreshToken = fn(refreshToken) },
+      databasePageRequestSeqRef: pageSeq, fontMetricsRequestSeqRef: seq
+    }))
+    function request(response) {
+      effects = []; timers = []
+      try { page.useRendererDatabasePageRuntime({ virtualViewport: { width: 800, height: 600, scrollTop: 0 }, viewLayout: { rowHeight: 80, minCardWidth: 160 }, library: { folders: ['/fonts'] }, hfm: { getFontMetrics: () => response.promise },
+        fontMetricsRequestSeqRef: seq, rendererUserActive: () => false, reportTrace() {}, setDatabaseFontMetrics: value => h.setMetrics(value) }) }
+      catch (error) { assert.equal(error, stop) }
+      assert.equal(effects.length, 1); effects[0](); assert.equal(timers.length, 1); timers[0]()
+    }
+    const old = deferred(); request(old)
+    const action = h.runtime.deactivateFontByCard(font)
+    if (oldFirst) { old.resolve({ activeCount: 7 }); await drain(); assert.equal(h.snapshot().metrics.activeCount, 7) }
+    gate.resolve({ ok: false, message: 'keep active' }); await action
+    assert.equal(h.snapshot().metrics, null); assert.equal(refreshToken, 1); assert.equal(pageSeq.current, 1)
+    assert.equal(h.snapshot().font.active, true)
+    const fresh = deferred(); request(fresh); fresh.resolve({ activeCount: 1 }); await drain()
+    if (!oldFirst) { old.resolve({ activeCount: 0 }); await drain() }
+    assert.equal(h.snapshot().metrics.activeCount, 1, 'old metric result overwrote settled state')
+    assert.equal(h.refreshes(), 1)
+  }
 }
 async function manualBackgroundHealthy(transform = x => x) {
   const logs = [], r = load(backgroundFile, {}, {}, transform).createManualFolderRefreshBackgroundRuntime({ appendStartupLog: s => logs.push(s) })
@@ -268,21 +331,27 @@ function contracts() {
 function mutate(source, before, after) { assert(source.includes(before), `mutation target missing: ${before}`); return source.replace(before, after) }
 async function main() {
   if (process.argv.includes('--observe') || process.argv.includes('--probe')) {
-    const cases = { 'F-A1': observeA1 }
+    const cases = { 'F-A1': observeA1, 'F-A2': observeA2 }
     const selected = process.argv.find(x => x.startsWith('--case='))?.slice(7)
     if (selected) assert(cases[selected], `Unknown case ${selected}`)
     for (const [id, run] of Object.entries(cases)) {
       if (selected && selected !== id) continue
       const result = await run(); console.log(id, JSON.stringify(result))
       if (process.argv.includes('--probe')) assert.deepEqual(result.actual, result.expected, id)
-      else assert.notDeepEqual(result.actual, result.expected, `${id} no longer reproduces; promote to mandatory gate`)
+      else assert.deepEqual(result.actual, result.expected, `${id} repaired correctness regression`)
     }
     return
   }
+  await rendererDeactivationCheck()
+  await assert.rejects(() => rendererDeactivationCheck(s => mutate(s, "if (!result.ok) throw new Error(result.message || '临时激活记录未能完成清理。')", '')), assert.AssertionError)
+  await assert.rejects(() => metricsResponseOrderCheck(s => mutate(s, 'options.refreshDatabaseDerivedState()', '')), assert.AssertionError)
+  await metricsResponseOrderCheck()
+  const a1 = await observeA1(); assert.deepEqual(a1.actual, a1.expected, "F-A1")
   await mainDeactivationCheck()
   await assert.rejects(() => mainDeactivationCheck(s => mutate(s, 'ok: cleaned === targets.length,', 'ok: true,')), assert.AssertionError)
   await assert.rejects(() => mainDeactivationCheck(s => mutate(s, 'if (cleaned === targets.length) {', 'if (cleaned > 0) {')), assert.AssertionError)
   const a2 = await observeA2(); assert.equal(a2.actual, a2.expected, "F-A2")
+  assert.equal(a2.ui.font.active, true); assert.equal(a2.ui.metrics.activeCount, 1)
   const w1 = await observeW1(), w2 = await observeW2()
   assert.deepEqual(w1.actual, w1.expected, 'F-W1')
   assert.deepEqual(w2.actual, w2.expected, 'F-W2')
@@ -294,6 +363,6 @@ async function main() {
   await assert.rejects(() => watcherHealthy(s => mutate(s, 'if (options.isScanActive?.()) {', 'if (false) {')), assert.AssertionError)
   await assert.rejects(() => activationHealthy(s => mutate(s, 'stateRuntime.adjustDatabaseActiveCount(1)\n      }\n      options.setStatus(`取消激活失败', 'stateRuntime.adjustDatabaseActiveCount(0)\n      }\n      options.setStatus(`取消激活失败')), assert.AssertionError)
   await assert.rejects(() => manualBackgroundHealthy(s => mutate(s, 'if (active) return active;', 'if (false) return active;')), assert.AssertionError)
-  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 8 mutations rejected')
+  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 10 mutations rejected; A-01 main/renderer correctness and metrics ordering')
 }
 main().catch(e => { console.error(e); process.exitCode = 1 })
