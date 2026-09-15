@@ -178,3 +178,16 @@ Missing expected exception: electron-builder v25 publisherName nesting escaped t
 - 同一 builder 反例分别以 LF 与 CRLF 运行，并断言改写前后内容确实不同，再要求 schema 门禁拒绝。
 
 修复后定向诊断与 `npm run verify` **91/91** 均通过。未修改生产代码、依赖、锁文件或打包配置；因此 Windows 只需 pull 修复提交并重新执行 `npm run build:win`，无需再次 `npm ci`。完整成功回执和 NSIS 安装烟测仍是 Stage 7 关闭条件。
+
+
+## AT-7.2 开发模式原生兼容修正
+
+Windows 实机先暴露 better-sqlite3 ABI 137/146 不匹配，按 Electron 重建后进一步确认 V8 External 与 SetNativeDataProperty 编译错误。此前“生产依赖保持不变”的升级策略未覆盖 Electron 42 原生源码兼容性，不能据此宣称开发运行验收完成。
+
+本次最小修正：better-sqlite3 12.10.0 → 精确锁定 12.11.1，不跨 13.x；其他依赖不变。官方 [12.10.1](https://github.com/WiseLibs/better-sqlite3/releases/tag/v12.10.1) 修复 V8 External API，官方 [12.11.1](https://github.com/WiseLibs/better-sqlite3/releases/tag/v12.11.1) 修复 Electron 42 Windows 编译，12.11.0 被官方标为不可用。
+
+新增 setup:dev 命令先运行 Electron 自带安装器，再运行 electron-builder install-app-deps；仅准备开发依赖，不生成安装包。npm ci 后或 Electron/原生依赖版本变化时执行一次，平时仍直接 npm run dev。依赖矩阵新增 12.10.0、12.10.1、12.11.0 退化拒绝用例。
+
+本环境使用 ignore-scripts 安装锁定包，不把静态检查当成 Windows 原生编译通过。Windows 待验收：setup:dev 成功；dev 启动无 ERR_DLOPEN_FAILED；任务列表、共享诊断、library 保存与关闭重开正常。无需打包安装，也不要删除用户数据库。
+
+本次自动验证：npm run verify 退出 0（91/91），包含新增三个 SQLite 不兼容版本反例；npm audit 为 0；锁文件仅 better-sqlite3 条目及根声明改变；Windows 原生重建与数据库实际运行尚待回执。

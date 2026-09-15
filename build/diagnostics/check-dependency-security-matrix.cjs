@@ -87,6 +87,12 @@ function validateMatrix(packageJson, lock, configSource, builderConfigSource) {
     assert(compareVersions(entry.version, expected.minimum) >= 0, `${name} resolved below ${expected.minimum}`)
   }
 
+  // Electron 42 V8 API fixes, including Windows overload resolution, landed in 12.11.1.
+  const sqliteVersion = lock.packages?.['node_modules/better-sqlite3']?.version
+  assert.equal(packageJson.dependencies?.['better-sqlite3'], '12.11.1', 'SQLite must use the reviewed Electron 42 Windows-compatible release')
+  assert.equal(lock.packages?.['']?.dependencies?.['better-sqlite3'], '12.11.1', 'SQLite lock root declaration drifted')
+  assert.equal(sqliteVersion, '12.11.1', 'SQLite resolved outside the reviewed native compatibility version')
+
   const electron = lock.packages?.['node_modules/electron']
   assert(electron?.dependencies?.['@electron-internal/extract-zip'], 'Electron must use its hardened internal archive extractor')
   assert(!electron?.dependencies?.['extract-zip'], 'Electron still depends on vulnerable extract-zip')
@@ -137,6 +143,12 @@ function main() {
   const crlfBuilderConfigSource = toCrlf(builderConfigSource)
   validateMatrix(packageJson, lock, crlfConfigSource, crlfBuilderConfigSource)
 
+  for (const version of ['12.10.0', '12.10.1', '12.11.0']) {
+    const incompatibleSqlite = clone(lock)
+    incompatibleSqlite.packages['node_modules/better-sqlite3'].version = version
+    assert.throws(() => validateMatrix(packageJson, incompatibleSqlite, configSource, builderConfigSource), /SQLite resolved/, `incompatible SQLite ${version} escaped the gate`)
+  }
+
   const oldElectron = clone(lock)
   oldElectron.packages['node_modules/electron'].version = '35.7.5'
   assert.throws(() => validateMatrix(packageJson, oldElectron, configSource, builderConfigSource), 'old Electron escaped the dependency gate')
@@ -167,7 +179,7 @@ function main() {
     )
   }
 
-  console.log('[diagnostics:dependency-security-matrix] compatible direct groups, lock graph floors, builder schema, production boundary, 6 mutants including LF/CRLF publisher rewrites passed')
+  console.log('[diagnostics:dependency-security-matrix] compatible direct groups, lock graph floors, builder schema, production boundary, 9 mutants including SQLite regressions and LF/CRLF publisher rewrites passed')
 }
 
 main()

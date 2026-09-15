@@ -10,6 +10,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "setup:dev": "node node_modules/electron/install.js && node node_modules/electron-builder/out/cli/cli.js install-app-deps",
     "dev": "node build/rust/build-core-worker.cjs --optional && node node_modules/electron-vite/bin/electron-vite.js dev",
     "build": "npm run verify && node build/rust/build-core-worker.cjs --required && node build/security/sync-public-keys.cjs && node node_modules/electron-vite/bin/electron-vite.js build && node build/obfuscate-dist.cjs",
     "build:win": "npm run verify && node build/rust/build-core-worker.cjs --required && node build/security/sync-public-keys.cjs && node node_modules/electron-vite/bin/electron-vite.js build && node build/obfuscate-dist.cjs && node node_modules/electron-builder/out/cli/cli.js --win --config electron-builder.yml",
@@ -120,7 +121,7 @@
     "diagnostics:log-regression-hardening": "node build/diagnostics/check-log-regression-hardening.cjs"
   },
   "dependencies": {
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "12.11.1",
     "fontkit": "^2.0.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
