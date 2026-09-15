@@ -1,0 +1,163 @@
+{
+  "baseline": "0b783bcf58192f67ef91e9ed7b26296546e2ac15",
+  "files": {
+    "src/main/watcher/folderWatcherRuntime.ts": {
+      "exports": [
+        "PendingFolderChange",
+        "FolderWatcherRuntime",
+        "createFolderWatcherRuntime"
+      ],
+      "functions": [
+        "createFolderWatcherRuntime",
+        "stopFolderWatchers",
+        "sendFontIndexChanged",
+        "flushPendingFolderChangesPass",
+        "flushPendingFolderChanges",
+        "schedulePendingFolderFlush",
+        "notifyFolderChanged",
+        "startWatchingFolders"
+      ],
+      "sha256": "e8e09b31af6dc3cbb0fa010ee9c6ace3aa0caa9438b5989346175ef2fe04bd3f"
+    },
+    "src/main/cache/cachePaths.ts": {
+      "exports": [
+        "CachePathHelperDeps",
+        "createCachePathHelpers",
+        "isRootIndexDbPath",
+        "sqliteSidecarPaths",
+        "cacheKeyForPath",
+        "fileCacheSignature",
+        "isIgnoredInternalDirectoryName",
+        "isIgnoredWatcherPathWithExtensions"
+      ],
+      "functions": [
+        "createCachePathHelpers",
+        "isRootIndexDbPath",
+        "sqliteSidecarPaths",
+        "cacheKeyForPath",
+        "fileCacheSignature",
+        "isIgnoredInternalDirectoryName",
+        "isIgnoredWatcherPathWithExtensions"
+      ],
+      "sha256": "c48d701855a39092c457dbf74d64e1dbf242a89fd78cdfd28b5790b401379599"
+    },
+    "src/main/watcher/manualFolderRefreshRuntime.ts": {
+      "exports": [
+        "createManualFolderRefreshRuntime"
+      ],
+      "functions": [
+        "createManualFolderRefreshRuntime"
+      ],
+      "sha256": "7c456631ab5c692c5fcbf106017c4e9b411b365ebc49cc06122cf6a4afdb4c3b"
+    },
+    "src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts": {
+      "exports": [
+        "createManualWatchedFolderRefreshRuntime",
+        "ManualWatchedFolderRefreshRuntime"
+      ],
+      "functions": [
+        "createManualWatchedFolderRefreshRuntime",
+        "runWatchedFolderRefreshJob",
+        "refreshWatchedFolder"
+      ],
+      "sha256": "4b5697702d1adc575151bab664388aba6c0305d66d1b00277ded3dbda94a4c39"
+    },
+    "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts": {
+      "exports": [
+        "ManualFolderRefreshBackgroundStart",
+        "createManualFolderRefreshBackgroundRuntime",
+        "ManualFolderRefreshBackgroundRuntime"
+      ],
+      "functions": [
+        "createManualFolderRefreshBackgroundRuntime",
+        "activeRefresh",
+        "scheduleRefresh",
+        "backgroundResult"
+      ],
+      "sha256": "68a94586d7ba2c1aa42c71fc1c542b63d2b3f2b64c7a922432c149d396004685"
+    },
+    "src/main/activation/runtime/fontActivationSessionRuntime.ts": {
+      "exports": [
+        "createFontActivationSessionRuntime",
+        "FontActivationSessionRuntime"
+      ],
+      "functions": [
+        "createFontActivationSessionRuntime",
+        "activateFontSession",
+        "deactivateFontSession"
+      ],
+      "sha256": "625764cfa71c9fc0984d4c88a7178688974e2395cbc0c76d19d3e71769e9cea4"
+    },
+    "src/main/activation/runtime/fontActivationInstallStatusRuntime.ts": {
+      "exports": [
+        "uniqueFontItems",
+        "createFontActivationInstallStatusRuntime",
+        "FontActivationInstallStatusRuntime"
+      ],
+      "functions": [
+        "uniqueFontItems",
+        "createFontActivationInstallStatusRuntime",
+        "installCompareFromFontItemSnapshot",
+        "readActivationInstallStatusSnapshot",
+        "compareActivationInstallStatus",
+        "readActivationInstallStatusBatch",
+        "temporaryActiveRecordToInstalledRecord",
+        "saveActivationInstallStatus"
+      ],
+      "sha256": "171f8f1157b9aee7061e5ed68c83c3b4c71cbabe556c0da1eaf8a6d89ad440ab"
+    },
+    "src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts": {
+      "exports": [
+        "createFontActivationActionRuntime"
+      ],
+      "functions": [
+        "createFontActivationActionRuntime",
+        "activateFontByCard",
+        "activateFontsBatch",
+        "deactivateFontByCard",
+        "deactivateFontsBatch"
+      ],
+      "sha256": "4338d1174807489400460517a6ce46e513d5dc03bae6a064bf5d33d74e1985fa"
+    },
+    "src/renderer/src/runtime/system/actions/fontSystemStateRuntime.ts": {
+      "exports": [
+        "createFontSystemStateRuntime"
+      ],
+      "functions": [
+        "createFontSystemStateRuntime",
+        "updateFont",
+        "adjustDatabaseActiveCount",
+        "adjustDatabaseFavoriteCount",
+        "setFontActiveRuntime",
+        "setFontsActiveRuntimeBulk",
+        "fontsForTag"
+      ],
+      "sha256": "5448cdb1d83bbd715cf2751fe9d215e33bb73d8d0430624116338771d3f7645f"
+    },
+    "src/renderer/src/fontInstallStateRuntime.ts": {
+      "exports": [
+        "FontActiveRuntimeUpdate",
+        "applyInstallCompareToFont",
+        "applyInstallCompareEntriesToLibrary",
+        "applyFontActiveRuntimePatch",
+        "applyFontActiveRuntimeUpdatesToLibrary"
+      ],
+      "functions": [
+        "applyInstallCompareToFont",
+        "applyInstallCompareEntriesToLibrary",
+        "applyFontActiveRuntimePatch",
+        "applyFontActiveRuntimeUpdatesToLibrary"
+      ],
+      "sha256": "42a25f117fc7f97b769f6218e8a45c67d86150ba5cdb48e6752698709a606a16"
+    },
+    "src/main/library/fontQueryWorkerRouteRuntime.ts": {
+      "exports": [
+        "shouldUseMergedIndexWorkerForPage"
+      ],
+      "functions": [
+        "shouldUseMergedIndexWorkerForPage"
+      ],
+      "sha256": "8bdca38f858ddb921689869ed99887787a7541e954ed153a220d7a8f8012accc"
+    }
+  }
+}

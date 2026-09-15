@@ -120,7 +120,9 @@
     "diagnostics:shutdown-log-durability": "node build/diagnostics/check-shutdown-log-durability.cjs",
     "diagnostics:database-maintenance-serialization": "node build/diagnostics/check-database-maintenance-serialization.cjs",
     "diagnostics:folder-count-path-consistency": "node build/diagnostics/check-folder-count-path-consistency.cjs",
-    "diagnostics:log-regression-hardening": "node build/diagnostics/check-log-regression-hardening.cjs"
+    "diagnostics:log-regression-hardening": "node build/diagnostics/check-log-regression-hardening.cjs",
+    "diagnostics:watcher-activation-baseline": "node build/diagnostics/check-watcher-activation-baseline.cjs",
+    "baseline:watcher-activation-observe": "node build/diagnostics/check-watcher-activation-baseline.cjs --observe"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

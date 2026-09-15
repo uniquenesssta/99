@@ -472,7 +472,7 @@ Windows 仅使用 npm run dev，在隔离测试目录执行 Y-01/Y-02/Y-03，GUI
 
 | 任务 | 状态 | 提交 | 自动验证 | 开发模式/遗留 |
 | --- | --- | --- | --- | --- |
-| W-01 | 未开始 | — | — | — |
+| W-01 | 基线完成（四故障未修复） | 第 12 节同一提交 | typecheck / 93 项通过 | 隔离测试；下一项 W-02 |
 | W-02 | 未开始 | — | — | — |
 | A-01 | 未开始 | — | — | — |
 | W-03 | 未开始 | — | — | — |
@@ -545,3 +545,82 @@ fixture 冻结三目标文件及七控制器的函数、具名导出、直接返
 Mermaid Chart 已输出真实四域写入关系图。Create State 返回“无 active world model”，未获得项目持久化成功证据；Git、fixture 与任务书为权威交接。
 
 下一项允许进入 W-01：本项基线可重复且未改生产逻辑；不宣称监听/激活故障已修复，不启动 Stage 8，不直接进入 D-04 等大规模迁移。
+
+
+## 12. W-01 执行卡（范围已于实施前登记）
+
+- 任务：W-01；状态：基线完成；分类：基线诊断与文档，无生产改动。
+- 基线 SHA：`0b783bcf58192f67ef91e9ed7b26296546e2ac15`；分支 `stage/09-preview-tags-app`；开工工作树干净，远端 fetch 后基线一致。
+- 精确允许文件与职责如下；新增诊断只拥有隔离测试状态，由 npm scripts 调用，fixture 无运行时可变状态。
+
+| 允许路径 | 职责 |
+| --- | --- |
+| `build/diagnostics/check-watcher-activation-baseline.cjs` | 真实监听/激活函数的行为基线和四项独立故障观察 |
+| `build/diagnostics/fixtures/watcher-activation-baseline.fixture.json` | 监听/激活直接链路的公开契约和源码基线 |
+| `package.json` | 注册默认基线门禁和独立已知故障观察入口 |
+| `README.md` | 本轮简洁变更记录 |
+| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡、生命周期及 active 来源、测试结果、遗留边界 |
+
+- 原 owner → 新 owner：全部生产所有者保持不变；不新增生产队列、句柄或状态镜像。
+- 实施计划：真实函数加载与受控 I/O/时钟；四故障各自控制失败时点并输出句柄/记录/结果/UI/count；健康行为及真实退化变异进入默认门禁；已知问题观察不进入默认 verify。
+- 验证、提交、实机边界：实施后按实测补齐；不提供 build:win，不启动 W-02/A-01 修复。
+
+
+### 12.1 生命周期与状态所有者（当前行为，不是修复方案）
+
+| 阶段 | 生产状态与调用链 | W-01 证据 |
+| --- | --- | --- |
+| 启动 | `useWatchedFoldersRuntime` 目录变化调用 watchFolders，经主进程接线进入 `folderWatcherRuntime`；该 runtime 独占句柄数组、timer、signature、ignoreUntil、pending Map、延迟日志时间、generation、flushInFlight、flushRequested | healthy 去重注册；F-W1 控制 availability Promise，反序完成后 A/B 两句柄并存 |
+| 宽限/事件 | 默认 grace 15000ms、debounce 900ms，由 `appRuntimeConfig.ts` 注入；真实 `cachePaths.ts` 过滤内部目录/缓存文件/非字体扩展；缺文件名转换为根 rescan，同根/文件/事件去重 | 测试注入 grace=100ms、debounce=10ms，验证宽限内忽略、过滤、重复 rename 合并、无文件名 rescan；不修改默认配置 |
+| 扫描暂停 | 扫描只推迟 timer flush，并未关闭句柄；pending 保留，再次等待至少 2500ms | 受控时钟先断言零 apply，再解除扫描，顺序 apply→merged sync→通知 |
+| 恢复 | 健康同签名跳过重复注册；当前同签名也会跳过离线失败根，缺少健康状态区分 | F-W2 先 availability=false，再 true；探测仍 1 次，句柄 0，两个调用均 true |
+| 停止/重启 | stop 增 generation、关闭已登记句柄、清空 signature/pending/timer；之后同根可新建句柄。generation 保护既有 flush，但启动 await 后没有对应校验 | healthy stop 清空待处理，重复启动建立新句柄；F-W1 为启动代次缺口。start 中 stop/旧 callback 在 W-02 扩展 |
+| 关闭 | `mainProcessLifecycleRuntime.ts` 退出清理最终调用 stopFolderWatchers；数据库关闭命令由 `mainScanCompositionRuntime.ts` 注入，句柄仍属原模块 | 实际 stop 行为通过；真实应用关闭流程复用原门禁，不声称新 Windows GUI 验收 |
+| 手动刷新 | `manualFolderRefreshRuntime` 组合 repair/apply/background；`manualWatchedFolderRefreshRuntime` 返回 background，后台选择 cache-read/incremental/repair-rebuild | 冻结门面/调度源；执行真实 background runtime 验证同 key 合并、失败清理、再次调度。未在本项重测完整磁盘扫描/repair 分支 |
+
+### 12.2 active 的四种来源与消费边界
+
+| 来源 | 权威/消费者 | 注意事项 |
+| --- | --- | --- |
+| 临时激活记录与原生资源 | `fontActivationTransactionRuntime` 激活事务保存临时记录；`fontActivationSessionRuntime` 单项停用调用清理并保存 remaining；安装状态由原 status runtime 排队保存 | 记录仍存不等于资源已清理；F-A2 实际验证 remaining=1，但 session 返回成功，不能只看返回布尔值 |
+| 安装状态覆盖 | `fontQueryFacadeRuntime`、`fontMetricsRuntime` 将 item.active 与 installed by=managed/both 合成 active；managed 单独不标成系统安装 | 不能将系统安装一概视为临时激活；来源是安装索引覆盖，不是 renderer 乐观状态 |
+| renderer 内存字段 | `fontActivationActionRuntime` 经 `fontSystemStateRuntime`/`fontInstallStateRuntime` 修改 active、activeSince、managed 路径/名称；busy Set 防重复点击 | 单项 reject 会恢复字段和计数；resolved ok:false 当前不会。标签、收藏、保护不得随 active 修改 |
+| 查询/显示计数 | 主进程 metrics 统计其加载字体范围；renderer `fontFilteringMetrics` 统计传入 fonts；databaseActiveCount 有乐观增减，随后由原查询刷新校正 | active 筛选走内存匹配并排除 merged worker 页；卡片/详情复用列表。全库 count 不必等于带搜索筛选的可见数，W-01 未声称完成 A-02 |
+
+真实 `fontDisplay.installLabel` 的系统安装/激活区别、active worker 路由、单项成功和 reject 回滚均有新断言；主进程覆盖与全部计数分支本项只核对来源，完整展示一致性留 A-02。
+
+### 12.3 可复现证据与门禁分工
+
+- 默认入口：`npm run diagnostics:watcher-activation-baseline`；fixture 为第 12 节允许清单路径，冻结 11 个直接生产文件的导出/函数与 LF/CRLF 等价源码。结构指纹仅防未经审查的漂移，不替代行为断言；后续修复需要显式迁移对应证据。
+- 独立观察：`npm run baseline:watcher-activation-observe`；不使用 diagnostics 前缀，默认 verify 不执行历史失败观察。可追加 `-- --case=F-W1` 等选择单项。
+- 正确性探针：`node build/diagnostics/check-watcher-activation-baseline.cjs --probe --case=F-W1`；四个 case 分别执行均以对应 AssertionError 退出 1。观察入口退出 0 只表示旧问题仍存在，W-02/A-01 必须转为默认必过正确性用例。
+
+| 故障 | 控制点与实际输出 |
+| --- | --- |
+| F-W1 | A 的 availability 暂停、B 完成、A 放行；期望仅 B，实际 B/A 均存活，closed 均 0；两个返回 true |
+| F-W2 | 第一次不可用、第二次恢复；期望句柄 1/探测 2，实际句柄 0/探测 1；两个返回 true |
+| F-A1 | renderer IPC Promise 延迟后 resolve ok:false；期望 active=true/count=1，实际 false/0，busy 最终释放；输出结果与完整 UI 字段 |
+| F-A2 | 真实 `fontSystemIpcHandlers` → session → 清理 Promise=false → 保存 remaining → renderer action/state；saved.records=1、未写清空安装状态、返回 ok:true、UI active=false/count=0；清理前断言未保存 |
+
+模拟边界明确限定为 fs.watch/stat、根可用性、时钟、BrowserWindow 通知、IPC 传输、原生清理和记录持久化；生产函数直接 transpile 执行。没有调用真实 Windows 字体资源或用户数据库；因此是跨层隔离证据，不是 Windows 原生端到端验收。
+
+三项真实退化变异均被必过门禁拒绝：取消扫描延迟、停用 reject 不恢复 count、手动刷新取消同 key 合并。初版诊断有一处对象括号错误，在生成 fixture/运行前即报 SyntaxError，已修正；未以放宽断言解决。
+
+### 12.4 范围与后续门禁
+
+- R-W1 广义 catch 是否错误产生删除、R-W2 pending 失败后的其他对账路径、R-A1 旧字段合并，保持待验证，留 W-03；W-01 没有改变这些期望或声称已修复。
+- R-A2 批量结果缺项的上游完整性保证保持待验证，留 A-01/A-02；新增单项测试不替代原 `check-font-activation-transaction.cjs --case=A2`。
+- 复用全量中的 `check-merged-index-mutation-serialization.cjs`、`check-font-activation-transaction.cjs`、`check-query-protocol.cjs` 等现有回归；本轮结果在收尾记录。
+- X-01～X-05：本项仅确认单项激活状态更新保留本地/共享标签、收藏、保护；原 D-01 跨域门继续运行。X-06～X-13 不因本次基线扩大认定完成。
+- Y-01～Y-03：事件过滤、扫描延迟、故障启动基线可执行，真实目录与网络恢复留 W-02/W-03；Y-04：单项 success/reject 和 resolved 失败观察通过基线要求；Y-05～Y-07 旧通知、完整展示与重启留 W-03/A-02。
+- 下一项 W-02 修复监听启动代次与同根恢复；当前不实施修复、不拆模块、不启动 Stage 8。
+
+
+### 12.5 收尾验证与交接
+
+- 本轮 `npm run verify`：退出 0，TypeScript 与 `diagnostics:all` 93/93 通过；新观察入口独立退出 0，四项 `--probe --case=…` 各自退出 1 且失败 ID 正确；三项行为退化变异被拒绝。
+- 环境：Linux / Node v24.19.0 / npm 11.9.0，沿用已有依赖，无依赖版本或锁文件变化。测试不使用真实 Windows 原生字体/数据库；Windows GUI 未重跑，用户后续仅使用 `npm run dev`。
+- 精确范围核对：实际 5 个变更文件与实施前清单一致，src 零修改；`git diff --check` 通过，未带入依赖或构建产物。
+- 提交 SHA：本卡随 W-01 独立原子提交发布，使用 `git log -1 --format=%H -- build/diagnostics/check-watcher-activation-baseline.cjs` 查询；发布核对同一文件树，失败不得声称已推送。回滚使用该发布提交的 revert。
+- Mermaid Chart 已记录真实链路；Create State 本轮返回 Context Captured。Git 与任务书仍为权威记录。
+- 可进入 W-02，理由为必过行为基线与四个旧故障观察均可重复；该完成状态不意味着四个故障已修复，不扩大为 W-03/A-02 或完整 GUI 验收。
