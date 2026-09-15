@@ -729,6 +729,9 @@ async function runReadCorrectness() {
           resolveRendererDevUrl: () => '',
         }
       }
+      if (id === '../security/ipcSenderValidation') {
+        return { assertTrustedIpcSender: () => undefined }
+      }
       return require(id)
     },
   )

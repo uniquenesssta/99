@@ -1,0 +1,10 @@
+{
+  "baseline": "e773deba2a7b1d96ec9ac878a71154bd04bab567",
+  "windowChannels": [
+    "app-window:minimize",
+    "app-window:toggleMaximize",
+    "app-window:close",
+    "app-window:flushComplete",
+    "app-window:rendererReady"
+  ]
+}

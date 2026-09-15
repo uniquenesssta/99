@@ -44,8 +44,9 @@ npm run build:win
 ## 当前工程任务
 
 - [修复与编排重构总任务书](docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md)
+- [当前 Stage 7：IPC 收口与依赖治理任务书](docs/plans/HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)
 - [Stage 5：Rust Worker 门面拆分任务书](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)
-- [当前 Stage 6：React 根组件拆分任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)
+- [已完成 Stage 6：React 根组件拆分任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)
 - [Stage 4：主进程组合根拆分任务书](docs/plans/HFM_STAGE_04_MAIN_COMPOSITION_TASKBOOK.md)
 - [已完成 Stage 3 工程验收：文件移动一致性与预览限额任务书](docs/plans/HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md)
 - [已完成 Stage 2：字体路径授权任务书](docs/plans/HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)
@@ -60,7 +61,9 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-15：完成 AT-6.5 渲染性能复核：控制器返回对象都在 App 内逐项消费，未做无效的大面积 memo；实测定位并修复卡片六个回调每次 render 重建、使既有 `FontCard.memo` 失效的热点。`useFontCardRenderer` 以 `WeakMap` 保持每字体事件身份，通过最新端口 ref 避免过期闭包；滚动重叠卡、详情开/关和 500 项批量选择只更新语义变化的卡片。新增 10,000 字体查询/虚拟滚动/选择、两项反例与 CRLF 长期门禁；typecheck、89/89 诊断、Electron/Vite 354/1/190 模块及混淆 3/3 通过。AT-6.4 Windows 完整构建回执已收；本环境无 Cargo，AT-6.5 需 pull 后完整构建并复验大字体库 GUI/性能。无依赖、数据库、IPC、CSS 或原生源码变更。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
+- 2026-09-15：完成 AT-7.1 IPC 来源收口：开发与打包 renderer 统一使用解析后的 protocol/origin/host/path/query 精确身份，拒绝路径前缀、伪主机、错端口、错协议与 query 变体，仅允许同一文档的 hash 路由；原 115 项业务 IPC 与 5 个窗口 channel 均在副作用前走中央 sender validation，开发/打包导航与新窗口同样 fail closed。新增真实 URL/IPC/导航行为、全主进程注册扫描、四项变异和 CRLF 门禁；typecheck、90/90 诊断、`npm audit --omit=dev` 0 漏洞、Electron/Vite 354/1/190 模块及混淆 3/3 通过。无依赖版本、锁文件、IPC 名称、preload、数据库、CSS 或原生源码变更；本环境无 Cargo，pull 后需 Windows 完整构建。详见 [Stage 7 任务书](docs/plans/HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)。
+
+- 2026-09-15：完成 AT-6.5 渲染性能复核：控制器返回对象都在 App 内逐项消费，未做无效的大面积 memo；实测定位并修复卡片六个回调每次 render 重建、使既有 `FontCard.memo` 失效的热点。`useFontCardRenderer` 以 `WeakMap` 保持每字体事件身份，通过最新端口 ref 避免过期闭包；滚动重叠卡、详情开/关和 500 项批量选择只更新语义变化的卡片。新增 10,000 字体查询/虚拟滚动/选择、两项反例与 CRLF 长期门禁；typecheck、89/89 诊断、Electron/Vite 354/1/190 模块及混淆 3/3 通过。用户随后完成 Windows Cargo 1.97.1 release、同一 354/1/190 三端构建和混淆 3/3，并明确进入 Stage 7；大字体库 GUI/性能回执仍单列。无依赖、数据库、IPC、CSS 或原生源码变更。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
 
 - 2026-09-15：完成 AT-6.4：将 Library、Operations、Developer 的 42 个 state/ref 从 `App.tsx` 收入三个单一所有者（11/22/9），写队列、安装状态、数据库刷新和开发诊断的可变引用不再泄漏；autosave 恢复、写后刷新、共享元数据前台同步、关闭 flush/确认顺序及生产态开发诊断惰性保持。新增真实运行时、42 项基线、三项变异与 CRLF 门禁；typecheck、88/88 诊断、Electron/Vite 354/1/190 模块及混淆 3/3 通过。AT-6.3 Windows 完整构建回执已收；本环境无 Cargo，6.4 pull 后 Windows 完整构建与 GUI 复验待补。无依赖、数据库、IPC、CSS 或原生源码变更。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
 

@@ -3,6 +3,7 @@ import { createWindowRoundedShapeRuntime } from './windowRoundedShapeRuntime'
 import fs from 'node:fs'
 import { dirname,join } from 'node:path'
 import { productionDevToolsEnabled, registerWindowSecurityGuards, resolveRendererDevUrl } from '../security/appSecurityRuntime'
+import { assertTrustedIpcSender } from '../security/ipcSenderValidation'
 import type { AuthorizeFontRead } from '../path/fontPathAuthorizationRuntime'
 import { createFontProtocolRuntime } from './fontProtocolRuntime'
 
@@ -166,6 +167,7 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
     windowControlHandlersRegistered = true
 
     ipcMain.handle('app-window:minimize', (event) => {
+      assertTrustedIpcSender(event, 'app-window:minimize', options.appendLog)
       const target = targetWindowForEvent(event)
       if (!target) return false
       target.minimize()
@@ -173,6 +175,7 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
     })
 
     ipcMain.handle('app-window:toggleMaximize', (event) => {
+      assertTrustedIpcSender(event, 'app-window:toggleMaximize', options.appendLog)
       const target = targetWindowForEvent(event)
       if (!target) return false
       if (target.isMaximized()) {
@@ -184,6 +187,7 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
     })
 
     ipcMain.handle('app-window:close', (event) => {
+      assertTrustedIpcSender(event, 'app-window:close', options.appendLog)
       const target = targetWindowForEvent(event)
       if (!target) return false
       target.close()
@@ -191,12 +195,14 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
     })
 
     ipcMain.handle('app-window:flushComplete', async (event, requestId: number, saved: boolean) => {
+      assertTrustedIpcSender(event, 'app-window:flushComplete', options.appendLog)
       const pending = pendingCloseFlushes.get(Number(requestId))
       if (!pending || pending.target.webContents !== event.sender) return false
       return completePendingWindowClose(Number(requestId), saved === true, 'renderer-ack')
     })
 
     ipcMain.handle('app-window:rendererReady', (event) => {
+      assertTrustedIpcSender(event, 'app-window:rendererReady', options.appendLog)
       const target = targetWindowForEvent(event)
       if (target) rendererReadyWindows.add(target)
       return revealWindow(target, 'renderer-ready')

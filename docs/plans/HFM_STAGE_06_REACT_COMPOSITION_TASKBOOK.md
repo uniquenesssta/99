@@ -2,13 +2,13 @@
 
 ## 0. 状态与边界
 
-- 版本：1.5；日期：2026-09-15；软件：HanFontManager 3.0.0。
+- 版本：1.6；日期：2026-09-15；软件：HanFontManager 3.0.0。
 - 分支：`stage/06-react-composition`；基线为 Stage 5 修复提交 `1e129e2d5360d9f5f9afbba0336d73ff1eb9555a`，树 `5c285b64c91f13c737a5bfcf3034c45c0bc08ef1`。
 - 用户明确要求开始 6.1，因此按大阶段创建新分支。本项不修改 Stage 5 或 main。Stage 5 修复版 Windows 实际退出证据仍待补，不把进入本阶段视为补齐旧验收。
 - AT-6.1 已完成自动验证，并收到用户 Windows 完整构建回执：85/85 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/181 模块及混淆 3/3 通过；GUI 与实际退出观察仍单列。
 - AT-6.2 已在 `f3ed225bcb3981950f0df900e8c269d0229fa251`（树 `d9825b4d9af48985fc65c357d11d2e3106f4aed2`）上实现；用户在 Windows 拉取后完成 86/86 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/183 模块及混淆 3/3 的完整构建。
 - AT-6.3 已在 `2d43d14` 基线上实现并完成自动验证。Windows 首轮复验正确拦截的冻结哈希录入错误已修正；用户随后完成 87/87 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/186 模块及混淆 3/3 的完整构建。GUI 回执仍单列。
-- AT-6.4 已在 `8425146` 基线上实现；用户已在 Windows 完成 Cargo 1.97.1 release、Electron/Vite 354/1/190 模块与混淆 3/3 的完整构建。AT-6.5 已在 `7b3e2d0` 基线上实现并完成自动验证；Windows 完整构建与 GUI/性能复验待 pull 后补齐。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
+- AT-6.4 已在 `8425146` 基线上实现；用户已在 Windows 完成 Cargo 1.97.1 release、Electron/Vite 354/1/190 模块与混淆 3/3 的完整构建。AT-6.5 已在 `7b3e2d0` 基线上实现并完成自动验证；用户随后完成 Windows Cargo 1.97.1 release、Electron/Vite 354/1/190 模块与混淆 3/3，并明确进入 Stage 7。大字体库 GUI/性能复验仍作为外部观察项保留。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
 
 ## 1. AT-6.1 二次审计
 
@@ -191,7 +191,9 @@ Library Controller 继续独占 autosave、初始 shell、前台共享元数据�
 
 `npm run verify` 退出码 0，typecheck 与 **89/89** 长期诊断通过。Electron/Vite main、preload、renderer **354/1/190** 个模块构建通过；main **1148.87 kB**、renderer JS **400.08 kB**、CSS **106.02 kB**，混淆 **3/3** 通过。required Rust 构建已实际尝试，当前审查环境没有 Cargo；本项未改 Rust/原生源码，仍需 Windows pull 后执行完整 `npm run build`。
 
-每个 AT 独立提交，整个 Stage 6 沿用当前阶段分支。AT-6.5 实现与自动门禁完成；Stage 6 的 Windows/GUI 外部验收通过后再进入 Stage 7。
+用户随后提供 Windows 构建回执：Cargo 1.97.1 release 完成并复制 worker，公钥同步成功；Electron/Vite main、preload、renderer **354/1/190** 个模块，main **1148.87 kB**、preload **9.04 kB**、renderer JS **400.08 kB**、CSS **106.02 kB**，混淆 **3/3** 全部通过。该回执关闭 AT-6.5 的 Windows 构建项；GUI 与大字体库性能观察不由构建日志代替。
+
+每个 AT 独立提交，整个 Stage 6 沿用当前阶段分支。AT-6.5 实现、自动门禁和 Windows 构建已完成；用户已明确进入 Stage 7，未提供的 GUI/性能观察继续单列，不伪报通过。
 
 ## 8. 拉取与实机验收
 

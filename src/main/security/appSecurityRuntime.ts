@@ -3,19 +3,56 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const DEV_SERVER_ENV_KEYS = ['ELECTRON_RENDERER_URL', 'VITE_DEV_SERVER_URL'] as const
+const DEFAULT_DEV_RENDERER_URLS = ['http://127.0.0.1:39217/', 'http://localhost:39217/'] as const
 const BLOCKED_PRODUCTION_SHORTCUTS = new Set(['i', 'j', 'r'])
 
-function packagedRendererUrlPrefix(): string {
-  return pathToFileURL(join(app.getAppPath(), 'out', 'renderer')).href
+function packagedRendererUrl(): string {
+  return pathToFileURL(join(app.getAppPath(), 'out', 'renderer', 'index.html')).href
 }
 
-function isTrustedPackagedRendererUrl(url: string): boolean {
-  return Boolean(url) && url.startsWith(packagedRendererUrlPrefix())
+function developmentRendererUrls(): string[] {
+  const configuredUrl = resolveRendererDevUrl()
+  return Array.from(new Set([
+    ...(configuredUrl ? [configuredUrl] : []),
+    ...DEFAULT_DEV_RENDERER_URLS,
+    pathToFileURL(join(process.cwd(), 'out', 'renderer', 'index.html')).href
+  ]))
+}
+
+function normalizedRendererPath(url: URL): string {
+  return url.protocol === 'file:' && process.platform === 'win32' ? url.pathname.toLowerCase() : url.pathname
+}
+
+function isSameRendererDocument(actualValue: string, expectedValue: string): boolean {
+  let actual: URL
+  let expected: URL
+  try {
+    actual = new URL(actualValue)
+    expected = new URL(expectedValue)
+  } catch {
+    return false
+  }
+
+  const actualPath = normalizedRendererPath(actual)
+  const expectedPath = normalizedRendererPath(expected)
+  return actual.protocol === expected.protocol &&
+    actual.origin === expected.origin &&
+    actual.host === expected.host &&
+    actual.username === expected.username &&
+    actual.password === expected.password &&
+    actualPath === expectedPath &&
+    actual.search === expected.search
 }
 
 export function resolveRendererDevUrl(): string {
   if (app.isPackaged || process.env.HFM_FORCE_DIST === '1') return ''
   return DEV_SERVER_ENV_KEYS.map((key) => process.env[key]).find((value): value is string => Boolean(value)) || ''
+}
+
+export function isTrustedRendererUrl(url: string): boolean {
+  if (!url) return false
+  const expectedUrls = app.isPackaged ? [packagedRendererUrl()] : developmentRendererUrls()
+  return expectedUrls.some((expectedUrl) => isSameRendererDocument(url, expectedUrl))
 }
 
 export function productionDevToolsEnabled(): boolean {
@@ -57,13 +94,13 @@ export function registerWindowSecurityGuards(window: BrowserWindow, appendLog: (
     return { action: 'deny' }
   })
 
-  if (!app.isPackaged) return
-
   window.webContents.on('will-navigate', (event, url) => {
-    if (isTrustedPackagedRendererUrl(url)) return
-    appendLog(`blocked packaged navigation: ${url}`)
+    if (isTrustedRendererUrl(url)) return
+    appendLog(`${app.isPackaged ? 'blocked packaged navigation' : 'blocked navigation'}: ${url}`)
     event.preventDefault()
   })
+
+  if (!app.isPackaged) return
 
   window.webContents.on('before-input-event', (event, input) => {
     const key = String(input.key || '').toLowerCase()
