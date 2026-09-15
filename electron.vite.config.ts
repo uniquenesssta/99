@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig,externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import { resolve } from 'node:path'
 
 const secureEsbuildOptions = {
@@ -13,7 +13,6 @@ const secureEsbuildOptions = {
 export default defineConfig({
   main: {
     esbuild: secureEsbuildOptions,
-    plugins: [externalizeDepsPlugin()],
     build: {
       sourcemap: false,
       minify: true,
@@ -26,7 +25,6 @@ export default defineConfig({
   },
   preload: {
     esbuild: secureEsbuildOptions,
-    plugins: [externalizeDepsPlugin()],
     build: {
       sourcemap: false,
       minify: true,

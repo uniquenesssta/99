@@ -1,0 +1,64 @@
+{
+  "baseline": "0810137091933a88c03be15cd38dee11bf6a593d",
+  "nodeEngine": ">=22.12.0",
+  "productionDependencies": [
+    "better-sqlite3",
+    "fontkit",
+    "react",
+    "react-dom"
+  ],
+  "direct": {
+    "@types/node": {
+      "range": "^24.13.4",
+      "minimum": "24.13.4",
+      "major": 24
+    },
+    "@vitejs/plugin-react": {
+      "range": "^4.3.4",
+      "minimum": "4.7.0",
+      "major": 4
+    },
+    "electron": {
+      "range": "^42.11.3",
+      "minimum": "42.11.3",
+      "major": 42
+    },
+    "electron-builder": {
+      "range": "^26.15.3",
+      "minimum": "26.15.3",
+      "major": 26
+    },
+    "electron-vite": {
+      "range": "^5.0.0",
+      "minimum": "5.0.0",
+      "major": 5
+    },
+    "typescript": {
+      "range": "^5.7.2",
+      "minimum": "5.9.3",
+      "major": 5
+    },
+    "vite": {
+      "range": "^7.3.6",
+      "minimum": "7.3.6",
+      "major": 7
+    }
+  },
+  "knownBuildChainMinimums": {
+    "@electron/rebuild": "4.0.3",
+    "app-builder-lib": "26.15.0",
+    "baseline-browser-mapping": "2.11.0",
+    "browserslist": "4.28.7",
+    "builder-util": "26.15.0",
+    "builder-util-runtime": "9.7.0",
+    "dmg-builder": "26.15.0",
+    "electron-builder-squirrel-windows": "26.15.0",
+    "electron-publish": "26.15.0",
+    "form-data": "4.0.6",
+    "ip-address": "10.3.1",
+    "js-yaml": "4.3.2",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.23",
+    "tar": "7.5.21"
+  }
+}

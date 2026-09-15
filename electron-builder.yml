@@ -23,8 +23,9 @@ artifactName: "字体管理器.${ext}"
 
 win:
   executableName: 字体管理器
-  publisherName:
-    - Xie Ele
+  signtoolOptions:
+    publisherName:
+      - Xie Ele
   target:
     - target: nsis
       arch:

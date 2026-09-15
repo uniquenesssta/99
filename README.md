@@ -14,7 +14,7 @@ HanFontManager（汉字字体工作台）是面向 Windows 的本地字体管理
 ## 开发环境
 
 - Windows 10/11 x64
-- Node.js 22 或兼容版本
+- Node.js 22.12 或更高兼容版本
 - Rust 与 Cargo（构建 `hfm-core-worker` 时需要）
 - Windows 原生组件对应的 C/C++ 构建工具链
 
@@ -60,6 +60,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-15：完成 AT-7.2 依赖安全矩阵与本环境自动验证：Electron 35.7.5 -> 42.11.3、electron-builder 25.1.8 -> 26.15.3、electron-vite 3.1.0 -> 5.0.0、Vite 6.4.3 -> 7.3.6，Node engine 固定为 >=22.12；生产依赖及版本不变。完整锁图审计从 1 critical + 21 high + 1 moderate（23）收敛为 0，未使用 `npm audit fix --force`。迁移 electron-vite 默认外部化和 builder v26 的 `win.signtoolOptions.publisherName`，新增安全下限、六项变异与 CRLF 门禁；`npm ci`、typecheck、91/91 诊断、354/1/190 三端模块及混淆 3/3 通过。Linux 已验证 Windows 配置 schema 并到达原生重建边界，因不能交叉执行 Windows node-gyp 且本环境无 Cargo，pull 后须在 Windows 执行干净安装、完整构建、NSIS 打包及安装/启动/卸载烟测。详见 [Stage 7 任务书](docs/plans/HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)。
 
 - 2026-09-15：完成 AT-7.1 IPC 来源收口：开发与打包 renderer 统一使用解析后的 protocol/origin/host/path/query 精确身份，拒绝路径前缀、伪主机、错端口、错协议与 query 变体，仅允许同一文档的 hash 路由；原 115 项业务 IPC 与 5 个窗口 channel 均在副作用前走中央 sender validation，开发/打包导航与新窗口同样 fail closed。新增真实 URL/IPC/导航行为、全主进程注册扫描、四项变异和 CRLF 门禁；typecheck、90/90 诊断、`npm audit --omit=dev` 0 漏洞、Electron/Vite 354/1/190 模块及混淆 3/3 通过。无依赖版本、锁文件、IPC 名称、preload、数据库、CSS 或原生源码变更；本环境无 Cargo，pull 后需 Windows 完整构建。详见 [Stage 7 任务书](docs/plans/HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)。
 
