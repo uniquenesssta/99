@@ -33,6 +33,24 @@ function packageEntries(lock, packageName) {
   )
 }
 
+function toCrlf(source) {
+  return source.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n')
+}
+
+function mutateLegacyWindowsPublisherConfig(source) {
+  const newline = source.includes('\r\n') ? '\r\n' : '\n'
+  const lines = source.split(/\r?\n/)
+  const signtoolIndex = lines.findIndex((line) => line === '  signtoolOptions:')
+  assert(signtoolIndex >= 0, 'electron-builder publisher mutation target is missing')
+  assert.deepEqual(
+    lines.slice(signtoolIndex, signtoolIndex + 3),
+    ['  signtoolOptions:', '    publisherName:', '      - Xie Ele'],
+    'electron-builder publisher mutation target drifted'
+  )
+  lines.splice(signtoolIndex, 3, '  publisherName:', '    - Xie Ele')
+  return lines.join(newline)
+}
+
 function validateWindowsBuilderConfig(builderConfigSource) {
   const lines = builderConfigSource.replace(/\r\n/g, '\n').split('\n')
   const winIndex = lines.findIndex((line) => /^win:\s*$/.test(line))
@@ -115,7 +133,9 @@ function main() {
   const configSource = fs.readFileSync(path.join(root, 'electron.vite.config.ts'), 'utf8')
   const builderConfigSource = fs.readFileSync(path.join(root, 'electron-builder.yml'), 'utf8')
   validateMatrix(packageJson, lock, configSource, builderConfigSource)
-  validateMatrix(packageJson, lock, configSource.replace(/\n/g, '\r\n'), builderConfigSource.replace(/\n/g, '\r\n'))
+  const crlfConfigSource = toCrlf(configSource)
+  const crlfBuilderConfigSource = toCrlf(builderConfigSource)
+  validateMatrix(packageJson, lock, crlfConfigSource, crlfBuilderConfigSource)
 
   const oldElectron = clone(lock)
   oldElectron.packages['node_modules/electron'].version = '35.7.5'
@@ -138,16 +158,16 @@ function main() {
   changedProductionDependencies.dependencies['new-runtime-package'] = '1.0.0'
   assert.throws(() => validateMatrix(changedProductionDependencies, lock, configSource, builderConfigSource), 'production dependency expansion escaped the gate')
 
-  const oldBuilderConfig = builderConfigSource.replace(
-    '  signtoolOptions:\n    publisherName:\n      - Xie Ele',
-    '  publisherName:\n    - Xie Ele'
-  )
-  assert.throws(
-    () => validateMatrix(packageJson, lock, configSource, oldBuilderConfig),
-    'electron-builder v25 publisherName nesting escaped the dependency gate'
-  )
+  for (const [lineEnding, source] of [['LF', builderConfigSource], ['CRLF', crlfBuilderConfigSource]]) {
+    const oldBuilderConfig = mutateLegacyWindowsPublisherConfig(source)
+    assert.notEqual(oldBuilderConfig, source, `${lineEnding} electron-builder publisher mutation was not applied`)
+    assert.throws(
+      () => validateMatrix(packageJson, lock, configSource, oldBuilderConfig),
+      `${lineEnding} electron-builder v25 publisherName nesting escaped the dependency gate`
+    )
+  }
 
-  console.log('[diagnostics:dependency-security-matrix] compatible direct groups, lock graph floors, builder schema, production boundary, 6 mutants and CRLF passed')
+  console.log('[diagnostics:dependency-security-matrix] compatible direct groups, lock graph floors, builder schema, production boundary, 6 mutants including LF/CRLF publisher rewrites passed')
 }
 
 main()

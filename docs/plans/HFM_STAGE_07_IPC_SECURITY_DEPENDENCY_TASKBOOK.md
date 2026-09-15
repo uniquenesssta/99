@@ -2,11 +2,11 @@
 
 ## 0. 状态与边界
 
-- 版本：1.1；日期：2026-09-15；软件：HanFontManager 3.0.0。
+- 版本：1.2；日期：2026-09-15；软件：HanFontManager 3.0.0。
 - 分支：`stage/07-ipc-security-dependencies`。
 - 不可变进入基线：Stage 6 完成提交 `e773deba2a7b1d96ec9ac878a71154bd04bab567`。
 - 进入依据：用户提供 AT-6.5 Windows Cargo 1.97.1 release、Electron/Vite 354/1/190 模块和混淆 3/3 的成功回执，并明确要求开始 7.1；随后又提供 AT-7.1 同样完整的 Windows 成功回执并要求推进 7.2。
-- 当前状态：AT-7.1 实现、自动验证与 Windows 完整构建均通过；AT-7.2 依赖升级、锁图清理和本环境自动验证完成，Windows 原生重建、安装包与启动/卸载烟测待 pull 后完成。
+- 当前状态：AT-7.1 实现、自动验证与 Windows 完整构建均通过；AT-7.2 依赖升级、锁图清理和本环境自动验证完成。Windows 已完成干净 `npm ci` 与审计 0 漏洞，首轮 `build:win` 在依赖诊断的 CRLF 反例构造处停止；诊断修复及本环境 91/91 已通过，Windows 原生重建、安装包与启动/卸载烟测待 pull 后继续。
 - 上级顺序、停止条件与最终发布门禁以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
 
 AT-7.1 只收紧既有信任边界，不修改 IPC channel、preload API、数据库、用户数据、CSS、Rust/C/C++ 协议或依赖版本。AT-7.2 是独立 Atomic Task，只调整开发/打包工具链、对应配置与诊断；四项生产依赖及其声明版本保持不变，也不迁移用户数据或协议。
@@ -161,3 +161,20 @@ npm run build:win
 验收记录至少包含：91/91 诊断、Cargo release/worker 复制、公钥同步、354/1/190 三端模块、混淆 3/3、electron-builder 26 / Electron 42、NSIS 产物路径。随后用未签名测试包完成安装、首次启动、字体库打开/搜索/预览、窗口关闭 flush、退出与卸载；不得用生产私钥做本阶段烟测。
 
 AT-7.2 的回滚单位是整个独立提交，需同时恢复 `package.json`、`package-lock.json`、两份构建配置和诊断/文档，不能只降一个工具造成 peer/ABI 混配。回滚不改数据库或字体文件；但旧锁图重新带回 23 个已知审计命中，只允许离线受控定位。Windows 构建与安装烟测通过后，Stage 7 才可关闭并进入 Stage 8。
+
+## 14. Windows 首轮复验与 CRLF 诊断修复
+
+用户在 Windows 从 `0810137` 快进到 `9144834` 后执行 `npm ci`，安装 395 个包、审计 396 个包并得到 0 vulnerabilities；五项提示均为已记录的传递依赖弃用提示。随后 `npm run build:win` 的 typecheck 与前四项诊断通过，在 `diagnostics:dependency-security-matrix` 停止：
+
+```text
+Missing expected exception: electron-builder v25 publisherName nesting escaped the dependency gate
+```
+
+生产配置没有回退，根因是诊断用包含 `\n` 的整块字面串生成旧配置反例；Windows checkout 为 CRLF，因此 `String.replace` 没有命中，传入验证器的仍是正确配置，`assert.throws` 才报告“没有抛错”。本项只修诊断证据：
+
+- 按三行 YAML 结构定位 `signtoolOptions/publisherName/Xie Ele`，目标缺失或漂移会先失败。
+- 根据输入保留 LF 或 CRLF，再生成旧 v25 顶层 `win.publisherName` 反例。
+- CRLF 重放先归一化再转换，避免在 Windows 原始 CRLF 上产生 `\r\r\n`。
+- 同一 builder 反例分别以 LF 与 CRLF 运行，并断言改写前后内容确实不同，再要求 schema 门禁拒绝。
+
+修复后定向诊断与 `npm run verify` **91/91** 均通过。未修改生产代码、依赖、锁文件或打包配置；因此 Windows 只需 pull 修复提交并重新执行 `npm run build:win`，无需再次 `npm ci`。完整成功回执和 NSIS 安装烟测仍是 Stage 7 关闭条件。
