@@ -60,6 +60,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-15：修正 AT-6.3 远端提交中 `fontPreviewLoadRuntime.ts` 冻结 token 哈希的录入错误；以 AT-6.2 基线源码和诊断使用的 TypeScript scanner 重算正确值，生产源码与控制器行为不变。目标诊断和 87/87 全量门禁通过；Windows 需 pull 后重跑 `npm run build`。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
+
 - 2026-09-14：AT-6.3 将 Selection、Folder、Preview 的 40 个 state/ref 收入三个单一所有者（17/6/17），Preview 可变队列不再暴露给 App、目录或索引事件，跨域删除与滚动只传窄命令/只读 ref；选择 hydration、详情竞态序号、目录拖放和预览队列时序保持。新增真实单击、Ctrl/Shift 多选、框选、双击详情、目录拖放/删除、快速滚动预览、40 项基线、两项变异与 CRLF 门禁；typecheck、87/87 诊断、Electron/Vite 354/1/186 模块及混淆 3/3 通过。AT-6.2 Windows 完整构建回执已收；本环境无 Cargo，6.3 pull 后 Windows 完整构建与 GUI 复验待补。无依赖、数据库、IPC、CSS 或原生源码变更。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
 
 - 2026-09-14：AT-6.2 将 16 个浏览 state、7 个持久 ref 收入 `useBrowseController`，并把字体索引/指标、标签/目录、可见字体等 9 项无副作用计算提取为只读派生；数据库分页、family、滚动、preview/selection 的原所有权和时序保持。新增真实逐页 toolbar/筛选行为、初始化与调用顺序、派生函数体、显式端口、两项变异和 CRLF 门禁；typecheck、86/86 诊断、三端构建及混淆通过。6.1 Windows 完整构建回执已收；6.2 pull 后 Windows/GUI 复验待补，6.3 未开始。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。

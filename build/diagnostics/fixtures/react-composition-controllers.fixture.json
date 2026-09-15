@@ -50,7 +50,7 @@
     "src/renderer/src/runtime/app/usePendingDetailRevealRuntime.ts": "cdb7c4dc211218e55b5ed94c608a8c8bd3940c5aa00b85eababe6916060d095f",
     "src/renderer/src/runtime/preview/fontPreviewQueueRuntime.ts": "f4c059ec238a5cca1930e1eb5dfc6277d25a2d4438704f09fece2a9b669de331",
     "src/renderer/src/runtime/preview/queue/fontPreviewStateRuntime.ts": "5c71bee122e74a82fa4e9ed51848402b1e9abba655faaa5d4d72c57536e7d0d0",
-    "src/renderer/src/runtime/preview/queue/fontPreviewLoadRuntime.ts": "349dc568ee3957b3ba54bfc31fbc173e2feddf8e1242485d4017e3b2cf5361fc",
+    "src/renderer/src/runtime/preview/queue/fontPreviewLoadRuntime.ts": "349dc568ee3957b5871fce7d76e4536ed62eff9c6a8f93b44f024441cc1ea7ef",
     "src/renderer/src/runtime/preview/queue/fontVisiblePreviewQueueRuntime.ts": "ef54b45e68f826d7b3ba54ad4177269622b5f6a5d20c1a47250ccfecb08def87",
     "src/renderer/src/runtime/preview/queue/fontAutoPreviewCacheQueueRuntime.ts": "5339fd863924dbd493793d7ab584c76430b3f43439f2bf02147a608be446e386"
   },
