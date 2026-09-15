@@ -1,0 +1,11 @@
+{
+  "baseline": "7b3e2d07f3114596d70ef8146a05bc10794db226",
+  "fontCount": 10000,
+  "searchQueries": ["", "family 00042", "family 05000", "tag-3", "tag-7", "missing-font"],
+  "scrollSamples": 500,
+  "maxVirtualItems": 80,
+  "selectedCount": 500,
+  "searchBudgetMs": 2500,
+  "scrollBudgetMs": 500,
+  "selectionBudgetMs": 500
+}

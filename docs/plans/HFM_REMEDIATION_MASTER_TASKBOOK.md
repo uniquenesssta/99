@@ -2,10 +2,10 @@
 
 ## 0. 文档状态
 
-- 文档版本：1.33
+- 文档版本：1.34
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 6 AT-6.4 Operations、Library、Developer 控制器已在 `8425146` 基线上实现，42 个 state/ref 归入 22/11/9 的单一所有者，typecheck、88/88 诊断、三端构建与混淆通过；AT-6.3 Windows 完整构建回执已收。沿用 `stage/06-react-composition`；6.4 Windows build/GUI、6.3 GUI 与 Stage 5 实际退出观察仍待补，6.5 未开始。
+- 当前阶段：Stage 6 AT-6.5 渲染性能复核已在 `7b3e2d0` 基线上实现；通过稳定卡片事件与组合器引用，使现有 `FontCard.memo` 能拒绝无关刷新，10,000 字体查询/滚动/详情/选择门禁已纳入 89/89 诊断，三端构建与混淆通过。AT-6.4 Windows 完整构建回执已收。沿用 `stage/06-react-composition`；6.5 Windows build/GUI 性能、既有 Stage 6 GUI 及 Stage 5 实际退出观察仍待补。
 - 当前阶段任务书：[`HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md`](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
@@ -430,7 +430,7 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 
 #### AT-6.4 提取 Operations、Library 与 Developer 控制器
 
-- 状态：已从 App 提取 42 个 state/ref，Operations/Library/Developer 分别独占 22/11/9；写队列、安装状态和开发诊断 raw refs 保持私有，数据库刷新只经命令/readonly ref，关闭 flush/确认顺序保持。新增真实生命周期、三项变异与 CRLF 门禁；typecheck、88/88 诊断、三端构建与混淆通过。Windows 完整构建和 GUI 硬门禁待 pull 后复验。详见 [Stage 6 任务书](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
+- 状态：已从 App 提取 42 个 state/ref，Operations/Library/Developer 分别独占 22/11/9；写队列、安装状态和开发诊断 raw refs 保持私有，数据库刷新只经命令/readonly ref，关闭 flush/确认顺序保持。新增真实生命周期、三项变异与 CRLF 门禁；typecheck、88/88 诊断、三端构建与混淆通过。用户已完成 Windows Cargo release、354/1/190 三端模块构建和混淆 3/3；GUI 硬门禁仍待复验。详见 [Stage 6 任务书](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
 
 - 写队列、autosave、unload flush 和数据库 refresh 的生命周期不能分散到多个所有者。
 - 开发诊断必须在生产构建中保持惰性。
@@ -439,6 +439,8 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 硬门禁：写后刷新、关闭窗口 flush、共享标签冲突提示、批量系统操作全部通过。
 
 #### AT-6.5 渲染性能复核
+
+- 状态：已完成控制器返回值消费方式与卡片重复渲染复核；仅对实测热点引入 `useFontCardRenderer`、`WeakMap` 事件缓存和最新端口 ref，未大面积 memo 化。新增 10,000 字体查询、500 次虚拟滚动、详情开/关、500 项批量选择、引用稳定性、过期闭包、两项反例和 CRLF 门禁；typecheck、89/89 诊断、三端构建与混淆通过。Windows 完整构建及 GUI/性能待 pull 后复验。详见 [Stage 6 任务书](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
 
 - 记录关键控制器返回对象的稳定性；避免每次 render 重建导致子树全量刷新。
 - 对 1 万字体数据执行搜索、滚动、详情开关和批量选择对比。
@@ -519,6 +521,6 @@ Windows 补验反馈：PowerShell 孤立代理项校验、symlink 测试权限�
 | Stage 3 | 完成（实现、自动门禁及 Windows 构建） | 本阶段分支 AT-3.1、AT-3.2 及独立回归修复提交 | 用户快进至 `476c5d6` 后 Windows verify 75/75、换行 24、三后端输入、Rust release、三端 build、混淆 3/3 通过 | 分支 `stage/03-file-preview-consistency`；NAS、实际位图与最大内存等明确留作外部验收；不支持硬链接的卷兼容边界保留 |
 | Stage 4 | AT-4.1 至 AT-4.4 实现及自动门禁完成 | 四个独立原子提交，另补诊断路径兼容修复 | 用户前置 Windows `c981777` build 通过；本项 verify 80/80、三端 build/混淆通过；新提交实机复验待补 | 分支 `stage/04-main-composition`；入口 2075→77 行，五组注册保持 115 项能力；见 Stage 4 第 10 节 |
 | Stage 5 | AT-5.4 实现及自动验证完成 | 基线 `c9f5a74`，本项独立提交 | 45 项引用/38 条命令、89 个类型保持；20 个 client/门面反例、83/83 诊断及三端构建/混淆通过 | 本次 Windows 复验与外部验收待补；AUD-5.4-01 已修复，84/84 诊断通过；Stage 6 未开始 |
-| Stage 6 | AT-6.1 至 AT-6.4 实现及自动验证完成 | `stage/06-react-composition`；6.4 基线 `8425146` | 六组强类型；Browse 16 state/7 ref/9 派生；Selection/Folder/Preview 40 state/ref；Operations/Library/Developer 42 state/ref；88/88 诊断及 build/混淆通过 | 6.3 Windows build 已收；6.4 Windows build/GUI、6.3 GUI 与 Stage 5 退出复验待补，6.5 未开始 |
+| Stage 6 | AT-6.1 至 AT-6.5 实现及自动验证完成 | `stage/06-react-composition`；6.5 基线 `7b3e2d0` | 六组强类型；七个控制器单一所有权；稳定卡片事件/组合器；10,000 字体性能与 89/89 诊断及 build/混淆通过 | 6.4 Windows build 已收；6.5 Windows build/GUI 性能、既有 Stage 6 GUI 与 Stage 5 退出复验待补 |
 | Stage 7 | 阻塞于 Stage 4/5/6 | - | - | - |
 | Stage 8 | 阻塞于 Stage 7 | - | - | - |

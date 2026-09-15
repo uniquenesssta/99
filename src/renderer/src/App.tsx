@@ -17,7 +17,7 @@ USER_ACTIVITY_IDLE_WINDOW_MS,
 VIRTUAL_PANEL_PADDING,
 } from './appRuntime'
 import { AppRootView } from './components/app/AppRootView'
-import { createFontCardRenderer } from './components/app/FontCardRenderer'
+import { useFontCardRenderer } from './components/app/FontCardRenderer'
 import { createFontContextActionRuntime } from './fontContextActionRuntime'
 import { createFontDetailPanelRuntime } from './fontDetailPanelRuntime'
 import { createFontDialogRuntime } from './fontDialogRuntime'
@@ -847,7 +847,7 @@ export default function App(): JSX.Element {
     setPendingDetailRevealFontId
   })
 
-  const { renderFontCard } = createFontCardRenderer({
+  const { renderFontCard } = useFontCardRenderer({
     detailVisible,
     selectedFontId: selectedFont?.id,
     selectedFontIdSet,

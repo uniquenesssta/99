@@ -85,6 +85,6 @@
     "createSelectionInteractionRuntime",
     "useFontListScrollRuntime",
     "usePendingDetailRevealRuntime",
-    "createFontCardRenderer"
+    "useFontCardRenderer"
   ]
 }

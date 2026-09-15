@@ -2,13 +2,13 @@
 
 ## 0. 状态与边界
 
-- 版本：1.4；日期：2026-09-15；软件：HanFontManager 3.0.0。
+- 版本：1.5；日期：2026-09-15；软件：HanFontManager 3.0.0。
 - 分支：`stage/06-react-composition`；基线为 Stage 5 修复提交 `1e129e2d5360d9f5f9afbba0336d73ff1eb9555a`，树 `5c285b64c91f13c737a5bfcf3034c45c0bc08ef1`。
 - 用户明确要求开始 6.1，因此按大阶段创建新分支。本项不修改 Stage 5 或 main。Stage 5 修复版 Windows 实际退出证据仍待补，不把进入本阶段视为补齐旧验收。
 - AT-6.1 已完成自动验证，并收到用户 Windows 完整构建回执：85/85 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/181 模块及混淆 3/3 通过；GUI 与实际退出观察仍单列。
 - AT-6.2 已在 `f3ed225bcb3981950f0df900e8c269d0229fa251`（树 `d9825b4d9af48985fc65c357d11d2e3106f4aed2`）上实现；用户在 Windows 拉取后完成 86/86 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/183 模块及混淆 3/3 的完整构建。
 - AT-6.3 已在 `2d43d14` 基线上实现并完成自动验证。Windows 首轮复验正确拦截的冻结哈希录入错误已修正；用户随后完成 87/87 诊断、Cargo 1.97.1 release、Electron/Vite 354/1/186 模块及混淆 3/3 的完整构建。GUI 回执仍单列。
-- AT-6.4 已在 `8425146` 基线上实现并完成自动验证；Windows 完整构建与 GUI 复验待 pull 后补齐。AT-6.5 未开始。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
+- AT-6.4 已在 `8425146` 基线上实现；用户已在 Windows 完成 Cargo 1.97.1 release、Electron/Vite 354/1/190 模块与混淆 3/3 的完整构建。AT-6.5 已在 `7b3e2d0` 基线上实现并完成自动验证；Windows 完整构建与 GUI/性能复验待 pull 后补齐。上级顺序以[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)为准。
 
 ## 1. AT-6.1 二次审计
 
@@ -162,13 +162,36 @@ Library Controller 继续独占 autosave、初始 shell、前台共享元数据�
 - required Rust 构建已实际尝试，但当前审查环境没有 Cargo；本项未改 Rust/原生源码，仍需 Windows pull 后执行完整 `npm run build`，不得用 Electron 分步构建替代该结论。
 - `App.tsx` 从 AT-6.3 的 1346 行降至 1062 行；行数不是门禁，验收依据是 42 个状态/ref 的单一所有权、窄端口与生命周期行为锁。
 
+用户随后在 Windows 执行完整构建：Cargo 1.97.1 release、Electron/Vite main/preload/renderer **354/1/190** 个模块、main **1148.87 kB**、renderer JS **399.69 kB**、CSS **106.02 kB** 以及混淆 **3/3** 全部通过。GUI 交互回执仍单列。
+
 本项没有升级依赖，没有修改数据库结构、IPC channel、原生协议、CSS、视图 JSX 或用户数据。
 
-## 7. 后续 Atomic Task
+## 7. AT-6.5 渲染性能复核
 
-- AT-6.5：测量对象稳定性、重复渲染与虚拟滚动；按数据优化，不以文件行数或 memo 数量验收。
+### 7.1 测量结论与最小优化
 
-每个 AT 独立提交，整个 Stage 6 沿用当前阶段分支。当前没有提前开始 6.5。
+七个控制器返回值都在 `App.tsx` 中按字段解构，没有将整个控制器对象穿过 `AppRootView` 或直接作为子组件 props。因此，仅对这些返回对象加 `useMemo` 不会减少子树刷新，本项不做这类无消费者的先验优化。
+
+实测定位到的有效热点是卡片组合器：`FontCard` 虽然已经使用 `memo`，但原 `createFontCardRenderer` 在每次 App render 中为每张卡片重建选择、详情、预览、右键和拖放共六个回调，使虚拟窗口中重叠卡片的 memo 失效。本项将其改为 `useFontCardRenderer`：
+
+- 按 `FontItem` 对象身份使用 `WeakMap` 缓存六个事件回调，不阻止旧字体对象回收。
+- `useLayoutEffect` 只更新事件所需的最新控制器端口；稳定回调在选择、拖放和预览时不读取过期状态。
+- `renderFontCard` 只依赖真正改变卡片视觉语义的详情、选择、预览和字号输入。滚动或仅控制器函数引用改变时，重叠卡片的全部 props 保持相同；详情开/关只改变目标卡，批量选择只改变选中的可见卡。
+
+没有为其他组件批量增加 memo，没有修改虚拟布局算法、视图 JSX、CSS、用户行为或数据格式。
+
+### 7.2 1 万字体长期门禁
+
+新增 `diagnostics:react-render-performance` 并纳入 `diagnostics:all`：
+
+- 生成 10,000 个字体及索引，覆盖空查询、精确家族、标签与无结果查询，500 个滚动位置、详情开/关及 500 项批量选择。
+- 最终全量门禁中测得六组查询 **50.9 ms**、500 次虚拟滚动布局 **3.4 ms**、1 万项 Shift 区间选择 **1.2 ms**；1440×900 视口中虚拟窗口最多 **60** 张卡片。时间上限只用于防止量级退化，不将容器数字冒充 Windows GUI 帧率。
+- 钩子行为测试确认纯回调更新和相邻滚动窗口中的卡片 props 身份稳定，事件仍调用最新端口；详情和批量选择的刷新范围按字体 ID 精确验证。
+- 两个反例分别将 `WeakMap` 退化为每次 render 新建，以及将虚拟窗口退化为返回全部 10,000 项；门禁均必须拒绝。LF/CRLF 重放通过。
+
+`npm run verify` 退出码 0，typecheck 与 **89/89** 长期诊断通过。Electron/Vite main、preload、renderer **354/1/190** 个模块构建通过；main **1148.87 kB**、renderer JS **400.08 kB**、CSS **106.02 kB**，混淆 **3/3** 通过。required Rust 构建已实际尝试，当前审查环境没有 Cargo；本项未改 Rust/原生源码，仍需 Windows pull 后执行完整 `npm run build`。
+
+每个 AT 独立提交，整个 Stage 6 沿用当前阶段分支。AT-6.5 实现与自动门禁完成；Stage 6 的 Windows/GUI 外部验收通过后再进入 Stage 7。
 
 ## 8. 拉取与实机验收
 
@@ -180,6 +203,6 @@ git pull --ff-only origin stage/06-react-composition
 npm run build
 ```
 
-无需依赖升级或数据迁移。若本地修改阻止切换，保留修改并按实际冲突处理，不执行 hard reset/clean。构建后重点回归标签/收藏/删除保护写入、批量安装/卸载/激活/停用/删除、添加目录/重扫/清缓存、共享标签冲突提示，以及关闭窗口后重新打开的持久化状态；同时确认选择、目录、预览、搜索/筛选/排序、列表/网格/family 与开发页未变。构建回执与 GUI 回执分开记录。
+无需依赖升级或数据迁移。若本地修改阻止切换，保留修改并按实际冲突处理，不执行 hard reset/clean。构建后重点回归标签/收藏/删除保护写入、批量安装/卸载/激活/停用/删除、添加目录/重扫/清缓存、共享标签冲突提示，以及关闭窗口后重新打开的持久化状态；同时确认选择、目录、预览、搜索/筛选/排序、列表/网格/family 与开发页未变。AT-6.5 额外要在大字体库中快速滚动，反复打开/关闭详情，并进行 Ctrl/Shift 批量选择与拖放，确认无选择错乱、详情误切换、预览停滞或明显额外卡顿。构建回执与 GUI/性能回执分开记录。
 
-AT-6.4 未引入新依赖或版本敏感 API，因此不重复查询 Context7；本地 React 18.3.1、@types/react 18.3.18、TypeScript 5.9.3 已实际编译验证。Mermaid Chart 更新为 Library/Operations/Developer 的真实所有权、刷新端口与关闭链；Create State 保存交接，Git/README/任务书仍为权威记录。
+AT-6.5 未引入新依赖或版本敏感 API，因此不重复查询 Context7；本地 React 18.3.1、@types/react 18.3.18、TypeScript 5.9.3 已实际编译验证。Mermaid Chart 已记录 App 状态、稳定卡片组合器、`FontCard.memo` 与虚拟窗口的实际渲染链。Create State 的 session handoff 与 conversation capture 均已尝试，但外部服务两次返回 HTTP 504，未伪报保存成功；Git/README/任务书为本次权威交接记录。

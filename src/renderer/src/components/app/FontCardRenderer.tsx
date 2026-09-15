@@ -1,9 +1,11 @@
 import type { FontItem } from '@shared/types'
-import type { DragEvent,KeyboardEvent,MouseEvent } from 'react'
+import { useCallback,useLayoutEffect,useRef } from 'react'
+import type { KeyboardEvent,MouseEvent } from 'react'
 import { fontDisplayName } from '../../appRuntime'
+import type { FontCardProps } from '../../appRuntime'
 import { FontCard } from '../FontCard'
 
-export function createFontCardRenderer(options: {
+interface FontCardRendererOptions {
   detailVisible: boolean
   selectedFontId?: string
   selectedFontIdSet: Set<string>
@@ -18,10 +20,60 @@ export function createFontCardRenderer(options: {
   fontListScrolling: () => boolean
   openFontMenu: (event: MouseEvent, font: FontItem) => void
   setDraggingFontId: (fontId: string) => void
-}) {
-  function renderFontCard(font: FontItem, compact = false): JSX.Element {
-    const active = options.detailVisible && options.selectedFontId === font.id
-    const selected = options.selectedFontIdSet.has(font.id)
+}
+
+interface FontCardHandlers {
+  onSelect: FontCardProps['onSelect']
+  onOpenDetail: NonNullable<FontCardProps['onOpenDetail']>
+  onVisible: FontCardProps['onVisible']
+  onContextMenu: FontCardProps['onContextMenu']
+  onDragStart: NonNullable<FontCardProps['onDragStart']>
+  onDragEnd: NonNullable<FontCardProps['onDragEnd']>
+}
+
+export function useFontCardRenderer(options: FontCardRendererOptions) {
+  const latestOptionsRef = useRef(options)
+  useLayoutEffect(() => {
+    latestOptionsRef.current = options
+  }, [options])
+  const handlerCacheRef = useRef(new WeakMap<FontItem, FontCardHandlers>())
+  const {
+    detailVisible,
+    selectedFontId,
+    selectedFontIdSet,
+    previewFamilies,
+    nativePreviewImages,
+    previewText,
+    listPreviewFontSize
+  } = options
+
+  const renderFontCard = useCallback((font: FontItem, compact = false): JSX.Element => {
+    let handlers = handlerCacheRef.current.get(font)
+    if (!handlers) {
+      handlers = {
+        onSelect: (event) => latestOptionsRef.current.handleFontSelect(event, font),
+        onOpenDetail: (event) => latestOptionsRef.current.handleFontOpenDetail(event, font),
+        onVisible: () => {
+          const current = latestOptionsRef.current
+          current.requestPreviewFont(font, current.fontListScrolling() ? 'normal' : 'high')
+        },
+        onContextMenu: (event) => latestOptionsRef.current.openFontMenu(event, font),
+        onDragStart: (event) => {
+          const current = latestOptionsRef.current
+          const dragIds = current.selectedFontIds.length > 1 && current.selectedFontIds.includes(font.id) ? current.selectedFontIds : [font.id]
+          current.setDraggingFontId(font.id)
+          event.dataTransfer.effectAllowed = 'copy'
+          event.dataTransfer.setData('application/x-hfm-font-id', font.id)
+          event.dataTransfer.setData('application/x-hfm-font-ids', JSON.stringify(dragIds))
+          event.dataTransfer.setData('text/plain', dragIds.length > 1 ? `已选 ${dragIds.length} 个字体` : fontDisplayName(font))
+        },
+        onDragEnd: () => latestOptionsRef.current.setDraggingFontId('')
+      }
+      handlerCacheRef.current.set(font, handlers)
+    }
+
+    const active = detailVisible && selectedFontId === font.id
+    const selected = selectedFontIdSet.has(font.id)
 
     return (
       <FontCard
@@ -30,29 +82,20 @@ export function createFontCardRenderer(options: {
         active={active}
         selected={selected}
         compact={compact}
-        previewFamily={options.previewFamilies[font.id]}
-        previewImage={options.nativePreviewImages[font.id]}
-        previewText={options.previewText}
-        listPreviewFontSize={options.listPreviewFontSize}
-        onSelect={(event) => options.handleFontSelect(event, font)}
-        onOpenDetail={(event) => options.handleFontOpenDetail(event, font)}
-        onVisible={() => {
-          options.requestPreviewFont(font, options.fontListScrolling() ? 'normal' : 'high')
-        }}
-        onContextMenu={(event) => options.openFontMenu(event, font)}
+        previewFamily={previewFamilies[font.id]}
+        previewImage={nativePreviewImages[font.id]}
+        previewText={previewText}
+        listPreviewFontSize={listPreviewFontSize}
+        onSelect={handlers.onSelect}
+        onOpenDetail={handlers.onOpenDetail}
+        onVisible={handlers.onVisible}
+        onContextMenu={handlers.onContextMenu}
         draggable
-        onDragStart={(event: DragEvent<Element>) => {
-          const dragIds = options.selectedFontIds.length > 1 && options.selectedFontIds.includes(font.id) ? options.selectedFontIds : [font.id]
-          options.setDraggingFontId(font.id)
-          event.dataTransfer.effectAllowed = 'copy'
-          event.dataTransfer.setData('application/x-hfm-font-id', font.id)
-          event.dataTransfer.setData('application/x-hfm-font-ids', JSON.stringify(dragIds))
-          event.dataTransfer.setData('text/plain', dragIds.length > 1 ? `已选 ${dragIds.length} 个字体` : fontDisplayName(font))
-        }}
-        onDragEnd={() => options.setDraggingFontId('')}
+        onDragStart={handlers.onDragStart}
+        onDragEnd={handlers.onDragEnd}
       />
     )
-  }
+  }, [detailVisible, selectedFontId, selectedFontIdSet, previewFamilies, nativePreviewImages, previewText, listPreviewFontSize])
 
   return { renderFontCard }
 }

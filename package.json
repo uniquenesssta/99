@@ -104,6 +104,7 @@
     "diagnostics:browse-controller": "node build/diagnostics/check-browse-controller.cjs",
     "diagnostics:react-composition-controllers": "node build/diagnostics/check-react-composition-controllers.cjs",
     "diagnostics:react-composition-domain-controllers": "node build/diagnostics/check-react-composition-domain-controllers.cjs",
+    "diagnostics:react-render-performance": "node build/diagnostics/check-react-render-performance.cjs",
     "diagnostics:app-root-view-contracts": "node build/diagnostics/check-app-root-view-contracts.cjs",
     "diagnostics:rust-daemon-shutdown": "node build/diagnostics/check-rust-daemon-shutdown.cjs",
     "diagnostics:rust-worker-clients": "node build/diagnostics/check-rust-worker-clients.cjs",

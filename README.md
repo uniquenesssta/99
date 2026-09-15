@@ -60,6 +60,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-15：完成 AT-6.5 渲染性能复核：控制器返回对象都在 App 内逐项消费，未做无效的大面积 memo；实测定位并修复卡片六个回调每次 render 重建、使既有 `FontCard.memo` 失效的热点。`useFontCardRenderer` 以 `WeakMap` 保持每字体事件身份，通过最新端口 ref 避免过期闭包；滚动重叠卡、详情开/关和 500 项批量选择只更新语义变化的卡片。新增 10,000 字体查询/虚拟滚动/选择、两项反例与 CRLF 长期门禁；typecheck、89/89 诊断、Electron/Vite 354/1/190 模块及混淆 3/3 通过。AT-6.4 Windows 完整构建回执已收；本环境无 Cargo，AT-6.5 需 pull 后完整构建并复验大字体库 GUI/性能。无依赖、数据库、IPC、CSS 或原生源码变更。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
+
 - 2026-09-15：完成 AT-6.4：将 Library、Operations、Developer 的 42 个 state/ref 从 `App.tsx` 收入三个单一所有者（11/22/9），写队列、安装状态、数据库刷新和开发诊断的可变引用不再泄漏；autosave 恢复、写后刷新、共享元数据前台同步、关闭 flush/确认顺序及生产态开发诊断惰性保持。新增真实运行时、42 项基线、三项变异与 CRLF 门禁；typecheck、88/88 诊断、Electron/Vite 354/1/190 模块及混淆 3/3 通过。AT-6.3 Windows 完整构建回执已收；本环境无 Cargo，6.4 pull 后 Windows 完整构建与 GUI 复验待补。无依赖、数据库、IPC、CSS 或原生源码变更。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
 
 - 2026-09-15：修正 AT-6.3 远端提交中 `fontPreviewLoadRuntime.ts` 冻结 token 哈希的录入错误；以 AT-6.2 基线源码和诊断使用的 TypeScript scanner 重算正确值，生产源码与控制器行为不变。目标诊断和 87/87 全量门禁通过；后续 Windows 完整构建回执已收。详见 [Stage 6 任务书](docs/plans/HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)。
