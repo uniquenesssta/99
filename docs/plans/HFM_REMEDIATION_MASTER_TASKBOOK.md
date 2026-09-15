@@ -1,5 +1,7 @@
 # HanFontManager 修复与编排重构总任务书
 
+> 补充专项（规划，未实施）：[预览缓存、本地标签与 App 详细拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)。使用 D-01～D-11 编号，不覆盖现有阶段；先修复已复现边界问题，再拆分与联动回归。本专项按用户要求以 `npm run dev` 实际操作验收，不要求安装包。
+
 ## 0. 文档状态
 
 - 文档版本：1.37

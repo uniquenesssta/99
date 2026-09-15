@@ -43,6 +43,8 @@ npm run build:win
 
 ## 当前工程任务
 
+- [预览缓存、本地标签与 App 专项拆分任务书（规划，未实施）](docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)
+
 - [修复与编排重构总任务书](docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md)
 - [当前 Stage 7：IPC 收口与依赖治理任务书](docs/plans/HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)
 - [Stage 5：Rust Worker 门面拆分任务书](docs/plans/HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)
@@ -60,6 +62,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-15：新增预览缓存、本地标签与 App 专项拆分计划，定义 11 项原子任务、已复现问题的独立修复及标签/收藏/共享标签/保护字段联动矩阵；尚未实施代码拆分。本专项使用 `npm run dev` 验收，不要求打包安装。
 
 - 2026-09-15：修复 AT-7.2 Windows 首轮 `build:win` 暴露的诊断反例构造问题：生产依赖、锁文件和 `electron-builder.yml` 均正确且未改，失败仅因诊断用 LF 字面串改写 CRLF 配置时没有命中。现在按 YAML 行结构构造旧 `win.publisherName` 反例，CRLF 重放先规范换行，并分别要求 LF/CRLF 反例确实发生改写且被门禁拒绝；定向诊断及 91/91 全量验证通过。用户的 Windows `npm ci` 已确认 395 个包、审计 0 漏洞；pull 本修复后需继续重跑 `npm run build:win`。
 
