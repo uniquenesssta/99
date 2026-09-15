@@ -28,7 +28,7 @@ function load(file, mocks = {}, globals = {}, transform = x => x) {
   return exports
 }
 const noProcess = { execFileSync() { throw Error('Native process forbidden in baseline') } }
-function watcherHarness({ availability = async () => true, stat = async () => ({ isDirectory: () => true }), transform = x => x } = {}) {
+function watcherHarness({ availability = async () => true, stat = async () => ({ isDirectory: () => true }), watchError = () => null, onWatch = () => {}, transform = x => x } = {}) {
   let now = 10000, scan = false, closes = 0
   const timers = new Map(), handles = [], applied = [], sent = [], order = [], probes = [], logs = []
   class Clock extends Date { static now() { return now } }
@@ -42,7 +42,7 @@ function watcherHarness({ availability = async () => true, stat = async () => ({
   }
   const runtime = load(watcherFile, {
     electron: { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: { send: (channel, payload) => { order.push('send'); sent.push({ channel, payload: plain(payload) }) } } }] } },
-    'node:fs': { promises: { stat }, watch(folder, config, callback) { const h = { folder, config, callback, closed: 0, on() { return h }, close() { h.closed++ } }; handles.push(h); return h } },
+    'node:fs': { promises: { stat }, watch(folder, config, callback) { const error = watchError(folder); if (error) throw error; const events = new Map(); const h = { folder, config, callback, closed: 0, on(name, fn) { events.set(name, fn); return h }, emit(name, error) { events.get(name)?.(error) }, close() { h.closed++ } }; handles.push(h); onWatch(h); return h } },
     'node:child_process': noProcess,
     '../path/startupPathAvailabilityRuntime': { ensureStartupPathRootAvailable: async folder => { probes.push(folder); return availability(folder) } }
   }, { Date: Clock, setTimeout(fn, ms) { const token = { unref() {} }; timers.set(token, { fn, ms }); return token }, clearTimeout: token => timers.delete(token) }, transform).createFolderWatcherRuntime(options)
@@ -73,6 +73,63 @@ async function watcherHealthy(transform = x => x) {
   await h.runtime.startWatchingFolders([folder]); assert.equal(h.handles.length, 2)
   await h.runtime.startWatchingFolders([]); assert.deepEqual(h.live(), [])
   assert.equal(h.handles[1].closed, 1)
+}
+async function watcherRecovery(transform = x => x) {
+  const a = path.resolve('/A'), b = path.resolve('/B')
+  // Availability and stat are separate suspension boundaries.
+  for (const stage of ['availability', 'stat']) {
+    for (const stop of [false, true]) {
+      const gate = deferred()
+      const h = watcherHarness({ transform, [stage]: folder => folder === a ? gate.promise : Promise.resolve(stage === 'stat' ? { isDirectory: () => true } : true) })
+      const first = h.runtime.startWatchingFolders([a]); await drain()
+      if (stop) h.runtime.stopFolderWatchers()
+      else await h.runtime.startWatchingFolders([b])
+      gate.resolve(stage === 'stat' ? { isDirectory: () => true } : true); await first
+      assert.deepEqual(h.live(), stop ? [] : [b], `${stage}: obsolete start registered`)
+      assert.equal(h.handles.length, stop ? 0 : 1, `${stage}: obsolete start reached fs.watch`)
+      h.runtime.stopFolderWatchers()
+    }
+  }
+  const registering = watcherHarness({ transform, onWatch: () => registering.runtime.stopFolderWatchers() })
+  await registering.runtime.startWatchingFolders([a])
+  assert.deepEqual(registering.live(), []); assert.equal(registering.handles[0].closed, 1)
+  registering.advance(101); registering.handles[0].callback('rename', 'late.ttf')
+  assert.equal(registering.timers.size, 0)
+  // Repeated identical requests during startup leave only one live handle.
+  const gates = [deferred(), deferred()]; let probes = 0
+  const repeated = watcherHarness({ transform, availability: () => gates[probes++].promise })
+  const first = repeated.runtime.startWatchingFolders([a]); await drain()
+  const second = repeated.runtime.startWatchingFolders([a]); await drain()
+  gates[1].resolve(true); gates[0].resolve(true); await Promise.all([first, second])
+  assert.deepEqual(repeated.live(), [a]); repeated.runtime.stopFolderWatchers()
+  // Partial failure, all unavailable, stat failure and watch registration failure retry on the same request.
+  for (const mode of ['partial', 'offline', 'stat', 'watch']) {
+    let recovered = false
+    const h = watcherHarness({ transform,
+      availability: async folder => recovered || (mode !== 'offline' && (mode !== 'partial' || folder === a)),
+      stat: async () => { if (!recovered && mode === 'stat') throw Error('EACCES'); return { isDirectory: () => true } },
+      watchError: () => !recovered && mode === 'watch' ? Error('watch refused') : null })
+    await h.runtime.startWatchingFolders([a, b])
+    assert.equal(h.live().length, mode === 'partial' ? 1 : 0)
+    const old = [...h.handles]; recovered = true
+    await h.runtime.startWatchingFolders([a, b]); assert.deepEqual(h.live(), [a, b])
+    for (const handle of old) assert.equal(handle.closed, 1)
+    const count = h.handles.length
+    await h.runtime.startWatchingFolders([b, a]); assert.equal(h.handles.length, count)
+    h.runtime.stopFolderWatchers(); assert(h.handles.every(x => x.closed === 1))
+  }
+  const h = watcherHarness({ transform })
+  await h.runtime.startWatchingFolders([a]); h.advance(101)
+  const old = h.handles[0]; old.emit('error', Error('lost root'))
+  assert.equal(old.closed, 1)
+  old.callback('rename', 'stale.ttf'); assert.equal(h.timers.size, 0)
+  await h.runtime.startWatchingFolders([a]); assert.deepEqual(h.live(), [a]); h.advance(101)
+  old.callback('rename', 'stale.ttf'); assert.equal(h.timers.size, 0)
+  h.handles[1].callback('rename', 'fresh.ttf'); h.tick(); await drain()
+  assert.deepEqual(h.applied[0].map(x => x.fileName), ['fresh.ttf'])
+  const current = h.handles[1]; h.runtime.stopFolderWatchers()
+  current.callback('rename', 'after-stop.ttf'); assert.equal(h.timers.size, 0)
+  assert(h.handles.every(x => x.closed === 1))
 }
 async function observeW1() {
   const gate = deferred(), a = path.resolve('/A'), b = path.resolve('/B')
@@ -182,7 +239,7 @@ function contracts() {
 function mutate(source, before, after) { assert(source.includes(before), `mutation target missing: ${before}`); return source.replace(before, after) }
 async function main() {
   if (process.argv.includes('--observe') || process.argv.includes('--probe')) {
-    const cases = { 'F-W1': observeW1, 'F-W2': observeW2, 'F-A1': observeA1, 'F-A2': observeA2 }
+    const cases = { 'F-A1': observeA1, 'F-A2': observeA2 }
     const selected = process.argv.find(x => x.startsWith('--case='))?.slice(7)
     if (selected) assert(cases[selected], `Unknown case ${selected}`)
     for (const [id, run] of Object.entries(cases)) {
@@ -193,10 +250,17 @@ async function main() {
     }
     return
   }
+  const w1 = await observeW1(), w2 = await observeW2()
+  assert.deepEqual(w1.actual, w1.expected, 'F-W1')
+  assert.deepEqual(w2.actual, w2.expected, 'F-W2')
+  await watcherRecovery()
+  await assert.rejects(() => watcherRecovery(s => mutate(s, 'if (nextSignature === currentFolderWatchSignature && folderWatchersHealthy)', 'if (nextSignature === currentFolderWatchSignature)')), assert.AssertionError)
+  await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (generation !== watcherGeneration) return true;', '')), assert.AssertionError)
+  await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (generation !== watcherGeneration || !listening) return;', '')), assert.AssertionError)
   contracts(); await watcherHealthy(); await activationHealthy(); await manualBackgroundHealthy()
   await assert.rejects(() => watcherHealthy(s => mutate(s, 'if (options.isScanActive?.()) {', 'if (false) {')), assert.AssertionError)
   await assert.rejects(() => activationHealthy(s => mutate(s, 'stateRuntime.adjustDatabaseActiveCount(1)\n      }\n      options.setStatus(`取消激活失败', 'stateRuntime.adjustDatabaseActiveCount(0)\n      }\n      options.setStatus(`取消激活失败')), assert.AssertionError)
   await assert.rejects(() => manualBackgroundHealthy(s => mutate(s, 'if (active) return active;', 'if (false) return active;')), assert.AssertionError)
-  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; 3 mutations rejected')
+  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 6 mutations rejected')
 }
 main().catch(e => { console.error(e); process.exitCode = 1 })

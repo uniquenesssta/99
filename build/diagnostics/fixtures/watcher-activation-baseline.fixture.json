@@ -17,7 +17,7 @@
         "notifyFolderChanged",
         "startWatchingFolders"
       ],
-      "sha256": "e8e09b31af6dc3cbb0fa010ee9c6ace3aa0caa9438b5989346175ef2fe04bd3f"
+      "sha256": "52017f7a43027b5b59ad529605516df48735b87fc4669707dd416eb6cda516eb"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -159,5 +159,13 @@
       ],
       "sha256": "8bdca38f858ddb921689869ed99887787a7541e954ed153a220d7a8f8012accc"
     }
-  }
+  },
+  "migrations": [
+    {
+      "task": "W-02",
+      "parent": "f628b8ea86740be85e7265b9d9f5a1830f28a8e0",
+      "file": "src/main/watcher/folderWatcherRuntime.ts",
+      "reason": "generation checks, healthy signature, failed handle cleanup; exports unchanged"
+    }
+  ]
 }

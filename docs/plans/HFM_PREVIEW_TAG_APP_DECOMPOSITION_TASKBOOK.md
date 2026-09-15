@@ -473,7 +473,7 @@ Windows 仅使用 npm run dev，在隔离测试目录执行 Y-01/Y-02/Y-03，GUI
 | 任务 | 状态 | 提交 | 自动验证 | 开发模式/遗留 |
 | --- | --- | --- | --- | --- |
 | W-01 | 基线完成（四故障未修复） | 第 12 节同一提交 | typecheck / 93 项通过 | 隔离测试；下一项 W-02 |
-| W-02 | 未开始 | — | — | — |
+| W-02 | 完成 | 第 13 节同一提交 | 93/93；三端构建通过 | Windows 开发模式待复验 |
 | A-01 | 未开始 | — | — | — |
 | W-03 | 未开始 | — | — | — |
 | A-02 | 未开始 | — | — | — |
@@ -624,3 +624,59 @@ Mermaid Chart 已输出真实四域写入关系图。Create State 返回“无 a
 - 提交 SHA：本卡随 W-01 独立原子提交发布，使用 `git log -1 --format=%H -- build/diagnostics/check-watcher-activation-baseline.cjs` 查询；发布核对同一文件树，失败不得声称已推送。回滚使用该发布提交的 revert。
 - Mermaid Chart 已记录真实链路；Create State 本轮返回 Context Captured。Git 与任务书仍为权威记录。
 - 可进入 W-02，理由为必过行为基线与四个旧故障观察均可重复；该完成状态不意味着四个故障已修复，不扩大为 W-03/A-02 或完整 GUI 验收。
+
+
+## 13. W-02 执行卡（实施前登记）
+
+基线 `f628b8ea86740be85e7265b9d9f5a1830f28a8e0`，分支 `stage/09-preview-tags-app`，开工工作树干净。分类：修复，不搬迁模块。
+
+精确允许文件：
+
+| 文件 | 职责 |
+| --- | --- |
+| `src/main/watcher/folderWatcherRuntime.ts` | 启动代次、实际监听健康判断、失效句柄及旧回调清理；仍为唯一监听状态所有者 |
+| `build/diagnostics/check-watcher-activation-baseline.cjs` | F-W1/F-W2 转为必过；补启动/停止/恢复/错误矩阵及变异 |
+| `build/diagnostics/fixtures/watcher-activation-baseline.fixture.json` | 只迁移监听文件的已审查基线，其他条目不变 |
+| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡、验证与接口语义说明 |
+| `README.md` | 修复结果记录 |
+
+不改调用方、IPC、依赖、激活逻辑或增量索引处理。boolean 接口保留；同签名仅在当前句柄全部健康时跳过，无无限重试。先以受控 I/O 建立失败门，再改生产实现。测试/提交结果收尾补录。
+
+
+### 13.1 实施与兼容边界
+
+- 沿用 `watcherGeneration`，新启动在停止旧监听后捕获代次；根 availability、stat await 后检查，注册返回后再保护一次。过期请求不再注册；注册过程中失效的句柄立即关闭。
+- 新增健康标志仍由原 runtime 唯一持有；仅同签名且全部根建立成功时跳过。部分/全部根失败保留不健康，下一次相同请求重新建立，旧句柄先关闭，不叠加监听。
+- error 回调将对应句柄标为失效、关闭并从数组移除，健康标志变 false。事件回调同时检查代次及句柄有效性，stop 后、error 后和旧代次晚到事件均不能入队。
+- boolean 返回保持既有“请求已处理”语义，包括被后续请求取代或根不可用时返回 true；不将其冒充所有目录健康的证明，不新增 IPC 健康接口。恢复由下一次 watchFolders 请求触发，不新增自动轮询/无限重试。部分根恢复采用全请求重建，因此会沿用原启动宽限期。
+- 公开导出、五项方法、事件过滤、默认 grace/debounce、扫描延迟、增量索引/手动刷新算法不变。未拆文件、未新增第二状态 owner。
+
+### 13.2 失败先行与门禁迁移
+
+- 新正确性门在原实现先失败：F-W1 实际 B/A，期望仅 B。修复后 F-W1/F-W2 均以实际结果等于正确期望进入默认 `diagnostics:watcher-activation-baseline`。
+- `baseline:watcher-activation-observe` 从本提交起仅观察 F-A1/F-A2，二者仍可复现；第 12 节四项 probe 是 W-01 的历史证据，不是当前命令的可用 case 清单。W-02 不修改停用逻辑。
+- fixture 仅迁移 watcher 一项 hash，并记录 parent/理由；其余十项原样保持，导出/函数清单不变。没有整体重建基线掩盖变化。
+
+| 场景 | 实际断言 |
+| --- | --- |
+| A/B 反序完成 | availability/stat 分别受控暂停；最终只有 B，过期 A 不调用 fs.watch |
+| start 中 stop | 两个 await 边界取消均为零句柄、零旧注册；注册中失效则新句柄关闭一次 |
+| 同请求重复进入 | 交错完成只留一个有效句柄；完成后同签名顺序改变不重复注册 |
+| 部分根/全部根失败 | 离线、stat 抛错、watch 抛错后原请求可重试；恢复后两个根均存活，旧句柄关闭一次 |
+| error 后恢复 | 错误句柄关闭、旧 callback 不入队，同根再次请求成功 |
+| 重复 start/stop | 原健康路径和新矩阵均检查句柄关闭次数、pending timer 清空 |
+| 旧 callback 晚到 | error 后、重启后、stop 后无旧排队；新句柄事件正常 apply/通知 |
+
+六项退化变异被拒绝：原扫描延迟、停用 reject 计数恢复、手动刷新合并三项继续通过；新增移除健康判断、移除启动 await 代次检查、移除回调有效性保护三项被拒绝。初始变异检查暴露“只看最终存活句柄”的测试盲点，已加实际注册次数断言，未放宽正确性期望。
+
+### 13.3 验证与交接
+
+- `npm run verify`：退出 0，TypeScript / 93 项诊断全部通过；最终定向门禁也通过。真实 watcher 状态机使用受控 fs/时钟，既有合并索引序列化、队列/控制器、激活事务门继续通过。
+- Electron/Vite 三端构建通过：354/1/190 模块。未打安装包、未重编未变的 Rust；Linux 不等于 Windows 原生 fs.watch 实机通过。
+- Windows 可在 `npm run dev` 下复验目录切换、离线恢复后重新发起相同监听请求、正常字体文件事件；未要求操作正式系统字体或构建安装包。自动测试覆盖错误注入，不以 UI 手动失败制造为前提。
+- X 跨域矩阵沿用 D-01，不扩张为停用或共享字段修复；Y-02/Y-03 启动/重试/旧代次行为已自动锁定，真实网络/目录事件仍待 Windows 回执。增量广义 catch、失败对账和旧字段合并保持 W-03 范围。
+- 实际变更为实施前允许的 5 个文件；无 package/依赖/IPC/数据库变化，`git diff --check` 通过。
+- 提交随本卡原子发布；以 `git log -1 --format=%H -- src/main/watcher/folderWatcherRuntime.ts` 查询最终发布 SHA；核对远端同树，回滚用该提交 revert。
+- 下一项 A-01：修复单项停用主进程与界面结果一致性；不启动 Stage 8。Mermaid 已更新为真实状态流，项目状态保存结果另按实际回执记录。
+
+Create State 本轮返回无 active world model，未取得项目级持久化确认；Git、任务书和诊断为权威交接。

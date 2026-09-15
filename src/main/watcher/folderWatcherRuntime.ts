@@ -52,6 +52,7 @@ export function createFolderWatcherRuntime(
   let folderWatchers: fs.FSWatcher[] = [];
   let folderWatchTimer: ReturnType<typeof setTimeout> | null = null;
   let currentFolderWatchSignature = "";
+  let folderWatchersHealthy = false;
   let folderWatcherIgnoreUntil = 0;
   const pendingFolderChanges = new Map<string, PendingFolderChange>();
   let delayedDuringScanLoggedAt = 0;
@@ -61,6 +62,7 @@ export function createFolderWatcherRuntime(
 
   function stopFolderWatchers(): void {
     watcherGeneration += 1;
+    folderWatchersHealthy = false;
     flushRequested = false;
     for (const watcher of folderWatchers) {
       try {
@@ -261,7 +263,7 @@ export function createFolderWatcherRuntime(
       .sort()
       .join("\n");
 
-    if (nextSignature === currentFolderWatchSignature) {
+    if (nextSignature === currentFolderWatchSignature && folderWatchersHealthy) {
       if (options.verboseLogs)
         options.appendStartupLog(
           `folder watcher unchanged: ${uniqueFolders.length} folders`,
@@ -271,8 +273,10 @@ export function createFolderWatcherRuntime(
 
     stopFolderWatchers();
     options.closeRuntimeDatabases();
+    const generation = watcherGeneration;
 
     if (!uniqueFolders.length) {
+      folderWatchersHealthy = true;
       options.appendStartupLog("folder watch disabled: no folders");
       return true;
     }
@@ -287,6 +291,7 @@ export function createFolderWatcherRuntime(
           options.appendStartupLog,
           "folder-watcher-start",
         );
+        if (generation !== watcherGeneration) return true;
         if (!rootAvailable) {
           options.appendStartupLog(
             `folder watcher skipped unavailable root: ${folder}`,
@@ -294,20 +299,39 @@ export function createFolderWatcherRuntime(
           continue;
         }
         const stat = await fsp.stat(folder);
+        if (generation !== watcherGeneration) return true;
         if (!stat.isDirectory()) continue;
 
+        let listening = true;
         const watcher = fs.watch(
           folder,
           { recursive: process.platform === "win32" },
-          (eventType, fileName) =>
+          (eventType, fileName) => {
+            if (generation !== watcherGeneration || !listening) return;
             notifyFolderChanged(
               folder,
               eventType,
               typeof fileName === "string" ? fileName : String(fileName || ""),
-            ),
+            );
+          },
         );
 
+        if (generation !== watcherGeneration) {
+          listening = false;
+          watcher.close();
+          return true;
+        }
+
         watcher.on("error", (error) => {
+          if (generation !== watcherGeneration || !listening) return;
+          listening = false;
+          folderWatchersHealthy = false;
+          folderWatchers = folderWatchers.filter((item) => item !== watcher);
+          try {
+            watcher.close();
+          } catch {
+            // The failed handle may already be closed.
+          }
           options.appendStartupLog(
             `folder watcher error: ${folder} ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -318,12 +342,16 @@ export function createFolderWatcherRuntime(
           `folder watcher started: ${folder}; initial events ignored for ${options.startupGraceMs}ms`,
         );
       } catch (error) {
+        if (generation !== watcherGeneration) return true;
         options.appendStartupLog(
           `folder watcher skipped: ${folder} ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
 
+    if (generation === watcherGeneration) {
+      folderWatchersHealthy = folderWatchers.length === uniqueFolders.length;
+    }
     return true;
   }
 
