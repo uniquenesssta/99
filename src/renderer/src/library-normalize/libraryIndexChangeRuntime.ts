@@ -1,3 +1,4 @@
+import { mergeFontUserIntent } from '../fontUserIntentRuntime'
 import type { FontIndexChangePayload,FontItem,LibraryState } from '@shared/types'
 import { buildFolderTreeFromCachedFonts } from './libraryFolderTreeRuntime'
 import { normalizeFolderPathForCompare,normalizeFontPathForCompare } from './libraryNormalizeBase'
@@ -80,7 +81,7 @@ export function applyFontIndexChangeToLibrary(state: LibraryState, payload: Font
       removedIds.add(oldId)
     }
 
-    const merged = mergeIncrementalIndexedFont(oldFont, font, payload.source)
+    const merged = mergeFontUserIntent(oldFont, mergeIncrementalIndexedFont(oldFont, font, payload.source))
     nextFonts[merged.id] = merged
     upsertedFonts.push(merged)
   }

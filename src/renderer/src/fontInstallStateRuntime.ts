@@ -1,3 +1,4 @@
+import { markActiveIntent } from './fontUserIntentRuntime'
 import type { FontItem,InstallCompareResult,LibraryState } from '@shared/types'
 
 export type FontActiveRuntimeUpdate = {
@@ -38,14 +39,14 @@ export function applyFontActiveRuntimePatch(
   patch: Partial<FontItem> = {},
   nowIso = new Date().toISOString()
 ): FontItem {
-  return {
+  return markActiveIntent({
     ...font,
     ...patch,
     active,
     activeSince: active ? patch.activeSince || font.activeSince || nowIso : undefined,
     managedInstallPath: active ? patch.managedInstallPath || font.managedInstallPath : undefined,
     managedRegistryName: active ? patch.managedRegistryName || font.managedRegistryName : undefined
-  }
+  })
 }
 
 export function applyFontActiveRuntimeUpdatesToLibrary(

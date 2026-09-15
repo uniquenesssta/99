@@ -123,7 +123,8 @@
     "diagnostics:log-regression-hardening": "node build/diagnostics/check-log-regression-hardening.cjs",
     "diagnostics:watcher-activation-baseline": "node build/diagnostics/check-watcher-activation-baseline.cjs",
     "baseline:watcher-activation-observe": "node build/diagnostics/check-watcher-activation-baseline.cjs --observe",
-    "diagnostics:watcher-index-consistency": "node build/diagnostics/check-watcher-index-consistency.cjs"
+    "diagnostics:watcher-index-consistency": "node build/diagnostics/check-watcher-index-consistency.cjs",
+    "diagnostics:user-intent-consistency": "node build/diagnostics/check-user-intent-consistency.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

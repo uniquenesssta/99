@@ -1,7 +1,8 @@
+import { hasFavoriteIntent } from './fontUserIntentRuntime'
 import type { FontFormat,FontItem,FontQueryPageResult,FontQueryRequest,FontScript,LibraryState } from '@shared/types'
 import { VIRTUAL_OVERSCAN_ROWS,VIRTUAL_PANEL_PADDING,getVirtualGridColumns } from './appConstants'
 import type { ActiveFilter,FontCategory,FontComputedIndex,InstallStatusFilter,SidebarPage,SortMode,TimeSortMode,VirtualLayout,VirtualViewport } from './appTypes'
-import { filterMatchesFontIndex,inTimeSortRangeIndex } from './fontFilteringMetrics'
+import { buildFontComputedIndex,filterMatchesFontIndex,inTimeSortRangeIndex } from './fontFilteringMetrics'
 import { compareFontsForSort,compareFontsForTimeSort } from './fontSort'
 import { fontBelongsToAnyFolder,fontBelongsToFolder,fontInsideRootFolder } from './libraryNormalize'
 import { filterFontByLibraryTagAuthority } from './fontTagStateAuthorityRuntime'
@@ -96,6 +97,15 @@ export function buildVisibleFonts(options: VisibleFontsOptions): FontItem[] {
     const items = options.databasePageResult.items.map((font) =>
       filterFontByLibraryTagAuthority(options.library, options.library.fonts[font.id] || font)
     )
+    if (options.sidebarPage === 'library' && (options.activeFilter.kind === 'favorites' || options.activeFilter.kind === 'active')) {
+      const seen = new Set(items.map((font) => font.id))
+      const pending = options.allFonts.filter((font) => !seen.has(font.id) &&
+        (options.activeFilter.kind === 'active' ? font.active : hasFavoriteIntent(font)))
+      // Reuse the exact memory-route filters and ordering for both pending and indexed rows.
+      const candidates = [...items, ...pending]
+      const fontIndexById = new Map(candidates.map((font) => [font.id, buildFontComputedIndex(font)]))
+      return buildVisibleFonts({ ...options, databasePageReady: false, allFonts: candidates, fontIndexById })
+    }
     return mergeOptimisticTagPageFonts(items, options)
   }
 

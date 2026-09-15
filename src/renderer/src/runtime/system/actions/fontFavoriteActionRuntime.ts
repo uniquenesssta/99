@@ -1,3 +1,4 @@
+import { markFavoriteIntent } from '../../../fontUserIntentRuntime'
 import type { FontItem } from '@shared/types'
 import type { FontSystemActionRuntimeOptions,FontSystemStateRuntime } from './fontSystemActionTypes'
 
@@ -10,7 +11,7 @@ export function createFontFavoriteActionRuntime(
   async function toggleFontFavorite(font: FontItem): Promise<void> {
     const liveFont = options.library.fonts[font.id] || font
     const nextValue = !liveFont.favorite
-    const nextFont = { ...liveFont, favorite: nextValue }
+    const nextFont = markFavoriteIntent(liveFont, nextValue)
 
     stateRuntime.updateFont(liveFont.id, () => nextFont)
     stateRuntime.adjustDatabaseFavoriteCount(nextValue ? 1 : -1)

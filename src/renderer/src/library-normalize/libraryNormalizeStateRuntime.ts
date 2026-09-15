@@ -1,3 +1,4 @@
+import { mergeFontUserIntent,hasFontUserIntent } from '../fontUserIntentRuntime'
 import type { FolderNode,FontItem,LibraryState } from '@shared/types'
 import { FONT_OBJECT_LRU_LIMIT } from '../appConstants'
 import { createLegacyCollectionStateFields,normalizeLegacyCollectionIds } from '@shared/legacy/legacyCollectionCompatibility'
@@ -67,26 +68,26 @@ export function libraryWithMergedFonts(state: LibraryState, fonts: FontItem[], k
   const nextFonts = { ...(state.fonts || {}) }
   for (const font of fonts) {
     const existing = nextFonts[font.id]
-    nextFonts[font.id] = existing
+    nextFonts[font.id] = mergeFontUserIntent(existing, existing
       ? {
           ...mergeFontWithTagAuthority(existing, font),
           favorite: !!font.favorite,
           collectionIds: normalizeLegacyCollectionIds(font.collectionIds),
           systemInstalled: !!font.systemInstalled,
           systemInstallMatches: font.systemInstallMatches || [],
-          active: existing.active || font.active,
-          activeSince: existing.active ? existing.activeSince || font.activeSince : font.activeSince,
-          managedInstallPath: existing.active ? existing.managedInstallPath || font.managedInstallPath : font.managedInstallPath,
-          managedRegistryName: existing.active ? existing.managedRegistryName || font.managedRegistryName : font.managedRegistryName,
+          active: font.active,
+          activeSince: font.active ? font.activeSince : undefined,
+          managedInstallPath: font.active ? font.managedInstallPath : undefined,
+          managedRegistryName: font.active ? font.managedRegistryName : undefined,
           deleteProtected: !!font.deleteProtected,
           previewDisabled: existing.previewDisabled || font.previewDisabled,
           previewError: existing.previewError || font.previewError
         }
-      : mergeFontWithTagAuthority(undefined, font)
+      : mergeFontWithTagAuthority(undefined, font))
   }
 
   for (const [id, font] of Object.entries(nextFonts)) {
-    if (font.active || font.favorite || font.deleteProtected) keepIds.add(id)
+    if (font.active || font.favorite || font.deleteProtected || hasFontUserIntent(font)) keepIds.add(id)
   }
 
   return ensureLibraryTagNamesContainFontTags({ ...state, fonts: pruneRecordByKeyLimit(nextFonts, FONT_OBJECT_LRU_LIMIT, keepIds), __partialFonts: true } as LibraryState)

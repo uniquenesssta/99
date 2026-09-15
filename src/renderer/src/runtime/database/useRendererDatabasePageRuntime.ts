@@ -1,3 +1,4 @@
+import { fontUserIntentRevision } from '../../fontUserIntentRuntime'
 import type { FontFormat,FontItem,FontQueryPageResult,FontQueryRequest,FontQueryResult,FontScript,LibraryState } from '@shared/types'
 import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
 import { useEffect,useMemo,useState } from 'react'
@@ -241,7 +242,13 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           scrolling: options.fontListScrollingRef.current
         }
       }, `db-query-start:${options.sidebarPage}`)
+      const intentRevision = fontUserIntentRevision()
       options.hfm.queryFontPage(databaseQueryRequest).then((result) => {
+        if (intentRevision !== fontUserIntentRevision()) {
+          options.reportTrace({ kind: 'db-query-rejected', label: 'user-intent-changed', page: options.sidebarPage,
+            severity: 'warn', details: { requestSeq, intentRevision, currentIntentRevision: fontUserIntentRevision() } })
+          return
+        }
         const durationMs = Math.round(performance.now() - startedAt)
         options.reportTrace({
           kind: 'db-query-end',

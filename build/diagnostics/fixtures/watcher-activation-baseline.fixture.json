@@ -149,7 +149,7 @@
         "applyFontActiveRuntimePatch",
         "applyFontActiveRuntimeUpdatesToLibrary"
       ],
-      "sha256": "42a25f117fc7f97b769f6218e8a45c67d86150ba5cdb48e6752698709a606a16"
+      "sha256": "bff7faac2a786f0f695f62e7d7fb41cdae03c7baee27c21841aeb5ca4492e530"
     },
     "src/main/library/fontQueryWorkerRouteRuntime.ts": {
       "exports": [

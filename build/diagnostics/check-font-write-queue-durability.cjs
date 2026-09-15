@@ -22,7 +22,7 @@ function loadTypeScriptModule(rel) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    require,
+    id => id === './fontUserIntentRuntime' ? loadTypeScriptModule('src/renderer/src/fontUserIntentRuntime.ts') : require(id),
     module,
     path.join(root, rel),
     path.dirname(path.join(root, rel))

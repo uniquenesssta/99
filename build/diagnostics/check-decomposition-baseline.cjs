@@ -18,6 +18,7 @@ function load(file, mocks = {}, transform = x => x) {
   vm.runInNewContext(code, { exports, require(id) {
     if (Object.hasOwn(mocks, id)) return mocks[id]
     if (id.startsWith('node:')) return require(id)
+    if (id === './fontUserIntentRuntime') return load('src/renderer/src/fontUserIntentRuntime.ts')
     throw new Error(`Unmocked dependency: ${file} -> ${id}`)
   }, console, Date, Map, Set, process }, { filename: file })
   return exports

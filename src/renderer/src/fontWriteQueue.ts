@@ -1,3 +1,4 @@
+import { settleFavoriteIntent } from './fontUserIntentRuntime'
 import type { FontItem, FontProtectionResult, FontTagUpdateResult } from '@shared/types'
 import type { HfmApi } from '../../preload'
 import type { QueuedFontWriteState } from './appTypes'
@@ -209,6 +210,7 @@ export async function flushQueuedFontWriteQueue(
       const result = await hfm.setFavorite(fonts, folders, favorite)
       const failedIds = failedIdsFromResult(result, fonts.map((font) => font.id))
       retryBooleanEntries(queue.favorite, failedIds, retryQueue.favorite)
+      for (const font of fonts) if (!failedIds.has(font.id)) settleFavoriteIntent(font)
       wroteCount += fonts.length - failedIds.size
       const failure = resultFailureMessage(result, `${label} ${fonts.length} 个失败`)
       if (failure) failures.push(failure)

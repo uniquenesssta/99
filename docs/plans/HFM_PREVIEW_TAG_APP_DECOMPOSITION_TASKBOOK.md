@@ -799,3 +799,20 @@ W-03a 本地提交 a32d40e、W-03b 本地提交 a611151；W-03c 随本执行卡�
 Windows 待验收：npm run dev，在隔离监听目录新增/修改/删除测试字体，快速重复事件后确认列表收敛；改收藏、本地/共享标签、保护，激活再停用后触发文件更新，确认新状态不反弹。网络/权限/提交/通知失败由自动注入覆盖，不要求破坏系统或真实字体库。完整已激活页筛选/计数/重启仍是下一项 A-02。
 
 最终验证：`npm run verify` 退出 0，TypeScript 与 94/94 全量诊断通过；Electron/Vite 354/1/190 模块构建通过，`git diff --check` 通过。新增诊断六项变异及 W/A 原十项变异通过，原生/Windows GUI 未在本机执行。Mermaid 已按真实恢复与字段权限链更新。
+
+## 16. A-02 实机反馈修复执行卡
+
+基线 7d041f0。用户复现：收藏切页消失再出现；停用后收藏卡片仍显示已激活。限定先修这一反馈，不将完整 A-02（重启/计数/全部批量场景）提前标为完成。
+允许文件：fontUserIntentRuntime.ts（新增会话内字段合并，无持久化/新队列）、fontInstallStateRuntime.ts、runtime/system/actions/fontFavoriteActionRuntime.ts、fontWriteQueue.ts、library-normalize/libraryNormalizeStateRuntime.ts、library-normalize/libraryIndexChangeRuntime.ts、fontViewRuntime.ts、runtime/database/useRendererDatabasePageRuntime.ts（均 renderer）；build/diagnostics/check-user-intent-consistency.cjs、package.json、实际受影响的既有诊断/fixture、README 与本任务书。先复现后修复，保留队列失败重试、分页/筛选/样式和系统安装语义。
+
+### 16.1 实施与证据
+
+新增真实函数用例先复现：停用后 libraryWithMergedFonts 接收旧 active=true，实际恢复为 true。收藏旧页/空页分别造成字段覆盖与成员缺失。修复以字体对象上的 Symbol 保存会话意图，随 renderer 不可变对象传播，不新增全局字体 Map/写队列；JSON/IPC 不携带，重启不恢复该临时标记。激活字段按本会话明确操作结算，收藏仅在既有队列确认成功且查询回读匹配后解除保护；失败仍由原队列重试，旧操作完成不确认新 token。
+
+分页请求捕获操作代次，跨代次返回拒绝并记录 db-query-rejected/user-intent-changed；保留既有请求序号与 refresh 调度。收藏/已激活页统一以当前字体字段筛选，补待确认收藏；对候选项重新计算筛选索引，避免数据库空页缺少派生索引时仍隐藏刚收藏字体。普通页/其他标签页面沿用原列表逻辑。保护中的对象不会因分页 LRU 丢失意图；本会话操作过的激活对象需保留至退出，未增加持久化数据。
+
+新诊断覆盖真实状态补丁、分页合并、可见列表、队列成功/失败，以及真实 useRendererDatabasePageRuntime 旧 Promise 晚返回；测试边界替换 React 调度、IPC 与索引计算，不等同 Windows GUI。四项退化变异（取消激活保护/收藏保护/补成员/请求代次）均拒绝；搜索、取消收藏、连续反向操作、外部收藏更新、JSON/structuredClone 会话边界与系统安装状态区分通过。
+
+原 W/A 十项变异、D-01 两项变异和写队列 durability 继续通过。只迁移 fontInstallStateRuntime 一项源哈希；两个旧诊断仅补真实新模块加载。最终 TypeScript / 全量95项通过，新增真实 hook 场景定向通过，Electron/Vite354/1/191模块构建通过（新增 renderer 模块1个），git diff --check 通过。依赖、原生源码、CSS与IPC协议不变。
+
+Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消失；取消收藏即时移除；在已激活页停用同一字体后切收藏/全部/详情，确认激活标识与时间一致；搜索仍能限制待确认收藏。此轮是 A-02 中这两项实机反馈修复，完整批量/计数/重启验收不据此宣称完成。Mermaid 已更新真实链路，结果随后保存交接。
