@@ -475,7 +475,7 @@ Windows 仅使用 npm run dev，在隔离测试目录执行 Y-01/Y-02/Y-03，GUI
 | W-01 | 基线完成（四故障未修复） | 第 12 节同一提交 | typecheck / 93 项通过 | 隔离测试；下一项 W-02 |
 | W-02 | 完成 | 第 13 节同一提交 | 93/93；三端构建通过 | Windows 开发模式待复验 |
 | A-01 | 完成 | 第 14 节两笔独立提交 | 两侧联合 93/93，构建通过 | Windows 开发模式待复验 |
-| W-03 | 未开始 | — | — | — |
+| W-03 | 实施中 | — | 待验证 | a/b/c 分根因提交 |
 | A-02 | 未开始 | — | — | — |
 
 
@@ -743,3 +743,33 @@ metrics 隔离测试运行实际 hook 的第一个 effect，仅替换 React 调�
 - 主进程提交 `098ac5b87e1c897b335c2b1f10620926f33e8f11`；renderer 随本执行卡提交，可用 `git log -1 --format=%H -- src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts` 查询发布 SHA。发布按主进程→renderer 两提交快进并核对文件树；回滚按逆序 revert，不重写历史。
 - Mermaid 已更新真实结果/结算链路。Create State 返回无 active world model，未取得项目级保存确认；Git 与任务书为权威交接。
 - A-01 完成，可进入 W-03：监听增量错误与界面合并一致性。不启动 Stage 8，不将完整已激活页面/计数展示回归 A-02 冒充本轮完成。
+
+
+## 15. W-03 执行卡（实施前登记）
+
+基线 `7be4d81370be50164f885e44a90640a41ac3bc66`，分支 `stage/09-preview-tags-app`，工作区干净。上轮环境中断前未修改；本轮恢复后登记如下精确允许范围。
+
+| 文件 | 职责 |
+| --- | --- |
+| `src/main/watcher/watchedFolderIndexRuntime.ts` | 删除证据、枚举完整性、重新读取增量 |
+| `src/main/watcher/folderWatcherRuntime.ts` | 原 owner 内的有界恢复、旧代次隔离、grace 事件保留 |
+| `src/main/bootstrap/mainScanCompositionRuntime.ts` | 注入既有根快照同步能力 |
+| `src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts` | 文件扫描通知标注既有 watcher 来源 |
+| `src/renderer/src/library-normalize/libraryIndexChangeRuntime.ts` | 按文件系统来源限制覆盖字段 |
+| `build/diagnostics/check-watcher-index-consistency.cjs` | 新真实函数异常/恢复/字段隔离门禁 |
+| `build/diagnostics/check-watcher-activation-baseline.cjs` | 迁移 grace 断言，保持 W/A 既有门禁 |
+| `build/diagnostics/fixtures/watcher-activation-baseline.fixture.json` | 仅迁移实际变化的冻结条目 |
+| `package.json` | 注册新门禁 |
+| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡与分项验证 |
+| `README.md` | 各笔提交结果 |
+
+W-03a 删除证据、W-03b 失败恢复、W-03c 字段来源分别原子提交；生产可变状态仍归原模块，不增加第二队列 owner。失败注入先行；测试、变异、验证、实机限制和提交后续据实回填。
+
+
+### 15.1 W-03a 删除证据
+
+新真实函数诊断在旧代码稳定复现 EACCES 导致删除；修复将删除限定为目标 stat 的 ENOENT/ENOTDIR 且根 stat 仍确认目录。解析阶段 ENOENT 不作为删除证据，离线根、权限/超时、目录签名读取失败均保留索引并报告 errors。枚举 errors 或行 error 时不按缺项删除，存在错误时不提交目录签名，避免失败扫描被标记为完整。
+
+正常更新、真实缺失和完整空目录删除通过；两项变异（取消缺失证据保护、取消枚举完整性检查）被拒绝。此笔仅索引运行时、新诊断、package 注册、README/任务书 5 文件。后续恢复/字段合并尚未实施，不将 W-03a 当整项完成。
+
+W-03a TypeScript / 全量 94/94 通过，退出 0；独立提交后再推进 W-03b。

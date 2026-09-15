@@ -227,6 +227,10 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
     async function processDirectory(targetPath: string): Promise<boolean> {
       const relativeDir = options.relativeDirectoryPathForRoot(rootPath, targetPath)
       const currentSignature = await computeWatchedDirectorySignature(targetPath)
+      if (!currentSignature) {
+        payload.errors?.push({ path: targetPath, message: '目录状态读取不完整，保留现有索引。' })
+        return false
+      }
       if (directorySignatureMatches(directorySignatures.get(relativeDir), currentSignature)) {
         options.appendStartupLog(
           `font index watcher skipped unchanged directory: ${rootPath} ${relativeDir || '.'}`,
@@ -235,6 +239,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       }
 
       const errors = payload.errors || []
+      const errorCount = errors.length
       const rows = await options.listFontFilesWithDirectoryCache(
         context,
         errors,
@@ -242,6 +247,10 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
         undefined,
         targetPath,
       )
+      for (const row of rows) {
+        if (row.error) errors.push({ path: row.file, message: row.error })
+      }
+      if (errors.length > errorCount) return false
       const seenKeysInDirectory = new Set<string>()
 
       for (const row of rows) {
@@ -265,12 +274,23 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       if (processedDirectories.some((dir) => watcherPathIsInside(relativeName, dir))) continue
 
       const targetPath = resolve(rootPath, change.fileName)
+      let confirmedMissing = false
       try {
-        const stat = await options.withGlobalIo(
-          'watch:stat-target',
-          () => fsp.stat(targetPath),
-          { priority: 'normal', storagePath: targetPath },
-        )
+        let stat: fs.Stats
+        try {
+          stat = await options.withGlobalIo(
+            'watch:stat-target',
+            () => fsp.stat(targetPath),
+            { priority: 'normal', storagePath: targetPath },
+          )
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code
+          if ((code === 'ENOENT' || code === 'ENOTDIR') && targetPath !== rootPath) {
+            const rootStat = await options.withGlobalIo('watch:verify-root', () => fsp.stat(rootPath), { priority: 'normal', storagePath: rootPath })
+            confirmedMissing = rootStat.isDirectory()
+          }
+          throw error
+        }
         if (stat.isDirectory()) {
           const processed = await processDirectory(targetPath)
           if (processed) processedDirectories.push(options.relativeDirectoryPathForRoot(rootPath, targetPath))
@@ -278,6 +298,10 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
           await processFontFile(targetPath)
         }
       } catch (error) {
+        if (!confirmedMissing) {
+          payload.errors?.push({ path: targetPath, message: error instanceof Error ? error.message : String(error) })
+          continue
+        }
         const removed = options.removeFontIndexEntriesForPath(rootPath, targetPath, context.cache)
         for (const item of removed) recordDelete(item)
         if (!removed.length && options.fontExtensions.has(extname(targetPath).toLowerCase())) {
@@ -318,7 +342,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
         )
       }
     }
-    if (context.directoryUpdates.length) await options.saveRootDirectorySignatures(context)
+    if (context.directoryUpdates.length && !payload.errors?.length) await options.saveRootDirectorySignatures(context)
 
     return payload
   }
