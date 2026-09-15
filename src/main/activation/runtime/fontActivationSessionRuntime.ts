@@ -78,7 +78,7 @@ export function createFontActivationSessionRuntime(
     }
 
     await saveTemporaryActiveFonts({ version: 1, records: remaining });
-    if (cleaned > 0) {
+    if (cleaned === targets.length) {
       await saveActivationInstallStatus(item, {
         installed: false,
         by: "none",
@@ -88,11 +88,11 @@ export function createFontActivationSessionRuntime(
     scheduleBackgroundFontRefreshTail("deactivate-tail", 80);
 
     return {
-      ok: true,
+      ok: cleaned === targets.length,
       message:
         cleaned === targets.length
           ? "已取消激活；临时字体文件已转入后台清理。"
-          : `已取消激活 ${cleaned} 项；仍有 ${targets.length - cleaned} 项可能被占用，将在下次启动继续清理。`,
+          : `已取消激活 ${cleaned} 项；仍有 ${targets.length - cleaned} 项未完成清理，记录已保留，可重试或在下次启动继续清理。`,
     };
   }
 

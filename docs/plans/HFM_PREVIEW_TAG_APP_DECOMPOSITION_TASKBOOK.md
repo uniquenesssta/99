@@ -474,7 +474,7 @@ Windows 仅使用 npm run dev，在隔离测试目录执行 Y-01/Y-02/Y-03，GUI
 | --- | --- | --- | --- | --- |
 | W-01 | 基线完成（四故障未修复） | 第 12 节同一提交 | typecheck / 93 项通过 | 隔离测试；下一项 W-02 |
 | W-02 | 完成 | 第 13 节同一提交 | 93/93；三端构建通过 | Windows 开发模式待复验 |
-| A-01 | 未开始 | — | — | — |
+| A-01 | 实施中 | — | 待验证 | 主进程/界面分别提交 |
 | W-03 | 未开始 | — | — | — |
 | A-02 | 未开始 | — | — | — |
 
@@ -680,3 +680,30 @@ Mermaid Chart 已输出真实四域写入关系图。Create State 返回“无 a
 - 下一项 A-01：修复单项停用主进程与界面结果一致性；不启动 Stage 8。Mermaid 已更新为真实状态流，项目状态保存结果另按实际回执记录。
 
 Create State 本轮返回无 active world model，未取得项目级持久化确认；Git、任务书和诊断为权威交接。
+
+
+## 14. A-01 执行卡（实施前登记）
+
+基线 `8a4eddfe828fe22b927e811cd3df07009b178905`，分支 `stage/09-preview-tags-app`，开工工作树干净。按任务要求主进程、renderer 分别独立修复提交，二者联合通过才完成 A-01。
+
+| 精确允许文件 | 职责/所属提交 |
+| --- | --- |
+| `src/main/activation/runtime/fontActivationSessionRuntime.ts` | 主进程：部分/全部清理失败语义与保留记录、安装状态保护 |
+| `src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts` | renderer：单项 resolved 失败/reject 恢复与计数重查 |
+| `build/diagnostics/check-watcher-activation-baseline.cjs` | 两侧真实函数测试、失败先行、跨 IPC 组合与变异 |
+| `build/diagnostics/fixtures/watcher-activation-baseline.fixture.json` | 分别迁移两个目标条目，不动其他契约 |
+| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡与两提交验证证据 |
+| `README.md` | 各提交用户可见修复记录 |
+
+状态 owner/调用方保持；不改批量停用协议、标签/收藏/保护、依赖或数据库格式。失败记录保留以便后续重试，计数响应倒序通过既有查询失效入口协调，不能通过再次停用核对状态。测试及最终 SHA 收尾记录。
+
+
+### 14.1 主进程独立修复
+
+正常返回 false 的记录保留；只有 cleaned 等于全部 targets 时才返回 ok:true 并清空安装状态。部分失败保留旧安装状态，避免尚有临时记录却整体写 none；消息包含保留数量和重试提示。无目标记录仍幂等成功，不处理其他字体。原生清理 reject 和持久化失败维持原异常传播，不返回成功、不清空安装状态。
+
+新增主进程矩阵：全部成功、全部 false、原生 reject、多记录部分成功、无记录、重复停用、保存失败；检查 saved records、安装状态写次数、实际清理目标。两个变异分别拒绝“无条件成功”和“部分成功清空状态”。F-A2 转默认必过；F-A1 仍独立观察，A-01 尚未完成。
+
+失败先行证据：旧实现返回 true 而预期 false。初次尝试捕获清理 reject 被原 `font-resource-session-result` 门拒绝，已撤销该尝试，保留原异常契约；没有调整旧门禁。真实批量 A2 门继续通过。主进程提交的全量结果见下方收尾记录。
+
+主进程独立提交验证：TypeScript 与全量 93/93 通过；新主进程矩阵、两个变异及原事务 A1/A2 通过。改动 5 个已允许文件；renderer 尚未改动，A-01 仍实施中。

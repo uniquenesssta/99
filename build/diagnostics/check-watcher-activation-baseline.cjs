@@ -159,12 +159,41 @@ function actionHarness(deactivateFont, transform = x => x) {
   const runtime = load(actionFile, { '../../../appRuntime': display }, {}, transform).createFontActivationActionRuntime(options, state)
   return { runtime, busy, messages, snapshot: () => plain({ font: library.fonts.a, metrics }) }
 }
-function sessionHarness(remove) {
+function sessionHarness(remove, config = {}, transform = x => x) {
   let saved = null
-  const statuses = [], tails = [], records = [{ fontId: 'a', sourcePath: '/a.ttf', installPath: '/managed/a.ttf', registryName: 'A' }]
-  const runtime = load(sessionFile).createFontActivationSessionRuntime({ ensureWindows() {}, loadTemporaryActiveFonts: async () => ({ version: 1, records }), saveTemporaryActiveFonts: async state => { saved = plain(state) }, scheduleBackgroundFontRefreshTail: (...args) => tails.push(args) },
+  const statuses = [], tails = []
+  let records = config.records || [{ fontId: 'a', sourcePath: '/a.ttf', installPath: '/managed/a.ttf', registryName: 'A' }]
+  const runtime = load(sessionFile, {}, {}, transform).createFontActivationSessionRuntime({ ensureWindows() {}, loadTemporaryActiveFonts: async () => ({ version: 1, records }), saveTemporaryActiveFonts: async state => { if (config.failSave) throw Error("save failed"); saved = plain(state); records = state.records }, scheduleBackgroundFontRefreshTail: (...args) => tails.push(args) },
     { saveActivationInstallStatus: async (...args) => statuses.push(plain(args)) }, { removeTemporaryActiveRecord: remove }, {})
   return { runtime, snapshot: () => ({ saved, statuses, tails }) }
+}
+async function mainDeactivationCheck(transform = x => x) {
+  const a = { fontId: 'a', sourcePath: '/a.ttf', installPath: '/managed/one.ttf', registryName: 'one' }
+  const b = { ...a, installPath: '/managed/two.ttf', registryName: 'two' }
+  const other = { fontId: 'b', sourcePath: '/b.ttf', installPath: '/managed/b.ttf', registryName: 'B' }
+  for (const mode of ['success', 'false', 'reject', 'partial']) {
+    const attempts = []
+    const h = sessionHarness(async record => { attempts.push(record.registryName); if (mode === 'reject') throw Error('cleanup rejected'); return mode === 'success' || (mode === 'partial' && record === a) }, { records: [a, b, other] }, transform)
+    if (mode === 'reject') {
+      await assert.rejects(() => h.runtime.deactivateFontSession(font), /cleanup rejected/)
+      assert.equal(h.snapshot().saved, null); assert.equal(h.snapshot().statuses.length, 0)
+      assert.deepEqual(attempts, ['one']); continue
+    }
+    const result = await h.runtime.deactivateFontSession(font)
+    assert.equal(result.ok, mode === 'success', mode)
+    assert.deepEqual(attempts, ['one', 'two'])
+    assert.deepEqual(h.snapshot().saved.records.map(r => r.registryName), mode === 'success' ? ['B'] : mode === 'partial' ? ['two', 'B'] : ['one', 'two', 'B'])
+    assert.equal(h.snapshot().statuses.length, mode === 'success' ? 1 : 0, 'must not clear status while a matching record remains')
+    const again = await h.runtime.deactivateFontSession(font)
+    assert.equal(again.ok, mode === 'success')
+    if (mode === 'success') assert.equal(attempts.length, 2, 'idempotent no-record call')
+  }
+  const empty = sessionHarness(async () => { throw Error('must not clean unrelated records') }, { records: [other] }, transform)
+  assert.equal((await empty.runtime.deactivateFontSession(font)).ok, true)
+  assert.equal(empty.snapshot().saved, null); assert.equal(empty.snapshot().statuses.length, 0)
+  const fail = sessionHarness(async () => true, { failSave: true }, transform)
+  await assert.rejects(() => fail.runtime.deactivateFontSession(font), /save failed/)
+  assert.equal(fail.snapshot().statuses.length, 0)
 }
 async function observeA1() {
   const gate = deferred(), h = actionHarness(() => gate.promise)
@@ -239,7 +268,7 @@ function contracts() {
 function mutate(source, before, after) { assert(source.includes(before), `mutation target missing: ${before}`); return source.replace(before, after) }
 async function main() {
   if (process.argv.includes('--observe') || process.argv.includes('--probe')) {
-    const cases = { 'F-A1': observeA1, 'F-A2': observeA2 }
+    const cases = { 'F-A1': observeA1 }
     const selected = process.argv.find(x => x.startsWith('--case='))?.slice(7)
     if (selected) assert(cases[selected], `Unknown case ${selected}`)
     for (const [id, run] of Object.entries(cases)) {
@@ -250,6 +279,10 @@ async function main() {
     }
     return
   }
+  await mainDeactivationCheck()
+  await assert.rejects(() => mainDeactivationCheck(s => mutate(s, 'ok: cleaned === targets.length,', 'ok: true,')), assert.AssertionError)
+  await assert.rejects(() => mainDeactivationCheck(s => mutate(s, 'if (cleaned === targets.length) {', 'if (cleaned > 0) {')), assert.AssertionError)
+  const a2 = await observeA2(); assert.equal(a2.actual, a2.expected, "F-A2")
   const w1 = await observeW1(), w2 = await observeW2()
   assert.deepEqual(w1.actual, w1.expected, 'F-W1')
   assert.deepEqual(w2.actual, w2.expected, 'F-W2')
@@ -261,6 +294,6 @@ async function main() {
   await assert.rejects(() => watcherHealthy(s => mutate(s, 'if (options.isScanActive?.()) {', 'if (false) {')), assert.AssertionError)
   await assert.rejects(() => activationHealthy(s => mutate(s, 'stateRuntime.adjustDatabaseActiveCount(1)\n      }\n      options.setStatus(`取消激活失败', 'stateRuntime.adjustDatabaseActiveCount(0)\n      }\n      options.setStatus(`取消激活失败')), assert.AssertionError)
   await assert.rejects(() => manualBackgroundHealthy(s => mutate(s, 'if (active) return active;', 'if (false) return active;')), assert.AssertionError)
-  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 6 mutations rejected')
+  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 8 mutations rejected')
 }
 main().catch(e => { console.error(e); process.exitCode = 1 })

@@ -86,7 +86,7 @@
         "activateFontSession",
         "deactivateFontSession"
       ],
-      "sha256": "625764cfa71c9fc0984d4c88a7178688974e2395cbc0c76d19d3e71769e9cea4"
+      "sha256": "21d5d9759cfe529ff8d15befb817831be01ed7e2a28675945afba6470ab16c96"
     },
     "src/main/activation/runtime/fontActivationInstallStatusRuntime.ts": {
       "exports": [
@@ -166,6 +166,12 @@
       "parent": "f628b8ea86740be85e7265b9d9f5a1830f28a8e0",
       "file": "src/main/watcher/folderWatcherRuntime.ts",
       "reason": "generation checks, healthy signature, failed handle cleanup; exports unchanged"
+    },
+    {
+      "task": "A-01-main",
+      "parent": "8a4eddfe828fe22b927e811cd3df07009b178905",
+      "file": "src/main/activation/runtime/fontActivationSessionRuntime.ts",
+      "reason": "failure results and retained records; no status clearing on partial cleanup"
     }
   ]
 }
