@@ -2,7 +2,7 @@
 
 ## 0. 状态、目标与执行边界
 
-- 文档版本：1.1；日期：2026-09-15；软件：3.0.0。
+- 文档版本：1.2；日期：2026-09-15；软件：3.0.0。
 - 状态：规划已完成，所有实施任务尚未开始。本次提交仅新增任务书及文档索引。
 - 仓库：uniquenesssta/99；文档分支：stage/07-ipc-security-dependencies。
 - 审计代码基线：4cf6c4f20785139def64fa6ba1286764279c81ba。
@@ -10,6 +10,8 @@
 - 用户使用开发模式运行与验收：npm run dev。安装包、NSIS、安装/卸载不属于本专项验收条件；旧任务书中的发布验收属于独立范围。
 - 本任务书不代表已授权立即实施所有重构。本轮先提交计划；收到实施指令后按下列 Atomic Task 串行执行。
 - 不重编号或覆盖原 Stage 7/8。本专项使用 D-01～D-11 编号；开始代码实施时遵守总任务书的阶段分支规则，以当时最新已接受基线建立一个专项分支，不为每个任务重复建分支。
+
+扩展范围：根据用户追加要求，第 10 节新增监听与已激活展示的 W/A 审计修复任务，继承所有实施约束；属于明确授权的任务书范围扩展，不代表现在开始生产修复。
 
 成功标准：修改本地标签时，不意外覆盖收藏、共享标签、删除保护；预览读写在并发失效下保持一致；根组件能清楚表达协作顺序，领域状态与队列只有一个所有者。
 
@@ -54,7 +56,7 @@
 
 ### C-01 范围冻结与任务入口
 
-1. 一次仅一个 D 任务处于“实施中”。未经验证的任务不得作为下一任务基线，不把 D-02/D-03 修复与 D-04～D-10 搬迁合并提交。
+1. 一次仅一个 D/W/A 任务处于“实施中”。未经验证的任务不得作为下一任务基线，不把 D-02/D-03 修复与 D-04～D-10 搬迁合并提交。
 2. D-01 开始前登记执行 HEAD、branch、工作树状态和开发依赖准备结果。代码基线需包含 Electron 42 / better-sqlite3 12.11.1 兼容修复；保留审计基线以重放历史故障。
 3. 每项开工前填写执行卡的“允许文件清单”，精确到文件路径。新增文件要写所属职责、唯一状态所有者、调用方；不得用“相关 runtime”“其他必要文件”等兜底条目。
 4. 发现清单外文件必须改动时，先记录具体证据和扩展理由。范围内必要直接调用方调整可按既有授权更新清单继续；涉及数据格式、公开协议、新功能或其他领域重构则暂停该扩展，不借“修顺手问题”扩大任务。
@@ -136,7 +138,7 @@ D-02/D-03 的遗留故障用例在 D-01 可作为明确预期失败的观察项�
 每项执行卡必须全部填写，不允许用“测试通过”“应该没问题”代替证据：
 
 ```text
-任务：D-__；状态：__
+任务：D-/W-/A-__；状态：__
 基线 SHA / 分支：__
 允许文件（精确路径）及每项职责：__
 变更分类：修复 / 纯拆分 / 独立清理
@@ -361,3 +363,117 @@ npm run dev
 | D-11 | 未开始 | — | — | — |
 
 本任务书建立后的下一步：收到实施指令后从 D-01 开始，先固定跨域行为与复现证据，不直接搬动三个文件。
+
+## 10. 扩展审计：文件夹监听与“已激活”展示
+
+### 10.1 范围与证据边界
+
+用户已明确开发窗口正常打开后由本人关闭，原生依赖准备成功；Stage 8 暂缓。该回执只关闭启动问题，不等于以下监听、停用与状态一致性用例通过。
+
+审计基于当前分支 b4bdeb5 对应源码。本次只审计并修订任务书，未修改生产代码。监听目录 src/main/watcher 共 12 个 TypeScript 文件，核心 folderWatcherRuntime.ts 337 行、watchedFolderIndexRuntime.ts 332 行，最大 manualFolderIndexApplyRuntime.ts 463 行；无需仅因体积再拆分。
+
+“已激活”复用字体列表，不是独立页面：侧栏 AppSidebarLibraryPage/AppSidebarCollapsedRail 设置 active 筛选；fontQueryWorkerRouteRuntime 对 active 排除 merged-index worker 页面路径；fontMemoryQueryMatcherRuntime 按 font.active 筛选；FontCard/fontDisplay/FontDetailPanel 展示状态。主进程安装状态覆盖还可能从 managed/both 推导 active，必须在测试中区分此来源与渲染端乐观状态，不能擅自改变业务定义。
+
+| 编号 | 审计结果 | 证据等级与影响 |
+| --- | --- | --- |
+| F-W1 | startWatchingFolders 没有在异步根目录检查/stat 后校验启动代次 | 真实函数+受控 I/O 复现：A 启动等待，B 启动完成，A 恢复后仍注册；最终同时监听 B/A，而期望只保留 B |
+| F-W2 | currentFolderWatchSignature 在建立实际句柄前设置，失败根未触发同签名重试 | 真实函数复现：根离线，首次启动跳过；恢复后再次传相同目录，availability 只被调用一次、句柄仍为 0。返回值却为 true |
+| F-A1 | 渲染端单项 deactivateFontByCard 不检查 resolved result.ok | 真实函数注入 ok:false：active 从 true 变 false，计数 1 变 0；仅 Promise reject 才恢复 |
+| F-A2 | 主进程 deactivateFontSession 在清理失败后仍返回 ok:true | 真实函数注入 removeTemporaryActiveRecord=false：保存记录仍有 1 项，却返回成功。实际 IPC fonts:deactivateFont 直接调用该方法 |
+| R-W1 | applyWatchedFolderChangesToIndex 的广义 catch 将 stat/解析等异常转成删除索引 | 源码风险：未区分不存在与 EACCES/网络/解析异常；需故障注入确认，不宣称已实机误删。指索引删除，不是磁盘文件删除 |
+| R-W2 | flush 先清空 pending，处理失败后只记日志；合并索引失败也只记日志 | 源码恢复缺口：未看到此层重入队/dirty-root 对账；需核对其他恢复路径，不能直接宣称永久丢事件 |
+| R-A1 | 增量索引合并用 incoming favorite/protection，active 使用 old OR incoming | 可发生旧快照覆盖或旧 active 保留的条件性风险；必须追踪 payload 权威性、revision 与实际通知顺序，未作为已确认业务故障 |
+| R-A2 | 批量停用仅恢复明确 ok:false，结果缺项默认保留乐观停用 | 注入不完整结果的待验收契约；正常主进程是否保证完整映射必须核实 |
+
+F-W1/F-W2/F-A1/F-A2 为隔离执行生产函数的可重复证据，外部文件系统、窗口、原生资源操作被替换；未在 Windows 正式库执行故障。实现前必须把复现移入正式 diagnostics，不能依赖 /tmp 脚本。
+
+本轮复跑：check-merged-index-mutation-serialization.cjs、check-font-activation-transaction.cjs --case=A2、check-query-protocol.cjs 均通过；说明已有 flush 串行与主进程批量停用门禁不覆盖上述启动交错和单项端到端问题。本轮没有重跑全量 verify 或新增生产门禁。
+
+### 10.2 必读直接链路
+
+| 链路 | 文件/目录 |
+| --- | --- |
+| 监听登记与生命周期 | src/main/watcher/folderWatcherRuntime.ts；src/main/bootstrap/mainScanCompositionRuntime.ts；src/renderer/src/runtime/app/effects/useWatchedFoldersRuntime.ts |
+| 增量预判、应用与恢复 | src/main/watcher/watchedFolderIndexRuntime.ts；src/main/watcher/watched-folder-index/；现有 merged-index 同步及 manual-refresh 实现 |
+| 通知落入界面 | src/renderer/src/runtime/app/effects/useFontIndexChangedEventRuntime.ts；src/renderer/src/library-normalize/libraryIndexChangeRuntime.ts |
+| 单项/批量结果 | src/main/activation/runtime/fontActivationSessionRuntime.ts；fontDeactivationBatchRuntime.ts；fontDeactivationSettlementRuntime.ts；src/main/ipc/handlers/fontSystemIpcHandlers.ts |
+| 乐观更新与回滚 | src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts；fontSystemStateRuntime.ts；src/renderer/src/fontInstallStateRuntime.ts |
+| 筛选、计数与标识 | src/main/library/fontQueryWorkerRouteRuntime.ts；fontQueryFacadeRuntime.ts；fontMemoryQueryMatcherRuntime.ts；src/renderer/src/fontFilteringMetrics.ts；components/app/AppSidebarLibraryPage.tsx、AppSidebarCollapsedRail.tsx、FontListPanel.tsx、FontDetailPanel.tsx；components/FontCard.tsx；fontDisplay.ts |
+
+以上是允许审查范围，不是允许整批改动清单。每个任务仍须按 C-01 登记精确修改文件。
+
+### 10.3 新增原子任务（继承 C-01～C-08）
+
+新增 W-01～W-03、A-01～A-02，全部未开始。原 D 编号不变；一次仅一个任务实施；第 10 节顺序补充并优先于原 D 顺序。开发环境正常后先完成 D-01，并依次执行 W-01 → W-02 → A-01 → W-03 → A-02，再继续剩余 D 拆分任务。D-11 为本专项统一收尾，必须同时覆盖 W/A；这不是启动 Stage 8。
+
+#### W-01 固定监听与激活跨层基线
+
+生产改动：无。交付可执行 F-W1/F-W2/F-A1/F-A2 重放和启动/暂停/恢复/关闭状态清单；记录 active 的原生记录、安装覆盖、内存字段、查询计数四种来源。
+
+冻结现有 fs.watch 事件过滤、startup grace、扫描期间延迟和手动刷新行为。新问题先作明确的预期失败观察，不混入必过门禁。把旧状态合并、批量缺项、广义 catch 列为待验证项；不得修改期望以掩盖未知语义。
+
+通过：每个复现能控制失败时点，输出实际句柄、保存记录、返回结果和 UI/count；基线测试对象为生产函数。
+
+#### W-02 修复监听启动代次与同根恢复
+
+范围：folderWatcherRuntime 与必要测试，确需调用方变化须单列。启动操作采用单一代次或等效串行协调；await 后和注册前均确保请求仍有效；过期句柄立即关闭，回调不能在 stop 后重新入队。
+
+区分期望目录与实际监听成功目录。同签名只能在实际句柄健康时跳过；离线根恢复后必须可重试。监听 error 后健康标记与再次建立方式要明确，不新增无限重试、重复监听或日志风暴。保持 boolean 接口兼容，若需要新健康状态接口，先作为独立协议变更评估。
+
+必测：A/B 启动反序完成；start 中 stop；相同请求重复进入；部分根失败；全部根失败；根恢复；error 后恢复；重复 start/stop；旧回调延迟到达。断言句柄数/关闭次数、代次、通知与排队数量。
+
+通过：最终仅监听当前有效根；健康同签名不重复建句柄；恢复重试可成功；旧 generation 不发送通知。
+
+#### A-01 修复单项停用的主进程与界面结果一致性
+
+范围：fontActivationSessionRuntime、fontActivationActionRuntime 及真实结果协议直接消费者和测试。不改标签、收藏、共享字段；不移动模块。
+
+明确“没有临时记录”“全部清理成功”“部分清理失败”“全部失败”结果。保留失败记录与重试信息；不能仅把文字改成警告仍返回无条件成功。先核对 partial success 下安装状态更新，避免有记录尚存却把权威状态全部清空。
+
+渲染端对 ok:false 与 reject 均做相应保守恢复/权威重查，恢复激活标识、时间和计数且只恢复一次；不得以再次执行停用代替状态核对。主进程与渲染端分别独立修复提交，关联同一 A-01 执行卡；仅完成一侧不得标为完成。
+
+必测：底层失败但 Promise resolve、Promise reject、同字体多个记录部分失败、无记录幂等、成功、重复点击、计数刷新与响应倒序。保留批量 A2 原门禁，补单项端到端用例。
+
+通过：结果、保留记录、安装状态、列表与计数一致；失败不会伪装成功，不会影响其他字段。
+
+#### W-03 监听增量错误与界面合并一致性
+
+先验证 R-W1/R-W2/R-A1，确认异常码、读取完整性、恢复链和 payload 权威性。只有证据明确的不存在/删除事件才生成删除记录；访问拒绝、网络超时、元数据失败不得直接被视为文件已删除。目录枚举不完整时，缺项不能直接证明删除。
+
+验证 root index 已提交但 merged sync 失败、通知失败、扫描与监听重叠、grace 内真实变动、启动重启期间旧写完成。优先复用现有 dirty-root/手动差异恢复入口，设计有界恢复，不在异步失败时盲目重复非幂等写入。
+
+界面合并必须有字段来源与新旧判定证据；测试激活/停用及收藏刚完成时旧 upsert 到达。不得将所有字段简单取旧值或新值，也不得无证据删除 active OR 兼容逻辑。
+
+通过：临时错误不造成错误索引删除；恢复后 root/merged/UI 收敛；新标签/收藏/保护/激活意图不被旧索引事件覆盖。若分属多个根因，使用 W-03a/b 关联独立修复提交，禁止整链重写。
+
+#### A-02 已激活筛选、计数与卡片统一回归
+
+不新增独立“已激活页面”。复用原列表，验证 active 筛选路由与权威状态、activeCount、卡片标识、详情时间一致。
+
+必测：单项成功/失败；批量部分失败与缺项；激活中切换筛选；停用当前详情字体；快速多次操作；索引 upsert 与计数回读反序；系统安装与临时激活区分；关闭重开按现有会话恢复策略展示。计数若为全库值、列表另有搜索筛选，不要求二者数字相等，必须先固定统计范围。
+
+通过：确定状态下各展示不互相矛盾；pending 可乐观显示但必须正确结算；无当前会话/持久化状态混淆；原列表虚拟化与样式保持。
+
+### 10.4 扩展联动验收与停止条件
+
+| 用例 | 操作 | 硬判定 |
+| --- | --- | --- |
+| Y-01 | 增删、重命名、移动字体与子目录 | 索引最终与目录一致；无重复条目、错误删除 |
+| Y-02 | 离线共享根恢复、同目录再次监听 | 实际句柄建立，事件进入索引；不只检查返回 true |
+| Y-03 | 扫描中改目录、切监听列表、旧请求晚完成 | 只保留有效代次；不重复写入、通知或漏掉后续对账 |
+| Y-04 | 单项停用失败/部分失败 | 保留记录、结果、UI 标识与计数一致；数据库未被清空 |
+| Y-05 | 激活/收藏/标签更新后旧索引事件到达 | 各字段按权威与版本合并，不回滚新意图 |
+| Y-06 | 已激活筛选+搜索+详情+折叠侧栏 | 同范围数据正确；系统安装/临时激活语义不混淆 |
+| Y-07 | 停用/激活后关闭重开 | 按既有会话恢复协议显示，不把本机旧缓存当真实系统状态 |
+
+Windows 仅使用 npm run dev，在隔离测试目录执行 Y-01/Y-02/Y-03，GUI 执行 Y-04 的安全成功路径及 Y-05～Y-07；资源清理失败、权限/网络错误使用自动故障注入，不要求用户破坏真实系统字体。
+
+任一 false-success、过期监听残留、错误索引删除、字段被旧事件覆盖均阻断相应任务完成。不得为了“拆分完成”跳过 W/A 验收。新任务首先定位与修复；只有出现独立职责且重构能降低复杂度才提取模块，不设新的行数门槛。
+
+| 任务 | 状态 | 提交 | 自动验证 | 开发模式/遗留 |
+| --- | --- | --- | --- | --- |
+| W-01 | 未开始 | — | — | — |
+| W-02 | 未开始 | — | — | — |
+| A-01 | 未开始 | — | — | — |
+| W-03 | 未开始 | — | — | — |
+| A-02 | 未开始 | — | — | — |
