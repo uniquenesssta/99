@@ -1,0 +1,940 @@
+{
+  "baseline": "d310b668943ad0b7529c8927406107606b86b3e9",
+  "files": {
+    "src/main/preview/runtime/previewCacheStorageRuntime.ts": {
+      "functions": [
+        "createPreviewCacheStorageRuntime",
+        "loadLibraryShellCached",
+        "invalidateLibraryShellCache",
+        "previewCacheStorageForFont",
+        "previewCacheStorageForFontFromIndex",
+        "rustPreviewDbPathForStorage",
+        "previewCacheIoErrorMessage",
+        "runRequiredRootPreviewCacheIo",
+        "runOptionalRootPreviewCacheIo",
+        "runStoragePreviewCacheIo",
+        "rememberSharedPresence",
+        "forgetSharedPresence",
+        "openPreviewIndexDb",
+        "readStatusCacheKey",
+        "readStatusToken",
+        "invalidateReadStatusKey",
+        "forgetReadStatus",
+        "rememberReadStatus",
+        "readPreviewCacheIndexStatus",
+        "readPreviewCacheIndexStatusUncached",
+        "writePreviewCacheIndex",
+        "schedulePrefetchForStatusMisses",
+        "deletePreviewCacheIndex",
+        "getPreviewCacheStatus",
+        "readCachedPreviewImages"
+      ],
+      "owners": [],
+      "exports": [
+        "createPreviewCacheStorageRuntime"
+      ],
+      "surfaces": {
+        "createPreviewCacheStorageRuntime": [
+          "previewCacheStorageForFont",
+          "previewCacheStorageForFontFromIndex",
+          "readPreviewCacheIndexStatus",
+          "writePreviewCacheIndex",
+          "deletePreviewCacheIndex",
+          "getPreviewCacheStatus",
+          "readCachedPreviewImages",
+          "hydratePreviewCache",
+          "rememberPreviewCacheRenderQueued",
+          "previewCacheStorageToShared",
+          "ensureSharedPreviewCacheAvailable",
+          "invalidateLibraryShellCache"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "d4c6a9603302c496519ba5022e29da1286ad30dea50b2320914719f1fdbd284e"
+    },
+    "src/main/library/runtime/localFontTagsRuntime.ts": {
+      "functions": [
+        "deleteLocalTagForFontIdentity",
+        "knownTagLifecycle",
+        "logKnownLocalTagLifecycle",
+        "cleanKnownTagNames",
+        "readLocalTagCatalog",
+        "readBoundLocalTags",
+        "mergeKnownLocalTags",
+        "readPersistedLocalTags",
+        "retainedEmptyLocalTags",
+        "saveKnownLocalTags",
+        "cleanLocalTagNames",
+        "rustLocalTagReadRow",
+        "rustLocalTagRow",
+        "insertLocalTagsForFont",
+        "createLocalFontTagsRuntime",
+        "emitLocalTagsMutationStateSignal",
+        "nodeLocalTagsMutationProtocol",
+        "tryReadLocalTagsWithRust",
+        "trySetLocalTagsWithRust",
+        "tryDeleteLocalTagWithRust",
+        "localTagsByFontIds",
+        "hydrateLocalTagsForFonts",
+        "setLocalFontTags",
+        "setLocalFontTagsBatch",
+        "deleteLocalFontTag"
+      ],
+      "owners": [],
+      "exports": [
+        "RustLocalTagsReadInput",
+        "RustLocalTagsReadResult",
+        "RustLocalTagsSetInput",
+        "RustLocalTagsSetResult",
+        "RustLocalTagsDeleteTagInput",
+        "RustLocalTagsMutationStateSignal",
+        "RustLocalTagsDeleteTagResult",
+        "LocalFontTagsRuntimeDeps",
+        "createLocalFontTagsRuntime"
+      ],
+      "surfaces": {
+        "knownTagLifecycle": [
+          "previous",
+          "next",
+          "added",
+          "removed"
+        ],
+        "rustLocalTagReadRow": [
+          "itemId",
+          "aliases",
+          "fontPath"
+        ],
+        "rustLocalTagRow": [
+          "itemId",
+          "aliases",
+          "fontPath",
+          "tagNames"
+        ],
+        "createLocalFontTagsRuntime": [
+          "localTagsByFontIds",
+          "hydrateLocalTagsForFonts",
+          "setLocalFontTags",
+          "setLocalFontTagsBatch",
+          "deleteLocalFontTag"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "57c9b9212a60863229d2a319ca2cce54e35d4bcbcd2b9594a5bc47deb6a31979"
+    },
+    "src/renderer/src/App.tsx": {
+      "functions": [
+        "App",
+        "appendDeveloperStatus",
+        "reportUserActivity",
+        "rendererUserActive",
+        "updateFontFromOperations",
+        "setCardPoolViewMode",
+        "cleanupRemovedFontViewState",
+        "cleanupRemovedFolderFontState"
+      ],
+      "owners": [],
+      "exports": [
+        "App"
+      ],
+      "surfaces": {},
+      "viewGroups": [
+        "topbar",
+        "sidebar",
+        "content",
+        "detail",
+        "overlays",
+        "developer"
+      ],
+      "ipcChannels": [],
+      "tokenHash": "77a59c346a71c5bcfbbb1a298e0fc4edc45c1f95aeea2c9a335f5d0aac3391a3"
+    },
+    "src/renderer/src/runtime/app/useBrowseController.ts": {
+      "functions": [
+        "useBrowseController"
+      ],
+      "owners": [
+        {
+          "binding": "[activeFilter,setActiveFilter]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[sidebarPage,setSidebarPage]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[selectedFormats,setSelectedFormats]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[selectedScripts,setSelectedScripts]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[selectedCategory,setSelectedCategory]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[selectedWatchedFolders,setSelectedWatchedFolders]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[expandedFilterGroups,setExpandedFilterGroups]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[selectedTagName,setSelectedTagName]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[selectedSharedTagName,setSelectedSharedTagName]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[selectedFolderId,setSelectedFolderId]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[pageToolbarStates,setPageToolbarStates]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[,setDatabaseQueryResult]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[databasePageResult,setDatabasePageResult]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[databaseQueryFailedKey,setDatabaseQueryFailedKey]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[databaseFontMetrics,setDatabaseFontMetrics]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[virtualViewport,setVirtualViewport]",
+          "kind": "useState"
+        },
+        {
+          "binding": "databasePageRequestSeqRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "fontMetricsRequestSeqRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "fontScrollerRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "scrollRafRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "lastScrollTraceAtRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "latestVisibleFontsRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "latestViewLayoutRef",
+          "kind": "useRef"
+        }
+      ],
+      "exports": [
+        "useBrowseController"
+      ],
+      "surfaces": {
+        "useBrowseController": [
+          "activeFilter",
+          "setActiveFilter",
+          "sidebarPage",
+          "setSidebarPage",
+          "selectedFormats",
+          "setSelectedFormats",
+          "selectedScripts",
+          "setSelectedScripts",
+          "selectedCategory",
+          "setSelectedCategory",
+          "selectedWatchedFolders",
+          "setSelectedWatchedFolders",
+          "expandedFilterGroups",
+          "selectedTagName",
+          "setSelectedTagName",
+          "selectedSharedTagName",
+          "setSelectedSharedTagName",
+          "selectedFolderId",
+          "setSelectedFolderId",
+          "setDatabaseQueryResult",
+          "databasePageResult",
+          "setDatabasePageResult",
+          "databaseQueryFailedKey",
+          "setDatabaseQueryFailedKey",
+          "databaseFontMetrics",
+          "setDatabaseFontMetrics",
+          "virtualViewport",
+          "setVirtualViewport",
+          "databasePageRequestSeqRef",
+          "fontMetricsRequestSeqRef",
+          "fontScrollerRef",
+          "scrollRafRef",
+          "lastScrollTraceAtRef",
+          "latestVisibleFontsRef",
+          "latestViewLayoutRef",
+          "search",
+          "installStatus",
+          "timeSortMode",
+          "sortMode",
+          "viewMode",
+          "selectedWatchedFoldersKey",
+          "selectedFormatsKey",
+          "selectedScriptsKey",
+          "activeFilterKey",
+          "updatePageToolbar",
+          "clearAdvancedFilters",
+          "setFilterGroupExpanded"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "4f4eca12280d7e593430d18ee085dbe720a23ef47916fca4b504b4845602b01f"
+    },
+    "src/renderer/src/runtime/app/useDeveloperController.ts": {
+      "functions": [
+        "useDeveloperController",
+        "appendDeveloperStatus",
+        "refreshDeveloperStatusDetails"
+      ],
+      "owners": [
+        {
+          "binding": "[developerStatusLog,setDeveloperStatusLog]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[latestIndexProgress,setLatestIndexProgress]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[latestBackgroundTaskEvent,setLatestBackgroundTaskEvent]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[developerArchitecture,setDeveloperArchitecture]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[developerSchedulerStatus,setDeveloperSchedulerStatus]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[developerMigrationDiagnostics,setDeveloperMigrationDiagnostics]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[developerSharedMetadataDiagnostics,setDeveloperSharedMetadataDiagnostics]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[developerTasks,setDeveloperTasks]",
+          "kind": "useState"
+        },
+        {
+          "binding": "developerStatusRefreshInFlightRef",
+          "kind": "useRef"
+        }
+      ],
+      "exports": [
+        "useDeveloperController"
+      ],
+      "surfaces": {
+        "useDeveloperController": [
+          "developerStatusLog",
+          "setDeveloperStatusLog",
+          "latestIndexProgress",
+          "setLatestIndexProgress",
+          "latestBackgroundTaskEvent",
+          "developerArchitecture",
+          "developerSchedulerStatus",
+          "developerMigrationDiagnostics",
+          "developerSharedMetadataDiagnostics",
+          "setDeveloperSharedMetadataDiagnostics",
+          "developerTasks",
+          "appendDeveloperStatus",
+          "refreshDeveloperStatusDetails"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "034dc5d519a087d930245d3d59a0459b4da3d32a98f7876369d44d7bb37864fa"
+    },
+    "src/renderer/src/runtime/app/useFolderController.ts": {
+      "functions": [
+        "useFolderController",
+        "clearAutoRefreshTimer",
+        "createRuntime"
+      ],
+      "owners": [
+        {
+          "binding": "[expandedFolderIds,setExpandedFolderIds]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[newFolderName,setNewFolderName]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[folderChildTarget,setFolderChildTarget]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[draggingFontId,setDraggingFontId]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[dropHoverFolderId,setDropHoverFolderId]",
+          "kind": "useState"
+        },
+        {
+          "binding": "autoRefreshTimerRef",
+          "kind": "useRef"
+        }
+      ],
+      "exports": [
+        "useFolderController"
+      ],
+      "surfaces": {
+        "useFolderController": [
+          "expandedFolderIds",
+          "setExpandedFolderIds",
+          "newFolderName",
+          "setNewFolderName",
+          "folderChildTarget",
+          "setFolderChildTarget",
+          "draggingFontId",
+          "setDraggingFontId",
+          "dropHoverFolderId",
+          "setDropHoverFolderId",
+          "clearAutoRefreshTimer",
+          "createRuntime"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "8d4efc53c3c6ee044db5980c12798c5c5ae0dbf20498f1fb5fc0c96b33c9d6d5"
+    },
+    "src/renderer/src/runtime/app/useFontOperationsController.ts": {
+      "functions": [
+        "useFontOperationsController",
+        "reportUserActivity",
+        "rendererUserActive",
+        "toggleFontDeleteProtection",
+        "removeFontIds"
+      ],
+      "owners": [
+        {
+          "binding": "[cacheMenuOpen,setCacheMenuOpen]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[newTagName,setNewTagName]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[newSharedTagName,setNewSharedTagName]",
+          "kind": "useState"
+        },
+        {
+          "binding": "fontWriteQueue",
+          "kind": "useRef"
+        },
+        {
+          "binding": "fontWriteFlushTimerRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "fontWriteRetryTimerRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "fontWriteRetryAttemptRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "fontWriteFlushActiveRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "fontWriteFlushActivePromiseRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "lazyInstallQueue",
+          "kind": "useRef"
+        },
+        {
+          "binding": "queuedLazyInstallIds",
+          "kind": "useRef"
+        },
+        {
+          "binding": "seenLazyInstallIds",
+          "kind": "useRef"
+        },
+        {
+          "binding": "knownInstallStatusIds",
+          "kind": "useRef"
+        },
+        {
+          "binding": "activeLazyInstallDetect",
+          "kind": "useRef"
+        },
+        {
+          "binding": "lazyInstallDetectTimerRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "lazyInstallDetectRunId",
+          "kind": "useRef"
+        },
+        {
+          "binding": "activeOperationFontIds",
+          "kind": "useRef"
+        },
+        {
+          "binding": "lastUserActivityReportAtRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "rendererUserActiveUntilRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "indexOperationRunIdRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "autoInstallStatusRefreshStartedRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "autoInstallStatusRefreshSignatureRef",
+          "kind": "useRef"
+        }
+      ],
+      "exports": [
+        "useFontOperationsController"
+      ],
+      "surfaces": {
+        "useFontOperationsController": [
+          "cacheMenuOpen",
+          "setCacheMenuOpen",
+          "newTagName",
+          "setNewTagName",
+          "newSharedTagName",
+          "setNewSharedTagName",
+          "reportUserActivity",
+          "rendererUserActive",
+          "updateFont",
+          "toggleFontFavorite",
+          "fontsForTag",
+          "installFontByCard",
+          "removeFontByCard",
+          "deleteFontsBatch",
+          "uninstallFontsBatch",
+          "activateFontByCard",
+          "activateFontsBatch",
+          "deactivateFontByCard",
+          "deactivateFontsBatch",
+          "refreshInstallStatus",
+          "startBackgroundInstallStatusRefresh",
+          "stopLazyInstallStatusDetect",
+          "loadCacheStats",
+          "readPhysicalFolderTree",
+          "clearAllCacheAction",
+          "addFolder",
+          "cancelIndexing",
+          "rescan",
+          "rebuildScanCache",
+          "refreshFolderTarget",
+          "queueLocalTagsWrite",
+          "queueSharedTagsWrite",
+          "flushFontWriteQueue",
+          "toggleFontDeleteProtection",
+          "removeFontIds"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "b64dd27786c547ef40e03663c6c9351927564127ecbe02480746b1cb5d262ee5"
+    },
+    "src/renderer/src/runtime/app/useLibraryController.ts": {
+      "functions": [
+        "useLibraryController",
+        "refreshDatabaseDerivedState",
+        "scheduleDatabaseDerivedStateRefresh",
+        "refreshDatabaseMetricsNow",
+        "checkSharedMetadataUpdates",
+        "clearDatabaseRefreshTimer"
+      ],
+      "owners": [
+        {
+          "binding": "[library,setLibraryState]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[status,setStatus]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[leaseLockConflictNotice,setLeaseLockConflictNotice]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[indexingActive,setIndexingActive]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[databaseRefreshToken,setDatabaseRefreshToken]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[,setCacheStats]",
+          "kind": "useState"
+        },
+        {
+          "binding": "databaseRefreshTimerRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "libraryLoadedRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "initialLibraryLoadStartedRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "sharedMetadataSyncInFlightRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "lastSharedMetadataSyncCheckAtRef",
+          "kind": "useRef"
+        }
+      ],
+      "exports": [
+        "LibraryDatabasePorts",
+        "useLibraryController"
+      ],
+      "surfaces": {
+        "useLibraryController": [
+          "library",
+          "setLibrary",
+          "getCurrentLibrary",
+          "commitLibraryUpdate",
+          "saveLibraryImmediately",
+          "flushLibraryPersistence",
+          "status",
+          "setStatus",
+          "leaseLockConflictNotice",
+          "setLeaseLockConflictNotice",
+          "indexingActive",
+          "setIndexingActive",
+          "databaseRefreshToken",
+          "setDatabaseRefreshToken",
+          "setCacheStats",
+          "libraryLoadedRef",
+          "refreshDatabaseDerivedState",
+          "scheduleDatabaseDerivedStateRefresh",
+          "refreshDatabaseMetricsNow",
+          "clearDatabaseRefreshTimer"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "742a17a4b947d0400153501a57f8a12c410d629451bd4c9d7d93dc709498e8c1"
+    },
+    "src/renderer/src/runtime/app/usePreviewController.ts": {
+      "functions": [
+        "usePreviewController",
+        "removeFontIds",
+        "beginFontListScroll",
+        "clearFontListScrollIdleTimer",
+        "isFontListScrolling"
+      ],
+      "owners": [
+        {
+          "binding": "[previewFamilies,setPreviewFamilies]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[nativePreviewImages,setNativePreviewImages]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[nativeDetailImage,setNativeDetailImage]",
+          "kind": "useState"
+        },
+        {
+          "binding": "detailNativePreviewRequestSeqRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "[failedPreviewFontIds,setFailedPreviewFontIds]",
+          "kind": "useState"
+        },
+        {
+          "binding": "loadingFonts",
+          "kind": "useRef"
+        },
+        {
+          "binding": "previewRequestTokenRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "previewQueue",
+          "kind": "useRef"
+        },
+        {
+          "binding": "queuedPreviewFontIds",
+          "kind": "useRef"
+        },
+        {
+          "binding": "fontListScrollingRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "fontListScrollIdleTimerRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "activePreviewLoads",
+          "kind": "useRef"
+        },
+        {
+          "binding": "autoPreviewCacheQueue",
+          "kind": "useRef"
+        },
+        {
+          "binding": "queuedAutoPreviewCacheIds",
+          "kind": "useRef"
+        },
+        {
+          "binding": "activeAutoPreviewCacheLoads",
+          "kind": "useRef"
+        },
+        {
+          "binding": "autoPreviewCacheRunId",
+          "kind": "useRef"
+        },
+        {
+          "binding": "autoPreviewCacheStats",
+          "kind": "useRef"
+        }
+      ],
+      "exports": [
+        "PreviewControllerOptions",
+        "usePreviewController"
+      ],
+      "surfaces": {
+        "usePreviewController": [
+          "previewFamilies",
+          "nativePreviewImages",
+          "nativeDetailImage",
+          "setNativeDetailImage",
+          "detailNativePreviewRequestSeqRef",
+          "failedPreviewFontIds",
+          "resetPreviewRuntimeState",
+          "processPreviewQueue",
+          "requestPreviewFont",
+          "processAutoPreviewCacheQueue",
+          "removeFontIds",
+          "beginFontListScroll",
+          "clearFontListScrollIdleTimer",
+          "fontListScrollingRef",
+          "isFontListScrolling"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "d88eeb914899ca704514686647dcacbdb3f17dabb9d6ac3b14fc4649f471e2a6"
+    },
+    "src/renderer/src/runtime/app/useSelectionController.ts": {
+      "functions": [
+        "useSelectionController",
+        "removeFontIds",
+        "createInteractionRuntime"
+      ],
+      "owners": [
+        {
+          "binding": "[selectedFontId,setSelectedFontId]",
+          "kind": "useState"
+        },
+        {
+          "binding": "selectedFontIdRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "[selectedFontIds,setSelectedFontIds]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[selectionAnchorFontId,setSelectionAnchorFontId]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[selectionRect,setSelectionRect]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[detailVisible,setDetailVisible]",
+          "kind": "useState"
+        },
+        {
+          "binding": "detailCardClickLockUntilRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "[pendingDetailRevealFontId,setPendingDetailRevealFontId]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[assignTagName,setAssignTagName]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[assignSharedTagName,setAssignSharedTagName]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[activeLocalTagSuggestionIndex,setActiveLocalTagSuggestionIndex]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[activeSharedTagSuggestionIndex,setActiveSharedTagSuggestionIndex]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[contextMenu,setContextMenu]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[renameTarget,setRenameTarget]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[renameValue,setRenameValue]",
+          "kind": "useState"
+        },
+        {
+          "binding": "[deleteTarget,setDeleteTarget]",
+          "kind": "useState"
+        },
+        {
+          "binding": "selectionBaseFontIdsRef",
+          "kind": "useRef"
+        }
+      ],
+      "exports": [
+        "SelectionInteractionRuntimeOptions",
+        "useSelectionController"
+      ],
+      "surfaces": {
+        "useSelectionController": [
+          "selectedFontId",
+          "selectedFontIdRef",
+          "setSelectedFontId",
+          "selectedFontIds",
+          "setSelectedFontIds",
+          "selectionAnchorFontId",
+          "setSelectionAnchorFontId",
+          "selectionRect",
+          "detailVisible",
+          "setDetailVisible",
+          "pendingDetailRevealFontId",
+          "setPendingDetailRevealFontId",
+          "assignTagName",
+          "setAssignTagName",
+          "assignSharedTagName",
+          "setAssignSharedTagName",
+          "activeLocalTagSuggestionIndex",
+          "setActiveLocalTagSuggestionIndex",
+          "activeSharedTagSuggestionIndex",
+          "setActiveSharedTagSuggestionIndex",
+          "contextMenu",
+          "setContextMenu",
+          "renameTarget",
+          "setRenameTarget",
+          "renameValue",
+          "setRenameValue",
+          "deleteTarget",
+          "setDeleteTarget",
+          "removeFontIds",
+          "createInteractionRuntime"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "618fd473ad41cf4bb6e85c7964ca05e0c9fcf8c3f68a2c9438fec614d67773b0"
+    },
+    "src/main/ipc/handlers/fontTagIpcHandlers.ts": {
+      "functions": [
+        "registerFontTagIpcHandlers"
+      ],
+      "owners": [],
+      "exports": [
+        "registerFontTagIpcHandlers"
+      ],
+      "surfaces": {},
+      "viewGroups": [],
+      "ipcChannels": [
+        "fonts:setLocalTags",
+        "fonts:setLocalTagsBatch",
+        "fonts:deleteLocalTag",
+        "fonts:setSharedTags",
+        "fonts:setSharedTagsBatch",
+        "fonts:renameSharedTag",
+        "fonts:deleteSharedTag"
+      ],
+      "tokenHash": "a6d54bdff22aed6f3602ad3eacb66806f506cb7b3e41dc6255b41fbcf304f980"
+    },
+    "src/main/ipc/handlers/fontSystemIpcHandlers.ts": {
+      "functions": [
+        "registerFontSystemIpcHandlers"
+      ],
+      "owners": [],
+      "exports": [
+        "registerFontSystemIpcHandlers"
+      ],
+      "surfaces": {},
+      "viewGroups": [],
+      "ipcChannels": [
+        "fonts:getSystemInstalledFonts",
+        "fonts:scanSystemInstalledFonts",
+        "fonts:compareInstalled",
+        "fonts:compareManyInstalled",
+        "fonts:refreshInstallStatusIndex",
+        "fonts:startInstallStatusRefreshIndex",
+        "fonts:getInstallStatusIndex",
+        "fonts:installSystem",
+        "fonts:uninstallSystem",
+        "fonts:deleteFiles",
+        "fonts:setDeleteProtection",
+        "fonts:setFavorite",
+        "fonts:activateFont",
+        "fonts:activateFonts",
+        "fonts:deactivateFont",
+        "fonts:deactivateFonts",
+        "fonts:installCurrentUser",
+        "fonts:uninstallManaged"
+      ],
+      "tokenHash": "352b3911e06d22270aebd49e3e5f10742ad073bc5d8e113b663ea50cf0b6d802"
+    }
+  }
+}

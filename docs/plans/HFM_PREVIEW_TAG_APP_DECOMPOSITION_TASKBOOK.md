@@ -350,7 +350,7 @@ npm run dev
 
 | 任务 | 状态 | 提交 | 自动验证 | 开发模式/遗留 |
 | --- | --- | --- | --- | --- |
-| D-01 | 未开始 | — | — | — |
+| D-01 | 完成基线（未修复生产故障） | 本节同一提交 | verify 92/92；独立观察 2 项 | 无生产变更；下一项 W-01 |
 | D-02 | 未开始 | — | — | — |
 | D-03 | 未开始 | — | — | — |
 | D-04 | 未开始 | — | — | — |
@@ -362,7 +362,7 @@ npm run dev
 | D-10 | 未开始 | — | — | — |
 | D-11 | 未开始 | — | — | — |
 
-本任务书建立后的下一步：收到实施指令后从 D-01 开始，先固定跨域行为与复现证据，不直接搬动三个文件。
+D-01 基线已落地；下一项按第 10 节执行 W-01，不直接搬动三个文件。
 
 ## 10. 扩展审计：文件夹监听与“已激活”展示
 
@@ -477,3 +477,71 @@ Windows 仅使用 npm run dev，在隔离测试目录执行 Y-01/Y-02/Y-03，GUI
 | A-01 | 未开始 | — | — | — |
 | W-03 | 未开始 | — | — | — |
 | A-02 | 未开始 | — | — | — |
+
+
+## 11. D-01 执行卡（2026-09-15）
+
+- 任务：D-01，已完成可执行基线；不代表 F-P1/F-T1 已修复或专项完成。
+- 基线：`d310b668943ad0b7529c8927406107606b86b3e9`；专项分支 `stage/09-preview-tags-app`，从最新 Stage 7 基线建立；开始时工作树干净。沿用可执行的本地依赖，未修改依赖或锁文件。用户已提供该兼容依赖体系的 Windows `setup:dev` 成功和手动关闭应用说明。
+- 分类：基线诊断与文档；生产 owner、导出、调用方、DB 格式均不变。
+- 范围纪律偏差：具体文件清单在收尾时补录，未满足 C-01 要求的开工前登记；本次如实记录，不能把事后核对当成事前登记。后续任务必须先提交执行卡范围再实施。
+
+### 11.1 精确允许文件与职责
+
+| 文件 | 职责、所有者与调用方 |
+| --- | --- |
+| `build/diagnostics/check-decomposition-baseline.cjs` | 新增基线诊断；隔离实例拥有测试状态，仅 diagnostics/显式观察命令调用 |
+| `build/diagnostics/fixtures/decomposition-baseline.fixture.json` | 新增静态基线清单；无运行时可变状态，仅该诊断读取 |
+| `package.json` | 注册默认门禁与独立观察命令 |
+| `README.md` | 用户可见变更记录 |
+| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡、范围、证据和后续验收边界 |
+
+实际 changed files 为以上 5 项；无 src、Rust、锁文件、构建产物变化。
+
+### 11.2 生产链与所有权清单
+
+fixture 冻结三目标文件及七控制器的函数、具名导出、直接返回对象键、state/ref、AppRootView 六组输入及 token 基线；另冻结 `fontTagIpcHandlers.ts`、`fontSystemIpcHandlers.ts` 注册的 IPC 名称和接线。允许 LF/CRLF 等价，不把 token 相同当作行为证明。后续纯迁移须逐项转移 owner 证据，不能直接重算全部 hash 绕过门禁。
+
+七控制器 hook 站点：Browse 23、Selection 17、Folder 6、Preview 17、Library 11、Operations 22、Developer 9，共 105。App 目标文件自身没有 useState/useRef 站点；这不表示其他自定义 hook 没有内部状态。保持六组视图 `topbar/sidebar/content/detail/overlays/developer`。本地标签门面五方法保留在 fixture 的 `createLocalFontTagsRuntime` 返回清单中。
+
+| 域 | 真实路径及写集 |
+| --- | --- |
+| 本地标签 | `fontWriteQueueRuntime.ts` → `fontWriteQueue.ts` 的 localTags → `fontTagIpcHandlers.ts` → `localFontTagsRuntime.ts`；本机标签绑定和目录，由既有 DB opener 管理句柄 |
+| 共享标签 | 同一执行器 sharedTags → 标签 IPC → `sharedFontMetadataMutations.ts` → `sharedMetadataMutationRuntime.ts`；按 tags 策略合并共享元数据 |
+| 收藏 | 同一执行器 favorite → `fontSystemIpcHandlers.ts` → `setSharedFontFavoriteInIndex`；按 favorite 策略合并 |
+| 删除保护 | 同一执行器 protection → 系统 IPC → `setFontDeleteProtectionInIndex`；按 deleteProtected 策略合并 |
+
+执行器顺序为 localTags → sharedTags → favorite → protection；四个 Map 独立，失败只回填失败域，回填不得覆盖排队中的更新意图。成功后由原队列运行时触发查询失效；renderer 标签乐观权威由 `fontTagStateAuthorityRuntime.ts` 管理。共享写入仍走原锁、后端准入和字段合并，本次未新建第二队列或数据库句柄所有者。
+
+预览门面仍拥有现有索引状态缓存及库壳缓存；DB 由注入的 opener/既有存储生命周期管理。F-P1 复现只替换 DB I/O 和未使用的外部服务，不新建生产 DB。标签复现使用真实身份算法及 hydration，仅替换 SQL 数据与回退准入。两者均无用户字体或数据库依赖。
+
+### 11.3 新增可执行证据
+
+- `npm run diagnostics:decomposition-baseline`：退出 0。真实四域串行执行器、提前解决后三域 gate、首域失败后其他域成功、参数隔离、仅失败域重试、新意图优先、真实乐观标签合并、24 种字段操作排列通过。
+- 两个生产行为变异被拒绝：重试无条件覆盖新意图；共享字段策略退化为全字段 replace。所有权新增镜像 state 变异也被结构基线识别。最终 fixture 加入 IPC 与公开返回清单后定向复跑通过。
+- `npm run baseline:decomposition-observe`：退出 0 表示旧问题仍可复现，不表示正确性通过。F-P1：数据库已写 ok，最终缓存仍返回 missing；F-T1：同 sourceId/path 的两个不同运行时 ID，预期两个都得到 tag，实际首项空、末项有 tag。
+- `node build/diagnostics/check-decomposition-baseline.cjs --probe` 是预期正确性的失败探针；现状应因 F-P1 非零退出。观察入口不使用 diagnostics 前缀，不纳入默认 verify。D-02/D-03 必须将对应观察提升为默认必过断言，并补各自完整失败/晚完成矩阵。
+- F-T1 的重复输入在隔离的兼容路径中可进入函数；当前 merged 索引有规范化路径去重，尚未证明正常生产入口会生成该组合。故将其限定为兼容输入/防御性风险，不能据此断言用户历史收藏或共享标签故障根因已确诊。D-03 仍须核对上游身份契约。
+
+### 11.4 X 矩阵结果及未完成边界
+
+| 用例 | 本次证据/后续任务 |
+| --- | --- |
+| X-01/02/03 | 字段层通过：真实乐观标签与共享字段 merge 保留其他域；多字体持久化、计数和 GUI 尚未覆盖 |
+| X-04 | 四域真实执行器及 24 种字段合并排列通过；不是跨进程端到端测试 |
+| X-05 | 真实执行器拒绝域间乱序，旧 base 的字段级排列通过；独立 IPC 响应/索引通知乱序留 W-03 与后续 D 任务 |
+| X-06 | 本地失败、其余成功、仅本地重试及新意图优先通过；未声称真实 DB 回读通过 |
+| X-07 | 复用 `check-shared-tag-conflicts.cjs`、`check-shared-tag-ops-replay.cjs`；跨根离线/GUI 场景待后续任务 |
+| X-08/09 | 新增基线未扩展 SQL 故障和空标签目录语义；留标签后端/事务任务，不算完成 |
+| X-10 | 复用 `check-font-write-queue-durability.cjs`、`check-library-persistence-order.cjs`；Windows 四域关闭重开实机待验收 |
+| X-11 | 复用 `check-app-root-view-contracts.cjs`、两组 react-composition 控制器门、`check-react-render-performance.cjs`；GUI 留后续 App 任务 |
+| X-12 | F-P1 观察复现，正确性未通过；D-02 修复并转默认门禁 |
+| X-13 | F-T1 仅覆盖 Node 允许回退的 hydration；复用已有后端准入门，Rust 实库和完整重复身份矩阵留 D-03/后端任务 |
+
+全量 `npm run verify`：本轮 TypeScript 与 92/92 诊断通过，退出 0；最终结构清单增强后新增门禁再次通过。Linux 本地 VM 隔离测试，未运行 Windows GUI/原生 SQLite。无生产变更，不重复安装依赖或打包；用户后续仅需开发模式验收，不提供 build:win。
+
+提交：本执行卡随 D-01 原子提交发布，以 `git log -1 --format=%H -- docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` 查询实际 SHA；远端发布后核对同一文件树。回滚使用该 D-01 发布提交的 revert，不重写历史。
+
+Mermaid Chart 已输出真实四域写入关系图。Create State 返回“无 active world model”，未获得项目持久化成功证据；Git、fixture 与任务书为权威交接。
+
+下一项允许进入 W-01：本项基线可重复且未改生产逻辑；不宣称监听/激活故障已修复，不启动 Stage 8，不直接进入 D-04 等大规模迁移。

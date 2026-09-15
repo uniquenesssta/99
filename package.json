@@ -10,6 +10,8 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "diagnostics:decomposition-baseline": "node build/diagnostics/check-decomposition-baseline.cjs",
+    "baseline:decomposition-observe": "node build/diagnostics/check-decomposition-baseline.cjs --observe",
     "setup:dev": "node node_modules/electron/install.js && node node_modules/electron-builder/out/cli/cli.js install-app-deps",
     "dev": "node build/rust/build-core-worker.cjs --optional && node node_modules/electron-vite/bin/electron-vite.js dev",
     "build": "npm run verify && node build/rust/build-core-worker.cjs --required && node build/security/sync-public-keys.cjs && node node_modules/electron-vite/bin/electron-vite.js build && node build/obfuscate-dist.cjs",
