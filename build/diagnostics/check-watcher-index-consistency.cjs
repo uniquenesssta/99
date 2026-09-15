@@ -25,11 +25,11 @@ const fail = code => Object.assign(Error(code), { code })
 async function indexCase(mode, transform = s => s) {
   const folder = path.resolve('/fonts'), file = path.join(folder,'a.ttf')
   const existing = { status:'ok', font:{ id:'a',path:file,favorite:true },cacheKey:'old' }
-  const cache = { entries:{ 'a.ttf':existing } }, writes = [], directoryWrites = []
+  const cache = { entries: mode==='no-cache-missing'?{}:{ 'a.ttf':existing } }, writes = [], directoryWrites = []
   const context = { cache, directoryUpdates:[] }
   const stat = async p => {
     if (p===folder) { if(mode==='offline') throw fail('ENOENT'); return { isDirectory:()=>true, isFile:()=>false,mtimeMs:2 } }
-    if(['ENOENT','ENOTDIR','EACCES','ETIMEDOUT','offline'].includes(mode)) throw fail(mode==='offline'?'ENOENT':mode)
+    if(['ENOENT','ENOTDIR','EACCES','ETIMEDOUT','offline','no-cache-missing','save-throw'].includes(mode)) throw fail(['offline','no-cache-missing','save-throw'].includes(mode)?'ENOENT':mode)
     return { isDirectory:()=>false,isFile:()=>true }
   }
   const runtime = load(indexFile, {
@@ -41,10 +41,10 @@ async function indexCase(mode, transform = s => s) {
     readRootDirectorySignatures:async()=>new Map(),relativeDirectoryPathForRoot:()=>'',
     cacheKeyForRootFile:()=> 'a.ttf',cacheKeyInsideDirectory:()=>true,
     listFontFilesWithDirectoryCache:async (_ctx,errors)=>{ context.directoryUpdates.push({relativePath:''}); if(mode==='partial-list')errors.push({path:folder,message:'EACCES'});return [] },
-    upsertFontIndexEntry:async()=>{ if(mode==='parse-ENOENT')throw fail('ENOENT'); if(mode==='parse')throw Error('metadata'); cache.entries['a.ttf']={...existing,cacheKey:'new'};return existing.font },
+    upsertFontIndexEntry:async(_root,_file,workingCache)=>{ if(mode==='parse-ENOENT')throw fail('ENOENT'); if(mode==='parse')throw Error('metadata'); if(mode!=='unchanged')workingCache.entries['a.ttf']={...existing,cacheKey:'new'};return existing.font },
     fontIndexEntryChanged:(a,b)=>a!==b,fontIndexDeleteRecord:(_root,key)=>({path:file,relativePath:key,id:'a'}),
-    removeFontIndexEntriesForPath:()=>[{path:file,relativePath:'a.ttf',id:'a'}],
-    saveRootIndexSqliteChanges:async(_db,_root,_storage,changed,deleted)=>writes.push(plain({changed,deleted})),
+    removeFontIndexEntriesForPath:()=>mode==='no-cache-missing'?[]:[{path:file,relativePath:'a.ttf',id:'a'}],
+    saveRootIndexSqliteChanges:async(_db,_root,_storage,changed,deleted)=>{writes.push(plain({changed,deleted}));if(mode==='save-throw'){assert(cache.entries['a.ttf'],'uncommitted changes leaked into source cache');throw Error('committed then failed')}},
     saveRootDirectorySignatures:async()=>directoryWrites.push(true),appendStartupLog(){}
   })
   const payload = await runtime.applyWatchedFolderChangesToIndex([{folder,eventType:'rename',fileName:mode.includes('list')?'.':'a.ttf',receivedAt:0}])
@@ -62,10 +62,76 @@ async function deletionCheck(transform = s => s) {
   for(const mode of ['ENOENT','ENOTDIR','complete-list']) {
     const r=await indexCase(mode,transform);assert.equal(r.payload.deletes.length,1,mode);assert.deepEqual(r.remaining,[])
   }
+  const replay=await indexCase('unchanged',transform);assert.equal(replay.payload.upserts.length,1);assert.equal(replay.writes.length,0)
+  const missing=await indexCase('no-cache-missing',transform);assert.equal(missing.payload.deletes.length,1);assert.equal(missing.writes.length,0)
+  await assert.rejects(()=>indexCase('save-throw',transform),e=>e.watcherRecoveryChanges?.[0]?.fileName==='a.ttf')
   const r=await indexCase('changed',transform);assert.equal(r.payload.upserts.length,1);assert.equal(r.writes.length,1)
 }
-async function main(){ await deletionCheck();
+const watcherFile = 'src/main/watcher/folderWatcherRuntime.ts'
+async function recoveryCheck(transform=s=>s) {
+  for(const mode of ['apply','sync','send','errors','permanent','grace','restart']) {
+    let apply=0,sync=0,snapshot=0,sends=0,now=0,scanning=false
+    const timers=new Map(),logs=[],delivered=[],gate=deferred()
+    const r=load(watcherFile,{
+      electron:{BrowserWindow:{getAllWindows:()=>[{isDestroyed:()=>false,webContents:{send(_channel,payload){sends++;if(mode==='send'&&sends===1)throw Error('notify');delivered.push(plain(payload))}}}]}},
+      'node:fs':{promises:{stat:async()=>({isDirectory:()=>true})},watch:()=>({on(){},close(){}})},
+      '../path/cachePath':{normalizePathForCacheCompare:x=>x.toLowerCase()},
+      '../path/startupPathAvailabilityRuntime':{ensureStartupPathRootAvailable:async()=>true}
+    },{Date:class extends Date{static now(){return now}},setTimeout(fn,ms){const token={unref(){}};timers.set(token,{fn,ms});return token},clearTimeout:token=>timers.delete(token)},transform).createFolderWatcherRuntime({
+      startupGraceMs:100,flushDebounceMs:10,closeRuntimeDatabases(){},isIgnoredWatcherPath:()=>false,appendStartupLog:x=>logs.push(x),isScanActive:()=>scanning,
+      watcherChangeBatchLooksUnchanged:async()=>false,
+      applyWatchedFolderChangesToIndex:async changes=>{apply++;if(mode==='restart'&&apply===1)await gate.promise;if(mode==='permanent'||(mode==='apply'&&apply===1))throw Error('read');return {folder:path.resolve('/fonts'),upserts:[{id:'a',path:'/fonts/a.ttf',fileName:'fresh'}],deletes:[],errors:mode==='errors'&&apply===1?[{path:'/fonts/a.ttf',message:'denied'}]:[]}},
+      syncMergedIndexForRootIncremental:async()=>{sync++;if(mode==='sync'&&sync===1)throw Error('merged')},
+      syncMergedIndexForRootSnapshot:async()=>{snapshot++}
+    })
+    const folder=path.resolve('/fonts');await r.startWatchingFolders([folder]);if(mode!=='grace')now=101
+    r.notifyFolderChanged(folder,'rename','a.ttf')
+    if(mode==='grace'){assert.equal(apply,0);assert.equal(timers.size,1);assert([...timers.values()][0].ms>=100);now=101}
+    const tick=async()=>{assert(timers.size>0);const[token,timer]=timers.entries().next().value;timers.delete(token);timer.fn();await drain()}
+    if(mode==='restart') {
+      const task=r.flushPendingFolderChanges();await drain();r.stopFolderWatchers();await r.startWatchingFolders([folder]);now=202;gate.resolve();await task
+      assert.equal(delivered.length,0);assert(timers.size>0)
+    } else await tick()
+    if(!['grace'].includes(mode)) {
+      assert(timers.size>0,mode+' needs bounded recovery')
+      scanning=true;await tick();assert.equal(apply,1)
+      scanning=false;await tick()
+      assert.equal(apply,2,mode)
+      assert.equal(timers.size,0,mode+' must not retry forever')
+      if(mode==='permanent')assert(logs.some(s=>s.includes('recovery exhausted')))
+      else {assert.equal(snapshot,1,mode);assert(delivered.length>0);assert.equal(delivered.at(-1).upserts[0].fileName,'fresh')}
+    } else {assert.equal(apply,1);assert.equal(delivered.length,1)}
+    r.stopFolderWatchers();assert.equal(timers.size,0)
+  }
+}
+const manualFile='src/main/watcher/manual-refresh/manualFolderIndexApplyRuntime.ts'
+async function manualIncompleteCheck(transform=s=>s) {
+  let writes=0,signatures=0
+  const cache={entries:{'a.ttf':{font:{id:'a'}}}}
+  const r=load(manualFile,{
+    '../../rust-core/rustFullMigrationPolicyRuntime':{rustFullMigrationEnabled:()=>false},
+    '../../indexing/scan-orchestrator/rustMetadataFastPathRuntime':{},
+    '../../indexing/scan-orchestrator/rustParseBatchFastPathRuntime':{consumeRustFontParseBatchFastPath:async()=>({remainingJobs:[],consumed:0,errors:0})},
+    './manualFolderRustListingRuntime':{createManualFolderRustListingRuntime:()=>({tryListManualRefreshWithRust:async()=>null})}
+  },{},transform).createManualFolderIndexApplyRuntime({
+    ensureRootScanCacheStorage:async()=>({cachePath:'/index.db',storage:'root'}),
+    appendStartupLog(){},scanWorkerCount:()=>1,runFontParseWorkerPool:async jobs=>{assert.equal(jobs.length,0);return {workerCount:0}},invalidateSharedFontRuntimeCaches(){},isRootIndexDbPath:()=>true,
+    saveRootIndexSqliteChanges:async()=>{writes++}
+  },{
+    makeRootScanCacheContext:()=>({cache,directoryUpdates:[]}),relativeDirectoryPathForRoot:()=>'',cacheKeyInsideDirectory:()=>true,
+    fontIndexDeleteRecord:()=>({path:'/fonts/a.ttf',relativePath:'a.ttf'}),saveRootDirectorySignatures:async()=>{signatures++},
+    listFontFilesWithDirectoryCache:async(_context,errors)=>{errors.push({path:'/fonts',message:'EACCES'});return []}
+  })
+  const result=await r.applyManualFolderRefreshToIndex('/fonts','/fonts')
+  assert.equal(result.payload.deletes.length,0);assert.equal(writes,0);assert.equal(signatures,0);assert(cache.entries['a.ttf'])
+}
+async function main(){ await manualIncompleteCheck();
+  await assert.rejects(()=>manualIncompleteCheck(s=>s.replace('if (payload.errors?.length) break;','')),assert.AssertionError)
+ await recoveryCheck();
+  await assert.rejects(()=>recoveryCheck(s=>s.replaceAll('if (!recovery)', 'if (false)')),assert.AssertionError)
+  await assert.rejects(()=>recoveryCheck(s=>s.replace('if (recovery && options.syncMergedIndexForRootSnapshot)', 'if (false && options.syncMergedIndexForRootSnapshot)')),assert.AssertionError)
+ await deletionCheck();
   await assert.rejects(()=>deletionCheck(s=>s.replace('if (!confirmedMissing) {','if (false) {')),assert.AssertionError)
   await assert.rejects(()=>deletionCheck(s=>s.replace('if (errors.length > errorCount) return false','')),assert.AssertionError)
-console.log('[diagnostics:watcher-index-consistency] stat/parse errors and incomplete listing retain index; confirmed deletes and updates pass') }
+console.log('[diagnostics:watcher-index-consistency] deletion evidence, bounded recovery, grace/restart and safe manual fallback; five mutations rejected') }
 main().catch(e=>{console.error(e);process.exitCode=1})

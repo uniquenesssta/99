@@ -31,6 +31,7 @@ interface FolderWatcherRuntimeOptions {
     payload: FontIndexChangePayload,
     reason: string,
   ) => Promise<void>;
+  syncMergedIndexForRootSnapshot?: (rootPath: string, reason: string) => Promise<void>;
   isScanActive?: () => boolean;
 }
 
@@ -55,6 +56,7 @@ export function createFolderWatcherRuntime(
   let folderWatchersHealthy = false;
   let folderWatcherIgnoreUntil = 0;
   const pendingFolderChanges = new Map<string, PendingFolderChange>();
+  const recoveryBatches = new Map<string, PendingFolderChange[]>();
   let delayedDuringScanLoggedAt = 0;
   let watcherGeneration = 0;
   let flushInFlight: Promise<void> | null = null;
@@ -75,6 +77,7 @@ export function createFolderWatcherRuntime(
     folderWatchers = [];
     currentFolderWatchSignature = "";
     pendingFolderChanges.clear();
+    recoveryBatches.clear();
 
     if (folderWatchTimer) {
       clearTimeout(folderWatchTimer);
@@ -97,12 +100,24 @@ export function createFolderWatcherRuntime(
     }
   }
 
+  function queueRecovery(rootPath: string, changes: PendingFolderChange[], payload?: FontIndexChangePayload): void {
+    const key = normalizePathForCacheCompare(rootPath);
+    if (!currentFolderWatchSignature.split("\n").includes(key)) return;
+    // Re-read current files; never replay a failed resource operation or old mutation payload.
+    const retries = [...(recoveryBatches.get(key) || []), ...changes,
+      ...(payload?.deletes || []).map((item) => ({ folder: rootPath, fileName: item.relativePath, eventType: "rescan", receivedAt: Date.now() }))];
+    recoveryBatches.set(key, Array.from(new Map(retries.map((item) => [item.fileName, { ...item, eventType: "rescan" }])).values()));
+    schedulePendingFolderFlush(Math.max(options.flushDebounceMs, folderWatcherIgnoreUntil - Date.now()));
+  }
+
   async function flushPendingFolderChangesPass(
     generation: number,
   ): Promise<void> {
     const changes = Array.from(pendingFolderChanges.values());
     pendingFolderChanges.clear();
-    if (!changes.length || generation !== watcherGeneration) return;
+    const recovering = Array.from(recoveryBatches.values());
+    recoveryBatches.clear();
+    if ((!changes.length && !recovering.length) || generation !== watcherGeneration) return;
 
     const grouped = new Map<string, PendingFolderChange[]>();
     for (const change of changes) {
@@ -112,11 +127,14 @@ export function createFolderWatcherRuntime(
       grouped.set(key, items);
     }
 
-    for (const group of grouped.values()) {
+    const jobs = [...recovering.map((group) => ({ group, recovery: true })),
+      ...Array.from(grouped.values(), (group) => ({ group, recovery: false }))];
+    for (const { group, recovery } of jobs) {
       if (generation !== watcherGeneration) return;
       const rootPath = resolve(group[0]?.folder || "");
+      let payload: FontIndexChangePayload | undefined;
       try {
-        if (await options.watcherChangeBatchLooksUnchanged(rootPath, group)) {
+        if (!recovery && await options.watcherChangeBatchLooksUnchanged(rootPath, group)) {
           if (generation !== watcherGeneration) return;
           if (options.verboseLogs)
             options.appendStartupLog(
@@ -126,40 +144,38 @@ export function createFolderWatcherRuntime(
         }
 
         if (generation !== watcherGeneration) return;
-        const payload = await options.applyWatchedFolderChangesToIndex(group);
+        payload = await options.applyWatchedFolderChangesToIndex(group);
         if (generation !== watcherGeneration) {
           options.appendStartupLog(
             `font index watcher batch result discarded after watcher restart: ${rootPath}, events=${group.length}`,
           );
+          queueRecovery(rootPath, group, payload);
           return;
         }
-        if (
-          (payload.upserts.length || payload.deletes.length) &&
-          options.syncMergedIndexForRootIncremental
-        ) {
-          try {
-            await options.syncMergedIndexForRootIncremental(
-              rootPath,
-              payload,
-              `watcher:${rootPath}`,
-            );
-          } catch (error) {
-            options.appendStartupLog(
-              `font index watcher merged index sync skipped: ${rootPath}, ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
+        if (recovery && options.syncMergedIndexForRootSnapshot) {
+          await options.syncMergedIndexForRootSnapshot(rootPath, `watcher-recovery:${rootPath}`);
+        } else if ((payload.upserts.length || payload.deletes.length) && options.syncMergedIndexForRootIncremental) {
+          await options.syncMergedIndexForRootIncremental(rootPath, payload, `watcher:${rootPath}`);
         }
         if (generation !== watcherGeneration) {
           options.appendStartupLog(
             `font index watcher notification discarded after watcher restart: ${rootPath}, events=${group.length}`,
           );
+          queueRecovery(rootPath, group, payload);
           return;
         }
         options.appendStartupLog(
           `font index watcher batch applied: ${rootPath}, events=${group.length}, upserts=${payload.upserts.length}, deletes=${payload.deletes.length}, errors=${payload.errors?.length || 0}`,
         );
         sendFontIndexChanged(payload);
+        if (payload.errors?.length) {
+          if (!recovery) queueRecovery(rootPath, group, payload);
+          else options.appendStartupLog(`folder watcher recovery exhausted: ${rootPath}; use manual refresh after resolving errors`);
+        }
       } catch (error) {
+        const hints = error && typeof error === "object" ? (error as { watcherRecoveryChanges?: PendingFolderChange[] }).watcherRecoveryChanges : undefined;
+        if (!recovery) queueRecovery(rootPath, [...group, ...(hints || [])], payload);
+        else options.appendStartupLog(`folder watcher recovery exhausted: ${rootPath}; use manual refresh after resolving errors`);
         options.appendStartupLog(
           `font index watcher batch failed: ${rootPath}, events=${group.length}, ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -171,7 +187,7 @@ export function createFolderWatcherRuntime(
     if (flushInFlight) {
       flushRequested = true;
       await flushInFlight;
-      if (pendingFolderChanges.size > 0 && !flushInFlight) {
+      if ((pendingFolderChanges.size > 0 || recoveryBatches.size > 0) && !flushInFlight) {
         schedulePendingFolderFlush(options.flushDebounceMs);
       }
       return;
@@ -186,7 +202,7 @@ export function createFolderWatcherRuntime(
       if (flushInFlight === task) flushInFlight = null;
       const shouldScheduleAgain =
         generation === watcherGeneration &&
-        (flushRequested || pendingFolderChanges.size > 0);
+        (flushRequested || pendingFolderChanges.size > 0 || recoveryBatches.size > 0);
       flushRequested = false;
       if (shouldScheduleAgain) {
         schedulePendingFolderFlush(options.flushDebounceMs);
@@ -229,9 +245,8 @@ export function createFolderWatcherRuntime(
     if (Date.now() < folderWatcherIgnoreUntil) {
       if (options.verboseLogs)
         options.appendStartupLog(
-          `folder watcher initial event ignored by grace window: ${folder} ${eventType} ${fileName || ""}`,
+          `folder watcher initial event deferred by grace window: ${folder} ${eventType} ${fileName || ""}`,
         );
-      return;
     }
 
     const normalizedFileName = String(fileName || "");
@@ -251,7 +266,7 @@ export function createFolderWatcherRuntime(
       receivedAt: Date.now(),
     });
 
-    schedulePendingFolderFlush(options.flushDebounceMs);
+    schedulePendingFolderFlush(Math.max(options.flushDebounceMs, folderWatcherIgnoreUntil - Date.now()));
   }
 
   async function startWatchingFolders(folders: string[]): Promise<boolean> {
@@ -339,7 +354,7 @@ export function createFolderWatcherRuntime(
 
         folderWatchers.push(watcher);
         options.appendStartupLog(
-          `folder watcher started: ${folder}; initial events ignored for ${options.startupGraceMs}ms`,
+          `folder watcher started: ${folder}; initial events deferred for ${options.startupGraceMs}ms`,
         );
       } catch (error) {
         if (generation !== watcherGeneration) return true;

@@ -192,6 +192,8 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
 
     const storage = await options.ensureRootScanCacheStorage(rootPath)
     const context = options.makeRootScanCacheContext(rootPath, storage)
+    const sourceCache = context.cache
+    context.cache = { ...sourceCache, entries: { ...sourceCache.entries } }
     const directorySignatures = await options.readRootDirectorySignatures(context)
     const changedEntryMap = new Map<string, FontScanCacheEntry>()
     const deletedKeySet = new Set<string>()
@@ -222,16 +224,17 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       const font = await options.upsertFontIndexEntry(rootPath, filePath, context.cache)
       const newEntry = context.cache.entries[key]
       if (options.fontIndexEntryChanged(oldEntry, newEntry)) recordChangedEntry(key, newEntry, font)
+      else if (font && newEntry?.status === 'ok') payload.upserts.push(font)
     }
 
-    async function processDirectory(targetPath: string): Promise<boolean> {
+    async function processDirectory(targetPath: string, force: boolean): Promise<boolean> {
       const relativeDir = options.relativeDirectoryPathForRoot(rootPath, targetPath)
       const currentSignature = await computeWatchedDirectorySignature(targetPath)
       if (!currentSignature) {
         payload.errors?.push({ path: targetPath, message: '目录状态读取不完整，保留现有索引。' })
         return false
       }
-      if (directorySignatureMatches(directorySignatures.get(relativeDir), currentSignature)) {
+      if (!force && directorySignatureMatches(directorySignatures.get(relativeDir), currentSignature)) {
         options.appendStartupLog(
           `font index watcher skipped unchanged directory: ${rootPath} ${relativeDir || '.'}`,
         )
@@ -292,7 +295,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
           throw error
         }
         if (stat.isDirectory()) {
-          const processed = await processDirectory(targetPath)
+          const processed = await processDirectory(targetPath, change.eventType === 'rescan')
           if (processed) processedDirectories.push(options.relativeDirectoryPathForRoot(rootPath, targetPath))
         } else if (stat.isFile() && options.fontExtensions.has(extname(targetPath).toLowerCase())) {
           await processFontFile(targetPath)
@@ -305,6 +308,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
         const removed = options.removeFontIndexEntriesForPath(rootPath, targetPath, context.cache)
         for (const item of removed) recordDelete(item)
         if (!removed.length && options.fontExtensions.has(extname(targetPath).toLowerCase())) {
+          payload.deletes.push({ path: targetPath, relativePath: options.cacheKeyForRootFile(rootPath, targetPath) })
           options.appendStartupLog(
             `index event missing file without cache entry: ${targetPath} ${error instanceof Error ? error.message : String(error)}`,
           )
@@ -312,38 +316,46 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       }
     }
 
-    const changedEntries = Array.from(changedEntryMap.entries())
-    const deletedKeys = Array.from(deletedKeySet)
-    if (changedEntries.length || deletedKeys.length) {
-      if (isRootIndexDbPath(storage.cachePath)) {
-        await options.saveRootIndexSqliteChanges(
-          storage.cachePath,
-          rootPath,
-          storage.storage,
-          changedEntries,
-          deletedKeys,
-        )
-      } else {
-        await options.saveScanCacheFile(
-          storage.cachePath,
-          {
-            version: options.fontScanCacheVersion,
-            entries: context.cache.entries || {},
-          },
-          rootPath,
-          storage.storage,
-        )
-        await options.writeRootCacheManifest(
-          storage.cacheDir,
-          rootPath,
-          storage.storage,
-          Object.keys(context.cache.entries || {}).length,
-          storage.cachePath,
-        )
+    try {
+      const changedEntries = Array.from(changedEntryMap.entries())
+      const deletedKeys = Array.from(deletedKeySet)
+      if (changedEntries.length || deletedKeys.length) {
+        if (isRootIndexDbPath(storage.cachePath)) {
+          await options.saveRootIndexSqliteChanges(
+            storage.cachePath,
+            rootPath,
+            storage.storage,
+            changedEntries,
+            deletedKeys,
+          )
+        } else {
+          await options.saveScanCacheFile(
+            storage.cachePath,
+            {
+              version: options.fontScanCacheVersion,
+              entries: context.cache.entries || {},
+            },
+            rootPath,
+            storage.storage,
+          )
+          await options.writeRootCacheManifest(
+            storage.cacheDir,
+            rootPath,
+            storage.storage,
+            Object.keys(context.cache.entries || {}).length,
+            storage.cachePath,
+          )
+        }
       }
-    }
-    if (context.directoryUpdates.length && !payload.errors?.length) await options.saveRootDirectorySignatures(context)
+      if (context.directoryUpdates.length && !payload.errors?.length) await options.saveRootDirectorySignatures(context)
 
+    } catch (error) {
+      // A writer may commit before reporting a later failure. Retain paths, not old writes.
+      throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
+        watcherRecoveryChanges: payload.deletes.map((item) => ({ folder: rootPath, fileName: item.relativePath, eventType: 'rescan', receivedAt: Date.now() })),
+      })
+    }
+    sourceCache.entries = context.cache.entries
     return payload
   }
 

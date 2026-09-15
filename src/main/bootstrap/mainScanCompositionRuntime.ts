@@ -333,6 +333,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     applyWatchedFolderChangesToIndex:
       watchedFolderIndexRuntime.applyWatchedFolderChangesToIndex,
     syncMergedIndexForRootIncremental,
+    syncMergedIndexForRootSnapshot,
     isScanActive: () => scanFoldersRuntime().isActive(),
   });
 

@@ -390,6 +390,7 @@ export function createManualFolderIndexApplyRuntime(
     }
 
     for (const [key, entry] of Object.entries(context.cache.entries || {})) {
+      if (payload.errors?.length) break;
       if (!cacheKeyInsideDirectory(key, relativeTargetDir)) continue;
       if (seenKeysInTarget.has(key)) continue;
       changedEntryMap.delete(key);
@@ -440,7 +441,7 @@ export function createManualFolderIndexApplyRuntime(
         );
       }
     }
-    await saveRootDirectorySignatures(context);
+    if (!payload.errors?.length) await saveRootDirectorySignatures(context);
 
     invalidateSharedFontRuntimeCaches();
     appendStartupLog(

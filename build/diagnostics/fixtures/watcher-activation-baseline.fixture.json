@@ -11,13 +11,14 @@
         "createFolderWatcherRuntime",
         "stopFolderWatchers",
         "sendFontIndexChanged",
+        "queueRecovery",
         "flushPendingFolderChangesPass",
         "flushPendingFolderChanges",
         "schedulePendingFolderFlush",
         "notifyFolderChanged",
         "startWatchingFolders"
       ],
-      "sha256": "52017f7a43027b5b59ad529605516df48735b87fc4669707dd416eb6cda516eb"
+      "sha256": "6ef5f4c6c9a1a8cf1281321b783647678de5449859fc94e3f1efab1c2abd7d77"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -178,6 +179,11 @@
       "parent": "098ac5b87e1c897b335c2b1f10620926f33e8f11",
       "file": "src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts",
       "reason": "resolved failure rollback and settled query invalidation; existing owner preserved"
+    },
+    {
+      "task": "W-03b",
+      "file": "src/main/watcher/folderWatcherRuntime.ts",
+      "reason": "bounded re-read recovery, snapshot sync, grace deferral; same owner"
     }
   ]
 }
