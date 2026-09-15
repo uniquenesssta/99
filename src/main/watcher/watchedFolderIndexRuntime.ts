@@ -180,6 +180,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
     const first = changes[0]
     const rootPath = resolve(first?.folder || '')
     const payload: FontIndexChangePayload = {
+      source: 'watcher',
       folder: rootPath,
       at: new Date().toISOString(),
       upserts: [],

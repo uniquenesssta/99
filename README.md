@@ -152,3 +152,7 @@ npm run build:win
 - 本次验证：`npm ci`、TypeScript 类型检查、63 项诊断、Electron/Vite 构建及混淆通过。审查环境缺少 Cargo，未完成 Rust worker 与 Windows 安装包的全量重建。
 
 W-03b：监听失败后有界重读并同步根快照；grace 事件保留，旧代次不通知，错误枚举下手动刷新不删除缺项。TypeScript / 94 项诊断通过；Windows 开发模式复验待执行。
+
+W-03c：文件监听与手动文件刷新按来源更新文件信息，保留已有收藏、标签、保护与激活状态；共享元数据更新保持原行为。详见专项任务书 §15，Windows 使用 `npm run dev` 复验，下一项 A-02。
+
+W-03 最终验证：TypeScript、94/94 全量诊断、Electron/Vite 354/1/190 模块通过；自动验证完成，Windows GUI 待回执。

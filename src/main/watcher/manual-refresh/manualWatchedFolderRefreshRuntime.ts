@@ -70,6 +70,7 @@ export function createManualWatchedFolderRefreshRuntime(
         skippedBad = rebuilt.stats?.skippedBad || 0;
         errors = rebuilt.errors.length;
         sendFontIndexChanged({
+          source: "watcher",
           folder: bestRoot,
           at: new Date().toISOString(),
           upserts: rebuilt.fonts || [],
@@ -99,7 +100,7 @@ export function createManualWatchedFolderRefreshRuntime(
         workerCount = refreshed.workerCount;
         mode = upserts || deletes || errors ? "incremental" : "cache-read";
         mergedIndexRefreshPayload = refreshed.payload;
-        sendFontIndexChanged(refreshed.payload);
+        sendFontIndexChanged({ ...refreshed.payload, source: "watcher" });
       }
 
       if (mode === "repair-rebuild") {

@@ -2,11 +2,30 @@ import type { FontIndexChangePayload,FontItem,LibraryState } from '@shared/types
 import { buildFolderTreeFromCachedFonts } from './libraryFolderTreeRuntime'
 import { normalizeFolderPathForCompare,normalizeFontPathForCompare } from './libraryNormalizeBase'
 import { pruneFontFolderIds } from './libraryNormalizeStateRuntime'
-import { ensureLibraryTagNamesContainFontTags,mergeFontWithTagAuthority } from '../fontTagStateAuthorityRuntime'
+import { ensureLibraryTagNamesContainFontTags,mergeFontTagsFromIncoming,mergeFontWithTagAuthority } from '../fontTagStateAuthorityRuntime'
 import { applyEarlyVisibleFontIndexChangeToLibrary,isEarlyVisibleOnlyFontIndexChangePayload } from './libraryEarlyVisibleIndexChangeRuntime'
 
-export function mergeIncrementalIndexedFont(oldFont: FontItem | undefined, nextFont: FontItem): FontItem {
+export function mergeIncrementalIndexedFont(oldFont: FontItem | undefined, nextFont: FontItem, source?: FontIndexChangePayload['source']): FontItem {
   if (!oldFont) return mergeFontWithTagAuthority(undefined, nextFont)
+  // Physical-file snapshots cannot acknowledge user metadata or activation changes.
+  if (source === 'watcher') {
+    return {
+      ...nextFont,
+      ...mergeFontTagsFromIncoming(oldFont, oldFont),
+      favorite: oldFont.favorite,
+      collectionIds: oldFont.collectionIds,
+      systemInstalled: oldFont.systemInstalled,
+      systemInstallMatches: oldFont.systemInstallMatches,
+      installStatusKnown: oldFont.installStatusKnown,
+      active: oldFont.active,
+      activeSince: oldFont.activeSince,
+      managedInstallPath: oldFont.managedInstallPath,
+      managedRegistryName: oldFont.managedRegistryName,
+      deleteProtected: oldFont.deleteProtected,
+      previewDisabled: oldFont.previewDisabled || nextFont.previewDisabled,
+      previewError: oldFont.previewError || nextFont.previewError
+    }
+  }
   return {
     ...mergeFontWithTagAuthority(oldFont, nextFont),
     favorite: !!nextFont.favorite,
@@ -61,7 +80,7 @@ export function applyFontIndexChangeToLibrary(state: LibraryState, payload: Font
       removedIds.add(oldId)
     }
 
-    const merged = mergeIncrementalIndexedFont(oldFont, font)
+    const merged = mergeIncrementalIndexedFont(oldFont, font, payload.source)
     nextFonts[merged.id] = merged
     upsertedFonts.push(merged)
   }

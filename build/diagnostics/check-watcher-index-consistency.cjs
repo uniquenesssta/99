@@ -65,7 +65,7 @@ async function deletionCheck(transform = s => s) {
   const replay=await indexCase('unchanged',transform);assert.equal(replay.payload.upserts.length,1);assert.equal(replay.writes.length,0)
   const missing=await indexCase('no-cache-missing',transform);assert.equal(missing.payload.deletes.length,1);assert.equal(missing.writes.length,0)
   await assert.rejects(()=>indexCase('save-throw',transform),e=>e.watcherRecoveryChanges?.[0]?.fileName==='a.ttf')
-  const r=await indexCase('changed',transform);assert.equal(r.payload.upserts.length,1);assert.equal(r.writes.length,1)
+  const r=await indexCase('changed',transform);assert.equal(r.payload.source,'watcher');assert.equal(r.payload.upserts.length,1);assert.equal(r.writes.length,1)
 }
 const watcherFile = 'src/main/watcher/folderWatcherRuntime.ts'
 async function recoveryCheck(transform=s=>s) {
@@ -125,7 +125,30 @@ async function manualIncompleteCheck(transform=s=>s) {
   const result=await r.applyManualFolderRefreshToIndex('/fonts','/fonts')
   assert.equal(result.payload.deletes.length,0);assert.equal(writes,0);assert.equal(signatures,0);assert(cache.entries['a.ttf'])
 }
-async function main(){ await manualIncompleteCheck();
+const rendererFile='src/renderer/src/library-normalize/libraryIndexChangeRuntime.ts'
+function authorityCheck(transform=s=>s) {
+  const r=load(rendererFile,{
+    './libraryFolderTreeRuntime':{buildFolderTreeFromCachedFonts:()=>({nodes:[]})},
+    './libraryNormalizeStateRuntime':{pruneFontFolderIds:ids=>ids},
+    './libraryNormalizeBase':{normalizeFolderPathForCompare:p=>p.toLowerCase(),normalizeFontPathForCompare:p=>p.toLowerCase()}
+  },{},transform)
+  for(const active of [false,true]) {
+    const old={id:'a',path:'/fonts/a.ttf',family:'old',favorite:active,deleteProtected:active,active,activeSince:active?'today':undefined,managedInstallPath:active?'managed':undefined,managedRegistryName:active?'reg':undefined,systemInstalled:active,systemInstallMatches:active?['system']:[],installStatusKnown:true,collectionIds:['c'],localTagNames:['local'],tagNames:['shared'],__localTagRevision:30,__sharedTagRevision:40}
+    const incoming={...old,family:'new',favorite:!active,deleteProtected:!active,active:!active,activeSince:'stale',managedInstallPath:'stale',managedRegistryName:'stale',systemInstalled:!active,systemInstallMatches:[],installStatusKnown:false,collectionIds:[],localTagNames:[],tagNames:[],__localTagRevision:0,__sharedTagRevision:0}
+    const other={id:'b',path:'/fonts/b.ttf',favorite:true}
+    const state={folders:['/fonts'],fonts:{a:old,b:other},tags:['shared'],localTags:['local']}
+    const result=r.applyFontIndexChangeToLibrary(state,{folder:'/fonts',source:'watcher',upserts:[incoming],deletes:[]})
+    const font=result.library.fonts.a
+    for(const key of ['favorite','deleteProtected','active','activeSince','managedInstallPath','managedRegistryName','systemInstalled','systemInstallMatches','installStatusKnown','collectionIds','localTagNames','tagNames','__localTagRevision','__sharedTagRevision'])assert.deepEqual(plain([font[key]]),plain([old[key]]),key)
+    assert.equal(font.family,'new');assert.equal(result.library.fonts.b,other)
+    const shared=r.mergeIncrementalIndexedFont(old,{...incoming,tagNames:['updated']},'shared-metadata')
+    assert.equal(shared.favorite,!active);assert.deepEqual(plain(shared.tagNames),['updated'])
+    const legacy=r.mergeIncrementalIndexedFont(old,incoming);assert.equal(legacy.active,true)
+    assert.equal(r.mergeIncrementalIndexedFont(undefined,incoming,'watcher').favorite,!active)
+  }
+}
+async function main(){ authorityCheck();
+  assert.throws(()=>authorityCheck(s=>s.replace("source === 'watcher'", "source === 'never'")),assert.AssertionError); await manualIncompleteCheck();
   await assert.rejects(()=>manualIncompleteCheck(s=>s.replace('if (payload.errors?.length) break;','')),assert.AssertionError)
  await recoveryCheck();
   await assert.rejects(()=>recoveryCheck(s=>s.replaceAll('if (!recovery)', 'if (false)')),assert.AssertionError)
@@ -133,5 +156,5 @@ async function main(){ await manualIncompleteCheck();
  await deletionCheck();
   await assert.rejects(()=>deletionCheck(s=>s.replace('if (!confirmedMissing) {','if (false) {')),assert.AssertionError)
   await assert.rejects(()=>deletionCheck(s=>s.replace('if (errors.length > errorCount) return false','')),assert.AssertionError)
-console.log('[diagnostics:watcher-index-consistency] deletion evidence, bounded recovery, grace/restart and safe manual fallback; five mutations rejected') }
+console.log('[diagnostics:watcher-index-consistency] deletion evidence, bounded recovery, grace/restart and safe manual fallback; source-scoped field authority; six mutations rejected') }
 main().catch(e=>{console.error(e);process.exitCode=1})
