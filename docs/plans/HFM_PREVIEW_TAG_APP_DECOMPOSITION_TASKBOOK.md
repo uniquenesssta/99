@@ -351,7 +351,7 @@ npm run dev
 | 任务 | 状态 | 提交 | 自动验证 | 开发模式/遗留 |
 | --- | --- | --- | --- | --- |
 | D-01 | 完成基线（未修复生产故障） | 本节同一提交 | verify 92/92；独立观察 2 项 | 无生产变更；下一项 W-01 |
-| D-02 | 未开始 | — | — | — |
+| D-02 | 自动验证通过待实机 | §18 同一提交 | typecheck / 97项 / 三端构建通过 | Windows开发模式待复验 |
 | D-03 | 未开始 | — | — | — |
 | D-04 | 未开始 | — | — | — |
 | D-05 | 未开始 | — | — | — |
@@ -870,3 +870,25 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 `npm run verify` 退出0，TypeScript与96/96诊断通过；Electron/Vite354/1/191模块通过；git diff --check通过。新增A-02四项变异、原user-intent四项、W/A十项与其他既有门保持。范围16文件（6生产、7诊断/fixture、package及README/任务书），不含构建输出与依赖目录。Git/任务书为权威交接；Create State返回无active world model，未取得本项目级保存确认。Mermaid已更新实际链路。
 
 回滚本轮提交即可恢复此前dc0fe44行为，数据库格式无变化；R1/R2实际体验、折叠侧栏、Windows真实退出/启动资源清理必须取得回执后才可标记A-02完整通过。本轮不启动后续D拆分或Stage8。
+
+## 18. D-02 执行卡
+
+- 状态：自动验证通过待实机；基线 `f46dd010001975f9deda0e920ddaf603af8681e7`，分支 `stage/09-preview-tags-app`。
+- 用户反馈 A-02 暂时 OK；不替代尚未执行的 Windows 完整矩阵。下一任务 D-03，本轮不合并。
+- 精确白名单：`src/main/preview/runtime/previewCacheStorageRuntime.ts`（唯一生产文件，提交后失效）；`build/diagnostics/check-preview-index-commit.cjs`（真实存储行为与变异）；`build/diagnostics/check-decomposition-baseline.cjs`（提升 F-P1、复用加载器）；`build/diagnostics/fixtures/decomposition-baseline.fixture.json`（仅预览文件指纹）；`package.json`（新增门禁）；`README.md`；本任务书。
+- 类型：故障修复，不搬模块；readStatusCache/InFlight/Generation 所有者和公开接口不变。
+- 基线证据：`--observe` F-P1 expected=ok、actual=missing；F-T1 仍复现，留 D-03。
+- 验收：local/root、写/删、操作前/中/后读取、反向完成、失败重试、超时后实际完成、关闭次数和真实失效变异；对应 X-12。X-01～X-11、X-13 不扩大完成声明。
+
+### 修复与证据
+
+- 仅在原索引所有者内修改写/删：开始时失效同 previewKey 的所有输出路径；Node 在 SQL 调用 finally 中失效，早于共享 presence 的异步维护；Rust 在真正 worker Promise 的 finally 中失效，独立于外层 deadline 返回。
+- 复用原 generation/in-flight 隔离，不新增状态副本，不修改接口、数据库 schema、TTL/容量、Rust 回退准入或共享 presence 策略。
+- 基线 F-P1 missing → 修复后 ok，已提升到默认 decomposition 门；`--observe` 仍明确 F-T1 未修复，`--probe` 仍会因 F-T1 失败，不能用它宣称 D-03 已通过。
+- 新门真实加载生产存储模块和 ioDeadline 实现，仅控制外部 I/O。覆盖三后端写删前/中/后读，读请求在操作前或操作中开始并反向完成，真实100ms超时后的成功及拒绝、失败重试、Rust null 回退、DB初始化失败及close次数、presence失败、输出路径变更。三个变异分别移除Rust完成失效、Node提交失效、读generation保护，均被拒绝。
+- 限制：测试使用受控 DB/worker I/O，不等于真实 Windows SQLite/Rust 或共享盘验收；超时不保证底层未提交，也不提供旧调用者返回值的追溯修改，只保证其不污染新缓存。
+- Windows沿用 `npm run dev`，检查快速滚动/筛选/详情切换及预览生成后再次进入；不要求打安装包。A-02实机矩阵缺口继承。
+- 提交与回滚：本节与生产修复同一原子提交；`git log -1 --format=%H -- build/diagnostics/check-preview-index-commit.cjs` 定位提交，按该SHA执行revert，不改写历史。下一项 D-03。
+
+- 自动验证：`npm run verify` 退出0（typecheck、97/97）；Vite 354/1/191 模块构建退出0；仅七个白名单文件。冻结基线只更新 previewCacheStorageRuntime 的 tokenHash，其余所有权/公开面未变。Mermaid 已记录实际链路。
+- Create State 返回无 active world model，未取得项目级保存确认；Git、README与本执行卡为交接依据。

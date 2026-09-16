@@ -20,7 +20,7 @@ function load(file, mocks = {}, transform = x => x) {
     if (id.startsWith('node:')) return require(id)
     if (id === './fontUserIntentRuntime') return load('src/renderer/src/fontUserIntentRuntime.ts')
     throw new Error(`Unmocked dependency: ${file} -> ${id}`)
-  }, console, Date, Map, Set, process }, { filename: file })
+  }, console, Date, Map, Set, process, setTimeout, clearTimeout }, { filename: file })
   return exports
 }
 function inventory(file, source = read(file)) {
@@ -173,11 +173,12 @@ async function main() {
     const results = { 'F-P1': await observePreview(), 'F-T1': await observeTags() }
     for (const [id, result] of Object.entries(results)) {
       console.log(id, JSON.stringify(result))
-      if (process.argv.includes('--probe')) assert.deepEqual(result.actual, result.expected, id)
+      if (id === 'F-P1' || process.argv.includes('--probe')) assert.deepEqual(result.actual, result.expected, id)
       else assert.notDeepEqual(result.actual, result.expected, `${id} no longer reproduces; promote to correctness gate`)
     }
     return
   }
+  const preview = await observePreview(); assert.equal(preview.actual, preview.expected, "F-P1");
   checkInventory(); await queueCheck(); authorityCheck(); fieldPermutationCheck()
   assert.throws(() => fieldPermutationCheck(s => s.replace("const policy = options.policy || 'replace'", "const policy = 'replace'")), assert.AssertionError)
   const mutant = source => {
@@ -188,4 +189,5 @@ async function main() {
   await assert.rejects(() => queueCheck(mutant), assert.AssertionError)
   console.log('[diagnostics:decomposition-baseline] ownership/token inventory LF/CRLF, real serial executor, domain arguments, retry isolation, newer intent, tag authority, 24 field permutations, two mutations rejected')
 }
-main().catch(error => { console.error(error); process.exitCode = 1 })
+module.exports = { load, inventory, observePreview };
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })

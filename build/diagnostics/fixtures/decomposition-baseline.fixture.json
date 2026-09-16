@@ -51,7 +51,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "d4c6a9603302c496519ba5022e29da1286ad30dea50b2320914719f1fdbd284e"
+      "tokenHash": "ca1d82481c3229830e28d31c057d6777fd7ddf2479e38ee23f1862fe55a7fde5"
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [

@@ -572,7 +572,7 @@ export function createPreviewCacheStorageRuntime(
       sourcePath?: string;
     },
   ): Promise<void> {
-    forgetReadStatus(storage, previewKey, data.outputPath);
+    forgetReadStatus(storage, previewKey);
     if (
       storage.storage === "root" &&
       storage.rootPath &&
@@ -609,12 +609,18 @@ export function createPreviewCacheStorageRuntime(
       const applyResult = await runStoragePreviewCacheIo(
         storage,
         `preview-cache-apply:${storage.rootPath || rustDbPath}`,
-        () =>
-          options.runRustPreviewCacheApply!({
-            dbPath: rustDbPath,
-            schemaVersion: options.previewSqliteSchemaVersion,
-            rows: [row],
-          }),
+        async () => {
+          try {
+            return await options.runRustPreviewCacheApply!({
+              dbPath: rustDbPath,
+              schemaVersion: options.previewSqliteSchemaVersion,
+              rows: [row],
+            });
+          } finally {
+            // A deadline does not cancel the worker; invalidate at actual settlement.
+            forgetReadStatus(storage, previewKey);
+          }
+        },
       );
       if (!applyResult.ok) return;
       if (applyResult.value) {
@@ -629,7 +635,11 @@ export function createPreviewCacheStorageRuntime(
 
     const { db, close } = await openPreviewIndexDb(storage);
     try {
-      options.upsertPreviewCacheRows(db, [row]);
+      try {
+        options.upsertPreviewCacheRows(db, [row]);
+      } finally {
+        forgetReadStatus(storage, previewKey);
+      }
       await rememberSharedPresence(
         storage,
         previewKey,
@@ -694,12 +704,18 @@ export function createPreviewCacheStorageRuntime(
       const deleteResult = await runStoragePreviewCacheIo(
         storage,
         `preview-cache-delete:${storage.rootPath || rustDbPath}`,
-        () =>
-          options.runRustPreviewCacheDelete!({
-            dbPath: rustDbPath,
-            schemaVersion: options.previewSqliteSchemaVersion,
-            keys: [previewKey],
-          }),
+        async () => {
+          try {
+            return await options.runRustPreviewCacheDelete!({
+              dbPath: rustDbPath,
+              schemaVersion: options.previewSqliteSchemaVersion,
+              keys: [previewKey],
+            });
+          } finally {
+            // A deadline does not cancel the worker; invalidate at actual settlement.
+            forgetReadStatus(storage, previewKey);
+          }
+        },
       );
       if (!deleteResult.ok) return;
       if (deleteResult.value) {
@@ -710,9 +726,13 @@ export function createPreviewCacheStorageRuntime(
 
     const { db, close } = await openPreviewIndexDb(storage);
     try {
-      db.prepare("DELETE FROM preview_cache WHERE preview_key = ?").run(
-        previewKey,
-      );
+      try {
+        db.prepare("DELETE FROM preview_cache WHERE preview_key = ?").run(
+          previewKey,
+        );
+      } finally {
+        forgetReadStatus(storage, previewKey);
+      }
       await forgetSharedPresence(storage, previewKey);
     } finally {
       if (close) options.closeSqliteDb(db);
