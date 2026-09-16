@@ -255,6 +255,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
     id => {
       if (!id.startsWith('.')) return localRequire(id)
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
+      if (target === 'src/main/logging/operationTraceContext') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       const core = 'src/main/rust-core/'
       if (target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime') {
         return loadTypeScriptModule(target + '.ts', localRequire)

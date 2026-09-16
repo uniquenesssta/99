@@ -1,3 +1,5 @@
+import { logOperation } from '../logging/operationTraceContext'
+import type { OperationTraceEvent } from '../../shared/operationTrace'
 export type RendererPerformanceTracePayload = {
   source?: string;
   kind?: string;
@@ -196,6 +198,13 @@ export function createRendererInteractionRuntime(
   const reportPerformanceEvent = (payload: RendererPerformanceTracePayload): {
     ok: boolean;
   } => {
+    if (payload?.kind === 'operation-chain') {
+      try {
+        const encoded = (payload.details as { event?: unknown } | undefined)?.event
+        if (typeof encoded === 'string' && encoded.length <= 8192) logOperation(JSON.parse(encoded) as OperationTraceEvent, options.appendLog)
+      } catch { /* Diagnostic input must not affect user activity or business work. */ }
+      return { ok: true }
+    }
     const durationMs = Math.round(Number(payload?.durationMs || 0));
     const source = String(payload?.source || "renderer").slice(0, 40);
     const kind = String(payload?.kind || "event").slice(0, 60);

@@ -15,6 +15,7 @@ export function normalizeSharedMetadataMutationStateSignal(
   const hasChangedRows = normalizedChangedIds.length > 0
   const sharedMetadataChanged = signal?.sharedMetadataChanged ?? hasChangedRows
   return {
+    ...(signal?.trace ? { trace: signal.trace } : {}),
     mutationKind: kind,
     dbPath: signal?.dbPath,
     rootPath: signal?.rootPath || fallbackRoot,

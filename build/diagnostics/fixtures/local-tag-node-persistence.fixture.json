@@ -25,7 +25,7 @@
     "src/main/library/runtime/localFontTagMutationEffectsRuntime.ts": {
       "knownTagLifecycle": "f259278890543ab0920d2c39b7b98dd6571a9e5d5b15e772be9126d00f94782d",
       "logKnownLocalTagLifecycle": "f8df94aa34a39759f4ffb05af085d9e99c0f54486f4dbbd2940ba39644fdf5a9",
-      "emitLocalTagsMutationStateSignal": "4762eba34f4255c0f49f33d72057367cadb9adf6863915c1dc9292b042f17f85",
+      "emitLocalTagsMutationStateSignal": "f1b990866dfdd158f2552c04f119c297cd0ca9cf6a9e0c956f393207860389a1",
       "nodeLocalTagsMutationProtocol": "043ff01cff1a86580c72257af7d64565e554a7349379205cfeb5b0e372853855"
     }
   },

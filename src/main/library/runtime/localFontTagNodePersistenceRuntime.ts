@@ -1,3 +1,4 @@
+import { logOperation } from '../../logging/operationTraceContext'
 import type { FontItem, FontTagBatchItem } from "../../../shared/types";
 import type { SqliteDb } from "./libraryRuntimeTypes";
 import { localTagFontIdAliases, localTagFontPath, localTagFontStorageId } from "./localFontTagIdentityRuntime";
@@ -196,7 +197,9 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
         retainedEmptyTags = retainedEmptyLocalTags(previousBoundTags, nextBoundTags, knownTags);
         saveKnownLocalTags(db, knownTags);
       });
+      logOperation({ stage: 'backend-start', backend: 'node' });
       tx();
+      logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'local-tag-transaction' });
       return { previousKnownTags, knownTags, retainedEmptyTags };
     }
 
@@ -224,8 +227,11 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
           saveKnownLocalTags(db, knownTags);
         });
 
-        tx();
+        logOperation({ stage: 'backend-start', backend: 'node' });
+      tx();
+      logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'local-tag-transaction' });
       } catch (error) {
+        logOperation({ stage: 'backend-result', outcome: 'unknown', backend: 'node', reason: 'node-transaction-failed' });
         const message = error instanceof Error ? error.message : String(error);
         for (const entry of items) {
           failed.push({
@@ -255,9 +261,12 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
           knownTags = previousKnownTags.filter((tag) => tag !== tagName);
           saveKnownLocalTags(db, knownTags);
         });
-        tx();
+        logOperation({ stage: 'backend-start', backend: 'node' });
+      tx();
+      logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'local-tag-transaction' });
         updatedIds.push(...Array.from(new Set(rows.map((item) => item.font_id || item.font_path || '').filter(Boolean))));
       } catch (error) {
+        logOperation({ stage: 'backend-result', outcome: 'unknown', backend: 'node', reason: 'node-transaction-failed' });
         const message = error instanceof Error ? error.message : String(error);
         return { ok: false as const, message };
       }

@@ -62,6 +62,7 @@ export interface FontIndexChangePayload {
 
 
 export interface FontTagMutationStateSignalPayload {
+  trace?: import('../operationTrace').OperationTrace
   scope: 'local' | 'shared'
   mutationKind: string
   changedIds: string[]

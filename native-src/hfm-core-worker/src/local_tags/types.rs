@@ -68,6 +68,8 @@ pub struct LocalTagsTimings {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalTagsMutationStateSignal {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<serde_json::Value>,
     pub mutation_kind: String,
     pub db_path: String,
     pub changed_ids: Vec<String>,

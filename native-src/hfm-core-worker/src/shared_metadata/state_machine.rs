@@ -48,6 +48,7 @@ struct TagTarget {
 pub fn apply_shared_metadata_state_machine(config: &SharedMetadataCommandConfig) -> Result<String, String> {
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
+    let mut trace = crate::operation_trace::OperationTrace::from_input(&input);
     let payload: SharedMetadataApplyPayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
     if let Some(parent) = Path::new(&payload.db_path).parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -166,6 +167,7 @@ pub fn apply_shared_metadata_state_machine(config: &SharedMetadataCommandConfig)
         }
     }
     tx.commit().map_err(|error| error.to_string())?;
+    trace.committed();
     set_meta(&conn, "updatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
     set_meta(&conn, "writerHost", &payload.updated_by).map_err(|error| error.to_string())?;
     if !payload.root_path.trim().is_empty() {
@@ -180,7 +182,7 @@ pub fn apply_shared_metadata_state_machine(config: &SharedMetadataCommandConfig)
         elapsed: started_at.elapsed().as_millis(),
         rows: payload.rows.len(),
     };
-    let state_signal = mutation_state_signal(
+    let mut state_signal = mutation_state_signal(
         "apply",
         &payload.db_path,
         &payload.root_path,
@@ -188,6 +190,7 @@ pub fn apply_shared_metadata_state_machine(config: &SharedMetadataCommandConfig)
         &changed_ids,
         &signature,
     );
+    state_signal.trace = trace.context.clone();
     let mutation_protocol = tag_mutation_protocol_result(
         "--shared-metadata-apply",
         "sharedMetadata",
@@ -218,18 +221,20 @@ pub fn apply_shared_metadata_state_machine(config: &SharedMetadataCommandConfig)
         timings,
         worker_mode: "rust-shared-metadata-apply".to_string(),
     };
-    serde_json::to_string(&result).map_err(|error| error.to_string())
+    trace.finish(serde_json::to_string(&result).map_err(|error| error.to_string()))
 }
 
 pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandConfig) -> Result<String, String> {
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
+    let mut trace = crate::operation_trace::OperationTrace::from_input(&input);
     let payload: SharedMetadataRemoveTagPayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
     let tag_name = payload.tag_name.trim().to_string();
     if tag_name.is_empty() {
         let signature = "metadata:none".to_string();
         let timings = SharedMetadataTimings { elapsed: started_at.elapsed().as_millis(), rows: 0 };
-        let state_signal = mutation_state_signal("removeTag", &payload.db_path, &payload.root_path, &payload.updated_at, &[], &signature);
+        let mut state_signal = mutation_state_signal("removeTag", &payload.db_path, &payload.root_path, &payload.updated_at, &[], &signature);
+        state_signal.trace = trace.context.clone();
         let mutation_protocol = tag_mutation_protocol_result(
             "--shared-metadata-remove-tag",
             "sharedMetadata",
@@ -259,7 +264,7 @@ pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandCo
             timings,
             worker_mode: "rust-shared-metadata-remove-tag".to_string(),
         };
-        return serde_json::to_string(&result).map_err(|error| error.to_string());
+        return trace.finish(serde_json::to_string(&result).map_err(|error| error.to_string()));
     }
 
     if let Some(parent) = Path::new(&payload.db_path).parent() {
@@ -271,7 +276,8 @@ pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandCo
     if targets.is_empty() {
         let signature = shared_metadata_signature_for_conn(&conn).map_err(|error| error.to_string())?;
         let timings = SharedMetadataTimings { elapsed: started_at.elapsed().as_millis(), rows: 0 };
-        let state_signal = mutation_state_signal("removeTag", &payload.db_path, &payload.root_path, &payload.updated_at, &[], &signature);
+        let mut state_signal = mutation_state_signal("removeTag", &payload.db_path, &payload.root_path, &payload.updated_at, &[], &signature);
+        state_signal.trace = trace.context.clone();
         let mutation_protocol = tag_mutation_protocol_result(
             "--shared-metadata-remove-tag",
             "sharedMetadata",
@@ -301,7 +307,7 @@ pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandCo
             timings,
             worker_mode: "rust-shared-metadata-remove-tag".to_string(),
         };
-        return serde_json::to_string(&result).map_err(|error| error.to_string());
+        return trace.finish(serde_json::to_string(&result).map_err(|error| error.to_string()));
     }
 
     let tx = conn.transaction().map_err(|error| error.to_string())?;
@@ -354,6 +360,7 @@ pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandCo
         }
     }
     tx.commit().map_err(|error| error.to_string())?;
+    trace.committed();
     set_meta(&conn, "updatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
     set_meta(&conn, "writerHost", &payload.updated_by).map_err(|error| error.to_string())?;
     if !payload.root_path.trim().is_empty() {
@@ -369,7 +376,8 @@ pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandCo
         elapsed: started_at.elapsed().as_millis(),
         rows: targets.len(),
     };
-    let state_signal = mutation_state_signal("removeTag", &payload.db_path, &payload.root_path, &payload.updated_at, &updated_ids, &signature);
+    let mut state_signal = mutation_state_signal("removeTag", &payload.db_path, &payload.root_path, &payload.updated_at, &updated_ids, &signature);
+    state_signal.trace = trace.context.clone();
     let mutation_protocol = tag_mutation_protocol_result(
         "--shared-metadata-remove-tag",
         "sharedMetadata",
@@ -399,7 +407,7 @@ pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandCo
         timings,
         worker_mode: "rust-shared-metadata-remove-tag".to_string(),
     };
-    serde_json::to_string(&result).map_err(|error| error.to_string())
+    trace.finish(serde_json::to_string(&result).map_err(|error| error.to_string()))
 }
 
 fn find_targets(conn: &Connection, tag_name: &str) -> rusqlite::Result<Vec<TagTarget>> {
@@ -600,6 +608,7 @@ fn mutation_state_signal(
 ) -> SharedMetadataMutationStateSignal {
     let changed = !changed_ids.is_empty();
     SharedMetadataMutationStateSignal {
+        trace: None,
         mutation_kind: mutation_kind.to_string(),
         db_path: db_path.to_string(),
         root_path: root_path.to_string(),

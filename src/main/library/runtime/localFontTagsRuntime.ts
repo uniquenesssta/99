@@ -54,6 +54,7 @@ export type RustLocalTagsDeleteTagInput = {
 }
 
 export type RustLocalTagsMutationStateSignal = {
+  trace?: import('../../../shared/operationTrace').OperationTrace
   mutationKind?: string
   dbPath?: string
   changedIds?: string[]

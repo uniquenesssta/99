@@ -1,3 +1,4 @@
+import { trackFontWrite } from './fontOperationTrace'
 import type { FontItem } from '@shared/types'
 import type { HfmApi } from '../../preload'
 import type { QueuedFontWriteState } from './appTypes'
@@ -179,19 +180,19 @@ export function createRendererFontWriteQueueRuntime(
     clearTimer,
     scheduleFlush,
     queueLocalTagsWrite: (item, tagNames) => {
-      options.queueRef.current.localTags.set(item.id, { item: { ...item, localTagNames: tagNames }, tagNames })
+      options.queueRef.current.localTags.set(item.id, trackFontWrite({ item: { ...item, localTagNames: tagNames }, tagNames }, 'localTags', options.queueRef.current.localTags.get(item.id)))
       void flush('local-tags-immediate')
     },
     queueSharedTagsWrite: (item, tagNames) => {
-      options.queueRef.current.sharedTags.set(item.id, { item: { ...item, tagNames }, tagNames })
+      options.queueRef.current.sharedTags.set(item.id, trackFontWrite({ item: { ...item, tagNames }, tagNames }, 'sharedTags', options.queueRef.current.sharedTags.get(item.id)))
       void flush('shared-tags-immediate')
     },
     queueFavoriteWrite: (font, favorite) => {
-      options.queueRef.current.favorite.set(font.id, { font: { ...font, favorite }, favorite })
+      options.queueRef.current.favorite.set(font.id, trackFontWrite({ font: { ...font, favorite }, favorite }, 'favorite', options.queueRef.current.favorite.get(font.id)))
       void flush('favorite-immediate')
     },
     queueProtectionWrite: (font, protect) => {
-      options.queueRef.current.protection.set(font.id, { font: { ...font, deleteProtected: protect }, protect })
+      options.queueRef.current.protection.set(font.id, trackFontWrite({ font: { ...font, deleteProtected: protect }, protect }, 'protection', options.queueRef.current.protection.get(font.id)))
       scheduleFlush()
     },
     flush

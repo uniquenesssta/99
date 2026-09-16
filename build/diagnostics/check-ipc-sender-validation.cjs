@@ -254,7 +254,7 @@ function checkRegistrationWiring(overrides = new Map()) {
   const traced = registrations.filter((registration) => registration.relativePath === tracePath)
   assert.equal(traced.length, 1, 'business IPC must have one traced registration boundary')
   assert.equal(traced[0].channel, '<dynamic>')
-  assert(firstStatement(traced[0]).includes('assertTrustedIpcSender(event, channel, runtime.appendLog)'), 'business IPC validation is not first')
+  assert(firstStatement(traced[0]).includes('assertTrustedIpcSender(event, channel, append)'), 'business IPC validation is not first')
 }
 
 function main() {

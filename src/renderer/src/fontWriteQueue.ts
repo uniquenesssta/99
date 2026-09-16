@@ -1,3 +1,5 @@
+import { dispatchFontWrites, settleFontWrites, cancelFontWrite } from './fontOperationTrace'
+import type { OperationTrace } from '../../shared/operationTrace'
 import { settleFavoriteIntent } from './fontUserIntentRuntime'
 import type { FontItem, FontProtectionResult, FontTagUpdateResult } from '@shared/types'
 import type { HfmApi } from '../../preload'
@@ -31,15 +33,19 @@ export function mergeQueuedFontWritesPreservingNewer(
 ): void {
   for (const [id, entry] of retryQueue.localTags) {
     if (!target.localTags.has(id)) target.localTags.set(id, entry)
+    else cancelFontWrite(entry, 'newer-queued-intent')
   }
   for (const [id, entry] of retryQueue.sharedTags) {
     if (!target.sharedTags.has(id)) target.sharedTags.set(id, entry)
+    else cancelFontWrite(entry, 'newer-queued-intent')
   }
   for (const [id, entry] of retryQueue.favorite) {
     if (!target.favorite.has(id)) target.favorite.set(id, entry)
+    else cancelFontWrite(entry, 'newer-queued-intent')
   }
   for (const [id, entry] of retryQueue.protection) {
     if (!target.protection.has(id)) target.protection.set(id, entry)
+    else cancelFontWrite(entry, 'newer-queued-intent')
   }
 }
 
@@ -111,8 +117,8 @@ async function flushTagEntries(args: {
   label: string
   entries: QueuedFontWriteState['localTags']
   retryEntries: QueuedFontWriteState['localTags']
-  batch?: (items: Array<{ item: FontItem; tagNames: string[] }>) => Promise<FontTagUpdateResult>
-  single?: (item: FontItem, tagNames: string[]) => Promise<FontTagUpdateResult>
+  batch?: (items: Array<{ item: FontItem; tagNames: string[] }>, trace?: OperationTrace) => Promise<FontTagUpdateResult>
+  single?: (item: FontItem, tagNames: string[], trace?: OperationTrace) => Promise<FontTagUpdateResult>
 }): Promise<{ wroteCount: number; failures: string[] }> {
   const items = Array.from(args.entries.values())
   if (!items.length) return { wroteCount: 0, failures: [] }
@@ -120,15 +126,17 @@ async function flushTagEntries(args: {
   const failures: string[] = []
   if (args.batch) {
     try {
-      const result = await args.batch(items)
+      const result = await args.batch(items, dispatchFontWrites(items))
       const candidateIds = items.map((entry) => entry.item.id)
       const failedIds = failedIdsFromResult(result, candidateIds)
       retryTagEntries(args.entries, failedIds, args.retryEntries)
+      settleFontWrites(items, failedIds, entry => entry.item.id)
       const failure = resultFailureMessage(result, `${args.label} ${items.length} 个失败`)
       if (failure) failures.push(failure)
       return { wroteCount: items.length - failedIds.size, failures }
     } catch (error) {
       retryTagEntries(args.entries, new Set(items.map((entry) => entry.item.id)), args.retryEntries)
+      settleFontWrites(items, new Set(items.map(entry => entry.item.id)), entry => entry.item.id)
       failures.push(`${args.label} ${items.length} 个：${error instanceof Error ? error.message : String(error)}`)
       return { wroteCount: 0, failures }
     }
@@ -138,14 +146,16 @@ async function flushTagEntries(args: {
     let wroteCount = 0
     for (const entry of items) {
       try {
-        const result = await args.single(entry.item, entry.tagNames)
+        const result = await args.single(entry.item, entry.tagNames, dispatchFontWrites([entry]))
         const failedIds = failedIdsFromResult(result, [entry.item.id])
         retryTagEntries(args.entries, failedIds, args.retryEntries)
+        settleFontWrites([entry], failedIds, entry => entry.item.id)
         const failure = resultFailureMessage(result, `${args.label} ${entry.item.fileName || entry.item.id} 失败`)
         if (failure) failures.push(failure)
         else wroteCount += 1
       } catch (error) {
         args.retryEntries.set(entry.item.id, entry)
+        settleFontWrites([entry], new Set([entry.item.id]), entry => entry.item.id)
         failures.push(`${args.label} ${entry.item.fileName || entry.item.id}：${error instanceof Error ? error.message : String(error)}`)
       }
     }
@@ -170,10 +180,10 @@ export async function flushQueuedFontWriteQueue(
     entries: queue.localTags,
     retryEntries: retryQueue.localTags,
     batch: typeof hfm.setLocalTagsBatch === 'function'
-      ? (items) => hfm.setLocalTagsBatch(items)
+      ? (items, trace) => hfm.setLocalTagsBatch(items, trace)
       : undefined,
     single: typeof hfm.setLocalTags === 'function'
-      ? (item, tagNames) => hfm.setLocalTags(item, tagNames)
+      ? (item, tagNames, trace) => hfm.setLocalTags(item, tagNames, trace)
       : undefined
   })
   wroteCount += localTagResult.wroteCount
@@ -184,10 +194,10 @@ export async function flushQueuedFontWriteQueue(
     entries: queue.sharedTags,
     retryEntries: retryQueue.sharedTags,
     batch: typeof hfm.setSharedTagsBatch === 'function'
-      ? (items) => hfm.setSharedTagsBatch(items, folders)
+      ? (items, trace) => hfm.setSharedTagsBatch(items, folders, trace)
       : undefined,
     single: typeof hfm.setSharedTags === 'function'
-      ? (item, tagNames) => hfm.setSharedTags([item], folders, tagNames)
+      ? (item, tagNames, trace) => hfm.setSharedTags([item], folders, tagNames, trace)
       : undefined
   })
   wroteCount += sharedTagResult.wroteCount
@@ -203,19 +213,22 @@ export async function flushQueuedFontWriteQueue(
     const label = favorite ? '收藏' : '取消收藏'
     if (typeof hfm.setFavorite !== 'function') {
       retryBooleanEntries(queue.favorite, new Set(fonts.map((font) => font.id)), retryQueue.favorite)
+      settleFontWrites(fonts.map(font => queue.favorite.get(font.id)!), new Set(fonts.map(font => font.id)), entry => entry.font.id)
       failures.push(`${label}写入接口不可用。`)
       continue
     }
     try {
-      const result = await hfm.setFavorite(fonts, folders, favorite)
+      const result = await hfm.setFavorite(fonts, folders, favorite, dispatchFontWrites(fonts.map(font => queue.favorite.get(font.id)!)))
       const failedIds = failedIdsFromResult(result, fonts.map((font) => font.id))
       retryBooleanEntries(queue.favorite, failedIds, retryQueue.favorite)
+      settleFontWrites(fonts.map(font => queue.favorite.get(font.id)!), failedIds, entry => entry.font.id)
       for (const font of fonts) if (!failedIds.has(font.id)) settleFavoriteIntent(font)
       wroteCount += fonts.length - failedIds.size
       const failure = resultFailureMessage(result, `${label} ${fonts.length} 个失败`)
       if (failure) failures.push(failure)
     } catch (error) {
       retryBooleanEntries(queue.favorite, new Set(fonts.map((font) => font.id)), retryQueue.favorite)
+      settleFontWrites(fonts.map(font => queue.favorite.get(font.id)!), new Set(fonts.map(font => font.id)), entry => entry.font.id)
       failures.push(`${label} ${fonts.length} 个：${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -230,18 +243,21 @@ export async function flushQueuedFontWriteQueue(
     const label = protect ? '加入保护' : '取消保护'
     if (typeof hfm.setDeleteProtection !== 'function') {
       retryBooleanEntries(queue.protection, new Set(fonts.map((font) => font.id)), retryQueue.protection)
+      settleFontWrites(fonts.map(font => queue.protection.get(font.id)!), new Set(fonts.map(font => font.id)), entry => entry.font.id)
       failures.push(`${label}写入接口不可用。`)
       continue
     }
     try {
-      const result = await hfm.setDeleteProtection(fonts, folders, protect)
+      const result = await hfm.setDeleteProtection(fonts, folders, protect, dispatchFontWrites(fonts.map(font => queue.protection.get(font.id)!)))
       const failedIds = failedIdsFromResult(result, fonts.map((font) => font.id))
       retryBooleanEntries(queue.protection, failedIds, retryQueue.protection)
+      settleFontWrites(fonts.map(font => queue.protection.get(font.id)!), failedIds, entry => entry.font.id)
       wroteCount += fonts.length - failedIds.size
       const failure = resultFailureMessage(result, `${label} ${fonts.length} 个失败`)
       if (failure) failures.push(failure)
     } catch (error) {
       retryBooleanEntries(queue.protection, new Set(fonts.map((font) => font.id)), retryQueue.protection)
+      settleFontWrites(fonts.map(font => queue.protection.get(font.id)!), new Set(fonts.map(font => font.id)), entry => entry.font.id)
       failures.push(`${label} ${fonts.length} 个：${error instanceof Error ? error.message : String(error)}`)
     }
   }

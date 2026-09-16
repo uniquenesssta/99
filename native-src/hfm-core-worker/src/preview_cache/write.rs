@@ -10,6 +10,7 @@ use super::types::{PreviewCacheApplyPayload, PreviewCacheApplyResult, PreviewCac
 pub fn apply_preview_cache_rows(config: &PreviewCacheCommandConfig) -> Result<String, String> {
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
+    let mut trace = crate::operation_trace::OperationTrace::from_input(&input);
     let payload: PreviewCacheApplyPayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
     if let Some(parent) = Path::new(&payload.db_path).parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -74,6 +75,7 @@ pub fn apply_preview_cache_rows(config: &PreviewCacheCommandConfig) -> Result<St
         }
     }
     tx.commit().map_err(|error| error.to_string())?;
+    trace.committed();
     if let Some(first) = payload.rows.first() {
         set_meta(&conn, "updatedAt", &first.updated_at).map_err(|error| error.to_string())?;
     }
@@ -84,12 +86,13 @@ pub fn apply_preview_cache_rows(config: &PreviewCacheCommandConfig) -> Result<St
         timings: PreviewCacheTimings { elapsed: started_at.elapsed().as_millis(), rows: payload.rows.len() },
         worker_mode: "rust-preview-cache-apply".to_string(),
     };
-    serde_json::to_string(&result).map_err(|error| error.to_string())
+    trace.finish(serde_json::to_string(&result).map_err(|error| error.to_string()))
 }
 
 pub fn delete_preview_cache_rows(config: &PreviewCacheCommandConfig) -> Result<String, String> {
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
+    let mut trace = crate::operation_trace::OperationTrace::from_input(&input);
     let payload: PreviewCacheDeletePayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
     if let Some(parent) = Path::new(&payload.db_path).parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -109,6 +112,7 @@ pub fn delete_preview_cache_rows(config: &PreviewCacheCommandConfig) -> Result<S
         }
     }
     tx.commit().map_err(|error| error.to_string())?;
+    trace.committed();
 
     let result = PreviewCacheDeleteResult {
         ok: true,
@@ -116,7 +120,7 @@ pub fn delete_preview_cache_rows(config: &PreviewCacheCommandConfig) -> Result<S
         timings: PreviewCacheTimings { elapsed: started_at.elapsed().as_millis(), rows: payload.keys.len() },
         worker_mode: "rust-preview-cache-delete".to_string(),
     };
-    serde_json::to_string(&result).map_err(|error| error.to_string())
+    trace.finish(serde_json::to_string(&result).map_err(|error| error.to_string()))
 }
 
 fn normalize_status(value: &str) -> &str {

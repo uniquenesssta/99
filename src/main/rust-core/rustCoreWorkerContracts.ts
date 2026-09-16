@@ -425,6 +425,7 @@ export type RustSharedMetadataApplyInput = {
 }
 
 export type RustSharedMetadataMutationStateSignal = {
+  trace?: import('../../shared/operationTrace').OperationTrace
   mutationKind?: string
   dbPath?: string
   rootPath?: string

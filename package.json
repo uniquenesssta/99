@@ -134,7 +134,8 @@
     "diagnostics:preview-storage-routing": "node build/diagnostics/check-preview-storage-routing.cjs",
     "diagnostics:preview-index-owner": "node build/diagnostics/check-preview-index-owner.cjs",
     "diagnostics:preview-batch-read": "node build/diagnostics/check-preview-batch-read.cjs",
-    "test:local-tag-hydration-rust": "cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests"
+    "test:local-tag-hydration-rust": "cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests",
+    "diagnostics:operation-chain": "node build/diagnostics/check-operation-chain.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

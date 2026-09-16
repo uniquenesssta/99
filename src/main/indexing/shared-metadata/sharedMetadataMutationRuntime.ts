@@ -1,3 +1,4 @@
+import { logOperation } from '../../logging/operationTraceContext'
 import os from 'node:os'
 import { basename } from 'node:path'
 import type { FontItem, FontTagMutationProtocolResult } from '../../../shared/types'
@@ -239,6 +240,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
 
           const db = await deps.openSharedMetadataDb(root)
           try {
+            logOperation({ stage: 'backend-start', backend: 'node' })
             db.exec('BEGIN IMMEDIATE')
             try {
               const upsert = db.prepare(`
@@ -315,6 +317,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               deps.writeMeta(db, 'updatedAt', now)
               deps.writeMeta(db, 'writerHost', writerHost)
               db.exec('COMMIT')
+              logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'shared-metadata-transaction' })
               const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, undefined, root, 'apply', changedIds, 'node-fallback')
               mutationProtocols.push(nodeSharedMetadataMutationProtocol({
                 command: '--shared-metadata-apply',
@@ -452,6 +455,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
 
           const db = await deps.openSharedMetadataDb(root)
           try {
+            logOperation({ stage: 'backend-start', backend: 'node' })
             db.exec('BEGIN IMMEDIATE')
             try {
               const update = db.prepare(`
@@ -487,6 +491,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               deps.writeMeta(db, 'updatedAt', now)
               deps.writeMeta(db, 'writerHost', writerHost)
               db.exec('COMMIT')
+              logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'shared-metadata-transaction' })
               const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, undefined, root, 'renameTag', changedIds, 'node-fallback')
               mutationProtocols.push(nodeSharedMetadataMutationProtocol({
                 command: '--shared-metadata-rename-tag',
@@ -579,6 +584,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               .filter((item) => item.state?.tagNames.includes(tagName))
             if (!targets.length) return
 
+            logOperation({ stage: 'backend-start', backend: 'node' })
             db.exec('BEGIN IMMEDIATE')
             try {
               const now = new Date().toISOString()
@@ -618,6 +624,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               deps.writeMeta(db, 'updatedAt', now)
               deps.writeMeta(db, 'writerHost', os.hostname())
               db.exec('COMMIT')
+              logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'shared-metadata-transaction' })
               const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, undefined, root, 'removeTag', changedIds, 'node-fallback')
               mutationProtocols.push(nodeSharedMetadataMutationProtocol({
                 command: '--shared-metadata-remove-tag',

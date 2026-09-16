@@ -129,7 +129,7 @@ function createHarness(settings = {}, overrides = new Map()) {
         if (target.startsWith(core) && Object.hasOwn(stubs, stub)) return stubs[stub]
         return load(target + '.ts')
       }
-      assert.equal(id, 'node:util', 'unexpected runtime dependency: ' + id)
+      assert(['node:util', 'node:async_hooks'].includes(id), 'unexpected runtime dependency: ' + id)
       return require(id)
     }
     const run = vm.runInContext('(function(exports, require, module) {' + compiled.get(cacheKey) + '\n})', context)

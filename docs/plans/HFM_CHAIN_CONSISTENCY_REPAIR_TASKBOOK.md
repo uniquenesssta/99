@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行入口
 
-- 文档版本1.0；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
+- 文档版本1.1；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
 - 建立基线：`58a3f25e632a2af1d49587ab065e0469da4bf330`；执行分支沿用`stage/09-preview-tags-app`。开工时重新核对远端、HEAD与工作树，不默认为本基线一直最新。
-- 当前仅完成任务规划，R-01～R-07全部未开始。本次只提交文档，不实施修复或日志功能。
+- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02～R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
 - 证据：[全链路审计](../audits/HFM_FULL_CHAIN_AUDIT.md)、[只读观察器](../audits/observe-chain-audit.cjs)。F-01/F-02/F-03已有真实TS受控反例；F-04为源码与SQLite顺序重建证据，尚无原生Rust故障测试；F-05为跨层日志关联缺口。
 - 承接[原拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)的C-01～C-07、X-01～X-13与Windows待验项。本书是新增五项审计问题的执行入口，不重启D阶段，不宣称D-11完整关闭。
 - 用户要求：**日志最先实施并验收，后续修改须利用该日志验证真实链路。** 用户使用`npm run dev`，不要求build:win、安装包或重新安装。
@@ -188,13 +188,13 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 - R-01开工登记日志诊断的准确命令/路径，接入现有diagnostics与默认npm run verify；不能只写任务书或提供手工观察脚本。
 - R-02～R-06相应修复落地时，已修复反例转为必过门。真实Rust测试提供独立必需命令并作为完成条件；若verify本身不执行Cargo，必须明确分开报告，不能将其遗漏解释为通过。
 - 新增/迁移owner、协议输入与trace边界必须有结构/类型门；日志关联、字段隔离、事务和异步正确性另用真实行为门证明。所有权/类型/行为检查缺项不得判完成。
-- 本文定义的是未来实施要求，当前尚未创建这些新自动门，不能将文档存在等同于约束已经被CI执行。
+- R-01的operation-chain门已接入默认verify；R-02～R-06业务修复门尚未创建，不能将文档存在等同于约束已经被CI执行。
 
 ## 12. 状态登记
 
 | 任务 | 状态 | 执行基线/提交 | 自动/原生/实机结果 |
 | --- | --- | --- | --- |
-| R-01 日志前置 | 未开始 | — | — |
+| R-01 日志前置 | 自动验证通过待实机 | 2cf2986起，本R-01独立提交 | TypeScript、105/105；Cargo退出127；Windows待验 |
 | R-02 本地标签事务 | 未开始 | — | — |
 | R-03 共享事务 | 未开始 | — | — |
 | R-04 预览事务 | 未开始 | — | — |
@@ -202,6 +202,106 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 | R-06 信号去重 | 未开始 | — | — |
 | R-07 总验收 | 未开始 | — | — |
 
-本次文档交付：新任务书及README/总任务书/原专项/审计报告入口更新；不启动R-01。下一条“开始R-01”进入日志实施。
+建书时的文档交付：新任务书及README/总任务书/原专项/审计报告入口更新；不启动R-01。下一条“开始R-01”进入日志实施。
 
 文档验证记录：本轮仅5份Markdown变更；链接目标与任务编号已核对，git diff --check通过，未重复运行未变化生产代码的verify。Create State返回Context Captured同时提示No active world model，未确认项目级保存；Git文档保留完整约束。
+
+## 13. R-01 执行卡
+
+- 状态：自动验证通过待实机。实际基线2cf29864e12a2977d93f68412c3e986ccba5453f，stage/09-preview-tags-app；fetch后远端一致，开工工作树干净。
+- 继承缺口：没有Cargo，Windows GUI/NAS未执行；不将原生关联视为已验证。
+- 最小传播：renderer队列条目的WeakMap只保留诊断身份（不进入字体数据）；每次dispatch单独attempt，合批逐成员记录batch关系。preload六个写方法增加可选末尾trace参数，两种preload保持一致；IPC剥离可选末尾诊断信封后用AsyncLocalStorage隔离当前异步操作；临时Rust输入增加可选trace；Rust同一执行作用域在真实commit后输出证据，信号携带trace，主进程去重/广播与renderer接收记录决策。无trace旧调用标记unlinked，不冒充UI意图。
+- 新模块：共享operationTrace仅协议/有界编码；renderer/fontOperationTrace仅WeakMap诊断身份和既有日志出口；main/logging/operationTraceContext仅异步诊断作用域，不建立领域store；Rustoperation_trace仅命令作用域日志，不改事务。
+- 日志限额：单事件最多8192 UTF-8字节，信封最多16成员；全批成员通过逐成员dispatch记录batchId，截断计数显式可见。renderer最多256在途日志调用，超出计入dropped，下次成功发送报告；WeakMap不持有条目强引用，不新增定时器或监听器。主进程复用startup日志80ms/64KiB缓冲，新增日志仅详细模式持久化；文件保留沿用现状（没有自动删除，不新增删日志策略），本轮新增关联输出每会话最多16MiB，超额明确计数。业务flush/关闭顺序保持。
+- 准确新增门：build/diagnostics/check-operation-chain.cjs，npm run diagnostics:operation-chain，接入默认verify。Rust用例独立cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml operation_trace；未运行不算通过。
+- 精确生产白名单：
+  - src/shared/operationTrace.ts
+  - src/renderer/src/fontOperationTrace.ts
+  - src/renderer/src/fontWriteQueue.ts
+  - src/renderer/src/fontWriteQueueRuntime.ts
+  - src/preload/index.ts
+  - src/main/preload/runtimePreloadSource.ts
+  - src/main/logging/operationTraceContext.ts
+  - src/main/ipc/ipcTraceRuntime.ts
+  - src/main/performance/rendererInteractionRuntime.ts
+  - src/main/library/tagMutationStateSignalRuntime.ts
+  - src/shared/types/scanTypes.ts
+  - src/renderer/src/runtime/app/effects/useFontTagStateSignalEventRuntime.ts
+  - src/main/rust-core/rustCoreWorkerTransportRuntime.ts
+  - src/main/rust-core/rustCoreDaemonRuntime.ts
+  - src/main/library/runtime/localFontTagNodePersistenceRuntime.ts
+  - native-src/hfm-core-worker/src/main.rs
+  - native-src/hfm-core-worker/src/operation_trace.rs
+  - native-src/hfm-core-worker/src/local_tags/state_machine.rs
+  - native-src/hfm-core-worker/src/local_tags/types.rs
+  - native-src/hfm-core-worker/src/shared_metadata/state_machine.rs
+  - native-src/hfm-core-worker/src/shared_metadata/types.rs
+  - native-src/hfm-core-worker/src/preview_cache/write.rs
+- 精确诊断/文档白名单：build/diagnostics/check-operation-chain.cjs；package.json；README.md；本任务书。既有隔离加载器如因新import失败，先逐个登记再补接线，不批量重录hash。
+
+### R-01 接线补充（实施中）
+
+- 真实Node链已出现先前缺失的queued→dispatch→IPC→SQLite commit→signal→view-apply→queue-settled；同一队列条目两次SQL触发器失败后第三次成功，前两次第二连接回读0行，第三次1行。去掉preload实际传播的变异被拒绝；不是源码关键字门。
+- 首次旧门失败为隔离加载器不认识新增日志import，非产品结果差异。登记追加白名单：build/diagnostics/check-decomposition-baseline.cjs（加载真实日志模块，保留原算法mock边界）；docs/audits/operation-chain-samples.json（实际Node验收输出，原生待验）。
+- 传播审计发现本地/共享signal归一化会复制字段，需保留可选trace才能关联daemon与worker同一span；登记追加src/main/library/runtime/localFontTagsRuntime.ts（仅类型字段）、src/main/library/runtime/localFontTagMutationEffectsRuntime.ts、src/main/indexing/shared-metadata/sharedMetadataMutationSignalRuntime.ts、src/main/rust-core/rustCoreWorkerContracts.ts（仅类型字段）。
+- Node共享metadata实际COMMIT也需证据，追加src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts，仅在已有BEGIN/COMMIT/错误位置记录，不改事务或回退。
+
+- 基线迁移追加build/diagnostics/fixtures/decomposition-baseline.fixture.json：仅localFontTagsRuntime新增可选trace类型成员的tokenHash。将旧/新源转译成JavaScript逐字比较必须一致，其他inventory字段和fixture项不动。
+
+- 同一fixture再精确迁移两项：localFontTagNodePersistenceRuntime（仅日志调用），localFontTagMutationEffectsRuntime（仅可选trace透传）。迁移前移除本轮日志/trace语句后tokenHash经AST打印规范化后必须等于HEAD原文件；其余exports/owner/surface均保持。不整体重录fixture。
+
+- 新增原生真实入口验收白名单：native-src/hfm-core-worker/tests/operation_trace.rs（启动实际worker、临时SQLite、第二连接回读；当前环境无法运行）。追加build/diagnostics/check-font-write-queue-durability.cjs，仅为其独立加载器接入真实fontOperationTrace，原断言不删。
+
+- 非队列重命名/删除需要独立意图，追加src/renderer/src/fontDialogRuntime.ts：只在三个真实hfm调用点记录直接操作，不改变先flush检查、确认或回调顺序；对应两种preload的renameSharedTag/deleteLocalTag/deleteSharedTag增加可选末尾trace，旧调用不附加信封。该协议共9个可选参数入口。
+
+- 日志非干扰包装将IPC的日志参数从runtime.appendLog换为安全append；sender校验仍严格第一条语句。追加build/diagnostics/check-ipc-sender-validation.cjs，仅更新该准确参数断言；原不可信sender反例保持。
+- 追加精确冻结迁移：build/diagnostics/fixtures/react-composition-domain-controllers.fixture.json中fontWriteQueueRuntime一项；build/diagnostics/fixtures/app-interaction-composition.fixture.json中fontDialogRuntime一项。只迁移日志追踪接线，保留42状态/Hook顺序、关闭flush和重命名/删除真实行为门。
+
+- 追加build/diagnostics/fixtures/local-tag-node-persistence.fixture.json，仅emitLocalTagsMutationStateSignal一函数的可选trace透传hash；3个SQL事务body hash全部不变。
+- 追加build/diagnostics/helpers/rustWorkerTransportHarness.cjs，仅允许新增Node内置async_hooks依赖；仍加载真实日志模块，45命令/生命周期行为基线不重录。
+- native日志增加backendSequence，signal携commitSequence；两条进程管道的接收先后不当作提交因果顺序。daemon-submit记录实际jobId，取消/超时明确unknown；不推断数据库已回滚。
+
+- 追加build/diagnostics/check-rust-worker-transport.cjs：early-file-cleanup变异的准确锚点随traceRustInput包装更新，仍要求“提前删除临时输入”失败；不改原用例预期。
+
+- 追加build/diagnostics/fixtures/local-tag-rust-adapter.fixture.json中同一emitLocalTagsMutationStateSignal函数hash；这是同一透传函数的第二个旧门，保持9函数其他项及三种回退策略反例。
+
+- 追加build/diagnostics/check-orchestration-contracts.cjs，仅让独立加载器加载真实operationTraceContext；保留原Rust输入输出类型、命令及回退矩阵。传输回归实际数量为369个命令场景、7组序列、28文件作用域、10个变异，不是此前导航文字中的45。
+
+- 最后一项类型冻结迁移追加build/diagnostics/fixtures/rust-worker-contracts.fixture.json，仅RustSharedMetadataMutationStateSignal可选trace字段的shapeHash；原45门面方法、38命令路由、115业务注册、7 app/2 process生命周期保持。
+
+
+### R-01 验收边界与使用方法
+
+本轮为关联日志，未修F-01～F-04；只读观察器仍复现F-01a/b、F-02和F-03，这是保留后续修复反例。信号日志的view-apply表示既有状态应用函数与commitLibraryUpdate已返回，不代表浏览器已绘制、查询已刷新或已修好旧ack问题；当前没有拒绝逻辑的地方不伪造view-reject。R-05增加实际拒绝决策时必须接入本日志。
+
+覆盖的用户入口：四域队列写入，以及重命名共享标签、删除本地/共享标签；9个preload方法可选末尾trace保持老参数调用兼容。系统扫描/自动任务/无trace旧调用保留unlinked，不能据此宣称整个软件每个入口都已关联。Rust预览apply/delete提交点已具备输入trace诊断能力，但独立预览请求没有renderer根意图时仍未关联，R-04验证该路径前须补齐其具体调用链与验收。
+
+测试加载真实队列、两种preload、中央IPC、Node本地标签SQLite持久化、revision/signal、renderer signal hook；替换Electron/React挂载端口与外部日志出口。SQLite使用临时DB+第二连接。Rust传输测试使用真实Node子进程模拟协议，仅证明临时输入、one-shot错误stderr、daemon分块stderr与jobId传播；**不能代替Rust执行**。原生集成测试启动实际worker，覆盖成功、写入触发器失败、catalog失败后的DB真实状态与日志相符、legacy无trace；命令已尝试但无Cargo退出127。
+
+默认门`npm run diagnostics:operation-chain`已注册到verify。涵盖连续意图与域身份、部分成功只重试失败项、40成员合批/16成员信封截断、256在途上限、16MiB会话容量/显式丢弃计数、不同会话与并发AsyncLocalStorage隔离、旧daemon禁止错误继承、日志抛错、unmount监听清理、关闭旧门；7个日志/传播/因果变异被拒绝。正常模式不持久化新增详细日志，验收模式不作性能采样。新增状态只有诊断WeakMap/计数及异步作用域，无业务store或新增定时器。
+
+[两份实际Node路径脱敏样例](../audits/operation-chain-samples.json)：success、retry（两次SQL失败后成功）。每成员dispatch日志用operationId关联意图、用batchId/attemptId关联后端；目标为非业务用的有界ID摘要。原生跨stdout/stderr不依赖接收时序，使用spanId和backendSequence/commitSequence。日志有dropped/omitted或缺关键阶段时判证据不完整；不能从日志缺失推断数据库失败。无确认前只记unknown，不伪造rollback；commit仅指该实际事务，metadata若仍在其后失败记committed-error。
+
+Windows开发验收（无依赖升级，无需npm ci或安装包）：
+
+```bat
+git pull --ff-only origin stage/09-preview-tags-app
+cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml operation_trace
+set HFM_LOG_DETAIL=debug
+npm run dev
+```
+
+测试连续两次标签编辑、收藏/保护跨域交错、共享重命名/删除、立即关闭重开。沿用已有startup日志文件，搜索`operation-chain:`；同操作重试operationId保持、attemptId改变，不能把committed-error当成功或回滚。验收结束使用`set HFM_LOG_DETAIL=`关闭详细模式。实机回执需提交号、操作顺序、肉眼反馈及日志；未收到前状态为自动验证通过待实机。
+
+Context7已核对Node 24 AsyncLocalStorage.run并发作用域与异常恢复语义；实际链路Mermaid已更新。未修改SQL、schema、依赖锁文件、业务去重键、七controller所有权、UI/CSS或关闭flush顺序。独立revert本R-01提交即可回滚，旧调用不带trace仍可工作。
+
+
+### R-01 自动验证收尾
+
+- Node v24.19.0/npm 11.9.0；npm run verify退出0，105/105（原104项保留，新日志门1项）。最终日志位于本次执行环境/tmp/r01-final-verify.log；可复现实证保留在默认诊断与样例文件。
+- Electron/Vite三端生产构建通过，364/1/196模块；混淆3/3。没有运行Windows打包。Cargo真实测试尝试退出127（command not found），原生测试文件存在不等于通过。
+- sender仍首条校验、既有SQL事务体hash未变；旧类型/算法冻结仅登记的精确trace接线迁移。最后no-change信号补日志后，operation-chain和local-tag-rust-adapter定向重验通过。
+- 行为证据：独立字体字段回读、失败无SQL残留、合批部分成功、实际preload传播变异、并发/会话/监听清理、日志抛错/容量、两个子进程传输模式；旧关闭flush和日志耐久门通过。没有Windows GUI/NAS结果。
+- R-02准入：TS/Node日志验收可用，原生观测接口已实现但待Cargo验证。后续必须继承此缺口，不能把本轮标为Rust已验收；原生实际日志若断链须先补R-01，不开始混合业务修复。
+
+- Create State返回Context Captured但同时No active world model，未确认HFM项目级保存；未选择无关model。Git、README、任务书与样例是权威交接。

@@ -1,3 +1,4 @@
+import { reportFontOperation } from '../../../fontOperationTrace'
 import { useEffect, useRef } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { FontTagMutationStateSignalPayload, LibraryState } from '@shared/types'
@@ -22,6 +23,7 @@ export function useFontTagStateSignalEventRuntime(args: {
       const current = argsRef.current
       const nextLibrary = applyFontTagMutationSignalToLibrary(current.getCurrentLibrary(), payload)
       current.commitLibraryUpdate(nextLibrary)
+      reportFontOperation({ trace: payload.trace, stage: 'view-apply', reason: 'tag-authority-signal', localRevision: payload.localRevision, sharedRevision: payload.sharedRevision })
       current.refreshDatabaseDerivedState()
       reportRendererTrace({
         kind: 'tag-authority-applied',

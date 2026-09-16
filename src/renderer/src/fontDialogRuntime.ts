@@ -1,3 +1,4 @@
+import { traceDirectFontOperation } from './fontOperationTrace'
 import type { FontItem,LibraryState } from '@shared/types'
 import type { Dispatch,SetStateAction } from 'react'
 import type { ContextMenuState,EditableMenuTarget,MenuTarget,SidebarPage } from './appRuntime'
@@ -161,7 +162,7 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
               void flushBeforeRename
                 .then((saved) => {
                   if (!saved) throw new Error('仍有共享标签写入未保存，请检查 NAS 或数据库状态后重试。')
-                  return options.hfm.renameSharedTag(renameTarget.name, clean, options.watchedFolders)
+                  return traceDirectFontOperation('sharedTags', trace => options.hfm.renameSharedTag(renameTarget.name, clean, options.watchedFolders, trace))
                 })
                 .then((result) => {
                   options.refreshDatabaseDerivedState()
@@ -224,9 +225,9 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
             throw new Error('仍有标签写入未保存，请检查磁盘、数据库或 NAS 状态后重试。')
           }
           const result = shared && typeof options.hfm.deleteSharedTag === 'function'
-            ? await options.hfm.deleteSharedTag(deleteTarget.name, options.watchedFolders)
+            ? await traceDirectFontOperation('sharedTags', trace => options.hfm.deleteSharedTag(deleteTarget.name, options.watchedFolders, trace))
             : !shared && typeof options.hfm.deleteLocalTag === 'function'
-              ? await options.hfm.deleteLocalTag(deleteTarget.name)
+              ? await traceDirectFontOperation('localTags', trace => options.hfm.deleteLocalTag(deleteTarget.name, trace))
               : null
 
           if (shared) {

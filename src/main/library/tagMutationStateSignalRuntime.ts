@@ -1,3 +1,5 @@
+import { currentOperationTrace, logOperation } from '../logging/operationTraceContext'
+import { cleanOperationTrace, type OperationTrace } from '../../shared/operationTrace'
 import { BrowserWindow } from 'electron'
 import type { FontTagMutationStateSignalPayload } from '../../shared/types'
 import type { TagMetadataRevisionBarrierRuntime } from './tagMetadataRevisionBarrierRuntime'
@@ -5,6 +7,7 @@ import type { TagMetadataRevisionBarrierRuntime } from './tagMetadataRevisionBar
 export type TagMutationSignalSource = FontTagMutationStateSignalPayload['source']
 
 export type LocalTagsMutationStateSignalInput = {
+  trace?: OperationTrace
   mutationKind?: string
   dbPath?: string
   changedIds?: string[]
@@ -18,6 +21,7 @@ export type LocalTagsMutationStateSignalInput = {
 }
 
 export type SharedMetadataMutationStateSignalInput = {
+  trace?: OperationTrace
   mutationKind?: string
   rootPath?: string
   changedIds?: string[]
@@ -61,6 +65,7 @@ function broadcastFontTagMutationStateSignal(payload: FontTagMutationStateSignal
 }
 
 export function createTagMutationStateSignalRuntime(options: TagMutationStateSignalRuntimeOptions) {
+  const append = (message: string): void => { try { options.appendStartupLog(message) } catch { /* Diagnostic only. */ } }
   const tagMutationSignalDedupe = new Map<string, { at: number; hasKnownTags: boolean }>()
 
   function shouldApplyTagMutationSignal(scope: 'local' | 'shared', signal: { mutationKind?: string; updatedAt?: string; changedIds?: string[]; knownTags?: string[] }): boolean {
@@ -78,19 +83,26 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
 
   function handleLocalTagsMutationStateSignal(signal: LocalTagsMutationStateSignalInput, source: TagMutationSignalSource = 'rust-worker'): void {
     const effectiveSource = signal.source || source
+    const trace = cleanOperationTrace(signal.trace) || (effectiveSource === 'rust-daemon' ? undefined : currentOperationTrace())
     const changedIds = cleanSignalIds(signal.changedIds)
     const dirty = signal.localTagsChanged !== false || signal.cacheInvalidated !== false || signal.pageQueryDirty !== false || signal.metricsDirty !== false
     if (!dirty && !changedIds.length) {
-      options.appendStartupLog(`local tags mutation signal ignored: source=${effectiveSource}, db=${signal.dbPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=0, dirty=false`)
+      logOperation({ trace, stage: 'signal-reject', reason: 'no-change' }, options.appendStartupLog)
+      append(`local tags mutation signal ignored: source=${effectiveSource}, db=${signal.dbPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=0, dirty=false`)
       return
     }
-    if (!shouldApplyTagMutationSignal('local', { mutationKind: signal.mutationKind, updatedAt: signal.updatedAt, changedIds, knownTags: signal.knownTags })) return
+    if (!shouldApplyTagMutationSignal('local', { mutationKind: signal.mutationKind, updatedAt: signal.updatedAt, changedIds, knownTags: signal.knownTags })) {
+      logOperation({ trace, stage: 'signal-reject', reason: 'dedupe' }, options.appendStartupLog)
+      return
+    }
     const snapshot = options.tagMetadataRevisionBarrier.noteLocalTagMutation(
       `local-tags-signal:${signal.mutationKind || 'unknown'}:${effectiveSource}`,
       changedIds,
     )
     options.clearFontQueryCaches()
+    logOperation({ trace, stage: 'signal', backend: effectiveSource, localRevision: snapshot.localRevision, sharedRevision: snapshot.sharedRevision }, options.appendStartupLog)
     broadcastFontTagMutationStateSignal({
+      trace,
       scope: 'local',
       mutationKind: signal.mutationKind || 'unknown',
       changedIds,
@@ -105,24 +117,31 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
         metrics: signal.metricsDirty !== false,
       },
     })
-    options.appendStartupLog(`local tags mutation signal applied: source=${effectiveSource}, db=${signal.dbPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=${changedIds.length}`)
+    append(`local tags mutation signal applied: source=${effectiveSource}, db=${signal.dbPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=${changedIds.length}`)
   }
 
   function handleSharedMetadataMutationStateSignal(signal: SharedMetadataMutationStateSignalInput, source: TagMutationSignalSource = 'rust-worker'): void {
     const effectiveSource = signal.source || source
+    const trace = cleanOperationTrace(signal.trace) || (effectiveSource === 'rust-daemon' ? undefined : currentOperationTrace())
     const changedIds = cleanSignalIds(signal.changedIds)
     const dirty = signal.sharedMetadataChanged !== false || signal.cacheInvalidated !== false || signal.pageQueryDirty !== false || signal.metricsDirty !== false || signal.mergedIndexDirty === true
     if (!dirty && !changedIds.length) {
-      options.appendStartupLog(`shared metadata mutation signal ignored: source=${effectiveSource}, root=${signal.rootPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=0, dirty=false`)
+      logOperation({ trace, stage: 'signal-reject', reason: 'no-change' }, options.appendStartupLog)
+      append(`shared metadata mutation signal ignored: source=${effectiveSource}, root=${signal.rootPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=0, dirty=false`)
       return
     }
-    if (!shouldApplyTagMutationSignal('shared', { mutationKind: signal.mutationKind, updatedAt: signal.updatedAt, changedIds })) return
+    if (!shouldApplyTagMutationSignal('shared', { mutationKind: signal.mutationKind, updatedAt: signal.updatedAt, changedIds })) {
+      logOperation({ trace, stage: 'signal-reject', reason: 'dedupe' }, options.appendStartupLog)
+      return
+    }
     const snapshot = options.tagMetadataRevisionBarrier.noteSharedTagMutation(
       `shared-metadata-signal:${signal.mutationKind || 'unknown'}:${effectiveSource}`,
       changedIds,
     )
     options.clearFontQueryCaches()
+    logOperation({ trace, stage: 'signal', backend: effectiveSource, localRevision: snapshot.localRevision, sharedRevision: snapshot.sharedRevision }, options.appendStartupLog)
     broadcastFontTagMutationStateSignal({
+      trace,
       scope: 'shared',
       mutationKind: signal.mutationKind || 'unknown',
       changedIds,
@@ -137,7 +156,7 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
         mergedIndex: signal.mergedIndexDirty !== false,
       },
     })
-    options.appendStartupLog(`shared metadata mutation signal applied: source=${effectiveSource}, root=${signal.rootPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=${changedIds.length}`)
+    append(`shared metadata mutation signal applied: source=${effectiveSource}, root=${signal.rootPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=${changedIds.length}`)
   }
 
   
@@ -157,7 +176,7 @@ function indexProtocolDirty(protocol: unknown): boolean {
   function handleRustCoreDaemonDomainEvent(event: RustCoreDaemonTagDomainEvent): void {
     if (event.domain === 'index' && indexProtocolDirty(event.indexProtocol)) {
       options.clearFontQueryCaches()
-      options.appendStartupLog(`merged index protocol event applied: command=${event.command || 'unknown'}`)
+      append(`merged index protocol event applied: command=${event.command || 'unknown'}`)
       return
     }
     const stateSignal = event.stateSignal && typeof event.stateSignal === 'object' ? event.stateSignal : signalFromMutationProtocol(event.mutationProtocol)

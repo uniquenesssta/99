@@ -101,7 +101,7 @@ async function checkMutants() {
     ['listener cleanup', 'mergedSignal.cleanup()', 'void mergedSignal', 'runRustFontParseBatch/oneshot'],
     ['cached status', 'if (cachedStatus) return cachedStatus', '', 'cached-ready'],
     ['duplicate scheduler', 'const rustCoreScheduler = createRustCoreSchedulerRuntime', 'createRustCoreSchedulerRuntime({ appendStartupLog: options.appendStartupLog });\n  const rustCoreScheduler = createRustCoreSchedulerRuntime', 'runRustFontActivationFiles/oneshot'],
-    ['early file cleanup', "writeJson: value => fsp.writeFile(filePath, JSON.stringify(value), 'utf-8')", "writeJson: value => fsp.writeFile(filePath, JSON.stringify(value), 'utf-8').then(() => fsp.rm(filePath, { force: true }))", 'concurrent-files'],
+    ['early file cleanup', "writeJson: value => fsp.writeFile(filePath, JSON.stringify(traceRustInput(value)), 'utf-8')", "writeJson: value => fsp.writeFile(filePath, JSON.stringify(traceRustInput(value)), 'utf-8').then(() => fsp.rm(filePath, { force: true }))", 'concurrent-files'],
     ['missing file cleanup', 'fsp.rm(filePath, { force: true }).catch(() => undefined)', 'Promise.resolve()', 'runRustFontActivationFiles/oneshot'],
     ['cleanup masks result', '.catch(() => undefined)', '', 'runRustFontActivationFiles/cleanup-fail'],
     ['throttle threshold', 'now - previous.at < 8000', 'now - previous.at < 7999', 'throttled-preview-daemon'],

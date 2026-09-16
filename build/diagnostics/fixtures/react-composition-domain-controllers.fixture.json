@@ -104,7 +104,7 @@
     "useDeveloperController"
   ],
   "sourceHashes": {
-    "src/renderer/src/fontWriteQueueRuntime.ts": "decf81267e18437ca0c0562638222a1f3878327f25af07caf8f09fbe310f36e2",
+    "src/renderer/src/fontWriteQueueRuntime.ts": "c6eb36a204a0c42d29d96a4756352d96b3ca4b495d02a49cba49a06e627f4756",
     "src/renderer/src/databaseDerivedStateRuntime.ts": "42e18e700d5635da34e285e4158cc134013e39591a6e6e949a59fdbb81d6bd2d",
     "src/renderer/src/sharedMetadataSyncRuntime.ts": "10ae9150b3115ea4ef1a9060cddb4b76455d28f3bd14726bee9862e1d564d50e",
     "src/renderer/src/rendererDeveloperStatusRuntime.ts": "435e2f25ab960502c5bdb31b907b24f483a4ecf251370ba8e0bf0804221ed437",

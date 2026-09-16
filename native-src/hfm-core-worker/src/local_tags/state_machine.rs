@@ -20,6 +20,7 @@ use super::types::{
 pub fn set_local_tags_state_machine(config: &LocalTagsCommandConfig) -> Result<String, String> {
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
+    let mut trace = crate::operation_trace::OperationTrace::from_input(&input);
     let payload: LocalTagsSetPayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
     if let Some(parent) = Path::new(&payload.db_path).parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -46,6 +47,7 @@ pub fn set_local_tags_state_machine(config: &LocalTagsCommandConfig) -> Result<S
         apply_set_rows(delete_by_id, delete_by_path, insert, &payload, &mut updated_ids, &mut written)?;
     }
     tx.commit().map_err(|error| error.to_string())?;
+    trace.committed();
     let next_bound_tags = read_bound_tags(&conn).map_err(|error| error.to_string())?;
     let known_tags = merge_tag_sets([
         previous_known_tags.as_slice(),
@@ -62,7 +64,8 @@ pub fn set_local_tags_state_machine(config: &LocalTagsCommandConfig) -> Result<S
     updated_ids.dedup();
     let timings = LocalTagsTimings { elapsed: started_at.elapsed().as_millis(), rows: payload.rows.len() };
     let catalog_changed = !added_known_tags.is_empty() || !removed_known_tags.is_empty();
-    let state_signal = local_tag_signal("set", &payload.db_path, &payload.updated_at, &updated_ids, &known_tags, catalog_changed);
+    let mut state_signal = local_tag_signal("set", &payload.db_path, &payload.updated_at, &updated_ids, &known_tags, catalog_changed);
+    state_signal.trace = trace.context.clone();
     let mutation_protocol = tag_mutation_protocol_result(
         "--local-tags-set",
         "localTags",
@@ -96,7 +99,7 @@ pub fn set_local_tags_state_machine(config: &LocalTagsCommandConfig) -> Result<S
         timings,
         worker_mode: "rust-local-tags-set".to_string(),
     };
-    serde_json::to_string(&result).map_err(|error| error.to_string())
+    trace.finish(serde_json::to_string(&result).map_err(|error| error.to_string()))
 }
 
 fn apply_set_rows(
@@ -139,6 +142,7 @@ fn apply_set_rows(
 pub fn delete_local_tag_state_machine(config: &LocalTagsCommandConfig) -> Result<String, String> {
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
+    let mut trace = crate::operation_trace::OperationTrace::from_input(&input);
     let payload: LocalTagsDeletePayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
     let tag_name = payload.tag_name.trim().to_string();
     if let Some(parent) = Path::new(&payload.db_path).parent() {
@@ -160,6 +164,7 @@ pub fn delete_local_tag_state_machine(config: &LocalTagsCommandConfig) -> Result
         tx.execute("DELETE FROM local_font_tags WHERE tag_name = ?", params![&tag_name])
             .map_err(|error| error.to_string())?;
         tx.commit().map_err(|error| error.to_string())?;
+        trace.committed();
     }
     let known_tags = remove_known_tag(&previous_known_tags, &tag_name);
     let (added_known_tags, removed_known_tags) = known_tag_diff(&previous_known_tags, &known_tags);
@@ -171,7 +176,8 @@ pub fn delete_local_tag_state_machine(config: &LocalTagsCommandConfig) -> Result
     updated_ids.dedup();
     let timings = LocalTagsTimings { elapsed: started_at.elapsed().as_millis(), rows: updated };
     let catalog_changed = !added_known_tags.is_empty() || !removed_known_tags.is_empty();
-    let state_signal = local_tag_signal("deleteTag", &payload.db_path, &payload.updated_at, &updated_ids, &known_tags, catalog_changed);
+    let mut state_signal = local_tag_signal("deleteTag", &payload.db_path, &payload.updated_at, &updated_ids, &known_tags, catalog_changed);
+    state_signal.trace = trace.context.clone();
     let mutation_protocol = tag_mutation_protocol_result(
         "--local-tags-delete-tag",
         "localTags",
@@ -204,7 +210,7 @@ pub fn delete_local_tag_state_machine(config: &LocalTagsCommandConfig) -> Result
         timings,
         worker_mode: "rust-local-tags-delete".to_string(),
     };
-    serde_json::to_string(&result).map_err(|error| error.to_string())
+    trace.finish(serde_json::to_string(&result).map_err(|error| error.to_string()))
 }
 
 fn read_tag_target_ids(conn: &Connection, tag_name: &str) -> rusqlite::Result<Vec<String>> {
@@ -255,6 +261,7 @@ fn local_tag_signal(
 ) -> LocalTagsMutationStateSignal {
     let changed = !changed_ids.is_empty() || catalog_changed;
     LocalTagsMutationStateSignal {
+        trace: None,
         mutation_kind: kind.to_string(),
         db_path: db_path.to_string(),
         changed_ids: changed_ids.to_vec(),

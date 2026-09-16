@@ -1,3 +1,4 @@
+import { traceRustInput, logOperation } from '../logging/operationTraceContext'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fsp } from 'node:fs'
@@ -74,7 +75,7 @@ function createTemporaryJsonFile(prefix: string): RustCoreJsonFile {
   const filePath = join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${randomUUID()}.json`)
   return {
     path: filePath,
-    writeJson: value => fsp.writeFile(filePath, JSON.stringify(value), 'utf-8'),
+    writeJson: value => fsp.writeFile(filePath, JSON.stringify(traceRustInput(value)), 'utf-8'),
     readText: () => fsp.readFile(filePath, 'utf-8'),
     dispose: () => fsp.rm(filePath, { force: true }).catch(() => undefined),
   }
@@ -130,6 +131,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   }
 
   async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean }> {
+    logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'daemon-probe' }, options.appendStartupLog)
     const daemonResult = await rustCoreDaemon.tryRun(workerPath, args, execOptions).catch((error) => {
       if (error instanceof Error && error.name === 'AbortError') throw error
       if (isRustCoreDaemonSubmittedError(error)) {
@@ -140,14 +142,29 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       return null
     })
     if (daemonResult) return { ...daemonResult, daemon: true }
+    logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'one-shot' }, options.appendStartupLog)
     const result = await rustCoreScheduler.run(args, async (schedulerSignal) => {
       const mergedSignal = mergeAbortSignals(schedulerSignal, execOptions.signal)
       try {
         return await execFileAsync(workerPath, args, { ...execOptionsWithoutExternalSignal(execOptions), signal: mergedSignal.signal }) as { stdout: string; stderr: string }
+      } catch (error) {
+        const stderr = error && typeof error === 'object' ? (error as { stderr?: unknown }).stderr : undefined
+        if (typeof stderr === 'string') {
+          for (const line of stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
+            try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Preserve original error. */ }
+          }
+        }
+        logOperation({ stage: 'transport-result', outcome: 'unknown', reason: 'worker-rejected', transport: 'one-shot' }, options.appendStartupLog)
+        throw error
       } finally {
         mergedSignal.cleanup()
       }
     })
+    for (const line of result.stderr.split(/\r?\n/)) {
+      if (line.startsWith('operation-chain: ')) {
+        try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Best effort diagnostic. */ }
+      }
+    }
     return { ...result, daemon: false }
   }
 

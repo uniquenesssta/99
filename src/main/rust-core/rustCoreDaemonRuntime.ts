@@ -1,3 +1,4 @@
+import { logOperation, currentOperationTrace } from '../logging/operationTraceContext'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
@@ -168,6 +169,8 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
   const stoppingChildren = new Map<ChildProcessWithoutNullStreams, () => void>()
   let childPath = ''
   let stderrTail = ''
+  let traceLine = ''
+  let traceLineOverflow = false
   let loggedDisabled = false
   let loggedReady = false
   let exitHookInstalled = false
@@ -410,6 +413,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
 
     stopImmediately()
     stderrTail = ''
+    traceLine = ''; traceLineOverflow = false
     loggedReady = false
 
     try {
@@ -424,6 +428,17 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
       child.stderr.on('data', (chunk: Buffer) => {
         if (child !== active) return
         stderrTail = `${stderrTail}${chunk.toString('utf-8')}`.slice(-4096)
+        for (const part of chunk.toString('utf-8').split(/(?<=\n)/)) {
+          if (!traceLineOverflow) traceLine += part
+          if (traceLine.length > 8192 + 32) { traceLine = ''; traceLineOverflow = true }
+          if (part.endsWith('\n')) {
+            if (traceLineOverflow) logOperation({ stage: 'log-capacity', reason: 'native-line-limit', dropped: 1 }, options.appendStartupLog)
+            else if (traceLine.startsWith('operation-chain: ')) {
+              try { logOperation(JSON.parse(traceLine.slice(17)), options.appendStartupLog) } catch { /* Malformed diagnostic only. */ }
+            }
+            traceLine = ''; traceLineOverflow = false
+          }
+        }
       })
       child.stdin.on('error', (error) => {
         if (child !== active) { stoppingChildren.get(active)?.(); return }
@@ -464,6 +479,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
     if (!ensureStarted(workerPath) || !child || child.killed) return null
 
     const id = randomUUID()
+    const trace = currentOperationTrace()
     const command = commandFromArgs(args)
     const maxBuffer = Math.max(1024, Number(execOptions.maxBuffer || 8 * 1024 * 1024) || 8 * 1024 * 1024)
     const timeoutMs = Math.max(0, Number(execOptions.timeout || 0) || 0)
@@ -494,6 +510,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
             // ignore cancel write failures; the caller has already been released
           }
           cleanupJob(job)
+          logOperation({ trace, stage: 'transport-result', outcome: 'unknown', reason: 'aborted', jobId: id }, options.appendStartupLog)
           reject(abortError(signal))
         }
         signal.addEventListener('abort', job.abortListener, { once: true })
@@ -508,6 +525,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
             // ignore cancel write failures; reject below is enough for the caller fallback
           }
           cleanupJob(job)
+          logOperation({ trace, stage: 'transport-result', outcome: 'unknown', reason: 'timeout', jobId: id }, options.appendStartupLog)
           reject(rustCoreDaemonBlocksOneShotFallbackAfterSubmit(command)
             ? submittedError(command, `rust core daemon job timeout: command=${command}, timeoutMs=${timeoutMs}, elapsedMs=${Date.now() - job.startedAt}`)
             : new Error(`rust core daemon job timeout: command=${command}, timeoutMs=${timeoutMs}, elapsedMs=${Date.now() - job.startedAt}`))
@@ -517,6 +535,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
 
       pending.set(id, job)
       try {
+        logOperation({ trace, stage: 'daemon-submit', backend: 'rust', transport: 'daemon', jobId: id }, options.appendStartupLog)
         if (!writeDaemonLine(JSON.stringify({ id, type: 'submit', args }))) throw new Error('rust core daemon stdin unavailable')
       } catch (error) {
         pending.delete(id)

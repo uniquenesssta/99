@@ -1,0 +1,764 @@
+{
+  "success": [
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2sj-gpvano21zoh",
+        "operationId": "renderer-mu4dd2sj-gpvano21zoh:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2sj-gpvano21zoh:1",
+        "batchId": "renderer-mu4dd2sj-gpvano21zoh:1",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2sj-gpvano21zoh:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "queued",
+      "outcome": "",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390135,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2sj-gpvano21zoh",
+        "operationId": "renderer-mu4dd2sj-gpvano21zoh:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2sj-gpvano21zoh:3",
+        "batchId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2sj-gpvano21zoh:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "dispatch",
+      "outcome": "",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390136,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2sj-gpvano21zoh",
+        "operationId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2sj-gpvano21zoh:3",
+        "batchId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2sj-gpvano21zoh:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "ipc-start",
+      "outcome": "",
+      "reason": "",
+      "backend": "main",
+      "transport": "",
+      "timestamp": 1789579390136,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2sj-gpvano21zoh",
+        "operationId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2sj-gpvano21zoh:3",
+        "batchId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2sj-gpvano21zoh:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "backend-start",
+      "outcome": "",
+      "reason": "",
+      "backend": "node",
+      "transport": "",
+      "timestamp": 1789579390137,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2sj-gpvano21zoh",
+        "operationId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2sj-gpvano21zoh:3",
+        "batchId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2sj-gpvano21zoh:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "commit",
+      "outcome": "committed",
+      "reason": "local-tag-transaction",
+      "backend": "node",
+      "transport": "",
+      "timestamp": 1789579390138,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2sj-gpvano21zoh",
+        "operationId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2sj-gpvano21zoh:3",
+        "batchId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2sj-gpvano21zoh:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "signal",
+      "outcome": "",
+      "reason": "",
+      "backend": "node-fallback",
+      "transport": "",
+      "localRevision": 1,
+      "sharedRevision": 0,
+      "timestamp": 1789579390138,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2sj-gpvano21zoh",
+        "operationId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2sj-gpvano21zoh:3",
+        "batchId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2sj-gpvano21zoh:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "view-apply",
+      "outcome": "",
+      "reason": "tag-authority-signal",
+      "backend": "",
+      "transport": "",
+      "localRevision": 1,
+      "sharedRevision": 0,
+      "timestamp": 1789579390139,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2sj-gpvano21zoh",
+        "operationId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2sj-gpvano21zoh:3",
+        "batchId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2sj-gpvano21zoh:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "ipc-result",
+      "outcome": "returned",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390140,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2sj-gpvano21zoh",
+        "operationId": "renderer-mu4dd2sj-gpvano21zoh:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2sj-gpvano21zoh:3",
+        "batchId": "renderer-mu4dd2sj-gpvano21zoh:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2sj-gpvano21zoh:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "queue-settled",
+      "outcome": "acknowledged",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390140,
+      "jobId": "",
+      "dropped": 0
+    }
+  ],
+  "retry": [
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:1",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:1",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "queued",
+      "outcome": "",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390258,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:3",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "dispatch",
+      "outcome": "",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390258,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:3",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "ipc-start",
+      "outcome": "",
+      "reason": "",
+      "backend": "main",
+      "transport": "",
+      "timestamp": 1789579390259,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:3",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "backend-start",
+      "outcome": "",
+      "reason": "",
+      "backend": "node",
+      "transport": "",
+      "timestamp": 1789579390259,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:3",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "backend-result",
+      "outcome": "unknown",
+      "reason": "node-transaction-failed",
+      "backend": "node",
+      "transport": "",
+      "timestamp": 1789579390259,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:3",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "ipc-result",
+      "outcome": "returned",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390260,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:3",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:2",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "retry",
+      "outcome": "unconfirmed",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390260,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:5",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "dispatch",
+      "outcome": "",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390260,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:5",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "ipc-start",
+      "outcome": "",
+      "reason": "",
+      "backend": "main",
+      "transport": "",
+      "timestamp": 1789579390260,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:5",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "backend-start",
+      "outcome": "",
+      "reason": "",
+      "backend": "node",
+      "transport": "",
+      "timestamp": 1789579390261,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:5",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "backend-result",
+      "outcome": "unknown",
+      "reason": "node-transaction-failed",
+      "backend": "node",
+      "transport": "",
+      "timestamp": 1789579390261,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:5",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "ipc-result",
+      "outcome": "returned",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390261,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:5",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:4",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "retry",
+      "outcome": "unconfirmed",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390261,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:7",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "dispatch",
+      "outcome": "",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390261,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:7",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "ipc-start",
+      "outcome": "",
+      "reason": "",
+      "backend": "main",
+      "transport": "",
+      "timestamp": 1789579390262,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:7",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "backend-start",
+      "outcome": "",
+      "reason": "",
+      "backend": "node",
+      "transport": "",
+      "timestamp": 1789579390262,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:7",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "commit",
+      "outcome": "committed",
+      "reason": "local-tag-transaction",
+      "backend": "node",
+      "transport": "",
+      "timestamp": 1789579390262,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:7",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "signal",
+      "outcome": "",
+      "reason": "",
+      "backend": "node-fallback",
+      "transport": "",
+      "localRevision": 1,
+      "sharedRevision": 0,
+      "timestamp": 1789579390262,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:7",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "view-apply",
+      "outcome": "",
+      "reason": "tag-authority-signal",
+      "backend": "",
+      "transport": "",
+      "localRevision": 1,
+      "sharedRevision": 0,
+      "timestamp": 1789579390263,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:7",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "ipc-result",
+      "outcome": "returned",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390263,
+      "jobId": "",
+      "dropped": 0
+    },
+    {
+      "trace": {
+        "version": 1,
+        "sessionId": "renderer-mu4dd2wn-zz7bolevc7",
+        "operationId": "renderer-mu4dd2wn-zz7bolevc7:1",
+        "target": "id-e40c292c:1",
+        "rendererGeneration": 1,
+        "attemptId": "renderer-mu4dd2wn-zz7bolevc7:7",
+        "batchId": "renderer-mu4dd2wn-zz7bolevc7:6",
+        "domain": "localTags",
+        "members": [
+          "renderer-mu4dd2wn-zz7bolevc7:1"
+        ],
+        "omitted": 0
+      },
+      "linked": true,
+      "stage": "queue-settled",
+      "outcome": "acknowledged",
+      "reason": "",
+      "backend": "",
+      "transport": "",
+      "timestamp": 1789579390263,
+      "jobId": "",
+      "dropped": 0
+    }
+  ]
+}

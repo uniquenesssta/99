@@ -1,3 +1,4 @@
+import type { OperationTrace } from '../shared/operationTrace'
 import { contextBridge,ipcRenderer } from 'electron'
 import { Buffer } from 'node:buffer'
 
@@ -211,15 +212,15 @@ const api = {
   installSystem: (item: FontItem): Promise<InstallResult> => invoke('fonts:installSystem', item),
   uninstallSystem: (item: FontItem): Promise<InstallResult> => invoke('fonts:uninstallSystem', item),
   deleteFontFiles: (items: FontItem[], watchedFolders: string[]): Promise<FontDeleteResult> => invoke('fonts:deleteFiles', items, watchedFolders),
-  setDeleteProtection: (items: FontItem[], watchedFolders: string[], protect: boolean): Promise<FontProtectionResult> => invoke('fonts:setDeleteProtection', items, watchedFolders, protect),
-  setFavorite: (items: FontItem[], watchedFolders: string[], favorite: boolean): Promise<FontProtectionResult> => invoke('fonts:setFavorite', items, watchedFolders, favorite),
-  setLocalTags: (item: FontItem, tagNames: string[]): Promise<FontTagUpdateResult> => invoke('fonts:setLocalTags', item, tagNames),
-  setLocalTagsBatch: (items: FontTagBatchItem[]): Promise<FontTagUpdateResult> => invoke('fonts:setLocalTagsBatch', items),
-  deleteLocalTag: (tagName: string): Promise<FontTagUpdateResult> => invoke('fonts:deleteLocalTag', tagName),
-  setSharedTags: (items: FontItem[], watchedFolders: string[], tagNames: string[]): Promise<FontTagUpdateResult> => invoke('fonts:setSharedTags', items, watchedFolders, tagNames),
-  setSharedTagsBatch: (items: FontTagBatchItem[], watchedFolders: string[]): Promise<FontTagUpdateResult> => invoke('fonts:setSharedTagsBatch', items, watchedFolders),
-  renameSharedTag: (oldTagName: string, newTagName: string, watchedFolders: string[]): Promise<FontTagUpdateResult> => invoke('fonts:renameSharedTag', oldTagName, newTagName, watchedFolders),
-  deleteSharedTag: (tagName: string, watchedFolders: string[]): Promise<FontTagUpdateResult> => invoke('fonts:deleteSharedTag', tagName, watchedFolders),
+  setDeleteProtection: (items: FontItem[], watchedFolders: string[], protect: boolean, trace?: OperationTrace): Promise<FontProtectionResult> => invoke('fonts:setDeleteProtection', items, watchedFolders, protect, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  setFavorite: (items: FontItem[], watchedFolders: string[], favorite: boolean, trace?: OperationTrace): Promise<FontProtectionResult> => invoke('fonts:setFavorite', items, watchedFolders, favorite, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  setLocalTags: (item: FontItem, tagNames: string[], trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:setLocalTags', item, tagNames, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  setLocalTagsBatch: (items: FontTagBatchItem[], trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:setLocalTagsBatch', items, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  deleteLocalTag: (tagName: string, trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:deleteLocalTag', tagName, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  setSharedTags: (items: FontItem[], watchedFolders: string[], tagNames: string[], trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:setSharedTags', items, watchedFolders, tagNames, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  setSharedTagsBatch: (items: FontTagBatchItem[], watchedFolders: string[], trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:setSharedTagsBatch', items, watchedFolders, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  renameSharedTag: (oldTagName: string, newTagName: string, watchedFolders: string[], trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:renameSharedTag', oldTagName, newTagName, watchedFolders, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  deleteSharedTag: (tagName: string, watchedFolders: string[], trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:deleteSharedTag', tagName, watchedFolders, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   activateFont: (item: FontItem): Promise<InstallResult> => invoke('fonts:activateFont', item),
   activateFonts: (items: FontItem[]): Promise<FontActivationBatchResult> => invoke('fonts:activateFonts', items),
   deactivateFont: (item: FontItem): Promise<InstallResult> => invoke('fonts:deactivateFont', item),

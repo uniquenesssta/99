@@ -69,6 +69,7 @@ export function createLocalFontTagMutationEffectsRuntime(deps: Pick<LocalFontTag
     const normalizedChangedIds = Array.isArray(signal?.changedIds) ? signal?.changedIds : changedIds;
     const changed = normalizedChangedIds.length > 0 || catalogChanged;
     const normalized: RustLocalTagsMutationStateSignal = {
+      ...(signal?.trace ? { trace: signal.trace } : {}),
       mutationKind: signal?.mutationKind || kind,
       dbPath: signal?.dbPath || deps.librarySqlitePath(),
       changedIds: normalizedChangedIds,

@@ -1,9 +1,16 @@
+import { withOperationTrace, logOperation } from '../logging/operationTraceContext'
 import { ipcMain } from "electron";
 import { PreviewInputError } from "../preview/runtime/previewInputPolicy";
 import { assertTrustedIpcSender } from "../security/ipcSenderValidation";
 import { detailedStartupLogsEnabled } from "../logging/startupLogPolicy";
 import type { IpcHandlerRuntime,IpcInvokeHandler } from "./ipcHandlerTypes";
 
+const OPERATION_TRACE_ARGUMENTS: Record<string, number> = {
+  'fonts:setLocalTags': 2, 'fonts:setLocalTagsBatch': 1,
+  'fonts:setSharedTags': 3, 'fonts:setSharedTagsBatch': 2,
+  'fonts:setFavorite': 3, 'fonts:setDeleteProtection': 3,
+  'fonts:deleteLocalTag': 1, 'fonts:deleteSharedTag': 2, 'fonts:renameSharedTag': 3,
+}
 const IPC_TRACE_SLOW_MS = 120
 const IPC_TRACE_WARN_MS = 300
 
@@ -234,8 +241,15 @@ function processMemorySummary(): { rssMb: number; heapUsedMb: number; heapTotalM
 }
 
 export function registerTracedIpcHandler(runtime: IpcHandlerRuntime, channel: string, handler: IpcInvokeHandler): void {
+  const append = (message: string): void => { try { runtime.appendLog?.(message) } catch { /* Log failure never changes IPC outcome. */ } }
   ipcMain.handle(channel, async (event, ...args) => {
-    assertTrustedIpcSender(event, channel, runtime.appendLog)
+    assertTrustedIpcSender(event, channel, append)
+    const tail = args[args.length - 1]
+    const envelope = args.length === OPERATION_TRACE_ARGUMENTS[channel] + 1 && tail && typeof tail === 'object' && Object.keys(tail).length === 1 && Object.hasOwn(tail, '__hfmOperationTrace')
+      ? args.pop() as { __hfmOperationTrace?: unknown } : undefined
+    return withOperationTrace(envelope?.__hfmOperationTrace, append, async () => {
+    const traceChannel = Object.hasOwn(OPERATION_TRACE_ARGUMENTS, channel)
+    if (traceChannel) logOperation({ stage: 'ipc-start', backend: 'main' })
     const startedAt = Date.now()
     const cpuStarted = process.cpuUsage()
     const heapBefore = process.memoryUsage().heapUsed
@@ -244,7 +258,7 @@ export function registerTracedIpcHandler(runtime: IpcHandlerRuntime, channel: st
     const shouldTraceStart = detailedIpcLogs && shouldTraceDetailed
     const argsSummary = shouldTraceDetailed ? summarizeIpcArgs(channel, args) : ''
     if (shouldTraceStart) {
-      runtime.appendLog?.(`perf ipc start: channel=${channel}, sender=${event.sender.id}, args=${argsSummary}`)
+      append(`perf ipc start: channel=${channel}, sender=${event.sender.id}, args=${argsSummary}`)
     }
     try {
       runtime.assertFeatureForChannel?.(channel)
@@ -260,21 +274,24 @@ export function registerTracedIpcHandler(runtime: IpcHandlerRuntime, channel: st
         elapsed >= slowMs ||
         IPC_TRACE_IMPORTANT_RESULT_CHANNELS.has(channel)
       if (shouldTraceEnd) {
-        runtime.appendLog?.(
+        append(
           `perf ipc end: channel=${channel}, severity=${severity}, status=ok, durationMs=${elapsed}, cpuUserMs=${Math.round(cpu.user / 1000)}, cpuSystemMs=${Math.round(cpu.system / 1000)}, heapDeltaMb=${Math.round(((heapAfter - heapBefore) / 1024 / 1024) * 10) / 10}, memory=${JSON.stringify(processMemorySummary())}, result=${summarizeIpcResult(channel, result)}`
         )
       }
+      if (traceChannel) logOperation({ stage: 'ipc-result', outcome: 'returned' })
       return result
     } catch (error) {
+      if (traceChannel) logOperation({ stage: 'ipc-result', outcome: 'unknown', reason: 'handler-rejected' })
       // The preview policy already records these through its bounded log sink.
       // Preserve the rejection without a second per-request error/argument log.
       if (error instanceof PreviewInputError) throw error
       const elapsed = Date.now() - startedAt
       const cpu = process.cpuUsage(cpuStarted)
-      runtime.appendLog?.(
+      append(
         `perf ipc end: channel=${channel}, severity=error, status=failed, durationMs=${elapsed}, cpuUserMs=${Math.round(cpu.user / 1000)}, cpuSystemMs=${Math.round(cpu.system / 1000)}, error=${error instanceof Error ? safeString(error.message, 240) : safeString(error, 240)}, args=${argsSummary || summarizeIpcArgs(channel, args)}`
       )
       throw error
     }
+    })
   })
 }

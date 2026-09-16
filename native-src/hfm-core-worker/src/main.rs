@@ -14,6 +14,7 @@ mod json;
 mod local_tags;
 mod merged_index;
 mod mutation_protocol;
+mod operation_trace;
 mod protocol;
 mod preview_cache;
 mod preview_render;

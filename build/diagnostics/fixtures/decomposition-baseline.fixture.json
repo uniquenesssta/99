@@ -63,7 +63,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "41bd5b5d37586c42431f491ae127f6bb417b21de5426f0b7d4f98178609f3507"
+      "tokenHash": "f862da9c2785a5f283a4c3fe89fd057c168ddba6edf7c49dacfee06ffead5045"
     },
     "src/renderer/src/App.tsx": {
       "functions": [
@@ -1031,7 +1031,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "d83309e67e8a9e1649b1d1b7122f19e75b518297cf7555796e030e17bb323c7e"
+      "tokenHash": "5e239faf5a10c9629db5db04ccf83bca684eb05622f86b08c3de9c5f4dd8bd62"
     },
     "src/main/library/runtime/localFontTagRustAdapterRuntime.ts": {
       "functions": [
@@ -1099,7 +1099,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "e50eb870049b6a24a2b92cd138191bacbeab3c5953ad7104d40d0f9796d0753a"
+      "tokenHash": "a11ba73f829e94f4fdbce5b4ffb0624d99d20237e0d75b61fd61587a15206059"
     },
     "src/renderer/src/runtime/app/createAppMenuDialogRuntime.ts": {
       "functions": [
