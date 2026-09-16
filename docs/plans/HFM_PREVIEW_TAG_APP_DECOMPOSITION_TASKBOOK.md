@@ -117,7 +117,7 @@ D-01 必须冻结公开导出、IPC 名称、五个本地标签方法、六组�
 | --- | --- | --- |
 | D-01 | 无 | 三文件清单、跨域写入链、两个隔离复现、字段隔离基线；新自动门禁的具体名称与路径 |
 | D-02 | 预览索引失效修复 | F-P1 旧失败/新通过；写/删/失败/晚完成测试；不移动模块 |
-| D-03 | Node 标签身份 hydration | 合法输入证据、F-T1 重放、分块与去重、回退政策不变；不移动事务 |
+| D-03 | 标签身份 hydration（Node/Rust，扩展证据见§19） | 合法输入证据、F-T1 重放、分块与去重、回退政策不变；不移动事务 |
 | D-04 | 路由/库快照迁移及窄接线 | 缓存身份与副作用摘要不变、单一 availability、旧 Promise 不污染 |
 | D-05 | 索引访问迁移及窄接线 | D-02 全保持、Map 不外泄、句柄所有权及唯一实例 |
 | D-06 | 批量行构造/读取收敛 | 键与行结果一致、400 分块、状态/图片语义区分、root 分支处理证明 |
@@ -352,7 +352,7 @@ npm run dev
 | --- | --- | --- | --- | --- |
 | D-01 | 完成基线（未修复生产故障） | 本节同一提交 | verify 92/92；独立观察 2 项 | 无生产变更；下一项 W-01 |
 | D-02 | 自动验证通过待实机 | §18 同一提交 | typecheck / 97项 / 三端构建通过 | Windows开发模式待复验 |
-| D-03 | 未开始 | — | — | — |
+| D-03 | 阻塞 | §19 同一提交 | typecheck、98项诊断、三端构建通过；修复已实现 | 当前环境无Cargo，Rust定向门与Windows实机待验 |
 | D-04 | 未开始 | — | — | — |
 | D-05 | 未开始 | — | — | — |
 | D-06 | 未开始 | — | — | — |
@@ -892,3 +892,28 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 
 - 自动验证：`npm run verify` 退出0（typecheck、97/97）；Vite 354/1/191 模块构建退出0；仅七个白名单文件。冻结基线只更新 previewCacheStorageRuntime 的 tokenHash，其余所有权/公开面未变。Mermaid 已记录实际链路。
 - Create State 返回无 active world model，未取得项目级保存确认；Git、README与本执行卡为交接依据。
+
+## 19. D-03 执行卡
+
+- 状态：阻塞（修复已实现，Rust门缺执行环境）；基线 `1cda3a6ca0cd48ac8bffd399fa19d1bc07ba645c`，分支 `stage/09-preview-tags-app`，开工与远端一致且工作树干净。
+- 范围：修复身份关联读取，不搬模块，不改写入事务/持久化主键/路径规范化/默认回退准入。
+- 精确白名单：`src/main/library/runtime/localFontTagsRuntime.ts`（Node一对多关联）；`native-src/hfm-core-worker/src/local_tags/read_state.rs`（审计发现Rust同源缺陷，一对多读取及原地单元测试）；`build/diagnostics/check-local-tag-hydration.cjs`（新真实Node用例、Rust边界、变异）；`build/diagnostics/check-decomposition-baseline.cjs`（F-T1转必过）；`build/diagnostics/fixtures/decomposition-baseline.fixture.json`（仅标签文件tokenHash）；`package.json`；`README.md`；本任务书。
+- 范围扩展证据：Rust read_state.rs alias_to_item/path_to_item 也是 HashMap<String,String>，insert覆盖前项；仅修Node不能满足Rust路径同一契约。Rust测试实际执行依赖Cargo，缺失必须标明，不能将边界mock宣称原生通过。
+- 身份证据：rootIndexCoordinator 与 dbQueryWorkerSharedSource 从原字体保留sourceId、重新生成runtime id；hydration本身没有唯一sourceId/path输入断言。共享身份读取采用关联集合，不推断传递关系、不把A专属标签分给仅共享另一别名的B。同路径多ID是防御契约，尚无用户实库样本证明普遍出现；不宣称历史收藏/共享标签故障都由此造成。
+- 基线：F-T1 expected=[[tag],[tag]], actual=[[],[tag]]；F-P1已通过。
+- 验收对应X-13的身份读取和回退准入，覆盖共享path/sourceId、独立字体隔离、去重、空输入/缺路径/重复ID、500项分块、Rust正常/null/失败及允许/禁止回退、输入不变和真实变异。
+
+### 实现与验证边界
+
+- Node使用alias/path → Set<runtimeId>，Rust使用alias/path → BTreeSet<itemId>；按数据库行的直接关联逐项添加、按每个结果ID去重。查询键仍去重并每500项分块，排序规则和身份规范化保持原样。
+- 不新增状态所有者，映射均为单次hydration局部变量；公开方法、Rust协议、DB schema、标签写入与通知链均不变。
+- F-T1从观察失败提升为默认必过；`baseline:decomposition-observe` 和 `--probe` 现在都要求F-P1/F-T1通过，历史§11/§18记录仍代表当时证据。
+- 新JS门真实加载生产Node运行时与identity helper，SQL I/O受控；Rust成功返回测试仅证明TS适配请求/结果及禁止Node回退，不证明Rust内部行为。两项真实变异分别恢复alias/path最后一项覆盖，均被拒绝。
+- Rust新增两个原地单元测试，调用真实read_local_tags与隔离临时SQLite，覆盖共享别名/路径、不传递串标签、缺路径、重复输入、空输入、1001项分块。当前`cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests`因缺Cargo退出127，测试未执行，原生编译未确认。
+- Windows拉取后执行上述定向cargo test，再`npm run dev`重编Rust并检查标签跨页与收藏/共享标签保持；不要求安装包。Rust测试失败必须先修复，不能将本轮作为D-04已验收基线。D-02/A-02未覆盖的Windows矩阵继续继承。
+- 回滚以本节同一提交SHA执行revert；可通过`git log -1 --format=%H -- build/diagnostics/check-local-tag-hydration.cjs`查询发布提交。下一项D-04仅在原生门补齐后进入。
+
+- 提供`npm run test:local-tag-hydration-rust`作为定向Rust门入口；不混入不依赖Cargo的diagnostics:all计数。
+
+- 自动证据：`npm run verify`退出0，TypeScript和98/98诊断通过；Electron/Vite 354/1/191模块通过。D-02门及已有标签事务/回退政策门保持。冻结fixture仅改变标签生产文件tokenHash；共八个白名单文件，生产改动两文件，无依赖/锁文件变更。
+- Create State返回无active world model，未取得项目级保存确认；以Git、README与本执行卡交接。此次为原有两个读取函数的局部集合修复，无新复杂生命周期，未新增架构图。

@@ -44,8 +44,8 @@ fn read_local_tags(payload: &LocalTagsReadPayload, started_at: Instant) -> Resul
         });
     }
 
-    let mut alias_to_item = HashMap::<String, String>::new();
-    let mut path_to_item = HashMap::<String, String>::new();
+    let mut alias_to_item = HashMap::<String, BTreeSet<String>>::new();
+    let mut path_to_item = HashMap::<String, BTreeSet<String>>::new();
     let mut aliases = Vec::<String>::new();
     let mut paths = Vec::<String>::new();
 
@@ -62,14 +62,14 @@ fn read_local_tags(payload: &LocalTagsReadPayload, started_at: Instant) -> Resul
             if !alias_to_item.contains_key(&alias) {
                 aliases.push(alias.clone());
             }
-            alias_to_item.insert(alias, item_id.clone());
+            alias_to_item.entry(alias).or_default().insert(item_id.clone());
         }
         let font_path = clean_value(&row.font_path);
         if !font_path.is_empty() {
             if !path_to_item.contains_key(&font_path) {
                 paths.push(font_path.clone());
             }
-            path_to_item.insert(font_path, item_id);
+            path_to_item.entry(font_path).or_default().insert(item_id);
         }
     }
 
@@ -101,7 +101,7 @@ fn read_tags_by_column(
     conn: &Connection,
     column: &str,
     values: &[String],
-    value_to_item: &HashMap<String, String>,
+    value_to_item: &HashMap<String, BTreeSet<String>>,
     tag_map: &mut BTreeMap<String, BTreeSet<String>>,
 ) -> rusqlite::Result<()> {
     if values.is_empty() {
@@ -118,10 +118,13 @@ fn read_tags_by_column(
         })?;
         for row in rows {
             let (lookup_value, tag_name) = row?;
-            let item_id = value_to_item.get(&lookup_value).cloned().unwrap_or(lookup_value);
             let tag_name = clean_value(&tag_name);
-            if !item_id.is_empty() && !tag_name.is_empty() {
-                tag_map.entry(item_id).or_default().insert(tag_name);
+            if !tag_name.is_empty() {
+                if let Some(item_ids) = value_to_item.get(&lookup_value) {
+                    for item_id in item_ids {
+                        tag_map.entry(item_id.clone()).or_default().insert(tag_name.clone());
+                    }
+                }
             }
         }
     }
@@ -172,4 +175,65 @@ fn read_meta(conn: &Connection, key: &str) -> Option<String> {
 
 fn clean_value(value: &str) -> String {
     value.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::types::LocalTagsReadRow;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestDb(std::path::PathBuf);
+    impl Drop for TestDb {
+        fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
+    }
+    fn fixture() -> (TestDb, Connection) {
+        let name = format!("hfm-local-tags-{}-{}.db", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
+        let file = TestDb(std::env::temp_dir().join(name));
+        let conn = Connection::open(&file.0).unwrap();
+        conn.execute_batch("CREATE TABLE local_font_tags(font_id TEXT, font_path TEXT, tag_name TEXT, updated_at TEXT);
+            CREATE TABLE app_state(key TEXT PRIMARY KEY, value TEXT);").unwrap();
+        (file, conn)
+    }
+    fn row(id: &str, aliases: &[&str], path: &str) -> LocalTagsReadRow {
+        LocalTagsReadRow { item_id: id.into(), aliases: aliases.iter().map(|x| x.to_string()).collect(), font_path: path.into() }
+    }
+    #[test]
+    fn hydration_shared_alias_and_path_preserve_all_items() {
+        let (file, conn) = fixture();
+        conn.execute_batch(r"INSERT INTO local_font_tags VALUES
+            ('shared','','common',''), ('a','','only-a',''),
+            ('','c:\one.ttf','path',''), ('','c:\one.ttf','path',''),
+            ('independent','','isolated','');").unwrap();
+        drop(conn);
+        let rows = vec![row("a", &["a", "shared"], r"c:\one.ttf"), row("b", &["b", "shared"], r"c:\two.ttf"),
+            row("c", &["c"], r"c:\one.ttf"), row("independent", &["independent"], ""),
+            row("no-path", &["no-path", "shared"], ""), row("a", &["a", "shared"], r"c:\one.ttf")];
+        let payload = LocalTagsReadPayload { db_path: file.0.to_string_lossy().into_owned(), rows };
+        let result = read_local_tags(&payload, Instant::now()).unwrap();
+        for (id, expected) in [("a", vec!["common", "only-a", "path"]), ("b", vec!["common"]),
+            ("c", vec!["path"]), ("independent", vec!["isolated"]), ("no-path", vec!["common"])] {
+            assert_eq!(result.tag_map.get(id).unwrap(), &expected);
+        }
+        assert_eq!(result.tag_map.len(), 5);
+        assert_eq!(payload.rows.len(), 6);
+        let empty = LocalTagsReadPayload { db_path: payload.db_path, rows: vec![] };
+        assert!(read_local_tags(&empty, Instant::now()).unwrap().tag_map.is_empty());
+    }
+    #[test]
+    fn hydration_chunks_over_five_hundred_keep_alias_and_path_matches() {
+        let (file, conn) = fixture();
+        let mut rows = Vec::new();
+        for i in 0..1001 {
+            let id = format!("id-{i}");
+            let path = format!("path-{i}");
+            conn.execute("INSERT INTO local_font_tags VALUES (?1, '', 'alias', '')", [&id]).unwrap();
+            conn.execute("INSERT INTO local_font_tags VALUES ('', ?1, 'path', '')", [&path]).unwrap();
+            rows.push(row(&id, &[&id], &path));
+        }
+        drop(conn);
+        let result = read_local_tags(&LocalTagsReadPayload { db_path: file.0.to_string_lossy().into_owned(), rows }, Instant::now()).unwrap();
+        assert_eq!(result.tag_map.len(), 1001);
+        for tags in result.tag_map.values() { assert_eq!(tags, &vec!["alias", "path"]); }
+    }
 }

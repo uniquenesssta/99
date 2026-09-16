@@ -431,21 +431,27 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
       detail: `items=${items.length}`,
     });
 
-    const aliasToRuntimeId = new Map<string, string>();
-    const pathToRuntimeId = new Map<string, string>();
+    const aliasToRuntimeIds = new Map<string, Set<string>>();
+    const pathToRuntimeIds = new Map<string, Set<string>>();
     const ids: string[] = [];
     const paths: string[] = [];
     for (const item of items) {
       if (!item?.id) continue;
       const runtimeId = item.id;
       for (const id of localTagFontIdAliases(item)) {
-        if (!aliasToRuntimeId.has(id)) ids.push(id);
-        aliasToRuntimeId.set(id, runtimeId);
+        if (!aliasToRuntimeIds.has(id)) {
+          ids.push(id);
+          aliasToRuntimeIds.set(id, new Set());
+        }
+        aliasToRuntimeIds.get(id)!.add(runtimeId);
       }
       const fontPath = localTagFontPath(item);
       if (fontPath) {
-        if (!pathToRuntimeId.has(fontPath)) paths.push(fontPath);
-        pathToRuntimeId.set(fontPath, runtimeId);
+        if (!pathToRuntimeIds.has(fontPath)) {
+          paths.push(fontPath);
+          pathToRuntimeIds.set(fontPath, new Set());
+        }
+        pathToRuntimeIds.get(fontPath)!.add(runtimeId);
       }
     }
 
@@ -465,7 +471,10 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
           `SELECT font_id, tag_name FROM local_font_tags WHERE font_id IN (${chunk.map(() => "?").join(",")}) ORDER BY tag_name`,
         )
         .all(...chunk) as Array<{ font_id: string; tag_name: string }>;
-      for (const row of rows) addTag(aliasToRuntimeId.get(row.font_id) || row.font_id, row.tag_name);
+      for (const row of rows) {
+        for (const runtimeId of aliasToRuntimeIds.get(row.font_id) || [])
+          addTag(runtimeId, row.tag_name);
+      }
     }
     for (let index = 0; index < paths.length; index += chunkSize) {
       const chunk = paths.slice(index, index + chunkSize);
@@ -474,7 +483,10 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
           `SELECT font_path, tag_name FROM local_font_tags WHERE font_path IN (${chunk.map(() => "?").join(",")}) ORDER BY tag_name`,
         )
         .all(...chunk) as Array<{ font_path: string; tag_name: string }>;
-      for (const row of rows) addTag(pathToRuntimeId.get(row.font_path) || "", row.tag_name);
+      for (const row of rows) {
+        for (const runtimeId of pathToRuntimeIds.get(row.font_path) || [])
+          addTag(runtimeId, row.tag_name);
+      }
     }
 
     for (const tags of Object.values(tagMap)) tags.sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));

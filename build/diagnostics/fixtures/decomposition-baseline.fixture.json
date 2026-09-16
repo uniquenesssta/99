@@ -121,7 +121,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "57c9b9212a60863229d2a319ca2cce54e35d4bcbcd2b9594a5bc47deb6a31979"
+      "tokenHash": "35c39ec5628c46ac7a69875ecf1ee0e4cc5059c93cc98163752e4893ec3a59b1"
     },
     "src/renderer/src/App.tsx": {
       "functions": [

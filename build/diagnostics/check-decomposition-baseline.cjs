@@ -173,12 +173,12 @@ async function main() {
     const results = { 'F-P1': await observePreview(), 'F-T1': await observeTags() }
     for (const [id, result] of Object.entries(results)) {
       console.log(id, JSON.stringify(result))
-      if (id === 'F-P1' || process.argv.includes('--probe')) assert.deepEqual(result.actual, result.expected, id)
-      else assert.notDeepEqual(result.actual, result.expected, `${id} no longer reproduces; promote to correctness gate`)
+      assert.deepEqual(result.actual, result.expected, id)
     }
     return
   }
   const preview = await observePreview(); assert.equal(preview.actual, preview.expected, "F-P1");
+  const tags = await observeTags(); assert.deepEqual(tags.actual, tags.expected, "F-T1");
   checkInventory(); await queueCheck(); authorityCheck(); fieldPermutationCheck()
   assert.throws(() => fieldPermutationCheck(s => s.replace("const policy = options.policy || 'replace'", "const policy = 'replace'")), assert.AssertionError)
   const mutant = source => {
