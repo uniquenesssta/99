@@ -110,7 +110,7 @@ export function createRendererFontWriteQueueRuntime(
 
         if (result.wroteCount) {
           const includesTagWrites = queue.localTags.size > 0 || queue.sharedTags.size > 0
-          options.scheduleDatabaseDerivedStateRefresh(includesTagWrites ? 80 : reason === 'memory' ? 120 : 520)
+          options.scheduleDatabaseDerivedStateRefresh(queue.favorite.size > 0 ? 0 : includesTagWrites ? 80 : reason === 'memory' ? 120 : 520)
         }
 
         const retryCount = queuedFontWriteCount(result.retryQueue)
@@ -188,7 +188,7 @@ export function createRendererFontWriteQueueRuntime(
     },
     queueFavoriteWrite: (font, favorite) => {
       options.queueRef.current.favorite.set(font.id, { font: { ...font, favorite }, favorite })
-      scheduleFlush()
+      void flush('favorite-immediate')
     },
     queueProtectionWrite: (font, protect) => {
       options.queueRef.current.protection.set(font.id, { font: { ...font, deleteProtected: protect }, protect })

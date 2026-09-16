@@ -44,6 +44,11 @@ export function scheduleDatabaseDerivedStateRefreshRuntime(options: {
   if (options.timerRef.current !== null) options.clearTimeout(options.timerRef.current)
   options.timerRef.current = options.setTimeout(() => {
     options.timerRef.current = null
+    // Explicit successful mutations must not wait until the user stops navigating.
+    if (options.delay <= 0) {
+      options.setDatabaseRefreshToken((value) => value + 1)
+      return
+    }
     options.requestIdleWindow(() => {
       if (options.rendererUserActive()) {
         options.scheduleAgain(Math.max(options.delay, 360))

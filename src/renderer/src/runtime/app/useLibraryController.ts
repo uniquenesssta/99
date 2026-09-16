@@ -1,3 +1,4 @@
+import { fontUserIntentRevision,hasUnsettledFavoriteIntent } from '../../fontUserIntentRuntime'
 import type { CacheStats,FontQueryPageResult,FontQueryResult,LibraryState } from '@shared/types'
 import { useEffect,useMemo,useRef,useState } from 'react'
 import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
@@ -94,11 +95,17 @@ export function useLibraryController(options: {
       return
     }
 
+    const requestSeq = ++options.database.fontMetricsRequestSeqRef.current
+    const intentRevision = fontUserIntentRevision()
+    const pendingFavorite = Object.values(library.fonts || {}).some(hasUnsettledFavoriteIntent)
+    const isCurrent = () => requestSeq === options.database.fontMetricsRequestSeqRef.current &&
+      intentRevision === fontUserIntentRevision() && !pendingFavorite
     void options.hfm.getFontMetrics()
       .then((metrics) => {
+        if (!isCurrent()) return
         options.database.setDatabaseFontMetrics(normalizeFontMetricsResult(metrics))
       })
-      .catch(() => options.database.setDatabaseFontMetrics(null))
+      .catch(() => { if (isCurrent()) options.database.setDatabaseFontMetrics(null) })
   }
 
   function checkSharedMetadataUpdates(reason: string, minIntervalMs = 5000): Promise<void> | null {

@@ -124,7 +124,8 @@
     "diagnostics:watcher-activation-baseline": "node build/diagnostics/check-watcher-activation-baseline.cjs",
     "baseline:watcher-activation-observe": "node build/diagnostics/check-watcher-activation-baseline.cjs --observe",
     "diagnostics:watcher-index-consistency": "node build/diagnostics/check-watcher-index-consistency.cjs",
-    "diagnostics:user-intent-consistency": "node build/diagnostics/check-user-intent-consistency.cjs"
+    "diagnostics:user-intent-consistency": "node build/diagnostics/check-user-intent-consistency.cjs",
+    "diagnostics:active-view-consistency": "node build/diagnostics/check-active-view-consistency.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

@@ -1,4 +1,4 @@
-import { fontUserIntentRevision } from '../../fontUserIntentRuntime'
+import { fontUserIntentRevision,hasUnsettledFavoriteIntent } from '../../fontUserIntentRuntime'
 import type { FontFormat,FontItem,FontQueryPageResult,FontQueryRequest,FontQueryResult,FontScript,LibraryState } from '@shared/types'
 import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
 import { useEffect,useMemo,useState } from 'react'
@@ -128,17 +128,29 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
     const timer = window.setTimeout(() => {
       const startedAt = performance.now()
       options.reportTrace({ kind: 'db-metrics-start', label: 'getFontMetrics', page: options.sidebarPage, durationMs: 0, details: { indexingActive: options.indexingActive, userActive: options.rendererUserActive(), fonts: options.allFontsLength } }, 'db-metrics-start')
+      const intentRevision = fontUserIntentRevision()
+      const pendingFavorite = Object.values(options.library.fonts || {}).some(hasUnsettledFavoriteIntent)
       options.hfm.getFontMetrics()
         .then((result) => {
           const durationMs = Math.round(performance.now() - startedAt)
           options.reportTrace({ kind: 'db-metrics-end', label: 'getFontMetrics', page: options.sidebarPage, severity: databaseTraceSeverity(durationMs), durationMs, details: { total: result.total, installed: result.installedCount, notInstalled: result.notInstalledCount, missing: result.installStatusMissingCount, elapsedMs: result.elapsedMs } })
           if (disposed || requestSeq !== options.fontMetricsRequestSeqRef.current) return
+          if (pendingFavorite || intentRevision !== fontUserIntentRevision()) {
+            options.reportTrace({ kind: 'db-metrics-rejected', label: 'user-intent-changed', page: options.sidebarPage,
+              severity: 'warn', details: { requestSeq, pendingFavorite, intentRevision, currentIntentRevision: fontUserIntentRevision() } })
+            return
+          }
           options.setDatabaseFontMetrics(normalizeFontMetricsResult(result))
         })
         .catch((error) => {
           const durationMs = Math.round(performance.now() - startedAt)
           options.reportTrace({ kind: 'db-metrics-error', label: 'getFontMetrics', page: options.sidebarPage, severity: 'error', durationMs, details: { error: error instanceof Error ? error.message : String(error) } })
           if (disposed || requestSeq !== options.fontMetricsRequestSeqRef.current) return
+          if (pendingFavorite || intentRevision !== fontUserIntentRevision()) {
+            options.reportTrace({ kind: 'db-metrics-rejected', label: 'user-intent-changed', page: options.sidebarPage,
+              severity: 'warn', details: { requestSeq, pendingFavorite, intentRevision, currentIntentRevision: fontUserIntentRevision() } })
+            return
+          }
           options.setDatabaseFontMetrics(null)
         })
     }, metricsDelayMs)

@@ -104,8 +104,8 @@
     "useDeveloperController"
   ],
   "sourceHashes": {
-    "src/renderer/src/fontWriteQueueRuntime.ts": "4b1c146c0722eaf370c3d9a2812892b3f9badf573bad4a0a5c3d997b47d11813",
-    "src/renderer/src/databaseDerivedStateRuntime.ts": "05dc9716cf3e3304d47be05bcba50183e4cb1af71eda514c4192115fcda4b8d2",
+    "src/renderer/src/fontWriteQueueRuntime.ts": "decf81267e18437ca0c0562638222a1f3878327f25af07caf8f09fbe310f36e2",
+    "src/renderer/src/databaseDerivedStateRuntime.ts": "42e18e700d5635da34e285e4158cc134013e39591a6e6e949a59fdbb81d6bd2d",
     "src/renderer/src/sharedMetadataSyncRuntime.ts": "10ae9150b3115ea4ef1a9060cddb4b76455d28f3bd14726bee9862e1d564d50e",
     "src/renderer/src/rendererDeveloperStatusRuntime.ts": "435e2f25ab960502c5bdb31b907b24f483a4ecf251370ba8e0bf0804221ed437",
     "src/renderer/src/runtime/app/effects/useLibraryAutosaveRuntime.ts": "e3295dfa7b88644afcaace8b209fab4d9bf30993b90c0dfeb3ac2c3ff86b1f86",

@@ -202,7 +202,7 @@ function createLoader({ hooks, mocks = {}, globals = {} }) {
   return load
 }
 
-function checkLibraryBehavior() {
+async function checkLibraryBehavior() {
   const harness = createHookHarness()
   const calls = {}
   const cleared = []
@@ -264,6 +264,20 @@ function checkLibraryBehavior() {
   controller = harness.render(useLibraryController, options)
   controller = harness.render(useLibraryController, options)
   assert.equal(controller.leaseLockConflictNotice.title, 'conflict')
+  const pending = [], metricWrites = []
+  database.setDatabaseFontMetrics = value => metricWrites.push(value)
+  options.hfm.getFontMetrics = () => new Promise(resolve => pending.push(resolve))
+  controller.refreshDatabaseMetricsNow()
+  controller.refreshDatabaseMetricsNow()
+  pending[0]({ activeCount: 99 }); await Promise.resolve(); await Promise.resolve()
+  assert.equal(metricWrites.length, 0, 'direct metrics refresh accepted older request')
+  load('src/renderer/src/fontUserIntentRuntime.ts').markActiveIntent({ id: 'a', active: false })
+  pending[1]({ activeCount: 88 }); await Promise.resolve(); await Promise.resolve()
+  assert.equal(metricWrites.length, 0, 'direct metrics refresh overwrote newer operation')
+  controller.refreshDatabaseMetricsNow()
+  pending[2]({ activeCount: 0 }); await Promise.resolve(); await Promise.resolve()
+  assert.equal(metricWrites[0].activeCount, 0)
+
 }
 
 async function checkOperationsBehavior() {
@@ -467,7 +481,7 @@ async function checkDeveloperLazyBehavior() {
 async function main() {
   checkBaseline()
   checkStructure()
-  checkLibraryBehavior()
+  await checkLibraryBehavior()
   await checkOperationsBehavior()
   await checkCloseFlushBehavior()
   await checkDeveloperLazyBehavior()

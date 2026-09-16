@@ -116,6 +116,7 @@ export function createFontActivationActionRuntime(
         options.setStatus(`批量激活失败：${error instanceof Error ? error.message : String(error)}`)
       } finally {
         for (const font of targets) options.activeOperationFontIds.current.delete(font.id)
+        options.refreshDatabaseDerivedState()
       }
       return
     }
@@ -216,8 +217,8 @@ export function createFontActivationActionRuntime(
         const restoreUpdates: Record<string, { active: boolean; patch?: Partial<FontItem> }> = {}
         let restoreCount = 0
         for (const font of targets) {
-          const itemResult = result.results[font.id]
-          if (itemResult && itemResult.ok === false) {
+          const itemResult = result.results?.[font.id]
+          if (itemResult?.ok !== true) {
             const previous = previousById[font.id]
             restoreUpdates[font.id] = {
               active: true,
@@ -232,7 +233,7 @@ export function createFontActivationActionRuntime(
         }
         stateRuntime.setFontsActiveRuntimeBulk(restoreUpdates)
         if (restoreCount) stateRuntime.adjustDatabaseActiveCount(restoreCount)
-        options.setStatus(`${result.message} 未激活 ${skippedInactive} 个，处理中 ${skippedBusy} 个。`)
+        options.setStatus(`${result.message} 未确认成功并保留激活 ${restoreCount} 个；未激活 ${skippedInactive} 个，处理中 ${skippedBusy} 个。`)
       } catch (error) {
         const rollbackUpdates: Record<string, { active: boolean; patch?: Partial<FontItem> }> = {}
         for (const font of targets) {
@@ -250,6 +251,7 @@ export function createFontActivationActionRuntime(
         options.setStatus(`批量取消激活失败：${error instanceof Error ? error.message : String(error)}`)
       } finally {
         for (const font of targets) options.activeOperationFontIds.current.delete(font.id)
+        options.refreshDatabaseDerivedState()
       }
       return
     }

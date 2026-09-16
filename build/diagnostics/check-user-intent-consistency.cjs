@@ -9,7 +9,7 @@ function load(file, mocks = {}) {
   const mutation=process.argv[2]
   if(mutation==='active') source=source.replace('...intent.active,','')
   if(mutation==='favorite') source=source.replace('favorite && (!favorite.settled || incoming.favorite !== favorite.value)','false')
-  if(mutation==='query') source=source.replace('intentRevision !== fontUserIntentRevision()', 'false')
+  if(mutation==='query') source=source.replaceAll('intentRevision !== fontUserIntentRevision()', 'false')
   if(mutation==='membership') source=source.replace('const candidates = [...items, ...pending]','const candidates = items')
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,console,performance,window:{setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout(){}},require(id){
     if (id in mocks) return mocks[id]
@@ -23,7 +23,8 @@ const mocks={
  '../appConstants':{FONT_OBJECT_LRU_LIMIT:1000},
  '@shared/legacy/legacyCollectionCompatibility':{normalizeLegacyCollectionIds:x=>x||[]},
  '../fontClassification':{},
- './libraryNormalizeBase':{},
+ './libraryNormalizeBase':{normalizeFolderPathForCompare:x=>x.toLowerCase(),normalizeFontPathForCompare:x=>x.toLowerCase()},
+ './libraryNormalizeStateRuntime':{pruneFontFolderIds:ids=>ids},
  './appConstants':{},
  './fontFilteringMetrics':{buildFontComputedIndex:f=>({searchText:'alpha',bad:false,active:f.active}),filterMatchesFontIndex:(filter,f)=>filter.kind==='favorites'?f.favorite:filter.kind==='active'?f.active:true,inTimeSortRangeIndex:()=>true},
  './fontSort':{compareFontsForSort:(a,b)=>a.id.localeCompare(b.id),compareFontsForTimeSort:(a,b)=>a.id.localeCompare(b.id)},
@@ -112,4 +113,13 @@ async function queryRaceCheck() {
   assert.equal(pageWrites,0,'late real hook response must be rejected after mutation')
   assert(traces.some(e=>e.label==='user-intent-changed'),'rejection must be logged')
   for(const fn of cleanup)if(typeof fn==='function')fn()
+}
+
+const indexChange=load(base+'library-normalize/libraryIndexChangeRuntime.ts',mocks)
+for(const source of ['watcher','shared-metadata']) {
+ const current=intent.markFavoriteIntent(install.applyFontActiveRuntimePatch(font,false),true)
+ const state={folders:['/fonts'],fonts:{a:current},tags:[],localTags:[]}
+ const result=indexChange.applyFontIndexChangeToLibrary(state,{source,folder:'/fonts',upserts:[{...font,favorite:false,active:true}],deletes:[]})
+ assert.equal(result.library.fonts.a.active,false,source+' old notification reactivated font')
+ assert.equal(result.library.fonts.a.favorite,true,source+' old notification lost favorite')
 }

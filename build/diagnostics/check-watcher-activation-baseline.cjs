@@ -345,7 +345,7 @@ async function main() {
   }
   await rendererDeactivationCheck()
   await assert.rejects(() => rendererDeactivationCheck(s => mutate(s, "if (!result.ok) throw new Error(result.message || '临时激活记录未能完成清理。')", '')), assert.AssertionError)
-  await assert.rejects(() => metricsResponseOrderCheck(s => mutate(s, 'options.refreshDatabaseDerivedState()', '')), assert.AssertionError)
+  await assert.rejects(() => metricsResponseOrderCheck(s => mutate(s, 'options.activeOperationFontIds.current.delete(font.id)\n      options.refreshDatabaseDerivedState()', 'options.activeOperationFontIds.current.delete(font.id)')), assert.AssertionError)
   await metricsResponseOrderCheck()
   const a1 = await observeA1(); assert.deepEqual(a1.actual, a1.expected, "F-A1")
   await mainDeactivationCheck()

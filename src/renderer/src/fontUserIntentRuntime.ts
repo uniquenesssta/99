@@ -32,6 +32,11 @@ export function hasFontUserIntent(font: FontItem): boolean {
   return !!(intent?.active || intent?.favorite)
 }
 
+export function hasUnsettledFavoriteIntent(font: FontItem): boolean {
+  const favorite = (font as IntentFont)[intentKey]?.favorite
+  return !!favorite && !favorite.settled
+}
+
 export function hasFavoriteIntent(font: FontItem): boolean {
   return !!(font as IntentFont)[intentKey]?.favorite
 }

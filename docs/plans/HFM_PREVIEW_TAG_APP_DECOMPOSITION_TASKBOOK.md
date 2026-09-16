@@ -490,7 +490,7 @@ Windows 仅使用 npm run dev，在隔离测试目录执行 Y-01/Y-02/Y-03，GUI
 | W-02 | 完成 | 第 13 节同一提交 | 93/93；三端构建通过 | Windows 开发模式待复验 |
 | A-01 | 完成 | 第 14 节两笔独立提交 | 两侧联合 93/93，构建通过 | Windows 开发模式待复验 |
 | W-03 | 自动验证完成，Windows 待回执 | §15，a/b/c 独立提交 | typecheck / 94 项通过 | 下一项 A-02 |
-| A-02 | 未开始 | — | — | — |
+| A-02 | 实现及自动验证完成，Windows硬验收待回执 | §17同一提交 | typecheck / 96项 / 三端构建通过 | R1/R2/R3及重开实机待验，不标完整通过 |
 
 
 ## 11. D-01 执行卡（2026-09-15）
@@ -830,3 +830,43 @@ Windows 待验收：npm run dev，在隔离监听目录新增/修改/删除测�
 原 W/A 十项变异、D-01 两项变异和写队列 durability 继续通过。只迁移 fontInstallStateRuntime 一项源哈希；两个旧诊断仅补真实新模块加载。最终 TypeScript / 全量95项通过，新增真实 hook 场景定向通过，Electron/Vite354/1/191模块构建通过（新增 renderer 模块1个），git diff --check 通过。依赖、原生源码、CSS与IPC协议不变。
 
 Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消失；取消收藏即时移除；在已激活页停用同一字体后切收藏/全部/详情，确认激活标识与时间一致；搜索仍能限制待确认收藏。此轮是 A-02 中这两项实机反馈修复，完整批量/计数/重启验收不据此宣称完成。Mermaid 已更新真实链路，结果随后保存交接。
+
+## 17. A-02 执行卡（2026-09-16）
+
+基线 dc0fe44；用户反馈比之前快但仍慢。本轮从真实等待/异步结算链入手：收藏360ms写前等待、成功后520ms刷新及持续用户活动导致的空闲延期；批量停用缺项误结算；计数异步回读覆盖更新。实施前范围：renderer 的 fontWriteQueueRuntime.ts、databaseDerivedStateRuntime.ts、runtime/database/useRendererDatabasePageRuntime.ts、runtime/app/useLibraryController.ts、runtime/system/actions/fontActivationActionRuntime.ts；build/diagnostics/check-active-view-consistency.cjs（新增）、受影响的既有诊断与精确fixture迁移；package.json、README、本任务书。需要额外范围必须先说明具体证据。复用会话意图模块与原队列，不引入第二状态owner，不改CSS、依赖、原生激活事务。R1/R2/R3及A-02既有矩阵均记录证据边界，Windows实机不以Linux测试替代。
+
+实施前补充范围：fontUserIntentRuntime.ts 仅增加“收藏尚未成功写入”只读判定，供计数查询阻止提交前旧值覆盖乐观计数；复用原 Symbol token，不建立新状态。
+
+实施前诊断补充：扩展既有 check-user-intent-consistency.cjs 的 R3 覆盖，直接调用真实索引通知合并，确认 watcher/shared-metadata 旧通知不会覆盖未确认的新收藏和停用状态。
+
+
+### 17.1 修复与范围
+
+- 收藏复用原串行写队列立即开始，不再等待 WRITE_BEHIND_DELAY_MS=360；写入成功安排 delay=0 的派生刷新，跳过520ms与空闲/持续操作延期。其他标签、保护的节流与失败重试保持。该结论是移除固定等待，不宣称 Windows/NAS 的总延迟为0。
+- 批量激活/停用结束刷新派生状态；停用只接受逐项 ok=true，失败、缺项、缺 results 均恢复对应字体与计数，并显示未确认数量。不修改主进程原生资源事务。
+- 自动和手动计数请求均检查请求序号/操作代次；收藏未确认写入期间不允许旧计数覆盖乐观数。旧成功与旧异常都不能覆盖当前状态，自动路径记录 db-metrics-rejected。
+- 原所有者、筛选/虚拟化/CSS、数据库与IPC协议不变。精确迁移四处冻结证据：D-01 Library控制器 token；AT-6.4写队列/派生刷新 token；W-01激活动作 source。原单项刷新变异改为精确定位，分页请求变异改为覆盖实际分页保护，未移除反例。
+
+### 17.2 A-02 自动证据矩阵
+
+| 必测范围 | 自动证据 | 外部限制 |
+| --- | --- | --- |
+| R1收藏切页、快速反向、搜索 | user-intent-consistency 的真实列表/合并/队列；active-view-consistency 确认无写前timer且成功刷新不等待用户空闲 | Windows实际切页感受待回执 |
+| R2单项成功/拒绝、重复点击、详情时间 | 新门真实动作+状态函数，pending时间/乐观数/最终回滚；原A-01停用成功失败继续执行 | 详情窗口与折叠侧栏显示需实机 |
+| 批量部分失败/缺项/抛错 | 新门逐项核对active字段、计数、activeSince、busy释放与最终刷新；原原生事务门继续执行 | 不用伪造故障破坏系统字体 |
+| R3查询、索引、计数乱序 | user-intent-consistency 调真实 watcher/shared-metadata通知合并；真实分页Promise晚到；新门自动计数旧成功/旧异常/未提交收藏；控制器门验证手动计数旧请求 | 有拒绝日志；不以IPC成功替代页面验收 |
+| 搜索/统计范围、系统安装区分 | 新门真实筛选/计数/列表函数，2个激活全库计数与1个搜索命中并存，系统安装字体不等于临时激活 | 样式不修改，折叠侧栏沿原属性契约 |
+| 关闭重开 | 核对真实生命周期 startup/quit cleanup入口；新门执行原cleanup并经真实session store序列化后重读；此前Symbol跨JSON测试保留 | 模拟I/O不等于Windows原生重开；既有协议为清理临时激活，不应自动恢复旧缓存标志 |
+
+新增门四项变异：恢复360ms等待、恢复空闲延期、缺项默认成功、去掉计数代次保护，均应失败。此前user-intent四项与W/A十项等门继续保留。统计范围在fixture中明确，不要求带搜索列表长度等于全库计数。
+
+### 17.3 Windows开发模式验收
+
+拉取后仅 `npm run dev`：收藏后立即连续切全部/收藏，取消收藏再反向；对同一字体激活/停用并切收藏/已激活/详情；选择几个非系统测试字体批量操作；搜索缩小列表并核对全库计数含义；折叠侧栏重复，正常关闭重开确认临时激活清理。记录提交、操作顺序、界面结果与启动日志。任一反弹/矛盾/未收敛仍阻止A-02完整关闭；本轮自动验证和实现完成不能替代此回执。
+
+
+### 17.4 最终验证与交接
+
+`npm run verify` 退出0，TypeScript与96/96诊断通过；Electron/Vite354/1/191模块通过；git diff --check通过。新增A-02四项变异、原user-intent四项、W/A十项与其他既有门保持。范围16文件（6生产、7诊断/fixture、package及README/任务书），不含构建输出与依赖目录。Git/任务书为权威交接；Create State返回无active world model，未取得本项目级保存确认。Mermaid已更新实际链路。
+
+回滚本轮提交即可恢复此前dc0fe44行为，数据库格式无变化；R1/R2实际体验、折叠侧栏、Windows真实退出/启动资源清理必须取得回执后才可标记A-02完整通过。本轮不启动后续D拆分或Stage8。
