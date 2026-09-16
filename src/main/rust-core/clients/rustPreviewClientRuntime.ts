@@ -1,3 +1,4 @@
+import { tracePreviewCacheMutation } from '../../logging/previewCacheMutationTrace'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
 import type { PreviewCacheIndexStatus } from '../../preview/previewCacheRuntime'
 import {
@@ -162,32 +163,49 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
   }
 
   async function runRustPreviewCacheInputCommand<T extends { ok?: boolean; message?: string }>(label: string, command: string, input: unknown): Promise<T | null> {
-    const status = await diagnoseRustCoreWorker()
-    if (!status.available || !status.path) return null
-
-    const startedAt = Date.now()
-    const inputFile = createTemporaryJsonFile(`hfm-rust-preview-cache-${label}`)
-    const inputPath = inputFile.path
-    try {
-      await inputFile.writeJson(input)
-      const { stdout } = await runRustCoreScheduledCommand(status.path, [command, '--input', inputPath], {
-        timeout: Math.max(5000, Number(process.env.HFM_RUST_PREVIEW_CACHE_DB_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
-        windowsHide: true,
-        maxBuffer: 8 * 1024 * 1024,
-      })
-      const payload = parseJsonLine<T>(stdout)
-      if (!payload.ok) throw new Error(payload.message || `rust preview cache ${label} returned ok=false`)
-      const elapsedMs = Date.now() - startedAt
-      if (label !== 'batch' || elapsedMs >= 800 || process.env.HFM_LOG_DETAIL === 'debug' || process.env.HFM_VERBOSE_LOGS === '1') {
-        options.appendStartupLog(`rust preview cache ${label} finished: elapsed=${elapsedMs}ms`)
+    return tracePreviewCacheMutation(label, options.appendStartupLog, async () => {
+      const mutation = label === 'apply' || label === 'delete'
+      const status = await diagnoseRustCoreWorker()
+      if (!status.available || !status.path) return null
+      const startedAt = Date.now()
+      const inputFile = createTemporaryJsonFile(`hfm-rust-preview-cache-${label}`)
+      const inputPath = inputFile.path
+      let submitted = false
+      try {
+        await inputFile.writeJson(input)
+        submitted = true
+        const { stdout } = await runRustCoreScheduledCommand(status.path, [command, '--input', inputPath], {
+          timeout: Math.max(5000, Number(process.env.HFM_RUST_PREVIEW_CACHE_DB_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
+          windowsHide: true,
+          maxBuffer: 8 * 1024 * 1024,
+        })
+        const payload = parseJsonLine<T>(stdout)
+        if (!payload.ok) throw new Error(payload.message || `rust preview cache ${label} returned ok=false`)
+        if (mutation) {
+          const count = (payload as { written?: unknown; deleted?: unknown })[label === 'apply' ? 'written' : 'deleted']
+          if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) throw new Error(`rust preview cache ${label} missing valid commit result`)
+        }
+        const elapsedMs = Date.now() - startedAt
+        if (label !== 'batch' || elapsedMs >= 800 || process.env.HFM_LOG_DETAIL === 'debug' || process.env.HFM_VERBOSE_LOGS === '1') {
+          if (mutation) {
+            try { options.appendStartupLog(`rust preview cache ${label} finished: elapsed=${elapsedMs}ms`) } catch { /* Committed result is authoritative. */ }
+          } else options.appendStartupLog(`rust preview cache ${label} finished: elapsed=${elapsedMs}ms`)
+        }
+        return payload
+      } catch (error) {
+        if (mutation && submitted) {
+          try { appendPreviewCacheFailureLog(label, error instanceof Error ? error.message : String(error)) } catch { /* Preserve the original uncertainty. */ }
+          throw error
+        }
+        appendPreviewCacheFailureLog(label, error instanceof Error ? error.message : String(error))
+        return null
+      } finally {
+        try { await inputFile.dispose() } catch (error) {
+          // Cleanup failure cannot turn a settled write into replay.
+          if (!mutation) throw error
+        }
       }
-      return payload
-    } catch (error) {
-      appendPreviewCacheFailureLog(label, error instanceof Error ? error.message : String(error))
-      return null
-    } finally {
-      await inputFile.dispose()
-    }
+    })
   }
 
   async function runRustPreviewRenderImage(input: RustPreviewRenderImageInput): Promise<RustPreviewRenderImageResult | null> {

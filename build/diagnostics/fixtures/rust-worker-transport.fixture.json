@@ -2928,7 +2928,7 @@
           "workerMode": "rust-preview-cache-apply"
         }
       },
-      "traceHash": "bb1dfdaee1e3f9858c53d158ad0d74dc9939c51b625427059bf239026293caaa",
+      "traceHash": "35dc6948642ca53063d5aef4d1517a6ba692d5f64f6e7b144a9019984a7f6c76",
       "pendingFiles": 0
     },
     {
@@ -2941,7 +2941,7 @@
           "workerMode": "rust-preview-cache-apply"
         }
       },
-      "traceHash": "0a9cb15918a86e92046290264820ee1c982d4f060376a01ae52348dbd17a08d0",
+      "traceHash": "18d4267e3bd4f41b1f8a1373cbb130c212ecc808e02afa0130b3658095caa720",
       "pendingFiles": 0
     },
     {
@@ -2954,43 +2954,52 @@
           "workerMode": "rust-preview-cache-apply"
         }
       },
-      "traceHash": "47521e55deb9c540f6270a560331a06b9401d0634decad986876788773e3c4dd",
+      "traceHash": "6ebf6cd9784b76da4793618d0e4a5daba0f44570d4db92dc2dd05eea9ba4670f",
       "pendingFiles": 0
     },
     {
       "id": "runRustPreviewCacheApply/submitted",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--preview-cache-apply"
       },
-      "traceHash": "769c674ef228461fc1aaec9aae1562a0d8167d4703d7734738b8f249bd488126",
+      "traceHash": "392f18360bbf01b42fb1e8e6489c14986c9a85c1b10a1e3f2b820db08f64d410",
       "pendingFiles": 0
     },
     {
       "id": "runRustPreviewCacheApply/false-oneshot",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
       },
-      "traceHash": "f9f4f4b6e39b0be44e16094c30fef56eb131bdbee2a41dd8c941bbdde4ec34a4",
+      "traceHash": "cb150748c6a3cb34c6f26188fbba67b483ac36642736a8cf00bdd59207928985",
       "pendingFiles": 0
     },
     {
       "id": "runRustPreviewCacheApply/false-daemon",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
       },
-      "traceHash": "3396760d4c4c3fda0851e809a56f5822faf13a476649e045d4514c3a8f65ff58",
+      "traceHash": "b367c6cc8bd3e722b3de2592d5b873a9130bd8fa32d2bb924602eaab1d2d7301",
       "pendingFiles": 0
     },
     {
       "id": "runRustPreviewCacheApply/bad-json",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "SyntaxError",
+        "message": "fixture invalid JSON",
+        "submitted": false
       },
-      "traceHash": "ead2790cd9ad00b594c048f4d646798a3c981b06c73e15ca5c17a9720030ce89",
+      "traceHash": "65ee6b5c1e6c31ee172bf8740af77d12b19099fa35f0affece4521b990530105",
       "pendingFiles": 0
     },
     {
@@ -2999,7 +3008,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "2f0185562e52643595117a05f187b3f0858e95ea7bfaa0c1776983e45062da0c",
+      "traceHash": "6f176c5776ca8bf8c3a6f15a3984b3c6e5f08b890d1f3b9bb2abe8b4ab64cc37",
       "pendingFiles": 0
     },
     {
@@ -3012,7 +3021,7 @@
           "workerMode": "rust-preview-cache-apply"
         }
       },
-      "traceHash": "bb1dfdaee1e3f9858c53d158ad0d74dc9939c51b625427059bf239026293caaa",
+      "traceHash": "35dc6948642ca53063d5aef4d1517a6ba692d5f64f6e7b144a9019984a7f6c76",
       "pendingFiles": 1
     },
     {
@@ -3025,7 +3034,7 @@
           "workerMode": "rust-preview-cache-delete"
         }
       },
-      "traceHash": "f1408e4d032f710aaf8a94d402a8933fc8faf547a6eebe55ff7b5fb6f15910ac",
+      "traceHash": "608fb4505339f9779336505e96a4e45cab77324ab8fc5ffbd8d46aa449c2f4ad",
       "pendingFiles": 0
     },
     {
@@ -3038,7 +3047,7 @@
           "workerMode": "rust-preview-cache-delete"
         }
       },
-      "traceHash": "eed1879e3f217068d90351e57adfd2c3220c776947ca96ac6c53193aaff65fd2",
+      "traceHash": "0f0cdc77e1f07a5234d95e4f68ad311efb1abe348fc80551e260b379fd0f0d66",
       "pendingFiles": 0
     },
     {
@@ -3051,43 +3060,52 @@
           "workerMode": "rust-preview-cache-delete"
         }
       },
-      "traceHash": "fd8e7ae359300c170afc9ba12e5a4a2357579193d36422596fd048da5f3e4555",
+      "traceHash": "f40e158fcacd7f002ae126f958c1b83db465d1667b7c3ed1a2e55630e4ac313a",
       "pendingFiles": 0
     },
     {
       "id": "runRustPreviewCacheDelete/submitted",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "daemon submitted failure",
+        "submitted": true,
+        "command": "--preview-cache-delete"
       },
-      "traceHash": "aa0df957e510e28ef256385ebee52e2c7764d52d56aa65ed1039db1efc72eb6e",
+      "traceHash": "4b26cc9941dd7926e1e41e5fd970f41160b0840eee276dafd6a48e288a9a60f3",
       "pendingFiles": 0
     },
     {
       "id": "runRustPreviewCacheDelete/false-oneshot",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
       },
-      "traceHash": "f6c2912fb0a485877430a2bcb1af7a93bfd7fad96ca56a7f2554813d8ed92b86",
+      "traceHash": "8024de6ecbdec2b6fea75cc5739674eca4797f2cdfc6ece46f32db29fdb956ec",
       "pendingFiles": 0
     },
     {
       "id": "runRustPreviewCacheDelete/false-daemon",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
       },
-      "traceHash": "3fa03dddf5a800d0f1a02af8d2bf1308f5ddec345d9f42620667e261a43ff866",
+      "traceHash": "a8cee6c671fbd583155d947f7b80d249502025f9777f3e4fbfd612c559b318ce",
       "pendingFiles": 0
     },
     {
       "id": "runRustPreviewCacheDelete/bad-json",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "SyntaxError",
+        "message": "fixture invalid JSON",
+        "submitted": false
       },
-      "traceHash": "67a4c2f735b0b7b513bde29e5dc61702d3b2790d12f3d3bc75bba6b2deb222a6",
+      "traceHash": "c289755509ed91602348499844675073b9e3c5947b739e09e6697190e6843384",
       "pendingFiles": 0
     },
     {
@@ -3096,7 +3114,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "7fef2aeebb650aee4ca9c8f58011281419ce7af5dee4ab4e3556647a421a8d82",
+      "traceHash": "5205bf74ce86cea892ceab023cbe6a528676d5f7d5bfea6681aa928cd44c096f",
       "pendingFiles": 0
     },
     {
@@ -3109,7 +3127,7 @@
           "workerMode": "rust-preview-cache-delete"
         }
       },
-      "traceHash": "f1408e4d032f710aaf8a94d402a8933fc8faf547a6eebe55ff7b5fb6f15910ac",
+      "traceHash": "608fb4505339f9779336505e96a4e45cab77324ab8fc5ffbd8d46aa449c2f4ad",
       "pendingFiles": 1
     },
     {

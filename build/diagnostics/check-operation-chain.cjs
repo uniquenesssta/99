@@ -178,6 +178,23 @@ async function queueAndLimits() {
   process.env.HFM_LOG_DETAIL='';let normal=0;ctx.logOperation({trace:batch,stage:'dispatch'},()=>normal++);assert.equal(normal,0);process.env.HFM_LOG_DETAIL='debug'
 }
 
+function validatePreviewNativeStages(events, committed = true) {
+  const dispatch=events.find(e=>e.stage==='dispatch' && e.trace?.domain==='previewCache')
+  assert(dispatch, 'missing preview dispatch')
+  const linked=events.filter(e=>e.trace?.operationId===dispatch.trace.operationId && e.trace?.attemptId===dispatch.trace.attemptId)
+  const start=linked.find(e=>e.stage==='backend-start' && e.backend==='rust')
+  const end=linked.find(e=>e.stage==='backend-result' && e.backend==='rust')
+  const result=linked.find(e=>e.stage==='client-result')
+  assert(start && end && result,'preview native propagation missing')
+  assert(start.trace.spanId && end.trace.spanId===start.trace.spanId && end.backendSequence>start.backendSequence)
+  const commits=linked.filter(e=>e.stage==='commit')
+  assert.equal(commits.length,committed?1:0)
+  if(committed) {
+    const c=commits[0];assert(c.trace.spanId===start.trace.spanId && c.backendSequence>start.backendSequence && c.backendSequence<end.backendSequence)
+    assert.equal(c.trace.commitSequence,c.backendSequence);assert.equal(end.outcome,'returned');assert.equal(result.outcome,'returned')
+  } else {assert.equal(end.outcome,'unknown');assert.equal(result.outcome,'unknown')}
+}
+
 function validateNativeStages(events) {
   const commits=events.filter(e=>e.stage==='commit' && e.backend==='rust')
   assert(commits.length,'missing native commit receipt')
@@ -279,4 +296,4 @@ async function main() {
   } else console.log('[diagnostics:operation-chain] real queue/preload/IPC/SQLite/signal/view; two failures then commit; both preloads; log failure; cleanup; bounded batch/retry/concurrency/legacy/transport and seven mutants passed. Rust execution separately required.')
 }
 if(require.main===module) main().catch(e=>{console.error(e);process.exitCode=1})
-module.exports={loader,validateChain,validateNativeStages,chain}
+module.exports={validatePreviewNativeStages,loader,validateChain,validateNativeStages,chain}

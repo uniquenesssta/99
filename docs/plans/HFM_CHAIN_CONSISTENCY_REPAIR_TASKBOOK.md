@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行入口
 
-- 文档版本1.3；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
+- 文档版本1.4；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
 - 建立基线：`58a3f25e632a2af1d49587ab065e0469da4bf330`；执行分支沿用`stage/09-preview-tags-app`。开工时重新核对远端、HEAD与工作树，不默认为本基线一直最新。
-- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04～R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
+- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04自动验证通过待实机（原生测试未执行）；R-05～R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
 - 证据：[全链路审计](../audits/HFM_FULL_CHAIN_AUDIT.md)、[只读观察器](../audits/observe-chain-audit.cjs)。F-01/F-02/F-03已有真实TS受控反例；F-04为源码与SQLite顺序重建证据，尚无原生Rust故障测试；F-05为跨层日志关联缺口。
 - 承接[原拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)的C-01～C-07、X-01～X-13与Windows待验项。本书是新增五项审计问题的执行入口，不重启D阶段，不宣称D-11完整关闭。
 - 用户要求：**日志最先实施并验收，后续修改须利用该日志验证真实链路。** 用户使用`npm run dev`，不要求build:win、安装包或重新安装。
@@ -188,7 +188,7 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 - R-01开工登记日志诊断的准确命令/路径，接入现有diagnostics与默认npm run verify；不能只写任务书或提供手工观察脚本。
 - R-02～R-06相应修复落地时，已修复反例转为必过门。真实Rust测试提供独立必需命令并作为完成条件；若verify本身不执行Cargo，必须明确分开报告，不能将其遗漏解释为通过。
 - 新增/迁移owner、协议输入与trace边界必须有结构/类型门；日志关联、字段隔离、事务和异步正确性另用真实行为门证明。所有权/类型/行为检查缺项不得判完成。
-- R-01的operation-chain门已接入默认verify；R-02/R-03已有默认结构门和独立原生验收入口；R-04～R-06业务修复门尚未创建，不能将文档存在等同于约束已经被CI执行。
+- R-01的operation-chain门已接入默认verify；R-02/R-03/R-04已有默认约束门和独立原生验收入口；R-05/R-06业务修复门尚未创建，不能将文档存在等同于约束已经被CI执行。
 
 ## 12. 状态登记
 
@@ -197,7 +197,7 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 | R-01 日志前置 | 自动验证通过待实机 | 2cf2986起，本R-01独立提交 | TypeScript、105/105；Cargo退出127；Windows待验 |
 | R-02 本地标签事务 | 自动验证通过待实机 | cee7970 | 106/106；无Cargo，原生及Windows待验 |
 | R-03 共享事务 | 自动验证通过待实机 | cee7970起，本R-03独立提交 | 107/107及12个TS场景；Cargo缺失，原生/Windows待验 |
-| R-04 预览事务 | 未开始 | — | — |
+| R-04 预览事务 | 自动验证通过待实机 | 8b60ee7起，本R-04独立提交 | 108/108及16个客户端场景；Cargo缺失，原生/Windows待验 |
 | R-05 标签确认生命周期 | 未开始 | — | — |
 | R-06 信号去重 | 未开始 | — | — |
 | R-07 总验收 | 未开始 | — | — |
@@ -406,3 +406,59 @@ npm run dev
 - 差异仅9个白名单文件；无依赖/锁/schema、预览事务、本地标签事务、IPC/preload、UI/CSS、业务ID变化。发生写入时结果序列化/通知均在成功commit之后，旧无trace消息仍兼容。revert本R-03提交即可回滚，不需撤销R-01/R-02。
 
 - Create State返回Context Captured但仍提示No active world model；HFM项目级保存未确认，Git/README/任务书保存完整交接。
+
+## 16. R-04 执行卡
+
+状态：自动验证通过待实机。基线8b60ee798b8e5fd4c10fcecc5633dbbc08981c01，stage/09-preview-tags-app，开工工作树干净；继承R-01～R-03无Cargo/Windows原生回执缺口。
+精确白名单：
+- native-src/hfm-core-worker/src/preview_cache/write.rs
+- native-src/hfm-core-worker/src/preview_cache/atomicity_tests.rs
+- native-src/hfm-core-worker/tests/preview_cache_atomicity.rs
+- src/main/logging/previewCacheMutationTrace.ts
+- src/main/rust-core/clients/rustPreviewClientRuntime.ts
+- build/diagnostics/check-preview-cache-rust-atomicity.cjs
+- build/diagnostics/fixtures/rust-worker-clients.fixture.json
+- package.json
+- README.md
+- docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+
+边界：updatedAt是apply原有成功要求，放入行事务；保留第一输入行时间来源、空输入与无效行跳过语义，delete没有更新时间输入且原本不写meta，不扩展协议。修复Rust apply/delete提交后异常返回null触发Node回退，记录结果未知，保留命令不可用时null兼容。补R-01预览系统操作trace：起点为实际Rust客户端操作，不虚称来自用户点击；复用既有日志作用域、容量和临时输入，不加业务store/队列。
+只迁移rust-worker-clients fixture中runRustPreviewCacheInputCommand这一函数hash；先用实际客户端故障行为验证，再精确更新，其他方法/接口不变。测试使用真实Rust命令+第二连接回读、真实客户端及既有D-02迟到/代次/句柄门；无Cargo时原生测试仍独立待验。
+
+追加白名单build/diagnostics/check-operation-chain.cjs：新增预览原生阶段验收函数，预览没有标签signal，不伪造signal；检查系统dispatch、backend-start/commit/backend-result和client-result关联及序号。
+
+追加精确白名单build/diagnostics/fixtures/rust-worker-transport.fixture.json：仅apply/delete的18个场景，迁移新增临时输入trace及提交后错误由null变error的预期。每项与基线客户端实际运行对比，去除诊断trace和其span UUID记录后I/O轨迹必须相同；其余351场景与7组序列保持原fixture。
+
+追加白名单build/diagnostics/check-orchestration-contracts.cjs：既有隔离加载器不解析新增日志模块；仅登记精确import并加载真实模块，不替换业务算法或放宽契约。
+
+
+### R-04 实现及验证边界
+
+- Rust apply把原updatedAt写入移到同一个行事务内；空输入不写updatedAt，仍提交空事务；第一输入行无效时仍按原语义取该行时间。delete仍只删行，没有新增timestamp参数或metadata写入。schema初始化常量保持原位置，不改变schema/缓存key/行合并/status/fail_count规则。
+- 客户端apply/delete进入调度调用后，执行错误、ok=false、无效JSON或缺少合法written/deleted回执均抛错，不再转换null。此时无法证明是否提交，日志记unknown，不宣称rollback。worker不可用/能力不支持保留null；实际执行前的临时输入失败仍保留原兼容。
+- 成功写入后的普通日志/临时输入清理失败不改变业务结果；只读/渲染/其他预览命令保持原异常行为。清理仍在finally实际执行一次；未新增调用重试。原D-02实际结算后失效generation、超时不取消底层工作、本地借用句柄不关和共享句柄finally关闭未改。
+- 新日志模块是进程内系统操作诊断所有者：session+单调operation序号，apply/delete各自独立attempt，复用R-01 AsyncLocalStorage、日志容量和临时输入trace传播。无Map/监听器/定时器/业务状态；不写数据库trace，不虚构renderer意图、标签signal或已绘制页面。客户端returned不是commit证据，必须与原生commit及数据库回读对应。
+- 默认新门：16个实际客户端场景（apply/delete各成功、执行错误、非法计数、损坏JSON、ok=false、日志异常、清理异常、不可用）。旧基线客户端实际执行错误返回null的反例已被拒绝；恢复吞错、移除trace和2种事务结构变异被拒绝。预览原生阶段验收器另以明确合成数据验证缺commit、错误顺序、跨attempt3个反例，此部分不计原生执行。
+- 原生交付：3个集成测试（Windows2个，/dev/full日志IO故障仅Unix）及1个模块测试；覆盖第N行/第N次删除/meta触发器故障、apply/delete延迟外键commit失败、第二连接回读、空输入/无效行/failed/missing/pending及COALESCE/MAX语义、写删交错、日志故障。当前没有Cargo，所有原生项目仍待运行。
+- --native先运行真实Rust测试，再调用真实TS客户端/真实traceRustInput，将实际worker stderr和客户端日志交给R-01新增预览验收器，并用SQLite第二连接核对结果；外部调度/临时文件端口由测试提供，不冒充完整daemon路径。最后隔离编译旧Rust事务实现及metadata移出事务变异，要求“metadata leaked partial writes”数据库断言失败，编译失败不算捕获。
+- 精确fixture迁移：1个客户端函数hash；18个apply/delete传输场景与旧源实际执行对照，去除新增trace/span UUID后I/O轨迹一致，4类已执行失败由null变error。其余351场景、7组序列、28文件作用域和原10变异保持；没有整体重录。
+
+Windows原生及开发验收：
+
+```bat
+git pull --ff-only origin stage/09-preview-tags-app
+node build/diagnostics/check-preview-cache-rust-atomicity.cjs --native
+set HFM_LOG_DETAIL=debug
+npm run dev
+```
+
+重点共享预览生成、清理后重新生成、不可达根恢复、快速滚动和请求超时后的晚完成；本地预览仍走原Node借用连接。检查startup的operation-chain，区分客户端结果与Rust commit。此轮未修R-05旧ack/TTL和R-06去重。
+
+
+### R-04 验证收尾
+
+- 完整 npm run verify 退出0，108/108；日志 /tmp/r04-final-verify.log。新门16个客户端场景及故障变异通过；传输门369场景、7组生命周期、28个临时文件作用域通过。原D-02代次/迟到/句柄边界及编排契约继续通过。
+- Electron/Vite生产构建退出0，365/1/196模块；混淆3/4（一份旧renderer资源已标记），本次main/preload/renderer三入口标记已核对。没有生成安装包。
+- 原生入口实际尝试退出1：spawnSync cargo ENOENT。Rust编译、实际数据库故障/commit回滚、真实worker日志、Windows交互均待验；不以默认门替代原生验收。
+- 变更限13个白名单文件；无依赖锁、schema、缓存key、IPC/preload、UI/CSS变化。独立revert本R-04提交可回滚；不需撤销R-01～R-03。
+- Create State返回Context Captured同时提示No active world model，HFM项目级保存未确认；Git、README和本任务书保留交接。

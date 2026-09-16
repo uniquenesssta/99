@@ -18,6 +18,10 @@ pub fn apply_preview_cache_rows(config: &PreviewCacheCommandConfig) -> Result<St
 
     let mut conn = Connection::open(&payload.db_path).map_err(|error| error.to_string())?;
     initialize_preview_cache_db(&conn, payload.schema_version).map_err(|error| error.to_string())?;
+    apply_on_connection(&mut conn, &payload, &mut trace, started_at)
+}
+
+fn apply_on_connection(conn: &mut Connection, payload: &PreviewCacheApplyPayload, trace: &mut crate::operation_trace::OperationTrace, started_at: Instant) -> Result<String, String> {
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut written = 0usize;
     {
@@ -74,11 +78,11 @@ pub fn apply_preview_cache_rows(config: &PreviewCacheCommandConfig) -> Result<St
             written += 1;
         }
     }
+    if let Some(first) = payload.rows.first() {
+        set_meta(&tx, "updatedAt", &first.updated_at).map_err(|error| error.to_string())?;
+    }
     tx.commit().map_err(|error| error.to_string())?;
     trace.committed();
-    if let Some(first) = payload.rows.first() {
-        set_meta(&conn, "updatedAt", &first.updated_at).map_err(|error| error.to_string())?;
-    }
 
     let result = PreviewCacheApplyResult {
         ok: true,
@@ -100,6 +104,10 @@ pub fn delete_preview_cache_rows(config: &PreviewCacheCommandConfig) -> Result<S
 
     let mut conn = Connection::open(&payload.db_path).map_err(|error| error.to_string())?;
     initialize_preview_cache_db(&conn, payload.schema_version).map_err(|error| error.to_string())?;
+    delete_on_connection(&mut conn, &payload, &mut trace, started_at)
+}
+
+fn delete_on_connection(conn: &mut Connection, payload: &PreviewCacheDeletePayload, trace: &mut crate::operation_trace::OperationTrace, started_at: Instant) -> Result<String, String> {
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut deleted = 0usize;
     {
@@ -129,3 +137,7 @@ fn normalize_status(value: &str) -> &str {
         _ => "pending",
     }
 }
+
+#[cfg(test)]
+#[path = "atomicity_tests.rs"]
+mod atomicity_tests;

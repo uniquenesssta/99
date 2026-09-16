@@ -44,7 +44,7 @@
       ],
       "functions": {
         "runRustPreviewRenderImage": "da98f37eaf33ed9f734f5d2d131afce54816937313887ed362083371610a21cf",
-        "runRustPreviewCacheInputCommand": "3406d56541725092fd76f45a2dc014c170d89154a22e681cfbfc1531472168b8",
+        "runRustPreviewCacheInputCommand": "c1747900c32286ea516740ba116811578236dfc7a9c472d69f8c82f17583de1a",
         "runRustPreviewCacheMaintenance": "eaad38eb2f51486894612442a9e33196207bc6e22274455ceec7d129ac4da9b2",
         "runRustPreviewCacheBatch": "eea2b11ed1aed52b27b194d86b1d724af66181d3478635f9a0aecff633aeffca",
         "runRustPreviewCacheTouch": "8c60eb153bef9986a4115c358bb316f08256cef394ad517dde8aa054c155f666",
