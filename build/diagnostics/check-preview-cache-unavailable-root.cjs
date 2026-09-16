@@ -46,7 +46,7 @@ function testPreviewCacheStorageShortCircuitsUnavailableRoot() {
   const text = readText('src/main/preview/runtime/previewCacheStorageRuntime.ts')
   assert(/import \{ createPreviewCacheRootAvailabilityRuntime \} from [\"']\.\/previewCacheRootAvailabilityRuntime[\"']/.test(text), 'storage runtime missing root availability import')
   assert(text.includes('const rootAvailability = createPreviewCacheRootAvailabilityRuntime'), 'storage runtime missing root availability instance')
-  assert(text.includes('await rootAvailability.ensureRootPreviewCacheAvailable(root)'), 'root write path missing availability preflight')
+  assert(readText('src/main/preview/runtime/previewStorageRoutingRuntime.ts').includes('await rootAvailability.ensureRootPreviewCacheAvailable(root)'), 'root write path missing availability preflight')
   assert(text.includes('storage.storage === \"root\"') && text.includes('rootAvailability.ensureRootPreviewCacheAvailable(\n        storage.rootPath'), 'root read/write paths missing availability short-circuit')
   assert(text.includes('for (const row of group.rows) result[row.id] = false'), 'status batch does not return deterministic misses for unavailable root')
 }

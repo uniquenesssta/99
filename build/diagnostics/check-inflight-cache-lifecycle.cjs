@@ -140,8 +140,9 @@ function testStaticGenerationAndWiring() {
   assert(storage.includes('readStatusGeneration'), 'preview index status cache is missing generation tracking')
   assert(storage.includes('if (readStatusInFlight.get(statusCacheKey) === readTask)'), 'preview status cleanup is not identity-safe')
   assert(storage.includes('invalidateLibraryShellCache'), 'preview storage is missing library-shell invalidation')
-  assert(storage.includes('libraryShellGeneration'), 'preview library-shell cache is missing generation protection')
-  assert(storage.includes('if (libraryShellCachePromise === task)'), 'preview library-shell cleanup is not identity-safe')
+  const routing = read('src/main/preview/runtime/previewStorageRoutingRuntime.ts')
+  assert(routing.includes('libraryShellGeneration'), 'preview library-shell cache is missing generation protection')
+  assert(routing.includes('if (libraryShellCachePromise === task)'), 'preview library-shell cleanup is not identity-safe')
 
   const rootAvailability = read('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts')
   assert(rootAvailability.includes('probeToken?: object'), 'shared preview root probe is missing a lifecycle token')

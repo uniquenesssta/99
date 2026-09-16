@@ -1,0 +1,10 @@
+{
+  "baseline": "de8515808cbbb525021e7ed6ccb615585f1fb1a7",
+  "movedBodies": {
+    "loadLibraryShellCached": "b0bae1d3d62f31b0d782a7b938f23648420f4e8724a0e134f4c363329e6e7b44",
+    "invalidateLibraryShellCache": "7b9abf6bd519dee3f222a27faea7d61ef88cb881c53bf8eeb01cd207abf027cd",
+    "previewCacheStorageForFont": "a9b328b32ad8de51a9eb07112713e083ab1ba4c2ceffd6cfb26776cdd41c237f",
+    "previewCacheStorageForFontFromIndex": "92b5bc13cb8ec149f74eb6739526fad21bb079d14a6235fa28c5f03478607940"
+  },
+  "requiredIoBody": "26196e6b26544bb563f9d952c3190f4fde3b4d157b5420cd61306910f0d001f5"
+}

@@ -4,10 +4,6 @@
     "src/main/preview/runtime/previewCacheStorageRuntime.ts": {
       "functions": [
         "createPreviewCacheStorageRuntime",
-        "loadLibraryShellCached",
-        "invalidateLibraryShellCache",
-        "previewCacheStorageForFont",
-        "previewCacheStorageForFontFromIndex",
         "rustPreviewDbPathForStorage",
         "previewCacheIoErrorMessage",
         "runRequiredRootPreviewCacheIo",
@@ -51,7 +47,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "ca1d82481c3229830e28d31c057d6777fd7ddf2479e38ee23f1862fe55a7fde5"
+      "tokenHash": "8131134f5be79ccda14e9a14aa5aae9dc3c78a3b85538578dd91e14c21ea902c"
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [
@@ -935,6 +931,30 @@
         "fonts:uninstallManaged"
       ],
       "tokenHash": "352b3911e06d22270aebd49e3e5f10742ad073bc5d8e113b663ea50cf0b6d802"
+    },
+    "src/main/preview/runtime/previewStorageRoutingRuntime.ts": {
+      "functions": [
+        "createPreviewStorageRoutingRuntime",
+        "loadLibraryShellCached",
+        "invalidateLibraryShellCache",
+        "previewCacheStorageForFont",
+        "previewCacheStorageForFontFromIndex"
+      ],
+      "owners": [],
+      "exports": [
+        "createPreviewStorageRoutingRuntime"
+      ],
+      "surfaces": {
+        "createPreviewStorageRoutingRuntime": [
+          "loadLibraryShellCached",
+          "invalidateLibraryShellCache",
+          "previewCacheStorageForFont",
+          "previewCacheStorageForFontFromIndex"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "eda92ade0031edeb387525c0647802bb5d5011e4a23c0554f30ea0fd3f33e808"
     }
   }
 }

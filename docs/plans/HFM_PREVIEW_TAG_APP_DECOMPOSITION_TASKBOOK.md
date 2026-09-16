@@ -352,8 +352,8 @@ npm run dev
 | --- | --- | --- | --- | --- |
 | D-01 | 完成基线（未修复生产故障） | 本节同一提交 | verify 92/92；独立观察 2 项 | 无生产变更；下一项 W-01 |
 | D-02 | 自动验证通过待实机 | §18 同一提交 | typecheck / 97项 / 三端构建通过 | Windows开发模式待复验 |
-| D-03 | 阻塞 | §19 同一提交 | typecheck、98项诊断、三端构建通过；修复已实现 | 当前环境无Cargo，Rust定向门与Windows实机待验 |
-| D-04 | 未开始 | — | — | — |
+| D-03 | 自动验证通过待实机 | §19 同一提交，§20构建回执 | typecheck、98项；用户确认构建成功 | Rust定向用例与完整GUI待回执，用户授权先继续 |
+| D-04 | 自动验证通过待实机 | §20 同一提交 | typecheck、99项、三端构建通过 | Windows开发模式复验待回执 |
 | D-05 | 未开始 | — | — | — |
 | D-06 | 未开始 | — | — | — |
 | D-07 | 未开始 | — | — | — |
@@ -917,3 +917,22 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 
 - 自动证据：`npm run verify`退出0，TypeScript和98/98诊断通过；Electron/Vite 354/1/191模块通过。D-02门及已有标签事务/回退政策门保持。冻结fixture仅改变标签生产文件tokenHash；共八个白名单文件，生产改动两文件，无依赖/锁文件变更。
 - Create State返回无active world model，未取得项目级保存确认；以Git、README与本执行卡交接。此次为原有两个读取函数的局部集合修复，无新复杂生命周期，未新增架构图。
+
+## 20. D-04 执行卡
+
+- 状态：自动验证通过待实机；基线 `de8515808cbbb525021e7ed6ccb615585f1fb1a7`，分支 `stage/09-preview-tags-app`，远端一致、开工工作树干净。
+- 用户确认D-03构建成功，并明确授权先继续、其他问题以后排查。记录为原生构建已获回执，不冒充Rust两项定向测试/完整GUI矩阵通过；按本次授权进入D-04，待验项继承。
+- 纯迁移，不混入新修复。精确白名单：`src/main/preview/runtime/previewCacheStorageRuntime.ts`（组合接线）；`src/main/preview/runtime/previewStorageRoutingRuntime.ts`（新路由所有者）；`build/diagnostics/check-preview-storage-routing.cjs`、`build/diagnostics/fixtures/preview-storage-routing.fixture.json`（新增行为/迁移锁）；`build/diagnostics/check-decomposition-baseline.cjs`（真实加载新增模块）；`build/diagnostics/fixtures/decomposition-baseline.fixture.json`（迁移四函数及局部cache所有权）；`build/diagnostics/check-preview-cache-tier.cjs`、`build/diagnostics/check-preview-cache-unavailable-root.cjs`、`build/diagnostics/check-inflight-cache-lifecycle.cjs`（移动断言到真实所有者）；`package.json`；`README.md`；本任务书。
+- 所有权：library shell value/promise/generation由新路由模块唯一持有；availability与tier仍由原组合根各创建一次，传入窄端口。原索引cache/inflight/token、DB生命周期与D-02修复留原文件。
+- 验收：四个搬迁函数体token保持；公开门面不变；同步索引入口无准备副作用、异步mkdir/hide/manifest顺序、不可达根本地降级、库旧Promise不覆盖新代次、deadline拒绝处理；真实退化变异、D-02与全量诊断。
+
+### D-04 迁移与验收记录
+
+- 新`previewStorageRoutingRuntime`只拥有库快照value/promise/generation和四个搬迁函数，使用10个必需配置字段及availability/tier/requiredIo三个窄端口。存储组合根公开接口保持；原文件1257→1150行，新模块157行。不把所有逻辑换名搬家。
+- 冻结证明：新增fixture从开工HEAD提取四函数体tokenHash及原requiredIo函数体hash，迁移前后逐项相等、LF/CRLF一致。decomposition fixture仅迁移四函数的归属及原文件hash，并加入新模块清单；原门面公开面、其他模块指纹未改。
+- 行为门通过真实组合根接线、新路由、原tier与deadline执行；仅根选择输入、FS和探测I/O受控。验证同步无副作用、异步mkdir/images→mkdir/db→hide→manifest→本地目录顺序、共享不可达/异常/100ms超时后的本地降级、晚拒绝、库请求合并/失效/反向完成/失败重试。全套同时使用本机及Windows路径规则；三个变异（去代次校验、无条件清Promise、错误manifest层级）均被拒绝。
+- X-12由D-02真实索引门继续通过；本轮加强X-11的路由与库快照时序，不冒充GUI跨字段矩阵验收。用户已明确其他实机问题后续排查，D-03原生定向测试仍保留待验。
+- `npm run verify`退出0：TypeScript与99/99诊断；Electron/Vite355/1/191模块通过。`git diff --check`通过；12个白名单文件，无Rust、依赖、锁文件、CSS变更。
+- Mermaid已更新真实所有权关系。发布为单一迁移提交，`git log -1 --format=%H -- src/main/preview/runtime/previewStorageRoutingRuntime.ts`可定位SHA；回滚用该SHA revert，不改历史。
+- Windows使用`git pull`后`npm run dev`；观察目录切换、快速滚动、预览生成与详情。下一项D-05提取索引访问所有者，必须继承D-02门和本轮路由门。
+- Create State再次返回无active world model，未取得项目级保存确认；Git、README和本执行卡为权威交接。

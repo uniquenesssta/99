@@ -128,6 +128,7 @@
     "diagnostics:active-view-consistency": "node build/diagnostics/check-active-view-consistency.cjs",
     "diagnostics:preview-index-commit": "node build/diagnostics/check-preview-index-commit.cjs",
     "diagnostics:local-tag-hydration": "node build/diagnostics/check-local-tag-hydration.cjs",
+    "diagnostics:preview-storage-routing": "node build/diagnostics/check-preview-storage-routing.cjs",
     "test:local-tag-hydration-rust": "cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests"
   },
   "dependencies": {
