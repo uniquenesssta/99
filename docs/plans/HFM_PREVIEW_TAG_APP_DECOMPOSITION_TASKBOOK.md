@@ -359,7 +359,7 @@ npm run dev
 | D-07 | 自动验证通过待实机 | §23：前置修复与纯迁移独立提交 | TypeScript、102/102、三端360/1/191通过 | Windows开发模式待回执 |
 | D-08 | 自动验证通过待实机 | §24 同一提交 | TypeScript、103/103、三端362/1/191通过 | 继承Windows待验项 |
 | D-09 | 自动验证通过待实机 | §25 同一提交 | TypeScript、104/104、三端362/1/194通过 | 继承实机缺口 |
-| D-10 | 未开始 | — | — | — |
+| D-10 | 自动验证通过待实机 | §26 同一提交 | TypeScript、104/104、三端362/1/194通过 | 继承实机缺口 |
 | D-11 | 未开始 | — | — | — |
 
 D-01 基线已落地；下一项按第 10 节执行 W-01，不直接搬动三个文件。
@@ -1050,3 +1050,23 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 - 完整npm run verify退出0（TypeScript、104/104）；新增两变异定向复跑通过；Electron/Vite生产三端362/1/194模块构建退出0。Windows GUI、原生Rust以及之前待验项继续保留，本轮不宣称完整Windows构建或实机交互通过。
 - Mermaid已同步实际分时组合/初始化关系；Create State返回Context Captured成功回执（Project: `.`）。无新增第三方API问题，不触发Context7。README、本任务书与Git为精确验收依据。
 - 本轮11文件，提交前git diff --check通过。提交定位：git log -1 --format=%H -- src/renderer/src/runtime/app/createAppMenuDialogRuntime.ts；回滚采用revert该原子提交，不改写历史。Windows继续git pull后npm run dev，复验右键重命名/删除、标签输入、Ctrl/Shift/框选、双击详情和目录拖放；无需安装包。下一项D-10等待新指令。
+
+## 26. D-10 执行卡
+
+- 基线0a9b82bfe84dff77992eecb4c2a52df2cf649d07，stage/09-preview-tags-app，工作区干净。沿用用户直接推送授权；D-09与此前Windows/Rust待验项继承。
+- 最小生产白名单仅src/renderer/src/App.tsx：六组JSX内联对象改为六个显式AppRootViewProps索引类型的局部对象，继续逐字段接线。不复制大接口，不传整个controller，不增加一次性转发工厂或Hook，不改变任何既有Hook/效果/队列/订阅实例。
+- 诊断白名单：build/diagnostics/check-app-root-view-contracts.cjs（支持解析六个实际局部对象，保持旧UI快照与18类型反例）；新增fixtures/app-view-composition.fixture.json（冻结迁移前App生命周期前缀与AppRootView）；fixtures/decomposition-baseline.fixture.json（仅App tokenHash）。另含README与本任务书。性能使用原check-react-render-performance.cjs，不调阈值、不改缓存算法。
+- 改动前10k基准：查询21.9ms、500次布局2.1ms、万项Shift选择0.9ms、最多60卡；500项选择/拖拽最新值、详情开关、相邻窗口引用与退化变异通过。本轮只复核，不据单次耗时作性能提升结论。
+
+### D-10 实施与验收证据
+
+- 六组局部对象直接标注AppRootViewProps['组名']，JSX只接收对应变量，所有字段映射保持；AppRootView及底层组件源码不改。无新增生产文件/接口/工厂，不透传controller、不使用any或类型断言、不引入memo。
+- 原六组18个TypeScript反例继续通过。原四种development/collapsed组合的UI快照hash不变；诊断仅把实际六个局部对象纳入执行。新增反例拒绝any替代输入类型、对象spread透传controller、生命周期插入setTimeout；旧search错接status反例保持，LF/CRLF均通过。
+- 新fixture从D-09基线生成：剔除新增类型import后，App视图对象之前的全部代码逐字冻结；AppRootView完整源码冻结。因此Hook顺序、effects清理、订阅/计时器/队列构造和开发开关没有生产变更。此为结构不变证据，不声称运行过Windows StrictMode挂载/卸载；D-11实机仍需验收。
+- decomposition仅更新App tokenHash，其他inventory字段逐项断言相同；既有app-root-view-wiring.fixture.json全部保留。App从1032变为1045行，新增显式类型和对象声明使职责更清楚，行数不作为完成条件。
+- 原10k性能门不改fixture/阈值/算法：改后独立复测查询25.1ms、500次布局3.5ms、万项Shift选择0.8ms、虚拟窗口最多60卡；500项选择/拖拽、详情开关局部更新、相邻窗口卡片props与事件引用稳定、回调读取最新值均通过，两个原退化变异继续被拒绝。单次耗时受环境波动影响，不据此宣称加速，也没有数据支持额外优化。
+- Electron/Vite三端构建退出0（362/1/194模块）。Mermaid已记录真实六组输入与类型边界；无第三方API/依赖变化，无需Context7。D-11未开始，Windows继续git pull后npm run dev，不要求安装包。
+
+- 最终完整npm run verify退出0：TypeScript、104/104；全量中的性能结果为查询25.2ms、500次布局2.6ms、万项选择1.0ms、最多60卡。收尾补强的视图对象之后新增计时器反例另行定向复跑通过，视图尾部严格限于六对象和return。没有放松旧门或重置旧UI快照。
+- git diff --check通过；本轮6个白名单文件，无依赖/锁文件/构建产物。提交定位：git log -1 --format=%H -- build/diagnostics/fixtures/app-view-composition.fixture.json；回滚使用revert本轮提交。D-11全链路/开发模式验收在收到新指令后推进。
+- Create State返回Context Captured同时提示No active world model，现有模型均为其他项目，因此未确认本项目级保存，不写入无关模型；Git、README及本执行卡为权威记录。

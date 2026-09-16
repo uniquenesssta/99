@@ -90,7 +90,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "52599233b2635d8197834726c9fd31a1d7520d693b058493a698b71ecbdadc64"
+      "tokenHash": "2f3d4c2b6cefa129e945e8718ba43790ce3f5d68079ea8ea7e06afa4bc994461"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
