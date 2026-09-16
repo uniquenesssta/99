@@ -64,6 +64,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-17：修复R-04诊断在Windows CRLF下多行变异未命中导致的 Missing expected exception；统一变异输入换行并强制检查替换命中，覆盖客户端和原生反例入口，生产代码不变。
+
 - 2026-09-16：R-04预览缓存提交完整性：Rust apply行与updatedAt同事务；apply/delete执行结果未知时不再返回null触发Node重写，成功后的日志/临时文件清理失败不改变写入结果。新增系统预览operation trace、16个客户端故障场景及独立原生SQLite/commit故障验收入口。verify 108/108、Electron/Vite 365/1/196及三个入口混淆通过；当前无Cargo，原生/Windows验收待执行，详见[链路一致性任务书](docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#16-r-04-执行卡)。开发验收使用 `npm run dev`；R-05/R-06未启动。
 
 - 2026-09-16：R-03将Rust共享元数据行、ops/events、metadata和signature纳入一致事务；删除目标/revision在锁内读取，普通只读signature保持旧兼容。修复Rust提交成功后日志异常误报失败，新增原生故障和默认门；verify 107/107、12个TS场景及三端构建通过，Rust/Windows原生仍待验。见[执行卡](docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#15-r-03-执行卡)。

@@ -462,3 +462,12 @@ npm run dev
 - 原生入口实际尝试退出1：spawnSync cargo ENOENT。Rust编译、实际数据库故障/commit回滚、真实worker日志、Windows交互均待验；不以默认门替代原生验收。
 - 变更限13个白名单文件；无依赖锁、schema、缓存key、IPC/preload、UI/CSS变化。独立revert本R-04提交可回滚；不需撤销R-01～R-03。
 - Create State返回Context Captured同时提示No active world model，HFM项目级保存未确认；Git、README和本任务书保留交接。
+
+
+### R-04 Windows 换行兼容修正
+
+用户实机在默认门反例断言报 Missing expected exception。根因为多行变异锚点写死LF，CRLF源码未被修改；此前CRLF只检查正确源码，未覆盖变异生成。修正限本诊断脚本、README和本任务书：所有源码变异统一LF并断言锚点命中及内容确实变化，Rust反例覆盖LF/CRLF；原生metadata移出事务反例也使用同一检查。
+
+实际把Rust write.rs与TS客户端转成CRLF，旧门复现同样错误，新门通过16个客户端场景及反例；随后恢复原文件字节，生产源码无差异。Rust/Cargo实机验收仍待回执，本修正不宣称原生验收通过。
+
+验证：定向LF/CRLF退出0；--native通过默认门后因cargo ENOENT退出1。全量verify运行至Rust诊断期间容器连接中断，最终状态未确认，不计作108项通过。已通过定向验证的修复按相同替换规则从远端基线恢复并提交；未重复构建未修改的生产源码。Create State提示No active world model，项目级保存未确认。

@@ -3,6 +3,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {spawnSync,execFileSync}=require('node:child_process')
 const {loader,validatePreviewNativeStages}=require('./check-operation-chain.cjs')
 const root=path.resolve(__dirname,'../..'),file='native-src/hfm-core-worker/src/preview_cache/write.rs',clientFile='src/main/rust-core/clients/rustPreviewClientRuntime.ts'
+function replaceRequired(source, before, after) {
+ const normalized=source.replace(/\r\n/g,'\n')
+ assert(normalized.includes(before), 'mutation anchor missing: '+before)
+ const changed=normalized.replace(before,after)
+ assert.notEqual(changed,normalized,'mutation must change source')
+ return changed
+}
 function check(s){s=s.replace(/\r\n/g,'\n');const body=s.slice(s.indexOf('fn apply_on_connection'),s.indexOf('pub fn delete_preview_cache_rows'));let prev=-1;for(const t of ['conn.transaction()','upsert.execute','set_meta(&tx, "updatedAt"','tx.commit()','trace.committed()','trace.finish(']){const i=body.indexOf(t);assert(i>prev,t);prev=i}assert(!body.includes('set_meta(&conn'));assert.equal((body.match(/tx\.commit\(\)/g)||[]).length,1)}
 async function clientCase(mode,kind,transform=x=>x,binary) {
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-preview-chain-')),dbPath=path.join(dir,'preview.db'),events=[];let runs=0,disposed=0,written
@@ -29,10 +36,10 @@ async function clientCase(mode,kind,transform=x=>x,binary) {
  return events
  }finally{if(previous===undefined)delete process.env.HFM_LOG_DETAIL;else process.env.HFM_LOG_DETAIL=previous;fs.rmSync(dir,{recursive:true,force:true})}
 }
-async function main(){const s=fs.readFileSync(path.join(root,file),'utf8');check(s);check(s.replace(/\n/g,'\r\n'));for(const mutate of [s=>s.replace('set_meta(&tx,','set_meta(&conn,'),s=>s.replace('    tx.commit().map_err(|error| error.to_string())?;\n    trace.committed();','    trace.committed();\n    tx.commit().map_err(|error| error.to_string())?;')])assert.throws(()=>check(mutate(s)))
+async function main(){const s=fs.readFileSync(path.join(root,file),'utf8');check(s);check(s.replace(/\r?\n/g,'\r\n'));for(const mutate of [s=>replaceRequired(s,'set_meta(&tx,','set_meta(&conn,'),s=>replaceRequired(s,'    tx.commit().map_err(|error| error.to_string())?;\n    trace.committed();','    trace.committed();\n    tx.commit().map_err(|error| error.to_string())?;')]){for(const source of [s.replace(/\r\n/g,'\n'),s.replace(/\r?\n/g,'\r\n')]){const changed=mutate(source);assert.throws(()=>check(changed))}}
  for(const kind of ['apply','delete'])for(const mode of ['success','error','invalid','malformed','rejected','log-error','cleanup-error','unavailable'])await clientCase(mode,kind)
- await assert.rejects(()=>clientCase('error','apply',s=>s.replace('          throw error\n        }','          return null\n        }')),/submitted mutation/)
- await assert.rejects(()=>clientCase('success','apply',s=>s.replace('return tracePreviewCacheMutation(label, options.appendStartupLog, async () => {','return (async () => {').replace('    })\n  }','    })()\n  }')))
+ await assert.rejects(()=>clientCase('error','apply',s=>replaceRequired(s,'          throw error\n        }','          return null\n        }')),/submitted mutation/)
+ await assert.rejects(()=>clientCase('success','apply',s=>replaceRequired(replaceRequired(s,'return tracePreviewCacheMutation(label, options.appendStartupLog, async () => {','return (async () => {'),'    })\n  }','    })()\n  }')))
  // Synthetic validator unit cases; these do not count as native execution.
  const t={version:1,sessionId:'validator',operationId:'o',attemptId:'a',batchId:'b',domain:'previewCache',members:['o'],omitted:0,spanId:'s'}
  const chain=[{trace:t,stage:'dispatch'},{trace:t,stage:'backend-start',backend:'rust',backendSequence:1},{trace:{...t,commitSequence:2},stage:'commit',backend:'rust',backendSequence:2},{trace:t,stage:'backend-result',backend:'rust',backendSequence:3,outcome:'returned'},{trace:t,stage:'client-result',outcome:'returned'}]
@@ -44,7 +51,7 @@ async function native(){const origin=path.join(root,'native-src/hfm-core-worker'
  const r=cargo(['test','--manifest-path',manifest,'preview_cache_atomicity']);process.stdout.write(r.stdout);process.stderr.write(r.stderr);assert.equal(r.status,0)
  const m=cargo(['metadata','--manifest-path',manifest,'--no-deps','--format-version','1']);assert.equal(m.status,0);const binary=path.join(JSON.parse(m.stdout).target_directory,'debug',process.platform==='win32'?'hfm-core-worker.exe':'hfm-core-worker')
  for(const kind of ['apply','delete']){const events=await clientCase('success',kind,x=>x,binary);assert.throws(()=>validatePreviewNativeStages(events.filter(e=>e.stage!=='commit')))}
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-r04-mutant-'));try{for(const name of ['src','tests','Cargo.toml','Cargo.lock'])fs.cpSync(path.join(origin,name),path.join(dir,name),{recursive:true});const source=fs.readFileSync(path.join(root,file),'utf8'),old=execFileSync('git',['show',`8b60ee798b8e5fd4c10fcecc5633dbbc08981c01:${file}`],{cwd:root,encoding:'utf8'});const block='    if let Some(first) = payload.rows.first() {\n        set_meta(&tx, "updatedAt", &first.updated_at).map_err(|error| error.to_string())?;\n    }';const mutant=source.replace(block,'').replace('    trace.committed();','    trace.committed();\n'+block.replace('&tx','&conn'));assert.notEqual(mutant,source)
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-r04-mutant-'));try{for(const name of ['src','tests','Cargo.toml','Cargo.lock'])fs.cpSync(path.join(origin,name),path.join(dir,name),{recursive:true});const source=fs.readFileSync(path.join(root,file),'utf8'),old=execFileSync('git',['show',`8b60ee798b8e5fd4c10fcecc5633dbbc08981c01:${file}`],{cwd:root,encoding:'utf8'});const block='    if let Some(first) = payload.rows.first() {\n        set_meta(&tx, "updatedAt", &first.updated_at).map_err(|error| error.to_string())?;\n    }';const mutant=replaceRequired(replaceRequired(source,block,''),'    trace.committed();','    trace.committed();\n'+block.replace('&tx','&conn'))
  for(const [label,text] of [['old',old],['meta-after-commit',mutant]]){fs.writeFileSync(path.join(dir,'src/preview_cache/write.rs'),text);const result=cargo(['test','--manifest-path',path.join(dir,'Cargo.toml'),'--test','preview_cache_atomicity','preview_cache_atomicity_row_and_meta_failures','--','--nocapture'],{...process.env,CARGO_TARGET_DIR:path.join(origin,'target/r04-negative')});assert.notEqual(result.status,0);assert((result.stdout+result.stderr).includes('metadata leaked partial writes'),`${label}: must fail database assertion, not compilation`);console.log(`[native:preview-cache-atomicity] ${label} database assertion rejected`)}}
  finally{fs.rmSync(dir,{recursive:true,force:true})}}
 if(require.main===module)main().then(()=>{if(process.argv.includes('--native'))return native()}).catch(e=>{console.error(e);process.exitCode=1})
