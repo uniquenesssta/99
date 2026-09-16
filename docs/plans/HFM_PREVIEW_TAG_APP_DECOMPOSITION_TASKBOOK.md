@@ -980,3 +980,14 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 
 - 最终验证：`npm run verify`退出0（TypeScript、101/101）；Electron/Vite三端359/1/191模块构建退出0。20个白名单文件，无Rust、依赖版本、锁文件或CSS改动；`git diff --check`通过。Windows继续使用`git pull`后`npm run dev`复验，不要求安装包。
 - Create State本轮返回Context Captured成功回执（Project: `.`）；Git、README与本执行卡仍为精确代码和验收证据。
+
+## 23. D-07 执行卡
+
+- 开工基线`2e898670a49a2357cbe2e4b633b868e87bea6040`，分支`stage/09-preview-tags-app`，工作区干净、远端一致。继承实机待验项，不把用户推进授权作为GUI/Rust测试通过。
+- 发现并复现提交后日志异常：单项已提交却抛错，批量/删除已提交却返回失败并清空成功ID。通知回调已有独立catch，日志抛错会阻断通知。按D-07要求先做独立修复提交，再纯迁移；不把结果语义变更藏入拆分。
+- 修复白名单：`src/main/library/runtime/localFontTagsRuntime.ts`、新增`build/diagnostics/check-local-tag-node-persistence.cjs`、`build/diagnostics/fixtures/decomposition-baseline.fixture.json`（只改此生产文件tokenHash）、`package.json`、README及本任务书。
+- 修复仅隔离生命周期日志回调异常，每条日志独立try/catch；SQL、事务、通知以及Rust调用策略不变。新门先在未修复源码上报log failure，再要求已提交结果成功且仍发通知；撤销隔离的变异必须失败。
+- 真实SQLite使用Node内置node:sqlite，临时文件及第二连接回读；适配器仅提供BEGIN/COMMIT/ROLLBACK同步事务回调。运行器带--experimental-sqlite兼容既有Node>=22.12，不改生产better-sqlite3/依赖。当前容器缺better-sqlite3本机binding，因此不冒充该原生绑定或Electron验收。Context7已查询Node24内置SQLite及22.12开关边界。
+- 覆盖事务第二项失败、目录写失败（SQLite触发器RAISE）、单项/批量/删除提交后日志和通知抛错、回读无部分绑定、清空绑定保留空标签、显式删除目录、其他app_state和字体收藏/共享标签/保护字段保持。
+- 回读同时发现批量回滚后协议仍可能携带事务内计算的新目录；前置修复将失败knownTags恢复为previousKnownTags，并断言失败响应不发布未提交目录。该结果语义修复与日志隔离同属前置修复，纯迁移以修复后提交为基线。
+- 前置修复验证：TypeScript、102/102诊断退出0；目录失败协议修正后复跑新真实SQLite门与decomposition门通过。纯迁移完成后再做最终完整verify/三端构建。

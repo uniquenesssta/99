@@ -137,6 +137,13 @@ function logKnownLocalTagLifecycle(options: {
   removedKnownTags?: string[]
   retainedEmptyTags?: string[]
 }): void {
+  const appendStartupLog = (message: string): void => {
+    try {
+      options.appendStartupLog?.(message)
+    } catch {
+      // Logging must not change a completed tag mutation or suppress its state signal.
+    }
+  }
   const hasLifecycleBaseline = Array.isArray(options.previousKnownTags) || Array.isArray(options.addedKnownTags) || Array.isArray(options.removedKnownTags)
   if (!hasLifecycleBaseline) return
   const lifecycle = knownTagLifecycle(options.previousKnownTags, options.knownTags)
@@ -144,13 +151,13 @@ function logKnownLocalTagLifecycle(options: {
   const removed = cleanKnownTagNames(options.removedKnownTags || lifecycle.removed)
   const retainedEmpty = cleanKnownTagNames(options.retainedEmptyTags || [])
   if (retainedEmpty.length) {
-    options.appendStartupLog?.(`local known tag retained empty: source=${options.source}, kind=${options.kind}, tags=${JSON.stringify(retainedEmpty)}, catalog=${lifecycle.next.length}, changedFonts=${options.changedIds.length}`)
+    appendStartupLog(`local known tag retained empty: source=${options.source}, kind=${options.kind}, tags=${JSON.stringify(retainedEmpty)}, catalog=${lifecycle.next.length}, changedFonts=${options.changedIds.length}`)
   }
   if (removed.length) {
-    options.appendStartupLog?.(`local known tag deleted: source=${options.source}, kind=${options.kind}, tags=${JSON.stringify(removed)}, previous=${lifecycle.previous.length}, next=${lifecycle.next.length}, changedFonts=${options.changedIds.length}`)
+    appendStartupLog(`local known tag deleted: source=${options.source}, kind=${options.kind}, tags=${JSON.stringify(removed)}, previous=${lifecycle.previous.length}, next=${lifecycle.next.length}, changedFonts=${options.changedIds.length}`)
   }
   if (added.length) {
-    options.appendStartupLog?.(`local known tag created: source=${options.source}, kind=${options.kind}, tags=${JSON.stringify(added)}, previous=${lifecycle.previous.length}, next=${lifecycle.next.length}, changedFonts=${options.changedIds.length}`)
+    appendStartupLog(`local known tag created: source=${options.source}, kind=${options.kind}, tags=${JSON.stringify(added)}, previous=${lifecycle.previous.length}, next=${lifecycle.next.length}, changedFonts=${options.changedIds.length}`)
   }
 }
 
@@ -676,6 +683,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
         });
       }
       updatedIds.length = 0;
+      knownTags = previousKnownTags;
     }
 
     const message = failed.length
