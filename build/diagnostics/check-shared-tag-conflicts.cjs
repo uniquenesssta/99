@@ -96,7 +96,7 @@ function testSharedTagNoopDeleteDoesNotDirtyFreshQueries() {
   const localRustState = readText('native-src/hfm-core-worker/src/local_tags/state_machine.rs')
   assert(localRustState.includes('let changed = !changed_ids.is_empty() || catalog_changed;'), 'rust local tag signal must dirty only changed bindings or changed catalog state')
 
-  const localRuntime = readText('src/main/library/runtime/localFontTagsRuntime.ts')
+  const localRuntime = readText('src/main/library/runtime/localFontTagMutationEffectsRuntime.ts')
   assert(localRuntime.includes('const changed = normalizedChangedIds.length > 0 || catalogChanged'), 'local tag signal should derive dirty state from changed rows or catalog changes')
 
   assert(stateSignalRuntime.includes('local tags mutation signal ignored'), 'local tag no-op signal should be ignored before barrier/cache invalidation')

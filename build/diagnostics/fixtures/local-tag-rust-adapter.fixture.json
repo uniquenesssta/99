@@ -1,0 +1,18 @@
+{
+  "baseline": "fc6b85ae9331ab4f7d7f177566f74c3188920f58",
+  "files": {
+    "src/main/library/runtime/localFontTagRustAdapterRuntime.ts": {
+      "rustLocalTagReadRow": "6f476772233cf9b990aa0d1d485dd892d8bf608ac3c98764fa3b034033beb8a0",
+      "rustLocalTagRow": "9eefef45ecfa1aaa142d4350ab062b62d735bcd75ba3aea2a6fcdbbf41f80769",
+      "tryReadLocalTagsWithRust": "1c1eae36adc0f37a2338cdac70e6ad28e57573fd678fe85ed0d051b313b7f874",
+      "trySetLocalTagsWithRust": "f7ddecbcbe3893fca82999334e75c402202f8aaa8ddbcaf423650647d6e8af73",
+      "tryDeleteLocalTagWithRust": "2010a9088b4baabcd0a9966c20d53e4a1534141dcb013be997263074b314215e"
+    },
+    "src/main/library/runtime/localFontTagMutationEffectsRuntime.ts": {
+      "knownTagLifecycle": "f259278890543ab0920d2c39b7b98dd6571a9e5d5b15e772be9126d00f94782d",
+      "logKnownLocalTagLifecycle": "f8df94aa34a39759f4ffb05af085d9e99c0f54486f4dbbd2940ba39644fdf5a9",
+      "emitLocalTagsMutationStateSignal": "4762eba34f4255c0f49f33d72057367cadb9adf6863915c1dc9292b042f17f85",
+      "nodeLocalTagsMutationProtocol": "043ff01cff1a86580c72257af7d64565e554a7349379205cfeb5b0e372853855"
+    }
+  }
+}

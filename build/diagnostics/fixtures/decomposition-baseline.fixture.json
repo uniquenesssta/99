@@ -33,16 +33,7 @@
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [
-        "knownTagLifecycle",
-        "logKnownLocalTagLifecycle",
-        "rustLocalTagReadRow",
-        "rustLocalTagRow",
         "createLocalFontTagsRuntime",
-        "emitLocalTagsMutationStateSignal",
-        "nodeLocalTagsMutationProtocol",
-        "tryReadLocalTagsWithRust",
-        "trySetLocalTagsWithRust",
-        "tryDeleteLocalTagWithRust",
         "localTagsByFontIds",
         "hydrateLocalTagsForFonts",
         "setLocalFontTags",
@@ -62,23 +53,6 @@
         "createLocalFontTagsRuntime"
       ],
       "surfaces": {
-        "knownTagLifecycle": [
-          "previous",
-          "next",
-          "added",
-          "removed"
-        ],
-        "rustLocalTagReadRow": [
-          "itemId",
-          "aliases",
-          "fontPath"
-        ],
-        "rustLocalTagRow": [
-          "itemId",
-          "aliases",
-          "fontPath",
-          "tagNames"
-        ],
         "createLocalFontTagsRuntime": [
           "localTagsByFontIds",
           "hydrateLocalTagsForFonts",
@@ -89,7 +63,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "4f0623d71c948aa38b4c3e988d4dc2bedf60b4fb88a3751fa4caedabfe169cee"
+      "tokenHash": "41bd5b5d37586c42431f491ae127f6bb417b21de5426f0b7d4f98178609f3507"
     },
     "src/renderer/src/App.tsx": {
       "functions": [
@@ -1058,6 +1032,74 @@
       "viewGroups": [],
       "ipcChannels": [],
       "tokenHash": "d83309e67e8a9e1649b1d1b7122f19e75b518297cf7555796e030e17bb323c7e"
+    },
+    "src/main/library/runtime/localFontTagRustAdapterRuntime.ts": {
+      "functions": [
+        "rustLocalTagReadRow",
+        "rustLocalTagRow",
+        "createLocalFontTagRustAdapterRuntime",
+        "tryReadLocalTagsWithRust",
+        "trySetLocalTagsWithRust",
+        "tryDeleteLocalTagWithRust",
+        "nodeFallbackDenial"
+      ],
+      "owners": [],
+      "exports": [
+        "createLocalFontTagRustAdapterRuntime"
+      ],
+      "surfaces": {
+        "rustLocalTagReadRow": [
+          "itemId",
+          "aliases",
+          "fontPath"
+        ],
+        "rustLocalTagRow": [
+          "itemId",
+          "aliases",
+          "fontPath",
+          "tagNames"
+        ],
+        "createLocalFontTagRustAdapterRuntime": [
+          "rustLocalTagReadRow",
+          "rustLocalTagRow",
+          "tryReadLocalTagsWithRust",
+          "trySetLocalTagsWithRust",
+          "tryDeleteLocalTagWithRust",
+          "nodeFallbackDenial"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "c6a24bf0cfe431ef19d11217cae98f6b8767eff15447564eb75ef973e6f0db28"
+    },
+    "src/main/library/runtime/localFontTagMutationEffectsRuntime.ts": {
+      "functions": [
+        "knownTagLifecycle",
+        "logKnownLocalTagLifecycle",
+        "createLocalFontTagMutationEffectsRuntime",
+        "emitLocalTagsMutationStateSignal",
+        "nodeLocalTagsMutationProtocol"
+      ],
+      "owners": [],
+      "exports": [
+        "logKnownLocalTagLifecycle",
+        "createLocalFontTagMutationEffectsRuntime"
+      ],
+      "surfaces": {
+        "knownTagLifecycle": [
+          "previous",
+          "next",
+          "added",
+          "removed"
+        ],
+        "createLocalFontTagMutationEffectsRuntime": [
+          "emitLocalTagsMutationStateSignal",
+          "nodeLocalTagsMutationProtocol"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "e50eb870049b6a24a2b92cd138191bacbeab3c5953ad7104d40d0f9796d0753a"
     }
   }
 }

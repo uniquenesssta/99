@@ -313,9 +313,9 @@ function testTagSignalInvalidatesQueriesBeforePersistenceWait() {
 function testLocalKnownTagLifecycleLoggingWiring() {
   assertIncludes('native-src/hfm-core-worker/src/local_tags/state_machine.rs', 'known_tag_diff');
   assertIncludes('native-src/hfm-core-worker/src/local_tags/types.rs', 'retained_empty_tags');
-  assertIncludes('src/main/library/runtime/localFontTagsRuntime.ts', 'local known tag retained empty:');
-  assertIncludes('src/main/library/runtime/localFontTagsRuntime.ts', 'local known tag deleted:');
-  assertNotIncludes('src/main/library/runtime/localFontTagsRuntime.ts', 'local known tag zero-bind removed:');
+  assertIncludes('src/main/library/runtime/localFontTagMutationEffectsRuntime.ts', 'local known tag retained empty:');
+  assertIncludes('src/main/library/runtime/localFontTagMutationEffectsRuntime.ts', 'local known tag deleted:');
+  assertNotIncludes('src/main/library/runtime/localFontTagMutationEffectsRuntime.ts', 'local known tag zero-bind removed:');
   assertIncludes('src/renderer/src/fontTagStateAuthorityRuntime.ts', 'if (hasKnownTags)');
   assertIncludes('src/renderer/src/runtime/app/useBrowseDerivedRuntime.ts', "isLibraryTagAuthorityKnown(library, 'local')");
   assertIncludes('src/renderer/src/fontTagStateAuthorityRuntime.ts', '__localTagAuthorityKnown: true');

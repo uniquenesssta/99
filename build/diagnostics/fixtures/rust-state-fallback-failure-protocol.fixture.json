@@ -32,7 +32,8 @@
     {
       "name": "local-tags-read-rust-failed",
       "command": "--local-tags-read",
-      "runtimeFile": "src/main/library/runtime/localFontTagsRuntime.ts",
+      "runtimeFile": "src/main/library/runtime/localFontTagRustAdapterRuntime.ts",
+      "callsiteFile": "src/main/library/runtime/localFontTagsRuntime.ts",
       "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
       "fallbackSource": "local-tags-read",
       "expectedDefaultDecision": "return-empty-or-original",
@@ -41,7 +42,8 @@
     {
       "name": "local-tags-write-rust-failed",
       "command": "--local-tags-set",
-      "runtimeFile": "src/main/library/runtime/localFontTagsRuntime.ts",
+      "runtimeFile": "src/main/library/runtime/localFontTagRustAdapterRuntime.ts",
+      "callsiteFile": "src/main/library/runtime/localFontTagsRuntime.ts",
       "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
       "fallbackSource": "local-tags-write",
       "expectedDefaultDecision": "return-denied-result",
@@ -50,7 +52,8 @@
     {
       "name": "local-tags-delete-rust-failed",
       "command": "--local-tags-delete-tag",
-      "runtimeFile": "src/main/library/runtime/localFontTagsRuntime.ts",
+      "runtimeFile": "src/main/library/runtime/localFontTagRustAdapterRuntime.ts",
+      "callsiteFile": "src/main/library/runtime/localFontTagsRuntime.ts",
       "rustWorkerFile": "src/main/rust-core/rustCoreWorkerRuntime.ts",
       "fallbackSource": "local-tags-delete",
       "expectedDefaultDecision": "return-denied-result",

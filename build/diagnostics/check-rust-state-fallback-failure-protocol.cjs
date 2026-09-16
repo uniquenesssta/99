@@ -58,7 +58,7 @@ function testRustWorkerFailureLogsArePolicyGated() {
 function testFallbackCallersStillGateNodePaths() {
   const data = fixture()
   for (const scenario of data.scenarios) {
-    const source = read(scenario.runtimeFile)
+    const source = read(scenario.runtimeFile) + (scenario.callsiteFile ? read(scenario.callsiteFile) : '')
     assert(source.includes(`source: '${scenario.fallbackSource}'`), `${scenario.runtimeFile} missing fallback source ${scenario.fallbackSource}`)
     for (const needle of scenario.requires || []) {
       assert(source.includes(needle), `${scenario.runtimeFile} missing ${needle} for ${scenario.name}`)

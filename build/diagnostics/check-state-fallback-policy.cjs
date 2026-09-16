@@ -59,7 +59,7 @@ function testPolicyModuleWiring() {
 
 function testLocalAndSharedStateFallbacksAreGated() {
   for (const relativePath of [
-    'src/main/library/runtime/localFontTagsRuntime.ts',
+    'src/main/library/runtime/localFontTagRustAdapterRuntime.ts',
     'src/main/library/sharedKnownTagsRuntime.ts',
     'src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts',
     'src/main/indexing/shared-metadata/sharedMetadataOverlayRuntime.ts',

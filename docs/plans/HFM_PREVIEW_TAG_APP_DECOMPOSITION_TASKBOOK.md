@@ -357,7 +357,7 @@ npm run dev
 | D-05 | 自动验证通过待实机 | §21 同一提交 | typecheck、100项、三端构建通过 | Windows开发模式待复验 |
 | D-06 | 自动验证通过待实机 | §22 同一提交 | TypeScript、101/101、三端359/1/191通过 | Windows开发模式待回执 |
 | D-07 | 自动验证通过待实机 | §23：前置修复与纯迁移独立提交 | TypeScript、102/102、三端360/1/191通过 | Windows开发模式待回执 |
-| D-08 | 未开始 | — | — | — |
+| D-08 | 自动验证通过待实机 | §24 同一提交 | TypeScript、103/103、三端362/1/191通过 | 继承Windows待验项 |
 | D-09 | 未开始 | — | — | — |
 | D-10 | 未开始 | — | — | — |
 | D-11 | 未开始 | — | — | — |
@@ -1011,3 +1011,23 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 - 定位提交：`git log --oneline --all --grep='fix(tags): preserve committed'`定位前置修复，`git log -1 --format=%H -- src/main/library/runtime/localFontTagNodePersistenceRuntime.ts`定位迁移；回滚先revert迁移，可独立保留前置修复，不改写历史。
 - 最终验证：时序收口后完整`npm run verify`退出0，TypeScript与102/102诊断通过；Electron/Vite360/1/191模块构建退出0，renderer产物不变。`git diff --check`通过；前置修复6文件、纯迁移10文件，合计11个不同文件，未提交依赖或产物。
 - Create State返回Context Captured成功回执（Project: `.`）；Git、README及本执行卡保留精确证据。Windows按`git pull`后`npm run dev`复验标签单项/批量/清空/删除、收藏及共享标签显示；不要求安装包。
+
+## 24. D-08 执行卡
+
+- 开工基线`fc6b85ae9331ab4f7d7f177566f74c3188920f58`，`stage/09-preview-tags-app`，工作区干净、已fetch。继承D-07及之前Windows/Rust待验项，用户授权推进不等于实机已通过。
+- 纯迁移。生产白名单：`src/main/library/runtime/localFontTagsRuntime.ts`；新增同目录`localFontTagRustAdapterRuntime.ts`（row/调用结果与回退准入）、`localFontTagMutationEffectsRuntime.ts`（既有生命周期日志、信号规范化与Node协议）。D-07 Node持久化及真实信号处理链生产文件不改；不新增队列/状态/数据库实例。
+- 诊断白名单：新增`build/diagnostics/check-local-tag-rust-adapter.cjs`及`fixtures/local-tag-rust-adapter.fixture.json`；`check-decomposition-baseline.cjs`与对应fixture（加载新owner/迁移清单）；`check-local-tag-node-persistence.cjs`与对应fixture（日志变异、保留helper指纹改归属）；`check-tag-consistency.cjs`、`check-shared-tag-conflicts.cjs`、`check-state-fallback-policy.cjs`、`check-rust-state-fallback-failure-protocol.cjs`及`fixtures/rust-state-fallback-failure-protocol.fixture.json`（原文字断言随所有者迁移）。另含package.json、README及本任务书。
+- 验收：原五个row/Rust helper与四个日志/信号/协议helper体锁；五公开方法结果/message区别保留；Rust写异常不重放Node，null/缺少worker仅策略允许才回退；读异常维持原策略。真实信号runtime执行revision→清查询cache→广播；空目录删除/no-op/重复信号与异常边界覆盖，D-07真实SQLite及并发通知顺序、D-03身份门继承。
+
+### D-08 迁移与验证证据
+
+- 原门面611→378行；Rust适配89行，提交反馈122行。门面继续拥有五方法不同的输入处理、单项空updatedIds补item.id、批量/删除不补ID、中文message与返回协议分支；类型导出路径不变。两个新owner无状态、无SQL、无新增await，D-07 Node owner271行未改。
+- Rust适配只接收5个必需deps字段，反馈工厂只接收librarySqlitePath与通知回调；生命周期日志继续独立函数传入原参数。类型使用现有deps的Pick，无新增any/万能上下文。既有stateSignal到Record的单次断言原样迁移，未扩展类型逃逸。
+- 5个row/Rust函数体及4个生命周期/信号/协议函数体指纹来自开工HEAD，迁移后逐项相同且支持LF/CRLF；D-07 fixture只移动9项归属，hash值不变。decomposition只更新门面迁移清单、新两owner，五方法公开面逐项一致，其他生产文件指纹不变。
+- 新门真实加载门面、适配、effects、身份/归一化、回退政策、修订屏障和信号runtime；只控制Rust客户端、Node后端命令端口及窗口广播/清缓存出口。Node数据库行为另由未放松的D-07真实SQLite门覆盖，不能把本门后端spy当原生数据库/Rust worker实测。
+- 三种真实策略环境（禁用、显式兼容、legacy）×成功/null/缺少worker/抛错×五方法；验证写异常对象向上传播且Node零调用、禁用回退零读写、允许时一次回退、请求row身份与批量去重、标签归一化、输入其他字段保持。空输入、单项/批量/删除不同结果、生命周期日志抛错仍通知、目录变更/no-op/信号去重均覆盖。
+- 真实信号链验证revision→clear query cache→broadcast，广播携带屏障真实修订号与空目录；三变异（吞写异常转null、强制允许、强制禁止回退）均失败。D-07四变异及并发commit→signal→commit→signal、D-03两个身份变异、既有tag-consistency/state-fallback/shared-conflicts门已通过。
+- 旧失败协议fixture的三个local场景将runtimeFile定位adapter，并增加callsiteFile定位门面；原source与requires断言全部保留，在两段真实调用链上检查。日志与signal的文字断言改为新effects所有者，不删除门禁。
+- 无新第三方API或版本问题，不触发Context7；Mermaid已更新真实适配/准入/提交反馈关系。Windows开发模式待复验及既有Rust定向测试缺口继续继承，下一项D-09仅在新指令后进入。
+- 独立提交可用`git log -1 --format=%H -- src/main/library/runtime/localFontTagRustAdapterRuntime.ts`定位；回滚使用该提交revert，D-07修复独立保留。Windows继续`git pull`后`npm run dev`，观察本地标签单项/批量/清空/删除及收藏/共享标签显示。
+- 最终验证：`npm run verify`退出0（TypeScript与103/103）；Electron/Vite362/1/191模块构建退出0。`git diff --check`通过，17个精确白名单文件，无依赖/锁文件/产物提交。Create State虽返回Context Captured文本，同时明确No active world model，未确认本项目级保存；列出的其他项目模型不匹配，不写入无关模型。Git、README与任务书保留权威证据。

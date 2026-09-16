@@ -41,7 +41,8 @@ function harness({ fault, logThrows = false, signalThrows = false, transform = x
     '../../rust-core/nodeStateFallbackCompatibilityRuntime': { nodeStateFallbackCompatibilityAllowed: () => true, logNodeStateFallbackUsed() {} }
   }
   mocks['./localFontTagNodePersistenceRuntime'] = load(nodeFile, mocks, nodeTransform)
-  const runtime = load(file, mocks, transform).createLocalFontTagsRuntime({
+  mocks['./localFontTagMutationEffectsRuntime'] = load('src/main/library/runtime/localFontTagMutationEffectsRuntime.ts', mocks, transform)
+  const runtime = load(file, mocks).createLocalFontTagsRuntime({
     openLibraryDb: async () => adapter, librarySqlitePath: () => dbPath,
     appendStartupLog(message) { events.push('log'); if (logThrows) throw Error('log failure') },
     onLocalTagsMutationStateSignal(signal) { events.push('signal'); assert(events.includes('commit')); if (signalThrows) throw Error('signal failure') }

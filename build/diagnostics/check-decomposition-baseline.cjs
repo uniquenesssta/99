@@ -18,6 +18,7 @@ function load(file, mocks = {}, transform = x => x) {
   vm.runInNewContext(code, { exports, require(id) {
     if (Object.hasOwn(mocks, id)) return mocks[id]
     if (['./previewBatchRowsRuntime', './previewBatchReadRuntime', './previewStorageIoRuntime'].includes(id)) return load('src/main/preview/runtime/' + id.slice(2) + '.ts', mocks)
+    if (['./localFontTagRustAdapterRuntime', './localFontTagMutationEffectsRuntime'].includes(id)) return load('src/main/library/runtime/' + id.slice(2) + '.ts', mocks)
     if (id === './localFontTagNodePersistenceRuntime') return load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts', mocks)
     if (id === './previewIndexAccessRuntime') return load('src/main/preview/runtime/previewIndexAccessRuntime.ts', mocks)
     if (id === './previewStorageRoutingRuntime') return load('src/main/preview/runtime/previewStorageRoutingRuntime.ts', mocks)
