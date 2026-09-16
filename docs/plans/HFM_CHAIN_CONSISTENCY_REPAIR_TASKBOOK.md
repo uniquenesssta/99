@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行入口
 
-- 文档版本1.1；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
+- 文档版本1.2；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
 - 建立基线：`58a3f25e632a2af1d49587ab065e0469da4bf330`；执行分支沿用`stage/09-preview-tags-app`。开工时重新核对远端、HEAD与工作树，不默认为本基线一直最新。
-- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02～R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
+- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03～R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
 - 证据：[全链路审计](../audits/HFM_FULL_CHAIN_AUDIT.md)、[只读观察器](../audits/observe-chain-audit.cjs)。F-01/F-02/F-03已有真实TS受控反例；F-04为源码与SQLite顺序重建证据，尚无原生Rust故障测试；F-05为跨层日志关联缺口。
 - 承接[原拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)的C-01～C-07、X-01～X-13与Windows待验项。本书是新增五项审计问题的执行入口，不重启D阶段，不宣称D-11完整关闭。
 - 用户要求：**日志最先实施并验收，后续修改须利用该日志验证真实链路。** 用户使用`npm run dev`，不要求build:win、安装包或重新安装。
@@ -305,3 +305,49 @@ Context7已核对Node 24 AsyncLocalStorage.run并发作用域与异常恢复语�
 - R-02准入：TS/Node日志验收可用，原生观测接口已实现但待Cargo验证。后续必须继承此缺口，不能把本轮标为Rust已验收；原生实际日志若断链须先补R-01，不开始混合业务修复。
 
 - Create State返回Context Captured但同时No active world model，未确认HFM项目级保存；未选择无关model。Git、README、任务书与样例是权威交接。
+
+## 14. R-02 执行卡
+
+任务/状态：R-02，自动验证通过待实机（原生必需门未执行，非完整关闭）；实际基线934139b238ad0967068fecde8766ea38de51c37e，stage/09-preview-tags-app；fetch后与origin一致，开工工作树干净。
+前置：R-01默认日志门可运行；继承无Cargo/Windows原生回执缺口，不能判原生闭环。
+精确白名单：
+- native-src/hfm-core-worker/src/local_tags/state_machine.rs
+- native-src/hfm-core-worker/src/local_tags/atomicity_tests.rs
+- native-src/hfm-core-worker/tests/local_tags_atomicity.rs
+- build/diagnostics/check-local-tag-rust-atomicity.cjs
+- package.json
+- README.md
+- docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+
+范围：只修本地Rust标签事务；同文件连接函数供实际命令调用和SQLite提交失败测试共用，不新增业务所有者。绑定/目录/必要更新时间及其前后读取在Immediate事务中；身份、目录保留、返回结构、显式回退不变。共享/预览事务留R-03/R-04。
+旧证据：基线set/delete均在save_known_tags、localTagsUpdatedAt之前commit，目录读取也在事务前；原生旧失败/新通过暂待工具链，不用SQL重建冒充。
+测试计划：真实worker临时数据库+第二连接覆盖第N行/目录/meta失败、成功/空输入/重复身份/删除；同一生产连接函数用延迟外键故障强制commit失败。默认新增门仅证明结构、退化变异与既有日志接口，不等同Rust执行；原生测试独立必需。
+
+### R-02 变更与验证边界
+
+- set/delete均在Immediate事务开始后读取原目录和绑定身份，统一写绑定、app_state.localTags、meta.localTagsUpdatedAt，再commit。空delete原来仍写目录/meta，现在也有一次真实事务和commit日志；结果字段及上层空参数准入不变。
+- 私有set_on_connection/delete_on_connection由原命令入口调用；原生提交失败测试调用同一函数，只在测试DB上启用延迟外键并注入触发器，所有业务算法仍是生产实现。schema初始化保留事务外，schemaVersion/cacheArchitecture初始化常量不属于本次标签变更；未变更数据库格式。
+- 提交后只保留原有best-effort checkpoint、内存结果构造/JSON编码及诊断。结果由字符串/数字/布尔/数组组成，无自定义可失败序列化器；日志IO错误已忽略且不改变结果。进程中断/输出管道失败仍可能产生“已提交但确认未知”，R-01记committed-error/unknown，既有Rust适配器禁止异常后跨后端再写；本轮不宣称解决所有传输不确定性。
+- 原生集成4个测试（Windows3个，/dev/full日志IO故障仅Unix）覆盖第N行、目录、meta失败、重复身份/无变化/空输入/显式删除/空目录、第二连接回读与其他域哨兵不变。模块内另1个测试覆盖set/delete真实commit延迟外键失败。所有原生项目前待执行，不能把测试文件数当通过数。
+- 默认结构门为独立可执行约束，不声称原生行为通过：LF/CRLF和5种退化（目录出事务、meta出事务、弱化锁、事务外读取、提前commit日志）必须拒绝；旧基线结构反例已被拒绝，原生旧失败待执行。
+- `--native`强制先执行真实Cargo测试，再启动实际worker，把其stateSignal送入真实TS信号处理器并复用R-01 validateNativeStages；最后在隔离源码目录编译旧基线及目录移到commit后的变异，要求两者都在“catalog leaked partial writes”数据库断言失败。编译错误不算变异被捕获。原工作树不受变异修改。
+- Context7返回rusqlite当前文档，未提供0.32.1专页；已确认项目锁定0.32.1并沿用Transaction的Immediate/默认Drop回滚API，最终版本兼容仍需原生编译。Mermaid已按实际代码更新。
+
+原生必需命令（包含R-01日志因果、旧实现反例及退化变异；无需安装包）：
+
+```bat
+node build/diagnostics/check-local-tag-rust-atomicity.cjs --native
+cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml operation_trace
+set HFM_LOG_DETAIL=debug
+npm run dev
+```
+
+Windows复验：连续改单个/批量本地标签，清空后目录保留，显式删除后目录消失；收藏/共享标签/保护不受影响。记录真实反馈与operation-chain日志；不把F-01/F-02旧ack/TTL残留问题算本事务修复已解决。
+
+### R-02 自动验证回执
+
+- Node v24.19.0/npm11.9.0：R-01 operation-chain前置门退出0；npm run verify退出0，106/106，包含新增结构门及既有本地标签五方法/回退、提交后日志/信号、字段隔离、关闭门。日志/tmp/r02-verify.log。
+- 真实尝试cargo test ... local_tags_atomicity退出127（无Cargo）；原生runner退出1（spawnSync cargo ENOENT），未启动Rust，原生旧失败/新通过/变异、R-01原生因果及Windows GUI均待验。没有重跑与本轮无关的Electron三端构建，也不把TypeScript通过计为Rust编译成功。
+- 修改仅7个白名单文件；未改schema、依赖版本/锁、共享/预览事务、信号去重/意图TTL、UI或controller所有权。无fixture重录；回滚使用本R-02原子提交的revert，R-01独立保留。
+
+- Create State再次返回Context Captured同时提示No active world model，项目级保存未确认；Git/README/任务书为权威记录。

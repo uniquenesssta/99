@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, TransactionBehavior};
 
 use crate::mutation_protocol::{json_value, tag_mutation_protocol_result};
 
@@ -28,13 +28,23 @@ pub fn set_local_tags_state_machine(config: &LocalTagsCommandConfig) -> Result<S
 
     let mut conn = Connection::open(&payload.db_path).map_err(|error| error.to_string())?;
     initialize_local_tags_db(&conn).map_err(|error| error.to_string())?;
-    let previous_known_tags = read_known_tags(&conn).map_err(|error| error.to_string())?;
-    let previous_bound_tags = read_bound_tags(&conn).map_err(|error| error.to_string())?;
+    set_on_connection(&mut conn, &payload, &mut trace, started_at)
+}
+
+fn set_on_connection(
+    conn: &mut Connection,
+    payload: &LocalTagsSetPayload,
+    trace: &mut crate::operation_trace::OperationTrace,
+    started_at: Instant,
+) -> Result<String, String> {
+    // Acquire the writer lock before reading the catalog used by this mutation.
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
+    let previous_known_tags = read_known_tags(&tx).map_err(|error| error.to_string())?;
+    let previous_bound_tags = read_bound_tags(&tx).map_err(|error| error.to_string())?;
     let requested_tags = clean_tag_names(
         &payload.rows.iter().flat_map(|row| row.tag_names.clone()).collect::<Vec<_>>(),
     );
 
-    let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut updated_ids: Vec<String> = Vec::new();
     let mut written = 0usize;
     {
@@ -46,9 +56,7 @@ pub fn set_local_tags_state_machine(config: &LocalTagsCommandConfig) -> Result<S
         ).map_err(|error| error.to_string())?;
         apply_set_rows(delete_by_id, delete_by_path, insert, &payload, &mut updated_ids, &mut written)?;
     }
-    tx.commit().map_err(|error| error.to_string())?;
-    trace.committed();
-    let next_bound_tags = read_bound_tags(&conn).map_err(|error| error.to_string())?;
+    let next_bound_tags = read_bound_tags(&tx).map_err(|error| error.to_string())?;
     let known_tags = merge_tag_sets([
         previous_known_tags.as_slice(),
         next_bound_tags.as_slice(),
@@ -56,8 +64,10 @@ pub fn set_local_tags_state_machine(config: &LocalTagsCommandConfig) -> Result<S
     ]);
     let retained_empty_tags = retained_empty_tags(&previous_bound_tags, &next_bound_tags, &known_tags);
     let (added_known_tags, removed_known_tags) = known_tag_diff(&previous_known_tags, &known_tags);
-    save_known_tags(&conn, &known_tags).map_err(|error| error.to_string())?;
-    set_meta(&conn, "localTagsUpdatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
+    save_known_tags(&tx, &known_tags).map_err(|error| error.to_string())?;
+    set_meta(&tx, "localTagsUpdatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    trace.committed();
     let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
 
     updated_ids.sort();
@@ -144,32 +154,41 @@ pub fn delete_local_tag_state_machine(config: &LocalTagsCommandConfig) -> Result
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
     let mut trace = crate::operation_trace::OperationTrace::from_input(&input);
     let payload: LocalTagsDeletePayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
-    let tag_name = payload.tag_name.trim().to_string();
     if let Some(parent) = Path::new(&payload.db_path).parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
 
     let mut conn = Connection::open(&payload.db_path).map_err(|error| error.to_string())?;
     initialize_local_tags_db(&conn).map_err(|error| error.to_string())?;
-    let previous_known_tags = read_known_tags(&conn).map_err(|error| error.to_string())?;
+    delete_on_connection(&mut conn, &payload, &mut trace, started_at)
+}
+
+fn delete_on_connection(
+    conn: &mut Connection,
+    payload: &LocalTagsDeletePayload,
+    trace: &mut crate::operation_trace::OperationTrace,
+    started_at: Instant,
+) -> Result<String, String> {
+    let tag_name = payload.tag_name.trim().to_string();
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
+    let previous_known_tags = read_known_tags(&tx).map_err(|error| error.to_string())?;
 
     let mut updated_ids = if tag_name.is_empty() {
         Vec::new()
     } else {
-        read_tag_target_ids(&conn, &tag_name).map_err(|error| error.to_string())?
+        read_tag_target_ids(&tx, &tag_name).map_err(|error| error.to_string())?
     };
     let updated = updated_ids.len();
     if !tag_name.is_empty() {
-        let tx = conn.transaction().map_err(|error| error.to_string())?;
         tx.execute("DELETE FROM local_font_tags WHERE tag_name = ?", params![&tag_name])
             .map_err(|error| error.to_string())?;
-        tx.commit().map_err(|error| error.to_string())?;
-        trace.committed();
     }
     let known_tags = remove_known_tag(&previous_known_tags, &tag_name);
     let (added_known_tags, removed_known_tags) = known_tag_diff(&previous_known_tags, &known_tags);
-    save_known_tags(&conn, &known_tags).map_err(|error| error.to_string())?;
-    set_meta(&conn, "localTagsUpdatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
+    save_known_tags(&tx, &known_tags).map_err(|error| error.to_string())?;
+    set_meta(&tx, "localTagsUpdatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    trace.committed();
     let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
 
     updated_ids.sort();
@@ -273,3 +292,7 @@ fn local_tag_signal(
         known_tags: known_tags.to_vec(),
     }
 }
+
+#[cfg(test)]
+#[path = "atomicity_tests.rs"]
+mod atomicity_tests;
