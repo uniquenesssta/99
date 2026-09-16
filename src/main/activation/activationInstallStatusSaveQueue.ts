@@ -1,9 +1,14 @@
+import { isDeepStrictEqual } from 'node:util'
 import type { FontItem, InstallCompareResult } from '../../shared/types'
 
 const SAVE_RETRY_DELAYS_MS = [120, 360, 900]
 const BACKGROUND_RETRY_DELAY_MS = 1800
 
 export interface ActivationInstallStatusSaveQueueDeps {
+  readInstallStatusIndex: (
+    items: FontItem[],
+    options: { enqueueMissTasks: boolean },
+  ) => Promise<{ results: Record<string, InstallCompareResult>; misses: FontItem[] }>
   saveInstallStatusIndex: (
     results: Record<string, InstallCompareResult>,
     itemsById: Map<string, FontItem>,
@@ -106,9 +111,30 @@ export function createActivationInstallStatusSaveQueue(
     pendingResults = {}
     pendingItemsById = new Map<string, FontItem>()
     const startedAt = Date.now()
-    const affectedItems = Array.from(itemsById.values())
 
     const task = (async (): Promise<void> => {
+      const unchangedIds: string[] = []
+      try {
+        const persisted = await deps.readInstallStatusIndex(Array.from(itemsById.values()), { enqueueMissTasks: false })
+        const missingIds = new Set(persisted.misses.map((item) => item.id))
+        for (const [id, result] of Object.entries(results)) {
+          const previous = persisted.results[id]
+          if (previous && !missingIds.has(id) && previous.installed === result.installed && previous.by === result.by
+            && isDeepStrictEqual(previous.matches || [], result.matches || [])) unchangedIds.push(id)
+        }
+      } catch (error) {
+        deps.appendStartupLog(`activation install status comparison unavailable: ${error instanceof Error ? error.message : String(error)}; saving requested rows`)
+      }
+      if (unchangedIds.length === rowCount) {
+        deps.appendStartupLog(`activation install status async save skipped: reason=${reason}, unchanged=${unchangedIds.length}, syncRoots=0`)
+        return
+      }
+      for (const id of unchangedIds) {
+        delete results[id]
+        itemsById.delete(id)
+      }
+      const affectedItems = Array.from(itemsById.values())
+      const writeCount = Object.keys(results).length
       let saved = false
       let lastError: unknown = null
 
@@ -128,7 +154,7 @@ export function createActivationInstallStatusSaveQueue(
       if (!saved) {
         mergeFailedBatch(results, itemsById)
         deps.appendStartupLog(
-          `activation install status async save failed: reason=${reason}, rows=${rowCount}, pending=${pendingCount()}, ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+          `activation install status async save failed: reason=${reason}, rows=${writeCount}, pending=${pendingCount()}, ${lastError instanceof Error ? lastError.message : String(lastError)}`,
         )
         scheduleTimer(BACKGROUND_RETRY_DELAY_MS, 'background-retry')
         throw lastError instanceof Error ? lastError : new Error(String(lastError))
@@ -147,7 +173,7 @@ export function createActivationInstallStatusSaveQueue(
         }
         deps.clearFontQueryCaches()
         deps.appendStartupLog(
-          `activation install status async save flushed: reason=${reason}, rows=${rowCount}, saveElapsed=${saveElapsed}ms, syncRoots=${affectedRoots.size}, elapsed=${Date.now() - startedAt}ms`,
+          `activation install status async save flushed: reason=${reason}, rows=${writeCount}, unchanged=${unchangedIds.length}, saveElapsed=${saveElapsed}ms, syncRoots=${affectedRoots.size}, elapsed=${Date.now() - startedAt}ms`,
         )
       } catch (error) {
         deps.clearFontQueryCaches()

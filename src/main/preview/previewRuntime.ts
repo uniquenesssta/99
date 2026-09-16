@@ -232,7 +232,19 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
 
     try {
       let rendered = false
-      if (installedRoute) {
+      // Temporary activation does not guarantee family-name lookup is available.
+      // Use the existing font file directly while keeping the same cache identity.
+      const activeFontPath = installedRoute?.reason === 'active'
+        ? await resolveExistingFontFilePath(item.path)
+        : null
+      if (activeFontPath) {
+        await fsp.access(activeFontPath)
+        await heartbeatBackgroundTask(taskKey, 0.35, '正在使用字体文件生成已激活字体预览').catch(() => undefined)
+        await renderRequest({ fontPath: activeFontPath, text: normalizedText, fontSize, width, height, outputPath })
+        rendered = true
+        appendStartupLog(`active font preview file route: fontId=${item.id}, engine=${renderMessage}`)
+      }
+      if (!rendered && installedRoute) {
         try {
           await heartbeatBackgroundTask(taskKey, 0.35, '正在使用系统已安装字体快速生成预览').catch(() => undefined)
           await renderRequest({

@@ -2,7 +2,7 @@
 
 ## 0. 状态与执行入口
 
-- 文档版本1.4；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
+- 文档版本1.5；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
 - 建立基线：`58a3f25e632a2af1d49587ab065e0469da4bf330`；执行分支沿用`stage/09-preview-tags-app`。开工时重新核对远端、HEAD与工作树，不默认为本基线一直最新。
 - 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04自动验证通过待实机（原生测试未执行）；R-05～R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
 - 证据：[全链路审计](../audits/HFM_FULL_CHAIN_AUDIT.md)、[只读观察器](../audits/observe-chain-audit.cjs)。F-01/F-02/F-03已有真实TS受控反例；F-04为源码与SQLite顺序重建证据，尚无原生Rust故障测试；F-05为跨层日志关联缺口。
@@ -520,3 +520,57 @@ npm run dev
 连续收藏/取消收藏、激活/停用、本地/共享标签及保护操作；核对安装数不闪成部分统计，目标根纯metadata变化日志走incremental-rust或snapshot-rust，普通无变化监听upserts=0；实际增删字体和故障恢复继续可见。记录启动和目录计数异常，随新日志继续追查。
 
 F-06收尾：npm run verify退出0（109/109），日志/tmp/f06-verify.log；新增门补全60场景及CRLF后独立复验退出0。15个白名单文件，git diff --check通过。原生源码未改、Cargo不可用；Windows验收待回执。Create State再次提示No active world model，HFM项目级保存未确认，Git/README/任务书完整保存交接。回滚本次独立F-06提交即可恢复基线行为。
+
+## 18. 日志四项问题修复执行卡（F-07）
+
+状态：自动验证通过待实机。实际基线878fc285268a98de9fcdcde567cd8966a1ebba64；stage/09-preview-tags-app，fetch后与origin一致，工作树干净。用户明确授权修复四项日志发现，作为F-06后续；R-05/R-06未启动，继承无Cargo/Windows原生验证缺口。
+
+证据：19:10日志目录节点173→14、统计项174→15且字体1499不变；激活/停用分别同步1499行但changed=0；metrics文件未创建导致维护ok=false；active名称预览status=14后文件渲染成功。首个收藏统计延迟和单次1.36秒预览仅登记，不混入四项修复。
+
+成功标准：增量字体更新不能删除未加载目录，真实物理树替换/显式目录删除仍生效；激活状态与持久化安装状态一致时不重写、不全根同步，缺失/变化/读取失败仍保存并同步；缺失可选metrics不报损坏，已存在但损坏/必需库缺失必须失败；active有效文件直接进入Rust文件预览，普通系统字体和源文件离线时保留名称路径，授权、缓存身份、输入验证和兼容回退策略不变。
+
+精确生产白名单：
+- src/renderer/src/library-normalize/libraryIndexChangeRuntime.ts
+- src/main/activation/activationInstallStatusSaveQueue.ts
+- src/main/activation/mainActivationInstallStatusSaveRuntime.ts
+- src/main/bootstrap/mainMutationCompositionRuntime.ts
+- src/main/maintenance/databaseMaintenance.ts
+- src/main/preview/previewRuntime.ts
+
+验证/文档白名单：
+- build/diagnostics/check-log-regression-followup.cjs
+- build/diagnostics/check-activation-save-queue-durability.cjs
+- package.json
+- README.md
+- docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+
+无新增业务模块/状态所有者、schema、IPC/preload、依赖、UI/CSS变化。新门加载真实TS入口，替换磁盘/Rust/窗口和数据库外部端口，先对基线逐项复现，再对新代码验收并执行LF/CRLF退化变异。队列的实际持久化结果读取在flush内进行，保留失败重试/新意图覆盖旧失败/关闭顺序。Rust渲染实机效果必须由Windows日志补证；mock结果不作原生验收。
+
+
+### F-07 实施与验证记录
+
+- 四项旧实现均实际失败：目录173→1；未变化安装状态仍save/sync/clear；缺失metrics使维护false；active渲染先失败名称查询再成功文件路径（2次调用）。基线门命令`node build/diagnostics/check-log-regression-followup.cjs --baseline=878fc28`退出1；初次预览夹具import.meta加载错误修正为替换helper发现端口后，单独复跑预览得到业务断言2!==1，未计夹具错误为产品反例。
+- 目录：规范路径合并增量目录，现有未加载/空目录与createdAt保留，大小写/斜杠不重复；字体删除继续删除字体，但不代表物理目录删除。权威物理树替换仍能移除已删除目录。此前已经持久化的缩水树可用现有根目录右键刷新恢复，不执行磁盘字体删除或数据迁移。
+- 激活：唯一保存队列flush内读取持久化、签名已校验的安装状态；installed/by/matches均一致且非missing才跳过。混合批次仅保存变化行，读取失败/缺失继续原保存同步。新增状态在比较期间入队仍在flush后继续排空；原失败重试及新值覆盖旧失败门继续通过。真实安装变化仍同步受影响根，不宣称完全禁止全根同步。
+- 健康：本地metrics快照保存原本为no-op，实际统计来自共享根索引。沿用preview的可选缓存语义加入metrics，只有stat确认ENOENT才视为未创建；EACCES/EIO、已存在但损坏、必需库缺失不能当成功。Rust与Node路径共14场景；Node检查不因验证而创建可选空库。不修改Rust健康协议、SQLite schema或备份布局。
+- 预览：仅reason=active且源文件可用时跳过名称查询，直接使用既有Rust文件渲染；普通系统字体、active离线继续原名称路径，名称失败仍可文件回退；实际渲染失败仍标记failed。缓存键/身份、授权、输入检查、Node兼容策略不变，没有启用PowerShell兼容回退。
+- 新诊断四组真实TS入口通过；5个退化变异在LF和CRLF下共10次均被拒绝，全部CRLF正例通过；队列并发新意图/混合批次/by及matches差异、健康权限/I/O错误均有行为断言。新增readInstallStatusIndex端口为内部队列必需依赖，复用Mutation既有依赖，不扩展IPC；类型检查确认实际生产接线。
+- 全量`npm run verify`退出0，110/110，日志/tmp/f07-verify.log。补充权限/I/O及队列并发门后目标门与maintenance/activation既有门退出0，类型检查复跑通过；没有更新冻结hash、快照或放宽既有断言。
+- Electron/Vite生产构建365/1/196模块通过，main 1,167.87 kB，日志/tmp/f07-build.log；安全混淆实际报告3/6（输出目录含既有产物，3个当前产物完成处理）。本轮原生源码未改；Cargo及Windows GUI未执行，不计原生验收通过。
+- Mermaid Chart已更新四项真实链路；未使用陌生/新增框架或系统API，不需Context7。Create State返回Context Captured但同时提示No active world model，HFM项目级保存未确认。README为变更记录；本节保存执行证据，独立revert F-07提交可回滚全部本轮改动。
+
+Windows开发模式复验（无依赖变化）：
+
+```powershell
+git pull --ff-only origin stage/09-preview-tags-app
+$env:HFM_LOG_DETAIL = "debug"
+npm run dev
+```
+
+若旧目录已缩水，先右键监听根目录刷新一次，记录library:save的folderNodes和metrics的folderKeys。连续收藏/取消收藏、标签、字体增删后目录不应退成当前分页的目录集；物理刷新仍能移除实际删除的目录。连续激活/停用，状态未变时预期`activation install status async save skipped: ... unchanged=1, syncRoots=0`，真实安装变化仍保存后同步。健康检查仅缺metrics时记录`database health optional cache absent: label=metrics`且不因此使maintenance=false。新的active预览缓存缺失且文件可用时记录`active font preview file route`，不先出现family status=14；缓存已命中则无渲染日志。字体文件离线和真实预览失败继续保留原诊断，不伪造成功。
+
+范围外仍待处理：首个收藏0→1的统计显示延迟、旧日志多根启动长等待，以及单次预览1.36秒等待。F-07不以四项自动门替代这些问题的测量，也不提前完成R-05/R-06/R-07。
+
+F-07最终收尾：补充边界后的完整`npm run verify`再次退出0（110/110），日志/tmp/f07-final-verify.log；git diff --check通过，11个精确白名单文件，无构建产物、日志、依赖目录或用户数据入库。提交前再次fetch确认远端仍与878fc28一致，按授权直接快进推送stage/09-preview-tags-app。
+
+F-07推送阻塞：实际git push被自动审批拒绝，理由为本次11个源码/诊断/文档文件将外发到公开仓库uniquenesssta/99，审查要求对本次载荷和目的地的具体用户授权，未接受此前长期授权。未换通道重试；只读ls-remote确认远端仍为878fc285268a98de9fcdcde567cd8966a1ebba64。代码和全部验证已完成、本地提交保留，待具体授权后仅快进当前阶段分支。

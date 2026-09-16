@@ -1,3 +1,4 @@
+import { promises as fsp } from 'node:fs'
 import type { ApplicationDatabaseLabel } from '../db/sqliteRuntime'
 import { readSqliteQuickCheckMessage, isoBefore } from './databaseMaintenanceHelpers'
 import { createDatabaseBackupRuntime } from './databaseBackupRuntime'
@@ -99,16 +100,24 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
   async function runDatabaseHealthCheckRaw(): Promise<DatabaseHealthItem[]> {
     const specs = dbFileSpecs()
 
+    async function optionalCacheAbsent(filePath: string): Promise<boolean> {
+      // A boolean access probe also returns false for permission/I/O failures.
+      return fsp.stat(filePath).then(() => false, (error: NodeJS.ErrnoException) => error.code === 'ENOENT')
+    }
+
     async function normalizeOptionalMissingHealth(items: DatabaseHealthItem[]): Promise<DatabaseHealthItem[]> {
       const byLabel = new Map(specs.map((spec) => [spec.label, spec]))
       const normalized: DatabaseHealthItem[] = []
       for (const item of items) {
         const spec = byLabel.get(item.label as ApplicationDatabaseLabel)
-        if (item.label === 'preview' && spec && !item.ok && !(await exists(spec.filePath))) {
+        // Local metrics persistence is lazy/unused by Rust merged-index metrics.
+        // Absence is normal; an existing but unhealthy database is still an error.
+        if ((item.label === 'preview' || item.label === 'metrics') && spec && !item.ok && await optionalCacheAbsent(spec.filePath)) {
+          appendStartupLog(`database health optional cache absent: label=${item.label}`)
           normalized.push({
             ...item,
             ok: true,
-            message: 'optional preview fallback database has not been created yet'
+            message: `optional ${item.label} fallback database has not been created yet`
           })
           continue
         }
@@ -134,6 +143,11 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
 
     for (const spec of specs) {
       try {
+        const [optionalMissing] = await normalizeOptionalMissingHealth([{ label: spec.label, filePath: spec.filePath, ok: false, message: '' }])
+        if (optionalMissing.ok) {
+          items.push(optionalMissing)
+          continue
+        }
         const db = await spec.open()
         const message = readSqliteQuickCheckMessage(db) || 'ok'
         const ok = message.toLowerCase() === 'ok'

@@ -24,6 +24,7 @@ export function createMainActivationInstallStatusSaveRuntime(
   options: MainActivationInstallStatusSaveRuntimeOptions,
 ): MainActivationInstallStatusSaveRuntime {
   const queue = createActivationInstallStatusSaveQueue({
+    readInstallStatusIndex: options.readInstallStatusIndex,
     saveInstallStatusIndex: options.saveInstallStatusIndex,
     appWatchedFolders: options.appWatchedFolders,
     rootForFontPath: options.rootForFontPath,

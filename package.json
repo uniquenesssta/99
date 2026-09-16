@@ -136,6 +136,7 @@
     "diagnostics:preview-batch-read": "node build/diagnostics/check-preview-batch-read.cjs",
     "test:local-tag-hydration-rust": "cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests",
     "diagnostics:operation-refresh-scope": "node build/diagnostics/check-operation-refresh-scope.cjs",
+    "diagnostics:log-regression-followup": "node build/diagnostics/check-log-regression-followup.cjs",
     "diagnostics:preview-cache-rust-atomicity": "node build/diagnostics/check-preview-cache-rust-atomicity.cjs",
     "diagnostics:shared-metadata-rust-atomicity": "node build/diagnostics/check-shared-metadata-rust-atomicity.cjs",
     "diagnostics:local-tag-rust-atomicity": "node build/diagnostics/check-local-tag-rust-atomicity.cjs",

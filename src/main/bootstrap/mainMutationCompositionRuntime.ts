@@ -225,6 +225,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     hasPendingActivationInstallStatusSave,
     hasInFlightActivationInstallStatusSave,
   } = createMainActivationInstallStatusSaveRuntime({
+    readInstallStatusIndex,
     saveInstallStatusIndex,
     appWatchedFolders,
     rootForFontPath,

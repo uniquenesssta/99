@@ -80,6 +80,7 @@ async function runBehaviorChecks() {
   runtime = runtimeModule.createActivationInstallStatusSaveQueue({
     batchDelayMs: 100000,
     appendStartupLog: () => undefined,
+    readInstallStatusIndex: async () => ({ results: {}, misses: [font] }),
     saveInstallStatusIndex: async (results) => {
       saveCalls += 1
       if (failWrites) {

@@ -90,11 +90,18 @@ export function applyFontIndexChangeToLibrary(state: LibraryState, payload: Font
   for (const id of removedIds) delete nextFontFolderIds[id]
 
   const tree = buildFolderTreeFromCachedFonts(state.folders || [], Object.values(nextFonts), state.folderNodes || [])
+  // Renderer fonts are a hydration window, not a complete directory inventory.
+  // Only a physical tree refresh or an explicit folder operation may remove nodes.
+  const folderNodes = new Map((state.folderNodes || []).map((node) => [normalizeFolderPathForCompare(node.id), node]))
+  for (const node of tree.nodes) {
+    const key = normalizeFolderPathForCompare(node.id)
+    if (!folderNodes.has(key)) folderNodes.set(key, node)
+  }
   const nextLibrary = ensureLibraryTagNamesContainFontTags({
     ...state,
-    folderNodes: tree.nodes,
+    folderNodes: Array.from(folderNodes.values()),
     fonts: nextFonts,
-    fontFolderIds: pruneFontFolderIds(nextFontFolderIds, nextFonts, state.folders || [], tree.nodes)
+    fontFolderIds: pruneFontFolderIds(nextFontFolderIds, nextFonts, state.folders || [], Array.from(folderNodes.values()))
   })
 
   return { library: nextLibrary, removedIds: Array.from(removedIds), upsertedFonts }
