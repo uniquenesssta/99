@@ -2,11 +2,11 @@
 
 ## 0. 状态、目标与执行边界
 
-- 文档版本：1.2；日期：2026-09-15；软件：3.0.0。
-- 状态：规划已完成，所有实施任务尚未开始。本次提交仅新增任务书及文档索引。
-- 仓库：uniquenesssta/99；文档分支：stage/07-ipc-security-dependencies。
-- 审计代码基线：4cf6c4f20785139def64fa6ba1286764279c81ba。
-- 目标文件：previewCacheStorageRuntime.ts（1237 行）、localFontTagsRuntime.ts（821 行）、App.tsx（1062 行）。行数用于追踪，不作为验收指标。
+- 文档版本：1.3；更新日期：2026-09-16；软件：3.0.0。
+- 状态：实现与自动验证完成，GUI待验收。D-11全量104/104及结构审查通过；Windows GUI和Rust定向测试未齐，专项尚未完整关闭。
+- 仓库：uniquenesssta/99；当前分支：stage/09-preview-tags-app；最初文档建立于stage/07-ipc-security-dependencies。
+- 最初审计基线：4cf6c4f20785139def64fa6ba1286764279c81ba；D-11验收代码基线：e7b34d80d03d54e7380ad332ea5cb06388f65991。
+- 目标文件（初审→D-11）：previewCacheStorageRuntime.ts 1237→216行，localFontTagsRuntime.ts 821→378行，App.tsx 1062→1045行。行数用于追踪，不作为验收指标。
 - 用户使用开发模式运行与验收：npm run dev。安装包、NSIS、安装/卸载不属于本专项验收条件；旧任务书中的发布验收属于独立范围。
 - 本任务书不代表已授权立即实施所有重构。本轮先提交计划；收到实施指令后按下列 Atomic Task 串行执行。
 - 不重编号或覆盖原 Stage 7/8。本专项使用 D-01～D-11 编号；开始代码实施时遵守总任务书的阶段分支规则，以当时最新已接受基线建立一个专项分支，不为每个任务重复建分支。
@@ -360,7 +360,7 @@ npm run dev
 | D-08 | 自动验证通过待实机 | §24 同一提交 | TypeScript、103/103、三端362/1/191通过 | 继承Windows待验项 |
 | D-09 | 自动验证通过待实机 | §25 同一提交 | TypeScript、104/104、三端362/1/194通过 | 继承实机缺口 |
 | D-10 | 自动验证通过待实机 | §26 同一提交 | TypeScript、104/104、三端362/1/194通过 | 继承实机缺口 |
-| D-11 | 未开始 | — | — | — |
+| D-11 | 实现与自动验证完成，GUI待验收 | §27 同一提交 | TypeScript、104/104；结构审查通过 | Windows GUI / Rust定向待验 |
 
 D-01 基线已落地；下一项按第 10 节执行 W-01，不直接搬动三个文件。
 
@@ -1070,3 +1070,66 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 - 最终完整npm run verify退出0：TypeScript、104/104；全量中的性能结果为查询25.2ms、500次布局2.6ms、万项选择1.0ms、最多60卡。收尾补强的视图对象之后新增计时器反例另行定向复跑通过，视图尾部严格限于六对象和return。没有放松旧门或重置旧UI快照。
 - git diff --check通过；本轮6个白名单文件，无依赖/锁文件/构建产物。提交定位：git log -1 --format=%H -- build/diagnostics/fixtures/app-view-composition.fixture.json；回滚使用revert本轮提交。D-11全链路/开发模式验收在收到新指令后推进。
 - Create State返回Context Captured同时提示No active world model，现有模型均为其他项目，因此未确认本项目级保存，不写入无关模型；Git、README及本执行卡为权威记录。
+
+## 27. D-11 全链路回归与开发模式验收
+
+### 范围与环境
+
+- 基线e7b34d80d03d54e7380ad332ea5cb06388f65991，stage/09-preview-tags-app，开工工作区干净；本轮仅更新README、本专项任务书、HFM_REMEDIATION_MASTER_TASKBOOK.md三份文档。不改生产代码、诊断期望、依赖、数据库或用户数据。
+- 本轮Linux，Node v24.19.0、npm11.9.0。执行完整npm run verify，结果在下方记录。D-10三端362/1/194成功构建为上一轮证据，本轮没有为未变化的源码重复构建，更不等同Windows GUI验收。
+- 实际尝试cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests，退出127（cargo未安装）。D-03两个真实Rust身份读取测试仍待Windows执行；以前的构建成功回执不能替代单元测试。
+
+### 职责、所有权与依赖审查
+
+| 对象 | 当前职责与状态所有者 | 审查结论 |
+| --- | --- | --- |
+| previewCacheStorageRuntime.ts，216行 | 组合root可用性、路由、索引、hydration/prefetch与批量读取；保留共享presence同步 | 不再持有路由快照与索引读缓存；路由的快照/promise/generation在previewStorageRoutingRuntime，索引的cache/inflight/generation在previewIndexAccessRuntime；工厂每门面实例各构造一次 |
+| localFontTagsRuntime.ts，378行 | 五方法输入/结果、后端选择及不同message语义 | Node持久化仅借用数据库、持有SQL与同步事务；Rust适配持有row构造/调用及准入，effects处理日志/信号协议；事务与通知之间未加新await |
+| App.tsx，1045行 | 七controller、effects、交互组合与六组类型输入 | 状态/ref仍归原七controller；MenuDialog绑定共享输入和当前标签文本，DetailSelection绑定toggle/hydration；两者有实际组合职责；命令端口承担初始化保护，无跨render缓存 |
+
+- 静态审计方法：从以上三个入口，用TypeScript转译为CommonJS，剔除type-only import后递归解析静态require；解析相对路径及@shared/@renderer，DFS检测回边。结果205个项目模块、354条运行时边，0循环、0未解析项目内导入。范围仅此可达静态运行时图，不声称覆盖动态加载或全仓库所有依赖。
+- Rust适配/effects向标签门面、详情组合向Selection controller的反向引用为type-only，转译后消失，不构成运行时环。Node cleanLocalTagNames被Rust适配复用，未实例化第二数据库或持久化owner。
+- 保留公开门面以兼容调用方；提取模块各承接路由缓存、索引句柄、批量策略、SQL事务、Rust协议或交互绑定，本次未发现需要删除的纯空转发层。此结论来自职责/导入/构造审查，不等同动态资源泄漏实测。
+- 既有SQLite句柄any（previewIndexAccessRuntime及SqliteDb别名）仍存在，未在纯迁移中扩大；这是后续类型改进候选，不宣称本专项消除了所有any。原字段串扰/页面闪回的实机完全消失仍需下面回执。
+
+### 自动证据与实机缺口对应
+
+| 矩阵 | 自动证据入口（diagnostics） | Windows剩余验收 |
+| --- | --- | --- |
+| X-01～X-05 | decomposition-baseline、user-intent-consistency、active-view-consistency、local-tag-hydration | 同字体标签/收藏/共享标签连续更改、反向结果与跨页一致性 |
+| X-06 | font-write-queue-durability、decomposition-baseline | 隔离故障门验收，不在正式库制造失败 |
+| X-07 | shared-tag-conflicts、shared-tag-ops-replay | 测试共享根离线/恢复及真实冲突提示 |
+| X-08 | local-tag-node-persistence | 内置SQLite临时库/第二连接回读通过才算自动证据，不能替代better-sqlite3原生绑定运行 |
+| X-09 | local-tag-node-persistence、local-tag-rust-adapter、tag-consistency | 清空最后绑定保留目录；显式删除空标签后计数/菜单同步 |
+| X-10 | library-persistence-order、font-write-queue-durability、关闭相关旧门 | 编辑立即正常关闭、重开，四字段域与临时激活清理 |
+| X-11 | app-interaction-composition、app-root-view-contracts、react-render-performance、preview-storage-routing | 快速滚动/切页/详情、多选、输入和目录拖放 |
+| X-12 | preview-index-commit、preview-index-owner、preview-cache-generation、preview-batch-read | 受控I/O故障门，不等同真实NAS运行 |
+| X-13 | local-tag-rust-adapter、local-tag-hydration、state-fallback-policy | Rust真实身份读取两个定向测试尚缺回执 |
+| W/A补充 | watcher-index-consistency、watcher-activation-baseline、active-view-consistency | 监视目录增删/改名及字段保持；收藏/已激活/全部/详情状态一致，侧栏折叠与计数 |
+
+### Windows开发模式操作记录（全部待用户实测）
+
+使用独立测试库、非系统字体A/B及测试共享根C；先记录各字体本地标签、共享标签、收藏、保护值。不要在正式库执行故障注入。
+
+1. git pull；git log -1 --oneline记录提交；npm run dev。依赖未变，无需npm ci或安装包。
+2. A改本地标签、切收藏；C改共享标签。来回切全部/收藏/已激活/详情，检查未编辑字段、其他字体、列表与计数。
+3. 同字体连续改三个域并快速反向操作，确认最后意图保留；收藏新增不消失再出现，取消收藏立即移除；停用后所有页面激活标识一致。
+4. 单击/Ctrl/Shift/框选、双击详情、右键重命名/删除确认、中文输入法标签输入、目录拖放；快速滚动和切筛选，观察旧结果不覆盖新页面。
+5. 清空标签最后绑定，再显式删除空标签；核对目录、下拉和计数。测试共享根离线/恢复，记录冲突提示和其他字段是否保持。
+6. 测试监视目录增删/改名，检查收藏/标签/保护不被物理扫描覆盖；侧栏折叠后重复激活/停用与批量操作。
+7. 编辑后立即正常关闭，再npm run dev；核对持久化字段和临时激活清理。附对应启动/操作日志；日志之外同时描述肉眼看到的延迟、闪回和不一致。
+8. 执行上述cargo test定向命令，提供测试数量、退出结果；不以dev重编成功替代。
+
+回执格式：提交SHA；步骤编号；预期/实际；是否通过；若失败提供操作顺序、相关时间、日志文件。未收到这些结果前，专项保持“实现与自动验证完成，GUI待验收”，不得标记全部关闭。
+
+### 回滚与后续
+
+- 本轮仅文档，可独立revert；生产回滚按Git中各原子提交逆序revert，先评估后续依赖，不直接把历史提交重置为HEAD，不改写远端。
+- D-10 e7b34d8、D-09 0a9b82b、D-08 1762c0f、D-07迁移fc6b85a、D-06 2e89867、D-05 cf0b2ea、D-04 38a3f88。尽量保留正确性修复：D-07前置3387824、D-03 de85158、D-02 1cda3a6及W/A修复。
+- 不启动Stage8或新增重构阶段。下一步是补齐本节Windows回执；若复现问题，按最小复现单独修复和验证，不能用拆分完成推定历史问题全部根治。
+
+### 本轮最终结果
+
+- npm run verify退出0：TypeScript及104/104诊断；Node v24.19.0/npm11.9.0/Linux。本轮10k查询20.1ms、500次布局2.1ms、万项选择0.6ms、最多60卡；非Windows实机性能结论。
+- 已通过自动门的领域修复包括字段隔离/重试、监听删除证据/失败重读、收藏与激活意图、预览提交失效、标签重复身份、事务回滚及提交后日志故障；对应实机历史问题不因自动门通过而全部关闭。GUI、NAS及Rust定向缺口见上表。
+- Mermaid已同步真实职责链；Create State返回Context Captured成功回执（Project: `.`）。无新API或版本问题，未触发Context7。git diff --check通过，提交只含3份文档；以git log -1 --format=%H -- docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md定位本轮报告提交。

@@ -1,13 +1,13 @@
 # HanFontManager 修复与编排重构总任务书
 
-> 补充专项（规划，未实施）：[预览缓存、本地标签与 App 详细拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)。使用 D-01～D-11 编号，不覆盖现有阶段；先修复已复现边界问题，再拆分与联动回归。本专项按用户要求以 `npm run dev` 实际操作验收，不要求安装包。
+> 补充专项（实现与自动验证完成，GUI待验收）：[预览缓存、本地标签与 App 详细拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)。D-01～D-10已实施，D-11于2026-09-16完成TypeScript、104/104及结构审查；Windows GUI/NAS和Rust定向测试仍待回执，详见专项§27。当前分支stage/09-preview-tags-app，验收代码基线e7b34d8；专项未完整关闭，不覆盖现有阶段。本专项按用户要求以 `npm run dev` 实际操作验收，不要求安装包。
 
 ## 0. 文档状态
 
-- 文档版本：1.37
+- 文档版本：1.38
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
-- 当前阶段：Stage 7 AT-7.1 已完成自动与 Windows 构建验收；AT-7.2 已完成兼容工具链升级、锁图清理和本环境自动验证。Windows `npm ci` 已确认 395 个包且审计 0；首轮 `build:win` 在诊断的 LF 字面串无法改写 CRLF 配置处停止，生产配置与依赖无误。该诊断已改为 LF/CRLF 结构化反例并通过 91/91；分支 `stage/07-ipc-security-dependencies`。Windows 完整重跑、原生 ABI、NSIS 及安装/启动/卸载烟测待补，Stage 8 尚未开始。
+- 主线阶段历史记录：Stage 7 AT-7.1 已完成自动与 Windows 构建验收；AT-7.2 已完成兼容工具链升级、锁图清理和本环境自动验证。Windows `npm ci` 已确认 395 个包且审计 0；首轮 `build:win` 在诊断的 LF 字面串无法改写 CRLF 配置处停止，生产配置与依赖无误。该诊断已改为 LF/CRLF 结构化反例并通过 91/91；分支 `stage/07-ipc-security-dependencies`。Windows 完整重跑、原生 ABI、NSIS 及安装/启动/卸载烟测待补，Stage 8 尚未开始。
 - 当前阶段任务书：[`HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md`](HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)
 - 适用平台：Windows 10/11 x64；本地字体库与 NAS/共享字体库
 - 本任务书是修复顺序、拆分边界和阶段门禁的唯一主文档。阶段执行细节放入对应阶段任务书，不在多个文档重复维护。
