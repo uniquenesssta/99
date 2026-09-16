@@ -358,7 +358,7 @@ npm run dev
 | D-06 | 自动验证通过待实机 | §22 同一提交 | TypeScript、101/101、三端359/1/191通过 | Windows开发模式待回执 |
 | D-07 | 自动验证通过待实机 | §23：前置修复与纯迁移独立提交 | TypeScript、102/102、三端360/1/191通过 | Windows开发模式待回执 |
 | D-08 | 自动验证通过待实机 | §24 同一提交 | TypeScript、103/103、三端362/1/191通过 | 继承Windows待验项 |
-| D-09 | 未开始 | — | — | — |
+| D-09 | 自动验证通过待实机 | §25 同一提交 | TypeScript、104/104、三端362/1/194通过 | 继承实机缺口 |
 | D-10 | 未开始 | — | — | — |
 | D-11 | 未开始 | — | — | — |
 
@@ -1031,3 +1031,22 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 - 无新第三方API或版本问题，不触发Context7；Mermaid已更新真实适配/准入/提交反馈关系。Windows开发模式待复验及既有Rust定向测试缺口继续继承，下一项D-09仅在新指令后进入。
 - 独立提交可用`git log -1 --format=%H -- src/main/library/runtime/localFontTagRustAdapterRuntime.ts`定位；回滚使用该提交revert，D-07修复独立保留。Windows继续`git pull`后`npm run dev`，观察本地标签单项/批量/清空/删除及收藏/共享标签显示。
 - 最终验证：`npm run verify`退出0（TypeScript与103/103）；Electron/Vite362/1/191模块构建退出0。`git diff --check`通过，17个精确白名单文件，无依赖/锁文件/产物提交。Create State虽返回Context Captured文本，同时明确No active world model，未确认本项目级保存；列出的其他项目模型不匹配，不写入无关模型。Git、README与任务书保留权威证据。
+
+## 25. D-09 执行卡
+
+- 基线1762c0f4f2c28d96576948fb8f27a9eab5bcd74a，stage/09-preview-tags-app，工作区干净；沿用用户继续推进与直接推送授权，既有Windows/Rust待验不扩大为已通过。
+- 生产白名单：src/renderer/src/App.tsx；新增runtime/app/createAppMenuDialogRuntime.ts、createAppDetailSelectionRuntime.ts、createAppControllerPorts.ts（三者均src/renderer/src内）。菜单先构造、dialog后构造；detail先构造、selection仍在原effects之后构造。只复用现有窄参数类型，不传全部controller，不移动七controller状态/refs/queues。
+- 诊断白名单：新增build/diagnostics/check-app-interaction-composition.cjs及fixtures/app-interaction-composition.fixture.json；check-decomposition-baseline.cjs/fixtures/decomposition-baseline.fixture.json（App迁移清单）；fixtures/react-composition-controllers.fixture.json（仅selection工厂调用定位迁移，如必要）；package.json、README.md、本任务书。旧UI/控制器行为门和视图接线不放松。
+- 前向关系：Browse/Library/Preview依赖Operations命令；Operations依赖Developer日志。新每次render局部命令端口仅保存3个operations命令和1个developer命令，创建早于控制器，绑定紧随对应controller，提前访问明确抛错。无Hook、全局状态、镜像领域状态或跨render缓存。
+- 旧控制器门实际依赖三项工厂名称：dialog、detail、selection。位置均未移动，fixture仅将这三项调用名改为组合入口名称（非仅selection），原顺序数组其余项、状态/算法指纹不变；新门独立对照原有效参数和完整Hook顺序。
+
+### D-09 迁移与验证证据
+
+- App交互组合归入两个无状态工厂：MenuDialog复用五个菜单/对话框共享参数，绑定当前本地/共享标签输入；DetailSelection统一详情toggle与选择hydration注入。菜单与dialog、detail与selection仍分时在原位置创建，不提前执行事件回调。七controller状态/ref/队列所有权及六组视图接线不变，未进入D-10。
+- 新命令端口每次render独立，只保存Operations三个与Developer一个命令；owner创建后立即绑定，提前同步调用明确抛错。未绑定反例、绑定后参数/结果转发、不同render实例隔离均通过；不以跨render缓存绕过初始化约束。
+- 新诊断从开工HEAD冻结四组原工厂有效输入与完整Hook序列，重建共享参数后逐项比较，支持LF/CRLF。九个菜单/对话框/详情/输入/选择叶子文件指纹不变。decomposition仅迁移App清单与登记三个组合文件；控制器fixture仅更新三工厂调用名，原位置及其余指纹不变。
+- 行为门加载真实菜单/对话框/标签/详情/hydration模块，只控制外部端口及ReactDOM同步出口；验证rename、局部字段隔离、删除flush→IPC→refresh、IME、本地/共享输入分离、详情开关和选择hydration接线。真实选择引擎的单击/Ctrl/Shift/框选/竞态以及拖放继续由既有控制器门覆盖。移除初始化guard、断开detail-toggle注入的两个变异均被拒绝。
+- App由1062变为1032行，新增组合文件26/18行、命令端口23行；行数也受别名改解构影响，不把行数下降作为性能或功能收益。无领域算法迁移、依赖升级、Rust/CSS/锁文件修改。
+- 完整npm run verify退出0（TypeScript、104/104）；新增两变异定向复跑通过；Electron/Vite生产三端362/1/194模块构建退出0。Windows GUI、原生Rust以及之前待验项继续保留，本轮不宣称完整Windows构建或实机交互通过。
+- Mermaid已同步实际分时组合/初始化关系；Create State返回Context Captured成功回执（Project: `.`）。无新增第三方API问题，不触发Context7。README、本任务书与Git为精确验收依据。
+- 本轮11文件，提交前git diff --check通过。提交定位：git log -1 --format=%H -- src/renderer/src/runtime/app/createAppMenuDialogRuntime.ts；回滚采用revert该原子提交，不改写历史。Windows继续git pull后npm run dev，复验右键重命名/删除、标签输入、Ctrl/Shift/框选、双击详情和目录拖放；无需安装包。下一项D-10等待新指令。

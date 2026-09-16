@@ -18,9 +18,9 @@ VIRTUAL_PANEL_PADDING,
 } from './appRuntime'
 import { AppRootView } from './components/app/AppRootView'
 import { useFontCardRenderer } from './components/app/FontCardRenderer'
-import { createFontContextActionRuntime } from './fontContextActionRuntime'
-import { createFontDetailPanelRuntime } from './fontDetailPanelRuntime'
-import { createFontDialogRuntime } from './fontDialogRuntime'
+import { createAppMenuDialogRuntime } from './runtime/app/createAppMenuDialogRuntime'
+import { createAppDetailSelectionRuntime } from './runtime/app/createAppDetailSelectionRuntime'
+import { createAppControllerPorts } from './runtime/app/createAppControllerPorts'
 import {
 pruneExpandedFolderIds,
 pruneSelectedWatchedFolders
@@ -65,7 +65,6 @@ import { useFontFilterScrollResetRuntime } from './runtime/app/effects/useFontFi
 import { useFontViewportResizeObserverRuntime } from './runtime/app/effects/useFontViewportResizeObserverRuntime'
 import { useTagSuggestionResetRuntime } from './runtime/app/effects/useTagSuggestionResetRuntime'
 import { useFontFamilyGroupsRuntime } from './runtime/app/useFontFamilyGroupsRuntime'
-import { hydrateFontForSelectionDetail } from './runtime/app/fontSelectionHydrationRuntime'
 import { effectiveCardPoolViewMode as resolveEffectiveCardPoolViewMode, isFontFamilyViewAllowed } from './runtime/app/cardPoolViewModePolicyRuntime'
 export default function App(): JSX.Element {
   if (!window.hfm) {
@@ -77,6 +76,8 @@ export default function App(): JSX.Element {
       </div>
     )
   }
+
+  const controllerPorts = createAppControllerPorts()
 
   useRendererReadyNotification()
 
@@ -218,19 +219,19 @@ export default function App(): JSX.Element {
   })
 
   function appendDeveloperStatus(source: string, message: string, payload?: unknown): void {
-    developerController.appendDeveloperStatus(source, message, payload)
+    controllerPorts.developer().appendDeveloperStatus(source, message, payload)
   }
 
   function reportUserActivity(reason = 'interaction', durationMs = USER_ACTIVITY_IDLE_WINDOW_MS): void {
-    operationsController.reportUserActivity(reason, durationMs)
+    controllerPorts.operations().reportUserActivity(reason, durationMs)
   }
 
   function rendererUserActive(): boolean {
-    return operationsController.rendererUserActive()
+    return controllerPorts.operations().rendererUserActive()
   }
 
   function updateFontFromOperations(fontId: string, updater: (font: FontItem) => FontItem): void {
-    operationsController.updateFont(fontId, updater)
+    controllerPorts.operations().updateFont(fontId, updater)
   }
 
   const {
@@ -333,6 +334,11 @@ export default function App(): JSX.Element {
     clearFontListScrollIdleTimer,
     appendDeveloperStatus
   })
+  controllerPorts.bindOperations({
+    reportUserActivity: operationsController.reportUserActivity,
+    rendererUserActive: operationsController.rendererUserActive,
+    updateFont: operationsController.updateFont
+  })
   const {
     cacheMenuOpen,
     setCacheMenuOpen,
@@ -371,6 +377,7 @@ export default function App(): JSX.Element {
     hfm: window.hfm,
     status
   })
+  controllerPorts.bindDeveloper({ appendDeveloperStatus: developerController.appendDeveloperStatus })
   const {
     developerStatusLog,
     setDeveloperStatusLog,
@@ -386,7 +393,7 @@ export default function App(): JSX.Element {
     refreshDeveloperStatusDetails
   } = developerController
 
-  const contextActionRuntime = createFontContextActionRuntime({
+  const contextActionRuntime = createAppMenuDialogRuntime({
     library,
     contextMenu,
     selectedFontIds,
@@ -406,14 +413,7 @@ export default function App(): JSX.Element {
     deleteFontsBatch,
     toggleFontDeleteProtection
   })
-  const setSingleFontSelection = contextActionRuntime.setSingleFontSelection
-  const selectionLabel = contextActionRuntime.selectionLabel
-  const contextFontTargets = contextActionRuntime.contextFontTargets
-  const openTagMenu = contextActionRuntime.openTagMenu
-  const openSharedTagMenu = contextActionRuntime.openSharedTagMenu
-  const openFolderMenu = contextActionRuntime.openFolderMenu
-  const openFontMenu = contextActionRuntime.openFontMenu
-  const runFontContextAction = contextActionRuntime.runFontContextAction
+  const { setSingleFontSelection, selectionLabel, contextFontTargets, openTagMenu, openSharedTagMenu, openFolderMenu, openFontMenu, runFontContextAction } = contextActionRuntime
 
   const folderTreeRuntime = createFolderRuntime({
     selectedFolderId,
@@ -689,13 +689,11 @@ export default function App(): JSX.Element {
   })
 
 
-  const dialogRuntime = createFontDialogRuntime({
-    contextMenu,
+  const dialogRuntime = contextActionRuntime.createDialogs({
     renameTarget,
     renameValue,
     deleteTarget,
     selectedFont,
-    library,
     selectedTagName,
     selectedSharedTagName,
     hfm: window.hfm,
@@ -705,8 +703,6 @@ export default function App(): JSX.Element {
     queueSharedTagsWrite,
     removeFolderTarget,
     refreshFolderTarget,
-    activateFontsBatch,
-    deactivateFontsBatch,
     updateFont,
     setLibrary,
     commitLibraryUpdate,
@@ -714,7 +710,6 @@ export default function App(): JSX.Element {
     setRenameTarget,
     setRenameValue,
     setDeleteTarget,
-    setContextMenu,
     setFolderChildTarget,
     setNewFolderName,
     setExpandedFolderIds,
@@ -729,23 +724,10 @@ export default function App(): JSX.Element {
     setStatus,
     refreshDatabaseDerivedState,
     flushFontWriteQueue
-  })
-  const runContextRename = dialogRuntime.runContextRename
-  const runContextDelete = dialogRuntime.runContextDelete
-  const runContextAddSubfolder = dialogRuntime.runContextAddSubfolder
-  const runContextRefreshFolder = dialogRuntime.runContextRefreshFolder
-  const runContextBatchActivate = dialogRuntime.runContextBatchActivate
-  const runContextBatchDeactivate = dialogRuntime.runContextBatchDeactivate
-  const confirmRename = dialogRuntime.confirmRename
-  const confirmDelete = dialogRuntime.confirmDelete
-  const createTagOnlyFromInput = () => dialogRuntime.createTagOnlyFromInput(newTagName)
-  const createSharedTagOnlyFromInput = () => dialogRuntime.createSharedTagOnlyFromInput(newSharedTagName)
-  const addTagToSelectedByName = dialogRuntime.addTagToSelectedByName
-  const addSharedTagToSelectedByName = dialogRuntime.addSharedTagToSelectedByName
-  const removeTagFromSelected = dialogRuntime.removeTagFromSelected
-  const removeSharedTagFromSelected = dialogRuntime.removeSharedTagFromSelected
+  }, newTagName, newSharedTagName)
+  const { runContextRename, runContextDelete, runContextAddSubfolder, runContextRefreshFolder, runContextBatchActivate, runContextBatchDeactivate, confirmRename, confirmDelete, addTagToSelectedByName, addSharedTagToSelectedByName, removeTagFromSelected, removeSharedTagFromSelected, createTagOnlyFromInput, createSharedTagOnlyFromInput } = dialogRuntime
 
-  const detailPanelRuntime = createFontDetailPanelRuntime({
+  const detailPanelRuntime = createAppDetailSelectionRuntime({
     selectedFont,
     detailVisible,
     selectedFontId,
@@ -773,17 +755,7 @@ export default function App(): JSX.Element {
     activateFontByCard,
     deactivateFontByCard
   })
-  const selectedPreviewFamily = detailPanelRuntime.selectedPreviewFamily
-  const closeDetail = detailPanelRuntime.closeDetail
-  const toggleFontDetail = detailPanelRuntime.toggleFontDetail
-  const generateDetailNativePreview = detailPanelRuntime.generateDetailNativePreview
-  const setPreviewText = detailPanelRuntime.setPreviewText
-  const handleLocalTagInputKeyDown = detailPanelRuntime.handleLocalTagInputKeyDown
-  const handleSharedTagInputKeyDown = detailPanelRuntime.handleSharedTagInputKeyDown
-  const installSelected = detailPanelRuntime.installSelected
-  const removeSelected = detailPanelRuntime.removeSelected
-  const activateSelected = detailPanelRuntime.activateSelected
-  const deactivateSelected = detailPanelRuntime.deactivateSelected
+  const { selectedPreviewFamily, closeDetail, toggleFontDetail, generateDetailNativePreview, setPreviewText, handleLocalTagInputKeyDown, handleSharedTagInputKeyDown, installSelected, removeSelected, activateSelected, deactivateSelected } = detailPanelRuntime
 
   useFontDetailSelectionEffectsRuntime({
     library,
@@ -810,12 +782,10 @@ export default function App(): JSX.Element {
     isBadFontRecord: isDefinitelyBadFontRecord
   })
 
-  const selectionRuntime = createSelectionInteractionRuntime({
+  const selectionRuntime = detailPanelRuntime.createSelection(createSelectionInteractionRuntime, {
     visibleFonts,
     setStatus,
     setSingleFontSelection,
-    toggleFontDetail,
-    hydrateFont: (font) => hydrateFontForSelectionDetail(font, setLibrary),
     reportUserActivity,
     userActivityIdleWindowMs: USER_ACTIVITY_IDLE_WINDOW_MS
   })

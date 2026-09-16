@@ -90,7 +90,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "77a59c346a71c5bcfbbb1a298e0fc4edc45c1f95aeea2c9a335f5d0aac3391a3"
+      "tokenHash": "52599233b2635d8197834726c9fd31a1d7520d693b058493a698b71ecbdadc64"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -1100,6 +1100,64 @@
       "viewGroups": [],
       "ipcChannels": [],
       "tokenHash": "e50eb870049b6a24a2b92cd138191bacbeab3c5953ad7104d40d0f9796d0753a"
+    },
+    "src/renderer/src/runtime/app/createAppMenuDialogRuntime.ts": {
+      "functions": [
+        "createAppMenuDialogRuntime",
+        "createDialogs"
+      ],
+      "owners": [],
+      "exports": [
+        "createAppMenuDialogRuntime"
+      ],
+      "surfaces": {
+        "createAppMenuDialogRuntime": [
+          "...actions",
+          "createDialogs"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "d57531603cafbba92977642e7dbd39f7bf58356219fa3f80856c4f7f1cd3c174"
+    },
+    "src/renderer/src/runtime/app/createAppDetailSelectionRuntime.ts": {
+      "functions": [
+        "createAppDetailSelectionRuntime",
+        "createSelection"
+      ],
+      "owners": [],
+      "exports": [
+        "createAppDetailSelectionRuntime"
+      ],
+      "surfaces": {
+        "createAppDetailSelectionRuntime": [
+          "...detail",
+          "createSelection"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "fcc3d5e3c2bbb57eb419d5f8efe65ae74293cff46c854322e91e6847612fba52"
+    },
+    "src/renderer/src/runtime/app/createAppControllerPorts.ts": {
+      "functions": [
+        "createAppControllerPorts"
+      ],
+      "owners": [],
+      "exports": [
+        "createAppControllerPorts"
+      ],
+      "surfaces": {
+        "createAppControllerPorts": [
+          "bindOperations",
+          "bindDeveloper",
+          "operations",
+          "developer"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "c8dd53380d4b1009dcdeb99fb6a9a2ce5c6d3a18635cbc5fc39cb2dbecfb2c10"
     }
   }
 }

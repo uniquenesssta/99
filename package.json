@@ -113,6 +113,7 @@
     "diagnostics:react-render-performance": "node build/diagnostics/check-react-render-performance.cjs",
     "diagnostics:ipc-sender-validation": "node build/diagnostics/check-ipc-sender-validation.cjs",
     "diagnostics:dependency-security-matrix": "node build/diagnostics/check-dependency-security-matrix.cjs",
+    "diagnostics:app-interaction-composition": "node build/diagnostics/check-app-interaction-composition.cjs",
     "diagnostics:app-root-view-contracts": "node build/diagnostics/check-app-root-view-contracts.cjs",
     "diagnostics:rust-daemon-shutdown": "node build/diagnostics/check-rust-daemon-shutdown.cjs",
     "diagnostics:rust-worker-clients": "node build/diagnostics/check-rust-worker-clients.cjs",
