@@ -49,7 +49,7 @@ function testPreviewCacheStorageShortCircuitsUnavailableRoot() {
   assert(readText('src/main/preview/runtime/previewStorageRoutingRuntime.ts').includes('await rootAvailability.ensureRootPreviewCacheAvailable(root)'), 'root write path missing availability preflight')
   const indexOwner = readText('src/main/preview/runtime/previewIndexAccessRuntime.ts')
   assert(indexOwner.includes('storage.storage === \"root\"') && indexOwner.includes('rootAvailability.ensureRootPreviewCacheAvailable(\n        storage.rootPath'), 'root read/write paths missing availability short-circuit')
-  assert(text.includes('for (const row of group.rows) result[row.id] = false'), 'status batch does not return deterministic misses for unavailable root')
+  assert(readText('src/main/preview/runtime/previewBatchReadRuntime.ts').includes('for (const row of group.rows) result[row.id] = false'), 'status batch does not return deterministic misses for unavailable root')
 }
 
 function testWatchedFolderCanonicalFailuresAreThrottled() {

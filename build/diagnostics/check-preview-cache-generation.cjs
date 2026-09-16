@@ -39,7 +39,7 @@ function testPrefetchQueueCarriesGeneration() {
 }
 
 function testStatusPathAdvancesGeneration() {
-  const text = readText('src/main/preview/runtime/previewCacheStorageRuntime.ts')
+  const text = readText('src/main/preview/runtime/previewBatchReadRuntime.ts')
   assert(text.includes('beginPreviewCachePrefetchGeneration(\"preview-cache-status\")') || text.includes("beginPreviewCachePrefetchGeneration('preview-cache-status')"), 'status path does not cancel stale prefetch tasks')
 }
 

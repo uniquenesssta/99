@@ -39,7 +39,7 @@ function structure() {
       assert.equal(current[name], hash, `${name} must be a pure relocation`)
       assert.equal(bodies(read(storageFile))[name], undefined, `${name} duplicated in facade`)
     }
-    assert.equal(bodies(read(storageFile)).runRequiredRootPreviewCacheIo, fixture.requiredIoBody)
+    assert.equal(bodies(read('src/main/preview/runtime/previewStorageIoRuntime.ts')).runRequiredRootPreviewCacheIo, fixture.requiredIoBody)
   }
   const facade = read(storageFile), route = read(routeFile)
   assert.equal((facade.match(/const rootAvailability = createPreviewCacheRootAvailabilityRuntime\(/g) || []).length, 1)

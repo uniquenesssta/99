@@ -355,7 +355,7 @@ npm run dev
 | D-03 | 自动验证通过待实机 | §19 同一提交，§20构建回执 | typecheck、98项；用户确认构建成功 | Rust定向用例与完整GUI待回执，用户授权先继续 |
 | D-04 | 自动验证通过待实机 | §20 同一提交 | typecheck、99项、三端构建通过 | Windows开发模式复验待回执 |
 | D-05 | 自动验证通过待实机 | §21 同一提交 | typecheck、100项、三端构建通过 | Windows开发模式待复验 |
-| D-06 | 未开始 | — | — | — |
+| D-06 | 自动验证通过待实机 | §22 同一提交 | TypeScript、101/101、三端359/1/191通过 | Windows开发模式待回执 |
 | D-07 | 未开始 | — | — | — |
 | D-08 | 未开始 | — | — | — |
 | D-09 | 未开始 | — | — | — |
@@ -958,3 +958,25 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 
 - 最终验证：`npm run verify`退出0（TypeScript、100/100）；三端构建356/1/191模块退出0；git diff --check通过。首次全量的旧变异定位失败已修正并完整复跑。最终14个白名单文件，不含构建产物和依赖。
 - Create State返回无active world model，未确认项目级保存；Git、README、本执行卡为权威交接。
+
+## 22. D-06 执行卡
+
+- 状态：自动验证通过待实机；基线`cf0b2ea93992e59cc6b7a0970399f9aa622dc176`，分支`stage/09-preview-tags-app`，远端一致且工作区干净。实机缺口按用户授权继续继承。
+- 精确白名单生产：`src/main/preview/runtime/previewCacheStorageRuntime.ts`；新增同目录`previewBatchRowsRuntime.ts`、`previewBatchReadRuntime.ts`、`previewStorageIoRuntime.ts`。
+- 精确白名单诊断：`build/diagnostics/check-preview-batch-read.cjs`、`build/diagnostics/fixtures/preview-batch-read.fixture.json`（新增）；`check-decomposition-baseline.cjs`、`fixtures/decomposition-baseline.fixture.json`；`check-preview-index-owner.cjs`、`fixtures/preview-index-owner.fixture.json`；`check-preview-storage-routing.cjs`；`check-io-deadline-policy.cjs`、`check-diagnostic-line-endings.cjs`、`check-preview-cache-generation.cjs`、`check-preview-cache-hydration.cjs`、`check-preview-cache-prefetch.cjs`、`check-preview-cache-unavailable-root.cjs`（均build/diagnostics内，迁移断言归属）。另含package.json、README.md、本任务书。
+- 所有权：行构建无持久状态，批量策略独立保留status/images函数；原IO包装移入独立工厂，继续共享唯一rootAvailability。门面仅创建/连接这些实例和兼容出口。D-02/D-04/D-05所有者不变。
+- 可达性：两批量入口→previewCacheStorageForFontFromIndex→tier.localStorageForRoot或localStorageForPath均返回storage=local；shared描述只供hydration。因此root/Rust批量分支对当前产品入口不可达。本轮不删除分支、不改变route输入；在内部端口注入root验证兼容策略，不能宣称产品新增可达入口。后续删除必须独立提交。
+- 验收：共享行构建与原重复代码一致；两查询从now/chunkSize开始的策略主体冻结，IO函数体冻结；无效item/无stat、400分块、并发6、status的missing/failed与图片ok区分、补齐/预取代次/touch顺序/缺图；真实行为及变异，既有门全部继承。
+
+### D-06 实施与证据
+
+- 门面782→216行，只保留实例组合、共享presence适配及兼容返回。行构建76行；批量策略438行（status/images独立）；I/O包装69行。未增第二路由、availability、索引缓存或prefetch所有者。
+- 已直接比较开工HEAD的两个有效item构建片段，逐字一致；helper仅把status的invalid id=false改成可选回调，images不传该回调，无stat仍省略结果键。新fixture基于旧片段构造helper预期指纹，两个查询从now开始的策略主体及5个I/O函数体指纹均与开工HEAD一致，支持LF/CRLF。
+- D-05 fixture只迁移两条批量函数的新前导构建调用hash，新D-06策略主体锁补足证据；D-04 requiredIo断言只改读取所属文件，hash未变；decomposition只更新门面迁移清单及新增三模块。旧断言/换行变异随实际代码移动，未删门禁。
+- 新门使用真实行构建、key/installed-route/input策略、tier、IO包装、图片并发读取及prefetch代次；DB、FS、根探测、hydration外部端口受控。覆盖invalid/no-stat/active、missing/failed不尝试PNG、缺图和补齐后touch、801项400/400/1分块、实测并发≤6、真实prefetch取消旧队列；3个变异（丢missing/failed状态、把missing作PNG候选、改分块800）均被拒绝。
+- 注入root内部端口测试batch/query/null回退/失败/不可达与acceptedStatuses/checkFiles/touch差异。当前产品入口仍走local，不把内部测试当作真实可达新功能；保留兼容分支，未做删除或后端策略变化。
+- 对应X-11/X-12的预览路径；共享补齐I/O受控不等于真实共享盘验收。D-03 Rust定向测试和其他Windows缺口按用户先推进的授权继续继承。
+- Mermaid已更新共享行构建、独立策略、索引作用域及IO命令关系。单一迁移提交，`git log -1 --format=%H -- src/main/preview/runtime/previewBatchReadRuntime.ts`定位SHA，回滚用revert不改历史。下一项D-07提取标签Node持久化。
+
+- 最终验证：`npm run verify`退出0（TypeScript、101/101）；Electron/Vite三端359/1/191模块构建退出0。20个白名单文件，无Rust、依赖版本、锁文件或CSS改动；`git diff --check`通过。Windows继续使用`git pull`后`npm run dev`复验，不要求安装包。
+- Create State本轮返回Context Captured成功回执（Project: `.`）；Git、README与本执行卡仍为精确代码和验收证据。

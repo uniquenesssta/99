@@ -13,7 +13,7 @@
     "deletePreviewCacheIndex": "04379451428463a97dc6915d13219491aa0af1232207a0c8038b111b88e3b1dd"
   },
   "batchBodiesAfterScope": {
-    "getPreviewCacheStatus": "8a4c4b1d75dd3d27781304f327bdafdc05672840def6f1b00e8a44ef40e569c4",
-    "readCachedPreviewImages": "8a41cb861255db40b8677b0459176a820af1fbe3141fdf3f2ce37398c88a71b1"
+    "getPreviewCacheStatus": "98d885e3d0da1a72f5c2ac7d13070ec058f0905de3dafd1b154af6a48f4731b0",
+    "readCachedPreviewImages": "dc8e552ffec7a7a7d09499f5a6427ba828db7420abd1b49b9cfc09c8e1d2a321"
   }
 }

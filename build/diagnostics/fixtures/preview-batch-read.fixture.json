@@ -1,0 +1,15 @@
+{
+  "baseline": "cf0b2ea93992e59cc6b7a0970399f9aa622dc176",
+  "ioBodies": {
+    "rustPreviewDbPathForStorage": "2ee1a925c7f32a274dc24bf05f2c8f187a171df32cb45da787d647fb523eb6a7",
+    "previewCacheIoErrorMessage": "254b1b9e430ad49bbf836b238d91974d68d0f781262844f1809a61ed952f4227",
+    "runRequiredRootPreviewCacheIo": "26196e6b26544bb563f9d952c3190f4fde3b4d157b5420cd61306910f0d001f5",
+    "runOptionalRootPreviewCacheIo": "0dffe87b78ae812e3f4f6a79302f489359c2cd9a91aa6acdc1376c5499ce6517",
+    "runStoragePreviewCacheIo": "dd5245c2227fd99082208165242333ff37ad88d0034c2c473dcaf3cd0efd7c4c"
+  },
+  "queryTails": {
+    "getPreviewCacheStatus": "3ab1a3ff671ced206c07c3965fd192d8993ae381b4683b4067a3868d2dcb81b4",
+    "readCachedPreviewImages": "e965881c29040a76e77545d685986588afdcf4febe5121d5e6825e24c421050d"
+  },
+  "rowBuilderBody": "13030cd6dd870418ae072d8d54e13c83aa499344b873d4515d6a503dd1f25d6a"
+}

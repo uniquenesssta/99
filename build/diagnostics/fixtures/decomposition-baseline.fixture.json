@@ -4,16 +4,8 @@
     "src/main/preview/runtime/previewCacheStorageRuntime.ts": {
       "functions": [
         "createPreviewCacheStorageRuntime",
-        "rustPreviewDbPathForStorage",
-        "previewCacheIoErrorMessage",
-        "runRequiredRootPreviewCacheIo",
-        "runOptionalRootPreviewCacheIo",
-        "runStoragePreviewCacheIo",
         "rememberSharedPresence",
-        "forgetSharedPresence",
-        "schedulePrefetchForStatusMisses",
-        "getPreviewCacheStatus",
-        "readCachedPreviewImages"
+        "forgetSharedPresence"
       ],
       "owners": [],
       "exports": [
@@ -37,7 +29,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "26a4b90440448b82a8686015e4f9e7526c0d550928cc99c8e1e80601944efb42"
+      "tokenHash": "011b1b8610707b74e465438aedaad2d6088ee69472184418dfc8baa47eaa6c7f"
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [
@@ -976,6 +968,69 @@
       "viewGroups": [],
       "ipcChannels": [],
       "tokenHash": "42abf4a72dee3aff694371bec7f02034561ea3f37e19aae4e6b1bf065b2dda1a"
+    },
+    "src/main/preview/runtime/previewBatchRowsRuntime.ts": {
+      "functions": [
+        "createPreviewBatchRowsRuntime",
+        "buildPreviewCacheGroups"
+      ],
+      "owners": [],
+      "exports": [
+        "createPreviewBatchRowsRuntime"
+      ],
+      "surfaces": {
+        "createPreviewBatchRowsRuntime": [
+          "buildPreviewCacheGroups"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "15f4c67843b829cfbf56b271123c273ef21c675b8dc5554c5d453ce0e0e8eca1"
+    },
+    "src/main/preview/runtime/previewBatchReadRuntime.ts": {
+      "functions": [
+        "createPreviewBatchReadRuntime",
+        "schedulePrefetchForStatusMisses",
+        "getPreviewCacheStatus",
+        "readCachedPreviewImages"
+      ],
+      "owners": [],
+      "exports": [
+        "createPreviewBatchReadRuntime"
+      ],
+      "surfaces": {
+        "createPreviewBatchReadRuntime": [
+          "getPreviewCacheStatus",
+          "readCachedPreviewImages"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "bc1641496a68b408b582f3a15721f84d7bb16f052046e521cddea2e44dc5f209"
+    },
+    "src/main/preview/runtime/previewStorageIoRuntime.ts": {
+      "functions": [
+        "createPreviewStorageIoRuntime",
+        "rustPreviewDbPathForStorage",
+        "previewCacheIoErrorMessage",
+        "runRequiredRootPreviewCacheIo",
+        "runOptionalRootPreviewCacheIo",
+        "runStoragePreviewCacheIo"
+      ],
+      "owners": [],
+      "exports": [
+        "createPreviewStorageIoRuntime"
+      ],
+      "surfaces": {
+        "createPreviewStorageIoRuntime": [
+          "rustPreviewDbPathForStorage",
+          "runRequiredRootPreviewCacheIo",
+          "runStoragePreviewCacheIo"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "b4a7d6b147cc8fcfb7db8dc6394ad9617c04294d9fb67842d7415ab4d3e2e570"
     }
   }
 }

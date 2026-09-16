@@ -130,6 +130,7 @@
     "diagnostics:local-tag-hydration": "node build/diagnostics/check-local-tag-hydration.cjs",
     "diagnostics:preview-storage-routing": "node build/diagnostics/check-preview-storage-routing.cjs",
     "diagnostics:preview-index-owner": "node build/diagnostics/check-preview-index-owner.cjs",
+    "diagnostics:preview-batch-read": "node build/diagnostics/check-preview-batch-read.cjs",
     "test:local-tag-hydration-rust": "cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests"
   },
   "dependencies": {

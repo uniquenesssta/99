@@ -49,8 +49,8 @@ function testRootAvailabilityUsesDeadline() {
 }
 
 function testPreviewCacheQueriesUseDeadlineAndDropTimeouts() {
-  const text = readText('src/main/preview/runtime/previewCacheStorageRuntime.ts')
-  assert(text.includes('previewCacheQueryTimeoutMs'), 'preview cache storage missing query timeout import')
+  const text = readText('src/main/preview/runtime/previewBatchReadRuntime.ts')
+  assert(readText('src/main/preview/runtime/previewStorageIoRuntime.ts').includes('previewCacheQueryTimeoutMs'), 'preview cache storage missing query timeout import')
   assert(text.includes('runStoragePreviewCacheIo'), 'preview cache storage missing storage-level deadline wrapper')
   assert(text.includes('preview-cache-batch:'), 'preview cache batch is not deadline-labeled')
   assert(text.includes('preview-cache-query:'), 'preview cache query is not deadline-labeled')

@@ -43,8 +43,9 @@ function testPrefetchUsesHydrationAndDedupedQueue() {
 function testStatusPathSchedulesBackgroundPrefetchWithoutBlocking() {
   const text = readText('src/main/preview/runtime/previewCacheStorageRuntime.ts')
   assert(text.includes('createPreviewCachePrefetchRuntime'), 'storage runtime missing prefetch runtime')
-  assert(text.includes('prefetchRuntime.schedulePreviewCachePrefetch'), 'status path does not schedule background prefetch')
-  assert(text.includes('schedulePrefetchForStatusMisses'), 'status path missing local-miss prefetch helper')
+  const batch = readText('src/main/preview/runtime/previewBatchReadRuntime.ts')
+  assert(batch.includes('prefetchRuntime.schedulePreviewCachePrefetch'), 'status path does not schedule background prefetch')
+  assert(batch.includes('schedulePrefetchForStatusMisses'), 'status path missing local-miss prefetch helper')
 }
 
 function testPackageScriptAndVersion() {

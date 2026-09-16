@@ -20,7 +20,7 @@ function structure() {
       assert.equal(current[name], hash, `single-item body drift: ${name}`)
       assert.equal(bodies(facade)[name], undefined, `duplicated owner: ${name}`)
     }
-    for (const [name, hash] of Object.entries(fixture.batchBodiesAfterScope)) assert.equal(bodies(facade)[name], hash, `batch change exceeds DB scope wrapping: ${name}`)
+    for (const [name, hash] of Object.entries(fixture.batchBodiesAfterScope)) assert.equal(bodies(read('src/main/preview/runtime/previewBatchReadRuntime.ts'))[name], hash, `batch change exceeds DB scope wrapping: ${name}`)
   }
   for (const token of ['readStatusCache', 'readStatusInFlight', 'readStatusGeneration', 'openPreviewIndexDb', 'options.closeSqliteDb']) assert(!facade.includes(token), token)
   assert.equal((facade.match(/= createPreviewIndexAccessRuntime\(/g) || []).length, 1)

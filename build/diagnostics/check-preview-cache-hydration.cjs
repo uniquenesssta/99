@@ -42,7 +42,7 @@ function testHydrationCoalescesAndNegativeCachesSharedMisses() {
 }
 
 function testReadPathHydratesOnlyAfterLocalMiss() {
-  const text = readText('src/main/preview/runtime/previewCacheStorageRuntime.ts')
+  const text = readText('src/main/preview/runtime/previewBatchReadRuntime.ts')
   assert(text.includes('hydrationRuntime.rememberLocalHit'), 'read path does not count local hits')
   assert(text.includes('const localMissRows = chunk.filter'), 'read path does not isolate local misses')
   assert(text.includes('hydrationRuntime.hydratePreviewCacheRows') && text.includes('group.storage') && text.includes('localMissRows'), 'read path does not hydrate shared hits into local cache')

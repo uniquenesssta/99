@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '..', '..')
 const fixtures = [
   {
     script: 'check-io-deadline-policy.cjs',
-    source: 'src/main/preview/runtime/previewCacheStorageRuntime.ts',
+    source: 'src/main/preview/runtime/previewBatchReadRuntime.ts',
     before: 'if (!batchResult.ok) {\n          for (const row of group.rows) result[row.id] = false',
     after: 'if (!batchResult.ok) {\n          for (const row of group.rows) result[row.id] = true',
     error: 'status batch timeout does not return deterministic misses'
