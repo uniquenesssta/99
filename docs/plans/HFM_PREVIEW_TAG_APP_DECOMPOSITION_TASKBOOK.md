@@ -1133,3 +1133,9 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 - npm run verify退出0：TypeScript及104/104诊断；Node v24.19.0/npm11.9.0/Linux。本轮10k查询20.1ms、500次布局2.1ms、万项选择0.6ms、最多60卡；非Windows实机性能结论。
 - 已通过自动门的领域修复包括字段隔离/重试、监听删除证据/失败重读、收藏与激活意图、预览提交失效、标签重复身份、事务回滚及提交后日志故障；对应实机历史问题不因自动门通过而全部关闭。GUI、NAS及Rust定向缺口见上表。
 - Mermaid已同步真实职责链；Create State返回Context Captured成功回执（Project: `.`）。无新API或版本问题，未触发Context7。git diff --check通过，提交只含3份文档；以git log -1 --format=%H -- docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md定位本轮报告提交。
+
+## 28. D-11之后的全链路审计补充
+
+- 基线7e0e6d7，2026-09-16；详见[全链路审计报告](../audits/HFM_FULL_CHAIN_AUDIT.md)。现有TypeScript和104/104仍通过，但新增F-01～F-04正确性风险及F-05日志关联缺口尚未修复，故D-11自动回归记录保留，不能据其关闭专项。
+- 真实TS观察复现旧标签确认清理新意图、20秒后旧读覆盖、去重键冲突；Rust事务提交后目录/metadata失败从源码确认，并以SQLite顺序重建验证部分提交后果，未冒称原生Rust测试。
+- 优先顺序：Rust事务边界→标签确认/意图寿命→去重身份→日志关联。此次仅审计报告/观察器及入口记录，未混入生产修复或新的阶段推进。

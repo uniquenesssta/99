@@ -2,6 +2,8 @@
 
 > 补充专项（实现与自动验证完成，GUI待验收）：[预览缓存、本地标签与 App 详细拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)。D-01～D-10已实施，D-11于2026-09-16完成TypeScript、104/104及结构审查；Windows GUI/NAS和Rust定向测试仍待回执，详见专项§27。当前分支stage/09-preview-tags-app，验收代码基线e7b34d8；专项未完整关闭，不覆盖现有阶段。本专项按用户要求以 `npm run dev` 实际操作验收，不要求安装包。
 
+> 全链路补充审计：[发现及只读复现](../audits/HFM_FULL_CHAIN_AUDIT.md)。新增标签确认/意图寿命、信号去重与Rust事务边界待修项；104/104通过不能替代这些新增反例及Windows验收。
+
 ## 0. 文档状态
 
 - 文档版本：1.38
