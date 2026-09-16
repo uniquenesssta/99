@@ -176,7 +176,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
     }
   }
 
-  async function applyWatchedFolderChangesToIndex(changes: PendingFolderChange[]): Promise<FontIndexChangePayload> {
+  async function applyWatchedFolderChangesToIndex(changes: PendingFolderChange[], replayUnchanged = false): Promise<FontIndexChangePayload> {
     const first = changes[0]
     const rootPath = resolve(first?.folder || '')
     const payload: FontIndexChangePayload = {
@@ -225,7 +225,8 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       const font = await options.upsertFontIndexEntry(rootPath, filePath, context.cache)
       const newEntry = context.cache.entries[key]
       if (options.fontIndexEntryChanged(oldEntry, newEntry)) recordChangedEntry(key, newEntry, font)
-      else if (font && newEntry?.status === 'ok') payload.upserts.push(font)
+      // Recovery may need to redeliver rows committed before a failed notification.
+      else if (replayUnchanged && font && newEntry?.status === 'ok') payload.upserts.push(font)
     }
 
     async function processDirectory(targetPath: string, force: boolean): Promise<boolean> {

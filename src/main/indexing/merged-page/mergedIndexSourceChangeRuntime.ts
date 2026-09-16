@@ -36,6 +36,7 @@ function sourceKeyChangedOnlyByFields(
   previousKey: string,
   nextKey: string,
   allowedFields: SourceKeyField[],
+  changedRoot?: string,
 ): boolean {
   if (!previousKey || !nextKey || previousKey === nextKey) return false;
   const previous = parseSourceKey(previousKey);
@@ -54,7 +55,7 @@ function sourceKeyChangedOnlyByFields(
       const before = normalizedFieldValue(previousEntry, field);
       const after = normalizedFieldValue(nextEntry, field);
       if (before === after) continue;
-      if (!allowed.has(field)) return false;
+      if (!allowed.has(field) || (changedRoot !== undefined && nextEntry.root !== changedRoot)) return false;
       allowedFieldChanged = true;
     }
   }
@@ -63,7 +64,8 @@ function sourceKeyChangedOnlyByFields(
 
 export function isSharedMetadataIncrementalSyncReason(reason: string): boolean {
   const value = String(reason || '').toLowerCase();
-  return value.includes('shared') && (value.includes('tag') || value.includes('metadata'));
+  return (value.includes('shared') && (value.includes('tag') || value.includes('metadata'))) ||
+    value.startsWith('shared-favorite-') || value.startsWith('shared-delete-protection-');
 }
 
 export function isRootIndexIncrementalSyncReason(reason: string): boolean {
@@ -79,20 +81,23 @@ export function isInstallStatusIncrementalSyncReason(reason: string): boolean {
 export function sourceKeyChangedOnlyBySharedMetadata(
   previousKey: string,
   nextKey: string,
+  changedRoot?: string,
 ): boolean {
-  return sourceKeyChangedOnlyByFields(previousKey, nextKey, ['sharedMetadataSignature']);
+  return sourceKeyChangedOnlyByFields(previousKey, nextKey, ['sharedMetadataSignature'], changedRoot);
 }
 
 export function sourceKeyChangedOnlyByRootIndex(
   previousKey: string,
   nextKey: string,
+  changedRoot?: string,
 ): boolean {
-  return sourceKeyChangedOnlyByFields(previousKey, nextKey, ['indexSignature']);
+  return sourceKeyChangedOnlyByFields(previousKey, nextKey, ['indexSignature'], changedRoot);
 }
 
 export function sourceKeyChangedOnlyByInstallStatus(
   previousKey: string,
   nextKey: string,
+  changedRoot?: string,
 ): boolean {
-  return sourceKeyChangedOnlyByFields(previousKey, nextKey, ['installSignature']);
+  return sourceKeyChangedOnlyByFields(previousKey, nextKey, ['installSignature'], changedRoot);
 }

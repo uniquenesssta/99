@@ -64,6 +64,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-17：修复操作后的刷新放大：安装/未安装统计保留最后成功快照，查询失败不清空；收藏/保护纳入共享元数据增量同步，共享标签快照限目标目录，跨目录及其他签名变化继续重建；普通监听仅发布实际变化，失败恢复仍重发。新增60种索引分流与统计保留诊断，Windows需用debug日志复验；启动长等待、目录统计波动、维护缺文件仍待定位。
+
 - 2026-09-17：修复R-04诊断在Windows CRLF下多行变异未命中导致的 Missing expected exception；统一变异输入换行并强制检查替换命中，覆盖客户端和原生反例入口，生产代码不变。
 
 - 2026-09-16：R-04预览缓存提交完整性：Rust apply行与updatedAt同事务；apply/delete执行结果未知时不再返回null触发Node重写，成功后的日志/临时文件清理失败不改变写入结果。新增系统预览operation trace、16个客户端故障场景及独立原生SQLite/commit故障验收入口。verify 108/108、Electron/Vite 365/1/196及三个入口混淆通过；当前无Cargo，原生/Windows验收待执行，详见[链路一致性任务书](docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#16-r-04-执行卡)。开发验收使用 `npm run dev`；R-05/R-06未启动。

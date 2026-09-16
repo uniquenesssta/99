@@ -25,6 +25,7 @@ interface FolderWatcherRuntimeOptions {
   ) => Promise<boolean>;
   applyWatchedFolderChangesToIndex: (
     changes: PendingFolderChange[],
+    replayUnchanged?: boolean,
   ) => Promise<FontIndexChangePayload>;
   syncMergedIndexForRootIncremental?: (
     rootPath: string,
@@ -144,7 +145,7 @@ export function createFolderWatcherRuntime(
         }
 
         if (generation !== watcherGeneration) return;
-        payload = await options.applyWatchedFolderChangesToIndex(group);
+        payload = await options.applyWatchedFolderChangesToIndex(group, recovery);
         if (generation !== watcherGeneration) {
           options.appendStartupLog(
             `font index watcher batch result discarded after watcher restart: ${rootPath}, events=${group.length}`,

@@ -151,7 +151,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
               severity: 'warn', details: { requestSeq, pendingFavorite, intentRevision, currentIntentRevision: fontUserIntentRevision() } })
             return
           }
-          options.setDatabaseFontMetrics(null)
+          // A failed refresh must not replace a known snapshot with partial frontend counts.
         })
     }, metricsDelayMs)
 

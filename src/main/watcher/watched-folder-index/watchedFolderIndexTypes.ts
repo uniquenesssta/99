@@ -96,7 +96,7 @@ export interface WatchedFolderIndexRuntimeOptions {
 
 export interface WatchedFolderIndexRuntime {
   watcherChangeBatchLooksUnchanged: (rootPath: string, changes: PendingFolderChange[]) => Promise<boolean>
-  applyWatchedFolderChangesToIndex: (changes: PendingFolderChange[]) => Promise<FontIndexChangePayload>
+  applyWatchedFolderChangesToIndex: (changes: PendingFolderChange[], replayUnchanged?: boolean) => Promise<FontIndexChangePayload>
   computeWatchedDirectorySignature: (dirPath: string) => Promise<RootDirectorySignature | null>
   normalizePendingFolderChanges: (changes: PendingFolderChange[]) => PendingFolderChange[]
 }

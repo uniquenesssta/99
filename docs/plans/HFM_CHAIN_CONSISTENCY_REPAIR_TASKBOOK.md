@@ -471,3 +471,52 @@ npm run dev
 实际把Rust write.rs与TS客户端转成CRLF，旧门复现同样错误，新门通过16个客户端场景及反例；随后恢复原文件字节，生产源码无差异。Rust/Cargo实机验收仍待回执，本修正不宣称原生验收通过。
 
 验证：定向LF/CRLF退出0；--native通过默认门后因cargo ENOENT退出1。全量verify运行至Rust诊断期间容器连接中断，最终状态未确认，不计作108项通过。已通过定向验证的修复按相同替换规则从远端基线恢复并提交；未重复构建未修改的生产源码。Create State提示No active world model，项目级保存未确认。
+
+
+## 17. 操作刷新放大修复执行卡（F-06）
+
+状态：自动验证通过待实机。基线3fac7e7，stage/09-preview-tags-app，工作树已与远端对齐；恢复容器后读取上一轮完整日志，CRLF修正verify实际108/108通过。继承无Cargo/Windows原生验收缺口。用户授权修复本次日志暴露的刷新问题，不替代R-05/R-06。
+
+证据：收藏5次均incremental-rebuild且安装数量295/1204不变；普通目录复查1事件1499upserts。实际根因包括全统计清空、共享元数据reason漏掉收藏/保护，以及未变化条目亦发送。正常事件只发送差异，显式恢复仍必须重发，禁止删除恢复机制。统计保留最后成功值直到新权威结果替换，保持请求序号/意图校验，不关闭必要的聚合查询、不猜算安装状态。
+
+精确白名单：
+- src/renderer/src/databaseDerivedStateRuntime.ts
+- src/renderer/src/runtime/database/useRendererDatabasePageRuntime.ts
+- src/main/indexing/merged-page/mergedIndexSourceChangeRuntime.ts
+- src/main/indexing/merged-page/mergedIndexSyncRuntime.ts
+- src/main/watcher/folderWatcherRuntime.ts
+- src/main/watcher/watchedFolderIndexRuntime.ts
+- src/main/watcher/watched-folder-index/watchedFolderIndexTypes.ts
+- build/diagnostics/check-operation-refresh-scope.cjs
+- build/diagnostics/check-watcher-index-consistency.cjs
+- build/diagnostics/check-watcher-activation-baseline.cjs
+- build/diagnostics/fixtures/react-composition-domain-controllers.fixture.json
+- package.json
+- README.md
+- docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+
+无新业务状态所有者。新增门加载真实刷新、索引分流和监听实现，外部SQLite/Rust/文件系统由端口夹具替代，仍须Windows日志确认实际性能。仅迁移刷新函数所属文件冻结hash及失效后统计应保留的旧断言，不整体重录。启动等待、文件夹计数波动、维护缺文件继续定位，未确认根因不写成已修。PowerShell详细日志使用 $env:HFM_LOG_DETAIL = "debug"。
+
+追加精确白名单：build/diagnostics/fixtures/watcher-activation-baseline.fixture.json，仅folderWatcherRuntime.ts源码hash随可选replayUnchanged端口更新；函数及导出列表不变，恢复重试/重启/代次/失败门继续执行。
+
+
+### F-06 实施证据
+
+- 旧实现实测失败：刷新门得到null而不是原统计对象；shared-favorite-set仅metadata变化却重建；监听旧接线没有传恢复标记。新实现统计门、60种真实sync分流（含安装签名/其他根变化反例）及LF/CRLF、3个退化变异通过。指标查询失败仍输出db-metrics-error并保留最后成功快照。
+- 正常监听目录复查/单文件无变化时不广播，真正变化和删除保持；恢复路径通过可选replayUnchanged标记重发，恢复快照同步与有限重试保持。既有W门补充正常/恢复正反场景及2个变异，8个变异全通过；A-01旧统计乱序、停用失败回滚及10变异、A-02四变异均通过。
+- 仅迁移databaseDerivedStateRuntime与folderWatcherRuntime两个冻结hash；原导出/函数列表保持，激活门保留结算后的统计后再验证旧响应不得覆盖新结果，未关闭竞态断言。
+- 不修改IPC、Rust、依赖、schema、UI/CSS、业务身份、R-05旧ack/TTL或R-06业务去重。聚合metrics仍包含安装数；修复的是清空后回退部分前端统计和重复索引广播，不宣称所有安装数量查询已消除。列表仍按旧规则失效，避免把已删除项当新快照。
+- Electron/Vite构建365/1/196通过，main 1,166.15 kB，混淆3/3。Mermaid已同步真实实现，原生代码未改；Windows显示/共享盘行为待用户验收。
+- 待查：34.85秒查询与5ms worker之间的等待来源、目录计数219/174变化、hash/metrics健康检查缺文件。当前证据不能确认根因；本轮减少多余重建/广播可能改善渲染负载，但不据此宣称这些问题全修复。
+
+Windows PowerShell验收（无依赖变更，不需npm ci）：
+
+```powershell
+git pull --ff-only origin stage/09-preview-tags-app
+$env:HFM_LOG_DETAIL = "debug"
+npm run dev
+```
+
+连续收藏/取消收藏、激活/停用、本地/共享标签及保护操作；核对安装数不闪成部分统计，目标根纯metadata变化日志走incremental-rust或snapshot-rust，普通无变化监听upserts=0；实际增删字体和故障恢复继续可见。记录启动和目录计数异常，随新日志继续追查。
+
+F-06收尾：npm run verify退出0（109/109），日志/tmp/f06-verify.log；新增门补全60场景及CRLF后独立复验退出0。15个白名单文件，git diff --check通过。原生源码未改、Cargo不可用；Windows验收待回执。Create State再次提示No active world model，HFM项目级保存未确认，Git/README/任务书完整保存交接。回滚本次独立F-06提交即可恢复基线行为。

@@ -292,7 +292,7 @@ async function metricsResponseOrderCheck(transform = x => x) {
     const action = h.runtime.deactivateFontByCard(font)
     if (oldFirst) { old.resolve({ activeCount: 7 }); await drain(); assert.equal(h.snapshot().metrics.activeCount, 7) }
     gate.resolve({ ok: false, message: 'keep active' }); await action
-    assert.equal(h.snapshot().metrics, null); assert.equal(refreshToken, 1); assert.equal(pageSeq.current, 1)
+    assert.equal(h.snapshot().metrics.activeCount, oldFirst ? 8 : 1, 'refresh retains the settled snapshot until a newer result'); assert.equal(refreshToken, 1); assert.equal(pageSeq.current, 1)
     assert.equal(h.snapshot().font.active, true)
     const fresh = deferred(); request(fresh); fresh.resolve({ activeCount: 1 }); await drain()
     if (!oldFirst) { old.resolve({ activeCount: 0 }); await drain() }

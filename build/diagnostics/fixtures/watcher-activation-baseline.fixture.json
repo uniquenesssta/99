@@ -18,7 +18,7 @@
         "notifyFolderChanged",
         "startWatchingFolders"
       ],
-      "sha256": "6ef5f4c6c9a1a8cf1281321b783647678de5449859fc94e3f1efab1c2abd7d77"
+      "sha256": "2f0ac9713f7fae38796cee6b9175df68e881a2639463fe680554ea95e8a267a3"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [

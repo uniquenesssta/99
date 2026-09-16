@@ -57,11 +57,11 @@ export function createMergedIndexSyncRuntime(
           const metadataOnlySourceChange =
             sourcesChanged &&
             isSharedMetadataIncrementalSyncReason(reason) &&
-            sourceKeyChangedOnlyBySharedMetadata(currentSourcesKey, sourcesKey);
+            sourceKeyChangedOnlyBySharedMetadata(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
           const rootIndexOnlySourceChange =
             sourcesChanged &&
             isRootIndexIncrementalSyncReason(reason) &&
-            sourceKeyChangedOnlyByRootIndex(currentSourcesKey, sourcesKey);
+            sourceKeyChangedOnlyByRootIndex(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
           if (
             rootsChanged ||
             (sourcesChanged &&
@@ -195,10 +195,14 @@ export function createMergedIndexSyncRuntime(
           const installStatusOnlySourceChange =
             sourcesChanged &&
             isInstallStatusIncrementalSyncReason(reason) &&
-            sourceKeyChangedOnlyByInstallStatus(currentSourcesKey, sourcesKey);
+            sourceKeyChangedOnlyByInstallStatus(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
+          const metadataOnlySourceChange =
+            sourcesChanged &&
+            isSharedMetadataIncrementalSyncReason(reason) &&
+            sourceKeyChangedOnlyBySharedMetadata(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
           if (
             rootsChanged ||
-            (sourcesChanged && !installStatusOnlySourceChange)
+            (sourcesChanged && !installStatusOnlySourceChange && !metadataOnlySourceChange)
           ) {
             await buildRuntime.rebuildMergedIndexDb(db, sources, sourcesKey);
             commit(`snapshot-rebuild:${reason}`);

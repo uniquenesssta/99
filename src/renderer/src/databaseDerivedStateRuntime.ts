@@ -27,7 +27,7 @@ export function refreshDatabaseDerivedStateRuntime(options: {
   }
   options.setDatabasePageResult(null)
   options.setDatabaseQueryResult(null)
-  options.setDatabaseFontMetrics(null)
+  // Keep the last authoritative counts while requests are invalidated and revalidated.
   options.setDatabaseRefreshToken((value) => value + 1)
 }
 
