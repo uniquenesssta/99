@@ -3,12 +3,12 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use crate::mutation_protocol::{json_value, tag_mutation_protocol_result};
 
 use super::schema::{initialize_shared_metadata_db, set_meta};
-use super::signature::shared_metadata_signature_for_conn;
+use super::signature::shared_metadata_signature_for_transaction;
 use super::types::{
     SharedMetadataApplyPayload, SharedMetadataApplyResult, SharedMetadataCommandConfig,
     SharedMetadataMutationStateSignal, SharedMetadataRemoveTagPayload, SharedMetadataRemoveTagResult,
@@ -57,7 +57,16 @@ pub fn apply_shared_metadata_state_machine(config: &SharedMetadataCommandConfig)
     let mut conn = Connection::open(&payload.db_path).map_err(|error| error.to_string())?;
     initialize_shared_metadata_db(&conn).map_err(|error| error.to_string())?;
 
-    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    apply_on_connection(&mut conn, &payload, &mut trace, started_at)
+}
+
+fn apply_on_connection(
+    conn: &mut Connection,
+    payload: &SharedMetadataApplyPayload,
+    trace: &mut crate::operation_trace::OperationTrace,
+    started_at: Instant,
+) -> Result<String, String> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
     let mut written = 0usize;
     let mut events = 0usize;
     let mut changed_ids: Vec<String> = Vec::new();
@@ -166,16 +175,16 @@ pub fn apply_shared_metadata_state_machine(config: &SharedMetadataCommandConfig)
             events += 1;
         }
     }
-    tx.commit().map_err(|error| error.to_string())?;
-    trace.committed();
-    set_meta(&conn, "updatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
-    set_meta(&conn, "writerHost", &payload.updated_by).map_err(|error| error.to_string())?;
+    set_meta(&tx, "updatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
+    set_meta(&tx, "writerHost", &payload.updated_by).map_err(|error| error.to_string())?;
     if !payload.root_path.trim().is_empty() {
-        set_meta(&conn, "rootPath", &payload.root_path).map_err(|error| error.to_string())?;
+        set_meta(&tx, "rootPath", &payload.root_path).map_err(|error| error.to_string())?;
     }
     changed_ids.sort();
     changed_ids.dedup();
-    let signature = shared_metadata_signature_for_conn(&conn).map_err(|error| error.to_string())?;
+    let signature = shared_metadata_signature_for_transaction(&tx).map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    trace.committed();
     let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
 
     let timings = SharedMetadataTimings {
@@ -272,9 +281,20 @@ pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandCo
     }
     let mut conn = Connection::open(&payload.db_path).map_err(|error| error.to_string())?;
     initialize_shared_metadata_db(&conn).map_err(|error| error.to_string())?;
-    let targets = find_targets(&conn, &tag_name).map_err(|error| error.to_string())?;
+    remove_on_connection(&mut conn, &payload, &mut trace, started_at)
+}
+
+fn remove_on_connection(
+    conn: &mut Connection,
+    payload: &SharedMetadataRemoveTagPayload,
+    trace: &mut crate::operation_trace::OperationTrace,
+    started_at: Instant,
+) -> Result<String, String> {
+    let tag_name = payload.tag_name.trim().to_string();
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
+    let targets = find_targets(&tx, &tag_name).map_err(|error| error.to_string())?;
     if targets.is_empty() {
-        let signature = shared_metadata_signature_for_conn(&conn).map_err(|error| error.to_string())?;
+        let signature = shared_metadata_signature_for_transaction(&tx).map_err(|error| error.to_string())?;
         let timings = SharedMetadataTimings { elapsed: started_at.elapsed().as_millis(), rows: 0 };
         let mut state_signal = mutation_state_signal("removeTag", &payload.db_path, &payload.root_path, &payload.updated_at, &[], &signature);
         state_signal.trace = trace.context.clone();
@@ -310,7 +330,6 @@ pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandCo
         return trace.finish(serde_json::to_string(&result).map_err(|error| error.to_string()));
     }
 
-    let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut updated_ids = Vec::with_capacity(targets.len());
     {
         let mut update = tx.prepare(
@@ -359,17 +378,17 @@ pub fn remove_shared_metadata_tag_state_machine(config: &SharedMetadataCommandCo
             updated_ids.push(target.font_id.clone());
         }
     }
-    tx.commit().map_err(|error| error.to_string())?;
-    trace.committed();
-    set_meta(&conn, "updatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
-    set_meta(&conn, "writerHost", &payload.updated_by).map_err(|error| error.to_string())?;
+    set_meta(&tx, "updatedAt", &payload.updated_at).map_err(|error| error.to_string())?;
+    set_meta(&tx, "writerHost", &payload.updated_by).map_err(|error| error.to_string())?;
     if !payload.root_path.trim().is_empty() {
-        set_meta(&conn, "rootPath", &payload.root_path).map_err(|error| error.to_string())?;
+        set_meta(&tx, "rootPath", &payload.root_path).map_err(|error| error.to_string())?;
     }
 
     updated_ids.sort();
     updated_ids.dedup();
-    let signature = shared_metadata_signature_for_conn(&conn).map_err(|error| error.to_string())?;
+    let signature = shared_metadata_signature_for_transaction(&tx).map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    trace.committed();
     let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
 
     let timings = SharedMetadataTimings {
@@ -622,3 +641,7 @@ fn mutation_state_signal(
         metrics_dirty: changed,
     }
 }
+
+#[cfg(test)]
+#[path = "atomicity_tests.rs"]
+mod atomicity_tests;

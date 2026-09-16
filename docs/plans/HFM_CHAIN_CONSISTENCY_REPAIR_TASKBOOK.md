@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行入口
 
-- 文档版本1.2；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
+- 文档版本1.3；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
 - 建立基线：`58a3f25e632a2af1d49587ab065e0469da4bf330`；执行分支沿用`stage/09-preview-tags-app`。开工时重新核对远端、HEAD与工作树，不默认为本基线一直最新。
-- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03～R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
+- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04～R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
 - 证据：[全链路审计](../audits/HFM_FULL_CHAIN_AUDIT.md)、[只读观察器](../audits/observe-chain-audit.cjs)。F-01/F-02/F-03已有真实TS受控反例；F-04为源码与SQLite顺序重建证据，尚无原生Rust故障测试；F-05为跨层日志关联缺口。
 - 承接[原拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)的C-01～C-07、X-01～X-13与Windows待验项。本书是新增五项审计问题的执行入口，不重启D阶段，不宣称D-11完整关闭。
 - 用户要求：**日志最先实施并验收，后续修改须利用该日志验证真实链路。** 用户使用`npm run dev`，不要求build:win、安装包或重新安装。
@@ -188,15 +188,15 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 - R-01开工登记日志诊断的准确命令/路径，接入现有diagnostics与默认npm run verify；不能只写任务书或提供手工观察脚本。
 - R-02～R-06相应修复落地时，已修复反例转为必过门。真实Rust测试提供独立必需命令并作为完成条件；若verify本身不执行Cargo，必须明确分开报告，不能将其遗漏解释为通过。
 - 新增/迁移owner、协议输入与trace边界必须有结构/类型门；日志关联、字段隔离、事务和异步正确性另用真实行为门证明。所有权/类型/行为检查缺项不得判完成。
-- R-01的operation-chain门已接入默认verify；R-02～R-06业务修复门尚未创建，不能将文档存在等同于约束已经被CI执行。
+- R-01的operation-chain门已接入默认verify；R-02/R-03已有默认结构门和独立原生验收入口；R-04～R-06业务修复门尚未创建，不能将文档存在等同于约束已经被CI执行。
 
 ## 12. 状态登记
 
 | 任务 | 状态 | 执行基线/提交 | 自动/原生/实机结果 |
 | --- | --- | --- | --- |
 | R-01 日志前置 | 自动验证通过待实机 | 2cf2986起，本R-01独立提交 | TypeScript、105/105；Cargo退出127；Windows待验 |
-| R-02 本地标签事务 | 未开始 | — | — |
-| R-03 共享事务 | 未开始 | — | — |
+| R-02 本地标签事务 | 自动验证通过待实机 | cee7970 | 106/106；无Cargo，原生及Windows待验 |
+| R-03 共享事务 | 自动验证通过待实机 | cee7970起，本R-03独立提交 | 107/107及12个TS场景；Cargo缺失，原生/Windows待验 |
 | R-04 预览事务 | 未开始 | — | — |
 | R-05 标签确认生命周期 | 未开始 | — | — |
 | R-06 信号去重 | 未开始 | — | — |
@@ -351,3 +351,58 @@ Windows复验：连续改单个/批量本地标签，清空后目录保留，显
 - 修改仅7个白名单文件；未改schema、依赖版本/锁、共享/预览事务、信号去重/意图TTL、UI或controller所有权。无fixture重录；回滚使用本R-02原子提交的revert，R-01独立保留。
 
 - Create State再次返回Context Captured同时提示No active world model，项目级保存未确认；Git/README/任务书为权威记录。
+
+## 15. R-03 执行卡
+
+- 状态：自动验证通过待实机，原生必需门未执行，非完整关闭。实际HEAD cee79701ca72e63a4d829fdcccf93b099d449886；stage/09-preview-tags-app；fetch后与origin一致，开工工作树干净。
+- 前置：R-02默认106项通过记录；本轮重验R-01日志门和R-02结构门。继承无Cargo/Windows回执缺口，不把原生文件存在算验收。
+- 精确白名单：
+  - native-src/hfm-core-worker/src/shared_metadata/state_machine.rs
+  - native-src/hfm-core-worker/src/shared_metadata/signature.rs
+  - native-src/hfm-core-worker/src/shared_metadata/atomicity_tests.rs
+  - native-src/hfm-core-worker/tests/shared_metadata_atomicity.rs
+  - build/diagnostics/check-shared-metadata-rust-atomicity.cjs
+  - package.json
+  - README.md
+  - docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+- 实现范围：apply/remove-tag的行、ops、events、updatedAt/writerHost/rootPath、signature读纳入同一Immediate事务；删除目标读取在锁内。signature缺少meta记录仍兼容空值，真实SQL错误不再吞掉。空tag无数据库写入、无目标不更新metadata的旧语义保留。
+- 状态所有者：仍为原Rust命令；同文件私有连接函数供真实入口及commit故障测试共用，无新store/队列。lease、冲突合并、归档回放、Node路径、信号身份、UI及schema不改。
+- 旧证据：两个入口均先commit再写meta/读signature；本轮建立真实worker触发器和第二连接回读用例。原生旧失败/新通过如无法执行必须保持待验。
+- 测试计划：apply/delete的第N行、ops/events第N项、每项meta、signature错误、commit失败；字段隔离、旧base合并、空输入/无变化/删除；R-01日志和真实回读对照、原生退化与默认结构门分别报告。
+
+### R-03 接线范围补充
+
+追加精确白名单：src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts。已确认Rust成功结果之后3处普通appendStartupLog可抛入外层catch，rename/remove会把已提交root加入failed；属于本轮提交后失败语义。仅让这些成功分支的日志非干扰，保留真实写入错误和原显式回退政策。新增诊断同文件加载实际TS运行时，注入Rust结果/异常、日志和信号故障，验证不重放、不误报。
+
+
+### R-03 实现与证据边界
+
+- Rust apply/remove采用Immediate事务，行、revision、ops/events、updatedAt/writerHost/rootPath及结果signature一致提交；删除目标在锁内读取，避免读取后其他写者修改导致使用旧revision/旧标签集。无目标分支释放未写事务，不生成commit日志；空tag仍不创建数据库。
+- 新strict signature函数以Transaction引用为参数，缺少updatedAt记录返回原空值；SQL/类型错误传播并使写事务回滚。普通只读signature保留旧容错语义，计算格式metadata-v2及计数/最大revision算法未改。
+- 提交后仅保留原checkpoint（best effort）、内存结构序列化、日志与结果输出。返回对象由现有primitive/Vec/JSON Value组成，无新增自定义可失败Serialize；进程中断/输出管道故障仍是确认未知，不承诺绝对一次传输。R-01仍区分committed-error/unknown，不伪造rollback。主进程对3处Rust成功日志局部保护，真实写入异常保持失败且不进入Node回退。
+- 默认新诊断加载真实sharedMetadataMutationRuntime及其状态/匹配/信号模块；只替换Rust调用、文件缓存、数据库读取、锁和日志/通知外部端口。3方法×成功/原生异常/根离线/lease拒绝共12场景：成功后日志/通知抛错仍确认成功；原生异常保持失败；成功/原生异常每场景1次Rust调用；根离线和lease拒绝0次调用；全部0次Node写入、读取句柄关闭。恢复旧日志调用的行为变异被拒绝；此证据不代替RustSQLite。
+- 默认结构/算法门检查两写路径同一事务、严格signature、锁内目标读取、日志晚于commit、LF/CRLF；7种结构退化被拒绝，find_targets之后合并/字段保护/revision-op-ID/信号函数与基线hash一致，无fixture重录。
+- 原生新增4个集成测试（Windows3个，/dev/full仅Unix）和2个同生产连接函数测试：apply/delete各8种触发器故障（行/ops/events/3项meta/signature聚合/signature的meta类型）；延迟外键强制commit失败；第二连接回读行、ops、events、meta及本地域哨兵；陈旧base标签合并、收藏/保护字段隔离、无变化/空输入/删除、signature真实读命令对照及日志故障。原生测试尚未执行，不能把这些数量报告成通过数。
+- 独立--native入口先跑实际Cargo测试，再把真实worker回执送入生产共享signal运行时和R-01 validateNativeStages；隔离源码目录编译旧实现及updatedAt移出事务的变异，必须在“updatedAt leaked partial writes”数据库断言失败，编译失败不能算捕获。不会改工作树或正式字体库。
+- Context7确认OptionalExtension只把QueryReturnedNoRows转None、其他错误传播；返回的是当前文档，未提供0.32.1专页，真实版本兼容仍需Cargo编译。Mermaid已按实际事务边界更新；原lease/冲突/ops归档回放源码未改。
+
+Windows原生与开发态验收（不要求安装包）：
+
+```bat
+git pull --ff-only origin stage/09-preview-tags-app
+node build/diagnostics/check-shared-metadata-rust-atomicity.cjs --native
+set HFM_LOG_DETAIL=debug
+npm run dev
+```
+
+检查共享标签添加/重命名/删除与收藏、保护交错操作，关闭重开及共享根离线恢复。回执包含提交、操作顺序、实际反馈和operation-chain日志；F-01/F-02旧ack/TTL、F-03去重仍留后续任务，不以本轮事务修复宣称全部解决。
+
+
+### R-03 验证收尾
+
+- R-01日志门与R-02结构门前置重验退出0。完整npm run verify退出0，107/107，包含共享冲突/字段合并/ops回放/归档/回退/关闭原门；随后补充根离线/lease拒绝的定向门退出0，共12个真实TS场景、7个结构变异及1个日志行为变异。全量日志/tmp/r03-final-verify.log。
+- Electron/Vite生产构建退出0，364/1/196模块；main 1,164.33 kB；混淆退出0，原始输出3/4（一份旧renderer资源已带标记而跳过），本次三个真实入口均已核对安全标记。无安装包构建。
+- --native真实尝试退出1，spawnSync cargo ENOENT；尚未启动Rust。原生旧失败/新通过、真实SQLite及commit故障、原生日志因果、Windows/NAS回执全部待验；不可用TS或源码冻结替代。任务状态保留自动验证通过待实机。
+- 差异仅9个白名单文件；无依赖/锁/schema、预览事务、本地标签事务、IPC/preload、UI/CSS、业务ID变化。发生写入时结果序列化/通知均在成功commit之后，旧无trace消息仍兼容。revert本R-03提交即可回滚，不需撤销R-01/R-02。
+
+- Create State返回Context Captured但仍提示No active world model；HFM项目级保存未确认，Git/README/任务书保存完整交接。

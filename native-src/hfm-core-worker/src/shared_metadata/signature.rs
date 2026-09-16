@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension, Transaction};
 use serde::Deserialize;
 
 use super::types::{SharedMetadataCommandConfig, SharedMetadataSignatureResult, SharedMetadataTimings};
@@ -44,7 +44,17 @@ pub fn shared_metadata_signature(db_path: &str) -> Result<String, String> {
 }
 
 pub fn shared_metadata_signature_for_conn(conn: &Connection) -> rusqlite::Result<String> {
-    let updated_at = read_meta(conn, "updatedAt").unwrap_or_default();
+    // Keep the legacy read-only signature fallback; mutation receipts use the strict entry.
+    let updated_at = read_meta(conn, "updatedAt").ok().flatten().unwrap_or_default();
+    signature_with_updated_at(conn, &updated_at)
+}
+
+pub fn shared_metadata_signature_for_transaction(tx: &Transaction<'_>) -> rusqlite::Result<String> {
+    let updated_at = read_meta(tx, "updatedAt")?.unwrap_or_default();
+    signature_with_updated_at(tx, &updated_at)
+}
+
+fn signature_with_updated_at(conn: &Connection, updated_at: &str) -> rusqlite::Result<String> {
     let row = conn.query_row(
         "SELECT COUNT(*) AS count,
                 COALESCE(MAX(revision), 0) AS max_revision,
@@ -89,6 +99,6 @@ fn table_exists(conn: &Connection, table_name: &str) -> rusqlite::Result<bool> {
     Ok(count > 0)
 }
 
-fn read_meta(conn: &Connection, key: &str) -> Option<String> {
-    conn.query_row("SELECT value FROM meta WHERE key=?", [key], |row| row.get(0)).ok()
+fn read_meta(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
+    conn.query_row("SELECT value FROM meta WHERE key=?", [key], |row| row.get(0)).optional()
 }

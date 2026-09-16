@@ -87,6 +87,9 @@ function nodeSharedMetadataMutationProtocol(options: {
 
 export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutationRuntimeDeps) {
   const runtimeDeps = deps.runtimeDeps
+  const appendAfterCommit = (message: string): void => {
+    try { runtimeDeps.appendStartupLog(message) } catch { /* A committed write must not become a retryable failure because logging failed. */ }
+  }
 
   async function updateSharedFontMetadataEntries(
     options: SharedMetadataMutationOptions,
@@ -220,7 +223,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               updatedIds.push(...changedIds)
               const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, rustResult.stateSignal, root, 'apply', changedIds, 'rust-worker')
               if (rustResult.mutationProtocol) mutationProtocols.push(rustResult.mutationProtocol)
-              runtimeDeps.appendStartupLog(`shared metadata mutation wrote by rust: root=${root}, rows=${rustResult.written}, requested=${preparedRows.length}, ${sharedMetadataMutationSignalSummary(stateSignal, root)}`)
+              appendAfterCommit(`shared metadata mutation wrote by rust: root=${root}, rows=${rustResult.written}, requested=${preparedRows.length}, ${sharedMetadataMutationSignalSummary(stateSignal, root)}`)
               return
             }
           }
@@ -434,7 +437,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
                 ...rustResult.mutationProtocol,
                 mutationKind: rustResult.mutationProtocol.mutationKind || 'renameTag',
               })
-              runtimeDeps.appendStartupLog(`shared metadata tag renamed by rust: root=${root}, from=${oldTagName}, to=${newTagName}, rows=${rustResult.written}, ${sharedMetadataMutationSignalSummary(stateSignal, root)}`)
+              appendAfterCommit(`shared metadata tag renamed by rust: root=${root}, from=${oldTagName}, to=${newTagName}, rows=${rustResult.written}, ${sharedMetadataMutationSignalSummary(stateSignal, root)}`)
               return
             }
           }
@@ -555,7 +558,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               updatedIds.push(...rustResult.updatedIds)
               const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, rustResult.stateSignal, root, 'removeTag', rustResult.updatedIds, 'rust-worker')
               if (rustResult.mutationProtocol) mutationProtocols.push(rustResult.mutationProtocol)
-              runtimeDeps.appendStartupLog(`shared metadata tag removed by rust: root=${root}, tag=${tagName}, rows=${rustResult.updated}, ${sharedMetadataMutationSignalSummary(stateSignal, root)}`)
+              appendAfterCommit(`shared metadata tag removed by rust: root=${root}, tag=${tagName}, rows=${rustResult.updated}, ${sharedMetadataMutationSignalSummary(stateSignal, root)}`)
               return
             }
           }

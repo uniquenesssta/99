@@ -135,6 +135,7 @@
     "diagnostics:preview-index-owner": "node build/diagnostics/check-preview-index-owner.cjs",
     "diagnostics:preview-batch-read": "node build/diagnostics/check-preview-batch-read.cjs",
     "test:local-tag-hydration-rust": "cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests",
+    "diagnostics:shared-metadata-rust-atomicity": "node build/diagnostics/check-shared-metadata-rust-atomicity.cjs",
     "diagnostics:local-tag-rust-atomicity": "node build/diagnostics/check-local-tag-rust-atomicity.cjs",
     "diagnostics:operation-chain": "node build/diagnostics/check-operation-chain.cjs"
   },

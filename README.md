@@ -64,6 +64,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-16：R-03将Rust共享元数据行、ops/events、metadata和signature纳入一致事务；删除目标/revision在锁内读取，普通只读signature保持旧兼容。修复Rust提交成功后日志异常误报失败，新增原生故障和默认门；verify 107/107、12个TS场景及三端构建通过，Rust/Windows原生仍待验。见[执行卡](docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#15-r-03-执行卡)。
+
 - 2026-09-16：R-02将Rust本地标签绑定、目录和localTagsUpdatedAt纳入同一Immediate事务，并把目录/绑定读取移入事务；新增真实worker故障测试、commit失败测试及原生旧实现/退化验收入口。默认verify 106/106；本环境无Cargo，原生编译/测试与Windows开发态仍待验，不代表问题已完整关闭。见[执行卡](docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#14-r-02-执行卡)。
 
 - 2026-09-16：R-01新增写入关联日志，贯通队列意图/重试、两种preload、IPC、Node/Rust提交证据、信号去重与页面状态应用；详细模式使用既有startup日志，新增容量限制和非干扰验收。默认verify为105/105，三端构建与混淆通过；原生故障测试已加入，Rust/Windows实机结果待验；见[修复任务书](docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#13-r-01-执行卡)。
