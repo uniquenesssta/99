@@ -137,8 +137,9 @@ function testStaticGenerationAndWiring() {
   assert(coalescer.includes('if (map.get(key) === promise) map.delete(key)'), 'preview coalescer cleanup is not identity-safe')
 
   const storage = read('src/main/preview/runtime/previewCacheStorageRuntime.ts')
-  assert(storage.includes('readStatusGeneration'), 'preview index status cache is missing generation tracking')
-  assert(storage.includes('if (readStatusInFlight.get(statusCacheKey) === readTask)'), 'preview status cleanup is not identity-safe')
+  const indexOwner = read('src/main/preview/runtime/previewIndexAccessRuntime.ts')
+  assert(indexOwner.includes('readStatusGeneration'), 'preview index status cache is missing generation tracking')
+  assert(indexOwner.includes('if (readStatusInFlight.get(statusCacheKey) === readTask)'), 'preview status cleanup is not identity-safe')
   assert(storage.includes('invalidateLibraryShellCache'), 'preview storage is missing library-shell invalidation')
   const routing = read('src/main/preview/runtime/previewStorageRoutingRuntime.ts')
   assert(routing.includes('libraryShellGeneration'), 'preview library-shell cache is missing generation protection')

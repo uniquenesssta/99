@@ -1,0 +1,19 @@
+{
+  "baseline": "38a3f88de0977a699e66045ebd0ab8a07b2486e8",
+  "movedBodies": {
+    "openPreviewIndexDb": "dbf7daed42ce3065dcb1a05bd1511c52566177ed7b2dcc878051180341d71b73",
+    "readStatusCacheKey": "9aded4c22e35a8f4bd50a0f936a0008f030fe4e5fc2af021f82ca193642f00cd",
+    "readStatusToken": "a2d2cadd827feea053307ccf74e1e6c3ed3695e083ab84a17506308d7b909cb7",
+    "invalidateReadStatusKey": "348d67f96dee8706e3efa7db7c55ef74541620f823006ffb355123718af8aa52",
+    "forgetReadStatus": "625edcf789afce7aef4bf9ba8a2c2db46a97b9bdbae20d9685f61240f4288856",
+    "rememberReadStatus": "4d2300f23f59bfdc29169a0fc2433e964a1faec2169e441a210fd14045a20bf6",
+    "readPreviewCacheIndexStatus": "4feb205b48ba34facea73f6a23fcd7de5e8c3df7f5a3fa77d64bf3b839a7ce9b",
+    "readPreviewCacheIndexStatusUncached": "52f9899aa42ee38d8dbc48dbd351ab363a0f134764b01b5dbdd36ab025a79f79",
+    "writePreviewCacheIndex": "370b1e7e7d8f9ddeac20bb9154927a62f6315164872bd86fb332bc8de9c13541",
+    "deletePreviewCacheIndex": "04379451428463a97dc6915d13219491aa0af1232207a0c8038b111b88e3b1dd"
+  },
+  "batchBodiesAfterScope": {
+    "getPreviewCacheStatus": "8a4c4b1d75dd3d27781304f327bdafdc05672840def6f1b00e8a44ef40e569c4",
+    "readCachedPreviewImages": "8a41cb861255db40b8677b0459176a820af1fbe3141fdf3f2ce37398c88a71b1"
+  }
+}

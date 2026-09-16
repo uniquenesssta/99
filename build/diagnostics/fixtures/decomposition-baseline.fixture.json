@@ -11,17 +11,7 @@
         "runStoragePreviewCacheIo",
         "rememberSharedPresence",
         "forgetSharedPresence",
-        "openPreviewIndexDb",
-        "readStatusCacheKey",
-        "readStatusToken",
-        "invalidateReadStatusKey",
-        "forgetReadStatus",
-        "rememberReadStatus",
-        "readPreviewCacheIndexStatus",
-        "readPreviewCacheIndexStatusUncached",
-        "writePreviewCacheIndex",
         "schedulePrefetchForStatusMisses",
-        "deletePreviewCacheIndex",
         "getPreviewCacheStatus",
         "readCachedPreviewImages"
       ],
@@ -47,7 +37,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "8131134f5be79ccda14e9a14aa5aae9dc3c78a3b85538578dd91e14c21ea902c"
+      "tokenHash": "26a4b90440448b82a8686015e4f9e7526c0d550928cc99c8e1e80601944efb42"
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [
@@ -955,6 +945,37 @@
       "viewGroups": [],
       "ipcChannels": [],
       "tokenHash": "eda92ade0031edeb387525c0647802bb5d5011e4a23c0554f30ea0fd3f33e808"
+    },
+    "src/main/preview/runtime/previewIndexAccessRuntime.ts": {
+      "functions": [
+        "createPreviewIndexAccessRuntime",
+        "openPreviewIndexDb",
+        "readStatusCacheKey",
+        "readStatusToken",
+        "invalidateReadStatusKey",
+        "forgetReadStatus",
+        "rememberReadStatus",
+        "readPreviewCacheIndexStatus",
+        "readPreviewCacheIndexStatusUncached",
+        "writePreviewCacheIndex",
+        "deletePreviewCacheIndex",
+        "withPreviewIndexDb"
+      ],
+      "owners": [],
+      "exports": [
+        "createPreviewIndexAccessRuntime"
+      ],
+      "surfaces": {
+        "createPreviewIndexAccessRuntime": [
+          "readPreviewCacheIndexStatus",
+          "writePreviewCacheIndex",
+          "deletePreviewCacheIndex",
+          "withPreviewIndexDb"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "42abf4a72dee3aff694371bec7f02034561ea3f37e19aae4e6b1bf065b2dda1a"
     }
   }
 }

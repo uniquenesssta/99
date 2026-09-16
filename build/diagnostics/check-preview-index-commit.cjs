@@ -5,10 +5,10 @@ const file = 'src/main/preview/runtime/previewCacheStorageRuntime.ts'
 const gate = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
 const tick = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
 function harness(mode, transform = x => x) {
-  const state = { value: 'missing', path: '/old.png', opens: 0, closes: 0, fail: false, hold: null, readHold: null, presenceFail: false }
+  const state = { value: 'missing', path: '/old.png', opens: 0, closes: 0, fail: false, hold: null, readHold: null, presenceFail: false, evictions: 0 }
   const mocks = {}
   const factories = { previewCacheRootAvailabilityRuntime: 'createPreviewCacheRootAvailabilityRuntime', previewCacheTierRuntime: 'createPreviewCacheTierRuntime', previewCacheSharedPresenceRuntime: 'createPreviewCacheSharedPresenceRuntime', previewCachePresenceIndexRuntime: 'createPreviewCacheSharedPresenceIndexRuntime', previewCacheMetaRuntime: 'createPreviewCacheMetaRuntime', previewCacheHydrationRuntime: 'createPreviewCacheHydrationRuntime', previewCachePrefetchRuntime: 'createPreviewCachePrefetchRuntime', previewLocalCacheEvictionRuntime: 'createPreviewLocalCacheEvictionRuntime' }
-  const services = { ensureRootPreviewCacheAvailable: async () => true, markRootPreviewCacheUnavailable() {}, rememberSharedPresence() {}, forgetSharedPresence() {}, async rememberSharedPresenceIndex() { if (state.presenceFail) throw Error('presence') }, async forgetSharedPresenceIndex() { if (state.presenceFail) throw Error('presence') }, schedulePreviewLocalCacheEviction() {} }
+  const services = { ensureRootPreviewCacheAvailable: async () => true, markRootPreviewCacheUnavailable() {}, rememberSharedPresence() {}, forgetSharedPresence() {}, async rememberSharedPresenceIndex() { if (state.presenceFail) throw Error('presence') }, async forgetSharedPresenceIndex() { if (state.presenceFail) throw Error('presence') }, schedulePreviewLocalCacheEviction() { state.evictions++ } }
   for (const [f, factory] of Object.entries(factories)) mocks[`./${f}`] = { [factory]: () => services }
   for (const id of ['./previewInputPolicy', '../../path/fontPathPolicy', './previewCacheKeyRuntime', './previewCachedImageReadBatchRuntime', './previewInstalledFontRouteRuntime']) mocks[id] = {}
   const deadline = load('src/main/path/ioDeadlineRuntime.ts')
@@ -30,9 +30,14 @@ function harness(mode, transform = x => x) {
     options.runRustPreviewCacheApply = async ({ rows }) => { await waitOpen(); options.upsertPreviewCacheRows(null, rows); return true }
     options.runRustPreviewCacheDelete = async () => { await waitOpen(); if (state.fail) throw Error('delete'); state.value = null; return true }
   }
-  const runtime = load(file, mocks, transform).createPreviewCacheStorageRuntime(options)
+  let indexRuntime
+  mocks['./previewIndexAccessRuntime'] = { createPreviewIndexAccessRuntime: (...args) => {
+    indexRuntime = load('src/main/preview/runtime/previewIndexAccessRuntime.ts', mocks, transform).createPreviewIndexAccessRuntime(...args)
+    return indexRuntime
+  } }
+  const runtime = load(file, mocks).createPreviewCacheStorageRuntime(options)
   const storage = mode === 'local' ? { storage: 'local', dir: '/', identity: 'a' } : { storage: 'root', rootPath: '/root', indexDbPath: '/root/index.db', dir: '/', identity: 'a' }
-  return { state, options, read: (path = '/old.png') => runtime.readPreviewCacheIndexStatus(storage, 'key', path), write: (path = '/old.png') => runtime.writePreviewCacheIndex(storage, 'key', { outputPath: path, status: 'ok' }), remove: () => runtime.deletePreviewCacheIndex(storage, 'key') }
+  return { state, options, indexRuntime, storage, read: (path = '/old.png', key = 'key') => runtime.readPreviewCacheIndexStatus(storage, key, path), write: (path = '/old.png') => runtime.writePreviewCacheIndex(storage, 'key', { outputPath: path, status: 'ok' }), remove: () => runtime.deletePreviewCacheIndex(storage, 'key') }
 }
 async function commitCases(transform) {
   for (const mode of ['local', 'node-root', 'rust']) for (const kind of ['write', 'remove']) {
@@ -114,4 +119,5 @@ async function main() {
   await assert.rejects(() => lateCases(s => s.replace('if (readStatusGeneration.get(statusCacheKey) !== taskGeneration)', 'if (false)')), assert.AssertionError)
   console.log('[diagnostics:preview-index-commit] local/root Node/Rust write/delete, before/during/after, reversed reads, late timeout success/rejection, retry, path change, close counts; three mutants rejected')
 }
-main().catch(error => { console.error(error); process.exitCode = 1 })
+module.exports = { harness }
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })

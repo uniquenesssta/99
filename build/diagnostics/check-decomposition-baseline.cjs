@@ -17,6 +17,7 @@ function load(file, mocks = {}, transform = x => x) {
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
   vm.runInNewContext(code, { exports, require(id) {
     if (Object.hasOwn(mocks, id)) return mocks[id]
+    if (id === './previewIndexAccessRuntime') return load('src/main/preview/runtime/previewIndexAccessRuntime.ts', mocks)
     if (id === './previewStorageRoutingRuntime') return load('src/main/preview/runtime/previewStorageRoutingRuntime.ts', mocks)
     if (id.startsWith('node:')) return require(id)
     if (id === './fontUserIntentRuntime') return load('src/renderer/src/fontUserIntentRuntime.ts')

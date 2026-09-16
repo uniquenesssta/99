@@ -18,7 +18,7 @@ const fixtures = [
   },
   {
     script: 'check-preview-cache-unavailable-root.cjs',
-    source: 'src/main/preview/runtime/previewCacheStorageRuntime.ts',
+    source: 'src/main/preview/runtime/previewIndexAccessRuntime.ts',
     before: 'rootAvailability.ensureRootPreviewCacheAvailable(\n        storage.rootPath',
     after: 'Promise.resolve(\n        storage.rootPath',
     error: 'root read/write paths missing availability short-circuit'

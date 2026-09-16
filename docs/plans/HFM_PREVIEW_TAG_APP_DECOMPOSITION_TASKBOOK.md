@@ -354,7 +354,7 @@ npm run dev
 | D-02 | 自动验证通过待实机 | §18 同一提交 | typecheck / 97项 / 三端构建通过 | Windows开发模式待复验 |
 | D-03 | 自动验证通过待实机 | §19 同一提交，§20构建回执 | typecheck、98项；用户确认构建成功 | Rust定向用例与完整GUI待回执，用户授权先继续 |
 | D-04 | 自动验证通过待实机 | §20 同一提交 | typecheck、99项、三端构建通过 | Windows开发模式复验待回执 |
-| D-05 | 未开始 | — | — | — |
+| D-05 | 自动验证通过待实机 | §21 同一提交 | typecheck、100项、三端构建通过 | Windows开发模式待复验 |
 | D-06 | 未开始 | — | — | — |
 | D-07 | 未开始 | — | — | — |
 | D-08 | 未开始 | — | — | — |
@@ -936,3 +936,25 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 - Mermaid已更新真实所有权关系。发布为单一迁移提交，`git log -1 --format=%H -- src/main/preview/runtime/previewStorageRoutingRuntime.ts`可定位SHA；回滚用该SHA revert，不改历史。
 - Windows使用`git pull`后`npm run dev`；观察目录切换、快速滚动、预览生成与详情。下一项D-05提取索引访问所有者，必须继承D-02门和本轮路由门。
 - Create State再次返回无active world model，未取得项目级保存确认；Git、README和本执行卡为权威交接。
+
+## 21. D-05 执行卡
+
+- 状态：自动验证通过待实机；基线 `38a3f88de0977a699e66045ebd0ab8a07b2486e8`，分支 `stage/09-preview-tags-app`，开工工作区干净、远端一致。继承用户先推进、其他实机问题后查的授权；不扩大D-03/D-04验收声明。
+- 纯迁移。精确白名单：`src/main/preview/runtime/previewCacheStorageRuntime.ts`、`src/main/preview/runtime/previewIndexAccessRuntime.ts`（新索引所有者）；`build/diagnostics/check-preview-index-owner.cjs`、`build/diagnostics/fixtures/preview-index-owner.fixture.json`（新迁移/行为门）；`build/diagnostics/check-preview-index-commit.cjs`（D-02变异改为注入新所有者、复用外部I/O夹具）；`build/diagnostics/check-decomposition-baseline.cjs`、`build/diagnostics/fixtures/decomposition-baseline.fixture.json`（真实加载、精确迁移清单）；`build/diagnostics/check-inflight-cache-lifecycle.cjs`（缓存断言移到真实所有者）；`package.json`、`README.md`、本任务书。
+- 所有权：三个索引Map与单项读写删、DB打开/关闭进入新模块；原组合根持有唯一availability/tier/eviction及I/O deadline，注入窄命令。hydration仍仅拿读/写命令。批量SQL本轮不迁移，改用withPreviewIndexDb回调作用域，DB关闭由新所有者统一管理，不向门面返回原始句柄/close标志。
+- 验收：原单项函数体不变，D-02全矩阵保持；容量512、并发复用、Rust读取null/失败/超时、DB作用域成功/失败关闭、本地共享句柄不关闭、eviction时机与公开面冻结；D-04路由与全量回归。
+- 白名单补充：`build/diagnostics/check-preview-local-cache-eviction.cjs`，其旧断言把“创建eviction实例”和“写入后调度”都定位在原文件；前者留组合根，后者应迁至索引所有者。仅调整断言归属，行为另由新门真实执行覆盖。
+
+### D-05 迁移与验证证据
+
+- 原门面1150→782行，新索引模块429行。10个单项/缓存/打开DB函数体从开工HEAD提取指纹，迁移后逐项一致；三个Map只留索引所有者内，返回面仅read/write/delete/withPreviewIndexDb四个命令。IndexOptions使用原options对象的11字段Pick视图，不复制配置以保留调用语义。
+- 批量SQL两个函数仅把原open/try/finally替换为withPreviewIndexDb的await回调；fixture从旧源码应用这两处限定替换后计算函数指纹，禁止顺带修改批量筛选、touch、补齐或分块。局部DB引用限定在回调中，不外返句柄或close标志。
+- 新行为门真实创建组合根与索引实例，只控制外部I/O：容量512及淘汰、in-flight复用和失败后重试、Rust读null转Node/抛错及超时不转Node、晚拒绝、原eviction时机；共享DB在异步回调成功/拒绝/初始化失败均按所有权关闭，本地长期句柄不关闭。
+- 三个变异（去容量限制、无条件关闭本地DB、提前关闭未完成回调）被拒绝。D-02原3变异与写删晚完成矩阵仍通过；D-04路由及Windows路径规则门保持。冻结清单只迁移索引10函数归属和原文件hash，原公开门面和路由指纹不变。
+- 对应X-12；X-11沿用D-04路由证据。GUI和D-03定向Rust未回执部分继续继承，不能把I/O夹具测试当作真实共享盘/Windows验收。
+- Mermaid已同步真实单一索引所有者、窄命令与DB作用域链路。发布为独立迁移提交；`git log -1 --format=%H -- src/main/preview/runtime/previewIndexAccessRuntime.ts`定位SHA，回滚用该SHA revert，不改历史。
+- Windows按原开发模式`git pull`后`npm run dev`复验；下一项D-06批量预览查询与门面收敛，继承D-02/D-04/D-05门。
+- 全量发现确定的诊断归属遗漏：`check-preview-cache-unavailable-root.cjs`的单项storage.rootPath检查已搬入新索引文件，`check-diagnostic-line-endings.cjs`仍在门面注入该变异，导致anchor missing。白名单追加这两个精确文件，仅同步读源与变异源，不删除断言或变异。
+
+- 最终验证：`npm run verify`退出0（TypeScript、100/100）；三端构建356/1/191模块退出0；git diff --check通过。首次全量的旧变异定位失败已修正并完整复跑。最终14个白名单文件，不含构建产物和依赖。
+- Create State返回无active world model，未确认项目级保存；Git、README、本执行卡为权威交接。

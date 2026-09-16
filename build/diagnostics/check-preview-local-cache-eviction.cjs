@@ -42,8 +42,9 @@ function testEvictionOnlyTargetsLocalPreviewCacheAndCleansIndex() {
 function testStorageRuntimeSchedulesEvictionAfterLocalOkWrites() {
   const text = readText('src/main/preview/runtime/previewCacheStorageRuntime.ts')
   assert(text.includes('createPreviewLocalCacheEvictionRuntime'), 'storage runtime missing local eviction runtime')
-  assert(text.includes('evictionRuntime.schedulePreviewLocalCacheEviction'), 'storage runtime does not schedule local eviction')
-  assert(text.includes('storage.storage === \"local\"') && text.includes('data.status === \"ok\"'), 'storage runtime should schedule eviction only for local ok writes')
+  const indexOwner = readText('src/main/preview/runtime/previewIndexAccessRuntime.ts')
+  assert(indexOwner.includes('evictionRuntime.schedulePreviewLocalCacheEviction'), 'storage runtime does not schedule local eviction')
+  assert(indexOwner.includes('storage.storage === \"local\"') && indexOwner.includes('data.status === \"ok\"'), 'storage runtime should schedule eviction only for local ok writes')
 }
 
 function testPackageScriptAndVersion() {
