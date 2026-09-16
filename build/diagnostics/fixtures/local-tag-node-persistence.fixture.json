@@ -1,0 +1,35 @@
+{
+  "baseline": "5d7a1aabcbbb2475e7685c9e98b25ccc9d5dec9a",
+  "files": {
+    "src/main/library/runtime/localFontTagNodePersistenceRuntime.ts": {
+      "deleteLocalTagForFontIdentity": "341dc455fe2f4521b9004511c13a23fb272fa786c9135151f835d900ba08defd",
+      "cleanKnownTagNames": "cf673e2b0c64c7f4bd937ed775c8be631c31a76deebd94b19ce30d4abf5ecd7e",
+      "readLocalTagCatalog": "6987cd82f1a559586b425c13eeb815bf8e5279f33b4fdfaa4a83eb0d8ce31f66",
+      "readBoundLocalTags": "dd71816ec83222e94f7c0adfd890fd4e7d33aeae26aff6bb02dd2aeeb9cfc2a9",
+      "mergeKnownLocalTags": "8ea8f9b5770677c5f8a2106fb369a26db4bb2be850d0deca7cdf7259b3f3d857",
+      "readPersistedLocalTags": "22ea9c8fd7b0b7821aa71c6300e5970b4a861730b49e9d814faa6058f30826af",
+      "retainedEmptyLocalTags": "80fe20ba72859bc0fb32f3b33df00dde5ba6b7ccd11d8e555697507a7046b7eb",
+      "saveKnownLocalTags": "ca7ad5725df1c58179bf15600922beaf1f2351258f41d821b8cb287673b3ec44",
+      "cleanLocalTagNames": "cf673e2b0c64c7f4bd937ed775c8be631c31a76deebd94b19ce30d4abf5ecd7e",
+      "insertLocalTagsForFont": "72c4658b60a0fc18aa973cc926d0953b5719df235074b5e4cc31dc7d0c26203f",
+      "localTagsByFontIds": "d1410fec1602b6eb7250d1c90c477eab152603768ead9ff2f63ab47411d3aba1",
+      "hydrateLocalTagsForFonts": "ee476d8aa1969473d18d89b509f837571516fcf5dd302c052972c4218286977d"
+    },
+    "src/main/library/runtime/localFontTagsRuntime.ts": {
+      "knownTagLifecycle": "f259278890543ab0920d2c39b7b98dd6571a9e5d5b15e772be9126d00f94782d",
+      "logKnownLocalTagLifecycle": "f8df94aa34a39759f4ffb05af085d9e99c0f54486f4dbbd2940ba39644fdf5a9",
+      "rustLocalTagReadRow": "6f476772233cf9b990aa0d1d485dd892d8bf608ac3c98764fa3b034033beb8a0",
+      "rustLocalTagRow": "9eefef45ecfa1aaa142d4350ab062b62d735bcd75ba3aea2a6fcdbbf41f80769",
+      "emitLocalTagsMutationStateSignal": "4762eba34f4255c0f49f33d72057367cadb9adf6863915c1dc9292b042f17f85",
+      "nodeLocalTagsMutationProtocol": "043ff01cff1a86580c72257af7d64565e554a7349379205cfeb5b0e372853855",
+      "tryReadLocalTagsWithRust": "1c1eae36adc0f37a2338cdac70e6ad28e57573fd678fe85ed0d051b313b7f874",
+      "trySetLocalTagsWithRust": "f7ddecbcbe3893fca82999334e75c402202f8aaa8ddbcaf423650647d6e8af73",
+      "tryDeleteLocalTagWithRust": "2010a9088b4baabcd0a9966c20d53e4a1534141dcb013be997263074b314215e"
+    }
+  },
+  "transactions": [
+    "41a493e243c60d07511b2b4c1d99e556d8c5dea0d3b0ab4d15cc25bf5bf44990",
+    "f12e5d0b0a1a49833174208d2bc5fd9e4cc4b38da520cfceb0b1e5f00cace387",
+    "00d969c1180b1e43e4fe737bb5855b83c0ad12667ec56e3430f46b86ac12cf9c"
+  ]
+}

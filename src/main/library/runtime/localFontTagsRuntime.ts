@@ -15,6 +15,8 @@ import {
   nodeStateFallbackCompatibilityAllowed,
   nodeStateFallbackDeniedMessage,
 } from "../../rust-core/nodeStateFallbackCompatibilityRuntime";
+import { createLocalFontTagNodePersistenceRuntime, cleanKnownTagNames, cleanLocalTagNames } from "./localFontTagNodePersistenceRuntime";
+
 import type { SqliteDb } from "./libraryRuntimeTypes";
 
 export type RustLocalTagsReadInput = {
@@ -95,18 +97,6 @@ export type LocalFontTagsRuntimeDeps = {
   onLocalTagsMutationStateSignal?: (signal: RustLocalTagsMutationStateSignal) => void
 }
 
-function deleteLocalTagForFontIdentity(
-  db: SqliteDb,
-  item: Pick<FontItem, "id" | "sourceId" | "path">,
-): void {
-  const aliases = localTagFontIdAliases(item);
-  const fontPath = localTagFontPath(item);
-  if (aliases.length) {
-    db.prepare(`DELETE FROM local_font_tags WHERE font_id IN (${aliases.map(() => "?").join(",")})`).run(...aliases);
-  }
-  if (fontPath) db.prepare("DELETE FROM local_font_tags WHERE font_path = ?").run(fontPath);
-}
-
 
 function knownTagLifecycle(previousInput: string[] | undefined, nextInput: string[] | undefined): {
   previous: string[]
@@ -161,68 +151,6 @@ function logKnownLocalTagLifecycle(options: {
   }
 }
 
-function cleanKnownTagNames(tagNamesInput: string[]): string[] {
-  return Array.from(
-    new Set(
-      (tagNamesInput || [])
-        .map((tag) => String(tag || "").trim())
-        .filter(Boolean),
-    ),
-  ).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
-}
-
-function readLocalTagCatalog(db: SqliteDb): string[] {
-  const row = db
-    .prepare("SELECT value FROM app_state WHERE key = ?")
-    .get("localTags") as { value?: string } | undefined;
-  if (!row?.value) return [];
-  try {
-    const parsed = JSON.parse(row.value);
-    return cleanKnownTagNames(Array.isArray(parsed) ? parsed : []);
-  } catch {
-    return [];
-  }
-}
-
-function readBoundLocalTags(db: SqliteDb): string[] {
-  const rows = db
-    .prepare("SELECT DISTINCT tag_name FROM local_font_tags WHERE TRIM(COALESCE(tag_name, '')) <> '' ORDER BY tag_name")
-    .all() as Array<{ tag_name: string }>;
-  return cleanKnownTagNames(rows.map((row) => row.tag_name));
-}
-
-function mergeKnownLocalTags(...sources: string[][]): string[] {
-  return cleanKnownTagNames(sources.flat());
-}
-
-function readPersistedLocalTags(db: SqliteDb): string[] {
-  return mergeKnownLocalTags(readLocalTagCatalog(db), readBoundLocalTags(db));
-}
-
-function retainedEmptyLocalTags(previousBound: string[], nextBound: string[], knownTags: string[]): string[] {
-  const nextBoundSet = new Set(cleanKnownTagNames(nextBound));
-  const knownSet = new Set(cleanKnownTagNames(knownTags));
-  return cleanKnownTagNames(previousBound).filter((tag) => !nextBoundSet.has(tag) && knownSet.has(tag));
-}
-
-function saveKnownLocalTags(db: SqliteDb, tagNames: string[]): void {
-  db.prepare("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)").run(
-    "localTags",
-    JSON.stringify(cleanKnownTagNames(tagNames)),
-  );
-}
-
-function cleanLocalTagNames(tagNamesInput: string[]): string[] {
-  return Array.from(
-    new Set(
-      (tagNamesInput || [])
-        .map((tag) => String(tag || "").trim())
-        .filter(Boolean),
-    ),
-  ).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
-}
-
-
 function rustLocalTagReadRow(item: Pick<FontItem, "id" | "sourceId" | "path">) {
   const aliases = localTagFontIdAliases(item);
   const storageId = localTagFontStorageId(item);
@@ -246,28 +174,9 @@ function rustLocalTagRow(item: FontItem, tagNames: string[]) {
   };
 }
 
-function insertLocalTagsForFont(
-  db: SqliteDb,
-  item: FontItem,
-  tagNames: string[],
-  updatedAt: string,
-): void {
-  const aliases = localTagFontIdAliases(item);
-  const storageId = localTagFontStorageId(item);
-  if (storageId && !aliases.includes(storageId)) aliases.push(storageId);
-  const cleanAliases = Array.from(new Set(aliases.map((id) => String(id || "").trim()).filter(Boolean)));
-  if (!cleanAliases.length) return;
-  const fontPath = localTagFontPath(item);
-  const insert = db.prepare(
-    "INSERT OR REPLACE INTO local_font_tags (font_id, font_path, tag_name, updated_at) VALUES (?, ?, ?, ?)",
-  );
-  for (const id of cleanAliases) {
-    for (const tag of tagNames) insert.run(id, fontPath, tag, updatedAt);
-  }
-}
 
 export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
-  const { openLibraryDb } = deps;
+  const nodePersistence = createLocalFontTagNodePersistenceRuntime(deps.openLibraryDb);
 
   function emitLocalTagsMutationStateSignal(
     kind: string,
@@ -397,22 +306,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
       detail: `ids=${ids.length}`,
     });
 
-    const db = await openLibraryDb();
-    const result: Record<string, string[]> = {};
-    const chunkSize = 500;
-    for (let index = 0; index < ids.length; index += chunkSize) {
-      const chunk = ids.slice(index, index + chunkSize);
-      const rows = db
-        .prepare(
-          `SELECT font_id, tag_name FROM local_font_tags WHERE font_id IN (${chunk.map(() => "?").join(",")}) ORDER BY tag_name`,
-        )
-        .all(...chunk) as Array<{ font_id: string; tag_name: string }>;
-      for (const row of rows) {
-        if (!result[row.font_id]) result[row.font_id] = [];
-        result[row.font_id].push(row.tag_name);
-      }
-    }
-    return result;
+    return nodePersistence.localTagsByFontIds(ids);
   }
 
   async function hydrateLocalTagsForFonts(items: FontItem[]): Promise<FontItem[]> {
@@ -438,69 +332,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
       detail: `items=${items.length}`,
     });
 
-    const aliasToRuntimeIds = new Map<string, Set<string>>();
-    const pathToRuntimeIds = new Map<string, Set<string>>();
-    const ids: string[] = [];
-    const paths: string[] = [];
-    for (const item of items) {
-      if (!item?.id) continue;
-      const runtimeId = item.id;
-      for (const id of localTagFontIdAliases(item)) {
-        if (!aliasToRuntimeIds.has(id)) {
-          ids.push(id);
-          aliasToRuntimeIds.set(id, new Set());
-        }
-        aliasToRuntimeIds.get(id)!.add(runtimeId);
-      }
-      const fontPath = localTagFontPath(item);
-      if (fontPath) {
-        if (!pathToRuntimeIds.has(fontPath)) {
-          paths.push(fontPath);
-          pathToRuntimeIds.set(fontPath, new Set());
-        }
-        pathToRuntimeIds.get(fontPath)!.add(runtimeId);
-      }
-    }
-
-    const tagMap: Record<string, string[]> = {};
-    const addTag = (runtimeId: string, tagName: string): void => {
-      if (!runtimeId || !tagName) return;
-      if (!tagMap[runtimeId]) tagMap[runtimeId] = [];
-      if (!tagMap[runtimeId].includes(tagName)) tagMap[runtimeId].push(tagName);
-    };
-
-    const db = await openLibraryDb();
-    const chunkSize = 500;
-    for (let index = 0; index < ids.length; index += chunkSize) {
-      const chunk = ids.slice(index, index + chunkSize);
-      const rows = db
-        .prepare(
-          `SELECT font_id, tag_name FROM local_font_tags WHERE font_id IN (${chunk.map(() => "?").join(",")}) ORDER BY tag_name`,
-        )
-        .all(...chunk) as Array<{ font_id: string; tag_name: string }>;
-      for (const row of rows) {
-        for (const runtimeId of aliasToRuntimeIds.get(row.font_id) || [])
-          addTag(runtimeId, row.tag_name);
-      }
-    }
-    for (let index = 0; index < paths.length; index += chunkSize) {
-      const chunk = paths.slice(index, index + chunkSize);
-      const rows = db
-        .prepare(
-          `SELECT font_path, tag_name FROM local_font_tags WHERE font_path IN (${chunk.map(() => "?").join(",")}) ORDER BY tag_name`,
-        )
-        .all(...chunk) as Array<{ font_path: string; tag_name: string }>;
-      for (const row of rows) {
-        for (const runtimeId of pathToRuntimeIds.get(row.font_path) || [])
-          addTag(runtimeId, row.tag_name);
-      }
-    }
-
-    for (const tags of Object.values(tagMap)) tags.sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
-    return items.map((item) => ({
-      ...item,
-      localTagNames: tagMap[item.id] || [],
-    }));
+    return nodePersistence.hydrateLocalTagsForFonts(items);
   }
 
   async function setLocalFontTags(
@@ -548,20 +380,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
       detail: `items=1`,
     });
 
-    const db = await openLibraryDb();
-    const previousKnownTags = readPersistedLocalTags(db);
-    const previousBoundTags = readBoundLocalTags(db);
-    let knownTags: string[] = [];
-    let retainedEmptyTags: string[] = [];
-    const tx = db.transaction(() => {
-      deleteLocalTagForFontIdentity(db, item);
-      insertLocalTagsForFont(db, item, tagNames, now);
-      const nextBoundTags = readBoundLocalTags(db);
-      knownTags = mergeKnownLocalTags(previousKnownTags, nextBoundTags, cleanLocalTagNames(tagNames));
-      retainedEmptyTags = retainedEmptyLocalTags(previousBoundTags, nextBoundTags, knownTags);
-      saveKnownLocalTags(db, knownTags);
-    });
-    tx();
+    const { previousKnownTags, knownTags, retainedEmptyTags } = (await nodePersistence.openWriter()).setLocalFontTags(item, tagNames, now);
     logKnownLocalTagLifecycle({ appendStartupLog: deps.appendStartupLog, kind: 'set', source: 'node-fallback', changedIds: [item.id], previousKnownTags, knownTags, retainedEmptyTags });
     const message = `本地标签已更新：${item.fileName || item.id}`;
     const stateSignal = emitLocalTagsMutationStateSignal('set', now, [item.id], knownTags, undefined, 'node-fallback');
@@ -645,45 +464,11 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
       detail: `items=${items.length}`,
     });
 
-    const db = await openLibraryDb();
-    const previousKnownTags = readPersistedLocalTags(db);
-    const previousBoundTags = readBoundLocalTags(db);
-    const requestedKnownTags = cleanKnownTagNames(items.flatMap((entry) => entry.tagNames || []));
-    const updatedIds: string[] = [];
-    const failed: Array<{ id: string; fileName: string; message: string }> = [];
-
-    let knownTags: string[] = [];
-    let retainedEmptyTags: string[] = [];
+    const { updatedIds, failed, previousKnownTags, knownTags, retainedEmptyTags } = (await nodePersistence.openWriter()).setLocalFontTagsBatch(items, now);
     let batchStateSignal: RustLocalTagsMutationStateSignal | undefined;
-    try {
-      const tx = db.transaction(() => {
-        for (const entry of items) {
-          const tagNames = cleanLocalTagNames(entry.tagNames || []);
-          deleteLocalTagForFontIdentity(db, entry.item);
-          insertLocalTagsForFont(db, entry.item, tagNames, now);
-          updatedIds.push(entry.item.id);
-        }
-
-        const nextBoundTags = readBoundLocalTags(db);
-        knownTags = mergeKnownLocalTags(previousKnownTags, nextBoundTags, requestedKnownTags);
-        retainedEmptyTags = retainedEmptyLocalTags(previousBoundTags, nextBoundTags, knownTags);
-        saveKnownLocalTags(db, knownTags);
-      });
-
-      tx();
+    if (!failed.length) {
       logKnownLocalTagLifecycle({ appendStartupLog: deps.appendStartupLog, kind: 'setBatch', source: 'node-fallback', changedIds: updatedIds, previousKnownTags, knownTags, retainedEmptyTags });
       batchStateSignal = emitLocalTagsMutationStateSignal('setBatch', now, updatedIds, knownTags, undefined, 'node-fallback');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      for (const entry of items) {
-        failed.push({
-          id: entry.item.id,
-          fileName: entry.item.fileName || entry.item.id,
-          message,
-        });
-      }
-      updatedIds.length = 0;
-      knownTags = previousKnownTags;
     }
 
     const message = failed.length
@@ -767,35 +552,9 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
       detail: `tag=${tagName}`,
     });
 
-    const db = await openLibraryDb();
-    const previousKnownTags = readPersistedLocalTags(db);
-    const updatedIds: string[] = [];
-    let knownTags: string[] = [];
-    let deleteTagStateSignal: RustLocalTagsMutationStateSignal | undefined;
-    try {
-      const rows = db
-        .prepare("SELECT DISTINCT font_id, font_path FROM local_font_tags WHERE tag_name = ?")
-        .all(tagName) as Array<{ font_id?: string; font_path?: string }>;
-
-      const tx = db.transaction(() => {
-        db.prepare("DELETE FROM local_font_tags WHERE tag_name = ?").run(tagName);
-        knownTags = previousKnownTags.filter((tag) => tag !== tagName);
-        saveKnownLocalTags(db, knownTags);
-      });
-      tx();
-      updatedIds.push(...Array.from(new Set(rows.map((item) => item.font_id || item.font_path || '').filter(Boolean))));
-      logKnownLocalTagLifecycle({ appendStartupLog: deps.appendStartupLog, kind: 'deleteTag', source: 'node-fallback', changedIds: updatedIds, previousKnownTags, knownTags });
-      deleteTagStateSignal = emitLocalTagsMutationStateSignal(
-        'deleteTag',
-        now,
-        updatedIds,
-        knownTags,
-        undefined,
-        'node-fallback',
-        previousKnownTags.length !== knownTags.length,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    const persisted = (await nodePersistence.openWriter()).deleteLocalFontTag(tagName);
+    if (!persisted.ok) {
+      const message = persisted.message;
       const resultMessage = `本地标签删除失败：${message}`;
       return {
         ok: false,
@@ -812,6 +571,17 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
         }),
       };
     }
+    const { updatedIds, previousKnownTags, knownTags } = persisted;
+    logKnownLocalTagLifecycle({ appendStartupLog: deps.appendStartupLog, kind: 'deleteTag', source: 'node-fallback', changedIds: updatedIds, previousKnownTags, knownTags });
+    const deleteTagStateSignal = emitLocalTagsMutationStateSignal(
+      'deleteTag',
+      now,
+      updatedIds,
+      knownTags,
+      undefined,
+      'node-fallback',
+      previousKnownTags.length !== knownTags.length,
+    );
 
     const message = updatedIds.length ? `已删除本地标签“${tagName}”，更新 ${updatedIds.length} 个字体。` : `已删除本地标签“${tagName}”。`;
     return {

@@ -356,7 +356,7 @@ npm run dev
 | D-04 | 自动验证通过待实机 | §20 同一提交 | typecheck、99项、三端构建通过 | Windows开发模式复验待回执 |
 | D-05 | 自动验证通过待实机 | §21 同一提交 | typecheck、100项、三端构建通过 | Windows开发模式待复验 |
 | D-06 | 自动验证通过待实机 | §22 同一提交 | TypeScript、101/101、三端359/1/191通过 | Windows开发模式待回执 |
-| D-07 | 未开始 | — | — | — |
+| D-07 | 自动验证通过待实机 | §23：前置修复与纯迁移独立提交 | TypeScript、102/102、三端360/1/191通过 | Windows开发模式待回执 |
 | D-08 | 未开始 | — | — | — |
 | D-09 | 未开始 | — | — | — |
 | D-10 | 未开始 | — | — | — |
@@ -991,3 +991,23 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 - 覆盖事务第二项失败、目录写失败（SQLite触发器RAISE）、单项/批量/删除提交后日志和通知抛错、回读无部分绑定、清空绑定保留空标签、显式删除目录、其他app_state和字体收藏/共享标签/保护字段保持。
 - 回读同时发现批量回滚后协议仍可能携带事务内计算的新目录；前置修复将失败knownTags恢复为previousKnownTags，并断言失败响应不发布未提交目录。该结果语义修复与日志隔离同属前置修复，纯迁移以修复后提交为基线。
 - 前置修复验证：TypeScript、102/102诊断退出0；目录失败协议修正后复跑新真实SQLite门与decomposition门通过。纯迁移完成后再做最终完整verify/三端构建。
+
+### D-07 纯迁移白名单与边界
+
+- 纯迁移以本地前置修复提交`5d7a1aa`为基线。生产白名单：原`localFontTagsRuntime.ts`、新增`localFontTagNodePersistenceRuntime.ts`；新owner仅接收openLibraryDb，不接收日志/通知/Rust/回退策略。SQL、目录和绑定事务归owner；五方法门面保留准入与业务结果。
+- 诊断白名单：`check-local-tag-node-persistence.cjs`及新增`fixtures/local-tag-node-persistence.fixture.json`；`check-decomposition-baseline.cjs`/fixture（加载与所有权迁移）；`check-local-tag-hydration.cjs`（D-03变异定位新owner）；`check-tag-consistency.cjs`（目录SQL断言新owner）。README与本任务书。迁移不改包版本、schema、Rust或其他状态字段。
+- 门禁：10个原SQL/归一化helper体保持；读取和事务主体按限定提取锁定；Rust适配与协议helper体保持。既有D-03多目标hydration/变异继续通过；真实SQLite回读门覆盖事务与提交结果，另加去事务/丢目录保存等退化变异。
+- 并发审查发现直接await写命令会在commit与日志/通知之间增加微任务空隙（两次commit先于第一次signal），不满足纯拆分顺序要求。改为openWriter只借用句柄并返回三个同步写命令；门面await打开后，在同一续体同步完成事务→日志→通知。原基线与新实现并发事件序列对照纳入门禁，无新增await进入事务，无句柄外泄或关闭借用句柄。
+
+### D-07 迁移与验收证据
+
+- 本轮原文件833行，前置修复后841行；纯迁移后611行，新Node持久化owner271行。原门面保留五公开方法，Rust调用、回退准入、日志、信号与协议；SQL与三个事务只在新owner，读方法保留500分块、身份多目标映射。归一化helper迁移后从同一owner复用，未新增身份规则或缓存。
+- 新fixture从前置修复HEAD取10个helper、9个保留业务/Rust helper、2个旧读取尾部以及3个原事务回调指纹；迁移后逐项相同。decomposition只迁移这一个门面的函数归属并登记新owner，公开五方法保持，其他文件指纹不变；D-03变异位置与目录SQL文字断言随代码迁移。
+- 真实SQLite：Node v24.19.0、ABI137、SQLite3.53.3，使用内置SQLite与临时文件第二连接回读。产品依然使用better-sqlite3，本机binding缺失未执行该绑定；不改变产品驱动。日志故障旧基线复验：单项reject，批量/删除ok=false且updatedIds为空，三者实际均已提交且无通知；修复后均成功并继续通知。
+- 新门覆盖批量第二项和目录触发器故障、三写入口目录回滚、提交后日志/通知失败、已提交目录与协议一致、真实读/hydration、空标签生命周期、输入及其他字段不变。四个变异（撤销日志隔离、去事务、丢目录保存、回滚返回未提交目录）均被拒绝。并发两写严格commit→signal→commit→signal；D-03两个身份变异与D-01跨域24排列继续保持。
+- 无新增生产any/ts-ignore；SqliteDb沿用libraryRuntimeTypes中既有any别名，本轮未扩展其逃逸。openWriter只借用既有数据库并返回同步命令，不关闭借用句柄，不暴露db/SQL句柄，事务内无await。
+- 对应C-04/C-05、X标签字段隔离和目录生命周期。真实SQLite门不等于Windows字体库、GUI/共享盘或Rust原生测试；D-03定向Rust及既有实机缺口继续继承，不宣称历史跨域问题全部根治。
+- Context7用于确认诊断SQLite API/版本开关；Mermaid已同步Node所有者及提交/通知关系。下一项D-08只在另行指令后提取Rust适配与门面，不在本轮扩展。
+- 定位提交：`git log --oneline --all --grep='fix(tags): preserve committed'`定位前置修复，`git log -1 --format=%H -- src/main/library/runtime/localFontTagNodePersistenceRuntime.ts`定位迁移；回滚先revert迁移，可独立保留前置修复，不改写历史。
+- 最终验证：时序收口后完整`npm run verify`退出0，TypeScript与102/102诊断通过；Electron/Vite360/1/191模块构建退出0，renderer产物不变。`git diff --check`通过；前置修复6文件、纯迁移10文件，合计11个不同文件，未提交依赖或产物。
+- Create State返回Context Captured成功回执（Project: `.`）；Git、README及本执行卡保留精确证据。Windows按`git pull`后`npm run dev`复验标签单项/批量/清空/删除、收藏及共享标签显示；不要求安装包。

@@ -33,20 +33,10 @@
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [
-        "deleteLocalTagForFontIdentity",
         "knownTagLifecycle",
         "logKnownLocalTagLifecycle",
-        "cleanKnownTagNames",
-        "readLocalTagCatalog",
-        "readBoundLocalTags",
-        "mergeKnownLocalTags",
-        "readPersistedLocalTags",
-        "retainedEmptyLocalTags",
-        "saveKnownLocalTags",
-        "cleanLocalTagNames",
         "rustLocalTagReadRow",
         "rustLocalTagRow",
-        "insertLocalTagsForFont",
         "createLocalFontTagsRuntime",
         "emitLocalTagsMutationStateSignal",
         "nodeLocalTagsMutationProtocol",
@@ -99,7 +89,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "ffd92227c70519e3841031eee8bed7955f6e713efe89c231bc976fecf090e408"
+      "tokenHash": "4f0623d71c948aa38b4c3e988d4dc2bedf60b4fb88a3751fa4caedabfe169cee"
     },
     "src/renderer/src/App.tsx": {
       "functions": [
@@ -1031,6 +1021,43 @@
       "viewGroups": [],
       "ipcChannels": [],
       "tokenHash": "b4a7d6b147cc8fcfb7db8dc6394ad9617c04294d9fb67842d7415ab4d3e2e570"
+    },
+    "src/main/library/runtime/localFontTagNodePersistenceRuntime.ts": {
+      "functions": [
+        "deleteLocalTagForFontIdentity",
+        "cleanKnownTagNames",
+        "readLocalTagCatalog",
+        "readBoundLocalTags",
+        "mergeKnownLocalTags",
+        "readPersistedLocalTags",
+        "retainedEmptyLocalTags",
+        "saveKnownLocalTags",
+        "cleanLocalTagNames",
+        "insertLocalTagsForFont",
+        "createLocalFontTagNodePersistenceRuntime",
+        "localTagsByFontIds",
+        "hydrateLocalTagsForFonts",
+        "openWriter",
+        "setLocalFontTags",
+        "setLocalFontTagsBatch",
+        "deleteLocalFontTag"
+      ],
+      "owners": [],
+      "exports": [
+        "cleanKnownTagNames",
+        "cleanLocalTagNames",
+        "createLocalFontTagNodePersistenceRuntime"
+      ],
+      "surfaces": {
+        "createLocalFontTagNodePersistenceRuntime": [
+          "localTagsByFontIds",
+          "hydrateLocalTagsForFonts",
+          "openWriter"
+        ]
+      },
+      "viewGroups": [],
+      "ipcChannels": [],
+      "tokenHash": "d83309e67e8a9e1649b1d1b7122f19e75b518297cf7555796e030e17bb323c7e"
     }
   }
 }

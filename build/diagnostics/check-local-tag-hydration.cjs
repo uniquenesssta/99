@@ -6,14 +6,16 @@ const identity = load('src/main/library/runtime/localFontTagIdentityRuntime.ts')
 const plain = value => JSON.parse(JSON.stringify(value))
 function harness({ rows = [], allowed = true, rust, transform = x => x } = {}) {
   const calls = { opens: 0, queries: [], rust: [], used: 0, disabled: 0 }
-  const runtime = load(file, {
+  const mocks = {
     './localFontTagIdentityRuntime': identity,
     '../tagMutationProtocolResultRuntime': {},
     '../../rust-core/nodeStateFallbackCompatibilityRuntime': {
       nodeStateFallbackCompatibilityAllowed: () => allowed,
       logNodeStateFallbackUsed() { calls.used++ }, logNodeStateFallbackDisabled() { calls.disabled++ }
     }
-  }, transform).createLocalFontTagsRuntime({
+  }
+  mocks['./localFontTagNodePersistenceRuntime'] = load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts', mocks, transform)
+  const runtime = load(file, mocks).createLocalFontTagsRuntime({
     librarySqlitePath: () => '/isolated.db',
     runRustLocalTagsRead: rust && (async input => { calls.rust.push(plain(input)); return rust(input) }),
     openLibraryDb: async () => {

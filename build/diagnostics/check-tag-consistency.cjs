@@ -297,8 +297,8 @@ function testLocalTagCatalogPersistenceWiring() {
   assertIncludes('native-src/hfm-core-worker/src/local_tags/catalog.rs', 'retained_empty_tags');
   assertIncludes('native-src/hfm-core-worker/src/local_tags/state_machine.rs', 'previous_known_tags.as_slice()');
   assertIncludes('native-src/hfm-core-worker/src/local_tags/state_machine.rs', 'remove_known_tag(&previous_known_tags, &tag_name)');
-  assertIncludes('src/main/library/runtime/localFontTagsRuntime.ts', 'mergeKnownLocalTags(previousKnownTags, nextBoundTags');
-  assertIncludes('src/main/library/runtime/localFontTagsRuntime.ts', 'previousKnownTags.filter((tag) => tag !== tagName)');
+  assertIncludes('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts', 'mergeKnownLocalTags(previousKnownTags, nextBoundTags');
+  assertIncludes('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts', 'previousKnownTags.filter((tag) => tag !== tagName)');
 }
 
 function testTagSignalInvalidatesQueriesBeforePersistenceWait() {
