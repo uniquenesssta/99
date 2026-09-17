@@ -38,13 +38,10 @@ export function useFontTagStateSignalEventRuntime(args: {
         }
       })
 
-      void (async () => {
-        const saved = await current.saveLibraryImmediately(nextLibrary)
-        const changed = Array.isArray(payload.changedIds) ? payload.changedIds.length : 0
-        current.setStatus(saved
-          ? `${payload.scope === 'shared' ? '共享标签' : '本地标签'}更新已接收：${changed} 个字体。`
-          : `${payload.scope === 'shared' ? '共享标签' : '本地标签'}更新已接收，但本地库状态保存失败。`)
-      })()
+      // This is a backend read receipt, not a new user edit. Writing the whole
+      // renderer snapshot back here can resurrect a catalog deleted in flight.
+      const changed = Array.isArray(payload.changedIds) ? payload.changedIds.length : 0
+      current.setStatus(`${payload.scope === 'shared' ? '共享标签' : '本地标签'}更新已接收：${changed} 个字体。`)
     })
 
     return () => dispose()

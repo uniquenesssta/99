@@ -6,10 +6,10 @@ addRootIndexJsonArrayAnyClause,
 addRootIndexJsonArrayContainsClause,
 addRootIndexTimeRangeClause,
 mergedIndexActiveExpr,
+mergedIndexLocalFavoriteExpr,
 mergedIndexInstalledExpr,
 mergedIndexNotInstalledExpr,
 mergedIndexSystemDefaultExpr,
-rootIndexJsonBoolExpr,
 rootIndexJsonTextExpr,
 rootIndexJsonArrayHasAnyValueExpr,
 rootIndexLocalTagMatchExpr,
@@ -36,7 +36,7 @@ function addMergedIndexActiveFilterClauses(parts: RootIndexQueryParts, request: 
   const filter = request.activeFilter || { kind: 'all' }
   switch (filter.kind) {
     case 'favorites':
-      parts.clauses.push(`${rootIndexJsonBoolExpr('favorite')} = 1`)
+      parts.clauses.push(`${mergedIndexLocalFavoriteExpr()} = 1`)
       break
     case 'installed':
       parts.clauses.push(mergedIndexInstalledExpr())
@@ -131,7 +131,7 @@ function mergedIndexOrderBy(request: FontQueryRequest): string {
   const stable = 'entries.root_path ASC, entries.relative_path ASC'
   if (sortMode === 'smart') {
     const time = timeSortMode === 'created' ? created : modified
-    return `${rootIndexJsonBoolExpr('favorite')} DESC, ${rootIndexJsonBoolExpr('active')} DESC, ${mergedIndexInstalledExpr()} DESC, ${time} DESC, ${fileName} ASC, ${stable}`
+    return `${mergedIndexLocalFavoriteExpr()} DESC, ${mergedIndexActiveExpr()} DESC, ${mergedIndexInstalledExpr()} DESC, ${time} DESC, ${fileName} ASC, ${stable}`
   }
   if (sortMode === 'nameAsc') return `${fileName} ASC, ${stable}`
   if (sortMode === 'nameDesc') return `${fileName} DESC, ${stable}`

@@ -12,7 +12,7 @@ function loader(mocks={},globals={},transforms={}){
   if(process.argv[2]==='batch')source=source.replace('itemResult?.ok !== true','itemResult && itemResult.ok === false')
   if(process.argv[2]==='metrics')source=source.replaceAll('pendingFavorite || intentRevision !== fontUserIntentRevision()','false')
   if(transforms[file])source=transforms[file](source)
-  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,console,performance,...globals,require(id){if(id in mocks)return mocks[id];if(id.startsWith('.'))return load(path.relative(root,path.resolve(root,path.dirname(file),id+'.ts')));throw Error(id)}})
+  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,console,performance,...globals,require(id){if(id in mocks)return mocks[id];if(id.startsWith('node:'))return require(id);if(id.startsWith('.'))return load(path.relative(root,path.resolve(root,path.dirname(file),id+'.ts')));throw Error(id)}})
   return exports
  }return load
 }
@@ -93,16 +93,16 @@ async function metricsRace(){
 }
 
 async function restartPolicy(){
- let saved={version:1,records:[{fontId:'a',installPath:'/managed/a.ttf',registryName:'a'}]},disk='',removed=0
+ let saved={version:1,records:[{fontId:'a',installPath:'/managed/a.ttf',registryName:'a'}]},disk='',removed=0,installedRows={}
  const load=loader({
   'node:fs':{promises:{mkdir:async()=>{},writeFile:async(_p,s)=>disk=s,readFile:async()=>disk}},
   '../temporaryFontDeleteQueue':{createTemporaryFontDeleteQueue:()=>({isSafeTemporaryActiveFontPath:()=>true,queueTemporaryFontFileDeletes:async()=>({}),flushPendingTemporaryFontDeletes:async()=>{}})},
   '../../rust-core/nodeBridgeFallbackCompatibilityRuntime':{}
  },{process:{platform:'win32',env:{}}})
- const deps={appName:'test',dataRoot:()=>'/data',dataPath:()=>'/data/session.json',currentUserFontsDir:()=>'/managed',removeFontResourceSession:async()=>{removed++},deleteRegistryValueHKCU:async()=>{},advancedFontRefresh:async()=>{},clearInstalledFontsMemoryCache(){},appendStartupLog(){},loadTemporaryActiveFonts:async()=>saved,saveTemporaryActiveFonts:async s=>saved=s,runRustFontActivationFiles:async()=>({deleteResults:[{ok:true}]})}
+ const deps={normalizePathForCacheCompare:x=>x||'',getSystemInstalledFontsCached:async()=>[],compareFontInstalledWithList:()=>({installed:false,by:'none',matches:[]}),scheduleActivationInstallStatusSave:rows=>{installedRows=rows},isTemporaryActiveInstalledRecord:()=>false,appName:'test',dataRoot:()=>'/data',dataPath:()=>'/data/session.json',currentUserFontsDir:()=>'/managed',removeFontResourceSession:async()=>{removed++},deleteRegistryValueHKCU:async()=>{},advancedFontRefresh:async()=>{},clearInstalledFontsMemoryCache(){},appendStartupLog(){},loadTemporaryActiveFonts:async()=>saved,saveTemporaryActiveFonts:async s=>saved=s,runRustFontActivationFiles:async()=>({deleteResults:[{ok:true}]})}
  const cleanup=load('src/main/activation/runtime/fontActivationCleanupRuntime.ts').createFontActivationCleanupRuntime(deps,{temporaryActiveRecordStillVisible:async()=>false})
  const result=await cleanup.cleanupTemporaryActiveFonts('startup')
- assert.equal(result.remaining,0);assert.equal(removed,1);assert.equal(saved.records.length,0)
+ assert.equal(result.remaining,0);assert.equal(removed,1);assert.equal(saved.records.length,0);assert.equal(installedRows.a.by,'none','startup cleanup left persisted active state stale')
  const store=load('src/main/windows/runtime/temporaryActiveFontsStoreRuntime.ts').createTemporaryActiveFontsStoreRuntime(deps)
  await store.saveTemporaryActiveFonts(saved)
  assert.equal((await store.loadTemporaryActiveFonts()).records.length,0,'restart must use cleaned persisted session')

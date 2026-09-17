@@ -124,7 +124,7 @@ export function createRootIndexCoordinator(deps: RootIndexCoordinatorDeps) {
         installStatusKnown: true,
         systemInstalled: !!row.installed && installedBy !== 'managed',
         systemInstallMatches: parseSqliteJson<SystemInstalledFont[]>(row.matches_json, []),
-        active: font.active || installedBy === 'managed' || installedBy === 'both',
+        active: installedBy === 'managed' || installedBy === 'both',
       }
     }
     return { ...font, sourceId, installStatusKnown: false }

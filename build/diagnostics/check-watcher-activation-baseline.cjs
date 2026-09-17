@@ -167,7 +167,7 @@ function sessionHarness(remove, config = {}, transform = x => x) {
   const statuses = [], tails = []
   let records = config.records || [{ fontId: 'a', sourcePath: '/a.ttf', installPath: '/managed/a.ttf', registryName: 'A' }]
   const runtime = load(sessionFile, {}, {}, transform).createFontActivationSessionRuntime({ ensureWindows() {}, loadTemporaryActiveFonts: async () => ({ version: 1, records }), saveTemporaryActiveFonts: async state => { if (config.failSave) throw Error("save failed"); saved = plain(state); records = state.records }, scheduleBackgroundFontRefreshTail: (...args) => tails.push(args) },
-    { saveActivationInstallStatus: async (...args) => statuses.push(plain(args)) }, { removeTemporaryActiveRecord: remove }, {})
+    { reconcileDeactivatedInstallStatus: async (items) => { statuses.push(plain(items)); return Object.fromEntries(items.map(item => [item.id, {installed:false,by:'none',matches:[]}])) } }, { removeTemporaryActiveRecord: remove }, {})
   return { runtime, snapshot: () => ({ saved, statuses, tails }) }
 }
 async function mainDeactivationCheck(transform = x => x) {
@@ -193,7 +193,7 @@ async function mainDeactivationCheck(transform = x => x) {
   }
   const empty = sessionHarness(async () => { throw Error('must not clean unrelated records') }, { records: [other] }, transform)
   assert.equal((await empty.runtime.deactivateFontSession(font)).ok, true)
-  assert.equal(empty.snapshot().saved, null); assert.equal(empty.snapshot().statuses.length, 0)
+  assert.equal(empty.snapshot().saved, null); assert.equal(empty.snapshot().statuses.length, 1)
   const fail = sessionHarness(async () => true, { failSave: true }, transform)
   await assert.rejects(() => fail.runtime.deactivateFontSession(font), /save failed/)
   assert.equal(fail.snapshot().statuses.length, 0)

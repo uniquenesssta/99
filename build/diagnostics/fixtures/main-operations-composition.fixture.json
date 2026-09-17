@@ -259,6 +259,10 @@
           []
         ],
         [
+          "createLocalFontFavoritesRuntime.initialize",
+          []
+        ],
+        [
           "createSharedKnownTagsRuntime.refreshKnownSharedTagsFromMetadata",
           [
             [
@@ -398,7 +402,7 @@
           {
             "openMergedIndexDb": "createMergedIndexPageRuntime.openMergedIndexDb",
             "openMachineInstallDbForRoot": "createInstallStatusRuntime.openMachineInstallDbForRoot",
-            "openLibraryDb": "library.open",
+            "openLibraryDb": "<function>",
             "closeSqliteDb": "createSqliteRuntime.closeSqliteDb",
             "getSqliteMeta": "getSqliteMeta",
             "appWatchedFolders": "<function>",

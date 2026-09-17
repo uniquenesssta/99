@@ -49,9 +49,9 @@ function testNodeMutationUsesFieldMerge() {
 
 function testHighLevelMutationsDeclarePolicies() {
   const text = readText('src/main/library/sharedFontMetadataMutations.ts')
+  assert(!text.includes("mergePolicy: 'favorite'"), 'user favorites must not write shared metadata')
   for (const needle of [
     "mergePolicy: 'tags'",
-    "mergePolicy: 'favorite'",
     "mergePolicy: 'deleteProtected'",
   ]) {
     assert(text.includes(needle), `shared metadata high-level mutations missing ${needle}`)

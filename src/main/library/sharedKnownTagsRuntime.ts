@@ -8,6 +8,7 @@ import {
 } from '../rust-core/nodeStateFallbackCompatibilityRuntime'
 
 export interface SharedKnownTagsRefreshOptions {
+  requireFresh?: boolean
   allowEmptyOverwrite?: boolean
   preserveTags?: string[]
   dropTags?: string[]
@@ -56,7 +57,7 @@ function parseTagNamesJson(value: unknown): string[] {
 }
 
 export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
-  async function readMetadataTagsForRoot(rootPath: string): Promise<string[]> {
+  async function readMetadataTagsForRoot(rootPath: string, requireFresh = false): Promise<string[]> {
     const dbPath = deps.sharedMetadataDbPathForRoot(rootPath)
     if (!(await deps.exists(dbPath).catch(() => false))) return []
     const db = await deps.openSharedMetadataDb(rootPath, false)
@@ -67,7 +68,8 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
         for (const tag of parseTagNamesJson(row.tag_names_json)) tags.add(tag)
       }
       return Array.from(tags)
-    } catch {
+    } catch (error) {
+      if (requireFresh) throw error
       return []
     } finally {
       deps.closeSqliteDb(db)
@@ -187,6 +189,11 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
     if (skippedRoots.length) {
       deps.appendStartupLog(`shared known tags unavailable roots skipped: skipped=${skippedRoots.length}, available=${availableRoots.length}`)
     }
+    if (skippedRoots.length) {
+      if (options.requireFresh) throw new Error('共享根目录暂时不可用，不能确认完整标签目录。')
+      // A partial directory cannot revoke tags belonging to an unread root.
+      for (const tag of await readPersistedSharedTags()) if (!persistedTags.includes(tag)) persistedTags.push(tag)
+    }
     if (!availableRoots.length && roots.length) {
       return readPersistedSharedTags()
     }
@@ -206,11 +213,11 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
       if (rustResult && Array.isArray(rustResult.knownTags)) {
         const rustKnownTags = rustResult.knownTags.map(cleanTagName).filter(Boolean)
         const nextTags = Array.from(new Set([
-          ...rustKnownTags.filter((tag) => !dropTags.has(tag)),
+          ...rustKnownTags,
           ...(options.allowEmptyOverwrite === false ? persistedTags : []),
           ...(options.allowEmptyOverwrite === false ? preserveTags : []),
         ])).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
-        if (!nextTags.length && options.allowEmptyOverwrite === false) {
+        if (!nextTags.length && options.allowEmptyOverwrite === false && !dropTags.size) {
           deps.appendStartupLog(`shared known tags empty refresh ignored after set: source=rust, roots=${availableRoots.length}`)
           return readPersistedSharedTags()
         }
@@ -219,6 +226,7 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
     }
 
     if (!nodeStateFallbackCompatibilityAllowed()) {
+      if (options.requireFresh) throw new Error('共享标签目录读取未成功。')
       logNodeStateFallbackDisabled({
         appendStartupLog: deps.appendStartupLog,
         source: 'shared-known-tags-read',
@@ -234,14 +242,14 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
 
     const tags = new Set<string>()
     for (const root of availableRoots) {
-      for (const tag of await readMetadataTagsForRoot(root)) tags.add(tag)
+      for (const tag of await readMetadataTagsForRoot(root, options.requireFresh)) tags.add(tag)
     }
     const nextTags = Array.from(new Set([
-      ...Array.from(tags).filter((tag) => !dropTags.has(tag)),
+      ...Array.from(tags),
       ...(options.allowEmptyOverwrite === false ? persistedTags : []),
       ...(options.allowEmptyOverwrite === false ? preserveTags : []),
     ])).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
-    if (!nextTags.length && options.allowEmptyOverwrite === false) {
+    if (!nextTags.length && options.allowEmptyOverwrite === false && !dropTags.size) {
       deps.appendStartupLog(`shared known tags empty refresh ignored after set: source=node-fallback, roots=${availableRoots.length}`)
       return readPersistedSharedTags()
     }

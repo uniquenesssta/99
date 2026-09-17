@@ -90,8 +90,8 @@ function testSharedTagNoopDeleteDoesNotDirtyFreshQueries() {
   assert(knownTagsRuntime.includes('shared known tags empty refresh ignored after set'), 'shared known tags refresh must not wipe the visible tag list after a set mutation returns an empty read')
 
   const sharedMutations = readText('src/main/library/sharedFontMetadataMutations.ts')
-  assert(sharedMutations.includes('preserveTags: tagNames'), 'single shared tag set must preserve requested tag names while refreshing known tags')
-  assert(sharedMutations.includes('preserveTags: Array.from(new Set(items.flatMap'), 'batch shared tag set must preserve requested tag names while refreshing known tags')
+  assert(sharedMutations.includes('preserveTags: updatedIds.length ? tagNames : []'), 'single shared tag set must preserve requested tag names while refreshing known tags')
+  assert(sharedMutations.includes('preserveTags: Array.from(new Set(items.filter((item) => updatedIds.includes(item.id)).flatMap'), 'batch shared tag set must preserve requested tag names while refreshing known tags')
 
   const localRustState = readText('native-src/hfm-core-worker/src/local_tags/state_machine.rs')
   assert(localRustState.includes('let changed = !changed_ids.is_empty() || catalog_changed;'), 'rust local tag signal must dirty only changed bindings or changed catalog state')

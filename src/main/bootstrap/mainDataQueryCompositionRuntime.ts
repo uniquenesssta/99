@@ -12,7 +12,7 @@ import { pathInsideFolder } from "../folders/physicalFolders";
 import { createMergedIndexPageRuntime } from "../indexing/mergedIndexPageRuntime";
 import { createRootIndexCoordinator } from "../indexing/rootIndexCoordinator";
 import { createFontMemoryQueryRuntime } from "../library/fontMemoryQueryRuntime";
-import { createFontMetricsRuntime } from "../library/fontMetricsRuntime";
+import { createFontMetricsRuntime, readLocalUserMetricsFromMergedIndex } from "../library/fontMetricsRuntime";
 import { createFontPageQueryCacheRuntime } from "../library/fontPageQueryCacheRuntime";
 import { createFontQueryFacadeRuntime, type FontQueryFacadeRuntime } from "../library/fontQueryFacadeRuntime";
 import { createFontSearchRuntime } from "../library/fontSearchRuntime";
@@ -38,6 +38,7 @@ export interface MainDataQueryOptions {
   loadSharedFontsForFolders: Storage['loadSharedFontsForFolders'];
   loadSharedFontsForFoldersFresh: Storage['loadSharedFontsForFoldersFresh'];
   hydrateLocalTagsForFonts: Storage['hydrateLocalTagsForFonts'];
+  hydrateLocalFavoritesForFonts: Storage['hydrateLocalFavoritesForFonts'];
   isSystemInstalledRecord: Core['comparison']['isSystemInstalledRecord'];
   isPathInWindowsFonts: Core['comparison']['isPathInWindowsFonts'];
   appendStartupLog: Core['logging']['appendStartupLog'];
@@ -289,11 +290,8 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     limit: number,
     offset: number,
   ): Promise<FontQueryPageResult> {
-    return requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(
-      request,
-      limit,
-      offset,
-    );
+    const result = await requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(request, limit, offset);
+    return { ...result, items: await options.hydrateLocalFavoritesForFonts(await hydrateInstallStatusForFonts(result.items)) };
   }
 
   async function queryFontsInLibrary(
@@ -317,6 +315,17 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
 
   fontQueryFacadeRuntimeRef = createFontQueryFacadeRuntime({
     applyPendingActivationState: options.applyPendingActivationState,
+    reconcileLocalUserMetrics: async metrics => {
+      try {
+        const counts = await readLocalUserMetricsFromMergedIndex({
+          roots: await appWatchedFolders(), expectedTotal: metrics.total, openMergedIndexDb, openLibraryDb,
+          librarySqlitePath, closeSqliteDb, applyPendingActivationState: options.applyPendingActivationState,
+        });
+        if (counts) return { ...metrics, ...counts };
+      } catch (error) { appendStartupLog(`local user metrics snapshot fallback: ${String(error)}`); }
+      const fonts = await hydrateInstallStatusForFonts(await loadSharedFontsForFolders(await appWatchedFolders()));
+      return { ...metrics, favoriteCount: fonts.filter(font => font.favorite).length, activeCount: fonts.filter(font => font.active).length };
+    },
     fontSearchResultLimitDefault: FONT_SEARCH_RESULT_LIMIT_DEFAULT,
     mergedIndexSchemaVersion: MERGED_INDEX_SCHEMA_VERSION,
     appendLog: appendStartupLog,
@@ -341,6 +350,8 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     return requireFontQueryFacadeRuntime().getFontMetricsFromLibrary();
   }
   return {
+
+    hydrateInstallStatusForFonts,
 
     queryFontPageInLibrary,
 

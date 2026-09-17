@@ -9,7 +9,7 @@ const { createHarness, observeBootstrap, root, entry, bootstrap } = require('./h
 const fixture = require('./fixtures/main-composition-runtime.fixture.json')
 const compositionFile = owner => path.join(bootstrap, `main${owner}CompositionRuntime.ts`)
 
-function checkImportAndOwnership() {
+async function checkImportAndOwnership() {
   const h = createHarness()
   for (const owner of ['Core', 'Data', 'DataStorage', 'DataQuery', 'Mutation', 'Operations', 'Maintenance', 'Scan']) h.load(compositionFile(owner))
   assert.equal(h.constructors.size, 0, 'import constructed a domain runtime')
@@ -23,7 +23,14 @@ function checkImportAndOwnership() {
     assert.equal(data.resources[key], storage[key], `${key} lost its single storage owner`)
   }
   assert.equal(data.capabilities.queryFontsInLibrary, query.queryFontsInLibrary)
-  assert.equal(data.capabilities.loadLibrary, storage.loadLibrary)
+  h.librarySnapshot = { fonts: { a: { id: 'a', active: true, favorite: true, tagNames: ['shared'] } }, previewText: 'retained' }
+  const hydrate = query.hydrateInstallStatusForFonts
+  query.hydrateInstallStatusForFonts = async items => items.map(item => ({ ...item, active: false }))
+  h.reset()
+  const library = await data.capabilities.loadLibrary()
+  query.hydrateInstallStatusForFonts = hydrate
+  assert(h.calls.some(call => call[0] === 'createLibraryRuntime.loadLibrary'), 'complete load bypassed storage owner')
+  assert.deepEqual(h.clean(library), { fonts: { a: { id: 'a', active: false, favorite: true, tagNames: ['shared'] } }, previewText: 'retained' }, 'complete load did not apply local activation authority')
   assert.equal(h.options('createPreviewRuntime').openPreviewDb, storage.openPreviewDb)
   assert.equal(h.options('createMainBackgroundRuntime').openRecoverableApplicationSqliteDb, storage.openRecoverableApplicationSqliteDb)
   h.reset()
@@ -157,7 +164,7 @@ async function checkRejectedMutations() {
 }
 
 async function main() {
-  checkImportAndOwnership()
+  await checkImportAndOwnership()
   await checkPreviewHandleOwnership()
   assert.deepEqual(await observeBootstrap(), fixture.observations, 'AT-4.1 composition behavior changed')
   const operations = checkOutputTypes()

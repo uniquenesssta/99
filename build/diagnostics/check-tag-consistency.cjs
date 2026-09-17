@@ -163,7 +163,7 @@ function testTagSignalInvalidatesQueriesBeforePersistenceWait() {
   const hook = read('src/renderer/src/runtime/app/effects/useFontTagStateSignalEventRuntime.ts');
   const refreshAt = hook.indexOf('current.refreshDatabaseDerivedState()');
   const saveAt = hook.indexOf('await current.saveLibraryImmediately(nextLibrary)');
-  assert(refreshAt >= 0 && saveAt >= 0 && refreshAt < saveAt, 'tag state signal must invalidate database requests before waiting for shell persistence');
+  assert(refreshAt >= 0 && saveAt === -1, 'backend tag notifications must refresh reads without writing a stale shell back');
   assertIncludes('src/renderer/src/databaseDerivedStateRuntime.ts', 'options.databasePageRequestSeqRef.current += 1');
   assertIncludes('src/renderer/src/databaseDerivedStateRuntime.ts', 'options.fontMetricsRequestSeqRef.current += 1');
 }

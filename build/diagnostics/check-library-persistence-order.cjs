@@ -60,7 +60,7 @@ const firstMetricsRefresh = indexRuntime.indexOf('await sharedRuntime.finishInde
 assert(firstSave >= 0 && firstMetricsRefresh >= 0 && firstSave < firstMetricsRefresh, 'index metrics refresh must happen after library persistence')
 
 const tagSignal = read('src/renderer/src/runtime/app/effects/useFontTagStateSignalEventRuntime.ts')
-assert(tagSignal.indexOf('current.refreshDatabaseDerivedState()') < tagSignal.indexOf('await current.saveLibraryImmediately(nextLibrary)'), 'tag-derived database requests must be invalidated before waiting for shell persistence')
+assert(tagSignal.includes('current.refreshDatabaseDerivedState()') && !tagSignal.includes('await current.saveLibraryImmediately(nextLibrary)'), 'backend tag notifications must invalidate reads without rewriting the catalog')
 
 const dialogRuntime = read('src/renderer/src/fontDialogRuntime.ts')
 const renameCommit = dialogRuntime.indexOf('const nextLibrary = options.commitLibraryUpdate((prev) => replaceFolderPathInLibrary')

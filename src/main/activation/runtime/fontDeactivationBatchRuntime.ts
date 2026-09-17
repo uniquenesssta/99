@@ -1,11 +1,10 @@
 import type {
   FontActivationBatchResult,
   FontItem,
-  InstallCompareResult,
 } from "../../../shared/types";
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
 import type { FontActivationCleanupRuntime } from "./fontActivationCleanupRuntime";
-import { uniqueFontItems } from "./fontActivationInstallStatusRuntime";
+import { createFontActivationInstallStatusRuntime, uniqueFontItems } from "./fontActivationInstallStatusRuntime";
 import {
   fontDeactivationPathKey,
   fontDeactivationSettlementFailureMessage,
@@ -24,7 +23,6 @@ export function createFontDeactivationBatchRuntime(
     saveTemporaryActiveFonts,
     removeFontResourceSessionBatch,
     deleteFontRegistryValuesHKCUBatch,
-    scheduleActivationInstallStatusSave,
     scheduleBackgroundFontRefreshTail,
     appendStartupLog,
   } = deps;
@@ -133,25 +131,24 @@ export function createFontDeactivationBatchRuntime(
       }
     }
 
-    const deactivatedStatusUpdates: Record<string, InstallCompareResult> = {};
-    const deactivatedItemsById = new Map<string, FontItem>();
-    for (const item of unique) {
-      const result = results[item.id];
-      if (!result?.ok || result.temporaryActivated !== false) continue;
-      if (!recordsByItemId.has(item.id)) continue;
-      deactivatedStatusUpdates[item.id] = {
-        installed: false,
-        by: "none",
-        matches: [],
-      };
-      deactivatedItemsById.set(item.id, item);
-    }
-    if (Object.keys(deactivatedStatusUpdates).length) {
-      scheduleActivationInstallStatusSave(
-        deactivatedStatusUpdates,
-        deactivatedItemsById,
-        "batch-deactivate",
-      );
+    const reconciledItems = unique.filter(item => results[item.id]?.ok && results[item.id]?.temporaryActivated === false);
+    try {
+      const reconciled = await createFontActivationInstallStatusRuntime(deps).reconcileDeactivatedInstallStatus(reconciledItems, [...committedRecords].map(record => record.installPath));
+      for (const item of reconciledItems) {
+        const status = reconciled[item.id];
+        if (status?.by === 'managed' || status?.by === 'both') {
+          results[item.id] = { ...results[item.id], ok: false, temporaryActivated: true,
+            message: '系统仍检测到临时激活，但本机记录未能完成对应清理；已保留实际状态。' };
+          failed += 1;
+        }
+      }
+    } catch (error) {
+      appendStartupLog(`deactivation status reconciliation failed: ${error instanceof Error ? error.message : String(error)}`);
+      for (const item of reconciledItems) {
+        results[item.id] = { ...results[item.id], ok: false,
+          message: '临时记录处理已完成，但系统安装状态核对失败，请重试。' };
+        failed += 1;
+      }
     }
     if (settlements.some((settlement) => settlement.resource.ok)) {
       scheduleBackgroundFontRefreshTail("batch-deactivate-tail", 80);

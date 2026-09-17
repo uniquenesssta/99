@@ -906,3 +906,47 @@ R-07自动部分通过；原生子项阻塞、Windows/NAS待验，F-01～F-05及
 最终范围为30个白名单文件（含README、审计报告、执行卡及唯一新增诊断文件）；依赖锁、native-src、两套preload、UI结构均未改。W-02多根同时签名变化仍保守重建；W-03独立路径规范化的同步net use未改；已有原生/Windows/NAS待验项仍保留。首屏减时不作定量承诺，原四问题的Windows实际回执按审计修复节采集。
 
 插件：Context7核对Node24 execFile异步回调、timeout及windowsHide；Mermaid Chart已展示真实保存/查询覆盖/增量及预览生命周期与异步探测链。Create State返回Context Captured，但Project为`.`、No active world model；HFM项目级保存未确认，未关联无关模型。Git、README与本执行卡为续接依据。
+
+## 25. 标签目录、停用核对与本地收藏修复执行卡
+
+状态：修复与自动验证完成，Windows/NAS实机待验；基线398eabb875cc0df00ec3b8c96355c5bd80c1b7c6。用户明确授权完整修复并将收藏改成本机独立保存。输入两份09-17日志：10:51删除共享标签成功但通知没有knownTags；停用3项无临时记录而查询仍3项；收藏写入共享metadata。
+
+方案与验收：共享修改串行事务结束后发布完整跨根目录（包括空数组），保留较新标签意图，覆盖零绑定/最后标签/重命名/部分失败；停用单个及批量重新比较系统安装，查询有本机安装快照时不得OR共享active，缺快照不得宣称共享激活为本机激活；收藏新增app.sqlite本地表，初次仅从已有本机merged快照迁移，保留共享历史列以兼容旧客户端，不再读写它作为当前收藏。分页、排序、ID查询、完整载入及统计均读取本地收藏。迁移与写入事务化、重启幂等、旧共享更新不能覆盖、取消收藏不能复活；不清除共享数据库的历史数据。回滚整体revert代码，本地新增表可保留；本地新收藏不会反向写回旧共享收藏。
+
+精确白名单（生产）：src/main/library/sharedFontMetadataMutations.ts；src/main/library/sharedKnownTagsRuntime.ts；src/main/library/tagMutationStateSignalRuntime.ts；src/main/library/tagMutationWriteProtocolRuntime.ts；src/main/library/runtime/libraryPersistenceRuntime.ts；src/main/library/runtime/librarySchemaRuntime.ts；新增src/main/library/runtime/localFontFavoritesRuntime.ts；src/main/bootstrap/mainDataStorageCompositionRuntime.ts；src/main/bootstrap/mainDataQueryCompositionRuntime.ts；src/main/bootstrap/mainDataCompositionRuntime.ts；src/main/bootstrap/mainMutationCompositionRuntime.ts；src/main/bootstrap/mainCompositionContracts.ts；src/main/index.ts；src/main/ipc/ipcHandlerTypes.ts；src/main/ipc/handlers/fontSystemIpcHandlers.ts；src/main/library/fontQueryFacadeRuntime.ts；src/main/library/fontMetricsRuntime.ts；src/main/activation/runtime/fontActivationInstallStatusRuntime.ts；src/main/activation/runtime/fontActivationSessionRuntime.ts；src/main/activation/runtime/fontDeactivationBatchRuntime.ts；src/main/indexing/root-query/rootIndexQuerySharedSql.ts；src/main/indexing/root-query/mergedIndexPageQuerySql.ts；src/main/indexing/rootIndexCoordinator.ts；src/main/indexing/merged-page/mergedIndexPageQueryRuntime.ts；src/main/library/query-sql/fontQueryOrderRuntime.ts；src/main/library/query-sql/fontQueryClausesRuntime.ts。文档/验证：README.md；本任务书；package.json；新增build/diagnostics/check-local-user-state.cjs。必要关联路径或旧诊断契约迁移，在有证据后追加具体文件，不整体重录冻结夹具。
+
+验证要求：实际模块+SQLite复现原错误，覆盖多根/空目录/永久安装/系统读取失败/本机A与B隔离/历史迁移/重启/共享刷新/分页计数；原有完整verify、TypeScript、Electron/Vite构建与差异白名单复核。Windows字体资源与NAS真实交互单列待验，不以受控端口替代实机结论。
+
+白名单补充（已定位链路）：src/main/bootstrap/mainTagCompositionRuntime.ts负责把串行提交后的完整目录送入既有通知owner；src/renderer/src/runtime/app/effects/useFontTagStateSignalEventRuntime.ts原监听每个通知都把旧目录saveLibrary回写，移除此反向写入，避免事务中的无目录通知复活已删标签；src/main/indexing/root-query/rootIndexPageQuerySql.ts需本地收藏筛选与排序；src/main/library/runtime/libraryLoadRuntime.ts与src/main/library/libraryRuntime.ts完整库读取同样需本地收藏覆盖。
+
+白名单补充：src/main/bootstrap/mainApplicationRuntime.ts为收藏能力的现有注册转发；src/main/activation/runtime/fontActivationCleanupRuntime.ts退出/启动清理也须把已成功清除记录核对后送入原状态保存队列，防止重启继续显示旧active。src/main/library/fontMetricsRequestCoalescerRuntime.ts旧在途metrics失效后虽不缓存仍返回旧值，需与分页一样重读当前代结果，防止停用/收藏后计数回跳。
+
+诊断迁移证据：完整115项独立跑完发现旧断言要求共享favorite mergePolicy、标签通知后saveLibrary、停用无记录不保存，以及隔离loader没有新的现有status模块/系统端口。精确补充build/diagnostics/check-tag-consistency.cjs、check-library-persistence-order.cjs、check-shared-metadata-field-merge.cjs、check-shared-tag-conflicts.cjs、check-font-activation-transaction.cjs、check-watcher-activation-baseline.cjs、check-active-view-consistency.cjs；仅迁移上述冲突与真实依赖，保留失败边界及变异检查。已有IPC注册能力名称继续兼容，底层实现改成本地收藏，避免无关接口改名。
+
+夹具补充：build/diagnostics/fixtures/main-composition-runtime.fixture.json仅新增一个localFavorites owner、首次授权读库前initialize调用及schemaAudit.openLibraryDb由直传转包装；main-operations-composition.fixture.json仅sharedTagsStartup读库前initialize调用。先用398eabb的全部改动生产模块覆盖回放，已确认原两个夹具逐值相等；新观察的全部差异只有这4处，禁止整份重录。
+
+白名单补充：src/main/activation/runtime/fontDeactivationSettlementRuntime.ts既有路径key仅小写，补齐斜杠规范化并供单个停用复用，防止同一路径不同写法漏掉本机临时记录。
+
+后续门证据：main-operations夹具startup.schemaAudit同一openLibraryDb包装端口标识变化（顺序/其他值不变），追加该字段迁移；build/diagnostics/fixtures/watcher-activation-baseline.fixture.json仅fontActivationSessionRuntime源码sha256变化，原exports/functions不变。更新前核对398eabb对应源码hash，既有W-01行为与变异门继续执行。
+
+白名单补充：src/renderer/src/sharedMetadataSyncRuntime.ts仅移除共享同步提示中的“收藏”，与本地保存语义一致。
+
+最终关联检查补充：src/main/library/fontPageQueryCacheRuntime.ts原generation重读仅覆盖active，收藏/智能排序页在写入后仍可返回旧total，改为所有已失效分页拒绝旧结果。build/diagnostics/check-query-cache-invalidation-generation.cjs调整旧调用者的等待顺序并断言收到新代结果；原测试先await旧metrics再释放新gate，会在无event-loop句柄时退出0而未完成，补beforeExit完成哨兵，保留全部原隔离断言。新增门同步覆盖收藏分页、ID及统计的在途失效。
+
+完整verify实报AT-6.4冻结sharedMetadataSyncRuntime源码摘要因提示文字变化失败：补充build/diagnostics/fixtures/react-composition-domain-controllers.fixture.json，仅该文件sourceHashes一项；先用398eabb源文核对旧hash，再计算新hash。控制器生命周期与42项状态等其他冻结值不动。
+
+性能边界复核：收藏仅失效查询缓存，不清空NAS字体缓存。两项本机计数优先在既有本地merged快照关联app.sqlite读取，叠加原激活保存队列；快照行数/根范围不符才使用既有字体载入回退，避免每次metrics都重新遍历共享目录。逻辑归属既有fontMetricsRuntime，组合根只接线；不新增统计store或Rust协议。
+
+完整库IPC读取补齐：mainDataComposition.loadLibrary在原storage载入后复用query安装状态水合，与分页一致，不再直接返回共享font_json的active。build/diagnostics/check-main-composition-runtime.cjs原“载入函数引用等于storage函数”定向改为验证storage载入→query水合及字段保留；helpers/mainCompositionHarness.cjs为该行为提供受控库快照端口。IPC签名和数据库句柄唯一所有者不变。
+
+最终W-01冻结迁移：核对398eabb的fontActivationInstallStatusRuntime旧源码摘要后，仅更新该文件sha256与新增reconcileDeactivatedInstallStatus函数名；其余导出及另外9个未修改生产文件冻结值不动。此前sessionRuntime的单项摘要迁移保留；原行为回归与10项变异检查继续执行。
+
+### 本轮完成与验证边界
+
+- 共享标签：串行提交后发送完整全局knownTags（包括空数组），零绑定目录同样更新；失败根保留目录，回读失败明确反馈，不制造空目录。渲染通知不再saveLibrary回写旧目录；标签pending意图保护继续保留。
+- 停用：单个、批量、启动/退出清理复用安装状态owner，核对新系统列表，分离临时/永久安装；无记录仍核对，系统读取失败不虚报成功。分页、完整库、ID、统计与在途查询统一本机状态及原待保存覆盖。
+- 收藏：唯一权威为app.sqlite.local_font_favorites；一次性事务迁移已有本机merged快照，新机器不导入NAS收藏。取消保存false并清理身份别名；收藏变更只失效查询缓存，保留NAS缓存。本地标签/共享标签/保护字段与既有IPC能力名不变。
+- npm run verify通过：TypeScript + 115/115诊断；新增门包含实际SQLite、A/B隔离、迁移/重启/回滚、标签目录和实际渲染通知、单个/批量停用与真实安装比较器、分页/ID/统计失效，LF/CRLF及4个旧代码反例、4个退化反例。
+- Electron/Vite构建367/1/196模块，混淆3/3通过；git diff --check通过。未执行依赖Cargo的完整npm run build或Windows打包，未声称Windows字体资源/NAS实机验收通过；Rust源码未变。
+- 最终46个文件均属于本节白名单及明确补充；未实际修改的预列候选文件不纳入提交。旧冻结夹具只迁移已证实的组合接线/源码摘要差异，不整体重录。
+- 实机回执：删除最后一个共享标签并重启；取消激活后核对侧栏计数和列表（永久安装仍保留）；A机收藏/取消并重启，B机不随A变化，期间共享标签和保护不变。开发方式仍使用npm run dev。

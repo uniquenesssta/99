@@ -40,7 +40,7 @@ export function runSharedMetadataSyncCheckRuntime(options: SharedMetadataSyncRun
     options.refreshDatabaseDerivedState()
     const roots = Number(result.roots || 0)
     const elapsedMs = Number(result.elapsedMs || 0)
-    const message = `检测到共享标签 / 收藏 / 保护变化，已同步 ${roots} 个共享索引。`
+    const message = `检测到共享标签 / 保护变化，已同步 ${roots} 个共享索引。`
     options.setStatus(message)
     options.appendDeveloperStatus?.('shared-metadata-sync', message, { ...result, elapsedMs })
   })().catch((error) => {

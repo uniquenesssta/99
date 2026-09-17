@@ -1,3 +1,4 @@
+import { fontDeactivationPathKey } from './fontDeactivationSettlementRuntime';
 import type { FontItem, InstallResult } from "../../../shared/types";
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
 import type { FontActivationCleanupRuntime } from "./fontActivationCleanupRuntime";
@@ -18,7 +19,7 @@ export function createFontActivationSessionRuntime(
     requestFontRefresh,
     scheduleBackgroundFontRefreshTail,
   } = deps;
-  const { saveActivationInstallStatus } = statusRuntime;
+  const { reconcileDeactivatedInstallStatus } = statusRuntime;
   const { removeTemporaryActiveRecord } = cleanupRuntime;
   const { activateFontSessionTransaction } = transactionRuntime;
 
@@ -46,10 +47,14 @@ export function createFontActivationSessionRuntime(
     const targets = state.records.filter(
       (record) =>
         record.fontId === item.id ||
-        record.sourcePath.toLowerCase() === item.path.toLowerCase(),
+        fontDeactivationPathKey(record.sourcePath) === fontDeactivationPathKey(item.path),
     );
 
     if (!targets.length) {
+      const status = (await reconcileDeactivatedInstallStatus([item]))[item.id];
+      if (status.by === 'managed' || status.by === 'both') return {
+        ok: false, message: '系统仍检测到临时激活，但缺少对应的本机临时记录；已保留实际状态。',
+      };
       return {
         ok: true,
         message:
@@ -79,11 +84,10 @@ export function createFontActivationSessionRuntime(
 
     await saveTemporaryActiveFonts({ version: 1, records: remaining });
     if (cleaned === targets.length) {
-      await saveActivationInstallStatus(item, {
-        installed: false,
-        by: "none",
-        matches: [],
-      });
+      const status = (await reconcileDeactivatedInstallStatus([item], targets.map(record => record.installPath)))[item.id];
+      if (status.by === 'managed' || status.by === 'both') return {
+        ok: false, message: '系统仍检测到临时激活，状态已保留，请重试。',
+      };
     }
     scheduleBackgroundFontRefreshTail("deactivate-tail", 80);
 

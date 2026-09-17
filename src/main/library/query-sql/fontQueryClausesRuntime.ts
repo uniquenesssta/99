@@ -170,7 +170,7 @@ export function addActiveFilterClauses(
       );
       break;
     case "active":
-      parts.clauses.push("(fonts.active = 1 OR COALESCE(install_status.by_type, 'none') IN ('managed', 'both'))");
+      parts.clauses.push("(COALESCE(install_status.by_type, 'none') IN ('managed', 'both'))");
       break;
     case "systemBuiltin":
       parts.clauses.push(systemMatchSqlExpression());

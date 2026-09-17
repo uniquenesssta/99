@@ -106,7 +106,7 @@
   "sourceHashes": {
     "src/renderer/src/fontWriteQueueRuntime.ts": "c6eb36a204a0c42d29d96a4756352d96b3ca4b495d02a49cba49a06e627f4756",
     "src/renderer/src/databaseDerivedStateRuntime.ts": "cfc5dbf069a2e282f1d37b938eb1f0640aa869c1709c33837c1f2716cd333752",
-    "src/renderer/src/sharedMetadataSyncRuntime.ts": "10ae9150b3115ea4ef1a9060cddb4b76455d28f3bd14726bee9862e1d564d50e",
+    "src/renderer/src/sharedMetadataSyncRuntime.ts": "3e66af88272bcfd429b0b15836a19fec0e380ede989459e15d2d1dc7d22e2614",
     "src/renderer/src/rendererDeveloperStatusRuntime.ts": "435e2f25ab960502c5bdb31b907b24f483a4ecf251370ba8e0bf0804221ed437",
     "src/renderer/src/runtime/app/effects/useLibraryAutosaveRuntime.ts": "e3295dfa7b88644afcaace8b209fab4d9bf30993b90c0dfeb3ac2c3ff86b1f86",
     "src/renderer/src/runtime/system/fontInstallStatusRuntime.ts": "e81953ead27aee0bf466c5204e3491cbc3d591eb82377de067492e7b59d94350",

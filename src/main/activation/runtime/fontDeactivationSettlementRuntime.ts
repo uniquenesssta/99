@@ -50,7 +50,7 @@ function failedStep(error: unknown, fallback: string): DeactivationStepResult {
 }
 
 export function fontDeactivationPathKey(filePath: string): string {
-  return filePath.toLowerCase();
+  return String(filePath || "").replace(/[\\/]+/g, "\\").replace(/\\+$/g, "").toLowerCase();
 }
 
 export function fontDeactivationSettlementFailureMessage(

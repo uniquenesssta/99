@@ -34,7 +34,8 @@ function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    localRequire,
+    id => id === './fontDeactivationSettlementRuntime'
+      ? loadTypeScriptModule('src/main/activation/runtime/fontDeactivationSettlementRuntime.ts') : localRequire(id),
     module,
     path.join(root, rel),
     path.dirname(path.join(root, rel)),
@@ -298,6 +299,7 @@ async function caseA1() {
           nodeBridgeFallbackDeniedMessage: () => 'fallback denied',
         }
       }
+      if (id === './fontActivationInstallStatusRuntime') return loadTypeScriptModule('src/main/activation/runtime/fontActivationInstallStatusRuntime.ts')
       return require(id)
     },
   )
@@ -458,7 +460,7 @@ async function caseA2() {
   const module = loadTypeScriptModule(
     'src/main/activation/runtime/fontDeactivationBatchRuntime.ts',
     (id) => {
-      if (id === './fontActivationInstallStatusRuntime') return { uniqueFontItems }
+      if (id === './fontActivationInstallStatusRuntime') return loadTypeScriptModule('src/main/activation/runtime/fontActivationInstallStatusRuntime.ts')
       if (id === './fontDeactivationSettlementRuntime') {
         return loadTypeScriptModule('src/main/activation/runtime/fontDeactivationSettlementRuntime.ts')
       }
@@ -489,6 +491,9 @@ async function caseA2() {
         [records[1].installPath]: { ok: false, count: 0, message: 'injected batch remove failure' },
       }),
       deleteFontRegistryValuesHKCUBatch: async (names) => { deletedRegistryNames = names.slice() },
+      clearInstalledFontsMemoryCache() {}, getSystemInstalledFontsCached: async () => [],
+      normalizePathForCacheCompare: value => value.toLowerCase(), isTemporaryActiveInstalledRecord: () => false,
+      compareFontInstalledWithList: () => ({ installed: false, by: 'none', matches: [] }),
       scheduleActivationInstallStatusSave: (updates) => { statusUpdates = updates },
       scheduleBackgroundFontRefreshTail: () => { refreshTails += 1 },
       appendStartupLog: () => undefined,
@@ -584,6 +589,9 @@ async function caseA2() {
   const mixedRegistryRuntime = module.createFontDeactivationBatchRuntime(
     {
       ensureWindows: () => undefined,
+      clearInstalledFontsMemoryCache() {}, getSystemInstalledFontsCached: async () => [],
+      normalizePathForCacheCompare: value => value.toLowerCase(), isTemporaryActiveInstalledRecord: () => false,
+      compareFontInstalledWithList: () => ({ installed: false, by: 'none', matches: [] }),
       loadTemporaryActiveFonts: async () => ({ version: 1, records: registryRecords }),
       saveTemporaryActiveFonts: async (state) => { mixedRegistryState = state },
       removeFontResourceSessionBatch: async () => Object.fromEntries(
@@ -728,7 +736,7 @@ async function caseA8() {
   const module = loadTypeScriptModule(
     'src/main/activation/runtime/fontActivationBatchRuntime.ts',
     (id) => {
-      if (id === './fontActivationInstallStatusRuntime') return { uniqueFontItems }
+      if (id === './fontActivationInstallStatusRuntime') return loadTypeScriptModule('src/main/activation/runtime/fontActivationInstallStatusRuntime.ts')
       if (id === './fontDeactivationBatchRuntime') {
         return { createFontDeactivationBatchRuntime: () => ({ deactivateFontSessionsBatch: async () => ({}) }) }
       }

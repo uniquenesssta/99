@@ -72,7 +72,7 @@ export function createFontMetricsRequestCoalescerRuntime(
         cachedByKey.set(key, entry)
         latestCacheEntry = entry
       }
-      return result
+      return requestGeneration === cacheGeneration ? result : run(args)
     }).finally(() => {
       if (inFlightByKey.get(key) === promise) inFlightByKey.delete(key)
     })

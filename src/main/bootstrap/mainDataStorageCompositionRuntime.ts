@@ -1,3 +1,4 @@
+import { createLocalFontFavoritesRuntime } from '../library/runtime/localFontFavoritesRuntime';
 import type { DatabaseArgument } from './mainDatabasePorts';
 import type { FontItem, LibraryState, ScanResult } from "../../shared/types";
 import { FONT_EXTENSIONS, INSTALLED_FONTS_TTL_MS, SQLITE_BUSY_TIMEOUT_MS, SQLITE_MMAP_SIZE_BYTES } from "../bootstrap/mainIndexConstants";
@@ -23,7 +24,7 @@ import { createRootArchitectureDatabasesRuntime } from "../cache/rootArchitectur
 import { createScanCacheStorageRuntime } from "../cache/scanCacheStorageRuntime";
 import { createApplicationDatabasePaths } from "../db/appDatabasePaths";
 import { createDbQueryWorkerRuntime } from "../db/dbQueryWorkerRuntime";
-import { ensureSqliteColumn as ensureSqliteColumnRuntime, getSqliteMeta, parseSqliteJson, setSqliteMeta } from "../db/sqliteHelpers";
+import { ensureSqliteColumn as ensureSqliteColumnRuntime, getSqliteMeta, parseSqliteJson, setSqliteMeta, sqliteTableExists } from "../db/sqliteHelpers";
 import { createSqliteRuntime } from "../db/sqliteRuntime";
 import { createFolderCacheRuntime, type FolderCacheRuntime, type FolderCacheSource } from "../folders/folderCacheRuntime";
 import { createCachedFontRuntime, fontItemFromPath, hasValidFontSignature, readFontMetadata, sha1 } from "../fonts/fontRuntime";
@@ -314,11 +315,11 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
   });
 
   const {
-    openLibraryDb,
+    openLibraryDb: openLibraryDbBase,
     getOpenLibraryDb,
     closeLibraryDb,
     loadLibraryShellFromSqlite,
-    hydrateLocalTagsForFonts,
+    hydrateLocalTagsForFonts: hydrateLocalTagsForFontsBase,
     localTagsByFontIds,
     setLocalFontTags: setLocalFontTagsBase,
     setLocalFontTagsBatch: setLocalFontTagsBatchBase,
@@ -327,6 +328,32 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     loadLibraryShell,
     saveLibrary: saveLibraryBase,
   } = libraryRuntime;
+
+  const localFavorites = createLocalFontFavoritesRuntime({
+    openLibraryDb: openLibraryDbBase,
+    invalidate: clearFontQueryCaches,
+    appendLog: appendStartupLog,
+    loadLegacyLocalSnapshot: async () => {
+      const path = dataPath('db', 'merged-index.sqlite');
+      if (!(await exists(path))) return [];
+      const db = await openStableSqliteDb(path, 'local-favorite-migration');
+      try {
+        if (!sqliteTableExists(db, 'entries')) return [];
+        const rows = db.prepare("SELECT root_path, relative_path, file_size, modified_at, font_json FROM entries WHERE COALESCE(is_deleted, 0) = 0 AND status = 'ok' AND json_valid(font_json)").all() as Array<{ root_path: string; relative_path: string; file_size: number; modified_at: number; font_json: string }>;
+        return rows.map(row => cachedFontForRuntime(JSON.parse(row.font_json), cacheEntryRuntimePath(row.root_path, row.relative_path), { size: row.file_size, mtimeMs: row.modified_at }, row.relative_path));
+      } finally { closeSqliteDb(db); }
+    },
+  });
+  async function openLibraryDb() {
+    const db = await openLibraryDbBase();
+    await localFavorites.initialize();
+    return db;
+  }
+  async function hydrateLocalTagsForFonts(items: FontItem[]): Promise<FontItem[]> {
+    return localFavorites.hydrate(await hydrateLocalTagsForFontsBase(items));
+  }
+  const setLocalFontFavorite = localFavorites.setFavorite;
+  const hydrateLocalFavoritesForFonts = localFavorites.hydrate;
 
   async function saveLibrary(state: LibraryState): Promise<boolean> {
     const saved = await saveLibraryBase(state);
@@ -584,16 +611,18 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
   async function loadSharedFontsForFolders(
     folders: string[],
   ): Promise<FontItem[]> {
-    return requireFolderCacheRuntime().loadSharedFontsForFolders(folders);
+    await localFavorites.initialize();
+    return localFavorites.hydrate(await requireFolderCacheRuntime().loadSharedFontsForFolders(folders));
   }
 
   async function loadSharedFontsForFoldersFresh(
     folders: string[],
   ): Promise<FontItem[]> {
     const runtime = requireFolderCacheRuntime();
-    return typeof runtime.loadSharedFontsForFoldersFresh === "function"
+    await localFavorites.initialize();
+    return localFavorites.hydrate(await (typeof runtime.loadSharedFontsForFoldersFresh === "function"
       ? runtime.loadSharedFontsForFoldersFresh(folders)
-      : runtime.loadSharedFontsForFolders(folders);
+      : runtime.loadSharedFontsForFolders(folders)));
   }
 
   async function countSharedFontsForFolders(folders: string[]): Promise<number> {
@@ -712,6 +741,8 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     sharedMetadataDbPathForRoot,
     closePreviewDb,
     closeLibraryDb,
+    setLocalFontFavorite,
+    hydrateLocalFavoritesForFonts,
     hydrateLocalTagsForFonts,
     localTagsByFontIds,
     setLocalFontTagsBase,

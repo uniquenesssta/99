@@ -1,3 +1,5 @@
+import type { FontItem } from '../../../shared/types';
+import { createFontActivationInstallStatusRuntime } from './fontActivationInstallStatusRuntime';
 import { promises as fsp } from "node:fs";
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
 import { createTemporaryFontDeleteQueue } from "../temporaryFontDeleteQueue";
@@ -162,6 +164,16 @@ export function createFontActivationCleanupRuntime(
 
     await saveTemporaryActiveFonts({ version: 1, records: remaining });
     clearInstalledFontsMemoryCache();
+    const removed = state.records.filter(record => !remaining.includes(record));
+    if (removed.length) {
+      try {
+        await createFontActivationInstallStatusRuntime(deps).reconcileDeactivatedInstallStatus(
+          removed.map(record => ({ id: record.fontId, path: record.sourcePath, fileName: record.fileName,
+            managedInstallPath: record.installPath } as FontItem)), removed.map(record => record.installPath));
+      } catch (error) {
+        appendStartupLog(`temporary cleanup status reconciliation failed: ${String(error)}`);
+      }
+    }
 
     appendStartupLog(
       `temporary active fonts cleanup finished: ${reason}, cleaned=${cleaned}, remaining=${remaining.length}`,

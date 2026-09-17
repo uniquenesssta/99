@@ -1,3 +1,5 @@
+import { resolve } from 'node:path'
+import { mergedIndexLocalFavoriteExpr, rootIndexRuntimeFontIdExpr, sqliteLiteral } from '../indexing/root-query/rootIndexQuerySharedSql'
 import type { FontItem,FontMetricsResult,InstallCompareResult,LibraryShell } from '../../shared/types'
 import { normalizePathForCacheCompare } from '../path/cachePath'
 import type { FontSearchCategory } from './fontSearchRuntime'
@@ -79,13 +81,13 @@ export function createFontMetricsRuntime(options: FontMetricsRuntimeOptions): {
         installStatusMissingCount = missingIds.size
         hydrated = rawFonts.map((item) => {
           const result = results[item.id]
-          if (!result) return { ...item, installStatusKnown: false }
+          if (!result) return { ...item, active: false, installStatusKnown: false }
           return {
             ...item,
             installStatusKnown: true,
             systemInstalled: result.installed && result.by !== 'managed',
             systemInstallMatches: result.matches || [],
-            active: item.active || result.by === 'managed' || result.by === 'both'
+            active: result.by === 'managed' || result.by === 'both'
           }
         })
       } catch {
@@ -172,4 +174,35 @@ export function createFontMetricsRuntime(options: FontMetricsRuntimeOptions): {
   }
 
   return { getFontMetricsFromLibrary }
+}
+
+
+// The local snapshot keeps hot metrics reads off the NAS. The pending queue is
+// applied before counting, just as it is for page hydration and active filters.
+export async function readLocalUserMetricsFromMergedIndex(options: {
+  roots: string[]
+  expectedTotal: number
+  openMergedIndexDb: () => Promise<any>
+  openLibraryDb: () => Promise<any>
+  librarySqlitePath: () => string
+  closeSqliteDb: (db: any) => void
+  applyPendingActivationState: (items: FontItem[]) => FontItem[]
+}): Promise<Pick<FontMetricsResult, 'favoriteCount' | 'activeCount'> | null> {
+  if (!options.roots.length) return { favoriteCount: 0, activeCount: 0 }
+  await options.openLibraryDb()
+  const db = await options.openMergedIndexDb()
+  try {
+    db.exec(`ATTACH DATABASE ${sqliteLiteral(options.librarySqlitePath())} AS local_db`)
+    const roots = [...new Set(options.roots.map(root => resolve(root)))]
+    const rows = db.prepare(`SELECT ${rootIndexRuntimeFontIdExpr()} AS id,
+      entries.installed_by, ${mergedIndexLocalFavoriteExpr()} AS favorite
+      FROM entries WHERE COALESCE(entries.is_deleted, 0) = 0 AND entries.status = 'ok'
+      AND entries.font_json IS NOT NULL AND json_valid(entries.font_json)
+      AND entries.root_path IN (${roots.map(() => '?').join(',')})`).all(...roots) as Array<{ id: string; installed_by: string; favorite: number }>
+    if (rows.length !== options.expectedTotal) return null
+    const fonts = options.applyPendingActivationState(rows.map(row => ({
+      id: row.id, favorite: !!row.favorite, active: row.installed_by === 'managed' || row.installed_by === 'both',
+    } as FontItem)))
+    return { favoriteCount: fonts.filter(font => font.favorite).length, activeCount: fonts.filter(font => font.active).length }
+  } finally { options.closeSqliteDb(db) }
 }

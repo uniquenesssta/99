@@ -27,6 +27,7 @@ export interface MainMutationCompositionOptions {
     tagMutationWriteProtocolRuntime: ReturnType<typeof createTagMutationWriteProtocolRuntime>;
   };
   storage: Pick<Data['storage'],
+    | 'setLocalFontFavorite'
     | 'setLocalFontTagsBase'
     | 'invalidateSharedFontRuntimeCaches'
     | 'setLocalFontTagsBatchBase'
@@ -113,6 +114,7 @@ export interface MainMutationCompositionOptions {
 export function createMainMutationCompositionRuntime(options: MainMutationCompositionOptions) {
   const { tagMutationWriteProtocolRuntime } = options.tags;
   const {
+    setLocalFontFavorite,
     setLocalFontTagsBase,
     invalidateSharedFontRuntimeCaches,
     setLocalFontTagsBatchBase,
@@ -350,7 +352,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     syncSharedMetadataRootsToMergedIndex:
       sharedMetadataMergedIndexSyncRuntime.syncSharedMetadataRootsToMergedIndex,
     refreshKnownSharedTagsFromMetadata: async (folders, options) => {
-      await refreshKnownSharedTagsFromMetadata(folders, options);
+      return refreshKnownSharedTagsFromMetadata(folders, options);
     },
     renameKnownSharedTagIfUnbound,
     deleteKnownSharedTagIfUnbound,
@@ -358,7 +360,6 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
 
   const {
     setFontDeleteProtectionInIndex,
-    setSharedFontFavoriteInIndex,
     setSharedFontTagsInIndex: setSharedFontTagsInIndexBase,
     setSharedFontTagsBatchInIndex: setSharedFontTagsBatchInIndexBase,
     renameSharedFontTagInIndex: renameSharedFontTagInIndexBase,
@@ -470,7 +471,8 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     uninstallFontSystemWide,
     deleteFontFilesToTrash,
     setFontDeleteProtectionInIndex,
-    setSharedFontFavoriteInIndex,
+    // Preserve the existing registration port; its implementation is local-only.
+    setSharedFontFavoriteInIndex: setLocalFontFavorite,
     setLocalFontTags,
     setLocalFontTagsBatch,
     deleteLocalFontTag,

@@ -61,6 +61,7 @@ function createHarness(overrides = new Map()) {
     if (name === 'createInstallStatusRefreshStarterRuntime') specific.activeInstallStatusRefreshJob = () => 'refresh-job'
     if (name === 'createStorageProfileRuntime') specific.storageProfileForPath = file => ({ type: 'ssd', path: file })
     if (name === 'createLibraryRuntime') Object.assign(specific, {
+      loadLibrary: operation('createLibraryRuntime.loadLibrary', async () => state.librarySnapshot || { fonts: {} }),
       openLibraryDb: operation('library.open', async () => database),
       getOpenLibraryDb: operation('library.get', () => database),
       saveLibrary: operation('library.save', async () => state.saveSucceeds),

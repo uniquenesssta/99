@@ -55,6 +55,7 @@ export type FontQueryFacadeRuntimeOptions = {
   appWatchedFolders: () => Promise<string[]>;
   cleanSharedFontsForQuery: (request: FontQueryRequest) => Promise<FontItem[]>;
   hydrateLocalTagsForFonts: (items: FontItem[]) => Promise<FontItem[]>;
+  reconcileLocalUserMetrics?: (metrics: FontMetricsResult) => Promise<FontMetricsResult>;
   applyPendingActivationState?: (items: FontItem[]) => FontItem[];
   readInstallStatusIndex: (
     items: FontItem[],
@@ -138,6 +139,7 @@ export function createFontQueryFacadeRuntime(
 ): FontQueryFacadeRuntime {
   const metricsReconcileCache = createMetricsInstallStatusReconcileCacheRuntime();
   const metricsRequestCoalescer = createFontMetricsRequestCoalescerRuntime();
+  let queryGeneration = 0;
 
   function delay(ms: number): Promise<void> {
     return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
@@ -245,7 +247,7 @@ export function createFontQueryFacadeRuntime(
         enqueueMissTasks: false,
       });
       if (!Object.keys(results).length)
-        return overlay(items.map((item) => ({ ...item, installStatusKnown: false })));
+        return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false })));
       return overlay(items.map((item) => {
         const result = results[item.id];
         return result
@@ -257,13 +259,13 @@ export function createFontQueryFacadeRuntime(
               active:
                 result.by === "managed" || result.by === "both",
             }
-          : { ...item, installStatusKnown: false };
+          : { ...item, active: false, installStatusKnown: false };
       }));
     } catch (error) {
       options.appendLog(
         `hydrateInstallStatusForFonts failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return overlay(items.map((item) => ({ ...item, installStatusKnown: false })));
+      return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false })));
     }
   }
 
@@ -377,6 +379,10 @@ export function createFontQueryFacadeRuntime(
     startedAt: number,
     reason: string,
   ): Promise<{ ids: string[]; total: number; truncated: boolean; engine: "like" | "sql" } | null> {
+    // Active IDs need the same pending state as active pages, before the async
+    // installation snapshot is persisted and merged.
+    if (request.activeFilter?.kind === 'active') return null;
+    const generation = queryGeneration;
     try {
       const folders = await options.appWatchedFolders();
       const roots = Array.from(
@@ -410,7 +416,7 @@ export function createFontQueryFacadeRuntime(
           usedLike: built.usedLike,
         },
       });
-      if (!rustResult) return null;
+      if (!rustResult || generation !== queryGeneration) return null;
       if (tagRevisionCacheToken(tagRevisionSnapshot) && !tagRevisionMatchesSnapshot(tagRevisionSnapshot, rustResult.tagRevision as any)) {
         options.appendLog(`rust ids query rejected: reason=missing-or-mismatched-tag-revision, reasonKind=${reason}`);
         options.migrationDiagnostics?.record({
@@ -647,13 +653,17 @@ export function createFontQueryFacadeRuntime(
     const metricsRevisionToken = tagRevisionCacheToken(options.tagMetadataRevisionBarrier?.snapshot());
     return metricsRequestCoalescer.run({
       appendLog: options.appendLog,
-      load: loadFontMetricsFromLibraryUncoalesced,
+      load: async () => {
+        const metrics = await loadFontMetricsFromLibraryUncoalesced();
+        return options.reconcileLocalUserMetrics ? options.reconcileLocalUserMetrics(metrics) : metrics;
+      },
       key: metricsRevisionToken ? `metrics:${metricsRevisionToken}` : 'metrics:default',
     });
   }
 
 
   function clearFontMetricsQueryCache(): void {
+    queryGeneration += 1;
     metricsRequestCoalescer.clear();
   }
 

@@ -30,6 +30,13 @@ export function rootIndexLocalTagMatchExpr(alias = 'lft'): string {
   return `(LOWER(${alias}.font_id) = ${rootIndexJsonTextExpr('id')} OR LOWER(${alias}.font_id) = ${rootIndexRuntimeFontIdExpr()} OR (COALESCE(${alias}.font_path, '') <> '' AND LOWER(${alias}.font_path) = ${rootIndexRuntimePathExpr()}))`
 }
 
+export function mergedIndexLocalFavoriteExpr(): string {
+  return `COALESCE(
+    (SELECT favorite FROM local_db.local_font_favorites WHERE font_path <> '' AND font_path = ${rootIndexRuntimePathExpr()} LIMIT 1),
+    (SELECT favorite FROM local_db.local_font_favorites WHERE font_id = ${rootIndexRuntimeFontIdExpr()} LIMIT 1),
+    (SELECT favorite FROM local_db.local_font_favorites WHERE font_id = ${rootIndexJsonTextExpr('id')} LIMIT 1), 0)`
+}
+
 export function rootIndexInstalledExpr(hasInstallJoin: boolean): string {
   return hasInstallJoin
     ? `(COALESCE(install_status.installed, ${rootIndexJsonBoolExpr('systemInstalled')}, 0) = 1 AND COALESCE(install_status.by_type, '') <> 'managed')`
@@ -44,8 +51,8 @@ export function rootIndexNotInstalledExpr(hasInstallJoin: boolean): string {
 
 export function rootIndexActiveExpr(hasInstallJoin: boolean): string {
   return hasInstallJoin
-    ? `(COALESCE(${rootIndexJsonBoolExpr('active')}, 0) = 1 OR COALESCE(install_status.by_type, 'none') IN ('managed', 'both'))`
-    : `${rootIndexJsonBoolExpr('active')} = 1`
+    ? `(COALESCE(install_status.by_type, 'none') IN ('managed', 'both'))`
+    : `0`
 }
 
 export function rootIndexSystemDefaultExpr(hasInstallJoin: boolean): string {
@@ -62,7 +69,7 @@ export function mergedIndexNotInstalledExpr(): string {
 }
 
 export function mergedIndexActiveExpr(): string {
-  return `(COALESCE(${rootIndexJsonBoolExpr('active')}, 0) = 1 OR COALESCE(entries.installed_by, 'none') IN ('managed', 'both'))`
+  return `(COALESCE(entries.installed_by, 'none') IN ('managed', 'both'))`
 }
 
 export function mergedIndexSystemDefaultExpr(): string {

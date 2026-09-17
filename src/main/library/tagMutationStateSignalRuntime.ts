@@ -23,6 +23,7 @@ export type LocalTagsMutationStateSignalInput = {
 }
 
 export type SharedMetadataMutationStateSignalInput = {
+  knownTags?: string[]
   trace?: OperationTrace
   mutationId?: string
   mutationKind?: string
@@ -134,6 +135,7 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
     broadcastFontTagMutationStateSignal({
       trace,
       scope: 'shared',
+      knownTags: Array.isArray(signal.knownTags) ? signal.knownTags : undefined,
       mutationKind: signal.mutationKind || 'unknown',
       changedIds,
       updatedAt: signal.updatedAt || new Date().toISOString(),

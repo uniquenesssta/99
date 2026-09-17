@@ -7,6 +7,7 @@ export type TagMutationWriteScope = 'local' | 'shared'
 export type TagMutationWriteProtocolOptions = {
   tagMetadataRevisionBarrier: TagMetadataRevisionBarrierRuntime
   clearFontQueryCaches: () => void
+  onSharedCatalogCommitted?: (result: FontTagUpdateResult) => void
   appendStartupLog?: (message: string) => void
 }
 
@@ -57,6 +58,7 @@ export function createTagMutationWriteProtocolRuntime(options: TagMutationWriteP
       const updatedIds = tagMutationUpdatedIds(result, inputIds)
       const protocolKind = result.mutationProtocol?.mutationKind || runOptions.mutationKind
       noteTagMutation(options.tagMetadataRevisionBarrier, runOptions.scope, `${protocolKind}:commit`, updatedIds)
+      if (runOptions.scope === 'shared' && Array.isArray(result.mutationProtocol?.knownTags)) options.onSharedCatalogCommitted?.(result)
       await runOptions.afterCommit?.(result)
       options.clearFontQueryCaches()
       return result

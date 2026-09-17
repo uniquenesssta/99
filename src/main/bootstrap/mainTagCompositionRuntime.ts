@@ -16,6 +16,10 @@ export function createMainTagCompositionRuntime(options: TagOptions) {
   });
   const tagMutationWriteProtocolRuntime = createTagMutationWriteProtocolRuntime({
     tagMetadataRevisionBarrier, ...options,
+    onSharedCatalogCommitted: (result) => tagMutationStateSignalRuntime.handleSharedMetadataMutationStateSignal({
+      mutationKind: 'catalogCommit', changedIds: result.updatedIds || [],
+      knownTags: result.mutationProtocol!.knownTags, mergedIndexDirty: false,
+    }, 'node-fallback'),
   });
   return {
     tagMetadataRevisionBarrier, tagMutationStateSignalRuntime, tagMutationWriteProtocolRuntime,

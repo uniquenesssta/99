@@ -144,7 +144,8 @@
     "diagnostics:tag-mutation-identity": "node build/diagnostics/check-tag-mutation-identity.cjs",
     "diagnostics:tag-intent-lifecycle": "node build/diagnostics/check-tag-intent-lifecycle.cjs",
     "diagnostics:operation-chain": "node build/diagnostics/check-operation-chain.cjs",
-    "diagnostics:runtime-feedback": "node build/diagnostics/check-runtime-feedback.cjs"
+    "diagnostics:runtime-feedback": "node build/diagnostics/check-runtime-feedback.cjs",
+    "diagnostics:local-user-state": "node build/diagnostics/check-local-user-state.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

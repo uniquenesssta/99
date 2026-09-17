@@ -153,7 +153,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     loadLibraryShellFromSqlite,
     hydrateLocalTagsForFonts,
     localTagsByFontIds,
-    loadLibrary,
+    loadLibrary: loadLibraryBase,
     loadLibraryShell,
     setCacheKvs,
     saveMetricsSnapshot,
@@ -185,6 +185,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     loadSharedFontsForFolders,
     loadSharedFontsForFoldersFresh,
     hydrateLocalTagsForFonts,
+    hydrateLocalFavoritesForFonts: storage.hydrateLocalFavoritesForFonts,
     isSystemInstalledRecord,
     isPathInWindowsFonts,
     appendStartupLog,
@@ -217,6 +218,11 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     saveMetricsSnapshot,
     readInstallStatusIndex,
   });
+  async function loadLibrary() {
+    const state = await loadLibraryBase();
+    const fonts = await query.hydrateInstallStatusForFonts(Object.values(state.fonts || {}));
+    return { ...state, fonts: Object.fromEntries(fonts.map(font => [font.id, font])) };
+  }
   const {
     queryFontPageInLibrary,
     searchFontsInLibrary,
@@ -380,6 +386,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
       getOpenLibraryDb: storage.getOpenLibraryDb,
       closeLibraryDb: storage.closeLibraryDb,
       loadLibraryShellFromSqlite: storage.loadLibraryShellFromSqlite,
+      setLocalFontFavorite: storage.setLocalFontFavorite,
       setLocalFontTagsBase: storage.setLocalFontTagsBase,
       setLocalFontTagsBatchBase: storage.setLocalFontTagsBatchBase,
       deleteLocalFontTagBase: storage.deleteLocalFontTagBase,

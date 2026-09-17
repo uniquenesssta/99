@@ -139,6 +139,38 @@ export function createFontActivationInstallStatusRuntime(
     return results;
   }
 
+  async function reconcileDeactivatedInstallStatus(items: FontItem[], removedPaths: string[] = []): Promise<Record<string, InstallCompareResult>> {
+    const unique = uniqueFontItems(items);
+    if (!unique.length) return {};
+    // Ignore cached UI/index state: a missing session record cannot prove that
+    // the font is not permanently installed. A fresh system read owns that fact.
+    deps.clearInstalledFontsMemoryCache();
+    const removed = new Set(removedPaths.map(deps.normalizePathForCacheCompare));
+    const installed = (await getSystemInstalledFontsCached(true)).filter(record =>
+      !removed.has(deps.normalizePathForCacheCompare(record.path || record.value || '')));
+    const results: Record<string, InstallCompareResult> = {};
+    for (const item of unique) {
+      const compared = compareFontInstalledWithList(item, installed);
+      // The permanent-install comparator intentionally excludes temporary
+      // resources. Match those separately using this font's managed identity.
+      const temporaryMatches = installed.filter(record => isTemporaryActiveInstalledRecord(record) && (
+        deps.normalizePathForCacheCompare(record.path || record.value || '') === deps.normalizePathForCacheCompare(item.managedInstallPath || '') ||
+        String(record.fileName || basename(record.path || record.value || '')).toLowerCase() === deps.safeTemporaryActiveFontName(item).toLowerCase() ||
+        String(record.registryName || '').toLowerCase() === deps.temporaryActiveRegistryNameFor(item).toLowerCase()
+      ));
+      const matches = [...(compared.matches || []).filter(record => !isTemporaryActiveInstalledRecord(record)), ...temporaryMatches];
+      const temporary = temporaryMatches.length > 0;
+      const permanent = matches.some(record => !isTemporaryActiveInstalledRecord(record));
+      results[item.id] = {
+        ...compared, matches, installed: compared.installed || temporary,
+        by: temporary ? (permanent ? 'both' : 'managed')
+          : compared.by === 'managed' || compared.by === 'both' ? (matches.some(record => record.source === 'HKLM' || record.source === 'WindowsFontsFolder') ? 'system' : 'user') : compared.by,
+      };
+    }
+    scheduleActivationInstallStatusSave(results, new Map(unique.map(item => [item.id, item])), 'deactivate-reconcile');
+    return results;
+  }
+
   function temporaryActiveRecordToInstalledRecord(
     record: TemporaryActiveFontRecord,
   ): SystemInstalledFont {
@@ -163,6 +195,7 @@ export function createFontActivationInstallStatusRuntime(
   }
 
   return {
+    reconcileDeactivatedInstallStatus,
     installCompareFromFontItemSnapshot,
     readActivationInstallStatusSnapshot,
     compareActivationInstallStatus,

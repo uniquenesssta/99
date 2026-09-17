@@ -181,6 +181,12 @@ export function initializeLibraryDb(db: SqliteDb): void {
       name TEXT PRIMARY KEY,
       sort_order INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS local_font_favorites (
+      font_id TEXT PRIMARY KEY,
+      font_path TEXT NOT NULL DEFAULT '',
+      favorite INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_local_favorites_path ON local_font_favorites(font_path);
     CREATE TABLE IF NOT EXISTS local_font_tags (
       font_id TEXT NOT NULL,
       font_path TEXT NOT NULL DEFAULT '',

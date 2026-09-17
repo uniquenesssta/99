@@ -22,7 +22,7 @@ function addRootIndexActiveFilterClauses(parts: RootIndexQueryParts, request: Fo
   const filter = request.activeFilter || { kind: 'all' }
   switch (filter.kind) {
     case 'favorites':
-      parts.clauses.push(`${rootIndexJsonBoolExpr('favorite')} = 1`)
+      parts.unsupportedReason = 'favorite filter needs local app database'
       break
     case 'installed':
       parts.clauses.push(rootIndexInstalledExpr(parts.hasInstallJoin))
@@ -106,7 +106,7 @@ function rootIndexOrderBy(request: FontQueryRequest, hasInstallJoin: boolean): s
   const modified = `COALESCE(entries.modified_at, 0)`
   if (sortMode === 'smart') {
     const time = timeSortMode === 'created' ? created : modified
-    return `${rootIndexJsonBoolExpr('favorite')} DESC, ${rootIndexJsonBoolExpr('active')} DESC, ${rootIndexInstalledExpr(hasInstallJoin)} DESC, ${time} DESC, ${fileName} ASC, entries.relative_path ASC`
+    return `${rootIndexJsonBoolExpr('active')} DESC, ${rootIndexInstalledExpr(hasInstallJoin)} DESC, ${time} DESC, ${fileName} ASC, entries.relative_path ASC`
   }
   if (sortMode === 'nameAsc') return `${fileName} ASC, entries.relative_path ASC`
   if (sortMode === 'nameDesc') return `${fileName} DESC, entries.relative_path ASC`
@@ -134,6 +134,7 @@ export function buildRootIndexQuerySql(rootPath: string, request: FontQueryReque
   const joinSql = hasInstallJoin
     ? `LEFT JOIN install_db.install_status AS install_status ON install_status.font_id = ${rootIndexJsonExpr('id')}`
     : ''
+  if ((request.sortMode || 'smart') === 'smart') parts.unsupportedReason = 'favorite sort needs local app database'
   const where = parts.clauses.length ? `WHERE ${parts.clauses.join(' AND ')}` : ''
   const orderBy = rootIndexOrderBy(request, hasInstallJoin)
   const selectInstallColumns = hasInstallJoin ? `, install_status.installed AS installed, install_status.by_type AS installed_by, install_status.matches_json AS matches_json` : `, NULL AS installed, NULL AS installed_by, NULL AS matches_json`

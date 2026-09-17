@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+let completed = false
+process.once('beforeExit', () => { if (!completed) { console.error('query cache diagnostics did not complete'); process.exitCode = 1 } })
 const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
@@ -83,12 +85,14 @@ async function runPageCacheBehavior() {
   assert(loads === 2, 'a request after invalidation incorrectly joined an older in-flight page query')
 
   oldGate.resolve({ queryKey: 'old', items: [], total: 1, offset: 0, limit: 20, truncated: false, engine: 'sql', elapsedMs: 1 })
-  await oldRequest
+  await Promise.resolve()
+  await Promise.resolve()
   const joinedNewRequest = runtime.queryFontPageInLibrary(request)
   assert(loads === 2, 'an older completion deleted the newer in-flight page query')
 
   const newResult = { queryKey: 'new', items: [], total: 2, offset: 0, limit: 20, truncated: false, engine: 'sql', elapsedMs: 1 }
   newGate.resolve(newResult)
+  assert((await oldRequest).queryKey === 'new', 'old page caller received stale data after invalidation')
   assert((await newRequest).queryKey === 'new' && (await joinedNewRequest).queryKey === 'new', 'new page query callers did not share the current-generation result')
   assert((await runtime.queryFontPageInLibrary(request)).queryKey === 'new' && loads === 2, 'current-generation page result was not cached')
 }
@@ -111,11 +115,13 @@ async function runMetricsCacheBehavior() {
   assert(loads === 2, 'a metrics request after clear incorrectly joined an older in-flight request')
 
   oldGate.resolve({ total: 1 })
-  await oldRequest
+  await Promise.resolve()
+  await Promise.resolve()
   const joinedNewRequest = runtime.run({ appendLog() {}, key: 'metrics:a', load })
   assert(loads === 2, 'an older metrics completion deleted the newer in-flight request')
 
   newGate.resolve({ total: 2 })
+  assert((await oldRequest).total === 2, 'old metrics caller received stale data after invalidation')
   assert((await newRequest).total === 2 && (await joinedNewRequest).total === 2, 'metrics callers did not receive the current-generation result')
   assert((await runtime.run({ appendLog() {}, key: 'metrics:a', load })).total === 2 && loads === 2, 'current-generation metrics were not cached')
 }
@@ -165,7 +171,7 @@ Promise.all([
   runMetricsCacheBehavior(),
   runMemoryCacheBehavior()
 ])
-  .then(() => console.log('[diagnostics:query-cache-generation] ok'))
+  .then(() => { completed = true; console.log('[diagnostics:query-cache-generation] ok') })
   .catch((error) => {
     console.error(`[diagnostics:query-cache-generation] ${error instanceof Error ? error.stack || error.message : String(error)}`)
     process.exit(1)

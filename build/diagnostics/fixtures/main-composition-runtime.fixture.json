@@ -205,6 +205,10 @@
         1
       ],
       [
+        "createLocalFontFavoritesRuntime",
+        1
+      ],
+      [
         "createMainActivationInstallStatusSaveRuntime",
         1
       ],
@@ -553,6 +557,10 @@
             []
           ],
           [
+            "createLocalFontFavoritesRuntime.initialize",
+            []
+          ],
+          [
             "index.find",
             [
               "",
@@ -690,7 +698,7 @@
               {
                 "openMergedIndexDb": "createMergedIndexPageRuntime.openMergedIndexDb",
                 "openMachineInstallDbForRoot": "createInstallStatusRuntime.openMachineInstallDbForRoot",
-                "openLibraryDb": "library.open",
+                "openLibraryDb": "<function>",
                 "closeSqliteDb": "createSqliteRuntime.closeSqliteDb",
                 "getSqliteMeta": "getSqliteMeta",
                 "appWatchedFolders": "<function>",
