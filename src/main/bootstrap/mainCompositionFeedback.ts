@@ -7,7 +7,7 @@ import type { MainDataTaskPorts } from './mainDataTaskPorts';
 type Data = ReturnType<typeof createMainDataCompositionRuntime>;
 type DataFeedback = Pick<Data['storage'], 'appWatchedFolders'> &
   Pick<Data['query'], 'mainProcessFontIndexContains' | 'clearFontQueryCaches'>;
-type MutationFeedback = Pick<MainDataCompositionOptions, 'listPhysicalFolderTree'>;
+type MutationFeedback = Pick<MainDataCompositionOptions, 'listPhysicalFolderTree' | 'applyPendingActivationState'>;
 export type MainOperationsFeedback = MainDataTaskPorts & Pick<MainCoreCompositionOptions,
   'isIndexingActive' | 'activeScanJobId' | 'isInstallStatusRefreshActive' | 'activeBackgroundTaskCount'
 > & {
@@ -61,6 +61,7 @@ export function createMainCompositionFeedback() {
       isMainProcessIndexedFont: (...args: Parameters<DataFeedback['mainProcessFontIndexContains']>) => bound(data, 'Data').mainProcessFontIndexContains(...args),
     },
     clearFontQueryCaches: () => bound(data, 'Data').clearFontQueryCaches(),
+    applyPendingActivationState: (...args: Parameters<MutationFeedback['applyPendingActivationState']>) => bound(mutation, 'Mutation').applyPendingActivationState(...args),
     listPhysicalFolderTree: (...args: Parameters<MutationFeedback['listPhysicalFolderTree']>) => bound(mutation, 'Mutation').listPhysicalFolderTree(...args),
     refreshWatchedFolder: (...args: Parameters<MainOperationsFeedback['refreshWatchedFolder']>) => requireOperations().refreshWatchedFolder(...args),
     sendFontIndexChanged: (payload: FontIndexChangePayload) => requireOperations().sendFontIndexChanged(payload),

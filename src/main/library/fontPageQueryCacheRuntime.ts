@@ -68,6 +68,9 @@ export function createFontPageQueryCacheRuntime(
     const requestGeneration = cacheGeneration;
     let promise!: Promise<FontQueryPageResult>;
     promise = options.queryUncached(request, limit, offset).then((result) => {
+      if (requestGeneration !== cacheGeneration && request.activeFilter?.kind === 'active') {
+        return queryFontPageInLibrary(request);
+      }
       if (requestGeneration === cacheGeneration) {
         rememberFontQueryPageResult(cacheKey, result);
       }

@@ -112,7 +112,8 @@ function checkStructure(overrides = new Map()) {
   assert(/cleanupRemovedFontState: \(removedFontIds: string\[\]\) => void/.test(indexEffect), 'Index removal lacks narrow cleanup command')
   assert(/fontListScrollingRef: fontListScrollingRef as Readonly<\{ current: boolean \}>/.test(previewController), 'scroll state is not exported as read-only')
   assert(!/fontListScrollingRef\.current\s*=/.test(app), 'App directly mutates preview scroll state')
-  assert(previewController.indexOf('createFontPreviewQueueRuntime({') < previewController.indexOf('usePreviewTextResetRuntime({'), 'preview reset effect moved before queue runtime creation')
+  const queueCreation = previewController.indexOf('createFontPreviewQueueRuntime(runtimeOptionsRef.current)')
+  assert(queueCreation >= 0 && queueCreation < previewController.indexOf('usePreviewTextResetRuntime({'), 'preview reset effect moved before retained queue runtime creation')
   assert.equal((selectionController.match(/options\.hydrateFont\(font\)[\s\S]{0,100}runtime\.handleFont(?:Select|OpenDetail)\(event, font\)/g) || []).length, 2, 'selection hydration must precede select and detail dispatch')
 }
 
@@ -130,6 +131,13 @@ function createHookHarness() {
         const index = cursor++
         if (!(index in slots)) slots[index] = { current: initial }
         return slots[index]
+      },
+      useEffect(effect, deps) {
+        const index = cursor++, previous = slots[index]
+        if (!previous || deps.some((value, i) => value !== previous.deps[i])) {
+          previous?.cleanup?.()
+          slots[index] = { deps, cleanup: effect() }
+        }
       }
     },
     render(hook, options) {
@@ -385,6 +393,8 @@ function checkPreviewBehavior() {
           queueOptions = options
           return {
             resetPreviewRuntimeState() { processed.push('reset') },
+            disposePreviewQueue() {},
+            resumePreviewQueue() {},
             processPreviewQueue() { processed.push('visible') },
             requestPreviewFont() {},
             processAutoPreviewCacheQueue() { processed.push('auto') }
@@ -408,7 +418,7 @@ function checkPreviewBehavior() {
     updateFont: () => {}
   }
   let controller = harness.render(usePreviewController, baseOptions)
-  assert.equal(harness.slots.length, 17)
+  assert.equal(harness.slots.length, 20, '17 original owners plus two runtime refs and one disposal effect')
   assert.equal(queueOptions.previewRequestTokenRef.current, 'Sample::36')
   assert.equal(resetOptions.previewText, '  Sample  ')
   assert.equal(resetOptions.listPreviewFontSize, 36)

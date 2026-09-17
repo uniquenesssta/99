@@ -1,3 +1,4 @@
+import type { FontItem, FontIndexChangePayload } from "../../../shared/types";
 import { resolve } from "node:path";
 import type {
 MergedIndexBuildRuntime,
@@ -132,6 +133,8 @@ export function createMergedIndexValidationRuntime(
   async function syncMergedIndexAfterInstallStatusRefresh(
     folders: string[],
     syncMergedIndexForRootSnapshot: (rootPath: string, reason: string) => Promise<void>,
+    items?: FontItem[],
+    syncIncremental?: (root: string, payload: FontIndexChangePayload, reason: string) => Promise<void>,
   ): Promise<void> {
     const roots = Array.from(
       new Set((folders || []).filter(Boolean).map((folder) => resolve(folder))),
@@ -140,7 +143,11 @@ export function createMergedIndexValidationRuntime(
     const startedAt = Date.now();
     for (const root of roots) {
       try {
-        await syncMergedIndexForRootSnapshot(root, "install-status-refresh");
+        if (items && syncIncremental) {
+          await syncIncremental(root, { folder: root, at: new Date().toISOString(), upserts: items, deletes: [] }, "install-status-refresh");
+        } else {
+          await syncMergedIndexForRootSnapshot(root, "install-status-refresh");
+        }
       } catch (error) {
         ctx.appendStartupLog(
           `local merged index install status sync skipped: root=${root}, ${error instanceof Error ? error.message : String(error)}`,

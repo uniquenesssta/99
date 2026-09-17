@@ -16,7 +16,7 @@ export interface ActivationInstallStatusSaveQueueDeps {
   ) => Promise<void>
   appWatchedFolders: () => Promise<string[]>
   rootForFontPath: (fontPath: string, watchedFolders: string[]) => Promise<string | null>
-  syncMergedIndexAfterInstallStatusRefresh: (roots: string[]) => Promise<void>
+  syncMergedIndexAfterInstallStatusRefresh: (roots: string[], items?: FontItem[]) => Promise<void>
   clearFontQueryCaches: () => void
   appendStartupLog: (message: string) => void
   batchDelayMs?: number
@@ -29,6 +29,7 @@ export interface ActivationInstallStatusSaveQueueRuntime {
     reason: string,
   ) => void
   flush: (reason: string) => Promise<void>
+  applyPendingState: (items: FontItem[]) => FontItem[]
   hasPending: () => boolean
   hasInFlight: () => boolean
 }
@@ -43,8 +44,19 @@ export function createActivationInstallStatusSaveQueue(
   const batchDelayMs = deps.batchDelayMs ?? 500
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   let saveInFlight: Promise<void> | null = null
+  let inFlightResults: Record<string, InstallCompareResult> = {}
   let pendingResults: Record<string, InstallCompareResult> = {}
   let pendingItemsById = new Map<string, FontItem>()
+
+  function applyPendingState(items: FontItem[]): FontItem[] {
+    return items.map(item => {
+      const result = pendingResults[item.id] || inFlightResults[item.id]
+      if (!result) return item
+      return { ...item, active: result.by === 'managed' || result.by === 'both',
+        installStatusKnown: true, systemInstalled: result.installed && result.by !== 'managed',
+        systemInstallMatches: result.matches || [] }
+    })
+  }
 
   function pendingCount(): number {
     return Object.keys(pendingResults).length
@@ -89,6 +101,7 @@ export function createActivationInstallStatusSaveQueue(
     deps.appendStartupLog(
       `activation install status async save queued: reason=${reason}, rows=${ids.length}, pending=${pendingCount()}`,
     )
+    deps.clearFontQueryCaches()
     scheduleTimer(batchDelayMs, 'timer')
   }
 
@@ -108,6 +121,7 @@ export function createActivationInstallStatusSaveQueue(
     const rowCount = Object.keys(results).length
     if (!rowCount) return
 
+    inFlightResults = { ...results }
     pendingResults = {}
     pendingItemsById = new Map<string, FontItem>()
     const startedAt = Date.now()
@@ -169,7 +183,7 @@ export function createActivationInstallStatusSaveQueue(
           if (root) affectedRoots.add(root)
         }
         if (affectedRoots.size) {
-          await deps.syncMergedIndexAfterInstallStatusRefresh(Array.from(affectedRoots))
+          await deps.syncMergedIndexAfterInstallStatusRefresh(Array.from(affectedRoots), affectedItems)
         }
         deps.clearFontQueryCaches()
         deps.appendStartupLog(
@@ -182,7 +196,11 @@ export function createActivationInstallStatusSaveQueue(
         )
       }
     })().finally(() => {
-      if (saveInFlight === task) saveInFlight = null
+      if (saveInFlight === task) {
+        saveInFlight = null
+        inFlightResults = {}
+        deps.clearFontQueryCaches()
+      }
     })
 
     saveInFlight = task
@@ -196,6 +214,7 @@ export function createActivationInstallStatusSaveQueue(
   return {
     schedule,
     flush,
+    applyPendingState,
     hasPending: () => pendingCount() > 0,
     hasInFlight: () => !!saveInFlight,
   }

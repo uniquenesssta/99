@@ -64,6 +64,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-17：修复Windows反馈四项问题：停用成功后的待保存状态立即用于查询；单字体安装变更保留到增量索引同步；存储介质探测改为异步合并并保守限流；预览runtime跨render保留防重状态，重置/卸载拒绝旧结果并支持失败重试。TypeScript与114/114诊断、Electron/Vite构建及混淆3/3通过，新增4条真实链和8个LF/CRLF退化检查；无依赖、DB或IPC迁移。Windows视觉、冷启动/NAS耗时及Rust原生实测仍待验，详见[修复结果](docs/audits/HFM_FULL_CHAIN_AUDIT.md#windows反馈四项修复结果)。
+
 - 2026-09-17：完成Windows反馈四项审计：确认停用后安装状态延迟可见、单字体全根同步、前台同步存储探测及预览批查状态随render重建。新增只读真实模块观察器，四条路径均复现；三项相关既有诊断通过，未改生产代码。首屏耗时分段与视觉表现仍需Windows验证，详见[专项审计](docs/audits/HFM_FULL_CHAIN_AUDIT.md#windows反馈专项审计停用同步与预览)。
 
 - 2026-09-17：R-07全链路自动验收通过，TypeScript及113/113；原只读observer的F-01/F-02/F-03反例均不再复现。修正R-02/R-03历史Rust测试夹具缺少R-06可选字段的问题，并拒绝把编译失败当数据库反例；不改生产源码、依赖或原冻结fixture。汇总F-01～F-05、X-01～X-13证据、真实Node SQLite关联样本与Windows开发模式步骤。六个原生入口因缺Cargo未执行，Windows/NAS待验，R-07保持自动验证通过待实机，见[执行卡](docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#22-r-07-执行卡)。

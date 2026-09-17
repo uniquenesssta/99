@@ -55,6 +55,7 @@ export type FontQueryFacadeRuntimeOptions = {
   appWatchedFolders: () => Promise<string[]>;
   cleanSharedFontsForQuery: (request: FontQueryRequest) => Promise<FontItem[]>;
   hydrateLocalTagsForFonts: (items: FontItem[]) => Promise<FontItem[]>;
+  applyPendingActivationState?: (items: FontItem[]) => FontItem[];
   readInstallStatusIndex: (
     items: FontItem[],
     options?: { enqueueMissTasks?: boolean },
@@ -238,13 +239,14 @@ export function createFontQueryFacadeRuntime(
     items: FontItem[],
   ): Promise<FontItem[]> {
     if (!items.length) return items;
+    const overlay = options.applyPendingActivationState || ((fonts: FontItem[]) => fonts);
     try {
       const { results } = await options.readInstallStatusIndex(items, {
         enqueueMissTasks: false,
       });
       if (!Object.keys(results).length)
-        return items.map((item) => ({ ...item, installStatusKnown: false }));
-      return items.map((item) => {
+        return overlay(items.map((item) => ({ ...item, installStatusKnown: false })));
+      return overlay(items.map((item) => {
         const result = results[item.id];
         return result
           ? {
@@ -253,15 +255,15 @@ export function createFontQueryFacadeRuntime(
               systemInstalled: result.installed && result.by !== "managed",
               systemInstallMatches: result.matches || [],
               active:
-                item.active || result.by === "managed" || result.by === "both",
+                result.by === "managed" || result.by === "both",
             }
           : { ...item, installStatusKnown: false };
-      });
+      }));
     } catch (error) {
       options.appendLog(
         `hydrateInstallStatusForFonts failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return items.map((item) => ({ ...item, installStatusKnown: false }));
+      return overlay(items.map((item) => ({ ...item, installStatusKnown: false })));
     }
   }
 

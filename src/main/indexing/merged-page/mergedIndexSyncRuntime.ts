@@ -58,6 +58,9 @@ export function createMergedIndexSyncRuntime(
             sourcesChanged &&
             isSharedMetadataIncrementalSyncReason(reason) &&
             sourceKeyChangedOnlyBySharedMetadata(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
+          const installStatusOnlySourceChange =
+            sourcesChanged && isInstallStatusIncrementalSyncReason(reason) &&
+            sourceKeyChangedOnlyByInstallStatus(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
           const rootIndexOnlySourceChange =
             sourcesChanged &&
             isRootIndexIncrementalSyncReason(reason) &&
@@ -66,7 +69,8 @@ export function createMergedIndexSyncRuntime(
             rootsChanged ||
             (sourcesChanged &&
               !metadataOnlySourceChange &&
-              !rootIndexOnlySourceChange)
+              !rootIndexOnlySourceChange &&
+              !installStatusOnlySourceChange)
           ) {
             await buildRuntime.rebuildMergedIndexDb(db, sources, sourcesKey);
             commit(`incremental-rebuild:${reason}`);

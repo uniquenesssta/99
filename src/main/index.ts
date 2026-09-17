@@ -29,6 +29,7 @@ const dataComposition = createMainDataCompositionRuntime({
   rustCoreWorkerRuntime: coreComposition.rustCoreWorkerRuntime,
   migrationDiagnosticsRuntime: coreComposition.migrationDiagnosticsRuntime,
   listPhysicalFolderTree: feedback.listPhysicalFolderTree,
+  applyPendingActivationState: feedback.applyPendingActivationState,
 });
 feedback.bindData({
   appWatchedFolders: dataComposition.storage.appWatchedFolders,

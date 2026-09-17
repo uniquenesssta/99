@@ -1,3 +1,4 @@
+import type { FontItem } from "../../shared/types";
 import { createMergedIndexBuildRuntime } from "./merged-page/mergedIndexBuildRuntime";
 import { createMergedIndexMutationCoordinatorRuntime } from "./merged-page/mergedIndexMutationCoordinatorRuntime";
 import { createMergedIndexPageQueryRuntime } from "./merged-page/mergedIndexPageQueryRuntime";
@@ -87,10 +88,12 @@ export function createMergedIndexPageRuntime(
       validationRuntime.scheduleMergedIndexBackgroundValidation,
     checkMergedIndexExternalChanges:
       validationRuntime.checkMergedIndexExternalChanges,
-    syncMergedIndexAfterInstallStatusRefresh: (folders: string[]) =>
+    syncMergedIndexAfterInstallStatusRefresh: (folders: string[], items?: FontItem[]) =>
       validationRuntime.syncMergedIndexAfterInstallStatusRefresh(
         folders,
         syncRuntime.syncMergedIndexForRootSnapshot,
+        items,
+        syncRuntime.syncMergedIndexForRootIncremental,
       ),
     syncMergedIndexForRootIncremental:
       syncRuntime.syncMergedIndexForRootIncremental,

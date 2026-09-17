@@ -678,6 +678,14 @@
         {
           "binding": "autoPreviewCacheStats",
           "kind": "useRef"
+        },
+        {
+          "binding": "runtimeOptionsRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "queueRuntimeRef",
+          "kind": "useRef"
         }
       ],
       "exports": [
@@ -705,7 +713,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "d88eeb914899ca704514686647dcacbdb3f17dabb9d6ac3b14fc4649f471e2a6"
+      "tokenHash": "0b84cf9c712d2f4572ba2e68912a5e5a3af483d20f691c780145b6fcab6dd6b8"
     },
     "src/renderer/src/runtime/app/useSelectionController.ts": {
       "functions": [

@@ -33,6 +33,7 @@ type Core = ReturnType<typeof createMainCoreCompositionRuntime>;
 type Storage = ReturnType<typeof createMainDataStorageCompositionRuntime>;
 
 export interface MainDataQueryOptions {
+  applyPendingActivationState: (items: FontItem[]) => FontItem[];
   appWatchedFolders: Storage['appWatchedFolders'];
   loadSharedFontsForFolders: Storage['loadSharedFontsForFolders'];
   loadSharedFontsForFoldersFresh: Storage['loadSharedFontsForFoldersFresh'];
@@ -315,6 +316,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   });
 
   fontQueryFacadeRuntimeRef = createFontQueryFacadeRuntime({
+    applyPendingActivationState: options.applyPendingActivationState,
     fontSearchResultLimitDefault: FONT_SEARCH_RESULT_LIMIT_DEFAULT,
     mergedIndexSchemaVersion: MERGED_INDEX_SCHEMA_VERSION,
     appendLog: appendStartupLog,

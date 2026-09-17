@@ -1,6 +1,6 @@
 import type { FontItem } from '@shared/types'
 import { normalizePreviewText } from '@shared/preview-layout/previewTextFitRuntime'
-import { useRef,useState } from 'react'
+import { useEffect,useRef,useState } from 'react'
 import type { PreviewQueueEntry } from '../../appRuntime'
 import { clampListPreviewFontSize } from '../preview/listPreviewSizeRuntime'
 import { createFontPreviewQueueRuntime } from '../preview/fontPreviewQueueRuntime'
@@ -49,7 +49,7 @@ export function usePreviewController(options: PreviewControllerOptions) {
   const autoPreviewCacheRunId = useRef(0)
   const autoPreviewCacheStats = useRef({ total: 0, done: 0, cached: 0, generated: 0, failed: 0 })
 
-  const queueRuntime = createFontPreviewQueueRuntime({
+  const queueOptions: FontPreviewQueueRuntimeOptions = {
     ...options,
     previewFamilies,
     nativePreviewImages,
@@ -69,7 +69,16 @@ export function usePreviewController(options: PreviewControllerOptions) {
     setFailedPreviewFontIds,
     setNativePreviewImages,
     setNativeDetailImage
-  })
+  }
+  const runtimeOptionsRef = useRef(queueOptions)
+  Object.assign(runtimeOptionsRef.current, queueOptions)
+  const queueRuntimeRef = useRef<ReturnType<typeof createFontPreviewQueueRuntime> | null>(null)
+  if (!queueRuntimeRef.current) queueRuntimeRef.current = createFontPreviewQueueRuntime(runtimeOptionsRef.current)
+  const queueRuntime = queueRuntimeRef.current
+  useEffect(() => {
+    queueRuntime.resumePreviewQueue()
+    return () => queueRuntime.disposePreviewQueue()
+  }, [queueRuntime])
 
   usePreviewTextResetRuntime({
     previewText: options.previewText,

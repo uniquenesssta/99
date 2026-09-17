@@ -47,11 +47,15 @@ export type FontPreviewStateRuntime = {
 }
 
 export type FontPreviewLoadRuntime = {
+  resetPreviewLoads: () => void
   ensurePreviewFont: (font: FontItem) => Promise<string>
   loadCachedNativeCardPreviews: (fonts: FontItem[]) => Promise<Set<string>>
 }
 
 export type FontVisiblePreviewQueueRuntime = {
+  resetVisiblePreviewQueue: () => void
+  disposePreviewQueue: () => void
+  resumePreviewQueue: () => void
   processPreviewQueue: () => void
   requestPreviewFont: (font: FontItem, priority?: 'normal' | 'high') => void
 }

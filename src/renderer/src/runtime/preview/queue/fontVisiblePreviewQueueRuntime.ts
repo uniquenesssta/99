@@ -21,10 +21,31 @@ export function createFontVisiblePreviewQueueRuntime(
 ): FontVisiblePreviewQueueRuntime {
   let deferredPreviewRetryId: number | null = null
   let normalPreviewProcessScheduled = false
+  let idleId: number | null = null
+  let queueGeneration = 0
+  let disposed = false
   let cachedPreviewBatchInFlight = false
   let cachedPreviewBatchToken = ''
   const cachedPreviewBatchCheckedIds = new Set<string>()
   const cachedPreviewBatchMissIds = new Set<string>()
+
+  function resetVisiblePreviewQueue(): void {
+    queueGeneration += 1
+    cachedPreviewBatchInFlight = false
+    cachedPreviewBatchCheckedIds.clear()
+    cachedPreviewBatchMissIds.clear()
+    if (deferredPreviewRetryId !== null) window.clearTimeout(deferredPreviewRetryId)
+    deferredPreviewRetryId = null
+    if (idleId !== null) {
+      if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleId)
+      else window.clearTimeout(idleId)
+    }
+    idleId = null
+    normalPreviewProcessScheduled = false
+  }
+  function disposePreviewQueue(): void { disposed = true; resetVisiblePreviewQueue(); loadRuntime.resetPreviewLoads(); options.activePreviewLoads.current = 0; options.loadingFonts.current.clear() }
+  function resumePreviewQueue(): void { disposed = false }
+
 
   function currentPreviewText(): string {
     return options.previewText.trim() || '字体预览\nAaBb 123'
@@ -44,7 +65,9 @@ export function createFontVisiblePreviewQueueRuntime(
 
   function scheduleDeferredPreviewRetry(delayMs = 420): void {
     if (!options.previewQueue.current.length || deferredPreviewRetryId !== null) return
+    const generation = queueGeneration
     deferredPreviewRetryId = window.setTimeout(() => {
+      if (disposed || generation !== queueGeneration) return
       deferredPreviewRetryId = null
       processPreviewQueue()
     }, delayMs)
@@ -53,7 +76,10 @@ export function createFontVisiblePreviewQueueRuntime(
   function scheduleNormalPreviewProcess(): void {
     if (normalPreviewProcessScheduled) return
     normalPreviewProcessScheduled = true
-    requestIdleWindow(() => {
+    const generation = queueGeneration
+    idleId = requestIdleWindow(() => {
+      if (disposed || generation !== queueGeneration) return
+      idleId = null
       normalPreviewProcessScheduled = false
       processPreviewQueue()
     }, 120)
@@ -86,9 +112,12 @@ export function createFontVisiblePreviewQueueRuntime(
   }
 
   function pruneCachedPreviewBatchCheckedIds(): void {
-    if (options.previewQueue.current.length) return
-    cachedPreviewBatchCheckedIds.clear()
-    cachedPreviewBatchMissIds.clear()
+    for (const id of cachedPreviewBatchCheckedIds) {
+      if (!options.queuedPreviewFontIds.current.has(id)) cachedPreviewBatchCheckedIds.delete(id)
+    }
+    for (const id of cachedPreviewBatchMissIds) {
+      if (!options.queuedPreviewFontIds.current.has(id)) cachedPreviewBatchMissIds.delete(id)
+    }
   }
 
   function processCachedPreviewBatchIfNeeded(): boolean {
@@ -97,11 +126,15 @@ export function createFontVisiblePreviewQueueRuntime(
     const candidates = collectCachedPreviewBatchCandidates()
     if (!candidates.length) return false
 
+    const generation = queueGeneration
+    const token = currentPreviewBatchToken()
     cachedPreviewBatchInFlight = true
     for (const font of candidates) cachedPreviewBatchCheckedIds.add(font.id)
 
+    let failed = false
     void loadRuntime.loadCachedNativeCardPreviews(candidates)
       .then((hitIds) => {
+        if (disposed || generation !== queueGeneration || token !== currentPreviewBatchToken()) return
         for (const font of candidates) {
           if (!hitIds.has(font.id)) cachedPreviewBatchMissIds.add(font.id)
         }
@@ -112,16 +145,24 @@ export function createFontVisiblePreviewQueueRuntime(
           return false
         })
       })
+      .catch(() => {
+        failed = true
+        if (disposed || generation !== queueGeneration) return
+        for (const font of candidates) cachedPreviewBatchCheckedIds.delete(font.id)
+      })
       .finally(() => {
+        if (disposed || generation !== queueGeneration) return
         cachedPreviewBatchInFlight = false
         pruneCachedPreviewBatchCheckedIds()
-        processPreviewQueue()
+        if (failed) scheduleDeferredPreviewRetry()
+        else processPreviewQueue()
       })
 
     return true
   }
 
   function processPreviewQueue(): void {
+    if (disposed) return
     const cooldownMs = previewQueueCooldownRemaining()
     if (cooldownMs > 0) {
       scheduleDeferredPreviewRetry(Math.min(cooldownMs + 80, 2200))
@@ -156,8 +197,10 @@ export function createFontVisiblePreviewQueueRuntime(
       options.queuedPreviewFontIds.current.delete(font.id)
       if (!stateRuntime.canRequestPreviewFont(font)) continue
 
+      const generation = queueGeneration
       options.activePreviewLoads.current += 1
       void loadRuntime.ensurePreviewFont(font).finally(() => {
+        if (disposed || generation !== queueGeneration) return
         options.activePreviewLoads.current = Math.max(0, options.activePreviewLoads.current - 1)
         pruneCachedPreviewBatchCheckedIds()
         processPreviewQueue()
@@ -166,6 +209,7 @@ export function createFontVisiblePreviewQueueRuntime(
   }
 
   function requestPreviewFont(font: FontItem, priority: 'normal' | 'high' = 'normal'): void {
+    if (disposed) return
     if (!stateRuntime.canRequestPreviewFont(font)) return
     const routeForcesNative = resolveFontPreviewRoute(font).shouldSkipWebFontFileLoad
     if ((!routeForcesNative && options.previewFamilies[font.id]) || options.nativePreviewImages[font.id] || options.loadingFonts.current.has(font.id)) return
@@ -203,6 +247,9 @@ export function createFontVisiblePreviewQueueRuntime(
   }
 
   return {
+    resetVisiblePreviewQueue,
+    disposePreviewQueue,
+    resumePreviewQueue,
     processPreviewQueue,
     requestPreviewFont
   }

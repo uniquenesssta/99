@@ -210,3 +210,33 @@ npm run verify
 - 优先W-01（状态正确性），随后W-02（同链工作量）；W-03冷态阻塞与W-04请求生命周期分别处理，避免一次改动同时改变调度/缓存/一致性导致无法定位回归。
 - 本次6次收藏/取消均92～123ms且1行增量；10个mutation摘要new/duplicate成对；2个本地意图有post-ack-read-confirmed；已激活字体Rust文件预览路径有实际日志；关闭flush保存成功。这些仅覆盖日志中操作，不替代故障/多根/NAS断连验收。
 - shared tag ops replay的3个冲突是已有6条操作的回放结果（changed=0），没有对应冲突样本，独立保留待查，不加入本次四项修复范围。首个收藏视觉延迟也未被本次日志证明完全消失。
+
+
+## Windows反馈四项修复结果
+
+2026-09-17，修复基线`c352c81c1cf9d1511db967821a7dc1d4fa212d09`，原分支`stage/09-preview-tags-app`。上一节保留修复前历史证据；本节说明当前行为，不能把旧观察器的true当成修复后结果。
+
+| 问题 | 已实现的修复 | 当前受控验证 |
+| --- | --- | --- |
+| W-01 停用后查询旧状态 | 原激活保存队列保留待写入及在途结果；查询经组合根使用它们，新pending优先于旧in-flight。入队、覆盖释放时失效缓存，跨generation的active分页/内存查询重读；有持久化结果时不再以旧item.active覆盖它 | 热/冷查询在保存前均返回0；快速反向操作以最新成功结果为准；写入失败保留覆盖、恢复后释放；旧DB读晚于释放仍返回新状态；收藏/本地标签/共享标签/保护字段保持 |
+| W-02 单字体全根同步 | affectedItems经原组合根和validation保留到增量owner；仅目标根安装签名变化允许增量，继续传installDbPath。未提供items的全局安装刷新仍走原snapshot | 单字体发送一个relativePath、fullSnapshot=false；重复根去重；索引签名、其他根签名及根集合变化仍要求重建；原未变化跳过写入/同步门保留 |
+| W-03 前台同步探测 | 原storage profile owner以execFile异步合并net与介质探测；分类未完成使用原network限流配置；已知映射盘直接返回network，跳过本地PowerShell | 首次返回前无同步子进程；探测挂起期间事件循环继续；同盘请求合并；介质失败5秒后可重试；映射过期刷新、环境覆盖保留 |
+| W-04 render重建防重状态 | 原preview controller用两个ref维持同一runtime及最新options；visible queue和load generation随reset/dispose失效；旧Promise不能清新代在途/加载标记，timer/idle清理；IPC失败不记永久miss | 实际Hook受控rerender只发一个在途批查；新文本重新请求；旧结果被拒绝；批查失败延迟重试；cleanup/setup可恢复；卸载不写图片；单字体缓存/URL/WebFont晚到不继续旧回退 |
+
+生命周期：没有第二个激活业务store，in-flight是原待持久化批次的只读结果快照；成功结算释放，失败合回原pending，正常退出沿用原flush/重试。preview仍保留原40个controller状态初值；新增两个ref只持有runtime和端口，未向App暴露队列。每字体miss表沿用800上限；visible checked/miss集合在批查/加载完成时清除已离队字体，reset/dispose清空。storage按单一映射缓存、26个盘符媒体缓存/在途集合持有结果，无按文件路径增长的缓存；映射成功缓存30秒、介质成功5分钟、失败5秒，按需刷新，无新增轮询计时器。
+
+默认门`diagnostics:runtime-feedback`复用现有TS加载器，加载真实queue、facade、memory/page cache、validation/incremental、storage profile及preview controller/queue/load；仅替换OS、持久化、IPC与React挂载端口。LF/CRLF正常路径通过；将最新状态优先级反转、移除安装增量准入、移除映射盘短路、恢复每render创建runtime，8个退化运行均在对应业务断言失败，不以语法/编译错误代替反例。可选`--case=<activation|incremental|storage|preview> --baseline=c352c81`替换该链的历史目标模块，四项均退出1，分别命中热查询旧active、单字体重建、同步命令、重复批查断言。它们不是Windows实机测试。
+
+当前只读观察器复用修复门四条链，成功才报告reproduced=false；异常报告null及错误，不把任意运行失败都算旧缺陷重现。修复前原脚本仍可由`git show c352c81:docs/audits/observe-runtime-feedback.cjs`查阅，不另外保存副本。
+
+既有冻结契约仅迁移真实冲突：原“未变化不清缓存”调整为覆盖进入/释放清缓存但仍不写DB/同步；原内存generation结构从return items改为重读并加强原调用者结果断言；preview inventory只新增两个runtime ref/tokenHash、三个受影响preview源码摘要及dispose/resume/effect端口。原基线摘要迁移前逐一核对；40字段初值、其他controller、metrics/分页隔离与原变异断言未删除。
+
+验证结果：`npm run verify`退出0，TypeScript与114/114诊断通过；最终改动另行复跑typecheck。`electron-vite build`成功，main/preload/renderer模块数366/1/196，随后混淆3/3成功；公钥同步成功。没有运行需要Cargo的完整`npm run build`或安装包构建。四项只读观察reproduced=false，旧版本四项业务断言失败，修复版LF/CRLF和8个退化检查通过。Linux、Node24.19.0/npm11.9.0；输出记录/tmp/hfm-feedback-verify-final.log、/tmp/hfm-feedback-regression.log、/tmp/hfm-feedback-observer-final.json，Git中保存测试入口与结论，不提交机器日志。
+
+保留限制：
+- 当前Linux无Cargo、Windows GUI/NAS；没有执行真实Rust工作进程、COMMIT故障或Windows视觉验收。原生源码、DB schema、IPC、依赖和两套preload均未修改，R-07既有原生/实机待验项不因此关闭。
+- W-02的单根单字体变更已有增量工作量证据；多根同时改安装签名时保守重建仍可发生。故不承诺所有批量场景均只读N行；未索引、外部变化、恢复重建保留原正确性路径。
+- W-03仅消除storage profile中的同步net/PowerShell。路径规范化的独立同步net use尚在；它涉及路径身份语义，本次没有证据将其与首屏间隙等同，不混改。冷启动的队列等待、读取和真实绘制耗时仍需分段复验，不能把此前1.69秒全部归因或宣称已经减少固定时长。
+- W-04不能撤销已提交到主进程的原生任务；本轮阻止旧结果/后续回退污染及重复发起，保留主进程现有合批/渲染去重。React调度由受控Hook模拟，不能代替真实Electron滚动与长期内存观测。
+
+Windows回执：拉取修复提交后运行`npm run verify`和`npm run dev`，保留Git SHA。分别检查停用后立即切已激活页面、快速激活/停用反向操作、单字体同步日志的changed/rows/fullSnapshot、冷启动首屏、修改预览文本/字号及快速滚动切页；GUI、IPC与持久化结果分别记录。正常运行无需安装包命令。故障和NAS断开操作仅在隔离测试根执行。

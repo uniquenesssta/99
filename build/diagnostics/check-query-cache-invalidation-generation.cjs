@@ -53,7 +53,7 @@ const memorySource = read('src/main/library/fontMemoryQueryRuntime.ts')
 for (const needle of [
   'let cacheGeneration = 0',
   'const requestGeneration = cacheGeneration',
-  'if (requestGeneration !== cacheGeneration) return items'
+  'if (requestGeneration !== cacheGeneration) return cleanSharedFontsForQuery(request)'
 ]) assert(memorySource.includes(needle), `memory query cache missing ${needle}`)
 
 async function runPageCacheBehavior() {
@@ -154,7 +154,8 @@ async function runMemoryCacheBehavior() {
   const oldRequest = runtime.cleanSharedFontsForQuery({})
   runtime.invalidateFontQueryResultCache()
   oldGate.resolve([{ id: 'old', path: 'D:/Fonts/old.ttf' }])
-  await oldRequest
+  const lateResult = await oldRequest
+  assert(lateResult[0].id === 'new', 'an invalidated memory query returned obsolete state to its original caller')
   const fresh = await runtime.cleanSharedFontsForQuery({})
   assert(loads === 2 && fresh[0].id === 'new', 'an invalidated memory query repopulated the result cache after completing late')
 }

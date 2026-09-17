@@ -882,3 +882,27 @@ R-07自动部分通过；原生子项阻塞、Windows/NAS待验，F-01～F-05及
 审计结果：见[审计报告专项章节](../audits/HFM_FULL_CHAIN_AUDIT.md#windows反馈专项审计停用同步与预览)。W-01热/冷查询在真实异步保存队列flush前仍返回旧active，flush后收敛；W-02单字体到根snapshot路由；W-03同步net/PowerShell探测；W-04同ref队列跨runtime重建重复批查，四条受控观察reproduced=true。三项相关原诊断退出0，未跑全量或构建。原生/GUI与精确延迟归因限制单列；原R-07仍自动验证通过待实机。仅4个白名单文件，后续依次处理W-01、W-02，再分别修W-03/W-04。
 
 插件：Mermaid已展示真实状态与预览调用链；没有新增/陌生API，不需Context7。Create State返回Context Captured，但No active world model，HFM项目级保存未确认；未关联无关模型。差异复核git diff --check通过，生产/依赖/fixture无变更，沿原分支独立提交审计。
+
+## 24. Windows反馈四项修复执行卡
+
+状态：四项生产修复及自动验收完成，Windows待复验；基线c352c81c1cf9d1511db967821a7dc1d4fa212d09，沿stage/09-preview-tags-app，工作树干净。W-01由原激活保存队列提供pending/in-flight结果覆盖，schedule及释放时失效缓存，查询跨generation重读；不新增第二业务store。W-02保留实际字体至原增量同步，非安装签名变化仍重建。W-03原storage profile owner异步合并探测并保守限流，路径规范化不改。W-04原preview controller跨render保持一个runtime，通过同一options对象读取最新值，reset/dispose保护旧批查与计时回调。
+
+精确白名单：README.md；本任务书；docs/audits/HFM_FULL_CHAIN_AUDIT.md；docs/audits/observe-runtime-feedback.cjs；package.json；src/main/activation/activationInstallStatusSaveQueue.ts；src/main/activation/mainActivationInstallStatusSaveRuntime.ts；src/main/bootstrap/mainCompositionFeedback.ts；src/main/bootstrap/mainDataCompositionRuntime.ts；src/main/bootstrap/mainDataQueryCompositionRuntime.ts；src/main/bootstrap/mainMutationCompositionRuntime.ts；src/main/index.ts；src/main/library/fontQueryFacadeRuntime.ts；src/main/library/fontMemoryQueryRuntime.ts；src/main/library/fontPageQueryCacheRuntime.ts；src/main/indexing/mergedIndexPageRuntime.ts；src/main/indexing/merged-page/mergedIndexValidationRuntime.ts；src/main/indexing/merged-page/mergedIndexSyncRuntime.ts；src/main/performance/storageProfileRuntime.ts；src/renderer/src/runtime/app/usePreviewController.ts；src/renderer/src/runtime/preview/fontPreviewQueueRuntime.ts；src/renderer/src/runtime/preview/queue/fontVisiblePreviewQueueRuntime.ts；src/renderer/src/runtime/preview/queue/fontPreviewLoadRuntime.ts；src/renderer/src/runtime/preview/queue/fontPreviewQueueTypes.ts；新增build/diagnostics/check-runtime-feedback.cjs。必要既有门契约迁移须先登记具体证据，禁止整体重录。无DB schema、依赖、用户数据、IPC/UI变化。
+
+验收：原四项反例转为正确断言，涵盖延迟读/保存失败/新旧批次、多根与签名回退、异步慢探测/失败恢复/网络限流、真实Hook rerender及旧token/卸载。全量verify与构建；Windows冷启动分段耗时和真实视觉回执继续待验，不冒称Linux替代。
+
+白名单补充：build/diagnostics/check-log-regression-followup.cjs仅迁移activation缓存失效时机断言（新pending权威状态进入/释放必须失效，未变化仍禁止写DB/同步）；build/diagnostics/fixtures/decomposition-baseline.fixture.json仅迁移usePreviewController两个runtime生命周期ref与对应tokenHash；build/diagnostics/check-react-composition-controllers.cjs及其fixtures/react-composition-controllers.fixture.json仅适配preview新dispose/resume端口并迁移受本次生命周期修复影响的preview文件摘要，原40字段初值、其他controller及行为变异门保留。迁移前核对原基线摘要；新增真实Hook/延迟队列门替代这些变更片段的旧字节冻结。
+
+白名单补充：build/diagnostics/check-query-cache-invalidation-generation.cjs。完整verify实报原内存generation断言要求晚到结果仍return items，已与W-01跨generation重读冲突；仅将该结构断言迁移为重读，并加强行为断言为旧调用者也收到新结果。原分页在途隔离、metrics与缓存不污染断言保留，不删除诊断。
+
+
+实现记录：W-01组合根通过原mutation feedback将队列查询覆盖注入data query；W-02可选items贯穿save→validation→incremental，保留旧全局刷新调用；W-03探测按需异步合并、未知时保守限流，路径身份owner未改；W-04固定runtime、最新options、generation及reset/dispose/resume，额外覆盖单字体回退await后的旧请求失效和visible集合离队清理。生产改动均留在既有责任模块，新增文件仅为四项运行反馈的诊断门。
+
+原冻结摘要核验后定向迁移：decomposition仅usePreviewController的owners追加runtimeOptionsRef/queueRuntimeRef和tokenHash；react-composition仅fontPreviewQueueRuntime、fontPreviewLoadRuntime、fontVisiblePreviewQueueRuntime三项sourceHashes；旧40字段初值与函数摘要不变。preview创建顺序断言同步匹配实际保留实例调用，并要求调用确实存在，避免旧文本不存在时以-1误通过。
+
+验证：npm run verify退出0，TypeScript、114/114默认诊断通过；最终改动复跑typecheck，Electron/Vite构建366/1/196、混淆3/3通过。四链观察均false；4个历史模块反例各在对应业务断言失败；当前LF/CRLF及8个因果退化断言全部通过。最初verify的owner冻结、后续旧generation文本契约均定向迁移；相关缓存失效旧断言也经实际运行失败后迁移，无绕过门禁。最终结果与未验证边界见审计报告“Windows反馈四项修复结果”。无新增依赖/锁、数据格式、schema或IPC；持久化/关闭接口兼容，无数据迁移。回滚按本轮独立fix提交整体revert，避免只回滚端口一端。
+
+
+最终范围为30个白名单文件（含README、审计报告、执行卡及唯一新增诊断文件）；依赖锁、native-src、两套preload、UI结构均未改。W-02多根同时签名变化仍保守重建；W-03独立路径规范化的同步net use未改；已有原生/Windows/NAS待验项仍保留。首屏减时不作定量承诺，原四问题的Windows实际回执按审计修复节采集。
+
+插件：Context7核对Node24 execFile异步回调、timeout及windowsHide；Mermaid Chart已展示真实保存/查询覆盖/增量及预览生命周期与异步探测链。Create State返回Context Captured，但Project为`.`、No active world model；HFM项目级保存未确认，未关联无关模型。Git、README与本执行卡为续接依据。

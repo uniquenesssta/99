@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import {
 driveLetterFromPath,
 getStorageProfile,
@@ -29,32 +29,42 @@ export interface StorageProfileRuntime {
 
 export function createStorageProfileRuntime(options: StorageProfileRuntimeOptions): StorageProfileRuntime {
   let mappedNetworkDriveLettersCache: Set<string> | null = null
-  const windowsDriveStorageInfoCache = new Map<string, WindowsDriveStorageInfo | null>()
-  const storageProfileCache = new Map<string, StorageProfile>()
+  let mappedExpiresAt = 0
+  let mappedInFlight = false
+  const mediaCache = new Map<string, { value: WindowsDriveStorageInfo | null; expiresAt: number }>()
+  const mediaInFlight = new Set<string>()
+
+  function runProbe(command: string, args: string[], timeout: number, done: (output: string | null) => void): void {
+    const startedAt = Date.now()
+    execFile(command, args, { windowsHide: true, timeout, encoding: 'utf8' }, (error, stdout) => {
+      done(error ? null : String(stdout || ''))
+      try { if (options.verbose) options.logger?.(`storage probe completed: command=${command}, ok=${!error}, elapsedMs=${Date.now() - startedAt}`) } catch { /* Logging cannot fail a completed probe. */ }
+    })
+  }
 
   const mappedNetworkDriveLetters = (): Set<string> => {
-    if (mappedNetworkDriveLettersCache) return mappedNetworkDriveLettersCache
-    const drives = new Set<string>()
-    if (options.platform !== 'win32') {
-      mappedNetworkDriveLettersCache = drives
-      return drives
+    if (options.platform !== 'win32') return new Set<string>()
+    if (!mappedInFlight && Date.now() >= mappedExpiresAt) {
+      mappedInFlight = true
+      runProbe('net', ['use'], 2500, output => {
+        const next = output === null ? null : parseMappedNetworkDriveLetters(output)
+        if ([...(next || [])].sort().join() !== [...(mappedNetworkDriveLettersCache || [])].sort().join()) mediaCache.clear()
+        mappedNetworkDriveLettersCache = next
+        mappedExpiresAt = Date.now() + (output === null ? 5000 : 30000)
+        mappedInFlight = false
+      })
     }
-    try {
-      const output = execFileSync('net', ['use'], { windowsHide: true, timeout: 2500, encoding: 'utf8' })
-      for (const drive of parseMappedNetworkDriveLetters(String(output || ''))) drives.add(drive)
-    } catch {
-      // 无映射盘或 net use 不可用时按本地盘处理；可用 HFM_SCAN_NETWORK_WORKERS 手动压低并发。
-    }
-    mappedNetworkDriveLettersCache = drives
-    return drives
+    return new Set(mappedNetworkDriveLettersCache || [])
   }
 
   const windowsDriveStorageInfo = (driveLetter: string): WindowsDriveStorageInfo | null => {
-    const drive = String(driveLetter || '').trim().slice(0, 1).toUpperCase()
-    if (!drive || options.platform !== 'win32' || !options.windowsMediaDetectEnabled) return null
-    if (windowsDriveStorageInfoCache.has(drive)) return windowsDriveStorageInfoCache.get(drive) || null
-
-    try {
+    const drive = String(driveLetter || '').trim().toUpperCase()
+    if (!/^[A-Z]$/.test(drive) || options.platform !== 'win32' || !options.windowsMediaDetectEnabled) return null
+    if (mappedNetworkDriveLetters().has(drive) || !mappedNetworkDriveLettersCache || mappedInFlight) return null
+    const cached = mediaCache.get(drive)
+    if (cached && Date.now() < cached.expiresAt) return cached.value
+    if (!mediaInFlight.has(drive)) {
+      mediaInFlight.add(drive)
       const script = [
         "$ErrorActionPreference='SilentlyContinue'",
         `$letter='${drive}'`,
@@ -64,54 +74,36 @@ export function createStorageProfileRuntime(options: StorageProfileRuntimeOption
         '  $physical = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq $disk.Number } | Select-Object -First 1',
         "  $mediaType = ''",
         '  if ($physical) { $mediaType = [string]$physical.MediaType }',
-        '  [pscustomobject]@{',
-        '    BusType = [string]$disk.BusType',
-        '    MediaType = $mediaType',
-        "    DriveType = ''",
-        '  } | ConvertTo-Json -Compress',
+        "  [pscustomobject]@{ BusType = [string]$disk.BusType; MediaType = $mediaType; DriveType = '' } | ConvertTo-Json -Compress",
         '}'
       ].join('\n')
-      const output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-        windowsHide: true,
-        timeout: options.windowsMediaDetectTimeoutMs,
-        encoding: 'utf8'
-      })
-      const trimmed = String(output || '').trim()
-      const parsed = trimmed ? JSON.parse(trimmed) as Record<string, unknown> : null
-      const info = parsed && typeof parsed === 'object'
-        ? {
-            mediaType: parsed.mediaType || parsed.MediaType ? String(parsed.mediaType || parsed.MediaType) : undefined,
-            busType: parsed.busType || parsed.BusType ? String(parsed.busType || parsed.BusType) : undefined,
-            driveType: parsed.driveType || parsed.DriveType ? String(parsed.driveType || parsed.DriveType) : undefined
+      runProbe('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], options.windowsMediaDetectTimeoutMs, output => {
+        let value: WindowsDriveStorageInfo | null = null
+        try {
+          const parsed = JSON.parse(output || 'null')
+          if (parsed && typeof parsed === 'object') value = {
+            mediaType: String(parsed.mediaType || parsed.MediaType || ''),
+            busType: String(parsed.busType || parsed.BusType || ''),
+            driveType: String(parsed.driveType || parsed.DriveType || ''),
           }
-        : null
-      windowsDriveStorageInfoCache.set(drive, info)
-      return info
-    } catch (error) {
-      windowsDriveStorageInfoCache.set(drive, null)
-      if (options.verbose) {
-        const reason = error instanceof Error && error.name ? error.name : 'PowerShellProbeError'
-        options.logger?.(`storage media detect skipped for ${drive}: ${reason}`)
-      }
-      return null
+        } catch { /* Retry failed/empty probes later; never block foreground I/O. */ }
+        mediaCache.set(drive, { value, expiresAt: Date.now() + (value ? 300000 : 5000) })
+        mediaInFlight.delete(drive)
+      })
     }
+    return null
   }
 
   const storageProfileForPath = (filePath: string): StorageProfile => {
     const drive = driveLetterFromPath(filePath)
     const mappedDrives = mappedNetworkDriveLetters()
-    const cacheKey = `${options.platform}|${drive || ''}|${String(filePath || '').slice(0, 256)}|${mappedDrives.size}`
-    const cached = storageProfileCache.get(cacheKey)
-    if (cached) return cached
-
-    const profile = getStorageProfile(filePath, {
-      platform: options.platform,
-      mappedNetworkDriveLetters: mappedDrives,
-      env: options.env,
-      driveInfo: drive ? windowsDriveStorageInfo(drive) : null
-    })
-    storageProfileCache.set(cacheKey, profile)
-    return profile
+    const base = getStorageProfile(filePath, { platform: options.platform, mappedNetworkDriveLetters: mappedDrives, env: options.env })
+    if (base.reason === 'env-override' || base.isNetwork || options.platform !== 'win32' || !drive) return base
+    // Until classification settles, use the existing conservative network lane.
+    if (!mappedNetworkDriveLettersCache || mappedInFlight) return { ...base, type: 'network', isNetwork: true, reason: 'mapping-probe-pending' }
+    const info = windowsDriveStorageInfo(drive)
+    if (options.windowsMediaDetectEnabled && !info) return { ...base, type: 'network', isNetwork: true, reason: 'media-probe-pending' }
+    return getStorageProfile(filePath, { platform: options.platform, mappedNetworkDriveLetters: mappedDrives, env: options.env, driveInfo: info })
   }
 
   const scanWorkerCount = (jobCount: number, roots: string[] = []): number => {

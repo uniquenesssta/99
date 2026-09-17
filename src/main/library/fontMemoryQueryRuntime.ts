@@ -41,7 +41,7 @@ export function createFontMemoryQueryRuntime(options: FontMemoryQueryRuntimeOpti
       .sort((a, b) => compareSharedFonts(a, b, request))
     if (freshMetadata) return items
 
-    if (requestGeneration !== cacheGeneration) return items
+    if (requestGeneration !== cacheGeneration) return cleanSharedFontsForQuery(request)
 
     fontQueryResultCache.set(cacheKey, { at: now, items })
     if (fontQueryResultCache.size > options.resultCacheMax) {

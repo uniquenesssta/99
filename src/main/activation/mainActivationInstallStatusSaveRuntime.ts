@@ -6,6 +6,7 @@ type ActivationInstallStatusSaveQueueDeps,
 export type MainActivationInstallStatusSaveRuntimeOptions = ActivationInstallStatusSaveQueueDeps;
 
 export type MainActivationInstallStatusSaveRuntime = {
+  applyPendingActivationState: ReturnType<typeof createActivationInstallStatusSaveQueue>["applyPendingState"];
   scheduleActivationInstallStatusSave: ReturnType<
     typeof createActivationInstallStatusSaveQueue
   >["schedule"];
@@ -36,6 +37,7 @@ export function createMainActivationInstallStatusSaveRuntime(
   });
 
   return {
+    applyPendingActivationState: queue.applyPendingState,
     scheduleActivationInstallStatusSave: queue.schedule,
     flushActivationInstallStatusSave: queue.flush,
     hasPendingActivationInstallStatusSave: queue.hasPending,

@@ -97,7 +97,7 @@ async function activation() {
     const { queue, calls, logs } = make(async () => ({ results: { a: structuredClone(result) }, misses: [] }))
     queue.scheduleActivationInstallStatusSave({ a: result }, items, 'unchanged')
     await queue.flushActivationInstallStatusSave('test')
-    assert.deepEqual(calls, [], 'unchanged persisted status must not write, sync or invalidate')
+    assert.deepEqual(calls, [['clear'], ['clear']], 'overlay entry/retirement invalidate queries; unchanged persisted status must not write or sync')
     assert.ok(logs.some((v) => v.includes('unchanged=1')))
     assert.equal(queue.hasPendingActivationInstallStatusSave(), false)
   }
@@ -105,18 +105,18 @@ async function activation() {
     const { queue, calls } = make(read)
     queue.scheduleActivationInstallStatusSave({ a: yes }, items, 'changed-or-unknown')
     await queue.flushActivationInstallStatusSave('test')
-    assert.deepEqual(calls, [['save', ['a']], ['sync'], ['clear']], 'missing/changed/unreadable status must persist before sync')
+    assert.deepEqual(calls, [['clear'], ['save', ['a']], ['sync'], ['clear'], ['clear']], 'missing/changed/unreadable status must persist before sync')
   }
   const { queue, calls } = make(async () => ({ results: { a: no, b: no }, misses: [] }))
   queue.scheduleActivationInstallStatusSave({ a: no, b: yes }, items, 'mixed')
   await queue.flushActivationInstallStatusSave('test')
-  assert.deepEqual(calls, [['save', ['b']], ['sync'], ['clear']], 'mixed batch must write changed rows only')
+  assert.deepEqual(calls, [['clear'], ['save', ['b']], ['sync'], ['clear'], ['clear']], 'mixed batch must write changed rows only')
   // A matching boolean alone is insufficient; source and matched records affect installation truth.
   for (const changed of [{ ...yes, by: 'user' }, { ...yes, matches: [{ ...yes.matches[0], value: 'other.ttf' }] }]) {
     const { queue, calls } = make(async () => ({ results: { a: yes }, misses: [] }))
     queue.scheduleActivationInstallStatusSave({ a: changed }, items, 'match-changed')
     await queue.flushActivationInstallStatusSave('test')
-    assert.equal(calls[0][0], 'save')
+    assert.deepEqual(calls.filter(([kind]) => kind === 'save'), [['save', ['a']]])
   }
   let releaseRead
   const reading = new Promise((resolve) => { releaseRead = resolve })
@@ -130,7 +130,7 @@ async function activation() {
   racing.queue.scheduleActivationInstallStatusSave({ a: yes }, items, 'new-during-read')
   releaseRead()
   await flush
-  assert.deepEqual(racing.calls, [['save', ['a']], ['sync'], ['clear']], 'skipping old batch must still drain newer pending state')
+  assert.deepEqual(racing.calls, [['clear'], ['clear'], ['clear'], ['save', ['a']], ['sync'], ['clear'], ['clear']], 'skipping old batch must still drain newer pending state')
   assert.equal(racing.queue.hasPendingActivationInstallStatusSave(), false)
   assert.equal(racing.queue.hasInFlightActivationInstallStatusSave(), false)
 }

@@ -221,6 +221,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
 
   const {
     scheduleActivationInstallStatusSave,
+    applyPendingActivationState,
     flushActivationInstallStatusSave,
     hasPendingActivationInstallStatusSave,
     hasInFlightActivationInstallStatusSave,
@@ -229,8 +230,8 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     saveInstallStatusIndex,
     appWatchedFolders,
     rootForFontPath,
-    syncMergedIndexAfterInstallStatusRefresh: (folders) =>
-      syncMergedIndexAfterInstallStatusRefresh(folders),
+    syncMergedIndexAfterInstallStatusRefresh: (folders, items) =>
+      syncMergedIndexAfterInstallStatusRefresh(folders, items),
     clearFontQueryCaches,
     appendStartupLog,
   });
@@ -495,5 +496,5 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     hasPendingActivationInstallStatusSave,
     hasInFlightActivationInstallStatusSave
   };
-  return { capabilities, lifecycle, listPhysicalFolderTree, refreshKnownSharedTagsFromMetadata };
+  return { capabilities, lifecycle, listPhysicalFolderTree, refreshKnownSharedTagsFromMetadata, applyPendingActivationState };
 }
