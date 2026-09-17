@@ -872,3 +872,13 @@ R-07自动部分通过；原生子项阻塞、Windows/NAS待验，F-01～F-05及
 本轮仅10个白名单文件，新增模块是历史夹具适配/失败证据验证的唯一所有者，两个原生入口复用；没有生产状态所有者变动。差异复核覆盖公开API、依赖、数据库、监听/计时器及日志容量边界，git diff --check通过；src、native-src、依赖锁和既有fixtures相对5406f74无变化。以`git log -1 --format=%H -- build/diagnostics/check-native-tag-mutation-fixtures.cjs`定位R-07独立提交，单独revert不影响R-01～R-06生产修复。
 
 插件回执：Mermaid Chart已展示真实队列→IPC→事务→通知→意图确认/查询链；未新增陌生框架或系统API，未触发Context7。Create State返回Context Captured但Project为`.`且No active world model；仅列无关Markdown/足球模型，未关联它们，HFM项目级保存未确认，以Git/README/本执行卡为准。
+
+## 23. Windows反馈四项专项审计执行卡
+
+状态：完成（仅四项审计，不含修复）；基线9edd6abee966095a61d9266c85add9448df06df1，stage/09-preview-tags-app，开工工作树干净。输入startup-2026-09-17_06-18-48-939-33208.log；仅审计停用旧状态、单字体全根同步、首屏预览延迟、缓存批查密度四项。日志没有Git SHA，不能仅以版本3.0.0认定用户源码与本基线逐字一致。
+
+精确白名单：README.md；docs/audits/HFM_FULL_CHAIN_AUDIT.md；本任务书；新增docs/audits/observe-runtime-feedback.cjs（只读受控观察器，不纳入通过门，不冻结缺陷为正确行为）。生产源码、依赖、fixtures与正式数据不改。核对真实调用链，使用真实模块与受控外部端口复现，记录疑点和确定证据的边界；审计文档独立提交原分支。
+
+审计结果：见[审计报告专项章节](../audits/HFM_FULL_CHAIN_AUDIT.md#windows反馈专项审计停用同步与预览)。W-01热/冷查询在真实异步保存队列flush前仍返回旧active，flush后收敛；W-02单字体到根snapshot路由；W-03同步net/PowerShell探测；W-04同ref队列跨runtime重建重复批查，四条受控观察reproduced=true。三项相关原诊断退出0，未跑全量或构建。原生/GUI与精确延迟归因限制单列；原R-07仍自动验证通过待实机。仅4个白名单文件，后续依次处理W-01、W-02，再分别修W-03/W-04。
+
+插件：Mermaid已展示真实状态与预览调用链；没有新增/陌生API，不需Context7。Create State返回Context Captured，但No active world model，HFM项目级保存未确认；未关联无关模型。差异复核git diff --check通过，生产/依赖/fixture无变更，沿原分支独立提交审计。

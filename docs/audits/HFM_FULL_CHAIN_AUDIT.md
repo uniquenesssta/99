@@ -131,3 +131,82 @@ npm run verify
 在上述问题修复并补足实机回执前，专项不标记“全链路完全通过”。本报告仅陈述本次发现，不承诺覆盖所有可能缺陷。
 
 工具记录：Mermaid已记录真实断点链；Create State返回Context Captured同时提示No active world model，未确认本项目级保存。Git及本报告为权威证据。此次只读代码审查未引入新第三方API，未触发Context7。
+
+
+## Windows反馈专项审计：停用、同步与预览
+
+日期2026-09-17；代码基线`9edd6abee966095a61d9266c85add9448df06df1`，分支`stage/09-preview-tags-app`。本节独立于上文7e0e6d7原审计，不覆盖历史发现，也不将R-07/D-11原生与Windows矩阵全部关项。
+
+输入`startup-2026-09-17_06-18-48-939-33208.log`共1404行，覆盖06:18:48.940Z～06:19:54.533Z；SHA-256为`d003b2efbd390f0768d0c793011f0a4417fa4b92710a078916adcb68be27a630`。下列时间均按日志UTC，行号为该原文件行号。日志标记3.0.0、开发模式、Windows，未记录Git SHA，故本基线的源码复现与用户运行日志分别列证据，不断言二者二进制完全相同。原日志不入库。
+
+只读观察器：`node docs/audits/observe-runtime-feedback.cjs`。复用现有TS加载器，生产模块不变，替换Windows命令、安装状态持久化、计时器及IPC等外部端口；不访问用户数据、不执行Windows命令。输出reproduced是观察结果而非通过条件，不加入默认verify、不给缺陷冻结快照。修复后应按正确业务期待新增回归门并使对应观察为false。
+
+| 编号 | 结论 | 严重性与证据等级 |
+| --- | --- | --- |
+| W-01 | 停用成功与查询可见安装状态之间存在不一致窗口 | P1；源码、真实查询/保存队列受控复现、日志三方一致；视觉闪回未证实 |
+| W-02 | 单字体安装状态变更仍走根目录全量同步 | P2；日志与源码确认；真实队列/validation路由复现 |
+| W-03 | 前台预览I/O选队列会触发同步Windows探测 | P2；阻塞机制已复现；本次首屏1.7秒的精确归因未完成 |
+| W-04 | 预览批查在途/未命中状态随controller渲染重建 | P2；真实队列及batch loader复现同请求重复发起；不等于重复原生渲染 |
+
+### W-01：停用后的旧安装状态仍可重新进入查询
+
+日志：1114～1121行，06:19:41.040资源移除成功、.042注册表删除成功、.048安装状态进入异步保存；1122～1131行，.115请求已激活页面、.119仍返回1项。1145～1166行，.568读取持久化状态、.586保存、.753同步完成；1396行06:19:53.130下一次已激活查询返回0。不能用两个查询之间的12秒推定页面一直错误12秒，也不能把主进程total=1当成用户肉眼已看到闪回。
+
+调用链及所有者：
+- `activation/runtime/fontActivationSessionRuntime.ts:42`移除资源/登记记录后，调用`fontActivationInstallStatusRuntime.ts:154`；名为save的函数仅调用schedule并立即返回。批量`fontDeactivationBatchRuntime.ts`也使用同一队列。
+- `activation/activationInstallStatusSaveQueue.ts:43/92`默认延迟500ms；schedule不清查询缓存，不向查询层暴露已成功的最新状态；174行在持久化和索引同步之后才清缓存。
+- `library/fontQueryWorkerRouteRuntime.ts`将active筛选排除出Rust分页，走`fontMemoryQueryRuntime.ts:18`；命中内存缓存直接返回，还会刷新缓存时间。未命中时经`fontQueryFacadeRuntime.ts:235`读取安装状态，并以`item.active || by===managed || by===both`赋active。
+- `windows/runtime/temporaryActiveFontsStoreRuntime.ts`写活动记录文件不清上述查询缓存；临时登记文件已更新不能自动覆盖旧安装状态查询。renderer现有用户意图保护可能挡住旧结果，所以这里是后端查询一致性缺陷，不能直接宣称既有前端保护失效。
+
+受控结果：先查询1项；模拟OS停用成功后进入真实保存队列，热缓存仍1项；主动清内存缓存后再查仍1项（持久化managed旧值重新补回）；真实flush在受控持久化端口完成后为0项。flush前队列触发的invalidations=0。这不是Windows原生移除测试，但证明仅提早clear cache不能消除窗口。
+
+修复边界：由既有激活状态所有者统一提供成功操作后、持久化前的查询权威结果或明确查询屏障；不另建无生命周期的第二store。覆盖单个/批量、无记录、部分失败、同字体快速激活→停用→激活、保存失败重试及关闭flush；防止旧批次完成覆盖新操作。保留收藏/本地与共享标签/保护字段，不用延长TTL或延迟页面刷新遮掩。
+
+验收：热/冷查询、旧查询在操作前开始后完成、批量部分失败、保存重试未完成时都不能把已成功停用字体重新查为active；新激活同样立即可见。使用生产session/queue/query贯通测试，另取Windows操作回执、查询/视觉/DB分开证明。
+
+### W-02：具体字体在同步边界被收缩为根目录
+
+日志674～680及1160～1166：各保存1个字体后，`fullSnapshot=true, rows=1499`；两次根同步整体158ms与166ms，Rust部分134ms与133ms。`changed=0`在fullSnapshot模式不能解释为没有写入，日志write=79/80ms。收藏六次则为`changed=1, rows=1, fullSnapshot=false`，已走增量，不能把它和激活混为同一问题。
+
+源码：`activationInstallStatusSaveQueue.ts:159`持有affectedItems但只将affectedRoots传给`syncMergedIndexAfterInstallStatusRefresh`；`indexing/merged-page/mergedIndexValidationRuntime.ts:132`逐根调用snapshot同步；`mergedIndexSyncRuntime.ts:238`明确发送fullSnapshot=true。此前“未变化跳过保存”仅优化相同状态，不解决真实变更的整根开销。受控真实队列与validation中，1字体恰触发1个root snapshot调用；Rust/SQLite输出端口被替换，1499行实耗来自用户日志而非该复现。
+
+修复边界：在现有增量同步owner内保留受影响字体/业务身份，正确应用本机安装状态；不要直接套收藏路径而丢失安装状态语义。保留根/签名变化必须重建的回退、跨根分组、未建立索引、删除/缺失字体、失败恢复及合批。不能为了少同步而不更新索引。
+
+验收：单字体不读写全根，N个实际变更只同步必要行；无变化0同步；多根只触及实际根；并发合批/失败重试无丢行；1万字体与真实NAS下同时对比索引最终内容及工作量，而非单看耗时。
+
+### W-03：首个前台预览的同步存储探测
+
+日志139～144：06:18:51.089第一条renderPreviewImage进入主进程，下一条主进程请求直到52.342，间隔1253ms；208～243多条预览最终端到端1580～1693ms。第一条主进程I/O计时1590ms，不能全当原生渲染耗时。193行52.587才记录helper可用；这不是helper初始化独占全部等待的证据。
+
+源码链：`preview/previewRuntime.ts:351`→`performance/globalIoRuntime.ts:123`→`ioScheduler.ts:85/95`，resolveLane同步调用storageProfileForPath；`storageProfileRuntime.ts:43`首次同步`net use`，74行同步PowerShell Get-Partition/Get-Disk/Get-PhysicalDisk。111行在构造getStorageProfile参数时就求值driveInfo，因此即使已经识别为映射网络盘也先探测本地介质。首次探测结果被缓存，所以暖态可能明显快于首屏。
+
+受控执行真实storage profile模块，Win32端口给出O映射盘：第一次函数返回前调用顺序net→powershell.exe，最终profile=network；第二次相同路径无命令。没有在Linux伪造Windows耗时。证实前台同步阻塞机制，日志1.253秒空窗与该机制相符，但当前缺少探测起止/队列等待/读取/原生绘制分段日志，不能将1.69秒精确归因于PowerShell或排除其他I/O开销。
+
+同链边界：`path/pathCanonicalizer.ts`另有同步net use，但现有证据不足以归因本次空窗，修复时应核对首次路径解析是否仍引入同类阻塞。`globalIoRuntime`只在拥塞时打印start，不能用缺少start日志推断未排队。
+
+修复边界：将探测移出前台同步调用、合并同盘并发探测；冷态采用现有保守限流并在结果就绪后更新分类，映射盘跳过无意义本地介质探测。不能简单提高并发压垮NAS，也不能关闭文件校验/超时或绕过Rust准入。维持媒体分类与路径规范化职责分离。
+
+验收：受控慢探测时主进程心跳/其他IPC继续运行，同盘并发仅一次探测，异常/超时/映射变化有恢复，网络限流保持。Windows冷启动分别记录探测、排队、缓存/文件读取、Rust绘制耗时；不能以暖启动快替代冷启动修复。
+
+### W-04：共享队列与局部防重状态生命周期不一致
+
+日志149～151附近同毫秒三条批查具有相同参数摘要；119条成功IPC完成记录中批量预览缓存查询40条。摘要只含数量/首项，不能由日志单独断言整个批次完全相同，更不能把40次全部算冗余。
+
+源码：`renderer/src/runtime/app/usePreviewController.ts:52`每次render创建queueRuntime。queue/queuedIds/activeLoads/loadingFonts用useRef跨render保存，但`fontVisiblePreviewQueueRuntime.ts:24`的cachedPreviewBatchInFlight、checked/miss集合和调度标记，以及`fontPreviewLoadRuntime.ts:58`的miss集合都是factory局部变量。新render获得共享队列却丢失旧批查在途标记；旧Promise也仍持有旧runtime回调。batch查缓存期间尚未进入ensurePreviewFont，loadingFonts保护并不能覆盖这个窗口。
+
+受控真实visible queue与batch loader：同一实例连续process两次只发1次IPC（正常控制组）；第一批未返回时，以同一refs/同一文本字号重建runtime再process，发出第2次完全相同字体批查。这里模拟controller源码明确存在的重建，不声称执行了React GUI。未走WebFont fallback/字体绘制，相关浏览器端口未参与结论。
+
+下游已有保护：`previewRequestSchedulerRuntime.ts`按参数和字体签名合并pending group，但group派发后已移出pending；`previewRuntime.ts:363`对原生渲染requestKey有inflight Promise，且有图片内存缓存。因此重复renderer批查不必然等量增加底层读库或重复绘图，不能删掉现有下游合并。
+
+修复边界：在既有preview controller中让批查状态与共享队列生命周期一致，并确保读取最新options；不要只useMemo([])冻结旧文本/选择/字体参数。覆盖文本/字号token变化、滚动、页面切换、删除字体、卸载、失败重试及旧Promise完成；旧请求不能清除新一代在途标记或消费新队列。miss缓存有界且有正确失效，不以永久记miss抑制新缓存。
+
+验收：受控Hook rerender期间同token/同字体在途批查只一次；不同文本/字号仍各自请求；旧代结果拒绝且不污染新队列；失败后可重试；卸载不留timer/idle回调；保留现有主进程batch/prefetch取消与渲染去重门。增加跨controller-render覆盖，不只测单次factory。
+
+### 回归覆盖、限制与处理次序
+
+- 新观察器运行退出0，W-01～W-04全部reproduced=true；表示成功观察到缺陷路径，不是修复完成。无源码变换、没有把缺陷断言为必须保持。
+- 原`check-activation-save-queue-durability.cjs`、`check-active-view-consistency.cjs`、`check-preview-batch-read.cjs`均退出0。分别侧重保存重试/退出、renderer意图结算、主进程批量读取；未覆盖本次查询读旧DB窗口、1字体同步工作量、冷态同步媒体探测、controller重建期间的批查防重。
+- 本轮仅文档与观察器，没有执行全量verify/构建或Rust故障测试；R-07的113/113为前次证据。没有正式DB改写、窗口操作、网络/OS实测，不声称本次已修复或完成R-07。
+- 优先W-01（状态正确性），随后W-02（同链工作量）；W-03冷态阻塞与W-04请求生命周期分别处理，避免一次改动同时改变调度/缓存/一致性导致无法定位回归。
+- 本次6次收藏/取消均92～123ms且1行增量；10个mutation摘要new/duplicate成对；2个本地意图有post-ack-read-confirmed；已激活字体Rust文件预览路径有实际日志；关闭flush保存成功。这些仅覆盖日志中操作，不替代故障/多根/NAS断连验收。
+- shared tag ops replay的3个冲突是已有6条操作的回放结果（changed=0），没有对应冲突样本，独立保留待查，不加入本次四项修复范围。首个收藏视觉延迟也未被本次日志证明完全消失。
