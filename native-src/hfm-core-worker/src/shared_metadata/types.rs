@@ -159,6 +159,8 @@ pub struct SharedMetadataKnownTagsResult {
 #[serde(rename_all = "camelCase")]
 pub struct SharedMetadataMutationStateSignal {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub mutation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trace: Option<serde_json::Value>,
     pub mutation_kind: String,
     pub db_path: String,

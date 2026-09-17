@@ -627,6 +627,7 @@ fn mutation_state_signal(
 ) -> SharedMetadataMutationStateSignal {
     let changed = !changed_ids.is_empty();
     SharedMetadataMutationStateSignal {
+        mutation_id: changed.then(crate::mutation_protocol::next_tag_mutation_id),
         trace: None,
         mutation_kind: mutation_kind.to_string(),
         db_path: db_path.to_string(),

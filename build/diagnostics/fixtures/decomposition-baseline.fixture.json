@@ -63,7 +63,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "f862da9c2785a5f283a4c3fe89fd057c168ddba6edf7c49dacfee06ffead5045"
+      "tokenHash": "5cf004fb5083c6edb64209111ce54ed0e769b269f42427c6919e587c69fd04d5"
     },
     "src/renderer/src/App.tsx": {
       "functions": [
@@ -1099,7 +1099,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "a11ba73f829e94f4fdbce5b4ffb0624d99d20237e0d75b61fd61587a15206059"
+      "tokenHash": "872e36ea1ec92e46bb287c639fddfc2d3da1f83981a2707a33af3898ff1e8b44"
     },
     "src/renderer/src/runtime/app/createAppMenuDialogRuntime.ts": {
       "functions": [

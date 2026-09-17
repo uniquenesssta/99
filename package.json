@@ -140,6 +140,7 @@
     "diagnostics:preview-cache-rust-atomicity": "node build/diagnostics/check-preview-cache-rust-atomicity.cjs",
     "diagnostics:shared-metadata-rust-atomicity": "node build/diagnostics/check-shared-metadata-rust-atomicity.cjs",
     "diagnostics:local-tag-rust-atomicity": "node build/diagnostics/check-local-tag-rust-atomicity.cjs",
+    "diagnostics:tag-mutation-identity": "node build/diagnostics/check-tag-mutation-identity.cjs",
     "diagnostics:tag-intent-lifecycle": "node build/diagnostics/check-tag-intent-lifecycle.cjs",
     "diagnostics:operation-chain": "node build/diagnostics/check-operation-chain.cjs"
   },

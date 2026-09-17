@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { RustSharedMetadataMutationStateSignal } from '../../rust-core/rustCoreWorkerContracts'
 
 export type SharedMetadataMutationSignalSource = 'rust-worker' | 'node-fallback'
@@ -16,6 +17,7 @@ export function normalizeSharedMetadataMutationStateSignal(
   const sharedMetadataChanged = signal?.sharedMetadataChanged ?? hasChangedRows
   return {
     ...(signal?.trace ? { trace: signal.trace } : {}),
+    mutationId: signal?.mutationId || (!signal && source === 'node-fallback' && sharedMetadataChanged ? `node:${randomUUID()}` : undefined),
     mutationKind: kind,
     dbPath: signal?.dbPath,
     rootPath: signal?.rootPath || fallbackRoot,

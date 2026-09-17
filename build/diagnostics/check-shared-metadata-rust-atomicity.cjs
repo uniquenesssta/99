@@ -21,7 +21,7 @@ function check(source,signature) {
   assert(signature.includes('read_meta(tx, "updatedAt")?.unwrap_or_default()'))
   assert(signature.includes('[key], |row| row.get(0)).optional()'))
   const algorithms=source.slice(source.indexOf('fn find_targets(')).split('#[cfg(test)]')[0].trim()
-  assert.equal(require('node:crypto').createHash('sha256').update(algorithms).digest('hex'),'fcf08cda5da43d6608401e0a938cda04405a0a9fa6114f2d6d0a8a422a76f2c3','merge, revision/op IDs and signal algorithms unchanged')
+  assert.equal(require('node:crypto').createHash('sha256').update(algorithms).digest('hex'),'b0d8ec03a5683fc77ab406b60f93261193b3a2c47a4edc64cc3257c9daf0878b','merge, revision/op IDs and R-06 signal contract')
 }
 async function main() {
   const source=fs.readFileSync(path.join(root,file),'utf8'), signature=fs.readFileSync(path.join(root,'native-src/hfm-core-worker/src/shared_metadata/signature.rs'),'utf8')

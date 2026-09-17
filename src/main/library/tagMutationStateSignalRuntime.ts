@@ -1,3 +1,4 @@
+import { createTagMutationSignalIdentityRuntime } from './tagMutationSignalIdentityRuntime'
 import { currentOperationTrace, logOperation } from '../logging/operationTraceContext'
 import { cleanOperationTrace, type OperationTrace } from '../../shared/operationTrace'
 import { BrowserWindow } from 'electron'
@@ -8,6 +9,7 @@ export type TagMutationSignalSource = FontTagMutationStateSignalPayload['source'
 
 export type LocalTagsMutationStateSignalInput = {
   trace?: OperationTrace
+  mutationId?: string
   mutationKind?: string
   dbPath?: string
   changedIds?: string[]
@@ -22,8 +24,11 @@ export type LocalTagsMutationStateSignalInput = {
 
 export type SharedMetadataMutationStateSignalInput = {
   trace?: OperationTrace
+  mutationId?: string
   mutationKind?: string
   rootPath?: string
+  dbPath?: string
+  signature?: string
   changedIds?: string[]
   updatedAt?: string
   sharedMetadataChanged?: boolean
@@ -53,11 +58,6 @@ function cleanSignalIds(ids: unknown): string[] {
   return Array.from(new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean)))
 }
 
-function tagMutationSignalKey(scope: 'local' | 'shared', signal: { mutationKind?: string; updatedAt?: string; changedIds?: string[] }): string {
-  const ids = cleanSignalIds(signal.changedIds).slice(0, 80).join('\u0000')
-  return `${scope}|${signal.mutationKind || 'unknown'}|${signal.updatedAt || ''}|${ids}`
-}
-
 function broadcastFontTagMutationStateSignal(payload: FontTagMutationStateSignalPayload): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send('font-tags:stateSignal', payload)
@@ -66,20 +66,7 @@ function broadcastFontTagMutationStateSignal(payload: FontTagMutationStateSignal
 
 export function createTagMutationStateSignalRuntime(options: TagMutationStateSignalRuntimeOptions) {
   const append = (message: string): void => { try { options.appendStartupLog(message) } catch { /* Diagnostic only. */ } }
-  const tagMutationSignalDedupe = new Map<string, { at: number; hasKnownTags: boolean }>()
-
-  function shouldApplyTagMutationSignal(scope: 'local' | 'shared', signal: { mutationKind?: string; updatedAt?: string; changedIds?: string[]; knownTags?: string[] }): boolean {
-    const now = Date.now()
-    for (const [key, entry] of tagMutationSignalDedupe) {
-      if (now - entry.at > 60_000) tagMutationSignalDedupe.delete(key)
-    }
-    const key = tagMutationSignalKey(scope, signal)
-    const hasKnownTags = Array.isArray(signal.knownTags)
-    const previous = tagMutationSignalDedupe.get(key)
-    if (previous && (!hasKnownTags || previous.hasKnownTags)) return false
-    tagMutationSignalDedupe.set(key, { at: now, hasKnownTags: hasKnownTags || previous?.hasKnownTags === true })
-    return true
-  }
+  const identify = createTagMutationSignalIdentityRuntime()
 
   function handleLocalTagsMutationStateSignal(signal: LocalTagsMutationStateSignalInput, source: TagMutationSignalSource = 'rust-worker'): void {
     const effectiveSource = signal.source || source
@@ -91,8 +78,10 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
       append(`local tags mutation signal ignored: source=${effectiveSource}, db=${signal.dbPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=0, dirty=false`)
       return
     }
-    if (!shouldApplyTagMutationSignal('local', { mutationKind: signal.mutationKind, updatedAt: signal.updatedAt, changedIds, knownTags: signal.knownTags })) {
-      logOperation({ trace, stage: 'signal-reject', reason: 'dedupe' }, options.appendStartupLog)
+    const decision = identify('local', signal)
+    append(`tag mutation identity: scope=local, decision=${decision.reason}, identity=${decision.identity}`)
+    if (!decision.apply) {
+      logOperation({ trace, stage: 'signal-reject', reason: `dedupe:${decision.identity}` }, options.appendStartupLog)
       return
     }
     const snapshot = options.tagMetadataRevisionBarrier.noteLocalTagMutation(
@@ -100,7 +89,7 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
       changedIds,
     )
     options.clearFontQueryCaches()
-    logOperation({ trace, stage: 'signal', backend: effectiveSource, localRevision: snapshot.localRevision, sharedRevision: snapshot.sharedRevision }, options.appendStartupLog)
+    logOperation({ trace, stage: 'signal', reason: `${decision.reason}:${decision.identity}`, backend: effectiveSource, localRevision: snapshot.localRevision, sharedRevision: snapshot.sharedRevision }, options.appendStartupLog)
     broadcastFontTagMutationStateSignal({
       trace,
       scope: 'local',
@@ -130,8 +119,10 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
       append(`shared metadata mutation signal ignored: source=${effectiveSource}, root=${signal.rootPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=0, dirty=false`)
       return
     }
-    if (!shouldApplyTagMutationSignal('shared', { mutationKind: signal.mutationKind, updatedAt: signal.updatedAt, changedIds })) {
-      logOperation({ trace, stage: 'signal-reject', reason: 'dedupe' }, options.appendStartupLog)
+    const decision = identify('shared', signal)
+    append(`tag mutation identity: scope=shared, decision=${decision.reason}, identity=${decision.identity}`)
+    if (!decision.apply) {
+      logOperation({ trace, stage: 'signal-reject', reason: `dedupe:${decision.identity}` }, options.appendStartupLog)
       return
     }
     const snapshot = options.tagMetadataRevisionBarrier.noteSharedTagMutation(
@@ -139,7 +130,7 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
       changedIds,
     )
     options.clearFontQueryCaches()
-    logOperation({ trace, stage: 'signal', backend: effectiveSource, localRevision: snapshot.localRevision, sharedRevision: snapshot.sharedRevision }, options.appendStartupLog)
+    logOperation({ trace, stage: 'signal', reason: `${decision.reason}:${decision.identity}`, backend: effectiveSource, localRevision: snapshot.localRevision, sharedRevision: snapshot.sharedRevision }, options.appendStartupLog)
     broadcastFontTagMutationStateSignal({
       trace,
       scope: 'shared',

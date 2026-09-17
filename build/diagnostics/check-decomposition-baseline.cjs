@@ -28,6 +28,7 @@ function load(file, mocks = {}, transform = x => x) {
     }
     if (id.startsWith('node:')) return require(id)
     if (id === './fontTagStateAuthorityRuntime') return load('src/renderer/src/fontTagStateAuthorityRuntime.ts')
+    if (id === './tagMutationSignalIdentityRuntime') return require('./check-operation-chain.cjs').loader()('src/main/library/tagMutationSignalIdentityRuntime.ts')
     if (id === './fontUserIntentRuntime') return load('src/renderer/src/fontUserIntentRuntime.ts')
     throw new Error(`Unmocked dependency: ${file} -> ${id}`)
   }, console, Date, Map, Set, process, setTimeout, clearTimeout }, { filename: file })

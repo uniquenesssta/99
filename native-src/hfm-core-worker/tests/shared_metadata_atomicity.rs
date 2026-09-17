@@ -36,6 +36,10 @@ fn success(o:&Output,committed:bool)->Value {
     assert_eq!(e.iter().filter(|v|v["stage"]=="commit").count(),if committed{1}else{0});
     assert_eq!(e.last().unwrap()["outcome"],"returned");
     if committed{assert_eq!(r["stateSignal"]["trace"]["commitSequence"],e.iter().find(|v|v["stage"]=="commit").unwrap()["backendSequence"]);}
+    assert_eq!(r["stateSignal"]["mutationId"], r["mutationProtocol"]["stateSignal"]["mutationId"]);
+    if r["stateSignal"]["sharedMetadataChanged"] == true {
+        assert!(r["stateSignal"]["mutationId"].as_str().unwrap().starts_with("rust:"));
+    }
     r
 }
 #[test]
@@ -89,4 +93,14 @@ fn shared_metadata_atomicity_empty_and_no_change_contracts() {
 #[test]
 fn shared_metadata_atomicity_logging_failure_keeps_committed_result() {
     for delete in [false,true] {let f=Fixture::new();let output=f.command(delete,json!({})).stderr(fs::OpenOptions::new().write(true).open("/dev/full").unwrap()).output().unwrap();assert!(output.status.success());let r:Value=serde_json::from_slice(&output.stdout).unwrap();assert_eq!(r["ok"],true);assert_eq!(f.reader().query_row("SELECT value FROM meta WHERE key='updatedAt'",[],|r|r.get::<_,String>(0)).unwrap(),"next");}
+}
+
+#[test]
+fn shared_metadata_mutation_identity_distinguishes_commits_with_same_attempt() {
+    let f = Fixture::new();
+    let first = success(&f.run(false, json!({"rows":[row("a", "new")]})), true);
+    let second = success(&f.run(false, json!({"rows":[row("a", "newer")]})), true);
+    assert_ne!(first["stateSignal"]["mutationId"], second["stateSignal"]["mutationId"]);
+    assert_eq!(first["stateSignal"]["updatedAt"], second["stateSignal"]["updatedAt"]);
+    assert_eq!(first["stateSignal"]["trace"], second["stateSignal"]["trace"]);
 }

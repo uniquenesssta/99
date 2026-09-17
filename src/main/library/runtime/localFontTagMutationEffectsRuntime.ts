@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { FontTagUpdateResult } from "../../../shared/types";
 import type { LocalFontTagsRuntimeDeps, RustLocalTagsMutationStateSignal } from "./localFontTagsRuntime";
 import { cleanKnownTagNames } from "./localFontTagNodePersistenceRuntime";
@@ -70,6 +71,7 @@ export function createLocalFontTagMutationEffectsRuntime(deps: Pick<LocalFontTag
     const changed = normalizedChangedIds.length > 0 || catalogChanged;
     const normalized: RustLocalTagsMutationStateSignal = {
       ...(signal?.trace ? { trace: signal.trace } : {}),
+      mutationId: signal?.mutationId || (!signal && source === 'node-fallback' && changed ? `node:${randomUUID()}` : undefined),
       mutationKind: signal?.mutationKind || kind,
       dbPath: signal?.dbPath || deps.librarySqlitePath(),
       changedIds: normalizedChangedIds,

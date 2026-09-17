@@ -363,6 +363,7 @@ export type RustLocalTagsDeleteTagInput = {
 }
 
 export type RustLocalTagsMutationStateSignal = {
+  mutationId?: string
   mutationKind?: string
   dbPath?: string
   changedIds?: string[]
@@ -425,6 +426,7 @@ export type RustSharedMetadataApplyInput = {
 }
 
 export type RustSharedMetadataMutationStateSignal = {
+  mutationId?: string
   trace?: import('../../shared/operationTrace').OperationTrace
   mutationKind?: string
   dbPath?: string

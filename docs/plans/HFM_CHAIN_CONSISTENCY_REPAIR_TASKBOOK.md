@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行入口
 
-- 文档版本1.6；日期2026-09-17；软件3.0.0；仓库uniquenesssta/99。
+- 文档版本1.7；日期2026-09-17；软件3.0.0；仓库uniquenesssta/99。
 - 建立基线：`58a3f25e632a2af1d49587ab065e0469da4bf330`；执行分支沿用`stage/09-preview-tags-app`。开工时重新核对远端、HEAD与工作树，不默认为本基线一直最新。
-- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04自动验证通过待实机（原生测试未执行）；R-05自动验证通过待实机，见§20；R-06/R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
+- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04自动验证通过待实机（原生测试未执行）；R-05自动验证通过待实机，见§20；R-06自动验证通过待实机，见§21；R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
 - 证据：[全链路审计](../audits/HFM_FULL_CHAIN_AUDIT.md)、[只读观察器](../audits/observe-chain-audit.cjs)。F-01/F-02/F-03已有真实TS受控反例；F-04为源码与SQLite顺序重建证据，尚无原生Rust故障测试；F-05为跨层日志关联缺口。
 - 承接[原拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)的C-01～C-07、X-01～X-13与Windows待验项。本书是新增五项审计问题的执行入口，不重启D阶段，不宣称D-11完整关闭。
 - 用户要求：**日志最先实施并验收，后续修改须利用该日志验证真实链路。** 用户使用`npm run dev`，不要求build:win、安装包或重新安装。
@@ -188,7 +188,7 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 - R-01开工登记日志诊断的准确命令/路径，接入现有diagnostics与默认npm run verify；不能只写任务书或提供手工观察脚本。
 - R-02～R-06相应修复落地时，已修复反例转为必过门。真实Rust测试提供独立必需命令并作为完成条件；若verify本身不执行Cargo，必须明确分开报告，不能将其遗漏解释为通过。
 - 新增/迁移owner、协议输入与trace边界必须有结构/类型门；日志关联、字段隔离、事务和异步正确性另用真实行为门证明。所有权/类型/行为检查缺项不得判完成。
-- R-01的operation-chain门已接入默认verify；R-02/R-03/R-04已有默认约束门和独立原生验收入口；R-05的tag-intent-lifecycle已注册默认verify，最终结果见§20；R-06业务修复门尚未创建。
+- R-01的operation-chain门已接入默认verify；R-02/R-03/R-04已有默认约束门和独立原生验收入口；R-05的tag-intent-lifecycle已注册默认verify，最终结果见§20；R-06的tag-mutation-identity已注册默认verify，原生入口单列，见§21。
 
 ## 12. 状态登记
 
@@ -199,7 +199,7 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 | R-03 共享事务 | 自动验证通过待实机 | cee7970起，本R-03独立提交 | 107/107及12个TS场景；Cargo缺失，原生/Windows待验 |
 | R-04 预览事务 | 自动验证通过待实机 | 8b60ee7起，本R-04独立提交 | 108/108及16个客户端场景；Cargo缺失，原生/Windows待验 |
 | R-05 标签确认生命周期 | 自动验证通过待实机 | b7f68e1起，本R-05独立提交 | TypeScript、111/111、三端构建；§20，Windows待验 |
-| R-06 信号去重 | 未开始 | — | — |
+| R-06 信号去重 | 自动验证通过待实机 | eded4db起，本R-06独立提交 | TypeScript、112/112、三端构建；§21，Cargo/Windows待验 |
 | R-07 总验收 | 未开始 | — | — |
 
 建书时的文档交付：新任务书及README/总任务书/原专项/审计报告入口更新；不启动R-01。下一条“开始R-01”进入日志实施。
@@ -661,3 +661,81 @@ npm run dev
 本R-05保持独立原子提交，可用`git log -1 --format=%H -- build/diagnostics/check-tag-intent-lifecycle.cjs`定位后revert；无需数据库迁移或回滚前置任务。下一项为R-06，但本轮不启动。
 
 最终差异复核：20个登记文件（含新增诊断），git diff --check通过；依赖锁、Rust源码、数据库schema、样式、R-06信号去重均无变更。两次全量回归均退出0，最终一次包含本轮续接补修；构建日志/tmp/hfm-r05-build.log。远端仍为b7f68e1，沿原阶段分支快进发布本R-05独立提交。
+
+## 21. R-06 执行卡
+
+状态：自动验证通过待实机。基线eded4dbbd40567486241adc9ee552bf05118ae91，stage/09-preview-tags-app，起始工作树干净且与远端一致。R-05前置生命周期门通过；原只读observer确认F-03a/b各仅1次广播（应2次），F-01/F-02不再复现。继承R-01～R-05 Rust/Windows/NAS/GUI待验缺口。
+
+精确白名单：
+- src/main/library/tagMutationStateSignalRuntime.ts；新增src/main/library/tagMutationSignalIdentityRuntime.ts：通知端与唯一去重表所有者，完整存储域/提交身份/语义摘要，固定容量与过期。
+- src/main/library/runtime/localFontTagMutationEffectsRuntime.ts、localFontTagsRuntime.ts；src/main/indexing/shared-metadata/sharedMetadataMutationSignalRuntime.ts；src/main/rust-core/rustCoreWorkerContracts.ts：已提交信号生产/适配，透传可选mutationId。
+- native-src/hfm-core-worker/src/mutation_protocol.rs、local_tags/types.rs、local_tags/state_machine.rs、shared_metadata/types.rs、shared_metadata/state_machine.rs：提交后生成一次独立于trace的mutationId，两通道从同一结果复制。
+- native-src/hfm-core-worker/tests/local_tags_atomicity.rs、shared_metadata_atomicity.rs：真实命令回执与协议身份相等/不同提交不同身份的原生断言。
+- 新增build/diagnostics/check-tag-mutation-identity.cjs；package.json：真实生产模块的完整R-06门及注册。
+- README.md、本任务书、docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md、docs/audits/HFM_FULL_CHAIN_AUDIT.md：结果与原审计修复入口。
+
+设计：现有updatedAt由调用方提供，shared signature为统计摘要，均不保证逐提交唯一。仅新增内部stateSignal.mutationId可选字段，Rust在事务提交后的signal构造点生成一次，Node仅为自身已提交信号生成UUID；旧Rust无字段不由适配器伪造身份。传输、daemon事件与worker响应复用同一字段，不修改数据库主键/schema、IPC通道/方法签名、preload或renderer广播；原回执mutationProtocol.stateSignal透传可选字段。生产端mutationId不参与数据库写入/重放，不从R-01trace/attempt计算。
+
+新去重键包含scope、原始db/root存储域、mutationId、完整排序去重ID集合、完整目录（缺失不同于空）、signature、操作类型与时间及dirty语义的SHA-256。路径不新增归一化规则。新消息执行revision→清缓存→广播；同提交完整消息双通道只执行一次。旧版本或身份/存储域缺失时保守接受刷新；不能证明相同提交则不抑制。缓存只保留固定长度摘要，60秒保留窗口不延长，最多2048项；过期/容量淘汰后重放允许额外刷新，不保证永久exactly-once，不以时间判断提交先后。乱序不同提交均可触发权威重查，重复旧提交在窗口内不回灌目录。
+
+必过：不同根同时间空IDs、相同前80不同81、相同IDs不同目录、完整双通道正反顺序、同trace不同提交及同提交不同trace、缺字段/旧消息、无变化、乱序、容量/过期、日志失败。先用真实旧模块验证业务断言失败，再验证现实现；存储域丢失/截断IDs/attempt去重退化及LF/CRLF必须失败。日志仅打印有界摘要与accept/dedupe/legacy理由，不输出ID列表。复用原真实Node SQLite链与R-05门；原生断言未执行不得计通过。回滚为本R-06单提交revert，旧消费者忽略新字段，无数据迁移。
+
+白名单补充：build/diagnostics/check-decomposition-baseline.cjs仅接入新增真实identity模块（observer和既有适配门共用该加载器）；build/diagnostics/check-local-tag-rust-adapter.cjs将旧无身份重复压制断言改为带完整提交身份，同时由新门保留旧消息保守刷新的兼容验收，不修改observer。没有扩大业务修改范围。
+
+全量门发现类型冻结变动：补充build/diagnostics/fixtures/decomposition-baseline.fixture.json，仅迁移localFontTagsRuntime.ts新增可选mutationId的tokenHash；先断言删除该类型行后与旧摘要完全相同，其他函数/导出/所有者/算法摘要不更新。新门补独立`--native`入口，真实Cargo测试和daemon输出进原生产适配/去重链，当前环境无Cargo明确待执行。
+
+同一fixture第二项迁移：localFontTagMutationEffectsRuntime.ts仅新增crypto导入与mutationId生成/透传行；移除这两行后必须与旧冻结条目完全一致，再只更新该tokenHash。其余冻结条目不变；新真实适配测试替代该两行的旧无身份行为。
+
+白名单补充build/diagnostics/fixtures/local-tag-rust-adapter.fixture.json与local-tag-node-persistence.fixture.json：仅emitLocalTagsMutationStateSignal函数新增mutationId一行所引起的body hash迁移；移除该行后验证原hash一致。二者均冻结同一emit函数，分别以原hash核对；其余持久化函数与事务摘要保持不动。
+
+白名单补充build/diagnostics/check-operation-chain.cjs：原R-01去重场景使用无提交身份的合成消息，与本轮旧消息保守刷新策略冲突；只给真正重复的场景补mutationId并保留已有dbPath并保留其1次广播断言，去重日志reason改为有界摘要格式。R-01队列/IPC/SQLite/trace及其他拒绝路径断言不改。新门另已验证8个真实Rust client/transport解析场景（4命令×daemon/oneshot）保留身份、清临时文件并接通实际通知适配。
+
+
+### R-06 实现与兼容边界
+
+原信号模块仅负责无变化判定、版本/缓存/广播顺序；新增identity模块接管原唯一去重表，不增加第二store或队列。存储域原字符串不折叠大小写/路径分隔符；完整ID集合及目录排序只用于摘要，不改广播顺序、字体id/sourceId或数据库键。只有固定64字符SHA-256及时间留存，容量2048、60秒从首次接收起算；副本不延长期限。两通道都读取Rust一次构造的stateSignal，客户端normalizer和两域适配保留mutationId。Node仅在自身成功写入后生成node UUID，旧Rust无signal或无mutationId均不补造身份。
+
+Rust使用现有std RandomState/BuildHasher的随机键哈希加AtomicU64序号，和用户时间/trace完全独立；新字段只在本地/共享stateSignal与原嵌套mutationProtocol中可选出现。无变化信号不生成身份；失败事务不产生成功signal。无依赖、DB schema/主键、IPC通道/方法签名、preload/renderer广播字段或写协议队列变化；原IPC回执内嵌stateSignal仅透传可选mutationId；tagMutationWriteProtocolRuntime既有start/commit版本屏障不变。
+
+| 验证 | 证据与边界 |
+| --- | --- |
+| 旧版本反例 | `node build/diagnostics/check-tag-mutation-identity.cjs --baseline=eded4db`退出1，三个独立原故障均expected=2/actual=1；真实旧模块可加载，非编译错误冒充失败 |
+| 新默认门 | 根/db隔离、完整第81项、目录内容/缺失/显式空、操作/签名/dirty区别、集合乱序与重复项、双通道正反顺序、相同attempt不同提交及同提交不同attempt、乱序旧副本、旧消息/缺字段、无变化、2048容量/60秒到期、日志抛错；实际revision→cache→broadcast顺序 |
+| 退化检查 | 丢存储域、截断80项、错误按attempt去重、去掉容量上限、扩大过期窗口；各在LF/CRLF执行，共10次业务断言拒绝，正向两种换行均通过 |
+| 传输/适配链 | 4个真实metadata client命令×oneshot/daemon共8场景，外部进程端口给定结果；真实JSON/协议解析、临时文件清理、适配与双通道去重。Rust进程执行由下面原生入口独立验证 |
+| R-01/R-05关联链 | 原两种preload×成功/两次失败重试，真实队列→IPC→Node SQLite→signal→回读确认，第二连接验证实际数据库；未替换业务算法，不视为Rust执行 |
+| 原只读observer | 未修改observer；F-03a/b均2次广播、reproduced=false，F-01a/b与F-02继续false |
+| 原生 | 新Rust并发唯一性、跨进程同输入及同attempt不同提交、协议/结果身份一致断言；`--native`还执行真实daemon领域事件与job_finished回执、两通道先后顺序、第二SQLite连接。实际入口退出1，spawnSync cargo ENOENT；尚未编译/执行，不能视为通过 |
+
+真实受控日志样本（非用户数据）：
+
+```text
+tag mutation identity: scope=local, decision=new, identity=dcc2897097b179ebae4ba909c891b08b063ed26671d555ece5213e6003cafbe6
+tag mutation identity: scope=local, decision=duplicate, identity=dcc2897097b179ebae4ba909c891b08b063ed26671d555ece5213e6003cafbe6
+tag mutation identity: scope=local, decision=legacy, identity=unavailable
+```
+
+原operation-chain的signal/signal-reject同时携带new/legacy/dedupe及有界摘要，trace仍仅诊断。旧消息保守刷新可能产生额外通知；保留窗口之外或容量淘汰后的副本也允许刷新。不提供跨重启永久去重，不从ID或客户端updatedAt推断提交先后；不同提交即便乱序仍触发权威查询。
+
+Electron/Vite构建退出0（366/1/196模块），混淆3/3退出0，日志/tmp/hfm-r06-build.log。最终npm run verify退出0：TypeScript与112/112通过，日志/tmp/hfm-r06-final-verify.log；环境Node24.19.0/npm11.9.0/Linux。未执行完整npm run build，不把无Cargo、Windows/NAS或GUI环境当通过。
+
+Context7已核对Rust std RandomState/BuildHasher官方文档（Rust 2021项目，Cargo未设置rust-version且本机无工具链；未推断实际编译版本），无新依赖。Mermaid已展示真实提交→双通道→摘要→版本/缓存/广播链。Create State返回Context Captured但No active world model，仅显示无关Markdown/足球模型；未写入这些模型，HFM项目级保存未确认，以Git/README/本执行卡为准。
+
+### 原生与Windows开发模式待验
+
+```powershell
+git pull --ff-only origin stage/09-preview-tags-app
+node build/diagnostics/check-tag-mutation-identity.cjs --native
+$env:HFM_LOG_DETAIL = "debug"
+npm run dev
+```
+
+原生入口需要既有Rust工具链；开发环境须重建当前sidecar以得到mutationId（`node build/rust/build-core-worker.cjs --required`），无npm依赖更新，不要求安装包。旧sidecar仍可读取，但decision=legacy不能证明新Rust去重已验收。两个共享根目录执行标签删除/重命名，批量至少81项且尾部不同，连续目录变化及同字体快速增删；检查新提交摘要不同，同一提交双通道仅一次signal，UI最后输入/目录/查询收敛。附startup日志、sidecar构建结果和操作顺序；Windows实机回执之前保持待验。
+
+本R-06可按`git log -1 --format=%H -- build/diagnostics/check-tag-mutation-identity.cjs`定位并单独revert；无数据迁移。R-07未启动，前置R-01～R-05及历史性能问题保留各自待验/待查结论。
+
+契约冻结补充白名单：build/diagnostics/fixtures/rust-worker-contracts.fixture.json仅迁移RustLocalTagsMutationStateSignal与RustSharedMetadataMutationStateSignal两个类型摘要；分别删mutationId可选行后验证原hash一致。依赖集合、导出集合、其他类型、必填字段拒绝及LF/CRLF检查保持原门。
+
+R-03算法冻结补充白名单：build/diagnostics/check-shared-metadata-rust-atomicity.cjs仅更新受本轮signal构造新增mutation_id一行影响的摘要。先去除该行验证旧fcf08cda摘要完全一致，合并、revision/op_id、事务顺序与原8个退化检查保持原状；摘要说明更新为R-06通知契约，不再声称signal字节未变。
+
+最终复核：27个白名单文件；git diff --check通过。只迁移4个fixture中的6项受影响摘要及R-03单条算法摘要，每项迁移前均证实移除本轮新增行即匹配旧值；不改其他冻结契约。无依赖锁、DB schema、UI/CSS、IPC频道、预加载入口或构建产物入库；远端发布前复核仍为eded4db，沿原分支提交本R-06。

@@ -1,3 +1,7 @@
+use std::collections::hash_map::RandomState;
+use std::hash::{BuildHasher, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use serde::Serialize;
 use serde_json::Value;
 
@@ -98,5 +102,28 @@ pub fn tag_mutation_protocol_error(
         state_signal: Value::Null,
         timings: Value::Null,
         worker_mode: String::new(),
+    }
+}
+
+// Receipt for one completed mutation, shared by its result and daemon event.
+// Random process-independent salt plus a monotonic counter, never request time or trace.
+pub fn next_tag_mutation_id() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let first = RandomState::new().build_hasher().finish();
+    let second = RandomState::new().build_hasher().finish();
+    format!("rust:{:016x}{:016x}:{:x}", first, second, COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
+#[cfg(test)]
+mod mutation_identity_tests {
+    #[test]
+    fn independent_receipts_are_unique_across_threads() {
+        let threads: Vec<_> = (0..4).map(|_| std::thread::spawn(|| {
+            (0..1000).map(|_| super::next_tag_mutation_id()).collect::<Vec<_>>()
+        })).collect();
+        let identities: std::collections::HashSet<_> = threads.into_iter()
+            .flat_map(|thread| thread.join().unwrap()).collect();
+        assert_eq!(identities.len(), 4000);
+        assert!(identities.iter().all(|id| id.starts_with("rust:") && id.len() < 128));
     }
 }

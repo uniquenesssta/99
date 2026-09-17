@@ -280,6 +280,7 @@ fn local_tag_signal(
 ) -> LocalTagsMutationStateSignal {
     let changed = !changed_ids.is_empty() || catalog_changed;
     LocalTagsMutationStateSignal {
+        mutation_id: changed.then(crate::mutation_protocol::next_tag_mutation_id),
         trace: None,
         mutation_kind: kind.to_string(),
         db_path: db_path.to_string(),

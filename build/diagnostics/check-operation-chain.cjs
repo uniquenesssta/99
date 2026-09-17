@@ -267,15 +267,15 @@ async function transportAndSignals() {
   const barrier=sl('src/main/library/tagMetadataRevisionBarrierRuntime.ts').createTagMetadataRevisionBarrierRuntime({appendStartupLog(){}})
   const signal=sl(signalFile).createTagMutationStateSignalRuntime({tagMetadataRevisionBarrier:barrier,clearFontQueryCaches(){},appendStartupLog:append})
   const trace={...base,spanId:'native-span',commitSequence:2}
-  const payload={trace,changedIds:['a'],updatedAt:'time',mutationKind:'set',dbPath:'/fixture',knownTags:['tag']}
+  const payload={trace,mutationId:'rust:receipt-1',changedIds:['a'],updatedAt:'time',mutationKind:'set',dbPath:'/fixture',knownTags:['tag']}
   signal.handleRustCoreDaemonDomainEvent({domain:'localTags',stateSignal:payload})
   signal.handleLocalTagsMutationStateSignal(payload,'rust-worker')
   assert.equal(received.length,1);assert.deepEqual(received[0].trace,trace)
-  assert(events.some(e=>e.stage==='signal-reject'&&e.reason==='dedupe'))
-  signal.handleLocalTagsMutationStateSignal({...payload,trace:undefined,updatedAt:'legacy'},'rust-worker')
+  assert(events.some(e=>e.stage==='signal-reject'&&/^dedupe:[a-f0-9]{64}$/.test(e.reason)))
+  signal.handleLocalTagsMutationStateSignal({...payload,mutationId:undefined,trace:undefined,updatedAt:'legacy'},'rust-worker')
   assert.equal(received.length,2);assert.equal(received[1].trace,undefined)
   const sc=sl('src/main/logging/operationTraceContext.ts')
-  sc.withOperationTrace(base,append,()=>signal.handleRustCoreDaemonDomainEvent({domain:'localTags',stateSignal:{...payload,trace:undefined,updatedAt:'legacy-daemon'}}))
+  sc.withOperationTrace(base,append,()=>signal.handleRustCoreDaemonDomainEvent({domain:'localTags',stateSignal:{...payload,mutationId:undefined,trace:undefined,updatedAt:'legacy-daemon'}}))
   assert.equal(received[2].trace,undefined,'legacy daemon inherited unrelated IPC context')
   assert.equal(events.filter(e=>e.stage==='signal').at(-1).linked,false)
   const native=[{trace,stage:'signal'},{trace,stage:'commit',backend:'rust',backendSequence:2},{trace,stage:'backend-start',backend:'rust',backendSequence:1}]

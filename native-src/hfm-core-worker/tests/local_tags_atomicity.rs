@@ -44,6 +44,10 @@ fn success(output: &Output) -> Value {
     assert_eq!(e.iter().map(|v|v["stage"].as_str().unwrap()).collect::<Vec<_>>(), ["backend-start", "commit", "backend-result"]);
     assert_eq!(result["stateSignal"]["trace"]["commitSequence"], e[1]["backendSequence"]);
     assert_eq!(e[2]["outcome"], "returned");
+    assert_eq!(result["stateSignal"]["mutationId"], result["mutationProtocol"]["stateSignal"]["mutationId"]);
+    if result["stateSignal"]["localTagsChanged"] == true {
+        assert!(result["stateSignal"]["mutationId"].as_str().unwrap().starts_with("rust:"));
+    }
     result
 }
 
@@ -115,4 +119,14 @@ fn local_tags_atomicity_logging_io_failure_does_not_replay_or_fail_commit() {
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["ok"], true); assert_eq!(result["stateSignal"]["trace"]["commitSequence"], 2);
     assert_eq!(f.snapshot()[0], vec!["a|a.ttf|new|next"]);
+}
+
+#[test]
+fn local_tags_mutation_identity_distinguishes_same_input_across_processes() {
+    let f = Fixture::new();
+    let first = success(&f.run("--local-tags-set", json!({"rows":[row("a", "new")]})));
+    let second = success(&f.run("--local-tags-set", json!({"rows":[row("a", "new")]})));
+    assert_ne!(first["stateSignal"]["mutationId"], second["stateSignal"]["mutationId"]);
+    assert_eq!(first["stateSignal"]["updatedAt"], second["stateSignal"]["updatedAt"]);
+    assert_eq!(first["stateSignal"]["trace"], second["stateSignal"]["trace"]);
 }

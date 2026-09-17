@@ -88,7 +88,7 @@ async function resultsAndSignals() {
     }
     const h=harness({outcome:'success'});assert.equal((await h.runtime.setLocalFontTagsBatch([])).ok,true);assert.equal((await h.runtime.deleteLocalFontTag(' ')).ok,false)
     assert.deepEqual(plain(await h.runtime.localTagsByFontIds([])),{});const empty=[];assert.equal(await h.runtime.hydrateLocalTagsForFonts(empty),empty);assert.equal(h.calls.rust.length,0);assert.equal(h.calls.node.length,0)
-    const s={mutationKind:'deleteTag',updatedAt:'fixed',changedIds:[],knownTags:[],localTagsChanged:true,cacheInvalidated:true,pageQueryDirty:true,metricsDirty:true}
+    const s={mutationId:'commit:test',dbPath:'/test.db',mutationKind:'deleteTag',updatedAt:'fixed',changedIds:[],knownTags:[],localTagsChanged:true,cacheInvalidated:true,pageQueryDirty:true,metricsDirty:true}
     h.signal.handleLocalTagsMutationStateSignal(s);assert.equal(h.barrier.snapshot().localRevision,1);assert.deepEqual(h.calls.broadcasts[0].knownTags,[])
     h.signal.handleLocalTagsMutationStateSignal(s);assert.equal(h.calls.broadcasts.length,1)
     h.signal.handleLocalTagsMutationStateSignal({...s,updatedAt:'noop',localTagsChanged:false,cacheInvalidated:false,pageQueryDirty:false,metricsDirty:false});assert.equal(h.barrier.snapshot().localRevision,1)
