@@ -1073,6 +1073,8 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 
 ## 27. D-11 全链路回归与开发模式验收
 
+后续R-07总验收（2026-09-17）：TypeScript及113/113通过；保留本节104/104原始历史记录。最新F-01～F-05、逐项X矩阵、原生命令与Windows回执模板见[一致性修复任务书§22](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#22-r-07-执行卡)。D-03身份读取和R-01～R-04/R-06原生入口均因缺Cargo未执行，GUI/NAS仍待验，不关闭D-11。本节X-13中历史标签state-fallback-policy对应现有npm入口`diagnostics:state-fallback`。
+
 ### 范围与环境
 
 - 基线e7b34d80d03d54e7380ad332ea5cb06388f65991，stage/09-preview-tags-app，开工工作区干净；本轮仅更新README、本专项任务书、HFM_REMEDIATION_MASTER_TASKBOOK.md三份文档。不改生产代码、诊断期望、依赖、数据库或用户数据。

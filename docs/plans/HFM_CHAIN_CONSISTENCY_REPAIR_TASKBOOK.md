@@ -2,10 +2,10 @@
 
 ## 0. 状态与执行入口
 
-- 文档版本1.7；日期2026-09-17；软件3.0.0；仓库uniquenesssta/99。
+- 文档版本1.8；日期2026-09-17；软件3.0.0；仓库uniquenesssta/99。
 - 建立基线：`58a3f25e632a2af1d49587ab065e0469da4bf330`；执行分支沿用`stage/09-preview-tags-app`。开工时重新核对远端、HEAD与工作树，不默认为本基线一直最新。
-- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04自动验证通过待实机（原生测试未执行）；R-05自动验证通过待实机，见§20；R-06自动验证通过待实机，见§21；R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
-- 证据：[全链路审计](../audits/HFM_FULL_CHAIN_AUDIT.md)、[只读观察器](../audits/observe-chain-audit.cjs)。F-01/F-02/F-03已有真实TS受控反例；F-04为源码与SQLite顺序重建证据，尚无原生Rust故障测试；F-05为跨层日志关联缺口。
+- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04自动验证通过待实机（原生测试未执行）；R-05自动验证通过待实机，见§20；R-06自动验证通过待实机，见§21；R-07自动验证通过待实机，见§22。Windows/Rust原生证据单列，不宣称全部修复完成。
+- 证据：[全链路审计](../audits/HFM_FULL_CHAIN_AUDIT.md)、[只读观察器](../audits/observe-chain-audit.cjs)。F-01/F-02/F-03已有真实TS受控反例；F-04为源码与SQLite顺序重建证据，R-02～R-04已补原生Rust故障测试但本环境尚未执行；F-05为跨层日志关联缺口。
 - 承接[原拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)的C-01～C-07、X-01～X-13与Windows待验项。本书是新增五项审计问题的执行入口，不重启D阶段，不宣称D-11完整关闭。
 - 用户要求：**日志最先实施并验收，后续修改须利用该日志验证真实链路。** 用户使用`npm run dev`，不要求build:win、安装包或重新安装。
 
@@ -200,7 +200,7 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 | R-04 预览事务 | 自动验证通过待实机 | 8b60ee7起，本R-04独立提交 | 108/108及16个客户端场景；Cargo缺失，原生/Windows待验 |
 | R-05 标签确认生命周期 | 自动验证通过待实机 | b7f68e1起，本R-05独立提交 | TypeScript、111/111、三端构建；§20，Windows待验 |
 | R-06 信号去重 | 自动验证通过待实机 | eded4db起，本R-06独立提交 | TypeScript、112/112、三端构建；§21，Cargo/Windows待验 |
-| R-07 总验收 | 未开始 | — | — |
+| R-07 总验收 | 自动验证通过待实机 | 5406f74起，本R-07独立提交 | TypeScript、113/113；§22；六个原生入口因Cargo缺失未执行，Windows/NAS待验 |
 
 建书时的文档交付：新任务书及README/总任务书/原专项/审计报告入口更新；不启动R-01。下一条“开始R-01”进入日志实施。
 
@@ -739,3 +739,136 @@ npm run dev
 R-03算法冻结补充白名单：build/diagnostics/check-shared-metadata-rust-atomicity.cjs仅更新受本轮signal构造新增mutation_id一行影响的摘要。先去除该行验证旧fcf08cda摘要完全一致，合并、revision/op_id、事务顺序与原8个退化检查保持原状；摘要说明更新为R-06通知契约，不再声称signal字节未变。
 
 最终复核：27个白名单文件；git diff --check通过。只迁移4个fixture中的6项受影响摘要及R-03单条算法摘要，每项迁移前均证实移除本轮新增行即匹配旧值；不改其他冻结契约。无依赖锁、DB schema、UI/CSS、IPC频道、预加载入口或构建产物入库；远端发布前复核仍为eded4db，沿原分支提交本R-06。
+
+## 22. R-07 执行卡
+
+状态：自动验证通过待实机。基线5406f74c247e7a9dfd5d67b2fc7926453b6f7dbf，stage/09-preview-tags-app，起始工作树干净；R-01～R-06已交付，继承Cargo、Windows/NAS/GUI未验缺口。执行全量verify，保留原性能/引用门；整理F-01～F-05及X-01～X-13证据，缺失必需原生/实机证据不得关项。
+
+精确白名单：README.md；本任务书；docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md；docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md；docs/audits/HFM_FULL_CHAIN_AUDIT.md；build/diagnostics/check-local-tag-rust-atomicity.cjs；build/diagnostics/check-shared-metadata-rust-atomicity.cjs；新增build/diagnostics/helpers/nativeTagMutationFixture.cjs与build/diagnostics/check-native-tag-mutation-fixtures.cjs；package.json。
+
+已发现验收阻断：R-02/R-03的--native把修复前state_machine.rs复制到当前crate，而当前signal struct新增mutation_id: Option<String>，历史构造器缺字段；原生反例会先编译失败，无法到达必须的数据库断言。无Cargo时此为源码结构确认，不能声称运行得到Rust编译错误。仅测试夹具新增mutation_id: None，不回填当前业务算法或改变历史事务顺序；必须证明移除兼容行后字节等于原始历史源码。两脚本复用同一夹具适配所有者；不改生产代码、Rust类型/业务、数据库schema、依赖、IPC或既有反例期待。新默认门覆盖两域历史输入、LF/CRLF、重复迁移/锚点缺失拒绝及编译错误不可当SQL反例通过；真正Rust编译/SQL失败仍由--native确认。容量与生命周期、公开API另按原生产门及源码审查登记。
+
+回滚为本R-07独立提交revert；不会回滚R-01～R-06生产修复。无用户字体库/NAS写入。原生入口和D-03定向命令逐个尝试，记录真实退出码；Windows缺口按§10保持待验，提供可复制命令和回执表。
+
+### R-07 夹具修正与自动总验收
+
+只在历史测试源的signal构造器补`mutation_id: None`，不生成假提交身份、不修改任何历史SQL/事务/trace语句。当前源码构造器兼容检查纳入默认verify，不要求历史Git对象；另用`--history`实际读取934139b本地旧源及cee7970共享旧源，LF/CRLF各自验证删除兼容行后字节完全相等。已有字段、丢锚点、多构造器及未知域一律拒绝。原生失败验收增加进程退出、Rust test FAILED及panic/数据库断言联合检查，8种启动失败/编译错误/无关失败/仅匹配文本的假回执被拒绝；这些是验收器单元输入，不能计作Rust执行。
+
+实际命令与结果：
+
+| 命令 | 退出/数量 | 范围 |
+| --- | --- | --- |
+| `npm run verify` | 0；TypeScript与113/113 | 原112门不删、不改fixture，新夹具门1项 |
+| `node build/diagnostics/check-native-tag-mutation-fixtures.cjs --history` | 0；2域×LF/CRLF | 真实旧源适配字节保持、8种错误证据拒绝；无Cargo |
+| `node docs/audits/observe-chain-audit.cjs` | 0；F-01a/b、F-02、F-03a/b全部false | 只读观察器原样运行，不改结果期待 |
+| R-01实际Node链额外取样 | 成功及两次失败后成功 | 原生产队列/两层IPC/SQLite/通知/回读确认；第二连接验证0→0→1行 |
+| R-02 `check-local-tag-rust-atomicity.cjs --native` | 1；Cargo ENOENT；原生执行0 | 默认结构门通过后原生启动阻塞 |
+| R-03 `check-shared-metadata-rust-atomicity.cjs --native` | 1；Cargo ENOENT；原生执行0 | 默认结构/12个TS场景后阻塞 |
+| R-04 `check-preview-cache-rust-atomicity.cjs --native` | 1；Cargo ENOENT；原生执行0 | 默认客户端/变异门后阻塞 |
+| R-06 `check-tag-mutation-identity.cjs --native` | 1；Cargo ENOENT；原生执行0 | 包含全crate测试和真实daemon双通道入口，未运行 |
+| `cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests` | 进程未启动ENOENT；无退出码；执行0 | D-03两个定向测试没有新回执 |
+| `cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml --test operation_trace` | 进程未启动ENOENT；无退出码；执行0 | R-01真实Rust关联未验 |
+
+执行环境Linux、Node v24.19.0、npm11.9.0。实际日志/tmp/hfm-r07-verify.log、/tmp/hfm-r07-native-results.json与各/tmp/hfm-r07-*-native.log，观察/tmp/hfm-r07-observer.json。不把包装脚本的1与Cargo实际测试失败混淆；没有原生已执行用例数。生产源码、Rust源码、依赖锁与所有fixture相对5406f74逐字无差异；沿用该提交的366/1/196构建和混淆3/3证据，本轮未重复构建，不宣称执行完整npm run build。
+
+原性能门保留原阈值：1万字体、6查询、500次布局、500项可见选择影响、万项shift选择、详情开关/卡片回调引用。实测search18.2ms、scroll2.2ms/500、shift selection0.5ms、最多60卡；原预算2500/500/500ms、虚拟卡上限80未修改。这是受控Linux测试，不是Windows实机帧率结论。
+
+### F-01～F-05证据登记
+
+| 发现 | 原反例/修复提交 | 当前自动证据 | 原生/实机状态及限制 |
+| --- | --- | --- | --- |
+| F-01a/b旧确认与其他字体旧目录清除新输入 | b7f68e1反例；R-05 eded4db | tag-intent-lifecycle、原observer均通过；意图按字段/成员结算、成功后权威查询确认 | Windows快速跨页/详情与真实广播回执待验 |
+| F-02失败超过20秒丢失保护 | b7f68e1反例；R-05 eded4db | 20秒/数分钟失败保护、重试、关闭、reload及TTL退化被拒绝 | 真实NAS离线恢复、正常关闭重开待验 |
+| F-03去重遗漏存储域/完整IDs/目录 | eded4db三反例；R-06 5406f74 | tag-mutation-identity、8客户端场景、LF/CRLF变异、容量/过期及observer通过 | Rust实际mutationId/双通道、Windows多根批量待验 |
+| F-04本地绑定/目录原子性 | 修复前934139b；R-02 cee7970 | 默认原子结构门、Node真SQLite失败回读、回退准入及夹具适配通过 | 原始Rust SQL反例/修复/退化三者均未执行；不能只凭日志关项 |
+| F-04共享metadata同类边界 | 修复前cee7970；R-03 8b60ee7 | 默认结构/12个TS边界、合并契约不变、夹具适配通过 | 原生事务/COMMIT故障与NAS多机待验 |
+| F-04预览metadata同类边界 | 修复前8b60ee7；R-04 1b39bb2，CRLF门3fac7e7 | 16客户端路径、未知结果不跨后端重放、预览索引和回滚结构门通过 | 原生COMMIT/元数据故障与Windows共享缓存待验 |
+| F-05关联日志不足 | 原审计7e0e6d7；R-01 934139b及R-04预览关联补充 | 真实Node链、两个preload、重试/部分成功、容量/日志错误/监听清理及因果退化通过 | Rust actual worker与Windows界面/DB三方对应仍待验；缺日志只记证据不足 |
+
+修复提交均沿stage/09-preview-tags-app保留，R-07不重写其历史。F-04已有原生测试代码，不再沿用建书时“尚无原生测试”的描述；有测试文件不等于已执行。
+
+### 当前真实关联样本
+
+2026-09-17本次临时SQLite取样（非用户数据，完整事件在/tmp/hfm-r07-chain-evidence.json）：
+- 成功operationId=`renderer-mu52yspk-75c9382t085:1`，attemptId=`renderer-mu52yspk-75c9382t085:3`，batchId同前缀`:2`；阶段dispatch→ipc-start→backend-start→commit→signal→view-reject/view-apply→ipc-result→intent-committed→queue-settled→post-ack-read-confirmed。实际commit1，确认保留原operationId。
+- 重试operationId=`renderer-mu52ysv8-wo7fw39jyvh:1`不变，三个attempt同前缀`:3`/`:5`/`:7`，batch分别`:2`/`:4`/`:6`；前两次backend-result→intent-retry→retry且commit0，第三次commit1后确认原operationId；原验证器的独立连接逐次确认失败无行、成功有绑定。
+- `view-reject`表示广播不直接确认pending意图，后续`view-apply`允许目录和库更新；两者并存不是一次操作同时成功/失败。最后确认日志的reason为`local-g1-post-ack-read-confirmed`；并不声称已在真实Electron窗口绘制。
+
+### 所有权、资源与兼容审查
+
+- 业务状态仍归原七controller和原写队列；R-05字段Symbol token随字体对象/队列条目生命周期，不建立全局业务Map、不持久化会话意图、不新增TTL timer。查询只确认开始前已ack且仍为同一token的结果；旧分页由原序号门拒绝。
+- R-06唯一去重表位于每个signal runtime的identity闭包，固定2048条64字符十六进制摘要，60秒由接收时清理；没有新增轮询或全局状态副本。未确认意图的LRU保留沿用原归一化owner。
+- R-01诊断身份WeakMap不强持有队列条目；renderer在途日志最多256，单事件最多8192字节、信封成员16，主进程operation-chain每会话16MiB并有dropped/omitted。AsyncLocalStorage隔离请求；清理与并发已由原门运行。
+- renderer signal effect返回原dispose；R-01～R-06新增能力没有额外全局监听或业务计时器。当前全量生命周期门验证原7 app/2 process注册和关闭flush→save→确认链，没有把受控挂载卸载当长期GUI泄漏实测。
+- 上述16MiB是operation-chain额度，不是整个startup文件硬限。原startup logger的64KiB是刷盘触发阈值、80ms为延迟；日志文件按启动分开，当前没有新增自动清理/保留天数策略。普通startup日志与慢磁盘队列并无此次证明的总硬上限；用户验收后应关闭debug，不宣称全软件日志容量已闭环。
+- IPC通道、方法/旧调用参数、DB schema/业务键、两套preload、依赖锁及UI全部未改；R-01/R-06先前新增的可选trace/mutationId兼容含义不变。R-07仅测试夹具/验证器/文档变更，未增加生产模块或更改退出顺序。
+
+### X矩阵与Windows回执入口
+
+下表自动门均在本轮113/113内执行；原生与Windows列全部待验。沿用原拆分任务书§27操作顺序，原104/104为历史证据，不覆盖成本轮结果。
+
+| 矩阵 | 本轮自动证据（diagnostics名称） | 仍需的原生/Windows证据 |
+| --- | --- | --- |
+| X-01 本地标签 | decomposition-baseline、tag-intent-lifecycle | A改标签，A的收藏/共享/保护与B/C状态保持 |
+| X-02 收藏 | user-intent-consistency、active-view-consistency | 收藏新增/取消及全部/收藏/详情和计数一致 |
+| X-03 共享标签 | shared-tag-conflicts、shared-tag-ops-replay | 测试共享根修改、其他字段保持及冲突反馈 |
+| X-04 快速跨域操作 | tag-intent-lifecycle、app-interaction-composition | 同字体连续改本地/共享/收藏，最后各字段意图保留 |
+| X-05 反向结果 | decomposition-baseline、tag-intent-lifecycle | 快速反向操作和跨页/详情，不被迟到结果覆盖 |
+| X-06 部分失败 | font-write-queue-durability、operation-chain | 隔离故障环境中本地失败/收藏成功，仅失败域重试 |
+| X-07 NAS | shared-tag-conflicts、shared-tag-ops-replay | 独立测试共享根离线/恢复、多机冲突，其他字段不丢 |
+| X-08 原子性 | local-tag-node-persistence、三类rust-atomicity默认门 | R-02/R-03真实SQL和COMMIT故障回读；不能以默认源码门替代 |
+| X-09 空目录 | tag-consistency、local-tag-node-persistence、local-tag-rust-adapter | 最后解绑保留空标签；显式删除才从目录/菜单移除 |
+| X-10 关闭重开 | window-close-flush、library-persistence-order、font-write-queue-durability | 编辑立即正常关闭重开，四字段保持、临时激活清理 |
+| X-11 页面身份 | local-tag-hydration、app-interaction-composition、react-render-performance | 切筛选/目录、快速滚动/详情、多选，旧查询不覆盖新页面 |
+| X-12 预览竞态 | preview-index-commit、preview-index-owner、preview-cache-generation | R-04原生提交/metadata故障；测试根写/删/读generation交错 |
+| X-13 回退准入 | state-fallback、local-tag-rust-adapter、local-tag-hydration | D-03真实身份读取；允许/禁止回退，无重复写入/身份读 |
+| 监听/激活补充 | watcher-index-consistency、watcher-activation-baseline、active-view-consistency | 测试目录增删/改名、折叠侧栏、激活/停用与跨页字段保持 |
+
+X-06/08/12/13故障仅由隔离诊断临时库或专用测试根制造，不破坏正式字体库/NAS。GUI的视觉结果、IPC回执与数据库提交须分别记录；同一operationId串联它们，日志缺失只记证据不足。
+
+在已有Windows开发环境、Rust工具链及对应编译环境中，逐行执行以下命令，任一失败停止并保留输出；不需要安装包或build:win。先确认工作树无自己的未提交改动。
+
+```powershell
+git pull --ff-only origin stage/09-preview-tags-app
+if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
+git rev-parse HEAD
+npm run verify
+if ($LASTEXITCODE -ne 0) { throw "verify failed" }
+cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags::read_state::tests
+if ($LASTEXITCODE -ne 0) { throw "D-03 native failed" }
+cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml --test operation_trace
+if ($LASTEXITCODE -ne 0) { throw "R-01 native failed" }
+node build/diagnostics/check-local-tag-rust-atomicity.cjs --native
+if ($LASTEXITCODE -ne 0) { throw "R-02 native failed" }
+node build/diagnostics/check-shared-metadata-rust-atomicity.cjs --native
+if ($LASTEXITCODE -ne 0) { throw "R-03 native failed" }
+node build/diagnostics/check-preview-cache-rust-atomicity.cjs --native
+if ($LASTEXITCODE -ne 0) { throw "R-04 native failed" }
+node build/diagnostics/check-tag-mutation-identity.cjs --native
+if ($LASTEXITCODE -ne 0) { throw "R-06 native failed" }
+node build/rust/build-core-worker.cjs --required
+if ($LASTEXITCODE -ne 0) { throw "sidecar build failed" }
+$env:HFM_LOG_DETAIL = "debug"
+try { npm run dev } finally { Remove-Item Env:HFM_LOG_DETAIL }
+```
+
+原子性入口须分别得到旧实现真实SQL断言失败、修复实现通过、退化实现被拒绝；编译失败不能冒充旧实现失败。R-06入口包含当前crate测试及真实daemon；新sidecar重建成功后再操作GUI，旧sidecar的legacy信号不能验收mutationId。GUI使用独立测试字体A/B及共享根C，按本表与原书§27完成操作，补至少81项尾部不同和两个根目录的通知隔离场景。
+
+回执模板：
+
+| 必填项 | 记录内容 |
+| --- | --- |
+| 版本/环境 | git完整SHA、Node/npm/Cargo版本、Windows版本、sidecar重建结果 |
+| 原生门 | 命令、真实退出码、通过/失败/忽略用例数、原始输出；未运行明确写未运行 |
+| 操作 | X编号、字体/测试根代号、初始四字段、操作顺序与时间 |
+| 结果 | 预期与肉眼实际（闪回/延迟/目录/计数/跨页）；数据库独立回读、IPC回执分别列 |
+| 关联 | operationId、attemptId、日志文件与具体行号/时间范围、提交/信号/回读确认阶段 |
+| 结论 | 通过/失败/证据不足；附最小复现，不以缺日志推定未提交或成功 |
+
+### 收尾与保留项
+
+R-07自动部分通过；原生子项阻塞、Windows/NAS待验，F-01～F-05及D-11不作全部关闭。继承§19的首个收藏0→1显示延迟、激活全根同步、历史目录恢复、已激活字体文件预览实机、预览请求密度/耗时及共享标签全根同步/启动等待等待查或待复验项；本轮未扩展修复。
+
+本轮仅10个白名单文件，新增模块是历史夹具适配/失败证据验证的唯一所有者，两个原生入口复用；没有生产状态所有者变动。差异复核覆盖公开API、依赖、数据库、监听/计时器及日志容量边界，git diff --check通过；src、native-src、依赖锁和既有fixtures相对5406f74无变化。以`git log -1 --format=%H -- build/diagnostics/check-native-tag-mutation-fixtures.cjs`定位R-07独立提交，单独revert不影响R-01～R-06生产修复。
+
+插件回执：Mermaid Chart已展示真实队列→IPC→事务→通知→意图确认/查询链；未新增陌生框架或系统API，未触发Context7。Create State返回Context Captured但Project为`.`且No active world model；仅列无关Markdown/足球模型，未关联它们，HFM项目级保存未确认，以Git/README/本执行卡为准。

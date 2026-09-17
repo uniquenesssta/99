@@ -4,6 +4,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { execFileSync } = require('node:child_process')
+const { adaptLegacyTagSignal, assertNativeDatabaseFailure } = require('./helpers/nativeTagMutationFixture.cjs')
 const root = path.resolve(__dirname, '../..')
 const file = 'native-src/hfm-core-worker/src/local_tags/state_machine.rs'
 function check(source) {
@@ -74,12 +75,10 @@ function native() {
     const line = '    save_known_tags(&tx, &known_tags).map_err(|error| error.to_string())?;'
     const mutant = source.replace(line, '').replace('    trace.committed();', '    trace.committed();\n' + line.replace('&tx', '&conn'))
     assert.notEqual(mutant, source)
-    for (const [label,text] of [['pre-fix',old],['catalog-after-commit',mutant]]) {
+    for (const [label,text] of [['pre-fix',adaptLegacyTagSignal(old,'local_tags')],['catalog-after-commit',mutant]]) {
       fs.writeFileSync(target,text)
       const result = cargo(['test','--manifest-path',path.join(dir,'Cargo.toml'),'--test','local_tags_atomicity','local_tags_atomicity_nth_row_catalog_and_metadata_failures','--','--nocapture'], {...process.env,CARGO_TARGET_DIR:path.join(origin,'target/r02-negative')})
-      const output = result.stdout + result.stderr
-      assert.notEqual(result.status,0, `${label} must fail`)
-      assert(output.includes('catalog leaked partial writes'), `${label} must fail on database assertion, not compilation: ${output}`)
+      assertNativeDatabaseFailure(result, label, 'catalog leaked partial writes')
       console.log(`[native:local-tag-rust-atomicity] ${label}: actual catalog rollback assertion rejected`)
     }
   } finally { fs.rmSync(dir,{recursive:true,force:true}) }

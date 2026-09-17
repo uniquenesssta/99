@@ -8,6 +8,8 @@ R-05修复进展（2026-09-17）：F-01a/b与F-02原始反例在b7f68e1分别复
 
 R-06修复进展（2026-09-17）：F-03a/b及相同IDs不同目录内容三项旧反例已转真实生产门；完整存储域/提交身份、双通道去重、保守旧消息与容量/过期边界见[修复任务书§21](../plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#21-r-06-执行卡)。未修改只读observer，F-03a/b当前均false；Rust原生/Windows/NAS仍待验。
 
+R-07验收进展（2026-09-17）：TypeScript与113/113通过，原observer的F-01a/b、F-02、F-03a/b均false；历史原生反例夹具补齐可选字段并严格区分编译失败和SQL断言失败。F-01～F-05证据、Node SQLite真实关联样本及X矩阵见[修复任务书§22](../plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#22-r-07-执行卡)。原生入口缺Cargo未执行，Windows/NAS待验；保留下面原审计基线、未宣称全部关项。
+
 ## 结论
 
 发现 **4项正确性问题/风险与1项可观测性缺口**。现有 `npm run verify` 的TypeScript及104/104诊断仍全部通过，说明以下边界未被既有门覆盖，不能把拆分和门禁通过解释为业务链路全部正确。
