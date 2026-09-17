@@ -10,11 +10,9 @@ import { createFontDialogContextActions } from './fontDialogContextActionsRuntim
 import { createFontDialogTagActions } from './fontDialogTagActionsRuntime'
 import {
 deleteTagFromLibrary,
-removedTagNameList,
-renameTagInLibrary,
-renamedTagNameList
+renameTagInLibrary
 } from './fontTagMutationRuntime'
-import { markFontTagsOptimistic } from './fontTagStateAuthorityRuntime'
+import { isSameFontTagIntent, cancelFontTagWrite, isFontTagStateDirty } from './fontTagStateAuthorityRuntime'
 import { physicalMutationIndexRefreshSuffix,refreshIndexesAfterPhysicalMutation } from './runtime/library/fontPhysicalMutationIndexRuntime'
 
 export type FontDialogRuntimeOptions = {
@@ -87,6 +85,20 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
     }
   }
 
+  // Each operation captures the same per-field token committed to the UI.
+  function queueTagRetry(font: FontItem, scope: 'local' | 'shared'): void {
+    let current: FontItem | undefined
+    options.commitLibraryUpdate(prev => { current = prev.fonts[font.id]; return prev })
+    if (!isSameFontTagIntent(current, font, scope)) { cancelFontTagWrite(font, scope); return }
+    if (scope === 'shared') options.queueSharedTagsWrite(font, font.tagNames || [])
+    else options.queueLocalTagsWrite(font, font.localTagNames || [])
+  }
+  function seedAffectedFonts(library: LibraryState, affected: FontItem[]): LibraryState {
+    const fonts = { ...library.fonts }
+    for (const font of affected) if (!fonts[font.id]) fonts[font.id] = font
+    return { ...library, fonts }
+  }
+
   const contextActions = createFontDialogContextActions(options)
   const tagActions = createFontDialogTagActions(options, refreshTagViewsNow)
 
@@ -147,58 +159,33 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
       } else {
         const shared = renameTarget.scope === 'shared'
         const affectedFonts = options.fontsForTag(renameTarget.name, renameTarget.scope)
-        options.setLibrary((prev) => renameTagInLibrary(prev, renameTarget.scope, renameTarget.name, clean))
-        closeRenameDialog()
-
-        if (shared) {
-          const previousSelectedSharedTagName = options.selectedSharedTagName
-          if (previousSelectedSharedTagName === renameTarget.name) options.setSelectedSharedTagName(clean)
-          if (typeof options.hfm.renameSharedTag === 'function') {
-            setStatus(`正在重命名共享标签“${renameTarget.name}”…`)
-            try {
-              const flushBeforeRename = options.flushFontWriteQueue
-                ? options.flushFontWriteQueue('shared-tag-rename-before')
-                : Promise.resolve(true)
-              void flushBeforeRename
-                .then((saved) => {
-                  if (!saved) throw new Error('仍有共享标签写入未保存，请检查 NAS 或数据库状态后重试。')
-                  return traceDirectFontOperation('sharedTags', trace => options.hfm.renameSharedTag(renameTarget.name, clean, options.watchedFolders, trace))
-                })
-                .then((result) => {
-                  options.refreshDatabaseDerivedState()
-                  setStatus(result.message || `已将共享标签“${renameTarget.name}”重命名为“${clean}”。`)
-                })
-                .catch((error) => {
-                  options.setLibrary((prev) => renameTagInLibrary(prev, 'shared', clean, renameTarget.name))
-                  if (previousSelectedSharedTagName === renameTarget.name) options.setSelectedSharedTagName(renameTarget.name)
-                  setStatus(`重命名共享标签失败：${error instanceof Error ? error.message : String(error)}`)
-                  options.refreshDatabaseDerivedState()
-                })
-            } catch (error) {
-              options.setLibrary((prev) => renameTagInLibrary(prev, 'shared', clean, renameTarget.name))
-              if (previousSelectedSharedTagName === renameTarget.name) options.setSelectedSharedTagName(renameTarget.name)
-              setStatus(`重命名共享标签失败：${error instanceof Error ? error.message : String(error)}`)
-              return
-            }
-          } else {
-            for (const font of affectedFonts) {
-              const nextTags = renamedTagNameList(font.tagNames, renameTarget.name, clean)
-              options.queueSharedTagsWrite({
-                ...markFontTagsOptimistic(font, 'shared', nextTags),
-                __sharedTagWriteMode: 'rename',
-                __sharedTagWriteFrom: renameTarget.name,
-                __sharedTagWriteTo: clean,
-              } as FontItem, nextTags)
-            }
-            setStatus(`已将共享标签“${renameTarget.name}”重命名为“${clean}”。`)
+        if (shared && typeof options.hfm.renameSharedTag === 'function') {
+          closeRenameDialog()
+          setStatus(`正在重命名共享标签“${renameTarget.name}”…`)
+          try {
+            const saved = await options.flushFontWriteQueue?.('shared-tag-rename-before') !== false
+            if (!saved) throw new Error('仍有共享标签写入未保存，请重试。')
+            const result = await traceDirectFontOperation('sharedTags', trace => options.hfm.renameSharedTag(renameTarget.name, clean, options.watchedFolders, trace))
+            if (result.ok && options.selectedSharedTagName === renameTarget.name) options.setSelectedSharedTagName(clean)
+            setStatus(result.message || (result.ok ? '共享标签重命名成功。' : '共享标签重命名未全部成功，请重试。'))
+          } catch (error) {
+            setStatus(`重命名共享标签失败，请重试：${error instanceof Error ? error.message : String(error)}`)
           }
+          options.refreshDatabaseDerivedState()
         } else {
-          if (options.selectedTagName === renameTarget.name) options.setSelectedTagName(clean)
-          for (const font of affectedFonts) {
-            const nextTags = renamedTagNameList(font.localTagNames, renameTarget.name, clean)
-            options.queueLocalTagsWrite(markFontTagsOptimistic(font, 'local', nextTags), nextTags)
-          }
-          setStatus(`已将标签“${renameTarget.name}”重命名为“${clean}”。`)
+          let before = options.library
+          const edited = options.commitLibraryUpdate(prev => {
+            before = seedAffectedFonts(prev, affectedFonts)
+            return renameTagInLibrary(before, renameTarget.scope, renameTarget.name, clean)
+          })
+          const writes = Object.values(edited.fonts).filter(font => isFontTagStateDirty(font, renameTarget.scope) && !isSameFontTagIntent(before.fonts[font.id], font, renameTarget.scope))
+          closeRenameDialog()
+          if (shared && options.selectedSharedTagName === renameTarget.name) options.setSelectedSharedTagName(clean)
+          if (!shared && options.selectedTagName === renameTarget.name) options.setSelectedTagName(clean)
+          for (const font of writes) queueTagRetry(shared
+            ? { ...font, __sharedTagWriteMode: 'rename', __sharedTagWriteFrom: renameTarget.name, __sharedTagWriteTo: clean } as FontItem
+            : font, renameTarget.scope)
+          setStatus(`已提交${shared ? '共享标签' : '标签'}重命名：${clean}`)
         }
       }
 
@@ -216,47 +203,40 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
       } else {
         const shared = deleteTarget.scope === 'shared'
         const affectedFonts = options.fontsForTag(deleteTarget.name, deleteTarget.scope)
-        options.setLibrary((prev) => deleteTagFromLibrary(prev, deleteTarget.scope, deleteTarget.name))
+        const direct = shared ? typeof options.hfm.deleteSharedTag === 'function' : typeof options.hfm.deleteLocalTag === 'function'
         setStatus(`正在删除${shared ? '共享标签' : '标签'}“${deleteTarget.name}”…`)
-
-        try {
-          const flushed = await options.flushFontWriteQueue?.(`${shared ? 'shared' : 'local'}-tag-delete`)
-          if (flushed === false) {
-            throw new Error('仍有标签写入未保存，请检查磁盘、数据库或 NAS 状态后重试。')
-          }
-          const result = shared && typeof options.hfm.deleteSharedTag === 'function'
-            ? await traceDirectFontOperation('sharedTags', trace => options.hfm.deleteSharedTag(deleteTarget.name, options.watchedFolders, trace))
-            : !shared && typeof options.hfm.deleteLocalTag === 'function'
-              ? await traceDirectFontOperation('localTags', trace => options.hfm.deleteLocalTag(deleteTarget.name, trace))
-              : null
-
-          if (shared) {
-            if (options.selectedSharedTagName === deleteTarget.name) options.setSelectedSharedTagName('')
-            if (!result) {
-              for (const font of affectedFonts) {
-                const nextTags = removedTagNameList(font.tagNames, deleteTarget.name)
-                options.queueSharedTagsWrite({
-                  ...markFontTagsOptimistic(font, 'shared', nextTags),
-                  __sharedTagWriteMode: 'remove',
-                  __sharedTagWriteTag: deleteTarget.name,
-                } as FontItem, nextTags)
-              }
+        if (direct) {
+          // Catalog operations have no per-font queue representation. Keep the
+          // current view until the authority commits; never create orphan intents
+          // or retry a catalog delete as an unbind (which retains empty tags).
+          try {
+            const flushed = await options.flushFontWriteQueue?.(`${shared ? 'shared' : 'local'}-tag-delete`)
+            if (flushed === false) throw new Error('仍有标签写入未保存，请重试。')
+            const result = shared
+              ? await traceDirectFontOperation('sharedTags', trace => options.hfm.deleteSharedTag(deleteTarget.name, options.watchedFolders, trace))
+              : await traceDirectFontOperation('localTags', trace => options.hfm.deleteLocalTag(deleteTarget.name, trace))
+            if (result.ok) {
+              if (shared && options.selectedSharedTagName === deleteTarget.name) options.setSelectedSharedTagName('')
+              if (!shared && options.selectedTagName === deleteTarget.name) options.setSelectedTagName('')
             }
-          } else {
-            if (options.selectedTagName === deleteTarget.name) options.setSelectedTagName('')
-            if (!result) {
-              for (const font of affectedFonts) {
-                const nextTags = removedTagNameList(font.localTagNames, deleteTarget.name)
-                options.queueLocalTagsWrite(markFontTagsOptimistic(font, 'local', nextTags), nextTags)
-              }
-            }
+            setStatus(result.message || (result.ok ? '标签删除成功。' : '标签删除未全部成功，请重试。'))
+          } catch (error) {
+            setStatus(`删除标签失败，请重试：${error instanceof Error ? error.message : String(error)}`)
           }
-
-          options.refreshDatabaseDerivedState()
-          setStatus(result?.message || `已删除${shared ? '共享标签' : '标签'}：${deleteTarget.name}`)
-        } catch (error) {
-          setStatus(`删除${shared ? '共享标签' : '标签'}失败：${error instanceof Error ? error.message : String(error)}`)
+        } else {
+          let before = options.library
+          const edited = options.commitLibraryUpdate(prev => {
+            before = seedAffectedFonts(prev, affectedFonts)
+            return deleteTagFromLibrary(before, deleteTarget.scope, deleteTarget.name)
+          })
+          const writes = Object.values(edited.fonts).filter(font => isFontTagStateDirty(font, deleteTarget.scope) && !isSameFontTagIntent(before.fonts[font.id], font, deleteTarget.scope))
+          for (const font of writes) queueTagRetry(shared
+            ? { ...font, __sharedTagWriteMode: 'remove', __sharedTagWriteTag: deleteTarget.name } as FontItem : font, deleteTarget.scope)
+          if (shared && options.selectedSharedTagName === deleteTarget.name) options.setSelectedSharedTagName('')
+          if (!shared && options.selectedTagName === deleteTarget.name) options.setSelectedTagName('')
+          setStatus(`已提交标签删除：${deleteTarget.name}`)
         }
+        options.refreshDatabaseDerivedState()
       }
     },
 

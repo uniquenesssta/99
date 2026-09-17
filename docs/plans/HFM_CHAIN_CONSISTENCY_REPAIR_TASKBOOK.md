@@ -2,9 +2,9 @@
 
 ## 0. 状态与执行入口
 
-- 文档版本1.5；日期2026-09-16；软件3.0.0；仓库uniquenesssta/99。
+- 文档版本1.6；日期2026-09-17；软件3.0.0；仓库uniquenesssta/99。
 - 建立基线：`58a3f25e632a2af1d49587ab065e0469da4bf330`；执行分支沿用`stage/09-preview-tags-app`。开工时重新核对远端、HEAD与工作树，不默认为本基线一直最新。
-- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04自动验证通过待实机（原生测试未执行）；R-05～R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
+- 当前R-01日志实施与自动验证通过，待原生/实机回执；R-02自动验证通过待实机（原生测试未执行）；R-03自动验证通过待实机（原生测试未执行）；R-04自动验证通过待实机（原生测试未执行）；R-05自动验证通过待实机，见§20；R-06/R-07未开始。Windows/Rust原生证据单列，不宣称全部修复完成。
 - 证据：[全链路审计](../audits/HFM_FULL_CHAIN_AUDIT.md)、[只读观察器](../audits/observe-chain-audit.cjs)。F-01/F-02/F-03已有真实TS受控反例；F-04为源码与SQLite顺序重建证据，尚无原生Rust故障测试；F-05为跨层日志关联缺口。
 - 承接[原拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)的C-01～C-07、X-01～X-13与Windows待验项。本书是新增五项审计问题的执行入口，不重启D阶段，不宣称D-11完整关闭。
 - 用户要求：**日志最先实施并验收，后续修改须利用该日志验证真实链路。** 用户使用`npm run dev`，不要求build:win、安装包或重新安装。
@@ -188,7 +188,7 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 - R-01开工登记日志诊断的准确命令/路径，接入现有diagnostics与默认npm run verify；不能只写任务书或提供手工观察脚本。
 - R-02～R-06相应修复落地时，已修复反例转为必过门。真实Rust测试提供独立必需命令并作为完成条件；若verify本身不执行Cargo，必须明确分开报告，不能将其遗漏解释为通过。
 - 新增/迁移owner、协议输入与trace边界必须有结构/类型门；日志关联、字段隔离、事务和异步正确性另用真实行为门证明。所有权/类型/行为检查缺项不得判完成。
-- R-01的operation-chain门已接入默认verify；R-02/R-03/R-04已有默认约束门和独立原生验收入口；R-05/R-06业务修复门尚未创建，不能将文档存在等同于约束已经被CI执行。
+- R-01的operation-chain门已接入默认verify；R-02/R-03/R-04已有默认约束门和独立原生验收入口；R-05的tag-intent-lifecycle已注册默认verify，最终结果见§20；R-06业务修复门尚未创建。
 
 ## 12. 状态登记
 
@@ -198,7 +198,7 @@ R-01完成判据：关联协议/类型检查、非干扰/容量/清理门、真�
 | R-02 本地标签事务 | 自动验证通过待实机 | cee7970 | 106/106；无Cargo，原生及Windows待验 |
 | R-03 共享事务 | 自动验证通过待实机 | cee7970起，本R-03独立提交 | 107/107及12个TS场景；Cargo缺失，原生/Windows待验 |
 | R-04 预览事务 | 自动验证通过待实机 | 8b60ee7起，本R-04独立提交 | 108/108及16个客户端场景；Cargo缺失，原生/Windows待验 |
-| R-05 标签确认生命周期 | 未开始 | — | — |
+| R-05 标签确认生命周期 | 自动验证通过待实机 | b7f68e1起，本R-05独立提交 | TypeScript、111/111、三端构建；§20，Windows待验 |
 | R-06 信号去重 | 未开始 | — | — |
 | R-07 总验收 | 未开始 | — | — |
 
@@ -574,3 +574,90 @@ npm run dev
 F-07最终收尾：补充边界后的完整`npm run verify`再次退出0（110/110），日志/tmp/f07-final-verify.log；git diff --check通过，11个精确白名单文件，无构建产物、日志、依赖目录或用户数据入库。提交前再次fetch确认远端仍与878fc28一致，按授权直接快进推送stage/09-preview-tags-app。
 
 F-07推送阻塞：实际git push被自动审批拒绝，理由为本次11个源码/诊断/文档文件将外发到公开仓库uniquenesssta/99，审查要求对本次载荷和目的地的具体用户授权，未接受此前长期授权。未换通道重试；只读ls-remote确认远端仍为878fc285268a98de9fcdcde567cd8966a1ebba64。代码和全部验证已完成、本地提交保留，待具体授权后仅快进当前阶段分支。
+
+
+## 19. F-07 Windows 新日志复核与判读纠正（2026-09-16）
+
+证据：startup-2026-09-16_19-38-09-711-18052.log，共1746行，19:38:09.711–19:39:05.176 UTC。F-07已在用户具体授权后发布为 b7f68e120788930a23e9aaf8c9ceafb3d5550554；原普通Git推送缺凭据，连接器发布的树与本地已验证树34ff14033beaea14f28b2844b9e72177862c929f一致。§18的推送阻塞已解除。本日志只支持部分实机验收，不得继续称四项全部修复。
+
+| 项目 | 实际证据 | 结论与后续 |
+|---|---|---|
+| 可选metrics数据库健康检查 | 177/186行将缺失标记为optional cache absent；192/193行维护ok=true、preview errors=0 | 本项实机通过；真实I/O/损坏错误仍须报错 |
+| 目录清单 | 87行原持久化folderNodes=14；253行变37；metrics folderKeys从15到38并保持；字体总数1499 | 本次未再缩减，但历史完整173目录未恢复；无物理树刷新请求，不能宣称恢复完成，亦不能据此认定字体丢失 |
+| 激活状态索引 | 39.710秒known1/missing0，仍写1项、fullSnapshot1499、144ms；flush unchanged0/syncRoots1/206ms。停止时known0/missing1、fullSnapshot1499/139ms、flush191ms | 正常激活/停止仍全根同步，F-07相同比较不足，待独立按字体增量同步修复 |
+| 激活字体预览 | 无active font preview file route；39–44秒激活窗口内无renderPreviewImage请求 | 路由修复未被实际执行；旧status14未出现不能算验收通过 |
+
+关键纠正：Rust merged_index/sync.rs的changed取payload.relative_paths.len()，不是数据库实际变化行数。因此fullSnapshot=true/changed=0不能证明“无变化仍写入”。激活实际写installed=true/by=managed，停止写false/by=none，相等比较不会跳过真实变化。停止时missing可能涉及包含managedInstallPath/managedRegistryName的签名变化，但日志不足以确定具体原因。此前门禁只覆盖人为相同状态，未覆盖真实激活链；记录覆盖缺口，不改写通过记录为真实链已修复。
+
+其他观察：8次收藏（4添加/4取消）全部成功108–176ms，走metadata incremental accepted；2次本地标签15/17ms成功；2次共享标签280/281ms成功但各全根1499项同步135/138ms，仍有优化空间。一次预览主进程1.389秒/renderer1.398秒，其余350/401/453ms。19:38:43单秒有21次getCachedPreviewImages启动，摘要长度6/首字体相同不能证明全部参数重复。一次metrics renderer567ms而worker34ms，等待发生在worker之外。user-intent-changed查询拒绝属于正常竞态保护。operation-chain中committed17、ack12、returned34，无失败；末尾关闭pending=false/inFlight=false。
+
+保留待查：首收藏0→1延迟、激活全根同步、目录历史清单恢复、激活文件预览实机覆盖、预览请求密度及耗时、共享标签全根同步、启动等待。本轮R-05仅处理标签意图/确认/重试，不混入这些性能修复。用户以开发模式验收，后续提供npm run dev，不要求build:win。
+
+## 20. R-05 执行卡
+
+状态：自动验证通过待实机；未将Windows/NAS或前置Rust缺口计为完成。
+
+基线b7f68e120788930a23e9aaf8c9ceafb3d5550554，stage/09-preview-tags-app；开始时工作树干净。本轮先补§19日志复核。继承无Cargo/Windows原生验证缺口。仅修F-01/F-02，R-06去重不动。
+
+精确白名单：README.md、本任务书；src/renderer/src/fontTagStateAuthorityRuntime.ts、fontTagMutationRuntime.ts、fontDialogTagActionsRuntime.ts、fontDialogRuntime.ts、fontWriteQueue.ts、runtime/app/effects/useFontTagStateSignalEventRuntime.ts；build/diagnostics/check-tag-intent-lifecycle.cjs、check-tag-consistency.cjs、check-decomposition-baseline.cjs、fixtures/app-interaction-composition.fixture.json；package.json。若既有隔离加载器缺少新依赖，先登记对应文件再补真实模块加载，禁止伪造业务mock或批量刷新fixture。
+
+| 当前状态 | 输入 | 下一状态/约束 |
+|---|---|---|
+| 未提交 | 原队列派发 | 发送中；字段内代次与对象身份不变 |
+| 发送中 | 本次IPC失败/部分失败成员 | 可重试失败；同token进原重试队列，无时间到期 |
+| 发送中 | 本次IPC成功成员 | 已提交待确认；回执只结算持有的token，不能触及较新token |
+| 已提交待确认 | 真实读取匹配目标 | 已确认；后续真实外部修改可接管 |
+| 任意旧代次 | 新用户编辑 | 新token替代；旧回执仅结算旧对象，旧失败不得覆盖新队列 |
+| 任意pending | 普通/缺revision广播、别字体旧目录 | 不确认；保护本字段意图，继续刷新权威查询 |
+| 已确认 | 外部显式空目录/修改 | 应用权威结果；不永久保留乐观值 |
+| 会话结束/reload | JSON或IPC往返 | Symbol意图不持久化；原关闭flush失败提示继续生效 |
+
+本轮复用FontItem会话Symbol持有每字段token，队列与界面必须引用同一token，不引入第二store/队列。代次仅本地编辑序号；后端revision只与同域后端revision比较；时间不作确认依据，trace只用于日志。共享rename/本地共享delete是目录级直接IPC，无原队列表示；延后界面目录变更至权威广播/查询，失败保留原视图并明确提示重试，不制造未入队的乐观token，也不将目录删除错误重试为保留空目录的逐字体解绑。队列标签批次仍逐成员结算；其他字段不回滚。
+
+白名单补充：build/diagnostics/check-font-write-queue-durability.cjs仅补新依赖的真实模块加载。旧check-tag-consistency移除复制的TTL/无条件确认算法，改跑生产模块，原14项契约保留，确认测试改为广播不确认。app-interaction-composition.fixture仅更新本轮有意变更的fontDialogRuntime与fontDialogTagActionsRuntime两个摘要；其他输入、Hook顺序、算法哈希不变，新R-05真实交互门替代这两项旧行为冻结。
+
+白名单补充（确认生命周期完整性）：src/renderer/src/runtime/database/useRendererDatabasePageRuntime.ts在查询开始捕获已成功写入的token，只有通过既有requestSeq/用户意图门的结果才确认同一代次；允许成功后的外部删除先于匹配读取、以及结果为空时结束保护。src/renderer/src/library-normalize/libraryNormalizeStateRuntime.ts将未结算标签意图列入既有LRU保留集合，避免队列仍在重试而UI所有者被逐出。二者均复用既有所有者，不新增缓存/队列。
+
+续接复核（2026-09-17）：16项未提交改动完整保留，HEAD与远端仍为b7f68e1。复现新边界：旧空目录→新增标签→写入成功→真实查询返回新标签，确认先解除保护导致新标签再次被旧目录过滤为空。修复限制在上述authority/page模块与新增生命周期门；同时检查空分页、确认后的外部删除及本地/共享两域，不扩大到R-06或性能专项。成功读取与目录信息需按来源协调，不能把旧空目录当新删除证据。
+
+日志验证补充白名单：src/renderer/src/fontOperationTrace.ts仅提供已有WeakMap的单条目诊断身份读取；build/diagnostics/check-operation-chain.cjs增加可选真实乐观编辑入口。发现此前token记录的是整批trace，无法区分批内同代次字体；改为单成员身份，生命周期阶段与原dispatch/queue-settled区分。业务确认仍仅使用token身份，不依赖trace。复用R-01真实preload/IPC/Node SQLite/第二连接回读验收成功与两次失败后重试；不替代Rust实机证据。
+
+文档收尾白名单：docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md仅同步本修复入口状态；docs/audits/HFM_FULL_CHAIN_AUDIT.md仅新增F-01/F-02修复证据链接，保留原始审计事实。
+
+### R-05 实现与验收边界
+
+- UI复制与原队列持有相同的逐字体/逐字段Symbol token；成功/失败只结算原条目，新编辑不会被旧ack或旧失败改写。pending保护依赖queued/sending/retry/committed状态，无TTL；JSON/structuredClone不携带会话身份。字体id/sourceId、原数据库结构、IPC/preload和依赖版本不变。
+- 广播只更新目录权威状态，不清除任意pending。目录单独以同域后端revision拒绝已知旧信号；旧消息缺revision仍兼容并保留pending，不把Date.now当因果版本。批内每个token的诊断使用原条目operationId/attemptId，intent-dispatch/intent-committed/intent-retry不重复记为原dispatch阶段。
+- 成功后匹配回读可确认；分页开始捕获已经成功的token，只有通过原requestSeq/用户意图门的结果才能确认。查询开始之前未ack、查询途中出现的新编辑都不能确认；空分页也发布新对象以更新派生视图。未结算token加入原LRU保留集合，不建立第二状态表或队列。
+- 续接复现并补修：成功新增标签不得被更早空目录过滤；回读结果的标签目录证据保留在原token，后来的权威目录广播清除该证据并允许外部显式删除。分页没有返回某字体本身不等于该字体标签已删除；如果ack后收到新目录，则空页确认沿用该新目录。旧draft目录不永久污染权威目录。
+- 本地重命名/兼容逐字体路径只对实际变更字体生成token，全部新token必须入原队列，即便查询提供的受影响ID不全。选中字体动作从当前库读取，并只合并目标字段，防止旧弹窗快照覆盖其他域。
+- 共享重命名和目录显式删除依赖已有直接IPC，先flush；不生成没有队列所有者的乐观token。失败保留现有视图并提示重试，禁止把失败的目录删除改成逐字体解绑重试；批次成功成员不重放。后端部分结果由权威广播/回读收敛。
+
+### 可复现自动证据
+
+| 检查 | 结果与边界 |
+| --- | --- |
+| `node build/diagnostics/check-tag-intent-lifecycle.cjs --baseline=b7f68e1` | 退出1，F-01a、F-01b均丢new变空；F-02到期变old。分别加载真实旧authority，不把编译/加载错误计作反例 |
+| `npm run diagnostics:tag-intent-lifecycle` | 当前通过；同字体旧ack、其他字体旧目录、缺revision、20秒/10分钟、两个字段反向确认、增删、批量部分成功/失败重试、缺接口、关闭失败、reload、弹窗共享身份、直接删除失败、空页/旧页、LRU、成功回读与旧目录冲突 |
+| 退化检查 | 5种变异分别在LF/CRLF执行，共10次被业务断言拒绝：恢复TTL、广播确认、未提交即确认、查询提前捕获未ack、丢弃成功回读目录证据 |
+| R-01真实链复用 | 两种preload，成功及两次SQLite故障后成功；真实队列→IPC→Node SQLite→广播→回读确认，第二连接验证失败无残留/成功有绑定，operation/attempt/确认身份一致、监听卸载清理。首轮未开启debug导致日志断言失败，启用测试所需debug后复验，不计为产品故障 |
+| `node docs/audits/observe-chain-audit.cjs` | F-01a/b、F-02均reproduced=false；F-03a/b仍true，明确留R-06，未混修 |
+| 原门迁移 | 14项tag-consistency改用真实authority；只迁移2个有意变更的弹窗文件hash，其他Hook/视图/性能/算法冻结保持。两个隔离加载器仅接入真实新依赖 |
+
+执行环境Node v24.19.0/npm11.9.0/Linux。最终`npm run verify`退出0，TypeScript与111/111诊断通过，日志`/tmp/hfm-r05-final-verify.log`；Electron/Vite三端构建365/1/196模块退出0，安全混淆3/3退出0。没有运行完整npm run build，因为本环境无Cargo；本项没有原生源码变更，继承R-01～R-04原生和Windows待验缺口，不将Node SQLite成功替代Rust/NAS/GUI验收。
+
+Mermaid已记录真实R-05链路；无新增或陌生第三方API，不触发Context7。Create State仅返回Context Captured并提示No active world model，账户中没有HFM模型，未写入markdown/足球模型；项目级保存未确认，以Git/README/本执行卡为准。
+
+### Windows开发模式复验（待用户回执）
+
+```powershell
+git pull --ff-only origin stage/09-preview-tags-app
+$env:HFM_LOG_DETAIL = "debug"
+npm run dev
+```
+
+同字体连续添加/移除本地与共享标签，交错收藏/保护，快速切页/详情；确认新标签不被旧广播清空，其他字段不变。删除最后绑定后保留空目录，显式删目录后消失；共享标签重命名/删除失败后应提示且不伪装成功。测试库共享根离线后等待超过20秒，恢复后检查最后编辑保存；编辑后正常关闭重开，失败时保留未保存提示。记录提交号、操作顺序、肉眼反馈和startup operation-chain日志；验收后移除HFM_LOG_DETAIL。无依赖变化，无需npm ci或安装包。
+
+本R-05保持独立原子提交，可用`git log -1 --format=%H -- build/diagnostics/check-tag-intent-lifecycle.cjs`定位后revert；无需数据库迁移或回滚前置任务。下一项为R-06，但本轮不启动。
+
+最终差异复核：20个登记文件（含新增诊断），git diff --check通过；依赖锁、Rust源码、数据库schema、样式、R-06信号去重均无变更。两次全量回归均退出0，最终一次包含本轮续接补修；构建日志/tmp/hfm-r05-build.log。远端仍为b7f68e1，沿原阶段分支快进发布本R-05独立提交。

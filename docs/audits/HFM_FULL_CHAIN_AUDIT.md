@@ -4,6 +4,8 @@
 
 执行顺序更新：用户要求日志最先。后续以[修复任务书](../plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)为准：R-01关联日志→三类Rust事务→标签意图/确认→广播去重→总验收。下文原始发现与原建议保留为审计历史，不作为当前实施顺序。
 
+R-05修复进展（2026-09-17）：F-01a/b与F-02原始反例在b7f68e1分别复现，当前观察均为false；真实队列/页面/弹窗与失败重试门、Node SQLite关联链及LF/CRLF退化检查见[修复任务书§20](../plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#20-r-05-执行卡)。Windows/NAS实机待验；F-03仍留R-06。以下旧审计结果保留原基线含义。
+
 ## 结论
 
 发现 **4项正确性问题/风险与1项可观测性缺口**。现有 `npm run verify` 的TypeScript及104/104诊断仍全部通过，说明以下边界未被既有门覆盖，不能把拆分和门禁通过解释为业务链路全部正确。

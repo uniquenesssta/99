@@ -8,7 +8,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
-const TAG_DIRTY_PROTECTION_MS = 20_000;
 const TAG_LOCALE = 'zh-Hans-CN';
 
 function read(relativePath) {
@@ -29,151 +28,10 @@ function assertNotIncludes(relativePath, needle) {
   assert(!content.includes(needle), `${relativePath} must not contain ${needle}`);
 }
 
-function cleanTags(tags) {
-  return Array.from(new Set((tags || []).map((tag) => String(tag || '').trim()).filter(Boolean)))
-    .sort((a, b) => a.localeCompare(b, TAG_LOCALE));
-}
-
-function numericValue(value) {
-  const numberValue = typeof value === 'number' ? value : Number(value || 0);
-  return Number.isFinite(numberValue) ? numberValue : 0;
-}
-
-function tagField(scope) {
-  return scope === 'local' ? 'localTagNames' : 'tagNames';
-}
-
-function revisionField(scope) {
-  return scope === 'local' ? '__localTagRevision' : '__sharedTagRevision';
-}
-
-function dirtyUntilField(scope) {
-  return scope === 'local' ? '__localTagDirtyUntil' : '__sharedTagDirtyUntil';
-}
-
-function authorityField(scope) {
-  return scope === 'local' ? '__localTagAuthorityKnown' : '__sharedTagAuthorityKnown';
-}
-
-function filterFontByLibraryAuthority(library, font) {
-  let next = font;
-  for (const scope of ['shared', 'local']) {
-    if (library[authorityField(scope)] !== true) continue;
-    const field = tagField(scope);
-    const known = new Set(cleanTags(scope === 'local' ? library.localTags : library.tags));
-    const current = cleanTags(next[field]);
-    const filtered = current.filter((tag) => known.has(tag));
-    if (filtered.length !== current.length) next = { ...next, [field]: filtered };
-  }
-  return next;
-}
-
-function ensureKnownTags(library) {
-  const sharedKnown = library.__sharedTagAuthorityKnown === true;
-  const localKnown = library.__localTagAuthorityKnown === true;
-  const sharedTags = new Set(cleanTags(library.tags));
-  const localTags = new Set(cleanTags(library.localTags));
-  const fonts = {};
-  for (const [fontId, original] of Object.entries(library.fonts || {})) {
-    const font = filterFontByLibraryAuthority(library, original);
-    fonts[fontId] = font;
-    if (!sharedKnown) for (const tag of cleanTags(font.tagNames)) sharedTags.add(tag);
-    if (!localKnown) for (const tag of cleanTags(font.localTagNames)) localTags.add(tag);
-  }
-  return { ...library, fonts, tags: cleanTags([...sharedTags]), localTags: cleanTags([...localTags]) };
-}
-
-function markOptimistic(font, scope, tagNames, nowMs) {
-  const revisionKey = revisionField(scope);
-  return {
-    ...font,
-    [tagField(scope)]: cleanTags(tagNames),
-    [revisionKey]: Math.max(numericValue(font[revisionKey]) + 1, nowMs),
-    [dirtyUntilField(scope)]: nowMs + TAG_DIRTY_PROTECTION_MS,
-  };
-}
-
-function mergeScope(existing, incoming, scope, nowMs) {
-  const tagsKey = tagField(scope);
-  const revisionKey = revisionField(scope);
-  const dirtyKey = dirtyUntilField(scope);
-  const existingTags = cleanTags(existing ? existing[tagsKey] : undefined);
-  const incomingHasTags = Array.isArray(incoming[tagsKey]);
-  const incomingTags = cleanTags(incomingHasTags ? incoming[tagsKey] : undefined);
-  const existingRevision = numericValue(existing ? existing[revisionKey] : 0);
-  const incomingRevision = numericValue(incoming[revisionKey]);
-  const dirty = numericValue(existing ? existing[dirtyKey] : 0) > nowMs;
-
-  if (dirty || (incomingRevision > 0 && existingRevision > incomingRevision)) {
-    return {
-      [tagsKey]: existingTags,
-      [revisionKey]: existingRevision,
-      [dirtyKey]: existing ? existing[dirtyKey] : undefined,
-    };
-  }
-
-  if (!incomingHasTags && existing) {
-    return {
-      [tagsKey]: existingTags,
-      [revisionKey]: existingRevision,
-      [dirtyKey]: existing ? existing[dirtyKey] : undefined,
-    };
-  }
-
-  return {
-    [tagsKey]: incomingTags,
-    [revisionKey]: incomingRevision || existingRevision || undefined,
-    [dirtyKey]: undefined,
-  };
-}
-
-function mergeWithAuthority(existing, incoming, nowMs) {
-  return {
-    ...incoming,
-    ...mergeScope(existing, incoming, 'shared', nowMs),
-    ...mergeScope(existing, incoming, 'local', nowMs),
-  };
-}
-
-function applySignal(library, signal, nowMs) {
-  const scope = signal.scope === 'shared' ? 'shared' : 'local';
-  const revisionKey = revisionField(scope);
-  const dirtyKey = dirtyUntilField(scope);
-  const changedIds = new Set((signal.changedIds || []).map((id) => String(id || '').trim()).filter(Boolean));
-  const signalRevision = numericValue(scope === 'local' ? signal.localRevision : signal.sharedRevision);
-  const updatedAtRevision = Number.isFinite(Date.parse(signal.updatedAt || '')) ? Date.parse(signal.updatedAt || '') : 0;
-  const nextRevisionBase = Math.max(signalRevision, updatedAtRevision, nowMs);
-  const fonts = {};
-  for (const [fontId, font] of Object.entries(library.fonts || {})) {
-    if (changedIds.size && !changedIds.has(fontId)) {
-      fonts[fontId] = font;
-      continue;
-    }
-    fonts[fontId] = {
-      ...font,
-      [revisionKey]: Math.max(numericValue(font[revisionKey]), nextRevisionBase),
-      [dirtyKey]: nowMs,
-    };
-  }
-  const hasKnownTags = Array.isArray(signal.knownTags);
-  const knownTags = cleanTags(signal.knownTags);
-  if (hasKnownTags) {
-    const knownSet = new Set(knownTags);
-    const field = tagField(scope);
-    for (const [fontId, font] of Object.entries(fonts)) {
-      fonts[fontId] = { ...font, [field]: cleanTags(font[field]).filter((tag) => knownSet.has(tag)) };
-    }
-  }
-  return ensureKnownTags({
-    ...library,
-    fonts,
-    ...(hasKnownTags
-      ? scope === 'local'
-        ? { localTags: knownTags, __localTagAuthorityKnown: true }
-        : { tags: knownTags, __sharedTagAuthorityKnown: true }
-      : {}),
-  });
-}
+const authority = require('./check-operation-chain.cjs').loader()('src/renderer/src/fontTagStateAuthorityRuntime.ts');
+const markOptimistic = authority.markFontTagsOptimistic;
+const mergeWithAuthority = authority.mergeFontWithTagAuthority;
+const applySignal = authority.applyFontTagMutationSignalToLibrary;
 
 function testDirtyLocalDoesNotOverwriteShared() {
   const now = 1_000_000;
@@ -218,7 +76,7 @@ function testOldRevisionCannotOverrideCleanNewerState() {
   assert(merged.tagNames.join(',') === '共享确认', 'lower shared revision overwrote newer shared tags');
 }
 
-function testStateSignalCleansDirtyAndUpdatesKnownTags() {
+function testStateSignalPreservesIntentAndUpdatesKnownTags() {
   const now = 3_000_000;
   const dirtyFont = markOptimistic({ id: 'font-c', localTagNames: ['设计'] }, 'local', ['标题'], now);
   const library = { fonts: { 'font-c': dirtyFont }, localTags: ['设计'], tags: [] };
@@ -230,7 +88,7 @@ function testStateSignalCleansDirtyAndUpdatesKnownTags() {
     knownTags: ['标题', '正文'],
   }, now + 20);
   const font = next.fonts['font-c'];
-  assert(numericValue(font.__localTagDirtyUntil) <= now + 20, 'local state signal did not clean dirty protection');
+  assert(authority.isFontTagStateDirty(font, 'local'), 'broadcast must not acknowledge a specific edit');
   assert(next.localTags.join(',') === '标题,正文', 'known local tags from signal were not applied');
 }
 
@@ -384,7 +242,7 @@ function testQueryProtocolFallbackPolicy() {
 const tests = [
   testDirtyLocalDoesNotOverwriteShared,
   testOldRevisionCannotOverrideCleanNewerState,
-  testStateSignalCleansDirtyAndUpdatesKnownTags,
+  testStateSignalPreservesIntentAndUpdatesKnownTags,
   testStateSignalCanClearKnownTags,
   testLastUnbindRetainsEmptyLocalTag,
   testExplicitDeleteRemovesEmptyLocalTag,

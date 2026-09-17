@@ -59,7 +59,7 @@ function validateChain(events, expectedAttempts = 1) {
   return operation
 }
 
-async function chain({ failures = 0, runtimePreload = false, transforms = {}, throwingLog = false } = {}) {
+async function chain({ failures = 0, runtimePreload = false, transforms = {}, throwingLog = false, tagIntent = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-chain-'))
   const dbPath = path.join(dir, 'test.sqlite'); const db = new DatabaseSync(dbPath)
   const schema = fs.readFileSync(path.join(root, 'src/main/library/runtime/librarySchemaRuntime.ts'), 'utf8')
@@ -101,6 +101,8 @@ async function chain({ failures = 0, runtimePreload = false, transforms = {}, th
   })
   try {
     let queue = q.createEmptyQueuedFontWriteState()
+    const authority = load('src/renderer/src/fontTagStateAuthorityRuntime.ts')
+    if (tagIntent) library.fonts.a = authority.markFontTagsOptimistic(library.fonts.a, 'local', ['new'])
     const entry=ft.trackFontWrite({ item:library.fonts.a, tagNames:['new'] }, 'localTags')
     queue.localTags.set('a',entry)
     for(let i=0;i<=failures;i++) {
@@ -115,6 +117,18 @@ async function chain({ failures = 0, runtimePreload = false, transforms = {}, th
     assert.equal(committedLibrary.fonts.a.favorite,true);assert.equal(committedLibrary.fonts.a.deleteProtected,true)
     assert.deepEqual(plain(committedLibrary.fonts.a.tagNames),['shared']);assert.equal(refreshes,1)
     assert.equal(context.currentOperationTrace(),undefined,'context leaked outside invocation')
+    if (tagIntent) {
+      assert(authority.isFontTagStateDirty(library.fonts.a,'local'),'broadcast cannot confirm the pending token')
+      library=authority.captureFontTagReadConfirmation(library)(library,[{...library.fonts.a,localTagNames:['new']}])
+      assert(!authority.isFontTagStateDirty(library.fonts.a,'local'),'successful write and accepted read must confirm')
+      await tick()
+      if (!throwingLog) {
+        const intentEvent=events.find(e=>e.stage==='queued')
+        const confirmations=events.filter(e=>e.reason==='local-g1-post-ack-read-confirmed')
+        assert.equal(confirmations.length,1)
+        assert.equal(confirmations[0].trace.operationId,intentEvent.trace.operationId,'confirmation must retain member identity')
+      }
+    }
     if(!throwingLog) validateChain(events,failures+1)
     for(const dispose of cleanups) dispose?.()
     assert.equal(listeners.size,0,'listener retained after unmount')

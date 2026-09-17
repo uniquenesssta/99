@@ -1,10 +1,9 @@
 import type { FontItem } from '@shared/types'
 import { fontDisplayName } from './appRuntime'
 import type { FontDialogRuntimeOptions } from './fontDialogRuntime'
-import { ensureLibraryTagNamesContainFontTags,markFontTagsOptimistic } from './fontTagStateAuthorityRuntime'
+import { ensureLibraryTagNamesContainFontTags,markFontTagsOptimistic,applyFontTagEdit } from './fontTagStateAuthorityRuntime'
 import {
   addTagNameToLibrary,
-  addTagToFontInLibrary,
   removedTagNameList,
   tagNameListWithValue,
 } from './fontTagMutationRuntime'
@@ -22,15 +21,17 @@ export type FontDialogTagActionsRuntime = {
 function latestSelectedFont(options: FontDialogRuntimeOptions): FontItem | undefined {
   const selectedFont = options.selectedFont
   if (!selectedFont?.id) return selectedFont
-  return options.library.fonts?.[selectedFont.id] || selectedFont
+  let latest = selectedFont
+  options.commitLibraryUpdate(prev => { latest = prev.fonts[selectedFont.id] || selectedFont; return prev })
+  return latest
 }
 
-function setFontInLibrary(options: FontDialogRuntimeOptions, selectedFont: FontItem, nextFont: FontItem): void {
+function setFontInLibrary(options: FontDialogRuntimeOptions, selectedFont: FontItem, nextFont: FontItem, scope: 'local' | 'shared'): void {
   options.setLibrary((prev) => ensureLibraryTagNamesContainFontTags({
     ...prev,
     fonts: {
       ...prev.fonts,
-      [selectedFont.id]: nextFont,
+      [selectedFont.id]: applyFontTagEdit(prev.fonts[selectedFont.id] || selectedFont, nextFont, scope),
     },
   }))
 }
@@ -81,7 +82,7 @@ export function createFontDialogTagActions(
 
       const nextTags = tagNameListWithValue(selectedFont.localTagNames, tag)
       const nextFont = markFontTagsOptimistic(selectedFont, 'local', nextTags)
-      options.setLibrary((prev) => addTagToFontInLibrary(prev, selectedFont, 'local', tag).library)
+      setFontInLibrary(options, selectedFont, nextFont, 'local')
       options.setAssignTagName('')
       setStatus(`已为 ${fontDisplayName(selectedFont)} 添加标签：${tag}`)
       options.queueLocalTagsWrite(nextFont, nextTags)
@@ -99,7 +100,7 @@ export function createFontDialogTagActions(
 
       const nextTags = tagNameListWithValue(selectedFont.tagNames, tag)
       const nextFont = markFontTagsOptimistic(selectedFont, 'shared', nextTags)
-      options.setLibrary((prev) => addTagToFontInLibrary(prev, selectedFont, 'shared', tag).library)
+      setFontInLibrary(options, selectedFont, nextFont, 'shared')
       options.setAssignSharedTagName('')
       setStatus(`已为 ${fontDisplayName(selectedFont)} 添加共享标签：${tag}`)
       options.queueSharedTagsWrite({ ...nextFont, __sharedTagWriteMode: 'add', __sharedTagWriteTag: tag } as FontItem, nextTags)
@@ -111,7 +112,7 @@ export function createFontDialogTagActions(
       if (!selectedFont) return
       const nextTags = removedTagNameList(selectedFont.localTagNames, tag)
       const nextFont = markFontTagsOptimistic(selectedFont, 'local', nextTags)
-      setFontInLibrary(options, selectedFont, nextFont)
+      setFontInLibrary(options, selectedFont, nextFont, 'local')
       setStatus(`已从 ${fontDisplayName(selectedFont)} 移除标签：${tag}`)
       options.queueLocalTagsWrite(nextFont, nextTags)
       refreshTagViewsNow()
@@ -122,7 +123,7 @@ export function createFontDialogTagActions(
       if (!selectedFont) return
       const nextTags = removedTagNameList(selectedFont.tagNames, tag)
       const nextFont = markFontTagsOptimistic(selectedFont, 'shared', nextTags)
-      setFontInLibrary(options, selectedFont, nextFont)
+      setFontInLibrary(options, selectedFont, nextFont, 'shared')
       setStatus(`已从 ${fontDisplayName(selectedFont)} 移除共享标签：${tag}`)
       options.queueSharedTagsWrite({ ...nextFont, __sharedTagWriteMode: 'remove', __sharedTagWriteTag: tag } as FontItem, nextTags)
       refreshTagViewsNow()

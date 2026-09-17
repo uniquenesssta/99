@@ -1,3 +1,4 @@
+import { captureFontTagReadConfirmation } from '../../fontTagStateAuthorityRuntime'
 import { fontUserIntentRevision,hasUnsettledFavoriteIntent } from '../../fontUserIntentRuntime'
 import type { FontFormat,FontItem,FontQueryPageResult,FontQueryRequest,FontQueryResult,FontScript,LibraryState } from '@shared/types'
 import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
@@ -255,6 +256,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
         }
       }, `db-query-start:${options.sidebarPage}`)
       const intentRevision = fontUserIntentRevision()
+      const confirmTagRead = captureFontTagReadConfirmation(options.library)
       options.hfm.queryFontPage(databaseQueryRequest).then((result) => {
         if (intentRevision !== fontUserIntentRevision()) {
           options.reportTrace({ kind: 'db-query-rejected', label: 'user-intent-changed', page: options.sidebarPage,
@@ -293,7 +295,10 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           engine: mergedResult.engine,
           elapsedMs: mergedResult.elapsedMs
         })
-        options.setLibrary((prev) => libraryWithMergedFonts(prev, result.items, [options.selectedFontId, ...options.selectedFontIds]))
+        options.setLibrary((prev) => {
+          const confirmed = confirmTagRead(prev, result.items)
+          return libraryWithMergedFonts(confirmed, result.items, [options.selectedFontId, ...options.selectedFontIds])
+        })
         options.setDatabaseQueryFailedKey('')
       }).catch((error) => {
         const durationMs = Math.round(performance.now() - startedAt)

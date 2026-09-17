@@ -4,7 +4,7 @@ import { FONT_OBJECT_LRU_LIMIT } from '../appConstants'
 import { createLegacyCollectionStateFields,normalizeLegacyCollectionIds } from '@shared/legacy/legacyCollectionCompatibility'
 import { fontScripts } from '../fontClassification'
 import { createEmptyLibrary,fontInsideRootFolder,isPhysicalFolderId,normalizeFontPathForCompare } from './libraryNormalizeBase'
-import { ensureLibraryTagNamesContainFontTags,mergeFontWithTagAuthority } from '../fontTagStateAuthorityRuntime'
+import { ensureLibraryTagNamesContainFontTags,mergeFontWithTagAuthority,isFontTagStateDirty } from '../fontTagStateAuthorityRuntime'
 
 export function normalizeLibrary(state: LibraryState): LibraryState {
   const base = createEmptyLibrary()
@@ -87,7 +87,7 @@ export function libraryWithMergedFonts(state: LibraryState, fonts: FontItem[], k
   }
 
   for (const [id, font] of Object.entries(nextFonts)) {
-    if (font.active || font.favorite || font.deleteProtected || hasFontUserIntent(font)) keepIds.add(id)
+    if (font.active || font.favorite || font.deleteProtected || hasFontUserIntent(font) || isFontTagStateDirty(font, 'local') || isFontTagStateDirty(font, 'shared')) keepIds.add(id)
   }
 
   return ensureLibraryTagNamesContainFontTags({ ...state, fonts: pruneRecordByKeyLimit(nextFonts, FONT_OBJECT_LRU_LIMIT, keepIds), __partialFonts: true } as LibraryState)

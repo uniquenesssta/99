@@ -67,7 +67,7 @@ export function renameTagInLibrary(
     fonts: Object.fromEntries(
       Object.entries(library.fonts).map(([id, font]) => [
         id,
-        shared
+        !(shared ? font.tagNames : font.localTagNames)?.includes(from) ? font : shared
           ? markFontTagsOptimistic(font, 'shared', renamedTagNameList(font.tagNames, from, to))
           : markFontTagsOptimistic(font, 'local', renamedTagNameList(font.localTagNames, from, to))
       ])
@@ -89,7 +89,7 @@ export function deleteTagFromLibrary(
     fonts: Object.fromEntries(
       Object.entries(library.fonts).map(([id, font]) => [
         id,
-        shared
+        !(shared ? font.tagNames : font.localTagNames)?.includes(tag) ? font : shared
           ? markFontTagsOptimistic(font, 'shared', removedTagNameList(font.tagNames, tag))
           : markFontTagsOptimistic(font, 'local', removedTagNameList(font.localTagNames, tag))
       ])

@@ -1,4 +1,5 @@
-import { dispatchFontWrites, settleFontWrites, cancelFontWrite } from './fontOperationTrace'
+import { beginFontTagWrite, settleFontTagWrite, cancelFontTagWrite, type FontTagAuthorityScope } from './fontTagStateAuthorityRuntime'
+import { dispatchFontWrites, settleFontWrites, cancelFontWrite, fontWriteTrace } from './fontOperationTrace'
 import type { OperationTrace } from '../../shared/operationTrace'
 import { settleFavoriteIntent } from './fontUserIntentRuntime'
 import type { FontItem, FontProtectionResult, FontTagUpdateResult } from '@shared/types'
@@ -33,11 +34,11 @@ export function mergeQueuedFontWritesPreservingNewer(
 ): void {
   for (const [id, entry] of retryQueue.localTags) {
     if (!target.localTags.has(id)) target.localTags.set(id, entry)
-    else cancelFontWrite(entry, 'newer-queued-intent')
+    else { cancelFontTagWrite(entry.item, 'local'); cancelFontWrite(entry, 'newer-queued-intent') }
   }
   for (const [id, entry] of retryQueue.sharedTags) {
     if (!target.sharedTags.has(id)) target.sharedTags.set(id, entry)
-    else cancelFontWrite(entry, 'newer-queued-intent')
+    else { cancelFontTagWrite(entry.item, 'shared'); cancelFontWrite(entry, 'newer-queued-intent') }
   }
   for (const [id, entry] of retryQueue.favorite) {
     if (!target.favorite.has(id)) target.favorite.set(id, entry)
@@ -115,6 +116,7 @@ function retryBooleanEntries<T extends { font: FontItem }>(
 
 async function flushTagEntries(args: {
   label: string
+  scope: FontTagAuthorityScope
   entries: QueuedFontWriteState['localTags']
   retryEntries: QueuedFontWriteState['localTags']
   batch?: (items: Array<{ item: FontItem; tagNames: string[] }>, trace?: OperationTrace) => Promise<FontTagUpdateResult>
@@ -124,19 +126,28 @@ async function flushTagEntries(args: {
   if (!items.length) return { wroteCount: 0, failures: [] }
 
   const failures: string[] = []
+  const dispatch = (entries: typeof items): OperationTrace | undefined => {
+    const trace = dispatchFontWrites(entries)
+    for (const entry of entries) beginFontTagWrite(entry.item, args.scope, fontWriteTrace(entry))
+    return trace
+  }
+  const settle = (entries: typeof items, failed: Set<string>): void => {
+    for (const entry of entries) settleFontTagWrite(entry.item, args.scope, !failed.has(entry.item.id))
+    settleFontWrites(entries, failed, entry => entry.item.id)
+  }
   if (args.batch) {
     try {
-      const result = await args.batch(items, dispatchFontWrites(items))
+      const result = await args.batch(items, dispatch(items))
       const candidateIds = items.map((entry) => entry.item.id)
       const failedIds = failedIdsFromResult(result, candidateIds)
       retryTagEntries(args.entries, failedIds, args.retryEntries)
-      settleFontWrites(items, failedIds, entry => entry.item.id)
+      settle(items, failedIds)
       const failure = resultFailureMessage(result, `${args.label} ${items.length} 个失败`)
       if (failure) failures.push(failure)
       return { wroteCount: items.length - failedIds.size, failures }
     } catch (error) {
       retryTagEntries(args.entries, new Set(items.map((entry) => entry.item.id)), args.retryEntries)
-      settleFontWrites(items, new Set(items.map(entry => entry.item.id)), entry => entry.item.id)
+      settle(items, new Set(items.map(entry => entry.item.id)))
       failures.push(`${args.label} ${items.length} 个：${error instanceof Error ? error.message : String(error)}`)
       return { wroteCount: 0, failures }
     }
@@ -146,16 +157,16 @@ async function flushTagEntries(args: {
     let wroteCount = 0
     for (const entry of items) {
       try {
-        const result = await args.single(entry.item, entry.tagNames, dispatchFontWrites([entry]))
+        const result = await args.single(entry.item, entry.tagNames, dispatch([entry]))
         const failedIds = failedIdsFromResult(result, [entry.item.id])
         retryTagEntries(args.entries, failedIds, args.retryEntries)
-        settleFontWrites([entry], failedIds, entry => entry.item.id)
+        settle([entry], failedIds)
         const failure = resultFailureMessage(result, `${args.label} ${entry.item.fileName || entry.item.id} 失败`)
         if (failure) failures.push(failure)
         else wroteCount += 1
       } catch (error) {
         args.retryEntries.set(entry.item.id, entry)
-        settleFontWrites([entry], new Set([entry.item.id]), entry => entry.item.id)
+        settle([entry], new Set([entry.item.id]))
         failures.push(`${args.label} ${entry.item.fileName || entry.item.id}：${error instanceof Error ? error.message : String(error)}`)
       }
     }
@@ -163,6 +174,7 @@ async function flushTagEntries(args: {
   }
 
   retryTagEntries(args.entries, new Set(items.map((entry) => entry.item.id)), args.retryEntries)
+  settle(items, new Set(items.map(entry => entry.item.id)))
   failures.push(`${args.label}写入接口不可用。`)
   return { wroteCount: 0, failures }
 }
@@ -177,6 +189,7 @@ export async function flushQueuedFontWriteQueue(
 
   const localTagResult = await flushTagEntries({
     label: '本地标签',
+    scope: 'local',
     entries: queue.localTags,
     retryEntries: retryQueue.localTags,
     batch: typeof hfm.setLocalTagsBatch === 'function'
@@ -191,6 +204,7 @@ export async function flushQueuedFontWriteQueue(
 
   const sharedTagResult = await flushTagEntries({
     label: '共享标签',
+    scope: 'shared',
     entries: queue.sharedTags,
     retryEntries: retryQueue.sharedTags,
     batch: typeof hfm.setSharedTagsBatch === 'function'

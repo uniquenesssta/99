@@ -67,6 +67,10 @@ export function cancelFontWrite(entry: object, reason: string): void {
   if (trace) reportFontOperation({ trace, stage: 'cancel', reason })
 }
 
+export function fontWriteTrace(entry: object): OperationTrace | undefined {
+  return identities.get(entry)
+}
+
 export async function traceDirectFontOperation<T>(domain: string, run: (trace: OperationTrace) => Promise<T>): Promise<T> {
   const id = nextId()
   const trace: OperationTrace = { version: 1, sessionId, operationId: id, attemptId: nextId(), batchId: id, domain, members: [id], omitted: 0 }
