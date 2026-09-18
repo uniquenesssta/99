@@ -1,4 +1,5 @@
-import type { CardPoolViewMode, SortMode } from '../../appRuntime'
+import { INSTALL_STATUS_OPTIONS } from '../../constants/filterConstants'
+import type { CardPoolViewMode, InstallStatusFilter, SortMode } from '../../appRuntime'
 import { LIST_PREVIEW_FONT_SIZE_MAX, LIST_PREVIEW_FONT_SIZE_MIN, clampListPreviewFontSize } from '../../runtime/preview/listPreviewSizeRuntime'
 import { nameSortCycleIcon, nameSortCycleTooltip, nextNameSortMode } from '../../runtime/toolbar/nameSortCycleRuntime'
 
@@ -74,6 +75,21 @@ export function ListPreviewSizeControl({ value, onChange }: { value: number; onC
         onChange={(event) => onChange(Number(event.currentTarget.value))}
       />
       <em>{safeValue}px</em>
+    </label>
+  )
+}
+
+export function InstallStatusControl({ value, onChange }: { value: InstallStatusFilter; onChange: (value: InstallStatusFilter) => void }): JSX.Element {
+  return (
+    <label className="toolbar-filter">
+      <select
+        aria-label="安装状态"
+        title="按永久安装状态筛选；未知状态仅显示在全部状态中"
+        value={value}
+        onChange={event => onChange(event.currentTarget.value as InstallStatusFilter)}
+      >
+        {INSTALL_STATUS_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+      </select>
     </label>
   )
 }

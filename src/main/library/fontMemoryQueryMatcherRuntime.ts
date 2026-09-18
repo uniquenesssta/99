@@ -120,15 +120,13 @@ export function createFontMemoryQueryMatcher(options: FontMemoryQueryRuntimeOpti
       }
     }
 
-    if (sidebarPage !== 'library') {
-      if (request.installStatus === 'installed' && !font.systemInstalled)
-        return false
-      if (
-        request.installStatus === 'notInstalled' &&
-        (!font.installStatusKnown || font.systemInstalled)
-      )
-        return false
-    }
+    if (request.installStatus === 'installed' && !font.systemInstalled)
+      return false
+    if (
+      request.installStatus === 'notInstalled' &&
+      (!font.installStatusKnown || font.systemInstalled)
+    )
+      return false
     if (sidebarPage === 'filters') {
       if (
         !sharedFontMatchesPathPrefixes(

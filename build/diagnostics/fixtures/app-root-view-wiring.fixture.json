@@ -172,28 +172,29 @@
     "runContextDelete",
     "setStatus",
     "runFontCommand",
-    "contextTargetCount"
+    "contextTargetCount",
+    "installStatus"
   ],
   "cases": [
     {
       "development": false,
       "collapsed": false,
-      "hash": "775f2380f302802792ddf8d087ae859ad88d5cd2fd9f43eba257c9866275d088"
+      "hash": "5e5b06536c4409b69cb214bac9e54dbeae78d02f0a892d2eefd14ec6ad015d49"
     },
     {
       "development": false,
       "collapsed": true,
-      "hash": "5341ac2163a050fcafacbdedeaedcc424216da09ae2eaaa71897f4dbe7441c05"
+      "hash": "f00cabe67f02f54f29f165919d352ca5553f161e16392a228ebeba0577a613f2"
     },
     {
       "development": true,
       "collapsed": false,
-      "hash": "5882987bced47bfb027a270debf14a4fc64b4da2192e5c1112a8c14f305a5235"
+      "hash": "20560db53b41417b666841e2fb216f134f751a21807b0856afa58913c40e5be1"
     },
     {
       "development": true,
       "collapsed": true,
-      "hash": "5ac0d762c6c0504d09ae541ab271f514db5cbddd93164db8909f3b01a758479a"
+      "hash": "472b40cbef51c535c5885706b7e54e860ec694cb340d99bca01b40bdab6ac4f7"
     }
   ]
 }

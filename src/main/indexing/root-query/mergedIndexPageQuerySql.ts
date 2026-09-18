@@ -77,10 +77,8 @@ function addMergedIndexActiveFilterClauses(parts: RootIndexQueryParts, request: 
 
 function addMergedIndexPageFilterClauses(parts: RootIndexQueryParts, request: FontQueryRequest): void {
   const sidebarPage = request.sidebarPage || 'library'
-  if (sidebarPage !== 'library') {
-    if (request.installStatus === 'installed') parts.clauses.push(mergedIndexInstalledExpr())
-    if (request.installStatus === 'notInstalled') parts.clauses.push(mergedIndexNotInstalledExpr())
-  }
+  if (request.installStatus === 'installed') parts.clauses.push(mergedIndexInstalledExpr())
+  if (request.installStatus === 'notInstalled') parts.clauses.push(mergedIndexNotInstalledExpr())
 
   if (sidebarPage === 'filters') {
     addMergedIndexPathPrefixClause(parts, sanitizeStringArray(request.selectedWatchedFolders))

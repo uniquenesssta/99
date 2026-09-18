@@ -60,10 +60,8 @@ function addRootIndexActiveFilterClauses(parts: RootIndexQueryParts, request: Fo
 
 function addRootIndexPageFilterClauses(parts: RootIndexQueryParts, rootPath: string, request: FontQueryRequest): void {
   const sidebarPage = request.sidebarPage || 'library'
-  if (sidebarPage !== 'library') {
-    if (request.installStatus === 'installed') parts.clauses.push(rootIndexInstalledExpr(parts.hasInstallJoin))
-    if (request.installStatus === 'notInstalled') parts.clauses.push(rootIndexNotInstalledExpr(parts.hasInstallJoin))
-  }
+  if (request.installStatus === 'installed') parts.clauses.push(rootIndexInstalledExpr(parts.hasInstallJoin))
+  if (request.installStatus === 'notInstalled') parts.clauses.push(rootIndexNotInstalledExpr(parts.hasInstallJoin))
 
   if (sidebarPage === 'filters') {
     addRootIndexPathPrefixClause(parts, rootPath, sanitizeStringArray(request.selectedWatchedFolders))

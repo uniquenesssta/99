@@ -208,16 +208,14 @@ export function addPageFilterClauses(
   request: FontQueryRequest,
 ): void {
   const sidebarPage = request.sidebarPage || "library";
-  if (sidebarPage !== "library") {
-    if (request.installStatus === "installed")
-      parts.clauses.push(
-        "(COALESCE(install_status.installed, fonts.system_installed) = 1 AND COALESCE(install_status.by_type, '') <> 'managed')",
-      );
-    if (request.installStatus === "notInstalled")
-      parts.clauses.push(
-        "(install_status.font_id IS NOT NULL AND (COALESCE(install_status.installed, 0) = 0 OR COALESCE(install_status.by_type, 'none') = 'managed'))",
-      );
-  }
+  if (request.installStatus === "installed")
+    parts.clauses.push(
+      "(COALESCE(install_status.installed, fonts.system_installed) = 1 AND COALESCE(install_status.by_type, '') <> 'managed')",
+    );
+  if (request.installStatus === "notInstalled")
+    parts.clauses.push(
+      "(install_status.font_id IS NOT NULL AND (COALESCE(install_status.installed, 0) = 0 OR COALESCE(install_status.by_type, 'none') = 'managed'))",
+    );
 
   if (sidebarPage === "filters") {
     addPathPrefixClause(

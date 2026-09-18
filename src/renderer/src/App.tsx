@@ -937,6 +937,7 @@ export default function App(): JSX.Element {
 
   const contentViewProps: AppRootViewProps['content'] = {
     sidebarPage: sidebarPage,
+    installStatus: installStatus,
     timeSortMode: timeSortMode,
     sortMode: sortMode,
     viewMode: viewMode,

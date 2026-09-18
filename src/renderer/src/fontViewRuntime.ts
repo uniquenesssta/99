@@ -1,3 +1,4 @@
+import { isInstalled } from './fontDisplay'
 import { hasFavoriteIntent } from './fontUserIntentRuntime'
 import type { FontFormat,FontItem,FontQueryPageResult,FontQueryRequest,FontScript,LibraryState } from '@shared/types'
 import { VIRTUAL_OVERSCAN_ROWS,VIRTUAL_PANEL_PADDING,getVirtualGridColumns } from './appConstants'
@@ -68,6 +69,12 @@ export interface VisibleFontsOptions {
   library: LibraryState
 }
 
+function matchesInstallStatus(font: FontItem, status: InstallStatusFilter): boolean {
+  if (status === 'installed') return isInstalled(font)
+  if (status === 'notInstalled') return font.installStatusKnown === true && !isInstalled(font)
+  return true
+}
+
 function optimisticTagPageMatches(font: FontItem, options: VisibleFontsOptions): boolean {
   if (options.sidebarPage === 'tags') {
     if (options.selectedTagName) return !!font.localTagNames?.includes(options.selectedTagName)
@@ -106,7 +113,7 @@ export function buildVisibleFonts(options: VisibleFontsOptions): FontItem[] {
       const fontIndexById = new Map(candidates.map((font) => [font.id, buildFontComputedIndex(font)]))
       return buildVisibleFonts({ ...options, databasePageReady: false, allFonts: candidates, fontIndexById })
     }
-    return mergeOptimisticTagPageFonts(items, options)
+    return mergeOptimisticTagPageFonts(items, options).filter(font => matchesInstallStatus(font, options.installStatus))
   }
 
   const keyword = options.deferredSearch.trim().toLowerCase()
@@ -115,10 +122,7 @@ export function buildVisibleFonts(options: VisibleFontsOptions): FontItem[] {
       const index = options.fontIndexById.get(font.id)
       if (!index || index.bad) return false
       if (!inTimeSortRangeIndex(index, options.timeSortMode)) return false
-      if (options.sidebarPage !== 'library') {
-        if (options.installStatus === 'installed' && !index.installed) return false
-        if (options.installStatus === 'notInstalled' && index.installed) return false
-      }
+      if (!matchesInstallStatus(font, options.installStatus)) return false
 
       if (options.sidebarPage === 'library' && !filterMatchesFontIndex(options.activeFilter, font, index)) return false
       if (options.sidebarPage === 'filters') {

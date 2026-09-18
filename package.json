@@ -10,6 +10,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "diagnostics:install-status-filter": "node build/diagnostics/check-install-status-filter.cjs",
     "diagnostics:batch-favorites": "node build/diagnostics/check-batch-favorites.cjs",
     "diagnostics:font-command-entry": "node build/diagnostics/check-font-command-entry.cjs",
     "diagnostics:decomposition-baseline": "node build/diagnostics/check-decomposition-baseline.cjs",

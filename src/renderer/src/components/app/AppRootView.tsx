@@ -120,6 +120,7 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
           latestBackgroundTaskEvent={developer.latestBackgroundTaskEvent}
           developerTasks={developer.developerTasks}
           developerStatusLog={developer.developerStatusLog}
+          installStatus={content.installStatus}
           timeSortMode={content.timeSortMode}
           sortMode={content.sortMode}
           viewMode={content.viewMode}

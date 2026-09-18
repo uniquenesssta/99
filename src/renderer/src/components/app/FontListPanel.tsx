@@ -10,7 +10,7 @@ import { FontFamilyGroupPanel } from './FontFamilyGroupPanel'
 import { SharedMetadataMaintenancePanel } from './SharedMetadataMaintenancePanel'
 import { SharedIndexSnapshotMaintenancePanel } from './SharedIndexSnapshotMaintenancePanel'
 import type { FontListPanelProps } from './FontListPanelTypes'
-import { CardPoolViewToggle,ListPreviewSizeControl,NameSortCycleButton } from './FontListToolbarControls'
+import { CardPoolViewToggle,InstallStatusControl,ListPreviewSizeControl,NameSortCycleButton } from './FontListToolbarControls'
 
 export function FontListPanel({
   sidebarPage,
@@ -25,6 +25,7 @@ export function FontListPanel({
   latestBackgroundTaskEvent,
   developerTasks,
   developerStatusLog,
+  installStatus,
   timeSortMode,
   sortMode,
   viewMode,
@@ -137,6 +138,7 @@ export function FontListPanel({
           <div role="status" aria-live="polite" className="selection-command-status">{status}</div>
           <div className="list-toolbar">
             <div className="toolbar-left toolbar-icon-controls" data-no-marquee>
+              <InstallStatusControl value={installStatus} onChange={value => updatePageToolbar('installStatus', value)} />
               <NameSortCycleButton
                 sortMode={sortMode}
                 onChange={(value) => updatePageToolbar('sortMode', value)}
@@ -214,7 +216,7 @@ export function FontListPanel({
                 {!visibleFonts.length && !(databasePageReady ? visibleFontTotal : 0) && (
                   <div className="empty-state virtual-empty">
                     <div>没有找到字体</div>
-                    <p>点击顶部“更新索引”建立或增量更新 SQLite 共享索引库；已有索引会自动读取。</p>
+                    <p>{installStatus && installStatus !== 'all' ? '当前范围没有符合安装状态的字体，可切换“全部状态”。' : '点击顶部“更新索引”建立或增量更新 SQLite 共享索引库；已有索引会自动读取。'}</p>
                   </div>
                 )}
               </div>

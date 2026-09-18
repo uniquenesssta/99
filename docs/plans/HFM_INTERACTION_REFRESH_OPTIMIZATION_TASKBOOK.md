@@ -5,7 +5,7 @@
 - 制定日期：2026-09-18。
 - 仓库：`uniquenesssta/99`；分支：`stage/09-preview-tags-app`。
 - 代码基线：`3bc1e387ebeb5298d5bd4060aaec5c9a0a2c7d93`。
-- 状态：**U-00 诊断、U-01 选择/命令链修复、U-02 统一操作入口及 U-03 本机集合收藏已实施，证据见 §10～§13；Windows 实机验收待回执。U-04～U-09 尚未实施。** 初次规划交付记录保留于 §9。
+- 状态：**U-00 诊断、U-01 选择/命令链修复、U-02 统一操作入口、U-03 本机集合收藏及 U-04 跨页安装筛选已实施，证据见 §10～§14；Windows 实机验收待回执。U-05～U-09 尚未实施。** 初次规划交付记录保留于 §9。
 - 输入：`startup-2026-09-18_02-59-25-870-21044.log`（813 行，UTC 02:59:25.872～03:01:28.978）及用户随后五点反馈、入口差异补充。原始日志不提交到 Git。
 - 与前任务衔接：[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md) §25 已交付本地收藏、标签目录同步与停用核对。本任务保留这些修复，处理后续真实交互问题和性能问题，不重开 R-01～R-07。
 - 既有基线证据：上一提交通过 TypeScript、115/115 诊断、Electron/Vite 367/1/196 模块构建和混淆 3/3。这是历史自动验证结果，**不能替代本任务的字体多选入口和 Windows 实机验收**。
@@ -108,7 +108,7 @@ flowchart TD
 
 ## 6. 实施顺序与任务卡
 
-优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02 见 §12；U-03 见 §13；U-04～U-09 为“待开始”。
+优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02 见 §12；U-03 见 §13；U-04 见 §14；U-05～U-09 为“待开始”。
 
 ### U-00：建立入口证据和复现基线
 
@@ -525,3 +525,50 @@ npm run dev
 4. 检查上述操作没有改动本地/共享标签、保护和激活状态；遇到实际写入失败时，状态区应显示失败回退，并以本机已保存值恢复。
 
 下一项 U-04：补齐跨页面安装状态筛选，本轮不提前实施。回滚本轮提交即可，无数据/配置迁移。Mermaid Chart 已更新实际集合收藏及回滚/补页链；无新第三方 API，未触发 Context7。Create State 前次创建因 2/2 容量上限失败，按用户要求放弃，本任务书和 Git 保存接续信息。
+
+## 14. U-04 执行卡
+
+- 起点：1ca99c178b19aee6170c4bf5c3570c9bae7e95d3，干净工作树。状态：实现及自动验证通过，Windows 实机待验。
+- 核对发现：公共工具栏缺少入口；PageToolbarState、查询键、分页重置、选择范围和滚动重置已携带 installStatus。合并索引、根索引、本机 SQL、主进程内存及渲染回退均跳过 library 页的安装筛选；渲染回退还会把未知状态列入未安装。数据库标签页的乐观补入也需与安装条件求交集。
+- 方案：复用三项 INSTALL_STATUS_OPTIONS 与现有按页状态，仅加公共入口/接线；所有现存查询路径应用同一个安装条件交集，未安装排除未知。永久安装定义保持：临时 managed 激活不算永久安装，both 仍算；Rust/Node 查询共用 TypeScript 生成 SQL，不另改 Rust。
+- 生产白名单：`src/renderer/src/components/app/FontListToolbarControls.tsx`、`FontListPanel.tsx`、`FontListPanelTypes.ts`、`AppRootView.tsx`；`src/renderer/src/App.tsx`、`fontViewRuntime.ts`；`src/main/indexing/root-query/mergedIndexPageQuerySql.ts`、`rootIndexPageQuerySql.ts`；`src/main/library/fontMemoryQueryMatcherRuntime.ts`、`query-sql/fontQueryClausesRuntime.ts`。保留查询状态 owner、缓存键、IPC、数据库结构与依赖。
+- 验证白名单：新增 `build/diagnostics/check-install-status-filter.cjs` 并注册 package.json；冻结 fixture 仅按新增 content.installStatus 接线与 App/root view 摘要迁移（改前逐项补记）。文档 README、本任务书。
+- 验收：字体库/收藏/文件夹/本地标签/共享标签/高级筛选三个状态，实际组件事件、按页恢复、永久/临时/未知、范围交集、空结果、SQL/内存一致、分页/计数/查询键、旧请求拒绝、多选及收藏组合。自动测试与 Windows GUI 边界分别记录。
+- Create State 前次创建因 2/2 容量上限失败，按用户指示放弃，不重复创建或修改其他项目。
+
+- 冻结迁移白名单补充：`build/diagnostics/fixtures/app-view-composition.fixture.json` 只改 AppRootView 摘要（新增 content.installStatus）；`decomposition-baseline.fixture.json` 只改 App tokenHash（新增 contentViewProps.installStatus），原 owner、Hooks 与生命周期前缀不变。
+
+- 冻结迁移补充：`app-root-view-wiring.fixture.json` 增加 installStatus 绑定及四种开发/折叠模式的视图快照摘要。先用 U-03 原源码确认四项旧快照仍匹配，再按唯一新增参数迁移，原错误接线/生命周期反例不变。
+
+- 未知状态边界：受控复现 installStatusKnown=false 但残留 systemInstallMatches 时，旧渲染判断误纳入“未安装”；本轮工具栏筛选严格使用当前确认标记，与 SQL/main memory 一致。保留原状态探测流程及其他安装定义。
+
+
+### 14.1 实现结果
+
+- 字体库（含收藏）、文件夹、本地标签、共享标签和高级筛选页面的公共字体工具栏，统一显示“全部状态 / 已安装 / 未安装”。复用已有选项、工具栏样式和按页状态；网格、列表、允许使用的家族视图都使用同一入口。筛选后空结果提示可切回“全部状态”。
+- 移除原 SQL 与内存路径跳过 library 安装条件的分支。合并索引页/ID/计数、根索引和已有本机 SQL 查询均与页面范围求交集；Rust/Node 使用同一 TypeScript SQL 生成器，未新增查询协议或存储。
+- 渲染内存回退同样应用安装条件，未安装要求当前 installStatusKnown=true，旧 systemInstallMatches 不能把未知候选重新带入。数据库列表叠加本机状态以及标签乐观补入后，再限制安装条件，避免扩大结果范围。
+- 永久安装语义不变：managed 仅临时激活，属于已确认未永久安装；both 含永久安装，归入已安装。已有页面状态、前后端缓存键、分页重置、家族查询范围键、选择范围及滚动重置已携带 installStatus，本轮复用并验证，没有新增状态 owner。
+- 未改收藏存储、激活/安装事务、标签数据、依赖、数据库结构、IPC 签名或 Rust 源码。U-05 单项修改刷新优化未提前实施。
+
+### 14.2 验证与限制
+
+- 新增 `diagnostics:install-status-filter`，43 个场景通过。真实组件事件接到 useBrowseController，再生成真实请求；六类范围 × 三状态在合并索引、根索引（支持的范围）、本机 SQL、主进程内存和渲染路径对照，实际执行 SQLite 列表/ID/总数/分段分页查询。Windows 路径通过 Node 的 win32 路径适配器执行；这不是 Windows GUI 实测。
+- 数据含永久安装、明确未安装、managed 临时激活、both、未知且残留旧匹配记录，以及范围外字体。覆盖空交集、标签乐观补入不放宽安装条件、按页状态恢复、三种卡片显示模式的筛选入口、前后端查询键一致及状态区分、迟到分页结果拒绝、滚动重置。
+- 未安装筛选下通过 U-02 实际命令执行收藏/取消收藏，只修改符合条件的选择；收藏范围同步移除取消项，已安装及未知字体不被改动。切换范围清理旧选择，U-03 原独立事务/失败回滚诊断继续保留。
+- 四个生产代码退化被拒绝：恢复合并索引忽略 library 条件、根索引忽略 library 条件、主进程内存忽略 library 条件，以及渲染未安装重新纳入未知。先复现“残留旧匹配记录”误分类，再修正并重新验证。
+- 冻结迁移仅限 installStatus 新参数、三个已声明 fixture；四个旧视图快照先用 U-03 源码对照通过，原 owner、Hooks、生命周期以及其他错误接线断言不变。
+- `npm run verify` 通过：TypeScript + 119/119 诊断，含 U-04 的 43 项专项、U-03 的 37 项收藏、U-02 的 36 项命令及 U-01 的 72 项激活入口场景。三端 367/1/200 模块构建、混淆 3/3 及 `git diff --check` 通过。
+- Windows 的窄窗口/详情展开布局、下拉框键盘操作及真实字体探测时序仍待实机；本环境的受控 Hooks、IPC 宿主和 SQLite 测试不替代这些验收。测试过程中遇到的旧视图摘要/绑定缺项已按白名单迁移，未删除旧行为检查。
+
+### 14.3 实机复验与接续
+
+在原 Windows 项目目录更新 `stage/09-preview-tags-app` 后运行 `npm run dev`：
+
+1. 逐个打开字体库、收藏、文件夹、本地标签、共享标签，选择“全部状态 / 已安装 / 未安装”，确认范围内列表变化，标签或文件夹外字体不会混入；未知状态不应列在“未安装”。
+2. 用仅临时激活的字体验证：它仍可在“未安装”中出现；已经永久安装的字体临时激活或停用，不应被误归类为未安装。
+3. 各页面选择不同状态，切换回来核对恢复；在已滚动多页后切换筛选，确认回到首段、清理旧选择，没有迟到结果跳回。
+4. 在收藏 + 未安装范围内多选取消收藏，确认目标消失，范围外字体保持；切回“全部状态”核对收藏、标签、保护和激活状态。
+5. 网格/列表/家族视图（允许的页面）、展开详情、窄窗口检查控件布局；用 Tab/方向键操作下拉框。
+
+下一项 U-05。回滚本轮提交即可，无数据迁移。Mermaid Chart 已更新实际工具栏、状态、SQL/内存及分页链；无新第三方 API，未触发 Context7。Create State 按前次 2/2 容量上限及用户要求继续跳过，交接由任务书和 Git 保留。
