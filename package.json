@@ -34,6 +34,7 @@
     "security:sync-keys": "node build/security/sync-public-keys.cjs",
     "rust:build": "node build/rust/build-core-worker.cjs --required",
     "rust:build:optional": "node build/rust/build-core-worker.cjs --optional",
+    "diagnostics:local-recovery-files": "node build/diagnostics/check-local-recovery-files.cjs",
     "diagnostics:local-activation-baseline": "node build/diagnostics/check-local-activation-baseline.cjs",
     "diagnostics:shared-action-admission": "node build/diagnostics/check-shared-action-admission.cjs",
     "diagnostics:shared-io-integration": "node build/diagnostics/check-shared-io-integration.cjs",

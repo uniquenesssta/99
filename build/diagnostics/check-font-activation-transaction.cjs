@@ -34,7 +34,9 @@ function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    id => id === './fontActivationTraceRuntime'
+    id => id === './localRecoveryFileRuntime'
+      ? loadTypeScriptModule('src/main/activation/runtime/localRecoveryFileRuntime.ts', localRequire)
+      : id === './fontActivationTraceRuntime'
       ? loadTypeScriptModule('src/main/activation/runtime/fontActivationTraceRuntime.ts')
       : id === './fontDeactivationSettlementRuntime'
       ? loadTypeScriptModule('src/main/activation/runtime/fontDeactivationSettlementRuntime.ts') : localRequire(id),
@@ -83,6 +85,9 @@ const compensationFsStub = {
       throw Object.assign(new Error(`missing diagnostic file: ${filePath}`), { code: 'ENOENT' })
     },
     mkdir: async () => undefined,
+    open: async filePath => ({ writeFile: async content => compensationFiles.set(filePath, String(content)), sync: async () => undefined, close: async () => undefined }),
+    rename: async (from, to) => { compensationFiles.set(to, compensationFiles.get(from)); compensationFiles.delete(from) },
+    rm: async filePath => compensationFiles.delete(filePath),
     writeFile: async (filePath, content) => {
       compensationFiles.set(filePath, String(content))
     },

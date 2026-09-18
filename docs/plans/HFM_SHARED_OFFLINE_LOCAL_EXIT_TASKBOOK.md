@@ -2,10 +2,10 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.6；制定日期：2026-09-18；软件版本：3.0.0。
+- 文档版本：1.7；制定日期：2026-09-18；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定及专项实施分支：`stage/09-preview-tags-app`。本项是当前分支的补充专项，不另行宣告主线 Stage 8 或 U-09 完成。
 - 制定代码基线：`5866105917d3af7a843f320f220ae047bb49d957`；实施前重新核对实际 HEAD、远端与工作树，不能把此处基线当成永远最新。
-- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02 已接入七项共享请求及目录探测，完整业务隔离未完成；O-03 已实现、自动验证通过、实机待验；O-04 已开始故障取证，完整实现受阻；O-05～O-08 未开始。**
+- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02 已接入七项共享请求及目录探测，完整业务隔离未完成；O-03 已实现、自动验证通过、实机待验；O-04 已开始故障取证，完整实现受阻；O-05 本地记录持久化已接入，完整闭环未完成；O-06～O-08 未开始。**
 - 用户最终约定：共享监视文件夹和共享标签断网后保留原位置、置灰禁用，重连后恢复；网络永远不恢复也必须允许正常退出；已激活字体通过本机副本继续使用和清理；不做离线共享修改或离线同步系统。
 - 上级：[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。承接[操作优化任务书](HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md) §19、§20，保留状态按钮合一、100ms 单击防连击、标签提交即时查询及共享冲突修复。
 - 同时继承[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)的事务/意图/回执约束，以及 [Stage 1 激活事务](HFM_STAGE_01_ACTIVATION_TASKBOOK.md)、[Stage 2 路径授权](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)、[Stage 5 Rust 边界](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)、[Stage 6 React 所有权](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)、[Stage 7 IPC 校验](HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)的质量要求。
@@ -296,7 +296,7 @@
 
 ### O-05：持久恢复与残留处理闭环
 
-- **状态：未开始。** 前置：O-04 自动门通过。
+- **状态：进行中，本地记录持久化已接入；完整闭环未完成。** 用户明确开始 O-05；O-04 前置自动门仍未通过，见 §21。
 - 导航：temporaryActiveFontsStoreRuntime、fontActivationCompensationQueue、temporaryFontDeleteQueue、fontActivationCleanupRuntime、既有维护/诊断入口和必要 native helper。
 - 步骤：本地记录原子性和版本错误处理；复用现有队列记录分阶段事实；最小手动清理入口；文件占用/权限错误准确提示；必要的用户触发提权与重启清理；启动核验。
 - 必过：每个阶段进程中断、磁盘满/权限拒绝/JSON 损坏/缺文件/未知版本；重开 owner/应用恢复；文件残留不能报仍激活；重复重试不能误删永久字体；重新安装或重新激活后的旧删除任务必须因身份变化被拒绝。
@@ -504,7 +504,7 @@ README/任务状态、提交、推送、回滚定位：
 | O-02 | 进行中，部分业务已接入 | §18.4 接续提交 | 接线专项及构建通过；全量回归记录见 §18.5；完整 O-02 门未通过 | 待验 | 七项请求与目录探测已切换，旧迁移等消费者仍待迁移 |
 | O-03 | 已实现、实机待验 | 本节同批提交 | TypeScript、129/129、定向 40 组及构建通过 | Windows/NAS 待验 | 置灰与完整动作准入；O-02 前置仍未满足 |
 | O-04 | 故障取证完成、实现受阻 | 本节同批提交 | 5 缺口观察/4 对照；完整门未通过 | 待验 | O-02 隔离及原生验证待补齐，见 §20 |
-| O-05 | 未开始 | — | 未执行 | 未执行 | 持久残留与处置入口 |
+| O-05 | 进行中，持久化已接入 | §21 同批提交 | TypeScript、132/132 诊断、专项 7 组及构建通过 | Windows/重启待验 | 手动处置、身份核验及分阶段闭环未完成 |
 | O-06 | 未开始 | — | 未执行 | 未执行 | 整体有界退出 |
 | O-07 | 未开始 | — | 未执行 | 未执行 | 校验后恢复，不重放编辑 |
 | O-08 | 未开始 | — | 未执行 | 未执行 | 28 项 X 矩阵与收尾 |
@@ -842,3 +842,33 @@ npm run verify
 - 已实际运行定向诊断：LF 观察 5 个缺口、4 个对照，CRLF 子进程退出码 0，历史 strict 子进程预期退出码 1。完整 npm run verify 退出码 0（TypeScript、130/130）；补强共享 worker 写组证据后定向基线仍退出码 0。另实际运行 --current --strict，退出码 1，精确报告上述 5 个未解决缺口；这才是本项尚未通过功能验收的结论。5 文件白名单、文档链接和 git diff --check 通过。
 - 最终范围仅本卡五个文件；没有生产、IPC、schema、Native 或激活目录变更，没有新构建/Windows/Cargo 结果，不复用 O-03 的构建结果冒充本项。
 - 回滚单位为本次诊断及文档提交，无数据迁移。下一步需在具备 Cargo 和依赖访问能力的环境补齐 O-02 原生隔离及上述 O-04 实现；本轮不把已知缺口变成静默成功，也不继续宣告后续任务通过。
+
+## 21. O-05 执行卡
+
+- 用户明确开始 O-05；基线 236f0a75000d94b93f0c5db44704c17e66d61e94。先实施可独立验证的本地记录安全，O-04 完整门尚未通过事实保留。
+- 实施前白名单：新增 src/main/activation/runtime/localRecoveryFileRuntime.ts；修改 src/main/windows/runtime/temporaryActiveFontsStoreRuntime.ts、src/main/activation/runtime/fontActivationCompensationQueue.ts、src/main/activation/temporaryFontDeleteQueue.ts；新增 build/diagnostics/check-local-recovery-files.cjs；package.json、README.md、本任务书和总任务书。必要既有诊断端口调整另行登记，不能删除原事务断言。
+- 本批目标：三份 version 1 文件整体验证，只有 ENOENT 表示空；损坏、未知版本、权限异常必须拒绝且保留原文；同目录独占临时文件、flush、关闭、rename 发布，禁止删除旧文件后重试；按文件串行写及 read-modify-write；删除队列入队与清理串行，保留失败项与错误。
+- 不复用 cache/jsonAtomic 的删除旧文件后重命名分支，不修改其他缓存写入政策。格式继续 version 1，新增可选错误字段向后兼容。手动处置界面、文件身份防替换、提权/重启清理及完整启动核验尚须后续实现和 Windows 验证；本批不能冒充 O-05 全部通过。
+
+- 诊断白名单补充：check-active-view-consistency.cjs、check-font-activation-transaction.cjs 的内存文件端口增加 open/write/sync/close/rename，缺失文件须抛 ENOENT；原激活事务与重启状态断言不删除。新增严格写入使旧“空字符串=缺失”的夹具不再有效，不能放宽生产解析来适配该夹具。
+
+### 21.1 已实现及兼容边界
+
+- temporary-active-fonts.json、pending-font-activation-compensations.json、pending-temporary-font-deletes.json 共同使用本地恢复文件 owner：version 1 整体校验，只有 ENOENT 为空；JSON、版本、条目、权限错误向上传播，禁止自动覆盖损坏原文。
+- 按规范化文件路径在当前进程串行；save 入队前保存调用方快照，队列 update 将读取、修改、发布置于同一临界区。同目录 wx 临时文件写入、sync、关闭后 rename；失败只回收本次创建的临时文件，不删除旧目标。不宣称跨进程锁或掉电目录持久性。
+- 删除清理与入队共用临界区，清理期间新增任务不再被旧快照覆盖；空清理不创建文件，成功日志在持久化后记录。占用/原生不可用错误随待删记录保存；越界历史记录保留待核验。父目录比较修正相邻前缀目录误接受，不等于文件身份或链接归属证明。
+- 公共接口与 version 1 保持兼容，仅删除记录新增可选 lastError；没有 schema、IPC、依赖、Rust 或默认兼容策略变更。原 A1～A8 和重启状态断言保留，夹具仅补齐真实文件端口语义。
+
+### 21.2 实际验证
+
+- 新专项执行实际 TS owner、真实临时文件，7 组涵盖损坏/版本/条目、权限拒绝/磁盘满/flush/rename 故障、并发 owner、发布前真实子进程退出、三份存储、清理期间入队和占用错误。CRLF 子进程通过；删除旧目标再发布的变异实现被拒绝。故障端口不能等同 Windows/NAS 实测。
+- npm run verify 实际退出码 0，TypeScript 和 132/132 诊断通过；最后调整后专项 7 组、CRLF/负例及 TypeScript 再次通过。直接 Electron/Vite 构建 375/1/202 模块、混淆 3/3 均退出码 0。这里是 JS 三端构建，不是含必需 Rust 构建的完整发行包通过。
+- Context7 用于 Node 文件写入/sync/rename API 查证；Mermaid 用于三份记录至统一持久化边界的链路审查。Create State 沿用容量 2/2 后跳过的既定约定。
+
+### 21.3 未完成项、接续与回滚
+
+- O-05 未通过完整门：激活副作用前的持久意图/写入能力准入、资源/注册表/文件各阶段中断恢复、启动真实系统核验仍须实现。现有 VerifyRuntime 将文件/注册残留与资源可见性合并的问题没有在本批修复。
+- 必须接续 O-04 的内容完整性与受管文件身份；旧删除任务遇到重新安装、重新激活或目标替换时的身份拒绝尚未实现。当前路径边界不能作为安全身份凭证。
+- 手动残留清理界面、权限处置、用户触发的重启清理及实际 Windows 重启核验尚未实现。删除队列临界区等待原生操作，本批不证明整体退出有界；O-02 全消费者隔离和 O-06 仍待完成。
+- 发布前中断只验证记录文件旧版本可读，不等于完整激活事务崩溃恢复；中断留下的随机临时文件不参与读取，本批不新增自动清扫。没有离线同步/共享写重放系统。
+- 回滚单位为本卡同批 11 文件 Git 提交；无需数据迁移。旧 version 1 可读取，回滚会失去严格错误保护和持久错误字段的使用。Windows 用户继续通过 npm run dev 验证，不把本环境无 Cargo 当作用户实机缺失工具链。

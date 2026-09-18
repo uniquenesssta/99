@@ -1,5 +1,6 @@
+import { createLocalRecoveryFileRuntime, isTemporaryActiveFontRecord } from "./runtime/localRecoveryFileRuntime";
 import { promises as fsp } from "node:fs";
-import { basename } from "node:path";
+import { posix, win32 } from "node:path";
 import type { GlobalIoOptions } from "../performance/ioScheduler";
 import type { TemporaryActiveFontRecord } from "../windows/fontRuntime";
 import {
@@ -12,6 +13,7 @@ export interface PendingTemporaryFontDeleteRecord extends TemporaryActiveFontRec
   queuedAt: string;
   reason: string;
   attempts: number;
+  lastError?: string;
 }
 
 export interface TemporaryFontDeleteQueueEntry {
@@ -49,36 +51,19 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
     return deps.dataPath("pending-temporary-font-deletes.json");
   }
 
-  async function loadPendingTemporaryFontDeletes(): Promise<PendingTemporaryFontDeleteRecord[]> {
-    try {
-      const raw = await fsp.readFile(pendingTemporaryFontDeletesPath(), "utf-8");
-      const parsed = JSON.parse(raw) as {
-        version?: number;
-        records?: PendingTemporaryFontDeleteRecord[];
-      };
-      if (!Array.isArray(parsed.records)) return [];
-      return parsed.records.filter((record) => !!record?.installPath);
-    } catch {
-      return [];
-    }
-  }
-
-  async function savePendingTemporaryFontDeletes(
-    records: PendingTemporaryFontDeleteRecord[],
-  ): Promise<void> {
-    await fsp.mkdir(deps.dataRoot(), { recursive: true });
-    await fsp.writeFile(
-      pendingTemporaryFontDeletesPath(),
-      JSON.stringify({ version: 1, records }),
-      "utf-8",
-    );
-  }
+  const store = createLocalRecoveryFileRuntime<PendingTemporaryFontDeleteRecord>(pendingTemporaryFontDeletesPath, value => {
+    const record = value as PendingTemporaryFontDeleteRecord | undefined;
+    return !!record && isTemporaryActiveFontRecord(record) && typeof record.queuedAt === "string"
+      && typeof record.reason === "string" && Number.isInteger(record.attempts) && record.attempts >= 0
+      && (record.lastError === undefined || typeof record.lastError === "string");
+  });
 
   function isSafeTemporaryActiveFontPath(filePath: string): boolean {
-    const lower = filePath.toLowerCase();
-    const allowedDir = deps.currentUserFontsDir().toLowerCase();
-    const fileName = basename(filePath);
-    return lower.startsWith(allowedDir) && fileName.startsWith(`${deps.appName}_ACTIVE_`);
+    const syntax = /^(?:[a-z]:[\\/]|[\\/]{2})/i.test(filePath) ? win32 : posix;
+    const target = syntax.resolve(filePath), allowed = syntax.resolve(deps.currentUserFontsDir());
+    const normalize = (value: string) => syntax === win32 ? value.toLowerCase() : value;
+    return normalize(syntax.dirname(target)) === normalize(allowed)
+      && syntax.basename(target).startsWith(`${deps.appName}_ACTIVE_`);
   }
 
   async function queueTemporaryFontFileDeletes(
@@ -89,7 +74,7 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
     const safeRecords: TemporaryActiveFontRecord[] = [];
     for (const record of records) {
       if (isSafeTemporaryActiveFontPath(record.installPath)) {
-        safeRecords.push(record);
+        safeRecords.push({ ...record });
         continue;
       }
       const message = "安全保护：临时字体文件不在允许的删除范围内。";
@@ -98,21 +83,22 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
     }
     if (!safeRecords.length) return results;
 
-    const existing = await loadPendingTemporaryFontDeletes();
-    const merged = new Map<string, PendingTemporaryFontDeleteRecord>();
-    for (const record of existing) merged.set(record.installPath.toLowerCase(), record);
-    for (const record of safeRecords) {
-      const key = record.installPath.toLowerCase();
-      const old = merged.get(key);
-      merged.set(key, {
-        ...record,
-        queuedAt: old?.queuedAt || new Date().toISOString(),
-        reason,
-        attempts: old?.attempts || 0,
-      });
-    }
+    const pending = await store.update(existing => {
+      const merged = new Map<string, PendingTemporaryFontDeleteRecord>();
+      for (const record of existing) merged.set(record.installPath.toLowerCase(), record);
+      for (const record of safeRecords) {
+        const key = record.installPath.toLowerCase();
+        const old = merged.get(key);
+        merged.set(key, {
+          ...record,
+          queuedAt: old?.queuedAt || new Date().toISOString(),
+          reason,
+          attempts: old?.attempts || 0,
+        });
+      }
 
-    await savePendingTemporaryFontDeletes(Array.from(merged.values()));
+      return Array.from(merged.values());
+    });
     for (const record of safeRecords) {
       results[record.installPath] = {
         ok: true,
@@ -120,13 +106,15 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
       };
     }
     deps.appendStartupLog(
-      `temporary font async delete queued: reason=${reason}, rows=${safeRecords.length}, pending=${merged.size}`,
+      `temporary font async delete queued: reason=${reason}, rows=${safeRecords.length}, pending=${pending.length}`,
     );
 
     if (deleteTimer) return results;
     deleteTimer = setTimeout(() => {
       deleteTimer = null;
-      void flushPendingTemporaryFontDeletes("timer");
+      void flushPendingTemporaryFontDeletes("timer").catch(error => {
+        deps.appendStartupLog(`temporary font delete persistence failed: ${String(error)}`);
+      });
     }, flushDelayMs);
     return results;
   }
@@ -137,14 +125,14 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
       deleteTimer = null;
     }
     if (deleteInFlight) {
-      await deleteInFlight.catch(() => undefined);
+      await deleteInFlight;
       return;
     }
 
-    deleteInFlight = (async () => {
+    let summary = "";
+    deleteInFlight = store.update(async records => {
       const startedAt = Date.now();
-      const records = await loadPendingTemporaryFontDeletes();
-      if (!records.length) return;
+      if (!records.length) return records;
 
       const remaining: PendingTemporaryFontDeleteRecord[] = [];
       let deleted = 0;
@@ -154,6 +142,7 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
       for (const record of records) {
         if (!isSafeTemporaryActiveFontPath(record.installPath)) {
           skippedUnsafe += 1;
+          remaining.push({ ...record, lastError: "安全保护：目标不属于临时字体目录，保留记录待核验。" });
           continue;
         }
         safeDeleteRecords.push(record);
@@ -177,7 +166,7 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
             continue;
           }
           const attempts = (record.attempts || 0) + 1;
-          remaining.push({ ...record, attempts });
+          remaining.push({ ...record, attempts, lastError: row?.message || "未收到删除成功回执。" });
           deps.appendStartupLog(`rust temporary font async delete failed: path=${record.installPath}, attempts=${attempts}, ${row?.message || 'unknown error'}`);
         }
       } else if (!nodeBridgeFallbackCompatibilityAllowed()) {
@@ -189,7 +178,7 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
         });
         for (const record of safeDeleteRecords) {
           const attempts = (record.attempts || 0) + 1;
-          remaining.push({ ...record, attempts });
+          remaining.push({ ...record, attempts, lastError: "原生删除不可用，未执行文件删除。" });
         }
       } else {
         logNodeBridgeFallbackUsed({
@@ -208,7 +197,7 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
             deleted += 1;
           } catch (error) {
             const attempts = (record.attempts || 0) + 1;
-            remaining.push({ ...record, attempts });
+            remaining.push({ ...record, attempts, lastError: error instanceof Error ? error.message : String(error) });
             deps.appendStartupLog(
               `temporary font async delete failed: path=${record.installPath}, attempts=${attempts}, ${error instanceof Error ? error.message : String(error)}`,
             );
@@ -217,11 +206,9 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
         }
       }
 
-      await savePendingTemporaryFontDeletes(remaining);
-      deps.appendStartupLog(
-        `temporary font async delete flushed: reason=${reason}, deleted=${deleted}, remaining=${remaining.length}, skippedUnsafe=${skippedUnsafe}, elapsed=${Date.now() - startedAt}ms`,
-      );
-    })().finally(() => {
+      summary = `temporary font async delete flushed: reason=${reason}, deleted=${deleted}, remaining=${remaining.length}, skippedUnsafe=${skippedUnsafe}, elapsed=${Date.now() - startedAt}ms`;
+      return remaining;
+    }).then(() => { if (summary) deps.appendStartupLog(summary); }).finally(() => {
       deleteInFlight = null;
     });
 

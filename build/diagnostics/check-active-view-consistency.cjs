@@ -93,9 +93,9 @@ async function metricsRace(){
 }
 
 async function restartPolicy(){
- let saved={version:1,records:[{fontId:'a',installPath:'/managed/a.ttf',registryName:'a'}]},disk='',removed=0,installedRows={}
+ let saved={version:1,records:[{fontId:'a',installPath:'/managed/a.ttf',registryName:'a'}]},disk=null,removed=0,installedRows={},temporary=new Map()
  const load=loader({
-  'node:fs':{promises:{mkdir:async()=>{},writeFile:async(_p,s)=>disk=s,readFile:async()=>disk}},
+  'node:fs':{promises:{mkdir:async()=>{},readFile:async()=>{if(disk===null)throw Object.assign(Error('missing'),{code:'ENOENT'});return disk},open:async p=>({writeFile:async s=>temporary.set(p,s),sync:async()=>{},close:async()=>{}}),rename:async p=>{disk=temporary.get(p);temporary.delete(p)},rm:async p=>temporary.delete(p)}},
   '../temporaryFontDeleteQueue':{createTemporaryFontDeleteQueue:()=>({isSafeTemporaryActiveFontPath:()=>true,queueTemporaryFontFileDeletes:async()=>({}),flushPendingTemporaryFontDeletes:async()=>{}})},
   '../../rust-core/nodeBridgeFallbackCompatibilityRuntime':{}
  },{process:{platform:'win32',env:{}}})
