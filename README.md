@@ -44,7 +44,7 @@ npm run build:win
 
 ## 当前工程任务
 
-- [操作一致性与刷新优化任务书（U-01 已实施，实机待验；U-02～U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
+- [操作一致性与刷新优化任务书（U-02 已实施，实机待验；U-03～U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
 
 - [预览缓存、本地标签与 App 专项拆分任务书（规划，未实施）](docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)
 
@@ -65,6 +65,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-18：U-02 将操作栏、字体右键和详情统一为同名命令，单选/多选按明确范围执行；安装汇总结果，卸载一次确认，删除与安装等操作共用在途保护。标签按所选集合增删指定名称，保留其他字段；普通状态提示与工具栏布局合并，操作栏支持换行。保留本机单项收藏，多选收藏明确禁用并留待 U-03。TypeScript、117/117 诊断（新命令 36 项、激活入口 72 项）、三端构建与混淆通过；Windows 开发模式复验见[U-02 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#12-u-02-执行卡)。无依赖、数据库/IPC 或 Rust 变更。
 
 - 2026-09-18：U-01 修复多选记录与分页缓存不一致导致少执行/不派发、Shift 选择被误裁剪；统一完整目标与缺项提示，保护整个选择，范围切换拒绝旧事件。标签激活/停用读取完整分页范围，保留逐项回滚与 busy 保护，普通页面显示操作结果；保护、删除和卸载入口同样拒绝静默丢项。TypeScript、116/116 诊断（含 72 个入口受控场景）、旧源码对照、三端构建及混淆通过；完整验证结果、Windows 开发模式复验和边界见[U-01 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#11-u-01-执行卡)。无依赖、数据库/IPC 或 Rust 变更；菜单统一、收藏和筛选扩展留待后续任务。
 

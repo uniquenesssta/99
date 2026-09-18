@@ -45,6 +45,7 @@ function loadModules(globals, mocks, transforms = {}) {
 function treeNodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(treeNodes)
   if (!tree || typeof tree !== 'object') return []
+  if (typeof tree.type === 'function' && tree.type.name === 'FontCommandButtons') return treeNodes(tree.type(tree.props))
   return [tree,...treeNodes(tree.props?.children)]
 }
 function button(tree,label) { const found=treeNodes(tree).find(n=>n.type==='button'&&n.props.children===label); assert(found,'missing button '+label); return found }
@@ -52,6 +53,7 @@ const font = id => ({id,path:`C:/fixture/${id}.ttf`,fileName:`${id}.ttf`,family:
 function harness({runtimePreload=false,cache=['a','b','c'],mode='success',throwLog=false,transforms={},partial=true}={}) {
   const all = ['a','b','c'].map(font), events=[], requests=[], status=[], listeners=new Map(), handlers=new Map(), selection=hookPort(), effects=hookPort()
   let hook=selection, scopeKey='', library={__partialFonts:partial,fonts:Object.fromEntries(all.filter(f=>cache.includes(f.id)).map(f=>[f.id,f])),localTags:['test'],tags:['shared'],folders:[]}, selected, menu=null, activeCount=0, refreshes=0, visible=all
+  let commandActions={}
   const busy=new Set(), window={setTimeout:fn=>{fn();return 0},clearTimeout:noop,innerWidth:800,innerHeight:600,addEventListener:(n,fn)=>listeners.set(n,fn),removeEventListener:n=>listeners.delete(n)}
   class Rect { constructor(left,top,width,height) { Object.assign(this,{left,top,right:left+width,bottom:top+height,width,height}) } }
   const document={documentElement:{getAttribute:()=>null},querySelectorAll:()=>visible.map((f,i)=>({dataset:{fontId:f.id},getBoundingClientRect:()=>({left:10,top:10+i*20,right:80,bottom:25+i*20})}))}
@@ -79,16 +81,17 @@ function harness({runtimePreload=false,cache=['a','b','c'],mode='success',throwL
   function interaction() {return select().createInteractionRuntime({visibleFonts:visible,setStatus:x=>status.push(x),setSingleFontSelection:id=>{selected.setSelectedFontIds([id]);selected.setSelectionAnchorFontId(id)},toggleFontDetail:noop,hydrateFont:(f,keepIds)=>load(renderer+'runtime/app/fontSelectionHydrationRuntime.ts').hydrateFontForSelectionDetail(f,setLibrary,keepIds),reportUserActivity:noop,userActivityIdleWindowMs:100})}
   function prune() {const setIds=select().setSelectedFontIds;hook=effects;hook.begin();load(renderer+'runtime/app/useFontDetailSelectionEffectsRuntime.ts').useFontDetailSelectionEffectsRuntime({library,selectedFontIds:selected.selectedFontIds,setLibrary,visibleFonts:visible,selectedFontId:'',detailVisible:false,setSelectedFontIds:setIds,setSelectedFontId:noop,requestPreviewFont:noop,isBadFontRecord:()=>false});effects.flush();select()}
   function patch(id,active,extra) { if(library.fonts[id])library={...library,fonts:{...library.fonts,[id]:{...library.fonts[id],...extra,active}}} }
-  function actions() {return load(renderer+'runtime/system/actions/fontActivationActionRuntime.ts').createFontActivationActionRuntime({hfm:window.hfm,library,getCurrentLibrary:()=>library,setLibrary,activeOperationFontIds:{current:busy},setStatus:x=>status.push(x),refreshDatabaseDerivedState:()=>refreshes++},{setFontActiveRuntime:patch,setFontsActiveRuntimeBulk:updates=>Object.entries(updates).forEach(([id,v])=>patch(id,v.active,v.patch)),adjustDatabaseActiveCount:n=>{activeCount+=n}})}
+  function actions() {return {...load(renderer+'runtime/system/actions/fontActivationActionRuntime.ts').createFontActivationActionRuntime({hfm:window.hfm,library,getCurrentLibrary:()=>library,setLibrary,activeOperationFontIds:{current:busy},setStatus:x=>status.push(x),refreshDatabaseDerivedState:()=>refreshes++},{setFontActiveRuntime:patch,setFontsActiveRuntimeBulk:updates=>Object.entries(updates).forEach(([id,v])=>patch(id,v.active,v.patch)),adjustDatabaseActiveCount:n=>{activeCount+=n}}),...commandActions}}
+  function command() {return load(renderer+'fontCommandRuntime.ts').createFontCommandRuntime({library,getCurrentLibrary:()=>library,selectedFontIds:select().selectedFontIds,getVisibleFonts:()=>visible,setStatus:x=>status.push(x),...actions()})}
   function context() {return load(renderer+'fontContextActionRuntime.ts').createFontContextActionRuntime({library,getVisibleFonts:()=>visible,setStatus:x=>status.push(x),contextMenu:menu,selectedFontIds:select().selectedFontIds,menuWidth:100,menuMaxHeight:100,viewport:window,setSelectedFontIds:selected.setSelectedFontIds,setSelectionAnchorFontId:selected.setSelectionAnchorFontId,setSelectedFontId:selected.setSelectedFontId,setContextMenu:x=>{menu=x},...actions()})}
-  function panel(view='grid',page='library') { const i=interaction();return load(renderer+'components/app/FontListPanel.tsx').FontListPanel({sidebarPage:page,status:status.at(-1),setStatus:x=>status.push(x),selectedFontIds:selected.selectedFontIds,library,activeFilter:{kind:'all'},cardPoolViewMode:view,viewMode:'grid',visibleFonts:visible,virtualLayout:{items:[],columns:1,totalHeight:100,top:0},viewLayout:{minCardWidth:100,rowHeight:30},renderFontCard:noop,closeDetail:noop,beginMarqueeSelection:i.beginMarqueeSelection,setSelectedFontIds:selected.setSelectedFontIds,...actions()}) }
+  function panel(view='grid',page='library') { const i=interaction();return load(renderer+'components/app/FontListPanel.tsx').FontListPanel({sidebarPage:page,status:status.at(-1),setStatus:x=>status.push(x),selectedFontIds:selected.selectedFontIds,library,runFontCommand:command(),activeFilter:{kind:'all'},cardPoolViewMode:view,viewMode:'grid',visibleFonts:visible,virtualLayout:{items:[],columns:1,totalHeight:100,top:0},viewLayout:{minCardWidth:100,rowHeight:30},renderFontCard:noop,closeDetail:noop,beginMarqueeSelection:i.beginMarqueeSelection,setSelectedFontIds:selected.setSelectedFontIds,...actions()}) }
   async function click(entry,view='grid',page='library',command='activate') {
-    if(entry==='toolbar')button(panel(view,page),command==='activate'?'批量激活':'批量取消激活').props.onClick()
+    if(entry==='toolbar')button(panel(view,page),(process.argv.includes('--baseline')?'批量':'')+(command==='activate'?'激活':'取消激活')).props.onClick()
     else {
       const ctx=context();if(entry==='font')ctx.openFontMenu(event(),all[0]);else menu={kind:'tag',scope:'local',name:'test',x:0,y:0}
       const current=context(), dialogs=load(renderer+'fontDialogContextActionsRuntime.ts').createFontDialogContextActions({hfm:window.hfm,library,setStatus:x=>status.push(x),contextMenu:menu,setContextMenu:x=>{menu=x},fontsForTag:(name,scope)=>load(renderer+'fontSelectionRuntime.ts').fontsForTagFromLibrary(library.fonts,name,scope),...actions()})
-      const overlay=load(renderer+'components/app/AppOverlays.tsx').AppOverlays({contextMenu:menu,contextSelectedFonts:current.contextFontTargets(),selectionLabel:current.selectionLabel,runFontContextAction:current.runFontContextAction,runContextBatchActivate:dialogs.runContextBatchActivate,runContextBatchDeactivate:dialogs.runContextBatchDeactivate})
-      const label=command==='activate'?'激活':'取消激活';const b=button(overlay,current.contextFontTargets().length<=1&&entry==='font'?label:'批量'+label);b.props.onMouseDown(event());b.props.onClick()
+      const overlay=load(renderer+'components/app/AppOverlays.tsx').AppOverlays({contextMenu:menu,contextSelectedFonts:current.contextFontTargets(),contextTargetCount:current.contextTargetCount,selectionLabel:current.selectionLabel,runFontContextAction:current.runFontContextAction,runContextBatchActivate:dialogs.runContextBatchActivate,runContextBatchDeactivate:dialogs.runContextBatchDeactivate})
+      const label=command==='activate'?'激活':'取消激活';const b=button(overlay,!process.argv.includes('--baseline')||current.contextFontTargets().length<=1&&entry==='font'?label:'批量'+label);b.props.onMouseDown(event());b.props.onClick()
     }
     await tick()
   }
@@ -96,13 +99,13 @@ function harness({runtimePreload=false,cache=['a','b','c'],mode='success',throwL
   function card(id,keys={},compact=false) {const i=interaction();hook=hookPort();hook.begin();const tree=load(renderer+'components/FontCard.tsx').FontCard({font:all.find(f=>f.id===id),compact,previewText:'test',onSelect:e=>i.handleFontSelect(e,all.find(f=>f.id===id))});tree.props.onMouseDown(event(keys));select()}
   function marquee(view='grid') {const scroller=treeNodes(panel(view)).find(n=>n.props?.className?.includes('font-virtual-scroller'));scroller.props.onMouseDown(event());listeners.get('mousemove')(event({clientX:100,clientY:100}));listeners.get('mouseup')(event({clientX:100,clientY:100}));select();assert.equal(listeners.size,0)}
   select()
-  return {all,events,requests,status,busy,card,marquee,click,prune,select,load,window,setLibrary,panel,handlers,actions,interaction,event,listeners,setScope:value=>{scopeKey=value;select();select()},get library(){return library},get menu(){return menu},get count(){return activeCount},get refreshes(){return refreshes},setVisible:fonts=>{visible=fonts}}
+  return {all,events,requests,status,busy,setCommandActions:value=>{commandActions=value},card,marquee,click,prune,select,load,window,setLibrary,panel,handlers,actions,command,context,interaction,event,listeners,setScope:value=>{scopeKey=value;select();select()},get library(){return library},get menu(){return menu},get count(){return activeCount},get refreshes(){return refreshes},setVisible:fonts=>{visible=fonts}}
 }
 async function run() {
   process.env.HFM_LOG_DETAIL='debug'
   if (process.argv.includes('--baseline')) {
     const {execFileSync}=require('node:child_process'), transforms={}
-    for(const file of ['components/app/FontListPanel.tsx','fontContextActionRuntime.ts','fontContextMenuRuntime.ts','fontDialogContextActionsRuntime.ts','runtime/system/actions/fontActivationActionRuntime.ts','runtime/app/useSelectionController.ts','runtime/app/useFontDetailSelectionEffectsRuntime.ts','runtime/app/fontSelectionHydrationRuntime.ts']) {
+    for(const file of ['components/app/FontListPanel.tsx','components/app/AppOverlays.tsx','fontContextActionRuntime.ts','fontContextMenuRuntime.ts','fontDialogContextActionsRuntime.ts','runtime/system/actions/fontActivationActionRuntime.ts','runtime/app/useSelectionController.ts','runtime/app/useFontDetailSelectionEffectsRuntime.ts','runtime/app/fontSelectionHydrationRuntime.ts']) {
       const source=execFileSync('git',['show',`c41f410ea19de901af0df9e1d64ff60d0b8a58c5:${renderer+file}`],{cwd:root,encoding:'utf8'})
       transforms[path.join(root,renderer+file)]=()=>source
     }
@@ -158,7 +161,7 @@ async function run() {
   pending.handlers.set('fonts:activateFonts',async(_,...args)=>{pending.requests.push(args[0].map(f=>f.id));await new Promise(resolve=>{release=resolve});return {message:'settled',results:{a:{ok:true,temporaryActivated:true},b:{ok:false}}}})
   pending.select().setSelectedFontIds(['a','b']);await pending.click('toolbar');assert.deepEqual([...pending.busy],['a','b']);await pending.click('toolbar');assert.equal(pending.requests.length,1)
   pending.select().setSelectedFontIds(['c']);release();await tick();assert.deepEqual(plain(pending.requests),[['a','b']]);assert.equal(pending.library.fonts.a.active,true);assert.equal(pending.library.fonts.b.active,false);assert.equal(pending.library.fonts.c.active,false);assert.deepEqual(plain(pending.select().selectedFontIds),['c']);assert.equal(pending.busy.size,0);cases++
-  for(const ok of [true,false]) {const h=harness({cache:[]});h.all[0].active=true;h.select().setSelectedFontIds(['a']);h.handlers.set('fonts:deactivateFont',(_,f)=>{h.requests.push([f.id]);return {ok,message:'controlled deactivation'}});await h.click('font','grid','library','deactivate');assert.deepEqual(plain(h.requests),[['a']]);assert.equal(h.library.fonts.a.active,!ok);assert.equal(h.count,ok?-1:0);assert.equal(h.busy.size,0);cases++}
+  for(const ok of [true,false]) {const h=harness({cache:[]});h.all[0].active=true;h.select().setSelectedFontIds(['a']);h.handlers.set('fonts:deactivateFonts',(_,fonts)=>{h.requests.push(fonts.map(f=>f.id));return {ok,message:'controlled deactivation',results:{a:{ok}}}});await h.click('font','grid','library','deactivate');assert.deepEqual(plain(h.requests),[['a']]);assert.equal(h.library.fonts.a.active,!ok);assert.equal(h.count,ok?-1:0);assert.equal(h.busy.size,0);cases++}
   const noReceipts=harness();noReceipts.handlers.set('fonts:activateFonts',()=>({message:'missing receipt'}));noReceipts.marquee();await noReceipts.click('toolbar');assert.equal(noReceipts.count,0);assert.equal(noReceipts.busy.size,0);assert.match(noReceipts.status.at(-1),/未确认 3 个/);cases++
   const tags=harness({cache:[]}), tagRows=Array.from({length:503},(_,i)=>font('tag-'+i)), offsets=[]
   tags.handlers.set('fonts:queryPage',(_,r)=>{offsets.push(r.offset);return {items:tagRows.slice(r.offset,r.offset+r.limit),total:503,offset:r.offset,limit:r.limit,engine:'sql'}})
@@ -176,8 +179,9 @@ async function run() {
   assert.equal(limited.events.filter(e=>e.stage==='item-result').length,16);assert.equal(limited.events.find(e=>e.stage==='operation-result').trace.omitted,984);assert(!JSON.stringify(limited.events).includes('fixture/'));cases++
   // Remove the actual toolbar callback; the same request assertion must detect the regression.
   const f=path.join(root,renderer+'components/app/FontListPanel.tsx')
-  const broken=harness({transforms:{[f]:s=>{const pattern=/onClick=\{\(\) => runSelectionCommand\(activateFontsBatch, true\)\}>批量激活/;assert(pattern.test(s));return s.replace(pattern,'onClick={() => {}}>批量激活')}}})
+  const broken=harness({transforms:{[f]:s=>{const pattern=/onCommand=\{action => void runFontCommand\([^\n]+\)\}/;assert(pattern.test(s));return s.replace(pattern,'onCommand={() => {}}')}}})
   broken.marquee();await broken.click('toolbar');assert.throws(()=>assert.deepEqual(plain(broken.requests),[['a','b','c']]),assert.AssertionError);cases++
   console.log(`[diagnostics:activation-entry] ${cases} controlled cases: actual TSX handlers, three entries, two preload/IPC routes, recovered hydration/prune, complete-or-reject targets, immutable inflight selection, tag pagination, all-skipped/partial/reject, trace non-interference. DOM propagation and Windows remain unverified.`)
 }
+module.exports={harness,loadModules,treeNodes,button,font,plain,noop,tick,renderer,root};
 if(require.main===module)run().catch(error=>{console.error(error);process.exitCode=1})

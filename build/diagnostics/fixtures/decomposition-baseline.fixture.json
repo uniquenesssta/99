@@ -90,7 +90,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "4351eccdf11f81ec6893466c7fb9527262a72add60072ddcd37fab6da30baf4e"
+      "tokenHash": "b94909a27df5a40000c1cbc45a04b778ca9d129ee9bbd17331cc71984725a775"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -486,6 +486,7 @@
           "toggleFontFavorite",
           "fontsForTag",
           "installFontByCard",
+          "installFontsBatch",
           "removeFontByCard",
           "deleteFontsBatch",
           "uninstallFontsBatch",
@@ -513,7 +514,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "5d1b84cdccb9ec1023c749523860449bf708db38d3fdfd14b71d3034b85b384f"
+      "tokenHash": "ca89fcdbbd48f5aac9fd98b041525941b6393b2d5bffd435469d2017c4fbfa42"
     },
     "src/renderer/src/runtime/app/useLibraryController.ts": {
       "functions": [

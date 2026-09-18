@@ -1,4 +1,6 @@
-import { isPartialFontLibrary, missingFontCommandTargetsMessage, resolveFontCommandTargets } from './fontCommandTargetsRuntime'
+import { createFontCommandRuntime } from './fontCommandRuntime'
+import type { FontCommand, FontCommandOptions, RunFontCommand } from './fontCommandRuntime'
+import { isPartialFontLibrary } from './fontCommandTargetsRuntime'
 import { activationEntryTrace, traceActivationEntry } from './fontActivationTrace'
 import { reportFontOperation } from './fontOperationTrace'
 import type { FontItem,LibraryState } from '@shared/types'
@@ -14,7 +16,7 @@ createTagContextMenuState
 } from './fontContextMenuRuntime'
 import { selectionLabel as buildSelectionLabel,singleFontSelection } from './fontSelectionRuntime'
 
-export type FontContextActionRuntimeOptions = {
+export type FontContextActionRuntimeOptions = FontCommandOptions & {
   library: LibraryState
   contextMenu: ContextMenuState
   selectedFontIds: string[]
@@ -45,8 +47,12 @@ export function createFontContextActionRuntime(options: FontContextActionRuntime
   openSharedTagMenu: (event: React.MouseEvent, tag: string) => void
   openFolderMenu: (event: React.MouseEvent, target: Extract<MenuTarget, { kind: 'folder' }>) => void
   openFontMenu: (event: React.MouseEvent, font: FontItem) => void
-  runFontContextAction: (action: 'install' | 'remove' | 'activate' | 'deactivate' | 'deleteFile' | 'protectToggle') => Promise<void>
+  contextTargetCount: number
+  runFontCommand: RunFontCommand
+  runFontContextAction: (action: FontCommand) => Promise<void>
 } {
+  const contextIds = options.contextMenu?.kind === 'font' ? (options.selectedFontIds.includes(options.contextMenu.font.id) ? options.selectedFontIds : [options.contextMenu.font.id]) : []
+  const runFontCommand = createFontCommandRuntime(options)
   const positionOptions = {
     menuWidth: options.menuWidth,
     menuMaxHeight: options.menuMaxHeight,
@@ -65,6 +71,8 @@ export function createFontContextActionRuntime(options: FontContextActionRuntime
 
   return {
     setSingleFontSelection,
+    runFontCommand,
+    contextTargetCount: new Set(contextIds).size,
 
     selectionLabel(fonts: FontItem[]): string {
       return buildSelectionLabel(fonts, fontDisplayName)
@@ -101,7 +109,7 @@ export function createFontContextActionRuntime(options: FontContextActionRuntime
       options.setContextMenu(createFontContextMenuState(font, event.clientX, event.clientY, positionOptions))
     },
 
-    async runFontContextAction(action: 'install' | 'remove' | 'activate' | 'deactivate' | 'deleteFile' | 'protectToggle'): Promise<void> {
+    async runFontContextAction(action: FontCommand): Promise<void> {
       if (!options.contextMenu || options.contextMenu.kind !== 'font') {
         if (action === 'activate') {
           const empty = traceActivationEntry([], 'font-context', options.selectedFontIds.length)
@@ -110,38 +118,11 @@ export function createFontContextActionRuntime(options: FontContextActionRuntime
         return
       }
 
-      const ids = options.selectedFontIds.length > 1 && options.selectedFontIds.includes(options.contextMenu.font.id) ? options.selectedFontIds : [options.contextMenu.font.id]
-      const resolved = resolveFontCommandTargets(ids, options.library, [...(options.getVisibleFonts?.() || []), options.contextMenu.font])
-      const targets = resolved.fonts
-      if (action === 'activate') {
-        const selected = resolved.selectedIds.length
-        traceActivationEntry(targets, 'font-context', selected)
-        if (!resolved.missingIds.length && targets.length < 2) reportFontOperation({ trace: activationEntryTrace(targets), stage: 'route', outcome: targets.length ? 'single-action' : 'zero-targets' })
-      }
-      if (resolved.missingIds.length) {
-        if (action === 'activate') reportFontOperation({ trace: activationEntryTrace(targets), stage: 'preflight', outcome: 'missing-records' })
-        options.setStatus(missingFontCommandTargetsMessage(resolved.missingIds))
-        options.setContextMenu(null)
-        return
-      }
-      const font = targets[0]
-      if (!font) return
-
+      const ids = contextIds
+      const font = options.contextMenu.font
       options.setSelectedFontId(font.id)
       options.setContextMenu(null)
-
-      if (action === 'install') for (const target of targets) await options.installFontByCard(target)
-      if (action === 'remove') for (const target of targets) await options.removeFontByCard(target)
-      if (action === 'activate') {
-        if (targets.length > 1) await options.activateFontsBatch(targets, '批量选择')
-        else await options.activateFontByCard(font)
-      }
-      if (action === 'deactivate') {
-        if (targets.length > 1) await options.deactivateFontsBatch(targets, '批量选择')
-        else await options.deactivateFontByCard(font)
-      }
-      if (action === 'deleteFile') await options.deleteFontsBatch(targets.length > 1 ? targets : [font], targets.length > 1 ? '批量选择' : fontDisplayName(font))
-      if (action === 'protectToggle') await options.toggleFontDeleteProtection(targets.map((item) => item.id), undefined, targets)
+      await runFontCommand(action, ids, [font], 'font-context')
     }
   }
 }

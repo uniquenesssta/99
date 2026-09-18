@@ -30,7 +30,8 @@ export type FontSystemStateRuntime = {
 }
 
 export type FontSystemActionRuntime = FontSystemStateRuntime & {
-  toggleFontFavorite: (font: FontItem) => Promise<void>
+  toggleFontFavorite: (font: FontItem, favorite?: boolean) => Promise<void>
+  installFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   installFontByCard: (font: FontItem) => Promise<void>
   removeFontByCard: (font: FontItem) => Promise<void>
   deleteFontsBatch: (fonts: FontItem[], label: string) => Promise<void>

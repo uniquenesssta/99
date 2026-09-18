@@ -20,6 +20,8 @@ export type FontDialogRuntimeOptions = {
   renameTarget: EditableMenuTarget | null
   renameValue: string
   deleteTarget: EditableMenuTarget | null
+  selectedFontIds?: string[]
+  getVisibleFonts?: () => FontItem[]
   selectedFont: FontItem | undefined
   library: LibraryState
   selectedTagName: string

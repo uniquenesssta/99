@@ -170,28 +170,30 @@
     "runContextRename",
     "runContextAddSubfolder",
     "runContextDelete",
-    "setStatus"
+    "setStatus",
+    "runFontCommand",
+    "contextTargetCount"
   ],
   "cases": [
     {
       "development": false,
       "collapsed": false,
-      "hash": "6efee0eab67e40574cf5a0590ec193e78915e5070f5ffc7fa4c10fc6be49d4b5"
+      "hash": "775f2380f302802792ddf8d087ae859ad88d5cd2fd9f43eba257c9866275d088"
     },
     {
       "development": false,
       "collapsed": true,
-      "hash": "f38012516478c0e9cde9407a343614bed1ceb4021e10843b34ac529d6feb3079"
+      "hash": "5341ac2163a050fcafacbdedeaedcc424216da09ae2eaaa71897f4dbe7441c05"
     },
     {
       "development": true,
       "collapsed": false,
-      "hash": "811c23be22b5900511aacc40d6e330958a4fa3db87d71085f058a5c87153fb23"
+      "hash": "5882987bced47bfb027a270debf14a4fc64b4da2192e5c1112a8c14f305a5235"
     },
     {
       "development": true,
       "collapsed": true,
-      "hash": "772ebc82ff67201c2deb66ec9456dc8e3bf23bea3d13b1ad8aca388856db0273"
+      "hash": "5ac0d762c6c0504d09ae541ab271f514db5cbddd93164db8909f3b01a758479a"
     }
   ]
 }

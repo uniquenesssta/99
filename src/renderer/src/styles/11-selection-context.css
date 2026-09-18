@@ -56,3 +56,9 @@
   background: rgba(122, 162, 255, 0.16);
   box-shadow: 0 0 0 1px rgba(122, 162, 255, 0.16);
 }
+
+.font-command-header { grid-row: 1; min-width: 0; }
+.selection-command-status { padding: 6px 14px; color: var(--muted); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.selection-command-status:empty { display: none; }
+.selection-actionbar { flex-wrap: wrap; }
+.selection-actionbar button { white-space: nowrap; }

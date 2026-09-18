@@ -1,7 +1,5 @@
-import { reportFontOperation } from '../../fontOperationTrace'
-import { missingFontCommandTargetsMessage, resolveFontCommandTargets } from '../../fontCommandTargetsRuntime'
-import { activationEntryTrace, traceActivationEntry } from '../../fontActivationTrace'
 import type { FontItem } from '@shared/types'
+import { FontCommandButtons } from './FontCommandButtons'
 import type { CSSProperties,MouseEvent } from 'react'
 import {
 IS_DEVELOPMENT,
@@ -18,7 +16,6 @@ export function FontListPanel({
   sidebarPage,
   refreshDeveloperStatusDetails,
   status,
-  setStatus,
   latestIndexProgress,
   developerArchitecture,
   developerSchedulerStatus,
@@ -40,12 +37,7 @@ export function FontListPanel({
   updateViewModeWithScroll,
   search,
   selectedFontIds,
-  library,
-  activateFontsBatch,
-  deactivateFontsBatch,
-  deleteFontsBatch,
-  uninstallFontsBatch,
-  toggleFontDeleteProtection,
+  runFontCommand,
   setSelectedFontIds,
   closeDetail,
   fontScrollerRef,
@@ -66,17 +58,6 @@ export function FontListPanel({
   const familyViewAllowed = isFontFamilyViewAllowed(sidebarPage, activeFilter)
   const effectiveCardPoolViewMode = resolveEffectiveCardPoolViewMode(cardPoolViewMode, sidebarPage, activeFilter)
 
-  function runSelectionCommand(action: (fonts: FontItem[], label: string) => Promise<void>, activate = false): void {
-    const resolved = resolveFontCommandTargets(selectedFontIds, library, visibleFonts)
-    const fonts = activate ? traceActivationEntry(resolved.fonts, 'selection-toolbar', resolved.selectedIds.length, `${sidebarPage}:${effectiveCardPoolViewMode}`) : resolved.fonts
-    if (resolved.missingIds.length) {
-      if (activate) reportFontOperation({ trace: activationEntryTrace(fonts), stage: 'preflight', outcome: 'missing-records' })
-      setStatus(missingFontCommandTargetsMessage(resolved.missingIds))
-      return
-    }
-    void action(fonts, '批量选择')
-  }
-
   function closeDetailFromBlankClick(event: MouseEvent<HTMLDivElement>): void {
     if (event.button !== 0) return
     const target = event.target as HTMLElement
@@ -85,7 +66,7 @@ export function FontListPanel({
   }
 
   return (
-    <section className={`font-list-panel${effectiveCardPoolViewMode === 'list' ? ' simple-wide-list-mode' : ''}${selectedFontIds.length > 1 ? ' has-selection-actionbar' : ''}`}>
+    <section className={`font-list-panel${effectiveCardPoolViewMode === 'list' ? ' simple-wide-list-mode' : ''}${selectedFontIds.length > 0 ? ' has-selection-actionbar' : ''}`}>
       {IS_DEVELOPMENT && sidebarPage === 'developer' ? (
         <div className="developer-status-page">
           <div className="developer-status-header">
@@ -152,6 +133,7 @@ export function FontListPanel({
         </div>
       ) : (
         <>
+          <div className="font-command-header">
           <div role="status" aria-live="polite" className="selection-command-status">{status}</div>
           <div className="list-toolbar">
             <div className="toolbar-left toolbar-icon-controls" data-no-marquee>
@@ -181,15 +163,12 @@ export function FontListPanel({
             />
           </div>
 
-          {selectedFontIds.length > 1 && (
+          </div>
+
+          {selectedFontIds.length > 0 && (
             <div className="selection-actionbar" data-no-marquee>
-              <span>已选择 {selectedFontIds.length} 个字体</span>
-              <button onClick={() => runSelectionCommand(activateFontsBatch, true)}>批量激活</button>
-              <button onClick={() => runSelectionCommand(deactivateFontsBatch)}>批量取消激活</button>
-              <button onClick={() => runSelectionCommand(deleteFontsBatch)}>批量删除文件</button>
-              <button onClick={() => runSelectionCommand(uninstallFontsBatch)}>批量卸载字体</button>
-              <button onClick={() => runSelectionCommand(async fonts => toggleFontDeleteProtection(fonts.map(font => font.id), true, fonts))}>加入保护</button>
-              <button onClick={() => runSelectionCommand(async fonts => toggleFontDeleteProtection(fonts.map(font => font.id), false, fonts))}>取消保护</button>
+              <span>已选择 {new Set(selectedFontIds).size} 个字体</span>
+              <FontCommandButtons count={new Set(selectedFontIds).size} onCommand={action => void runFontCommand(action, selectedFontIds, visibleFonts, 'selection-toolbar', `${sidebarPage}:${effectiveCardPoolViewMode}`)} />
               <button onClick={() => setSelectedFontIds([])}>取消选择</button>
             </div>
           )}

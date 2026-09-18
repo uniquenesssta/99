@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom'
 import type { FontItem } from '@shared/types'
 import { useDeferredValue } from 'react'
 import { useBrowseController } from './runtime/app/useBrowseController'
@@ -5,6 +6,7 @@ import type {
 CardPoolViewMode,
 } from './appRuntime'
 import {
+libraryWithMergedFonts,
 CONTEXT_MENU_MAX_HEIGHT,
 CONTEXT_MENU_WIDTH,
 getVirtualGridColumns,
@@ -350,6 +352,7 @@ export default function App(): JSX.Element {
     updateFont,
     toggleFontFavorite,
     fontsForTag,
+    installFontsBatch,
     installFontByCard,
     removeFontByCard,
     deleteFontsBatch,
@@ -395,6 +398,18 @@ export default function App(): JSX.Element {
   } = developerController
 
   const contextActionRuntime = createAppMenuDialogRuntime({
+    getCurrentLibrary,
+    installFontsBatch,
+    uninstallFontsBatch,
+    toggleFontFavorite,
+    editFontTags: (fonts, scope) => {
+      flushSync(() => {
+        setLibrary(prev => libraryWithMergedFonts(prev, fonts.filter(font => !prev.fonts[font.id]), fonts.map(font => font.id)))
+        setSelectedFontId(fonts[0].id)
+        setDetailVisible(true)
+      })
+      document.getElementById(scope === 'local' ? 'font-local-tag-input' : 'font-shared-tag-input')?.focus()
+    },
     getVisibleFonts: () => latestVisibleFontsRef.current,
     setStatus,
     library,
@@ -416,7 +431,7 @@ export default function App(): JSX.Element {
     deleteFontsBatch,
     toggleFontDeleteProtection
   })
-  const { setSingleFontSelection, selectionLabel, contextFontTargets, openTagMenu, openSharedTagMenu, openFolderMenu, openFontMenu, runFontContextAction } = contextActionRuntime
+  const { runFontCommand, contextTargetCount, setSingleFontSelection, contextFontTargets, openTagMenu, openSharedTagMenu, openFolderMenu, openFontMenu, runFontContextAction } = contextActionRuntime
 
   const folderTreeRuntime = createFolderRuntime({
     selectedFolderId,
@@ -693,6 +708,8 @@ export default function App(): JSX.Element {
 
 
   const dialogRuntime = contextActionRuntime.createDialogs({
+    selectedFontIds,
+    getVisibleFonts: () => latestVisibleFontsRef.current,
     renameTarget,
     renameValue,
     deleteTarget,
@@ -758,7 +775,7 @@ export default function App(): JSX.Element {
     activateFontByCard,
     deactivateFontByCard
   })
-  const { selectedPreviewFamily, closeDetail, toggleFontDetail, generateDetailNativePreview, setPreviewText, handleLocalTagInputKeyDown, handleSharedTagInputKeyDown, installSelected, removeSelected, activateSelected, deactivateSelected } = detailPanelRuntime
+  const { selectedPreviewFamily, closeDetail, toggleFontDetail, generateDetailNativePreview, setPreviewText, handleLocalTagInputKeyDown, handleSharedTagInputKeyDown } = detailPanelRuntime
 
   useFontDetailSelectionEffectsRuntime({
     library,
@@ -918,7 +935,6 @@ export default function App(): JSX.Element {
   }
 
   const contentViewProps: AppRootViewProps['content'] = {
-    setStatus: setStatus,
     sidebarPage: sidebarPage,
     timeSortMode: timeSortMode,
     sortMode: sortMode,
@@ -932,12 +948,7 @@ export default function App(): JSX.Element {
     updateViewModeWithScroll: updateViewModeWithScroll,
     search: search,
     selectedFontIds: selectedFontIds,
-    library: library,
-    activateFontsBatch: activateFontsBatch,
-    deactivateFontsBatch: deactivateFontsBatch,
-    deleteFontsBatch: deleteFontsBatch,
-    uninstallFontsBatch: uninstallFontsBatch,
-    toggleFontDeleteProtection: toggleFontDeleteProtection,
+    runFontCommand: runFontCommand,
     setSelectedFontIds: setSelectedFontIds,
     closeDetail: closeDetail,
     fontScrollerRef: fontScrollerRef,
@@ -963,12 +974,8 @@ export default function App(): JSX.Element {
     previewFamilies: previewFamilies,
     selectedPreviewFamily: selectedPreviewFamily,
     nativeDetailImage: nativeDetailImage,
-    toggleFontFavorite: toggleFontFavorite,
-    installSelected: installSelected,
-    removeSelected: removeSelected,
-    activateSelected: activateSelected,
-    deactivateSelected: deactivateSelected,
-    toggleFontDeleteProtection: toggleFontDeleteProtection,
+    selectedFontIds: selectedFontIds,
+    runFontCommand: runFontCommand,
     assignTagName: assignTagName,
     setAssignTagName: setAssignTagName,
     handleLocalTagInputKeyDown: handleLocalTagInputKeyDown,
@@ -1007,11 +1014,8 @@ export default function App(): JSX.Element {
     normalizedSelectionRect: normalizedSelectionRect,
     contextMenu: contextMenu,
     contextSelectedFonts: contextSelectedFonts,
-    selectionLabel: selectionLabel,
     runFontContextAction: runFontContextAction,
-    deleteFontsBatch: deleteFontsBatch,
-    uninstallFontsBatch: uninstallFontsBatch,
-    toggleFontDeleteProtection: toggleFontDeleteProtection,
+    contextTargetCount: contextTargetCount,
     runContextBatchActivate: runContextBatchActivate,
     runContextBatchDeactivate: runContextBatchDeactivate,
     runContextRefreshFolder: runContextRefreshFolder,

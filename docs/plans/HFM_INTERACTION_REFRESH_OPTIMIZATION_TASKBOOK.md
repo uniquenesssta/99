@@ -5,7 +5,7 @@
 - 制定日期：2026-09-18。
 - 仓库：`uniquenesssta/99`；分支：`stage/09-preview-tags-app`。
 - 代码基线：`3bc1e387ebeb5298d5bd4060aaec5c9a0a2c7d93`。
-- 状态：**U-00 诊断与 U-01 选择/命令链修复已实施，证据见 §10、§11；Windows 原故障归因及实机验收待回执。U-02～U-09 尚未实施。** 初次规划交付记录保留于 §9。
+- 状态：**U-00 诊断、U-01 选择/命令链修复及 U-02 统一操作入口已实施，证据见 §10～§12；Windows 实机验收待回执。U-03～U-09 尚未实施。** 初次规划交付记录保留于 §9。
 - 输入：`startup-2026-09-18_02-59-25-870-21044.log`（813 行，UTC 02:59:25.872～03:01:28.978）及用户随后五点反馈、入口差异补充。原始日志不提交到 Git。
 - 与前任务衔接：[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md) §25 已交付本地收藏、标签目录同步与停用核对。本任务保留这些修复，处理后续真实交互问题和性能问题，不重开 R-01～R-07。
 - 既有基线证据：上一提交通过 TypeScript、115/115 诊断、Electron/Vite 367/1/196 模块构建和混淆 3/3。这是历史自动验证结果，**不能替代本任务的字体多选入口和 Windows 实机验收**。
@@ -108,7 +108,7 @@ flowchart TD
 
 ## 6. 实施顺序与任务卡
 
-优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02～U-09 为“待开始”。
+优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02 见 §12；U-03～U-09 为“待开始”。
 
 ### U-00：建立入口证据和复现基线
 
@@ -429,3 +429,59 @@ npm run dev
 - 回滚本轮提交即可恢复原实现；无依赖、数据库/IPC 格式、Rust 或持久化数据迁移。
 - Mermaid Chart 已按本轮实际链路更新；未使用新第三方 API，未触发 Context7。
 - Create State 本轮查询仍仅返回“markdown”“足球”两个其他模型，未向不匹配项目写入。任务书与 Git 保存交接依据；项目状态插件同步未完成。
+
+## 12. U-02 执行卡
+
+- 起点：dd3966d6d4e90c375fc96a71b0f0ad9329ec8607，干净工作树。状态：实现完成，验证与实机边界见下文。
+- Create State：按用户授权创建 HFM 项目，服务返回 World Model Limit Reached（2/2）；本轮放弃同步，不修改已有其他项目。
+- 方案：共用一套命令描述、目标解析/派发和按钮；操作栏支持单选，右键取消单项/批量分叉，详情命令保留当前选择范围。继续使用 U-01 完整性检查与既有本机事务。安装/卸载汇总反馈及一次确认；标签按指定标签增删，不覆盖混合字段。收藏明确单项能力，混合/多项禁用并说明，U-03 再开放集合写入。
+- 生产白名单：新增 `src/renderer/src/fontCommandRuntime.ts`、`src/renderer/src/components/app/FontCommandButtons.tsx`；修改 `src/renderer/src/fontContextActionRuntime.ts`、`fontDialogRuntime.ts`、`fontDialogTagActionsRuntime.ts`、`fontDetailPanelRuntime.ts`、`App.tsx`；`components/app/FontListPanel.tsx`、`FontListPanelTypes.ts`、`AppOverlays.tsx`、`FontDetailPanel.tsx`、`AppRootView.tsx`；`runtime/app/useFontOperationsController.ts`、`runtime/system/actions/fontInstallActionRuntime.ts`、`fontDeleteActionRuntime.ts`、`fontSystemActionTypes.ts`。如具体门禁发现必要接线，先补卡再改。
+- 验证白名单：`build/diagnostics/check-activation-entry.cjs`；新增 `build/diagnostics/check-font-command-entry.cjs`；对应 `package.json` 默认诊断注册；既有交互/根视图/控制器/decomposition/watcher-activation 冻结门仅定向迁移受影响参数、接口及摘要，不移除行为断言。具体文件在迁移前补记。
+- 文档：本任务书、README。无依赖升级、数据迁移或新增 IPC。
+
+| 动作 | 单项 / 多项 | 资格及确认 | 结果 |
+| --- | --- | --- | --- |
+| 安装 | 同一入口，逐项系统能力 | 跳过已安装/处理中 | 成功、跳过、未确认计数 |
+| 卸载字体 | 同一入口，一次确认 | 跳过保护/未安装/处理中；与取消激活分离 | 逐项成功/失败与跳过数 |
+| 删除字体文件 | 同一入口，一次回收站确认 | 保留原后端安全过滤 | 删除/跳过/失败与索引回写 |
+| 激活 / 取消激活 | 共用原集合事务 | 安装/激活/busy 按原规则过滤 | 原逐项回执与回滚 |
+| 加入保护 / 取消保护 | 显式 true / false | 完整目标，不逐项反转 | 原字段队列，显示提交及跳过 |
+| 本地 / 共享标签 | 同一详情编辑区作用于当前集合 | 仅显式增删的标签，域隔离 | 原意图/写队列，不能冒称持久化成功 |
+| 收藏 / 取消收藏 | 本轮单项；多项明确禁用 | 集合写入由 U-03 负责 | 保持本机收藏，不能退化成首项 |
+| 标签/文件夹容器 | 保持容器范围 | 标签激活完整查询，重命名/删除不删源字体 | 明确容器名称与读取后数量 |
+- 白名单补充：`runtime/system/actions/fontFavoriteActionRuntime.ts` 的单项接口增加可选明确目标值，读取当前记录并补齐缺缓存；仅保证新入口的“收藏/取消收藏”不因旧闭包反向切换，不实现 U-03 集合收藏。
+- 布局白名单补充：`src/renderer/src/styles/11-selection-context.css`。统一按钮增加后允许操作栏换行；状态与工具栏合为同一顶部网格单元，避免占用选择栏/列表的固定网格行。
+- 冻结验证迁移清单：`fixtures/app-interaction-composition.fixture.json` 仅 context/dialog 新接线与改动的 context/tag 源码摘要；`app-view-composition.fixture.json` 的 App 前缀及根视图摘要；`app-root-view-wiring.fixture.json` 的新增命令/数量/选择绑定和四种视图快照；`decomposition-baseline.fixture.json` 仅 App 摘要、operations 摘要及新增 installFontsBatch 返回能力，所有原 owner/函数/导出不变。上述 fixtures 均位于 build/diagnostics；迁移前核对实际差异，旧行为断言保留。
+- 门禁补充：`build/diagnostics/fixtures/orchestration-contracts.fixture.json` 中 detail.requiredProps 与 detail flow 将旧四个单项回调替换为 runFontCommand / selectedFontIds；保留其他 UI、主进程、IPC、Rust 合约不变。删除与安装/卸载共用现有 activeOperationFontIds，回归覆盖互斥与仅释放本请求目标。
+
+
+### 12.1 已实现的交互
+
+- `FontCommandButtons` 为操作栏、字体右键、详情共用唯一的动作名称清单；不存在按单项/多项分别维护的菜单 JSX。单选也出现操作栏；原内部集合事务方法名保留，不影响按钮一致性。
+- `fontCommandRuntime` 用 U-01 解析器在点击时检查完整目标，去重并固定请求快照。所有字体入口的安装、卸载、删除、激活、停用和保护均经此处派发；缺项整次停止并提示。右键集合外字体仍先切为该项，右键集合内保留原选择；详情显示哪个字体不改当前多选命令范围。
+- 激活/停用统一使用既有集合事务，1 项也保留过滤、日志及逐项确认。安装逐项核对系统安装结果并汇总；卸载过滤保护/未安装/处理中项后只确认一次，明确可执行及选中总数。卸载不再隐式取消临时激活，用户使用“取消激活”。
+- 安装、卸载、激活和删除复用同一个处理中编号集合；删除跳过已在途目标，并在 finally 只释放本请求占用。删除继续回收站语义、安全过滤、实际已删项选择清理与受影响根索引刷新。
+- 收藏/取消收藏统一为明确单项 true/false，使用当前记录并保留原本机意图及写队列；未变化不重复提交。多选收藏按钮禁用并说明，直接调用同样拒绝，不能隐式只改详情字体。集合收藏尚未实施，留给 U-03。
+- 设置本地/共享标签打开同一详情编辑区并聚焦对应输入框，详情显示操作范围。添加/移除只改指定标签，保留每个字体原有的其他标签、收藏及保护；共享写入继续携带 add/remove 增量意图。鼠标按钮、建议项及 Enter 使用同一目标集合，输入法组合中 Enter 不提交。
+- 保护明确设置 true/false 并跳过未变化项；标签和收藏显示“提交/后台保存”而不把入队视为持久化成功。实际失败仍由原写队列反馈。
+- 标签节点显示本地/共享名称及完整范围，执行继续由 U-01 分页读取后给出数量。文件夹及标签目录删除、重命名保持原容器语义。
+- 普通页面沿用非阻塞 status 区。状态和工具栏同处顶部网格单元，选择栏可换行，避免新按钮或状态行挤占字体列表。
+
+### 12.2 验证与迁移证据
+
+- 新增 `diagnostics:font-command-entry`，36 个受控场景通过：实际共同按钮与操作栏/右键/详情 TSX，单项/3 项、两套 preload、完整安装目标、混合状态卸载和一次确认、取消操作、回收站删除、在途互斥、部分安装失败、旧选择请求快照、缺项阻断、单项本机收藏幂等及多选拒绝、保护明确值、本地/共享标签鼠标/Enter/IME/增量域隔离；把真实安装派发改成仅首项的退化反例被拒绝。
+- U-01 激活入口 72 个受控场景继续通过；原始起点 c41f410 的 5 项对照通过。新增按钮渲染会执行真实 FontCommandButtons，未以手工复制的按钮逻辑代验。
+- 旧冻结基线仅按已声明输入/视图/返回能力迁移；原 Hooks 和 owner 不变，operations 只增加 installFontsBatch。orchestration 的详情合约改锁定 runFontCommand / selectedFontIds，主进程、IPC、Rust 合约保持。
+- 最终 `npm run verify` 通过（TypeScript + 117/117 诊断，其中新命令 36 项、原激活入口 72 项）；旧源码对照 5 项通过。`npx electron-vite build` 三端 367/1/200 模块通过，`node build/obfuscate-dist.cjs` 输出 3/3 files，`git diff --check` 通过。Windows 原生字体可用性、真实浏览器焦点/布局/事件冒泡以及 NAS 多机并发未在本环境验证。受控端口测试不等于实机验收。
+
+### 12.3 实机复验与接续
+
+在原 Windows 项目目录更新阶段分支后使用 `npm run dev`。
+
+1. 单选与多选打开操作栏、右键和详情，确认同名动作只有一套，数量与选中范围相符；右键集合外字体只操作该项。
+2. 多选未安装字体“安装”；混合已安装/未安装/保护字体“卸载字体”，检查一次确认、跳过理由和系统结果；临时激活字体应使用“取消激活”。
+3. 多选编辑本地/共享标签，分别用鼠标和 Enter 添加，再移除一个指定标签；核对各字体其他标签及收藏不变。
+4. 窄窗口、列表/卡片视图检查操作栏换行、列表滚动和普通状态提示；键盘 Tab/Enter 操作按钮与鼠标一致。
+5. 单项收藏/取消收藏正常；多选收藏本轮明确不可用。下一项 U-03 才开放明确 true/false 的集合收藏，并验证写入失败、反向意图和重启行为。
+
+回滚本轮提交即可；无数据/IPC 迁移、依赖升级或 Rust 改动。Mermaid Chart 已按实际共同命令链更新；无新第三方 API，未触发 Context7。Create State 因 2/2 项目容量上限创建失败，按用户指示放弃，本任务书与 Git 保存交接状态。

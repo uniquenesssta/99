@@ -213,17 +213,18 @@ export function useFontOperationsController(options: {
     if (!ids.length) return
     const nextValue = typeof protect === 'boolean' ? protect : !targetFonts.every(font => !!font.deleteProtected)
 
+    const changedFonts = targetFonts.filter(font => !!font.deleteProtected !== nextValue)
     options.library.setLibrary((prev) => {
       const nextFonts = { ...prev.fonts }
-      for (const target of targetFonts) {
+      for (const target of changedFonts) {
         const font = nextFonts[target.id] || target
         nextFonts[target.id] = { ...font, deleteProtected: nextValue }
       }
       return { ...prev, fonts: nextFonts }
     })
 
-    for (const font of targetFonts) fontWriteQueueRuntime.queueProtectionWrite(font, nextValue)
-    options.library.setStatus(`${nextValue ? '加入保护' : '取消保护'}已在界面生效，后台队列写入 ${targetFonts.length} 个。`)
+    for (const font of changedFonts) fontWriteQueueRuntime.queueProtectionWrite(font, nextValue)
+    options.library.setStatus(`${nextValue ? '加入保护' : '取消保护'}已在界面生效，后台队列写入 ${changedFonts.length} 个，跳过未变化 ${targetFonts.length - changedFonts.length} 个。`)
   }
 
   function removeFontIds(removedFontIds: ReadonlySet<string>): void {
@@ -283,6 +284,7 @@ export function useFontOperationsController(options: {
     toggleFontFavorite: systemActionRuntime.toggleFontFavorite,
     fontsForTag: systemActionRuntime.fontsForTag,
     installFontByCard: systemActionRuntime.installFontByCard,
+    installFontsBatch: systemActionRuntime.installFontsBatch,
     removeFontByCard: systemActionRuntime.removeFontByCard,
     deleteFontsBatch: systemActionRuntime.deleteFontsBatch,
     uninstallFontsBatch: systemActionRuntime.uninstallFontsBatch,

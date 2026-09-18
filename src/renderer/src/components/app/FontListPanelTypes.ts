@@ -1,4 +1,5 @@
-import type { FontItem, LibraryState } from '@shared/types'
+import type { RunFontCommand } from '../../fontCommandRuntime'
+import type { FontItem } from '@shared/types'
 import type { RefObject, UIEvent, MouseEvent } from 'react'
 import type { CardPoolViewMode, SortMode, SidebarPage, ActiveFilter, PageToolbarState, DeveloperStatusEntry, VirtualLayout, VIEW_MODE_LAYOUT } from '../../appRuntime'
 import type { FontFamilyGroupResult } from '../../runtime/family/fontFamilyGroupingRuntime'
@@ -7,7 +8,6 @@ export type FontListPanelProps = {
   sidebarPage: SidebarPage
   refreshDeveloperStatusDetails: () => Promise<void>
   status: string
-  setStatus: (status: string) => void
   latestIndexProgress: unknown
   developerArchitecture: unknown
   developerSchedulerStatus: unknown
@@ -29,12 +29,7 @@ export type FontListPanelProps = {
   updateViewModeWithScroll: (viewMode: PageToolbarState['viewMode']) => void
   search: string
   selectedFontIds: string[]
-  library: LibraryState
-  activateFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
-  deactivateFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
-  deleteFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
-  uninstallFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
-  toggleFontDeleteProtection: (fontIds: string[], protect?: boolean, available?: FontItem[]) => Promise<void>
+  runFontCommand: RunFontCommand
   setSelectedFontIds: (ids: string[]) => void
   closeDetail: () => void
   fontScrollerRef: RefObject<HTMLDivElement>

@@ -1,3 +1,5 @@
+import { FontCommandButtons } from './FontCommandButtons'
+import type { FontCommand } from '../../fontCommandRuntime'
 import type { EditableMenuTarget, MenuTarget, SelectionRectState, ContextMenuState } from '../../appRuntime'
 import type { FontItem } from '@shared/types'
 import { isKeyboardCompositionEvent } from '../../fontTagInputRuntime'
@@ -22,11 +24,8 @@ type AppOverlaysProps = {
   normalizedSelectionRect: (rect: SelectionRectState) => DOMRect
   contextMenu: ContextMenuState | null
   contextSelectedFonts: FontItem[]
-  selectionLabel: (fonts: FontItem[]) => string
-  runFontContextAction: (action: 'install' | 'remove' | 'activate' | 'deactivate' | 'deleteFile' | 'protectToggle') => Promise<void>
-  deleteFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
-  uninstallFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
-  toggleFontDeleteProtection: (fontIds: string[], protect?: boolean, available?: FontItem[]) => Promise<void>
+  runFontContextAction: (action: FontCommand) => Promise<void>
+  contextTargetCount: number
   runContextBatchActivate: () => void
   runContextBatchDeactivate: () => void
   runContextRefreshFolder: () => void
@@ -55,11 +54,8 @@ export function AppOverlays({
   normalizedSelectionRect,
   contextMenu,
   contextSelectedFonts,
-  selectionLabel,
   runFontContextAction,
-  deleteFontsBatch,
-  uninstallFontsBatch,
-  toggleFontDeleteProtection,
+  contextTargetCount,
   runContextBatchActivate,
   runContextBatchDeactivate,
   runContextRefreshFolder,
@@ -171,31 +167,16 @@ export function AppOverlays({
           onClick={(event) => event.stopPropagation()}
         >
           {contextMenu.kind === 'font' ? (
-            contextSelectedFonts.length > 1 ? (
-              <>
-                <div className="context-menu-title">{selectionLabel(contextSelectedFonts)}</div>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void runFontContextAction('activate')}>批量激活</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void runFontContextAction('deactivate')}>批量取消激活</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void deleteFontsBatch(contextSelectedFonts, '批量选择')}>批量删除文件</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void uninstallFontsBatch(contextSelectedFonts, '批量选择')}>批量卸载字体</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void toggleFontDeleteProtection(contextSelectedFonts.map((font) => font.id), true, contextSelectedFonts)}>加入保护不可删除</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void toggleFontDeleteProtection(contextSelectedFonts.map((font) => font.id), false, contextSelectedFonts)}>取消删除保护</button>
-              </>
-            ) : (
-              <>
-                <div className="context-menu-title">{selectionLabel(contextSelectedFonts)}</div>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void runFontContextAction('install')}>安装</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void runFontContextAction('remove')}>卸载/移除安装</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void runFontContextAction('deleteFile')}>删除字体文件</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void runFontContextAction('activate')}>激活</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void runFontContextAction('deactivate')}>取消激活</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void runFontContextAction('protectToggle')}>{contextSelectedFonts[0]?.deleteProtected ? '取消删除保护' : '加入保护不可删除'}</button>
-              </>
-            )
+            <>
+              <div className="context-menu-title">已选择 {contextTargetCount} 个字体</div>
+              {contextSelectedFonts.length !== contextTargetCount && <div role="status">部分字体待重新读取，点击操作将检查完整范围。</div>}
+              <FontCommandButtons count={contextTargetCount} onCommand={action => void runFontContextAction(action)} />
+            </>
           ) : (
             <>
-              {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextBatchActivate}>批量激活</button>}
-              {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextBatchDeactivate}>批量取消激活</button>}
+              <div className="context-menu-title">{contextMenu.kind === 'tag' ? `${contextMenu.scope === 'shared' ? '共享标签' : '本地标签'}：${contextMenu.name}（全部匹配字体）` : '文件夹操作'}</div>
+              {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextBatchActivate}>激活</button>}
+              {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextBatchDeactivate}>取消激活</button>}
               {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextRefreshFolder}>刷新</button>}
               <button onMouseDown={(event) => event.preventDefault()} onClick={runContextRename}>重命名</button>
               {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextAddSubfolder}>新增子文件夹</button>}

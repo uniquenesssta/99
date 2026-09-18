@@ -1,5 +1,5 @@
 import type { FontItem } from '@shared/types'
-import { fontDisplayName,isInstalled } from '../../../appRuntime'
+import { fontDisplayName,isInstalled,libraryWithMergedFonts } from '../../../appRuntime'
 import { uniqueFontsById } from '../../../fontFolderMutationRuntime'
 import { applyInstallCompareToFont } from '../../../fontInstallStateRuntime'
 import { isFontDeleteProtected } from '../../../fontSelectionRuntime'
@@ -8,103 +8,58 @@ import type { FontSystemActionRuntimeOptions,FontSystemStateRuntime } from './fo
 export function createFontInstallActionRuntime(
   options: FontSystemActionRuntimeOptions,
   stateRuntime: Pick<FontSystemStateRuntime, 'updateFont'>,
-  activationRuntime: { deactivateFontByCard: (font: FontItem) => Promise<void> }
+  _activationRuntime: { deactivateFontByCard: (font: FontItem) => Promise<void> }
 ): {
   installFontByCard: (font: FontItem) => Promise<void>
+  installFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   removeFontByCard: (font: FontItem) => Promise<void>
   uninstallFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
 } {
-  async function installFontByCard(font: FontItem): Promise<void> {
-    options.setStatus(`正在安装：${fontDisplayName(font)}……`)
-
-    try {
-      const result = await options.hfm.installSystem(font)
-      const compare = await options.hfm.compareFontInstalled(font)
-      stateRuntime.updateFont(font.id, (current) => applyInstallCompareToFont(current, compare))
-      options.refreshDatabaseDerivedState()
-      options.setStatus(result.message)
-    } catch (error) {
-      options.setStatus(`安装失败：${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
-  async function removeFontByCard(font: FontItem): Promise<void> {
-    if (font.active && !isInstalled(font)) {
-      await activationRuntime.deactivateFontByCard(font)
-      return
-    }
-
-    if (isFontDeleteProtected(font)) {
-      options.setStatus(`已保护，不能删除或卸载：${fontDisplayName(font)}`)
-      return
-    }
-
-    const ok = window.confirm('将移除这个已安装字体。受保护字体会被跳过；当前用户字体可直接移除。HKLM / C:\\Windows\\Fonts 中的字体受 Windows 权限限制，普通权限无法删除，软件只会内部提示，不会弹出 PowerShell。确定继续？')
-    if (!ok) return
-
-    options.setStatus(`正在移除：${fontDisplayName(font)}……`)
-
-    try {
-      const result = await options.hfm.uninstallSystem(font)
-      if (result.ok) {
-        stateRuntime.updateFont(font.id, (current) => ({
-          ...current,
-          systemInstalled: false,
-          systemInstallMatches: []
-        }))
-        options.refreshDatabaseDerivedState()
-      }
-      options.setStatus(result.message)
-    } catch (error) {
-      options.setStatus(`移除失败：${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
-  async function uninstallFontsBatch(fonts: FontItem[], label: string): Promise<void> {
+  async function runInstallCommand(fonts: FontItem[], label: string, uninstall: boolean): Promise<void> {
     options.setContextMenu(null)
-    const unique = uniqueFontsById(fonts)
-    if (!unique.length) return
-
-    const ok = window.confirm(`将批量卸载“${label}”中的字体。受保护或未安装字体会自动跳过。确定继续？`)
-    if (!ok) return
-
-    const targets = unique.filter((font) => isInstalled(font) && !isFontDeleteProtected(font))
-    const skippedProtected = unique.filter(isFontDeleteProtected).length
-    const skippedNotInstalled = unique.length - targets.length - skippedProtected
-
-    if (!targets.length) {
-      options.setStatus(`没有可卸载字体。跳过保护 ${skippedProtected} 个，跳过未安装 ${Math.max(0, skippedNotInstalled)} 个。`)
+    const current = options.getCurrentLibrary?.() || options.library
+    const unique = uniqueFontsById(fonts).map(font => ({ ...(current.fonts[font.id] || font) }))
+    const verb = uninstall ? '卸载字体' : '安装'
+    let skippedProtected = 0, skippedState = 0, skippedBusy = 0
+    const targets = unique.filter(font => {
+      if (options.activeOperationFontIds.current.has(font.id)) { skippedBusy++; return false }
+      if (uninstall && isFontDeleteProtected(font)) { skippedProtected++; return false }
+      if (isInstalled(font) !== uninstall) { skippedState++; return false }
+      return true
+    })
+    const skipped = `跳过保护 ${skippedProtected} 个，${uninstall ? '未安装' : '已安装'} ${skippedState} 个，处理中 ${skippedBusy} 个`
+    if (!targets.length) { options.setStatus(`没有可${verb}的字体：成功 0 个，失败 0 个；${skipped}。`); return }
+    if (uninstall && !window.confirm(`将卸载“${label}”中的 ${targets.length} 个已安装字体（所选 ${unique.length} 个）。${skipped}。不会删除源字体文件或取消临时激活；Windows 系统目录受权限限制。确定继续？`)) {
+      options.setStatus(`已取消卸载，未执行 ${targets.length} 个；${skipped}。`)
       return
     }
-
-    let removed = 0
-    let failed = 0
-    for (const font of targets) {
-      options.setStatus(`正在批量卸载：${removed + failed + 1} / ${targets.length} · ${fontDisplayName(font)}`)
-      try {
-        const result = await options.hfm.uninstallSystem(font)
-        if (result.ok) {
-          removed += 1
-          stateRuntime.updateFont(font.id, (current) => ({
-            ...current,
-            systemInstalled: false,
-            systemInstallMatches: []
-          }))
-        } else {
-          failed += 1
-        }
-      } catch {
-        failed += 1
+    for (const font of targets) options.activeOperationFontIds.current.add(font.id)
+    let succeeded = 0, failed = 0
+    try {
+      options.setLibrary(prev => libraryWithMergedFonts(prev, targets.filter(font => !prev.fonts[font.id]), targets.map(font => font.id)))
+      for (const font of targets) {
+        options.setStatus(`正在${verb}：${succeeded + failed + 1} / ${targets.length} · ${fontDisplayName(font)}`)
+        try {
+          const result = uninstall ? await options.hfm.uninstallSystem(font) : await options.hfm.installSystem(font)
+          if (!result.ok) { failed++; continue }
+          if (uninstall) stateRuntime.updateFont(font.id, current => ({ ...current, systemInstalled: false, systemInstallMatches: [] }))
+          else {
+            const compare = await options.hfm.compareFontInstalled(font)
+            stateRuntime.updateFont(font.id, current => applyInstallCompareToFont(current, compare))
+            if (!compare.installed) { failed++; continue }
+          }
+          succeeded++
+        } catch { failed++ }
       }
+    } finally {
+      for (const font of targets) options.activeOperationFontIds.current.delete(font.id)
+      options.refreshDatabaseDerivedState()
     }
-
-    if (removed) options.refreshDatabaseDerivedState()
-    options.setStatus(`批量卸载完成：卸载 ${removed} 个，失败 ${failed} 个，跳过保护 ${skippedProtected} 个，跳过未安装 ${Math.max(0, skippedNotInstalled)} 个。`)
+    options.setStatus(`${verb}完成：成功 ${succeeded} 个，失败或未确认 ${failed} 个；${skipped}。`)
   }
-
-  return {
-    installFontByCard,
-    removeFontByCard,
-    uninstallFontsBatch
-  }
+  async function installFontsBatch(fonts: FontItem[], label: string): Promise<void> { await runInstallCommand(fonts, label, false) }
+  async function uninstallFontsBatch(fonts: FontItem[], label: string): Promise<void> { await runInstallCommand(fonts, label, true) }
+  async function installFontByCard(font: FontItem): Promise<void> { await installFontsBatch([font], fontDisplayName(font)) }
+  async function removeFontByCard(font: FontItem): Promise<void> { await uninstallFontsBatch([font], fontDisplayName(font)) }
+  return { installFontByCard, installFontsBatch, removeFontByCard, uninstallFontsBatch }
 }

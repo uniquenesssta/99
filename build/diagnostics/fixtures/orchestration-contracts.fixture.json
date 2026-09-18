@@ -260,7 +260,7 @@
       "topbar": { "component": "AppTopbar", "requiredProps": ["themeMode", "indexingActive", "rescan", "cancelIndexing"] },
       "sidebar": { "component": "AppSidebar", "requiredProps": ["activeFilter", "selectedWatchedFolders", "selectedFormats", "selectedScripts", "selectedCategory"] },
       "content": { "component": "FontListPanel", "requiredProps": ["search", "selectedFontIds", "handleFontScroll", "visibleFonts"] },
-      "detail": { "component": "FontDetailPanel", "requiredProps": ["selectedFont", "installSelected", "activateSelected", "deactivateSelected"] },
+      "detail": { "component": "FontDetailPanel", "requiredProps": ["selectedFont", "runFontCommand", "selectedFontIds"] },
       "overlays": { "component": "AppOverlays", "requiredProps": ["contextMenu", "confirmRename", "confirmDelete", "leaseLockConflictNotice"] },
       "developer": { "component": null, "requiredProps": ["IS_DEVELOPMENT", "developerArchitecture", "developerSchedulerStatus", "developerMigrationDiagnostics", "developerStatusLog"] }
     },
@@ -269,7 +269,7 @@
       { "name": "filter", "identifiers": ["activeFilter", "selectedFormats", "selectedScripts", "clearAdvancedFilters"] },
       { "name": "scroll", "identifiers": ["handleFontScroll", "virtualLayout", "fontScrollerRef"] },
       { "name": "selection", "identifiers": ["selectedFontIds", "setSelectedFontIds", "beginMarqueeSelection"] },
-      { "name": "detail", "identifiers": ["selectedFont", "closeDetail", "installSelected", "removeSelected"] },
+      { "name": "detail", "identifiers": ["selectedFont", "closeDetail", "runFontCommand", "selectedFontIds"] },
       { "name": "tags", "identifiers": ["addTagToSelectedByName", "removeTagFromSelected", "addSharedTagToSelectedByName", "removeSharedTagFromSelected"] },
       { "name": "folders", "identifiers": ["selectFolderFilter", "assignFontsToFolder", "createSubfolder", "runContextRefreshFolder"] },
       { "name": "batch-system", "identifiers": ["activateFontsBatch", "deactivateFontsBatch", "deleteFontsBatch", "uninstallFontsBatch"] },

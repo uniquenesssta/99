@@ -6,11 +6,13 @@ export function createFontFavoriteActionRuntime(
   options: FontSystemActionRuntimeOptions,
   stateRuntime: Pick<FontSystemStateRuntime, 'updateFont' | 'adjustDatabaseFavoriteCount'>
 ): {
-  toggleFontFavorite: (font: FontItem) => Promise<void>
+  toggleFontFavorite: (font: FontItem, favorite?: boolean) => Promise<void>
 } {
-  async function toggleFontFavorite(font: FontItem): Promise<void> {
-    const liveFont = options.library.fonts[font.id] || font
-    const nextValue = !liveFont.favorite
+  async function toggleFontFavorite(font: FontItem, favorite?: boolean): Promise<void> {
+    const liveFont = (options.getCurrentLibrary?.() || options.library).fonts[font.id] || font
+    const nextValue = favorite ?? !liveFont.favorite
+    if (nextValue === !!liveFont.favorite) { options.setStatus('收藏状态未变化：跳过 1 个。'); return }
+    options.setLibrary?.(prev => prev.fonts[font.id] ? prev : { ...prev, fonts: { ...prev.fonts, [font.id]: liveFont } })
     const nextFont = markFavoriteIntent(liveFont, nextValue)
 
     stateRuntime.updateFont(liveFont.id, () => nextFont)

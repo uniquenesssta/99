@@ -1,3 +1,5 @@
+import { FontCommandButtons } from './FontCommandButtons'
+import type { RunFontCommand } from '../../fontCommandRuntime'
 import type { FontItem,InstallCompareResult } from '@shared/types'
 import {
 fontCategoryLabel,
@@ -18,12 +20,8 @@ type FontDetailPanelProps = {
   previewFamilies: Record<string, string>
   selectedPreviewFamily: string
   nativeDetailImage: string
-  toggleFontFavorite: (font: FontItem) => Promise<void>
-  installSelected: () => Promise<void>
-  removeSelected: () => Promise<void>
-  activateSelected: () => Promise<void>
-  deactivateSelected: () => Promise<void>
-  toggleFontDeleteProtection: (fontIds: string[], protect?: boolean) => Promise<void>
+  selectedFontIds: string[]
+  runFontCommand: RunFontCommand
   assignTagName: string
   setAssignTagName: (value: string) => void
   handleLocalTagInputKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void
@@ -51,12 +49,8 @@ export function FontDetailPanel({
   previewFamilies,
   selectedPreviewFamily,
   nativeDetailImage,
-  toggleFontFavorite,
-  installSelected,
-  removeSelected,
-  activateSelected,
-  deactivateSelected,
-  toggleFontDeleteProtection,
+  selectedFontIds,
+  runFontCommand,
   assignTagName,
   setAssignTagName,
   handleLocalTagInputKeyDown,
@@ -78,6 +72,7 @@ export function FontDetailPanel({
 }: FontDetailPanelProps): JSX.Element | null {
   if (!visible) return null
 
+  const commandIds = selectedFontIds.length ? selectedFontIds : selectedFont ? [selectedFont.id] : []
   const installMatches = selectedFont?.systemInstallMatches || []
   return (
     <section className="detail-panel detail-dock-panel">
@@ -92,14 +87,8 @@ export function FontDetailPanel({
 
 
           <div className="detail-actions primary-actions">
-            <button onClick={installSelected}>安装</button>
-            <button onClick={removeSelected}>移除</button>
-            <button onClick={activateSelected}>激活</button>
-            <button onClick={deactivateSelected}>取消激活</button>
-            <button title={selectedFont.deleteProtected ? '取消删除保护' : '加入保护不可删除'} onClick={() => { if (selectedFont) void toggleFontDeleteProtection([selectedFont.id]) }}>{selectedFont.deleteProtected ? '取消保护' : '保护'}</button>
-            <button className={selectedFont.favorite ? 'detail-favorite-action active' : 'detail-favorite-action'} title={selectedFont.favorite ? '取消收藏' : '收藏'} onClick={() => void toggleFontFavorite(selectedFont)}>
-              ★
-            </button>
+            <span>操作范围：已选择 {new Set(commandIds).size} 个字体</span>
+            <FontCommandButtons count={new Set(commandIds).size} showTagActions={false} onCommand={action => void runFontCommand(action, commandIds, [selectedFont], 'detail')} />
           </div>
 
           <div className="tag-box">
@@ -122,12 +111,13 @@ export function FontDetailPanel({
           </div>
 
           <div className="tag-box">
-            <div className="tag-box-title">标签</div>
+            <div className="tag-box-title">本地标签 · 编辑作用于 {commandIds.length} 个字体</div>
             <div className="inline-create detail-create">
               <div className="tag-input-wrap">
                 <input
                   value={assignTagName}
                   onChange={(event) => setAssignTagName(event.target.value)}
+                  id="font-local-tag-input"
                   placeholder="输入标签名称"
                   onKeyDown={handleLocalTagInputKeyDown}
                 />
@@ -149,7 +139,7 @@ export function FontDetailPanel({
               </div>
               <button onClick={() => addTagToSelectedByName(localTagSuggestions[activeLocalTagSuggestionIndex] || assignTagName)}>添加标签</button>
             </div>
-            <div className="tag-row">
+            <div className="tag-row" aria-label="预览字体的标签，点击仅从操作范围移除该标签">
               {(selectedFont.localTagNames || []).length ? (selectedFont.localTagNames || []).map((tag) => (
                 <button key={tag} className="tag-pill removable" onClick={() => removeTagFromSelected(tag)}>
                   #{tag} ×
@@ -159,12 +149,13 @@ export function FontDetailPanel({
           </div>
 
           <div className="tag-box">
-            <div className="tag-box-title">共享标签</div>
+            <div className="tag-box-title">共享标签 · 编辑作用于 {commandIds.length} 个字体</div>
             <div className="inline-create detail-create">
               <div className="tag-input-wrap">
                 <input
                   value={assignSharedTagName}
                   onChange={(event) => setAssignSharedTagName(event.target.value)}
+                  id="font-shared-tag-input"
                   placeholder="输入共享标签名称"
                   onKeyDown={handleSharedTagInputKeyDown}
                 />
@@ -186,7 +177,7 @@ export function FontDetailPanel({
               </div>
               <button onClick={() => addSharedTagToSelectedByName(sharedTagSuggestions[activeSharedTagSuggestionIndex] || assignSharedTagName)}>添加共享标签</button>
             </div>
-            <div className="tag-row">
+            <div className="tag-row" aria-label="预览字体的标签，点击仅从操作范围移除该标签">
               {(selectedFont.tagNames || []).length ? selectedFont.tagNames.map((tag) => (
                 <button key={tag} className="tag-pill removable" onClick={() => removeSharedTagFromSelected(tag)}>
                   #{tag} ×

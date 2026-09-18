@@ -10,6 +10,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "diagnostics:font-command-entry": "node build/diagnostics/check-font-command-entry.cjs",
     "diagnostics:decomposition-baseline": "node build/diagnostics/check-decomposition-baseline.cjs",
     "baseline:decomposition-observe": "node build/diagnostics/check-decomposition-baseline.cjs --observe",
     "setup:dev": "node node_modules/electron/install.js && node node_modules/electron-builder/out/cli/cli.js install-app-deps",

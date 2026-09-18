@@ -2,6 +2,13 @@
   "baseline": "1762c0f4f2c28d96576948fb8f27a9eab5bcd74a",
   "calls": {
     "createFontContextActionRuntime:0": {
+      "getCurrentLibrary": "getCurrentLibrary",
+      "installFontsBatch": "installFontsBatch",
+      "uninstallFontsBatch": "uninstallFontsBatch",
+      "toggleFontFavorite": "toggleFontFavorite",
+      "editFontTags": "(fonts, scope) => {\n      flushSync(() => {\n        setLibrary(prev => libraryWithMergedFonts(prev, fonts.filter(font => !prev.fonts[font.id]), fonts.map(font => font.id)))\n        setSelectedFontId(fonts[0].id)\n        setDetailVisible(true)\n      })\n      document.getElementById(scope === 'local' ? 'font-local-tag-input' : 'font-shared-tag-input')?.focus()\n    }",
+      "getVisibleFonts": "() => latestVisibleFontsRef.current",
+      "setStatus": "setStatus",
       "library": "library",
       "contextMenu": "contextMenu",
       "selectedFontIds": "selectedFontIds",
@@ -19,17 +26,15 @@
       "activateFontsBatch": "activateFontsBatch",
       "deactivateFontsBatch": "deactivateFontsBatch",
       "deleteFontsBatch": "deleteFontsBatch",
-      "toggleFontDeleteProtection": "toggleFontDeleteProtection",
-      "getVisibleFonts": "() => latestVisibleFontsRef.current",
-      "setStatus": "setStatus"
+      "toggleFontDeleteProtection": "toggleFontDeleteProtection"
     },
     "createFontDialogRuntime:0": {
-      "contextMenu": "contextMenu",
+      "selectedFontIds": "selectedFontIds",
+      "getVisibleFonts": "() => latestVisibleFontsRef.current",
       "renameTarget": "renameTarget",
       "renameValue": "renameValue",
       "deleteTarget": "deleteTarget",
       "selectedFont": "selectedFont",
-      "library": "library",
       "selectedTagName": "selectedTagName",
       "selectedSharedTagName": "selectedSharedTagName",
       "hfm": "window.hfm",
@@ -39,8 +44,6 @@
       "queueSharedTagsWrite": "queueSharedTagsWrite",
       "removeFolderTarget": "removeFolderTarget",
       "refreshFolderTarget": "refreshFolderTarget",
-      "activateFontsBatch": "activateFontsBatch",
-      "deactivateFontsBatch": "deactivateFontsBatch",
       "updateFont": "updateFont",
       "setLibrary": "setLibrary",
       "commitLibraryUpdate": "commitLibraryUpdate",
@@ -48,7 +51,6 @@
       "setRenameTarget": "setRenameTarget",
       "setRenameValue": "setRenameValue",
       "setDeleteTarget": "setDeleteTarget",
-      "setContextMenu": "setContextMenu",
       "setFolderChildTarget": "setFolderChildTarget",
       "setNewFolderName": "setNewFolderName",
       "setExpandedFolderIds": "setExpandedFolderIds",
@@ -62,7 +64,12 @@
       "setSidebarPage": "setSidebarPage",
       "setStatus": "setStatus",
       "refreshDatabaseDerivedState": "refreshDatabaseDerivedState",
-      "flushFontWriteQueue": "flushFontWriteQueue"
+      "flushFontWriteQueue": "flushFontWriteQueue",
+      "library": "library",
+      "contextMenu": "contextMenu",
+      "setContextMenu": "setContextMenu",
+      "activateFontsBatch": "activateFontsBatch",
+      "deactivateFontsBatch": "deactivateFontsBatch"
     },
     "createFontDetailPanelRuntime:0": {
       "selectedFont": "selectedFont",
@@ -137,11 +144,11 @@
     "useFontCardRenderer"
   ],
   "sources": {
-    "src/renderer/src/fontContextActionRuntime.ts": "63491ee34e90cd826f87ba72ccc3602a628eb0c32c1e4cf3c0b84acb54bc52a3",
+    "src/renderer/src/fontContextActionRuntime.ts": "f1ab7466c61191a73e1014f59b84522c6ee02013127d791023d2eafdf8165bd3",
     "src/renderer/src/fontContextMenuRuntime.ts": "fd620a07186f0a74db86bba1e4e67164241bb9ec3550ab6fcf951683fa6f7e44",
-    "src/renderer/src/fontDialogRuntime.ts": "6c6391a8c9ef968b6512fafb53813a261679aeb5c8ba2cc01219c724e28a7bf0",
+    "src/renderer/src/fontDialogRuntime.ts": "888546a13c86bfa658fff5bfcb70338f2fc15ac4165deed640747d4d3563a7ec",
     "src/renderer/src/fontDialogContextActionsRuntime.ts": "a8d58799e7c3f00ce8661a35a37293f1c80b39653834d0fbed1ee29bbb96a719",
-    "src/renderer/src/fontDialogTagActionsRuntime.ts": "9df6041f92030b5c9780f53107a91632546b1e9f8819efb04326ae9c539e6c94",
+    "src/renderer/src/fontDialogTagActionsRuntime.ts": "9b5bc4b4b683c0f3b758f21fc5e1954136c45f8c5bf6065a9ba97576c1a9767c",
     "src/renderer/src/fontDetailPanelRuntime.ts": "ef5ba91f22fa915de270e90513a6de0cdc5848aa7f63a75e682222c24b12b9b0",
     "src/renderer/src/fontTagInputRuntime.ts": "296b77a1412004e68c390c96e732479f90faa57f9a7aa5fa9984efa6ca4a6c07",
     "src/renderer/src/runtime/app/useSelectionController.ts": "afef9e1fabcbbcd431972d9106db8c39ff3b3d7891643cface8c2c2b174f46ad",
