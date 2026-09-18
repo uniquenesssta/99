@@ -1,3 +1,4 @@
+import { traceActivationEntry } from '../../fontActivationTrace'
 import type { FontItem } from '@shared/types'
 import type { CSSProperties,MouseEvent } from 'react'
 import {
@@ -168,7 +169,7 @@ export function FontListPanel({
           {selectedFontIds.length > 1 && (
             <div className="selection-actionbar" data-no-marquee>
               <span>已选择 {selectedFontIds.length} 个字体</span>
-              <button onClick={() => void activateFontsBatch(selectedFontIds.map((id) => library.fonts[id]).filter((font: FontItem | undefined): font is FontItem => !!font), '批量选择')}>批量激活</button>
+              <button onClick={() => void activateFontsBatch(traceActivationEntry(selectedFontIds.map((id) => library.fonts[id]).filter((font: FontItem | undefined): font is FontItem => !!font), 'selection-toolbar', selectedFontIds.length, `${sidebarPage}:${effectiveCardPoolViewMode}`), '批量选择')}>批量激活</button>
               <button onClick={() => void deactivateFontsBatch(selectedFontIds.map((id) => library.fonts[id]).filter((font: FontItem | undefined): font is FontItem => !!font), '批量选择')}>批量取消激活</button>
               <button onClick={() => void deleteFontsBatch(selectedFontIds.map((id) => library.fonts[id]).filter((font: FontItem | undefined): font is FontItem => !!font), '批量选择')}>批量删除文件</button>
               <button onClick={() => void uninstallFontsBatch(selectedFontIds.map((id) => library.fonts[id]).filter((font: FontItem | undefined): font is FontItem => !!font), '批量选择')}>批量卸载字体</button>

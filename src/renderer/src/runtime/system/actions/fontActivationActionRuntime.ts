@@ -1,3 +1,5 @@
+import { activationEntryTrace, reportActivationResult, reportActivationTargets } from '../../../fontActivationTrace'
+import { reportFontOperation } from '../../../fontOperationTrace'
 import type { FontItem } from '@shared/types'
 import { fontDisplayName,isCleanWindowsDefaultFont,isInstalled } from '../../../appRuntime'
 import { batchActivationCandidates } from '../../../fontSelectionRuntime'
@@ -54,7 +56,9 @@ export function createFontActivationActionRuntime(
   }
 
   async function activateFontsBatch(fonts: FontItem[], label: string): Promise<void> {
+    const trace = activationEntryTrace(fonts)
     if (!fonts.length) {
+      reportFontOperation({ trace, stage: 'preflight', outcome: 'zero-targets' })
       options.setStatus(`${label} 中没有字体。`)
       return
     }
@@ -66,7 +70,10 @@ export function createFontActivationActionRuntime(
     const skippedActive = unique.filter((font) => font.active).length
     const skippedBusy = unique.filter((font) => options.activeOperationFontIds.current.has(font.id)).length
 
+    reportActivationTargets(trace, targets)
+    reportFontOperation({ trace, stage: 'filter', reason: `installed:${skippedInstalled}.system:${skippedSystem}.active:${skippedActive}.busy:${skippedBusy}` })
     if (!targets.length) {
+      reportFontOperation({ trace, stage: 'preflight', outcome: 'all-skipped' })
       options.setStatus(`${label} 没有需要临时激活的字体。已安装 ${skippedInstalled} 个，受保护 ${skippedSystem} 个，已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
       return
     }
@@ -87,7 +94,9 @@ export function createFontActivationActionRuntime(
       options.setStatus(`正在批量激活 ${label}：已合并为 1 次主进程任务和 1 次 Windows 字体刷新……`)
 
       try {
-        const result = await options.hfm.activateFonts(targets)
+        reportFontOperation({ trace, stage: 'dispatch', transport: 'batch-ipc' })
+        const result = await options.hfm.activateFonts(targets, trace)
+        reportActivationResult(trace, targets, result.results || {})
         const finalUpdates: Record<string, { active: boolean; patch?: Partial<FontItem> }> = {}
         let rollback = 0
         for (const font of targets) {
@@ -108,11 +117,14 @@ export function createFontActivationActionRuntime(
         }
         stateRuntime.setFontsActiveRuntimeBulk(finalUpdates)
         if (rollback) stateRuntime.adjustDatabaseActiveCount(-rollback)
+        reportFontOperation({ trace, stage: 'view-apply', outcome: 'state-updated' })
         options.setStatus(`${result.message} 跳过受保护 ${skippedSystem} 个，跳过已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
       } catch (error) {
         const rollbackUpdates = Object.fromEntries(targets.map((font) => [font.id, { active: false }])) as Record<string, { active: boolean; patch?: Partial<FontItem> }>
         stateRuntime.setFontsActiveRuntimeBulk(rollbackUpdates)
         stateRuntime.adjustDatabaseActiveCount(-targets.length)
+        reportFontOperation({ trace, stage: 'operation-result', outcome: 'unknown', reason: 'batch-rejected' })
+        reportFontOperation({ trace, stage: 'view-apply', outcome: 'rolled-back' })
         options.setStatus(`批量激活失败：${error instanceof Error ? error.message : String(error)}`)
       } finally {
         for (const font of targets) options.activeOperationFontIds.current.delete(font.id)
@@ -121,6 +133,7 @@ export function createFontActivationActionRuntime(
       return
     }
 
+    reportFontOperation({ trace, stage: 'dispatch', transport: 'legacy-single', reason: `count:${targets.length}` })
     options.setStatus(`已开始批量激活 ${label}：界面会先标记，Windows 后台逐个确认。`)
 
     for (const font of targets) {
@@ -153,6 +166,8 @@ export function createFontActivationActionRuntime(
       }
     }
 
+    reportFontOperation({ trace, stage: 'operation-result', outcome: failed ? 'unconfirmed' : 'returned', reason: `activated:${activated}.failed:${failed}.skipped:${skippedInstalledFresh}` })
+    reportFontOperation({ trace, stage: 'view-apply', outcome: 'state-updated' })
     options.setStatus(`批量激活完成：${label} 已激活 ${activated} 个，失败 ${failed} 个，跳过已安装 ${skippedInstalled + skippedInstalledFresh} 个，跳过受保护 ${skippedSystem} 个，跳过已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
   }
 

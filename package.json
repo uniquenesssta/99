@@ -145,7 +145,8 @@
     "diagnostics:tag-intent-lifecycle": "node build/diagnostics/check-tag-intent-lifecycle.cjs",
     "diagnostics:operation-chain": "node build/diagnostics/check-operation-chain.cjs",
     "diagnostics:runtime-feedback": "node build/diagnostics/check-runtime-feedback.cjs",
-    "diagnostics:local-user-state": "node build/diagnostics/check-local-user-state.cjs"
+    "diagnostics:local-user-state": "node build/diagnostics/check-local-user-state.cjs",
+    "diagnostics:activation-entry": "node build/diagnostics/check-activation-entry.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

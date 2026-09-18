@@ -1,3 +1,4 @@
+import { traceActivationEntry } from './fontActivationTrace'
 import {
   editableTargetFromContextMenu,
   folderTargetFromContextMenu,
@@ -51,7 +52,7 @@ export function createFontDialogContextActions(options: FontDialogRuntimeOptions
       if (!action) return
       const fonts = options.fontsForTag(action.name, action.scope)
       options.setContextMenu(null)
-      void options.activateFontsBatch(fonts, action.label)
+      void options.activateFontsBatch(traceActivationEntry(fonts, 'tag-context', fonts.length, action.scope), action.label)
     },
 
     runContextBatchDeactivate(): void {

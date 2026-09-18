@@ -1,3 +1,5 @@
+import { activationEntryTrace, traceActivationEntry } from './fontActivationTrace'
+import { reportFontOperation } from './fontOperationTrace'
 import type { FontItem,LibraryState } from '@shared/types'
 import type React from 'react'
 import type { Dispatch,SetStateAction } from 'react'
@@ -97,9 +99,20 @@ export function createFontContextActionRuntime(options: FontContextActionRuntime
     },
 
     async runFontContextAction(action: 'install' | 'remove' | 'activate' | 'deactivate' | 'deleteFile' | 'protectToggle'): Promise<void> {
-      if (!options.contextMenu || options.contextMenu.kind !== 'font') return
+      if (!options.contextMenu || options.contextMenu.kind !== 'font') {
+        if (action === 'activate') {
+          const empty = traceActivationEntry([], 'font-context', options.selectedFontIds.length)
+          reportFontOperation({ trace: activationEntryTrace(empty), stage: 'route', outcome: 'missing-context' })
+        }
+        return
+      }
 
       const targets = contextFontTargets()
+      if (action === 'activate') {
+        const selected = options.selectedFontIds.length > 1 && options.selectedFontIds.includes(options.contextMenu.font.id) ? options.selectedFontIds.length : 1
+        traceActivationEntry(targets, 'font-context', selected)
+        if (targets.length < 2) reportFontOperation({ trace: activationEntryTrace(targets), stage: 'route', outcome: targets.length ? 'single-action' : 'zero-targets' })
+      }
       const font = targets[0]
       if (!font) return
 

@@ -5,7 +5,7 @@
 - 制定日期：2026-09-18。
 - 仓库：`uniquenesssta/99`；分支：`stage/09-preview-tags-app`。
 - 代码基线：`3bc1e387ebeb5298d5bd4060aaec5c9a0a2c7d93`。
-- 状态：**任务规划完成，U-00～U-09 均未实施、未验收。** 本次只提交本文及 README 入口和变更记录。
+- 状态：**U-00 诊断与受控复现已实施，自动验证结果见 §10；Windows 原故障根因待证。U-01～U-09 尚未实施。** 初次规划交付记录保留于 §9。
 - 输入：`startup-2026-09-18_02-59-25-870-21044.log`（813 行，UTC 02:59:25.872～03:01:28.978）及用户随后五点反馈、入口差异补充。原始日志不提交到 Git。
 - 与前任务衔接：[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md) §25 已交付本地收藏、标签目录同步与停用核对。本任务保留这些修复，处理后续真实交互问题和性能问题，不重开 R-01～R-07。
 - 既有基线证据：上一提交通过 TypeScript、115/115 诊断、Electron/Vite 367/1/196 模块构建和混淆 3/3。这是历史自动验证结果，**不能替代本任务的字体多选入口和 Windows 实机验收**。
@@ -108,7 +108,7 @@ flowchart TD
 
 ## 6. 实施顺序与任务卡
 
-优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。所有状态当前均为“待开始”。
+优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01～U-09 均为“待开始”。
 
 ### U-00：建立入口证据和复现基线
 
@@ -295,3 +295,85 @@ flowchart TD
 - 本次文档验证：文件路径与链接检查、任务覆盖检查、`git diff --check`；未重跑生产代码测试，不新增“115/115”通过声明。
 - Mermaid Chart 已绘制现有两种激活入口的真实调用关系。当前不涉及新第三方 API，无需 Context7 查询。
 - 后续从 U-00 开始；不得先把猜测的多选根因当结论，也不得仅删“批量”文字而保留分裂的执行逻辑。
+
+## 10. U-00 执行卡
+
+- 起点：`90adfa6c4332fca553db56acc370f886a763b1d4`，工作树干净；本轮仅诊断取证，不实施 U-01 目标补取/选择保留或后续菜单调整。
+- 状态：**自动通过待实机**。诊断实现和受控复现完成，Windows 原故障根因待证。已确认缓存缺失可使入口停止或少执行；本轮没有修复目标解析或裁剪逻辑。
+- 精确白名单：
+  - `src/renderer/src/fontOperationTrace.ts`：复用 trace 身份生成。
+  - `src/renderer/src/fontActivationTrace.ts`（新增）：激活入口、计数、目标摘要与有界逐项诊断；只保存请求数组的弱关联，不保存业务状态。
+  - `src/renderer/src/components/app/FontListPanel.tsx`、`src/renderer/src/fontContextActionRuntime.ts`、`src/renderer/src/fontDialogContextActionsRuntime.ts`：三入口取证。
+  - `src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts`：候选、派发、回执和状态回写诊断，不改候选及执行算法。
+  - `src/preload/index.ts`、`src/main/preload/runtimePreloadSource.ts`、`src/main/ipc/ipcTraceRuntime.ts`：激活批量请求复用既有可选 trace 信封；旧调用无 trace 继续兼容，主进程业务参数不变。
+  - `build/diagnostics/check-activation-entry.cjs`（新增）、`package.json`：真实组件回调及实际动作/preload/IPC 边界的可重复诊断；原生端口受控，不冒充 Windows GUI。
+  - `build/diagnostics/fixtures/app-interaction-composition.fixture.json`：只迁移上述两个入口文件的源码摘要；原行为断言保留。
+  - `README.md`、本任务书：结果、证据缺口和最小实机步骤。
+- 验证计划：完整缓存三入口对照；空/部分缓存；全跳过/处理中/部分回执失败/请求拒绝；选择水合与裁剪；日志失败不影响原动作；两套 preload 的 trace 关联。类型、全量诊断及可执行前端构建。
+- 环境边界：当前 Linux 没有 Windows 字体系统或浏览器二进制。真实 TSX 回调取证不能代替浏览器事件传播、真实分页竞态或 Windows 系统激活验收；实机根因保持待证。
+
+- 白名单补充：`build/diagnostics/fixtures/watcher-activation-baseline.fixture.json` 仅更新 `fontActivationActionRuntime.ts` 的规范化源码摘要；导出名、函数名及全部旧回滚断言不变。原因是新增诊断调用触发既有摘要门禁。
+
+
+### 10.1 复现结论与解释边界
+
+| 条件/入口 | 实际结果 | 定位 |
+| --- | --- | --- |
+| 同一组 a/b/c，完整缓存，Ctrl 多选后操作栏/字体右键/标签右键 | 三入口均派发 a/b/c，逐项回执后激活数为 3，busy 清空 | 按钮和共用动作已接线；不是普遍“没写代码” |
+| 3 个可见字体不在对象缓存，真实列表框选回调→操作栏 | 选中 3，解析 0，IPC 0；写“没有字体”状态 | `.map(library.fonts[id]).filter(Boolean)` 丢光目标，动作提前返回 |
+| 分两批水合 1499 项，使用真实 `libraryWithMergedFonts` 与 `buildVisibleFonts` | 对象缓存 1400，分页可见数据仍为 1499；被淘汰的 a/b/c 可见且可框选，但操作栏不派发 | 明确可达的缓存/分页边界缺陷；不是手工把按钮断开制造的反例 |
+| 空缓存，点击 a，再 Shift 点击 c | 一度选择 a/b/c，只水合 a/c；真实选择 effect 后只余 a/c，请求 2 项 | Shift 中间项没有水合，缓存有效 ID 裁剪进一步缩小选择 |
+| 字体右键，选中 3 项均缺缓存 | 菜单呈现单项动作，点击激活后 0 请求且菜单未关闭 | `targets[0]` 为空的提前返回；日志记录 `route=zero-targets` |
+| 已安装/已激活/处理中混合，全部不可执行 | IPC 0，分别记录过滤计数和 `all-skipped` | 区别于解析失败；过滤计数沿用原口径，条件可能重叠，不能相加当唯一跳过总数 |
+| 三项中一项失败；整个请求拒绝 | 分别回滚 1 项/3 项、清 busy，记录部分失败/结果未知及状态回写 | 保留原回滚与统计行为，没有用日志成功代替业务成功 |
+
+必须保留的反证和未证实项：
+
+- 正常分页完成时，`useRendererDatabasePageRuntime` **已经**把该批字体合并到 library.fonts，并保护当时选中 ID。因此“框选没有单独水合”本身不足以解释任意一次失败；确认缺陷需要旧分页记录、缓存淘汰或其他缺记录条件。
+- 1499 是本轮受控数据规模，也与旧日志扫描总数相同；**规模相同不证明用户当时触发了 1400 缓存边界**。旧日志没有入口/选择/解析计数，无法将该反例直接归因到那次操作。
+- 标签入口同样从 library.fonts 筛选；它不是全库权威查询。不能用它成功推断字体多选的目标完整性。
+- 右键动作先计算 targets 后关菜单；菜单点击 stopPropagation，关闭监听为 click/blur。受控回调正常可派发；尚无浏览器事件传播证据证明实机不存在关闭时序问题。
+- `FontCardRenderer` 使用 latestOptionsRef；当前回调重建后的选择测试通过，但 React DOM 提交期/分页竞态仍需实机或真实浏览器验证。
+- 开发模式 `AppRootView` 仍有状态栏；正式模式不显示该 footer。不能笼统说所有普通页面都完全没有反馈。U-02 继续处理统一可见反馈。
+
+### 10.2 新日志如何判读
+
+使用既有 `operation-chain`，domain 为 `font-activation`，按 `trace.operationId` 关联：
+
+1. `entry.reason`：`selection-toolbar`、`font-context`、`tag-context`；操作栏 `outcome` 记录页面与实际视图，标签记录 local/shared。
+2. `resolved.reason`：selected/resolved/missing；标签的 selected 是缓存中该标签匹配数，**不是数据库标签总数**。
+3. `targets`：过滤后数量和 ID 集合摘要；`filter`：installed/system/active/busy。
+4. `preflight`：zero-targets/all-skipped；字体右键 `route`：zero-targets/missing-context/single-action。
+5. `dispatch → ipc-start → ipc-result`：两套 preload 都支持可选 trace 信封，主进程业务 handler 仍只收到字体数组。
+6. `item-result`：最多 16 项的 ID 摘要与 activated/unconfirmed/not-temporary；`operation-result` 提供全量计数，`omitted` 明示未展开项数。
+7. `view-apply`：原状态回写函数已执行或已回滚；**不是 DOM 已绘制或 Windows 已验证的证明**。
+
+请求数组用 WeakMap 临时关联 trace，动作接收时释放；日志继续使用原 256 在途上限和 dropped 计数。无整套对象、字体路径或标签名称新增日志。旧调用可省略 trace，无数据迁移、无新依赖。取消激活/收藏/删除流程未修改。
+
+诊断边界：字体右键解析到 1 项仍走原单项函数，`single-action` 之后不提供本轮新增的批量 IPC 关联；旧 preload 缺 batch 方法时记录 `legacy-single` 和汇总结果，不假称具备批量 IPC 链。选择方式和跨页过程由复现记录补充，本轮未新增逐次选择日志或全局选择状态。
+
+### 10.3 自动验证与实机最小步骤
+
+- `node build/diagnostics/check-activation-entry.cjs --baseline`：直接读取起点 commit 的四个入口/动作源码，5 项原代码反例/对照通过。该命令需 Git 中保留起点提交，不加入默认门禁。
+- 默认新增诊断从真实 FontCard / FontListPanel / AppOverlays TSX 回调出发，接实际选择、动作、两套 preload 和 IPC trace 接收器；原生激活结果、DOM 几何和 React Hook 调度是受控端口。覆盖卡片/列表，library/folders/tags，Ctrl/Shift/框选，跨可见页选择，空/部分缓存，1400 边界，失败/拒绝、日志故障、逐项上限，以及移除真实按钮回调的退化反例。
+- 这不是浏览器挂载测试，没有测量操作系统字体可用性、真实滚动、DOM 冒泡或 React 并发调度。不会将“真实 TSX 回调”写成“Windows 实机点击通过”。
+- 最终验证：`npm run verify` 通过（TypeScript + 116/116 诊断）；其中新增入口诊断 52 个受控场景通过。`electron-vite build` 三端 367/1/197 模块通过，`node build/obfuscate-dist.cjs` 成功（工具输出 4/14 files）；`git diff --check` 通过。未运行 Windows 原生字体激活或 Rust 构建，本轮无 Rust 改动。
+
+Windows 复验（沿用现有开发启动，不清库、不重建数据）：
+
+```powershell
+$env:HFM_LOG_DETAIL = 'debug'
+npm run dev
+```
+
+1. 取同一组 3 个已知未安装且未激活的字体，记下页面、卡片/列表视图和选择方式。分别从操作栏、字体右键、对应标签右键激活；每轮检查系统结果并取消激活后再下一轮，避免“已激活”干扰。
+2. 首先重做曾经无反应的操作，并记录大致时间、点击前选中数量、点击后是否消失/减少、开发状态提示。若没有对应 `entry`，重点查事件触发；有 entry 后按上述阶段找断点。
+3. 再分别试 Ctrl/Shift/框选和跨页返回。若正常小样本都成功，滚动加载超过 1400 项再回到较早记录框选，复查 resolved/missing；无需删除或移动字体文件。
+4. 提供此次 startup 日志和出现问题的入口/时间。U-01 可依据本轮确定缺陷修复，但原 Windows 故障仍须通过同入口日志与系统结果闭环，不能拿标签成功代验。
+
+### 10.4 交付与接续
+
+- 下一项 U-01：修复已证实的分页可见字体/对象缓存目标解析不一致和错误选择裁剪；审计单项水合保留整个选中集合的边界，并保留本轮反例。不得单纯扩大缓存或取消所有有效删除清理。
+- 回滚：回退本轮 U-00 提交即可；只有诊断与向后兼容的可选 trace 参数，无持久化数据变更。
+- Mermaid Chart 已更新实际选择/水合/缓存/IPC 链。无新增第三方 API，未触发 Context7。
+- Create State 查询只返回“markdown”“足球”两个其他项目模型，未向它们写入 HFM 状态；本任务书与 Git 保留交接依据。

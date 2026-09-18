@@ -71,6 +71,11 @@ export function fontWriteTrace(entry: object): OperationTrace | undefined {
   return identities.get(entry)
 }
 
+export function createFontOperationTrace(domain: string): OperationTrace {
+  const id = nextId()
+  return { version: 1, sessionId, operationId: id, attemptId: nextId(), batchId: id, domain, members: [id], omitted: 0 }
+}
+
 export async function traceDirectFontOperation<T>(domain: string, run: (trace: OperationTrace) => Promise<T>): Promise<T> {
   const id = nextId()
   const trace: OperationTrace = { version: 1, sessionId, operationId: id, attemptId: nextId(), batchId: id, domain, members: [id], omitted: 0 }

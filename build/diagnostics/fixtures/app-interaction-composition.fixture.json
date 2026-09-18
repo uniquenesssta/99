@@ -135,10 +135,10 @@
     "useFontCardRenderer"
   ],
   "sources": {
-    "src/renderer/src/fontContextActionRuntime.ts": "aa039b83d1c623d2f66f6bbf15168bb55afddf1b491704912669634343d81a57",
+    "src/renderer/src/fontContextActionRuntime.ts": "0bf3d979de26e1bd8eb7fd7d236d8b7eafaf2547be6eadc5e2f116d47c7ef835",
     "src/renderer/src/fontContextMenuRuntime.ts": "7754392787d2b27743a76593a50aeb46e79b9878a38a9b8e7824e39b93d0e5d9",
     "src/renderer/src/fontDialogRuntime.ts": "6c6391a8c9ef968b6512fafb53813a261679aeb5c8ba2cc01219c724e28a7bf0",
-    "src/renderer/src/fontDialogContextActionsRuntime.ts": "2efe0c003986660c176341722ba87e3fc31b848768dd26bb53edf80e48f294c5",
+    "src/renderer/src/fontDialogContextActionsRuntime.ts": "ffdff77006f09b4a3605607d958fbbfc835ae080e4793079309bf69a42dba162",
     "src/renderer/src/fontDialogTagActionsRuntime.ts": "9df6041f92030b5c9780f53107a91632546b1e9f8819efb04326ae9c539e6c94",
     "src/renderer/src/fontDetailPanelRuntime.ts": "ef5ba91f22fa915de270e90513a6de0cdc5848aa7f63a75e682222c24b12b9b0",
     "src/renderer/src/fontTagInputRuntime.ts": "296b77a1412004e68c390c96e732479f90faa57f9a7aa5fa9984efa6ca4a6c07",
