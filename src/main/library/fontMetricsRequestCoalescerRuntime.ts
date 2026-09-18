@@ -36,6 +36,7 @@ export function createFontMetricsRequestCoalescerRuntime(
   const inFlightByKey = new Map<string, Promise<FontMetricsResult>>()
   let latestCacheEntry: MetricsCacheEntry | null = null
   let cacheGeneration = 0
+  let nextRequestId = 0
 
   async function run(args: {
     appendLog: (message: string) => void
@@ -43,9 +44,15 @@ export function createFontMetricsRequestCoalescerRuntime(
     key?: string
   }): Promise<FontMetricsResult> {
     const now = Date.now()
+    const requestId = ++nextRequestId
+    // Diagnostics must not turn a successful cache/read into a failed request.
+    const trace = (stage: string, details = ''): void => {
+      try { args.appendLog(`font metrics timing: request=${requestId}, generation=${cacheGeneration}, stage=${stage}, elapsed=${Date.now() - now}ms${details ? `, ${details}` : ''}`) } catch { /* best effort */ }
+    }
     const key = args.key || 'default'
     const cached = cachedByKey.get(key)
     if (cached && cached.expiresAt > now) {
+      trace('cache-hit')
       return cloneMetricsResult(cached.result)
     }
 
@@ -55,16 +62,18 @@ export function createFontMetricsRequestCoalescerRuntime(
       canReuseRecentMetricsAcrossKeys(latestCacheEntry.key, key)
     ) {
       args.appendLog(`font metrics request reused recent result: from=${latestCacheEntry.key}, to=${key}`)
+      trace('recent-hit')
       return cloneMetricsResult(latestCacheEntry.result)
     }
 
     const inFlight = inFlightByKey.get(key)
     if (inFlight) {
       args.appendLog(`font metrics request joined in-flight: key=${key}`)
-      return inFlight.then(cloneMetricsResult)
+      return inFlight.then(result => { trace('joined'); return cloneMetricsResult(result) })
     }
 
     const requestGeneration = cacheGeneration
+    trace('load-start')
     let promise!: Promise<FontMetricsResult>
     promise = args.load().then((result) => {
       if (requestGeneration === cacheGeneration) {
@@ -72,8 +81,10 @@ export function createFontMetricsRequestCoalescerRuntime(
         cachedByKey.set(key, entry)
         latestCacheEntry = entry
       }
-      return requestGeneration === cacheGeneration ? result : run(args)
-    }).finally(() => {
+      if (requestGeneration === cacheGeneration) { trace('load-end'); return result }
+      trace('invalidated-reread', `startedGeneration=${requestGeneration}`)
+      return run(args)
+    }).catch(error => { trace('load-error'); throw error }).finally(() => {
       if (inFlightByKey.get(key) === promise) inFlightByKey.delete(key)
     })
     inFlightByKey.set(key, promise)

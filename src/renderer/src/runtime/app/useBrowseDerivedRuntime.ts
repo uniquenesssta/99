@@ -27,22 +27,24 @@ export type BrowseDerivedOptions = {
   expandedFolderIds: Record<string, true>
 }
 
+const EMPTY_FONTS: FontItem[] = []
+
 // Read-only derivation; selection, preview effects and mutable refs stay with their owners.
 export function useBrowseDerivedRuntime(args: BrowseDerivedOptions) {
   const { library, sidebarPage, databasePageReady, databasePageResult, databaseFontMetrics, allFonts, activeFilter, selectedWatchedFolders, selectedFormats, selectedScripts, selectedCategory, selectedTagName, selectedSharedTagName, selectedFolderId, installStatus, timeSortMode, sortMode, deferredSearch, expandedFolderIds } = args
 
+  // Counts and logging context do not change any per-font search index.
+  const indexUsesDatabasePage = Boolean(databasePageReady && databaseFontMetrics)
+  const sourceFonts = indexUsesDatabasePage ? databasePageResult?.items || EMPTY_FONTS : allFonts
   const fontIndexById = useMemo(() => {
-    const sourceFonts = databasePageReady && databaseFontMetrics
-      ? databasePageResult?.items || []
-      : allFonts
-    return traceRendererSyncComputation('font-index-by-id', { fonts: sourceFonts.length, mode: databasePageReady && databaseFontMetrics ? 'database-page-window' : 'frontend-window' }, () => {
+    return traceRendererSyncComputation('font-index-by-id', { fonts: sourceFonts.length, mode: indexUsesDatabasePage ? 'database-page-window' : 'frontend-window' }, () => {
       const map = new Map<string, FontComputedIndex>()
       for (const font of sourceFonts) {
         map.set(font.id, buildFontComputedIndex(font))
       }
       return map
     }, sidebarPage)
-  }, [databasePageReady, databaseFontMetrics, databasePageResult?.items, allFonts, sidebarPage])
+  }, [sourceFonts, indexUsesDatabasePage])
 
   const fontMetrics = useMemo(
     () => databaseFontMetrics || traceRendererSyncComputation('frontend-build-font-metrics', { fonts: allFonts.length, collections: library.collections.length, tags: library.tags.length, folders: library.folders.length }, () => buildFontMetrics(allFonts, fontIndexById, library), sidebarPage),
@@ -112,6 +114,8 @@ export function useBrowseDerivedRuntime(args: BrowseDerivedOptions) {
   const flatFolderNodes = useMemo(() => flattenFolderNodes(library, expandedFolderIds), [library.folders, library.folderNodes, expandedFolderIds])
   const advancedFilterCount = selectedWatchedFolders.length + selectedFormats.length + selectedScripts.length + (selectedCategory === 'all' ? 0 : 1)
 
+  // Match buildVisibleFonts + tag authority + folder membership inputs. Preview
+  // text/mode and unrelated library preferences must not invalidate the list.
   const visibleFonts = useMemo(() => traceRendererSyncComputation('visible-fonts-filter-sort', { mode: databasePageReady ? 'database-page' : 'frontend-fallback', fonts: allFonts.length, page: sidebarPage, searchLength: deferredSearch.length, installStatus, sortMode, timeSortMode, selectedFolderId, selectedTagName, selectedSharedTagName }, () => buildVisibleFonts({
     databasePageReady,
     databasePageResult,
@@ -131,7 +135,7 @@ export function useBrowseDerivedRuntime(args: BrowseDerivedOptions) {
     sortMode,
     sidebarPage,
     library
-  }), sidebarPage), [databasePageReady, databasePageResult, allFonts, fontIndexById, deferredSearch, activeFilter, selectedWatchedFolders, selectedFormats, selectedScripts, selectedCategory, selectedTagName, selectedSharedTagName, selectedFolderId, installStatus, timeSortMode, sortMode, sidebarPage, library])
+  }), sidebarPage), [databasePageReady, databasePageResult, allFonts, fontIndexById, deferredSearch, activeFilter, selectedWatchedFolders, selectedFormats, selectedScripts, selectedCategory, selectedTagName, selectedSharedTagName, selectedFolderId, installStatus, timeSortMode, sortMode, sidebarPage, library.fonts, library.tags, library.localTags, library.__localTagAuthorityKnown, library.__sharedTagAuthorityKnown, library.folders, library.folderNodes, library.fontFolderIds])
 
   return { fontIndexById, fontMetrics, localTagCounts, sharedTagCounts, localTagList, sharedTagList, flatFolderNodes, advancedFilterCount, visibleFonts }
 }

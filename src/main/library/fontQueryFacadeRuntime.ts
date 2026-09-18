@@ -654,8 +654,21 @@ export function createFontQueryFacadeRuntime(
     return metricsRequestCoalescer.run({
       appendLog: options.appendLog,
       load: async () => {
-        const metrics = await loadFontMetricsFromLibraryUncoalesced();
-        return options.reconcileLocalUserMetrics ? options.reconcileLocalUserMetrics(metrics) : metrics;
+        const startedAt = Date.now();
+        let queryFinishedAt: number | undefined;
+        let outcome = 'error';
+        try {
+          const metrics = await loadFontMetricsFromLibraryUncoalesced();
+          queryFinishedAt = Date.now();
+          const result = options.reconcileLocalUserMetrics ? await options.reconcileLocalUserMetrics(metrics) : metrics;
+          outcome = 'ok';
+          return result;
+        } finally {
+          const finishedAt = Date.now();
+          try {
+            options.appendLog(`font metrics stages: outcome=${outcome}, query=${(queryFinishedAt ?? finishedAt) - startedAt}ms, localUser=${queryFinishedAt === undefined ? 0 : finishedAt - queryFinishedAt}ms, total=${finishedAt - startedAt}ms`);
+          } catch { /* diagnostics must not change metrics results */ }
+        }
       },
       key: metricsRevisionToken ? `metrics:${metricsRevisionToken}` : 'metrics:default',
     });

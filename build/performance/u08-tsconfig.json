@@ -1,0 +1,4 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["u08-browser.tsx", "u08-before.d.ts", "../../src/renderer/src/global.d.ts"]
+}

@@ -152,7 +152,10 @@
     "diagnostics:operation-chain": "node build/diagnostics/check-operation-chain.cjs",
     "diagnostics:runtime-feedback": "node build/diagnostics/check-runtime-feedback.cjs",
     "diagnostics:local-user-state": "node build/diagnostics/check-local-user-state.cjs",
-    "diagnostics:activation-entry": "node build/diagnostics/check-activation-entry.cjs"
+    "diagnostics:activation-entry": "node build/diagnostics/check-activation-entry.cjs",
+    "diagnostics:browse-metrics-reuse": "node build/diagnostics/check-browse-metrics-reuse.cjs",
+    "diagnostics:preview-reuse-matrix": "node build/diagnostics/check-preview-reuse-matrix.cjs",
+    "benchmark:u08": "node build/performance/u08-serve.mjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

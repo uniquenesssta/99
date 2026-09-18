@@ -122,6 +122,9 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
 
     let disposed = false
     const requestSeq = ++options.fontMetricsRequestSeqRef.current
+    const scheduledAt = performance.now()
+    let dispatched = false
+    let settled = false
     const metricsDelayMs = options.indexingActive
       ? METRICS_INDEXING_DELAY_MS
       : options.rendererUserActive()
@@ -129,24 +132,34 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
         : METRICS_IDLE_DELAY_MS
     const timer = window.setTimeout(() => {
       const startedAt = performance.now()
-      options.reportTrace({ kind: 'db-metrics-start', label: 'getFontMetrics', page: options.sidebarPage, durationMs: 0, details: { indexingActive: options.indexingActive, userActive: options.rendererUserActive(), fonts: options.allFontsLength } }, 'db-metrics-start')
+      dispatched = true
+      const queueMs = Math.round(startedAt - scheduledAt)
+      options.reportTrace({ kind: 'db-metrics-start', label: 'getFontMetrics', page: options.sidebarPage, durationMs: 0, details: { requestSeq, scheduledDelayMs: metricsDelayMs, queueMs, indexingActive: options.indexingActive, userActive: options.rendererUserActive(), fonts: options.allFontsLength } })
       const intentRevision = fontUserIntentRevision()
       const pendingFavorite = Object.values(options.library.fonts || {}).some(hasUnsettledFavoriteIntent)
       options.hfm.getFontMetrics()
         .then((result) => {
+          settled = true
           const durationMs = Math.round(performance.now() - startedAt)
-          options.reportTrace({ kind: 'db-metrics-end', label: 'getFontMetrics', page: options.sidebarPage, severity: databaseTraceSeverity(durationMs), durationMs, details: { total: result.total, installed: result.installedCount, notInstalled: result.notInstalledCount, missing: result.installStatusMissingCount, elapsedMs: result.elapsedMs } })
-          if (disposed || requestSeq !== options.fontMetricsRequestSeqRef.current) return
+          options.reportTrace({ kind: 'db-metrics-end', label: 'getFontMetrics', page: options.sidebarPage, severity: databaseTraceSeverity(durationMs), durationMs, details: { requestSeq, queueMs, totalMs: Math.round(performance.now() - scheduledAt), total: result.total, installed: result.installedCount, notInstalled: result.notInstalledCount, missing: result.installStatusMissingCount, elapsedMs: result.elapsedMs } })
+          if (disposed || requestSeq !== options.fontMetricsRequestSeqRef.current) {
+            options.reportTrace({ kind: 'db-metrics-rejected', label: 'obsolete-request', page: options.sidebarPage, details: { requestSeq } })
+            return
+          }
           if (pendingFavorite || intentRevision !== fontUserIntentRevision()) {
             options.reportTrace({ kind: 'db-metrics-rejected', label: 'user-intent-changed', page: options.sidebarPage,
               severity: 'warn', details: { requestSeq, pendingFavorite, intentRevision, currentIntentRevision: fontUserIntentRevision() } })
             return
           }
+          const applyStartedAt = performance.now()
           options.setDatabaseFontMetrics(normalizeFontMetricsResult(result))
+          options.reportTrace({ kind: 'db-metrics-applied', label: 'state-scheduled', page: options.sidebarPage,
+            severity: 'info', durationMs: 0, details: { requestSeq, stateScheduleMs: Math.round(performance.now() - applyStartedAt), totalMs: Math.round(performance.now() - scheduledAt) } })
         })
         .catch((error) => {
+          settled = true
           const durationMs = Math.round(performance.now() - startedAt)
-          options.reportTrace({ kind: 'db-metrics-error', label: 'getFontMetrics', page: options.sidebarPage, severity: 'error', durationMs, details: { error: error instanceof Error ? error.message : String(error) } })
+          options.reportTrace({ kind: 'db-metrics-error', label: 'getFontMetrics', page: options.sidebarPage, severity: 'error', durationMs, details: { requestSeq, queueMs, totalMs: Math.round(performance.now() - scheduledAt), error: error instanceof Error ? error.message : String(error) } })
           if (disposed || requestSeq !== options.fontMetricsRequestSeqRef.current) return
           if (pendingFavorite || intentRevision !== fontUserIntentRevision()) {
             options.reportTrace({ kind: 'db-metrics-rejected', label: 'user-intent-changed', page: options.sidebarPage,
@@ -160,6 +173,8 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
     return () => {
       disposed = true
       window.clearTimeout(timer)
+      if (!settled) options.reportTrace({ kind: 'db-metrics-cancelled', label: dispatched ? 'in-flight' : 'queued', page: options.sidebarPage,
+        details: { requestSeq, scheduledDelayMs: metricsDelayMs, totalMs: Math.round(performance.now() - scheduledAt) } })
     }
   }, [hasWatchedFolders, options.library.collections, options.library.tags, options.library.localTags, options.library.folders, options.library.folderNodes, options.library.fontFolderIds, options.databaseMetricsRefreshToken ?? options.databaseRefreshToken, options.indexingActive])
 

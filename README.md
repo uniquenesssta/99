@@ -44,7 +44,7 @@ npm run build:win
 
 ## 当前工程任务
 
-- [操作一致性与刷新优化任务书（U-00～U-07 已实施，实机待验；U-08～U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
+- [操作一致性与刷新优化任务书（U-00～U-08 代码已实施，实机待验；U-08 性能测量未结案，U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
 
 - [预览缓存、本地标签与 App 专项拆分任务书（规划，未实施）](docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)
 
@@ -65,6 +65,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-18：U-08 缩窄字体索引和列表派生依赖，统计读回/预览文字修改不再造成无关全表重算；1499 条字体各 40 次受控更新的对应重算均由 40 次降至 0。补齐统计调度、缓存复用/失效重读、主进程读取及本机状态校正日志，保持旧结果拒绝和失败重试。新增派生/统计及真实 SQLite/PNG 缓存复用检查，预览 owner/原生生成未改；TypeScript、124/124 诊断、三端构建与混淆通过；真实 React 对照入口为 `npm run benchmark:u08`。浏览器访问本地页受限，尚无中位数/P95 或完整应用绘制实测，U-08 性能验收未结案；结果与 Windows 开发模式复验见 [U-08 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#18-u-08-执行卡)。
 
 - 2026-09-18：U-07 修复新目录 events/hash 尚未创建导致的维护误报；与 preview/metrics 统一按 ENOENT 识别惰性库，权限、损坏、锁及 I/O 错误仍保留。启动维护先等待原 owner 初始化明确缺失的 library/tasks/kvs，Node 备用备份不再创建未使用的可选库；自动备份失败参与最终结果并保留重试资格。TypeScript、122/122 诊断（新增 78 项真实 SQLite/受控端口检查）、三端构建与混淆通过；Windows 原生故障实测待验，见[U-07 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#17-u-07-执行卡)。无依赖、数据库格式、IPC 或 Rust 变更，下一项 U-08。
 

@@ -134,7 +134,7 @@ async function preview() {
   const app={PREVIEW_STATE_LRU_LIMIT:800,pruneRecordByKeyLimit:x=>x,rendererMemoryPressure:()=> 'normal',requestIdleWindow:fn=>{timers.set(++timerId,fn);return timerId},MAX_CONCURRENT_PREVIEW_LOADS:3,SCROLLING_PREVIEW_LOADS:1,INDEXING_PREVIEW_LOADS:1}
   const window={setTimeout:fn=>{timers.set(++timerId,fn);return timerId},clearTimeout:id=>timers.delete(id),cancelIdleCallback:id=>timers.delete(id)}
   const load=loadFor({react,'../../../appRuntime':app,'../../../rendererPerformance':{reportRendererTrace(){}},'./fontPreviewQuickFallbackRuntime':{},'../../appRuntime':app},{window})
-  const calls=[],font={id:'a',path:'/audit/a.ttf',fileName:'a.ttf'}, options={previewText:'audit',listPreviewFontSize:39,selectedFontId:'',selectedFontIds:[],indexingActive:false,rendererUserActive:()=>false,isBadFontRecord:()=>false,setStatus(){},updateFont(){},hfm:{getCachedPreviewImages:(fonts,text)=>{const g=deferred();calls.push({g,text,ids:fonts.map(f=>f.id)});return g.promise}}}
+  const calls=[],font={id:'a',path:'/audit/a.ttf',fileName:'a.ttf'}, options={previewText:'audit',listPreviewFontSize:39,selectedFontId:'',selectedFontIds:[],indexingActive:false,rendererUserActive:()=>false,isBadFontRecord:()=>false,setStatus(){},updateFont(){},hfm:{getCachedPreviewImages:(fonts,text,fontSize)=>{const g=deferred();calls.push({g,text,fontSize,ids:fonts.map(f=>f.id)});return g.promise}}}
   const hook=load(files.preview).usePreviewController
   const render=()=>{cursor=0;const value=hook(options);while(effects.length)effects.shift()();return value}
   let controller=render();controller.requestPreviewFont(font,'high');controller.processPreviewQueue();assert.equal(calls.length,1)
@@ -143,6 +143,15 @@ async function preview() {
   calls[0].g.resolve({a:'old-image'});await tick();controller=render();assert.equal(controller.nativePreviewImages.a,undefined,'old token applied image')
   controller.processPreviewQueue();assert.equal(calls.length,2,'old completion released new in-flight gate')
   calls[1].g.resolve({a:'new-image'});await tick();controller=render();assert.equal(controller.nativePreviewImages.a,'new-image')
+  // U-08: revisiting and user-state changes reuse the existing image in this owner.
+  for (const active of [false, true, false]) {
+    options.selectedFontIds = active ? ['a'] : []
+    controller = render()
+    controller.requestPreviewFont({ ...font, active, favorite: active }, 'high')
+    controller.processPreviewQueue()
+    assert.equal(calls.length, 2, 'unchanged text/size regenerated an in-memory preview')
+    assert.equal(controller.nativePreviewImages.a, 'new-image')
+  }
   // An IPC error is not a persistent cache miss: defer, then re-read the batch.
   controller.requestPreviewFont({...font,id:'b'},'high');assert.equal(calls.length,3)
   calls[2].g.reject(Error('temporary IPC failure'));await tick();assert(timers.size>0)
@@ -175,6 +184,19 @@ async function preview() {
     assert.deepEqual(effects,before,`${boundary} completion continued obsolete fallback work`)
     assert(o.loadingFonts.current.has(font.id),'old load cleared newer loading ownership')
   }
+  // A size change is a new complete request; its old completion cannot win.
+  slots.length = 0; calls.length = 0; timers.clear()
+  options.previewText = 'size-test'; options.listPreviewFontSize = 39
+  controller = render(); controller.requestPreviewFont(font, 'high')
+  options.listPreviewFontSize = 52
+  controller = render(); controller.requestPreviewFont(font, 'high')
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].fontSize, 39); assert.equal(calls[1].fontSize, 52)
+  calls[0].g.resolve({ a: 'wrong-size' }); await tick(); controller = render()
+  assert.equal(controller.nativePreviewImages.a, undefined, 'old size applied after reset')
+  calls[1].g.resolve({ a: 'right-size' }); await tick(); controller = render()
+  assert.equal(controller.nativePreviewImages.a, 'right-size')
+  for (const slot of slots) slot?.cleanup?.()
   console.log('W-04 real controller rerender, latest options, old token, failed batch retry, cleanup/setup, in-flight ownership, unmount cleanup, per-font await boundaries: passed')
 }
 async function run(){for(const [key,fn]of Object.entries({activation,incremental,storage,preview}))if(!selected||key===selected)await fn()}

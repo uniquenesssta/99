@@ -5,7 +5,7 @@
 - 制定日期：2026-09-18。
 - 仓库：`uniquenesssta/99`；分支：`stage/09-preview-tags-app`。
 - 代码基线：`3bc1e387ebeb5298d5bd4060aaec5c9a0a2c7d93`。
-- 状态：**U-00 诊断、U-01 选择/命令链修复、U-02 统一操作入口、U-03 本机集合收藏、U-04 跨页安装筛选、U-05 增量刷新、U-06 停用等待优化及 U-07 首次启动维护修复已实施，证据见 §10～§17；Windows 实机验收待回执。U-08～U-09 尚未实施。** 初次规划交付记录保留于 §9。
+- 状态：**U-00 诊断、U-01 选择/命令链修复、U-02 统一操作入口、U-03 本机集合收藏、U-04 跨页安装筛选、U-05 增量刷新、U-06 停用等待优化及 U-07 首次启动维护修复已实施，证据见 §10～§17；Windows 实机验收待回执。U-08 的重复派生修复、分阶段日志及缓存回归已实施，见 §18；实际 React 中位数/P95、完整应用请求到绘制及 Windows/NAS 性能验收尚未完成。U-09 尚未实施。** 初次规划交付记录保留于 §9。
 - 输入：`startup-2026-09-18_02-59-25-870-21044.log`（813 行，UTC 02:59:25.872～03:01:28.978）及用户随后五点反馈、入口差异补充。原始日志不提交到 Git。
 - 与前任务衔接：[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md) §25 已交付本地收藏、标签目录同步与停用核对。本任务保留这些修复，处理后续真实交互问题和性能问题，不重开 R-01～R-07。
 - 既有基线证据：上一提交通过 TypeScript、115/115 诊断、Electron/Vite 367/1/196 模块构建和混淆 3/3。这是历史自动验证结果，**不能替代本任务的字体多选入口和 Windows 实机验收**。
@@ -705,3 +705,46 @@ Mermaid Chart 已绘制实际批量确认、失败隔离和代次链路；无新
 - `npm run verify` 通过：TypeScript + 122/122 诊断；最终初始化修改后另行 TypeScript 通过。三端构建 367/1/200 模块、混淆 3/3 和 `git diff --check` 通过。Rust 端为受控返回，Windows 权限/锁为注入；不声称已运行 Windows 原生故障测试。
 - Windows 开发模式复验：更新当前分支后 `npm run dev`，在独立测试数据目录启动（保留原目录），确认只初始化必需库；尚未扫描时 events/hash 缺失不再使维护 ok=false。首次扫描/事件后再次维护检查其已有库；在测试目录验证只读/权限/锁异常仍可见。正常退出重启后核对已有字体、收藏、标签及任务历史，备份可读；不要用生产数据库做损坏实验。
 - Mermaid Chart 已更新实际初始化、分类和最终汇总链；未新增第三方/系统 API，不触发 Context7。Create State 按此前 2/2 容量上限与用户要求继续跳过，进度留在 Git/README/任务书。无数据迁移，回滚本轮提交即可。下一项 U-08；U-06 的系统字体枚举部分来源失败审计边界不在本轮修改范围内。
+
+## 18. U-08 执行卡
+
+### 18.1 起点、证据与范围
+
+- 起点 `08c07c7ecd6b58c6fb24481cef5f8ccaaa173a5a`，工作区干净。旧日志的 React commit 约 37–40ms、font-index-by-id 约 18ms 和统计 IPC 423ms / worker 34ms 仅作定位线索，不作为当前版本对比结果。
+- 已定位：字体索引依赖整个统计对象，计数读回会重建不变字体的搜索索引；列表派生依赖整个 library，预览文字修改也会重跑筛选排序。按真实读取字段缩窄依赖，保留字体、标签权威状态、文件夹关联、筛选及排序的有效更新。
+- 生产白名单：`src/renderer/src/runtime/app/useBrowseDerivedRuntime.ts`；`src/renderer/src/runtime/database/useRendererDatabasePageRuntime.ts`；`src/main/library/fontMetricsRequestCoalescerRuntime.ts`、`fontQueryFacadeRuntime.ts`（后三者仅补阶段计时，不改变调度延迟、缓存有效期、失效重读、用户意图和回退规则）。不改预览生成、格式、存储层、Rust 或 IPC 协议，不新增依赖。
+- 验证白名单：新增 `build/diagnostics/check-browse-metrics-reuse.cjs`；`build/performance/u08-*` 真实 React 浏览器对照入口；`check-runtime-feedback.cjs` 的预览重复进入/激活/尺寸复用检查；package.json 注册命令，README 与本任务书记录结果。只迁移实际受影响的冻结锚点，不批量重录基线。
+- 对照基线直接读取上述 Git 提交，使用相同合成字体、React 18.3.1、操作序列和冷热条件；浏览器性能与受控端口执行结果分开报告，不能替代 Windows / DirectWrite / NAS 实机验收。
+- 预览审计补充白名单：新增 `build/diagnostics/check-preview-reuse-matrix.cjs`，通过真实临时 SQLite/PNG、实际缓存分组/读取/共享拉取 owner 检查完整键、冷/热访问及 owner 重建。原生 PNG 生成和 NAS 网络为受控边界。激活切换可能改变 system-installed 路由键，首次缺失不能误报为缓存失效。
+- 冻结迁移登记：首轮 verify 在 `browse-controller` 的派生函数摘要处按预期拦截（旧 `f3ecf434…`、新 `b7544a6d…`）。仅迁移 `browse-controller.fixture.json` 的 derived 摘要，对应本轮索引来源选择与 visibleFonts 依赖缩窄；state/ref、App 调用接线、预览/选择/布局余部全部保持原摘要。新增执行门同时要求旧源码复现 40/40 次重算、新源码消除，并对照真实未缓存派生结果，不能用换摘要代替行为验证。
+
+
+### 18.2 实现与执行证据
+
+| 场景 | 本轮结果 | 边界 |
+| --- | --- | --- |
+| 1499 条字体，40 次统计对象读回 | 旧源码索引重建 40 次，当前源码 0 次 | 同一 Node 进程、真实派生函数、受控 Hook 调度；这是次数，不是 React 耗时 |
+| 同一字体集，40 次只改预览文字 | 旧源码列表重算 40 次，当前源码 0 次 | 文字对应的预览仍需按新键生成/读取，不能复用旧文字图像 |
+| 字体/收藏/激活/标签/安装状态/文件夹变更 | 对照未缓存的实际派生函数一致；标签权威标记单独改变也生效 | 数据库分页与前端回退均覆盖；缺页/统计未就绪切换保留 |
+| 同一预览再次请求、切页返回、收藏/激活状态改变 | 已在内存的相同文字/尺寸图像不重复派发 IPC | 真实 controller，React 生命周期与 IPC 为受控端口 |
+| 冷、本地热、共享拉取、本地回访、重建 owner 和 SQLite 连接 | 真实临时 SQLite/PNG 读回一致；本地命中不查共享，同键共享拉取合并一次 | PNG 生成与网络可用性为受控端口；重建 owner 不等于整机重启 |
+| 文字/字号/宽高/文件大小/mtime/渲染版本；严格键 DPI/前景模式 | 不同完整键不能命中旧图像 | 默认与严格键的既有协议均保持 |
+| 激活/停用 | 系统字体路由产生不同键，首次缺失正常；同路由复访、停用回原路由均命中 | 不把跨路由的新键强行视为旧缓存失效 |
+| 过期完成、重置、卸载/恢复、尺寸变化、失败重试 | 原 W-04 生命周期反例保留，新增内存重复访问及尺寸旧结果隔离通过 | 不修改预览 owner 或原生渲染器 |
+
+统计日志的解释（完整阶段采集需以 `HFM_LOG_DETAIL=debug` 启动，两次对比使用同一设置；默认慢事件/汇总日志不构成全量分位数样本）：
+
+- `db-metrics-start`：`requestSeq`、预设 `scheduledDelayMs` 与实际 `queueMs`；取消事件区分 queued / in-flight。
+- `db-metrics-end`：`durationMs` 是渲染侧调用到收到结果，含 IPC、主进程等待/处理和返回；`totalMs` 另包含调度等待。它不是纯 IPC 开销。
+- `font metrics timing`：主进程自身 request/generation 与 cache-hit、recent-hit、joined、load-start/end/error、invalidated-reread。主进程编号与渲染侧编号是独立序列，不可硬拼为同一个 ID。
+- `font metrics stages`：未合并读取的 query（含路由、worker、必要校正/回退）与 localUser（本机收藏/激活校正）；既有 worker 的 select/parse/workerElapsed 保留。缓存命中时 result.elapsedMs 属于缓存生成时的值，不能当成本次又执行了 SQL。
+- `db-metrics-applied / state-scheduled` 的 `stateScheduleMs` 仅表示归一化并安排状态更新，**不是 React commit 或屏幕已经绘制**；事件自身 duration=0/info，避免新增计时反过来延长用户活跃窗口。完整应用 commit/长任务沿用现有监测；本轮未取得完整应用请求到绘制实测，不能把两者时间差全部称为 IPC 或 SQL 慢。
+
+### 18.3 验证、测量限制与接续
+
+- 新增 `diagnostics:browse-metrics-reuse`：92 项受控检查，含旧源码对照、有效依赖、失效重读/同键合并/失败重试、排队与请求阶段拆分、主进程本机校正阶段及诊断失败隔离。新增 `diagnostics:preview-reuse-matrix`：34 项真实临时 SQLite/PNG 与受控网络检查。原 W-04 LF/CRLF 和 8 个退化反例继续保留；只迁移上述一个 derived 冻结摘要。
+- 自动门：`npm run verify` 通过 TypeScript + 124/124 诊断；最终日志字段调整后补跑 92 项派生/统计专项及 TypeScript。三端构建 367/1/200 模块、混淆 3/3、`git diff --check` 通过；复测入口独立类型检查及基线与当前实现的同包编译通过。以上不等同于浏览器或 Windows 原生性能通过。
+- 浏览器复测入口 `npm run benchmark:u08`：先单独 TypeScript 校验，再用现有 esbuild 启动 `http://127.0.0.1:39218/`。同一次运行加载 Git 基线和当前实际 Hook，每场景前后各 40 个热样本、每段预热 5 次、交错 before/after 顺序，冷挂载单列；输出 actualDuration、请求到 commit、双帧绘制机会的中位数/P95、commit 数和长任务。默认开发 StrictMode，可另行关闭作为**独立条件**，不能跨条件计算提升比例。仅含 48 行简单 DOM，不能代表完整 App 卡片与原生预览性能。
+- 本轮浏览器测量**未运行成功**：本地 Chromium 缺失、下载被环境拦截；现有云浏览器可连接但访问本地测试页返回 `ERR_BLOCKED_BY_CLIENT`。未绕过访问限制，未填入模拟 React/绘制耗时。本地服务编译和复测入口 TypeScript 已检查，真实浏览器交互仍待执行；因此 U-08 性能验收未结案。
+- Windows 开发方式继续 `npm run dev`。固定同一字体集与窗口尺寸，对原基线/当前版本各记录不少于 30 次同序列操作：字体多选及标签激活、收藏/取消、标签增删、改一个预览字、切页返回、停用、正常退出重启；按冷/热、内存/本地/共享层分别汇总中位数/P95 与样本数。完整 App 的 commit/绘制使用开发者工具全程录制；默认 Profiler 仅上报慢更新，不能据此计算所有更新的分位数。保留选中项和滚动位置，检查没有无关预览请求。原生生成与 NAS/断线后的真实表现需这份回执，不根据旧日志宣称已经改善多少毫秒。
+- Context7 已核对 React 18 Profiler/StrictMode 语义及 esbuild define 参数；复测入口曾因对象替换值不是 JSON 字符串而编译失败，已修正并通过 `--check`；Mermaid Chart 已展示真实统计链。Create State 按此前 2/2 容量上限和用户要求继续跳过，由 Git/README/任务书保存进度。无数据库迁移、Rust、IPC 格式或依赖变更，回滚本轮提交即可；下一阶段为 U-09，并须补齐本节未完成的实测。
