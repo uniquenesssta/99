@@ -8,9 +8,11 @@
 
 > 当前交互补充：按用户最新要求移除主界面选择操作栏、详情正反状态按钮合一、单击选择/取消及 100ms 防连击，执行与验证见[操作优化任务书 §19](HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#19-用户补充详情状态按钮与单击选择修正)。不代替 U-09 或此前 Windows 实机验收。
 
+> 标签日志补充：修复已提交标签查询仍等待及共享操作历史误报冲突，退出/断网现状只读核查见[操作优化任务书 §20](HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#20-标签提交查询延迟与共享冲突误报)。退出机制本轮未修改。
+
 ## 0. 文档状态
 
-- 文档版本：1.38
+- 文档版本：1.39
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
 - 主线阶段历史记录：Stage 7 AT-7.1 已完成自动与 Windows 构建验收；AT-7.2 已完成兼容工具链升级、锁图清理和本环境自动验证。Windows `npm ci` 已确认 395 个包且审计 0；首轮 `build:win` 在诊断的 LF 字面串无法改写 CRLF 配置处停止，生产配置与依赖无误。该诊断已改为 LF/CRLF 结构化反例并通过 91/91；分支 `stage/07-ipc-security-dependencies`。Windows 完整重跑、原生 ABI、NSIS 及安装/启动/卸载烟测待补，Stage 8 尚未开始。

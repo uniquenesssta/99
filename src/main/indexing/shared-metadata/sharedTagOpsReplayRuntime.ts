@@ -93,6 +93,8 @@ type ReplayFontState = {
 
 const LAST_REPLAY_ROWID_META_KEY = 'sharedTagOpsReplayMaxRowId'
 const LAST_REPLAY_AT_META_KEY = 'sharedTagOpsReplayAt'
+const CONFLICT_POLICY_META_KEY = 'sharedTagOpsConflictPolicy'
+const CONFLICT_POLICY_VERSION = '2'
 const CONFLICT_SAMPLE_LIMIT = 20
 
 function numberValue(value: unknown): number {
@@ -157,15 +159,16 @@ function readTagOps(db: any): SharedTagOperationRow[] {
 }
 
 function makeConflict(fontId: string, tagName: string, ops: SharedTagOperationRow[], latest: SharedTagOperationRow): SharedTagOpsReplayConflict | null {
-  const actions = Array.from(new Set(ops.map((op) => normalizedAction(op.action, op.tombstone)).filter(Boolean) as string[])).sort()
-  const machines = Array.from(new Set(ops.map((op) => stringValue(op.machine_id)).filter(Boolean))).sort()
   const latestRevision = numberValue(latest.next_revision)
   const latestAction = normalizedAction(latest.action, latest.tombstone)
   if (!latestAction) return null
   const latestComparable = ops.filter((op) => numberValue(op.next_revision) === latestRevision)
+  // Earlier revisions are resolved history, including sequential add/remove
+  // and edits from different machines. Only the current frontier can compete.
+  const actions = Array.from(new Set(latestComparable.map((op) => normalizedAction(op.action, op.tombstone)).filter(Boolean) as string[])).sort()
+  const machines = Array.from(new Set(latestComparable.map((op) => stringValue(op.machine_id)).filter(Boolean))).sort()
   const hasRevisionTie = latestComparable.length > 1
-  const hasConflict = actions.length > 1 || machines.length > 1 || hasRevisionTie
-  if (!hasConflict) return null
+  if (!hasRevisionTie) return null
   return {
     fontId,
     tagName,
@@ -173,7 +176,7 @@ function makeConflict(fontId: string, tagName: string, ops: SharedTagOperationRo
     machines,
     latestRevision,
     latestAction,
-    opCount: ops.length,
+    opCount: latestComparable.length,
     hasRevisionTie,
   }
 }
@@ -262,7 +265,8 @@ export function createSharedTagOpsReplayRuntime(deps: SharedTagOpsReplayRuntimeD
     const updatedAt = new Date().toISOString()
     const previousMaxRowId = numberValue(deps.readMeta(db, LAST_REPLAY_ROWID_META_KEY))
     const maxRowId = readMaxRowId(db)
-    if (maxRowId <= 0 || previousMaxRowId >= maxRowId) {
+    const policyCurrent = deps.readMeta(db, CONFLICT_POLICY_META_KEY) === CONFLICT_POLICY_VERSION
+    if (policyCurrent && (maxRowId <= 0 || previousMaxRowId >= maxRowId)) {
       return {
         ok: true,
         rootPath,
@@ -283,6 +287,7 @@ export function createSharedTagOpsReplayRuntime(deps: SharedTagOpsReplayRuntimeD
     const rows = readMetadataRows(db)
     const ops = readTagOps(db)
     const { states, conflicts } = buildReplayStates(rows, ops)
+    const hasNewOps = maxRowId > previousMaxRowId
     const update = db.prepare(`
       UPDATE font_metadata
       SET tag_names_json = ?, revision = COALESCE(revision, 0) + 1, updated_at = ?, updated_by = ?
@@ -299,6 +304,9 @@ export function createSharedTagOpsReplayRuntime(deps: SharedTagOpsReplayRuntimeD
     db.exec('BEGIN IMMEDIATE')
     try {
       for (const state of states.values()) {
+        // A diagnostic policy refresh must not reapply already-replayed history
+        // over newer metadata when the operation watermark has not advanced.
+        if (!hasNewOps) continue
         const nextTags = replayTagsForState(state)
         if (state.revision > 0) {
           if (!sameTags(state.baseTags, nextTags)) {
@@ -321,10 +329,11 @@ export function createSharedTagOpsReplayRuntime(deps: SharedTagOpsReplayRuntimeD
           insertedRows += 1
         }
       }
-      deps.writeMeta(db, LAST_REPLAY_ROWID_META_KEY, String(maxRowId))
+      deps.writeMeta(db, LAST_REPLAY_ROWID_META_KEY, String(Math.max(previousMaxRowId, maxRowId)))
       deps.writeMeta(db, LAST_REPLAY_AT_META_KEY, updatedAt)
       deps.writeMeta(db, 'sharedTagOpsConflictCount', String(conflicts.length))
-      if (conflicts.length) deps.writeMeta(db, 'sharedTagOpsConflictSamples', JSON.stringify(conflicts.slice(0, CONFLICT_SAMPLE_LIMIT)))
+      deps.writeMeta(db, 'sharedTagOpsConflictSamples', JSON.stringify(conflicts.slice(0, CONFLICT_SAMPLE_LIMIT)))
+      deps.writeMeta(db, CONFLICT_POLICY_META_KEY, CONFLICT_POLICY_VERSION)
       db.exec('COMMIT')
     } catch (error) {
       try { db.exec('ROLLBACK') } catch { /* ignore */ }

@@ -35,10 +35,11 @@ function noteTagMutation(
   scope: TagMutationWriteScope,
   reason: string,
   ids: string[],
+  committed = false,
 ): void {
   if (!ids.length) return
-  if (scope === 'local') runtime.noteLocalTagMutation(reason, ids)
-  else runtime.noteSharedTagMutation(reason, ids)
+  if (scope === 'local') runtime.noteLocalTagMutation(reason, ids, committed)
+  else runtime.noteSharedTagMutation(reason, ids, committed)
 }
 
 export function createTagMutationWriteProtocolRuntime(options: TagMutationWriteProtocolOptions) {
@@ -57,7 +58,7 @@ export function createTagMutationWriteProtocolRuntime(options: TagMutationWriteP
       const result = await runOptions.action()
       const updatedIds = tagMutationUpdatedIds(result, inputIds)
       const protocolKind = result.mutationProtocol?.mutationKind || runOptions.mutationKind
-      noteTagMutation(options.tagMetadataRevisionBarrier, runOptions.scope, `${protocolKind}:commit`, updatedIds)
+      noteTagMutation(options.tagMetadataRevisionBarrier, runOptions.scope, `${protocolKind}:commit`, updatedIds, true)
       if (runOptions.scope === 'shared' && Array.isArray(result.mutationProtocol?.knownTags)) options.onSharedCatalogCommitted?.(result)
       await runOptions.afterCommit?.(result)
       options.clearFontQueryCaches()

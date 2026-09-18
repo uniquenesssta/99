@@ -88,6 +88,7 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
     const snapshot = options.tagMetadataRevisionBarrier.noteLocalTagMutation(
       `local-tags-signal:${signal.mutationKind || 'unknown'}:${effectiveSource}`,
       changedIds,
+      true,
     )
     options.clearFontQueryCaches()
     logOperation({ trace, stage: 'signal', reason: `${decision.reason}:${decision.identity}`, backend: effectiveSource, localRevision: snapshot.localRevision, sharedRevision: snapshot.sharedRevision }, options.appendStartupLog)
@@ -129,6 +130,7 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
     const snapshot = options.tagMetadataRevisionBarrier.noteSharedTagMutation(
       `shared-metadata-signal:${signal.mutationKind || 'unknown'}:${effectiveSource}`,
       changedIds,
+      true,
     )
     options.clearFontQueryCaches()
     logOperation({ trace, stage: 'signal', reason: `${decision.reason}:${decision.identity}`, backend: effectiveSource, localRevision: snapshot.localRevision, sharedRevision: snapshot.sharedRevision }, options.appendStartupLog)

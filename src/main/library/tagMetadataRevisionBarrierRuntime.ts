@@ -14,6 +14,7 @@ export type TagMetadataMutationInput = {
   scope: TagMetadataScope
   reason: string
   fontIds?: string[]
+  committed?: boolean
 }
 
 const TAG_METADATA_BARRIER_MS = 2_000
@@ -76,7 +77,7 @@ export function createTagMetadataRevisionBarrierRuntime(options: {
     if (input.scope === 'local') {
       localRevision += 1
       localDirtyUntil = now + TAG_METADATA_BARRIER_MS
-      localLastMutationAt = now
+      localLastMutationAt = input.committed ? 0 : now
       localLastReason = input.reason || 'local-tag-mutation'
       addChangedIds(localChangedIds, ids)
       options.appendStartupLog(
@@ -85,7 +86,7 @@ export function createTagMetadataRevisionBarrierRuntime(options: {
     } else {
       sharedRevision += 1
       sharedDirtyUntil = now + TAG_METADATA_BARRIER_MS
-      sharedLastMutationAt = now
+      sharedLastMutationAt = input.committed ? 0 : now
       sharedLastReason = input.reason || 'shared-tag-mutation'
       addChangedIds(sharedChangedIds, ids)
       options.appendStartupLog(
@@ -95,12 +96,12 @@ export function createTagMetadataRevisionBarrierRuntime(options: {
     return snapshot()
   }
 
-  function noteLocalTagMutation(reason: string, fontIds?: string[]): TagMetadataRevisionSnapshot {
-    return noteMutation({ scope: 'local', reason, fontIds })
+  function noteLocalTagMutation(reason: string, fontIds?: string[], committed = false): TagMetadataRevisionSnapshot {
+    return noteMutation({ scope: 'local', reason, fontIds, committed })
   }
 
-  function noteSharedTagMutation(reason: string, fontIds?: string[]): TagMetadataRevisionSnapshot {
-    return noteMutation({ scope: 'shared', reason, fontIds })
+  function noteSharedTagMutation(reason: string, fontIds?: string[], committed = false): TagMetadataRevisionSnapshot {
+    return noteMutation({ scope: 'shared', reason, fontIds, committed })
   }
 
   function snapshotForRequest(request: FontQueryRequest): TagMetadataRevisionSnapshot {
