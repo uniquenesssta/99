@@ -34,6 +34,7 @@
     "security:sync-keys": "node build/security/sync-public-keys.cjs",
     "rust:build": "node build/rust/build-core-worker.cjs --required",
     "rust:build:optional": "node build/rust/build-core-worker.cjs --optional",
+    "diagnostics:shared-io-process": "node build/diagnostics/check-shared-io-process.cjs",
     "diagnostics:shared-root-retention": "node build/diagnostics/check-shared-root-retention.cjs",
     "diagnostics:shared-offline-baseline": "node build/diagnostics/check-shared-offline-baseline.cjs",
     "diagnostics:tag-commit-query": "node build/diagnostics/check-tag-commit-query.cjs",

@@ -2,10 +2,10 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.2；制定日期：2026-09-18；软件版本：3.0.0。
+- 文档版本：1.3；制定日期：2026-09-18；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定及专项实施分支：`stage/09-preview-tags-app`。本项是当前分支的补充专项，不另行宣告主线 Stage 8 或 U-09 完成。
 - 制定代码基线：`5866105917d3af7a843f320f220ae047bb49d957`；实施前重新核对实际 HEAD、远端与工作树，不能把此处基线当成永远最新。
-- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02～O-08 未开始。**
+- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02 进程基础已实现、业务隔离未完成；O-03～O-08 未开始。**
 - 用户最终约定：共享监视文件夹和共享标签断网后保留原位置、置灰禁用，重连后恢复；网络永远不恢复也必须允许正常退出；已激活字体通过本机副本继续使用和清理；不做离线共享修改或离线同步系统。
 - 上级：[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。承接[操作优化任务书](HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md) §19、§20，保留状态按钮合一、100ms 单击防连击、标签提交即时查询及共享冲突修复。
 - 同时继承[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)的事务/意图/回执约束，以及 [Stage 1 激活事务](HFM_STAGE_01_ACTIVATION_TASKBOOK.md)、[Stage 2 路径授权](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)、[Stage 5 Rust 边界](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)、[Stage 6 React 所有权](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)、[Stage 7 IPC 校验](HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)的质量要求。
@@ -269,7 +269,7 @@
 
 ### O-02：网络任务隔离、超时与取消结算
 
-- **状态：未开始。** 前置：O-01 自动门通过。
+- **状态：进行中，原生迁移验证环境受阻；尚未通过 O-02 完整门。** 前置：O-01 自动门通过。进程基础及未接入范围见 §18。
 - 导航：ioDeadlineRuntime、rustCoreDaemonRuntime、rustCoreDaemonWriteBoundaryRuntime、共享 metadata 前置读取、DB worker 与现有调度器。
 - 步骤：逐消费者迁移/证明无主进程阻塞网络 I/O；按根准入；本地清理与网络隔离；取消宽限、终止、旧代次结果拒绝；已提交未知结果保留；共享/本地句柄不能跨所有者误关。
 - 必过：真实子进程永不回应/忽略 cancel/退出前迟到返回；两个根一坏一好、本地调用持续可用；读超时可取消，写超时不重写；10 次连续故障后进程、句柄、队列有界；无主进程同步网络调用漏网。
@@ -501,7 +501,7 @@ README/任务状态、提交、推送、回滚定位：
 | --- | --- | --- | --- | --- | --- |
 | O-00 | 自动验证通过、实机待验 | 本节同批提交（Git 可追溯） | TypeScript、126/126；8 项已知问题观察、5 组对照 | 待验 | 证据与消费者清单见 §16，非修复完成 |
 | O-01 | 自动验证通过 | 本节同批提交（Git 可追溯） | TypeScript、127/127、LF/CRLF、旧反例、三端构建与混淆 | 待验 | 根状态与目录保留，见 §17 |
-| O-02 | 未开始 | — | 未执行 | 未执行 | 网络执行隔离 |
+| O-02 | 进行中、原生验证环境受阻 | 本节进程基础同批提交 | 基础 LF/CRLF、TypeScript、128/128、构建通过；完整 O-02 门未通过 | 待验 | 尚未切换业务调用，见 §18 |
 | O-03 | 未开始 | — | 未执行 | 未执行 | 置灰与完整动作准入 |
 | O-04 | 未开始 | — | 未执行 | 未执行 | 无网络源依赖的本地取消 |
 | O-05 | 未开始 | — | 未执行 | 未执行 | 持久残留与处置入口 |
@@ -509,7 +509,7 @@ README/任务状态、提交、推送、回滚定位：
 | O-07 | 未开始 | — | 未执行 | 未执行 | 校验后恢复，不重放编辑 |
 | O-08 | 未开始 | — | 未执行 | 未执行 | 28 项 X 矩阵与收尾 |
 
-下一次执行入口：O-02。本次用户仅启动 O-01，不自动进入 O-02；Windows 待证项持续登记，最终验收不得跳过。
+继续执行入口：O-02。先恢复原生迁移验证条件，完成所有消费者隔离后再进入 O-03；Windows 待证项持续登记，最终验收不得跳过。
 
 
 ## 16. O-00 执行卡
@@ -663,3 +663,54 @@ npm run verify
 
 
 最终执行结果：`npm run verify` 退出码 0，TypeScript 与 127/127 诊断通过；定向 LF 17 组、CRLF 16 组退出码 0，`--baseline` 预期退出码 1 并精确检出 legacy 丢失。三端构建和混淆分别退出码 0，`git diff --check`、11 文件精确白名单、文档链接与脚本注册检查通过。原 126 项门全部保留，未删断言或放大超时。Windows/NAS/原生及真实断网退出仍为待验，不以自动门代替。
+
+## 18. O-02 执行卡
+
+- 状态：实施中；基线 `dfdec2f26103a65d53fd86bc1534c58861561c71`，原分支，初始工作树干净。执行 O-02，不提前实现 O-03 UI 或 O-06 退出策略。
+- 已确认两个独立缺口：daemon cancel 只释放调用方而未回收执行者；共享 metadata 的 legacy/replay preflight 与部分 fallback 仍在 main 打开同步 SQLite。禁止仅修前者便声称 O-02 完成。
+- 第一批生产白名单：新增 `src/main/path/sharedIoProcessRuntime.ts`（有界进程与任务所有权）、`src/main/rust-core/rustSharedIoCommandRuntime.ts`（Rust 命令隔离分类）；`src/main/rust-core/rustCoreWorkerTransportRuntime.ts`（实际调度接线）。后续前置 I/O 迁移按消费者登记准确扩展文件。
+- 第一批诊断白名单：新增 `build/diagnostics/check-shared-io-process.cjs`，package.json；文档为 README、本任务书、总任务书。
+- 进程原则：全局至多 2 个网络执行进程、同根互斥、排队至多 128；超时/取消不能自动补交，已启动写入没有确定回执即 unknown；取消后仍占用进程名额直到 close，不能用 killed=true 假称退出或不断补开进程。
+- 当前环境没有 cargo；本轮如必须变更 Native，先解决对应测试环境并保留 Windows 实机门，不以 JS 代替 Cargo。
+
+
+### 18.1 本次可审查交付与未接线边界
+
+- 当前交付仅 `sharedIoProcessRuntime` 及其真实进程诊断。先前试接的 rustSharedIoCommandRuntime 和 transport 路由已撤回，未提交；不能把 metadata 命令切成独立进程却继续在 main 做同步 preflight，造成“已隔离”的假象。原业务执行链保持 O-01。
+- 最终生产白名单：新增 `src/main/path/sharedIoProcessRuntime.ts`。最终其他白名单：新增 `build/diagnostics/check-shared-io-process.cjs`、package.json、README、本任务书、总任务书，共 6 个文件。没有隐藏的 Rust、IPC、schema 或原入口变更。
+- 工厂返回 run/stop/whenIdle/status，接线时必须由既有 transport 持有唯一实例，不能每个请求创建一个实例绕过全局额度。当前调用方只有诊断，不存在新常驻后台进程。
+- 一次任务持有实际 ChildProcess、timer、abort listener、根集合、排队/开始时间和独立 Promise 结算标记。排队与执行各自有截止时间，重复取消幂等，队列最多 128、活动进程最多 2，同根任务互斥；多根任务占有全部根身份。
+- caller 的超时/取消立即结算，但 active 名额及根锁必须等 close 才释放。先 SIGTERM，1 秒后仍未 close 则 SIGKILL；不以 child.killed 或 exit 代替 close。即使系统未完成回收，也不无界补开进程。
+- 进入 stop 后拒绝新任务，排队任务按 not-started 结算，已启动但没有确定回执的任务按 unknown 结算。基础不自动重试、不持久化离线操作；后续接线必须沿用原生已提交写禁止 fallback 的错误标记及业务回执协议。
+- stdout/stderr 合计字节预算，按 UTF-8 流解码避免中文被跨块截坏；超限取消任务。日志不影响结算。请求的 args/roots/env 复制后归 owner 持有，不能由调用方改变已排队资源身份。
+
+### 18.2 实际阻塞、原因与继续条件
+
+已核查的主线程事务不只是只读查询：
+
+| 当前入口 | 必须保留的行为 | 下一步必要工作 |
+| --- | --- | --- |
+| sharedMetadataLegacyImportRuntime | 从旧 root cache 导入 font_metadata、写迁移标志和 metadata_events | 在原生边界承接幂等导入及失败原子性，不删除导入步骤 |
+| sharedMetadataOverlayRuntime | overlay 前 legacy 导入、tag ops backfill/replay，再读取字段 | 增加可确认的原生 preflight/读回能力，避免 main 打开 SQLite |
+| sharedTagOpsBackfillRuntime / sharedTagOpsReplayRuntime | 历史 tag ops 回填、回放和冲突保护 | 搬迁同一业务协议与反例到 Native，保留事务和兼容约束 |
+| sharedMetadataSignatureRuntime | Rust 失败后的 Node SQLite 查询 | 在隔离读取完成后统一拒绝/保留；不能超时又退回 main 打开库 |
+| SharedKnownTags Node 兼容 / merged index / maintenance | 共享句柄及路径检查 | 逐消费者迁移；与本地状态库/清理分开持有与回收 |
+| watchedFolderCanonicalRuntime / watcher / scan / preview / authorization | 同步路径规范化、监听及前置共享 I/O | 保留路径授权语义，逐项证明无主进程同步网络访问 |
+
+- 当前 Rust shared_metadata 模块只有 apply/read_state/remove_tag/schema/signature/state_machine/types；没有可直接替代上述 legacy/backfill/replay 的公共命令。本任务沿用既定 Rust 主路径，不能悄悄删掉旧格式兼容，或把完整事务改成逐条远程 SQL 调用。
+- 环境核查：`command -v cargo` 没有结果；常见 Cargo 安装目录也不存在。对 `https://static.rust-lang.org/dist/channel-rust-stable.toml` 的连接测试 10 秒超时，curl 退出码 28，当前无法从该地址准备工具链。没有声称所有网络地址永久不可达，也未申请或绕过网络权限。
+- 根据本书 O-02 Native 硬门和 §11.1，原生修改必须实际运行对应 Cargo 测试/release；因此本次不发布未编译的原生事务迁移，不将 JS 子进程用例写成原生通过。
+- 继续条件：在可访问依赖且具备 Cargo 的环境完成 Native 事务/故障测试，接入新增能力并核验当前 worker 能力；再完成 §16.1 全部消费者的调用迁移、提交未知错误传播和本地执行隔离。仍需 Windows 真进程与 SMB 实测。
+- O-02 尚未满足“无主进程同步网络调用漏网”，也未满足全业务写入未知持久回执和 16 类消费者隔离；O-03 不得据本次基础测试提前开工。没有离线同步系统或提前变更退出策略。
+
+### 18.3 基础验证和交接
+
+- 新门 `diagnostics:shared-io-process` 已接入 diagnostics:all，仅证明进程 owner 行为，不代表业务隔离完成。
+- LF 实际 7 组通过：真实 Node 成功/UTF-8 边界；坏根卡住、另一根与本地文件操作继续；连续 10 次忽略取消的进程回收；同根串行/排队超时无副作用；128 队列满额拒绝及取消不启动；输出上限/启动失败；迟到结果与 stop 准入。最终 active=0、queued=0、pids=[]。
+- 注入仅测试自建 Node 进程和临时目录，没有 NAS 写入、注册/删除字体或任意 IPC。Linux 的 SIGTERM 忽略/强杀行为不冒充 Windows 实测。
+- 初次断言比较 VM 中的空数组与宿主空数组因原型不同失败，改为校验实际 PID 数量为 0；没有修改回收条件或弱化超时要求。
+- 已用 Context7 核对 Node 24 spawn/close/exit/kill 语义；Mermaid 图明确标题“已实现但尚未接入业务的进程基础”。Create State 按既定容量跳过约定，不阻塞本次交接。
+- 本次不涉及持久格式迁移；回滚为本次基础提交。用户软件功能仍是 O-01，不能宣称升级后已经能抵御 NAS 卡死退出。
+
+
+本次最终验证：`npm run verify` 退出码 0（TypeScript、128/128）；`diagnostics:shared-io-process` 的 LF/CRLF 各 7 组通过且资源归零；三端构建 368/1/200 模块及混淆 3/3 退出码 0。6 文件白名单、链接与 `git diff --check` 通过。原 127 项诊断未修改。上述结果只覆盖当前未接入业务的基础，不解除 §18.2 的阻塞，也不允许把 O-02 标记完成。

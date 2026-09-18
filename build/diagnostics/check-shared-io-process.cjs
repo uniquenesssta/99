@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+const assert = require('node:assert/strict')
+const fs = require('node:fs'), fsp = fs.promises, os = require('node:os'), path = require('node:path')
+const { loader } = require('./check-operation-chain.cjs')
+const root = path.resolve(__dirname,'../..')
+const file = 'src/main/path/sharedIoProcessRuntime.ts'
+const crlf = process.argv.includes('--crlf')
+const transforms = { [path.join(root,file)]: text => crlf ? text.replace(/\r?\n/g,'\r\n') : text }
+const create = () => loader({}, {}, transforms)(file).createSharedIoProcessRuntime
+const tick = ms => new Promise(r=>setTimeout(r,ms))
+async function until(test) {const end=Date.now()+5000;while(!test()){assert(Date.now()<end,'test condition timed out');await tick(10)}}
+const completed=[]
+async function main(){
+ const dir=await fsp.mkdtemp(path.join(os.tmpdir(),'hfm-io-process-'))
+ const logs=[], runtime=create()(text=>logs.push(text))
+ const watchdog=setTimeout(()=>{for(const pid of runtime.status().pids){try{process.kill(pid,'SIGKILL')}catch{}}console.error('process diagnostics exceeded safety budget');process.exit(1)},60000)
+ const run=(code,roots=['a'],extras={})=>runtime.run({file:process.execPath,args:['-e',code],roots,timeoutMs:3000,write:false,...extras})
+ const hang=ready=>`require('node:fs').writeFileSync(${JSON.stringify(ready)},'ready');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)`
+ try{
+  const out=await run("const b=Buffer.from('中文🌟');process.stdout.write(b.subarray(0,2));setTimeout(()=>process.stdout.end(b.subarray(2)),20)")
+  assert.equal(out.stdout,'中文🌟');assert.equal(runtime.status().active,0)
+  completed.push('real process success, UTF-8 boundaries, close before slot release')
+  const ready=path.join(dir,'hung');const h=run(hang(ready),['bad'],{timeoutMs:1000}).catch(e=>e)
+  await until(()=>fs.existsSync(ready))
+  const healthy=run("setTimeout(()=>console.log('healthy'),100)",['good']);assert.equal(runtime.status().active,2);const control=await healthy;assert.equal(control.stdout.trim(),'healthy')
+  let localRan=false;await fsp.writeFile(path.join(dir,'local'),'local');localRan=true;assert(localRan)
+  const failure=await h;assert.equal(failure.reason,'timeout');assert.equal(failure.outcome,'unknown')
+  assert.equal(runtime.status().active,1,'timed out process was forgotten before close')
+  await runtime.whenIdle();assert.equal(runtime.status().active,0)
+  completed.push('hung root timeout, healthy root and local file proceed, SIGKILL escalation observed')
+  for(let i=0;i<10;i++){
+   const ready=path.join(dir,'cycle-'+i), controller=new AbortController()
+   const promise=run(hang(ready),['cycle'],{signal:controller.signal,write:true}).catch(e=>e)
+   await until(()=>fs.existsSync(ready));controller.abort()
+   const result=await promise;assert.equal(result.outcome,'unknown');assert.equal(result.reason,'cancelled')
+   assert.equal(runtime.status().active,1);await runtime.whenIdle();assert.equal(runtime.status().pids.length,0)
+  }
+  assert(logs.filter(x=>x.startsWith('shared io closed:')).length>=13)
+  completed.push('10 cancel-ignoring real processes reaped; started writes remain unknown; no repeated submission')
+  const ready2=path.join(dir,'serialized'), controller=new AbortController()
+  const first=run(hang(ready2),['same'],{signal:controller.signal}).catch(e=>e);await until(()=>fs.existsSync(ready2))
+  const marker=path.join(dir,'must-not-start')
+  const queued=run(`require('node:fs').writeFileSync(${JSON.stringify(marker)},'bad')`,['same'],{queueTimeoutMs:100}).catch(e=>e)
+  const queuedFailure=await queued;assert.equal(queuedFailure.outcome,'not-started');assert.equal(queuedFailure.reason,'queue-timeout');assert(!fs.existsSync(marker))
+  controller.abort();await first;await runtime.whenIdle()
+  completed.push('same-root exclusion, queued timeout has no side effects')
+  const ready3=path.join(dir,'overflow'), stop=new AbortController()
+  const holding=run(hang(ready3),['bounded'],{signal:stop.signal}).catch(e=>e);await until(()=>fs.existsSync(ready3))
+  const queueControllers=Array.from({length:128},()=>new AbortController())
+  const queuedJobs=queueControllers.map(c=>run("throw Error('must not execute')",['bounded'],{signal:c.signal,queueTimeoutMs:5000}).catch(e=>e))
+  const overflow=await run('',['bounded']).catch(e=>e)
+  assert.equal(overflow.reason,'queue-full');assert.equal(runtime.status().queued,128);assert.equal(runtime.status().active,1)
+  queueControllers.forEach(c=>c.abort());for(const error of await Promise.all(queuedJobs))assert.equal(error.outcome,'not-started')
+  stop.abort();await holding;await runtime.whenIdle()
+  completed.push('128 queue limit and cancelled queued jobs never spawn')
+  const limit=await run("process.stdout.write('x'.repeat(4096))",['output'],{maxBuffer:100}).catch(e=>e);assert.equal(limit.reason,'output-limit');await runtime.whenIdle()
+  const spawnFailure=await runtime.run({file:path.join(dir,'missing-executable'),args:[],roots:['spawn'],timeoutMs:1000,write:true}).catch(e=>e)
+  assert.equal(spawnFailure.reason,'process-error');await runtime.whenIdle()
+  completed.push('output budget and spawn failure release resources')
+  const ready4=path.join(dir,'late'), end=new AbortController()
+  const late=run(`require('node:fs').writeFileSync(${JSON.stringify(ready4)},'ready');setTimeout(()=>console.log('late'),1000)`,['late'],{signal:end.signal}).catch(e=>e)
+  await until(()=>fs.existsSync(ready4));end.abort();assert.equal((await late).reason,'cancelled');await runtime.whenIdle()
+  runtime.stop();assert.equal((await run('').catch(e=>e)).outcome,'not-started')
+  completed.push('late result discarded, stop closes admission')
+ }finally{runtime.stop();await runtime.whenIdle();clearTimeout(watchdog);await fsp.rm(dir,{recursive:true,force:true})}
+ console.log(JSON.stringify({passed:completed.length,cases:completed,crlf,remaining:runtime.status()}))
+}
+main().catch(e=>{console.error(e);process.exitCode=1})

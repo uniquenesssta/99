@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-18：O-02 新增尚未接入业务的有界进程基础及真实子进程诊断：限制并发/队列、同根互斥，取消后等待 close 才释放名额，已启动且无回执的结果标为未知。TypeScript、128/128 诊断、三端构建与混淆通过。现有执行链保持 O-01；共享 SQLite legacy/replay 原生迁移因 Cargo 环境缺失、工具链下载连接超时而待继续，O-02 未完成。详见[O-02 执行卡](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#18-o-02-执行卡)。
+
 - 2026-09-18：O-01 实现根状态/代次与共享标签按根保留：离线或读取失败保留已确认目录，在线完整空结果及显式删除仍正常生效；旧数据无归属时保守保留，迟到读回不得覆盖新状态。新增本地 meta 记录并与 tags 原子提交，映射盘可用性识别改用异步缓存入口；共享库格式、依赖及字体激活流程不变。TypeScript、127/127 诊断、三端构建与混淆通过，Windows/NAS 待验；详见[O-01 执行卡](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#17-o-01-执行卡)，O-02 未开始。
 
 - 2026-09-18：O-00 建立共享离线与退出基线，登记 16 类消费者和句柄所有权；复现 8 项已知行为缺口，保留 5 组正常对照。TypeScript、126/126 诊断通过；观察成功不表示缺陷已修复，严格观察按预期失败。无生产代码或数据格式变更，Windows/NAS 实测待验，O-01 未开始。详见[O-00 执行卡](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#16-o-00-执行卡)。
