@@ -44,6 +44,8 @@ npm run build:win
 
 ## 当前工程任务
 
+- [操作一致性与刷新优化任务书（U-00～U-09，待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
+
 - [预览缓存、本地标签与 App 专项拆分任务书（规划，未实施）](docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)
 
 - [修复与编排重构总任务书](docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md)
@@ -63,6 +65,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-18：新增操作一致性与刷新优化任务书，覆盖字体多选激活入口、统一单选/多选操作、多选本机收藏、跨页面安装筛选、局部刷新、停用耗时、启动维护及预览/渲染验证。区分用户确认故障、日志事实与待证原因，规定真实入口及 Windows 验收；本次仅文档规划，未实施生产修复。
 
 - 2026-09-17：修复共享标签删除后目录残留，提交后同步完整目录并取消界面旧目录回写；停用单个/批量及启动退出清理重新核对本机安装，保留永久安装，分页、完整载入与计数拒绝旧激活状态。收藏改存本机app.sqlite，首次仅迁移已有本机快照，后续不读写共享收藏；筛选、智能排序与统计同步使用本机值，收藏操作不清空NAS缓存。新增本机收藏隔离、SQLite迁移/回滚、标签目录及异步失效回归。TypeScript与115/115诊断、Electron/Vite三端构建及混淆3/3通过。无依赖、IPC签名或Rust源码变更；本地新增收藏表，共享历史字段保留。Windows/NAS实机仍待验，见[修复执行卡](docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#25-标签目录停用核对与本地收藏修复执行卡)。
 
