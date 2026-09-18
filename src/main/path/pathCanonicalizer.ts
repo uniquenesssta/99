@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 
 export type PathCanonicalizerLogger = (message: string) => void
 
@@ -49,19 +49,45 @@ function readMappedDriveTableFromWindows(): Map<string, string> {
       stdio: ['ignore', 'pipe', 'ignore'],
     })
 
-    for (const line of String(stdout || '').split(/\r?\n/)) {
-      const driveMatch = line.match(/\b([a-zA-Z]:)\b/)
-      const uncIndex = line.indexOf('\\\\')
-      if (!driveMatch || uncIndex < 0) continue
-      const remoteMatch = line.slice(uncIndex).trim().match(/^(\\\\\S+)/)
-      if (!remoteMatch) continue
-      drives.set(driveMatch[1].toUpperCase(), normalizeNativePathText(remoteMatch[1]))
-    }
+    return parseMappedDriveTable(String(stdout || ''))
   } catch {
     // Mapping lookup is best-effort. If it fails, keep the user's original path.
   }
 
   return drives
+}
+
+function parseMappedDriveTable(stdout: string): Map<string, string> {
+  const drives = new Map<string, string>()
+  for (const line of String(stdout || '').split(/\r?\n/)) {
+    const driveMatch = line.match(/\b([a-zA-Z]:)(?=\s|$)/)
+    const uncIndex = line.indexOf('\\\\')
+    if (!driveMatch || uncIndex < 0) continue
+    const remote = line.slice(uncIndex).trim().split(/\s{2,}/)[0]
+    if (!/^\\\\[^\\]+\\[^\\]+/.test(remote)) continue
+    drives.set(driveMatch[1].toUpperCase(), normalizeNativePathText(remote))
+  }
+  return drives
+}
+
+let mappedDriveFailureUntil = 0
+let mappedDriveTableInFlight: Promise<Map<string, string> | null> | null = null
+
+// The availability owner must never perform the synchronous legacy mapping lookup.
+export async function mappedDriveTableAsync(): Promise<Map<string, string> | null> {
+  if (process.platform !== 'win32') return new Map()
+  if (mappedDriveTableInFlight) return mappedDriveTableInFlight
+  if (mappedDriveFailureUntil > Date.now()) return null
+  if (mappedDriveTableCache && mappedDriveTableCache.expiresAt > Date.now()) return new Map(mappedDriveTableCache.drives)
+  mappedDriveTableInFlight = new Promise<Map<string, string> | null>((done) => {
+    execFile('net.exe', ['use'], { encoding: 'utf8', timeout: 1500, windowsHide: true, shell: false }, (error, stdout) => {
+      if (error) { mappedDriveFailureUntil = Date.now() + 5000; done(null); return }
+      const drives = parseMappedDriveTable(String(stdout || ''))
+      mappedDriveTableCache = { drives, expiresAt: Date.now() + MAPPED_DRIVE_TABLE_TTL_MS }
+      done(new Map(drives))
+    })
+  })
+  try { return await mappedDriveTableInFlight } finally { mappedDriveTableInFlight = null }
 }
 
 export function mappedDriveTable(): Map<string, string> {

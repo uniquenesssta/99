@@ -1,3 +1,6 @@
+import { promises as fsp } from 'node:fs'
+import { getStartupPathRootState } from '../path/startupPathAvailabilityRuntime'
+import { SHARED_ROOT_CATALOG_KEY, readSharedRootCatalog, mergeSharedRootCatalog, sharedCatalogRootId, type SharedRootCatalog, type ConfirmedRootCatalog } from './runtime/sharedRootCatalogRuntime'
 import type { LibraryShell } from '../../shared/types'
 import { filterStartupAvailableRoots } from '../path/startupPathAvailabilityRuntime'
 import { sharedMetadataQueryTimeoutMs, withIoDeadlineResult } from '../path/ioDeadlineRuntime'
@@ -45,32 +48,32 @@ function cleanTagName(value: unknown): string {
   return String(value).trim()
 }
 
-function parseTagNamesJson(value: unknown): string[] {
-  if (!value) return []
-  try {
-    const parsed = JSON.parse(String(value))
-    if (!Array.isArray(parsed)) return []
-    return Array.from(new Set(parsed.map(cleanTagName).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
-  } catch {
-    return []
-  }
-}
-
 export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
-  async function readMetadataTagsForRoot(rootPath: string, requireFresh = false): Promise<string[]> {
-    const dbPath = deps.sharedMetadataDbPathForRoot(rootPath)
-    if (!(await deps.exists(dbPath).catch(() => false))) return []
+  let revision = 0
+  async function metadataFileMissingConfirmed(rootPath: string): Promise<boolean> {
+    const result = await withIoDeadlineResult('shared-metadata-missing-confirm', async () => {
+      try { await fsp.stat(deps.sharedMetadataDbPathForRoot(rootPath)); return false } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      // A failed exists() is not proof of an empty directory.
+      return (await fsp.stat(rootPath)).isDirectory()
+    }, sharedMetadataQueryTimeoutMs())
+    return result.ok && result.value
+  }
+
+  async function readMetadataTagsForRoot(rootPath: string): Promise<string[]> {
+    if (await metadataFileMissingConfirmed(rootPath)) return []
+    await fsp.stat(deps.sharedMetadataDbPathForRoot(rootPath))
     const db = await deps.openSharedMetadataDb(rootPath, false)
     try {
       const rows = db.prepare('SELECT tag_names_json FROM font_metadata').all() as Array<{ tag_names_json?: string | null }>
       const tags = new Set<string>()
       for (const row of rows) {
-        for (const tag of parseTagNamesJson(row.tag_names_json)) tags.add(tag)
+        const parsed = JSON.parse(String(row.tag_names_json || '[]'))
+        if (!Array.isArray(parsed) || !parsed.every(tag => typeof tag === 'string')) throw new Error('Invalid shared metadata tags')
+        for (const tag of parsed.map(cleanTagName).filter(Boolean)) tags.add(tag)
       }
       return Array.from(tags)
-    } catch (error) {
-      if (requireFresh) throw error
-      return []
     } finally {
       deps.closeSqliteDb(db)
     }
@@ -81,16 +84,21 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
     return deps.loadLibraryShellFromSqlite(db).tags || []
   }
 
-  async function persistKnownSharedTags(roots: string[], nextTags: string[], source: string): Promise<string[]> {
+  async function persistKnownSharedTags(roots: string[], nextTags: string[], source: string, catalog?: SharedRootCatalog, isCurrent: () => boolean = () => true): Promise<string[]> {
     const db = await deps.openLibraryDb()
     const previous = deps.loadLibraryShellFromSqlite(db).tags || []
+    if (!isCurrent()) return previous
     const previousKey = previous.join('\u0000')
     const nextKey = nextTags.join('\u0000')
-    if (previousKey !== nextKey) {
+    if (previousKey !== nextKey || catalog) {
       const tx = db.transaction(() => {
-        db.prepare('DELETE FROM tags').run()
-        const insert = db.prepare('INSERT INTO tags (name, sort_order) VALUES (?, ?)')
-        nextTags.forEach((tag, index) => insert.run(tag, index))
+        if (previousKey !== nextKey) {
+          db.prepare('DELETE FROM tags').run()
+          const insert = db.prepare('INSERT INTO tags (name, sort_order) VALUES (?, ?)')
+          nextTags.forEach((tag, index) => insert.run(tag, index))
+        }
+        const snapshot = catalog || { version: 1, roots: [], unattributedTags: nextTags, publishedTags: nextTags }
+        db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(SHARED_ROOT_CATALOG_KEY, JSON.stringify(snapshot))
       })
       tx()
       deps.appendStartupLog(`shared known tags refreshed from metadata: source=${source}, roots=${roots.length}, tags=${nextTags.length}`)
@@ -100,20 +108,7 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
 
 
   async function metadataRootHasTagBinding(rootPath: string, tagName: string): Promise<boolean> {
-    const dbPath = deps.sharedMetadataDbPathForRoot(rootPath)
-    if (!(await deps.exists(dbPath).catch(() => false))) return false
-    const db = await deps.openSharedMetadataDb(rootPath, false)
-    try {
-      const rows = db.prepare('SELECT tag_names_json FROM font_metadata').all() as Array<{ tag_names_json?: string | null }>
-      for (const row of rows) {
-        if (parseTagNamesJson(row.tag_names_json).includes(tagName)) return true
-      }
-      return false
-    } catch {
-      return true
-    } finally {
-      deps.closeSqliteDb(db)
-    }
+    try { return (await readMetadataTagsForRoot(rootPath)).includes(tagName) } catch { return true }
   }
 
   async function renameKnownSharedTagIfUnbound(
@@ -121,6 +116,7 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
     oldTagNameInput: string,
     newTagNameInput: string,
   ): Promise<SharedKnownTagRenameIfUnboundResult> {
+    const operationRevision = ++revision
     const startedAt = Date.now()
     const oldTagName = cleanTagName(oldTagNameInput)
     const newTagName = cleanTagName(newTagNameInput)
@@ -130,6 +126,7 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
 
     const roots = deps.uniqueResolvedFolders(watchedFoldersInput || [])
     const { availableRoots, skippedRoots } = await filterStartupAvailableRoots(roots, deps.appendStartupLog, 'shared-known-tag-zero-rename')
+    const generations = new Map(availableRoots.map(root => [root, getStartupPathRootState(root).generation]))
     if (skippedRoots.length) {
       deps.appendStartupLog(`shared known tag zero-bind rename skipped: reason=unavailable-root, old=${oldTagName}, new=${newTagName}, skipped=${skippedRoots.length}, available=${availableRoots.length}`)
       return { renamed: false, reason: 'unavailable-root', previousTags, nextTags: previousTags }
@@ -145,7 +142,15 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
       ...previousTags.filter((tag) => tag !== oldTagName),
       newTagName,
     ])).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
-    await persistKnownSharedTags(availableRoots, nextTags, 'zero-bind-rename')
+    let accepted = false
+    const savedTags = await persistKnownSharedTags(availableRoots, nextTags, 'zero-bind-rename', undefined, () => {
+      accepted = revision === operationRevision && availableRoots.every(root => {
+        const state = getStartupPathRootState(root)
+        return state.state === 'online' && state.generation === generations.get(root)
+      })
+      return accepted
+    })
+    if (!accepted) return { renamed: false, reason: 'superseded', previousTags, nextTags: savedTags }
     deps.appendStartupLog(`shared known tag zero-bind renamed: old=${oldTagName}, new=${newTagName}, roots=${availableRoots.length}, previous=${previousTags.length}, next=${nextTags.length}, durationMs=${Date.now() - startedAt}`)
     return { renamed: true, reason: 'zero-bind-known-tag', previousTags, nextTags }
   }
@@ -154,6 +159,7 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
     watchedFoldersInput: string[],
     tagNameInput: string,
   ): Promise<SharedKnownTagDeleteIfUnboundResult> {
+    const operationRevision = ++revision
     const startedAt = Date.now()
     const tagName = cleanTagName(tagNameInput)
     const previousTags = (await readPersistedSharedTags()).map(cleanTagName).filter(Boolean)
@@ -161,6 +167,7 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
 
     const roots = deps.uniqueResolvedFolders(watchedFoldersInput || [])
     const { availableRoots, skippedRoots } = await filterStartupAvailableRoots(roots, deps.appendStartupLog, 'shared-known-tag-zero-delete')
+    const generations = new Map(availableRoots.map(root => [root, getStartupPathRootState(root).generation]))
     if (skippedRoots.length) {
       deps.appendStartupLog(`shared known tag zero-bind delete skipped: reason=unavailable-root, tag=${tagName}, skipped=${skippedRoots.length}, available=${availableRoots.length}`)
       return { deleted: false, reason: 'unavailable-root', previousTags, nextTags: previousTags }
@@ -173,29 +180,55 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
     }
 
     const nextTags = previousTags.filter((tag) => tag !== tagName)
-    await persistKnownSharedTags(availableRoots, nextTags, 'zero-bind-delete')
+    let accepted = false
+    const savedTags = await persistKnownSharedTags(availableRoots, nextTags, 'zero-bind-delete', undefined, () => {
+      accepted = revision === operationRevision && availableRoots.every(root => {
+        const state = getStartupPathRootState(root)
+        return state.state === 'online' && state.generation === generations.get(root)
+      })
+      return accepted
+    })
+    if (!accepted) return { deleted: false, reason: 'superseded', previousTags, nextTags: savedTags }
     deps.appendStartupLog(`shared known tag zero-bind deleted: tag=${tagName}, roots=${availableRoots.length}, previous=${previousTags.length}, next=${nextTags.length}, durationMs=${Date.now() - startedAt}`)
     return { deleted: true, reason: previousTags.includes(tagName) ? 'zero-bind-known-tag' : 'zero-bind-known-tag-missing', previousTags, nextTags }
   }
 
   async function refreshKnownSharedTagsFromMetadata(watchedFoldersInput: string[], options: SharedKnownTagsRefreshOptions = {}): Promise<string[]> {
-    const preserveTags = Array.from(new Set((options.preserveTags || []).map(cleanTagName).filter(Boolean)))
-    const dropTags = new Set((options.dropTags || []).map(cleanTagName).filter(Boolean))
-    const persistedTags = options.allowEmptyOverwrite === false
-      ? (await readPersistedSharedTags()).map(cleanTagName).filter((tag) => tag && !dropTags.has(tag))
-      : []
+    const operationRevision = ++revision
     const roots = deps.uniqueResolvedFolders(watchedFoldersInput || [])
     const { availableRoots, skippedRoots } = await filterStartupAvailableRoots(roots, deps.appendStartupLog, 'shared-metadata-known-tags')
+    const generations = new Map(roots.map(root => [root, getStartupPathRootState(root).generation]))
+    const isCurrent = () => {
+      const current = operationRevision === revision
+        && roots.every(root => getStartupPathRootState(root).generation === generations.get(root))
+        && availableRoots.every(root => getStartupPathRootState(root).state === 'online')
+      if (!current && options.requireFresh) throw new Error('共享标签目录读取已失效，不能确认完整标签目录。')
+      return current
+    }
     if (skippedRoots.length) {
       deps.appendStartupLog(`shared known tags unavailable roots skipped: skipped=${skippedRoots.length}, available=${availableRoots.length}`)
-    }
-    if (skippedRoots.length) {
       if (options.requireFresh) throw new Error('共享根目录暂时不可用，不能确认完整标签目录。')
-      // A partial directory cannot revoke tags belonging to an unread root.
-      for (const tag of await readPersistedSharedTags()) if (!persistedTags.includes(tag)) persistedTags.push(tag)
     }
-    if (!availableRoots.length && roots.length) {
-      return readPersistedSharedTags()
+    if (!availableRoots.length && roots.length) return readPersistedSharedTags()
+
+    async function finish(confirmed: ConfirmedRootCatalog[], complete: boolean, source: string, aggregateTags?: string[]): Promise<string[]> {
+      if (options.requireFresh && (!complete || !isCurrent())) throw new Error('共享标签目录读取未成功，不能确认完整标签目录。')
+      const db = await deps.openLibraryDb()
+      const persistedTags = deps.loadLibraryShellFromSqlite(db).tags || []
+      if (!isCurrent()) return persistedTags
+      const previous = readSharedRootCatalog(db, persistedTags)
+      const dropTags = new Set((options.dropTags || []).map(cleanTagName).filter(Boolean))
+      const preserveTags = (options.preserveTags || []).map(cleanTagName).filter(Boolean)
+      const extraTags = [
+        ...(options.allowEmptyOverwrite === false ? persistedTags.filter(tag => !complete || !dropTags.has(tag)) : []),
+        ...(options.allowEmptyOverwrite === false ? preserveTags : []),
+      ]
+      const catalog = mergeSharedRootCatalog(previous, roots, confirmed, complete, extraTags, aggregateTags)
+      if (!catalog.publishedTags.length && options.allowEmptyOverwrite === false && !dropTags.size) {
+        deps.appendStartupLog(`shared known tags empty refresh ignored after set: source=${source}, roots=${availableRoots.length}`)
+        return persistedTags
+      }
+      return persistKnownSharedTags(roots, catalog.publishedTags, source, catalog, isCurrent)
     }
 
     const rustRoots = availableRoots.map((rootPath) => ({ rootPath, dbPath: deps.sharedMetadataDbPathForRoot(rootPath) }))
@@ -211,49 +244,37 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
         deps.appendStartupLog(`shared known tags rust read skipped: ${rustRead.timedOut ? 'deadline exceeded' : (error instanceof Error ? error.message : String(error))}`)
       }
       if (rustResult && Array.isArray(rustResult.knownTags)) {
-        const rustKnownTags = rustResult.knownTags.map(cleanTagName).filter(Boolean)
-        const nextTags = Array.from(new Set([
-          ...rustKnownTags,
-          ...(options.allowEmptyOverwrite === false ? persistedTags : []),
-          ...(options.allowEmptyOverwrite === false ? preserveTags : []),
-        ])).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
-        if (!nextTags.length && options.allowEmptyOverwrite === false && !dropTags.size) {
-          deps.appendStartupLog(`shared known tags empty refresh ignored after set: source=rust, roots=${availableRoots.length}`)
-          return readPersistedSharedTags()
+        if (!Array.isArray(rustResult.roots)) {
+          // Compatibility protocol: aggregate success cannot establish root ownership.
+          return finish([], false, 'rust-aggregate', rustResult.knownTags.map(cleanTagName).filter(Boolean))
         }
-        return persistKnownSharedTags(availableRoots, nextTags, options.allowEmptyOverwrite === false && preserveTags.length ? 'rust+mutation-preserve' : 'rust')
+        const confirmed: ConfirmedRootCatalog[] = []
+        for (const root of rustRoots) {
+          const matches = rustResult.roots.filter(row => sharedCatalogRootId(row.rootPath) === sharedCatalogRootId(root.rootPath))
+          if (matches.length !== 1) continue
+          const row = matches[0]
+          if (sharedCatalogRootId(row.dbPath) !== sharedCatalogRootId(root.dbPath) || !Array.isArray(row.knownTags) || !row.knownTags.every(tag => typeof tag === 'string')) continue
+          if (!row.signature || row.signature === 'metadata:error') continue
+          if (row.signature === 'metadata:none' && (row.knownTags.length > 0 || !(await metadataFileMissingConfirmed(root.rootPath)))) continue
+          confirmed.push({ rootId: sharedCatalogRootId(root.rootPath), tags: row.knownTags.map(cleanTagName).filter(Boolean), signature: row.signature, confirmedAt: Date.now() })
+        }
+        return finish(confirmed, !skippedRoots.length && confirmed.length === roots.length, 'rust')
       }
     }
 
+    if (!roots.length) return finish([], true, 'empty-configuration')
     if (!nodeStateFallbackCompatibilityAllowed()) {
       if (options.requireFresh) throw new Error('共享标签目录读取未成功。')
-      logNodeStateFallbackDisabled({
-        appendStartupLog: deps.appendStartupLog,
-        source: 'shared-known-tags-read',
-        reason: 'rust-known-tags-returned-empty',
-      })
+      logNodeStateFallbackDisabled({ appendStartupLog: deps.appendStartupLog, source: 'shared-known-tags-read', reason: 'rust-known-tags-returned-empty' })
       return readPersistedSharedTags()
     }
-    logNodeStateFallbackUsed({
-      appendStartupLog: deps.appendStartupLog,
-      source: 'shared-known-tags-read',
-      detail: `roots=${availableRoots.length},skippedUnavailable=${skippedRoots.length}`,
-    })
-
-    const tags = new Set<string>()
+    logNodeStateFallbackUsed({ appendStartupLog: deps.appendStartupLog, source: 'shared-known-tags-read', detail: `roots=${availableRoots.length},skippedUnavailable=${skippedRoots.length}` })
+    const confirmed: ConfirmedRootCatalog[] = []
     for (const root of availableRoots) {
-      for (const tag of await readMetadataTagsForRoot(root, options.requireFresh)) tags.add(tag)
+      const read = await withIoDeadlineResult('shared-metadata-known-tags-node', () => readMetadataTagsForRoot(root), sharedMetadataQueryTimeoutMs())
+      if (read.ok) confirmed.push({ rootId: sharedCatalogRootId(root), tags: read.value, signature: 'node-confirmed', confirmedAt: Date.now() })
     }
-    const nextTags = Array.from(new Set([
-      ...Array.from(tags),
-      ...(options.allowEmptyOverwrite === false ? persistedTags : []),
-      ...(options.allowEmptyOverwrite === false ? preserveTags : []),
-    ])).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
-    if (!nextTags.length && options.allowEmptyOverwrite === false && !dropTags.size) {
-      deps.appendStartupLog(`shared known tags empty refresh ignored after set: source=node-fallback, roots=${availableRoots.length}`)
-      return readPersistedSharedTags()
-    }
-    return persistKnownSharedTags(availableRoots, nextTags, options.allowEmptyOverwrite === false && preserveTags.length ? 'node-fallback+mutation-preserve' : 'node-fallback')
+    return finish(confirmed, !skippedRoots.length && confirmed.length === roots.length, 'node-fallback')
   }
 
   return { refreshKnownSharedTagsFromMetadata, renameKnownSharedTagIfUnbound, deleteKnownSharedTagIfUnbound }

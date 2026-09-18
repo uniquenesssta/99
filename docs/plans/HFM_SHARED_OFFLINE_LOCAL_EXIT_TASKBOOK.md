@@ -2,10 +2,10 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.1；制定日期：2026-09-18；软件版本：3.0.0。
+- 文档版本：1.2；制定日期：2026-09-18；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定及专项实施分支：`stage/09-preview-tags-app`。本项是当前分支的补充专项，不另行宣告主线 Stage 8 或 U-09 完成。
 - 制定代码基线：`5866105917d3af7a843f320f220ae047bb49d957`；实施前重新核对实际 HEAD、远端与工作树，不能把此处基线当成永远最新。
-- 当前状态：**O-00 自动验证通过、实机待验；O-01～O-08 未开始。本轮仅诊断与文档，不修改业务行为。**
+- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02～O-08 未开始。**
 - 用户最终约定：共享监视文件夹和共享标签断网后保留原位置、置灰禁用，重连后恢复；网络永远不恢复也必须允许正常退出；已激活字体通过本机副本继续使用和清理；不做离线共享修改或离线同步系统。
 - 上级：[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。承接[操作优化任务书](HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md) §19、§20，保留状态按钮合一、100ms 单击防连击、标签提交即时查询及共享冲突修复。
 - 同时继承[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)的事务/意图/回执约束，以及 [Stage 1 激活事务](HFM_STAGE_01_ACTIVATION_TASKBOOK.md)、[Stage 2 路径授权](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)、[Stage 5 Rust 边界](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)、[Stage 6 React 所有权](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)、[Stage 7 IPC 校验](HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)的质量要求。
@@ -259,7 +259,7 @@
 
 ### O-01：根状态与最后确认目录的单一权威
 
-- **状态：未开始。** 前置：O-00 证据完整。
+- **状态：已实现，自动验证通过、实机待验。** 前置：O-00 自动证据齐备；继承 Windows/NAS 缺口，见 §17。
 - 导航：startupPathAvailabilityRuntime、folderCacheRootAvailabilityRuntime、sharedKnownTagsRuntime、现有 library shell/schema/read/write owner。
 - 步骤：根身份/代次状态机；配置和执行集合分离；映射盘识别；根级快照完整性与部分失败保留；启动离线保留；持久字段兼容策略。
 - 不做：UI 全面改版、网络进程终止、离线写队列。
@@ -500,7 +500,7 @@ README/任务状态、提交、推送、回滚定位：
 | 任务 | 状态 | 实施提交 | 自动验证 | Windows/NAS/原生 | 备注 |
 | --- | --- | --- | --- | --- | --- |
 | O-00 | 自动验证通过、实机待验 | 本节同批提交（Git 可追溯） | TypeScript、126/126；8 项已知问题观察、5 组对照 | 待验 | 证据与消费者清单见 §16，非修复完成 |
-| O-01 | 未开始 | — | 未执行 | 未执行 | 根状态与目录保留 |
+| O-01 | 自动验证通过 | 本节同批提交（Git 可追溯） | TypeScript、127/127、LF/CRLF、旧反例、三端构建与混淆 | 待验 | 根状态与目录保留，见 §17 |
 | O-02 | 未开始 | — | 未执行 | 未执行 | 网络执行隔离 |
 | O-03 | 未开始 | — | 未执行 | 未执行 | 置灰与完整动作准入 |
 | O-04 | 未开始 | — | 未执行 | 未执行 | 无网络源依赖的本地取消 |
@@ -509,7 +509,7 @@ README/任务状态、提交、推送、回滚定位：
 | O-07 | 未开始 | — | 未执行 | 未执行 | 校验后恢复，不重放编辑 |
 | O-08 | 未开始 | — | 未执行 | 未执行 | 28 项 X 矩阵与收尾 |
 
-下一次执行入口：O-01。本次用户仅启动 O-00，不自动进入 O-01；Windows 待证项持续登记，最终验收不得跳过。
+下一次执行入口：O-02。本次用户仅启动 O-01，不自动进入 O-02；Windows 待证项持续登记，最终验收不得跳过。
 
 
 ## 16. O-00 执行卡
@@ -595,3 +595,71 @@ npm run verify
 - 真正的 Windows 映射盘/UNC 断网、SMB 永不返回系统调用、系统字体资源与注册表清理、渲染器关闭及应用自有进程真正退出仍待实测；受控端口和测试 Node 子进程不能替代上述证据。
 - O-01 依据 B01/B02 开始根状态与最后确认目录设计；O-02 接管真正隔离与回收；O-04～O-06 接管本地取消、残留和退出。各项须使用当前实现的正确性测试，不将本观察器当成修复门。
 - 现有按钮合一、100ms 防连击和标签提交契约不变；不新增离线同步。工具协议沿用 §14，已补绘真实退出等待链；Create State 按既定容量跳过约定执行。
+
+## 17. O-01 执行卡
+
+- 状态：自动验证通过、实机待验；起点 `3cfc5716a5971e588270a44bd872a5d0da61c749`，原分支，工作树干净；仅执行 O-01。
+- 生产白名单：`src/main/path/startupPathAvailabilityRuntime.ts`（根状态/代次）；`src/main/path/pathCanonicalizer.ts`（复用映射表的异步识别）；`src/main/folders/folderCacheRootAvailabilityRuntime.ts`（明确配置集合）；`src/main/library/sharedKnownTagsRuntime.ts`（实际读回与完整性）；新增 `src/main/library/runtime/sharedRootCatalogRuntime.ts`（现有 library DB 的根目录保留元数据）。
+- 诊断白名单：新增 `build/diagnostics/check-shared-root-retention.cjs`、`package.json` 注册；必要时仅扩充已有诊断的真实端口/持久库夹具，事先记录具体文件，不删除旧断言。O-00 固定历史观察不变。
+- 文档白名单：README、本任务书、总任务书。
+- 存储计划：现有本地 `meta` 表新增一个 `sharedRootCatalog` JSON 值，不改共享库或 schemaVersion；记录版本、按规范根路径的确认目录/签名/确认时间及未归属旧目录。状态和代次仅内存，重启不继承在线授权。新元数据与 tags 在同一事务提交。
+- 兼容：无根归属/元数据损坏/不支持版本时保留当前 tags；仅完整成功刷新解除未知归属。旧版忽略新增 meta；回退再升级时重新核对目录。签名是读取版本，不冒充共享库稳定身份；重连身份核验仍属 O-07。
+- 根路径识别使用已有 Windows 映射表语义、异步子进程和缓存；失败时对盘符路径保守探测，不默认在线。目录 stat 的真正网络执行隔离仍属 O-02。
+- 必验：单根/全根离线、重启离线、真实空目录、读取错误和 metadata:error、同标签双根、迟到与并发、真实 SQLite 重开/事务失败、旧反例拒绝、LF/CRLF、原全部回归。
+
+- 诊断白名单补充：`build/diagnostics/check-local-user-state.cjs` 的 knownCatalog 夹具补齐真实根状态读取与 Rust 根级回执字段，保留原删除/离线断言；原因是旧夹具仅模拟全局 tags，不能验证新增完整性合同。
+
+
+### 17.1 实际 owner、状态与数据链
+
+- `startupPathAvailabilityRuntime` 是本轮根可用性状态的唯一内存 owner，导出只读 `SharedRootAvailabilitySnapshot { rootId, state, generation, lastError? }`。路径使用既有去设备前缀、大小写/斜杠规范化；已识别映射盘与 UNC 共用根键。状态为 checking/online/offline/recovering，每次探测或失效推进代次；旧探测不得把新 offline 改回 online。健康 online 根复查期间保持 online；离线 TTL 到期后的实际重试进入 recovering。
+- 映射表复用 pathCanonicalizer 的缓存，新增 `mappedDriveTableAsync` 用 `execFile(net.exe, ['use'])` 异步识别；无 shell、1500ms 进程超时、并发合并，成功缓存 30 秒、失败抑制 5 秒。修正盘符冒号后原单词边界导致识别失败，并保留共享名中的单个空格。未知盘符仍做目录探测；已知映射丢失或换目标时拒绝恢复旧根身份。
+- 目录探测沿用现有 500ms 默认值及环境参数，离线抑制默认 30 秒，成功缓存沿用 1～5 秒；本轮没有把设计目标 1 秒/15 秒伪装成实测承诺。普通本地根也确认目录，避免把根状态留在 checking；这不是所有本地动作的准入锁。
+- `filterFolderCacheAvailableRoots` 明确返回 configuredFolders（原配置全集）、folders（本次可执行集合）、skippedFolders（不可执行集合）。持久配置和节点表仍由现有 library owner 管理，本轮不将可执行集合写回配置。
+- `sharedKnownTagsRuntime` 使用根覆盖和代次验证实际 Rust 回执，按 rootPath/dbPath 对应读取成功项；metadata:error、缺项、重复项、缺失签名不能作为空目录。metadata:none 仅在真实 stat 明确 ENOENT 且根目录仍可读时确认为空；I/O 错误、权限拒绝和目录消失不等价于零标签。
+- 旧 aggregate-only 回执只能增加/保留未归属项，不能证明全量为空；requireFresh 明确拒绝。当前 Rust client 已传递 roots；本轮没有修改原生协议。显式 Node 兼容读同样逐根保留失败项，非法 JSON 不再降为空数组；共享句柄始终由读取 owner 在 finally 关闭，本地库借用句柄不关闭。
+- 新 `sharedRootCatalogRuntime` 只负责现有本地库中的确认目录读取/合并，不执行网络、不保存离线编辑、不拥有新 DB 或写队列。已确认根用新结果替换，未读根保留旧结果；同名标签取并集。没有归属证据或目录被旧版本/其他合法写入修改时，保守回到现有 tags。
+- 目录读取使用请求 revision 与根 generation 双重检查，发布前再次核验；新请求或根失效后晚到的目录不写库，requireFresh 不报告成功。零绑定重命名/删除失效时明确返回 superseded，读取失败时不能假称“没有绑定”。
+- 已使用 Mermaid Chart 绘制实际 owner 链：配置 → 根状态 → 可执行集合 → 根级读回 → 完整性/代次检查 → 确认目录合并 → 本地事务。图没有包含尚未实现的 UI 置灰、硬隔离或退出协调器。
+
+### 17.2 持久字段、兼容和回滚
+
+仅新增本地 `meta` 表键 `sharedRootCatalog`，值为：
+
+| 字段 | 含义 |
+| --- | --- |
+| version = 1 | 本地记录格式；缺失、损坏或未知版本回退到现有 tags |
+| roots[].rootId | 已配置规范根路径，非字体 ID、非新共享库 UUID |
+| roots[].tags | 该根最近完整确认的标签名集合 |
+| roots[].signature | 原读取签名或 node-confirmed；仅表示读取版本，不能证明服务器身份 |
+| roots[].confirmedAt | 确认时间，非激活时间或清理租约 |
+| unattributedTags | 未确认根归属的旧目录/保留项，不能据此准许跨根写操作 |
+| publishedTags | 与 tags 的一致性检查；旧版本或其他写入更改 tags 时自动退回保守模式 |
+
+- `tags` 变化与该 meta 值在同一个既有 library 事务提交；目录没变化时不反复删除/插入 tags。事务失败时二者一起回滚，不出现目录已更新但归属没保存。
+- 不改 schemaVersion=100、共享 SQLite 格式、字体 ID、绑定数据、收藏/保护/本地标签、现有根配置格式或软件版本。新增元数据不放入会被设置保存全量重写的 app_state。
+- 回滚只回退本次代码/测试/文档提交；旧版忽略额外 meta，不要求删除它。再次升级时若 publishedTags 与当前 tags 不一致，旧归属失效并保留当前目录。完全在线且读取完整后正常删除仍生效；离线未确认时不利用 dropTags 删除未知归属项。
+- 保存的只是最近确认目录，不含用户离线写操作、补交命令、字体副本或同步队列。
+
+### 17.3 定向证据与实际限制
+
+- 新命令 `npm run diagnostics:shared-root-retention` 已注册进 diagnostics:all。LF 默认 17 组（含旧实现负例），CRLF 16 组运行行为；加载真实 TS owner、真实临时 SQLite 和文件，只替换 Windows/网络等外部端口。
+- 已覆盖状态迁移/别名/并发探测/迟到、映射盘异步识别与失败缓存、旧归属保留、单根空目录更新、双根同名标签、SQLite 重开、全离线启动、配置与节点保留、metadata:error、全量空集、旧 aggregate 协议、损坏元数据、事务回滚、并发请求/根失效、真实空目录、Rust 读取失败、显式 Node 真实 SQLite 与句柄关闭、零绑定改名/删除。
+- `--baseline` 实际加载 `3cfc571` 的旧共享目录 owner，同一保留断言退出码 1：实际 `[A, both]` 缺失预期的 legacy。LF 默认自动确认该负例；不是用日志文字冒充故障。
+- 原 local-user-state 夹具补齐根状态和完整 roots 回执，原“删除最后标签、离线不删、剩余绑定仍保留”的断言未删除。第一轮回归在未补齐端口时明确失败；修正夹具后通过。新诊断首次缺 db.exec 适配也明确失败并修正，没有放宽生产行为。
+- 根目录探测依然是 main 发起的异步 fs I/O；旧同步映射/路径规范化调用点仍存在，网络 SQLite 的真正隔离、系统调用硬期限和关闭子进程证明归 O-02。不能把 execFile 的 timeout 当作全应用进程回收证明。
+- roots 签名不是 NAS 稳定库身份；跨重启换库识别、恢复 watcher、事件代次传播及 UI 动作准入仍归 O-03/O-07。O-01 的 online 表示目录可读证据，不能独立充当共享写授权。
+- Windows 映射盘、真实 NAS 黑洞、网络永不恢复下本地字体取消/残留/进程退出仍待对应任务实机验证。没有声称 O-01 已解决网络卡死退出，也没有修改字体激活/清理逻辑。
+- Context7 已结合仓库 @types/node 24、Electron 42 核对 Node 24 execFile 异步/timeout/shell 语义；使用现有 API，不新增依赖。Create State 沿用容量 2/2 后跳过的既定约定。
+
+
+### 17.4 验证与交接登记
+
+- 对应需求：UO-01/UO-02 的根配置与目录保留基础、UO-03 的代次和路径身份基础、UO-04 不新增离线编辑；覆盖 X-01/X-02/X-03/X-10/X-25 中的本轮目录行为。完整 UI/进程矩阵仍在后续任务验收，不能据本项关闭 X 矩阵。
+- 构建已实际通过 Electron/Vite main/preload/renderer 368/1/200 模块，混淆 3/3；无 Rust 源码变化，未运行或宣称新 Cargo release、原生字体实测、安装包验收。
+- 性能仅有受控证据：同根并发探测合并为 1 次 stat，映射识别成功及失败缓存均抑制重复子进程调用；不填真实 NAS/P95 改善比例。在线完整结果的确认时间仍会更新本地 meta；目录内容未变时不重写 tags。
+- Windows 继续用 `npm run dev`；后续实测先用独立共享根，分别检查首次离线启动、一个根断开、metadata 不可读、恢复后标签目录。UI 置灰和网络永久不可恢复时安全退出不是本次已交付能力。
+- 回滚单位：本执行卡对应的独立提交。下一项 O-02 尚未开始；不得跳过对遗留同步路径规范化、网络 SQLite 及进程退出的隔离检查。
+
+
+最终执行结果：`npm run verify` 退出码 0，TypeScript 与 127/127 诊断通过；定向 LF 17 组、CRLF 16 组退出码 0，`--baseline` 预期退出码 1 并精确检出 legacy 丢失。三端构建和混淆分别退出码 0，`git diff --check`、11 文件精确白名单、文档链接与脚本注册检查通过。原 126 项门全部保留，未删断言或放大超时。Windows/NAS/原生及真实断网退出仍为待验，不以自动门代替。

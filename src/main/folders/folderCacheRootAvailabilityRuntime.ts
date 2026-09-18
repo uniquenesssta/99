@@ -5,6 +5,7 @@ export type FolderCacheRootAvailabilityLogger = (message: string) => void
 
 export type FolderCacheRootAvailabilityResult = {
   folders: string[]
+  configuredFolders: string[]
   skippedFolders: string[]
 }
 
@@ -31,6 +32,7 @@ export async function filterFolderCacheAvailableRoots(
   }
 
   return {
+    configuredFolders: resolvedFolders,
     folders: availableRoots,
     skippedFolders: skippedRoots,
   }

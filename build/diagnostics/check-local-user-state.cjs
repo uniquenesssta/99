@@ -196,13 +196,13 @@ async function metricsRace() {
 async function knownCatalog() {
   const db=database()
   let unavailable=false, bound=[]
-  const load=loader({'../path/startupPathAvailabilityRuntime':{filterStartupAvailableRoots:async roots=>({availableRoots:unavailable?roots.slice(0,1):roots,skippedRoots:unavailable?roots.slice(1):[]})}})
+  const load=loader({'../path/startupPathAvailabilityRuntime':{getStartupPathRootState:root=>({generation:1,state:unavailable&&root==='r2'?'offline':'online'}),filterStartupAvailableRoots:async roots=>({availableRoots:unavailable?roots.slice(0,1):roots,skippedRoots:unavailable?roots.slice(1):[]})}})
   load('src/main/library/runtime/librarySchemaRuntime.ts').initializeLibraryDb(db)
   const insert=db.prepare('INSERT INTO tags VALUES (?,?)');insert.run('last',0);insert.run('empty',1)
   const runtime=load('src/main/library/sharedKnownTagsRuntime.ts').createSharedKnownTagsRuntime({
     uniqueResolvedFolders:x=>x,sharedMetadataDbPathForRoot:root=>root+'/metadata',openLibraryDb:async()=>db,
     loadLibraryShellFromSqlite:()=>({tags:db.prepare('SELECT name FROM tags ORDER BY sort_order').all().map(row=>row.name)}),
-    appendStartupLog(){},runRustSharedMetadataKnownTags:async()=>({knownTags:bound}),
+    appendStartupLog(){},runRustSharedMetadataKnownTags:async({roots})=>({knownTags:bound,roots:roots.map(root=>({...root,signature:'metadata-v2|fixture',knownTags:bound,rows:bound.length}))}),
   })
   assert.deepEqual(plain(await runtime.refreshKnownSharedTagsFromMetadata(['r1','r2'],{allowEmptyOverwrite:false,dropTags:['last']})),['empty'])
   assert.deepEqual(plain(await runtime.refreshKnownSharedTagsFromMetadata(['r1','r2'],{allowEmptyOverwrite:false,dropTags:['empty']})),[], 'actual known-tag owner revived the last deleted tag')
