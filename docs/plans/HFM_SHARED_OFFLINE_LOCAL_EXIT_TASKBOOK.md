@@ -2,10 +2,10 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.0；制定日期：2026-09-18；软件版本：3.0.0。
+- 文档版本：1.1；制定日期：2026-09-18；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定及专项实施分支：`stage/09-preview-tags-app`。本项是当前分支的补充专项，不另行宣告主线 Stage 8 或 U-09 完成。
 - 制定代码基线：`5866105917d3af7a843f320f220ae047bb49d957`；实施前重新核对实际 HEAD、远端与工作树，不能把此处基线当成永远最新。
-- 当前状态：**任务书已制定；O-00～O-08 全部未开始；本轮没有修改功能代码。**
+- 当前状态：**O-00 自动验证通过、实机待验；O-01～O-08 未开始。本轮仅诊断与文档，不修改业务行为。**
 - 用户最终约定：共享监视文件夹和共享标签断网后保留原位置、置灰禁用，重连后恢复；网络永远不恢复也必须允许正常退出；已激活字体通过本机副本继续使用和清理；不做离线共享修改或离线同步系统。
 - 上级：[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。承接[操作优化任务书](HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md) §19、§20，保留状态按钮合一、100ms 单击防连击、标签提交即时查询及共享冲突修复。
 - 同时继承[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)的事务/意图/回执约束，以及 [Stage 1 激活事务](HFM_STAGE_01_ACTIVATION_TASKBOOK.md)、[Stage 2 路径授权](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)、[Stage 5 Rust 边界](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)、[Stage 6 React 所有权](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)、[Stage 7 IPC 校验](HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)的质量要求。
@@ -250,7 +250,7 @@
 
 ### O-00：基线、日志与故障复现
 
-- **状态：未开始。** 前置：核对远端/工作树、读取当前规则与上级任务书。
+- **状态：自动验证通过、实机待验。** 前置已核对；证据与限制见 §16。
 - 范围：诊断、故障夹具、现有日志边界和文档；不先混入置灰/退出业务修改。
 - 步骤：列出 §4 全部消费者；记录真实后端、线程/进程、网络调用与句柄 owner；复现 UNC 和映射盘断网、永不返回请求、激活后离线退出、误清目录风险；核对副本真实位置及本地记录读写。
 - 交付：旧实现失败证据、真实时序、每根访问计数和子进程清单；区分已复现缺陷、代码风险、Windows 待证项。
@@ -499,7 +499,7 @@ README/任务状态、提交、推送、回滚定位：
 
 | 任务 | 状态 | 实施提交 | 自动验证 | Windows/NAS/原生 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| O-00 | 未开始 | — | 未执行 | 未执行 | 首项为证据与消费者清单 |
+| O-00 | 自动验证通过、实机待验 | 本节同批提交（Git 可追溯） | TypeScript、126/126；8 项已知问题观察、5 组对照 | 待验 | 证据与消费者清单见 §16，非修复完成 |
 | O-01 | 未开始 | — | 未执行 | 未执行 | 根状态与目录保留 |
 | O-02 | 未开始 | — | 未执行 | 未执行 | 网络执行隔离 |
 | O-03 | 未开始 | — | 未执行 | 未执行 | 置灰与完整动作准入 |
@@ -509,4 +509,89 @@ README/任务状态、提交、推送、回滚定位：
 | O-07 | 未开始 | — | 未执行 | 未执行 | 校验后恢复，不重放编辑 |
 | O-08 | 未开始 | — | 未执行 | 未执行 | 28 项 X 矩阵与收尾 |
 
-下一次执行入口：O-00。用户此次仅要求创建任务书；收到实施指令前不开始生产代码修改。
+下一次执行入口：O-01。本次用户仅启动 O-00，不自动进入 O-01；Windows 待证项持续登记，最终验收不得跳过。
+
+
+## 16. O-00 执行卡
+
+- 状态：自动验证通过、实机待验；起点 `117b08470b55556d9c066da618e4afaf7947178a`，原分支，工作树干净。
+- 精确生产白名单：无。复用已有日志，不为基线引入业务状态、网络探测或新 IPC。
+- 精确诊断/配置白名单：新增 `build/diagnostics/check-shared-offline-baseline.cjs`；`package.json` 注册只读基线诊断。
+- 精确文档白名单：README.md、本任务书、HFM_REMEDIATION_MASTER_TASKBOOK.md（均位于原目录）。
+- 复用 `check-operation-chain.cjs` 的 TS 模块加载器；网络/Windows/Electron 使用明确受控端口，SQLite/临时文件/测试子进程为真实资源。新观察器输出逐项证据与已知缺陷标签，不能用观察器成功代替修复成功。
+- 计划复现：映射盘跳过探测、UNC 失败抑制、部分共享标签回读覆盖、Promise 超时后子进程仍运行、退出受根定位/索引同步阻塞、清理残留阻止退出、损坏本地激活记录被视为空。另保留本机副本和已有保护路径的正向对照。
+- 所有注入只作用于模块加载端口、临时 SQLite/文件和由测试创建的子进程；不访问用户 NAS、不注册/删除系统字体。真实 Windows 映射盘/字体资源与 SMB 黑洞测试待回执。
+
+
+### 16.1 消费者与执行/句柄清单
+
+下表逐项覆盖 §4 消费者。线程/进程按源码边界识别；本轮未接真实 Windows daemon/NAS，不把源码路由列作实机进程证据。“拟处置”仅供后续 O-01～O-07，不表示已实施。
+
+| 消费者 | 当前入口/传递路径 | 执行及 I/O、句柄 owner | 现有控制及缺口 | 拟处置 |
+| --- | --- | --- | --- | --- |
+| 根探测与目录缓存 | startupPathAvailabilityRuntime → folderCacheRootAvailabilityRuntime | main 发起 fsp.stat；模块级可用性 Map | UNC 500ms/TTL；映射盘未探测，期限不终止 I/O | 根级统一准入、映射盘识别、隔离探测 |
+| watcher | folderWatcherRuntime.startWatchingFolders/flushPendingFolderChanges | main 的 fs.watch/stat；运行时持有 FSWatcher、timer、generation、恢复批 | 有 generation 与停用清理，缺统一每根离线状态；错误不是删除证据 | 离线停止该根事件应用，保留配置，恢复单一 watcher |
+| 扫描 | scanOrchestrator → scan-orchestrator/scanListingRuntime → font index worker | Rust 路由优先；indexListWorkerSourceRuntime/scanWorkerSourceRuntime 的 worker_threads 为兼容执行端 | 已有工作进度/调度，不能据此认定取消系统阻塞有效 | 实际根准入、网络隔离、进度期限，不自动扫空写删 |
+| 手动刷新 | manualFolderRefreshRuntime → manual-refresh/manualWatchedFolderRefreshRuntime、manualFolderRustListingRuntime | 主进程编排、Rust listing/索引写入及缓存 repair 端口 | 错误恢复与快照需逐根验证完整性 | 离线拒绝、保留旧快照，恢复后新鲜读取 |
+| 路径授权/文件动作 | fontPathAuthorizationRuntime → realpath/stat、权威根/索引端口 | main 发起 fsp；消费者拥有后续文件动作 | 安全拒绝已有，等待网络本身仍在主线程发起 | 网络授权隔离；本地取消使用独立托管身份，不取消权限检查 |
+| 共享标签目录 | mainOperationsCompositionRuntime.startStartupTasks → sharedKnownTagsRuntime | 启动延迟 1500ms 后默认参数刷新；Rust metadata read，兼容 main SQLite；本地 library owner 保存 tags | B02 默认部分根路径真实删除本地目录项；显式 preserve/requireFresh 是正向对照 | 根级保留和完整性标记、离线禁用 |
+| 共享绑定/批量/重命名/删除 | sharedFontMetadataMutations → sharedMetadataMutationRuntime/LockRuntime → Rust/显式兼容 | main 锁文件 fsp.open/stat，共享 SQLite 由 mutation owner/原生端执行并按借用规则关闭 | 提交/刷新结果已有区分，未知写不能重放；锁与前置 I/O 仍需隔离 | 提交前准入，已提交保留结果未知，只核验不补交 |
+| 共享 metadata 覆盖/同步 | sharedMetadataOverlayRuntime → openSharedMetadataDb/回放；sharedMetadataMergedIndexSyncRuntime | Rust 前置有 main 同步 SQLite；共享 DB 自有句柄在 finally 关闭 | 外层 Promise deadline 不能中断同步 SQLite | 网络 open/query/close 隔离，不改共享事务语义 |
+| 预览读取/发布 | previewCacheRootAvailabilityRuntime、previewSharedStorageCircuitBreakerRuntime、现有 preview cache owner | main 发起共享根 stat，缓存/渲染经原 worker/原生执行端；存储 owner 管 DB | 已有预览熔断与本地缓存，不是全应用根状态；缓存写失败不能当根全失联 | 本地命中继续可用；共享读取/发布暂停，不清空本地缓存 |
+| 分页/ID/统计 | fontQueryFacadeRuntime → merged-page worker/ runRustMergedIndexIdsQuery/runRustMergedIndexMetricsQuery | Rust daemon 路由；兼容 DB worker 为 worker_threads（dbQueryWorkerClientRuntime） | 标签 revision/generation 已有；主进程 fallback 和外部 metadata 检查需纳入 | 未确认快照保留，离线不新发网络查询，恢复拒绝迟到结果 |
+| 安装状态读/写 | install/status/installStatusReadRuntime、installStatusWriteRuntime → rootForFontPath → worker | main 根定位/分组，Rust/DB worker 执行；fallback main SQLite 受策略控制 | 在选择 worker 前已经需要源根定位 | 本地取消结果独立，网络状态可重建，不阻塞退出 |
+| 安装状态保存队列 | activationInstallStatusSaveQueue.flush → read/save → rootForFontPath → syncMergedIndexAfterInstallStatusRefresh | main 内存 pending/in-flight 与重试 timer；依赖端口负责 DB | B03/B04 真实 queue 与 lifecycle 组合可被未返回端口卡住 | 退出只结算本地事实，根校正移出退出必经链 |
+| 数据库维护/备份 | maintenance/databaseBackupRuntime、applicationDatabaseMaintenanceRuntime | main exists/stat、Rust backup；显式兼容 spec.open 句柄由维护 owner 关闭 | 保留已有维护串行保护；共享 backup 前置访问也需准入 | 离线共享维护禁用，本地维护保留，关闭时有限结算 |
+| 渲染器关闭保存 | runtime/app/effects/useAppFlushOnUnloadRuntime → flushApplicationState → windowRuntime | renderer 写队列/库保存；main close request/12 秒 timeout/dialog | 本轮没有真实 DOM/renderer hang 复现；现有 gate 保留 | 不等未确认网络写无限返回，真实 IPC 关闭流程 O-06 验证 |
+| 主进程退出 | mainProcessLifecycleRuntime.before-quit → cleanup → save queue → stop watchers → will-quit | app 生命周期 owner；stopRustCoreDaemon、dbQueryWorkerShutdown 负责各自进程/线程 | B03～B05 可复现未到 stop/quit；不是 Windows 真退出测量 | 单一预算与 closing 准入，本地记录残留后可退出 |
+| 本机副本/残留 | fontActivationTransactionRuntime → CopyRuntime → currentUserFontsDir；Cleanup/Verify/store/delete/compensation | Windows 本机用户 Fonts、HKCU、原生资源；本地 JSON 由各自 store/queue 唯一管理 | B06 损坏读为空，B07 fileExists 纳入 stillVisible；不能混称注册残留 | 保留所有权，分阶段事实和原子持久，O-04/O-05 修复 |
+
+源副本位置已核对：`fontActivationTransactionRuntime` 用 `currentUserFontsDir()` 与安全临时名生成 dest，后者来自 LOCALAPPDATA 下 Microsoft/Windows/Fonts。现有副本不在用户正式共享字体库中；本轮没有改路径或建立第二个副本。恢复文件分别为 `temporary-active-fonts.json`、`pending-font-activation-compensations.json`、`pending-temporary-font-deletes.json`，都由既有本地 owner 管理。
+
+### 16.2 可执行基线证据
+
+观察器直接加载实际 TS 生产模块。默认通过 Git 读取制定基线的生产源码（包括加载到的内部依赖），用当前未修改的测试 loader 执行；后续修复不会被要求继续保留缺陷。`--current` 复核当前源码，后续任务须将对应场景迁为新正确性门；它不注册为强制保留旧缺陷的长期门。
+
+| 观察 | 已复现结果 | 证据强度与后续归属 |
+| --- | --- | --- |
+| B01 | `O:\fonts` 返回可用，stat 调用 0 次 | 实际根策略，受控路径端口；不是 Windows 映射盘实测。O-01 |
+| B02 | 根 A 离线/根 B 在线；原 tags 两项变一项，重开真实 SQLite 连接仍只剩在线标签 | 默认参数；startup tasks 存在真实默认调用。不能宣称所有调用都会丢。O-01 |
+| B03 | 本地 cleanup 端口完成后，根定位 Promise 不返回：queue 在途、app.quit 未调用、watcher stop 未执行 | 实际 lifecycle＋queue；外部 OS 清理及网络端口受控。O-04/O-06 |
+| B04 | 根定位完成，索引同步 Promise 不返回：同样阻止退出；释放端口后可正常结束 | 同 B03；排除测试忘记触发退出的假阳性。O-02/O-06 |
+| B05 | cleanup 返回 remaining=1，恢复窗口一次，退出次数 0 | 实际现有政策，与新需求不符；不称作原设计意外崩溃。O-05/O-06 |
+| B06 | 真实临时激活 JSON 损坏，load 返回空记录；只读时原损坏文件仍保留 | 已证明错误被解释为空，未声称本次读取已经覆盖原文件。O-05 |
+| B07 | 本地文件存在、系统枚举端口为空，stillVisible 返回 true；删掉测试文件后 false | 证明当前核验合并文件/资源事实，非真实 Windows 资源状态证据。O-05 |
+| B08 | 实际 withIoDeadlineResult 超时返回，真实测试 Node 子进程仍活着 | 证明 deadline 不负责终止执行者；测试 finally 杀自己创建的进程并观察 close，存活数回到 0。O-02 |
+
+五组正向对照：C01 UNC 错误返回不可用且 TTL 内重复探测只一次；C02 显式保留目录成功、requireFresh 对部分根拒绝；C03 正常退出按 cleanup→delete flush→status flush→watcher stop→log flush→quit；C04 本地记录重开能读取、真实副本在测试源删除后仍可读；C05 子进程 close 被确认且无残留。C04 的 Rust copy 端口由真实本地 fsp.copyFile 替换，不能当作真实 Rust/Windows 激活成功。
+
+B03/B04 注入期间实际顺序为 `prevent-quit → cleanup-local → delete-flush → status-flush`；状态队列根定位访问计数为 1，根定位或同步释放前退出仍为 0。观察器同时输出生产 before-quit 日志和测试边界事件，二者明确分开；未伪造 production operationId 或 quitId（现版本没有后者）。
+
+B08 每次输出实际 childPid 与实测 elapsedMs，不写成固定性能门或 P95；100ms 是该测试主动设置的最小 deadline，不是应用新增网络策略。实际 Windows daemon/shared I/O 的进程数、handle 数、15 秒退出目标及 30 样本性能仍待 O-02/O-08 实测。无网络连通探测接触用户系统。
+
+### 16.3 运行方式与基线门语义
+
+```bash
+npm run diagnostics:shared-offline-baseline
+node build/diagnostics/check-shared-offline-baseline.cjs --crlf
+node build/diagnostics/check-shared-offline-baseline.cjs --current
+node build/diagnostics/check-shared-offline-baseline.cjs --current --strict
+npm run verify
+```
+
+- 前三条观察器成功时退出码 0，报告 8 项 KNOWN_DEFECT、5 组 CONTROL_PASS、businessCorrectnessPassed=false；表示基线取证有效，**不表示共享离线功能已通过**。
+- `--strict` 使用同一执行证据，在已知问题存在时明确返回 1。已实际运行确认，不能把这个预期失败隐藏为业务绿色门。
+- 默认只读基线观察接入 diagnostics:all，不删除原 125 项诊断。后续修复要新增/提升对应正确性断言；不得以 pinned baseline 代替当前源码门。
+- LF 和 CRLF 两种真实模块编译加载完成；fixture 使用 Node SQLite/真实临时文件，最后清理。脚本有 15 秒整体保护，测试子进程有 5 秒保护和 finally 所有权清理；没有系统字体/注册表副作用。
+- 初次脚本解析因测试端口对象缺一处闭合括号而失败，已修正；这是夹具构建错误，没有调整生产代码或删业务断言。后续当前源码与 pinned/LF/CRLF 均产出一致分类。
+- 日志只增加测试报告，生产 logger 未改，不引入业务影响；真实运行日志在 scratch 临时输出，关键证据、命令和边界已保存本文。
+
+### 16.4 验证、兼容与交接
+
+- `npm run verify` 实际退出码 0：TypeScript 通过，126/126 诊断通过，原 125 项全部保留；新诊断成功只证明历史问题可复现。
+- pinned 默认、CRLF、当前源码观察各自退出码 0，均为 8 项已知问题及 5 组对照；当前源码 `--strict` 实际退出码 1，为预期缺陷证据。`node --check`、`git diff --check` 通过。
+- 观察器默认依赖 Git 中的 `117b08470b55556d9c066da618e4afaf7947178a` 生产源码；运行环境需保留该历史对象。缺失时明确失败，不能降级为当前源码假称历史基线。
+- 本轮无生产、Rust、IPC、依赖、数据库格式或字体目录变更；未运行新一轮打包、Cargo 或 Windows 实机，不复用历史构建冒充本项验收。回滚单位为本次诊断、脚本注册与文档提交，无数据迁移。
+- 真正的 Windows 映射盘/UNC 断网、SMB 永不返回系统调用、系统字体资源与注册表清理、渲染器关闭及应用自有进程真正退出仍待实测；受控端口和测试 Node 子进程不能替代上述证据。
+- O-01 依据 B01/B02 开始根状态与最后确认目录设计；O-02 接管真正隔离与回收；O-04～O-06 接管本地取消、残留和退出。各项须使用当前实现的正确性测试，不将本观察器当成修复门。
+- 现有按钮合一、100ms 防连击和标签提交契约不变；不新增离线同步。工具协议沿用 §14，已补绘真实退出等待链；Create State 按既定容量跳过约定执行。
