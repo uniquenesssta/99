@@ -233,7 +233,7 @@ createMainRuntimeRegistrationPayload(incomplete)
   const old = compile(probe, new Map([[adapterPath, legacy]]))
   assert.equal(old.errors.length, 0, diagnosticText(old.errors))
   checkRuntimeErasure()
-  console.log(`[diagnostics:main-composition-contracts] 115 unique required capabilities; real database owners compatible; ${rejected} compiler rejections; legacy omission reproduced; runtime unchanged`)
+  console.log(`[diagnostics:main-composition-contracts] 116 unique required capabilities; real database owners compatible; ${rejected} compiler rejections; legacy omission reproduced; runtime unchanged`)
 }
 
 try { main() } catch (error) {

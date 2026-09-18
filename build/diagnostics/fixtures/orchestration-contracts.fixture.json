@@ -60,6 +60,7 @@
     "loadFolderCache",
     "loadLibrary",
     "loadLibraryShell",
+    "getSharedAvailability",
     "logPath",
     "logSchemaVersion",
     "markCleanShutdownSync",

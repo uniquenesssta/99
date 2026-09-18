@@ -1,3 +1,4 @@
+import { createSharedAvailabilityReader } from '../path/sharedAvailabilityRuntime';
 import { cacheKeyForPath } from "../cache/cachePaths";
 import { PREVIEW_SQLITE_SCHEMA_VERSION } from "../cache/constants";
 import { getSqliteMeta } from "../db/sqliteHelpers";
@@ -314,6 +315,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     closeLibraryDb, closePreviewDb, clearLocalPreviewDbHandle, checkpointOpenCacheDbs, closeCacheDb,
   };
   const capabilities: MainDataCompositionRuntime['capabilities'] = {
+    getSharedAvailability: createSharedAvailabilityReader(openLibraryDb),
     loadLibrary, loadLibraryShell, loadFolderCache, searchFontsInLibrary, queryFontsInLibrary,
     queryFontPageInLibrary, checkSharedMetadataUpdates, getFontMetricsFromLibrary,
     getCacheStats, cacheArchitectureInfo, clearScanCache, clearPreviewCache, setCacheKvs,

@@ -1,3 +1,5 @@
+import { useSharedAvailability } from '../../sharedAvailabilityRuntime'
+import { sharedPathBlocked, fontSharedActionBlocked, SHARED_UNAVAILABLE_MESSAGE } from '../../../../shared/sharedAvailability'
 import { resolveFontCommandTargets } from '../../fontCommandTargetsRuntime'
 import { FontCommandButtons } from './FontCommandButtons'
 import type { RunFontCommand } from '../../fontCommandRuntime'
@@ -75,10 +77,12 @@ export function FontDetailPanel({
   updateFont,
   applyCompare
 }: FontDetailPanelProps): JSX.Element | null {
+  const availability = useSharedAvailability()
   if (!visible) return null
 
   const commandIds = selectedFontIds.length ? selectedFontIds : selectedFont ? [selectedFont.id] : []
   const commandFonts = resolveFontCommandTargets(commandIds, library, visibleFonts).fonts
+  const sharedBlocked = fontSharedActionBlocked(availability, 'sharedTags', commandFonts) || commandFonts.length !== commandIds.length
   const installMatches = selectedFont?.systemInstallMatches || []
   return (
     <section className="detail-panel detail-dock-panel">
@@ -154,7 +158,7 @@ export function FontDetailPanel({
             </div>
           </div>
 
-          <div className="tag-box">
+          <fieldset className="tag-box" disabled={sharedBlocked} aria-disabled={sharedBlocked} title={sharedBlocked ? SHARED_UNAVAILABLE_MESSAGE : undefined}>
             <div className="tag-box-title">共享标签 · 编辑作用于 {commandIds.length} 个字体</div>
             <div className="inline-create detail-create">
               <div className="tag-input-wrap">
@@ -163,7 +167,7 @@ export function FontDetailPanel({
                   onChange={(event) => setAssignSharedTagName(event.target.value)}
                   id="font-shared-tag-input"
                   placeholder="输入共享标签名称"
-                  onKeyDown={handleSharedTagInputKeyDown}
+                  onKeyDown={event => { if (!sharedBlocked) handleSharedTagInputKeyDown(event) }}
                 />
                 {sharedTagSuggestions.length > 0 && (
                   <div className="tag-suggestion-list">
@@ -173,7 +177,7 @@ export function FontDetailPanel({
                         className={index === activeSharedTagSuggestionIndex ? 'active' : ''}
                         onMouseDown={(event) => event.preventDefault()}
                         onMouseEnter={() => setActiveSharedTagSuggestionIndex(index)}
-                        onClick={() => addSharedTagToSelectedByName(tag)}
+                        onClick={() => !sharedBlocked && addSharedTagToSelectedByName(tag)}
                       >
                         #{tag}
                       </button>
@@ -181,20 +185,20 @@ export function FontDetailPanel({
                   </div>
                 )}
               </div>
-              <button onClick={() => addSharedTagToSelectedByName(sharedTagSuggestions[activeSharedTagSuggestionIndex] || assignSharedTagName)}>添加共享标签</button>
+              <button onClick={() => !sharedBlocked && addSharedTagToSelectedByName(sharedTagSuggestions[activeSharedTagSuggestionIndex] || assignSharedTagName)}>添加共享标签</button>
             </div>
             <div className="tag-row" aria-label="预览字体的标签，点击仅从操作范围移除该标签">
               {(selectedFont.tagNames || []).length ? selectedFont.tagNames.map((tag) => (
-                <button key={tag} className="tag-pill removable" onClick={() => removeSharedTagFromSelected(tag)}>
+                <button key={tag} className="tag-pill removable" onClick={() => !sharedBlocked && removeSharedTagFromSelected(tag)}>
                   #{tag} ×
                 </button>
               )) : <span className="empty">这个字体还没有共享标签</span>}
             </div>
-          </div>
+          </fieldset>
 
           <div className="detail-actions secondary-actions">
             <button onClick={() => void window.hfm.compareFontInstalled(selectedFont).then((result) => updateFont(selectedFont.id, (font) => applyCompare(font, result)))}>重新检测这个字体</button>
-            <button onClick={() => window.hfm.showItemInFolder(selectedFont.path)}>在资源管理器中显示</button>
+            <button disabled={sharedPathBlocked(availability, selectedFont.path)} onClick={() => !sharedPathBlocked(availability, selectedFont.path) && window.hfm.showItemInFolder(selectedFont.path)}>在资源管理器中显示</button>
           </div>
 
           <div className="info-grid">

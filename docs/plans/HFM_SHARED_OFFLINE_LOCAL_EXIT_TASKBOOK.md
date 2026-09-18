@@ -2,10 +2,10 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.3；制定日期：2026-09-18；软件版本：3.0.0。
+- 文档版本：1.4；制定日期：2026-09-18；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定及专项实施分支：`stage/09-preview-tags-app`。本项是当前分支的补充专项，不另行宣告主线 Stage 8 或 U-09 完成。
 - 制定代码基线：`5866105917d3af7a843f320f220ae047bb49d957`；实施前重新核对实际 HEAD、远端与工作树，不能把此处基线当成永远最新。
-- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02 进程基础已实现、业务隔离未完成；O-03～O-08 未开始。**
+- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02 进程基础已实现、业务隔离未完成；O-03 已实现、自动验证通过、实机待验；O-04～O-08 未开始。**
 - 用户最终约定：共享监视文件夹和共享标签断网后保留原位置、置灰禁用，重连后恢复；网络永远不恢复也必须允许正常退出；已激活字体通过本机副本继续使用和清理；不做离线共享修改或离线同步系统。
 - 上级：[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。承接[操作优化任务书](HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md) §19、§20，保留状态按钮合一、100ms 单击防连击、标签提交即时查询及共享冲突修复。
 - 同时继承[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)的事务/意图/回执约束，以及 [Stage 1 激活事务](HFM_STAGE_01_ACTIVATION_TASKBOOK.md)、[Stage 2 路径授权](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)、[Stage 5 Rust 边界](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)、[Stage 6 React 所有权](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)、[Stage 7 IPC 校验](HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)的质量要求。
@@ -278,7 +278,7 @@
 
 ### O-03：离线置灰与主进程动作准入
 
-- **状态：未开始。** 前置：O-01、O-02 自动门通过。
+- **状态：已实现，自动验证通过；Windows/NAS 待验。** 用户明确要求先开始 O-03；O-02 前置完整门尚未满足，不能把本项视为隔离/退出综合验收通过。详见 §19。
 - 导航：AppSidebarFoldersPage、AppSidebarTagPage、AppSidebarTypes、FontDetailPanel、AppOverlays、fontCommandRuntime、Browse/Library controller、preload、IPC handlers、shared types。
 - 步骤：只读状态接线；保留目录/标签/选择；离线提示与真实禁用；详情、右键、键盘、拖放和批量共同准入；本地取消激活入口保留；mixed-root 目标完整性。
 - 必过：真实 TSX 事件到主进程拒绝链，禁用样式/aria 状态；直接 IPC 绕过 UI 无副作用；本地标签/收藏/保护正常；旧详情状态合一与 99/100ms 边界保持。
@@ -502,7 +502,7 @@ README/任务状态、提交、推送、回滚定位：
 | O-00 | 自动验证通过、实机待验 | 本节同批提交（Git 可追溯） | TypeScript、126/126；8 项已知问题观察、5 组对照 | 待验 | 证据与消费者清单见 §16，非修复完成 |
 | O-01 | 自动验证通过 | 本节同批提交（Git 可追溯） | TypeScript、127/127、LF/CRLF、旧反例、三端构建与混淆 | 待验 | 根状态与目录保留，见 §17 |
 | O-02 | 进行中、原生验证环境受阻 | 本节进程基础同批提交 | 基础 LF/CRLF、TypeScript、128/128、构建通过；完整 O-02 门未通过 | 待验 | 尚未切换业务调用，见 §18 |
-| O-03 | 未开始 | — | 未执行 | 未执行 | 置灰与完整动作准入 |
+| O-03 | 已实现、实机待验 | 本节同批提交 | TypeScript、129/129、定向 40 组及构建通过 | Windows/NAS 待验 | 置灰与完整动作准入；O-02 前置仍未满足 |
 | O-04 | 未开始 | — | 未执行 | 未执行 | 无网络源依赖的本地取消 |
 | O-05 | 未开始 | — | 未执行 | 未执行 | 持久残留与处置入口 |
 | O-06 | 未开始 | — | 未执行 | 未执行 | 整体有界退出 |
@@ -714,3 +714,48 @@ npm run verify
 
 
 本次最终验证：`npm run verify` 退出码 0（TypeScript、128/128）；`diagnostics:shared-io-process` 的 LF/CRLF 各 7 组通过且资源归零；三端构建 368/1/200 模块及混淆 3/3 退出码 0。6 文件白名单、链接与 `git diff --check` 通过。原 127 项诊断未修改。上述结果只覆盖当前未接入业务的基础，不解除 §18.2 的阻塞，也不允许把 O-02 标记完成。
+
+## 19. O-03 执行卡
+
+- 状态：实施完成，自动验证通过、Windows/NAS 待验；基线 2cc43a894431a92a4631ec7b920fddea9fb9f073，工作树干净。用户明确要求开始 O-03，按最新指令先实施可独立验证的界面/IPC 准入；§18.2 的 O-02 依赖未满足事实保留，不据此声称网络隔离或退出保障完成。
+- 生产白名单：新增 shared/sharedAvailability.ts、main/path/sharedAvailabilityRuntime.ts、main/ipc/sharedActionAdmissionRuntime.ts、renderer/src/sharedAvailabilityRuntime.tsx；修改 main/bootstrap/mainDataCompositionRuntime.ts、mainCompositionContracts.ts、mainApplicationRuntime.ts，main/ipc/ipcHandlerTypes.ts、ipcHandlers.ts，preload/index.ts、main/preload/runtimePreloadSource.ts，renderer/src/components/app/{AppRootView,AppSidebar,AppSidebarFoldersPage,AppSidebarTagPage,FontCommandButtons,FontDetailPanel,AppOverlays}.tsx。路径均位于 src/ 下。
+- 诊断白名单：新增 build/diagnostics/check-shared-action-admission.cjs；必要的现有组合契约夹具按实际新增能力精确更新并记录，不能删断言；package.json。文档白名单：README、本任务书、总任务书。
+- 设计：复用 O-01 唯一根状态 owner、本地配置与标签归属；只读快照 IPC，不持久化 online、不设同步队列。主进程依据配置和目标路径检查全部目标，预检失败整体拒绝；保留原 sender/路径授权。UI 使用单一只读订阅，离线项留在原位，使用 disabled/aria-disabled，并阻止键盘、右键和拖放。共享标签无归属时保守处理；本地行为与取消激活不受共享准入限制。
+- 验证：真实生产模块和 TSX 行为、直接 IPC 拒绝零副作用、混合根完整性、失联保留/恢复、双 preload、原 100ms 防连击边界、全部自动诊断及三端构建。真实 Windows/NAS 和未完成的 O-02/O-04/O-06 不冒充通过。
+
+### 19.1 白名单补充（实施前登记）
+
+- 查询保留：src/renderer/src/runtime/database/useRendererDatabasePageRuntime.ts，拒绝共享离线查询时保留已有分页/选择；不将拒绝转换成空集合。
+- 视觉禁用：src/renderer/src/styles/15-global-interaction.css，为 disabled/fieldset 提供真实灰色样式。
+- 新能力带来的夹具变化：build/diagnostics/fixtures/{orchestration-contracts,main-application-registration,main-composition-runtime}.fixture.json，check-main-composition-contracts.cjs；新增 getSharedAvailability，原键不移除。check-activation-entry.cjs 的 React 受控端口补齐 context，仅设原有正常在线基线；离线行为由新门实际注入状态检验。
+
+- 白名单调整：只读状态 Provider 放入 src/renderer/src/main.tsx 的应用入口，覆盖界面及控制器且不改变六组视图参数契约；AppRootView 的试接已撤回，保留原有结构锁和四种模式哈希。
+
+- 编译路径夹具白名单补充：build/diagnostics/check-main-composition-compiler-paths.cjs、check-main-application-runtime.cjs。新增只读能力使必需能力数 115→116、缺失能力编译反例 125→126；同步精确计数与输出，保留正/反路径、LF/CRLF 和旧遗漏反例。
+
+### 19.2 实际边界与兼容约束
+
+- 状态快照由现有本地库借用句柄读取 folders/tags/meta，再结合 O-01 唯一根状态 owner；不调用 loadLibraryShell 的共享统计，不新开共享数据库、不写 online 状态、不增加持久格式。沿用 owner 的合并探测/失败缓存，目录 stat 仍属 O-02 未隔离部分。
+- 新增唯一 `library:getSharedAvailability` 注册项，正式和运行时 preload 同步。内部组合能力必需且类型固定；旧 preload 无该方法、快照缺字段或读取错误时 UI 保守禁用共享入口。原 sender 校验在准入前执行，原路径/业务授权仍在处理器中执行。
+- Provider 位于应用入口，默认两秒读取一次，最多一项未结算读取；六秒未返回仅将界面置为不可用，不声称取消了 IPC 或系统调用。StrictMode 重复 effect 复用未结算 Promise，卸载清理 timer 并忽略旧回包；超过六秒的旧回包也不恢复在线状态，等待下一次新读取确认。目录/标签来自原 library，不用快照重建或删除它们。
+- 目录、子目录、共享标签的 disabled/aria-disabled 与灰色样式同步；保留选中 class 和展开记录。详情共享标签 fieldset、输入 Enter、菜单与拖放均有限制。旧菜单中的危险动作再次点击时仍经过 main 当前状态检查。合并状态按钮及 99/100ms 单击逻辑保留。
+- main 整批检查安装、激活、物理删除/移动、目录创建/改名/刷新、共享标签写、显式扫描/缓存/树读取、需源文件的预览和资源管理器入口；不会在混合根列表中筛掉离线项再执行剩余写操作。共享标签旧写链可能访问多个索引，所以任一配置根不可用时保守暂停共享标签写；按归属读取的在线独占标签仍可用，同名跨根和无归属旧标签保守禁用。
+- library:save 变更共享标签目录时同样受准入限制；仅本地标签/收藏/保护、配置移除及取消激活不因此禁用。来源不明 UNC 路径保守拒绝。主进程仍依据本地配置和真实目标 path 判定，不接受 renderer 提供的 online 布尔值。
+- 指定共享目录/标签查询在执行前和回包时检查；拒绝时 renderer 保留当前分页、字体记录与选择，不能把错误转为空结果。通用本地查询与既有索引同步机制不迁移到本项。后台监听保留 O-01 逐根跳过方式，避免一个离线根阻止其他根启动；watcher 重新绑定、共享库身份复核和完整恢复归 O-07。
+- 取消激活入口可用只表示本项不拦截，不表示现有激活文件已复制本机。字体本地副本归 O-04；共享 SQLite/同步路径隔离归 O-02；网络永不恢复下有界退出归 O-06。新增监视目录在保存配置前先经现有 owner 实际验证可读，不把未配置路径一律拒绝；这类探测不直接写入配置。真实断网至检出存在 O-01 TTL/探测窗口，O-03 不是原子网络事务或系统调用熔断器。
+- 新增 1 个只读能力和 1 个诊断脚本；无依赖、schema、Rust、持久同步队列变化。Create State 沿用容量 2/2 后跳过的既定约定；Context7 核对 React 18 effect 清理，Mermaid 展示已接入的状态/准入链。
+
+### 19.3 验证记录
+
+- 新诊断直接执行实际 TSX、两套 preload、完整 IPC 注册和真实 sender 校验；覆盖混合根无副作用、目录/标签保留、共享/本地行为区别、迟到菜单点击、恢复、缺失能力、损坏快照、轮询截止/卸载/StrictMode。默认 40 组（含 CRLF 子进程及故意移除 main 准入的负例），负例必须因“缺少预期拒绝”失败。
+- 实施中失败记录：原缺失字体预检被新增按钮完整数量禁用遮住，已保留原 resolver 报错路径并让原断言通过；Provider 试放视图导致结构锁失败，改为应用入口并恢复原视图哈希；组合新增能力导致 115/125 旧计数失败，精确增加到 116/126，旧键/旧反例全部保留。新诊断初次将审计日志计作副作用、按钮 void 返回当 Promise、运行时 preload 导出名写错均已修正夹具，没有放宽业务拒绝断言。
+- 已实际通过一轮 TypeScript 与 129/129 全部诊断；新增目录准入补查后，定向 39 组、最终 TypeScript 及三端构建 371/1/202 模块、混淆 3/3 均退出码 0。最终完整重跑 129/129 退出码 0；随后仅加严过期回包不得恢复在线的分支，定向 40 组（含 CRLF/负例）、最终 TypeScript、三端构建 371/1/202 和混淆 3/3 再次退出码 0。32 文件精确白名单、文档链接与 git diff --check 通过。Windows/NAS、浏览器原生焦点/布局、实际断网激活和退出不在本环境冒充通过。
+
+
+### 19.4 交接与回滚
+
+- 本项对应 UO-01/UO-02 的置灰保留、UO-04 的禁止离线共享写；自动证据覆盖 X 矩阵的 UI/主进程准入部分，不能据此关闭整个断网/退出矩阵。
+- 最终实际 32 文件，AppRootView 试接未保留；32 文件均在 §19/§19.1 及补充白名单内。既有 128 项诊断保留，六组视图绑定与原结构哈希保持，新增只读能力的 116 个必需键和 126 个编译拒绝检查通过。
+- 性能证据限于有界轮询、StrictMode 合并同一未结算读取、计时器清理及旧回包抑制；没有虚报 NAS 延迟/P95、Windows 句柄数量或字体清理耗时。未新增依赖/原生代码，因此没有新 Cargo/Windows 安装包构建结果。
+- Windows 后续以 npm run dev 验证：选中并展开共享根后断开、同名跨根标签、菜单打开中断网、混合根批量操作、离线取消激活入口、恢复后的状态；真正的源路径无关取消、共享身份/监听恢复和有界退出须分别完成 O-04/O-07/O-06，并补齐 O-02。
+- 回滚单位为本执行卡同批 Git 提交；不存在需要撤销的 schema 迁移或离线操作队列。O-02 仍未完成，后续不得用本项 UI/IPC 通过替代网络执行隔离验收。

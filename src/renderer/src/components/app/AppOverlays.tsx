@@ -1,3 +1,5 @@
+import { useSharedAvailability } from '../../sharedAvailabilityRuntime'
+import { sharedPathBlocked, sharedTagBlocked } from '../../../../shared/sharedAvailability'
 import { FontCommandButtons } from './FontCommandButtons'
 import type { FontCommand } from '../../fontCommandRuntime'
 import type { EditableMenuTarget, MenuTarget, SelectionRectState, ContextMenuState } from '../../appRuntime'
@@ -65,6 +67,14 @@ export function AppOverlays({
   leaseLockConflictNotice,
   setLeaseLockConflictNotice
 }: AppOverlaysProps): JSX.Element {
+  const availability = useSharedAvailability()
+  const targetBlocked = (target: EditableMenuTarget | MenuTarget | null) => !!target && (target.kind === 'folder'
+    ? sharedPathBlocked(availability, target.rootPath || target.id)
+    : target.kind === 'tag' && target.scope === 'shared' && sharedTagBlocked(availability, target.name))
+  const renameBlocked = targetBlocked(renameTarget)
+  const deleteBlocked = deleteTarget?.kind === 'tag' && targetBlocked(deleteTarget)
+  const childBlocked = targetBlocked(folderChildTarget)
+  const menuBlocked = targetBlocked(contextMenu)
   return (
     <>
       <LeaseLockConflictNotice
@@ -86,13 +96,13 @@ export function AppOverlays({
               onChange={(event) => setRenameValue(event.target.value)}
               onKeyDown={(event) => {
                 if (isKeyboardCompositionEvent(event)) return
-                if (event.key === 'Enter') void confirmRename()
+                if (event.key === 'Enter' && !renameBlocked) void confirmRename()
                 if (event.key === 'Escape') setRenameTarget(null)
               }}
             />
             <div className="modal-actions">
               <button onClick={() => setRenameTarget(null)}>取消</button>
-              <button onClick={() => void confirmRename()}>保存</button>
+              <button disabled={renameBlocked} aria-disabled={renameBlocked} onClick={() => { if (!renameBlocked) void confirmRename() }}>保存</button>
             </div>
           </div>
         </div>
@@ -109,7 +119,7 @@ export function AppOverlays({
             </div>
             <div className="modal-actions danger">
               <button onClick={() => setDeleteTarget(null)}>取消</button>
-              <button onClick={() => void confirmDelete()}>删除</button>
+              <button disabled={!!deleteBlocked} aria-disabled={!!deleteBlocked} onClick={() => { if (!deleteBlocked) void confirmDelete() }}>删除</button>
             </div>
           </div>
         </div>
@@ -128,7 +138,7 @@ export function AppOverlays({
               onChange={(event) => setNewFolderName(event.target.value)}
               onKeyDown={(event) => {
                 if (isKeyboardCompositionEvent(event)) return
-                if (event.key === 'Enter') {
+                if (event.key === 'Enter' && !childBlocked) {
                   void createSubfolder(folderChildTarget, newFolderName)
                   setFolderChildTarget(null)
                   setNewFolderName('')
@@ -138,7 +148,8 @@ export function AppOverlays({
             />
             <div className="modal-actions">
               <button onClick={() => setFolderChildTarget(null)}>取消</button>
-              <button onClick={() => {
+              <button disabled={childBlocked} aria-disabled={childBlocked} onClick={() => {
+                if (childBlocked) return
                 void createSubfolder(folderChildTarget, newFolderName)
                 setFolderChildTarget(null)
                 setNewFolderName('')
@@ -175,12 +186,12 @@ export function AppOverlays({
           ) : (
             <>
               <div className="context-menu-title">{contextMenu.kind === 'tag' ? `${contextMenu.scope === 'shared' ? '共享标签' : '本地标签'}：${contextMenu.name}（全部匹配字体）` : '文件夹操作'}</div>
-              {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextBatchActivate}>激活</button>}
+              {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextBatchActivate() }}>激活</button>}
               {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextBatchDeactivate}>取消激活</button>}
-              {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextRefreshFolder}>刷新</button>}
-              <button onMouseDown={(event) => event.preventDefault()} onClick={runContextRename}>重命名</button>
-              {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextAddSubfolder}>新增子文件夹</button>}
-              <button onMouseDown={(event) => event.preventDefault()} onClick={runContextDelete}>删除</button>
+              {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextRefreshFolder() }}>刷新</button>}
+              <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextRename() }}>重命名</button>
+              {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextAddSubfolder() }}>新增子文件夹</button>}
+              <button onMouseDown={(event) => event.preventDefault()} disabled={contextMenu.kind === 'tag' && menuBlocked} aria-disabled={contextMenu.kind === 'tag' && menuBlocked} onClick={() => { if (contextMenu.kind !== 'tag' || !menuBlocked) runContextDelete() }}>删除</button>
             </>
           )}
         </div>

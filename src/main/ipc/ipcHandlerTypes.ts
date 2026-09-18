@@ -23,6 +23,7 @@ export type IpcInvokeHandler = (event: Electron.IpcMainInvokeEvent, ...args: any
 export type IpcHandleRegistrar = (channel: string, handler: IpcInvokeHandler) => void
 
 export interface IpcHandlerRuntime {
+  getSharedAvailability: () => Promise<import('../../shared/sharedAvailability').SharedAvailability>;
   appendLog?: (message: string) => void;
   reportPerformanceEvent?: (payload: RendererPerformanceEventPayload) => unknown;
   assertFeatureForChannel?: (channel: string) => void;

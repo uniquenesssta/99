@@ -167,6 +167,7 @@ export function AppSidebar(props: AppSidebarProps): JSX.Element {
           {sidebarPage === 'sharedTags' && (
             <AppSidebarTagPage
               title="共享标签"
+              shared
               inputValue={newSharedTagName}
               setInputValue={setNewSharedTagName}
               createFromInput={createSharedTagOnlyFromInput}

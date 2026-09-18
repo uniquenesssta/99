@@ -1,3 +1,4 @@
+import { SharedAvailabilityProvider } from './sharedAvailabilityRuntime'
 import React,{ Profiler } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
@@ -55,7 +56,7 @@ function reportReactRender(
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <Profiler id="App" onRender={reportReactRender}>
-      <App />
+      <SharedAvailabilityProvider><App /></SharedAvailabilityProvider>
     </Profiler>
   </React.StrictMode>
 )

@@ -1,3 +1,4 @@
+import { createSharedActionAdmission } from './sharedActionAdmissionRuntime';
 import { registerFontSystemIpcHandlers } from "./handlers/fontSystemIpcHandlers";
 import { registerFontTagIpcHandlers } from "./handlers/fontTagIpcHandlers";
 import { registerLibraryIpcHandlers } from "./handlers/libraryIpcHandlers";
@@ -10,7 +11,14 @@ import { registerTracedIpcHandler } from "./ipcTraceRuntime";
 export type { IpcHandlerRuntime,RendererPerformanceEventPayload } from "./ipcHandlerTypes";
 
 export function registerIpcHandlers(runtime: IpcHandlerRuntime): void {
-  const handle = (channel: string, handler: IpcInvokeHandler): void => registerTracedIpcHandler(runtime, channel, handler);
+  const admit = createSharedActionAdmission(runtime.getSharedAvailability);
+  const handle = (channel: string, handler: IpcInvokeHandler): void => registerTracedIpcHandler(runtime, channel, async (event, ...args) => {
+    await admit(channel, args);
+    const result = await handler(event, ...args);
+    if (channel === 'fonts:query' || channel === 'fonts:queryPage') await admit(channel, args);
+    return result;
+  });
+  handle('library:getSharedAvailability', () => runtime.getSharedAvailability());
 
   registerLibraryIpcHandlers(handle, runtime);
   registerMaintenanceIpcHandlers(handle, runtime);

@@ -49,6 +49,7 @@
       "getLicenseStatus",
       "getMigrationDiagnostics",
       "getPreviewCacheStatus",
+      "getSharedAvailability",
       "getSystemInstalledFonts",
       "hasInFlightActivationInstallStatusSave",
       "hasPendingActivationInstallStatusSave",
@@ -290,6 +291,10 @@
       ],
       [
         "createScanOrchestrator",
+        1
+      ],
+      [
+        "createSharedAvailabilityReader",
         1
       ],
       [

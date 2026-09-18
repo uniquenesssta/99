@@ -52,6 +52,7 @@
     "reportRendererLongTask",
     "loadLibrary",
     "loadLibraryShell",
+    "getSharedAvailability",
     "loadFolderCache",
     "searchFontsInLibrary",
     "queryFontsInLibrary",

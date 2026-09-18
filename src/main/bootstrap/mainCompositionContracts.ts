@@ -41,7 +41,7 @@ export interface MainDataResourceLifecycle {
 
 export interface MainDataCompositionRuntime {
   readonly capabilities: Pick<RegistrationSurface,
-    | 'loadLibrary' | 'loadLibraryShell' | 'loadFolderCache'
+    | 'getSharedAvailability' | 'loadLibrary' | 'loadLibraryShell' | 'loadFolderCache'
     | 'searchFontsInLibrary' | 'queryFontsInLibrary' | 'queryFontPageInLibrary'
     | 'checkSharedMetadataUpdates' | 'getFontMetricsFromLibrary'
     | 'getCacheStats' | 'cacheArchitectureInfo' | 'clearScanCache' | 'clearPreviewCache' | 'setCacheKvs'
@@ -169,6 +169,7 @@ export interface MainApplicationRegistrationGroups {
     | 'reportRendererLongTask'
     | 'loadLibrary'
     | 'loadLibraryShell'
+    | 'getSharedAvailability'
     | 'loadFolderCache'
     | 'searchFontsInLibrary'
     | 'queryFontsInLibrary'

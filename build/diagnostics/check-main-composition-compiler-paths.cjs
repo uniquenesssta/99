@@ -53,7 +53,7 @@ function run(style, eol, mutation) {
     assert.match(output, mutation[3], `${mutation[0]} failed for an unrelated reason`)
   } else {
     assert.equal(diagnosticProcess.exitCode, 0, output)
-    assert(output.includes('125 compiler rejections; legacy omission reproduced; runtime unchanged'), output)
+    assert(output.includes('126 compiler rejections; legacy omission reproduced; runtime unchanged'), output)
   }
 }
 
@@ -71,5 +71,5 @@ if (caseIndex !== -1) {
     assert.ifError(result.error)
     assert.equal(result.status, 0, `compiler path case ${index}: ${result.stderr || result.stdout}`)
   }
-  console.log('[diagnostics:main-composition-compiler-paths] forward/backslash/mixed paths with LF/CRLF passed; 125 compiler rejections retained; 3 regressions rejected')
+  console.log('[diagnostics:main-composition-compiler-paths] forward/backslash/mixed paths with LF/CRLF passed; 126 compiler rejections retained; 3 regressions rejected')
 }

@@ -45,6 +45,7 @@ function invoke(channel, ...args) {
 
 const api = {
   loadLibrary: () => invoke('library:load'),
+    getSharedAvailability: () => invoke('library:getSharedAvailability'),
   loadLibraryShell: () => invoke('library:loadShell'),
   saveLibrary: (state) => invoke('library:save', state),
   selectFontFolders: () => invoke('dialog:selectFontFolders'),

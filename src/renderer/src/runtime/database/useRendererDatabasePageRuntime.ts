@@ -1,3 +1,4 @@
+import { SHARED_UNAVAILABLE_MESSAGE } from '../../../../shared/sharedAvailability'
 import { captureFontTagReadConfirmation } from '../../fontTagStateAuthorityRuntime'
 import { fontUserIntentRevision,hasUnsettledFavoriteIntent } from '../../fontUserIntentRuntime'
 import type { FontFormat,FontItem,FontQueryPageResult,FontQueryRequest,FontQueryResult,FontScript,LibraryState } from '@shared/types'
@@ -335,6 +336,10 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
         const durationMs = Math.round(performance.now() - startedAt)
         options.reportTrace({ kind: 'db-query-error', label: 'queryFontPage', page: options.sidebarPage, severity: 'error', durationMs, details: { requestSeq, error: error instanceof Error ? error.message : String(error), queryKey: databaseQueryKey } })
         if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) return
+        if (String(error).includes(SHARED_UNAVAILABLE_MESSAGE)) {
+          options.setStatus(SHARED_UNAVAILABLE_MESSAGE)
+          return
+        }
         options.setDatabasePageResult(null)
         options.setDatabaseQueryResult(null)
         options.setDatabaseQueryFailedKey(databaseQueryKey)

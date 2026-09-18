@@ -1,3 +1,5 @@
+import { useSharedAvailability } from '../../sharedAvailabilityRuntime'
+import { sharedPathBlocked } from '../../../../shared/sharedAvailability'
 import { folderDisplayName, folderHasChildren } from '../../appRuntime'
 import type { AppSidebarProps } from './AppSidebarTypes'
 
@@ -41,11 +43,14 @@ export function AppSidebarFoldersPage({
   folderCounts,
   flatFolderNodes,
 }: AppSidebarFoldersPageProps): JSX.Element {
+  const availability = useSharedAvailability()
+  const blocked = (path: string) => sharedPathBlocked(availability, path)
   return (
     <div className="sidebar-page">
       <div className="section-title">字体文件夹</div>
       <button className="clear-filter-button" onClick={() => void addFolder()}>添加监听文件夹</button>
       <div className="watch-hint">自动监听已开启，磁盘新增、删除、重命名后会同步刷新。新增/重命名子文件夹会影响真实磁盘；拖入字体卡会物理移动字体文件。系统字体会被保护。</div>
+      {library.folders.some(blocked) && <div role="status">共享位置不可用：目录、选择和上次记录保留，恢复后可继续使用。</div>}
       <div className="folder-list">
         {library.folders.length ? (
           <>
@@ -64,16 +69,17 @@ export function AppSidebarFoldersPage({
               return (
                 <button
                   key={folder}
+                  disabled={blocked(folder)} aria-disabled={blocked(folder)}
                   className={`${selectedFolderId === folder ? 'folder-row active' : 'folder-row'} ${dropHoverFolderId === folder ? 'drop-hover' : ''}`}
-                  onClick={() => selectFolderFilter(folder)}
-                  onContextMenu={(event) => openFolderMenu(event, { kind: 'folder', id: folder, name, rootPath: folder, virtual: false })}
-                  onDragOver={(event) => { event.preventDefault(); setDropHoverFolderId(folder) }}
+                  onClick={() => { if (!blocked(folder)) selectFolderFilter(folder) }}
+                  onContextMenu={(event) => !blocked(folder) && openFolderMenu(event, { kind: 'folder', id: folder, name, rootPath: folder, virtual: false })}
+                  onDragOver={(event) => { event.preventDefault(); if (!blocked(folder)) setDropHoverFolderId(folder) }}
                   onDragLeave={() => setDropHoverFolderId('')}
                   onDrop={(event) => {
                     event.preventDefault()
                     const fontIds = fontIdsFromDropEvent(event)
                     setDropHoverFolderId('')
-                    if (fontIds.length) void assignFontsToFolder(fontIds, folder)
+                    if (!blocked(folder) && fontIds.length) void assignFontsToFolder(fontIds, folder)
                   }}
                   title="左键查看/取消查看；点击三角展开/收拢；右键物理重命名、移除监听或新增物理子文件夹；可拖入字体卡"
                 >
@@ -84,12 +90,12 @@ export function AppSidebarFoldersPage({
                       if (!hasChildren) return
                       event.preventDefault()
                       event.stopPropagation()
-                      toggleFolderExpanded(folder)
+                      if (!blocked(folder)) toggleFolderExpanded(folder)
                     }}
                   >
                     {hasChildren ? (expanded ? '▾' : '▸') : ''}
                   </span>
-                  <span className="folder-name">{name}</span>
+                  <span className="folder-name">{name}{blocked(folder) ? ' · 不可用' : ''}</span>
                   <em>{folderCounts[folder] || 0}</em>
                 </button>
               )
@@ -97,17 +103,18 @@ export function AppSidebarFoldersPage({
             {flatFolderNodes.map((node) => (
               <button
                 key={node.id}
+                  disabled={blocked(node.rootPath)} aria-disabled={blocked(node.rootPath)}
                 className={`${selectedFolderId === node.id ? 'folder-row virtual active' : 'folder-row virtual'} ${dropHoverFolderId === node.id ? 'drop-hover' : ''}`}
                 style={{ paddingLeft: 8 + node.depth * 14 }}
-                onClick={() => selectFolderFilter(node.id)}
-                onContextMenu={(event) => openFolderMenu(event, { kind: 'folder', id: node.id, name: folderDisplayName(library, node.id, node.name), rootPath: node.rootPath, virtual: true })}
-                onDragOver={(event) => { event.preventDefault(); setDropHoverFolderId(node.id) }}
+                onClick={() => { if (!blocked(node.rootPath)) selectFolderFilter(node.id) }}
+                onContextMenu={(event) => !blocked(node.rootPath) && openFolderMenu(event, { kind: 'folder', id: node.id, name: folderDisplayName(library, node.id, node.name), rootPath: node.rootPath, virtual: true })}
+                onDragOver={(event) => { event.preventDefault(); if (!blocked(node.rootPath)) setDropHoverFolderId(node.id) }}
                 onDragLeave={() => setDropHoverFolderId('')}
                 onDrop={(event) => {
                   event.preventDefault()
                   const fontIds = fontIdsFromDropEvent(event)
                   setDropHoverFolderId('')
-                  if (fontIds.length) void assignFontsToFolder(fontIds, node.id)
+                  if (!blocked(node.rootPath) && fontIds.length) void assignFontsToFolder(fontIds, node.id)
                 }}
                 title="物理子文件夹：点击三角展开/收拢；创建、重命名和拖入会影响磁盘；移除只影响软件记录"
               >
@@ -118,7 +125,7 @@ export function AppSidebarFoldersPage({
                     if (!node.hasChildren) return
                     event.preventDefault()
                     event.stopPropagation()
-                    toggleFolderExpanded(node.id)
+                    if (!blocked(node.rootPath)) toggleFolderExpanded(node.id)
                   }}
                 >
                   {node.hasChildren ? (node.expanded ? '▾' : '▸') : ''}

@@ -11,6 +11,8 @@ function hookPort() {
     useState(initial) { const i = index++; if (!(i in slots)) slots[i] = typeof initial === 'function' ? initial() : initial; return [slots[i], value => { slots[i] = typeof value === 'function' ? value(slots[i]) : value }] },
     useRef(current) { const i = index++; return slots[i] ||= { current } },
     useEffect(fn, deps) { const i = index++; if (!slots[i] || !deps || deps.some((d, n) => d !== slots[i][n])) { slots[i] = deps; effects.push(fn) } },
+    createContext: () => ({ fixtureValue: { roots: [], tags: ['shared'], unattributedTags: [] } }),
+    useContext: context => context.fixtureValue,
     useMemo: fn => fn(), useCallback: fn => fn, memo: fn => fn
   }
 }

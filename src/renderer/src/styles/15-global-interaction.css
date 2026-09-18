@@ -14,3 +14,10 @@ select,
   -webkit-user-select: text;
   user-select: text;
 }
+
+/* Unavailable shared entries remain visible and keep their selection styling. */
+button:disabled, input:disabled, fieldset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+fieldset.tag-box { min-width: 0; margin-inline: 0; }

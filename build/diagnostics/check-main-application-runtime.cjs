@@ -76,6 +76,6 @@ async function main() {
   const crlf = new Map([entry, application, adapter, path.join(bootstrap, 'mainTagCompositionRuntime.ts')]
     .map(file => [file, read(file).replace(/\n/g, '\r\n')]))
   checkApplication(crlf)
-  console.log('[diagnostics:main-application-runtime] passed: 5 groups, 115 capability identities, side-effect-free imports, 8 rejected wiring/duplicate start-stop mutations, CRLF')
+  console.log('[diagnostics:main-application-runtime] passed: 5 groups, 116 capability identities, side-effect-free imports, 8 rejected wiring/duplicate start-stop mutations, CRLF')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })
