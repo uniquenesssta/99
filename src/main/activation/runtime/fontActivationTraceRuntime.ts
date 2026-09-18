@@ -1,7 +1,9 @@
 import type { FontActivationRuntimeDeps } from "./fontActivationTypes";
 
-export function createFontActivationTraceRuntime(deps: FontActivationRuntimeDeps) {
-  const { appendStartupLog } = deps;
+export function createFontActivationTraceRuntime(deps: Pick<FontActivationRuntimeDeps, "appendStartupLog">) {
+  const appendStartupLog = (message: string): void => {
+    try { deps.appendStartupLog(message); } catch { /* Logging cannot change a committed operation. */ }
+  };
 
   async function activationTraceStep<T>(
     label: string,

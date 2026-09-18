@@ -44,7 +44,7 @@ npm run build:win
 
 ## 当前工程任务
 
-- [操作一致性与刷新优化任务书（U-02 已实施，实机待验；U-03～U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
+- [操作一致性与刷新优化任务书（U-00～U-06 已实施，实机待验；U-07～U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
 
 - [预览缓存、本地标签与 App 专项拆分任务书（规划，未实施）](docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)
 
@@ -65,6 +65,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-18：U-06 停用后的系统枚举增加代次屏障，拒绝删除前在途结果；正常批量注册表删除合并一次，失败后仅逐值重试注册表，不重复移除字体资源。临时状态匹配建立一次索引，最终复核失败不再同时计为成功；补齐前台分阶段、系统排队/读取及渲染回执应用计时，保留原后台文件清理、持久保存与永久安装核对。TypeScript、121/121 诊断（新增 74 项受控专项）、三端构建与混淆通过；Windows 同机重复耗时验收见[U-06 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#16-u-06-执行卡)。底层枚举部分来源失败的完整性协议本轮未改，仍是审计边界。无新依赖、数据库/IPC 或 Rust 变更，下一项 U-07。
 
 - 2026-09-18：U-05 共享标签按已提交 ID 定位并复用增量索引同步，替代 set/batch/rename/delete 的无条件全根快照；目录仍完整确认，提交后读失败不重放写入。渲染刷新合并并区分页面/统计，拒绝过期通知，收藏/激活按筛选刷新；保护通知只更新字段并保留其他用户状态与预览。标签权威字段读回和未知事件的保守刷新保留。TypeScript、120/120 诊断（新增 31 项 SQLite/真实队列、控制器及通知专项）、三端构建与混淆通过，Windows 实机待验，见[U-05 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#15-u-05-执行卡)。无新依赖、数据库格式或 Rust 变更，通知新增可选字段，下一项 U-06。
 

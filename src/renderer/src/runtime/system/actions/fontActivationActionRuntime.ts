@@ -181,6 +181,8 @@ export function createFontActivationActionRuntime(
   }
 
   async function deactivateFontByCard(font: FontItem): Promise<void> {
+    const startedAt = Date.now()
+    let outcome = 'rolled-back'
     if (options.activeOperationFontIds.current.has(font.id)) {
       options.setStatus(`正在处理：${fontDisplayName(font)}……`)
       return
@@ -202,6 +204,7 @@ export function createFontActivationActionRuntime(
       if (!result.ok) throw new Error(result.message || '临时激活记录未能完成清理。')
       stateRuntime.setFontActiveRuntime(font.id, false)
       options.setStatus(result.message)
+      outcome = 'confirmed'
     } catch (error) {
       if (changed) {
         stateRuntime.setFontActiveRuntime(font.id, true, {
@@ -215,6 +218,7 @@ export function createFontActivationActionRuntime(
     } finally {
       options.activeOperationFontIds.current.delete(font.id)
       options.refreshDatabaseDerivedState(['activation'])
+      reportFontOperation({ stage: 'view-apply', reason: 'deactivation-single', outcome, elapsedMs: Date.now() - startedAt })
     }
   }
 
@@ -231,6 +235,8 @@ export function createFontActivationActionRuntime(
 
     hydrateTargets(targets)
     if (typeof options.hfm.deactivateFonts === 'function') {
+      const startedAt = Date.now()
+      let outcome = 'rolled-back'
       const previousById = Object.fromEntries(targets.map((font) => [font.id, font])) as Record<string, FontItem>
       const optimisticUpdates = Object.fromEntries(targets.map((font) => [font.id, { active: false }])) as Record<string, { active: boolean; patch?: Partial<FontItem> }>
       for (const font of targets) options.activeOperationFontIds.current.add(font.id)
@@ -259,6 +265,7 @@ export function createFontActivationActionRuntime(
         }
         stateRuntime.setFontsActiveRuntimeBulk(restoreUpdates)
         if (restoreCount) stateRuntime.adjustDatabaseActiveCount(restoreCount)
+        outcome = restoreCount === targets.length ? 'rolled-back' : restoreCount ? 'partially-confirmed' : 'confirmed'
         options.setStatus(`${result.message} 未确认成功并保留激活 ${restoreCount} 个；未激活 ${skippedInactive} 个，处理中 ${skippedBusy} 个。`)
       } catch (error) {
         const rollbackUpdates: Record<string, { active: boolean; patch?: Partial<FontItem> }> = {}
@@ -278,6 +285,7 @@ export function createFontActivationActionRuntime(
       } finally {
         for (const font of targets) options.activeOperationFontIds.current.delete(font.id)
         options.refreshDatabaseDerivedState(['activation'])
+        reportFontOperation({ stage: 'view-apply', reason: 'deactivation-batch', outcome, elapsedMs: Date.now() - startedAt })
       }
       return
     }

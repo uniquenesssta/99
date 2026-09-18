@@ -34,7 +34,9 @@ function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    id => id === './fontDeactivationSettlementRuntime'
+    id => id === './fontActivationTraceRuntime'
+      ? loadTypeScriptModule('src/main/activation/runtime/fontActivationTraceRuntime.ts')
+      : id === './fontDeactivationSettlementRuntime'
       ? loadTypeScriptModule('src/main/activation/runtime/fontDeactivationSettlementRuntime.ts') : localRequire(id),
     module,
     path.join(root, rel),
@@ -602,7 +604,7 @@ async function caseA2() {
       ),
       deleteFontRegistryValuesHKCUBatch: async (names) => {
         mixedRegistryCalls.push(names.slice())
-        if (names[0] === registryRecords[1].registryName) {
+        if (names.includes(registryRecords[1].registryName)) {
           throw new Error('injected second registry failure')
         }
       },
@@ -622,7 +624,7 @@ async function caseA2() {
   )
   const mixedRegistryResult = await mixedRegistryRuntime.deactivateFontSessionsBatch(registryItems)
   assert('A2', mixedRegistryResult.deactivated === 1 && mixedRegistryResult.failed === 1, 'mixed registry cleanup did not settle one success and one failure')
-  assert('A2', mixedRegistryCalls.length === 2 && mixedRegistryCalls.every((names) => names.length === 1), 'registry cleanup was not isolated per value')
+  assert('A2', mixedRegistryCalls.length === 3 && mixedRegistryCalls[0].length === 2 && mixedRegistryCalls.slice(1).every((names) => names.length === 1), 'failed batch registry cleanup was not isolated per value')
   assert('A2', mixedRegistryQueue.length === 1 && mixedRegistryQueue[0].fontId === registryItems[0].id, 'registry-failed item advanced to the file queue')
   assert('A2', mixedRegistryState?.records?.length === 1 && mixedRegistryState.records[0].fontId === registryItems[1].id, 'registry-failed item state was not retained independently')
 

@@ -1,3 +1,4 @@
+import { createFontActivationTraceRuntime } from "./fontActivationTraceRuntime";
 import type { FontItem } from '../../../shared/types';
 import { createFontActivationInstallStatusRuntime } from './fontActivationInstallStatusRuntime';
 import { promises as fsp } from "node:fs";
@@ -32,6 +33,7 @@ export function createFontActivationCleanupRuntime(
     appendStartupLog,
     runRustFontActivationFiles,
   } = deps;
+  const { activationTraceStep } = createFontActivationTraceRuntime(deps);
   const { temporaryActiveRecordStillVisible } = verifyRuntime;
 
   const temporaryFontDeleteQueue = createTemporaryFontDeleteQueue({
@@ -61,11 +63,11 @@ export function createFontActivationCleanupRuntime(
   ): Promise<boolean> {
     let fileRemoved = true;
 
-    await removeFontResourceSession(record.installPath);
-    await deleteRegistryValueHKCU(record.registryName);
+    await activationTraceStep("deactivate:resource-remove", record.fontId, () => removeFontResourceSession(record.installPath));
+    await activationTraceStep("deactivate:registry-settlement", record.fontId, () => deleteRegistryValueHKCU(record.registryName));
 
     if (options.deleteFileMode === "background") {
-      const queueResult = await queueTemporaryFontFileDeletes([record], "deactivate");
+      const queueResult = await activationTraceStep("deactivate:file-queue", record.fontId, () => queueTemporaryFontFileDeletes([record], "deactivate"));
       const queued = queueResult[record.installPath];
       if (!queued?.ok) {
         appendStartupLog(

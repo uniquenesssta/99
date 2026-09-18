@@ -85,9 +85,10 @@
       "functions": [
         "createFontActivationSessionRuntime",
         "activateFontSession",
+        "runDeactivation",
         "deactivateFontSession"
       ],
-      "sha256": "97806ea1c302a8c847318907764892c65556a61536f1c9fcbbc8e1adc399b670"
+      "sha256": "33f4b91d92e2b20bc61dc5fd98c9b856cab0420741e8f7a8236f844505138e1e"
     },
     "src/main/activation/runtime/fontActivationInstallStatusRuntime.ts": {
       "exports": [
@@ -106,7 +107,7 @@
         "temporaryActiveRecordToInstalledRecord",
         "saveActivationInstallStatus"
       ],
-      "sha256": "712ec6526586bb12050c66e9dbe1ee38747705602782d353a117afcde5f39094"
+      "sha256": "7004e33130f1d1b2f0fe51a07c24e9cb0a708867cac1b1aaa3f40d522d7a35cd"
     },
     "src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts": {
       "exports": [
@@ -120,7 +121,7 @@
         "deactivateFontByCard",
         "deactivateFontsBatch"
       ],
-      "sha256": "cdd07de8b128d8337e6c05a744c6fb51bc0cfd584b6e578b6bb2b137682cb928"
+      "sha256": "2b5ce2cd7f31275df7828b64140405617a74e692cb4568168c097810fe328bd2"
     },
     "src/renderer/src/runtime/system/actions/fontSystemStateRuntime.ts": {
       "exports": [

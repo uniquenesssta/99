@@ -5,7 +5,7 @@
 - 制定日期：2026-09-18。
 - 仓库：`uniquenesssta/99`；分支：`stage/09-preview-tags-app`。
 - 代码基线：`3bc1e387ebeb5298d5bd4060aaec5c9a0a2c7d93`。
-- 状态：**U-00 诊断、U-01 选择/命令链修复、U-02 统一操作入口、U-03 本机集合收藏及 U-04 跨页安装筛选已实施，证据见 §10～§14；Windows 实机验收待回执。U-05～U-09 尚未实施。** 初次规划交付记录保留于 §9。
+- 状态：**U-00 诊断、U-01 选择/命令链修复、U-02 统一操作入口、U-03 本机集合收藏、U-04 跨页安装筛选、U-05 增量刷新及 U-06 停用等待优化已实施，证据见 §10～§16；Windows 实机验收待回执。U-07～U-09 尚未实施。** 初次规划交付记录保留于 §9。
 - 输入：`startup-2026-09-18_02-59-25-870-21044.log`（813 行，UTC 02:59:25.872～03:01:28.978）及用户随后五点反馈、入口差异补充。原始日志不提交到 Git。
 - 与前任务衔接：[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md) §25 已交付本地收藏、标签目录同步与停用核对。本任务保留这些修复，处理后续真实交互问题和性能问题，不重开 R-01～R-07。
 - 既有基线证据：上一提交通过 TypeScript、115/115 诊断、Electron/Vite 367/1/196 模块构建和混淆 3/3。这是历史自动验证结果，**不能替代本任务的字体多选入口和 Windows 实机验收**。
@@ -108,7 +108,7 @@ flowchart TD
 
 ## 6. 实施顺序与任务卡
 
-优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02 见 §12；U-03 见 §13；U-04 见 §14；U-05～U-09 为“待开始”。
+优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02 见 §12；U-03 见 §13；U-04 见 §14；U-05 见 §15；U-06 见 §16；U-07～U-09 为“待开始”。
 
 ### U-00：建立入口证据和复现基线
 
@@ -622,3 +622,50 @@ npm run dev
 
 回滚本轮提交即可，无数据迁移。Mermaid Chart 已更新真实同步/回读/刷新链路；无新第三方 API，未触发 Context7。Create State 按此前 2/2 容量上限和用户要求继续跳过，由 Git 与本任务书保存状态。下一项 U-06。
 - 收尾冻结迁移：`watcher-activation-baseline.fixture.json` 仅 `fontActivationActionRuntime.ts` 原文摘要，实际差异为 3 处集合收尾增加 activation 刷新范围；激活事务、逐项回滚、watcher、导出和函数集合不变。原执行级反例继续运行。
+
+## 16. U-06 执行卡
+
+### 16.1 起点与修改范围
+
+- 起点 `deb0abd58cdd54baeaeb4e75fc3ad96a05c2f42c`，工作区干净。
+- 已确认批量停用只在最终调用一次系统枚举；持久文件删除队列已经移出文件删除等待。当前放大点是注册表按名称逐次等待、逐字体重复查找临时系统记录；时序缺口是清缓存不隔离正在进行的系统枚举，删除后的 force 读取可能复用删除前的结果。
+- 最小方案：系统枚举 owner 增加失效代次，记录读取开始/结束及代次，拒绝旧读覆盖缓存或作为新操作确认；同代次在途合并，跨操作不复用已完成的旧快照。注册表正常路径一次批量提交，失败后仅对幂等删除逐值确认，不重复资源移除；持久队列及失败记录继续保留。临时记录比较建立一次索引。增加资源/注册表/入队/状态保存/系统枚举/比较/回执阶段计时。
+- 生产白名单：`src/main/install/systemInstalledFontsRuntime.ts`（已确认必须修改的唯一系统枚举 owner）；`src/main/activation/runtime/fontActivationInstallStatusRuntime.ts`、`fontDeactivationBatchRuntime.ts`、`fontDeactivationSettlementRuntime.ts`、`fontActivationSessionRuntime.ts`、`fontActivationCleanupRuntime.ts`、`fontActivationTraceRuntime.ts`；`src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts`（仅停用确认计时）。现有 Windows 资源、注册表桥、数据库及 IPC 格式不改；无新依赖。
+- 验证白名单：新增 `build/diagnostics/check-deactivation-refresh.cjs` 并注册 package.json；`check-font-activation-transaction.cjs` 的注册表部分失败场景从逐项正常调用迁移为批量失败后逐项隔离，保留成功/失败记录及持久队列断言；冻结摘要只迁移本轮实际差异，改前补记。文档 README、本任务书。
+- 同机 Windows 耗时验收需要实机日志；受控并发测试只能证明枚举次数/时序与减少串行等待，不能宣称达成固定毫秒数。
+
+- 审计补充：批量最终复核失败/仍有临时资源时，原 deactivated 已累计而 failed 再累计，会重复计数；改为最终逐项结果派生计数，未知状态不报成功。底层 Rust/Node 枚举目前存在部分来源失败被吞并的历史边界，本轮不更改其协议，不能把枚举返回等同于完整来源可用证明；仍要求实机/来源异常验证。
+
+- 诊断加载器迁移：`check-font-activation-transaction.cjs` 增加真实 trace runtime 的 TS 加载，非替身；冻结 `watcher-activation-baseline.fixture.json` 仅停用 session/action 的实际函数集合与原文摘要迁移。其余冻结如触发，先逐项记录，禁止重新生成整份基线。
+
+### 16.2 实现与保留边界
+
+- `clearInstalledFontsMemoryCache` 同时提升代次并断开旧在途引用。读取捕获代次/开始时间，只允许当前代次写入缓存；旧成功结果被丢弃并等待新读，旧失败不清除新读的引用。同代次在途请求合并；停用先失效再 force，每个操作不直接复用已完成缓存。外部变化若没有通知，仍靠该次新枚举发现，不假定 TTL 内没有变化。
+- 正常注册表清理从逐名称调用改为一次批量桥调用。批量失败才逐名称隔离，单名称失败不额外重试；重试只涉及幂等注册表删除，不重复资源移除。资源/注册表/持久队列任何一阶段失败的记录不从会话文件移除。桥内部的原生/Node 兼容回退没有改动，桥调用数不能等同于底层 Windows API 调用数。
+- 同一快照只建立一次临时路径、文件名和注册表名索引，保留原 OR 匹配、记录顺序和去重语义；仍使用原永久安装比较。已确认移除路径的后台残留文件不重新标为激活；其他临时资源仍在时返回失败并保留真实安装状态。
+- 最终逐项结果派生成功、跳过、失败数，系统复核失败的字体不同时计入成功或跳过。缺会话记录仍读取系统，不据此断定字体没有永久安装。读取抛错时不排队覆盖安装状态，界面保留原回滚逻辑。
+- 新增 `deactivate:resource-remove / registry-batch / registry-isolate / registry-settlement / file-queue / session-load / session-save / system-enumerate / status-compare / status-save-enqueue / single-total / batch-total`。系统快照日志区分 requestedAt、startedAt、queueElapsed、readElapsed、总 elapsed、generation 与 accepted/discarded/failed；渲染 `view-apply` 记录停用回执应用耗时和结果。它是状态应用时间，**不是浏览器完成绘制时间**。后台实际删除仍看 `temporary font async delete flushed`，实际安装状态落盘仍看 `activation install status async save flushed` 的 saveElapsed/elapsed；没有把入队耗时冒充落盘耗时。
+- 为新计时复用的 trace owner 隔离日志异常，业务异常仍原样抛出；不增加存储、任务队列或 IPC 参数。启动/退出清理的逐记录可见性确认不在前台批处理路径中，本轮未为提速删减它。
+- **未覆盖的原生边界**：Rust/Node 系统枚举原有代码会在部分来源读取失败后继续返回其他来源；本轮只确保快照时序、抛错传播与业务反馈，不新增来源完整性协议，也不能保证识别这些被底层吞并的部分失败。该风险保留为后续系统枚举专项审计项，不能把受控 read-throw 测试说成真实权限/设备故障已全覆盖。
+
+### 16.3 自动验证与实机验收
+
+新增 `diagnostics:deactivation-refresh`：74 项受控检查（含正例重复及退化检测执行中的断言），执行真实系统缓存 owner、批量 settlement、状态比较和渲染回执模块；OS/IO 是替身。覆盖旧成功/旧失败迟到、连续三次失效、同代次合并、force 绕过已完成缓存、失败可重试、40 项正常停用、注册表/资源/持久队列部分失败、缺记录、孤立临时资源、永久与临时并存、被删除路径过滤、顺序/大小写匹配、单项与批量回滚和计时。恢复旧在途复用、逐值正常调用、重复成功计数三种退化均被拒绝；缓存场景额外在 CRLF 源码执行。旧 A1～A8、安装状态持久队列和 U-01～U-05 行为门继续保留。
+
+| 40 项正常批量停用 | 修改前 | 本轮受控结果 |
+| --- | --- | --- |
+| 资源批处理入口 | 1 | 1 |
+| 注册表批处理入口 | 40 | 1（40 名称） |
+| 持久文件队列 / 会话保存 | 各 1 | 各 1 |
+| 系统枚举 | 1 | 1，必须属于失效后代次 |
+| 临时记录全表匹配 | 每字体扫描 | 一次索引，按身份取匹配 |
+
+异常注册表路径可增加一次失败批处理，再逐值隔离；不承诺故障情况下也更快。系统新枚举、资源真实性确认与持久入队等待保留。没有实机前后毫秒数，也不承诺低于历史 0.5s/0.873s。
+
+Windows 开发模式复验（更新当前分支后 `npm run dev`）：同机同字体集，对单项、10 项及 40 项激活后停用各重复至少 10 次，分别记录前台总耗时、系统枚举耗时/次数、注册表批处理次数、缓存冷热和开发模式；比较中位数/P95。检查已激活页、普通页、侧栏计数，退出重启后状态。额外覆盖永久+临时并存、缺本机会话记录、快速连续停用/外部安装变化，以及可控资源移除/注册表/枚举故障；核对失败提示、保留项和后台清理重试。
+
+Mermaid Chart 已绘制实际批量确认、失败隔离和代次链路；无新第三方/系统 API，未触发 Context7。Create State 按之前 2/2 容量上限及用户“失败即放弃”要求继续跳过，由 Git、README 和本任务书保存进度。无数据迁移，回滚本轮提交即可；下一项 U-07，Windows 性能及原生边界验收另行保留。
+
+- 全门禁发现冻结项补充：`watcher-activation-baseline.fixture.json` 的 `fontActivationInstallStatusRuntime.ts` 仅更新已声明临时索引与计时造成的原文摘要，导出/函数集合不变；原行为反例不变。
+
+- 发布门结果：`npm run verify` 通过（TypeScript + 121/121 诊断，含 U-06 的 74 项受控检查）；最终源码另行 TypeScript 复核通过。清空旧构建输出后重建三端 367/1/200 模块，混淆 3/3，`git diff --check` 通过。首轮只因上述冻结摘要变化阻断，迁移后完整重跑通过；未删除任何旧行为门。Windows 原生执行及同机耗时仍未实测。

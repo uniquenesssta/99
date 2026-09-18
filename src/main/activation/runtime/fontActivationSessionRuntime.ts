@@ -1,3 +1,4 @@
+import { createFontActivationTraceRuntime } from "./fontActivationTraceRuntime";
 import { fontDeactivationPathKey } from './fontDeactivationSettlementRuntime';
 import type { FontItem, InstallResult } from "../../../shared/types";
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
@@ -19,6 +20,7 @@ export function createFontActivationSessionRuntime(
     requestFontRefresh,
     scheduleBackgroundFontRefreshTail,
   } = deps;
+  const { activationTraceStep } = createFontActivationTraceRuntime(deps);
   const { reconcileDeactivatedInstallStatus } = statusRuntime;
   const { removeTemporaryActiveRecord } = cleanupRuntime;
   const { activateFontSessionTransaction } = transactionRuntime;
@@ -40,10 +42,10 @@ export function createFontActivationSessionRuntime(
     return transaction.result;
   }
 
-  async function deactivateFontSession(item: FontItem): Promise<InstallResult> {
+  async function runDeactivation(item: FontItem): Promise<InstallResult> {
     ensureWindows();
 
-    const state = await loadTemporaryActiveFonts();
+    const state = await activationTraceStep("deactivate:session-load", item.id, () => loadTemporaryActiveFonts());
     const targets = state.records.filter(
       (record) =>
         record.fontId === item.id ||
@@ -82,7 +84,7 @@ export function createFontActivationSessionRuntime(
       }
     }
 
-    await saveTemporaryActiveFonts({ version: 1, records: remaining });
+    await activationTraceStep("deactivate:session-save", item.id, () => saveTemporaryActiveFonts({ version: 1, records: remaining }));
     if (cleaned === targets.length) {
       const status = (await reconcileDeactivatedInstallStatus([item], targets.map(record => record.installPath)))[item.id];
       if (status.by === 'managed' || status.by === 'both') return {
@@ -98,6 +100,10 @@ export function createFontActivationSessionRuntime(
           ? "已取消激活；临时字体文件已转入后台清理。"
           : `已取消激活 ${cleaned} 项；仍有 ${targets.length - cleaned} 项未完成清理，记录已保留，可重试或在下次启动继续清理。`,
     };
+  }
+
+  function deactivateFontSession(item: FontItem): Promise<InstallResult> {
+    return activationTraceStep("deactivate:single-total", item.id, () => runDeactivation(item));
   }
 
   return { activateFontSession, deactivateFontSession };

@@ -1,3 +1,4 @@
+import { createFontActivationTraceRuntime } from "./fontActivationTraceRuntime";
 import type { FontItem } from "../../../shared/types";
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
 import type { FontResourceBatchResult } from "../../windows/runtime/fontRuntimeTypes";
@@ -69,6 +70,7 @@ export async function settleFontDeactivationRecords(
   targets: DeactivationRecordTarget[],
   deps: FontDeactivationSettlementDeps,
 ): Promise<DeactivationRecordSettlement[]> {
+  const { activationTraceStep } = createFontActivationTraceRuntime(deps);
   const settlements = targets.map<DeactivationRecordSettlement>((target) => ({
     ...target,
     resource: pendingStep("字体资源移除尚未执行。"),
@@ -80,9 +82,9 @@ export async function settleFontDeactivationRecords(
   let resourceResults: FontResourceBatchResult = {};
   if (settlements.length) {
     try {
-      resourceResults = await deps.removeFontResourceSessionBatch(
+      resourceResults = await activationTraceStep("deactivate:resource-remove", undefined, () => deps.removeFontResourceSessionBatch(
         settlements.map((settlement) => settlement.record.installPath),
-      );
+      ));
     } catch (error) {
       resourceBatchError = error;
       deps.appendStartupLog(
@@ -141,21 +143,36 @@ export async function settleFontDeactivationRecords(
     grouped.push(settlement);
     registryCandidatesByName.set(registryKey, grouped);
   }
-  for (const candidates of registryCandidatesByName.values()) {
-    const registryName = candidates[0].record.registryName;
-    try {
-      await deps.deleteFontRegistryValuesHKCUBatch([registryName]);
-      for (const settlement of candidates) {
-        settlement.registry = successfulStep("注册表记录已清理。");
-      }
-    } catch (error) {
-      deps.appendStartupLog(
-        `batch deactivate registry delete failed: ${registryName} ${error instanceof Error ? error.message : String(error)}`,
-      );
-      for (const settlement of candidates) {
-        settlement.registry = failedStep(error, "字体注册表批量清理失败。");
-      }
+  const registryGroups = [...registryCandidatesByName.values()];
+  const registryNames = registryGroups.map(candidates => candidates[0].record.registryName);
+  const settleRegistryGroup = (candidates: DeactivationRecordSettlement[], error?: unknown): void => {
+    for (const settlement of candidates) {
+      settlement.registry = error === undefined
+        ? successfulStep("注册表记录已清理。")
+        : failedStep(error, "字体注册表批量清理失败。");
     }
+  };
+  if (registryNames.length) {
+    await activationTraceStep("deactivate:registry-settlement", undefined, async () => {
+      try {
+        await activationTraceStep("deactivate:registry-batch", undefined, () => deps.deleteFontRegistryValuesHKCUBatch(registryNames));
+        registryGroups.forEach(candidates => settleRegistryGroup(candidates));
+      } catch (error) {
+        if (registryNames.length === 1) {
+          settleRegistryGroup(registryGroups[0], error ?? "注册表清理失败。");
+          return;
+        }
+        // Only idempotent registry deletion is retried. Resources are never removed twice.
+        for (const candidates of registryGroups) {
+          try {
+            await activationTraceStep("deactivate:registry-isolate", candidates[0].item.id, () => deps.deleteFontRegistryValuesHKCUBatch([candidates[0].record.registryName]));
+            settleRegistryGroup(candidates);
+          } catch (entryError) {
+            settleRegistryGroup(candidates, entryError ?? "注册表清理失败。");
+          }
+        }
+      }
+    });
   }
 
   const fileQueueCandidates = settlements.filter(
@@ -163,10 +180,10 @@ export async function settleFontDeactivationRecords(
   );
   if (fileQueueCandidates.length) {
     try {
-      const queueResults = await deps.queueTemporaryFontFileDeletes(
+      const queueResults = await activationTraceStep("deactivate:file-queue", undefined, () => deps.queueTemporaryFontFileDeletes(
         fileQueueCandidates.map((settlement) => settlement.record),
         "batch-deactivate",
-      );
+      ));
       const queueResultsByPath = new Map(
         Object.entries(queueResults).map(([filePath, entry]) => [
           fontDeactivationPathKey(filePath),

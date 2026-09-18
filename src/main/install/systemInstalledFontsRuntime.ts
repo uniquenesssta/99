@@ -37,11 +37,18 @@ export function createSystemInstalledFontsRuntime(deps: {
 }) {
   let installedFontsMemoryCache: { at: number; items: SystemInstalledFont[] } | null = null
   let installedFontsReadInFlight: Promise<SystemInstalledFont[]> | null = null
+  let installedFontsGeneration = 0
+  const logRead = (message: string): void => {
+    try { deps.appendStartupLog(message) } catch { /* Diagnostics must not change read outcomes. */ }
+  }
   const platform = deps.platform || process.platform
   const env = deps.env || process.env
 
   function clearInstalledFontsMemoryCache(): void {
     installedFontsMemoryCache = null
+    installedFontsGeneration += 1
+    // A read started before a mutation cannot acknowledge the new state.
+    installedFontsReadInFlight = null
   }
 
   function installedFontNameCandidatesFromMetadata(filePath: string): string[] {
@@ -190,20 +197,38 @@ export function createSystemInstalledFontsRuntime(deps: {
     }
 
     if (installedFontsReadInFlight) {
-      deps.appendStartupLog(`getSystemInstalledFontsCached joined in-flight read: force=${force}`)
+      logRead(`system installed snapshot joined: generation=${installedFontsGeneration}, force=${force}`)
       return installedFontsReadInFlight
     }
 
-    installedFontsReadInFlight = deps.withGlobalIo('system:installed-fonts', () => getSystemInstalledFonts(), { priority: force ? 'foreground' : 'background' })
+    const generation = installedFontsGeneration
+    const requestedAt = Date.now()
+    let startedAt: number | undefined
+    logRead(`system installed snapshot requested: generation=${generation}, requestedAt=${requestedAt}, force=${force}`)
+    const read = deps.withGlobalIo('system:installed-fonts', () => {
+      startedAt = Date.now()
+      logRead(`system installed snapshot started: generation=${generation}, startedAt=${startedAt}, queueElapsed=${startedAt - requestedAt}ms`)
+      return getSystemInstalledFonts()
+    }, { priority: force ? 'foreground' : 'background' })
       .then((items) => {
+        if (generation !== installedFontsGeneration) {
+          logRead(`system installed snapshot discarded: generation=${generation}, current=${installedFontsGeneration}, startedAt=${startedAt}, elapsed=${Date.now() - requestedAt}ms, readElapsed=${startedAt === undefined ? "not-started" : Date.now() - startedAt}`)
+          // Existing callers also receive a post-invalidation read, never stale data.
+          return getSystemInstalledFontsCached(true)
+        }
         installedFontsMemoryCache = { at: Date.now(), items }
+        logRead(`system installed snapshot accepted: generation=${generation}, startedAt=${startedAt}, elapsed=${Date.now() - requestedAt}ms, readElapsed=${startedAt === undefined ? "not-started" : Date.now() - startedAt}, records=${items.length}`)
         return items
+      }, (error) => {
+        logRead(`system installed snapshot failed: generation=${generation}, startedAt=${startedAt}, elapsed=${Date.now() - requestedAt}ms, readElapsed=${startedAt === undefined ? "not-started" : Date.now() - startedAt}, ${String(error)}`)
+        throw error
       })
       .finally(() => {
-        installedFontsReadInFlight = null
+        // An obsolete read must not detach a newer in-flight request.
+        if (installedFontsReadInFlight === read) installedFontsReadInFlight = null
       })
-
-    return installedFontsReadInFlight
+    installedFontsReadInFlight = read
+    return read
   }
 
   async function fontItemFromInstalledRecord(record: SystemInstalledFont): Promise<FontItem | null> {
