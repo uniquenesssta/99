@@ -572,3 +572,53 @@ npm run dev
 5. 网格/列表/家族视图（允许的页面）、展开详情、窄窗口检查控件布局；用 Tab/方向键操作下拉框。
 
 下一项 U-05。回滚本轮提交即可，无数据迁移。Mermaid Chart 已更新实际工具栏、状态、SQL/内存及分页链；无新第三方 API，未触发 Context7。Create State 按前次 2/2 容量上限及用户要求继续跳过，交接由任务书和 Git 保留。
+
+## 15. U-05 执行卡
+
+### 15.1 起点与修改边界
+
+- 起点：`fcd65cf88a086b3a4abf4ece19d8bdc64d412edd`，工作区干净。
+- 已定位：共享标签 set/batch/rename/delete 无条件根快照；标签过期通知仍清页；保护更新走物理字体通知并请求预览；队列把所有字段刷新合并为同一 page/metrics token。
+- 方案：提交 ID 定位已有元数据行，沿用原增量索引 owner 从权威库读取；缺定位/增量失败记录原因再回退，提交后的读失败不重复写。保留完整标签目录回读。渲染端保持页快照，按字段和当前筛选调度；保护只合并保护字段，不刷新预览。需要权威标签字段确认时保留读回与 generation/intent 屏障。
+- 生产白名单：`src/main/library/sharedFontMetadataMutations.ts`、`sharedMetadataMergedIndexSyncRuntime.ts`；`src/main/bootstrap/mainMutationCompositionRuntime.ts`；`src/shared/types/scanTypes.ts`；`src/renderer/src/databaseDerivedStateRuntime.ts`、`fontWriteQueueRuntime.ts`、`fontTagStateAuthorityRuntime.ts`、`library-normalize/libraryIndexChangeRuntime.ts`、`runtime/app/useLibraryController.ts`、`runtime/app/useFontOperationsController.ts`、`runtime/app/effects/useFontTagStateSignalEventRuntime.ts`、`useFontIndexChangedEventRuntime.ts`、`runtime/database/useRendererDatabasePageRuntime.ts`、`runtime/system/actions/fontSystemActionTypes.ts`、`fontActivationActionRuntime.ts`、`App.tsx`。不改 Rust、Windows 系统事务、数据库格式、依赖或收藏存储域。
+- 验证白名单：新增 `build/diagnostics/check-incremental-metadata-refresh.cjs` 并注册 package.json；扩展 `check-operation-refresh-scope.cjs`。必要冻结迁移限实际修改的端口/摘要，迁移前记录具体字段。README 与本任务书记录执行结果和仍需实机的项目。
+
+- 冻结门迁移补充：`app-view-composition.fixture.json` 仅 App 生命周期前缀；`decomposition-baseline.fixture.json` 仅本轮修改文件的 tokenHash 和 library 返回的 metrics token；`react-composition-domain-controllers.fixture.json` 仅 databaseDerivedState/writeQueue 摘要，以及 Library owner 新增的 metrics token、待刷新范围、当前筛选引用。`check-react-composition-domain-controllers.cjs` 保留原 42 个 owner 的历史基线单独校验，另外校验这 3 个 owner 的初始化和归属，不重写历史基线。若检查发现其余实际契约变化，先补记再迁移。
+- `browse-controller.fixture.json` 只迁移 App 的 `useRendererDatabasePageRuntime` 调用摘要，增加独立 metrics token；其他分页、查询键、排序和选择契约保持原值。对外旧 `setDatabaseRefreshToken` 保留同时刷新 page/metrics 的语义，避免目录和安装状态通知遗漏统计。
+- 旧反例诊断迁移：`check-shared-tag-conflicts.cjs` 和 `check-diagnostic-line-endings.cjs` 的“零变更不触发同步”锚点改为 `syncCommittedTags` 的空 ID 拦截；保留原 LF/CRLF 正例与破坏该拦截的负例。新专项另用执行级反例拦截恢复无条件根快照。
+
+### 15.2 实现结果与刷新边界
+
+- set/batch/rename/delete 根据已提交 `updatedIds` 分块查询 `font_metadata` 的 ID/相对路径，沿用 `syncMergedIndexForRootIncremental` 从数据库读取权威行；不把调用方旧收藏、本地标签或保护值写入合并索引。零 ID 不同步；目录删除和重命名按全部实际绑定 ID 同步。定位不全、路径不属于根、读取失败会记录 cause 后回退；源根、物理索引或安装快照不兼容仍由既有同步 owner 保守重建，未削弱来源检查。
+- 完整共享目录回读独立保留，包括空数组、多根和部分失败的保留规则。已提交后的同步/目录读取失败不再变成可重试写入失败；不伪造空目录，结果提示目录尚未确认。持续离线时目录仍需恢复后重新读取，不能把提示当作目录已确认。
+- 标签通知拒绝旧 revision 后立即返回；有效通知与写队列使用同一延迟合并。目录不变时复用标签数组引用；零绑定 `catalogCommit` 只更新目录，由既有目录依赖和选择清理处理，不额外重查字体页。
+- Library owner 单独维护页面与统计刷新 token，累计待刷新范围，避免后来的窄刷新覆盖已请求的宽刷新。收藏/激活在对应筛选页面重查成员，其他页面保留当前页并更新计数；没有页快照时补读。旧公共刷新 setter 仍更新两个域，目录、安装状态和索引刷新兼容。
+- 保护索引通知增加可选 `metadataFields: ['deleteProtected']`，只合并已有卡片保护字段；不重建目录树、不保存整库、不查询缓存统计、不触发字体预览请求。其他字段和未受影响卡片引用保持。旧通知缺少该字段时仍使用完整处理路径；IPC 名称、方法参数和数据存储格式不变。
+- 本地/共享标签的逐字体权威值尚不在标签广播中，故保留现有分页读回用于标签 intent 确认和字段更新，并同时核对统计；这不是物理整库加载。未知字段的后端元数据广播也保留保守读回。未承诺每次操作都零查询或每种时序都只发一次通知；超过合并窗口的通知仍可能触发额外读回。激活的系统枚举/通知等待属于 U-06，本轮未调整。
+
+### 15.3 验证与计数证据
+
+新增 `diagnostics:incremental-metadata-refresh`，31 项受控检查：真实 SQLite 1499 行的 ID 定位、1/N/目录绑定、两根分组、空集、不完整 ID、越界路径、失败回退、已提交读失败不重写；真实渲染写队列字段路由、Library controller token/合并/旧 setter、无页快照补读、旧通知/零绑定目录、保护字段及预览隔离。另恢复旧根快照路径作为执行级负例；主链 LF/CRLF 都执行。SQLite 定位是真实读取，系统写入/原生增量执行为受控替身，不能据此声称实机耗时已测。
+
+| 操作/环节 | 本轮检查结果 | 保留的必要工作 |
+| --- | --- | --- |
+| 一个已提交共享标签 ID（1499 行样本） | 定位 1 行、增量入参 1 行，根快照 0 | 完整标签目录回读、页面权威字段确认及计数 |
+| 两个已提交 ID | 定位/增量入参 2 行 | 实际受影响根同步 |
+| 删除/重命名含 3 个绑定的标签 | 增量入参 3 行 | 确认完整目录，包括删除最后标签的空数组 |
+| 本机收藏（有页快照的普通库页） | 写队列携带 favorite 范围；page token 不变，metrics +1 | 收藏筛选页补页/成员与计数核对；本机事务由既有 U-03 门覆盖 |
+| 本地标签 | 写队列携带 localTags 范围；与共享标签连续回执合并 | 原标签读回、外部修改和在途 intent 屏障 |
+| 保护字段通知 | 1 个受影响卡片，预览请求/整库保存/缓存统计查询均 0 | 缺字段的旧后端广播保守读回；主写入仍使用原字段 merge policy |
+| 激活/停用集合收尾 | 携带 activation 范围；与标签待刷新范围取并集 | 原系统事务/逐项回滚/统计核对，U-06 再处理等待耗时 |
+
+主进程既有缓存合并与 generation 失效保护未修改；`operation-refresh-scope` 的 60 项真实同步路由、`query-cache-invalidation-generation`、`local-user-state`、`tag-intent-lifecycle`、U-01～U-04 回归继续作为发布门。发布门已通过：`npm run verify`（TypeScript + 120/120 诊断，含本轮 31 项专项）；三端构建 367/1/200 模块，混淆 3/3，`git diff --check` 无问题。Windows GUI、NAS 时序和原生执行耗时仍待上述实机验收。
+
+### 15.4 Windows 开发模式验收
+
+1. `npm run dev` 启动，稳定索引后分别改单字体共享标签、收藏、本地标签、保护；日志比对 changed/rows 与 db-query/db-metrics 次数。单 ID 正常共享标签路径应为 changed=1/rows=1，不能无理由 rows=1499；目录回读日志不算字体全量加载。
+2. 共享标签多选增删、含多绑定标签的重命名/最后删除、零绑定标签；跨两个监听根及部分离线后恢复检查完整目录。
+3. 普通字体页、收藏页、已激活页操作，保留滚动和其他选择；收藏连续取消需补齐分页。启动页未读回时操作也不能一直空白。
+4. 先快速修改收藏/本地标签，再收到保护回执，其他字段不能被旧快照覆盖；保持预览文字不变，未受影响卡片不重新请求预览。
+5. 共享目录读取失败后检查“目录尚未确认”提示；确认主写入未重复提交。恢复后重新读取，并重启核对收藏仍为本机独立数据。
+
+回滚本轮提交即可，无数据迁移。Mermaid Chart 已更新真实同步/回读/刷新链路；无新第三方 API，未触发 Context7。Create State 按此前 2/2 容量上限和用户要求继续跳过，由 Git 与本任务书保存状态。下一项 U-06。
+- 收尾冻结迁移：`watcher-activation-baseline.fixture.json` 仅 `fontActivationActionRuntime.ts` 原文摘要，实际差异为 3 处集合收尾增加 activation 刷新范围；激活事务、逐项回滚、watcher、导出和函数集合不变。原执行级反例继续运行。

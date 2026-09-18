@@ -66,6 +66,7 @@ export type RendererDatabasePageRuntimeOptions = {
   hfm: typeof window.hfm
   library: LibraryState
   libraryLoadedRef: Readonly<{ current: boolean }>
+  databaseMetricsRefreshToken?: number
   databaseRefreshToken: number
   databasePageResult: FontQueryPageResult | null
   databaseQueryFailedKey: string
@@ -160,7 +161,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
       disposed = true
       window.clearTimeout(timer)
     }
-  }, [hasWatchedFolders, options.library.collections, options.library.tags, options.library.localTags, options.library.folders, options.library.folderNodes, options.library.fontFolderIds, options.databaseRefreshToken, options.indexingActive])
+  }, [hasWatchedFolders, options.library.collections, options.library.tags, options.library.localTags, options.library.folders, options.library.folderNodes, options.library.fontFolderIds, options.databaseMetricsRefreshToken ?? options.databaseRefreshToken, options.indexingActive])
 
   const databasePageWindow = useMemo(() => buildRendererDatabasePageWindow({
     width: options.virtualViewport.width,

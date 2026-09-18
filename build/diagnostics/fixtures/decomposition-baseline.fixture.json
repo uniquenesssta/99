@@ -90,7 +90,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "bd8259c6a5d89da1818648dd428d3bc92cd84eb90cbc2e71dbb9233daee1b2d7"
+      "tokenHash": "763466b93cfa111038aa39a2e7cc80a7d804751553288a133be6b1956d037d73"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -515,7 +515,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "683b5f795accf8c583946946243c5667238a826052fded983a9aacf8f0ccd304"
+      "tokenHash": "2a1cb1e1f03aa42b9384d6e262002079c9d0d1383996e0707ba550c921c9de40"
     },
     "src/renderer/src/runtime/app/useLibraryController.ts": {
       "functions": [
@@ -546,6 +546,18 @@
         {
           "binding": "[databaseRefreshToken,setDatabaseRefreshToken]",
           "kind": "useState"
+        },
+        {
+          "binding": "[databaseMetricsRefreshToken,setDatabaseMetricsRefreshToken]",
+          "kind": "useState"
+        },
+        {
+          "binding": "pendingRefreshScope",
+          "kind": "useRef"
+        },
+        {
+          "binding": "activeFilterKindRef",
+          "kind": "useRef"
         },
         {
           "binding": "[,setCacheStats]",
@@ -591,6 +603,7 @@
           "indexingActive",
           "setIndexingActive",
           "databaseRefreshToken",
+          "databaseMetricsRefreshToken",
           "setDatabaseRefreshToken",
           "setCacheStats",
           "libraryLoadedRef",
@@ -602,7 +615,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "635e64a7cd3c38736ad7692c1c3a9bfee508ae799ba26ebeef07f43fd48e857b"
+      "tokenHash": "d44013ff952bb8cde63fe437c910fe8281f1eebdd7d659fef868b310c606e625"
     },
     "src/renderer/src/runtime/app/usePreviewController.ts": {
       "functions": [

@@ -72,7 +72,9 @@ function checkStructure(overrides = new Map()) {
 
   for (const [relativePath, expectedNames] of Object.entries(fixture.owners)) {
     const owned = declarations(get(relativePath))
-    assert.deepEqual(Object.keys(owned), expectedNames, `${relativePath} state/ref ownership order changed`)
+    const extra = fixture.additionalOwners?.[relativePath] || {}
+    assert.deepEqual(Object.fromEntries(Object.entries(owned).filter(([name]) => Object.hasOwn(extra, name))), extra, `${relativePath} U-05 owner initialization changed`)
+    assert.deepEqual(Object.keys(owned).filter(name => !Object.hasOwn(extra, name)), expectedNames, `${relativePath} state/ref ownership order changed`)
     for (const name of expectedNames) {
       assert.equal(owned[name], fixture.states[name], `${relativePath} changed frozen initializer ${name}`)
       assert(!seen.has(name), `duplicate AT-6.4 controller owner: ${name}`)
@@ -117,7 +119,7 @@ function checkStructure(overrides = new Map()) {
   const libraryReturns = returnedKeys(libraryControllerPath, library, 'useLibraryController')
   const operationsReturns = returnedKeys(operationsControllerPath, operations, 'useFontOperationsController')
   const developerReturns = returnedKeys(developerControllerPath, developer, 'useDeveloperController')
-  for (const name of ['databaseRefreshTimerRef', 'initialLibraryLoadStartedRef', 'sharedMetadataSyncInFlightRef', 'lastSharedMetadataSyncCheckAtRef']) {
+  for (const name of ['databaseRefreshTimerRef', 'initialLibraryLoadStartedRef', 'sharedMetadataSyncInFlightRef', 'lastSharedMetadataSyncCheckAtRef', 'pendingRefreshScope', 'activeFilterKindRef']) {
     assert(!libraryReturns.has(name), `Library controller exposed mutable owner ${name}`)
   }
   for (const name of fixture.owners[operationsControllerPath].filter((entry) => !entry.startsWith('['))) {
@@ -248,7 +250,7 @@ async function checkLibraryBehavior() {
   const useLibraryController = load(libraryControllerPath).useLibraryController
   const options = { hfm: {}, database, rendererUserActive: () => false, appendDeveloperStatus() {} }
   let controller = harness.render(useLibraryController, options)
-  assert.equal(harness.slots.length, 11)
+  assert.equal(harness.slots.length, 14)
   controller.refreshDatabaseDerivedState()
   assert.equal(calls.refresh.databasePageRequestSeqRef, database.databasePageRequestSeqRef)
   assert.equal(calls.refresh.fontMetricsRequestSeqRef, database.fontMetricsRequestSeqRef)

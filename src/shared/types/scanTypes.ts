@@ -56,6 +56,7 @@ export interface FontIndexChangePayload {
   upserts: FontItem[]
   deletes: Array<{ path: string; relativePath: string; id?: string }>
   errors?: Array<{ path: string; message: string }>
+  metadataFields?: Array<'deleteProtected'>
   source?: 'watcher' | 'scan-stream' | 'shared-metadata'
   jobId?: string
 }

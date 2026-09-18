@@ -26,6 +26,7 @@ const revisionField = (scope: FontTagAuthorityScope) => scope === 'local' ? '__l
 const authorityField = (scope: FontTagAuthorityScope) => scope === 'local' ? '__localTagAuthorityKnown' : '__sharedTagAuthorityKnown'
 const intentOf = (font: FontItem | undefined, scope: FontTagAuthorityScope) => (font as IntentFont | undefined)?.[intentKey(scope)]
 const sortedUniqueTagNames = (tags: string[]) => Array.from(new Set(tags)).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+const keepEqualTags = (old: string[] | undefined, next: string[]): string[] => old && old.length === next.length && old.every((tag, i) => tag === next[i]) ? old : next
 const cleanTagNames = (tags: string[] | undefined) => sortedUniqueTagNames((tags || []).map(tag => String(tag || '').trim()).filter(Boolean))
 const numericValue = (value: number | undefined) => Number.isFinite(value) && Number(value) > 0 ? Number(value) : 0
 function report(intent: Intent, scope: FontTagAuthorityScope, stage: string, reason: string): void {
@@ -169,7 +170,7 @@ export function ensureLibraryTagNamesContainFontTags(library: LibraryState): Lib
       }
     }
   }
-  return { ...library, fonts: changed ? fonts : library.fonts, tags: sortedUniqueTagNames([...sharedTags]), localTags: sortedUniqueTagNames([...localTags]), [draftCatalog]: nextDrafts } as AuthorityLibrary
+  return { ...library, fonts: changed ? fonts : library.fonts, tags: keepEqualTags(library.tags, sortedUniqueTagNames([...sharedTags])), localTags: keepEqualTags(library.localTags, sortedUniqueTagNames([...localTags])), [draftCatalog]: nextDrafts } as AuthorityLibrary
 }
 export function applyFontTagMutationSignalToLibrary(library: LibraryState, signal: {
   scope?: FontTagAuthorityScope; changedIds?: string[]; updatedAt?: string; localRevision?: number; sharedRevision?: number; knownTags?: string[]; trace?: OperationTrace
@@ -196,8 +197,8 @@ export function applyFontTagMutationSignalToLibrary(library: LibraryState, signa
   let next: AuthorityLibrary = { ...library, [catalogRevision]: { ...revisions, ...(revision > 0 ? { [scope]: revision } : {}) } }
   if (hasKnownTags) {
     next = { ...next, [draftCatalog]: { ...(library as AuthorityLibrary)[draftCatalog], [scope]: [] }, ...(scope === 'local'
-      ? { localTags: cleanTagNames(signal.knownTags), __localTagAuthorityKnown: true }
-      : { tags: cleanTagNames(signal.knownTags), __sharedTagAuthorityKnown: true }) }
+      ? { localTags: keepEqualTags(library.localTags, cleanTagNames(signal.knownTags)), __localTagAuthorityKnown: true }
+      : { tags: keepEqualTags(library.tags, cleanTagNames(signal.knownTags)), __sharedTagAuthorityKnown: true }) }
   }
   return ensureLibraryTagNamesContainFontTags(next)
 }

@@ -201,6 +201,7 @@ export default function App(): JSX.Element {
     indexingActive,
     setIndexingActive,
     databaseRefreshToken,
+    databaseMetricsRefreshToken,
     setDatabaseRefreshToken,
     setCacheStats,
     libraryLoadedRef,
@@ -209,6 +210,8 @@ export default function App(): JSX.Element {
     refreshDatabaseMetricsNow,
     clearDatabaseRefreshTimer
   } = useLibraryController({
+    activeFilterKind: activeFilter.kind,
+    hasDatabasePageSnapshot: !!databasePageResult,
     hfm: window.hfm,
     database: {
       setDatabasePageResult,
@@ -528,6 +531,7 @@ export default function App(): JSX.Element {
 
 
   useFontTagStateSignalEventRuntime({
+    scheduleDatabaseDerivedStateRefresh,
     hfm: window.hfm,
     getCurrentLibrary,
     commitLibraryUpdate,
@@ -580,6 +584,7 @@ export default function App(): JSX.Element {
     library,
     libraryLoadedRef,
     databaseRefreshToken,
+    databaseMetricsRefreshToken,
     databasePageResult,
     databaseQueryFailedKey,
     virtualViewport,

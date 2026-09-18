@@ -8,7 +8,7 @@ import {
   normalizeFontMetricsResult,
   requestIdleWindow
 } from '../../appRuntime'
-import { refreshDatabaseDerivedStateRuntime,scheduleDatabaseDerivedStateRefreshRuntime } from '../../databaseDerivedStateRuntime'
+import { fontMutationRefreshScope,type FontRefreshField,refreshDatabaseDerivedStateRuntime,scheduleDatabaseDerivedStateRefreshRuntime } from '../../databaseDerivedStateRuntime'
 import { runSharedMetadataSyncCheckRuntime } from '../../sharedMetadataSyncRuntime'
 import type { LeaseLockConflictNotice } from '../lease-lock/leaseLockConflictNoticeRuntime'
 import { parseLeaseLockConflictNotice } from '../lease-lock/leaseLockConflictNoticeRuntime'
@@ -26,6 +26,8 @@ export type LibraryDatabasePorts = {
 
 export function useLibraryController(options: {
   hfm: Window['hfm']
+  activeFilterKind?: string
+  hasDatabasePageSnapshot?: boolean
   database: LibraryDatabasePorts
   rendererUserActive: () => boolean
   appendDeveloperStatus: (source: string, message: string, payload?: unknown) => void
@@ -35,6 +37,10 @@ export function useLibraryController(options: {
   const [leaseLockConflictNotice, setLeaseLockConflictNotice] = useState<LeaseLockConflictNotice | null>(null)
   const [indexingActive, setIndexingActive] = useState(false)
   const [databaseRefreshToken, setDatabaseRefreshToken] = useState(0)
+  const [databaseMetricsRefreshToken, setDatabaseMetricsRefreshToken] = useState(0)
+  const pendingRefreshScope = useRef({ page: false, metrics: false })
+  const activeFilterKindRef = useRef({ kind: options.activeFilterKind || 'all', hasPage: options.hasDatabasePageSnapshot !== false })
+  activeFilterKindRef.current = { kind: options.activeFilterKind || 'all', hasPage: options.hasDatabasePageSnapshot !== false }
   const [, setCacheStats] = useState<CacheStats | null>(null)
   const databaseRefreshTimerRef = useRef<number | null>(null)
   const libraryLoadedRef = useRef(false)
@@ -63,7 +69,10 @@ export function useLibraryController(options: {
     onPersistenceRecovered: refreshDatabaseDerivedState
   })
 
-  function refreshDatabaseDerivedState(): void {
+  function refreshDatabaseDerivedState(fields?: FontRefreshField[]): void {
+    if (fields) { scheduleDatabaseDerivedStateRefresh(0, fields); return }
+    pendingRefreshScope.current = { page: false, metrics: false }
+    setDatabaseMetricsRefreshToken(value => value + 1)
     refreshDatabaseDerivedStateRuntime({
       timerRef: databaseRefreshTimerRef,
       clearTimeout: window.clearTimeout,
@@ -76,7 +85,13 @@ export function useLibraryController(options: {
     })
   }
 
-  function scheduleDatabaseDerivedStateRefresh(delay = 420): void {
+  function scheduleDatabaseDerivedStateRefresh(delay = 420, fields?: FontRefreshField[]): void {
+    const scope = fields ? fontMutationRefreshScope(fields, activeFilterKindRef.current.kind) : { page: true, metrics: true }
+    if (fields?.length && !activeFilterKindRef.current.hasPage) scope.page = true
+    const pending = pendingRefreshScope.current
+    pending.page ||= scope.page
+    pending.metrics ||= scope.metrics
+    if (!pending.page && !pending.metrics) return
     scheduleDatabaseDerivedStateRefreshRuntime({
       timerRef: databaseRefreshTimerRef,
       delay,
@@ -84,8 +99,13 @@ export function useLibraryController(options: {
       setTimeout: window.setTimeout,
       requestIdleWindow,
       rendererUserActive: options.rendererUserActive,
-      scheduleAgain: scheduleDatabaseDerivedStateRefresh,
-      setDatabaseRefreshToken
+      scheduleAgain: nextDelay => scheduleDatabaseDerivedStateRefresh(nextDelay, []),
+      setDatabaseRefreshToken: () => {
+        const pending = pendingRefreshScope.current
+        pendingRefreshScope.current = { page: false, metrics: false }
+        if (pending.page) setDatabaseRefreshToken(value => value + 1)
+        if (pending.metrics) setDatabaseMetricsRefreshToken(value => value + 1)
+      }
     })
   }
 
@@ -167,7 +187,12 @@ export function useLibraryController(options: {
     indexingActive,
     setIndexingActive,
     databaseRefreshToken,
-    setDatabaseRefreshToken,
+    databaseMetricsRefreshToken,
+    // Legacy structural/install callers invalidate both domains.
+    setDatabaseRefreshToken: (update: SetStateAction<number>) => {
+      setDatabaseRefreshToken(update)
+      setDatabaseMetricsRefreshToken(value => value + 1)
+    },
     setCacheStats,
     libraryLoadedRef: libraryLoadedRef as Readonly<{ current: boolean }>,
     refreshDatabaseDerivedState,

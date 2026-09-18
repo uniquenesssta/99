@@ -38,7 +38,8 @@ export function useFontIndexChangedEventRuntime(args: {
         current.cleanupRemovedFontState(removedIds)
       }
 
-      if (payload.source !== 'scan-stream') {
+      const metadataOnly = payload.source === 'shared-metadata' && !!payload.metadataFields?.length && !payload.deletes.length
+      if (payload.source !== 'scan-stream' && !metadataOnly) {
         current.refreshDatabaseDerivedState()
         for (const font of upsertedFonts) {
           if (!font.__earlyVisible) current.requestPreviewFont(font)
@@ -46,6 +47,7 @@ export function useFontIndexChangedEventRuntime(args: {
       }
 
       void (async () => {
+        if (metadataOnly) return
         if (!earlyVisibleOnly && !await current.saveLibraryImmediately(result.library)) return
         if (payload.source !== 'scan-stream') await current.loadCacheStats()
       })()

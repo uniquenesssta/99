@@ -58,3 +58,16 @@ export function scheduleDatabaseDerivedStateRefreshRuntime(options: {
     }, Math.max(500, options.delay))
   }, options.delay)
 }
+
+export type FontRefreshField = 'favorite' | 'protection' | 'activation' | 'localTags' | 'sharedTags'
+
+// Tag broadcasts do not contain authoritative per-font values. Their page read
+// is the existing intent confirmation owner, not a physical library reload.
+export function fontMutationRefreshScope(fields: FontRefreshField[], activeKind: string): { page: boolean; metrics: boolean } {
+  return {
+    page: fields.some(field => field === 'localTags' || field === 'sharedTags' ||
+      (field === 'favorite' && activeKind === 'favorites') ||
+      (field === 'activation' && activeKind === 'active')),
+    metrics: fields.some(field => field !== 'protection')
+  }
+}

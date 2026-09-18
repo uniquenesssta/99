@@ -1,3 +1,4 @@
+import type { FontRefreshField } from './databaseDerivedStateRuntime'
 import { hasUnsettledFavoriteIntent, isSameFavoriteIntent } from './fontUserIntentRuntime'
 import { cancelFontWrite, trackFontWrite } from './fontOperationTrace'
 import type { FontItem } from '@shared/types'
@@ -36,7 +37,7 @@ export interface RendererFontWriteQueueRuntimeOptions {
   setTimeout: Window['setTimeout']
   clearTimeout: Window['clearTimeout']
   setStatus: (status: string) => void
-  scheduleDatabaseDerivedStateRefresh: (delay?: number) => void
+  scheduleDatabaseDerivedStateRefresh: (delay?: number, fields?: FontRefreshField[]) => void
 }
 
 export interface RendererFontWriteQueueRuntime {
@@ -113,7 +114,12 @@ export function createRendererFontWriteQueueRuntime(
 
         if (result.wroteCount) {
           const includesTagWrites = queue.localTags.size > 0 || queue.sharedTags.size > 0
-          options.scheduleDatabaseDerivedStateRefresh(queue.favorite.size > 0 ? 0 : includesTagWrites ? 80 : reason === 'memory' ? 120 : 520)
+          const fields: FontRefreshField[] = []
+          if (queue.favorite.size) fields.push('favorite')
+          if (queue.localTags.size) fields.push('localTags')
+          if (queue.sharedTags.size) fields.push('sharedTags')
+          if (queue.protection.size) fields.push('protection')
+          options.scheduleDatabaseDerivedStateRefresh(queue.favorite.size > 0 ? 0 : includesTagWrites ? 80 : reason === 'memory' ? 120 : 520, fields)
         }
 
         const retryCount = queuedFontWriteCount(result.retryQueue)

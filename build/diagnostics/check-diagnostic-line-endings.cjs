@@ -33,8 +33,8 @@ const fixtures = [
   {
     script: 'check-shared-tag-conflicts.cjs',
     source: 'src/main/library/sharedFontMetadataMutations.ts',
-    before: 'if (updatedIds.length) {\n      await deps.syncSharedMetadataRootsToMergedIndex',
-    after: 'if (true) {\n      await deps.syncSharedMetadataRootsToMergedIndex',
+    before: 'if (!ids.length) return;',
+    after: 'if (false) return;',
     error: 'shared tag delete should not resync all roots when no rows changed'
   },
   {

@@ -1,3 +1,4 @@
+import type { FontRefreshField } from '../../../databaseDerivedStateRuntime'
 import { reportFontOperation } from '../../../fontOperationTrace'
 import { useEffect, useRef } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
@@ -10,6 +11,7 @@ export function useFontTagStateSignalEventRuntime(args: {
   getCurrentLibrary: () => LibraryState
   commitLibraryUpdate: (update: SetStateAction<LibraryState>) => LibraryState
   saveLibraryImmediately: (nextLibrary: LibraryState) => Promise<boolean>
+  scheduleDatabaseDerivedStateRefresh?: (delay?: number, fields?: FontRefreshField[]) => void
   refreshDatabaseDerivedState: () => void
   setStatus: Dispatch<SetStateAction<string>>
 }): void {
@@ -23,9 +25,16 @@ export function useFontTagStateSignalEventRuntime(args: {
       const current = argsRef.current
       const previousLibrary = current.getCurrentLibrary()
       const nextLibrary = applyFontTagMutationSignalToLibrary(previousLibrary, payload)
-      current.commitLibraryUpdate(nextLibrary)
       reportFontOperation({ trace: payload.trace, stage: nextLibrary === previousLibrary ? 'view-reject' : 'view-apply', reason: nextLibrary === previousLibrary ? 'stale-tag-authority-signal' : 'tag-authority-signal', localRevision: payload.localRevision, sharedRevision: payload.sharedRevision })
-      current.refreshDatabaseDerivedState()
+      if (nextLibrary === previousLibrary) return
+      current.commitLibraryUpdate(nextLibrary)
+      const catalogOnly = payload.mutationKind === 'catalogCommit' && Array.isArray(payload.knownTags) && Array.isArray(payload.changedIds) && payload.changedIds.length === 0
+      // Catalog dependencies/prune effects own labels and removed selections.
+      if (!catalogOnly) {
+        if (current.scheduleDatabaseDerivedStateRefresh) {
+          current.scheduleDatabaseDerivedStateRefresh(80, [payload.scope === 'shared' ? 'sharedTags' : 'localTags'])
+        } else current.refreshDatabaseDerivedState()
+      }
       reportRendererTrace({
         kind: 'tag-authority-applied',
         label: payload.scope === 'shared' ? 'shared-tags' : 'local-tags',

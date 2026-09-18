@@ -337,11 +337,18 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
       uniqueResolvedFolders,
       syncMergedIndexForRootIncremental,
       syncMergedIndexForRootSnapshot,
+      openMetadataDb: async (root) => {
+        const dbPath = sharedMetadataDbPathForRoot(root);
+        return await exists(dbPath) ? openStableSqliteDb(dbPath, 'shared-metadata-changed-ids') : null;
+      },
+      closeMetadataDb: closeSqliteDb,
       sendFontIndexChanged: (payload: FontIndexChangePayload) =>
         sendFontIndexChanged(payload),
     });
 
   const sharedFontMetadataMutations = createSharedFontMetadataMutations({
+    appendLog: appendStartupLog,
+    syncSharedMetadataChangedIdsToMergedIndex: sharedMetadataMergedIndexSyncRuntime.syncSharedMetadataChangedIdsToMergedIndex,
     uniqueResolvedFolders,
     updateSharedFontMetadataEntries,
     removeSharedTagFromMetadataIndexes,

@@ -1,3 +1,4 @@
+import type { FontRefreshField } from '../../../databaseDerivedStateRuntime'
 import type { FontItem,LibraryState } from '@shared/types'
 import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
 import type { FontMetrics } from '../../../appRuntime'
@@ -16,8 +17,8 @@ export type FontSystemActionRuntimeOptions = {
   setDetailVisible: Dispatch<SetStateAction<boolean>>
   setContextMenu: (value: null) => void
   setDatabaseFontMetrics: Dispatch<SetStateAction<FontMetrics | null>>
-  refreshDatabaseDerivedState: () => void
-  scheduleDatabaseDerivedStateRefresh: (delay?: number) => void
+  refreshDatabaseDerivedState: (fields?: FontRefreshField[]) => void
+  scheduleDatabaseDerivedStateRefresh: (delay?: number, fields?: FontRefreshField[]) => void
   queueFavoriteWrites: (fonts: FontItem[], favorite: boolean) => Promise<void>
   queueFavoriteWrite: (font: FontItem, favorite: boolean) => void
 }

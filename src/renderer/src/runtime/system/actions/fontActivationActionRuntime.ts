@@ -137,7 +137,7 @@ export function createFontActivationActionRuntime(
         options.setStatus(`批量激活失败：${error instanceof Error ? error.message : String(error)}`)
       } finally {
         for (const font of targets) options.activeOperationFontIds.current.delete(font.id)
-        options.refreshDatabaseDerivedState()
+        options.refreshDatabaseDerivedState(['activation'])
       }
       return
     }
@@ -214,7 +214,7 @@ export function createFontActivationActionRuntime(
       options.setStatus(`取消激活失败：${error instanceof Error ? error.message : String(error)}`)
     } finally {
       options.activeOperationFontIds.current.delete(font.id)
-      options.refreshDatabaseDerivedState()
+      options.refreshDatabaseDerivedState(['activation'])
     }
   }
 
@@ -277,7 +277,7 @@ export function createFontActivationActionRuntime(
         options.setStatus(`批量取消激活失败：${error instanceof Error ? error.message : String(error)}`)
       } finally {
         for (const font of targets) options.activeOperationFontIds.current.delete(font.id)
-        options.refreshDatabaseDerivedState()
+        options.refreshDatabaseDerivedState(['activation'])
       }
       return
     }

@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import type { FontIndexChangePayload, FontItem } from '../../shared/types'
 
 export interface SharedMetadataMergedIndexSyncRuntimeDeps {
@@ -6,6 +7,8 @@ export interface SharedMetadataMergedIndexSyncRuntimeDeps {
   uniqueResolvedFolders: (folders: string[]) => string[]
   syncMergedIndexForRootIncremental: (rootPath: string, payload: FontIndexChangePayload, reason: string) => Promise<void>
   syncMergedIndexForRootSnapshot: (rootPath: string, reason: string) => Promise<void>
+  openMetadataDb?: (root: string) => Promise<any | null>
+  closeMetadataDb?: (db: any) => void
   sendFontIndexChanged?: (payload: FontIndexChangePayload) => void
 }
 
@@ -30,8 +33,9 @@ function groupItemsByWatchedRoot(
   normalize: (value: string) => string,
 ): Map<string, FontItem[]> {
   const groups = new Map<string, FontItem[]>()
+  const rootsByDepth = [...watchedFolders].sort((a, b) => b.length - a.length)
   for (const item of uniqueFonts(items)) {
-    const root = watchedFolders.find((folder) => itemPathInsideRoot(item.path || '', folder, normalize))
+    const root = rootsByDepth.find((folder) => itemPathInsideRoot(item.path || '', folder, normalize))
     if (!root) continue
     const list = groups.get(root) || []
     list.push(item)
@@ -57,6 +61,8 @@ export function createSharedMetadataMergedIndexSyncRuntime(
     const at = new Date().toISOString()
     for (const [root, items] of groups) {
       const payload: FontIndexChangePayload = {
+        source: 'shared-metadata',
+        metadataFields: ['deleteProtected'],
         folder: root,
         at,
         upserts: uniqueFonts(items),
@@ -69,8 +75,46 @@ export function createSharedMetadataMergedIndexSyncRuntime(
         if (options.emitIndexChanged && deps.sendFontIndexChanged) deps.sendFontIndexChanged(payload)
       } catch (error) {
         deps.appendLog(`shared metadata merged index incremental sync failed: reason=${reason}, root=${root}, ${error instanceof Error ? error.message : String(error)}`)
+        await syncSharedMetadataRootsToMergedIndex([root], `${reason}:incremental-failed`)
       }
     }
+  }
+
+  // These are locators only. The incremental owner reads committed metadata from
+  // the source DB; renderer snapshots must never be written back into the index.
+  async function syncSharedMetadataChangedIdsToMergedIndex(idsInput: string[], folders: string[], reason: string): Promise<void> {
+    const ids = [...new Set(idsInput.filter(Boolean))]
+    if (!ids.length) return
+    const roots = deps.uniqueResolvedFolders(folders)
+    const items: FontItem[] = []
+    const found = new Set<string>()
+    try {
+      if (!deps.openMetadataDb) throw new Error('metadata-locator-reader-unavailable')
+      for (const root of roots) {
+        const db = await deps.openMetadataDb(root)
+        if (!db) continue
+        try {
+          for (let start = 0; start < ids.length; start += 400) {
+            const chunk = ids.slice(start, start + 400)
+            const rows = db.prepare(`SELECT font_id, relative_path FROM font_metadata WHERE font_id IN (${chunk.map(() => '?').join(',')})`).all(...chunk) as Array<{font_id: string; relative_path: string}>
+            for (const row of rows) {
+              if (!row.relative_path) continue
+              const itemPath = resolve(root, row.relative_path)
+              if (!itemPathInsideRoot(itemPath, root, deps.normalizePathForCacheCompare)) throw new Error('changed-id-path-outside-root')
+              found.add(row.font_id)
+              items.push({ id: row.font_id, path: itemPath } as FontItem)
+            }
+          }
+        } finally { deps.closeMetadataDb?.(db) }
+      }
+      if (found.size !== ids.length) throw new Error(`changed-id-locator-incomplete:${found.size}/${ids.length}`)
+    } catch (error) {
+      deps.appendLog(`shared metadata sync fallback: reason=${reason}, cause=${String(error)}, committed=${ids.length}`)
+      await syncSharedMetadataRootsToMergedIndex(roots, `${reason}:unknown-locators`)
+      return
+    }
+    deps.appendLog(`shared metadata refresh scope: reason=${reason}, committed=${ids.length}, located=${items.length}, roots=${roots.length}, fontSnapshot=0`)
+    await syncSharedMetadataItemsToMergedIndex(items, roots, reason)
   }
 
   async function syncSharedMetadataRootsToMergedIndex(
@@ -89,6 +133,7 @@ export function createSharedMetadataMergedIndexSyncRuntime(
   }
 
   return {
+    syncSharedMetadataChangedIdsToMergedIndex,
     syncSharedMetadataItemsToMergedIndex,
     syncSharedMetadataRootsToMergedIndex,
   }

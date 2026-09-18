@@ -46,6 +46,19 @@ export function mergeIncrementalIndexedFont(oldFont: FontItem | undefined, nextF
 export function applyFontIndexChangeToLibrary(state: LibraryState, payload: FontIndexChangePayload): { library: LibraryState; removedIds: string[]; upsertedFonts: FontItem[] } {
   const watched = (state.folders || []).some((folder) => normalizeFolderPathForCompare(folder) === normalizeFolderPathForCompare(payload.folder))
   if (!watched) return { library: state, removedIds: [], upsertedFonts: [] }
+  if (payload.source === 'shared-metadata' && payload.metadataFields?.length && !payload.deletes.length) {
+    let fonts = state.fonts
+    const upsertedFonts: FontItem[] = []
+    for (const incoming of payload.upserts) {
+      const current = fonts[incoming.id]
+      if (!current || current.deleteProtected === incoming.deleteProtected) continue
+      if (fonts === state.fonts) fonts = { ...fonts }
+      const next = { ...current, deleteProtected: !!incoming.deleteProtected }
+      fonts[incoming.id] = next
+      upsertedFonts.push(next)
+    }
+    return { library: fonts === state.fonts ? state : { ...state, fonts }, removedIds: [], upsertedFonts }
+  }
   if (isEarlyVisibleOnlyFontIndexChangePayload(payload)) return applyEarlyVisibleFontIndexChangeToLibrary(state, payload)
 
   const nextFonts = { ...(state.fonts || {}) }

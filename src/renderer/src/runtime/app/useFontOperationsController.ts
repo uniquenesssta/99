@@ -1,3 +1,4 @@
+import type { FontRefreshField } from '../../databaseDerivedStateRuntime'
 import { missingFontCommandTargetsMessage, resolveFontCommandTargets } from '../../fontCommandTargetsRuntime'
 import type { CacheStats,FontItem,FontQueryPageResult,FontQueryResult,LibraryState } from '@shared/types'
 import { useRef,useState } from 'react'
@@ -40,8 +41,8 @@ type FontOperationsLibraryPort = {
   setIndexingActive: Dispatch<SetStateAction<boolean>>
   setCacheStats: Dispatch<SetStateAction<CacheStats | null>>
   clearDatabaseRefreshTimer: () => void
-  refreshDatabaseDerivedState: () => void
-  scheduleDatabaseDerivedStateRefresh: (delay?: number) => void
+  refreshDatabaseDerivedState: (fields?: FontRefreshField[]) => void
+  scheduleDatabaseDerivedStateRefresh: (delay?: number, fields?: FontRefreshField[]) => void
   refreshDatabaseMetricsNow: () => void
 }
 

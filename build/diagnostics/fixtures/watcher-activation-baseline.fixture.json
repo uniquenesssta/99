@@ -120,7 +120,7 @@
         "deactivateFontByCard",
         "deactivateFontsBatch"
       ],
-      "sha256": "25a13b41911b01f1ef21ed304a8f3234169981d3355eeeb3ea1236bdde4aaff0"
+      "sha256": "cdd07de8b128d8337e6c05a744c6fb51bc0cfd584b6e578b6bb2b137682cb928"
     },
     "src/renderer/src/runtime/system/actions/fontSystemStateRuntime.ts": {
       "exports": [
