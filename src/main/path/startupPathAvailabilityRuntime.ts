@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { probeStartupDirectory } from './sharedPathProbeRuntime'
 import { resolve } from 'node:path'
 import { mappedDriveTableAsync, normalizeNativePathText } from './pathCanonicalizer'
 import { normalizePathForCacheCompare } from './cachePath'
@@ -125,15 +125,14 @@ export async function ensureStartupPathRootAvailable(rootPath: string, appendLog
   const probeGeneration = ++generation
   const timeoutMs = uncRootProbeTimeoutMs()
   const promise = (async () => {
-    const result = await withIoDeadlineResult(`startup-root-probe:${rootPath}`, () => fsp.stat(rootPath), timeoutMs)
+    const result = await withIoDeadlineResult(`startup-root-probe:${rootPath}`, () => probeStartupDirectory(rootPath, key, timeoutMs), timeoutMs)
     if (entries.get(key)?.generation !== probeGeneration) return false
     if (!result.ok) {
       const error = 'error' in result ? result.error : new Error('startup root probe failed')
       markStartupPathRootUnavailable(rootPath, error, appendLog, reason)
       return false
     }
-    const stat = result.value as { isDirectory: () => boolean }
-    if (!stat.isDirectory()) {
+    if (!result.value) {
       markStartupPathRootUnavailable(rootPath, new Error('root path is not a directory'), appendLog, reason)
       return false
     }

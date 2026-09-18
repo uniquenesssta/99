@@ -21,10 +21,17 @@ const tick = () => new Promise(r=>setImmediate(r))
 const deferred = () => {let resolve; const promise=new Promise(r=>resolve=r); return {promise,resolve}}
 const cases=[]
 const passed = name => cases.push(name)
+function stateLoader(mocks, globals, transforms) {
+  const stat = mocks['node:fs']?.promises?.stat
+  if (stat) mocks[path.join(root,'src/main/path/sharedPathProbeRuntime.ts')] = {
+    probeStartupDirectory: async value => (await stat(value)).isDirectory()
+  }
+  return loader(mocks, globals, transforms)
+}
 async function stateCases() {
   let time=1000, gate=deferred(), calls=0, fail=false
   class Clock extends Date {static now(){return time}}
-  const load=loader({'node:fs':{promises:{stat:async()=>{calls++;await gate.promise;if(fail)throw Error('offline');return{isDirectory:()=>true}}}}}, {Date:Clock}, transforms)
+  const load=stateLoader({'node:fs':{promises:{stat:async()=>{calls++;await gate.promise;if(fail)throw Error('offline');return{isDirectory:()=>true}}}}}, {Date:Clock}, transforms)
   const state=load(stateFile), a='\\\\nas\\a'
   assert.equal(state.getStartupPathRootState(a).state,'checking')
   const first=state.ensureStartupPathRootAvailable(a), duplicate=state.ensureStartupPathRootAvailable(a)
@@ -42,11 +49,11 @@ async function stateCases() {
   const snap=state.getStartupPathRootState(a);assert(Object.isFrozen(snap))
   time+=40000;fail=true;assert.equal(await state.ensureStartupPathRootAvailable(a),false)
   assert.equal(state.getStartupPathRootState(a).state,'offline')
-  assert.equal(loader({}, {}, transforms)(stateFile).getStartupPathRootState(a).state,'checking')
+  assert.equal(stateLoader({}, {}, transforms)(stateFile).getStartupPathRootState(a).state,'checking')
   passed('state transitions, aliases, in-flight coalescing, stale result, restart')
 
   let probes=0, processCalls=0, synchronous=0
-  const winLoad=loader({'node:fs':{promises:{stat:async()=>{probes++;throw Error('ENETUNREACH')}}},'node:child_process':{
+  const winLoad=stateLoader({'node:fs':{promises:{stat:async()=>{probes++;throw Error('ENETUNREACH')}}},'node:child_process':{
     execFileSync(){synchronous++;throw Error('must not block')},
     execFile(file,args,options,done){processCalls++;assert.equal(file,'net.exe');assert.deepEqual(plain(args),['use']);assert.equal(options.shell,false);assert.equal(options.timeout,1500);setImmediate(()=>done(null,'OK           O:        \\\\nas\\share       Microsoft Windows Network\r\n'))}
   }},{process:{...process,platform:'win32'}},transforms)
@@ -59,7 +66,7 @@ async function stateCases() {
   assert.equal(mapping.get('O:'),'\\\\nas\\share')
   passed('mapped drive async classification, shared UNC identity, TTL')
   let attempts=0
-  const failed=loader({'node:child_process':{execFile(f,a,o,cb){attempts++;setImmediate(()=>cb(Error('timeout')))}},'node:fs':{promises:{stat:async()=>{throw Error('disconnected')}}}}, {process:{...process,platform:'win32'}},transforms)
+  const failed=stateLoader({'node:child_process':{execFile(f,a,o,cb){attempts++;setImmediate(()=>cb(Error('timeout')))}},'node:fs':{promises:{stat:async()=>{throw Error('disconnected')}}}}, {process:{...process,platform:'win32'}},transforms)
   assert.equal(await failed(stateFile).ensureStartupPathRootAvailable('P:\\fonts'),false)
   assert.equal(await failed(stateFile).ensureStartupPathRootAvailable('P:\\fonts'),false)
   assert.equal(attempts,1)
@@ -151,6 +158,10 @@ async function catalogCases(dir) {
   deps.closeSqliteDb=m=>{closed++;m.close()}
   const compatLoad=loader({}, {process:{...process,env:{...process.env,HFM_NODE_STATE_FALLBACK:'1'}}},transforms)
   runtime=compatLoad(tagsFile).createSharedKnownTagsRuntime(deps);state=compatLoad(stateFile)
+  await expect(['keep-on-error']);assert.equal(opened,0)
+  passed('explicit compatibility cannot reopen SQLite after failed Rust read')
+  // The original compatibility controls still run when no Rust read port is supplied.
+  deps.runRustSharedMetadataKnownTags=undefined
   await expect(['bound'])
   const malformed=new DatabaseSync(metadataPaths[1]);malformed.prepare('UPDATE font_metadata SET tag_names_json=?').run('{bad');malformed.close()
   const empty=new DatabaseSync(metadataPaths[0]);empty.exec('DELETE FROM font_metadata');empty.close()

@@ -1,3 +1,5 @@
+import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { promises as fsp } from 'node:fs'
 import type { SharedFontMetadataRuntimeDeps } from './sharedFontMetadataRuntime'
 import { sharedMetadataDbPathForRoot } from './sharedMetadataPathsRuntime'
@@ -48,6 +50,7 @@ export function createSharedMetadataSignatureRuntime(deps: SharedMetadataSignatu
 
   async function computeSharedMetadataSignature(rootPath: string, dbPath: string, state: string): Promise<string> {
     const rustResult = await deps.runtimeDeps.runRustSharedMetadataSignature?.({ dbPath }).catch((error) => {
+      rethrowSharedIoProcessError(error)
       deps.runtimeDeps.appendStartupLog(`shared metadata rust signature skipped: ${rootPath}, ${error instanceof Error ? error.message : String(error)}`)
       return null
     })
@@ -91,6 +94,20 @@ export function createSharedMetadataSignatureRuntime(deps: SharedMetadataSignatu
 
   async function sharedMetadataSignatureForRoot(rootPath: string): Promise<string> {
     const dbPath = sharedMetadataDbPathForRoot(rootPath)
+    if ((await sharedIoResourceKeys([rootPath, dbPath])).length) {
+      const existing = signatureInFlight.get(dbPath)
+      if (existing) return existing
+      if (signatureInFlight.size >= SHARED_METADATA_SIGNATURE_IN_FLIGHT_LIMIT) throw new SharedIoProcessError('Shared signature queue full', 'not-started', 'queue-full')
+      // Missing/error/locked database classification belongs to the isolated worker.
+      // No main-thread exists/stat or SQLite fallback is permitted on this path.
+      const task = Promise.resolve().then(async () => {
+        const result = await deps.runtimeDeps.runRustSharedMetadataSignature?.({ dbPath })
+        if (!result?.signature || result.signature === 'metadata:error') throw new SharedIoProcessError('Shared signature unavailable', 'unknown', 'invalid-receipt')
+        return result.signature
+      }).finally(() => { if (signatureInFlight.get(dbPath) === task) signatureInFlight.delete(dbPath) })
+      signatureInFlight.set(dbPath, task)
+      return task
+    }
     if (!(await deps.runtimeDeps.exists(dbPath).catch(() => false))) return 'metadata:none'
 
     const state = await sharedMetadataDbFileState(dbPath)

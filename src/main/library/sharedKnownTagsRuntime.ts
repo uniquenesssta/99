@@ -242,6 +242,8 @@ export function createSharedKnownTagsRuntime(deps: SharedKnownTagsRuntimeDeps) {
       if (!rustRead.ok) {
         const error = 'error' in rustRead ? rustRead.error : new Error('shared known tags read failed')
         deps.appendStartupLog(`shared known tags rust read skipped: ${rustRead.timedOut ? 'deadline exceeded' : (error instanceof Error ? error.message : String(error))}`)
+        if (options.requireFresh) throw new Error('共享标签目录读取未成功。', { cause: error })
+        return readPersistedSharedTags()
       }
       if (rustResult && Array.isArray(rustResult.knownTags)) {
         if (!Array.isArray(rustResult.roots)) {

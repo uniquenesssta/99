@@ -1,3 +1,4 @@
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import type { FontItem } from '../../../shared/types'
 import type { RustSharedMetadataOverlayReadInput, RustSharedMetadataOverlayReadResult } from '../../rust-core/rustCoreWorkerContracts'
 import {
@@ -84,6 +85,7 @@ async function readRustOverlayStateMap(
   for (let start = 0; start < entries.length; start += RUST_OVERLAY_BATCH_LIMIT) {
     const chunk = entries.slice(start, start + RUST_OVERLAY_BATCH_LIMIT)
     const result = await deps.runRustSharedMetadataOverlayRead({ rootPath, dbPath, entries: chunk }).catch((error) => {
+      rethrowSharedIoProcessError(error)
       deps.appendStartupLog(`shared metadata rust overlay skipped: root=${rootPath}, ${error instanceof Error ? error.message : String(error)}`)
       return null
     })

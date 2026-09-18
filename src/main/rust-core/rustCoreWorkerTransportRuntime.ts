@@ -12,6 +12,9 @@ import { EXPECTED_RUST_CORE_PROTOCOL_VERSION, rustCoreWorkerIsCompatible } from 
 import { resolveRustCoreWorkerPathWithDiagnostics } from './rustCoreWorkerPathRuntime'
 import { createRustCoreSchedulerRuntime } from './rustCoreSchedulerRuntime'
 import { createRustCoreDaemonRuntime, isRustCoreDaemonSubmittedError } from './rustCoreDaemonRuntime'
+import { createSharedIoProcessRuntime, SharedIoProcessError } from '../path/sharedIoProcessRuntime'
+import { sharedIoResourceKeys, type RustSharedIoTarget } from './rustSharedIoCommandRuntime'
+import { stopSharedPathProbes } from '../path/sharedPathProbeRuntime'
 
 const execFileAsync = promisify(execFile)
 
@@ -20,6 +23,7 @@ export type RustCoreExecOptions = {
   windowsHide?: boolean
   maxBuffer?: number
   signal?: AbortSignal
+  sharedIo?: RustSharedIoTarget
 }
 
 export function parseJsonLine<T>(stdout: string): T {
@@ -71,7 +75,7 @@ type RustCoreJsonFile = {
 
 // The transport owns path allocation, encoding and best-effort deletion.
 // Callers dispose in their original finally block to preserve settlement order.
-function createTemporaryJsonFile(prefix: string): RustCoreJsonFile {
+function allocateTemporaryJsonFile(prefix: string): RustCoreJsonFile {
   const filePath = join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${randomUUID()}.json`)
   return {
     path: filePath,
@@ -83,6 +87,19 @@ function createTemporaryJsonFile(prefix: string): RustCoreJsonFile {
 
 export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRuntimeOptions) {
   let cachedStatus: RustCoreWorkerStatus | null = null
+  const sharedIo = createSharedIoProcessRuntime(options.appendStartupLog)
+  const temporaryFiles = new Map<string, { holds: number; disposed: boolean; file: RustCoreJsonFile }>()
+  function createTemporaryJsonFile(prefix: string): RustCoreJsonFile {
+    const file = allocateTemporaryJsonFile(prefix)
+    const entry = { holds: 0, disposed: false, file }
+    temporaryFiles.set(file.path, entry)
+    return { ...file, dispose: async () => {
+      entry.disposed = true
+      if (entry.holds) return
+      temporaryFiles.delete(file.path)
+      await file.dispose()
+    } }
+  }
   const rustCoreScheduler = createRustCoreSchedulerRuntime({ appendStartupLog: options.appendStartupLog })
   const rustCoreDaemon = createRustCoreDaemonRuntime({
     appendStartupLog: options.appendStartupLog,
@@ -130,7 +147,43 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     options.appendStartupLog(`rust preview cache ${label} failed: ${message}${suppressedText}; Node fallback remains active`)
   }
 
-  async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean }> {
+  async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
+    // Copy caller-owned identities before awaiting mapping discovery.
+    const target = execOptions.sharedIo ? { paths: [...execOptions.sharedIo.paths], write: execOptions.sharedIo.write } : undefined
+    execOptions = { ...execOptions, sharedIo: target }
+    args = [...args]
+    const roots = target ? await sharedIoResourceKeys(target.paths) : []
+    if (roots.length) {
+      const leased = [...new Set(args)].map(path => temporaryFiles.get(path)).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      for (const entry of leased) entry.holds += 1
+      const onClose = () => {
+        for (const entry of leased) {
+          entry.holds -= 1
+          if (!entry.holds && entry.disposed) {
+            temporaryFiles.delete(entry.file.path)
+            void entry.file.dispose()
+          }
+        }
+      }
+      logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
+      const result = await sharedIo.run({ file: workerPath, args, roots, write: target!.write,
+        timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
+        queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose }).catch(error => {
+          logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
+          throw error
+        })
+      for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
+        try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Preserve the worker result. */ }
+      }
+      // A malformed success envelope can follow a commit. It must never trigger a fallback write.
+      try {
+        const payload = parseJsonLine<{ ok?: boolean }>(result.stdout)
+        if (payload.ok !== true) throw new Error('worker returned ok=false')
+      } catch (error) {
+        throw new SharedIoProcessError(`Shared I/O invalid receipt: ${String(error)}`, 'unknown', 'invalid-receipt')
+      }
+      return { ...result, daemon: false, sharedIo: true }
+    }
     logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'daemon-probe' }, options.appendStartupLog)
     const daemonResult = await rustCoreDaemon.tryRun(workerPath, args, execOptions).catch((error) => {
       if (error instanceof Error && error.name === 'AbortError') throw error
@@ -290,7 +343,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       rustCoreDaemon.pollStatus()
       return rustCoreDaemon.status()
     },
-    stopRustCoreDaemon: rustCoreDaemon.stop,
+    stopRustCoreDaemon: () => { sharedIo.stop(); stopSharedPathProbes(); rustCoreDaemon.stop() },
     runRustCoreScheduledCommand,
     appendPreviewCacheFailureLog,
     createTemporaryJsonFile,

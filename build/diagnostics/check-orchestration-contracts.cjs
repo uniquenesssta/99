@@ -257,7 +257,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
       if (target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       const core = 'src/main/rust-core/'
-      if (target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime') {
+      if (target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
         return loadTypeScriptModule(target + '.ts', localRequire)
       }
       return localRequire(target.startsWith(core) ? './' + target.slice(core.length) : id)

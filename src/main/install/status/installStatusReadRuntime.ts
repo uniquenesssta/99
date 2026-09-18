@@ -1,3 +1,4 @@
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { resolve } from 'node:path';
 import type { FontItem,InstallCompareResult,SystemInstalledFont } from '../../../shared/types';
 import type {
@@ -64,6 +65,7 @@ export function createInstallStatusReadRuntime(
         }
         return { results, misses: missesFromWorker }
       } catch (error) {
+        rethrowSharedIoProcessError(error)
         deps.appendStartupLog(`machine install status db worker read fallback: ${error instanceof Error ? error.message : String(error)}`)
       }
     }

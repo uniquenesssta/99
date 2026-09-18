@@ -1,3 +1,4 @@
+import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
 import type {
   InstallStatusReadWorkerGroup,
@@ -119,18 +120,22 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-install-status-read`)
     const inputPath = inputFile.path
+    let sharedReceipt = false
     try {
       await inputFile.writeJson({ groups })
-      const { stdout } = await runRustCoreScheduledCommand(status.path, [
+      const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--install-status-read',
         '--input', inputPath,
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_INSTALL_STATUS_READ_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
+        sharedIo: { paths: groups.flatMap(group => [group.rootPath, group.dbPath]), write: false },
         windowsHide: true,
         maxBuffer: 32 * 1024 * 1024,
       })
 
-      const payload = parseJsonLine<RustInstallStatusReadPayload>(stdout)
+      sharedReceipt = commandOutput.sharedIo === true
+
+      const payload = parseJsonLine<RustInstallStatusReadPayload>(commandOutput.stdout)
       if (!payload.ok || !payload.results || !Array.isArray(payload.missingIds)) throw new Error(payload.message || 'rust install status read returned ok=false')
       const result: RustInstallStatusReadResult = {
         results: payload.results || {},
@@ -141,6 +146,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       options.appendStartupLog(`rust install status read finished: groups=${groups.length}, known=${Object.keys(result.results || {}).length}, missing=${result.missingIds.length}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.timings?.elapsed || 0}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
+      if (sharedReceipt) throw new SharedIoProcessError(`Shared I/O receipt rejected: ${String(error)}`, 'unknown', 'invalid-receipt')
       options.appendStartupLog(`rust install status read failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--install-status-read')}`)
       return null
     } finally {
@@ -155,6 +162,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-install-status-save`)
     const inputPath = inputFile.path
+    let sharedReceipt = false
     try {
       await inputFile.writeJson({ groups })
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
@@ -162,9 +170,12 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_INSTALL_STATUS_SAVE_TIMEOUT_MS || 5 * 60 * 1000) || 5 * 60 * 1000),
+        sharedIo: { paths: groups.flatMap(group => [group.rootPath, group.dbPath]), write: true },
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024,
       })
+
+      sharedReceipt = commandOutput.sharedIo === true
 
       const payload = parseJsonLine<RustInstallStatusSavePayload>(commandOutput.stdout)
       if (!payload.ok || typeof payload.written !== 'number') {
@@ -180,6 +191,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       options.appendStartupLog(`rust install status save finished: groups=${groups.length}, written=${result.written}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.timings?.elapsed || 0}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
+      if (sharedReceipt) throw new SharedIoProcessError(`Shared I/O receipt rejected: ${String(error)}`, 'unknown', 'invalid-receipt')
       rethrowRustCoreDaemonSubmittedJob(error, options.appendStartupLog, 'rust install status save')
       options.appendStartupLog(`rust install status save failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--install-status-save')}`)
       return null
@@ -397,6 +410,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-apply`)
     const inputPath = inputFile.path
+    let sharedReceipt = false
     try {
       await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
@@ -404,9 +418,12 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_SHARED_METADATA_WRITE_TIMEOUT_MS || 5 * 60 * 1000) || 5 * 60 * 1000),
+        sharedIo: { paths: [input.rootPath, input.dbPath], write: true },
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024,
       })
+
+      sharedReceipt = commandOutput.sharedIo === true
 
       const payload = parseJsonLine<RustSharedMetadataApplyPayload>(commandOutput.stdout)
       const mutationProtocol = normalizeRustTagMutationProtocolResult(payload, {
@@ -434,6 +451,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       options.appendStartupLog(`rust shared metadata apply finished: rows=${input.rows.length}, written=${result.written}, events=${result.events}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.timings?.elapsed || 0}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
+      if (sharedReceipt) throw new SharedIoProcessError(`Shared I/O receipt rejected: ${String(error)}`, 'unknown', 'invalid-receipt')
       if (isRustCoreDaemonSubmittedError(error)) {
         options.appendStartupLog(`rust shared metadata apply failed after daemon submit: ${error.message}; Node fallback blocked`)
         throw error
@@ -452,6 +471,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-remove-tag`)
     const inputPath = inputFile.path
+    let sharedReceipt = false
     try {
       await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
@@ -459,9 +479,12 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_SHARED_METADATA_WRITE_TIMEOUT_MS || 5 * 60 * 1000) || 5 * 60 * 1000),
+        sharedIo: { paths: [input.rootPath || '', input.dbPath], write: true },
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024,
       })
+
+      sharedReceipt = commandOutput.sharedIo === true
 
       const payload = parseJsonLine<RustSharedMetadataRemoveTagPayload>(commandOutput.stdout)
       const mutationProtocol = normalizeRustTagMutationProtocolResult(payload, {
@@ -488,6 +511,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       options.appendStartupLog(`rust shared metadata remove tag finished: tag=${input.tagName}, updated=${result.updated}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.timings?.elapsed || 0}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
+      if (sharedReceipt) throw new SharedIoProcessError(`Shared I/O receipt rejected: ${String(error)}`, 'unknown', 'invalid-receipt')
       if (isRustCoreDaemonSubmittedError(error)) {
         options.appendStartupLog(`rust shared metadata remove tag failed after daemon submit: ${error.message}; Node fallback blocked`)
         throw error
@@ -506,18 +531,22 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-known-tags`)
     const inputPath = inputFile.path
+    let sharedReceipt = false
     try {
       await inputFile.writeJson(input)
-      const { stdout } = await runRustCoreScheduledCommand(status.path, [
+      const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--shared-metadata-known-tags',
         '--input', inputPath,
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_SHARED_METADATA_KNOWN_TAGS_TIMEOUT_MS || 45 * 1000) || 45 * 1000),
+        sharedIo: { paths: input.roots.flatMap(root => [root.rootPath, root.dbPath]), write: false },
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024,
       })
 
-      const payload = parseJsonLine<RustSharedMetadataKnownTagsPayload>(stdout)
+      sharedReceipt = commandOutput.sharedIo === true
+
+      const payload = parseJsonLine<RustSharedMetadataKnownTagsPayload>(commandOutput.stdout)
       if (!payload.ok || !Array.isArray(payload.knownTags)) throw new Error(payload.message || 'rust shared metadata known tags returned ok=false')
       const result: RustSharedMetadataKnownTagsResult = {
         knownTags: payload.knownTags.map(String).filter(Boolean),
@@ -537,6 +566,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       }
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
+      if (sharedReceipt) throw new SharedIoProcessError(`Shared I/O receipt rejected: ${String(error)}`, 'unknown', 'invalid-receipt')
       options.appendStartupLog(`rust shared metadata known tags failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--shared-metadata-known-tags')}`)
       return null
     } finally {
@@ -572,22 +603,26 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-overlay-read`)
     const inputPath = inputFile.path
+    let sharedReceipt = false
     try {
       await inputFile.writeJson({
         rootPath: input.rootPath,
         dbPath: input.dbPath,
         entries: cleanEntries,
       })
-      const { stdout } = await runRustCoreScheduledCommand(status.path, [
+      const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--shared-metadata-overlay-read',
         '--input', inputPath,
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_SHARED_METADATA_OVERLAY_READ_TIMEOUT_MS || 45 * 1000) || 45 * 1000),
+        sharedIo: { paths: [input.rootPath, input.dbPath], write: false },
         windowsHide: true,
         maxBuffer: 16 * 1024 * 1024,
       })
 
-      const payload = parseJsonLine<RustSharedMetadataOverlayReadPayload>(stdout)
+      sharedReceipt = commandOutput.sharedIo === true
+
+      const payload = parseJsonLine<RustSharedMetadataOverlayReadPayload>(commandOutput.stdout)
       if (!payload.ok || !Array.isArray(payload.matched)) throw new Error(payload.message || 'rust shared metadata overlay read returned ok=false')
       const result: RustSharedMetadataOverlayReadResult = {
         rootPath: String(payload.rootPath || input.rootPath || ''),
@@ -611,6 +646,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       }
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
+      if (sharedReceipt) throw new SharedIoProcessError(`Shared I/O receipt rejected: ${String(error)}`, 'unknown', 'invalid-receipt')
       options.appendStartupLog(`rust shared metadata overlay read failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--shared-metadata-overlay-read')}`)
       return null
     } finally {
@@ -625,18 +662,22 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-shared-metadata-signature`)
     const inputPath = inputFile.path
+    let sharedReceipt = false
     try {
       await inputFile.writeJson(input)
-      const { stdout } = await runRustCoreScheduledCommand(status.path, [
+      const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--shared-metadata-signature',
         '--input', inputPath,
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_SHARED_METADATA_SIGNATURE_TIMEOUT_MS || 30 * 1000) || 30 * 1000),
+        sharedIo: { paths: [input.dbPath], write: false },
         windowsHide: true,
         maxBuffer: 2 * 1024 * 1024,
       })
 
-      const payload = parseJsonLine<RustSharedMetadataSignaturePayload>(stdout)
+      sharedReceipt = commandOutput.sharedIo === true
+
+      const payload = parseJsonLine<RustSharedMetadataSignaturePayload>(commandOutput.stdout)
       if (!payload.ok || typeof payload.signature !== 'string') throw new Error(payload.message || 'rust shared metadata signature returned ok=false')
       const result: RustSharedMetadataSignatureResult = {
         signature: payload.signature || 'metadata:none',
@@ -649,6 +690,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       }
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
+      if (sharedReceipt) throw new SharedIoProcessError(`Shared I/O receipt rejected: ${String(error)}`, 'unknown', 'invalid-receipt')
       options.appendStartupLog(`rust shared metadata signature failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {

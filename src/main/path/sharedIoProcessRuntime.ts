@@ -10,12 +10,17 @@ export type SharedIoProcessRequest = {
   write: boolean
   signal?: AbortSignal
   env?: NodeJS.ProcessEnv
+  onClose?: () => void
 }
 export class SharedIoProcessError extends Error {
+  readonly sharedIo = true
   constructor(message: string, readonly outcome: 'not-started' | 'unknown', readonly reason: string) {
     super(message)
     this.name = 'SharedIoProcessError'
   }
+}
+export function rethrowSharedIoProcessError(error: unknown): void {
+  if (error && typeof error === 'object' && (error as SharedIoProcessError).sharedIo === true) throw error
 }
 type Result = { stdout: string; stderr: string }
 type Job = {
@@ -30,6 +35,7 @@ type Job = {
   settled: boolean
   enqueuedAt: number
   startedAt?: number
+  released?: boolean
 }
 
 // A slot and its root locks belong to the process until close, not to its caller's Promise.
@@ -39,6 +45,11 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   const idleWaiters: Array<() => void> = []
   let closed = false, nextId = 0
   const log = (message: string) => { try { appendLog(message) } catch { /* Diagnostics cannot alter settlement. */ } }
+  const release = (job: Job) => {
+    if (job.released) return
+    job.released = true
+    try { job.request.onClose?.() } catch (error) { log(`shared io cleanup failed: ${String(error)}`) }
+  }
   const detach = (job: Job) => {
     if (job.timer) clearTimeout(job.timer)
     if (job.abort) job.request.signal?.removeEventListener('abort', job.abort)
@@ -54,9 +65,10 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     if (job.settled) return
     const started = Boolean(job.child?.pid)
     settle(job, undefined, new SharedIoProcessError(`Shared I/O ${reason}: request=${job.id}`, started ? 'unknown' : 'not-started', reason))
-    if (!started) {
+    if (!job.child) {
       const index = queue.indexOf(job)
       if (index >= 0) queue.splice(index, 1)
+      release(job)
       drain()
       return
     }
@@ -107,6 +119,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       child.once('close', (code, signal) => {
         if (job.killTimer) clearTimeout(job.killTimer)
         active.delete(job)
+        release(job)
         if (!job.settled) {
           if (code === 0) settle(job, { stdout, stderr })
           else settle(job, undefined, new SharedIoProcessError(`Shared I/O process failed: code=${code}, signal=${signal}`, 'unknown', 'process-exit'))
@@ -117,13 +130,19 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       job.timer = setTimeout(() => cancel(job, 'timeout'), Math.max(1, request.timeoutMs))
     } catch (error) {
       settle(job, undefined, new SharedIoProcessError(`Shared I/O spawn failed: ${String(error)}`, 'not-started', 'spawn-error'))
+      release(job)
+      drain()
     }
   }
   function run(request: SharedIoProcessRequest): Promise<Result> {
     request = { ...request, args: [...request.args], roots: [...new Set(request.roots)], env: request.env ? { ...request.env } : undefined }
-    if (closed || request.signal?.aborted) return Promise.reject(new SharedIoProcessError('Shared I/O is closed or cancelled', 'not-started', 'cancelled'))
-    if (!request.roots.length) return Promise.reject(new SharedIoProcessError('Shared I/O requires a resource identity', 'not-started', 'invalid-root'))
-    if (queue.length >= 128) return Promise.reject(new SharedIoProcessError('Shared I/O queue full', 'not-started', 'queue-full'))
+    const reject = (message: string, reason: string) => {
+      try { request.onClose?.() } catch (error) { log(`shared io cleanup failed: ${String(error)}`) }
+      return Promise.reject(new SharedIoProcessError(message, 'not-started', reason))
+    }
+    if (closed || request.signal?.aborted) return reject('Shared I/O is closed or cancelled', 'cancelled')
+    if (!request.roots.length) return reject('Shared I/O requires a resource identity', 'invalid-root')
+    if (queue.length >= 128) return reject('Shared I/O queue full', 'queue-full')
     return new Promise((resolve, reject) => {
       const job: Job = { id: ++nextId, request, resolve, reject, settled: false, enqueuedAt: Date.now() }
       job.abort = () => cancel(job, 'cancelled')

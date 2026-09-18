@@ -74,7 +74,7 @@ function createHarness(settings = {}, overrides = new Map()) {
     'node:child_process': { execFile },
     'node:crypto': { randomUUID: () => { record('uuid', ++serial); return 'id-' + serial } },
     'node:os': { tmpdir: () => '/fixture-tmp' },
-    'node:path': path.posix,
+    'node:path': { ...path.posix, win32: path.win32 },
     'node:fs': { promises: {
       writeFile: async (file, contents, encoding) => { record('write', file, contents, encoding); if (mode === 'write-fail') throw failure('Error', 'write failed'); files.set(file, contents) },
       readFile: async (file, encoding) => { record('read', file, encoding); if (mode === 'read-fail') throw failure('Error', 'read failed'); if (!files.has(file)) throw failure('Error', 'missing fixture file'); return files.get(file) },

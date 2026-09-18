@@ -2,10 +2,10 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.5；制定日期：2026-09-18；软件版本：3.0.0。
+- 文档版本：1.6；制定日期：2026-09-18；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定及专项实施分支：`stage/09-preview-tags-app`。本项是当前分支的补充专项，不另行宣告主线 Stage 8 或 U-09 完成。
 - 制定代码基线：`5866105917d3af7a843f320f220ae047bb49d957`；实施前重新核对实际 HEAD、远端与工作树，不能把此处基线当成永远最新。
-- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02 进程基础已实现、业务隔离未完成；O-03 已实现、自动验证通过、实机待验；O-04 已开始故障取证，完整实现受阻；O-05～O-08 未开始。**
+- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02 已接入七项共享请求及目录探测，完整业务隔离未完成；O-03 已实现、自动验证通过、实机待验；O-04 已开始故障取证，完整实现受阻；O-05～O-08 未开始。**
 - 用户最终约定：共享监视文件夹和共享标签断网后保留原位置、置灰禁用，重连后恢复；网络永远不恢复也必须允许正常退出；已激活字体通过本机副本继续使用和清理；不做离线共享修改或离线同步系统。
 - 上级：[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。承接[操作优化任务书](HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md) §19、§20，保留状态按钮合一、100ms 单击防连击、标签提交即时查询及共享冲突修复。
 - 同时继承[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)的事务/意图/回执约束，以及 [Stage 1 激活事务](HFM_STAGE_01_ACTIVATION_TASKBOOK.md)、[Stage 2 路径授权](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)、[Stage 5 Rust 边界](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)、[Stage 6 React 所有权](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)、[Stage 7 IPC 校验](HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)的质量要求。
@@ -501,7 +501,7 @@ README/任务状态、提交、推送、回滚定位：
 | --- | --- | --- | --- | --- | --- |
 | O-00 | 自动验证通过、实机待验 | 本节同批提交（Git 可追溯） | TypeScript、126/126；8 项已知问题观察、5 组对照 | 待验 | 证据与消费者清单见 §16，非修复完成 |
 | O-01 | 自动验证通过 | 本节同批提交（Git 可追溯） | TypeScript、127/127、LF/CRLF、旧反例、三端构建与混淆 | 待验 | 根状态与目录保留，见 §17 |
-| O-02 | 进行中、原生验证环境受阻 | 本节进程基础同批提交 | 基础 LF/CRLF、TypeScript、128/128、构建通过；完整 O-02 门未通过 | 待验 | 尚未切换业务调用，见 §18 |
+| O-02 | 进行中，部分业务已接入 | §18.4 接续提交 | 接线专项及构建通过；全量回归记录见 §18.5；完整 O-02 门未通过 | 待验 | 七项请求与目录探测已切换，旧迁移等消费者仍待迁移 |
 | O-03 | 已实现、实机待验 | 本节同批提交 | TypeScript、129/129、定向 40 组及构建通过 | Windows/NAS 待验 | 置灰与完整动作准入；O-02 前置仍未满足 |
 | O-04 | 故障取证完成、实现受阻 | 本节同批提交 | 5 缺口观察/4 对照；完整门未通过 | 待验 | O-02 隔离及原生验证待补齐，见 §20 |
 | O-05 | 未开始 | — | 未执行 | 未执行 | 持久残留与处置入口 |
@@ -714,6 +714,43 @@ npm run verify
 
 
 本次最终验证：`npm run verify` 退出码 0（TypeScript、128/128）；`diagnostics:shared-io-process` 的 LF/CRLF 各 7 组通过且资源归零；三端构建 368/1/200 模块及混淆 3/3 退出码 0。6 文件白名单、链接与 `git diff --check` 通过。原 127 项诊断未修改。上述结果只覆盖当前未接入业务的基础，不解除 §18.2 的阻塞，也不允许把 O-02 标记完成。
+
+
+### 18.4 O-02 接续实施登记（基线 35a0e9d）
+
+- 用户要求继续实现，代码实现与 Windows 实机验收分开记录；本次优先实际接入现有 Native 命令，保留旧迁移语义。此前以缺少 Cargo 为由停止现有命令接线的判断已纠正；新增原生代码的编译门与全阶段验收要求继续保留。
+- 实施前白名单：src/main/path/{sharedIoProcessRuntime,sharedPathProbeRuntime,startupPathAvailabilityRuntime}.ts；src/main/rust-core/{rustSharedIoCommandRuntime,rustCoreWorkerTransportRuntime,rustCoreDaemonWriteBoundaryRuntime}.ts；src/main/rust-core/clients/rustMetadataClientRuntime.ts；src/main/indexing/shared-metadata/{sharedMetadataOverlayRuntime,sharedMetadataSignatureRuntime}.ts；src/main/library/sharedKnownTagsRuntime.ts；src/main/install/status/{installStatusReadRuntime,installStatusWriteRuntime}.ts。
+- 诊断白名单：新增 build/diagnostics/check-shared-io-integration.cjs；既有 check-shared-root-retention.cjs、check-startup-nas-deadline-policy.cjs、check-shared-io-process.cjs 的系统端口夹具可随真实边界迁移，原断言不删；package.json、README.md、本任务书及总任务书。实际遇到其他诊断契约须先补充登记。
+- 本次目标：共享元数据五项命令与安装状态读写按资源路径分流至单一有界独立进程 owner；本地命令保留原通道；隔离请求失败不得回主线程兼容读写，未知写不得重试；输入文件保留至进程 close；目录探测也用可回收子进程。
+- 验证计划：真实 Node 故障进程经过生产 transport/client，覆盖同根互斥、跨根及本地进展、取消/停止、坏回执、兼容回退阻断、临时文件生命周期、UNC/映射盘归一、目录探测；TypeScript、全部诊断、三端构建。Node 故障进程不冒充 Rust 或 Windows 实机。
+
+- 18.4 诊断白名单补充：check-orchestration-contracts.cjs 的 TS 模块加载器需认识新增隔离依赖；helpers/rustWorkerTransportHarness.cjs 补齐纯路径端口；fixtures/rust-worker-clients.fixture.json 仅更新本项七个修改方法的源码哈希，保留其他方法、全部行为断言与变异反例。不是整份重录历史行为基线。
+
+
+### 18.5 本次接线的实际边界与验收
+
+| 环节 | 已实现行为 | 保留的边界 |
+| --- | --- | --- |
+| 七项业务 | shared-metadata apply/remove-tag/known-tags/overlay-read/signature，install-status read/save 传入真实资源路径；共享目标绕过常驻 daemon 和原调度器，使用 transport 唯一 sharedIo owner | 本地路径仍用原 daemon/scheduler；没有更改 Native 命令格式、能力探测或数据表 |
+| 路径身份 | 纯文本正规化 UNC、设备 UNC、大小写、点段；映射盘复用现有异步映射查询；同一 SMB share 共用互斥键 | 按 share 串行比按子目录更保守；映射查询失败直接拒绝。旧同步映射调用及库身份恢复验证仍未迁移 |
+| 超时/回收 | 共享业务执行期限最多 30 秒，排队期限 3 秒；最多 2 活动进程、128 排队；取消先 TERM，1 秒后 KILL；名额与锁只在 close 后释放 | 调用方更短的旧软期限仍可先返回，底层任务继续由 owner 跟踪至回收；不把 Promise 拒绝当作进程结束 |
+| 输入文件 | 复用 transport 本地临时 JSON；隔离进程持有期间 dispose 只登记意图，close 后才实际删除 | 不改业务 payload；删除仍沿用原有 best-effort 策略；不保证系统强制断电时清除临时输入 |
+| 失败与回退 | 隔离错误带 sharedIo 终止标记，未启动与结果未知分开；坏 JSON、ok=false、业务回执结构错误也不回退；安装状态外层及 overlay/signature 吞错点保留终止语义 | 不新增离线队列、自动补交或重放；全业务未知提交的持久记录仍未实现 |
+| 共享签名 | 共享路径不再先执行 main exists/stat/SQLite，直接交由 worker；同库合并在途请求，共享分支达到 64 个签名在途键时拒绝新请求 | 原生命令对 metadata:none 的既有语义未改，严格缺失/权限分类与共享身份确认仍需后续 Native 验证 |
+| 标签目录 | Rust 读取失败或外层超时保留本地确认目录，requireFresh 使用原中文失败提示；即使显式启用 Node 兼容也不在失败后再次开共享库 | 正常完整回执、部分根保留与旧数据兼容规则不删除 |
+| 目录探测 | Windows 路径及 UNC 的 stat 在独立 Node 模式子进程执行；路径为独立 argv，shell=false；探测池独立于业务池，各最多 2/128；既有生命周期 stop 同时停止业务池和探测池 | Linux 普通本地目录仍走异步 stat。映射盘查询仍复用既有 net.exe/1500ms 实现；本轮不宣称迁完所有目录/扫描/预览 I/O |
+| 本机行为 | 本地标签、字体资源移除/注册表操作、系统枚举保持原执行通道；测试证明所迁移的共享请求卡住不占该通道 | 未迁移的其他 NAS 命令仍可能进入原 daemon；O-04 的状态保存尾部与 O-06 的有界退出未完成 |
+
+- 生产入口已切换，不再是只有诊断引用的基础工厂；但 §18.2 的 legacy import、backfill/replay、overlay 的前置 SQLite、merged index、维护、扫描、预览、授权等库存仍未全部迁移。因此 O-02 继续标记进行中，不能仅凭七项客户端与目录探测通过就关闭“16 类消费者无漏网”验收。
+- 本次没有修改 Rust；当前环境没有 Cargo，未声称执行 Cargo 测试/release。也没有把此限制继续当成现有 TypeScript 接线不能推进的理由。本轮查阅 Electron 包入口时发现本地缺少可执行文件、触发自动下载提示，已中止；没有取得 Electron/Windows 实机运行结果。
+- Context7 已核对 Node 24 的 close/exit/kill 行为及 Electron 的 ELECTRON_RUN_AS_NODE、默认启用的 RunAsNode fuse；项目未配置禁用该 fuse。Mermaid 已展示当前实际接入链；首次参数名错误后修正成功。Create State 沿用既定容量 2/2 跳过约定，不另建平行状态文件。
+- 实施失败及修正：旧组合诊断加载器未识别新增 path 模块；已限定扩展到实际新增依赖。共享目录 requireFresh 原提示被底层 EIO 替代；已恢复原中文提示并保留 cause。兼容目录旧用例原先依赖“Rust 抛错后再开库”，已增加该行为必须禁止的断言；原正常兼容读取/损坏保留/句柄关闭断言改在未提供 Rust 端口的显式兼容场景执行，全部保留。原 369 个 transport 行为用例、7 个状态序列、28 个输入文件作用域和 10 个变异反例原样通过；仅本项七个方法源码哈希发生变化。
+- 新诊断为生产 client→transport→真实故障子进程；故障脚本只读取自建本地 JSON，绝不连接真实 NAS 或执行字体注册/移除。10 组包含 UNC/映射身份、七项方法接线、本地通道、错误回执、同根/跨根、输入文件直到 close、外部取消、外层回退阻断、目录探测及关闭。LF/CRLF 通过，移除实际分流的反例必须失败，最终子进程数为 0。原进程门的连续 10 次忽略取消、128 队列上限等检查继续通过。
+- 三端构建实际为 374/1/202 模块，退出码 0；混淆实际日志为 3/5（本次重建的 3 个 JS 文件已处理，另 2 个旧产物已带标记而跳过），退出码 0。没有冒充完整 npm run build、安装包或真实 Windows/NAS 验收。
+- Windows 后续应在 dev 模式验证目录选择/加载、共享标签读写、映射盘与 UNC、断网时本地取消及关闭；网络永不恢复、残留字体与全链路退出仍须完成 O-04～O-06 后验收。回滚单位为本轮 Git 提交，无持久格式迁移；旧本地目录/标签、100ms 选择与合并按钮不变。
+
+
+- 最终验证：npm run verify 退出码 0，TypeScript 与 131/131 全部诊断通过；目录保留门 LF 18 组（含历史反例）、CRLF 17 组通过。实际修改 20 个文件，均在 §18.4 及其补充白名单内；文档目标与 git diff --check 通过。三端构建和混淆结果如上；没有更改 Rust、依赖、IPC、schema 或激活副本文件。当前自动证据只覆盖本次已接入范围，O-02 完整门、O-04～O-08 及 Windows/NAS 实机仍未关闭。
 
 ## 19. O-03 执行卡
 
