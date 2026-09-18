@@ -44,7 +44,7 @@ npm run build:win
 
 ## 当前工程任务
 
-- [操作一致性与刷新优化任务书（U-00～U-06 已实施，实机待验；U-07～U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
+- [操作一致性与刷新优化任务书（U-00～U-07 已实施，实机待验；U-08～U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
 
 - [预览缓存、本地标签与 App 专项拆分任务书（规划，未实施）](docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)
 
@@ -65,6 +65,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-18：U-07 修复新目录 events/hash 尚未创建导致的维护误报；与 preview/metrics 统一按 ENOENT 识别惰性库，权限、损坏、锁及 I/O 错误仍保留。启动维护先等待原 owner 初始化明确缺失的 library/tasks/kvs，Node 备用备份不再创建未使用的可选库；自动备份失败参与最终结果并保留重试资格。TypeScript、122/122 诊断（新增 78 项真实 SQLite/受控端口检查）、三端构建与混淆通过；Windows 原生故障实测待验，见[U-07 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#17-u-07-执行卡)。无依赖、数据库格式、IPC 或 Rust 变更，下一项 U-08。
 
 - 2026-09-18：U-06 停用后的系统枚举增加代次屏障，拒绝删除前在途结果；正常批量注册表删除合并一次，失败后仅逐值重试注册表，不重复移除字体资源。临时状态匹配建立一次索引，最终复核失败不再同时计为成功；补齐前台分阶段、系统排队/读取及渲染回执应用计时，保留原后台文件清理、持久保存与永久安装核对。TypeScript、121/121 诊断（新增 74 项受控专项）、三端构建与混淆通过；Windows 同机重复耗时验收见[U-06 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#16-u-06-执行卡)。底层枚举部分来源失败的完整性协议本轮未改，仍是审计边界。无新依赖、数据库/IPC 或 Rust 变更，下一项 U-07。
 

@@ -41,3 +41,20 @@ export async function walkPreviewPngFiles(dir: string, visit: (filePath: string)
     }
   }
 }
+
+// Only ENOENT proves absence; access and device failures must remain errors.
+export async function databaseFileAbsent(filePath: string): Promise<boolean> {
+  try {
+    await fsp.stat(filePath)
+    return false
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
+    throw error // Permission, path and device failures are not absent caches.
+  }
+}
+
+// These caches are created by their first writer, not by health/backup inspection.
+export async function optionalDatabaseAbsent(spec: { label: string; filePath: string }): Promise<boolean> {
+  if (!(spec.label === 'preview' || spec.label === 'metrics' || spec.label === 'events' || spec.label === 'hash')) return false
+  return databaseFileAbsent(spec.filePath)
+}

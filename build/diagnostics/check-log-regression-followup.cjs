@@ -18,8 +18,8 @@ const files = {
 const mutants = {
   folder: [files.folder, 'folderNodes: Array.from(folderNodes.values()),', 'folderNodes: tree.nodes,'],
   activation: [files.activation, 'if (unchangedIds.length === rowCount)', 'if (false)'],
-  health: [files.health, "item.label === 'preview' || item.label === 'metrics'", "item.label === 'preview'"],
-  corruption: [files.health, 'await optionalCacheAbsent(spec.filePath)', 'true'],
+  health: ['src/main/maintenance/databaseMaintenanceHelpers.ts', "spec.label === 'preview' || spec.label === 'metrics'", "spec.label === 'preview'"],
+  corruption: ['src/main/maintenance/databaseMaintenanceHelpers.ts', 'await fsp.stat(filePath)\n    return false', 'return true'],
   preview: [files.preview, "installedRoute?.reason === 'active'", 'false'],
 }
 

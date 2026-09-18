@@ -58,7 +58,7 @@ async function runBehaviorChecks() {
     'src/main/maintenance/databaseMaintenance.ts',
     (id) => {
       if (id === './databaseMaintenanceHelpers') {
-        return { readSqliteQuickCheckMessage: () => 'ok', isoBefore: () => '' }
+        return loadTypeScriptModule('src/main/maintenance/databaseMaintenanceHelpers.ts', require)
       }
       if (id === './databaseBackupRuntime') {
         return {

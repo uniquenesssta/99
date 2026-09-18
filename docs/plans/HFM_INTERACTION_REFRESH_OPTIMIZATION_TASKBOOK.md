@@ -5,7 +5,7 @@
 - 制定日期：2026-09-18。
 - 仓库：`uniquenesssta/99`；分支：`stage/09-preview-tags-app`。
 - 代码基线：`3bc1e387ebeb5298d5bd4060aaec5c9a0a2c7d93`。
-- 状态：**U-00 诊断、U-01 选择/命令链修复、U-02 统一操作入口、U-03 本机集合收藏、U-04 跨页安装筛选、U-05 增量刷新及 U-06 停用等待优化已实施，证据见 §10～§16；Windows 实机验收待回执。U-07～U-09 尚未实施。** 初次规划交付记录保留于 §9。
+- 状态：**U-00 诊断、U-01 选择/命令链修复、U-02 统一操作入口、U-03 本机集合收藏、U-04 跨页安装筛选、U-05 增量刷新、U-06 停用等待优化及 U-07 首次启动维护修复已实施，证据见 §10～§17；Windows 实机验收待回执。U-08～U-09 尚未实施。** 初次规划交付记录保留于 §9。
 - 输入：`startup-2026-09-18_02-59-25-870-21044.log`（813 行，UTC 02:59:25.872～03:01:28.978）及用户随后五点反馈、入口差异补充。原始日志不提交到 Git。
 - 与前任务衔接：[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md) §25 已交付本地收藏、标签目录同步与停用核对。本任务保留这些修复，处理后续真实交互问题和性能问题，不重开 R-01～R-07。
 - 既有基线证据：上一提交通过 TypeScript、115/115 诊断、Electron/Vite 367/1/196 模块构建和混淆 3/3。这是历史自动验证结果，**不能替代本任务的字体多选入口和 Windows 实机验收**。
@@ -108,7 +108,7 @@ flowchart TD
 
 ## 6. 实施顺序与任务卡
 
-优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02 见 §12；U-03 见 §13；U-04 见 §14；U-05 见 §15；U-06 见 §16；U-07～U-09 为“待开始”。
+优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02 见 §12；U-03 见 §13；U-04 见 §14；U-05 见 §15；U-06 见 §16；U-07 见 §17；U-08～U-09 为“待开始”。
 
 ### U-00：建立入口证据和复现基线
 
@@ -669,3 +669,39 @@ Mermaid Chart 已绘制实际批量确认、失败隔离和代次链路；无新
 - 全门禁发现冻结项补充：`watcher-activation-baseline.fixture.json` 的 `fontActivationInstallStatusRuntime.ts` 仅更新已声明临时索引与计时造成的原文摘要，导出/函数集合不变；原行为反例不变。
 
 - 发布门结果：`npm run verify` 通过（TypeScript + 121/121 诊断，含 U-06 的 74 项受控检查）；最终源码另行 TypeScript 复核通过。清空旧构建输出后重建三端 367/1/200 模块，混淆 3/3，`git diff --check` 通过。首轮只因上述冻结摘要变化阻断，迁移后完整重跑通过；未删除任何旧行为门。Windows 原生执行及同机耗时仍未实测。
+
+## 17. U-07 执行卡
+
+### 17.1 定位与修改边界
+
+- 起点 `5a57e905a61843fef8e236480af5e31fffb1a722`，工作区干净。9 月 18 日日志 02:59:28 明确显示 events/hash 缺文件导致维护 ok=false；同次 preview/metrics 已被视为可选。
+- `cacheArchitectureRuntime` 的 events 由 recordCacheEvent 首次创建，hash 由非空 upsertFontHashIndex 首次创建；metrics 本机持久化已经停用，preview 是兼容缓存。它们合法惰性；kvs 在窗口创建时写启动信息，library 由既有 schema audit/library owner 初始化，tasks 由任务 owner 初始化，不扩大到“所有数据库缺失均成功”。不改启动时序或创建空库消除告警。
+- 修改方案：统一四类惰性库的 ENOENT 判断，在健康检查前分类；检查到存在后发生的读取错误保留，不以事后文件消失覆盖损坏/权限错误。Rust 和 Node 使用同一分类；Node 备用备份也跳过明确不存在的惰性库。启动自动备份失败必须参与最终 ok，失败不能显示整体成功。
+- 生产白名单：`src/main/maintenance/databaseMaintenance.ts`、`databaseMaintenanceHelpers.ts`、`databaseBackupRuntime.ts`。不改 Rust/IPC/数据库结构/依赖，也不碰 U-06 遗留系统字体枚举问题。
+- 验证白名单：新增 `build/diagnostics/check-startup-database-health.cjs` 并注册 package.json；旧 `check-log-regression-followup.cjs` 的 optional/corruption 退化锚点迁移到共享判断，保留原行为断言；`check-database-maintenance-serialization.cjs` 如需加载新 helper，使用真实模块，不削弱备份串行、有效备份先验和恢复保护。README、本任务书记录结果。
+- 通过真实临时目录与 SQLite 验证新/旧目录、损坏、备份读回；权限/锁/设备 I/O 使用受控端口验证错误保留，不能冒充 Windows 原生实测。既有恢复 owner 不修改。
+- 初始化缺口补充：tasks 无启动前强制打开，library schema audit 与维护均由定时器调度，kvs 写入也是异步；不能用延迟值证明必需库已经就绪。启动维护在既有串行队列内按 dbFileSpecs 的 library→tasks→kvs 顺序，只对 stat 确认为 ENOENT 的必需库 await 原 spec.open，再初检；已有库不主动打开/重建，初始化或访问错误仍记录为维护失败。复用 helper 的精确缺失判断，不改全局生命周期接线。健康检查单独调用时仍对缺失必需库报告异常。
+
+
+### 17.2 实现结果
+
+| 数据库 / 状态 | 启动维护行为 |
+| --- | --- |
+| library、tasks、kvs 明确缺失 | 在原维护串行队列中依次等待原 owner 初始化，再做首次健康检查；不依赖界面请求和定时器先后 |
+| preview、events、hash、metrics 明确缺失 | 正常报告尚未创建，不为健康检查或 Node 备用备份新建空库 |
+| 惰性库已存在 | 必须正常 quick_check；不能根据 label 自动成功 |
+| stat 权限、路径或设备错误 | 保留失败信息，不按不存在跳过 |
+| 已确认存在后读取失败 / 随后被删除 | 保留本次读取错误，不事后将错误改为“可选缺失” |
+| 自动备份失败 | 启动最终 ok=false，成功时间不前移，仍可重试 |
+
+- Rust 只接收需要检查的库；接受返回前逐项核对 label/filePath 及数量，防止重复行或错误路径代替完整结果。不可用、不完整、身份不匹配走原 Node 备用路径；完整的逐库错误结果直接保留，不以 Node 重试掩盖它。
+- 分类 helper 使用 stat 的 ENOENT，不能用吞并权限错误的 boolean exists。Node 备用备份共享此判断，现有库仍沿用原 SQLite backup/VACUUM、备份清单和保留策略；恢复/隔离 owner 未改，未改 Rust 协议或实现。必需库初始化仅在启动维护入口执行，独立健康检查仍报告缺失必需库。
+- 初始化错误仍由启动维护原错误日志报告，后续创建停止，不输出维护成功。已有必需库不因这次修复进入缺失初始化分支；原 Node 打开 owner 自带的恢复行为不变。
+
+### 17.3 验证与接续
+
+- 新增 `diagnostics:startup-database-health`，78 项执行检查（包含 CRLF 与退化执行中的断言）。真实临时目录、Node SQLite quick_check、VACUUM 备份及备份读回；events/hash 首次写入使用真实 cache owner，tasks/kvs 首次初始化使用真实 owner/schema，library 初始化端口受控。覆盖惰性库从未创建→首次写入→再次健康检查、旧库损坏内容保持、必需库缺失顺序、正常只读源库检查/备份、备份失败不前移时间、首次检查后文件消失、Rust 结果缺项/重复/错误路径/抛错，以及受控 EACCES/EPERM/EIO/ENOTDIR/SQLITE_BUSY/SQLITE_READONLY。
+- 三个执行级退化被拒绝：重新把 events/hash 当必需已存在库、删除必需库初始化等待、自动备份失败不参与最终 ok。原日志回归门继续保留 optional metrics 和损坏不可成功的 LF/CRLF 反例，只把锚点迁移到新的 helper；原备份串行、有效备份确认后才隔离当前库等检查通过。没有迁移生产冻结摘要。
+- `npm run verify` 通过：TypeScript + 122/122 诊断；最终初始化修改后另行 TypeScript 通过。三端构建 367/1/200 模块、混淆 3/3 和 `git diff --check` 通过。Rust 端为受控返回，Windows 权限/锁为注入；不声称已运行 Windows 原生故障测试。
+- Windows 开发模式复验：更新当前分支后 `npm run dev`，在独立测试数据目录启动（保留原目录），确认只初始化必需库；尚未扫描时 events/hash 缺失不再使维护 ok=false。首次扫描/事件后再次维护检查其已有库；在测试目录验证只读/权限/锁异常仍可见。正常退出重启后核对已有字体、收藏、标签及任务历史，备份可读；不要用生产数据库做损坏实验。
+- Mermaid Chart 已更新实际初始化、分类和最终汇总链；未新增第三方/系统 API，不触发 Context7。Create State 按此前 2/2 容量上限与用户要求继续跳过，进度留在 Git/README/任务书。无数据迁移，回滚本轮提交即可。下一项 U-08；U-06 的系统字体枚举部分来源失败审计边界不在本轮修改范围内。

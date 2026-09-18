@@ -10,6 +10,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "diagnostics:startup-database-health": "node build/diagnostics/check-startup-database-health.cjs",
     "diagnostics:deactivation-refresh": "node build/diagnostics/check-deactivation-refresh.cjs",
     "diagnostics:incremental-metadata-refresh": "node build/diagnostics/check-incremental-metadata-refresh.cjs",
     "diagnostics:install-status-filter": "node build/diagnostics/check-install-status-filter.cjs",

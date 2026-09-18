@@ -1,6 +1,6 @@
 import fs,{ promises as fsp } from 'node:fs'
 import { dirname,join } from 'node:path'
-import { sqliteStringLiteral, timestampForFileName } from './databaseMaintenanceHelpers'
+import { sqliteStringLiteral, timestampForFileName, optionalDatabaseAbsent } from './databaseMaintenanceHelpers'
 import type { DatabaseBackupItem, DatabaseBackupReport, DatabaseMaintenanceRuntimeOptions } from './databaseMaintenanceTypes'
 
 export interface DatabaseBackupRuntimeDeps {
@@ -113,6 +113,10 @@ export function createDatabaseBackupRuntime(deps: DatabaseBackupRuntimeDeps) {
     const items: DatabaseBackupItem[] = []
     for (const spec of specs) {
       try {
+        if (await optionalDatabaseAbsent(spec)) {
+          items.push({ label: spec.label, sourcePath: spec.filePath, ok: true, sizeBytes: 0, message: '可选缓存数据库尚未创建，已跳过。' })
+          continue
+        }
         const db = await spec.open()
         items.push(await backupSqliteDatabase(db, spec.label, spec.filePath, backupDir))
       } catch (error) {

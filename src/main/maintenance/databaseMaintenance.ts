@@ -1,6 +1,5 @@
-import { promises as fsp } from 'node:fs'
 import type { ApplicationDatabaseLabel } from '../db/sqliteRuntime'
-import { readSqliteQuickCheckMessage, isoBefore } from './databaseMaintenanceHelpers'
+import { readSqliteQuickCheckMessage, isoBefore, optionalDatabaseAbsent, databaseFileAbsent } from './databaseMaintenanceHelpers'
 import { createDatabaseBackupRuntime } from './databaseBackupRuntime'
 import { createPreviewCacheMaintenanceRuntime } from './previewCacheMaintenanceRuntime'
 import type {
@@ -100,52 +99,44 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
   async function runDatabaseHealthCheckRaw(): Promise<DatabaseHealthItem[]> {
     const specs = dbFileSpecs()
 
-    async function optionalCacheAbsent(filePath: string): Promise<boolean> {
-      // A boolean access probe also returns false for permission/I/O failures.
-      return fsp.stat(filePath).then(() => false, (error: NodeJS.ErrnoException) => error.code === 'ENOENT')
-    }
-
-    async function normalizeOptionalMissingHealth(items: DatabaseHealthItem[]): Promise<DatabaseHealthItem[]> {
-      const byLabel = new Map(specs.map((spec) => [spec.label, spec]))
-      const normalized: DatabaseHealthItem[] = []
-      for (const item of items) {
-        const spec = byLabel.get(item.label as ApplicationDatabaseLabel)
-        // Local metrics persistence is lazy/unused by Rust merged-index metrics.
-        // Absence is normal; an existing but unhealthy database is still an error.
-        if ((item.label === 'preview' || item.label === 'metrics') && spec && !item.ok && await optionalCacheAbsent(spec.filePath)) {
-          appendStartupLog(`database health optional cache absent: label=${item.label}`)
-          normalized.push({
-            ...item,
-            ok: true,
-            message: `optional ${item.label} fallback database has not been created yet`
-          })
-          continue
+    const preflight = new Map<string, DatabaseHealthItem>()
+    for (const spec of specs) {
+      try {
+        if (await optionalDatabaseAbsent(spec)) {
+          appendStartupLog(`database health optional cache absent: label=${spec.label}`)
+          preflight.set(spec.label, { label: spec.label, filePath: spec.filePath, ok: true,
+            message: `optional ${spec.label} fallback database has not been created yet` })
         }
-        normalized.push(item)
+      } catch (error) {
+        preflight.set(spec.label, { label: spec.label, filePath: spec.filePath, ok: false,
+          message: error instanceof Error ? error.message : String(error) })
       }
-      return normalized
     }
+    const checkSpecs = specs.filter(spec => !preflight.has(spec.label))
+    if (!checkSpecs.length) return specs.map(spec => preflight.get(spec.label)!)
 
     const rustResult = runRustDatabaseHealthCheck
       ? await runRustDatabaseHealthCheck({
-        items: specs.map((spec) => ({ label: spec.label, filePath: spec.filePath }))
+        items: checkSpecs.map((spec) => ({ label: spec.label, filePath: spec.filePath }))
       }).catch((error) => {
         appendStartupLog(`rust database health check fallback: ${error instanceof Error ? error.message : String(error)}`)
         return null
       })
       : null
-    if (rustResult?.items?.length === specs.length) {
+    if (rustResult?.items?.length === checkSpecs.length && checkSpecs.every(spec =>
+      rustResult.items.filter(item => item.label === spec.label && item.filePath === spec.filePath).length === 1)) {
       appendStartupLog(`database health check used rust fast path: count=${rustResult.items.length}, elapsed=${rustResult.elapsedMs}ms`)
-      return await normalizeOptionalMissingHealth(rustResult.items)
+      const byLabel = new Map(rustResult.items.map(item => [item.label, item]))
+      return specs.map(spec => preflight.get(spec.label) || byLabel.get(spec.label)!)
     }
 
     const items: DatabaseHealthItem[] = []
 
     for (const spec of specs) {
       try {
-        const [optionalMissing] = await normalizeOptionalMissingHealth([{ label: spec.label, filePath: spec.filePath, ok: false, message: '' }])
-        if (optionalMissing.ok) {
-          items.push(optionalMissing)
+        const classified = preflight.get(spec.label)
+        if (classified) {
+          items.push(classified)
           continue
         }
         const db = await spec.open()
@@ -162,7 +153,7 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
       }
     }
 
-    return await normalizeOptionalMissingHealth(items)
+    return items
   }
 
   async function restoreLatestApplicationDatabaseRaw(label: ApplicationDatabaseLabel): Promise<DatabaseRestoreReport> {
@@ -224,6 +215,14 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
 
   async function runStartupDatabaseMaintenanceRaw(): Promise<void> {
     try {
+      // Timers/UI requests do not establish initialization order. Let the existing
+      // owners create genuinely missing required databases before the first read.
+      for (const spec of dbFileSpecs()) {
+        if ((spec.label === 'library' || spec.label === 'tasks' || spec.label === 'kvs') && await databaseFileAbsent(spec.filePath)) {
+          await spec.open()
+          appendStartupLog(`startup required database initialized: label=${spec.label}`)
+        }
+      }
       const initialHealth = await runDatabaseHealthCheckRaw()
       const healthOk = initialHealth.every((item) => item.ok)
       if (!healthOk) {
@@ -232,7 +231,11 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
 
       const backup = healthOk ? await createAutomaticDatabaseBackupIfNeededRaw() : undefined
       const report = await runDatabaseMaintenanceRaw({ createBackup: false })
-      if (backup) report.backup = backup
+      if (backup) {
+        report.backup = backup
+        report.ok = report.ok && backup.ok
+        if (!report.ok) report.message = '数据库维护完成，但存在需要查看的警告。'
+      }
       appendStartupLog(`startup database maintenance finished: ok=${report.ok}`)
     } catch (error) {
       appendStartupLog(`startup database maintenance skipped: ${error instanceof Error ? error.message : String(error)}`)
