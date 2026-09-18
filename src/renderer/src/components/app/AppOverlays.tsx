@@ -26,7 +26,7 @@ type AppOverlaysProps = {
   runFontContextAction: (action: 'install' | 'remove' | 'activate' | 'deactivate' | 'deleteFile' | 'protectToggle') => Promise<void>
   deleteFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   uninstallFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
-  toggleFontDeleteProtection: (fontIds: string[], protect?: boolean) => Promise<void>
+  toggleFontDeleteProtection: (fontIds: string[], protect?: boolean, available?: FontItem[]) => Promise<void>
   runContextBatchActivate: () => void
   runContextBatchDeactivate: () => void
   runContextRefreshFolder: () => void
@@ -178,8 +178,8 @@ export function AppOverlays({
                 <button onMouseDown={(event) => event.preventDefault()} onClick={() => void runFontContextAction('deactivate')}>批量取消激活</button>
                 <button onMouseDown={(event) => event.preventDefault()} onClick={() => void deleteFontsBatch(contextSelectedFonts, '批量选择')}>批量删除文件</button>
                 <button onMouseDown={(event) => event.preventDefault()} onClick={() => void uninstallFontsBatch(contextSelectedFonts, '批量选择')}>批量卸载字体</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void toggleFontDeleteProtection(contextSelectedFonts.map((font) => font.id), true)}>加入保护不可删除</button>
-                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void toggleFontDeleteProtection(contextSelectedFonts.map((font) => font.id), false)}>取消删除保护</button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void toggleFontDeleteProtection(contextSelectedFonts.map((font) => font.id), true, contextSelectedFonts)}>加入保护不可删除</button>
+                <button onMouseDown={(event) => event.preventDefault()} onClick={() => void toggleFontDeleteProtection(contextSelectedFonts.map((font) => font.id), false, contextSelectedFonts)}>取消删除保护</button>
               </>
             ) : (
               <>

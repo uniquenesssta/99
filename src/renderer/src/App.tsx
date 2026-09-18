@@ -176,7 +176,7 @@ export default function App(): JSX.Element {
     setDeleteTarget,
     removeFontIds: removeSelectedFontIds,
     createInteractionRuntime: createSelectionInteractionRuntime
-  } = useSelectionController()
+  } = useSelectionController(JSON.stringify([sidebarPage, activeFilterKey, selectedFolderId, selectedTagName, selectedSharedTagName, search, installStatus, timeSortMode, selectedWatchedFoldersKey, selectedFormatsKey, selectedScriptsKey, selectedCategory]))
   const {
     themeMode,
     setThemeMode,
@@ -395,6 +395,8 @@ export default function App(): JSX.Element {
   } = developerController
 
   const contextActionRuntime = createAppMenuDialogRuntime({
+    getVisibleFonts: () => latestVisibleFontsRef.current,
+    setStatus,
     library,
     contextMenu,
     selectedFontIds,
@@ -760,6 +762,8 @@ export default function App(): JSX.Element {
 
   useFontDetailSelectionEffectsRuntime({
     library,
+    selectedFontIds,
+    setLibrary,
     visibleFonts,
     selectedFontId,
     selectedFont,
@@ -914,6 +918,7 @@ export default function App(): JSX.Element {
   }
 
   const contentViewProps: AppRootViewProps['content'] = {
+    setStatus: setStatus,
     sidebarPage: sidebarPage,
     timeSortMode: timeSortMode,
     sortMode: sortMode,

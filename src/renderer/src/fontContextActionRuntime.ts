@@ -1,3 +1,4 @@
+import { isPartialFontLibrary, missingFontCommandTargetsMessage, resolveFontCommandTargets } from './fontCommandTargetsRuntime'
 import { activationEntryTrace, traceActivationEntry } from './fontActivationTrace'
 import { reportFontOperation } from './fontOperationTrace'
 import type { FontItem,LibraryState } from '@shared/types'
@@ -17,6 +18,8 @@ export type FontContextActionRuntimeOptions = {
   library: LibraryState
   contextMenu: ContextMenuState
   selectedFontIds: string[]
+  getVisibleFonts?: () => FontItem[]
+  setStatus: (status: string) => void
   menuWidth: number
   menuMaxHeight: number
   viewport: Window
@@ -31,13 +34,13 @@ export type FontContextActionRuntimeOptions = {
   activateFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   deactivateFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   deleteFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
-  toggleFontDeleteProtection: (fontIds: string[]) => Promise<void>
+  toggleFontDeleteProtection: (fontIds: string[], protect?: boolean, available?: FontItem[]) => Promise<void>
 }
 
 export function createFontContextActionRuntime(options: FontContextActionRuntimeOptions): {
   setSingleFontSelection: (fontId: string) => void
   selectionLabel: (fonts: FontItem[]) => string
-  contextFontTargets: () => FontItem[]
+  contextFontTargets: (available?: FontItem[]) => FontItem[]
   openTagMenu: (event: React.MouseEvent, tag: string) => void
   openSharedTagMenu: (event: React.MouseEvent, tag: string) => void
   openFolderMenu: (event: React.MouseEvent, target: Extract<MenuTarget, { kind: 'folder' }>) => void
@@ -56,8 +59,8 @@ export function createFontContextActionRuntime(options: FontContextActionRuntime
     options.setSelectionAnchorFontId(next.selectionAnchorFontId)
   }
 
-  function contextFontTargets(): FontItem[] {
-    return contextFontsFromLibrary(options.contextMenu, options.selectedFontIds, options.library.fonts)
+  function contextFontTargets(available = options.getVisibleFonts?.() || []): FontItem[] {
+    return contextFontsFromLibrary(options.contextMenu, options.selectedFontIds, options.library.fonts, available, isPartialFontLibrary(options.library))
   }
 
   return {
@@ -107,11 +110,19 @@ export function createFontContextActionRuntime(options: FontContextActionRuntime
         return
       }
 
-      const targets = contextFontTargets()
+      const ids = options.selectedFontIds.length > 1 && options.selectedFontIds.includes(options.contextMenu.font.id) ? options.selectedFontIds : [options.contextMenu.font.id]
+      const resolved = resolveFontCommandTargets(ids, options.library, [...(options.getVisibleFonts?.() || []), options.contextMenu.font])
+      const targets = resolved.fonts
       if (action === 'activate') {
-        const selected = options.selectedFontIds.length > 1 && options.selectedFontIds.includes(options.contextMenu.font.id) ? options.selectedFontIds.length : 1
+        const selected = resolved.selectedIds.length
         traceActivationEntry(targets, 'font-context', selected)
-        if (targets.length < 2) reportFontOperation({ trace: activationEntryTrace(targets), stage: 'route', outcome: targets.length ? 'single-action' : 'zero-targets' })
+        if (!resolved.missingIds.length && targets.length < 2) reportFontOperation({ trace: activationEntryTrace(targets), stage: 'route', outcome: targets.length ? 'single-action' : 'zero-targets' })
+      }
+      if (resolved.missingIds.length) {
+        if (action === 'activate') reportFontOperation({ trace: activationEntryTrace(targets), stage: 'preflight', outcome: 'missing-records' })
+        options.setStatus(missingFontCommandTargetsMessage(resolved.missingIds))
+        options.setContextMenu(null)
+        return
       }
       const font = targets[0]
       if (!font) return
@@ -119,8 +130,8 @@ export function createFontContextActionRuntime(options: FontContextActionRuntime
       options.setSelectedFontId(font.id)
       options.setContextMenu(null)
 
-      if (action === 'install') await options.installFontByCard(font)
-      if (action === 'remove') await options.removeFontByCard(font)
+      if (action === 'install') for (const target of targets) await options.installFontByCard(target)
+      if (action === 'remove') for (const target of targets) await options.removeFontByCard(target)
       if (action === 'activate') {
         if (targets.length > 1) await options.activateFontsBatch(targets, '批量选择')
         else await options.activateFontByCard(font)
@@ -130,7 +141,7 @@ export function createFontContextActionRuntime(options: FontContextActionRuntime
         else await options.deactivateFontByCard(font)
       }
       if (action === 'deleteFile') await options.deleteFontsBatch(targets.length > 1 ? targets : [font], targets.length > 1 ? '批量选择' : fontDisplayName(font))
-      if (action === 'protectToggle') await options.toggleFontDeleteProtection(targets.length > 1 ? targets.map((item) => item.id) : [font.id])
+      if (action === 'protectToggle') await options.toggleFontDeleteProtection(targets.map((item) => item.id), undefined, targets)
     }
   }
 }

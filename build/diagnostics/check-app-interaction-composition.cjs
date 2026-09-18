@@ -26,7 +26,7 @@ function structure(){
     const dialog={...current.calls['contextActionRuntime.createDialogs:0']};for(const k of ['library','contextMenu','setContextMenu','activateFontsBatch','deactivateFontsBatch'])dialog[k]=context[k]
     assert.deepEqual(dialog,fixture.calls['createFontDialogRuntime:0'],'effective dialog inputs')
     assert.deepEqual(current.calls['createAppDetailSelectionRuntime:0'],fixture.calls['createFontDetailPanelRuntime:0'])
-    const selection={...current.calls['detailPanelRuntime.createSelection:1'],toggleFontDetail:'toggleFontDetail',hydrateFont:'(font) => hydrateFontForSelectionDetail(font, setLibrary)'}
+    const selection={...current.calls['detailPanelRuntime.createSelection:1'],toggleFontDetail:'toggleFontDetail',hydrateFont:'(font, keepFontIds) => hydrateFontForSelectionDetail(font, setLibrary, keepFontIds)'}
     assert.deepEqual(selection,fixture.calls['createSelectionInteractionRuntime:0'])
     assert(source.indexOf('createAppControllerPorts()')<source.indexOf('useBrowseController({'))
     assert(source.indexOf('controllerPorts.bindOperations(')>source.indexOf('const operationsController = useFontOperationsController('))

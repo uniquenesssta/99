@@ -1,7 +1,7 @@
 import { activationEntryTrace, reportActivationResult, reportActivationTargets } from '../../../fontActivationTrace'
 import { reportFontOperation } from '../../../fontOperationTrace'
 import type { FontItem } from '@shared/types'
-import { fontDisplayName,isCleanWindowsDefaultFont,isInstalled } from '../../../appRuntime'
+import { fontDisplayName,isCleanWindowsDefaultFont,isInstalled,libraryWithMergedFonts } from '../../../appRuntime'
 import { batchActivationCandidates } from '../../../fontSelectionRuntime'
 import type { FontSystemActionRuntimeOptions,FontSystemStateRuntime } from './fontSystemActionTypes'
 
@@ -14,13 +14,21 @@ export function createFontActivationActionRuntime(
   deactivateFontByCard: (font: FontItem) => Promise<void>
   deactivateFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
 } {
+  function hydrateTargets(fonts: FontItem[]): void {
+    options.setLibrary?.(prev => {
+      const missing = fonts.filter(font => !prev.fonts[font.id])
+      return missing.length ? libraryWithMergedFonts(prev, missing, fonts.map(font => font.id)) : prev
+    })
+  }
+
   async function activateFontByCard(font: FontItem): Promise<void> {
     if (options.activeOperationFontIds.current.has(font.id)) {
       options.setStatus(`正在处理：${fontDisplayName(font)}……`)
       return
     }
 
-    const previous = options.library.fonts[font.id] || font
+    const previous = (options.getCurrentLibrary?.() || options.library).fonts[font.id] || font
+    hydrateTargets([previous])
     const optimisticAt = new Date().toISOString()
     const changed = !previous.active && !isInstalled(previous)
 
@@ -63,7 +71,7 @@ export function createFontActivationActionRuntime(
       return
     }
 
-    const unique = Array.from(new Map(fonts.map((font) => [font.id, options.library.fonts[font.id] || font])).values())
+    const unique = Array.from(new Map(fonts.map((font) => [font.id, (options.getCurrentLibrary?.() || options.library).fonts[font.id] || font])).values())
     const targets = batchActivationCandidates(unique).filter((font) => !options.activeOperationFontIds.current.has(font.id))
     const skippedInstalled = unique.filter((font) => isInstalled(font) && !isCleanWindowsDefaultFont(font)).length
     const skippedSystem = unique.filter(isCleanWindowsDefaultFont).length
@@ -78,6 +86,7 @@ export function createFontActivationActionRuntime(
       return
     }
 
+    hydrateTargets(targets)
     let activated = 0
     let failed = 0
     let skippedInstalledFresh = 0
@@ -100,7 +109,7 @@ export function createFontActivationActionRuntime(
         const finalUpdates: Record<string, { active: boolean; patch?: Partial<FontItem> }> = {}
         let rollback = 0
         for (const font of targets) {
-          const itemResult = result.results[font.id]
+          const itemResult = result.results?.[font.id]
           if (itemResult?.ok && itemResult.temporaryActivated) {
             finalUpdates[font.id] = {
               active: true,
@@ -118,7 +127,7 @@ export function createFontActivationActionRuntime(
         stateRuntime.setFontsActiveRuntimeBulk(finalUpdates)
         if (rollback) stateRuntime.adjustDatabaseActiveCount(-rollback)
         reportFontOperation({ trace, stage: 'view-apply', outcome: 'state-updated' })
-        options.setStatus(`${result.message} 跳过受保护 ${skippedSystem} 个，跳过已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
+        options.setStatus(`${result.message} 已确认临时激活 ${targets.length - rollback} 个，未临时激活或未确认 ${rollback} 个；跳过已安装 ${skippedInstalled} 个，受保护 ${skippedSystem} 个，已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
       } catch (error) {
         const rollbackUpdates = Object.fromEntries(targets.map((font) => [font.id, { active: false }])) as Record<string, { active: boolean; patch?: Partial<FontItem> }>
         stateRuntime.setFontsActiveRuntimeBulk(rollbackUpdates)
@@ -177,7 +186,8 @@ export function createFontActivationActionRuntime(
       return
     }
 
-    const previous = options.library.fonts[font.id] || font
+    const previous = (options.getCurrentLibrary?.() || options.library).fonts[font.id] || font
+    hydrateTargets([previous])
     const changed = !!previous.active
 
     options.activeOperationFontIds.current.add(font.id)
@@ -209,7 +219,7 @@ export function createFontActivationActionRuntime(
   }
 
   async function deactivateFontsBatch(fonts: FontItem[], label: string): Promise<void> {
-    const unique = Array.from(new Map(fonts.map((font) => [font.id, options.library.fonts[font.id] || font])).values())
+    const unique = Array.from(new Map(fonts.map((font) => [font.id, (options.getCurrentLibrary?.() || options.library).fonts[font.id] || font])).values())
     const targets = unique.filter((font) => font.active && !options.activeOperationFontIds.current.has(font.id))
     const skippedInactive = unique.filter((font) => !font.active).length
     const skippedBusy = unique.filter((font) => options.activeOperationFontIds.current.has(font.id)).length
@@ -219,6 +229,7 @@ export function createFontActivationActionRuntime(
       return
     }
 
+    hydrateTargets(targets)
     if (typeof options.hfm.deactivateFonts === 'function') {
       const previousById = Object.fromEntries(targets.map((font) => [font.id, font])) as Record<string, FontItem>
       const optimisticUpdates = Object.fromEntries(targets.map((font) => [font.id, { active: false }])) as Record<string, { active: boolean; patch?: Partial<FontItem> }>

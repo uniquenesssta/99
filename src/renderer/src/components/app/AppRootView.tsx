@@ -111,6 +111,7 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
           sidebarPage={content.sidebarPage}
           refreshDeveloperStatusDetails={developer.refreshDeveloperStatusDetails}
           status={developer.status}
+          setStatus={content.setStatus}
           latestIndexProgress={developer.latestIndexProgress}
           developerArchitecture={developer.developerArchitecture}
           developerSchedulerStatus={developer.developerSchedulerStatus}

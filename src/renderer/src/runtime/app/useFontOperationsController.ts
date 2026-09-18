@@ -1,3 +1,4 @@
+import { missingFontCommandTargetsMessage, resolveFontCommandTargets } from '../../fontCommandTargetsRuntime'
 import type { CacheStats,FontItem,FontQueryPageResult,FontQueryResult,LibraryState } from '@shared/types'
 import { useRef,useState } from 'react'
 import type { Dispatch,SetStateAction } from 'react'
@@ -201,19 +202,22 @@ export function useFontOperationsController(options: {
     isBadFontRecord: options.index.isBadFontRecord
   })
 
-  async function toggleFontDeleteProtection(fontIds: string[], protect?: boolean): Promise<void> {
+  async function toggleFontDeleteProtection(fontIds: string[], protect?: boolean, available: FontItem[] = []): Promise<void> {
     options.selection.setContextMenu(null)
-    const ids = Array.from(new Set(fontIds)).filter((id) => !!options.library.library.fonts[id])
+    const resolved = resolveFontCommandTargets(fontIds, options.library.getCurrentLibrary(), available)
+    if (resolved.missingIds.length) {
+      options.library.setStatus(missingFontCommandTargetsMessage(resolved.missingIds))
+      return
+    }
+    const ids = resolved.selectedIds, targetFonts = resolved.fonts
     if (!ids.length) return
-    const nextValue = typeof protect === 'boolean' ? protect : !ids.every((id) => !!options.library.library.fonts[id]?.deleteProtected)
-    const targetFonts = ids.map((id) => options.library.library.fonts[id]).filter((font): font is FontItem => !!font)
+    const nextValue = typeof protect === 'boolean' ? protect : !targetFonts.every(font => !!font.deleteProtected)
 
     options.library.setLibrary((prev) => {
       const nextFonts = { ...prev.fonts }
-      for (const id of ids) {
-        const font = nextFonts[id]
-        if (!font) continue
-        nextFonts[id] = { ...font, deleteProtected: nextValue }
+      for (const target of targetFonts) {
+        const font = nextFonts[target.id] || target
+        nextFonts[target.id] = { ...font, deleteProtected: nextValue }
       }
       return { ...prev, fonts: nextFonts }
     })

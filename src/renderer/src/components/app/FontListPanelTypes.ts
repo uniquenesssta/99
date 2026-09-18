@@ -7,6 +7,7 @@ export type FontListPanelProps = {
   sidebarPage: SidebarPage
   refreshDeveloperStatusDetails: () => Promise<void>
   status: string
+  setStatus: (status: string) => void
   latestIndexProgress: unknown
   developerArchitecture: unknown
   developerSchedulerStatus: unknown
@@ -33,7 +34,7 @@ export type FontListPanelProps = {
   deactivateFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   deleteFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   uninstallFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
-  toggleFontDeleteProtection: (fontIds: string[], protect?: boolean) => Promise<void>
+  toggleFontDeleteProtection: (fontIds: string[], protect?: boolean, available?: FontItem[]) => Promise<void>
   setSelectedFontIds: (ids: string[]) => void
   closeDetail: () => void
   fontScrollerRef: RefObject<HTMLDivElement>

@@ -114,12 +114,13 @@
       ],
       "functions": [
         "createFontActivationActionRuntime",
+        "hydrateTargets",
         "activateFontByCard",
         "activateFontsBatch",
         "deactivateFontByCard",
         "deactivateFontsBatch"
       ],
-      "sha256": "472348bc077e992b77ddc29cd41d19fc4c1328fb7313ac5aa068358dd48ea515"
+      "sha256": "25a13b41911b01f1ef21ed304a8f3234169981d3355eeeb3ea1236bdde4aaff0"
     },
     "src/renderer/src/runtime/system/actions/fontSystemStateRuntime.ts": {
       "exports": [

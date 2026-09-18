@@ -5,7 +5,7 @@
 - 制定日期：2026-09-18。
 - 仓库：`uniquenesssta/99`；分支：`stage/09-preview-tags-app`。
 - 代码基线：`3bc1e387ebeb5298d5bd4060aaec5c9a0a2c7d93`。
-- 状态：**U-00 诊断与受控复现已实施，自动验证结果见 §10；Windows 原故障根因待证。U-01～U-09 尚未实施。** 初次规划交付记录保留于 §9。
+- 状态：**U-00 诊断与 U-01 选择/命令链修复已实施，证据见 §10、§11；Windows 原故障归因及实机验收待回执。U-02～U-09 尚未实施。** 初次规划交付记录保留于 §9。
 - 输入：`startup-2026-09-18_02-59-25-870-21044.log`（813 行，UTC 02:59:25.872～03:01:28.978）及用户随后五点反馈、入口差异补充。原始日志不提交到 Git。
 - 与前任务衔接：[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md) §25 已交付本地收藏、标签目录同步与停用核对。本任务保留这些修复，处理后续真实交互问题和性能问题，不重开 R-01～R-07。
 - 既有基线证据：上一提交通过 TypeScript、115/115 诊断、Electron/Vite 367/1/196 模块构建和混淆 3/3。这是历史自动验证结果，**不能替代本任务的字体多选入口和 Windows 实机验收**。
@@ -108,7 +108,7 @@ flowchart TD
 
 ## 6. 实施顺序与任务卡
 
-优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01～U-09 均为“待开始”。
+优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02～U-09 为“待开始”。
 
 ### U-00：建立入口证据和复现基线
 
@@ -377,3 +377,55 @@ npm run dev
 - 回滚：回退本轮 U-00 提交即可；只有诊断与向后兼容的可选 trace 参数，无持久化数据变更。
 - Mermaid Chart 已更新实际选择/水合/缓存/IPC 链。无新增第三方 API，未触发 Context7。
 - Create State 查询只返回“markdown”“足球”两个其他项目模型，未向它们写入 HFM 状态；本任务书与 Git 保留交接依据。
+
+## 11. U-01 执行卡
+
+- 起点：`c41f410ea19de901af0df9e1d64ff60d0b8a58c5`，工作树干净。状态：实现完成，自动验证与实机边界见下文。
+- 方案：命令解析统一去重、完整性检查、固定请求快照；partial 库可使用可见分页记录补齐，完整权威库缺项按删除处理。选择水合保护整个选择，partial 缺缓存不裁剪；范围变化和明确删除保留清理。标签命令按原分页查询获取完整范围，拒绝不完整/变化结果。保留原系统过滤、事务与回滚。
+- U-02 的按钮命名合并、U-03 收藏扩展不提前实施。本轮仅完善既有操作的目标完整性及激活/停用结果反馈。
+- 精确生产白名单：
+  - 新增 `src/renderer/src/fontCommandTargetsRuntime.ts`：选择/标签命令目标解析、完整性检查及快照。
+  - `src/renderer/src/components/app/FontListPanel.tsx`、`FontListPanelTypes.ts`、`AppRootView.tsx`：操作栏完整目标与普通页面状态反馈，透传已有 setStatus。
+  - `src/renderer/src/fontContextMenuRuntime.ts`、`fontContextActionRuntime.ts`、`fontDialogContextActionsRuntime.ts`：右键/标签目标，避免缺项静默退化单项。
+  - `src/renderer/src/runtime/app/useSelectionController.ts`、`createAppDetailSelectionRuntime.ts`、`fontSelectionHydrationRuntime.ts`、`useFontDetailSelectionEffectsRuntime.ts`、`useAppFontDerivedRuntime.ts`、`src/renderer/src/App.tsx`：水合、范围清理和可见记录接线。
+  - `src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts`：执行前水合缺项、读取当前状态、缺回执按项回滚并显示计数。
+- 验证白名单：`build/diagnostics/check-activation-entry.cjs`；如现有冻结门因上述已声明行为变化失败，仅定向迁移 `check-app-interaction-composition.cjs`、`check-app-root-view-contracts.cjs`、`check-react-composition-controllers.cjs`、`check-react-composition-domain-controllers.cjs`、`check-react-render-performance.cjs` 与其同名/关联 `fixtures/app-interaction-composition.fixture.json`、`app-root-view-wiring.fixture.json`、`app-view-composition.fixture.json`、`react-composition-controllers.fixture.json`、`react-composition-domain-controllers.fixture.json`、`react-render-performance.fixture.json`、`watcher-activation-baseline.fixture.json` 的受影响输入/摘要；不得批量重录。
+- 文档白名单：README、本任务书。无新依赖，无 IPC/数据库格式迁移。
+- 验收：U-00 原反例变为完整派发；1/2/3 项、跨页、1400 边界、部分缺失、完整库删除、范围切换、取消选择、请求中改变选择、重复点击 busy、部分失败/缺回执、标签超过一页与查询失败。继续明确受控回调测试不能替代 Windows GUI/系统字体结果。
+- 白名单补充：`src/renderer/src/runtime/app/useFontOperationsController.ts` 与 `src/renderer/src/components/app/AppOverlays.tsx`。审查发现保护动作仍按旧缓存过滤 ID，属于相同缺记录问题；让既有保护入口传入已完整解析字体，缺项停止，保持原字段写队列。`build/diagnostics/fixtures/browse-controller.fixture.json` 仅迁移已修改 `useAppFontDerivedRuntime.ts` 的摘要，不改变查询/筛选算法基线。
+- 冻结基线补充：`build/diagnostics/fixtures/decomposition-baseline.fixture.json` 仅更新 App.tsx 的 tokenHash；逐项确认 functions、owners、exports、surfaces、viewGroups、ipcChannels 均未改变后迁移。
+- 同一 decomposition 基线的后续逐文件核对：`useFontOperationsController.ts`、`createAppDetailSelectionRuntime.ts` 仅 tokenHash；`useSelectionController.ts` 仅 tokenHash 及新增用于范围隔离的 previousScopeRef，原 17 项 owner、函数、导出和返回接口不变。
+
+### 11.1 已落实行为与原因
+
+- 操作栏和字体右键共用完整目标解析：按编号去重并固定本次字体快照；当前缓存优先，只有部分库允许用可见分页记录补齐。仍缺记录则整次停止并显示缺失数量和最多 8 个编号，不静默少执行或退化成单项。
+- 缓存暂缺不等于删除。partial 库保留所选编号并补入已选可见字体；单项水合保护整个选择集合。完整库的删除裁剪、明确删除事件与手动取消继续有效。
+- 页面、目录、标签、搜索或筛选范围改变时清理选择和上下文菜单；旧范围的框选收尾不得把选择写回。分页、刷新、普通排序/视图切换不作为范围变化。
+- 标签激活/停用先等待现有标签写队列，再用原 queryFontPage 每页 500 项读取完整标签范围；重复页、数量/标签版本变化、查询失败、无进展或最终截断都停止。超过 100000 项明确提示分组，不截断执行。该检查不是跨页数据库事务或 NAS 原子快照。
+- 激活动作在原状态 owner 中补入缺失记录，沿用原资格过滤和 busy 保护；回执按字体处理，缺回执只回滚对应目标，汇总明确显示已确认、未确认及过滤计数。普通页面使用原 status 状态显示结果。
+- 删除、卸载和保护的现有入口也使用完整目标；保护补齐仅更新 deleteProtected，沿用原字段写队列。右键 install/remove 不再只执行首项。未新增批量收藏、筛选功能或改按钮名称，这些继续由 U-02～U-04 承接。
+
+### 11.2 验证证据与边界
+
+- `node build/diagnostics/check-activation-entry.cjs --baseline`：读取起点 c41f410 的原始源码，5 项旧行为对照通过；保留缓存缺项不派发与 Shift 中间项丢失的原反例。
+- 当前入口诊断 72 个受控场景通过：真实 TSX 回调、实际选择/动作及两套 preload/IPC trace 链；覆盖三入口、卡片/列表、library/folders/tags、Ctrl/Shift/框选、1/2/3 项、1499 可见记录与 1400 缓存边界、跨页、重复编号、缺项阻断、显式删除/取消、范围切换及旧框选收尾、在途变更选择、busy 重入、部分失败/缺回执、缺缓存单项停用的成功和失败回滚、标签 503 项两页及失败/变更/重复页。
+- 真实保护控制器另验证 partial 补齐、去重、缺项整次阻断、完整库不恢复已删除记录，以及收藏和本地/共享标签字段保持不变。
+- 冻结基线按白名单逐字段迁移。AppRootView 四种开发/折叠快照在去掉新增 setStatus 透传后与旧基线完全相同；decomposition 的函数/导出/返回接口保持不变，选择 owner 仅新增 previousScopeRef。
+- 最终 `npm run verify` 通过（TypeScript + 116/116 诊断，入口场景 72 项）；起点源码对照 5 项通过；`npx electron-vite build` 三端 367/1/198 模块通过，`node build/obfuscate-dist.cjs` 最终输出 3/3 files，`git diff --check` 通过。真实浏览器 DOM 冒泡、React 并发提交、Windows 原生激活及 NAS 多机并发未执行。受控端口成功不代表系统字体已可用，不以标签成功代替字体多选复验。
+
+### 11.3 Windows 开发模式复验
+
+在 `F:\Electron+Rust\HanFontManager_Electron_rust` 更新本阶段分支，沿用 `npm run dev`（可保留 §10 的 debug 日志设置）。
+
+1. 同一组 3 个未安装、未激活字体，分别用 Ctrl、Shift、框选，从操作栏和字体右键激活；检查系统可用性、选中数量、提示与逐项日志，取消激活后再试下一入口。
+2. 滚动加载超过 1400 项后返回早期记录，多选激活；切换范围应清空选择，正常刷新不应因缓存缺项缩减选择。
+3. 标签超过一页时检查全部匹配项；断网/缺记录应有明确失败提示，不能只处理已加载项。
+4. 在途切换选择及部分字体失败时，确认原请求目标不变、成功项保留、失败项回滚；核对永久安装字体不会误作临时字体。
+5. 回传 startup 日志、入口、操作时间及实际系统结果。现阶段仍不承诺原 Windows 无反应的唯一原因已证实。
+
+### 11.4 接续与回滚
+
+- 下一项 U-02：统一单选/多选操作入口及命名，复用本轮完整目标和原业务事务。U-03 收藏及 U-04 筛选仍待实施。
+- 回滚本轮提交即可恢复原实现；无依赖、数据库/IPC 格式、Rust 或持久化数据迁移。
+- Mermaid Chart 已按本轮实际链路更新；未使用新第三方 API，未触发 Context7。
+- Create State 本轮查询仍仅返回“markdown”“足球”两个其他模型，未向不匹配项目写入。任务书与 Git 保存交接依据；项目状态插件同步未完成。

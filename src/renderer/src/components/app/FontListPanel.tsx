@@ -1,4 +1,6 @@
-import { traceActivationEntry } from '../../fontActivationTrace'
+import { reportFontOperation } from '../../fontOperationTrace'
+import { missingFontCommandTargetsMessage, resolveFontCommandTargets } from '../../fontCommandTargetsRuntime'
+import { activationEntryTrace, traceActivationEntry } from '../../fontActivationTrace'
 import type { FontItem } from '@shared/types'
 import type { CSSProperties,MouseEvent } from 'react'
 import {
@@ -16,6 +18,7 @@ export function FontListPanel({
   sidebarPage,
   refreshDeveloperStatusDetails,
   status,
+  setStatus,
   latestIndexProgress,
   developerArchitecture,
   developerSchedulerStatus,
@@ -62,6 +65,17 @@ export function FontListPanel({
 }: FontListPanelProps): JSX.Element {
   const familyViewAllowed = isFontFamilyViewAllowed(sidebarPage, activeFilter)
   const effectiveCardPoolViewMode = resolveEffectiveCardPoolViewMode(cardPoolViewMode, sidebarPage, activeFilter)
+
+  function runSelectionCommand(action: (fonts: FontItem[], label: string) => Promise<void>, activate = false): void {
+    const resolved = resolveFontCommandTargets(selectedFontIds, library, visibleFonts)
+    const fonts = activate ? traceActivationEntry(resolved.fonts, 'selection-toolbar', resolved.selectedIds.length, `${sidebarPage}:${effectiveCardPoolViewMode}`) : resolved.fonts
+    if (resolved.missingIds.length) {
+      if (activate) reportFontOperation({ trace: activationEntryTrace(fonts), stage: 'preflight', outcome: 'missing-records' })
+      setStatus(missingFontCommandTargetsMessage(resolved.missingIds))
+      return
+    }
+    void action(fonts, '批量选择')
+  }
 
   function closeDetailFromBlankClick(event: MouseEvent<HTMLDivElement>): void {
     if (event.button !== 0) return
@@ -138,6 +152,7 @@ export function FontListPanel({
         </div>
       ) : (
         <>
+          <div role="status" aria-live="polite" className="selection-command-status">{status}</div>
           <div className="list-toolbar">
             <div className="toolbar-left toolbar-icon-controls" data-no-marquee>
               <NameSortCycleButton
@@ -169,12 +184,12 @@ export function FontListPanel({
           {selectedFontIds.length > 1 && (
             <div className="selection-actionbar" data-no-marquee>
               <span>已选择 {selectedFontIds.length} 个字体</span>
-              <button onClick={() => void activateFontsBatch(traceActivationEntry(selectedFontIds.map((id) => library.fonts[id]).filter((font: FontItem | undefined): font is FontItem => !!font), 'selection-toolbar', selectedFontIds.length, `${sidebarPage}:${effectiveCardPoolViewMode}`), '批量选择')}>批量激活</button>
-              <button onClick={() => void deactivateFontsBatch(selectedFontIds.map((id) => library.fonts[id]).filter((font: FontItem | undefined): font is FontItem => !!font), '批量选择')}>批量取消激活</button>
-              <button onClick={() => void deleteFontsBatch(selectedFontIds.map((id) => library.fonts[id]).filter((font: FontItem | undefined): font is FontItem => !!font), '批量选择')}>批量删除文件</button>
-              <button onClick={() => void uninstallFontsBatch(selectedFontIds.map((id) => library.fonts[id]).filter((font: FontItem | undefined): font is FontItem => !!font), '批量选择')}>批量卸载字体</button>
-              <button onClick={() => void toggleFontDeleteProtection(selectedFontIds, true)}>加入保护</button>
-              <button onClick={() => void toggleFontDeleteProtection(selectedFontIds, false)}>取消保护</button>
+              <button onClick={() => runSelectionCommand(activateFontsBatch, true)}>批量激活</button>
+              <button onClick={() => runSelectionCommand(deactivateFontsBatch)}>批量取消激活</button>
+              <button onClick={() => runSelectionCommand(deleteFontsBatch)}>批量删除文件</button>
+              <button onClick={() => runSelectionCommand(uninstallFontsBatch)}>批量卸载字体</button>
+              <button onClick={() => runSelectionCommand(async fonts => toggleFontDeleteProtection(fonts.map(font => font.id), true, fonts))}>加入保护</button>
+              <button onClick={() => runSelectionCommand(async fonts => toggleFontDeleteProtection(fonts.map(font => font.id), false, fonts))}>取消保护</button>
               <button onClick={() => setSelectedFontIds([])}>取消选择</button>
             </div>
           )}

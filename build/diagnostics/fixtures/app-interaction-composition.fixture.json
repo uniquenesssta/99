@@ -19,7 +19,9 @@
       "activateFontsBatch": "activateFontsBatch",
       "deactivateFontsBatch": "deactivateFontsBatch",
       "deleteFontsBatch": "deleteFontsBatch",
-      "toggleFontDeleteProtection": "toggleFontDeleteProtection"
+      "toggleFontDeleteProtection": "toggleFontDeleteProtection",
+      "getVisibleFonts": "() => latestVisibleFontsRef.current",
+      "setStatus": "setStatus"
     },
     "createFontDialogRuntime:0": {
       "contextMenu": "contextMenu",
@@ -95,7 +97,7 @@
       "setStatus": "setStatus",
       "setSingleFontSelection": "setSingleFontSelection",
       "toggleFontDetail": "toggleFontDetail",
-      "hydrateFont": "(font) => hydrateFontForSelectionDetail(font, setLibrary)",
+      "hydrateFont": "(font, keepFontIds) => hydrateFontForSelectionDetail(font, setLibrary, keepFontIds)",
       "reportUserActivity": "reportUserActivity",
       "userActivityIdleWindowMs": "USER_ACTIVITY_IDLE_WINDOW_MS"
     }
@@ -135,14 +137,14 @@
     "useFontCardRenderer"
   ],
   "sources": {
-    "src/renderer/src/fontContextActionRuntime.ts": "0bf3d979de26e1bd8eb7fd7d236d8b7eafaf2547be6eadc5e2f116d47c7ef835",
-    "src/renderer/src/fontContextMenuRuntime.ts": "7754392787d2b27743a76593a50aeb46e79b9878a38a9b8e7824e39b93d0e5d9",
+    "src/renderer/src/fontContextActionRuntime.ts": "63491ee34e90cd826f87ba72ccc3602a628eb0c32c1e4cf3c0b84acb54bc52a3",
+    "src/renderer/src/fontContextMenuRuntime.ts": "fd620a07186f0a74db86bba1e4e67164241bb9ec3550ab6fcf951683fa6f7e44",
     "src/renderer/src/fontDialogRuntime.ts": "6c6391a8c9ef968b6512fafb53813a261679aeb5c8ba2cc01219c724e28a7bf0",
-    "src/renderer/src/fontDialogContextActionsRuntime.ts": "ffdff77006f09b4a3605607d958fbbfc835ae080e4793079309bf69a42dba162",
+    "src/renderer/src/fontDialogContextActionsRuntime.ts": "a8d58799e7c3f00ce8661a35a37293f1c80b39653834d0fbed1ee29bbb96a719",
     "src/renderer/src/fontDialogTagActionsRuntime.ts": "9df6041f92030b5c9780f53107a91632546b1e9f8819efb04326ae9c539e6c94",
     "src/renderer/src/fontDetailPanelRuntime.ts": "ef5ba91f22fa915de270e90513a6de0cdc5848aa7f63a75e682222c24b12b9b0",
     "src/renderer/src/fontTagInputRuntime.ts": "296b77a1412004e68c390c96e732479f90faa57f9a7aa5fa9984efa6ca4a6c07",
-    "src/renderer/src/runtime/app/useSelectionController.ts": "17411a5781bba551e0c998e2dbd42013ec68cabe369b2b56b8fcd0e45f04a989",
-    "src/renderer/src/runtime/app/fontSelectionHydrationRuntime.ts": "d15ba12348be504397b4ee5374898878eefdaea3298a0cae245656d1bfb3ee01"
+    "src/renderer/src/runtime/app/useSelectionController.ts": "afef9e1fabcbbcd431972d9106db8c39ff3b3d7891643cface8c2c2b174f46ad",
+    "src/renderer/src/runtime/app/fontSelectionHydrationRuntime.ts": "87633750b764db93d484bccce6b0f5d87dfc686b04049b5ab7b7e3960cdd363a"
   }
 }

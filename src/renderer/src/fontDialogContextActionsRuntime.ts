@@ -1,3 +1,4 @@
+import { readTagCommandTargets } from './fontCommandTargetsRuntime'
 import { traceActivationEntry } from './fontActivationTrace'
 import {
   editableTargetFromContextMenu,
@@ -50,17 +51,33 @@ export function createFontDialogContextActions(options: FontDialogRuntimeOptions
     runContextBatchActivate(): void {
       const action = tagBatchActionFromContextMenu(options.contextMenu)
       if (!action) return
-      const fonts = options.fontsForTag(action.name, action.scope)
       options.setContextMenu(null)
-      void options.activateFontsBatch(traceActivationEntry(fonts, 'tag-context', fonts.length, action.scope), action.label)
+      options.setStatus(`正在读取 ${action.label} 的完整字体范围……`)
+      void (async () => {
+        try {
+          if (options.flushFontWriteQueue && !await options.flushFontWriteQueue('tag-activate')) throw new Error('标签修改尚未保存，请稍后重试。')
+          const fonts = await readTagCommandTargets(options.hfm, options.library, action.name, action.scope)
+          await options.activateFontsBatch(traceActivationEntry(fonts, 'tag-context', fonts.length, action.scope), action.label)
+        } catch (error) {
+          options.setStatus(`标签操作未完成：${error instanceof Error ? error.message : String(error)}`)
+        }
+      })()
     },
 
     runContextBatchDeactivate(): void {
       const action = tagBatchActionFromContextMenu(options.contextMenu)
       if (!action) return
-      const fonts = options.fontsForTag(action.name, action.scope)
       options.setContextMenu(null)
-      void options.deactivateFontsBatch(fonts, action.label)
+      options.setStatus(`正在读取 ${action.label} 的完整字体范围……`)
+      void (async () => {
+        try {
+          if (options.flushFontWriteQueue && !await options.flushFontWriteQueue('tag-deactivate')) throw new Error('标签修改尚未保存，请稍后重试。')
+          const fonts = await readTagCommandTargets(options.hfm, options.library, action.name, action.scope)
+          await options.deactivateFontsBatch(fonts, action.label)
+        } catch (error) {
+          options.setStatus(`标签操作未完成：${error instanceof Error ? error.message : String(error)}`)
+        }
+      })()
     },
   }
 }

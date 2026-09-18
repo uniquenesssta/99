@@ -402,6 +402,22 @@ async function checkOperationsBehavior() {
   await controller.toggleFontDeleteProtection(['a'], true)
   assert.equal(liveLibrary.fonts.a.deleteProtected, true)
   assert.deepEqual(protectionWrites, [['a', true]])
+  const other = { ...liveLibrary.fonts.a, id: 'b', favorite: true, tagNames: ['shared'], localTagNames: ['local'] }
+  liveLibrary = { ...liveLibrary, __partialFonts: true }
+  await controller.toggleFontDeleteProtection(['a', 'b', 'b'], false, [other])
+  assert.equal(liveLibrary.fonts.b.deleteProtected, false)
+  assert.equal(liveLibrary.fonts.b.favorite, true)
+  assert.deepEqual(liveLibrary.fonts.b.tagNames, ['shared'])
+  assert.deepEqual(liveLibrary.fonts.b.localTagNames, ['local'])
+  assert.deepEqual(protectionWrites, [['a', true], ['a', false], ['b', false]])
+  await controller.toggleFontDeleteProtection(['a', 'missing'], true)
+  assert.equal(protectionWrites.length, 3, 'missing targets must block the whole protection command')
+  assert.equal(liveLibrary.fonts.a.deleteProtected, false)
+  liveLibrary = { ...liveLibrary, __partialFonts: false }
+  await controller.toggleFontDeleteProtection(['removed'], true, [{ ...other, id: 'removed' }])
+  assert.equal(protectionWrites.length, 3, 'a complete authoritative library must not resurrect deleted rows')
+  assert.equal(liveLibrary.fonts.removed, undefined)
+
   calls.install.lazyInstallQueue.current = [{ id: 'a' }, { id: 'b' }]
   calls.install.queuedLazyInstallIds.current.add('a')
   calls.install.queuedLazyInstallIds.current.add('b')

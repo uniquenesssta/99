@@ -1,5 +1,5 @@
 import type { FontItem } from '@shared/types'
-import { useRef,useState } from 'react'
+import { useEffect,useRef,useState } from 'react'
 import type { Dispatch,KeyboardEvent,MouseEvent,SetStateAction } from 'react'
 import type { ContextMenuState,EditableMenuTarget,SelectionRectState } from '../../appRuntime'
 import { createAppFontSelectionInteractionRuntime } from './useFontSelectionInteractionRuntime'
@@ -9,12 +9,12 @@ export type SelectionInteractionRuntimeOptions = {
   setStatus: Dispatch<SetStateAction<string>>
   setSingleFontSelection: (fontId: string) => void
   toggleFontDetail: (font: FontItem) => void
-  hydrateFont: (font: FontItem) => void
+  hydrateFont: (font: FontItem, keepFontIds?: string[]) => void
   reportUserActivity: (reason?: string, durationMs?: number) => void
   userActivityIdleWindowMs: number
 }
 
-export function useSelectionController() {
+export function useSelectionController(scopeKey = '') {
   const [selectedFontId, setSelectedFontId] = useState<string>('')
   const selectedFontIdRef = useRef('')
   selectedFontIdRef.current = selectedFontId
@@ -34,6 +34,18 @@ export function useSelectionController() {
   const [deleteTarget, setDeleteTarget] = useState<EditableMenuTarget | null>(null)
   const selectionBaseFontIdsRef = useRef<string[]>([])
 
+  const previousScopeRef = useRef(scopeKey)
+  useEffect(() => {
+    if (previousScopeRef.current === scopeKey) return
+    previousScopeRef.current = scopeKey
+    setSelectedFontIds([])
+    setSelectionAnchorFontId('')
+    setSelectedFontId('')
+    setDetailVisible(false)
+    setSelectionRect(null)
+    setContextMenu(null)
+  }, [scopeKey])
+
   function removeFontIds(removedFontIds: ReadonlySet<string>): boolean {
     if (!removedFontIds.size) return false
     setSelectedFontIds((prev) => prev.filter((id) => !removedFontIds.has(id)))
@@ -50,20 +62,21 @@ export function useSelectionController() {
     handleFontOpenDetail: (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, font: FontItem) => void
     beginMarqueeSelection: (event: MouseEvent<HTMLDivElement>) => void
   } {
+    const inCurrentScope = () => previousScopeRef.current === scopeKey
     const runtime = createAppFontSelectionInteractionRuntime({
       visibleFonts: options.visibleFonts,
       selectedFontId,
       selectionAnchorFontId,
       selectedFontIds,
       selectionBaseFontIdsRef,
-      setSelectedFontIds,
-      setSelectionAnchorFontId,
-      setSelectedFontId,
-      setDetailVisible,
+      setSelectedFontIds: value => { if (inCurrentScope()) setSelectedFontIds(value) },
+      setSelectionAnchorFontId: value => { if (inCurrentScope()) setSelectionAnchorFontId(value) },
+      setSelectedFontId: value => { if (inCurrentScope()) setSelectedFontId(value) },
+      setDetailVisible: value => { if (inCurrentScope()) setDetailVisible(value) },
       detailVisible,
       detailCardClickLockUntilRef,
-      setSelectionRect,
-      setStatus: options.setStatus,
+      setSelectionRect: value => { if (inCurrentScope()) setSelectionRect(value) },
+      setStatus: value => { if (inCurrentScope()) options.setStatus(value) },
       setSingleFontSelection: options.setSingleFontSelection,
       requestDetailReveal: setPendingDetailRevealFontId,
       toggleFontDetail: options.toggleFontDetail,
@@ -73,14 +86,16 @@ export function useSelectionController() {
 
     return {
       handleFontSelect(event, font): void {
-        options.hydrateFont(font)
+        if (!inCurrentScope()) return
+        options.hydrateFont(font, selectedFontIds)
         runtime.handleFontSelect(event, font)
       },
       handleFontOpenDetail(event, font): void {
-        options.hydrateFont(font)
+        if (!inCurrentScope()) return
+        options.hydrateFont(font, selectedFontIds)
         runtime.handleFontOpenDetail(event, font)
       },
-      beginMarqueeSelection: runtime.beginMarqueeSelection
+      beginMarqueeSelection: event => { if (inCurrentScope()) runtime.beginMarqueeSelection(event) }
     }
   }
 

@@ -90,7 +90,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "2f3d4c2b6cefa129e945e8718ba43790ce3f5d68079ea8ea7e06afa4bc994461"
+      "tokenHash": "4351eccdf11f81ec6893466c7fb9527262a72add60072ddcd37fab6da30baf4e"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -513,7 +513,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "b64dd27786c547ef40e03663c6c9351927564127ecbe02480746b1cb5d262ee5"
+      "tokenHash": "5d1b84cdccb9ec1023c749523860449bf708db38d3fdfd14b71d3034b85b384f"
     },
     "src/renderer/src/runtime/app/useLibraryController.ts": {
       "functions": [
@@ -789,6 +789,10 @@
         {
           "binding": "selectionBaseFontIdsRef",
           "kind": "useRef"
+        },
+        {
+          "binding": "previousScopeRef",
+          "kind": "useRef"
         }
       ],
       "exports": [
@@ -831,7 +835,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "618fd473ad41cf4bb6e85c7964ca05e0c9fcf8c3f68a2c9438fec614d67773b0"
+      "tokenHash": "6ce13f25378fe157a80b5b81d03f8b7806e4ac9459482c0e85c20e03f8a8b4bf"
     },
     "src/main/ipc/handlers/fontTagIpcHandlers.ts": {
       "functions": [
@@ -1145,7 +1149,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "fcc3d5e3c2bbb57eb419d5f8efe65ae74293cff46c854322e91e6847612fba52"
+      "tokenHash": "2d66564f0f9722b0b20420406f8e7aef8497ec76122b1ff88fd72e1cfbd49245"
     },
     "src/renderer/src/runtime/app/createAppControllerPorts.ts": {
       "functions": [

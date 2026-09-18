@@ -1,3 +1,4 @@
+import { resolveFontCommandTargets } from './fontCommandTargetsRuntime'
 import type { FontItem } from '@shared/types'
 import type { ContextMenuState,EditableMenuTarget,MenuTarget } from './appTypes'
 import { clampContextMenuPosition } from './fontSelectionRuntime'
@@ -78,14 +79,15 @@ export function tagBatchActionFromContextMenu(contextMenu: ContextMenuState): {
 export function contextFontsFromLibrary(
   contextMenu: ContextMenuState,
   selectedFontIds: string[],
-  fonts: Record<string, FontItem>
+  fonts: Record<string, FontItem>,
+  available: FontItem[] = [],
+  partial = false
 ): FontItem[] {
   if (!contextMenu || contextMenu.kind !== 'font') return []
   const liveFont = fonts[contextMenu.font.id] || contextMenu.font
   if (selectedFontIds.length > 1 && selectedFontIds.includes(liveFont.id)) {
-    return selectedFontIds
-      .map((id) => fonts[id])
-      .filter((font): font is FontItem => !!font)
+    const resolved = resolveFontCommandTargets(selectedFontIds, { fonts, __partialFonts: partial }, [...available, liveFont])
+    return resolved.missingIds.length ? [] : resolved.fonts
   }
   return [liveFont]
 }

@@ -169,28 +169,29 @@
     "runContextRefreshFolder",
     "runContextRename",
     "runContextAddSubfolder",
-    "runContextDelete"
+    "runContextDelete",
+    "setStatus"
   ],
   "cases": [
     {
       "development": false,
       "collapsed": false,
-      "hash": "f80694cfdf0270bd284b564ec0bec581002a63c4eab637b105c7c9bb7cf1ddfa"
+      "hash": "6efee0eab67e40574cf5a0590ec193e78915e5070f5ffc7fa4c10fc6be49d4b5"
     },
     {
       "development": false,
       "collapsed": true,
-      "hash": "f3368fb815b2ac7c2f8d21e0f917fa5450b99d07ae2496c649cb8148b3b6df30"
+      "hash": "f38012516478c0e9cde9407a343614bed1ceb4021e10843b34ac529d6feb3079"
     },
     {
       "development": true,
       "collapsed": false,
-      "hash": "0e1abaa1fa51b43f4cac8199683d64edb78495c84908cb8cd69d095aeb06e8cc"
+      "hash": "811c23be22b5900511aacc40d6e330958a4fa3db87d71085f058a5c87153fb23"
     },
     {
       "development": true,
       "collapsed": true,
-      "hash": "95f2057f3bc3fc605f7f8ef1179a3882c11ad76edaa609280b65942a39ea4ae6"
+      "hash": "772ebc82ff67201c2deb66ec9456dc8e3bf23bea3d13b1ad8aca388856db0273"
     }
   ]
 }

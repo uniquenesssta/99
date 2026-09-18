@@ -21,7 +21,7 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
   latestVisibleFontsRef: MutableRefObject<FontItem[]>
   latestViewLayoutRef: MutableRefObject<{ rowHeight: number; minCardWidth: number }>
   requestPreviewFont: (font: FontItem) => void
-  contextFontTargets: () => FontItem[]
+  contextFontTargets: (available?: FontItem[]) => FontItem[]
 }) {
   const { cardPoolViewLayout, virtualViewport, selectedFontId, selectedFontIds, contextMenu, previewFamilies, nativePreviewImages, failedPreviewFontIds, assignTagName, assignSharedTagName, latestVisibleFontsRef, latestViewLayoutRef, requestPreviewFont, contextFontTargets, library, sidebarPage, databasePageReady, databasePageResult } = args
   const { fontIndexById, fontMetrics, localTagCounts, sharedTagCounts, localTagList, sharedTagList, flatFolderNodes, advancedFilterCount, visibleFonts } = useBrowseDerivedRuntime({
@@ -90,8 +90,8 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
   const sharedTagSuggestions = useMemo(() => buildTagSuggestions(library.tags || [], selectedFont?.tagNames, assignSharedTagName), [assignSharedTagName, library.tags, selectedFont?.tagNames])
   const selectedFontIdSet = useMemo(() => new Set(selectedFontIds), [selectedFontIds])
   const contextSelectedFonts = useMemo(
-    () => contextFontTargets(),
-    [contextMenu, selectedFontIds, library.fonts]
+    () => contextFontTargets(visibleFonts),
+    [contextMenu, selectedFontIds, library.fonts, visibleFonts]
   )
 
   return {

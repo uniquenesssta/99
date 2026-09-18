@@ -114,7 +114,7 @@ function checkStructure(overrides = new Map()) {
   assert(!/fontListScrollingRef\.current\s*=/.test(app), 'App directly mutates preview scroll state')
   const queueCreation = previewController.indexOf('createFontPreviewQueueRuntime(runtimeOptionsRef.current)')
   assert(queueCreation >= 0 && queueCreation < previewController.indexOf('usePreviewTextResetRuntime({'), 'preview reset effect moved before retained queue runtime creation')
-  assert.equal((selectionController.match(/options\.hydrateFont\(font\)[\s\S]{0,100}runtime\.handleFont(?:Select|OpenDetail)\(event, font\)/g) || []).length, 2, 'selection hydration must precede select and detail dispatch')
+  assert.equal((selectionController.match(/options\.hydrateFont\(font, selectedFontIds\)[\s\S]{0,100}runtime\.handleFont(?:Select|OpenDetail)\(event, font\)/g) || []).length, 2, 'selection hydration must precede select and detail dispatch')
 }
 
 function createHookHarness() {
@@ -231,7 +231,7 @@ function checkSelectionBehavior() {
   })
 
   render()
-  assert.equal(harness.slots.length, 17)
+  assert.equal(harness.slots.length, 19, '17 existing hook slots plus the scope ref/effect')
   interaction().handleFontSelect({ shiftKey: false, ctrlKey: false, metaKey: false }, visibleFonts[0])
   render()
   assert.equal(controller.selectedFontId, 'a')

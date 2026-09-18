@@ -11,7 +11,7 @@ export function createAppDetailSelectionRuntime(options: FontDetailPanelRuntimeO
     return createInteraction({
       ...selection,
       toggleFontDetail: detail.toggleFontDetail,
-      hydrateFont: (font) => hydrateFontForSelectionDetail(font, options.setLibrary)
+      hydrateFont: (font, keepFontIds) => hydrateFontForSelectionDetail(font, options.setLibrary, keepFontIds)
     })
   }
   return { ...detail, createSelection }
