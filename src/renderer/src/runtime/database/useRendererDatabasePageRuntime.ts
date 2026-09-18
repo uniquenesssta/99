@@ -257,7 +257,22 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
       }, `db-query-start:${options.sidebarPage}`)
       const intentRevision = fontUserIntentRevision()
       const confirmTagRead = captureFontTagReadConfirmation(options.library)
-      options.hfm.queryFontPage(databaseQueryRequest).then((result) => {
+      options.hfm.queryFontPage(databaseQueryRequest).then(async (result) => {
+        // Refill the previously loaded favorites window before publishing it. A
+        // one-page replacement would shrink the scroll area after a bulk removal.
+        const previous = options.databasePageResult
+        if (databaseQueryRequest.activeFilter?.kind === 'favorites' && result.offset === 0 &&
+            previous && databaseQueryScopeKey(previous.queryKey) === databaseQueryScopeKey(result.queryKey)) {
+          const target = Math.min(previous.items.length, result.total)
+          while (result.items.length < target) {
+            if (disposed || requestSeq !== options.databasePageRequestSeqRef.current || intentRevision !== fontUserIntentRevision()) return
+            const next = await options.hfm.queryFontPage({ ...databaseQueryRequest, offset: result.items.length, limit: DATABASE_INCREMENTAL_PAGE_SIZE })
+            if (next.total !== result.total || !next.items.length) throw new Error('收藏分页在补齐期间发生变化，请重试')
+            const merged = mergeIncrementalDatabasePage(result, next)
+            if (merged.items.length <= result.items.length) throw new Error('收藏分页未向前推进，请重试')
+            result = merged
+          }
+        }
         if (intentRevision !== fontUserIntentRevision()) {
           options.reportTrace({ kind: 'db-query-rejected', label: 'user-intent-changed', page: options.sidebarPage,
             severity: 'warn', details: { requestSeq, intentRevision, currentIntentRevision: fontUserIntentRevision() } })

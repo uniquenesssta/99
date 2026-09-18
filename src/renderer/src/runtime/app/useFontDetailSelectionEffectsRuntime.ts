@@ -1,3 +1,4 @@
+import { hasUnsettledFavoriteIntent } from '../../fontUserIntentRuntime'
 import { isPartialFontLibrary } from '../../fontCommandTargetsRuntime'
 import { libraryWithMergedFonts } from '../../appRuntime'
 import type { FontItem, LibraryState } from '@shared/types'
@@ -5,6 +6,7 @@ import { useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 
 export function useFontDetailSelectionEffectsRuntime(options: {
+  favoritesOnly?: boolean
   library: LibraryState
   selectedFontIds: string[]
   setLibrary: Dispatch<SetStateAction<LibraryState>>
@@ -30,6 +32,15 @@ export function useFontDetailSelectionEffectsRuntime(options: {
   } = options
 
   useEffect(() => {
+    if (options.favoritesOnly) {
+      setSelectedFontIds(prev => {
+        const remaining = prev.filter(id => {
+          const font = library.fonts[id]
+          return !font || !!font.favorite || hasUnsettledFavoriteIntent(font)
+        })
+        return remaining.length === prev.length ? prev : remaining
+      })
+    }
     // A partial cache miss is not deletion. Explicit index/delete events still remove IDs.
     if (!isPartialFontLibrary(library)) {
       const validIds = new Set(Object.keys(library.fonts || {}))
@@ -44,7 +55,7 @@ export function useFontDetailSelectionEffectsRuntime(options: {
       const absent = missing.filter(font => !prev.fonts[font.id])
       return absent.length ? libraryWithMergedFonts(prev, absent, options.selectedFontIds) : prev
     })
-  }, [library.fonts, isPartialFontLibrary(library), options.selectedFontIds, visibleFonts])
+  }, [library.fonts, options.favoritesOnly, isPartialFontLibrary(library), options.selectedFontIds, visibleFonts])
 
   useEffect(() => {
     if (!selectedFontId && visibleFonts[0]) {

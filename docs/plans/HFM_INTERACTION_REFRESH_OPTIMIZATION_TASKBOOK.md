@@ -5,7 +5,7 @@
 - 制定日期：2026-09-18。
 - 仓库：`uniquenesssta/99`；分支：`stage/09-preview-tags-app`。
 - 代码基线：`3bc1e387ebeb5298d5bd4060aaec5c9a0a2c7d93`。
-- 状态：**U-00 诊断、U-01 选择/命令链修复及 U-02 统一操作入口已实施，证据见 §10～§12；Windows 实机验收待回执。U-03～U-09 尚未实施。** 初次规划交付记录保留于 §9。
+- 状态：**U-00 诊断、U-01 选择/命令链修复、U-02 统一操作入口及 U-03 本机集合收藏已实施，证据见 §10～§13；Windows 实机验收待回执。U-04～U-09 尚未实施。** 初次规划交付记录保留于 §9。
 - 输入：`startup-2026-09-18_02-59-25-870-21044.log`（813 行，UTC 02:59:25.872～03:01:28.978）及用户随后五点反馈、入口差异补充。原始日志不提交到 Git。
 - 与前任务衔接：[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md) §25 已交付本地收藏、标签目录同步与停用核对。本任务保留这些修复，处理后续真实交互问题和性能问题，不重开 R-01～R-07。
 - 既有基线证据：上一提交通过 TypeScript、115/115 诊断、Electron/Vite 367/1/196 模块构建和混淆 3/3。这是历史自动验证结果，**不能替代本任务的字体多选入口和 Windows 实机验收**。
@@ -108,7 +108,7 @@ flowchart TD
 
 ## 6. 实施顺序与任务卡
 
-优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02 见 §12；U-03～U-09 为“待开始”。
+优先顺序：U-00 → U-01 → U-02 → U-03 → U-04 → U-05 → U-06 → U-07 → U-08 → U-09。先解决操作可达性和正确性，再优化成本。U-00 状态见 §10；U-01 实现与自动验证见 §11；U-02 见 §12；U-03 见 §13；U-04～U-09 为“待开始”。
 
 ### U-00：建立入口证据和复现基线
 
@@ -485,3 +485,43 @@ npm run dev
 5. 单项收藏/取消收藏正常；多选收藏本轮明确不可用。下一项 U-03 才开放明确 true/false 的集合收藏，并验证写入失败、反向意图和重启行为。
 
 回滚本轮提交即可；无数据/IPC 迁移、依赖升级或 Rust 改动。Mermaid Chart 已按实际共同命令链更新；无新第三方 API，未触发 Context7。Create State 因 2/2 项目容量上限创建失败，按用户指示放弃，本任务书与 Git 保存交接状态。
+
+## 13. U-03 执行卡
+
+- 起点：b7a37bf8e2fed09f80ba637dab306e498f868a60，干净工作树。状态：实现及自动验证通过，Windows 实机待验。
+- 方案：明确 true/false 集合设置，未变化项跳过；一次乐观更新、一次计数变更、整组入原队列并立即排空。现有本机 SQLite 集合事务不变。收藏意图共享最近确认值，但每次请求 token 独立；成功确认更新持久值，耗尽前台重试后仅撤销本批仍拥有的失败条目并按最近确认值回滚，较新操作不被覆盖。
+- 生产白名单：`src/renderer/src/runtime/system/actions/fontFavoriteActionRuntime.ts`、`fontSystemActionTypes.ts`；`src/renderer/src/fontUserIntentRuntime.ts`、`fontWriteQueueRuntime.ts`、`fontWriteQueue.ts`、`fontCommandRuntime.ts`、`components/app/FontCommandButtons.tsx`、`runtime/app/useFontOperationsController.ts`、`runtime/app/useFontDetailSelectionEffectsRuntime.ts`、`runtime/database/useRendererDatabasePageRuntime.ts`、`App.tsx`。不修改主进程本机/共享存储域、IPC 格式或 Rust。
+- 验证白名单：新增 `build/diagnostics/check-batch-favorites.cjs` 并注册 package.json；迁移 U-02 `check-font-command-entry.cjs` 的收藏禁用预期为集合写入；必要时复用/扩展 `check-local-user-state.cjs` 的真实 SQLite 重启、A/B 机器、事务失败门。冻结 fixture 只按新能力/接线/摘要逐项迁移，改前补记。
+- 文档：README、本任务书。Create State 前次创建已因 2/2 上限失败，按用户指示继续放弃，不反复创建。
+- 验收：全未收藏/全已收藏/混合、去重、幂等、缺记录、批量失败/部分失败、旧失败遇新反向操作、连续 true/false/true、队列重试取消、普通反馈、一次集合 IPC、无共享写入、收藏页移除及补页保留其他有效选择与滚动。自动测试与 Windows 实机边界分别记录。
+
+- 冻结门迁移白名单：`app-interaction-composition.fixture.json` 的收藏回调改为 setFontsFavorite；`react-composition-controllers.fixture.json` 的详情选择效果摘要与 favoritesOnly 接线；`react-composition-domain-controllers.fixture.json` 的写队列摘要；`decomposition-baseline.fixture.json` 的 App/operations 摘要、输入端口及 setFontsFavorite 返回能力；`app-view-composition.fixture.json` 的 App 生命周期前缀摘要。只更新 U-03 已实现差异，不改其他 owner、Hooks、主进程、IPC 或 Rust 基线。
+
+
+### 13.1 已实现的行为
+
+- 操作栏、字体右键、详情共用的“收藏 / 取消收藏”现已支持 1 项或多项。沿用 U-01 完整目标检查与 U-02 命令派发；明确设置 true/false，目标去重、未变化项跳过，混合收藏状态不逐项反转。
+- 一组请求只合并一次乐观字体更新和计数变化，整组进入原写队列；同值目标一次集合 IPC，复用已有本机 SQLite 事务。单项包装也走同一集合动作。收藏仍只属于本机，未改主进程/共享存储、IPC 或数据库结构，其他标签、保护及激活字段保留。
+- 成功必须取得 updatedIds 的逐项确认；缺回执不算成功。前台重试耗尽后，取消本请求仍拥有的重试项，防止后台稍后把已回退操作重新写入；原标签/保护队列耐久策略不变。
+- 每次收藏意图有独立归属，共享最近成功确认值。旧请求失败不会回退新操作；较早写入已成功而较新取消失败时，恢复真实已保存值，避免回到另一个未保存的乐观值。普通状态区汇总成功、失败回退、未变化及已替代数量。
+- 收藏页立即过滤取消项；成功后只清理已确认不再收藏的选择，保留其他选择及部分缓存中的缺项。刷新同一收藏筛选时分段补齐先前加载窗口后一次发布，避免突然缩成 100 项；范围切换或新意图会拒绝旧补页结果。回滚刷新也保留原分页快照。若剩余总量小于原窗口，按实际总量收缩。
+
+### 13.2 验证与边界
+
+- 新增 `diagnostics:batch-favorites`：37 个场景通过。使用实际操作栏/字体右键/详情 TSX、共同命令、收藏动作、写队列、两套 preload 和真实本机 SQLite；仅 React 时序、DOM 及 IPC 宿主端口受控。
+- 覆盖全未收藏、全已收藏、混合、重复目标与重复点击、缺记录整次拒绝；抛错、缺成功回执、SQLite 事务回滚、部分失败仅重试失败项、暂时失败恢复；旧成功/失败与新反向成功/失败的四种组合、true/false/true，期间其他字段修改保留，失败后没有残留收藏重试。重启取消不复活、A/B 数据库隔离通过。
+- 覆盖收藏页旧数据不恢复取消项、失败尚未确认时保留选择、成功只移除取消项、部分缓存缺项不裁剪；同范围原 300 项删除前 30 项后按 100 项分段补足 300，换范围不复用旧窗口，新意图拒绝迟到补页。故意恢复“只操作首项”和“回退到未确认乐观值”的两个生产代码退化均被拒绝。
+- U-02 36 项入口测试迁移原多选禁用预期，继续覆盖其他动作；U-01 72 项激活入口测试保持通过。冻结 fixture 仅迁移执行卡白名单中的接口/接线/摘要，原 owner、Hooks 顺序及其他行为断言保留。
+- TypeScript 已通过；Electron/Vite 主进程/preload/renderer 367/1/200 模块构建通过，混淆处理本次 3 个输出并跳过 2 个已有标记文件（输出 3/5），通过。`npm run verify` 通过：TypeScript + 118/118 诊断；新增收藏诊断补齐到 37 项后单独复跑通过，`git diff --check` 通过。
+- 当前环境未执行 Windows GUI、真实滚动锚点/键盘焦点或多机 NAS 实机验收；受控 Hook/DOM 和独立 SQLite 不等同于这些实测。无依赖升级、原生或 Rust 代码变化。
+
+### 13.3 实机复验与接续
+
+在 Windows 原项目目录更新阶段分支后运行 `npm run dev`：
+
+1. 选择几个收藏状态不同的字体，分别从操作栏、字体右键、详情点击“收藏”，确认全部收藏；重复点击应跳过，再点“取消收藏”全部取消。
+2. 在收藏页向下加载数页，选中一部分取消收藏：目标立即消失，其他有效选择保留，列表补齐且不突然缩为第一页；滚动位置与键盘焦点请实机核对。
+3. 连续收藏 → 取消 → 收藏，确认最后一次选择生效；关闭重开后保持。取消收藏后重启应仍未收藏，另一台机器不跟随变化。
+4. 检查上述操作没有改动本地/共享标签、保护和激活状态；遇到实际写入失败时，状态区应显示失败回退，并以本机已保存值恢复。
+
+下一项 U-04：补齐跨页面安装状态筛选，本轮不提前实施。回滚本轮提交即可，无数据/配置迁移。Mermaid Chart 已更新实际集合收藏及回滚/补页链；无新第三方 API，未触发 Context7。Create State 前次创建因 2/2 容量上限失败，按用户要求放弃，本任务书和 Git 保存接续信息。

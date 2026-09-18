@@ -151,6 +151,8 @@ export function useFontOperationsController(options: {
     setContextMenu: (value) => options.selection.setContextMenu(value),
     setDatabaseFontMetrics: options.database.setDatabaseFontMetrics,
     refreshDatabaseDerivedState: options.library.refreshDatabaseDerivedState,
+    scheduleDatabaseDerivedStateRefresh: options.library.scheduleDatabaseDerivedStateRefresh,
+    queueFavoriteWrites: fontWriteQueueRuntime.queueFavoriteWrites,
     queueFavoriteWrite: fontWriteQueueRuntime.queueFavoriteWrite
   })
 
@@ -282,6 +284,7 @@ export function useFontOperationsController(options: {
     rendererUserActive,
     updateFont: systemActionRuntime.updateFont,
     toggleFontFavorite: systemActionRuntime.toggleFontFavorite,
+    setFontsFavorite: systemActionRuntime.setFontsFavorite,
     fontsForTag: systemActionRuntime.fontsForTag,
     installFontByCard: systemActionRuntime.installFontByCard,
     installFontsBatch: systemActionRuntime.installFontsBatch,

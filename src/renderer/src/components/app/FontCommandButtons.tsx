@@ -7,7 +7,6 @@ export function FontCommandButtons({ count, onCommand, showTagActions = true }: 
   showTagActions?: boolean
 }): JSX.Element {
   return <>{FONT_COMMANDS.filter(command => showTagActions || !['localTags', 'sharedTags'].includes(command.action)).map(command => {
-    const unavailable = count > 1 && (command.action === 'favorite' || command.action === 'unfavorite')
-    return <button key={command.action} disabled={!count || unavailable} title={unavailable ? '多选收藏尚未开放，请先选择一个字体' : `${command.label} · ${count} 个字体`} onMouseDown={event => event.preventDefault()} onClick={() => onCommand(command.action)}>{command.label}</button>
+    return <button key={command.action} disabled={!count} title={`${command.label} · ${count} 个字体`} onMouseDown={event => event.preventDefault()} onClick={() => onCommand(command.action)}>{command.label}</button>
   })}</>
 }

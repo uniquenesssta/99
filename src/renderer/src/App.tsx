@@ -350,7 +350,7 @@ export default function App(): JSX.Element {
     newSharedTagName,
     setNewSharedTagName,
     updateFont,
-    toggleFontFavorite,
+    setFontsFavorite,
     fontsForTag,
     installFontsBatch,
     installFontByCard,
@@ -401,7 +401,7 @@ export default function App(): JSX.Element {
     getCurrentLibrary,
     installFontsBatch,
     uninstallFontsBatch,
-    toggleFontFavorite,
+    setFontsFavorite,
     editFontTags: (fonts, scope) => {
       flushSync(() => {
         setLibrary(prev => libraryWithMergedFonts(prev, fonts.filter(font => !prev.fonts[font.id]), fonts.map(font => font.id)))
@@ -778,6 +778,7 @@ export default function App(): JSX.Element {
   const { selectedPreviewFamily, closeDetail, toggleFontDetail, generateDetailNativePreview, setPreviewText, handleLocalTagInputKeyDown, handleSharedTagInputKeyDown } = detailPanelRuntime
 
   useFontDetailSelectionEffectsRuntime({
+    favoritesOnly: sidebarPage === 'library' && activeFilter.kind === 'favorites',
     library,
     selectedFontIds,
     setLibrary,

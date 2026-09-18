@@ -25,7 +25,7 @@ export type FontCommandOptions = {
   deactivateFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   deleteFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   toggleFontDeleteProtection: (ids: string[], protect?: boolean, available?: FontItem[]) => Promise<void>
-  toggleFontFavorite: (font: FontItem, favorite?: boolean) => Promise<void>
+  setFontsFavorite: (fonts: FontItem[], favorite: boolean) => Promise<void>
   editFontTags: (fonts: FontItem[], scope: 'local' | 'shared') => void
 }
 
@@ -48,11 +48,7 @@ export function createFontCommandRuntime(options: FontCommandOptions): RunFontCo
       if (action === 'deactivate') await options.deactivateFontsBatch(fonts, label)
       if (action === 'deleteFile') await options.deleteFontsBatch(fonts, label)
       if (action === 'protect' || action === 'unprotect') await options.toggleFontDeleteProtection(resolved.selectedIds, action === 'protect', fonts)
-      if (action === 'favorite' || action === 'unfavorite') {
-        if (fonts.length > 1) { options.setStatus('多选收藏尚未开放，请先选择一个字体。'); return }
-        if (!!fonts[0].favorite === (action === 'favorite')) options.setStatus('收藏状态未变化：跳过 1 个。')
-        else await options.toggleFontFavorite(fonts[0], action === 'favorite')
-      }
+      if (action === 'favorite' || action === 'unfavorite') await options.setFontsFavorite(fonts, action === 'favorite')
       if (action === 'localTags' || action === 'sharedTags') options.editFontTags(fonts, action === 'localTags' ? 'local' : 'shared')
     } catch (error) {
       options.setStatus(`操作未完成：${error instanceof Error ? error.message : String(error)}`)

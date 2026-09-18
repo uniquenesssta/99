@@ -17,6 +17,8 @@ export type FontSystemActionRuntimeOptions = {
   setContextMenu: (value: null) => void
   setDatabaseFontMetrics: Dispatch<SetStateAction<FontMetrics | null>>
   refreshDatabaseDerivedState: () => void
+  scheduleDatabaseDerivedStateRefresh: (delay?: number) => void
+  queueFavoriteWrites: (fonts: FontItem[], favorite: boolean) => Promise<void>
   queueFavoriteWrite: (font: FontItem, favorite: boolean) => void
 }
 
@@ -30,6 +32,7 @@ export type FontSystemStateRuntime = {
 }
 
 export type FontSystemActionRuntime = FontSystemStateRuntime & {
+  setFontsFavorite: (fonts: FontItem[], favorite: boolean) => Promise<void>
   toggleFontFavorite: (font: FontItem, favorite?: boolean) => Promise<void>
   installFontsBatch: (fonts: FontItem[], label: string) => Promise<void>
   installFontByCard: (font: FontItem) => Promise<void>

@@ -3,7 +3,7 @@ import type { FontItem } from '@shared/types'
 // Symbols survive renderer object spreads, but are excluded from IPC/JSON persistence.
 const intentKey = Symbol('fontUserIntent')
 type ActiveState = Pick<FontItem, 'active' | 'activeSince' | 'managedInstallPath' | 'managedRegistryName'>
-type Intent = { active?: ActiveState; favorite?: { value: boolean; settled: boolean } }
+type Intent = { active?: ActiveState; favorite?: { value: boolean; settled: boolean; confirmed: { value: boolean } } }
 type IntentFont = FontItem & { [intentKey]?: Intent }
 let revision = 0
 
@@ -17,14 +17,32 @@ export function markActiveIntent(font: FontItem): FontItem {
 
 export function markFavoriteIntent(font: FontItem, value: boolean): FontItem {
   revision += 1
-  return { ...font, favorite: value, [intentKey]: { ...(font as IntentFont)[intentKey], favorite: { value, settled: false } } } as IntentFont
+  return { ...font, favorite: value, [intentKey]: { ...(font as IntentFont)[intentKey], favorite: { value, settled: false, confirmed: (font as IntentFont)[intentKey]?.favorite?.confirmed || { value: !!font.favorite } } } } as IntentFont
 }
 
 export function settleFavoriteIntent(font: FontItem): void {
   const favorite = (font as IntentFont)[intentKey]?.favorite
   if (!favorite || favorite.settled) return
+  favorite.confirmed.value = favorite.value
   favorite.settled = true
   revision += 1
+}
+
+export function isSameFavoriteIntent(current: FontItem | undefined, request: FontItem): boolean {
+  const expected = (request as IntentFont)[intentKey]?.favorite
+  return !!expected && (current as IntentFont | undefined)?.[intentKey]?.favorite === expected
+}
+
+export function rollbackFavoriteIntent(current: FontItem, request: FontItem): FontItem {
+  if (!isSameFavoriteIntent(current, request)) return current
+  const previous = (request as IntentFont)[intentKey]!.favorite!
+  revision += 1
+  // A prior in-flight write may have committed after this request was created.
+  // Restore the latest confirmed local value, not a previous optimistic value.
+  return { ...current, favorite: previous.confirmed.value, [intentKey]: {
+    ...(current as IntentFont)[intentKey],
+    favorite: { value: previous.confirmed.value, settled: true, confirmed: previous.confirmed }
+  } } as IntentFont
 }
 
 export function hasFontUserIntent(font: FontItem): boolean {

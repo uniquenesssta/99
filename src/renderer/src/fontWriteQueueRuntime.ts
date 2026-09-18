@@ -1,4 +1,5 @@
-import { trackFontWrite } from './fontOperationTrace'
+import { hasUnsettledFavoriteIntent, isSameFavoriteIntent } from './fontUserIntentRuntime'
+import { cancelFontWrite, trackFontWrite } from './fontOperationTrace'
 import type { FontItem } from '@shared/types'
 import type { HfmApi } from '../../preload'
 import type { QueuedFontWriteState } from './appTypes'
@@ -44,6 +45,7 @@ export interface RendererFontWriteQueueRuntime {
   queueLocalTagsWrite: (item: FontItem, tagNames: string[]) => void
   queueSharedTagsWrite: (item: FontItem, tagNames: string[]) => void
   queueFavoriteWrite: (font: FontItem, favorite: boolean) => void
+  queueFavoriteWrites: (fonts: FontItem[], favorite: boolean) => Promise<void>
   queueProtectionWrite: (font: FontItem, protect: boolean) => void
   flush: (reason?: string) => Promise<boolean>
 }
@@ -186,6 +188,20 @@ export function createRendererFontWriteQueueRuntime(
     queueSharedTagsWrite: (item, tagNames) => {
       options.queueRef.current.sharedTags.set(item.id, trackFontWrite({ item: { ...item, tagNames }, tagNames }, 'sharedTags', options.queueRef.current.sharedTags.get(item.id)))
       void flush('shared-tags-immediate')
+    },
+    queueFavoriteWrites: async (fonts, favorite) => {
+      for (const font of fonts) options.queueRef.current.favorite.set(font.id, trackFontWrite({ font: { ...font, favorite }, favorite }, 'favorite', options.queueRef.current.favorite.get(font.id)))
+      await flush('favorite-batch')
+      // A rejected batch is explicitly rolled back by its action owner. Never
+      // leave its retry queued to silently reapply it later, or cancel a newer one.
+      for (const font of fonts) {
+        const queued = options.queueRef.current.favorite.get(font.id)
+        if (hasUnsettledFavoriteIntent(font) && queued && isSameFavoriteIntent(queued.font, font)) {
+          options.queueRef.current.favorite.delete(font.id)
+          cancelFontWrite(queued, 'favorite-batch-rollback')
+        }
+      }
+      if (!queuedFontWriteCount(options.queueRef.current)) clearRetryTimer()
     },
     queueFavoriteWrite: (font, favorite) => {
       options.queueRef.current.favorite.set(font.id, trackFontWrite({ font: { ...font, favorite }, favorite }, 'favorite', options.queueRef.current.favorite.get(font.id)))

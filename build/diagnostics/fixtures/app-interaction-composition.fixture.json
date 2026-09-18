@@ -5,7 +5,6 @@
       "getCurrentLibrary": "getCurrentLibrary",
       "installFontsBatch": "installFontsBatch",
       "uninstallFontsBatch": "uninstallFontsBatch",
-      "toggleFontFavorite": "toggleFontFavorite",
       "editFontTags": "(fonts, scope) => {\n      flushSync(() => {\n        setLibrary(prev => libraryWithMergedFonts(prev, fonts.filter(font => !prev.fonts[font.id]), fonts.map(font => font.id)))\n        setSelectedFontId(fonts[0].id)\n        setDetailVisible(true)\n      })\n      document.getElementById(scope === 'local' ? 'font-local-tag-input' : 'font-shared-tag-input')?.focus()\n    }",
       "getVisibleFonts": "() => latestVisibleFontsRef.current",
       "setStatus": "setStatus",
@@ -26,7 +25,8 @@
       "activateFontsBatch": "activateFontsBatch",
       "deactivateFontsBatch": "deactivateFontsBatch",
       "deleteFontsBatch": "deleteFontsBatch",
-      "toggleFontDeleteProtection": "toggleFontDeleteProtection"
+      "toggleFontDeleteProtection": "toggleFontDeleteProtection",
+      "setFontsFavorite": "setFontsFavorite"
     },
     "createFontDialogRuntime:0": {
       "selectedFontIds": "selectedFontIds",

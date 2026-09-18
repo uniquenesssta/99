@@ -234,6 +234,9 @@ export async function flushQueuedFontWriteQueue(
     try {
       const result = await hfm.setFavorite(fonts, folders, favorite, dispatchFontWrites(fonts.map(font => queue.favorite.get(font.id)!)))
       const failedIds = failedIdsFromResult(result, fonts.map((font) => font.id))
+      // Only an explicit per-ID receipt confirms a local favorite write.
+      const updatedIds = new Set(result.updatedIds || [])
+      for (const font of fonts) if (!updatedIds.has(font.id)) failedIds.add(font.id)
       retryBooleanEntries(queue.favorite, failedIds, retryQueue.favorite)
       settleFontWrites(fonts.map(font => queue.favorite.get(font.id)!), failedIds, entry => entry.font.id)
       for (const font of fonts) if (!failedIds.has(font.id)) settleFavoriteIntent(font)
