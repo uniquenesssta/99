@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-18：按最新交互要求移除主界面选中字体后出现的操作栏，保留详情操作；安装/卸载、激活/取消激活、保护/取消保护、收藏/取消收藏各合并为一个随所选状态变化的按钮，字体右键同步。混合状态明确设值，继续完整目标检查、确认和失败回滚。单击选中、再次单击取消，同字体 100ms 防连击；Ctrl/Shift/框选后详情可操作，双击不再重新选回已取消字体。修正列表网格行及详情按钮布局，无存储/IPC/依赖变更；TypeScript、124 项诊断、三端构建和混淆通过，Windows 实机待验；验证与实机边界见[补充执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#19-用户补充详情状态按钮与单击选择修正)。
+
 - 2026-09-18：U-08 缩窄字体索引和列表派生依赖，统计读回/预览文字修改不再造成无关全表重算；1499 条字体各 40 次受控更新的对应重算均由 40 次降至 0。补齐统计调度、缓存复用/失效重读、主进程读取及本机状态校正日志，保持旧结果拒绝和失败重试。新增派生/统计及真实 SQLite/PNG 缓存复用检查，预览 owner/原生生成未改；TypeScript、124/124 诊断、三端构建与混淆通过；真实 React 对照入口为 `npm run benchmark:u08`。浏览器访问本地页受限，尚无中位数/P95 或完整应用绘制实测，U-08 性能验收未结案；结果与 Windows 开发模式复验见 [U-08 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#18-u-08-执行卡)。
 
 - 2026-09-18：U-07 修复新目录 events/hash 尚未创建导致的维护误报；与 preview/metrics 统一按 ENOENT 识别惰性库，权限、损坏、锁及 I/O 错误仍保留。启动维护先等待原 owner 初始化明确缺失的 library/tasks/kvs，Node 备用备份不再创建未使用的可选库；自动备份失败参与最终结果并保留重试资格。TypeScript、122/122 诊断（新增 78 项真实 SQLite/受控端口检查）、三端构建与混淆通过；Windows 原生故障实测待验，见[U-07 执行卡](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md#17-u-07-执行卡)。无依赖、数据库格式、IPC 或 Rust 变更，下一项 U-08。

@@ -1,5 +1,4 @@
 import type { FontItem } from '@shared/types'
-import { FontCommandButtons } from './FontCommandButtons'
 import type { CSSProperties,MouseEvent } from 'react'
 import {
 IS_DEVELOPMENT,
@@ -37,9 +36,6 @@ export function FontListPanel({
   updatePageToolbar,
   updateViewModeWithScroll,
   search,
-  selectedFontIds,
-  runFontCommand,
-  setSelectedFontIds,
   closeDetail,
   fontScrollerRef,
   handleFontScroll,
@@ -67,7 +63,7 @@ export function FontListPanel({
   }
 
   return (
-    <section className={`font-list-panel${effectiveCardPoolViewMode === 'list' ? ' simple-wide-list-mode' : ''}${selectedFontIds.length > 0 ? ' has-selection-actionbar' : ''}`}>
+    <section className={`font-list-panel${effectiveCardPoolViewMode === 'list' ? ' simple-wide-list-mode' : ''}`}>
       {IS_DEVELOPMENT && sidebarPage === 'developer' ? (
         <div className="developer-status-page">
           <div className="developer-status-header">
@@ -166,14 +162,6 @@ export function FontListPanel({
           </div>
 
           </div>
-
-          {selectedFontIds.length > 0 && (
-            <div className="selection-actionbar" data-no-marquee>
-              <span>已选择 {new Set(selectedFontIds).size} 个字体</span>
-              <FontCommandButtons count={new Set(selectedFontIds).size} onCommand={action => void runFontCommand(action, selectedFontIds, visibleFonts, 'selection-toolbar', `${sidebarPage}:${effectiveCardPoolViewMode}`)} />
-              <button onClick={() => setSelectedFontIds([])}>取消选择</button>
-            </div>
-          )}
 
           {effectiveCardPoolViewMode === 'family' ? (
             <div

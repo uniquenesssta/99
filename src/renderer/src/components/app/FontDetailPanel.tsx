@@ -1,6 +1,7 @@
+import { resolveFontCommandTargets } from '../../fontCommandTargetsRuntime'
 import { FontCommandButtons } from './FontCommandButtons'
 import type { RunFontCommand } from '../../fontCommandRuntime'
-import type { FontItem,InstallCompareResult } from '@shared/types'
+import type { FontItem,LibraryState,InstallCompareResult } from '@shared/types'
 import {
 fontCategoryLabel,
 fontFileDisplayName,
@@ -21,6 +22,8 @@ type FontDetailPanelProps = {
   selectedPreviewFamily: string
   nativeDetailImage: string
   selectedFontIds: string[]
+  library: LibraryState
+  visibleFonts: FontItem[]
   runFontCommand: RunFontCommand
   assignTagName: string
   setAssignTagName: (value: string) => void
@@ -50,6 +53,8 @@ export function FontDetailPanel({
   selectedPreviewFamily,
   nativeDetailImage,
   selectedFontIds,
+  library,
+  visibleFonts,
   runFontCommand,
   assignTagName,
   setAssignTagName,
@@ -73,6 +78,7 @@ export function FontDetailPanel({
   if (!visible) return null
 
   const commandIds = selectedFontIds.length ? selectedFontIds : selectedFont ? [selectedFont.id] : []
+  const commandFonts = resolveFontCommandTargets(commandIds, library, visibleFonts).fonts
   const installMatches = selectedFont?.systemInstallMatches || []
   return (
     <section className="detail-panel detail-dock-panel">
@@ -88,7 +94,7 @@ export function FontDetailPanel({
 
           <div className="detail-actions primary-actions">
             <span>操作范围：已选择 {new Set(commandIds).size} 个字体</span>
-            <FontCommandButtons count={new Set(commandIds).size} showTagActions={false} onCommand={action => void runFontCommand(action, commandIds, [selectedFont], 'detail')} />
+            <FontCommandButtons fonts={commandFonts} count={new Set(commandIds).size} showTagActions={false} onCommand={action => void runFontCommand(action, commandIds, [selectedFont], 'detail')} />
           </div>
 
           <div className="tag-box">

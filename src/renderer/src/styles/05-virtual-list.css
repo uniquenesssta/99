@@ -1,5 +1,5 @@
 .font-virtual-scroller {
-  grid-row: 3;
+  grid-row: 2;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;

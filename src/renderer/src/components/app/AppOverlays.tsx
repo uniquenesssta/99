@@ -170,7 +170,7 @@ export function AppOverlays({
             <>
               <div className="context-menu-title">已选择 {contextTargetCount} 个字体</div>
               {contextSelectedFonts.length !== contextTargetCount && <div role="status">部分字体待重新读取，点击操作将检查完整范围。</div>}
-              <FontCommandButtons count={contextTargetCount} onCommand={action => void runFontContextAction(action)} />
+              <FontCommandButtons fonts={contextSelectedFonts} count={contextTargetCount} onCommand={action => void runFontContextAction(action)} />
             </>
           ) : (
             <>

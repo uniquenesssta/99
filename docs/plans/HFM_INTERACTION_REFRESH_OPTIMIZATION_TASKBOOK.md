@@ -748,3 +748,28 @@ Mermaid Chart 已绘制实际批量确认、失败隔离和代次链路；无新
 - 本轮浏览器测量**未运行成功**：本地 Chromium 缺失、下载被环境拦截；现有云浏览器可连接但访问本地测试页返回 `ERR_BLOCKED_BY_CLIENT`。未绕过访问限制，未填入模拟 React/绘制耗时。本地服务编译和复测入口 TypeScript 已检查，真实浏览器交互仍待执行；因此 U-08 性能验收未结案。
 - Windows 开发方式继续 `npm run dev`。固定同一字体集与窗口尺寸，对原基线/当前版本各记录不少于 30 次同序列操作：字体多选及标签激活、收藏/取消、标签增删、改一个预览字、切页返回、停用、正常退出重启；按冷/热、内存/本地/共享层分别汇总中位数/P95 与样本数。完整 App 的 commit/绘制使用开发者工具全程录制；默认 Profiler 仅上报慢更新，不能据此计算所有更新的分位数。保留选中项和滚动位置，检查没有无关预览请求。原生生成与 NAS/断线后的真实表现需这份回执，不根据旧日志宣称已经改善多少毫秒。
 - Context7 已核对 React 18 Profiler/StrictMode 语义及 esbuild define 参数；复测入口曾因对象替换值不是 JSON 字符串而编译失败，已修正并通过 `--check`；Mermaid Chart 已展示真实统计链。Create State 按此前 2/2 容量上限和用户要求继续跳过，由 Git/README/任务书保存进度。无数据库迁移、Rust、IPC 格式或依赖变更，回滚本轮提交即可；下一阶段为 U-09，并须补齐本节未完成的实测。
+
+
+## 19. 用户补充：详情状态按钮与单击选择修正
+
+- 起点 `0ea2635a702f182f9b7d7472f709aa6150a6dff6`，原阶段分支、干净工作区；本项按用户最新要求覆盖 §3.1/U-02 的按钮呈现约定，不作为 U-09 综合验收完成。
+- 取消主界面选择操作栏及其专用接线/布局；详情和字体右键每类状态仅显示一个按钮：安装/卸载、激活/取消激活、保护/取消保护、收藏/取消收藏。混合集合统一设置正向状态，全体已达成时显示取消，保留原过滤、确认、完整目标检查和失败回滚。
+- 单击选中并显示详情，再次单击移除该字体；同字体 100ms 内重复点击忽略，取消后同样防连击。Ctrl/Shift/框选继续支持多选，并使详情操作可达；双击事件不得重新选回已经取消的字体。
+- 生产范围：FontCommandButtons/fontCommandRuntime 的状态呈现；FontDetailPanel、AppOverlays、AppRootView、App 的目标接线；FontListPanel/Types 移除操作栏；fontSelectionEventRuntime/FontCard 的选择事件；仅清理这些变化造成的 selection-actionbar 样式。复用现有 resolver、选择 owner 和系统/字段动作，不改持久化、IPC、Rust、依赖。
+- 验证范围：已有 activation-entry/font-command-entry/batch-favorites/install-status-filter 入口迁移到真实详情，新增状态成对唯一、混合/缺记录、100ms 边界与双击反例。受影响冻结契约按实际差异定向迁移，保留全部业务断言。全量 verify、三端构建、差异检查；Windows GUI 另行标记。
+
+- 冻结迁移登记：app-view-composition 仅 rootViewSha256；app-root-view-wiring 仅四种 UI 快照（删除 content 三项操作栏端口、详情增加 library/visibleFonts）；decomposition-baseline 仅 App tokenHash，owner/函数/接口集合不变；react-composition-controllers 仅 handleFontSelectRuntime 与 beginMarqueeSelectionRuntime 函数摘要。详情按钮宽度与范围文本独占行纳入 studio-interface-11.css 白名单。
+
+- 关联布局修正：05-virtual-list.css 的字体滚动区域由第 3 行改为第 2 行，配合移除操作栏，防止网格视图保留空行或挤压列表。原控制器行为测试只迁移 Ctrl 选择后详情应可见这一预期；选择、删除清理、水合及 owner 数量断言保留。
+
+- 混合激活边界：复用原 batchActivationCandidates 判断；存在已激活项且已无可激活候选时显示取消激活，不让混入的永久安装/Windows 字体使按钮永远停在“激活”。取消仍只处理临时已激活项，保留永久安装。补测原 FontCard 双击回调会重新选中，现已移除该事件分支。
+
+
+### 19.1 验证结果与交接
+
+- 自动验证通过：`npm run verify`（TypeScript + 124/124）；最终混合激活规则及双击反例补齐后定向复跑 `check-activation-entry.cjs` 76 场景、`check-font-command-entry.cjs` 41 场景及 TypeScript。收藏 `check-batch-favorites.cjs` 31 场景通过；原 37 项中的 6 项是已删除操作栏的重复入口，详情/右键两套 preload、真实 SQLite、反向意图、事务失败/重试、重启/本机隔离及分页补齐检查全部保留。原 `--baseline` 五项取证仍通过。
+- 原 U-08 源码复现：第二次单击只隐藏详情但保留选择、双击重新选回已取消项、正反操作同时铺开；当前执行断言均能拒绝这些旧实现。100ms 测试使用确定时钟覆盖 99ms 忽略、100ms 生效、取消后的防连击、快速切换另一字体、卡片/列表、Ctrl/Shift/框选详情可达。缺记录仍整次停止，不根据不完整状态执行取消。
+- 首轮全门禁因旧 root view 摘要停止，按登记迁移后全量通过；旧 Ctrl 多选隐藏详情断言改为显示详情，删除清理、选择水合、跨页范围、在途请求与失败回滚检查保留。未新增/弱化质量门，未修改数据库或系统事务。
+- Electron/Vite 三端 367/1/200 模块构建通过，混淆 3/3，`git diff --check` 通过。最终仅 CSS 空行清理不影响构建产物；无依赖、Rust、IPC 或数据迁移。生产范围共 17 个文件，职责仍由原 owner 管理，删除了失效操作栏接线和样式。
+- Windows GUI/实际滚动、焦点与原生字体结果本环境未测；更新当前分支后仍用 `npm run dev`。检查主界面没有选择操作栏，详情只显示 5 个主操作（4 个状态切换 + 删除字体文件）；单击选择，再次单击取消，100ms 内重复不反转；Ctrl/Shift/框选后可在详情操作完整集合。混合永久安装/临时激活取消时永久安装保留，收藏失败不覆盖新意图。
+- Mermaid Chart 已更新实际选择/状态按钮/完整目标与事务链；没有新第三方 API，未触发 Context7。Create State 按此前容量 2/2 及“失败即放弃”约定跳过，交接保存在 Git/README/本任务书。U-09 和 U-08 实机性能验收仍未完成；本补充不将它们标为完成。回滚本补充提交即可，无数据回滚步骤。

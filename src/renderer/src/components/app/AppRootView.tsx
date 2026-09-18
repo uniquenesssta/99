@@ -132,9 +132,6 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
           updatePageToolbar={content.updatePageToolbar}
           updateViewModeWithScroll={content.updateViewModeWithScroll}
           search={content.search}
-          selectedFontIds={content.selectedFontIds}
-          runFontCommand={content.runFontCommand}
-          setSelectedFontIds={content.setSelectedFontIds}
           closeDetail={content.closeDetail}
           fontScrollerRef={content.fontScrollerRef}
           handleFontScroll={content.handleFontScroll}
@@ -160,6 +157,8 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
           selectedPreviewFamily={detail.selectedPreviewFamily}
           nativeDetailImage={detail.nativeDetailImage}
           selectedFontIds={detail.selectedFontIds}
+          library={detail.library}
+          visibleFonts={detail.visibleFonts}
           runFontCommand={detail.runFontCommand}
           assignTagName={detail.assignTagName}
           setAssignTagName={detail.setAssignTagName}

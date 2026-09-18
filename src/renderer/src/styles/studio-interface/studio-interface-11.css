@@ -153,9 +153,13 @@
 
 .detail-dock-panel .primary-actions {
   display: grid !important;
-  grid-template-columns: repeat(auto-fit, minmax(82px, 1fr)) !important;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) !important;
   gap: 8px !important;
   align-items: stretch !important;
+}
+
+.detail-dock-panel .primary-actions > span {
+  grid-column: 1 / -1;
 }
 
 .detail-dock-panel .primary-actions button {
@@ -172,7 +176,7 @@
 
 @media (max-width: 1440px) {
   .detail-dock-panel .primary-actions {
-    grid-template-columns: repeat(auto-fit, minmax(82px, 1fr)) !important;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) !important;
   }
 }
 

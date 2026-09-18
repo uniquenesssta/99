@@ -243,7 +243,7 @@ function checkSelectionBehavior() {
   render()
   assert.deepEqual(Array.from(controller.selectedFontIds), ['a', 'b'])
   assert.equal(controller.selectionAnchorFontId, 'b')
-  assert.equal(controller.detailVisible, false)
+  assert.equal(controller.detailVisible, true)
 
   interaction().handleFontSelect({ shiftKey: true, ctrlKey: false, metaKey: false }, visibleFonts[2])
   render()

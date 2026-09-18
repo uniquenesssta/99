@@ -33,6 +33,10 @@ export function handleFontSelectRuntime(
   font: FontItem,
   options: FontSelectRuntimeOptions
 ): void {
+  const now = performance.now()
+  if (options.selectedFontId === font.id && now < options.detailCardClickLockUntilRef.current) return
+  options.detailCardClickLockUntilRef.current = now + 100
+
   const isShift = 'shiftKey' in event && event.shiftKey
   const isCtrl = 'ctrlKey' in event && (event.ctrlKey || event.metaKey)
 
@@ -46,40 +50,24 @@ export function handleFontSelectRuntime(
     )
     options.setSelectedFontIds(next)
     options.setSelectedFontId(font.id)
-    options.setDetailVisible(false)
+    options.setDetailVisible(next.length > 0)
     options.setStatus(`已选择 ${next.length} 个字体。`)
     return
   }
 
-  if (isCtrl) {
-    options.setSelectedFontIds((prev) => {
-      const next = toggleFontSelectionId(prev, font.id)
-      options.setStatus(`已选择 ${next.length} 个字体。`)
-      return next
-    })
+  if (isCtrl || options.selectedFontIds.includes(font.id)) {
+    const next = toggleFontSelectionId(options.selectedFontIds, font.id)
+    options.setSelectedFontIds(next)
     options.setSelectionAnchorFontId(font.id)
     options.setSelectedFontId(font.id)
-    options.setDetailVisible(false)
-    return
-  }
-
-  const now = performance.now()
-  const sameAsCurrentDetail = options.selectedFontId === font.id
-
-  if (options.detailVisible && sameAsCurrentDetail) {
-    if (now < options.detailCardClickLockUntilRef.current) {
-      options.setSingleFontSelection(font.id)
-      options.setSelectedFontId(font.id)
-      return
-    }
-    options.setDetailVisible(false)
+    options.setDetailVisible(next.length > 0)
+    options.setStatus(`已选择 ${next.length} 个字体。`)
     return
   }
 
   options.setSingleFontSelection(font.id)
   options.setSelectedFontId(font.id)
   options.requestDetailReveal(font.id)
-  options.detailCardClickLockUntilRef.current = now + 100
   options.setDetailVisible(true)
 }
 
@@ -167,6 +155,7 @@ export function beginMarqueeSelectionRuntime(
     const next = { ...start, currentX: upEvent.clientX, currentY: upEvent.clientY }
     const result = applyMarqueeSelectionRuntime(next, options)
     options.setSelectionRect(null)
+    options.setDetailVisible(result.selectedIds.length > 0)
     if (result.hitCount) options.setStatus(`框选完成：${result.hitCount} 个字体。`)
   }
 

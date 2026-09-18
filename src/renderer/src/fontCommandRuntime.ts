@@ -1,3 +1,5 @@
+import { isInstalled } from './fontDisplay'
+import { batchActivationCandidates } from './fontSelectionRuntime'
 import type { FontItem, LibraryState } from '@shared/types'
 import { missingFontCommandTargetsMessage, resolveFontCommandTargets } from './fontCommandTargetsRuntime'
 import { activationEntryTrace, traceActivationEntry } from './fontActivationTrace'
@@ -11,6 +13,18 @@ export const FONT_COMMANDS = [
   { action: 'favorite', label: '收藏' }, { action: 'unfavorite', label: '取消收藏' },
   { action: 'localTags', label: '设置本地标签' }, { action: 'sharedTags', label: '设置共享标签' }
 ] as const
+// Mixed selections receive one explicit value; never invert individual items.
+export function visibleFontCommands(fonts: FontItem[], count: number) {
+  const complete = count > 0 && fonts.length === count
+  const shownActions = new Set<string>([
+    complete && fonts.every(isInstalled) ? 'remove' : 'install',
+    complete && fonts.some(font => !!font.active) && !batchActivationCandidates(fonts).length ? 'deactivate' : 'activate',
+    complete && fonts.every(font => !!font.deleteProtected) ? 'unprotect' : 'protect',
+    complete && fonts.every(font => !!font.favorite) ? 'unfavorite' : 'favorite',
+    'deleteFile', 'localTags', 'sharedTags'
+  ])
+  return FONT_COMMANDS.filter(command => shownActions.has(command.action))
+}
 export type FontCommand = typeof FONT_COMMANDS[number]['action']
 export type RunFontCommand = (action: FontCommand, ids?: string[], available?: FontItem[], entry?: 'selection-toolbar' | 'font-context' | 'detail', outcome?: string) => Promise<void>
 export type FontCommandOptions = {

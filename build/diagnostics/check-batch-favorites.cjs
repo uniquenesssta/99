@@ -25,12 +25,12 @@ async function fixture(config={}) {
   h.setCommandActions(actions)
   return {s,h,db,dbB,calls,refresh,deltas,timers,q,queueRef,actions,persist,response:fn=>response=fn,get updates(){return updates},get invalidations(){return invalidations},get count(){return metrics},async seed(ids){await persist(ids.map(font),[],true);h.setLibrary(p=>({...p,fonts:{...p.fonts,...Object.fromEntries(ids.map(id=>[id,{...p.fonts[id],favorite:true}]))}}));metrics=ids.length;invalidations=0},async saved(){return plain((await store.hydrate(h.all)).map(f=>f.favorite))},async restart(){store=create(db);return this.saved()},async isolated(){return plain((await other.hydrate(h.all.map(f=>({...f,favorite:true})))).map(f=>f.favorite))},close(){q.clearTimer();db.close();dbB.close()}}
 }
-function tree(f,entry){return entry==='toolbar'?f.h.panel():entry==='context'?f.s.overlay():f.s.detail()}
+function tree(f,entry){return entry==='context'?f.s.overlay():f.s.detail()}
 async function entries(){
-  for(const runtimePreload of [false,true])for(const entry of ['toolbar','context','detail'])for(const initial of [[],['a'],['a','b','c']]){
+  for(const runtimePreload of [false,true])for(const entry of ['context','detail'])for(const initial of [[],['a'],['a','b','c']]){
     const f=await fixture({runtimePreload});await f.seed(initial);f.h.select().setSelectedFontIds(['a','b','c'])
     const before=plain(f.h.library.fonts),changed=3-initial.length
-    button(tree(f,entry),'收藏').props.onClick();await tick()
+    if(initial.length===3){assert(button(tree(f,entry),'取消收藏'));await f.h.command()('favorite')}else button(tree(f,entry),'收藏').props.onClick();await tick()
     assert.deepEqual(await f.saved(),[true,true,true]);assert.equal(f.count,3)
     assert.equal(f.calls.length,changed?1:0);assert.equal(f.refresh.length,changed?1:0);assert.equal(f.updates,changed?2:0);assert.equal(f.invalidations,changed?1:0)
     if(changed)assert.equal(f.calls[0][0].length,changed)
@@ -116,5 +116,5 @@ async function regressions(){
   const visible=h.h.load(renderer+'fontViewRuntime.ts').buildVisibleFonts({databasePageReady:true,databasePageResult:{items:h.h.all.map(f=>({...f,favorite:true}))},allFonts:Object.values(h.h.library.fonts),fontIndexById:new Map(),deferredSearch:'',activeFilter:{kind:'favorites'},sidebarPage:'library',library:h.h.library,timeSortMode:'all',sortMode:'name'})
   assert.deepEqual(plain(visible.map(f=>f.id)),['c'],'stale query resurrected canceled favorites');h.close();cases++
 }
-async function main(){await entries();await failures();await selection();await pagination();await regressions();console.log(`[diagnostics:batch-favorites] ${cases} scenarios passed: actual three UI entries/two preloads + action/queue + SQLite, mixed/idempotent/dedup, rollback/retry/reversal, A/B isolation/restart, selection and loaded-window refill. Controlled hooks; Windows/browser acceptance remains pending.`)}
+async function main(){await entries();await failures();await selection();await pagination();await regressions();console.log(`[diagnostics:batch-favorites] ${cases} scenarios passed: actual two UI entries/two preloads + action/queue + SQLite, mixed/idempotent/dedup, rollback/retry/reversal, A/B isolation/restart, selection and loaded-window refill. Controlled hooks; Windows/browser acceptance remains pending.`)}
 main().catch(e=>{console.error(e);process.exitCode=1})

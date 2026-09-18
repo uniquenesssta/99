@@ -1,4 +1,3 @@
-import type { RunFontCommand } from '../../fontCommandRuntime'
 import type { FontItem } from '@shared/types'
 import type { RefObject, UIEvent, MouseEvent } from 'react'
 import type { CardPoolViewMode, SortMode, SidebarPage, ActiveFilter, PageToolbarState, DeveloperStatusEntry, VirtualLayout, VIEW_MODE_LAYOUT } from '../../appRuntime'
@@ -29,9 +28,6 @@ export type FontListPanelProps = {
   updatePageToolbar: <K extends keyof PageToolbarState>(key: K, value: PageToolbarState[K]) => void
   updateViewModeWithScroll: (viewMode: PageToolbarState['viewMode']) => void
   search: string
-  selectedFontIds: string[]
-  runFontCommand: RunFontCommand
-  setSelectedFontIds: (ids: string[]) => void
   closeDetail: () => void
   fontScrollerRef: RefObject<HTMLDivElement>
   handleFontScroll: (event: UIEvent<HTMLDivElement>) => void

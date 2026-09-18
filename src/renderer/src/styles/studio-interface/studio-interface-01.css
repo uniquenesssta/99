@@ -169,7 +169,6 @@ body,
 }
 
 .topbar button,
-.selection-actionbar button,
 .detail-actions button,
 .modal-actions button,
 .clear-filter-button,
@@ -180,7 +179,6 @@ body,
 }
 
 .topbar button:hover,
-.selection-actionbar button:hover,
 .detail-actions button:hover,
 .modal-actions button:hover,
 .clear-filter-button:hover,

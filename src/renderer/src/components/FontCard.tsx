@@ -151,12 +151,6 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
         onClick={(event) => {
           event.preventDefault()
         }}
-        onDoubleClick={(event) => {
-          if (!onOpenDetail) return
-          event.preventDefault()
-          event.stopPropagation()
-          onOpenDetail(event)
-        }}
         onKeyDown={(event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return
           event.preventDefault()
@@ -248,12 +242,6 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
       onClick={(event) => {
         // 选择已经在 mouseDown 完成，避免 click 阶段再次触发。
         event.preventDefault()
-      }}
-      onDoubleClick={(event) => {
-        if (!onOpenDetail) return
-        event.preventDefault()
-        event.stopPropagation()
-        onOpenDetail(event)
       }}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return

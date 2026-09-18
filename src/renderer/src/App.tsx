@@ -954,9 +954,6 @@ export default function App(): JSX.Element {
     updatePageToolbar: updatePageToolbar,
     updateViewModeWithScroll: updateViewModeWithScroll,
     search: search,
-    selectedFontIds: selectedFontIds,
-    runFontCommand: runFontCommand,
-    setSelectedFontIds: setSelectedFontIds,
     closeDetail: closeDetail,
     fontScrollerRef: fontScrollerRef,
     handleFontScroll: handleFontScroll,
@@ -975,6 +972,8 @@ export default function App(): JSX.Element {
   }
 
   const detailViewProps: AppRootViewProps['detail'] = {
+    library: library,
+    visibleFonts: visibleFonts,
     visible: detailVisible,
     selectedFont: selectedFont,
     previewText: library.previewText,

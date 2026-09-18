@@ -55,10 +55,10 @@
     "src/renderer/src/runtime/preview/queue/fontAutoPreviewCacheQueueRuntime.ts": "5339fd863924dbd493793d7ab584c76430b3f43439f2bf02147a608be446e386"
   },
   "functionHashes": {
-    "src/renderer/src/fontSelectionEventRuntime.ts#handleFontSelectRuntime": "49e7c922417cc8427d1bc116dc70ac319cabe2f4723f1ed39b6361da7ab2b0c4",
+    "src/renderer/src/fontSelectionEventRuntime.ts#handleFontSelectRuntime": "b4db351753b5baa5e82447fcd279c3818a5e310aae1064dffe97c5ab652974fb",
     "src/renderer/src/fontSelectionEventRuntime.ts#handleFontOpenDetailRuntime": "3622cedd29acfc2cb4fb045d2d6b8f1ac89712b7f5d4a9dc72003647bcf5b794",
     "src/renderer/src/fontSelectionEventRuntime.ts#applyMarqueeSelectionRuntime": "7ce3f214b6473ace80ffdd07f15d14aa9c679d8c7928c56bc5203e051aa178e5",
-    "src/renderer/src/fontSelectionEventRuntime.ts#beginMarqueeSelectionRuntime": "3b9a9bd1dd8245ec5f9c562d9a76121c45d9d3ced3bd38e5ebf2fea9cd74b89d",
+    "src/renderer/src/fontSelectionEventRuntime.ts#beginMarqueeSelectionRuntime": "e23b84fbc110698ac298373e69156c3fb6a155e29dda630ac7cd44d0c5abf2c8",
     "src/renderer/src/fontFolderTreeRuntime.ts#assignFontToFolder": "9a2f936ca62a286d5917b119699aedeb09f99ed43e93d65c416ef9c55978d5d9",
     "src/renderer/src/fontFolderTreeRuntime.ts#selectFolderFilter": "5cb90388da9f441c9d30a0dbb2cf40352fffd2fe397a772c27b34d4b7b6bfcc0",
     "src/renderer/src/fontFolderTreeRuntime.ts#toggleFolderExpanded": "88ddf4302acd62a97fd3139616c37bbfc226650d6850af888e41905eea7a95ae",

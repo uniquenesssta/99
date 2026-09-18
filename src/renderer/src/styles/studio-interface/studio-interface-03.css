@@ -73,13 +73,6 @@
   width: clamp(240px, 28vw, 360px);
 }
 
-.selection-actionbar {
-  margin: 10px 14px 0;
-  border: 1px solid var(--studio-hairline);
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(122, 162, 255, 0.12), rgba(94, 234, 212, 0.045));
-}
-
 .font-virtual-scroller {
   padding: 14px;
 }
