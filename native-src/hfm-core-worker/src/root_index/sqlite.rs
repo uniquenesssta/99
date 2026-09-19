@@ -13,7 +13,7 @@ fn ensure_parent_dir(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn initialize_root_index_db(conn: &Connection, config: &RootIndexApplyConfig) -> rusqlite::Result<()> {
+pub(crate) fn initialize_root_index_db(conn: &Connection, config: &RootIndexApplyConfig) -> rusqlite::Result<()> {
     conn.execute_batch(
         r#"
         PRAGMA journal_mode = WAL;

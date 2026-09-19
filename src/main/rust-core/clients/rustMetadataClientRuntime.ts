@@ -259,6 +259,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_LOCAL_TAGS_READ_TIMEOUT_MS || 30 * 1000) || 30 * 1000),
         windowsHide: true,
+        sharedIo: { paths: [input.dbPath], write: false },
         maxBuffer: 8 * 1024 * 1024,
       })
 
@@ -303,6 +304,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_LOCAL_TAGS_WRITE_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
+        sharedIo: { paths: [input.dbPath], write: true },
         maxBuffer: 4 * 1024 * 1024,
       })
 
@@ -361,6 +363,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_LOCAL_TAGS_WRITE_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
+        sharedIo: { paths: [input.dbPath], write: true },
         maxBuffer: 4 * 1024 * 1024,
       })
 
@@ -578,6 +581,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
   async function runRustSharedMetadataOverlayRead(input: RustSharedMetadataOverlayReadInput): Promise<RustSharedMetadataOverlayReadResult | null> {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'shared-metadata-overlay-read')) return null
+    if (input.preflight && !hasCapability(status, 'shared-metadata-preflight-v1')) throw new SharedIoProcessError('原生 worker 不支持安全共享迁移，请更新。', 'not-started', 'capability-unavailable')
 
     const cleanEntries = Array.isArray(input.entries)
       ? input.entries.map((entry) => ({
@@ -587,7 +591,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         pathKey: String(entry?.pathKey || ''),
       })).filter((entry) => entry.key)
       : []
-    if (!cleanEntries.length) {
+    if (!cleanEntries.length && !input.preflight) {
       return {
         rootPath: input.rootPath,
         dbPath: input.dbPath,
@@ -609,13 +613,14 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         rootPath: input.rootPath,
         dbPath: input.dbPath,
         entries: cleanEntries,
+        preflight: input.preflight,
       })
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--shared-metadata-overlay-read',
         '--input', inputPath,
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_SHARED_METADATA_OVERLAY_READ_TIMEOUT_MS || 45 * 1000) || 45 * 1000),
-        sharedIo: { paths: [input.rootPath, input.dbPath], write: false },
+        sharedIo: { paths: [input.rootPath, input.dbPath], write: !!input.preflight },
         windowsHide: true,
         maxBuffer: 16 * 1024 * 1024,
       })
@@ -624,7 +629,10 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
 
       const payload = parseJsonLine<RustSharedMetadataOverlayReadPayload>(commandOutput.stdout)
       if (!payload.ok || !Array.isArray(payload.matched)) throw new Error(payload.message || 'rust shared metadata overlay read returned ok=false')
+      if (input.preflight && (payload.preflight?.version !== 1 || payload.preflight.phase !== input.preflight.phase)) throw new Error('原生共享迁移能力未确认，请更新 worker。')
+      if (input.preflight?.phase === 'snapshot' && !payload.preflight?.snapshot?.token) throw new Error('原生共享迁移快照缺失。')
       const result: RustSharedMetadataOverlayReadResult = {
+        preflight: payload.preflight,
         rootPath: String(payload.rootPath || input.rootPath || ''),
         dbPath: String(payload.dbPath || input.dbPath || ''),
         signature: String(payload.signature || 'metadata:none'),

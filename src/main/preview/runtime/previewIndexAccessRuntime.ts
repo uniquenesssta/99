@@ -1,4 +1,6 @@
-import { promises as fsp } from "node:fs";
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname } from "node:path";
 import type { PreviewCacheIndexStatus } from "../previewCacheRuntime";
 import type { PreviewCacheStorage, PreviewRuntimeOptions } from "./previewRuntimeTypes";
@@ -60,6 +62,8 @@ export function createPreviewIndexAccessRuntime(options: IndexOptions, ports: In
       ))
     )
       throw new Error("共享预览缓存根目录暂不可达");
+    if ((await sharedIoResourceKeys([indexDbPath])).length)
+      throw new SharedIoProcessError('共享预览数据库需要原生隔离执行器。', 'not-started', 'native-required');
     await runRequiredRootPreviewCacheIo(
       storage.rootPath || "",
       `preview-cache-open-db-dir:${storage.rootPath || indexDbPath}`,

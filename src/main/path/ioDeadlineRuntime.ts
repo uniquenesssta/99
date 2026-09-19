@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from './sharedFileSystemRuntime'
 export class IoDeadlineTimeoutError extends Error {
   readonly timeoutMs: number
   readonly label: string

@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import os from 'node:os'

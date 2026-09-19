@@ -1,5 +1,6 @@
 import { app } from 'electron'
-import fs,{ promises as fsp } from 'node:fs'
+import fs from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { dirname,join,resolve } from 'node:path'
 import { normalizePathForCacheCompare } from '../path/cachePath'
 import {

@@ -1,3 +1,4 @@
+import { prepareSharedMetadataInWorker } from './sharedMetadataPreflightRuntime'
 import os from 'node:os'
 import type { FontScanCacheFile } from '../rootIndexRuntime'
 import type { SharedFontMetadataRuntimeDeps } from './sharedFontMetadataRuntime'
@@ -52,6 +53,10 @@ export function createSharedMetadataLegacyImportRuntime(deps: SharedMetadataLega
   }
 
   async function ensureLegacyMetadataImported(rootPath: string, cache: FontScanCacheFile): Promise<void> {
+    if (runtimeDeps.runRustSharedMetadataOverlayRead) {
+      await prepareSharedMetadataInWorker(runtimeDeps.runRustSharedMetadataOverlayRead, rootPath, runtimeDeps.cacheEntryRuntimePath, cache)
+      return
+    }
     const db = await deps.openSharedMetadataDb(rootPath)
     try {
       const imported = migrateLegacyMetadataFromCacheInOpenDb(db, rootPath, cache)

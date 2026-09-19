@@ -1,5 +1,6 @@
 import { shell } from "electron";
-import { promises as fsp } from "node:fs";
+import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime';
+import { executeSharedFile, sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime';
 import { basename,extname,resolve } from "node:path";
 import type { FontDeleteResult,FontItem } from "../../shared/types";
 import { withSharedLeaseLock } from "../storage/runtime/sharedLeaseLockRuntime";
@@ -49,7 +50,8 @@ export async function deleteFontFilesToTrashRuntime(
         appendStartupLog: deps.appendStartupLog
       }, async () => {
         await fsp.access(resolvedPath);
-        await shell.trashItem(resolvedPath);
+        if ((await sharedIoResourceKeys([resolvedPath])).length) await executeSharedFile({ operation:'trash',path:resolvedPath });
+        else await shell.trashItem(resolvedPath);
       });
       deletedIds.push(item.id);
     } catch (error) {

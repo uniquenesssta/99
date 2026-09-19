@@ -2,10 +2,10 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.7；制定日期：2026-09-18；软件版本：3.0.0。
+- 文档版本：1.8；制定日期：2026-09-18；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定及专项实施分支：`stage/09-preview-tags-app`。本项是当前分支的补充专项，不另行宣告主线 Stage 8 或 U-09 完成。
 - 制定代码基线：`5866105917d3af7a843f320f220ae047bb49d957`；实施前重新核对实际 HEAD、远端与工作树，不能把此处基线当成永远最新。
-- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02 已接入七项共享请求及目录探测，完整业务隔离未完成；O-03 已实现、自动验证通过、实机待验；O-04 已开始故障取证，完整实现受阻；O-05 本地记录持久化已接入，完整闭环未完成；O-06～O-08 未开始。**
+- 当前状态：**O-00 基线取证已交付；O-01 已实现，自动验证通过、实机待验；O-02 消费者隔离代码已补齐，验收见 §22；O-03 已实现、自动验证通过、实机待验；O-04 本机副本及源路径无关取消代码已补齐；O-05 分阶段恢复及人工残留处置代码已补齐，Windows/NAS 与重启实机待验；O-06～O-08 未开始。**
 - 用户最终约定：共享监视文件夹和共享标签断网后保留原位置、置灰禁用，重连后恢复；网络永远不恢复也必须允许正常退出；已激活字体通过本机副本继续使用和清理；不做离线共享修改或离线同步系统。
 - 上级：[总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)。承接[操作优化任务书](HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md) §19、§20，保留状态按钮合一、100ms 单击防连击、标签提交即时查询及共享冲突修复。
 - 同时继承[链路一致性任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)的事务/意图/回执约束，以及 [Stage 1 激活事务](HFM_STAGE_01_ACTIVATION_TASKBOOK.md)、[Stage 2 路径授权](HFM_STAGE_02_PATH_AUTHORIZATION_TASKBOOK.md)、[Stage 5 Rust 边界](HFM_STAGE_05_RUST_WORKER_TASKBOOK.md)、[Stage 6 React 所有权](HFM_STAGE_06_REACT_COMPOSITION_TASKBOOK.md)、[Stage 7 IPC 校验](HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)的质量要求。
@@ -269,7 +269,7 @@
 
 ### O-02：网络任务隔离、超时与取消结算
 
-- **状态：进行中，原生迁移验证环境受阻；尚未通过 O-02 完整门。** 前置：O-01 自动门通过。进程基础及未接入范围见 §18。
+- **状态：代码已补齐；自动验收见 §22，真实 NAS 故障矩阵待验。** 前置：O-01 自动门通过。§18 是历史分批记录，§22 为当前接续结果。
 - 导航：ioDeadlineRuntime、rustCoreDaemonRuntime、rustCoreDaemonWriteBoundaryRuntime、共享 metadata 前置读取、DB worker 与现有调度器。
 - 步骤：逐消费者迁移/证明无主进程阻塞网络 I/O；按根准入；本地清理与网络隔离；取消宽限、终止、旧代次结果拒绝；已提交未知结果保留；共享/本地句柄不能跨所有者误关。
 - 必过：真实子进程永不回应/忽略 cancel/退出前迟到返回；两个根一坏一好、本地调用持续可用；读超时可取消，写超时不重写；10 次连续故障后进程、句柄、队列有界；无主进程同步网络调用漏网。
@@ -287,7 +287,7 @@
 
 ### O-04：本机副本与源路径无关的取消激活
 
-- **状态：已开始，已建立故障基线；完整实现受 O-02 及原生验证环境阻塞。** 前置仍为 O-02、O-03 自动门通过，用户明确要求先开展 O-04；当前取证不代表前置通过。见 §20。
+- **状态：代码已补齐；自动验收见 §22，真实 Windows 字体/NAS 场景待验。** 取消与状态结算已切换本机记录及数据库；§20 保留历史故障取证。
 - 导航：fontActivationCopyRuntime、fontActivationTransactionRuntime、fontActivationVerifyRuntime、fontDeactivationBatchRuntime、fontDeactivationSettlementRuntime、fontActivationInstallStatusRuntime、临时激活记录及路径授权 owner。
 - 步骤：梳理本机副本所有权与完整性；复制断网补偿；本地记录独立解析取消目标；去除取消/核验中的 NAS 必需访问；本地结果与可重建网络索引分离。
 - 必过：激活成功后所有源路径访问被故障端口拒绝，单项/多项/退出候选仍能本地结算；资源失败、注册失败、混合永久字体、源文件删除、同名不同字体、半文件和目标被替换；原 A1～A8 事务门保持。
@@ -296,7 +296,7 @@
 
 ### O-05：持久恢复与残留处理闭环
 
-- **状态：进行中，本地记录持久化已接入；完整闭环未完成。** 用户明确开始 O-05；O-04 前置自动门仍未通过，见 §21。
+- **状态：代码已补齐；自动验收见 §22，Windows 占用、权限和实际重启待验。** §21 保留早期持久化批次；阶段恢复、身份拒绝与人工入口已接入，不能将未执行实机项标为通过。
 - 导航：temporaryActiveFontsStoreRuntime、fontActivationCompensationQueue、temporaryFontDeleteQueue、fontActivationCleanupRuntime、既有维护/诊断入口和必要 native helper。
 - 步骤：本地记录原子性和版本错误处理；复用现有队列记录分阶段事实；最小手动清理入口；文件占用/权限错误准确提示；必要的用户触发提权与重启清理；启动核验。
 - 必过：每个阶段进程中断、磁盘满/权限拒绝/JSON 损坏/缺文件/未知版本；重开 owner/应用恢复；文件残留不能报仍激活；重复重试不能误删永久字体；重新安装或重新激活后的旧删除任务必须因身份变化被拒绝。
@@ -501,15 +501,15 @@ README/任务状态、提交、推送、回滚定位：
 | --- | --- | --- | --- | --- | --- |
 | O-00 | 自动验证通过、实机待验 | 本节同批提交（Git 可追溯） | TypeScript、126/126；8 项已知问题观察、5 组对照 | 待验 | 证据与消费者清单见 §16，非修复完成 |
 | O-01 | 自动验证通过 | 本节同批提交（Git 可追溯） | TypeScript、127/127、LF/CRLF、旧反例、三端构建与混淆 | 待验 | 根状态与目录保留，见 §17 |
-| O-02 | 进行中，部分业务已接入 | §18.4 接续提交 | 接线专项及构建通过；全量回归记录见 §18.5；完整 O-02 门未通过 | 待验 | 七项请求与目录探测已切换，旧迁移等消费者仍待迁移 |
-| O-03 | 已实现、实机待验 | 本节同批提交 | TypeScript、129/129、定向 40 组及构建通过 | Windows/NAS 待验 | 置灰与完整动作准入；O-02 前置仍未满足 |
-| O-04 | 故障取证完成、实现受阻 | 本节同批提交 | 5 缺口观察/4 对照；完整门未通过 | 待验 | O-02 隔离及原生验证待补齐，见 §20 |
-| O-05 | 进行中，持久化已接入 | §21 同批提交 | TypeScript、132/132 诊断、专项 7 组及构建通过 | Windows/重启待验 | 手动处置、身份核验及分阶段闭环未完成 |
+| O-02 | 代码已补齐、实机待验 | §22 同批提交 | 136/136、真实隔离子进程及原生验证见 §22 | NAS 故障待验 | 前置迁移、扫描、预览、维护及文件消费者已接入 |
+| O-03 | 已实现、实机待验 | 本节同批提交 | TypeScript、129/129、定向 40 组及构建通过 | Windows/NAS 待验 | 置灰与完整动作准入；O-02 后续接线见 §22 |
+| O-04 | 代码已补齐、实机待验 | §22 同批提交 | 源路径全面拒绝下单项/批量结算、身份替换拒绝 | Windows 字体/NAS 待验 | 本机副本、完整性、本机状态及列表更新 |
+| O-05 | 代码已补齐、实机待验 | §22 同批提交 | 分阶段恢复、人工终结、本地损坏/并发故障门 | Windows 占用/权限/重启待验 | 手动重试、旧记录核验与 RunOnce 已接入 |
 | O-06 | 未开始 | — | 未执行 | 未执行 | 整体有界退出 |
 | O-07 | 未开始 | — | 未执行 | 未执行 | 校验后恢复，不重放编辑 |
 | O-08 | 未开始 | — | 未执行 | 未执行 | 28 项 X 矩阵与收尾 |
 
-继续执行入口：O-02。先恢复原生迁移验证条件，完成所有消费者隔离后再进入 O-03；Windows 待证项持续登记，最终验收不得跳过。
+继续执行入口：O-06（整体退出预算）；O-02/O-04/O-05 的本轮代码与自动验证见 §22。实机矩阵在 O-08 继续验收，不因代码交付而跳过；整体断网退出成功承诺须等 O-06 验证。
 
 
 ## 16. O-00 执行卡
@@ -872,3 +872,102 @@ npm run verify
 - 手动残留清理界面、权限处置、用户触发的重启清理及实际 Windows 重启核验尚未实现。删除队列临界区等待原生操作，本批不证明整体退出有界；O-02 全消费者隔离和 O-06 仍待完成。
 - 发布前中断只验证记录文件旧版本可读，不等于完整激活事务崩溃恢复；中断留下的随机临时文件不参与读取，本批不新增自动清扫。没有离线同步/共享写重放系统。
 - 回滚单位为本卡同批 11 文件 Git 提交；无需数据迁移。旧 version 1 可读取，回滚会失去严格错误保护和持久错误字段的使用。Windows 用户继续通过 npm run dev 验证，不把本环境无 Cargo 当作用户实机缺失工具链。
+
+## 22. O-02/O-04/O-05 完整实现接续
+
+- 用户要求按依赖补齐实际代码；不得把未实现项写成仅待实机验证，不因当前环境缺失停止可完成代码。基线 bbc76a816f5b3cc00de3bc0f496140a18af545df。
+- 第一组精确白名单（O-02 前置迁移）：native-src/hfm-core-worker/src/shared_metadata/{mod.rs,types.rs,read_state.rs,preflight.rs}；src/main/rust-core/{rustCoreWorkerContracts.ts,clients/rustMetadataClientRuntime.ts}；src/main/indexing/shared-metadata/{sharedMetadataLegacyImportRuntime.ts,sharedMetadataOverlayRuntime.ts,sharedFontMetadataRuntime.ts,sharedMetadataDbRuntime.ts,sharedMetadataLockRuntime.ts}；build/diagnostics/check-shared-metadata-preflight.cjs；package.json、README.md、本任务书、总任务书。后续消费者、激活与残留界面依次在改动前追加准确路径。
+- 目标是把 legacy/import/backfill/replay 的共享文件和 SQLite 操作迁出主进程，保留兼容和未知结果拒绝重放，原生能力回执需明确确认，旧 worker 不得静默跳过前置步骤。
+
+- 白名单补充：src/main/indexing/shared-metadata/sharedMetadataPreflightRuntime.ts（新增），sharedTagOpsReplayRuntime.ts（导出现有纯回放计划计算）。为保持原有 localeCompare 冲突顺序，原生进程返回有版本指纹的类型化快照，JS 仅作纯计算，再由原生事务核对指纹并提交整批回放；冲突拒绝，不重放共享业务写。不是逐条 SQL RPC，也不允许 main 打开共享库。
+
+- 白名单补充：native-src/hfm-core-worker/src/protocol.rs（迁移能力握手），src/main/rust-core/rustCoreWorkerTransportRuntime.ts（本地迁移命令也使用独立进程，避免把带写入的 overlay 交给 daemon 可替换读队列）。
+
+- 第二组白名单（网络执行漏网）：src/main/rust-core/rustSharedIoCommandRuntime.ts；src/main/rust-core/clients/rustIndexingClientRuntime.ts、rustWindowsClientRuntime.ts、rustPreviewClientRuntime.ts；src/main/path/pathCanonicalizer.ts、watchedFolderCanonicalRuntime.ts；build/diagnostics/check-shared-io-integration.cjs。transport 对自身临时输入的不可变快照及直接参数收集绝对网络路径，覆盖扫描、复制、预览与数据库命令；客户端不得吞掉隔离取消/未知错误。
+
+- 第三组白名单（O-04 本地结算）：src/main/install/status/{installStatusMachineIdentity.ts,installStatusReadRuntime.ts,installStatusWriteRuntime.ts}；src/main/activation/activationInstallStatusSaveQueue.ts；src/main/indexing/merged-page/mergedIndexValidationRuntime.ts。机器安装事实统一使用现有本机 machines/<machine>/install.sqlite；保留旧共享机器索引文件，不迁移或重放共享业务。缓存缺失沿用真实系统核验。激活保存后直接修改本地 merged entries，不再按源根重读共享索引。
+- 诊断白名单补充：build/diagnostics/check-io-deadline-policy.cjs，移除历史强开主线程 UNC 探测开关的要求，改为实际运行 UNC/映射盘及显式旧开关均不得进入同步 stat/realpath 的断言。
+
+- 第四组白名单（O-04/O-05 托管副本及恢复）：native-src/hfm-core-worker/src/font_resource/{activation_files.rs,activation_identity.rs,mod.rs}；src/main/windows/runtime/fontRuntimeTypes.ts；src/main/activation/runtime/{fontActivationTypes.ts,fontActivationCopyRuntime.ts,managedActivationIdentityRuntime.ts,fontActivationTransactionRuntime.ts,fontActivationCompensationRuntime.ts,fontActivationCleanupRuntime.ts,fontDeactivationSettlementRuntime.ts,fontDeactivationBatchRuntime.ts,fontActivationVerifyRuntime.ts,localRecoveryFileRuntime.ts}；src/main/activation/temporaryFontDeleteQueue.ts、fontActivationRuntime.ts。复用已有三份记录，扩展可选 sessionId/identity/stage；新激活使用独立代次目标，旧证据不足记录保留待人工核验。原生复制完整性、身份检查和受管删除分别有真实源码测试，无法在当前损坏工具链中执行的项如实待验。
+
+- 第五组白名单（O-05 处置入口）：新增 src/shared/fontCleanup.ts、src/main/activation/runtime/fontCleanupRemnantsRuntime.ts、src/renderer/src/components/app/FontCleanupPanel.tsx；修改 src/main/ipc/{ipcHandlerTypes.ts,handlers/maintenanceIpcHandlers.ts}、src/main/bootstrap/{mainCompositionContracts.ts,mainMutationCompositionRuntime.ts,mainApplicationRuntime.ts}、src/preload/index.ts、src/main/preload/runtimePreloadSource.ts、src/renderer/src/components/app/FontListPanel.tsx；native-src/hfm-core-worker/src/font_resource/windows.rs。只接管本机记录中的目标，IPC 不接受任意文件路径；旧记录接管需用户确认且核对显示时的身份令牌。重启后清理使用当前用户 RunOnce 启动原应用，复用启动阶段的身份核验及队列，不使用按路径盲删的重启删除命令。
+
+- 第六组白名单（执行者生命周期）：src/main/path/sharedIoProcessRuntime.ts、sharedPathProbeRuntime.ts；native-src/hfm-core-worker/src/main.rs、isolated_lifetime.rs（新增）。超时错误携带真实 close 的完成信号；托管副本在执行者关闭前禁止核验接管/删除。目录探测与共享 Rust 命令共用应用级两槽进程池。原生隔离执行者监视父进程句柄，父进程异常结束时终止自身，避免复制执行者脱离应用存活。
+
+- 第七组白名单（回归及身份故障门）：build/diagnostics/{check-font-activation-transaction.cjs,check-deactivation-refresh.cjs,check-local-recovery-files.cjs,check-shared-tag-ops-replay.cjs,check-active-view-consistency.cjs,check-runtime-feedback.cjs,check-managed-activation-recovery.cjs}；build/diagnostics/helpers/rustWorkerTransportHarness.cjs；build/diagnostics/fixtures/{orchestration-contracts.fixture.json,main-application-registration.fixture.json,main-composition-runtime.fixture.json,rust-worker-contracts.fixture.json,rust-worker-clients.fixture.json,rust-worker-transport.fixture.json}。仅更新必要新增端口、身份回执与预期行为；保留负向变异门，并新增实际文件替换、迟到执行者和阶段恢复测试，不以刷新哈希替代行为验证。
+- 契约白名单补充：src/main/rust-core/rustCoreWorkerRuntime.ts，仅补充新类型的原有 facade 导出；没有新增运行时 owner 或另建客户端。
+
+- 第八组白名单（共享维护隔离）：native-src/hfm-core-worker/src/shared_metadata/{preflight.rs,read_state.rs}；src/main/indexing/shared-metadata/{sharedMetadataFrontendDiagnosticsRuntime.ts,sharedMetadataMaintenanceSnapshotRuntime.ts（新增）,sharedMetadataDbRuntime.ts}；src/main/bootstrap/mainMaintenanceCompositionRuntime.ts；src/main/rust-core/rustCoreWorkerContracts.ts；build/diagnostics/check-shared-metadata-preflight.cjs。维护使用原生事务快照、主进程纯内存 SQLite 执行原有报告/修复逻辑、原生指纹条件提交；固定五张元数据表，不暴露 SQL RPC，不打开网络 SQLite，也不把联网维护静默禁用。
+- 第八组接线补充：src/main/bootstrap/mainOperationsCompositionRuntime.ts（维护 worker 能力的窄类型传递）；native-src/hfm-core-worker/src/shared_metadata/schema.rs（初始化固定 schema 元数据仅在值变化时更新，避免只读初始化改变维护指纹）。
+
+- 第九组白名单（文件及根索引读取隔离）：新增 native-src/hfm-core-worker/src/shared_file_io.rs、src/main/path/sharedFileSystemRuntime.ts；修改 native-src/hfm-core-worker/src/{main.rs,commands.rs,protocol.rs}、src/main/rust-core/rustCoreWorkerTransportRuntime.ts。原生固定文件操作协议通过现有进程 owner 执行，二进制经 owner 持有的本地临时文件传递；共享根 SQLite 只读快照由原生生成，主进程只打开本地快照。共享文件句柄不跨进程借用。
+
+- 第九组精确消费者白名单（仅替换共享异步文件 I/O 端口，原本地分支保持原 Node 操作）：src/main/preview/previewRuntime.ts；src/main/preview/previewDbRuntime.ts；src/main/preview/runtime/previewCachedImageReadBatchRuntime.ts；src/main/preview/runtime/previewCacheMetaRuntime.ts；src/main/preview/runtime/previewLocalCacheEvictionRuntime.ts；src/main/preview/runtime/previewIndexAccessRuntime.ts；src/main/preview/runtime/previewCacheManifestRuntime.ts；src/main/preview/runtime/previewCacheHydrationRuntime.ts；src/main/preview/runtime/cachedPreviewReadRuntime.ts；src/main/preview/runtime/previewCachePublishRuntime.ts；src/main/preview/runtime/previewFontDataRuntime.ts；src/main/preview/runtime/previewStorageRoutingRuntime.ts；src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts；src/main/watcher/watchedFolderIndexRuntime.ts；src/main/watcher/folderWatcherRuntime.ts；src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts；src/main/watcher/manual-refresh/manualFolderIndexEntryRuntime.ts；src/main/watcher/manual-refresh/manualFolderCacheRepairRuntime.ts；src/main/indexing/fontScanWorkers.ts；src/main/indexing/mergedIndexRuntime.ts；src/main/indexing/rootIndexRuntime.ts；src/main/indexing/root-index/rootIndexLockRuntime.ts；src/main/indexing/root-index/rootIndexLatestRuntime.ts；src/main/indexing/root-index/rootIndexSnapshotRuntime.ts；src/main/indexing/root-index/sharedRootIdentityRuntime.ts；src/main/indexing/root-index/sharedIndexLeaseRuntime.ts；src/main/indexing/root-index/rootIndexDatabaseRuntime.ts；src/main/indexing/root-index/sharedIndexTrustRuntime.ts；src/main/indexing/root-index/rootIndexFileRuntime.ts；src/main/indexing/root-index/rootIndexManifestRuntime.ts；src/main/indexing/scan-orchestrator/rootDirectoryCacheRuntime.ts；src/main/indexing/scan-orchestrator/scanListingRuntime.ts；src/main/indexing/shared-metadata/sharedMetadataSignatureRuntime.ts；src/main/indexing/shared-metadata/sharedMetadataDbRuntime.ts；src/main/indexing/shared-metadata/sharedMetadataLockRuntime.ts；src/main/cache/cacheArchitectureRuntime.ts；src/main/cache/rootArchitectureDatabasesRuntime.ts；src/main/cache/jsonAtomic.ts；src/main/cache/scan-storage/rootIndexStorageRuntime.ts；src/main/cache/scan-storage/cacheCleanupRuntime.ts；src/main/cache/scan-storage/scanCacheJsonRuntime.ts；src/main/cache/scan-storage/cacheStatsRuntime.ts；src/main/path/ioDeadlineRuntime.ts；src/main/path/fontPathAuthorizationRuntime.ts；src/main/maintenance/databaseBackupRuntime.ts；src/main/maintenance/previewCacheMaintenanceRuntime.ts；src/main/maintenance/databaseMaintenanceHelpers.ts；src/main/folders/folderCacheJsonRuntime.ts；src/main/folders/physicalFolders.ts；src/main/folders/folderCacheRuntime.ts；src/main/app/appDataPaths.ts。
+- 第九组根索引/监听补充：src/main/indexing/root-index/rootIndexDatabaseRuntime.ts（共享只读快照句柄及关闭释放）；src/main/watcher/folderWatcherRuntime.ts（共享监听改为隔离目录快照差异检测，错误不提交删除）；src/main/path/sharedPathProbeRuntime.ts（探测锁使用同一规范共享根身份）；src/main/path/sharedIoProcessRuntime.ts（Node 目录探测父进程生命管道）。
+- 第九组漏网补充：src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts（重命名规划读取原生快照）；src/main/preview/native-renderer/previewNativeRendererRuntime.ts、src/main/maintenance/previewCacheMaintenanceRuntime.ts、src/main/preview/runtime/cachedPreviewReadRuntime.ts（去除网络同步 exists）；src/main/indexing/fontScanWorkers.ts、src/main/indexing/scan-orchestrator/{scanListingRuntime.ts,rustParseBatchFastPathRuntime.ts}、src/main/watcher/manual-refresh/manualFolderRustListingRuntime.ts、src/main/indexing/merged-page/mergedIndexSyncRuntime.ts、src/main/maintenance/databaseBackupRuntime.ts、src/main/rust-core/clients/rustMaintenanceClientRuntime.ts（隔离错误不得回退为未隔离任务）。
+
+- 第十组闭环白名单：src/main/path/startupPathAvailabilityRuntime.ts（隔离探测记录物理根身份）；native-src/hfm-core-worker/src/shared_metadata/signature.rs（仅确认不存在可作为空结果）；build/diagnostics/check-shared-filesystem.cjs（新增隔离文件端口/监听诊断）。其余本组改动限第九组已有的监听、数据库和进程 owner，禁止共享主进程 SQLite 回退。
+
+- 第十组诊断接线白名单：build/diagnostics/check-decomposition-baseline.cjs、build/diagnostics/check-main-composition-runtime.cjs、build/diagnostics/check-font-path-authorization.cjs、build/diagnostics/check-merged-index-mutation-serialization.cjs、build/diagnostics/check-database-maintenance-serialization.cjs、build/diagnostics/check-watcher-index-consistency.cjs、build/diagnostics/fixtures/watcher-activation-baseline.fixture.json、build/diagnostics/fixtures/preview-index-owner.fixture.json。原有局部加载器补入新的文件 I/O 端口；默认使用该用例既有 node:fs mock，隔离路由由独立真实 owner 专项验证。结构快照仅按已复核新增入口更新，原断言和故障变异保留。
+
+- 第十组契约补充白名单：build/diagnostics/check-main-composition-compiler-paths.cjs、build/diagnostics/check-watcher-activation-baseline.cjs、build/diagnostics/fixtures/decomposition-baseline.fixture.json。新增维护能力使编译拒绝案例由 126 增至 128，保持全部案例；共享隔离接线增加结构快照，行为断言不减少。
+
+- 第十一组精确消费者白名单：src/main/library/sharedKnownTagsRuntime.ts、src/main/db/sqliteRuntime.ts、src/main/app/fontProtocolRuntime.ts、src/main/storage/runtime/sharedLeaseLockRuntime.ts；native-src/hfm-core-worker/src/root_index/{mod.rs,sqlite.rs}、native-src/hfm-core-worker/src/preview_cache/mod.rs（复用已有固定 schema 初始化）。mainMutationCompositionRuntime 已在第五组，新增两个只读元数据入口使用本地快照；manualFolderCacheRepairRuntime 已在第九组，共享修复走隔离固定协议，未知失败禁止隔离/重建旧库。
+
+- 第十二组本地事实白名单：native-src/hfm-core-worker/src/system_fonts/{registry.rs,read.rs}、src/main/install/systemInstalledFontsRuntime.ts。系统登记读取保留注册表事实，不探测注册表里任意网络字体路径；名称增强仅限两个本机字体目录。既有 font_resource/windows.rs 增加仅 HKCU 字体值的归属读取，复用本批尚未发布的 font-activation-identity-v1 协议；清理前值已指向其他文件则拒绝。
+
+
+- 第十三组文件读取白名单：src/main/fonts/fontRuntime.ts（字体头隔离读取、异步取得本地字节后纯解析）；src/main/install/{currentUserManagedInstallRuntime.ts,systemFontInstallRuntime.ts,systemFontInstallHelpersRuntime.ts,fontTrashDeleteRuntime.ts}（源文件异步 I/O 走统一隔离端口，OS 回收站仍需专用执行者核验，不能冒充已隔离）。fontFileMoveCommitRuntime 的流式移动不是本组修改，继续登记为消费者审计项。
+
+- 第十三组类型补充白名单：src/main/fontkit.d.ts；已安装 fontkit 2.0.4 的 create(buffer) 能力补齐类型，纯字节解析不增加依赖。
+
+- 第十四组移动白名单：src/main/folders/fontFileMoveCommitRuntime.ts；既有 activation_identity.rs 导出只读 file_id 供固定文件操作返回精确卷/文件编号。移动继续执行原独占发布、摘要比对和来源保留逻辑；复制/发布结果未知时不抢先清理仍可能被执行者使用的临时文件。
+
+- 第十五组回收站白名单：新增 native-src/hfm-core-worker/src/shared_file_io/trash.rs；既有 shared_file_io.rs 路由固定 trash 操作，fontTrashDeleteRuntime.ts 在共享/受监视隔离根使用该操作。Windows IFileOperation、RECYCLEONDELETE、EARLYFAILURE 和取消回执按 Microsoft 文档核对；操作不降级为永久删除，不启动不受控 PowerShell 子进程。Windows COM 路径待原生编译/实机验证。
+
+- O-05 人工终结边界（沿用第五组已有白名单）：增加清除失效记录动作。只在用户明确确认已重启 Windows，且原生再次确认本机目标文件不存在、对应 HKCU 值不存在后移除该条本地任务；不删除任何文件/注册表，不把用户确认伪装成程序已测得重启，也不将缺失文件直接解释为当前 GDI 已卸载。
+
+- 第十六组验证白名单：.github/workflows/native-offline-verification.yml（新增）、build/diagnostics/check-orchestration-contracts.cjs、build/diagnostics/check-font-move-transaction.cjs。原生验证分支只运行 Linux/Windows Cargo 测试和编译，不发布应用；诊断仅适配新增隔离端口，原断言保留。
+
+- 第十六组行为补充白名单：build/diagnostics/check-offline-settlement-watcher.cjs（新增）；实际 SQLite 本机状态更新及失败后再投影、共享监视快照失败保留/停止后迟到拒绝，包含 CRLF 与因果变异。
+
+
+### 22.1 实际交付与消费者闭合
+
+| 范围 | 实际入口与处理 | 失败与所有权约束 |
+| --- | --- | --- |
+| 根目录、UNC、映射盘与 junction | 注册监视根隔离身份；异步映射发现；子进程 stat/realpath；共享根使用原生完整树快照轮询 | 不在主进程探测 Windows 监视根；失败保留旧快照；根代次变化丢弃迟到读回 |
+| 共享元数据前置及维护 | 原生读取旧文件/数据库快照 → JS 纯回放计划或内存 SQLite 维护 → 原生指纹条件事务提交 | 保留原 localeCompare 冲突顺序和删除事实；指纹过期拒绝提交；main 不打开网络 SQLite |
+| 共享元数据读取与写入 | 原五项命令及 knownTags、重命名前读取、标签定位读取接统一边界 | 已提交结果未知不降级 Node/daemon 再做；读取失败不变为空目录 |
+| 扫描、根索引与手动刷新 | 原生扫描/解析，根索引只读本地快照，清单/锁/快照文件走固定操作协议 | 共享 worker_thread 回退拒绝；根锁心跳/删除核对文件身份；扫描失败不生成空成功 |
+| 预览、缓存与字体协议 | 共享字体/图片字节、目录及索引操作隔离；字体名称在拿到字节后纯解析 | 共享预览不进入旧主进程同步检查或 PowerShell 回退；临时输入保留到执行者真正关闭 |
+| 备份、数据库维护与修复 | 固定 SQLite 快照/检查/已确认损坏后的隔离修复；三份辅助根库原生初始化 | 网络不可达、权限、busy 或未知结果不作为损坏重建证据；隔离结果未知禁止复制删除回退 |
+| 移动、安装与回收站 | 共享源文件端口隔离；移动保留独占发布/摘要核验/源保留；回收站使用原生 IFileOperation | 无回收站能力时报告失败，不降级永久删除；未知移动保留恢复文件 |
+| 本机安装事实 | 所有根统一使用本机 machines/<machine>/install.sqlite；已确认结果直接事务修改本机 merged entries | 不定位 NAS 源根；本机列表更新失败保留重试；不改变共享标签/收藏/保护事实 |
+| 本机激活与取消 | 独立代次文件名、全内容校验、卷/文件编号和会话记录；本机目标进入 OS API | 激活后不再检查 NAS 源；旧任务不接受同名替换或同内容新文件身份；HKCU 值改指其他文件时拒绝 |
+| 残留恢复与人工处置 | 三份原有 version 1 记录的串行原子更新；资源→注册表→文件分阶段；UI/两套 preload/IPC 接入 | 阶段持久化失败立即停止下游副作用；损坏记录保留；原生删除失败不兼容重试 |
+
+- 活动共享进程上限 2、每根互斥、排队上限 128；共享文件同键读取合并。队列提交前再次检查根代次与离线准入，未提交写入不会在恢复后自动补交。超时先结算为未开始/未知，槽位与输入文件一直保留到真实 close；父进程结束后原生及 Node 探测子进程均有独立生命周期保护。
+- 固定文件端口预算：元信息/开句柄 500ms，读取/完整目录快照 2s，写入 5s；这是隔离执行预算，不是 O-06 总退出预算。真实大目录/NAS 负载需要 O-08 验证，未为通过测试偷偷增大预算。
+- 本机副本采用完整复制；仅发布完整、校验通过的文件。复制超时执行者未关闭时禁止接管和清理；partial 文件不能被当成已激活文件。Windows 删除以独占句柄核验身份并对该句柄设置删除标记，原生测试覆盖同内容替换拒绝。
+- 残留界面提供刷新、重试、打开本机字体/记录目录、登记下次 Windows 登录清理及旧记录身份确认。永久权限故障保留具体阶段，用户可通过 Windows 手工处理权限/残留后重启；不要求恢复 NAS，不无限重放共享业务。
+- `dismiss-missing` 是有限终结办法：用户明确确认已重启 Windows，原生再核验文件及对应 HKCU 值均不存在，才删除该条失效记录；不是 GDI 资源自动核验，也不是按路径强删。RunOnce 启动原应用完成受身份保护的清理，不安排不受保护的系统启动删文件。
+
+### 22.2 验证证据
+
+- `npm run verify` 退出码 0：TypeScript 与 136/136 诊断通过；包含原 A1～A8、路径授权、IPC 来源、共享/本地状态一致性及既有变异门。新增隔离文件、元数据前置、托管恢复、本地状态/共享监视四项，未删减旧门。
+- 隔离集成实际创建不响应/忽略退出/迟到返回的进程，检查并发与真实关闭后的资源归还；目录探测专项实际杀掉父进程，证明阻塞探测子进程退出；排队写入失去准入时未产生目标文件。元数据专项使用真实内存 SQLite；新本地列表事务和共享监视专项包含 CRLF 与两个因果变异。
+- 托管恢复专项 9 组：真实本机文件及生产 owner；源访问全拒绝下单项/批量取消、资源与注册表分阶段重试、同内容新身份拒绝、执行者关闭租约、文件残留状态、人工接管令牌、人工终结前置及损坏意图拒绝。Windows 资源/注册表端口受控，这部分不冒充实机字体卸载。
+- Electron/Vite 三端构建 380/1/203 模块，混淆 3/3，均退出码 0。未制作 NSIS 或运行桌面 UI 实机验收。
+- 原生验证：首轮 GitHub Windows/Linux Cargo 全测试与 release check 均通过；新增父进程异常退出测试在两平台通过。第二轮 Windows 发现并行测试目录只用时间戳导致重名，修复测试夹具为进程内原子序号，不改变生产复制逻辑。最终两平台 Cargo 全测试与 release build 结果在本节末登记。
+- 查询了真实 rusqlite/Node/fontkit 与 Windows 文件身份、注册表、COM 回收站、RunOnce 文档；Context7 无精确条目时使用 Microsoft 官方 API 文档。Mermaid Chart 已更新实际隔离、回执、持久清理链路。Create State 沿用容量 2/2 后跳过的既定约定，交接以 Git/README/本书为准。
+
+### 22.3 兼容、风险与后续
+
+- 不新增业务依赖；共享元数据 schema 及 version 1 本机记录保留兼容，增加可选身份/阶段字段与必要能力握手、两个窄 IPC 入口。缺少新原生能力时明确拒绝，不让旧 worker 静默跳过身份和隔离。用户继续使用既有 `npm run dev`，原生构建脚本随代码构建当前 worker。
+- 原共享机器安装状态库保留原文件，新机器事实写入本机既有目录；不迁移或回放共享业务。旧无身份恢复记录需显式人工核验，不能自动认领同路径文件。
+- O-02/O-04/O-05 的已知代码接线缺口已补齐；Windows CI 不是用户 NAS 实机。仍需真实断网/映射盘重连、大目录预算、已激活字体跨软件可见性、占用/ACL/RunOnce 实际重启及回收站行为验证。
+- O-06 的总退出截止时间与最终关闭顺序尚未实现；不能因单个进程有预算就宣称软件在永久断网时一定按总预算退出。O-07 负责完整恢复校验，O-08 负责最终故障矩阵。可以接续 O-06 代码工作，不能提前宣布整个离线专项验收完成。
+- 回滚以本节同批提交为单位；保留三份本地恢复文件及新机器事实库，不手删记录。旧二进制缺少身份保护，不应被用于自动处理新代次残留；需要回滚时先通过本版清理入口或 Windows 重启/人工处理核验残留。
+
+- 最终原生门（2026-09-19）：[GitHub Actions 35417708203](https://github.com/uniquenesssta/99/actions/runs/35417708203)，验证提交 `2011788aa067859e2cf79a9978739e2c82e4e7e0`。Windows 全部 35 项、Linux 全部 38 项 Cargo 测试通过（含父进程死亡后阻塞子进程退出）；两平台 `cargo +stable build --locked --release` 均通过。验证分支的原生源码与本批发布原生源码逐文件核对一致；不把该 CI 结果替代真实 NAS/桌面重启验收。

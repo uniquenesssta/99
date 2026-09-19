@@ -1,5 +1,6 @@
 mod apply;
 mod read_state;
+mod preflight;
 mod remove_tag;
 mod schema;
 mod signature;

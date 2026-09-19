@@ -1,4 +1,5 @@
-import { promises as fsp } from 'node:fs'
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { resolve } from 'node:path'
 import type { ScanResult } from '../../../shared/types'
 import type { CachedFontStatLike } from '../../fonts/fontRuntime'
@@ -60,6 +61,7 @@ export async function ensureRootContextsForScan(args: {
       if (!stat.isDirectory()) continue
       await ensureRootContext(folder)
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       if (isOperationCancelledError(error)) throw error
       errors.push({ path: folder, message: error instanceof Error ? error.message : String(error) })
     }
@@ -135,6 +137,7 @@ async function tryListScanStatJobsWithRust(args: {
     deps.appendStartupLog(`scan listing source=rust files=${listed.files.length}, valid=${listed.files.filter((item) => item.signatureValid !== false).length}, invalid=${listed.files.filter((item) => item.signatureValid === false).length}, quickHash=${listed.files.filter((item) => item.quickHash).length}, contentHash=${listed.files.filter((item) => item.contentHash).length}, fullHash=${listed.files.filter((item) => item.hashKind === 'full-fnv1a64').length}, nameHints=${listed.files.filter((item) => item.nameHint).length}, scriptHints=${listed.files.filter((item) => item.scriptHint).length}, styleHints=${listed.files.filter((item) => item.styleHint).length}, familyHints=${listed.files.filter((item) => item.familyHint).length}, folders=${listed.foldersScanned || 0}, errors=${listed.errors.length}, durationMs=${Date.now() - startedAt}`)
     return dedupeScanStatJobs(listed.files.map((item) => ({ ...item, error: '', signatureValid: item.signatureValid, formatHint: item.format, quickHash: item.quickHash, contentHash: item.contentHash, hashKind: item.hashKind, nameHint: item.nameHint, scriptHint: item.scriptHint, styleHint: item.styleHint, familyHint: item.familyHint })))
   } catch (error) {
+      rethrowSharedIoProcessError(error)
     if (isOperationCancelledError(error)) throw error
     deps.appendStartupLog(`rust scan listing failed, fallback to directory cache listing: ${error instanceof Error ? error.message : String(error)}`)
     reportProgress({ stage: 'listing', message: 'Rust core 列出失败，已降级为目录缓存列出。' }, true)
@@ -184,6 +187,7 @@ export async function listScanStatJobs(args: {
     }
     return dedupeScanStatJobs(allListed)
   } catch (error) {
+      rethrowSharedIoProcessError(error)
     if (isOperationCancelledError(error)) throw error
     deps.appendStartupLog(`directory cache listing failed, fallback to worker walk: ${error instanceof Error ? error.message : String(error)}`)
     reportProgress({ stage: 'listing', message: '目录级缓存列出失败，已降级为后台 Worker 全量列出。' }, true)

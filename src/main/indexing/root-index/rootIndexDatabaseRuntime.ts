@@ -1,4 +1,7 @@
-import { promises as fsp } from 'node:fs'
+import { sharedSqliteReadSnapshot } from '../../path/sharedFileSystemRuntime'
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname } from 'node:path'
 import { ROOT_INDEX_DB_SCHEMA_VERSION } from '../../cache/constants'
 import { sqliteEnsureColumn, sqliteEntryFileIdentity, sqliteNextOpstamp, sqliteRowToScanEntry } from './rootIndexSqliteRuntime'
@@ -84,10 +87,24 @@ export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
   }
 
   async function openRootIndexDb(filePath: string, rootPath: string, storage: RootIndexStorage, touchMeta = true): Promise<any> {
-    await fsp.mkdir(dirname(filePath), { recursive: true })
-    const db = deps.openStableSqliteDb(filePath, `root-index:${storage}`)
-    initializeRootIndexDb(db, rootPath, storage, touchMeta)
-    return db
+    if (touchMeta && (await sharedIoResourceKeys([filePath])).length) throw new SharedIoProcessError('共享根索引写入必须使用隔离的原生事务。','not-started','main-write-denied')
+    const snapshot = await sharedSqliteReadSnapshot(filePath)
+    const localPath = snapshot?.path || filePath
+    let db: any
+    try {
+      await fsp.mkdir(dirname(localPath), { recursive: true })
+      db = deps.openStableSqliteDb(localPath, `root-index:${storage}`)
+      initializeRootIndexDb(db, rootPath, storage, touchMeta)
+      if (snapshot) {
+        const close = db.close.bind(db)
+        db.close = () => { try { return close() } finally { void snapshot.dispose().catch(error => deps.appendStartupLog(`shared snapshot disposal failed: ${String(error)}`)) } }
+      }
+      return db
+    } catch (error) {
+      if (db) deps.closeSqliteDb(db)
+      await snapshot?.dispose()
+      throw error
+    }
   }
 
   async function readRootIndexSqliteFile(filePath: string, rootPath: string, storage: RootIndexStorage): Promise<FontScanCacheFile> {

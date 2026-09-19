@@ -25,7 +25,7 @@
           "durationMs": 0
         }
       },
-      "traceHash": "b8ca652946c3021180a8b6d33b6fb0f09d6e3a2c39880a716ad2f2aec69789e0",
+      "traceHash": "7384b48e8d846c562ff17efce424d694cb2c447a48733dde92dea6dd23917ae0",
       "pendingFiles": 0
     },
     {
@@ -52,7 +52,7 @@
           "durationMs": 0
         }
       },
-      "traceHash": "a85d05bcd21da71818c45d798732f24fd3ae1f0bdd205b247768eaae68b61d34",
+      "traceHash": "a4b3e19d2d80d60b80b32bca6e7a55c330903788e324a5aeffc32dd33ed4b931",
       "pendingFiles": 0
     },
     {
@@ -79,7 +79,7 @@
           "durationMs": 0
         }
       },
-      "traceHash": "9b0020663b06a6ddbd0726f5c53e138222051da0617cb704c3a45ec369a1476f",
+      "traceHash": "15ea7d3f49975e140316b925107cc7c1f6786ee0a52f0cfd8c70dcd642fac7a6",
       "pendingFiles": 0
     },
     {
@@ -91,7 +91,7 @@
         "submitted": true,
         "command": "--list-font-files"
       },
-      "traceHash": "6772cd90d038ee9740e08e22959184bde7a8961d82012935b812b3eff70eeb8b",
+      "traceHash": "94815c7be8d3a54698878c4c4e6316153de9dc9ca05e4d106a75780d2ca81077",
       "pendingFiles": 0
     },
     {
@@ -102,7 +102,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "028b991d0e37297aa2988082c9d3b517eda877454c7b21e4cd91c84c3fe69537",
+      "traceHash": "75527be1656dc675fb18294483570e9a750b0f1132a0ab56d6203b208e6f978c",
       "pendingFiles": 0
     },
     {
@@ -113,7 +113,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "aa3ece4e1adb04e2eadad6c3d473ec8a61bcfb4885a29b593f75906a62222294",
+      "traceHash": "5f57915f28476e1192c6bc0a7fe98bd34d2179ee50dada2858bb37da6d80682b",
       "pendingFiles": 0
     },
     {
@@ -124,7 +124,7 @@
         "message": "fixture invalid JSON",
         "submitted": false
       },
-      "traceHash": "028b991d0e37297aa2988082c9d3b517eda877454c7b21e4cd91c84c3fe69537",
+      "traceHash": "75527be1656dc675fb18294483570e9a750b0f1132a0ab56d6203b208e6f978c",
       "pendingFiles": 0
     },
     {
@@ -151,7 +151,7 @@
           "durationMs": 0
         }
       },
-      "traceHash": "b8ca652946c3021180a8b6d33b6fb0f09d6e3a2c39880a716ad2f2aec69789e0",
+      "traceHash": "7384b48e8d846c562ff17efce424d694cb2c447a48733dde92dea6dd23917ae0",
       "pendingFiles": 0
     },
     {
@@ -178,7 +178,7 @@
           "durationMs": 0
         }
       },
-      "traceHash": "b8ca652946c3021180a8b6d33b6fb0f09d6e3a2c39880a716ad2f2aec69789e0",
+      "traceHash": "7384b48e8d846c562ff17efce424d694cb2c447a48733dde92dea6dd23917ae0",
       "pendingFiles": 1
     },
     {
@@ -204,7 +204,7 @@
           "workerMode": "rust-font-parse-batch"
         }
       },
-      "traceHash": "ef802d7436b6c7d09a00abd1fd6af3924fab9c56d9bd29836c1530152fe7c805",
+      "traceHash": "ab8542d3bf60f1224116c19d555f29e7ffe4664ca62698fc859a2944ff3c2ff8",
       "pendingFiles": 0
     },
     {
@@ -230,7 +230,7 @@
           "workerMode": "rust-font-parse-batch"
         }
       },
-      "traceHash": "dd774b515d1490a8deb3846ada8c0799e01fff72e2caf2dc5d77624340ce848f",
+      "traceHash": "b03b030fa23309c71ee82eea4c0a2a29c0d3cab58db8e2c2e8c95f9dd849e64a",
       "pendingFiles": 0
     },
     {
@@ -256,7 +256,7 @@
           "workerMode": "rust-font-parse-batch"
         }
       },
-      "traceHash": "26eefd18b62b635e61fed73bdc1f318503db172671b416326065cf42af9cbd18",
+      "traceHash": "820d622e5a62f7876e5cd7bcd49370ffd111d905cc600bb5d4c1c9431cede38e",
       "pendingFiles": 0
     },
     {
@@ -265,7 +265,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "9472102dd930be4e3e1b5eefbcc79848c1a4ec4d7a70af43f4bb5359e4ae9e5d",
+      "traceHash": "193a007eb73bcc19241c8b3ab03f42a8fdcbc193dff073ac077dd09fa408bfc4",
       "pendingFiles": 0
     },
     {
@@ -274,7 +274,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "2ce22a46d2945c713a838e471627d73a48d11d99c552cd78ae69fb0d8b7b3ba6",
+      "traceHash": "971e512f094ec5c471fdeccd2971307b76db8e5c8eb49ee91126a2721940fcff",
       "pendingFiles": 0
     },
     {
@@ -283,7 +283,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "917d27532500c0ac6fbc5ebb28b4c3ca7b03b4d5e606d684b29c21a7135feeff",
+      "traceHash": "1d8294f20f5dfe4d4c77e008eea183c58c92514e1eeb7d7e9e308107ff2c464e",
       "pendingFiles": 0
     },
     {
@@ -292,7 +292,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "20ec4ccf47b632b2822fbcb9b3d05fbf2cd451a47efaeedc70d00f4c07abf84f",
+      "traceHash": "cd09232130403edcda62acc3bce15bc8facb334b6b2eb50bc19e144990a0c25a",
       "pendingFiles": 0
     },
     {
@@ -301,7 +301,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "31169172e8c5bce282436e7575409e2515415ae4cb4e13f9a79780c6f41dd466",
+      "traceHash": "961ae1f345ec14980b80fd2e13a60119d88a9cfcfedeecc0f219058561fbc81e",
       "pendingFiles": 0
     },
     {
@@ -327,7 +327,7 @@
           "workerMode": "rust-font-parse-batch"
         }
       },
-      "traceHash": "ef802d7436b6c7d09a00abd1fd6af3924fab9c56d9bd29836c1530152fe7c805",
+      "traceHash": "ab8542d3bf60f1224116c19d555f29e7ffe4664ca62698fc859a2944ff3c2ff8",
       "pendingFiles": 1
     },
     {
@@ -342,7 +342,7 @@
           "durationMs": 0
         }
       },
-      "traceHash": "5c55bbb848df0b1960b07c0b60bf892a827816f8ab86a4bff270bb401941d546",
+      "traceHash": "3776bbcfbe27a00ca84388b5fabe37001169a53aba1eaeb2ee1ad2728c46bf56",
       "pendingFiles": 0
     },
     {
@@ -357,7 +357,7 @@
           "durationMs": 0
         }
       },
-      "traceHash": "b46baeee6b5e0a090652d0c6b0e4acf5b3e6f0d84b833673fa0885029afd5ff8",
+      "traceHash": "cd472453245a0edd1b5c6a865da2f61e701158ed80d05211c49d3eb364b0b14d",
       "pendingFiles": 0
     },
     {
@@ -372,7 +372,7 @@
           "durationMs": 0
         }
       },
-      "traceHash": "0dd2344eef43343b03de791a472130f6802d4f370fd63e0da03808e7f399b168",
+      "traceHash": "e3246513dac2671dfbb782381146b89173bf88dfa000157a0f73851aa512673e",
       "pendingFiles": 0
     },
     {
@@ -384,7 +384,7 @@
         "submitted": true,
         "command": "--root-index-apply-changes"
       },
-      "traceHash": "010785b70f3fb9d3ec5f5d6f25b1dad34e226b2cafe4c4c0026aae5025ff9001",
+      "traceHash": "81e459d0d59c689ea32e739842b12979437ef64bc93611247c60a483dec67d28",
       "pendingFiles": 0
     },
     {
@@ -393,7 +393,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "693ed4d217d98f171cb356dc784fa96783868a2c8943d7413085a4af32459fe1",
+      "traceHash": "49a6b42d421dee2512a0b9aa54ad83adb7d80d505c2839a90f0b7e7910b1fa35",
       "pendingFiles": 0
     },
     {
@@ -405,7 +405,7 @@
         "submitted": true,
         "command": "--root-index-apply-changes"
       },
-      "traceHash": "b48e1ab95afbce87e6447141bbbf87d3f926375857e193d8b9337cc00971df40",
+      "traceHash": "dae9031c002d2ee3354296df9c933c2c75a036c20f5c56bfc466d0ef446b1df1",
       "pendingFiles": 0
     },
     {
@@ -414,7 +414,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "fcba6d58600f3fd7ecf15c95dd03087ed5a7a72a0950a3dbcbad9fc595fa99b4",
+      "traceHash": "f0f7604f86174d6e3cbd0b990e4f65a4d62a4157a7305a28bd6d1cb42ad2eaa2",
       "pendingFiles": 0
     },
     {
@@ -423,7 +423,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "a64a15afb6044fa96a8944e705dd7275c04cb0888876f107e62fb7a40c6f22cd",
+      "traceHash": "1392934eef8f7536b4d5e44c34c508d7a636a90e66998ebc117ff4f7299f52b2",
       "pendingFiles": 0
     },
     {
@@ -438,7 +438,7 @@
           "durationMs": 0
         }
       },
-      "traceHash": "5c55bbb848df0b1960b07c0b60bf892a827816f8ab86a4bff270bb401941d546",
+      "traceHash": "3776bbcfbe27a00ca84388b5fabe37001169a53aba1eaeb2ee1ad2728c46bf56",
       "pendingFiles": 1
     },
     {
@@ -465,7 +465,7 @@
           "timings": {}
         }
       },
-      "traceHash": "6a9a41309ec2d86e23384b1579aad15dee2c85a210e7561c883be860300d4a6b",
+      "traceHash": "b3dfd4b2717113609f042c2b5a26eb4a15dc04ee106339220c4ebd3d83a0ed41",
       "pendingFiles": 0
     },
     {
@@ -492,7 +492,7 @@
           "timings": {}
         }
       },
-      "traceHash": "14b5610bfbaa439798300cbd1ed25d9ab540531dc57027bfe81a975e4309e7ae",
+      "traceHash": "3fa2d4c200775adcb5e18c406e536256b47decfe2e696a1fcdaa15b5ec916f0c",
       "pendingFiles": 0
     },
     {
@@ -519,7 +519,7 @@
           "timings": {}
         }
       },
-      "traceHash": "228702a99cb5481fc2f907dcd4093621478691e452521a1128616aa7d7d9a52f",
+      "traceHash": "d41424d4cf4825d82ba883f8209763d6791dbfe5247735e340c4918d57a607bc",
       "pendingFiles": 0
     },
     {
@@ -531,7 +531,7 @@
         "submitted": true,
         "command": "--merged-index-query-page"
       },
-      "traceHash": "993f4526a25149353c494106bd0deccbf93c8c18194252e001aab2b643581993",
+      "traceHash": "3a3dedc135d2784f95014040438a933aaab476ec4b6e6e481f705965e6822675",
       "pendingFiles": 0
     },
     {
@@ -542,7 +542,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "aef0d17fea8581c133cfa4012d0b80b5599536cee87e49de920631695118db22",
+      "traceHash": "58bfbfa1c52b010664b5e837fcfca8e09d9d001a8f1e02366943460d9cae600e",
       "pendingFiles": 0
     },
     {
@@ -553,7 +553,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "f2dcbda7ef63ddc7bfb2c07694c4ca8423badf47703db14ac45361f4500488b1",
+      "traceHash": "829430f88d8a9b5672e287b6eac97b193f6e5ff6403d8f2caf4a8c3c2b428de3",
       "pendingFiles": 0
     },
     {
@@ -564,7 +564,7 @@
         "message": "fixture invalid JSON",
         "submitted": false
       },
-      "traceHash": "aef0d17fea8581c133cfa4012d0b80b5599536cee87e49de920631695118db22",
+      "traceHash": "58bfbfa1c52b010664b5e837fcfca8e09d9d001a8f1e02366943460d9cae600e",
       "pendingFiles": 0
     },
     {
@@ -575,7 +575,7 @@
         "message": "write failed",
         "submitted": false
       },
-      "traceHash": "63a2ff089a5df25b1940434816c989c35e77a56199cabb3155aafac742e2a4b8",
+      "traceHash": "4401ca458e7b7647429a54954d6b693fa81ff57693ced57225d89e7a83e89921",
       "pendingFiles": 0
     },
     {
@@ -602,7 +602,7 @@
           "timings": {}
         }
       },
-      "traceHash": "6a9a41309ec2d86e23384b1579aad15dee2c85a210e7561c883be860300d4a6b",
+      "traceHash": "b3dfd4b2717113609f042c2b5a26eb4a15dc04ee106339220c4ebd3d83a0ed41",
       "pendingFiles": 1
     },
     {
@@ -623,7 +623,7 @@
           "timings": {}
         }
       },
-      "traceHash": "b8782856a7acd1ea587dcd33a120278a1facb9bfe2e5f4bf9143fe4bcfbc475d",
+      "traceHash": "65a88142786390829fe952a6d764b57eaa03f10604787cfa5b9fec71adef66ef",
       "pendingFiles": 0
     },
     {
@@ -644,7 +644,7 @@
           "timings": {}
         }
       },
-      "traceHash": "434d0e8691b2738030b9a792f9e460617f3c4b7f9fe3950a61088a12445ee098",
+      "traceHash": "d65b6812d66f3bcd5dc50256b9b98efce075922f49a06c0dfa011dde5af8b756",
       "pendingFiles": 0
     },
     {
@@ -665,7 +665,7 @@
           "timings": {}
         }
       },
-      "traceHash": "894eeb4f5c263bcaa1f84fa0c1415575b3280090a338c3a4a15c9315d2984922",
+      "traceHash": "41c8668aaae7bd0649c76893d33945b88e6947c657feaab71873532a9ee85bf3",
       "pendingFiles": 0
     },
     {
@@ -677,7 +677,7 @@
         "submitted": true,
         "command": "--merged-index-query-ids"
       },
-      "traceHash": "7be6abb417aaf1b9b59126c6d838d521dd82b3ab985dc52ae4faec7f30fbb4be",
+      "traceHash": "77da51167e39913cb4d5cee6f3ad93fd905d7a5199c35e99876f2443419cc0fd",
       "pendingFiles": 0
     },
     {
@@ -688,7 +688,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "4150d1d4e146e71009500face57a92c351c709d710ffc6d8519bcef6bb6861b2",
+      "traceHash": "1790e75fb7c9ad809929f06b542c5dba2310bc2e84e491e4c9f318b638e42485",
       "pendingFiles": 0
     },
     {
@@ -699,7 +699,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "c878ef43ac09d4e7597a83bba44637667ad059222ca26708589b23133132f284",
+      "traceHash": "1a9c3000e95e516a5afd781c2ec51f761dfe2e7992f718ff660024fff7c006d6",
       "pendingFiles": 0
     },
     {
@@ -710,7 +710,7 @@
         "message": "fixture invalid JSON",
         "submitted": false
       },
-      "traceHash": "4150d1d4e146e71009500face57a92c351c709d710ffc6d8519bcef6bb6861b2",
+      "traceHash": "1790e75fb7c9ad809929f06b542c5dba2310bc2e84e491e4c9f318b638e42485",
       "pendingFiles": 0
     },
     {
@@ -721,7 +721,7 @@
         "message": "write failed",
         "submitted": false
       },
-      "traceHash": "d51250f105b5a480c2c38ad893752fcbb6f19368580875c2383e1e4c7079f0a8",
+      "traceHash": "622791b35a907af901048b1d946ec9c104e06d6eba983101e3b56456b468b3fe",
       "pendingFiles": 0
     },
     {
@@ -742,7 +742,7 @@
           "timings": {}
         }
       },
-      "traceHash": "b8782856a7acd1ea587dcd33a120278a1facb9bfe2e5f4bf9143fe4bcfbc475d",
+      "traceHash": "65a88142786390829fe952a6d764b57eaa03f10604787cfa5b9fec71adef66ef",
       "pendingFiles": 1
     },
     {
@@ -788,7 +788,7 @@
           "timings": {}
         }
       },
-      "traceHash": "4bcf27310f88ded627cdb7d5b40aeae120a4dbccfe9cda82e76e03f9a15d800e",
+      "traceHash": "9d62faf829cf84413a2ea40f7fc02f5e81694bdf5b3b1a4c4b54ebf150f34fab",
       "pendingFiles": 0
     },
     {
@@ -834,7 +834,7 @@
           "timings": {}
         }
       },
-      "traceHash": "097a1ace41201c4513ee1849e5982e8441ac6d1191590615fe85c43488da9db8",
+      "traceHash": "42236c7f56d70bb3f120054f0c6e721c855232cdfb22de326daff56843014bc7",
       "pendingFiles": 0
     },
     {
@@ -880,7 +880,7 @@
           "timings": {}
         }
       },
-      "traceHash": "46ea22ae075ab7b2111fea44979c03ece18fed601c58f5c5e974196959d84c85",
+      "traceHash": "1a8d589062bf8402fb03071240174af39e5fff201f7d32971d6356f7e31e84ce",
       "pendingFiles": 0
     },
     {
@@ -892,7 +892,7 @@
         "submitted": true,
         "command": "--merged-index-query-metrics"
       },
-      "traceHash": "24328b872d91c64d57935abaa8ed8daca56bd01f8f8d73d470c2ddb4c0898fed",
+      "traceHash": "5c24159ea07763d3f2f1b0eccfce69dfd2b7c0c86b122d085b1b4c3d2875ff50",
       "pendingFiles": 0
     },
     {
@@ -903,7 +903,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "d9d775751065704435cd97ce3ac0042e6fc9732aa5543f55951e43d72ed72228",
+      "traceHash": "af12d2e52a774aa51c116cff13ce43c67d67b24ee08669b917366d649188f1c0",
       "pendingFiles": 0
     },
     {
@@ -914,7 +914,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "ddd98d8ddf63427d7469d74642fadbbfade17effda8b7364b9160ad26536b5cd",
+      "traceHash": "a8a350aeac30789e4a03c67100fc19cd8f880068629646bb4ef29d6028499fa0",
       "pendingFiles": 0
     },
     {
@@ -925,7 +925,7 @@
         "message": "fixture invalid JSON",
         "submitted": false
       },
-      "traceHash": "d9d775751065704435cd97ce3ac0042e6fc9732aa5543f55951e43d72ed72228",
+      "traceHash": "af12d2e52a774aa51c116cff13ce43c67d67b24ee08669b917366d649188f1c0",
       "pendingFiles": 0
     },
     {
@@ -936,7 +936,7 @@
         "message": "write failed",
         "submitted": false
       },
-      "traceHash": "6e7c4b5b28491a8acd84797baa39ab8abe1dc747a86f926cba8e7a62372396cd",
+      "traceHash": "739288f5ed2774939953ec4483f4c07c2f15a7f5e72072cc3e2ccb8560db8c79",
       "pendingFiles": 0
     },
     {
@@ -982,7 +982,7 @@
           "timings": {}
         }
       },
-      "traceHash": "4bcf27310f88ded627cdb7d5b40aeae120a4dbccfe9cda82e76e03f9a15d800e",
+      "traceHash": "9d62faf829cf84413a2ea40f7fc02f5e81694bdf5b3b1a4c4b54ebf150f34fab",
       "pendingFiles": 1
     },
     {
@@ -997,7 +997,7 @@
           "timings": {}
         }
       },
-      "traceHash": "b7ba4c48fe6c11e338c62d0dc45c533eff5944067b30ef7848db40782f8fcb76",
+      "traceHash": "db19b7c60b89bba8b34aa5661cb847eae1f1398a0b30d5022ff77ed340842279",
       "pendingFiles": 0
     },
     {
@@ -1012,7 +1012,7 @@
           "timings": {}
         }
       },
-      "traceHash": "ed80e55846c90879af536edcef19ba34ed6f0f676ea8ddbc4b39cc13fe2a18d4",
+      "traceHash": "e81db33235d35e9ca4c6a39c26a793f7db2fcb70bdc059a56499c63704ec85c8",
       "pendingFiles": 0
     },
     {
@@ -1027,7 +1027,7 @@
           "timings": {}
         }
       },
-      "traceHash": "9363e834ba23d9c679d74f97e8441ae32363a3f9731dae8e4116d873109a3610",
+      "traceHash": "90f2360b1e53266764b5e016ac8f534a8a4458500891d5bebc80ed04fe7881fe",
       "pendingFiles": 0
     },
     {
@@ -1039,7 +1039,7 @@
         "submitted": true,
         "command": "--merged-index-rebuild"
       },
-      "traceHash": "2f77c417e80e945a90bc446f8533ef5c953c8f44b8788e010c8aa9e3f2d27c0b",
+      "traceHash": "ce0cf6eb8b2516dfa6d1a10cc91e95a3fd3d70536f03cc8ba6fc35e8e24bed00",
       "pendingFiles": 0
     },
     {
@@ -1048,7 +1048,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "68f4906f5009560346422d762391ba9f0da5d07bbcde1ddfb1ea7270e6b194a8",
+      "traceHash": "31ab20ceedf310d7e0069384df45e30345d0f418986a7c93535f25e27d6e0879",
       "pendingFiles": 0
     },
     {
@@ -1060,7 +1060,7 @@
         "submitted": true,
         "command": "--merged-index-rebuild"
       },
-      "traceHash": "df4b2a78cecc6f1e77553616d033e74e5c1dcec20f624a2b52e0603bca62d838",
+      "traceHash": "9d2aaa066731677cec0fd241655b61e94e41c438890cebe1b1db65756b5242d4",
       "pendingFiles": 0
     },
     {
@@ -1069,7 +1069,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "398a21f6947d745bf22703cad0808c7e44598fb11ce4b7399a9c0cf23e829a3a",
+      "traceHash": "29f052884cdcf2a28afbc3046f1002e869dd14583c97abefc95d681adaa2dcb7",
       "pendingFiles": 0
     },
     {
@@ -1078,7 +1078,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "9a8887dd58f5280013e218d6f749254f7009cc9dc9102d619e81b8037af91405",
+      "traceHash": "2d37adb91c477afeced1caf8241bb1a93a0c9dfe45d97c331b7b896d3ef0702f",
       "pendingFiles": 0
     },
     {
@@ -1093,7 +1093,7 @@
           "timings": {}
         }
       },
-      "traceHash": "b7ba4c48fe6c11e338c62d0dc45c533eff5944067b30ef7848db40782f8fcb76",
+      "traceHash": "db19b7c60b89bba8b34aa5661cb847eae1f1398a0b30d5022ff77ed340842279",
       "pendingFiles": 1
     },
     {
@@ -1110,7 +1110,7 @@
           "timings": {}
         }
       },
-      "traceHash": "d6c0804bf9b6c551401dfc5604dc3b62d40758692a1ace303b49a258c937bfe1",
+      "traceHash": "aee96105294d26ad608a01c4491fb430299ba64c5fad7f045397f74564983ef8",
       "pendingFiles": 0
     },
     {
@@ -1127,7 +1127,7 @@
           "timings": {}
         }
       },
-      "traceHash": "8ad1a5260e11b7d80213544490544c264d93eb27214119ea7da2e7e5733b7f03",
+      "traceHash": "e23c0322a475441f87bcf42d011720b2a266bcfce02aede2b846e468df3af4db",
       "pendingFiles": 0
     },
     {
@@ -1144,7 +1144,7 @@
           "timings": {}
         }
       },
-      "traceHash": "615cb869aa23d3b66eb879908469374c59c4feba87024ac640ff0b444a7298b6",
+      "traceHash": "ef5d69de1fda212889e2654238cfd48da716b4447ba9c50b7794ccf143e7d4c9",
       "pendingFiles": 0
     },
     {
@@ -1156,7 +1156,7 @@
         "submitted": true,
         "command": "--merged-index-sync"
       },
-      "traceHash": "513219e96ac5568a6332f1b8d57653c82785d1ee950d68d7e0cb907e60ed2873",
+      "traceHash": "b5c1b6fcb656b769a84a91f77be755998efa766b80c1f9760758023a2c7cce7a",
       "pendingFiles": 0
     },
     {
@@ -1165,7 +1165,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "d4b9eb3f3702963194d3da3d9a8c9ef3f7f6967a830c33639cf2366f5f431749",
+      "traceHash": "3686426563d9d737daeed584a63d27200bf1eeaa9fcbafa9cb9b14616a076875",
       "pendingFiles": 0
     },
     {
@@ -1177,7 +1177,7 @@
         "submitted": true,
         "command": "--merged-index-sync"
       },
-      "traceHash": "534b64839824bed2d3bbd0e04d02ad6cf73e33832617e502ebaeb6bacce3203a",
+      "traceHash": "25eec0656a679553dd197cfdd87f207ca7348aa95f97a7797e7dcc65ff1d4eb9",
       "pendingFiles": 0
     },
     {
@@ -1186,7 +1186,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "f2fba9b21a51c21cb9b1a19c84f346aa66cfce36aee0dee5cb8c5adbe51868a3",
+      "traceHash": "2a16a80e9225569ab30236d50cd03514fef1f86f01fd1631dc8c87242346fbd3",
       "pendingFiles": 0
     },
     {
@@ -1195,7 +1195,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "7edf15e87b4e883b277ea047b055aa946938fe9b9e10e61b6b918c5f9e9a43ea",
+      "traceHash": "fd65b1c97bdc08f457c344fdddfb42bfa35fe1edb979a84b226827a0b4f5abb0",
       "pendingFiles": 0
     },
     {
@@ -1212,7 +1212,7 @@
           "timings": {}
         }
       },
-      "traceHash": "d6c0804bf9b6c551401dfc5604dc3b62d40758692a1ace303b49a258c937bfe1",
+      "traceHash": "aee96105294d26ad608a01c4491fb430299ba64c5fad7f045397f74564983ef8",
       "pendingFiles": 1
     },
     {
@@ -1228,7 +1228,7 @@
           "workerMode": "rust-watcher-preflight"
         }
       },
-      "traceHash": "b583fe655a4433ca05a05084e55376d42c21a52ecb46488df222bf2d544ec4df",
+      "traceHash": "99d3e5e9f0a61f3a2adf62cd35a077dbd4ba516640f226d58b176c914b1c91e9",
       "pendingFiles": 0
     },
     {
@@ -1244,7 +1244,7 @@
           "workerMode": "rust-watcher-preflight"
         }
       },
-      "traceHash": "574632b362aceda934542afa78efcf4ac8350364018c4f983f5441fd248238b6",
+      "traceHash": "93c98bbd6d983946b4ea08b4c67e9c3b3cd03b0f2c33b088d7168bbe1b30628c",
       "pendingFiles": 0
     },
     {
@@ -1260,7 +1260,7 @@
           "workerMode": "rust-watcher-preflight"
         }
       },
-      "traceHash": "c7bd8c89881a96c51dc62f7a25f0aa3a4864ce3981bab58cd4d9907c5166ae1a",
+      "traceHash": "4d87674c7104ea5743d5ac6dc61c2534384b60e92f28774baa6f6d52c3fab7e4",
       "pendingFiles": 0
     },
     {
@@ -1269,7 +1269,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "f5709baa1044ef8bee9b6b4f4b133a8263218a217eaaea0e7ce4d877639f5a43",
+      "traceHash": "4fc19271cd3fc86e2d8880ca5af32cb12206170fa7b3ab4f5b8cb79f2b2fcad7",
       "pendingFiles": 0
     },
     {
@@ -1278,7 +1278,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "0a971884dab69ab1c4039edd333ae13da1644429bd0dadc6d9ba422238f51fd8",
+      "traceHash": "bfc485aa0f5b99dd96a4f430e9116970b8f359dbf776c8deac859d46b68040f5",
       "pendingFiles": 0
     },
     {
@@ -1287,7 +1287,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "cd63c3e5aa5797c3deac7bd19074f88ec29997970bda10dc10f56362bdfe51d3",
+      "traceHash": "22bd3cedace6d966ae6a42020869b057250c0537d24eddc991de8e6a6d0cbb74",
       "pendingFiles": 0
     },
     {
@@ -1296,7 +1296,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "e6e1ee8a3f4477af29fcbf620d2116fdcccf7d7c95d60c47476c409cb6651ffb",
+      "traceHash": "c6f7d8b756d138ea1b82fbb6b224f5c90be9349773c4a3c2f308715e8c9cf3b7",
       "pendingFiles": 0
     },
     {
@@ -1305,7 +1305,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "8b2c14bb88dc5119da479cd7cd69cbd1017f8ae284f4099e34116b75cf412a93",
+      "traceHash": "d431d263e330590952f3d6138cfa2d9c8ebb6e5957ce1f66f7a3ddd4fa799816",
       "pendingFiles": 0
     },
     {
@@ -1321,7 +1321,7 @@
           "workerMode": "rust-watcher-preflight"
         }
       },
-      "traceHash": "b583fe655a4433ca05a05084e55376d42c21a52ecb46488df222bf2d544ec4df",
+      "traceHash": "99d3e5e9f0a61f3a2adf62cd35a077dbd4ba516640f226d58b176c914b1c91e9",
       "pendingFiles": 1
     },
     {
@@ -1339,7 +1339,7 @@
           "workerMode": "rust-install-status-read"
         }
       },
-      "traceHash": "9b9387e0584312f86198c0afaee09dd20dd34870c0831c60a95f7b67780e9242",
+      "traceHash": "b71a9fe94e981cf74ac3e56191fceefe412926754602a1b084275883b637847a",
       "pendingFiles": 0
     },
     {
@@ -1357,7 +1357,7 @@
           "workerMode": "rust-install-status-read"
         }
       },
-      "traceHash": "f109367fe53a192047f69cf0b1308bf059aadaa2b33d9910f53622a5419501ce",
+      "traceHash": "f82fcdb5477e9ad8a584a9ace54ddb85e6fe73d4ab067688d353541efd175be8",
       "pendingFiles": 0
     },
     {
@@ -1375,7 +1375,7 @@
           "workerMode": "rust-install-status-read"
         }
       },
-      "traceHash": "bb0227081f572644088d65149bea77265d4340dc830e396c7913de46b8f46a69",
+      "traceHash": "60e59e667532bf6470410dd0c1e83c12facfabff23f79dff94930a600e1c7043",
       "pendingFiles": 0
     },
     {
@@ -1384,7 +1384,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "1ee7e3f03c4cb75c1e31928ff1d617389c8ae79868e1bd3b8e7ea4b31ac31d0d",
+      "traceHash": "a36b13eee55976631a30fb07ef825e0d4ccd50154075b4991a5464d196081ba9",
       "pendingFiles": 0
     },
     {
@@ -1393,7 +1393,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3794b540f099a99bc1359ec12ca1e3863de0f7b25340a1e63ed83fa97883a033",
+      "traceHash": "25a7e3ab62c8d92d427a63440def9e563e1c730a714383c2365d9db47fd13052",
       "pendingFiles": 0
     },
     {
@@ -1402,7 +1402,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "7ea6d849b2695dea35f0bfff0e30a079a2b2ac16d025b2122a6fa3992697dbc4",
+      "traceHash": "e84b1b79b094542cee9436a4e50a57a5843b5e04c535f8a74129bb080c2f0225",
       "pendingFiles": 0
     },
     {
@@ -1411,7 +1411,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "373f7a8e393d1c9f34542f8164c1f68eb662bb4e4a2db25b7a027dd478400313",
+      "traceHash": "c3c3098e465f9e3d6a994f9a6eaf4d45611562d706131054ecc3a9e738086d39",
       "pendingFiles": 0
     },
     {
@@ -1420,7 +1420,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "c10da9566d26f1d014f2bfd70905aadf26bbac8af7d04022012698cca86fcc00",
+      "traceHash": "3b046fbcda36217deb9e78b6a72b2928e8860bfb737cf5e87969392c85731a48",
       "pendingFiles": 0
     },
     {
@@ -1438,7 +1438,7 @@
           "workerMode": "rust-install-status-read"
         }
       },
-      "traceHash": "9b9387e0584312f86198c0afaee09dd20dd34870c0831c60a95f7b67780e9242",
+      "traceHash": "b71a9fe94e981cf74ac3e56191fceefe412926754602a1b084275883b637847a",
       "pendingFiles": 1
     },
     {
@@ -1452,7 +1452,7 @@
           "workerMode": "rust-install-status-save"
         }
       },
-      "traceHash": "e46a239d04db061c9451258e24c6ae09a4638459bd3330f87ab0357218085487",
+      "traceHash": "3f5783b562df7c0830a34b73a369ad7947a0b6102a7c709b1b48f8a1463b3f90",
       "pendingFiles": 0
     },
     {
@@ -1466,7 +1466,7 @@
           "workerMode": "rust-install-status-save"
         }
       },
-      "traceHash": "68d3ebf914b518830912d9c4b639c66a5f8d631b7df92e9b80e6a62336ab7fdf",
+      "traceHash": "cb38a614e0a69ec88ad8933c9bb25eb5f57d44d3f578d9dd273dff7bcfb1ea77",
       "pendingFiles": 0
     },
     {
@@ -1480,7 +1480,7 @@
           "workerMode": "rust-install-status-save"
         }
       },
-      "traceHash": "3e5fd37e39378c7b218f5d73d2b41112fa04c1f0994e48705c40ce830e49114b",
+      "traceHash": "dd96bc5621773a1f5a5445719859558b9c16f138cd1fe14fcefeeff16b6d518a",
       "pendingFiles": 0
     },
     {
@@ -1492,7 +1492,7 @@
         "submitted": true,
         "command": "--install-status-save"
       },
-      "traceHash": "3608626d3e0321c8d61713693cc33a22d1500c5d5fce9148062908f187abc7e5",
+      "traceHash": "e2710fee45f15bff595b47d794f5e0ac48de90269aafc01b0cfdc2e9037e67b8",
       "pendingFiles": 0
     },
     {
@@ -1501,7 +1501,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "fe5af7df34b11a67368ed055fe84de0e80e590e07d472594ebc17c25bd89338b",
+      "traceHash": "e4fa6aca0a65fe1c1f0a12961bd6006f774b595d594961a27038523bad2dfe4e",
       "pendingFiles": 0
     },
     {
@@ -1513,7 +1513,7 @@
         "submitted": true,
         "command": "--install-status-save"
       },
-      "traceHash": "d0123f5342804bc70acd2d4e90b43d18911570254efd51abb4b3c26f7806ca7e",
+      "traceHash": "5dbcf9c997614a82005a26f28278ce1509a50d88f9363005b313319ba67081f4",
       "pendingFiles": 0
     },
     {
@@ -1522,7 +1522,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "946200da17d4c4b54862389b5eb5678a1ceff80ac4c834e7b367305c2befff0c",
+      "traceHash": "a54fbec252b23cb55154e2fc1b05fb47e6b8585bb2b83f96f8e6c4272ed249c4",
       "pendingFiles": 0
     },
     {
@@ -1531,7 +1531,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "afed08f99d842fd1c6aa4c051df98e2893385c2abf787d537498f7e7437f794e",
+      "traceHash": "3008b6a9f41ae46346ba163ce9e327e76cb7d1a478f4f5a715b77b69530eb09e",
       "pendingFiles": 0
     },
     {
@@ -1545,7 +1545,7 @@
           "workerMode": "rust-install-status-save"
         }
       },
-      "traceHash": "e46a239d04db061c9451258e24c6ae09a4638459bd3330f87ab0357218085487",
+      "traceHash": "3f5783b562df7c0830a34b73a369ad7947a0b6102a7c709b1b48f8a1463b3f90",
       "pendingFiles": 1
     },
     {
@@ -1563,7 +1563,7 @@
           "workerMode": "rust-install-status-compare"
         }
       },
-      "traceHash": "2823b85605ddcb545ad4d6959842b70ccae8cbbf704509e1d44a4c7e6f2e34ea",
+      "traceHash": "c821525be3c1145ca9cf5c59d69ca36b5e7559fbbac7bf62cf89bc56ba9275ee",
       "pendingFiles": 0
     },
     {
@@ -1581,7 +1581,7 @@
           "workerMode": "rust-install-status-compare"
         }
       },
-      "traceHash": "b58e27ab82c9c5a9f6d9ecc22ebf934953941379b938aa0f33c2e7571dd81699",
+      "traceHash": "346da441f4ca124eec2e58fb8964a2c676fe4abc87b0c1960659a5bdcd2f1426",
       "pendingFiles": 0
     },
     {
@@ -1599,7 +1599,7 @@
           "workerMode": "rust-install-status-compare"
         }
       },
-      "traceHash": "a82dbb404c030a756a08f50de8bda30e352e7edb30be76002e38e7951e8f97c0",
+      "traceHash": "a5113a3641ddf0aaa81f199119fed44ec6f904acc082e5a7f57a0a22a0675cd5",
       "pendingFiles": 0
     },
     {
@@ -1608,7 +1608,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "e23b61ebf2f17643ae44c79765db19a2b764548d3a7d27bb655d9721175539dd",
+      "traceHash": "e469faf9a21f72d13791d28210dec4b7461e2802c7c6f7bcc8b405e67d60ecf2",
       "pendingFiles": 0
     },
     {
@@ -1617,7 +1617,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "8400ed29ebd04f3bce0234c202a4b54265fdc833ddae6feab190f0ce1cbbb45e",
+      "traceHash": "b69077b4252e64f555468ce53508beb570ef19b76c2c680dcf828dd158d9e337",
       "pendingFiles": 0
     },
     {
@@ -1626,7 +1626,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "add462ed70c0563448b125ac6ed183cc710977872319f294aaff982cff7c9ac8",
+      "traceHash": "6673c9ee6ae1af5bd56effeb67b0ee408704e535b3e44d590810343d68fb404b",
       "pendingFiles": 0
     },
     {
@@ -1635,7 +1635,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "7074c26f90eda105cb3e48acaa979339c703b0ea7752c859721b92e819150312",
+      "traceHash": "20dcc997ebb679c86ef2d6baebf65f4c92fbaa84df29e8ce73fa83335d392bd1",
       "pendingFiles": 0
     },
     {
@@ -1644,7 +1644,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "e78a272dbab106e9627ffe3aab10349874cbd615da6c6cc62f4cea45c009f231",
+      "traceHash": "db8e4d7d4ba9174ed5e94fad1d21126a67eb1238bec2cdbf7e904121cdb8d1e4",
       "pendingFiles": 0
     },
     {
@@ -1662,7 +1662,7 @@
           "workerMode": "rust-install-status-compare"
         }
       },
-      "traceHash": "2823b85605ddcb545ad4d6959842b70ccae8cbbf704509e1d44a4c7e6f2e34ea",
+      "traceHash": "c821525be3c1145ca9cf5c59d69ca36b5e7559fbbac7bf62cf89bc56ba9275ee",
       "pendingFiles": 1
     },
     {
@@ -1683,7 +1683,7 @@
           "workerMode": "rust-local-tags-read"
         }
       },
-      "traceHash": "f356d29ad66d9efee2d3d79db48763a5df6e13d281adbd0953c70093d934e60a",
+      "traceHash": "352a066c4e71a8285ddb7cfc0a716b907bc7475bacd49c8c80480c2d09fee17f",
       "pendingFiles": 0
     },
     {
@@ -1704,7 +1704,7 @@
           "workerMode": "rust-local-tags-read"
         }
       },
-      "traceHash": "a8127f846f0c0d5e98d412988c6eabb585c3d4372e7ddbb8de05bda8d8f07f91",
+      "traceHash": "4b82b665eccc6c959a55d2896806e15b8ff9f7107c796f5302fbde1f6d76d94b",
       "pendingFiles": 0
     },
     {
@@ -1725,7 +1725,7 @@
           "workerMode": "rust-local-tags-read"
         }
       },
-      "traceHash": "b79886340aaf858df22897b63b4bda5bfa0b74ecd4d07c62b87902c35b056bf2",
+      "traceHash": "d76b2dd1aab75dcce324526c8967b84de98b3278d51304ec90611085274b4ff8",
       "pendingFiles": 0
     },
     {
@@ -1734,7 +1734,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "20751b24178f19b79a7245dbdaaddd8a909d16813993ed8de6f612c56f6f35ac",
+      "traceHash": "faa445b995196c43c9411e276ead31825803be60b1e715b6c8fb3013715d9ffc",
       "pendingFiles": 0
     },
     {
@@ -1743,7 +1743,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "9980796c310329a3a4daa4f35e9191b77f5b6d6c01081778e88fbbc82e64958e",
+      "traceHash": "0a780a29bc4382e692bb75e162589e1adcdb2f84282a4b75940131185315ad50",
       "pendingFiles": 0
     },
     {
@@ -1752,7 +1752,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "8faac2dd46d18641bb0268c34b9fe398eb736615e1becd25492bee0e55cccf20",
+      "traceHash": "b311e456f9e8d0c8a971389731949c27c69d76f0839d5e5880919c223e141a2b",
       "pendingFiles": 0
     },
     {
@@ -1761,7 +1761,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "cf87a8508191bbac5c31a905a821d4f451b4af1ca4b0a48fb5c92b85a541df2c",
+      "traceHash": "00c81356120ddefd520aa396e92d7d86f6b697da92348b09a87d4b7f8f4cc9bc",
       "pendingFiles": 0
     },
     {
@@ -1770,7 +1770,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "e57f7387cc2482cd1dd72d633e50168588bce5ffa326167d7b7ae24d5199d732",
+      "traceHash": "b9d72cc0d6618f2101076a888df77add7cdcb3ae7da2dec4dd7b21b4aad439a1",
       "pendingFiles": 0
     },
     {
@@ -1791,7 +1791,7 @@
           "workerMode": "rust-local-tags-read"
         }
       },
-      "traceHash": "f356d29ad66d9efee2d3d79db48763a5df6e13d281adbd0953c70093d934e60a",
+      "traceHash": "352a066c4e71a8285ddb7cfc0a716b907bc7475bacd49c8c80480c2d09fee17f",
       "pendingFiles": 1
     },
     {
@@ -1824,7 +1824,7 @@
           "workerMode": "rust-local-tags-set"
         }
       },
-      "traceHash": "41c3a71f321aff85cf1e9515dc787b28796668f6b521fd9399598106109fcfee",
+      "traceHash": "924274d73cb875cba490ee03c535af6b762593157a6cbfc824d4a5d67a5a4ec6",
       "pendingFiles": 0
     },
     {
@@ -1857,7 +1857,7 @@
           "workerMode": "rust-local-tags-set"
         }
       },
-      "traceHash": "0dd0fc5ae58ce3f331e8394b31617083eba9dd4d001f1664f44b8ff3286e5ca9",
+      "traceHash": "096caf104625cf35948a3d9fb7dece10e8e3a6770128f6b2e8173b0b1e4e030f",
       "pendingFiles": 0
     },
     {
@@ -1890,7 +1890,7 @@
           "workerMode": "rust-local-tags-set"
         }
       },
-      "traceHash": "340b9f9844bbbcc44ad1ff985cd5cd9d6f81ab31c80bcca1292c27288f2ea1b0",
+      "traceHash": "0653158da73834f10d524af8f4dcf64474238c3548dc12848e037d2906438a40",
       "pendingFiles": 0
     },
     {
@@ -1902,7 +1902,7 @@
         "submitted": true,
         "command": "--local-tags-set"
       },
-      "traceHash": "463e9e7b0b3c2e747dbfbe8636e4d71e8eb3a63ffbd19b2651028fade1f478c1",
+      "traceHash": "5c618c02890579182cb024cbbfb997834187a5a269759d7459a795cc310767b6",
       "pendingFiles": 0
     },
     {
@@ -1911,7 +1911,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "f9176736cc509d932d6c989bfff289399f089b73de91cfe1490d0b43b25c1e44",
+      "traceHash": "c4e01c2b97adaaa70a41cdd9c4faebf6fe725ec8d56111a7fac533c772329029",
       "pendingFiles": 0
     },
     {
@@ -1923,7 +1923,7 @@
         "submitted": true,
         "command": "--local-tags-set"
       },
-      "traceHash": "597e653a32b207c6288f713ed7a44e65865b95a31012f2e8334a2829994e9ff3",
+      "traceHash": "35cd1da055c15851444d06b3b568df19318390f979f030f68d6c68c242b07441",
       "pendingFiles": 0
     },
     {
@@ -1932,7 +1932,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "9e35c71929aae72195a2ed9471dad9f70d66bc3cf724f686f3183a853468ada9",
+      "traceHash": "8b4cb130c85584fe4fc1dccfc0bd1311f333ed7f60f8fe602c16810c2547aee4",
       "pendingFiles": 0
     },
     {
@@ -1941,7 +1941,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "fbe0864534330ea7461b56d68ae66247498c54830f50d18909dc16e80679fba7",
+      "traceHash": "7f01b22b951f69f01b2470984bacd671f1366955a7dab175b1c7bf0956c294d6",
       "pendingFiles": 0
     },
     {
@@ -1974,7 +1974,7 @@
           "workerMode": "rust-local-tags-set"
         }
       },
-      "traceHash": "41c3a71f321aff85cf1e9515dc787b28796668f6b521fd9399598106109fcfee",
+      "traceHash": "924274d73cb875cba490ee03c535af6b762593157a6cbfc824d4a5d67a5a4ec6",
       "pendingFiles": 1
     },
     {
@@ -2007,7 +2007,7 @@
           "workerMode": "rust-local-tags-delete"
         }
       },
-      "traceHash": "9f93dbbc372002ba7119756b2574e6982f8cf6c1ed96444c28df9c4216f116f7",
+      "traceHash": "441e31da3262d3c3d35783ddf28859bb76f2abe1ffa730bba16637b6262e45d8",
       "pendingFiles": 0
     },
     {
@@ -2040,7 +2040,7 @@
           "workerMode": "rust-local-tags-delete"
         }
       },
-      "traceHash": "95e3e50d171eea6bc7200bfaa153d5c07554f969f428bb5d4c1d5753c2931906",
+      "traceHash": "75179df3494d0f5dffbe74d893d2db1aa6d864d23855ff92ea6dc8562deb9ce8",
       "pendingFiles": 0
     },
     {
@@ -2073,7 +2073,7 @@
           "workerMode": "rust-local-tags-delete"
         }
       },
-      "traceHash": "1c39bcfd365d0bf72ded5433ec4bb2c55a7d5b3a473af9d4fc98e7c998af6174",
+      "traceHash": "a239ecd7fcaf19718364e626caa50b339eb0d12ed75bf3ee2f8d300555c28728",
       "pendingFiles": 0
     },
     {
@@ -2085,7 +2085,7 @@
         "submitted": true,
         "command": "--local-tags-delete-tag"
       },
-      "traceHash": "35124a28ec4bfac20704e7096edfcd129795a199a14f95de0b44eb40cab98684",
+      "traceHash": "0c6b9fd5caa13599def03cc57198c5feb68e836f4bdfac0a7c8158943102d038",
       "pendingFiles": 0
     },
     {
@@ -2094,7 +2094,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "7cac28fabd40f53ee73d039f2a2e7de5d8aaadb6966f7959d924f10a24ede56a",
+      "traceHash": "f370e14c0af44bb4a04fbec337ba83ed1ea63c619564f6e5878f6471ea101749",
       "pendingFiles": 0
     },
     {
@@ -2106,7 +2106,7 @@
         "submitted": true,
         "command": "--local-tags-delete-tag"
       },
-      "traceHash": "d42c2bff314a0a66183db08c2cadce6f1652524e3bf51941cdcbf48765b30b2a",
+      "traceHash": "6e67b52b72aa37eb43d099ae5aeaac5fca21b645be81475acbbaff7b0316ba75",
       "pendingFiles": 0
     },
     {
@@ -2115,7 +2115,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "34954d59d37aae9b36abf39ca0ec979e867c9e8479f9167e70fe1d5351d4ce2f",
+      "traceHash": "d440d303a2438a648ab383097838494a8297c26c850eef9078b3c452a6b24a88",
       "pendingFiles": 0
     },
     {
@@ -2124,7 +2124,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3888c920710145c5dd99d3621413acf14a7ee1a9305eb407f5f3c19dbe2bf893",
+      "traceHash": "873c14fa3248580b868b155f1d19ce302869dd51ab49c9d5803c32f3e7f1e906",
       "pendingFiles": 0
     },
     {
@@ -2157,7 +2157,7 @@
           "workerMode": "rust-local-tags-delete"
         }
       },
-      "traceHash": "9f93dbbc372002ba7119756b2574e6982f8cf6c1ed96444c28df9c4216f116f7",
+      "traceHash": "441e31da3262d3c3d35783ddf28859bb76f2abe1ffa730bba16637b6262e45d8",
       "pendingFiles": 1
     },
     {
@@ -2184,7 +2184,7 @@
           "workerMode": "rust-shared-metadata-apply"
         }
       },
-      "traceHash": "7d6be9ed67c8cf339af3dc18de0759c65cfc80f12090ec2d01ff94f675c23d6a",
+      "traceHash": "2c83e0c60e01ad5da22b7a56a395893f3d513813d72394a7ce9e64f69520523a",
       "pendingFiles": 0
     },
     {
@@ -2211,7 +2211,7 @@
           "workerMode": "rust-shared-metadata-apply"
         }
       },
-      "traceHash": "0b7ab13df6a04cdcd338d50fed64732308c815909f6def1e84cc35e150d622b2",
+      "traceHash": "3bce3c355accb4570491291810ef71b86d93ab134d6147e9d6c880f3647bed01",
       "pendingFiles": 0
     },
     {
@@ -2238,7 +2238,7 @@
           "workerMode": "rust-shared-metadata-apply"
         }
       },
-      "traceHash": "38eb3b0973eface25fcb85ca76bb4fe3d1d4a1f0f03d25f044596cc97fcd2452",
+      "traceHash": "d6e1d60e7c42496d581bafc6e5fd6e2beae45be15333e729ff50ec47c4fe3849",
       "pendingFiles": 0
     },
     {
@@ -2250,7 +2250,7 @@
         "submitted": true,
         "command": "--shared-metadata-apply"
       },
-      "traceHash": "cec483e1d56de0f069d9a2f21e1f2d7980f877031b8c6d59be806ed9bb2a5207",
+      "traceHash": "6782dfe0ea6d130399eece96207c8c0c7b82fcf33252d6dae02e25492d59fbe8",
       "pendingFiles": 0
     },
     {
@@ -2259,7 +2259,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3b82ca2180d030f197d7fe1fa802820716c309cd5949ebbd22b261b42b833de5",
+      "traceHash": "e751cf0c83ebd3e6667b63d1c2d1919c2c53a26ef50de792cc4f15a4aad6f2a0",
       "pendingFiles": 0
     },
     {
@@ -2271,7 +2271,7 @@
         "submitted": true,
         "command": "--shared-metadata-apply"
       },
-      "traceHash": "a038431a78bc77546d5165a03d84a177202916ae38f9be2106a0ce791a88ab1b",
+      "traceHash": "879278ed85070c1dce463aa1e62d814bb704532cbe3a20d0492417f9087d6654",
       "pendingFiles": 0
     },
     {
@@ -2280,7 +2280,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "4989d2e359e3eb5145efa77590077f39ac0ffa94f592927a2708b40f1ca2c3cd",
+      "traceHash": "2256974df2fbee9693f125e3fd913f78a04e4eef922c710b95f247672914e427",
       "pendingFiles": 0
     },
     {
@@ -2289,7 +2289,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "4355121b66ec6b99338810db91f350b31da13f9abcaa847ff41f63664364eace",
+      "traceHash": "76e7989c57ac4983fd641582e2472cb91262d5c192295b7bf10eb176622053c5",
       "pendingFiles": 0
     },
     {
@@ -2316,7 +2316,7 @@
           "workerMode": "rust-shared-metadata-apply"
         }
       },
-      "traceHash": "7d6be9ed67c8cf339af3dc18de0759c65cfc80f12090ec2d01ff94f675c23d6a",
+      "traceHash": "2c83e0c60e01ad5da22b7a56a395893f3d513813d72394a7ce9e64f69520523a",
       "pendingFiles": 1
     },
     {
@@ -2346,7 +2346,7 @@
           "workerMode": "rust-shared-metadata-remove-tag"
         }
       },
-      "traceHash": "240ace0b6b4e04145355ed1524f385b915a2273b702ab76b9319c087b9235940",
+      "traceHash": "822ab182e0f95f9f3d8e692a204d779839e827f03f1bcd1eef7b605a69361f77",
       "pendingFiles": 0
     },
     {
@@ -2376,7 +2376,7 @@
           "workerMode": "rust-shared-metadata-remove-tag"
         }
       },
-      "traceHash": "a3d6f1f211a9da1d0d713df7567692f8cd35ed55e8177d6a53c3b80ec4f4c708",
+      "traceHash": "fea9ff79c30e1576fb51255299f86c7274fcb85addf22c4cf20323be84ea8352",
       "pendingFiles": 0
     },
     {
@@ -2406,7 +2406,7 @@
           "workerMode": "rust-shared-metadata-remove-tag"
         }
       },
-      "traceHash": "a450bd471227058e88ecb1cbaa57f2b61c60f04c527b1ba67ad485f540293790",
+      "traceHash": "c934c88036eea4050ab64aa0ef9bb93d9f6bd5c5b349b6669063fd0c6ecf35a5",
       "pendingFiles": 0
     },
     {
@@ -2418,7 +2418,7 @@
         "submitted": true,
         "command": "--shared-metadata-remove-tag"
       },
-      "traceHash": "74b1d905b626f13e96fceac7aa1ebbf9a0d438b7095770e309c733f213c52a12",
+      "traceHash": "6e82ba9a700a5d08a3a99036e43347ab6d8c5afe0c79c1efdb7679b7dae6b4c8",
       "pendingFiles": 0
     },
     {
@@ -2427,7 +2427,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "65c4515b3be97ddcb18f712f4fb7e4a2920b58d8add1ae7ad295dbd805cc211a",
+      "traceHash": "c2cf4ebe4447fea76397690cd9f8654d80b9af7b2e77fdbacb3974541556b4bb",
       "pendingFiles": 0
     },
     {
@@ -2439,7 +2439,7 @@
         "submitted": true,
         "command": "--shared-metadata-remove-tag"
       },
-      "traceHash": "63041e7db135b243ea9948e1b2a1afafe715e8a5a9384bc72f405c7f1f22039c",
+      "traceHash": "2e51b34b472a360876172b0f9d4b30e2353ab3a83e70814b61200f81fa9c2b65",
       "pendingFiles": 0
     },
     {
@@ -2448,7 +2448,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3b9b289375f546fbb9e90d1137351f56877d67a5c74a3600276530c292974382",
+      "traceHash": "0d40a33d8cb079cdcce5788f74f59667e90ba193f373c5ac034977533f94e3b7",
       "pendingFiles": 0
     },
     {
@@ -2457,7 +2457,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "28d306650115a0f2cf32adae7db0d09d210277498e4e025ce78b7c58fbfc8014",
+      "traceHash": "fae5c1134b5be2bd19efb7a07b15c5ea8b67d5c921dc4a315c8bfa15551b5a25",
       "pendingFiles": 0
     },
     {
@@ -2487,7 +2487,7 @@
           "workerMode": "rust-shared-metadata-remove-tag"
         }
       },
-      "traceHash": "240ace0b6b4e04145355ed1524f385b915a2273b702ab76b9319c087b9235940",
+      "traceHash": "822ab182e0f95f9f3d8e692a204d779839e827f03f1bcd1eef7b605a69361f77",
       "pendingFiles": 1
     },
     {
@@ -2503,7 +2503,7 @@
           "workerMode": "rust-shared-metadata-known-tags"
         }
       },
-      "traceHash": "c9a979ed4836eaf53b29593ddf0d021b0aec44b56ff38682069831a1a191a66d",
+      "traceHash": "3a3b7c48c1773a56c5ff60d6b8ee4e953edca53728bc949aece14b8b377d3db7",
       "pendingFiles": 0
     },
     {
@@ -2519,7 +2519,7 @@
           "workerMode": "rust-shared-metadata-known-tags"
         }
       },
-      "traceHash": "4a542d81996e06c04e924dceef6135612f715c9c9908f868b6b42094f54a9fd1",
+      "traceHash": "29273fee1b61985fbcef9237abe568ca9aa078ec031a6ee6bc317203964beadd",
       "pendingFiles": 0
     },
     {
@@ -2535,7 +2535,7 @@
           "workerMode": "rust-shared-metadata-known-tags"
         }
       },
-      "traceHash": "22a8b7c0ce18be4efac90a7c69e2ba461daf21a2b46708a4586f0b9a12855097",
+      "traceHash": "7f23b715178dc6436159aebf1428dc865f8d3074594ec4b478515baa2924ae8c",
       "pendingFiles": 0
     },
     {
@@ -2544,7 +2544,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "05af3da48ad9391681f96b643a9f595099b4f3ef67ff4e48f69a4cde46232cbe",
+      "traceHash": "36d87ddb79b68430dbf8c4e4474300e2a57fd2e74eef455251299c2a30a21d50",
       "pendingFiles": 0
     },
     {
@@ -2553,7 +2553,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3f2a4e0a57285201167cb4a80c18a694b4e3594c62a7373651cddad54a9bfde5",
+      "traceHash": "5226f67e54582fce28e7cb22f6a0161f22eb890d2423a848c6c43f4a34c079d5",
       "pendingFiles": 0
     },
     {
@@ -2562,7 +2562,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "e27a3630c2d9fd76b2ecb4178e853be0279ed58ce3f9e3a34613751f686f9b51",
+      "traceHash": "0552724afa7d3a8d70df484f8079db056fdb1fcecbab548d5867fd5014ba8bf8",
       "pendingFiles": 0
     },
     {
@@ -2571,7 +2571,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "2eeec7ec8d217fc5dbcb6778c2a10db76c6b03438703a4e62de26c90e7b1902b",
+      "traceHash": "c275767fa5f8cd275dd3e6b49e9f64f1c307a2af8de1375f2c742b175186dbe7",
       "pendingFiles": 0
     },
     {
@@ -2580,7 +2580,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "cf77119bb95dc1bf4f09413bf4c952eb95ebd474ef3cb611312b84cfa054a28f",
+      "traceHash": "513dd36d6b58ed4c879757d94997b89d7326d54c35d036c81bf1b58602cf1665",
       "pendingFiles": 0
     },
     {
@@ -2596,7 +2596,7 @@
           "workerMode": "rust-shared-metadata-known-tags"
         }
       },
-      "traceHash": "c9a979ed4836eaf53b29593ddf0d021b0aec44b56ff38682069831a1a191a66d",
+      "traceHash": "3a3b7c48c1773a56c5ff60d6b8ee4e953edca53728bc949aece14b8b377d3db7",
       "pendingFiles": 1
     },
     {
@@ -2614,7 +2614,7 @@
           "workerMode": "rust-shared-metadata-overlay-read"
         }
       },
-      "traceHash": "376ae6c40d5c9ebacb7a7055158c98cf49281868bd15e0a406bdfe997ddab576",
+      "traceHash": "7def0374480b7700ca70fc2b23a8b332d9d4484011d99f83ccda8f186a1cafa8",
       "pendingFiles": 0
     },
     {
@@ -2632,7 +2632,7 @@
           "workerMode": "rust-shared-metadata-overlay-read"
         }
       },
-      "traceHash": "ecadd1df747fab167b5a60fec93d87fcbd4fc48289e27dd55957140ce29aa825",
+      "traceHash": "e787d2d8bf3e81129de2739973dbd971841e6d36c79ab77452e980e8cf395a93",
       "pendingFiles": 0
     },
     {
@@ -2650,7 +2650,7 @@
           "workerMode": "rust-shared-metadata-overlay-read"
         }
       },
-      "traceHash": "089701301f1b6470777a62fdc90d96d899c413e96be86e8c4f61f80c8a38bab1",
+      "traceHash": "74fa65e492b35d797d7e071e5c1f8ae2a4fe742de131f5c611e487ce56fbbe24",
       "pendingFiles": 0
     },
     {
@@ -2659,7 +2659,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "98dfc61a0d4b55a56b0888468a961d950830d943d6744dc99a616c56c6303a50",
+      "traceHash": "8e065d3681403397dfdfb45a9f4273bd95b71c7fa9d61e7e83f330f5ade5a1e2",
       "pendingFiles": 0
     },
     {
@@ -2668,7 +2668,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "73264ed7cfbd810b98716f32047a5ad3f3be86cd26855c1ca695d83306769194",
+      "traceHash": "d75ea2fa5afffad2860ef6f7a9228ac3acd7e4c05cefe9fb17d0f38c26338798",
       "pendingFiles": 0
     },
     {
@@ -2677,7 +2677,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "278c67737935b16b997b728c4efc3885c384f85b5bf0703289c15d3a6013200d",
+      "traceHash": "a5ba616d2886113efa21ac10e6dcfc0b38fae3e8849ce7d77931c55f6357d8b3",
       "pendingFiles": 0
     },
     {
@@ -2686,7 +2686,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "d9dded92bf0ab25b9571d3a1c2a80c43701a98dbcbedf655b6eeee0646ab974d",
+      "traceHash": "93eda3eba583966734b73b07a0bca891529d09bff562ffca239034082669bcde",
       "pendingFiles": 0
     },
     {
@@ -2695,7 +2695,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "8b40cd354ea6fd80c1d211fba0e40e135ae788b13b378a3f0c3b2cda35ce4ef1",
+      "traceHash": "e2e2cdbdae91bd01b5f81f6ee6a633571ec389f0a798b4a450dc5e6daaa1ae21",
       "pendingFiles": 0
     },
     {
@@ -2713,7 +2713,7 @@
           "workerMode": "rust-shared-metadata-overlay-read"
         }
       },
-      "traceHash": "376ae6c40d5c9ebacb7a7055158c98cf49281868bd15e0a406bdfe997ddab576",
+      "traceHash": "7def0374480b7700ca70fc2b23a8b332d9d4484011d99f83ccda8f186a1cafa8",
       "pendingFiles": 1
     },
     {
@@ -2726,7 +2726,7 @@
           "workerMode": "rust-shared-metadata-signature"
         }
       },
-      "traceHash": "12e71c605cdc6dc6cb10aafb34851ecfd4ccf246d2425d225fe50fd227b1d4e4",
+      "traceHash": "c284da39d772b52ac9df045c18940fbc2d5a9860f71ccccbd6af86d06534cff3",
       "pendingFiles": 0
     },
     {
@@ -2739,7 +2739,7 @@
           "workerMode": "rust-shared-metadata-signature"
         }
       },
-      "traceHash": "cd78ba92865cc0b6aa991343097db3e284e4b5e60d512fffbbf81a522901d27c",
+      "traceHash": "079281c7ba94445442820c3e640e69eb08db26db3fd8423196212664404e9da4",
       "pendingFiles": 0
     },
     {
@@ -2752,7 +2752,7 @@
           "workerMode": "rust-shared-metadata-signature"
         }
       },
-      "traceHash": "0aeb6b989f83bf1d18b62015eb0f2341dcb63163861b589c16c6e97bf5b1e384",
+      "traceHash": "a2e54fe44f64b74d91d2959b250a4a261a1f9c37ac20895e4690e1f4abccf296",
       "pendingFiles": 0
     },
     {
@@ -2761,7 +2761,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "b0d3b8eed5e946e9a8e3d59cff844ff4d26a14000aa8a049aede5810be5bd315",
+      "traceHash": "11e00ac40d22044531721330f160cdb8d40582354039d7718644cccaf5da1167",
       "pendingFiles": 0
     },
     {
@@ -2770,7 +2770,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "f08017d7121e9aa3a3a2d2acd6116ee031df15f20df3ce64247ccd2962de29eb",
+      "traceHash": "e0fe835b2ef8911676a79ce8e6cbae35b094e1bcca6e8028fc964c7166a882b1",
       "pendingFiles": 0
     },
     {
@@ -2779,7 +2779,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "be0d1a346caffccec0b9406a38409952757c7e4666ded8c09267676a81e3e8d3",
+      "traceHash": "8a733f82cde5541fddbe8b7c38932b60b6abcc45c1cb4b87e53d4c49962eeafc",
       "pendingFiles": 0
     },
     {
@@ -2788,7 +2788,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "f291ea44c9eb4e9be0ddd65cf5edad846413a2c6818903d0e42945d46081695c",
+      "traceHash": "275e360557a24d1423606fae593f56379ae1a5cd9a3bb5cc262bae5e7ef28467",
       "pendingFiles": 0
     },
     {
@@ -2797,7 +2797,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "20a4ece8d6565c2884128ee84f9f9a22fc36ec7f2f58c98d5877485ca43f4d80",
+      "traceHash": "dd158a47a93216f8dad440bdd8080cd275bc9e542a47b7cc15b922fee204750f",
       "pendingFiles": 0
     },
     {
@@ -2810,7 +2810,7 @@
           "workerMode": "rust-shared-metadata-signature"
         }
       },
-      "traceHash": "12e71c605cdc6dc6cb10aafb34851ecfd4ccf246d2425d225fe50fd227b1d4e4",
+      "traceHash": "c284da39d772b52ac9df045c18940fbc2d5a9860f71ccccbd6af86d06534cff3",
       "pendingFiles": 1
     },
     {
@@ -2825,7 +2825,7 @@
           "workerMode": "rust-preview-cache-read-status"
         }
       },
-      "traceHash": "8a8f67271978044b8b381e68871778fe2d24162cb626a766bc650069a9e3ff48",
+      "traceHash": "2a27a0e747d54d90c39457cb2ff6c51016db203f3c6a44723edadcc8a75fb16d",
       "pendingFiles": 0
     },
     {
@@ -2840,7 +2840,7 @@
           "workerMode": "rust-preview-cache-read-status"
         }
       },
-      "traceHash": "d36658f6fc2516b37d2ba99e66e9ae1b263bd893fa944ba7cb3c060703ea83cf",
+      "traceHash": "f023da31b0704ec6bd80fb4e2d78f1700796c28e79bfae3cb25599d673d61326",
       "pendingFiles": 0
     },
     {
@@ -2855,7 +2855,7 @@
           "workerMode": "rust-preview-cache-read-status"
         }
       },
-      "traceHash": "f733371a435428091b0b655db4ad327f9e60ce2d2e3cd63753b2893605155f25",
+      "traceHash": "2cc379c4c64f3744c98448d72e06627d4fc1958422ed6d7349514436439271fe",
       "pendingFiles": 0
     },
     {
@@ -2864,7 +2864,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "383a926fbdee1ab039f646a1cff57cf669a994622d43366a0e621f7a6d537f60",
+      "traceHash": "036cd6d862965972265f71cc543d232e244b6709035f1921ee6f8c8d15a8b2e0",
       "pendingFiles": 0
     },
     {
@@ -2873,7 +2873,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "189499e9daee515d3ecca5c792653504d1c7d084dc98bfa8e62acff52c49e7db",
+      "traceHash": "e9a644d333c888c0c7b75ff5fc1f6fae356cc40cf9abc642afa7dab18561466f",
       "pendingFiles": 0
     },
     {
@@ -2882,7 +2882,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "7d373e044650fc258b8110f5a598665f2917155ba0b9569a08284bd2ddf3b86a",
+      "traceHash": "28d8917728185db3f6d2eadb31bfdc8ae2fa34d1595e224f8e884dd3e1857059",
       "pendingFiles": 0
     },
     {
@@ -2891,7 +2891,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "212bd1452d318814b1d59feb12ba4d74145add263475665ab02e8e548709d71f",
+      "traceHash": "cbd8d84234fafd80b17a15681ae32e737e2829d37628ab90288a74c3e8f41c6d",
       "pendingFiles": 0
     },
     {
@@ -2900,7 +2900,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "6ed942651981bb38e93ed9aeb19112a96181e5f28bc770eb363bd6946cfdbba0",
+      "traceHash": "1c15e350190cc2c98cfe338f954ad78e928633447eea8aeeadeb42d24ab29eca",
       "pendingFiles": 0
     },
     {
@@ -2915,7 +2915,7 @@
           "workerMode": "rust-preview-cache-read-status"
         }
       },
-      "traceHash": "8a8f67271978044b8b381e68871778fe2d24162cb626a766bc650069a9e3ff48",
+      "traceHash": "2a27a0e747d54d90c39457cb2ff6c51016db203f3c6a44723edadcc8a75fb16d",
       "pendingFiles": 1
     },
     {
@@ -2928,7 +2928,7 @@
           "workerMode": "rust-preview-cache-apply"
         }
       },
-      "traceHash": "35dc6948642ca53063d5aef4d1517a6ba692d5f64f6e7b144a9019984a7f6c76",
+      "traceHash": "43b7d68247e6e65f6aff161e0fa1c4baa895bfe0d8d672ceb2bbf63acf573da3",
       "pendingFiles": 0
     },
     {
@@ -2941,7 +2941,7 @@
           "workerMode": "rust-preview-cache-apply"
         }
       },
-      "traceHash": "18d4267e3bd4f41b1f8a1373cbb130c212ecc808e02afa0130b3658095caa720",
+      "traceHash": "17577ebb6323b101dcfe499af575c211ec8efae80c52600c7afa5cef696e7d35",
       "pendingFiles": 0
     },
     {
@@ -2954,7 +2954,7 @@
           "workerMode": "rust-preview-cache-apply"
         }
       },
-      "traceHash": "6ebf6cd9784b76da4793618d0e4a5daba0f44570d4db92dc2dd05eea9ba4670f",
+      "traceHash": "8c2bf5d6101d39ccc606ac6707f9a810543dcdcedf0de4f9340aeba150e7fc33",
       "pendingFiles": 0
     },
     {
@@ -2966,7 +2966,7 @@
         "submitted": true,
         "command": "--preview-cache-apply"
       },
-      "traceHash": "392f18360bbf01b42fb1e8e6489c14986c9a85c1b10a1e3f2b820db08f64d410",
+      "traceHash": "0f4aa0a71f693a285d9267eba02e965483d893f4cd3fe8cfb7da8a0e0a0cb728",
       "pendingFiles": 0
     },
     {
@@ -2977,7 +2977,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "cb150748c6a3cb34c6f26188fbba67b483ac36642736a8cf00bdd59207928985",
+      "traceHash": "c5b121d5007a5a33fbb8ae3e0ef963cc41e54208960211148edef96d433fcbad",
       "pendingFiles": 0
     },
     {
@@ -2988,7 +2988,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "b367c6cc8bd3e722b3de2592d5b873a9130bd8fa32d2bb924602eaab1d2d7301",
+      "traceHash": "950c483f4e01c8380d930ef911a3c361534799b2e509284fc367bc98ff2cd68a",
       "pendingFiles": 0
     },
     {
@@ -2999,7 +2999,7 @@
         "message": "fixture invalid JSON",
         "submitted": false
       },
-      "traceHash": "65ee6b5c1e6c31ee172bf8740af77d12b19099fa35f0affece4521b990530105",
+      "traceHash": "aac49e72430113db1c7cf30dc53fe50428c61feb032c45e55687ac835da57510",
       "pendingFiles": 0
     },
     {
@@ -3008,7 +3008,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "6f176c5776ca8bf8c3a6f15a3984b3c6e5f08b890d1f3b9bb2abe8b4ab64cc37",
+      "traceHash": "1057e30ce61fc3190372f494588d4728b78e1eeec53dc16201c65289c172270c",
       "pendingFiles": 0
     },
     {
@@ -3021,7 +3021,7 @@
           "workerMode": "rust-preview-cache-apply"
         }
       },
-      "traceHash": "35dc6948642ca53063d5aef4d1517a6ba692d5f64f6e7b144a9019984a7f6c76",
+      "traceHash": "43b7d68247e6e65f6aff161e0fa1c4baa895bfe0d8d672ceb2bbf63acf573da3",
       "pendingFiles": 1
     },
     {
@@ -3034,7 +3034,7 @@
           "workerMode": "rust-preview-cache-delete"
         }
       },
-      "traceHash": "608fb4505339f9779336505e96a4e45cab77324ab8fc5ffbd8d46aa449c2f4ad",
+      "traceHash": "bdadc233fa5a2fbb2f0dae9368d828efeab2f8aac976778a98a9f20931eb55d6",
       "pendingFiles": 0
     },
     {
@@ -3047,7 +3047,7 @@
           "workerMode": "rust-preview-cache-delete"
         }
       },
-      "traceHash": "0f0cdc77e1f07a5234d95e4f68ad311efb1abe348fc80551e260b379fd0f0d66",
+      "traceHash": "c00b035a49b2d376f740ade5332b137ce54f163b756216fe7e0b7f8c99101fc1",
       "pendingFiles": 0
     },
     {
@@ -3060,7 +3060,7 @@
           "workerMode": "rust-preview-cache-delete"
         }
       },
-      "traceHash": "f40e158fcacd7f002ae126f958c1b83db465d1667b7c3ed1a2e55630e4ac313a",
+      "traceHash": "d7f1b42af383b7979c616f1dd3bd41090c141cf05cd6dd9f75ec3c705647f48d",
       "pendingFiles": 0
     },
     {
@@ -3072,7 +3072,7 @@
         "submitted": true,
         "command": "--preview-cache-delete"
       },
-      "traceHash": "4b26cc9941dd7926e1e41e5fd970f41160b0840eee276dafd6a48e288a9a60f3",
+      "traceHash": "7b02b5f082e8a5389affb97edd16a4be11a2c41e75dfd6375bdca0499b796bb7",
       "pendingFiles": 0
     },
     {
@@ -3083,7 +3083,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "8024de6ecbdec2b6fea75cc5739674eca4797f2cdfc6ece46f32db29fdb956ec",
+      "traceHash": "aea5411b34ace6e3622897fe0c30ea8ee7ba6d2f2d7ff8f1691fc27c94f12caa",
       "pendingFiles": 0
     },
     {
@@ -3094,7 +3094,7 @@
         "message": "worker said no",
         "submitted": false
       },
-      "traceHash": "a8cee6c671fbd583155d947f7b80d249502025f9777f3e4fbfd612c559b318ce",
+      "traceHash": "a290abd2c5f97a9d1db8344ade3201ba077b73c24f9c76a867b38f35d8e09406",
       "pendingFiles": 0
     },
     {
@@ -3105,7 +3105,7 @@
         "message": "fixture invalid JSON",
         "submitted": false
       },
-      "traceHash": "c289755509ed91602348499844675073b9e3c5947b739e09e6697190e6843384",
+      "traceHash": "5628883188b7ad67512f1384ddd78cf254836b361478839f0dc3c107de089880",
       "pendingFiles": 0
     },
     {
@@ -3114,7 +3114,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "5205bf74ce86cea892ceab023cbe6a528676d5f7d5bfea6681aa928cd44c096f",
+      "traceHash": "a06c1f5504eaca20290a0670e3d954d8242cff41ca5edfda653ca903337408cb",
       "pendingFiles": 0
     },
     {
@@ -3127,7 +3127,7 @@
           "workerMode": "rust-preview-cache-delete"
         }
       },
-      "traceHash": "608fb4505339f9779336505e96a4e45cab77324ab8fc5ffbd8d46aa449c2f4ad",
+      "traceHash": "bdadc233fa5a2fbb2f0dae9368d828efeab2f8aac976778a98a9f20931eb55d6",
       "pendingFiles": 1
     },
     {
@@ -3142,7 +3142,7 @@
           "workerMode": "rust-preview-cache-query"
         }
       },
-      "traceHash": "bf3d64e004e3cc85a71c9c623d50423eb1ca1e8e7486c2a267b96e7a75520fcd",
+      "traceHash": "63ace8f66bf4131cc3c1dac294645904a7fba9c73e0d165b95a6cde358fae217",
       "pendingFiles": 0
     },
     {
@@ -3157,7 +3157,7 @@
           "workerMode": "rust-preview-cache-query"
         }
       },
-      "traceHash": "107207ee8bb61ffe28ec00590373d92dea3f0f5278f2321d7913f5dc772e50fa",
+      "traceHash": "9d60231459e8052798ac69602dc619a7ddadb61ad794be1ccbf9b6fb8042342a",
       "pendingFiles": 0
     },
     {
@@ -3172,7 +3172,7 @@
           "workerMode": "rust-preview-cache-query"
         }
       },
-      "traceHash": "97f9173a0092fa607ee15feb046134cd7593175e495a682465318c3b6fb9749b",
+      "traceHash": "36004543b2eba2b4ea29bea046d354b595db111fb973d226b307bef51d039f43",
       "pendingFiles": 0
     },
     {
@@ -3181,7 +3181,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "eab69d6c660f5fba2aa9b0d7815e69c1199a1ac685bbb37d58022de28715bb70",
+      "traceHash": "8cee2fe59de99324e06f74eeca670332e005a920464066e950ba660ea9626dc1",
       "pendingFiles": 0
     },
     {
@@ -3190,7 +3190,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "aa90099c26b9f2714544bb432a0537ab81d0fdb5be1551a1e08c9dc3af22f999",
+      "traceHash": "575aed25d042548d1ce0ede950d8c74b92994c0e1a9fc5c355d60d8cea49bba4",
       "pendingFiles": 0
     },
     {
@@ -3199,7 +3199,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "8944aa6e6ddbb54cb9d944ec14237aa50ec1ce370aba1f556e43ddacbfa02b55",
+      "traceHash": "44ec4144e7a7d3f433376fbc75209fb05bbfc6dd7da1c73029d55835c6f8ca72",
       "pendingFiles": 0
     },
     {
@@ -3208,7 +3208,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "4c669eab04d0366cff0bd172c05b15cb68a48f893b8beb6ee5bbb7df93310fb3",
+      "traceHash": "9e87f353ee91e4cf876360ce3608c265a3e178784a1544b4109bab6b9effb369",
       "pendingFiles": 0
     },
     {
@@ -3217,7 +3217,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "cdd60fc7b8da6edb44ab6eb13f89636de7511c00454a7bce657a6ddff81d9a65",
+      "traceHash": "1987a503b2b225bcf565bdaeb5f33bf9d9251a6ad4c11a14b2f81c21774ed6a8",
       "pendingFiles": 0
     },
     {
@@ -3232,7 +3232,7 @@
           "workerMode": "rust-preview-cache-query"
         }
       },
-      "traceHash": "bf3d64e004e3cc85a71c9c623d50423eb1ca1e8e7486c2a267b96e7a75520fcd",
+      "traceHash": "63ace8f66bf4131cc3c1dac294645904a7fba9c73e0d165b95a6cde358fae217",
       "pendingFiles": 1
     },
     {
@@ -3245,7 +3245,7 @@
           "workerMode": "rust-preview-cache-touch"
         }
       },
-      "traceHash": "58eacf10b69473fdadaf4cc4591db8aba5267ef5f7a8fffa5616dc9f03497844",
+      "traceHash": "99b7d2112d7cf13923ea66ae1918d498a0bd247620f417b480a91087c4a38d0d",
       "pendingFiles": 0
     },
     {
@@ -3258,7 +3258,7 @@
           "workerMode": "rust-preview-cache-touch"
         }
       },
-      "traceHash": "36094793dba2da8bd089ee82d14fb9d5e1bc67ee24493b49ba8e1ae716203016",
+      "traceHash": "de0b72a2162381f989504f21cb607d7051034e37fe4e471ad76b697c5fb8ab79",
       "pendingFiles": 0
     },
     {
@@ -3271,7 +3271,7 @@
           "workerMode": "rust-preview-cache-touch"
         }
       },
-      "traceHash": "26743e263f7f24004fea9483dd4cbf6e29a10d3c4d639783a31f36ef17b1597d",
+      "traceHash": "71f52cebf48861d07052c339d9417e872e7c67f611655f95c3ab70dcce861509",
       "pendingFiles": 0
     },
     {
@@ -3280,7 +3280,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "881f3352e41a9d2ac5eaae010a1791a2875bca2fd08eec1e909a4df505d4abc5",
+      "traceHash": "7c198cb5ccf6ab0699500fdb16ffc246cb43cd1dcdb40c80a5bad457951c624b",
       "pendingFiles": 0
     },
     {
@@ -3289,7 +3289,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3f3472ce88e83ef73f1bee9319a7cf14bb32c07b79db5316668b036359b63388",
+      "traceHash": "cfb22fc8f98fa639a640cc90e068f86ad668ccf1a8843f82d8af8d39d982d161",
       "pendingFiles": 0
     },
     {
@@ -3298,7 +3298,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "8e2bc29a246324f4d4db17996fc6ab5757b06df0642ff84d2874bd2a07ed90d7",
+      "traceHash": "8f9664118710d738b582282757707d85a15bae3fd4bfc9252e2936424ef2ddaf",
       "pendingFiles": 0
     },
     {
@@ -3307,7 +3307,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "d53bfe19014cfab9b9c70efb2a71167f62025a972c5c9af6d01bd5a72d1b4806",
+      "traceHash": "87d218e1233af3a484ad43a75e2a87cfb114f0ec8f152c3b26c54179c5443779",
       "pendingFiles": 0
     },
     {
@@ -3316,7 +3316,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "deb855ea56a1712c9151319043d073596c7aa8ddf66cf10b3a88faad430ee7d6",
+      "traceHash": "883de842ffa9b3dc7a961cc4d67ddc65aa3f801f314d5bd1c645c5dcfa6fdc5e",
       "pendingFiles": 0
     },
     {
@@ -3329,7 +3329,7 @@
           "workerMode": "rust-preview-cache-touch"
         }
       },
-      "traceHash": "58eacf10b69473fdadaf4cc4591db8aba5267ef5f7a8fffa5616dc9f03497844",
+      "traceHash": "99b7d2112d7cf13923ea66ae1918d498a0bd247620f417b480a91087c4a38d0d",
       "pendingFiles": 1
     },
     {
@@ -3345,7 +3345,7 @@
           "workerMode": "rust-preview-cache-batch"
         }
       },
-      "traceHash": "86ccf9d0ce4dc3f0aca2d948110640bc8509014922a64cb243c8db445325d0a6",
+      "traceHash": "067c7bf7fce8a4756b11199612ea09268822adffcd224e0d3f22f31e2d9a545d",
       "pendingFiles": 0
     },
     {
@@ -3361,7 +3361,7 @@
           "workerMode": "rust-preview-cache-batch"
         }
       },
-      "traceHash": "149aba964ecdf57a2346329d770d8fbcdcc44bc451fa6cf41dea536aa6163500",
+      "traceHash": "a832b84027f20af98d611f87549932c4cd2ae9c25821f1f93de7d35906c08959",
       "pendingFiles": 0
     },
     {
@@ -3377,7 +3377,7 @@
           "workerMode": "rust-preview-cache-batch"
         }
       },
-      "traceHash": "85a48c1929eec9939a9cc6fbd1d4cf223ff1a4bc1ab122b2bf62a7d143a0e8d4",
+      "traceHash": "ade3c1c5b45ea6345d9ff35d0209901d2f608d43c57950467067bc8a72e5aab8",
       "pendingFiles": 0
     },
     {
@@ -3386,7 +3386,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "0e75738d25afbb845a440fdf531fab6e55950d0ce45258c50b789e8dd9a74a7c",
+      "traceHash": "ac0b64aae686436ff890dc2a9dab1937c8c68fce54174f9bb29a6cbd0e653218",
       "pendingFiles": 0
     },
     {
@@ -3395,7 +3395,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "d2822adb99c9d8d1551c8eb0fdca1c9b4954f85bf123ac264082a632630f687c",
+      "traceHash": "96b84f77e89195f2551e6a40a841fe7a5001005bcd63973f002b25a82889f935",
       "pendingFiles": 0
     },
     {
@@ -3404,7 +3404,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "358f9bf93ce4682563acfb07f4288c505450548a546a8a4710a04302d94b62b3",
+      "traceHash": "77007dd4c7eb54ac217d608c0efb9f50f19b29412ac5a8c08af08c73fa916eb6",
       "pendingFiles": 0
     },
     {
@@ -3413,7 +3413,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "4818a3a65d359b0589ae995df0bcf16db52944391d3087a004ff90f65f2f8bf9",
+      "traceHash": "71528c4edac02c51d3998f5c1473f4053fe3c3e526a316bb1416d2c817b0f1c3",
       "pendingFiles": 0
     },
     {
@@ -3422,7 +3422,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "4a40ba890a550e46adb41e7a9305743870be81bb72de0d925f734167932a1120",
+      "traceHash": "de646b1904fdae24927df2975ace05f14b3350465d34bdb83002c644b4b3de34",
       "pendingFiles": 0
     },
     {
@@ -3438,7 +3438,7 @@
           "workerMode": "rust-preview-cache-batch"
         }
       },
-      "traceHash": "86ccf9d0ce4dc3f0aca2d948110640bc8509014922a64cb243c8db445325d0a6",
+      "traceHash": "067c7bf7fce8a4756b11199612ea09268822adffcd224e0d3f22f31e2d9a545d",
       "pendingFiles": 1
     },
     {
@@ -3455,7 +3455,7 @@
           "workerMode": "rust-preview-cache-maintenance"
         }
       },
-      "traceHash": "0b3c23a18bfecdd3b5d9a4a14407db308122976e40e5c9a464ceae0cc5ad00fa",
+      "traceHash": "2f33c5ddfdb210057e8a4ea1b865b3824a54256696feae540696cd7793220b76",
       "pendingFiles": 0
     },
     {
@@ -3472,7 +3472,7 @@
           "workerMode": "rust-preview-cache-maintenance"
         }
       },
-      "traceHash": "a37a98c79fa5b8e79883e6f0e54175fedd65647f94b48da9c91d8f740b30caed",
+      "traceHash": "68f82559637424dbdd9ece3d510304b5cf623e6c322ea91d0031f5cb8572e0aa",
       "pendingFiles": 0
     },
     {
@@ -3489,7 +3489,7 @@
           "workerMode": "rust-preview-cache-maintenance"
         }
       },
-      "traceHash": "c13764e52716e95a020f26da7bfc6d82225397c3456da6fae58ada3402e405ea",
+      "traceHash": "cce8426040ac4aeaead7ae26370b7db1849664ee8a42fc27d1b3f5c03ad9b4d5",
       "pendingFiles": 0
     },
     {
@@ -3498,7 +3498,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "e5fb514a2a6c2e08b907bb8eedd6170d327417fbdc126e39951d07badffc9e9e",
+      "traceHash": "f9e083ce8efc5833167cd960d7f53405773e664f4a5a88bd4d7b81a30e5ee491",
       "pendingFiles": 0
     },
     {
@@ -3507,7 +3507,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "5953e0218e2fa4cc376adfb96e0025b2479a0d34ac4e4c957043b5a5b4a7b596",
+      "traceHash": "2e3fab901956b5edd101a34ff694028032a371b70147ea28a50211e8f186f309",
       "pendingFiles": 0
     },
     {
@@ -3516,7 +3516,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "2cf42d489cec3f738a073d1999c439ff0a9f6764a9d79be54eddf8014d2bffb0",
+      "traceHash": "fae19d6aa0d318eb729774782177281c96ec475f1961e4d63682c18cbae551e2",
       "pendingFiles": 0
     },
     {
@@ -3525,7 +3525,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "fe60936f625fa13fb0334f543bd63ec8fa249db0f963b1d47a36aff5e16373fb",
+      "traceHash": "351201a75ca5a402afe2068d08866feca24202313e03cd3996475394d52bb6f4",
       "pendingFiles": 0
     },
     {
@@ -3534,7 +3534,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "4b4ebac699946fb394bece2eda69aef4d18a7bf7f01afcfa458f8bd25034274c",
+      "traceHash": "c281d723968db790730540967e41258c1f6af0a457c55e4e3381b33275e96461",
       "pendingFiles": 0
     },
     {
@@ -3551,7 +3551,7 @@
           "workerMode": "rust-preview-cache-maintenance"
         }
       },
-      "traceHash": "0b3c23a18bfecdd3b5d9a4a14407db308122976e40e5c9a464ceae0cc5ad00fa",
+      "traceHash": "2f33c5ddfdb210057e8a4ea1b865b3824a54256696feae540696cd7793220b76",
       "pendingFiles": 1
     },
     {
@@ -3571,7 +3571,7 @@
           "workerMode": "rust-database-health-check"
         }
       },
-      "traceHash": "1736bff7808f96cbcbeb0fd8af7febeb3440fe825a351d4e5533aa3b7b0667af",
+      "traceHash": "6c7edad9b018db090522470a71b25d3b85318708bd2f285204d9524ad6081838",
       "pendingFiles": 0
     },
     {
@@ -3591,7 +3591,7 @@
           "workerMode": "rust-database-health-check"
         }
       },
-      "traceHash": "5a49fa0133f152c06838c531d3177c6d8918b3b3c97839d6f48302dbfe119e43",
+      "traceHash": "afe46b60216a37064856795db14bf871f90c28c22776d5625870337844ca4e8c",
       "pendingFiles": 0
     },
     {
@@ -3611,7 +3611,7 @@
           "workerMode": "rust-database-health-check"
         }
       },
-      "traceHash": "06f3d404de4900fccd7ab5e4f43dbfa9e5ff677fca16916ff57a987bacbd604c",
+      "traceHash": "5edfedb282d71c2e1900ea69d19179334276f76a14976b438bf99a82ac071911",
       "pendingFiles": 0
     },
     {
@@ -3623,7 +3623,7 @@
         "submitted": true,
         "command": "--database-health-check"
       },
-      "traceHash": "eadc6808900558d3079a7e572c7ba594e2f0715e86bdeffc673d0993df737daf",
+      "traceHash": "35a8d5fe33550d6cc00752451a1ff72e831eb1fe6f9cf938dff4adfd077130a8",
       "pendingFiles": 0
     },
     {
@@ -3632,7 +3632,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "1736bff7808f96cbcbeb0fd8af7febeb3440fe825a351d4e5533aa3b7b0667af",
+      "traceHash": "6c7edad9b018db090522470a71b25d3b85318708bd2f285204d9524ad6081838",
       "pendingFiles": 0
     },
     {
@@ -3641,7 +3641,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "5a49fa0133f152c06838c531d3177c6d8918b3b3c97839d6f48302dbfe119e43",
+      "traceHash": "afe46b60216a37064856795db14bf871f90c28c22776d5625870337844ca4e8c",
       "pendingFiles": 0
     },
     {
@@ -3650,7 +3650,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "ae9620a0d874c68cc94b226243bafe39bd09c6e9e41d91364d23c1132e14c1f0",
+      "traceHash": "25055a76670d03f176d8f9d4229fc8d48fcef8f7d77f8aa99165f58f2aeb3814",
       "pendingFiles": 0
     },
     {
@@ -3659,7 +3659,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "88e1df3d784a4be95dfbf4c07fcc9e1804eb866331ce574a607aae61a03ca310",
+      "traceHash": "03495bbc1cd31d82b82f1028ab4512e828271b580e9f72ce63e6887a4772d577",
       "pendingFiles": 0
     },
     {
@@ -3679,7 +3679,7 @@
           "workerMode": "rust-database-health-check"
         }
       },
-      "traceHash": "1736bff7808f96cbcbeb0fd8af7febeb3440fe825a351d4e5533aa3b7b0667af",
+      "traceHash": "6c7edad9b018db090522470a71b25d3b85318708bd2f285204d9524ad6081838",
       "pendingFiles": 1
     },
     {
@@ -3704,7 +3704,7 @@
           "workerMode": "rust-database-backup"
         }
       },
-      "traceHash": "97492dbb0fa8e4f8a27dfe553d7288c142fa1b11c725f7b31a28aaefe1d15b24",
+      "traceHash": "9ca5bd4ea371c9edca7aa12a79829744633305c29fa395ce07fe8202cd8a1b88",
       "pendingFiles": 0
     },
     {
@@ -3729,7 +3729,7 @@
           "workerMode": "rust-database-backup"
         }
       },
-      "traceHash": "90ed030ab48af3166a47b2df74ea01ab2334bcca8b753aceccb97909bba05ee5",
+      "traceHash": "f9933866c38e517c26850e03accb1c237713f33fbb78cdd1734d5cee67f975f9",
       "pendingFiles": 0
     },
     {
@@ -3754,7 +3754,7 @@
           "workerMode": "rust-database-backup"
         }
       },
-      "traceHash": "338fdaadeb7842a0dc25f850982c80171675752f533ada944f5d99825bb61645",
+      "traceHash": "308d7d86175bd587e7265faf76c8284a5cc9e44712274c64cc6218556fb09dd7",
       "pendingFiles": 0
     },
     {
@@ -3766,7 +3766,7 @@
         "submitted": true,
         "command": "--database-backup"
       },
-      "traceHash": "af4569c25dedbf0586ee53e5a99c1a450cf7392ce2185e0634185eafaaab2057",
+      "traceHash": "ff2620c633fb319a1baedd91d6dd5eea479bd7bcedd0df366780d5f95d8da15b",
       "pendingFiles": 0
     },
     {
@@ -3775,7 +3775,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "5d2bb19ba5e7a241ef919a501d6129db912d86f452a9575b44843d40b7bcf785",
+      "traceHash": "deea53cfaf3a50cc08854126ab695c76c28afeac6f1b8b98c333820f50dafb1c",
       "pendingFiles": 0
     },
     {
@@ -3787,7 +3787,7 @@
         "submitted": true,
         "command": "--database-backup"
       },
-      "traceHash": "6a8bfccf71dc3ef71c90d65e355c694d8baa2b839a0ccdf74d7558975aebf4d6",
+      "traceHash": "6423dc0aace9842ae598b908c5de2bc9c7b7a1cb06c57e24d1c897228dbfc2e1",
       "pendingFiles": 0
     },
     {
@@ -3796,7 +3796,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "fa014338f8764e528ca2ac2fef075633537012a5cf1129e69fd197af5ff982e5",
+      "traceHash": "c5a1054d67b35a0cb700a7e79ba4a70a94c7c69aef51f2a42d10fd55b9aa28c6",
       "pendingFiles": 0
     },
     {
@@ -3805,7 +3805,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "32c0f9ee13531d4cfe42049ffb05a3afb99c0e87ed894b574a224e4a6884a843",
+      "traceHash": "86d38d90431734cf71d2bf161ffcaa12dabcae6479abbb4266d3a1cb01d3a5cf",
       "pendingFiles": 0
     },
     {
@@ -3830,7 +3830,7 @@
           "workerMode": "rust-database-backup"
         }
       },
-      "traceHash": "97492dbb0fa8e4f8a27dfe553d7288c142fa1b11c725f7b31a28aaefe1d15b24",
+      "traceHash": "9ca5bd4ea371c9edca7aa12a79829744633305c29fa395ce07fe8202cd8a1b88",
       "pendingFiles": 1
     },
     {
@@ -3845,7 +3845,7 @@
           }
         }
       },
-      "traceHash": "64eefd2aa0d60dd3a80bd9f4be777a5fdfa619a7a60643f02c622a72cb88edf7",
+      "traceHash": "a86c70a4f79961a4cdaefcf1f7d51ca39d133ff69f6c6b57a85963304660318a",
       "pendingFiles": 0
     },
     {
@@ -3860,7 +3860,7 @@
           }
         }
       },
-      "traceHash": "841a84848867a775a691ed6e61c7ed57855926df862a0dbb1e792f417edc1164",
+      "traceHash": "176e2919b6a10c7cb8303bbd49648fc748007174af6795d7771ea81238d353bb",
       "pendingFiles": 0
     },
     {
@@ -3875,7 +3875,7 @@
           }
         }
       },
-      "traceHash": "92ed5664a267b6b7b29a507dce4388c61e5cda79e7ab981ae777a22e6a60fad0",
+      "traceHash": "18e3f2a6738ae6befb15cda0e285d17a57659eb113fa90974e0357232efb2085",
       "pendingFiles": 0
     },
     {
@@ -3887,7 +3887,7 @@
         "submitted": true,
         "command": "--font-resource-add"
       },
-      "traceHash": "8e2fa202b1811d6816cfa378e7ebaa6527e7b12c070ece8f5b007cd9376ada33",
+      "traceHash": "e537a00a6a7af8bfae0851ee1cfbe210785ec9fb3dd589ef425f7777bf4879e2",
       "pendingFiles": 0
     },
     {
@@ -3896,7 +3896,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "c9aef0356203691f97e70ba2305b96157776f0a12d9614a2e951dbe7434043ad",
+      "traceHash": "48a8d2a4b243337db7540d9b9c54ee3c4c87f66553eec6a83d524f437ac0040c",
       "pendingFiles": 0
     },
     {
@@ -3908,7 +3908,7 @@
         "submitted": true,
         "command": "--font-resource-add"
       },
-      "traceHash": "31f3e338a6064867b41d21ccdebae040ba0b74b7f1bc1e97d90a8a86d252c0aa",
+      "traceHash": "5c6ed9086805c2def14a0cc80aa1649eb47bb2b3c6756393521880567c7d759c",
       "pendingFiles": 0
     },
     {
@@ -3917,7 +3917,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "df85a64a28a67bedd9e2bd116dec6b2ae8afd0548a732955fd522e90a7c54837",
+      "traceHash": "0e1cd66f68d9a6f81b35b9b41c65b1351c8116b9f029fe7ad9f20291ca8cc704",
       "pendingFiles": 0
     },
     {
@@ -3926,7 +3926,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "91a15f1937579c0a04a94fb12c699394ca53b9abb4fbcd216e41dd657803366e",
+      "traceHash": "c58b2039a4f71d3b03d08dea6bd0b2e6dbe33eea6baa1f4057088e22ffa67f4c",
       "pendingFiles": 0
     },
     {
@@ -3941,7 +3941,7 @@
           }
         }
       },
-      "traceHash": "64eefd2aa0d60dd3a80bd9f4be777a5fdfa619a7a60643f02c622a72cb88edf7",
+      "traceHash": "a86c70a4f79961a4cdaefcf1f7d51ca39d133ff69f6c6b57a85963304660318a",
       "pendingFiles": 1
     },
     {
@@ -3956,7 +3956,7 @@
           }
         }
       },
-      "traceHash": "cdee43cad276c2e276dfd28b5a177dce73d744e71f7d96eaf6f05b7a92e9b02b",
+      "traceHash": "abb26aad3509045d7df6813ebfebf93d5a3bd41e100e860f8f2003f757d58d88",
       "pendingFiles": 0
     },
     {
@@ -3971,7 +3971,7 @@
           }
         }
       },
-      "traceHash": "b48c83f9f371ab9a785573503e25fac6edec8aa0fd95ebc18ec324e5770a53ec",
+      "traceHash": "a5f757ce1eb5f4dbee40d5ce7b6702e5d3b38558b8120fe29abefe7a1862f436",
       "pendingFiles": 0
     },
     {
@@ -3986,7 +3986,7 @@
           }
         }
       },
-      "traceHash": "6e4a57b86d4c49bf28cdb0c4b12bb261de6e61e5f5258112e4e012f4fd77e7ce",
+      "traceHash": "b6a4d5bd3ca9c74f69e0166d43a0541b53e46eda68cb17c38a0a362642bb515b",
       "pendingFiles": 0
     },
     {
@@ -3998,7 +3998,7 @@
         "submitted": true,
         "command": "--font-resource-remove"
       },
-      "traceHash": "90b2712e487548dc2636e158bdfe2bc66b2dfd0917cdeee95de0e7e24fe081c1",
+      "traceHash": "7efe3a585f8411bb138f07bbd31c7a0630444ff6e16a5e0b714ea9e457859d9f",
       "pendingFiles": 0
     },
     {
@@ -4007,7 +4007,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "50d2d9d36d0574a3c7bc1455c1add5c189a239937f45909fc9d9c6ce4075cd68",
+      "traceHash": "3db0e46f858bcafc6a97230a862ac00b0dea14657402d3bed34344d13a9a4938",
       "pendingFiles": 0
     },
     {
@@ -4019,7 +4019,7 @@
         "submitted": true,
         "command": "--font-resource-remove"
       },
-      "traceHash": "557d8e7976d28f5ee2a98ba3bd547fc64b02c21d1a0ce88e11691f960c3b4211",
+      "traceHash": "7f2367c30b56d0bca5eaead9fe0a419730f31e71b798e028370aaa0a7b0e9bea",
       "pendingFiles": 0
     },
     {
@@ -4028,7 +4028,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "ad048a8408331f66fd42c3d179c713a230dbb5cd8ee03523ac595572b959741e",
+      "traceHash": "161134d2a1560178954f2f40eb833df846e87d12f066c8f16d283d3d6214f331",
       "pendingFiles": 0
     },
     {
@@ -4037,7 +4037,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "a9a6861c050f3d46388f1340a378deb21e2debb7f8c10978aa09257d5ad39e9d",
+      "traceHash": "dedcb322d234b24fd3e10a3d54c46df11331bfa39469d14ccd0edd6e62b3ea9d",
       "pendingFiles": 0
     },
     {
@@ -4052,7 +4052,7 @@
           }
         }
       },
-      "traceHash": "cdee43cad276c2e276dfd28b5a177dce73d744e71f7d96eaf6f05b7a92e9b02b",
+      "traceHash": "abb26aad3509045d7df6813ebfebf93d5a3bd41e100e860f8f2003f757d58d88",
       "pendingFiles": 1
     },
     {
@@ -4067,7 +4067,7 @@
           "workerMode": "rust-font-registry-apply"
         }
       },
-      "traceHash": "5dd2227a8e6ee92046f4e2643114b8dfefe52c587b83ff1248a7c33b3d146ce7",
+      "traceHash": "2fdd14446380e86d7df505e5389d0aaefa941cc9d5f5dde4dc225b7737109221",
       "pendingFiles": 0
     },
     {
@@ -4082,7 +4082,7 @@
           "workerMode": "rust-font-registry-apply"
         }
       },
-      "traceHash": "9cf5ce84689d14a59e282ed547203fca2bfb5f43d74750d5d9c0e9e6df28e159",
+      "traceHash": "7c949ba53cce6aaba20cbff28000d41d66d51007526f5a9886d0362cc8b5bcf8",
       "pendingFiles": 0
     },
     {
@@ -4097,7 +4097,7 @@
           "workerMode": "rust-font-registry-apply"
         }
       },
-      "traceHash": "fcbc9a58e38d5aaffcbbcae6d89fa244f5458c5f9b0ac2f292230a998a0292db",
+      "traceHash": "4debc58ffe4cd1bc97b4c26738293ee0718071d3072199a58d3a02ab2fd8f3cb",
       "pendingFiles": 0
     },
     {
@@ -4109,7 +4109,7 @@
         "submitted": true,
         "command": "--font-registry-apply"
       },
-      "traceHash": "b78785980e1b6576811040fc542ecc9c0b4a7d42fdde2a4e29e6460f2300aaf6",
+      "traceHash": "2fd16796af1e9bc6a0390f4055860a9f8fcafda92ff35b3ad9179aeb8514621f",
       "pendingFiles": 0
     },
     {
@@ -4118,7 +4118,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "ea992077d969db8c5d647335b8ed32f55bde86dc0d6f402eb7930fd96926f41c",
+      "traceHash": "324880212f215718160df6f792fe0195fc8343a18e08b8cdf1e6271133179851",
       "pendingFiles": 0
     },
     {
@@ -4130,7 +4130,7 @@
         "submitted": true,
         "command": "--font-registry-apply"
       },
-      "traceHash": "7880cdfe20f8aea864f9e786e94bf05275d93fc8960df90570e6bcb3b154122c",
+      "traceHash": "cc52a63feffe3355095c1cc50d0f6d8ccdfd14c3f143dd66bdd71c8b416c60bf",
       "pendingFiles": 0
     },
     {
@@ -4139,7 +4139,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "61897d27cdb5c0580a61605dc0a68f9e8f439e3eb06dbcef049a8d8ef7a17faf",
+      "traceHash": "3b4b4485cc208a8ab117fec292db77612ccd35ef53a6c66a3e89409d3d87571d",
       "pendingFiles": 0
     },
     {
@@ -4148,7 +4148,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3cfbed298469486cae1a973b731ab342ce5a540cad256316aa578d0819e61012",
+      "traceHash": "4d3613ab01591c647a337f74c67ef8af340dccb190e52225a793f805f18ab937",
       "pendingFiles": 0
     },
     {
@@ -4163,7 +4163,7 @@
           "workerMode": "rust-font-registry-apply"
         }
       },
-      "traceHash": "5dd2227a8e6ee92046f4e2643114b8dfefe52c587b83ff1248a7c33b3d146ce7",
+      "traceHash": "2fdd14446380e86d7df505e5389d0aaefa941cc9d5f5dde4dc225b7737109221",
       "pendingFiles": 1
     },
     {
@@ -4178,7 +4178,7 @@
           "workerMode": "rust-font-registry-delete"
         }
       },
-      "traceHash": "61233c86e4a96d0c322ab1a635eea00073efcb5e7ac2d7a0e3b5ea59e402a5d7",
+      "traceHash": "33d84b73ba91351d4d541aba66562bc126d7fef96a5e0ce255982dade09d7412",
       "pendingFiles": 0
     },
     {
@@ -4193,7 +4193,7 @@
           "workerMode": "rust-font-registry-delete"
         }
       },
-      "traceHash": "07e6cfdae144239b04d0f585934aa6244456525d2f64be5c56159d47af77693f",
+      "traceHash": "13de12a0aa45a600d4ca0feecd577cc41e96959f28c9845b11c4b9d2533b1e98",
       "pendingFiles": 0
     },
     {
@@ -4208,7 +4208,7 @@
           "workerMode": "rust-font-registry-delete"
         }
       },
-      "traceHash": "c0971b39e1f7a2fea717da2c188d844d80b064b39858fd558928cf1f3d0082fd",
+      "traceHash": "55bcd703934862ea2fc2574214a0e0583baac2035cbd999bacd8e57edc8c0a02",
       "pendingFiles": 0
     },
     {
@@ -4220,7 +4220,7 @@
         "submitted": true,
         "command": "--font-registry-delete"
       },
-      "traceHash": "4ef9b1b700966e775d5faa5c03bfe647a941ae3b9f5529fba841a1c9c767ae1d",
+      "traceHash": "bebc9e03c9ac562454dff5c2c244d99b3a3d2c4915e623fb0b328b32e4e2ad8d",
       "pendingFiles": 0
     },
     {
@@ -4229,7 +4229,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "59a4f6bc614f72aff2082a33c94cc5e5577c7fd9d5201506047af4c7b725a30d",
+      "traceHash": "20fbc881d00c710cb4c5a5e4e17025f406305773906bc8905a9f9808a11ea077",
       "pendingFiles": 0
     },
     {
@@ -4241,7 +4241,7 @@
         "submitted": true,
         "command": "--font-registry-delete"
       },
-      "traceHash": "b5d84177300f871aaf2f250b2eb781b76c48f88acc7fb54efa931b0d6bed43ae",
+      "traceHash": "6d914268f04844813771b3d3db20e9e1e9016b6bce01e90417ea57ac2ea70c58",
       "pendingFiles": 0
     },
     {
@@ -4250,7 +4250,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "255fe72be3707b0314f00860b2bc5ca45da1169898652437903a612453425209",
+      "traceHash": "2788cf5277b2c49c5226d042d87830cf0f26d0406ca5b7f3aab6005dd4236be7",
       "pendingFiles": 0
     },
     {
@@ -4259,7 +4259,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "fccaaf3b196854f52a44848c59261700eb4846109a7905af86cbb2c41b336956",
+      "traceHash": "5c19b4edad401c8de598f0fcad6a34117f9b3666bce262e86dffae0f9c844716",
       "pendingFiles": 0
     },
     {
@@ -4274,7 +4274,7 @@
           "workerMode": "rust-font-registry-delete"
         }
       },
-      "traceHash": "61233c86e4a96d0c322ab1a635eea00073efcb5e7ac2d7a0e3b5ea59e402a5d7",
+      "traceHash": "33d84b73ba91351d4d541aba66562bc126d7fef96a5e0ce255982dade09d7412",
       "pendingFiles": 1
     },
     {
@@ -4287,7 +4287,7 @@
           "workerMode": "rust-font-change-notify"
         }
       },
-      "traceHash": "3850b5e1007fa83da406ae6a31bf0aefd3e9b0a1b1eb6f0df21f843ced522f79",
+      "traceHash": "d1622071e4f33f3b79a627d310108cd48ca7fb7ed56b7ad1afceae7868fc0bb4",
       "pendingFiles": 0
     },
     {
@@ -4300,7 +4300,7 @@
           "workerMode": "rust-font-change-notify"
         }
       },
-      "traceHash": "f5cebf39b152a9a34d2a22a0fd57456a719ea2878a65ddb40eaf0b035bf3544b",
+      "traceHash": "f69a273494194dd6038fa5db606017e22b7a3718c2e399ce93a5454af75ca281",
       "pendingFiles": 0
     },
     {
@@ -4313,7 +4313,7 @@
           "workerMode": "rust-font-change-notify"
         }
       },
-      "traceHash": "9d598e5e90d8dccaab819fd65c8b8b78864179fe8aee7130d1413a853be295ea",
+      "traceHash": "91e4018651d62fc7222c2e12ce20359ed2ebdbf756c11862068dec56d40f1d16",
       "pendingFiles": 0
     },
     {
@@ -4325,7 +4325,7 @@
         "submitted": true,
         "command": "--font-resource-notify"
       },
-      "traceHash": "5c54a2d546162d0cb37e25f23cfb369f6b71f7a6abece8ed38f0d42f2a79d8bc",
+      "traceHash": "9eddb93e575d4bd3287c2c9456742fe2dda4e1aa8ab23ab07b10e20a63a66f70",
       "pendingFiles": 0
     },
     {
@@ -4334,7 +4334,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "84bf99e82de83744aba9e0b988086a732ab07f7b405c422495d29ba0ded28995",
+      "traceHash": "dd696983c8f23bc5f84cd181c2dd083b07f1f39ecca3883a2b591d44d1fa0eb0",
       "pendingFiles": 0
     },
     {
@@ -4346,7 +4346,7 @@
         "submitted": true,
         "command": "--font-resource-notify"
       },
-      "traceHash": "e12ded49453af4298bf629aecadb4f4499c669852e7e216bc605d2ebe252f560",
+      "traceHash": "6b60511c58735a2d3cb4fc30cee4acd32a4c01a214091cd99a03c40fc52ee112",
       "pendingFiles": 0
     },
     {
@@ -4355,7 +4355,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3f17649889aab61a108f5d9ef4b44b46524d01730d0e4eb342a07ff5ba30a837",
+      "traceHash": "4d4b90600174056a6c7b13004c234fd9ddf57be8fdbce69778f0494016499f65",
       "pendingFiles": 0
     },
     {
@@ -4364,7 +4364,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "70f9f282d0d23ba4f674b28960447fd59b8199f16cb6e621df334f383083f32c",
+      "traceHash": "0ded8a7ebf24fc04cb4b37ccaeca04c911d3d07b27e78cf04d35cf52c58367d2",
       "pendingFiles": 0
     },
     {
@@ -4377,7 +4377,7 @@
           "workerMode": "rust-font-change-notify"
         }
       },
-      "traceHash": "3850b5e1007fa83da406ae6a31bf0aefd3e9b0a1b1eb6f0df21f843ced522f79",
+      "traceHash": "d1622071e4f33f3b79a627d310108cd48ca7fb7ed56b7ad1afceae7868fc0bb4",
       "pendingFiles": 1
     },
     {
@@ -4394,7 +4394,7 @@
           "workerMode": "rust-physical-folder-tree"
         }
       },
-      "traceHash": "9b38c081ef2d82099393135b191e020cf405a113a4a80caf98bdfc39a16d1c71",
+      "traceHash": "f9594ecf8cf9ec16af5ba19d4c7fc97b7b14c0cc09463c26bdd4b696b21d4911",
       "pendingFiles": 0
     },
     {
@@ -4411,7 +4411,7 @@
           "workerMode": "rust-physical-folder-tree"
         }
       },
-      "traceHash": "6592182b68efa47971dc73bf94fb43dd6583f0c800fb1cfaa0aac98a457f45be",
+      "traceHash": "3afeb63c964da21f54950b4a55ed88e09f431f020b6517d06e04246f3eaf704f",
       "pendingFiles": 0
     },
     {
@@ -4428,7 +4428,7 @@
           "workerMode": "rust-physical-folder-tree"
         }
       },
-      "traceHash": "33620fb7b4e709f1879276c8d8ceb4772f1861be13e17c19dc0750f0d67fd4ab",
+      "traceHash": "51e40b111b63793d70fb835b72503a42f1cec80944513d9d380994e484263270",
       "pendingFiles": 0
     },
     {
@@ -4437,7 +4437,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "5ce7717d69af8ba91c4faf0fd8e0d40aa562dd9fdc84ada3886b9b6ec190f117",
+      "traceHash": "dd7eff8321ada71b2be4ac3f9c38753b79dbb9ba6b06e4ad2ec8496084dcab87",
       "pendingFiles": 0
     },
     {
@@ -4446,7 +4446,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "7aef038705e6f8c556e5a2b1ec5afa75db22b08156c8e58eec43c584ba78f324",
+      "traceHash": "76d3dd0725c318675c1524ffb1afa3fb9120cfe11e533b66a5ab8c56e1b77915",
       "pendingFiles": 0
     },
     {
@@ -4455,7 +4455,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "2b411f371f1e94ea8cb0f0578efe179e07e44f778d929d1216b45daaf5f26466",
+      "traceHash": "4742a888a125b6fce44cb3d1b781bae5abc1458b8977e0b865d30b06f3756f45",
       "pendingFiles": 0
     },
     {
@@ -4464,7 +4464,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "bf76b0b231e01aa1bf5392fa0fca00e22aa4e04f9756f14050ff374463ab4809",
+      "traceHash": "0708503881ebaec3354855ebf71abb07acce0b95556e77c70c4c1d6c2b72bd87",
       "pendingFiles": 0
     },
     {
@@ -4473,7 +4473,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "8f25e56b44a4e395e4db4e20b5cff04502d61d2d14946ed2e30a9fe588a4d7ba",
+      "traceHash": "26f4e425aeefee759b5543be5d168c2ccb8f666d02139834c8221e89d8404e64",
       "pendingFiles": 0
     },
     {
@@ -4490,7 +4490,7 @@
           "workerMode": "rust-physical-folder-tree"
         }
       },
-      "traceHash": "9b38c081ef2d82099393135b191e020cf405a113a4a80caf98bdfc39a16d1c71",
+      "traceHash": "f9594ecf8cf9ec16af5ba19d4c7fc97b7b14c0cc09463c26bdd4b696b21d4911",
       "pendingFiles": 1
     },
     {
@@ -4498,6 +4498,7 @@
       "outcome": {
         "kind": "result",
         "value": {
+          "inspectResults": [],
           "ok": true,
           "copied": 1,
           "reused": 0,
@@ -4509,7 +4510,7 @@
           "workerMode": "rust-font-activation-files"
         }
       },
-      "traceHash": "a75007d76352b0f058d1e6e8344824d164ec105b1e7a1926f79a22831994b506",
+      "traceHash": "d94b267c83e61c4bfab8ca227a85af8a40dea7ee7c74099ab54bcf8db502637d",
       "pendingFiles": 0
     },
     {
@@ -4517,6 +4518,7 @@
       "outcome": {
         "kind": "result",
         "value": {
+          "inspectResults": [],
           "ok": true,
           "copied": 1,
           "reused": 0,
@@ -4528,7 +4530,7 @@
           "workerMode": "rust-font-activation-files"
         }
       },
-      "traceHash": "51a90bbdc45637cfbfa7fdcd07e151927a02f69d77f4cc0af431a094ff9d6432",
+      "traceHash": "607fc30204fdd3340cba2cb722d5da6f443fdd5677135c6d98f6a502ebb0cc2f",
       "pendingFiles": 0
     },
     {
@@ -4536,6 +4538,7 @@
       "outcome": {
         "kind": "result",
         "value": {
+          "inspectResults": [],
           "ok": true,
           "copied": 1,
           "reused": 0,
@@ -4547,7 +4550,7 @@
           "workerMode": "rust-font-activation-files"
         }
       },
-      "traceHash": "1620aec8c6dc3ae8fa6803b785dbbda07c57862832c81249db78708cd5cf3a8d",
+      "traceHash": "beed54677cbb4f908e6289d7a982bf1d51ccee52e5793f436f701734464a1899",
       "pendingFiles": 0
     },
     {
@@ -4559,16 +4562,18 @@
         "submitted": true,
         "command": "--font-activation-files"
       },
-      "traceHash": "a9cb96038d6b40b8400f7550678b846a7339c5a97b414e932a238d70a65aba9b",
+      "traceHash": "78ed12a37fa25691b0f86cbdc0873b73b2712a0c3a573f8c317ed8712238c6b8",
       "pendingFiles": 0
     },
     {
       "id": "runRustFontActivationFiles/false-oneshot",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "worker said no",
+        "submitted": false
       },
-      "traceHash": "ca9a0e2eea2d7b054a99eae6940b7d09e54d5ab7d2e74a4e444f0e8a97f563ba",
+      "traceHash": "00a682527a3b7bbad4f59a2f632b2d58f2ffed866e0db3bd44efe23ea0d03da5",
       "pendingFiles": 0
     },
     {
@@ -4580,25 +4585,29 @@
         "submitted": true,
         "command": "--font-activation-files"
       },
-      "traceHash": "6d16864c3e4fef63128af2aff17be7c866f08da63a27c26ed4612b882db39c00",
+      "traceHash": "20759aa89a779a432edbe54e98fd48759c6604a926e0728c3b716792789332f8",
       "pendingFiles": 0
     },
     {
       "id": "runRustFontActivationFiles/bad-json",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "SyntaxError",
+        "message": "fixture invalid JSON",
+        "submitted": false
       },
-      "traceHash": "bf7ecc15a1ea7f63ccb78ebec49082b2bf05b8b6b909ccf13a2f16183e82c2f6",
+      "traceHash": "412f3fff754563b5e14942d4fff16286348fa102f7c045ca41888434bfa2d78c",
       "pendingFiles": 0
     },
     {
       "id": "runRustFontActivationFiles/write-fail",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "write failed",
+        "submitted": false
       },
-      "traceHash": "43a7d704352573d627639f1a573af6ab23a39312aebbf60e7519d63eb916c41f",
+      "traceHash": "f877466adc614819fa0b00ad17b86a2de8251f2866290c0bf865090b92fed1e8",
       "pendingFiles": 0
     },
     {
@@ -4606,6 +4615,7 @@
       "outcome": {
         "kind": "result",
         "value": {
+          "inspectResults": [],
           "ok": true,
           "copied": 1,
           "reused": 0,
@@ -4617,7 +4627,7 @@
           "workerMode": "rust-font-activation-files"
         }
       },
-      "traceHash": "a75007d76352b0f058d1e6e8344824d164ec105b1e7a1926f79a22831994b506",
+      "traceHash": "d94b267c83e61c4bfab8ca227a85af8a40dea7ee7c74099ab54bcf8db502637d",
       "pendingFiles": 1
     },
     {
@@ -4632,7 +4642,7 @@
           "workerMode": "rust-preview-render-image"
         }
       },
-      "traceHash": "140b4a247fbe31fc1c6a4c1e7d715a524a40c78ebf5080e3a1411f2a4613e0f2",
+      "traceHash": "2a35ce14f1edfc4f702d5cc8df8b5354a656045753b2235ec8bc5363c4480175",
       "pendingFiles": 0
     },
     {
@@ -4647,7 +4657,7 @@
           "workerMode": "rust-preview-render-image"
         }
       },
-      "traceHash": "56c677f41378f8ef6dd265f733fc8f5b5ce0d7cc41368967789c20b52dba76f4",
+      "traceHash": "a85ece048108a4a651841bb87c709921b080a8af7984c4accc3bbc0547e7fa09",
       "pendingFiles": 0
     },
     {
@@ -4662,7 +4672,7 @@
           "workerMode": "rust-preview-render-image"
         }
       },
-      "traceHash": "5b4f5ef9adff1635fa10d564c33f6b2d20d9c9210d0a51766f8bd95daefc2e37",
+      "traceHash": "ebf8ca1a1e7a3acecc96faec6cd14b716cc20a70232d20d68253546c56040f52",
       "pendingFiles": 0
     },
     {
@@ -4674,7 +4684,7 @@
         "submitted": true,
         "command": "--preview-render-image"
       },
-      "traceHash": "01e0f8ae5a7cbb6d2f5a0ace11b9b6e5289f37e80c6dd1df897c5e3176ddd747",
+      "traceHash": "df7cd59fe7948665e6f3b8549d08dcf1460bcb22156be5772a0eac55dae14f39",
       "pendingFiles": 0
     },
     {
@@ -4683,7 +4693,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "aff4898e8d3cefe74703715a63645bf870cf76d15034f56989c770e42309aedc",
+      "traceHash": "feaa8f7d078f6a50f9ef7972e150c02e3ea5b3e636e197d9045252854ce2acfd",
       "pendingFiles": 0
     },
     {
@@ -4695,7 +4705,7 @@
         "submitted": true,
         "command": "--preview-render-image"
       },
-      "traceHash": "ba17d85a09be3148b34457be105f6059053e8303281f9fb5baf993397666aa43",
+      "traceHash": "7e9a864103f28cec23b2b400f82f5385ccf8b7fd876399273fe0e9fa7cc662cc",
       "pendingFiles": 0
     },
     {
@@ -4704,7 +4714,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3c4b41099b1cbafd66fefc094805988aa1797b6b5bd01c363fa5f8561fa942e6",
+      "traceHash": "334107a85b84eaa330b113121d00e0ba09313fffc7e1da84e85fa9b6af0f1db7",
       "pendingFiles": 0
     },
     {
@@ -4713,7 +4723,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "4667a8354d35ef4a3ee3125f9a850abb20723eb879e16d53d5099cc95fb3fbd6",
+      "traceHash": "bcad305df0289ab5ba50d01f86e57dc3b90a9fc1974c4389d0b77b7dd27460fa",
       "pendingFiles": 0
     },
     {
@@ -4728,7 +4738,7 @@
           "workerMode": "rust-preview-render-image"
         }
       },
-      "traceHash": "140b4a247fbe31fc1c6a4c1e7d715a524a40c78ebf5080e3a1411f2a4613e0f2",
+      "traceHash": "2a35ce14f1edfc4f702d5cc8df8b5354a656045753b2235ec8bc5363c4480175",
       "pendingFiles": 1
     },
     {
@@ -4751,7 +4761,7 @@
           "workerMode": "rust-system-installed-fonts"
         }
       },
-      "traceHash": "6dbcfd27b9547452b28e7ce59f9e0390db4ade4132b1b0e73d7baa0b77305407",
+      "traceHash": "ef5cce742222c289e33788802ff9939035fb7296f33e3b7828d3a0a862696657",
       "pendingFiles": 0
     },
     {
@@ -4774,7 +4784,7 @@
           "workerMode": "rust-system-installed-fonts"
         }
       },
-      "traceHash": "9ddd16851baa4bf6f4993909710ea7931e119b757b0d6160baa96a824a700f40",
+      "traceHash": "d84e1b6e5cb623abf7a386074e6ba994098ace429065acbb360967a6f86f14cb",
       "pendingFiles": 0
     },
     {
@@ -4797,7 +4807,7 @@
           "workerMode": "rust-system-installed-fonts"
         }
       },
-      "traceHash": "0bd7f5d5be068d6b06ef85ace5f75573775da116680c88d2b36691a22691fde4",
+      "traceHash": "97bcabf7661ce1b9e49d3d2505270d46e09cfa0a6314fd10afa90d8bb5fdbaf6",
       "pendingFiles": 0
     },
     {
@@ -4806,7 +4816,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "3bf66b16663757df739711151de8b61488652e4f737d129ac20ff434cc5bacba",
+      "traceHash": "2693760cbf3ccddf9d6dc2f8667d79464239746c4ccb988fd908c4af3d89a1dd",
       "pendingFiles": 0
     },
     {
@@ -4815,7 +4825,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "c295193e80f61ebc54f09ed480b33499283aa66e857459fedd7db680c1dde19e",
+      "traceHash": "950d5b68beeac7397f2e89016e1a9cee37096fbe7fb9259fd6bf8d553ab76f87",
       "pendingFiles": 0
     },
     {
@@ -4824,7 +4834,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "7b245ca1d8ba2caf2113b0e3387ab1baa8d2932475ae79cecc4b695e0d8ea0a8",
+      "traceHash": "669932c5641acf7712cfb2ce7ca132c11ef500993c8de2a3cb825ca3f85eaa21",
       "pendingFiles": 0
     },
     {
@@ -4833,7 +4843,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "e17dbfbb408e6dee25f4c8750190fb727b64cb7dbf31399843222a16f92cc3ea",
+      "traceHash": "400531ae0b802346213de76848b6758de104bbf9be20eb1e6eac6b7e9a26ef1d",
       "pendingFiles": 0
     },
     {
@@ -4856,7 +4866,7 @@
           "workerMode": "rust-system-installed-fonts"
         }
       },
-      "traceHash": "6dbcfd27b9547452b28e7ce59f9e0390db4ade4132b1b0e73d7baa0b77305407",
+      "traceHash": "ef5cce742222c289e33788802ff9939035fb7296f33e3b7828d3a0a862696657",
       "pendingFiles": 0
     },
     {
@@ -4879,7 +4889,7 @@
           "workerMode": "rust-system-installed-fonts"
         }
       },
-      "traceHash": "6dbcfd27b9547452b28e7ce59f9e0390db4ade4132b1b0e73d7baa0b77305407",
+      "traceHash": "ef5cce742222c289e33788802ff9939035fb7296f33e3b7828d3a0a862696657",
       "pendingFiles": 0
     },
     {
@@ -4925,6 +4935,7 @@
       "outcome": {
         "kind": "result",
         "value": {
+          "inspectResults": [],
           "ok": true,
           "copied": 1,
           "reused": 0,
@@ -4936,7 +4947,7 @@
           "workerMode": "rust-font-activation-files"
         }
       },
-      "traceHash": "f1d40b99ddee62d27707a342ae1fb8d75a411b3af88f0f99953a096444eefe01",
+      "traceHash": "19b4543e519777827fbe8fa821293a2dfebf342e95a72502eafbbf5300eed117",
       "pendingFiles": 0
     },
     {
@@ -4953,6 +4964,7 @@
       "outcome": {
         "kind": "result",
         "value": {
+          "inspectResults": [],
           "ok": true,
           "copied": 1,
           "reused": 0,
@@ -4964,7 +4976,7 @@
           "workerMode": "rust-font-activation-files"
         }
       },
-      "traceHash": "7719858595528b1316c28c7927be751a602fab6c58193e47ba8ab54d3ded4af9",
+      "traceHash": "b2effefccdcb9b24ede9aca9f2813a13c808174b8debba2fab80d686a1a46a9f",
       "pendingFiles": 0
     },
     {
@@ -5001,6 +5013,7 @@
       "outcome": {
         "kind": "result",
         "value": {
+          "inspectResults": [],
           "ok": true,
           "copied": 1,
           "reused": 0,
@@ -5012,7 +5025,7 @@
           "workerMode": "rust-font-activation-files"
         }
       },
-      "traceHash": "cdea75f51377a6adcc5f361aae80d47991d0dd607e2ba997265962d99acb6e96",
+      "traceHash": "905a21b5fd0b091ce5f12170a7309089f8ef8a14e9741dc125309516b2695be3",
       "pendingFiles": 0
     },
     {
@@ -5029,6 +5042,7 @@
       "outcome": {
         "kind": "result",
         "value": {
+          "inspectResults": [],
           "ok": true,
           "copied": 1,
           "reused": 0,
@@ -5040,61 +5054,73 @@
           "workerMode": "rust-font-activation-files"
         }
       },
-      "traceHash": "03945d4e377d6c09d712771b0f8757df97eb7b06e59cd85007b870cb31d1989f",
+      "traceHash": "c0194140a904a26fef1b906e8fe5caf4f6d30d5f679b6740abc01d2c2a5d2c51",
       "pendingFiles": 0
     },
     {
       "id": "activation/{\"mode\":\"empty-json\"}",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "empty rust worker output",
+        "submitted": false
       },
-      "traceHash": "fd62691f8fd3a379e9ecaf58c39920c6d6016275c77fdf77fa3c8ea012c3972a",
+      "traceHash": "08f9e9347e7eb8bd922db83cf664ac3f814c9dfa7f3bc39d735e389fa6c696e9",
       "pendingFiles": 0
     },
     {
       "id": "activation/{\"mode\":\"timeout\"}",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "timed out",
+        "submitted": false
       },
-      "traceHash": "a901aaa8ca604103d029ef5690a1fb7f91cf79a00d0824648bba9cc4a4b79521",
+      "traceHash": "cf71fc953b98c7de79fb2d73b002017d948dc7ad481fdd6db545332802b3948f",
       "pendingFiles": 0
     },
     {
       "id": "activation/{\"mode\":\"max-buffer\"}",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "RangeError",
+        "message": "stdout maxBuffer exceeded",
+        "submitted": false
       },
-      "traceHash": "bc23bfa8dd888e0144e3f78907698b8b792a9f7e28c71bd9199d4cdfb23a0b51",
+      "traceHash": "fadf8998d878ae069c56614263b63c6b468cfe026d11903845c4795f46bbf924",
       "pendingFiles": 0
     },
     {
       "id": "activation/{\"mode\":\"exec-fail\"}",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "exec failed",
+        "submitted": false
       },
-      "traceHash": "274404fbeca1ad8456f129a1fe3bed2968c0af883e7f185d9da0faff3c12b874",
+      "traceHash": "6bb97d8f998b79b6ab78cbc1e0a4c84db0c1d578c4fcee5196a5e0a060b9cd57",
       "pendingFiles": 0
     },
     {
       "id": "activation/{\"mode\":\"schedule-fail\"}",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "Error",
+        "message": "schedule rejected",
+        "submitted": false
       },
-      "traceHash": "d3c4b6fb675242419b76db1c7bedaedd769bc8ac32f835d27c484cd23b3a29b2",
+      "traceHash": "bc543552fb71b944e00b92caec67c6dcf1e1e6d628fbdb62de9d09871bd0c1a2",
       "pendingFiles": 0
     },
     {
       "id": "activation/{\"mode\":\"daemon-abort\"}",
       "outcome": {
-        "kind": "null",
-        "value": null
+        "kind": "error",
+        "name": "AbortError",
+        "message": "daemon cancelled",
+        "submitted": false
       },
-      "traceHash": "a6b02a49135471989d64c38a8842970789849a5f16e9a0f3ef3c31cb9699f0e6",
+      "traceHash": "32ebbfd49d5e272ea8bbe912c8a9e11475de535e976f7f5c2c8a784386e21909",
       "pendingFiles": 0
     },
     {
@@ -5105,7 +5131,7 @@
         "message": "Rust parse batch cancelled",
         "submitted": false
       },
-      "traceHash": "af1bb6ed36bc13cd39939464ed3f036fa3cb793004c03e0713652163c6ccb55b",
+      "traceHash": "cf450d45fcc03d5e60a8718099852c4f42b2b7755c4d65c684f90197df1dac1c",
       "pendingFiles": 0
     },
     {
@@ -5114,7 +5140,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "0b4589025107c67eb7ed9ed331e9522ae62960b8b32ac30a8a45675d1bc5ea38",
+      "traceHash": "cdf313fb571fcc54192e30d59c957ddef0eb3f93c3ce7be8b31e8fe900767b00",
       "pendingFiles": 0
     },
     {
@@ -5123,7 +5149,7 @@
         "kind": "null",
         "value": null
       },
-      "traceHash": "6e720e1f7442cab0773ed908cded8ac61e2eb4d9bf54a5724e02575c10d37ad3",
+      "traceHash": "46305e8b531cb41b8b0011facd0145115c74d5239aa7f34ef5f754d44ac4034f",
       "pendingFiles": 0
     },
     {
@@ -5149,7 +5175,7 @@
           "workerMode": "rust-font-parse-batch"
         }
       },
-      "traceHash": "ef802d7436b6c7d09a00abd1fd6af3924fab9c56d9bd29836c1530152fe7c805",
+      "traceHash": "ab8542d3bf60f1224116c19d555f29e7ffe4664ca62698fc859a2944ff3c2ff8",
       "pendingFiles": 0
     },
     {
@@ -5160,7 +5186,7 @@
         "message": "Rust listing cancelled",
         "submitted": false
       },
-      "traceHash": "af1bb6ed36bc13cd39939464ed3f036fa3cb793004c03e0713652163c6ccb55b",
+      "traceHash": "cf450d45fcc03d5e60a8718099852c4f42b2b7755c4d65c684f90197df1dac1c",
       "pendingFiles": 0
     },
     {
@@ -5171,7 +5197,7 @@
         "message": "cancelled",
         "submitted": false
       },
-      "traceHash": "01eab70e23d234b24489b8e0e220a5b909338dadda201a028de23cad8256a12e",
+      "traceHash": "42ed4c902eb4e2eb65e62ab7dbe09da1172f9b1461a0aad0d62617ba06b4b191",
       "pendingFiles": 0
     },
     {
@@ -5182,7 +5208,7 @@
         "message": "cancelled",
         "submitted": false
       },
-      "traceHash": "fdc8e0f80d6b8b25fdd796b025f7e2070c298ac4563fcc9187c3784f459ff221",
+      "traceHash": "ea13b19ae91cf63284c4af53f913ac60836faaa243f4defb04f93cc8dcb6df3e",
       "pendingFiles": 0
     },
     {
@@ -5193,7 +5219,7 @@
         "message": "read failed",
         "submitted": false
       },
-      "traceHash": "f3da7eeca67078ff5b604c4f95b67dc2137164922745d4130c346908f0237b1d",
+      "traceHash": "ad07cb07c0e84b7267c96570a61cd83428cdb1dbc682e962d4fd6db0d45ce748",
       "pendingFiles": 0
     }
   ],
@@ -5233,6 +5259,7 @@
               "shared-metadata-remove-tag",
               "shared-metadata-known-tags",
               "shared-metadata-overlay-read",
+              "shared-metadata-preflight-v1",
               "shared-metadata-signature",
               "preview-cache-index-read",
               "preview-cache-index-apply",
@@ -5250,6 +5277,7 @@
               "font-resource-notify",
               "physical-folder-tree",
               "font-activation-files",
+              "font-activation-identity-v1",
               "preview-render-image",
               "system-installed-fonts"
             ]
@@ -5287,6 +5315,7 @@
               "shared-metadata-remove-tag",
               "shared-metadata-known-tags",
               "shared-metadata-overlay-read",
+              "shared-metadata-preflight-v1",
               "shared-metadata-signature",
               "preview-cache-index-read",
               "preview-cache-index-apply",
@@ -5304,6 +5333,7 @@
               "font-resource-notify",
               "physical-folder-tree",
               "font-activation-files",
+              "font-activation-identity-v1",
               "preview-render-image",
               "system-installed-fonts"
             ]
@@ -5339,6 +5369,7 @@
             "shared-metadata-remove-tag",
             "shared-metadata-known-tags",
             "shared-metadata-overlay-read",
+            "shared-metadata-preflight-v1",
             "shared-metadata-signature",
             "preview-cache-index-read",
             "preview-cache-index-apply",
@@ -5356,12 +5387,13 @@
             "font-resource-notify",
             "physical-folder-tree",
             "font-activation-files",
+            "font-activation-identity-v1",
             "preview-render-image",
             "system-installed-fonts"
           ]
         }
       ],
-      "traceHash": "af1bb6ed36bc13cd39939464ed3f036fa3cb793004c03e0713652163c6ccb55b",
+      "traceHash": "cf450d45fcc03d5e60a8718099852c4f42b2b7755c4d65c684f90197df1dac1c",
       "pendingFiles": 0
     },
     {
@@ -5395,6 +5427,7 @@
         {
           "kind": "result",
           "value": {
+            "inspectResults": [],
             "ok": true,
             "copied": 1,
             "reused": 0,
@@ -5412,7 +5445,7 @@
           "running": true
         }
       ],
-      "traceHash": "c7f22e53c6540fd55c89ded0839b326cb26ca9c628bf1a19261b9757e56fc6f2",
+      "traceHash": "1c9fd1e215b82500eb6c3c2222973893b5a9643f5748cac5d227cb9c0678b261",
       "pendingFiles": 0
     },
     {
@@ -5439,7 +5472,7 @@
           "value": null
         }
       ],
-      "traceHash": "38c8ccecec7a763dc61a3736b31cc0dc9c7c5be25582af50cac4f759ca031ea1",
+      "traceHash": "2ee491f3eaa91e4937d57bfb29fd6ab3881835b4f2acefbdb825dd99ac89593e",
       "pendingFiles": 0
     },
     {
@@ -5448,6 +5481,7 @@
         {
           "kind": "result",
           "value": {
+            "inspectResults": [],
             "ok": true,
             "copied": 1,
             "reused": 0,
@@ -5470,18 +5504,20 @@
           }
         }
       ],
-      "traceHash": "984dbed4ccb11ff723f1e1e89ceb5aafc4c1b6900d72ef15abc2aad0f04d3dae",
+      "traceHash": "b93935b1ac0f3ebb8e7ae7ff8e1088cc83cd770ddac9eda7015169055f91a04d",
       "pendingFiles": 0
     },
     {
       "name": "serialization-error",
       "results": [
         {
-          "kind": "null",
-          "value": null
+          "kind": "error",
+          "name": "Error",
+          "message": "fixture serialization failed",
+          "submitted": false
         }
       ],
-      "traceHash": "71e8d9b744d441bae2730d2da2cfea7c19f69d8c135262fc4c9d2faf4bce3a2b",
+      "traceHash": "e43b772a775e32e7d173a9fc764f63221ce27ffd5b4d4551d9935d1a7ad740aa",
       "pendingFiles": 0
     },
     {
@@ -5492,7 +5528,7 @@
           "value": null
         }
       ],
-      "traceHash": "5a49fa0133f152c06838c531d3177c6d8918b3b3c97839d6f48302dbfe119e43",
+      "traceHash": "afe46b60216a37064856795db14bf871f90c28c22776d5625870337844ca4e8c",
       "pendingFiles": 0
     }
   ]

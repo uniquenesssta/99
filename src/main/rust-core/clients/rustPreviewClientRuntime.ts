@@ -1,3 +1,4 @@
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { tracePreviewCacheMutation } from '../../logging/previewCacheMutationTrace'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
 import type { PreviewCacheIndexStatus } from '../../preview/previewCacheRuntime'
@@ -193,6 +194,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         }
         return payload
       } catch (error) {
+      rethrowSharedIoProcessError(error)
         if (mutation && submitted) {
           try { appendPreviewCacheFailureLog(label, error instanceof Error ? error.message : String(error)) } catch { /* Preserve the original uncertainty. */ }
           throw error
@@ -201,6 +203,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         return null
       } finally {
         try { await inputFile.dispose() } catch (error) {
+      rethrowSharedIoProcessError(error)
           // Cleanup failure cannot turn a settled write into replay.
           if (!mutation) throw error
         }
@@ -237,6 +240,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
       options.appendStartupLog(`rust preview render finished: output=${result.outputPath}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       rethrowRustCoreDaemonSubmittedJob(error, options.appendStartupLog, 'rust preview render')
       options.appendStartupLog(`rust preview render failed: ${error instanceof Error ? error.message : String(error)}; directwrite helper fallback remains active`)
       return null

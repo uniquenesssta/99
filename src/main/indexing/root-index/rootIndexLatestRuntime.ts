@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import os from 'node:os'
 import { basename, join } from 'node:path'
 import {

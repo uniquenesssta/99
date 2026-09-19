@@ -1,3 +1,4 @@
+import { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { logOperation } from '../../logging/operationTraceContext'
 import os from 'node:os'
 import { basename } from 'node:path'
@@ -386,12 +387,17 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
             nextTags: string[]
           }> = []
 
-          const readDb = await deps.openSharedMetadataDb(root)
+          let readDb: any
           try {
-            const rows = readDb.prepare(`
-              SELECT font_id, relative_path, path_key, tag_names_json, favorite, delete_protected, revision
-              FROM font_metadata
-            `).all() as SharedMetadataRow[]
+            let rows: SharedMetadataRow[]
+            if (runtimeDeps.runRustSharedMetadataOverlayRead) {
+              const result = await runtimeDeps.runRustSharedMetadataOverlayRead({ rootPath: root, dbPath: sharedMetadataDbPathForRoot(root), entries: [], preflight: {phase:'snapshot',updatedAt:new Date().toISOString(),updatedBy:os.hostname(),writerPid:process.pid} })
+              if (!result?.preflight?.snapshot?.rows) throw new SharedIoProcessError('共享重命名快照未确认。','unknown','invalid-receipt')
+              rows = result.preflight.snapshot.rows
+            } else {
+              readDb = await deps.openSharedMetadataDb(root)
+              rows = readDb.prepare('SELECT font_id, relative_path, path_key, tag_names_json, favorite, delete_protected, revision FROM font_metadata').all()
+            }
             targets = rows
               .map((row) => {
                 const state = stateFromRow(row)
@@ -401,7 +407,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               })
               .filter((item) => item.previousTags.includes(oldTagName) && !sameTagNames(item.previousTags, item.nextTags))
           } finally {
-            runtimeDeps.closeSqliteDb(readDb)
+            if (readDb) runtimeDeps.closeSqliteDb(readDb)
           }
 
           if (!targets.length) return

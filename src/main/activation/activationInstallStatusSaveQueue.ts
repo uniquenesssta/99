@@ -47,6 +47,7 @@ export function createActivationInstallStatusSaveQueue(
   let inFlightResults: Record<string, InstallCompareResult> = {}
   let pendingResults: Record<string, InstallCompareResult> = {}
   let pendingItemsById = new Map<string, FontItem>()
+  const projectionPending = new Set<string>()
 
   function applyPendingState(items: FontItem[]): FontItem[] {
     return items.map(item => {
@@ -125,6 +126,7 @@ export function createActivationInstallStatusSaveQueue(
     pendingResults = {}
     pendingItemsById = new Map<string, FontItem>()
     const startedAt = Date.now()
+    let projectionFailed = false
 
     const task = (async (): Promise<void> => {
       const unchangedIds: string[] = []
@@ -133,7 +135,7 @@ export function createActivationInstallStatusSaveQueue(
         const missingIds = new Set(persisted.misses.map((item) => item.id))
         for (const [id, result] of Object.entries(results)) {
           const previous = persisted.results[id]
-          if (previous && !missingIds.has(id) && previous.installed === result.installed && previous.by === result.by
+          if (!projectionPending.has(id) && previous && !missingIds.has(id) && previous.installed === result.installed && previous.by === result.by
             && isDeepStrictEqual(previous.matches || [], result.matches || [])) unchangedIds.push(id)
         }
       } catch (error) {
@@ -176,20 +178,22 @@ export function createActivationInstallStatusSaveQueue(
 
       const saveElapsed = Date.now() - startedAt
       try {
-        const watchedFolders = await deps.appWatchedFolders().catch(() => [])
-        const affectedRoots = new Set<string>()
-        for (const item of affectedItems) {
-          const root = await deps.rootForFontPath(item.path, watchedFolders).catch(() => null)
-          if (root) affectedRoots.add(root)
-        }
-        if (affectedRoots.size) {
-          await deps.syncMergedIndexAfterInstallStatusRefresh(Array.from(affectedRoots), affectedItems)
-        }
+        const settledItems = affectedItems.map(item => {
+          const result = results[item.id]
+          return { ...item, installStatusKnown: true, active: result.by === 'managed' || result.by === 'both',
+            systemInstalled: result.installed && result.by !== 'managed', systemInstallMatches: result.matches || [] }
+        })
+        await deps.syncMergedIndexAfterInstallStatusRefresh([], settledItems)
+        for (const item of settledItems) projectionPending.delete(item.id)
         deps.clearFontQueryCaches()
         deps.appendStartupLog(
-          `activation install status async save flushed: reason=${reason}, rows=${writeCount}, unchanged=${unchangedIds.length}, saveElapsed=${saveElapsed}ms, syncRoots=${affectedRoots.size}, elapsed=${Date.now() - startedAt}ms`,
+          `activation install status async save flushed: reason=${reason}, rows=${writeCount}, unchanged=${unchangedIds.length}, saveElapsed=${saveElapsed}ms, syncRoots=0, elapsed=${Date.now() - startedAt}ms`,
         )
       } catch (error) {
+        projectionFailed = true
+        for (const item of affectedItems) projectionPending.add(item.id)
+        mergeFailedBatch(results, itemsById)
+        scheduleTimer(BACKGROUND_RETRY_DELAY_MS, 'local-projection-retry')
         deps.clearFontQueryCaches()
         deps.appendStartupLog(
           `activation install status post-save sync failed: reason=${reason}, rows=${rowCount}, ${error instanceof Error ? error.message : String(error)}`,
@@ -206,7 +210,7 @@ export function createActivationInstallStatusSaveQueue(
     saveInFlight = task
     await task
 
-    if (pendingCount()) {
+    if (pendingCount() && !projectionFailed) {
       await flush(`${reason}-followup`)
     }
   }

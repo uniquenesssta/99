@@ -30,6 +30,8 @@ pub struct SharedMetadataKnownTagsRoot {
 #[serde(rename_all = "camelCase")]
 pub struct SharedMetadataOverlayReadPayload {
     #[serde(default)]
+    pub preflight: Option<serde_json::Value>,
+    #[serde(default)]
     pub root_path: String,
     #[serde(default)]
     pub db_path: String,
@@ -63,6 +65,8 @@ pub struct SharedMetadataOverlayMatchedEntry {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedMetadataOverlayReadResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preflight: Option<serde_json::Value>,
     pub ok: bool,
     pub root_path: String,
     pub db_path: String,

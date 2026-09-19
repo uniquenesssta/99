@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { resolve } from 'node:path'
 import { ROOT_INDEX_DB_SCHEMA_VERSION } from '../../cache/constants'
 import { normalizePathCompareText } from '../../path/pathCanonicalizer'

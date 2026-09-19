@@ -1,4 +1,4 @@
-import { promises as fsp } from "node:fs";
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname, resolve } from "node:path";
 import type { LibraryState } from "../../../shared/types";
 import { findBestWatchedRootForFile } from "../../path/fontPathPolicy";

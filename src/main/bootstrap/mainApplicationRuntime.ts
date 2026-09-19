@@ -96,6 +96,8 @@ export function createMainApplicationRuntime({ core, data, mutation, operations 
       setSharedFontTagsBatchInIndex: mutation.capabilities.setSharedFontTagsBatchInIndex,
       renameSharedFontTagInIndex: mutation.capabilities.renameSharedFontTagInIndex,
       deleteSharedFontTagInIndex: mutation.capabilities.deleteSharedFontTagInIndex,
+      readFontCleanupRemnants: mutation.capabilities.readFontCleanupRemnants,
+      runFontCleanupAction: mutation.capabilities.runFontCleanupAction,
       activateFontSession: mutation.capabilities.activateFontSession,
       activateFontSessionsBatch: mutation.capabilities.activateFontSessionsBatch,
       deactivateFontSession: mutation.capabilities.deactivateFontSession,

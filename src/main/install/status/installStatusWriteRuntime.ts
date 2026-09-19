@@ -1,5 +1,4 @@
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
-import { resolve } from 'node:path'
 import type { FontItem,InstallCompareResult } from '../../../shared/types'
 import type {
 InstallStatusDbRuntime,
@@ -21,20 +20,10 @@ export function createInstallStatusWriteRuntime(
 ) {
   async function saveInstallStatusIndex(results: Record<string, InstallCompareResult>, itemsById: Map<string, FontItem>, options: { completeTasks?: boolean } = {}): Promise<void> {
     if (!Object.keys(results).length) return
-    const folders = await deps.appWatchedFolders().catch(() => [])
-    const grouped = new Map<string, Array<[string, InstallCompareResult, FontItem]>>()
     const fallbackRows: Array<[string, InstallCompareResult, FontItem]> = []
-
     for (const [fontId, result] of Object.entries(results)) {
       const item = itemsById.get(fontId)
-      if (!item) continue
-      const root = await helpers.rootForFontPath(item.path, folders)
-      const row: [string, InstallCompareResult, FontItem] = [fontId, result, item]
-      if (!root) fallbackRows.push(row)
-      else {
-        if (!grouped.has(root)) grouped.set(root, [])
-        grouped.get(root)!.push(row)
-      }
+      if (item) fallbackRows.push([fontId, result, item])
     }
 
     if (deps.saveInstallStatusIndexInWorker) {
@@ -48,14 +37,6 @@ export function createInstallStatusWriteRuntime(
           matches: result.matches || [],
           systemDefault: deps.isCleanWindowsDefaultCompareResult(item, result)
         }))
-        for (const [root, rows] of grouped.entries()) {
-          workerGroups.push({
-            rootLabel: root,
-            rootPath: resolve(root),
-            dbPath: await helpers.installStatusDbPathForRoot(root),
-            rows: toWorkerRows(rows)
-          })
-        }
         if (fallbackRows.length) {
           workerGroups.push({
             rootLabel: 'local-fallback',
@@ -119,7 +100,6 @@ export function createInstallStatusWriteRuntime(
       }
     }
 
-    for (const [root, rows] of grouped.entries()) await writeRows(root, rows, () => helpers.openMachineInstallDbForRoot(root))
     await writeRows('local-fallback', fallbackRows, () => helpers.openFallbackInstallDb())
     if (options.completeTasks !== false) {
       for (const [fontId, result] of Object.entries(results)) await deps.completeBackgroundTask(helpers.installStatusTaskKey(fontId), result.installed ? '已安装' : '未安装').catch(() => undefined)

@@ -1,3 +1,4 @@
+import { createFontCleanupRemnantsRuntime } from './runtime/fontCleanupRemnantsRuntime';
 import { createFontActivationBatchRuntime } from "./runtime/fontActivationBatchRuntime";
 import { createFontActivationCleanupRuntime } from "./runtime/fontActivationCleanupRuntime";
 import { createFontActivationCompensationRuntime } from "./runtime/fontActivationCompensationRuntime";
@@ -50,7 +51,7 @@ export function createFontActivationRuntime(deps: FontActivationRuntimeDeps) {
 
   async function cleanupTemporaryActiveFontsUntilEmpty(
     reason: "startup" | "quit" | "manual" = "manual",
-    maxAttempts = 18,
+    maxAttempts = 1,
   ): Promise<{ cleaned: number; remaining: number }> {
     let pending = { cleaned: 0, remaining: 0 };
     try {
@@ -75,11 +76,29 @@ export function createFontActivationRuntime(deps: FontActivationRuntimeDeps) {
     };
   }
 
+  let mutationTail: Promise<unknown> = Promise.resolve();
+  function serial<Args extends unknown[], Result>(action: (...args: Args) => Promise<Result>) {
+    return (...args: Args): Promise<Result> => {
+      const task = mutationTail.catch(() => undefined).then(() => action(...args));
+      mutationTail = task;
+      return task;
+    };
+  }
+  const remnants = createFontCleanupRemnantsRuntime(deps, cleanupRuntime, async () => {
+    await cleanupTemporaryActiveFontsUntilEmpty('manual', 1);
+    await cleanupRuntime.flushPendingTemporaryFontDeletes('manual');
+  });
   return {
+    readFontCleanupRemnants: remnants.readFontCleanupRemnants,
+    runFontCleanupAction: serial(remnants.runFontCleanupAction),
     activationTraceStep: traceRuntime.activationTraceStep,
     ...sessionRuntime,
     ...batchRuntime,
-    cleanupTemporaryActiveFontsUntilEmpty,
+    activateFontSession: serial(sessionRuntime.activateFontSession),
+    deactivateFontSession: serial(sessionRuntime.deactivateFontSession),
+    activateFontSessionsBatch: serial(batchRuntime.activateFontSessionsBatch),
+    deactivateFontSessionsBatch: serial(batchRuntime.deactivateFontSessionsBatch),
+    cleanupTemporaryActiveFontsUntilEmpty: serial(cleanupTemporaryActiveFontsUntilEmpty),
     flushPendingTemporaryFontDeletes:
       cleanupRuntime.flushPendingTemporaryFontDeletes,
   };

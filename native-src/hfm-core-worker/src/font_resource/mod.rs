@@ -2,6 +2,7 @@ use std::fs;
 use std::time::Instant;
 
 mod activation_files;
+pub(crate) mod activation_identity;
 mod types;
 mod windows;
 

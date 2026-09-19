@@ -1,6 +1,5 @@
 import { promises as fsp } from 'node:fs'
 import os from 'node:os'
-import { join,resolve } from 'node:path'
 import type { InstallStatusRuntimeDeps } from './installStatusTypes'
 
 export function createInstallStatusMachineIdentityRuntime(deps: InstallStatusRuntimeDeps) {
@@ -19,8 +18,7 @@ export function createInstallStatusMachineIdentityRuntime(deps: InstallStatusRun
   }
 
   async function installStatusDbPathForRoot(rootPath: string): Promise<string> {
-    const machine = await localMachineId()
-    return join(deps.rootCacheDir(resolve(rootPath)), 'machines', machine, 'install.sqlite')
+    return fallbackInstallStatusDbPath()
   }
 
   async function fallbackInstallStatusDbPath(): Promise<string> {

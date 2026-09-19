@@ -1,5 +1,5 @@
 import fs,{ promises as fsp } from 'node:fs';
-import { basename,extname,join,parse } from 'node:path';
+import { basename,dirname,extname,join,parse } from 'node:path';
 import type { FontItem,ScanResult,SystemInstalledFont } from '../../shared/types';
 import { readFontRegistryItemsWithRegExe } from './fontRegistryCommandRuntime';
 
@@ -51,6 +51,10 @@ export function createSystemInstalledFontsRuntime(deps: {
     installedFontsReadInFlight = null
   }
 
+  function isLocalFontDirectoryFile(filePath: string): boolean {
+    const parent = dirname(filePath).replace(/\\/g,'/').toLowerCase();
+    return [deps.windowsFontsDir(),deps.currentUserFontsDir()].some(dir => dir.replace(/\\/g,'/').toLowerCase() === parent);
+  }
   function installedFontNameCandidatesFromMetadata(filePath: string): string[] {
     try {
       const meta = deps.readFontMetadata(filePath)
@@ -76,7 +80,7 @@ export function createSystemInstalledFontsRuntime(deps: {
       const recordPath = item.path || item.value
       const normalizedPath = recordPath ? recordPath.toLowerCase().replace(/\\+/g, '/') : ''
       let nameCandidates: string[] = []
-      if (normalizedPath && item.path && deps.fontExtensions.has(extname(item.path).toLowerCase()) && fs.existsSync(item.path)) {
+      if (normalizedPath && item.path && isLocalFontDirectoryFile(item.path) && deps.fontExtensions.has(extname(item.path).toLowerCase()) && fs.existsSync(item.path)) {
         if (!cache.has(normalizedPath)) {
           let candidates: string[] = []
           try {
@@ -133,6 +137,7 @@ export function createSystemInstalledFontsRuntime(deps: {
       for (let index = 0; index < registryItems.length; index += deps.systemFontResolveBatchSize) {
         const batch = registryItems.slice(index, index + deps.systemFontResolveBatchSize)
         const resolvedBatch = await Promise.all(batch.map(async (item): Promise<SystemInstalledFont | null> => {
+          if (!isLocalFontDirectoryFile(item.path || item.value)) return item;
           const resolvedPath = await deps.resolveExistingFontFilePath(item.path || item.value)
           if (!resolvedPath) {
             missingRegistryPaths += 1

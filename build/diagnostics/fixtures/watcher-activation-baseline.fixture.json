@@ -16,9 +16,10 @@
         "flushPendingFolderChanges",
         "schedulePendingFolderFlush",
         "notifyFolderChanged",
+        "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "2f0ac9713f7fae38796cee6b9175df68e881a2639463fe680554ea95e8a267a3"
+      "sha256": "6f30e521ae634cdf4c4b242676d993c80fc3815be77d86b83723573212d0dc45"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -61,7 +62,7 @@
         "runWatchedFolderRefreshJob",
         "refreshWatchedFolder"
       ],
-      "sha256": "0585026a50449df36b7f7ea6a3a7798be62467ebd4650d02125c078ae74d8da8"
+      "sha256": "37da0f4c2782af93ca7caf7a3d1c3b36d502fb766c10d76c466fc18fc085ccc9"
     },
     "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts": {
       "exports": [

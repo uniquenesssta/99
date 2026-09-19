@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { validatePreviewInput } from './runtime/previewInputPolicy'
 import { join,resolve } from 'node:path'
 import type { FontItem } from '../../shared/types'

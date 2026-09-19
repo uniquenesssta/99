@@ -86,20 +86,8 @@ export interface FontActivationRuntimeDeps {
   ) => Promise<T>;
   delayToEventLoop: () => Promise<void>;
   appendStartupLog: (message: string) => void;
-  runRustFontActivationFiles?: (input: {
-    copies?: Array<{ id: string; source: string; dest: string }>;
-    deletes?: string[];
-    allowedDeleteDir?: string;
-    allowedNamePrefix?: string;
-  }) => Promise<{
-    ok: boolean;
-    copied: number;
-    reused: number;
-    deleted: number;
-    failed: number;
-    copyResults: Array<{ id: string; source: string; dest: string; ok: boolean; mode: string; message: string }>;
-    deleteResults: Array<{ path: string; ok: boolean; message: string }>;
-  } | null>;
+  runRustFontActivationFiles?: (input: import('../../rust-core/rustCoreWorkerContracts').RustFontActivationFilesInput) => Promise<Omit<import('../../rust-core/rustCoreWorkerContracts').RustFontActivationFilesResult, 'elapsedMs' | 'workerMode'> | null>;
+
 }
 
 export type FontActivationBatchResults = FontActivationBatchResult["results"];

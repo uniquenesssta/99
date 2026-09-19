@@ -93,7 +93,8 @@ export function createFontActivationVerifyRuntime(deps: FontActivationRuntimeDep
       installedFontRecordMatchesPath(item, record.installPath),
     );
 
-    return fileExists || registryVisible || fileVisible;
+    // A remaining file is a deletion task, not proof that a font is active.
+    return registryVisible;
   }
 
   async function verifyInstalledFontVisibility(

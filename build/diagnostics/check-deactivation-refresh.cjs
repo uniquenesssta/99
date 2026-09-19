@@ -93,7 +93,7 @@ function batchHarness({count=3,registryFail=false,resourceFail=false,queueFail=f
     safeTemporaryActiveFontName:item=>item.id+'.ttf',temporaryActiveRegistryNameFor:item=>'HFM_'+item.id,
     scheduleActivationInstallStatusSave:values=>statuses.push(plain(values)),scheduleBackgroundFontRefreshTail:()=>order.push('tail')
   }
-  const cleanup={queueTemporaryFontFileDeletes:async values=>{queued.push(values.map(x=>x.fontId));order.push('queue');return Object.fromEntries(values.map(record=>[record.installPath,{ok:!(queueFail&&record.fontId==='f0'),message:'durable queue'}]))}}
+  const cleanup={verifyManagedRecord:async()=>true,persistRecordStage:async(record,stage)=>{record.stage=stage},queueTemporaryFontFileDeletes:async values=>{queued.push(values.map(x=>x.fontId));order.push('queue');return Object.fromEntries(values.map(record=>[record.installPath,{ok:!(queueFail&&record.fontId==='f0'),message:'durable queue'}]))}}
   const runtime=load(batchFile).createFontDeactivationBatchRuntime(deps,cleanup)
   return {runtime,fonts,records,deps,logs,order,registry,queued,saved,statuses,counts:()=>({enumerations,resources,comparisons})}
 }

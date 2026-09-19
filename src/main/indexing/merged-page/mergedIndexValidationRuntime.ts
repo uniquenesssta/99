@@ -1,3 +1,4 @@
+import { rootIndexRuntimeFontIdExpr } from '../root-query/rootIndexQuerySharedSql';
 import type { FontItem, FontIndexChangePayload } from "../../../shared/types";
 import { resolve } from "node:path";
 import type {
@@ -136,6 +137,27 @@ export function createMergedIndexValidationRuntime(
     items?: FontItem[],
     syncIncremental?: (root: string, payload: FontIndexChangePayload, reason: string) => Promise<void>,
   ): Promise<void> {
+    if (items && items.every(item => item.installStatusKnown === true)) {
+      await ctx.runMergedIndexMutation('local-install-status', async ({ commit }) => {
+        const db = await ctx.openMergedIndexDb();
+        try {
+          const update = db.prepare(`UPDATE entries SET installed = ?, installed_by = ?, matches_json = ?
+            WHERE json_valid(font_json) AND ${rootIndexRuntimeFontIdExpr()} = ?`);
+          db.exec('BEGIN IMMEDIATE');
+          try {
+            for (const item of items) {
+              if (item.installStatusKnown !== true) continue;
+              const permanentBy = item.systemInstallMatches?.some(match => match.source === 'HKLM' || match.source === 'WindowsFontsFolder') ? 'system' : 'user';
+              const by = item.active ? (item.systemInstalled ? 'both' : 'managed') : item.systemInstalled ? permanentBy : 'none';
+              update.run(item.active || item.systemInstalled ? 1 : 0, by, JSON.stringify(item.systemInstallMatches || []), item.id);
+            }
+            db.exec('COMMIT');
+            commit('local-install-status');
+          } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
+        } finally { ctx.closeSqliteDb(db); }
+      });
+      return;
+    }
     const roots = Array.from(
       new Set((folders || []).filter(Boolean).map((folder) => resolve(folder))),
     );

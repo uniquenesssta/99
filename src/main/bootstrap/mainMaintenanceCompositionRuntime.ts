@@ -1,3 +1,4 @@
+import { createSharedMetadataMaintenanceSnapshotRuntime } from '../indexing/shared-metadata/sharedMetadataMaintenanceSnapshotRuntime';
 import {
   APP_NAME,
   AUTO_DATABASE_BACKUP_INTERVAL_MS,
@@ -67,7 +68,7 @@ export interface MainMaintenanceCompositionOptions {
   runTaskMaintenance: MainBackgroundRuntime['runTaskMaintenance'];
   inspectRootIndexSnapshotMaintenance: Data['storage']['inspectRootIndexSnapshotMaintenance'];
   cleanupRootIndexSnapshotMaintenance: Data['storage']['cleanupRootIndexSnapshotMaintenance'];
-  rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustDatabaseHealthCheck' | 'runRustDatabaseBackup' | 'runRustPreviewCacheMaintenance'>;
+  rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustSharedMetadataOverlayRead' | 'runRustDatabaseHealthCheck' | 'runRustDatabaseBackup' | 'runRustPreviewCacheMaintenance'>;
 }
 
 export function createMainMaintenanceCompositionRuntime(options: MainMaintenanceCompositionOptions) {
@@ -127,6 +128,7 @@ export function createMainMaintenanceCompositionRuntime(options: MainMaintenance
 
   const sharedMetadataFrontendDiagnosticsRuntime =
     createSharedMetadataFrontendDiagnosticsRuntime({
+      openIsolatedSnapshot: createSharedMetadataMaintenanceSnapshotRuntime(rustCoreWorkerRuntime.runRustSharedMetadataOverlayRead).openIsolatedSnapshot,
       appWatchedFolders,
       uniqueResolvedFolders,
       exists,

@@ -65,8 +65,24 @@ mod platform {
             data: *const u8,
             data_len: Dword,
         ) -> Long;
+        fn RegGetValueW(hkey: Hkey, sub_key: *const u16, value: *const u16, flags: Dword, value_type: *mut Dword, data: *mut c_void, data_len: *mut Dword) -> Long;
         fn RegDeleteValueW(hkey: Hkey, value_name: *const u16) -> Long;
         fn RegCloseKey(hkey: Hkey) -> Long;
+    }
+
+    pub fn verify_registry_value(name: &str, expected: &str) -> Result<bool, String> {
+        let mut buffer = vec![0u16;32768];
+        let mut size = (buffer.len()*2) as Dword;
+        let mut kind = 0;
+        let result = unsafe { RegGetValueW(HKEY_CURRENT_USER,wide(HKCU_FONT_REGISTRY_KEY).as_ptr(),wide(name).as_ptr(),2,&mut kind,buffer.as_mut_ptr() as *mut c_void,&mut size) };
+        if result == 2 { return Ok(true); }
+        if result != 0 || kind != REG_SZ || size as usize > buffer.len()*2 || size%2 != 0 { return Err(format!("registry ownership read failed: {}",result)); }
+        let units=&buffer[..size as usize/2];
+        let end=units.iter().position(|value|*value==0).unwrap_or(units.len());
+        let actual=String::from_utf16(&units[..end]).map_err(|error|error.to_string())?;
+        let normalized=|value:&str| value.trim().trim_matches('"').replace('/',"\\").trim_end_matches('\\').to_lowercase();
+        if normalized(&actual) != normalized(expected) { return Err("registry value now belongs to another font; cleanup refused".into()); }
+        Ok(false)
     }
 
     fn wide(value: &str) -> Vec<u16> {
@@ -157,6 +173,18 @@ mod platform {
         Ok(key)
     }
 
+    pub fn schedule_cleanup_restart(command: &str) -> Result<(), String> {
+        if command.is_empty() || command.contains('\0') || command.encode_utf16().count() > 260 { return Err("RunOnce command must be 1..260 UTF-16 units".into()); }
+        let mut key: Hkey=0; let mut disposition:Dword=0;
+        let status=unsafe { RegCreateKeyExW(HKEY_CURRENT_USER,wide("Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce").as_ptr(),0,std::ptr::null_mut(),0,KEY_SET_VALUE,std::ptr::null_mut(),&mut key,&mut disposition) };
+        if status != ERROR_SUCCESS { return Err(format!("RunOnce permission denied: {}",status)); }
+        let value=wide(command);
+        let status=unsafe { RegSetValueExW(key,wide("!HanFontManagerCleanup").as_ptr(),0,REG_SZ,value.as_ptr() as *const u8,(value.len()*2) as u32) };
+        unsafe { RegCloseKey(key); }
+        if status != ERROR_SUCCESS { return Err(format!("RunOnce write failed: {}",status)); }
+        Ok(())
+    }
+
     pub fn apply_registry_records(records: &[FontRegistryRecord]) -> Result<(usize, usize), String> {
         if records.is_empty() {
             return Ok((0, 0));
@@ -204,8 +232,10 @@ mod platform {
             }
             let wide_name = wide(name);
             let status = unsafe { RegDeleteValueW(key, wide_name.as_ptr()) };
-            if status == ERROR_SUCCESS {
-                count += 1;
+            if status == ERROR_SUCCESS { count += 1; }
+            else if status != 2 {
+                unsafe { RegCloseKey(key); }
+                return Err(format!("RegDeleteValueW failed: {}", status));
             }
         }
         unsafe { RegCloseKey(key); }
@@ -216,6 +246,10 @@ mod platform {
 #[cfg(not(windows))]
 mod platform {
     use super::{FontRegistryRecord, FontResourceBatchRow};
+
+    pub fn verify_registry_value(_name: &str, _expected: &str) -> Result<bool, String> { Err("Windows only".into()) }
+
+    pub fn schedule_cleanup_restart(_command: &str) -> Result<(), String> { Err("Windows only".into()) }
 
     pub fn notify_font_change(_strong: bool) -> Result<(), String> {
         Err("font resource commands are only supported on Windows".to_string())

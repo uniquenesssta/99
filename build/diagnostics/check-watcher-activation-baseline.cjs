@@ -21,6 +21,8 @@ function load(file, mocks = {}, globals = {}, transform = x => x) {
   const exports = {}
   vm.runInNewContext(output, { exports, console, process, ...globals, require(id) {
     if (Object.hasOwn(mocks, id)) return mocks[id]
+    if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises }
+    if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id === 'node:path') return path
     if (id.startsWith('.')) return load(path.relative(root, path.resolve(root, path.dirname(file), id + '.ts')), mocks, globals)
     throw Error(`Unexpected external dependency ${file}: ${id}`)

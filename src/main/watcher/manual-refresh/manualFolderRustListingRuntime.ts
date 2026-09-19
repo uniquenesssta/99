@@ -1,3 +1,4 @@
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import type { ScanResult } from "../../../shared/types";
 import type { CachedFontStatLike } from "../../fonts/fontRuntime";
 import type {
@@ -125,6 +126,7 @@ export function createManualFolderRustListingRuntime(
         durationMs: Date.now() - startedAt,
       };
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       deps.appendStartupLog(
         `manual folder rust listing failed, fallback to Node directory cache listing: ${error instanceof Error ? error.message : String(error)}`,
       );

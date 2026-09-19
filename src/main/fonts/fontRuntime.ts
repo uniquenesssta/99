@@ -1,6 +1,8 @@
 import * as fontkit from 'fontkit'
 import crypto from 'node:crypto'
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp, executeSharedFile } from '../path/sharedFileSystemRuntime'
+import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
+import { rethrowSharedIoProcessError } from '../path/sharedIoProcessRuntime'
 import { basename,extname,isAbsolute,join,parse } from 'node:path'
 import type { FontFormat,FontItem,FontScript } from '../../shared/types'
 
@@ -21,6 +23,10 @@ export function asFormat(filePath: string): FontFormat {
 
 export async function hasValidFontSignature(filePath: string): Promise<boolean> {
   try {
+    if ((await sharedIoResourceKeys([filePath])).length) {
+      const { bytes } = await executeSharedFile({ operation:'readFile',path:filePath,limitBytes:4 });
+      return !!bytes && bytes.length === 4 && (bytes.toString('hex') === '00010000' || ['OTTO','ttcf','true','typ1'].includes(bytes.toString('ascii')));
+    }
     const handle = await fsp.open(filePath, 'r')
     try {
       const buffer = Buffer.alloc(4)
@@ -40,7 +46,8 @@ export async function hasValidFontSignature(filePath: string): Promise<boolean> 
     } finally {
       await handle.close()
     }
-  } catch {
+  } catch (error) {
+    rethrowSharedIoProcessError(error)
     return false
   }
 }
@@ -211,9 +218,9 @@ function inferScriptsFromFontText(filePath: string, names: Pick<FontItem, 'famil
   return Array.from(scripts)
 }
 
-export function readFontMetadata(filePath: string): Pick<FontItem, 'family' | 'fullName' | 'postscriptName' | 'style' | 'scripts' | 'scriptVersion'> {
+export function readFontMetadata(filePath: string, bytes?: Buffer): Pick<FontItem, 'family' | 'fullName' | 'postscriptName' | 'style' | 'scripts' | 'scriptVersion'> {
   try {
-    const opened = fontkit.openSync(filePath)
+    const opened = bytes ? fontkit.create(bytes) : fontkit.openSync(filePath)
     const font = Array.isArray(opened?.fonts) ? opened.fonts[0] : opened
 
     const family = String(font?.familyName || font?.fullName || parse(filePath).name || '')
@@ -235,7 +242,7 @@ export function readFontMetadata(filePath: string): Pick<FontItem, 'family' | 'f
 export async function fontItemFromPath(filePath: string): Promise<FontItem> {
   const stat = await fsp.stat(filePath)
   const id = sha1(`${filePath.toLowerCase()}|${stat.size}|${Math.round(stat.mtimeMs)}`)
-  const names = readFontMetadata(filePath)
+  const names = readFontMetadata(filePath, await fsp.readFile(filePath))
 
   return {
     id,

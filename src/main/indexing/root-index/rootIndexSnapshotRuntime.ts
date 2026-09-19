@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { basename, join } from 'node:path'
 import { sqliteSidecarPaths } from '../../cache/cachePaths'
 import { ROOT_INDEX_DB_DIR_NAME, ROOT_INDEX_DB_FILE_NAME, ROOT_INDEX_SNAPSHOT_KEEP_COUNT } from '../../cache/constants'

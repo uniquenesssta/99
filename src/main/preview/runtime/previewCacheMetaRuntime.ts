@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { hostname } from 'node:os'
 import type { PreviewCachePublishRow } from './previewCachePublishRuntime'
 import type { PreviewCacheHydrationRow } from './previewCacheHydrationRuntime'

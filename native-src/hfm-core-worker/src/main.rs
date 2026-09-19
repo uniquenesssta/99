@@ -1,4 +1,6 @@
 mod commands;
+mod shared_file_io;
+mod isolated_lifetime;
 mod config;
 mod core_scheduler;
 mod core_daemon;
@@ -25,6 +27,7 @@ mod system_fonts;
 mod watcher;
 
 fn main() {
+    if let Err(error) = isolated_lifetime::watch_parent() { eprintln!("{}", error); std::process::exit(70); }
     let code = commands::run_from_env();
     if code != 0 {
         std::process::exit(code);

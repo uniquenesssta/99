@@ -1,4 +1,4 @@
-import { promises as fsp } from "node:fs";
+import { sharedFileSystem as fsp } from './sharedFileSystemRuntime'
 import type { Stats } from "node:fs";
 import {
   canonicalizeAbsolutePath,

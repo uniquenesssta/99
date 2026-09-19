@@ -1,4 +1,5 @@
-import fs,{ promises as fsp } from 'node:fs'
+import fs from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import os from 'node:os'
 import { dirname,join } from 'node:path'
 import { ROOT_CACHE_LOCK_DIR_NAME,ROOT_INDEX_BUILD_LOCK_FILE_NAME,ROOT_SCAN_CACHE_LOCK_STALE_MS } from '../../cache/constants'

@@ -1,4 +1,4 @@
-import { promises as fsp } from "node:fs";
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { basename,resolve } from "node:path";
 import type { FolderCacheRepairStatus,FontIndexChangePayload,WatchedFolderRefreshResult } from "../../../shared/types";
 import { pathInsideFolder } from "../../folders/physicalFolders";

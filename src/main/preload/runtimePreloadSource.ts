@@ -45,6 +45,8 @@ function invoke(channel, ...args) {
 
 const api = {
   loadLibrary: () => invoke('library:load'),
+    readFontCleanupRemnants: () => invoke('fontCleanup:read'),
+    runFontCleanupAction: (input) => invoke('fontCleanup:run', input),
     getSharedAvailability: () => invoke('library:getSharedAvailability'),
   loadLibraryShell: () => invoke('library:loadShell'),
   saveLibrary: (state) => invoke('library:save', state),

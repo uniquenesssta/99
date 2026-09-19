@@ -1,4 +1,5 @@
-import { promises as fsp } from 'node:fs'
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import os from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { ROOT_SCAN_CACHE_LOCK_STALE_MS, ROOT_SCAN_CACHE_LOCK_TIMEOUT_MS } from '../../cache/constants'
@@ -10,6 +11,9 @@ export interface SharedMetadataLockRuntimeDeps {
 
 export function createSharedMetadataLockRuntime(deps: SharedMetadataLockRuntimeDeps) {
   async function withSharedMetadataWriteLock<T>(rootPath: string, action: () => Promise<T>): Promise<T> {
+    // Native transactions serialize cross-machine commits; the process owner
+    // keeps same-share jobs serialized without main-thread network lock files.
+    if ((await sharedIoResourceKeys([rootPath])).length) return action()
     const lockPath = sharedMetadataLockPathForRoot(rootPath)
     const startedAt = Date.now()
     let handle: any | null = null

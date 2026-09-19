@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname,join,resolve } from 'node:path'
 import type { CacheStats } from '../../../shared/types'
 import { sqliteSidecarPaths } from '../cachePaths'

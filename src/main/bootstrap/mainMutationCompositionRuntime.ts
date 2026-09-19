@@ -1,3 +1,4 @@
+import { sharedSqliteReadSnapshot } from '../path/sharedFileSystemRuntime';
 import type { FontIndexChangePayload, FontItem, FontTagBatchItem, FontTagUpdateResult } from '../../shared/types';
 import { createFontActivationRuntime } from '../activation/fontActivationRuntime';
 import { createMainActivationInstallStatusSaveRuntime } from '../activation/mainActivationInstallStatusSaveRuntime';
@@ -274,6 +275,8 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
 
   const {
     activationTraceStep,
+    readFontCleanupRemnants,
+    runFontCleanupAction,
     activateFontSession,
     activateFontSessionsBatch,
     deactivateFontSession,
@@ -311,15 +314,24 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     deleteFontFilesToTrash,
   } = systemFontInstallRuntime;
 
+  async function openMetadataReadSnapshot(rootPath: string, label: string): Promise<any> {
+    const dbPath = sharedMetadataDbPathForRoot(rootPath);
+    const snapshot = await sharedSqliteReadSnapshot(dbPath);
+    let db: any;
+    try {
+      db = openStableSqliteDb(snapshot?.path || dbPath, label);
+      if (snapshot) {
+        const close = db.close.bind(db);
+        db.close = () => { try { return close(); } finally { void snapshot.dispose().catch(error => appendStartupLog(`metadata snapshot close failed: ${String(error)}`)); } };
+      }
+      return db;
+    } catch (error) { await snapshot?.dispose(); throw error; }
+  }
   const sharedKnownTagsRuntime = createSharedKnownTagsRuntime({
     uniqueResolvedFolders,
     sharedMetadataDbPathForRoot,
     exists,
-    openSharedMetadataDb: async (rootPath: string) =>
-      openStableSqliteDb(
-        sharedMetadataDbPathForRoot(rootPath),
-        "shared-metadata-known-tags",
-      ),
+    openSharedMetadataDb: async (rootPath: string) => openMetadataReadSnapshot(rootPath, "shared-metadata-known-tags"),
     closeSqliteDb,
     openLibraryDb,
     loadLibraryShellFromSqlite,
@@ -339,7 +351,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
       syncMergedIndexForRootSnapshot,
       openMetadataDb: async (root) => {
         const dbPath = sharedMetadataDbPathForRoot(root);
-        return await exists(dbPath) ? openStableSqliteDb(dbPath, 'shared-metadata-changed-ids') : null;
+        return await exists(dbPath) ? openMetadataReadSnapshot(root, 'shared-metadata-changed-ids') : null;
       },
       closeMetadataDb: closeSqliteDb,
       sendFontIndexChanged: (payload: FontIndexChangePayload) =>
@@ -487,6 +499,8 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     setSharedFontTagsBatchInIndex,
     renameSharedFontTagInIndex,
     deleteSharedFontTagInIndex,
+    readFontCleanupRemnants,
+    runFontCleanupAction,
     activateFontSession,
     activateFontSessionsBatch,
     deactivateFontSession,

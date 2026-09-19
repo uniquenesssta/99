@@ -1,4 +1,5 @@
-import { promises as fsp } from 'node:fs'
+import { rethrowSharedIoProcessError } from '../path/sharedIoProcessRuntime'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import type { createRequire } from 'node:module'
 import { basename,dirname,join } from 'node:path'
 
@@ -189,12 +190,14 @@ export function createSqliteRuntime(options: SqliteRuntimeOptions): {
       try {
         await fsp.rename(source, target)
         moved.push(target)
-      } catch {
+      } catch (error) {
+        rethrowSharedIoProcessError(error)
         try {
           await fsp.copyFile(source, target)
           await fsp.rm(source, { force: true })
           moved.push(target)
         } catch (error) {
+          rethrowSharedIoProcessError(error)
           options.appendLog(`sqlite quarantine file skipped: ${source} ${recoveryMessage(error)}`)
         }
       }

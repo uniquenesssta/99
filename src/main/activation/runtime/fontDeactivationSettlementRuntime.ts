@@ -21,6 +21,9 @@ export type DeactivationRecordSettlement = DeactivationRecordTarget & {
 };
 
 export interface FontDeactivationSettlementDeps {
+  verifyManagedRecord: (record: TemporaryActiveFontRecord) => Promise<boolean>;
+  persistRecordStages?: (records: TemporaryActiveFontRecord[], stage: TemporaryActiveFontRecord['stage']) => Promise<void>;
+  persistRecordStage: (record: TemporaryActiveFontRecord, stage: TemporaryActiveFontRecord['stage']) => Promise<void>;
   removeFontResourceSessionBatch: (
     fontPaths: string[],
   ) => Promise<FontResourceBatchResult>;
@@ -78,12 +81,33 @@ export async function settleFontDeactivationRecords(
     fileQueue: pendingStep("等待注册表清理成功。"),
   }));
 
+  const persist = async (items: DeactivationRecordSettlement[], stage: TemporaryActiveFontRecord['stage']): Promise<void> => {
+    if (deps.persistRecordStages) await deps.persistRecordStages(items.map(item => item.record), stage);
+    else for (const item of items) await deps.persistRecordStage(item.record, stage);
+  };
+  const eligible: DeactivationRecordSettlement[] = [];
+  for (const settlement of settlements) {
+    try {
+      await deps.verifyManagedRecord(settlement.record);
+      if (settlement.record.stage === 'registry-removal-pending' || settlement.record.stage === 'file-pending') {
+        settlement.resource = successfulStep('资源已在之前的清理阶段移除。');
+        if (settlement.record.stage === 'file-pending') settlement.registry = successfulStep('注册表已在之前的清理阶段清理。');
+      } else {
+        eligible.push(settlement);
+      }
+    } catch (error) { settlement.resource = failedStep(error, '受管身份核验失败。'); }
+  }
+  try { await persist(eligible, 'resource-removal-pending'); }
+  catch (error) {
+    for (const settlement of eligible) settlement.resource = failedStep(error, '资源移除意图保存失败。');
+    eligible.length = 0;
+  }
   let resourceBatchError: unknown = null;
   let resourceResults: FontResourceBatchResult = {};
-  if (settlements.length) {
+  if (eligible.length) {
     try {
       resourceResults = await activationTraceStep("deactivate:resource-remove", undefined, () => deps.removeFontResourceSessionBatch(
-        settlements.map((settlement) => settlement.record.installPath),
+        eligible.map((settlement) => settlement.record.installPath),
       ));
     } catch (error) {
       resourceBatchError = error;
@@ -99,7 +123,8 @@ export async function settleFontDeactivationRecords(
       entry,
     ]),
   );
-  for (const settlement of settlements) {
+  const removed: DeactivationRecordSettlement[] = [];
+  for (const settlement of eligible) {
     if (resourceBatchError) {
       settlement.resource = failedStep(
         resourceBatchError,
@@ -119,14 +144,16 @@ export async function settleFontDeactivationRecords(
         entry.message || "RemoveFontResourceEx 批量移除失败。",
       );
     } else {
-      settlement.resource = successfulStep(
-        entry.message || "字体资源已移除。",
-      );
+      removed.push(settlement);
+      settlement.resource = successfulStep(entry.message || '字体资源已移除。');
     }
   }
 
+  try { await persist(removed, 'registry-removal-pending'); }
+  catch (error) { for (const settlement of removed) settlement.resource = failedStep(error, '资源移除进度保存失败。'); }
+
   const registryCandidates = settlements.filter(
-    (settlement) => settlement.resource.ok,
+    (settlement) => settlement.resource.ok && !settlement.registry.ok,
   );
   const registryCandidatesByName = new Map<
     string,
@@ -174,6 +201,10 @@ export async function settleFontDeactivationRecords(
       }
     });
   }
+
+  const registryRemoved = settlements.filter(settlement => settlement.resource.ok && settlement.registry.ok);
+  try { await persist(registryRemoved, 'file-pending'); }
+  catch (error) { for (const settlement of registryRemoved) settlement.registry = failedStep(error, '注册表清理进度保存失败。'); }
 
   const fileQueueCandidates = settlements.filter(
     (settlement) => settlement.resource.ok && settlement.registry.ok,

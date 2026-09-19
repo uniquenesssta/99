@@ -1,5 +1,5 @@
 import type fs from 'node:fs'
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { extname,resolve } from 'node:path'
 import type { FontIndexChangePayload,FontItem } from '../../shared/types'
 import { fileCacheSignature,isIgnoredInternalDirectoryName,isRootIndexDbPath } from '../cache/cachePaths'

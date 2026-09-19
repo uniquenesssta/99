@@ -48,6 +48,7 @@
     "getLicenseStatus",
     "getMigrationDiagnostics",
     "getPreviewCacheStatus",
+    "getSharedAvailability",
     "getSystemInstalledFonts",
     "hasInFlightActivationInstallStatusSave",
     "hasPendingActivationInstallStatusSave",
@@ -60,7 +61,6 @@
     "loadFolderCache",
     "loadLibrary",
     "loadLibraryShell",
-    "getSharedAvailability",
     "logPath",
     "logSchemaVersion",
     "markCleanShutdownSync",
@@ -72,6 +72,7 @@
     "queryFontsInLibrary",
     "readCachedFontPreviewImage",
     "readCachedFontPreviewImages",
+    "readFontCleanupRemnants",
     "readPreviewFontData",
     "readSharedIndexSnapshotFrontendDiagnostics",
     "readSharedMetadataFrontendDiagnostics",
@@ -90,6 +91,7 @@
     "runBackgroundTaskSchedulerOnce",
     "runDatabaseHealthCheck",
     "runDatabaseMaintenance",
+    "runFontCleanupAction",
     "runStartupCriticalSchemaAudit",
     "runStartupDatabaseMaintenance",
     "saveLibrary",
@@ -215,67 +217,629 @@
     "stopRustCoreDaemon"
   ],
   "rustCommands": [
-    { "method": "runRustFontIndexListWorker", "capabilities": ["font-family-hint-probe", "font-full-fingerprint", "font-name-table-probe", "font-script-table-probe", "font-style-table-probe", "list-font-files"], "flags": ["--extensions", "--full-hash", "--list-font-files", "--max", "--output", "--probe-family", "--probe-names", "--probe-scripts", "--probe-style", "--root"] },
-    { "method": "runRustFontParseBatch", "capabilities": ["font-parse-batch"], "flags": ["--font-parse-batch", "--input"] },
-    { "method": "runRustRootIndexApplyChanges", "capabilities": ["root-index-sqlite-apply-changes"], "flags": ["--cache-version", "--db", "--input", "--root", "--root-index-apply-changes", "--schema-version", "--script-detection-version", "--storage"] },
-    { "method": "runRustMergedIndexPageQuery", "capabilities": ["merged-index-page-query"], "flags": ["--input", "--merged-index-query-page"] },
-    { "method": "runRustMergedIndexIdsQuery", "capabilities": ["merged-index-ids-query"], "flags": ["--input", "--merged-index-query-ids"] },
-    { "method": "runRustMergedIndexMetricsQuery", "capabilities": ["merged-index-metrics-query"], "flags": ["--input", "--merged-index-query-metrics"] },
-    { "method": "runRustMergedIndexRebuild", "capabilities": ["merged-index-rebuild"], "flags": ["--input", "--merged-index-rebuild"] },
-    { "method": "runRustMergedIndexSync", "capabilities": ["merged-index-sync"], "flags": ["--input", "--merged-index-sync"] },
-    { "method": "runRustWatcherPreflight", "capabilities": ["watcher-batch-preflight"], "flags": ["--input", "--watcher-batch-preflight"] },
-    { "method": "runRustInstallStatusRead", "capabilities": ["install-status-index-read"], "flags": ["--input", "--install-status-read"] },
-    { "method": "runRustInstallStatusSave", "capabilities": ["install-status-index-save"], "flags": ["--input", "--install-status-save"] },
-    { "method": "runRustInstallStatusCompare", "capabilities": ["install-status-compare"], "flags": ["--input", "--install-status-compare"] },
-    { "method": "runRustLocalTagsRead", "capabilities": ["local-tags-read"], "flags": ["--input", "--local-tags-read"] },
-    { "method": "runRustLocalTagsSet", "capabilities": ["local-tags-set"], "flags": ["--input", "--local-tags-set"] },
-    { "method": "runRustLocalTagsDeleteTag", "capabilities": ["local-tags-delete-tag"], "flags": ["--input", "--local-tags-delete-tag"] },
-    { "method": "runRustSharedMetadataApply", "capabilities": ["shared-metadata-apply"], "flags": ["--input", "--shared-metadata-apply"] },
-    { "method": "runRustSharedMetadataRemoveTag", "capabilities": ["shared-metadata-remove-tag"], "flags": ["--input", "--shared-metadata-remove-tag"] },
-    { "method": "runRustSharedMetadataKnownTags", "capabilities": ["shared-metadata-known-tags"], "flags": ["--input", "--shared-metadata-known-tags"] },
-    { "method": "runRustSharedMetadataOverlayRead", "capabilities": ["shared-metadata-overlay-read"], "flags": ["--input", "--shared-metadata-overlay-read"] },
-    { "method": "runRustSharedMetadataSignature", "capabilities": ["shared-metadata-signature"], "flags": ["--input", "--shared-metadata-signature"] },
-    { "method": "runRustPreviewCacheReadStatus", "capabilities": ["preview-cache-index-read"], "flags": ["--input", "--preview-cache-read-status"] },
-    { "method": "runRustPreviewCacheApply", "capabilities": ["preview-cache-index-apply"], "flags": ["--input", "--preview-cache-apply"] },
-    { "method": "runRustPreviewCacheDelete", "capabilities": ["preview-cache-index-delete"], "flags": ["--input", "--preview-cache-delete"] },
-    { "method": "runRustPreviewCacheQuery", "capabilities": ["preview-cache-index-query"], "flags": ["--input", "--preview-cache-query"] },
-    { "method": "runRustPreviewCacheTouch", "capabilities": ["preview-cache-index-touch"], "flags": ["--input", "--preview-cache-touch"] },
-    { "method": "runRustPreviewCacheBatch", "capabilities": ["preview-cache-batch"], "flags": ["--input", "--preview-cache-batch"] },
-    { "method": "runRustPreviewCacheMaintenance", "capabilities": ["preview-cache-maintenance"], "flags": ["--input", "--preview-cache-maintenance"] },
-    { "method": "runRustDatabaseHealthCheck", "capabilities": ["database-health-check"], "flags": ["--database-health-check", "--input"] },
-    { "method": "runRustDatabaseBackup", "capabilities": ["database-backup"], "flags": ["--database-backup", "--input"] },
-    { "method": "runRustFontResourceAdd", "capabilities": ["font-resource-add"], "flags": ["--font-resource-add", "--input"] },
-    { "method": "runRustFontResourceRemove", "capabilities": ["font-resource-remove"], "flags": ["--font-resource-remove", "--input"] },
-    { "method": "runRustFontRegistryApply", "capabilities": ["font-registry-apply"], "flags": ["--font-registry-apply", "--input"] },
-    { "method": "runRustFontRegistryDelete", "capabilities": ["font-registry-delete"], "flags": ["--font-registry-delete", "--input"] },
-    { "method": "runRustFontChangeNotify", "capabilities": ["font-resource-notify"], "flags": ["--font-resource-notify", "--input"] },
-    { "method": "runRustPhysicalFolderTree", "capabilities": ["physical-folder-tree"], "flags": ["--input", "--physical-folder-tree"] },
-    { "method": "runRustFontActivationFiles", "capabilities": ["font-activation-files"], "flags": ["--font-activation-files", "--input"] },
-    { "method": "runRustPreviewRenderImage", "capabilities": ["preview-render-image"], "flags": ["--input", "--preview-render-image"] },
-    { "method": "runRustSystemInstalledFonts", "capabilities": ["system-installed-fonts"], "flags": ["--current-user-fonts-dir", "--extensions", "--include-name-candidates", "--system-installed-fonts", "--windows-fonts-dir"] }
+    {
+      "method": "runRustFontIndexListWorker",
+      "capabilities": [
+        "font-family-hint-probe",
+        "font-full-fingerprint",
+        "font-name-table-probe",
+        "font-script-table-probe",
+        "font-style-table-probe",
+        "list-font-files"
+      ],
+      "flags": [
+        "--extensions",
+        "--full-hash",
+        "--list-font-files",
+        "--max",
+        "--output",
+        "--probe-family",
+        "--probe-names",
+        "--probe-scripts",
+        "--probe-style",
+        "--root",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustFontParseBatch",
+      "capabilities": [
+        "font-parse-batch"
+      ],
+      "flags": [
+        "--font-parse-batch",
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustRootIndexApplyChanges",
+      "capabilities": [
+        "root-index-sqlite-apply-changes"
+      ],
+      "flags": [
+        "--cache-version",
+        "--db",
+        "--input",
+        "--root",
+        "--root-index-apply-changes",
+        "--schema-version",
+        "--script-detection-version",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read",
+        "--storage"
+      ]
+    },
+    {
+      "method": "runRustMergedIndexPageQuery",
+      "capabilities": [
+        "merged-index-page-query"
+      ],
+      "flags": [
+        "--input",
+        "--merged-index-query-page",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustMergedIndexIdsQuery",
+      "capabilities": [
+        "merged-index-ids-query"
+      ],
+      "flags": [
+        "--input",
+        "--merged-index-query-ids",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustMergedIndexMetricsQuery",
+      "capabilities": [
+        "merged-index-metrics-query"
+      ],
+      "flags": [
+        "--input",
+        "--merged-index-query-metrics",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustMergedIndexRebuild",
+      "capabilities": [
+        "merged-index-rebuild"
+      ],
+      "flags": [
+        "--input",
+        "--merged-index-rebuild",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustMergedIndexSync",
+      "capabilities": [
+        "merged-index-sync"
+      ],
+      "flags": [
+        "--input",
+        "--merged-index-sync",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustWatcherPreflight",
+      "capabilities": [
+        "watcher-batch-preflight"
+      ],
+      "flags": [
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read",
+        "--watcher-batch-preflight"
+      ]
+    },
+    {
+      "method": "runRustInstallStatusRead",
+      "capabilities": [
+        "install-status-index-read"
+      ],
+      "flags": [
+        "--input",
+        "--install-status-read",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustInstallStatusSave",
+      "capabilities": [
+        "install-status-index-save"
+      ],
+      "flags": [
+        "--input",
+        "--install-status-save",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustInstallStatusCompare",
+      "capabilities": [
+        "install-status-compare"
+      ],
+      "flags": [
+        "--input",
+        "--install-status-compare",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustLocalTagsRead",
+      "capabilities": [
+        "local-tags-read"
+      ],
+      "flags": [
+        "--input",
+        "--local-tags-read",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustLocalTagsSet",
+      "capabilities": [
+        "local-tags-set"
+      ],
+      "flags": [
+        "--input",
+        "--local-tags-set",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustLocalTagsDeleteTag",
+      "capabilities": [
+        "local-tags-delete-tag"
+      ],
+      "flags": [
+        "--input",
+        "--local-tags-delete-tag",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustSharedMetadataApply",
+      "capabilities": [
+        "shared-metadata-apply"
+      ],
+      "flags": [
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-apply",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustSharedMetadataRemoveTag",
+      "capabilities": [
+        "shared-metadata-remove-tag"
+      ],
+      "flags": [
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read",
+        "--shared-metadata-remove-tag"
+      ]
+    },
+    {
+      "method": "runRustSharedMetadataKnownTags",
+      "capabilities": [
+        "shared-metadata-known-tags"
+      ],
+      "flags": [
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-known-tags",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustSharedMetadataOverlayRead",
+      "capabilities": [
+        "shared-metadata-overlay-read",
+        "shared-metadata-preflight-v1"
+      ],
+      "flags": [
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustSharedMetadataSignature",
+      "capabilities": [
+        "shared-metadata-signature"
+      ],
+      "flags": [
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read",
+        "--shared-metadata-signature"
+      ]
+    },
+    {
+      "method": "runRustPreviewCacheReadStatus",
+      "capabilities": [
+        "preview-cache-index-read"
+      ],
+      "flags": [
+        "--input",
+        "--preview-cache-read-status",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustPreviewCacheApply",
+      "capabilities": [
+        "preview-cache-index-apply"
+      ],
+      "flags": [
+        "--input",
+        "--preview-cache-apply",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustPreviewCacheDelete",
+      "capabilities": [
+        "preview-cache-index-delete"
+      ],
+      "flags": [
+        "--input",
+        "--preview-cache-delete",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustPreviewCacheQuery",
+      "capabilities": [
+        "preview-cache-index-query"
+      ],
+      "flags": [
+        "--input",
+        "--preview-cache-query",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustPreviewCacheTouch",
+      "capabilities": [
+        "preview-cache-index-touch"
+      ],
+      "flags": [
+        "--input",
+        "--preview-cache-touch",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustPreviewCacheBatch",
+      "capabilities": [
+        "preview-cache-batch"
+      ],
+      "flags": [
+        "--input",
+        "--preview-cache-batch",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustPreviewCacheMaintenance",
+      "capabilities": [
+        "preview-cache-maintenance"
+      ],
+      "flags": [
+        "--input",
+        "--preview-cache-maintenance",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustDatabaseHealthCheck",
+      "capabilities": [
+        "database-health-check"
+      ],
+      "flags": [
+        "--database-health-check",
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustDatabaseBackup",
+      "capabilities": [
+        "database-backup"
+      ],
+      "flags": [
+        "--database-backup",
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustFontResourceAdd",
+      "capabilities": [
+        "font-resource-add"
+      ],
+      "flags": [
+        "--font-resource-add",
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustFontResourceRemove",
+      "capabilities": [
+        "font-resource-remove"
+      ],
+      "flags": [
+        "--font-resource-remove",
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustFontRegistryApply",
+      "capabilities": [
+        "font-registry-apply"
+      ],
+      "flags": [
+        "--font-registry-apply",
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustFontRegistryDelete",
+      "capabilities": [
+        "font-registry-delete"
+      ],
+      "flags": [
+        "--font-registry-delete",
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustFontChangeNotify",
+      "capabilities": [
+        "font-resource-notify"
+      ],
+      "flags": [
+        "--font-resource-notify",
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustPhysicalFolderTree",
+      "capabilities": [
+        "physical-folder-tree"
+      ],
+      "flags": [
+        "--input",
+        "--physical-folder-tree",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustFontActivationFiles",
+      "capabilities": [
+        "font-activation-files",
+        "font-activation-identity-v1"
+      ],
+      "flags": [
+        "--font-activation-files",
+        "--input",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustPreviewRenderImage",
+      "capabilities": [
+        "preview-render-image"
+      ],
+      "flags": [
+        "--input",
+        "--preview-render-image",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read"
+      ]
+    },
+    {
+      "method": "runRustSystemInstalledFonts",
+      "capabilities": [
+        "system-installed-fonts"
+      ],
+      "flags": [
+        "--current-user-fonts-dir",
+        "--extensions",
+        "--include-name-candidates",
+        "--shared-file-io",
+        "--shared-metadata-overlay-read",
+        "--system-installed-fonts",
+        "--windows-fonts-dir"
+      ]
+    }
   ],
   "appRootView": {
     "currentPropType": "any",
     "currentPropCount": 169,
     "targetGroups": {
-      "topbar": { "component": "AppTopbar", "requiredProps": ["themeMode", "indexingActive", "rescan", "cancelIndexing"] },
-      "sidebar": { "component": "AppSidebar", "requiredProps": ["activeFilter", "selectedWatchedFolders", "selectedFormats", "selectedScripts", "selectedCategory"] },
-      "content": { "component": "FontListPanel", "requiredProps": ["search", "selectedFontIds", "handleFontScroll", "visibleFonts"] },
-      "detail": { "component": "FontDetailPanel", "requiredProps": ["selectedFont", "runFontCommand", "selectedFontIds"] },
-      "overlays": { "component": "AppOverlays", "requiredProps": ["contextMenu", "confirmRename", "confirmDelete", "leaseLockConflictNotice"] },
-      "developer": { "component": null, "requiredProps": ["IS_DEVELOPMENT", "developerArchitecture", "developerSchedulerStatus", "developerMigrationDiagnostics", "developerStatusLog"] }
+      "topbar": {
+        "component": "AppTopbar",
+        "requiredProps": [
+          "themeMode",
+          "indexingActive",
+          "rescan",
+          "cancelIndexing"
+        ]
+      },
+      "sidebar": {
+        "component": "AppSidebar",
+        "requiredProps": [
+          "activeFilter",
+          "selectedWatchedFolders",
+          "selectedFormats",
+          "selectedScripts",
+          "selectedCategory"
+        ]
+      },
+      "content": {
+        "component": "FontListPanel",
+        "requiredProps": [
+          "search",
+          "selectedFontIds",
+          "handleFontScroll",
+          "visibleFonts"
+        ]
+      },
+      "detail": {
+        "component": "FontDetailPanel",
+        "requiredProps": [
+          "selectedFont",
+          "runFontCommand",
+          "selectedFontIds"
+        ]
+      },
+      "overlays": {
+        "component": "AppOverlays",
+        "requiredProps": [
+          "contextMenu",
+          "confirmRename",
+          "confirmDelete",
+          "leaseLockConflictNotice"
+        ]
+      },
+      "developer": {
+        "component": null,
+        "requiredProps": [
+          "IS_DEVELOPMENT",
+          "developerArchitecture",
+          "developerSchedulerStatus",
+          "developerMigrationDiagnostics",
+          "developerStatusLog"
+        ]
+      }
     },
     "flows": [
-      { "name": "search", "identifiers": ["search", "updatePageToolbar"] },
-      { "name": "filter", "identifiers": ["activeFilter", "selectedFormats", "selectedScripts", "clearAdvancedFilters"] },
-      { "name": "scroll", "identifiers": ["handleFontScroll", "virtualLayout", "fontScrollerRef"] },
-      { "name": "selection", "identifiers": ["selectedFontIds", "setSelectedFontIds", "beginMarqueeSelection"] },
-      { "name": "detail", "identifiers": ["selectedFont", "closeDetail", "runFontCommand", "selectedFontIds"] },
-      { "name": "tags", "identifiers": ["addTagToSelectedByName", "removeTagFromSelected", "addSharedTagToSelectedByName", "removeSharedTagFromSelected"] },
-      { "name": "folders", "identifiers": ["selectFolderFilter", "assignFontsToFolder", "createSubfolder", "runContextRefreshFolder"] },
-      { "name": "batch-system", "identifiers": ["activateFontsBatch", "deactivateFontsBatch", "deleteFontsBatch", "uninstallFontsBatch"] },
-      { "name": "conflict", "identifiers": ["leaseLockConflictNotice", "setLeaseLockConflictNotice"] },
-      { "name": "close-flush", "identifiers": ["flushFontWriteQueue", "flushLibraryPersistence"] }
+      {
+        "name": "search",
+        "identifiers": [
+          "search",
+          "updatePageToolbar"
+        ]
+      },
+      {
+        "name": "filter",
+        "identifiers": [
+          "activeFilter",
+          "selectedFormats",
+          "selectedScripts",
+          "clearAdvancedFilters"
+        ]
+      },
+      {
+        "name": "scroll",
+        "identifiers": [
+          "handleFontScroll",
+          "virtualLayout",
+          "fontScrollerRef"
+        ]
+      },
+      {
+        "name": "selection",
+        "identifiers": [
+          "selectedFontIds",
+          "setSelectedFontIds",
+          "beginMarqueeSelection"
+        ]
+      },
+      {
+        "name": "detail",
+        "identifiers": [
+          "selectedFont",
+          "closeDetail",
+          "runFontCommand",
+          "selectedFontIds"
+        ]
+      },
+      {
+        "name": "tags",
+        "identifiers": [
+          "addTagToSelectedByName",
+          "removeTagFromSelected",
+          "addSharedTagToSelectedByName",
+          "removeSharedTagFromSelected"
+        ]
+      },
+      {
+        "name": "folders",
+        "identifiers": [
+          "selectFolderFilter",
+          "assignFontsToFolder",
+          "createSubfolder",
+          "runContextRefreshFolder"
+        ]
+      },
+      {
+        "name": "batch-system",
+        "identifiers": [
+          "activateFontsBatch",
+          "deactivateFontsBatch",
+          "deleteFontsBatch",
+          "uninstallFontsBatch"
+        ]
+      },
+      {
+        "name": "conflict",
+        "identifiers": [
+          "leaseLockConflictNotice",
+          "setLeaseLockConflictNotice"
+        ]
+      },
+      {
+        "name": "close-flush",
+        "identifiers": [
+          "flushFontWriteQueue",
+          "flushLibraryPersistence"
+        ]
+      }
     ]
   }
 }

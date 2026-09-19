@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { join, resolve } from 'node:path'
 import type { FontItem } from '../../../shared/types'
 import { previewCacheKey } from './previewCacheKeyRuntime'
@@ -57,7 +57,7 @@ export function createCachedPreviewReadRuntime(args: {
           missCache.rememberMiss(memoryKey)
           return ''
         }
-        if (!fs.existsSync(outputPath)) {
+        if (!await fsp.access(outputPath).then(()=>true,()=>false)) {
           missCache.rememberMiss(memoryKey)
           return ''
         }

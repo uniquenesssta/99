@@ -23,6 +23,8 @@ export type IpcInvokeHandler = (event: Electron.IpcMainInvokeEvent, ...args: any
 export type IpcHandleRegistrar = (channel: string, handler: IpcInvokeHandler) => void
 
 export interface IpcHandlerRuntime {
+  readFontCleanupRemnants: () => Promise<import('../../shared/fontCleanup').FontCleanupReport>;
+  runFontCleanupAction: (input: import('../../shared/fontCleanup').FontCleanupAction) => Promise<import('../../shared/fontCleanup').FontCleanupReport>;
   getSharedAvailability: () => Promise<import('../../shared/sharedAvailability').SharedAvailability>;
   appendLog?: (message: string) => void;
   reportPerformanceEvent?: (payload: RendererPerformanceEventPayload) => unknown;

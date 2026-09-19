@@ -516,7 +516,28 @@ export type RustSharedMetadataOverlayReadEntry = {
   pathKey?: string
 }
 
+export type RustSharedMetadataPreflightSnapshot = {
+  token: string
+  rows: import('../indexing/shared-metadata/sharedMetadataStateRuntime').SharedMetadataRow[]
+  ops: import('../indexing/shared-metadata/sharedTagOpsReplayRuntime').SharedTagOperationRow[]
+  meta: Record<string, string>
+}
+
+export type RustSharedMetadataMaintenanceSnapshot = { exists: boolean; token: string; tables: Record<string, Array<Record<string, string | number | null>>> }
+
+export type RustSharedMetadataPreflight = {
+  maintenance?: RustSharedMetadataMaintenanceSnapshot
+  phase: 'snapshot' | 'commit' | 'maintenance-snapshot' | 'maintenance-commit'
+  updatedAt: string
+  updatedBy: string
+  writerPid: number
+  legacy?: Array<{ fontId: string; relativePath: string; pathKey: string; tagNames: string[]; favorite: boolean; deleteProtected: boolean }>
+  token?: string
+  plan?: ReturnType<typeof import('../indexing/shared-metadata/sharedTagOpsReplayRuntime').planSharedTagOpsReplay>
+}
+
 export type RustSharedMetadataOverlayReadInput = {
+  preflight?: RustSharedMetadataPreflight
   rootPath: string
   dbPath: string
   entries: RustSharedMetadataOverlayReadEntry[]
@@ -531,6 +552,7 @@ export type RustSharedMetadataOverlayMatchedEntry = {
 }
 
 export type RustSharedMetadataOverlayReadResult = {
+  preflight?: { version: 1; phase: 'snapshot' | 'commit' | 'maintenance-snapshot' | 'maintenance-commit'; snapshot?: RustSharedMetadataPreflightSnapshot; maintenance?: RustSharedMetadataMaintenanceSnapshot }
   rootPath: string
   dbPath: string
   signature: string
@@ -683,6 +705,11 @@ export type RustFontActivationFileCopy = {
 }
 
 export type RustFontActivationFilesInput = {
+  registryExpectations?: Record<string, string>
+  requireMissing?: boolean
+  restartCommand?: string
+  inspects?: string[]
+  identities?: Record<string, import('../windows/runtime/fontRuntimeTypes').ManagedActivationFileIdentity>
   copies?: RustFontActivationFileCopy[]
   deletes?: string[]
   allowedDeleteDir?: string
@@ -695,7 +722,8 @@ export type RustFontActivationFilesResult = {
   reused: number
   deleted: number
   failed: number
-  copyResults: Array<{ id: string; source: string; dest: string; ok: boolean; mode: string; message: string }>
+  inspectResults?: Array<{ path: string; identity?: import('../windows/runtime/fontRuntimeTypes').ManagedActivationFileIdentity | null; missing: boolean; message: string }>
+  copyResults: Array<{ id: string; source: string; dest: string; ok: boolean; mode: string; message: string; identity?: import('../windows/runtime/fontRuntimeTypes').ManagedActivationFileIdentity | null }>
   deleteResults: Array<{ path: string; ok: boolean; message: string }>
   elapsedMs: number
   workerMode: 'rust-font-activation-files'

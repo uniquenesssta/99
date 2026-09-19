@@ -9,6 +9,9 @@ import type { RustCoreWorkerRuntimeOptions } from './rustCoreWorkerContracts'
 
 // Preserve the existing public type import path without loading another runtime.
 export type {
+  RustSharedMetadataMaintenanceSnapshot,
+  RustSharedMetadataPreflightSnapshot,
+  RustSharedMetadataPreflight,
   RustCoreWorkerStatus,
   RustFontScriptHint,
   RustFontStyleHint,

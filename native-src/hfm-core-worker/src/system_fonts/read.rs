@@ -31,7 +31,10 @@ pub fn read_system_installed_fonts(config: &SystemInstalledFontsConfig) -> Resul
     if config.include_name_candidates {
         for item in &mut items {
             if let Some(path) = item.path.as_ref() {
-                item.name_candidates = installed_font_name_candidates(path);
+                let parent=std::path::Path::new(path).parent();
+                if parent == Some(std::path::Path::new(&config.windows_fonts_dir)) || parent == Some(std::path::Path::new(&config.current_user_fonts_dir)) {
+                    item.name_candidates = installed_font_name_candidates(path);
+                }
             }
         }
     }

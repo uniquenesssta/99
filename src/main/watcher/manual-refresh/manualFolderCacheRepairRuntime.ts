@@ -1,4 +1,6 @@
-import { promises as fsp } from "node:fs";
+import { ROOT_INDEX_DB_SCHEMA_VERSION, PREVIEW_SQLITE_SCHEMA_VERSION } from '../../cache/constants'
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname,join,resolve } from "node:path";
 import type { FolderCacheRepairStatus } from "../../../shared/types";
 import type { ManualFolderRefreshDeps } from "./manualFolderRefreshTypes";
@@ -79,6 +81,10 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
 
     for (const item of databases) {
       try {
+        if ((await sharedIoResourceKeys([item.path])).length) {
+          await executeSharedFile({ operation:'repairRootDatabase', path:item.path, rootPath:resolvedRoot, kind:item.label.slice(5) as 'events' | 'hash' | 'metrics', repairCorrupt:true, dest:join(rootCacheDir(resolvedRoot),'corrupt') });
+          continue;
+        }
         const db = openStableSqliteDb(item.path, `${item.label}:manual-refresh`);
         try {
           item.init(db, resolvedRoot);
@@ -87,6 +93,7 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
           closeSqliteDb(db);
         }
       } catch (error) {
+        if ((await sharedIoResourceKeys([item.path])).length) throw error;
         const message = error instanceof Error ? error.message : String(error);
         await quarantineSqliteFiles(
           item.path,
@@ -137,6 +144,14 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
       dbPath = await resolveActiveRootIndexDbPath(cacheDir, defaultDbPath);
       existedBefore = await exists(dbPath);
 
+      if ((await sharedIoResourceKeys([dbPath])).length) {
+        const { result } = await executeSharedFile({ operation:'repairRootDatabase', kind:'root-index', path:dbPath, rootPath:resolvedRoot,
+          schemaVersion:ROOT_INDEX_DB_SCHEMA_VERSION, cacheVersion:deps.fontScanCacheVersion, scriptDetectionVersion:deps.scriptDetectionVersion,
+          repairCorrupt:true, dest:join(cacheDir,'corrupt') });
+        await writeRootCacheManifest(cacheDir,resolvedRoot,'root',Number(result.value.entries),dbPath);
+        const repaired = result.value.repaired === true;
+        return { ...cacheRepairStatus('index',dbPath,true,repaired,repaired ? '索引缓存已修复，将重新扫描。' : '索引缓存正常。'), rebuildRequired:repaired };
+      }
       const db = await openRootIndexDb(dbPath, resolvedRoot, "root", true);
       try {
         sqliteQuickCheck(db, "root-index-manual-refresh", dbPath, true);
@@ -173,6 +188,7 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
         rebuildRequired: repaired,
       };
     } catch (error) {
+      if ((await sharedIoResourceKeys([dbPath])).length) throw error;
       const message = error instanceof Error ? error.message : String(error);
       dbPath = dbPath || defaultDbPath;
       await quarantineSqliteFiles(
@@ -236,6 +252,12 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
       await hideDirectoryOnWindows(previewCacheDir);
       existedBefore = await exists(previewDbPath);
 
+      if ((await sharedIoResourceKeys([previewDbPath])).length) {
+        const { result } = await executeSharedFile({ operation:'repairRootDatabase', kind:'preview', path:previewDbPath, rootPath:resolvedRoot,
+          schemaVersion:PREVIEW_SQLITE_SCHEMA_VERSION, repairCorrupt:true, dest:join(previewCacheDir,'corrupt') });
+        await writeRootPreviewCacheManifest(previewCacheDir,resolvedRoot,'root',previewDbPath,previewImageDir);
+        return cacheRepairStatus('preview',previewDbPath,true,result.value.repaired === true,result.value.repaired ? '预览缓存已修复。' : '预览缓存正常。');
+      }
       const db = openStableSqliteDb(previewDbPath, "preview:manual-refresh");
       try {
         initializePreviewDb(db);
@@ -261,6 +283,7 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
           : "预览缓存缺失，已创建新的 preview.sqlite。",
       );
     } catch (error) {
+      if ((await sharedIoResourceKeys([previewDbPath])).length) throw error;
       const message = error instanceof Error ? error.message : String(error);
       await quarantineSqliteFiles(
         previewDbPath,

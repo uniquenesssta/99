@@ -1,3 +1,4 @@
+import { createManagedActivationIdentityRuntime } from './managedActivationIdentityRuntime';
 import { createFontActivationTraceRuntime } from "./fontActivationTraceRuntime";
 import type { FontItem } from '../../../shared/types';
 import { createFontActivationInstallStatusRuntime } from './fontActivationInstallStatusRuntime';
@@ -35,6 +36,25 @@ export function createFontActivationCleanupRuntime(
   } = deps;
   const { activationTraceStep } = createFontActivationTraceRuntime(deps);
   const { temporaryActiveRecordStillVisible } = verifyRuntime;
+  const identityRuntime = createManagedActivationIdentityRuntime(deps);
+  async function persistRecordStages(records: TemporaryActiveFontRecord[], stage: TemporaryActiveFontRecord['stage'], lastError = ''): Promise<void> {
+    if (!records.length) return;
+    const state = await loadTemporaryActiveFonts();
+    const targets = new Map(records.map(record => [record.installPath, record]));
+    const matched = new Set<string>();
+    const next = state.records.map(current => {
+      const target = targets.get(current.installPath);
+      if (!target || target.sessionId !== current.sessionId) return current;
+      matched.add(current.installPath);
+      return { ...current, stage, lastError };
+    });
+    if (matched.size !== targets.size) throw new Error('激活记录已变化，清理阶段未提交。');
+    await saveTemporaryActiveFonts({ version: 1, records: next });
+    for (const record of records) { record.stage = stage; record.lastError = lastError; }
+  }
+  async function persistRecordStage(record: TemporaryActiveFontRecord, stage: TemporaryActiveFontRecord['stage'], lastError = ''): Promise<void> {
+    await persistRecordStages([record], stage, lastError);
+  }
 
   const temporaryFontDeleteQueue = createTemporaryFontDeleteQueue({
     appName: APP_NAME,
@@ -62,9 +82,16 @@ export function createFontActivationCleanupRuntime(
     } = {},
   ): Promise<boolean> {
     let fileRemoved = true;
-
-    await activationTraceStep("deactivate:resource-remove", record.fontId, () => removeFontResourceSession(record.installPath));
-    await activationTraceStep("deactivate:registry-settlement", record.fontId, () => deleteRegistryValueHKCU(record.registryName));
+    await identityRuntime.verify(record);
+    if (record.stage !== 'registry-removal-pending' && record.stage !== 'file-pending') {
+      await persistRecordStage(record, 'resource-removal-pending');
+      await activationTraceStep("deactivate:resource-remove", record.fontId, () => removeFontResourceSession(record.installPath));
+      await persistRecordStage(record, 'registry-removal-pending');
+    }
+    if (record.stage !== 'file-pending') {
+      await activationTraceStep("deactivate:registry-settlement", record.fontId, () => deleteRegistryValueHKCU(record.registryName));
+      await persistRecordStage(record, 'file-pending');
+    }
 
     if (options.deleteFileMode === "background") {
       const queueResult = await activationTraceStep("deactivate:file-queue", record.fontId, () => queueTemporaryFontFileDeletes([record], "deactivate"));
@@ -86,11 +113,12 @@ export function createFontActivationCleanupRuntime(
 
         const rustDelete = await runRustFontActivationFiles?.({
           deletes: [record.installPath],
+          identities: record.identity ? { [record.installPath]: record.identity } : {},
           allowedDeleteDir: currentUserFontsDir(),
           allowedNamePrefix: `${APP_NAME}_ACTIVE_`,
         }).catch((error) => {
           appendStartupLog(`rust temporary font inline delete route failed: ${error instanceof Error ? error.message : String(error)}`);
-          return null;
+          throw error;
         });
         if (rustDelete) {
           const row = rustDelete.deleteResults[0];
@@ -156,7 +184,12 @@ export function createFontActivationCleanupRuntime(
     let cleaned = 0;
 
     for (const record of state.records) {
-      const ok = await removeTemporaryActiveRecord(record);
+      let ok = false;
+      try { ok = await removeTemporaryActiveRecord(record, { deleteFileMode: 'background' }); }
+      catch (error) {
+        record.lastError = error instanceof Error ? error.message : String(error);
+        appendStartupLog(`temporary font cleanup retained: ${record.installPath}, ${record.lastError}`);
+      }
       if (ok) {
         cleaned += 1;
       } else {
@@ -188,7 +221,7 @@ export function createFontActivationCleanupRuntime(
 
   async function cleanupTemporaryActiveFontsUntilEmpty(
     reason: "startup" | "quit" | "manual" = "manual",
-    maxAttempts = 18,
+    maxAttempts = 1,
   ): Promise<{ cleaned: number; remaining: number }> {
     let totalCleaned = 0;
     let remaining = 0;
@@ -212,9 +245,14 @@ export function createFontActivationCleanupRuntime(
   }
 
   return {
+    loadPendingTemporaryFontDeletes: temporaryFontDeleteQueue.loadPendingTemporaryFontDeletes,
+    updatePendingTemporaryFontDeletes: temporaryFontDeleteQueue.updatePendingTemporaryFontDeletes,
     isSafeTemporaryActiveFontPath,
     queueTemporaryFontFileDeletes,
     flushPendingTemporaryFontDeletes,
+    persistRecordStage,
+    persistRecordStages,
+    verifyManagedRecord: identityRuntime.verify,
     removeTemporaryActiveRecord,
     cleanupTemporaryActiveFonts,
     cleanupTemporaryActiveFontsUntilEmpty,

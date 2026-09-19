@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { promises as fsp } from "node:fs";
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { dirname, resolve } from "node:path";
 import type { FontIndexChangePayload } from "../../shared/types";
 import { normalizePathForCacheCompare } from "../path/cachePath";

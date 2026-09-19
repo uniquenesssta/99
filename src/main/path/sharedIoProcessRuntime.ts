@@ -11,9 +11,11 @@ export type SharedIoProcessRequest = {
   signal?: AbortSignal
   env?: NodeJS.ProcessEnv
   onClose?: () => void
+  admit?: () => boolean
 }
 export class SharedIoProcessError extends Error {
   readonly sharedIo = true
+  closed?: Promise<void>
   constructor(message: string, readonly outcome: 'not-started' | 'unknown', readonly reason: string) {
     super(message)
     this.name = 'SharedIoProcessError'
@@ -36,6 +38,8 @@ type Job = {
   enqueuedAt: number
   startedAt?: number
   released?: boolean
+  whenClosed: Promise<void>
+  close: () => void
 }
 
 // A slot and its root locks belong to the process until close, not to its caller's Promise.
@@ -48,6 +52,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   const release = (job: Job) => {
     if (job.released) return
     job.released = true
+    job.close()
     try { job.request.onClose?.() } catch (error) { log(`shared io cleanup failed: ${String(error)}`) }
   }
   const detach = (job: Job) => {
@@ -58,7 +63,10 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     if (job.settled) return
     job.settled = true
     detach(job)
-    if (error) job.reject(error)
+    if (error) {
+      if (error instanceof SharedIoProcessError) error.closed = job.whenClosed
+      job.reject(error)
+    }
     else job.resolve(result!)
   }
   function cancel(job: Job, reason: string): void {
@@ -95,10 +103,12 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   function start(job: Job): void {
     const request = job.request
     if (request.signal?.aborted) { cancel(job, 'cancelled'); return }
+    if (request.admit && !request.admit()) { cancel(job, 'stale-generation'); return }
     let stdout = '', stderr = '', bytes = 0
     try {
-      const child = spawn(request.file, request.args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: false, env: request.env })
-      job.child = child
+      const child = spawn(request.file, request.args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe'], windowsHide: true, shell: false, env: { ...process.env, ...request.env, HFM_PARENT_PID: String(process.pid) } })
+      child.stdio[3]?.on('error', () => undefined)
+      job.child = child as ChildProcessWithoutNullStreams
       job.startedAt = Date.now()
       active.add(job)
       child.stdin.on('error', () => cancel(job, 'stdin-error'))
@@ -144,7 +154,9 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     if (!request.roots.length) return reject('Shared I/O requires a resource identity', 'invalid-root')
     if (queue.length >= 128) return reject('Shared I/O queue full', 'queue-full')
     return new Promise((resolve, reject) => {
-      const job: Job = { id: ++nextId, request, resolve, reject, settled: false, enqueuedAt: Date.now() }
+      let close!: () => void
+      const whenClosed = new Promise<void>(resolve => { close = resolve })
+      const job: Job = { whenClosed, close, id: ++nextId, request, resolve, reject, settled: false, enqueuedAt: Date.now() }
       job.abort = () => cancel(job, 'cancelled')
       request.signal?.addEventListener('abort', job.abort, { once: true })
       job.timer = setTimeout(() => cancel(job, 'queue-timeout'), request.queueTimeoutMs ?? 3000)
@@ -162,4 +174,11 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     whenIdle: () => active.size || queue.length ? new Promise<void>(resolve => idleWaiters.push(resolve)) : Promise.resolve(),
     status: () => ({ closed, active: active.size, queued: queue.length, pids: [...active].map(job => job.child?.pid).filter(Boolean) }),
   }
+}
+
+let applicationPool: ReturnType<typeof createSharedIoProcessRuntime> | undefined
+let applicationLog: (message: string) => void = () => undefined
+export function applicationSharedIoProcessRuntime(appendLog?: (message: string) => void) {
+  if (appendLog) applicationLog = appendLog
+  return applicationPool ||= createSharedIoProcessRuntime(message => applicationLog(message))
 }

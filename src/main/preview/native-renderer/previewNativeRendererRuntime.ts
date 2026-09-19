@@ -1,4 +1,6 @@
-import fs from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { validatePreviewInput } from '../runtime/previewInputPolicy'
 import type { PreviewNativeRenderRequest,PreviewNativeRenderResult,PreviewNativeRendererOptions } from './previewNativeRenderTypes'
 import { findDirectWritePreviewHelperPath } from './directwrite/directWritePreviewHelperPathRuntime'
@@ -37,19 +39,21 @@ export function createPreviewNativeRenderer(options: PreviewNativeRendererOption
     // Validate before helper discovery, Rust invocation, or fallback selection.
     request = { ...request, ...validatePreviewInput(request, options.appendStartupLog) }
     // All file-based backends consume the exact same validated payload as Rust.
-    await fs.promises.writeFile(inputPath, JSON.stringify(request, null, 2), 'utf-8')
+    await fsp.writeFile(inputPath, JSON.stringify(request, null, 2), 'utf-8')
     logHelperAvailabilityOnce()
 
     if (options.runRustPreviewRenderImage) {
       try {
         const result = await options.runRustPreviewRenderImage(request)
-        if (result?.ok && result.outputPath && fs.existsSync(result.outputPath)) return result
+        if (result?.ok && result.outputPath && await fsp.access(result.outputPath).then(()=>true,()=>false)) return result
       } catch (error) {
+        rethrowSharedIoProcessError(error)
         const message = error instanceof Error ? error.message : String(error)
         options.appendStartupLog(`preview rust renderer failed before fallback: ${message}`)
       }
     }
 
+    if ((await sharedIoResourceKeys([request.fontPath || '', request.outputPath || ''])).length) throw new SharedIoProcessError('共享预览需要隔离的原生执行器。','not-started','shared-fallback-denied')
     const systemOnlyRequest = !!request.preferSystemFont && !request.fontPath
     const fallbackSource: NodeBridgeFallbackSource = systemOnlyRequest ? 'preview-render-powershell' : 'preview-render-directwrite'
     if (!nodeBridgeFallbackCompatibilityAllowed()) {
@@ -70,9 +74,10 @@ export function createPreviewNativeRenderer(options: PreviewNativeRendererOption
     if (helperPath) {
       try {
         const result = await renderWithDirectWritePreviewHelper(request, inputPath, options.execFileAsync)
-        if (result.ok && result.outputPath && fs.existsSync(result.outputPath)) return result
+        if (result.ok && result.outputPath && await fsp.access(result.outputPath).then(()=>true,()=>false)) return result
         options.appendStartupLog(`preview directwrite renderer returned empty result: ${result.message || 'unknown'}`)
       } catch (error) {
+        rethrowSharedIoProcessError(error)
         const message = error instanceof Error ? error.message : String(error)
         options.appendStartupLog(`preview directwrite renderer failed; fallback to powershell-gdi: ${message}`)
       }

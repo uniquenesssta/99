@@ -1,3 +1,6 @@
+import { getStartupPathRootState, markStartupPathRootUnavailable } from '../path/startupPathAvailabilityRuntime'
+import { sharedIoAvailabilityRoot } from './rustSharedIoCommandRuntime'
+import { configureSharedFileExecutor } from '../path/sharedFileSystemRuntime'
 import { traceRustInput, logOperation } from '../logging/operationTraceContext'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -12,8 +15,8 @@ import { EXPECTED_RUST_CORE_PROTOCOL_VERSION, rustCoreWorkerIsCompatible } from 
 import { resolveRustCoreWorkerPathWithDiagnostics } from './rustCoreWorkerPathRuntime'
 import { createRustCoreSchedulerRuntime } from './rustCoreSchedulerRuntime'
 import { createRustCoreDaemonRuntime, isRustCoreDaemonSubmittedError } from './rustCoreDaemonRuntime'
-import { createSharedIoProcessRuntime, SharedIoProcessError } from '../path/sharedIoProcessRuntime'
-import { sharedIoResourceKeys, type RustSharedIoTarget } from './rustSharedIoCommandRuntime'
+import { applicationSharedIoProcessRuntime, SharedIoProcessError } from '../path/sharedIoProcessRuntime'
+import { sharedIoResourceKeys, sharedIoPathsInInput, type RustSharedIoTarget } from './rustSharedIoCommandRuntime'
 import { stopSharedPathProbes } from '../path/sharedPathProbeRuntime'
 
 const execFileAsync = promisify(execFile)
@@ -87,13 +90,17 @@ function allocateTemporaryJsonFile(prefix: string): RustCoreJsonFile {
 
 export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRuntimeOptions) {
   let cachedStatus: RustCoreWorkerStatus | null = null
-  const sharedIo = createSharedIoProcessRuntime(options.appendStartupLog)
-  const temporaryFiles = new Map<string, { holds: number; disposed: boolean; file: RustCoreJsonFile }>()
+  const sharedIo = applicationSharedIoProcessRuntime(options.appendStartupLog)
+  const temporaryFiles = new Map<string, { holds: number; disposed: boolean; file: RustCoreJsonFile; input?: unknown }>()
   function createTemporaryJsonFile(prefix: string): RustCoreJsonFile {
     const file = allocateTemporaryJsonFile(prefix)
-    const entry = { holds: 0, disposed: false, file }
+    const entry: { holds: number; disposed: boolean; file: RustCoreJsonFile; input?: unknown } = { holds: 0, disposed: false, file }
     temporaryFiles.set(file.path, entry)
-    return { ...file, dispose: async () => {
+    return { ...file, writeJson: async value => {
+      const snapshot = JSON.parse(JSON.stringify(value))
+      await file.writeJson(snapshot)
+      entry.input = snapshot
+    }, dispose: async () => {
       entry.disposed = true
       if (entry.holds) return
       temporaryFiles.delete(file.path)
@@ -149,11 +156,21 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
 
   async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
     // Copy caller-owned identities before awaiting mapping discovery.
-    const target = execOptions.sharedIo ? { paths: [...execOptions.sharedIo.paths], write: execOptions.sharedIo.write } : undefined
+    const inferredPaths = sharedIoPathsInInput([args, ...args.map(path => temporaryFiles.get(path)?.input)])
+    const target = execOptions.sharedIo
+      ? { paths: [...execOptions.sharedIo.paths], write: execOptions.sharedIo.write }
+      : inferredPaths.length ? { paths: inferredPaths, write: true } : undefined
     execOptions = { ...execOptions, sharedIo: target }
     args = [...args]
     const roots = target ? await sharedIoResourceKeys(target.paths) : []
+    // Preflight writes must never enter a replaceable/cached daemon read lane.
+    if (!roots.length && target?.write && args[0] === '--shared-metadata-overlay-read') roots.push(`local-metadata:${target.paths.join('|').toLowerCase()}`)
     if (roots.length) {
+      const rootGenerations = new Map(target!.paths.map(sharedIoAvailabilityRoot).filter((root): root is string => !!root).map(root => [root,getStartupPathRootState(root).generation]));
+      const admit = () => [...rootGenerations].every(([root,generation]) => {
+        const current = getStartupPathRootState(root);
+        return current.generation === generation && current.state !== 'offline';
+      });
       const leased = [...new Set(args)].map(path => temporaryFiles.get(path)).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
       for (const entry of leased) entry.holds += 1
       const onClose = () => {
@@ -168,17 +185,19 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
       const result = await sharedIo.run({ file: workerPath, args, roots, write: target!.write,
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
-        queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose }).catch(error => {
+        queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(error => {
+          if (error.reason === 'timeout') for (const root of rootGenerations.keys()) markStartupPathRootUnavailable(root,error,options.appendStartupLog,'isolated-io-timeout')
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
           throw error
         })
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
         try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Preserve the worker result. */ }
       }
+      if (!target!.write && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
       // A malformed success envelope can follow a commit. It must never trigger a fallback write.
       try {
         const payload = parseJsonLine<{ ok?: boolean }>(result.stdout)
-        if (payload.ok !== true) throw new Error('worker returned ok=false')
+        if (payload.ok !== true && !(args[0] === '--shared-file-io' && payload.ok === false)) throw new Error('worker returned ok=false')
       } catch (error) {
         throw new SharedIoProcessError(`Shared I/O invalid receipt: ${String(error)}`, 'unknown', 'invalid-receipt')
       }
@@ -333,6 +352,35 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     if (options.required) throw new Error(cachedStatus.message)
     return cachedStatus
   }
+  configureSharedFileExecutor(async (request, bytes) => {
+    const status = await diagnoseRustCoreWorker()
+    if (!status.available || !status.path || !hasCapability(status, 'shared-file-io-v1')) throw new SharedIoProcessError('原生 worker 不支持共享文件隔离。', 'not-started', 'capability-unavailable')
+    const inputFile = createTemporaryJsonFile('hfm-shared-file-input')
+    const transferFile = createTemporaryJsonFile('hfm-shared-file-transfer')
+    let retainSnapshot = false
+    const write = !['stat','lstat','access','realpath','readdir','readFile','sqliteSnapshot','treeSnapshot'].includes(request.operation)
+    try {
+      if (bytes) await fsp.writeFile(transferFile.path, bytes)
+      else if (request.operation === 'readFile') await transferFile.writeJson(null)
+      const input = { ...request, transferPath: transferFile.path }
+      await inputFile.writeJson(input)
+      const output = await runRustCoreScheduledCommand(status.path, ['--shared-file-io','--input',inputFile.path,'--transfer',transferFile.path], {
+        timeout: ['stat','lstat','access','realpath','openFile'].includes(request.operation) ? 500 : write ? 5000 : 2000,
+        windowsHide: true, maxBuffer: 32*1024*1024, sharedIo: { paths: [request.path, request.dest || ''], write },
+      })
+      const result = parseJsonLine<import('../path/sharedFileSystemRuntime').SharedFileResult>(output.stdout)
+      if (typeof result.ok !== 'boolean' || result.operation !== request.operation) throw new SharedIoProcessError('共享文件隔离回执无效。','unknown','invalid-receipt')
+      if (!result.ok && write) throw Object.assign(new SharedIoProcessError(result.message || '共享文件写入结果未确认。', result.code === 'EEXIST' ? 'not-started' : 'unknown', 'file-write-failed'), {code:result.code})
+      if (result.ok && request.operation === 'sqliteSnapshot') {
+        retainSnapshot = true
+        return { result, snapshotPath: transferFile.path, dispose: transferFile.dispose }
+      }
+      return { result, bytes: result.ok && request.operation === 'readFile' ? await fsp.readFile(transferFile.path) : undefined }
+    } finally {
+      await inputFile.dispose()
+      if (!retainSnapshot) await transferFile.dispose()
+    }
+  })
   return {
     diagnoseRustCoreWorker,
     rustCoreWorkerStatus: () => cachedStatus,

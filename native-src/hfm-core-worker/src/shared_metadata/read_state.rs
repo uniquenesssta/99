@@ -57,7 +57,12 @@ fn read_known_tags(payload: &SharedMetadataKnownTagsPayload, started_at: Instant
     for root in &payload.roots {
         let db_path = root.db_path.trim();
         let root_path = root.root_path.trim();
-        if db_path.is_empty() || !Path::new(db_path).exists() {
+        let missing = if db_path.is_empty() { true } else { match fs::metadata(db_path) {
+            Ok(_) => false,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => { fs::metadata(root_path).map_err(|error|error.to_string())?; true },
+            Err(error) => return Err(error.to_string()),
+        }};
+        if missing {
             roots.push(SharedMetadataKnownTagsRootResult {
                 root_path: root_path.to_string(),
                 db_path: db_path.to_string(),
@@ -68,22 +73,10 @@ fn read_known_tags(payload: &SharedMetadataKnownTagsPayload, started_at: Instant
             continue;
         }
 
-        let conn = match Connection::open(db_path) {
-            Ok(conn) => conn,
-            Err(_) => {
-                roots.push(SharedMetadataKnownTagsRootResult {
-                    root_path: root_path.to_string(),
-                    db_path: db_path.to_string(),
-                    signature: "metadata:error".to_string(),
-                    known_tags: Vec::new(),
-                    rows: 0,
-                });
-                continue;
-            }
-        };
+        let conn = Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|error| error.to_string())?;
 
         let (root_tags, rows) = read_root_known_tags(&conn).map_err(|error| error.to_string())?;
-        let signature = shared_metadata_signature_for_conn(&conn).unwrap_or_else(|_| "metadata:none".to_string());
+        let signature = shared_metadata_signature_for_conn(&conn).map_err(|error|error.to_string())?;
         total_rows += rows;
         for tag in &root_tags {
             known_tags.insert(tag.clone());
@@ -109,8 +102,11 @@ fn read_known_tags(payload: &SharedMetadataKnownTagsPayload, started_at: Instant
 fn read_overlay_matches(payload: &SharedMetadataOverlayReadPayload, started_at: Instant) -> Result<SharedMetadataOverlayReadResult, String> {
     let db_path = payload.db_path.trim();
     let root_path = payload.root_path.trim();
-    if db_path.is_empty() || !Path::new(db_path).exists() {
+    if db_path.is_empty() { return Err("empty shared metadata path".into()); }
+    let missing = match fs::metadata(db_path) { Ok(_) => false, Err(error) if error.kind() == std::io::ErrorKind::NotFound => true, Err(error) => return Err(error.to_string()) };
+    if missing && (payload.preflight.is_none() || payload.preflight.as_ref().is_some_and(|value| value["phase"] == "maintenance-snapshot")) {
         return Ok(SharedMetadataOverlayReadResult {
+            preflight: payload.preflight.as_ref().map(|_| serde_json::json!({"version":1,"phase":"maintenance-snapshot","maintenance":{"exists":false,"token":"missing","tables":{}}})),
             ok: true,
             root_path: root_path.to_string(),
             db_path: db_path.to_string(),
@@ -123,9 +119,13 @@ fn read_overlay_matches(payload: &SharedMetadataOverlayReadPayload, started_at: 
         });
     }
 
-    let conn = Connection::open(db_path).map_err(|error| error.to_string())?;
+    if payload.preflight.is_some() {
+        if let Some(parent) = Path::new(db_path).parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
+    }
+    let mut conn = Connection::open(db_path).map_err(|error| error.to_string())?;
+    let preflight = payload.preflight.as_ref().map(|value| super::preflight::run(&mut conn, value)).transpose()?;
     let overlay = read_overlay_maps(&conn).map_err(|error| error.to_string())?;
-    let signature = shared_metadata_signature_for_conn(&conn).unwrap_or_else(|_| "metadata:none".to_string());
+    let signature = shared_metadata_signature_for_conn(&conn).map_err(|error|error.to_string())?;
     let mut matched = Vec::<SharedMetadataOverlayMatchedEntry>::new();
 
     for entry in &payload.entries {
@@ -155,6 +155,7 @@ fn read_overlay_matches(payload: &SharedMetadataOverlayReadPayload, started_at: 
     }
 
     Ok(SharedMetadataOverlayReadResult {
+        preflight,
         ok: true,
         root_path: root_path.to_string(),
         db_path: db_path.to_string(),

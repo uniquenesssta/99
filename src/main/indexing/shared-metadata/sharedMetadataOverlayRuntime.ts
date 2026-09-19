@@ -1,3 +1,4 @@
+import { prepareSharedMetadataInWorker } from './sharedMetadataPreflightRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import type { FontItem } from '../../../shared/types'
 import type { RustSharedMetadataOverlayReadInput, RustSharedMetadataOverlayReadResult } from '../../rust-core/rustCoreWorkerContracts'
@@ -149,16 +150,10 @@ export function createSharedMetadataOverlayRuntime(deps: SharedMetadataOverlayRu
 
   async function applySharedMetadataOverlay(rootPath: string, cache: FontScanCacheFile): Promise<FontScanCacheFile> {
     const dbPath = sharedMetadataDbPathForRoot(rootPath)
-    if (!(await deps.exists(dbPath).catch(() => false))) return cache
+    if (!deps.runRustSharedMetadataOverlayRead && !(await deps.exists(dbPath).catch(() => false))) return cache
 
     if (deps.runRustSharedMetadataOverlayRead) {
-      const legacyDb = await deps.openSharedMetadataDb(rootPath, false)
-      try {
-        deps.migrateLegacyMetadataFromCacheInOpenDb(legacyDb, rootPath, cache)
-        deps.ensureSharedTagOpsReplayedInOpenDb?.(legacyDb, rootPath, 'overlay-rust-preflight')
-      } finally {
-        deps.closeSqliteDb(legacyDb)
-      }
+      await prepareSharedMetadataInWorker(deps.runRustSharedMetadataOverlayRead, rootPath, deps.cacheEntryRuntimePath, cache)
       const rustApplied = await applySharedMetadataOverlayWithRust(rootPath, dbPath, cache)
       if (rustApplied) return rustApplied
     }
@@ -259,15 +254,11 @@ export function createSharedMetadataOverlayRuntime(deps: SharedMetadataOverlayRu
 
   async function applySharedMetadataToMergedRows(rootPath: string, rows: MergedIndexPageRow[]): Promise<MergedIndexPageRow[]> {
     const dbPath = sharedMetadataDbPathForRoot(rootPath)
-    if (!rows.length || !(await deps.exists(dbPath).catch(() => false))) return rows
+    if (!rows.length) return rows
+    if (!deps.runRustSharedMetadataOverlayRead && !(await deps.exists(dbPath).catch(() => false))) return rows
 
     if (deps.runRustSharedMetadataOverlayRead) {
-      const preflightDb = await deps.openSharedMetadataDb(rootPath, false)
-      try {
-        deps.ensureSharedTagOpsReplayedInOpenDb?.(preflightDb, rootPath, 'row-overlay-rust-preflight')
-      } finally {
-        deps.closeSqliteDb(preflightDb)
-      }
+      await prepareSharedMetadataInWorker(deps.runRustSharedMetadataOverlayRead, rootPath, deps.cacheEntryRuntimePath)
     }
 
     const rustRows = await applySharedMetadataToMergedRowsWithRust(rootPath, dbPath, rows)

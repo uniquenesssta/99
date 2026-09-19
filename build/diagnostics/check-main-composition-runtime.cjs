@@ -57,6 +57,7 @@ async function checkPreviewHandleOwnership() {
       schemas += 1
       if (schemaFails) throw new Error('fixture schema failure')
     } }
+    if (spec.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: fs.promises }
     if (spec.startsWith('node:')) return require(spec)
     throw new Error(`unexpected import ${spec}`)
   } }, { filename: file })

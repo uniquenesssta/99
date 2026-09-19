@@ -96,7 +96,8 @@ async function restartPolicy(){
  let saved={version:1,records:[{fontId:'a',installPath:'/managed/a.ttf',registryName:'a'}]},disk=null,removed=0,installedRows={},temporary=new Map()
  const load=loader({
   'node:fs':{promises:{mkdir:async()=>{},readFile:async()=>{if(disk===null)throw Object.assign(Error('missing'),{code:'ENOENT'});return disk},open:async p=>({writeFile:async s=>temporary.set(p,s),sync:async()=>{},close:async()=>{}}),rename:async p=>{disk=temporary.get(p);temporary.delete(p)},rm:async p=>temporary.delete(p)}},
-  '../temporaryFontDeleteQueue':{createTemporaryFontDeleteQueue:()=>({isSafeTemporaryActiveFontPath:()=>true,queueTemporaryFontFileDeletes:async()=>({}),flushPendingTemporaryFontDeletes:async()=>{}})},
+  './managedActivationIdentityRuntime':{createManagedActivationIdentityRuntime:()=>({verify:async()=>true})},
+  '../temporaryFontDeleteQueue':{createTemporaryFontDeleteQueue:()=>({isSafeTemporaryActiveFontPath:()=>true,queueTemporaryFontFileDeletes:async records=>Object.fromEntries(records.map(r=>[r.installPath,{ok:true}])),flushPendingTemporaryFontDeletes:async()=>{}})},
   '../../rust-core/nodeBridgeFallbackCompatibilityRuntime':{}
  },{process:{platform:'win32',env:{}}})
  const deps={normalizePathForCacheCompare:x=>x||'',getSystemInstalledFontsCached:async()=>[],compareFontInstalledWithList:()=>({installed:false,by:'none',matches:[]}),scheduleActivationInstallStatusSave:rows=>{installedRows=rows},isTemporaryActiveInstalledRecord:()=>false,appName:'test',dataRoot:()=>'/data',dataPath:()=>'/data/session.json',currentUserFontsDir:()=>'/managed',removeFontResourceSession:async()=>{removed++},deleteRegistryValueHKCU:async()=>{},advancedFontRefresh:async()=>{},clearInstalledFontsMemoryCache(){},appendStartupLog(){},loadTemporaryActiveFonts:async()=>saved,saveTemporaryActiveFonts:async s=>saved=s,runRustFontActivationFiles:async()=>({deleteResults:[{ok:true}]})}

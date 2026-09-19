@@ -260,6 +260,28 @@ function sameTags(left: string[], right: string[]): boolean {
   return a.length === b.length && a.every((tag, index) => tag === b[index])
 }
 
+// Pure planning shared by the isolated SQLite owner. Keep the existing locale
+// comparison here so a native migration cannot change the conflict winner.
+export function planSharedTagOpsReplay(rows: SharedMetadataRow[], ops: SharedTagOperationRow[], meta: Record<string, string>, updatedAt: string, reason: string) {
+  const previous = numberValue(meta[LAST_REPLAY_ROWID_META_KEY])
+  const maximum = ops.reduce((value, op) => Math.max(value, numberValue(op.rowid)), 0)
+  const changes: Array<{ fontId: string; relativePath: string; pathKey: string; tagNames: string[]; favorite: number; deleteProtected: number; revision: number; insert: boolean }> = []
+  if (meta[CONFLICT_POLICY_META_KEY] === CONFLICT_POLICY_VERSION && previous >= maximum) return { changes, meta: {}, updatedAt, reason }
+  const { states, conflicts } = buildReplayStates(rows, ops)
+  if (maximum > previous) for (const state of states.values()) {
+    const tagNames = replayTagsForState(state)
+    if (state.revision > 0 ? sameTags(state.baseTags, tagNames) : !(tagNames.length || state.relativePath || state.pathKey)) continue
+    changes.push({ fontId: state.fontId, relativePath: state.relativePath, pathKey: state.pathKey, tagNames,
+      favorite: state.favorite, deleteProtected: state.deleteProtected, insert: state.revision <= 0,
+      revision: state.revision > 0 ? state.revision + 1 : Math.max(1, ...Array.from(state.latestByTag.values()).map(op => numberValue(op.next_revision))) })
+  }
+  return { changes, updatedAt, reason, meta: {
+    [LAST_REPLAY_ROWID_META_KEY]: String(Math.max(previous, maximum)), [LAST_REPLAY_AT_META_KEY]: updatedAt,
+    sharedTagOpsConflictCount: String(conflicts.length), sharedTagOpsConflictSamples: JSON.stringify(conflicts.slice(0, CONFLICT_SAMPLE_LIMIT)),
+    [CONFLICT_POLICY_META_KEY]: CONFLICT_POLICY_VERSION,
+  } }
+}
+
 export function createSharedTagOpsReplayRuntime(deps: SharedTagOpsReplayRuntimeDeps) {
   function ensureSharedTagOpsReplayedInOpenDb(db: any, rootPath: string, reason = 'read'): SharedTagOpsReplayReport {
     const updatedAt = new Date().toISOString()

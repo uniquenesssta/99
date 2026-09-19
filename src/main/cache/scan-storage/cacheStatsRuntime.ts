@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs";
-import { promises as fsp } from "node:fs";
+import { sharedSqliteReadSnapshot, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname, join, resolve } from "node:path";
 import type { CacheStats } from "../../../shared/types";
 import type { FontScanCacheFile } from "../../indexing/rootIndexRuntime";
@@ -223,7 +223,10 @@ export function createCacheStatsRuntime(
     if (!(await options.exists(dbPath)))
       return { entries: 0, goodEntries: 0, badEntries: 0, sizeBytes };
 
-    const db = options.openStableSqliteDb(dbPath, "preview-stats");
+    const snapshot = await sharedSqliteReadSnapshot(dbPath);
+    let db: any;
+    try { db = options.openStableSqliteDb(snapshot?.path || dbPath, "preview-stats"); }
+    catch (error) { await snapshot?.dispose(); throw error; }
     try {
       options.initializePreviewDb(db);
       const row = db
@@ -248,7 +251,7 @@ export function createCacheStatsRuntime(
     } catch {
       return { entries: 0, goodEntries: 0, badEntries: 0, sizeBytes };
     } finally {
-      options.closeSqliteDb(db);
+      try { options.closeSqliteDb(db); } finally { await snapshot?.dispose(); }
     }
   }
 

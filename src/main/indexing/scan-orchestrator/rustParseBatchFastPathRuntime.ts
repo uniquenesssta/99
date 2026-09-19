@@ -1,3 +1,4 @@
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import type { FontParseJob,FontParseWorkerResult } from '../fontScanWorkers'
 import { isOperationCancelledError,throwIfAborted } from '../../performance/ioQueue'
 import { buildFontParseResultFromRustMetadata } from './rustMetadataFastPathRuntime'
@@ -80,6 +81,7 @@ export async function consumeRustFontParseBatchFastPath(args: {
     appendStartupLog(`${logPrefix} used: rustBatch=${consumed}, fallbackWorker=${remainingJobs.length}, rustErrors=${rustResult.errors?.length || 0}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${rustResult.elapsedMs || 0}ms`)
     return { remainingJobs, consumed, errors: rustResult.errors?.length || 0 }
   } catch (error) {
+      rethrowSharedIoProcessError(error)
     if (isOperationCancelledError(error)) throw error
     appendStartupLog(`${logPrefix} failed: ${error instanceof Error ? error.message : String(error)}; ${nodeFontkitScanFallbackFailureLogSuffix()}`)
     return { remainingJobs: jobs, consumed: 0, errors: 0 }

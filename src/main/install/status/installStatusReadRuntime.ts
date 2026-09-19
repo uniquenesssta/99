@@ -1,5 +1,4 @@
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
-import { resolve } from 'node:path';
 import type { FontItem,InstallCompareResult,SystemInstalledFont } from '../../../shared/types';
 import type {
 InstallStatusDbRuntime,
@@ -23,31 +22,11 @@ export function createInstallStatusReadRuntime(
     const results: Record<string, InstallCompareResult> = {}
     const misses: FontItem[] = []
     const uniqueItems = Array.from(new Map((items || []).filter(Boolean).map((item) => [item.id, item])).values())
-    const folders = await deps.appWatchedFolders().catch(() => [])
-    const grouped = new Map<string, FontItem[]>()
-    const fallbackItems: FontItem[] = []
-
-    for (const item of uniqueItems) {
-      const root = await helpers.rootForFontPath(item.path, folders)
-      if (!root) {
-        fallbackItems.push(item)
-        continue
-      }
-      if (!grouped.has(root)) grouped.set(root, [])
-      grouped.get(root)!.push(item)
-    }
+    const fallbackItems = uniqueItems
 
     if (deps.readInstallStatusIndexInWorker) {
       try {
         const workerGroups: InstallStatusReadWorkerGroup[] = []
-        for (const [root, groupItems] of grouped.entries()) {
-          workerGroups.push({
-            rootLabel: root,
-            rootPath: resolve(root),
-            dbPath: await helpers.installStatusDbPathForRoot(root),
-            items: groupItems.map(helpers.installStatusWorkerItem)
-          })
-        }
         if (fallbackItems.length) {
           workerGroups.push({
             rootLabel: 'local-fallback',
@@ -114,7 +93,6 @@ export function createInstallStatusReadRuntime(
       }
     }
 
-    for (const [root, groupItems] of grouped.entries()) await readGroup(root, groupItems, () => helpers.openMachineInstallDbForRoot(root))
     await readGroup('local-fallback', fallbackItems, () => helpers.openFallbackInstallDb())
 
     if (options.enqueueMissTasks && misses.length) {

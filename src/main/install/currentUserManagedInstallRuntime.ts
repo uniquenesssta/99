@@ -1,4 +1,4 @@
-import { promises as fsp } from "node:fs";
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime';
 import { join } from "node:path";
 import type { FontItem,InstallResult } from "../../shared/types";
 import type {

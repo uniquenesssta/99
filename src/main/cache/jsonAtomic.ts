@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { dirname } from 'node:path'
 
 async function writeTempFile(tempPath: string, json: string): Promise<void> {

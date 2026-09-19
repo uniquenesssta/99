@@ -1,4 +1,7 @@
-import fs,{ promises as fsp } from 'node:fs'
+import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
+import { SharedIoProcessError } from '../path/sharedIoProcessRuntime'
+import fs from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { dirname,extname,join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import type { FontItem } from '../../shared/types'
@@ -189,6 +192,7 @@ export function createFontScanWorkers(deps: FontScanWorkersDeps) {
 
   async function runFontIndexListWorker(folders: string[], progress?: (payload: { files: number; foldersScanned: number; batch?: FontIndexListedFile[] }) => void, signal?: AbortSignal): Promise<FontIndexListWorkerDoneMessage> {
     throwIfAborted(signal)
+    if ((await sharedIoResourceKeys(folders)).length) throw new SharedIoProcessError('共享扫描需要隔离的原生执行器。','not-started','shared-thread-denied')
     const scriptPath = await ensureIndexListWorkerScript()
 
     return await new Promise<FontIndexListWorkerDoneMessage>((resolveWorker, rejectWorker) => {
@@ -262,6 +266,7 @@ export function createFontScanWorkers(deps: FontScanWorkersDeps) {
     const storageProfiles = roots.map(deps.storageProfileForPath)
     const workerCount = deps.scanWorkerCount(jobs.length, roots)
     const batchSize = Math.max(1, Math.min(deps.scanWorkerBatchSize, Math.ceil(jobs.length / workerCount)))
+    if ((await sharedIoResourceKeys(jobs.map(job => job.filePath))).length) throw new SharedIoProcessError('共享字体解析需要隔离的原生执行器。','not-started','shared-thread-denied')
     const scriptPath = await ensureScanWorkerScript()
     const fontkitPath = deps.fontkitPath()
 

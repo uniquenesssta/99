@@ -1,4 +1,6 @@
-import { constants,createReadStream,promises as fsp } from 'node:fs'
+import { constants,createReadStream } from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
+import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
 import { createHash,randomUUID } from 'node:crypto'
 import { basename,join,parse } from 'node:path'
 
@@ -16,8 +18,8 @@ type FontMoveFileSystem = {
 type FontMoveFileStat = {
   size: number
   mtimeMs: number
-  dev: number
-  ino: number
+  dev: number | string
+  ino: number | string
   isFile: () => boolean
 }
 
@@ -57,7 +59,8 @@ function errorCode(error: unknown): string {
 
 async function defaultDigestFile(filePath: string): Promise<string> {
   const hash = createHash('sha256')
-  for await (const chunk of createReadStream(filePath)) hash.update(chunk)
+  if ((await sharedIoResourceKeys([filePath])).length) hash.update(await fsp.readFile(filePath))
+  else for await (const chunk of createReadStream(filePath)) hash.update(chunk)
   return hash.digest('hex')
 }
 
@@ -193,6 +196,11 @@ export function createFontFileMoveCommitRuntime(options: FontMoveCommitOptions =
       state.sourceRetained = false
     } catch (error) {
       let cleanupSuffix = ''
+      if ((error as {sharedIo?:boolean;outcome?:string})?.sharedIo && (error as {outcome?:string}).outcome === 'unknown') {
+        state.recoveryPath = tempPath;
+        if (state.targetCommitted) state.sourceRetained = undefined;
+        mayOwnTemp = false;
+      }
       if (mayOwnTemp) {
         cleanupSuffix = await removePrecommitTemp(tempPath)
         if (cleanupSuffix) state.recoveryPath = tempPath
@@ -235,6 +243,7 @@ export function createFontFileMoveCommitRuntime(options: FontMoveCommitOptions =
       await hooks.verifyDestination(state.destination)
       return state
     } catch (error) {
+      if ((error as {sharedIo?:boolean;outcome?:string})?.sharedIo && (error as {outcome?:string}).outcome === 'unknown' && state.targetCommitted) state.sourceRetained = undefined;
       const failure = error instanceof FontMoveExecutionError ? error : new FontMoveExecutionError(error, state)
       if (failure.state.targetCommitted && failure.state.sourceRetained) {
         try {

@@ -55,7 +55,9 @@ async function main(){
   await comp.remove(record(dir,'a'));assert.equal((await comp.load())[0].record.fontId,'b')
   cases.push('real session and compensation owners retain version 1 and concurrent records')
   let resolveWorker,entered;const gate=new Promise(r=>resolveWorker=r),start=new Promise(r=>entered=r)
-  const queue=load('src/main/activation/temporaryFontDeleteQueue.ts').createTemporaryFontDeleteQueue({...dirs,appName:'HFM',currentUserFontsDir:()=>dir,flushDelayMs:60000,appendStartupLog(){},delayToEventLoop:async()=>{},withGlobalIo:(_,fn)=>fn(),runRustFontActivationFiles:async input=>{entered();await gate;return {deleted:0,failed:input.deletes.length,deleteResults:input.deletes.map(p=>({path:p,ok:false,message:'file occupied'}))}}})
+  const identity={device:'1',inode:'1',sha1:'a'.repeat(40),size:1};
+  const identityLoad=loader({'./runtime/managedActivationIdentityRuntime':{...load(base+'managedActivationIdentityRuntime.ts'),createManagedActivationIdentityRuntime:()=>({verify:async()=>true})}}, {},transforms);
+  const queue=identityLoad('src/main/activation/temporaryFontDeleteQueue.ts').createTemporaryFontDeleteQueue({...dirs,appName:'HFM',currentUserFontsDir:()=>dir,flushDelayMs:60000,appendStartupLog(){},delayToEventLoop:async()=>{},withGlobalIo:(_,fn)=>fn(),runRustFontActivationFiles:async input=>{entered();await gate;return {deleted:0,failed:input.deletes.length,deleteResults:input.deletes.map(p=>({path:p,ok:false,message:'file occupied'}))}}})
   await queue.flushPendingTemporaryFontDeletes('empty');assert(!fs.existsSync(dirs.dataPath('pending-temporary-font-deletes.json')),'empty cleanup must not create a queue file')
   assert.equal(queue.isSafeTemporaryActiveFontPath(path.join(dir+'-neighbor','HFM_ACTIVE_bad.ttf')),false)
   await queue.queueTemporaryFontFileDeletes([record(dir,'a')],'initial')

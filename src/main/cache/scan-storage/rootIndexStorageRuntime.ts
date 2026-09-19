@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { resolve } from 'node:path'
 import type { FontScanCacheFile } from '../../indexing/rootIndexRuntime'
 import type { RootIndexStorage,ScanCacheStorageRuntimeOptions } from './scanCacheStorageTypes'

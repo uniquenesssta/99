@@ -1,5 +1,5 @@
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 use super::normalize::{looks_like_windows_absolute_path, path_file_name};
@@ -67,9 +67,8 @@ pub fn read_registry_installed_fonts(windows_fonts_dir: &str) -> Vec<SystemInsta
         for line in stdout.lines() {
             let Some((registry_name, value)) = parse_registry_line(line) else { continue };
             let path = possible_installed_font_path(&value, windows_fonts_dir);
-            if !Path::new(&path).exists() {
-                continue;
-            }
+            // Registry facts must not depend on reaching an arbitrary font source.
+            // In particular, local deactivation cannot stat an old NAS registration.
             items.push(SystemInstalledFontRecord {
                 source: source.to_string(),
                 registry_name,

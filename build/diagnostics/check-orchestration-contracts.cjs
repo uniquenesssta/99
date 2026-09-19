@@ -256,6 +256,8 @@ function loadTypeScriptModule(rel, localRequire = require) {
       if (!id.startsWith('.')) return localRequire(id)
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
       if (target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
+      if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {} }
+      if (target === 'src/main/path/startupPathAvailabilityRuntime') return { getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }
       const core = 'src/main/rust-core/'
       if (target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
         return loadTypeScriptModule(target + '.ts', localRequire)
@@ -282,7 +284,7 @@ function createRustBehaviorHarness(mode) {
   execFileStub[promisify.custom] = async (_workerPath, args) => {
     if (args.includes('--handshake')) {
       return {
-        stdout: `${JSON.stringify({ ok: true, version: 'fixture', protocolVersion: 1, capabilities: ['font-activation-files'] })}\n`,
+        stdout: `${JSON.stringify({ ok: true, version: 'fixture', protocolVersion: 1, capabilities: ['font-activation-files', 'font-activation-identity-v1'] })}\n`,
         stderr: '',
       }
     }

@@ -1,4 +1,5 @@
-import fs,{ promises as fsp } from 'node:fs'
+import fs from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { isIsoOlderThan, walkPreviewPngFiles } from './databaseMaintenanceHelpers'
 import type { DatabaseMaintenanceRuntimeOptions, PreviewMaintenanceReport } from './databaseMaintenanceTypes'
 
@@ -54,7 +55,7 @@ export function createPreviewCacheMaintenanceRuntime(deps: PreviewCacheMaintenan
 
       let shouldStale = false
       let reason = ''
-      if (!outputPath || !fs.existsSync(outputPath)) {
+      if (!outputPath || !await fsp.access(outputPath).then(()=>true,()=>false)) {
         shouldStale = true
         reason = '预览文件不存在，已标记为需要重建。'
       } else if (isIsoOlderThan(row.accessed_at || row.generated_at || row.updated_at, deps.previewOkRetentionMs)) {

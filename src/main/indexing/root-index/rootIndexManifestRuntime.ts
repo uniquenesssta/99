@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import os from 'node:os'
 import { join } from 'node:path'
 import {

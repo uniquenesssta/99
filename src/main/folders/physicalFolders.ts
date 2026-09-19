@@ -1,4 +1,5 @@
-import fs,{ promises as fsp } from 'node:fs'
+import fs from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { dirname,join,resolve } from 'node:path'
 import type { FolderNode,PhysicalFolderTreeResult,RenameFolderResult } from '../../shared/types'
 import { isIgnoredInternalDirectoryName } from '../cache/cachePaths'

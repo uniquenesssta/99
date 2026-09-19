@@ -1,3 +1,4 @@
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
 import { rethrowRustCoreDaemonSubmittedJob, markRustCoreDaemonSubmittedError } from '../rustCoreDaemonWriteBoundaryRuntime'
 import type { RustDatabaseHealthCheckInput, RustDatabaseHealthCheckResult, RustDatabaseBackupInput, RustDatabaseBackupResult } from '../rustCoreWorkerContracts'
@@ -75,6 +76,7 @@ export function createRustMaintenanceClientRuntime(options: RustMaintenanceClien
       options.appendStartupLog(`rust database maintenance ${label} finished: elapsed=${Date.now() - startedAt}ms`)
       return payload
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       rethrowRustCoreDaemonSubmittedJob(error, options.appendStartupLog, `rust database maintenance ${label}`)
       options.appendStartupLog(`rust database maintenance ${label} failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null

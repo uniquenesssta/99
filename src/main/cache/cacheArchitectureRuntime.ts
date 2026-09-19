@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { dirname } from 'node:path'
 import type { FontItem } from '../../shared/types'
 import { createCacheArchitectureInfo,createCacheIdentityPayload } from './architecture/cacheArchitectureInfoRuntime'

@@ -2,6 +2,7 @@ mod batch;
 mod maintenance;
 mod path;
 mod schema;
+pub(crate) use schema::initialize_preview_cache_db;
 mod status;
 mod types;
 mod write;

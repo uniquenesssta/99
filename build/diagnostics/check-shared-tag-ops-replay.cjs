@@ -37,7 +37,7 @@ function testReplayRuntimeExists() {
 function testOverlayRunsReplayBeforeRead() {
   const text = readText('src/main/indexing/shared-metadata/sharedMetadataOverlayRuntime.ts')
   for (const needle of [
-    'ensureSharedTagOpsReplayedInOpenDb?.(legacyDb, rootPath, \'overlay-rust-preflight\')',
+    'await prepareSharedMetadataInWorker(',
     'ensureSharedTagOpsReplayedInOpenDb?.(db, rootPath, \'overlay-read\')',
     'ensureSharedTagOpsReplayedInOpenDb?.(db, rootPath, \'merged-row-overlay\')',
   ]) {

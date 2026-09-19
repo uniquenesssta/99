@@ -1,5 +1,4 @@
 use std::fs;
-use std::path::Path;
 use std::time::Instant;
 
 use rusqlite::{Connection, OptionalExtension, Transaction};
@@ -31,11 +30,14 @@ pub fn read_shared_metadata_signature(config: &SharedMetadataCommandConfig) -> R
 }
 
 pub fn shared_metadata_signature(db_path: &str) -> Result<String, String> {
-    if db_path.trim().is_empty() || !Path::new(db_path).exists() {
-        return Ok("metadata:none".to_string());
+    if db_path.trim().is_empty() { return Ok("metadata:none".to_string()); }
+    match fs::metadata(db_path) {
+        Ok(_) => {},
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok("metadata:none".to_string()),
+        Err(error) => return Err(error.to_string()),
     }
 
-    let conn = Connection::open(db_path).map_err(|error| error.to_string())?;
+    let conn = Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|error| error.to_string())?;
     if !table_exists(&conn, "font_metadata").map_err(|error| error.to_string())? {
         return Ok("metadata:none".to_string());
     }

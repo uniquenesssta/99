@@ -1,3 +1,4 @@
+import type { SharedMetadataMaintenanceSnapshotOwner } from './sharedMetadataMaintenanceSnapshotRuntime'
 import type { SharedMetadataRepairOptions, SharedMetadataRepairReport } from './sharedMetadataRepairRuntime'
 import type { SharedMetadataMigrationDiagnosticsReport } from './sharedMetadataMigrationDiagnosticsRuntime'
 import type { SharedTagOpsConflictReport, SharedTagOpsDiagnosticsReport, SharedTagOpsReplayReport } from './sharedTagOpsReplayRuntime'
@@ -71,6 +72,7 @@ export type SharedMetadataFrontendRepairReport = {
 }
 
 export interface SharedMetadataFrontendDiagnosticsRuntimeDeps {
+  openIsolatedSnapshot?: (root: string) => Promise<SharedMetadataMaintenanceSnapshotOwner | undefined>
   appWatchedFolders: () => Promise<string[]>
   uniqueResolvedFolders: (folders: string[]) => string[]
   exists: (filePath: string) => Promise<boolean>
@@ -128,7 +130,8 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
     for (const rootPath of roots) {
       const dbPath = deps.sharedMetadataDbPathForRoot(rootPath)
       try {
-        const hasDb = await deps.exists(dbPath)
+        const snapshot = await deps.openIsolatedSnapshot?.(rootPath)
+        const hasDb = snapshot ? snapshot.exists : await deps.exists(dbPath)
         if (!hasDb) {
           reports.push({
             ok: true,
@@ -143,7 +146,7 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
         }
 
         existingRoots += 1
-        const db = await deps.openSharedMetadataDb(rootPath, false)
+        const db = snapshot ? snapshot.db : await deps.openSharedMetadataDb(rootPath, false)
         try {
           let replay: SharedTagOpsReplayReport | undefined
           if (options.synchronize === true) {
@@ -168,6 +171,7 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
             ...conflicts.suggestedActions,
             ...(repairDryRun?.suggestedActions || []),
           ])
+          if (snapshot) await snapshot.commit()
           reports.push({
             ok: severity !== 'critical',
             rootPath,
@@ -183,7 +187,8 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
             suggestedActions,
           })
         } finally {
-          deps.closeSqliteDb(db)
+          if (snapshot) snapshot.close()
+          else deps.closeSqliteDb(db)
         }
       } catch (error) {
         reports.push({
@@ -250,13 +255,14 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
     for (const rootPath of roots) {
       const dbPath = deps.sharedMetadataDbPathForRoot(rootPath)
       try {
-        const hasDb = await deps.exists(dbPath)
+        const snapshot = await deps.openIsolatedSnapshot?.(rootPath)
+        const hasDb = snapshot ? snapshot.exists : await deps.exists(dbPath)
         if (!hasDb) {
           reports.push({ rootPath, dbPath, exists: false })
           continue
         }
         existingRoots += 1
-        const db = await deps.openSharedMetadataDb(rootPath, false)
+        const db = snapshot ? snapshot.db : await deps.openSharedMetadataDb(rootPath, false)
         try {
           const repair = deps.repairSharedMetadataInOpenDb(db, rootPath, {
             ...options,
@@ -269,9 +275,11 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
               replay = deps.ensureSharedTagOpsReplayedInOpenDb(db, rootPath, 'frontend-repair')
             }
           }
+          if (snapshot && !dryRun) await snapshot.commit()
           reports.push({ rootPath, dbPath, exists: true, repair, replay })
         } finally {
-          deps.closeSqliteDb(db)
+          if (snapshot) snapshot.close()
+          else deps.closeSqliteDb(db)
         }
       } catch (error) {
         reports.push({ rootPath, dbPath, exists: false, error: errorMessage(error) })

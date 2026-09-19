@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { promises as fsp } from "node:fs";
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime';
 import { basename,extname,join,parse,resolve } from "node:path";
 import { promisify } from "node:util";
 import type { FontItem,SystemInstalledFont } from "../../shared/types";

@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { getStartupPathRootState } from '../path/startupPathAvailabilityRuntime'
 import { SHARED_ROOT_CATALOG_KEY, readSharedRootCatalog, mergeSharedRootCatalog, sharedCatalogRootId, type SharedRootCatalog, type ConfirmedRootCatalog } from './runtime/sharedRootCatalogRuntime'
 import type { LibraryShell } from '../../shared/types'

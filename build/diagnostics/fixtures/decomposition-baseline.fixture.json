@@ -927,7 +927,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "eda92ade0031edeb387525c0647802bb5d5011e4a23c0554f30ea0fd3f33e808"
+      "tokenHash": "36960723d5a8e45e762612d1e2ae82ab137c91bc6f05954c3382400aeeb6624b"
     },
     "src/main/preview/runtime/previewIndexAccessRuntime.ts": {
       "functions": [
@@ -958,7 +958,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "42abf4a72dee3aff694371bec7f02034561ea3f37e19aae4e6b1bf065b2dda1a"
+      "tokenHash": "7c9f7294319a904f160b93eb9222ec6aa2ddf65c8b81f5c5ebc9960f4f4045a9"
     },
     "src/main/preview/runtime/previewBatchRowsRuntime.ts": {
       "functions": [

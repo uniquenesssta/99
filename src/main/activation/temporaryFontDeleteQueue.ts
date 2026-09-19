@@ -1,6 +1,7 @@
+import { createManagedActivationIdentityRuntime, safeManagedActivationPath } from './runtime/managedActivationIdentityRuntime';
+import type { FontActivationRuntimeDeps } from './runtime/fontActivationTypes';
 import { createLocalRecoveryFileRuntime, isTemporaryActiveFontRecord } from "./runtime/localRecoveryFileRuntime";
 import { promises as fsp } from "node:fs";
-import { posix, win32 } from "node:path";
 import type { GlobalIoOptions } from "../performance/ioScheduler";
 import type { TemporaryActiveFontRecord } from "../windows/fontRuntime";
 import {
@@ -39,7 +40,7 @@ export interface TemporaryFontDeleteQueueDeps {
   delayToEventLoop: () => Promise<void>;
   appendStartupLog: (message: string) => void;
   flushDelayMs?: number;
-  runRustFontActivationFiles?: (input: { deletes?: string[]; allowedDeleteDir?: string; allowedNamePrefix?: string }) => Promise<{ deleted: number; failed: number; deleteResults: Array<{ path: string; ok: boolean; message: string }> } | null>;
+  runRustFontActivationFiles?: FontActivationRuntimeDeps['runRustFontActivationFiles'];
 }
 
 export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDeps) {
@@ -58,12 +59,9 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
       && (record.lastError === undefined || typeof record.lastError === "string");
   });
 
+  const identityRuntime = createManagedActivationIdentityRuntime(deps);
   function isSafeTemporaryActiveFontPath(filePath: string): boolean {
-    const syntax = /^(?:[a-z]:[\\/]|[\\/]{2})/i.test(filePath) ? win32 : posix;
-    const target = syntax.resolve(filePath), allowed = syntax.resolve(deps.currentUserFontsDir());
-    const normalize = (value: string) => syntax === win32 ? value.toLowerCase() : value;
-    return normalize(syntax.dirname(target)) === normalize(allowed)
-      && syntax.basename(target).startsWith(`${deps.appName}_ACTIVE_`);
+    return safeManagedActivationPath(filePath, deps.currentUserFontsDir(), deps.appName);
   }
 
   async function queueTemporaryFontFileDeletes(
@@ -74,7 +72,11 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
     const safeRecords: TemporaryActiveFontRecord[] = [];
     for (const record of records) {
       if (isSafeTemporaryActiveFontPath(record.installPath)) {
-        safeRecords.push({ ...record });
+        try {
+          await identityRuntime.verify(record);
+          safeRecords.push({ ...record, stage: 'file-pending' });
+        } catch (error) { results[record.installPath] = { ok: false, message: String(error) }; }
+
         continue;
       }
       const message = "安全保护：临时字体文件不在允许的删除范围内。";
@@ -145,16 +147,18 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
           remaining.push({ ...record, lastError: "安全保护：目标不属于临时字体目录，保留记录待核验。" });
           continue;
         }
-        safeDeleteRecords.push(record);
+        try { await identityRuntime.verify(record); safeDeleteRecords.push(record); }
+        catch (error) { remaining.push({ ...record, lastError: String(error) }); }
       }
 
       const rustResult = await deps.runRustFontActivationFiles?.({
         deletes: safeDeleteRecords.map((record) => record.installPath),
+        identities: Object.fromEntries(safeDeleteRecords.filter(record => record.identity).map(record => [record.installPath, record.identity!])),
         allowedDeleteDir: deps.currentUserFontsDir(),
         allowedNamePrefix: `${deps.appName}_ACTIVE_`,
       }).catch((error) => {
         deps.appendStartupLog(`rust temporary font delete route failed: ${error instanceof Error ? error.message : String(error)}`);
-        return null;
+        return { deleteResults: safeDeleteRecords.map(record => ({ path: record.installPath, ok: false, message: String(error) })) };
       });
 
       if (rustResult) {
@@ -216,6 +220,8 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
   }
 
   return {
+    loadPendingTemporaryFontDeletes: store.load,
+    updatePendingTemporaryFontDeletes: store.update,
     isSafeTemporaryActiveFontPath,
     queueTemporaryFontFileDeletes,
     flushPendingTemporaryFontDeletes,

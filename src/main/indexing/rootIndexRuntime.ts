@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { sqliteSidecarPaths } from '../cache/cachePaths'
 import { rethrowRustCoreDaemonSubmittedWrite } from '../rust-core/rustCoreDaemonWriteBoundaryRuntime'
 import {

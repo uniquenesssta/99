@@ -79,6 +79,9 @@ export function createFontDeactivationBatchRuntime(
     const settlements = await settleFontDeactivationRecords(
       settlementTargets,
       {
+        verifyManagedRecord: cleanupRuntime.verifyManagedRecord,
+        persistRecordStage: cleanupRuntime.persistRecordStage,
+        persistRecordStages: cleanupRuntime.persistRecordStages,
         removeFontResourceSessionBatch,
         deleteFontRegistryValuesHKCUBatch,
         queueTemporaryFontFileDeletes,

@@ -3,6 +3,10 @@ const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
 
+const managedIdentity = {device:'1',inode:'1',sha1:'a'.repeat(40),size:12};
+let copiedDiagnosticPaths = new Set();
+const identityPort = { sameManagedIdentity: (a,b) => JSON.stringify(a) === JSON.stringify(b), validManagedIdentity: value => !!value && value.sha1 === managedIdentity.sha1, createManagedActivationIdentityRuntime: () => ({ verify: async () => true, inspect: async path => copiedDiagnosticPaths.has(path) ? managedIdentity : null }) };
+const stagePorts = { verifyManagedRecord: async () => true, persistRecordStage: async (record, stage) => { record.stage = stage } };
 const root = path.resolve(__dirname, '..', '..')
 const correctnessCase = process.argv.find((arg) => arg.startsWith('--case='))?.slice('--case='.length) || ''
 
@@ -34,7 +38,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    id => id === './localRecoveryFileRuntime'
+    id => id === './managedActivationIdentityRuntime' ? identityPort : id === './localRecoveryFileRuntime'
       ? loadTypeScriptModule('src/main/activation/runtime/localRecoveryFileRuntime.ts', localRequire)
       : id === './fontActivationTraceRuntime'
       ? loadTypeScriptModule('src/main/activation/runtime/fontActivationTraceRuntime.ts')
@@ -133,6 +137,7 @@ function createSessionHarness(failureStage) {
       return raw ? JSON.parse(raw).records || [] : []
     },
   }
+  copiedDiagnosticPaths = effects.copiedFiles;
   const currentState = { version: 1, records: [] }
 
   const deps = {
@@ -208,7 +213,7 @@ function createSessionHarness(failureStage) {
     copyTemporaryActiveFontWithTrace: async (_item, dest) => {
       if (activeFailureStage === 'copy') throw new Error('injected copy failure')
       effects.copiedFiles.add(dest)
-      return 'copied'
+      return { mode: 'copied', identity: managedIdentity }
     },
   }
   const compensationRuntime = compensationModule.createFontActivationCompensationRuntime(
@@ -287,7 +292,8 @@ async function caseA1() {
         return {
           createTemporaryFontDeleteQueue: () => ({
             isSafeTemporaryActiveFontPath: () => true,
-            queueTemporaryFontFileDeletes: async (records) => {
+            ...stagePorts,
+      queueTemporaryFontFileDeletes: async (records) => {
               queuedDeletes += 1
               return Object.fromEntries(records.map((record) => [
                 record.installPath,
@@ -321,7 +327,7 @@ async function caseA1() {
       advancedFontRefresh: async () => undefined,
       clearInstalledFontsMemoryCache: () => undefined,
       saveTemporaryActiveFonts: async () => undefined,
-      loadTemporaryActiveFonts: async () => ({ version: 1, records: [] }),
+      loadTemporaryActiveFonts: async () => ({ version: 1, records: [record] }),
       withGlobalIo: async (_label, task) => task(),
       delayToEventLoop: async () => undefined,
       appendStartupLog: () => undefined,
@@ -506,6 +512,7 @@ async function caseA2() {
       appendStartupLog: () => undefined,
     },
     {
+      ...stagePorts,
       queueTemporaryFontFileDeletes: async (targets) => {
         queued = targets.slice()
         return Object.fromEntries(targets.map((target) => [
@@ -557,7 +564,8 @@ async function caseA2() {
         appendStartupLog: () => undefined,
       },
       {
-        queueTemporaryFontFileDeletes: async () => {
+        ...stagePorts,
+      queueTemporaryFontFileDeletes: async () => {
           queueCalls += 1
           return {
             [record.installPath]: stage === 'queue'
@@ -618,6 +626,7 @@ async function caseA2() {
       appendStartupLog: () => undefined,
     },
     {
+      ...stagePorts,
       queueTemporaryFontFileDeletes: async (targets) => {
         mixedRegistryQueue = targets.slice()
         return Object.fromEntries(targets.map((target) => [
@@ -684,18 +693,18 @@ async function caseA4() {
   const { runtime, effects } = createSessionHarness('write-registry')
   await expectReject('A4', () => runtime.activateFontSession(fontItem('font-registry')), 'injected registry write failure')
   assert('A4', effects.copiedFiles.size === 0, 'registry failure left the copied file behind')
-  assert('A4', effects.cleanupCalls.length === 1 && effects.cleanupCalls[0].startsWith('file:'), 'registry failure did not compensate only the copied file')
+  assert('A4', effects.cleanupCalls.length === 2 && effects.cleanupCalls[0].startsWith('registry:') && effects.cleanupCalls[1].startsWith('file:'), 'registry failure did not compensate only the copied file')
   assert('A4', effects.savedSessionStates.length === 0, 'registry failure committed session state')
-  return 'registry write failure compensates the copied file without advancing other stages'
+  return 'uncertain registry write failure settles registry before the copied file'
 }
 
 async function caseA5() {
   const { runtime, effects } = createSessionHarness('add-resource')
   await expectReject('A5', () => runtime.activateFontSession(fontItem('font-resource')), 'injected resource add failure')
   assert('A5', effects.copiedFiles.size === 0 && effects.registryNames.size === 0, 'resource add failure left file or registry side effects')
-  assert('A5', effects.cleanupCalls.length === 2 && effects.cleanupCalls[0].startsWith('registry:') && effects.cleanupCalls[1].startsWith('file:'), 'resource add failure compensation order was not registry then file')
+  assert('A5', effects.cleanupCalls.length === 3 && effects.cleanupCalls[0].startsWith('resource:') && effects.cleanupCalls[1].startsWith('registry:') && effects.cleanupCalls[2].startsWith('file:'), 'resource add failure compensation order was not registry then file')
   assert('A5', effects.savedSessionStates.length === 0, 'resource add failure committed session state')
-  return 'resource add failure compensates registry then copied file'
+  return 'uncertain add-resource failure checks removal before registry and file compensation'
 }
 
 async function caseA6() {
@@ -715,8 +724,8 @@ async function caseA7() {
     setFailureStage,
   } = createSessionHarness('compensation-fails')
   const error = await expectReject('A7', () => runtime.activateFontSession(fontItem('font-compensation')), 'injected session state failure')
-  assert('A7', effects.cleanupCalls.length >= 2 && effects.cleanupCalls[0].startsWith('resource:') && effects.cleanupCalls[1].startsWith('registry:'), 'compensation did not continue in reverse order after an earlier cleanup failure')
-  assert('A7', error.message.includes('injected resource compensation failure') && error.message.includes('injected registry compensation failure'), 'combined error lost one or more compensation failures')
+  assert('A7', effects.cleanupCalls.length === 1 && effects.cleanupCalls[0].startsWith('resource:'), 'resource failure must stop registry/file cleanup')
+  assert('A7', error.message.includes('injected resource compensation failure') && !error.message.includes('injected registry compensation failure'), 'error must report the failed stage without inventing an unattempted registry failure')
   assert('A7', error.message.includes('未完成阶段已写入持久清理队列'), 'combined error did not disclose durable retry state')
   assert('A7', effects.pendingCompensations().length === 1, 'failed compensation was not written to durable cleanup state')
   setFailureStage(null)

@@ -1,3 +1,4 @@
+import { createManagedActivationIdentityRuntime, sameManagedIdentity } from './managedActivationIdentityRuntime';
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
 import type { FontActivationCleanupRuntime } from "./fontActivationCleanupRuntime";
 import {
@@ -64,6 +65,21 @@ export function createFontActivationCompensationRuntime(
   } = deps;
   const { queueTemporaryFontFileDeletes } = cleanupRuntime;
   const compensationQueue = createFontActivationCompensationQueue(deps);
+  const identityRuntime = createManagedActivationIdentityRuntime(deps);
+  async function recordActivationIntent(record: TemporaryActiveFontRecord, pending: FontActivationCompensationStages): Promise<void> {
+    await compensationQueue.upsert({ record: { ...record }, pending: { ...pending }, queuedAt: record.activatedAt, attempts: 0, reason: 'activation-intent', lastError: '' });
+  }
+  async function queueCopyPartial(record: TemporaryActiveFontRecord): Promise<void> {
+    const partialPath = `${record.installPath}.partial`;
+    const partial = await identityRuntime.inspect(partialPath);
+    if (!partial) return;
+    if (!record.identity || !sameManagedIdentity(partial, record.identity)) throw new Error('半文件身份不同，已保留记录待核验。');
+    const results = await queueTemporaryFontFileDeletes([{ ...record, installPath: partialPath, identity: partial, stage: 'file-pending' }], 'copy-partial');
+    if (!results[partialPath]?.ok) throw new Error(results[partialPath]?.message || '半文件未能进入持久删除队列。');
+  }
+  async function completeActivationIntent(record: TemporaryActiveFontRecord): Promise<void> {
+    try { await compensationQueue.remove(record); } catch (error) { appendStartupLog(`activation journal completion retained: ${String(error)}`); }
+  }
 
   async function settleCompensation(
     entry: PendingFontActivationCompensation,
@@ -71,12 +87,14 @@ export function createFontActivationCompensationRuntime(
   ): Promise<FontActivationCompensationResult> {
     const errors: string[] = [];
     let durable = alreadyDurable;
+    let persistenceFailed = false;
 
     const persistProgress = async (label: string) => {
       try {
         await compensationQueue.upsert(entry);
         durable = true;
       } catch (error) {
+        persistenceFailed = true;
         errors.push(
           `${label}持久化失败：${errorMessage(error, "无法写入补偿队列。")}`,
         );
@@ -85,6 +103,23 @@ export function createFontActivationCompensationRuntime(
 
     if (!alreadyDurable) {
       await persistProgress("补偿登记");
+    }
+
+    if (persistenceFailed) return { attempted: true, errors, pending: { ...entry.pending }, durable };
+
+    try {
+      if (entry.record.identity) await identityRuntime.verify(entry.record);
+      else {
+        const identity = await identityRuntime.inspect(entry.record.installPath);
+        const partial = await identityRuntime.inspect(`${entry.record.installPath}.partial`);
+        if (identity || partial || entry.pending.registry || entry.pending.resource) throw new Error('未确认文件身份或复制结果，已保留待人工核验。');
+        entry.pending.file = false;
+      }
+    } catch (error) {
+      entry.lastError = errorMessage(error, '文件身份核验失败');
+      errors.push(entry.lastError);
+      await persistProgress('身份核验');
+      return { attempted: true, errors, pending: { ...entry.pending }, durable };
     }
 
     if (entry.pending.resource) {
@@ -102,7 +137,9 @@ export function createFontActivationCompensationRuntime(
       }
     }
 
-    if (entry.pending.registry) {
+    if (persistenceFailed) return { attempted: true, errors, pending: { ...entry.pending }, durable };
+
+    if (entry.pending.registry && !entry.pending.resource) {
       try {
         await deleteRegistryValueHKCU(entry.record.registryName);
         entry.pending.registry = false;
@@ -113,6 +150,8 @@ export function createFontActivationCompensationRuntime(
         );
       }
     }
+
+    if (persistenceFailed) return { attempted: true, errors, pending: { ...entry.pending }, durable };
 
     if (
       entry.pending.file &&
@@ -133,6 +172,7 @@ export function createFontActivationCompensationRuntime(
             queueEntry?.message || "持久文件删除队列缺少目标结果。",
           );
         }
+        await queueCopyPartial(entry.record);
         entry.pending.file = false;
         await persistProgress("文件补偿进度");
       } catch (error) {
@@ -141,6 +181,8 @@ export function createFontActivationCompensationRuntime(
         );
       }
     }
+
+    if (persistenceFailed) return { attempted: true, errors, pending: { ...entry.pending }, durable };
 
     entry.attempts += 1;
     entry.lastError = errors.join("；");
@@ -202,7 +244,12 @@ export function createFontActivationCompensationRuntime(
     appendStartupLog(
       `pending font activation compensation started: reason=${reason}, count=${records.length}`,
     );
+    const active = await deps.loadTemporaryActiveFonts();
     for (const entry of records) {
+      if (entry.reason === 'activation-intent' && active.records.some(record => record.sessionId && record.sessionId === entry.record.sessionId && record.installPath === entry.record.installPath && record.stage === 'active')) {
+        await compensationQueue.remove(entry.record);
+        continue;
+      }
       await settleCompensation(entry, true);
     }
     const remaining = (await compensationQueue.load()).length;
@@ -215,7 +262,7 @@ export function createFontActivationCompensationRuntime(
 
   async function cleanupPendingFontActivationCompensationsUntilEmpty(
     reason: "startup" | "quit" | "manual" = "manual",
-    maxAttempts = 18,
+    maxAttempts = 1,
   ): Promise<{ cleaned: number; remaining: number }> {
     let totalCleaned = 0;
     let remaining = 0;
@@ -232,6 +279,9 @@ export function createFontActivationCompensationRuntime(
   }
 
   return {
+    queueCopyPartial,
+    recordActivationIntent,
+    completeActivationIntent,
     compensateFailedFontActivation,
     cleanupPendingFontActivationCompensations,
     cleanupPendingFontActivationCompensationsUntilEmpty,

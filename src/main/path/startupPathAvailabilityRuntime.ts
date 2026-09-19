@@ -1,3 +1,4 @@
+import { registerIsolatedRoot } from '../rust-core/rustSharedIoCommandRuntime'
 import { probeStartupDirectory } from './sharedPathProbeRuntime'
 import { resolve } from 'node:path'
 import { mappedDriveTableAsync, normalizeNativePathText } from './pathCanonicalizer'
@@ -97,6 +98,7 @@ export function markStartupPathRootUnavailable(rootPath: string, error: unknown,
 
 export async function ensureStartupPathRootAvailable(rootPath: string, appendLog?: StartupPathAvailabilityLogger, reason = 'startup-path'): Promise<boolean> {
   if (!rootPath) return true
+  registerIsolatedRoot(rootPath)
   const normalized = normalizeNativePathText(rootPath)
   const drive = normalized.match(/^([a-z]:)(\\.*)?$/i)
   if (drive && process.platform === 'win32') {

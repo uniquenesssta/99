@@ -1,3 +1,4 @@
+import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
 import type { SystemInstalledFont } from '../../../shared/types'
 import {
@@ -84,6 +85,7 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
       options.appendStartupLog(`rust font resource ${label} finished: reason=${batchOptions.reason || 'n/a'}, paths=${cleanPaths.length}, ok=${okCount}, failed=${failedCount}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${workerElapsed}ms`)
       return results
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       rethrowRustCoreDaemonSubmittedJob(error, options.appendStartupLog, `rust font resource ${label}`)
       options.appendStartupLog(`rust font resource ${label} failed: ${error instanceof Error ? error.message : String(error)}; native helper fallback remains active`)
       return null
@@ -134,6 +136,7 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
       options.appendStartupLog(`rust font registry ${label} finished: count=${result.count}, failed=${result.failed}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       rethrowRustCoreDaemonSubmittedJob(error, options.appendStartupLog, `rust font registry ${label}`)
       options.appendStartupLog(`rust font registry ${label} failed: ${error instanceof Error ? error.message : String(error)}; native helper fallback remains active`)
       return null
@@ -169,6 +172,7 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
       options.appendStartupLog(`rust WM_FONTCHANGE ${input.strong ? 'strong' : 'light'} broadcast sent: ${input.reason || 'manual'}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       rethrowRustCoreDaemonSubmittedJob(error, options.appendStartupLog, 'rust WM_FONTCHANGE')
       options.appendStartupLog(`rust WM_FONTCHANGE failed: ${error instanceof Error ? error.message : String(error)}; native helper fallback remains active`)
       return null
@@ -209,6 +213,7 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
       options.appendStartupLog(`rust physical folder tree finished: roots=${result.folders.length}, nodes=${result.nodes.length}, errors=${result.errors.length}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       options.appendStartupLog(`rust physical folder tree failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {
@@ -219,6 +224,7 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
   async function runRustFontActivationFiles(input: RustFontActivationFilesInput): Promise<RustFontActivationFilesResult | null> {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'font-activation-files')) return null
+    if (!hasCapability(status, 'font-activation-identity-v1')) throw new Error('请更新原生 worker：缺少托管字体身份校验能力。')
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-activation-files`)
@@ -235,13 +241,18 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
         const error = new Error(payload.message || 'rust font activation files returned ok=false')
         throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, '--font-activation-files') : error
       }
+      const same = (a: string, b: string) => a.replaceAll('\\', '/').toLowerCase() === b.replaceAll('\\', '/').toLowerCase()
+      if ((input.copies || []).some(job => !payload.copyResults?.some(row => row.id === job.id && same(row.source, job.source) && same(row.dest, job.dest)))
+        || (input.deletes || []).some(path => !payload.deleteResults?.some(row => same(row.path, path)))
+        || (input.inspects || []).some(path => !payload.inspectResults?.some(row => same(row.path, path)))) throw new SharedIoProcessError('原生字体回执与请求不匹配。', 'unknown', 'invalid-receipt')
       const result: RustFontActivationFilesResult = {
+        inspectResults: payload.inspectResults,
         ok: true,
         copied: Number(payload.copied || 0),
         reused: Number(payload.reused || 0),
         deleted: Number(payload.deleted || 0),
         failed: Number(payload.failed || 0),
-        copyResults: Array.isArray(payload.copyResults) ? payload.copyResults.map((row) => ({ id: String(row.id || ''), source: String(row.source || ''), dest: String(row.dest || ''), ok: Boolean(row.ok), mode: String(row.mode || ''), message: String(row.message || '') })) : [],
+        copyResults: Array.isArray(payload.copyResults) ? payload.copyResults.map((row) => ({ id: String(row.id || ''), source: String(row.source || ''), dest: String(row.dest || ''), ok: Boolean(row.ok), mode: String(row.mode || ''), message: String(row.message || ''), identity: row.identity })) : [],
         deleteResults: Array.isArray(payload.deleteResults) ? payload.deleteResults.map((row) => ({ path: String(row.path || ''), ok: Boolean(row.ok), message: String(row.message || '') })) : [],
         elapsedMs: Number(payload.elapsedMs || Date.now() - startedAt),
         workerMode: 'rust-font-activation-files',
@@ -249,9 +260,10 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
       options.appendStartupLog(`rust font activation files finished: copied=${result.copied}, reused=${result.reused}, deleted=${result.deleted}, failed=${result.failed}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       rethrowRustCoreDaemonSubmittedJob(error, options.appendStartupLog, 'rust font activation files')
-      options.appendStartupLog(`rust font activation files failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
-      return null
+      options.appendStartupLog(`rust font activation files failed after submission: ${error instanceof Error ? error.message : String(error)}; result retained for recovery`)
+      throw error
     } finally {
       await inputFile.dispose()
     }
@@ -293,6 +305,7 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
       options.appendStartupLog(`rust system installed fonts read finished: items=${result.items.length}, registry=${result.registryCount}, folder=${result.folderCount}, includeNameCandidates=${Boolean(input.includeNameCandidates)}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       options.appendStartupLog(`rust system installed fonts read failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     }

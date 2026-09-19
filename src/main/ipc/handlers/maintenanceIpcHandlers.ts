@@ -2,6 +2,8 @@ import type { BackgroundTaskStatus } from "../../tasks/backgroundTasks";
 import type { IpcHandleRegistrar,IpcHandlerRuntime,RendererPerformanceEventPayload } from "../ipcHandlerTypes";
 
 export function registerMaintenanceIpcHandlers(handle: IpcHandleRegistrar, runtime: IpcHandlerRuntime): void {
+  handle('fontCleanup:read', () => runtime.readFontCleanupRemnants());
+  handle('fontCleanup:run', (_event, input) => runtime.runFontCleanupAction(input));
   handle("cache:getStats", () => runtime.getCacheStats());
   handle("cache:getArchitecture", () => runtime.cacheArchitectureInfo());
   handle("diagnostics:getMigrationStatus", () => runtime.getMigrationDiagnostics?.() || { unavailable: true });

@@ -45,7 +45,14 @@ function createHarness(settings = {}, overrides = new Map()) {
     if (mode === 'empty-json') return { stdout: '\r\n', stderr: '' }
     const output = args.indexOf('--output')
     if (output >= 0) files.set(args[output + 1], JSON.stringify(payload(command)))
-    return { stdout: '\r\n' + JSON.stringify(payload(command)) + '\r\nignored second line', stderr: '' }
+    const result = payload(command)
+    if (command === '--font-activation-files' && result.ok) {
+      const input = JSON.parse(files.get(args[args.indexOf('--input') + 1]) || '{}')
+      result.copyResults = (input.copies || []).map(row => ({...row, ok:true, mode:'copied', message:'ok', identity:{device:'1',inode:'1',sha1:'a'.repeat(40),size:1}}))
+      result.deleteResults = (input.deletes || []).map(path => ({path,ok:true,message:'ok'}))
+      result.inspectResults = (input.inspects || []).map(path => ({path,missing:false,identity:{device:'1',inode:'1',sha1:'a'.repeat(40),size:1}}))
+    }
+    return { stdout: '\r\n' + JSON.stringify(result) + '\r\nignored second line', stderr: '' }
   }
   function execFile() { throw new Error('diagnostic requires the promisified exec path') }
   execFile[promisify.custom] = async (worker, args, options) => {

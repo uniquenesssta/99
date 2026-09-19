@@ -1,5 +1,5 @@
 import type fs from "node:fs";
-import { promises as fsp } from "node:fs";
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { extname, join } from "node:path";
 import type { ScanResult } from "../../../shared/types";
 import {

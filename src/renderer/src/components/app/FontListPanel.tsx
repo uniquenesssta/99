@@ -1,3 +1,4 @@
+import { FontCleanupPanel } from './FontCleanupPanel'
 import type { FontItem } from '@shared/types'
 import type { CSSProperties,MouseEvent } from 'react'
 import {
@@ -64,6 +65,7 @@ export function FontListPanel({
 
   return (
     <section className={`font-list-panel${effectiveCardPoolViewMode === 'list' ? ' simple-wide-list-mode' : ''}`}>
+      <FontCleanupPanel />
       {IS_DEVELOPMENT && sidebarPage === 'developer' ? (
         <div className="developer-status-page">
           <div className="developer-status-header">

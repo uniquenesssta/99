@@ -1,4 +1,6 @@
-import fs,{ promises as fsp } from 'node:fs'
+import { rethrowSharedIoProcessError } from '../path/sharedIoProcessRuntime'
+import fs from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { dirname,join } from 'node:path'
 import { sqliteStringLiteral, timestampForFileName, optionalDatabaseAbsent } from './databaseMaintenanceHelpers'
 import type { DatabaseBackupItem, DatabaseBackupReport, DatabaseMaintenanceRuntimeOptions } from './databaseMaintenanceTypes'
@@ -78,6 +80,7 @@ export function createDatabaseBackupRuntime(deps: DatabaseBackupRuntimeDeps) {
         await fsp.rm(join(deps.backupsRootPath(), name), { recursive: true, force: true }).catch(() => undefined)
       }
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       deps.appendStartupLog(`database backup retention skipped: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -98,6 +101,7 @@ export function createDatabaseBackupRuntime(deps: DatabaseBackupRuntimeDeps) {
         backupDirName,
         items: specs.map((spec) => ({ label: spec.label, filePath: spec.filePath }))
       }).catch((error) => {
+        rethrowSharedIoProcessError(error)
         deps.appendStartupLog(`rust database backup fallback: ${error instanceof Error ? error.message : String(error)}`)
         return null
       })
@@ -120,6 +124,7 @@ export function createDatabaseBackupRuntime(deps: DatabaseBackupRuntimeDeps) {
         const db = await spec.open()
         items.push(await backupSqliteDatabase(db, spec.label, spec.filePath, backupDir))
       } catch (error) {
+      rethrowSharedIoProcessError(error)
         items.push({
           label: spec.label,
           sourcePath: spec.filePath,
@@ -173,6 +178,7 @@ export function createDatabaseBackupRuntime(deps: DatabaseBackupRuntimeDeps) {
     if (backup.ok) {
       state.lastAutoBackupAt = new Date().toISOString()
       await saveMaintenanceState(state).catch((error) => {
+        rethrowSharedIoProcessError(error)
         deps.appendStartupLog(`automatic database backup state save failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     } else {

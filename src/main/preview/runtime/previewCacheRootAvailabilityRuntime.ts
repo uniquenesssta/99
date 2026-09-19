@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { resolve } from 'node:path'
 import { normalizePathForCacheCompare } from '../../path/cachePath'
 import { unavailableRootTtlMs,uncRootProbeTimeoutMs,withIoDeadlineResult } from '../../path/ioDeadlineRuntime'

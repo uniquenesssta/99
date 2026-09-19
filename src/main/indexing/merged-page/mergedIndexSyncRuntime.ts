@@ -1,3 +1,4 @@
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import type { FontIndexChangePayload } from "../../../shared/types";
 import { rethrowRustCoreDaemonSubmittedWrite } from "../../rust-core/rustCoreDaemonWriteBoundaryRuntime";
 import {
@@ -120,6 +121,7 @@ export function createMergedIndexSyncRuntime(
               return;
             }
           } catch (error) {
+      rethrowSharedIoProcessError(error)
             rethrowRustCoreDaemonSubmittedWrite(
               error,
               ctx.appendStartupLog,
@@ -155,6 +157,7 @@ export function createMergedIndexSyncRuntime(
             `local merged index incrementally synced: reason=${reason}, root=${source.root}, changed=${relativePaths.length}, rows=${rows.length}, elapsed=${Date.now() - startedAt}ms`,
           );
         } catch (error) {
+      rethrowSharedIoProcessError(error)
           rethrowRustCoreDaemonSubmittedWrite(
             error,
             ctx.appendStartupLog,
@@ -251,6 +254,7 @@ export function createMergedIndexSyncRuntime(
               return;
             }
           } catch (error) {
+      rethrowSharedIoProcessError(error)
             rethrowRustCoreDaemonSubmittedWrite(
               error,
               ctx.appendStartupLog,
@@ -281,6 +285,7 @@ export function createMergedIndexSyncRuntime(
             `local merged index root snapshot synced: reason=${reason}, root=${source.root}, rows=${rows.length}, elapsed=${Date.now() - startedAt}ms`,
           );
         } catch (error) {
+      rethrowSharedIoProcessError(error)
           rethrowRustCoreDaemonSubmittedWrite(
             error,
             ctx.appendStartupLog,

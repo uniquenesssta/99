@@ -1,9 +1,11 @@
 import { BrowserWindow } from "electron";
-import fs, { promises as fsp } from "node:fs";
+import fs from 'node:fs'
+import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
+import { executeSharedFile, sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { resolve } from "node:path";
 import type { FontIndexChangePayload } from "../../shared/types";
 import { normalizePathForCacheCompare } from "../path/cachePath";
-import { ensureStartupPathRootAvailable } from "../path/startupPathAvailabilityRuntime";
+import { ensureStartupPathRootAvailable, markStartupPathRootUnavailable } from "../path/startupPathAvailabilityRuntime";
 
 export interface PendingFolderChange {
   folder: string;
@@ -51,7 +53,7 @@ export interface FolderWatcherRuntime {
 export function createFolderWatcherRuntime(
   options: FolderWatcherRuntimeOptions,
 ): FolderWatcherRuntime {
-  let folderWatchers: fs.FSWatcher[] = [];
+  let folderWatchers: Array<{ close(): void }> = [];
   let folderWatchTimer: ReturnType<typeof setTimeout> | null = null;
   let currentFolderWatchSignature = "";
   let folderWatchersHealthy = false;
@@ -270,6 +272,42 @@ export function createFolderWatcherRuntime(
     schedulePendingFolderFlush(Math.max(options.flushDebounceMs, folderWatcherIgnoreUntil - Date.now()));
   }
 
+  function startSharedPolling(folder: string, generation: number): { close(): void } {
+    let closed = false;
+    let baseline: Record<string, unknown> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async (): Promise<void> => {
+      try {
+        if (!await ensureStartupPathRootAvailable(folder, options.appendStartupLog, 'shared-watcher-poll')) return;
+        const { result } = await executeSharedFile({ operation: 'treeSnapshot', path: folder });
+        if (closed || generation !== watcherGeneration) return;
+        const next = result.value;
+        if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('无效的共享目录快照');
+        if (baseline) {
+          for (const name of new Set([...Object.keys(baseline), ...Object.keys(next)])) {
+            if (JSON.stringify(baseline[name]) !== JSON.stringify(next[name])) notifyFolderChanged(folder, 'rename', name);
+          }
+        } else {
+          // Refresh once on first confirmed access; never infer deletions from an error.
+          notifyFolderChanged(folder, 'rescan');
+        }
+        baseline = next;
+      } catch (error) {
+        if (!closed && generation === watcherGeneration) {
+          markStartupPathRootUnavailable(folder, error, options.appendStartupLog);
+          options.appendStartupLog(`shared watcher snapshot retained: ${folder}, ${String(error)}`);
+        }
+      } finally {
+        if (!closed && generation === watcherGeneration) {
+          timer = setTimeout(() => { void poll(); }, 30000);
+          timer.unref?.();
+        }
+      }
+    };
+    void poll();
+    return { close() { closed = true; if (timer) clearTimeout(timer); } };
+  }
+
   async function startWatchingFolders(folders: string[]): Promise<boolean> {
     const uniqueFolders = Array.from(
       new Set((folders || []).filter(Boolean).map((folder) => resolve(folder))),
@@ -308,6 +346,12 @@ export function createFolderWatcherRuntime(
           "folder-watcher-start",
         );
         if (generation !== watcherGeneration) return true;
+        if ((await sharedIoResourceKeys([folder])).length) {
+          if (generation !== watcherGeneration) return true;
+          folderWatchers.push(startSharedPolling(folder, generation));
+          options.appendStartupLog(`shared folder polling started: ${folder}`);
+          continue;
+        }
         if (!rootAvailable) {
           options.appendStartupLog(
             `folder watcher skipped unavailable root: ${folder}`,

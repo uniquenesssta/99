@@ -1,4 +1,5 @@
-import fs,{ promises as fsp } from "node:fs";
+import fs from 'node:fs';
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime';
 import { basename,extname,join,resolve } from "node:path";
 import type { FontDeleteResult,FontItem,InstallResult,SystemInstalledFont } from "../../shared/types";
 import { deleteFontFilesToTrashRuntime } from "./fontTrashDeleteRuntime";

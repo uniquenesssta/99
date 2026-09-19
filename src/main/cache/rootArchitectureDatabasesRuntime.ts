@@ -1,4 +1,5 @@
-import { promises as fsp } from "node:fs";
+import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
+import { executeSharedFile, sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 
 export type RootArchitectureDatabasesRuntimeOptions = {
   rootIndexDbDir: (rootPath: string) => string;
@@ -88,6 +89,12 @@ export function createRootArchitectureDatabasesRuntime(
     rootPath: string,
   ): Promise<void> {
     await fsp.mkdir(rootIndexDbDir(rootPath), { recursive: true });
+    if ((await sharedIoResourceKeys([rootPath])).length) {
+      for (const [kind, path] of [['events', rootEventsDbPath(rootPath)], ['hash', rootHashDbPath(rootPath)], ['metrics', rootMetricsDbPath(rootPath)]] as const) {
+        await executeSharedFile({ operation: 'initializeRootCache', path, kind, rootPath });
+      }
+      return;
+    }
     const eventsDb = openStableSqliteDb(
       rootEventsDbPath(rootPath),
       "root-events",

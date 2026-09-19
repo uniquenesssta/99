@@ -36,7 +36,11 @@ function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    localRequire,
+    id => id.endsWith('/sharedFileSystemRuntime')
+      ? { sharedFileSystem: localRequire('node:fs').promises, sharedSqliteReadSnapshot: async () => undefined }
+      : id.endsWith('/sharedIoProcessRuntime')
+        ? require('./check-operation-chain.cjs').loader()('src/main/path/sharedIoProcessRuntime.ts')
+        : id.endsWith('/rustSharedIoCommandRuntime') ? { sharedIoResourceKeys: () => [] } : localRequire(id),
     module,
     path.join(root, rel),
     path.dirname(path.join(root, rel)),

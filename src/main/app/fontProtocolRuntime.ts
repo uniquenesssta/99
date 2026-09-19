@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { promises as fsp } from "node:fs";
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { extname } from "node:path";
 import { TextDecoder } from "node:util";
 import type {

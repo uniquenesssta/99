@@ -163,7 +163,11 @@
     "diagnostics:activation-entry": "node build/diagnostics/check-activation-entry.cjs",
     "diagnostics:browse-metrics-reuse": "node build/diagnostics/check-browse-metrics-reuse.cjs",
     "diagnostics:preview-reuse-matrix": "node build/diagnostics/check-preview-reuse-matrix.cjs",
-    "benchmark:u08": "node build/performance/u08-serve.mjs"
+    "benchmark:u08": "node build/performance/u08-serve.mjs",
+    "diagnostics:shared-filesystem": "node build/diagnostics/check-shared-filesystem.cjs",
+    "diagnostics:shared-metadata-preflight": "node build/diagnostics/check-shared-metadata-preflight.cjs",
+    "diagnostics:managed-activation-recovery": "node build/diagnostics/check-managed-activation-recovery.cjs",
+    "diagnostics:offline-settlement-watcher": "node build/diagnostics/check-offline-settlement-watcher.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

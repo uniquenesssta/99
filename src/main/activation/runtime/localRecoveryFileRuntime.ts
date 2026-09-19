@@ -1,3 +1,4 @@
+import { validManagedIdentity } from './managedActivationIdentityRuntime'
 import { promises as fsp } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
@@ -10,6 +11,10 @@ export function isTemporaryActiveFontRecord(value: unknown): value is TemporaryA
   const record = value as Record<string, unknown>
   return ['fontId', 'sourcePath', 'installPath', 'registryName', 'activatedAt', 'fileName'].every(key => typeof record[key] === 'string')
     && Boolean(String(record.installPath).trim())
+    && (record.identity === undefined || validManagedIdentity(record.identity))
+    && (record.sessionId === undefined || typeof record.sessionId === 'string')
+    && (record.lastError === undefined || typeof record.lastError === 'string')
+    && (record.stage === undefined || ['copy-pending', 'registry-pending', 'resource-pending', 'active', 'resource-removal-pending', 'registry-removal-pending', 'file-pending'].includes(String(record.stage)))
 }
 
 // Recovery data must keep its old destination if publication fails. Cache writers

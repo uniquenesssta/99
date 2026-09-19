@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import type { FontItem } from '../../../shared/types'
 import { fileExistsTimeoutMs,withIoDeadlineResult } from '../../path/ioDeadlineRuntime'
 import type { AuthorizeFontRead } from '../../path/fontPathAuthorizationRuntime'

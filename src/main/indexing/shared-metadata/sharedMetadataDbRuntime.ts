@@ -1,4 +1,6 @@
-import { promises as fsp } from 'node:fs'
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname } from 'node:path'
 import { sharedMetadataDbPathForRoot } from './sharedMetadataPathsRuntime'
 
@@ -85,6 +87,7 @@ export function createSharedMetadataDbRuntime(deps: SharedMetadataDbRuntimeDeps)
   }
 
   async function openSharedMetadataDb(rootPath: string, touch = true): Promise<any> {
+    if ((await sharedIoResourceKeys([rootPath])).length) throw new SharedIoProcessError('共享数据库必须通过隔离执行入口访问。', 'not-started', 'main-io-denied')
     const dbPath = sharedMetadataDbPathForRoot(rootPath)
     await fsp.mkdir(dirname(dbPath), { recursive: true })
     const db = deps.openStableSqliteDb(dbPath, 'shared-metadata')

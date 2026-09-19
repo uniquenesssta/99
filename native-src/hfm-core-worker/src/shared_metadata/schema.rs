@@ -48,8 +48,9 @@ pub fn initialize_shared_metadata_db(conn: &Connection) -> rusqlite::Result<()> 
          CREATE INDEX IF NOT EXISTS idx_shared_tag_ops_created ON shared_tag_ops(created_at);",
     )?;
     ensure_shared_metadata_columns(conn)?;
-    set_meta(conn, "schemaVersion", "3")?;
-    set_meta(conn, "cacheType", "shared-font-metadata")?;
+    for (key, value) in [("schemaVersion", "3"), ("cacheType", "shared-font-metadata")] {
+        conn.execute("INSERT INTO meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE meta.value<>excluded.value", params![key,value])?;
+    }
     Ok(())
 }
 

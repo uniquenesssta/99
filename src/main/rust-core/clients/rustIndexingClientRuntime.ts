@@ -1,3 +1,4 @@
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
 import type { CachedFontStatLike } from '../../fonts/fontRuntime'
 import type { FontParseJob } from '../../indexing/fontScanWorkers'
@@ -288,6 +289,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       options.appendStartupLog(`rust font parse batch finished: jobs=${jobs.length}, results=${result.results.length}, errors=${result.errors.length}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       options.appendStartupLog(`rust font parse batch failed: ${error instanceof Error ? error.message : String(error)}; ${nodeFontkitScanFallbackFailureLogSuffix()}`)
       return null
     } finally {
@@ -338,6 +340,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       options.appendStartupLog(`rust root index apply finished: db=${input.dbPath}, root=${input.rootPath}, upserts=${result.upserts}, deletes=${result.deletes}, count=${result.count}, durationMs=${result.durationMs}`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       if (isRustCoreDaemonSubmittedError(error)) {
         options.appendStartupLog(`rust root index apply failed after daemon submit: ${error.message}; Node fallback blocked`)
         throw error
@@ -364,6 +367,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_MERGED_PAGE_QUERY_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
+        sharedIo: { paths: [input.mergedIndexDbPath, input.libraryDbPath], write: false },
         maxBuffer: 32 * 1024 * 1024,
       })
 
@@ -404,6 +408,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_MERGED_IDS_QUERY_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
+        sharedIo: { paths: [input.mergedIndexDbPath, input.libraryDbPath], write: false },
         maxBuffer: 32 * 1024 * 1024,
       })
 
@@ -443,6 +448,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_MERGED_METRICS_QUERY_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
+        sharedIo: { paths: [input.mergedIndexDbPath, input.libraryDbPath], write: false },
         maxBuffer: 32 * 1024 * 1024,
       })
 
@@ -514,6 +520,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       options.appendStartupLog(`rust merged index rebuild finished: sources=${input.sources.length}, rows=${result.rows}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms, timings=${JSON.stringify(result.timings || {})}`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       if (isRustCoreDaemonSubmittedError(error)) {
         options.appendStartupLog(`rust merged index rebuild failed after daemon submit: ${error.message}; Node fallback blocked`)
         throw error
@@ -561,6 +568,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       options.appendStartupLog(`rust merged index sync finished: root=${input.source.root}, changed=${result.changed}, rows=${result.rows}, fullSnapshot=${result.fullSnapshot}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms, timings=${JSON.stringify(result.timings || {})}`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       if (isRustCoreDaemonSubmittedError(error)) {
         options.appendStartupLog(`rust merged index sync failed after daemon submit: ${error.message}; Node fallback blocked`)
         throw error
@@ -603,6 +611,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       options.appendStartupLog(`rust watcher preflight finished: unchanged=${result.unchanged}, files=${result.checkedFiles}, dirs=${result.checkedDirs}, reason=${result.reason || 'n/a'}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       options.appendStartupLog(`rust watcher preflight failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
       return null
     } finally {

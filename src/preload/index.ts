@@ -133,6 +133,8 @@ import type { CacheStats,FontActivationBatchResult,FontDeleteResult,FontIndexCha
 const api = {
   getLicenseStatus: (): Promise<HfmLicensePublicStatus> => invoke('license:getStatus'),
   loadLibrary: (): Promise<LibraryState> => invoke('library:load'),
+  readFontCleanupRemnants: (): Promise<import('../shared/fontCleanup').FontCleanupReport> => invoke('fontCleanup:read'),
+  runFontCleanupAction: (input: import('../shared/fontCleanup').FontCleanupAction): Promise<import('../shared/fontCleanup').FontCleanupReport> => invoke('fontCleanup:run', input),
   getSharedAvailability: (): Promise<import('../shared/sharedAvailability').SharedAvailability> => invoke('library:getSharedAvailability'),
   loadLibraryShell: (): Promise<LibraryShell> => invoke('library:loadShell'),
   saveLibrary: (state: LibraryState): Promise<boolean> => invoke('library:save', state),

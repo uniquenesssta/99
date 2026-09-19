@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-19：补齐 O-02/O-04/O-05：共享扫描、标签维护、预览及文件操作进入可终止进程；NAS 激活字体通过本机受管副本取消，本机状态结算不再访问源根；新增身份校验、分阶段恢复、残留重试及重启后清理入口。TypeScript、136/136 诊断、JS 三端构建和混淆通过；Windows/Linux 原生测试与 release 构建通过，详见[执行记录](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#22-o-02o-04o-05-完整实现接续)。实际 Windows/NAS 与重启待验，整体退出预算留在 O-06。
+
 - 2026-09-18：O-05 接入三份本地恢复记录的严格 version 1 校验、串行更新和临时文件 flush/rename 发布；损坏、权限或磁盘异常保留旧记录。删除清理期间新增任务不会被覆盖，占用错误持久保存。TypeScript、132/132 诊断、专项 7 组及 JS 三端构建/混淆通过；手动处置、文件身份核验、分阶段恢复和 Windows 重启清理尚未完成，O-05 不标记全部通过。详见[O-05 执行卡](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#21-o-05-执行卡)。
 
 - 2026-09-18：O-02 将共享元数据五项命令、共享安装状态读写接入有界独立进程；目录探测移出主进程，共享签名读取不再先做主进程路径检查。隔离失败及坏回执均阻断兼容回退，输入文件保留至进程真正关闭；共享标签读取失败保留已有目录。本地命令保留原通道。TypeScript、131/131 诊断及三端构建通过；旧迁移、扫描等消费者和 Windows/NAS 仍待完成，详见[接续执行记录](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#185-本次接线的实际边界与验收)。

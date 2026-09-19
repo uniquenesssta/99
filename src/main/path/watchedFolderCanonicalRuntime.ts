@@ -11,7 +11,7 @@ const FAILED_CANONICAL_PATH_TTL_MS = 30000
 const failedCanonicalPathCache = new Map<string, FailedCanonicalPathEntry>()
 
 function shouldSkipSyncUncCanonicalProbe(folderPath: string): boolean {
-  if (process.env.HFM_CANONICAL_SYNC_UNC_PROBE === '1') return false
+  if (process.platform === 'win32' && /^[a-z]:/i.test(normalizeNativeSeparators(folderPath))) return true
   return /^\\\\[^\\]/.test(normalizeNativeSeparators(folderPath))
 }
 

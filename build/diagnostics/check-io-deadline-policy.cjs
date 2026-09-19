@@ -60,7 +60,16 @@ function testPreviewCacheQueriesUseDeadlineAndDropTimeouts() {
 
 function testSyncUncCanonicalProbeSkipped() {
   assertIncludes('src/main/path/watchedFolderCanonicalRuntime.ts', 'shouldSkipSyncUncCanonicalProbe')
-  assertIncludes('src/main/path/watchedFolderCanonicalRuntime.ts', 'HFM_CANONICAL_SYNC_UNC_PROBE')
+  let probes = 0
+  const load = require('./check-operation-chain.cjs').loader({
+    'node:path': path.win32,
+    'node:fs': { statSync() { probes++; throw new Error('synchronous network stat'); }, realpathSync: { native() { probes++; throw new Error('synchronous realpath'); } } },
+    [path.resolve(__dirname, '../../src/main/path/pathCanonicalizer.ts')]: { normalizePathCompareText: value => value.toLowerCase(), canonicalizeWatchedFolderPathText: value => value, normalizeNativePathText: value => value.replaceAll('/', '\\') },
+  }, { process: { ...process, platform: 'win32', env: { ...process.env, HFM_CANONICAL_SYNC_UNC_PROBE: '1' } } })
+  const canonical = load('src/main/path/watchedFolderCanonicalRuntime.ts')
+  canonical.canonicalWatchedFolderPath('//nas/share')
+  canonical.canonicalWatchedFolderPath('O:/fonts')
+  assert(probes === 0, 'UNC/mapped path reached synchronous filesystem')
   assertIncludes('src/main/path/watchedFolderCanonicalRuntime.ts', 'sync UNC canonical probe skipped')
 }
 

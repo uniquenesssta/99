@@ -1,4 +1,5 @@
-import fs, { promises as fsp } from 'node:fs'
+import fs from 'node:fs'
+import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { extname, join } from 'node:path'
 
 export function sqliteStringLiteral(value: string): string {

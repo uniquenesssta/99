@@ -1,4 +1,6 @@
-import fs,{ promises as fsp } from 'node:fs'
+import fs from 'node:fs'
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import os from 'node:os'
 import { basename,dirname,join } from 'node:path'
 import { isRootIndexDbPath } from '../../cache/cachePaths'
@@ -33,6 +35,11 @@ export function createRootIndexLockRuntime(deps: RootIndexLockRuntimeDeps): {
 
   async function removeStaleLockIfNeeded(lockPath: string): Promise<void> {
     try {
+      if ((await sharedIoResourceKeys([lockPath])).length) {
+        const { result } = await executeSharedFile({operation:'removeStaleLock',path:lockPath,olderThanMs:Date.now()-ROOT_SCAN_CACHE_LOCK_STALE_MS});
+        if (result.value) deps.appendStartupLog(`root cache stale lock removed: ${lockPath}`);
+        return;
+      }
       const stat = await fsp.stat(lockPath)
       if (Date.now() - stat.mtimeMs > ROOT_SCAN_CACHE_LOCK_STALE_MS) {
         await fsp.rm(lockPath, { force: true })
@@ -48,6 +55,8 @@ export function createRootIndexLockRuntime(deps: RootIndexLockRuntimeDeps): {
     const startedAt = Date.now()
     let handle: fs.promises.FileHandle | null = null
     let heartbeatTimer: NodeJS.Timeout | null = null
+    let heartbeatInFlight: Promise<void> | undefined
+    const isolated = (await sharedIoResourceKeys([lockPath])).length > 0
 
     const lockPayload = (createdAt: string) => JSON.stringify({
       pid: process.pid,
@@ -66,10 +75,12 @@ export function createRootIndexLockRuntime(deps: RootIndexLockRuntimeDeps): {
         const createdAt = new Date().toISOString()
         await handle.writeFile(lockPayload(createdAt), 'utf-8')
         heartbeatTimer = setInterval(() => {
-          fsp.writeFile(lockPath, lockPayload(createdAt), 'utf-8').catch(() => undefined)
+          if (heartbeatInFlight) return
+          heartbeatInFlight = (isolated ? handle!.writeFile(lockPayload(createdAt), 'utf-8') : fsp.writeFile(lockPath, lockPayload(createdAt), 'utf-8')).catch(() => undefined).finally(() => {heartbeatInFlight = undefined})
         }, Math.max(1000, Math.floor(ROOT_SCAN_CACHE_LOCK_STALE_MS / 4)))
         break
       } catch (error) {
+        if (handle) { await handle.close().catch(() => undefined); handle = null }
         const code = error && typeof error === 'object' && 'code' in error ? String((error as NodeJS.ErrnoException).code) : ''
         if (code !== 'EEXIST') throw error
         await removeStaleLockIfNeeded(lockPath)
@@ -86,8 +97,14 @@ export function createRootIndexLockRuntime(deps: RootIndexLockRuntimeDeps): {
       return await action()
     } finally {
       if (heartbeatTimer) clearInterval(heartbeatTimer)
-      if (handle) await handle.close().catch(() => undefined)
-      await fsp.rm(lockPath, { force: true }).catch(() => undefined)
+      await heartbeatInFlight
+      if (handle && isolated) {
+        await (handle as unknown as {removeOwned:()=>Promise<void>}).removeOwned().catch(() => undefined)
+        await handle.close().catch(() => undefined)
+      } else {
+        if (handle) await handle.close().catch(() => undefined)
+        await fsp.rm(lockPath, { force: true }).catch(() => undefined)
+      }
     }
   }
 

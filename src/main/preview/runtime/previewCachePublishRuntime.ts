@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname, join } from 'node:path'
 import { hostname } from 'node:os'
 import type { PreviewCacheIndexStatus } from '../previewCacheRuntime'

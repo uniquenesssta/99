@@ -1,6 +1,17 @@
 export type FontRefreshMode = 'light' | 'standard' | 'strong'
 
+export interface ManagedActivationFileIdentity {
+  device: string
+  inode: string
+  sha1: string
+  size: number
+}
+
 export interface TemporaryActiveFontRecord {
+  sessionId?: string
+  identity?: ManagedActivationFileIdentity
+  stage?: 'copy-pending' | 'registry-pending' | 'resource-pending' | 'active' | 'resource-removal-pending' | 'registry-removal-pending' | 'file-pending'
+  lastError?: string
   fontId: string
   sourcePath: string
   installPath: string

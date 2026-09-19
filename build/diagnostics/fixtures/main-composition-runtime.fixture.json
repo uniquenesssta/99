@@ -73,6 +73,7 @@
       "queryFontsInLibrary",
       "readCachedFontPreviewImage",
       "readCachedFontPreviewImages",
+      "readFontCleanupRemnants",
       "readPreviewFontData",
       "readSharedIndexSnapshotFrontendDiagnostics",
       "readSharedMetadataFrontendDiagnostics",
@@ -91,6 +92,7 @@
       "runBackgroundTaskSchedulerOnce",
       "runDatabaseHealthCheck",
       "runDatabaseMaintenance",
+      "runFontCleanupAction",
       "runStartupCriticalSchemaAudit",
       "runStartupDatabaseMaintenance",
       "saveLibrary",
@@ -315,6 +317,10 @@
       ],
       [
         "createSharedMetadataFrontendDiagnosticsRuntime",
+        1
+      ],
+      [
+        "createSharedMetadataMaintenanceSnapshotRuntime",
         1
       ],
       [

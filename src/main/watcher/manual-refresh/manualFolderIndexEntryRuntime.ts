@@ -1,4 +1,4 @@
-import { promises as fsp } from "node:fs";
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { extname } from "node:path";
 import type { FontItem,ScanResult } from "../../../shared/types";
 import type { FontScanCacheEntry,FontScanCacheFile } from "../../indexing/rootIndexRuntime";

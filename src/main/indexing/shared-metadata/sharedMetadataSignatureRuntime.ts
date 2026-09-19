@@ -1,6 +1,6 @@
 import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import type { SharedFontMetadataRuntimeDeps } from './sharedFontMetadataRuntime'
 import { sharedMetadataDbPathForRoot } from './sharedMetadataPathsRuntime'
 

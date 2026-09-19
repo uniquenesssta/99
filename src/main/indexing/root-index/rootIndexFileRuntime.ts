@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { basename,dirname,extname,isAbsolute,join,relative,resolve } from 'node:path'
 import { ROOT_CACHE_MANIFEST_FILE_NAME,ROOT_INDEX_DB_DIR_NAME } from '../../cache/constants'
 import { normalizePathForCacheCompare } from '../../path/cachePath'

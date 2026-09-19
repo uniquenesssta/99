@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { hostname } from 'node:os'
 import { basename, dirname, join, relative } from 'node:path'
 import type { PreviewCacheMetaPayload, PreviewCacheMetaValidationResult } from './previewCacheMetaRuntime'
