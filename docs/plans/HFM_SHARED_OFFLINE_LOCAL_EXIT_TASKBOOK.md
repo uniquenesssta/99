@@ -1051,5 +1051,6 @@ npm run verify
 - `src/main/path/startupPathAvailabilityRuntime.ts` 保留离线/恢复的 generation 隔离，但在线健康复检沿用当前 generation；探测失败仍由 `markStartupPathRootUnavailable` 推进 generation，离线恢复成功再进入新 generation。这样旧代次结果仍不能覆盖新状态，同时不会因健康探测制造虚假陈旧结果。
 - 回归补入既有 `check-shared-filesystem.cjs` 与 `check-shared-root-retention.cjs`：覆盖“先确认 UNC → 再次无物理参数注册”不得降级、同 share 子路径保持身份、不同 share 仍拒绝；覆盖在线 TTL 复检前/中/后 generation 不变，真实离线后 generation 必须变化。未新增依赖、IPC、schema、缓存格式或新分支。
 - 本轮不把关机阶段 `cache:getArchitecture/tasks:getSchedulerStatus/sharedMetadata:getDiagnostics` 的“软件正在退出”视为同一故障；它们发生在 O-06 freeze 之后，属于既有退出准入。终端中文乱码是控制台解码显示问题，不改变日志中的原始错误语义。
+- 验证结果：CI `35427144077` 完成并成功。Linux 上 `typecheck`、`shared-filesystem`、`shared-root-retention`、`mapped-drive-unicode`（mock Unicode/别名/失败重试）、`shared-io-integration`、`rust-worker-transport`、`offline-settlement-watcher`、`watcher-index-consistency`、Electron/Vite build 与混淆全部通过；Windows 上 `typecheck` 与 `shared-filesystem` 通过；Windows/Linux 原生 Rust test 与 release build 均通过。此前尝试的全量 `npm run verify` 被仓库既有 `activation-entry` 的 `import.meta` CommonJS 诊断装载问题阻断，Windows hosted runner 的真实 CIM 映射查询也无可用映射环境，因此未将这两项描述为本轮新通过；用户上一份实机日志已证明实际 Windows 映射盘中文路径解析工作。
 - O-07 继续暂停。实机验收重点：同时保留旧 `O:\\字体` 与新映射/UNC 子目录，确认 watcher 两根均启动；连续运行超过在线 TTL 后不再出现周期性 `stale-generation` 扫描失败；只有真实断网、映射改到另一共享或物理身份变化时才推进代次/拒绝操作。
 
