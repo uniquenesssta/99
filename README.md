@@ -66,7 +66,7 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-19：修复开发环境退出时开发者状态刷新继续调用 `cache:getArchitecture`、任务调度器、共享元数据诊断和任务列表而产生红色 IPC 错误：后台调度器进入 stopping 时不再启动新的诊断刷新，已在途刷新遇到“软件正在退出”后立即短路，不放宽主进程 O-06 freeze。同步完成 Shared I/O 高频调用只读审计，暂未修改其隔离/批处理策略，等待评估后再决定优化。
+- 2026-09-19：修复开发环境退出时开发者状态刷新继续调用 `cache:getArchitecture`、任务调度器、共享元数据诊断和任务列表而产生红色 IPC 错误：后台调度器进入 stopping 时不再启动新的诊断刷新，已在途刷新遇到“软件正在退出”后立即短路，不放宽主进程 O-06 freeze。TypeScript、window-close-flush、bounded-local-exit、React composition、Electron/Vite 构建与混淆通过，Windows/Linux 原生测试及 release 通过（CI 35428328158，Windows 原生首轮为既有 SQLite 唯一约束波动，原提交重跑通过）。Shared I/O 高频调用只读审计另发现 `O:\字体` watcher 的共享根索引原生事务边界问题，未在本轮擅自修改。
 
 - 2026-09-19：修复共享根身份重复注册与健康探测误增代次：已验证 UNC 身份不会被后续无物理参数的重复注册降级，只有新确认的不同共享才触发 `identity-changed`；在线健康复检不再使并发共享读取误报 `stale-generation`，真实离线/恢复仍推进代次。专项共享文件、根保留、共享 I/O、Rust transport、离线 watcher、watcher/index、一体构建与混淆均通过，Windows/Linux 原生测试及 release 通过（CI 35427144077）；O-07 继续暂停，实际映射盘/NAS 待复验。
 
