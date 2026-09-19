@@ -175,7 +175,7 @@ flowchart TD
 
 #### C-00.2 验证结果
 
-- GitHub Actions `35452094709`，验证提交 `954a2ec56d498c18e216f2a683375b46a8622e41`：最终 **success**。
+- GitHub Actions 首轮稳定验证 `35452094709` 为 success；将同一 C-00 文件集落到正式阶段提交 `cb7ca4068d237a9720a8880d9f85331524fab8f7` 后，又以验证提交 `ccbbc39cba3f5fabc261792703f58c336459df3b` 对正式阶段树执行最终复核，Actions `35454844919` **全部 success**。
 - JS/Linux：默认 pinned observer、`--current`、`--crlf` 均成功；`--current --strict` 按预期非零；`npm run verify` 通过，当前 **140/140 diagnostics**。
 - Windows native：定向 C-00 原生 observer、全部 Cargo 测试与 release build 通过；Linux native：全部 Cargo 测试与 release build 通过。
 - 本轮未修改任何 `src/main`、`src/renderer`、`src/preload` 或 Rust 生产模块，不改 IPC、数据库 schema、索引格式、恢复文件、依赖版本和用户行为。
