@@ -1032,3 +1032,13 @@ npm run verify
 - Mermaid Chart 已绘制本次握手/隔离访问/失败冷却链路；无新增第三方或系统 API。Create State 沿用容量 2/2 后跳过约定，状态保存在 Git/README/本节。O-07 保持暂停。
 
 - 最终自动门：`npm run verify`（TypeScript、139/139 诊断）退出码 0；Windows 36/36、Linux 39/39 原生测试及两平台 release 构建通过；Electron/Vite 构建与混淆 3/3 通过，`git diff --check` 通过。最终与原生 CI 树的差异仅为 README、本节和一条 React 夹具摘要。用户更新后需完成 `npm run rust:build` 再启动，实际 NAS 添加/离线恢复仍待复验。
+
+## 26. 共享文件旧时间戳兼容修复（O-07 暂停）
+
+- 实机日志在共享目录快照阶段持续返回 `second time provided was later than self`，使 `O:\\字体` 被标记不可用并连带阻断预览。根因是 Rust 对文件修改时间直接执行 `SystemTime::duration_since(UNIX_EPOCH)`；目录内存在早于 1970 年的文件时间时该调用返回错误。此问题与上轮 `shared-file-io-v1` 握手修复、缓存、系统时间及重新安装依赖无关。
+- 最小生产范围仅修改 `native-src/hfm-core-worker/src/shared_file_io.rs`：增加有符号 Unix 毫秒/纳秒转换；1970 年前的时间保留为负值，`treeSnapshot` 不再报错，`stat/lstat` 保留可比较时间，`removeStaleLock` 同根兼容旧时间。未修改 JS 路由、IPC、协议版本、数据库 schema 或依赖。
+- `native-src/hfm-core-worker/tests/shared_file_handshake.rs` 继续通过真实编译 worker 验证：将临时文件和锁文件 mtime 设为 Unix epoch 前 1 秒，要求 `treeSnapshot` 返回负纳秒、`stat` 返回负毫秒，且 `removeStaleLock` 能按截止时间清理；原握手、中文文件名、二进制读取和 ENOENT 回归保留。
+- 原生 CI：[35425543774](https://github.com/uniquenesssta/99/actions/runs/35425543774)，修正候选提交 `7f119584066fd7013ba4f223916651d16e1bea22`；Linux 测试与 release 首次通过。Windows 首次被既有 `shared_metadata_atomicity` 临时夹具的 `local_sentinel already exists` 冲突阻断，与本修改文件无交集；同一提交重跑后 Windows 测试及 release 通过，最终 workflow attempt 2 为 success。没有跳过或弱化该测试。
+- 本次 TypeScript/renderer/main 源码未变化；沿用基线 `e5a15431c86391050fce0a4d4fd9e8495fb0e62e` 已通过的 TypeScript、139/139 诊断与 Electron/Vite 构建证据，不把本轮未重跑的 JS 全量门描述为新通过。Context7 未返回该标准库细节的精确条目，改按 Rust 标准库现行接口核对；无新增依赖。本轮单一生产 owner，不新增架构图；Create State 沿用容量已满后的既定跳过约定。
+- O-07 保持暂停。用户拉取后只需重新生成 Rust worker（`npm run rust:build`，或使用会自动构建 worker 的开发入口）并重启应用，再用原 NAS/映射盘目录复验；不需要清理缓存、重装依赖或修改系统时间。
+

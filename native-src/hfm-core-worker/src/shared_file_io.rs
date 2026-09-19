@@ -1,5 +1,5 @@
 mod trash;
-use std::{fs, io::{self, Read, Seek, SeekFrom}, path::Path, time::UNIX_EPOCH};
+use std::{fs, io::{self, Read, Seek, SeekFrom}, path::Path, time::{SystemTime, UNIX_EPOCH}};
 use rusqlite::{Connection, OpenFlags};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -28,8 +28,20 @@ struct Request {
 }
 fn destination(request: &Request) -> io::Result<&str> { request.dest.as_deref().filter(|v|!v.is_empty()).ok_or_else(||io::Error::other("missing destination")) }
 fn transfer(request: &Request) -> io::Result<&str> { request.transfer_path.as_deref().filter(|v|!v.is_empty()).ok_or_else(||io::Error::other("missing local transfer file")) }
+fn unix_millis(time: SystemTime) -> f64 {
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_secs_f64() * 1000.0,
+        Err(error) => -(error.duration().as_secs_f64() * 1000.0),
+    }
+}
+fn unix_nanos_text(time: SystemTime) -> String {
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_nanos().to_string(),
+        Err(error) => format!("-{}", error.duration().as_nanos()),
+    }
+}
 fn metadata(value: &fs::Metadata) -> Value {
-    let millis = |date: io::Result<std::time::SystemTime>| date.ok().and_then(|time|time.duration_since(UNIX_EPOCH).ok()).map(|time|time.as_secs_f64()*1000.0).unwrap_or(0.0);
+    let millis = |date: io::Result<SystemTime>| date.ok().map(unix_millis).unwrap_or(0.0);
     json!({"size":value.len(),"mtimeMs":millis(value.modified()),"birthtimeMs":millis(value.created()),"atimeMs":millis(value.accessed()),"isFile":value.is_file(),"isDirectory":value.is_dir(),"isSymbolicLink":value.file_type().is_symlink()})
 }
 fn execute(request: &Request) -> io::Result<Value> {
@@ -52,7 +64,7 @@ fn execute(request: &Request) -> io::Result<Value> {
             let mut options=fs::OpenOptions::new();options.read(true);
             #[cfg(windows)] {use std::os::windows::fs::OpenOptionsExt;options.share_mode(0);}
             let mut file=options.open(path)?;
-            let modified=file.metadata()?.modified()?.duration_since(UNIX_EPOCH).map_err(io::Error::other)?.as_secs_f64()*1000.0;
+            let modified=unix_millis(file.metadata()?.modified()?);
             if modified>=cutoff {return Ok(json!(false));}
             let identity=crate::font_resource::activation_identity::identify(&mut file)?;drop(file);
             crate::font_resource::activation_identity::remove_owned(path,&identity)?;
@@ -95,7 +107,7 @@ fn execute(request: &Request) -> io::Result<Value> {
                     else if kind.is_file() {
                         let info = entry.metadata()?;
                         let name = full.strip_prefix(path).map_err(io::Error::other)?.to_string_lossy().into_owned();
-                        rows.insert(name, json!([info.len(), info.modified()?.duration_since(UNIX_EPOCH).map_err(io::Error::other)?.as_nanos().to_string()]));
+                        rows.insert(name, json!([info.len(), unix_nanos_text(info.modified()?)]));
                     }
                     if rows.len() + pending.len() > 200_000 { return Err(io::Error::other("directory snapshot limit exceeded")); }
                 }
