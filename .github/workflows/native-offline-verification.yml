@@ -6,15 +6,59 @@ on:
 permissions:
   contents: read
 jobs:
-  native:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+  js-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
-      - run: rustup toolchain install stable --profile minimal
-      - run: cargo +stable test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
-      - run: cargo +stable build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo fetch --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
+      - run: npm run diagnostics:index-io-activation-shutdown-baseline
+      - run: node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs --current
+      - run: node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs --crlf
+      - name: C-00 strict gate must reject current defects
+        shell: bash
+        run: |
+          set +e
+          node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs --current --strict
+          code=$?
+          if [ "$code" -eq 0 ]; then
+            echo "strict gate unexpectedly passed"
+            exit 1
+          fi
+          exit 0
+      - run: npm run verify
+  native-windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: native-src/hfm-core-worker
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked --test c00_activation_cleanup_contract -- --nocapture
+      - run: cargo test --locked
+      - run: cargo build --locked --release
+  native-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: native-src/hfm-core-worker
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked
+      - run: cargo build --locked --release
