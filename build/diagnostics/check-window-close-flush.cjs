@@ -37,6 +37,8 @@ for (const source of [preload, runtimePreload]) {
 }
 
 const rendererFlush = read('src/renderer/src/runtime/app/effects/useAppFlushOnUnloadRuntime.ts')
+const backgroundTaskEvents = read('src/renderer/src/runtime/app/effects/useBackgroundTaskEventsRuntime.ts')
+const developerStatus = read('src/renderer/src/rendererDeveloperStatusRuntime.ts')
 for (const needle of [
   'flushApplicationState',
   'const result = await current.flushFontWriteQueue(reason)',
@@ -52,5 +54,15 @@ assert(app.includes('flushLibraryPersistence'), 'App must connect the library fl
 assert(operationsController.includes('useAppFlushOnUnloadRuntime({'), 'Operations controller must own the close lifecycle composition')
 assert(operationsController.includes('flushLibraryPersistence: options.library.flushLibraryPersistence'), 'Close lifecycle must receive the library persistence flush')
 assert(operationsController.includes('hfm: options.hfm'), 'Close lifecycle must receive the preload close protocol')
+for (const needle of [
+  'isSchedulerStoppingEvent',
+  "event.eventType !== 'scheduler'",
+  "if (isSchedulerStoppingEvent(payload)) return"
+]) assert(backgroundTaskEvents.includes(needle), `renderer shutdown developer-refresh gate missing ${needle}`)
+for (const needle of [
+  'isApplicationClosingIpcError',
+  "message.includes('软件正在退出，此操作未继续执行。')",
+  'if (isApplicationClosingIpcError(error)) return'
+]) assert(developerStatus.includes(needle), `developer diagnostics shutdown short-circuit missing ${needle}`)
 
 console.log('[diagnostics:window-close-flush] ok')

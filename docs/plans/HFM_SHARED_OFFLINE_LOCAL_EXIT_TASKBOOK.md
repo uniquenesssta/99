@@ -1054,3 +1054,12 @@ npm run verify
 - 验证结果：CI `35427144077` 完成并成功。Linux 上 `typecheck`、`shared-filesystem`、`shared-root-retention`、`mapped-drive-unicode`（mock Unicode/别名/失败重试）、`shared-io-integration`、`rust-worker-transport`、`offline-settlement-watcher`、`watcher-index-consistency`、Electron/Vite build 与混淆全部通过；Windows 上 `typecheck` 与 `shared-filesystem` 通过；Windows/Linux 原生 Rust test 与 release build 均通过。此前尝试的全量 `npm run verify` 被仓库既有 `activation-entry` 的 `import.meta` CommonJS 诊断装载问题阻断，Windows hosted runner 的真实 CIM 映射查询也无可用映射环境，因此未将这两项描述为本轮新通过；用户上一份实机日志已证明实际 Windows 映射盘中文路径解析工作。
 - O-07 继续暂停。实机验收重点：同时保留旧 `O:\\字体` 与新映射/UNC 子目录，确认 watcher 两根均启动；连续运行超过在线 TTL 后不再出现周期性 `stale-generation` 扫描失败；只有真实断网、映射改到另一共享或物理身份变化时才推进代次/拒绝操作。
 
+## 28. 退出开发者诊断噪声修复与 Shared I/O 高频审计（O-07 暂停）
+
+- 实机日志 `startup-2026-09-19_06-51-13-309-39112.log` 已确认上一轮共享根身份修复生效：旧 `O:\\字体` 与 `\\\\192.168.4.38\\14t共享盘\\字体\\字体-小薇` 同时启动 polling，日志未再出现 `identity-changed`、`stale-generation` 或 `folder watcher skipped`。
+- 退出红字根因：O-06 进入 freeze 后会停止后台任务调度器；调度器发送 `background-tasks:changed` 的 `scheduler/stopping=true` 事件，开发环境 renderer 收到事件后仍调用 `refreshDeveloperStatusDetails`，依次触发缓存架构、调度器状态、共享元数据诊断和任务列表 IPC。主进程此时按设计已关闭新业务 IPC 准入，因此四个查询被正确拒绝并被 Electron 打印为错误。
+- 修复：`useBackgroundTaskEventsRuntime.ts` 将 `scheduler + stopping=true` 识别为退出生命周期信号，仅保留事件展示，不再启动新的开发者诊断刷新；`rendererDeveloperStatusRuntime.ts` 对已在途刷新增加退出错误短路，任一查询收到“软件正在退出，此操作未继续执行。”后立即结束本轮，不继续后续诊断。主进程 `assertApplicationOpen`、freeze 顺序、保存/清理预算均未放宽。
+- 回归：既有 `check-window-close-flush.cjs` 增加 stopping 事件抑制与退出错误短路契约；本轮不新增生产依赖、IPC、schema 或新分支。
+- Shared I/O 只读审计：该日志 3 分 42 秒内共有 7251 次 `shared io started`，其中 6602 次只读、649 次写入，7248 次单根、3 次双根；共有 542 个不同 PID，队列中位数 12ms、平均约 21.9ms、最大 726ms。实现上 `sharedFileSystem` 对共享路径的 `stat/lstat/access/realpath/readdir/readFile` 等每次未命中同请求 in-flight 去重时都会进入隔离 executor；共享 watcher 首次 polling 会排一个 root rescan，`watchedFolderIndexRuntime` 对目录签名和每个字体的 upsert 继续走共享文件适配器，因此大目录可形成大量短命隔离调用。当前证据支持“隔离粒度过细/批处理不足”是主要开销来源之一，但没有证据支持直接取消进程隔离；本轮不改 Shared I/O 架构。
+- 后续若获准优化，优先评估在不破坏 killable isolation 的前提下，把 watcher/root-index 的批量 stat/readdir/文件签名合并到现有 Rust shared-file 端口的批处理命令，或复用有界 worker，而不是退回主进程直接访问 NAS。
+

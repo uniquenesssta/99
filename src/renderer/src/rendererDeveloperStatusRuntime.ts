@@ -1,5 +1,10 @@
 import type { DeveloperStatusEntry } from './appTypes'
 
+function isApplicationClosingIpcError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('软件正在退出，此操作未继续执行。')
+}
+
 export function appendDeveloperStatusEntry(
   prev: DeveloperStatusEntry[],
   source: string,
@@ -27,6 +32,7 @@ export async function refreshDeveloperStatusDetailsRuntime(options: {
       options.setArchitecture(await options.hfm.getCacheArchitecture())
     }
   } catch (error) {
+    if (isApplicationClosingIpcError(error)) return
     options.appendStatus('developer', `读取缓存架构失败：${error instanceof Error ? error.message : String(error)}`)
   }
 
@@ -35,6 +41,7 @@ export async function refreshDeveloperStatusDetailsRuntime(options: {
       options.setSchedulerStatus(await options.hfm.getBackgroundTaskSchedulerStatus())
     }
   } catch (error) {
+    if (isApplicationClosingIpcError(error)) return
     options.appendStatus('developer', `读取任务调度器失败：${error instanceof Error ? error.message : String(error)}`)
   }
 
@@ -44,6 +51,7 @@ export async function refreshDeveloperStatusDetailsRuntime(options: {
       options.setMigrationDiagnostics(await options.hfm.getMigrationDiagnostics())
     }
   } catch (error) {
+    if (isApplicationClosingIpcError(error)) return
     options.appendStatus('developer', `读取迁移诊断失败：${error instanceof Error ? error.message : String(error)}`)
   }
 
@@ -52,6 +60,7 @@ export async function refreshDeveloperStatusDetailsRuntime(options: {
       options.setSharedMetadataDiagnostics(await options.hfm.getSharedMetadataDiagnostics({ includeRepairDryRun: true }))
     }
   } catch (error) {
+    if (isApplicationClosingIpcError(error)) return
     options.appendStatus('developer', `读取共享元数据诊断失败：${error instanceof Error ? error.message : String(error)}`)
   }
 
@@ -61,6 +70,7 @@ export async function refreshDeveloperStatusDetailsRuntime(options: {
       options.setTasks(Array.isArray(tasks) ? tasks : [])
     }
   } catch (error) {
+    if (isApplicationClosingIpcError(error)) return
     options.appendStatus('developer', `读取后台任务失败：${error instanceof Error ? error.message : String(error)}`)
   }
 }
