@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-19：补齐 Rust 共享文件能力握手并纳入启动兼容检查，修复共享目录误判不可用；原生预览失败增加短暂冷却，离线错误保留字体记录，避免反复请求刷错。新增真实 worker 握手/文件读取集成验证及预览冷却回归；TypeScript、139 项诊断、Windows 36/Linux 39 项原生测试、两平台 release 与 Electron/Vite 构建通过。更新后需重新构建 Rust worker，实际 NAS 待复验，O-07 继续暂停。
+
 - 2026-09-19：修复中文共享名的映射盘监视目录添加失败：使用 Windows 本机结构化映射及编码明确的返回值，避免 `net use` 本地化输出被误解码为乱码路径；错误映射不缓存，保留异步期限与单在途。新增旧版乱码复现、Unicode/空格/别名去重及失败重试诊断；TypeScript、138 项诊断、Electron/Vite 构建及混淆通过；Windows/NAS 实际添加待复验。O-07 暂停，详见[修复记录 §24](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#24-中文映射共享路径修复o-07-暂停)。
 
 - 2026-09-19：实现 O-06 整体有界退出：重复关闭共用 15 秒预算，人工保存确认暂停计时；退出冻结网络与新激活，保留本地保存通道，残留或清理超时不再无限阻止关闭。取消退出恢复窗口和监视，迟到复制/批次不会继续激活，最终显式终止自有执行者。TypeScript、137/137 诊断、三端构建和混淆通过；真实 Windows/NAS 退出仍待验。详见[O-06 执行卡](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#23-o-06-执行卡)，下一项 O-07。

@@ -1018,3 +1018,17 @@ npm run verify
 - 本次仅一个生产 owner 修改，按 AGENTS.md 小型单文件例外不新增架构图；Create State 沿用容量 2/2 后跳过约定。修复不自动改写历史乱码配置：更新并重启后重新选择原映射目录，若界面残留乱码项则由用户移除后重新添加，不猜测替换字符对应的真实名称。
 
 - 最终验证：`npm run verify`（TypeScript、138/138 诊断）退出码 0；Electron/Vite 主进程、预加载、渲染器构建及混淆通过；`git diff --check` 通过。新增乱码复现与原共享根保留诊断均通过。此次未执行真实 Windows CIM/NAS 添加或原生 Rust CI，未改动原生代码；不能将受控进程夹具记为实机验收。
+
+## 25. 共享能力握手与预览失败重试修复（O-07 暂停）
+
+- 用户实机日志 `startup-2026-09-19_04-51-09-289-36132.log`：worker 握手遗漏 `shared-file-io-v1`，启动共享根被拒绝；约 7 秒出现 2627 次预览调用失败。旧诊断替换握手端口，未覆盖真实声明到调用的连通性。
+- 最小范围：Rust `protocol.rs` 与新增 CLI 集成测试；主进程 `rustCoreProtocolRuntime.ts`；渲染器 `fontPreviewLoadRuntime.ts`；新增握手/预览冷却诊断、package.json、README、本节。必要时仅适配受影响测试夹具。
+- 补齐真实握手并纳入启动必需能力，旧二进制不能继续被视为兼容；预览错误短暂冷却，离线错误不写为字体损坏，重置或冷却到期可再次请求。保留共享隔离及旧记录，不推进 O-07。
+- 验收目标：真实编译后二进制握手和共享文件命令；旧握手拒绝；3000 次重复请求有界；冷却、重置、迟到失败与原队列回归。
+
+- 全量门发现旧 React 组合夹具冻结了预览加载器全文摘要；本次明确改变错误重试行为，仅更新 `build/diagnostics/fixtures/react-composition-controllers.fixture.json` 中该文件一条摘要，旧组合/选择/预览断言及变异检查全部保留。新增冷却行为诊断独立约束本次改动。
+
+- 原生 CI：[35422708268](https://github.com/uniquenesssta/99/actions/runs/35422708268)，验证提交 `3c82c56b7bc6fbcfd852909aebdadb220dd8b687`；Windows/Linux 的 `cargo test --locked` 与 release 构建全部成功。新增集成测试运行真实二进制，核对 Electron 启动所需能力、中文路径 stat/二进制读取、单个文件缺失 ENOENT；使用本机临时目录，不能算作实际 NAS 断线/重连验收。最终发布只额外更新文档与已说明的 React 摘要。
+- Mermaid Chart 已绘制本次握手/隔离访问/失败冷却链路；无新增第三方或系统 API。Create State 沿用容量 2/2 后跳过约定，状态保存在 Git/README/本节。O-07 保持暂停。
+
+- 最终自动门：`npm run verify`（TypeScript、139/139 诊断）退出码 0；Windows 36/36、Linux 39/39 原生测试及两平台 release 构建通过；Electron/Vite 构建与混淆 3/3 通过，`git diff --check` 通过。最终与原生 CI 树的差异仅为 README、本节和一条 React 夹具摘要。用户更新后需完成 `npm run rust:build` 再启动，实际 NAS 添加/离线恢复仍待复验。

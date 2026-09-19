@@ -112,6 +112,7 @@
     "diagnostics:font-activation-compensation": "node build/diagnostics/check-font-activation-transaction.cjs --case=A3-A7",
     "diagnostics:font-activation-batch-transaction": "node build/diagnostics/check-font-activation-transaction.cjs --case=A8",
     "diagnostics:bounded-local-exit": "node build/diagnostics/check-bounded-local-exit.cjs",
+    "diagnostics:preview-failure-cooldown": "node build/diagnostics/check-preview-failure-cooldown.cjs",
     "diagnostics:mapped-drive-unicode": "node build/diagnostics/check-mapped-drive-unicode.cjs",
     "diagnostics:all": "node build/diagnostics/run-all.cjs",
     "diagnostics:font-write-queue-durability": "node build/diagnostics/check-font-write-queue-durability.cjs",

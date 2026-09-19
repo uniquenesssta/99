@@ -1,4 +1,5 @@
 import type { FontItem } from '@shared/types'
+import { SHARED_UNAVAILABLE_MESSAGE } from '@shared/sharedAvailability'
 import { getNativePreviewRequestLayout,normalizePreviewText,previewTextLines } from '@shared/preview-layout/previewTextFitRuntime'
 import { clampListPreviewFontSize,listPreviewNativeImageHeight } from '../listPreviewSizeRuntime'
 import { PREVIEW_STATE_LRU_LIMIT,pruneRecordByKeyLimit } from '../../../appRuntime'
@@ -56,9 +57,10 @@ function normalizeFontFaceBinarySource(value: unknown): ArrayBuffer | null {
 
 export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOptions): FontPreviewLoadRuntime {
   const cachedPreviewMissKeys = new Set<string>()
+  const failedPreviewUntil = new Map<string, number>()
   let cachedPreviewMissText = ''
   let loadGeneration = 0
-  function resetPreviewLoads(): void { loadGeneration += 1; cachedPreviewMissKeys.clear() }
+  function resetPreviewLoads(): void { loadGeneration += 1; cachedPreviewMissKeys.clear(); failedPreviewUntil.clear() }
 
   function previewKeepIds(fontId: string): Set<string> {
     return previewStateKeepIds(fontId, options.selectedFontId, options.selectedFontIds)
@@ -159,6 +161,9 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
   }
 
   async function ensurePreviewFont(font: FontItem): Promise<string> {
+    const failureKey = `${font.id}::${font.path}::${cacheMissToken()}`
+    if ((failedPreviewUntil.get(failureKey) || 0) > Date.now()) return ''
+    failedPreviewUntil.delete(failureKey)
     const previewRoute = resolveFontPreviewRoute(font)
     if (previewRoute.shouldSkipWebFontFileLoad && options.previewFamilies[font.id]) {
       options.setPreviewFamilies((prev) => {
@@ -231,6 +236,10 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
         }
       } catch (error) {
         if (!isPreviewRequestCurrent(requestToken)) return ''
+        failedPreviewUntil.set(failureKey, Date.now() + 30000)
+        while (failedPreviewUntil.size > CACHE_MISS_LRU_LIMIT) {
+          failedPreviewUntil.delete(failedPreviewUntil.keys().next().value!)
+        }
         reportRendererTrace({
           kind: 'font-preview-native-render-failed',
           label: 'renderPreviewImage',
@@ -244,11 +253,11 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
             error: error instanceof Error ? error.message : String(error)
           }
         }, `preview-native-render-failed:${font.id}`)
-        options.updateFont(font.id, (current) => ({
-          ...current,
-          previewDisabled: true,
-          previewError: '预览失败。'
-        }))
+        // Electron preserves the error message across IPC, but not custom error fields.
+        if (String(error instanceof Error ? error.message : error).includes(SHARED_UNAVAILABLE_MESSAGE)) return ''
+        options.updateFont(font.id, (current) => current.previewDisabled && current.previewError === '预览失败。'
+          ? current
+          : { ...current, previewDisabled: true, previewError: '预览失败。' })
       }
       return ''
     }
