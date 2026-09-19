@@ -24,6 +24,7 @@ function load(file, mocks = {}, globals = {}, transform = x => x) {
     if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id === 'node:path') return path
+    if (['node:async_hooks', 'node:perf_hooks'].includes(id)) return require(id)
     if (id.startsWith('.')) return load(path.relative(root, path.resolve(root, path.dirname(file), id + '.ts')), mocks, globals)
     throw Error(`Unexpected external dependency ${file}: ${id}`)
   } }, { filename: file })
@@ -360,7 +361,7 @@ async function main() {
   assert.deepEqual(w2.actual, w2.expected, 'F-W2')
   await watcherRecovery()
   await assert.rejects(() => watcherRecovery(s => mutate(s, 'if (nextSignature === currentFolderWatchSignature && folderWatchersHealthy)', 'if (nextSignature === currentFolderWatchSignature)')), assert.AssertionError)
-  await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (generation !== watcherGeneration) return true;', '')), assert.AssertionError)
+  await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (isApplicationClosing() || generation !== watcherGeneration) return true;', '')), assert.AssertionError)
   await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (generation !== watcherGeneration || !listening) return;', '')), assert.AssertionError)
   contracts(); await watcherHealthy(); await activationHealthy(); await manualBackgroundHealthy()
   await assert.rejects(() => watcherHealthy(s => mutate(s, 'if (options.isScanActive?.()) {', 'if (false) {')), assert.AssertionError)

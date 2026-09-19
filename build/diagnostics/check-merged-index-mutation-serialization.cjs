@@ -20,7 +20,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
     }
   }).outputText
   const module = { exports: {} }
-  new Function('exports', 'require', 'module', output)(module.exports, id => id.endsWith('/sharedFileSystemRuntime')
+  new Function('exports', 'require', 'module', output)(module.exports, id => id.endsWith('/shutdownCoordinatorRuntime') ? require('./check-operation-chain.cjs').loader()('src/main/app/shutdownCoordinatorRuntime.ts') : id.endsWith('/sharedFileSystemRuntime')
       ? { sharedFileSystem: localRequire('node:fs').promises, sharedSqliteReadSnapshot: async () => undefined }
       : id.endsWith('/sharedIoProcessRuntime')
         ? require('./check-operation-chain.cjs').loader()('src/main/path/sharedIoProcessRuntime.ts')

@@ -1,3 +1,5 @@
+import { assertLocalShutdownWorkAllowed } from '../app/shutdownCoordinatorRuntime'
+import type { ChildProcess } from 'node:child_process'
 import { getStartupPathRootState, markStartupPathRootUnavailable } from '../path/startupPathAvailabilityRuntime'
 import { sharedIoAvailabilityRoot } from './rustSharedIoCommandRuntime'
 import { configureSharedFileExecutor } from '../path/sharedFileSystemRuntime'
@@ -90,6 +92,8 @@ function allocateTemporaryJsonFile(prefix: string): RustCoreJsonFile {
 
 export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRuntimeOptions) {
   let cachedStatus: RustCoreWorkerStatus | null = null
+  let transportStopped = false
+  const localChildren = new Set<ChildProcess>()
   const sharedIo = applicationSharedIoProcessRuntime(options.appendStartupLog)
   const temporaryFiles = new Map<string, { holds: number; disposed: boolean; file: RustCoreJsonFile; input?: unknown }>()
   function createTemporaryJsonFile(prefix: string): RustCoreJsonFile {
@@ -155,6 +159,8 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   }
 
   async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
+    assertLocalShutdownWorkAllowed()
+    if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
     // Copy caller-owned identities before awaiting mapping discovery.
     const inferredPaths = sharedIoPathsInInput([args, ...args.map(path => temporaryFiles.get(path)?.input)])
     const target = execOptions.sharedIo
@@ -203,6 +209,8 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       }
       return { ...result, daemon: false, sharedIo: true }
     }
+    assertLocalShutdownWorkAllowed()
+    if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
     logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'daemon-probe' }, options.appendStartupLog)
     const daemonResult = await rustCoreDaemon.tryRun(workerPath, args, execOptions).catch((error) => {
       if (error instanceof Error && error.name === 'AbortError') throw error
@@ -218,7 +226,15 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     const result = await rustCoreScheduler.run(args, async (schedulerSignal) => {
       const mergedSignal = mergeAbortSignals(schedulerSignal, execOptions.signal)
       try {
-        return await execFileAsync(workerPath, args, { ...execOptionsWithoutExternalSignal(execOptions), signal: mergedSignal.signal }) as { stdout: string; stderr: string }
+        assertLocalShutdownWorkAllowed()
+        if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
+        const execution = execFileAsync(workerPath, args, { ...execOptionsWithoutExternalSignal(execOptions), signal: mergedSignal.signal,
+          env: { ...process.env, HFM_PARENT_PID: String(process.pid) }, killSignal: 'SIGKILL' })
+        if (execution.child) {
+          localChildren.add(execution.child)
+          execution.child.once('close', () => localChildren.delete(execution.child))
+        }
+        return await execution as { stdout: string; stderr: string }
       } catch (error) {
         const stderr = error && typeof error === 'object' ? (error as { stderr?: unknown }).stderr : undefined
         if (typeof stderr === 'string') {
@@ -391,7 +407,13 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       rustCoreDaemon.pollStatus()
       return rustCoreDaemon.status()
     },
-    stopRustCoreDaemon: () => { sharedIo.stop(); stopSharedPathProbes(); rustCoreDaemon.stop() },
+    stopRustCoreDaemon: () => {
+      transportStopped = true
+      sharedIo.stop(); stopSharedPathProbes(); rustCoreDaemon.stopImmediately()
+      for (const child of localChildren) {
+        try { child.kill('SIGKILL') } catch (error) { options.appendStartupLog(`local worker termination failed: ${String(error)}`) }
+      }
+    },
     runRustCoreScheduledCommand,
     appendPreviewCacheFailureLog,
     createTemporaryJsonFile,

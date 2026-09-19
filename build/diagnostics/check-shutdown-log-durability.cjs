@@ -53,8 +53,8 @@ for (const needle of [
   'before-quit renderer flush cancelled; application remains open'
 ]) assert(lifecycle.includes(needle), `renderer quit preflight missing ${needle}`)
 assert(
-  lifecycle.indexOf('requestRendererWindowsCloseForQuit()') < lifecycle.indexOf('stopBackgroundTaskScheduler();'),
-  'renderer persistence preflight must complete before main-process services are stopped'
+  lifecycle.indexOf('stopBackgroundTaskScheduler();') < lifecycle.indexOf('requestRendererWindowsCloseForQuit()'),
+  'background scheduling must freeze before renderer persistence preflight'
 )
 
 async function runLoggerBehavior() {

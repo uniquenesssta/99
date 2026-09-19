@@ -18,7 +18,7 @@ async function main() {
    if(mutant && file.endsWith('rustCoreWorkerTransportRuntime.ts')) source=source.replace('if (roots.length) {','if (false) {')
    return crlf ? source.replace(/\r?\n/g,'\r\n') : source
  }
- const mockDaemon = { createRustCoreDaemonRuntime: () => ({ tryRun:async(_,args)=>{daemonCalls.push(args);return{stdout:JSON.stringify(payload),stderr:''}}, stop(){}, status(){return{}}, pollStatus(){} }), isRustCoreDaemonSubmittedError:e=>!!e?.daemonSubmitted }
+ const mockDaemon = { createRustCoreDaemonRuntime: () => ({ tryRun:async(_,args)=>{daemonCalls.push(args);return{stdout:JSON.stringify(payload),stderr:''}}, stop(){}, stopImmediately(){}, status(){return{}}, pollStatus(){} }), isRustCoreDaemonSubmittedError:e=>!!e?.daemonSubmitted }
  const spawn = (file,args,options) => {
    submissions.push({file,args:plain(args),options})
    let runArgs = args

@@ -1,3 +1,4 @@
+import { applicationWorkEpoch, assertApplicationOpen } from '../../app/shutdownCoordinatorRuntime';
 import type {
   FontActivationBatchResult,
   FontItem,
@@ -38,6 +39,8 @@ export function createFontActivationBatchRuntime(
     options: FontActivationBatchOptions = {},
   ): Promise<FontActivationBatchResult> {
     const batchStartedAt = Date.now();
+    const ticket = applicationWorkEpoch();
+    assertApplicationOpen(ticket);
     ensureWindows();
     const unique = uniqueFontItems(items).slice(0, 1000);
     const results: FontActivationBatchResult["results"] = {};
@@ -66,6 +69,7 @@ export function createFontActivationBatchRuntime(
       }
 
       try {
+        assertApplicationOpen(ticket);
         const transaction = await activateFontSessionTransaction(item);
         if (transaction.outcome === "activated") activated += 1;
         else if (transaction.outcome === "already-installed") {

@@ -20,7 +20,7 @@ for (const needle of [
   'completePendingWindowClose',
   "title: '尚有数据未保存'",
   "completePendingWindowClose(requestId, false, 'timeout')",
-  '}, 12000)',
+  '}, RENDERER_CLOSE_MS)',
   'requestRendererWindowsCloseForQuit',
   'pendingCloseFlushes.get(existingRequestId)?.completion',
   "target.once('closed', onClosed)",

@@ -135,6 +135,13 @@ function testLifecycleContract() {
   for (const [label, callback, requiredCalls] of callContracts) {
     assert(callback, `${label} lifecycle callback is missing`)
     const actualCalls = collectCallNames(callback)
+    if (label === 'before-quit') {
+      assert(callback.getText(lifecycleFile).includes('shutdown.request()'), 'before-quit must delegate to the single coordinator')
+      let coordinator
+      visit(lifecycleFile, node => { if (ts.isVariableDeclaration(node) && node.name.getText(lifecycleFile) === 'shutdown') coordinator = node.initializer })
+      assert(coordinator && ts.isCallExpression(coordinator) && coordinator.expression.getText(lifecycleFile) === 'createShutdownCoordinator', 'missing shutdown coordinator owner')
+      actualCalls.push(...collectCallNames(coordinator.arguments[0]))
+    }
     const missing = requiredCalls.filter((name) => !actualCalls.includes(name))
     assert(!missing.length, `${label} lifecycle lost required calls: ${missing.join(', ')}`)
   }
@@ -255,6 +262,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
     id => {
       if (!id.startsWith('.')) return localRequire(id)
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
+      if (target === 'src/main/app/shutdownCoordinatorRuntime') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {} }
       if (target === 'src/main/path/startupPathAvailabilityRuntime') return { getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }
@@ -334,7 +342,7 @@ function createRustBehaviorHarness(mode) {
             },
             pollStatus: () => undefined,
             status: () => ({ running: false }),
-            stop: () => undefined,
+            stop: () => undefined, stopImmediately: () => undefined,
           }),
           isRustCoreDaemonSubmittedError: (error) => Boolean(error?.daemonSubmitted),
         }

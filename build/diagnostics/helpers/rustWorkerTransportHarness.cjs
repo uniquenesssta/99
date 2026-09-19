@@ -114,7 +114,7 @@ function createHarness(settings = {}, overrides = new Map()) {
             if (mode === 'daemon' || mode === 'false-daemon') return commandResult(args)
             return null
           },
-          pollStatus: () => record('poll'), status: () => ({ running: true }), stop: () => record('stop'),
+          pollStatus: () => record('poll'), status: () => ({ running: true }), stop: () => record('stop'), stopImmediately: () => record('stop'),
         }
       },
     },
@@ -136,7 +136,7 @@ function createHarness(settings = {}, overrides = new Map()) {
         if (target.startsWith(core) && Object.hasOwn(stubs, stub)) return stubs[stub]
         return load(target + '.ts')
       }
-      assert(['node:util', 'node:async_hooks'].includes(id), 'unexpected runtime dependency: ' + id)
+      assert(['node:util', 'node:async_hooks', 'node:perf_hooks'].includes(id), 'unexpected runtime dependency: ' + id)
       return require(id)
     }
     const run = vm.runInContext('(function(exports, require, module) {' + compiled.get(cacheKey) + '\n})', context)

@@ -1,3 +1,4 @@
+import { noteRecoveryPersistenceFailure, assertLocalShutdownWorkAllowed } from '../../app/shutdownCoordinatorRuntime'
 import { validManagedIdentity } from './managedActivationIdentityRuntime'
 import { promises as fsp } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -41,12 +42,13 @@ export function createLocalRecoveryFileRuntime<T>(filePath: () => string, valid:
   }
   function serial<R>(action: (path: string) => Promise<R>): Promise<R> {
     const path = resolve(filePath()), key = process.platform === 'win32' ? path.toLowerCase() : path
-    const task = (tails.get(key) || Promise.resolve()).catch(() => undefined).then(() => action(path))
+    const task = (tails.get(key) || Promise.resolve()).catch(() => undefined).then(() => action(path)).catch(error => { noteRecoveryPersistenceFailure(error); throw error })
     tails.set(key, task)
     void task.finally(() => { if (tails.get(key) === task) tails.delete(key) }).catch(() => undefined)
     return task
   }
   async function write(path: string, records: T[]): Promise<void> {
+    assertLocalShutdownWorkAllowed()
     const text = JSON.stringify({ version: 1, records })
     validate(JSON.parse(text))
     await fsp.mkdir(dirname(path), { recursive: true })
@@ -60,6 +62,7 @@ export function createLocalRecoveryFileRuntime<T>(filePath: () => string, valid:
       await handle.sync()
       await handle.close()
       handle = undefined
+      assertLocalShutdownWorkAllowed()
       await fsp.rename(temporary, path)
     } finally {
       if (handle) await handle.close().catch(() => undefined)

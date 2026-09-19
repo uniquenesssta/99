@@ -305,7 +305,7 @@
 
 ### O-06：整体有界退出
 
-- **状态：未开始。** 前置：O-02、O-04、O-05 自动门通过。
+- **状态：代码及自动门已完成；实机待验。** 前置：O-02、O-04、O-05 自动门通过。
 - 导航：windowRuntime、mainProcessLifecycleRuntime、cleanShutdownRuntime、activationInstallStatusSaveQueue、现有 renderer 写入/关闭 owner、watcher 和 daemon shutdown。
 - 步骤：实现 §8 单一 closing/quitId；提前关闭准入；本地保存/清理、网络隔离、收尾共用期限；不再因残留恢复窗口无限等待；保留本地保存失败的明确选择；防止迟到激活及重连任务复活。
 - 必过：重复关闭、关闭时复制中/激活中/标签写入中、renderer 无回应、worker 忽略 cancel、网络永不恢复、1/100/1000 条清理记录；不能按记录数累加无限时间。窗口/主进程/子进程三者生命周期均有证据。
@@ -505,11 +505,11 @@ README/任务状态、提交、推送、回滚定位：
 | O-03 | 已实现、实机待验 | 本节同批提交 | TypeScript、129/129、定向 40 组及构建通过 | Windows/NAS 待验 | 置灰与完整动作准入；O-02 后续接线见 §22 |
 | O-04 | 代码已补齐、实机待验 | §22 同批提交 | 源路径全面拒绝下单项/批量结算、身份替换拒绝 | Windows 字体/NAS 待验 | 本机副本、完整性、本机状态及列表更新 |
 | O-05 | 代码已补齐、实机待验 | §22 同批提交 | 分阶段恢复、人工终结、本地损坏/并发故障门 | Windows 占用/权限/重启待验 | 手动重试、旧记录核验与 RunOnce 已接入 |
-| O-06 | 未开始 | — | 未执行 | 未执行 | 整体有界退出 |
+| O-06 | 已实现、实机待验 | §23 同批提交 | TypeScript、137/137、三端构建/混淆 | Windows/NAS 待验 | 单一 15 秒预算、残留不阻止退出 |
 | O-07 | 未开始 | — | 未执行 | 未执行 | 校验后恢复，不重放编辑 |
 | O-08 | 未开始 | — | 未执行 | 未执行 | 28 项 X 矩阵与收尾 |
 
-继续执行入口：O-06（整体退出预算）；O-02/O-04/O-05 的本轮代码与自动验证见 §22。实机矩阵在 O-08 继续验收，不因代码交付而跳过；整体断网退出成功承诺须等 O-06 验证。
+继续执行入口：O-07（重连校验）；O-06 实施与证据见 §23，O-02/O-04/O-05 见 §22。Windows/NAS 实机矩阵在 O-08 继续验收，不因代码交付而跳过。
 
 
 ## 16. O-00 执行卡
@@ -971,3 +971,36 @@ npm run verify
 - 回滚以本节同批提交为单位；保留三份本地恢复文件及新机器事实库，不手删记录。旧二进制缺少身份保护，不应被用于自动处理新代次残留；需要回滚时先通过本版清理入口或 Windows 重启/人工处理核验残留。
 
 - 最终原生门（2026-09-19）：[GitHub Actions 35417708203](https://github.com/uniquenesssta/99/actions/runs/35417708203)，验证提交 `2011788aa067859e2cf79a9978739e2c82e4e7e0`。Windows 全部 35 项、Linux 全部 38 项 Cargo 测试通过（含父进程死亡后阻塞子进程退出）；两平台 `cargo +stable build --locked --release` 均通过。验证分支的原生源码与本批发布原生源码逐文件核对一致；不把该 CI 结果替代真实 NAS/桌面重启验收。
+
+
+## 23. O-06 执行卡
+
+- 基线 `4f99ac665a7fbf5f78c2a754d16a9a85ccfb524f`，沿用 `stage/09-preview-tags-app`，开工工作区干净。状态：代码及自动门已完成、实机待验；仅推进 O-06，实机缺口继承 §22。
+- 新增 `src/main/app/shutdownCoordinatorRuntime.ts`：单一退出代次、单调时钟总预算、暂停人工确认、阶段超时和终止事实。现有生命周期只接入此 owner；不建立业务写队列。
+- 生产白名单：`src/main/app/mainProcessLifecycleRuntime.ts`、`src/main/app/windowRuntime.ts`、`src/main/ipc/ipcHandlers.ts`、`src/main/path/sharedIoProcessRuntime.ts`、`src/main/path/startupPathAvailabilityRuntime.ts`、`src/main/path/sharedPathProbeRuntime.ts`、`src/main/rust-core/rustCoreWorkerTransportRuntime.ts`、`src/main/activation/fontActivationRuntime.ts`、`src/main/activation/runtime/fontActivationTransactionRuntime.ts`、`src/main/activation/runtime/fontActivationTraceRuntime.ts`、`src/main/activation/runtime/localRecoveryFileRuntime.ts`、`src/main/watcher/folderWatcherRuntime.ts`。按关闭准入/迟到拒绝、网络任务取消、最后本地执行者终止接线，不改变永久安装和共享事务。
+- 诊断白名单：新增 `build/diagnostics/check-bounded-local-exit.cjs`；既有 `check-window-close-flush.cjs`、`check-shutdown-log-durability.cjs`、`check-main-application-runtime.cjs`、`check-orchestration-contracts.cjs`、`check-font-activation-transaction.cjs`、`check-deactivation-refresh.cjs`、`helpers/mainOperationsHarness.cjs`、`helpers/rustWorkerTransportHarness.cjs` 仅补真实新依赖端口，冻结摘要仅在逐项确认后迁移。`package.json` 注册长期门；README、本书、总任务书记录结果。
+- 计划证据：重复关闭、renderer 不回应、人工返回/强退、持久化失败、1/100/1000 项、永不返回的清理/保存、晚到激活、真实隔离子进程回收；保留源无关清理、三份恢复记录及已提交未知结果。15 秒共用总预算，人工对话框单列；不把 Promise 超时视为底层退出。
+
+- 原生执行者收尾补充白名单：`src/main/rust-core/rustCoreDaemonRuntime.ts` 仅向原 transport 暴露既有立即终止方法；本地 one-shot 由 transport 跟踪真实 close，并继承已验证的父进程生命保护。不新增 Rust 协议或依赖。
+
+- O-06 复核补充白名单：`fontActivationBatchRuntime.ts` 保留批次代次；诊断 `check-font-path-authorization.cjs`、`check-merged-index-mutation-serialization.cjs`、`check-activation-save-queue-durability.cjs`、`check-watcher-activation-baseline.cjs`、`check-watcher-index-consistency.cjs`、`check-active-view-consistency.cjs`、`check-shared-io-integration.cjs` 及 `fixtures/main-operations-composition.fixture.json`、`fixtures/watcher-activation-baseline.fixture.json`。仅迁移退出接线和必要依赖；原业务断言与变异门保留。
+
+### 23.1 实际行为与兼容
+
+- 标题栏关闭及 `app.quit()` 共用唯一协调器和退出代次；开始退出即冻结 IPC 新业务、后台调度、监视新增事件和共享进程准入。窗口现有库保存和本地标签队列仍可落盘，继续经过原共享编辑准入；共享标签写入不放行。既有共享任务明确结算为未开始或结果未知，保留真实 close 之前的资源所有权。
+- 使用单调时钟：总预算 15 秒；窗口 3 秒未回应后提示，协调器窗口阶段保护 3.5 秒；本地字体清理最多 8 秒、状态保存最多 2 秒、日志最多 0.5 秒，余量留给最终终止。人工确认暂停全部预算；重复关闭不重置预算或重复执行清理。定时期限依赖 Electron 主线程可调度，真实 OS/桌面时延仍须实机测量。
+- 残留数量不再决定是否恢复窗口；现有 O-05 恢复记录仍保留具体阶段。清理超时记录未知并继续退出；损坏记录、恢复记录落盘失败和未保存状态需要用户明确返回或退出。超时/强退不写正常关闭标记；正常结束但有已记录残留不冒充残留已清空。
+- 返回软件会恢复窗口、后台调度及原配置目录监视。旧 IPC 准入、激活队列、批次及复制回执保留旧代次，不能因取消退出而继续注册字体；超时清理通过异步上下文阻止后续 native 步骤和恢复文件发布。
+- 最终 `app.exit(0)` 前显式停止 watcher、scheduler、Rust daemon、本机 one-shot、共享子进程及数据库 worker；不依赖该 API 不触发的 `will-quit`。本机 one-shot 记录真实子进程并使用已有父进程保护；无 Rust 源码或协议修改。
+- 不新增依赖、数据库 schema、IPC 签名或恢复文件版本；已有 version 1 三份恢复记录与机器状态位置保持。回滚以本批提交为单位，不能删除残留记录；回滚后会恢复旧的残留阻止退出策略。
+
+### 23.2 验证与边界
+
+- 新增长期门 `diagnostics:bounded-local-exit`。真实 coordinator、window、lifecycle、IPC、激活 transaction/batch 和 cleanup owner 在受控时钟/OS 端口下执行：重复关闭、无回应窗口、暂停确认超过 60 秒、迟到 ACK、返回重试、保存失败、迟到复制/队列/批次、取消后监视恢复。
+- 1/100/1000 条记录进入生产 cleanup owner：首项本机资源操作永不返回，整个退出仍按共用预算结束；原记录及资源移除待确认阶段保留，迟到清理不能发布空记录。另验证清理/保存/窗口/日志各自永不返回，以及 CRLF 与三个有意退化反例。
+- 真实 Node 子进程忽略 SIGTERM、并发槽位与排队写任务：退出取消后等待真实 close，最终活动进程、队列和 PID 均为 0；未提交任务返回未开始，已开始任务返回未知，关闭准入拒绝时释放输入租约。共享隔离集成仍保留原路由、回执及未知结果断言。
+- 原生命周期九场景夹具按新流程逐项迁移，启动、操作、事件集合不变；保留原绑定、索引通知、激活保存和取消恢复变异门。watcher 摘要只更新关闭/恢复接线，原代次变异同步定位到新条件，未删除业务检查。
+- 最终命令结果在本节末登记。未在本轮执行真实 Electron 桌面关闭、Windows 字体系统/NAS 永久离线、ACL/占用/重启；这些仍为 O-08 实机门。此前 §22 原生 CI 仅作为未修改原生代码的既有证据，不记为本轮重跑。
+- Context7 已查 Electron `app.exit` 与 `app.quit` 生命周期差异；Mermaid Chart 已更新实际预算/确认/回收链路。Create State 按此前容量 2/2 后跳过的约定，交接继续以 Git、README 和任务书为准。O-07/O-08 未开始。
+
+- 最终自动门：`npm run verify`（TypeScript、137/137 诊断）退出码 0；Electron/Vite 主进程/预加载/渲染器构建 381/1/203 模块及混淆均通过。退出专项与原 worker transport、共享隔离、watcher、激活补偿、日志耐久及源无关清理门保留；没有跳过旧诊断或关闭变异断言。最终准入复核后再执行同一完整门，结果以发布前日志为准。

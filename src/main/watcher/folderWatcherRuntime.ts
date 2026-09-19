@@ -1,3 +1,4 @@
+import { isApplicationClosing, onApplicationResumed } from '../app/shutdownCoordinatorRuntime';
 import { BrowserWindow } from "electron";
 import fs from 'node:fs'
 import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
@@ -64,6 +65,8 @@ export function createFolderWatcherRuntime(
   let watcherGeneration = 0;
   let flushInFlight: Promise<void> | null = null;
   let flushRequested = false;
+  let requestedFolders: string[] = [];
+  onApplicationResumed(() => { void startWatchingFolders(requestedFolders).catch(error => options.appendStartupLog(`watcher resume failed: ${String(error)}`)); });
 
   function stopFolderWatchers(): void {
     watcherGeneration += 1;
@@ -243,6 +246,7 @@ export function createFolderWatcherRuntime(
     eventType: string,
     fileName?: string,
   ): void {
+    if (isApplicationClosing()) return;
     if (options.isIgnoredWatcherPath(fileName)) return;
 
     if (Date.now() < folderWatcherIgnoreUntil) {
@@ -278,9 +282,10 @@ export function createFolderWatcherRuntime(
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async (): Promise<void> => {
       try {
+        if (isApplicationClosing()) return;
         if (!await ensureStartupPathRootAvailable(folder, options.appendStartupLog, 'shared-watcher-poll')) return;
         const { result } = await executeSharedFile({ operation: 'treeSnapshot', path: folder });
-        if (closed || generation !== watcherGeneration) return;
+        if (isApplicationClosing() || closed || generation !== watcherGeneration) return;
         const next = result.value;
         if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('无效的共享目录快照');
         if (baseline) {
@@ -309,6 +314,8 @@ export function createFolderWatcherRuntime(
   }
 
   async function startWatchingFolders(folders: string[]): Promise<boolean> {
+    if (isApplicationClosing()) return false;
+    requestedFolders = [...folders];
     const uniqueFolders = Array.from(
       new Set((folders || []).filter(Boolean).map((folder) => resolve(folder))),
     );
@@ -345,9 +352,9 @@ export function createFolderWatcherRuntime(
           options.appendStartupLog,
           "folder-watcher-start",
         );
-        if (generation !== watcherGeneration) return true;
+        if (isApplicationClosing() || generation !== watcherGeneration) return true;
         if ((await sharedIoResourceKeys([folder])).length) {
-          if (generation !== watcherGeneration) return true;
+          if (isApplicationClosing() || generation !== watcherGeneration) return true;
           folderWatchers.push(startSharedPolling(folder, generation));
           options.appendStartupLog(`shared folder polling started: ${folder}`);
           continue;
@@ -359,7 +366,7 @@ export function createFolderWatcherRuntime(
           continue;
         }
         const stat = await fsp.stat(folder);
-        if (generation !== watcherGeneration) return true;
+        if (isApplicationClosing() || generation !== watcherGeneration) return true;
         if (!stat.isDirectory()) continue;
 
         let listening = true;
@@ -402,7 +409,7 @@ export function createFolderWatcherRuntime(
           `folder watcher started: ${folder}; initial events deferred for ${options.startupGraceMs}ms`,
         );
       } catch (error) {
-        if (generation !== watcherGeneration) return true;
+        if (isApplicationClosing() || generation !== watcherGeneration) return true;
         options.appendStartupLog(
           `folder watcher skipped: ${folder} ${error instanceof Error ? error.message : String(error)}`,
         );

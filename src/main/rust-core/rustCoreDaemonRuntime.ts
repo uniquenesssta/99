@@ -569,6 +569,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
     tryRun,
     cancel,
     stop,
+    stopImmediately,
     pollStatus,
     status: (): RustCoreDaemonStatus => ({
       enabled,

@@ -437,48 +437,47 @@
         ],
         [
           "log",
-          "before-quit renderer flush requested: windows=1"
+          "shutdown: quitId=1, phase=freeze, budgetMs=15000"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested"
         ],
         [
           "log",
           "before-quit renderer flush completed"
         ],
         [
-          "app.quit"
+          "log",
+          "shutdown: quitId=1, phase=cleanup, remaining=0"
         ],
         [
           "log",
-          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
+          "shutdown: quitId=1, phase=terminate, clean=true"
         ],
         [
-          "log",
-          "before-quit cleanup completed: activationPending=undefined, activationInFlight=undefined"
-        ],
-        [
-          "app.quit"
+          "app.exit",
+          0
         ]
       ],
       "calls": [
-        [
-          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
-          []
-        ],
         [
           "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
           []
         ],
         [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
           "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
           [
-            "quit"
+            "quit",
+            1
           ]
         ],
         [
@@ -494,7 +493,11 @@
           ]
         ],
         [
-          "createFolderWatcherRuntime.stopFolderWatchers",
+          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
           []
         ],
         [
@@ -508,15 +511,15 @@
           ]
         ],
         [
-          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
-          []
-        ],
-        [
           "createMainLoggingBootstrap.flushStartupLogAsync",
+          []
+        ],
+        [
+          "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
           []
         ],
         [
@@ -546,16 +549,36 @@
         ],
         [
           "log",
-          "before-quit renderer flush requested: windows=1"
+          "shutdown: quitId=1, phase=freeze, budgetMs=15000"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested"
         ],
         [
           "log",
           "before-quit renderer flush cancelled; application remains open"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=cancelled"
         ]
       ],
       "calls": [
         [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
           "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.showExistingWindow",
           []
         ]
       ],
@@ -569,20 +592,40 @@
         ],
         [
           "log",
-          "before-quit renderer flush requested: windows=1"
+          "shutdown: quitId=1, phase=freeze, budgetMs=15000"
         ],
         [
           "log",
-          "before-quit renderer flush failed: Error: renderer flush failed"
+          "before-quit renderer flush requested"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=renderer, error=Error: renderer flush failed"
+        ],
+        [
+          "dialog.choice",
+          "renderer-error"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=cancelled"
         ]
       ],
       "calls": [
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
         [
           "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
           []
         ],
         [
-          "createMainLoggingBootstrap.flushStartupLogSync",
+          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.showExistingWindow",
           []
         ]
       ],
@@ -596,295 +639,67 @@
         ],
         [
           "log",
-          "before-quit renderer flush requested: windows=1"
+          "shutdown: quitId=1, phase=freeze, budgetMs=15000"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested"
         ],
         [
           "log",
           "before-quit renderer flush completed"
         ],
         [
-          "app.quit"
+          "log",
+          "shutdown: quitId=1, phase=cleanup, remaining=1"
         ],
         [
           "log",
-          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
+          "shutdown: quitId=1, phase=terminate, clean=true"
         ],
         [
-          "window.focus"
-        ],
-        [
-          "dialog.error",
-          "临时激活字体仍未完全移除"
+          "app.exit",
+          0
         ]
       ],
       "calls": [
-        [
-          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
-          []
-        ],
         [
           "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
           []
         ],
         [
-          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
-          [
-            "quit"
-          ]
-        ],
-        [
-          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
-          [
-            "quit"
-          ]
-        ],
-        [
-          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
-          []
-        ],
-        [
-          "createMainWindowAndFontRuntime.createWindow",
-          []
-        ]
-      ],
-      "finished": false,
-      "windows": 1
-    },
-    "cleanup-error": {
-      "trace": [
-        [
-          "app.quit"
-        ],
-        [
-          "log",
-          "before-quit renderer flush requested: windows=1"
-        ],
-        [
-          "log",
-          "before-quit renderer flush completed"
-        ],
-        [
-          "app.quit"
-        ],
-        [
-          "log",
-          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
-        ],
-        [
-          "log",
-          "before-quit cleanup failed: Error: cleanup failed"
-        ],
-        [
-          "window.focus"
-        ],
-        [
-          "dialog.error",
-          "退出清理失败"
-        ]
-      ],
-      "calls": [
-        [
           "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
           []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
-          []
-        ],
-        [
-          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
-          [
-            "quit"
-          ]
-        ],
-        [
-          "createMainLoggingBootstrap.flushStartupLogSync",
-          []
-        ],
-        [
-          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
-          []
-        ],
-        [
-          "createMainWindowAndFontRuntime.createWindow",
-          []
-        ]
-      ],
-      "finished": false,
-      "windows": 1
-    },
-    "flush-return": {
-      "trace": [
-        [
-          "app.quit"
-        ],
-        [
-          "log",
-          "before-quit renderer flush requested: windows=1"
-        ],
-        [
-          "log",
-          "before-quit renderer flush completed"
-        ],
-        [
-          "app.quit"
-        ],
-        [
-          "log",
-          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
-        ],
-        [
-          "log",
-          "before-quit activation status flush failed: Error: activation flush failed"
-        ],
-        [
-          "dialog.choice",
-          "flush-return"
-        ],
-        [
-          "window.focus"
-        ]
-      ],
-      "calls": [
-        [
-          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
-          []
-        ],
-        [
-          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
-          [
-            "quit"
-          ]
-        ],
-        [
-          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
-          [
-            "quit"
-          ]
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.flushActivationInstallStatusSave",
-          [
-            "before-quit"
-          ]
-        ],
-        [
-          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
-          []
-        ],
-        [
-          "createMainWindowAndFontRuntime.createWindow",
-          []
-        ]
-      ],
-      "finished": false,
-      "windows": 1
-    },
-    "flush-force-quit": {
-      "trace": [
-        [
-          "app.quit"
-        ],
-        [
-          "log",
-          "before-quit renderer flush requested: windows=1"
-        ],
-        [
-          "log",
-          "before-quit renderer flush completed"
-        ],
-        [
-          "app.quit"
-        ],
-        [
-          "log",
-          "before-quit cleanup requested: activationPending=undefined, activationInFlight=undefined"
-        ],
-        [
-          "log",
-          "before-quit activation status flush failed: Error: activation flush failed"
-        ],
-        [
-          "dialog.choice",
-          "flush-force-quit"
-        ],
-        [
-          "log",
-          "before-quit activation status flush force-skipped by user"
-        ],
-        [
-          "log",
-          "before-quit cleanup completed: activationPending=undefined, activationInFlight=undefined"
-        ],
-        [
-          "app.quit"
-        ]
-      ],
-      "calls": [
-        [
-          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
-          []
-        ],
-        [
-          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
-          [
-            "quit"
-          ]
-        ],
-        [
-          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
-          [
-            "quit"
-          ]
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.flushActivationInstallStatusSave",
-          [
-            "before-quit"
-          ]
         ],
         [
           "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+          [
+            "quit",
+            1
+          ]
+        ],
+        [
+          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.flushActivationInstallStatusSave",
+          [
+            "before-quit"
+          ]
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
+          []
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
           []
         ],
         [
@@ -898,15 +713,15 @@
           ]
         ],
         [
-          "createMainActivationInstallStatusSaveRuntime.hasPendingActivationInstallStatusSave",
-          []
-        ],
-        [
-          "createMainActivationInstallStatusSaveRuntime.hasInFlightActivationInstallStatusSave",
-          []
-        ],
-        [
           "createMainLoggingBootstrap.flushStartupLogAsync",
+          []
+        ],
+        [
+          "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
           []
         ],
         [
@@ -919,6 +734,262 @@
         ],
         [
           "createCleanShutdownRuntime.markCleanShutdownSync",
+          []
+        ],
+        [
+          "createMainLoggingBootstrap.flushStartupLogSync",
+          []
+        ]
+      ],
+      "finished": true,
+      "windows": 0
+    },
+    "cleanup-error": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=freeze, budgetMs=15000"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested"
+        ],
+        [
+          "log",
+          "before-quit renderer flush completed"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=cleanup, outcome=unknown, error=Error: cleanup failed"
+        ],
+        [
+          "dialog.choice",
+          "cleanup-error"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=cancelled"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+          [
+            "quit",
+            1
+          ]
+        ],
+        [
+          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.createWindow",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.showExistingWindow",
+          []
+        ]
+      ],
+      "finished": false,
+      "windows": 1
+    },
+    "flush-return": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=freeze, budgetMs=15000"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested"
+        ],
+        [
+          "log",
+          "before-quit renderer flush completed"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=cleanup, remaining=0"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=save, error=Error: activation flush failed"
+        ],
+        [
+          "dialog.choice",
+          "flush-return"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=cancelled"
+        ]
+      ],
+      "calls": [
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+          [
+            "quit",
+            1
+          ]
+        ],
+        [
+          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.flushActivationInstallStatusSave",
+          [
+            "before-quit"
+          ]
+        ],
+        [
+          "createMainBackgroundRuntime.startBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.createWindow",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.showExistingWindow",
+          []
+        ]
+      ],
+      "finished": false,
+      "windows": 1
+    },
+    "flush-force-quit": {
+      "trace": [
+        [
+          "app.quit"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=freeze, budgetMs=15000"
+        ],
+        [
+          "log",
+          "before-quit renderer flush requested"
+        ],
+        [
+          "log",
+          "before-quit renderer flush completed"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=cleanup, remaining=0"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=save, error=Error: activation flush failed"
+        ],
+        [
+          "dialog.choice",
+          "flush-force-quit"
+        ],
+        [
+          "log",
+          "shutdown: quitId=1, phase=terminate, clean=false"
+        ],
+        [
+          "app.exit",
+          0
+        ]
+      ],
+      "calls": [
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createMainWindowAndFontRuntime.requestRendererWindowsCloseForQuit",
+          []
+        ],
+        [
+          "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
+          [
+            "quit",
+            1
+          ]
+        ],
+        [
+          "createFontActivationRuntime.flushPendingTemporaryFontDeletes",
+          [
+            "quit"
+          ]
+        ],
+        [
+          "createMainActivationInstallStatusSaveRuntime.flushActivationInstallStatusSave",
+          [
+            "before-quit"
+          ]
+        ],
+        [
+          "createMainPerformanceRuntime.stopPerformanceLogSampler",
+          []
+        ],
+        [
+          "createMainPerformanceRuntime.flushPerformanceLogs",
+          [
+            "before-quit"
+          ]
+        ],
+        [
+          "createMainLoggingBootstrap.flushStartupLogAsync",
+          []
+        ],
+        [
+          "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createMainBackgroundRuntime.stopBackgroundTaskScheduler",
+          []
+        ],
+        [
+          "createRustCoreWorkerRuntime.stopRustCoreDaemon",
+          []
+        ],
+        [
+          "createDbQueryWorkerRuntime.shutdown",
           []
         ],
         [

@@ -19,7 +19,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "6f30e521ae634cdf4c4b242676d993c80fc3815be77d86b83723573212d0dc45"
+      "sha256": "289748c930b6cd972c2f3bf66c496746caf57f6ff79a54782f452aa0318b00b4"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [

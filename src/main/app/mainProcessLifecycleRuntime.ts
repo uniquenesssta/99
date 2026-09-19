@@ -1,3 +1,4 @@
+import { createShutdownCoordinator, isApplicationClosing } from './shutdownCoordinatorRuntime';
 import { app,BrowserWindow,dialog,Menu,shell } from "electron";
 import { registerPackagedSessionSecurity } from "../security/appSecurityRuntime";
 import { configureElectronUserDataRoot } from "./appDataRootPolicyRuntime";
@@ -130,8 +131,6 @@ export function registerMainProcessLifecycleRuntime(
   } = options;
 
   let gpuInfoUpdateSeen = false;
-  let rendererCloseForQuitRunning = false;
-  let quitCleanupRunning = false;
   let quitCleanupDone = false;
   const installQuitArgs = new Set(["--hfm-quit-for-install", "--quit-for-install"]);
 
@@ -200,7 +199,7 @@ export function registerMainProcessLifecycleRuntime(
       quitForInstaller("second-instance");
       return;
     }
-    showExistingWindow();
+    if (!isApplicationClosing()) showExistingWindow();
   });
 
   app.whenReady().then(async () => {
@@ -300,7 +299,9 @@ export function registerMainProcessLifecycleRuntime(
           (error instanceof Error ? error.message : String(error)),
       );
     }
+    if (isApplicationClosing()) return;
     const schemaAuditTimer = setTimeout(() => {
+      if (isApplicationClosing()) return;
       void runStartupCriticalSchemaAudit().catch((error) => {
         appendLog(
           "startup critical schema audit failed: " +
@@ -315,6 +316,7 @@ export function registerMainProcessLifecycleRuntime(
     startPerformanceLogSampler();
     createWindow();
     const maintenanceTimer = setTimeout(() => {
+      if (isApplicationClosing()) return;
       void runStartupDatabaseMaintenance().catch((error) => {
         appendLog(
           "startup database maintenance failed: " +
@@ -337,125 +339,69 @@ export function registerMainProcessLifecycleRuntime(
     ).catch(() => undefined);
 
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      if (!isApplicationClosing() && BrowserWindow.getAllWindows().length === 0) createWindow();
     });
   });
 
-  function restoreAfterQuitAbort(): void {
-    quitCleanupRunning = false;
-    if (startupBackgroundTasksEnabled) startBackgroundTaskScheduler();
-    const windows = BrowserWindow.getAllWindows();
-    if (!windows.length) createWindow();
-    BrowserWindow.getAllWindows().forEach((window) => {
-      if (window.isDestroyed()) return;
-      if (window.isMinimized()) window.restore();
-      if (!window.isVisible()) window.show();
-      window.focus();
-    });
-  }
+  const shutdown = createShutdownCoordinator({
+    log: appendLog,
+    freeze: () => { stopBackgroundTaskScheduler(); },
+    closeRenderers: async () => {
+      appendLog("before-quit renderer flush requested");
+      const closed = await requestRendererWindowsCloseForQuit();
+      appendLog(closed ? "before-quit renderer flush completed" : "before-quit renderer flush cancelled; application remains open");
+      return closed;
+    },
+    restore: () => {
+      if (startupBackgroundTasksEnabled) startBackgroundTaskScheduler();
+      if (!BrowserWindow.getAllWindows().length) createWindow();
+      showExistingWindow();
+    },
+    cleanup: async () => {
+      stopFolderWatchers();
+      if (process.platform !== "win32") return { remaining: 0 };
+      const result = await cleanupTemporaryActiveFontsUntilEmpty("quit", 1);
+      await flushPendingTemporaryFontDeletes("quit");
+      return result;
+    },
+    save: async () => {
+      await flushActivationInstallStatusSave("before-quit");
+      if (hasPendingActivationInstallStatusSave() || hasInFlightActivationInstallStatusSave()) {
+        throw new Error("本机安装状态仍有未保存项；恢复记录保留，下次启动需要核验。");
+      }
+    },
+    confirmLoss: async (message) => {
+      const result = await dialog.showMessageBox({
+        type: "warning", title: "本地状态尚未完整保存",
+        message: "本次退出仍有未确认或未保存的数据。",
+        detail: `${message}\n返回软件可检查并重试；仍然退出会保留已有恢复记录，但未保存的修改可能丢失。`,
+        buttons: ["返回软件", "仍然退出"], defaultId: 0, cancelId: 0, noLink: true,
+      });
+      return result.response === 1;
+    },
+    drainLogs: async () => {
+      stopPerformanceLogSampler();
+      flushPerformanceLogs("before-quit");
+      await flushStartupLogAsync();
+    },
+    terminate: (clean) => {
+      quitCleanupDone = true;
+      // app.exit does not emit will-quit. Explicitly stop owned executors first.
+      try { stopFolderWatchers(); } catch (error) { try { appendLog(`shutdown watcher stop failed: ${String(error)}`); } catch { /* Continue final teardown. */ } }
+      try { stopBackgroundTaskScheduler(); } catch (error) { try { appendLog(`shutdown scheduler stop failed: ${String(error)}`); } catch { /* Continue final teardown. */ } }
+      try { stopRustCoreDaemon(); } catch (error) { try { appendLog(`shutdown worker stop failed: ${String(error)}`); } catch { /* Continue final teardown. */ } }
+      try { dbQueryWorkerShutdown(); } catch (error) { try { appendLog(`shutdown database stop failed: ${String(error)}`); } catch { /* Continue final teardown. */ } }
+      try {
+        if (clean) markCleanShutdownSync();
+        flushStartupLogSync();
+      } finally { app.exit(0); }
+    },
+  });
 
   app.on("before-quit", (event) => {
     if (quitCleanupDone) return;
-
-    const openWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
-    if (openWindows.length) {
-      event.preventDefault();
-      if (rendererCloseForQuitRunning) return;
-      rendererCloseForQuitRunning = true;
-      appendLog(`before-quit renderer flush requested: windows=${openWindows.length}`);
-      void requestRendererWindowsCloseForQuit()
-        .then((closed) => {
-          rendererCloseForQuitRunning = false;
-          if (closed) {
-            appendLog("before-quit renderer flush completed");
-            app.quit();
-          } else {
-            appendLog("before-quit renderer flush cancelled; application remains open");
-          }
-        })
-        .catch((error) => {
-          rendererCloseForQuitRunning = false;
-          appendLog(
-            `before-quit renderer flush failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          flushStartupLogSync();
-        });
-      return;
-    }
-
     event.preventDefault();
-    if (quitCleanupRunning) return;
-
-    quitCleanupRunning = true;
-    appendLog(
-      `before-quit cleanup requested: activationPending=${hasPendingActivationInstallStatusSave()}, activationInFlight=${hasInFlightActivationInstallStatusSave()}`,
-    );
-    stopBackgroundTaskScheduler();
-    BrowserWindow.getAllWindows().forEach((window) => window.hide());
-
-    void (async () => {
-      if (process.platform === "win32") {
-        const result = await cleanupTemporaryActiveFontsUntilEmpty("quit");
-        await flushPendingTemporaryFontDeletes("quit");
-        if (result.remaining > 0) {
-          restoreAfterQuitAbort();
-          dialog.showErrorBox(
-            "临时激活字体仍未完全移除",
-            `仍有 ${result.remaining} 个临时激活字体没有完全移除。请关闭 Photoshop、Illustrator 或其他正在使用字体的软件后，再次退出。软件不会在未完全移除临时激活字体时退出。`,
-          );
-          return;
-        }
-      }
-
-      try {
-        await flushActivationInstallStatusSave("before-quit");
-      } catch (error) {
-        appendLog(
-          `before-quit activation status flush failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        const target = BrowserWindow.getAllWindows().find((window) => !window.isDestroyed());
-        const messageBoxOptions = {
-          type: "warning" as const,
-          title: "安装状态尚未保存",
-          message: "最后一批字体安装或激活状态未能写入数据库。",
-          detail: "返回软件后会继续自动重试。仍然退出不会影响字体文件，但下次启动时可能需要重新校验安装状态。",
-          buttons: ["返回软件", "仍然退出"],
-          defaultId: 0,
-          cancelId: 0,
-          noLink: true,
-        };
-        const prompt = target
-          ? await dialog.showMessageBox(target, messageBoxOptions)
-          : await dialog.showMessageBox(messageBoxOptions);
-        if (prompt.response !== 1) {
-          restoreAfterQuitAbort();
-          return;
-        }
-        appendLog("before-quit activation status flush force-skipped by user");
-      }
-
-      stopFolderWatchers();
-      stopPerformanceLogSampler();
-      flushPerformanceLogs("before-quit");
-      appendLog(
-        `before-quit cleanup completed: activationPending=${hasPendingActivationInstallStatusSave()}, activationInFlight=${hasInFlightActivationInstallStatusSave()}`,
-      );
-      await flushStartupLogAsync();
-      quitCleanupDone = true;
-      quitCleanupRunning = false;
-      app.quit();
-    })().catch((error) => {
-      appendLog(
-        "before-quit cleanup failed: " +
-          (error instanceof Error ? error.stack || error.message : String(error)),
-      );
-      flushStartupLogSync();
-      restoreAfterQuitAbort();
-      dialog.showErrorBox(
-        "退出清理失败",
-        error instanceof Error ? error.message : String(error),
-      );
-    });
+    void shutdown.request();
   });
 
   app.on("will-quit", () => {

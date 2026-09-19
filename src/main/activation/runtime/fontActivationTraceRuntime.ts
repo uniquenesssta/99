@@ -1,3 +1,4 @@
+import { assertLocalShutdownWorkAllowed } from '../../app/shutdownCoordinatorRuntime';
 import type { FontActivationRuntimeDeps } from "./fontActivationTypes";
 
 export function createFontActivationTraceRuntime(deps: Pick<FontActivationRuntimeDeps, "appendStartupLog">) {
@@ -12,6 +13,7 @@ export function createFontActivationTraceRuntime(deps: Pick<FontActivationRuntim
   ): Promise<T> {
     const startedAt = Date.now();
     try {
+      assertLocalShutdownWorkAllowed();
       const result = await fn();
       appendStartupLog(
         `activation step: ${label}, fontId=${fontId || "unknown"}, elapsed=${Date.now() - startedAt}ms`,

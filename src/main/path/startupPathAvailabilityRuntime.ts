@@ -1,3 +1,4 @@
+import { isApplicationClosing, applicationWorkEpoch } from '../app/shutdownCoordinatorRuntime'
 import { registerIsolatedRoot } from '../rust-core/rustSharedIoCommandRuntime'
 import { probeStartupDirectory } from './sharedPathProbeRuntime'
 import { resolve } from 'node:path'
@@ -97,12 +98,15 @@ export function markStartupPathRootUnavailable(rootPath: string, error: unknown,
 }
 
 export async function ensureStartupPathRootAvailable(rootPath: string, appendLog?: StartupPathAvailabilityLogger, reason = 'startup-path'): Promise<boolean> {
+  if (isApplicationClosing()) return false
+  const workEpoch = applicationWorkEpoch()
   if (!rootPath) return true
   registerIsolatedRoot(rootPath)
   const normalized = normalizeNativePathText(rootPath)
   const drive = normalized.match(/^([a-z]:)(\\.*)?$/i)
   if (drive && process.platform === 'win32') {
     const mapping = await mappedDriveTableAsync()
+    if (isApplicationClosing() || applicationWorkEpoch() !== workEpoch) return false
     const remote = mapping?.get(drive[1].toUpperCase())
     const alias = normalizePathForCacheCompare(normalized)
     if (!remote && aliases.has(alias)) {
@@ -128,7 +132,7 @@ export async function ensureStartupPathRootAvailable(rootPath: string, appendLog
   const timeoutMs = uncRootProbeTimeoutMs()
   const promise = (async () => {
     const result = await withIoDeadlineResult(`startup-root-probe:${rootPath}`, () => probeStartupDirectory(rootPath, key, timeoutMs), timeoutMs)
-    if (entries.get(key)?.generation !== probeGeneration) return false
+    if (isApplicationClosing() || applicationWorkEpoch() !== workEpoch || entries.get(key)?.generation !== probeGeneration) return false
     if (!result.ok) {
       const error = 'error' in result ? result.error : new Error('startup root probe failed')
       markStartupPathRootUnavailable(rootPath, error, appendLog, reason)

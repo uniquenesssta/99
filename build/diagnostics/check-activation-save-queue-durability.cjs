@@ -55,14 +55,17 @@ for (const needle of [
 const lifecycle = read('src/main/app/mainProcessLifecycleRuntime.ts')
 for (const needle of [
   'await flushActivationInstallStatusSave("before-quit")',
-  'before-quit activation status flush failed:',
-  'before-quit activation status flush force-skipped by user',
-  'restoreAfterQuitAbort()',
+  'hasPendingActivationInstallStatusSave() || hasInFlightActivationInstallStatusSave()',
+  'return result.response === 1;',
+  'restore: () => {',
   'if (startupBackgroundTasksEnabled) startBackgroundTaskScheduler()',
   'await flushStartupLogAsync()'
 ]) assert(lifecycle.includes(needle), `unified activation quit lifecycle missing ${needle}`)
-assert(lifecycle.indexOf('await flushActivationInstallStatusSave("before-quit")') < lifecycle.indexOf('stopFolderWatchers();'), 'activation status must flush before watcher shutdown')
-assert((lifecycle.match(/stopRustCoreDaemon\(\)/g) || []).length === 1, 'Rust daemon must only stop in will-quit after renderer and activation flushes complete')
+const shutdown = read('src/main/app/shutdownCoordinatorRuntime.ts')
+assert(shutdown.includes("await budget.run('本地状态保存', 2000, ports.save)"), 'save must have a bounded phase')
+assert(shutdown.includes('if (!await confirm(error)) { restore(); return }'), 'failed save must support explicit cancellation')
+assert(lifecycle.indexOf('stopFolderWatchers();') < lifecycle.indexOf('await flushActivationInstallStatusSave("before-quit")'), 'watchers must stop adding work before final state save')
+assert(lifecycle.indexOf('stopRustCoreDaemon();', lifecycle.indexOf('terminate:')) < lifecycle.indexOf('app.exit(0)'), 'final exit must explicitly stop the native executor')
 assert(!fs.existsSync(path.join(root, 'src/main/activation/activationInstallStatusQuitFlushRuntime.ts')), 'the duplicate activation before-quit listener must be removed')
 
 

@@ -18,6 +18,7 @@ function load(file, mocks = {}, globals = {}, transform = s => s) {
     if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id==='node:path') return path
+    if (['node:async_hooks', 'node:perf_hooks'].includes(id)) return require(id)
     if (id.startsWith('.')) return load(path.relative(root,path.resolve(root,path.dirname(file),id+'.ts')),mocks,globals)
     throw Error(`Unmocked dependency ${file} -> ${id}`)
   } }, { filename:file })

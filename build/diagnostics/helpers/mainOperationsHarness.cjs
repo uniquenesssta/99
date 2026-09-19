@@ -65,6 +65,7 @@ async function observeLifecycle(scenario, overrides = new Map()) {
     requestSingleInstanceLock: () => true,
     on: (name, callback) => events.set(name, callback),
     whenReady: () => ({ then: callback => (ready = Promise.resolve().then(callback)) }),
+    exit: code => { record('app.exit', code); finished = true; windows = [] },
     quit: () => {
       record('app.quit')
       let prevented = false
@@ -88,6 +89,7 @@ async function observeLifecycle(scenario, overrides = new Map()) {
   vm.runInNewContext(code, {
     module, exports: module.exports,
     require: spec => {
+      if (spec.endsWith('shutdownCoordinatorRuntime')) return require('../check-operation-chain.cjs').loader({}, { AbortController })('src/main/app/shutdownCoordinatorRuntime.ts')
       if (spec === 'electron') return electron
       if (spec.endsWith('appSecurityRuntime')) return { registerPackagedSessionSecurity: () => record('session.security') }
       if (spec.endsWith('appDataRootPolicyRuntime')) return { configureElectronUserDataRoot: () => '/app/userdata' }

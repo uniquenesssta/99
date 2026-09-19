@@ -1,3 +1,4 @@
+import { assertApplicationOpen, applicationWorkEpoch } from '../app/shutdownCoordinatorRuntime';
 import { createFontCleanupRemnantsRuntime } from './runtime/fontCleanupRemnantsRuntime';
 import { createFontActivationBatchRuntime } from "./runtime/fontActivationBatchRuntime";
 import { createFontActivationCleanupRuntime } from "./runtime/fontActivationCleanupRuntime";
@@ -77,9 +78,13 @@ export function createFontActivationRuntime(deps: FontActivationRuntimeDeps) {
   }
 
   let mutationTail: Promise<unknown> = Promise.resolve();
-  function serial<Args extends unknown[], Result>(action: (...args: Args) => Promise<Result>) {
+  function serial<Args extends unknown[], Result>(action: (...args: Args) => Promise<Result>, newActivation = false) {
     return (...args: Args): Promise<Result> => {
-      const task = mutationTail.catch(() => undefined).then(() => action(...args));
+      const epoch = applicationWorkEpoch();
+      const task = mutationTail.catch(() => undefined).then(() => {
+        if (newActivation) assertApplicationOpen(epoch);
+        return action(...args);
+      });
       mutationTail = task;
       return task;
     };
@@ -94,9 +99,9 @@ export function createFontActivationRuntime(deps: FontActivationRuntimeDeps) {
     activationTraceStep: traceRuntime.activationTraceStep,
     ...sessionRuntime,
     ...batchRuntime,
-    activateFontSession: serial(sessionRuntime.activateFontSession),
+    activateFontSession: serial(sessionRuntime.activateFontSession, true),
     deactivateFontSession: serial(sessionRuntime.deactivateFontSession),
-    activateFontSessionsBatch: serial(batchRuntime.activateFontSessionsBatch),
+    activateFontSessionsBatch: serial(batchRuntime.activateFontSessionsBatch, true),
     deactivateFontSessionsBatch: serial(batchRuntime.deactivateFontSessionsBatch),
     cleanupTemporaryActiveFontsUntilEmpty: serial(cleanupTemporaryActiveFontsUntilEmpty),
     flushPendingTemporaryFontDeletes:

@@ -1,3 +1,4 @@
+import { isApplicationClosing, onApplicationClosing } from '../app/shutdownCoordinatorRuntime'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 
 export type SharedIoProcessRequest = {
@@ -164,13 +165,17 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       drain()
     })
   }
-  function stop(): void {
-    closed = true
+  function cancelAll(): void {
+    const wasClosed = closed; closed = true
     for (const job of [...queue, ...active]) cancel(job, 'stopping')
-    drain()
+    closed = wasClosed; drain()
+  }
+  function stop(): void {
+    closed = true; cancelAll()
+    for (const job of active) { try { job.child?.kill('SIGKILL') } catch { /* Parent guard remains active. */ } }
   }
   return {
-    run, stop,
+    run, stop, cancelAll,
     whenIdle: () => active.size || queue.length ? new Promise<void>(resolve => idleWaiters.push(resolve)) : Promise.resolve(),
     status: () => ({ closed, active: active.size, queued: queue.length, pids: [...active].map(job => job.child?.pid).filter(Boolean) }),
   }
@@ -180,5 +185,14 @@ let applicationPool: ReturnType<typeof createSharedIoProcessRuntime> | undefined
 let applicationLog: (message: string) => void = () => undefined
 export function applicationSharedIoProcessRuntime(appendLog?: (message: string) => void) {
   if (appendLog) applicationLog = appendLog
-  return applicationPool ||= createSharedIoProcessRuntime(message => applicationLog(message))
+  if (!applicationPool) {
+    const pool = createSharedIoProcessRuntime(message => applicationLog(message))
+    onApplicationClosing(() => pool.cancelAll())
+    applicationPool = { ...pool, run: request => {
+      if (!isApplicationClosing()) return pool.run(request)
+      try { request.onClose?.() } catch { /* No executor owns this input. */ }
+      return Promise.reject(new SharedIoProcessError('应用退出中，网络操作未提交。', 'not-started', 'closing'))
+    } }
+  }
+  return applicationPool
 }

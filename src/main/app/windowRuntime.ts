@@ -1,3 +1,4 @@
+import { isApplicationClosing, withShutdownPrompt, RENDERER_CLOSE_MS } from './shutdownCoordinatorRuntime'
 import { app,BrowserWindow,dialog,ipcMain,protocol } from 'electron'
 import { createWindowRoundedShapeRuntime } from './windowRoundedShapeRuntime'
 import fs from 'node:fs'
@@ -38,6 +39,7 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
     target: BrowserWindow
     timeout: ReturnType<typeof setTimeout>
     completion: Promise<boolean>
+    completing?: boolean
     resolveCompletion: (closed: boolean) => void
   }>()
   const fontProtocolRuntime = createFontProtocolRuntime({
@@ -86,7 +88,8 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
 
   async function completePendingWindowClose(requestId: number, saved: boolean, reason: string, forceClose = false): Promise<boolean> {
     const pending = pendingCloseFlushes.get(requestId)
-    if (!pending) return false
+    if (!pending || pending.completing) return false
+    pending.completing = true
 
     clearTimeout(pending.timeout)
     options.appendLog(`window close flush completed: request=${requestId}, saved=${saved ? 'yes' : 'no'}, reason=${reason}`)
@@ -98,7 +101,7 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
       return true
     }
     if (!saved && !forceClose) {
-      const result = await dialog.showMessageBox(target, {
+      const result = await withShutdownPrompt(() => dialog.showMessageBox(target, {
         type: 'warning',
         title: '尚有数据未保存',
         message: '字体写入队列或库配置未能完整保存。',
@@ -107,7 +110,7 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
         defaultId: 0,
         cancelId: 0,
         noLink: true
-      })
+      }))
       if (result.response !== 1) {
         pendingCloseFlushes.delete(requestId)
         pending.resolveCompletion(false)
@@ -387,6 +390,7 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
 
     createdWindow.on('close', (event) => {
       if (closeFlushAllowedWindows.delete(createdWindow)) return
+      if (!isApplicationClosing()) { event.preventDefault(); app.quit(); return }
       if (!rendererReadyWindows.has(createdWindow) || createdWindow.webContents.isDestroyed()) return
 
       event.preventDefault()
@@ -399,7 +403,7 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
       })
       const timeout = setTimeout(() => {
         void completePendingWindowClose(requestId, false, 'timeout')
-      }, 12000)
+      }, RENDERER_CLOSE_MS)
       pendingCloseFlushes.set(requestId, {
         target: createdWindow,
         timeout,

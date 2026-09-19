@@ -109,7 +109,7 @@ async function restartPolicy(){
  assert.equal((await store.loadTemporaryActiveFonts()).records.length,0,'restart must use cleaned persisted session')
  const lifecycle=fs.readFileSync(path.join(root,'src/main/app/mainProcessLifecycleRuntime.ts'),'utf8')
  assert(lifecycle.includes('cleanupTemporaryActiveFontsUntilEmpty("startup", 6)'))
- assert(lifecycle.includes('cleanupTemporaryActiveFontsUntilEmpty("quit")'))
+ assert(lifecycle.includes('cleanupTemporaryActiveFontsUntilEmpty("quit", 1)'))
 }
 
 function viewScopeMatrix(){

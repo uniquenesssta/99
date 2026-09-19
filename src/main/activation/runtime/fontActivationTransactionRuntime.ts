@@ -1,3 +1,4 @@
+import { assertApplicationOpen, applicationWorkEpoch } from '../../app/shutdownCoordinatorRuntime';
 import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { createManagedActivationIdentityRuntime, sameManagedIdentity } from './managedActivationIdentityRuntime';
@@ -70,6 +71,8 @@ export function createFontActivationTransactionRuntime(
   async function runFontActivationTransaction(
     item: FontItem,
   ): Promise<FontActivationTransactionResult> {
+    const workEpoch = applicationWorkEpoch();
+    assertApplicationOpen(workEpoch);
     ensureWindows();
     const state = await activationTraceStep("load-session-state", item.id, () =>
       loadTemporaryActiveFonts(),
@@ -126,6 +129,7 @@ export function createFontActivationTransactionRuntime(
       resource: false,
     };
     let copyMode = "copied";
+    assertApplicationOpen(workEpoch);
     await compensationRuntime.recordActivationIntent(record, { file: true, registry: false, resource: false });
     completed.file = true;
     try {
@@ -138,23 +142,29 @@ export function createFontActivationTransactionRuntime(
       record.identity = copy.identity;
       await compensationRuntime.recordActivationIntent(record, completed);
       await compensationRuntime.queueCopyPartial(record);
+      assertApplicationOpen(workEpoch);
       record.stage = 'registry-pending';
       completed.registry = true;
       await compensationRuntime.recordActivationIntent(record, completed);
 
-      await activationTraceStep("write-hkcu-registry", item.id, () =>
-        writeFontRegistryValuesHKCUBatch([{ name: regName, path: dest }]),
+      await activationTraceStep("write-hkcu-registry", item.id, () => {
+        assertApplicationOpen(workEpoch);
+        return writeFontRegistryValuesHKCUBatch([{ name: regName, path: dest }]);
+      },
       );
       completed.registry = true;
 
       record.stage = 'resource-pending';
       completed.resource = true;
       await compensationRuntime.recordActivationIntent(record, completed);
-      await activationTraceStep("add-font-resource", item.id, () =>
-        addFontResourceSession(dest, { notify: true, reason: "activate" }),
+      await activationTraceStep("add-font-resource", item.id, () => {
+        assertApplicationOpen(workEpoch);
+        return addFontResourceSession(dest, { notify: true, reason: "activate" });
+      },
       );
       completed.resource = true;
 
+      assertApplicationOpen(workEpoch);
       record.stage = 'active';
       const nextRecords = state.records.filter(
         (old) => old.fontId !== item.id,
@@ -193,7 +203,8 @@ export function createFontActivationTransactionRuntime(
   function activateFontSessionTransaction(
     item: FontItem,
   ): Promise<FontActivationTransactionResult> {
-    const task = activationTail.then(() => runFontActivationTransaction(item));
+    const ticket = applicationWorkEpoch();
+    const task = activationTail.then(() => { assertApplicationOpen(ticket); return runFontActivationTransaction(item); });
     activationTail = task.then(
       () => undefined,
       () => undefined,
