@@ -1004,3 +1004,17 @@ npm run verify
 - Context7 已查 Electron `app.exit` 与 `app.quit` 生命周期差异；Mermaid Chart 已更新实际预算/确认/回收链路。Create State 按此前容量 2/2 后跳过的约定，交接继续以 Git、README 和任务书为准。O-07/O-08 未开始。
 
 - 最终自动门：`npm run verify`（TypeScript、137/137 诊断）退出码 0；Electron/Vite 主进程/预加载/渲染器构建 381/1/203 模块及混淆均通过。退出专项与原 worker transport、共享隔离、watcher、激活补偿、日志耐久及源无关清理门保留；没有跳过旧诊断或关闭变异断言。最终准入复核后再执行同一完整门，结果以发布前日志为准。
+
+## 24. 中文映射共享路径修复（O-07 暂停）
+
+- 用户要求先修复添加局域网监视文件夹失败；O-07 仅完成只读核查，未修改代码。基线 `848764daea2c290796f3cd36f04a1c377e0527b8`，沿用原分支。
+- 日志 `startup-2026-09-19_04-38-16-014-35884.log`：选择器正常返回 Z: 路径，转换后的共享名称含 U+FFFD；索引读取落到乱码 UNC，随后目录树报错。原始网络位置不等于不存在。旧退出日志不能作为 O-06 实机回执。
+- 根因：`net use` 本地化文本固定按 UTF-8 解码；此前映射匹配修复让该编码缺口进入正常使用路径。不是 Git 修改中文文件编码。
+- 白名单：`src/main/path/pathCanonicalizer.ts`，新增 `build/diagnostics/check-mapped-drive-unicode.cjs`，适配 `build/diagnostics/check-shared-root-retention.cjs` 的进程夹具，`package.json`、README、本任务书。
+- 改为本机 CIM 结构化读取 Windows 网络盘 DeviceID/ProviderName；PowerShell 输出 UTF-8 JSON 的 ASCII Base64，避免依赖 OEM/控制台代码页或空格分列。保留异步、单在途、1500ms 期限及缓存；错误/损坏映射不转换用户路径，不作为空映射成功缓存。无新增依赖、Rust/IPC/schema 变更。
+- 验证覆盖中文/韩文/空格/非 BMP、设备前缀、大小写和斜杠、空表、错误输出、重复映射、超时及缓存重试；复现旧版乱码路径，并保留原共享身份/离线检查。真实 Windows NAS 添加仍需用户复验。
+
+- 查询 Context7 PowerShell 文档与 Microsoft Win32_LogicalDisk 属性文档，确认本机 WMI、网络盘 DeviceID/ProviderName；查询只投影这两个属性。没有要求用户更改系统代码页、共享名称或管理员权限。
+- 本次仅一个生产 owner 修改，按 AGENTS.md 小型单文件例外不新增架构图；Create State 沿用容量 2/2 后跳过约定。修复不自动改写历史乱码配置：更新并重启后重新选择原映射目录，若界面残留乱码项则由用户移除后重新添加，不猜测替换字符对应的真实名称。
+
+- 最终验证：`npm run verify`（TypeScript、138/138 诊断）退出码 0；Electron/Vite 主进程、预加载、渲染器构建及混淆通过；`git diff --check` 通过。新增乱码复现与原共享根保留诊断均通过。此次未执行真实 Windows CIM/NAS 添加或原生 Rust CI，未改动原生代码；不能将受控进程夹具记为实机验收。

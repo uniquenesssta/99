@@ -37,15 +37,28 @@ export function normalizePathCompareText(filePath: string): string {
   return normalizeNativePathText(filePath).toLowerCase()
 }
 
+// Query local WMI; never parse localized `net use` columns or OEM bytes.
+// ASCII output preserves Unicode paths regardless of the console code page.
+const MAPPED_DRIVE_QUERY = `$ErrorActionPreference = 'Stop'
+$rows = @(Get-CimInstance -Query 'SELECT DeviceID, ProviderName FROM Win32_LogicalDisk WHERE DriveType = 4' | ForEach-Object { @{ drive = [string]$_.DeviceID; remote = [string]$_.ProviderName } })
+$json = ConvertTo-Json -InputObject $rows -Compress
+[Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)))`
+
 function parseMappedDriveTable(stdout: string): Map<string, string> {
+  const encoded = stdout.trim()
+  const bytes = Buffer.from(encoded, 'base64')
+  if (!encoded || bytes.toString('base64') !== encoded) throw new Error('Invalid mapped drive response')
+  const rows: unknown = JSON.parse(bytes.toString('utf8'))
+  if (!Array.isArray(rows)) throw new Error('Invalid mapped drive table')
   const drives = new Map<string, string>()
-  for (const line of String(stdout || '').split(/\r?\n/)) {
-    const driveMatch = line.match(/\b([a-zA-Z]:)(?=\s|$)/)
-    const uncIndex = line.indexOf('\\\\')
-    if (!driveMatch || uncIndex < 0) continue
-    const remote = line.slice(uncIndex).trim().split(/\s{2,}/)[0]
-    if (!/^\\\\[^\\]+\\[^\\]+/.test(remote)) continue
-    drives.set(driveMatch[1].toUpperCase(), normalizeNativePathText(remote))
+  for (const row of rows) {
+    if (!row || typeof row.drive !== 'string' || !/^[a-z]:$/i.test(row.drive)
+      || typeof row.remote !== 'string' || /[\u0000-\u001f\ufffd]/.test(row.remote)) throw new Error('Invalid mapped drive identity')
+    const remote = normalizeNativePathText(row.remote)
+    if (!/^\\\\[^\\]+\\[^\\]+/.test(remote)) throw new Error('Invalid mapped drive remote path')
+    const drive = row.drive.toUpperCase()
+    if (drives.has(drive)) throw new Error('Duplicate mapped drive identity')
+    drives.set(drive, remote)
   }
   return drives
 }
@@ -60,12 +73,16 @@ export async function mappedDriveTableAsync(): Promise<Map<string, string> | nul
   if (mappedDriveFailureUntil > Date.now()) return null
   if (mappedDriveTableCache && mappedDriveTableCache.expiresAt > Date.now()) return new Map(mappedDriveTableCache.drives)
   mappedDriveTableInFlight = new Promise<Map<string, string> | null>((done) => {
-    execFile('net.exe', ['use'], { encoding: 'utf8', timeout: 1500, windowsHide: true, shell: false }, (error, stdout) => {
-      if (error) { mappedDriveFailureUntil = Date.now() + 5000; done(null); return }
-      const drives = parseMappedDriveTable(String(stdout || ''))
-      mappedDriveTableCache = { drives, expiresAt: Date.now() + MAPPED_DRIVE_TABLE_TTL_MS }
-      done(new Map(drives))
-    })
+    const failed = () => { mappedDriveTableCache = null; mappedDriveFailureUntil = Date.now() + 5000; done(null) }
+    execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(MAPPED_DRIVE_QUERY, 'utf16le').toString('base64')],
+      { encoding: 'utf8', timeout: 1500, maxBuffer: 256 * 1024, killSignal: 'SIGKILL', windowsHide: true, shell: false }, (error, stdout) => {
+        if (error) { failed(); return }
+        try {
+          const drives = parseMappedDriveTable(String(stdout || ''))
+          mappedDriveTableCache = { drives, expiresAt: Date.now() + MAPPED_DRIVE_TABLE_TTL_MS }
+          done(new Map(drives))
+        } catch { failed() }
+      })
   })
   try { return await mappedDriveTableInFlight } finally { mappedDriveTableInFlight = null }
 }

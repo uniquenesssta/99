@@ -55,7 +55,7 @@ async function stateCases() {
   let probes=0, processCalls=0, synchronous=0
   const winLoad=stateLoader({'node:fs':{promises:{stat:async()=>{probes++;throw Error('ENETUNREACH')}}},'node:child_process':{
     execFileSync(){synchronous++;throw Error('must not block')},
-    execFile(file,args,options,done){processCalls++;assert.equal(file,'net.exe');assert.deepEqual(plain(args),['use']);assert.equal(options.shell,false);assert.equal(options.timeout,1500);setImmediate(()=>done(null,'OK           O:        \\\\nas\\share       Microsoft Windows Network\r\n'))}
+    execFile(file,args,options,done){processCalls++;assert.equal(file,'powershell.exe');assert.equal(args[3],'-EncodedCommand');assert.equal(options.shell,false);assert.equal(options.timeout,1500);setImmediate(()=>done(null,Buffer.from(JSON.stringify([{drive:'O:',remote:'\\\\nas\\share'}])).toString('base64')))}
   }},{process:{...process,platform:'win32'}},transforms)
   const win=winLoad(stateFile)
   assert.equal(await win.ensureStartupPathRootAvailable('O:\\fonts'),false)

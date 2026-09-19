@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-19：修复中文共享名的映射盘监视目录添加失败：使用 Windows 本机结构化映射及编码明确的返回值，避免 `net use` 本地化输出被误解码为乱码路径；错误映射不缓存，保留异步期限与单在途。新增旧版乱码复现、Unicode/空格/别名去重及失败重试诊断；TypeScript、138 项诊断、Electron/Vite 构建及混淆通过；Windows/NAS 实际添加待复验。O-07 暂停，详见[修复记录 §24](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#24-中文映射共享路径修复o-07-暂停)。
+
 - 2026-09-19：实现 O-06 整体有界退出：重复关闭共用 15 秒预算，人工保存确认暂停计时；退出冻结网络与新激活，保留本地保存通道，残留或清理超时不再无限阻止关闭。取消退出恢复窗口和监视，迟到复制/批次不会继续激活，最终显式终止自有执行者。TypeScript、137/137 诊断、三端构建和混淆通过；真实 Windows/NAS 退出仍待验。详见[O-06 执行卡](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#23-o-06-执行卡)，下一项 O-07。
 
 - 2026-09-19：补齐 O-02/O-04/O-05：共享扫描、标签维护、预览及文件操作进入可终止进程；NAS 激活字体通过本机受管副本取消，本机状态结算不再访问源根；新增身份校验、分阶段恢复、残留重试及重启后清理入口。TypeScript、136/136 诊断、JS 三端构建和混淆通过；Windows/Linux 原生测试与 release 构建通过，详见[执行记录](docs/plans/HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#22-o-02o-04o-05-完整实现接续)。实际 Windows/NAS 与重启待验，整体退出预算留在 O-06。
