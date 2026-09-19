@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-20：完成 C-00 可执行基线：新增索引访问/共享 I/O/激活清理/退出生命周期 observer，固定 5 项 JS 已知缺陷、3 项对照，并用 Windows 真实 Rust worker 复现临时激活清理的 `unsafe registry ownership request`；修正仅测试夹具的并行临时目录碰撞与既有 renderer hash 冻结。`npm run verify` 140/140、Windows/Linux Cargo 全测试与 release 均通过（CI 35452094709）。未修改生产代码；下一项 C-01。
+
 - 2026-09-19：新增[索引访问、共享 I/O、激活清理与退出一致性修复任务书](docs/plans/HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)，明确 `RootIndexStorage=root/fallback` 只表示索引存储位置，不表示本地/局域网访问类型；按实机日志登记共享 root index 写事务、watcher 放大、根离线误判、临时激活清理所有权、退出结果语义与 renderer closing 七类待修项，拆为 C-00～C-09 原子任务。当前仅规划，未修改生产代码，O-07 继续暂停。
 
 - 2026-09-19：修复开发环境退出时开发者状态刷新继续调用 `cache:getArchitecture`、任务调度器、共享元数据诊断和任务列表而产生红色 IPC 错误：后台调度器进入 stopping 时不再启动新的诊断刷新，已在途刷新遇到“软件正在退出”后立即短路，不放宽主进程 O-06 freeze。TypeScript、window-close-flush、bounded-local-exit、React composition、Electron/Vite 构建与混淆通过，Windows/Linux 原生测试及 release 通过（CI 35428328158，Windows 原生首轮为既有 SQLite 唯一约束波动，原提交重跑通过）。Shared I/O 高频调用只读审计另发现 `O:\字体` watcher 的共享根索引原生事务边界问题，未在本轮擅自修改。

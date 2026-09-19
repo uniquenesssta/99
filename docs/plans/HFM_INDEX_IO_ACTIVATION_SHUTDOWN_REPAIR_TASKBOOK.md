@@ -2,9 +2,9 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.0；制定日期：2026-09-19；软件版本：3.0.0。
+- 文档版本：1.1；制定日期：2026-09-19；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定分支：`stage/09-preview-tags-app`；制定基线：`8fe6db1335e16287062c23bf7de1d66853545f59`。
-- 状态：**规划完成，尚未实施生产代码**。本轮只创建任务书、记录已确认事实和后续 Atomic Task，不修源码。
+- 状态：**C-00 已完成；C-01 未开始**。C-00 仅新增/调整诊断、测试夹具和记录，未修改生产源码；O-07 继续暂停。
 - 本书是 [共享离线与本地退出任务书](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md) 在真实 Windows/NAS 验收中发现的新一轮正确性修复入口；O-07 继续暂停，先完成本书 P0/P1 修复再决定是否恢复 O-07。
 - 不新建阶段分支；继续沿用当前阶段唯一分支。除非用户明确要求，不创建并行修复分支。
 - 上级约束继续来自 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[全链路一致性修复任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)、Stage 1 激活事务、Stage 2 路径授权、Stage 5 Rust 边界、Stage 6 React 所有权及 Stage 7 IPC 安全任务书。
@@ -149,7 +149,7 @@ flowchart TD
 
 ### C-00 基线与可执行反例
 
-状态：未开始。
+状态：**完成**。执行基线 `515f2103106db1dc2a200b43fd3e8304d1ed780e`；最终验证分支提交 `954a2ec56d498c18e216f2a683375b46a8622e41`。
 
 范围：只新增/扩展诊断、测试夹具和任务书记录，不改生产行为。
 
@@ -164,6 +164,23 @@ flowchart TD
 7. freeze 后 renderer 仍触发四项 developer IPC 的实机/受控事件链。
 
 硬门禁：反例必须在当前生产代码上真实失败；不得只做源字符串匹配。C-00 未完成禁止改 C-01。
+
+#### C-00.1 实际观察与长期基线
+
+- 新增 `build/diagnostics/check-index-io-activation-shutdown-baseline.cjs`。默认固定读取 C-00 制定基线源码；`--current` 复核当前源码，`--crlf` 验证 Windows 换行，`--strict` 在当前缺陷仍存在时必须非零退出。默认 observer 进入 `diagnostics:all`，但“成功复现已知缺陷”不等于业务通过。
+- JS observer 实际得到 **5 项 KNOWN_DEFECT + 3 项 CONTROL_PASS**：本机 `storage=root` 写入正常；shared `storage=root` 在进入 Rust apply 前先走 atomic snapshot 并触发 `main-write-denied`；结构性 watcher 提交失败触发第二次 root-level rescan recovery；单个 `stat` timeout 将整个 root 标为 offline 并推进 generation；普通 ENOENT 不会误判 root offline；真实激活命名产生 `字体管理器_ACTIVE_` 托管文件但 registryName 为真实字体名 + session；`remaining=1` 仍 `terminate(clean=true)`；close flush 后晚到后台事件仍可触发四项 developer IPC。
+- 新增 Windows 原生 observer `native-src/hfm-core-worker/tests/c00_activation_cleanup_contract.rs`，真实启动 `hfm-core-worker --font-activation-files`，用生产形态 registryName + 受管本机文件路径复现 `unsafe registry ownership request`。该测试只在 Windows 执行，不用 Linux stub 冒充 Windows registry 证据。
+- C-00 增加的并行原生测试暴露三个既有测试夹具临时目录名只依赖 PID+时间戳，Windows 并行 Cargo 下可能重名；仅在 `local_tags_atomicity.rs`、`preview_cache_atomicity.rs`、`shared_metadata_atomicity.rs` 增加进程内原子序号，不改变生产 Rust。
+- 全量 JS 门发现 `rendererDeveloperStatusRuntime.ts` 的冻结 hash 仍停留在上一轮退出修复前；仅更新 `react-composition-domain-controllers.fixture.json` 对应摘要，使夹具与已存在的生产源码一致，未修改 renderer 生产文件。
+
+#### C-00.2 验证结果
+
+- GitHub Actions `35452094709`，验证提交 `954a2ec56d498c18e216f2a683375b46a8622e41`：最终 **success**。
+- JS/Linux：默认 pinned observer、`--current`、`--crlf` 均成功；`--current --strict` 按预期非零；`npm run verify` 通过，当前 **140/140 diagnostics**。
+- Windows native：定向 C-00 原生 observer、全部 Cargo 测试与 release build 通过；Linux native：全部 Cargo 测试与 release build 通过。
+- 本轮未修改任何 `src/main`、`src/renderer`、`src/preload` 或 Rust 生产模块，不改 IPC、数据库 schema、索引格式、恢复文件、依赖版本和用户行为。
+- C-00 只证明问题可稳定重放，**不表示 C-01～C-07 已修复**。下一执行入口为 C-01。
+
 
 ### C-01 分离 Root Index 存储位置与物理访问类型
 
@@ -402,13 +419,13 @@ flowchart TD
 
 ## 9. 当前结论与下一执行入口
 
-本书制定完成后仍然**不代表问题已修复**。
+C-00 已完成，但本书整体仍然**不代表问题已修复**。
 
 当前执行顺序固定为：
 
 ```text
-C-00 基线
-→ C-01 索引 storage/access 分离
+C-00 基线（完成）
+→ C-01 索引 storage/access 分离（下一项）
 → C-02 局域网 root index 原生事务
 → C-03 watcher 收敛
 → C-04 offline 证据

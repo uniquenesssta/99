@@ -12,7 +12,7 @@
 
 > 共享离线专项接续：[任务书 §22](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#22-o-02o-04o-05-完整实现接续)。O-02 全消费者隔离、O-04 本机副本与断网取消、O-05 分阶段恢复及人工残留处理代码已补齐。TypeScript、136/136 诊断、JS 三端构建/混淆通过；原生 Windows/Linux 验证与真实待验项详见 §22。保留并置灰离线共享目录/标签，不做离线共享写入同步。O-06 已实现单一总退出预算及退出准入，验证见 [§23](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#23-o-06-执行卡)；后续入口 O-07（重连校验）；Windows/NAS、权限占用和实际重启仍须验收，旧 U-09 与主线待验项不变。
 
-> 新实机修复入口：[索引访问、共享 I/O、激活清理与退出一致性修复任务书](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)。Windows/NAS 日志已确认 `storage=root` 与 local/shared 访问维度被错误混用于写路由，并暴露 watcher 原生事务、根超时误离线、临时激活清理所有权和退出 lifecycle 的独立问题；按 C-00～C-09 串行修复。当前仅完成规划，生产代码未改，O-07 继续暂停。
+> 新实机修复入口：[索引访问、共享 I/O、激活清理与退出一致性修复任务书](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)。Windows/NAS 日志已确认 `storage=root` 与 local/shared 访问维度被错误混用于写路由，并暴露 watcher 原生事务、根超时误离线、临时激活清理所有权和退出 lifecycle 的独立问题；按 C-00～C-09 串行修复。C-00 已完成历史反例固化：140/140 JS diagnostics、Windows/Linux Cargo 全测试与 release 通过，生产代码未改；下一项 C-01，O-07 继续暂停。
 
 ## 0. 文档状态
 

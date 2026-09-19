@@ -1,9 +1,10 @@
-use std::{fs,path::PathBuf,process::{Command,Output},time::{SystemTime,UNIX_EPOCH}};
+use std::{sync::atomic::{AtomicU64, Ordering}, fs,path::PathBuf,process::{Command,Output},time::{SystemTime,UNIX_EPOCH}};
 use rusqlite::Connection;
 use serde_json::{json,Value};
 struct Fixture {dir:PathBuf,db:PathBuf}
 impl Fixture {
- fn new()->Self {let dir=std::env::temp_dir().join(format!("hfm-preview-{}-{}",std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));fs::create_dir_all(&dir).unwrap();let f=Self{db:dir.join("preview.sqlite"),dir};assert!(f.run(false,json!({"rows":[row("a","before"),row("b","before")]})).status.success());f}
+ fn new()->Self {static NEXT: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!("hfm-preview-{}-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(), NEXT.fetch_add(1, Ordering::Relaxed)));fs::create_dir_all(&dir).unwrap();let f=Self{db:dir.join("preview.sqlite"),dir};assert!(f.run(false,json!({"rows":[row("a","before"),row("b","before")]})).status.success());f}
  fn reader(&self)->Connection{Connection::open(&self.db).unwrap()}
  fn command(&self,delete:bool,extra:Value)->Command{let mut p=json!({"dbPath":self.db.to_str().unwrap(),"schemaVersion":1,"keys":["a","b"],"rows":[row("a","next"),row("b","next")],"trace":{"version":1,"sessionId":"preview-test","operationId":"intent","attemptId":"attempt","batchId":"batch","domain":"previewCache","members":["intent"],"omitted":0,"spanId":"span"}});for(k,v)in extra.as_object().unwrap(){p[k]=v.clone();}let input=self.dir.join("input.json");fs::write(&input,p.to_string()).unwrap();let mut c=Command::new(env!("CARGO_BIN_EXE_hfm-core-worker"));c.arg(if delete{"--preview-cache-delete"}else{"--preview-cache-apply"}).arg("--input").arg(input);c}
  fn run(&self,delete:bool,p:Value)->Output{self.command(delete,p).output().unwrap()}

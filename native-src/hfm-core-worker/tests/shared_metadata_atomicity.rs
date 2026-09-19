@@ -1,11 +1,12 @@
 //! Real Rust commands and isolated SQLite databases, including R-01 commit receipts.
-use std::{fs, path::PathBuf, process::{Command, Output}, time::{SystemTime, UNIX_EPOCH}};
+use std::{sync::atomic::{AtomicU64, Ordering}, fs, path::PathBuf, process::{Command, Output}, time::{SystemTime, UNIX_EPOCH}};
 use rusqlite::Connection;
 use serde_json::{json, Value};
 struct Fixture { dir: PathBuf, db: PathBuf }
 impl Fixture {
     fn new() -> Self {
-        let dir=std::env::temp_dir().join(format!("hfm-shared-{}-{}",std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!("hfm-shared-{}-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(), NEXT.fetch_add(1, Ordering::Relaxed)));
         fs::create_dir_all(&dir).unwrap(); let f=Self {db:dir.join("shared.sqlite"),dir};
         assert!(f.run(false,json!({"updatedAt":"before","rows":[row("a","old"),row("b","old")]})).status.success());
         f.reader().execute_batch("CREATE TABLE local_sentinel(value TEXT); INSERT INTO local_sentinel VALUES('local-tag-unchanged');").unwrap();

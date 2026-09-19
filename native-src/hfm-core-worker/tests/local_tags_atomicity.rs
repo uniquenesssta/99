@@ -1,12 +1,13 @@
 //! Real command regression tests; no substitute SQL implementation of the mutation.
-use std::{fs, path::PathBuf, process::{Command, Output}, time::{SystemTime, UNIX_EPOCH}};
+use std::{sync::atomic::{AtomicU64, Ordering}, fs, path::PathBuf, process::{Command, Output}, time::{SystemTime, UNIX_EPOCH}};
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
 struct Fixture { dir: PathBuf, db: PathBuf }
 impl Fixture {
     fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!("hfm-atomic-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!("hfm-atomic-{}-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(), NEXT.fetch_add(1, Ordering::Relaxed)));
         fs::create_dir_all(&dir).unwrap();
         let f = Self { db: dir.join("local.sqlite"), dir };
         assert!(f.run("--local-tags-set", json!({"rows":[row("a", "old")]})).status.success());
