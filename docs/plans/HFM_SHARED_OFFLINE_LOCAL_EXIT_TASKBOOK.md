@@ -1066,3 +1066,9 @@ npm run verify
 - 审计同时发现一个独立正确性问题：`06:53:35.672` 的 `O:\\字体` watcher 在 `root-cache-write-lock` 内失败，错误为“共享根索引写入必须使用隔离的原生事务”，随后 watcher batch 失败。源码对应默认 `saveRootIndexSqliteChangesAtomicSnapshot` 路径会在共享根下创建 snapshot/temp SQLite，并调用禁止共享主进程写入的 `openRootIndexDb(..., touchMeta=true)`，因此与 O-02 的原生事务边界冲突。此项可能额外触发 watcher recovery 并放大 Shared I/O，但本轮按约定仅审计、未修改；建议在任何性能批处理之前先单独修复该正确性问题。
 - 后续若获准优化，优先评估在不破坏 killable isolation 的前提下，把 watcher/root-index 的批量 stat/readdir/文件签名合并到现有 Rust shared-file 端口的批处理命令，或复用有界 worker，而不是退回主进程直接访问 NAS。
 
+## 29. 后续实机修复转入独立任务书
+
+- 2026-09-19 Windows/NAS 实机日志 `startup-2026-09-19_12-40-52-744-38500.log` 已确认：本书前序根身份修复有效，但又暴露 root index 写事务、watcher recovery 放大、单请求 timeout 误判根离线、临时激活清理所有权合同、退出结果语义和 renderer closing 未实机通过等问题。
+- 这些问题不继续堆入 O-07；详细根因、local/shared 索引术语、Atomic Task、白名单和验收门统一转入 [HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)。
+- O-07 保持暂停。新任务书 C-01～C-07 的正确性门未通过前，不推进性能型 Shared I/O 重构，也不把 O-04/O-05/O-06 的相关 Windows 实机项标成全部完成。
+

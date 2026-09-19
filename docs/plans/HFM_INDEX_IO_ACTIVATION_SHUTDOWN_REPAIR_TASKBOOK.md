@@ -1,0 +1,422 @@
+# HFM 索引访问、共享 I/O、激活清理与退出一致性修复任务书
+
+## 0. 文档状态与执行入口
+
+- 文档版本：1.0；制定日期：2026-09-19；软件版本：3.0.0。
+- 仓库：`uniquenesssta/99`；制定分支：`stage/09-preview-tags-app`；制定基线：`8fe6db1335e16287062c23bf7de1d66853545f59`。
+- 状态：**规划完成，尚未实施生产代码**。本轮只创建任务书、记录已确认事实和后续 Atomic Task，不修源码。
+- 本书是 [共享离线与本地退出任务书](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md) 在真实 Windows/NAS 验收中发现的新一轮正确性修复入口；O-07 继续暂停，先完成本书 P0/P1 修复再决定是否恢复 O-07。
+- 不新建阶段分支；继续沿用当前阶段唯一分支。除非用户明确要求，不创建并行修复分支。
+- 上级约束继续来自 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[全链路一致性修复任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)、Stage 1 激活事务、Stage 2 路径授权、Stage 5 Rust 边界、Stage 6 React 所有权及 Stage 7 IPC 安全任务书。
+- 当前用户要求：先明确“本地索引”和“局域网索引”的职责，修复不得继续混用“共享”概念；其余已确认问题按现有 docs 同等级别的范围冻结、能力约束、失败门、自动验证和 Windows/NAS 实机验收执行。
+
+## 1. 必须先统一的索引术语
+
+### 1.1 四个维度不能再混为一个布尔值
+
+当前代码里至少存在四个不同概念：
+
+| 维度 | 正确含义 | 当前实现事实 | 禁止误解 |
+| --- | --- | --- | --- |
+| Root Index 存储位置 | 索引文件放在监视根自己的 `.hfm-cache`，还是本机兼容/回退位置 | `RootIndexStorage = 'root' | 'fallback'` | `storage='root'` **不等于局域网/共享** |
+| 物理访问类型 | 文件实际位于本机磁盘，还是映射盘/UNC/网络提供者 | 由路径和 `sharedIoResourceKeys(...)` 等运行时判断 | 不能用 `storage` 推断 local/shared |
+| Root Index 权威性 | 每个监视根自己的字体事实索引 | 每个 root 有自己的 root index | 不能等同本机 merged index |
+| Merged Index | 本机聚合查询投影，用于跨 root 页查询/统计 | 本机生成，可重建 | 不能把 merged index 当共享根数据库写回 |
+
+### 1.2 本地索引和局域网索引的软件实际上“能分辨”，但写路径选错了维度
+
+现状不是“所有索引都被当共享”。底层 `rootIndexDatabaseRuntime.openRootIndexDb()` 会调用 `sharedIoResourceKeys([filePath])`，因此：
+
+- 本机磁盘上的 root index：返回无共享资源，可走本机 SQLite；
+- 映射盘/UNC 上的 root index：返回共享资源，主进程直接写会被 `main-write-denied` 拒绝；
+- 本机 merged index：仍是本机投影，不应进入共享写事务。
+
+真正错误发生在更上层：`rootIndexRuntime.saveRootIndexSqliteChanges()` 先判断 `storage === 'root'`，默认直接进入 `saveRootIndexSqliteChangesAtomicSnapshot()`，而不是先判断该 root index 的**物理访问类型**。但 `ensureRootScanCacheStorage()` 对“索引放在监视根自身”统一返回 `storage: 'root'`，无论该监视根是本机目录、映射盘还是 UNC。
+
+因此当前错误链是：
+
+```text
+storage = root
+  ↓
+直接选择 atomic snapshot 主进程写路径
+  ↓
+局域网 root index 真正 open 时才被 sharedIoResourceKeys 识别为 shared
+  ↓
+main-write-denied
+```
+
+结论：**识别能力在，但路由决策使用了错误的字段。** 本书把“存储位置”和“访问类型”永久拆成两个独立契约。
+
+## 2. 本次实机日志已确认的事实
+
+证据日志：`startup-2026-09-19_12-40-52-744-38500.log`，Windows 开发模式，Rust worker 0.42.0 / protocol 42 / `shared-file-io-v1` 已加载。
+
+1. 两个根均成功加载：`O:\字体` 1499 项，`\\192.168.4.38\14t共享盘\字体\字体-小薇` 4068 项；两根 polling 同时启动，merged query 初始总数 5567。此前 `identity-changed` 修复没有复发。
+2. `O:\字体` watcher 在真实增量提交时失败：`共享根索引写入必须使用隔离的原生事务。`；后续 recovery 再次失败并 `recovery exhausted`。
+3. UNC 根也在同一写边界上失败；同时一次 500ms root probe 超时会把根转为 offline，并使旧读取产生 `stale-generation`。
+4. 一次 Shared I/O 超时会触发整个共享根 30 秒不可用，随后多个预览和字体协议请求一起失败。
+5. 约 425 秒内产生 9960 次 Shared I/O one-shot，随后 recovery 耗尽后速率明显下降；说明 watcher rescan/recovery 与细粒度隔离调用存在放大关系。
+6. 临时激活本身成功：本机托管副本、注册表、FontResource 全部提交；但取消激活和退出清理均被 Rust 拒绝为 `unsafe registry ownership request`。
+7. 退出允许残留并按 O-06 预算完成，但 `remaining=1` 时仍写出 `clean=true`，没有区分“进程正常退出”和“本地清理完整”。
+8. 上轮 renderer shutdown 噪声修复在本次实机日志中仍未通过：freeze 后仍出现 `cache:getArchitecture`、`tasks:getSchedulerStatus`、`sharedMetadata:getDiagnostics`、`tasks:list`。
+
+## 3. 修复目标与非目标
+
+### 3.1 必须完成
+
+| ID | 级别 | 目标 |
+| --- | --- | --- |
+| C-01 | P0 | 索引“存储位置”与“物理访问类型”彻底分离，本机 root index 永远不因 `storage='root'` 被当共享；局域网 root index 永远不进入主进程 SQLite 写 |
+| C-02 | P0 | 修复共享 root index full/incremental/watcher 写入路由，网络根使用隔离原生事务，watcher 可以真实提交 |
+| C-03 | P0 | watcher rescan/recovery 收敛：结构性写错误不能触发反复全根扫描/逐字体 I/O 风暴 |
+| C-04 | P0 | 单个 Shared I/O 超时不再直接等价“整个根离线”；根 offline 必须有专用根健康证据 |
+| C-05 | P0 | 修复临时激活清理的 JS/Rust 所有权合同，成功激活的本机托管副本必须可单项、批量、退出、启动恢复清理 |
+| C-06 | P1 | 退出结果分离“进程生命周期干净”与“临时字体清理完整”，有持久残留允许退出但不得冒充全部清空 |
+| C-07 | P1 | renderer 使用明确的 closing 生命周期信号停止诊断/轮询，不再以 scheduler stopping 作为间接代理 |
+| C-08 | P1 | 在 C-01～C-07 正确性完成后，再降低 Shared I/O one-shot 数量；保留 killable isolation，不把 NAS I/O 搬回主线程 |
+| C-09 | 验收 | Windows + 映射盘 + UNC + 本机 root + 临时激活 + 断网/恢复/退出全链路实机验收 |
+
+### 3.2 明确不做
+
+- 不合并本机 root index、局域网 root index 和本机 merged index。
+- 不把局域网 root index 复制成第二套长期“本地权威索引”来绕开共享事务。
+- 不重新引入共享 root 的本机 fallback 写入；网络根写失败必须保留原索引并明确失败。
+- 不用拉长所有 timeout、降低错误级别、吞掉 `stale-generation` 或关掉 watcher 掩盖问题。
+- 不为性能删除进程隔离、把 UNC SQLite 重新放进 Electron 主进程、或取消 root generation 保护。
+- 不因清理合同错误放宽到“按任意注册表名称/任意用户字体路径删除”。
+- 不新增离线同步、标签 outbox、全量 NAS 镜像或新的生产依赖。
+- 不改变用户现有本地标签、收藏、保护、共享标签、永久安装/卸载语义。
+
+## 4. 不可破坏的不变量
+
+| 编号 | 不变量 |
+| --- | --- |
+| INV-C01 | `RootIndexStorage` 只描述**存储位置策略**，不得承担网络/本地分类 |
+| INV-C02 | 物理 local/shared 分类必须来自主进程可信路径/资源解析，renderer 不能传 `isShared` 绕过 |
+| INV-C03 | 本机 root index 可用本机 SQLite；局域网 root index 所有写必须在可终止隔离原生事务中完成 |
+| INV-C04 | 本机 merged index 是可重建投影；共享 root index 是各 root 的事实来源，二者不能反向覆盖 |
+| INV-C05 | 网络根写失败不能切换到本机 fallback 假装提交成功 |
+| INV-C06 | watcher 只有在持久索引提交成功后才能发布对应 upsert/delete；失败恢复不能无限全根 rescan |
+| INV-C07 | 单项请求 timeout 是“操作结果未知/失败”证据，不自动等价“根离线” |
+| INV-C08 | 根 offline/recovering 只由根健康 owner 变更；队列等待、预览缓存失败、单文件慢读不直接拥有根状态 |
+| INV-C09 | generation 只表示根身份/可用状态 epoch；普通健康复检、队列延迟不能制造代次抖动 |
+| INV-C10 | 成功激活的托管记录必须包含足够的本机路径、session、registryName、file identity；取消后不需要访问 NAS 源 |
+| INV-C11 | 注册表清理安全证明由“持久记录 + 精确 registryName + registry value 指向受管 installPath + 受管文件身份”组成，不要求 registryName 伪装成文件名前缀 |
+| INV-C12 | 有残留可以退出，但进程干净、保存完整、字体清理完整是不同事实，日志/marker 不得用一个 `clean` 含混覆盖 |
+| INV-C13 | renderer closing 必须是显式生命周期，收到后停止非保存必需请求；主进程 freeze 仍保持 fail closed |
+| INV-C14 | Shared I/O 性能优化只能减少调用/创建成本，不弱化 killable isolation、提交回执或 root generation |
+| INV-C15 | 每个 Atomic Task 失败立即停止；不得用后续任务掩盖前一项硬门失败 |
+
+## 5. 目标职责与数据流
+
+```mermaid
+flowchart TD
+  A["监视根路径"] --> B{"物理访问类型"}
+  B -->|本机磁盘| C["local access"]
+  B -->|映射盘 / UNC| D["shared access"]
+
+  A --> E{"索引存储位置"}
+  E -->|根目录 .hfm-cache| F["storage = root"]
+  E -->|本机兼容/回退| G["storage = fallback"]
+
+  C --> H["本机 root index\n本机 SQLite 事务"]
+  D --> I["局域网 root index\nRust 隔离原生事务"]
+  G --> J["本机 fallback index"]
+
+  H --> K["本机 merged index\n可重建查询投影"]
+  I --> K
+  J --> K
+
+  L["watcher"] --> M["根级变更批"]
+  M --> N["root index transaction owner"]
+  N --> H
+  N --> I
+  N --> O["提交成功后同步 merged index"]
+```
+
+职责边界：
+
+- **Root index storage owner**：决定 root/fallback 文件放在哪里，不决定网络访问方式。
+- **Root index access owner**：从可信路径判断 local/shared，选择本机事务或隔离 Rust 事务。
+- **Root index transaction owner**：唯一决定 full/incremental/snapshot 的提交协议；watcher 不直接打开 SQLite。
+- **Watcher owner**：只做事件合并、预检、提交请求、成功后通知和有界恢复，不拥有索引数据库写算法。
+- **Availability owner**：只根据根级探测证据变更 online/offline/recovering；预览、扫描、单文件 I/O 只能上报失败证据。
+- **Activation cleanup owner**：只按本机 durable record 清理资源、registry、文件；网络源路径只作展示/关联。
+- **Shutdown owner**：维护 processExitClean、persistenceComplete、localCleanupComplete 三类事实；renderer closing 是其生命周期事件。
+- **Shared I/O transport owner**：负责隔离执行、deadline、真实 close、限流和后续批处理；不拥有业务 offline 判定。
+
+## 6. Atomic Task 执行顺序
+
+### C-00 基线与可执行反例
+
+状态：未开始。
+
+范围：只新增/扩展诊断、测试夹具和任务书记录，不改生产行为。
+
+必须建立以下可重复反例：
+
+1. 本机目录 root index：`storage='root'`，`sharedIoResourceKeys=0`，本机增量写成功。
+2. UNC/mapped root index：`storage='root'`，当前 atomic snapshot 路径触发 `main-write-denied`。
+3. watcher 首次 rescan -> 索引提交失败 -> recovery -> repeated rescan 的调用计数。
+4. 单文件/索引 I/O timeout 触发整根 offline 的旧行为。
+5. 激活成功后，现有 registryName + managed path 在 Rust inspect/cleanup 上触发 `unsafe registry ownership request`。
+6. `remaining=1` 仍 `clean=true` 的退出事实。
+7. freeze 后 renderer 仍触发四项 developer IPC 的实机/受控事件链。
+
+硬门禁：反例必须在当前生产代码上真实失败；不得只做源字符串匹配。C-00 未完成禁止改 C-01。
+
+### C-01 分离 Root Index 存储位置与物理访问类型
+
+状态：未开始。
+
+候选生产范围：
+
+- `src/main/indexing/root-index/rootIndexTypes.ts`
+- `src/main/indexing/rootIndexRuntime.ts`
+- `src/main/indexing/root-index/rootIndexDatabaseRuntime.ts`
+- `src/main/cache/scan-storage/rootIndexStorageRuntime.ts`
+- 必要的窄路径/访问分类 owner；不在 watcher 里复制 locality 判断。
+
+实现约束：
+
+- 保留 `RootIndexStorage='root'|'fallback'` 兼容，不把它重命名成 local/shared。
+- 新访问决策必须显式表达 local/shared，来源只能是可信 root/file path 分类。
+- 本机 `storage='root'` 不能触发 Shared I/O；映射盘/UNC `storage='root'` 必须进入 shared route。
+- 分类失败时 fail closed；不得默认“本地”后直接 SQLite 网络路径。
+- 不修改 DB schema、rootId、manifest 兼容字段，除非 C-00 证明无法实现；若必须修改，先停下补迁移方案。
+
+硬门禁：同一个 `storage='root'` 用本机路径和 UNC 路径得到不同 access route；四组合 `root/local`、`root/shared`、`fallback/local`、非法 fallback/shared 均有测试。
+
+### C-02 修复局域网 Root Index 原生事务
+
+状态：未开始。
+
+必须审计全部 root index 写入口，而不只修 watcher 当前报错：
+
+- full write/rebuild；
+- incremental upsert/delete；
+- atomic snapshot/latest pointer/manifest；
+- shared metadata merge 前置读取；
+- maintenance/snapshot cleanup；
+- legacy migration；
+- manual refresh 和 watcher 写。
+
+实现要求：
+
+- 局域网 root index 写统一使用现有 Rust/daemon sequenced write lane；若现有 `root-index-sqlite-apply-changes` 只覆盖增量，full rebuild 必须增加同 owner 的原生原子提交能力，不能回到 Node SQLite UNC。
+- 已提交 Rust 写失败/超时遵守结果未知协议，不切 Node fallback 重写。
+- 本机 root index 可继续使用本机 atomic snapshot，但不能走 Shared I/O one-shot。
+- manifest/latest 指针的发布顺序必须在数据库候选验证后，且网络根发布也处于同一可结算事务边界或明确的恢复协议内。
+- 共享数据库旧文件不能因新写失败被删除/清空。
+
+硬门禁：本机和 UNC 各做 full + incremental + delete；Rust commit 前失败、commit 后响应丢失、manifest 发布失败均不得产生假成功或双写。
+
+### C-03 Watcher 收敛与恢复去放大
+
+状态：未开始；必须等 C-02。
+
+候选范围：
+
+- `src/main/watcher/folderWatcherRuntime.ts`
+- `src/main/watcher/watchedFolderIndexRuntime.ts`
+- watcher preflight/root diff 相关窄模块；
+- 不把数据库事务逻辑复制进 watcher。
+
+要求：
+
+- 首次 shared polling 可以做一次 root diff，但相同 root/generation 不能因结构性持久化错误无限重排全根 rescan。
+- recovery 只重读受影响项；只有“事件无文件名/根签名确实变化且无法定位”才允许 root-level rescan。
+- 同一 root 同一 generation 至多一个 root rescan in-flight；后续相同信号合并。
+- 持久提交失败时保留旧索引，不发布假的 `font-index:changed`。
+- `recovery exhausted` 后进入明确待人工/下次健康事件状态，不以毫秒级 one-shot 自旋。
+- 一个根恢复失败不能停止另一个根 watcher。
+
+硬门禁：4000+ 文件受控夹具下，结构性写失败不会产生与文件数同阶的重复子进程/重扫；恢复后只执行一个必要重放并能成功提交。
+
+### C-04 Root availability 证据与 timeout 语义
+
+状态：未开始；必须等 C-03，避免先用阈值掩盖 I/O 风暴。
+
+候选范围：
+
+- `src/main/path/startupPathAvailabilityRuntime.ts`
+- `src/main/path/sharedFileSystemRuntime.ts`
+- `src/main/path/sharedPathProbeRuntime.ts`
+- `src/main/path/ioDeadlineRuntime.ts`
+- `src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts`
+- 必要的 Shared I/O 结果类型。
+
+要求：
+
+- 单文件/缓存/索引命令 timeout 只标记该操作失败或结果未知，不能直接 `markStartupPathRootUnavailable`。
+- offline 必须来自专用根探测、明确 OS unreachable/not-found/connection 类错误，或有记录的连续根级失败策略。
+- queue wait 与 actual execution 分开计时；因本机 executor 排队导致的超时不能算网络根不可达。
+- 500ms 现值不得直接“调大了事”；C-00 先记录真实 root probe elapsed/queue，再决定阈值。
+- 根探测拥有保留执行能力，不能被批量预览/scan one-shot 完全饿死。
+- online 健康复检不变 generation；confirmed offline/recovering/identity change 才推进 epoch。
+- 预览缓存 circuit breaker 只关闭共享 preview tier，不拥有整个字体 root offline 状态。
+
+硬门禁：慢单文件 + 根可读时根仍 online；真实断网时有限时间转 offline；重连只恢复同一身份；旧代次结果仍被丢弃。
+
+### C-05 修复临时激活清理所有权合同
+
+状态：未开始，可与 C-03/C-04 不交叉，但同工作区仍串行提交。
+
+候选范围：
+
+- `src/main/activation/runtime/managedActivationIdentityRuntime.ts`
+- `fontActivationCleanupRuntime.ts`
+- `fontDeactivationSettlementRuntime.ts`
+- `fontDeactivationBatchRuntime.ts`
+- `fontActivationTransactionRuntime.ts`
+- `native-src/hfm-core-worker/src/font_resource/activation_files.rs`
+- 相关 Rust/TS 类型与原有诊断。
+
+根因约束：
+
+- JS 持久记录的 `registryName` 是真实字体注册名 + session 信息，不以 `字体管理器_ACTIVE_` 开头；
+- Rust 当前把 `registryExpectations` 的“注册表 value name”也要求使用文件所有权前缀，和真实 Windows Fonts 注册命名语义冲突。
+
+修复要求：
+
+- **不能**简单删除 Rust 安全检查。
+- 文件所有权仍要求：精确 `currentUserFontsDir`、文件名前缀、非 UNC、真实文件 identity。
+- registry 所有权改为：请求来自 durable record；registryName 精确等于该 record；当前 registry value 必须精确指向 record.installPath；installPath 必须通过受管路径/身份验证。
+- 删除 registry 前再次 native 核验；不允许传任意 registryName + 任意 path。
+- 单项、批量、退出 cleanup、启动 recovery 使用同一验证函数/协议。
+- 清理仍不访问 NAS sourcePath。
+
+硬门禁：真实命名形态（中文字体名、TrueType/OpenType、session）均可成功清理；伪造 registryName、同名指向外部文件、受管路径相邻文件、替换 inode、旧 record 全部拒绝。
+
+### C-06 退出结果三轴语义
+
+状态：未开始；必须等 C-05，避免在清理本身坏掉时定义假状态。
+
+目标事实至少分开：
+
+- `processExitClean`：退出编排按预算正常走完；
+- `persistenceComplete`：必须落盘的本地状态/恢复意图可靠保存；
+- `localCleanupComplete`：临时字体资源/registry/file 是否全部清完。
+
+实现要求：
+
+- `remaining>0` 且 durable recovery 已确认时允许进程退出，但日志必须明确 `localCleanupComplete=false`。
+- 不把“允许退出”写成“所有清理完成”。
+- 现有 previous shutdown marker 若必须扩字段，使用向后兼容可选字段；旧 reader 仍能识别 process-level clean，不能把正常有残留退出误判为崩溃。
+- durable record 保存失败时不能写出 process clean 成功而掩盖恢复事实丢失。
+- 下一次启动必须能区分 crash recovery 与 planned residual cleanup。
+
+硬门禁：0 残留、1 残留已持久化、持久化失败、清理超时、强制退出五种结果不可混淆。
+
+### C-07 Renderer 显式 closing 生命周期
+
+状态：未开始。
+
+现有 `scheduler stopping` 只能是后台调度事实，不能继续充当 renderer closing 的代理。
+
+要求：
+
+- 复用现有 `app-window:flush-before-close` 或增加职责明确的关闭生命周期事件；不得新增第二套互相竞争的退出协议。
+- renderer 一收到 closing 即：
+  - 停止 developer diagnostics refresh；
+  - 停止 shared metadata foreground refresh；
+  - 停止非必要 metrics/task list polling；
+  - 清除相关 timer；
+  - 只保留允许的本地 flush。
+- preload 暴露最窄订阅；不允许 renderer 自报“我已 closing”影响主进程准入。
+- 已在途请求收到 shutdown rejection 属正常结算，不继续触发后续串行查询。
+- 主进程 `assertApplicationOpen` 不放宽。
+
+硬门禁：真实 close request 触发后四个已知 IPC 调用计数为 0；正常运行 developer page 功能保持。
+
+### C-08 Shared I/O 批处理与执行者复用
+
+状态：未开始；**只有 C-01～C-07 全部硬门通过才允许开始。**
+
+优化顺序：
+
+1. 先统计修复后 idle/首次 watcher rescan/预览滚动的 request 数；
+2. 优先使用已有 Rust `list-font-files`、`directory-signatures`、`font-signature-probe`、`watcher-batch-preflight`、`root-index-sqlite-apply-changes` 合并 per-file stat/readdir；
+3. 仍有进程创建热点时，再评估有界 worker 复用或每根有限隔离执行者；
+4. 保留 kill/timeout/parent-death 语义，不引入常驻无界进程。
+
+硬门禁：
+
+- 稳态 60 秒无变更时不得出现逐字体 I/O；只允许周期性根健康/poll；
+- 一个 root 的批量任务不能占满本地字体清理通道；
+- 断网后进程数、队列长度和 PID 最终回到有界稳定值；
+- 性能提升不得以降低正确性测试或扩大 timeout 获得。
+
+### C-09 Windows/NAS 总验收
+
+状态：未开始。
+
+至少覆盖：
+
+1. 本机普通监视目录 + 映射盘 + UNC 三根同时存在；
+2. 本机 root index full/incremental/watcher；
+3. 映射盘与 UNC root index full/incremental/watcher；
+4. NAS 正常、瞬时慢、拔网、共享服务停止、映射改指另一 share、恢复同一 share；
+5. 预览滚动、搜索、分页、metrics、标签读取期间断网；
+6. NAS 字体临时激活后立即断网，单项取消；
+7. NAS 字体临时激活后退出软件自动清理；
+8. registry/file 被占用、ACL 拒绝、残留持久化、重启后恢复；
+9. 退出时 Developer 页打开/关闭两种情况；
+10. 至少一次运行 10 分钟，确认无 request 风暴、重复 watcher、代次抖动或残留子进程。
+
+硬验收结果必须来自日志和实际系统状态；不能用 Node mock 代替 Windows registry、FontResource、映射盘/NAS。
+
+## 7. 验证矩阵与统一门禁
+
+每个 Atomic Task：
+
+1. `git status --short`，确认用户改动并冻结文件范围；
+2. 先执行对应旧反例；
+3. 修改后跑定向诊断；
+4. `npm run typecheck`；
+5. `npm run verify`；
+6. Electron/Vite build + 混淆；
+7. 涉及 Rust 时 Windows/Linux `cargo test --locked` + release build；
+8. `git diff --check` 与 final diff 审查；
+9. 更新 README 与本任务书执行卡；
+10. 硬门失败立即停止下一 Atomic Task。
+
+禁止：
+
+- 删除/跳过已有诊断；
+- 把真实 Rust/Windows 必验链替换成 mock 后宣称通过；
+- 用环境变量关闭错误路径后算修复；
+- 用重建全部索引、删除 `.hfm-cache`、清空恢复记录作为常规修复步骤；
+- 用 `catch { return [] }`、silent fallback 或日志降级掩盖数据错误；
+- 新增生产依赖，除非先单独说明用途、许可证、体积、运行成本、替代方案和风险并获得用户决定。
+
+## 8. 兼容、迁移与回滚
+
+- 默认不改 root index schema、merged index schema、shared metadata schema、IPC channel、恢复文件 version 1。
+- C-01 若仅增加运行时 access kind，不持久化到 DB/manifest；重启每次重新可信分类。
+- C-02 不迁移现有索引内容；正确原生事务必须能直接继续使用现有 `.hfm-cache`。
+- C-05 不批量改写现有 registry name；旧 durable record 按相同验证协议读取。若旧 record 不足以证明所有权，保留并进入人工残留面板，不能猜测删除。
+- C-06 若扩 shutdown marker，只加向后兼容字段；回滚旧版仍能读取 process-level clean。
+- C-08 性能优化可单独回退，不影响 C-01～C-07 正确性。
+- 每个 Atomic Task 一个可逆提交；用户现有工作区修改受保护，不允许 reset/checkout 覆盖。
+
+## 9. 当前结论与下一执行入口
+
+本书制定完成后仍然**不代表问题已修复**。
+
+当前执行顺序固定为：
+
+```text
+C-00 基线
+→ C-01 索引 storage/access 分离
+→ C-02 局域网 root index 原生事务
+→ C-03 watcher 收敛
+→ C-04 offline 证据
+→ C-05 激活清理合同
+→ C-06 退出结果语义
+→ C-07 renderer closing
+→ C-08 Shared I/O 性能
+→ C-09 Windows/NAS 总验收
+```
+
+在 C-02 通过前，不应推进 Shared I/O 性能重构；在 C-05 通过前，不应把 O-04/O-05 的 Windows 实机状态标成完成；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。
