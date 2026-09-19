@@ -51,6 +51,8 @@ async function main() {
     const root=path.resolve(__dirname,'../..');const routing=loader({[path.join(root,'src/main/path/pathCanonicalizer.ts')]:{normalizeNativePathText:x=>x,mappedDriveTableAsync:async()=>new Map()}},{process:{...process,platform:'win32',env:{SystemDrive:'C:'}}})('src/main/rust-core/rustSharedIoCommandRuntime.ts')
     routing.registerIsolatedRoot('C:\\fonts');assert.deepEqual(Array.from(await routing.sharedIoResourceKeys(['C:\\fonts\\a.ttf'])),['configured-root:c:\\fonts'])
     routing.registerIsolatedRoot('C:\\fonts','\\\\nas\\fonts');assert.deepEqual(Array.from(await routing.sharedIoResourceKeys(['C:\\fonts\\a.ttf','\\\\nas\\fonts\\b.ttf'])),['\\\\nas\\fonts'])
+    routing.registerIsolatedRoot('C:\\fonts');assert.deepEqual(Array.from(await routing.sharedIoResourceKeys(['C:\\fonts\\a.ttf'])),['\\\\nas\\fonts'],'lexical re-registration downgraded verified identity')
+    routing.registerIsolatedRoot('C:\\fonts','\\\\nas\\fonts\\nested');assert.deepEqual(Array.from(await routing.sharedIoResourceKeys(['C:\\fonts\\a.ttf'])),['\\\\nas\\fonts'])
     assert.throws(()=>routing.registerIsolatedRoot('C:\\fonts','\\\\nas\\replacement'),e=>e.reason==='identity-changed')
     const cp=require('node:child_process')
     const waitUntil=async test=>{const end=Date.now()+5000;while(!test()){assert(Date.now()<end,'process proof timed out');await new Promise(resolve=>setTimeout(resolve,15))}}

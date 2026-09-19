@@ -8,12 +8,20 @@ const configuredRoots = new Map<string, string>()
 export function registerIsolatedRoot(rootPath: string, physicalPath?: string): void {
   if (process.platform !== 'win32') return
   const root = win32.normalize(normalizeNativePathText(rootPath)).toLowerCase().replace(/\\+$/, '')
-  const physical = physicalPath ? win32.normalize(normalizeNativePathText(physicalPath)).toLowerCase() : ''
+  const previous = configuredRoots.get(root)
+  if (!physicalPath) {
+    if (!previous) configuredRoots.set(root, `configured-root:${root}`)
+    return
+  }
+  const physical = win32.normalize(normalizeNativePathText(physicalPath)).toLowerCase()
   const share = physical.match(/^\\\\[^\\]+\\[^\\]+/)
   const resource = share?.[0] || `configured-root:${root}`
-  const previous = configuredRoots.get(root)
-  if (previous?.startsWith('\\\\') && previous !== resource) throw new SharedIoProcessError('共享根物理身份已变化。', 'not-started', 'identity-changed')
-  if (!previous || physicalPath) configuredRoots.set(root, resource)
+  if (previous?.startsWith('\\\\') && resource.startsWith('\\\\') && previous !== resource)
+    throw new SharedIoProcessError('共享根物理身份已变化。', 'not-started', 'identity-changed')
+  // An unverified lexical registration must never downgrade a previously
+  // verified UNC identity. Only a newly verified different UNC share is a
+  // physical identity change.
+  if (!previous?.startsWith('\\\\') || resource.startsWith('\\\\')) configuredRoots.set(root, resource)
 }
 
 export function sharedIoAvailabilityRoot(path: string): string | undefined {

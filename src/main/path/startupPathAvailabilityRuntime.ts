@@ -128,11 +128,11 @@ export async function ensureStartupPathRootAvailable(rootPath: string, appendLog
   if (existing?.promise) return existing.promise
   if (existing && existing.expiresAt > current) return existing.available
 
-  const probeGeneration = ++generation
+  const stateGeneration = existing?.generation ?? ++generation
   const timeoutMs = uncRootProbeTimeoutMs()
   const promise = (async () => {
     const result = await withIoDeadlineResult(`startup-root-probe:${rootPath}`, () => probeStartupDirectory(rootPath, key, timeoutMs), timeoutMs)
-    if (isApplicationClosing() || applicationWorkEpoch() !== workEpoch || entries.get(key)?.generation !== probeGeneration) return false
+    if (isApplicationClosing() || applicationWorkEpoch() !== workEpoch || entries.get(key)?.generation !== stateGeneration) return false
     if (!result.ok) {
       const error = 'error' in result ? result.error : new Error('startup root probe failed')
       markStartupPathRootUnavailable(rootPath, error, appendLog, reason)
@@ -142,13 +142,16 @@ export async function ensureStartupPathRootAvailable(rootPath: string, appendLog
       markStartupPathRootUnavailable(rootPath, new Error('root path is not a directory'), appendLog, reason)
       return false
     }
-    entries.set(key, { state: 'online', generation: probeGeneration, available: true, expiresAt: now() + Math.max(1000, Math.min(5000, timeoutMs)) })
+    const latest = entries.get(key)
+    if (!latest || latest.generation !== stateGeneration) return false
+    const nextGeneration = latest.state === 'online' ? stateGeneration : ++generation
+    entries.set(key, { state: 'online', generation: nextGeneration, available: true, expiresAt: now() + Math.max(1000, Math.min(5000, timeoutMs)) })
     return true
   })()
 
   entries.set(key, {
     state: existing?.state === 'online' ? 'online' : existing?.state === 'offline' || existing?.state === 'recovering' ? 'recovering' : 'checking',
-    generation: probeGeneration,
+    generation: stateGeneration,
     available: existing?.available || false,
     expiresAt: current + availabilityTtlMs(),
     promise,

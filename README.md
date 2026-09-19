@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-19：修复共享根身份重复注册与健康探测误增代次：已验证 UNC 身份不会被后续无物理参数的重复注册降级，只有新确认的不同共享才触发 `identity-changed`；在线健康复检不再使并发共享读取误报 `stale-generation`，真实离线/恢复仍推进代次。补充身份降级、同共享子路径、健康复检与离线失效回归；O-07 继续暂停，实际映射盘/NAS 待复验。
+
 - 2026-09-19：修复共享目录中早于 1970 年的文件时间导致 `treeSnapshot` 报错并把共享根误判离线的问题；Rust 共享文件端口统一按有符号 Unix 时间处理 `stat`、目录快照和过期锁判断，不再因 pre-epoch 时间中断目录监听。真实 worker 集成新增 pre-epoch `treeSnapshot`、`stat`、`removeStaleLock` 回归；Windows/Linux 原生测试与 release 构建通过。O-07 继续暂停，实际 NAS 需更新 Rust worker 后复验。
 
 - 2026-09-19：补齐 Rust 共享文件能力握手并纳入启动兼容检查，修复共享目录误判不可用；原生预览失败增加短暂冷却，离线错误保留字体记录，避免反复请求刷错。新增真实 worker 握手/文件读取集成验证及预览冷却回归；TypeScript、139 项诊断、Windows 36/Linux 39 项原生测试、两平台 release 与 Electron/Vite 构建通过。更新后需重新构建 Rust worker，实际 NAS 待复验，O-07 继续暂停。

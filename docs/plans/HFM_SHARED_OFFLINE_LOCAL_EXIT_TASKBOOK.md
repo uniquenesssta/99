@@ -1042,3 +1042,14 @@ npm run verify
 - 本次 TypeScript/renderer/main 源码未变化；沿用基线 `e5a15431c86391050fce0a4d4fd9e8495fb0e62e` 已通过的 TypeScript、139/139 诊断与 Electron/Vite 构建证据，不把本轮未重跑的 JS 全量门描述为新通过。Context7 未返回该标准库细节的精确条目，改按 Rust 标准库现行接口核对；无新增依赖。本轮单一生产 owner，不新增架构图；Create State 沿用容量已满后的既定跳过约定。
 - O-07 保持暂停。用户拉取后只需重新生成 Rust worker（`npm run rust:build`，或使用会自动构建 worker 的开发入口）并重启应用，再用原 NAS/映射盘目录复验；不需要清理缓存、重装依赖或修改系统时间。
 
+## 27. 共享根身份重复注册与代次稳定性修复（O-07 暂停）
+
+- 用户实机日志 `startup-2026-09-19_06-23-14-348-37816.log` 已证明新 Rust worker、`shared-file-io-v1` 和中文映射盘解析均生效：`Z:\\字体\\字体-小薇` 成功规范化到 `\\\\192.168.4.38\\14t共享盘\\字体\\字体-小薇`，共享元数据及 4068 条根索引成功读取；随后 watcher 在同一路径再次准入时抛出 `identity-changed`，并伴随大量健康根 `stale-generation` 丢弃。
+- 根因一：`registerIsolatedRoot(rootPath)` 既承担“声明词法根”又承担“确认物理根”的状态写入。根已经由隔离探测确认 UNC share 后，后续仅传 rootPath 的幂等注册会构造 `configured-root:...`，旧实现把这个“没有新物理证据”误判为物理身份改变。
+- 根因二：`startupPathAvailabilityRuntime` 将每一次 TTL 到期的健康复检都作为新 generation。generation 同时被共享读取用作结果准入代次，因此在线根的正常复检会无条件让正在执行的读请求变成 `stale-generation`；这违反 INV-05 的本意，代次应表示状态/身份 epoch，而不是探测请求编号。
+- 修复范围：`src/main/rust-core/rustSharedIoCommandRuntime.ts` 将无 `physicalPath` 注册改为纯幂等声明，不能降级已验证 UNC；只有新的已验证 UNC share 与旧 share 不同才保留 `identity-changed`。已有已验证 UNC 遇到非 UNC 回执也不降级。未放宽真正的共享替换检测。
+- `src/main/path/startupPathAvailabilityRuntime.ts` 保留离线/恢复的 generation 隔离，但在线健康复检沿用当前 generation；探测失败仍由 `markStartupPathRootUnavailable` 推进 generation，离线恢复成功再进入新 generation。这样旧代次结果仍不能覆盖新状态，同时不会因健康探测制造虚假陈旧结果。
+- 回归补入既有 `check-shared-filesystem.cjs` 与 `check-shared-root-retention.cjs`：覆盖“先确认 UNC → 再次无物理参数注册”不得降级、同 share 子路径保持身份、不同 share 仍拒绝；覆盖在线 TTL 复检前/中/后 generation 不变，真实离线后 generation 必须变化。未新增依赖、IPC、schema、缓存格式或新分支。
+- 本轮不把关机阶段 `cache:getArchitecture/tasks:getSchedulerStatus/sharedMetadata:getDiagnostics` 的“软件正在退出”视为同一故障；它们发生在 O-06 freeze 之后，属于既有退出准入。终端中文乱码是控制台解码显示问题，不改变日志中的原始错误语义。
+- O-07 继续暂停。实机验收重点：同时保留旧 `O:\\字体` 与新映射/UNC 子目录，确认 watcher 两根均启动；连续运行超过在线 TTL 后不再出现周期性 `stale-generation` 扫描失败；只有真实断网、映射改到另一共享或物理身份变化时才推进代次/拒绝操作。
+

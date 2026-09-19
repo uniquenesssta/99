@@ -47,8 +47,18 @@ async function stateCases() {
   assert.equal(state.getStartupPathRootState(a).state,'recovering')
   gate.resolve();assert.equal(await retry,true);assert.equal(state.getStartupPathRootState(a).state,'online')
   const snap=state.getStartupPathRootState(a);assert(Object.isFrozen(snap))
-  time+=40000;fail=true;assert.equal(await state.ensureStartupPathRootAvailable(a),false)
+  const stableGeneration=snap.generation
+  time+=40000;gate=deferred();fail=false
+  const healthyRefresh=state.ensureStartupPathRootAvailable(a);await tick()
+  assert.equal(state.getStartupPathRootState(a).state,'online')
+  assert.equal(state.getStartupPathRootState(a).generation,stableGeneration,'healthy probe must not invalidate in-flight reads')
+  gate.resolve();assert.equal(await healthyRefresh,true)
+  assert.equal(state.getStartupPathRootState(a).generation,stableGeneration,'healthy probe success must preserve root epoch')
+  time+=40000;gate=deferred();fail=true
+  const failedRefresh=state.ensureStartupPathRootAvailable(a);await tick();gate.resolve()
+  assert.equal(await failedRefresh,false)
   assert.equal(state.getStartupPathRootState(a).state,'offline')
+  assert.notEqual(state.getStartupPathRootState(a).generation,stableGeneration,'offline transition must advance root epoch')
   assert.equal(stateLoader({}, {}, transforms)(stateFile).getStartupPathRootState(a).state,'checking')
   passed('state transitions, aliases, in-flight coalescing, stale result, restart')
 
