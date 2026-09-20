@@ -117,13 +117,11 @@ export type RustRootIndexApplyChangesInput = {
   dbPath: string
   rootPath: string
   storage: 'root' | 'fallback'
-  mode?: 'incremental' | 'replace'
   schemaVersion: number
   cacheVersion: number
   scriptDetectionVersion: number
   upserts: Array<[string, unknown]>
   deletes: string[]
-  directories?: Array<{ relativePath: string; modifiedAt: number; fileCount: number; dirCount: number }>
 }
 
 export type RustRootIndexApplyChangesResult = {
