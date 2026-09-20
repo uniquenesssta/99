@@ -150,7 +150,7 @@ function statFromRustFile(item: NonNullable<RustListFontFilesPayload['files']>[n
 function normalizeRustParseBatchJob(input: Partial<FontParseJob>): FontParseJob | null {
   if (!input || typeof input !== 'object') return null
   const jobId = typeof input.jobId === 'string' ? input.jobId : ''
-  const rootPath = typeof mutationInput.rootPath === 'string' ? mutationInput.rootPath : ''
+  const rootPath = typeof input.rootPath === 'string' ? input.rootPath : ''
   const filePath = typeof input.filePath === 'string' ? input.filePath : ''
   const cacheKey = typeof input.cacheKey === 'string' ? input.cacheKey : ''
   const signature = typeof input.signature === 'string' ? input.signature : ''
@@ -312,7 +312,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
     const inputFile = createTemporaryJsonFile(`hfm-rust-root-index`)
     const inputPath = inputFile.path
     try {
-      const payload: {
+      const requestPayload: {
         upserts: Array<{ relativePath: string; entry: unknown }>
         deletes: string[]
         directories?: Array<{ relativePath: string; modifiedAt: number; fileCount: number; dirCount: number }>
@@ -320,8 +320,8 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
         upserts: mutationInput.upserts.map(([relativePath, entry]) => ({ relativePath, entry })),
         deletes: replace ? [] : mutationInput.deletes,
       }
-      if (mutationInput.directories?.length) payload.directories = mutationInput.directories
-      await inputFile.writeJson(payload)
+      if (mutationInput.directories?.length) requestPayload.directories = mutationInput.directories
+      await inputFile.writeJson(requestPayload)
 
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         command,
@@ -338,16 +338,16 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
         maxBuffer: 256 * 1024,
       })
 
-      const payload = parseJsonLine<RustApplyRootIndexPayload>(commandOutput.stdout)
-      if (!payload.ok || !payload.applied) {
-        const error = new Error(payload.message || (replace ? 'rust root index replace returned ok=false' : 'rust root index apply returned ok=false'))
+      const responsePayload = parseJsonLine<RustApplyRootIndexPayload>(commandOutput.stdout)
+      if (!responsePayload.ok || !responsePayload.applied) {
+        const error = new Error(responsePayload.message || (replace ? 'rust root index replace returned ok=false' : 'rust root index apply returned ok=false'))
         throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, command) : error
       }
       const result = {
         applied: true,
-        count: Number(payload.count || 0),
-        upserts: Number(payload.upserts || 0),
-        deletes: Number(payload.deletes || 0),
+        count: Number(responsePayload.count || 0),
+        upserts: Number(responsePayload.upserts || 0),
+        deletes: Number(responsePayload.deletes || 0),
         durationMs: Date.now() - startedAt,
       }
       if (replace) {
