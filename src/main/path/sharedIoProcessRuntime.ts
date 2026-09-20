@@ -6,6 +6,7 @@ export type SharedIoProcessRequest = {
   args: string[]
   roots: string[]
   timeoutMs: number
+  lane?: 'default' | 'root-probe'
   queueTimeoutMs?: number
   maxBuffer?: number
   write: boolean
@@ -17,6 +18,8 @@ export type SharedIoProcessRequest = {
 export class SharedIoProcessError extends Error {
   readonly sharedIo = true
   closed?: Promise<void>
+  queuedMs?: number
+  executionMs?: number
   constructor(message: string, readonly outcome: 'not-started' | 'unknown', readonly reason: string) {
     super(message)
     this.name = 'SharedIoProcessError'
@@ -25,7 +28,7 @@ export class SharedIoProcessError extends Error {
 export function rethrowSharedIoProcessError(error: unknown): void {
   if (error && typeof error === 'object' && (error as SharedIoProcessError).sharedIo === true) throw error
 }
-type Result = { stdout: string; stderr: string }
+type Result = { stdout: string; stderr: string; queuedMs: number; executionMs: number }
 type Job = {
   id: number
   request: SharedIoProcessRequest
@@ -50,6 +53,23 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   const idleWaiters: Array<() => void> = []
   let closed = false, nextId = 0
   const log = (message: string) => { try { appendLog(message) } catch { /* Diagnostics cannot alter settlement. */ } }
+  const laneOf = (job: Job) => job.request.lane || 'default'
+  const timingOf = (job: Job) => {
+    const current = Date.now()
+    return {
+      queuedMs: Math.max(0, (job.startedAt ?? current) - job.enqueuedAt),
+      executionMs: job.startedAt ? Math.max(0, current - job.startedAt) : 0,
+    }
+  }
+  const rootsOverlap = (a: Job, b: Job) => a.request.roots.some(root => b.request.roots.includes(root))
+  const canStart = (job: Job) => {
+    if (laneOf(job) === 'root-probe') {
+      if ([...active].some(other => laneOf(other) === 'root-probe')) return false
+      return ![...active].some(other => rootsOverlap(job, other) && (other.request.write || laneOf(other) === 'root-probe'))
+    }
+    if ([...active].filter(other => laneOf(other) === 'default').length >= 2) return false
+    return ![...active].some(other => rootsOverlap(job, other))
+  }
   const release = (job: Job) => {
     if (job.released) return
     job.released = true
@@ -65,7 +85,12 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     job.settled = true
     detach(job)
     if (error) {
-      if (error instanceof SharedIoProcessError) error.closed = job.whenClosed
+      if (error instanceof SharedIoProcessError) {
+        error.closed = job.whenClosed
+        const timing = timingOf(job)
+        error.queuedMs ??= timing.queuedMs
+        error.executionMs ??= timing.executionMs
+      }
       job.reject(error)
     }
     else job.resolve(result!)
@@ -91,8 +116,9 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   }
   function drain(): void {
     if (!closed) {
-      while (active.size < 2) {
-        const index = queue.findIndex(job => ![...active].some(other => other.request.roots.some(root => job.request.roots.includes(root))))
+      while (true) {
+        let index = queue.findIndex(job => laneOf(job) === 'root-probe' && canStart(job))
+        if (index < 0) index = queue.findIndex(job => laneOf(job) === 'default' && canStart(job))
         if (index < 0) break
         const job = queue.splice(index, 1)[0]
         if (job.timer) clearTimeout(job.timer)
@@ -114,7 +140,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       active.add(job)
       child.stdin.on('error', () => cancel(job, 'stdin-error'))
       child.stdin.end()
-      log(`shared io started: request=${job.id}, pid=${child.pid}, roots=${request.roots.length}, queuedMs=${job.startedAt - job.enqueuedAt}, write=${request.write}`)
+      log(`shared io started: request=${job.id}, pid=${child.pid}, lane=${request.lane || 'default'}, roots=${request.roots.length}, queuedMs=${job.startedAt - job.enqueuedAt}, write=${request.write}`)
       child.stdout.setEncoding('utf8')
       child.stderr.setEncoding('utf8')
       const collect = (kind: 'stdout' | 'stderr', chunk: string) => {
@@ -132,7 +158,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
         active.delete(job)
         release(job)
         if (!job.settled) {
-          if (code === 0) settle(job, { stdout, stderr })
+          if (code === 0) settle(job, { stdout, stderr, ...timingOf(job) })
           else settle(job, undefined, new SharedIoProcessError(`Shared I/O process failed: code=${code}, signal=${signal}`, 'unknown', 'process-exit'))
         }
         log(`shared io closed: request=${job.id}, pid=${child.pid}, code=${code}, signal=${signal}, active=${active.size}`)
@@ -153,7 +179,10 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     }
     if (closed || request.signal?.aborted) return reject('Shared I/O is closed or cancelled', 'cancelled')
     if (!request.roots.length) return reject('Shared I/O requires a resource identity', 'invalid-root')
-    if (queue.length >= 128) return reject('Shared I/O queue full', 'queue-full')
+    const requestLane = request.lane || 'default'
+    const queuedInLane = queue.filter(job => laneOf(job) === requestLane).length
+    if (requestLane === 'default' && queuedInLane >= 128) return reject('Shared I/O queue full', 'queue-full')
+    if (requestLane === 'root-probe' && queuedInLane >= 8) return reject('Shared root probe queue full', 'queue-full')
     return new Promise((resolve, reject) => {
       let close!: () => void
       const whenClosed = new Promise<void>(resolve => { close = resolve })
@@ -177,7 +206,14 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   return {
     run, stop, cancelAll,
     whenIdle: () => active.size || queue.length ? new Promise<void>(resolve => idleWaiters.push(resolve)) : Promise.resolve(),
-    status: () => ({ closed, active: active.size, queued: queue.length, pids: [...active].map(job => job.child?.pid).filter(Boolean) }),
+    status: () => ({
+      closed,
+      active: active.size,
+      queued: queue.length,
+      activeDefault: [...active].filter(job => laneOf(job) === 'default').length,
+      activeRootProbe: [...active].filter(job => laneOf(job) === 'root-probe').length,
+      pids: [...active].map(job => job.child?.pid).filter(Boolean),
+    }),
   }
 }
 

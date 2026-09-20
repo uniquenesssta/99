@@ -173,7 +173,8 @@
     "diagnostics:index-io-activation-shutdown-baseline": "node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs",
     "diagnostics:offline-settlement-watcher": "node build/diagnostics/check-offline-settlement-watcher.cjs",
     "diagnostics:root-index-access-routing": "node --experimental-sqlite build/diagnostics/check-root-index-access-routing.cjs",
-    "diagnostics:root-index-native-transactions": "node --experimental-sqlite build/diagnostics/check-root-index-native-transactions.cjs"
+    "diagnostics:root-index-native-transactions": "node --experimental-sqlite build/diagnostics/check-root-index-native-transactions.cjs",
+    "diagnostics:root-availability-evidence": "node build/diagnostics/check-root-availability-evidence.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

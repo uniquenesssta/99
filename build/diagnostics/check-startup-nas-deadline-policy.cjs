@@ -38,8 +38,9 @@ function testGenericStartupRootAvailabilityRuntimeExists() {
   assertIncludes('src/main/path/startupPathAvailabilityRuntime.ts', 'ensureStartupPathRootAvailable')
   assertIncludes('src/main/path/startupPathAvailabilityRuntime.ts', 'filterStartupAvailableRoots')
   assertIncludes('src/main/path/startupPathAvailabilityRuntime.ts', 'isUncLikePath')
-  assertIncludes('src/main/path/startupPathAvailabilityRuntime.ts', 'withIoDeadlineResult(`startup-root-probe:${rootPath}`')
+  assertIncludes('src/main/path/sharedPathProbeRuntime.ts', "lane: 'root-probe'")
   assertIncludes('src/main/path/startupPathAvailabilityRuntime.ts', 'startup path root unavailable')
+  assertIncludes('src/main/path/startupPathAvailabilityRuntime.ts', 'startup path root probe inconclusive')
 }
 
 function testIoDeadlineHasSharedMetadataBudget() {

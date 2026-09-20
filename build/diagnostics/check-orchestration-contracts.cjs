@@ -267,7 +267,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
       if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {} }
       if (target === 'src/main/path/startupPathAvailabilityRuntime') return { getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }
       const core = 'src/main/rust-core/'
-      if (target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
+      if (target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/ioDeadlineRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
         return loadTypeScriptModule(target + '.ts', localRequire)
       }
       return localRequire(target.startsWith(core) ? './' + target.slice(core.length) : id)

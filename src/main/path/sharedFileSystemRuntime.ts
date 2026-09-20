@@ -37,7 +37,7 @@ export async function executeSharedFile(request: SharedFileRequest, bytes?: Buff
   let output: Awaited<ReturnType<SharedFileExecutor>>
   try { output = await task }
   catch (error) {
-    if (root && ['timeout','ENETUNREACH'].includes((error as SharedIoProcessError).reason)) markStartupPathRootUnavailable(root,error)
+    if (root && (error as SharedIoProcessError).reason === 'ENETUNREACH') markStartupPathRootUnavailable(root,error)
     throw error
   }
   if (root && shareableReads.has(request.operation) && getStartupPathRootState(root).generation !== generation)

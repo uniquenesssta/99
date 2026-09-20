@@ -4,7 +4,7 @@ import { probeStartupDirectory } from './sharedPathProbeRuntime'
 import { resolve } from 'node:path'
 import { mappedDriveTableAsync, normalizeNativePathText } from './pathCanonicalizer'
 import { normalizePathForCacheCompare } from './cachePath'
-import { unavailableRootTtlMs, uncRootProbeTimeoutMs, withIoDeadlineResult } from './ioDeadlineRuntime'
+import { unavailableRootTtlMs, uncRootProbeTimeoutMs } from './ioDeadlineRuntime'
 
 export type StartupPathAvailabilityLogger = (message: string) => void
 
@@ -14,6 +14,8 @@ export type SharedRootAvailabilitySnapshot = Readonly<{
   state: SharedRootAvailabilityState
   generation: number
   lastError?: string
+  lastProbeQueuedMs?: number
+  lastProbeExecutionMs?: number
 }>
 
 type AvailabilityEntry = {
@@ -24,6 +26,8 @@ type AvailabilityEntry = {
   promise?: Promise<boolean>
   lastError?: string
   lastLoggedAt?: number
+  lastProbeQueuedMs?: number
+  lastProbeExecutionMs?: number
 }
 
 const entries = new Map<string, AvailabilityEntry>()
@@ -56,7 +60,14 @@ export function getStartupPathRootState(rootPath: string): SharedRootAvailabilit
     entry = { state: 'checking', generation: ++generation, available: false, expiresAt: 0 }
     entries.set(rootId, entry)
   }
-  return Object.freeze({ rootId, state: entry.state, generation: entry.generation, lastError: entry.lastError })
+  return Object.freeze({
+    rootId,
+    state: entry.state,
+    generation: entry.generation,
+    lastError: entry.lastError,
+    lastProbeQueuedMs: entry.lastProbeQueuedMs,
+    lastProbeExecutionMs: entry.lastProbeExecutionMs,
+  })
 }
 
 function errorMessage(error: unknown): string {
@@ -83,12 +94,14 @@ export function markStartupPathRootUnavailable(rootPath: string, error: unknown,
   const ttlMs = availabilityTtlMs()
   entries.set(key, {
     state: 'offline',
-    generation: ++generation,
+    generation: previous?.state === 'offline' ? previous.generation : ++generation,
     promise: previous?.promise,
     available: false,
     expiresAt: current + ttlMs,
     lastError: message,
     lastLoggedAt: previous?.lastLoggedAt,
+    lastProbeQueuedMs: previous?.lastProbeQueuedMs,
+    lastProbeExecutionMs: previous?.lastProbeExecutionMs,
   })
 
   const latest = entries.get(key)
@@ -101,7 +114,6 @@ export async function ensureStartupPathRootAvailable(rootPath: string, appendLog
   if (isApplicationClosing()) return false
   const workEpoch = applicationWorkEpoch()
   if (!rootPath) return true
-  registerIsolatedRoot(rootPath)
   const normalized = normalizeNativePathText(rootPath)
   const drive = normalized.match(/^([a-z]:)(\\.*)?$/i)
   if (drive && process.platform === 'win32') {
@@ -120,6 +132,7 @@ export async function ensureStartupPathRootAvailable(rootPath: string, appendLog
         return false
       }
       aliases.set(alias, canonical)
+      registerIsolatedRoot(rootPath, canonical)
     }
   }
   const key = entryKey(rootPath)
@@ -128,36 +141,80 @@ export async function ensureStartupPathRootAvailable(rootPath: string, appendLog
   if (existing?.promise) return existing.promise
   if (existing && existing.expiresAt > current) return existing.available
 
-  const stateGeneration = existing?.generation ?? ++generation
+  const enteringRecovery = existing?.state === 'offline' || existing?.state === 'recovering'
+  const stateGeneration = enteringRecovery ? ++generation : existing?.generation ?? ++generation
+  const probeState: SharedRootAvailabilityState = existing?.state === 'online' ? 'online' : enteringRecovery ? 'recovering' : 'checking'
   const timeoutMs = uncRootProbeTimeoutMs()
-  const promise = (async () => {
-    const result = await withIoDeadlineResult(`startup-root-probe:${rootPath}`, () => probeStartupDirectory(rootPath, key, timeoutMs), timeoutMs)
-    if (isApplicationClosing() || applicationWorkEpoch() !== workEpoch || entries.get(key)?.generation !== stateGeneration) return false
-    if (!result.ok) {
-      const error = 'error' in result ? result.error : new Error('startup root probe failed')
-      markStartupPathRootUnavailable(rootPath, error, appendLog, reason)
-      return false
-    }
-    if (!result.value) {
-      markStartupPathRootUnavailable(rootPath, new Error('root path is not a directory'), appendLog, reason)
-      return false
-    }
-    const latest = entries.get(key)
-    if (!latest || latest.generation !== stateGeneration) return false
-    const nextGeneration = latest.state === 'online' ? stateGeneration : ++generation
-    entries.set(key, { state: 'online', generation: nextGeneration, available: true, expiresAt: now() + Math.max(1000, Math.min(5000, timeoutMs)) })
-    return true
-  })()
-
-  entries.set(key, {
-    state: existing?.state === 'online' ? 'online' : existing?.state === 'offline' || existing?.state === 'recovering' ? 'recovering' : 'checking',
+  const probeEntry: AvailabilityEntry = {
+    state: probeState,
     generation: stateGeneration,
-    available: existing?.available || false,
+    available: probeState === 'online' && Boolean(existing?.available),
     expiresAt: current + availabilityTtlMs(),
-    promise,
     lastError: existing?.lastError,
     lastLoggedAt: existing?.lastLoggedAt,
-  })
+    lastProbeQueuedMs: existing?.lastProbeQueuedMs,
+    lastProbeExecutionMs: existing?.lastProbeExecutionMs,
+  }
+  entries.set(key, probeEntry)
+
+  const promise = (async () => {
+    try {
+      const result = await probeStartupDirectory(rootPath, key, timeoutMs)
+      if (isApplicationClosing() || applicationWorkEpoch() !== workEpoch || entries.get(key)?.generation !== stateGeneration) return false
+      const latest = entries.get(key)
+      if (!latest || latest.generation !== stateGeneration) return false
+      latest.lastProbeQueuedMs = result.queuedMs
+      latest.lastProbeExecutionMs = result.executionMs
+      if (!result.directory) {
+        markStartupPathRootUnavailable(rootPath, new Error('root path is not a directory'), appendLog, reason)
+        const offline = entries.get(key)
+        if (offline) {
+          offline.lastProbeQueuedMs = result.queuedMs
+          offline.lastProbeExecutionMs = result.executionMs
+        }
+        return false
+      }
+      entries.set(key, {
+        state: 'online',
+        generation: stateGeneration,
+        available: true,
+        expiresAt: now() + Math.max(1000, Math.min(5000, timeoutMs)),
+        lastProbeQueuedMs: result.queuedMs,
+        lastProbeExecutionMs: result.executionMs,
+      })
+      return true
+    } catch (error) {
+      if (isApplicationClosing() || applicationWorkEpoch() !== workEpoch || entries.get(key)?.generation !== stateGeneration) return false
+      const probeError = error as { reason?: string; queuedMs?: number; executionMs?: number }
+      const latest = entries.get(key)
+      if (latest) {
+        latest.lastProbeQueuedMs = Number(probeError.queuedMs || 0)
+        latest.lastProbeExecutionMs = Number(probeError.executionMs || 0)
+      }
+      if (['queue-timeout','queue-full','cancelled','stopping','closing','stale-generation'].includes(String(probeError.reason || ''))) {
+        appendLog?.(`startup path root probe inconclusive: reason=${reason}, root=${rootPath}, probeReason=${probeError.reason}, queuedMs=${probeError.queuedMs || 0}, executionMs=${probeError.executionMs || 0}`)
+        if (existing?.state === 'online' && existing.available) {
+          entries.set(key, {
+            ...latest!,
+            state: 'online',
+            generation: stateGeneration,
+            available: true,
+            expiresAt: now() + Math.max(1000, timeoutMs),
+          })
+          return true
+        }
+        return false
+      }
+      markStartupPathRootUnavailable(rootPath, error, appendLog, reason)
+      const offline = entries.get(key)
+      if (offline) {
+        offline.lastProbeQueuedMs = Number(probeError.queuedMs || 0)
+        offline.lastProbeExecutionMs = Number(probeError.executionMs || 0)
+      }
+      return false
+    }
+  })()
+  probeEntry.promise = promise
   try { return await promise } finally {
     const latest = entries.get(key)
     if (latest?.promise === promise) latest.promise = undefined

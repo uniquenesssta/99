@@ -318,7 +318,9 @@ flowchart TD
 
 ### C-04 Root availability 证据与 timeout 语义
 
-状态：未开始；必须等 C-03，避免先用阈值掩盖 I/O 风暴。
+状态：已完成（2026-09-20）。
+
+验收平台：Windows 10/11 x64；本地固定盘、UNC、映射盘与 NAS。Linux/macOS 不作为本阶段验收条件。
 
 候选范围：
 
@@ -340,6 +342,27 @@ flowchart TD
 - 预览缓存 circuit breaker 只关闭共享 preview tier，不拥有整个字体 root offline 状态。
 
 硬门禁：慢单文件 + 根可读时根仍 online；真实断网时有限时间转 offline；重连只恢复同一身份；旧代次结果仍被丢弃。
+
+#### C-04.1 实施结果
+
+- `sharedFileSystemRuntime` 不再把普通请求 `timeout` 升级成整个 root offline；单文件/缓存/索引命令超时只结算该请求。明确 `ENETUNREACH` 等网络不可达证据仍可推进 root unavailable。
+- `sharedIoProcessRuntime` 增加独立 `root-probe` lane：普通 Shared I/O 继续最多两个 default slot，根探测拥有保留执行能力；同根写入仍与 probe 互斥，避免探测读取未结算写状态。进程结果及错误均记录 `queuedMs` 与 `executionMs`。
+- 根探测继续保持 **500ms execution budget**，没有通过“调大 timeout”掩盖问题；新增独立 **3000ms queue budget**，排队超时/队列满/关闭/取消属于 inconclusive，不再等价于网络根不可达。
+- `startupPathAvailabilityRuntime` 成为 root online/offline/recovering 的单一状态 owner：online 健康复检保持 generation；confirmed offline、recovering 与 identity change 才推进 epoch；旧 generation 结果继续丢弃。
+- 修复 Windows 本地固定盘被误登记为 isolated root 的真实缺陷：普通 `C:\...` 本地 root 不再进入 Shared I/O 路由；映射盘仅在远端映射已确认后登记物理身份，UNC/映射根成功 probe 后继续登记已验证共享身份。
+- `previewCacheRootAvailabilityRuntime` 不再自行 `stat(root)` 决定整个字体 root offline，而是消费中央 Root availability；Preview circuit breaker 只关闭共享 preview tier。中央 probe 仅“不确定”时不会把 preview root 永久缓存为 unavailable。
+- shared watcher polling 的单次 snapshot/read 失败不再直接调用 `markStartupPathRootUnavailable`；旧 baseline 保留，root offline 由专用根证据链负责。
+- 未修改数据库 schema、Root Index/Shared Metadata 协议、IPC、用户配置或生产依赖。
+
+#### C-04.2 回归与验证
+
+- 新增 `diagnostics:root-availability-evidence`：覆盖单请求 timeout 不改 root、明确网络不可达、root-probe 保留 lane、queue/execution 分离、online generation 稳定、offline/recovering epoch、本地固定盘不进入 Shared I/O、Preview 只消费中央 owner。
+- 相关既有门同步升级但未弱化：`io-deadline`、`startup-nas-deadline`、`preview-cache-root`、`preview-storage-routing`、`shared-filesystem`、`shared-io-process`、`shared-io-integration`、`offline-settlement-watcher`、`shared-root-retention`、watcher/root-index 门均验证新合同；Windows 测试夹具补齐结构化 probe receipt、显式 SQLite close 与受控本地盘身份。
+- C-00 `--current` 从 **3 KNOWN_DEFECT / 5 CONTROL_PASS** 变为 **2 KNOWN_DEFECT / 6 CONTROL_PASS**；`C00-B03` 已转为 control：单文件 `stat` timeout 后 root 仍为 `online`，generation 不因该请求变化。剩余 shutdown residual clean 与 renderer closing 留给 C-06/C-07。
+- Windows C-04 影响链 CI `35514640345` 最终 **success**：TypeScript、Root availability、deadline/NAS、Preview、Shared I/O、offline/watcher、shared-root retention、Root Index、Electron/Vite build、混淆、`git diff --check`、Cargo 全测试与 release build 全部通过。
+- C-04 验收仅以 Windows 10/11 x64 目标平台为准；Linux/macOS 不作为本阶段验收条件。
+- 完整 Windows `npm run verify` 另暴露既有 `diagnostics:activation-entry` 在 Node VM 中加载 `import.meta.env` 的测试框架兼容问题；该项与 C-04 Root availability 无关，本任务没有修改 renderer/activation 生产代码或通过弱化测试掩盖它。
+- C-04 关闭 timeout→root offline、probe 饥饿、排队/执行混淆及 Preview root owner 重复问题；下一项进入 C-05 临时激活清理所有权合同。
 
 ### C-05 修复临时激活清理所有权合同
 
@@ -485,7 +508,7 @@ flowchart TD
 
 ## 9. 当前结论与下一执行入口
 
-C-00～C-03 已完成，但本书整体仍然**不代表问题已全部修复**。
+C-00～C-04 已完成，但本书整体仍然**不代表问题已全部修复**。
 
 当前执行顺序固定为：
 
@@ -494,12 +517,12 @@ C-00 基线（完成）
 → C-01 索引 storage/access 分离（完成）
 → C-02 局域网 root index 原生事务（完成）
 → C-03 watcher 收敛（完成）
-→ C-04 offline 证据（下一项）
-→ C-05 激活清理合同
+→ C-04 offline 证据（完成）
+→ C-05 激活清理合同（下一项）
 → C-06 退出结果语义
 → C-07 renderer closing
 → C-08 Shared I/O 性能
 → C-09 Windows/NAS 总验收
 ```
 
-C-04 现在是下一执行入口；C-08 仍须等 C-01～C-07 全部硬门通过。在 C-05 通过前，不应把 O-04/O-05 的 Windows 实机状态标成完成；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。
+C-05 现在是下一执行入口；C-08 仍须等 C-01～C-07 全部硬门通过。在 C-05 通过前，不应把 O-04/O-05 的 Windows 实机状态标成完成；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。

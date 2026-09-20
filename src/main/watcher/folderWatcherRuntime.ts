@@ -6,7 +6,7 @@ import { executeSharedFile, sharedFileSystem as fsp } from '../path/sharedFileSy
 import { resolve } from "node:path";
 import type { FontIndexChangePayload } from "../../shared/types";
 import { normalizePathForCacheCompare } from "../path/cachePath";
-import { ensureStartupPathRootAvailable, markStartupPathRootUnavailable } from "../path/startupPathAvailabilityRuntime";
+import { ensureStartupPathRootAvailable } from "../path/startupPathAvailabilityRuntime";
 
 export interface PendingFolderChange {
   folder: string;
@@ -398,7 +398,6 @@ export function createFolderWatcherRuntime(
         baseline = next;
       } catch (error) {
         if (!closed && generation === watcherGeneration) {
-          markStartupPathRootUnavailable(folder, error, options.appendStartupLog);
           options.appendStartupLog(`shared watcher snapshot retained: ${folder}, ${String(error)}`);
         }
       } finally {

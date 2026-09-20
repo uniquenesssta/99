@@ -1,7 +1,7 @@
-import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { resolve } from 'node:path'
 import { normalizePathForCacheCompare } from '../../path/cachePath'
-import { unavailableRootTtlMs,uncRootProbeTimeoutMs,withIoDeadlineResult } from '../../path/ioDeadlineRuntime'
+import { unavailableRootTtlMs } from '../../path/ioDeadlineRuntime'
+import { ensureStartupPathRootAvailable, getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
 import { createPreviewSharedStorageCircuitBreakerRuntime } from './previewSharedStorageCircuitBreakerRuntime'
 
 export type PreviewCacheRootAvailabilityLogger = (message: string) => void
@@ -45,7 +45,6 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
   const availableTtlMs = Math.max(1000, Number(options.availableTtlMs || DEFAULT_AVAILABLE_TTL_MS) || DEFAULT_AVAILABLE_TTL_MS)
   const unavailableTtlMs = Math.max(1000, Number(options.unavailableTtlMs || DEFAULT_UNAVAILABLE_TTL_MS) || DEFAULT_UNAVAILABLE_TTL_MS)
   const logThrottleMs = Math.max(1000, Number(options.logThrottleMs || DEFAULT_LOG_THROTTLE_MS) || DEFAULT_LOG_THROTTLE_MS)
-  const rootProbeTimeoutMs = Math.max(100, Number(options.rootProbeTimeoutMs || uncRootProbeTimeoutMs()) || uncRootProbeTimeoutMs())
   const now = options.now || (() => Date.now())
   const circuitBreaker = createPreviewSharedStorageCircuitBreakerRuntime({
     appendStartupLog: options.appendStartupLog,
@@ -99,10 +98,17 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
     const probeToken = {}
     const promise = (async () => {
       try {
-        const statResult = await withIoDeadlineResult(`preview-cache-root-probe:${rootPath}`, () => fsp.stat(rootPath), rootProbeTimeoutMs)
-        if (!statResult.ok) throw statResult.error
-        if (!statResult.value.isDirectory()) throw new Error('root path is not a directory')
+        const rootAvailable = await ensureStartupPathRootAvailable(rootPath, options.appendStartupLog, 'preview-cache-root')
         if (entries.get(key)?.probeToken !== probeToken) return false
+        if (!rootAvailable) {
+          const rootState = getStartupPathRootState(rootPath)
+          if (rootState.state === 'offline') {
+            markRootPreviewCacheUnavailable(rootPath, new Error(rootState.lastError || 'shared root unavailable'))
+          } else {
+            entries.delete(key)
+          }
+          return false
+        }
         circuitBreaker.recordSharedStorageSuccess(rootPath)
         entries.set(key, { available: true, expiresAt: now() + availableTtlMs })
         return true

@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-20：完成 C-04 Root availability 证据与 timeout 语义：单文件/缓存/索引请求 timeout 不再直接把整个共享 root 标 offline；root probe 增加保留执行 lane，queue wait 与实际 execution 分开计时，500ms 根探测执行预算保持不变。online 健康复检不推进 generation，confirmed offline/recovering/identity change 才推进 epoch；Preview circuit breaker 仅关闭共享 preview tier。另修复 Windows 本地固定盘被误登记为 isolated root、导致本地 metadata/stat 被错误送入 Shared I/O 的问题。C-00 current 从 3 缺陷/5 对照降为 2 缺陷/6 对照；Windows C-04 影响链、Electron/Vite build、混淆、diff check、Cargo 全测试和 release build 全部通过（CI 35514640345）。下一项 C-05。
+
 - 2026-09-20：完成 C-03 Watcher 收敛与恢复去放大：索引持久化失败不再立即触发第二次 root rescan，而是按 root/current generation 保存 deferred recovery；重复无文件名 root-diff 在 deferred 期间被抑制，下一条具体健康事件只释放一次受影响路径重放，失败 root 不阻塞其他 root。持久化失败继续保留旧索引且不发布假的 `font-index:changed`，数据库事务仍由 C-02 owner 负责。新增 4096 文件收敛、多根隔离与 11 个因果 mutant 门；C-00 current 由 4 缺陷/4 对照降为 3 缺陷/5 对照，`npm run verify` 142/142、Electron/Vite build、混淆 3/3、`git diff --check`、Windows/Linux Cargo 全测试及 release build 均通过（CI 35502445436）。下一项 C-04。
 
 - 2026-09-20：完成 C-02 局域网 Root Index 原生事务：shared full rebuild 新增 Rust `root-index-sqlite-replace-v1`，full/incremental/delete/目录签名统一由原生事务 owner 写入，共享 SQLite 不再落回 Node 直写；Rust 已提交但回执丢失保持 `outcome=unknown` 且禁止 fallback 双写，manifest/latest 发布失败记录 `committed_publication_pending` 并由后续加载修复，本机 root 继续使用 atomic snapshot。新增原生事务诊断与 Rust replace 原子性测试；`npm run verify` 142/142、Electron/Vite build、混淆 3/3、Windows/Linux Cargo 全测试及 release build 均通过（CI 35493225636）。下一项 C-03。

@@ -112,13 +112,22 @@ async function main() {
    await assert.rejects(signature.sharedMetadataSignatureForRoot('\\\\nas\\share'),e=>e===terminalError)
    cases.push('outer install read/write and network signature forbid main filesystem/SQLite fallback')
    // Production probe runs fs in a child even when the parent fs port would hang.
-   const probeLoad=loader({'node:child_process':{...cp,spawn},'node:fs':{promises:{stat(){throw Error('main stat forbidden')}}}},globals,transforms)
+   const probeLoad=loader({
+     'node:child_process':{...cp,spawn},
+     'node:fs':{promises:{stat(){throw Error('main stat forbidden')}}},
+     [path.join(root,'src/main/path/pathCanonicalizer.ts')]:{
+       normalizeNativePathText:value=>String(value).replaceAll('/','\\'),
+       mappedDriveTableAsync:async()=>new Map()
+     }
+   },globals,transforms)
    const probe=probeLoad('src/main/path/sharedPathProbeRuntime.ts')
-   assert.equal(await probe.probeStartupDirectory(dir,'local-test',2000),true)
-   assert.equal(await probe.probeStartupDirectory(__filename,'file-test',2000),false)
+   const directoryProbe=await probe.probeStartupDirectory(dir,'local-test',2000)
+   assert.equal(directoryProbe.directory,true);assert.equal(typeof directoryProbe.queuedMs,'number');assert.equal(typeof directoryProbe.executionMs,'number')
+   const fileProbe=await probe.probeStartupDirectory(__filename,'file-test',2000)
+   assert.equal(fileProbe.directory,false);assert.equal(typeof fileProbe.queuedMs,'number');assert.equal(typeof fileProbe.executionMs,'number')
    await assert.rejects(probe.probeStartupDirectory(path.join(dir,'missing'),'missing',2000))
    probe.stopSharedPathProbes();await assert.rejects(probe.probeStartupDirectory(dir,'stopped',2000),e=>e.outcome==='not-started')
-   cases.push('directory/file/missing probe happens outside main; stop closes admission')
+   cases.push('directory/file/missing probe happens outside main with queue/execution evidence; stop closes admission')
    mode='hang';nextReady=path.join(dir,'stop-ready')
    const stopping=run(['\\\\nas\\stop'],{timeout:5000}).catch(e=>e);await until(()=>fs.existsSync(nextReady))
    transport.stopRustCoreDaemon();assert.equal((await stopping).reason,'stopping')

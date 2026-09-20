@@ -8,7 +8,7 @@ function load(mocks={},globals={}) {
  const transforms={}
  for(const file of [queueFile,watchFile,mergeFile])transforms[path.join(root,file)]=s=>{
   if(mutant==='projection'&&file===queueFile){assert(s.includes('!projectionPending.has(id) &&'));s=s.replace('!projectionPending.has(id) &&','')}
-  if(mutant==='baseline'&&file===watchFile){const anchor='markStartupPathRootUnavailable(folder, error, options.appendStartupLog);';assert(s.includes(anchor));s=s.replace(anchor,'baseline = {}; '+anchor)}
+  if(mutant==='baseline'&&file===watchFile){const anchor='options.appendStartupLog(`shared watcher snapshot retained: ${folder}, ${String(error)}`);';assert(s.includes(anchor));s=s.replace(anchor,'baseline = {}; '+anchor)}
   return crlf?s.replace(/\r?\n/g,'\r\n'):s
  }
  return baseLoader(mocks,globals,transforms)
@@ -55,7 +55,7 @@ async function watcher() {
  async function poll(){const row=[...timers].find(([,t])=>t.ms===30000);assert(row,'next poll absent');timers.delete(row[0]);row[1].fn();await tick()}
  try {
   await runtime.startWatchingFolders(['/test/shared']);await tick();await runtime.flushPendingFolderChanges();assert.equal(batches.length,1)
-  failure=true;await poll();await runtime.flushPendingFolderChanges();assert.equal(batches.length,1);assert.equal(offline,1)
+  failure=true;await poll();await runtime.flushPendingFolderChanges();assert.equal(batches.length,1);assert.equal(offline,0,'shared watcher request failure must not directly own root offline state')
   failure=false;await poll();await runtime.flushPendingFolderChanges();assert.equal(batches.length,1,'failed poll must retain old baseline')
   snapshot={};await poll();await runtime.flushPendingFolderChanges();assert.equal(batches.length,2);assert.equal(batches[1][0].fileName,'a.ttf')
   let resolve;held=new Promise(r=>resolve=r);await poll();runtime.stopFolderWatchers();resolve({result:{value:{'late.ttf':{size:3}}}});await tick();await runtime.flushPendingFolderChanges();assert.equal(batches.length,2);assert.equal(timers.size,0)

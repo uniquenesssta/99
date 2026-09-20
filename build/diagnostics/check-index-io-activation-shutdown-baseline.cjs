@@ -183,7 +183,7 @@ async function observeTimeoutOffline() {
   runtime.configureSharedFileExecutor(async () => { throw new SharedIoProcessError('controlled timeout', 'unknown', 'timeout') })
   await assert.rejects(runtime.executeSharedFile({ operation: 'stat', path: rootPath + '\\slow.ttf' }), error => error.reason === 'timeout')
   const defect = rootState.state === 'offline'
-  report('C00-B03', defect, { operation: 'stat', reason: 'timeout', rootState: rootState.state, generation: rootState.generation })
+  report('C00-B03', defect, { operation: 'stat', reason: 'timeout', rootState: rootState.state, generation: rootState.generation, meaning: defect ? 'single request timeout still owns root offline state' : 'single request timeout no longer changes root state' })
 
   rootState = { state: 'online', generation: rootState.generation + 1 }
   runtime.configureSharedFileExecutor(async request => ({ result: { ok: false, operation: request.operation, code: 'ENOENT', message: 'missing' } }))

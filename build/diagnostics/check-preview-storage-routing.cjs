@@ -124,7 +124,11 @@ async function main() {
   structure(); await routingCases(); await generations()
   await assert.rejects(() => generations(s => s.replace('if (taskGeneration === libraryShellGeneration)', 'if (true)')), assert.AssertionError)
   await assert.rejects(() => generations(s => s.replace('if (libraryShellCachePromise === task)', 'if (true)')), assert.AssertionError)
-  await assert.rejects(() => routingCases(s => s.replace('"root",\n                previewDbPath', '"local",\n                previewDbPath')), assert.AssertionError)
+  await assert.rejects(() => routingCases(s => {
+    const anchor = 'options.writeRootPreviewCacheManifest(\n                previewCacheDir,\n                root,\n                "root",'
+    assert(s.includes(anchor), 'manifest storage mutant anchor missing')
+    return s.replace(anchor, anchor.replace('"root"', '"local"'))
+  }), assert.AssertionError)
   if (!process.argv.includes('--win-paths')) require('node:child_process').execFileSync(process.execPath, [__filename, '--win-paths'], { stdio: 'pipe' })
   console.log('[diagnostics:preview-storage-routing] four unchanged bodies LF/CRLF, sole owners, real facade/tier/deadline, sync purity, preparation order, local degradation, shell coalescing/invalidation/retry, three mutants rejected')
 }

@@ -24,7 +24,11 @@ const passed = name => cases.push(name)
 function stateLoader(mocks, globals, transforms) {
   const stat = mocks['node:fs']?.promises?.stat
   if (stat) mocks[path.join(root,'src/main/path/sharedPathProbeRuntime.ts')] = {
-    probeStartupDirectory: async value => (await stat(value)).isDirectory()
+    probeStartupDirectory: async value => {
+      const startedAt = Date.now()
+      const result = await stat(value)
+      return { directory: result.isDirectory(), queuedMs: 0, executionMs: Date.now() - startedAt }
+    }
   }
   return loader(mocks, globals, transforms)
 }
@@ -85,11 +89,12 @@ async function stateCases() {
 async function catalogCases(dir) {
   const roots=[path.join(dir,'a'),path.join(dir,'b')];for(const r of roots)await fsp.mkdir(r)
   const dbPath=path.join(dir,'library.sqlite'), db=new DatabaseSync(dbPath)
+  try {
   let failTransaction=false
   const adapter={exec:sql=>db.exec(sql),prepare:sql=>db.prepare(sql),transaction:fn=>()=>{db.exec('BEGIN');try{const v=fn();if(failTransaction)throw Error('injected disk commit failure');db.exec('COMMIT');return v}catch(e){db.exec('ROLLBACK');throw e}}}
   let values=[['A','both'],['B','both']], broken=new Set(), aggregate=false, blocked=null, unavailable=new Set(), requests=0
   const tags=()=>db.prepare('SELECT name FROM tags ORDER BY sort_order').all().map(r=>r.name)
-  const load=loader({}, {}, transforms)
+  const load=stateLoader({'node:fs':fs}, {}, transforms)
   load('src/main/library/runtime/librarySchemaRuntime.ts').initializeLibraryDb(adapter)
   db.prepare('INSERT INTO folders VALUES (?,?)').run(roots[0],0)
   db.prepare('INSERT INTO folders VALUES (?,?)').run(roots[1],1)
@@ -111,7 +116,7 @@ async function catalogCases(dir) {
   assert(tags().includes('legacy'))
   passed('legacy partial read preserves unattributed tags (old implementation rejected)')
   // A new owner models app restart; online state is never persisted.
-  const reload=()=>{const l=loader({}, {}, transforms);state=l(stateFile);runtime=l(tagsFile).createSharedKnownTagsRuntime(deps)}
+  const reload=()=>{const l=stateLoader({'node:fs':fs}, {}, transforms);state=l(stateFile);runtime=l(tagsFile).createSharedKnownTagsRuntime(deps)}
   reload();await expect(['A','B','both'])
   let row=JSON.parse(db.prepare('SELECT value FROM meta WHERE key=?').get('sharedRootCatalog').value)
   assert.equal(row.roots.length,2);assert.equal(row.unattributedTags.length,0)
@@ -166,7 +171,7 @@ async function catalogCases(dir) {
   let opened=0,closed=0
   deps.openSharedMetadataDb=async r=>{opened++;return new DatabaseSync(path.join(r,'metadata.sqlite'))}
   deps.closeSqliteDb=m=>{closed++;m.close()}
-  const compatLoad=loader({}, {process:{...process,env:{...process.env,HFM_NODE_STATE_FALLBACK:'1'}}},transforms)
+  const compatLoad=stateLoader({'node:fs':fs}, {process:{...process,env:{...process.env,HFM_NODE_STATE_FALLBACK:'1'}}},transforms)
   runtime=compatLoad(tagsFile).createSharedKnownTagsRuntime(deps);state=compatLoad(stateFile)
   await expect(['keep-on-error']);assert.equal(opened,0)
   passed('explicit compatibility cannot reopen SQLite after failed Rust read')
@@ -186,7 +191,9 @@ async function catalogCases(dir) {
   assert.equal((await runtime.deleteKnownSharedTagIfUnbound(roots,'renamed')).deleted,true)
   assert(!tags().includes('renamed'));await expect([]);assert.equal(opened,closed)
   passed('zero-binding rename/delete: failures deny, successful explicit removal never resurrects')
-  db.close()
+  } finally {
+    db.close()
+  }
 }
 async function main(){
   const dir=await fsp.mkdtemp(path.join(os.tmpdir(),'hfm-root-retention-'))

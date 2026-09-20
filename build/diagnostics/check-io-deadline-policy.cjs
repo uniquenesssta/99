@@ -36,6 +36,8 @@ function testFixtureStillDescribesRegression() {
 function testDeadlineRuntimeExists() {
   assertIncludes('src/main/path/ioDeadlineRuntime.ts', 'DEFAULT_UNC_ROOT_PROBE_TIMEOUT_MS = 500')
   assertIncludes('src/main/path/ioDeadlineRuntime.ts', 'HFM_UNC_ROOT_PROBE_TIMEOUT_MS')
+  assertIncludes('src/main/path/ioDeadlineRuntime.ts', 'DEFAULT_ROOT_PROBE_QUEUE_TIMEOUT_MS = 3000')
+  assertIncludes('src/main/path/ioDeadlineRuntime.ts', 'HFM_ROOT_PROBE_QUEUE_TIMEOUT_MS')
   assertIncludes('src/main/path/ioDeadlineRuntime.ts', 'HFM_PREVIEW_CACHE_QUERY_TIMEOUT_MS')
   assertIncludes('src/main/path/ioDeadlineRuntime.ts', 'HFM_FILE_EXISTS_TIMEOUT_MS')
   assertIncludes('src/main/path/ioDeadlineRuntime.ts', 'withIoDeadlineResult')
@@ -43,8 +45,12 @@ function testDeadlineRuntimeExists() {
 }
 
 function testRootAvailabilityUsesDeadline() {
-  assertIncludes('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts', 'uncRootProbeTimeoutMs')
-  assertIncludes('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts', 'withIoDeadlineResult(`preview-cache-root-probe:${rootPath}`')
+  assertIncludes('src/main/path/sharedPathProbeRuntime.ts', "lane: 'root-probe'")
+  assertIncludes('src/main/path/sharedPathProbeRuntime.ts', 'rootProbeQueueTimeoutMs()')
+  assertIncludes('src/main/path/startupPathAvailabilityRuntime.ts', 'lastProbeQueuedMs')
+  assertIncludes('src/main/path/startupPathAvailabilityRuntime.ts', 'lastProbeExecutionMs')
+  assertIncludes('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts', 'ensureStartupPathRootAvailable')
+  assertIncludes('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts', 'getStartupPathRootState')
   assertIncludes('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts', 'unavailableRootTtlMs')
 }
 

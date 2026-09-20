@@ -16,6 +16,7 @@ export type IoDeadlineResult<T> =
   | { ok: false; error: unknown; timedOut: boolean }
 
 export const DEFAULT_UNC_ROOT_PROBE_TIMEOUT_MS = 500
+export const DEFAULT_ROOT_PROBE_QUEUE_TIMEOUT_MS = 3000
 export const DEFAULT_PREVIEW_CACHE_QUERY_TIMEOUT_MS = 2000
 export const DEFAULT_FILE_EXISTS_TIMEOUT_MS = 500
 export const DEFAULT_SHARED_METADATA_QUERY_TIMEOUT_MS = 500
@@ -31,6 +32,10 @@ function parseEnvTimeoutMs(name: string, fallbackMs: number): number {
 
 export function uncRootProbeTimeoutMs(): number {
   return parseEnvTimeoutMs('HFM_UNC_ROOT_PROBE_TIMEOUT_MS', parseEnvTimeoutMs('HFM_IO_DEADLINE_MS', DEFAULT_UNC_ROOT_PROBE_TIMEOUT_MS))
+}
+
+export function rootProbeQueueTimeoutMs(): number {
+  return parseEnvTimeoutMs('HFM_ROOT_PROBE_QUEUE_TIMEOUT_MS', DEFAULT_ROOT_PROBE_QUEUE_TIMEOUT_MS)
 }
 
 export function previewCacheQueryTimeoutMs(): number {
