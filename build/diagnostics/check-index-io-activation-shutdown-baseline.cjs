@@ -142,7 +142,7 @@ async function observeWatcherRecovery(dir) {
     watcherChangeBatchLooksUnchanged: async () => false,
     applyWatchedFolderChangesToIndex: async (changes, recovery) => {
       calls.push({ recovery: Boolean(recovery), eventTypes: changes.map(item => item.eventType), files: changes.map(item => item.fileName) })
-      throw new Error('共享根索引写入必须使用隔离的原生事务。')
+      throw Object.assign(new Error('共享根索引持久化失败。'), { watcherRecoveryDisposition: 'defer' })
     },
     syncMergedIndexForRootIncremental: async () => undefined,
     syncMergedIndexForRootSnapshot: async () => undefined,

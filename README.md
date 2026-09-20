@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-20：完成 C-03 Watcher 收敛与恢复去放大：索引持久化失败不再立即触发第二次 root rescan，而是按 root/current generation 保存 deferred recovery；重复无文件名 root-diff 在 deferred 期间被抑制，下一条具体健康事件只释放一次受影响路径重放，失败 root 不阻塞其他 root。持久化失败继续保留旧索引且不发布假的 `font-index:changed`，数据库事务仍由 C-02 owner 负责。新增 4096 文件收敛、多根隔离与 11 个因果 mutant 门；C-00 current 由 4 缺陷/4 对照降为 3 缺陷/5 对照，`npm run verify` 142/142、Electron/Vite build、混淆 3/3、`git diff --check`、Windows/Linux Cargo 全测试及 release build 均通过（CI 35502445436）。下一项 C-04。
+
 - 2026-09-20：完成 C-02 局域网 Root Index 原生事务：shared full rebuild 新增 Rust `root-index-sqlite-replace-v1`，full/incremental/delete/目录签名统一由原生事务 owner 写入，共享 SQLite 不再落回 Node 直写；Rust 已提交但回执丢失保持 `outcome=unknown` 且禁止 fallback 双写，manifest/latest 发布失败记录 `committed_publication_pending` 并由后续加载修复，本机 root 继续使用 atomic snapshot。新增原生事务诊断与 Rust replace 原子性测试；`npm run verify` 142/142、Electron/Vite build、混淆 3/3、Windows/Linux Cargo 全测试及 release build 均通过（CI 35493225636）。下一项 C-03。
 
 - 2026-09-20：完成 C-01 Root Index 存储/访问分离：新增 `local/shared` 访问分类 owner，`root/fallback` 仅保留存储位置语义；本机 root 继续 atomic snapshot，局域网 root 增量改走现有 Rust 隔离 apply，fallback/shared fail closed，shared full write 在 C-02 前明确拒绝而不落回主进程 SQLite。新增四组合路由、CRLF 与两个退化反例门；C-00 current 从 5 缺陷降为 4，verify 141/141、Electron/Vite build、混淆及 Windows/Linux Cargo 全测试/release 通过（CI 35484776935）。下一项 C-02。

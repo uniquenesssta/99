@@ -11,7 +11,11 @@
         "createFolderWatcherRuntime",
         "stopFolderWatchers",
         "sendFontIndexChanged",
+        "recoveryRootKey",
+        "recoveryItems",
         "queueRecovery",
+        "deferRecovery",
+        "releaseDeferredRecovery",
         "flushPendingFolderChangesPass",
         "flushPendingFolderChanges",
         "schedulePendingFolderFlush",
@@ -19,7 +23,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "289748c930b6cd972c2f3bf66c496746caf57f6ff79a54782f452aa0318b00b4"
+      "sha256": "63d35336700fb7f064e087a7aee040d6145992604eb3fd513d00880f86d6aa6e"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -188,6 +192,12 @@
       "task": "W-03b",
       "file": "src/main/watcher/folderWatcherRuntime.ts",
       "reason": "bounded re-read recovery, snapshot sync, grace deferral; same owner"
+    },
+    {
+      "task": "C-03",
+      "parent": "7912bc97b147baca9531ad8de326dd46c8352069",
+      "file": "src/main/watcher/folderWatcherRuntime.ts",
+      "reason": "deferred persistence recovery, next-concrete-event replay, repeated root-diff suppression; watcher lifecycle owner preserved"
     }
   ]
 }

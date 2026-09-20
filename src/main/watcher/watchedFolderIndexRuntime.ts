@@ -354,6 +354,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
     } catch (error) {
       // A writer may commit before reporting a later failure. Retain paths, not old writes.
       throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
+        watcherRecoveryDisposition: 'defer' as const,
         watcherRecoveryChanges: payload.deletes.map((item) => ({ folder: rootPath, fileName: item.relativePath, eventType: 'rescan', receivedAt: Date.now() })),
       })
     }

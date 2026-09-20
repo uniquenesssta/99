@@ -67,12 +67,12 @@ async function deletionCheck(transform = s => s) {
   }
   for(const mode of ['unchanged','unchanged-list'])for(const recovery of [false,true]){const r=await indexCase(mode,transform,recovery);assert.equal(r.payload.upserts.length,recovery?1:0,'unchanged broadcasts only during recovery');assert.equal(r.writes.length,0)}
   const missing=await indexCase('no-cache-missing',transform);assert.equal(missing.payload.deletes.length,1);assert.equal(missing.writes.length,0)
-  await assert.rejects(()=>indexCase('save-throw',transform),e=>e.watcherRecoveryChanges?.[0]?.fileName==='a.ttf')
+  await assert.rejects(()=>indexCase('save-throw',transform),e=>e.watcherRecoveryDisposition==='defer'&&e.watcherRecoveryChanges?.[0]?.fileName==='a.ttf')
   const r=await indexCase('changed',transform);assert.equal(r.payload.source,'watcher');assert.equal(r.payload.upserts.length,1);assert.equal(r.writes.length,1)
 }
 const watcherFile = 'src/main/watcher/folderWatcherRuntime.ts'
 async function recoveryCheck(transform=s=>s) {
-  for(const mode of ['apply','sync','send','errors','permanent','grace','restart']) {
+  for(const mode of ['apply','sync','send','errors','permanent','grace','restart','persistence']) {
     let apply=0,sync=0,snapshot=0,sends=0,now=0,scanning=false
     const timers=new Map(),logs=[],delivered=[],gate=deferred()
     const r=load(watcherFile,{
@@ -83,7 +83,7 @@ async function recoveryCheck(transform=s=>s) {
     },{Date:class extends Date{static now(){return now}},setTimeout(fn,ms){const token={unref(){}};timers.set(token,{fn,ms});return token},clearTimeout:token=>timers.delete(token)},transform).createFolderWatcherRuntime({
       startupGraceMs:100,flushDebounceMs:10,closeRuntimeDatabases(){},isIgnoredWatcherPath:()=>false,appendStartupLog:x=>logs.push(x),isScanActive:()=>scanning,
       watcherChangeBatchLooksUnchanged:async()=>false,
-      applyWatchedFolderChangesToIndex:async (changes,replayUnchanged)=>{apply++;assert.equal(replayUnchanged,apply>1,'recovery must explicitly replay unchanged entries');if(mode==='restart'&&apply===1)await gate.promise;if(mode==='permanent'||(mode==='apply'&&apply===1))throw Error('read');return {folder:path.resolve('/fonts'),upserts:[{id:'a',path:'/fonts/a.ttf',fileName:'fresh'}],deletes:[],errors:mode==='errors'&&apply===1?[{path:'/fonts/a.ttf',message:'denied'}]:[]}},
+      applyWatchedFolderChangesToIndex:async (changes,replayUnchanged)=>{apply++;assert.equal(replayUnchanged,apply>1,'recovery must explicitly replay unchanged entries');if(mode==='restart'&&apply===1)await gate.promise;if(mode==='persistence'&&apply===1)throw Object.assign(Error('persist'),{watcherRecoveryDisposition:'defer'});if(mode==='permanent'||(mode==='apply'&&apply===1))throw Error('read');return {folder:path.resolve('/fonts'),upserts:[{id:'a',path:'/fonts/a.ttf',fileName:'fresh'}],deletes:[],errors:mode==='errors'&&apply===1?[{path:'/fonts/a.ttf',message:'denied'}]:[]}},
       syncMergedIndexForRootIncremental:async()=>{sync++;if(mode==='sync'&&sync===1)throw Error('merged')},
       syncMergedIndexForRootSnapshot:async()=>{snapshot++}
     })
@@ -95,7 +95,10 @@ async function recoveryCheck(transform=s=>s) {
       const task=r.flushPendingFolderChanges();await drain();r.stopFolderWatchers();await r.startWatchingFolders([folder]);now=202;gate.resolve();await task
       assert.equal(delivered.length,0);assert(timers.size>0)
     } else await tick()
-    if(!['grace'].includes(mode)) {
+    if(mode==='persistence'){
+      assert.equal(apply,1);assert.equal(timers.size,0,'persistence failure must not schedule immediate retry');assert(logs.some(s=>s.includes('recovery deferred')))
+      r.notifyFolderChanged(folder,'rename','a.ttf');assert.equal(timers.size,1,'concrete event must release deferred recovery');await tick();assert.equal(apply,2);assert.equal(snapshot,1);assert.equal(timers.size,0);assert(delivered.length>0)
+    } else if(!['grace'].includes(mode)) {
       assert(timers.size>0,mode+' needs bounded recovery')
       scanning=true;await tick();assert.equal(apply,1)
       scanning=false;await tick()
@@ -107,6 +110,48 @@ async function recoveryCheck(transform=s=>s) {
     r.stopFolderWatchers();assert.equal(timers.size,0)
   }
 }
+
+async function structuralRecoveryConvergenceCheck(transform=s=>s) {
+  const folder=path.resolve('/fonts'),fixtureFiles=4096,logs=[],timers=new Map();let apply=0,rowsRead=0,now=1000
+  const r=load(watcherFile,{
+    electron:{BrowserWindow:{getAllWindows:()=>[]}},
+    'node:fs':{promises:{stat:async()=>({isDirectory:()=>true})},watch:()=>({on(){},close(){}})},
+    '../path/cachePath':{normalizePathForCacheCompare:x=>x.toLowerCase()},
+    '../path/startupPathAvailabilityRuntime':{ensureStartupPathRootAvailable:async()=>true}
+  },{Date:class extends Date{static now(){return now}},setTimeout(fn,ms){const token={unref(){}};timers.set(token,{fn,ms});return token},clearTimeout:token=>timers.delete(token)},transform).createFolderWatcherRuntime({
+    startupGraceMs:0,flushDebounceMs:10,closeRuntimeDatabases(){},isIgnoredWatcherPath:()=>false,appendStartupLog:x=>logs.push(x),isScanActive:()=>false,
+    watcherChangeBatchLooksUnchanged:async()=>false,
+    applyWatchedFolderChangesToIndex:async()=>{apply++;rowsRead+=fixtureFiles;if(apply===1)throw Object.assign(Error('structural persistence failure'),{watcherRecoveryDisposition:'defer'});return{folder,upserts:[],deletes:[],errors:[]}},
+    syncMergedIndexForRootIncremental:async()=>{},syncMergedIndexForRootSnapshot:async()=>{}
+  })
+  await r.startWatchingFolders([folder]);r.notifyFolderChanged(folder,'rescan')
+  const tick=async()=>{assert(timers.size>0);const[token,timer]=timers.entries().next().value;timers.delete(token);timer.fn();await drain()}
+  await tick();assert.equal(apply,1);assert.equal(rowsRead,fixtureFiles);assert.equal(timers.size,0)
+  for(let i=0;i<fixtureFiles;i++)r.notifyFolderChanged(folder,'rescan')
+  assert.equal(timers.size,0,'deferred root must not spin on repeated root-level signals');assert.equal(apply,1)
+  r.notifyFolderChanged(folder,'rename','changed.ttf');assert.equal(timers.size,1);await tick()
+  assert.equal(apply,2,'next concrete event must allow exactly one deferred replay');assert.equal(rowsRead,fixtureFiles*2);assert.equal(timers.size,0)
+  assert(logs.some(x=>x.includes('root diff suppressed while recovery is deferred')))
+  r.stopFolderWatchers()
+}
+async function multiRootIsolationCheck(transform=s=>s){
+  const a=path.resolve('/fonts-a'),b=path.resolve('/fonts-b'),logs=[],delivered=[];let now=1000
+  const r=load(watcherFile,{
+    electron:{BrowserWindow:{getAllWindows:()=>[{isDestroyed:()=>false,webContents:{send(_c,p){delivered.push(plain(p))}}}]}},
+    'node:fs':{promises:{stat:async()=>({isDirectory:()=>true})},watch:()=>({on(){},close(){}})},
+    '../path/cachePath':{normalizePathForCacheCompare:x=>x.toLowerCase()},
+    '../path/startupPathAvailabilityRuntime':{ensureStartupPathRootAvailable:async()=>true}
+  },{Date:class extends Date{static now(){return now}},setTimeout,clearTimeout},transform).createFolderWatcherRuntime({
+    startupGraceMs:0,flushDebounceMs:60000,closeRuntimeDatabases(){},isIgnoredWatcherPath:()=>false,appendStartupLog:x=>logs.push(x),isScanActive:()=>false,
+    watcherChangeBatchLooksUnchanged:async()=>false,
+    applyWatchedFolderChangesToIndex:async changes=>{const root=path.resolve(changes[0].folder);if(root===a)throw Object.assign(Error('persist-a'),{watcherRecoveryDisposition:'defer'});return{folder:root,upserts:[{id:'b',path:path.join(root,'b.ttf')}],deletes:[],errors:[]}},
+    syncMergedIndexForRootIncremental:async()=>{},syncMergedIndexForRootSnapshot:async()=>{}
+  })
+  await r.startWatchingFolders([a,b]);r.notifyFolderChanged(a,'rename','a.ttf');r.notifyFolderChanged(b,'rename','b.ttf');await r.flushPendingFolderChanges()
+  assert(delivered.some(x=>path.resolve(x.folder)===b),'one root failure must not stop another root');assert(logs.some(x=>x.includes('recovery deferred')&&x.includes(a)))
+  r.stopFolderWatchers()
+}
+
 const manualFile='src/main/watcher/manual-refresh/manualFolderIndexApplyRuntime.ts'
 async function manualIncompleteCheck(transform=s=>s) {
   let writes=0,signatures=0
@@ -153,13 +198,16 @@ function authorityCheck(transform=s=>s) {
 async function main(){ authorityCheck();
   assert.throws(()=>authorityCheck(s=>s.replace("source === 'watcher'", "source === 'never'")),assert.AssertionError); await manualIncompleteCheck();
   await assert.rejects(()=>manualIncompleteCheck(s=>s.replace('if (payload.errors?.length) break;','')),assert.AssertionError)
- await recoveryCheck();
+ await recoveryCheck(); await structuralRecoveryConvergenceCheck(); await multiRootIsolationCheck();
   await assert.rejects(()=>recoveryCheck(s=>s.replaceAll('if (!recovery)', 'if (false)')),assert.AssertionError)
   await assert.rejects(()=>recoveryCheck(s=>s.replace('if (recovery && options.syncMergedIndexForRootSnapshot)', 'if (false && options.syncMergedIndexForRootSnapshot)')),assert.AssertionError)
+  await assert.rejects(()=>recoveryCheck(s=>s.replace('if (recoveryError?.watcherRecoveryDisposition === "defer")', 'if (false)')),assert.AssertionError)
+  await assert.rejects(()=>structuralRecoveryConvergenceCheck(s=>s.replace('if (deferredRecoveryBatches.has(rootKey)) {', 'if (false) {')),assert.AssertionError)
  await deletionCheck();
   await assert.rejects(()=>deletionCheck(s=>s.replace('replayUnchanged && font','font')),/unchanged broadcasts/)
   await assert.rejects(()=>deletionCheck(s=>s.replace('replayUnchanged && font','false && font')),/unchanged broadcasts/)
   await assert.rejects(()=>deletionCheck(s=>s.replace('if (!confirmedMissing) {','if (false) {')),assert.AssertionError)
   await assert.rejects(()=>deletionCheck(s=>s.replace('if (errors.length > errorCount) return false','')),assert.AssertionError)
-console.log('[diagnostics:watcher-index-consistency] deletion evidence, bounded recovery, grace/restart and safe manual fallback; source-scoped field authority; eight mutations rejected') }
+  await assert.rejects(()=>deletionCheck(s=>s.replace("watcherRecoveryDisposition: 'defer' as const,","")),assert.AssertionError)
+console.log('[diagnostics:watcher-index-consistency] deletion evidence, deferred persistence recovery, 4096-row convergence, multi-root isolation, grace/restart and safe manual fallback; source-scoped field authority; eleven mutations rejected') }
 main().catch(e=>{console.error(e);process.exitCode=1})

@@ -61,6 +61,7 @@ export function createFolderWatcherRuntime(
   let folderWatcherIgnoreUntil = 0;
   const pendingFolderChanges = new Map<string, PendingFolderChange>();
   const recoveryBatches = new Map<string, PendingFolderChange[]>();
+  const deferredRecoveryBatches = new Map<string, PendingFolderChange[]>();
   let delayedDuringScanLoggedAt = 0;
   let watcherGeneration = 0;
   let flushInFlight: Promise<void> | null = null;
@@ -84,6 +85,7 @@ export function createFolderWatcherRuntime(
     currentFolderWatchSignature = "";
     pendingFolderChanges.clear();
     recoveryBatches.clear();
+    deferredRecoveryBatches.clear();
 
     if (folderWatchTimer) {
       clearTimeout(folderWatchTimer);
@@ -106,14 +108,88 @@ export function createFolderWatcherRuntime(
     }
   }
 
+  function recoveryRootKey(rootPath: string): string {
+    return normalizePathForCacheCompare(resolve(rootPath));
+  }
+
+  function recoveryItems(
+    rootPath: string,
+    changes: PendingFolderChange[],
+    payload?: FontIndexChangePayload,
+  ): PendingFolderChange[] {
+    const retries = [
+      ...changes,
+      ...(payload?.deletes || []).map((item) => ({
+        folder: rootPath,
+        fileName: item.relativePath,
+        eventType: "rescan",
+        receivedAt: Date.now(),
+      })),
+    ];
+    return Array.from(
+      new Map(
+        retries.map((item) => [
+          String(item.fileName || ".").toLowerCase(),
+          { ...item, folder: rootPath, fileName: String(item.fileName || "."), eventType: "rescan" },
+        ]),
+      ).values(),
+    );
+  }
+
   function queueRecovery(rootPath: string, changes: PendingFolderChange[], payload?: FontIndexChangePayload): void {
-    const key = normalizePathForCacheCompare(rootPath);
+    const key = recoveryRootKey(rootPath);
     if (!currentFolderWatchSignature.split("\n").includes(key)) return;
     // Re-read current files; never replay a failed resource operation or old mutation payload.
-    const retries = [...(recoveryBatches.get(key) || []), ...changes,
-      ...(payload?.deletes || []).map((item) => ({ folder: rootPath, fileName: item.relativePath, eventType: "rescan", receivedAt: Date.now() }))];
-    recoveryBatches.set(key, Array.from(new Map(retries.map((item) => [item.fileName, { ...item, eventType: "rescan" }])).values()));
+    const retries = recoveryItems(rootPath, [...(recoveryBatches.get(key) || []), ...changes], payload);
+    if (!retries.length) return;
+    recoveryBatches.set(key, retries);
     schedulePendingFolderFlush(Math.max(options.flushDebounceMs, folderWatcherIgnoreUntil - Date.now()));
+  }
+
+  function deferRecovery(
+    rootPath: string,
+    changes: PendingFolderChange[],
+    payload: FontIndexChangePayload | undefined,
+    reason: string,
+  ): void {
+    const key = recoveryRootKey(rootPath);
+    const queuedForRoot: PendingFolderChange[] = [];
+    for (const [pendingKey, item] of pendingFolderChanges) {
+      if (recoveryRootKey(item.folder) !== key) continue;
+      queuedForRoot.push(item);
+      pendingFolderChanges.delete(pendingKey);
+    }
+    const retries = recoveryItems(
+      rootPath,
+      [
+        ...(deferredRecoveryBatches.get(key) || []),
+        ...(recoveryBatches.get(key) || []),
+        ...queuedForRoot,
+        ...changes,
+      ],
+      payload,
+    );
+    recoveryBatches.delete(key);
+    if (retries.length) deferredRecoveryBatches.set(key, retries);
+    options.appendStartupLog(
+      `folder watcher recovery deferred: ${rootPath}; reason=${reason}; affected=${retries.length}; awaiting next concrete watcher event or manual refresh`,
+    );
+  }
+
+  function releaseDeferredRecovery(change: PendingFolderChange): boolean {
+    const rootPath = resolve(change.folder);
+    const key = recoveryRootKey(rootPath);
+    const deferred = deferredRecoveryBatches.get(key);
+    if (!deferred?.length) return false;
+    deferredRecoveryBatches.delete(key);
+    recoveryBatches.set(
+      key,
+      recoveryItems(rootPath, [...deferred, change]),
+    );
+    options.appendStartupLog(
+      `folder watcher deferred recovery released by concrete event: ${rootPath} ${change.fileName}`,
+    );
+    return true;
   }
 
   async function flushPendingFolderChangesPass(
@@ -176,12 +252,24 @@ export function createFolderWatcherRuntime(
         sendFontIndexChanged(payload);
         if (payload.errors?.length) {
           if (!recovery) queueRecovery(rootPath, group, payload);
-          else options.appendStartupLog(`folder watcher recovery exhausted: ${rootPath}; use manual refresh after resolving errors`);
+          else {
+            deferRecovery(rootPath, group, payload, "recovery-errors");
+            options.appendStartupLog(`folder watcher recovery exhausted: ${rootPath}; waiting for the next concrete event or manual refresh`);
+          }
         }
       } catch (error) {
-        const hints = error && typeof error === "object" ? (error as { watcherRecoveryChanges?: PendingFolderChange[] }).watcherRecoveryChanges : undefined;
-        if (!recovery) queueRecovery(rootPath, [...group, ...(hints || [])], payload);
-        else options.appendStartupLog(`folder watcher recovery exhausted: ${rootPath}; use manual refresh after resolving errors`);
+        const recoveryError = error && typeof error === "object"
+          ? error as { watcherRecoveryChanges?: PendingFolderChange[]; watcherRecoveryDisposition?: "defer" }
+          : undefined;
+        const hints = recoveryError?.watcherRecoveryChanges;
+        if (recoveryError?.watcherRecoveryDisposition === "defer") {
+          deferRecovery(rootPath, [...group, ...(hints || [])], payload, "persistence");
+        } else if (!recovery) {
+          queueRecovery(rootPath, [...group, ...(hints || [])], payload);
+        } else {
+          deferRecovery(rootPath, [...group, ...(hints || [])], payload, "recovery-exhausted");
+          options.appendStartupLog(`folder watcher recovery exhausted: ${rootPath}; waiting for the next concrete event or manual refresh`);
+        }
         options.appendStartupLog(
           `font index watcher batch failed: ${rootPath}, events=${group.length}, ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -259,19 +347,30 @@ export function createFolderWatcherRuntime(
     const normalizedFileName = String(fileName || "");
     const changeFileName = normalizedFileName || ".";
     const changeEventType = normalizedFileName ? eventType : "rescan";
-    if (!normalizedFileName) {
-      options.appendStartupLog(
-        `folder watcher event without file name queued for root diff: ${folder} ${eventType}`,
-      );
-    }
-
-    const key = `${normalizePathForCacheCompare(folder)}\0${changeFileName.toLowerCase()}\0${changeEventType}`;
-    pendingFolderChanges.set(key, {
+    const change: PendingFolderChange = {
       folder,
       eventType: changeEventType,
       fileName: changeFileName,
       receivedAt: Date.now(),
-    });
+    };
+    const rootKey = recoveryRootKey(folder);
+    if (!normalizedFileName) {
+      if (deferredRecoveryBatches.has(rootKey)) {
+        options.appendStartupLog(
+          `folder watcher root diff suppressed while recovery is deferred: ${folder} ${eventType}`,
+        );
+        return;
+      }
+      options.appendStartupLog(
+        `folder watcher event without file name queued for root diff: ${folder} ${eventType}`,
+      );
+    } else if (releaseDeferredRecovery(change)) {
+      schedulePendingFolderFlush(Math.max(options.flushDebounceMs, folderWatcherIgnoreUntil - Date.now()));
+      return;
+    }
+
+    const key = `${normalizePathForCacheCompare(folder)}\0${changeFileName.toLowerCase()}\0${changeEventType}`;
+    pendingFolderChanges.set(key, change);
 
     schedulePendingFolderFlush(Math.max(options.flushDebounceMs, folderWatcherIgnoreUntil - Date.now()));
   }

@@ -280,7 +280,7 @@ flowchart TD
 
 ### C-03 Watcher 收敛与恢复去放大
 
-状态：未开始；必须等 C-02。
+状态：已完成（2026-09-20）。
 
 候选范围：
 
@@ -299,6 +299,22 @@ flowchart TD
 - 一个根恢复失败不能停止另一个根 watcher。
 
 硬门禁：4000+ 文件受控夹具下，结构性写失败不会产生与文件数同阶的重复子进程/重扫；恢复后只执行一个必要重放并能成功提交。
+
+#### C-03.1 实施结果
+
+- `watchedFolderIndexRuntime` 将索引持久化阶段失败标记为 `watcherRecoveryDisposition=defer`；工作缓存只有在持久化成功后才回写 source cache，因此结构性写失败继续保留旧索引，也不会发布假的 `font-index:changed`。
+- `folderWatcherRuntime` 新增按 root、当前 watcher generation 生命周期持有的 deferred recovery：普通文件读取/解析错误仍保留一次有界重读；持久化失败和 recovery exhausted 不再立即 one-shot 自旋，而是保存受影响路径，等待下一条具体文件事件或人工刷新。
+- deferred 状态下重复的“无文件名/root diff”信号被抑制，不会再次安排全根 rescan；下一条具体事件只释放一次待重放批次。原始信号若能定位到文件/目录，仅重读受影响路径；只有原本就是无法定位的 root-level 信号才保留根级重放语义。
+- 同根同 generation 的重复事件继续通过 pending/recovery map 合并，watcher restart 会清空旧 generation 的 deferred 状态；一个 root 的失败在批次内被独立结算，不阻塞另一个 root 的成功提交与通知。
+- 数据库事务仍完全由 C-02 的 root-index owner 负责；C-03 没有把 SQLite/manifest 事务复制进 watcher，也没有修改 Shared I/O timeout/offline 判定。
+
+#### C-03.2 回归与验证
+
+- 扩展 `diagnostics:watcher-index-consistency`：加入持久化 deferred recovery、**4096 文件**结构性失败收敛、重复 root-diff 抑制、下一具体事件单次重放、多 root 隔离，并保留 grace/restart、删除证据、manual refresh 与字段 authority 旧门；共拒绝 **11 个**因果 mutant。
+- C-00 `--current` 从 **4 KNOWN_DEFECT / 4 CONTROL_PASS** 变为 **3 KNOWN_DEFECT / 5 CONTROL_PASS**；`C00-B02` 现只出现首次 `rescan "."`，不再自动产生第二次 recovery root rescan。剩余 timeout→offline、shutdown residual clean、renderer closing 三项仍保持已知缺陷，分别留给 C-04/C-06/C-07。
+- 最终候选 `62492c79384ae051d356e7fb79f9a7aa304dbba5` 在 GitHub Actions `35502445436` 四个 job 全部 success：Linux/Windows watcher 定向门与 TypeScript 通过；Linux `npm run verify` **142/142 diagnostics**、Electron/Vite build、混淆 **3/3**、`git diff --check` 通过；Windows/Linux Cargo 全测试及 release build 通过。
+- 首轮候选只因新增测试夹具未注入 VM timer 而在断言前失败；补齐测试环境后同一生产实现通过完整门禁，没有删除、跳过或弱化任何测试。
+- C-03 完成只关闭 watcher 恢复放大；单文件 timeout 误标根 offline 的 `C00-B03` 仍属于 C-04，不在本任务用阈值或吞错掩盖。
 
 ### C-04 Root availability 证据与 timeout 语义
 
@@ -469,7 +485,7 @@ flowchart TD
 
 ## 9. 当前结论与下一执行入口
 
-C-00～C-02 已完成，但本书整体仍然**不代表问题已全部修复**。
+C-00～C-03 已完成，但本书整体仍然**不代表问题已全部修复**。
 
 当前执行顺序固定为：
 
@@ -477,8 +493,8 @@ C-00～C-02 已完成，但本书整体仍然**不代表问题已全部修复**�
 C-00 基线（完成）
 → C-01 索引 storage/access 分离（完成）
 → C-02 局域网 root index 原生事务（完成）
-→ C-03 watcher 收敛（下一项）
-→ C-04 offline 证据
+→ C-03 watcher 收敛（完成）
+→ C-04 offline 证据（下一项）
 → C-05 激活清理合同
 → C-06 退出结果语义
 → C-07 renderer closing
@@ -486,4 +502,4 @@ C-00 基线（完成）
 → C-09 Windows/NAS 总验收
 ```
 
-C-03 现在是下一执行入口；C-08 仍须等 C-01～C-07 全部硬门通过。在 C-05 通过前，不应把 O-04/O-05 的 Windows 实机状态标成完成；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。
+C-04 现在是下一执行入口；C-08 仍须等 C-01～C-07 全部硬门通过。在 C-05 通过前，不应把 O-04/O-05 的 Windows 实机状态标成完成；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。

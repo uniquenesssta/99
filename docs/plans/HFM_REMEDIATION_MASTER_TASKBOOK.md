@@ -12,11 +12,11 @@
 
 > 共享离线专项接续：[任务书 §22](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#22-o-02o-04o-05-完整实现接续)。O-02 全消费者隔离、O-04 本机副本与断网取消、O-05 分阶段恢复及人工残留处理代码已补齐。TypeScript、136/136 诊断、JS 三端构建/混淆通过；原生 Windows/Linux 验证与真实待验项详见 §22。保留并置灰离线共享目录/标签，不做离线共享写入同步。O-06 已实现单一总退出预算及退出准入，验证见 [§23](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#23-o-06-执行卡)；后续入口 O-07（重连校验）；Windows/NAS、权限占用和实际重启仍须验收，旧 U-09 与主线待验项不变。
 
-> 新实机修复入口：[索引访问、共享 I/O、激活清理与退出一致性修复任务书](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)。Windows/NAS 日志已确认 `storage=root` 与 local/shared 访问维度被错误混用于写路由，并暴露 watcher 原生事务、根超时误离线、临时激活清理所有权和退出 lifecycle 的独立问题；按 C-00～C-09 串行修复。C-00～C-02 已完成：Root Index 存储/访问分类已独立，shared full/incremental/delete/目录签名统一进入 Rust 原生事务，commit 后 publication 失败进入可恢复 pending 而不双写；142/142 JS diagnostics、Electron/Vite 构建/混淆及 Windows/Linux Cargo 全测试/release 通过（CI 35493225636）。下一项 C-03 watcher 收敛，O-07 继续暂停。
+> 新实机修复入口：[索引访问、共享 I/O、激活清理与退出一致性修复任务书](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)。Windows/NAS 日志已确认 `storage=root` 与 local/shared 访问维度被错误混用于写路由，并暴露 watcher 原生事务、根超时误离线、临时激活清理所有权和退出 lifecycle 的独立问题；按 C-00～C-09 串行修复。C-00～C-03 已完成：Root Index 原生事务已收口，watcher 持久化失败改为 deferred recovery，重复 root diff 不再触发立即全根重扫，4096 文件收敛与多根隔离门通过；C-00 current 为 3 缺陷/5 对照，142/142 JS diagnostics、Electron/Vite 构建/混淆及 Windows/Linux Cargo 全测试/release 通过（CI 35502445436）。下一项 C-04 root availability/timeout 语义，O-07 继续暂停。
 
 ## 0. 文档状态
 
-- 文档版本：1.49
+- 文档版本：1.50
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
 - 主线阶段历史记录：Stage 7 AT-7.1 已完成自动与 Windows 构建验收；AT-7.2 已完成兼容工具链升级、锁图清理和本环境自动验证。Windows `npm ci` 已确认 395 个包且审计 0；首轮 `build:win` 在诊断的 LF 字面串无法改写 CRLF 配置处停止，生产配置与依赖无误。该诊断已改为 LF/CRLF 结构化反例并通过 91/91；分支 `stage/07-ipc-security-dependencies`。Windows 完整重跑、原生 ABI、NSIS 及安装/启动/卸载烟测待补，Stage 8 尚未开始。
