@@ -52,15 +52,51 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
     resolveActiveRootIndexDbPath,
   })
 
+  async function activeRootIndexWritePath(filePath: string): Promise<string> {
+    const cacheDir = rootCacheDirForIndexPath(filePath)
+    const activePath = await resolveActiveRootIndexDbPath(cacheDir, filePath).catch(() => filePath)
+    return await deps.exists(activePath).catch(() => false) ? activePath : filePath
+  }
+
   async function mergeExistingSharedMetadataBeforeFullWrite(filePath: string, rootPath: string, storage: RootIndexStorage, cache: FontScanCacheFile): Promise<void> {
-    if (storage !== 'root' || !(await deps.exists(filePath).catch(() => false))) return
+    if (storage !== 'root') return
+    const activePath = await activeRootIndexWritePath(filePath)
+    if (!(await deps.exists(activePath).catch(() => false))) return
     try {
-      const existing = await readRootIndexSqliteFile(filePath, rootPath, storage)
+      const existing = await readRootIndexSqliteFile(activePath, rootPath, storage)
       const result = mergeSharedFontMetadataFromExistingIndex(cache, existing)
       if (result.merged) deps.appendStartupLog(`root index full write preserved shared metadata rows=${result.merged}`)
     } catch (error) {
       deps.appendStartupLog(`root index shared metadata merge skipped: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  async function publishCommittedSharedRootIndexState(
+    filePath: string,
+    rootPath: string,
+    storage: RootIndexStorage,
+    fileCount: number,
+    activeDbPath: string,
+    reason: 'full' | 'incremental',
+  ): Promise<void> {
+    const cacheDir = rootCacheDirForIndexPath(filePath)
+    try {
+      await writeRootCacheManifest(cacheDir, rootPath, storage, fileCount, activeDbPath)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      deps.appendStartupLog(`root index committed publication pending: root=${rootPath}, mode=${reason}, db=${activeDbPath}, error=${message}`)
+      await deps.recordCacheEvent('root-index', 'committed_publication_pending', {
+        rootPath, storage, mode: reason, database: activeDbPath, fileCount, message,
+      }).catch(() => undefined)
+    }
+  }
+
+  async function settleCommittedSharedRootIndexWrite(eventType: string, payload: Record<string, unknown>): Promise<void> {
+    try { deps.invalidateSharedFontRuntimeCaches() }
+    catch (error) { deps.appendStartupLog(`root index committed cache invalidation skipped: ${error instanceof Error ? error.message : String(error)}`) }
+    await deps.recordCacheEvent('root-index', eventType, payload).catch((error) => {
+      deps.appendStartupLog(`root index committed cache event skipped: ${error instanceof Error ? error.message : String(error)}`)
+    })
   }
 
   async function activeRootIndexEntryCounts(cacheDir: string, filePath: string, rootPath: string, storage: RootIndexStorage) {
@@ -154,25 +190,51 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
 
   async function saveRootIndexSqliteFile(filePath: string, rootPath: string, storage: RootIndexStorage, cache: FontScanCacheFile): Promise<void> {
     const accessKind = await resolveRootIndexAccessKind(filePath, storage)
-    if (accessKind === 'shared') {
-      throw new SharedIoProcessError(
-        '共享根索引完整写入尚未接入隔离原生事务。',
-        'not-started',
-        'shared-root-index-full-write-unavailable',
-      )
-    }
+    let committedSharedDatabase = ''
+    let committedSharedCount = 0
     try {
       await withRootCacheWriteLock(filePath, async () => {
         await mergeExistingSharedMetadataBeforeFullWrite(filePath, rootPath, storage, cache)
+        if (accessKind === 'shared') {
+          if (!deps.runRustRootIndexApplyChanges) {
+            throw new SharedIoProcessError('共享根索引完整写入需要隔离原生事务。','not-started','shared-root-index-native-write-unavailable')
+          }
+          const activePath = await activeRootIndexWritePath(filePath)
+          const entries = Object.entries(cache.entries || {})
+          const rustResult = await deps.runRustRootIndexApplyChanges({
+            dbPath: activePath,
+            rootPath,
+            storage,
+            mode: 'replace',
+            schemaVersion: ROOT_INDEX_DB_SCHEMA_VERSION,
+            cacheVersion: deps.fontScanCacheVersion,
+            scriptDetectionVersion: deps.scriptDetectionVersion,
+            upserts: entries,
+            deletes: [],
+          })
+          if (!rustResult?.applied) {
+            throw new SharedIoProcessError('共享根索引完整写入原生事务未能提交。','not-started','shared-root-index-native-write-unavailable')
+          }
+          committedSharedDatabase = activePath
+          committedSharedCount = Number(rustResult.count || entries.length)
+          await publishCommittedSharedRootIndexState(filePath, rootPath, storage, committedSharedCount, activePath, 'full')
+          deps.appendStartupLog(`root index rust full replace used: root=${rootPath}, storage=${storage}, rows=${entries.length}, count=${committedSharedCount}, durationMs=${rustResult.durationMs || 0}, database=${activePath}`)
+          return
+        }
         if (storage === 'root') {
           await saveRootIndexSqliteFileAtomicSnapshot(filePath, rootPath, storage, cache)
           return
         }
-
         await saveRootIndexSqliteFileDirect(filePath, rootPath, storage, cache)
         await writeRootCacheManifest(rootCacheDirForIndexPath(filePath), rootPath, storage, Object.keys(cache.entries || {}).length, filePath)
       })
-    } catch (error) {
+      if (committedSharedDatabase) {
+        await settleCommittedSharedRootIndexWrite('full_native_replace', {
+          rootPath, storage, rows: Object.keys(cache.entries || {}).length,
+          count: committedSharedCount, database: committedSharedDatabase,
+        })
+      }
+
       if (storage === 'root' && error instanceof RootCacheLockTimeoutError) {
         throw new Error(`共享索引写入锁超时：${rootPath}。v2.0 不再写入本机 fallback，请稍后重试或确认没有其他电脑正在更新索引。`)
       }
@@ -185,8 +247,11 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
 
     const accessKind = await resolveRootIndexAccessKind(filePath, storage)
     let writtenDatabase = filePath
+    let committedShared = false
+    let committedSharedCount = 0
     try {
       await withRootCacheWriteLock(filePath, async () => {
+        const nativeDatabase = accessKind === 'shared' ? await activeRootIndexWritePath(filePath) : filePath
         if (storage === 'root' && accessKind === 'local' && process.env.HFM_ROOT_INDEX_INCREMENTAL_SNAPSHOT !== '0') {
           const snapshotPath = await saveRootIndexSqliteChangesAtomicSnapshot(filePath, rootPath, storage, upserts, deletes)
           writtenDatabase = snapshotPath
@@ -203,9 +268,10 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
         if (deps.runRustRootIndexApplyChanges) {
           try {
             const rustResult = await deps.runRustRootIndexApplyChanges({
-              dbPath: filePath,
+              dbPath: nativeDatabase,
               rootPath,
               storage,
+              mode: 'incremental',
               schemaVersion: ROOT_INDEX_DB_SCHEMA_VERSION,
               cacheVersion: deps.fontScanCacheVersion,
               scriptDetectionVersion: deps.scriptDetectionVersion,
@@ -213,8 +279,15 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
               deletes,
             })
             if (rustResult?.applied) {
-              await writeRootCacheManifest(rootCacheDirForIndexPath(filePath), rootPath, storage, Number(rustResult.count || 0), filePath)
-              writtenDatabase = filePath
+              const resultCount = Number(rustResult.count || 0)
+              if (accessKind === 'shared') {
+                committedShared = true
+                committedSharedCount = resultCount
+                await publishCommittedSharedRootIndexState(filePath, rootPath, storage, resultCount, nativeDatabase, 'incremental')
+              } else {
+                await writeRootCacheManifest(rootCacheDirForIndexPath(filePath), rootPath, storage, resultCount, nativeDatabase)
+              }
+              writtenDatabase = nativeDatabase
               deps.appendStartupLog(`root index rust incremental write used: root=${rootPath}, storage=${storage}, upserts=${rustResult.upserts}, deletes=${rustResult.deletes}, count=${rustResult.count}, durationMs=${rustResult.durationMs || 0}`)
               return
             }
@@ -315,14 +388,18 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
           deps.closeSqliteDb(db)
         }
       })
-      deps.invalidateSharedFontRuntimeCaches()
-      await deps.recordCacheEvent('root-index', 'incremental_write', {
-        rootPath,
-        storage,
-        upserts: upserts.length,
-        deletes: deletes.length,
-        database: writtenDatabase
-      })
+      if (committedShared) {
+        await settleCommittedSharedRootIndexWrite('incremental_write', {
+          rootPath, storage, upserts: upserts.length, deletes: deletes.length,
+          count: committedSharedCount, database: writtenDatabase
+        })
+      } else {
+        deps.invalidateSharedFontRuntimeCaches()
+        await deps.recordCacheEvent('root-index', 'incremental_write', {
+          rootPath, storage, upserts: upserts.length, deletes: deletes.length,
+          database: writtenDatabase
+        })
+      }
     } catch (error) {
       if (storage === 'root' && error instanceof RootCacheLockTimeoutError) {
         throw new Error(`共享索引增量写入锁超时：${rootPath}。v2.0 不再写入本机 fallback，请稍后重试或确认没有其他电脑正在更新索引。`)

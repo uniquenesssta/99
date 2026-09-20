@@ -47,6 +47,7 @@ export type RustRootIndexApplyChangesRequest = {
   dbPath: string
   rootPath: string
   storage: RootIndexStorage
+  mode?: 'incremental' | 'replace'
   schemaVersion: number
   cacheVersion: number
   scriptDetectionVersion: number

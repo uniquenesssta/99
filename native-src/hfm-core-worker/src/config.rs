@@ -33,6 +33,7 @@ pub enum Command {
     ListFontFiles(Result<ListFontFilesConfig, String>),
     FontParseBatch(Result<FontParseBatchCommandConfig, String>),
     RootIndexApplyChanges(Result<RootIndexApplyConfig, String>),
+    RootIndexReplace(Result<RootIndexApplyConfig, String>),
     InstallStatusRead(Result<InstallStatusCommandConfig, String>),
     InstallStatusSave(Result<InstallStatusCommandConfig, String>),
     InstallStatusCompare(Result<InstallStatusCommandConfig, String>),
@@ -506,6 +507,9 @@ pub fn parse_args(args: &[String]) -> Command {
     if args.iter().any(|arg| arg == "--root-index-apply-changes") {
         return Command::RootIndexApplyChanges(parse_root_index_apply_args(args));
     }
+    if args.iter().any(|arg| arg == "--root-index-replace") {
+        return Command::RootIndexReplace(parse_root_index_apply_args(args));
+    }
 
     if args.iter().any(|arg| arg == "--merged-index-query-page") {
         return Command::MergedIndexQueryPage(parse_merged_index_page_query_args(args));
@@ -667,6 +671,7 @@ pub fn usage() {
     eprintln!("hfm-core-worker --font-activation-files --input <json>");
     eprintln!("hfm-core-worker --physical-folder-tree --input <json>");
     eprintln!("hfm-core-worker --root-index-apply-changes --db <path> --root <path> --storage <root|fallback> --input <json> [--schema-version <n>] [--cache-version <n>] [--script-detection-version <n>]");
+    eprintln!("hfm-core-worker --root-index-replace --db <path> --root <path> --storage <root|fallback> --input <json> [--schema-version <n>] [--cache-version <n>] [--script-detection-version <n>]");
     eprintln!("hfm-core-worker --merged-index-query-page --input <json>");
     eprintln!("hfm-core-worker --merged-index-query-metrics --input <json>");
     eprintln!("hfm-core-worker --merged-index-query-ids --input <json>");

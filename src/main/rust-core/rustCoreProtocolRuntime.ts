@@ -34,6 +34,7 @@ export const REQUIRED_RUST_CORE_CAPABILITIES = [
   'preview-cache-batch',
   'preview-cache-maintenance',
   'physical-folder-tree',
+  'root-index-sqlite-replace-v1',
   'font-activation-files',
 ] as const
 

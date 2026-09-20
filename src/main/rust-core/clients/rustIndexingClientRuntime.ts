@@ -299,7 +299,10 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
 
   async function runRustRootIndexApplyChanges(input: RustRootIndexApplyChangesInput): Promise<RustRootIndexApplyChangesResult | null> {
     const status = await diagnoseRustCoreWorker()
-    if (!status.available || !status.path || !hasCapability(status, 'root-index-sqlite-apply-changes')) return null
+    const replace = input.mode === 'replace'
+    const capability = replace ? 'root-index-sqlite-replace-v1' : 'root-index-sqlite-apply-changes'
+    if (!status.available || !status.path || !hasCapability(status, capability)) return null
+    const command = replace ? '--root-index-replace' : '--root-index-apply-changes'
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-root-index`)
@@ -307,11 +310,11 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
     try {
       await inputFile.writeJson({
         upserts: input.upserts.map(([relativePath, entry]) => ({ relativePath, entry })),
-        deletes: input.deletes,
+        deletes: replace ? [] : input.deletes,
       })
 
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
-        '--root-index-apply-changes',
+        command,
         '--db', input.dbPath,
         '--root', input.rootPath,
         '--storage', input.storage,
@@ -327,8 +330,8 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
 
       const payload = parseJsonLine<RustApplyRootIndexPayload>(commandOutput.stdout)
       if (!payload.ok || !payload.applied) {
-        const error = new Error(payload.message || 'rust root index apply returned ok=false')
-        throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, '--root-index-apply-changes') : error
+        const error = new Error(payload.message || (replace ? 'rust root index replace returned ok=false' : 'rust root index apply returned ok=false'))
+        throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, command) : error
       }
       const result = {
         applied: true,
@@ -337,15 +340,23 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
         deletes: Number(payload.deletes || 0),
         durationMs: Date.now() - startedAt,
       }
-      options.appendStartupLog(`rust root index apply finished: db=${input.dbPath}, root=${input.rootPath}, upserts=${result.upserts}, deletes=${result.deletes}, count=${result.count}, durationMs=${result.durationMs}`)
+      if (replace) {
+        options.appendStartupLog(`rust root index replace finished: db=${input.dbPath}, root=${input.rootPath}, rows=${result.upserts}, count=${result.count}, durationMs=${result.durationMs}`)
+      } else {
+        options.appendStartupLog(`rust root index apply finished: db=${input.dbPath}, root=${input.rootPath}, upserts=${result.upserts}, deletes=${result.deletes}, count=${result.count}, durationMs=${result.durationMs}`)
+      }
       return result
     } catch (error) {
       rethrowSharedIoProcessError(error)
       if (isRustCoreDaemonSubmittedError(error)) {
-        options.appendStartupLog(`rust root index apply failed after daemon submit: ${error.message}; Node fallback blocked`)
+        options.appendStartupLog(replace
+          ? `rust root index replace failed after daemon submit: ${error.message}; Node fallback blocked`
+          : `rust root index apply failed after daemon submit: ${error.message}; Node fallback blocked`)
         throw error
       }
-      options.appendStartupLog(`rust root index apply failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--root-index-apply-changes')}`)
+      options.appendStartupLog(replace
+        ? `rust root index replace failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix(command)}`
+        : `rust root index apply failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix(command)}`)
       return null
     } finally {
       await inputFile.dispose()

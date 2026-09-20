@@ -172,7 +172,8 @@
     "diagnostics:managed-activation-recovery": "node build/diagnostics/check-managed-activation-recovery.cjs",
     "diagnostics:index-io-activation-shutdown-baseline": "node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs",
     "diagnostics:offline-settlement-watcher": "node build/diagnostics/check-offline-settlement-watcher.cjs",
-    "diagnostics:root-index-access-routing": "node --experimental-sqlite build/diagnostics/check-root-index-access-routing.cjs"
+    "diagnostics:root-index-access-routing": "node --experimental-sqlite build/diagnostics/check-root-index-access-routing.cjs",
+    "diagnostics:root-index-native-transactions": "node --experimental-sqlite build/diagnostics/check-root-index-native-transactions.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

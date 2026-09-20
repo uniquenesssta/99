@@ -117,6 +117,7 @@ export type RustRootIndexApplyChangesInput = {
   dbPath: string
   rootPath: string
   storage: 'root' | 'fallback'
+  mode?: 'incremental' | 'replace'
   schemaVersion: number
   cacheVersion: number
   scriptDetectionVersion: number
