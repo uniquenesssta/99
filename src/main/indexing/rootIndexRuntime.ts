@@ -8,7 +8,7 @@ import {
   nodeStateFallbackDeniedMessage,
 } from '../rust-core/nodeStateFallbackCompatibilityRuntime'
 import { ROOT_INDEX_DB_SCHEMA_VERSION } from '../cache/constants'
-import { SharedIoProcessError } from '../path/sharedIoProcessRuntime'
+import { SharedIoProcessError, rethrowSharedIoProcessError } from '../path/sharedIoProcessRuntime'
 import { resolveRootIndexAccessKind } from './root-index/rootIndexAccessRuntime'
 import { RootCacheLockTimeoutError } from './root-index/rootIndexTypes'
 import { createRootIndexDatabaseRuntime } from './root-index/rootIndexDatabaseRuntime'
@@ -234,7 +234,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
           count: committedSharedCount, database: committedSharedDatabase,
         })
       }
-
+    } catch (error) {
       if (storage === 'root' && error instanceof RootCacheLockTimeoutError) {
         throw new Error(`共享索引写入锁超时：${rootPath}。v2.0 不再写入本机 fallback，请稍后重试或确认没有其他电脑正在更新索引。`)
       }
@@ -292,6 +292,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
               return
             }
           } catch (error) {
+            rethrowSharedIoProcessError(error)
             rethrowRustCoreDaemonSubmittedWrite(error, deps.appendStartupLog, 'root index rust incremental write')
             deps.appendStartupLog(`root index rust incremental write fallback: ${error instanceof Error ? error.message : String(error)}`)
           }
