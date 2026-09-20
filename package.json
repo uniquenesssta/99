@@ -1,7 +1,7 @@
 {
   "name": "han-font-manager",
   "version": "3.0.0",
-  "description": "\u5b57\u4f53\u7ba1\u7406\u5668",
+  "description": "字体管理器",
   "main": "./out/main/index.js",
   "author": "Xie Ele",
   "license": "MIT",
@@ -171,7 +171,8 @@
     "diagnostics:shared-metadata-preflight": "node build/diagnostics/check-shared-metadata-preflight.cjs",
     "diagnostics:managed-activation-recovery": "node build/diagnostics/check-managed-activation-recovery.cjs",
     "diagnostics:index-io-activation-shutdown-baseline": "node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs",
-    "diagnostics:offline-settlement-watcher": "node build/diagnostics/check-offline-settlement-watcher.cjs"
+    "diagnostics:offline-settlement-watcher": "node build/diagnostics/check-offline-settlement-watcher.cjs",
+    "diagnostics:root-index-access-routing": "node --experimental-sqlite build/diagnostics/check-root-index-access-routing.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",
@@ -190,5 +191,5 @@
     "typescript": "^5.7.2",
     "vite": "^7.3.6"
   },
-  "copyright": "Copyright \u00a9 2026 Xie Ele"
+  "copyright": "Copyright © 2026 Xie Ele"
 }

@@ -2,9 +2,9 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.1；制定日期：2026-09-19；软件版本：3.0.0。
+- 文档版本：1.2；制定日期：2026-09-19；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定分支：`stage/09-preview-tags-app`；制定基线：`8fe6db1335e16287062c23bf7de1d66853545f59`。
-- 状态：**C-00 已完成；C-01 未开始**。C-00 仅新增/调整诊断、测试夹具和记录，未修改生产源码；O-07 继续暂停。
+- 状态：**C-00、C-01 已完成；C-02 未开始**。C-01 已把 Root Index 存储位置与物理访问类型拆为独立契约；O-07 继续暂停。
 - 本书是 [共享离线与本地退出任务书](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md) 在真实 Windows/NAS 验收中发现的新一轮正确性修复入口；O-07 继续暂停，先完成本书 P0/P1 修复再决定是否恢复 O-07。
 - 不新建阶段分支；继续沿用当前阶段唯一分支。除非用户明确要求，不创建并行修复分支。
 - 上级约束继续来自 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[全链路一致性修复任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)、Stage 1 激活事务、Stage 2 路径授权、Stage 5 Rust 边界、Stage 6 React 所有权及 Stage 7 IPC 安全任务书。
@@ -184,7 +184,7 @@ flowchart TD
 
 ### C-01 分离 Root Index 存储位置与物理访问类型
 
-状态：未开始。
+状态：**完成**。实现提交随本节同批正式落到 `stage/09-preview-tags-app`；验证候选 `4cac27cd2c7ca0e81effd9cfa4a0e8cad5c86e81`，最终 CI `35484776935`。
 
 候选生产范围：
 
@@ -203,6 +203,40 @@ flowchart TD
 - 不修改 DB schema、rootId、manifest 兼容字段，除非 C-00 证明无法实现；若必须修改，先停下补迁移方案。
 
 硬门禁：同一个 `storage='root'` 用本机路径和 UNC 路径得到不同 access route；四组合 `root/local`、`root/shared`、`fallback/local`、非法 fallback/shared 均有测试。
+
+#### C-01.1 实际实现
+
+- 新增 `src/main/indexing/root-index/rootIndexAccessRuntime.ts` 作为唯一 Root Index 物理访问分类 owner；新增 `RootIndexAccessKind = 'local' | 'shared'`。分类只依赖现有可信 `sharedIoResourceKeys([filePath])`，不把 renderer 输入、`storage`、文件名或 manifest 字段当网络身份。
+- `RootIndexStorage = 'root' | 'fallback'` 保持原语义和原类型：只描述索引存放在监视根自身还是本机 fallback，**不再参与 local/shared 身份推断**。
+- `rootIndexDatabaseRuntime` 改为统一调用 access owner：
+  - local 路径直接打开本机 SQLite；
+  - shared 只读继续通过本地 SQLite snapshot；
+  - shared + `touchMeta=true` 仍拒绝主进程写，保留 `main-write-denied` 防线；
+  - `fallback/shared` 在进入数据库前以 `invalid-root-index-access` fail closed。
+- `rootIndexRuntime.saveRootIndexSqliteChanges()` 先解析 access kind：
+  - `root/local` 保留现有 atomic snapshot；
+  - `root/shared` 不再错误进入 Node atomic snapshot，而是进入现有 `runRustRootIndexApplyChanges` 隔离原生增量路由；
+  - shared 原生增量能力不可用时在 Node fallback 之前明确拒绝 `shared-root-index-native-write-unavailable`，不重新打开网络 SQLite。
+- `saveRootIndexSqliteFile()` 的 shared full write 在 C-01 阶段明确以 `shared-root-index-full-write-unavailable` fail closed，防止再次落回主进程 SQLite。**这不是 C-02 的 full transaction 实现**；C-02 继续负责 full rebuild/snapshot/latest/manifest 的完整原生事务。
+- 本轮没有修改 `rootIndexStorageRuntime`：它继续只负责 root/fallback 存储位置，避免把 access 分类再次塞回存储 owner。
+- 不改 root index/merged index/shared metadata schema、rootId、manifest 格式、IPC、Rust 协议、依赖或用户配置。
+
+#### C-01.2 回归与验证
+
+- 新增长期门 `diagnostics:root-index-access-routing`：
+  - 四组合 `root/local`、`root/shared`、`fallback/local`、非法 `fallback/shared`；
+  - local root 增量必须生成本机 snapshot 且 Rust apply=0；
+  - shared root 增量必须 Rust apply=1 且主进程 SQLite open=0；
+  - shared full write 在 C-02 前必须明确 fail closed；
+  - CRLF 通过；把路由退化回 `storage === 'root'` 的 mutant 和移除 fallback/shared 拒绝的 mutant 均被拒绝。
+- C-00 `--current` 从 **5 KNOWN_DEFECT / 3 CONTROL_PASS** 变为 **4 KNOWN_DEFECT / 4 CONTROL_PASS**；原 `C00-B01` 已转为 control：shared `storage=root` 现在到达 Rust route，`rustCalls=1`，不再复现 `main-write-denied`。其余 watcher recovery、timeout→offline、remaining=1→clean=true、renderer closing 四项仍保持已知缺陷，未被本轮掩盖。
+- 最终 CI：GitHub Actions `35484776935`，全部 success。
+  - Linux JS：新定向门、C-00 current observer、`npm run verify` **141/141 diagnostics**、Electron/Vite build、混淆 3/3 全部通过；
+  - Windows JS：新定向门和 TypeScript 通过；
+  - Windows/Linux：Cargo 全测试及 release build 通过；本轮未修改 Rust 生产源码。
+- 首轮验证 `35484602596` 的 JS 全量门在既有 `preview-input-boundary` 内因 runner 未预取 crates、`cargo --offline` 找不到 `rusqlite` 停止；定向 C-01、Windows JS、Linux native 均已通过。验证工作流补 `cargo fetch --locked` 后，同一候选代码在 `35484776935` 全绿；没有修改或弱化生产测试。
+- C-01 完成只关闭“storage/access 混用”的路由缺陷；shared full transaction、watcher 提交全链和 manifest/latest 发布仍属于 C-02，不提前宣称完成。
+
 
 ### C-02 修复局域网 Root Index 原生事务
 
@@ -425,8 +459,8 @@ C-00 已完成，但本书整体仍然**不代表问题已修复**。
 
 ```text
 C-00 基线（完成）
-→ C-01 索引 storage/access 分离（下一项）
-→ C-02 局域网 root index 原生事务
+→ C-01 索引 storage/access 分离（完成）
+→ C-02 局域网 root index 原生事务（下一项）
 → C-03 watcher 收敛
 → C-04 offline 证据
 → C-05 激活清理合同

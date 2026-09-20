@@ -1,6 +1,7 @@
 import type { FontItem } from '../../../shared/types'
 
 export type RootIndexStorage = 'root' | 'fallback'
+export type RootIndexAccessKind = 'local' | 'shared'
 
 export interface FontScanCacheEntry {
   path: string

@@ -1,5 +1,5 @@
 import { sharedSqliteReadSnapshot } from '../../path/sharedFileSystemRuntime'
-import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { resolveRootIndexAccessKind } from './rootIndexAccessRuntime'
 import { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname } from 'node:path'
@@ -87,8 +87,9 @@ export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
   }
 
   async function openRootIndexDb(filePath: string, rootPath: string, storage: RootIndexStorage, touchMeta = true): Promise<any> {
-    if (touchMeta && (await sharedIoResourceKeys([filePath])).length) throw new SharedIoProcessError('共享根索引写入必须使用隔离的原生事务。','not-started','main-write-denied')
-    const snapshot = await sharedSqliteReadSnapshot(filePath)
+    const accessKind = await resolveRootIndexAccessKind(filePath, storage)
+    if (touchMeta && accessKind === 'shared') throw new SharedIoProcessError('共享根索引写入必须使用隔离的原生事务。','not-started','main-write-denied')
+    const snapshot = accessKind === 'shared' ? await sharedSqliteReadSnapshot(filePath) : undefined
     const localPath = snapshot?.path || filePath
     let db: any
     try {

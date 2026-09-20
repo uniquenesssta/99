@@ -8,6 +8,8 @@ import {
   nodeStateFallbackDeniedMessage,
 } from '../rust-core/nodeStateFallbackCompatibilityRuntime'
 import { ROOT_INDEX_DB_SCHEMA_VERSION } from '../cache/constants'
+import { SharedIoProcessError } from '../path/sharedIoProcessRuntime'
+import { resolveRootIndexAccessKind } from './root-index/rootIndexAccessRuntime'
 import { RootCacheLockTimeoutError } from './root-index/rootIndexTypes'
 import { createRootIndexDatabaseRuntime } from './root-index/rootIndexDatabaseRuntime'
 import { createRootIndexLockRuntime } from './root-index/rootIndexLockRuntime'
@@ -151,6 +153,14 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
   }
 
   async function saveRootIndexSqliteFile(filePath: string, rootPath: string, storage: RootIndexStorage, cache: FontScanCacheFile): Promise<void> {
+    const accessKind = await resolveRootIndexAccessKind(filePath, storage)
+    if (accessKind === 'shared') {
+      throw new SharedIoProcessError(
+        '共享根索引完整写入尚未接入隔离原生事务。',
+        'not-started',
+        'shared-root-index-full-write-unavailable',
+      )
+    }
     try {
       await withRootCacheWriteLock(filePath, async () => {
         await mergeExistingSharedMetadataBeforeFullWrite(filePath, rootPath, storage, cache)
@@ -173,10 +183,11 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
   async function saveRootIndexSqliteChanges(filePath: string, rootPath: string, storage: RootIndexStorage, upserts: Array<[string, FontScanCacheEntry]>, deletes: string[]): Promise<void> {
     if (!upserts.length && !deletes.length) return
 
+    const accessKind = await resolveRootIndexAccessKind(filePath, storage)
     let writtenDatabase = filePath
     try {
       await withRootCacheWriteLock(filePath, async () => {
-        if (storage === 'root' && process.env.HFM_ROOT_INDEX_INCREMENTAL_SNAPSHOT !== '0') {
+        if (storage === 'root' && accessKind === 'local' && process.env.HFM_ROOT_INDEX_INCREMENTAL_SNAPSHOT !== '0') {
           const snapshotPath = await saveRootIndexSqliteChangesAtomicSnapshot(filePath, rootPath, storage, upserts, deletes)
           writtenDatabase = snapshotPath
           await deps.recordCacheEvent('root-index', 'incremental_snapshot_switch', {
@@ -211,6 +222,13 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
             rethrowRustCoreDaemonSubmittedWrite(error, deps.appendStartupLog, 'root index rust incremental write')
             deps.appendStartupLog(`root index rust incremental write fallback: ${error instanceof Error ? error.message : String(error)}`)
           }
+        }
+        if (accessKind === 'shared') {
+          throw new SharedIoProcessError(
+            '共享根索引增量写入需要隔离原生事务。',
+            'not-started',
+            'shared-root-index-native-write-unavailable',
+          )
         }
         if (!nodeStateFallbackCompatibilityAllowed()) {
           logNodeStateFallbackDisabled({
