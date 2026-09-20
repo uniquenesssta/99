@@ -43,6 +43,13 @@ export interface RootCacheManifestFile {
 }
 
 
+export type RootIndexDirectorySignatureUpdate = {
+  relativePath: string
+  modifiedAt: number
+  fileCount: number
+  dirCount: number
+}
+
 export type RustRootIndexApplyChangesRequest = {
   dbPath: string
   rootPath: string
@@ -53,6 +60,7 @@ export type RustRootIndexApplyChangesRequest = {
   scriptDetectionVersion: number
   upserts: Array<[string, FontScanCacheEntry]>
   deletes: string[]
+  directories?: RootIndexDirectorySignatureUpdate[]
 }
 
 export type RustRootIndexApplyChangesResult = {

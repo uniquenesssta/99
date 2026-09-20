@@ -4,7 +4,7 @@ use std::path::Path;
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use sha1::{Digest, Sha1};
 
-use super::types::{RootIndexApplyConfig, RootIndexApplyPayload, RootIndexApplyResult, RootIndexEntry};
+use super::types::{RootIndexApplyConfig, RootIndexApplyPayload, RootIndexApplyResult, RootIndexDirectoryUpdate, RootIndexEntry};
 
 fn ensure_parent_dir(path: &str) -> Result<(), String> {
     if let Some(parent) = Path::new(path).parent() {
@@ -151,6 +151,22 @@ fn insert_index_event(tx: &Transaction<'_>, event_type: &str, relative_path: &st
     Ok(())
 }
 
+fn apply_directory(tx: &Transaction<'_>, item: &RootIndexDirectoryUpdate, now: &str) -> rusqlite::Result<()> {
+    tx.execute(
+        r#"
+        INSERT INTO directories (relative_path, modified_at, file_count, dir_count, scanned_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(relative_path) DO UPDATE SET
+          modified_at = excluded.modified_at,
+          file_count = excluded.file_count,
+          dir_count = excluded.dir_count,
+          scanned_at = excluded.scanned_at
+        "#,
+        params![item.relative_path, item.modified_at, item.file_count, item.dir_count, now],
+    )?;
+    Ok(())
+}
+
 fn apply_delete(tx: &Transaction<'_>, relative_path: &str, deleted_at: &str) -> rusqlite::Result<()> {
     let opstamp = next_opstamp(tx)?;
     tx.execute(
@@ -251,6 +267,7 @@ pub fn replace_root_index(config: &RootIndexApplyConfig) -> Result<RootIndexAppl
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
     let now = tx_now(&tx).map_err(|error| error.to_string())?;
     tx.execute("DELETE FROM entries", []).map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM directories", []).map_err(|error| error.to_string())?;
     for upsert in &payload.upserts {
         replace_entry(&tx, &upsert.relative_path, &upsert.entry, &now).map_err(|error| error.to_string())?;
     }
@@ -285,6 +302,9 @@ pub fn apply_root_index_changes(config: &RootIndexApplyConfig) -> Result<RootInd
         }
         for upsert in &payload.upserts {
             apply_upsert(&tx, &upsert.relative_path, &upsert.entry, &now)?;
+        }
+        for directory in &payload.directories {
+            apply_directory(&tx, directory, &now)?;
         }
         let count: i64 = tx.query_row(
             "SELECT COUNT(*) FROM entries WHERE COALESCE(is_deleted, 0) = 0 AND status <> 'deleted'",

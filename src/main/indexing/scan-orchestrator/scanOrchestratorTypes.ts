@@ -40,6 +40,12 @@ export interface ScanOrchestratorDeps {
     changedEntries: Array<[string, FontScanCacheEntry]>,
     deletedKeys: string[],
   ) => Promise<void>
+  saveRootIndexDirectorySignatures: (
+    dbPath: string,
+    rootPath: string,
+    storage: 'root' | 'fallback',
+    updates: Array<{ relativePath: string; modifiedAt: number; fileCount: number; dirCount: number }>,
+  ) => Promise<void>
   upsertFontHashIndex: (fonts: FontItem[]) => Promise<void>
   recordCacheEvent: (source: string, eventType: string, payload?: Record<string, unknown>) => Promise<void>
   runRustFontIndexListWorker?: (

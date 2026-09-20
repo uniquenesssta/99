@@ -18,7 +18,7 @@ import { mergeSharedFontMetadataFromExistingIndex } from './root-index/rootIndex
 import { createRootIndexSnapshotRuntime } from './root-index/rootIndexSnapshotRuntime'
 import { sqliteEntryFileIdentity, sqliteInsertIndexEvent, sqliteNextOpstamp, sqliteRowToScanEntry } from './root-index/rootIndexSqliteRuntime'
 import { assertRootIndexCandidateDbValid, assertRootIndexSwitchAllowed, countRootIndexEntries, readRootIndexCandidateDbCounts } from './root-index/sharedIndexAtomicWriter'
-import type { FontScanCacheEntry, FontScanCacheFile, RootIndexRuntimeDeps, RootIndexStorage } from './root-index/rootIndexTypes'
+import type { FontScanCacheEntry, FontScanCacheFile, RootIndexDirectorySignatureUpdate, RootIndexRuntimeDeps, RootIndexStorage } from './root-index/rootIndexTypes'
 
 export type { FontScanCacheEntry, FontScanCacheFile, RootIndexStorage } from './root-index/rootIndexTypes'
 
@@ -211,6 +211,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
             scriptDetectionVersion: deps.scriptDetectionVersion,
             upserts: entries,
             deletes: [],
+            directories: [],
           })
           if (!rustResult?.applied) {
             throw new SharedIoProcessError('共享根索引完整写入原生事务未能提交。','not-started','shared-root-index-native-write-unavailable')
@@ -277,6 +278,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
               scriptDetectionVersion: deps.scriptDetectionVersion,
               upserts,
               deletes,
+              directories: [],
             })
             if (rustResult?.applied) {
               const resultCount = Number(rustResult.count || 0)
@@ -409,11 +411,72 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
     }
   }
 
+  async function saveRootIndexDirectorySignatures(
+    filePath: string,
+    rootPath: string,
+    storage: RootIndexStorage,
+    updates: RootIndexDirectorySignatureUpdate[],
+  ): Promise<void> {
+    if (!updates.length) return
+    const accessKind = await resolveRootIndexAccessKind(filePath, storage)
+    await withRootCacheWriteLock(filePath, async () => {
+      const activePath = accessKind === 'shared' ? await activeRootIndexWritePath(filePath) : filePath
+      if (accessKind === 'shared') {
+        if (!deps.runRustRootIndexApplyChanges) {
+          throw new SharedIoProcessError('共享根目录签名写入需要隔离原生事务。','not-started','shared-root-index-native-write-unavailable')
+        }
+        try {
+          const rustResult = await deps.runRustRootIndexApplyChanges({
+            dbPath: activePath,
+            rootPath,
+            storage,
+            mode: 'incremental',
+            schemaVersion: ROOT_INDEX_DB_SCHEMA_VERSION,
+            cacheVersion: deps.fontScanCacheVersion,
+            scriptDetectionVersion: deps.scriptDetectionVersion,
+            upserts: [],
+            deletes: [],
+            directories: updates,
+          })
+          if (rustResult?.applied) {
+            deps.appendStartupLog(`root index rust directory signature write used: root=${rootPath}, rows=${updates.length}, database=${activePath}`)
+            return
+          }
+        } catch (error) {
+          rethrowSharedIoProcessError(error)
+          rethrowRustCoreDaemonSubmittedWrite(error, deps.appendStartupLog, 'root index rust directory signature write')
+        }
+        throw new SharedIoProcessError('共享根目录签名原生事务未能提交。','not-started','shared-root-index-native-write-unavailable')
+      }
+
+      const db = await openRootIndexDb(activePath, rootPath, storage)
+      const now = new Date().toISOString()
+      try {
+        const upsert = db.prepare(`
+          INSERT INTO directories (relative_path, modified_at, file_count, dir_count, scanned_at)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(relative_path) DO UPDATE SET
+            modified_at = excluded.modified_at,
+            file_count = excluded.file_count,
+            dir_count = excluded.dir_count,
+            scanned_at = excluded.scanned_at
+        `)
+        const tx = db.transaction(() => {
+          for (const item of updates) upsert.run(item.relativePath, item.modifiedAt, item.fileCount, item.dirCount, now)
+        })
+        tx()
+      } finally {
+        deps.closeSqliteDb(db)
+      }
+    })
+  }
+
   return {
     openRootIndexDb,
     readRootIndexSqliteFile,
     saveRootIndexSqliteFile,
     saveRootIndexSqliteChanges,
+    saveRootIndexDirectorySignatures,
     writeRootCacheManifest,
     withRootCacheWriteLock,
     resolveActiveRootIndexDbPath,

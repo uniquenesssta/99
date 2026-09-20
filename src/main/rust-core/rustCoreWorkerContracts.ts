@@ -123,6 +123,7 @@ export type RustRootIndexApplyChangesInput = {
   scriptDetectionVersion: number
   upserts: Array<[string, unknown]>
   deletes: string[]
+  directories?: Array<{ relativePath: string; modifiedAt: number; fileCount: number; dirCount: number }>
 }
 
 export type RustRootIndexApplyChangesResult = {

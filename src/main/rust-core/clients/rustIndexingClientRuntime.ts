@@ -311,6 +311,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       await inputFile.writeJson({
         upserts: input.upserts.map(([relativePath, entry]) => ({ relativePath, entry })),
         deletes: replace ? [] : input.deletes,
+        directories: input.directories || [],
       })
 
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
@@ -355,8 +356,8 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
         throw error
       }
       options.appendStartupLog(replace
-        ? `rust root index replace failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix(command)}`
-        : `rust root index apply failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix(command)}`)
+        ? `rust root index replace failed: ${error instanceof Error ? error.message : String(error)}; Node fallback blocked for shared root full replace`
+        : `rust root index apply failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--root-index-apply-changes')}`)
       return null
     } finally {
       await inputFile.dispose()
