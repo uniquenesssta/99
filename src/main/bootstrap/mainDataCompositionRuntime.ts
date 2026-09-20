@@ -414,6 +414,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
       saveInstallStatusIndex: storage.saveInstallStatusIndex,
       openRootIndexDb: storage.openRootIndexDb,
       saveRootIndexSqliteChanges: storage.saveRootIndexSqliteChanges,
+      saveRootIndexDirectorySignatures: storage.saveRootIndexDirectorySignatures,
       writeRootCacheManifest: storage.writeRootCacheManifest,
       withRootCacheWriteLock: storage.withRootCacheWriteLock,
       resolveActiveRootIndexDbPath: storage.resolveActiveRootIndexDbPath,

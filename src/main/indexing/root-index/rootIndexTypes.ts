@@ -43,15 +43,24 @@ export interface RootCacheManifestFile {
 }
 
 
+export type RootIndexDirectorySignatureUpdate = {
+  relativePath: string
+  modifiedAt: number
+  fileCount: number
+  dirCount: number
+}
+
 export type RustRootIndexApplyChangesRequest = {
   dbPath: string
   rootPath: string
   storage: RootIndexStorage
+  mode?: 'incremental' | 'replace'
   schemaVersion: number
   cacheVersion: number
   scriptDetectionVersion: number
   upserts: Array<[string, FontScanCacheEntry]>
   deletes: string[]
+  directories?: RootIndexDirectorySignatureUpdate[]
 }
 
 export type RustRootIndexApplyChangesResult = {

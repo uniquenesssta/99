@@ -98,6 +98,7 @@ export interface MainOperationsCompositionOptions {
     | 'openRootIndexDb'
     | 'withRootCacheWriteLock'
     | 'saveRootIndexSqliteChanges'
+    | 'saveRootIndexDirectorySignatures'
     | 'upsertFontHashIndex'
     | 'recordCacheEvent'
     | 'invalidateSharedFontRuntimeCaches'
@@ -239,6 +240,7 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     openRootIndexDb,
     withRootCacheWriteLock,
     saveRootIndexSqliteChanges,
+    saveRootIndexDirectorySignatures,
     upsertFontHashIndex,
     recordCacheEvent,
     invalidateSharedFontRuntimeCaches,
@@ -477,6 +479,7 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     closeSqliteDb,
     withRootCacheWriteLock,
     saveRootIndexSqliteChanges,
+    saveRootIndexDirectorySignatures,
     upsertFontHashIndex,
     recordCacheEvent,
     rustCoreWorkerRuntime,

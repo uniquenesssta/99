@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-20：完成 C-02 局域网 Root Index 原生事务：shared full rebuild 新增 Rust `root-index-sqlite-replace-v1`，full/incremental/delete/目录签名统一由原生事务 owner 写入，共享 SQLite 不再落回 Node 直写；Rust 已提交但回执丢失保持 `outcome=unknown` 且禁止 fallback 双写，manifest/latest 发布失败记录 `committed_publication_pending` 并由后续加载修复，本机 root 继续使用 atomic snapshot。新增原生事务诊断与 Rust replace 原子性测试；`npm run verify` 142/142、Electron/Vite build、混淆 3/3、Windows/Linux Cargo 全测试及 release build 均通过（CI 35493225636）。下一项 C-03。
+
 - 2026-09-20：完成 C-01 Root Index 存储/访问分离：新增 `local/shared` 访问分类 owner，`root/fallback` 仅保留存储位置语义；本机 root 继续 atomic snapshot，局域网 root 增量改走现有 Rust 隔离 apply，fallback/shared fail closed，shared full write 在 C-02 前明确拒绝而不落回主进程 SQLite。新增四组合路由、CRLF 与两个退化反例门；C-00 current 从 5 缺陷降为 4，verify 141/141、Electron/Vite build、混淆及 Windows/Linux Cargo 全测试/release 通过（CI 35484776935）。下一项 C-02。
 
 - 2026-09-20：完成 C-00 可执行基线：新增索引访问/共享 I/O/激活清理/退出生命周期 observer，固定 5 项 JS 已知缺陷、3 项对照，并用 Windows 真实 Rust worker 复现临时激活清理的 `unsafe registry ownership request`；修正仅测试夹具的并行临时目录碰撞与既有 renderer hash 冻结。`npm run verify` 140/140、Windows/Linux Cargo 全测试与 release 均通过；正式阶段树最终复核 CI 35454844919 全部成功。未修改生产代码；下一项 C-01。

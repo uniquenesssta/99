@@ -107,49 +107,11 @@ export function createRootDirectoryCacheRuntime(
   async function saveRootDirectorySignatures(
     context: RootScanCacheContext,
   ): Promise<void> {
-    if (
-      !context.directoryUpdates.length ||
-      !isRootIndexDbPath(context.cachePath)
-    )
-      return;
+    if (!context.directoryUpdates.length || !isRootIndexDbPath(context.cachePath)) return
     try {
-      await deps.withRootCacheWriteLock(context.cachePath, async () => {
-        const db = await deps.openRootIndexDb(
-          context.cachePath,
-          context.rootPath,
-          context.storage,
-          false,
-        );
-        const now = new Date().toISOString();
-        try {
-          const upsert = db.prepare(`
-            INSERT INTO directories (relative_path, modified_at, file_count, dir_count, scanned_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(relative_path) DO UPDATE SET
-              modified_at = excluded.modified_at,
-              file_count = excluded.file_count,
-              dir_count = excluded.dir_count,
-              scanned_at = excluded.scanned_at
-          `);
-          const tx = db.transaction(() => {
-            for (const item of context.directoryUpdates)
-              upsert.run(
-                item.relativePath,
-                item.modifiedAt,
-                item.fileCount,
-                item.dirCount,
-                now,
-              );
-          });
-          tx();
-        } finally {
-          deps.closeSqliteDb(db);
-        }
-      });
+      await deps.saveRootIndexDirectorySignatures(context.cachePath, context.rootPath, context.storage, context.directoryUpdates)
     } catch (error) {
-      deps.appendStartupLog(
-        `directory signature write skipped: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      deps.appendStartupLog(`directory signature write skipped: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

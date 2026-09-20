@@ -14,7 +14,7 @@ use crate::merged_index::{query_merged_index_ids, query_merged_index_metrics, qu
 use crate::protocol::{print_error, print_handshake};
 use crate::preview_cache::{apply_preview_cache_rows, delete_preview_cache_rows, query_preview_cache_status, read_preview_cache_status, touch_preview_cache_rows, query_preview_cache_batch, run_preview_cache_maintenance};
 use crate::preview_render::render_preview_image;
-use crate::root_index::apply_root_index_changes;
+use crate::root_index::{apply_root_index_changes, replace_root_index};
 use crate::shared_metadata::{apply_shared_metadata, read_shared_metadata_known_tags, read_shared_metadata_overlay, read_shared_metadata_signature, remove_shared_metadata_tag};
 use crate::scanner::{list_font_files, result_to_json};
 use crate::scanner::parse_batch::parse_font_batch;
@@ -50,6 +50,8 @@ pub fn run_from_env() -> i32 {
             2
         }
         Command::RootIndexApplyChanges(Ok(config)) => print_root_index_apply_changes(config),
+        Command::RootIndexReplace(Ok(config)) => print_root_index_replace(config),
+        Command::RootIndexReplace(Err(message)) => { print_error(&message); 2 }
         Command::InstallStatusRead(Ok(config)) => print_install_status_read(config),
         Command::InstallStatusRead(Err(message)) => {
             print_error(&message);
@@ -655,6 +657,22 @@ fn print_merged_index_sync(config: crate::merged_index::MergedIndexSyncConfig) -
                 "{{\"ok\":false,\"message\":\"{}\"}}",
                 escape_json(&message)
             );
+            2
+        }
+    }
+}
+
+fn print_root_index_replace(config: crate::root_index::RootIndexApplyConfig) -> i32 {
+    match replace_root_index(&config) {
+        Ok(result) => {
+            println!(
+                "{{\"ok\":true,\"applied\":true,\"count\":{},\"upserts\":{},\"deletes\":{}}}",
+                result.count, result.upserts, result.deletes
+            );
+            0
+        }
+        Err(message) => {
+            println!("{{\"ok\":false,\"message\":\"{}\"}}", escape_json(&message));
             2
         }
     }

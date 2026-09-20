@@ -4,7 +4,7 @@ use std::path::Path;
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use sha1::{Digest, Sha1};
 
-use super::types::{RootIndexApplyConfig, RootIndexApplyPayload, RootIndexApplyResult, RootIndexEntry};
+use super::types::{RootIndexApplyConfig, RootIndexApplyPayload, RootIndexApplyResult, RootIndexDirectoryUpdate, RootIndexEntry};
 
 fn ensure_parent_dir(path: &str) -> Result<(), String> {
     if let Some(parent) = Path::new(path).parent() {
@@ -151,6 +151,22 @@ fn insert_index_event(tx: &Transaction<'_>, event_type: &str, relative_path: &st
     Ok(())
 }
 
+fn apply_directory(tx: &Transaction<'_>, item: &RootIndexDirectoryUpdate, now: &str) -> rusqlite::Result<()> {
+    tx.execute(
+        r#"
+        INSERT INTO directories (relative_path, modified_at, file_count, dir_count, scanned_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(relative_path) DO UPDATE SET
+          modified_at = excluded.modified_at,
+          file_count = excluded.file_count,
+          dir_count = excluded.dir_count,
+          scanned_at = excluded.scanned_at
+        "#,
+        params![item.relative_path, item.modified_at, item.file_count, item.dir_count, now],
+    )?;
+    Ok(())
+}
+
 fn apply_delete(tx: &Transaction<'_>, relative_path: &str, deleted_at: &str) -> rusqlite::Result<()> {
     let opstamp = next_opstamp(tx)?;
     tx.execute(
@@ -219,6 +235,58 @@ fn apply_upsert(tx: &Transaction<'_>, relative_path: &str, entry: &RootIndexEntr
     insert_index_event(tx, "upsert", relative_path, if font_id.is_empty() { None } else { Some(font_id) }, payload, now)
 }
 
+fn replace_entry(tx: &Transaction<'_>, relative_path: &str, entry: &RootIndexEntry, now: &str) -> rusqlite::Result<()> {
+    let status = if entry.status == "bad" { "bad" } else { "ok" };
+    let cached_at = entry.cached_at.as_deref().unwrap_or(now);
+    let message = entry.message.as_deref();
+    let content_hash = entry.content_hash.as_deref();
+    let font_json = font_json(entry);
+    let identity = file_identity(relative_path, entry);
+    let opstamp = next_opstamp(tx)?;
+    tx.execute(
+        r#"
+        INSERT INTO entries (
+          relative_path, cache_key, file_size, modified_at, created_at, status, font_json, message, cached_at,
+          is_deleted, deleted_at, revision, opstamp, file_identity, content_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, 1, ?, ?, ?)
+        "#,
+        params![relative_path, entry.cache_key, entry.file_size.round() as i64, entry.modified_at, entry.created_at,
+            status, font_json, message, cached_at, opstamp, identity, content_hash],
+    )?;
+    Ok(())
+}
+
+pub fn replace_root_index(config: &RootIndexApplyConfig) -> Result<RootIndexApplyResult, String> {
+    ensure_parent_dir(&config.db_path)?;
+    let payload_text = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
+    let payload: RootIndexApplyPayload = serde_json::from_str(&payload_text).map_err(|error| error.to_string())?;
+    if !payload.deletes.is_empty() { return Err("root index replace payload must not contain deletes".to_string()); }
+
+    let mut conn = Connection::open(&config.db_path).map_err(|error| error.to_string())?;
+    initialize_root_index_db(&conn, config).map_err(|error| error.to_string())?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
+    let now = tx_now(&tx).map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM entries", []).map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM directories", []).map_err(|error| error.to_string())?;
+    for upsert in &payload.upserts {
+        replace_entry(&tx, &upsert.relative_path, &upsert.entry, &now).map_err(|error| error.to_string())?;
+    }
+    let count: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM entries WHERE COALESCE(is_deleted, 0) = 0 AND status <> 'deleted'",
+        [], |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    if count != payload.upserts.len() as i64 {
+        return Err(format!("root index replace candidate count mismatch: expected={}, actual={}", payload.upserts.len(), count));
+    }
+    set_meta(&tx, "updatedAt", &now).map_err(|error| error.to_string())?;
+    set_meta(&tx, "last_update.index_rebuild", &now).map_err(|error| error.to_string())?;
+    set_meta(&tx, "last_update.entry_state_check", &now).map_err(|error| error.to_string())?;
+    set_meta(&tx, "fileCount", &count.to_string()).map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    Ok(RootIndexApplyResult { count, upserts: payload.upserts.len(), deletes: 0 })
+}
+
 pub fn apply_root_index_changes(config: &RootIndexApplyConfig) -> Result<RootIndexApplyResult, String> {
     ensure_parent_dir(&config.db_path)?;
     let payload_text = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
@@ -234,6 +302,9 @@ pub fn apply_root_index_changes(config: &RootIndexApplyConfig) -> Result<RootInd
         }
         for upsert in &payload.upserts {
             apply_upsert(&tx, &upsert.relative_path, &upsert.entry, &now)?;
+        }
+        for directory in &payload.directories {
+            apply_directory(&tx, directory, &now)?;
         }
         let count: i64 = tx.query_row(
             "SELECT COUNT(*) FROM entries WHERE COALESCE(is_deleted, 0) = 0 AND status <> 'deleted'",

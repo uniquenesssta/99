@@ -129,11 +129,9 @@ async function main() {
     assert.equal(rustCalls.length, 1, 'shared root incremental write did not reach isolated native route')
     assert.equal(openCalls.length, 0, 'shared root incremental write opened main-process SQLite')
 
-    await assert.rejects(
-      runtime.saveRootIndexSqliteFile(sharedDb, sharedRoot, 'root', { version: 1, entries: { 'a.ttf': entryFor(sharedRoot) } }),
-      error => error?.reason === 'shared-root-index-full-write-unavailable',
-      'shared full write must fail at the explicit shared route until C-02 provides native full transaction',
-    )
+    await runtime.saveRootIndexSqliteFile(sharedDb, sharedRoot, 'root', { version: 1, entries: { 'a.ttf': entryFor(sharedRoot) } })
+    assert.equal(rustCalls.length, 2, 'shared root full write did not reach isolated native replace route')
+    assert.equal(rustCalls[1].mode, 'replace')
     assert.equal(openCalls.length, 0, 'shared full write reached main-process SQLite')
 
     console.log(JSON.stringify({
@@ -144,7 +142,7 @@ async function main() {
         rootSharedIncremental: 'rust-isolated-apply',
         fallbackLocal: 'local',
         fallbackShared: 'rejected',
-        rootSharedFull: 'explicit-c02-native-full-required',
+        rootSharedFull: 'rust-isolated-replace',
       },
       rustCalls: rustCalls.length,
     }))

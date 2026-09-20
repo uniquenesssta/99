@@ -50,6 +50,7 @@ export interface MainScanCompositionOptions {
   closeSqliteDb: Data['storage']['closeSqliteDb'];
   withRootCacheWriteLock: Data['storage']['withRootCacheWriteLock'];
   saveRootIndexSqliteChanges: Data['storage']['saveRootIndexSqliteChanges'];
+  saveRootIndexDirectorySignatures: Data['storage']['saveRootIndexDirectorySignatures'];
   upsertFontHashIndex: Data['storage']['upsertFontHashIndex'];
   recordCacheEvent: Data['storage']['recordCacheEvent'];
   rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustFontIndexListWorker' | 'runRustFontParseBatch' | 'runRustWatcherPreflight'>;
@@ -111,6 +112,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     closeSqliteDb,
     withRootCacheWriteLock,
     saveRootIndexSqliteChanges,
+    saveRootIndexDirectorySignatures,
     upsertFontHashIndex,
     recordCacheEvent,
     rustCoreWorkerRuntime,
@@ -190,6 +192,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     closeSqliteDb,
     withRootCacheWriteLock,
     saveRootIndexSqliteChanges,
+    saveRootIndexDirectorySignatures,
     upsertFontHashIndex,
     recordCacheEvent,
     runRustFontIndexListWorker: rustCoreWorkerRuntime.runRustFontIndexListWorker,

@@ -20,6 +20,17 @@ pub struct RootIndexApplyPayload {
     pub upserts: Vec<RootIndexUpsert>,
     #[serde(default)]
     pub deletes: Vec<String>,
+    #[serde(default)]
+    pub directories: Vec<RootIndexDirectoryUpdate>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RootIndexDirectoryUpdate {
+    pub relative_path: String,
+    pub modified_at: f64,
+    pub file_count: i64,
+    pub dir_count: i64,
 }
 
 #[derive(Clone, Debug, Deserialize)]

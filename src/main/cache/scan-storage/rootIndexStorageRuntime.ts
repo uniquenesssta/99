@@ -68,13 +68,13 @@ export function createRootIndexStorageRuntime(
     await deps.hideDirectoryOnWindows(rootDir)
     await options.ensureRootArchitectureDatabases(resolvedRoot)
     const activeRootDbPath = await options.resolveActiveRootIndexDbPath(rootDir, rootDefaultDbPath)
-    await options.writeRootCacheManifest(rootDir, resolvedRoot, 'root', 0, activeRootDbPath)
-    return {
-      cachePath: activeRootDbPath,
-      cacheDir: rootDir,
-      storage: 'root',
-      cache: await options.readRootIndexSqliteFile(activeRootDbPath, resolvedRoot, 'root')
+    const cache = await options.readRootIndexSqliteFile(activeRootDbPath, resolvedRoot, 'root')
+    if (await options.exists(activeRootDbPath).catch(() => false)) {
+      await options.writeRootCacheManifest(rootDir, resolvedRoot, 'root', Object.keys(cache.entries || {}).length, activeRootDbPath).catch((error) => {
+        options.appendStartupLog(`root index manifest recovery pending: root=${resolvedRoot}, db=${activeRootDbPath}, ${options.recoveryMessage(error)}`)
+      })
     }
+    return { cachePath: activeRootDbPath, cacheDir: rootDir, storage: 'root', cache }
   }
 
   return {

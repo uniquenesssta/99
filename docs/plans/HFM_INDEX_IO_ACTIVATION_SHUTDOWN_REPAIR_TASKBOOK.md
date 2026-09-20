@@ -240,7 +240,7 @@ flowchart TD
 
 ### C-02 修复局域网 Root Index 原生事务
 
-状态：未开始。
+状态：已完成（2026-09-20）。
 
 必须审计全部 root index 写入口，而不只修 watcher 当前报错：
 
@@ -261,6 +261,22 @@ flowchart TD
 - 共享数据库旧文件不能因新写失败被删除/清空。
 
 硬门禁：本机和 UNC 各做 full + incremental + delete；Rust commit 前失败、commit 后响应丢失、manifest 发布失败均不得产生假成功或双写。
+
+#### C-02.1 实施结果
+
+- Rust worker 新增 `--root-index-replace` 与能力 `root-index-sqlite-replace-v1`；shared root full rebuild 不再回到 Node SQLite UNC，而是通过现有 Rust 写入 owner 执行 `mode=replace`。
+- shared incremental upsert/delete 与目录签名写入统一进入同一 Rust root-index 事务入口；`rootDirectoryCacheRuntime` 不再直接打开共享 SQLite。local root 保留本机 atomic snapshot 路径，不走 Shared I/O one-shot。
+- 原生 full replace 使用 SQLite `IMMEDIATE` transaction 清理旧 entries/directories、写入完整候选、核对有效行数与 meta 后提交并 checkpoint；提交失败由 SQLite 回滚保护旧数据库，不先删除或清空已提交版本。
+- 已提交 Rust 写若回执丢失继续按 submitted-write 语义返回 `outcome=unknown`，禁止 Node fallback 双写；数据库已提交但 manifest/latest 发布失败时记录 `committed_publication_pending`，不把已提交事务伪装成失败，下一次 `ensureRootScanCacheStorage` 会依据 active DB 重建 manifest。
+- full write 前继续合并已有 shared metadata；未修改 root index/merged index/shared metadata schema、rootId、manifest 格式、IPC、用户配置或生产依赖。
+
+#### C-02.2 回归与验证
+
+- 新增 `diagnostics:root-index-native-transactions`：覆盖 local/shared full、incremental、delete，Rust commit 前失败、commit 后响应丢失、manifest 发布失败、空根 manifest 顺序、CRLF，并拒绝 Node shared-full 回退与 publication 误失败两个因果 mutant。
+- `diagnostics:root-index-access-routing` 从 C-01 的 shared full fail-closed 门推进为原生 full replace 门；Rust 增加 `root_index_replace_atomicity` 定向原子性测试。
+- 最终候选 `39703fcbe77f56db24c7e8a42977a6b0f1a5cb61` 在 GitHub Actions `35493225636` 全绿：`js-windows`、`js-linux`、`native (windows-latest)`、`native (ubuntu-latest)` 全部 success。
+- Linux 全量 `npm run verify` 为 **142/142 diagnostics**；Electron/Vite build 与混淆 **3/3** 通过；Windows/Linux 均通过 `root_index_replace_atomicity`、Cargo 全测试及 release build。
+- C-02 关闭 shared root index 原生事务与提交后发布恢复边界；watcher 扫描风暴/恢复放大仍属于 C-03，不在本任务提前处理。
 
 ### C-03 Watcher 收敛与恢复去放大
 
@@ -453,15 +469,15 @@ flowchart TD
 
 ## 9. 当前结论与下一执行入口
 
-C-00 已完成，但本书整体仍然**不代表问题已修复**。
+C-00～C-02 已完成，但本书整体仍然**不代表问题已全部修复**。
 
 当前执行顺序固定为：
 
 ```text
 C-00 基线（完成）
 → C-01 索引 storage/access 分离（完成）
-→ C-02 局域网 root index 原生事务（下一项）
-→ C-03 watcher 收敛
+→ C-02 局域网 root index 原生事务（完成）
+→ C-03 watcher 收敛（下一项）
 → C-04 offline 证据
 → C-05 激活清理合同
 → C-06 退出结果语义
@@ -470,4 +486,4 @@ C-00 基线（完成）
 → C-09 Windows/NAS 总验收
 ```
 
-在 C-02 通过前，不应推进 Shared I/O 性能重构；在 C-05 通过前，不应把 O-04/O-05 的 Windows 实机状态标成完成；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。
+C-03 现在是下一执行入口；C-08 仍须等 C-01～C-07 全部硬门通过。在 C-05 通过前，不应把 O-04/O-05 的 Windows 实机状态标成完成；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。

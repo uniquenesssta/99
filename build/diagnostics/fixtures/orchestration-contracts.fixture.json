@@ -257,7 +257,8 @@
     {
       "method": "runRustRootIndexApplyChanges",
       "capabilities": [
-        "root-index-sqlite-apply-changes"
+        "root-index-sqlite-apply-changes",
+        "root-index-sqlite-replace-v1"
       ],
       "flags": [
         "--cache-version",
@@ -265,6 +266,7 @@
         "--input",
         "--root",
         "--root-index-apply-changes",
+        "--root-index-replace",
         "--schema-version",
         "--script-detection-version",
         "--shared-file-io",

@@ -298,54 +298,75 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
   }
 
   async function runRustRootIndexApplyChanges(input: RustRootIndexApplyChangesInput): Promise<RustRootIndexApplyChangesResult | null> {
+    const mutationInput = input as RustRootIndexApplyChangesInput & {
+      mode?: 'incremental' | 'replace'
+      directories?: Array<{ relativePath: string; modifiedAt: number; fileCount: number; dirCount: number }>
+    }
     const status = await diagnoseRustCoreWorker()
-    if (!status.available || !status.path || !hasCapability(status, 'root-index-sqlite-apply-changes')) return null
+    const replace = mutationInput.mode === 'replace'
+    const capability = replace ? 'root-index-sqlite-replace-v1' : 'root-index-sqlite-apply-changes'
+    if (!status.available || !status.path || !hasCapability(status, capability)) return null
+    const command = replace ? '--root-index-replace' : '--root-index-apply-changes'
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-root-index`)
     const inputPath = inputFile.path
     try {
-      await inputFile.writeJson({
-        upserts: input.upserts.map(([relativePath, entry]) => ({ relativePath, entry })),
-        deletes: input.deletes,
-      })
+      const requestPayload: {
+        upserts: Array<{ relativePath: string; entry: unknown }>
+        deletes: string[]
+        directories?: Array<{ relativePath: string; modifiedAt: number; fileCount: number; dirCount: number }>
+      } = {
+        upserts: mutationInput.upserts.map(([relativePath, entry]) => ({ relativePath, entry })),
+        deletes: replace ? [] : mutationInput.deletes,
+      }
+      if (mutationInput.directories?.length) requestPayload.directories = mutationInput.directories
+      await inputFile.writeJson(requestPayload)
 
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
-        '--root-index-apply-changes',
-        '--db', input.dbPath,
-        '--root', input.rootPath,
-        '--storage', input.storage,
+        command,
+        '--db', mutationInput.dbPath,
+        '--root', mutationInput.rootPath,
+        '--storage', mutationInput.storage,
         '--input', inputPath,
-        '--schema-version', String(input.schemaVersion),
-        '--cache-version', String(input.cacheVersion),
-        '--script-detection-version', String(input.scriptDetectionVersion),
+        '--schema-version', String(mutationInput.schemaVersion),
+        '--cache-version', String(mutationInput.cacheVersion),
+        '--script-detection-version', String(mutationInput.scriptDetectionVersion),
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_ROOT_INDEX_WRITE_TIMEOUT_MS || 10 * 60 * 1000) || 10 * 60 * 1000),
         windowsHide: true,
         maxBuffer: 256 * 1024,
       })
 
-      const payload = parseJsonLine<RustApplyRootIndexPayload>(commandOutput.stdout)
-      if (!payload.ok || !payload.applied) {
-        const error = new Error(payload.message || 'rust root index apply returned ok=false')
-        throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, '--root-index-apply-changes') : error
+      const responsePayload = parseJsonLine<RustApplyRootIndexPayload>(commandOutput.stdout)
+      if (!responsePayload.ok || !responsePayload.applied) {
+        const error = new Error(responsePayload.message || (replace ? 'rust root index replace returned ok=false' : 'rust root index apply returned ok=false'))
+        throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, command) : error
       }
       const result = {
         applied: true,
-        count: Number(payload.count || 0),
-        upserts: Number(payload.upserts || 0),
-        deletes: Number(payload.deletes || 0),
+        count: Number(responsePayload.count || 0),
+        upserts: Number(responsePayload.upserts || 0),
+        deletes: Number(responsePayload.deletes || 0),
         durationMs: Date.now() - startedAt,
       }
-      options.appendStartupLog(`rust root index apply finished: db=${input.dbPath}, root=${input.rootPath}, upserts=${result.upserts}, deletes=${result.deletes}, count=${result.count}, durationMs=${result.durationMs}`)
+      if (replace) {
+        options.appendStartupLog(`rust root index replace finished: db=${mutationInput.dbPath}, root=${mutationInput.rootPath}, rows=${result.upserts}, count=${result.count}, durationMs=${result.durationMs}`)
+      } else {
+        options.appendStartupLog(`rust root index apply finished: db=${mutationInput.dbPath}, root=${mutationInput.rootPath}, upserts=${result.upserts}, deletes=${result.deletes}, count=${result.count}, durationMs=${result.durationMs}`)
+      }
       return result
     } catch (error) {
       rethrowSharedIoProcessError(error)
       if (isRustCoreDaemonSubmittedError(error)) {
-        options.appendStartupLog(`rust root index apply failed after daemon submit: ${error.message}; Node fallback blocked`)
+        options.appendStartupLog(replace
+          ? `rust root index replace failed after daemon submit: ${error.message}; Node fallback blocked`
+          : `rust root index apply failed after daemon submit: ${error.message}; Node fallback blocked`)
         throw error
       }
-      options.appendStartupLog(`rust root index apply failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--root-index-apply-changes')}`)
+      options.appendStartupLog(replace
+        ? `rust root index replace failed: ${error instanceof Error ? error.message : String(error)}; Node fallback blocked for shared root full replace`
+        : `rust root index apply failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--root-index-apply-changes')}`)
       return null
     } finally {
       await inputFile.dispose()
