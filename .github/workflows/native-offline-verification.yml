@@ -6,15 +6,45 @@ on:
 permissions:
   contents: read
 jobs:
+  js-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: cargo fetch --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
+      - run: npm run diagnostics:root-index-access-routing
+      - run: npm run diagnostics:root-index-native-transactions
+      - run: node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs --current
+      - run: npm run verify
+      - run: node node_modules/electron-vite/bin/electron-vite.js build
+      - run: node build/obfuscate-dist.cjs
+  js-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - run: npm run diagnostics:root-index-access-routing
+      - run: npm run diagnostics:root-index-native-transactions
+      - run: npm run typecheck
   native:
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+      matrix: { os: [ubuntu-latest, windows-latest] }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7.0.1
-      - run: rustup toolchain install stable --profile minimal
-      - run: cargo +stable test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
-      - run: cargo +stable build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml
+        with: { fetch-depth: 0 }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml --test root_index_replace_atomicity -- --nocapture
+      - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
+      - run: cargo build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml
