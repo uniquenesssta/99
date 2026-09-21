@@ -12,13 +12,11 @@
 
 > 共享离线专项接续：[任务书 §22](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#22-o-02o-04o-05-完整实现接续)。O-02 全消费者隔离、O-04 本机副本与断网取消、O-05 分阶段恢复及人工残留处理代码已补齐。TypeScript、136/136 诊断、JS 三端构建/混淆通过；原生 Windows/Linux 验证与真实待验项详见 §22。保留并置灰离线共享目录/标签，不做离线共享写入同步。O-06 已实现单一总退出预算及退出准入，验证见 [§23](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md#23-o-06-执行卡)；后续入口 O-07（重连校验）；Windows/NAS、权限占用和实际重启仍须验收，旧 U-09 与主线待验项不变。
 
-> 新实机修复入口：[索引访问、共享 I/O、激活清理与退出一致性修复任务书](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)。C-00～C-05 阶段代码已完成；C-05 ownership 合同 Windows CI 35567035211 全绿。随后实机发现 Renderer stale install state 会把未激活字体提前过滤成 0 target，导致“激活”按钮可见但不发送主进程 IPC；该入口回归已修并通过 Windows regression CI 35590647591，Rust ownership 协议未改。当前等待 Windows 实机复验“激活 → 取消激活 → 再激活”，并将 `os error 32` 临时字体文件占用作为下一独立原子修复；C-06 继续暂停，O-07 继续暂停。
-
-> 2026-09-21 C-05R Windows sharing violation 回归已通过自动门：临时字体文件删除遇到 `os error 32` 后进入 durable backoff，普通 flush 在冷却期不重复触碰文件，startup/用户显式重试仍可立即尝试；C-05 ownership 与已修复的激活入口保持不变。Windows locked-file verification `35591586994` 的 typecheck、activation-entry、managed recovery、C-05 settlement、Electron/Vite build、混淆与 diff check 全绿。C-06 继续暂停，先完成实机“激活 → 取消 → 再激活”和占用文件最终回收观察。
+> 新实机修复入口：[索引访问、共享 I/O、激活清理与退出一致性修复任务书](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)。C-00～C-06 已完成。C-05 ownership、激活入口回归和 C-05R Windows sharing violation 回收均已收口；Windows 实机日志确认“激活 → 取消激活 → 再激活 → 再取消激活”真实通过。C-06 将退出结果拆为 `processExitClean / persistenceComplete / localCleanupComplete` 三轴，并把 C-05R pending delete queue 残留计入真实 `cleanupRemaining`；planned residual 与 crash recovery 现在可由 shutdown marker 区分。Windows C-06 verification `35630687836` 全绿，C00 current 为 1 缺陷 / 7 对照，仅剩 C00-B05 renderer closing。下一项 C-07，O-07 继续暂停。
 
 ## 0. 文档状态
 
-- 文档版本：1.52
+- 文档版本：1.53
 - 建立日期：2026-09-01
 - 代码基线：`9e6eab51384f63804b1bb04e27e83c8bed18dc31`
 - 主线阶段历史记录：Stage 7 AT-7.1 已完成自动与 Windows 构建验收；AT-7.2 已完成兼容工具链升级、锁图清理和本环境自动验证。Windows `npm ci` 已确认 395 个包且审计 0；首轮 `build:win` 在诊断的 LF 字面串无法改写 CRLF 配置处停止，生产配置与依赖无误。该诊断已改为 LF/CRLF 结构化反例并通过 91/91；分支 `stage/07-ipc-security-dependencies`。Windows 完整重跑、原生 ABI、NSIS 及安装/启动/卸载烟测待补，Stage 8 尚未开始。

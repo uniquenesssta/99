@@ -1,4 +1,4 @@
-import { createShutdownCoordinator, isApplicationClosing } from './shutdownCoordinatorRuntime';
+import { createShutdownCoordinator, isApplicationClosing, type ShutdownOutcome } from './shutdownCoordinatorRuntime';
 import { app,BrowserWindow,dialog,Menu,shell } from "electron";
 import { registerPackagedSessionSecurity } from "../security/appSecurityRuntime";
 import { configureElectronUserDataRoot } from "./appDataRootPolicyRuntime";
@@ -46,7 +46,7 @@ export type MainProcessLifecycleRuntimeOptions = {
     reason?: "startup" | "quit" | "manual",
     maxPasses?: number,
   ) => Promise<{ remaining: number }>;
-  flushPendingTemporaryFontDeletes: (reason: string) => Promise<void>;
+  flushPendingTemporaryFontDeletes: (reason: string) => Promise<{ remaining: number }>;
   runStartupCriticalSchemaAudit: () => Promise<void>;
   registerFontProtocol: () => void;
   registerIpc: () => void;
@@ -70,7 +70,7 @@ export type MainProcessLifecycleRuntimeOptions = {
   ) => Promise<unknown>;
   dbQueryWorkerShutdown: () => void;
   stopRustCoreDaemon: () => void;
-  markCleanShutdownSync: () => void;
+  markCleanShutdownSync: (outcome?: ShutdownOutcome) => void;
   flushStartupLogAsync: () => Promise<void>;
   flushStartupLogSync: () => void;
 };
@@ -360,9 +360,9 @@ export function registerMainProcessLifecycleRuntime(
     cleanup: async () => {
       stopFolderWatchers();
       if (process.platform !== "win32") return { remaining: 0 };
-      const result = await cleanupTemporaryActiveFontsUntilEmpty("quit", 1);
-      await flushPendingTemporaryFontDeletes("quit");
-      return result;
+      const active = await cleanupTemporaryActiveFontsUntilEmpty("quit", 1);
+      const pending = await flushPendingTemporaryFontDeletes("quit");
+      return { remaining: active.remaining + pending.remaining };
     },
     save: async () => {
       await flushActivationInstallStatusSave("before-quit");
@@ -384,7 +384,7 @@ export function registerMainProcessLifecycleRuntime(
       flushPerformanceLogs("before-quit");
       await flushStartupLogAsync();
     },
-    terminate: (clean) => {
+    terminate: (outcome) => {
       quitCleanupDone = true;
       // app.exit does not emit will-quit. Explicitly stop owned executors first.
       try { stopFolderWatchers(); } catch (error) { try { appendLog(`shutdown watcher stop failed: ${String(error)}`); } catch { /* Continue final teardown. */ } }
@@ -392,7 +392,7 @@ export function registerMainProcessLifecycleRuntime(
       try { stopRustCoreDaemon(); } catch (error) { try { appendLog(`shutdown worker stop failed: ${String(error)}`); } catch { /* Continue final teardown. */ } }
       try { dbQueryWorkerShutdown(); } catch (error) { try { appendLog(`shutdown database stop failed: ${String(error)}`); } catch { /* Continue final teardown. */ } }
       try {
-        if (clean) markCleanShutdownSync();
+        markCleanShutdownSync(outcome);
         flushStartupLogSync();
       } finally { app.exit(0); }
     },

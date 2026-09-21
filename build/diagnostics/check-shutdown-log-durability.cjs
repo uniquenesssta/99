@@ -92,9 +92,42 @@ async function runShutdownMarkerBehavior() {
     runtime.markCleanShutdownSync()
     marker = JSON.parse(await fsp.readFile(markerPath, 'utf8'))
     assert(marker.clean === true, 'will-quit must mark the session clean')
+    assert(marker.processExitClean === true && marker.persistenceComplete === true && marker.localCleanupComplete === true, 'default clean marker must publish all three axes')
 
-    marker.clean = false
-    await fsp.writeFile(markerPath, JSON.stringify(marker), 'utf8')
+    runtime.markCleanShutdownSync({
+      processExitClean: true,
+      persistenceComplete: true,
+      localCleanupComplete: false,
+      cleanupRemaining: 1,
+      cleanupTimedOut: false,
+      forced: false,
+      reason: 'residual'
+    })
+    marker = JSON.parse(await fsp.readFile(markerPath, 'utf8'))
+    assert(marker.clean === true, 'planned residual cleanup must remain legacy-clean for old readers')
+    assert(marker.localCleanupComplete === false && marker.cleanupRemaining === 1, 'planned residual cleanup axes were not persisted')
+
+    const residualLogs = []
+    const residualReader = createCleanShutdownRuntime({
+      dataPath: () => markerPath,
+      cacheArchitectureVersion: 7,
+      appendLog: (message) => residualLogs.push(message)
+    })
+    residualReader.beginStartupSessionSync()
+    assert(residualLogs.some((message) => message.includes('planned residual cleanup')), 'next startup must distinguish planned residual cleanup from a crash')
+
+    runtime.markCleanShutdownSync({
+      processExitClean: false,
+      persistenceComplete: false,
+      localCleanupComplete: false,
+      cleanupRemaining: 1,
+      cleanupTimedOut: false,
+      forced: true,
+      reason: 'persistence-failure'
+    })
+    marker = JSON.parse(await fsp.readFile(markerPath, 'utf8'))
+    assert(marker.clean === false, 'persistence failure must never publish legacy clean=true')
+
     const second = createCleanShutdownRuntime({
       dataPath: () => markerPath,
       cacheArchitectureVersion: 7,

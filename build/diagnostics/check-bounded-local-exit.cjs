@@ -8,7 +8,7 @@ function fixture(transforms={},mocks={},globals={}){
  const clock={setTimeout(fn,ms){const key=++id;timers.set(key,{at:now+ms,fn});return key},clearTimeout(key){timers.delete(key)}};
  const load=loader({...mocks,'node:perf_hooks':{performance:{now:()=>now}}},{...clock,AbortController,...globals},transforms);
  const runtime=load(file),events=[];
- const ports={log:s=>events.push(s),freeze:()=>events.push('freeze'),restore:()=>events.push('restore'),closeRenderers:async()=>true,cleanup:async()=>({remaining:0}),save:async()=>{},drainLogs:async()=>{},confirmLoss:async()=>false,terminate:clean=>events.push(['exit',clean,now])};
+ const ports={log:s=>events.push(s),freeze:()=>events.push('freeze'),restore:()=>events.push('restore'),closeRenderers:async()=>true,cleanup:async()=>({remaining:0}),save:async()=>{},drainLogs:async()=>{},confirmLoss:async()=>false,terminate:outcome=>events.push(['exit',outcome,now])};
  const advance=async ms=>{const end=now+ms;await tick();while(true){const next=[...timers].sort((a,b)=>a[1].at-b[1].at)[0];if(!next||next[1].at>end)break;now=next[1].at;timers.delete(next[0]);next[1].fn();await tick()}now=end;await tick()};
  return {runtime,ports,events,advance,load,timers,now:()=>now};
 }
@@ -49,11 +49,30 @@ async function deterministic(){
   const events=new Map(),exits=[],logs=[];const app={setName(){},getVersion:()=>'',getPath:()=>'',getAppPath:()=>'',setAppUserModelId(){},requestSingleInstanceLock:()=>true,on:(n,fn)=>events.set(n,fn),whenReady:()=>({then(){}}),exit:code=>exits.push(code)};
   const proc=Object.create(process);Object.defineProperty(proc,'platform',{value:'win32'});proc.on=()=>{};
   const load=loader({electron:{app,BrowserWindow:{getAllWindows:()=>[]},dialog:{showMessageBox:async()=>({response:1})}},[path.resolve(root,'src/main/security/appSecurityRuntime.ts')]:{registerPackagedSessionSecurity(){}},[path.resolve(root,'src/main/app/appDataRootPolicyRuntime.ts')]:{configureElectronUserDataRoot:()=>'/tmp'},[path.resolve(root,'src/main/security/appIntegrityRuntime.ts')]:{verifyPackagedAppIntegrity:()=>({ok:true})}},{process:proc,AbortController});
-  const order=[];const options=new Proxy({appendLog:s=>logs.push(s),gpuAccelerationSwitches:[],gpuDisableSwitches:[],requestRendererWindowsCloseForQuit:async()=>{order.push('renderer');return true},cleanupTemporaryActiveFontsUntilEmpty:async()=>{order.push('cleanup');return {remaining:1000}},hasPendingActivationInstallStatusSave:()=>false,hasInFlightActivationInstallStatusSave:()=>false,flushStartupLogAsync:async()=>order.push('logs'),stopRustCoreDaemon:()=>order.push('stop-native'),dbQueryWorkerShutdown:()=>order.push('stop-db')},{get:(obj,key)=>key in obj?obj[key]:()=>undefined});
+  const order=[];const options=new Proxy({appendLog:s=>logs.push(s),gpuAccelerationSwitches:[],gpuDisableSwitches:[],requestRendererWindowsCloseForQuit:async()=>{order.push('renderer');return true},cleanupTemporaryActiveFontsUntilEmpty:async()=>{order.push('cleanup');return {remaining:1000}},flushPendingTemporaryFontDeletes:async()=>({remaining:0}),hasPendingActivationInstallStatusSave:()=>false,hasInFlightActivationInstallStatusSave:()=>false,flushStartupLogAsync:async()=>order.push('logs'),stopRustCoreDaemon:()=>order.push('stop-native'),dbQueryWorkerShutdown:()=>order.push('stop-db')},{get:(obj,key)=>key in obj?obj[key]:()=>undefined});
   load('src/main/app/mainProcessLifecycleRuntime.ts').registerMainProcessLifecycleRuntime(options);let prevented=0;events.get('before-quit')({preventDefault(){prevented++}});events.get('before-quit')({preventDefault(){prevented++}});await tick();
   assert.equal(prevented,2);assert.deepEqual(exits,[0]);assert.equal(order.filter(x=>x==='cleanup').length,1);assert(order.indexOf('renderer')<order.indexOf('cleanup'));assert(order.includes('stop-native')&&order.includes('stop-db'));
  }
 }
+async function shutdownOutcomeAxes(){
+ const outcomeOf=events=>JSON.parse(JSON.stringify(events.find(Array.isArray)?.[1]));
+ {
+  const f=fixture();await f.runtime.createShutdownCoordinator(f.ports).request();assert.deepEqual(outcomeOf(f.events),{processExitClean:true,persistenceComplete:true,localCleanupComplete:true,cleanupRemaining:0,cleanupTimedOut:false,forced:false,reason:'complete'});
+ }
+ {
+  const f=fixture();f.ports.cleanup=async()=>({remaining:1});await f.runtime.createShutdownCoordinator(f.ports).request();assert.deepEqual(outcomeOf(f.events),{processExitClean:true,persistenceComplete:true,localCleanupComplete:false,cleanupRemaining:1,cleanupTimedOut:false,forced:false,reason:'residual'});
+ }
+ {
+  const f=fixture();f.ports.cleanup=async()=>{f.runtime.noteRecoveryPersistenceFailure(new Error('journal disk full'));return{remaining:1}};f.ports.confirmLoss=async()=>true;await f.runtime.createShutdownCoordinator(f.ports).request();assert.deepEqual(outcomeOf(f.events),{processExitClean:false,persistenceComplete:false,localCleanupComplete:false,cleanupRemaining:1,cleanupTimedOut:false,forced:true,reason:'persistence-failure'});
+ }
+ {
+  const f=fixture();f.ports.cleanup=()=>new Promise(()=>{});const task=f.runtime.createShutdownCoordinator(f.ports).request();await f.advance(8000);await task;assert.deepEqual(outcomeOf(f.events),{processExitClean:true,persistenceComplete:true,localCleanupComplete:false,cleanupRemaining:null,cleanupTimedOut:true,forced:false,reason:'cleanup-timeout'});
+ }
+ {
+  const f=fixture();f.ports.cleanup=async()=>{throw Error('cleanup contract failed')};f.ports.confirmLoss=async()=>true;await f.runtime.createShutdownCoordinator(f.ports).request();assert.deepEqual(outcomeOf(f.events),{processExitClean:false,persistenceComplete:true,localCleanupComplete:false,cleanupRemaining:null,cleanupTimedOut:false,forced:true,reason:'forced-exit'});
+ }
+}
+
 async function productionCleanupBudget(){
  for(const count of [1,100,1000]){
   const proc=Object.create(process);Object.defineProperty(proc,'platform',{value:'win32'});
@@ -157,4 +176,4 @@ async function realProcesses(){
  await Promise.all(jobs);assert(exited);assert.equal(pool.status().active,0);assert.equal(pool.status().queued,0);assert.equal(pool.status().pids.length,0);assert(outcomes.includes('not-started'));assert(outcomes.includes('unknown'));assert(Date.now()-started<5000);
  let released=0;await assert.rejects(pool.run({file:process.execPath,args:['-e','process.exit(0)'],roots:['later'],write:false,timeoutMs:1000,onClose:()=>released++}),/退出/);assert.equal(released,1);
 }
-(async()=>{await deterministic();await productionCleanupBudget();await watcherCancellation();await lateActivation();await windowProtocol();await admissionAndBatch();await regressions();await realProcesses();console.log('[diagnostics:bounded-local-exit] coordinator/lifecycle, 1/100/1000 remnants, duplicate close, frozen admissions, cancelled epoch, paused prompts, disk failure, late copy/batch/IPC, late cleanup, real window protocol, CRLF/three mutants and real child close passed')})().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{await deterministic();await shutdownOutcomeAxes();await productionCleanupBudget();await watcherCancellation();await lateActivation();await windowProtocol();await admissionAndBatch();await regressions();await realProcesses();console.log('[diagnostics:bounded-local-exit] coordinator/lifecycle, three-axis 0/residual/persistence-failure/cleanup-timeout/forced outcomes, 1/100/1000 remnants, duplicate close, frozen admissions, cancelled epoch, paused prompts, disk failure, late copy/batch/IPC, late cleanup, real window protocol, CRLF/three mutants and real child close passed')})().catch(e=>{console.error(e);process.exitCode=1});

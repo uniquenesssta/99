@@ -7,9 +7,19 @@ export type CleanShutdownRuntimeOptions = {
   appendLog: (message: string) => void;
 };
 
+export type ShutdownMarkerOutcome = {
+  processExitClean: boolean;
+  persistenceComplete: boolean;
+  localCleanupComplete: boolean;
+  cleanupRemaining?: number | null;
+  cleanupTimedOut?: boolean;
+  forced?: boolean;
+  reason?: string;
+};
+
 export type CleanShutdownRuntime = {
   beginStartupSessionSync: () => void;
-  markCleanShutdownSync: () => void;
+  markCleanShutdownSync: (outcome?: ShutdownMarkerOutcome) => void;
 };
 
 type ShutdownMarker = {
@@ -18,6 +28,13 @@ type ShutdownMarker = {
   startedAt?: string;
   architectureVersion?: number;
   pid?: number;
+  processExitClean?: boolean;
+  persistenceComplete?: boolean;
+  localCleanupComplete?: boolean;
+  cleanupRemaining?: number | null;
+  cleanupTimedOut?: boolean;
+  forced?: boolean;
+  reason?: string;
 };
 
 export function createCleanShutdownRuntime(
@@ -40,10 +57,16 @@ export function createCleanShutdownRuntime(
         const previous = JSON.parse(fs.readFileSync(markerPath, "utf-8")) as ShutdownMarker;
         if (previous?.clean === false) {
           options.appendLog(
-            `previous shutdown was unclean: startedAt=${previous.startedAt || "unknown"}, markerAt=${previous.at || "unknown"}, pid=${previous.pid || 0}`,
+            `previous shutdown was unclean: startedAt=${previous.startedAt || "unknown"}, markerAt=${previous.at || "unknown"}, pid=${previous.pid || 0}, processExitClean=${previous.processExitClean ?? false}, persistenceComplete=${previous.persistenceComplete ?? false}, localCleanupComplete=${previous.localCleanupComplete ?? false}, cleanupRemaining=${previous.cleanupRemaining ?? "unknown"}, cleanupTimedOut=${previous.cleanupTimedOut ?? false}, forced=${previous.forced ?? false}, reason=${previous.reason || "legacy-unclean"}`,
           );
         } else if (previous?.clean === true) {
-          options.appendLog(`previous shutdown marker: clean, at=${previous.at || "unknown"}`);
+          if (previous.localCleanupComplete === false) {
+            options.appendLog(
+              `previous shutdown marker: clean with planned residual cleanup, at=${previous.at || "unknown"}, persistenceComplete=${previous.persistenceComplete ?? true}, cleanupRemaining=${previous.cleanupRemaining ?? "unknown"}, cleanupTimedOut=${previous.cleanupTimedOut ?? false}, forced=${previous.forced ?? false}, reason=${previous.reason || "residual"}`,
+            );
+          } else {
+            options.appendLog(`previous shutdown marker: clean, at=${previous.at || "unknown"}`);
+          }
         } else {
           options.appendLog("previous shutdown marker: unreadable state");
         }
@@ -64,14 +87,30 @@ export function createCleanShutdownRuntime(
     }
   }
 
-  function markCleanShutdownSync(): void {
+  function markCleanShutdownSync(outcome: ShutdownMarkerOutcome = {
+    processExitClean: true,
+    persistenceComplete: true,
+    localCleanupComplete: true,
+    cleanupRemaining: 0,
+    cleanupTimedOut: false,
+    forced: false,
+    reason: "complete",
+  }): void {
     try {
+      const clean = outcome.processExitClean && outcome.persistenceComplete;
       writeMarkerSync({
-        clean: true,
+        clean,
         at: new Date().toISOString(),
         startedAt: sessionStartedAt,
         architectureVersion: options.cacheArchitectureVersion,
         pid: process.pid,
+        processExitClean: outcome.processExitClean,
+        persistenceComplete: outcome.persistenceComplete,
+        localCleanupComplete: outcome.localCleanupComplete,
+        cleanupRemaining: outcome.cleanupRemaining,
+        cleanupTimedOut: outcome.cleanupTimedOut,
+        forced: outcome.forced,
+        reason: outcome.reason,
       });
     } catch (error) {
       options.appendLog(

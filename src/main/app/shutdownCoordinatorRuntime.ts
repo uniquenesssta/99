@@ -63,6 +63,25 @@ export async function withShutdownPrompt<T>(action: () => Promise<T>): Promise<T
   return activeBudget ? activeBudget.prompt(action) : action()
 }
 
+export type ShutdownOutcomeReason =
+  | 'complete'
+  | 'residual'
+  | 'cleanup-timeout'
+  | 'persistence-failure'
+  | 'forced-exit'
+  | 'deadline'
+  | 'log-failure'
+
+export type ShutdownOutcome = {
+  processExitClean: boolean
+  persistenceComplete: boolean
+  localCleanupComplete: boolean
+  cleanupRemaining: number | null
+  cleanupTimedOut: boolean
+  forced: boolean
+  reason: ShutdownOutcomeReason
+}
+
 export type ShutdownPorts = {
   log: (message: string) => void
   closeRenderers: () => Promise<boolean>
@@ -72,7 +91,7 @@ export type ShutdownPorts = {
   save: () => Promise<void>
   confirmLoss: (message: string) => Promise<boolean>
   drainLogs: () => Promise<void>
-  terminate: (clean: boolean) => void
+  terminate: (outcome: ShutdownOutcome) => void
 }
 // This owner is shared by title-bar close, app.quit and repeated requests.
 export function createShutdownCoordinator(ports: ShutdownPorts) {
@@ -84,11 +103,22 @@ export function createShutdownCoordinator(ports: ShutdownPorts) {
     const budget = new ExitBudget(); activeBudget = budget
     let ended = false
     const log = (message: string) => { try { ports.log(`shutdown: quitId=${quitId}, ${message}`) } catch { /* Preserve shutdown outcome. */ } }
-    const finish = (clean: boolean) => {
+    const outcome: ShutdownOutcome = {
+      processExitClean: true,
+      persistenceComplete: true,
+      localCleanupComplete: true,
+      cleanupRemaining: 0,
+      cleanupTimedOut: false,
+      forced: false,
+      reason: 'complete',
+    }
+    const finish = (patch: Partial<ShutdownOutcome> = {}) => {
       if (ended) return
+      Object.assign(outcome, patch)
+      if (!outcome.persistenceComplete) outcome.processExitClean = false
       ended = true; finishing = true; budget.dispose(); activeBudget = undefined
-      log(`phase=terminate, clean=${clean}`)
-      ports.terminate(clean)
+      log(`phase=terminate, processExitClean=${outcome.processExitClean}, persistenceComplete=${outcome.persistenceComplete}, localCleanupComplete=${outcome.localCleanupComplete}, cleanupRemaining=${outcome.cleanupRemaining === null ? 'unknown' : outcome.cleanupRemaining}, cleanupTimedOut=${outcome.cleanupTimedOut}, forced=${outcome.forced}, reason=${outcome.reason}`)
+      ports.terminate({ ...outcome })
     }
     const restore = () => {
       if (ended) return
@@ -97,50 +127,100 @@ export function createShutdownCoordinator(ports: ShutdownPorts) {
       for (const listener of resumeListeners) { try { listener() } catch (error) { log(`resume failed: ${String(error)}`) } }
     }
     const confirm = (error: unknown) => withShutdownPrompt(() => ports.confirmLoss(String(error)))
-    budget.alarm(SHUTDOWN_BUDGET_MS, () => { log('phase=deadline, outcome=unknown'); finish(false) })
+    budget.alarm(SHUTDOWN_BUDGET_MS, () => {
+      log('phase=deadline, outcome=unknown')
+      finish({
+        processExitClean: false,
+        persistenceComplete: false,
+        localCleanupComplete: false,
+        cleanupRemaining: null,
+        cleanupTimedOut: false,
+        forced: true,
+        reason: 'deadline',
+      })
+    })
     running = Promise.resolve().then(async () => {
       log('phase=freeze, budgetMs=15000')
       ports.freeze()
       for (const listener of freezeListeners) listener()
       let renderersClosed = false
       try { renderersClosed = await budget.run('窗口保存', RENDERER_CLOSE_MS + 500, ports.closeRenderers) }
-      catch (error) { log(`phase=renderer, error=${String(error)}`); renderersClosed = await confirm(error) }
+      catch (error) {
+        log(`phase=renderer, error=${String(error)}`)
+        renderersClosed = await confirm(error)
+        if (renderersClosed) {
+          outcome.processExitClean = false
+          outcome.persistenceComplete = false
+          outcome.forced = true
+          outcome.reason = 'forced-exit'
+        }
+      }
       if (ended) return
       if (!renderersClosed) { restore(); return }
-      let clean = true
       try {
         const result = await budget.run('本地字体清理', 8000, ports.cleanup)
-        log(`phase=cleanup, remaining=${result.remaining}`)
+        outcome.cleanupRemaining = Math.max(0, Number(result.remaining) || 0)
+        outcome.localCleanupComplete = outcome.cleanupRemaining === 0
+        if (!outcome.localCleanupComplete) outcome.reason = 'residual'
+        log(`phase=cleanup, remaining=${outcome.cleanupRemaining}, localCleanupComplete=${outcome.localCleanupComplete}`)
       } catch (error) {
-        clean = false; log(`phase=cleanup, outcome=unknown, error=${String(error)}`)
-        // A stalled OS call retains the O-05 write-ahead record. A failed local
-        // journal or unreadable record needs a real user decision.
-        if (!(error instanceof ShutdownTimeout) || persistenceFailure) {
+        outcome.localCleanupComplete = false
+        outcome.cleanupRemaining = null
+        log(`phase=cleanup, outcome=unknown, error=${String(error)}`)
+        // A stalled OS call retains the write-ahead recovery record. That is a
+        // planned residual, not a process crash, provided persistence stayed healthy.
+        if (error instanceof ShutdownTimeout && !persistenceFailure) {
+          outcome.cleanupTimedOut = true
+          outcome.reason = 'cleanup-timeout'
+        } else {
+          if (persistenceFailure) outcome.persistenceComplete = false
           if (!await confirm(persistenceFailure || error)) { restore(); return }
+          outcome.processExitClean = false
+          outcome.forced = true
+          outcome.reason = outcome.persistenceComplete ? 'forced-exit' : 'persistence-failure'
           persistenceFailure = undefined
         }
       }
       if (ended) return
       if (persistenceFailure) {
-        clean = false
+        outcome.persistenceComplete = false
         if (!await confirm(persistenceFailure)) { restore(); return }
+        outcome.processExitClean = false
+        outcome.forced = true
+        outcome.reason = 'persistence-failure'
         persistenceFailure = undefined
       }
       try { await budget.run('本地状态保存', 2000, ports.save) }
       catch (error) {
-        clean = false; log(`phase=save, error=${String(error)}`)
+        outcome.persistenceComplete = false
+        outcome.processExitClean = false
+        log(`phase=save, error=${String(error)}`)
         if (ended) return
         if (!await confirm(error)) { restore(); return }
+        outcome.forced = true
+        outcome.reason = 'persistence-failure'
       }
       if (ended) return
       try { await budget.run('日志落盘', 500, ports.drainLogs) }
-      catch (error) { clean = false; log(`phase=logs, error=${String(error)}`) }
-      finish(clean)
+      catch (error) {
+        outcome.processExitClean = false
+        if (outcome.reason === 'complete' || outcome.reason === 'residual' || outcome.reason === 'cleanup-timeout') outcome.reason = 'log-failure'
+        log(`phase=logs, error=${String(error)}`)
+      }
+      finish()
     }).catch(async error => {
       log(`phase=failed, error=${String(error)}`)
       if (!ended) {
-        try { if (await confirm(error)) finish(false); else restore() }
-        catch { finish(false) }
+        const forcedFailure: Partial<ShutdownOutcome> = {
+          processExitClean: false,
+          persistenceComplete: false,
+          localCleanupComplete: false,
+          cleanupRemaining: null,
+          forced: true,
+          reason: 'forced-exit',
+        }
+        try { if (await confirm(error)) finish(forcedFailure); else restore() }
+        catch { finish(forcedFailure) }
       }
     }).finally(() => { if (!closing) running = undefined })
     return running

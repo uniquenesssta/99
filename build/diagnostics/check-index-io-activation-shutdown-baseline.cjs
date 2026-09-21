@@ -220,15 +220,21 @@ async function observeShutdownResidualClean() {
     save: async () => undefined,
     confirmLoss: async () => true,
     drainLogs: async () => undefined,
-    terminate: clean => { terminated = clean },
+    terminate: outcome => { terminated = outcome },
   })
   await coordinator.request()
-  const defect = terminated === true
+  const defect = !terminated
+    || terminated.processExitClean !== true
+    || terminated.persistenceComplete !== true
+    || terminated.localCleanupComplete !== false
+    || terminated.cleanupRemaining !== 1
+    || terminated.reason !== 'residual'
   report('C00-B04', defect, {
     cleanupRemaining: 1,
-    terminateClean: terminated,
+    outcome: terminated,
     cleanupLog: logs.find(line => line.includes('phase=cleanup')) || '',
     terminateLog: logs.find(line => line.includes('phase=terminate')) || '',
+    meaning: defect ? 'shutdown residual still collapses process/persistence/cleanup into one clean flag' : 'planned residual exit is process-clean and persistence-complete while local cleanup remains incomplete',
   })
 }
 

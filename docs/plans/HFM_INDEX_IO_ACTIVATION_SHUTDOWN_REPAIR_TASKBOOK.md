@@ -366,7 +366,7 @@ flowchart TD
 
 ### C-05 修复临时激活清理所有权合同
 
-状态：已完成（2026-09-21）；同日发现激活入口实机回归，代码修复与 Windows 自动门已通过，实机复验待确认，C-06 暂停。
+状态：已完成（2026-09-21）；同日激活入口回归与 C-05R sharing violation 回收已完成。Windows 实机日志已确认“激活 → 取消激活 → 再激活 → 再取消激活”成功，C-05/C-05R 实机闭环通过。
 
 候选范围：
 
@@ -425,7 +425,7 @@ flowchart TD
 
 ### C-06 退出结果三轴语义
 
-状态：未开始；必须等 C-05，避免在清理本身坏掉时定义假状态。
+状态：已完成（2026-09-22）。
 
 目标事实至少分开：
 
@@ -442,6 +442,17 @@ flowchart TD
 - 下一次启动必须能区分 crash recovery 与 planned residual cleanup。
 
 硬门禁：0 残留、1 残留已持久化、持久化失败、清理超时、强制退出五种结果不可混淆。
+
+#### C-06.1 实施结果
+
+- `shutdownCoordinatorRuntime.ts` 不再用单一 `clean:boolean` 表示全部退出事实，改为结构化 `ShutdownOutcome`：`processExitClean`、`persistenceComplete`、`localCleanupComplete`、`cleanupRemaining`、`cleanupTimedOut`、`forced` 与 `reason`。
+- planned residual cleanup（例如 C-05R 中被 Windows 暂时占用的字体文件）现在允许 `processExitClean=true`、`persistenceComplete=true`，同时明确 `localCleanupComplete=false`；不会再把“允许退出”冒充“清理已全部完成”。
+- `temporaryFontDeleteQueue` 的 flush 现在返回真实 `remaining`；主生命周期把 activation/compensation 残留与 pending temporary-font delete 残留合并进 shutdown cleanup outcome。修正了实机日志里 delete queue 仍 `remaining=1`，coordinator 却错误记录 `remaining=0` 的语义缺口。
+- `last-shutdown.json` 保留 legacy `clean` 字段，并新增可选三轴字段。正常 planned residual 对旧 reader 仍保持 `clean:true`；新 reader 会记录并识别 `localCleanupComplete=false`。恢复意图/本地状态持久化失败时不会写出 legacy `clean:true`。
+- 下一次启动日志可区分 `previous shutdown marker: clean with planned residual cleanup` 与真正的 `previous shutdown was unclean`，避免把正常有残留退出误判为 crash recovery。
+- `diagnostics:bounded-local-exit` 已锁定 0 残留、1 残留已持久化、持久化失败、cleanup timeout、强制退出五类 outcome；`diagnostics:shutdown-log-durability` 锁定三轴 marker 与 legacy 兼容。
+- C-00 current 从 2 个缺陷 / 6 个对照降为 **1 个缺陷 / 7 个对照**；`C00-B04` 已转为 `CONTROL_PASS`。当前唯一剩余缺陷为 `C00-B05` renderer closing admission，对应 C-07。
+- Windows C-06 verification `35630687836` 全绿：TypeScript、C00 current、bounded-local-exit、shutdown-log-durability、window-close-flush、main application/composition contracts、Electron/Vite build、混淆与 `git diff --check` 全部通过。首轮 `35623591752` 仅因 VM 对象原型差异导致测试深比较失败，后续只在测试端进行 JSON 规范化，生产语义未改。
 
 ### C-07 Renderer 显式 closing 生命周期
 
@@ -537,7 +548,7 @@ flowchart TD
 
 ## 9. 当前结论与下一执行入口
 
-C-00～C-05 的阶段代码已完成，但 C-05 实机回归复验尚未收口，因此本书整体仍然**不代表问题已全部修复**。
+C-00～C-06 已完成；C-05/C-05R 的 Windows 实机“激活 → 取消激活 → 再激活 → 再取消激活”也已验证通过。本书整体仍然**不代表问题已全部修复**。
 
 当前执行顺序固定为：
 
@@ -547,12 +558,12 @@ C-00 基线（完成）
 → C-02 局域网 root index 原生事务（完成）
 → C-03 watcher 收敛（完成）
 → C-04 offline 证据（完成）
-→ C-05 激活清理合同（完成；入口回归自动门通过，实机复验待确认）
-→ C-05R 临时字体文件占用 / os error 32（下一独立原子修复）
-→ C-06 退出结果语义（暂停）
-→ C-07 renderer closing
+→ C-05 激活清理合同（完成；实机通过）
+→ C-05R Windows 临时字体占用退避回收（完成；实机链通过）
+→ C-06 退出结果三轴语义（完成）
+→ C-07 renderer closing（下一项）
 → C-08 Shared I/O 性能
 → C-09 Windows/NAS 总验收
 ```
 
-当前执行入口仍属于 C-05 实机回归闭环：先复验“激活 → 取消激活 → 再激活”，随后独立处理 `os error 32` 文件占用。C-06 在上述实机链确认前暂停；C-08 仍须等 C-01～C-07 全部硬门通过。
+C-06 已关闭退出结果三轴语义，C00 current 现为 1 个缺陷 / 7 个对照；唯一剩余 C00 缺陷为 C00-B05 renderer closing admission。**下一执行入口为 C-07**；C-08 仍须等 C-07 硬门通过后再推进，O-07 继续暂停。

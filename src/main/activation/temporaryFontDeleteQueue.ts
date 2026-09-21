@@ -29,6 +29,13 @@ export type TemporaryFontDeleteQueueResult = Record<
   TemporaryFontDeleteQueueEntry
 >;
 
+export type TemporaryFontDeleteFlushResult = {
+  deleted: number;
+  remaining: number;
+  sharingDeferred: number;
+  skippedUnsafe: number;
+};
+
 const SHARING_RETRY_DELAYS_MS = [5_000, 15_000, 60_000, 5 * 60_000, 15 * 60_000] as const;
 
 export function isTemporaryFontSharingViolation(message: unknown): boolean {
@@ -59,7 +66,7 @@ export interface TemporaryFontDeleteQueueDeps {
 export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDeps) {
   const flushDelayMs = deps.flushDelayMs ?? 80;
   let deleteTimer: ReturnType<typeof setTimeout> | null = null;
-  let deleteInFlight: Promise<void> | null = null;
+  let deleteInFlight: Promise<PendingTemporaryFontDeleteRecord[]> | null = null;
 
   function pendingTemporaryFontDeletesPath(): string {
     return deps.dataPath("pending-temporary-font-deletes.json");
@@ -139,18 +146,24 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
     return results;
   }
 
-  async function flushPendingTemporaryFontDeletes(reason: string): Promise<void> {
+  async function flushPendingTemporaryFontDeletes(reason: string): Promise<TemporaryFontDeleteFlushResult> {
     if (deleteTimer) {
       clearTimeout(deleteTimer);
       deleteTimer = null;
     }
     if (deleteInFlight) {
-      await deleteInFlight;
-      return;
+      const records = await deleteInFlight;
+      return {
+        deleted: 0,
+        remaining: records.length,
+        sharingDeferred: records.filter(record => record.blockedBySharing).length,
+        skippedUnsafe: 0,
+      };
     }
 
     let summary = "";
     let nextAutomaticRetryAt = 0;
+    let flushResult: TemporaryFontDeleteFlushResult = { deleted: 0, remaining: 0, sharingDeferred: 0, skippedUnsafe: 0 };
     deleteInFlight = store.update(async records => {
       const startedAt = Date.now();
       if (!records.length) return records;
@@ -254,9 +267,11 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
         }
       }
 
+      flushResult = { deleted, remaining: remaining.length, sharingDeferred, skippedUnsafe };
       summary = `temporary font async delete flushed: reason=${reason}, deleted=${deleted}, remaining=${remaining.length}, sharingDeferred=${sharingDeferred}, skippedUnsafe=${skippedUnsafe}, elapsed=${Date.now() - startedAt}ms`;
       return remaining;
-    }).then(() => {
+    }).then((records) => {
+      flushResult.remaining = records.length;
       if (summary) deps.appendStartupLog(summary);
       if (nextAutomaticRetryAt > Date.now() && !deleteTimer) {
         const delayMs = Math.max(1_000, nextAutomaticRetryAt - Date.now());
@@ -268,11 +283,13 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
         }, delayMs);
         if (typeof deleteTimer.unref === "function") deleteTimer.unref();
       }
+      return records;
     }).finally(() => {
       deleteInFlight = null;
     });
 
     await deleteInFlight;
+    return flushResult;
   }
 
   return {
