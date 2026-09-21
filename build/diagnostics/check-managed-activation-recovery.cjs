@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const assert = require('node:assert/strict'), fs = require('node:fs'), fsp = fs.promises, path = require('node:path'), os = require('node:os')
+const assert = require('node:assert/strict'), fs = require('node:fs'), fsp = fs.promises, path = require('node:path'), os = require('node:os'), {createHash} = require('node:crypto')
 const {loader} = require('./check-operation-chain.cjs')
 const base = 'src/main/activation/runtime/'
 async function main() {
@@ -15,6 +15,42 @@ async function main() {
  const load = loader({'node:fs': {...fs, promises:io}, electron:{app:{isPackaged:true},shell:{openPath:async()=>''}}}, {process:{...process, platform:'win32', env:{...process.env,HFM_RUST_FULL_MIGRATION:'1',HFM_NODE_BRIDGE_FALLBACK:'1',SystemDrive:'C:'}}})
  const store = load('src/main/windows/runtime/temporaryActiveFontsStoreRuntime.ts').createTemporaryActiveFontsStoreRuntime({dataRoot:()=>dataDir,dataPath:n=>path.join(dataDir,n)})
  const registry = new Map(), resources = new Set(), resourceCalls = [], statusWrites = []
+ const nativeIdentity = async file => {
+   const stat = await fsp.lstat(file,{bigint:true})
+   if(!stat.isFile()||stat.isSymbolicLink())throw Error('managed identity invalid')
+   const sha1=createHash('sha1').update(await fsp.readFile(file)).digest('hex')
+   return {device:stat.dev.toString(),inode:stat.ino.toString(),sha1,size:Number(stat.size)}
+ }
+ const sameIdentity=(a,b)=>!!a&&!!b&&a.device===b.device&&a.inode===b.inode&&a.sha1===b.sha1&&a.size===b.size
+ const runRustFontActivationFiles=async input=>{
+   if(input.copies?.length||input.deletes?.length||input.restartCommand)return null
+   const inspectResults=[]
+   for(const file of input.inspects||[]){
+     try{inspectResults.push({path:file,identity:await nativeIdentity(file),missing:false,message:''})}
+     catch(error){if(error.code==='ENOENT')inspectResults.push({path:file,missing:true,message:error.message});else throw error}
+   }
+   const registryResults=[]
+   for(const claim of input.registryClaims||[]){
+     if(!claim.sessionId||!claim.registryName.endsWith(` [${claim.sessionId}]`))throw Error('unsafe registry ownership request')
+     const current=registry.get(claim.registryName)
+     if(input.requireMissing){
+       if(current!==undefined)throw Error('registry still exists')
+       try{await fsp.access(claim.installPath);throw Error('file still exists')}catch(error){if(error.code!=='ENOENT')throw error}
+       registryResults.push({registryName:claim.registryName,installPath:claim.installPath,ok:true,missing:true,deleted:false,message:'confirmed missing'})
+       continue
+     }
+     const actual=await nativeIdentity(claim.installPath)
+     if(!sameIdentity(actual,claim.identity))throw Error('目标字体已经替换')
+     if(current===undefined)throw Error('registry value missing; ownership cannot be confirmed')
+     if(path.resolve(current).toLowerCase()!==path.resolve(claim.installPath).toLowerCase())throw Error('registry value now belongs to another font')
+     if(input.deleteRegistryClaims){
+       if(registryFails)throw Error('registry denied')
+       registry.delete(claim.registryName)
+       registryResults.push({registryName:claim.registryName,installPath:claim.installPath,ok:true,missing:false,deleted:true,message:'deleted'})
+     }else registryResults.push({registryName:claim.registryName,installPath:claim.installPath,ok:true,missing:false,deleted:false,message:'owned'})
+   }
+   return {ok:true,copyResults:[],deleteResults:[],inspectResults,registryResults,copied:0,reused:0,deleted:0,failed:0}
+ }
  const deps = {appName:'HFM',dataRoot:()=>dataDir,dataPath:n=>path.join(dataDir,n),currentUserFontsDir:()=>fontsDir,ensureWindows(){},...store,
    normalizePathForCacheCompare:p=>p.toLowerCase(),safeTemporaryActiveFontName:i=>`HFM_ACTIVE_${i.id}.ttf`,temporaryActiveRegistryNameFor:i=>`HFM_ACTIVE_${i.id}`,
    appendStartupLog(){},withGlobalIo:(_,action)=>action(),delayToEventLoop:async()=>{},clearInstalledFontsMemoryCache(){},requestFontRefresh(){},advancedFontRefresh:async()=>{},scheduleBackgroundFontRefreshTail(){},
@@ -26,7 +62,8 @@ async function main() {
    deleteFontRegistryValuesHKCUBatch:async names=>{if(registryFails)throw Error('registry denied');names.forEach(name=>registry.delete(name))},
    addFontResourceSession:async p=>{resources.add(p);return 1},
    removeFontResourceSession:async p=>{resourceCalls.push(p);if(resourceFails)throw Error('resource denied');resources.delete(p)},
-   removeFontResourceSessionBatch:async paths=>Object.fromEntries(await Promise.all(paths.map(async p=>{try{await deps.removeFontResourceSession(p);return [p,{ok:true,count:1}]}catch(error){return [p,{ok:false,message:error.message}]}})))
+   removeFontResourceSessionBatch:async paths=>Object.fromEntries(await Promise.all(paths.map(async p=>{try{await deps.removeFontResourceSession(p);return [p,{ok:true,count:1}]}catch(error){return [p,{ok:false,message:error.message}]}}))),
+   runRustFontActivationFiles
  }
  const identity = load(base+'managedActivationIdentityRuntime.ts').createManagedActivationIdentityRuntime(deps)
  const verify = load(base+'fontActivationVerifyRuntime.ts').createFontActivationVerifyRuntime(deps)
@@ -71,15 +108,11 @@ async function main() {
    await fsp.appendFile(old.installPath,'changed');await assert.rejects(panel.runFontCleanupAction({action:'adopt',key:entry.key,observedToken:entry.observedToken}),/已经变化/)
    cases.push('manual actions reject arbitrary paths and stale displayed identity tokens')
    await fsp.unlink(old.installPath)
-   deps.runRustFontActivationFiles=async input=>{
-     if(!input.requireMissing)return null
-     for(const [name,file] of Object.entries(input.registryExpectations||{})) {
-       if(registry.has(name))throw Error('registry still exists')
-       try{await fsp.access(file);throw Error('file still exists')}catch(error){if(error.code!=='ENOENT')throw error}
-     }
-     return {ok:true,copyResults:[],deleteResults:[],inspectResults:[],copied:0,reused:0,deleted:0,failed:0}
-   }
-   const missing=(await panel.readFontCleanupRemnants()).records.find(r=>r.path===old.installPath);assert(missing.canDismissMissing)
+   let missing=(await panel.readFontCleanupRemnants()).records.find(r=>r.path===old.installPath);assert(missing.canDismissMissing)
+   await assert.rejects(panel.runFontCleanupAction({action:'dismiss-missing',key:missing.key,windowsRestarted:true}),/旧记录缺少文件身份/)
+   cases.push('legacy record without durable file identity is rejected even after the file disappears')
+   await store.saveTemporaryActiveFonts({version:1,records:[{...old,lastError:'missing-after-restart'}]})
+   missing=(await panel.readFontCleanupRemnants()).records.find(r=>r.path===old.installPath);assert(missing.canDismissMissing)
    await assert.rejects(panel.runFontCleanupAction({action:'dismiss-missing',key:missing.key,windowsRestarted:false}),/重启/)
    await assert.rejects(panel.runFontCleanupAction({action:'dismiss-missing',key:missing.key,windowsRestarted:true}),/registry still exists/)
    assert((await store.loadTemporaryActiveFonts()).records.length)

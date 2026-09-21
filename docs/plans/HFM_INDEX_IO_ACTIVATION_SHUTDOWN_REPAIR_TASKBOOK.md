@@ -2,9 +2,9 @@
 
 ## 0. 文档状态与执行入口
 
-- 文档版本：1.2；制定日期：2026-09-19；软件版本：3.0.0。
+- 文档版本：1.3；制定日期：2026-09-19；更新日期：2026-09-21；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定分支：`stage/09-preview-tags-app`；制定基线：`8fe6db1335e16287062c23bf7de1d66853545f59`。
-- 状态：**C-00、C-01 已完成；C-02 未开始**。C-01 已把 Root Index 存储位置与物理访问类型拆为独立契约；O-07 继续暂停。
+- 状态：**C-00～C-05 已完成；C-06 为下一项**。C-01～C-05 已按顺序完成实现与 Windows 目标平台验证；O-07 继续暂停。
 - 本书是 [共享离线与本地退出任务书](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md) 在真实 Windows/NAS 验收中发现的新一轮正确性修复入口；O-07 继续暂停，先完成本书 P0/P1 修复再决定是否恢复 O-07。
 - 不新建阶段分支；继续沿用当前阶段唯一分支。除非用户明确要求，不创建并行修复分支。
 - 上级约束继续来自 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[全链路一致性修复任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)、Stage 1 激活事务、Stage 2 路径授权、Stage 5 Rust 边界、Stage 6 React 所有权及 Stage 7 IPC 安全任务书。
@@ -366,7 +366,7 @@ flowchart TD
 
 ### C-05 修复临时激活清理所有权合同
 
-状态：未开始，可与 C-03/C-04 不交叉，但同工作区仍串行提交。
+状态：已完成（2026-09-21）。
 
 候选范围：
 
@@ -393,6 +393,15 @@ flowchart TD
 - 清理仍不访问 NAS sourcePath。
 
 硬门禁：真实命名形态（中文字体名、TrueType/OpenType、session）均可成功清理；伪造 registryName、同名指向外部文件、受管路径相邻文件、替换 inode、旧 record 全部拒绝。
+
+#### C-05.1 实施结果
+
+- durable activation record 现在以精确 `registryName`、`installPath`、`sessionId` 与真实文件 identity 组成 native ownership claim；真实 Windows Fonts 注册名无需伪装成文件所有权前缀。单项停用、批量停用、退出 cleanup 与启动 recovery 复用同一验证协议，清理路径不读取 NAS `sourcePath`。
+- Rust `activation_files` 保留并加强 fail-closed：legacy `registryExpectations` 明确拒绝；受管文件必须位于精确 Current User Fonts 目录、满足 managed 文件名前缀、非 UNC 且 identity 匹配；registry value 必须精确等于 durable record 的 `registryName` 并精确指向 `installPath`，删除前再次 native 核验。
+- 文件被替换、相邻文件、外部路径、伪造 registryName、旧记录缺 identity、copy lease 未结算等场景全部拒绝；资源/registry/file 的 compensation 与 batch settlement 保留 durable retry state，不把未完成清理伪报成功。
+- Windows C-05 verification `35567035211` 全绿：TypeScript、managed activation recovery 10 cases、C-05 batch settlement、A2～A8 activation transaction/compensation、save queue durability、Rust contracts/clients/transport、orchestration contracts、`c00_activation_cleanup_contract`、Cargo 全测试、Electron/Vite build、混淆、diff check 与 release build 全部通过。
+- transport fixture 仅在 non-trace outcome 完全不变的前提下刷新 C-05 导致的 8 个 activation trace 与 2 个 lifecycle sequence trace；未重录无关基线，也未弱化 mutant/ownership 门。
+- `local-activation-baseline` 继续以 observer 身份报告旧基线中的 5 observed defects / 4 controls；其中跨阶段剩余项不在 C-05 冒充已修。C-05 只正式关闭临时激活清理所有权合同，C-06 退出结果语义为下一项。
 
 ### C-06 退出结果三轴语义
 
@@ -518,11 +527,11 @@ C-00 基线（完成）
 → C-02 局域网 root index 原生事务（完成）
 → C-03 watcher 收敛（完成）
 → C-04 offline 证据（完成）
-→ C-05 激活清理合同（下一项）
-→ C-06 退出结果语义
+→ C-05 激活清理合同（完成）
+→ C-06 退出结果语义（下一项）
 → C-07 renderer closing
 → C-08 Shared I/O 性能
 → C-09 Windows/NAS 总验收
 ```
 
-C-05 现在是下一执行入口；C-08 仍须等 C-01～C-07 全部硬门通过。在 C-05 通过前，不应把 O-04/O-05 的 Windows 实机状态标成完成；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。
+C-05 已完成，C-06 现在是下一执行入口；C-08 仍须等 C-01～C-07 全部硬门通过。C-05 已关闭临时激活清理所有权合同，但 O-04/O-05 的 Windows/NAS 总体验收仍由 C-09 统一收口；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。

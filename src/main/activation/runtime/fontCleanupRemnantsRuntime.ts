@@ -53,10 +53,7 @@ export function createFontCleanupRemnantsRuntime(deps: FontActivationRuntimeDeps
       const entry = (await entries()).values.find(entry => key(entry) === input.key)
       if (!entry || entry.partial || !entry.record.registryName) throw new Error('失效记录已变化。')
       if (await identity.inspect(entry.record.installPath)) throw new Error('该路径仍有文件，不能清除记录。')
-      const confirmation = await deps.runRustFontActivationFiles?.({ requireMissing:true,
-        registryExpectations:{[entry.record.registryName]:entry.record.installPath},
-        allowedDeleteDir:deps.currentUserFontsDir(),allowedNamePrefix:`${deps.appName}_ACTIVE_` })
-      if (!confirmation?.ok) throw new Error('未能确认文件及注册表均已清理，记录已保留。')
+      await cleanup.confirmManagedRecordMissing(entry.record)
       const same = (record: TemporaryActiveFontRecord) => record.installPath === entry.record.installPath && record.activatedAt === entry.record.activatedAt && record.sessionId === entry.record.sessionId
       if (entry.source === 'session') {
         const state = await deps.loadTemporaryActiveFonts()

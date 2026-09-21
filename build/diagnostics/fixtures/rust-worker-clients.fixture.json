@@ -77,7 +77,7 @@
       ],
       "functions": {
         "runRustSystemInstalledFonts": "2d2f285b685fd0c6c0d8965ec4d1e1ab639fa9bb3f8cf00f9a76c0f8068f960e",
-        "runRustFontActivationFiles": "010e32dc6e07664228477b6ff939cc8acb020dfd116cda339a2ec1920101d6a0",
+        "runRustFontActivationFiles": "cc756748df4c516dfd0f79bc57dc358c3f2b3e02e40b3e414ad775880e2e8dd6",
         "runRustPhysicalFolderTree": "319405d5a2afcb8a5da5bd4aa9c94d5066f3f48b1946c50b1afd5ebfa74ca0e6",
         "runRustFontChangeNotify": "98d927ee478af0d746a3f1f04e0bda924851425f558c01ca2d293d735c0c88ed",
         "runRustFontRegistryCommand": "b547ab61d4dcf21630667939215806d6ae27283899bf53eb2a3f65750d63d132",

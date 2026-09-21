@@ -60,10 +60,9 @@ export function createFontActivationCompensationRuntime(
 ) {
   const {
     removeFontResourceSession,
-    deleteRegistryValueHKCU,
     appendStartupLog,
   } = deps;
-  const { queueTemporaryFontFileDeletes } = cleanupRuntime;
+  const { queueTemporaryFontFileDeletes, deleteManagedRegistryRecord } = cleanupRuntime;
   const compensationQueue = createFontActivationCompensationQueue(deps);
   const identityRuntime = createManagedActivationIdentityRuntime(deps);
   async function recordActivationIntent(record: TemporaryActiveFontRecord, pending: FontActivationCompensationStages): Promise<void> {
@@ -108,8 +107,14 @@ export function createFontActivationCompensationRuntime(
     if (persistenceFailed) return { attempted: true, errors, pending: { ...entry.pending }, durable };
 
     try {
-      if (entry.record.identity) await identityRuntime.verify(entry.record);
-      else {
+      if (entry.record.identity) {
+        if (entry.pending.registry || entry.pending.resource) await identityRuntime.verify(entry.record);
+        else {
+          const current = await identityRuntime.inspect(entry.record.installPath);
+          if (current && !sameManagedIdentity(current, entry.record.identity)) throw new Error('目标字体已经替换，旧清理任务已拒绝。');
+          if (!current) entry.pending.file = false;
+        }
+      } else {
         const identity = await identityRuntime.inspect(entry.record.installPath);
         const partial = await identityRuntime.inspect(`${entry.record.installPath}.partial`);
         if (identity || partial || entry.pending.registry || entry.pending.resource) throw new Error('未确认文件身份或复制结果，已保留待人工核验。');
@@ -141,7 +146,7 @@ export function createFontActivationCompensationRuntime(
 
     if (entry.pending.registry && !entry.pending.resource) {
       try {
-        await deleteRegistryValueHKCU(entry.record.registryName);
+        await deleteManagedRegistryRecord(entry.record);
         entry.pending.registry = false;
         await persistProgress("注册表补偿进度");
       } catch (error) {

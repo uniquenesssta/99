@@ -133,7 +133,8 @@ function createSessionHarness(failureStage) {
     cleanupCalls: [],
     refreshCalls: [],
     pendingCompensations: () => {
-      const raw = compensationFiles.get('/diagnostic/pending-font-activation-compensations.json')
+      const raw = compensationFiles.get(path.resolve('/diagnostic/pending-font-activation-compensations.json'))
+        || compensationFiles.get('/diagnostic/pending-font-activation-compensations.json')
       return raw ? JSON.parse(raw).records || [] : []
     },
   }
@@ -195,6 +196,11 @@ function createSessionHarness(failureStage) {
   }
   const cleanupRuntime = {
     removeTemporaryActiveRecord: async () => true,
+    deleteManagedRegistryRecord: async (record) => {
+      effects.cleanupCalls.push(`registry:${record.registryName}`)
+      if (activeFailureStage === 'compensation-fails') throw new Error('injected registry compensation failure')
+      effects.registryNames.delete(record.registryName)
+    },
     queueTemporaryFontFileDeletes: async (records) => {
       for (const record of records) {
         effects.cleanupCalls.push(`file:${record.installPath}`)
@@ -313,6 +319,14 @@ async function caseA1() {
         }
       }
       if (id === './fontActivationInstallStatusRuntime') return loadTypeScriptModule('src/main/activation/runtime/fontActivationInstallStatusRuntime.ts')
+      if (id === './managedActivationIdentityRuntime') return {
+        createManagedActivationIdentityRuntime: () => ({
+          verify: async () => true,
+          deleteRegistry: async () => { registryDeletes += 1 },
+          deleteRegistryRecords: async records => { registryDeletes += records.length },
+          confirmMissing: async () => undefined,
+        }),
+      }
       return require(id)
     },
   )
@@ -503,7 +517,6 @@ async function caseA2() {
         [records[0].installPath]: { ok: true, count: 1 },
         [records[1].installPath]: { ok: false, count: 0, message: 'injected batch remove failure' },
       }),
-      deleteFontRegistryValuesHKCUBatch: async (names) => { deletedRegistryNames = names.slice() },
       clearInstalledFontsMemoryCache() {}, getSystemInstalledFontsCached: async () => [],
       normalizePathForCacheCompare: value => value.toLowerCase(), isTemporaryActiveInstalledRecord: () => false,
       compareFontInstalledWithList: () => ({ installed: false, by: 'none', matches: [] }),
@@ -513,8 +526,9 @@ async function caseA2() {
     },
     {
       ...stagePorts,
+      deleteManagedRegistryRecords: async (targets) => { deletedRegistryNames = Array.from(targets, record => record.registryName) },
       queueTemporaryFontFileDeletes: async (targets) => {
-        queued = targets.slice()
+        queued = Array.from(targets)
         return Object.fromEntries(targets.map((target) => [
           target.installPath,
           { ok: true, message: 'queued by diagnostic' },
@@ -555,17 +569,17 @@ async function caseA2() {
         removeFontResourceSessionBatch: async () => stage === 'missing-result'
           ? {}
           : { [record.installPath]: { ok: true, count: 1, message: '' } },
-        deleteFontRegistryValuesHKCUBatch: async () => {
-          registryCalls += 1
-          if (stage === 'registry') throw new Error('injected registry cleanup failure')
-        },
         scheduleActivationInstallStatusSave: () => fail('A2', `${stage} unexpectedly saved inactive install status`),
         scheduleBackgroundFontRefreshTail: () => { boundaryRefreshTails += 1 },
         appendStartupLog: () => undefined,
       },
       {
         ...stagePorts,
-      queueTemporaryFontFileDeletes: async () => {
+        deleteManagedRegistryRecords: async () => {
+          registryCalls += 1
+          if (stage === 'registry') throw new Error('injected registry cleanup failure')
+        },
+        queueTemporaryFontFileDeletes: async () => {
           queueCalls += 1
           return {
             [record.installPath]: stage === 'queue'
@@ -615,20 +629,19 @@ async function caseA2() {
           { ok: true, count: 1, message: '' },
         ]),
       ),
-      deleteFontRegistryValuesHKCUBatch: async (names) => {
-        mixedRegistryCalls.push(names.slice())
-        if (names.includes(registryRecords[1].registryName)) {
-          throw new Error('injected second registry failure')
-        }
-      },
       scheduleActivationInstallStatusSave: () => undefined,
       scheduleBackgroundFontRefreshTail: () => undefined,
       appendStartupLog: () => undefined,
     },
     {
       ...stagePorts,
+      deleteManagedRegistryRecords: async (targets) => {
+        const names = Array.from(targets, record => record.registryName)
+        mixedRegistryCalls.push(names)
+        if (names.includes(registryRecords[1].registryName)) throw new Error('injected second registry failure')
+      },
       queueTemporaryFontFileDeletes: async (targets) => {
-        mixedRegistryQueue = targets.slice()
+        mixedRegistryQueue = Array.from(targets)
         return Object.fromEntries(targets.map((target) => [
           target.installPath,
           { ok: true, message: 'queued by diagnostic' },

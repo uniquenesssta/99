@@ -19,6 +19,10 @@ struct ActivationFilesPayload {
     #[serde(default)]
     identities: BTreeMap<String, Identity>,
     #[serde(default)]
+    registry_claims: Vec<ActivationRegistryClaim>,
+    #[serde(default)]
+    delete_registry_claims: bool,
+    #[serde(default)]
     registry_expectations: BTreeMap<String, String>,
     #[serde(default)]
     require_missing: bool,
@@ -30,6 +34,15 @@ struct ActivationFilesPayload {
     allowed_delete_dir: String,
     #[serde(default)]
     allowed_name_prefix: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivationRegistryClaim {
+    registry_name: String,
+    install_path: String,
+    session_id: String,
+    identity: Option<Identity>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -62,6 +75,17 @@ struct ActivationDeleteRow {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ActivationRegistryRow {
+    registry_name: String,
+    install_path: String,
+    ok: bool,
+    missing: bool,
+    deleted: bool,
+    message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ActivationFilesResult {
     ok: bool,
     copied: usize,
@@ -70,6 +94,7 @@ struct ActivationFilesResult {
     failed: usize,
     copy_results: Vec<ActivationFileRow>,
     inspect_results: Vec<ActivationInspectRow>,
+    registry_results: Vec<ActivationRegistryRow>,
     delete_results: Vec<ActivationDeleteRow>,
     elapsed_ms: u128,
     worker_mode: &'static str,
@@ -84,13 +109,17 @@ pub fn run_font_activation_files(config: &FontResourceCommandConfig) -> Result<S
     let started_at = Instant::now();
     let raw = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
     let payload: ActivationFilesPayload = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
-    if payload.require_missing && payload.registry_expectations.is_empty() { return Err("missing cleanup target".into()); }
-    for (name,path) in &payload.registry_expectations {
-        if !name.starts_with(&payload.allowed_name_prefix) || !is_safe_delete_path(path,&payload.allowed_delete_dir,&payload.allowed_name_prefix) { return Err("unsafe registry ownership request".into()); }
-        let missing = super::windows::verify_registry_value(name,path)?;
-        if payload.require_missing {
-            if !missing { return Err("registry value still exists".into()); }
-            match fs::symlink_metadata(path) { Err(error) if error.kind()==std::io::ErrorKind::NotFound=>{}, Ok(_)=>return Err("font file still exists".into()),Err(error)=>return Err(error.to_string()) }
+    if !payload.registry_expectations.is_empty() { return Err("legacy registry ownership contract rejected".into()); }
+    if payload.require_missing && payload.registry_claims.is_empty() { return Err("missing cleanup target".into()); }
+    if payload.require_missing && payload.delete_registry_claims { return Err("cannot delete while confirming missing cleanup target".into()); }
+    let mut registry_results = Vec::with_capacity(payload.registry_claims.len());
+    for claim in &payload.registry_claims {
+        registry_results.push(verify_registry_claim(claim, &payload.allowed_delete_dir, &payload.allowed_name_prefix, payload.require_missing)?);
+    }
+    if payload.delete_registry_claims {
+        registry_results.clear();
+        for claim in &payload.registry_claims {
+            registry_results.push(delete_registry_claim(claim, &payload.allowed_delete_dir, &payload.allowed_name_prefix)?);
         }
     }
     if let Some(command) = &payload.restart_command { super::windows::schedule_cleanup_restart(command)?; }
@@ -135,11 +164,52 @@ pub fn run_font_activation_files(config: &FontResourceCommandConfig) -> Result<S
         failed,
         copy_results,
         inspect_results,
+        registry_results,
         delete_results,
         elapsed_ms: started_at.elapsed().as_millis(),
         worker_mode: "rust-font-activation-files",
     };
     serde_json::to_string(&result).map_err(|error| error.to_string())
+}
+
+fn validate_registry_claim_shape(claim: &ActivationRegistryClaim, allowed_dir: &str, prefix: &str) -> Result<(), String> {
+    let session = claim.session_id.trim();
+    let file_name = Path::new(&claim.install_path).file_name().map(|value| value.to_string_lossy().to_string()).unwrap_or_default();
+    let session_in_file = file_name.rsplit_once('.').map(|(stem, _)| stem.ends_with(&format!("_{}", session))).unwrap_or(false);
+    if session.is_empty() || claim.registry_name.trim().is_empty()
+        || !claim.registry_name.ends_with(&format!(" [{}]", session))
+        || !session_in_file
+        || !is_safe_delete_path(&claim.install_path, allowed_dir, prefix) {
+        return Err("unsafe registry ownership request".into());
+    }
+    Ok(())
+}
+
+fn verify_registry_claim(claim: &ActivationRegistryClaim, allowed_dir: &str, prefix: &str, require_missing: bool) -> Result<ActivationRegistryRow, String> {
+    validate_registry_claim_shape(claim, allowed_dir, prefix)?;
+    if require_missing {
+        if !super::windows::verify_registry_value(&claim.registry_name, &claim.install_path)? { return Err("registry value still exists".into()); }
+        match fs::symlink_metadata(&claim.install_path) {
+            Err(error) if error.kind()==std::io::ErrorKind::NotFound => {},
+            Ok(_) => return Err("font file still exists".into()),
+            Err(error) => return Err(error.to_string()),
+        }
+        return Ok(ActivationRegistryRow { registry_name:claim.registry_name.clone(), install_path:claim.install_path.clone(), ok:true, missing:true, deleted:false, message:"confirmed missing".into() });
+    }
+    let expected = claim.identity.as_ref().ok_or_else(|| "missing managed identity; manual review required".to_string())?;
+    let actual = activation_identity::inspect(Path::new(&claim.install_path)).map_err(|error| error.to_string())?;
+    if actual != *expected { return Err("managed font identity changed".into()); }
+    if super::windows::verify_registry_value(&claim.registry_name, &claim.install_path)? { return Err("registry value missing; ownership cannot be confirmed".into()); }
+    Ok(ActivationRegistryRow { registry_name:claim.registry_name.clone(), install_path:claim.install_path.clone(), ok:true, missing:false, deleted:false, message:"owned".into() })
+}
+
+fn delete_registry_claim(claim: &ActivationRegistryClaim, allowed_dir: &str, prefix: &str) -> Result<ActivationRegistryRow, String> {
+    validate_registry_claim_shape(claim, allowed_dir, prefix)?;
+    let expected = claim.identity.as_ref().ok_or_else(|| "missing managed identity; manual review required".to_string())?;
+    let actual = activation_identity::inspect(Path::new(&claim.install_path)).map_err(|error| error.to_string())?;
+    if actual != *expected { return Err("managed font identity changed".into()); }
+    super::windows::delete_registry_value_if_owned(&claim.registry_name, &claim.install_path)?;
+    Ok(ActivationRegistryRow { registry_name:claim.registry_name.clone(), install_path:claim.install_path.clone(), ok:true, missing:false, deleted:true, message:"deleted".into() })
 }
 
 fn copy_one(job: &ActivationCopyJob) -> ActivationFileRow {

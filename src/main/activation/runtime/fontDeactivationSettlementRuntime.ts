@@ -27,7 +27,7 @@ export interface FontDeactivationSettlementDeps {
   removeFontResourceSessionBatch: (
     fontPaths: string[],
   ) => Promise<FontResourceBatchResult>;
-  deleteFontRegistryValuesHKCUBatch: (names: string[]) => Promise<unknown>;
+  deleteManagedRegistryRecords: (records: TemporaryActiveFontRecord[]) => Promise<void>;
   queueTemporaryFontFileDeletes: (
     records: TemporaryActiveFontRecord[],
     reason: string,
@@ -171,7 +171,7 @@ export async function settleFontDeactivationRecords(
     registryCandidatesByName.set(registryKey, grouped);
   }
   const registryGroups = [...registryCandidatesByName.values()];
-  const registryNames = registryGroups.map(candidates => candidates[0].record.registryName);
+  const registryRecords = registryGroups.map(candidates => candidates[0].record);
   const settleRegistryGroup = (candidates: DeactivationRecordSettlement[], error?: unknown): void => {
     for (const settlement of candidates) {
       settlement.registry = error === undefined
@@ -179,20 +179,23 @@ export async function settleFontDeactivationRecords(
         : failedStep(error, "字体注册表批量清理失败。");
     }
   };
-  if (registryNames.length) {
+  if (registryRecords.length) {
     await activationTraceStep("deactivate:registry-settlement", undefined, async () => {
       try {
-        await activationTraceStep("deactivate:registry-batch", undefined, () => deps.deleteFontRegistryValuesHKCUBatch(registryNames));
+        // The native owner re-verifies durable record path + identity + registry value
+        // immediately before deletion. No generic arbitrary-name registry delete is used here.
+        await activationTraceStep("deactivate:registry-batch", undefined, () => deps.deleteManagedRegistryRecords(registryRecords));
         registryGroups.forEach(candidates => settleRegistryGroup(candidates));
       } catch (error) {
-        if (registryNames.length === 1) {
+        if (registryRecords.length === 1) {
           settleRegistryGroup(registryGroups[0], error ?? "注册表清理失败。");
           return;
         }
-        // Only idempotent registry deletion is retried. Resources are never removed twice.
+        // Only the same ownership-checked idempotent delete is isolated per record.
+        // Resources are never removed twice.
         for (const candidates of registryGroups) {
           try {
-            await activationTraceStep("deactivate:registry-isolate", candidates[0].item.id, () => deps.deleteFontRegistryValuesHKCUBatch([candidates[0].record.registryName]));
+            await activationTraceStep("deactivate:registry-isolate", candidates[0].item.id, () => deps.deleteManagedRegistryRecords([candidates[0].record]));
             settleRegistryGroup(candidates);
           } catch (entryError) {
             settleRegistryGroup(candidates, entryError ?? "注册表清理失败。");

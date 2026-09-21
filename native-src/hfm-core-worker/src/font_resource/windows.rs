@@ -85,6 +85,15 @@ mod platform {
         Ok(false)
     }
 
+    pub fn delete_registry_value_if_owned(name: &str, expected: &str) -> Result<(), String> {
+        if verify_registry_value(name, expected)? {
+            return Err("registry value missing; ownership cannot be confirmed".into());
+        }
+        let deleted = delete_registry_values(&[name.to_string()])?;
+        if deleted != 1 { return Err("registry ownership changed before delete".into()); }
+        Ok(())
+    }
+
     fn wide(value: &str) -> Vec<u16> {
         OsStr::new(value).encode_wide().chain(once(0)).collect()
     }
@@ -248,6 +257,7 @@ mod platform {
     use super::{FontRegistryRecord, FontResourceBatchRow};
 
     pub fn verify_registry_value(_name: &str, _expected: &str) -> Result<bool, String> { Err("Windows only".into()) }
+    pub fn delete_registry_value_if_owned(_name: &str, _expected: &str) -> Result<(), String> { Err("Windows only".into()) }
 
     pub fn schedule_cleanup_restart(_command: &str) -> Result<(), String> { Err("Windows only".into()) }
 

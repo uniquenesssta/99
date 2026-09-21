@@ -51,7 +51,6 @@ export function createFontActivationTransactionRuntime(
     removeFontResourceSession,
     addFontResourceSession,
     writeFontRegistryValuesHKCUBatch,
-    deleteRegistryValueHKCU,
   } = deps;
   const { activationTraceStep } = traceRuntime;
   const {

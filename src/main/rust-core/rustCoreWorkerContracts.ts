@@ -704,7 +704,17 @@ export type RustFontActivationFileCopy = {
   dest: string
 }
 
+export type RustManagedActivationRegistryClaim = {
+  registryName: string
+  installPath: string
+  sessionId: string
+  identity: import('../windows/runtime/fontRuntimeTypes').ManagedActivationFileIdentity
+}
+
 export type RustFontActivationFilesInput = {
+  registryClaims?: RustManagedActivationRegistryClaim[]
+  deleteRegistryClaims?: boolean
+  /** Rejected by the v2 native ownership contract; retained only to fail old callers closed. */
   registryExpectations?: Record<string, string>
   requireMissing?: boolean
   restartCommand?: string
@@ -723,6 +733,7 @@ export type RustFontActivationFilesResult = {
   deleted: number
   failed: number
   inspectResults?: Array<{ path: string; identity?: import('../windows/runtime/fontRuntimeTypes').ManagedActivationFileIdentity | null; missing: boolean; message: string }>
+  registryResults?: Array<{ registryName: string; installPath: string; ok: boolean; missing: boolean; deleted: boolean; message: string }>
   copyResults: Array<{ id: string; source: string; dest: string; ok: boolean; mode: string; message: string; identity?: import('../windows/runtime/fontRuntimeTypes').ManagedActivationFileIdentity | null }>
   deleteResults: Array<{ path: string; ok: boolean; message: string }>
   elapsedMs: number

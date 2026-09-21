@@ -24,7 +24,6 @@ export function createFontActivationCleanupRuntime(
     dataRoot,
     currentUserFontsDir,
     removeFontResourceSession,
-    deleteRegistryValueHKCU,
     advancedFontRefresh,
     clearInstalledFontsMemoryCache,
     saveTemporaryActiveFonts,
@@ -89,7 +88,7 @@ export function createFontActivationCleanupRuntime(
       await persistRecordStage(record, 'registry-removal-pending');
     }
     if (record.stage !== 'file-pending') {
-      await activationTraceStep("deactivate:registry-settlement", record.fontId, () => deleteRegistryValueHKCU(record.registryName));
+      await activationTraceStep("deactivate:registry-settlement", record.fontId, () => identityRuntime.deleteRegistry(record));
       await persistRecordStage(record, 'file-pending');
     }
 
@@ -253,6 +252,9 @@ export function createFontActivationCleanupRuntime(
     persistRecordStage,
     persistRecordStages,
     verifyManagedRecord: identityRuntime.verify,
+    deleteManagedRegistryRecord: identityRuntime.deleteRegistry,
+    deleteManagedRegistryRecords: identityRuntime.deleteRegistryRecords,
+    confirmManagedRecordMissing: identityRuntime.confirmMissing,
     removeTemporaryActiveRecord,
     cleanupTemporaryActiveFonts,
     cleanupTemporaryActiveFontsUntilEmpty,

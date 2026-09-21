@@ -85,7 +85,6 @@ function batchHarness({count=3,registryFail=false,resourceFail=false,queueFail=f
     loadTemporaryActiveFonts:async()=>({version:1,records:missing?[]:records}),
     saveTemporaryActiveFonts:async state=>{order.push('save');saved.push(plain(state))},
     removeFontResourceSessionBatch:async paths=>{resources++;order.push('remove');return Object.fromEntries(paths.map((p,i)=>[p,{ok:!(resourceFail&&i===0),count:1,message:'controlled resource'}]))},
-    deleteFontRegistryValuesHKCUBatch:async names=>{registry.push([...names]);order.push('registry');if(registryFail&&names.includes('HFM_f0'))throw Error('registry denied')},
     clearInstalledFontsMemoryCache:()=>order.push('invalidate'),
     getSystemInstalledFontsCached:async force=>{assert.equal(force,true);enumerations++;order.push('enumerate');if(readFail)throw Error('enumeration failed');return system},
     compareFontInstalledWithList:()=>{comparisons++;return {installed:permanent,by:permanent?'system':'none',matches:system.filter(x=>x.source==='HKLM')}},
@@ -93,7 +92,12 @@ function batchHarness({count=3,registryFail=false,resourceFail=false,queueFail=f
     safeTemporaryActiveFontName:item=>item.id+'.ttf',temporaryActiveRegistryNameFor:item=>'HFM_'+item.id,
     scheduleActivationInstallStatusSave:values=>statuses.push(plain(values)),scheduleBackgroundFontRefreshTail:()=>order.push('tail')
   }
-  const cleanup={verifyManagedRecord:async()=>true,persistRecordStage:async(record,stage)=>{record.stage=stage},queueTemporaryFontFileDeletes:async values=>{queued.push(values.map(x=>x.fontId));order.push('queue');return Object.fromEntries(values.map(record=>[record.installPath,{ok:!(queueFail&&record.fontId==='f0'),message:'durable queue'}]))}}
+  const cleanup={
+    verifyManagedRecord:async()=>true,
+    persistRecordStage:async(record,stage)=>{record.stage=stage},
+    deleteManagedRegistryRecords:async values=>{const names=Array.from(values,record=>record.registryName);registry.push(names);order.push('registry');if(registryFail&&names.includes('HFM_f0'))throw Error('registry denied')},
+    queueTemporaryFontFileDeletes:async values=>{queued.push(values.map(x=>x.fontId));order.push('queue');return Object.fromEntries(values.map(record=>[record.installPath,{ok:!(queueFail&&record.fontId==='f0'),message:'durable queue'}]))}
+  }
   const runtime=load(batchFile).createFontDeactivationBatchRuntime(deps,cleanup)
   return {runtime,fonts,records,deps,logs,order,registry,queued,saved,statuses,counts:()=>({enumerations,resources,comparisons})}
 }
@@ -143,9 +147,16 @@ async function rendererTiming() {
   }
 }
 async function main() {
+  if (process.argv.includes('--c05-batch-only')) {
+    await batchCases()
+    await assert.rejects(batchCases({[path.join(root,settlementFile)]:source=>source.replace('() => deps.deleteManagedRegistryRecords(registryRecords)', 'async () => { for (const record of registryRecords) await deps.deleteManagedRegistryRecords([record]); }')}),/strictly equal/);cases++
+    await assert.rejects(batchCases({[path.join(root,batchFile)]:source=>source.replace('recordsByItemId.has(item.id) && results[item.id]?.ok','recordsByItemId.has(item.id)')}),/strictly equal/);cases++
+    console.log(`[diagnostics:deactivation-refresh] C-05 batch settlement passed: batch counts, ownership-checked registry isolation, queue boundaries and 2 rejected regressions; renderer timing intentionally not entered`)
+    return
+  }
   await snapshotBoundaries();await consecutiveMutations();await obsoleteFailure();await batchCases();await temporaryIndex();await rendererTiming()
   await assert.rejects(snapshotBoundaries(source=>source.replace('installedFontsGeneration += 1','installedFontsGeneration += 0').replace('    installedFontsReadInFlight = null\n  }','  }')),/post-mutation read joined/);cases++
-  await assert.rejects(batchCases({[path.join(root,settlementFile)]:source=>source.replace('() => deps.deleteFontRegistryValuesHKCUBatch(registryNames)', 'async () => { for (const name of registryNames) await deps.deleteFontRegistryValuesHKCUBatch([name]); }')}),/strictly equal/);cases++
+  await assert.rejects(batchCases({[path.join(root,settlementFile)]:source=>source.replace('() => deps.deleteManagedRegistryRecords(registryRecords)', 'async () => { for (const record of registryRecords) await deps.deleteManagedRegistryRecords([record]); }')}),/strictly equal/);cases++
   await assert.rejects(batchCases({[path.join(root,batchFile)]:source=>source.replace('recordsByItemId.has(item.id) && results[item.id]?.ok','recordsByItemId.has(item.id)')}),/strictly equal/);cases++
   await snapshotBoundaries(source=>source.replace(/\r?\n/g,'\r\n'))
   const trace=loader()('src/main/activation/runtime/fontActivationTraceRuntime.ts').createFontActivationTraceRuntime({appendStartupLog(){throw Error('log offline')}})

@@ -66,6 +66,9 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-21：完成 C-05 临时激活清理所有权合同：durable activation record 以真实 `registryName` + `installPath` + `sessionId` + 文件 identity 证明所有权，Rust 删除 HKCU Fonts value 前再次核验其精确指向受管 `installPath`，legacy `registryExpectations` fail closed；单项、批量、退出 cleanup、启动 recovery 统一走同一验证协议，清理不访问 NAS `sourcePath`。Windows C-05 影响链、10 个 managed recovery cases、A2～A8、Rust contracts/clients/transport、原生 `c00_activation_cleanup_contract`、Cargo 全测试、Electron/Vite build、混淆、diff check 与 release build 全部通过（CI 35567035211）；transport fixture 仅在 non-trace outcome 不变前提下刷新 8 个 activation trace 与 2 个 lifecycle sequence trace。下一项 C-06。
+
+
 - 2026-09-20：完成 C-04 Root availability 证据与 timeout 语义：单文件/缓存/索引请求 timeout 不再直接把整个共享 root 标 offline；root probe 增加保留执行 lane，queue wait 与实际 execution 分开计时，500ms 根探测执行预算保持不变。online 健康复检不推进 generation，confirmed offline/recovering/identity change 才推进 epoch；Preview circuit breaker 仅关闭共享 preview tier。另修复 Windows 本地固定盘被误登记为 isolated root、导致本地 metadata/stat 被错误送入 Shared I/O 的问题。C-00 current 从 3 缺陷/5 对照降为 2 缺陷/6 对照；Windows C-04 影响链、Electron/Vite build、混淆、diff check、Cargo 全测试和 release build 全部通过（CI 35514640345）。下一项 C-05。
 
 - 2026-09-20：完成 C-03 Watcher 收敛与恢复去放大：索引持久化失败不再立即触发第二次 root rescan，而是按 root/current generation 保存 deferred recovery；重复无文件名 root-diff 在 deferred 期间被抑制，下一条具体健康事件只释放一次受影响路径重放，失败 root 不阻塞其他 root。持久化失败继续保留旧索引且不发布假的 `font-index:changed`，数据库事务仍由 C-02 owner 负责。新增 4096 文件收敛、多根隔离与 11 个因果 mutant 门；C-00 current 由 4 缺陷/4 对照降为 3 缺陷/5 对照，`npm run verify` 142/142、Electron/Vite build、混淆 3/3、`git diff --check`、Windows/Linux Cargo 全测试及 release build 均通过（CI 35502445436）。下一项 C-04。

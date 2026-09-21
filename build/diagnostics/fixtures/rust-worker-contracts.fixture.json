@@ -79,8 +79,8 @@
     "RustPhysicalFolderTreeInput": "c6279beb3cda75a150a05fc4d71b4cfa81695e43b9ccdb9c0a554e6abba42d1a",
     "RustPhysicalFolderTreeResult": "3a6c518782eaa35bdb21c6d97dc452a2545a95c7c68b34b20cc9fe4ce20e1f4a",
     "RustFontActivationFileCopy": "8ae081b50a80a522ebf34bdc6cd53a499b139d3ed9a1dd9a5435ef92e2bb6eaf",
-    "RustFontActivationFilesInput": "e9f31325b4ca5c2edf0f3750b869efa52f21a43621dfdc4c5973b9d8b45eaa4f",
-    "RustFontActivationFilesResult": "0924abf8c0b620934db10cdd80defa6ceee4bdd053c394e6a0344212aa169b2f",
+    "RustFontActivationFilesInput": "70f7123d30d0441d83a65146aabc20b71fd2fb75fe1f8e4ce5a9941f04005130",
+    "RustFontActivationFilesResult": "0db05a127eb0e35606c3a8c9c3b4e43ccb4acf24fe17d558d7af4621fc10b34f",
     "RustDatabaseMaintenanceFileItem": "8e76ffd3ba55b489a06b589719222ab652edbf7f6a99ed4244071b4ab2d9de36",
     "RustDatabaseHealthCheckInput": "33415c415914028b6dad8b66e0a00942e3261feb4b4857e6198906699d735da6",
     "RustDatabaseHealthCheckResult": "36f873ccc291d076227431649853dadf0634d528f857eace0d50c78db7cbe8de",
@@ -92,7 +92,8 @@
     "RustFontNotifyResult": "94f455f5f2f33e7f6b9b52a749d474f0a58e9dec9abe943f251f8b253a916c33",
     "RustPreviewRenderImageInput": "4b685cc410b08b16a684228dcf1e19ff5e3eec02082cc739b3aaa4814ce20241",
     "RustPreviewRenderImageResult": "9c09f8603373c4500dc9c3a4116c7ce52094b1a8d283e1be725610380cd70c0b",
-    "RustCoreWorkerRuntimeOptions": "86f86a0f98f515e8ff5e63da6f912bd6b1171af0e7c58768085e8d1d4b0d731f"
+    "RustCoreWorkerRuntimeOptions": "86f86a0f98f515e8ff5e63da6f912bd6b1171af0e7c58768085e8d1d4b0d731f",
+    "RustManagedActivationRegistryClaim": "9ef43d7b14ff5bd987460aec03c13783bd2963351cb04b54ea1cc033b40d76d2"
   },
   "payloadTypes": {
     "RustCoreWorkerHandshake": "5dfe78eb801492564a156a1a8a566de02bb997a17a2d91a17ae10369cff6ade1",

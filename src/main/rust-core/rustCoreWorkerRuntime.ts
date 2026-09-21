@@ -87,6 +87,7 @@ export type {
   RustPhysicalFolderTreeInput,
   RustPhysicalFolderTreeResult,
   RustFontActivationFileCopy,
+  RustManagedActivationRegistryClaim,
   RustFontActivationFilesInput,
   RustFontActivationFilesResult,
   RustDatabaseMaintenanceFileItem,

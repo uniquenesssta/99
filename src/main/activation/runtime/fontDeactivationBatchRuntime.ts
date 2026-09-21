@@ -23,7 +23,6 @@ export function createFontDeactivationBatchRuntime(
     loadTemporaryActiveFonts,
     saveTemporaryActiveFonts,
     removeFontResourceSessionBatch,
-    deleteFontRegistryValuesHKCUBatch,
     scheduleBackgroundFontRefreshTail,
     appendStartupLog,
   } = deps;
@@ -83,7 +82,7 @@ export function createFontDeactivationBatchRuntime(
         persistRecordStage: cleanupRuntime.persistRecordStage,
         persistRecordStages: cleanupRuntime.persistRecordStages,
         removeFontResourceSessionBatch,
-        deleteFontRegistryValuesHKCUBatch,
+        deleteManagedRegistryRecords: cleanupRuntime.deleteManagedRegistryRecords,
         queueTemporaryFontFileDeletes,
         appendStartupLog,
       },

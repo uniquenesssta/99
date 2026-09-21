@@ -225,6 +225,10 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'font-activation-files')) return null
     if (!hasCapability(status, 'font-activation-identity-v1')) throw new Error('请更新原生 worker：缺少托管字体身份校验能力。')
+    if ((input.registryClaims?.length || input.deleteRegistryClaims || input.requireMissing)
+      && !hasCapability(status, 'font-activation-registry-ownership-v2')) {
+      throw new Error('请更新原生 worker：缺少临时激活注册表所有权核验能力。')
+    }
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-activation-files`)
@@ -244,9 +248,11 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
       const same = (a: string, b: string) => a.replaceAll('\\', '/').toLowerCase() === b.replaceAll('\\', '/').toLowerCase()
       if ((input.copies || []).some(job => !payload.copyResults?.some(row => row.id === job.id && same(row.source, job.source) && same(row.dest, job.dest)))
         || (input.deletes || []).some(path => !payload.deleteResults?.some(row => same(row.path, path)))
-        || (input.inspects || []).some(path => !payload.inspectResults?.some(row => same(row.path, path)))) throw new SharedIoProcessError('原生字体回执与请求不匹配。', 'unknown', 'invalid-receipt')
+        || (input.inspects || []).some(path => !payload.inspectResults?.some(row => same(row.path, path)))
+        || (input.registryClaims || []).some(claim => !payload.registryResults?.some(row => row.registryName === claim.registryName && same(row.installPath, claim.installPath)))) throw new SharedIoProcessError('原生字体回执与请求不匹配。', 'unknown', 'invalid-receipt')
       const result: RustFontActivationFilesResult = {
         inspectResults: payload.inspectResults,
+        registryResults: payload.registryResults,
         ok: true,
         copied: Number(payload.copied || 0),
         reused: Number(payload.reused || 0),
@@ -257,7 +263,7 @@ export function createRustWindowsClientRuntime(options: RustWindowsClientOptions
         elapsedMs: Number(payload.elapsedMs || Date.now() - startedAt),
         workerMode: 'rust-font-activation-files',
       }
-      options.appendStartupLog(`rust font activation files finished: copied=${result.copied}, reused=${result.reused}, deleted=${result.deleted}, failed=${result.failed}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
+      options.appendStartupLog(`rust font activation files finished: copied=${result.copied}, reused=${result.reused}, deleted=${result.deleted}, registryClaims=${result.registryResults?.length || 0}, failed=${result.failed}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
       rethrowSharedIoProcessError(error)
