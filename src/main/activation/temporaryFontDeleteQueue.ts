@@ -15,6 +15,8 @@ export interface PendingTemporaryFontDeleteRecord extends TemporaryActiveFontRec
   reason: string;
   attempts: number;
   lastError?: string;
+  blockedBySharing?: boolean;
+  nextRetryAt?: string;
 }
 
 export interface TemporaryFontDeleteQueueEntry {
@@ -26,6 +28,17 @@ export type TemporaryFontDeleteQueueResult = Record<
   string,
   TemporaryFontDeleteQueueEntry
 >;
+
+const SHARING_RETRY_DELAYS_MS = [5_000, 15_000, 60_000, 5 * 60_000, 15 * 60_000] as const;
+
+export function isTemporaryFontSharingViolation(message: unknown): boolean {
+  return /\(os error 32\)/i.test(String(message || ""));
+}
+
+export function temporaryFontDeleteRetryDelayMs(attempts: number): number {
+  const index = Math.min(SHARING_RETRY_DELAYS_MS.length - 1, Math.max(0, Math.trunc(attempts) - 1));
+  return SHARING_RETRY_DELAYS_MS[index];
+}
 
 export interface TemporaryFontDeleteQueueDeps {
   appName: string;
@@ -56,7 +69,9 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
     const record = value as PendingTemporaryFontDeleteRecord | undefined;
     return !!record && isTemporaryActiveFontRecord(record) && typeof record.queuedAt === "string"
       && typeof record.reason === "string" && Number.isInteger(record.attempts) && record.attempts >= 0
-      && (record.lastError === undefined || typeof record.lastError === "string");
+      && (record.lastError === undefined || typeof record.lastError === "string")
+      && (record.blockedBySharing === undefined || typeof record.blockedBySharing === "boolean")
+      && (record.nextRetryAt === undefined || typeof record.nextRetryAt === "string");
   });
 
   const identityRuntime = createManagedActivationIdentityRuntime(deps);
@@ -96,6 +111,9 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
           queuedAt: old?.queuedAt || new Date().toISOString(),
           reason,
           attempts: old?.attempts || 0,
+          lastError: old?.lastError,
+          blockedBySharing: old?.blockedBySharing,
+          nextRetryAt: old?.nextRetryAt,
         });
       }
 
@@ -132,6 +150,7 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
     }
 
     let summary = "";
+    let nextAutomaticRetryAt = 0;
     deleteInFlight = store.update(async records => {
       const startedAt = Date.now();
       if (!records.length) return records;
@@ -139,9 +158,18 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
       const remaining: PendingTemporaryFontDeleteRecord[] = [];
       let deleted = 0;
       let skippedUnsafe = 0;
+      let sharingDeferred = 0;
+      const forceRetry = reason === "startup" || reason === "user-retry";
 
       const safeDeleteRecords: PendingTemporaryFontDeleteRecord[] = [];
       for (const record of records) {
+        const retryAt = record.nextRetryAt ? Date.parse(record.nextRetryAt) : 0;
+        if (!forceRetry && record.blockedBySharing && Number.isFinite(retryAt) && retryAt > Date.now()) {
+          sharingDeferred += 1;
+          nextAutomaticRetryAt = nextAutomaticRetryAt ? Math.min(nextAutomaticRetryAt, retryAt) : retryAt;
+          remaining.push(record);
+          continue;
+        }
         if (!isSafeTemporaryActiveFontPath(record.installPath)) {
           skippedUnsafe += 1;
           remaining.push({ ...record, lastError: "安全保护：目标不属于临时字体目录，保留记录待核验。" });
@@ -170,8 +198,17 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
             continue;
           }
           const attempts = (record.attempts || 0) + 1;
-          remaining.push({ ...record, attempts, lastError: row?.message || "未收到删除成功回执。" });
-          deps.appendStartupLog(`rust temporary font async delete failed: path=${record.installPath}, attempts=${attempts}, ${row?.message || 'unknown error'}`);
+          const message = row?.message || "未收到删除成功回执。";
+          if (isTemporaryFontSharingViolation(message)) {
+            const delayMs = temporaryFontDeleteRetryDelayMs(attempts);
+            const retryAt = Date.now() + delayMs;
+            nextAutomaticRetryAt = nextAutomaticRetryAt ? Math.min(nextAutomaticRetryAt, retryAt) : retryAt;
+            remaining.push({ ...record, attempts, lastError: message, blockedBySharing: true, nextRetryAt: new Date(retryAt).toISOString() });
+            deps.appendStartupLog(`rust temporary font delete deferred by sharing violation: path=${record.installPath}, attempts=${attempts}, retryInMs=${delayMs}`);
+          } else {
+            remaining.push({ ...record, attempts, lastError: message, blockedBySharing: false, nextRetryAt: undefined });
+            deps.appendStartupLog(`rust temporary font async delete failed: path=${record.installPath}, attempts=${attempts}, ${message}`);
+          }
         }
       } else if (!nodeBridgeFallbackCompatibilityAllowed()) {
         logNodeBridgeFallbackDisabled({
@@ -182,7 +219,7 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
         });
         for (const record of safeDeleteRecords) {
           const attempts = (record.attempts || 0) + 1;
-          remaining.push({ ...record, attempts, lastError: "原生删除不可用，未执行文件删除。" });
+          remaining.push({ ...record, attempts, lastError: "原生删除不可用，未执行文件删除。", blockedBySharing: false, nextRetryAt: undefined });
         }
       } else {
         logNodeBridgeFallbackUsed({
@@ -201,18 +238,37 @@ export function createTemporaryFontDeleteQueue(deps: TemporaryFontDeleteQueueDep
             deleted += 1;
           } catch (error) {
             const attempts = (record.attempts || 0) + 1;
-            remaining.push({ ...record, attempts, lastError: error instanceof Error ? error.message : String(error) });
-            deps.appendStartupLog(
-              `temporary font async delete failed: path=${record.installPath}, attempts=${attempts}, ${error instanceof Error ? error.message : String(error)}`,
-            );
+            const message = error instanceof Error ? error.message : String(error);
+            if (isTemporaryFontSharingViolation(message)) {
+              const delayMs = temporaryFontDeleteRetryDelayMs(attempts);
+              const retryAt = Date.now() + delayMs;
+              nextAutomaticRetryAt = nextAutomaticRetryAt ? Math.min(nextAutomaticRetryAt, retryAt) : retryAt;
+              remaining.push({ ...record, attempts, lastError: message, blockedBySharing: true, nextRetryAt: new Date(retryAt).toISOString() });
+              deps.appendStartupLog(`temporary font delete deferred by sharing violation: path=${record.installPath}, attempts=${attempts}, retryInMs=${delayMs}`);
+            } else {
+              remaining.push({ ...record, attempts, lastError: message, blockedBySharing: false, nextRetryAt: undefined });
+              deps.appendStartupLog(`temporary font async delete failed: path=${record.installPath}, attempts=${attempts}, ${message}`);
+            }
           }
           await deps.delayToEventLoop();
         }
       }
 
-      summary = `temporary font async delete flushed: reason=${reason}, deleted=${deleted}, remaining=${remaining.length}, skippedUnsafe=${skippedUnsafe}, elapsed=${Date.now() - startedAt}ms`;
+      summary = `temporary font async delete flushed: reason=${reason}, deleted=${deleted}, remaining=${remaining.length}, sharingDeferred=${sharingDeferred}, skippedUnsafe=${skippedUnsafe}, elapsed=${Date.now() - startedAt}ms`;
       return remaining;
-    }).then(() => { if (summary) deps.appendStartupLog(summary); }).finally(() => {
+    }).then(() => {
+      if (summary) deps.appendStartupLog(summary);
+      if (nextAutomaticRetryAt > Date.now() && !deleteTimer) {
+        const delayMs = Math.max(1_000, nextAutomaticRetryAt - Date.now());
+        deleteTimer = setTimeout(() => {
+          deleteTimer = null;
+          void flushPendingTemporaryFontDeletes("sharing-backoff").catch(error => {
+            deps.appendStartupLog(`temporary font sharing-backoff retry failed: ${String(error)}`);
+          });
+        }, delayMs);
+        if (typeof deleteTimer.unref === "function") deleteTimer.unref();
+      }
+    }).finally(() => {
       deleteInFlight = null;
     });
 

@@ -91,7 +91,7 @@ export function createFontActivationRuntime(deps: FontActivationRuntimeDeps) {
   }
   const remnants = createFontCleanupRemnantsRuntime(deps, cleanupRuntime, async () => {
     await cleanupTemporaryActiveFontsUntilEmpty('manual', 1);
-    await cleanupRuntime.flushPendingTemporaryFontDeletes('manual');
+    await cleanupRuntime.flushPendingTemporaryFontDeletes('user-retry');
   });
   return {
     readFontCleanupRemnants: remnants.readFontCleanupRemnants,

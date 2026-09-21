@@ -412,6 +412,17 @@ flowchart TD
 - Windows regression CI `35590647591` 全绿：TypeScript、activation-entry、font-command-entry、managed activation recovery、C-05 deactivation settlement scope、Electron/Vite build、混淆及 `git diff --check` 全部通过。生产 Rust/C-05 ownership 协议未改。
 - 本项仍要求用户在 Windows 实机重新执行“激活 → 取消激活 → 再激活”确认。实机回执前 **C-06 继续暂停**；`os error 32` 临时字体文件占用作为下一独立原子修复处理。
 
+#### C-05.2 C-05R：Windows 占用文件退避回收
+
+状态：自动门完成（2026-09-21）；Windows 实机最终观察保留，C-06 暂不推进。
+
+- 实机根因不是 C-05 ownership 失败，而是 Windows 已释放 resource/registry 后，受管临时字体文件仍可能短时间被其他进程持有，Rust 删除返回 `os error 32`；旧队列在后续 flush 中会持续再次触碰同一文件，形成无收益的重复删除与日志噪声。
+- `pending-temporary-font-deletes.json` 记录新增 `blockedBySharing` / `nextRetryAt`；sharing violation 自动退避固定为 5 秒 → 15 秒 → 60 秒 → 5 分钟 → 15 分钟封顶。冷却窗口内普通自动 flush 只保留记录，不再次调用 native delete。
+- `startup` 与用户显式“重试清理”属于 force retry，可绕过当前 backoff；成功删除后 durable record 正常移除。非 sharing 错误不伪装成占用错误，继续保留原失败语义。
+- 每次真正删除前仍执行 C-05 的 managed path、session record 与 file identity 核验；未放宽 registry/file ownership，未改 Renderer stale-installed 激活入口修复，也未引入管理员权限或 `MOVEFILE_DELAY_UNTIL_REBOOT` 依赖。
+- Windows C-05R locked-file verification `35591586994` 全绿：TypeScript、activation-entry、managed recovery（新增 sharing violation durable backoff / repeated flush / user retry / startup recovery 场景）、C-05 batch settlement、Electron/Vite build、混淆与 diff check 均通过。
+- 本项自动门收口后仍保留实机观察项：执行“激活 → 取消激活 → 再激活”，并确认被 Windows 暂时占用的 `*_ACTIVE_*` 文件不会形成快速重试风暴，释放占用后可由后台/启动/用户重试最终回收。
+
 ### C-06 退出结果三轴语义
 
 状态：未开始；必须等 C-05，避免在清理本身坏掉时定义假状态。

@@ -14,6 +14,8 @@
 
 > 新实机修复入口：[索引访问、共享 I/O、激活清理与退出一致性修复任务书](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)。C-00～C-05 阶段代码已完成；C-05 ownership 合同 Windows CI 35567035211 全绿。随后实机发现 Renderer stale install state 会把未激活字体提前过滤成 0 target，导致“激活”按钮可见但不发送主进程 IPC；该入口回归已修并通过 Windows regression CI 35590647591，Rust ownership 协议未改。当前等待 Windows 实机复验“激活 → 取消激活 → 再激活”，并将 `os error 32` 临时字体文件占用作为下一独立原子修复；C-06 继续暂停，O-07 继续暂停。
 
+> 2026-09-21 C-05R Windows sharing violation 回归已通过自动门：临时字体文件删除遇到 `os error 32` 后进入 durable backoff，普通 flush 在冷却期不重复触碰文件，startup/用户显式重试仍可立即尝试；C-05 ownership 与已修复的激活入口保持不变。Windows locked-file verification `35591586994` 的 typecheck、activation-entry、managed recovery、C-05 settlement、Electron/Vite build、混淆与 diff check 全绿。C-06 继续暂停，先完成实机“激活 → 取消 → 再激活”和占用文件最终回收观察。
+
 ## 0. 文档状态
 
 - 文档版本：1.52

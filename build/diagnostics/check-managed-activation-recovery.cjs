@@ -120,6 +120,36 @@ async function main() {
    await panel.runFontCleanupAction({action:'dismiss-missing',key:missing.key,windowsRestarted:true})
    assert.equal((await store.loadTemporaryActiveFonts()).records.length,0)
    cases.push('manual terminal action requires restart acknowledgement and native-confirmed missing file plus registry; no delete side effect')
+   const sharingDataDir=path.join(directory,'sharing-delete-data');await fsp.mkdir(sharingDataDir,{recursive:true})
+   const sharingSession='sharing-session', sharingPath=path.join(fontsDir,`HFM_ACTIVE_sharing_${sharingSession}.ttf`)
+   await fsp.writeFile(sharingPath,'sharing locked font')
+   const sharingRecord={...old,fontId:'sharing',fileName:'sharing.ttf',installPath:sharingPath,registryName:`Sharing Font (TrueType) [${sharingSession}]`,sessionId:sharingSession,identity:await nativeIdentity(sharingPath),stage:'file-pending'}
+   let sharingDeleteCalls=0, sharingMode='blocked'
+   const sharingQueue=load('src/main/activation/temporaryFontDeleteQueue.ts').createTemporaryFontDeleteQueue({
+     appName:'HFM',dataRoot:()=>sharingDataDir,dataPath:n=>path.join(sharingDataDir,n),currentUserFontsDir:()=>fontsDir,
+     withGlobalIo:(_,action)=>action(),delayToEventLoop:async()=>{},appendStartupLog(){},flushDelayMs:60_000,
+     runRustFontActivationFiles:async input=>{
+       if(!(input.deletes||[]).length)return {ok:true,copyResults:[],deleteResults:[],inspectResults:[],registryResults:[],copied:0,reused:0,deleted:0,failed:0}
+       sharingDeleteCalls+=1
+       if(sharingMode==='blocked')return {ok:true,copyResults:[],inspectResults:[],registryResults:[],deleted:0,copied:0,reused:0,failed:input.deletes.length,
+         deleteResults:input.deletes.map(p=>({path:p,ok:false,message:'另一个程序正在使用此文件，进程无法访问。 (os error 32)'}))}
+       for(const p of input.deletes)await fsp.unlink(p)
+       return {ok:true,copyResults:[],inspectResults:[],registryResults:[],copied:0,reused:0,deleted:input.deletes.length,failed:0,
+         deleteResults:input.deletes.map(p=>({path:p,ok:true,message:'ok'}))}
+     }
+   })
+   assert((await sharingQueue.queueTemporaryFontFileDeletes([sharingRecord],'sharing-test'))[sharingPath].ok)
+   await sharingQueue.flushPendingTemporaryFontDeletes('sharing-first')
+   let sharingPending=await sharingQueue.loadPendingTemporaryFontDeletes()
+   assert.equal(sharingDeleteCalls,1);assert.equal(sharingPending.length,1);assert.equal(sharingPending[0].blockedBySharing,true)
+   assert(Date.parse(sharingPending[0].nextRetryAt)>Date.now());assert.equal(sharingPending[0].attempts,1)
+   await sharingQueue.flushPendingTemporaryFontDeletes('sharing-repeat')
+   sharingPending=await sharingQueue.loadPendingTemporaryFontDeletes();assert.equal(sharingDeleteCalls,1);assert.equal(sharingPending[0].attempts,1)
+   await sharingQueue.flushPendingTemporaryFontDeletes('user-retry')
+   sharingPending=await sharingQueue.loadPendingTemporaryFontDeletes();assert.equal(sharingDeleteCalls,2);assert.equal(sharingPending[0].attempts,2)
+   sharingMode='success';await sharingQueue.flushPendingTemporaryFontDeletes('startup')
+   assert.equal(sharingDeleteCalls,3);assert.equal((await sharingQueue.loadPendingTemporaryFontDeletes()).length,0);assert.equal(fs.existsSync(sharingPath),false)
+   cases.push('Windows sharing violation enters durable backoff; repeated automatic flushes do not spin, user/startup retry remains available')
    const journalPath=path.join(dataDir,'pending-font-activation-compensations.json');await fsp.writeFile(journalPath,'{corrupt')
    offline=false;const blocked=await font('blocked');const filesBefore=await fsp.readdir(fontsDir);await assert.rejects(session.activateFontSession(blocked),/JSON/);assert.deepEqual(await fsp.readdir(fontsDir),filesBefore);assert.equal(await fsp.readFile(journalPath,'utf8'),'{corrupt')
    cases.push('corrupt intent storage refuses activation before copy/registry/resource side effects')
