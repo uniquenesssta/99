@@ -2,7 +2,6 @@ import { activationEntryTrace, reportActivationResult, reportActivationTargets }
 import { reportFontOperation } from '../../../fontOperationTrace'
 import type { FontItem } from '@shared/types'
 import { fontDisplayName,isCleanWindowsDefaultFont,isInstalled,libraryWithMergedFonts } from '../../../appRuntime'
-import { batchActivationCandidates } from '../../../fontSelectionRuntime'
 import type { FontSystemActionRuntimeOptions,FontSystemStateRuntime } from './fontSystemActionTypes'
 
 export function createFontActivationActionRuntime(
@@ -72,17 +71,23 @@ export function createFontActivationActionRuntime(
     }
 
     const unique = Array.from(new Map(fonts.map((font) => [font.id, (options.getCurrentLibrary?.() || options.library).fonts[font.id] || font])).values())
-    const targets = batchActivationCandidates(unique).filter((font) => !options.activeOperationFontIds.current.has(font.id))
-    const skippedInstalled = unique.filter((font) => isInstalled(font) && !isCleanWindowsDefaultFont(font)).length
+    // Renderer install state is advisory and can lag behind deactivation cleanup.
+    // Admission only excludes states the renderer owns authoritatively; main owns the fresh installed decision.
+    const targets = unique.filter((font) =>
+      !font.active
+      && !isCleanWindowsDefaultFont(font)
+      && !options.activeOperationFontIds.current.has(font.id)
+    )
+    const installedHint = unique.filter((font) => isInstalled(font) && !isCleanWindowsDefaultFont(font)).length
     const skippedSystem = unique.filter(isCleanWindowsDefaultFont).length
     const skippedActive = unique.filter((font) => font.active).length
     const skippedBusy = unique.filter((font) => options.activeOperationFontIds.current.has(font.id)).length
 
     reportActivationTargets(trace, targets)
-    reportFontOperation({ trace, stage: 'filter', reason: `installed:${skippedInstalled}.system:${skippedSystem}.active:${skippedActive}.busy:${skippedBusy}` })
+    reportFontOperation({ trace, stage: 'filter', reason: `installedHint:${installedHint}.system:${skippedSystem}.active:${skippedActive}.busy:${skippedBusy}` })
     if (!targets.length) {
       reportFontOperation({ trace, stage: 'preflight', outcome: 'all-skipped' })
-      options.setStatus(`${label} 没有需要临时激活的字体。已安装 ${skippedInstalled} 个，受保护 ${skippedSystem} 个，已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
+      options.setStatus(`${label} 没有需要临时激活的字体。受保护 ${skippedSystem} 个，已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
       return
     }
 
@@ -106,6 +111,7 @@ export function createFontActivationActionRuntime(
         reportFontOperation({ trace, stage: 'dispatch', transport: 'batch-ipc' })
         const result = await options.hfm.activateFonts(targets, trace)
         reportActivationResult(trace, targets, result.results || {})
+        const confirmedInstalled = Number(result.skippedInstalled || 0)
         const finalUpdates: Record<string, { active: boolean; patch?: Partial<FontItem> }> = {}
         let rollback = 0
         for (const font of targets) {
@@ -127,7 +133,7 @@ export function createFontActivationActionRuntime(
         stateRuntime.setFontsActiveRuntimeBulk(finalUpdates)
         if (rollback) stateRuntime.adjustDatabaseActiveCount(-rollback)
         reportFontOperation({ trace, stage: 'view-apply', outcome: 'state-updated' })
-        options.setStatus(`${result.message} 已确认临时激活 ${targets.length - rollback} 个，未临时激活或未确认 ${rollback} 个；跳过已安装 ${skippedInstalled} 个，受保护 ${skippedSystem} 个，已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
+        options.setStatus(`${result.message} 已确认临时激活 ${targets.length - rollback} 个，未临时激活或未确认 ${rollback} 个；主进程确认已安装 ${confirmedInstalled} 个，受保护 ${skippedSystem} 个，已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
       } catch (error) {
         const rollbackUpdates = Object.fromEntries(targets.map((font) => [font.id, { active: false }])) as Record<string, { active: boolean; patch?: Partial<FontItem> }>
         stateRuntime.setFontsActiveRuntimeBulk(rollbackUpdates)
@@ -177,7 +183,7 @@ export function createFontActivationActionRuntime(
 
     reportFontOperation({ trace, stage: 'operation-result', outcome: failed ? 'unconfirmed' : 'returned', reason: `activated:${activated}.failed:${failed}.skipped:${skippedInstalledFresh}` })
     reportFontOperation({ trace, stage: 'view-apply', outcome: 'state-updated' })
-    options.setStatus(`批量激活完成：${label} 已激活 ${activated} 个，失败 ${failed} 个，跳过已安装 ${skippedInstalled + skippedInstalledFresh} 个，跳过受保护 ${skippedSystem} 个，跳过已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
+    options.setStatus(`批量激活完成：${label} 已激活 ${activated} 个，失败 ${failed} 个，主进程确认已安装 ${skippedInstalledFresh} 个，跳过受保护 ${skippedSystem} 个，跳过已激活 ${skippedActive} 个，处理中 ${skippedBusy} 个。`)
   }
 
   async function deactivateFontByCard(font: FontItem): Promise<void> {

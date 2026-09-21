@@ -22,10 +22,10 @@ function loadModules(globals, mocks, transforms = {}) {
     file = path.resolve(root, file)
     if (mocks[file]) return mocks[file]
     if (cache.has(file)) return cache.get(file).exports
-    if (file.endsWith('/appRuntime.ts')) return { ...load(renderer+'fontDisplay.ts'), ...load(renderer+'fontClassification.ts'), ...load(renderer+'libraryNormalize.ts'), IS_DEVELOPMENT:false }
+    if (file.replaceAll('\\','/').endsWith('/appRuntime.ts')) return { ...load(renderer+'fontDisplay.ts'), ...load(renderer+'fontClassification.ts'), ...load(renderer+'libraryNormalize.ts'), IS_DEVELOPMENT:false }
     const module = { exports:{} }; cache.set(file,module)
     let source = fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n')
-    if (file.endsWith('/environmentConstants.ts')) source=source.replace('(import.meta as unknown as { env?: { DEV?: boolean; PROD?: boolean } }).env', '({DEV:false,PROD:true})')
+    if (file.replaceAll('\\','/').endsWith('/environmentConstants.ts')) source=source.replace('(import.meta as unknown as { env?: { DEV?: boolean; PROD?: boolean } }).env', '({DEV:false,PROD:true})')
     if (transforms[file]) source = transforms[file](source)
     const code = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText
     const req = id => {
@@ -167,7 +167,14 @@ async function run() {
   for(const mode of ['partial','reject']) {
     const h=harness({mode});h.marquee();await h.click('detail');assert.equal(h.busy.size,0);assert.equal(h.count,mode==='partial'?2:0);assert.equal(h.library.fonts.b.active,false);assert(h.events.some(e=>e.outcome===(mode==='partial'?'partial-failure':'unknown')));cases++
   }
-  const skipped=harness();skipped.library.fonts.a.systemInstalled=true;skipped.library.fonts.b.active=true;skipped.busy.add('c');skipped.marquee();await skipped.click('detail');assert.equal(skipped.requests.length,0);assert(skipped.events.some(e=>e.outcome==='all-skipped'));assert(skipped.events.some(e=>e.reason==='installed:1.system:0.active:1.busy:1'));cases++
+  // Renderer install state may be stale after deactivation: it must still dispatch the inactive item so main can decide.
+  const skipped=harness();skipped.library.fonts.a.systemInstalled=true;skipped.library.fonts.b.active=true;skipped.busy.add('c');skipped.marquee();await skipped.click('detail');assert.deepEqual(plain(skipped.requests),[['a']]);assert(skipped.events.some(e=>e.reason==='installedHint:1.system:0.active:1.busy:1'));assert.equal(skipped.library.fonts.a.active,true);cases++
+  {
+    const file=path.join(root,renderer+'runtime/system/actions/fontActivationActionRuntime.ts')
+    const broken=harness({transforms:{[file]:source=>source.replace('!font.active\n      && !isCleanWindowsDefaultFont(font)', '!font.active\n      && !isInstalled(font)\n      && !isCleanWindowsDefaultFont(font)')}})
+    broken.library.fonts.a.systemInstalled=true;broken.select().setSelectedFontIds(['a']);await broken.click('detail')
+    assert.throws(()=>assert.deepEqual(plain(broken.requests),[['a']]),assert.AssertionError);cases++
+  }
   const crossing=harness({cache:[]});crossing.card('a',{ctrlKey:true});crossing.setVisible(crossing.all.slice(1));crossing.card('c',{ctrlKey:true});await crossing.click('detail');assert.deepEqual(plain(crossing.requests),[['a','c']]);cases++
   const stale=harness();stale.card('a',{ctrlKey:true});stale.card('b',{ctrlKey:true});stale.select().setSelectedFontIds(['b','c']);await stale.click('detail');assert.deepEqual(plain(stale.requests),[['b','c']]);cases++
   const logging=harness({throwLog:true});logging.marquee();await logging.click('detail');assert.deepEqual(plain(logging.requests),[['a','b','c']]);assert.equal(logging.count,3);cases++

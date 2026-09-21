@@ -366,7 +366,7 @@ flowchart TD
 
 ### C-05 修复临时激活清理所有权合同
 
-状态：已完成（2026-09-21）。
+状态：已完成（2026-09-21）；同日发现激活入口实机回归，代码修复与 Windows 自动门已通过，实机复验待确认，C-06 暂停。
 
 候选范围：
 
@@ -402,6 +402,15 @@ flowchart TD
 - Windows C-05 verification `35567035211` 全绿：TypeScript、managed activation recovery 10 cases、C-05 batch settlement、A2～A8 activation transaction/compensation、save queue durability、Rust contracts/clients/transport、orchestration contracts、`c00_activation_cleanup_contract`、Cargo 全测试、Electron/Vite build、混淆、diff check 与 release build 全部通过。
 - transport fixture 仅在 non-trace outcome 完全不变的前提下刷新 C-05 导致的 8 个 activation trace 与 2 个 lifecycle sequence trace；未重录无关基线，也未弱化 mutant/ownership 门。
 - `local-activation-baseline` 继续以 observer 身份报告旧基线中的 5 observed defects / 4 controls；其中跨阶段剩余项不在 C-05 冒充已修。C-05 只正式关闭临时激活清理所有权合同，C-06 退出结果语义为下一项。
+
+#### C-05.2 实机回归：stale install state 截断激活入口
+
+- 当前 Windows 实机日志已确认 C-05 v2 worker 正常加载，停用时 ownership registry claim、`RemoveFontResourceEx` 与 registry settlement 能执行；另有两个受管字体文件因 Windows `os error 32` 长时间占用而无法物理删除，该问题独立保留，不与本次入口修复混合。
+- 实机“点击激活但主进程无 copy / registry write / AddFontResourceEx”根因位于 Renderer admission：统一菜单显示“激活”，但 `activateFontsBatch()` 又调用 `batchActivationCandidates()`，把 `isInstalled=true` 的未激活字体提前过滤为 0 target。取消激活后 install-status 可能短暂保留旧提示，因此按钮可见但 `fonts:activateFonts` IPC 根本不会发送。
+- 修复后 Renderer 的 install state 只作为提示，不再拥有激活 admission。Renderer 只排除明确 `active`、Windows 默认受保护字体和 busy 项；所有其余未激活字体都发送到 main，永久安装与否由 main 的 `activateFontSessionTransaction()` 依据权威 install-status 决定，仍保留 `already-installed` 安全分支。
+- `diagnostics:activation-entry` 新增 stale `systemInstalled=true` 正例：未激活字体必须仍发送到 main；重新加入 Renderer `!isInstalled(font)` 过滤的 mutant 必须失败。诊断同时直接兼容 Windows 路径，不依赖运行前改写测试文件。
+- Windows regression CI `35590647591` 全绿：TypeScript、activation-entry、font-command-entry、managed activation recovery、C-05 deactivation settlement scope、Electron/Vite build、混淆及 `git diff --check` 全部通过。生产 Rust/C-05 ownership 协议未改。
+- 本项仍要求用户在 Windows 实机重新执行“激活 → 取消激活 → 再激活”确认。实机回执前 **C-06 继续暂停**；`os error 32` 临时字体文件占用作为下一独立原子修复处理。
 
 ### C-06 退出结果三轴语义
 
@@ -517,7 +526,7 @@ flowchart TD
 
 ## 9. 当前结论与下一执行入口
 
-C-00～C-04 已完成，但本书整体仍然**不代表问题已全部修复**。
+C-00～C-05 的阶段代码已完成，但 C-05 实机回归复验尚未收口，因此本书整体仍然**不代表问题已全部修复**。
 
 当前执行顺序固定为：
 
@@ -527,11 +536,12 @@ C-00 基线（完成）
 → C-02 局域网 root index 原生事务（完成）
 → C-03 watcher 收敛（完成）
 → C-04 offline 证据（完成）
-→ C-05 激活清理合同（完成）
-→ C-06 退出结果语义（下一项）
+→ C-05 激活清理合同（完成；入口回归自动门通过，实机复验待确认）
+→ C-05R 临时字体文件占用 / os error 32（下一独立原子修复）
+→ C-06 退出结果语义（暂停）
 → C-07 renderer closing
 → C-08 Shared I/O 性能
 → C-09 Windows/NAS 总验收
 ```
 
-C-05 已完成，C-06 现在是下一执行入口；C-08 仍须等 C-01～C-07 全部硬门通过。C-05 已关闭临时激活清理所有权合同，但 O-04/O-05 的 Windows/NAS 总体验收仍由 C-09 统一收口；在 C-07 通过前，上轮退出 IPC 噪声修复仍只能记为自动门通过、实机未通过。
+当前执行入口仍属于 C-05 实机回归闭环：先复验“激活 → 取消激活 → 再激活”，随后独立处理 `os error 32` 文件占用。C-06 在上述实机链确认前暂停；C-08 仍须等 C-01～C-07 全部硬门通过。

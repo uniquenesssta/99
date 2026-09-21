@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-21：修复 C-05 收尾后的实机激活入口回归：Renderer 曾把 `systemInstalled/isInstalled` 的缓存状态当成激活 admission，导致取消激活后状态尚未刷新时“激活”按钮仍显示，但目标被过滤成 0、完全不发送 `fonts:activateFonts`。现仅由 Renderer 排除明确 active、Windows 默认受保护字体和 busy 项，是否永久安装统一交由 main `activateFontSessionTransaction()` 权威判断；C-05 Rust ownership 协议未改。新增 stale-installed 正例与重新加入 `!isInstalled` 的退化反例，Windows typecheck、activation/font-command、managed recovery、C-05 deactivation settlement、Electron/Vite build、混淆和 diff check 通过（CI 35590647591）。当前等待实机复验“激活 → 取消激活 → 再激活”；临时字体文件 `os error 32` 占用另列下一原子修复，C-06 暂停。
+
 - 2026-09-21：完成 C-05 临时激活清理所有权合同：durable activation record 以真实 `registryName` + `installPath` + `sessionId` + 文件 identity 证明所有权，Rust 删除 HKCU Fonts value 前再次核验其精确指向受管 `installPath`，legacy `registryExpectations` fail closed；单项、批量、退出 cleanup、启动 recovery 统一走同一验证协议，清理不访问 NAS `sourcePath`。Windows C-05 影响链、10 个 managed recovery cases、A2～A8、Rust contracts/clients/transport、原生 `c00_activation_cleanup_contract`、Cargo 全测试、Electron/Vite build、混淆、diff check 与 release build 全部通过（CI 35567035211）；transport fixture 仅在 non-trace outcome 不变前提下刷新 8 个 activation trace 与 2 个 lifecycle sequence trace。下一项 C-06。
 
 
