@@ -158,7 +158,7 @@
         "runRustMergedIndexPageQuery": "7ddb774216cf3663057260dd7018c1a13c8f46ffe0c421ff1b8007dc19cb7364",
         "runRustRootIndexApplyChanges": "1269933b52379c2b8adf242be1f96048ff06cff0f48773cb3fa43c40d5ae6ee7",
         "runRustFontParseBatch": "71a72816176adade0c673c66916c35c0a11595f8a05e60411c54077e0a49428d",
-        "runRustFontIndexListWorker": "2e16375894d6c5d59daec347001e29634ef70743d640d785fece72feb2d0c75b",
+        "runRustFontIndexListWorker": "260bfcf3ce7ac3ee9ee9c95229218f7c40791375fd2961321e63eb6b735c7b27",
         "normalizeRustParseBatchJob": "9d6df67524c061bc5e2723253fe8efd9eb6871b49972918a03cdd8f3a996ee73",
         "statFromRustFile": "35415cd340f9b4be989486e1c4e3bb8e13941a35b99d1b521dd8b9100ffe268b",
         "normalizeFamilyHint": "e659a53fbb5b687c55dfe60709dd5897405a0a9fa833f7d185f9da5ae9d34c96",
