@@ -54,7 +54,8 @@ async function main() {
    const first=await client.runRustSharedMetadataSignature({dbPath:'\\\\nas\\share\\metadata.sqlite'})
    assert.equal(first.signature,payload.signature);assert.equal(submissions.length,1,'production client did not reach isolated process');assert.equal(daemonCalls.length,0)
    assert.equal(submissions[0].options.shell,false)
-   cases.push('real client -> transport -> child -> receipt; daemon is bypassed')
+   assert(logs.some(line=>line.includes('shared io started:')&&line.includes('label=shared-metadata-signature')),'shared I/O command label was not observable')
+   cases.push('real client -> transport -> child -> receipt; daemon is bypassed; command label observable')
    const localBefore=daemonCalls.length
    await client.runRustSharedMetadataSignature({dbPath:path.join(dir,'local.sqlite')})
    assert.equal(daemonCalls.length,localBefore+1)

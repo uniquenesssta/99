@@ -6,6 +6,7 @@ export type SharedIoProcessRequest = {
   args: string[]
   roots: string[]
   timeoutMs: number
+  label?: string
   lane?: 'default' | 'root-probe'
   queueTimeoutMs?: number
   maxBuffer?: number
@@ -29,6 +30,17 @@ export function rethrowSharedIoProcessError(error: unknown): void {
   if (error && typeof error === 'object' && (error as SharedIoProcessError).sharedIo === true) throw error
 }
 type Result = { stdout: string; stderr: string; queuedMs: number; executionMs: number }
+export type SharedIoProcessMetricRow = {
+  requests: number
+  accepted: number
+  started: number
+  completed: number
+  failed: number
+  closed: number
+}
+export type SharedIoProcessMetrics = SharedIoProcessMetricRow & {
+  byLabel: Record<string, SharedIoProcessMetricRow>
+}
 type Job = {
   id: number
   request: SharedIoProcessRequest
@@ -51,8 +63,27 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   const active = new Set<Job>()
   const queue: Job[] = []
   const idleWaiters: Array<() => void> = []
+  const metricTotals: SharedIoProcessMetricRow = { requests: 0, accepted: 0, started: 0, completed: 0, failed: 0, closed: 0 }
+  const metricByLabel = new Map<string, SharedIoProcessMetricRow>()
   let closed = false, nextId = 0
   const log = (message: string) => { try { appendLog(message) } catch { /* Diagnostics cannot alter settlement. */ } }
+  const requestLabel = (request: SharedIoProcessRequest) => String(request.label || request.args[0] || 'unknown').slice(0, 120)
+  const metricRow = (label: string) => {
+    let row = metricByLabel.get(label)
+    if (!row) {
+      row = { requests: 0, accepted: 0, started: 0, completed: 0, failed: 0, closed: 0 }
+      metricByLabel.set(label, row)
+    }
+    return row
+  }
+  const count = (request: SharedIoProcessRequest, field: keyof SharedIoProcessMetricRow) => {
+    metricTotals[field] += 1
+    metricRow(requestLabel(request))[field] += 1
+  }
+  const snapshotMetrics = (): SharedIoProcessMetrics => ({
+    ...metricTotals,
+    byLabel: Object.fromEntries([...metricByLabel].sort(([a], [b]) => a.localeCompare(b)).map(([label, row]) => [label, { ...row }])),
+  })
   const laneOf = (job: Job) => job.request.lane || 'default'
   const timingOf = (job: Job) => {
     const current = Date.now()
@@ -85,6 +116,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     job.settled = true
     detach(job)
     if (error) {
+      count(job.request, 'failed')
       if (error instanceof SharedIoProcessError) {
         error.closed = job.whenClosed
         const timing = timingOf(job)
@@ -93,7 +125,10 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       }
       job.reject(error)
     }
-    else job.resolve(result!)
+    else {
+      count(job.request, 'completed')
+      job.resolve(result!)
+    }
   }
   function cancel(job: Job, reason: string): void {
     if (job.settled) return
@@ -138,9 +173,10 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       job.child = child as ChildProcessWithoutNullStreams
       job.startedAt = Date.now()
       active.add(job)
+      count(request, 'started')
       child.stdin.on('error', () => cancel(job, 'stdin-error'))
       child.stdin.end()
-      log(`shared io started: request=${job.id}, pid=${child.pid}, lane=${request.lane || 'default'}, roots=${request.roots.length}, queuedMs=${job.startedAt - job.enqueuedAt}, write=${request.write}`)
+      log(`shared io started: request=${job.id}, pid=${child.pid}, label=${requestLabel(request)}, lane=${request.lane || 'default'}, roots=${request.roots.length}, queuedMs=${job.startedAt - job.enqueuedAt}, write=${request.write}`)
       child.stdout.setEncoding('utf8')
       child.stderr.setEncoding('utf8')
       const collect = (kind: 'stdout' | 'stderr', chunk: string) => {
@@ -156,12 +192,13 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       child.once('close', (code, signal) => {
         if (job.killTimer) clearTimeout(job.killTimer)
         active.delete(job)
+        count(request, 'closed')
         release(job)
         if (!job.settled) {
           if (code === 0) settle(job, { stdout, stderr, ...timingOf(job) })
           else settle(job, undefined, new SharedIoProcessError(`Shared I/O process failed: code=${code}, signal=${signal}`, 'unknown', 'process-exit'))
         }
-        log(`shared io closed: request=${job.id}, pid=${child.pid}, code=${code}, signal=${signal}, active=${active.size}`)
+        log(`shared io closed: request=${job.id}, pid=${child.pid}, label=${requestLabel(request)}, code=${code}, signal=${signal}, active=${active.size}, startedTotal=${metricTotals.started}, closedTotal=${metricTotals.closed}`)
         drain()
       })
       job.timer = setTimeout(() => cancel(job, 'timeout'), Math.max(1, request.timeoutMs))
@@ -173,7 +210,9 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   }
   function run(request: SharedIoProcessRequest): Promise<Result> {
     request = { ...request, args: [...request.args], roots: [...new Set(request.roots)], env: request.env ? { ...request.env } : undefined }
+    count(request, 'requests')
     const reject = (message: string, reason: string) => {
+      count(request, 'failed')
       try { request.onClose?.() } catch (error) { log(`shared io cleanup failed: ${String(error)}`) }
       return Promise.reject(new SharedIoProcessError(message, 'not-started', reason))
     }
@@ -183,6 +222,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     const queuedInLane = queue.filter(job => laneOf(job) === requestLane).length
     if (requestLane === 'default' && queuedInLane >= 128) return reject('Shared I/O queue full', 'queue-full')
     if (requestLane === 'root-probe' && queuedInLane >= 8) return reject('Shared root probe queue full', 'queue-full')
+    count(request, 'accepted')
     return new Promise((resolve, reject) => {
       let close!: () => void
       const whenClosed = new Promise<void>(resolve => { close = resolve })
@@ -213,6 +253,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       activeDefault: [...active].filter(job => laneOf(job) === 'default').length,
       activeRootProbe: [...active].filter(job => laneOf(job) === 'root-probe').length,
       pids: [...active].map(job => job.child?.pid).filter(Boolean),
+      metrics: snapshotMetrics(),
     }),
   }
 }

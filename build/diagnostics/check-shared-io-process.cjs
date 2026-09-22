@@ -17,9 +17,10 @@ async function main(){
  const run=(code,roots=['a'],extras={})=>runtime.run({file:process.execPath,args:['-e',code],roots,timeoutMs:3000,write:false,...extras})
  const hang=ready=>`require('node:fs').writeFileSync(${JSON.stringify(ready)},'ready');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)`
  try{
-  const out=await run("const b=Buffer.from('中文🌟');process.stdout.write(b.subarray(0,2));setTimeout(()=>process.stdout.end(b.subarray(2)),20)")
+  const out=await run("const b=Buffer.from('中文🌟');process.stdout.write(b.subarray(0,2));setTimeout(()=>process.stdout.end(b.subarray(2)),20)",['a'],{label:'c08:utf8'})
   assert.equal(out.stdout,'中文🌟');assert.equal(runtime.status().active,0)
-  completed.push('real process success, UTF-8 boundaries, close before slot release')
+  const firstMetrics=runtime.status().metrics;assert.equal(firstMetrics.byLabel['c08:utf8'].requests,1);assert.equal(firstMetrics.byLabel['c08:utf8'].started,1);assert.equal(firstMetrics.byLabel['c08:utf8'].completed,1);assert.equal(firstMetrics.byLabel['c08:utf8'].closed,1)
+  completed.push('real process success, UTF-8 boundaries, close before slot release, command metrics')
   const ready=path.join(dir,'hung');const h=run(hang(ready),['bad'],{timeoutMs:1000}).catch(e=>e)
   await until(()=>fs.existsSync(ready))
   const healthy=run("setTimeout(()=>console.log('healthy'),100)",['good']);assert.equal(runtime.status().active,2);const control=await healthy;assert.equal(control.stdout.trim(),'healthy')
@@ -63,6 +64,7 @@ async function main(){
   runtime.stop();assert.equal((await run('').catch(e=>e)).outcome,'not-started')
   completed.push('late result discarded, stop closes admission')
  }finally{runtime.stop();await runtime.whenIdle();clearTimeout(watchdog);await fsp.rm(dir,{recursive:true,force:true})}
- console.log(JSON.stringify({passed:completed.length,cases:completed,crlf,remaining:runtime.status()}))
+ const finalStatus=runtime.status();assert.equal(finalStatus.metrics.started,finalStatus.metrics.closed,'started child process count did not converge to closed');assert.equal(finalStatus.pids.length,0);assert.equal(finalStatus.active,0);assert.equal(finalStatus.queued,0)
+ console.log(JSON.stringify({passed:completed.length,cases:completed,crlf,remaining:finalStatus}))
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

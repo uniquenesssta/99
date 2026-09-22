@@ -158,6 +158,18 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     options.appendStartupLog(`rust preview cache ${label} failed: ${message}${suppressedText}; Node fallback remains active`)
   }
 
+  function sharedIoRequestLabel(args: string[]): string {
+    const command = String(args[0] || 'unknown').replace(/^--/, '') || 'unknown'
+    if (command !== 'shared-file-io') return command
+    const inputIndex = args.indexOf('--input')
+    const inputPath = inputIndex >= 0 ? args[inputIndex + 1] : ''
+    const input = inputPath ? temporaryFiles.get(inputPath)?.input : undefined
+    const operation = input && typeof input === 'object' && !Array.isArray(input)
+      ? String((input as { operation?: unknown }).operation || 'unknown')
+      : 'unknown'
+    return `shared-file-io:${operation}`
+  }
+
   async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
     assertLocalShutdownWorkAllowed()
     if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
@@ -189,7 +201,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
-      const result = await sharedIo.run({ file: workerPath, args, roots, write: target!.write,
+      const result = await sharedIo.run({ file: workerPath, args, roots, write: target!.write, label: sharedIoRequestLabel(args),
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(error => {
           if (error.reason === 'timeout') for (const root of rootGenerations.keys()) markStartupPathRootUnavailable(root,error,options.appendStartupLog,'isolated-io-timeout')

@@ -490,7 +490,7 @@ flowchart TD
 
 ### C-08 Shared I/O 批处理与执行者复用
 
-状态：未开始；**只有 C-01～C-07 全部硬门通过才允许开始。**
+状态：**进行中**。C-08.0 可观测性基线已完成；下一 Atomic Task 为 **C-08.1 network `list-font-files` 批处理优化**。
 
 优化顺序：
 
@@ -505,6 +505,37 @@ flowchart TD
 - 一个 root 的批量任务不能占满本地字体清理通道；
 - 断网后进程数、队列长度和 PID 最终回到有界稳定值；
 - 性能提升不得以降低正确性测试或扩大 timeout 获得。
+
+#### C-08.0 Shared I/O 可观测性基线
+
+状态：**完成**。验证候选 `b0eddb45b80d265a8b947bd3f1065130399753f0`；Windows run `35742653243` 为 SUCCESS。正式提交不保留临时验证 workflow。
+
+范围与结果：
+
+- `SharedIoProcessRequest` 增加可选 `label`，Shared I/O runtime 按总量与 label 记录 `requests / accepted / started / completed / failed / closed`；状态快照同时保留 active、queued、PID，便于直接判断请求来源与子进程是否收敛。
+- Rust transport 为普通 one-shot 使用命令名作为 label；对 `shared-file-io` 从现有临时 JSON 输入读取 `operation`，形成 `shared-file-io:<operation>`，不新增业务协议，也不让 renderer 提供网络身份。
+- Shared I/O start/close 日志加入 label；close 日志附带 `startedTotal / closedTotal`。诊断日志失败仍不改变任务结算。
+- 既有队列容量、default/root-probe lane、timeout、SIGTERM/SIGKILL、真实 child close 后释放 slot、root generation、offline owner 和写入准入均未修改；C-08.0 只建立性能计数与命令归因，不提前实施 worker 复用。
+- `check-shared-io-process.cjs` 锁定单命令 metrics 计数与最终 `started === closed`、active=0、queued=0、PID=0；`check-shared-io-integration.cjs` 锁定 production client → transport → isolated child 的 command label 可观察。
+- Windows `35742653243`：TypeScript、Shared I/O process、Shared I/O integration、shared filesystem、Rust worker transport、C00 current、Electron/Vite build、混淆、`git diff --check` 全部通过。没有新增依赖、数据库/IPC/schema 迁移或用户数据变更。
+- 临时 `.github/workflows/native-offline-verification.yml` 仅用于候选验证，正式原子提交中删除；候选本身不作为最终阶段提交。
+
+C-08.0 的数据只解决“能准确计数并定位 one-shot 来源”。真实 NAS 的 idle/首次 watcher rescan/预览滚动基准仍需在 C-08.1/C-09 的 Windows/NAS 运行中记录，不能用 CI 进程计数代替实机性能结论。
+
+#### C-08.1 network `list-font-files` 批处理优化
+
+状态：**未开始**。
+
+目标：先处理共享根扫描中可由已有 Rust `list-font-files` 一次完成的目录枚举/字体文件信息读取，减少等价的 network `readdir/stat` one-shot；不改变 Root Index 权威性、watcher 提交顺序或根 availability 证据。
+
+实施前硬约束：
+
+- 必须先定位现有 `list-font-files` 的真实调用链、输入/输出和 shared routing，不复制第二套目录扫描算法；
+- 只合并同一可信 root/generation 下可等价批处理的读取；任一批次回执仍需经过 generation 校验，旧代次结果必须丢弃；
+- 不把 local root 强制送入 Shared I/O，不把 NAS I/O 搬回 Electron 主线程；
+- 不改变文件筛选、扩展名、相对路径、mtime/size/identity 等既有索引语义；若批量结果缺少现有调用方必须字段，先补协议/行为锁，禁止猜测填充；
+- 批处理失败保持现有 fail-closed/有界恢复，不新增 `catch { return [] }` 或 Node 网络 fallback；
+- C-08.1 独立验证通过前不得进入 worker 复用评估。
 
 ### C-09 Windows/NAS 总验收
 
