@@ -3,7 +3,9 @@ const root=path.resolve(__dirname,'../..'),base='src/renderer/src/'
 const plain=x=>JSON.parse(JSON.stringify(x))
 function loader(mocks={},globals={},transforms={}){
  const cache=new Map()
+ const moduleKey=file=>path.normalize(String(file).replace(/[\\/]+/g,path.sep)).replace(/\\/g,'/')
  function load(file){
+  file=moduleKey(file)
   if(cache.has(file))return cache.get(file)
   const exports={};cache.set(file,exports)
   let source=fs.readFileSync(path.join(root,file),'utf8')
