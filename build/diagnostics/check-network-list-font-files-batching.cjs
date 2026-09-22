@@ -124,7 +124,7 @@ async function checkMixedRootBatchingAndEarlyVisible() {
 
   assert.deepEqual(plain(rustCalls), [[sharedRoot]])
   assert.deepEqual(plain(directoryCalls), [localRoot])
-  assert.deepEqual(result.map((item) => item.rootPath).sort(), [localRoot, sharedRoot].sort())
+  assert.deepEqual(plain(result.map((item) => item.rootPath).sort()), [localRoot, sharedRoot].sort())
   assert(visibleRoots.includes(sharedRoot), 'shared Rust batch was not forwarded to existing early-visible consumer')
   assert(visibleRoots.includes(localRoot), 'local early-visible directory stream changed')
   assert(logs.some((line) => line.includes('scan listing network batch source=rust')), 'network batch route missing from diagnostics')
