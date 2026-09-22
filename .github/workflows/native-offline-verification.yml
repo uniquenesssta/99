@@ -1,0 +1,34 @@
+name: Windows C-08.1 counterexample
+on:
+  push:
+    branches: ['stage/09-preview-tags-app']
+permissions:
+  contents: read
+  statuses: write
+jobs:
+  windows-c08-network-counterexample:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - id: counterexample
+        continue-on-error: true
+        run: npm run diagnostics:network-list-font-files-batching
+      - name: Publish counterexample status
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: \${{ github.token }}
+          TEST_OUTCOME: \${{ steps.counterexample.outcome }}
+        run: |
+          $state = if ($env:TEST_OUTCOME -eq 'success') { 'success' } else { 'failure' }
+          $description = if ($state -eq 'success') { 'counterexample unexpectedly passed' } else { 'counterexample reproduced' }
+          $body = @{ state = $state; context = 'C-08.1 counterexample'; description = $description } | ConvertTo-Json -Compress
+          Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/statuses/$env:GITHUB_SHA" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' } -Body $body -ContentType 'application/json'
+      - name: Require counterexample failure
+        if: steps.counterexample.outcome == 'success'
+        run: exit 1
