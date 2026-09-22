@@ -11,7 +11,6 @@ const rustClientPath = 'src/main/rust-core/clients/rustIndexingClientRuntime.ts'
 const sharedIoCommandPath = 'src/main/rust-core/rustSharedIoCommandRuntime.ts'
 const sharedIoProcessPath = 'src/main/path/sharedIoProcessRuntime.ts'
 const sharedFsPath = 'src/main/path/sharedFileSystemRuntime.ts'
-const startupAvailabilityPath = 'src/main/path/startupPathAvailabilityRuntime.ts'
 const fontPathPolicyPath = 'src/main/path/fontPathPolicy.ts'
 const cachePath = 'src/main/path/cachePath.ts'
 const ioQueuePath = 'src/main/performance/ioQueue.ts'
@@ -21,6 +20,9 @@ const transportPath = 'src/main/rust-core/rustCoreWorkerTransportRuntime.ts'
 const abs = (value) => path.join(root, value)
 const plain = (value) => JSON.parse(JSON.stringify(value))
 const stat = () => ({ size: 123, mtimeMs: 456, birthtimeMs: 400, ctimeMs: 400 })
+const sharedRoot = '\\\\NAS\\share\\fonts'
+const localRoot = 'C:\\fonts'
+const sharedResource = '\\\\nas\\share'
 
 class TestSharedIoProcessError extends Error {
   constructor(message, outcome = 'unknown', reason = 'test') {
@@ -31,25 +33,19 @@ class TestSharedIoProcessError extends Error {
   }
 }
 
-function scanLoader({ resourceKeys } = {}) {
-  const sharedRoot = String.raw\`\\NAS\share\fonts\`
-  return loader({
+function createScanRuntime(resourceKeys) {
+  const mocks = {
     [abs(sharedIoCommandPath)]: {
-      sharedIoAvailabilityRoot: (value) =>
-        String(value).startsWith('\\\\') ? String.raw\`\\NAS\share\` : String(value).slice(0, 3),
       sharedIoResourceKeys: resourceKeys || (async (paths) =>
-        String(paths[0] || '').startsWith('\\\\') ? [String.raw\`\\nas\share\`] : []),
+        String(paths[0] || '').startsWith('\\\\') ? [sharedResource] : []),
     },
     [abs(sharedIoProcessPath)]: {
       SharedIoProcessError: TestSharedIoProcessError,
       rethrowSharedIoProcessError(error) {
-        if (error?.sharedIo) throw error
+        if (error && error.sharedIo === true) throw error
       },
     },
     [abs(sharedFsPath)]: { sharedFileSystem: {} },
-    [abs(startupAvailabilityPath)]: {
-      getStartupPathRootState: () => ({ generation: 7, state: 'online' }),
-    },
     [abs(fontPathPolicyPath)]: {
       findBestWatchedRootForFile(filePath, folders) {
         const target = String(filePath).toLowerCase()
@@ -64,24 +60,26 @@ function scanLoader({ resourceKeys } = {}) {
     [abs(ioQueuePath)]: {
       isOperationCancelledError: () => false,
       throwIfAborted(signal) {
-        if (signal?.aborted) throw new Error('aborted')
+        if (signal && signal.aborted) throw new Error('aborted')
       },
     },
     [abs(scanUtilsPath)]: { delayToEventLoop: async () => {} },
-  }, {
-    process: { ...process, env: { ...process.env, HFM_RUST_SCAN_LISTING: '1', HFM_SCAN_EARLY_VISIBLE: '1' } },
+  }
+  return loader(mocks, {
+    process: {
+      ...process,
+      env: { ...process.env, HFM_RUST_SCAN_LISTING: '1', HFM_SCAN_EARLY_VISIBLE: '1' },
+    },
   })(scanListingPath)
 }
 
-async function checkInitialScanRouting() {
-  const sharedRoot = String.raw\`\\NAS\share\fonts\`
-  const localRoot = String.raw\`C:\fonts\`
+async function checkMixedRootBatchingAndEarlyVisible() {
   const logs = []
   const rustCalls = []
   const directoryCalls = []
-  const batchRoots = []
+  const visibleRoots = []
   const contexts = new Map()
-  const runtime = scanLoader()
+  const runtime = createScanRuntime()
 
   const deps = {
     appendStartupLog: (message) => logs.push(message),
@@ -98,10 +96,9 @@ async function checkInitialScanRouting() {
       }
     },
     runFontIndexListWorker: async () => {
-      throw new Error('worker walk must not be used by this scenario')
+      throw new Error('worker walk must not be used in this controlled scenario')
     },
   }
-
   const ensureRootContext = async (rootPath) => {
     if (!contexts.has(rootPath)) contexts.set(rootPath, { rootPath, directoryUpdates: [] })
     return contexts.get(rootPath)
@@ -110,7 +107,7 @@ async function checkInitialScanRouting() {
     listFontFilesWithDirectoryCache: async (context, _errors, _progress, _signal, _startDir, onListedBatch) => {
       directoryCalls.push(context.rootPath)
       const rows = [{ file: context.rootPath + '\\local.ttf', rootPath: context.rootPath, stat: stat(), error: '' }]
-      onListedBatch?.(rows)
+      if (onListedBatch) onListedBatch(rows)
       return rows
     },
   }
@@ -122,27 +119,20 @@ async function checkInitialScanRouting() {
     errors: [],
     ensureRootContext,
     reportProgress: () => {},
-    onListedBatch: (items) => {
-      for (const item of items) batchRoots.push(item.rootPath)
-    },
+    onListedBatch: (items) => items.forEach((item) => visibleRoots.push(item.rootPath)),
   })
 
-  assert.deepEqual(plain(rustCalls), [[sharedRoot]], 'shared root did not use one Rust list-font-files batch')
-  assert.deepEqual(plain(directoryCalls), [localRoot], 'network root fell back to directory cache or local route changed')
+  assert.deepEqual(plain(rustCalls), [[sharedRoot]])
+  assert.deepEqual(plain(directoryCalls), [localRoot])
   assert.deepEqual(result.map((item) => item.rootPath).sort(), [localRoot, sharedRoot].sort())
-  assert(batchRoots.includes(sharedRoot), 'shared batch was not published to the existing early-visible consumer')
-  assert(batchRoots.includes(localRoot), 'local early-visible directory stream was not preserved')
-  assert(logs.some((line) => line.includes('network batch source=rust')), 'shared batch route was not observable')
+  assert(visibleRoots.includes(sharedRoot), 'shared Rust batch was not forwarded to existing early-visible consumer')
+  assert(visibleRoots.includes(localRoot), 'local early-visible directory stream changed')
+  assert(logs.some((line) => line.includes('scan listing network batch source=rust')), 'network batch route missing from diagnostics')
 }
 
-async function checkClassificationFailureIsFailClosed() {
-  const sharedRoot = String.raw\`\\NAS\share\fonts\`
+async function checkIdentityFailureDoesNotDowngradeToNetworkNodeWalk() {
   const identityError = new TestSharedIoProcessError('identity unavailable', 'not-started', 'identity-unavailable')
-  const runtime = scanLoader({
-    resourceKeys: async () => {
-      throw identityError
-    },
-  })
+  const runtime = createScanRuntime(async () => { throw identityError })
   const deps = {
     appendStartupLog: () => {},
     fontExtensions: new Set(['.ttf']),
@@ -154,7 +144,7 @@ async function checkClassificationFailureIsFailClosed() {
       deps,
       directoryCacheRuntime: {
         listFontFilesWithDirectoryCache: async () => {
-          throw new Error('identity failure must not fall back to Node/network directory listing')
+          throw new Error('identity failure must not enter per-directory network fallback')
         },
       },
       folders: [sharedRoot],
@@ -167,13 +157,12 @@ async function checkClassificationFailureIsFailClosed() {
   )
 }
 
-async function checkManualRefreshRouting() {
-  const sharedRoot = String.raw\`\\NAS\share\fonts\`
+async function checkManualNetworkRefreshUsesRustBatch() {
   let rustCalls = 0
   const runtime = loader({
     [abs(sharedIoProcessPath)]: {
       rethrowSharedIoProcessError(error) {
-        if (error?.sharedIo) throw error
+        if (error && error.sharedIo === true) throw error
       },
     },
   }, {
@@ -206,17 +195,16 @@ async function checkManualRefreshRouting() {
     context: { rootPath: sharedRoot, directoryUpdates: [] },
     errors: [],
   })
-  assert.equal(rustCalls, 1, 'manual network refresh auto mode skipped Rust list-font-files')
-  assert.equal(result?.rows.length, 1, 'manual network refresh did not return the Rust batch')
+  assert.equal(rustCalls, 1)
+  assert.equal(result && result.rows.length, 1)
 }
 
-async function checkReadOnlyGenerationRouting() {
-  const rootPath = String.raw\`\\NAS\share\fonts\`
+async function checkListCommandIsReadOnlySharedIo() {
   const calls = []
   const mocks = {
     [abs(sharedIoProcessPath)]: {
       rethrowSharedIoProcessError(error) {
-        if (error?.sharedIo) throw error
+        if (error && error.sharedIo === true) throw error
       },
     },
     [abs(transportPath)]: {
@@ -224,7 +212,7 @@ async function checkReadOnlyGenerationRouting() {
         return JSON.parse(String(value).trim().split(/\r?\n/).filter(Boolean).at(-1) || '{}')
       },
       hasCapability(status, capability) {
-        return Array.isArray(status?.capabilities) && status.capabilities.includes(capability)
+        return Array.isArray(status && status.capabilities) && status.capabilities.includes(capability)
       },
     },
     [abs('src/main/rust-core/rustCoreDaemonRuntime.ts')]: { isRustCoreDaemonSubmittedError: () => false },
@@ -245,7 +233,6 @@ async function checkReadOnlyGenerationRouting() {
       },
     },
   })(rustClientPath)
-
   const client = runtime.createRustIndexingClientRuntime({
     diagnoseRustCoreWorker: async () => ({ available: true, path: 'worker.exe', capabilities: ['list-font-files'] }),
     runRustCoreScheduledCommand: async (_worker, _args, options) => {
@@ -253,7 +240,7 @@ async function checkReadOnlyGenerationRouting() {
       return { stdout: JSON.stringify({ ok: true }), stderr: '' }
     },
     createTemporaryJsonFile: () => ({
-      path: String.raw\`C:\Temp\hfm-rust-list.json\`,
+      path: 'C:\\Temp\\hfm-rust-list.json',
       readText: async () => JSON.stringify({ ok: true, files: [], directories: [], errors: [], foldersScanned: 1, truncated: false }),
       writeJson: async () => {},
       dispose: async () => {},
@@ -261,19 +248,22 @@ async function checkReadOnlyGenerationRouting() {
     appendStartupLog: () => {},
   })
 
-  await client.runRustFontIndexListWorker([rootPath], ['ttf'])
+  await client.runRustFontIndexListWorker([sharedRoot], ['ttf'])
   assert.equal(calls.length, 1)
-  assert.deepEqual(plain(calls[0].sharedIo), { paths: [rootPath], write: false }, 'list-font-files must enter Shared I/O as a read-only batch')
+  assert.deepEqual(plain(calls[0].sharedIo), { paths: [sharedRoot], write: false })
   const transport = fs.readFileSync(abs(transportPath), 'utf8').replace(/\r\n/g, '\n')
-  assert(transport.includes("if (!target!.write && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"), 'read-only shared receipts are no longer guarded by root generation')
+  assert(
+    transport.includes("if (!target!.write && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"),
+    'transport read-only generation gate changed',
+  )
 }
 
 async function main() {
-  await checkInitialScanRouting()
-  await checkClassificationFailureIsFailClosed()
-  await checkManualRefreshRouting()
-  await checkReadOnlyGenerationRouting()
-  console.log('[diagnostics:network-list-font-files-batching] shared batching, early-visible publication, fail-closed identity, manual refresh and read-only generation routing passed')
+  await checkMixedRootBatchingAndEarlyVisible()
+  await checkIdentityFailureDoesNotDowngradeToNetworkNodeWalk()
+  await checkManualNetworkRefreshUsesRustBatch()
+  await checkListCommandIsReadOnlySharedIo()
+  console.log('[diagnostics:network-list-font-files-batching] mixed roots, early-visible, fail-closed identity, manual network refresh and read-only generation routing passed')
 }
 
 main().catch((error) => {

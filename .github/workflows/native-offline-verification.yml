@@ -4,7 +4,6 @@ on:
     branches: ['stage/09-preview-tags-app']
 permissions:
   contents: read
-  statuses: write
 jobs:
   windows-c08-network-list:
     runs-on: windows-latest
@@ -15,40 +14,14 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
-      - id: targeted
-        continue-on-error: true
-        run: npm run diagnostics:network-list-font-files-batching
-      - id: typecheck
-        continue-on-error: true
-        run: npm run typecheck
-      - id: verify
-        continue-on-error: true
-        run: npm run verify
-      - id: build
-        continue-on-error: true
-        run: node node_modules/electron-vite/bin/electron-vite.js build
-      - id: obfuscate
-        continue-on-error: true
-        run: node build/obfuscate-dist.cjs
-      - id: diffcheck
-        continue-on-error: true
-        run: git diff --check 506e5389ab456ef55acfdc3e22b0d0fa651a927e HEAD
-      - name: Publish validation status
-        if: always()
-        shell: pwsh
-        env:
-          GH_TOKEN: \${{ github.token }}
-          TARGETED: \${{ steps.targeted.outcome }}
-          TYPECHECK: \${{ steps.typecheck.outcome }}
-          VERIFY: \${{ steps.verify.outcome }}
-          BUILD: \${{ steps.build.outcome }}
-          OBFUSCATE: \${{ steps.obfuscate.outcome }}
-          DIFFCHECK: \${{ steps.diffcheck.outcome }}
-        run: |
-          $outcomes = @($env:TARGETED,$env:TYPECHECK,$env:VERIFY,$env:BUILD,$env:OBFUSCATE,$env:DIFFCHECK)
-          $state = if ($outcomes -notcontains 'failure') { 'success' } else { 'failure' }
-          $description = "targeted=$env:TARGETED type=$env:TYPECHECK verify=$env:VERIFY build=$env:BUILD obf=$env:OBFUSCATE diff=$env:DIFFCHECK"
-          if ($description.Length -gt 140) { $description = $description.Substring(0, 140) }
-          $body = @{ state = $state; context = 'C-08.1 validation'; description = $description } | ConvertTo-Json -Compress
-          Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/statuses/$env:GITHUB_SHA" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' } -Body $body -ContentType 'application/json'
-          if ($state -ne 'success') { exit 1 }
+      - run: npm run diagnostics:network-list-font-files-batching
+      - run: npm run diagnostics:scan-fallback
+      - run: npm run diagnostics:shared-io-process
+      - run: npm run diagnostics:shared-io-integration
+      - run: npm run diagnostics:rust-worker-clients
+      - run: npm run diagnostics:rust-worker-transport
+      - run: npm run typecheck
+      - run: npm run verify
+      - run: node node_modules/electron-vite/bin/electron-vite.js build
+      - run: node build/obfuscate-dist.cjs
+      - run: git diff --check 8bc364b9bc1f9660959ca168275402a0d1de8584 HEAD
