@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import type { InstallStatusProgressPayload } from '@shared/types'
+import type { RendererClosingLifecycleRuntime } from '../rendererClosingLifecycleRuntime'
 
 export function useInstallStatusProgressEventRuntime(args: {
   hfm: Window['hfm']
@@ -10,6 +11,7 @@ export function useInstallStatusProgressEventRuntime(args: {
   setStatus: Dispatch<SetStateAction<string>>
   refreshDatabaseDerivedState: () => void
   refreshDatabaseMetricsNow: () => void
+  closingLifecycle: RendererClosingLifecycleRuntime
 }): void {
   const {
     hfm,
@@ -18,7 +20,8 @@ export function useInstallStatusProgressEventRuntime(args: {
     appendDeveloperStatus,
     setStatus,
     refreshDatabaseDerivedState,
-    refreshDatabaseMetricsNow
+    refreshDatabaseMetricsNow,
+    closingLifecycle
   } = args
 
   useEffect(() => {
@@ -26,15 +29,33 @@ export function useInstallStatusProgressEventRuntime(args: {
       return
     }
 
+    const pendingTimers = new Set<number>()
+    const clearPendingTimers = (): void => {
+      for (const timer of pendingTimers) window.clearTimeout(timer)
+      pendingTimers.clear()
+    }
+    const schedule = (action: () => void, delayMs: number): void => {
+      if (closingLifecycle.isClosing()) return
+      const timer = window.setTimeout(() => {
+        pendingTimers.delete(timer)
+        if (!closingLifecycle.isClosing()) action()
+      }, delayMs)
+      pendingTimers.add(timer)
+    }
+    const disposeClosing = closingLifecycle.subscribe((closing) => {
+      if (closing) clearPendingTimers()
+    })
+
     const dispose = hfm.onInstallStatusProgress((payload: InstallStatusProgressPayload) => {
+      if (closingLifecycle.isClosing()) return
       appendDeveloperStatus('install-status', payload.message, payload)
       setStatus(payload.message)
       if (payload.stage === 'done') {
         autoInstallStatusRefreshStartedRef.current = false
         knownInstallStatusIds.current.clear()
         refreshDatabaseDerivedState()
-        window.setTimeout(refreshDatabaseMetricsNow, 80)
-        window.setTimeout(() => {
+        schedule(refreshDatabaseMetricsNow, 80)
+        schedule(() => {
           refreshDatabaseDerivedState()
           refreshDatabaseMetricsNow()
         }, 900)
@@ -43,6 +64,10 @@ export function useInstallStatusProgressEventRuntime(args: {
       }
     })
 
-    return () => dispose()
-  }, [])
+    return () => {
+      dispose()
+      disposeClosing()
+      clearPendingTimers()
+    }
+  }, [closingLifecycle])
 }

@@ -25,6 +25,7 @@ import { useAppFlushOnUnloadRuntime } from './effects/useAppFlushOnUnloadRuntime
 import { useInstallStatusProgressEventRuntime } from './effects/useInstallStatusProgressEventRuntime'
 import { useRendererActivityRuntime } from './effects/useRendererActivityRuntime'
 import { useAutoInstallStatusRefreshRuntime } from './useAutoInstallStatusRefreshRuntime'
+import type { RendererClosingLifecycleRuntime } from './rendererClosingLifecycleRuntime'
 import { useIndexOperationRunRuntime } from './effects/useIndexOperationRunRuntime'
 
 type FontOperationsLibraryPort = {
@@ -79,6 +80,7 @@ export function useFontOperationsController(options: {
   sidebarPage: SidebarPage
   clearFontListScrollIdleTimer: () => void
   appendDeveloperStatus: (source: string, message: string, payload?: unknown) => void
+  closingLifecycle: RendererClosingLifecycleRuntime
 }) {
   const [cacheMenuOpen, setCacheMenuOpen] = useState(false)
   const [newTagName, setNewTagName] = useState('')
@@ -252,7 +254,8 @@ export function useFontOperationsController(options: {
     appendDeveloperStatus: options.appendDeveloperStatus,
     setStatus: options.library.setStatus,
     refreshDatabaseDerivedState: options.library.refreshDatabaseDerivedState,
-    refreshDatabaseMetricsNow: options.library.refreshDatabaseMetricsNow
+    refreshDatabaseMetricsNow: options.library.refreshDatabaseMetricsNow,
+    closingLifecycle: options.closingLifecycle
   })
 
   useAutoInstallStatusRefreshRuntime({
@@ -262,7 +265,8 @@ export function useFontOperationsController(options: {
     indexingActive: options.library.indexingActive,
     startedRef: autoInstallStatusRefreshStartedRef,
     signatureRef: autoInstallStatusRefreshSignatureRef,
-    startBackgroundInstallStatusRefresh: installStatusRuntime.startBackgroundInstallStatusRefresh
+    startBackgroundInstallStatusRefresh: installStatusRuntime.startBackgroundInstallStatusRefresh,
+    isClosing: options.closingLifecycle.isClosing
   })
 
   useAppFlushOnUnloadRuntime({
@@ -271,7 +275,8 @@ export function useFontOperationsController(options: {
     clearFontListScrollIdleTimer: options.clearFontListScrollIdleTimer,
     clearQueuedFontWriteTimer: fontWriteQueueRuntime.clearTimer,
     flushFontWriteQueue: fontWriteQueueRuntime.flush,
-    flushLibraryPersistence: options.library.flushLibraryPersistence
+    flushLibraryPersistence: options.library.flushLibraryPersistence,
+    closingLifecycle: options.closingLifecycle
   })
 
   return {

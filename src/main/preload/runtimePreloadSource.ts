@@ -156,6 +156,11 @@ const api = {
     ipcRenderer.on('app-window:flush-before-close', listener);
     return () => ipcRenderer.removeListener('app-window:flush-before-close', listener);
   },
+  onWindowCloseCancelled: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('app-window:close-cancelled', listener);
+    return () => ipcRenderer.removeListener('app-window:close-cancelled', listener);
+  },
   completeWindowCloseFlush: (requestId, saved) => invoke('app-window:flushComplete', requestId, saved),
   notifyRendererReady: () => invoke('app-window:rendererReady')
 };

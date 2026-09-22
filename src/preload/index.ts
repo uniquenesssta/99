@@ -246,6 +246,11 @@ const api = {
     ipcRenderer.on('app-window:flush-before-close', listener)
     return () => ipcRenderer.removeListener('app-window:flush-before-close', listener)
   },
+  onWindowCloseCancelled: (callback: (payload: { requestId: number }) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { requestId: number }): void => callback(payload)
+    ipcRenderer.on('app-window:close-cancelled', listener)
+    return () => ipcRenderer.removeListener('app-window:close-cancelled', listener)
+  },
   completeWindowCloseFlush: (requestId: number, saved: boolean): Promise<boolean> => invoke('app-window:flushComplete', requestId, saved),
   notifyRendererReady: (): Promise<boolean> => invoke('app-window:rendererReady')
 }

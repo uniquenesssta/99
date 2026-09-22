@@ -15,6 +15,7 @@ import { parseLeaseLockConflictNotice } from '../lease-lock/leaseLockConflictNot
 import { useInitialLibraryShellRuntime } from './effects/useInitialLibraryShellRuntime'
 import { libraryShellPersistenceKey,useLibraryAutosaveRuntime } from './effects/useLibraryAutosaveRuntime'
 import { useSharedMetadataSyncForegroundRuntime } from './effects/useSharedMetadataSyncForegroundRuntime'
+import type { RendererClosingLifecycleRuntime } from './rendererClosingLifecycleRuntime'
 
 export type LibraryDatabasePorts = {
   setDatabasePageResult: Dispatch<SetStateAction<FontQueryPageResult | null>>
@@ -31,6 +32,7 @@ export function useLibraryController(options: {
   database: LibraryDatabasePorts
   rendererUserActive: () => boolean
   appendDeveloperStatus: (source: string, message: string, payload?: unknown) => void
+  closingLifecycle: RendererClosingLifecycleRuntime
 }) {
   const [library, setLibraryState] = useState<LibraryState>(createEmptyLibrary())
   const [status, setStatus] = useState('准备就绪')
@@ -70,6 +72,7 @@ export function useLibraryController(options: {
   })
 
   function refreshDatabaseDerivedState(fields?: FontRefreshField[]): void {
+    if (options.closingLifecycle.isClosing()) return
     if (fields) { scheduleDatabaseDerivedStateRefresh(0, fields); return }
     pendingRefreshScope.current = { page: false, metrics: false }
     setDatabaseMetricsRefreshToken(value => value + 1)
@@ -86,6 +89,7 @@ export function useLibraryController(options: {
   }
 
   function scheduleDatabaseDerivedStateRefresh(delay = 420, fields?: FontRefreshField[]): void {
+    if (options.closingLifecycle.isClosing()) return
     const scope = fields ? fontMutationRefreshScope(fields, activeFilterKindRef.current.kind) : { page: true, metrics: true }
     if (fields?.length && !activeFilterKindRef.current.hasPage) scope.page = true
     const pending = pendingRefreshScope.current
@@ -110,6 +114,7 @@ export function useLibraryController(options: {
   }
 
   function refreshDatabaseMetricsNow(): void {
+    if (options.closingLifecycle.isClosing()) return
     if (typeof options.hfm.getFontMetrics !== 'function') {
       options.database.setDatabaseFontMetrics(null)
       return
@@ -129,6 +134,7 @@ export function useLibraryController(options: {
   }
 
   function checkSharedMetadataUpdates(reason: string, minIntervalMs = 5000): Promise<void> | null {
+    if (options.closingLifecycle.isClosing()) return null
     return runSharedMetadataSyncCheckRuntime({
       hfm: options.hfm,
       reason,
@@ -140,7 +146,8 @@ export function useLibraryController(options: {
       minIntervalMs,
       refreshDatabaseDerivedState,
       setStatus,
-      appendDeveloperStatus: options.appendDeveloperStatus
+      appendDeveloperStatus: options.appendDeveloperStatus,
+      isClosing: options.closingLifecycle.isClosing
     })
   }
 
@@ -170,7 +177,8 @@ export function useLibraryController(options: {
     enabled: typeof options.hfm.checkSharedMetadataUpdates === 'function',
     libraryFoldersKey,
     indexingActive,
-    checkSharedMetadataUpdates
+    checkSharedMetadataUpdates,
+    closingLifecycle: options.closingLifecycle
   })
 
   return {

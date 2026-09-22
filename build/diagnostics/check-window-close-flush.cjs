@@ -23,6 +23,7 @@ for (const needle of [
   '}, RENDERER_CLOSE_MS)',
   'requestRendererWindowsCloseForQuit',
   'pendingCloseFlushes.get(existingRequestId)?.completion',
+  "target.webContents.send('app-window:close-cancelled', { requestId })",
   "target.once('closed', onClosed)",
   'return outcomes.every(Boolean)'
 ]) assert(mainWindow.includes(needle), `main window close protocol missing ${needle}`)
@@ -31,8 +32,10 @@ const preload = read('src/preload/index.ts')
 const runtimePreload = read('src/main/preload/runtimePreloadSource.ts')
 for (const source of [preload, runtimePreload]) {
   assert(source.includes('onWindowFlushBeforeClose'), 'preload must expose the close flush request event')
+  assert(source.includes('onWindowCloseCancelled'), 'preload must expose the narrow close-cancelled event')
   assert(source.includes('completeWindowCloseFlush'), 'preload must expose the close flush acknowledgement')
   assert(source.includes('app-window:flush-before-close'), 'preload must subscribe to the main close flush channel')
+  assert(source.includes('app-window:close-cancelled'), 'preload must subscribe to the main close-cancelled channel')
   assert(source.includes('app-window:flushComplete'), 'preload must acknowledge close flush completion')
 }
 
@@ -45,6 +48,9 @@ for (const needle of [
   'if (result === false) fontWritesSaved = false',
   'flushLibraryPersistence()',
   'onWindowFlushBeforeClose',
+  'closingLifecycle.beginClosing()',
+  'onWindowCloseCancelled',
+  'closingLifecycle.resume()',
   'completeWindowCloseFlush(payload.requestId, saved)'
 ]) assert(rendererFlush.includes(needle), `renderer close flush runtime missing ${needle}`)
 
@@ -57,6 +63,7 @@ assert(operationsController.includes('hfm: options.hfm'), 'Close lifecycle must 
 for (const needle of [
   'isSchedulerStoppingEvent',
   "event.eventType !== 'scheduler'",
+  'closingLifecycle.isClosing()',
   "if (isSchedulerStoppingEvent(payload)) return"
 ]) assert(backgroundTaskEvents.includes(needle), `renderer shutdown developer-refresh gate missing ${needle}`)
 for (const needle of [
@@ -64,5 +71,10 @@ for (const needle of [
   "message.includes('软件正在退出，此操作未继续执行。')",
   'if (isApplicationClosingIpcError(error)) return'
 ]) assert(developerStatus.includes(needle), `developer diagnostics shutdown short-circuit missing ${needle}`)
+
+const closingLifecycle = read('src/renderer/src/runtime/app/rendererClosingLifecycleRuntime.ts')
+const sharedForeground = read('src/renderer/src/runtime/app/effects/useSharedMetadataSyncForegroundRuntime.ts')
+for (const needle of ['beginClosing', 'resume', 'subscribe', 'isClosing']) assert(closingLifecycle.includes(needle), `renderer closing lifecycle missing ${needle}`)
+for (const needle of ['closingLifecycle.subscribe', 'cancelScheduled()', 'closingLifecycle.isClosing()', 'window-close-cancelled-shared-metadata-sync']) assert(sharedForeground.includes(needle), `shared metadata closing gate missing ${needle}`)
 
 console.log('[diagnostics:window-close-flush] ok')

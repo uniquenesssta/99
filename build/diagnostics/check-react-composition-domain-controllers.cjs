@@ -142,7 +142,10 @@ function checkStructure(overrides = new Map()) {
   assert(operations.includes('scheduleDatabaseDerivedStateRefresh: options.library.scheduleDatabaseDerivedStateRefresh'), 'font writes lost the Library refresh command')
   assert(operations.indexOf('createRendererFontWriteQueueRuntime({') < operations.indexOf('useAppFlushOnUnloadRuntime({'), 'close lifecycle must bind after the write queue exists')
   assert(operations.includes('clearDatabaseRefreshTimer: options.library.clearDatabaseRefreshTimer'), 'close lifecycle leaked or lost the database timer cleanup command')
-  assert.equal((developer.match(/if \(!options\.enabled\) return/g) || []).length, 2, 'Developer controller lost a production lazy guard')
+  assert.equal((developer.match(/if \(!options\.enabled \|\| options\.closingLifecycle\.isClosing\(\)\) return/g) || []).length, 2, 'Developer controller lost explicit closing admission')
+  assert(developer.includes('if (!options.enabled || options.closingLifecycle.isClosing()) return Promise.resolve()'), 'Developer detail refresh lost explicit closing admission')
+  assert(developer.includes('isClosing: options.closingLifecycle.isClosing'), 'Developer detail runtime lost in-flight closing guard')
+  assert(developer.includes('closingLifecycle: options.closingLifecycle'), 'Background diagnostics lost shared closing lifecycle')
   assert(developer.includes('enabled: options.enabled'), 'background diagnostics are not gated by the development flag')
 }
 
@@ -248,7 +251,9 @@ async function checkLibraryBehavior() {
     globals: { window: { clearTimeout: (id) => cleared.push(id), setTimeout: () => 1 } }
   })
   const useLibraryController = load(libraryControllerPath).useLibraryController
-  const options = { hfm: {}, database, rendererUserActive: () => false, appendDeveloperStatus() {} }
+  let libraryClosing = false
+  const closingLifecycle = { isClosing: () => libraryClosing, beginClosing() { libraryClosing = true }, resume() { libraryClosing = false }, subscribe: () => () => {} }
+  const options = { hfm: {}, database, rendererUserActive: () => false, appendDeveloperStatus() {}, closingLifecycle }
   let controller = harness.render(useLibraryController, options)
   assert.equal(harness.slots.length, 14)
   controller.refreshDatabaseDerivedState()
@@ -262,6 +267,16 @@ async function checkLibraryBehavior() {
   assert.deepEqual(cleared, [33])
   assert(calls.initial.libraryLoadedRef && typeof calls.initial.libraryLoadedRef.current === 'boolean')
   assert.equal(calls.foreground.enabled, false)
+  assert.equal(calls.foreground.closingLifecycle, closingLifecycle)
+  libraryClosing = true
+  delete calls.refresh
+  delete calls.schedule
+  controller.refreshDatabaseDerivedState()
+  controller.scheduleDatabaseDerivedStateRefresh(88)
+  controller.refreshDatabaseMetricsNow()
+  assert.equal(calls.refresh, undefined, 'closing library must not start database refresh')
+  assert.equal(calls.schedule, undefined, 'closing library must not schedule database refresh')
+  libraryClosing = false
   controller.setStatus('conflict')
   controller = harness.render(useLibraryController, options)
   controller = harness.render(useLibraryController, options)
@@ -392,7 +407,8 @@ async function checkOperationsBehavior() {
     },
     sidebarPage: 'library',
     clearFontListScrollIdleTimer: noOp,
-    appendDeveloperStatus: noOp
+    appendDeveloperStatus: noOp,
+    closingLifecycle: { isClosing: () => false, beginClosing: noOp, resume: noOp, subscribe: () => () => {} }
   })
   assert.equal(harness.slots.length, 22)
   assert.equal(calls.queue.scheduleDatabaseDerivedStateRefresh, noOp)
@@ -401,6 +417,8 @@ async function checkOperationsBehavior() {
   assert.equal(calls.index.autoInstallStatusRefreshStartedRef, calls.auto.startedRef)
   assert.equal(calls.close.flushFontWriteQueue, queueRuntime.flush)
   assert.equal(calls.close.flushLibraryPersistence instanceof Function, true)
+  assert.equal(calls.close.closingLifecycle, calls.progress.closingLifecycle)
+  assert.equal(calls.auto.isClosing, calls.close.closingLifecycle.isClosing)
   await controller.toggleFontDeleteProtection(['a'], true)
   assert.equal(liveLibrary.fonts.a.deleteProtected, true)
   assert.deepEqual(protectionWrites, [['a', true]])
@@ -434,7 +452,15 @@ async function checkOperationsBehavior() {
 async function checkCloseFlushBehavior() {
   const order = []
   let closeRequest
+  let closeCancelled
   let beforeUnload
+  let closing = false
+  const closingLifecycle = {
+    isClosing: () => closing,
+    beginClosing: () => { closing = true; order.push('closing:true') },
+    resume: () => { closing = false; order.push('closing:false') },
+    subscribe: () => () => {}
+  }
   const hooks = {
     useRef: (value) => ({ current: value }),
     useEffect: (effect) => { effect() }
@@ -445,6 +471,7 @@ async function checkCloseFlushBehavior() {
   }
   const hfm = {
     onWindowFlushBeforeClose(handler) { closeRequest = handler; return () => {} },
+    onWindowCloseCancelled(handler) { closeCancelled = handler; return () => {} },
     completeWindowCloseFlush(requestId, saved) { order.push(`complete:${requestId}:${saved}`) }
   }
   const load = createLoader({ hooks, globals: { window: windowObject } })
@@ -454,12 +481,18 @@ async function checkCloseFlushBehavior() {
     clearFontListScrollIdleTimer: () => order.push('clear-preview'),
     clearQueuedFontWriteTimer: () => order.push('clear-write'),
     flushFontWriteQueue: async () => { order.push('flush-write'); return true },
-    flushLibraryPersistence: async () => { order.push('flush-library'); return true }
+    flushLibraryPersistence: async () => { order.push('flush-library'); return true },
+    closingLifecycle
   })
   assert.equal(typeof beforeUnload, 'function')
+  assert.equal(typeof closeCancelled, 'function')
   closeRequest({ requestId: 'r1' })
   await new Promise((resolve) => setImmediate(resolve))
-  assert.deepEqual(order, ['clear-write', 'clear-database', 'clear-preview', 'flush-write', 'flush-library', 'complete:r1:true'])
+  assert.deepEqual(order, ['closing:true', 'clear-write', 'clear-database', 'clear-preview', 'flush-write', 'flush-library', 'complete:r1:true'])
+  assert.equal(closingLifecycle.isClosing(), true)
+  closeCancelled({ requestId: 'r1' })
+  assert.equal(closingLifecycle.isClosing(), false)
+  assert.equal(order.at(-1), 'closing:false')
 }
 
 async function checkDeveloperLazyBehavior() {
@@ -474,8 +507,9 @@ async function checkDeveloperLazyBehavior() {
     './effects/useBackgroundTaskEventsRuntime': { useBackgroundTaskEventsRuntime: (options) => { backgroundOptions = options } },
     './effects/useRendererDeveloperStatusLogRuntime': { useRendererDeveloperStatusLogRuntime() {} }
   }
+  const openLifecycle = { isClosing: () => false, beginClosing() {}, resume() {}, subscribe: () => () => {} }
   let load = createLoader({ hooks: disabledHarness.hooks, mocks })
-  let controller = disabledHarness.render(load(developerControllerPath).useDeveloperController, { enabled: false, hfm: {}, status: 'ready' })
+  let controller = disabledHarness.render(load(developerControllerPath).useDeveloperController, { enabled: false, hfm: {}, status: 'ready', closingLifecycle: openLifecycle })
   controller.appendDeveloperStatus('status', 'hidden')
   await controller.refreshDeveloperStatusDetails()
   assert.equal(refreshCalls, 0)
@@ -487,13 +521,24 @@ async function checkDeveloperLazyBehavior() {
   const pending = new Promise((resolve) => { resolveRefresh = resolve })
   mocks['../../rendererDeveloperStatusRuntime'].refreshDeveloperStatusDetailsRuntime = () => { refreshCalls += 1; return pending }
   load = createLoader({ hooks: enabledHarness.hooks, mocks })
-  controller = enabledHarness.render(load(developerControllerPath).useDeveloperController, { enabled: true, hfm: {}, status: 'ready' })
+  controller = enabledHarness.render(load(developerControllerPath).useDeveloperController, { enabled: true, hfm: {}, status: 'ready', closingLifecycle: openLifecycle })
   const first = controller.refreshDeveloperStatusDetails()
   const second = controller.refreshDeveloperStatusDetails()
   assert.equal(first, second)
   assert.equal(refreshCalls, 1)
   resolveRefresh()
   await first
+
+  const closingHarness = createHookHarness()
+  let closingRefreshCalls = 0
+  mocks['../../rendererDeveloperStatusRuntime'].refreshDeveloperStatusDetailsRuntime = () => { closingRefreshCalls += 1; return Promise.resolve() }
+  const closedLifecycle = { isClosing: () => true, beginClosing() {}, resume() {}, subscribe: () => () => {} }
+  load = createLoader({ hooks: closingHarness.hooks, mocks })
+  controller = closingHarness.render(load(developerControllerPath).useDeveloperController, { enabled: true, hfm: {}, status: 'ready', closingLifecycle: closedLifecycle })
+  controller.appendDeveloperStatus('status', 'closing')
+  await controller.refreshDeveloperStatusDetails()
+  assert.equal(closingRefreshCalls, 0, 'closing developer controller started diagnostics')
+  assert.equal(closingHarness.slots[0].length, 0, 'closing developer controller appended status')
 }
 
 async function main() {
@@ -514,10 +559,10 @@ async function main() {
   const developer = read(developerControllerPath)
   assert.throws(() => checkStructure(new Map([[
     developerControllerPath,
-    developer.replace('if (!options.enabled) return\n', '')
-  ]])), 'production developer eager path escaped guard gate')
+    developer.replace('if (!options.enabled || options.closingLifecycle.isClosing()) return\n', 'if (!options.enabled) return\n')
+  ]])), 'production developer closing guard escaped structure gate')
   checkStructure(new Map(controllerPaths.map((relativePath) => [relativePath, read(relativePath).replace(/\n/g, '\r\n')])))
-  console.log('[diagnostics:react-composition-domain-controllers] 42 state/ref owners, write refresh, close flush, protection/lazy cleanup, developer laziness, narrow ports, mutations and CRLF passed')
+  console.log('[diagnostics:react-composition-domain-controllers] 42 state/ref owners, write refresh, explicit closing admission/resume, close flush, protection/lazy cleanup, developer laziness, narrow ports, mutations and CRLF passed')
 }
 
 main().catch((error) => {

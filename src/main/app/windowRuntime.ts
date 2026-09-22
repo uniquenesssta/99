@@ -114,6 +114,9 @@ export function createWindowRuntime(options: WindowRuntimeOptions): WindowRuntim
       if (result.response !== 1) {
         pendingCloseFlushes.delete(requestId)
         pending.resolveCompletion(false)
+        if (!target.webContents.isDestroyed()) {
+          target.webContents.send('app-window:close-cancelled', { requestId })
+        }
         if (target.isMinimized()) target.restore()
         if (!target.isVisible()) target.show()
         target.focus()

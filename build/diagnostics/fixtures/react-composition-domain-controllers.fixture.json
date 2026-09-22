@@ -106,14 +106,14 @@
   "sourceHashes": {
     "src/renderer/src/fontWriteQueueRuntime.ts": "bf5ef93ae58b4d158ccb0642f9ca2641672d2233dcc4592c588ed2299dd2b7d8",
     "src/renderer/src/databaseDerivedStateRuntime.ts": "c9968c6de408e8b0af97891471ba6e9a7d82d503f0070009936b00add1061cf6",
-    "src/renderer/src/sharedMetadataSyncRuntime.ts": "3e66af88272bcfd429b0b15836a19fec0e380ede989459e15d2d1dc7d22e2614",
-    "src/renderer/src/rendererDeveloperStatusRuntime.ts": "8749af72dbd3ded091d11f666754371b67f73faab0f945ab8875edb97440106a",
+    "src/renderer/src/sharedMetadataSyncRuntime.ts": "13da66e8840e39aa8562b8fd6119eb5f6f7d21adf86f08fb73f60a0d14b7bda6",
+    "src/renderer/src/rendererDeveloperStatusRuntime.ts": "e1d7cfcb6b5d0c4c5bf33af84b9153044efaa875c1126972e3360d2443d5fd35",
     "src/renderer/src/runtime/app/effects/useLibraryAutosaveRuntime.ts": "e3295dfa7b88644afcaace8b209fab4d9bf30993b90c0dfeb3ac2c3ff86b1f86",
     "src/renderer/src/runtime/system/fontInstallStatusRuntime.ts": "e81953ead27aee0bf466c5204e3491cbc3d591eb82377de067492e7b59d94350",
     "src/renderer/src/runtime/system/fontSystemActionRuntime.ts": "042cb290899749426c9efb620f5e54be6f57777bdb2e8c8eaac868f1de0d13f6",
     "src/renderer/src/runtime/library/fontLibraryIndexActionRuntime.ts": "578887166042a9759a41c2b0905fe01fe3c9f15dfe92f62b4c1eaff63d6a3ae4",
-    "src/renderer/src/runtime/app/effects/useInstallStatusProgressEventRuntime.ts": "423f409c089962d3648d980f661b498f4e268f0acb3a4a3fc65f36979d86bc37",
-    "src/renderer/src/runtime/app/useAutoInstallStatusRefreshRuntime.ts": "875dfc776698f93ade033d247bf04a6df0a9609025daf509459b721b351855fc"
+    "src/renderer/src/runtime/app/effects/useInstallStatusProgressEventRuntime.ts": "ce7a471a08af75e2e0711439ddeef34be63779b8ee6a381b40922c6e1f7c4030",
+    "src/renderer/src/runtime/app/useAutoInstallStatusRefreshRuntime.ts": "e6ec7d212d041454173409f8f5f64ff2e3933966a87aaf8342a37f76e8283ea4"
   },
   "additionalOwners": {
     "src/renderer/src/runtime/app/useLibraryController.ts": {

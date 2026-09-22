@@ -456,7 +456,7 @@ flowchart TD
 
 ### C-07 Renderer 显式 closing 生命周期
 
-状态：未开始。
+状态：已完成（2026-09-22）。
 
 现有 `scheduler stopping` 只能是后台调度事实，不能继续充当 renderer closing 的代理。
 
@@ -474,6 +474,19 @@ flowchart TD
 - 主进程 `assertApplicationOpen` 不放宽。
 
 硬门禁：真实 close request 触发后四个已知 IPC 调用计数为 0；正常运行 developer page 功能保持。
+
+#### C-07.1 实施结果
+
+- 新增 renderer 内部唯一 `rendererClosingLifecycleRuntime`，由现有 `app-window:flush-before-close` main→renderer 事件进入 closing；Renderer 只消费该状态，不提供 renderer→main 的“自报 closing”能力。
+- 保存失败/超时且用户选择“返回软件”时，main 通过同一 `app-window` 协议发送窄 `app-window:close-cancelled` 通知；preload 只暴露订阅，renderer lifecycle 随即 resume。没有增加第二套退出协议。
+- closing 后 developer diagnostics、background-task late event、shared metadata foreground idle/timeout/interval、非必要 database metrics 与 install-status 后续 metrics timer 均停止；允许的 font-write/library persistence 本地 flush 保留。
+- developer diagnostics 的串行调用在每个 await 边界再次检查 closing；已在途请求即使返回，也不会继续派生后续 IPC。
+- shared metadata in-flight 结果在 closing 后不再触发数据库刷新、状态提示或下一轮 foreground 调度。
+- 原 `scheduler stopping` 只保留为 scheduler-domain 事件，不再承担 renderer closing admission。
+- `main assertApplicationOpen` 与 C-06 shutdown coordinator 准入规则未放宽。
+- C00-B05 已由缺陷反例转为 `CONTROL_PASS`：正常运行时 4 个 developer diagnostics IPC 可用；真实 close request 后 4 个已知 IPC 调用计数为 0，shared foreground 调用增量为 0；close cancelled 后两者恢复。C00 current 现为 **0 缺陷 / 8 对照**。
+- Stage 6 controller/source freeze、App hook order、root-view legacy lifecycle freeze 均保留并更新为显式 closing owner/wiring 行为锁；Windows CRLF mutant 必须先确认实际命中源码，再验证门禁拒绝，未删除或弱化既有门禁。
+- Windows C-07 verification `35737665904` 全绿：TypeScript、C00 current、window-close-flush、bounded-local-exit、React composition controllers/domain controllers、app interaction composition、app-root-view contracts、Electron/Vite build、混淆与 `git diff --check` 全部通过。
 
 ### C-08 Shared I/O 批处理与执行者复用
 
@@ -548,7 +561,7 @@ flowchart TD
 
 ## 9. 当前结论与下一执行入口
 
-C-00～C-06 已完成；C-05/C-05R 的 Windows 实机“激活 → 取消激活 → 再激活 → 再取消激活”也已验证通过。本书整体仍然**不代表问题已全部修复**。
+C-00～C-07 已完成；C-05/C-05R 的 Windows 实机激活链与 C-06/C-07 Windows 自动门均已通过。本书整体仍然**不代表问题已全部修复**。
 
 当前执行顺序固定为：
 
@@ -561,9 +574,9 @@ C-00 基线（完成）
 → C-05 激活清理合同（完成；实机通过）
 → C-05R Windows 临时字体占用退避回收（完成；实机链通过）
 → C-06 退出结果三轴语义（完成）
-→ C-07 renderer closing（下一项）
-→ C-08 Shared I/O 性能
+→ C-07 renderer closing（完成）
+→ C-08 Shared I/O 性能（下一项）
 → C-09 Windows/NAS 总验收
 ```
 
-C-06 已关闭退出结果三轴语义，C00 current 现为 1 个缺陷 / 7 个对照；唯一剩余 C00 缺陷为 C00-B05 renderer closing admission。**下一执行入口为 C-07**；C-08 仍须等 C-07 硬门通过后再推进，O-07 继续暂停。
+C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 对照**。**下一执行入口为 C-08 Shared I/O 性能**；C-09 仍须等 C-08 硬门通过后再推进，O-07 继续暂停。

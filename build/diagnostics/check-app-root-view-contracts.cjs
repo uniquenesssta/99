@@ -38,7 +38,25 @@ function viewDeclarations(app) {
 }
 function checkLifecycle(app, view) {
   const fixture = require('./fixtures/app-view-composition.fixture.json')
-  const normalized = app.replace(/\r\n/g, '\n').replace("import type { AppRootViewProps } from './components/app/AppRootView'\n", '')
+  const normalizedApp = app.replace(/\r\n/g, '\n')
+  const closingImport = "import { useRendererClosingLifecycleRuntime } from './runtime/app/rendererClosingLifecycleRuntime'\n"
+  const closingOwner = '  const rendererClosingLifecycle = useRendererClosingLifecycleRuntime()\n'
+  const libraryClosing = '    rendererUserActive,\n    appendDeveloperStatus,\n    closingLifecycle: rendererClosingLifecycle\n  })'
+  const operationsClosing = '    sidebarPage,\n    clearFontListScrollIdleTimer,\n    appendDeveloperStatus,\n    closingLifecycle: rendererClosingLifecycle\n  })'
+  const developerClosing = '    enabled: IS_DEVELOPMENT,\n    hfm: window.hfm,\n    status,\n    closingLifecycle: rendererClosingLifecycle\n  })'
+  assert.equal((normalizedApp.match(/useRendererClosingLifecycleRuntime\(\)/g) || []).length, 1, 'renderer closing lifecycle owner must be composed exactly once')
+  assert.equal((normalizedApp.match(/closingLifecycle: rendererClosingLifecycle/g) || []).length, 3, 'renderer closing lifecycle must wire exactly three close-sensitive controllers')
+  assert(normalizedApp.indexOf(closingOwner) < normalizedApp.indexOf('  useRendererReadyNotification()'), 'renderer closing lifecycle owner must exist before close-capable effects')
+  assert(normalizedApp.includes(libraryClosing), 'library controller lost renderer closing lifecycle wiring')
+  assert(normalizedApp.includes(operationsClosing), 'operations controller lost renderer closing lifecycle wiring')
+  assert(normalizedApp.includes(developerClosing), 'developer controller lost renderer closing lifecycle wiring')
+  const normalized = normalizedApp
+    .replace("import type { AppRootViewProps } from './components/app/AppRootView'\n", '')
+    .replace(closingImport, '')
+    .replace(closingOwner, '')
+    .replace(libraryClosing, '    rendererUserActive,\n    appendDeveloperStatus\n  })')
+    .replace(operationsClosing, '    sidebarPage,\n    clearFontListScrollIdleTimer,\n    appendDeveloperStatus\n  })')
+    .replace(developerClosing, '    enabled: IS_DEVELOPMENT,\n    hfm: window.hfm,\n    status\n  })')
   const marker = normalized.indexOf('  const topbarViewProps:')
   assert(marker > 0)
   const { file } = jsx(app)
@@ -111,8 +129,16 @@ function main() {
   const app=read(appPath),view=read(viewPath)
   checkLifecycle(app, view)
   checkLifecycle(app.replace(/\r?\n/g,'\r\n'), view.replace(/\r?\n/g,'\r\n'))
+  const missingClosingOwner = app.replace(/  const rendererClosingLifecycle = useRendererClosingLifecycleRuntime\(\)\r?\n/, '')
+  assert.notEqual(missingClosingOwner, app, 'closing lifecycle owner mutant did not match source')
+  assert.throws(() => checkLifecycle(missingClosingOwner, view), /closing lifecycle owner/, 'closing lifecycle owner removal escaped the gate')
+  const missingClosingWiring = app.replace(/    closingLifecycle: rendererClosingLifecycle\r?\n/, '')
+  assert.notEqual(missingClosingWiring, app, 'closing lifecycle wiring mutant did not match source')
+  assert.throws(() => checkLifecycle(missingClosingWiring, view), /closing lifecycle/, 'closing lifecycle controller wiring removal escaped the gate')
   assert.throws(() => checkLifecycle(app.replace('useRendererReadyNotification()', 'useRendererReadyNotification(); setTimeout(() => {}, 1)'), view), /hooks\/effects\/commands/, 'new lifecycle work escaped the gate')
-  assert.throws(() => checkLifecycle(app.replace('  return (\n    <AppRootView', '  setTimeout(() => {}, 1)\n  return (\n    <AppRootView'), view), /no lifecycle work/, 'late lifecycle work escaped the gate')
+  const lateLifecycleWork = app.replace(/  return \(\r?\n    <AppRootView/, match => `  setTimeout(() => {}, 1)\n${match}`)
+  assert.notEqual(lateLifecycleWork, app, 'late lifecycle mutant did not match source')
+  assert.throws(() => checkLifecycle(lateLifecycleWork, view), /no lifecycle work/, 'late lifecycle work escaped the gate')
   assert.throws(() => viewDeclarations(app.replace("AppRootViewProps['topbar']", 'any')), /group type/, 'untyped view input escaped the gate')
   assert.throws(() => viewDeclarations(app.replace('themeMode: themeMode,', '...operationsController,')), /controller spread/, 'controller forwarding escaped the gate')
   const groupNames=jsx(app).found.attributes.properties.map(p=>p.name?.text)
@@ -125,7 +151,7 @@ function main() {
   assert.notEqual(broken,app)
   assert.notEqual(snapshot(broken,view,fixture.bindings,false,false),fixture.cases.find(c=>!c.development&&!c.collapsed).hash,'wrong wiring was not detected')
   compilerGate()
-  console.log('[diagnostics:app-root-view-contracts] six typed local groups; 18 compiler negatives; frozen UI in four modes; unchanged lifecycle/dev switch; wiring/type/spread/lifecycle mutations and CRLF passed')
+  console.log('[diagnostics:app-root-view-contracts] six typed local groups; explicit renderer-closing owner/wiring plus frozen legacy lifecycle; 18 compiler negatives; frozen UI in four modes; wiring/type/spread/lifecycle mutations and CRLF passed')
 }
 module.exports={snapshot,jsx}
 if(require.main===module)main()

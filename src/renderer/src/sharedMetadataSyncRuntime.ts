@@ -21,9 +21,11 @@ export type SharedMetadataSyncRuntimeOptions = {
   refreshDatabaseDerivedState: () => void
   setStatus: (message: string) => void
   appendDeveloperStatus?: (source: string, message: string, payload?: unknown) => void
+  isClosing?: () => boolean
 }
 
 export function runSharedMetadataSyncCheckRuntime(options: SharedMetadataSyncRuntimeOptions): Promise<void> | null {
+  if (options.isClosing?.()) return null
   if (typeof options.hfm.checkSharedMetadataUpdates !== 'function') return null
   if (!options.libraryLoadedRef.current || options.foldersLength <= 0 || options.indexingActive) return null
 
@@ -35,6 +37,7 @@ export function runSharedMetadataSyncCheckRuntime(options: SharedMetadataSyncRun
   options.lastCheckedAtRef.current = now
   const task = (async () => {
     const result = await options.hfm.checkSharedMetadataUpdates(options.reason) as SharedMetadataSyncCheckResult
+    if (options.isClosing?.()) return
     if (!result?.changed) return
 
     options.refreshDatabaseDerivedState()
@@ -44,6 +47,7 @@ export function runSharedMetadataSyncCheckRuntime(options: SharedMetadataSyncRun
     options.setStatus(message)
     options.appendDeveloperStatus?.('shared-metadata-sync', message, { ...result, elapsedMs })
   })().catch((error) => {
+    if (options.isClosing?.()) return
     const message = error instanceof Error ? error.message : String(error)
     options.appendDeveloperStatus?.('shared-metadata-sync', `共享元数据同步检查失败：${message}`, { reason: options.reason })
   }).finally(() => {

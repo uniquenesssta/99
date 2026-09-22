@@ -11,6 +11,7 @@ export function useAutoInstallStatusRefreshRuntime(options: {
   startedRef: MutableRefObject<boolean>
   signatureRef: MutableRefObject<string>
   startBackgroundInstallStatusRefresh: (messagePrefix?: string) => Promise<void>
+  isClosing: () => boolean
 }): void {
   const {
     hfm,
@@ -19,10 +20,12 @@ export function useAutoInstallStatusRefreshRuntime(options: {
     indexingActive,
     startedRef,
     signatureRef,
-    startBackgroundInstallStatusRefresh
+    startBackgroundInstallStatusRefresh,
+    isClosing
   } = options
 
   useEffect(() => {
+    if (isClosing()) return
     if (!databaseFontMetrics || !libraryFolders.length || indexingActive) return
     const missing = databaseFontMetrics.installStatusMissingCount || 0
     if (missing <= 0) {

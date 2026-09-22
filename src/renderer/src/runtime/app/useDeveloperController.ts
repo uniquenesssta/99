@@ -4,11 +4,13 @@ import type { DeveloperStatusEntry } from '../../appRuntime'
 import { appendDeveloperStatusEntry,refreshDeveloperStatusDetailsRuntime } from '../../rendererDeveloperStatusRuntime'
 import { useBackgroundTaskEventsRuntime } from './effects/useBackgroundTaskEventsRuntime'
 import { useRendererDeveloperStatusLogRuntime } from './effects/useRendererDeveloperStatusLogRuntime'
+import type { RendererClosingLifecycleRuntime } from './rendererClosingLifecycleRuntime'
 
 export function useDeveloperController(options: {
   enabled: boolean
   hfm: Window['hfm']
   status: string
+  closingLifecycle: RendererClosingLifecycleRuntime
 }) {
   const [developerStatusLog, setDeveloperStatusLog] = useState<DeveloperStatusEntry[]>([])
   const [latestIndexProgress, setLatestIndexProgress] = useState<FontIndexProgressPayload | null>(null)
@@ -21,12 +23,12 @@ export function useDeveloperController(options: {
   const developerStatusRefreshInFlightRef = useRef<Promise<void> | null>(null)
 
   function appendDeveloperStatus(source: string, message: string, payload?: unknown): void {
-    if (!options.enabled) return
+    if (!options.enabled || options.closingLifecycle.isClosing()) return
     setDeveloperStatusLog((prev) => appendDeveloperStatusEntry(prev, source, message, payload))
   }
 
   function refreshDeveloperStatusDetails(): Promise<void> {
-    if (!options.enabled) return Promise.resolve()
+    if (!options.enabled || options.closingLifecycle.isClosing()) return Promise.resolve()
     if (developerStatusRefreshInFlightRef.current) return developerStatusRefreshInFlightRef.current
 
     const task = refreshDeveloperStatusDetailsRuntime({
@@ -37,7 +39,8 @@ export function useDeveloperController(options: {
       setMigrationDiagnostics: setDeveloperMigrationDiagnostics,
       setSharedMetadataDiagnostics: setDeveloperSharedMetadataDiagnostics,
       setTasks: setDeveloperTasks,
-      appendStatus: appendDeveloperStatus
+      appendStatus: appendDeveloperStatus,
+      isClosing: options.closingLifecycle.isClosing
     }).finally(() => {
       if (developerStatusRefreshInFlightRef.current === task) {
         developerStatusRefreshInFlightRef.current = null
@@ -54,7 +57,8 @@ export function useDeveloperController(options: {
     hfm: options.hfm,
     setLatestBackgroundTaskEvent,
     appendDeveloperStatus,
-    refreshDeveloperStatusDetails
+    refreshDeveloperStatusDetails,
+    closingLifecycle: options.closingLifecycle
   })
 
   return {

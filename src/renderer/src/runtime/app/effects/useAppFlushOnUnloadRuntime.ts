@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import type { RendererClosingLifecycleRuntime } from '../rendererClosingLifecycleRuntime'
 
 export function useAppFlushOnUnloadRuntime(args: {
   hfm: Window['hfm']
@@ -7,6 +8,7 @@ export function useAppFlushOnUnloadRuntime(args: {
   clearQueuedFontWriteTimer: () => void
   flushFontWriteQueue: (reason: string) => Promise<boolean> | boolean | void
   flushLibraryPersistence: () => Promise<boolean>
+  closingLifecycle: RendererClosingLifecycleRuntime
 }): void {
   const argsRef = useRef(args)
   argsRef.current = args
@@ -34,11 +36,13 @@ export function useAppFlushOnUnloadRuntime(args: {
     }
 
     const flushBeforeUnload = (): void => {
+      argsRef.current.closingLifecycle.beginClosing()
       void flushApplicationState('beforeunload')
     }
 
     const disposeCloseFlush = typeof args.hfm.onWindowFlushBeforeClose === 'function'
       ? args.hfm.onWindowFlushBeforeClose((payload) => {
+          argsRef.current.closingLifecycle.beginClosing()
           void flushApplicationState('window-close').then((saved) => (
             argsRef.current.hfm.completeWindowCloseFlush(payload.requestId, saved)
           )).catch(() => (
@@ -47,10 +51,17 @@ export function useAppFlushOnUnloadRuntime(args: {
         })
       : null
 
+    const disposeCloseCancelled = typeof args.hfm.onWindowCloseCancelled === 'function'
+      ? args.hfm.onWindowCloseCancelled(() => {
+          argsRef.current.closingLifecycle.resume()
+        })
+      : null
+
     window.addEventListener('beforeunload', flushBeforeUnload)
     return () => {
       window.removeEventListener('beforeunload', flushBeforeUnload)
       disposeCloseFlush?.()
+      disposeCloseCancelled?.()
       clearPendingTimers()
       void flushApplicationState('unmount')
     }

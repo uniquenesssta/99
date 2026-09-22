@@ -24,53 +24,72 @@ export async function refreshDeveloperStatusDetailsRuntime(options: {
   setSharedMetadataDiagnostics: (value: unknown) => void
   setTasks: (value: unknown[]) => void
   appendStatus: (source: string, message: string) => void
+  isClosing?: () => boolean
 }): Promise<void> {
-  if (!options.enabled) return
+  const shouldStop = (): boolean => !options.enabled || options.isClosing?.() === true
+  if (shouldStop()) return
 
   try {
     if (typeof options.hfm.getCacheArchitecture === 'function') {
-      options.setArchitecture(await options.hfm.getCacheArchitecture())
+      const value = await options.hfm.getCacheArchitecture()
+      if (shouldStop()) return
+      options.setArchitecture(value)
     }
   } catch (error) {
     if (isApplicationClosingIpcError(error)) return
+    if (shouldStop()) return
     options.appendStatus('developer', `读取缓存架构失败：${error instanceof Error ? error.message : String(error)}`)
   }
 
+  if (shouldStop()) return
   try {
     if (typeof options.hfm.getBackgroundTaskSchedulerStatus === 'function') {
-      options.setSchedulerStatus(await options.hfm.getBackgroundTaskSchedulerStatus())
+      const value = await options.hfm.getBackgroundTaskSchedulerStatus()
+      if (shouldStop()) return
+      options.setSchedulerStatus(value)
     }
   } catch (error) {
     if (isApplicationClosingIpcError(error)) return
+    if (shouldStop()) return
     options.appendStatus('developer', `读取任务调度器失败：${error instanceof Error ? error.message : String(error)}`)
   }
 
-
+  if (shouldStop()) return
   try {
     if (typeof options.hfm.getMigrationDiagnostics === 'function') {
-      options.setMigrationDiagnostics(await options.hfm.getMigrationDiagnostics())
+      const value = await options.hfm.getMigrationDiagnostics()
+      if (shouldStop()) return
+      options.setMigrationDiagnostics(value)
     }
   } catch (error) {
     if (isApplicationClosingIpcError(error)) return
+    if (shouldStop()) return
     options.appendStatus('developer', `读取迁移诊断失败：${error instanceof Error ? error.message : String(error)}`)
   }
 
+  if (shouldStop()) return
   try {
     if (typeof options.hfm.getSharedMetadataDiagnostics === 'function') {
-      options.setSharedMetadataDiagnostics(await options.hfm.getSharedMetadataDiagnostics({ includeRepairDryRun: true }))
+      const value = await options.hfm.getSharedMetadataDiagnostics({ includeRepairDryRun: true })
+      if (shouldStop()) return
+      options.setSharedMetadataDiagnostics(value)
     }
   } catch (error) {
     if (isApplicationClosingIpcError(error)) return
+    if (shouldStop()) return
     options.appendStatus('developer', `读取共享元数据诊断失败：${error instanceof Error ? error.message : String(error)}`)
   }
 
+  if (shouldStop()) return
   try {
     if (typeof options.hfm.listBackgroundTasks === 'function') {
       const tasks = await options.hfm.listBackgroundTasks(undefined, 80)
+      if (shouldStop()) return
       options.setTasks(Array.isArray(tasks) ? tasks : [])
     }
   } catch (error) {
     if (isApplicationClosingIpcError(error)) return
+    if (shouldStop()) return
     options.appendStatus('developer', `读取后台任务失败：${error instanceof Error ? error.message : String(error)}`)
   }
 }

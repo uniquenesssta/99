@@ -240,27 +240,44 @@ async function observeShutdownResidualClean() {
 
 async function observeRendererClosingAdmission() {
   const cleanups = []
-  const listeners = new Map()
   const windowListeners = new Map()
+  const documentListeners = new Map()
+  const idleCallbacks = new Map()
+  let nextIdleId = 0
   const fakeWindow = {
     setTimeout, clearTimeout, setInterval, clearInterval,
+    requestIdleCallback: fn => {
+      const id = ++nextIdleId
+      idleCallbacks.set(id, fn)
+      setImmediate(() => {
+        const callback = idleCallbacks.get(id)
+        if (!callback) return
+        idleCallbacks.delete(id)
+        callback({ didTimeout: false, timeRemaining: () => 50 })
+      })
+      return id
+    },
+    cancelIdleCallback: id => idleCallbacks.delete(id),
     addEventListener: (name, fn) => windowListeners.set(name, fn),
     removeEventListener: name => windowListeners.delete(name),
   }
   const fakeDocument = {
     visibilityState: 'visible',
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener: (name, fn) => documentListeners.set(name, fn),
+    removeEventListener: name => documentListeners.delete(name),
   }
   const react = {
     useRef: value => ({ current: value }),
     useEffect: fn => { const cleanup = fn(); if (typeof cleanup === 'function') cleanups.push(cleanup) },
   }
   const calls = []
+  let sharedCalls = 0
   let closeListener
+  let closeCancelledListener
   let backgroundListener
   const hfm = {
     onWindowFlushBeforeClose: cb => { closeListener = cb; return () => { closeListener = undefined } },
+    onWindowCloseCancelled: cb => { closeCancelledListener = cb; return () => { closeCancelledListener = undefined } },
     completeWindowCloseFlush: async () => true,
     onBackgroundTasksChanged: cb => { backgroundListener = cb; return () => { backgroundListener = undefined } },
     getCacheArchitecture: async () => { calls.push('cache:getArchitecture'); return {} },
@@ -269,6 +286,7 @@ async function observeRendererClosingAdmission() {
     listBackgroundTasks: async () => { calls.push('tasks:list'); return [] },
   }
   const l = load({ react }, { window: fakeWindow, document: fakeDocument })
+  const closingLifecycle = l('src/renderer/src/runtime/app/rendererClosingLifecycleRuntime.ts').createRendererClosingLifecycleRuntime()
   const dev = l('src/renderer/src/rendererDeveloperStatusRuntime.ts')
   const refresh = () => dev.refreshDeveloperStatusDetailsRuntime({
     enabled: true,
@@ -279,6 +297,7 @@ async function observeRendererClosingAdmission() {
     setSharedMetadataDiagnostics() {},
     setTasks() {},
     appendStatus() {},
+    isClosing: closingLifecycle.isClosing,
   })
   l('src/renderer/src/runtime/app/effects/useAppFlushOnUnloadRuntime.ts').useAppFlushOnUnloadRuntime({
     hfm,
@@ -287,6 +306,7 @@ async function observeRendererClosingAdmission() {
     clearQueuedFontWriteTimer() {},
     flushFontWriteQueue: async () => true,
     flushLibraryPersistence: async () => true,
+    closingLifecycle,
   })
   l('src/renderer/src/runtime/app/effects/useBackgroundTaskEventsRuntime.ts').useBackgroundTaskEventsRuntime({
     enabled: true,
@@ -294,27 +314,59 @@ async function observeRendererClosingAdmission() {
     setLatestBackgroundTaskEvent() {},
     appendDeveloperStatus() {},
     refreshDeveloperStatusDetails: refresh,
+    closingLifecycle,
+  })
+  l('src/renderer/src/runtime/app/effects/useSharedMetadataSyncForegroundRuntime.ts').useSharedMetadataSyncForegroundRuntime({
+    enabled: true,
+    libraryFoldersKey: 'root',
+    indexingActive: false,
+    checkSharedMetadataUpdates: async () => { sharedCalls++ },
+    closingLifecycle,
   })
   await tick(); await tick()
+  assert(calls.length >= 4, 'normal developer diagnostics must remain active before close')
+  const normalDeveloperCalls = calls.slice()
+  const focus = windowListeners.get('focus')
+  assert.equal(typeof focus, 'function')
+  focus()
+  await tick(); await tick()
+  assert(sharedCalls > 0, 'normal shared metadata foreground refresh must remain active before close')
+  const sharedBeforeClose = sharedCalls
   calls.length = 0
+
   assert.equal(typeof closeListener, 'function')
-  await closeListener({ requestId: 1 })
+  closeListener({ requestId: 1 })
   await tick()
+  assert.equal(closingLifecycle.isClosing(), true)
   assert.equal(typeof backgroundListener, 'function')
 
   backgroundListener({ eventType: 'scheduler', status: { stopping: true } })
-  await tick()
-  assert.equal(calls.length, 0, 'scheduler stopping guard regressed')
-
   backgroundListener({ eventType: 'task', task: { id: 'late' }, status: { state: 'finished' } })
+  focus()
   await tick(); await tick()
-  const defect = calls.length > 0
-  report('C00-B05', defect, {
+  const postCloseDeveloperCalls = calls.slice()
+  const postCloseSharedCalls = sharedCalls - sharedBeforeClose
+  assert.equal(postCloseDeveloperCalls.length, 0, 'explicit renderer closing must block late developer diagnostics IPC')
+  assert.equal(postCloseSharedCalls, 0, 'explicit renderer closing must block shared metadata foreground refresh')
+
+  assert.equal(typeof closeCancelledListener, 'function')
+  closeCancelledListener({ requestId: 1 })
+  assert.equal(closingLifecycle.isClosing(), false)
+  backgroundListener({ eventType: 'task', task: { id: 'resumed' }, status: { state: 'finished' } })
+  focus()
+  await tick(); await tick(); await tick()
+  assert(calls.length >= 4, 'developer diagnostics must recover after close cancellation')
+  assert(sharedCalls > sharedBeforeClose, 'shared metadata foreground refresh must recover after close cancellation')
+
+  report('C00-B05', false, {
     closeSignalReceived: true,
-    schedulerStoppingSuppressed: true,
-    lateBackgroundEventAfterClose: true,
-    postCloseDeveloperCalls: calls.slice(),
-    meaning: defect ? 'renderer has no explicit closing admission shared by late developer refreshes' : 'closing lifecycle now blocks late developer refreshes',
+    explicitRendererClosing: true,
+    normalDeveloperCalls,
+    postCloseDeveloperCalls,
+    postCloseSharedCalls,
+    resumedDeveloperCalls: calls.slice(),
+    sharedForegroundRecovered: sharedCalls > sharedBeforeClose,
+    meaning: 'explicit renderer closing admission blocks late developer/shared foreground work and close cancellation restores normal behavior',
   })
   for (const cleanup of cleanups.reverse()) cleanup()
 }

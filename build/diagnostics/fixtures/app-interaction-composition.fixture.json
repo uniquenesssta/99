@@ -110,6 +110,7 @@
     }
   },
   "hooks": [
+    "useRendererClosingLifecycleRuntime",
     "useRendererReadyNotification",
     "useBrowseController",
     "useFolderController",

@@ -43,6 +43,7 @@ import { useFontListScrollRuntime } from './runtime/app/useFontListScrollRuntime
 import { usePendingDetailRevealRuntime } from './runtime/app/usePendingDetailRevealRuntime'
 import { useRendererDisplayPreferences } from './runtime/app/useRendererDisplayPreferencesRuntime'
 import { useRendererReadyNotification } from './runtime/app/useRendererReadyNotificationRuntime'
+import { useRendererClosingLifecycleRuntime } from './runtime/app/rendererClosingLifecycleRuntime'
 import { useAppFontShellDerivedRuntime } from './runtime/app/useAppFontShellDerivedRuntime'
 import { useAppFontDerivedRuntime } from './runtime/app/useAppFontDerivedRuntime'
 import { createAppFontScrollRestoreRuntime } from './runtime/app/useFontScrollRestoreRuntime'
@@ -81,6 +82,7 @@ export default function App(): JSX.Element {
   }
 
   const controllerPorts = createAppControllerPorts()
+  const rendererClosingLifecycle = useRendererClosingLifecycleRuntime()
 
   useRendererReadyNotification()
 
@@ -221,7 +223,8 @@ export default function App(): JSX.Element {
       fontMetricsRequestSeqRef
     },
     rendererUserActive,
-    appendDeveloperStatus
+    appendDeveloperStatus,
+    closingLifecycle: rendererClosingLifecycle
   })
 
   function appendDeveloperStatus(source: string, message: string, payload?: unknown): void {
@@ -338,7 +341,8 @@ export default function App(): JSX.Element {
     },
     sidebarPage,
     clearFontListScrollIdleTimer,
-    appendDeveloperStatus
+    appendDeveloperStatus,
+    closingLifecycle: rendererClosingLifecycle
   })
   controllerPorts.bindOperations({
     reportUserActivity: operationsController.reportUserActivity,
@@ -382,7 +386,8 @@ export default function App(): JSX.Element {
   const developerController = useDeveloperController({
     enabled: IS_DEVELOPMENT,
     hfm: window.hfm,
-    status
+    status,
+    closingLifecycle: rendererClosingLifecycle
   })
   controllerPorts.bindDeveloper({ appendDeveloperStatus: developerController.appendDeveloperStatus })
   const {
