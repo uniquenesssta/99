@@ -221,6 +221,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
           windowsHide: true,
           maxBuffer: 256 * 1024,
           signal,
+          sharedIo: { paths: [rootPath], write: false },
         })
         const written = parseJsonLine<{ ok?: boolean; message?: string }>(stdout)
         if (!written.ok) throw new Error(written.message || 'rust listing output write failed')

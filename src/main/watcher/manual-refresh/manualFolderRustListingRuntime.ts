@@ -41,13 +41,8 @@ function rustManualRefreshListingMode(): "auto" | "force" | "off" {
   return "auto";
 }
 
-function shouldUseRustManualRefreshListing(deps: ManualFolderRefreshDeps, targetFolder: string): boolean {
-  const mode = rustManualRefreshListingMode();
-  if (mode === "off") return false;
-  if (mode === "force") return true;
-
-  const profile = deps.storageProfileForPath?.(targetFolder);
-  return profile?.isNetwork !== true;
+function shouldUseRustManualRefreshListing(): boolean {
+  return rustManualRefreshListingMode() !== "off";
 }
 
 export function createManualFolderRustListingRuntime(
@@ -62,10 +57,9 @@ export function createManualFolderRustListingRuntime(
     progress?: (payload: { files: number; foldersScanned: number; skippedDirs: number }) => void;
   }): Promise<ManualRustListingResult | null> {
     if (!deps.runRustFontIndexListWorker) return null;
-    if (!shouldUseRustManualRefreshListing(deps, args.targetFolder)) {
-      const profile = deps.storageProfileForPath?.(args.targetFolder);
+    if (!shouldUseRustManualRefreshListing()) {
       deps.appendStartupLog(
-        `manual folder rust listing skipped: folder=${args.targetFolder}, reason=${profile?.isNetwork ? `network-${profile.reason || profile.type || "path"}` : "disabled"}; directory signature cache preferred`,
+        `manual folder rust listing skipped: folder=${args.targetFolder}, reason=disabled; directory signature cache preferred`,
       );
       return null;
     }

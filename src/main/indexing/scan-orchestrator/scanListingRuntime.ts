@@ -1,11 +1,10 @@
-import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
-import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
 import { resolve } from 'node:path'
 import type { ScanResult } from '../../../shared/types'
 import type { CachedFontStatLike } from '../../fonts/fontRuntime'
 import type { RustFontFamilyHint, RustFontNameHint, RustFontScriptHint, RustFontStyleHint } from '../fontScanWorkers'
-import { sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { normalizePathForCacheCompare } from '../../path/cachePath'
 import { findBestWatchedRootForFile } from '../../path/fontPathPolicy'
 import { isOperationCancelledError, throwIfAborted } from '../../performance/ioQueue'
@@ -85,27 +84,6 @@ function rootForListedDirectory(folders: string[], dirPath: string): string | nu
   return findBestWatchedRootForFile(dirPath, folders)
 }
 
-type SharedRootGenerationSnapshot = Map<string, number>
-
-function snapshotSharedRootGenerations(folders: string[]): SharedRootGenerationSnapshot {
-  const snapshot: SharedRootGenerationSnapshot = new Map()
-  for (const folder of folders) {
-    const root = sharedIoAvailabilityRoot(folder)
-    if (!root || snapshot.has(root)) continue
-    snapshot.set(root, getStartupPathRootState(root).generation)
-  }
-  return snapshot
-}
-
-function assertSharedRootGenerationsStable(snapshot: SharedRootGenerationSnapshot): void {
-  for (const [root, generation] of snapshot) {
-    const current = getStartupPathRootState(root)
-    if (current.generation !== generation || current.state === 'offline') {
-      throw new SharedIoProcessError('共享根状态已变化，批量列出结果已丢弃。', 'unknown', 'stale-generation')
-    }
-  }
-}
-
 async function partitionNetworkScanFolders(
   folders: string[],
   deps: ScanOrchestratorDeps,
@@ -117,8 +95,8 @@ async function partitionNetworkScanFolders(
       if ((await sharedIoResourceKeys([folder])).length) networkFolders.push(folder)
       else fallbackFolders.push(folder)
     } catch (error) {
-      // Classification is only the optimization gate. The existing directory-cache route
-      // remains isolated by sharedFileSystem and keeps its original failure semantics.
+      rethrowSharedIoProcessError(error)
+      // Non-Shared classification failures keep the pre-existing directory-cache route.
       fallbackFolders.push(folder)
       deps.appendStartupLog(`rust scan listing network classification deferred: root=${folder}, reason=${error instanceof Error ? error.message : String(error)}`)
     }
@@ -134,9 +112,8 @@ async function tryListScanStatJobsWithRust(args: {
   ensureRootContext: (folder: string) => Promise<RootScanCacheContext>
   reportProgress: (payload: any, immediate?: boolean) => void
   onListedBatch?: (items: ScanStatJob[]) => void
-  generationSnapshot?: SharedRootGenerationSnapshot
 }): Promise<ScanStatJob[] | null> {
-  const { deps, folders, signal, errors, ensureRootContext, reportProgress, onListedBatch, generationSnapshot } = args
+  const { deps, folders, signal, errors, ensureRootContext, reportProgress, onListedBatch } = args
   if (!rustScanListingEnabled() || !deps.runRustFontIndexListWorker) return null
   if (onListedBatch && earlyVisibleListingEnabled()) {
     deps.appendStartupLog('rust scan listing skipped: early visible directory stream enabled')
@@ -160,7 +137,6 @@ async function tryListScanStatJobsWithRust(args: {
       signal,
     )
     if (!listed) return null
-    if (generationSnapshot) assertSharedRootGenerationsStable(generationSnapshot)
     if (listed.truncated) {
       deps.appendStartupLog('rust scan listing skipped: result truncated, fallback to directory cache listing')
       return null
@@ -216,7 +192,6 @@ export async function listScanStatJobs(args: {
   if (earlyVisibleActive && rustScanListingEnabled() && deps.runRustFontIndexListWorker) {
     const { networkFolders, fallbackFolders } = await partitionNetworkScanFolders(folders, deps)
     if (networkFolders.length) {
-      const generationSnapshot = snapshotSharedRootGenerations(networkFolders)
       const networkListed = await tryListScanStatJobsWithRust({
         deps,
         folders: networkFolders,
@@ -225,9 +200,9 @@ export async function listScanStatJobs(args: {
         ensureRootContext,
         reportProgress,
         onListedBatch: undefined,
-        generationSnapshot,
       })
       if (networkListed) {
+        onListedBatch?.(networkListed)
         prelisted.push(...networkListed)
         foldersForDirectoryListing = fallbackFolders
         deps.appendStartupLog(`scan listing network batch source=rust roots=${networkFolders.length}, files=${networkListed.length}, localOrFallbackRoots=${fallbackFolders.length}`)

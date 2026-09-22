@@ -82,17 +82,23 @@ function testC08NetworkListingBatchRouting() {
   assert(listing.includes('folders: networkFolders') && listing.includes('onListedBatch: undefined'), 'network roots must reuse Rust list-font-files even while local early-visible streaming remains enabled')
   assert(listing.includes('foldersForDirectoryListing = fallbackFolders'), 'successful network batch must keep local/fallback roots on the existing directory-cache route')
   assert(listing.includes('foldersForDirectoryListing,') && listing.includes('...prelisted,'), 'directory-cache failure must not redo an already completed network batch')
-  assert(listing.includes('snapshotSharedRootGenerations(networkFolders)'), 'network batch must capture the current root generation before submission')
-  assert(listing.includes("'stale-generation'"), 'network batch must discard a receipt from a changed/offline root generation')
+  assert(listing.includes('rethrowSharedIoProcessError(error)'), 'Shared I/O identity failures must remain fail-closed during network classification')
+  assert(listing.includes('onListedBatch?.(networkListed)'), 'network batch must still publish to the existing early-visible consumer')
+  assert(!listing.includes('snapshotSharedRootGenerations'), 'root generation ownership must remain in the Shared I/O transport')
 
   const indexingClient = read('src/main/rust-core/clients/rustIndexingClientRuntime.ts')
   assert(indexingClient.includes('HFM_RUST_SCAN_LISTING_TIMEOUT_MS || 10 * 60 * 1000'), 'C-08.1 must not widen the existing list-font-files timeout')
+  assert(indexingClient.includes('sharedIo: { paths: [rootPath], write: false }'), 'list-font-files must enter Shared I/O as a read-only batch')
+
+  const manualListing = read('src/main/watcher/manual-refresh/manualFolderRustListingRuntime.ts')
+  assert(!manualListing.includes('profile?.isNetwork !== true'), 'manual network refresh must not skip the existing Rust list-font-files batch in auto mode')
 
   const watcher = read('src/main/watcher/watchedFolderIndexRuntime.ts')
   assert(watcher.includes('options.runRustWatcherPreflight({'), 'watcher batch must continue to use the existing Rust preflight command')
   assert(watcher.includes('if (rustResult) return rustResult.unchanged'), 'watcher preflight result must remain authoritative when available')
 
   const transport = read('src/main/rust-core/rustCoreWorkerTransportRuntime.ts')
+  assert(transport.includes("if (!target!.write && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"), 'read-only Shared I/O receipts must retain the root-generation gate')
   assert(transport.includes('timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000))'), 'Shared I/O execution timeout cap changed')
   assert(transport.includes('queueTimeoutMs: 3000'), 'Shared I/O queue timeout changed')
 
