@@ -1,9 +1,11 @@
-import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
 import { resolve } from 'node:path'
 import type { ScanResult } from '../../../shared/types'
 import type { CachedFontStatLike } from '../../fonts/fontRuntime'
 import type { RustFontFamilyHint, RustFontNameHint, RustFontScriptHint, RustFontStyleHint } from '../fontScanWorkers'
+import { sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { normalizePathForCacheCompare } from '../../path/cachePath'
 import { findBestWatchedRootForFile } from '../../path/fontPathPolicy'
 import { isOperationCancelledError, throwIfAborted } from '../../performance/ioQueue'
@@ -83,6 +85,47 @@ function rootForListedDirectory(folders: string[], dirPath: string): string | nu
   return findBestWatchedRootForFile(dirPath, folders)
 }
 
+type SharedRootGenerationSnapshot = Map<string, number>
+
+function snapshotSharedRootGenerations(folders: string[]): SharedRootGenerationSnapshot {
+  const snapshot: SharedRootGenerationSnapshot = new Map()
+  for (const folder of folders) {
+    const root = sharedIoAvailabilityRoot(folder)
+    if (!root || snapshot.has(root)) continue
+    snapshot.set(root, getStartupPathRootState(root).generation)
+  }
+  return snapshot
+}
+
+function assertSharedRootGenerationsStable(snapshot: SharedRootGenerationSnapshot): void {
+  for (const [root, generation] of snapshot) {
+    const current = getStartupPathRootState(root)
+    if (current.generation !== generation || current.state === 'offline') {
+      throw new SharedIoProcessError('共享根状态已变化，批量列出结果已丢弃。', 'unknown', 'stale-generation')
+    }
+  }
+}
+
+async function partitionNetworkScanFolders(
+  folders: string[],
+  deps: ScanOrchestratorDeps,
+): Promise<{ networkFolders: string[]; fallbackFolders: string[] }> {
+  const networkFolders: string[] = []
+  const fallbackFolders: string[] = []
+  for (const folder of folders) {
+    try {
+      if ((await sharedIoResourceKeys([folder])).length) networkFolders.push(folder)
+      else fallbackFolders.push(folder)
+    } catch (error) {
+      // Classification is only the optimization gate. The existing directory-cache route
+      // remains isolated by sharedFileSystem and keeps its original failure semantics.
+      fallbackFolders.push(folder)
+      deps.appendStartupLog(`rust scan listing network classification deferred: root=${folder}, reason=${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  return { networkFolders, fallbackFolders }
+}
+
 async function tryListScanStatJobsWithRust(args: {
   deps: ScanOrchestratorDeps
   folders: string[]
@@ -91,8 +134,9 @@ async function tryListScanStatJobsWithRust(args: {
   ensureRootContext: (folder: string) => Promise<RootScanCacheContext>
   reportProgress: (payload: any, immediate?: boolean) => void
   onListedBatch?: (items: ScanStatJob[]) => void
+  generationSnapshot?: SharedRootGenerationSnapshot
 }): Promise<ScanStatJob[] | null> {
-  const { deps, folders, signal, errors, ensureRootContext, reportProgress, onListedBatch } = args
+  const { deps, folders, signal, errors, ensureRootContext, reportProgress, onListedBatch, generationSnapshot } = args
   if (!rustScanListingEnabled() || !deps.runRustFontIndexListWorker) return null
   if (onListedBatch && earlyVisibleListingEnabled()) {
     deps.appendStartupLog('rust scan listing skipped: early visible directory stream enabled')
@@ -116,6 +160,7 @@ async function tryListScanStatJobsWithRust(args: {
       signal,
     )
     if (!listed) return null
+    if (generationSnapshot) assertSharedRootGenerationsStable(generationSnapshot)
     if (listed.truncated) {
       deps.appendStartupLog('rust scan listing skipped: result truncated, fallback to directory cache listing')
       return null
@@ -137,7 +182,7 @@ async function tryListScanStatJobsWithRust(args: {
     deps.appendStartupLog(`scan listing source=rust files=${listed.files.length}, valid=${listed.files.filter((item) => item.signatureValid !== false).length}, invalid=${listed.files.filter((item) => item.signatureValid === false).length}, quickHash=${listed.files.filter((item) => item.quickHash).length}, contentHash=${listed.files.filter((item) => item.contentHash).length}, fullHash=${listed.files.filter((item) => item.hashKind === 'full-fnv1a64').length}, nameHints=${listed.files.filter((item) => item.nameHint).length}, scriptHints=${listed.files.filter((item) => item.scriptHint).length}, styleHints=${listed.files.filter((item) => item.styleHint).length}, familyHints=${listed.files.filter((item) => item.familyHint).length}, folders=${listed.foldersScanned || 0}, errors=${listed.errors.length}, durationMs=${Date.now() - startedAt}`)
     return dedupeScanStatJobs(listed.files.map((item) => ({ ...item, error: '', signatureValid: item.signatureValid, formatHint: item.format, quickHash: item.quickHash, contentHash: item.contentHash, hashKind: item.hashKind, nameHint: item.nameHint, scriptHint: item.scriptHint, styleHint: item.styleHint, familyHint: item.familyHint })))
   } catch (error) {
-      rethrowSharedIoProcessError(error)
+    rethrowSharedIoProcessError(error)
     if (isOperationCancelledError(error)) throw error
     deps.appendStartupLog(`rust scan listing failed, fallback to directory cache listing: ${error instanceof Error ? error.message : String(error)}`)
     reportProgress({ stage: 'listing', message: 'Rust core 列出失败，已降级为目录缓存列出。' }, true)
@@ -160,12 +205,39 @@ export async function listScanStatJobs(args: {
   onListedBatch?: (items: ScanStatJob[]) => void
 }): Promise<ScanStatJob[]> {
   const { deps, directoryCacheRuntime, folders, signal, errors, ensureRootContext, reportProgress, onListedBatch } = args
-  const rustListed = await tryListScanStatJobsWithRust({ deps, folders, signal, errors, ensureRootContext, reportProgress, onListedBatch })
-  if (rustListed) return rustListed
+  const earlyVisibleActive = Boolean(onListedBatch && earlyVisibleListingEnabled())
+  if (!earlyVisibleActive) {
+    const rustListed = await tryListScanStatJobsWithRust({ deps, folders, signal, errors, ensureRootContext, reportProgress, onListedBatch })
+    if (rustListed) return rustListed
+  }
+
+  const prelisted: ScanStatJob[] = []
+  let foldersForDirectoryListing = folders
+  if (earlyVisibleActive && rustScanListingEnabled() && deps.runRustFontIndexListWorker) {
+    const { networkFolders, fallbackFolders } = await partitionNetworkScanFolders(folders, deps)
+    if (networkFolders.length) {
+      const generationSnapshot = snapshotSharedRootGenerations(networkFolders)
+      const networkListed = await tryListScanStatJobsWithRust({
+        deps,
+        folders: networkFolders,
+        signal,
+        errors,
+        ensureRootContext,
+        reportProgress,
+        onListedBatch: undefined,
+        generationSnapshot,
+      })
+      if (networkListed) {
+        prelisted.push(...networkListed)
+        foldersForDirectoryListing = fallbackFolders
+        deps.appendStartupLog(`scan listing network batch source=rust roots=${networkFolders.length}, files=${networkListed.length}, localOrFallbackRoots=${fallbackFolders.length}`)
+      }
+    }
+  }
 
   try {
-    const allListed: ScanStatJob[] = []
-    for (const folder of folders) {
+    const allListed: ScanStatJob[] = [...prelisted]
+    for (const folder of foldersForDirectoryListing) {
       throwIfAborted(signal)
       const context = await ensureRootContext(folder)
       const listed = await directoryCacheRuntime.listFontFilesWithDirectoryCache(
@@ -187,14 +259,14 @@ export async function listScanStatJobs(args: {
     }
     return dedupeScanStatJobs(allListed)
   } catch (error) {
-      rethrowSharedIoProcessError(error)
+    rethrowSharedIoProcessError(error)
     if (isOperationCancelledError(error)) throw error
     deps.appendStartupLog(`directory cache listing failed, fallback to worker walk: ${error instanceof Error ? error.message : String(error)}`)
     reportProgress({ stage: 'listing', message: '目录级缓存列出失败，已降级为后台 Worker 全量列出。' }, true)
 
     throwIfAborted(signal)
     const listed = await deps.runFontIndexListWorker(
-      folders,
+      foldersForDirectoryListing,
       (payload) => {
         if (Array.isArray(payload.batch) && payload.batch.length) {
           onListedBatch?.(payload.batch.map((item) => ({ ...item, error: '' })))
@@ -209,6 +281,9 @@ export async function listScanStatJobs(args: {
     )
 
     errors.push(...listed.errors)
-    return dedupeScanStatJobs(listed.files.map((item) => ({ ...item, error: '', signatureValid: item.signatureValid, formatHint: item.format, quickHash: item.quickHash, contentHash: item.contentHash, hashKind: item.hashKind, nameHint: item.nameHint, scriptHint: item.scriptHint, styleHint: item.styleHint, familyHint: item.familyHint })))
+    return dedupeScanStatJobs([
+      ...prelisted,
+      ...listed.files.map((item) => ({ ...item, error: '', signatureValid: item.signatureValid, formatHint: item.format, quickHash: item.quickHash, contentHash: item.contentHash, hashKind: item.hashKind, nameHint: item.nameHint, scriptHint: item.scriptHint, styleHint: item.styleHint, familyHint: item.familyHint })),
+    ])
   }
 }

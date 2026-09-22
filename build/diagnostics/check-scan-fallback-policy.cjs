@@ -75,6 +75,33 @@ function testMigrationDiagnosticsExposePolicy() {
   assertIncludes('src/main/diagnostics/migrationDiagnosticsRuntime.ts', 'nodeFontkitScanFallbackPolicyLogLine()')
 }
 
+function testC08NetworkListingBatchRouting() {
+  const listing = read('src/main/indexing/scan-orchestrator/scanListingRuntime.ts')
+  assert(listing.includes("sharedIoResourceKeys([folder])"), 'C-08.1 must classify roots with the existing Shared I/O identity owner')
+  assert(listing.includes('networkFolders') && listing.includes('fallbackFolders'), 'C-08.1 must partition network roots from local/fallback roots')
+  assert(listing.includes('folders: networkFolders') && listing.includes('onListedBatch: undefined'), 'network roots must reuse Rust list-font-files even while local early-visible streaming remains enabled')
+  assert(listing.includes('foldersForDirectoryListing = fallbackFolders'), 'successful network batch must keep local/fallback roots on the existing directory-cache route')
+  assert(listing.includes('foldersForDirectoryListing,') && listing.includes('...prelisted,'), 'directory-cache failure must not redo an already completed network batch')
+  assert(listing.includes('snapshotSharedRootGenerations(networkFolders)'), 'network batch must capture the current root generation before submission')
+  assert(listing.includes("'stale-generation'"), 'network batch must discard a receipt from a changed/offline root generation')
+
+  const indexingClient = read('src/main/rust-core/clients/rustIndexingClientRuntime.ts')
+  assert(indexingClient.includes('HFM_RUST_SCAN_LISTING_TIMEOUT_MS || 10 * 60 * 1000'), 'C-08.1 must not widen the existing list-font-files timeout')
+
+  const watcher = read('src/main/watcher/watchedFolderIndexRuntime.ts')
+  assert(watcher.includes('options.runRustWatcherPreflight({'), 'watcher batch must continue to use the existing Rust preflight command')
+  assert(watcher.includes('if (rustResult) return rustResult.unchanged'), 'watcher preflight result must remain authoritative when available')
+
+  const transport = read('src/main/rust-core/rustCoreWorkerTransportRuntime.ts')
+  assert(transport.includes('timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000))'), 'Shared I/O execution timeout cap changed')
+  assert(transport.includes('queueTimeoutMs: 3000'), 'Shared I/O queue timeout changed')
+
+  const sharedProcess = read('src/main/path/sharedIoProcessRuntime.ts')
+  assert(sharedProcess.includes("filter(other => laneOf(other) === 'default').length >= 2"), 'Shared I/O default concurrency changed')
+  assert(sharedProcess.includes("child.kill('SIGTERM')") && sharedProcess.includes("child.kill('SIGKILL')"), 'Shared I/O terminate/kill settlement changed')
+  assert(sharedProcess.includes('return ![...active].some(other => rootsOverlap(job, other))'), 'Shared I/O root lock changed')
+}
+
 function testPackageScriptRegistered() {
   const pkg = JSON.parse(read('package.json'))
   assert(pkg.scripts && pkg.scripts['diagnostics:scan-fallback'], 'package.json missing diagnostics:scan-fallback')
@@ -87,6 +114,7 @@ const tests = [
   testPolicyModuleWiring,
   testFallbackSourcesAreGated,
   testMigrationDiagnosticsExposePolicy,
+  testC08NetworkListingBatchRouting,
   testPackageScriptRegistered,
 ]
 
