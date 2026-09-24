@@ -5,6 +5,7 @@ const {DatabaseSync} = require('node:sqlite')
 const {loader} = require('./check-operation-chain.cjs')
 const {loadModules, font, plain} = require('./check-activation-entry.cjs')
 const root = path.resolve(__dirname,'../..')
+const virtualMetadataRoot = (name) => path.resolve(root, '.diagnostic-virtual', name)
 let cases=0
 async function metadata(transform=x=>x) {
   const file='src/main/library/sharedFontMetadataMutations.ts'
@@ -30,32 +31,34 @@ async function metadata(transform=x=>x) {
     renameSharedTagInMetadataIndexes:async()=>write(['f1','f2','f3']),
     invalidateSharedFontRuntimeCaches(){},refreshKnownSharedTagsFromMetadata:async()=>{if(catalogFail)throw Error('catalog offline');return catalog}
   })
-  const a={id:'f1',path:'/fonts/f1.ttf'},b={id:'f2',path:'/fonts/f2.ttf'}
-  await mutation.setSharedFontTagsInIndex([a],['/fonts'],['new'])
+  const fontsRoot=virtualMetadataRoot('fonts')
+  const a={id:'f1',path:path.join(fontsRoot,'f1.ttf')},b={id:'f2',path:path.join(fontsRoot,'f2.ttf')}
+  assert.equal(path.isAbsolute(fontsRoot),true,'metadata fixture root must be platform-native absolute')
+  await mutation.setSharedFontTagsInIndex([a],[fontsRoot],['new'])
   assert.equal(rows,1,'one committed shared tag must sync one of 1499 rows')
   assert.equal(snapshots,0);assert.equal(writes,1);assert.equal(notifications,0);cases++
   rows=0
-  await mutation.setSharedFontTagsBatchInIndex([{item:a,tagNames:['new']},{item:b,tagNames:[]}],['/fonts'])
+  await mutation.setSharedFontTagsBatchInIndex([{item:a,tagNames:['new']},{item:b,tagNames:[]}],[fontsRoot])
   assert.equal(rows,2);cases++
   rows=0
-  const deleted=await mutation.deleteSharedFontTagInIndex('old',['/fonts'])
+  const deleted=await mutation.deleteSharedFontTagInIndex('old',[fontsRoot])
   assert.equal(rows,3,'catalog delete must cover all actual bindings');assert.deepEqual(plain(deleted.mutationProtocol.knownTags),[]);cases++
   rows=0
   catalog=['new']
-  await mutation.renameSharedFontTagInIndex('old','new',['/fonts'])
+  await mutation.renameSharedFontTagInIndex('old','new',[fontsRoot])
   assert.equal(rows,3);cases++
   rows=0
-  await mutation.setFontDeleteProtectionInIndex([a],['/fonts'],true)
+  await mutation.setFontDeleteProtectionInIndex([a],[fontsRoot],true)
   assert.equal(rows,1);assert.equal(notifications,1);cases++
   failRead=true;rows=0
-  await mutation.setSharedFontTagsInIndex([a],['/fonts'],[])
+  await mutation.setSharedFontTagsInIndex([a],[fontsRoot],[])
   assert.equal(snapshots,1);assert(logs.some(x=>x.includes('unknown')||x.includes('offline')));cases++
   failRead=false;failSync=true
-  await mutation.setSharedFontTagsInIndex([a],['/fonts'],[])
+  await mutation.setSharedFontTagsInIndex([a],[fontsRoot],[])
   assert.equal(snapshots,2,'failed incremental must recover with explicit reason');cases++
   failSync=false;catalogFail=true
   const before=writes
-  const result=await mutation.deleteSharedFontTagInIndex('new',['/fonts'])
+  const result=await mutation.deleteSharedFontTagInIndex('new',[fontsRoot])
   assert.equal(writes-before,3,'catalog read failure must not replay committed write')
   assert.equal(result.ok,true);assert.equal(result.mutationProtocol,undefined)
   assert(logs.some(x=>x.includes('do not retry committed write')));cases++
@@ -81,22 +84,23 @@ async function queueScopes() {
 }
 async function multipleRoots() {
   const load=loader()
-  const databases=new Map(['/fonts','/other'].map(r=>{const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE font_metadata(font_id TEXT PRIMARY KEY,relative_path TEXT)');return[r,db]}))
-  databases.get('/fonts').prepare('INSERT INTO font_metadata VALUES(?,?)').run('a','a.ttf')
-  databases.get('/other').prepare('INSERT INTO font_metadata VALUES(?,?)').run('b','b.ttf')
+  const fontsRoot=virtualMetadataRoot('fonts'),otherRoot=virtualMetadataRoot('other')
+  const databases=new Map([fontsRoot,otherRoot].map(r=>{const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE font_metadata(font_id TEXT PRIMARY KEY,relative_path TEXT)');return[r,db]}))
+  databases.get(fontsRoot).prepare('INSERT INTO font_metadata VALUES(?,?)').run('a','a.ttf')
+  databases.get(otherRoot).prepare('INSERT INTO font_metadata VALUES(?,?)').run('b','b.ttf')
   const synced=[],fallback=[],logs=[]
   const runtime=load('src/main/library/sharedMetadataMergedIndexSyncRuntime.ts').createSharedMetadataMergedIndexSyncRuntime({
     uniqueResolvedFolders:x=>x,normalizePathForCacheCompare:x=>x,appendLog:x=>logs.push(x),openMetadataDb:async r=>databases.get(r),closeMetadataDb(){},
     syncMergedIndexForRootIncremental:async(r,p)=>synced.push([r,p.upserts.map(f=>f.id)]),syncMergedIndexForRootSnapshot:async r=>fallback.push(r)
   })
-  await runtime.syncSharedMetadataChangedIdsToMergedIndex(['a','b','a'],['/fonts','/other'],'shared-tags-batch-authority-refresh')
-  assert.deepEqual(plain(synced),[['/fonts',['a']],['/other',['b']]]);assert.equal(fallback.length,0);cases++
-  await runtime.syncSharedMetadataChangedIdsToMergedIndex([],['/fonts','/other'],'shared-tag-delete:empty')
+  await runtime.syncSharedMetadataChangedIdsToMergedIndex(['a','b','a'],[fontsRoot,otherRoot],'shared-tags-batch-authority-refresh')
+  assert.deepEqual(plain(synced),[[fontsRoot,['a']],[otherRoot,['b']]]);assert.equal(fallback.length,0);cases++
+  await runtime.syncSharedMetadataChangedIdsToMergedIndex([],[fontsRoot,otherRoot],'shared-tag-delete:empty')
   assert.equal(synced.length,2);cases++
-  await runtime.syncSharedMetadataChangedIdsToMergedIndex(['missing'],['/fonts','/other'],'shared-tag-delete:unknown')
+  await runtime.syncSharedMetadataChangedIdsToMergedIndex(['missing'],[fontsRoot,otherRoot],'shared-tag-delete:unknown')
   assert.equal(fallback.length,2);assert(logs.some(x=>x.includes('changed-id-locator-incomplete')));cases++
-  databases.get('/fonts').prepare('UPDATE font_metadata SET relative_path=?').run('../outside.ttf')
-  await runtime.syncSharedMetadataChangedIdsToMergedIndex(['a'],['/fonts'],'shared-tags-set-authority-refresh')
+  databases.get(fontsRoot).prepare('UPDATE font_metadata SET relative_path=?').run('../outside.ttf')
+  await runtime.syncSharedMetadataChangedIdsToMergedIndex(['a'],[fontsRoot],'shared-tags-set-authority-refresh')
   assert.equal(fallback.length,3);assert(logs.some(x=>x.includes('changed-id-path-outside-root')));cases++
   for(const db of databases.values())db.close()
 }
