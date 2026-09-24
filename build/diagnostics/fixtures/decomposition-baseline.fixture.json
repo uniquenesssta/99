@@ -314,7 +314,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "034dc5d519a087d930245d3d59a0459b4da3d32a98f7876369d44d7bb37864fa"
+      "tokenHash": "577f4db1f0d5d817cbc1ac2fdcc61cc43bbf3929dfda1ffc1a9741fbc3d9e4e4"
     },
     "src/renderer/src/runtime/app/useFolderController.ts": {
       "functions": [
@@ -515,7 +515,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "2a1cb1e1f03aa42b9384d6e262002079c9d0d1383996e0707ba550c921c9de40"
+      "tokenHash": "a65e755d038ba1608157289e26e2a948a24be8d92617292e5aba92631d30345b"
     },
     "src/renderer/src/runtime/app/useLibraryController.ts": {
       "functions": [
@@ -615,7 +615,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "d44013ff952bb8cde63fe437c910fe8281f1eebdd7d659fef868b310c606e625"
+      "tokenHash": "33dd9246910ce927d0ab17cea5ad5ec8ca1395ebf0da9b726f5dc3eca9442c3b"
     },
     "src/renderer/src/runtime/app/usePreviewController.ts": {
       "functions": [

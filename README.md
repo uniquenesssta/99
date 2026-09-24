@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-24：C-08.1 D-01 冻结证据迁移继续收口：Windows 35963112437 在首个 decomposition-baseline 门确认 App.tsx hash 已迁移后，下一命中为 useDeveloperController.ts。一次性核对 D-01 全部冻结文件与 C-07 Git 历史后，确认仅 App.tsx、useDeveloperController.ts、useFontOperationsController.ts、useLibraryController.ts 受 C-07 renderer closing lifecycle 影响，后三个 controller 自 C-07 40fa79c 后无生产修改。当前验证只在 functions/owners/exports/surfaces/viewGroups/ipcChannels 全部保持原冻结值时迁移其 tokenHash；任何额外结构变化立即失败。生产源码、依赖和用户数据均不改。Windows 运行 35969337307 将在同一候选树继续完整门禁；未全绿前不推进下一阶段。
+
 - 2026-09-24：C-08.1 验证继续收口：Windows `35949931927` 的定向 deactivation-refresh、active-view、network batching、scan fallback、Shared I/O、Rust clients/transport、TypeScript 与 C00 current 全部通过，完整 `verify` 继续运行后停在 D-01 decomposition baseline 的 `App.tsx` 冻结 tokenHash。核对 Git 历史确认 `App.tsx` 自上次冻结后唯一新增生产变化来自已完成 C-07：一个 renderer closing lifecycle owner 及 Library/Operations/Developer 三处窄接线；该行为已由 C-07 app-root-view/React 生命周期门独立锁定，inventory 的 functions/owners/viewGroups 均未变化。因此仅迁移 D-01 的 App tokenHash 证据，不改生产源码、不降低结构门；下一轮 Windows 全量验证待结果，未通过前不推进下一阶段。\n\n- 2026-09-24：修正 deactivation-refresh 的快照失效反例在 CRLF 源码中只命中 generation、不命中 in-flight reset 的问题；两处替换均须唯一命中，并对 LF/CRLF 分别执行原 post-mutation read joined 断言。正常快照/批量结算/失败恢复检查保持不变，不改生产模块或放宽失败断言。Windows 复验 `35949931927` 已通过该定向门，随后全量 verify 继续到 decomposition baseline 才停止；不推进下一阶段。
 
 - 2026-09-24：C-08.1 验证接续：修正 active-view-consistency 启动清理夹具未跟进 C-05 registry settlement 合同的问题；改为加载生产 ownership、cleanup、安装状态对账和 recovery-file owner，仅控制原生系统、文件系统及删除队列端口。覆盖成功、所有权拒绝、注册表拒绝/缺失回执、队列拒绝及按持久阶段重试，保留原四个反例并增加跳过注册表结算和忽略队列失败两个反例。生产源码、依赖、数据格式未改。Windows 验证 `35949497524` 已通过该门及六个反例，C00 current 仍为 0 缺陷/8 对照；全量 verify 随后停在 deactivation-refresh 的 CRLF 反例命中检查，未执行后续 build/混淆。C-08.1 尚未收口。
