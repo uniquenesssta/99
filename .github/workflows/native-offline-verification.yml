@@ -3,7 +3,7 @@ on:
   push:
     branches: ['stage/09-preview-tags-app']
 permissions:
-  contents: read
+  contents: write
 jobs:
   windows-c08-network-list:
     runs-on: windows-latest
@@ -13,7 +13,179 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
+      - name: Apply scoped startup-fixture repair and record candidate
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const assert = require('node:assert/strict');
+          const cp = require('node:child_process');
+          const git = (...args) => cp.execFileSync('git', args, { encoding: 'utf8' }).trim();
+          const ref = 'refs/heads/stage/09-preview-tags-app';
+          assert.equal(process.env.GITHUB_REF, ref, 'unexpected branch');
+          assert.equal(git('status', '--porcelain'), '', 'refuse to overwrite a dirty checkout');
+          const base = git('rev-parse', 'HEAD');
+          assert.equal(base, process.env.GITHUB_SHA, 'checkout does not match the triggering commit');
+          assert.equal(git('rev-parse', 'HEAD^'), '4c360c97817b9e30f2675711c64709e15f031da1', 'unexpected source baseline');
+          const diag = 'build/diagnostics/check-active-view-consistency.cjs';
+          const task = 'docs/plans/HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md';
+          assert.equal(git('rev-parse', 'HEAD:' + diag), '33af982870a740fab6c51b811e7cf3f40f67f70a', 'diagnostic changed concurrently');
+          assert.equal(git('rev-parse', 'HEAD:' + task), '407b6a2b65e4062f6546ed0070939386c5492b2b', 'taskbook changed concurrently');
+          const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+          function replaceOnce(text, before, after) {
+            assert.equal(text.split(before).length, 2, 'missing or ambiguous patch anchor: ' + before);
+            return text.replace(before, after);
+          }
+          let source = read(diag);
+          const start = source.indexOf('async function restartPolicy(){');
+          const end = source.indexOf('\nfunction viewScopeMatrix(){', start);
+          assert(start >= 0 && end > start, 'startup fixture boundaries missing');
+          const replacement = String.raw`async function restartPolicy(){
+           for(const initialFault of ['success','ownership-rejected','registry-rejected','registry-missing-receipt','queue-rejected']){
+            const identity={device:'1',inode:'2',sha1:'a'.repeat(40),size:123}
+            const record={fontId:'a',sourcePath:'\\\\nas\\offline\\a.ttf',installPath:'/managed/test_ACTIVE_a_session.ttf',registryName:'A (TrueType) [session]',sessionId:'session',identity,activatedAt:'2026-09-22T00:00:00.000Z',fileName:'a.ttf',stage:'active'}
+            let fault=initialFault,disk=null,removed=0,refreshes=0,installedRows={}
+            const temporary=new Map(),calls=[],queued=[],stages=[],logs=[]
+            const local=p=>{assert(!/^[\\/]{2}/.test(String(p)),'startup cleanup must not access NAS');return p}
+            // Keep the production ownership, cleanup, reconciliation and recovery-file owners.
+            // Only filesystem, native Windows and deferred-delete ports are controlled here.
+            const load=loader({
+             'node:fs':{promises:{
+              mkdir:async p=>{local(p)},
+              readFile:async p=>{local(p);if(disk===null)throw Object.assign(Error('missing'),{code:'ENOENT'});return disk},
+              open:async(p,mode)=>{local(p);assert.equal(mode,'wx');return {writeFile:async s=>temporary.set(p,s),sync:async()=>{},close:async()=>{}}},
+              rename:async(p,destination)=>{local(p);local(destination);assert(temporary.has(p));disk=temporary.get(p);temporary.delete(p)},
+              rm:async p=>{local(p);temporary.delete(p)}
+             }},
+             '../temporaryFontDeleteQueue':{createTemporaryFontDeleteQueue:()=>({
+              isSafeTemporaryActiveFontPath:p=>p===record.installPath,
+              queueTemporaryFontFileDeletes:async records=>{
+               calls.push('queue')
+               assert.equal(JSON.parse(disk).records[0].stage,'file-pending','queue must follow durable registry settlement')
+               assert.deepEqual(plain(records.map(r=>r.installPath)),[record.installPath])
+               const ok=fault!=='queue-rejected'
+               if(ok)queued.push(...plain(records))
+               return {[record.installPath]:{ok,message:ok?'':'queue rejected'}}
+              },
+              flushPendingTemporaryFontDeletes:async()=>({remaining:queued.length})
+             })},
+             '../../rust-core/nodeBridgeFallbackCompatibilityRuntime':{nodeBridgeFallbackCompatibilityAllowed:()=>false}
+            },{process:{...process,platform:'win32',env:{}}})
+            const store=load('src/main/windows/runtime/temporaryActiveFontsStoreRuntime.ts').createTemporaryActiveFontsStoreRuntime({dataRoot:()=>'/data',dataPath:()=>'/data/session.json'})
+            await store.saveTemporaryActiveFonts({version:1,records:[record]})
+            const deps={
+             normalizePathForCacheCompare:x=>x||'',getSystemInstalledFontsCached:async()=>[],compareFontInstalledWithList:()=>({installed:false,by:'none',matches:[]}),
+             scheduleActivationInstallStatusSave:rows=>{calls.push('status');installedRows=rows},isTemporaryActiveInstalledRecord:()=>false,
+             appName:'test',dataRoot:()=>'/data',dataPath:()=>'/data/session.json',currentUserFontsDir:()=>'/managed',
+             removeFontResourceSession:async p=>{assert.equal(p,record.installPath);calls.push('resource');removed++},
+             advancedFontRefresh:async()=>{refreshes++},clearInstalledFontsMemoryCache(){},appendStartupLog:s=>logs.push(s),
+             loadTemporaryActiveFonts:store.loadTemporaryActiveFonts,
+             saveTemporaryActiveFonts:async state=>{await store.saveTemporaryActiveFonts(state);stages.push(state.records[0]?.stage||'empty')},
+             runRustFontActivationFiles:async input=>{
+              assert.equal(input.allowedDeleteDir,'/managed');assert.equal(input.allowedNamePrefix,'test_ACTIVE_')
+              assert.deepEqual(plain(input.registryClaims),[{registryName:record.registryName,installPath:record.installPath,sessionId:record.sessionId,identity}])
+              const row={registryName:record.registryName,installPath:record.installPath,ok:true,missing:false}
+              if(input.deleteRegistryClaims){
+               calls.push('registry')
+               assert.equal(JSON.parse(disk).records[0].stage,'registry-removal-pending')
+               return {ok:true,registryResults:fault==='registry-missing-receipt'?[]:[{...row,ok:fault!=='registry-rejected',deleted:fault!=='registry-rejected',message:'registry rejected'}]}
+              }
+              calls.push('ownership')
+              assert.deepEqual(plain(input.inspects),[record.installPath])
+              return {ok:true,inspectResults:[{path:record.installPath,identity}],registryResults:[{...row,ok:fault!=='ownership-rejected',message:'ownership rejected'}]}
+             }
+            }
+            const cleanup=load('src/main/activation/runtime/fontActivationCleanupRuntime.ts').createFontActivationCleanupRuntime(deps,{temporaryActiveRecordStillVisible:async()=>false})
+            const result=await cleanup.cleanupTemporaryActiveFonts('startup')
+            if(initialFault==='success'){
+             assert.deepEqual(plain(result),{cleaned:1,remaining:0})
+             assert.deepEqual(calls,['ownership','resource','registry','queue','status'])
+             assert.deepEqual(stages,['resource-removal-pending','registry-removal-pending','file-pending','empty'])
+            }else{
+             assert.deepEqual(plain(result),{cleaned:0,remaining:1},initialFault)
+             const retained=(await store.loadTemporaryActiveFonts()).records
+             assert.equal(retained.length,1,initialFault+' must retain a restartable durable record')
+             assert.deepEqual(plain(retained[0].identity),identity)
+             const expectedStage=initialFault==='ownership-rejected'?'active':initialFault==='queue-rejected'?'file-pending':'registry-removal-pending'
+             assert.equal(retained[0].stage,expectedStage)
+             assert.equal(queued.length,0,'failed ownership/registry/queue must not report accepted deletion')
+             assert.equal(Object.keys(installedRows).length,0,'failed cleanup must not clear installed state')
+             assert.equal(refreshes,0)
+             if(initialFault==='ownership-rejected')assert.equal(removed,0)
+             else assert.equal(removed,1)
+             assert(!logs.some(s=>s.includes('not a function')||s.includes('TypeError')),'fixture has an incomplete production port')
+             if(initialFault==='ownership-rejected')assert.match(retained[0].lastError,/ownership rejected/)
+             if(initialFault==='registry-rejected')assert.match(retained[0].lastError,/registry rejected/)
+             if(initialFault==='registry-missing-receipt')assert.match(retained[0].lastError,/原生注册表所有权清理失败/)
+             if(initialFault==='queue-rejected')assert(logs.some(s=>s.includes('queue rejected')))
+             calls.length=0;fault='success'
+             const retry=await cleanup.cleanupTemporaryActiveFonts('startup')
+             assert.deepEqual(plain(retry),{cleaned:1,remaining:0},initialFault+' restart retry')
+             const expectedCalls=expectedStage==='file-pending'?['queue','status']:expectedStage==='registry-removal-pending'?['ownership','registry','queue','status']:['ownership','resource','registry','queue','status']
+             assert.deepEqual(calls,expectedCalls,'retry must resume after the last durable stage')
+            }
+            assert.equal(removed,1,'resource removal must not repeat after its durable settlement')
+            assert.equal(queued.length,1);assert.equal(refreshes,1)
+            assert.equal(installedRows.a.by,'none','startup cleanup left persisted active state stale')
+            assert.equal((await store.loadTemporaryActiveFonts()).records.length,0,'restart must use cleaned persisted session')
+            assert.equal(temporary.size,0,'recovery-file temporary writes leaked')
+           }
+           const lifecycle=fs.readFileSync(path.join(root,'src/main/app/mainProcessLifecycleRuntime.ts'),'utf8')
+           assert(lifecycle.includes('cleanupTemporaryActiveFontsUntilEmpty("startup", 6)'))
+           assert(lifecycle.includes('cleanupTemporaryActiveFontsUntilEmpty("quit", 1)'))
+          }
+          `;
+          source = source.slice(0, start) + replacement + '\n' + source.slice(end);
+          source = replaceOnce(source, "  if(transforms[file])source=transforms[file](source)", [
+            "  if(file==='src/main/activation/runtime/fontActivationCleanupRuntime.ts'&&process.argv[2]==='startup-registry'){",
+            "   const before='await activationTraceStep(\"deactivate:registry-settlement\", record.fontId, () => identityRuntime.deleteRegistry(record));'",
+            "   assert(source.includes(before),'startup registry mutant anchor missing');source=source.replace(before,'void 0;')",
+            "  }",
+            "  if(file==='src/main/activation/runtime/fontActivationCleanupRuntime.ts'&&process.argv[2]==='startup-queue'){",
+            "   const before='if (!queued?.ok) {'",
+            "   assert(source.includes(before),'startup queue mutant anchor missing');source=source.replace(before,'if (false) {')",
+            "  }",
+            "  if(transforms[file])source=transforms[file](source)"
+          ].join('\n'));
+          source = replaceOnce(source, "['favorite','idle','batch','metrics']", "['favorite','idle','batch','metrics','startup-registry','startup-queue']");
+          source = replaceOnce(source, 'startup cleanup; four mutations rejected', 'startup cleanup with production ownership and durable retry; six mutations rejected');
+          fs.writeFileSync(diag, source);
+          const runId = process.env.GITHUB_RUN_ID;
+          assert(/^\d+$/.test(runId || ''), 'missing run identity');
+          const readmeEntry = '- 2026-09-24：C-08.1 验证接续：修正 active-view-consistency 启动清理夹具未跟进 C-05 registry settlement 合同的问题；改为加载生产 ownership、cleanup、安装状态对账和 recovery-file owner，仅控制原生系统、文件系统及删除队列端口。覆盖成功、所有权拒绝、注册表拒绝/缺失回执、队列拒绝及按持久阶段重试，保留原四个反例并增加跳过注册表结算和忽略队列失败两个反例。生产源码、依赖、数据格式未改。Windows 验证运行 `' + runId + '` 待结果；C-08.1 全量门禁未收口，不进入下一阶段。';
+          fs.writeFileSync('README.md', replaceOnce(read('README.md'), '## 变更记录\n', '## 变更记录\n\n' + readmeEntry + '\n'));
+          let book = read(task);
+          book = replaceOnce(book, '- 状态：**C-00～C-05 已完成；C-06 为下一项**。C-01～C-05 已按顺序完成实现与 Windows 目标平台验证；O-07 继续暂停。', '- 状态：**C-00～C-07、C-08.0 已完成；C-08.1 进行中，验证未收口**。O-07 继续暂停，C-09 未开始。');
+          book = replaceOnce(book, '#### C-08.1 network `list-font-files` 批处理优化\n\n状态：**未开始**。', '#### C-08.1 network `list-font-files` 批处理优化\n\n状态：**进行中，验证未收口**。');
+          const card = [
+            '#### C-08.1 验证接续（2026-09-24）', '',
+            '- 当前生产候选保留已有 network list-font-files 批处理；本次只修正验证夹具及记录，不改生产模块。',
+            '- 前置 Windows 运行 `35754472600`：network batching、scan fallback、Shared I/O process/integration、Rust clients/transport 和 TypeScript 通过；全量 verify 在 active-view-consistency 的 restartPolicy 失败，后续 build/混淆未执行。此前 old-success 模块实例问题已越过，本次失败为旧 identity 替身缺少 deleteRegistry。',
+            '- 启动恢复夹具改用真实 JS ownership/cleanup/reconciliation/recovery-file 链路和合法 session/file identity，原生系统与删除队列仅作为受控端口。新增成功、ownership 拒绝、registry 拒绝/缺失回执、queue 拒绝、阶段持久化与重启重试检查；不以这些受控场景替代 Windows/NAS 实机验收。',
+            '- 保留 favorite/idle/batch/metrics 四个退化反例，增加跳过 registry settlement、忽略 queue rejection 两个因果反例；原断言与 npm run verify 均未删除或跳过。',
+            '- 当前验证运行 `' + runId + '`：待取得实际结果；本候选未标为完成。若失败，继续处理当前硬门，不推进 worker 复用、C-09 或 O-07。',
+            '- 后续仍需完整 Windows verify、构建/混淆和真实 NAS 请求计数/首屏延迟记录；临时 workflow 在最终收口时删除，不能把定向门通过写成整阶段完成。', ''
+          ].join('\n');
+          book = replaceOnce(book, '### C-09 Windows/NAS 总验收', card + '\n### C-09 Windows/NAS 总验收');
+          book = replaceOnce(book, '→ C-08 Shared I/O 性能（下一项）', '→ C-08 Shared I/O 性能（C-08.0 完成，C-08.1 验证中）');
+          book = replaceOnce(book, '**下一执行入口为 C-08 Shared I/O 性能**', '**当前执行入口为 C-08.1 验证收口**');
+          fs.writeFileSync(task, book);
+          const allowed = ['README.md', diag, task].sort();
+          assert.deepEqual(git('diff', '--name-only').split(/\r?\n/).sort(), allowed, 'patch escaped the frozen scope');
+          cp.execFileSync(process.execPath, ['--check', diag], { stdio: 'inherit' });
+          git('diff', '--check');
+          console.log(git('diff', '--stat'));
+          const remote = git('ls-remote', 'origin', ref).split(/\s+/)[0];
+          assert.equal(remote, base, 'branch moved; refusing to overwrite concurrent work');
+          git('add', '--', ...allowed);
+          git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com', 'commit', '-m', 'test(c08): align startup cleanup fixture with ownership settlement');
+          git('push', 'origin', 'HEAD:' + ref);
+          const candidate = git('rev-parse', 'HEAD');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'C-08.1 validation candidate: `' + candidate + '`\n\nValidation is pending; no stage completion is claimed.\n');
+          console.log('C-08.1 validation candidate: ' + candidate);
+          NODE
       - run: npm ci
+      - run: npm run diagnostics:active-view-consistency
       - run: npm run diagnostics:network-list-font-files-batching
       - run: npm run diagnostics:scan-fallback
       - run: npm run diagnostics:shared-io-process
@@ -21,6 +193,7 @@ jobs:
       - run: npm run diagnostics:rust-worker-clients
       - run: npm run diagnostics:rust-worker-transport
       - run: npm run typecheck
+      - run: node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs --current
       - run: npm run verify
       - run: node node_modules/electron-vite/bin/electron-vite.js build
       - run: node build/obfuscate-dist.cjs
