@@ -543,7 +543,9 @@ C-08.0 的数据只解决“能准确计数并定位 one-shot 来源”。真实
 - 前置 Windows 运行 `35754472600`：network batching、scan fallback、Shared I/O process/integration、Rust clients/transport 和 TypeScript 通过；全量 verify 在 active-view-consistency 的 restartPolicy 失败，后续 build/混淆未执行。此前 old-success 模块实例问题已越过，本次失败为旧 identity 替身缺少 deleteRegistry。
 - 启动恢复夹具改用真实 JS ownership/cleanup/reconciliation/recovery-file 链路和合法 session/file identity，原生系统与删除队列仅作为受控端口。新增成功、ownership 拒绝、registry 拒绝/缺失回执、queue 拒绝、阶段持久化与重启重试检查；不以这些受控场景替代 Windows/NAS 实机验收。
 - 保留 favorite/idle/batch/metrics 四个退化反例，增加跳过 registry settlement、忽略 queue rejection 两个因果反例；原断言与 npm run verify 均未删除或跳过。
-- 当前验证运行 `35949497524`：待取得实际结果；本候选未标为完成。若失败，继续处理当前硬门，不推进 worker 复用、C-09 或 O-07。
+- Windows `35949497524`（实际验证候选 `33f0538d8105185fdfa14292c0c09785b3752f6c`）已通过 active-view-consistency 与六个因果反例、network batching、scan fallback、Shared I/O、Rust 边界、TypeScript 及 C00 current（0 缺陷/8 对照）；全量 verify 随后在 deactivation-refresh 的反例预期检查失败，后续 build/混淆未执行。不得据此标为 C-08.1 完成。
+- deactivation-refresh 的 Windows CRLF 反例只替换 generation，未替换 in-flight reset，导致预期 post-mutation read joined 与实际 stale snapshot 失败点不同。现使用唯一命中断言并保留源换行格式，LF/CRLF 分别运行同一个原失败断言；生产源码不变。
+- 新 Windows 复验 `35949931927`：结果待核对；完整 verify、build/混淆未通过前不推进 worker 复用、C-09 或 O-07。
 - 后续仍需完整 Windows verify、构建/混淆和真实 NAS 请求计数/首屏延迟记录；临时 workflow 在最终收口时删除，不能把定向门通过写成整阶段完成。
 
 ### C-09 Windows/NAS 总验收

@@ -146,6 +146,19 @@ async function rendererTiming() {
     check(()=>{assert.equal(current.active,fail);assert.equal(count,fail?1:0);assert.equal(busy.size,0);assert.equal(events.length,1);assert.equal(events[0].reason,batch?'deactivation-batch':'deactivation-single');assert.equal(events[0].outcome,fail?'rolled-back':'confirmed');assert(events[0].elapsedMs>=0)})
   }
 }
+function withoutSnapshotInvalidation(source) {
+  const crlf = source.includes('\r\n');
+  let next = source.replace(/\r\n/g, '\n');
+  for (const [before, after] of [
+    ['installedFontsGeneration += 1', 'installedFontsGeneration += 0'],
+    ['    installedFontsReadInFlight = null\n  }', '  }'],
+  ]) {
+    assert.equal(next.split(before).length, 2, 'snapshot mutant anchor missing or ambiguous: ' + before);
+    next = next.replace(before, after);
+  }
+  return crlf ? next.replace(/\n/g, '\r\n') : next;
+}
+
 async function main() {
   if (process.argv.includes('--c05-batch-only')) {
     await batchCases()
@@ -155,7 +168,12 @@ async function main() {
     return
   }
   await snapshotBoundaries();await consecutiveMutations();await obsoleteFailure();await batchCases();await temporaryIndex();await rendererTiming()
-  await assert.rejects(snapshotBoundaries(source=>source.replace('installedFontsGeneration += 1','installedFontsGeneration += 0').replace('    installedFontsReadInFlight = null\n  }','  }')),/post-mutation read joined/);cases++
+  for (const crlf of [false, true]) {
+    await assert.rejects(snapshotBoundaries(source => {
+      const lf = source.replace(/\r\n/g, '\n');
+      return withoutSnapshotInvalidation(crlf ? lf.replace(/\n/g, '\r\n') : lf);
+    }), /post-mutation read joined/);cases++
+  }
   await assert.rejects(batchCases({[path.join(root,settlementFile)]:source=>source.replace('() => deps.deleteManagedRegistryRecords(registryRecords)', 'async () => { for (const record of registryRecords) await deps.deleteManagedRegistryRecords([record]); }')}),/strictly equal/);cases++
   await assert.rejects(batchCases({[path.join(root,batchFile)]:source=>source.replace('recordsByItemId.has(item.id) && results[item.id]?.ok','recordsByItemId.has(item.id)')}),/strictly equal/);cases++
   await snapshotBoundaries(source=>source.replace(/\r?\n/g,'\r\n'))
@@ -163,6 +181,6 @@ async function main() {
   check(()=>assert.equal(trace.activationTraceSync('sync',undefined,()=>42),42))
   assert.equal(await trace.activationTraceStep('async',undefined,async()=>42),42);cases++
   await assert.rejects(trace.activationTraceStep('failure',undefined,async()=>{throw Error('real failure')}),/real failure/);cases++
-  console.log(`[diagnostics:deactivation-refresh] ${cases} controlled checks passed: fresh snapshots, batch counts, failure boundaries, temporary/permanent matching, renderer rollback/timing, 3 rejected regressions; Windows timing remains unmeasured`)
+  console.log(`[diagnostics:deactivation-refresh] ${cases} controlled checks passed: fresh snapshots, batch counts, failure boundaries, temporary/permanent matching, renderer rollback/timing, 3 rejected regressions (snapshot mutant in LF/CRLF with both anchors checked); Windows timing remains unmeasured`)
 }
 main().catch(error=>{console.error(error);process.exitCode=1})

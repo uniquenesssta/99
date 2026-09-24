@@ -66,7 +66,9 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-24：C-08.1 验证接续：修正 active-view-consistency 启动清理夹具未跟进 C-05 registry settlement 合同的问题；改为加载生产 ownership、cleanup、安装状态对账和 recovery-file owner，仅控制原生系统、文件系统及删除队列端口。覆盖成功、所有权拒绝、注册表拒绝/缺失回执、队列拒绝及按持久阶段重试，保留原四个反例并增加跳过注册表结算和忽略队列失败两个反例。生产源码、依赖、数据格式未改。Windows 验证运行 `35949497524` 待结果；C-08.1 全量门禁未收口，不进入下一阶段。
+- 2026-09-24：修正 deactivation-refresh 的快照失效反例在 CRLF 源码中只命中 generation、不命中 in-flight reset 的问题；两处替换均须唯一命中，并对 LF/CRLF 分别执行原 post-mutation read joined 断言。正常快照/批量结算/失败恢复检查保持不变，不改生产模块或放宽失败断言。Windows 复验 `35949931927` 待结果；不推进下一阶段。
+
+- 2026-09-24：C-08.1 验证接续：修正 active-view-consistency 启动清理夹具未跟进 C-05 registry settlement 合同的问题；改为加载生产 ownership、cleanup、安装状态对账和 recovery-file owner，仅控制原生系统、文件系统及删除队列端口。覆盖成功、所有权拒绝、注册表拒绝/缺失回执、队列拒绝及按持久阶段重试，保留原四个反例并增加跳过注册表结算和忽略队列失败两个反例。生产源码、依赖、数据格式未改。Windows 验证 `35949497524` 已通过该门及六个反例，C00 current 仍为 0 缺陷/8 对照；全量 verify 随后停在 deactivation-refresh 的 CRLF 反例命中检查，未执行后续 build/混淆。C-08.1 尚未收口。
 
 - 2026-09-22：完成 C-08.0 Shared I/O 可观测性基线：隔离执行请求增加稳定 command label，并按总量/label 记录 requests、accepted、started、completed、failed、closed；Rust transport 对 `shared-file-io` 细分到具体 operation，启动/关闭日志可直接关联命令与子进程收敛。未改变 queue、timeout、kill、root generation 或 NAS 隔离语义。Windows 候选 `b0eddb45b80d265a8b947bd3f1065130399753f0` 在验证 `35742653243` 中通过 TypeScript、Shared I/O process/integration、shared filesystem、Rust worker transport、C00 current、Electron/Vite build、混淆与 `git diff --check`；临时验证 workflow 已在正式提交中删除。下一项 C-08.1：network `list-font-files` 批处理优化。
 
