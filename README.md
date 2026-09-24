@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-24：补齐 C-08.1 Windows P6 诊断中最后一处词法路径比较：`reconciledRoots.includes(watchedRoot)` 改为与本轮其他路径断言一致的 `realpath` 身份比较。只修测试夹具，生产目录创建、路径授权、lease lock、Shared I/O 与 reconciliation 逻辑均未修改；此前创建成功、越界拒绝、竞态重授权和不同目录反例继续保留。Windows 全量验证重新执行，未全绿前 C-08.1 仍不收口。
+
 - 2026-09-24：C-08.1 全量 Windows 门继续收口：候选 `2323d84e6ad627293c8152615592ed315fe29a90` 已通过 D-01 decomposition、deactivation-refresh、active-view、network batching、scan fallback、Shared I/O process/integration、Rust clients/transport、TypeScript 与 C00 current；`npm run verify` 随后首次推进到旧 `font-physical-path-authorization` P6，合法目录已创建但测试要求返回路径与临时目录词法字符串完全相等。生产路径授权以 real `ioPath` 为合同，因此测试改为比较现有路径的 `realpath` 身份，并同步修正同类的 post-verify destination 与 reconcile-root 两处比较；另增加不同目录不得被判同一身份的反断言。生产源码、权限边界、越界/竞态/副作用断言均未修改或放宽。新 Windows 全量验证待结果；未全绿前 C-08.1 仍不收口。
 
 - 2026-09-24：C-08.1 D-01 冻结证据迁移继续收口：Windows 35963112437 在首个 decomposition-baseline 门确认 App.tsx hash 已迁移后，下一命中为 useDeveloperController.ts。一次性核对 D-01 全部冻结文件与 C-07 Git 历史后，确认仅 App.tsx、useDeveloperController.ts、useFontOperationsController.ts、useLibraryController.ts 受 C-07 renderer closing lifecycle 影响，后三个 controller 自 C-07 40fa79c 后无生产修改。当前验证只在 functions/owners/exports/surfaces/viewGroups/ipcChannels 全部保持原冻结值时迁移其 tokenHash；任何额外结构变化立即失败。生产源码、依赖和用户数据均不改。Windows 运行 35969337307 将在同一候选树继续完整门禁；未全绿前不推进下一阶段。

@@ -279,7 +279,7 @@ async function runPhysicalCorrectness() {
     const renameRace = await renameRaceActions.renamePhysicalFolder(renameRaceSource, 'lock-race-renamed')
     assert('P6', renameRace.ok === false && renameRace.message.includes('重试'), 'lock-time rename replacement did not return retryable failure')
     assert('P6', fs.existsSync(renameRaceSource) && !fs.existsSync(path.join(watchedRoot, 'lock-race-renamed')), 'lock-time rename authorization failure still caused rename')
-    assert('P6', reconciledRoots.includes(watchedRoot), 'successful folder mutation did not request watched-root reconciliation')
+    assert('P6', reconciledRoots.some((rootPath) => sameExistingPath(rootPath, watchedRoot)), 'successful folder mutation did not request watched-root reconciliation')
 
     const legitimateMove = await actions.moveFontFileToFolder(fontItem('legitimate', sourcePaths.legitimate), targetFolder)
     assert('P7', legitimateMove.ok === true && legitimateMove.newPath && fs.existsSync(legitimateMove.newPath), 'authorized indexed font move failed')

@@ -553,6 +553,7 @@ C-08.0 的数据只解决“能准确计数并定位 one-shot 来源”。真实
 - Windows `35969337307` 的迁移步骤成功生成实际候选 `2323d84e6ad627293c8152615592ed315fe29a90`；D-01 decomposition、deactivation-refresh、active-view、network batching、scan fallback、Shared I/O process/integration、Rust clients/transport、TypeScript 与 C00 current 均通过。
 - 同一运行的完整 `npm run verify` 继续到 `diagnostics:font-physical-path-authorization` 后在 P6 停止：合法 watched-root 子目录创建完成，但旧断言把返回的授权 real `ioPath` 与 `path.join(watchedRoot, name)` 做词法字符串全等比较。该检查在 Windows 临时目录存在真实路径规范化/别名时比生产合同更严格。
 - 本轮只在诊断中增加 `existingPathIdentity/sameExistingPath`，以现有对象的 `realpath` + 平台大小写规则比较身份；应用到合法创建返回路径、post-verify committed destination、reconcile watched-root 三处等价身份判断，并加入不同目录不得折叠的反断言。越界、symlink escape、lock-time reauthorization、源保留、目标发布与 reconciliation 次数要求保持原强度。
+- 复核 `c8d57728014357a19e005f32f688a35d4b137dff` 的 Windows `35973246480` 后确认，前一轮已修正合法创建返回路径，但 P6 仍残留一处 `reconciledRoots.includes(watchedRoot)` 的词法等值断言；该断言在 Windows realpath 规范化下可误判已经发生的 root reconciliation。本轮仅将该处改为 `sameExistingPath(...)`，其余 P6/P7 断言与生产代码保持不变。
 - 新验证必须先通过 PHYSICAL 定向门，再跑完整 verify、Electron/Vite build、混淆和 diff check；生产 `physicalFolders.ts`、路径授权和 Shared I/O 不修改。
 - 后续仍需完整 Windows verify、构建/混淆和真实 NAS 请求计数/首屏延迟记录；临时 workflow 在最终收口时删除，不能把定向门通过写成整阶段完成。
 
