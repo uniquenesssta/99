@@ -3,7 +3,7 @@ on:
   push:
     branches: ['stage/09-preview-tags-app']
 permissions:
-  contents: write
+  contents: read
 jobs:
   windows-c08-network-list:
     runs-on: windows-latest
@@ -13,78 +13,8 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
-      - name: Apply scoped CRLF mutant repair
-        shell: bash
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const assert = require('node:assert/strict');
-          const cp = require('node:child_process');
-          const git = (...args) => cp.execFileSync('git', args, {encoding:'utf8'}).trim();
-          const ref = 'refs/heads/stage/09-preview-tags-app';
-          const base = git('rev-parse', 'HEAD');
-          assert.equal(process.env.GITHUB_REF, ref);
-          assert.equal(base, process.env.GITHUB_SHA);
-          assert.equal(git('status', '--porcelain'), '', 'dirty checkout; refusing repair');
-          assert.equal(git('rev-parse', 'HEAD^'), '33f0538d8105185fdfa14292c0c09785b3752f6c', 'unexpected source baseline');
-          const diag = 'build/diagnostics/check-deactivation-refresh.cjs';
-          const task = 'docs/plans/HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md';
-          assert.equal(git('rev-parse', 'HEAD:' + diag), '20bf73c57008e2180f96ed97704543a1e8351d48');
-          assert.equal(git('rev-parse', 'HEAD:' + task), 'd569630b1490640a703919f017cb65a71b54b266');
-          const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
-          function replaceOnce(text, before, after) {
-            assert.equal(text.split(before).length, 2, 'patch anchor missing/ambiguous: ' + before);
-            return text.replace(before, after);
-          }
-          const helper = String.raw`function withoutSnapshotInvalidation(source) {
-            const crlf = source.includes('\r\n');
-            let next = source.replace(/\r\n/g, '\n');
-            for (const [before, after] of [
-              ['installedFontsGeneration += 1', 'installedFontsGeneration += 0'],
-              ['    installedFontsReadInFlight = null\n  }', '  }'],
-            ]) {
-              assert.equal(next.split(before).length, 2, 'snapshot mutant anchor missing or ambiguous: ' + before);
-              next = next.replace(before, after);
-            }
-            return crlf ? next.replace(/\n/g, '\r\n') : next;
-          }
-          `;
-          let source = read(diag);
-          source = replaceOnce(source, 'async function main() {', helper + '\nasync function main() {');
-          const before = String.raw`  await assert.rejects(snapshotBoundaries(source=>source.replace('installedFontsGeneration += 1','installedFontsGeneration += 0').replace('    installedFontsReadInFlight = null\n  }','  }')),/post-mutation read joined/);cases++`;
-          const after = String.raw`  for (const crlf of [false, true]) {
-              await assert.rejects(snapshotBoundaries(source => {
-                const lf = source.replace(/\r\n/g, '\n');
-                return withoutSnapshotInvalidation(crlf ? lf.replace(/\n/g, '\r\n') : lf);
-              }), /post-mutation read joined/);cases++
-            }`;
-          source = replaceOnce(source, before, after);
-          source = replaceOnce(source, '3 rejected regressions; Windows timing remains unmeasured', '3 rejected regressions (snapshot mutant in LF/CRLF with both anchors checked); Windows timing remains unmeasured');
-          fs.writeFileSync(diag, source);
-          const runId = process.env.GITHUB_RUN_ID;
-          assert(/^\d+$/.test(runId || ''));
-          let readme = read('README.md');
-          readme = replaceOnce(readme, 'Windows 验证运行 `35949497524` 待结果；C-08.1 全量门禁未收口，不进入下一阶段。', 'Windows 验证 `35949497524` 已通过该门及六个反例，C00 current 仍为 0 缺陷/8 对照；全量 verify 随后停在 deactivation-refresh 的 CRLF 反例命中检查，未执行后续 build/混淆。C-08.1 尚未收口。');
-          const entry = '- 2026-09-24：修正 deactivation-refresh 的快照失效反例在 CRLF 源码中只命中 generation、不命中 in-flight reset 的问题；两处替换均须唯一命中，并对 LF/CRLF 分别执行原 post-mutation read joined 断言。正常快照/批量结算/失败恢复检查保持不变，不改生产模块或放宽失败断言。Windows 复验 `' + runId + '` 待结果；不推进下一阶段。';
-          readme = replaceOnce(readme, '## 变更记录\n', '## 变更记录\n\n' + entry + '\n');
-          fs.writeFileSync('README.md', readme);
-          let book = read(task);
-          book = replaceOnce(book, '- 当前验证运行 `35949497524`：待取得实际结果；本候选未标为完成。若失败，继续处理当前硬门，不推进 worker 复用、C-09 或 O-07。', '- Windows `35949497524`（实际验证候选 `33f0538d8105185fdfa14292c0c09785b3752f6c`）已通过 active-view-consistency 与六个因果反例、network batching、scan fallback、Shared I/O、Rust 边界、TypeScript 及 C00 current（0 缺陷/8 对照）；全量 verify 随后在 deactivation-refresh 的反例预期检查失败，后续 build/混淆未执行。不得据此标为 C-08.1 完成。\n- deactivation-refresh 的 Windows CRLF 反例只替换 generation，未替换 in-flight reset，导致预期 post-mutation read joined 与实际 stale snapshot 失败点不同。现使用唯一命中断言并保留源换行格式，LF/CRLF 分别运行同一个原失败断言；生产源码不变。\n- 新 Windows 复验 `' + runId + '`：结果待核对；完整 verify、build/混淆未通过前不推进 worker 复用、C-09 或 O-07。');
-          fs.writeFileSync(task, book);
-          const allowed = ['README.md', diag, task].sort();
-          assert.deepEqual(git('diff', '--name-only').split(/\r?\n/).sort(), allowed);
-          cp.execFileSync(process.execPath, ['--check', diag], {stdio:'inherit'});
-          git('diff', '--check');
-          console.log(git('diff', '--stat'));
-          assert.equal(git('ls-remote', 'origin', ref).split(/\s+/)[0], base, 'branch moved; refusing overwrite');
-          git('add', '--', ...allowed);
-          git('-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','test(c08): verify snapshot invalidation mutants across line endings');
-          git('push', 'origin', 'HEAD:' + ref);
-          const candidate = git('rev-parse', 'HEAD');
-          console.log('C-08.1 validation candidate: ' + candidate);
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'C-08.1 validation candidate: `' + candidate + '`\n\nValidation pending.\n');
-          NODE
       - run: npm ci
+      - run: npm run diagnostics:decomposition-baseline
       - run: npm run diagnostics:deactivation-refresh
       - run: npm run diagnostics:active-view-consistency
       - run: npm run diagnostics:network-list-font-files-batching
