@@ -139,6 +139,16 @@ function authorizationDenied(message = '文件系统状态已变化，请重试�
   return { ok: false, reason: 'outside-authorized-roots', message }
 }
 
+function existingPathIdentity(filePath) {
+  const realPath = fs.realpathSync.native ? fs.realpathSync.native(filePath) : fs.realpathSync(filePath)
+  const normalized = path.normalize(realPath)
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
+function sameExistingPath(left, right) {
+  return existingPathIdentity(left) === existingPathIdentity(right)
+}
+
 async function runPhysicalCorrectness() {
   const boundaryModule = loadTypeScriptModule('src/main/path/pathBoundaryPolicy.ts')
   const authorizationModule = loadTypeScriptModule(
@@ -233,7 +243,9 @@ async function runPhysicalCorrectness() {
     assert('P6', escapedRename.ok === false && fs.lstatSync(escapingTarget).isSymbolicLink(), 'root-escaping directory link was renamed')
 
     const created = await actions.createPhysicalFolder(watchedRoot, 'created-safe')
-    assert('P6', created === path.join(watchedRoot, 'created-safe') && fs.statSync(created).isDirectory(), 'authorized folder create failed')
+    const expectedCreated = path.join(watchedRoot, 'created-safe')
+    assert('P6', sameExistingPath(created, expectedCreated) && fs.statSync(created).isDirectory(), 'authorized folder create failed')
+    assert('P6', !sameExistingPath(created, outsideTarget), 'path identity check collapsed distinct directories')
 
     const rootRename = await actions.renamePhysicalFolder(protectedRoot, 'renamed-root')
     assert('P6', rootRename.ok === false && fs.statSync(protectedRoot).isDirectory(), 'watched root itself was renamed')
@@ -325,7 +337,7 @@ async function runPhysicalCorrectness() {
     const postVerifyDestination = path.join(targetFolder, path.basename(sourcePaths.postVerify))
     assert('P7', postVerifyMove.ok === false && postVerifyMove.message.includes('重试'), 'post-move boundary change did not return retryable failure')
     assert('P7', fs.existsSync(sourcePaths.postVerify) && fs.existsSync(postVerifyDestination), 'failed target verification must retain the source after exclusive publication')
-    assert('P7', postVerifyMove.outcome === 'target-committed-source-retained' && postVerifyMove.newPath === postVerifyDestination, 'post-verification failure must report both recoverable paths')
+    assert('P7', postVerifyMove.outcome === 'target-committed-source-retained' && postVerifyMove.newPath && sameExistingPath(postVerifyMove.newPath, postVerifyDestination), 'post-verification failure must report both recoverable paths')
     assert('P7', reconciledRoots.length > reconciliationCountBeforePostFailure, 'post-verification failure did not trigger authoritative root reconciliation')
 
     const batchMove = await actions.moveFontFilesToFolder([
@@ -333,7 +345,7 @@ async function runPhysicalCorrectness() {
       fontItem('batch-b', sourcePaths.batchB),
     ], targetFolder)
     assert('P7', batchMove.ok === true && batchMove.movedCount === 2, 'authorized indexed batch move failed')
-    assert('P7', reconciledRoots.filter((rootPath) => rootPath === watchedRoot).length >= 3, 'physical moves did not request authoritative root reconciliation')
+    assert('P7', reconciledRoots.filter((rootPath) => sameExistingPath(rootPath, watchedRoot)).length >= 3, 'physical moves did not request authoritative root reconciliation')
     assert('P7', observedLockOptions.length >= 5, 'physical mutations did not acquire the expected lease locks')
     assert('P7', observedLockOptions.every((options) => Array.isArray(options.roots) && options.roots.length > 0), 'lease lock storage was not anchored to authoritative watched roots')
 

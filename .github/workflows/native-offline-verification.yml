@@ -3,7 +3,7 @@ on:
   push:
     branches: ['stage/09-preview-tags-app']
 permissions:
-  contents: write
+  contents: read
 jobs:
   windows-c08-network-list:
     runs-on: windows-latest
@@ -14,91 +14,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
-      - name: Migrate remaining C-07 D-01 token evidence
-        shell: bash
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const assert = require('node:assert/strict');
-          const cp = require('node:child_process');
-          const git = (...args) => cp.execFileSync('git', args, { encoding: 'utf8' }).trim();
-          const branchRef = 'refs/heads/stage/09-preview-tags-app';
-          const protectedParent = 'fd7ecc444048397aefbb0eb83f62027fdc9f77ac';
-          const c07 = '40fa79c03d832bc18266f2241065d6cd98355901';
-          assert.equal(process.env.GITHUB_REF, branchRef, 'unexpected branch');
-          assert.equal(git('status', '--porcelain'), '', 'dirty checkout; refusing migration');
-          const head = git('rev-parse', 'HEAD');
-          assert.equal(head, process.env.GITHUB_SHA, 'checkout/head mismatch');
-
-          if (git('rev-parse', 'HEAD^') !== protectedParent) {
-            console.log('D-01 evidence migration already applied or this is a later validation commit; no repository mutation.');
-            process.exit(0);
-          }
-
-          const fixturePath = 'build/diagnostics/fixtures/decomposition-baseline.fixture.json';
-          const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
-          const fixture = JSON.parse(read(fixturePath));
-          const { inventory } = require('./build/diagnostics/check-decomposition-baseline.cjs');
-          const targets = [
-            'src/renderer/src/runtime/app/useDeveloperController.ts',
-            'src/renderer/src/runtime/app/useFontOperationsController.ts',
-            'src/renderer/src/runtime/app/useLibraryController.ts'
-          ];
-
-          const appPath = 'src/renderer/src/App.tsx';
-          assert.deepEqual(inventory(appPath), fixture.files[appPath], 'App D-01 evidence must already match before controller migration');
-
-          const migrated = [];
-          for (const file of targets) {
-            assert.equal(git('log', '-1', '--format=%H', '--', file), c07, file + ' changed after C-07; refusing evidence migration');
-            const expected = fixture.files[file];
-            assert(expected, 'missing D-01 fixture entry: ' + file);
-            const current = inventory(file);
-            assert.deepEqual({ ...current, tokenHash: expected.tokenHash }, expected, file + ' changed beyond tokenHash; explicit review required');
-            assert.notEqual(current.tokenHash, expected.tokenHash, file + ' tokenHash already matches; unexpected migration input');
-            migrated.push({ file, from: expected.tokenHash, to: current.tokenHash });
-            expected.tokenHash = current.tokenHash;
-          }
-
-          fs.writeFileSync(fixturePath, JSON.stringify(fixture, null, 2) + '\n');
-
-          const runId = process.env.GITHUB_RUN_ID;
-          assert(/^\d+$/.test(runId || ''), 'missing run id');
-
-          let readme = read('README.md');
-          const marker = '## 变更记录\n';
-          assert.equal(readme.split(marker).length, 2, 'README change-log marker missing/ambiguous');
-          const entry = '- 2026-09-24：C-08.1 D-01 冻结证据迁移继续收口：Windows 35963112437 在首个 decomposition-baseline 门确认 App.tsx hash 已迁移后，下一命中为 useDeveloperController.ts。一次性核对 D-01 全部冻结文件与 C-07 Git 历史后，确认仅 App.tsx、useDeveloperController.ts、useFontOperationsController.ts、useLibraryController.ts 受 C-07 renderer closing lifecycle 影响，后三个 controller 自 C-07 40fa79c 后无生产修改。当前验证只在 functions/owners/exports/surfaces/viewGroups/ipcChannels 全部保持原冻结值时迁移其 tokenHash；任何额外结构变化立即失败。生产源码、依赖和用户数据均不改。Windows 运行 ' + runId + ' 将在同一候选树继续完整门禁；未全绿前不推进下一阶段。';
-          readme = readme.replace(marker, marker + '\n' + entry + '\n');
-          fs.writeFileSync('README.md', readme);
-
-          const taskPath = 'docs/plans/HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md';
-          let task = read(taskPath);
-          const anchor = '- 后续仍需完整 Windows verify、构建/混淆和真实 NAS 请求计数/首屏延迟记录；临时 workflow 在最终收口时删除，不能把定向门通过写成整阶段完成。';
-          assert.equal(task.split(anchor).length, 2, 'C-08.1 taskbook anchor missing/ambiguous');
-          const detail = [
-            '- Windows 35963112437 在迁移 App tokenHash 后，diagnostics:decomposition-baseline 首个剩余命中为 useDeveloperController.ts；后续步骤因 fail-fast 均未执行，不能计为通过。',
-            '- 全量 D-01/C-07 交叉核对确认 C-07 修改且被 D-01 冻结的文件恰为 App.tsx、useDeveloperController.ts、useFontOperationsController.ts、useLibraryController.ts。后三个 controller 的最近生产修改均为 C-07 40fa79c03d832bc18266f2241065d6cd98355901。',
-            '- 本轮迁移脚本要求后三个 controller 的 functions/owners/exports/surfaces/viewGroups/ipcChannels 与 D-01 旧证据完全一致，只允许 tokenHash 变化；同时要求 App 当前 inventory 已与前一迁移匹配。任一额外差异 fail closed，不自动刷新证据。',
-            '- 同一 Windows 候选在迁移后立即重跑 decomposition、C-08 定向门、typecheck、C00 current、完整 verify、build/混淆和 diff check；全绿前 C-08.1 仍为验证未收口。'
-          ].join('\n');
-          task = task.replace(anchor, detail + '\n' + anchor);
-          fs.writeFileSync(taskPath, task);
-
-          const allowed = ['README.md', fixturePath, taskPath].sort();
-          assert.deepEqual(git('diff', '--name-only').split(/\r?\n/).filter(Boolean).sort(), allowed, 'migration escaped frozen scope');
-          cp.execFileSync(process.execPath, ['build/diagnostics/check-decomposition-baseline.cjs'], { stdio: 'inherit' });
-          git('diff', '--check');
-
-          const remoteHead = git('ls-remote', 'origin', branchRef).split(/\s+/)[0];
-          assert.equal(remoteHead, head, 'branch moved; refusing overwrite');
-
-          git('add', '--', ...allowed);
-          git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com', 'commit', '-m', 'test(c08): migrate remaining C-07 decomposition evidence');
-          git('push', 'origin', 'HEAD:' + branchRef);
-          console.log('D-01 migrated evidence: ' + JSON.stringify(migrated));
-          console.log('C-08.1 validation candidate: ' + git('rev-parse', 'HEAD'));
-          NODE
+      - run: npm run diagnostics:font-physical-path-authorization
       - run: npm run diagnostics:decomposition-baseline
       - run: npm run diagnostics:deactivation-refresh
       - run: npm run diagnostics:active-view-consistency
