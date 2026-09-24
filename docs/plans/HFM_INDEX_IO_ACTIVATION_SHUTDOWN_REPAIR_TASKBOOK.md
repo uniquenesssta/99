@@ -4,7 +4,7 @@
 
 - 文档版本：1.3；制定日期：2026-09-19；更新日期：2026-09-21；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定分支：`stage/09-preview-tags-app`；制定基线：`8fe6db1335e16287062c23bf7de1d66853545f59`。
-- 状态：**C-00～C-05 已完成；C-06 为下一项**。C-01～C-05 已按顺序完成实现与 Windows 目标平台验证；O-07 继续暂停。
+- 状态：**C-00～C-07、C-08.0 已完成；C-08.1 进行中，验证未收口**。O-07 继续暂停，C-09 未开始。
 - 本书是 [共享离线与本地退出任务书](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md) 在真实 Windows/NAS 验收中发现的新一轮正确性修复入口；O-07 继续暂停，先完成本书 P0/P1 修复再决定是否恢复 O-07。
 - 不新建阶段分支；继续沿用当前阶段唯一分支。除非用户明确要求，不创建并行修复分支。
 - 上级约束继续来自 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[全链路一致性修复任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)、Stage 1 激活事务、Stage 2 路径授权、Stage 5 Rust 边界、Stage 6 React 所有权及 Stage 7 IPC 安全任务书。
@@ -524,7 +524,7 @@ C-08.0 的数据只解决“能准确计数并定位 one-shot 来源”。真实
 
 #### C-08.1 network `list-font-files` 批处理优化
 
-状态：**未开始**。
+状态：**进行中，验证未收口**。
 
 目标：先处理共享根扫描中可由已有 Rust `list-font-files` 一次完成的目录枚举/字体文件信息读取，减少等价的 network `readdir/stat` one-shot；不改变 Root Index 权威性、watcher 提交顺序或根 availability 证据。
 
@@ -536,6 +536,15 @@ C-08.0 的数据只解决“能准确计数并定位 one-shot 来源”。真实
 - 不改变文件筛选、扩展名、相对路径、mtime/size/identity 等既有索引语义；若批量结果缺少现有调用方必须字段，先补协议/行为锁，禁止猜测填充；
 - 批处理失败保持现有 fail-closed/有界恢复，不新增 `catch { return [] }` 或 Node 网络 fallback；
 - C-08.1 独立验证通过前不得进入 worker 复用评估。
+
+#### C-08.1 验证接续（2026-09-24）
+
+- 当前生产候选保留已有 network list-font-files 批处理；本次只修正验证夹具及记录，不改生产模块。
+- 前置 Windows 运行 `35754472600`：network batching、scan fallback、Shared I/O process/integration、Rust clients/transport 和 TypeScript 通过；全量 verify 在 active-view-consistency 的 restartPolicy 失败，后续 build/混淆未执行。此前 old-success 模块实例问题已越过，本次失败为旧 identity 替身缺少 deleteRegistry。
+- 启动恢复夹具改用真实 JS ownership/cleanup/reconciliation/recovery-file 链路和合法 session/file identity，原生系统与删除队列仅作为受控端口。新增成功、ownership 拒绝、registry 拒绝/缺失回执、queue 拒绝、阶段持久化与重启重试检查；不以这些受控场景替代 Windows/NAS 实机验收。
+- 保留 favorite/idle/batch/metrics 四个退化反例，增加跳过 registry settlement、忽略 queue rejection 两个因果反例；原断言与 npm run verify 均未删除或跳过。
+- 当前验证运行 `35949497524`：待取得实际结果；本候选未标为完成。若失败，继续处理当前硬门，不推进 worker 复用、C-09 或 O-07。
+- 后续仍需完整 Windows verify、构建/混淆和真实 NAS 请求计数/首屏延迟记录；临时 workflow 在最终收口时删除，不能把定向门通过写成整阶段完成。
 
 ### C-09 Windows/NAS 总验收
 
@@ -606,8 +615,8 @@ C-00 基线（完成）
 → C-05R Windows 临时字体占用退避回收（完成；实机链通过）
 → C-06 退出结果三轴语义（完成）
 → C-07 renderer closing（完成）
-→ C-08 Shared I/O 性能（下一项）
+→ C-08 Shared I/O 性能（C-08.0 完成，C-08.1 验证中）
 → C-09 Windows/NAS 总验收
 ```
 
-C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 对照**。**下一执行入口为 C-08 Shared I/O 性能**；C-09 仍须等 C-08 硬门通过后再推进，O-07 继续暂停。
+C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 对照**。**当前执行入口为 C-08.1 验证收口**；C-09 仍须等 C-08 硬门通过后再推进，O-07 继续暂停。

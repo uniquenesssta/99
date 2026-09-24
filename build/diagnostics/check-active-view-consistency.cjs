@@ -13,6 +13,14 @@ function loader(mocks={},globals={},transforms={}){
   if(process.argv[2]==='idle')source=source.replace('options.delay <= 0','false')
   if(process.argv[2]==='batch')source=source.replace('itemResult?.ok !== true','itemResult && itemResult.ok === false')
   if(process.argv[2]==='metrics')source=source.replaceAll('pendingFavorite || intentRevision !== fontUserIntentRevision()','false')
+  if(file==='src/main/activation/runtime/fontActivationCleanupRuntime.ts'&&process.argv[2]==='startup-registry'){
+   const before='await activationTraceStep("deactivate:registry-settlement", record.fontId, () => identityRuntime.deleteRegistry(record));'
+   assert(source.includes(before),'startup registry mutant anchor missing');source=source.replace(before,'void 0;')
+  }
+  if(file==='src/main/activation/runtime/fontActivationCleanupRuntime.ts'&&process.argv[2]==='startup-queue'){
+   const before='if (!queued?.ok) {'
+   assert(source.includes(before),'startup queue mutant anchor missing');source=source.replace(before,'if (false) {')
+  }
   if(transforms[file])source=transforms[file](source)
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,console,performance,...globals,require(id){if(id in mocks)return mocks[id];if(id.startsWith('node:'))return require(id);if(id.startsWith('.'))return load(path.relative(root,path.resolve(root,path.dirname(file),id+'.ts')));throw Error(id)}})
   return exports
@@ -51,9 +59,9 @@ async function batchSettlement(){
   assert.equal(busy.size,0)
  }
 }
-async function main(){await feedbackLatency();await batchSettlement();await singleAndActivateBatch();await metricsRace();await restartPolicy();viewScopeMatrix();if(!process.argv[2])for(const mutant of ['favorite','idle','batch','metrics']){
+async function main(){await feedbackLatency();await batchSettlement();await singleAndActivateBatch();await metricsRace();await restartPolicy();viewScopeMatrix();if(!process.argv[2])for(const mutant of ['favorite','idle','batch','metrics','startup-registry','startup-queue']){
  const r=require('node:child_process').spawnSync(process.execPath,[__filename,mutant],{encoding:'utf8'});assert.notEqual(r.status,0,mutant+' escaped');assert(r.stderr.includes('AssertionError'),r.stderr)
- }console.log('A-02 immediate favorite/no idle starvation, single/batch settlement, stale metrics, startup cleanup; four mutations rejected')}
+ }console.log('A-02 immediate favorite/no idle starvation, single/batch settlement, stale metrics, startup cleanup with production ownership and durable retry; six mutations rejected')}
 main().catch(e=>{console.error(e);process.exitCode=1})
 
 async function singleAndActivateBatch(){
@@ -95,24 +103,100 @@ async function metricsRace(){
 }
 
 async function restartPolicy(){
- let saved={version:1,records:[{fontId:'a',installPath:'/managed/a.ttf',registryName:'a'}]},disk=null,removed=0,installedRows={},temporary=new Map()
- const load=loader({
-  'node:fs':{promises:{mkdir:async()=>{},readFile:async()=>{if(disk===null)throw Object.assign(Error('missing'),{code:'ENOENT'});return disk},open:async p=>({writeFile:async s=>temporary.set(p,s),sync:async()=>{},close:async()=>{}}),rename:async p=>{disk=temporary.get(p);temporary.delete(p)},rm:async p=>temporary.delete(p)}},
-  './managedActivationIdentityRuntime':{createManagedActivationIdentityRuntime:()=>({verify:async()=>true})},
-  '../temporaryFontDeleteQueue':{createTemporaryFontDeleteQueue:()=>({isSafeTemporaryActiveFontPath:()=>true,queueTemporaryFontFileDeletes:async records=>Object.fromEntries(records.map(r=>[r.installPath,{ok:true}])),flushPendingTemporaryFontDeletes:async()=>{}})},
-  '../../rust-core/nodeBridgeFallbackCompatibilityRuntime':{}
- },{process:{platform:'win32',env:{}}})
- const deps={normalizePathForCacheCompare:x=>x||'',getSystemInstalledFontsCached:async()=>[],compareFontInstalledWithList:()=>({installed:false,by:'none',matches:[]}),scheduleActivationInstallStatusSave:rows=>{installedRows=rows},isTemporaryActiveInstalledRecord:()=>false,appName:'test',dataRoot:()=>'/data',dataPath:()=>'/data/session.json',currentUserFontsDir:()=>'/managed',removeFontResourceSession:async()=>{removed++},deleteRegistryValueHKCU:async()=>{},advancedFontRefresh:async()=>{},clearInstalledFontsMemoryCache(){},appendStartupLog(){},loadTemporaryActiveFonts:async()=>saved,saveTemporaryActiveFonts:async s=>saved=s,runRustFontActivationFiles:async()=>({deleteResults:[{ok:true}]})}
- const cleanup=load('src/main/activation/runtime/fontActivationCleanupRuntime.ts').createFontActivationCleanupRuntime(deps,{temporaryActiveRecordStillVisible:async()=>false})
- const result=await cleanup.cleanupTemporaryActiveFonts('startup')
- assert.equal(result.remaining,0);assert.equal(removed,1);assert.equal(saved.records.length,0);assert.equal(installedRows.a.by,'none','startup cleanup left persisted active state stale')
- const store=load('src/main/windows/runtime/temporaryActiveFontsStoreRuntime.ts').createTemporaryActiveFontsStoreRuntime(deps)
- await store.saveTemporaryActiveFonts(saved)
- assert.equal((await store.loadTemporaryActiveFonts()).records.length,0,'restart must use cleaned persisted session')
+ for(const initialFault of ['success','ownership-rejected','registry-rejected','registry-missing-receipt','queue-rejected']){
+  const identity={device:'1',inode:'2',sha1:'a'.repeat(40),size:123}
+  const record={fontId:'a',sourcePath:'\\\\nas\\offline\\a.ttf',installPath:'/managed/test_ACTIVE_a_session.ttf',registryName:'A (TrueType) [session]',sessionId:'session',identity,activatedAt:'2026-09-22T00:00:00.000Z',fileName:'a.ttf',stage:'active'}
+  let fault=initialFault,disk=null,removed=0,refreshes=0,installedRows={}
+  const temporary=new Map(),calls=[],queued=[],stages=[],logs=[]
+  const local=p=>{assert(!/^[\\/]{2}/.test(String(p)),'startup cleanup must not access NAS');return p}
+  // Keep the production ownership, cleanup, reconciliation and recovery-file owners.
+  // Only filesystem, native Windows and deferred-delete ports are controlled here.
+  const load=loader({
+   'node:fs':{promises:{
+    mkdir:async p=>{local(p)},
+    readFile:async p=>{local(p);if(disk===null)throw Object.assign(Error('missing'),{code:'ENOENT'});return disk},
+    open:async(p,mode)=>{local(p);assert.equal(mode,'wx');return {writeFile:async s=>temporary.set(p,s),sync:async()=>{},close:async()=>{}}},
+    rename:async(p,destination)=>{local(p);local(destination);assert(temporary.has(p));disk=temporary.get(p);temporary.delete(p)},
+    rm:async p=>{local(p);temporary.delete(p)}
+   }},
+   '../temporaryFontDeleteQueue':{createTemporaryFontDeleteQueue:()=>({
+    isSafeTemporaryActiveFontPath:p=>p===record.installPath,
+    queueTemporaryFontFileDeletes:async records=>{
+     calls.push('queue')
+     assert.equal(JSON.parse(disk).records[0].stage,'file-pending','queue must follow durable registry settlement')
+     assert.deepEqual(plain(records.map(r=>r.installPath)),[record.installPath])
+     const ok=fault!=='queue-rejected'
+     if(ok)queued.push(...plain(records))
+     return {[record.installPath]:{ok,message:ok?'':'queue rejected'}}
+    },
+    flushPendingTemporaryFontDeletes:async()=>({remaining:queued.length})
+   })},
+   '../../rust-core/nodeBridgeFallbackCompatibilityRuntime':{nodeBridgeFallbackCompatibilityAllowed:()=>false}
+  },{process:{...process,platform:'win32',env:{}}})
+  const store=load('src/main/windows/runtime/temporaryActiveFontsStoreRuntime.ts').createTemporaryActiveFontsStoreRuntime({dataRoot:()=>'/data',dataPath:()=>'/data/session.json'})
+  await store.saveTemporaryActiveFonts({version:1,records:[record]})
+  const deps={
+   normalizePathForCacheCompare:x=>x||'',getSystemInstalledFontsCached:async()=>[],compareFontInstalledWithList:()=>({installed:false,by:'none',matches:[]}),
+   scheduleActivationInstallStatusSave:rows=>{calls.push('status');installedRows=rows},isTemporaryActiveInstalledRecord:()=>false,
+   appName:'test',dataRoot:()=>'/data',dataPath:()=>'/data/session.json',currentUserFontsDir:()=>'/managed',
+   removeFontResourceSession:async p=>{assert.equal(p,record.installPath);calls.push('resource');removed++},
+   advancedFontRefresh:async()=>{refreshes++},clearInstalledFontsMemoryCache(){},appendStartupLog:s=>logs.push(s),
+   loadTemporaryActiveFonts:store.loadTemporaryActiveFonts,
+   saveTemporaryActiveFonts:async state=>{await store.saveTemporaryActiveFonts(state);stages.push(state.records[0]?.stage||'empty')},
+   runRustFontActivationFiles:async input=>{
+    assert.equal(input.allowedDeleteDir,'/managed');assert.equal(input.allowedNamePrefix,'test_ACTIVE_')
+    assert.deepEqual(plain(input.registryClaims),[{registryName:record.registryName,installPath:record.installPath,sessionId:record.sessionId,identity}])
+    const row={registryName:record.registryName,installPath:record.installPath,ok:true,missing:false}
+    if(input.deleteRegistryClaims){
+     calls.push('registry')
+     assert.equal(JSON.parse(disk).records[0].stage,'registry-removal-pending')
+     return {ok:true,registryResults:fault==='registry-missing-receipt'?[]:[{...row,ok:fault!=='registry-rejected',deleted:fault!=='registry-rejected',message:'registry rejected'}]}
+    }
+    calls.push('ownership')
+    assert.deepEqual(plain(input.inspects),[record.installPath])
+    return {ok:true,inspectResults:[{path:record.installPath,identity}],registryResults:[{...row,ok:fault!=='ownership-rejected',message:'ownership rejected'}]}
+   }
+  }
+  const cleanup=load('src/main/activation/runtime/fontActivationCleanupRuntime.ts').createFontActivationCleanupRuntime(deps,{temporaryActiveRecordStillVisible:async()=>false})
+  const result=await cleanup.cleanupTemporaryActiveFonts('startup')
+  if(initialFault==='success'){
+   assert.deepEqual(plain(result),{cleaned:1,remaining:0})
+   assert.deepEqual(calls,['ownership','resource','registry','queue','status'])
+   assert.deepEqual(stages,['resource-removal-pending','registry-removal-pending','file-pending','empty'])
+  }else{
+   assert.deepEqual(plain(result),{cleaned:0,remaining:1},initialFault)
+   const retained=(await store.loadTemporaryActiveFonts()).records
+   assert.equal(retained.length,1,initialFault+' must retain a restartable durable record')
+   assert.deepEqual(plain(retained[0].identity),identity)
+   const expectedStage=initialFault==='ownership-rejected'?'active':initialFault==='queue-rejected'?'file-pending':'registry-removal-pending'
+   assert.equal(retained[0].stage,expectedStage)
+   assert.equal(queued.length,0,'failed ownership/registry/queue must not report accepted deletion')
+   assert.equal(Object.keys(installedRows).length,0,'failed cleanup must not clear installed state')
+   assert.equal(refreshes,0)
+   if(initialFault==='ownership-rejected')assert.equal(removed,0)
+   else assert.equal(removed,1)
+   assert(!logs.some(s=>s.includes('not a function')||s.includes('TypeError')),'fixture has an incomplete production port')
+   if(initialFault==='ownership-rejected')assert.match(retained[0].lastError,/ownership rejected/)
+   if(initialFault==='registry-rejected')assert.match(retained[0].lastError,/registry rejected/)
+   if(initialFault==='registry-missing-receipt')assert.match(retained[0].lastError,/原生注册表所有权清理失败/)
+   if(initialFault==='queue-rejected')assert(logs.some(s=>s.includes('queue rejected')))
+   calls.length=0;fault='success'
+   const retry=await cleanup.cleanupTemporaryActiveFonts('startup')
+   assert.deepEqual(plain(retry),{cleaned:1,remaining:0},initialFault+' restart retry')
+   const expectedCalls=expectedStage==='file-pending'?['queue','status']:expectedStage==='registry-removal-pending'?['ownership','registry','queue','status']:['ownership','resource','registry','queue','status']
+   assert.deepEqual(calls,expectedCalls,'retry must resume after the last durable stage')
+  }
+  assert.equal(removed,1,'resource removal must not repeat after its durable settlement')
+  assert.equal(queued.length,1);assert.equal(refreshes,1)
+  assert.equal(installedRows.a.by,'none','startup cleanup left persisted active state stale')
+  assert.equal((await store.loadTemporaryActiveFonts()).records.length,0,'restart must use cleaned persisted session')
+  assert.equal(temporary.size,0,'recovery-file temporary writes leaked')
+ }
  const lifecycle=fs.readFileSync(path.join(root,'src/main/app/mainProcessLifecycleRuntime.ts'),'utf8')
  assert(lifecycle.includes('cleanupTemporaryActiveFontsUntilEmpty("startup", 6)'))
  assert(lifecycle.includes('cleanupTemporaryActiveFontsUntilEmpty("quit", 1)'))
 }
+
 
 function viewScopeMatrix(){
  const load=loader({

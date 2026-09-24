@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-24：C-08.1 验证接续：修正 active-view-consistency 启动清理夹具未跟进 C-05 registry settlement 合同的问题；改为加载生产 ownership、cleanup、安装状态对账和 recovery-file owner，仅控制原生系统、文件系统及删除队列端口。覆盖成功、所有权拒绝、注册表拒绝/缺失回执、队列拒绝及按持久阶段重试，保留原四个反例并增加跳过注册表结算和忽略队列失败两个反例。生产源码、依赖、数据格式未改。Windows 验证运行 `35949497524` 待结果；C-08.1 全量门禁未收口，不进入下一阶段。
+
 - 2026-09-22：完成 C-08.0 Shared I/O 可观测性基线：隔离执行请求增加稳定 command label，并按总量/label 记录 requests、accepted、started、completed、failed、closed；Rust transport 对 `shared-file-io` 细分到具体 operation，启动/关闭日志可直接关联命令与子进程收敛。未改变 queue、timeout、kill、root generation 或 NAS 隔离语义。Windows 候选 `b0eddb45b80d265a8b947bd3f1065130399753f0` 在验证 `35742653243` 中通过 TypeScript、Shared I/O process/integration、shared filesystem、Rust worker transport、C00 current、Electron/Vite build、混淆与 `git diff --check`；临时验证 workflow 已在正式提交中删除。下一项 C-08.1：network `list-font-files` 批处理优化。
 
 - 2026-09-22：完成 C-07 Renderer 显式 closing 生命周期：新增 renderer 内部唯一 closing owner，复用现有 `app-window:flush-before-close` 作为 main→renderer closing 信号，并以同一协议下的窄 `app-window:close-cancelled` 事件在用户返回软件时恢复；Renderer 不具备自报 closing 影响主进程准入的能力。closing 后 developer diagnostics、late background-task refresh、shared metadata foreground idle/timeout/interval、非必要 database metrics 与 install-status 后续 metrics timer 均停止，仅保留允许的本地 font-write/library persistence flush；已在途 developer/shared 请求返回后也不会继续派生串行 IPC。主进程 `assertApplicationOpen` 未放宽。C00-B05 已转为 CONTROL_PASS，C00 current 现为 0 缺陷 / 8 对照；Stage 6 source freeze、App hook order、root-view legacy lifecycle 与 LF/CRLF mutants 均保持硬门。Windows C-07 verification `35737665904` 的 typecheck、C00 current、window-close-flush、bounded-local-exit、React composition、App interaction/root-view contracts、Electron/Vite build、混淆与 diff check 全绿。下一项 C-08 Shared I/O 性能。
