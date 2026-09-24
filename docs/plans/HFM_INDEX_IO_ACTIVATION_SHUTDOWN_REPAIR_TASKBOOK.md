@@ -555,6 +555,10 @@ C-08.0 的数据只解决“能准确计数并定位 one-shot 来源”。真实
 - 本轮只在诊断中增加 `existingPathIdentity/sameExistingPath`，以现有对象的 `realpath` + 平台大小写规则比较身份；应用到合法创建返回路径、post-verify committed destination、reconcile watched-root 三处等价身份判断，并加入不同目录不得折叠的反断言。越界、symlink escape、lock-time reauthorization、源保留、目标发布与 reconciliation 次数要求保持原强度。
 - 复核 `c8d57728014357a19e005f32f688a35d4b137dff` 的 Windows `35973246480` 后确认，前一轮已修正合法创建返回路径，但 P6 仍残留一处 `reconciledRoots.includes(watchedRoot)` 的词法等值断言；该断言在 Windows realpath 规范化下可误判已经发生的 root reconciliation。本轮仅将该处改为 `sameExistingPath(...)`，其余 P6/P7 断言与生产代码保持不变。
 - 新验证必须先通过 PHYSICAL 定向门，再跑完整 verify、Electron/Vite build、混淆和 diff check；生产 `physicalFolders.ts`、路径授权和 Shared I/O 不修改。
+- Windows `35977991956` 已通过 PHYSICAL、D-01、deactivation-refresh、active-view、network batching、scan fallback、Shared I/O、Rust clients/transport、TypeScript 与 C00 current；完整 verify 随后在 `incremental-metadata-refresh` 的首个 1/1499 断言失败，build/混淆未执行。
+- 根因不是生产全量同步：U-05 在 `deb0abd58cdd54baeaeb4e75fc3ad96a05c2f42c` 新增该诊断时即把 metadata 根写成 POSIX `'/fonts'`/`'/other'`，且当时 README 明确 Windows 实机待验；生产 locator 采用平台 `node:path.resolve()`。Windows runner 将相对 metadata path 解析成带盘符绝对路径，测试的 identity normalizer 又不做规范化，于是合法 changed id 被诊断误判 `changed-id-path-outside-root` 并进入 snapshot fallback，得到 1499 而不是 1。
+- 本轮只把诊断虚拟根改为基于仓库根的 platform-native absolute path；单项 1 行、批量 2 行、多根精确定位、unknown locator snapshot、根外 relative_path snapshot、增量失败 fallback 和原 root-snapshot mutant 全部保留。`sharedMetadataMergedIndexSyncRuntime.ts` 与 `sharedFontMetadataMutations.ts` 不修改。
+- Windows workflow 增加 `diagnostics:incremental-metadata-refresh` 前置定向门；通过后才继续 C-08.1 其他门、完整 verify、build、混淆和 diff check。
 - 后续仍需完整 Windows verify、构建/混淆和真实 NAS 请求计数/首屏延迟记录；临时 workflow 在最终收口时删除，不能把定向门通过写成整阶段完成。
 
 ### C-09 Windows/NAS 总验收

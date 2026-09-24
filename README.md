@@ -66,6 +66,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-24：C-08.1 全量门中的 `incremental-metadata-refresh` Windows 失败定位为 U-05 诊断夹具跨平台问题，而非共享标签生产同步退化。U-05 自 2026-09-18 起在诊断中写死 `'/fonts'`/`'/other'`，而生产 `sharedMetadataMergedIndexSyncRuntime` 使用平台 `node:path.resolve()`；Windows 因盘符规范化把测试定位结果误判为根外，主动触发 1499 行 snapshot fallback。现仅将诊断虚拟 metadata roots 改为平台原生绝对路径，并保留单项 1/1499、双项 2/1499、多根定位、unknown locator 与根外 fallback 断言；生产同步 runtime、标签写入、数据库格式与依赖均未修改。Windows 验证先跑该定向门再继续完整 verify。
+
 - 2026-09-24：补齐 C-08.1 Windows P6 诊断中最后一处词法路径比较：`reconciledRoots.includes(watchedRoot)` 改为与本轮其他路径断言一致的 `realpath` 身份比较。只修测试夹具，生产目录创建、路径授权、lease lock、Shared I/O 与 reconciliation 逻辑均未修改；此前创建成功、越界拒绝、竞态重授权和不同目录反例继续保留。Windows 全量验证重新执行，未全绿前 C-08.1 仍不收口。
 
 - 2026-09-24：C-08.1 全量 Windows 门继续收口：候选 `2323d84e6ad627293c8152615592ed315fe29a90` 已通过 D-01 decomposition、deactivation-refresh、active-view、network batching、scan fallback、Shared I/O process/integration、Rust clients/transport、TypeScript 与 C00 current；`npm run verify` 随后首次推进到旧 `font-physical-path-authorization` P6，合法目录已创建但测试要求返回路径与临时目录词法字符串完全相等。生产路径授权以 real `ioPath` 为合同，因此测试改为比较现有路径的 `realpath` 身份，并同步修正同类的 post-verify destination 与 reconcile-root 两处比较；另增加不同目录不得被判同一身份的反断言。生产源码、权限边界、越界/竞态/副作用断言均未修改或放宽。新 Windows 全量验证待结果；未全绿前 C-08.1 仍不收口。
