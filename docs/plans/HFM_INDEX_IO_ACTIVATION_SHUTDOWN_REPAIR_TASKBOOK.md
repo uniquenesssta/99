@@ -559,6 +559,7 @@ C-08.0 的数据只解决“能准确计数并定位 one-shot 来源”。真实
 - 根因不是生产全量同步：U-05 在 `deb0abd58cdd54baeaeb4e75fc3ad96a05c2f42c` 新增该诊断时即把 metadata 根写成 POSIX `'/fonts'`/`'/other'`，且当时 README 明确 Windows 实机待验；生产 locator 采用平台 `node:path.resolve()`。Windows runner 将相对 metadata path 解析成带盘符绝对路径，测试的 identity normalizer 又不做规范化，于是合法 changed id 被诊断误判 `changed-id-path-outside-root` 并进入 snapshot fallback，得到 1499 而不是 1。
 - 本轮只把诊断虚拟根改为基于仓库根的 platform-native absolute path；单项 1 行、批量 2 行、多根精确定位、unknown locator snapshot、根外 relative_path snapshot、增量失败 fallback 和原 root-snapshot mutant 全部保留。`sharedMetadataMergedIndexSyncRuntime.ts` 与 `sharedFontMetadataMutations.ts` 不修改。
 - Windows workflow 增加 `diagnostics:incremental-metadata-refresh` 前置定向门；通过后才继续 C-08.1 其他门、完整 verify、build、混淆和 diff check。
+- Windows `35989601682` 已不再出现 1499/1 metadata locator 误判；新的首个失败是 U-05 renderer 夹具未传 C-07 `closingLifecycle`，导致 `undefined.isClosing`。本轮只补与 C-07 控制器诊断一致的非 closing 生命周期窄替身，不修改 Library controller、renderer closing owner 或共享元数据生产链；新 Windows 验证继续先跑 `diagnostics:incremental-metadata-refresh`，通过后再执行完整 C-08.1 门禁。
 - 后续仍需完整 Windows verify、构建/混淆和真实 NAS 请求计数/首屏延迟记录；临时 workflow 在最终收口时删除，不能把定向门通过写成整阶段完成。
 
 ### C-09 Windows/NAS 总验收

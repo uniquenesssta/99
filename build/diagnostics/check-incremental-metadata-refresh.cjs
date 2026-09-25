@@ -117,7 +117,8 @@ function renderer() {
   })
   const useLibrary=load('src/renderer/src/runtime/app/useLibraryController.ts').useLibraryController
   let clears=0
-  const args={hfm:{},activeFilterKind:'all',database:{setDatabasePageResult:()=>clears++,setDatabaseQueryResult:()=>clears++,setDatabaseFontMetrics(){},databasePageRequestSeqRef:{current:0},fontMetricsRequestSeqRef:{current:0}},rendererUserActive:()=>false,appendDeveloperStatus(){}}
+  const closingLifecycle={isClosing:()=>false,beginClosing(){},resume(){},subscribe:()=>()=>{}}
+  const args={hfm:{},activeFilterKind:'all',database:{setDatabasePageResult:()=>clears++,setDatabaseQueryResult:()=>clears++,setDatabaseFontMetrics(){},databasePageRequestSeqRef:{current:0},fontMetricsRequestSeqRef:{current:0}},rendererUserActive:()=>false,appendDeveloperStatus(){},closingLifecycle}
   function render(){cursor=0;return useLibrary(args)}
   function drain(){const pending=[...timers.values()];timers.clear();pending.forEach(fn=>fn())}
   let ctl=render()
