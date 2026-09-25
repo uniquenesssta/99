@@ -643,7 +643,7 @@ C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 
 
 | Atomic Task | 范围 | 硬门与当前状态 |
 | --- | --- | --- |
-| C-08.1-V 验证链修复 | C-00 observer、诊断执行生命周期、全量 runner、现有 CI 与记录 | 进行中；历史 5 缺陷/3 对照，当前严格 0/8；LF/CRLF；故意失败正常退出；超时终止真实子进程树；完整 Windows verify/build/混淆 |
+| C-08.1-V 验证链修复 | C-00 observer、诊断执行生命周期、全量 runner、现有 CI 与记录 | 实现已提交，验收阻塞：本地 LF/CRLF 完整 146 项与构建/混淆通过；Windows 真实 CIM 查询触发现有 1500ms deadline，完整 Windows verify/build/混淆未通过 |
 | C-04R 传输超时语义补修 | Rust transport 与 root availability 受影响测试 | 待 C-08.1-V 通过；单次操作 timeout 不改 online/generation，根探测失败仍判离线；保留取消、隔离、写入未知结果及旧代次拒绝 |
 | C-08.1-P 首批返回 | scan listing 与 indexing client 的批次交付边界 | 待 C-04R 通过；本地根不等全部网络根，完成批次及时交付；不重复发布，不改变索引字段、错误与 generation 语义 |
 | C-09 实机验收 | Windows 开发模式、本机/映射盘/UNC、断网/退出/恢复 | 以上门禁通过后执行；真实 NAS 首批、可见预览、总扫描耗时及进程数分别记录；O-07 继续暂停 |
@@ -669,3 +669,5 @@ C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 
 - Windows `36166890452`（`834f2ea`）已通过原失败点，随后在 managed-font-uninstall-authorization P8 失败：断言把授权 real ioPath 和临时目录的词法输入全等比较。夹具现在使用带 `.` 的等价输入，独立真实路径身份确认目标且排除外部同名文件，再精确比较 unlink/注册表补偿与授权返回 ioPath；十二场景本地通过。生产授权、删除与补偿代码未改；第三轮 Windows 全量门待回执。
 
 - 本地对当前全部源码读取注入 CRLF 的 `npm run verify` 已完整通过 146 项。第三轮 Windows `36167830579`（`151e260`）通过 P8，继而 mapped-drive-unicode 的真实 CIM 断言失败；尚无底层退出证据，不能直接判定超时或放宽门禁。诊断只包装实际 execFile 记录耗时、原 timeout、code/signal/killed、stderr 和输出字节数，不改执行参数/返回值；workflow 前置这项原有严格门以尽早取得实机证据。其余完整 verify/build/混淆保留，当前任务仍进行中。
+
+- 当前明确阻塞：前置 Windows `36168691760`（代码 `a79f557`）真实查询耗时 1537ms，原 timeout=1500ms，signal=SIGKILL，killed=true，stdoutBytes=0，stderr 为空。只能确定执行预算内没有返回有效结果，尚不能区分 PowerShell 启动耗时与 CIM 查询耗时，更不能当作网络根不可达。诊断仍失败，无自动重试、延长期限、接受 null 或跳过 Windows 门。当前验证脚本修复已提交，但 C-08.1-V 未验收；下一推进前需先为映射盘发现的真实执行超时建立独立修复范围和证据，C-04R/C-08.1-P/C-09/O-07 保持未推进。
