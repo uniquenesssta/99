@@ -468,9 +468,16 @@ async function runManagedUninstallCorrectness() {
     })
     const managedItem = {
       ...authoritative,
-      managedInstallPath: managedPath,
+      // An equivalent spelling must still be resolved before destructive I/O.
+      managedInstallPath: currentUserFontsRoot + path.sep + '.' + path.sep + expectedName,
       managedRegistryName: expectedRegistryName,
     }
+    const authorizedManaged = await policy.authorizeManagedFontDelete(managedPath)
+    assert('P8', authorizedManaged.ok, 'expected managed fixture path was not authorized')
+    const authorizedManagedPath = authorizedManaged.value.ioPath
+    assert('P8', sameExistingPath(authorizedManagedPath, managedPath), 'authorized fixture resolved to a different file')
+    assert('P8', !sameExistingPath(authorizedManagedPath, outsidePrefixPath), 'path identity collapsed the outside same-named file')
+    assert('P8', managedItem.managedInstallPath !== authorizedManagedPath, 'fixture must exercise a noncanonical input spelling')
 
     for (const [label, item, messagePart] of [
       ['missing managed identity', authoritative, '不是由本工具安装'],
@@ -491,7 +498,7 @@ async function runManagedUninstallCorrectness() {
     const success = await runtime.uninstallManagedFont(managedItem)
     assert('P8', success.ok === true, `authorized managed uninstall failed: ${JSON.stringify(success)}`)
     assert('P8', effects.registryDeletes.length === 1 && effects.registryDeletes[0] === expectedRegistryName, 'authorized uninstall deleted the wrong registry identity')
-    assert('P8', effects.unlinks.length === 1 && effects.unlinks[0] === managedPath, 'authorized uninstall did not use the authorized real path')
+    assert('P8', effects.unlinks.length === 1 && effects.unlinks[0] === authorizedManagedPath, 'authorized uninstall did not use the authorized real path')
     assert('P8', effects.broadcasts === 1 && effects.registryWrites.length === 0, 'authorized uninstall side effects changed')
 
     resetEffects()
@@ -505,7 +512,7 @@ async function runManagedUninstallCorrectness() {
     const fileFailure = await runtime.uninstallManagedFont(managedItem)
     assert('P8', fileFailure.ok === false && fileFailure.message.includes('文件'), 'file failure was not returned truthfully')
     assert('P8', effects.registryDeletes.length === 1 && effects.unlinks.length === 1, 'file failure did not preserve cleanup stage results')
-    assert('P8', effects.registryWrites.length === 1 && effects.registryWrites[0].name === expectedRegistryName && effects.registryWrites[0].path === managedPath, 'file failure did not restore the removed registry identity')
+    assert('P8', effects.registryWrites.length === 1 && effects.registryWrites[0].name === expectedRegistryName && effects.registryWrites[0].path === authorizedManagedPath, 'file failure did not restore the removed registry identity')
     assert('P8', effects.broadcasts === 1, 'file failure compensation did not broadcast the final registry state')
 
     resetEffects()

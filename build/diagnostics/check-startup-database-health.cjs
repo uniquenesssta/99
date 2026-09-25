@@ -173,9 +173,18 @@ async function backupAbsenceError() {
 async function main() {
   await absence();await failures();await racesAndProtocol();await writers();await failedBackup();await requiredStartup();await backupAbsenceError()
   const helper=path.join(root,base+'databaseMaintenanceHelpers.ts'),coordinator=path.join(root,base+'databaseMaintenance.ts')
-  await assert.rejects(absence({[helper]:s=>s.replace(" || spec.label === 'events' || spec.label === 'hash'",'')}));checks++
-  await assert.rejects(failedBackup({[coordinator]:s=>s.replace('report.ok = report.ok && backup.ok','report.ok = report.ok')}),/failed automatic backup reported success/);checks++
-  await assert.rejects(requiredStartup({[coordinator]:s=>s.replace('await spec.open()\n          appendStartupLog', '/* initialization removed */\n          appendStartupLog')}),/required owners must initialize/);checks++
+  function mutation(file, before, after, eol) {
+    const source = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+    assert(source.includes(before), 'database health mutation anchor missing')
+    const changed = source.replace(before, after)
+    assert.notEqual(changed, source, 'database health mutation must change source')
+    return { [file]: () => changed.replace(/\n/g, eol) }
+  }
+  for (const eol of ['\n', '\r\n']) {
+    await assert.rejects(absence(mutation(helper, " || spec.label === 'events' || spec.label === 'hash'", '', eol)), assert.AssertionError);checks++
+    await assert.rejects(failedBackup(mutation(coordinator, 'report.ok = report.ok && backup.ok', 'report.ok = report.ok', eol)), /failed automatic backup reported success/);checks++
+    await assert.rejects(requiredStartup(mutation(coordinator, 'await spec.open()\n          appendStartupLog', '/* initialization removed */\n          appendStartupLog', eol)), /required owners must initialize/);checks++
+  }
   await absence({[helper]:s=>s.replace(/\r?\n/g,'\r\n'),[coordinator]:s=>s.replace(/\r?\n/g,'\r\n')})
   console.log(`[diagnostics:startup-database-health] ${checks} checks passed: fresh/existing directories, real SQLite health/backup/cache writers, Rust/Node classification, controlled permission/lock/IO errors, late removal, incomplete worker results, backup failure/retry, three mutants and CRLF`)
 }

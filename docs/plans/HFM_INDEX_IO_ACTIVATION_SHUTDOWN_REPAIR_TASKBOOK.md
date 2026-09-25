@@ -664,3 +664,6 @@ C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 
 - 本地 `npm run verify` 通过（typecheck + 146 项诊断），execution-lifecycle/九场景七 mutant/十 watcher mutant 均通过；electron-vite build、3/3 混淆、git diff --check 通过。preview-input-boundary 的 C++ 68 案例/JS 190 案例已执行；本机缺少 PowerShell/Rust，诊断明确报告外部必验，不能视作原生链通过。Windows 全量门待回执。Create State 连接要求重新认证，本次状态保存在 README/本任务书。未通过完整门禁前不得推进 C-04R、C-08.1-P、C-09 或 O-07。
 
 - Windows `36166165139`（`35a2f92`）已通过新增执行生命周期、全部前置专项、typecheck/current strict；完整 verify 在 local-tag-rust-atomicity 的 CRLF mutation 漏匹配处及时失败，build/混淆未执行。检查发现 shared-metadata 同根问题（原文未归一化、LF 转 CRLF 可能叠加回车）；两脚本统一先归一化，再对正常/每个实际生效的 mutant 执行 LF/CRLF 检查，交易顺序、算法 hash 与业务检查不变。本地原始 LF 与注入 CRLF 的真实源码读取均通过；新 Windows 全量门待回执。
+
+- 对 TypeScript/Rust 源码读取统一注入 CRLF 后，完整诊断另定位 startup-database-health 与 tag-commit-query 的多行 mutation 漏匹配；两者先验证样本实际改变源码，再在 LF/CRLF 分别执行三项反例。修复点和后续八项诊断通过；没有把首次失败的全量命令记为通过。
+- Windows `36166890452`（`834f2ea`）已通过原失败点，随后在 managed-font-uninstall-authorization P8 失败：断言把授权 real ioPath 和临时目录的词法输入全等比较。夹具现在使用带 `.` 的等价输入，独立真实路径身份确认目标且排除外部同名文件，再精确比较 unlink/注册表补偿与授权返回 ioPath；十二场景本地通过。生产授权、删除与补偿代码未改；第三轮 Windows 全量门待回执。

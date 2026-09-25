@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Real write protocol, revision owner, signals and query facade; deterministic clock/worker boundary.
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
 const path = require('node:path')
 const { loader } = require('./check-operation-chain.cjs')
 const root = path.resolve(__dirname, '../..')
@@ -71,13 +72,19 @@ async function exercise(transforms = {}) {
   }
 }
 async function main(){
-  await exercise()
-  for(const file of [barrierFile,protocolFile,signalFile]) {
-    const transform=file===barrierFile?s=>s.replaceAll('input.committed ? 0 : now','now')
-      :file===protocolFile?s=>s.replace('updatedIds, true)','updatedIds)')
-      :s=>s.replaceAll('      true,\n','')
-    await assert.rejects(exercise({[path.join(root,file)]:transform}),{name:'AssertionError'},`regression must detect ${file}`)
+  const files = [barrierFile, protocolFile, signalFile]
+  for (const eol of ['\n', '\r\n']) {
+    await exercise(Object.fromEntries(files.map(file => [path.join(root, file), source => source.replace(/\r\n/g, '\n').replace(/\n/g, eol)])))
+    for(const file of files) {
+      const transform=file===barrierFile?s=>s.replaceAll('input.committed ? 0 : now','now')
+        :file===protocolFile?s=>s.replace('updatedIds, true)','updatedIds)')
+        :s=>s.replaceAll('      true,\n','')
+      const source = fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')
+      const changed = transform(source)
+      assert.notEqual(changed, source, `mutation anchor missing: ${file}`)
+      await assert.rejects(exercise({[path.join(root,file)]:()=>changed.replace(/\n/g,eol)}),{name:'AssertionError'},`regression must detect ${file}`)
+    }
   }
-  console.log('tag commit query checks passed (local/shared, set/delete, signals, query retry, version rejection, failure, 3 regression mutations)')
+  console.log('tag commit query checks passed (local/shared, set/delete, signals, query retry, version rejection, failure, 3 applied regression mutations in LF/CRLF)')
 }
 main().catch(error=>{console.error(error);process.exitCode=1})
