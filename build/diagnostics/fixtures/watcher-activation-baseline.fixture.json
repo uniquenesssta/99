@@ -23,7 +23,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "63d35336700fb7f064e087a7aee040d6145992604eb3fd513d00880f86d6aa6e"
+      "sha256": "0292fef2837bca7c9db9f19492db935cb93f7c8b93f263f05b54ce6ee95bbcd0"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -126,7 +126,7 @@
         "deactivateFontByCard",
         "deactivateFontsBatch"
       ],
-      "sha256": "2b5ce2cd7f31275df7828b64140405617a74e692cb4568168c097810fe328bd2"
+      "sha256": "abe135d98728042372e295cd974e7377347dc7ce04be1b53b093f69fbc1ff49a"
     },
     "src/renderer/src/runtime/system/actions/fontSystemStateRuntime.ts": {
       "exports": [
@@ -198,6 +198,18 @@
       "parent": "7912bc97b147baca9531ad8de326dd46c8352069",
       "file": "src/main/watcher/folderWatcherRuntime.ts",
       "reason": "deferred persistence recovery, next-concrete-event replay, repeated root-diff suppression; watcher lifecycle owner preserved"
+    },
+    {
+      "task": "C-04",
+      "commit": "289226b370efee1b8ea9fcf0884fb95d13abeeac",
+      "file": "src/main/watcher/folderWatcherRuntime.ts",
+      "reason": "Remove snapshot-error root-offline marking; current root-availability-evidence and watcher recovery behavior gates remain required."
+    },
+    {
+      "task": "C-05",
+      "commit": "f6ad3f8c5fa8333e94e5a0ec5a7af436a3965bba",
+      "file": "src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts",
+      "reason": "Dispatch inactive fonts despite stale renderer installed hints; activation-entry checks fresh main admission and existing rollback/metrics gates remain required."
     }
   ]
 }

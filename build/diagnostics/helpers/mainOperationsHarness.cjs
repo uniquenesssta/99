@@ -119,6 +119,10 @@ async function observeLifecycle(scenario, overrides = new Map()) {
       if (reason === 'quit' && scenario === 'cleanup-error') throw new Error('cleanup failed')
       return { remaining: reason === 'quit' && scenario === 'cleanup-remains' ? 1 : 0 }
     },
+    flushPendingTemporaryFontDeletes: async reason => {
+      p.flushPendingTemporaryFontDeletes(reason)
+      return { remaining: 0 }
+    },
     flushActivationInstallStatusSave: async reason => {
       p.flushActivationInstallStatusSave(reason)
       if (scenario === 'flush-return' || scenario === 'flush-force-quit') throw new Error('activation flush failed')

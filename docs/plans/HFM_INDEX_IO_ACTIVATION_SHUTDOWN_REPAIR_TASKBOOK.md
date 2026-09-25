@@ -4,7 +4,7 @@
 
 - 文档版本：1.3；制定日期：2026-09-19；更新日期：2026-09-21；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；制定分支：`stage/09-preview-tags-app`；制定基线：`8fe6db1335e16287062c23bf7de1d66853545f59`。
-- 状态：**C-00～C-07、C-08.0 已完成；C-08.1 进行中，验证未收口**。O-07 继续暂停，C-09 未开始。
+- 状态：**C-08.1 验证修复进行中；复审确认 C-04 传输层遗漏，需补修后重新验收**。C-00～C-07、C-08.0 的历史记录保留其当时覆盖范围，不表示新反例已通过；O-07 继续暂停，C-09 未开始。最新入口见 §10。
 - 本书是 [共享离线与本地退出任务书](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md) 在真实 Windows/NAS 验收中发现的新一轮正确性修复入口；O-07 继续暂停，先完成本书 P0/P1 修复再决定是否恢复 O-07。
 - 不新建阶段分支；继续沿用当前阶段唯一分支。除非用户明确要求，不创建并行修复分支。
 - 上级约束继续来自 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[全链路一致性修复任务书](HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)、Stage 1 激活事务、Stage 2 路径授权、Stage 5 Rust 边界、Stage 6 React 所有权及 Stage 7 IPC 安全任务书。
@@ -636,3 +636,29 @@ C-00 基线（完成）
 ```
 
 C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 对照**。**当前执行入口为 C-08.1 验证收口**；C-09 仍须等 C-08 硬门通过后再推进，O-07 继续暂停。
+
+## 10. 2026-09-25 复审修复接续
+
+复审代码基线 `afa39f09c478728278f54d1bf95ed9880288dfbf`，同一 `stage/09-preview-tags-app` 分支接续。用户已授权按下列顺序实施；不新建阶段分支，不改依赖或用户数据。每项独立提交、受影响门及完整 Windows verify/build/混淆通过后才进入下一项。旧节中的“下一项”以本节为准。
+
+| Atomic Task | 范围 | 硬门与当前状态 |
+| --- | --- | --- |
+| C-08.1-V 验证链修复 | C-00 observer、诊断执行生命周期、全量 runner、现有 CI 与记录 | 进行中；历史 5 缺陷/3 对照，当前严格 0/8；LF/CRLF；故意失败正常退出；超时终止真实子进程树；完整 Windows verify/build/混淆 |
+| C-04R 传输超时语义补修 | Rust transport 与 root availability 受影响测试 | 待 C-08.1-V 通过；单次操作 timeout 不改 online/generation，根探测失败仍判离线；保留取消、隔离、写入未知结果及旧代次拒绝 |
+| C-08.1-P 首批返回 | scan listing 与 indexing client 的批次交付边界 | 待 C-04R 通过；本地根不等全部网络根，完成批次及时交付；不重复发布，不改变索引字段、错误与 generation 语义 |
+| C-09 实机验收 | Windows 开发模式、本机/映射盘/UNC、断网/退出/恢复 | 以上门禁通过后执行；真实 NAS 首批、可见预览、总扫描耗时及进程数分别记录；O-07 继续暂停 |
+
+### 10.1 已确认反例及覆盖缺口
+
+- Windows `36141281909` 的定向检查及 typecheck 已通过；完整 verify 在默认 C-00 historical observer 第 340 行失败。该模式加载 `515f210` 旧源码，但断言要求 C-07 才加入的 closing state。失败后 foreground interval 未清理，外层 watchdog 又被清除，直到 55 分钟工作流 deadline 才取消；build/混淆未执行。本地同一反例亦失败且不退出，外部 25 秒超时终止；`--current --strict` 独立通过 0/8。
+- C-04 的 shared filesystem 测试替换了 transport executor；生产 `rustCoreWorkerTransportRuntime` 仍把普通 timeout 升级为 root offline。真实子进程加受控健康探测复现 online→offline，无新增根不可达证据。C00 current 0/8 不能覆盖该遗漏。
+- C-08.1 在早显示模式下先 await 全部 network roots，才交付首批及处理 local roots；受控等待中即使 local root 排第一，localCalls=0、visible=0。NAS 实际耗时尚未测量，不把进程减少当成首屏加速。
+
+### 10.2 C-08.1-V 实施与验收
+
+- 历史 observer 保留旧源码与明确 5 缺陷/3 对照断言；C-07 closing/resume 正确性仅在 current 模式验收。新增独立 `diagnostics:index-io-activation-shutdown-current`，带 `--current --strict`，进入完整 verify；未删除历史门。
+- renderer observer 的 effects/断言全路径由 finally 清理；临时目录清理完成后才释放 observer watchdog。全量诊断使用独立进程执行 owner：普通单项 5 分钟，包含冷态原生编译的 preview-input-boundary 10 分钟；超时显式失败，Windows taskkill tree/POSIX process group 终止后再结算，不重试或跳过失败项。
+- 新 `diagnostics:execution-lifecycle` 验证历史/当前 LF/CRLF、严格失败、在 interval 活动时抛错的退出、真实父子进程 deadline、启动失败和非零退出。现有 Windows workflow 先执行此门与 current strict，再完整 verify/build/混淆；为原有 cargo offline fixture 预取 lockfile 中的 crates，不改变 Rust/生产依赖。
+- 本地完整 verify 在 main-operations 发现既有夹具未提供 pending-delete 返回值且预期停留在单轴 clean 结果。只补 mock 返回契约及四场景中已由 C-06 实现的三轴结果/日志，其他预期保持不变；新增丢失 pending-delete 调用和丢失 outcome 参数两个 mutant，九场景与七个 mutation 均通过。
+- 全量 verify 随后抵达 watcher-activation-baseline：两个指纹仍为 C-03 时源码。逐文件核对 `289226b` 的 watcher snapshot 错误不判整根离线、`f6ad3f8` 的 renderer 过期 installed hint 不阻断激活；限定迁移这两项 hash 并记录来源提交，保留另外九项指纹及全部行为/mutation 门。
+- 本地 `npm run verify` 通过（typecheck + 146 项诊断），execution-lifecycle/九场景七 mutant/十 watcher mutant 均通过；electron-vite build、3/3 混淆、git diff --check 通过。preview-input-boundary 的 C++ 68 案例/JS 190 案例已执行；本机缺少 PowerShell/Rust，诊断明确报告外部必验，不能视作原生链通过。Windows 全量门待回执。Create State 连接要求重新认证，本次状态保存在 README/本任务书。未通过完整门禁前不得推进 C-04R、C-08.1-P、C-09 或 O-07。

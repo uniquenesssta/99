@@ -286,7 +286,9 @@ async function observeRendererClosingAdmission() {
     listBackgroundTasks: async () => { calls.push('tasks:list'); return [] },
   }
   const l = load({ react }, { window: fakeWindow, document: fakeDocument })
-  const closingLifecycle = l('src/renderer/src/runtime/app/rendererClosingLifecycleRuntime.ts').createRendererClosingLifecycleRuntime()
+  const closingLifecycle = current
+    ? l('src/renderer/src/runtime/app/rendererClosingLifecycleRuntime.ts').createRendererClosingLifecycleRuntime()
+    : undefined
   const dev = l('src/renderer/src/rendererDeveloperStatusRuntime.ts')
   const refresh = () => dev.refreshDeveloperStatusDetailsRuntime({
     enabled: true,
@@ -297,78 +299,89 @@ async function observeRendererClosingAdmission() {
     setSharedMetadataDiagnostics() {},
     setTasks() {},
     appendStatus() {},
-    isClosing: closingLifecycle.isClosing,
+    isClosing: closingLifecycle?.isClosing,
   })
-  l('src/renderer/src/runtime/app/effects/useAppFlushOnUnloadRuntime.ts').useAppFlushOnUnloadRuntime({
-    hfm,
-    clearDatabaseRefreshTimer() {},
-    clearFontListScrollIdleTimer() {},
-    clearQueuedFontWriteTimer() {},
-    flushFontWriteQueue: async () => true,
-    flushLibraryPersistence: async () => true,
-    closingLifecycle,
-  })
-  l('src/renderer/src/runtime/app/effects/useBackgroundTaskEventsRuntime.ts').useBackgroundTaskEventsRuntime({
-    enabled: true,
-    hfm,
-    setLatestBackgroundTaskEvent() {},
-    appendDeveloperStatus() {},
-    refreshDeveloperStatusDetails: refresh,
-    closingLifecycle,
-  })
-  l('src/renderer/src/runtime/app/effects/useSharedMetadataSyncForegroundRuntime.ts').useSharedMetadataSyncForegroundRuntime({
-    enabled: true,
-    libraryFoldersKey: 'root',
-    indexingActive: false,
-    checkSharedMetadataUpdates: async () => { sharedCalls++ },
-    closingLifecycle,
-  })
-  await tick(); await tick()
-  assert(calls.length >= 4, 'normal developer diagnostics must remain active before close')
-  const normalDeveloperCalls = calls.slice()
-  const focus = windowListeners.get('focus')
-  assert.equal(typeof focus, 'function')
-  focus()
-  await tick(); await tick()
-  assert(sharedCalls > 0, 'normal shared metadata foreground refresh must remain active before close')
-  const sharedBeforeClose = sharedCalls
-  calls.length = 0
+  try {
+    l('src/renderer/src/runtime/app/effects/useAppFlushOnUnloadRuntime.ts').useAppFlushOnUnloadRuntime({
+      hfm,
+      clearDatabaseRefreshTimer() {},
+      clearFontListScrollIdleTimer() {},
+      clearQueuedFontWriteTimer() {},
+      flushFontWriteQueue: async () => true,
+      flushLibraryPersistence: async () => true,
+      closingLifecycle,
+    })
+    l('src/renderer/src/runtime/app/effects/useBackgroundTaskEventsRuntime.ts').useBackgroundTaskEventsRuntime({
+      enabled: true,
+      hfm,
+      setLatestBackgroundTaskEvent() {},
+      appendDeveloperStatus() {},
+      refreshDeveloperStatusDetails: refresh,
+      closingLifecycle,
+    })
+    l('src/renderer/src/runtime/app/effects/useSharedMetadataSyncForegroundRuntime.ts').useSharedMetadataSyncForegroundRuntime({
+      enabled: true,
+      libraryFoldersKey: 'root',
+      indexingActive: false,
+      checkSharedMetadataUpdates: async () => { sharedCalls++ },
+      closingLifecycle,
+    })
+    await tick(); await tick()
+    assert(calls.length >= 4, 'normal developer diagnostics must remain active before close')
+    const normalDeveloperCalls = calls.slice()
+    const focus = windowListeners.get('focus')
+    assert.equal(typeof focus, 'function')
+    focus()
+    await tick(); await tick()
+    assert(sharedCalls > 0, 'normal shared metadata foreground refresh must remain active before close')
+    const sharedBeforeClose = sharedCalls
+    calls.length = 0
 
-  assert.equal(typeof closeListener, 'function')
-  closeListener({ requestId: 1 })
-  await tick()
-  assert.equal(closingLifecycle.isClosing(), true)
-  assert.equal(typeof backgroundListener, 'function')
+    assert.equal(typeof closeListener, 'function')
+    closeListener({ requestId: 1 })
+    await tick()
+    if (current) assert.equal(closingLifecycle.isClosing(), true)
+    assert.equal(typeof backgroundListener, 'function')
 
-  backgroundListener({ eventType: 'scheduler', status: { stopping: true } })
-  backgroundListener({ eventType: 'task', task: { id: 'late' }, status: { state: 'finished' } })
-  focus()
-  await tick(); await tick()
-  const postCloseDeveloperCalls = calls.slice()
-  const postCloseSharedCalls = sharedCalls - sharedBeforeClose
-  assert.equal(postCloseDeveloperCalls.length, 0, 'explicit renderer closing must block late developer diagnostics IPC')
-  assert.equal(postCloseSharedCalls, 0, 'explicit renderer closing must block shared metadata foreground refresh')
+    backgroundListener({ eventType: 'scheduler', status: { stopping: true } })
+    backgroundListener({ eventType: 'task', task: { id: 'late' }, status: { state: 'finished' } })
+    focus()
+    await tick(); await tick()
+    const postCloseDeveloperCalls = calls.slice()
+    const postCloseSharedCalls = sharedCalls - sharedBeforeClose
+    if (!current) {
+      assert.deepEqual(postCloseDeveloperCalls, normalDeveloperCalls, 'pinned baseline must reproduce late developer IPC')
+      assert(postCloseSharedCalls > 0, 'pinned baseline must reproduce late shared foreground work')
+      assert.equal(closeCancelledListener, undefined, 'pinned baseline unexpectedly has the later close-cancel protocol')
+      report('C00-B05', true, { normalDeveloperCalls, postCloseDeveloperCalls, postCloseSharedCalls,
+        meaning: 'pinned pre-C-07 code still dispatches developer/shared foreground work after close' })
+      return
+    }
+    assert.equal(postCloseDeveloperCalls.length, 0, 'explicit renderer closing must block late developer diagnostics IPC')
+    assert.equal(postCloseSharedCalls, 0, 'explicit renderer closing must block shared metadata foreground refresh')
 
-  assert.equal(typeof closeCancelledListener, 'function')
-  closeCancelledListener({ requestId: 1 })
-  assert.equal(closingLifecycle.isClosing(), false)
-  backgroundListener({ eventType: 'task', task: { id: 'resumed' }, status: { state: 'finished' } })
-  focus()
-  await tick(); await tick(); await tick()
-  assert(calls.length >= 4, 'developer diagnostics must recover after close cancellation')
-  assert(sharedCalls > sharedBeforeClose, 'shared metadata foreground refresh must recover after close cancellation')
+    assert.equal(typeof closeCancelledListener, 'function')
+    closeCancelledListener({ requestId: 1 })
+    assert.equal(closingLifecycle.isClosing(), false)
+    backgroundListener({ eventType: 'task', task: { id: 'resumed' }, status: { state: 'finished' } })
+    focus()
+    await tick(); await tick(); await tick()
+    assert(calls.length >= 4, 'developer diagnostics must recover after close cancellation')
+    assert(sharedCalls > sharedBeforeClose, 'shared metadata foreground refresh must recover after close cancellation')
 
-  report('C00-B05', false, {
-    closeSignalReceived: true,
-    explicitRendererClosing: true,
-    normalDeveloperCalls,
-    postCloseDeveloperCalls,
-    postCloseSharedCalls,
-    resumedDeveloperCalls: calls.slice(),
-    sharedForegroundRecovered: sharedCalls > sharedBeforeClose,
-    meaning: 'explicit renderer closing admission blocks late developer/shared foreground work and close cancellation restores normal behavior',
-  })
-  for (const cleanup of cleanups.reverse()) cleanup()
+    report('C00-B05', false, {
+      closeSignalReceived: true,
+      explicitRendererClosing: true,
+      normalDeveloperCalls,
+      postCloseDeveloperCalls,
+      postCloseSharedCalls,
+      resumedDeveloperCalls: calls.slice(),
+      sharedForegroundRecovered: sharedCalls > sharedBeforeClose,
+      meaning: 'explicit renderer closing admission blocks late developer/shared foreground work and close cancellation restores normal behavior',
+    })
+  } finally {
+    for (const cleanup of cleanups.reverse()) cleanup()
+  }
 }
 
 async function main() {
@@ -385,8 +398,13 @@ async function main() {
     await observeShutdownResidualClean()
     await observeRendererClosingAdmission()
   } finally {
-    clearTimeout(watchdog)
     await fsp.rm(dir, { recursive: true, force: true })
+    clearTimeout(watchdog)
+  }
+  if (!current) {
+    assert.deepEqual(rows.filter(row => row.status === 'KNOWN_DEFECT').map(row => row.id),
+      ['C00-B01', 'C00-B02', 'C00-B03', 'C00-B04', 'C00-B05'], 'historical defect evidence changed')
+    assert.equal(rows.filter(row => row.status === 'CONTROL_PASS').length, 3, 'historical controls changed')
   }
   const reportData = {
     mode: current ? 'current-observation' : 'pinned-baseline',

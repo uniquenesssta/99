@@ -449,11 +449,11 @@
         ],
         [
           "log",
-          "shutdown: quitId=1, phase=cleanup, remaining=0"
+          "shutdown: quitId=1, phase=cleanup, remaining=0, localCleanupComplete=true"
         ],
         [
           "log",
-          "shutdown: quitId=1, phase=terminate, clean=true"
+          "shutdown: quitId=1, phase=terminate, processExitClean=true, persistenceComplete=true, localCleanupComplete=true, cleanupRemaining=0, cleanupTimedOut=false, forced=false, reason=complete"
         ],
         [
           "app.exit",
@@ -532,7 +532,17 @@
         ],
         [
           "createCleanShutdownRuntime.markCleanShutdownSync",
-          []
+          [
+            {
+              "processExitClean": true,
+              "persistenceComplete": true,
+              "localCleanupComplete": true,
+              "cleanupRemaining": 0,
+              "cleanupTimedOut": false,
+              "forced": false,
+              "reason": "complete"
+            }
+          ]
         ],
         [
           "createMainLoggingBootstrap.flushStartupLogSync",
@@ -651,11 +661,11 @@
         ],
         [
           "log",
-          "shutdown: quitId=1, phase=cleanup, remaining=1"
+          "shutdown: quitId=1, phase=cleanup, remaining=1, localCleanupComplete=false"
         ],
         [
           "log",
-          "shutdown: quitId=1, phase=terminate, clean=true"
+          "shutdown: quitId=1, phase=terminate, processExitClean=true, persistenceComplete=true, localCleanupComplete=false, cleanupRemaining=1, cleanupTimedOut=false, forced=false, reason=residual"
         ],
         [
           "app.exit",
@@ -734,7 +744,17 @@
         ],
         [
           "createCleanShutdownRuntime.markCleanShutdownSync",
-          []
+          [
+            {
+              "processExitClean": true,
+              "persistenceComplete": true,
+              "localCleanupComplete": false,
+              "cleanupRemaining": 1,
+              "cleanupTimedOut": false,
+              "forced": false,
+              "reason": "residual"
+            }
+          ]
         ],
         [
           "createMainLoggingBootstrap.flushStartupLogSync",
@@ -829,7 +849,7 @@
         ],
         [
           "log",
-          "shutdown: quitId=1, phase=cleanup, remaining=0"
+          "shutdown: quitId=1, phase=cleanup, remaining=0, localCleanupComplete=true"
         ],
         [
           "log",
@@ -911,7 +931,7 @@
         ],
         [
           "log",
-          "shutdown: quitId=1, phase=cleanup, remaining=0"
+          "shutdown: quitId=1, phase=cleanup, remaining=0, localCleanupComplete=true"
         ],
         [
           "log",
@@ -923,7 +943,7 @@
         ],
         [
           "log",
-          "shutdown: quitId=1, phase=terminate, clean=false"
+          "shutdown: quitId=1, phase=terminate, processExitClean=false, persistenceComplete=false, localCleanupComplete=true, cleanupRemaining=0, cleanupTimedOut=false, forced=true, reason=persistence-failure"
         ],
         [
           "app.exit",
@@ -991,6 +1011,20 @@
         [
           "createDbQueryWorkerRuntime.shutdown",
           []
+        ],
+        [
+          "createCleanShutdownRuntime.markCleanShutdownSync",
+          [
+            {
+              "processExitClean": false,
+              "persistenceComplete": false,
+              "localCleanupComplete": true,
+              "cleanupRemaining": 0,
+              "cleanupTimedOut": false,
+              "forced": true,
+              "reason": "persistence-failure"
+            }
+          ]
         ],
         [
           "createMainLoggingBootstrap.flushStartupLogSync",

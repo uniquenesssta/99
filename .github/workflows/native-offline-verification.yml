@@ -14,6 +14,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
+      - run: cargo fetch --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
+      - run: npm run diagnostics:execution-lifecycle
       - run: npm run diagnostics:incremental-metadata-refresh
       - run: npm run diagnostics:font-physical-path-authorization
       - run: npm run diagnostics:decomposition-baseline
@@ -26,7 +28,7 @@ jobs:
       - run: npm run diagnostics:rust-worker-clients
       - run: npm run diagnostics:rust-worker-transport
       - run: npm run typecheck
-      - run: node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs --current
+      - run: npm run diagnostics:index-io-activation-shutdown-current
       - run: npm run verify
       - run: node node_modules/electron-vite/bin/electron-vite.js build
       - run: node build/obfuscate-dist.cjs

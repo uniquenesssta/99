@@ -80,6 +80,8 @@ async function checkMutations() {
     ['lost index sync', compositionFile('Scan'), 'await syncMergedIndexForRootSnapshot(root, "scan-finished");', ''],
     ['lost watcher notification', compositionFile('Scan'), 'folderWatcherRuntime.sendFontIndexChanged(payload);', ''],
     ['lost activation flush', lifecycle, 'await flushActivationInstallStatusSave("before-quit");', ''],
+    ['lost pending deletion flush', lifecycle, 'await flushPendingTemporaryFontDeletes("quit")', '({ remaining: 0 })'],
+    ['lost shutdown outcome', lifecycle, 'markCleanShutdownSync(outcome);', 'markCleanShutdownSync();'],
     ['lost quit-abort resume', lifecycle, 'if (startupBackgroundTasksEnabled) startBackgroundTaskScheduler();', ''],
   ]
   for (const [name, file, before, after] of mutants) {
@@ -88,7 +90,7 @@ async function checkMutations() {
     const overrides = new Map([[file, source.replace(before, after)]])
     await assert.rejects(async () => {
       if (file === lifecycle) {
-        const scenario = name === 'lost activation flush' ? 'normal' : 'flush-return'
+        const scenario = name === 'lost quit-abort resume' ? 'flush-return' : 'normal'
         const actual = await observeLifecycle(scenario, overrides)
         assert.deepEqual(actual.shutdown, fixture.shutdown[scenario])
       } else assert.deepEqual(await observeOperations(overrides), fixture.operations)

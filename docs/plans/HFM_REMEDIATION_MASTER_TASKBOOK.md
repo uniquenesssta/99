@@ -1,5 +1,7 @@
 # HanFontManager 修复与编排重构总任务书
 
+> 2026-09-25 复审接续：当前入口为 [C 阶段 §10](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md#10-2026-09-25-复审修复接续)。先修复历史/current 验证混用及失败挂起，再补 C-04 传输 timeout 误标整根 offline，随后处理 C-08.1 首批交付等待；各项完整 Windows 门禁通过才继续。历史“C-04 完成”仅代表原覆盖范围，新反例尚未关闭；C-09/O-07 保持暂停。
+
 > 补充专项（实现与自动验证完成，GUI待验收）：[预览缓存、本地标签与 App 详细拆分任务书](HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)。D-01～D-10已实施，D-11于2026-09-16完成TypeScript、104/104及结构审查；Windows GUI/NAS和Rust定向测试仍待回执，详见专项§27。当前分支stage/09-preview-tags-app，验收代码基线e7b34d8；专项未完整关闭，不覆盖现有阶段。本专项按用户要求以 `npm run dev` 实际操作验收，不要求安装包。
 
 > 全链路补充审计：[发现及只读复现](../audits/HFM_FULL_CHAIN_AUDIT.md)。新增标签确认/意图寿命、信号去重与Rust事务边界待修项；104/104通过不能替代这些新增反例及Windows验收。

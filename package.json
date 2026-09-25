@@ -10,6 +10,8 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "diagnostics:execution-lifecycle": "node build/diagnostics/check-diagnostic-execution.cjs",
+    "diagnostics:index-io-activation-shutdown-current": "node --experimental-sqlite build/diagnostics/check-index-io-activation-shutdown-baseline.cjs --current --strict",
     "diagnostics:startup-database-health": "node build/diagnostics/check-startup-database-health.cjs",
     "diagnostics:deactivation-refresh": "node build/diagnostics/check-deactivation-refresh.cjs",
     "diagnostics:incremental-metadata-refresh": "node build/diagnostics/check-incremental-metadata-refresh.cjs",

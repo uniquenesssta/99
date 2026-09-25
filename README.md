@@ -46,7 +46,9 @@ npm run build:win
 
 - [操作一致性与刷新优化任务书（U-00～U-08 代码已实施，实机待验；U-08 性能测量未结案，U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
 
-- [预览缓存、本地标签与 App 专项拆分任务书（规划，未实施）](docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)
+- [预览缓存、本地标签与 App 专项拆分任务书（实现及自动验证已完成，实机待验）](docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)
+
+- [当前 C 阶段：验证链修复 → C-04 传输超时补修 → C-08.1 首批返回 → Windows/NAS 验收](docs/plans/HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md#10-2026-09-25-复审修复接续)
 
 - [修复与编排重构总任务书](docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md)
 - [当前 Stage 7：IPC 收口与依赖治理任务书](docs/plans/HFM_STAGE_07_IPC_SECURITY_DEPENDENCY_TASKBOOK.md)
@@ -65,6 +67,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-25：修复 C-00 默认历史观察误用 C-07 当前关闭断言的问题；历史模式保持 5 缺陷/3 对照，当前模式独立以严格门禁拒绝已知缺陷。观察器异常路径执行 timer/监听清理，诊断总入口增加单项 deadline 与进程树终止，避免断言报错后挂到 CI 总超时。新增 LF/CRLF、严格失败、异常清理及真实子进程树验证。补齐 main-operations 关闭夹具的 pending-delete 返回值与已落地的三轴退出结果，保留九场景精确比较，新增两个丢失调用/结果的 mutation 检查；按已核对的 C-04/C-05 提交补齐 watcher/activation 两项源码指纹迁移，其余指纹和行为门不变。当前仅修改验证与记录；本地完整 verify（146 项）、构建与混淆通过；本机缺少 PowerShell/Rust，对应原生验证及完整 Windows 门仍待闭合；C-04 底层传输 timeout→offline 遗漏和 C-08.1 网络列举阻塞首批显示已登记，按顺序待修，C-09/O-07 暂停。
 
 - 2026-09-25：C-08.1 Windows `35989601682` 已越过 U-05 的 platform-native metadata root 问题，`incremental-metadata-refresh` 随后在 renderer 子场景因旧夹具未提供 C-07 新增的 `closingLifecycle` 而触发 `undefined.isClosing`。现仅在该 U-05 诊断里复用 C-07 已验证的非 closing 窄替身（`isClosing=false` + no-op lifecycle surface），不修改 `useLibraryController.ts` 或关闭准入逻辑；关闭行为仍由 C-07 专门诊断负责。Windows 验证重新执行，未全绿前 C-08.1 仍不收口。
 
