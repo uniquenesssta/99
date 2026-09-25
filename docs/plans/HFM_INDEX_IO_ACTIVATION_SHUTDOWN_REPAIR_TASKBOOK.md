@@ -662,3 +662,5 @@ C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 
 - 本地完整 verify 在 main-operations 发现既有夹具未提供 pending-delete 返回值且预期停留在单轴 clean 结果。只补 mock 返回契约及四场景中已由 C-06 实现的三轴结果/日志，其他预期保持不变；新增丢失 pending-delete 调用和丢失 outcome 参数两个 mutant，九场景与七个 mutation 均通过。
 - 全量 verify 随后抵达 watcher-activation-baseline：两个指纹仍为 C-03 时源码。逐文件核对 `289226b` 的 watcher snapshot 错误不判整根离线、`f6ad3f8` 的 renderer 过期 installed hint 不阻断激活；限定迁移这两项 hash 并记录来源提交，保留另外九项指纹及全部行为/mutation 门。
 - 本地 `npm run verify` 通过（typecheck + 146 项诊断），execution-lifecycle/九场景七 mutant/十 watcher mutant 均通过；electron-vite build、3/3 混淆、git diff --check 通过。preview-input-boundary 的 C++ 68 案例/JS 190 案例已执行；本机缺少 PowerShell/Rust，诊断明确报告外部必验，不能视作原生链通过。Windows 全量门待回执。Create State 连接要求重新认证，本次状态保存在 README/本任务书。未通过完整门禁前不得推进 C-04R、C-08.1-P、C-09 或 O-07。
+
+- Windows `36166165139`（`35a2f92`）已通过新增执行生命周期、全部前置专项、typecheck/current strict；完整 verify 在 local-tag-rust-atomicity 的 CRLF mutation 漏匹配处及时失败，build/混淆未执行。检查发现 shared-metadata 同根问题（原文未归一化、LF 转 CRLF 可能叠加回车）；两脚本统一先归一化，再对正常/每个实际生效的 mutant 执行 LF/CRLF 检查，交易顺序、算法 hash 与业务检查不变。本地原始 LF 与注入 CRLF 的真实源码读取均通过；新 Windows 全量门待回执。

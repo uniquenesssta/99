@@ -20,16 +20,23 @@ function check(source) {
   }
 }
 function main() {
-  const source = fs.readFileSync(path.join(root, file), 'utf8')
-  check(source); check(source.replace(/\r?\n/g, '\r\n'))
-  for (const mutate of [
+  const source = fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')
+  const mutations = [
     s => s.replace('save_known_tags(&tx, &known_tags)', 'save_known_tags(&conn, &known_tags)'),
     s => s.replace('set_meta(&tx, "localTagsUpdatedAt"', 'set_meta(&conn, "localTagsUpdatedAt"'),
     s => s.replace('TransactionBehavior::Immediate', 'TransactionBehavior::Deferred'),
     s => s.replace('read_known_tags(&tx)', 'read_known_tags(&conn)'),
     s => s.replace('    tx.commit().map_err(|error| error.to_string())?;\n    trace.committed();', '    trace.committed();\n    tx.commit().map_err(|error| error.to_string())?;')
-  ]) assert.throws(() => check(mutate(source)))
-  console.log('[diagnostics:local-tag-rust-atomicity] transaction structure/LF/CRLF and 5 mutants passed; native behavior NOT executed: cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags_atomicity')
+  ]
+  for (const eol of ['\n', '\r\n']) {
+    check(source.replace(/\n/g, eol))
+    for (const mutate of mutations) {
+      const mutant = mutate(source)
+      assert.notEqual(mutant, source, 'transaction mutation anchor missing')
+      assert.throws(() => check(mutant.replace(/\n/g, eol)), assert.AssertionError)
+    }
+  }
+  console.log('[diagnostics:local-tag-rust-atomicity] transaction structure and 5 applied mutants each in LF/CRLF passed; native behavior NOT executed: cargo test --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags_atomicity')
 }
 function native() {
   const { spawnSync } = require('node:child_process')

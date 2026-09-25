@@ -25,17 +25,27 @@ function check(source,signature) {
   assert.equal(require('node:crypto').createHash('sha256').update(algorithms).digest('hex'),'b0d8ec03a5683fc77ab406b60f93261193b3a2c47a4edc64cc3257c9daf0878b','merge, revision/op IDs and R-06 signal contract')
 }
 async function main() {
-  const source=fs.readFileSync(path.join(root,file),'utf8'), signature=fs.readFileSync(path.join(root,'native-src/hfm-core-worker/src/shared_metadata/signature.rs'),'utf8')
-  check(source,signature);check(source.replace(/\n/g,'\r\n'),signature)
-  for(const mutate of [
+  const source=fs.readFileSync(path.join(root,file),'utf8').replace(/\r\n/g,'\n'), signature=fs.readFileSync(path.join(root,'native-src/hfm-core-worker/src/shared_metadata/signature.rs'),'utf8').replace(/\r\n/g,'\n')
+  const mutations = [
     s=>s.replace('set_meta(&tx, "updatedAt"','set_meta(&conn, "updatedAt"'),
     s=>s.replace('set_meta(&tx, "writerHost"','set_meta(&conn, "writerHost"'),
     s=>s.replace('shared_metadata_signature_for_transaction(&tx)','shared_metadata_signature_for_transaction(&conn)'),
     s=>s.replace('find_targets(&tx,','find_targets(&conn,'),
     s=>s.replace('TransactionBehavior::Immediate','TransactionBehavior::Deferred'),
     s=>s.replace('    tx.commit().map_err(|error| error.to_string())?;\n    trace.committed();','    trace.committed();\n    tx.commit().map_err(|error| error.to_string())?;')
-  ])assert.throws(()=>check(mutate(source),signature))
-  assert.throws(()=>check(source,signature.replace('read_meta(tx, "updatedAt")?','read_meta(conn, "updatedAt")')))
+  ]
+  for (const eol of ['\n', '\r\n']) {
+    const convertedSignature = signature.replace(/\n/g, eol)
+    check(source.replace(/\n/g, eol), convertedSignature)
+    for (const mutate of mutations) {
+      const mutant = mutate(source)
+      assert.notEqual(mutant, source, 'transaction mutation anchor missing')
+      assert.throws(() => check(mutant.replace(/\n/g, eol), convertedSignature), assert.AssertionError)
+    }
+    const badSignature = convertedSignature.replace('read_meta(tx, "updatedAt")?', 'read_meta(conn, "updatedAt")')
+    assert.notEqual(badSignature, convertedSignature, 'signature mutation anchor missing')
+    assert.throws(() => check(source.replace(/\n/g, eol), badSignature), assert.AssertionError)
+  }
   await postCommit()
   await assert.rejects(()=>postCommit({[path.join(root,'src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts')]:s=>s.replaceAll('appendAfterCommit(`','runtimeDeps.appendStartupLog(`')}),/committed result/)
   console.log('[diagnostics:shared-metadata-rust-atomicity] structure/algorithm freeze, LF/CRLF, 12 real TS scenarios and 8 mutations passed; native tests require --native')
