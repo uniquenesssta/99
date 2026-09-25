@@ -667,3 +667,5 @@ C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 
 
 - 对 TypeScript/Rust 源码读取统一注入 CRLF 后，完整诊断另定位 startup-database-health 与 tag-commit-query 的多行 mutation 漏匹配；两者先验证样本实际改变源码，再在 LF/CRLF 分别执行三项反例。修复点和后续八项诊断通过；没有把首次失败的全量命令记为通过。
 - Windows `36166890452`（`834f2ea`）已通过原失败点，随后在 managed-font-uninstall-authorization P8 失败：断言把授权 real ioPath 和临时目录的词法输入全等比较。夹具现在使用带 `.` 的等价输入，独立真实路径身份确认目标且排除外部同名文件，再精确比较 unlink/注册表补偿与授权返回 ioPath；十二场景本地通过。生产授权、删除与补偿代码未改；第三轮 Windows 全量门待回执。
+
+- 本地对当前全部源码读取注入 CRLF 的 `npm run verify` 已完整通过 146 项。第三轮 Windows `36167830579`（`151e260`）通过 P8，继而 mapped-drive-unicode 的真实 CIM 断言失败；尚无底层退出证据，不能直接判定超时或放宽门禁。诊断只包装实际 execFile 记录耗时、原 timeout、code/signal/killed、stderr 和输出字节数，不改执行参数/返回值；workflow 前置这项原有严格门以尽早取得实机证据。其余完整 verify/build/混淆保留，当前任务仍进行中。

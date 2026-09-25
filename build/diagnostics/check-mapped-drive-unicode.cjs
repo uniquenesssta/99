@@ -69,7 +69,18 @@ async function main() {
   await baseline();await unicode(s=>s);await failures();await unicode(s=>s.replace(/\r?\n/g,'\r\n'))
   await assert.rejects(()=>unicode(s=>s.replace("normalizeNativePathText(`${remoteRoot}${suffix}`)","normalizeNativePathText(`${remoteRoot}`)")),undefined,'lost suffix mutant escaped')
   if(process.platform==='win32') {
-    const actual=loader()(file);assert(await actual.mappedDriveTableAsync() instanceof Map,'real local CIM query failed')
+    let observation
+    const actual = loader({'node:child_process': {...cp, execFile(command, args, options, done) {
+      const started = Date.now()
+      return cp.execFile(command, args, options, (error, stdout, stderr) => {
+        observation = { elapsedMs: Date.now() - started, timeoutMs: options.timeout,
+          code: error?.code, signal: error?.signal, killed: error?.killed,
+          stdoutBytes: Buffer.byteLength(stdout || ''), stderr: String(stderr || '').slice(0, 2000) }
+        done(error, stdout, stderr)
+      })
+    }}})(file)
+    assert(await actual.mappedDriveTableAsync() instanceof Map, 'real local CIM query failed: ' + JSON.stringify(observation))
+    console.log('[diagnostics:mapped-drive-unicode] actual CIM execution: ' + JSON.stringify(observation))
   }
   console.log('[diagnostics:mapped-drive-unicode] old OEM corruption reproduced; Unicode/space/device aliases, actual watched-root dedupe, no sync IO, coalescing/cache/retry/invalid receipts, CRLF and suffix regression passed; Windows CIM/NAS '+(process.platform==='win32'?'local CIM executed; NAS acceptance separate':'not executed'))
 }

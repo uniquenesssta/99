@@ -69,6 +69,7 @@ npm run build:win
 ## 变更记录
 
 - 2026-09-25：修复 C-00 默认历史观察误用 C-07 当前关闭断言的问题；历史模式保持 5 缺陷/3 对照，当前模式独立以严格门禁拒绝已知缺陷。观察器异常路径执行 timer/监听清理，诊断总入口增加单项 deadline 与进程树终止，避免断言报错后挂到 CI 总超时。新增 LF/CRLF、严格失败、异常清理及真实子进程树验证。补齐 main-operations 关闭夹具的 pending-delete 返回值与已落地的三轴退出结果，保留九场景精确比较，新增两个丢失调用/结果的 mutation 检查；按已核对的 C-04/C-05 提交补齐 watcher/activation 两项源码指纹迁移，其余指纹和行为门不变。Windows 首轮全量门进一步暴露 local-tag/shared-metadata 原子性诊断的 CRLF mutation 漏匹配；统一输入换行并确保五/六项事务 mutation 在 LF/CRLF 都实际生效，签名 mutation 同样双格式覆盖。补齐 startup-database-health、tag-commit-query 的已生效 LF/CRLF 反例；受管卸载诊断改为精确比较授权 ioPath，并用等价路径输入、真实文件身份及外部同名文件反例验证，删除/补偿均保持授权路径。当前仅修改验证与记录；本地完整 verify（146 项）、构建与混淆通过；本机缺少 PowerShell/Rust，对应原生验证及完整 Windows 门仍待闭合；C-04 底层传输 timeout→offline 遗漏和 C-08.1 网络列举阻塞首批显示已登记，按顺序待修，C-09/O-07 暂停。
+- 2026-09-25：当前源码读取为 CRLF 的完整 verify（146 项）通过。Windows `36167830579` 通过受管卸载后，在真实 CIM 映射盘查询失败；新增实际 execFile 耗时/退出/错误证据并将该检查前置，保留生产 1500ms 期限和严格成功断言。Windows 门仍未通过，C-04R/C-08.1-P 未推进。
 
 - 2026-09-25：C-08.1 Windows `35989601682` 已越过 U-05 的 platform-native metadata root 问题，`incremental-metadata-refresh` 随后在 renderer 子场景因旧夹具未提供 C-07 新增的 `closingLifecycle` 而触发 `undefined.isClosing`。现仅在该 U-05 诊断里复用 C-07 已验证的非 closing 窄替身（`isClosing=false` + no-op lifecycle surface），不修改 `useLibraryController.ts` 或关闭准入逻辑；关闭行为仍由 C-07 专门诊断负责。Windows 验证重新执行，未全绿前 C-08.1 仍不收口。
 
