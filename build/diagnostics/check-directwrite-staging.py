@@ -26,6 +26,8 @@ def network():
             for source in [unc,drive+'\\source.ttf']:
                 p=subprocess.run([str(EXE),'--render',source,'0','AB','44','720','260',str(root/'bad.png')],capture_output=True,text=True,timeout=10)
                 assert not json.loads(p.stdout)['ok'] and not (root/'bad.png').exists()
+            environment=dict(os.environ,HFM_DW_TEST_SOURCE_ROOT=remote)
+            subprocess.run(['node','build/diagnostics/check-directwrite-staging-integration.cjs'],env=environment,check=True,timeout=60)
             removed=ps("Remove-SmbShare -Name '"+share+"' -Force -Confirm:$false"); assert removed.returncode==0;created=False
             _,r=stage(unc,unc,target);assert not r['ok'] and not target.exists()
         finally:

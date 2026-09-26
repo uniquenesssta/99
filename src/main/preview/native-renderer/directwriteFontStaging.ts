@@ -1,6 +1,6 @@
 import { createFontPathAuthorizationRuntime, type FontPathAuthorizationRuntimeOptions } from '../../path/fontPathAuthorizationRuntime';
 import { applicationSharedIoProcessRuntime, type SharedIoProcessError } from '../../path/sharedIoProcessRuntime';
-import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime';
+import { sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime';
 import { ensureStartupPathRootAvailable, getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime';
 import { applicationWorkEpoch, isApplicationClosing } from '../../app/shutdownCoordinatorRuntime';
 
@@ -18,10 +18,18 @@ export interface FontStagingPort {
 export function createDirectwriteFontStaging(command: string, authorization: Omit<FontPathAuthorizationRuntimeOptions, 'fileSystem'>): FontStagingPort {
   async function run(args: string[], paths: string[], signal?: AbortSignal, admit?: () => boolean, timeoutMs = 30000): Promise<any> {
     const roots = await sharedIoResourceKeys(paths);
+    const states = paths.map(sharedIoAvailabilityRoot).filter((root): root is string => !!root)
+      .map(root => ({ root, snapshot: getStartupPathRootState(root) }));
+    const admitted = () => !isApplicationClosing() && states.every(({root, snapshot}) => {
+      const now = getStartupPathRootState(root);
+      return now.rootId === snapshot.rootId && now.generation === snapshot.generation && now.state !== 'offline';
+    }) && (!admit || admit());
+    if (!admitted()) throw new Error('DW_SOURCE_OFFLINE_OR_STALE');
     try {
       const output = await applicationSharedIoProcessRuntime().run({ file: command,
         args: [...args, String(process.pid)], roots: roots.length ? roots : ['dw-local-font-staging'],
-        timeoutMs, maxBuffer: 65536, write: false, signal, admit, label: 'dw-font-staging' });
+        timeoutMs, maxBuffer: 65536, write: false, signal, admit: admitted, label: 'dw-font-staging' });
+      if (!admitted()) throw new Error('DW_STALE');
       const result = JSON.parse(output.stdout);
       if (result?.ok !== true || result.version !== 1) throw new Error('DW_STAGE_RECEIPT_INVALID');
       return result;

@@ -76,7 +76,7 @@ async function stagingBoundary() {
   [path.join(root,'src/main/path/startupPathAvailabilityRuntime.ts')]:{
    ensureStartupPathRootAvailable:async()=>online,getStartupPathRootState:()=>({rootId:'root',generation,state:online?'online':'offline'}),
   },
-  [path.join(root,'src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>['share']},
+  [path.join(root,'src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>['share'],sharedIoAvailabilityRoot:()=> 'root'},
  },{AbortController});
  const port=load('src/main/preview/native-renderer/directwriteFontStaging.ts').createDirectwriteFontStaging('native',{
   fontExtensions:new Set(['.ttf']),readRoots:()=>['C:\\allowed'],watchedRoots:()=>[],appOwnedRoots:()=>[],
@@ -85,6 +85,7 @@ async function stagingBoundary() {
  assert.equal(events.length,4);assert(events.every(e=>e.args[0]==='--font-path-info' && e.timeoutMs===500));
  await assert.rejects(port.authorize('C:\\outside\\font.ttf'),/UNAUTHORIZED/);
  generation++;assert(!source.current());generation--;
+ const count=events.length;online=false;await assert.rejects(port.authorize('C:\\allowed\\font.ttf'),/UNAUTHORIZED/);assert.equal(events.length,count,'offline metadata started');online=true;
  let closed=false;const promise=new Promise(r=>{releaseClose=()=>{closed=true;r()}});
  after=async()=>{throw Object.assign(Error('timeout'),{closed:promise})};
  let settled=false;const copy=port.copy(source,'C:\\local\\part',undefined,new AbortController().signal).catch(e=>{settled=true;throw e});
