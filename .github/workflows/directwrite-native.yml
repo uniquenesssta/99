@@ -27,6 +27,8 @@ jobs:
         run: npm run diagnostics:directwrite-service
       - name: Resident DirectWrite, EOF, parent death and owner integration
         run: npm run test:directwrite-resident
+      - name: Real font object reuse, eviction and memory limits
+        run: python build/diagnostics/check-directwrite-cache.py
       - name: Reject source mutations and restore executable
         shell: cmd
         run: |

@@ -1,10 +1,10 @@
 // DW-01's fixed rendering semantics: 96 DPI, transparent BGRA, no variable axes.
-export const DW_PROTOCOL = 1;
+export const DW_PROTOCOL = 2;
 export const DW_RENDER_VERSION = 1;
 export const DW_FRAME_LIMIT = 65536;
 export interface DirectwriteInput {
   fontPath: string;
-  fontIdentity: string; // Authorized staged content identity is supplied by DW-04.
+  fontIdentity: string; // Expected SHA-256 of the local font bytes; staging authorization belongs to DW-04.
   sourceGeneration: number;
   faceIndex: number;
   text: string;
@@ -23,6 +23,12 @@ export interface DirectwriteReceipt {
   serviceGeneration: number; requestId: number; sourceGeneration: number;
   fontIdentity: string; outputIdentity: string; faceIndex: number;
   ok: boolean; reason: string; glyphRuns: number; missingGlyphs: number; elapsedMs: number;
+  cacheHit: boolean; fontObjectId: number; contentHash: string;
+  cache: DirectwriteCacheStats;
+}
+export interface DirectwriteCacheStats {
+  hits: number; misses: number; loads: number; evictions: number; entries: number; bytes: number;
+  liveEntries: number; liveBytes: number; sourceReads: number; sourceBytes: number; privateBytes: number; peakPrivateBytes: number;
 }
 const uint = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 0xffffffff;
 function validText(text: string, max: number): boolean {
@@ -73,18 +79,33 @@ export function parseDirectwriteMessage(line: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 export function validateDirectwriteReady(value: Record<string, unknown>, generation: number): void {
-  if (Object.keys(value).length !== 8 || value.type !== 'ready' || value.protocolVersion !== DW_PROTOCOL
+  if (Object.keys(value).length !== 9 || value.type !== 'ready' || value.protocolVersion !== DW_PROTOCOL
     || value.renderVersion !== DW_RENDER_VERSION || value.engine !== 'directwrite' || value.resident !== true
-    || value.variableFonts !== false || value.serviceGeneration !== generation || value.parentPid !== process.pid) throw new Error('DW_HANDSHAKE_INVALID');
+    || value.variableFonts !== false || value.cacheVersion !== 1 || value.serviceGeneration !== generation || value.parentPid !== process.pid) throw new Error('DW_HANDSHAKE_INVALID');
+}
+function validCache(value: unknown): value is DirectwriteCacheStats {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const cache = value as Record<string, unknown>;
+  const keys = ['hits', 'misses', 'loads', 'evictions', 'entries', 'bytes', 'liveEntries', 'liveBytes', 'sourceReads', 'sourceBytes', 'privateBytes', 'peakPrivateBytes'];
+  if (Object.keys(cache).length !== keys.length || keys.some(key => typeof cache[key] !== 'number'
+      || !Number.isSafeInteger(cache[key]) || (cache[key] as number) < 0)) return false;
+  const stats = value as DirectwriteCacheStats;
+  return stats.entries <= 128 && stats.bytes <= 256 * 1024 * 1024 && stats.liveEntries === stats.entries
+    && stats.liveBytes <= stats.bytes && stats.privateBytes > 0 && stats.privateBytes <= stats.peakPrivateBytes
+    && stats.peakPrivateBytes <= 512 * 1024 * 1024;
 }
 export function validateDirectwriteReceipt(value: Record<string, unknown>, request: DirectwriteRequest): DirectwriteReceipt {
-  if (Object.keys(value).length !== 15 || value.type !== 'result' || value.protocolVersion !== DW_PROTOCOL
+  if (Object.keys(value).length !== 19 || value.type !== 'result' || value.protocolVersion !== DW_PROTOCOL
     || value.renderVersion !== DW_RENDER_VERSION || value.engine !== 'directwrite'
     || value.serviceGeneration !== request.serviceGeneration || value.requestId !== request.requestId
     || value.sourceGeneration !== request.sourceGeneration || value.fontIdentity !== request.fontIdentity
     || value.outputIdentity !== request.outputIdentity || value.faceIndex !== request.faceIndex
     || typeof value.ok !== 'boolean' || typeof value.reason !== 'string'
     || (value.ok ? value.reason !== '' : !/^[A-Z_0-9]{1,80}$/.test(value.reason))
-    || !uint(value.glyphRuns) || !uint(value.missingGlyphs) || !uint(value.elapsedMs)) throw new Error('DW_RECEIPT_INVALID');
+    || !uint(value.glyphRuns) || !uint(value.missingGlyphs) || !uint(value.elapsedMs)
+    || typeof value.cacheHit !== 'boolean' || !Number.isSafeInteger(value.fontObjectId) || (value.fontObjectId as number) < 0
+    || !validCache(value.cache) || (value.ok ? value.contentHash !== request.fontIdentity || !value.fontObjectId : value.contentHash !== '')
+    || (value.cacheHit && (!value.ok || value.cache.hits < 1))
+    || (value.ok && (value.fontObjectId as number) > value.cache.loads)) throw new Error('DW_RECEIPT_INVALID');
   return value as unknown as DirectwriteReceipt;
 }

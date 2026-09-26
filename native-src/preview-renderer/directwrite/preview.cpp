@@ -1,4 +1,7 @@
 #include "preview.h"
+#include "localFontFile.h"
+#include "fontCache.h"
+#include "memoryBudget.h"
 #include "../preview-input-policy.h"
 #include <windows.h>
 #include <dwrite_3.h>
@@ -29,31 +32,6 @@ ComPtr<IDWriteFactory3> factory() {
   return value;
 }
 
-// This proof entry point accepts fixed/removable local paths only. Reject all
-// reparse components before opening files; network staging belongs to DW-04.
-std::wstring localPath(const std::wstring& input, bool newFile) {
-  if (input.size() < 3 || input[1] != L':' || input[2] != L'\\' || input.find(L'\0') != std::wstring::npos
-      || input.find(L':', 2) != std::wstring::npos) throw std::runtime_error("LOCAL_PATH_REQUIRED");
-  DWORD length = GetFullPathNameW(input.c_str(), 0, nullptr, nullptr);
-  if (!length || length > 32768) throw std::runtime_error("PATH_INVALID");
-  std::wstring full(length, L'\0');
-  DWORD written = GetFullPathNameW(input.c_str(), length, full.data(), nullptr);
-  if (!written || written >= length) throw std::runtime_error("PATH_INVALID");
-  full.resize(written);
-  UINT drive = GetDriveTypeW(full.substr(0, 3).c_str());
-  if (drive != DRIVE_FIXED && drive != DRIVE_REMOVABLE) throw std::runtime_error("LOCAL_PATH_REQUIRED");
-  for (size_t end = 3; end <= full.size(); ++end) {
-    if (end < full.size() && full[end] != L'\\') continue;
-    DWORD attrs = GetFileAttributesW(full.substr(0, end).c_str());
-    if (attrs == INVALID_FILE_ATTRIBUTES) {
-      if (newFile && end == full.size() && GetLastError() == ERROR_FILE_NOT_FOUND) continue;
-      throw std::runtime_error("PATH_UNAVAILABLE");
-    }
-    if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) throw std::runtime_error("REPARSE_NOT_SUPPORTED");
-    if (newFile && end == full.size()) throw std::runtime_error("OUTPUT_EXISTS");
-  }
-  return full;
-}
 bool validUtf16(const std::wstring& text) {
   for (size_t i = 0; i < text.size(); ++i) {
     unsigned c = text[i];
@@ -164,58 +142,47 @@ void writePng(IWICImagingFactory* wic, IWICBitmap* bitmap, const std::wstring& o
 }
 } // namespace
 
-void probe() { Apartment apartment; auto dw = factory(); }
-Result render(const Request& request) {
+struct Renderer::Impl {
+  MemoryBudget budget;
+  Apartment apartment;
+  FontCache fonts;
+  ComPtr<ID2D1Factory> d2d;
+  ComPtr<IWICImagingFactory> wic;
+  Impl() {
+    auto capability = factory();
+    check(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2d.GetAddressOf()), "D2D_UNAVAILABLE");
+    check(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic)), "WIC_UNAVAILABLE");
+    processMemory();
+  }
+};
+Renderer::Renderer() : impl(std::make_unique<Impl>()) {}
+Renderer::~Renderer() = default;
+void probe() { Renderer renderer; }
+Result render(const Request& request) { Renderer renderer; return renderer.render(request); }
+CacheStats Renderer::stats() const {
+  auto result = impl->fonts.stats(); auto memory = processMemory();
+  result.privateBytes = memory.current; result.peakPrivateBytes = memory.peak; return result;
+}
+Result Renderer::render(const Request& request) {
   if (!preview_input::valid(request.width, request.height, request.fontSize, request.text.size()) || !validUtf16(request.text))
     throw std::runtime_error("INPUT_INVALID");
-  auto source = localPath(request.fontPath, false), output = localPath(request.outputPath, true);
-  Handle pinned{CreateFileW(source.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)};
-  LARGE_INTEGER size{};
-  if (pinned.value == INVALID_HANDLE_VALUE || !GetFileSizeEx(pinned.value, &size)) throw std::runtime_error("FONT_READ_FAILED");
-  if (size.QuadPart <= 0 || size.QuadPart > 64*1024*1024) throw std::runtime_error("FONT_SIZE_UNSUPPORTED");
-  Apartment apartment;
-  auto dw = factory();
-  ComPtr<IDWriteFontFile> file;
-  check(dw->CreateFontFileReference(source.c_str(), nullptr, &file), "FONT_READ_FAILED");
-  BOOL supported = FALSE; DWRITE_FONT_FILE_TYPE type; DWRITE_FONT_FACE_TYPE faceType; UINT32 count = 0;
-  check(file->Analyze(&supported, &type, &faceType, &count), "FONT_UNSUPPORTED");
-  if (!supported || request.faceIndex >= count) throw std::runtime_error("FACE_UNSUPPORTED");
-  ComPtr<IDWriteFontFaceReference> reference;
-  check(dw->CreateFontFaceReference(file.Get(), request.faceIndex, DWRITE_FONT_SIMULATIONS_NONE, &reference), "FACE_UNSUPPORTED");
-  ComPtr<IDWriteFontFace3> face;
-  check(reference->CreateFontFace(&face), "FACE_UNSUPPORTED");
-  const void* table = nullptr; UINT32 tableSize = 0; void* context = nullptr; BOOL exists = FALSE;
-  check(face->TryGetFontTable(DWRITE_MAKE_OPENTYPE_TAG('f','v','a','r'), &table, &tableSize, &context, &exists), "FONT_UNSUPPORTED");
-  if (context) face->ReleaseFontTable(context);
-  if (exists) throw std::runtime_error("VARIABLE_FONT_UNSUPPORTED");
-  ComPtr<IDWriteFontSetBuilder> builder;
-  check(dw->CreateFontSetBuilder(&builder), "FONT_SET_FAILED");
-  check(builder->AddFontFaceReference(reference.Get()), "FONT_SET_FAILED");
-  ComPtr<IDWriteFontSet> set; check(builder->CreateFontSet(&set), "FONT_SET_FAILED");
-  ComPtr<IDWriteFontCollection1> collection;
-  check(dw->CreateFontCollectionFromFontSet(set.Get(), &collection), "FONT_SET_FAILED");
-  ComPtr<IDWriteFontFamily> family; check(static_cast<IDWriteFontCollection*>(collection.Get())->GetFontFamily(0, &family), "FONT_SET_FAILED");
-  ComPtr<IDWriteLocalizedStrings> names; check(family->GetFamilyNames(&names), "FONT_SET_FAILED");
-  UINT32 length; check(names->GetStringLength(0, &length), "FONT_SET_FAILED");
-  std::wstring name(length + 1, L'\0'); check(names->GetString(0, name.data(), length + 1), "FONT_SET_FAILED");
-  ComPtr<IDWriteFont> font; check(family->GetFont(0, &font), "FONT_SET_FAILED");
+  auto output = localPath(request.outputPath, true);
+  processMemory();
+  auto lease = impl->fonts.acquire(request);
+  auto& font = *lease.font;
+  auto dw = font.factory.Get(); auto file = font.file.Get();
+  auto d2d = impl->d2d.Get(); auto wic = impl->wic.Get();
   ComPtr<IDWriteTextFormat> format;
-  check(dw->CreateTextFormat(name.c_str(), collection.Get(), font->GetWeight(), font->GetStyle(), font->GetStretch(),
+  check(dw->CreateTextFormat(font.familyName.c_str(), font.collection.Get(), font.weight, font.style, font.stretch,
     static_cast<FLOAT>(request.fontSize), L"en-us", &format), "LAYOUT_FAILED");
   auto text = request.text.empty() ? std::wstring(L"字体预览 AaBb 123") : request.text;
   check(format->SetWordWrapping(text.find_first_of(L"\r\n") == std::wstring::npos ? DWRITE_WORD_WRAPPING_NO_WRAP : DWRITE_WORD_WRAPPING_WRAP), "LAYOUT_FAILED");
   ComPtr<IDWriteTextLayout> layout;
   check(dw->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format.Get(), static_cast<FLOAT>(request.width), static_cast<FLOAT>(request.height), &layout), "LAYOUT_FAILED");
-  ComPtr<IDWriteFontFallbackBuilder> fallbackBuilder;
-  check(dw->CreateFontFallbackBuilder(&fallbackBuilder), "LAYOUT_FAILED");
-  ComPtr<IDWriteFontFallback> fallback; check(fallbackBuilder->CreateFontFallback(&fallback), "LAYOUT_FAILED");
   ComPtr<IDWriteTextLayout2> layout2; check(layout.As(&layout2), "LAYOUT_FAILED");
-  check(layout2->SetFontFallback(fallback.Get()), "LAYOUT_FAILED");
-  ComPtr<ID2D1Factory> d2d; check(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2d.GetAddressOf()), "D2D_UNAVAILABLE");
-  ComPtr<Outlines> outlines; outlines.Attach(new Outlines(d2d.Get(), file.Get(), request.faceIndex));
+  check(layout2->SetFontFallback(font.fallback.Get()), "LAYOUT_FAILED");
+  ComPtr<Outlines> outlines; outlines.Attach(new Outlines(d2d, file, request.faceIndex));
   check(layout->Draw(nullptr, outlines.Get(), 0, 0), "GLYPH_RUN_REJECTED");
-  ComPtr<IWICImagingFactory> wic;
-  check(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic)), "WIC_UNAVAILABLE");
   ComPtr<IWICBitmap> bitmap;
   check(wic->CreateBitmap(request.width, request.height, GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnLoad, &bitmap), "BITMAP_FAILED");
   ComPtr<ID2D1RenderTarget> target;
@@ -232,7 +199,7 @@ Result render(const Request& request) {
     for (auto& shape : outlines->shapes) target->FillGeometry(shape.Get(), brush.Get());
   }
   check(target->EndDraw(), "DRAW_FAILED");
-  writePng(wic.Get(), bitmap.Get(), output);
-  return {request.faceIndex, outlines->runs, outlines->missing};
+  writePng(wic, bitmap.Get(), output);
+  return {request.faceIndex, outlines->runs, outlines->missing, lease.hit, font.id, font.digest};
 }
 } // namespace hfm_dw

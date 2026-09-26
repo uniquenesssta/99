@@ -1,5 +1,5 @@
 """Real Windows resident DirectWrite protocol and independent lifetime checks."""
-import base64, ctypes, importlib.util, json, os, queue, struct, subprocess, sys, tempfile, threading
+import base64, hashlib, ctypes, importlib.util, json, os, queue, struct, subprocess, sys, tempfile, threading
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 EXE = ROOT/'build/native/directwrite/hfm-directwrite-preview.exe'
@@ -17,8 +17,10 @@ def receive(lines):
     assert line is not None, 'process closed without receipt'
     return json.loads(line)
 
-def frame(font, output, request_id=1, generation=7, text='A', face=0):
-    data = struct.pack('<8Id',1,generation,request_id,3,1,face,720,260,44.0) + b'a'*64 + b'b'*32
+def frame(font, output, request_id=1, generation=7, text='A', face=0, source_generation=3, font_identity=None, width=720, height=260):
+    if font_identity is None:
+        font_identity=hashlib.sha256(Path(font).read_bytes()).hexdigest()
+    data = struct.pack('<8Id',2,generation,request_id,source_generation,1,face,width,height,44.0) + font_identity.encode('ascii') + b'b'*32
     for value in [str(font),text,str(output)]:
         encoded=value.encode('utf-16le'); data += struct.pack('<I',len(encoded)//2)+encoded
     return struct.pack('<I',len(data))+data
@@ -64,7 +66,7 @@ def child_process():
     p=subprocess.Popen([str(EXE),'--serve','7',str(os.getpid())],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     lines=line_reader(p.stdout)
     ready=receive(lines)
-    assert ready==dict(type='ready',protocolVersion=1,renderVersion=1,engine='directwrite',resident=True,serviceGeneration=7,parentPid=os.getpid(),variableFonts=False),ready
+    assert ready==dict(type='ready',protocolVersion=2,renderVersion=1,engine='directwrite',resident=True,serviceGeneration=7,parentPid=os.getpid(),variableFonts=False,cacheVersion=1),ready
     return p,lines
 
 def main():
@@ -82,12 +84,12 @@ def main():
                 output=directory/f'{i}.png';p.stdin.write(frame(font,output,i,face=face));p.stdin.flush()
                 receipt=receive(lines)
                 assert receipt['ok'] and receipt['engine']=='directwrite' and receipt['serviceGeneration']==7
-                assert receipt['requestId']==i and receipt['sourceGeneration']==3 and receipt['fontIdentity']=='a'*64
+                assert receipt['requestId']==i and receipt['sourceGeneration']==3 and receipt['fontIdentity']==hashlib.sha256(font.read_bytes()).hexdigest()
                 assert receipt['outputIdentity']=='b'*32 and receipt['faceIndex']==face
                 images.append(pixel_test.pixels(output))
             assert images[0]==images[2] and images[0]!=images[1], 'resident face identity/PNG mismatch'
             # Invalid local input is a correlated failure, not silent fallback.
-            p.stdin.write(frame(Path(r'\\server\share\font.ttf'),directory/'nas.png',4));p.stdin.flush()
+            p.stdin.write(frame(Path(r'\\server\share\font.ttf'),directory/'nas.png',4,font_identity='a'*64));p.stdin.flush()
             rejected=receive(lines);assert not rejected['ok'] and rejected['reason']=='LOCAL_PATH_REQUIRED'
             assert not (directory/'nas.png').exists()
             # EOF must stop even a stuck rendering thread.

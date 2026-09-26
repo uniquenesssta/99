@@ -13,7 +13,7 @@
 
 namespace hfm_dw {
 namespace {
-constexpr uint32_t protocolVersion = 1, maxFrame = 65536;
+constexpr uint32_t protocolVersion = 2, maxFrame = 65536;
 [[noreturn]] void stop(UINT code) { TerminateProcess(GetCurrentProcess(), code); std::terminate(); }
 void require(bool ok) { if (!ok) throw std::runtime_error("PROTOCOL_INVALID"); }
 
@@ -92,9 +92,9 @@ int serve(uint32_t generation, uint32_t parentPid) {
   }).detach();
   // Once threads refer to the stack, all exits must terminate the process.
   try {
-    probe();
-    std::cout << "{\"type\":\"ready\",\"protocolVersion\":1,\"renderVersion\":1,\"engine\":\"directwrite\",\"resident\":true,\"serviceGeneration\":"
-      << generation << ",\"parentPid\":" << parentPid << ",\"variableFonts\":false}\n" << std::flush;
+    Renderer renderer;
+    std::cout << "{\"type\":\"ready\",\"protocolVersion\":2,\"renderVersion\":1,\"engine\":\"directwrite\",\"resident\":true,\"serviceGeneration\":"
+      << generation << ",\"parentPid\":" << parentPid << ",\"variableFonts\":false,\"cacheVersion\":1}\n" << std::flush;
     uint32_t lastId = 0;
     for (;;) {
       std::vector<unsigned char> bytes;
@@ -109,20 +109,28 @@ int serve(uint32_t generation, uint32_t parentPid) {
       request.faceIndex = frame.take<uint32_t>(); request.width = frame.take<uint32_t>(); request.height = frame.take<uint32_t>();
       request.fontSize = frame.take<double>();
       auto fontIdentity = frame.token(64), outputIdentity = frame.token(32);
+      request.fontIdentity = fontIdentity; request.sourceGeneration = sourceGeneration;
       request.fontPath = frame.wide(8192); request.text = frame.wide(4096); request.outputPath = frame.wide(8192);
       require(frame.offset == bytes.size());
       auto start = std::chrono::steady_clock::now();
       Result result{}; std::string reason;
-      try { result = render(request); } catch (const std::runtime_error& error) { reason = error.what(); }
+      try { result = renderer.render(request); } catch (const std::runtime_error& error) { reason = error.what(); }
       catch (...) { reason = "RENDER_FAILED"; }
+      auto cache = renderer.stats();
       // Never interpolate arbitrary error text into the receipt.
       if (reason.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789") != std::string::npos) reason = "RENDER_FAILED";
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
-      std::cout << "{\"type\":\"result\",\"protocolVersion\":1,\"renderVersion\":1,\"engine\":\"directwrite\",\"serviceGeneration\":" << generation
+      std::cout << "{\"type\":\"result\",\"protocolVersion\":2,\"renderVersion\":1,\"engine\":\"directwrite\",\"serviceGeneration\":" << generation
         << ",\"requestId\":" << id << ",\"sourceGeneration\":" << sourceGeneration << ",\"fontIdentity\":\"" << fontIdentity
         << "\",\"outputIdentity\":\"" << outputIdentity << "\",\"faceIndex\":" << request.faceIndex
         << ",\"ok\":" << (reason.empty() ? "true" : "false") << ",\"reason\":\"" << reason
-        << "\",\"glyphRuns\":" << result.glyphRuns << ",\"missingGlyphs\":" << result.missingGlyphs << ",\"elapsedMs\":" << ms << "}\n" << std::flush;
+        << "\",\"glyphRuns\":" << result.glyphRuns << ",\"missingGlyphs\":" << result.missingGlyphs << ",\"elapsedMs\":" << ms
+        << ",\"cacheHit\":" << (result.cacheHit ? "true" : "false") << ",\"fontObjectId\":" << result.fontObjectId
+        << ",\"contentHash\":\"" << result.contentHash << "\",\"cache\":{\"hits\":" << cache.hits
+        << ",\"misses\":" << cache.misses << ",\"loads\":" << cache.loads << ",\"evictions\":" << cache.evictions
+        << ",\"entries\":" << cache.entries << ",\"bytes\":" << cache.bytes << ",\"liveEntries\":" << cache.liveEntries
+        << ",\"liveBytes\":" << cache.liveBytes << ",\"sourceReads\":" << cache.sourceReads << ",\"sourceBytes\":" << cache.sourceBytes
+        << ",\"privateBytes\":" << cache.privateBytes << ",\"peakPrivateBytes\":" << cache.peakPrivateBytes << "}}\n" << std::flush;
       if (!std::cout) stop(4);
     }
   } catch (...) { stop(3); }

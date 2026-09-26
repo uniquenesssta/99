@@ -147,11 +147,12 @@ async function nativeOwner() {
  const fonts=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/directwrite/fonts.json'),'utf8'))
  const fontPath=path.join(temp,'fixture.ttf')
  fs.writeFileSync(fontPath,Buffer.from(fonts['narrow.ttf'],'base64'))
+ const digest=require('node:crypto').createHash('sha256').update(fs.readFileSync(fontPath)).digest('hex')
  const load=loader({}, {AbortController,setImmediate});const Service=load(file).DirectwriteService
  const service=new Service({command:path.join(root,'build/native/directwrite/hfm-directwrite-preview.exe'),temporaryRoot:temp})
  try {
-  const a=await service.render({...input('AB'),fontPath},{isCurrent:()=>true})
-  const b=await service.render({...input('A'),fontPath},{isCurrent:()=>true})
+  const a=await service.render({...input('AB'),fontPath,fontIdentity:digest},{isCurrent:()=>true})
+  const b=await service.render({...input('A'),fontPath,fontIdentity:digest},{isCurrent:()=>true})
   assert(a.png.length>100);assert(b.png.length>100);assert.notDeepEqual(a.png,b.png)
   assert.equal(a.receipt.serviceGeneration,b.receipt.serviceGeneration,'real worker not reused')
   assert.equal(a.receipt.engine,'directwrite')
@@ -159,11 +160,11 @@ async function nativeOwner() {
   const suspended=require('node:child_process').spawnSync('python',[path.join(__dirname,'check-directwrite-resident.py'),'--suspend-main',String(originalPid)],{encoding:'utf8',timeout:10000})
   assert.equal(suspended.status,0,suspended.stderr)
   const cancel=new AbortController()
-  const hung=service.render({...input('A'),fontPath},{signal:cancel.signal,isCurrent:()=>true})
+  const hung=service.render({...input('A'),fontPath,fontIdentity:digest},{signal:cancel.signal,isCurrent:()=>true})
   const rejected=assert.rejects(hung,/CANCELLED/)
   await until(()=>service.child?.pending)
   cancel.abort();await rejected
-  const recovered=await service.render({...input('B'),fontPath},{isCurrent:()=>true})
+  const recovered=await service.render({...input('B'),fontPath,fontIdentity:digest},{isCurrent:()=>true})
   assert(dead(originalPid),'real native cancelled process survived')
   assert.notEqual(recovered.receipt.serviceGeneration,a.receipt.serviceGeneration)
  }finally{await service.dispose();fs.rmSync(temp,{recursive:true,force:true})}
@@ -171,8 +172,8 @@ async function nativeOwner() {
 async function main() {
  if(process.argv.includes('--native')) {await nativeOwner();console.log('[directwrite-service] real Windows owner → native DirectWrite → PNG passed');return}
  await normal();await cancellation();await queueLimit()
- for(const mode of ['crash','wrong-id','wrong-generation','wrong-source','wrong-output','wrong-font','wrong-engine','missing','invalid','oversized','duplicate','duplicate-field']) await fault(mode)
+ for(const mode of ['crash','wrong-id','wrong-generation','wrong-source','wrong-output','wrong-font','wrong-engine','missing','invalid','oversized','duplicate','duplicate-field','bad-cache','bad-private','bad-content','missing-cache']) await fault(mode)
  await timeoutAndFreeze();await exitConfirmation();await cleanupFailure();await sourceMutants()
- console.log('[directwrite-service] real subprocess: reuse/coalescing, 64 queue limit, cancellation, stale source, 12 faults, bounded restart, deadline, shutdown/resume, exit confirmation and 4 source mutants passed')
+ console.log('[directwrite-service] real subprocess: reuse/coalescing, 64 queue limit, cancellation, stale source, 16 faults, bounded restart, deadline, shutdown/resume, exit confirmation and 4 source mutants passed')
 }
 main().catch(error=>{console.error(error);process.exitCode=1})

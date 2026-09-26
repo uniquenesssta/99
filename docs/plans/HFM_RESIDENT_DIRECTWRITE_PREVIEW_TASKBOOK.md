@@ -363,3 +363,17 @@ flowchart TD
 - 最终代码 `4b105b750086b51420a3487b372c6188e19b67af`，Windows Actions [36235681240](https://github.com/uniquenesssta/99/actions/runs/36235681240) 全绿，包含最终 owner 边界、4 个 TS 变异、3 个 C++ 变异及恢复生产源码后重测。后续记录提交只改文档。Windows/NAS 用户实机、早期 Win10、长期内存/对象预算和端到端收益未验；本项完成不代表 DW-00/03～08 完成。
 
 - 独立基线门仍失败：最终代码对应 `36235681162` 的 `diagnostics:mapped-drive-unicode` 实测 CIM 1517ms / 限额 1500ms，未放宽或跳过；不把本专项全绿称为完整 Windows 全部门禁通过。
+
+## 13. DW-03 执行卡（进行中）
+
+用户于 2026-09-26 明确授权开始 DW-03，继续唯一试验分支。本项不切换默认后端、不接 UI、不复制 NAS 字体。
+
+实现边界及决定：
+- 新增 `native-src/preview-renderer/directwrite/fontCache.{h,cpp}`：按本地规范路径、实际 SHA-256、源代次和 face 缓存私有字体对象；每项持有隔离 DirectWrite factory/custom memory loader/face/collection，活跃绘制持 shared_ptr 租约，LRU 只淘汰无外部租约的项。采用每项隔离 factory，使淘汰可连同 DirectWrite 内部缓存一起释放；相同项连续绘制复用这些对象。文本 layout/位图不缓存。
+- 新增 `localFontFile.{h,cpp}`：从 DW-01 移入既有本地路径过滤，短暂独占写入共享权限的读取句柄取得不可变内存快照，计算 SHA-256；读取结束即释放文件句柄。当前每次请求仍重新读取并校验内容，不以 mtime/size 或调用方自报身份证明内容不变。DW-04 再决定受控不可变副本的读取复用。
+- 新增 `memoryBudget.{h,cpp}`：512MiB 进程提交内存 Job 限额及真实 PrivateUsage/峰值指标；无法设置限额则不宣告服务就绪。字体项上限 128、可计量缓存上限 256MiB、单文件 64MiB 不变；可计量字节不冒充 COM 全部内存。
+- `preview.{h,cpp}`：渲染会话保持 COM/D2D/WIC 生命周期，调用字体缓存并保留原图像规则；原 CLI 单次入口继续有效。`resident.cpp`：持有一个会话，报告缓存命中、实际对象 ID、加载/淘汰/引用释放和内存计数。
+- 常驻协议升为 2，字体身份收紧为预期内容 SHA-256，新增必需 cacheVersion/指标；`src/main/preview/native-renderer/directwriteProtocol.ts` 及真实子进程夹具同步，拒绝混用旧 worker。CLI 单次协议保持 1。调用方只是传入预期摘要，本项不冒充 DW-04 的源授权实现。
+- 测试/构建范围：`build-win.cmd`、现有 `check-directwrite-{native,resident,service,mutants}` 与 `fixtures/directwrite/process.cjs`；新增 `check-directwrite-cache.py` 验证真实对象复用、同名/多 face/同 size+mtime 替换、删除/淘汰释放、计数/字节预算和压力，直接使用原创字体夹具；`package.json`、`.github/workflows/directwrite-native.yml` 加入 Windows 门。更新本书、总任务书导航与根 README；其他业务职责不改。
+
+先建立可失败的缓存检查，再实现。至少用实际源码变异证明：停用复用、忽略 face、放宽对象数/字节限额不能通过；原 DW-01/02 图像、取消、父死清理及全部回执验证继续保留。

@@ -68,6 +68,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-26：开始 DW-03 原生字体对象复用：按路径/内容 SHA-256/源代次/face 建立有界 LRU，每项复用隔离 factory、内存 loader、face 与私有 collection，淘汰同时释放内部缓存；源文件读取后立即释放句柄，COM/D2D/WIC 会话跨请求保持。固定 128 项/256MiB 缓存及 512MiB 进程限额，常驻协议升级为 2 并核验摘要与真实资源指标；单次 CLI 和默认 UI 后端保持。新增真实 Windows 缓存/替换/淘汰/压力测试及源码变异，本地协议诊断与 typecheck 已过，Windows 验收中。详见[试验任务书 §13](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#13-dw-03-执行卡进行中)。
+
 - 2026-09-26：完成 DW-02：专用 DirectWrite 常驻进程、版本/代次/输出身份校验、单活动任务与 64 项等待队列、相同请求合并、取消及期限后终止确认和有界退避；接入退出 freeze，父进程句柄看护与独立 stdin 线程处理绘制挂起时的退出。默认预览不变，无新增依赖。本地 typecheck/149 项诊断、构建与混淆通过；Windows 常驻绘制、挂起取消、父死/EOF、唯一 owner、清理失败停止准入及源码变异门全通过（最终代码 `4b105b7`，Actions `36235681240`）。字体对象缓存/网络副本/UI 接入仍分别属于 DW-03/04/05；既有 CIM 1500ms 门仍独立失败。详见[试验任务书 §12](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#12-dw-02-执行卡)。
 
 - 2026-09-26：开始 DW-01 独立原生验证入口，新增系统 DirectWrite 私有单 face 字体集、真实排版/轮廓绘制及透明 PNG；拒绝网络/reparse 路径、错误 face 和变量字体，输出不覆盖已有文件。新增原创 TTF/CFF/TTC 夹具与 Windows 图像诊断、独立构建门，覆盖空串默认文字及真实源码变异；Windows 原生 27 项与 2 项源码变异通过，本地 typecheck/148 项诊断、构建和混淆 3/3 通过。尚未接入默认预览/常驻服务，实机视觉及性能待验；旧完整 Windows 门仍受 CIM 1500ms 失败阻塞。见[试验任务书 §11](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#11-dw-01-执行卡)。
