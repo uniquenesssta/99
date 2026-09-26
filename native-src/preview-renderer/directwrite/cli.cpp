@@ -24,6 +24,10 @@ int wmain(int argc, wchar_t** argv) {
       hfm_dw::watchParent(integer(argv[6]));
       return hfm_dw::stageFont(argv[2], argv[3], argv[4], argv[5]);
     }
+    if (argc == 4 && std::wstring(argv[1]) == L"--font-path-info") {
+      hfm_dw::watchParent(integer(argv[3]));
+      return hfm_dw::fontPathInfo(argv[2]);
+    }
     if (argc == 4 && std::wstring(argv[1]) == L"--prepare-font-store") {
       hfm_dw::watchParent(integer(argv[3]));
       return hfm_dw::prepareFontStore(argv[2]);

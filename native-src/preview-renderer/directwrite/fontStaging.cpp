@@ -13,7 +13,7 @@ void require(bool value, const char* reason) { if (!value) throw std::runtime_er
 std::wstring normalized(std::wstring value) {
   if (value.rfind(L"\\\\?\\UNC\\",0)==0) value=L"\\\\"+value.substr(8);
   else if (value.rfind(L"\\\\?\\",0)==0) value=value.substr(4);
-  require(value.size()>3 && value.find(L'\0')==std::wstring::npos, "STAGE_PATH_INVALID");
+  require(value.size()>=3 && value.find(L'\0')==std::wstring::npos, "STAGE_PATH_INVALID");
   require((value[1]==L':' && value[2]==L'\\' && value.find(L':',2)==std::wstring::npos)
     || (value.rfind(L"\\\\",0)==0 && value.find(L':')==std::wstring::npos && value[2]!=L'.' && value[2]!=L'?'), "STAGE_PATH_INVALID");
   for (auto& c:value) { if(c==L'/') c=L'\\'; }
@@ -34,6 +34,24 @@ bool sameInfo(const BY_HANDLE_FILE_INFORMATION& a,const BY_HANDLE_FILE_INFORMATI
   return a.dwVolumeSerialNumber==b.dwVolumeSerialNumber && a.nFileIndexHigh==b.nFileIndexHigh && a.nFileIndexLow==b.nFileIndexLow
     && a.nFileSizeHigh==b.nFileSizeHigh && a.nFileSizeLow==b.nFileSizeLow && CompareFileTime(&a.ftLastWriteTime,&b.ftLastWriteTime)==0;
 }
+}
+int fontPathInfo(const std::wstring& path) {
+  normalized(path);
+  File file{CreateFileW(path.c_str(),FILE_READ_ATTRIBUTES,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+    nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS,nullptr)};
+  require(file.value!=INVALID_HANDLE_VALUE,"STAGE_PATH_UNAVAILABLE");
+  auto physical=finalPath(file.value); BY_HANDLE_FILE_INFORMATION info{};
+  require(GetFileInformationByHandle(file.value,&info)!=0 && GetFileType(file.value)==FILE_TYPE_DISK,"STAGE_PATH_INVALID");
+  require(physical.size()<=8192,"STAGE_PATH_INVALID");
+  std::string encoded; const char* hex="0123456789abcdef";
+  for(auto c:physical) for(auto byte:{static_cast<unsigned char>(c&255),static_cast<unsigned char>(c>>8)}) {
+    encoded+=hex[byte>>4]; encoded+=hex[byte&15];
+  }
+  auto size=(static_cast<unsigned long long>(info.nFileSizeHigh)<<32)|info.nFileSizeLow;
+  bool directory=(info.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)!=0;
+  std::cout<<"{\"type\":\"font-path\",\"version\":1,\"ok\":true,\"pathHex\":\""<<encoded
+    <<"\",\"bytes\":"<<size<<",\"directory\":"<<(directory?"true":"false")<<"}\n";
+  return 0;
 }
 int prepareFontStore(const std::wstring& parent) {
   auto local=localPath(parent,false);
