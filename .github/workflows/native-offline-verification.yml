@@ -1,7 +1,7 @@
 name: Windows C-08.1 validation
 on:
   push:
-    branches: ['stage/09-preview-tags-app']
+    branches: ['stage/09-preview-tags-app', 'stage/10-preview-performance']
 permissions:
   contents: read
 jobs:
@@ -16,6 +16,7 @@ jobs:
       - run: npm ci
       - run: npm run diagnostics:shared-io-integration
       - run: npm run diagnostics:shared-filesystem
+      - run: npm run rust:build
       - run: npm run diagnostics:mapped-drive-unicode
       - run: cargo fetch --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
       - run: npm run diagnostics:execution-lifecycle

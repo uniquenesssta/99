@@ -68,6 +68,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-26：从 Stage 9 建立 `stage/10-preview-performance`，先回移独立修复：Rust `WNetGetConnectionW` Unicode 映射查询替换 PowerShell/CIM，保留 1500ms、TTL/请求合并/失败冷却与未知身份拒绝。同步回移 Windows 诊断的 stderr 管道时序、变异路径匹配、模块缓存路径统一修复；不合入 DirectWrite 试验代码。五项相关诊断与 typecheck 通过，新分支完整回归/构建结果见[Stage 10 任务书](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。
+
 - 2026-09-26：建立常驻 DirectWrite 预览试验任务书，明确 DW-00～DW-08、默认关闭、网络隔离、字体副本/对象预算、取消退出、缓存兼容和端到端 A/B 验收约束；本次仅文档，未切换渲染后端。见 [常驻 DirectWrite 预览试验任务书](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md)。
 
 - 2026-09-26：修复网络扫盘把整根字体内容预读塞进单次 30 秒 Shared I/O 请求的问题。网络根改为逐目录批量读取真实文件属性，先交付本地字体批次，再按文件变化决定是否解析；监听刷新复用新鲜属性，历史缓存仍重新校验。扫描/重建失败退出“扫描中”并显示错误，旧任务不覆盖新任务状态。新增 `shared-directory-metadata-v1` 必需能力，开发模式沿用现有 worker 自动重编译；无数据库迁移或新增依赖。本地 typecheck + 147 项完整诊断、构建和 3/3 混淆通过，修复提交 `ecaf8ab` 的 Windows/Linux 原生属性测试、真实 worker 4096 文件单目录请求、相关回归、构建和混淆均通过（Actions `36221272200`）；旧 Windows 全量门仍在独立 CIM 1500ms 查询处失败（1513ms），真实 NAS 耗时待开发模式复验。

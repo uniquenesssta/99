@@ -3,6 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
 const timers=[]
 const root = path.resolve(__dirname, '../..'), cache = new Map()
 function load(file, mocks = {}) {
+  file = file.replace(/\\/g, '/')
   if (cache.has(file)) return cache.get(file)
   const exports = {}; cache.set(file,exports)
   let source = fs.readFileSync(path.join(root,file),'utf8')
@@ -40,6 +41,7 @@ library=normalize.libraryWithMergedFonts(library,[font])
 assert.equal(library.fonts.a.active,false,'old page must not reactivate a stopped font')
 console.log('user intent consistency passed')
 const intent=load(base+'fontUserIntentRuntime.ts',mocks)
+assert.equal(load((base+'fontUserIntentRuntime.ts').replaceAll('/', '\\'),mocks),intent,'path aliases must share the same module instance')
 const view=load(base+'fontViewRuntime.ts',mocks)
 const plain=x=>JSON.parse(JSON.stringify(x))
 let fav=intent.markFavoriteIntent(stopped,true)

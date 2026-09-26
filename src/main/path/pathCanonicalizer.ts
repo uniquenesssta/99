@@ -37,18 +37,9 @@ export function normalizePathCompareText(filePath: string): string {
   return normalizeNativePathText(filePath).toLowerCase()
 }
 
-// Query local WMI; never parse localized `net use` columns or OEM bytes.
-// ASCII output preserves Unicode paths regardless of the console code page.
-const MAPPED_DRIVE_QUERY = `$ErrorActionPreference = 'Stop'
-$rows = @(Get-CimInstance -Query 'SELECT DeviceID, ProviderName FROM Win32_LogicalDisk WHERE DriveType = 4' | ForEach-Object { @{ drive = [string]$_.DeviceID; remote = [string]$_.ProviderName } })
-$json = ConvertTo-Json -InputObject $rows -Compress
-[Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)))`
-
+// Native UTF-8 JSON avoids PowerShell startup, CIM provider initialization and OEM decoding.
 function parseMappedDriveTable(stdout: string): Map<string, string> {
-  const encoded = stdout.trim()
-  const bytes = Buffer.from(encoded, 'base64')
-  if (!encoded || bytes.toString('base64') !== encoded) throw new Error('Invalid mapped drive response')
-  const rows: unknown = JSON.parse(bytes.toString('utf8'))
+  const rows: unknown = JSON.parse(stdout.trim())
   if (!Array.isArray(rows)) throw new Error('Invalid mapped drive table')
   const drives = new Map<string, string>()
   for (const row of rows) {
@@ -72,10 +63,14 @@ export async function mappedDriveTableAsync(): Promise<Map<string, string> | nul
   if (mappedDriveTableInFlight) return mappedDriveTableInFlight
   if (mappedDriveFailureUntil > Date.now()) return null
   if (mappedDriveTableCache && mappedDriveTableCache.expiresAt > Date.now()) return new Map(mappedDriveTableCache.drives)
-  mappedDriveTableInFlight = new Promise<Map<string, string> | null>((done) => {
+  mappedDriveTableInFlight = (async () => {
+    const { resolveRustCoreWorkerPath } = await import('../rust-core/rustCoreWorkerPathRuntime')
+    const command = resolveRustCoreWorkerPath()
+    if (!command) { mappedDriveTableCache = null; mappedDriveFailureUntil = Date.now() + 5000; return null }
+    return await new Promise<Map<string, string> | null>((done) => {
     const failed = () => { mappedDriveTableCache = null; mappedDriveFailureUntil = Date.now() + 5000; done(null) }
-    execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(MAPPED_DRIVE_QUERY, 'utf16le').toString('base64')],
-      { encoding: 'utf8', timeout: 1500, maxBuffer: 256 * 1024, killSignal: 'SIGKILL', windowsHide: true, shell: false }, (error, stdout) => {
+    execFile(command, ['--mapped-drive-table'],
+      { env: { ...process.env, HFM_PARENT_PID: String(process.pid) }, encoding: 'utf8', timeout: 1500, maxBuffer: 256 * 1024, killSignal: 'SIGKILL', windowsHide: true, shell: false }, (error, stdout) => {
         if (error) { failed(); return }
         try {
           const drives = parseMappedDriveTable(String(stdout || ''))
@@ -83,7 +78,8 @@ export async function mappedDriveTableAsync(): Promise<Map<string, string> | nul
           done(new Map(drives))
         } catch { failed() }
       })
-  })
+    })
+  })().catch(() => { mappedDriveTableCache = null; mappedDriveFailureUntil = Date.now() + 5000; return null })
   try { return await mappedDriveTableInFlight } finally { mappedDriveTableInFlight = null }
 }
 

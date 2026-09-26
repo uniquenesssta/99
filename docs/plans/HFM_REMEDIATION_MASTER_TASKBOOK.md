@@ -1,5 +1,7 @@
 # HanFontManager 修复与编排重构总任务书
 
+> 2026-09-26 当前入口：[Stage 10 预览性能任务书](HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。用户停止 DW 试验推进，从 Stage 9 创建 `stage/10-preview-performance`；首批只回移 CIM 及独立验证修复，预览优化尚未实施。DW 分支保留，不整分支合并。
+
 > 2026-09-26 新试验任务书：[常驻 DirectWrite 预览](HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md)。当前仅完成计划，DW-00 未开始，默认后端保持不变；其他一般性能优化暂停，55 字体解析与 CIM 失败单列。该试验不覆盖 C-09/O-07 验收。
 
 
