@@ -2,13 +2,13 @@
 
 ## 0. 状态、授权与执行入口
 
-- 文档版本：1.5；日期：2026-09-26；软件版本：3.0.0。
+- 文档版本：1.6；日期：2026-09-26；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；试验分支：`stage/dw-resident-directwrite-preview`（用户已明确授权新建）；起点：`7d220c3d041291d4480210303ceae5dc3731145e`（渲染代码沿用此前版本，扫描修复为 `ecaf8ab`）。
-- 当前状态：**DW-00 实机基线待验；DW-01～DW-04 实现及独立 Windows 自动验收通过；DW-05 已授权实施、验证中；DW-06～DW-08 未实施**。用户同时授权解决原 CIM 超时；默认预览不切换。
+- 当前状态：**DW-00 实机基线待验；DW-01～DW-05 实现及独立 Windows 自动验收通过；DW-05 综合 Windows 回归通过；DW-06～DW-08 未实施**。用户同时授权解决原 CIM 超时；默认预览不切换。
 - 用户目标：尝试常驻 DirectWrite 是否能改善未安装字体预览，特别是连续浏览、修改文字与字号；没有要求全面重做预览系统。
 - 用户已接受剩余一般延迟，其他性能优化暂停。本试验不借机扩展为扫描、全库缓存、标签、收藏、激活或数据库重构。
 - 继续遵守 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[共享离线与本地退出](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md)、[索引与 Shared I/O 专项](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)、[Stage 3 文件与预览边界](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md) 及项目规则。
-- 已知独立问题：55 个字体解析未解决、Windows CIM 1500ms 自动门由本轮单独修复（验收中）、扫描外大量 stat 的来源尚未归因。保持记录；本试验不宣称解决这些问题，不自动启用旧 fontkit 兜底。C-09/O-07 不因本试验通过而自动完成。
+- 已知独立问题：55 个字体解析未解决，扫描外大量 stat 的来源尚未归因；不自动启用旧 fontkit 兜底。原 Windows CIM 1500ms 问题已由本轮原生映射查询替换并通过真实 Windows 门。C-09/O-07 不因本试验通过而自动完成。
 
 ## 1. 基线事实与待验证假设
 
@@ -22,7 +22,7 @@
 | `src/main/rust-core/rustCoreWorkerTransportRuntime.ts` | 网络路径进入隔离 one-shot；本地任务尝试现有 daemon | 不能声称现有所有预览都重新启动进程；新渲染服务必须保留网络隔离 |
 | `native-src/preview-renderer/hfm-preview-renderer.cpp` | helper 也包含私有 GDI+ 路径 | 不能只改名称就算迁移 DirectWrite |
 
-当前默认预览链路（DW-02 独立试验链见 §12，尚未接入 UI）：
+当前默认预览链路（DW-05 显式试验链已接入 UI，见 §15）：
 
 ```mermaid
 flowchart TD
@@ -451,7 +451,7 @@ flowchart TD
 DW-04 实现和上述独立自动门通过；默认 UI 仍为当前后端。下一项为 **DW-05 现有预览链接入**，等待用户明确开始。接线应复用当前授权根/index provider 创建 `createDirectwriteFontStaging`，由一个 `DirectwriteFontStore` 持有副本，再通过 `renderStagedDirectwrite` 调用唯一服务；`admission.isCurrent` 必须接现有请求/源失效所有者，不能常量放行。所有模块按需构造，默认分支不得创建副本目录或启动新进程。Context7 核对 Win32 共享/真实路径 API，Mermaid Chart 已更新实际链，Create State 记录本阶段结果。
 
 
-## 15. DW-05 执行卡（2026-09-26，验证中）
+## 15. DW-05 执行卡（2026-09-26）
 
 用户明确授权开始 DW-05，并同时解决 CIM 1500ms 查询失败。默认关闭、无需 build:win；运行 `npm run dev:dw` 自动编译独立 helper 后启动原 `npm run dev`，关闭后用 `npm run dev` 恢复默认。需要既有 C++/Windows SDK 工具链；找不到或编译失败会停在开发启动入口，不静默冒充已启用。开发者页显示实际选中后端，日志区分 native/object hit/local image/fallback。
 
@@ -459,4 +459,25 @@ DW-04 实现和上述独立自动门通过；默认 UI 仍为当前后端。下�
 - 图片使用内容 SHA-256、实际 DirectWrite 语义版本、face 0、无轴、原文/字号/尺寸、96 DPI、固定 RGBA 与透明背景键。当前 FontItem 仍一文件一条，沿用 face 0，不引入未定义的 TTC face UI。每次先授权/校验源摘要才读试验图片；单独本地 PNG 原子发布与现有本地索引/淘汰相接，不写共享图片。旧图片不计为新后端命中；背景自动生成在试用模式对未安装字体明确跳过。
 - 回退只允许明确列举的 helper/启动/协议/格式失败；重新授权后最多一次原后端，沿原后端键与日志统计。离线、越权、取消、旧代次、closing、任务超时不回退。格式失败仍可由旧 GDI 路径处理，不改全局 fallback 门。
 - 原 CIM 修复：Rust one-shot `--mapped-drive-table` 调用 WNetGetConnectionW，经 UTF-8 JSON 严格解码；不启动 PowerShell/CIM、不打开远端文件，不延长 1500ms。原合并/30 秒缓存/5 秒失败冷却保留，未知/断开的身份不冒充本地盘。worker 缺失/过旧也失败关闭，开发启动原有 Rust 编译会更新 worker。
-- 待记录：本地完整门、Windows 原生完整 owner/真实中文 SMB 映射/旧自动门。DW-06 应用总退出收口、DW-07 用户 Win10/真实 NAS 30 分钟及人工图像/A-B 仍未验收；无端到端提速承诺。
+- 本地完整门、Windows 原生完整 owner/真实中文 SMB 映射已通过，详细证据见 §15.1。DW-06 应用总退出收口、DW-07 用户 Win10/真实 NAS 30 分钟及人工图像/A-B 仍未验收；无端到端提速承诺。
+
+
+### 15.1 验证与边界记录
+
+- 本地 typecheck、151 项完整诊断、最终差异定向检查、Electron/Vite 构建与 3/3 混淆通过。新增诊断贯通渲染层请求 helper、两份 preload、真实 IPC handler/窗口准入；覆盖跨窗口取消隔离、主框架导航/销毁、晚结果拒绝、默认/生产模式关闭、单次回退、授权拒绝、图片键与清缓存恢复，拒绝移除文本键及扩大回退范围两种源码变异。更新三处本轮实际改变的 UI 代码冻结摘要，既有行为用例继续执行。
+- Windows 原生完整门 `36242497120`（代码 `917b1f0`）通过：本地与含中文/日文/空格名称的真实 loopback SMB，WNet Unicode 映射、源授权/Shared I/O/摘要副本/常驻绘制/本地图片发布、同 size/mtime 替换及摘要核验、明确格式回退与离线拒绝。27 项原生图像、1153 次对象缓存压力、9 个 C++ 和原有 6 个 TS 源码变异继续通过。此轮私有内存峰值 322490368 / 322576384 bytes，未作 GUI 性能收益声明。
+- CIM 旧失败路径已替换：Windows 真实执行已观察 33ms、35ms，最终综合门为 36ms/27ms（限额仍 1500ms），不是延长期限；另在实际映射的 Unicode SMB share 上重复核对 UNC 结果。失败仍返回未知身份而不是空表，不把断开/未知映射视为本地盘。
+- 候选验证中保留的失败：首次专项工作流浅检出缺少历史回归提交，改为完整历史；图片替换夹具最初用 `AB`，生成器明确将它替换为两字体相同的 `fi` 连字，改用确有不同轮廓的 `A`，仍要求图片变化并验证发布摘要。Windows 综合旧 operation-chain 用例在 stdout 返回即停进程，存在 stderr 独立管道尚未送达的时序竞争；测试改为有界等待预期诊断再停止并等 close，内容断言保留，不改生产 daemon。
+- 最终收尾增加清空整个图片目录后重新准备/校验并重建缓存；图片目录准备也接取消信号。最终生产代码 `541e7fa` 的 Windows 原生完整门 `36243031482` / job `108407006396` 全通过，包含该清缓存实际用例及全部 9 个 C++ 源码变异和恢复后复跑。其后的 `c1a0323` 只修综合旧诊断：Windows 路径反斜杠导致 admission mutant 未实际修改源码，统一分隔符并要求替换锚点存在，保留原行为失败断言；本地与 Windows 40 组通过。综合 Windows 门 `36243537272` 继续通过前 146 项，随后旧 user-intent 测试因装载器缓存键混用正反斜杠而重复加载带 Symbol 的模块失败；`56227d0` 仅规范测试模块键并增加别名必须返回同一实例的断言，本地原有收藏/查询/四种变异全部通过。最终综合门 `36244288794` / Windows job `108410450788` 全通过：typecheck、151/151 诊断、Electron/Vite 构建、3/3 混淆及差异检查；Windows/Linux 原生目录 jobs `108410450980` / `108410450999` 同样通过。生产收藏逻辑未修改。最终代码 `56227d02e162d8b69000b660a40fd624f57e6f74` 的 DirectWrite 原生完整门 `36244288816` / job `108410450778` 也全通过。
+- 图片缓存需要先取得内容摘要，因此 UI 图片事务直接使用既有 store 的租约和唯一 service，覆盖图片命中与绘制两种路径；原 `renderStagedDirectwrite` 保留用于独立原生组合验证。没有新建第二套字体复制、原生渲染或根状态所有者。
+- Context7 核对 WNetGetConnectionW 及 Electron 42 的 navigation details（与安装版本声明复核）；Mermaid Chart 已更新接通链。下一阶段仍为 DW-06 的应用总退出收口；真实 Win10/NAS 长时间断网、人工图像质量、30 分钟稳定性与 A/B 留给 DW-07。默认后端保持，55 个字体解析/C-09/O-07 不在本轮关闭。
+
+
+### 15.2 开发模式试用
+
+1. 在此试验分支运行 `npm run dev:dw`；入口自动构建 DirectWrite helper，并沿原开发启动流程更新 Rust worker。需要既有 Visual Studio C++ 桌面工具链/Windows SDK；无需打包。
+2. 在开发者页确认实际后端为 `directwrite-resident`，使用未安装字体测试列表滚动、详情、快速改文字/字号及关闭详情。已安装字体仍走既有路径。
+3. 可测试清空预览缓存后再次打开同一字体；应重新生成。网络根离线时不得用本地副本绕过授权返回新预览。
+4. 退出后运行 `npm run dev` 恢复默认后端；启动器仅设置其子进程环境，不持久化开关。
+
+本项自动验收不能替代用户 Windows 10/实际 NAS 的图像观感和耗时比较；本轮不宣称已经提速。DW-06、DW-07 仍按阶段单独实施。
