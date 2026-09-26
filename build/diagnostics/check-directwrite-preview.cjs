@@ -36,7 +36,7 @@ async function admission(){
  const navigation=new Sender();const pending=[];
  for(let n=0;n<16;n++)pending.push(assert.rejects(runtime.run(navigation,'nav-'+n,async admission=>new Promise(resolve=>admission.signal.addEventListener('abort',()=>resolve('late')))),/CANCELLED|STALE/));
  assert.equal(navigation.listenerCount('destroyed'),1,'per-request window listeners accumulated');
- navigation.emit('did-start-navigation',{},'about:blank',false,true);await Promise.all(pending);
+ navigation.emit('did-start-navigation',{isMainFrame:true,isSameDocument:false});await Promise.all(pending);
 
 }
 async function ipcRendererChain(template) {

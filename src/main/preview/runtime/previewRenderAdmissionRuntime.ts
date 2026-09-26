@@ -13,7 +13,7 @@ export function createPreviewRenderAdmissionRuntime() {
       requests = new Map(); owners.set(sender, requests)
       const cancelAll = () => { for (const controller of requests!.values()) controller.abort() }
       sender.once('destroyed', cancelAll)
-      sender.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) cancelAll() })
+      sender.on('did-start-navigation', details => { if (details.isMainFrame && !details.isSameDocument) cancelAll() })
     }
     if (sender.isDestroyed() || isApplicationClosing()) throw new Error('DW_CLOSING')
     if (requests.size >= 64 || requests.has(token)) throw new Error('DW_REQUEST_LIMIT')

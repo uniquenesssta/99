@@ -220,7 +220,8 @@ function validateNativeStages(events) {
 }
 async function transportAndSignals() {
   const events=[],received=[]
-  const append=s=>{if(s.startsWith('operation-chain: ')) events.push(JSON.parse(s.slice(17)))}
+  let daemonFrameObserved
+  const append=s=>{if(s.startsWith('operation-chain: ')) { const event=JSON.parse(s.slice(17)); events.push(event); if(event.stage==='backend-start')daemonFrameObserved?.() }}
   const base={version:1,sessionId:'transport-test',operationId:'operation',attemptId:'attempt',batchId:'batch',domain:'localTags',members:['operation'],omitted:0}
   const core='src/main/rust-core/'
   const mocks={
@@ -257,8 +258,16 @@ async function transportAndSignals() {
   await ctx.withOperationTrace(base,append,()=>file.writeJson({rows:[]}))
   try {
     const before=events.filter(e=>e.stage==='backend-start').length
-    assert.equal((await dc.withOperationTrace(base,append,()=>daemon.tryRun('scripted-worker',['--local-tags-set','--input',file.path],{timeout:5000}))).stdout,'ok')
-    const exited=new Promise(resolve=>child.once('exit',resolve));daemon.stop();await exited
+    // stdout and stderr are independent pipes; job_finished does not imply that
+    // stderr has drained. Observe the split diagnostic before testing stop.
+    let timeout
+    const frame=new Promise((resolve,reject)=>{daemonFrameObserved=resolve;timeout=setTimeout(()=>reject(Error('daemon split stderr frame not delivered')),5000)})
+    void frame.catch(()=>undefined)
+    try {
+      assert.equal((await dc.withOperationTrace(base,append,()=>daemon.tryRun('scripted-worker',['--local-tags-set','--input',file.path],{timeout:5000}))).stdout,'ok')
+      await frame
+    } finally { clearTimeout(timeout); daemonFrameObserved=undefined }
+    const exited=new Promise(resolve=>child.once('close',resolve));daemon.stop();await exited
     assert.equal(events.filter(e=>e.stage==='backend-start').length,before+1,'daemon split stderr frame lost')
     assert(events.some(e=>e.stage==='daemon-submit'&&e.jobId))
     assert.equal(daemon.status().pending,0)
