@@ -16,3 +16,6 @@ hfm-license.json
 
 .DS_Store
 *.log
+
+build/native/directwrite/
+__pycache__/

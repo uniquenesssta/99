@@ -180,7 +180,9 @@
     "diagnostics:root-index-native-transactions": "node --experimental-sqlite build/diagnostics/check-root-index-native-transactions.cjs",
     "diagnostics:root-availability-evidence": "node build/diagnostics/check-root-availability-evidence.cjs",
     "diagnostics:preview-baseline": "node build/diagnostics/check-preview-baseline.cjs",
-    "baseline:preview-report": "node build/performance/preview-baseline-report.cjs"
+    "baseline:preview-report": "node build/performance/preview-baseline-report.cjs",
+    "native:directwrite": "cmd /c native-src\\preview-renderer\\directwrite\\build-win.cmd",
+    "test:directwrite-native": "python build/diagnostics/check-directwrite-native.py"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

@@ -1,0 +1,26 @@
+name: DirectWrite native proof
+on:
+  push:
+    branches: ['stage/dw-resident-directwrite-preview']
+permissions:
+  contents: read
+jobs:
+  directwrite-native:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Compile against Windows SDK
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\Common7\Tools\VsDevCmd.bat" -arch=x64
+          if errorlevel 1 exit /b %errorlevel%
+          call native-src\preview-renderer\directwrite\build-win.cmd
+      - name: Real private TTF CFF TTC and PNG checks
+        run: python build/diagnostics/check-directwrite-native.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: directwrite-native-proof
+          path: build/native/directwrite/hfm-directwrite-preview.exe

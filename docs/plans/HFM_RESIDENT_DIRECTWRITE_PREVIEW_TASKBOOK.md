@@ -4,7 +4,7 @@
 
 - 文档版本：1.1；日期：2026-09-26；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；试验分支：`stage/dw-resident-directwrite-preview`（用户已明确授权新建）；起点：`7d220c3d041291d4480210303ceae5dc3731145e`（渲染代码沿用此前版本，扫描修复为 `ecaf8ab`）。
-- 当前状态：**DW-00 进行中；DW-01～DW-08 未实施**。用户已授权新建分支并开始 DW-00；本轮实施主进程逐请求诊断和行为锁，不启用新后端。
+- 当前状态：**DW-00 进行中；DW-01 进行中，DW-02～DW-08 未实施**。用户已授权新建分支并开始 DW-00；本轮实施主进程逐请求诊断和行为锁，不启用新后端。
 - 用户目标：尝试常驻 DirectWrite 是否能改善未安装字体预览，特别是连续浏览、修改文字与字号；没有要求全面重做预览系统。
 - 用户已接受剩余一般延迟，其他性能优化暂停。本试验不借机扩展为扫描、全库缓存、标签、收藏、激活或数据库重构。
 - 继续遵守 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[共享离线与本地退出](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md)、[索引与 Shared I/O 专项](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)、[Stage 3 文件与预览边界](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md) 及项目规则。
@@ -272,3 +272,15 @@ npm run baseline:preview-report -- '实际 startup 日志路径'
 - Electron/Vite 构建退出 0（main 384 / preload 1 / renderer 204 模块），混淆退出 0（3/3）；`git diff --check` 通过。输入边界 190 个 JS 行为用例及 68 个 C++ 策略用例通过，后者不执行 GDI+。
 - 对原实机日志运行报告得到 0 个关联样本、不可验收，未伪造或补算旧日志数据。
 - Windows CI 随新分支推送触发，结果待收；本环境无 Rust/Cargo/Windows，Windows/NAS 与 GUI 实机均未执行。DW-00 保持进行中，下一入口为 renderer 关联终点、真实样本/API/预算确认。
+
+## 11. DW-01 执行卡
+
+2026-09-26 用户明确要求开始 DW-01，授权在 DW-00 实机基线未完成时先实现原生最小验证；这覆盖 §10.2 的推进顺序，不代表 DW-00 已验收。当前唯一分支保持不变。本项不切换 Electron 默认后端，不开始 DW-02 常驻服务。
+
+范围：新增 `native-src/preview-renderer/directwrite/`，分别承载原生绘制和独立命令入口；复用原有 `preview-input-policy.h` 数值限额。用系统 DirectWrite + Direct2D/WIC，MSVC/Windows SDK 编译，无生产第三方依赖；生成物不进 Git。命令只用于本地测试，尚不接受 UI 请求。新增真实原生诊断、原创轮廓字体夹具及独立 Windows CI，保留原有完整门。修改 `.gitignore`、`package.json`、本书、主任务书入口和 README 用于构建与验收接线。
+
+API 决定：系统 `IDWriteFactory3`（Windows 10 起），单 face 的 `IDWriteFontSetBuilder` → 私有 collection → `IDWriteTextLayout2`；不使用 Windows App SDK。自定义 glyph renderer 校验实际 run 的文件引用及 faceIndex；禁用系统 fallback，缺字回报缺失 glyph 数。变量字体 fvar 明确返回不支持，不冒充默认实例正确。RGBA 透明图、96 DPI、现有前景色；居中与必要缩放。最终 UI 视觉兼容待 DW-05/07，不以原创几何字体测试代替真实字体人工检查。
+
+参考：https://learn.microsoft.com/en-us/windows/win32/api/dwrite_3/nf-dwrite_3-idwritefactory3-createfontcollectionfromfontset 、https://learn.microsoft.com/en-us/windows/win32/directwrite/custom-font-sets-win10 。Context7 已查询私有字体集及自定义 glyph renderer，结合 Microsoft Win32 文档确认 Windows 10 接口，不采用 Windows App SDK 文档的不同最低版本。
+
+DW-00 CI `36231611578`：Windows 预览基线诊断通过；Windows/Linux directory-metadata-native 两组通过；完整 Windows 门在 mapped-drive-unicode 的已知本地 CIM 1500ms 门失败（1518ms/SIGKILL），不提高超时，不归为 DirectWrite 成功或无关已修复。
