@@ -24,6 +24,12 @@ use crate::folders::list_physical_folder_tree;
 
 pub fn run_from_env() -> i32 {
     let args: Vec<String> = env::args().collect();
+    if args.len() == 2 && args[1] == "--mapped-drive-table" {
+        return match crate::mapped_drives::query() {
+            Ok(rows) => { println!("{}", rows); 0 },
+            Err(error) => { print_error(&error); 2 },
+        };
+    }
     if args.get(1).is_some_and(|arg| arg == "--shared-file-io") {
         let result = args.iter().position(|arg| arg == "--input").and_then(|index| args.get(index+1)).ok_or("missing shared I/O input".to_string()).and_then(|path| crate::shared_file_io::run(path));
         return match result { Ok(result) => { println!("{}",result); 0 }, Err(error) => { print_error(&error); 2 } };

@@ -1,3 +1,6 @@
+import { residentPreviewEnabled } from './runtime/previewBackendPolicy'
+import { createDirectwritePreviewRuntime } from './native-renderer/directwritePreviewRuntime'
+import type { FontAdmission } from './native-renderer/directwriteFontStore'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { bindPreviewBaseline, measurePreviewBaseline, previewBaselineEvent } from '../logging/previewBaselineTrace'
 import { validatePreviewInput } from './runtime/previewInputPolicy'
@@ -96,6 +99,18 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     readPreviewCacheIndexStatus,
     readCachedPreviewImages
   })
+
+  let resident: ReturnType<typeof createDirectwritePreviewRuntime> | undefined
+  function trialFor(item: FontItem): boolean { return residentPreviewEnabled() && !resolveInstalledFontPreviewRoute(item) }
+  function residentRuntime() {
+    return resident ??= createDirectwritePreviewRuntime(options, async (key, item, input, outputPath, digest) => {
+      await writePreviewCacheIndex({ dir: options.localPreviewImageDir(), identity: item.path, storage: 'local' }, key, {
+        outputPath, fontSignature: `directwrite-resident|${digest}|face=0`,
+        textHash: previewCacheTextHash(sha1, input.text), fontSize: input.fontSize, width: input.width, height: input.height,
+        status: 'ok', message: 'directwrite-resident', fontId: item.id, sourcePath: item.path,
+      })
+    })
+  }
 
   async function ensureFontPreviewImageFile(
     item: FontItem,
@@ -353,7 +368,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
 
 
 
-  async function renderFontPreviewImage(
+  async function renderCurrentFontPreviewImage(
     item: FontItem,
     text: string,
     fontSize = 44,
@@ -412,6 +427,16 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     return task
   }
 
+  async function renderFontPreviewImage(item: FontItem, text: string, fontSize = 44, width = 720, height = 260,
+    admission?: FontAdmission): Promise<string> {
+    if (!trialFor(item)) return renderCurrentFontPreviewImage(item, text, fontSize, width, height)
+    // Foreground IPC supplies a request owner. Internal trial calls must explicitly own admission.
+    if (!admission) throw new Error('DW_ADMISSION_REQUIRED')
+    const input = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog)
+    return residentRuntime().render(item, input, admission,
+      () => renderCurrentFontPreviewImage(item, text, fontSize, width, height))
+  }
+
   async function ensureFontPreviewCache(
     item: FontItem,
     text: string,
@@ -419,6 +444,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     width = 520,
     height = 150
   ): Promise<{ ok: boolean; cached: boolean; storage?: 'root' | 'fallback' | 'local'; message?: string }> {
+    if (trialFor(item)) return { ok: false, cached: false, message: 'DirectWrite 试验仅按前台请求生成本地预览。' }
     try {
       const previewFile = await withGlobalIo('preview:cache', () => ensureFontPreviewImageFile(item, text, fontSize, width, height, true), { priority: 'background', storagePath: item.path })
       if (!previewFile) return { ok: false, cached: false, message: '字体文件不存在或路径已失效。' }
@@ -439,8 +465,8 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     ensureFontPreviewImageFile,
     readPreviewFontData,
     renderFontPreviewImage,
-    readCachedFontPreviewImage,
-    readCachedFontPreviewImages,
+    readCachedFontPreviewImage: (...args: Parameters<typeof readCachedFontPreviewImage>) => trialFor(args[0]) ? Promise.resolve('') : readCachedFontPreviewImage(...args),
+    readCachedFontPreviewImages: (items: FontItem[], ...args: [string, number?, number?, number?]) => readCachedFontPreviewImages(items.filter(item => !trialFor(item)), ...args),
     ensureFontPreviewCache,
     invalidateLibraryShellCache
   }

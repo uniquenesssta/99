@@ -1,3 +1,4 @@
+import { usesResidentPreview, renderNativePreviewRequest } from '../nativePreviewRequestRuntime'
 import type { FontItem } from '@shared/types'
 import { SHARED_UNAVAILABLE_MESSAGE } from '@shared/sharedAvailability'
 import { getNativePreviewRequestLayout,normalizePreviewText,previewTextLines } from '@shared/preview-layout/previewTextFitRuntime'
@@ -165,6 +166,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     if ((failedPreviewUntil.get(failureKey) || 0) > Date.now()) return ''
     failedPreviewUntil.delete(failureKey)
     const previewRoute = resolveFontPreviewRoute(font)
+    const residentTrial = await usesResidentPreview(options.hfm) && !previewRoute.shouldSkipWebFontFileLoad
     if (previewRoute.shouldSkipWebFontFileLoad && options.previewFamilies[font.id]) {
       options.setPreviewFamilies((prev) => {
         if (!prev[font.id]) return prev
@@ -172,7 +174,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
         delete next[font.id]
         return next
       })
-    } else if (options.previewFamilies[font.id]) {
+    } else if (!residentTrial && options.previewFamilies[font.id]) {
       return options.previewFamilies[font.id]
     }
     if (font.previewDisabled && (font.previewError?.includes('字体文件不存在') || font.previewError?.includes('路径已失效'))) return ''
@@ -222,7 +224,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       try {
         const previewText = currentCardPreviewText(options.previewText)
         const previewLayout = currentCardPreviewLayout(options.previewText, options.listPreviewFontSize)
-        const image = await options.hfm.renderPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height)
+        const image = await renderNativePreviewRequest(options.hfm, font, previewText, previewLayout, () => isPreviewRequestCurrent(requestToken))
         if (!isPreviewRequestCurrent(requestToken)) return ''
         const missingFile = image.startsWith('data:image/svg+xml')
         const rememberMissingPlaceholder = optionsOverride?.rememberMissingPlaceholder !== false
@@ -263,6 +265,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     }
 
     try {
+      if (residentTrial) return await renderNativeCardPreview('DirectWrite 常驻预览试用。')
       if (options.failedPreviewFontIds[font.id]) {
         return await renderNativeCardPreview('Chromium WebFont 预览失败，已直接使用 Windows 原生图片预览。')
       }

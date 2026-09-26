@@ -7,7 +7,7 @@ permissions:
 jobs:
   directwrite-native:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v5
@@ -15,6 +15,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - run: npm ci --ignore-scripts
+      - run: npm run rust:build
+      - run: npm run diagnostics:mapped-drive-unicode
       - name: Compile against Windows SDK
         shell: cmd
         run: |
@@ -29,6 +31,8 @@ jobs:
         run: npm run test:directwrite-resident
       - name: Isolated font staging, local store and resident integration
         run: npm run diagnostics:directwrite-font-store && npm run test:directwrite-staging
+      - name: Foreground trial cache and native production owner
+        run: npm run diagnostics:directwrite-preview && node build/diagnostics/check-directwrite-preview-native.cjs
       - name: Real font object reuse, eviction and memory limits
         run: python build/diagnostics/check-directwrite-cache.py
       - name: Reject source mutations and restore executable

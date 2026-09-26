@@ -1,6 +1,7 @@
+import { renderNativePreviewRequest, usesResidentPreview } from '../preview/nativePreviewRequestRuntime'
 import type { FontItem } from '@shared/types'
 import { getNativePreviewRequestLayout } from '@shared/preview-layout/previewTextFitRuntime'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 
 export function useFontDetailNativePreviewRuntime(options: {
@@ -28,7 +29,10 @@ export function useFontDetailNativePreviewRuntime(options: {
     isBadFontRecord
   } = options
 
+  const [residentTrial, setResidentTrial] = useState(false)
+  useEffect(() => { let alive = true; void usesResidentPreview(hfm).then(value => { if (alive) setResidentTrial(value) }); return () => { alive = false } }, [hfm])
   useEffect(() => {
+    let active = true
     const requestId = requestSeqRef.current + 1
     requestSeqRef.current = requestId
 
@@ -37,12 +41,12 @@ export function useFontDetailNativePreviewRuntime(options: {
       return undefined
     }
 
-    if (selectedFontPreviewFamily && !selectedFont.previewDisabled) {
+    if (!residentTrial && selectedFontPreviewFamily && !selectedFont.previewDisabled) {
       setNativeDetailImage('')
       return undefined
     }
 
-    const shouldRenderNativeDetail = Boolean(selectedFont.previewDisabled || selectedFailedPreview || selectedNativePreviewImage)
+    const shouldRenderNativeDetail = Boolean(residentTrial || selectedFont.previewDisabled || selectedFailedPreview || selectedNativePreviewImage)
     if (!shouldRenderNativeDetail) {
       setNativeDetailImage('')
       return undefined
@@ -57,26 +61,27 @@ export function useFontDetailNativePreviewRuntime(options: {
       const loadDetailPreview = async (): Promise<void> => {
         if (typeof hfm.getCachedPreviewImage === 'function') {
           const cachedImage = await hfm.getCachedPreviewImage(fontForPreview, previewTextForRequest, detailNativeLayout.fontSize, detailNativeLayout.width, detailNativeLayout.height).catch(() => '')
-          if (requestSeqRef.current !== requestId) return
+          if (!active || requestSeqRef.current !== requestId) return
           if (cachedImage) {
             setNativeDetailImage(cachedImage)
             return
           }
         }
 
-        const image = await hfm.renderPreviewImage(fontForPreview, previewTextForRequest, detailNativeLayout.fontSize, detailNativeLayout.width, detailNativeLayout.height)
-        if (requestSeqRef.current !== requestId) return
+        const image = await renderNativePreviewRequest(hfm, fontForPreview, previewTextForRequest, detailNativeLayout, () => active && requestSeqRef.current === requestId)
+        if (!active || requestSeqRef.current !== requestId) return
         setNativeDetailImage(image)
       }
 
       void loadDetailPreview().catch(() => {
-        if (requestSeqRef.current !== requestId) return
+        if (!active || requestSeqRef.current !== requestId) return
         setNativeDetailImage(selectedNativePreviewImage || '')
       })
     }, 180)
 
     return () => {
+      active = false
       window.clearTimeout(timer)
     }
-  }, [selectedFont?.id, selectedFont?.previewDisabled, selectedFontPreviewFamily, selectedFailedPreview, selectedNativePreviewImage, previewText, detailVisible])
+  }, [selectedFont?.id, selectedFont?.previewDisabled, selectedFontPreviewFamily, selectedFailedPreview, selectedNativePreviewImage, previewText, detailVisible, residentTrial])
 }

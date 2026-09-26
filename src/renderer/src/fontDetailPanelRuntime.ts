@@ -1,3 +1,4 @@
+import { renderNativePreviewRequest } from './runtime/preview/nativePreviewRequestRuntime'
 import type { FontItem,LibraryState } from '@shared/types'
 import type React from 'react'
 import type { Dispatch,SetStateAction } from 'react'
@@ -33,6 +34,8 @@ export type FontDetailPanelRuntimeOptions = {
   deactivateFontByCard: (font: FontItem) => Promise<void>
 }
 
+let manualPreviewGeneration = 0
+
 export function createFontDetailPanelRuntime(options: FontDetailPanelRuntimeOptions): {
   selectedPreviewFamily: string
   closeDetail: () => void
@@ -50,6 +53,7 @@ export function createFontDetailPanelRuntime(options: FontDetailPanelRuntimeOpti
     selectedPreviewFamily: options.selectedFont ? options.previewFamilies[options.selectedFont.id] : '',
 
     closeDetail(): void {
+      manualPreviewGeneration++
       flushSync(() => {
         options.setSelectedFontId('')
         options.setDetailVisible(false)
@@ -57,6 +61,7 @@ export function createFontDetailPanelRuntime(options: FontDetailPanelRuntimeOpti
     },
 
     toggleFontDetail(font: FontItem): void {
+      manualPreviewGeneration++
       const closing = options.detailVisible && options.selectedFontId === font.id
       flushSync(() => {
         options.setSelectedFontId(closing ? '' : font.id)
@@ -65,15 +70,19 @@ export function createFontDetailPanelRuntime(options: FontDetailPanelRuntimeOpti
     },
 
     async generateDetailNativePreview(font: FontItem): Promise<void> {
+      const generation = ++manualPreviewGeneration
+      const current = () => generation === manualPreviewGeneration
       try {
-        const image = await options.hfm.renderPreviewImage(font, options.library.previewText, 54, 760, 320)
-        options.setNativeDetailImage(image)
+        const image = await renderNativePreviewRequest(options.hfm, font, options.library.previewText,
+          { fontSize: 54, width: 760, height: 320 }, current)
+        if (current()) options.setNativeDetailImage(image)
       } catch {
-        options.setNativeDetailImage('')
+        if (current()) options.setNativeDetailImage('')
       }
     },
 
     setPreviewText(value: string): void {
+      manualPreviewGeneration++
       options.setLibrary((prev) => ({ ...prev, previewText: value }))
     },
 

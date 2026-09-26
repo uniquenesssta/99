@@ -29,6 +29,7 @@ export interface MainDataCompositionOptions {
     | 'resolveExistingFontFilePath'
     | 'ensureWindows'
     | 'authorizeFontRead'
+    | 'getFontReadPolicy'
     | 'missingFontPreviewDataUri'
   >;
   comparison: Pick<Core['comparison'],
@@ -80,6 +81,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     resolveExistingFontFilePath,
     ensureWindows,
     authorizeFontRead,
+    getFontReadPolicy,
     missingFontPreviewDataUri,
   } = options.windows;
   const {
@@ -242,6 +244,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     ensureFontPreviewCache,
     invalidateLibraryShellCache: invalidatePreviewLibraryShellCache,
   } = createPreviewRuntime({
+    localDataRoot: () => options.paths.dataPath(),
     cacheKeyForRootFile,
     rootPreviewCacheDir,
     rootPreviewImageDir,
@@ -264,6 +267,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     ensureWindows,
     resolveExistingFontFilePath,
     authorizeFontRead,
+    getFontReadPolicy,
     previewTaskKey,
     completeBackgroundTask,
     skipBackgroundTask,

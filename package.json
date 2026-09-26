@@ -187,7 +187,9 @@
     "test:directwrite-cache": "python build/diagnostics/check-directwrite-cache.py",
     "test:directwrite-native": "python build/diagnostics/check-directwrite-native.py",
     "diagnostics:directwrite-service": "node build/diagnostics/check-directwrite-service.cjs",
-    "test:directwrite-resident": "python build/diagnostics/check-directwrite-resident.py && node build/diagnostics/check-directwrite-service.cjs --native"
+    "test:directwrite-resident": "python build/diagnostics/check-directwrite-resident.py && node build/diagnostics/check-directwrite-service.cjs --native",
+    "dev:dw": "node build/preview/run-directwrite-dev.cjs",
+    "diagnostics:directwrite-preview": "node build/diagnostics/check-directwrite-preview.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

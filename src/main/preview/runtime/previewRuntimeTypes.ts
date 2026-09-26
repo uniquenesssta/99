@@ -26,6 +26,8 @@ export interface PreviewImageFileResult {
 }
 
 export interface PreviewRuntimeOptions {
+  localDataRoot: () => string
+  getFontReadPolicy: () => import('../../path/fontPathAuthorizationRuntime').FontPathAuthorizationRuntimeOptions
   cacheKeyForRootFile: (rootPath: string, filePath: string) => string
   rootPreviewCacheDir: (rootPath: string) => string
   rootPreviewImageDir: (rootPath: string) => string

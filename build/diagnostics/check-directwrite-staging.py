@@ -8,7 +8,7 @@ def network():
     # Controlled loopback SMB is not a claim of real NAS outage acceptance.
     with tempfile.TemporaryDirectory(prefix='hfm-dw-smb-') as temp:
         root=pathlib.Path(temp).resolve(); (root/'source.ttf').write_bytes(b'smb private font')
-        share='HfmDw'+str(os.getpid()); remote='\\\\localhost\\'+share
+        share='HfmDw中文_日本 '+str(os.getpid()); remote='\\\\localhost\\'+share
         drive=next((c+':' for c in 'ZYXWVUTSR' if not pathlib.Path(c+':/').exists()),None)
         assert drive, 'fixture requires a free drive letter'
         def ps(script):
@@ -19,6 +19,12 @@ def network():
             assert made.returncode==0,(made.stdout,made.stderr);created=True
             p=subprocess.run(['net','use',drive,remote,'/persistent:no'],capture_output=True,text=True,timeout=30)
             assert p.returncode==0,(p.stdout,p.stderr);mapped=True
+            worker=pathlib.Path('build/native/hfm-core-worker.exe').resolve()
+            for _ in range(3):
+                native=subprocess.run([str(worker),'--mapped-drive-table'],capture_output=True,encoding='utf-8',timeout=1.5)
+                assert native.returncode==0,(native.stdout,native.stderr)
+                table={row['drive']:row['remote'] for row in json.loads(native.stdout)}
+                assert table[drive].lower()==remote.lower(),table
             unc=remote+'\\source.ttf'; target=root/'copy.font'
             _,r=stage(unc,unc,target);assert r['ok'] and target.read_bytes()==b'smb private font';target.unlink()
             _,r=stage(drive+'\\source.ttf',unc,target);assert r['ok'];target.unlink()
@@ -28,6 +34,7 @@ def network():
                 assert not json.loads(p.stdout)['ok'] and not (root/'bad.png').exists()
             environment=dict(os.environ,HFM_DW_TEST_SOURCE_ROOT=remote)
             subprocess.run(['node','build/diagnostics/check-directwrite-staging-integration.cjs'],env=environment,check=True,timeout=60)
+            subprocess.run(['node','build/diagnostics/check-directwrite-preview-native.cjs'],env=environment,check=True,timeout=60)
             removed=ps("Remove-SmbShare -Name '"+share+"' -Force -Confirm:$false"); assert removed.returncode==0;created=False
             _,r=stage(unc,unc,target);assert not r['ok'] and not target.exists()
         finally:

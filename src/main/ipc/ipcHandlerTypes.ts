@@ -160,6 +160,7 @@ export interface IpcHandlerRuntime {
     fontSize: number,
     width: number,
     height: number,
+    admission?: import("../preview/native-renderer/directwriteFontStore").FontAdmission,
   ) => unknown | Promise<unknown>;
   readCachedFontPreviewImage: (
     item: FontItem,

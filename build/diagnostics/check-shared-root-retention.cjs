@@ -67,9 +67,10 @@ async function stateCases() {
   passed('state transitions, aliases, in-flight coalescing, stale result, restart')
 
   let probes=0, processCalls=0, synchronous=0
-  const winLoad=stateLoader({'node:fs':{promises:{stat:async()=>{probes++;throw Error('ENETUNREACH')}}},'node:child_process':{
+  const winLoad=stateLoader({'node:fs':{promises:{stat:async()=>{probes++;throw Error('ENETUNREACH')}}},[path.join(root,'src/main/rust-core/rustCoreWorkerPathRuntime.ts')]:{resolveRustCoreWorkerPath:()=> 'native-worker.exe'},
+    'node:child_process':{
     execFileSync(){synchronous++;throw Error('must not block')},
-    execFile(file,args,options,done){processCalls++;assert.equal(file,'powershell.exe');assert.equal(args[3],'-EncodedCommand');assert.equal(options.shell,false);assert.equal(options.timeout,1500);setImmediate(()=>done(null,Buffer.from(JSON.stringify([{drive:'O:',remote:'\\\\nas\\share'}])).toString('base64')))}
+    execFile(file,args,options,done){processCalls++;assert.equal(file,'native-worker.exe');assert.equal(args[0],'--mapped-drive-table');assert.equal(options.shell,false);assert.equal(options.timeout,1500);setImmediate(()=>done(null,JSON.stringify([{drive:'O:',remote:'\\\\nas\\share'}])))}
   }},{process:{...process,platform:'win32'}},transforms)
   const win=winLoad(stateFile)
   assert.equal(await win.ensureStartupPathRootAvailable('O:\\fonts'),false)
@@ -80,7 +81,8 @@ async function stateCases() {
   assert.equal(mapping.get('O:'),'\\\\nas\\share')
   passed('mapped drive async classification, shared UNC identity, TTL')
   let attempts=0
-  const failed=stateLoader({'node:child_process':{execFile(f,a,o,cb){attempts++;setImmediate(()=>cb(Error('timeout')))}},'node:fs':{promises:{stat:async()=>{throw Error('disconnected')}}}}, {process:{...process,platform:'win32'}},transforms)
+  const failed=stateLoader({[path.join(root,'src/main/rust-core/rustCoreWorkerPathRuntime.ts')]:{resolveRustCoreWorkerPath:()=> 'native-worker.exe'},
+    'node:child_process':{execFile(f,a,o,cb){attempts++;setImmediate(()=>cb(Error('timeout')))}},'node:fs':{promises:{stat:async()=>{throw Error('disconnected')}}}}, {process:{...process,platform:'win32'}},transforms)
   assert.equal(await failed(stateFile).ensureStartupPathRootAvailable('P:\\fonts'),false)
   assert.equal(await failed(stateFile).ensureStartupPathRootAvailable('P:\\fonts'),false)
   assert.equal(attempts,1)

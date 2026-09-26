@@ -1,4 +1,5 @@
 mod commands;
+mod mapped_drives;
 mod shared_file_io;
 mod isolated_lifetime;
 mod config;

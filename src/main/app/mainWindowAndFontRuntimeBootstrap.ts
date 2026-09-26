@@ -42,7 +42,7 @@ export function createMainWindowAndFontRuntime(
     runRustFontChangeNotify: deps.runRustFontChangeNotify,
   });
 
-  const fontPathAuthorizationRuntime = createFontPathAuthorizationRuntime({
+  const fontReadPolicy = {
     fontExtensions: deps.fontExtensions,
     readRoots: async () => [
       ...(await deps.loadWatchedFontRoots()),
@@ -52,7 +52,8 @@ export function createMainWindowAndFontRuntime(
     watchedRoots: deps.loadWatchedFontRoots,
     appOwnedRoots: () => [windowsFontRuntime.currentUserFontsDir()],
     isMainProcessIndexedFont: deps.isMainProcessIndexedFont,
-  });
+  };
+  const fontPathAuthorizationRuntime = createFontPathAuthorizationRuntime(fontReadPolicy);
 
   const windowRuntime = createWindowRuntime({
     appName: deps.appName,
@@ -75,5 +76,6 @@ export function createMainWindowAndFontRuntime(
     ...progressEventRuntime,
     ...windowsFontRuntime,
     ...fontPathAuthorizationRuntime,
+    getFontReadPolicy: () => fontReadPolicy,
   };
 }

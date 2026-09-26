@@ -1,17 +1,24 @@
+import { residentPreviewEnabled } from '../../preview/runtime/previewBackendPolicy';
+import { createPreviewRenderAdmissionRuntime } from '../../preview/runtime/previewRenderAdmissionRuntime';
 import { shell } from "electron";
 import { createPreviewRequestSchedulerRuntime } from "../../preview/runtime/previewRequestSchedulerRuntime";
 import type { FontItem } from "../../../shared/types";
 import type { IpcHandleRegistrar,IpcHandlerRuntime } from "../ipcHandlerTypes";
 
 export function registerPreviewAndFolderIpcHandlers(handle: IpcHandleRegistrar, runtime: IpcHandlerRuntime): void {
+  const admission = createPreviewRenderAdmissionRuntime();
+  handle('fonts:getPreviewBackend', () => residentPreviewEnabled() ? 'directwrite-resident' : 'current');
+  handle('fonts:cancelPreviewImage', (event, token: string) => admission.cancel(event.sender, token));
   const previewRequestScheduler = createPreviewRequestSchedulerRuntime({
     readCachedPreviewImages: (items, text, fontSize, width, height) => runtime.readCachedFontPreviewImages(items, text, fontSize, width, height) as Promise<Record<string, string>>,
     appendStartupLog: runtime.appendLog
   });
   handle("path:toFontUrl", (_event, filePath: string) => `hfm-font://local/${encodeURIComponent(filePath)}`);
   handle("fonts:readPreviewFontData", (_event, item: FontItem) => runtime.readPreviewFontData(item));
-  handle("fonts:renderPreviewImage", (_event, item: FontItem, text: string, fontSize: number, width: number, height: number) =>
-    runtime.renderFontPreviewImage(item, text, fontSize, width, height),
+  handle("fonts:renderPreviewImage", (event, item: FontItem, text: string, fontSize: number, width: number, height: number, token?: string) =>
+    residentPreviewEnabled()
+      ? admission.run(event.sender, token || 'legacy-request', request => Promise.resolve(runtime.renderFontPreviewImage(item, text, fontSize, width, height, request)))
+      : runtime.renderFontPreviewImage(item, text, fontSize, width, height),
   );
   handle("fonts:getCachedPreviewImage", (_event, item: FontItem, text: string, fontSize: number, width: number, height: number) =>
     runtime.readCachedFontPreviewImage(item, text, fontSize, width, height),

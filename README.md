@@ -68,6 +68,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-26：DW-05 接入验证中。新增 `npm run dev:dw` 开发试用入口（自动调用已有 C++ 构建），开发者页显示后端；未安装字体列表/详情进入按需授权副本和常驻 DirectWrite，窗口令牌取消、过期拒绝、内容摘要/face 0/绘制语义图片键、本地原子发布与既有本地淘汰接通。当前索引仍一文件一条、face 0；已安装字体与默认 `npm run dev` 保持原路径；试验不进行背景全库生成或共享图片发布。允许的原生失败重新授权后最多一次当前后端回退，取消/离线/越权不回退。用户同时授权修复 CIM：现有 Rust worker 新增 `WNetGetConnectionW` Unicode 映射查询，替换 PowerShell/CIM，保留 1500ms、合并/TTL/失败冷却与身份未知拒绝；缺失/过旧 worker 会拒绝映射身份，`npm run dev` 的原有 Rust 构建负责更新。自动验证结果待本轮 Windows 运行记录；未声称实机收益或关闭 DW-06/07。
+
 - 2026-09-26：完成 DW-04 网络字体按需本地化：授权元数据与字体读取均通过现有 Shared I/O 隔离，句柄真实路径/SHA-256/根代次核验，本地副本单文件 64MiB、总量 512MiB/128 项，活跃租约保护、原子发布、取消后真实退出再清理及受控残留恢复。Windows 本地与实际 loopback SMB 全链路、UNC/映射盘、同 size/mtime 替换、junction/越界、复制中断及离线拒绝通过；9 个 C++ 与 6 个 TS 源码变异门通过（Actions `36240067541`，代码 `ca27f82`）。本地 typecheck/150 项诊断、384/1/204 构建与 3/3 混淆通过。独立 CIM 1500ms 门仍失败（1517ms），未改期限。每次仍校验源摘要，不宣称减少 NAS 读取；默认后端、激活和既有图片缓存保持，GUI 入口留给 DW-05。详见[任务书 §14](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#14-dw-04-执行范围2026-09-26)。
 
 - 2026-09-26：完成 DW-03 原生字体对象复用：按路径/内容 SHA-256/源代次/face 建立有界 LRU，每项复用隔离 factory、内存 loader、face 与私有 collection，淘汰同时释放内部缓存；源文件读取后立即释放句柄，COM/D2D/WIC 会话跨请求保持。固定 128 项/256MiB 缓存及 512MiB 进程限额，常驻协议升级为 2 并核验摘要与真实资源指标；单次 CLI 和默认 UI 后端保持。Windows 1153 次请求验证复用、同 size/mtime 替换、文件释放与淘汰，1000 次切换私有内存稳定，大文件峰值约 308MiB；7 个 C++ / 4 个 TS 源码变异、原图像/取消/父死门均通过（Actions `36238266759`）。本地 typecheck/149 项诊断、构建/混淆通过；当前仍逐次校验本地字体内容，网络副本与界面入口留待 DW-04/05，不据此宣称端到端提速。详见[试验任务书 §13](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#13-dw-03-执行卡)。
