@@ -68,7 +68,7 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-26：开始 DW-01 独立原生验证入口，新增系统 DirectWrite 私有单 face 字体集、真实排版/轮廓绘制及透明 PNG；拒绝网络/reparse 路径、错误 face 和变量字体，输出不覆盖已有文件。新增原创 TTF/CFF/TTC 夹具与 Windows 图像诊断、独立构建门，覆盖空串默认文字及真实源码变异；尚未接入默认预览，原生 CI 与实机视觉验收待收。见[试验任务书 §11](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#11-dw-01-执行卡)。
+- 2026-09-26：开始 DW-01 独立原生验证入口，新增系统 DirectWrite 私有单 face 字体集、真实排版/轮廓绘制及透明 PNG；拒绝网络/reparse 路径、错误 face 和变量字体，输出不覆盖已有文件。新增原创 TTF/CFF/TTC 夹具与 Windows 图像诊断、独立构建门，覆盖空串默认文字及真实源码变异；Windows 原生 27 项与 2 项源码变异通过，本地 typecheck/148 项诊断、构建和混淆 3/3 通过。尚未接入默认预览/常驻服务，实机视觉及性能待验；旧完整 Windows 门仍受 CIM 1500ms 失败阻塞。见[试验任务书 §11](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#11-dw-01-执行卡)。
 
 - 2026-09-26：新建 `stage/dw-resident-directwrite-preview`，开始 DW-00 首批：可关闭的主进程预览关联计时、真实 GDI+ 引擎与 daemon/隔离进程记录、缓存/排队观察及分组报告。typecheck、148 项诊断、三端构建与混淆 3/3 通过。保持当前渲染后端；renderer 可见终点和 Windows/NAS 基线待补，DW-00 尚未验收。操作与验证见[试验任务书 §10](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#10-dw-00-首批执行边界)。
 

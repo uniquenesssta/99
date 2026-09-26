@@ -1,6 +1,6 @@
 # HanFontManager 修复与编排重构总任务书
 
-> 2026-09-26 新试验任务书：[常驻 DirectWrite 预览](HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md)。DW-00 首批关联诊断已交付、实机待验；按用户授权开始 DW-01 原生最小实现，默认后端保持不变；其他一般性能优化暂停，55 字体解析与 CIM 失败单列。该试验不覆盖 C-09/O-07 验收。
+> 2026-09-26 新试验任务书：[常驻 DirectWrite 预览](HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md)。DW-00 首批关联诊断已交付、实机待验；按用户授权完成 DW-01 原生最小实现与独立 Windows 自动验证，默认后端保持不变；其他一般性能优化暂停，55 字体解析与 CIM 失败单列。该试验不覆盖 C-09/O-07 验收。
 
 
 > 2026-09-26 扫盘故障继续修复：用户报告 request=330 实际执行 30010ms 后再次失败，要求立即解决。按最新授权继续修复扫描与 watcher 重复 I/O；网络逐目录属性批次及 UI 失败收尾已实现，本地 typecheck + 147 项完整诊断、构建/混淆通过，修复 `ecaf8ab` 的 Windows/Linux 原生专项、真实 worker 4096 文件单目录请求、相关回归、构建/混淆通过（Actions `36221272200`）。CIM 原有失败门仍保留（1513ms/1500ms）；C-09/O-07 不宣称完成。当前入口见专项 §10.4。

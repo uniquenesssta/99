@@ -4,7 +4,7 @@
 
 - 文档版本：1.1；日期：2026-09-26；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；试验分支：`stage/dw-resident-directwrite-preview`（用户已明确授权新建）；起点：`7d220c3d041291d4480210303ceae5dc3731145e`（渲染代码沿用此前版本，扫描修复为 `ecaf8ab`）。
-- 当前状态：**DW-00 进行中；DW-01 进行中，DW-02～DW-08 未实施**。用户已授权新建分支并开始 DW-00；本轮实施主进程逐请求诊断和行为锁，不启用新后端。
+- 当前状态：**DW-00 实机基线待验；DW-01 原生实现及独立 Windows 自动验收通过；DW-02～DW-08 未实施**。用户已授权继续 DW-01，交付独立原生入口；默认预览不切换，常驻服务与 UI 接入仍未实施。
 - 用户目标：尝试常驻 DirectWrite 是否能改善未安装字体预览，特别是连续浏览、修改文字与字号；没有要求全面重做预览系统。
 - 用户已接受剩余一般延迟，其他性能优化暂停。本试验不借机扩展为扫描、全库缓存、标签、收藏、激活或数据库重构。
 - 继续遵守 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[共享离线与本地退出](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md)、[索引与 Shared I/O 专项](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)、[Stage 3 文件与预览边界](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md) 及项目规则。
@@ -203,7 +203,7 @@ flowchart TD
 - 最新日志已确认扫描修复生效，其他一般延迟按用户决定暂停；55 字体解析和 CIM 问题仍单列待查。
 - 已核对 Microsoft DirectWrite factory 文档：factory 可保存字体 loader 注册和缓存数据，支持状态复用；文档不证明本项目的实际收益。DW-00/DW-01 使用新增 API 前须按 AGENTS 用 Context7 核对目标 SDK/系统支持，必要时补官方文档。
 - Mermaid Chart 已展示当前真实链路；新服务实施后再更新架构图，不能提前画作已落地。
-- Create State 最近返回 UNAUTHORIZED，需重新认证；以本书与 Git 为可恢复依据，不因外部状态保存失败阻断文档交付。
+- Create State 建立任务书时曾返回 UNAUTHORIZED；DW-00 交付时已恢复并成功保存。Git 与任务书仍为主要恢复依据。
 
 参考：[DWriteCreateFactory](https://learn.microsoft.com/en-us/windows/win32/api/dwrite/nf-dwrite-dwritecreatefactory)、[DWRITE_FACTORY_TYPE](https://learn.microsoft.com/en-us/windows/win32/api/dwrite/ne-dwrite-dwrite_factory_type)。
 
@@ -295,4 +295,26 @@ DW-00 CI `36231611578`：Windows 预览基线诊断通过；Windows/Linux direct
 
 夹具轮廓为项目原创 CC0，固定字体名相同但几何不同，包含 TTF、CFF、TTC 两 face、连字、组合字符、代理对、中英文/RTL、缺字、空白/换行与 fvar 拒绝；不用系统已安装字体掩盖私有加载。生成器仅开发重建需要 fontTools 4.61.1；提交的 base64 夹具及 Windows 诊断只用 Python 标准库，无运行依赖。两项源码变异重新编译真实 exe：强制 TTC face=0、移除输入限制；编译失败不得当作测试有效，最后恢复源码并重建/重验正确 exe。
 
-首轮 Windows CI `36233697917`：MSVC 编译通过，图像用例在空字符串断言处失败；已确认旧语义为空串使用默认文字，修正测试期待，不更改生产语义。最终 CI 结果待收。本项完成原生独立调用不代表 DW-02 常驻/DW-05 UI 已接通，也不关闭 DW-00 实机性能缺口。
+首轮 Windows CI `36233697917`：MSVC 编译通过，图像用例在空字符串断言处失败；已确认旧语义为空串使用默认文字，修正测试期待，不更改生产语义。修正后的 Windows 原生 CI 已通过，证据见 §11.2。本项完成原生独立调用不代表 DW-02 常驻/DW-05 UI 已接通，也不关闭 DW-00 实机性能缺口。
+
+### 11.2 验证结果与交付
+
+- 原生实现提交 `eb25c1d`，空串语义/变异补强提交 `6030bc6`。Windows 原生 CI [36233853827](https://github.com/uniquenesssta/99/actions/runs/36233853827) 全部通过：MSVC 真正编译、27 个真实 API/PNG 用例、2 项真实源码变异拒绝、恢复源码后重建并重跑 27 项。产物为该 CI 的 `directwrite-native-proof`，不是默认运行时更新。
+- 验证了相同 family 名的两份私有文件不会串用；TTC face 0/1 与对应独立 TTF 图像匹配且互不相同；同轮廓 CFF/TTF 像素一致；连字轮廓比例、上下沿/居中、前景 straight-alpha、空白/空串默认、缺字回执及输入限额通过。变量字体明确拒绝，源文件可在进程完成后改名/删除，已有输出保留。
+- `npm run verify` 退出 0（typecheck、148/148），Electron/Vite 构建退出 0，混淆退出 0（3/3），`git diff --check` 通过。本地 Linux 没有 MSVC/DirectWrite；其原生测试明确退出并提示 Windows required，没有假报通过。
+- 完整 Windows 旧门仍在 `mapped-drive-unicode` 的 CIM 1500ms 查询失败；该门未删除或加时。DW-01 有独立真实原生门，但不能称完整 Windows 门全绿。
+- 本次 Windows 原生 CI 使用托管 runner 的 VS 2026 v18.10.1；接口按系统 Win10 API 设计，用户 Win10/VS2022 本机、真实商业字体和字体集合视觉质量仍待实测。中文/RTL 夹具只证明码点、排版通路和边界，不替代真实复杂字体视觉验收。
+- 仍未实现/未验收：持久进程与对象复用、网络字体本地化、UI/图片缓存接入、父死/有界退出、真实 NAS 与端到端性能。没有提速结论，没有默认切换。下一项 DW-02 从现有原生绘制职责复用，不新建第二套渲染实现。
+
+当前独立链路：
+
+```mermaid
+flowchart TD
+  A[原生测试命令] --> B[本地路径和输入校验]
+  B --> C[私有单 face 字体集]
+  C --> D[DirectWrite 排版和轮廓]
+  D --> E[Direct2D 透明位图]
+  E --> F[WIC PNG 和真实回执]
+```
+
+该链路尚未连接 Electron 前台，Mermaid Chart 已同步展示；Context7/API 核对见 §11。
