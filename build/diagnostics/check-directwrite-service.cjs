@@ -93,6 +93,8 @@ async function timeoutAndFreeze() {
  }finally{await s.close()}
  const missing=setup({args:['--no-ready'],deadlineMs:100})
  try{await assert.rejects(missing.render('hang'),/TIMEOUT/)}finally{await missing.close()}
+ const old=setup({args:['--old-ready']})
+ try{await assert.rejects(old.render('anything'),/HANDSHAKE_INVALID/);assert(!old.events().some(e=>e.type==='request'))}finally{await old.close()}
  const startup=setup({args:['--no-ready'],deadlineMs:5000})
  try{await assert.rejects(startup.render('hang'),/START_TIMEOUT/)}finally{await startup.close()}
 }

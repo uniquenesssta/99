@@ -17,10 +17,10 @@ def receive(lines):
     assert line is not None, 'process closed without receipt'
     return json.loads(line)
 
-def frame(font, output, request_id=1, generation=7, text='A', face=0, source_generation=3, font_identity=None, width=720, height=260):
+def frame(font, output, request_id=1, generation=7, text='A', face=0, source_generation=3, font_identity=None, width=720, height=260, font_size=44.0):
     if font_identity is None:
         font_identity=hashlib.sha256(Path(font).read_bytes()).hexdigest()
-    data = struct.pack('<8Id',2,generation,request_id,source_generation,1,face,width,height,44.0) + font_identity.encode('ascii') + b'b'*32
+    data = struct.pack('<8Id',2,generation,request_id,source_generation,1,face,width,height,font_size) + font_identity.encode('ascii') + b'b'*32
     for value in [str(font),text,str(output)]:
         encoded=value.encode('utf-16le'); data += struct.pack('<I',len(encoded)//2)+encoded
     return struct.pack('<I',len(data))+data

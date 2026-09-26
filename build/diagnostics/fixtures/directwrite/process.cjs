@@ -7,7 +7,7 @@ const event = value => fs.appendFileSync(log, JSON.stringify({pid:process.pid,..
 const send = value => process.stdout.write(JSON.stringify(value)+'\n')
 event({type:'spawn'})
 if (process.argv.includes('--no-ready')) setInterval(()=>{},1000)
-else send({type:'ready',protocolVersion:2,renderVersion:1,engine:'directwrite',resident:true,serviceGeneration:generation,parentPid,variableFonts:false,cacheVersion:1})
+else send({type:'ready',protocolVersion:process.argv.includes('--old-ready')?1:2,renderVersion:1,engine:'directwrite',resident:true,serviceGeneration:generation,parentPid,variableFonts:false,cacheVersion:1})
 let buffer=Buffer.alloc(0)
 process.stdin.on('end',()=>process.exit())
 process.stdin.on('data',chunk=>{

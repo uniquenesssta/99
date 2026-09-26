@@ -14,11 +14,11 @@ def main():
         fixtures=json.loads((ROOT/'build/diagnostics/fixtures/directwrite/fonts.json').read_text())
         for name,data in fixtures.items():(directory/name).write_bytes(base64.b64decode(data))
         p,lines=wire.child_process();sequence=0;peak=0
-        def draw(font='narrow.ttf',text='A',face=0,source=3,expected=None,ok=True):
+        def draw(font='narrow.ttf',text='A',face=0,source=3,expected=None,ok=True,size=44.0):
             nonlocal sequence,peak
             sequence+=1;file=directory/font;output=directory/f'output-{sequence}.png'
             digest=hashlib.sha256(file.read_bytes()).hexdigest() if expected is None else expected
-            p.stdin.write(wire.frame(file,output,sequence,text=text,face=face,source_generation=source,font_identity=digest,width=64,height=32));p.stdin.flush()
+            p.stdin.write(wire.frame(file,output,sequence,text=text,face=face,source_generation=source,font_identity=digest,width=64,height=32,font_size=size));p.stdin.flush()
             result=wire.receive(lines);assert result['ok']==ok,result
             cache=result['cache'];assert cache['entries']<=128 and cache['bytes']<=256*1024*1024,cache
             assert cache['liveEntries']==cache['entries'] and cache['liveBytes']<=cache['bytes'],cache
@@ -32,6 +32,8 @@ def main():
             assert first['fontObjectId']==second['fontObjectId']==third['fontObjectId']
             assert third['cache']['loads']==1 and third['cache']['hits']==2
             assert third['cache']['sourceReads']==3,'unverified caller identity bypassed source read'
+            sized,sized_image=draw(size=8.0)
+            assert sized['cacheHit'] and sized['fontObjectId']==first['fontObjectId'] and sized_image!=image,'font size change reused old layout'
             wide,wide_image=draw('wide.ttf');assert wide_image!=image and wide['fontObjectId']!=first['fontObjectId']
             face0,face0_image=draw('faces.ttc',face=0);face1,face1_image=draw('faces.ttc',face=1)
             assert face0_image==image and face1_image==wide_image and face0['fontObjectId']!=face1['fontObjectId']
