@@ -134,38 +134,42 @@ async function preview() {
   const app={PREVIEW_STATE_LRU_LIMIT:800,pruneRecordByKeyLimit:x=>x,rendererMemoryPressure:()=> 'normal',requestIdleWindow:fn=>{timers.set(++timerId,fn);return timerId},MAX_CONCURRENT_PREVIEW_LOADS:3,SCROLLING_PREVIEW_LOADS:1,INDEXING_PREVIEW_LOADS:1}
   const window={setTimeout:fn=>{timers.set(++timerId,fn);return timerId},clearTimeout:id=>timers.delete(id),cancelIdleCallback:id=>timers.delete(id)}
   const load=loadFor({react,'../../../appRuntime':app,'../../../rendererPerformance':{reportRendererTrace(){}},'./fontPreviewQuickFallbackRuntime':{},'../../appRuntime':app},{window})
-  const calls=[],font={id:'a',path:'/audit/a.ttf',fileName:'a.ttf'}, options={previewText:'audit',listPreviewFontSize:39,selectedFontId:'',selectedFontIds:[],indexingActive:false,rendererUserActive:()=>false,isBadFontRecord:()=>false,setStatus(){},updateFont(){},hfm:{getCachedPreviewImages:(fonts,text,fontSize)=>{const g=deferred();calls.push({g,text,fontSize,ids:fonts.map(f=>f.id)});return g.promise}}}
+  const calls=[],native=[],font={id:'a',path:'/audit/a.ttf',fileName:'a.ttf',systemInstalled:true}, options={previewText:'audit',listPreviewFontSize:39,selectedFontId:'',selectedFontIds:[],indexingActive:false,rendererUserActive:()=>false,isBadFontRecord:()=>false,setStatus(){},updateFont(){},hfm:{renderPreviewImage:async(f,text,fontSize)=>{native.push({id:f.id,text,fontSize});return `data:image/png;base64,native-${text}-${fontSize}-${f.id}`},getCachedPreviewImages:(fonts,text,fontSize)=>{const g=deferred();calls.push({g,text,fontSize,ids:fonts.map(f=>f.id)});return g.promise}}}
   const hook=load(files.preview).usePreviewController
   const render=()=>{cursor=0;const value=hook(options);while(effects.length)effects.shift()();return value}
   let controller=render();controller.requestPreviewFont(font,'high');controller.processPreviewQueue();assert.equal(calls.length,1)
   controller=render();controller.processPreviewQueue();assert.equal(calls.length,1,'rerender duplicated pending batch')
-  options.previewText='new';controller=render();controller.requestPreviewFont(font,'high');assert.equal(calls.length,2)
-  calls[0].g.resolve({a:'old-image'});await tick();controller=render();assert.equal(controller.nativePreviewImages.a,undefined,'old token applied image')
-  controller.processPreviewQueue();assert.equal(calls.length,2,'old completion released new in-flight gate')
-  calls[1].g.resolve({a:'new-image'});await tick();controller=render();assert.equal(controller.nativePreviewImages.a,'new-image')
-  // U-08: revisiting and user-state changes reuse the existing image in this owner.
+  options.previewText='new';controller=render();controller.requestPreviewFont(font,'high');assert.equal(calls.length,1,'reset released pending cache IPC')
+  await tick();controller=render();assert.equal(controller.nativePreviewImages.a,'data:image/png;base64,native-new-39-a')
+  calls[0].g.resolve({a:'old-image'});await tick();controller=render();assert.equal(controller.nativePreviewImages.a,'data:image/png;base64,native-new-39-a','old token applied image')
+  assert.equal(native.length,1)
+  controller.requestPreviewFont({...font,id:'b'},'high');assert.equal(calls.length,2)
+  calls[1].g.resolve({b:'new-image'});await tick();controller=render();assert.equal(controller.nativePreviewImages.b,'new-image')
+  // Revisit/user state changes reuse the existing owner and image.
   for (const active of [false, true, false]) {
     options.selectedFontIds = active ? ['a'] : []
     controller = render()
     controller.requestPreviewFont({ ...font, active, favorite: active }, 'high')
     controller.processPreviewQueue()
     assert.equal(calls.length, 2, 'unchanged text/size regenerated an in-memory preview')
-    assert.equal(controller.nativePreviewImages.a, 'new-image')
+    assert.equal(native.length,1)
   }
-  // An IPC error is not a persistent cache miss: defer, then re-read the batch.
-  controller.requestPreviewFont({...font,id:'b'},'high');assert.equal(calls.length,3)
-  calls[2].g.reject(Error('temporary IPC failure'));await tick();assert(timers.size>0)
-  const retry=[...timers.values()].at(-1);timers.clear();retry();assert.equal(calls.length,4,'batch error lost retry')
-  // StrictMode cleanup/setup keeps the owner but invalidates its old work.
+  // S10-04: rejected batch advances to loading, never loops in cache retries.
+  controller.requestPreviewFont({...font,id:'c'},'high');assert.equal(calls.length,3)
+  calls[2].g.reject(Error('temporary IPC failure'));await tick();controller=render()
+  assert.equal(calls.length,3);assert.equal(controller.nativePreviewImages.c,'data:image/png;base64,native-new-39-c')
+  // StrictMode cleanup/setup retains the pending cache slot and rejects its old result.
+  controller.requestPreviewFont({...font,id:'d'},'high');assert.equal(calls.length,4)
   for(const slot of slots)if(slot?.setup){slot.cleanup?.();slot.cleanup=slot.setup()}
-  controller.processPreviewQueue();assert.equal(calls.length,5,'cleanup/setup did not resume pending queue')
-  calls[3].g.resolve({b:'disposed-image'});await tick();controller=render()
-  assert.equal(controller.nativePreviewImages.b,undefined,'disposed request applied after resume')
-  controller.processPreviewQueue();assert.equal(calls.length,5,'disposed completion released resumed batch')
-  controller.requestPreviewFont({...font,id:'c'},'normal');assert(timers.size>0)
+  controller.processPreviewQueue();assert.equal(calls.length,4,'cleanup/setup released pending cache slot')
+  await tick();controller=render();assert.equal(controller.nativePreviewImages.d,'data:image/png;base64,native-new-39-d')
+  calls[3].g.resolve({d:'disposed-image'});await tick();controller=render()
+  assert.equal(controller.nativePreviewImages.d,'data:image/png;base64,native-new-39-d','disposed request applied after resume')
+  controller.requestPreviewFont({...font,id:'e'},'normal');assert(timers.size>0)
+  controller.requestPreviewFont({...font,id:'f'},'high');assert.equal(calls.length,5)
   for(const slot of slots)slot?.cleanup?.()
-  calls[4].g.resolve({b:'unmounted-image'});await tick();controller=render()
-  assert.equal(controller.nativePreviewImages.b,undefined,'unmounted request applied image')
+  calls[4].g.resolve({f:'unmounted-image'});await tick();controller=render()
+  assert.equal(controller.nativePreviewImages.f,undefined,'unmounted request applied image')
   assert.equal(timers.size,0,'unmount left scheduled work')
   const before=calls.length;controller.processPreviewQueue();assert.equal(calls.length,before)
   // The per-font fallback path must also stop at await boundaries after reset.
@@ -177,7 +181,7 @@ async function preview() {
       setPreviewFamilies:()=>effects.push('state'),setFailedPreviewFontIds:()=>effects.push('state'),setNativePreviewImages:()=>effects.push('state'),updateFont:()=>effects.push('update'),
       hfm:{getCachedPreviewImage:async()=>{effects.push('cache');if(boundary==='cache')await gate.promise;return ''},toFontUrl:async()=>{effects.push('url');if(boundary==='url')await gate.promise;return 'font://test'},renderPreviewImage:async()=>{effects.push('native');return 'image'}}}
     const perFont=perFontLoad('src/renderer/src/runtime/preview/queue/fontPreviewLoadRuntime.ts').createFontPreviewLoadRuntime(o)
-    const pending=perFont.ensurePreviewFont(font);await tick();const before=[...effects]
+    const pending=perFont.ensurePreviewFont({...font,systemInstalled:false});await tick();const before=[...effects]
     perFont.resetPreviewLoads();o.loadingFonts.current.clear();o.loadingFonts.current.add(font.id)
     if(boundary==='webfont')gate.reject(Error('late font load failure'));else gate.resolve()
     await pending
@@ -190,14 +194,15 @@ async function preview() {
   controller = render(); controller.requestPreviewFont(font, 'high')
   options.listPreviewFontSize = 52
   controller = render(); controller.requestPreviewFont(font, 'high')
-  assert.equal(calls.length, 2)
-  assert.equal(calls[0].fontSize, 39); assert.equal(calls[1].fontSize, 52)
+  assert.equal(calls.length, 1, 'size change released cache IPC slot')
+  assert.equal(calls[0].fontSize, 39)
+  await tick();controller=render();assert.equal(native.at(-1).fontSize,52)
   calls[0].g.resolve({ a: 'wrong-size' }); await tick(); controller = render()
-  assert.equal(controller.nativePreviewImages.a, undefined, 'old size applied after reset')
-  calls[1].g.resolve({ a: 'right-size' }); await tick(); controller = render()
-  assert.equal(controller.nativePreviewImages.a, 'right-size')
+  assert.equal(controller.nativePreviewImages.a, 'data:image/png;base64,native-size-test-52-a', 'old size applied after reset')
+  controller.requestPreviewFont({...font,id:'g'},'high');assert.equal(calls.length,2);assert.equal(calls[1].fontSize,52)
+  calls[1].g.resolve({g:'right-size'});await tick();controller=render();assert.equal(controller.nativePreviewImages.g,'right-size')
   for (const slot of slots) slot?.cleanup?.()
-  console.log('W-04 real controller rerender, latest options, old token, failed batch retry, cleanup/setup, in-flight ownership, unmount cleanup, per-font await boundaries: passed')
+  console.log('W-04 real controller rerender, latest options, old token, failed batch progress, cleanup/setup, in-flight ownership, unmount cleanup, per-font await boundaries: passed')
 }
 async function run(){for(const [key,fn]of Object.entries({activation,incremental,storage,preview}))if(!selected||key===selected)await fn()}
 async function main(){

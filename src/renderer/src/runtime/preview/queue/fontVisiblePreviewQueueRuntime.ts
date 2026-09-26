@@ -10,8 +10,8 @@ rendererMemoryPressure,
 requestIdleWindow
 } from '../../../appRuntime'
 import { previewQueueCooldownRemaining } from './fontPreviewIndexCooldownRuntime'
-import { VISIBLE_PREVIEW_CACHE_BATCH_LIMIT } from './fontPreviewBatchPolicyRuntime'
-import { hasNetworkFontPath, networkAwarePreviewLimit } from './fontPreviewNetworkPathRuntime'
+import { VISIBLE_PREVIEW_CACHE_BATCH_LIMIT, VISIBLE_PREVIEW_CACHE_WAIT_MS } from './fontPreviewBatchPolicyRuntime'
+import { networkAwarePreviewLimit } from './fontPreviewNetworkPathRuntime'
 import { resolveFontPreviewRoute } from './fontPreviewRouteRuntime'
 import type { FontPreviewLoadRuntime,FontPreviewQueueRuntimeOptions,FontPreviewStateRuntime,FontVisiblePreviewQueueRuntime } from './fontPreviewQueueTypes'
 
@@ -28,12 +28,16 @@ export function createFontVisiblePreviewQueueRuntime(
   let disposed = false
   let cachedPreviewBatchInFlight = false
   let cachedPreviewBatchToken = ''
+  let cacheWaitTimer: number | null = null
+  let cacheWaitExpired = false
   const cachedPreviewBatchCheckedIds = new Set<string>()
   const cachedPreviewBatchMissIds = new Set<string>()
 
   function resetVisiblePreviewQueue(): void {
     queueGeneration += 1
-    cachedPreviewBatchInFlight = false
+    cacheWaitExpired = cachedPreviewBatchInFlight
+    if (cacheWaitTimer !== null) window.clearTimeout(cacheWaitTimer)
+    cacheWaitTimer = null
     cachedPreviewBatchCheckedIds.clear()
     cachedPreviewBatchMissIds.clear()
     if (deferredPreviewRetryId !== null) window.clearTimeout(deferredPreviewRetryId)
@@ -123,7 +127,7 @@ export function createFontVisiblePreviewQueueRuntime(
 
   function processCachedPreviewBatchIfNeeded(): boolean {
     syncCachedPreviewBatchText()
-    if (cachedPreviewBatchInFlight) return true
+    if (cachedPreviewBatchInFlight) return !cacheWaitExpired
     const candidates = collectCachedPreviewBatchCandidates()
     if (!candidates.length) return false
 
@@ -132,10 +136,18 @@ export function createFontVisiblePreviewQueueRuntime(
     cachedPreviewBatchInFlight = true
     for (const font of candidates) cachedPreviewBatchCheckedIds.add(font.id)
 
-    let failed = false
-    void loadRuntime.loadCachedNativeCardPreviews(candidates)
+    cacheWaitExpired = false
+    let accepting = true
+    const acceptsResult = () => accepting && !disposed && generation === queueGeneration && token === currentPreviewBatchToken()
+    cacheWaitTimer = window.setTimeout(() => {
+      cacheWaitTimer = null
+      accepting = false
+      cacheWaitExpired = true
+      if (!disposed && generation === queueGeneration) processPreviewQueue()
+    }, VISIBLE_PREVIEW_CACHE_WAIT_MS)
+    void loadRuntime.loadCachedNativeCardPreviews(candidates, acceptsResult)
       .then((hitIds) => {
-        if (disposed || generation !== queueGeneration || token !== currentPreviewBatchToken()) return
+        if (!acceptsResult()) return
         for (const font of candidates) {
           if (!hitIds.has(font.id)) cachedPreviewBatchMissIds.add(font.id)
         }
@@ -147,16 +159,19 @@ export function createFontVisiblePreviewQueueRuntime(
         })
       })
       .catch(() => {
-        failed = true
-        if (disposed || generation !== queueGeneration) return
-        for (const font of candidates) cachedPreviewBatchCheckedIds.delete(font.id)
+        // A failed probe is a miss for this queue attempt, not a reason to probe forever.
+        if (!acceptsResult()) return
+        for (const font of candidates) cachedPreviewBatchMissIds.add(font.id)
       })
       .finally(() => {
-        if (disposed || generation !== queueGeneration) return
+        accepting = false
+        if (cacheWaitTimer !== null) window.clearTimeout(cacheWaitTimer)
+        cacheWaitTimer = null
         cachedPreviewBatchInFlight = false
+        cacheWaitExpired = false
+        if (disposed) return
         pruneCachedPreviewBatchCheckedIds()
-        if (failed) scheduleDeferredPreviewRetry()
-        else processPreviewQueue()
+        processPreviewQueue()
       })
 
     return true
@@ -201,7 +216,7 @@ export function createFontVisiblePreviewQueueRuntime(
       const generation = queueGeneration
       previewEvent(previewTrace(font.id, options.previewText, options.listPreviewFontSize), 'load-start')
       options.activePreviewLoads.current += 1
-      void loadRuntime.ensurePreviewFont(font).finally(() => {
+      void loadRuntime.ensurePreviewFont(font, true).finally(() => {
         if (disposed || generation !== queueGeneration) return
         options.activePreviewLoads.current = Math.max(0, options.activePreviewLoads.current - 1)
         pruneCachedPreviewBatchCheckedIds()

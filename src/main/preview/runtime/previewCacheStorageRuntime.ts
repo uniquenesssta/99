@@ -118,6 +118,7 @@ export function createPreviewCacheStorageRuntime(
 
   const {
     loadLibraryShellCached,
+    ensureSharedPreviewCachePrepared,
     invalidateLibraryShellCache,
     previewCacheStorageForFont,
     previewCacheStorageForFontFromIndex,
@@ -210,7 +211,7 @@ export function createPreviewCacheStorageRuntime(
     rememberPreviewCacheRenderQueued: hydrationRuntime.rememberRenderQueued,
     previewCacheStorageToShared: tierRuntime.previewCacheStorageToShared,
     ensureSharedPreviewCacheAvailable:
-      rootAvailability.ensureRootPreviewCacheAvailable,
+      ensureSharedPreviewCachePrepared,
     invalidateLibraryShellCache,
   };
 }

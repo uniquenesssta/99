@@ -1,7 +1,7 @@
 import type { FontItem } from './types'
 
 export type SharedAvailability = {
-  roots: Array<{ path: string; rootId: string; state: 'checking' | 'online' | 'offline' | 'recovering'; generation: number; tags: string[] }>
+  roots: Array<{ path: string; rootId: string; state: 'checking' | 'online' | 'offline' | 'recovering'; generation: number; resourceKeys?: string[]; tags: string[] }>
   tags: string[]
   unattributedTags: string[]
 }
@@ -11,7 +11,7 @@ export function isSharedAvailability(value: unknown): value is SharedAvailabilit
   const strings = (items: unknown): items is string[] => Array.isArray(items) && items.every(item => typeof item === 'string')
   return strings(dto.tags) && strings(dto.unattributedTags) && Array.isArray(dto.roots) && dto.roots.every(root =>
     root && typeof root.path === 'string' && !!root.path && typeof root.rootId === 'string' && !!root.rootId &&
-    ['checking', 'online', 'offline', 'recovering'].includes(root.state) && Number.isFinite(root.generation) && strings(root.tags))
+    ['checking', 'online', 'offline', 'recovering'].includes(root.state) && Number.isFinite(root.generation) && strings(root.tags) && (root.resourceKeys === undefined || strings(root.resourceKeys)))
 }
 export const SHARED_UNAVAILABLE_MESSAGE = '共享位置离线或尚未确认可用，本次操作未执行；原有记录已保留。'
 

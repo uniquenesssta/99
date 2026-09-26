@@ -29,7 +29,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "011b1b8610707b74e465438aedaad2d6088ee69472184418dfc8baa47eaa6c7f"
+      "tokenHash": "9a23cef97e8138073df24b70a67b9c67e662073e43a0c8c90d3366e1a537617a"
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [
@@ -910,6 +910,7 @@
         "createPreviewStorageRoutingRuntime",
         "loadLibraryShellCached",
         "invalidateLibraryShellCache",
+        "ensureSharedPreviewCachePrepared",
         "previewCacheStorageForFont",
         "previewCacheStorageForFontFromIndex"
       ],
@@ -920,6 +921,7 @@
       "surfaces": {
         "createPreviewStorageRoutingRuntime": [
           "loadLibraryShellCached",
+          "ensureSharedPreviewCachePrepared",
           "invalidateLibraryShellCache",
           "previewCacheStorageForFont",
           "previewCacheStorageForFontFromIndex"
@@ -927,7 +929,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "36960723d5a8e45e762612d1e2ae82ab137c91bc6f05954c3382400aeeb6624b"
+      "tokenHash": "7b024dff964e3605376bd54696a48be1139626d48f834726e068402d1e50cc17"
     },
     "src/main/preview/runtime/previewIndexAccessRuntime.ts": {
       "functions": [

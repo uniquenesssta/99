@@ -1,3 +1,4 @@
+import { rememberPreviewAvailability } from './runtime/preview/previewAvailabilitySnapshotRuntime'
 import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from 'react'
 import { isSharedAvailability, type SharedAvailability } from '../../shared/sharedAvailability'
 
@@ -11,15 +12,19 @@ export function SharedAvailabilityProvider({ children }: { children: ReactNode }
     let disposed = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let deadline: ReturnType<typeof setTimeout> | undefined
+    function publish(value: SharedAvailability | null): void {
+      rememberPreviewAvailability(value)
+      setSnapshot(value)
+    }
     async function poll() {
       // Exactly one IPC in flight. A hung bridge disables controls without spawning more calls.
       let expired = false
-      deadline = setTimeout(() => { expired = true; if (!disposed) setSnapshot(null) }, 6000)
+      deadline = setTimeout(() => { expired = true; if (!disposed) publish(null) }, 6000)
       try {
         inFlight.current ||= Promise.resolve().then(() => window.hfm.getSharedAvailability?.())
         const value = await inFlight.current
-        if (!disposed && !expired) setSnapshot(isSharedAvailability(value) ? value : null)
-      } catch { if (!disposed) setSnapshot(null) }
+        if (!disposed && !expired) publish(isSharedAvailability(value) ? value : null)
+      } catch { if (!disposed) publish(null) }
       finally {
         inFlight.current = null
         clearTimeout(deadline)
@@ -27,7 +32,7 @@ export function SharedAvailabilityProvider({ children }: { children: ReactNode }
       }
     }
     void poll()
-    return () => { disposed = true; clearTimeout(timer); clearTimeout(deadline) }
+    return () => { disposed = true; rememberPreviewAvailability(null); clearTimeout(timer); clearTimeout(deadline) }
   }, [])
   return <AvailabilityContext.Provider value={snapshot}>{children}</AvailabilityContext.Provider>
 }

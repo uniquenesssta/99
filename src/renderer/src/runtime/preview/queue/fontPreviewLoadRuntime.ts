@@ -128,7 +128,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     })
   }
 
-  async function loadCachedNativeCardPreviews(fonts: FontItem[]): Promise<Set<string>> {
+  async function loadCachedNativeCardPreviews(fonts: FontItem[], acceptsResult: () => boolean = () => true): Promise<Set<string>> {
     const seen = new Set<string>()
     const uniqueFonts: FontItem[] = []
     for (const font of fonts || []) {
@@ -148,8 +148,9 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     const memberTraces = uniqueFonts.map(font => previewTrace(font.id, options.previewText, options.listPreviewFontSize))
     const batchTrace = previewBatchTrace(memberTraces)
     const cachedImages = await options.hfm.getCachedPreviewImages(uniqueFonts, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, batchTrace)
-    previewEvent(batchTrace, 'cache-batch-result', isPreviewRequestCurrent(requestToken) ? 'current' : 'stale')
-    if (!isPreviewRequestCurrent(requestToken)) return hitIds
+    const accepted = isPreviewRequestCurrent(requestToken) && acceptsResult()
+    previewEvent(batchTrace, 'cache-batch-result', accepted ? 'current' : 'stale')
+    if (!accepted) return hitIds
     const hitEntries: Array<{ font: FontItem; image: string }> = []
     for (const [index, font] of uniqueFonts.entries()) {
       const image = cachedImages[font.id]
@@ -167,7 +168,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     return hitIds
   }
 
-  async function ensurePreviewFont(font: FontItem): Promise<string> {
+  async function ensurePreviewFont(font: FontItem, skipCachedPreview = false): Promise<string> {
     const trace = previewLoadTrace(font.id, options.previewText, options.listPreviewFontSize)
     previewEvent(trace, 'load-attempt')
     const startedAt = performance.now()
@@ -196,7 +197,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     const family = createPreviewFamilyName(font.id)
 
     const loadCachedNativeCardPreview = async (): Promise<boolean> => {
-      if (hasLegacyMissingPreviewFlag(font) || hasCacheMiss(font.id)) return false
+      if (skipCachedPreview || hasLegacyMissingPreviewFlag(font) || hasCacheMiss(font.id)) return false
       if (typeof options.hfm.getCachedPreviewImage !== 'function') return false
       const previewText = currentCardPreviewText(options.previewText)
       const previewLayout = currentCardPreviewLayout(options.previewText, options.listPreviewFontSize)

@@ -14,6 +14,8 @@ export type PreviewCacheRootAvailabilityRuntime = {
 
 type RootAvailabilityEntry = {
   available: boolean
+  rootGeneration?: number
+  rootId?: string
   expiresAt: number
   promise?: Promise<boolean>
   probeToken?: object
@@ -93,7 +95,11 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
     const current = now()
     const existing = entries.get(key)
     if (existing?.promise) return existing.promise
-    if (existing && existing.expiresAt > current) return existing.available
+    if (existing && existing.expiresAt > current) {
+      if (!existing.available) return false
+      const state = getStartupPathRootState(rootPath)
+      if (state.state === 'online' && existing.rootGeneration === state.generation && existing.rootId === state.rootId) return true
+    }
 
     const probeToken = {}
     const promise = (async () => {
@@ -110,7 +116,8 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
           return false
         }
         circuitBreaker.recordSharedStorageSuccess(rootPath)
-        entries.set(key, { available: true, expiresAt: now() + availableTtlMs })
+        const state = getStartupPathRootState(rootPath)
+        entries.set(key, { available: true, rootGeneration: state.generation, rootId: state.rootId, expiresAt: now() + availableTtlMs })
         return true
       } catch (error) {
         if (entries.get(key)?.probeToken === probeToken) markRootPreviewCacheUnavailable(rootPath, error)

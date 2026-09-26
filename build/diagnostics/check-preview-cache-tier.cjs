@@ -36,7 +36,8 @@ function testTierRuntimeExists() {
 function testStorageRuntimeReturnsLocalTierForWatchedRoots() {
   const text = readText('src/main/preview/runtime/previewStorageRoutingRuntime.ts')
   assert(text.includes('return tierRuntime.localStorageForRoot(root, identity)'), 'watched-root preview storage does not return local L1 tier')
-  assert(text.includes('preview cache shared tier unavailable, local tier will be used'), 'unavailable shared tier is not downgraded to local tier')
+  const localRoute = text.slice(text.indexOf('  async function previewCacheStorageForFont('), text.indexOf('  function previewCacheStorageForFontFromIndex('))
+  assert(!localRoute.includes('rootAvailability') && !localRoute.includes('runRequiredRootPreviewCacheIo'), 'local L1 lookup still waits for shared availability/preparation')
   assert(text.includes('tierRuntime.localStorageForPath'), 'unwatched/system fonts no longer use local fallback storage')
 }
 

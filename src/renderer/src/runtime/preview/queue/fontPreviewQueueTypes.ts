@@ -48,8 +48,8 @@ export type FontPreviewStateRuntime = {
 
 export type FontPreviewLoadRuntime = {
   resetPreviewLoads: () => void
-  ensurePreviewFont: (font: FontItem) => Promise<string>
-  loadCachedNativeCardPreviews: (fonts: FontItem[]) => Promise<Set<string>>
+  ensurePreviewFont: (font: FontItem, skipCachedPreview?: boolean) => Promise<string>
+  loadCachedNativeCardPreviews: (fonts: FontItem[], acceptsResult?: () => boolean) => Promise<Set<string>>
 }
 
 export type FontVisiblePreviewQueueRuntime = {

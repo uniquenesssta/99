@@ -50,6 +50,7 @@
     "diagnostics:rust-state-fallback": "node build/diagnostics/check-rust-state-fallback-failure-protocol.cjs",
     "diagnostics:scan-fallback": "node build/diagnostics/check-scan-fallback-policy.cjs",
     "diagnostics:final-migration": "node build/diagnostics/check-final-migration-closure.cjs",
+    "diagnostics:preview-cache-progress": "node build/diagnostics/check-preview-cache-progress.cjs",
     "diagnostics:preview-cache-root": "node build/diagnostics/check-preview-cache-unavailable-root.cjs",
     "diagnostics:io-deadline": "node build/diagnostics/check-io-deadline-policy.cjs",
     "diagnostics:line-endings": "node build/diagnostics/check-diagnostic-line-endings.cjs",

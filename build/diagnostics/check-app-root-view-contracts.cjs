@@ -45,12 +45,14 @@ function checkLifecycle(app, view) {
   const operationsClosing = '    sidebarPage,\n    clearFontListScrollIdleTimer,\n    appendDeveloperStatus,\n    closingLifecycle: rendererClosingLifecycle\n  })'
   const developerClosing = '    enabled: IS_DEVELOPMENT,\n    hfm: window.hfm,\n    status,\n    closingLifecycle: rendererClosingLifecycle\n  })'
   assert.equal((normalizedApp.match(/useRendererClosingLifecycleRuntime\(\)/g) || []).length, 1, 'renderer closing lifecycle owner must be composed exactly once')
-  assert.equal((normalizedApp.match(/closingLifecycle: rendererClosingLifecycle/g) || []).length, 3, 'renderer closing lifecycle must wire exactly three close-sensitive controllers')
+  assert.equal((normalizedApp.match(/closingLifecycle: rendererClosingLifecycle/g) || []).length, 4, 'renderer closing lifecycle must wire three controllers and preview cards')
   assert(normalizedApp.indexOf(closingOwner) < normalizedApp.indexOf('  useRendererReadyNotification()'), 'renderer closing lifecycle owner must exist before close-capable effects')
   assert(normalizedApp.includes(libraryClosing), 'library controller lost renderer closing lifecycle wiring')
   assert(normalizedApp.includes(operationsClosing), 'operations controller lost renderer closing lifecycle wiring')
   assert(normalizedApp.includes(developerClosing), 'developer controller lost renderer closing lifecycle wiring')
+  assert(normalizedApp.includes('useFontCardRenderer({\n    closingLifecycle: rendererClosingLifecycle,'), 'preview cards lost renderer closing lifecycle wiring')
   const normalized = normalizedApp
+    .replace('useFontCardRenderer({\n    closingLifecycle: rendererClosingLifecycle,', 'useFontCardRenderer({')
     .replace("import type { AppRootViewProps } from './components/app/AppRootView'\n", '')
     .replace(closingImport, '')
     .replace(closingOwner, '')

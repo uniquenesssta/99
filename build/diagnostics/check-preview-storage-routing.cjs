@@ -35,8 +35,8 @@ function structure() {
   for (const crlf of [false, true]) {
     const source = crlf ? read(routeFile).replace(/\r?\n/g, '\r\n') : read(routeFile)
     const current = bodies(source)
-    for (const [name, hash] of Object.entries(fixture.movedBodies)) {
-      assert.equal(current[name], hash, `${name} must be a pure relocation`)
+    for (const [name, hash] of Object.entries({ ...fixture.movedBodies, ...fixture.changedBodies })) {
+      assert.equal(current[name], hash, `${name} differs from its recorded routing contract`)
       assert.equal(bodies(read(storageFile))[name], undefined, `${name} duplicated in facade`)
     }
     assert.equal(bodies(read('src/main/preview/runtime/previewStorageIoRuntime.ts')).runRequiredRootPreviewCacheIo, fixture.requiredIoBody)
@@ -49,7 +49,7 @@ function structure() {
 }
 function harness(transform = x => x) {
   const events = [], state = { available: true, loads: 0, library: { folders: [fontRoot] }, failure: '', manifestHold: null, loadHold: null }
-  const mocks = { 'node:path': routePath }
+  const mocks = { 'node:path': routePath, '../../path/startupPathAvailabilityRuntime': { getStartupPathRootState: root => ({rootId: root, generation: 1, state: 'online'}) }, '../../app/shutdownCoordinatorRuntime': {isApplicationClosing:()=>false,applicationWorkEpoch:()=>1} }
   const factories = { previewCacheSharedPresenceRuntime: 'createPreviewCacheSharedPresenceRuntime', previewCachePresenceIndexRuntime: 'createPreviewCacheSharedPresenceIndexRuntime', previewCacheMetaRuntime: 'createPreviewCacheMetaRuntime', previewCacheHydrationRuntime: 'createPreviewCacheHydrationRuntime', previewCachePrefetchRuntime: 'createPreviewCachePrefetchRuntime', previewLocalCacheEvictionRuntime: 'createPreviewLocalCacheEvictionRuntime' }
   for (const [file, name] of Object.entries(factories)) mocks[`./${file}`] = { [name]: () => ({}) }
   mocks['./previewCacheRootAvailabilityRuntime'] = { createPreviewCacheRootAvailabilityRuntime: () => ({
@@ -84,14 +84,17 @@ async function routingCases(transform) {
   assert.deepEqual(plain(h.facade.previewCacheStorageForFontFromIndex(fontPath, h.state.library)), expected)
   assert.equal(h.events.length, 0); assert.equal(h.state.loads, 0)
   assert.deepEqual(plain(await h.facade.previewCacheStorageForFont(fontPath, h.state.library)), expected)
-  assert.deepEqual(h.events, [['probe', fontRoot], ['mkdir', imagesDir], ['mkdir', cacheDir], ['hide', cacheDir], ['manifest', cacheDir, fontRoot, 'root', dbPath, imagesDir], ['mkdir', rootLocalDir]])
+  assert.deepEqual(h.events, [['mkdir', rootLocalDir]])
+  assert.equal(await h.facade.ensureSharedPreviewCacheAvailable(fontRoot), true)
+  assert.deepEqual(h.events.slice(1), [['probe', fontRoot], ['mkdir', imagesDir], ['mkdir', cacheDir], ['hide', cacheDir], ['manifest', cacheDir, fontRoot, 'root', dbPath, imagesDir]])
   assert.equal(h.state.loads, 0)
   for (const failure of ['unavailable', 'hide', imagesDir, 'deadline']) {
     const f = harness(transform); f.state.available = failure !== 'unavailable'; f.state.failure = failure
     if (failure === 'deadline') f.state.manifestHold = gate()
     assert.deepEqual(plain(await f.facade.previewCacheStorageForFont(fontPath, f.state.library)), expected)
-    assert(f.events.some(x => x[0] === 'unavailable'))
-    assert.deepEqual(f.events.at(-1), ['mkdir', rootLocalDir])
+    assert.deepEqual(f.events, [['mkdir', rootLocalDir]], 'local route entered shared preparation')
+    assert.equal(await f.facade.ensureSharedPreviewCacheAvailable(fontRoot), false)
+    if (failure !== 'unavailable') assert(f.events.some(x => x[0] === 'unavailable'))
     if (failure === 'unavailable') assert(!f.events.some(x => x[0] === 'manifest'))
     if (failure === 'deadline') { f.state.manifestHold.reject(Error('late')); await Promise.resolve() }
   }
@@ -125,12 +128,12 @@ async function main() {
   await assert.rejects(() => generations(s => s.replace('if (taskGeneration === libraryShellGeneration)', 'if (true)')), assert.AssertionError)
   await assert.rejects(() => generations(s => s.replace('if (libraryShellCachePromise === task)', 'if (true)')), assert.AssertionError)
   await assert.rejects(() => routingCases(s => {
-    const anchor = 'options.writeRootPreviewCacheManifest(\n                previewCacheDir,\n                root,\n                "root",'
+    const anchor = "options.writeRootPreviewCacheManifest(cacheDir, root, 'root', dbPath, imageDir)"
     assert(s.includes(anchor), 'manifest storage mutant anchor missing')
-    return s.replace(anchor, anchor.replace('"root"', '"local"'))
+    return s.replace(anchor, anchor.replace("'root'", "'local'"))
   }), assert.AssertionError)
   if (!process.argv.includes('--win-paths')) require('node:child_process').execFileSync(process.execPath, [__filename, '--win-paths'], { stdio: 'pipe' })
-  console.log('[diagnostics:preview-storage-routing] four unchanged bodies LF/CRLF, sole owners, real facade/tier/deadline, sync purity, preparation order, local degradation, shell coalescing/invalidation/retry, three mutants rejected')
+  console.log('[diagnostics:preview-storage-routing] recorded bodies LF/CRLF, sole owners, real facade/tier/deadline, sync purity, publication preparation order, local reads independent of shared failure, shell coalescing/invalidation/retry, three mutants rejected')
 }
 module.exports = { bodies }
 if (require.main === module) main().catch(e => { console.error(e); process.exitCode = 1 })

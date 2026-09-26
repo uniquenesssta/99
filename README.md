@@ -74,6 +74,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-27：S10-04 将共享目录准备移出本地缓存读取路径；可见缓存批次采用有限等待预算，迟到结果不覆盖当前预览；调度复用主进程共享身份分类。补正 S10-03 卡片退出接线的旧 CI 断言。typecheck、152 项诊断分段回归、三端构建与 3/3 混淆通过；Windows CI/实机待验。范围见 [Stage 10 第 14 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#14-s10-04-执行回执2026-09-27)。
+
 - 2026-09-27：S10-03 区分缺失、暂不可达、超时、生成失败和取消，阻止错误占位图缓存及路径失效误标；历史失败索引与旧标记支持有证据恢复，单张/批量/后台核验 PNG，可见项有界退避重试并随离屏、根离线、退出停止。typecheck、151/151 诊断、三端构建及 3/3 混淆通过，Windows/NAS GUI 与性能待验；后台缓存核验会读取 PNG，详见 [Stage 10 第 13 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#13-s10-03-执行回执2026-09-27)。
 
 - 2026-09-26：S10-02 修复预取队列优先级提升及可见卡片改字/字号后的补排，覆盖 24 项稳定挂载、清空旧图时序和卸载回调；18 项预取与现有并发限制保持。typecheck、150/150 诊断、三端构建及 3/3 混淆通过，Windows GUI/性能待验；见 [Stage 10 第 12 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#12-s10-02-执行回执2026-09-26)。
