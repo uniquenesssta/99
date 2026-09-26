@@ -10,8 +10,9 @@ async function main(){
  // staging/store, resident rendering and filesystem operations are real.
  // The local-only authorization fixture explicitly uses fs; production uses
  // its configured isolated SharedFileExecutor for network paths.
+ const canonical=loader()('src/main/path/pathCanonicalizer.ts');
  const load=loader({[path.join(root,'src/main/path/pathCanonicalizer.ts')]:{
-  mappedDriveTableAsync:async()=>new Map(),normalizeNativePathText:x=>x,
+  ...canonical,mappedDriveTableAsync:async()=>new Map(),
  }},{AbortController});
  const command=path.join(root,'build/native/directwrite/hfm-directwrite-preview.exe');
  const fonts=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/directwrite/fonts.json'),'utf8'));

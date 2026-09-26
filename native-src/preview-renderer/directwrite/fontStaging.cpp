@@ -49,6 +49,14 @@ int stageFont(const std::wstring& source, const std::wstring& authorized, const 
   auto expected=normalized(authorized); normalized(source);
   require(knownDigest==L"-" || (knownDigest.size()==64 && knownDigest.find_first_not_of(L"0123456789abcdef")==std::wstring::npos),"STAGE_INPUT_INVALID");
   auto output=localPath(target,true);
+  // Resolve the destination through a held directory handle. Windows temporary
+  // paths may contain 8.3 names; comparing that spelling with a normalized
+  // handle path would incorrectly reject an otherwise valid local target.
+  auto separator=output.find_last_of(L'\\');
+  File outputDirectory{CreateFileW(output.substr(0,separator).c_str(),FILE_READ_ATTRIBUTES,FILE_SHARE_READ|FILE_SHARE_WRITE,
+    nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS,nullptr)};
+  require(outputDirectory.value!=INVALID_HANDLE_VALUE,"STAGE_OUTPUT_FAILED");
+  auto expectedOutput=finalPath(outputDirectory.value)+output.substr(separator);
   // FILE_SHARE_READ deliberately excludes writers and rename/delete. No NAS
   // handle escapes this killable one-shot process, including on read hangs.
   File input{CreateFileW(source.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_SEQUENTIAL_SCAN,nullptr)};
@@ -75,7 +83,7 @@ int stageFont(const std::wstring& source, const std::wstring& authorized, const 
     // Never overwrite an existing file; incomplete files retain the .part name.
     File dest{CreateFileW(output.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr)};
     require(dest.value!=INVALID_HANDLE_VALUE,"STAGE_OUTPUT_FAILED");
-    require(samePath(finalPath(dest.value),normalized(output)),"STAGE_OUTPUT_CHANGED");
+    require(samePath(finalPath(dest.value),expectedOutput),"STAGE_OUTPUT_CHANGED");
     offset=0;
     while(offset<bytes.size()) {
       DWORD written=0;

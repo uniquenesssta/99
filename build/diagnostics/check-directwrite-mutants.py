@@ -9,6 +9,8 @@ TEST=ROOT/'build/diagnostics/check-directwrite-native.py'
 RESIDENT=ROOT/'native-src/preview-renderer/directwrite/resident.cpp'
 CACHE=ROOT/'native-src/preview-renderer/directwrite/fontCache.cpp'
 CACHE_TEST=ROOT/'build/diagnostics/check-directwrite-cache.py'
+STAGING=ROOT/'native-src/preview-renderer/directwrite/fontStaging.cpp'
+STAGING_TEST=ROOT/'build/diagnostics/check-directwrite-staging.py'
 RESIDENT_TEST=ROOT/'build/diagnostics/check-directwrite-resident.py'
 
 def build():
@@ -19,6 +21,7 @@ def main():
     original=SOURCE.read_text(encoding='utf-8')
     resident_original=RESIDENT.read_text(encoding='utf-8')
     cache_original=CACHE.read_text(encoding='utf-8')
+    staging_original=STAGING.read_text(encoding='utf-8')
     mutations=[
       ('wrong TTC face', 'CreateFontFaceReference(font.file.Get(), request.faceIndex,', 'CreateFontFaceReference(font.file.Get(), 0,'),
       ('removed input limits', 'if (!preview_input::valid(request.width, request.height, request.fontSize, request.text.size()) || !validUtf16(request.text))', 'if (false)'),
@@ -55,11 +58,24 @@ def main():
             assert result.returncode!=0 and 'AssertionError' in result.stderr,(name,result.stdout,result.stderr)
             print('Rejected actual source mutant:',name,flush=True)
             CACHE.write_text(cache_original,encoding='utf-8')
+        for name,before,after in [
+            ('removed staging handle identity','samePath(finalPath(input.value),expected)','true'),
+            ('allowed source writers','GENERIC_READ,FILE_SHARE_READ,nullptr','GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr'),
+        ]:
+            assert before in staging_original
+            STAGING.write_text(staging_original.replace(before,after),encoding='utf-8')
+            build()
+            result=subprocess.run([sys.executable,str(STAGING_TEST)],cwd=ROOT,capture_output=True,text=True,timeout=120)
+            assert result.returncode!=0 and 'AssertionError' in result.stderr,(name,result.stdout,result.stderr)
+            print('Rejected actual source mutant:',name,flush=True)
+            STAGING.write_text(staging_original,encoding='utf-8')
     finally:
+        STAGING.write_text(staging_original,encoding='utf-8')
         SOURCE.write_text(original,encoding='utf-8')
         RESIDENT.write_text(resident_original,encoding='utf-8')
         CACHE.write_text(cache_original,encoding='utf-8')
         build() # Uploaded binary must contain restored production code.
+    subprocess.run([sys.executable,str(STAGING_TEST)],cwd=ROOT,check=True,timeout=120)
     subprocess.run([sys.executable,str(TEST)],cwd=ROOT,check=True,timeout=120)
     subprocess.run([sys.executable,str(RESIDENT_TEST)],cwd=ROOT,check=True,timeout=120)
     subprocess.run([sys.executable,str(CACHE_TEST)],cwd=ROOT,check=True,timeout=180)
