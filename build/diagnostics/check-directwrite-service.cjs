@@ -29,6 +29,7 @@ async function normal() {
  const s=setup()
  try {
   assert.equal(s.events().length,0,'eager spawn')
+  assert.throws(()=>new s.service.constructor(s.service.options),/OWNER_EXISTS/)
   const [a,b]=await Promise.all([s.render('delay'),s.render('delay')]);assert.equal(a.receipt.requestId,b.receipt.requestId)
   const c=await s.render('next');assert(c.receipt.requestId>a.receipt.requestId)
   assert.equal(s.events().filter(e=>e.type==='spawn').length,1,'not resident')
@@ -131,6 +132,15 @@ async function sourceMutants() {
  await assert.rejects(cancellation({[serviceFile]:s=>s.replace('this.disposed || isApplicationClosing() || !subscriber.current()', 'this.disposed || isApplicationClosing()')}),/Missing expected rejection/)
  await assert.rejects(exitConfirmation({[path.join(root,'src/main/preview/native-renderer/directwriteProcess.ts')]:s=>s.replace('return this.closed;', 'return Promise.resolve();')}),/spawn before confirmed close/)
 }
+async function cleanupFailure() {
+ const s=setup({mocks:{'node:fs':{promises:{...fs.promises,rm:async()=>{throw Error('controlled EACCES')}}}}})
+ try {
+  const result=await s.render('valid');assert(result.receipt.ok)
+  await until(()=>s.service.unavailable)
+  await assert.rejects(s.render('next'),/OUTPUT_CLEANUP_FAILED/)
+  assert.equal(s.events().filter(e=>e.type==='request').length,1)
+ }finally{await s.close()}
+}
 async function nativeOwner() {
  // Invoked separately by Windows CI against the real DirectWrite executable.
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-dw-integration-'))
@@ -162,7 +172,7 @@ async function main() {
  if(process.argv.includes('--native')) {await nativeOwner();console.log('[directwrite-service] real Windows owner → native DirectWrite → PNG passed');return}
  await normal();await cancellation();await queueLimit()
  for(const mode of ['crash','wrong-id','wrong-generation','wrong-source','wrong-output','wrong-font','wrong-engine','missing','invalid','oversized','duplicate','duplicate-field']) await fault(mode)
- await timeoutAndFreeze();await exitConfirmation();await sourceMutants()
+ await timeoutAndFreeze();await exitConfirmation();await cleanupFailure();await sourceMutants()
  console.log('[directwrite-service] real subprocess: reuse/coalescing, 64 queue limit, cancellation, stale source, 12 faults, bounded restart, deadline, shutdown/resume, exit confirmation and 4 source mutants passed')
 }
 main().catch(error=>{console.error(error);process.exitCode=1})

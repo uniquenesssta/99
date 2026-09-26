@@ -68,7 +68,7 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-26：DW-02 实现专用 DirectWrite 常驻进程、版本/代次/输出身份校验、单活动任务与 64 项等待队列、相同请求合并、取消及期限后终止确认和有界退避；接入退出 freeze，父进程句柄看护与独立 stdin 线程处理绘制挂起时的退出。默认预览不变，无新增依赖。真实子进程故障诊断与 TypeScript 已通过；Windows 原生常驻、父死及源码变异门正在验证，尚不标为完成。详见[试验任务书 §12](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#12-dw-02-执行边界进行中)。
+- 2026-09-26：DW-02 实现专用 DirectWrite 常驻进程、版本/代次/输出身份校验、单活动任务与 64 项等待队列、相同请求合并、取消及期限后终止确认和有界退避；接入退出 freeze，父进程句柄看护与独立 stdin 线程处理绘制挂起时的退出。默认预览不变，无新增依赖。本地 typecheck/149 项诊断、构建与混淆通过；Windows 常驻绘制、挂起取消、父死/EOF 和源码变异门通过（36235481324）。追加唯一 owner 与清理失败停止准入边界，最终复验中。详见[试验任务书 §12](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#12-dw-02-执行边界进行中)。
 
 - 2026-09-26：开始 DW-01 独立原生验证入口，新增系统 DirectWrite 私有单 face 字体集、真实排版/轮廓绘制及透明 PNG；拒绝网络/reparse 路径、错误 face 和变量字体，输出不覆盖已有文件。新增原创 TTF/CFF/TTC 夹具与 Windows 图像诊断、独立构建门，覆盖空串默认文字及真实源码变异；Windows 原生 27 项与 2 项源码变异通过，本地 typecheck/148 项诊断、构建和混淆 3/3 通过。尚未接入默认预览/常驻服务，实机视觉及性能待验；旧完整 Windows 门仍受 CIM 1500ms 失败阻塞。见[试验任务书 §11](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md#11-dw-01-执行卡)。
 

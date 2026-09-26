@@ -2,9 +2,9 @@
 
 ## 0. 状态、授权与执行入口
 
-- 文档版本：1.1；日期：2026-09-26；软件版本：3.0.0。
+- 文档版本：1.2；日期：2026-09-26；软件版本：3.0.0。
 - 仓库：`uniquenesssta/99`；试验分支：`stage/dw-resident-directwrite-preview`（用户已明确授权新建）；起点：`7d220c3d041291d4480210303ceae5dc3731145e`（渲染代码沿用此前版本，扫描修复为 `ecaf8ab`）。
-- 当前状态：**DW-00 实机基线待验；DW-01 原生实现及独立 Windows 自动验收通过；DW-02～DW-08 未实施**。用户已授权继续 DW-01，交付独立原生入口；默认预览不切换，常驻服务与 UI 接入仍未实施。
+- 当前状态：**DW-00 实机基线待验；DW-01、DW-02 原生路径已通过独立 Windows 自动门，DW-02 最终准入边界复验中；DW-03～DW-08 未实施**。用户已授权开始 DW-02；默认预览不切换，界面试用入口仍由 DW-05 提供。
 - 用户目标：尝试常驻 DirectWrite 是否能改善未安装字体预览，特别是连续浏览、修改文字与字号；没有要求全面重做预览系统。
 - 用户已接受剩余一般延迟，其他性能优化暂停。本试验不借机扩展为扫描、全库缓存、标签、收藏、激活或数据库重构。
 - 继续遵守 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[共享离线与本地退出](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md)、[索引与 Shared I/O 专项](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)、[Stage 3 文件与预览边界](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md) 及项目规则。
@@ -22,7 +22,7 @@
 | `src/main/rust-core/rustCoreWorkerTransportRuntime.ts` | 网络路径进入隔离 one-shot；本地任务尝试现有 daemon | 不能声称现有所有预览都重新启动进程；新渲染服务必须保留网络隔离 |
 | `native-src/preview-renderer/hfm-preview-renderer.cpp` | helper 也包含私有 GDI+ 路径 | 不能只改名称就算迁移 DirectWrite |
 
-当前已实现链路（试验目标尚未实现，不把目标画成现有架构）：
+当前默认预览链路（DW-02 独立试验链见 §12，尚未接入 UI）：
 
 ```mermaid
 flowchart TD
@@ -326,3 +326,36 @@ flowchart TD
 精确文件清单：`native-src/preview-renderer/directwrite/resident.{h,cpp}`（父进程句柄看护、stdin 生命周期、受限二进制协议）、该目录 `cli.cpp`/`build-win.cmd`（服务入口与编译）；`src/main/preview/native-renderer/directwriteProtocol.ts`（跨进程格式/回执验证）、`directwriteProcess.ts`（单进程管道与关闭确认）、`directwriteService.ts`（唯一服务 owner、64 项队列/合并/取消/关闭、受控临时输出）；`build/diagnostics/check-directwrite-service.cjs`、`fixtures/directwrite/process.cjs`（真实进程故障协议）、`check-directwrite-resident.py`（Windows 原生服务与父死验证）、`check-directwrite-mutants.py`（实际移除父死清理必须失败）；`.github/workflows/directwrite-native.yml`、`package.json`（自动门）；本书及根 README。
 
 服务 owner 构造时接入现有 shutdown coordinator 的 freeze/resume 订阅，不添加新的退出等待预算。固定渲染语义沿用 DW-01（96 DPI、透明底、既有前景/布局）；协议仅允许该语义版本。字体对象缓存、源副本授权/摘要、UI 图片发布分别留给 DW-03/04/05，不把身份回显当内容校验。
+
+
+### 12.1 协议、生命周期与边界
+
+- `DirectwriteService` 是主进程中的唯一实例；第二次构造被拒绝，实际退出后 dispose 才释放所有权。惰性启动，当前生产 UI 不构造/调用该服务；Windows 自动诊断通过真实 owner → exe → DirectWrite → PNG 验收完整专用链，非接口占位。
+- 请求使用小端长度前缀，单帧最多 65536 字节；版本、渲染语义版本、ID、服务代次、源代次、64 位十六进制字体身份、32 位输出身份及全部绘制参数必须匹配。回执为受限规范 JSON，拒绝重复字段、超长输出、错误引擎/代次/ID/身份、缺失及乱序/重复回执。
+- 1 个活动任务、64 个等待任务；完整输入键合并，合并订阅者总量另限 256。所有订阅者取消才终止该活动任务；队列取消立即移除，源 owner 可调用 invalidate 清退旧代次。请求总期限默认 30 秒（含排队），只允许缩短；启动握手另受 3 秒上限，不能延长请求总期限。
+- 超时、取消、协议错误仅杀本服务；请求不自动重试/回退。保留活动槽直到真实 `close`，失败后续请求按 100/200/400/800/1600/2000ms 封顶退避。输出位于独占目录，仅在身份与最终源代次验证后返回 PNG 字节；文件读取上限 40MiB。清理失败停止 owner 准入，保留其独占目录，避免反复积累；跨启动残留恢复属于 DW-06。
+- freeze 订阅现有 shutdown coordinator，立即拒绝新请求并终止服务，不新增退出等待预算；用户取消退出后复用原 owner 按需重启。专用 C++ 进程核对实际父 PID 与创建时间，持有父进程 SYNCHRONIZE 句柄独立看护；stdin 读取也独立于绘制线程，父死或 EOF 均直接终止本进程。
+- 原生绘制仍复用 DW-01 实现，每次重建字体/COM 对象；本项只证明进程常驻，**不宣称 DW-03 的对象复用、DW-04 的内容授权副本或性能收益已实现**。不打开 NAS 字体，网络/reparse 拒绝沿用 DW-01；实际 NAS、本地路径并发替换及 Win10 GUI 矩阵仍待后续阶段。
+
+```mermaid
+flowchart TD
+  A[显式测试调用] --> B[唯一服务所有者]
+  B --> C[请求合并与64项队列]
+  C --> D[单活动协议通道]
+  D --> E[独立常驻进程]
+  E --> F[DirectWrite与临时PNG]
+  F --> D
+  D --> G[身份和代次核对后返回]
+  H[现有退出冻结] --> I[终止并确认真实退出]
+  B -->|超时或取消| I
+  I -->|有界退避| C
+  J[父句柄和stdin看护线程] -->|父死或EOF| E
+```
+
+### 12.2 验证记录
+
+- 代码初版 `52449b0`；测试校正 `70ca826`。Windows Actions `36235481324` / job `108386353563` 全通过：真实 DirectWrite 27 项图像检查、常驻 TTC 三次 face 切换、6 种非法协议、绘制主线程挂起时 stdin EOF、保持 stdin 打开的父进程单独强杀、真实 TS owner 原生绘制/取消/重启，以及移除父死终止后必须失败的实际 C++ 源码变异。原 DW-01 错 face/输入限额变异仍通过。
+- 初次 `36235303248` 常驻 TTC 断言失败：选用 AB 时夹具会形成两 face 相同的 fi 连字，不能区分 face；改为轮廓不同的 A 并复用既有 PNG 解码器比较像素，未放松不同 face 必须不同的断言，未改生产绘制。
+- `diagnostics:directwrite-service` 使用生产队列/协议/退出协调器和真实子进程，覆盖合并、满队列、取消/过期、12 类崩溃/恶意回执、期限、退出取消恢复；控制 kill 端口保持真实子进程存活，证明 kill 返回不等于 close。4 个 TS 源码变异（去代次、加队列上限、去发布前过期检查、跳过退出确认）必须失败。夹具的合成 PNG 只验证 transport，不代替真实 Windows 图像门。
+- 本地 `npm run verify`：typecheck + 149/149 诊断通过；Electron/Vite 构建 main 384 / preload 1 / renderer 204，通过混淆（脚本报告 3/4 文件处理，退出 0）；最终唯一 owner/清理失败边界已有定向测试与 typecheck，Windows 最终复验待收。
+- Context7 核对 OpenProcess/WaitForSingleObject/TerminateProcess/GetProcessTimes/Toolhelp API；Mermaid Chart 更新真实实现链。用户仍通过正常 `npm run dev` 使用原预览；不要求现在手动切后端。下一原子项 DW-03 字体对象复用与释放，须用户明确开始后实施。

@@ -18,6 +18,7 @@ interface Subscriber {
   settle: (error?: Error, value?: DirectwriteResult) => void;
 }
 interface Job { key: string; input: DirectwriteInput; subscribers: Set<Subscriber>; completed?: boolean }
+let owner: DirectwriteService | undefined;
 
 // Construct once in the preview composition. No child or filesystem work until
 // explicitly called; current UI remains on its existing backend until DW-05.
@@ -30,6 +31,7 @@ export class DirectwriteService {
   private generation = randomBytes(4).readUInt32LE() || 1;
   private subscribers = 0;
   private disposed = false;
+  private unavailable?: Error;
   private failures = 0;
   private retryAt = 0;
   private wake?: ReturnType<typeof setTimeout>;
@@ -41,12 +43,16 @@ export class DirectwriteService {
     this.deadline = options.deadlineMs ?? 30000;
     if (!Number.isFinite(this.deadline) || this.deadline < 1 || this.deadline > 30000
       || !/^[a-z]:\\/i.test(options.temporaryRoot) || options.temporaryRoot.includes('\0')) throw new Error('DW_OPTIONS_INVALID');
+    if (owner) throw new Error('DW_OWNER_EXISTS');
+    this.options = { ...options, args: options.args?.slice() };
     this.unsubscribe = onApplicationClosing(() => { void this.stop('DW_CLOSING'); });
+    owner = this;
   }
   render(input: DirectwriteInput, admission: { signal?: AbortSignal; isCurrent: () => boolean }): Promise<DirectwriteResult> {
     try {
       validateDirectwriteInput(input);
       if (this.disposed || isApplicationClosing()) throw new Error('DW_CLOSING');
+      if (this.unavailable) throw this.unavailable;
       if (admission.signal?.aborted || !admission.isCurrent()) throw new Error('DW_STALE');
       this.invalidate();
       const snapshot: DirectwriteInput = { fontPath: input.fontPath, fontIdentity: input.fontIdentity,
@@ -96,7 +102,7 @@ export class DirectwriteService {
     if (this.active === job && !job.completed) void this.child?.stop();
   }
   private pump(): void {
-    if (this.running || this.stopping || this.disposed || isApplicationClosing()) return;
+    if (this.running || this.stopping || this.disposed || this.unavailable || isApplicationClosing()) return;
     this.invalidate();
     if (!this.queue.length) return;
     if (Date.now() < this.retryAt) {
@@ -161,7 +167,14 @@ export class DirectwriteService {
       }
       if (directory) {
         try { await fs.rm(directory, { recursive: true, force: true }); }
-        catch { /* Retain only our private directory for later recovery (DW-04/06). */ }
+        catch {
+          // Never build an unbounded pile of inaccessible outputs. Preserve the
+          // owned directory for later recovery and stop this owner's admission.
+          this.unavailable = new Error('DW_OUTPUT_CLEANUP_FAILED');
+          for (const pending of this.jobs.values()) for (const subscriber of pending.subscribers) subscriber.settle(this.unavailable);
+          this.jobs.clear(); this.queue.length = 0;
+          if (this.child) { await this.child.stop('DW_OUTPUT_CLEANUP_FAILED'); this.child = undefined; }
+        }
       }
     }
   }
@@ -181,5 +194,6 @@ export class DirectwriteService {
   }
   async dispose(): Promise<void> {
     this.disposed = true; this.unsubscribe(); await this.stop('DW_CLOSING');
+    if (owner === this) owner = undefined;
   }
 }
