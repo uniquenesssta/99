@@ -68,7 +68,7 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-26：从 Stage 9 建立 `stage/10-preview-performance`，先回移独立修复：Rust `WNetGetConnectionW` Unicode 映射查询替换 PowerShell/CIM，保留 1500ms、TTL/请求合并/失败冷却与未知身份拒绝。同步回移 Windows 诊断的 stderr 管道时序、变异路径匹配、模块缓存路径统一修复；不合入 DirectWrite 试验代码。五项相关诊断与 typecheck 通过，新分支完整回归/构建结果见[Stage 10 任务书](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。
+- 2026-09-26：从 Stage 9 建立 `stage/10-preview-performance`，先回移独立修复：Rust `WNetGetConnectionW` Unicode 映射查询替换 PowerShell/CIM，保留 1500ms、TTL/请求合并/失败冷却与未知身份拒绝。同步回移 Windows 诊断的 stderr 管道时序、变异路径匹配、模块缓存路径统一修复；不合入 DirectWrite 试验代码。本地 typecheck、147/147 完整诊断、构建与 3/3 混淆通过；新分支 Windows/Linux CI `36246802044` 已触发，最终结果待确认。范围及接续见[Stage 10 任务书](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。
 
 - 2026-09-26：建立常驻 DirectWrite 预览试验任务书，明确 DW-00～DW-08、默认关闭、网络隔离、字体副本/对象预算、取消退出、缓存兼容和端到端 A/B 验收约束；本次仅文档，未切换渲染后端。见 [常驻 DirectWrite 预览试验任务书](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md)。
 

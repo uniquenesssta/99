@@ -21,7 +21,9 @@
 ## 2. 验证
 
 - 当前本地：mapped-drive-unicode、shared-root-retention（18场景）、operation-chain（7变异）、shared-action-admission（40组）、user-intent-consistency（4变异）及 typecheck 全通过。
-- 完整诊断与构建运行中；新分支 Windows/Linux CI 推送后执行，未得到结果不得记为通过。
+- 本地完整 `npm run verify` 退出 0：typecheck + 147/147 诊断；Electron/Vite 构建及 3/3 混淆通过，diff 检查通过。
+- 代码提交 `237998144009a41885089fb286879ed1f8055477`；新分支 Windows/Linux CI `36246802044` 已触发，最终结果仍待确认，不能以原 DW 分支绿灯代替。
+- 复用已核对的 WNet API 实现；Mermaid 更新实际查询链，Create State 保存当前分支与回移边界。
 - 开发运行：`npm run dev`；不需要 build:win。新分支不提供 dev:dw。
 
 ## 3. 后续预览研究（尚未实施）
