@@ -74,6 +74,10 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-26：补齐 Stage 10 的 S10-01 至 06 执行卡，覆盖关联基线、请求调度、失败恢复、缓存关键路径、过期工作与实机验收；明确审计追踪、性能判定及回滚要求，下一项 S10-01，尚未实施预览修复。见 [Stage 10 任务书](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。
+
+- 2026-09-26：扩展 Stage 10 预览审计：受控复现队列优先级提升失效、超时转缺失占位且被复用，以及文字/字号补排缺口；登记共享准备阻挡缓存读取、失败恢复与显示回执缺口。尚未确定用户空白事件的唯一根因。仅更新审计记录，尚未修复；证据和边界见 [Stage 10 任务书第 5–6 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#5-预览缺失与延迟审计2026-09-26未修复)。
+
 - 2026-09-26：依赖下载改为项目上一级 `../.hfm-deps/`，新增 `deps:install`；开发安装、原生重建、打包下载和 Rust worker 构建接入同一相对位置策略。保留项目内安装/编译产物与原有构建验证门。已核对 Electron 42.11.3 的缓存参数及 Cargo 文档，通过真实子进程路径/错误传播、npm 缓存落点、typecheck 和 release gate 检查；未在本环境执行完整 Windows 依赖下载/原生重建。
 
 - 2026-09-26：从 Stage 9 建立 `stage/10-preview-performance`，先回移独立修复：Rust `WNetGetConnectionW` Unicode 映射查询替换 PowerShell/CIM，保留 1500ms、TTL/请求合并/失败冷却与未知身份拒绝。同步回移 Windows 诊断的 stderr 管道时序、变异路径匹配、模块缓存路径统一修复；不合入 DirectWrite 试验代码。本地 typecheck、147/147 完整诊断、构建与 3/3 混淆通过；回移提交的 Windows/Linux CI `36246802044` 已全部通过。范围及接续见[Stage 10 任务书](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。
