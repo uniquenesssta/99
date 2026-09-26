@@ -19,7 +19,10 @@ export function createPreviewRenderAdmissionRuntime() {
     const current = () => !controller.signal.aborted && !sender.isDestroyed() && !isApplicationClosing()
       && applicationWorkEpoch() === epoch && requests!.get(token) === controller
     try {
-      const value = await action({ signal: controller.signal, isCurrent: current })
+      const cancelled = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener('abort', () => reject(new Error('DW_CANCELLED')), { once: true })
+      })
+      const value = await Promise.race([action({ signal: controller.signal, isCurrent: current }), cancelled])
       if (!current()) throw new Error('DW_STALE')
       return value
     } finally { clearTimeout(timer); sender.removeListener('destroyed', abort); requests.delete(token) }

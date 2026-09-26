@@ -150,7 +150,7 @@
     "src/renderer/src/fontDialogRuntime.ts": "888546a13c86bfa658fff5bfcb70338f2fc15ac4165deed640747d4d3563a7ec",
     "src/renderer/src/fontDialogContextActionsRuntime.ts": "a8d58799e7c3f00ce8661a35a37293f1c80b39653834d0fbed1ee29bbb96a719",
     "src/renderer/src/fontDialogTagActionsRuntime.ts": "9b5bc4b4b683c0f3b758f21fc5e1954136c45f8c5bf6065a9ba97576c1a9767c",
-    "src/renderer/src/fontDetailPanelRuntime.ts": "ef5ba91f22fa915de270e90513a6de0cdc5848aa7f63a75e682222c24b12b9b0",
+    "src/renderer/src/fontDetailPanelRuntime.ts": "c771e621207945c0a4ce50c9aa47127037a842e244541a7314047af05a825f02",
     "src/renderer/src/fontTagInputRuntime.ts": "296b77a1412004e68c390c96e732479f90faa57f9a7aa5fa9984efa6ca4a6c07",
     "src/renderer/src/runtime/app/useSelectionController.ts": "afef9e1fabcbbcd431972d9106db8c39ff3b3d7891643cface8c2c2b174f46ad",
     "src/renderer/src/runtime/app/fontSelectionHydrationRuntime.ts": "87633750b764db93d484bccce6b0f5d87dfc686b04049b5ab7b7e3960cdd363a"
