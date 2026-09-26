@@ -1,4 +1,5 @@
 import { withOperationTrace, logOperation } from '../logging/operationTraceContext'
+import { createPreviewBaselineTrace, measurePreviewBaseline } from '../logging/previewBaselineTrace'
 import { ipcMain } from "electron";
 import { PreviewInputError } from "../preview/runtime/previewInputPolicy";
 import { assertTrustedIpcSender } from "../security/ipcSenderValidation";
@@ -248,7 +249,7 @@ export function registerTracedIpcHandler(runtime: IpcHandlerRuntime, channel: st
     const tail = args[args.length - 1]
     const envelope = args.length === OPERATION_TRACE_ARGUMENTS[channel] + 1 && tail && typeof tail === 'object' && Object.keys(tail).length === 1 && Object.hasOwn(tail, '__hfmOperationTrace')
       ? args.pop() as { __hfmOperationTrace?: unknown } : undefined
-    return withOperationTrace(envelope?.__hfmOperationTrace, append, async () => {
+    return withOperationTrace(envelope?.__hfmOperationTrace ?? createPreviewBaselineTrace(channel), append, async () => {
     const traceChannel = Object.hasOwn(OPERATION_TRACE_ARGUMENTS, channel)
     if (traceChannel) logOperation({ stage: 'ipc-start', backend: 'main' })
     const startedAt = Date.now()
@@ -263,7 +264,7 @@ export function registerTracedIpcHandler(runtime: IpcHandlerRuntime, channel: st
     }
     try {
       runtime.assertFeatureForChannel?.(channel)
-      const result = await handler(event, ...args)
+      const result = await measurePreviewBaseline('preview-request', () => handler(event, ...args), channel)
       const elapsed = Date.now() - startedAt
       const cpu = process.cpuUsage(cpuStarted)
       const heapAfter = process.memoryUsage().heapUsed

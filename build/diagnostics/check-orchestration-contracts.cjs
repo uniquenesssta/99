@@ -263,7 +263,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
       if (!id.startsWith('.')) return localRequire(id)
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
       if (target === 'src/main/app/shutdownCoordinatorRuntime') return require('./check-operation-chain.cjs').loader()(target + '.ts')
-      if (target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
+      if (target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace' || target === 'src/main/logging/previewBaselineTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {} }
       if (target === 'src/main/path/startupPathAvailabilityRuntime') return { getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }
       const core = 'src/main/rust-core/'

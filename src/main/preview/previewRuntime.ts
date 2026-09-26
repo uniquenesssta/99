@@ -1,4 +1,5 @@
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
+import { bindPreviewBaseline, measurePreviewBaseline, previewBaselineEvent } from '../logging/previewBaselineTrace'
 import { validatePreviewInput } from './runtime/previewInputPolicy'
 import { join,resolve } from 'node:path'
 import type { FontItem } from '../../shared/types'
@@ -110,7 +111,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     const resolvedFontPath = resolve(item.path)
     const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog)
     const installedRoute = resolveInstalledFontPreviewRoute(item)
-    const previewCache = await previewCacheStorageForFont(resolvedFontPath)
+    const previewCache = await measurePreviewBaseline('preview-storage', () => previewCacheStorageForFont(resolvedFontPath))
     let stat = previewCacheStatForInstalledRoute(
       item,
       installedRoute,
@@ -120,7 +121,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     )
 
     if (!stat) {
-      const existingFontPath = await resolveExistingFontFilePath(item.path)
+      const existingFontPath = await measurePreviewBaseline('preview-source-resolve', () => resolveExistingFontFilePath(item.path))
       if (!existingFontPath) {
         if (installedRoute) {
           stat = { size: 0, mtimeMs: 0 }
@@ -151,12 +152,14 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     const taskKey = previewTaskKey(key)
 
     if (!ignorePreviewIndex) {
-      const indexedStatus = await readPreviewCacheIndexStatus(previewCache, key, outputPath)
+      const indexedStatus = await measurePreviewBaseline('preview-index', () => readPreviewCacheIndexStatus(previewCache, key, outputPath))
       if (indexedStatus === 'ok') {
+        previewBaselineEvent('preview-cache', { reason: 'index-hit' })
         await completeBackgroundTask(taskKey, '预览缓存已存在').catch(() => undefined)
         return { outputPath, cached: true, storage: previewCache.storage }
       }
       if ((indexedStatus === 'missing' || indexedStatus === 'failed') && !installedRoute) {
+        previewBaselineEvent('preview-cache', { reason: 'negative-index-hit' })
         await skipBackgroundTask(taskKey, indexedStatus === 'missing' ? '字体文件路径已记录为失效，跳过预览缓存。' : '字体预览生成曾失败，跳过重复重试。').catch(() => undefined)
         return null
       }
@@ -171,6 +174,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     }
 
     if (await fileExistsWithDeadline(outputPath)) {
+      previewBaselineEvent('preview-cache', { reason: 'file-hit' })
       await writePreviewCacheIndex(previewCache, key, {
         outputPath,
         fontSignature,
@@ -199,6 +203,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         sourcePath: item.path,
       })
       if (hydrated && await fileExistsWithDeadline(outputPath)) {
+        previewBaselineEvent('preview-cache', { reason: 'shared-hydration-hit' })
         await completeBackgroundTask(taskKey, '预览缓存已从共享缓存拉取到本地').catch(() => undefined)
         return { outputPath, cached: true, storage: previewCache.storage }
       }
@@ -358,17 +363,27 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     text = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog).text
     const requestKey = previewImageMemoryRuntime.requestKey(item, text, fontSize, width, height)
     const cachedDataUri = previewImageMemoryRuntime.get(requestKey)
-    if (cachedDataUri) return cachedDataUri
+    if (cachedDataUri) {
+      previewBaselineEvent('preview-cache', { reason: 'memory-hit' })
+      return cachedDataUri
+    }
 
     const existing = previewImageMemoryRuntime.inflight.get(requestKey)
-    if (existing) return existing
+    if (existing) {
+      previewBaselineEvent('preview-cache', { reason: 'coalesced' })
+      return existing
+    }
 
-    const task = withGlobalIo('preview:render', async () => {
-      let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false)
+    const queuedAt = performance.now()
+    const task = withGlobalIo('preview:render', bindPreviewBaseline(async () => {
+      previewBaselineEvent('preview-global-queue', { elapsedMs: performance.now() - queuedAt })
+      let previewFile = await measurePreviewBaseline('preview-file', () => ensureFontPreviewImageFile(item, text, fontSize, width, height, false))
+      previewBaselineEvent('preview-file-source', { reason: !previewFile ? 'placeholder' : previewFile.cached ? 'cached' : 'rendered' })
       if (!previewFile) return previewImageMemoryRuntime.remember(requestKey, missingFontPreviewDataUri(item.path, width, height))
 
       try {
-        const bytes = await fsp.readFile(previewFile.outputPath)
+        const outputPath = previewFile.outputPath
+        const bytes = await measurePreviewBaseline('preview-image-read', () => fsp.readFile(outputPath))
         return previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
       } catch (error) {
         if (previewFile.cached) {
@@ -379,7 +394,8 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
           const keyStat = previewCacheStatForInstalledRoute(item, installedRoute, { size: item.fileSize || 0, mtimeMs: item.modifiedAt || 0 }) || { size: 0, mtimeMs: 0 }
           const key = previewCacheKey(sha1, keyIdentity, keyStat.size, keyStat.mtimeMs, fontSize, width, height, normalizedText)
           await deletePreviewCacheIndex(storage, key).catch(() => undefined)
-          previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, true)
+          previewFile = await measurePreviewBaseline('preview-file-recovery', () => ensureFontPreviewImageFile(item, text, fontSize, width, height, false, true))
+          previewBaselineEvent('preview-file-source', { reason: !previewFile ? 'recovery-placeholder' : previewFile.cached ? 'recovery-cached' : 'recovery-rendered' })
           if (previewFile) {
             const bytes = await fsp.readFile(previewFile.outputPath)
             return previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
@@ -387,7 +403,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         }
         throw error
       }
-    }, { priority: 'foreground', storagePath: item.path })
+    }, appendStartupLog), { priority: 'foreground', storagePath: item.path })
       .finally(() => {
         previewImageMemoryRuntime.inflight.delete(requestKey)
       })

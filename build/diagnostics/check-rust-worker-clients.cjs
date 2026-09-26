@@ -15,6 +15,28 @@ function tokens(text) {
   while (scanner.scan() !== ts.SyntaxKind.EndOfFileToken) result.push(scanner.getTokenText())
   return result
 }
+// DW-00 adds observation around the unchanged render command. Keep the original
+// digest and remove ONLY these exact additions; new telemetry has a behavior gate.
+function baselineFunction(name, text) {
+  if (name !== 'runRustPreviewRenderImage') return text
+  text = text.replace(/\r\n/g, '\n')
+  const edits = [
+    ['    const workerPath = status.path\n', ''],
+    ["await measurePreviewBaseline('preview-native-command', () => runRustCoreScheduledCommand(workerPath,", 'await runRustCoreScheduledCommand(status.path,'],
+    ['        maxBuffer: 1024 * 1024,\n      }))', '        maxBuffer: 1024 * 1024,\n      })'],
+    [`      previewBaselineEvent('preview-native-result', {
+        backend: payload.engine === 'rust-private-gdi' ? 'rust-private-gdi' : 'unknown',
+        transport: commandOutput.sharedIo ? 'shared-one-shot' : commandOutput.daemon ? 'daemon' : 'one-shot',
+        outcome: payload.ok && payload.outputPath ? 'returned' : 'rejected',
+        elapsedMs: typeof payload.elapsedMs === 'number' && payload.elapsedMs >= 0 ? payload.elapsedMs : undefined,
+      })\n`, ''],
+  ]
+  for (const [before, after] of edits) {
+    assert.equal(text.split(before).length, 2, 'unrecognized preview instrumentation; review behavior before changing the baseline')
+    text = text.replace(before, after)
+  }
+  return text
+}
 function checkFunctions(overrides = sources) {
   for (const group of fixture.groups) {
     const file = ts.createSourceFile(group.path, overrides.get(group.path), ts.ScriptTarget.Latest, true)
@@ -30,7 +52,7 @@ function checkFunctions(overrides = sources) {
     })
     for (const [name, hash] of Object.entries(group.functions)) {
       assert(found.has(name), 'lost domain/helper function: ' + name)
-      assert.equal(h.digest(tokens(found.get(name).getText(file))), hash, name + ' changed from pre-extraction baseline')
+      assert.equal(h.digest(tokens(baselineFunction(name, found.get(name).getText(file)))), hash, name + ' changed from pre-extraction baseline')
     }
     assert.equal(found.size, Object.keys(group.functions).length + 1, 'unexpected client function owner')
     const clientFactory = found.get(group.factory)
@@ -153,6 +175,10 @@ async function checkMaintenanceFailureReports() {
 }
 async function main() {
   checkFunctions()
+  const previewPath = h.core + 'clients/rustPreviewClientRuntime.ts'
+  const changedTimeout = sources.get(previewPath).replace('Math.max(5000, Number(process.env.HFM_RUST_PREVIEW_RENDER_TIMEOUT_MS', 'Math.max(5001, Number(process.env.HFM_RUST_PREVIEW_RENDER_TIMEOUT_MS')
+  assert.notEqual(changedTimeout, sources.get(previewPath))
+  assert.throws(() => checkFunctions(new Map(sources).set(previewPath, changedTimeout)), /pre-extraction baseline/, 'diagnostic normalization hid a production timeout change')
   checkFacadeClosure()
   checkControlIdentities()
   checkClosureMutations()

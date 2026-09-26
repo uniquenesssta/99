@@ -1,7 +1,7 @@
 name: Windows C-08.1 validation
 on:
   push:
-    branches: ['stage/09-preview-tags-app']
+    branches: ['stage/09-preview-tags-app', 'stage/dw-resident-directwrite-preview']
 permissions:
   contents: read
 jobs:
@@ -14,6 +14,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
+      - run: npm run diagnostics:preview-baseline
       - run: npm run diagnostics:shared-io-integration
       - run: npm run diagnostics:shared-filesystem
       - run: npm run diagnostics:mapped-drive-unicode

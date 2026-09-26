@@ -1,5 +1,6 @@
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { tracePreviewCacheMutation } from '../../logging/previewCacheMutationTrace'
+import { measurePreviewBaseline, previewBaselineEvent } from '../../logging/previewBaselineTrace'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
 import type { PreviewCacheIndexStatus } from '../../preview/previewCacheRuntime'
 import {
@@ -215,17 +216,24 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'preview-render-image')) return null
 
+    const workerPath = status.path
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-preview-render`)
     const inputPath = inputFile.path
     try {
       await inputFile.writeJson(input)
-      const commandOutput = await runRustCoreScheduledCommand(status.path, ['--preview-render-image', '--input', inputPath], {
+      const commandOutput = await measurePreviewBaseline('preview-native-command', () => runRustCoreScheduledCommand(workerPath, ['--preview-render-image', '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_PREVIEW_RENDER_TIMEOUT_MS || 30 * 1000) || 30 * 1000),
         windowsHide: true,
         maxBuffer: 1024 * 1024,
-      })
+      }))
       const payload = parseJsonLine<RustPreviewRenderImagePayload>(commandOutput.stdout)
+      previewBaselineEvent('preview-native-result', {
+        backend: payload.engine === 'rust-private-gdi' ? 'rust-private-gdi' : 'unknown',
+        transport: commandOutput.sharedIo ? 'shared-one-shot' : commandOutput.daemon ? 'daemon' : 'one-shot',
+        outcome: payload.ok && payload.outputPath ? 'returned' : 'rejected',
+        elapsedMs: typeof payload.elapsedMs === 'number' && payload.elapsedMs >= 0 ? payload.elapsedMs : undefined,
+      })
       if (!payload.ok || !payload.outputPath) {
         const error = new Error(payload.message || 'rust preview render returned ok=false')
         throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, '--preview-render-image') : error

@@ -2,9 +2,9 @@
 
 ## 0. 状态、授权与执行入口
 
-- 文档版本：1.0；日期：2026-09-26；软件版本：3.0.0。
-- 仓库：`uniquenesssta/99`；唯一分支：`stage/09-preview-tags-app`；基线：`37863fdd5832ac3ced3f44ba893b6f12e59272b5`（渲染代码沿用此前版本，扫描修复为 `ecaf8ab`）。
-- 当前状态：**任务书已建立，DW-00～DW-08 均未实施**。当前授权是制定试验任务书与约束；本轮不改运行时代码、不启用新后端。实施入口为 DW-00。
+- 文档版本：1.1；日期：2026-09-26；软件版本：3.0.0。
+- 仓库：`uniquenesssta/99`；试验分支：`stage/dw-resident-directwrite-preview`（用户已明确授权新建）；起点：`7d220c3d041291d4480210303ceae5dc3731145e`（渲染代码沿用此前版本，扫描修复为 `ecaf8ab`）。
+- 当前状态：**DW-00 进行中；DW-01～DW-08 未实施**。用户已授权新建分支并开始 DW-00；本轮实施主进程逐请求诊断和行为锁，不启用新后端。
 - 用户目标：尝试常驻 DirectWrite 是否能改善未安装字体预览，特别是连续浏览、修改文字与字号；没有要求全面重做预览系统。
 - 用户已接受剩余一般延迟，其他性能优化暂停。本试验不借机扩展为扫描、全库缓存、标签、收藏、激活或数据库重构。
 - 继续遵守 [总任务书](HFM_REMEDIATION_MASTER_TASKBOOK.md)、[共享离线与本地退出](HFM_SHARED_OFFLINE_LOCAL_EXIT_TASKBOOK.md)、[索引与 Shared I/O 专项](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md)、[Stage 3 文件与预览边界](HFM_STAGE_03_FILE_PREVIEW_TASKBOOK.md) 及项目规则。
@@ -206,3 +206,69 @@ flowchart TD
 - Create State 最近返回 UNAUTHORIZED，需重新认证；以本书与 Git 为可恢复依据，不因外部状态保存失败阻断文档交付。
 
 参考：[DWriteCreateFactory](https://learn.microsoft.com/en-us/windows/win32/api/dwrite/nf-dwrite-dwritecreatefactory)、[DWRITE_FACTORY_TYPE](https://learn.microsoft.com/en-us/windows/win32/api/dwrite/ne-dwrite-dwrite_factory_type)。
+
+## 10. DW-00 首批执行边界
+
+本批范围为主进程入口 → 缓存/全局 I/O 排队 → 原生客户端 → 主进程返回。先接通可重复的关联日志和行为门；renderer 排队、图片解码/可见性、原生字体加载/绘制/编码细分、真实 Windows/NAS 样本和资源峰值仍待补，**不把主进程耗时称为端到端可见耗时，不将 DW-00 标为验收通过**。
+
+精确文件清单及扩展理由：
+- `src/main/logging/previewBaselineTrace.ts`：复用现有 operation-chain 与 AsyncLocalStorage，只管理可关闭的预览测量。
+- `src/main/ipc/ipcTraceRuntime.ts`：为三个预览入口创建关联 ID，保持 IPC 参数与返回值不变。
+- `src/main/preview/previewRuntime.ts`：记录内存/合并/图片来源和队列等待，保持缓存与调度所有者不变。
+- `src/main/rust-core/clients/rustPreviewClientRuntime.ts`：记录原生回执中的真实引擎及实际 transport，不改兼容标签/结果协议。
+- `build/diagnostics/check-rust-worker-clients.cjs`：旧提取期函数指纹保持原值；仅对本批精确诊断包装作可审计归一化，再比较原函数体，并用新行为门检查诊断本身。不放宽超时、异常或结果断言。
+- `build/diagnostics/check-orchestration-contracts.cjs`：原诊断使用明确的 TS 模块装载白名单，新增诊断模块后补齐真实模块加载；不修改原行为断言或指纹。
+- `build/diagnostics/check-preview-baseline.cjs`、`build/performance/preview-baseline-report.cjs`、`package.json`：行为门和日志分组报告，不加入生产依赖。
+- `.github/workflows/native-offline-verification.yml`：新分支继续执行既有门，并先运行本批定向诊断，不跳过已知 CIM 门。
+- 本书、根 `README.md`：状态、操作方式、证据与未测项。
+
+不冻结未经测量的内存预算，不猜测最低 DirectWrite API/SDK 版本；沿用 §3.3 设计上限，在后续 DW-00 实测与 API 核对后再确认。
+
+### 10.1 本批诊断的使用与判读
+
+开发 PowerShell（当前后端不变）：
+
+```powershell
+$env:HFM_PREVIEW_BASELINE='1'
+$env:HFM_LOG_DETAIL='debug'
+npm run dev
+```
+
+结束采样后关闭应用，恢复这两个变量原值（原先未设置则移除），下次正常 `npm run dev` 不产生本批关联诊断。必须同时开启详细日志；诊断复用原有 16MiB operation-chain 会话预算，出现 dropped/截断需换新一轮采集，不允许从残缺日志宣称性能通过。A/B 必须使用相同日志配置，详细日志的额外成本不忽略。
+
+```powershell
+npm run baseline:preview-report -- '实际 startup 日志路径'
+```
+
+报告仅含同 `sessionId + operationId` 的主进程处理耗时，按入口、缓存来源、真实原生引擎和 transport 分组。`preview-native-result` 是原生回执计时，`preview-native-command-result` 含调度/传输；缺少回执则为 `not-observed`，不按兼容标签猜成 DirectWrite。保留 `rust-directwrite` 旧返回别名仅为兼容，真实观测当前是 `rust-private-gdi`。
+
+`coalesced` 只记录等待已有请求；不会复制首次请求的内部阶段冒充第二次绘制。调度回调显式恢复创建它的 trace，不能继承上一请求的队列完成上下文。计时均使用同进程单调时钟，原生内部时间单列；阶段可能嵌套，禁止相加或相减各组分位数。
+
+缓存单项/批量读取入口本批只有处理总耗时，不将一个批量耗时算成每张图片耗时；图片/字体对象冷热、UNC/映射盘位置需实验记录确认，不能由 `daemon`/`shared-one-shot` 标签直接推导。内存命中可能是既有缺失占位图；`returned` 不是字体绘制正确性验收。
+
+报告对重复/缺失终态、坏行和 dropped 记录标记不可用；零样本不可用。小于 100 个请求的组标明不足；即使日志完整，`endToEndAccepted` 始终为 false，本工具不能确认屏幕可见性、三轮 A/B 或真实 NAS。
+
+### 10.2 固定采样卡（实测尚未执行）
+
+采用用户现有可合法使用的字体，记录固定匿名样本编号、格式、文件摘要/大小、TTC face、是否安装；不提交字体文件或私有路径。相同样本分别放在本地、映射盘、UNC 实验根，各轮使用同一个映射关系。禁止清空用户共享缓存制造冷启动。
+
+| 组 | 固定操作 | 需另行记录 |
+| --- | --- | --- |
+| 图片热 | 同样本、同文字、同字号重复请求 | 真正命中层；批量请求单列 |
+| 图片冷/同字体 | 同字体按固定序号更换文字 100 次 | 不把进程常驻假设为字体对象已复用 |
+| 修改字号 | 同文字按预先确定的字号序列切换 | 完整尺寸/DPI/布局参数保持 |
+| 首次请求/首屏 | 重启后首次进入固定页，至少 3 轮 | 进程冷不等于系统文件缓存冷；首屏可见终点待接线 |
+| 滚动/快速改字 | 固定页序、停留间隔、文字序列 | 过期取消数、最终显示正确性 |
+| NAS 首次获取 | 在线实验根首次读取未用过的固定样本 | 真实位置、网络条件、读取量；不与本地混组 |
+
+覆盖 TTF、OTF/CFF、TTC face、中英文、组合字符、RTL、缺字/空白/换行/可变字体；具体样本编号与机器配置随 Windows 采样补齐。§3.3 仍是设计预算，API/SDK 最低版本、字体大小分布、私有内存峰值和复制身份反例尚未冻结，禁止提前进入 DW-01 或声称收益。
+
+### 10.3 本批验证记录
+
+- 先运行行为门，缺少实现时失败（ENOENT）；实现后通过真实 IPC 包装、实际 I/O scheduler、Rust 客户端调用，操作系统/原生执行为受控端口。
+- 覆盖默认关闭、并发 trace 隔离、排队恢复、原返回别名保持、真实引擎、daemon/shared-one-shot、零耗时合法、原异常对象和临时文件释放、日志失败无重放。
+- 两项源码变异：把真实引擎改回错误别名、去掉排队 trace 恢复，都导致行为门失败。报告覆盖坏行/丢日志/重复终态/无样本/小样本，不宣称端到端验收。
+- `npm run verify` 退出 0：typecheck + 148/148 诊断通过。首次完整门因诊断白名单缺失失败，已补真实模块加载；旧 Rust 客户端指纹仍保留原值，仅精确归一化本批诊断包装，并新增生产超时改动会失败的反例。
+- Electron/Vite 构建退出 0（main 384 / preload 1 / renderer 204 模块），混淆退出 0（3/3）；`git diff --check` 通过。输入边界 190 个 JS 行为用例及 68 个 C++ 策略用例通过，后者不执行 GDI+。
+- 对原实机日志运行报告得到 0 个关联样本、不可验收，未伪造或补算旧日志数据。
+- Windows CI 随新分支推送触发，结果待收；本环境无 Rust/Cargo/Windows，Windows/NAS 与 GUI 实机均未执行。DW-00 保持进行中，下一入口为 renderer 关联终点、真实样本/API/预算确认。
