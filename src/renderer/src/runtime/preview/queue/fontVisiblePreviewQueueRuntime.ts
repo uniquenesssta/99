@@ -1,3 +1,4 @@
+import { previewRecordForProbe } from '@shared/previewFailure'
 import { previewTrace, previewEvent } from '../previewTraceRuntime'
 import type { FontItem } from '@shared/types'
 import type { PreviewQueueEntry } from '../../../appRuntime'
@@ -94,8 +95,7 @@ export function createFontVisiblePreviewQueueRuntime(
     if (options.previewFamilies[font.id] && !routeForcesNative) return false
     if (options.nativePreviewImages[font.id]) return false
     if (options.loadingFonts.current.has(font.id)) return false
-    if (options.isBadFontRecord(font)) return false
-    if (font.previewDisabled && (font.previewError?.includes('字体文件不存在') || font.previewError?.includes('路径已失效'))) return false
+    if (options.isBadFontRecord(previewRecordForProbe(font))) return false
     return true
   }
 

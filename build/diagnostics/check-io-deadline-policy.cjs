@@ -80,7 +80,9 @@ function testSyncUncCanonicalProbeSkipped() {
 }
 
 function testPreviewFileIoUsesDeadline() {
-  assertIncludes('src/main/preview/previewRuntime.ts', 'preview-font-stat:')
+  assertIncludes('src/main/preview/previewRuntime.ts', 'resolvePreviewSource')
+  assertIncludes('src/main/preview/runtime/previewSourceRuntime.ts', 'preview-font-stat')
+  assertIncludes('src/main/preview/runtime/previewSourceRuntime.ts', 'withIoDeadlineResult')
   assertIncludes('src/main/preview/previewRuntime.ts', 'fileExistsWithDeadline(outputPath)')
   assertIncludes('src/main/preview/runtime/previewFontDataRuntime.ts', 'preview-font-data-stat:')
   assertIncludes('src/main/preview/runtime/previewFontDataRuntime.ts', 'preview-font-data-read:')

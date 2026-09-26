@@ -1,3 +1,4 @@
+import { previewRecordForProbe, hasLegacyMissingPreviewFlag } from '@shared/previewFailure'
 import type { FontItem } from '@shared/types'
 import {
 AUTO_PREVIEW_CACHE_FONT_SIZE,
@@ -12,7 +13,7 @@ import { networkAwarePreviewLimit } from './fontPreviewNetworkPathRuntime'
 
 export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueueRuntimeOptions): FontAutoPreviewCacheQueueRuntime {
   async function startAutoPreviewCache(fonts: FontItem[]): Promise<void> {
-    const candidates = fonts.filter((font) => !options.isBadFontRecord(font))
+    const candidates = fonts.filter((font) => !options.isBadFontRecord(previewRecordForProbe(font)))
     options.autoPreviewCacheRunId.current += 1
     const runId = options.autoPreviewCacheRunId.current
     options.autoPreviewCacheQueue.current = []
@@ -21,7 +22,7 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
 
     if (!candidates.length) return
 
-    options.setStatus(`正在读取预览缓存索引：${candidates.length} 个字体……`)
+    options.setStatus(`正在核验预览缓存：${candidates.length} 个字体……`)
 
     let missing = candidates
     try {
@@ -31,7 +32,7 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
       const cachedCount = candidates.length - missing.length
       options.autoPreviewCacheStats.current = { total: missing.length, done: 0, cached: cachedCount, generated: 0, failed: 0 }
       if (!missing.length) {
-        options.setStatus(`预览缓存索引已完成：${cachedCount} 个已有缓存，无需生成。`)
+        options.setStatus(`预览缓存核验已完成：${cachedCount} 个已有缓存，无需生成。`)
         return
       }
     } catch {
@@ -67,7 +68,7 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
       const font = options.autoPreviewCacheQueue.current.shift()
       if (!font) continue
       options.queuedAutoPreviewCacheIds.current.delete(font.id)
-      if (options.isBadFontRecord(font)) continue
+      if (options.isBadFontRecord(previewRecordForProbe(font))) continue
 
       options.activeAutoPreviewCacheLoads.current += 1
       void options.hfm.ensurePreviewCache(font, AUTO_PREVIEW_CACHE_TEXT, AUTO_PREVIEW_CACHE_FONT_SIZE, AUTO_PREVIEW_CACHE_WIDTH, AUTO_PREVIEW_CACHE_HEIGHT)
@@ -76,6 +77,8 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
           const stats = options.autoPreviewCacheStats.current
           stats.done += 1
           if (result.ok) {
+            if (hasLegacyMissingPreviewFlag(font)) options.updateFont(font.id, current => hasLegacyMissingPreviewFlag(current)
+              ? { ...current, previewDisabled: false, previewError: undefined } : current)
             if (result.cached) stats.cached += 1
             else stats.generated += 1
           } else {

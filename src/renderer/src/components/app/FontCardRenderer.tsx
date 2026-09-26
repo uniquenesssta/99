@@ -6,6 +6,7 @@ import type { FontCardProps } from '../../appRuntime'
 import { FontCard } from '../FontCard'
 
 interface FontCardRendererOptions {
+  closingLifecycle?: FontCardProps['closingLifecycle']
   detailVisible: boolean
   selectedFontId?: string
   selectedFontIdSet: Set<string>
@@ -38,6 +39,7 @@ export function useFontCardRenderer(options: FontCardRendererOptions) {
   }, [options])
   const handlerCacheRef = useRef(new WeakMap<FontItem, FontCardHandlers>())
   const {
+    closingLifecycle,
     detailVisible,
     selectedFontId,
     selectedFontIdSet,
@@ -78,6 +80,7 @@ export function useFontCardRenderer(options: FontCardRendererOptions) {
     return (
       <FontCard
         key={font.id}
+        closingLifecycle={closingLifecycle}
         font={font}
         active={active}
         selected={selected}
@@ -95,7 +98,7 @@ export function useFontCardRenderer(options: FontCardRendererOptions) {
         onDragEnd={handlers.onDragEnd}
       />
     )
-  }, [detailVisible, selectedFontId, selectedFontIdSet, previewFamilies, nativePreviewImages, previewText, listPreviewFontSize])
+  }, [closingLifecycle, detailVisible, selectedFontId, selectedFontIdSet, previewFamilies, nativePreviewImages, previewText, listPreviewFontSize])
 
   return { renderFontCard }
 }

@@ -20,6 +20,7 @@ function load(file, mocks = {}, transform = x => x) {
     if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises, sharedSqliteReadSnapshot: async () => undefined }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id.endsWith('/sharedIoProcessRuntime')) return require('./check-operation-chain.cjs').loader()('src/main/path/sharedIoProcessRuntime.ts')
+    if (id === '../../../shared/previewFailure') return load('src/shared/previewFailure.ts', mocks)
     if (['./previewBatchRowsRuntime', './previewBatchReadRuntime', './previewStorageIoRuntime'].includes(id)) return load('src/main/preview/runtime/' + id.slice(2) + '.ts', mocks)
     if (['./localFontTagRustAdapterRuntime', './localFontTagMutationEffectsRuntime'].includes(id)) return load('src/main/library/runtime/' + id.slice(2) + '.ts', mocks)
     if (id === './localFontTagNodePersistenceRuntime') return load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts', mocks)

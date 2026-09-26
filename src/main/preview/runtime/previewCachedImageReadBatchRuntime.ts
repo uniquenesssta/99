@@ -1,3 +1,4 @@
+import { isCompletePreviewPng } from './previewImageValidationRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { fileExistsTimeoutMs,withIoDeadlineResult } from '../../path/ioDeadlineRuntime'
 
@@ -34,6 +35,7 @@ export async function readCachedPreviewImageDataUris(
           if (readResult.timedOut) options.onReadTimeout?.(item, readResult.error)
           continue
         }
+        if (!isCompletePreviewPng(readResult.value)) continue
         result[item.id] = `data:image/png;base64,${readResult.value.toString('base64')}`
       } catch {
         // 缓存索引和 PNG 文件可能被其他进程同时清理；保持未命中，后续会重新生成。

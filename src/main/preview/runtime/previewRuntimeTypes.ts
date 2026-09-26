@@ -20,6 +20,7 @@ export interface PreviewCacheStorage {
 }
 
 export interface PreviewImageFileResult {
+  bytes?: Buffer
   outputPath: string
   cached: boolean
   storage: 'root' | 'fallback' | 'local'

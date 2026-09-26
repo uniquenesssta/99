@@ -90,7 +90,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "e67ad06fab16fe46097d3c1c934317364e5cd0107f73a8731ca0b0f3cb9cc3c3"
+      "tokenHash": "8cf7270ea8ee2187415a19134eddcfae920694de7be8bb9ca39ce9ea48259e92"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -983,6 +983,7 @@
         "createPreviewBatchReadRuntime",
         "schedulePrefetchForStatusMisses",
         "getPreviewCacheStatus",
+        "verifyStatus",
         "readCachedPreviewImages"
       ],
       "owners": [],
@@ -997,7 +998,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "bc1641496a68b408b582f3a15721f84d7bb16f052046e521cddea2e44dc5f209"
+      "tokenHash": "26144d0b028732d0632d2a9f647f678a20810f7e0f13a5af79781c75acb85c98"
     },
     "src/main/preview/runtime/previewStorageIoRuntime.ts": {
       "functions": [

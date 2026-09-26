@@ -1,3 +1,4 @@
+import { previewRecordForProbe } from '@shared/previewFailure'
 import type { FontItem,LibraryState } from '@shared/types'
 
 export function createPreviewFamilyName(fontId: string): string {
@@ -24,7 +25,7 @@ export function canQueuePreviewFont(options: {
   if (nativePreviewImages[font.id] && failedPreviewFontIds[font.id]) return false
   if (loadingFontIds.has(font.id)) return false
   if (!options.allowQueued && queuedPreviewFontIds.has(font.id)) return false
-  if (isBadFontRecord(font)) return false
+  if (isBadFontRecord(previewRecordForProbe(font))) return false
   return true
 }
 

@@ -1,3 +1,4 @@
+import { hasLegacyMissingPreviewFlag } from '../../../shared/previewFailure'
 import type { FontItem, LibraryState } from "../../../shared/types";
 import { validatePreviewInput } from "./previewInputPolicy";
 import { readCachedPreviewImageDataUris } from "./previewCachedImageReadBatchRuntime";
@@ -60,6 +61,16 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
       (id) => { result[id] = false; },
     );
 
+    const recheckIds = new Set(items.filter(item => item && hasLegacyMissingPreviewFlag(item)).map(item => item.id));
+    async function verifyStatus(rows: PreviewCacheHydrationRow[], statuses: Record<string, boolean>): Promise<void> {
+      const hits = rows.filter(row => statuses[row.id] && !recheckIds.has(row.id));
+      for (let offset = 0; offset < hits.length; offset += 400) {
+        const chunk = hits.slice(offset, offset + 400);
+        const images = await readCachedPreviewImageDataUris(chunk, 6);
+        for (const row of chunk) result[row.id] = statuses[row.id] = !!images[row.id];
+      }
+      for (const row of rows) if (recheckIds.has(row.id)) result[row.id] = statuses[row.id] = false;
+    }
     const now = new Date().toISOString();
     const chunkSize = 400;
     for (const group of groups.values()) {
@@ -84,7 +95,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
               dbPath: rustDbPath,
               schemaVersion: options.previewSqliteSchemaVersion,
               rows: group.rows,
-              acceptedStatuses: ["ok", "missing", "failed"],
+              acceptedStatuses: ["ok"],
               touchMatched: true,
               checkFiles: false,
               now,
@@ -102,6 +113,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
             result[row.id] = matched;
             groupStatus[row.id] = matched;
           }
+          await verifyStatus(group.rows, groupStatus);
           schedulePrefetchForStatusMisses(
             group.storage,
             group.rows,
@@ -120,7 +132,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
               dbPath: rustDbPath,
               schemaVersion: options.previewSqliteSchemaVersion,
               rows: group.rows,
-              acceptedStatuses: ["ok", "missing", "failed"],
+              acceptedStatuses: ["ok"],
               touchMatched: true,
               now,
             }),
@@ -137,6 +149,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
             result[row.id] = matched;
             groupStatus[row.id] = matched;
           }
+          await verifyStatus(group.rows, groupStatus);
           schedulePrefetchForStatusMisses(
             group.storage,
             group.rows,
@@ -174,7 +187,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
               row?.status,
             );
             const processedStatus =
-              status === "ok" || status === "missing" || status === "failed";
+              status === "ok";
             const matched =
               processedStatus &&
               options.normalizePathForCacheCompare(row?.output_path || "") ===
@@ -193,6 +206,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
               `UPDATE preview_cache SET accessed_at = ?, updated_at = ? WHERE preview_key IN (${placeholders})`,
             ).run(now, now, ...keys);
         }
+        await verifyStatus(group.rows, groupStatus);
         schedulePrefetchForStatusMisses(group.storage, group.rows, groupStatus);
       });
     }

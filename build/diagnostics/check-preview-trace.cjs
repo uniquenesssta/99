@@ -135,7 +135,8 @@ async function run() {
     const cardLoad = loader({
         react: { memo: f => f, useEffect: () => { }, useMemo: f => f(), useRef: () => ({ current: null }) },
         'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-        '../runtime/preview/previewTraceRuntime': renderer,
+        '../sharedAvailabilityRuntime':{useSharedAvailability:()=>({roots:[],tags:[],unattributedTags:[]})},
+ '../runtime/preview/previewTraceRuntime': renderer,
         '../appRuntime': { fontDisplayName: () => '', fontFileDisplayName: () => '', formatSize: () => '', installLabel: () => '', isInstalled: () => false, scriptLabels: {} },
         '../runtime/preview/fontPreviewCssFamilyRuntime': { buildListPreviewCssFamily: () => '' },
         '../runtime/preview/useResizeFrozenPreviewRuntime': { useResizeFrozenPreviewRuntime: (_id, v) => v },
@@ -143,7 +144,7 @@ async function run() {
         '../runtime/preview/gridPreviewVisualFitRuntime': { useGridPreviewVisualFitText: () => ({ fittedText: 'sample', visualFitRef: { current: null }, visualFitActive: false }) },
         '../runtime/app/windowResizePhaseRuntime': { isWindowResizeActive: () => false, subscribeWindowResizeSettled: () => () => { } }
     });
-    const card = cardLoad('src/renderer/src/components/FontCard.tsx').FontCard({ font: { id: 'font' }, compact: true, previewImage: 'data:image/png;base64,CARD', previewText: 'sample', listPreviewFontSize: 44 });
+    const card = cardLoad('src/renderer/src/components/FontCard.tsx').FontCard({ font: { id: 'font', path:'C:/font.ttf' }, compact: true, previewImage: 'data:image/png;base64,CARD', previewText: 'sample', listPreviewFontSize: 44 });
     function findImage(node) { if (!node || typeof node !== 'object')
         return; if (node.type === 'img')
         return node; for (const child of [node.props?.children].flat(Infinity)) {

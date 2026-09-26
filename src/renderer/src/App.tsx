@@ -851,6 +851,7 @@ export default function App(): JSX.Element {
   })
 
   const { renderFontCard } = useFontCardRenderer({
+    closingLifecycle: rendererClosingLifecycle,
     detailVisible,
     selectedFontId: selectedFont?.id,
     selectedFontIdSet,

@@ -30,7 +30,7 @@ async function run(){
     rustPreviewDbPathForStorage:()=>null,runStoragePreviewCacheIo:async(_storage,_label,fn)=>({ok:true,value:await fn()}),
     prefetchRuntime:{schedulePreviewCachePrefetch(){}},hydrationRuntime:load(base+'previewCacheHydrationRuntime.ts').createPreviewCacheHydrationRuntime(hydrationOptions)
   })
-  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=','base64')
+  const png=require('./fixtures/preview-png.cjs')
   const font={id:'a',path:path.join(dir,'a.ttf'),fileName:'a.ttf',family:'Fixture',fileSize:1000,modifiedAt:1700000000000,active:false}
   const rowFor=(item=font,text='预览',size=34,width=520,height=150)=>[...rows.buildPreviewCacheGroups([item],library,text,size,width,height).values()][0].rows[0]
   const seed=async(row,shared=false)=>{let storage=selectStorage(font.path);if(shared)storage=tier.previewCacheStorageToShared(storage);const outputPath=shared?path.join(storage.dir,row.previewKey+'.png'):row.outputPath;fs.mkdirSync(path.dirname(outputPath),{recursive:true});fs.writeFileSync(outputPath,png);await writeIndex(storage,row.previewKey,{outputPath,status:'ok'})}

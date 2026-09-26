@@ -18,6 +18,7 @@ export function createPreviewImageMemoryRuntime(limit = 160) {
   }
 
   function remember(key: string, dataUri: string): string {
+    if (!dataUri.startsWith('data:image/png;base64,')) return dataUri
     if (dataUriCache.has(key)) dataUriCache.delete(key)
     dataUriCache.set(key, dataUri)
     while (dataUriCache.size > limit) {

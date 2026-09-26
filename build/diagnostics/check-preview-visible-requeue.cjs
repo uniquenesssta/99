@@ -68,7 +68,9 @@ async function run() {
  let active, observers=[];
  global.IntersectionObserver=class {constructor(cb){this.cb=cb;this.off=false;observers.push(this);}observe(){}disconnect(){this.off=true;}emit(visible=true){this.cb([{isIntersecting:visible}]);}};
  const react={memo:f=>f,useMemo:f=>f(),useRef:v=>{let i=active.pos++;return active.slots[i]??=ref(v);},useEffect:(f,deps)=>{let i=active.pos++,old=active.slots[i];if(!old||deps.some((v,j)=>!Object.is(v,old.deps[j])))active.effects.push(()=>{old?.cleanup?.();active.slots[i]={deps,cleanup:f()};});}};
+ let availability={roots:[],tags:[],unattributedTags:[]};
  const cardLoad=loader({react,'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})},
+ '../sharedAvailabilityRuntime':{useSharedAvailability:()=>availability},
  '../runtime/preview/previewTraceRuntime':trace,
  '../appRuntime':{fontDisplayName:()=>'',fontFileDisplayName:()=>'',formatSize:()=>'',installLabel:()=>'',isInstalled:()=>false,scriptLabels:{}},
  '../runtime/preview/fontPreviewCssFamilyRuntime':{buildListPreviewCssFamily:()=>''},
@@ -78,9 +80,9 @@ async function run() {
  '../runtime/app/windowResizePhaseRuntime':{isWindowResizeActive:()=>resizing,subscribeWindowResizeSettled:f=>(resizeCallbacks.push(f),()=>{})}
  });
  const Card=cardLoad('src/renderer/src/components/FontCard.tsx').FontCard;
- const cards=Array.from({length:24},(_,i)=>({font:{id:'card'+i},slots:[],onVisible(){queue.requestPreviewFont(this.font,'high');}}));
+ const cards=Array.from({length:24},(_,i)=>({font:{id:'card'+i,path:'C:/fonts/'+i+'.ttf'},slots:[],onVisible(){queue.requestPreviewFont(this.font,'high');}}));
  cards.forEach(c=>c.onVisible=c.onVisible.bind(c));
- function render(c,text,size,image,early=false){active=c;c.pos=0;c.effects=[];c.font.__earlyVisible=early;const tree=Card({font:c.font,onVisible:c.onVisible,compact:true,previewText:text,listPreviewFontSize:size,previewImage:image});tree.props.ref.current={};c.effects.forEach(f=>f());}
+ function render(c,text,size,image,early=false){active=c;c.pos=0;c.effects=[];c.font.__earlyVisible=early;const tree=Card({font:c.font,closingLifecycle:c.closingLifecycle,onVisible:c.onVisible,compact:true,previewText:text,listPreviewFontSize:size,previewImage:image});tree.props.ref.current={};c.effects.forEach(f=>f());}
  function emit(){observers.filter(o=>!o.off).forEach(o=>o.emit());}
  async function drain(){for(let i=0;i<40;i++){await flush();finish.splice(0).forEach(f=>f());}await flush();assert.equal(opt.previewQueue.current.length,0);assert.equal(opt.activePreviewLoads.current,0);}
  for(const [text,size] of [['abc',44],['changed',44],['changed',64],['final',48]]) {
@@ -103,6 +105,20 @@ async function run() {
  assert(peak <= 4, 'preview concurrency exceeded existing limit');
  const before=loads.length;opt.previewFamilies[c.font.id]='webfont';render(c,'webfont text',72,undefined);emit();await drain();assert.equal(loads.length,before,'loaded WebFont was reloaded');
  opt.previewFamilies={};opt.nativePreviewImages={};render(c,'obsolete',72,undefined);const obsolete=observers.at(-1);render(c,'newest',80,undefined);obsolete.emit();assert.equal(opt.previewQueue.current.length,0,'old text callback survived cleanup');
+ // Retry ownership: only intersecting cards, three retries with backoff; cleanup/root block cancels.
+ const priorTimers={setTimeout:window.setTimeout,clearTimeout:window.clearTimeout};let timerId=10000;const pendingTimers=new Map();
+ window.setTimeout=(fn,delay)=>{pendingTimers.set(++timerId,{fn,delay});return timerId;};window.clearTimeout=id=>pendingTimers.delete(id);
+ let visibleCalls=0;const closingLifecycle=cardLoad('src/renderer/src/runtime/app/rendererClosingLifecycleRuntime.ts').createRendererClosingLifecycleRuntime();const retryCard={closingLifecycle,font:{id:'retry',path:'C:/fonts/retry.ttf'},slots:[],onVisible:()=>visibleCalls++};
+ render(retryCard,'retry',44,undefined);let retryObserver=observers.at(-1);retryObserver.emit();assert.equal(visibleCalls,1);
+ const fire=()=>{const [id,timer]=pendingTimers.entries().next().value;pendingTimers.delete(id);timer.fn();return timer.delay;};
+ assert.equal(fire(),31000);assert.equal(visibleCalls,2);retryObserver.emit(false);assert.equal(pendingTimers.size,0);
+ retryObserver.emit();assert.equal(fire(),61000);assert.equal(fire(),121000);assert.equal(visibleCalls,4);assert.equal(pendingTimers.size,0);
+ render(retryCard,'changed',44,undefined);retryObserver=observers.at(-1);retryObserver.emit();assert.equal(pendingTimers.size,1);
+ availability={roots:[{path:'C:/fonts',rootId:'C:/fonts',state:'offline',generation:2,tags:[]}],tags:[],unattributedTags:[]};
+ render(retryCard,'changed',44,undefined);assert.equal(pendingTimers.size,0);const countBefore=visibleCalls;retryObserver.emit();assert.equal(visibleCalls,countBefore);
+ availability={roots:[],tags:[],unattributedTags:[]};render(retryCard,'changed',44,undefined);observers.at(-1).emit();assert.equal(visibleCalls,countBefore+1);
+ closingLifecycle.beginClosing();assert.equal(pendingTimers.size,0,'closing retained retry timer');const beforeClosing=visibleCalls;observers.at(-1).emit();assert.equal(visibleCalls,beforeClosing);closingLifecycle.resume();assert.equal(pendingTimers.size,1,'cancelled close did not resume visible retry');
+ retryCard.slots.forEach(slot=>slot?.cleanup?.());assert.equal(pendingTimers.size,0);Object.assign(window,priorTimers);
  // Exercise production load generation guards with an old success arriving after the new image.
  const actualLoad = require('./check-operation-chain.cjs').loader({
   '../../../appRuntime':{PREVIEW_STATE_LRU_LIMIT:800,pruneRecordByKeyLimit:x=>x},

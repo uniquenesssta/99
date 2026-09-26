@@ -179,7 +179,7 @@ async function preview() {
         'src/main/preview/native-renderer/previewNativeRendererRuntime.ts': { createPreviewNativeRenderer: () => ({ activeEngineLabel: () => 'rust-directwrite', renderNativePreview: async (request) => {
           calls.push(request)
           if (scenario === 'render-failed' || (request.preferSystemFont && ['active', 'system-fallback'].includes(scenario))) throw Error('family status=14')
-          fs.writeFileSync(request.outputPath, 'preview')
+          fs.writeFileSync(request.outputPath, require('./fixtures/preview-png.cjs'))
           return { ok: true, engine: 'rust-directwrite', outputPath: request.outputPath }
         } }) },
       })
@@ -191,7 +191,7 @@ async function preview() {
       })
       const item = { id: 'a', path: fontPath, fileName: 'font.ttf', family: 'Family', active: !scenario.startsWith('system'), systemInstalled: scenario.startsWith('system'), fileSize: 100, modifiedAt: 1 }
       if (scenario === 'render-failed') {
-        await assert.rejects(runtime.ensureFontPreviewImageFile(item, scenario), /Native preview failed/)
+        await assert.rejects(runtime.ensureFontPreviewImageFile(item, scenario), /HFM_PREVIEW:failed/)
         assert.equal(writes.at(-1).status, 'failed')
       } else {
         const result = await runtime.ensureFontPreviewImageFile(item, scenario)

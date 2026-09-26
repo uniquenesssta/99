@@ -1,6 +1,6 @@
+import { hasLegacyMissingPreviewFlag, previewRecordForProbe, previewFailure, previewFailureKind } from '@shared/previewFailure'
 import { previewTrace, previewLoadTrace, previewEvent, previewBatchTrace, rememberPreviewImageTrace } from '../previewTraceRuntime'
 import type { FontItem } from '@shared/types'
-import { SHARED_UNAVAILABLE_MESSAGE } from '@shared/sharedAvailability'
 import { getNativePreviewRequestLayout,normalizePreviewText,previewTextLines } from '@shared/preview-layout/previewTextFitRuntime'
 import { clampListPreviewFontSize,listPreviewNativeImageHeight } from '../listPreviewSizeRuntime'
 import { PREVIEW_STATE_LRU_LIMIT,pruneRecordByKeyLimit } from '../../../appRuntime'
@@ -136,7 +136,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       seen.add(font.id)
       const routeForcesNative = resolveFontPreviewRoute(font).shouldSkipWebFontFileLoad
       if ((!routeForcesNative && options.previewFamilies[font.id]) || options.nativePreviewImages[font.id] || options.loadingFonts.current.has(font.id)) continue
-      if (hasCacheMiss(font.id)) continue
+      if (hasLegacyMissingPreviewFlag(font) || hasCacheMiss(font.id)) continue
       uniqueFonts.push(font)
     }
     const hitIds = new Set<string>()
@@ -185,9 +185,8 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     } else if (options.previewFamilies[font.id]) {
       return options.previewFamilies[font.id]
     }
-    if (font.previewDisabled && (font.previewError?.includes('字体文件不存在') || font.previewError?.includes('路径已失效'))) return ''
     if (options.loadingFonts.current.has(font.id)) return ''
-    if (options.isBadFontRecord(font)) {
+    if (options.isBadFontRecord(previewRecordForProbe(font))) {
       options.setFailedPreviewFontIds((prev) => pruneRecordByKeyLimit({ ...prev, [font.id]: true }, PREVIEW_STATE_LRU_LIMIT, previewKeepIds(font.id)))
       return ''
     }
@@ -197,7 +196,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     const family = createPreviewFamilyName(font.id)
 
     const loadCachedNativeCardPreview = async (): Promise<boolean> => {
-      if (hasCacheMiss(font.id)) return false
+      if (hasLegacyMissingPreviewFlag(font) || hasCacheMiss(font.id)) return false
       if (typeof options.hfm.getCachedPreviewImage !== 'function') return false
       const previewText = currentCardPreviewText(options.previewText)
       const previewLayout = currentCardPreviewLayout(options.previewText, options.listPreviewFontSize)
@@ -228,7 +227,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       return true
     }
 
-    const renderNativeCardPreview = async (message: string, optionsOverride?: { rememberMissingPlaceholder?: boolean; markMissingAsDisabled?: boolean }): Promise<string> => {
+    const renderNativeCardPreview = async (message: string): Promise<string> => {
       if (await loadCachedNativeCardPreview()) return ''
       if (!isPreviewRequestCurrent(requestToken)) return ''
       try {
@@ -238,16 +237,11 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
         previewEvent(trace, 'image-return', isPreviewRequestCurrent(requestToken) ? 'current' : 'stale', startedAt)
         if (!isPreviewRequestCurrent(requestToken)) return ''
         rememberPreviewImageTrace(image, trace, font.id)
-        const missingFile = image.startsWith('data:image/svg+xml')
-        const rememberMissingPlaceholder = optionsOverride?.rememberMissingPlaceholder !== false
-        if (!missingFile || rememberMissingPlaceholder) rememberNativeCardPreview(font, image, requestToken)
-        if (missingFile && optionsOverride?.markMissingAsDisabled !== false) {
-          options.updateFont(font.id, (current) => ({
-            ...current,
-            previewDisabled: true,
-            previewError: '字体文件不存在或路径已失效。'
-          }))
-        }
+        if (!image.startsWith('data:image/png;base64,')) throw previewFailure('failed')
+        rememberNativeCardPreview(font, image, requestToken)
+        options.updateFont(font.id, current => hasLegacyMissingPreviewFlag(current) || current.previewError === '预览失败。'
+          ? { ...current, previewDisabled: false, previewError: undefined } : current)
+
       } catch (error) {
         if (!isPreviewRequestCurrent(requestToken)) return ''
         failedPreviewUntil.set(failureKey, Date.now() + 30000)
@@ -267,11 +261,9 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
             error: error instanceof Error ? error.message : String(error)
           }
         }, `preview-native-render-failed:${font.id}`)
-        // Electron preserves the error message across IPC, but not custom error fields.
-        if (String(error instanceof Error ? error.message : error).includes(SHARED_UNAVAILABLE_MESSAGE)) return ''
-        options.updateFont(font.id, (current) => current.previewDisabled && current.previewError === '预览失败。'
-          ? current
-          : { ...current, previewDisabled: true, previewError: '预览失败。' })
+        // Failure is session state only. A later successful source read is required to clear old flags.
+        previewEvent(trace, 'preview-failure', previewFailureKind(error))
+
       }
       return ''
     }
@@ -285,10 +277,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       if (!isPreviewRequestCurrent(requestToken)) return ''
 
       if (previewRoute.shouldSkipWebFontFileLoad) {
-        return await renderNativeCardPreview('已安装字体直接使用 Windows 系统字体名原生预览。', {
-          rememberMissingPlaceholder: false,
-          markMissingAsDisabled: false
-        })
+        return await renderNativeCardPreview('已安装字体直接使用 Windows 系统字体名原生预览。')
       }
 
       const quickPreviewStartedAt = performance.now()

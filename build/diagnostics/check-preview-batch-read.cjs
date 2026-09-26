@@ -39,9 +39,9 @@ function harness({ rootStorage = false, shared = true, transform = x => x } = {}
   const keys = load(base + 'previewCacheKeyRuntime.ts', { './previewInputPolicy': input, '../native-renderer/directwrite/directWritePreviewHelperPathRuntime': { hasDirectWritePreviewHelper: () => false } })
   const installed = load(base + 'previewInstalledFontRouteRuntime.ts')
   const deadline = load('src/main/path/ioDeadlineRuntime.ts')
-  const imageRead = load(base + 'previewCachedImageReadBatchRuntime.ts', { '../../path/ioDeadlineRuntime': deadline, 'node:fs': { promises: { async readFile(p) {
+  const imageRead = load(base + 'previewCachedImageReadBatchRuntime.ts', { './previewImageValidationRuntime': load(base + 'previewImageValidationRuntime.ts'), '../../path/ioDeadlineRuntime': deadline, 'node:fs': { promises: { async readFile(p) {
     state.active++; state.maxActive = Math.max(state.active, state.maxActive); state.reads.push(p)
-    try { await new Promise(resolve => setTimeout(resolve, 1)); if (!files.has(p)) throw Error('ENOENT'); return Buffer.from('png') } finally { state.active-- }
+    try { await new Promise(resolve => setTimeout(resolve, 1)); if (!files.has(p)) throw Error('ENOENT'); return require('./fixtures/preview-png.cjs') } finally { state.active-- }
   } } } })
   const options = { sha1: x => crypto.createHash('sha1').update(x).digest('hex'), normalizePathForCacheCompare: x => x.toLowerCase(), normalizePreviewCacheIndexStatus: x => x, appendStartupLog() {}, previewSqliteSchemaVersion: 1 }
   const tier = load(base + 'previewCacheTierRuntime.ts').createPreviewCacheTierRuntime({ ...options, localPreviewImageDir: () => path.resolve('local'), rootPreviewImageDir: r => path.join(r, 'images'), rootPreviewDbPath: r => path.join(r, 'index.db') })
@@ -61,7 +61,7 @@ function harness({ rootStorage = false, shared = true, transform = x => x } = {}
   } }
   const prefetchRuntime = { beginPreviewCachePrefetchGeneration(reason) { events.push(['generation', reason]) }, schedulePreviewCachePrefetch(storage, rows) { events.push(['prefetch', Array.from(rows, x => x.id)]) } }
   const db = { prepare(sql) { return { all(...keys) { events.push(['select', keys.length]); return keys.flatMap(k => rowsByKey.has(k) ? [rowsByKey.get(k)] : []) }, run(_now, _updated, ...keys) { events.push(['touch', keys.map(k => byId.get(k))]) } } } }
-  const runtime = load(base + 'previewBatchReadRuntime.ts', { './previewInputPolicy': input, './previewCachedImageReadBatchRuntime': imageRead }, transform).createPreviewBatchReadRuntime(options, {
+  const runtime = load(base + 'previewBatchReadRuntime.ts', { '../../../shared/previewFailure': load('src/shared/previewFailure.ts'), './previewInputPolicy': input, './previewCachedImageReadBatchRuntime': imageRead }, transform).createPreviewBatchReadRuntime(options, {
     ...io, buildPreviewCacheGroups, rootAvailability, hydrationRuntime, prefetchRuntime,
     loadLibraryShellCached: async () => ({ folders: [rootPath] }),
     withPreviewIndexDb: async (storage, fn) => { events.push(['db', storage.storage]); return fn(db) }
@@ -84,9 +84,9 @@ async function policies(transform) {
   h.prepare(items, { missing: 'missing', failed: 'failed', hydrate: null }, ['missing', 'failed', 'nofile', 'hydrate'])
   h.state.hydrates.add('hydrate')
   const status = await h.runtime.getPreviewCacheStatus(items, 'test')
-  assert.deepEqual(plain(status), { invalid: false, ok: true, missing: true, failed: true, nofile: true, hydrate: false })
-  assert.equal(h.state.reads.length, 0)
-  assert.deepEqual(h.events.filter(x => x[0] === 'prefetch'), [['prefetch', ['hydrate']]])
+  assert.deepEqual(plain(status), { invalid: false, ok: true, missing: false, failed: false, nofile: false, hydrate: false })
+  assert.equal(h.state.reads.length, 2)
+  assert.deepEqual(h.events.filter(x => x[0] === 'prefetch'), [['prefetch', ['missing', 'failed', 'nofile', 'hydrate']]])
   h.events.length = 0
   const images = await h.runtime.readCachedPreviewImages(items, 'test')
   assert.deepEqual(Object.keys(images).sort(), ['hydrate', 'ok'])
@@ -115,7 +115,7 @@ async function compatibility() {
   h.options.runRustPreviewCacheBatch = async args => { h.state.rustCalls.push(plain(args)); return { rows: args.rows.map(r => ({ ...r, status: 'ok', matched: true })) } }
   assert.equal((await h.runtime.getPreviewCacheStatus(items, 'test')).x, true)
   assert((await h.runtime.readCachedPreviewImages(items, 'test')).x)
-  assert.deepEqual(h.state.rustCalls.map(x => x.acceptedStatuses), [['ok', 'missing', 'failed'], ['ok']])
+  assert.deepEqual(h.state.rustCalls.map(x => x.acceptedStatuses), [['ok'], ['ok']])
   assert.deepEqual(h.state.rustCalls.map(x => x.checkFiles), [false, true])
   h.options.runRustPreviewCacheBatch = async () => null
   h.options.runRustPreviewCacheQuery = async args => { h.state.rustCalls.push(plain(args)); return { rows: args.rows.map(r => ({ ...r, status: 'ok', matched: true })) } }
@@ -148,7 +148,7 @@ async function prefetchCancellation() {
 }
 async function main() {
   structure(); await policies(); await chunks(); await compatibility(); await prefetchCancellation()
-  await assert.rejects(() => policies(s => s.replace('status === "ok" || status === "missing" || status === "failed"', 'status === "ok"')), assert.AssertionError)
+  await assert.rejects(() => policies(s => s.replace('status === "ok";', 'status === "ok" || status === "missing" || status === "failed";')), assert.AssertionError)
   await assert.rejects(() => policies(s => s.replace('status === "ok" &&', '(status === "ok" || status === "missing") &&')), assert.AssertionError)
   await assert.rejects(() => chunks(s => s.replaceAll('const chunkSize = 400;', 'const chunkSize = 800;')), assert.AssertionError)
   console.log('[diagnostics:preview-batch-read] row/IO/query-tail locks, invalid/stat/active semantics, statuses vs PNG, hydration/touch,801 rows/400 chunks/6 reads, actual prefetch cancellation, injected root compatibility;3 mutants')

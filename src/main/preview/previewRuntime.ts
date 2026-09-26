@@ -1,3 +1,6 @@
+import { isCompletePreviewPng } from './runtime/previewImageValidationRuntime'
+import { previewFailure, previewFailureKind, previewFailureMessage, hasLegacyMissingPreviewFlag } from '../../shared/previewFailure'
+import { resolvePreviewSource } from './runtime/previewSourceRuntime'
 import { tracePreviewPhase } from './runtime/previewTraceRuntime'
 import { logOperation, currentOperationTrace } from '../logging/operationTraceContext'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
@@ -22,6 +25,7 @@ export type { PreviewCacheStorage,PreviewImageFileResult,PreviewRuntimeOptions }
 
 export function createPreviewRuntime(options: PreviewRuntimeOptions) {
   const previewImageMemoryRuntime = createPreviewImageMemoryRuntime()
+  const failedUntil = new Map<string, { until: number; error: Error }>()
   const renderTraceOwners = new Map<string, string>()
 
   const {
@@ -32,15 +36,13 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     authorizeFontRead,
     previewTaskKey,
     completeBackgroundTask,
-    skipBackgroundTask,
     upsertBackgroundTask,
     startBackgroundTask,
     heartbeatBackgroundTask,
     failBackgroundTask,
     legacyRootPreviewCacheDir,
     execFileAsync,
-    withGlobalIo,
-    missingFontPreviewDataUri
+    withGlobalIo
   } = options
 
   const {
@@ -99,6 +101,12 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     readCachedPreviewImages
   })
 
+  async function readValidCachedImage(path: string, required = false): Promise<Buffer | undefined> {
+    const result = await withIoDeadlineResult('preview-cache-validate', () => tracePreviewPhase('image-read', () => fsp.readFile(path)), fileExistsTimeoutMs())
+    if (!result.ok && required) throw previewFailure(result.timedOut ? 'timeout' : previewFailureKind(result.error))
+    return result.ok && isCompletePreviewPng(result.value) ? result.value : undefined
+  }
+
   async function ensureFontPreviewImageFile(
     item: FontItem,
     text: string,
@@ -114,37 +122,26 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog)
     const installedRoute = resolveInstalledFontPreviewRoute(item)
     const previewCache = await tracePreviewPhase('storage-prepare', () => previewCacheStorageForFont(resolvedFontPath))
-    let stat = previewCacheStatForInstalledRoute(
+    let verifiedSource: Awaited<ReturnType<typeof resolvePreviewSource>> | undefined
+    let imageBytes: Buffer | undefined
+    let stat = (installedRoute || preferCachedFontStat) ? previewCacheStatForInstalledRoute(
       item,
       installedRoute,
       (preferCachedFontStat || !!installedRoute) && item.fileSize > 0 && item.modifiedAt > 0
         ? { size: item.fileSize, mtimeMs: item.modifiedAt }
         : null
-    )
+    ) : null
 
     if (!stat) {
-      const existingFontPath = await tracePreviewPhase('font-resolve', () => resolveExistingFontFilePath(item.path))
-      if (!existingFontPath) {
-        if (installedRoute) {
-          stat = { size: 0, mtimeMs: 0 }
-        } else {
-          appendStartupLog(`native preview skipped missing font path: ${item.path}`)
-          return null
-        }
-      } else {
-        {
-          const statResult = await withIoDeadlineResult(`preview-font-stat:${existingFontPath}`, () => tracePreviewPhase('font-stat', () => fsp.stat(existingFontPath)), fileExistsTimeoutMs())
-          if (!statResult.ok) {
-            appendStartupLog(`native preview skipped slow/missing font path: ${existingFontPath}`)
-            return null
-          }
-          stat = statResult.value
-        }
-      }
+      verifiedSource = await tracePreviewPhase('font-resolve', () => resolvePreviewSource(item.path, resolveExistingFontFilePath))
+      stat = verifiedSource.stat
     }
 
     const cacheIdentity = previewCacheIdentityForInstalledRoute(previewCache.identity, installedRoute)
     const key = previewCacheKey(sha1, cacheIdentity, stat.size, stat.mtimeMs, fontSize, width, height, normalizedText)
+    const recentFailure = failedUntil.get(key)
+    if (recentFailure && recentFailure.until > Date.now()) throw recentFailure.error
+    failedUntil.delete(key)
     const previewDir = previewCache.dir
     const fontSignature = previewFontSignature(cacheIdentity, stat.size, stat.mtimeMs)
     const textHash = previewCacheTextHash(sha1, normalizedText)
@@ -155,14 +152,13 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
 
     if (!ignorePreviewIndex) {
       const indexedStatus = await tracePreviewPhase('index-read', () => readPreviewCacheIndexStatus(previewCache, key, outputPath))
-      if (indexedStatus === 'ok') {
+      if (indexedStatus === 'ok' && (imageBytes = await readValidCachedImage(outputPath))) {
         await completeBackgroundTask(taskKey, '预览缓存已存在').catch(() => undefined)
-        return { outputPath, cached: true, storage: previewCache.storage }
+        return { outputPath, cached: true, storage: previewCache.storage, bytes: imageBytes }
       }
-      if ((indexedStatus === 'missing' || indexedStatus === 'failed') && !installedRoute) {
-        await skipBackgroundTask(taskKey, indexedStatus === 'missing' ? '字体文件路径已记录为失效，跳过预览缓存。' : '字体预览生成曾失败，跳过重复重试。').catch(() => undefined)
-        return null
-      }
+      // Historical failed/missing rows are evidence of an old attempt, not current source absence.
+      // Retry through current source validation; successful generation replaces this row.
+
     }
 
     if (!(await fileExistsWithDeadline(outputPath)) && previewCache.shared?.rootPath) {
@@ -173,7 +169,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       }
     }
 
-    if (await fileExistsWithDeadline(outputPath)) {
+    if (!ignorePreviewIndex && (imageBytes = await readValidCachedImage(outputPath))) {
       await writePreviewCacheIndex(previewCache, key, {
         outputPath,
         fontSignature,
@@ -185,7 +181,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         fontId: item.id,
         sourcePath: item.path
       })
-      return { outputPath, cached: true, storage: previewCache.storage }
+      return { outputPath, cached: true, storage: previewCache.storage, bytes: imageBytes }
     }
 
     if (!ignorePreviewIndex && previewCache.shared) {
@@ -201,9 +197,9 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         fontId: item.id,
         sourcePath: item.path,
       })
-      if (hydrated && await fileExistsWithDeadline(outputPath)) {
+      if (hydrated && (imageBytes = await readValidCachedImage(outputPath))) {
         await completeBackgroundTask(taskKey, '预览缓存已从共享缓存拉取到本地').catch(() => undefined)
-        return { outputPath, cached: true, storage: previewCache.storage }
+        return { outputPath, cached: true, storage: previewCache.storage, bytes: imageBytes }
       }
     }
 
@@ -225,9 +221,11 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       systemFontFamilyCandidates?: string[]
     }): Promise<void> {
       const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview(request, inputPath))
-      if (!renderResult.ok || !(await fileExistsWithDeadline(renderResult.outputPath || outputPath))) {
+      if (!renderResult.ok) {
         throw new Error(renderResult.message || `${renderResult.engine} preview renderer did not create output.`)
       }
+      imageBytes = await readValidCachedImage(renderResult.outputPath || outputPath, true)
+      if (!imageBytes) throw previewFailure('failed')
       renderMessage = request.preferSystemFont
         ? `${renderResult.engine}:system-installed:${installedRoute?.reason || 'matched'}`
         : renderResult.engine
@@ -268,24 +266,8 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       }
 
       if (!rendered) {
-        const fontPath = await tracePreviewPhase('font-resolve', () => resolveExistingFontFilePath(item.path))
-        if (!fontPath) {
-          await writePreviewCacheIndex(previewCache, key, {
-            outputPath,
-            fontSignature,
-            textHash,
-            fontSize,
-            width,
-            height,
-            status: installedRoute ? 'failed' : 'missing',
-            message: installedRoute ? '系统已安装字体快速预览失败，且字体文件不存在或路径已失效。' : '字体文件不存在或路径已失效。',
-            fontId: item.id,
-            sourcePath: item.path
-          })
-          await upsertBackgroundTask(taskKey, 'preview_cache', 10, { fontId: item.id, path: item.path, previewKey: key, outputPath, text: normalizedText, fontSize, width, height }, 'skipped', '字体文件不存在或路径已失效。').catch(() => undefined)
-          appendStartupLog(`native preview skipped missing font path: ${item.path}`)
-          return null
-        }
+        const source = verifiedSource || await tracePreviewPhase('font-resolve', () => resolvePreviewSource(item.path, resolveExistingFontFilePath))
+        const fontPath = source.path
 
         await fsp.access(fontPath)
         await heartbeatBackgroundTask(taskKey, 0.4, `正在生成字体预览图片（${nativePreviewRenderer.activeEngineLabel()}）`).catch(() => undefined)
@@ -300,21 +282,25 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      await writePreviewCacheIndex(previewCache, key, {
+      const kind = previewFailureKind(error)
+      if (kind === 'failed' || kind === 'missing') await writePreviewCacheIndex(previewCache, key, {
         outputPath,
         fontSignature,
         textHash,
         fontSize,
         width,
         height,
-        status: 'failed',
+        status: kind === 'missing' ? 'missing' : 'failed',
         message,
         fontId: item.id,
         sourcePath: item.path
       }).catch(() => undefined)
       await failBackgroundTask(taskKey, message, error instanceof Error ? error.stack : undefined).catch(() => undefined)
       appendStartupLog(`native preview failed: ${item.path} ${message}`)
-      throw new Error('Native preview failed.')
+      const failure = previewFailure(previewFailureKind(error))
+      if (kind !== 'cancelled') failedUntil.set(key, { until: Date.now() + 30000, error: failure })
+      while (failedUntil.size > 512) failedUntil.delete(failedUntil.keys().next().value!)
+      throw failure
     }
 
     await writePreviewCacheIndex(previewCache, key, {
@@ -344,7 +330,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     })
 
     await completeBackgroundTask(taskKey, '预览缓存已生成').catch(() => undefined)
-    return { outputPath, cached: false, storage: previewCache.storage }
+    return { outputPath, cached: false, storage: previewCache.storage, bytes: imageBytes }
   }
 
 
@@ -361,7 +347,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     text = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog).text
     const requestKey = previewImageMemoryRuntime.requestKey(item, text, fontSize, width, height)
     const cachedDataUri = previewImageMemoryRuntime.get(requestKey)
-    if (cachedDataUri) { logOperation({ stage: 'image-memory-hit' }); return cachedDataUri }
+    if (cachedDataUri && !hasLegacyMissingPreviewFlag(item)) { logOperation({ stage: 'image-memory-hit' }); return cachedDataUri }
 
     const existing = previewImageMemoryRuntime.inflight.get(requestKey)
     if (existing) { logOperation({ stage: 'render-coalesced', jobId: renderTraceOwners.get(requestKey) }); return existing }
@@ -376,10 +362,11 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     const task = withGlobalIo('preview:render', async () => {
       logOperation({ stage: 'render-start', elapsedMs: performance.now() - queuedAt })
       let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false)
-      if (!previewFile) return previewImageMemoryRuntime.remember(requestKey, missingFontPreviewDataUri(item.path, width, height))
+      if (!previewFile) throw previewFailure('missing')
 
       try {
-        const bytes = await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
+        const bytes = previewFile.bytes || await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
+        if (!isCompletePreviewPng(bytes)) throw previewFailure('failed')
         return previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
       } catch (error) {
         if (previewFile.cached) {
@@ -392,8 +379,9 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
           await deletePreviewCacheIndex(storage, key).catch(() => undefined)
           previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, true)
           if (previewFile) {
-            const bytes = await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
-            return previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
+            const bytes = previewFile.bytes || await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
+            if (!isCompletePreviewPng(bytes)) throw previewFailure('failed')
+        return previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
           }
         }
         throw error
@@ -416,11 +404,11 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     height = 150
   ): Promise<{ ok: boolean; cached: boolean; storage?: 'root' | 'fallback' | 'local'; message?: string }> {
     try {
-      const previewFile = await withGlobalIo('preview:cache', () => ensureFontPreviewImageFile(item, text, fontSize, width, height, true), { priority: 'background', storagePath: item.path })
-      if (!previewFile) return { ok: false, cached: false, message: '字体文件不存在或路径已失效。' }
+      const previewFile = await withGlobalIo('preview:cache', () => ensureFontPreviewImageFile(item, text, fontSize, width, height, !hasLegacyMissingPreviewFlag(item)), { priority: 'background', storagePath: item.path })
+      if (!previewFile) return { ok: false, cached: false, message: previewFailureMessage('missing') }
       return { ok: true, cached: previewFile.cached, storage: previewFile.storage }
     } catch (error) {
-      return { ok: false, cached: false, message: error instanceof Error ? error.message : String(error) }
+      return { ok: false, cached: false, message: previewFailureMessage(previewFailureKind(error)) }
     }
   }
 

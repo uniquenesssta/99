@@ -1,3 +1,5 @@
+import { sharedPathBlocked } from '@shared/sharedAvailability'
+import { useSharedAvailability } from '../sharedAvailabilityRuntime'
 import { previewTrace, previewEvent, previewImageTrace, previewTraceEnabled } from '../runtime/preview/previewTraceRuntime'
 import { memo,useEffect,useMemo,useRef } from 'react'
 import type { CSSProperties } from 'react'
@@ -42,10 +44,13 @@ function previewSampleStyle(font: FontCardProps['font'], mode: 'grid' | 'list', 
 }
 
 
-function FontCardImpl({ font, active, selected, compact, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
+function FontCardImpl({ closingLifecycle, font, active, selected, compact, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
   const ref = useRef<HTMLButtonElement | null>(null)
   // Re-arm after reset commits: the text/size render can still contain the old image.
   const previewReady = Boolean(previewFamily || previewImage)
+  const availability = useSharedAvailability()
+  const retryBlocked = sharedPathBlocked(availability, font.path)
+  const knownRootBlocked = availability !== null && retryBlocked
   const frozenPreview = useResizeFrozenPreviewRuntime(font.id, {
     previewFamily,
     previewImage,
@@ -94,20 +99,36 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
 
   useEffect(() => {
     const node = ref.current
-    if (!node) return
+    if (!node || knownRootBlocked) return
 
     let cancelled = false
+    let intersecting = false
+    let retryTimer: number | undefined
+    let retryCount = 0
+    const retryDelays = [31000, 61000, 121000]
+    const stopRetry = (): void => { window.clearTimeout(retryTimer); retryTimer = undefined }
+    const scheduleRetry = (): void => {
+      if (cancelled || closingLifecycle?.isClosing() || !intersecting || previewReady || retryBlocked || retryTimer !== undefined || retryCount >= retryDelays.length) return
+      retryTimer = window.setTimeout(() => {
+        retryTimer = undefined
+        if (cancelled || closingLifecycle?.isClosing() || !intersecting) return
+        retryCount += 1
+        if (!isWindowResizeActive()) onVisible()
+        scheduleRetry()
+      }, retryDelays[retryCount])
+    }
     let revealed = false
     let deferVisibleUntilResizeSettled = false
     let unsubscribeResizeSettled: (() => void) | null = null
     let observer: IntersectionObserver | null = null
 
     const reveal = (): void => {
-      if (cancelled || revealed) return
+      if (cancelled || closingLifecycle?.isClosing()) return
+      if (revealed) { scheduleRetry(); return }
       revealed = true
       previewEvent(previewTrace(font.id, previewText || '', listPreviewFontSize ?? 44), 'visible')
       onVisible()
-      observer?.disconnect()
+      scheduleRetry()
       unsubscribeResizeSettled?.()
       unsubscribeResizeSettled = null
     }
@@ -115,7 +136,9 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
     observer = new IntersectionObserver(
       (entries) => {
         if (cancelled) return
-        if (!entries.some((entry) => entry.isIntersecting)) {
+        intersecting = entries[entries.length - 1]?.isIntersecting === true
+        if (!intersecting) {
+          stopRetry()
           deferVisibleUntilResizeSettled = false
           return
         }
@@ -135,14 +158,20 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
       { root: null, rootMargin: '260px' }
     )
 
+    const unsubscribeClosing = closingLifecycle?.subscribe(closing => {
+      if (closing) stopRetry()
+      else scheduleRetry()
+    })
     observer.observe(node)
     return () => {
       cancelled = true
+      stopRetry()
+      unsubscribeClosing?.()
       deferVisibleUntilResizeSettled = false
       observer?.disconnect()
       unsubscribeResizeSettled?.()
     }
-  }, [onVisible, font.id, font.__earlyVisible, previewText, listPreviewFontSize, previewReady])
+  }, [onVisible, closingLifecycle, font.id, font.__earlyVisible, previewText, listPreviewFontSize, previewReady, retryBlocked, knownRootBlocked])
 
   useEffect(() => {
     if (!previewTraceEnabled() || !ref.current) return

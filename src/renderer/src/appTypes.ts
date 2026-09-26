@@ -1,3 +1,4 @@
+import type { RendererClosingLifecycleRuntime } from './runtime/app/rendererClosingLifecycleRuntime'
 import type { FontFormat,FontItem,FontScript,FontTagBatchItem } from '@shared/types'
 import type React from 'react'
 
@@ -54,6 +55,7 @@ export interface ActiveFilter {
 }
 
 export interface FontCardProps {
+  closingLifecycle?: RendererClosingLifecycleRuntime
   font: FontItem
   active: boolean
   selected?: boolean

@@ -1,3 +1,5 @@
+import { previewFailure, previewFailureKind } from '../../../shared/previewFailure'
+import { isCompletePreviewPng } from './previewImageValidationRuntime'
 import fs from 'node:fs'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { join, resolve } from 'node:path'
@@ -52,20 +54,22 @@ export function createCachedPreviewReadRuntime(args: {
         const cacheIdentity = previewCacheIdentityForInstalledRoute(storage.identity, installedRoute)
         const key = previewCacheKey(sha1, cacheIdentity, stat.size, stat.mtimeMs, fontSize, width, height, normalizedText)
         const outputPath = join(storage.dir, `${key}.png`)
-        const indexedStatus = await readPreviewCacheIndexStatus(storage, key, outputPath).catch(() => null)
+        const indexedStatus = await readPreviewCacheIndexStatus(storage, key, outputPath)
         if (indexedStatus && indexedStatus !== 'ok') {
           missCache.rememberMiss(memoryKey)
           return ''
         }
-        if (!await fsp.access(outputPath).then(()=>true,()=>false)) {
+        await fsp.access(outputPath)
+        const bytes = await fsp.readFile(outputPath)
+        if (!isCompletePreviewPng(bytes)) return ''
+        missCache.forget(memoryKey)
+        return dataUriCache.remember(memoryKey, `data:image/png;base64,${bytes.toString('base64')}`)
+      } catch (error) {
+        if (['ENOENT', 'ENOTDIR'].includes((error as { code?: string })?.code || '')) {
           missCache.rememberMiss(memoryKey)
           return ''
         }
-        const bytes = await fsp.readFile(outputPath)
-        missCache.forget(memoryKey)
-        return dataUriCache.remember(memoryKey, `data:image/png;base64,${bytes.toString('base64')}`)
-      } catch {
-        return ''
+        throw previewFailure(previewFailureKind(error))
       }
     })
   }
@@ -117,7 +121,7 @@ export function createCachedPreviewReadRuntime(args: {
           for (const item of freshMisses) {
             const key = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height)
             const dataUri = diskResult[item.id]
-            if (!dataUri) {
+            if (!dataUri || !dataUri.startsWith('data:image/png;base64,') || !isCompletePreviewPng(Buffer.from(dataUri.slice(22), 'base64'))) {
               missedKeys.push(key)
               continue
             }
