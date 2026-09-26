@@ -23,10 +23,10 @@ jobs:
           call native-src\preview-renderer\directwrite\build-win.cmd
       - name: Real private TTF CFF TTC and PNG checks
         run: python build/diagnostics/check-directwrite-native.py
-      - name: Resident process, EOF, parent death and production owner
-        run: |
-          npm run diagnostics:directwrite-service
-          npm run test:directwrite-resident
+      - name: Production owner and hostile subprocess checks
+        run: npm run diagnostics:directwrite-service
+      - name: Resident DirectWrite, EOF, parent death and owner integration
+        run: npm run test:directwrite-resident
       - name: Reject source mutations and restore executable
         shell: cmd
         run: |

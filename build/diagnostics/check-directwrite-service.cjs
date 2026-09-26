@@ -13,12 +13,12 @@ const tick=()=>new Promise(r=>setTimeout(r,10))
 async function until(check) {const end=Date.now()+6000;while(!check()){assert(Date.now()<end,'condition timeout');await tick()}}
 const dead=pid=>{try{process.kill(pid,0);return false}catch{return true}}
 const input=text=>({fontPath:'C:\\local\\font.ttf',fontIdentity:'a'.repeat(64),sourceGeneration:1,faceIndex:0,text,fontSize:44,width:720,height:260})
-function setup({deadlineMs=3000,transforms={},args=[]}={}) {
+function setup({deadlineMs=3000,transforms={},args=[],mocks={}}={}) {
  // On Linux the Windows-shaped root is a normal relative directory, so the
  // exact production encoder and real fs/process paths can run unchanged.
  const temp=process.platform==='win32'?fs.mkdtempSync(path.join(os.tmpdir(),'hfm-dw-owner-')):fs.mkdtempSync('C:\\hfm-dw-owner-')
  const log=path.resolve(temp,'process.log');fs.writeFileSync(log,'')
- const load=loader({}, {AbortController,setImmediate},transforms)
+ const load=loader(mocks, {AbortController,setImmediate},transforms)
  const Service=load(file).DirectwriteService
  const service=new Service({command:process.execPath,args:[fixture,log,...args],temporaryRoot:temp,deadlineMs})
  const events=()=>fs.readFileSync(log,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)
@@ -92,6 +92,36 @@ async function timeoutAndFreeze() {
  }finally{await s.close()}
  const missing=setup({args:['--no-ready'],deadlineMs:100})
  try{await assert.rejects(missing.render('hang'),/TIMEOUT/)}finally{await missing.close()}
+ const startup=setup({args:['--no-ready'],deadlineMs:5000})
+ try{await assert.rejects(startup.render('hang'),/START_TIMEOUT/)}finally{await startup.close()}
+}
+async function exitConfirmation(transforms={}) {
+ // Real child, controlled kill acknowledgement: returning from kill is not
+ // proof of exit. Keep the original process alive until we explicitly release it.
+ let released=false;const children=[]
+ const s=setup({transforms,mocks:{'node:child_process':{spawn:(...args)=>{
+  const child=spawn(...args);const kill=child.kill.bind(child)
+  child.kill=(...args)=>released?kill(...args):true
+  children.push(child);return child
+ }}}})
+ const cancel=new AbortController()
+ try {
+  const active=s.render('hang',{signal:cancel.signal,isCurrent:()=>true});const rejected=assert.rejects(active,/CANCELLED/)
+  await until(()=>s.events().some(e=>e.type==='request'))
+  cancel.abort();await rejected
+  const next=s.render('after-close');void next.catch(()=>{})
+  await new Promise(r=>setTimeout(r,350))
+  assert.equal(children.length,1,'spawn before confirmed close')
+  assert(!dead(children[0].pid),'kill port did not retain actual process')
+  released=true;children[0].kill('SIGKILL');await next
+ }finally{
+  released=true
+  await Promise.all(children.map(child=>new Promise(resolve=>{
+   if(child.exitCode!==null || child.signalCode!==null)return resolve()
+   child.once('close',resolve);child.kill('SIGKILL')
+  })))
+  await s.close()
+ }
 }
 async function sourceMutants() {
  const absolute=path.join(root,protocol)
@@ -99,6 +129,7 @@ async function sourceMutants() {
  const serviceFile=path.join(root,file)
  await assert.rejects(queueLimit({[serviceFile]:s=>s.replace('MAX_PENDING = 64','MAX_PENDING = 65')}),/queue overflow/)
  await assert.rejects(cancellation({[serviceFile]:s=>s.replace('this.disposed || isApplicationClosing() || !subscriber.current()', 'this.disposed || isApplicationClosing()')}),/Missing expected rejection/)
+ await assert.rejects(exitConfirmation({[path.join(root,'src/main/preview/native-renderer/directwriteProcess.ts')]:s=>s.replace('return this.closed;', 'return Promise.resolve();')}),/spawn before confirmed close/)
 }
 async function nativeOwner() {
  // Invoked separately by Windows CI against the real DirectWrite executable.
@@ -131,7 +162,7 @@ async function main() {
  if(process.argv.includes('--native')) {await nativeOwner();console.log('[directwrite-service] real Windows owner → native DirectWrite → PNG passed');return}
  await normal();await cancellation();await queueLimit()
  for(const mode of ['crash','wrong-id','wrong-generation','wrong-source','wrong-output','wrong-font','wrong-engine','missing','invalid','oversized','duplicate','duplicate-field']) await fault(mode)
- await timeoutAndFreeze();await sourceMutants()
- console.log('[directwrite-service] real subprocess: reuse/coalescing, 64 queue limit, cancellation, stale source, 12 faults, bounded restart, deadline, shutdown/resume and 3 source mutants passed')
+ await timeoutAndFreeze();await exitConfirmation();await sourceMutants()
+ console.log('[directwrite-service] real subprocess: reuse/coalescing, 64 queue limit, cancellation, stale source, 12 faults, bounded restart, deadline, shutdown/resume, exit confirmation and 4 source mutants passed')
 }
 main().catch(error=>{console.error(error);process.exitCode=1})

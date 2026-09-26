@@ -17,7 +17,7 @@ def receive(lines):
     assert line is not None, 'process closed without receipt'
     return json.loads(line)
 
-def frame(font, output, request_id=1, generation=7, text='AB', face=0):
+def frame(font, output, request_id=1, generation=7, text='A', face=0):
     data = struct.pack('<8Id',1,generation,request_id,3,1,face,720,260,44.0) + b'a'*64 + b'b'*32
     for value in [str(font),text,str(output)]:
         encoded=value.encode('utf-16le'); data += struct.pack('<I',len(encoded)//2)+encoded
@@ -70,6 +70,8 @@ def child_process():
 def main():
     assert os.name=='nt','Windows required; no simulated native pass'
     if len(sys.argv)>1 and sys.argv[1]=='--suspend-main':suspend_main(int(sys.argv[2]));return
+    spec=importlib.util.spec_from_file_location('native_pixels',ROOT/'build/diagnostics/check-directwrite-native.py')
+    pixel_test=importlib.util.module_from_spec(spec);spec.loader.exec_module(pixel_test)
     with tempfile.TemporaryDirectory(prefix='hfm-dw-resident-') as temp:
         directory=Path(temp);fixtures=json.loads((ROOT/'build/diagnostics/fixtures/directwrite/fonts.json').read_text())
         font=directory/'faces.ttc';font.write_bytes(base64.b64decode(fixtures['faces.ttc']))
@@ -82,7 +84,7 @@ def main():
                 assert receipt['ok'] and receipt['engine']=='directwrite' and receipt['serviceGeneration']==7
                 assert receipt['requestId']==i and receipt['sourceGeneration']==3 and receipt['fontIdentity']=='a'*64
                 assert receipt['outputIdentity']=='b'*32 and receipt['faceIndex']==face
-                images.append(output.read_bytes())
+                images.append(pixel_test.pixels(output))
             assert images[0]==images[2] and images[0]!=images[1], 'resident face identity/PNG mismatch'
             # Invalid local input is a correlated failure, not silent fallback.
             p.stdin.write(frame(Path(r'\\server\share\font.ttf'),directory/'nas.png',4));p.stdin.flush()
