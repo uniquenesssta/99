@@ -15,7 +15,8 @@ async function main(){
   localDataRoot:()=>dir,localPreviewImageDir:()=>path.join(dir,'images'),getFontReadPolicy:()=>authorization,
   authorizeFontRead:async p=>{try{await staging.authorize(p);return{ok:true}}catch{return{ok:false,reason:'denied'}}},appendStartupLog:m=>logs.push(m),
  },async (...args)=>publications.push(args));
- const input={text:'AB',fontSize:44,width:720,height:260},item={id:'trial',path:source};let live=true,fallbacks=0;
+ // AB intentionally ligates to the same fi outline in both fixture files; A differs.
+ const input={text:'A',fontSize:44,width:720,height:260},item={id:'trial',path:source};let live=true,fallbacks=0;
  const fallback=async()=>{fallbacks++;return'old-backend'};
  try{
   fs.writeFileSync(source,Buffer.from(fonts['narrow.ttf'],'base64'));
@@ -27,6 +28,7 @@ async function main(){
   assert.equal(changed.length,oldStat.size,'fixture must preserve length');
   fs.writeFileSync(source,changed);fs.utimesSync(source,oldStat.atime,oldStat.mtime);
   const replacement=await runtime.render(item,input,{isCurrent:()=>live},fallback);assert.notEqual(replacement,first);
+  assert.equal(publications.at(-1)[4],require('node:crypto').createHash('sha256').update(changed).digest('hex'));
   assert.equal(new Set(publications.map(p=>p[0])).size,3,'image keys collided');
   fs.writeFileSync(source,Buffer.from(fonts['variable.ttf'],'base64'));
   assert.equal(await runtime.render(item,input,{isCurrent:()=>live},fallback),'old-backend');assert.equal(fallbacks,1);

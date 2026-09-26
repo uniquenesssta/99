@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import { usesResidentPreview } from '../../runtime/preview/nativePreviewRequestRuntime'
 import { useSharedAvailability } from '../../sharedAvailabilityRuntime'
 import { sharedPathBlocked, fontSharedActionBlocked, SHARED_UNAVAILABLE_MESSAGE } from '../../../../shared/sharedAvailability'
 import { resolveFontCommandTargets } from '../../fontCommandTargetsRuntime'
@@ -77,6 +79,8 @@ export function FontDetailPanel({
   updateFont,
   applyCompare
 }: FontDetailPanelProps): JSX.Element | null {
+  const [residentTrial, setResidentTrial] = useState(false)
+  useEffect(() => { let active = true; void usesResidentPreview(window.hfm).then(value => { if (active) setResidentTrial(value) }); return () => { active = false } }, [])
   const availability = useSharedAvailability()
   if (!visible) return null
 
@@ -96,6 +100,12 @@ export function FontDetailPanel({
           </div>
 
 
+          {residentTrial && nativeDetailImage && (
+            <div className="tag-box">
+              <div className="tag-box-title">字体预览</div>
+              <img className="native-preview-image" src={nativeDetailImage} alt={`${fontFileDisplayName(selectedFont)} 字体预览`} style={{ width: '100%', height: 'auto', objectFit: 'contain' }} />
+            </div>
+          )}
           <div className="detail-actions primary-actions">
             <span>操作范围：已选择 {new Set(commandIds).size} 个字体</span>
             <FontCommandButtons fonts={commandFonts} count={new Set(commandIds).size} showTagActions={false} onCommand={action => void runFontCommand(action, commandIds, [selectedFont], 'detail')} />

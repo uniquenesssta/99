@@ -33,6 +33,11 @@ async function admission(){
  const running=runtime.run(a,'request',async admission=>{signal=admission.signal;await new Promise(r=>proceed=r);return'image'});
  runtime.cancel(b,'request');assert.equal(signal.aborted,false);runtime.cancel(a,'request');assert.equal(signal.aborted,true);proceed();await assert.rejects(running,/STALE|CANCELLED/);
  const death=runtime.run(a,'death',async admission=>{a.emit('destroyed');assert(admission.signal.aborted);return'image'});await assert.rejects(death,/STALE|CANCELLED/);assert.equal(a.listenerCount('destroyed'),0);
+ const navigation=new Sender();const pending=[];
+ for(let n=0;n<16;n++)pending.push(assert.rejects(runtime.run(navigation,'nav-'+n,async admission=>new Promise(resolve=>admission.signal.addEventListener('abort',()=>resolve('late')))),/CANCELLED|STALE/));
+ assert.equal(navigation.listenerCount('destroyed'),1,'per-request window listeners accumulated');
+ navigation.emit('did-start-navigation',{},'about:blank',false,true);await Promise.all(pending);
+
 }
 async function ipcRendererChain(template) {
  const handlers=new Map();let api,resolveRender,signal,live=true;const intervals=new Set();
