@@ -65,10 +65,13 @@ export async function withQuickPreviewTimeout<T>(
 export async function loadFontFaceFromUrlWithinBudget(
   family: string,
   url: string,
-  timeoutMs = QUICK_WEBFONT_URL_TIMEOUT_MS
+  timeoutMs = QUICK_WEBFONT_URL_TIMEOUT_MS,
+  settled?: (outcome: string) => void
 ): Promise<FontFace> {
   const face = new FontFace(family, `url("${url}")`)
-  await withQuickPreviewTimeout(face.load(), timeoutMs, '协议 WebFont 快速预览')
+  const loading = face.load()
+  if (settled) void loading.then(() => settled('loaded'), () => settled('rejected')).catch(() => undefined)
+  await withQuickPreviewTimeout(loading, timeoutMs, '协议 WebFont 快速预览')
   document.fonts.add(face)
   return face
 }
@@ -76,10 +79,13 @@ export async function loadFontFaceFromUrlWithinBudget(
 export async function loadFontFaceFromBinaryWithinBudget(
   family: string,
   source: ArrayBuffer,
-  timeoutMs = QUICK_WEBFONT_BINARY_TIMEOUT_MS
+  timeoutMs = QUICK_WEBFONT_BINARY_TIMEOUT_MS,
+  settled?: (outcome: string) => void
 ): Promise<FontFace> {
   const face = new FontFace(family, source)
-  await withQuickPreviewTimeout(face.load(), timeoutMs, '二进制 WebFont 快速预览')
+  const loading = face.load()
+  if (settled) void loading.then(() => settled('loaded'), () => settled('rejected')).catch(() => undefined)
+  await withQuickPreviewTimeout(loading, timeoutMs, '二进制 WebFont 快速预览')
   document.fonts.add(face)
   return face
 }

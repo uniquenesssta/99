@@ -1,3 +1,4 @@
+import { previewTrace, previewEvent } from '../previewTraceRuntime'
 import type { FontItem } from '@shared/types'
 import type { PreviewQueueEntry } from '../../../appRuntime'
 import {
@@ -198,6 +199,7 @@ export function createFontVisiblePreviewQueueRuntime(
       if (!stateRuntime.canRequestPreviewFont(font)) continue
 
       const generation = queueGeneration
+      previewEvent(previewTrace(font.id, options.previewText, options.listPreviewFontSize), 'load-start')
       options.activePreviewLoads.current += 1
       void loadRuntime.ensurePreviewFont(font).finally(() => {
         if (disposed || generation !== queueGeneration) return
@@ -210,7 +212,9 @@ export function createFontVisiblePreviewQueueRuntime(
 
   function requestPreviewFont(font: FontItem, priority: 'normal' | 'high' = 'normal'): void {
     if (disposed) return
-    if (!stateRuntime.canRequestPreviewFont(font)) return
+    const trace = previewTrace(font.id, options.previewText, options.listPreviewFontSize)
+    previewEvent(trace, 'request', priority)
+    if (!stateRuntime.canRequestPreviewFont(font)) { previewEvent(trace, 'admission-rejected'); return }
     const routeForcesNative = resolveFontPreviewRoute(font).shouldSkipWebFontFileLoad
     if ((!routeForcesNative && options.previewFamilies[font.id]) || options.nativePreviewImages[font.id] || options.loadingFonts.current.has(font.id)) return
     if (routeForcesNative && options.previewFamilies[font.id]) {
@@ -234,6 +238,7 @@ export function createFontVisiblePreviewQueueRuntime(
       return
     }
 
+    previewEvent(trace, 'queued', priority)
     options.queuedPreviewFontIds.current.add(font.id)
     cachedPreviewBatchCheckedIds.delete(font.id)
     const entry: PreviewQueueEntry = { font, priority }

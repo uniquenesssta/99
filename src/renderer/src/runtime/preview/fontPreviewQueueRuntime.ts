@@ -1,3 +1,4 @@
+import { resetPreviewTrace } from './previewTraceRuntime'
 import { createFontAutoPreviewCacheQueueRuntime } from './queue/fontAutoPreviewCacheQueueRuntime'
 import { createFontPreviewLoadRuntime } from './queue/fontPreviewLoadRuntime'
 import type { FontPreviewQueueRuntime,FontPreviewQueueRuntimeOptions } from './queue/fontPreviewQueueTypes'
@@ -18,6 +19,7 @@ export function createFontPreviewQueueRuntime(options: FontPreviewQueueRuntimeOp
     ...visibleQueueRuntime,
     ...autoPreviewCacheQueueRuntime,
     resetPreviewRuntimeState() {
+      resetPreviewTrace()
       visibleQueueRuntime.resetVisiblePreviewQueue()
       loadRuntime.resetPreviewLoads()
       stateRuntime.resetPreviewRuntimeState()

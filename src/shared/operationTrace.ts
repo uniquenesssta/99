@@ -50,6 +50,7 @@ export interface OperationTraceEvent {
   dropped?: number
   backendSequence?: number
   elapsedMs?: number
+  monotonicMs?: number
   timestamp?: number
   jobId?: string
 }
@@ -65,6 +66,7 @@ export function encodeOperationTraceEvent(event: OperationTraceEvent): string {
       sharedRevision: Number.isFinite(event.sharedRevision) ? event.sharedRevision : undefined,
       timestamp: Number.isFinite(event.timestamp) ? event.timestamp : Date.now(),
       elapsedMs: Number.isFinite(event.elapsedMs) ? event.elapsedMs : undefined,
+      monotonicMs: Number.isFinite(event.monotonicMs) ? event.monotonicMs : undefined,
       backendSequence: Number.isSafeInteger(event.backendSequence) ? event.backendSequence : undefined,
       jobId: token(event.jobId),
       dropped: Math.max(0, Number(event.dropped) || 0)

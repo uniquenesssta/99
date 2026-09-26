@@ -1,3 +1,4 @@
+import { previewTrace, previewEvent, previewImageTrace, previewTraceEnabled } from '../runtime/preview/previewTraceRuntime'
 import { memo,useEffect,useMemo,useRef } from 'react'
 import type { CSSProperties } from 'react'
 import type { FontCardProps } from '../appRuntime'
@@ -51,8 +52,13 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
   })
   const displayPreviewFamily = frozenPreview.previewFamily
   const displayPreviewImage = frozenPreview.previewImage
+  const imageTrace = previewImageTrace(displayPreviewImage, font.id)
   const displayPreviewText = frozenPreview.previewText
   const displayListPreviewFontSize = frozenPreview.listPreviewFontSize
+  useEffect(() => {
+    if (displayPreviewImage && !displayPreviewFamily) previewEvent(imageTrace, 'card-image-applied')
+    else if (displayPreviewFamily) previewEvent(previewTrace(font.id, displayPreviewText || '', displayListPreviewFontSize ?? 44), 'card-webfont-applied')
+  }, [font.id, displayPreviewImage, displayPreviewFamily, displayPreviewText, displayListPreviewFontSize, imageTrace])
   const gridPreviewLines = useMemo(() => previewTextLines(displayPreviewText, 2), [displayPreviewText])
   const listPreviewLines = useMemo(() => previewTextLines(displayPreviewText, 2), [displayPreviewText])
   const hasLoadedPreviewFamily = Boolean(displayPreviewFamily)
@@ -96,6 +102,7 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
     const reveal = (): void => {
       if (revealed) return
       revealed = true
+      previewEvent(previewTrace(font.id, previewText || '', listPreviewFontSize ?? 44), 'visible')
       onVisible()
       observer?.disconnect()
       unsubscribeResizeSettled?.()
@@ -127,6 +134,17 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
       unsubscribeResizeSettled?.()
     }
   }, [onVisible])
+
+  useEffect(() => {
+    if (!previewTraceEnabled() || !ref.current) return
+    let lastTrace: ReturnType<typeof previewTrace>
+    const observer = new IntersectionObserver(entries => {
+      lastTrace = previewTrace(font.id, previewText || '', listPreviewFontSize ?? 44)
+      previewEvent(lastTrace, entries.some(entry => entry.isIntersecting) ? 'viewport-enter' : 'viewport-leave')
+    }, { root: null, rootMargin: '0px' })
+    observer.observe(ref.current)
+    return () => { observer.disconnect(); previewEvent(lastTrace, 'viewport-unmount') }
+  }, [font.id, previewText, listPreviewFontSize])
 
   if (compact) {
     return (
@@ -194,7 +212,7 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
         <span className="font-row-preview font-row-preview-wide">
           <span className="font-row-preview-box">
             {useNativePreviewImage ? (
-              <img className="font-sample-image compact" src={displayPreviewImage} alt="字体预览" loading="lazy" decoding="async" style={listNativePreviewImageStyle} />
+              <img onLoad={() => previewEvent(imageTrace, 'image-load')} onError={() => previewEvent(imageTrace, 'image-error')} className="font-sample-image compact" src={displayPreviewImage} alt="字体预览" loading="lazy" decoding="async" style={listNativePreviewImageStyle} />
             ) : (
               <span
                 className="font-sample compact preview-layout-text preview-layout-list preview-hard-fit-text"
@@ -270,7 +288,7 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
         {scriptLabels(font).slice(0, 4).map((label) => <span key={label} className="script-pill">{label}</span>)}
       </div>
       {useGridNativePreviewImage ? (
-        <img className={gridNativePreviewImageClassName(gridNativePreviewImageSrc)} src={gridNativePreviewImageSrc} alt="字体预览" loading="lazy" decoding="async" />
+        <img onLoad={() => previewEvent(imageTrace, 'image-load')} onError={() => previewEvent(imageTrace, 'image-error')} className={gridNativePreviewImageClassName(gridNativePreviewImageSrc)} src={gridNativePreviewImageSrc} alt="字体预览" loading="lazy" decoding="async" />
       ) : (
         <div ref={gridVisualFitRef} className={`font-sample preview-layout-text preview-layout-grid${gridVisualFitActive ? ' grid-preview-visual-fit-active' : ''}`} style={gridSampleStyle}>
           {font.previewDisabled && !hasGridTextPreviewFamily ? (

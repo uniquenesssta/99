@@ -1,3 +1,6 @@
+import { cleanOperationTrace } from '../../shared/operationTrace'
+import { withOperationTrace, logOperation } from '../logging/operationTraceContext'
+import { tracePreviewPhase } from '../preview/runtime/previewTraceRuntime'
 import { Buffer } from "node:buffer";
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { extname } from "node:path";
@@ -74,6 +77,19 @@ function textResponse(body: string, status: number): Response {
 
 export function createFontProtocolRuntime(options: FontProtocolRuntimeOptions) {
   async function handleRequest(request: FontProtocolRequest): Promise<Response> {
+    // Only the canonical base64 path supports optional diagnostic metadata. The
+    // decoded path still passes the unchanged authorization below, including when
+    // metadata is malformed. Metadata is never used for authorization or routing.
+    const traceSeparator = request.url.indexOf('?hfmTrace=')
+    if (request.url.startsWith(`${FONT_PROTOCOL_PREFIX}b64/`) && traceSeparator >= 0) {
+      let trace
+      try {
+        const encoded = request.url.slice(traceSeparator + '?hfmTrace='.length)
+        if (encoded.length <= 8192) trace = cleanOperationTrace(JSON.parse(decodeURIComponent(encoded)))
+      } catch { /* An invalid diagnostic context cannot grant access. */ }
+      return withOperationTrace(trace, options.appendLog, () => handleRequest({ url: request.url.slice(0, traceSeparator) }))
+    }
+
     if (!request.url.startsWith(FONT_PROTOCOL_PREFIX)) {
       return textResponse("Bad font request", 400);
     }
@@ -86,7 +102,8 @@ export function createFontProtocolRuntime(options: FontProtocolRuntimeOptions) {
       return textResponse("Bad font request path", 400);
     }
 
-    const authorization = await options.authorizeFontRead(filePath);
+    const authorization = await tracePreviewPhase('font-authorize', () => options.authorizeFontRead(filePath));
+    logOperation({ stage: 'font-authorization-result', outcome: authorization.ok ? 'allowed' : 'denied', ...(!authorization.ok ? { reason: authorization.reason } : {}) })
     if (!authorization.ok) {
       const status = denialStatus(authorization.reason);
       options.appendLog(
@@ -96,7 +113,7 @@ export function createFontProtocolRuntime(options: FontProtocolRuntimeOptions) {
     }
 
     try {
-      const data = await fsp.readFile(authorization.value.ioPath);
+      const data = await tracePreviewPhase('font-file-read', () => fsp.readFile(authorization.value.ioPath));
       const body = new Uint8Array(
         data.buffer,
         data.byteOffset,

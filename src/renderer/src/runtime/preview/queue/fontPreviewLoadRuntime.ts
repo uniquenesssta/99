@@ -1,3 +1,4 @@
+import { previewTrace, previewLoadTrace, previewEvent, previewBatchTrace, rememberPreviewImageTrace } from '../previewTraceRuntime'
 import type { FontItem } from '@shared/types'
 import { SHARED_UNAVAILABLE_MESSAGE } from '@shared/sharedAvailability'
 import { getNativePreviewRequestLayout,normalizePreviewText,previewTextLines } from '@shared/preview-layout/previewTextFitRuntime'
@@ -144,11 +145,17 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     const requestToken = `${cacheMissToken()}::${loadGeneration}`
     const previewText = currentCardPreviewText(options.previewText)
     const previewLayout = currentCardPreviewLayout(options.previewText, options.listPreviewFontSize)
-    const cachedImages = await options.hfm.getCachedPreviewImages(uniqueFonts, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height)
+    const memberTraces = uniqueFonts.map(font => previewTrace(font.id, options.previewText, options.listPreviewFontSize))
+    const batchTrace = previewBatchTrace(memberTraces)
+    const cachedImages = await options.hfm.getCachedPreviewImages(uniqueFonts, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, batchTrace)
+    previewEvent(batchTrace, 'cache-batch-result', isPreviewRequestCurrent(requestToken) ? 'current' : 'stale')
     if (!isPreviewRequestCurrent(requestToken)) return hitIds
     const hitEntries: Array<{ font: FontItem; image: string }> = []
-    for (const font of uniqueFonts) {
+    for (const [index, font] of uniqueFonts.entries()) {
       const image = cachedImages[font.id]
+      const trace = memberTraces[index]
+      previewEvent(trace, 'cache-result', image ? 'hit' : 'miss')
+      if (image) rememberPreviewImageTrace(image, trace, font.id)
       if (image) {
         hitEntries.push({ font, image })
         hitIds.add(font.id)
@@ -161,6 +168,9 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
   }
 
   async function ensurePreviewFont(font: FontItem): Promise<string> {
+    const trace = previewLoadTrace(font.id, options.previewText, options.listPreviewFontSize)
+    previewEvent(trace, 'load-attempt')
+    const startedAt = performance.now()
     const failureKey = `${font.id}::${font.path}::${cacheMissToken()}`
     if ((failedPreviewUntil.get(failureKey) || 0) > Date.now()) return ''
     failedPreviewUntil.delete(failureKey)
@@ -191,7 +201,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       if (typeof options.hfm.getCachedPreviewImage !== 'function') return false
       const previewText = currentCardPreviewText(options.previewText)
       const previewLayout = currentCardPreviewLayout(options.previewText, options.listPreviewFontSize)
-      const cachedImage = await options.hfm.getCachedPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height).catch((error) => {
+      const cachedImage = await options.hfm.getCachedPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, trace).catch((error) => {
         reportRendererTrace({
           kind: 'font-preview-cache-read-failed',
           label: 'getCachedPreviewImage',
@@ -212,6 +222,8 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
         rememberCacheMiss(font.id)
         return false
       }
+      rememberPreviewImageTrace(cachedImage, trace, font.id)
+      previewEvent(trace, 'cache-result', 'hit')
       rememberNativeCardPreview(font, cachedImage, requestToken)
       return true
     }
@@ -222,8 +234,10 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       try {
         const previewText = currentCardPreviewText(options.previewText)
         const previewLayout = currentCardPreviewLayout(options.previewText, options.listPreviewFontSize)
-        const image = await options.hfm.renderPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height)
+        const image = await options.hfm.renderPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, trace)
+        previewEvent(trace, 'image-return', isPreviewRequestCurrent(requestToken) ? 'current' : 'stale', startedAt)
         if (!isPreviewRequestCurrent(requestToken)) return ''
+        rememberPreviewImageTrace(image, trace, font.id)
         const missingFile = image.startsWith('data:image/svg+xml')
         const rememberMissingPlaceholder = optionsOverride?.rememberMissingPlaceholder !== false
         if (!missingFile || rememberMissingPlaceholder) rememberNativeCardPreview(font, image, requestToken)
@@ -285,9 +299,13 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
         const url = await options.hfm.toFontUrl(font.path)
         if (!isPreviewRequestCurrent(requestToken)) return ''
         const protocolTimeoutMs = Math.min(QUICK_WEBFONT_URL_TIMEOUT_MS, remainingQuickPreviewBudget(quickPreviewStartedAt))
-        await loadFontFaceFromUrlWithinBudget(family, url, protocolTimeoutMs)
+        previewEvent(trace, 'webfont-start')
+        const observedUrl = trace ? `${url}?hfmTrace=${encodeURIComponent(JSON.stringify(trace))}` : url
+        await loadFontFaceFromUrlWithinBudget(family, observedUrl, protocolTimeoutMs, trace ? outcome => previewEvent(trace, 'webfont-physical-settled', outcome, startedAt) : undefined)
+        previewEvent(trace, 'webfont-loaded')
         loadedByProtocolUrl = true
       } catch (error) {
+        previewEvent(trace, 'webfont-fallback')
         protocolLoadError = error
       }
 
@@ -313,7 +331,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
           if (!isPreviewRequestCurrent(requestToken)) return ''
           const source = normalizeFontFaceBinarySource(fontData)
           if (!source) throw new Error('主进程返回的字体数据不是有效 ArrayBuffer。')
-          await loadFontFaceFromBinaryWithinBudget(family, source, Math.min(QUICK_WEBFONT_BINARY_TIMEOUT_MS, remainingQuickPreviewBudget(quickPreviewStartedAt)))
+          await loadFontFaceFromBinaryWithinBudget(family, source, Math.min(QUICK_WEBFONT_BINARY_TIMEOUT_MS, remainingQuickPreviewBudget(quickPreviewStartedAt)), trace ? outcome => previewEvent(trace, 'webfont-physical-settled', outcome, startedAt) : undefined)
         } catch (error) {
           const protocolMessage = protocolLoadError ? `协议 URL 加载失败：${protocolLoadError instanceof Error ? protocolLoadError.message : String(protocolLoadError)}；` : ''
           throw new Error(`${protocolMessage}FontFace 快速预览失败：${error instanceof Error ? error.message : String(error)}；快速预览总预算 ${QUICK_WEBFONT_TOTAL_BUDGET_MS}ms。`)
@@ -321,6 +339,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       }
 
       if (!isPreviewRequestCurrent(requestToken)) return ''
+      previewEvent(trace, 'webfont-applied', 'current', startedAt)
       options.setPreviewFamilies((prev) => pruneRecordByKeyLimit({ ...prev, [font.id]: family }, PREVIEW_STATE_LRU_LIMIT, previewKeepIds(font.id)))
       options.setNativePreviewImages((prev) => {
         if (!prev[font.id]) return prev
@@ -356,6 +375,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       options.setFailedPreviewFontIds((prev) => pruneRecordByKeyLimit({ ...prev, [font.id]: true }, PREVIEW_STATE_LRU_LIMIT, previewKeepIds(font.id)))
       return await renderNativeCardPreview('Chromium WebFont 预览失败，已改用 Windows 原生图片预览。')
     } finally {
+      previewEvent(trace, 'load-settled', isPreviewRequestCurrent(requestToken) ? 'current' : 'stale', startedAt)
       if (isPreviewRequestCurrent(requestToken)) options.loadingFonts.current.delete(font.id)
     }
   }

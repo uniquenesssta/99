@@ -128,7 +128,7 @@ Mermaid 已记录真实重置/补排链；Create State 保存审计边界。生�
 | 阶段 | 目标 | 依赖 | 当前状态 |
 | --- | --- | --- | --- |
 | S10-00 | CIM 与独立验证修复回移 | Stage 9 | 已完成，见第 2 节 |
-| S10-01 | 建立复现、关联观测与性能基线 | S10-00 | 未开始，下一执行项 |
+| S10-01 | 建立复现、关联观测与性能基线 | S10-00 | 自动化通过，实机基线待验；见第 11 节 |
 | S10-02 | 修复优先级与可见项重新请求 | S10-01 自动化基线 | 未开始 |
 | S10-03 | 区分失败结果并闭合恢复链路 | S10-02 | 未开始 |
 | S10-04 | 缩短缓存读取关键路径 | S10-03 | 未开始 |
@@ -246,4 +246,47 @@ S10-01 固定修复前基线，S10-06 用相同口径复测首张和当前视口
 
 阶段提交保持可独立回退，回退必须涵盖同阶段关联接线和测试，不将新旧结果协议混用；保留 S10-00 独立修复及共享依赖目录设置。涉及旧错误记录纠正时记录精确修正条件，不能通过整库覆盖恢复。任何根身份、授权、退出或数据一致性回归立即停止推进并回修；不得删除用户文件或强制重置分支处理失败。
 
-本次文档交付：补齐 S10-01 至 06、审计映射和验收门；生产代码没有改动，下一项为 S10-01。
+此前文档交付：补齐 S10-01 至 06、审计映射和验收门，当时未改生产代码；S10-01 后续实施结果见第 11 节。
+
+
+## 11. S10-01 执行回执（2026-09-26）
+
+开始提交 `d108c590589f411d6d678bb2ee1a25d2dc420c2e`，沿用唯一 Stage 10 分支。本项只增加诊断与基线，五个已确认缺陷保持开放，不把观测通过称为修复通过。
+
+### 11.1 实现范围
+
+- 新增 renderer/main 预览观测模块，复用已有 operation-chain、AsyncLocalStorage、字段白名单、日志 16MiB 会话预算和 renderer 256 在途发送限制；不新建业务调度器。诊断状态最多 512 项，图片关联包含字体身份，避免相同图片串线；图片回调捕获旧 trace，迟到回执不冒充新代次。
+- 在已有详细日志开关下暴露只读 previewTraceEnabled；关闭时不建立诊断 viewport observer、不创建预览 trace、不发送新增 renderer 事件。观测走现有 operation-chain 分支，不触发 renderer 活跃状态延长。
+- 卡片记录实际视口 enter/leave/unmount、状态应用和 img load/error；原有 rootMargin 预取/可见回调独立记录。load 回执不等于可见像素验收，CSS/裁切结果仍需实机核对。
+- 记录请求/拒绝/入队/等待/加载尝试、缓存命中、过期结果、WebFont 加载/回退/物理完成；同一字体代次的重试有独立 attemptId。批次最多内嵌 16 个成员，额外逐成员事件保留第 17 项以后的关系并报告 omitted。
+- 两套 preload 为三项预览方法增加可选 trace 尾参；五个业务参数和返回值不变，旧调用不携带 envelope。既有 IPC 包装器在正常来源校验后剥离 metadata 并设置上下文，正常特性准入和处理器不变。
+- 主进程记录缓存批次各调用者与物理批次关系、调用者 deadline 和实际 settlement；原生同键合并记录 owner。记录 I/O 排队、共享存储准备、路径解析/stat、索引读取、原生调用和图片读取；不改变现有期限、并发和结果语义。
+- FontFace 使用 canonical b64 URL 的可选 hfmTrace 查询参数传递观测身份。协议端只剥离该诊断后缀、白名单清洗并设置上下文，随后执行原路径解码、authorizeFontRead 和读取；未携带 metadata 的旧 URL 不变。坏 metadata 不授予权限，仍必须正常授权。物理 FontFace 迟到完成仅记录，不提前实施 S10-05 的复用策略。
+
+### 11.2 复现、专项与兼容验证
+
+- `diagnostics:preview-observation-baseline`：真实 reset/derived hooks、可见队列+准入、previewRuntime+内存缓存，受控替代 UI/操作系统端口，稳定复现五项缺陷。`--observe` 通过仅表示复现成功；`--strict` 按预期非零，明确缺陷未修复。S10-02/03 必须把对应用例转换为健康行为断言，不能长期保留已修复缺陷的旧断言。
+- `diagnostics:preview-trace`：关闭开关无事件、512 项有界、代次和重试身份、24 项成员关联、相同图片不同字体、真实 Card load/error 回调、两套 preload 旧/新参数、真实 IPC 上下文及不可信来源拒绝、并发上下文隔离和原异常透传、缓存合并及超时后实际完成、FontFace 超时后迟到成功、协议 metadata 与授权拒绝。
+- 原 scheduler 八项检查仅增加观测依赖端口；font-path-authorization READ 保留所有权限/恶意路径断言。React composition 只更新三个已增加观测调用的源码摘要，40 个状态 owner、行为与变异断言不变。Context7 已核对 Node 22 AsyncLocalStorage Promise 上下文语义。
+- 本地 `npm run verify` 通过：typecheck + 149/149 诊断；最终新增观测/授权专项及 operation-chain 七项变异复核通过；Electron/Vite 三端构建与 3/3 混淆通过，diff 检查通过。原生源码未变，本轮未重新执行 Windows 原生构建。提交后 Windows CI 单独记状态，不用之前回移阶段 CI 代替。Windows/NAS GUI 与五次重复性能样本本环境未执行。
+
+### 11.3 已有日志基线及缺失值
+
+`build/diagnostics/fixtures/preview-observation-baseline.fixture.json` 保存旧日志文件名、SHA-256、代码基线与去路径统计：62 条原生回执（中位 10ms）、44 条筛选后的图片 IPC 样本（中位 1819.5ms，含退出失败）、1,709 次共享 I/O 启动、3 次缓存 deadline。原始日志含用户路径，未复制进仓库。没有视口分母、首个可见完成或整屏完成证据，因此对应字段为 null；Windows 重复样本和 Stage 9 配对样本均为 0。
+
+不得将这些筛选日志样本当作全请求统计，也不得把新埋点/受控测试耗时当作 Windows 性能基线。新增事件只记录白名单身份/阶段/结果/本进程 elapsed 与 monotonicMs，不记录完整文字、图片或字体二进制；原有详细日志的内容策略不在此项扩展。
+
+### 11.4 开发运行与实机回执
+
+Windows PowerShell 临时开启已有详细日志开关后启动：
+
+```powershell
+$env:HFM_LOG_DETAIL = 'debug'
+npm run dev
+```
+
+关闭本次应用后使用 `Remove-Item Env:HFM_LOG_DETAIL` 恢复默认日志。无需 build:win。按第 9 节记录视口、模式、字体集合、文字/字号、冷热条件与操作时间，每组至少五次；开启日志的前后对照使用相同开关，避免诊断开销混入比较。
+
+优先复现“首次进入就不显示”或用户实际触发步骤，再测试稳定同屏改字/字号和滚动；提供当前 startup 日志及对应操作说明/截图。沿 target、rendererGeneration、operationId、attemptId、batchId/jobId 关联各层；跨进程只做身份关联，不直接相减不同时间原点。若遇到 dropped/omitted、日志容量耗尽或图片关联被淘汰，该轮链路不完整，不能默认为显示成功。
+
+本阶段不宣布用户空白已解决，也不宣布提速。自动化门通过后可进入 S10-02，S10-06 仍须补齐原场景和实机性能回执。

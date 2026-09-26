@@ -131,6 +131,7 @@ function invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T> {
 import type { CacheStats,FontActivationBatchResult,FontDeleteResult,FontIndexChangePayload,FontIndexProgressPayload,FontTagMutationStateSignalPayload,FontItem,FontMetricsResult,FontProtectionResult,FontQueryPageResult,FontQueryRequest,FontQueryResult,FontSearchResult,FontTagBatchItem,FontTagUpdateResult,InstallCompareOptions,InstallCompareResult,InstallResult,InstallStatusProgressPayload,InstallStatusRefreshResult,InstallStatusRefreshStartResult,LibraryShell,LibraryState,MoveFontFileResult,MoveFontFilesResult,PhysicalFolderTreeResult,RenameFolderResult,ScanResult,SystemInstalledFont,WatchedFolderRefreshResult } from '../shared/types'
 
 const api = {
+  previewTraceEnabled: process.env.HFM_VERBOSE_LOGS === '1' || ['debug', 'verbose', 'full'].includes(String(process.env.HFM_LOG_DETAIL || '').trim().toLowerCase()),
   getLicenseStatus: (): Promise<HfmLicensePublicStatus> => invoke('license:getStatus'),
   loadLibrary: (): Promise<LibraryState> => invoke('library:load'),
   readFontCleanupRemnants: (): Promise<import('../shared/fontCleanup').FontCleanupReport> => invoke('fontCleanup:read'),
@@ -232,9 +233,9 @@ const api = {
   uninstallManaged: (item: FontItem): Promise<InstallResult> => invoke('fonts:uninstallManaged', item),
   toFontUrl: (filePath: string): Promise<string> => Promise.resolve(fontPathToProtocolUrl(filePath)),
   readPreviewFontData: (item: FontItem): Promise<ArrayBuffer> => invoke('fonts:readPreviewFontData', item),
-  renderPreviewImage: (item: FontItem, text: string, fontSize: number, width: number, height: number): Promise<string> => invoke('fonts:renderPreviewImage', item, text, fontSize, width, height),
-  getCachedPreviewImage: (item: FontItem, text: string, fontSize: number, width: number, height: number): Promise<string> => invoke('fonts:getCachedPreviewImage', item, text, fontSize, width, height),
-  getCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number): Promise<Record<string, string>> => invoke('fonts:getCachedPreviewImages', items, text, fontSize, width, height),
+  renderPreviewImage: (item: FontItem, text: string, fontSize: number, width: number, height: number, trace?: OperationTrace): Promise<string> => invoke('fonts:renderPreviewImage', item, text, fontSize, width, height, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  getCachedPreviewImage: (item: FontItem, text: string, fontSize: number, width: number, height: number, trace?: OperationTrace): Promise<string> => invoke('fonts:getCachedPreviewImage', item, text, fontSize, width, height, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  getCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number, trace?: OperationTrace): Promise<Record<string, string>> => invoke('fonts:getCachedPreviewImages', items, text, fontSize, width, height, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   ensurePreviewCache: (item: FontItem, text: string, fontSize: number, width: number, height: number): Promise<{ ok: boolean; cached: boolean; storage?: 'root' | 'fallback' | 'local'; message?: string }> => invoke('fonts:ensurePreviewCache', item, text, fontSize, width, height),
   getPreviewCacheStatus: (items: FontItem[], text: string, fontSize: number, width: number, height: number): Promise<Record<string, boolean>> => invoke('fonts:getPreviewCacheStatus', items, text, fontSize, width, height),
   showItemInFolder: (filePath: string): Promise<boolean> => invoke('shell:showItemInFolder', filePath),

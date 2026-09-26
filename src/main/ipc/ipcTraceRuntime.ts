@@ -6,6 +6,7 @@ import { detailedStartupLogsEnabled } from "../logging/startupLogPolicy";
 import type { IpcHandlerRuntime,IpcInvokeHandler } from "./ipcHandlerTypes";
 
 const OPERATION_TRACE_ARGUMENTS: Record<string, number> = {
+  'fonts:renderPreviewImage': 5, 'fonts:getCachedPreviewImage': 5, 'fonts:getCachedPreviewImages': 5,
   'fonts:activateFonts': 1,
   'fonts:setLocalTags': 2, 'fonts:setLocalTagsBatch': 1,
   'fonts:setSharedTags': 3, 'fonts:setSharedTagsBatch': 2,

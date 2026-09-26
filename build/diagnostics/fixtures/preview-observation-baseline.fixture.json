@@ -1,0 +1,36 @@
+{
+  "name": "preview-observation-baseline",
+  "sourceLog": "startup-2026-09-26_14-42-34-344-31120.log",
+  "sourceSha256": "cefe196bd41ddc0ebe74d40e26e2c3c3c10c1773cd8364b0fc3b1e904a26bc38",
+  "codeBaseline": "fa9637535ac373322f5292ad60c6b1245bf1c2ec",
+  "scope": "one pre-instrumentation user log; thresholded/suppressed samples, not all requests",
+  "rustRenderLogged": {
+    "count": 62,
+    "medianMs": 10.0,
+    "maxMs": 110
+  },
+  "imageIpcLogged": {
+    "count": 44,
+    "medianMs": 1819.5,
+    "maxMs": 3783,
+    "includesShutdownFailure": true
+  },
+  "sharedIoStarts": 1709,
+  "cacheDeadlines": 3,
+  "firstVisibleMs": null,
+  "viewportCompleteMs": null,
+  "visibleDenominator": null,
+  "windowsRepeatedSamples": 0,
+  "stage9PairedSamples": 0,
+  "knownDefects": [
+    "size-requeue",
+    "text-tail-requeue",
+    "priority-promotion",
+    "timeout-placeholder-reuse",
+    "failed-index-missing"
+  ],
+  "unverified": [
+    "actual image display",
+    "same-machine Stage9 regression"
+  ]
+}

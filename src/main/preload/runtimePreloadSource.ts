@@ -44,6 +44,7 @@ function invoke(channel, ...args) {
 }
 
 const api = {
+  previewTraceEnabled: process.env.HFM_VERBOSE_LOGS === '1' || ['debug', 'verbose', 'full'].includes(String(process.env.HFM_LOG_DETAIL || '').trim().toLowerCase()),
   loadLibrary: () => invoke('library:load'),
     readFontCleanupRemnants: () => invoke('fontCleanup:read'),
     runFontCleanupAction: (input) => invoke('fontCleanup:run', input),
@@ -142,9 +143,9 @@ const api = {
   uninstallManaged: (item) => invoke('fonts:uninstallManaged', item),
   toFontUrl: (filePath) => Promise.resolve(fontPathToProtocolUrl(filePath)),
   readPreviewFontData: (item) => invoke('fonts:readPreviewFontData', item),
-  renderPreviewImage: (item, text, fontSize, width, height) => invoke('fonts:renderPreviewImage', item, text, fontSize, width, height),
-  getCachedPreviewImage: (item, text, fontSize, width, height) => invoke('fonts:getCachedPreviewImage', item, text, fontSize, width, height),
-  getCachedPreviewImages: (items, text, fontSize, width, height) => invoke('fonts:getCachedPreviewImages', items, text, fontSize, width, height),
+  renderPreviewImage: (item, text, fontSize, width, height, trace) => invoke('fonts:renderPreviewImage', item, text, fontSize, width, height, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  getCachedPreviewImage: (item, text, fontSize, width, height, trace) => invoke('fonts:getCachedPreviewImage', item, text, fontSize, width, height, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  getCachedPreviewImages: (items, text, fontSize, width, height, trace) => invoke('fonts:getCachedPreviewImages', items, text, fontSize, width, height, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   ensurePreviewCache: (item, text, fontSize, width, height) => invoke('fonts:ensurePreviewCache', item, text, fontSize, width, height),
   getPreviewCacheStatus: (items, text, fontSize, width, height) => invoke('fonts:getPreviewCacheStatus', items, text, fontSize, width, height),
   showItemInFolder: (filePath) => invoke('shell:showItemInFolder', filePath),

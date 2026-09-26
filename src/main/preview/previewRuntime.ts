@@ -1,3 +1,5 @@
+import { tracePreviewPhase } from './runtime/previewTraceRuntime'
+import { logOperation, currentOperationTrace } from '../logging/operationTraceContext'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { validatePreviewInput } from './runtime/previewInputPolicy'
 import { join,resolve } from 'node:path'
@@ -20,6 +22,7 @@ export type { PreviewCacheStorage,PreviewImageFileResult,PreviewRuntimeOptions }
 
 export function createPreviewRuntime(options: PreviewRuntimeOptions) {
   const previewImageMemoryRuntime = createPreviewImageMemoryRuntime()
+  const renderTraceOwners = new Map<string, string>()
 
   const {
     appendStartupLog,
@@ -110,7 +113,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     const resolvedFontPath = resolve(item.path)
     const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog)
     const installedRoute = resolveInstalledFontPreviewRoute(item)
-    const previewCache = await previewCacheStorageForFont(resolvedFontPath)
+    const previewCache = await tracePreviewPhase('storage-prepare', () => previewCacheStorageForFont(resolvedFontPath))
     let stat = previewCacheStatForInstalledRoute(
       item,
       installedRoute,
@@ -120,7 +123,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     )
 
     if (!stat) {
-      const existingFontPath = await resolveExistingFontFilePath(item.path)
+      const existingFontPath = await tracePreviewPhase('font-resolve', () => resolveExistingFontFilePath(item.path))
       if (!existingFontPath) {
         if (installedRoute) {
           stat = { size: 0, mtimeMs: 0 }
@@ -130,7 +133,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         }
       } else {
         {
-          const statResult = await withIoDeadlineResult(`preview-font-stat:${existingFontPath}`, () => fsp.stat(existingFontPath), fileExistsTimeoutMs())
+          const statResult = await withIoDeadlineResult(`preview-font-stat:${existingFontPath}`, () => tracePreviewPhase('font-stat', () => fsp.stat(existingFontPath)), fileExistsTimeoutMs())
           if (!statResult.ok) {
             appendStartupLog(`native preview skipped slow/missing font path: ${existingFontPath}`)
             return null
@@ -151,7 +154,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     const taskKey = previewTaskKey(key)
 
     if (!ignorePreviewIndex) {
-      const indexedStatus = await readPreviewCacheIndexStatus(previewCache, key, outputPath)
+      const indexedStatus = await tracePreviewPhase('index-read', () => readPreviewCacheIndexStatus(previewCache, key, outputPath))
       if (indexedStatus === 'ok') {
         await completeBackgroundTask(taskKey, '预览缓存已存在').catch(() => undefined)
         return { outputPath, cached: true, storage: previewCache.storage }
@@ -221,7 +224,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       preferSystemFont?: boolean
       systemFontFamilyCandidates?: string[]
     }): Promise<void> {
-      const renderResult = await nativePreviewRenderer.renderNativePreview(request, inputPath)
+      const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview(request, inputPath))
       if (!renderResult.ok || !(await fileExistsWithDeadline(renderResult.outputPath || outputPath))) {
         throw new Error(renderResult.message || `${renderResult.engine} preview renderer did not create output.`)
       }
@@ -235,7 +238,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       // Temporary activation does not guarantee family-name lookup is available.
       // Use the existing font file directly while keeping the same cache identity.
       const activeFontPath = installedRoute?.reason === 'active'
-        ? await resolveExistingFontFilePath(item.path)
+        ? await tracePreviewPhase('font-resolve', () => resolveExistingFontFilePath(item.path))
         : null
       if (activeFontPath) {
         await fsp.access(activeFontPath)
@@ -265,7 +268,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       }
 
       if (!rendered) {
-        const fontPath = await resolveExistingFontFilePath(item.path)
+        const fontPath = await tracePreviewPhase('font-resolve', () => resolveExistingFontFilePath(item.path))
         if (!fontPath) {
           await writePreviewCacheIndex(previewCache, key, {
             outputPath,
@@ -358,17 +361,25 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     text = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog).text
     const requestKey = previewImageMemoryRuntime.requestKey(item, text, fontSize, width, height)
     const cachedDataUri = previewImageMemoryRuntime.get(requestKey)
-    if (cachedDataUri) return cachedDataUri
+    if (cachedDataUri) { logOperation({ stage: 'image-memory-hit' }); return cachedDataUri }
 
     const existing = previewImageMemoryRuntime.inflight.get(requestKey)
-    if (existing) return existing
+    if (existing) { logOperation({ stage: 'render-coalesced', jobId: renderTraceOwners.get(requestKey) }); return existing }
 
+    const owner = currentOperationTrace()?.operationId
+    if (owner) {
+      renderTraceOwners.set(requestKey, owner)
+      while (renderTraceOwners.size > 512) renderTraceOwners.delete(renderTraceOwners.keys().next().value!)
+    }
+    const queuedAt = performance.now()
+    logOperation({ stage: 'render-queued' })
     const task = withGlobalIo('preview:render', async () => {
+      logOperation({ stage: 'render-start', elapsedMs: performance.now() - queuedAt })
       let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false)
       if (!previewFile) return previewImageMemoryRuntime.remember(requestKey, missingFontPreviewDataUri(item.path, width, height))
 
       try {
-        const bytes = await fsp.readFile(previewFile.outputPath)
+        const bytes = await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
         return previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
       } catch (error) {
         if (previewFile.cached) {
@@ -381,7 +392,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
           await deletePreviewCacheIndex(storage, key).catch(() => undefined)
           previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, true)
           if (previewFile) {
-            const bytes = await fsp.readFile(previewFile.outputPath)
+            const bytes = await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
             return previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
           }
         }
@@ -389,6 +400,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       }
     }, { priority: 'foreground', storagePath: item.path })
       .finally(() => {
+        renderTraceOwners.delete(requestKey)
         previewImageMemoryRuntime.inflight.delete(requestKey)
       })
 

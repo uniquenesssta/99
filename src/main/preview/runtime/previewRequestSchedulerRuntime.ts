@@ -1,6 +1,11 @@
+import type { OperationTrace } from '../../../shared/operationTrace'
+import { currentOperationTrace, withOperationTrace, logOperation } from '../../logging/operationTraceContext'
+import { tracePreviewPhase } from './previewTraceRuntime'
 import type { FontItem } from '../../../shared/types'
 import { validatePreviewInput } from './previewInputPolicy'
 import { previewCacheQueryTimeoutMs,withIoDeadlineResult } from '../../path/ioDeadlineRuntime'
+
+let traceBatchSequence = 0
 
 const DEFAULT_PREVIEW_SCHEDULER_BATCH_LIMIT = 100
 const DEFAULT_PREVIEW_SCHEDULER_COALESCE_DELAY_MS = 32
@@ -19,6 +24,8 @@ export type PreviewRequestSchedulerRuntime = {
 }
 
 type PreviewCaller = {
+  trace?: OperationTrace
+  monotonicStartedAt: number
   items: FontItem[]
   resolve: (value: Record<string, string>) => void
   reject: (error: unknown) => void
@@ -143,6 +150,7 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
   function expireCaller(caller: PreviewCaller): void {
     if (caller.completed) return
     caller.completed = true
+    logOperation({ trace: caller.trace, stage: 'cache-caller-deadline', elapsedMs: performance.now() - caller.monotonicStartedAt }, options.appendStartupLog)
     caller.resolve({ ...caller.result })
   }
 
@@ -267,10 +275,15 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
   async function runBatch(batch: WorkBatch): Promise<void> {
     const liveCallers = batch.callers.filter((caller) => !caller.completed)
     if (!liveCallers.length) return
+    const taskId = `cache-batch-${++traceBatchSequence}`
+    for (const caller of liveCallers) logOperation({ trace: caller.trace, stage: 'cache-physical-member', elapsedMs: performance.now() - caller.monotonicStartedAt, jobId: taskId }, options.appendStartupLog)
     const taskLabel = `preview-scheduler-cache-read:${batch.items.length}:${Date.now()}`
     const result = await withIoDeadlineResult(
       taskLabel,
-      () => options.readCachedPreviewImages(batch.items, batch.text, batch.fontSize, batch.width, batch.height),
+      () => withOperationTrace(liveCallers[0].trace, options.appendStartupLog, () => tracePreviewPhase('cache-physical', async () => {
+        try { return await options.readCachedPreviewImages(batch.items, batch.text, batch.fontSize, batch.width, batch.height) }
+        finally { for (const caller of liveCallers) logOperation({ trace: caller.trace, stage: 'cache-physical-settled', outcome: caller.completed ? 'caller-ended' : 'caller-live', jobId: taskId }, options.appendStartupLog) }
+      })),
       previewSchedulerRequestTimeoutMs(),
     )
 
@@ -299,6 +312,8 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
       let caller: PreviewCaller
       const timer = setTimeout(() => expireCaller(caller), timeoutMs)
       caller = {
+        trace: currentOperationTrace(),
+        monotonicStartedAt: performance.now(),
         items: validItems,
         resolve,
         reject,

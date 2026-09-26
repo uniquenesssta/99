@@ -101,6 +101,8 @@ async function testSplitBatchResultsAreAggregated() {
             withIoDeadlineResult: async (_label, operation) => ({ ok: true, value: await operation() })
           }
         }
+        if (id === '../../logging/operationTraceContext') return { currentOperationTrace: () => undefined, logOperation() {}, withOperationTrace: (_trace, _append, run) => run() }
+        if (id === './previewTraceRuntime') return { tracePreviewPhase: (_stage, run) => run() }
         if (id === './previewInputPolicy') return loadTypeScriptModule('src/main/preview/runtime/previewInputPolicy.ts')
         return require(id)
       }
