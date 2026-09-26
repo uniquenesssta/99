@@ -1,7 +1,7 @@
 # HanFontManager 修复与编排重构总任务书
 
 
-> 2026-09-26 实机超时故障补修：C-04R 传输层普通 timeout 不再直接判整根离线，真实子进程/生产根状态集成门已补齐，完整 Windows 门待验。监听逐文件校验与扫描界面失败收尾尚未修改；执行入口见[专项 §10.3](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md#103-2026-09-26-实机故障与-c-04r-补修)。
+> 2026-09-26 实机超时故障补修：C-04R 传输层普通 timeout 不再直接判整根离线，真实子进程/生产根状态集成门在 Windows aaefee3 通过；完整 Windows 门仍被独立 CIM 1500ms 超时阻塞。监听逐文件校验与扫描界面失败收尾尚未修改；执行入口见[专项 §10.3](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md#103-2026-09-26-实机故障与-c-04r-补修)。
 
 > 2026-09-25 复审接续：当前入口为 [C 阶段 §10](HFM_INDEX_IO_ACTIVATION_SHUTDOWN_REPAIR_TASKBOOK.md#10-2026-09-25-复审修复接续)。先修复历史/current 验证混用及失败挂起，再补 C-04 传输 timeout 误标整根 offline，随后处理 C-08.1 首批交付等待；各项完整 Windows 门禁通过才继续。历史“C-04 完成”仅代表原覆盖范围，新反例尚未关闭；C-09/O-07 保持暂停。
 

@@ -644,7 +644,7 @@ C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 
 | Atomic Task | 范围 | 硬门与当前状态 |
 | --- | --- | --- |
 | C-08.1-V 验证链修复 | C-00 observer、诊断执行生命周期、全量 runner、现有 CI 与记录 | 实现已提交，验收阻塞：本地 LF/CRLF 完整 146 项与构建/混淆通过；Windows 真实 CIM 查询触发现有 1500ms deadline，完整 Windows verify/build/混淆未通过 |
-| C-04R 传输超时语义补修 | Rust transport 与 root availability 受影响测试 | 2026-09-26 实机故障后用户重新授权优先补修，候选已实现、Windows 门待验；单次操作 timeout 不改 online/generation，根探测失败仍判离线；保留取消、隔离、写入未知结果及旧代次拒绝 |
+| C-04R 传输超时语义补修 | Rust transport 与 root availability 受影响测试 | 2026-09-26 实机故障后用户重新授权优先补修，候选 aaefee3 已实现，Windows 专项通过，完整门仍被独立 CIM 超时阻塞；单次操作 timeout 不改 online/generation，根探测失败仍判离线；保留取消、隔离、写入未知结果及旧代次拒绝 |
 | C-08.1-P 首批返回 | scan listing 与 indexing client 的批次交付边界 | 待 C-04R 通过；本地根不等全部网络根，完成批次及时交付；不重复发布，不改变索引字段、错误与 generation 语义 |
 | C-09 实机验收 | Windows 开发模式、本机/映射盘/UNC、断网/退出/恢复 | 以上门禁通过后执行；真实 NAS 首批、可见预览、总扫描耗时及进程数分别记录；O-07 继续暂停 |
 
@@ -691,3 +691,7 @@ C-04R 本轮范围：
 - Windows workflow 把既有 Shared I/O integration 门移到 CIM 门前以获得本项回执；CIM、完整 verify、build、混淆均保留且依然失败即阻断后续步骤。
 - 修改前新增反例实际失败：`operation timeout offlined healthy root`。修改后 12 个场景、LF/CRLF、路由与超时误判两个 mutation 通过，最终存活子进程为 0。完整本地 verify 运行中；Electron/Vite build 与 3/3 混淆通过。真实 Windows/NAS 验收未完成。
 - Create State 在本次实机诊断时返回 UNAUTHORIZED/要求重新认证，不能保存插件状态；此执行卡与 Git 是接续记录。
+
+- Windows `36212749920`，候选 `aaefee327113fe05f6364e7ae0571c4f3ee48265`：Shared I/O integration 12 场景、LF/CRLF、两个 mutation 均通过，最终子进程为 0。随后原有 mapped-drive-unicode 门失败，真实查询 elapsedMs=1546 / timeoutMs=1500 / SIGKILL / killed=true / stdoutBytes=0 / stderr 为空；完整 Windows verify/build/混淆未执行。因此 C-04R 仅专项验证通过，阶段未验收；停止下一性能原子任务，先解决映射发现的独立执行预算问题，禁止略过 CIM、拉长生产 timeout 或降低根身份验证。
+
+- 本地首次完整 verify 在第 114 项 shared-filesystem 的 `assert(running())` 失败，独立重跑同样失败；已实测当前执行容器 `process.pid=2`，`readlink('/proc/self')=53831`，`/proc/2` 不存在。旧诊断把信号命名空间 PID 当作 procfs 挂载命名空间 PID，误判阻塞 child 已死亡。测试现在由实际 child 在进入阻塞前同时写入自身 PID 与 procfs self identity，先核对 ready 回执 PID，再以该 procfs identity 判断 Linux zombie；仍执行真实 parent SIGKILL，并要求 child 最终退出。独立场景通过，生产 probe/隔离代码未改，完整 verify 重跑中。Windows 增加此受影响专项前置门，CIM 与全部原门保持强制。

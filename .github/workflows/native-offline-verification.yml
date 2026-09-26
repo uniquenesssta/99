@@ -15,6 +15,7 @@ jobs:
         with: { node-version: '24', cache: npm }
       - run: npm ci
       - run: npm run diagnostics:shared-io-integration
+      - run: npm run diagnostics:shared-filesystem
       - run: npm run diagnostics:mapped-drive-unicode
       - run: cargo fetch --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
       - run: npm run diagnostics:execution-lifecycle

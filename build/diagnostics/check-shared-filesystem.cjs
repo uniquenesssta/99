@@ -64,14 +64,19 @@ async function main() {
     admitted=false;await firstJob;assert.equal((await staleWrite).outcome,'not-started');assert.equal(fs.existsSync(marker),false);pool.stop()
     const probeText=fs.readFileSync(path.join(root,'src/main/path/sharedPathProbeRuntime.ts'),'utf8')
     let source=probeText.match(/const probeSource = `([\s\S]*?)`/)[1]
-    source=source.replace('const stat = fs.statSync(path);',"fs.writeFileSync(process.argv[2],'ready'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0); const stat = fs.statSync(path);")
+    source=source.replace('const stat = fs.statSync(path);',"fs.writeFileSync(process.argv[2],JSON.stringify({pid:process.pid,procPid:process.platform==='linux'?fs.readlinkSync('/proc/self'):undefined})); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0); const stat = fs.statSync(path);")
     const ready=path.join(dir,'blocked-probe'),pidFile=path.join(dir,'probe-pid')
     const script=`const cp=require('node:child_process'),fs=require('node:fs');const child=cp.spawn(process.execPath,['-e',${JSON.stringify(source)},${JSON.stringify(dir)},${JSON.stringify(ready)}],{stdio:['ignore','ignore','ignore','pipe']});fs.writeFileSync(${JSON.stringify(pidFile)},String(child.pid));setInterval(()=>{},1000);`
-    const parent=cp.spawn(process.execPath,['-e',script],{stdio:'ignore'});let childPid
-    const running=()=>{try{if(process.platform==='linux')return fs.readFileSync('/proc/'+childPid+'/stat','utf8').split(') ')[1][0]!=='Z';process.kill(childPid,0);return true}catch{return false}}
+    const parent=cp.spawn(process.execPath,['-e',script],{stdio:'ignore'});let childPid,probeIdentity
+    // /proc may be mounted from the outer PID namespace. The blocked child
+    // reports both its signal PID and its own procfs-visible identity.
+    const running=()=>{try{if(process.platform==='linux')return fs.readFileSync('/proc/'+probeIdentity.procPid+'/stat','utf8').split(') ')[1][0]!=='Z';process.kill(childPid,0);return true}catch{return false}}
     try {
       await waitUntil(()=>fs.existsSync(pidFile));childPid=Number(fs.readFileSync(pidFile,'utf8'))
-      await waitUntil(()=>fs.existsSync(ready));assert(running())
+      await waitUntil(()=>{try{probeIdentity=JSON.parse(fs.readFileSync(ready,'utf8'));return true}catch{return false}})
+      assert.equal(probeIdentity.pid,childPid,'ready receipt belongs to a different child')
+      if(process.platform==='linux')assert.match(probeIdentity.procPid,/^\d+$/,'missing procfs-visible child identity')
+      assert(running(),'blocked child exited before parent crash')
       parent.kill('SIGKILL');await new Promise(resolve=>parent.once('close',resolve));await waitUntil(()=>!running())
     } finally {parent.kill('SIGKILL');if(childPid&&running())process.kill(childPid,'SIGKILL')}
     console.log('shared filesystem: local real files, binary transfer, owned handles, unknown reads, unsupported operations, snapshot lifetime, junction identity, stale queued write and blocked child after parent crash passed')
