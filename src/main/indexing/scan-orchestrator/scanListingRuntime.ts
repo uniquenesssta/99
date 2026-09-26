@@ -181,84 +181,61 @@ export async function listScanStatJobs(args: {
   onListedBatch?: (items: ScanStatJob[]) => void
 }): Promise<ScanStatJob[]> {
   const { deps, directoryCacheRuntime, folders, signal, errors, ensureRootContext, reportProgress, onListedBatch } = args
-  const earlyVisibleActive = Boolean(onListedBatch && earlyVisibleListingEnabled())
-  if (!earlyVisibleActive) {
-    const rustListed = await tryListScanStatJobsWithRust({ deps, folders, signal, errors, ensureRootContext, reportProgress, onListedBatch })
-    if (rustListed) return rustListed
+  // Network enumeration reads attributes only, one directory at a time. The
+  // root-wide Rust scanner opens font contents and cannot fit a bounded I/O lease.
+  const { networkFolders, fallbackFolders } = await partitionNetworkScanFolders(folders, deps)
+  const network = new Set(networkFolders)
+  const allListed: ScanStatJob[] = []
+  const published = new Set<string>()
+  const publish = (items: ScanStatJob[]): void => {
+    const fresh = items.filter(item => {
+      const key = normalizePathForCacheCompare(item.file)
+      if (published.has(key)) return false
+      published.add(key)
+      return true
+    })
+    if (fresh.length) onListedBatch?.(fresh)
   }
-
-  const prelisted: ScanStatJob[] = []
-  let foldersForDirectoryListing = folders
-  if (earlyVisibleActive && rustScanListingEnabled() && deps.runRustFontIndexListWorker) {
-    const { networkFolders, fallbackFolders } = await partitionNetworkScanFolders(folders, deps)
-    if (networkFolders.length) {
-      const networkListed = await tryListScanStatJobsWithRust({
-        deps,
-        folders: networkFolders,
-        signal,
-        errors,
-        ensureRootContext,
-        reportProgress,
-        onListedBatch: undefined,
-      })
-      if (networkListed) {
-        onListedBatch?.(networkListed)
-        prelisted.push(...networkListed)
-        foldersForDirectoryListing = fallbackFolders
-        deps.appendStartupLog(`scan listing network batch source=rust roots=${networkFolders.length}, files=${networkListed.length}, localOrFallbackRoots=${fallbackFolders.length}`)
+  for (const folder of [...fallbackFolders, ...networkFolders]) {
+    throwIfAborted(signal)
+    if (!network.has(folder)) {
+      const rustListed = await tryListScanStatJobsWithRust({ deps, folders: [folder], signal, errors, ensureRootContext, reportProgress, onListedBatch })
+      if (rustListed) {
+        allListed.push(...rustListed)
+        publish(rustListed)
+        continue
       }
     }
-  }
-
-  try {
-    const allListed: ScanStatJob[] = [...prelisted]
-    for (const folder of foldersForDirectoryListing) {
-      throwIfAborted(signal)
+    try {
       const context = await ensureRootContext(folder)
       const listed = await directoryCacheRuntime.listFontFilesWithDirectoryCache(
-        context,
-        errors,
-        (payload) => {
-          reportProgress({
-            stage: 'listing',
-            message: `正在增量列出字体：已发现 ${payload.files} 个，目录 ${payload.foldersScanned} 个，跳过未变化目录 ${payload.skippedDirs} 个。`,
-            listedFiles: payload.files,
-          })
-        },
-        signal,
-        undefined,
-        onListedBatch,
+        context, errors,
+        (payload) => reportProgress({
+          stage: 'listing',
+          message: `正在增量列出字体：已发现 ${payload.files} 个，目录 ${payload.foldersScanned} 个，跳过未变化目录 ${payload.skippedDirs} 个。`,
+          listedFiles: payload.files,
+        }),
+        signal, undefined, publish,
       )
       allListed.push(...listed)
-      await delayToEventLoop()
+      publish(listed)
+      if (network.has(folder)) deps.appendStartupLog(`scan listing network source=directory-metadata root=${folder}, files=${listed.length}`)
+    } catch (error) {
+      rethrowSharedIoProcessError(error)
+      if (isOperationCancelledError(error) || network.has(folder)) throw error
+      deps.appendStartupLog(`directory cache listing failed, fallback to worker walk: ${error instanceof Error ? error.message : String(error)}`)
+      reportProgress({ stage: 'listing', message: '目录级缓存列出失败，已降级为后台 Worker 全量列出。' }, true)
+      throwIfAborted(signal)
+      const listed = await deps.runFontIndexListWorker([folder], (payload) => {
+        if (Array.isArray(payload.batch) && payload.batch.length) publish(payload.batch.map(item => ({ ...item, error: '' })))
+        reportProgress({ stage: 'listing', message: `后台索引 Worker 正在列出字体：已发现 ${payload.files} 个，目录 ${payload.foldersScanned} 个。`, listedFiles: payload.files })
+      }, signal)
+      errors.push(...listed.errors)
+      const rows = listed.files.map(item => ({ ...item, error: '', formatHint: item.format }))
+      allListed.push(...rows)
+      publish(rows)
     }
-    return dedupeScanStatJobs(allListed)
-  } catch (error) {
-    rethrowSharedIoProcessError(error)
-    if (isOperationCancelledError(error)) throw error
-    deps.appendStartupLog(`directory cache listing failed, fallback to worker walk: ${error instanceof Error ? error.message : String(error)}`)
-    reportProgress({ stage: 'listing', message: '目录级缓存列出失败，已降级为后台 Worker 全量列出。' }, true)
-
-    throwIfAborted(signal)
-    const listed = await deps.runFontIndexListWorker(
-      foldersForDirectoryListing,
-      (payload) => {
-        if (Array.isArray(payload.batch) && payload.batch.length) {
-          onListedBatch?.(payload.batch.map((item) => ({ ...item, error: '' })))
-        }
-        reportProgress({
-          stage: 'listing',
-          message: `后台索引 Worker 正在列出字体：已发现 ${payload.files} 个，目录 ${payload.foldersScanned} 个。`,
-          listedFiles: payload.files,
-        })
-      },
-      signal,
-    )
-
-    errors.push(...listed.errors)
-    return dedupeScanStatJobs([
-      ...prelisted,
-      ...listed.files.map((item) => ({ ...item, error: '', signatureValid: item.signatureValid, formatHint: item.format, quickHash: item.quickHash, contentHash: item.contentHash, hashKind: item.hashKind, nameHint: item.nameHint, scriptHint: item.scriptHint, styleHint: item.styleHint, familyHint: item.familyHint })),
-    ])
+    await delayToEventLoop()
   }
+  return dedupeScanStatJobs(allListed)
 }

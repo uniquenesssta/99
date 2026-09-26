@@ -1,4 +1,5 @@
 import type fs from 'node:fs'
+import type { CachedFontStatLike } from '../fonts/fontRuntime'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { extname,resolve } from 'node:path'
 import type { FontIndexChangePayload,FontItem } from '../../shared/types'
@@ -219,10 +220,10 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       delete context.cache.entries[key]
     }
 
-    async function processFontFile(filePath: string): Promise<void> {
+    async function processFontFile(filePath: string, freshStat?: CachedFontStatLike): Promise<void> {
       const key = options.cacheKeyForRootFile(rootPath, filePath)
       const oldEntry = context.cache.entries[key]
-      const font = await options.upsertFontIndexEntry(rootPath, filePath, context.cache)
+      const font = await options.upsertFontIndexEntry(rootPath, filePath, context.cache, freshStat)
       const newEntry = context.cache.entries[key]
       if (options.fontIndexEntryChanged(oldEntry, newEntry)) recordChangedEntry(key, newEntry, font)
       // Recovery may need to redeliver rows committed before a failed notification.
@@ -261,7 +262,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       for (const row of rows) {
         const key = options.cacheKeyForRootFile(rootPath, row.file)
         seenKeysInDirectory.add(key)
-        await processFontFile(row.file)
+        await processFontFile(row.file, row.freshStat ? row.stat ?? undefined : undefined)
       }
 
       for (const [key, entry] of Object.entries(context.cache.entries || {})) {

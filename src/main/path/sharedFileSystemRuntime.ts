@@ -12,12 +12,12 @@ export type SharedFileRequest = {
   identity?: unknown
 }
 export type SharedFileResult = { ok: boolean; operation: string; value?: any; code?: string; message?: string }
-export type SharedFileExecutor = (request: SharedFileRequest, bytes?: Buffer) => Promise<{ result: SharedFileResult; bytes?: Buffer; snapshotPath?: string; dispose?: () => Promise<void> }>
+export type SharedFileExecutor = (request: SharedFileRequest, bytes?: Buffer, signal?: AbortSignal) => Promise<{ result: SharedFileResult; bytes?: Buffer; snapshotPath?: string; dispose?: () => Promise<void> }>
 let executor: SharedFileExecutor | undefined
 const readsInFlight = new Map<string, ReturnType<SharedFileExecutor>>()
-const shareableReads = new Set(['stat','lstat','access','realpath','readdir','readFile','treeSnapshot'])
+const shareableReads = new Set(['stat','lstat','access','realpath','readdir','readFile','treeSnapshot','directoryMetadata'])
 export function configureSharedFileExecutor(value: SharedFileExecutor): void { executor = value }
-export async function executeSharedFile(request: SharedFileRequest, bytes?: Buffer) {
+export async function executeSharedFile(request: SharedFileRequest, bytes?: Buffer, signal?: AbortSignal) {
   if (!executor) throw new SharedIoProcessError('共享文件隔离执行器尚未就绪。', 'not-started', 'executor-unavailable')
   request = { ...request, availabilityRoot: sharedIoAvailabilityRoot(request.path) }
   const key = JSON.stringify(request)
@@ -25,10 +25,10 @@ export async function executeSharedFile(request: SharedFileRequest, bytes?: Buff
   const rootState = root ? getStartupPathRootState(root) : undefined
   if (rootState?.state === 'offline') throw new SharedIoProcessError('共享根处于离线状态。','not-started','root-offline')
   const generation = rootState?.generation
-  let task = shareableReads.has(request.operation) ? readsInFlight.get(key) : undefined
+  let task = !signal && shareableReads.has(request.operation) ? readsInFlight.get(key) : undefined
   if (!task) {
-    task = executor(request, bytes)
-    if (shareableReads.has(request.operation)) {
+    task = executor(request, bytes, signal)
+    if (!signal && shareableReads.has(request.operation)) {
       readsInFlight.set(key, task)
       const pending = task
       void task.finally(() => { if (readsInFlight.get(key) === pending) readsInFlight.delete(key) }).catch(() => undefined)

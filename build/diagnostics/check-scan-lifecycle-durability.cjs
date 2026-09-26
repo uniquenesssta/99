@@ -143,7 +143,37 @@ async function runIncrementalAbortBehavior() {
   assert(payloads.length === 1 && payloads[0].upserts[0].id === 'first', 'a cancelled scan emitted a delayed stale font batch')
 }
 
-Promise.all([runManagedScanBehavior(), runIncrementalAbortBehavior()])
+async function runRendererFailureBehavior() {
+  const { createFontLibraryIndexOperationActionRuntime } = loadTypeScriptModule(
+    'src/renderer/src/runtime/library/actions/fontLibraryIndexOperationActionRuntime.ts',
+    id => id === '../../../appRuntime' ? {} : require(id),
+  )
+  for (const action of ['rescan', 'rebuildScanCache']) {
+    for (const superseded of [false, true]) {
+      let current = 0
+      const states = [], statuses = []
+      const runtime = createFontLibraryIndexOperationActionRuntime({
+        getCurrentLibrary: () => ({ folders: ['network'], fonts: {} }),
+        nextIndexOperationRunId: () => ++current,
+        isCurrentIndexOperation: id => id === current,
+        setStatus: text => statuses.push(text), setIndexingActive: active => states.push(active),
+        captureFontScrollSnapshot: () => ({}),
+        hfm: { clearScanCache: async () => {}, scanFolders: async () => {
+          if (superseded) current++
+          throw Error('Shared I/O timeout')
+        } },
+      }, { readPhysicalFolderTree: async folders => ({ folders }) })
+      await runtime[action]()
+      assert(states.length === (superseded ? 0 : 1), `${action}: failure must settle only its own active operation`)
+      if (!superseded) {
+        assert(states[0] === false, `${action}: failed scan remained active`)
+        assert(statuses.at(-1).includes('失败') && statuses.at(-1).includes('Shared I/O timeout'), `${action}: failure details were lost`)
+      } else assert(!statuses.at(-1).includes('失败'), `${action}: stale error overwrote a newer operation`)
+    }
+  }
+}
+
+Promise.all([runManagedScanBehavior(), runIncrementalAbortBehavior(), runRendererFailureBehavior()])
   .then(() => console.log('[diagnostics:scan-lifecycle-durability] ok'))
   .catch((error) => {
     console.error(`[diagnostics:scan-lifecycle-durability] ${error instanceof Error ? error.stack || error.message : String(error)}`)

@@ -36,24 +36,30 @@ export function createFontLibraryIndexOperationActionRuntime(
     }
 
     const runId = options.nextIndexOperationRunId()
-    options.setStatus('正在更新索引：对比字体文件状态，只解析新增或修改的文件……')
-    const tree = await sharedRuntime.readPhysicalFolderTree(currentLibrary.folders)
-    if (!options.isCurrentIndexOperation(runId)) return
-    const scrollSnapshot = options.captureFontScrollSnapshot()
-    const result = await options.hfm.scanFolders(tree.folders, Object.values(currentLibrary.fonts || {}))
-    if (sharedRuntime.isCancelledScanResult(result)) return
-    if (!options.isCurrentIndexOperation(runId)) return
-    const nextLibrary = options.commitLibraryUpdate((prev) => applyFolderTreeToLibrary(prev, tree))
-    options.restoreFontScrollSnapshot(scrollSnapshot)
-    if (!await options.saveLibraryImmediately(nextLibrary)) {
-      options.setStatus('更新索引完成，但文件夹树保存失败；为避免显示错误数量，本次未刷新文件夹统计。')
-      return
-    }
+    try {
+      options.setStatus('正在更新索引：对比字体文件状态，只解析新增或修改的文件……')
+      const tree = await sharedRuntime.readPhysicalFolderTree(currentLibrary.folders)
+      if (!options.isCurrentIndexOperation(runId)) return
+      const scrollSnapshot = options.captureFontScrollSnapshot()
+      const result = await options.hfm.scanFolders(tree.folders, Object.values(currentLibrary.fonts || {}))
+      if (sharedRuntime.isCancelledScanResult(result)) return
+      if (!options.isCurrentIndexOperation(runId)) return
+      const nextLibrary = options.commitLibraryUpdate((prev) => applyFolderTreeToLibrary(prev, tree))
+      options.restoreFontScrollSnapshot(scrollSnapshot)
+      if (!await options.saveLibraryImmediately(nextLibrary)) {
+        options.setStatus('更新索引完成，但文件夹树保存失败；为避免显示错误数量，本次未刷新文件夹统计。')
+        return
+      }
 
-    await sharedRuntime.loadCacheStats()
-    const indexedCount = result.stats?.totalFiles ?? 0
-    const statusText = result.stats ? `更新索引完成：索引 ${indexedCount} 个字体文件，复用索引 ${result.stats.fromCache} 个，新解析 ${result.stats.parsed} 个，跳过 ${result.stats.skippedBad} 个，用时 ${Math.round(result.stats.durationMs / 1000)} 秒${scanWorkerStatsText(result.stats)}。` : `更新索引完成：索引 ${indexedCount} 个字体文件，跳过/错误 ${result.errors.length} 个`
-    await sharedRuntime.finishIndexingWithoutFullInstallRefresh(statusText)
+      await sharedRuntime.loadCacheStats()
+      const indexedCount = result.stats?.totalFiles ?? 0
+      const statusText = result.stats ? `更新索引完成：索引 ${indexedCount} 个字体文件，复用索引 ${result.stats.fromCache} 个，新解析 ${result.stats.parsed} 个，跳过 ${result.stats.skippedBad} 个，用时 ${Math.round(result.stats.durationMs / 1000)} 秒${scanWorkerStatsText(result.stats)}。` : `更新索引完成：索引 ${indexedCount} 个字体文件，跳过/错误 ${result.errors.length} 个`
+      await sharedRuntime.finishIndexingWithoutFullInstallRefresh(statusText)
+    } catch (error) {
+      if (options.isCurrentIndexOperation(runId)) options.setStatus(`更新索引失败：${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      if (options.isCurrentIndexOperation(runId)) options.setIndexingActive(false)
+    }
   }
 
   async function rebuildScanCache(): Promise<void> {
@@ -63,9 +69,9 @@ export function createFontLibraryIndexOperationActionRuntime(
       return
     }
 
+    const runId = options.nextIndexOperationRunId()
     options.setStatus('正在完全重建索引：先清理旧索引，再重新解析字体文件夹……')
     try {
-      const runId = options.nextIndexOperationRunId()
       await options.hfm.clearScanCache()
       if (!options.isCurrentIndexOperation(runId)) return
       const tree = await sharedRuntime.readPhysicalFolderTree(currentLibrary.folders)
@@ -86,7 +92,9 @@ export function createFontLibraryIndexOperationActionRuntime(
       const statusText = result.stats ? `完全重建索引完成：索引 ${indexedCount} 个字体文件，新解析 ${result.stats.parsed} 个，跳过 ${result.stats.skippedBad} 个，用时 ${Math.round(result.stats.durationMs / 1000)} 秒${scanWorkerStatsText(result.stats)}。` : `完全重建索引完成：索引 ${indexedCount} 个字体文件，跳过/错误 ${result.errors.length} 个`
       await sharedRuntime.finishIndexingWithoutFullInstallRefresh(statusText)
     } catch (error) {
-      options.setStatus(`完全重建索引失败：${error instanceof Error ? error.message : String(error)}`)
+      if (options.isCurrentIndexOperation(runId)) options.setStatus(`完全重建索引失败：${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      if (options.isCurrentIndexOperation(runId)) options.setIndexingActive(false)
     }
   }
 

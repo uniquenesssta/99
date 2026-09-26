@@ -30,6 +30,7 @@ async function indexCase(mode, transform = s => s, replayUnchanged = false) {
   const existing = { status:'ok', font:{ id:'a',path:file,favorite:true },cacheKey:'old' }
   const cache = { entries: mode==='no-cache-missing'?{}:{ 'a.ttf':existing } }, writes = [], directoryWrites = []
   const context = { cache, directoryUpdates:[] }
+  const freshStat = { size: 10, mtimeMs: 20, birthtimeMs: 10 }
   const stat = async p => {
     if (p===folder) { if(mode==='offline') throw fail('ENOENT'); return { isDirectory:()=>true, isFile:()=>false,mtimeMs:2 } }
     if(['ENOENT','ENOTDIR','EACCES','ETIMEDOUT','offline','no-cache-missing','save-throw'].includes(mode)) throw fail(['offline','no-cache-missing','save-throw'].includes(mode)?'ENOENT':mode)
@@ -43,8 +44,8 @@ async function indexCase(mode, transform = s => s, replayUnchanged = false) {
     ensureRootScanCacheStorage:async()=>({cachePath:'/index.db',storage:'root'}),makeRootScanCacheContext:()=>context,
     readRootDirectorySignatures:async()=>new Map(),relativeDirectoryPathForRoot:()=>'',
     cacheKeyForRootFile:()=> 'a.ttf',cacheKeyInsideDirectory:()=>true,
-    listFontFilesWithDirectoryCache:async (_ctx,errors)=>{ context.directoryUpdates.push({relativePath:''}); if(mode==='partial-list')errors.push({path:folder,message:'EACCES'});return mode==='unchanged-list'?[{file}]:[] },
-    upsertFontIndexEntry:async(_root,_file,workingCache)=>{ if(mode==='parse-ENOENT')throw fail('ENOENT'); if(mode==='parse')throw Error('metadata'); if(!mode.startsWith('unchanged'))workingCache.entries['a.ttf']={...existing,cacheKey:'new'};return existing.font },
+    listFontFilesWithDirectoryCache:async (_ctx,errors)=>{ context.directoryUpdates.push({relativePath:''}); if(mode==='partial-list')errors.push({path:folder,message:'EACCES'});return mode.startsWith('unchanged') && mode.includes('list') ? [{file, stat:freshStat, freshStat:mode==='unchanged-fresh-list'}] : [] },
+    upsertFontIndexEntry:async(_root,_file,workingCache,receivedStat)=>{ assert.equal(receivedStat,mode==='unchanged-fresh-list'?freshStat:undefined,'only fresh directory attributes may bypass stat'); if(mode==='parse-ENOENT')throw fail('ENOENT'); if(mode==='parse')throw Error('metadata'); if(!mode.startsWith('unchanged'))workingCache.entries['a.ttf']={...existing,cacheKey:'new'};return existing.font },
     fontIndexEntryChanged:(a,b)=>a!==b,fontIndexDeleteRecord:(_root,key)=>({path:file,relativePath:key,id:'a'}),
     removeFontIndexEntriesForPath:()=>mode==='no-cache-missing'?[]:[{path:file,relativePath:'a.ttf',id:'a'}],
     saveRootIndexSqliteChanges:async(_db,_root,_storage,changed,deleted)=>{writes.push(plain({changed,deleted}));if(mode==='save-throw'){assert(cache.entries['a.ttf'],'uncommitted changes leaked into source cache');throw Error('committed then failed')}},
@@ -65,7 +66,7 @@ async function deletionCheck(transform = s => s) {
   for(const mode of ['ENOENT','ENOTDIR','complete-list']) {
     const r=await indexCase(mode,transform);assert.equal(r.payload.deletes.length,1,mode);assert.deepEqual(r.remaining,[])
   }
-  for(const mode of ['unchanged','unchanged-list'])for(const recovery of [false,true]){const r=await indexCase(mode,transform,recovery);assert.equal(r.payload.upserts.length,recovery?1:0,'unchanged broadcasts only during recovery');assert.equal(r.writes.length,0)}
+  for(const mode of ['unchanged','unchanged-list','unchanged-fresh-list'])for(const recovery of [false,true]){const r=await indexCase(mode,transform,recovery);assert.equal(r.payload.errors.length,0);assert.equal(r.payload.upserts.length,recovery?1:0,'unchanged broadcasts only during recovery');assert.equal(r.writes.length,0)}
   const missing=await indexCase('no-cache-missing',transform);assert.equal(missing.payload.deletes.length,1);assert.equal(missing.writes.length,0)
   await assert.rejects(()=>indexCase('save-throw',transform),e=>e.watcherRecoveryDisposition==='defer'&&e.watcherRecoveryChanges?.[0]?.fileName==='a.ttf')
   const r=await indexCase('changed',transform);assert.equal(r.payload.source,'watcher');assert.equal(r.payload.upserts.length,1);assert.equal(r.writes.length,1)

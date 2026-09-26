@@ -1,4 +1,5 @@
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import type { CachedFontStatLike } from "../../fonts/fontRuntime";
 import { extname } from "node:path";
 import type { FontItem,ScanResult } from "../../../shared/types";
 import type { FontScanCacheEntry,FontScanCacheFile } from "../../indexing/rootIndexRuntime";
@@ -43,14 +44,15 @@ export function createManualFolderIndexEntryRuntime(deps: ManualFolderRefreshDep
     rootPath: string,
     filePath: string,
     cache: FontScanCacheFile,
+    freshStat?: CachedFontStatLike,
   ): Promise<FontItem | null> {
     if (!FONT_EXTENSIONS.has(extname(filePath).toLowerCase())) return null;
 
-    const stat = await withGlobalIo("index:stat-font", () => fsp.stat(filePath), {
+    const stat = freshStat ?? await withGlobalIo("index:stat-font", () => fsp.stat(filePath), {
       priority: "normal",
       storagePath: filePath,
     });
-    if (!stat.isFile()) return null;
+    if ("isFile" in stat && typeof stat.isFile === "function" && !stat.isFile()) return null;
 
     const cacheKey = cacheKeyForRootFile(rootPath, filePath);
     const signature = fileCacheSignature(cacheKey, stat.size, stat.mtimeMs);

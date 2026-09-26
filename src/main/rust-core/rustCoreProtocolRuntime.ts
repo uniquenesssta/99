@@ -6,6 +6,7 @@ export const EXPECTED_RUST_CORE_PROTOCOL_VERSION = 42
 export const REQUIRED_RUST_CORE_CAPABILITIES = [
   'handshake',
   'shared-file-io-v1',
+  'shared-directory-metadata-v1',
   'core-scheduler-profile',
   'rust-core-scheduler-policy',
   'rust-core-scheduler-result-cache',

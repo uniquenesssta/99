@@ -64,8 +64,8 @@ export interface WatchedFolderIndexRuntimeOptions {
     progress?: (payload: { files: number; foldersScanned: number; skippedDirs: number }) => void,
     signal?: AbortSignal,
     startDir?: string,
-  ) => Promise<Array<{ file: string; rootPath: string; stat: CachedFontStatLike | null; error: string }>>
-  upsertFontIndexEntry: (rootPath: string, filePath: string, cache: FontScanCacheFile) => Promise<import('../../../shared/types').FontItem | null>
+  ) => Promise<Array<{ file: string; rootPath: string; stat: CachedFontStatLike | null; freshStat?: boolean; error: string }>>
+  upsertFontIndexEntry: (rootPath: string, filePath: string, cache: FontScanCacheFile, freshStat?: CachedFontStatLike) => Promise<import('../../../shared/types').FontItem | null>
   fontIndexEntryChanged: (oldEntry: FontScanCacheEntry | undefined, newEntry: FontScanCacheEntry | undefined) => boolean
   cacheKeyInsideDirectory: (cacheKey: string, relativeDir: string) => boolean
   fontIndexDeleteRecord: (rootPath: string, cacheKey: string, entry?: FontScanCacheEntry) => WatcherDeleteRecord

@@ -166,6 +166,21 @@ fn execute(request: &Request) -> io::Result<Value> {
             tx.commit().map_err(io::Error::other)?;
             Ok(Value::Null)
         },
+        "directoryMetadata" => {
+            let directory = fs::metadata(path)?;
+            let mut entries = Vec::new();
+            for entry in fs::read_dir(path)? {
+                let entry = entry?;
+                let kind = entry.file_type()?;
+                let mut row = json!({"name":entry.file_name().to_string_lossy(),"isFile":kind.is_file(),"isDirectory":kind.is_dir(),"isSymbolicLink":kind.is_symlink()});
+                // Windows directory entries already carry file metadata. Never open
+                // font contents here, and never follow a symlink for enumeration.
+                if kind.is_file() { row["stat"] = metadata(&entry.metadata()?); }
+                entries.push(row);
+                if entries.len() > 200_000 { return Err(io::Error::other("directory entry limit exceeded")); }
+            }
+            Ok(json!({"stat":metadata(&directory),"entries":entries}))
+        },
         "readdir" => {
             let mut entries = Vec::new();
             for entry in fs::read_dir(path)? {
@@ -272,6 +287,34 @@ mod tests {
         let snapshot = Connection::open(&target).unwrap();
         assert_eq!(snapshot.query_row("SELECT COUNT(*) FROM events",[],|row|row.get::<_,i64>(0)).unwrap(),1);
         assert!(execute(&dir.request("sqliteSnapshot","events.sqlite",json!({"transferPath":target}))).is_err());
+    }
+    #[test]
+    fn directory_metadata_reads_attributes_without_parsing_font_contents() {
+        let dir=Directory::new();
+        fs::create_dir(dir.0.join("nested")).unwrap();
+        for i in 0..4096 { fs::write(dir.0.join(format!("font-{}.ttf",i)),b"not a font").unwrap(); }
+        let result=execute(&dir.request("directoryMetadata","",json!({}))).unwrap();
+        assert_eq!(result["stat"]["isDirectory"],true);
+        let entries=result["entries"].as_array().unwrap();
+        assert_eq!(entries.len(),4097);
+        assert_eq!(entries.iter().filter(|row|row["isFile"]==true).count(),4096);
+        for row in entries.iter().filter(|row|row["isFile"]==true) {
+            let expected=execute(&dir.request("stat",row["name"].as_str().unwrap(),json!({}))).unwrap();
+            assert_eq!(row["stat"]["size"],expected["size"]);
+            assert_eq!(row["stat"]["mtimeMs"],expected["mtimeMs"]);
+            assert_eq!(row["stat"]["birthtimeMs"],expected["birthtimeMs"]);
+        }
+        assert!(execute(&dir.request("directoryMetadata","absent",json!({}))).is_err());
+        assert!(execute(&dir.request("directoryMetadata","font-0.ttf",json!({}))).is_err());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn directory_metadata_does_not_follow_symlinks() {
+        let dir=Directory::new();
+        std::os::unix::fs::symlink(dir.0.join("absent"),dir.0.join("link.ttf")).unwrap();
+        let result=execute(&dir.request("directoryMetadata","",json!({}))).unwrap();
+        assert_eq!(result["entries"][0]["isSymbolicLink"],true);
+        assert!(result["entries"][0]["stat"].is_null());
     }
     #[test]
     fn snapshot_tracks_complete_tree_and_ignores_owned_cache() {

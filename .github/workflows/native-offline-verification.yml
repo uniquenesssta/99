@@ -35,3 +35,30 @@ jobs:
       - run: node node_modules/electron-vite/bin/electron-vite.js build
       - run: node build/obfuscate-dist.cjs
       - run: git diff --check 8bc364b9bc1f9660959ca168275402a0d1de8584 HEAD
+  directory-metadata-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml shared_file_io::tests
+      - run: cargo build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml
+      - name: Exercise native directory receipts through scan listing
+        shell: bash
+        run: |
+          worker='native-src/hfm-core-worker/target/release/hfm-core-worker'
+          if [ "$RUNNER_OS" = 'Windows' ]; then worker="$worker.exe"; fi
+          HFM_TEST_NATIVE_WORKER="$worker" npm run diagnostics:network-directory-metadata
+      - run: npm run diagnostics:network-list-font-files-batching
+      - run: npm run diagnostics:scan-lifecycle-durability
+      - run: npm run diagnostics:shared-io-integration
+      - run: npm run diagnostics:watcher-index-consistency
+      - run: npm run typecheck
+      - run: node node_modules/electron-vite/bin/electron-vite.js build
+      - run: node build/obfuscate-dist.cjs

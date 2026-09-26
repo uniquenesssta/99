@@ -379,13 +379,13 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     if (options.required) throw new Error(cachedStatus.message)
     return cachedStatus
   }
-  configureSharedFileExecutor(async (request, bytes) => {
+  configureSharedFileExecutor(async (request, bytes, signal) => {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'shared-file-io-v1')) throw new SharedIoProcessError('原生 worker 不支持共享文件隔离。', 'not-started', 'capability-unavailable')
     const inputFile = createTemporaryJsonFile('hfm-shared-file-input')
     const transferFile = createTemporaryJsonFile('hfm-shared-file-transfer')
     let retainSnapshot = false
-    const write = !['stat','lstat','access','realpath','readdir','readFile','sqliteSnapshot','treeSnapshot'].includes(request.operation)
+    const write = !['stat','lstat','access','realpath','readdir','readFile','sqliteSnapshot','treeSnapshot','directoryMetadata'].includes(request.operation)
     try {
       if (bytes) await fsp.writeFile(transferFile.path, bytes)
       else if (request.operation === 'readFile') await transferFile.writeJson(null)
@@ -393,7 +393,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       await inputFile.writeJson(input)
       const output = await runRustCoreScheduledCommand(status.path, ['--shared-file-io','--input',inputFile.path,'--transfer',transferFile.path], {
         timeout: ['stat','lstat','access','realpath','openFile'].includes(request.operation) ? 500 : write ? 5000 : 2000,
-        windowsHide: true, maxBuffer: 32*1024*1024, sharedIo: { paths: [request.path, request.dest || ''], write },
+        windowsHide: true, maxBuffer: 32*1024*1024, signal, sharedIo: { paths: [request.path, request.dest || ''], write },
       })
       const result = parseJsonLine<import('../path/sharedFileSystemRuntime').SharedFileResult>(output.stdout)
       if (typeof result.ok !== 'boolean' || result.operation !== request.operation) throw new SharedIoProcessError('共享文件隔离回执无效。','unknown','invalid-receipt')

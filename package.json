@@ -170,6 +170,7 @@
     "diagnostics:preview-reuse-matrix": "node build/diagnostics/check-preview-reuse-matrix.cjs",
     "benchmark:u08": "node build/performance/u08-serve.mjs",
     "diagnostics:shared-filesystem": "node build/diagnostics/check-shared-filesystem.cjs",
+    "diagnostics:network-directory-metadata": "node build/diagnostics/check-network-directory-metadata.cjs",
     "diagnostics:network-list-font-files-batching": "node build/diagnostics/check-network-list-font-files-batching.cjs",
     "diagnostics:shared-metadata-preflight": "node build/diagnostics/check-shared-metadata-preflight.cjs",
     "diagnostics:managed-activation-recovery": "node build/diagnostics/check-managed-activation-recovery.cjs",

@@ -33,7 +33,7 @@ class TestSharedIoProcessError extends Error {
   }
 }
 
-function createScanRuntime(resourceKeys) {
+function createScanRuntime(resourceKeys, early = true) {
   const mocks = {
     [abs(sharedIoCommandPath)]: {
       sharedIoResourceKeys: resourceKeys || (async (paths) =>
@@ -68,32 +68,26 @@ function createScanRuntime(resourceKeys) {
   return loader(mocks, {
     process: {
       ...process,
-      env: { ...process.env, HFM_RUST_SCAN_LISTING: '1', HFM_SCAN_EARLY_VISIBLE: '1' },
+      env: { ...process.env, HFM_RUST_SCAN_LISTING: '1', HFM_SCAN_EARLY_VISIBLE: early ? '1' : '0' },
     },
   })(scanListingPath)
 }
 
-async function checkMixedRootBatchingAndEarlyVisible() {
+async function checkMixedRootBatchingAndEarlyVisible(early = true) {
   const logs = []
   const rustCalls = []
   const directoryCalls = []
   const visibleRoots = []
   const contexts = new Map()
-  const runtime = createScanRuntime()
+  const runtime = createScanRuntime(undefined, early)
 
   const deps = {
     appendStartupLog: (message) => logs.push(message),
     fontExtensions: new Set(['.ttf', '.otf']),
     runRustFontIndexListWorker: async (folders) => {
       rustCalls.push([...folders])
-      assert.deepEqual(plain(folders), [sharedRoot], 'shared batch must not include local roots')
-      return {
-        files: [{ file: sharedRoot + '\\shared.ttf', rootPath: sharedRoot, stat: stat(), signatureValid: true }],
-        directories: [{ path: sharedRoot, modifiedMs: 111, fileCount: 1, dirCount: 0 }],
-        errors: [],
-        foldersScanned: 1,
-        truncated: false,
-      }
+      assert(!folders.includes(sharedRoot), 'network listing must not open font contents through root-wide Rust scanner')
+      return null
     },
     runFontIndexListWorker: async () => {
       throw new Error('worker walk must not be used in this controlled scenario')
@@ -106,6 +100,7 @@ async function checkMixedRootBatchingAndEarlyVisible() {
   const directoryCacheRuntime = {
     listFontFilesWithDirectoryCache: async (context, _errors, _progress, _signal, _startDir, onListedBatch) => {
       directoryCalls.push(context.rootPath)
+      if (context.rootPath === sharedRoot) assert(visibleRoots.includes(localRoot), 'local results must be visible before network listing starts')
       const rows = [{ file: context.rootPath + '\\local.ttf', rootPath: context.rootPath, stat: stat(), error: '' }]
       if (onListedBatch) onListedBatch(rows)
       return rows
@@ -122,12 +117,33 @@ async function checkMixedRootBatchingAndEarlyVisible() {
     onListedBatch: (items) => items.forEach((item) => visibleRoots.push(item.rootPath)),
   })
 
-  assert.deepEqual(plain(rustCalls), [[sharedRoot]])
-  assert.deepEqual(plain(directoryCalls), [localRoot])
+  assert.deepEqual(plain(rustCalls), early ? [] : [[localRoot]])
+  assert.deepEqual(plain(directoryCalls), [localRoot, sharedRoot])
   assert.deepEqual(plain(result.map((item) => item.rootPath).sort()), [localRoot, sharedRoot].sort())
-  assert(visibleRoots.includes(sharedRoot), 'shared Rust batch was not forwarded to existing early-visible consumer')
+  assert(visibleRoots.includes(sharedRoot), 'shared directory batch was not forwarded to existing early-visible consumer')
   assert(visibleRoots.includes(localRoot), 'local early-visible directory stream changed')
-  assert(logs.some((line) => line.includes('scan listing network batch source=rust')), 'network batch route missing from diagnostics')
+  assert(logs.some((line) => line.includes('scan listing network source=directory-metadata')), 'network batch route missing from diagnostics')
+}
+
+async function checkFallbackIsolationAndDedupe() {
+  const runtime = createScanRuntime(), visible = [], fallbackCalls = []
+  const localRow = { file: localRoot + '\\local.ttf', rootPath: localRoot, stat: stat(), error: '' }
+  const args = {
+    deps: { appendStartupLog() {}, fontExtensions: new Set(['.ttf']),
+      runRustFontIndexListWorker: async () => null,
+      runFontIndexListWorker: async (folders, progress) => {
+        fallbackCalls.push(...folders); progress({ batch: [localRow], files: 1, foldersScanned: 1 })
+        return { files: [localRow], errors: [] }
+      },
+    }, folders: [sharedRoot, localRoot], errors: [], ensureRootContext: async rootPath => ({ rootPath }),
+    directoryCacheRuntime: { listFontFilesWithDirectoryCache: async (ctx, _e, _p, _s, _d, publish) => {
+      if (ctx.rootPath === localRoot) publish([localRow])
+      throw Error('directory failure')
+    } }, reportProgress() {}, onListedBatch: rows => visible.push(...rows),
+  }
+  await assert.rejects(runtime.listScanStatJobs(args), /directory failure/)
+  assert.deepEqual(fallbackCalls, [localRoot], 'network error must not enter Node walk')
+  assert.equal(visible.length, 1, 'local retry must not duplicate an already visible row')
 }
 
 async function checkIdentityFailureDoesNotDowngradeToNetworkNodeWalk() {
@@ -260,7 +276,9 @@ async function checkListCommandIsReadOnlySharedIo() {
 
 async function main() {
   await checkMixedRootBatchingAndEarlyVisible()
+  await checkMixedRootBatchingAndEarlyVisible(false)
   await checkIdentityFailureDoesNotDowngradeToNetworkNodeWalk()
+  await checkFallbackIsolationAndDedupe()
   await checkManualNetworkRefreshUsesRustBatch()
   await checkListCommandIsReadOnlySharedIo()
   console.log('[diagnostics:network-list-font-files-batching] mixed roots, early-visible, fail-closed identity, manual network refresh and read-only generation routing passed')

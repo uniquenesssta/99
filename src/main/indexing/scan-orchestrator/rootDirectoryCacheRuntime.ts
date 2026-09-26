@@ -1,4 +1,6 @@
 import type fs from "node:fs";
+import { readSharedDirectoryMetadata, type SharedDirectoryEntry } from "../../path/sharedDirectoryMetadataRuntime";
+import { rethrowSharedIoProcessError } from "../../path/sharedIoProcessRuntime";
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { extname, join } from "node:path";
 import type { ScanResult } from "../../../shared/types";
@@ -52,12 +54,13 @@ export interface RootDirectoryCacheRuntime {
     }) => void,
     signal?: AbortSignal,
     startDir?: string,
-    listedBatch?: (items: Array<{ file: string; rootPath: string; stat: CachedFontStatLike | null; error: string }>) => void,
+    listedBatch?: (items: Array<{ file: string; rootPath: string; stat: CachedFontStatLike | null; freshStat?: boolean; error: string }>) => void,
   ) => Promise<
     Array<{
       file: string;
       rootPath: string;
       stat: CachedFontStatLike | null;
+      freshStat?: boolean;
       error: string;
     }>
   >;
@@ -191,12 +194,13 @@ export function createRootDirectoryCacheRuntime(
     }) => void,
     signal?: AbortSignal,
     startDir: string = context.rootPath,
-    listedBatch?: (items: Array<{ file: string; rootPath: string; stat: CachedFontStatLike | null; error: string }>) => void,
+    listedBatch?: (items: Array<{ file: string; rootPath: string; stat: CachedFontStatLike | null; freshStat?: boolean; error: string }>) => void,
   ): Promise<
     Array<{
       file: string;
       rootPath: string;
       stat: CachedFontStatLike | null;
+      freshStat?: boolean;
       error: string;
     }>
   > {
@@ -205,6 +209,7 @@ export function createRootDirectoryCacheRuntime(
       file: string;
       rootPath: string;
       stat: CachedFontStatLike | null;
+      freshStat?: boolean;
       error: string;
     }> = [];
     let foldersScanned = 0;
@@ -223,24 +228,36 @@ export function createRootDirectoryCacheRuntime(
 
     async function walk(dir: string): Promise<void> {
       throwIfAborted(signal);
-      let stat: fs.Stats;
-      let entries: fs.Dirent[];
+      let stat: CachedFontStatLike;
+      let entries: Array<fs.Dirent | SharedDirectoryEntry>;
+      let shared: Awaited<ReturnType<typeof readSharedDirectoryMetadata>> = null;
       try {
-        stat = await deps.withGlobalIo("scan:stat-dir", () => fsp.stat(dir), {
-          priority: "normal",
-          signal,
-          storagePath: dir,
+        shared = await deps.withGlobalIo("scan:directory-metadata", () => readSharedDirectoryMetadata(dir, signal), {
+          priority: "normal", signal, storagePath: dir,
         });
-        entries = await deps.withGlobalIo(
-          "scan:read-dir",
-          () => fsp.readdir(dir, { withFileTypes: true }),
-          {
+        throwIfAborted(signal);
+        if (shared) {
+          stat = shared.stat;
+          entries = shared.entries;
+        } else {
+          stat = await deps.withGlobalIo("scan:stat-dir", () => fsp.stat(dir), {
             priority: "normal",
             signal,
             storagePath: dir,
-          },
-        );
+          });
+          entries = await deps.withGlobalIo(
+            "scan:read-dir",
+            () => fsp.readdir(dir, { withFileTypes: true }),
+            {
+              priority: "normal",
+              signal,
+              storagePath: dir,
+            },
+          );
+        }
       } catch (error) {
+        throwIfAborted(signal);
+        rethrowSharedIoProcessError(error);
         if (isOperationCancelledError(error)) throw error;
         errors.push({
           path: dir,
@@ -255,6 +272,7 @@ export function createRootDirectoryCacheRuntime(
       let dirCount = 0;
       const childDirectories: string[] = [];
       const fontFiles: string[] = [];
+      const freshStats = new Map<string, CachedFontStatLike>();
       for (const entry of entries) {
         if (entry.isDirectory()) {
           if (
@@ -272,13 +290,14 @@ export function createRootDirectoryCacheRuntime(
             deps.fontExtensions.has(extname(entry.name).toLowerCase())
           ) {
             fontFiles.push(join(dir, entry.name));
+            if (shared && "stat" in entry && entry.stat) freshStats.set(join(dir, entry.name), entry.stat);
           }
         }
       }
 
       const previous = signatures.get(relativeDir);
       const directoryUnchanged = Boolean(
-        previous &&
+        !shared && previous &&
         Math.round(previous.modifiedAt) === Math.round(stat.mtimeMs) &&
         previous.fileCount === fileCount &&
         previous.dirCount === dirCount,
@@ -307,6 +326,14 @@ export function createRootDirectoryCacheRuntime(
         for (const full of fontFiles) {
           throwIfAborted(signal);
           try {
+            const freshStat = freshStats.get(full);
+            if (freshStat) {
+              const row = { file: full, rootPath: context.rootPath, stat: freshStat, freshStat: true, error: "" };
+              files.push(row);
+              listedBatch?.([row]);
+              report(false);
+              continue;
+            }
             const fileStatResult = await deps.withGlobalIo(
               "scan:stat-font",
               () =>
@@ -341,6 +368,7 @@ export function createRootDirectoryCacheRuntime(
             }
             const fileStat = fileStatResult.value;
             const row = {
+              freshStat: true,
               file: full,
               rootPath: context.rootPath,
               stat: {

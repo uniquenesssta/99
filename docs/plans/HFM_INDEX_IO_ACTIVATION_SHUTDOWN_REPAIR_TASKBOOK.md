@@ -698,3 +698,35 @@ C-04R 本轮范围：
 
 - 最终本地 `npm run verify`（typecheck + 146 项）重跑退出码 0；生产代码的 Electron/Vite build、3/3 混淆和最终 diff check 通过。最新 Windows `36213207275` / `2b232cacdebc0bf4e8f4aa895376e55005fa6442` 同时通过 Shared I/O integration（12 场景、LF/CRLF、两个 mutation）和 shared-filesystem（含真实阻塞 child 的 parent crash 清理）。CIM 门仍在 1521ms / timeoutMs=1500 / SIGKILL / killed=true / stdoutBytes=0 / 空 stderr 失败，完整 Windows verify/build/混淆未执行。代码修复与专项通过不等于 C-04R 或 C-08 阶段全部验收。Create State 本轮再次返回 UNAUTHORIZED，需要重新认证。
 - 接续：先定位/修复映射盘发现的独立 CIM 预算失败并通过完整 Windows 门，然后实施监听批量文件状态读取、复用新鲜 stat 及扫描失败 UI 收尾；当前这三项均未修改。保留请求隔离、根代次、可靠错误/完整性证据，不通过延长超时或关闭监听掩盖问题。
+
+
+### 10.4 2026-09-26 request=330 扫盘超时直接修复
+
+用户再次报告 `fonts:scanFolders` 超时并要求立即解决。按最新授权继续处理扫描本身，不再让独立 CIM 失败阻断本故障的实现；旧 Windows 全量门保留，不把专项通过写成 C-08/C-09 总验收通过。本节为当前执行入口。
+
+证据：`startup-2026-09-26_04-34-03-325-5376.log` 中 request 330 为网络根 `list-font-files`，排队 12ms、执行 30010ms；04:34:47.528Z IPC 失败，用时 36202ms。普通超时未再触发上一轮的整根离线误判。现有 Rust 列举会打开每个字体、读取签名/quick hash/名称等，整根内容预读容易耗尽 30 秒执行预算；watcher 此后仍逐文件 stat。
+
+本原子修复的实际链路：
+
+```mermaid
+flowchart TD
+  A[扫描请求] --> B[先交付本地批次]
+  B --> C[逐个网络目录读取属性]
+  W[监听目录刷新] --> C
+  C --> D[隔离 Rust 文件端口]
+  D --> E{完整回执且代次有效}
+  E -->|是| F[对比文件大小和修改时间]
+  F -->|未变化| G[复用字体索引]
+  F -->|有变化| H[解析字体内容]
+  E -->|否| I[拒绝读取并保留错误]
+```
+
+- 新增 `directoryMetadata` 只读操作：一次目录请求返回目录属性、名字/类型及普通文件真实 size/mtime/birthtime；不打开字体内容、不跟随 symlink。任一条目失败使整次操作失败，不能部分成功后清除索引。保持现有 2 秒共享读取预算、进程隔离、取消、32MiB 回执上限及 generation 检查。
+- 网络 listing 不再使用整根 `list-font-files` 内容预读；本地原 Rust/目录缓存/Worker 路径保留且先返回。逐目录批次即时交付，按路径去重；网络出错不进入 Node 文件遍历兜底。
+- 目录缓存只为实际本次属性标记 `freshStat`；网络始终比较新鲜文件属性，即使父目录时间未变。watcher 可把此属性交给已有 upsert，省去逐文件第二次 stat；历史目录缓存不带标记，保持原校验。
+- renderer rescan/rebuild 的 catch/finally 显示原错误并关闭本次扫描状态，runId 过期时不覆盖新任务。
+- 新必需能力 `shared-directory-metadata-v1` 与 native 握手同步；协议 42 为向后兼容新增能力，不改持久化 schema、现有字体索引、依赖或 IPC。开发模式检测旧 worker 后使用现有自动编译路径。
+- 回归新增 4096 文件单目录单请求、缓存命中零内容读取、父目录未变但文件修改、历史属性仍 stat、不完整/非法回执、失败保留索引、取消、旧代次拒绝、本地对照；已有 watcher 回归增加 fresh/历史属性传递，renderer 增加失败与旧任务反例；Rust 测试检查 4096 个真实文件属性及 symlink。
+- CI 增加独立 Windows/Linux 原生目录属性 job，在原 CIM job 失败时仍能提供真实 worker、受影响诊断与 build/混淆证据；未删除、跳过或放宽 CIM/全量 verify 门。
+
+当前验证：本地 `npm run verify` 通过（typecheck + 147 项完整诊断），Electron/Vite build、3/3 混淆通过；Windows/Linux 原生门进行中。没有本机 Rust 编译器，不能把 JS 受控执行器测试写成原生通过。真实 NAS 扫描/首批/预览耗时仍需开发模式复验，C-09/O-07 继续暂停。

@@ -68,6 +68,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-26：修复网络扫盘把整根字体内容预读塞进单次 30 秒 Shared I/O 请求的问题。网络根改为逐目录批量读取真实文件属性，先交付本地字体批次，再按文件变化决定是否解析；监听刷新复用新鲜属性，历史缓存仍重新校验。扫描/重建失败退出“扫描中”并显示错误，旧任务不覆盖新任务状态。新增 `shared-directory-metadata-v1` 必需能力，开发模式沿用现有 worker 自动重编译；无数据库迁移或新增依赖。本地 typecheck + 147 项完整诊断、构建和 3/3 混淆通过，Windows/Linux 原生验证进行中；独立 CIM 1500ms 门禁和真实 NAS 耗时仍待验收。
+
 - 2026-09-26：修复共享传输层把普通读写超时直接升级为整根离线的遗漏；保持请求失败、写入结果未知、子进程终止回收和旧代次拒绝。新增真实子进程 + 生产根状态 owner 的读写超时及根探测失败集成验证，并验证重新引入误判的反例必败。补齐 shared-filesystem 诊断对 Linux PID 命名空间的进程存活证明，使用子进程回报的 procfs 身份，保留父进程崩溃后的退出断言。Windows aaefee3 的 12 场景及两个回归反例检查通过；完整门仍被独立 CIM 查询 1500ms 超时阻塞（实测 1546ms）。本地 typecheck + 146 项完整诊断、构建/混淆通过；最新 Windows 2b232ca 同时通过 Shared I/O 与 shared-filesystem 专项，CIM 仍失败（1521ms）。监听逐文件校验开销和扫描失败界面收尾尚未修复。
 
 - 2026-09-25：修复 C-00 默认历史观察误用 C-07 当前关闭断言的问题；历史模式保持 5 缺陷/3 对照，当前模式独立以严格门禁拒绝已知缺陷。观察器异常路径执行 timer/监听清理，诊断总入口增加单项 deadline 与进程树终止，避免断言报错后挂到 CI 总超时。新增 LF/CRLF、严格失败、异常清理及真实子进程树验证。补齐 main-operations 关闭夹具的 pending-delete 返回值与已落地的三轴退出结果，保留九场景精确比较，新增两个丢失调用/结果的 mutation 检查；按已核对的 C-04/C-05 提交补齐 watcher/activation 两项源码指纹迁移，其余指纹和行为门不变。Windows 首轮全量门进一步暴露 local-tag/shared-metadata 原子性诊断的 CRLF mutation 漏匹配；统一输入换行并确保五/六项事务 mutation 在 LF/CRLF 都实际生效，签名 mutation 同样双格式覆盖。补齐 startup-database-health、tag-commit-query 的已生效 LF/CRLF 反例；受管卸载诊断改为精确比较授权 ioPath，并用等价路径输入、真实文件身份及外部同名文件反例验证，删除/补偿均保持授权路径。当前仅修改验证与记录；本地完整 verify（146 项）、构建与混淆通过；本机缺少 PowerShell/Rust，对应原生验证及完整 Windows 门仍待闭合；C-04 底层传输 timeout→offline 遗漏和 C-08.1 网络列举阻塞首批显示已登记，按顺序待修，C-09/O-07 暂停。
