@@ -19,10 +19,16 @@ HanFontManager（汉字字体工作台）是面向 Windows 的本地字体管理
 - Windows 原生组件对应的 C/C++ 构建工具链
 
 ```bash
-npm ci
+npm run deps:install
 npm run setup:dev
 npm run dev
 ```
+
+依赖下载统一复用项目上一级的 `../.hfm-deps/`：`npm/` 保存 npm 包，`electron/` 保存 Electron 下载包，`electron-builder/` 保存打包工具下载，`cargo/` 保存 Rust registry/git 源码。路径从项目目录计算，不写死盘符；同级分支目录使用同一份缓存。首次缺少的版本仍需下载，后续优先复用。
+
+首次安装或更新锁文件后使用 `npm run deps:install`，再按需运行 `npm run setup:dev`；正常启动仍是 `npm run dev`。安装入口给子进程传递统一缓存路径，避免 npm 环境变量覆盖项目 `.npmrc`。直接 `npm ci` 只受 npm 自身缓存配置控制，不能保证 Electron 安装脚本使用上述目录。
+
+`node_modules`、Electron 解压后的运行文件和 Rust `target` 编译产物仍在各项目内，防止不同依赖版本/原生 ABI 互相覆盖；复用的是下载缓存。Rust 工具链保持现有安装位置；`@electron/rebuild` 自行管理的用户级 `.electron-gyp` 也保持原状，它原本跨目录共用。旧缓存不会自动搬迁或删除，新位置缺少的包首次仍可能需要下载。若使用私有 Cargo registry，需将相应配置提供给新的 Cargo home。
 
 ## 验证与构建
 
@@ -68,7 +74,9 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-26：从 Stage 9 建立 `stage/10-preview-performance`，先回移独立修复：Rust `WNetGetConnectionW` Unicode 映射查询替换 PowerShell/CIM，保留 1500ms、TTL/请求合并/失败冷却与未知身份拒绝。同步回移 Windows 诊断的 stderr 管道时序、变异路径匹配、模块缓存路径统一修复；不合入 DirectWrite 试验代码。本地 typecheck、147/147 完整诊断、构建与 3/3 混淆通过；新分支 Windows/Linux CI `36246802044` 已触发，最终结果待确认。范围及接续见[Stage 10 任务书](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。
+- 2026-09-26：依赖下载改为项目上一级 `../.hfm-deps/`，新增 `deps:install`；开发安装、原生重建、打包下载和 Rust worker 构建接入同一相对位置策略。保留项目内安装/编译产物与原有构建验证门。已核对 Electron 42.11.3 的缓存参数及 Cargo 文档，通过真实子进程路径/错误传播、npm 缓存落点、typecheck 和 release gate 检查；未在本环境执行完整 Windows 依赖下载/原生重建。
+
+- 2026-09-26：从 Stage 9 建立 `stage/10-preview-performance`，先回移独立修复：Rust `WNetGetConnectionW` Unicode 映射查询替换 PowerShell/CIM，保留 1500ms、TTL/请求合并/失败冷却与未知身份拒绝。同步回移 Windows 诊断的 stderr 管道时序、变异路径匹配、模块缓存路径统一修复；不合入 DirectWrite 试验代码。本地 typecheck、147/147 完整诊断、构建与 3/3 混淆通过；回移提交的 Windows/Linux CI `36246802044` 已全部通过。范围及接续见[Stage 10 任务书](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。
 
 - 2026-09-26：建立常驻 DirectWrite 预览试验任务书，明确 DW-00～DW-08、默认关闭、网络隔离、字体副本/对象预算、取消退出、缓存兼容和端到端 A/B 验收约束；本次仅文档，未切换渲染后端。见 [常驻 DirectWrite 预览试验任务书](docs/plans/HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md)。
 

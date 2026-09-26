@@ -2,7 +2,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
-const root = process.cwd()
+const { dependencyCacheEnv, projectRoot } = require('../dependencies/run-with-cache.cjs')
+const root = projectRoot
 const required = process.argv.includes('--required')
 const manifest = path.join(root, 'native-src', 'hfm-core-worker', 'Cargo.toml')
 const outDir = path.join(root, 'build', 'native')
@@ -30,6 +31,7 @@ console.log(`[hfm] building Rust core worker with ${cargoVersion.stdout.trim()}`
 const build = spawnSync('cargo', ['build', '--release', '--manifest-path', manifest], {
   cwd: root,
   stdio: 'inherit',
+  env: dependencyCacheEnv(root),
 })
 
 if (build.error || build.status !== 0) {

@@ -22,7 +22,7 @@
 
 - 当前本地：mapped-drive-unicode、shared-root-retention（18场景）、operation-chain（7变异）、shared-action-admission（40组）、user-intent-consistency（4变异）及 typecheck 全通过。
 - 本地完整 `npm run verify` 退出 0：typecheck + 147/147 诊断；Electron/Vite 构建及 3/3 混淆通过，diff 检查通过。
-- 代码提交 `237998144009a41885089fb286879ed1f8055477`；新分支 Windows/Linux CI `36246802044` 已触发，最终结果仍待确认，不能以原 DW 分支绿灯代替。
+- 代码提交 `237998144009a41885089fb286879ed1f8055477`；该回移提交的 Windows/Linux CI `36246802044` 已全部通过（含 Windows 全量诊断与原生目录回归）。
 - 复用已核对的 WNet API 实现；Mermaid 更新实际查询链，Create State 保存当前分支与回移边界。
 - 开发运行：`npm run dev`；不需要 build:win。新分支不提供 dev:dw。
 
@@ -31,3 +31,9 @@
 按用户高频改字目标，先处理可见队列等待整批图片缓存的阻塞，再区分 FontFace 超时与真正格式失败，保留已加载字体跨文字/字号复用；随后研究单请求授权/元数据/读取重复调用。不得绕过路径授权、根代次、离线或取消边界，不以无限并发或增大期限替代修复。
 
 分别测量首次一屏、同屏连续改字、滚回热字体；记录首张/整屏耗时、实际调用次数及过期工作。当前无实机提速结论。55字体解析、C-09/O-07及此前待验事项不在 S10-00 关闭。
+
+## 4. 用户追加：共享依赖下载目录
+
+2026-09-26 授权将依赖下载放到项目上一级，禁止写死机器绝对路径。统一 `../.hfm-deps/{npm,electron,electron-builder,cargo}`，运行时按项目目录解析；`npm run deps:install` 将环境传入 npm 及依赖安装子进程，setup/rebuild/打包入口沿用同一策略；Rust构建使用该 Cargo home。安装目录与编译产物各项目独立，Rust工具链与已有全局Electron headers缓存不迁移。旧下载缓存不自动搬迁/删除。
+
+已验证同级项目共享、中文/空格路径、从其他目录启动、退出码传播、真实npm缓存路径、typecheck及release gate；真实Windows下载与原生重建待运行验证。此项不改字体预览代码或依赖版本。
