@@ -284,3 +284,15 @@ API 决定：系统 `IDWriteFactory3`（Windows 10 起），单 face 的 `IDWrit
 参考：https://learn.microsoft.com/en-us/windows/win32/api/dwrite_3/nf-dwrite_3-idwritefactory3-createfontcollectionfromfontset 、https://learn.microsoft.com/en-us/windows/win32/directwrite/custom-font-sets-win10 。Context7 已查询私有字体集及自定义 glyph renderer，结合 Microsoft Win32 文档确认 Windows 10 接口，不采用 Windows App SDK 文档的不同最低版本。
 
 DW-00 CI `36231611578`：Windows 预览基线诊断通过；Windows/Linux directory-metadata-native 两组通过；完整 Windows 门在 mapped-drive-unicode 的已知本地 CIM 1500ms 门失败（1518ms/SIGKILL），不提高超时，不归为 DirectWrite 成功或无关已修复。
+
+### 11.1 原生接口与验收边界
+
+构建入口 `npm run native:directwrite`（仅原生开发/CI，需要 x64 MSVC 环境）；测试入口 `npm run test:directwrite-native`。用户正常开发仍用 `npm run dev`，不自动启用本实验二进制。
+
+命令协议 v1：`hfm-directwrite-preview.exe --probe` 返回实际 DirectWrite factory 能力；`--render <本地字体绝对路径> <faceIndex> <文字> <字号> <宽> <高> <新 PNG 绝对路径>` 执行一次渲染。回执含 `engine=directwrite`、faceIndex、glyphRuns、missingGlyphs、elapsedMs；非零退出/ok=false 是失败，不能算成功图片。输出使用 CREATE_NEW，不覆盖现有文件；编码完成后才创建输出，写入失败删除本次拥有的文件。独立 CLI 不作为 IPC 授权边界，未来接 UI 仍须既有授权与受控输出目录。
+
+绘制通过 DirectWrite 排版后的 GetGlyphRunOutline 获取真实轮廓，校验文件引用和 face 后用 Direct2D 软件光栅化，再由 WIC 编码直通 alpha PNG。布局与字体对象全在原生进程；图像透明、前景 #f2f4f8、96 DPI，以真实轮廓 bounds 居中并按需缩小，避免 overhang/重音裁切。轮廓光栅化和旧 GDI+ hinting/抗锯齿不同，真实字体视觉仍待验。仅本地固定/可移动盘，拒绝 UNC、映射网络盘与 reparse 路径；没有新增共享缓存发布或字体安装行为。
+
+夹具轮廓为项目原创 CC0，固定字体名相同但几何不同，包含 TTF、CFF、TTC 两 face、连字、组合字符、代理对、中英文/RTL、缺字、空白/换行与 fvar 拒绝；不用系统已安装字体掩盖私有加载。生成器仅开发重建需要 fontTools 4.61.1；提交的 base64 夹具及 Windows 诊断只用 Python 标准库，无运行依赖。两项源码变异重新编译真实 exe：强制 TTC face=0、移除输入限制；编译失败不得当作测试有效，最后恢复源码并重建/重验正确 exe。
+
+首轮 Windows CI `36233697917`：MSVC 编译通过，图像用例在空字符串断言处失败；已确认旧语义为空串使用默认文字，修正测试期待，不更改生产语义。最终 CI 结果待收。本项完成原生独立调用不代表 DW-02 常驻/DW-05 UI 已接通，也不关闭 DW-00 实机性能缺口。

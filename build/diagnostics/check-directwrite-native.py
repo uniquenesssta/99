@@ -58,7 +58,7 @@ def main():
             assert receipt['engine']=='directwrite' and receipt['faceIndex']==face
             w,h,rows=pixels(output); assert (w,h)==(width,height)
             ink=[(x,y) for y,row in enumerate(rows) for x in range(w) if row[x*4+3]>8]
-            if text.strip():
+            if text == '' or text.strip(): # Empty input uses the existing default preview text.
                 assert ink, 'nonblank text produced empty image'
                 xs,ys=zip(*ink)
                 assert min(xs)>0 and max(xs)<w-1 and min(ys)>0 and max(ys)<h-1, 'clipped ink'
@@ -74,7 +74,11 @@ def main():
         _,narrow=render();_,wide=render('wide.ttf');assert narrow!=wide, 'same-name private files conflated'
         _,face0=render('faces.ttc',0);_,face1=render('faces.ttc',1)
         assert face0==narrow and face1==wide and face0!=face1, 'TTC face ignored'
-        render('outline.otf')
+        _,cff=render('outline.otf');assert cff==narrow, 'equivalent CFF outline rendered differently'
+        _,ligature=render(text='fi')
+        ink=[(x,y) for y,row in enumerate(ligature) for x in range(720) if row[x*4+3]>8]
+        xs,ys=zip(*ink)
+        assert max(xs)-min(xs)>2.5*(max(ys)-min(ys)), 'OpenType ligature shaping missing'
         for text in ['中文','A\u0301','😀','אב','fi','A\nB','A'*200,'']:
             render(text=text)
         render(text='   ')
