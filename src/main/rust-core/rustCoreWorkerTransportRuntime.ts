@@ -1,6 +1,6 @@
 import { assertLocalShutdownWorkAllowed } from '../app/shutdownCoordinatorRuntime'
 import type { ChildProcess } from 'node:child_process'
-import { getStartupPathRootState, markStartupPathRootUnavailable } from '../path/startupPathAvailabilityRuntime'
+import { getStartupPathRootState } from '../path/startupPathAvailabilityRuntime'
 import { sharedIoAvailabilityRoot } from './rustSharedIoCommandRuntime'
 import { configureSharedFileExecutor } from '../path/sharedFileSystemRuntime'
 import { traceRustInput, logOperation } from '../logging/operationTraceContext'
@@ -204,7 +204,6 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       const result = await sharedIo.run({ file: workerPath, args, roots, write: target!.write, label: sharedIoRequestLabel(args),
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(error => {
-          if (error.reason === 'timeout') for (const root of rootGenerations.keys()) markStartupPathRootUnavailable(root,error,options.appendStartupLog,'isolated-io-timeout')
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
           throw error
         })

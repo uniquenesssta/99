@@ -4,7 +4,7 @@ const fs = require('node:fs'), fsp = fs.promises, path = require('node:path'), o
 const cp = require('node:child_process')
 const { loader } = require('./check-operation-chain.cjs')
 const root = path.resolve(__dirname, '../..'), core = 'src/main/rust-core/'
-const crlf = process.argv.includes('--crlf'), mutant = process.argv.includes('--without-routing')
+const crlf = process.argv.includes('--crlf'), mutant = process.argv.includes('--without-routing'), timeoutMutant = process.argv.includes('--timeout-offlines-root')
 const tick = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function until(test) { const end = Date.now() + 5000; while (!test()) { assert(Date.now() < end, 'condition timed out'); await tick(10) } }
 const plain = value => JSON.parse(JSON.stringify(value))
@@ -16,6 +16,11 @@ async function main() {
  const transforms = {}
  for (const file of [core+'rustCoreWorkerTransportRuntime.ts',core+'rustSharedIoCommandRuntime.ts',core+'clients/rustMetadataClientRuntime.ts','src/main/path/sharedIoProcessRuntime.ts','src/main/path/sharedPathProbeRuntime.ts']) transforms[path.join(root,file)] = source => {
    if(mutant && file.endsWith('rustCoreWorkerTransportRuntime.ts')) source=source.replace('if (roots.length) {','if (false) {')
+   if(timeoutMutant && file.endsWith('rustCoreWorkerTransportRuntime.ts')) {
+     const before=source
+     source=source.replace('getStartupPathRootState }', 'getStartupPathRootState, markStartupPathRootUnavailable }').replace("          logOperation({ stage: 'transport-result'", "          if (error.reason === 'timeout') for (const root of rootGenerations.keys()) markStartupPathRootUnavailable(root,error)\n          logOperation({ stage: 'transport-result'")
+     assert.notEqual(source,before,'timeout mutant not applied')
+   }
    return crlf ? source.replace(/\r?\n/g,'\r\n') : source
  }
  const mockDaemon = { createRustCoreDaemonRuntime: () => ({ tryRun:async(_,args)=>{daemonCalls.push(args);return{stdout:JSON.stringify(payload),stderr:''}}, stop(){}, stopImmediately(){}, status(){return{}}, pollStatus(){} }), isRustCoreDaemonSubmittedError:e=>!!e?.daemonSubmitted }
@@ -23,10 +28,10 @@ async function main() {
    submissions.push({file,args:plain(args),options})
    let runArgs = args
    if (args[0]?.startsWith('--')) {
-     currentInput = args[args.indexOf('--input')+1]
+     currentInput = args.includes('--input') ? args[args.indexOf('--input')+1] : ''
      const ready = nextReady, input = currentInput
      const script = `const fs=require('node:fs'); const input=${JSON.stringify(input)}; if(input) JSON.parse(fs.readFileSync(input,'utf8')); ${ready ? `fs.writeFileSync(${JSON.stringify(ready)},'ready');` : ''}`
-       + (mode==='hang' ? "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)" : mode==='bad-json' ? "process.stdout.write('broken')" : 'process.stdout.write('+JSON.stringify(JSON.stringify(payload))+')')
+       + (mode==='hang' ? "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)" : mode==='delayed' ? 'setTimeout(()=>process.stdout.write('+JSON.stringify(JSON.stringify(payload))+'),500)' : mode==='bad-json' ? "process.stdout.write('broken')" : 'process.stdout.write('+JSON.stringify(JSON.stringify(payload))+')')
      runArgs = ['-e',script]
    }
    const child = cp.spawn(process.execPath,runArgs,options);children.add(child);child.once('close',()=>children.delete(child));return child
@@ -43,6 +48,13 @@ async function main() {
    diagnoseRustCoreWorker:async()=>({available:true,path:process.execPath,capabilities:['install-status-index-read','install-status-index-save','shared-metadata-apply','shared-metadata-remove-tag','shared-metadata-known-tags','shared-metadata-overlay-read','shared-metadata-signature']}),
    appendStartupLog:s=>logs.push(s)})
  const run = (roots,extras={}) => transport.runRustCoreScheduledCommand(process.execPath,['--shared-metadata-signature','--input',extras.input || ''],{timeout:250,sharedIo:{paths:roots,write:false},...extras})
+ let healthyProbe=true
+ const healthLoad=loader({electron:{app:{}},'node:child_process':{...cp,spawn},
+   [path.join(root,core+'rustCoreDaemonRuntime.ts')]:mockDaemon,
+   [path.join(root,'src/main/path/sharedPathProbeRuntime.ts')]:{stopSharedPathProbes(){},probeStartupDirectory:async()=>({directory:healthyProbe,queuedMs:0,executionMs:1})}
+ },{AbortController},transforms)
+ const availability=healthLoad('src/main/path/startupPathAvailabilityRuntime.ts')
+ const healthTransport=healthLoad(core+'rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({appendStartupLog:s=>logs.push(s),enabled:false,required:false})
  const watchdog = setTimeout(()=>{for(const child of children)child.kill('SIGKILL');console.error('integration watchdog');process.exit(1)},60000)
  try {
    assert.deepEqual(plain(await mapped.sharedIoResourceKeys(['O:/fonts/../fonts','//nas/share/fonts','\\\\?\\UNC\\NAS\\share\\a'])),['\\\\nas\\share'])
@@ -82,11 +94,13 @@ async function main() {
    assert.equal(daemonCalls.length,localBefore+1)
    cases.push('invalid JSON / failed envelope / invalid business receipt cannot trigger fallback')
    mode='hang';nextReady=path.join(dir,'ready');const file=transport.createTemporaryJsonFile('hfm-integration-lease');await file.writeJson({test:true})
-   const hung=run(['\\\\nas\\bad'],{input:file.path,timeout:2000}).catch(e=>e)
+   let hungSettled=false
+   const hung=run(['\\\\nas\\bad'],{input:file.path,timeout:2000}).catch(e=>e).finally(()=>{hungSettled=true})
    await until(()=>fs.existsSync(nextReady));nextReady='';mode='success';payload={ok:true}
    const queued=run(['//NAS/bad/child'],{timeout:100}).catch(e=>e)
    await transport.runRustCoreScheduledCommand(process.execPath,['--font-resource-remove'],{timeout:100})
-   const healthy=await run(['\\\\nas\\good']);assert.equal(healthy.sharedIo,true)
+   const healthy=await run(['\\\\nas\\good'],{timeout:2000});assert.equal(healthy.sharedIo,true)
+   assert.equal(hungSettled,false,'healthy root waited for hung root to settle')
    assert.equal(daemonCalls.length,localBefore+2,'local cleanup was blocked by network request')
    const error=await hung;assert.equal(error.reason,'timeout');assert.equal(error.outcome,'unknown')
    await file.dispose();assert(fs.existsSync(file.path),'input removed before ignoring child closed')
@@ -129,6 +143,33 @@ async function main() {
    await assert.rejects(probe.probeStartupDirectory(path.join(dir,'missing'),'missing',2000))
    probe.stopSharedPathProbes();await assert.rejects(probe.probeStartupDirectory(dir,'stopped',2000),e=>e.outcome==='not-started')
    cases.push('directory/file/missing probe happens outside main with queue/execution evidence; stop closes admission')
+   // Keep the real availability owner, transport and killable child together.
+   // Only the external root-health result is controlled.
+   for (const write of [false,true]) {
+     const rootPath='//nas/timeout-'+String(write)
+     assert.equal(await availability.ensureStartupPathRootAvailable(rootPath),true)
+     const before=availability.getStartupPathRootState(rootPath)
+     mode='hang';nextReady=path.join(dir,'timeout-'+String(write))
+     const failed=healthTransport.runRustCoreScheduledCommand(process.execPath,['--test'],{timeout:1000,sharedIo:{paths:[rootPath],write}}).catch(e=>e)
+     await until(()=>fs.existsSync(nextReady))
+     const timeoutError=await failed
+     assert.equal(timeoutError.reason,'timeout');assert.equal(timeoutError.outcome,'unknown')
+     assert.equal(availability.getStartupPathRootState(rootPath).state,'online','operation timeout offlined healthy root')
+     assert.equal(availability.getStartupPathRootState(rootPath).generation,before.generation,'operation timeout changed root generation')
+     await until(()=>children.size===0)
+   }
+   cases.push('real read/write timeouts preserve healthy root state and generation')
+   mode='delayed';payload={ok:true};nextReady=path.join(dir,'stale-ready')
+   const staleRoot='//nas/probe-failure'
+   const beforeProbe=availability.getStartupPathRootState(staleRoot)
+   const stale=healthTransport.runRustCoreScheduledCommand(process.execPath,['--test'],{timeout:3000,sharedIo:{paths:[staleRoot],write:false}}).catch(e=>e)
+   await until(()=>fs.existsSync(nextReady));healthyProbe=false
+   assert.equal(await availability.ensureStartupPathRootAvailable(staleRoot),false)
+   assert.equal(availability.getStartupPathRootState(staleRoot).state,'offline')
+   assert(availability.getStartupPathRootState(staleRoot).generation>beforeProbe.generation)
+   assert.equal((await stale).reason,'stale-generation')
+   await until(()=>children.size===0);healthTransport.stopRustCoreDaemon()
+   cases.push('failed dedicated root probe still offlines root and rejects in-flight old-generation result')
    mode='hang';nextReady=path.join(dir,'stop-ready')
    const stopping=run(['\\\\nas\\stop'],{timeout:5000}).catch(e=>e);await until(()=>fs.existsSync(nextReady))
    transport.stopRustCoreDaemon();assert.equal((await stopping).reason,'stopping')
@@ -136,13 +177,14 @@ async function main() {
    await until(()=>children.size===0)
    cases.push('existing lifecycle stop cancels running work and rejects new shared work')
  } finally {
-   transport.stopRustCoreDaemon();for(const child of children) child.kill('SIGKILL');await until(()=>children.size===0);clearTimeout(watchdog);await fsp.rm(dir,{recursive:true,force:true})
+   healthTransport.stopRustCoreDaemon();transport.stopRustCoreDaemon();for(const child of children) child.kill('SIGKILL');await until(()=>children.size===0);clearTimeout(watchdog);await fsp.rm(dir,{recursive:true,force:true})
  }
  console.log(JSON.stringify({passed:cases.length,cases,crlf,remainingProcesses:children.size}))
- if(!crlf && !mutant) {
+ if(!crlf && !mutant && !timeoutMutant) {
    const child=cp.spawnSync(process.execPath,[__filename,'--crlf'],{encoding:'utf8',timeout:60000});assert.equal(child.status,0,child.stdout+child.stderr)
    const negative=cp.spawnSync(process.execPath,[__filename,'--without-routing'],{encoding:'utf8',timeout:60000});assert.notEqual(negative.status,0);assert.match(negative.stderr,/production client did not reach isolated process/)
-   console.log('CRLF passed; removed-routing mutant rejected')
+   const timeoutNegative=cp.spawnSync(process.execPath,[__filename,'--timeout-offlines-root'],{encoding:'utf8',timeout:60000});assert.notEqual(timeoutNegative.status,0);assert.match(timeoutNegative.stderr,/operation timeout offlined healthy root/)
+   console.log('CRLF passed; removed-routing and timeout-offlining mutants rejected')
  }
 }
 main().catch(error=>{console.error(error);process.exitCode=1})

@@ -644,7 +644,7 @@ C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 
 | Atomic Task | 范围 | 硬门与当前状态 |
 | --- | --- | --- |
 | C-08.1-V 验证链修复 | C-00 observer、诊断执行生命周期、全量 runner、现有 CI 与记录 | 实现已提交，验收阻塞：本地 LF/CRLF 完整 146 项与构建/混淆通过；Windows 真实 CIM 查询触发现有 1500ms deadline，完整 Windows verify/build/混淆未通过 |
-| C-04R 传输超时语义补修 | Rust transport 与 root availability 受影响测试 | 待 C-08.1-V 通过；单次操作 timeout 不改 online/generation，根探测失败仍判离线；保留取消、隔离、写入未知结果及旧代次拒绝 |
+| C-04R 传输超时语义补修 | Rust transport 与 root availability 受影响测试 | 2026-09-26 实机故障后用户重新授权优先补修，候选已实现、Windows 门待验；单次操作 timeout 不改 online/generation，根探测失败仍判离线；保留取消、隔离、写入未知结果及旧代次拒绝 |
 | C-08.1-P 首批返回 | scan listing 与 indexing client 的批次交付边界 | 待 C-04R 通过；本地根不等全部网络根，完成批次及时交付；不重复发布，不改变索引字段、错误与 generation 语义 |
 | C-09 实机验收 | Windows 开发模式、本机/映射盘/UNC、断网/退出/恢复 | 以上门禁通过后执行；真实 NAS 首批、可见预览、总扫描耗时及进程数分别记录；O-07 继续暂停 |
 
@@ -671,3 +671,23 @@ C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 
 - 本地对当前全部源码读取注入 CRLF 的 `npm run verify` 已完整通过 146 项。第三轮 Windows `36167830579`（`151e260`）通过 P8，继而 mapped-drive-unicode 的真实 CIM 断言失败；尚无底层退出证据，不能直接判定超时或放宽门禁。诊断只包装实际 execFile 记录耗时、原 timeout、code/signal/killed、stderr 和输出字节数，不改执行参数/返回值；workflow 前置这项原有严格门以尽早取得实机证据。其余完整 verify/build/混淆保留，当前任务仍进行中。
 
 - 当前明确阻塞：前置 Windows `36168691760`（代码 `a79f557`）真实查询耗时 1537ms，原 timeout=1500ms，signal=SIGKILL，killed=true，stdoutBytes=0，stderr 为空。只能确定执行预算内没有返回有效结果，尚不能区分 PowerShell 启动耗时与 CIM 查询耗时，更不能当作网络根不可达。诊断仍失败，无自动重试、延长期限、接受 null 或跳过 Windows 门。当前验证脚本修复已提交，但 C-08.1-V 未验收；下一推进前需先为映射盘发现的真实执行超时建立独立修复范围和证据，C-04R/C-08.1-P/C-09/O-07 保持未推进。
+
+### 10.3 2026-09-26 实机故障与 C-04R 补修
+
+用户提供 `startup-2026-09-26_02-11-51-283-23124.log`，并在故障说明后明确“开始修复”。本轮优先交付已在实机复现的 C-04R 候选；此前 C-08.1-V 的 CIM 硬门仍未通过，不把此次授权或专项通过写成完整 Windows 验收通过。后续性能原子任务仍遵守失败门。
+
+实机事实（北京时间）：
+
+- 10:12:17–10:12:47，`list-font-files` 请求 433 执行约 30 秒后超时；`fonts:scanFolders` 在 35.7 秒失败，随即由 `isolated-io-timeout` 标记整根不可用。
+- 全会话 12953 次 `shared-file-io:stat` 子进程，其中 12285 次在正式扫描失败后发生；NAS watcher 批次直到 10:20:22 才完成（42 upserts）。10:20:48 又由 2 秒 sqliteSnapshot 超时触发整根不可用及预览拒绝。日志没有逐条 stat 路径，不能把全部次数认定为同一文件重复访问。
+- 启动 polling 首次基线会发 root rescan；`watchedFolderIndexRuntime.processDirectory` 先列目录，再经 `upsertFontIndexEntry` 对每个文件重新 stat。目录缓存返回的 stat 可能是历史值，后续优化不能直接当作当前文件事实复用。现有 native readdir 仅提供名字/类型，缺少 size/mtime/birthtime；不允许为了省调用猜补字段。
+- renderer `rescan()` 的 await 链无 catch/finally；重建分支虽有 catch，也未显式结束 indexingActive。此项尚未修改，需要覆盖当前任务失败与旧任务失败不得覆盖新任务状态。
+
+C-04R 本轮范围：
+
+- 仅删除 transport catch 中 timeout→markStartupPathRootUnavailable 的越权状态写及无用 import。timeout 仍原样抛出，不改任何生产 deadline、并发、隔离、取消、关闭回收、写入未知结果、日志错误或 stale-generation 拒绝。
+- 原十个集成场景保留；新增真实 child / 生产 transport / 生产 availability owner 串联的读写超时场景，外部根健康端口仅受控返回结果。健康根保持 online/原 generation；专用探测确认非目录仍进入 offline，新 generation 使正在返回的旧读取被拒绝。增加重新引入 timeout→offline 的 mutation，LF/CRLF 均执行正常链。
+- 正常健康根的诊断启动预算从 250ms 改为 2000ms，仅影响受控测试；另显式断言其必须在坏根结算前完成，比仅检查最终返回更精确。生产 deadline 不变。修正测试子进程无 --input 时误把命令名当文件路径的解析。
+- Windows workflow 把既有 Shared I/O integration 门移到 CIM 门前以获得本项回执；CIM、完整 verify、build、混淆均保留且依然失败即阻断后续步骤。
+- 修改前新增反例实际失败：`operation timeout offlined healthy root`。修改后 12 个场景、LF/CRLF、路由与超时误判两个 mutation 通过，最终存活子进程为 0。完整本地 verify 运行中；Electron/Vite build 与 3/3 混淆通过。真实 Windows/NAS 验收未完成。
+- Create State 在本次实机诊断时返回 UNAUTHORIZED/要求重新认证，不能保存插件状态；此执行卡与 Git 是接续记录。
