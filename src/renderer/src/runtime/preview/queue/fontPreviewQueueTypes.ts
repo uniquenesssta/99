@@ -43,7 +43,7 @@ export type FontPreviewQueueRuntimeOptions = {
 
 export type FontPreviewStateRuntime = {
   resetPreviewRuntimeState: () => void
-  canRequestPreviewFont: (font: FontItem) => boolean
+  canRequestPreviewFont: (font: FontItem, allowQueued?: boolean) => boolean
 }
 
 export type FontPreviewLoadRuntime = {

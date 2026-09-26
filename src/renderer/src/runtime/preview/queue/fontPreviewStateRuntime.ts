@@ -17,9 +17,10 @@ export function createFontPreviewStateRuntime(options: FontPreviewQueueRuntimeOp
     options.setNativeDetailImage('')
   }
 
-  function canRequestPreviewFont(font: FontItem): boolean {
+  function canRequestPreviewFont(font: FontItem, allowQueued = false): boolean {
     return canQueuePreviewFont({
       font,
+      allowQueued,
       previewFamilies: options.previewFamilies,
       nativePreviewImages: options.nativePreviewImages,
       failedPreviewFontIds: options.failedPreviewFontIds,

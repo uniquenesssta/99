@@ -15,6 +15,7 @@ export function canQueuePreviewFont(options: {
   failedPreviewFontIds: Record<string, true>
   loadingFontIds: Set<string>
   queuedPreviewFontIds: Set<string>
+  allowQueued?: boolean
   isBadFontRecord: (font: FontItem) => boolean
 }): boolean {
   const { font, previewFamilies, nativePreviewImages, failedPreviewFontIds, loadingFontIds, queuedPreviewFontIds, isBadFontRecord } = options
@@ -22,7 +23,7 @@ export function canQueuePreviewFont(options: {
   if (previewFamilies[font.id] && !forceNativePreview) return false
   if (nativePreviewImages[font.id] && failedPreviewFontIds[font.id]) return false
   if (loadingFontIds.has(font.id)) return false
-  if (queuedPreviewFontIds.has(font.id)) return false
+  if (!options.allowQueued && queuedPreviewFontIds.has(font.id)) return false
   if (isBadFontRecord(font)) return false
   return true
 }

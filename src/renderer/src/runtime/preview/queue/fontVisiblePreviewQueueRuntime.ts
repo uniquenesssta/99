@@ -214,7 +214,7 @@ export function createFontVisiblePreviewQueueRuntime(
     if (disposed) return
     const trace = previewTrace(font.id, options.previewText, options.listPreviewFontSize)
     previewEvent(trace, 'request', priority)
-    if (!stateRuntime.canRequestPreviewFont(font)) { previewEvent(trace, 'admission-rejected'); return }
+    if (!stateRuntime.canRequestPreviewFont(font, true)) { previewEvent(trace, 'admission-rejected'); return }
     const routeForcesNative = resolveFontPreviewRoute(font).shouldSkipWebFontFileLoad
     if ((!routeForcesNative && options.previewFamilies[font.id]) || options.nativePreviewImages[font.id] || options.loadingFonts.current.has(font.id)) return
     if (routeForcesNative && options.previewFamilies[font.id]) {

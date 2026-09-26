@@ -44,6 +44,8 @@ function previewSampleStyle(font: FontCardProps['font'], mode: 'grid' | 'list', 
 
 function FontCardImpl({ font, active, selected, compact, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
   const ref = useRef<HTMLButtonElement | null>(null)
+  // Re-arm after reset commits: the text/size render can still contain the old image.
+  const previewReady = Boolean(previewFamily || previewImage)
   const frozenPreview = useResizeFrozenPreviewRuntime(font.id, {
     previewFamily,
     previewImage,
@@ -94,13 +96,14 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
     const node = ref.current
     if (!node) return
 
+    let cancelled = false
     let revealed = false
     let deferVisibleUntilResizeSettled = false
     let unsubscribeResizeSettled: (() => void) | null = null
     let observer: IntersectionObserver | null = null
 
     const reveal = (): void => {
-      if (revealed) return
+      if (cancelled || revealed) return
       revealed = true
       previewEvent(previewTrace(font.id, previewText || '', listPreviewFontSize ?? 44), 'visible')
       onVisible()
@@ -111,7 +114,11 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
 
     observer = new IntersectionObserver(
       (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return
+        if (cancelled) return
+        if (!entries.some((entry) => entry.isIntersecting)) {
+          deferVisibleUntilResizeSettled = false
+          return
+        }
         if (isWindowResizeActive()) {
           deferVisibleUntilResizeSettled = true
           if (!unsubscribeResizeSettled) {
@@ -130,10 +137,12 @@ function FontCardImpl({ font, active, selected, compact, previewFamily, previewI
 
     observer.observe(node)
     return () => {
+      cancelled = true
+      deferVisibleUntilResizeSettled = false
       observer?.disconnect()
       unsubscribeResizeSettled?.()
     }
-  }, [onVisible])
+  }, [onVisible, font.id, font.__earlyVisible, previewText, listPreviewFontSize, previewReady])
 
   useEffect(() => {
     if (!previewTraceEnabled() || !ref.current) return

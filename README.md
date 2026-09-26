@@ -74,6 +74,8 @@ npm run build:win
 
 ## 变更记录
 
+- 2026-09-26：S10-02 修复预取队列优先级提升及可见卡片改字/字号后的补排，覆盖 24 项稳定挂载、清空旧图时序和卸载回调；18 项预取与现有并发限制保持。typecheck、150/150 诊断、三端构建及 3/3 混淆通过，Windows GUI/性能待验；见 [Stage 10 第 12 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#12-s10-02-执行回执2026-09-26)。
+
 - 2026-09-26：S10-01 增加有界预览链路观测和五项已知缺陷的观察基线，覆盖可见项、缓存合并、物理完成、字体授权读取及图片加载回执；沿用详细日志开关与现有诊断传输，两套 preload 保持旧调用兼容。本地 typecheck、149/149 诊断、三端构建及 3/3 混淆通过；尚未修复预览缺陷，实机性能基线待验；详见 [Stage 10 第 11 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#11-s10-01-执行回执2026-09-26)。
 
 - 2026-09-26：补齐 Stage 10 的 S10-01 至 06 执行卡，覆盖关联基线、请求调度、失败恢复、缓存关键路径、过期工作与实机验收；明确审计追踪、性能判定及回滚要求，下一项 S10-01，尚未实施预览修复。见 [Stage 10 任务书](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。

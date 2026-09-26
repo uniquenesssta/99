@@ -49,9 +49,9 @@
     "src/renderer/src/runtime/app/useFontDetailNativePreviewRuntime.ts": "798669af0617be9def148c5ed992d036da895ad2a48eda2fe4e2fe4d76220a54",
     "src/renderer/src/runtime/app/usePendingDetailRevealRuntime.ts": "cdb7c4dc211218e55b5ed94c608a8c8bd3940c5aa00b85eababe6916060d095f",
     "src/renderer/src/runtime/preview/fontPreviewQueueRuntime.ts": "185f9e992aaf84f56887078ffbf70eecad3d5d6b6f6a2976b592c4e922f54456",
-    "src/renderer/src/runtime/preview/queue/fontPreviewStateRuntime.ts": "5c71bee122e74a82fa4e9ed51848402b1e9abba655faaa5d4d72c57536e7d0d0",
+    "src/renderer/src/runtime/preview/queue/fontPreviewStateRuntime.ts": "002f07cc50ddc162afdf5894f023c471fa5591795cdc8ad512f0b1e0517126f0",
     "src/renderer/src/runtime/preview/queue/fontPreviewLoadRuntime.ts": "b18878f58375b0c71055b404c1143a03c028e766860910ed04e66b19d495bd2c",
-    "src/renderer/src/runtime/preview/queue/fontVisiblePreviewQueueRuntime.ts": "2161ac523277495703df57433e80df4096f7f7d96ae41b07ef40e6aeede00ebf",
+    "src/renderer/src/runtime/preview/queue/fontVisiblePreviewQueueRuntime.ts": "1954872d89c488a170e097809d9bda172f254f587a842eb34f9e7d826ca9815a",
     "src/renderer/src/runtime/preview/queue/fontAutoPreviewCacheQueueRuntime.ts": "5339fd863924dbd493793d7ab584c76430b3f43439f2bf02147a608be446e386"
   },
   "functionHashes": {
