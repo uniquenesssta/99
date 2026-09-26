@@ -11,7 +11,10 @@ async function run() {
   const electron={app:{isPackaged:false,getAppPath:()=>root},ipcMain:{handle:(key,fn)=>{assert(!handlers.has(key));handlers.set(key,fn)}},ipcRenderer:{invoke:(key,...args)=>handlers.get(key)(event,...args),on:noop,removeListener:noop},contextBridge:{exposeInMainWorld:(_,value)=>window.hfm=value},shell:{showItemInFolder:()=>calls.push(['shell'])}}
   const globals={window,URL,URLSearchParams,__dirname:root,setTimeout:(fn)=>{const id=++timeId;timers.set(id,fn);return id},clearTimeout:id=>timers.delete(id)}
   const transforms = new Proxy({}, {get:(_,file)=>source=>{
-    if(process.argv.includes('--mutant') && String(file).endsWith('/ipcHandlers.ts')) source=source.replace('await admit(channel, args);','/* deliberately bypass admission */')
+    if(process.argv.includes('--mutant') && String(file).replace(/\\/g,'/').endsWith('/ipcHandlers.ts')) {
+      assert(source.includes('await admit(channel, args);'),'admission mutation anchor missing')
+      source=source.replace('await admit(channel, args);','/* deliberately bypass admission */')
+    }
     return process.argv.includes('--crlf') ? source.replace(/\n/g,'\r\n') : source
   }})
   const load=loadModules(globals,{react,electron},transforms)
