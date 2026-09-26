@@ -23,6 +23,8 @@ async function main(){
   const first=await runtime.render(item,input,{isCurrent:()=>live},fallback);assert(first.startsWith('data:image/png'));
   assert.equal(await runtime.render(item,input,{isCurrent:()=>live},fallback),first);
   assert.equal(publications.length,1);assert(logs.some(s=>s.includes('source=local-image-cache')));
+  fs.rmSync(path.join(dir,'images'),{recursive:true});
+  assert.equal(await runtime.render(item,input,{isCurrent:()=>live},fallback),first);
   await runtime.render(item,{...input,text:'BA'},{isCurrent:()=>live},fallback);assert(logs.some(s=>s.includes('objectHit=true')));
   const oldStat=fs.statSync(source),wide=Buffer.from(fonts['wide.ttf'],'base64'),changed=Buffer.alloc(oldStat.size);wide.copy(changed);
   assert.equal(changed.length,oldStat.size,'fixture must preserve length');

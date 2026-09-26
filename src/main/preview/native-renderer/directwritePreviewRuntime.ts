@@ -20,7 +20,7 @@ export function directwriteImageKey(digest: string, input: PreviewInput): string
 export function createDirectwritePreviewRuntime(options: Pick<PreviewRuntimeOptions,
   'localDataRoot' | 'localPreviewImageDir' | 'getFontReadPolicy' | 'authorizeFontRead' | 'appendStartupLog'>,
   publish: (key: string, item: FontItem, input: PreviewInput, outputPath: string, digest: string) => Promise<void>) {
-  let resources: { store: DirectwriteFontStore; service: DirectwriteService; prepareImages: () => Promise<void> } | undefined
+  let resources: { store: DirectwriteFontStore; service: DirectwriteService; prepareImages: (signal?: AbortSignal) => Promise<void> } | undefined
   function acquireResources() {
     if (resources) return resources
     const command = [process.env.HFM_DIRECTWRITE_RESIDENT_PATH,
@@ -30,12 +30,11 @@ export function createDirectwritePreviewRuntime(options: Pick<PreviewRuntimeOpti
     const staging = createDirectwriteFontStaging(command, options.getFontReadPolicy())
     const service = new DirectwriteService({ command, temporaryRoot: parent })
     const store = new DirectwriteFontStore(parent, staging)
-    let imagesReady: Promise<void> | undefined
-    resources = { store, service, prepareImages: () => imagesReady ??= (async () => {
+    resources = { store, service, prepareImages: async signal => {
       // Store acquisition has validated the parent; validate the image destination too.
       await fs.mkdir(options.localPreviewImageDir(), { recursive: true })
-      await staging.prepare(options.localPreviewImageDir())
-    })().catch(error => { imagesReady = undefined; throw error }) }
+      await staging.prepare(options.localPreviewImageDir(), signal)
+    } }
     return resources
   }
   async function render(item: FontItem, input: PreviewInput, admission: FontAdmission,
@@ -51,7 +50,7 @@ export function createDirectwritePreviewRuntime(options: Pick<PreviewRuntimeOpti
       try {
         const checkLease = () => { check(); if (!lease.current()) throw new Error('DW_STALE') }
         checkLease()
-        await prepareImages(); checkLease()
+        await prepareImages(admission.signal); checkLease()
         const key = directwriteImageKey(lease.fontIdentity, input)
         const outputPath = join(options.localPreviewImageDir(), `${key}.png`)
         try {

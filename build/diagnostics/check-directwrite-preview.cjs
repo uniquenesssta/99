@@ -17,8 +17,10 @@ async function owner(transform=s=>s){
  try{
   const a=await trial.render(font,input,admit,fallback);assert(a.startsWith('data:image/png'));assert.equal(published,1);
   assert.equal(await trial.render(font,input,admit,fallback),a);assert.equal(count,1,'image cache missed');
-  await trial.render(font,{...input,text:'BA'},admit,fallback);assert.equal(count,2);
-  digest='b'.repeat(64);await trial.render(font,input,admit,fallback);assert.equal(count,3,'same metadata replacement used old image');
+  fs.rmSync(path.join(dir,'images'),{recursive:true});
+  await trial.render(font,input,admit,fallback);assert.equal(count,2,'cleared image directory was not recreated');
+  await trial.render(font,{...input,text:'BA'},admit,fallback);assert.equal(count,3);
+  digest='b'.repeat(64);await trial.render(font,input,admit,fallback);assert.equal(count,4,'same metadata replacement used old image');
   assert.notEqual(runtime.directwriteImageKey(digest,input),runtime.directwriteImageKey(digest,{...input,width:721}));
   digest='c'.repeat(64);fault='DW_NATIVE_VARIABLE_FONT_UNSUPPORTED';assert.equal(await trial.render(font,input,admit,fallback),'old');assert.equal(fallbacks,1);
   auth=false;await assert.rejects(trial.render(font,input,admit,fallback),/FALLBACK_UNAUTHORIZED/);assert.equal(fallbacks,1);auth=true;
