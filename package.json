@@ -182,7 +182,9 @@
     "diagnostics:preview-baseline": "node build/diagnostics/check-preview-baseline.cjs",
     "baseline:preview-report": "node build/performance/preview-baseline-report.cjs",
     "native:directwrite": "cmd /c native-src\\preview-renderer\\directwrite\\build-win.cmd",
-    "test:directwrite-native": "python build/diagnostics/check-directwrite-native.py"
+    "test:directwrite-native": "python build/diagnostics/check-directwrite-native.py",
+    "diagnostics:directwrite-service": "node build/diagnostics/check-directwrite-service.cjs",
+    "test:directwrite-resident": "python build/diagnostics/check-directwrite-resident.py && node build/diagnostics/check-directwrite-service.cjs --native"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

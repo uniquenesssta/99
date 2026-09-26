@@ -12,6 +12,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm ci --ignore-scripts
       - name: Compile against Windows SDK
         shell: cmd
         run: |
@@ -20,6 +23,10 @@ jobs:
           call native-src\preview-renderer\directwrite\build-win.cmd
       - name: Real private TTF CFF TTC and PNG checks
         run: python build/diagnostics/check-directwrite-native.py
+      - name: Resident process, EOF, parent death and production owner
+        run: |
+          npm run diagnostics:directwrite-service
+          npm run test:directwrite-resident
       - name: Reject source mutations and restore executable
         shell: cmd
         run: |

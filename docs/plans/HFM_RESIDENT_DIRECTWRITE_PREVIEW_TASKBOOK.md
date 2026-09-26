@@ -318,3 +318,11 @@ flowchart TD
 ```
 
 该链路尚未连接 Electron 前台，Mermaid Chart 已同步展示；Context7/API 核对见 §11。
+
+## 12. DW-02 执行边界（进行中）
+
+本项实现独立常驻进程和有界 transport；现有默认预览不接入，实际原生调用由 Windows 集成诊断验收，界面开关仍属于 DW-05。取消直接终止专用进程；等待真实 close 后才释放活动槽，后续请求按有上限的退避重新启动，不重试失败请求。
+
+精确文件清单：`native-src/preview-renderer/directwrite/resident.{h,cpp}`（父进程句柄看护、stdin 生命周期、受限二进制协议）、该目录 `cli.cpp`/`build-win.cmd`（服务入口与编译）；`src/main/preview/native-renderer/directwriteProtocol.ts`（跨进程格式/回执验证）、`directwriteProcess.ts`（单进程管道与关闭确认）、`directwriteService.ts`（唯一服务 owner、64 项队列/合并/取消/关闭、受控临时输出）；`build/diagnostics/check-directwrite-service.cjs`、`fixtures/directwrite/process.cjs`（真实进程故障协议）、`check-directwrite-resident.py`（Windows 原生服务与父死验证）、`check-directwrite-mutants.py`（实际移除父死清理必须失败）；`.github/workflows/directwrite-native.yml`、`package.json`（自动门）；本书及根 README。
+
+服务 owner 构造时接入现有 shutdown coordinator 的 freeze/resume 订阅，不添加新的退出等待预算。固定渲染语义沿用 DW-01（96 DPI、透明底、既有前景/布局）；协议仅允许该语义版本。字体对象缓存、源副本授权/摘要、UI 图片发布分别留给 DW-03/04/05，不把身份回显当内容校验。

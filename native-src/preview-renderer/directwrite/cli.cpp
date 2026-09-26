@@ -1,4 +1,5 @@
 #include "preview.h"
+#include "resident.h"
 #include <iostream>
 #include <stdexcept>
 #include <cmath>
@@ -18,6 +19,9 @@ static uint32_t integer(const wchar_t* input) {
 }
 int wmain(int argc, wchar_t** argv) {
   try {
+    if (argc == 4 && std::wstring(argv[1]) == L"--serve") {
+      return hfm_dw::serve(integer(argv[2]), integer(argv[3]));
+    }
     if (argc == 2 && std::wstring(argv[1]) == L"--probe") {
       hfm_dw::probe();
       std::cout << "{\"ok\":true,\"protocolVersion\":1,\"engine\":\"directwrite\",\"minimumWindows\":10,\"resident\":false,\"variableFonts\":false}\n";
