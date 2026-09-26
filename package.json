@@ -182,6 +182,8 @@
     "diagnostics:preview-baseline": "node build/diagnostics/check-preview-baseline.cjs",
     "baseline:preview-report": "node build/performance/preview-baseline-report.cjs",
     "native:directwrite": "cmd /c native-src\\preview-renderer\\directwrite\\build-win.cmd",
+    "diagnostics:directwrite-font-store": "node build/diagnostics/check-directwrite-font-store.cjs",
+    "test:directwrite-staging": "python build/diagnostics/check-directwrite-staging.py && node build/diagnostics/check-directwrite-staging-integration.cjs",
     "test:directwrite-cache": "python build/diagnostics/check-directwrite-cache.py",
     "test:directwrite-native": "python build/diagnostics/check-directwrite-native.py",
     "diagnostics:directwrite-service": "node build/diagnostics/check-directwrite-service.cjs",

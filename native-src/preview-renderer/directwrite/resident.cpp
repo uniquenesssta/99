@@ -69,14 +69,18 @@ struct Decoder {
 };
 }
 
-int serve(uint32_t generation, uint32_t parentPid) {
-  require(generation != 0);
+void watchParent(uint32_t parentPid) {
   HANDLE parent = openParent(parentPid);
   std::thread([parent] {
     WaitForSingleObject(parent, INFINITE);
     // Independent of DirectWrite and stdin: a hung draw cannot orphan us.
     stop(2);
   }).detach();
+}
+
+int serve(uint32_t generation, uint32_t parentPid) {
+  require(generation != 0);
+  watchParent(parentPid);
   std::mutex mutex; std::condition_variable ready;
   std::vector<unsigned char> pending;
   // The reader continues observing EOF even while the rendering thread is busy.

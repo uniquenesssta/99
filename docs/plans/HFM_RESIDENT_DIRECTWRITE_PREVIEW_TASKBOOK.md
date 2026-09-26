@@ -411,3 +411,14 @@ flowchart TD
 - 本地 `npm run verify` 退出 0：typecheck + **149/149**；协议补测退出 0；Electron/Vite **384/1/204**、混淆 **3/3**、Python 语法和 diff 检查通过。Windows/Linux 原有目录属性/native 回归在 `36238266863` 均通过。
 - 独立综合 Windows 门：`36238084685` 仍停在原 CIM 检查；`36238266863` 初次在未修改的 Shared I/O 集成夹具 timeout=2000ms 处失败（queued58ms / execution2001ms）。两提交间仅改四个 DirectWrite 测试文件，该夹具及执行链字节相同，上一轮同生产代码通过；已申请只重跑失败 job 复核，不增加生产或测试期限。复跑 job `108394513251` 的 Shared I/O 集成门已通过，随后仍停在原 CIM 1500ms 门；两个目录属性/native jobs 复跑也均通过。未改源码、期限或断言，不能宣称整个综合 Windows 门全绿。
 - Context7 核对 DirectWrite 自定义 loader/stream 与注销生命周期、BCryptHash（Win10+）、Job/PrivateUsage API；Mermaid Chart 更新已实现链。下一项 **DW-04 网络字体按需本地化**，须用户明确开始；GUI 显式试用仍在 DW-05，不自动切后端或宣称预览提速。
+
+
+## 14. DW-04 执行范围（2026-09-26）
+
+用户授权开始 DW-04，沿用当前试验分支。默认后端和 GUI 接入不变。
+
+- 网络快照由 `directwrite/fontStaging.{h,cpp}` 的独立单次命令完成，复用现有 `applicationSharedIoProcessRuntime` 的额度、根锁、取消和真实 close；不放进常驻渲染循环，不增加 Rust 依赖或改通用传输协议。CLI/build 作窄接线，父进程守卫复用已有原生实现。
+- `directwriteFontStaging.ts` 负责授权、根身份/代次、隔离进程回执；`directwriteFontStore.ts` 独占本地副本生命周期和预算；`directwriteFontPreview.ts` 连接授权副本与已有常驻服务。现有 PNG 清理器带图片数据库副作用，不能直接清理字体；复用同一应用本地缓存父目录，建立独立受控子目录，按需 LRU 和失败重试，不另建数据库。
+- 身份策略冻结：每次读取源都在隔离进程打开禁止写入/删除共享的句柄，核对句柄真实路径与授权真实路径；读取及 SHA-256 后再次核对大小/文件 ID/时间和路径。同 size/mtime 仍重新摘要，禁止只依赖元数据。摘要相同才复用已有本地副本；本阶段不宣称消除 NAS 重读。不能取得强快照时明确失败，不降低一致性。
+- 副本合计含复制预约不超过 512MiB，单文件 64MiB，额外限制 128 个副本；活跃租约不可淘汰，释放后重试清理。临时文件独占创建，完整刷盘后同目录原子重命名；成功仍须主进程代次复核。崩溃恢复只处理带本服务标识的目录及严格命名文件，拒绝 reparse/未知内容，不扫描源目录。
+- 修改范围另含 service 的真实执行结束等待接口、专项诊断/Windows 工作流、package 脚本、README/主任务书导航。先运行可失败用例，再实现；测试包括真实复制、同元数据替换、别名/越界/junction、取消/离线/过期、租约/LRU/预算、残留和实际渲染链。

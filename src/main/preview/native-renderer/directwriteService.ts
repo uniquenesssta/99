@@ -192,6 +192,10 @@ export class DirectwriteService {
     })().finally(() => { this.stopping = undefined; this.pump(); });
     return this.stopping;
   }
+  async whenCurrentExecutionClosed(): Promise<void> {
+    await this.running;
+    await this.stopping;
+  }
   async dispose(): Promise<void> {
     this.disposed = true; this.unsubscribe(); await this.stop('DW_CLOSING');
     if (owner === this) owner = undefined;
