@@ -59,7 +59,40 @@ async function budget() {
   assert(fs.readdirSync(path.join(dir,'dw-fonts')).filter(x=>x.endsWith('.font')).length<=128);
  }finally{for(const lease of leases)await lease.release();await store.dispose();fs.rmSync(dir,{recursive:true,force:true})}
 }
-async function main(){await scenario();await budget();
+async function stagingBoundary() {
+ const events=[];let generation=1,online=true,after,releaseClose;
+ const pool={run:async request=>{
+  events.push(request);
+  if(after)return after(request);
+  const mode=request.args[0],name=request.args[1];
+  if(mode==='--font-path-info'){
+   const directory=name==='C:\\allowed';
+   return {stdout:JSON.stringify({type:'font-path',version:1,ok:true,pathHex:Buffer.from(name,'utf16le').toString('hex'),bytes:directory?0:8,directory})};
+  }
+  return {stdout:JSON.stringify({type:'font-stage',version:1,ok:true,digest:'a'.repeat(64),bytes:8,reused:false})};
+ }};
+ const load=loader({
+  [path.join(root,'src/main/path/sharedIoProcessRuntime.ts')]:{applicationSharedIoProcessRuntime:()=>pool},
+  [path.join(root,'src/main/path/startupPathAvailabilityRuntime.ts')]:{
+   ensureStartupPathRootAvailable:async()=>online,getStartupPathRootState:()=>({rootId:'root',generation,state:online?'online':'offline'}),
+  },
+  [path.join(root,'src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>['share']},
+ },{AbortController});
+ const port=load('src/main/preview/native-renderer/directwriteFontStaging.ts').createDirectwriteFontStaging('native',{
+  fontExtensions:new Set(['.ttf']),readRoots:()=>['C:\\allowed'],watchedRoots:()=>[],appOwnedRoots:()=>[],
+ });
+ const source=await port.authorize('C:\\allowed\\font.ttf');assert(source.current());
+ assert.equal(events.length,4);assert(events.every(e=>e.args[0]==='--font-path-info' && e.timeoutMs===500));
+ await assert.rejects(port.authorize('C:\\outside\\font.ttf'),/UNAUTHORIZED/);
+ generation++;assert(!source.current());generation--;
+ let closed=false;const promise=new Promise(r=>{releaseClose=()=>{closed=true;r()}});
+ after=async()=>{throw Object.assign(Error('timeout'),{closed:promise})};
+ let settled=false;const copy=port.copy(source,'C:\\local\\part',undefined,new AbortController().signal).catch(e=>{settled=true;throw e});
+ const rejected=assert.rejects(copy,/timeout/);await new Promise(r=>setImmediate(r));assert(!settled && !closed,'released before real close');releaseClose();await rejected;
+ after=async()=>({stdout:JSON.stringify({type:'font-stage',version:1,ok:true,digest:'a'.repeat(64),bytes:8,reused:true})});
+ await assert.rejects(port.copy(source,'C:\\local\\part','b'.repeat(64),new AbortController().signal),/RECEIPT/);
+}
+async function main(){await scenario();await budget();await stagingBoundary();
  for(const [from,to] of [['!source.current()','false'],['entry.refs) return false','false) return false']]){
   let changed=false;await assert.rejects(scenario({[file]:source=>{assert(source.includes(from));changed=true;return source.replaceAll(from,to)}}));assert(changed);
  }

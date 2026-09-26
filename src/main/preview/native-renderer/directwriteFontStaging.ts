@@ -9,8 +9,8 @@ export interface FontSource {
 }
 export interface FontStageResult { digest: string; bytes: number; reused: boolean }
 export interface FontStagingPort {
-  prepare(parent: string): Promise<void>;
-  authorize(path: string): Promise<FontSource>;
+  prepare(parent: string, signal?: AbortSignal): Promise<void>;
+  authorize(path: string, signal?: AbortSignal): Promise<FontSource>;
   copy(source: FontSource, target: string, known: string | undefined, signal: AbortSignal): Promise<FontStageResult>;
 }
 // The existing pool is the only owner of NAS admission, slots and termination.
@@ -33,11 +33,11 @@ export function createDirectwriteFontStaging(command: string, authorization: Omi
     }
   }
   return {
-    async prepare(parent) {
-      const result = await run(['--prepare-font-store', parent], [parent]);
+    async prepare(parent, signal) {
+      const result = await run(['--prepare-font-store', parent], [parent], signal);
       if (result.type !== 'font-store' || Object.keys(result).length !== 3) throw new Error('DW_STAGE_RECEIPT_INVALID');
     },
-    async authorize(path) {
+    async authorize(path, signal) {
       const epoch = applicationWorkEpoch();
       if (isApplicationClosing()) throw new Error('DW_CLOSING');
       // All path resolution (including local junctions that secretly reach NAS)
@@ -45,7 +45,7 @@ export function createDirectwriteFontStaging(command: string, authorization: Omi
       // rules/root providers with an isolated filesystem port, never a second
       // policy or an unbounded Node realpath/stat of a caller path.
       const inspect = async (target: string) => {
-        const info = await run(['--font-path-info', target], [target], undefined, undefined, 500);
+        const info = await run(['--font-path-info', target], [target], signal, undefined, 500);
         if (info.type !== 'font-path' || Object.keys(info).length !== 6 || typeof info.pathHex !== 'string'
           || !/^(?:[0-9a-f]{4}){1,8192}$/.test(info.pathHex) || !Number.isSafeInteger(info.bytes)
           || info.bytes < 0 || typeof info.directory !== 'boolean') throw new Error('DW_STAGE_RECEIPT_INVALID');

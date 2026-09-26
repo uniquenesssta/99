@@ -32,9 +32,9 @@ export class DirectwriteFontStore {
   private serialize<T>(action: () => Promise<T>): Promise<T> {
     const next = this.tail.then(action); this.tail = next.catch(() => undefined); return next;
   }
-  private async initialize(): Promise<void> {
+  private async initialize(signal: AbortSignal): Promise<void> {
     if (this.initialized) return;
-    await this.staging.prepare(this.parent); // Native local-drive/reparse validation precedes Node filesystem calls.
+    await this.staging.prepare(this.parent, signal); // Native local-drive/reparse validation precedes Node filesystem calls.
     const marker = path.join(this.directory, 'owner');
     const names = await fs.readdir(this.directory);
     for (const name of names) {
@@ -85,9 +85,9 @@ export class DirectwriteFontStore {
     try {
       return await this.serialize(async () => {
         if (!current()) throw new Error('DW_STALE');
-        const source = await this.staging.authorize(rawPath);
+        const source = await this.staging.authorize(rawPath, controller.signal);
         if (!current() || !source.current()) throw new Error('DW_STALE');
-        await this.initialize();
+        await this.initialize(controller.signal);
         for (const entry of [...this.entries]) {
           if (entry.source === source.identity && entry.generation !== source.generation) entry.stale = true;
           if (entry.stale) await this.remove(entry);
