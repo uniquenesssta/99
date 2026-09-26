@@ -645,7 +645,7 @@ C-07 已关闭最后一个 C00 已知缺陷，C00 current 现为 **0 缺陷 / 8 
 | --- | --- | --- |
 | C-08.1-V 验证链修复 | C-00 observer、诊断执行生命周期、全量 runner、现有 CI 与记录 | 实现已提交，验收阻塞：本地 LF/CRLF 完整 146 项与构建/混淆通过；Windows 真实 CIM 查询触发现有 1500ms deadline，完整 Windows verify/build/混淆未通过 |
 | C-04R 传输超时语义补修 | Rust transport 与 root availability 受影响测试 | 2026-09-26 实机故障后用户重新授权优先补修，候选 aaefee3 已实现，Windows 专项通过，完整门仍被独立 CIM 超时阻塞；单次操作 timeout 不改 online/generation，根探测失败仍判离线；保留取消、隔离、写入未知结果及旧代次拒绝 |
-| C-08.1-P 首批返回 | scan listing 与 indexing client 的批次交付边界 | 待 C-04R 通过；本地根不等全部网络根，完成批次及时交付；不重复发布，不改变索引字段、错误与 generation 语义 |
+| C-08.1-P 首批返回与扫盘请求边界 | scan listing、目录属性、watcher 与失败收尾 | 用户实机再次报错后按 §10.4 授权推进；ecaf8ab 已实现，本地 147 项及 Windows/Linux 原生专项通过；CIM/真实 NAS 总验收仍单列 |
 | C-09 实机验收 | Windows 开发模式、本机/映射盘/UNC、断网/退出/恢复 | 以上门禁通过后执行；真实 NAS 首批、可见预览、总扫描耗时及进程数分别记录；O-07 继续暂停 |
 
 ### 10.1 已确认反例及覆盖缺口
@@ -729,4 +729,13 @@ flowchart TD
 - 回归新增 4096 文件单目录单请求、缓存命中零内容读取、父目录未变但文件修改、历史属性仍 stat、不完整/非法回执、失败保留索引、取消、旧代次拒绝、本地对照；已有 watcher 回归增加 fresh/历史属性传递，renderer 增加失败与旧任务反例；Rust 测试检查 4096 个真实文件属性及 symlink。
 - CI 增加独立 Windows/Linux 原生目录属性 job，在原 CIM job 失败时仍能提供真实 worker、受影响诊断与 build/混淆证据；未删除、跳过或放宽 CIM/全量 verify 门。
 
-当前验证：本地 `npm run verify` 通过（typecheck + 147 项完整诊断），Electron/Vite build、3/3 混淆通过；Windows/Linux 原生门进行中。没有本机 Rust 编译器，不能把 JS 受控执行器测试写成原生通过。真实 NAS 扫描/首批/预览耗时仍需开发模式复验，C-09/O-07 继续暂停。
+当前验证：本地 `npm run verify` 通过（typecheck + 147 项完整诊断），Electron/Vite build、3/3 混淆通过；本机没有 Rust 编译器，原生证据来自下述两平台 CI。真实 NAS 扫描/首批/预览耗时仍需开发模式复验，C-09/O-07 继续暂停。
+
+
+原生与 Windows 回执（修复代码 `ecaf8ab67dff34743ec3ae2a5ec4f2e8d98d6690`）：
+
+- Actions [36221272200](https://github.com/uniquenesssta/99/actions/runs/36221272200)，Windows 原生 job `108346862208` 成功，Linux 原生 job `108346862200` 成功。Rust 共享文件测试 Windows 4 / Linux 5 均通过（Linux 多一项 symlink）；两个 release 构建通过。真实 worker 握手含新能力，4096 个文件经生产目录列举仅发一次 directoryMetadata，逐文件大小/时间与 OS stat 一致，缺失目录显式失败。
+- 两平台网络批次/本地优先/回退去重、renderer 失败收尾、12 场景 Shared I/O + LF/CRLF/两个反例、watcher 回归、typecheck、Electron/Vite build、3/3 混淆均通过。
+- 原 Windows 全量 job `108346862143` 通过 Shared I/O 与 shared-filesystem，仍在真实 CIM 查询严格门失败：elapsedMs=1513、timeoutMs=1500、signal=SIGKILL、killed=true、stdoutBytes=0、stderr 空。其后的完整 Windows verify 未执行，不能记为全绿；没有删除门、调大超时或忽略错误。
+- 本次代码修复和受影响原生验收完成；仍需用户更新同分支并重启 `npm run dev`，由现有兼容检查重编译旧 worker，再测真实 NAS 首批和总耗时。未要求打包、清空 `.hfm-cache` 或重建全部索引。C-09/O-07 继续暂停。
+- Context7 已用于 Rust 文件属性 API 核对；Mermaid Chart 已更新真实调用链。Create State 再次返回 UNAUTHORIZED（连接需重新认证），状态保存在 Git/README/本任务书，未伪报外部保存成功。
