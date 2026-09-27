@@ -1,7 +1,9 @@
 // Executed inside Electron's Chromium; no synthetic DOM or CSS evaluator.
 module.exports = async function checkLayout() {
   const close = (actual, expected, label) => { if (Math.abs(actual - expected) > 1) throw Error(`${label}: actual=${actual}, expected=${expected}`) }
-  const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
+  // Geometry reads force real layout; yielding a task also works on CI desktops
+  // that do not deliver animation frames to hidden/minimized windows.
+  const frame = () => new Promise(resolve => setTimeout(resolve, 0))
   const host = document.getElementById('fixture')
   let count = 0, mutationCaught = false
   for (const entry of cases) {
