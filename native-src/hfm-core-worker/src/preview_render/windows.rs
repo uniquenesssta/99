@@ -110,6 +110,7 @@ unsafe extern "system" {
 struct GdiplusToken(usize);
 impl Drop for GdiplusToken {
     fn drop(&mut self) {
+        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop GdiplusToken"); }
         if self.0 != 0 {
             unsafe { GdiplusShutdown(self.0) };
         }
@@ -119,6 +120,7 @@ impl Drop for GdiplusToken {
 struct Image(*mut c_void);
 impl Drop for Image {
     fn drop(&mut self) {
+        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop Image"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDisposeImage(self.0); }
         }
@@ -128,6 +130,7 @@ impl Drop for Image {
 struct Graphics(*mut c_void);
 impl Drop for Graphics {
     fn drop(&mut self) {
+        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop Graphics"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteGraphics(self.0); }
         }
@@ -137,6 +140,7 @@ impl Drop for Graphics {
 struct PrivateFontCollection(*mut c_void);
 impl Drop for PrivateFontCollection {
     fn drop(&mut self) {
+        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop PrivateFontCollection"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeletePrivateFontCollection(&mut self.0); }
         }
@@ -146,6 +150,7 @@ impl Drop for PrivateFontCollection {
 struct FontFamily(*mut c_void);
 impl Drop for FontFamily {
     fn drop(&mut self) {
+        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop FontFamily"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteFontFamily(self.0); }
         }
@@ -155,6 +160,7 @@ impl Drop for FontFamily {
 struct Font(*mut c_void);
 impl Drop for Font {
     fn drop(&mut self) {
+        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop Font"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteFont(self.0); }
         }
@@ -171,6 +177,7 @@ struct PreviewFont {
 struct StringFormat(*mut c_void);
 impl Drop for StringFormat {
     fn drop(&mut self) {
+        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop StringFormat"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteStringFormat(self.0); }
         }
@@ -180,6 +187,7 @@ impl Drop for StringFormat {
 struct Brush(*mut c_void);
 impl Drop for Brush {
     fn drop(&mut self) {
+        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop Brush"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteBrush(self.0); }
         }

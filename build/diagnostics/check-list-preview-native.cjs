@@ -24,8 +24,9 @@ function main(){
  const shared=loader()('src/shared/preview-layout/previewTextFitRuntime.ts'),ps=loader()('src/main/preview/runtime/nativePreviewScriptRuntime.ts')
  const fonts=[['Arial','arial.ttf'],['Gabriola','Gabriola.ttf'],['Microsoft YaHei','msyh.ttc']].filter(([,name])=>fs.existsSync(path.join(process.env.WINDIR,'Fonts',name)))
  assert(fonts.some(([name])=>name==='Arial'))
- const report=[],domSamples=[]
- for(const engine of ['rust','cpp','powershell'])for(const [family,file] of fonts)for(const size of [18,44,72])for(const [kind,text] of [['short','Ag jf'],['two','字体 Ag\n汉字 fj'],['long','Wide Ag '.repeat(100)+'\nSecond'],['blank','\nAg']]){
+ const report=[],domSamples=[],failures=[]
+ process.env.HFM_TEST_PREVIEW_DROP_TRACE='1'
+ for(const engine of ['cpp','powershell','rust']) { try { for(const [family,file] of fonts)for(const size of [18,44,72])for(const [kind,text] of [['short','Ag jf'],['two','字体 Ag\n汉字 fj'],['long','Wide Ag '.repeat(100)+'\nSecond'],['blank','\nAg']]){
   const d=shared.getCardPreviewLayout('list',text,size),stem=`${engine}-${family.replaceAll(' ','_')}-${size}-${kind}`,outputPath=path.join(out,stem+'.png'),inputPath=path.join(out,stem+'.json')
   const request={fontPath:path.join(process.env.WINDIR,'Fonts',file),text:d.text,fontSize:size,width:d.width,height:d.height,layout:d.nativeLayout,outputPath}
   fs.writeFileSync(inputPath,JSON.stringify(request))
@@ -40,6 +41,9 @@ function main(){
   if(engine==='rust'&&family==='Arial')domSamples.push({size,text,image:'data:image/png;base64,'+fs.readFileSync(outputPath).toString('base64'),width:d.width,height:d.height})
   fs.unlinkSync(inputPath)
  }
+ } catch(error) { failures.push(String(error)) } }
+ fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({fonts,report,failures},null,2));fs.writeFileSync(path.join(out,'dom-samples.json'),JSON.stringify(domSamples))
+ if(failures.length)throw Error(failures.join('\n'))
  // Same suffix line must be pixel-identical under short/very long first lines.
  // Reintroducing automatic wrap makes this fail without source-string checks.
  for(const engine of ['rust','cpp','powershell']){
