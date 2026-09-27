@@ -50,7 +50,7 @@ npm run build:win
 
 ## 当前工程任务
 
-- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S11-V01 已授权并在新分支实施、验证中；V02～V07 未开始。
+- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S11-V01 几何与滚动优化已完成并通过验证；V02～V07 未开始。
 - [文档索引与旧任务归档](docs/README.md)：原 16 份任务书已移动至 `docs/old task`，历史回执及未验事项保留。
 
 当前专项工作分支为 `stage/11-list-grid-view`（基线 `6012cb6`）；Stage 10 保持原提交不变。S10-06 既有工程核查结论保持；新任务书不恢复已取消的固定卡片数或冷热重复次数验收。
@@ -60,6 +60,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-28：按用户要求在新分支 `stage/11-list-grid-view` 完成 S11-V01，Stage 10 保持 `6012cb6`。统一列表/网格几何与容器断点，修复虚拟窗口末尾、分页列位置和尺寸变化后的滚动锚点；保留家族卡片布局。本地及 Windows 159 项诊断、300 次真实 Electron DOM 场景、Windows/Linux 原生回归、构建与混淆通过（[CI 36336287398](https://github.com/uniquenesssta/99/actions/runs/36336287398)）。V02～V07 未开始；开发入口继续使用 `npm run dev`。
 
 - 2026-09-27：完成列表/网格视图源码审计并建立 [S10-V00～V07 优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)，覆盖虚拟步长/响应式布局、样本文本及原生尺寸一致性、网格删字和无效裁图处理。原 16 份任务书移入 `docs/old task`，修复索引与历史引用；本次仅文档，生产优化未实施。三项现有网格诊断共 20 断言通过，但不等同新方案 GUI 验收。
 
