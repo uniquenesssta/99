@@ -1,9 +1,8 @@
 import type { RendererClosingLifecycleRuntime } from './rendererClosingLifecycleRuntime'
 import type { FontItem } from '@shared/types'
-import { normalizePreviewText } from '@shared/preview-layout/previewTextFitRuntime'
+import { getCardPreviewLayout } from '@shared/preview-layout/previewTextFitRuntime'
 import { useEffect,useRef,useState } from 'react'
 import type { PreviewQueueEntry } from '../../appRuntime'
-import { clampListPreviewFontSize } from '../preview/listPreviewSizeRuntime'
 import { createFontPreviewQueueRuntime } from '../preview/fontPreviewQueueRuntime'
 import type { FontPreviewQueueRuntimeOptions } from '../preview/fontPreviewQueueRuntime'
 import { usePreviewTextResetRuntime } from './effects/usePreviewTextResetRuntime'
@@ -38,7 +37,7 @@ export function usePreviewController(options: PreviewControllerOptions) {
   const [failedPreviewFontIds, setFailedPreviewFontIds] = useState<Record<string, true>>({})
   const loadingFonts = useRef<Set<string>>(new Set())
   const previewRequestTokenRef = useRef('')
-  previewRequestTokenRef.current = `${normalizePreviewText(options.previewText)}::${clampListPreviewFontSize(options.listPreviewFontSize)}`
+  previewRequestTokenRef.current = getCardPreviewLayout(options.previewLayoutMode ?? 'list', options.previewText, options.listPreviewFontSize).token
   const previewQueue = useRef<PreviewQueueEntry[]>([])
   const queuedPreviewFontIds = useRef<Set<string>>(new Set())
   const fontListScrollingRef = useRef(false)
@@ -86,9 +85,8 @@ export function usePreviewController(options: PreviewControllerOptions) {
     return () => { unsubscribe?.(); clearFontListScrollIdleTimer(); queueRuntime.disposePreviewQueue() }
   }, [queueRuntime, options.closingLifecycle])
 
-  usePreviewTextResetRuntime({
-    previewText: options.previewText,
-    listPreviewFontSize: options.listPreviewFontSize,
+  const previewImagesCurrent = usePreviewTextResetRuntime({
+    previewToken: previewRequestTokenRef.current,
     resetPreviewRuntimeState: queueRuntime.resetPreviewRuntimeState
   })
 
@@ -131,7 +129,7 @@ export function usePreviewController(options: PreviewControllerOptions) {
 
   return {
     previewFamilies,
-    nativePreviewImages,
+    nativePreviewImages: previewImagesCurrent ? nativePreviewImages : {},
     nativeDetailImage,
     setNativeDetailImage,
     detailNativePreviewRequestSeqRef,

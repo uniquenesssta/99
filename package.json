@@ -60,6 +60,7 @@
     "diagnostics:startup-nas-deadline": "node build/diagnostics/check-startup-nas-deadline-policy.cjs",
     "diagnostics:folder-cache-availability": "node build/diagnostics/check-folder-cache-availability.cjs",
     "diagnostics:library-db-handle": "node build/diagnostics/check-library-db-handle-lifecycle.cjs",
+    "diagnostics:preview-layout-contract": "node build/diagnostics/check-preview-layout-contract.cjs",
     "diagnostics:grid-preview-size": "node build/diagnostics/check-grid-preview-size-policy.cjs",
     "diagnostics:grid-preview-clip-safe": "node build/diagnostics/check-grid-preview-clip-safe.cjs",
     "diagnostics:grid-preview-visual-fit": "node build/diagnostics/check-grid-preview-visual-fit.cjs",

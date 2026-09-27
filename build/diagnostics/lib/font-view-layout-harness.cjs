@@ -38,13 +38,13 @@ function css(file = prefix + 'styles.css', source = read) {
   return source(file).replace(/@import\s+["']([^"']+)["'];/g, (_match, target) => css(path.posix.join(path.posix.dirname(file), target), source))
 }
 const fonts = Array.from({ length: 1003 }, (_, i) => ({ id: `f${i}`, path: `C:/fonts/f${i}.ttf`, fileName: `Font ${i}.ttf`, family: `测试字体 ${i}`, fullName: `Font ${i} Regular`, postscriptName: `Font${i}-Regular`, format: 'ttf', fileSize: 12000, tagNames: ['测试'], scripts: ['latin'], installStatusKnown: true }))
-function renderCase(load, { mode, density, width, size = 44, lines = 2, scrollTop = 0, offset = 0, total = fonts.length }) {
+function renderCase(load, { mode, density, width, size = 44, lines = 2, scrollTop = 0, offset = 0, total = fonts.length, previewText: suppliedPreviewText }) {
   const React = require('react'), { renderToStaticMarkup } = require('react-dom/server')
   const layout = load(prefix + 'runtime/app/fontViewLayoutRuntime.ts').buildFontViewLayout(mode, density, width, size, lines)
   const visibleFonts = offset ? fonts.slice(offset, offset + 100) : fonts.slice(0, total)
   const virtual = load(prefix + 'fontViewRuntime.ts').buildVirtualLayout({ ...layout, visibleFonts, databasePageReady: !!offset, databasePageResult: offset ? { offset, total, items: visibleFonts } : null, virtualViewport: { width, height: 520, scrollTop } })
   const { FontCard } = load(prefix + 'components/FontCard.tsx'), { FontListPanel } = load(prefix + 'components/app/FontListPanel.tsx')
-  const previewText = lines === 1 ? '测试字体 AaBb' : '测试字体\nAaBb 123', noop = () => {}
+  const previewText = suppliedPreviewText ?? (lines === 1 ? '测试字体 AaBb' : '测试字体\nAaBb 123'), noop = () => {}
   const html = renderToStaticMarkup(React.createElement(FontListPanel, {
     sidebarPage: 'library', activeFilter: { kind: 'all' }, status: '', search: '', installStatus: 'all', viewMode: density, cardPoolViewMode: mode,
     listPreviewFontSize: size, fontScrollerRef: { current: null }, updatePageToolbar: noop, visibleFonts, visibleFontTotal: total, databasePageReady: !!offset,

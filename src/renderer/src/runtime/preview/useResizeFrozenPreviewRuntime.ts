@@ -49,5 +49,5 @@ export function useResizeFrozenPreviewRuntime(identityKey: string, value: Resize
     })
   }, [])
 
-  return isWindowResizeActive() ? frozenValue : value
+  return identityRef.current === identityKey && isWindowResizeActive() ? frozenValue : value
 }

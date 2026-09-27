@@ -79,10 +79,11 @@ function makeDomFile() {
   }
   const family = renderCase(load, { mode: 'family', density: 'comfortable', width: 900 })
   const familyBaselineCss = css(undefined, file => cp.execFileSync('git', ['show', `6012cb6:${file}`], { cwd: root, encoding: 'utf8' }))
+  const samples = require('./check-preview-layout-contract.cjs').makeDomSamples()
   const checkDom = require('./lib/font-view-layout-dom.cjs')
   const select = load(prefix + 'fontSelectionRuntime.ts').fontIdsInClientRect
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-layout-')), file = path.join(temp, 'layout.html')
-  fs.writeFileSync(file, '<!doctype html><html data-theme="light"><meta charset="utf-8"><style>' + css() + '</style><body><div id="fixture"></div><script>const cases=' + JSON.stringify(cases).replace(/</g, '\\u003c') + ';const family=' + JSON.stringify(family).replace(/</g, '\u003c') + ';const familyBaselineCss=' + JSON.stringify(familyBaselineCss).replace(/</g, '\u003c') + ';const select=' + select.toString() + ';window.checkLayout=' + checkDom.toString() + '</script></body></html>')
+  fs.writeFileSync(file, '<!doctype html><html data-theme="light"><meta charset="utf-8"><style>' + css() + '</style><body><div id="fixture"></div><script>const cases=' + JSON.stringify(cases).replace(/</g, '\\u003c') + ';const family=' + JSON.stringify(family).replace(/</g, '\u003c') + ';const familyBaselineCss=' + JSON.stringify(familyBaselineCss).replace(/</g, '\u003c') + ';const select=' + select.toString() + ';const samples=' + JSON.stringify(samples).replace(/</g, '\\u003c') + ';window.checkLayout=' + checkDom.toString() + '</script></body></html>')
   return { file, temp, count: cases.length }
 }
 behavior(); hookCases()

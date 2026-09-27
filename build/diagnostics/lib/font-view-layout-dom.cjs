@@ -72,5 +72,18 @@ module.exports = async function checkLayout() {
   if (current.length !== 4 || baseline.length !== current.length) throw Error('Family regression fixture missing cards')
   current.forEach((rect, i) => rect.forEach((value, j) => close(value, baseline[i][j], `family baseline rect ${i}/${j}`)))
   style.textContent = currentCss
-  return { count, familyBaselineMatched: true, viewport: innerWidth, legacyGapMutantCaught: mutationCaught }
+  for (const entry of samples) {
+    host.innerHTML = entry.html
+    const panel = host.querySelector('.font-list-panel')
+    panel.style.width = '900px'; panel.style.height = '620px'
+    await frame()
+    const lines = [...host.querySelectorAll('.font-card .font-sample-line')]
+    if (JSON.stringify(lines.map(line => line.textContent)) !== JSON.stringify(entry.lines)) throw Error('Sample DOM text changed: ' + entry.label)
+    for (const line of lines) {
+      if (getComputedStyle(line).whiteSpace !== 'pre') throw Error('Sample whitespace collapsed: ' + entry.label)
+      if (!line.textContent && line.getBoundingClientRect().height < parseFloat(getComputedStyle(line).lineHeight)) throw Error('Explicit blank line lost its height: ' + entry.label)
+    }
+    if (lines.length === 2 && lines[1].getBoundingClientRect().top <= lines[0].getBoundingClientRect().top) throw Error('Explicit lines overlap: ' + entry.label)
+  }
+  return { count, sampleCases: samples.length, familyBaselineMatched: true, viewport: innerWidth, legacyGapMutantCaught: mutationCaught }
 }

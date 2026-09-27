@@ -1,18 +1,19 @@
 import { useEffect, useRef } from 'react'
 export function usePreviewTextResetRuntime(args: {
-  previewText: string
-  listPreviewFontSize: number
+  previewToken: string
   resetPreviewRuntimeState: () => void
-}): void {
-  const { previewText, listPreviewFontSize, resetPreviewRuntimeState } = args
+}): boolean {
+  const { previewToken, resetPreviewRuntimeState } = args
   const resetRef = useRef(resetPreviewRuntimeState)
-  const previousPreviewTokenRef = useRef(`${previewText}::${listPreviewFontSize}`)
+  const previousPreviewTokenRef = useRef(previewToken)
   resetRef.current = resetPreviewRuntimeState
+  const current = previousPreviewTokenRef.current === previewToken
 
   useEffect(() => {
-    const token = `${previewText}::${listPreviewFontSize}`
-    if (previousPreviewTokenRef.current === token) return
-    previousPreviewTokenRef.current = token
+    if (previousPreviewTokenRef.current === previewToken) return
+    previousPreviewTokenRef.current = previewToken
     resetRef.current()
-  }, [previewText, listPreviewFontSize])
+  }, [previewToken])
+  // Hide the previous generation during the render before the reset effect.
+  return current
 }

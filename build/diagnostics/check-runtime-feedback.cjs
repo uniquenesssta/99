@@ -1,4 +1,5 @@
 'use strict'
+const cardToken = (text, size, mode = 'list') => require('./check-operation-chain.cjs').loader()('src/shared/preview-layout/previewTextFitRuntime.ts').getCardPreviewLayout(mode, text, size).token;
 const assert = require('node:assert/strict')
 const path = require('node:path')
 const { execFileSync, spawnSync } = require('node:child_process')
@@ -178,7 +179,7 @@ async function preview() {
     const gate=deferred(), effects=[]
     const quick={createFontFaceLoadOwner:()=>({}),QuickPreviewTimeoutError:class extends Error {},QUICK_WEBFONT_URL_TIMEOUT_MS:100,remainingQuickPreviewBudget:()=>100,loadFontFaceFromUrlWithinBudget:async()=>{effects.push('webfont');if(boundary==='webfont')await gate.promise},isFontCollectionOrLargeFont:()=>true}
     const perFontLoad=loadFor({'../../../appRuntime':app,'../../../rendererPerformance':{reportRendererTrace(){}},'./fontPreviewQuickFallbackRuntime':quick})
-    const o={...options,previewText:'audit',previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:{current:new Set()},previewRequestTokenRef:{current:'audit::39'},
+    const o={...options,previewText:'audit',previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:{current:new Set()},previewRequestTokenRef:{current:cardToken('audit', 39)},
       setPreviewFamilies:()=>effects.push('state'),setFailedPreviewFontIds:()=>effects.push('state'),setNativePreviewImages:()=>effects.push('state'),updateFont:()=>effects.push('update'),
       hfm:{getCachedPreviewImage:async()=>{effects.push('cache');if(boundary==='cache')await gate.promise;return ''},toFontUrl:async()=>{effects.push('url');if(boundary==='url')await gate.promise;return 'font://test'},renderPreviewImage:async()=>{effects.push('native');return 'image'}}}
     const perFont=perFontLoad('src/renderer/src/runtime/preview/queue/fontPreviewLoadRuntime.ts').createFontPreviewLoadRuntime(o)

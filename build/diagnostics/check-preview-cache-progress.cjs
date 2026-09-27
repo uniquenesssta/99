@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const cardToken = (text, size, mode = 'list') => require('./check-operation-chain.cjs').loader()('src/shared/preview-layout/previewTextFitRuntime.ts').getCardPreviewLayout(mode, text, size).token;
 const assert = require('node:assert/strict');
 const { loader } = require('./check-operation-chain.cjs');
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b)=>{resolve=a;reject=b}); return {promise,resolve,reject}; };
@@ -37,7 +38,7 @@ async function queue(mode) {
  const timers=new Map();let next=0;const window={setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next},clearTimeout:id=>timers.delete(id)};
  const cache=deferred(), rendered=[], applied=[];let cacheCalls=0, singleCacheCalls=0;
  const ref=current=>({current});
- const opt={previewText:'text',listPreviewFontSize:44,previewRequestTokenRef:ref('text::44'),selectedFontId:'',selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:ref(new Set()),queuedPreviewFontIds:ref(new Set()),previewQueue:ref([]),activePreviewLoads:ref(0),fontListScrollingRef:ref(false),isBadFontRecord:()=>false,rendererUserActive:()=>false,
+ const opt={previewText:'text',listPreviewFontSize:44,previewRequestTokenRef:ref(cardToken('text', 44)),selectedFontId:'',selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:ref(new Set()),queuedPreviewFontIds:ref(new Set()),previewQueue:ref([]),activePreviewLoads:ref(0),fontListScrollingRef:ref(false),isBadFontRecord:()=>false,rendererUserActive:()=>false,
   setPreviewFamilies(fn){this.previewFamilies=fn(this.previewFamilies)},setNativePreviewImages(fn){this.nativePreviewImages=typeof fn === 'function' ? fn(this.nativePreviewImages) : fn;applied.push({...this.nativePreviewImages})},setFailedPreviewFontIds(){},setNativeDetailImage(){},updateFont(){},autoPreviewCacheQueue:ref([]),queuedAutoPreviewCacheIds:ref(new Set()),activeAutoPreviewCacheLoads:ref(0),autoPreviewCacheStats:ref({}),
   hfm:{getCachedPreviewImages:()=>{cacheCalls++;return cache.promise},getCachedPreviewImage:async()=>{singleCacheCalls++;return ''},renderPreviewImage:async f=>{rendered.push(f.id);return 'data:image/png;base64,native-'+f.id}}
  };
@@ -59,7 +60,7 @@ async function queue(mode) {
  else {
   if(mode==='reject')cache.reject(Error('cache failed'));
   else if(mode==='reset'){
-   q.resetVisiblePreviewQueue();loads.resetPreviewLoads();state.resetPreviewRuntimeState();opt.previewText='new';opt.previewRequestTokenRef.current='new::44';
+   q.resetVisiblePreviewQueue();loads.resetPreviewLoads();state.resetPreviewRuntimeState();opt.previewText='new';opt.previewRequestTokenRef.current=cardToken('new', 44);
    for(const f of fonts)q.requestPreviewFont(f,'high');
   } else {const timer=[...timers].find(([,t])=>t.ms===120);assert(timer);timers.delete(timer[0]);timer[1].f();}
   await flush();assert(rendered.includes('f7'),'other visible fonts stalled behind unresolved cache');assert.equal(new Set(rendered).size,8);assert.equal(rendered.length,8,'duplicate fallback');assert.equal(singleCacheCalls,0,'fallback re-entered slow cache');

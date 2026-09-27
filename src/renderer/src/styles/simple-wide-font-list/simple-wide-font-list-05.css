@@ -33,7 +33,7 @@
   min-width: 0 !important;
   overflow: visible !important;
   text-overflow: clip !important;
-  white-space: nowrap !important;
+  white-space: pre !important;
 }
 
 /* v3.0 resize smoothness: list preview text no longer performs dynamic
@@ -59,6 +59,11 @@
   min-height: 0 !important;
   padding-block: 0 !important;
   overflow: visible !important;
+}
+
+/* Preserve an explicit blank line under the list typography overrides. */
+.font-row-preview-wide .preview-hard-fit-text .font-sample-line:empty {
+  min-height: 1lh !important;
 }
 
 .font-row-preview-wide .preview-hard-fit-text .font-sample-line + .font-sample-line {

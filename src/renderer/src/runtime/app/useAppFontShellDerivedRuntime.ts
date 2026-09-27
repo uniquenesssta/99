@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import type { FontItem, LibraryState } from '@shared/types'
 import type { CardPoolViewMode, PageToolbarState, SidebarPage, VirtualViewport } from '../../appRuntime'
 import { traceRendererSyncComputation, VIEW_MODE_LAYOUT } from '../../appRuntime'
-import { previewTextLines } from '@shared/preview-layout/previewTextFitRuntime'
+import { getCardPreviewSample } from '@shared/preview-layout/previewTextFitRuntime'
 import { buildFontViewLayout, type FontViewLayout } from './fontViewLayoutRuntime'
 
 export function useAppFontShellDerivedRuntime(args: {
@@ -20,7 +20,7 @@ export function useAppFontShellDerivedRuntime(args: {
 } {
   const { library, sidebarPage, viewMode, cardPoolViewMode, listPreviewFontSize, virtualViewport } = args
   const viewLayout = VIEW_MODE_LAYOUT[viewMode]
-  const listPreviewLineCount = useMemo(() => previewTextLines(library.previewText, 2).length, [library.previewText])
+  const listPreviewLineCount = useMemo(() => getCardPreviewSample(library.previewText).lines.length, [library.previewText])
   const cardPoolViewLayout = useMemo(() => buildFontViewLayout(
     cardPoolViewMode, viewMode, virtualViewport.width, listPreviewFontSize, listPreviewLineCount
   ), [cardPoolViewMode, viewMode, virtualViewport.width, listPreviewFontSize, listPreviewLineCount])

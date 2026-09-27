@@ -1,3 +1,4 @@
+import { getCardPreviewLayout } from '@shared/preview-layout/previewTextFitRuntime'
 import { previewRecordForProbe } from '@shared/previewFailure'
 import { previewTrace, previewEvent } from '../previewTraceRuntime'
 import type { FontItem } from '@shared/types'
@@ -75,12 +76,13 @@ export function createFontVisiblePreviewQueueRuntime(
     processPreviewQueue()
   }
 
-  function currentPreviewText(): string {
-    return options.previewText.trim() || '字体预览\nAaBb 123'
+  function currentPreviewTrace(fontId: string) {
+    const layout = getCardPreviewLayout(options.previewLayoutMode ?? 'list', options.previewText, options.listPreviewFontSize)
+    return previewTrace(fontId, layout.text, layout.fontSize)
   }
 
   function currentPreviewBatchToken(): string {
-    return `${currentPreviewText()}::${Math.round(Number(options.listPreviewFontSize || 0))}`
+    return getCardPreviewLayout(options.previewLayoutMode ?? 'list', options.previewText, options.listPreviewFontSize).token
   }
 
   function syncCachedPreviewBatchText(): void {
@@ -226,7 +228,7 @@ export function createFontVisiblePreviewQueueRuntime(
       if (!stateRuntime.canRequestPreviewFont(font)) continue
 
       const generation = queueGeneration
-      previewEvent(previewTrace(font.id, options.previewText, options.listPreviewFontSize), 'load-start')
+      previewEvent(currentPreviewTrace(font.id), 'load-start')
       options.activePreviewLoads.current += 1
       void loadRuntime.ensurePreviewFont(font, true, () => !disposed && hasDemand(font.id)).finally(() => {
         options.activePreviewLoads.current = Math.max(0, options.activePreviewLoads.current - 1)
@@ -244,7 +246,7 @@ export function createFontVisiblePreviewQueueRuntime(
     for (const caller of callers) if (!caller()) callers.delete(caller)
     callers.add(acceptsResult)
     demand.set(font.id, { font, callers })
-    const trace = previewTrace(font.id, options.previewText, options.listPreviewFontSize)
+    const trace = currentPreviewTrace(font.id)
     previewEvent(trace, 'request', priority)
     if (!stateRuntime.canRequestPreviewFont(font, true)) {
       if (!options.loadingFonts.current.has(font.id) && !options.queuedPreviewFontIds.current.has(font.id)) demand.delete(font.id)

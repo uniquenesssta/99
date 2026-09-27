@@ -1,3 +1,4 @@
+import { getCardPreviewSample } from '@shared/preview-layout/previewTextFitRuntime'
 import { AppSidebarIcon } from './AppSidebarIcons'
 import type { AppSidebarProps } from './AppSidebarTypes'
 
@@ -33,6 +34,7 @@ export function AppSidebarLibraryPage({
   installStatusMissingCount,
   installStatusSyncSuffix,
 }: AppSidebarLibraryPageProps): JSX.Element {
+  const sample = getCardPreviewSample(previewText)
   return (
     <div className="sidebar-page">
       <div className="section-title">库</div>
@@ -60,7 +62,15 @@ export function AppSidebarLibraryPage({
           onChange={(event) => setPreviewText(event.target.value)}
           placeholder="输入字体预览文字"
           aria-label="字体预览文字"
+          aria-describedby={sample.hasHiddenLines || sample.lengthLimited ? 'card-preview-sample-hint' : undefined}
         />
+        {(sample.hasHiddenLines || sample.lengthLimited) && (
+          <div id="card-preview-sample-hint" className="sidebar-preview-hint" role="status">
+            {sample.hasHiddenLines && '卡片仅展示前两行。'}
+            {sample.lengthLimited && '卡片样本超过显示上限，仅展示前段。'}
+            完整输入已保留。
+          </div>
+        )}
         {!installStatusReady && (
           <div className="sidebar-preview-hint">
             已安装状态正在同步：还有 {installStatusMissingCount} 个字体未确认。

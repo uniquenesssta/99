@@ -3,8 +3,7 @@ import { readPreviewAvailability } from '../previewAvailabilitySnapshotRuntime'
 import { hasLegacyMissingPreviewFlag, previewRecordForProbe, previewFailure, previewFailureKind } from '@shared/previewFailure'
 import { previewTrace, previewLoadTrace, previewEvent, previewBatchTrace, rememberPreviewImageTrace } from '../previewTraceRuntime'
 import type { FontItem } from '@shared/types'
-import { getNativePreviewRequestLayout,normalizePreviewText,previewTextLines } from '@shared/preview-layout/previewTextFitRuntime'
-import { clampListPreviewFontSize,listPreviewNativeImageHeight } from '../listPreviewSizeRuntime'
+import { getCardPreviewLayout } from '@shared/preview-layout/previewTextFitRuntime'
 import { PREVIEW_STATE_LRU_LIMIT,pruneRecordByKeyLimit } from '../../../appRuntime'
 import { createPreviewFamilyName,previewStateKeepIds } from '../../../fontPreviewStateRuntime'
 import { reportRendererTrace } from '../../../rendererPerformance'
@@ -24,23 +23,7 @@ import {
   remainingQuickPreviewBudget
 } from './fontPreviewQuickFallbackRuntime'
 
-const CARD_PREVIEW_LAYOUT_MODE = 'list' as const
 const CACHE_MISS_LRU_LIMIT = 800
-
-function currentCardPreviewText(text: string): string {
-  return normalizePreviewText(text)
-}
-
-function currentCardPreviewLayout(text: string, listPreviewFontSize?: number): { fontSize: number; width: number; height: number } {
-  const previewText = currentCardPreviewText(text)
-  const layout = getNativePreviewRequestLayout(CARD_PREVIEW_LAYOUT_MODE, previewText)
-  const fontSize = clampListPreviewFontSize(listPreviewFontSize ?? layout.fontSize)
-  return {
-    ...layout,
-    fontSize,
-    height: listPreviewNativeImageHeight(fontSize, previewTextLines(previewText, 2).length)
-  }
-}
 
 function normalizeFontFaceBinarySource(value: unknown): ArrayBuffer | null {
   if (value instanceof ArrayBuffer) return value
@@ -80,7 +63,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
   }
 
   function cacheMissToken(): string {
-    return `${currentCardPreviewText(options.previewText)}::${clampListPreviewFontSize(options.listPreviewFontSize)}`
+    return getCardPreviewLayout(options.previewLayoutMode ?? 'list', options.previewText, options.listPreviewFontSize).token
   }
 
   function cacheMissKey(fontId: string): string {
@@ -155,9 +138,9 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     if (!uniqueFonts.length || typeof options.hfm.getCachedPreviewImages !== 'function') return hitIds
 
     const requestToken = `${cacheMissToken()}::${loadGeneration}`
-    const previewText = currentCardPreviewText(options.previewText)
-    const previewLayout = currentCardPreviewLayout(options.previewText, options.listPreviewFontSize)
-    const memberTraces = uniqueFonts.map(font => previewTrace(font.id, options.previewText, options.listPreviewFontSize))
+    const previewLayout = getCardPreviewLayout(options.previewLayoutMode ?? 'list', options.previewText, options.listPreviewFontSize)
+    const previewText = previewLayout.text
+    const memberTraces = uniqueFonts.map(font => previewTrace(font.id, previewText, previewLayout.fontSize))
     const batchTrace = previewBatchTrace(memberTraces)
     const cachedImages = await options.hfm.getCachedPreviewImages(uniqueFonts, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, batchTrace)
     const accepted = isPreviewRequestCurrent(requestToken) && acceptsResult()
@@ -183,7 +166,9 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
 
   async function ensurePreviewFont(font: FontItem, skipCachedPreview = false, acceptsResult: () => boolean = () => true): Promise<string> {
     if (!acceptsResult()) return ''
-    const trace = previewLoadTrace(font.id, options.previewText, options.listPreviewFontSize)
+    const previewLayout = getCardPreviewLayout(options.previewLayoutMode ?? 'list', options.previewText, options.listPreviewFontSize)
+    const previewText = previewLayout.text
+    const trace = previewLoadTrace(font.id, previewText, previewLayout.fontSize)
     previewEvent(trace, 'load-attempt')
     const startedAt = performance.now()
     const failureKey = `${font.id}::${font.path}::${cacheMissToken()}`
@@ -219,8 +204,6 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     const loadCachedNativeCardPreview = async (): Promise<boolean> => {
       if (skipCachedPreview || hasLegacyMissingPreviewFlag(font) || hasCacheMiss(font.id)) return false
       if (typeof options.hfm.getCachedPreviewImage !== 'function') return false
-      const previewText = currentCardPreviewText(options.previewText)
-      const previewLayout = currentCardPreviewLayout(options.previewText, options.listPreviewFontSize)
       const cachedImage = await options.hfm.getCachedPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, trace).catch((error) => {
         reportRendererTrace({
           kind: 'font-preview-cache-read-failed',
@@ -252,8 +235,6 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       if (await loadCachedNativeCardPreview()) return ''
       if (!current()) return ''
       try {
-        const previewText = currentCardPreviewText(options.previewText)
-        const previewLayout = currentCardPreviewLayout(options.previewText, options.listPreviewFontSize)
         const image = await options.hfm.renderPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, trace)
         previewEvent(trace, 'image-return', current() ? 'current' : 'stale', startedAt)
         if (!current()) return ''
@@ -278,7 +259,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
             fontId: font.id,
             fileName: font.fileName,
             path: font.path,
-            previewText: currentCardPreviewText(options.previewText),
+            previewText,
             error: error instanceof Error ? error.message : String(error)
           }
         }, `preview-native-render-failed:${font.id}`)
@@ -381,7 +362,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
           fontId: font.id,
           fileName: font.fileName,
           path: font.path,
-          previewText: currentCardPreviewText(options.previewText),
+          previewText,
           postscriptName: font.postscriptName,
           fullName: font.fullName,
           error: error instanceof Error ? error.message : String(error)

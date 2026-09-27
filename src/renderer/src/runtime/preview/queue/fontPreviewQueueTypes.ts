@@ -16,6 +16,7 @@ export type FontPreviewQueueRuntimeOptions = {
   nativePreviewImages: Record<string, string>
   failedPreviewFontIds: Record<string, true>
   previewText: string
+  previewLayoutMode?: 'list' | 'grid'
   listPreviewFontSize: number
   previewRequestTokenRef: MutableRefObject<string>
   selectedFontId: string

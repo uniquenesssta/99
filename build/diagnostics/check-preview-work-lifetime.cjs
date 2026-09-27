@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const cardToken = (text, size, mode = 'list') => require('./check-operation-chain.cjs').loader()('src/shared/preview-layout/previewTextFitRuntime.ts').getCardPreviewLayout(mode, text, size).token;
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -69,7 +70,7 @@ async function cacheAbort() {
 function rendererHarness(limit = 5) {
  const time=clock(),ref=current=>({current}),faces=[],native=[],applied=[];
  class FontFace {constructor(family,source){this.family=family;this.source=source;this.gate=deferred();faces.push(this)}load(){return this.gate.promise.then(()=>this)}}
- const opt={previewText:'text',listPreviewFontSize:44,previewRequestTokenRef:ref('text::44'),selectedFontId:'',selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:ref(new Set()),queuedPreviewFontIds:ref(new Set()),previewQueue:ref([]),activePreviewLoads:ref(0),fontListScrollingRef:ref(false),isBadFontRecord:()=>false,rendererUserActive:()=>false,
+ const opt={previewText:'text',listPreviewFontSize:44,previewRequestTokenRef:ref(cardToken('text', 44)),selectedFontId:'',selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:ref(new Set()),queuedPreviewFontIds:ref(new Set()),previewQueue:ref([]),activePreviewLoads:ref(0),fontListScrollingRef:ref(false),isBadFontRecord:()=>false,rendererUserActive:()=>false,
  setPreviewFamilies(fn){this.previewFamilies=typeof fn==='function'?fn(this.previewFamilies):fn},setNativePreviewImages(fn){this.nativePreviewImages=typeof fn==='function'?fn(this.nativePreviewImages):fn;applied.push({...this.nativePreviewImages})},setFailedPreviewFontIds(fn){this.failedPreviewFontIds=typeof fn==='function'?fn(this.failedPreviewFontIds):fn},setNativeDetailImage(){},updateFont(){},setStatus(){},autoPreviewCacheRunId:ref(0),autoPreviewCacheQueue:ref([]),queuedAutoPreviewCacheIds:ref(new Set()),activeAutoPreviewCacheLoads:ref(0),autoPreviewCacheStats:ref({}),
  hfm:{getCachedPreviewImages:async()=>({}),getCachedPreviewImage:async()=>'',toFontUrl:async p=>'hfm-font://local/'+p,renderPreviewImage:async f=>{native.push(f.id);return 'data:image/png;base64,'+f.id}}
  };
@@ -86,11 +87,11 @@ async function renderer() {
  const font={id:'web',path:'C:/fonts/web.ttf',fileSize:100,modifiedAt:1};
  let p=r.ensurePreviewFont(font,true);await flush();assert.equal(faces.length,1);time.fire(180);await p;assert.equal(opt.failedPreviewFontIds.web,undefined,'deadline was classified as a malformed font');assert.equal(attached.length,0);
  faces[0].gate.resolve();await flush();assert.equal(attached.length,0,'late face attached without a current caller');
- opt.previewText='new text';opt.previewRequestTokenRef.current='new text::44';r.resetPreviewRuntimeState();await r.ensurePreviewFont(font,true);assert.equal(faces.length,1,'text edit downloaded the same authorized face again');assert.equal(opt.previewFamilies.web,'HFM_web');assert.equal(attached.length,1);
+ opt.previewText='new text';opt.previewRequestTokenRef.current=cardToken('new text', 44);r.resetPreviewRuntimeState();await r.ensurePreviewFont(font,true);assert.equal(faces.length,1,'text edit downloaded the same authorized face again');assert.equal(opt.previewFamilies.web,'HFM_web');assert.equal(attached.length,1);
  // A changed root generation cannot reuse a previous physical load.
  opt.previewFamilies={};r.resetPreviewRuntimeState();h.stamp(2);p=r.ensurePreviewFont(font,true);await flush();assert.equal(faces.length,2);faces[1].gate.reject(Error('invalid font'));await p;assert.equal(opt.failedPreviewFontIds.web,true);
  // More edits than the physical WebFont limit: timeout is not slot release.
- for(let i=0;i<14;i++){opt.previewText='edit'+i;opt.previewRequestTokenRef.current=opt.previewText+'::44';r.resetPreviewRuntimeState();p=r.ensurePreviewFont({id:'f'+i,path:'C:/fonts/'+i+'.ttf',fileSize:100},true);await flush();time.fire(180);await p;}
+ for(let i=0;i<14;i++){opt.previewText='edit'+i;opt.previewRequestTokenRef.current=cardToken(opt.previewText, 44);r.resetPreviewRuntimeState();p=r.ensurePreviewFont({id:'f'+i,path:'C:/fonts/'+i+'.ttf',fileSize:100},true);await flush();time.fire(180);await p;}
  assert.equal(faces.length,12,'physical FontFace cap was bypassed across reset');
  for(const f of faces.slice(2))f.gate.resolve();await flush();
  r.disposePreviewQueue();assert.equal(time.timers.size,0);
@@ -100,12 +101,12 @@ async function renderer() {
  n.opt.hfm.renderPreviewImage=()=>{nativeCalls++;return gate.promise};
  const nativeFont={id:'native',path:'C:/fonts/native.ttf',systemInstalled:true};
  n.runtime.requestPreviewFont(nativeFont,'high');await flush();assert.equal(nativeCalls,1);
- for(let i=0;i<15;i++){n.opt.previewText='change'+i;n.opt.previewRequestTokenRef.current=n.opt.previewText+'::44';n.runtime.resetPreviewRuntimeState();n.runtime.requestPreviewFont({...nativeFont,id:'n'+i},'high');await flush();}
+ for(let i=0;i<15;i++){n.opt.previewText='change'+i;n.opt.previewRequestTokenRef.current=cardToken(n.opt.previewText, 44);n.runtime.resetPreviewRuntimeState();n.runtime.requestPreviewFont({...nativeFont,id:'n'+i},'high');await flush();}
  assert.equal(nativeCalls,5);assert.equal(n.opt.activePreviewLoads.current,5);n.runtime.disposePreviewQueue();gate.resolve('data:image/png;base64,old');await flush();assert.equal(n.opt.activePreviewLoads.current,0);assert.deepEqual({...n.opt.nativePreviewImages},{});assert.equal(n.time.timers.size,0);
  // Old-generation cleanup must not revoke the same font's newer live owner.
  const latest=rendererHarness(),oldResult=deferred(),newResult=deferred();let version=0;
  latest.opt.hfm.renderPreviewImage=()=>++version===1?oldResult.promise:newResult.promise;
- latest.runtime.requestPreviewFont(nativeFont,'high');await flush();latest.opt.previewText='latest';latest.opt.previewRequestTokenRef.current='latest::44';latest.runtime.resetPreviewRuntimeState();latest.runtime.requestPreviewFont(nativeFont,'high');await flush();assert.equal(version,2);
+ latest.runtime.requestPreviewFont(nativeFont,'high');await flush();latest.opt.previewText='latest';latest.opt.previewRequestTokenRef.current=cardToken('latest', 44);latest.runtime.resetPreviewRuntimeState();latest.runtime.requestPreviewFont(nativeFont,'high');await flush();assert.equal(version,2);
  oldResult.resolve('data:image/png;base64,old');await flush();assert.equal(latest.opt.loadingFonts.current.has(nativeFont.id),true);newResult.resolve('data:image/png;base64,newest');await flush();assert.equal(latest.opt.nativePreviewImages.native,'data:image/png;base64,newest');latest.runtime.disposePreviewQueue();
  // Two card consumers share a request; leaving one does not invalidate the other.
  const c=rendererHarness(),cg=deferred();let ca=true,cb=true,cc=0;

@@ -12,7 +12,7 @@ export const PREVIEW_LAYOUTS: Record<PreviewLayoutMode, PreviewLayoutSpec> = {
     maxFontSize: 42,
     minFontSize: 26,
     lineHeight: 1.04,
-    maxLines: 1,
+    maxLines: 2,
     capacityUnits: 16
   },
   list: {
@@ -40,3 +40,6 @@ export const PREVIEW_LAYOUTS: Record<PreviewLayoutMode, PreviewLayoutSpec> = {
 }
 
 export const DEFAULT_PREVIEW_TEXT = '字体预览\nAaBb 123'
+
+export const CARD_PREVIEW_LAYOUT_VERSION = 'card-preview-v2'
+export const CARD_PREVIEW_MAX_TEXT_LENGTH = 4096 // UTF-16 units; native input policy uses the same limit.

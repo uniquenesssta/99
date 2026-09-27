@@ -243,6 +243,9 @@ export default function App(): JSX.Element {
     controllerPorts.operations().updateFont(fontId, updater)
   }
 
+  const familyViewAllowed = isFontFamilyViewAllowed(sidebarPage, activeFilter)
+  const effectiveCardPoolMode = resolveEffectiveCardPoolViewMode(cardPoolViewMode, sidebarPage, activeFilter)
+
   const {
     previewFamilies,
     nativePreviewImages,
@@ -263,6 +266,7 @@ export default function App(): JSX.Element {
     closingLifecycle: rendererClosingLifecycle,
     hfm: window.hfm,
     previewText: library.previewText,
+    previewLayoutMode: effectiveCardPoolMode === 'grid' ? 'grid' : 'list',
     listPreviewFontSize,
     selectedFontId,
     selectedFontIds,
@@ -565,8 +569,6 @@ export default function App(): JSX.Element {
     sortMode
   })
 
-  const familyViewAllowed = isFontFamilyViewAllowed(sidebarPage, activeFilter)
-  const effectiveCardPoolMode = resolveEffectiveCardPoolViewMode(cardPoolViewMode, sidebarPage, activeFilter)
 
   useFontViewportResizeObserverRuntime({
     viewportKey: `${sidebarPage}:${effectiveCardPoolMode}`,

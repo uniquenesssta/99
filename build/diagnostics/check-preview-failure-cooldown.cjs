@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict')
+const cardToken = (text, size, mode = 'list') => require('./check-operation-chain.cjs').loader()('src/shared/preview-layout/previewTextFitRuntime.ts').getCardPreviewLayout(mode, text, size).token;
 const path = require('node:path')
 const fs = require('node:fs')
 const { loader } = require('./check-operation-chain.cjs')
@@ -17,7 +18,7 @@ async function check(transform = s => s) {
   let font = { id:'a', path:'O:\\字体\\a.ttf', fileName:'a.ttf', systemInstalled:true, favorite:true, tagNames:['共享'], localTagNames:['本机'] }
   const original = JSON.stringify(font)
   const options = {
-    previewText:'audit',listPreviewFontSize:39,previewRequestTokenRef:{current:'audit::39'},
+    previewText:'audit',listPreviewFontSize:39,previewRequestTokenRef:{current:cardToken('audit', 39)},
     selectedFontId:'',selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:{current:new Set()},isBadFontRecord:()=>false,
     setPreviewFamilies(){},setFailedPreviewFontIds(){},setNativePreviewImages(fn){options.nativePreviewImages=fn(options.nativePreviewImages)},
     updateFont(id,fn){ updates++;font=fn(font) },

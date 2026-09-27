@@ -157,7 +157,13 @@
   letter-spacing: inherit;
   overflow: hidden;
   text-overflow: clip;
-  white-space: nowrap;
+  white-space: pre;
+}
+
+/* Explicit empty lines occupy one line without inserting a fake character. */
+.font-card .preview-layout-text .font-sample-line:empty {
+  min-height: 1lh;
+  flex-shrink: 0;
 }
 
 /* Grid native PNG previews already contain a fixed preview canvas.

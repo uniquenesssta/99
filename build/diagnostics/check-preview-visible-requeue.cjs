@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const cardToken = (text, size, mode = 'list') => require('./check-operation-chain.cjs').loader()('src/shared/preview-layout/previewTextFitRuntime.ts').getCardPreviewLayout(mode, text, size).token;
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -125,14 +126,14 @@ async function run() {
   '../../../rendererPerformance':{reportRendererTrace(){}}, './fontPreviewQuickFallbackRuntime':{}
  });
  let releaseOld;
- const loadOptions={previewText:'old',listPreviewFontSize:44,previewRequestTokenRef:ref('old::44'),selectedFontId:'',selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:ref(new Set()),isBadFontRecord:()=>false,
+ const loadOptions={previewText:'old',listPreviewFontSize:44,previewRequestTokenRef:ref(cardToken('old', 44)),selectedFontId:'',selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:ref(new Set()),isBadFontRecord:()=>false,
   setPreviewFamilies(){},setFailedPreviewFontIds(){},setNativePreviewImages(fn){this.nativePreviewImages=fn(this.nativePreviewImages);},updateFont(){},
   hfm:{getCachedPreviewImage:async()=>'',renderPreviewImage:async(_font,text)=>text==='old'?new Promise(r=>releaseOld=r):'data:image/png;base64,new'}
  };
  const actual=actualLoad('src/renderer/src/runtime/preview/queue/fontPreviewLoadRuntime.ts').createFontPreviewLoadRuntime(loadOptions);
  const nativeFont={id:'native',path:'C:/font.ttf',fileName:'font.ttf',systemInstalled:true};
  const oldRequest=actual.ensurePreviewFont(nativeFont);await new Promise(setImmediate);assert(releaseOld);
- actual.resetPreviewLoads();loadOptions.loadingFonts.current.clear();loadOptions.previewText='new';loadOptions.listPreviewFontSize=64;loadOptions.previewRequestTokenRef.current='new::64';
+ actual.resetPreviewLoads();loadOptions.loadingFonts.current.clear();loadOptions.previewText='new';loadOptions.listPreviewFontSize=64;loadOptions.previewRequestTokenRef.current=cardToken('new', 64);
  await actual.ensurePreviewFont(nativeFont);assert.equal(loadOptions.nativePreviewImages.native,'data:image/png;base64,new');
  releaseOld('data:image/png;base64,old');await oldRequest;assert.equal(loadOptions.nativePreviewImages.native,'data:image/png;base64,new','old success overwrote current preview');
  console.log('PASS S10-02: actual admission/promotion, dedupe/guards, 24 stable cards text/size/reset race, offscreen/resize/unmount/remount/early-ready, scroll resume');

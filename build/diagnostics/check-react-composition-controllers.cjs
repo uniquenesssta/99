@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const cardToken = (text, size, mode = 'list') => require('./check-operation-chain.cjs').loader()('src/shared/preview-layout/previewTextFitRuntime.ts').getCardPreviewLayout(mode, text, size).token;
 const assert = require('node:assert/strict')
 const childProcess = require('node:child_process')
 const fs = require('node:fs')
@@ -376,6 +377,7 @@ function checkPreviewBehavior() {
   let nextTimerId = 1
   let queueOptions
   let resetOptions
+  let resetCurrent = true
   const processed = []
   const load = createLoader({
     hooks: harness.hooks,
@@ -386,8 +388,7 @@ function checkPreviewBehavior() {
       }
     },
     mocks: {
-      '@shared/preview-layout/previewTextFitRuntime': { normalizePreviewText: (value) => String(value || '').trim() || '字体预览\nAaBb 123' },
-      '../preview/listPreviewSizeRuntime': { clampListPreviewFontSize: (value) => Math.round(Number(value)) },
+      '@shared/preview-layout/previewTextFitRuntime': require('./check-operation-chain.cjs').loader()('src/shared/preview-layout/previewTextFitRuntime.ts'),
       '../preview/fontPreviewQueueRuntime': {
         createFontPreviewQueueRuntime(options) {
           queueOptions = options
@@ -403,7 +404,7 @@ function checkPreviewBehavior() {
           }
         }
       },
-      './effects/usePreviewTextResetRuntime': { usePreviewTextResetRuntime(options) { resetOptions = options } }
+      './effects/usePreviewTextResetRuntime': { usePreviewTextResetRuntime(options) { resetOptions = options; return resetCurrent } }
     }
   })
   const usePreviewController = load(previewControllerPath).usePreviewController
@@ -421,9 +422,8 @@ function checkPreviewBehavior() {
   }
   let controller = harness.render(usePreviewController, baseOptions)
   assert.equal(harness.slots.length, 20, '17 original owners plus two runtime refs and one disposal effect')
-  assert.equal(queueOptions.previewRequestTokenRef.current, 'Sample::36')
-  assert.equal(resetOptions.previewText, '  Sample  ')
-  assert.equal(resetOptions.listPreviewFontSize, 36)
+  assert.equal(queueOptions.previewRequestTokenRef.current, cardToken('  Sample  ', 36))
+  assert.equal(resetOptions.previewToken, cardToken('  Sample  ', 36))
 
   queueOptions.previewQueue.current = [{ font: { id: 'a' }, priority: 'normal' }, { font: { id: 'b' }, priority: 'normal' }]
   queueOptions.autoPreviewCacheQueue.current = [{ id: 'a' }, { id: 'b' }]
@@ -447,6 +447,12 @@ function checkPreviewBehavior() {
   assert.deepEqual(Object.keys(controller.nativePreviewImages), ['b'])
   assert.deepEqual(Object.keys(controller.failedPreviewFontIds), ['b'])
   assert.equal(controller.nativeDetailImage, '')
+  resetCurrent = false
+  controller = harness.render(usePreviewController, baseOptions)
+  assert.equal(Object.keys(controller.nativePreviewImages).length, 0, 'old image exposed before reset commits')
+  assert.equal(Object.keys(queueOptions.nativePreviewImages).length, 1, 'mask mutated image ownership')
+  resetCurrent = true
+  controller = harness.render(usePreviewController, baseOptions)
 
   controller.beginFontListScroll(240)
   assert.equal(controller.isFontListScrolling(), true)
@@ -462,7 +468,7 @@ function checkPreviewBehavior() {
   const priorRequestTokenRef = queueOptions.previewRequestTokenRef
   controller = harness.render(usePreviewController, { ...baseOptions, previewText: 'Next', listPreviewFontSize: 42 })
   assert.equal(queueOptions.previewRequestTokenRef, priorRequestTokenRef)
-  assert.equal(queueOptions.previewRequestTokenRef.current, 'Next::42')
+  assert.equal(queueOptions.previewRequestTokenRef.current, cardToken('Next', 42))
   for (const forbidden of ['previewQueue', 'autoPreviewCacheQueue', 'queuedPreviewFontIds', 'queuedAutoPreviewCacheIds', 'loadingFonts']) {
     assert(!Object.hasOwn(controller, forbidden), `Preview controller leaked mutable queue ${forbidden}`)
   }

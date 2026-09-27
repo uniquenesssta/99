@@ -4,9 +4,8 @@ import { previewTrace, previewEvent, previewImageTrace, previewTraceEnabled } fr
 import { memo,useEffect,useMemo,useRef } from 'react'
 import type { CSSProperties } from 'react'
 import type { FontCardProps } from '../appRuntime'
-import { getPreviewTextFit,previewTextLines } from '@shared/preview-layout/previewTextFitRuntime'
+import { getCardPreviewLayout } from '@shared/preview-layout/previewTextFitRuntime'
 import { fontDisplayName,fontFileDisplayName,formatSize,installLabel,isInstalled,scriptLabels } from '../appRuntime'
-import { clampListPreviewFontSize,listPreviewNativeImageHeight } from '../runtime/preview/listPreviewSizeRuntime'
 import { buildListPreviewCssFamily } from '../runtime/preview/fontPreviewCssFamilyRuntime'
 import { isWindowResizeActive,subscribeWindowResizeSettled } from '../runtime/app/windowResizePhaseRuntime'
 import { useResizeFrozenPreviewRuntime } from '../runtime/preview/useResizeFrozenPreviewRuntime'
@@ -31,13 +30,10 @@ function isPreviewErrorState(font: FontCardProps['font']): boolean {
 }
 
 function previewSampleStyle(font: FontCardProps['font'], mode: 'grid' | 'list', previewFamily?: string, previewText?: string, listPreviewFontSize?: number): CSSProperties {
-  const fit = getPreviewTextFit(mode, previewText)
-  const fontSize = mode === 'list' && listPreviewFontSize !== undefined
-    ? clampListPreviewFontSize(listPreviewFontSize)
-    : fit.fontSize
+  const fit = getCardPreviewLayout(mode, previewText, listPreviewFontSize)
   return {
     fontFamily: buildListPreviewCssFamily(font, previewFamily) || undefined,
-    fontSize: `${fontSize}px`,
+    fontSize: `${fit.fontSize}px`,
     lineHeight: String(fit.lineHeight),
     textAlign: fit.textAlign
   }
@@ -46,12 +42,13 @@ function previewSampleStyle(font: FontCardProps['font'], mode: 'grid' | 'list', 
 
 function FontCardImpl({ closingLifecycle, font, active, selected, compact, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
   const ref = useRef<HTMLButtonElement | null>(null)
+  const requestedLayout = useMemo(() => getCardPreviewLayout(compact ? 'list' : 'grid', previewText, listPreviewFontSize), [compact, previewText, listPreviewFontSize])
   // Re-arm after reset commits: the text/size render can still contain the old image.
   const previewReady = Boolean(previewFamily || previewImage)
   const availability = useSharedAvailability()
   const retryBlocked = sharedPathBlocked(availability, font.path)
   const knownRootBlocked = availability !== null && retryBlocked
-  const frozenPreview = useResizeFrozenPreviewRuntime(font.id, {
+  const frozenPreview = useResizeFrozenPreviewRuntime(`${font.id}:${requestedLayout.token}`, {
     previewFamily,
     previewImage,
     previewText,
@@ -62,12 +59,13 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
   const imageTrace = previewImageTrace(displayPreviewImage, font.id)
   const displayPreviewText = frozenPreview.previewText
   const displayListPreviewFontSize = frozenPreview.listPreviewFontSize
+  const displayLayout = useMemo(() => getCardPreviewLayout(compact ? 'list' : 'grid', displayPreviewText, displayListPreviewFontSize), [compact, displayPreviewText, displayListPreviewFontSize])
   useEffect(() => {
     if (displayPreviewImage && !displayPreviewFamily) previewEvent(imageTrace, 'card-image-applied')
-    else if (displayPreviewFamily) previewEvent(previewTrace(font.id, displayPreviewText || '', displayListPreviewFontSize ?? 44), 'card-webfont-applied')
-  }, [font.id, displayPreviewImage, displayPreviewFamily, displayPreviewText, displayListPreviewFontSize, imageTrace])
-  const gridPreviewLines = useMemo(() => previewTextLines(displayPreviewText, 2), [displayPreviewText])
-  const listPreviewLines = useMemo(() => previewTextLines(displayPreviewText, 2), [displayPreviewText])
+    else if (displayPreviewFamily) previewEvent(previewTrace(font.id, displayLayout.text, displayLayout.fontSize), 'card-webfont-applied')
+  }, [font.id, displayPreviewImage, displayPreviewFamily, displayLayout.text, displayLayout.fontSize, imageTrace])
+  const gridPreviewLines = displayLayout.lines
+  const listPreviewLines = displayLayout.lines
   const hasLoadedPreviewFamily = Boolean(displayPreviewFamily)
   const useNativePreviewImage = Boolean(displayPreviewImage && !hasLoadedPreviewFamily)
   const useGridNativePreviewImage = Boolean(displayPreviewImage && !hasLoadedPreviewFamily)
@@ -75,14 +73,14 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
     fittedText: gridVisualPreviewText,
     visualFitRef: gridVisualFitRef,
     visualFitActive: gridVisualFitActive,
-  } = useGridPreviewVisualFitText(displayPreviewText || '', gridPreviewLines, !useGridNativePreviewImage)
-  const gridVisualPreviewLines = useMemo(() => previewTextLines(gridVisualPreviewText, 2), [gridVisualPreviewText])
+  } = useGridPreviewVisualFitText(displayLayout.text, gridPreviewLines, !useGridNativePreviewImage)
+  const gridVisualPreviewLines = useMemo(() => gridVisualPreviewText.split('\n'), [gridVisualPreviewText])
   const gridSampleStyle = useMemo(() => previewSampleStyle(font, 'grid', displayPreviewFamily, gridVisualPreviewText), [font, displayPreviewFamily, gridVisualPreviewText])
   const listSampleStyle = useMemo(() => previewSampleStyle(font, 'list', displayPreviewFamily, displayPreviewText, displayListPreviewFontSize), [font, displayPreviewFamily, displayPreviewText, displayListPreviewFontSize])
   const listNativePreviewImageStyle = useMemo<CSSProperties>(() => ({
-    height: `${listPreviewNativeImageHeight(displayListPreviewFontSize ?? 44, listPreviewLines.length)}px`,
+    height: `${displayLayout.height}px`,
     maxHeight: 'none'
-  }), [displayListPreviewFontSize, listPreviewLines.length])
+  }), [displayLayout.height])
   const hasListTextPreviewFamily = Boolean(listSampleStyle.fontFamily)
   const hasGridTextPreviewFamily = Boolean(gridSampleStyle.fontFamily)
   const gridNativePreviewImageSrc = useGridNativePreviewImageTrim(useGridNativePreviewImage ? displayPreviewImage : undefined) || displayPreviewImage
@@ -126,7 +124,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       if (cancelled || closingLifecycle?.isClosing()) return
       if (revealed) { scheduleRetry(); return }
       revealed = true
-      previewEvent(previewTrace(font.id, previewText || '', listPreviewFontSize ?? 44), 'visible')
+      previewEvent(previewTrace(font.id, requestedLayout.text, requestedLayout.fontSize), 'visible')
       onVisible(() => !cancelled && intersecting && !closingLifecycle?.isClosing() && !knownRootBlocked)
       scheduleRetry()
       unsubscribeResizeSettled?.()
@@ -172,18 +170,18 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       observer?.disconnect()
       unsubscribeResizeSettled?.()
     }
-  }, [onVisible, closingLifecycle, font.id, font.__earlyVisible, previewText, listPreviewFontSize, previewReady, retryBlocked, knownRootBlocked])
+  }, [onVisible, closingLifecycle, font.id, font.__earlyVisible, requestedLayout.token, previewReady, retryBlocked, knownRootBlocked])
 
   useEffect(() => {
     if (!previewTraceEnabled() || !ref.current) return
     let lastTrace: ReturnType<typeof previewTrace>
     const observer = new IntersectionObserver(entries => {
-      lastTrace = previewTrace(font.id, previewText || '', listPreviewFontSize ?? 44)
+      lastTrace = previewTrace(font.id, requestedLayout.text, requestedLayout.fontSize)
       previewEvent(lastTrace, entries.some(entry => entry.isIntersecting) ? 'viewport-enter' : 'viewport-leave')
     }, { root: null, rootMargin: '0px' })
     observer.observe(ref.current)
     return () => { observer.disconnect(); previewEvent(lastTrace, 'viewport-unmount') }
-  }, [font.id, previewText, listPreviewFontSize])
+  }, [font.id, requestedLayout.token])
 
   if (compact) {
     return (
