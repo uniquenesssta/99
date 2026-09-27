@@ -80,10 +80,11 @@ function makeDomFile() {
   const family = renderCase(load, { mode: 'family', density: 'comfortable', width: 900 })
   const familyBaselineCss = css(undefined, file => cp.execFileSync('git', ['show', `6012cb6:${file}`], { cwd: root, encoding: 'utf8' }))
   const samples = require('./check-preview-layout-contract.cjs').makeDomSamples()
+  const webFontData = process.platform === 'win32' ? fs.readFileSync(path.join(process.env.WINDIR, 'Fonts/arial.ttf')).toString('base64') : null
   const listSamples = []
   for (const size of [18,44,72]) for (const text of ['Ag 字体', 'Wide '.repeat(80) + '\nSecond', '\nAg']) {
     const spec=load('src/shared/preview-layout/previewTextFitRuntime.ts').getCardPreviewLayout('list',text,size)
-    listSamples.push({...renderCase(load,{mode:'list',density:'compact',width:720,total:1,size,lines:spec.lines.length,previewText:text}),size,canvasWidth:spec.width,canvasHeight:spec.height,native:false})
+    for(const route of webFontData ? ['fallback','system','webfont'] : ['fallback']) listSamples.push({...renderCase(load,{mode:'list',density:'compact',width:720,total:1,size,lines:spec.lines.length,previewText:text,previewFamily:route==='webfont'?'HfmV03WebFont':undefined,fontOverrides:route==='system'?{family:'Arial',systemInstalled:true}:undefined}),size,expectedText:spec.text,route,canvasWidth:spec.width,canvasHeight:spec.height,native:false})
   }
   if(process.env.HFM_LIST_NATIVE_SAMPLES) for(const sample of JSON.parse(fs.readFileSync(path.resolve(root,process.env.HFM_LIST_NATIVE_SAMPLES),'utf8'))) {
     listSamples.push({...renderCase(load,{mode:'list',density:'compact',width:720,total:1,size:sample.size,lines:sample.text.split('\n').length,previewText:sample.text,previewImage:sample.image}),size:sample.size,canvasWidth:sample.width,canvasHeight:sample.height,native:true})
@@ -94,7 +95,7 @@ function makeDomFile() {
   const checkDom = require('./lib/font-view-layout-dom.cjs')
   const select = load(prefix + 'fontSelectionRuntime.ts').fontIdsInClientRect
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-layout-')), file = path.join(temp, 'layout.html')
-  fs.writeFileSync(file, '<!doctype html><html data-theme="light"><meta charset="utf-8"><style>' + css() + '</style><body><div id="fixture"></div>' + reactScripts + '<script>' + viewportScript + 'const listSamples=' + JSON.stringify(listSamples).replace(/</g, '\\u003c') + ';const cases=' + JSON.stringify(cases).replace(/</g, '\\u003c') + ';const family=' + JSON.stringify(family).replace(/</g, '\u003c') + ';const familyBaselineCss=' + JSON.stringify(familyBaselineCss).replace(/</g, '\u003c') + ';const select=' + select.toString() + ';const samples=' + JSON.stringify(samples).replace(/</g, '\\u003c') + ';window.checkLayout=' + checkDom.toString() + '</script></body></html>')
+  fs.writeFileSync(file, '<!doctype html><html data-theme="light"><meta charset="utf-8"><style>' + css() + '</style><body><div id="fixture"></div>' + reactScripts + '<script>' + viewportScript + 'const webFontData=' + JSON.stringify(webFontData) + ';const listSamples=' + JSON.stringify(listSamples).replace(/</g, '\\u003c') + ';const cases=' + JSON.stringify(cases).replace(/</g, '\\u003c') + ';const family=' + JSON.stringify(family).replace(/</g, '\u003c') + ';const familyBaselineCss=' + JSON.stringify(familyBaselineCss).replace(/</g, '\u003c') + ';const select=' + select.toString() + ';const samples=' + JSON.stringify(samples).replace(/</g, '\\u003c') + ';window.checkLayout=' + checkDom.toString() + '</script></body></html>')
   return { file, temp, count: cases.length }
 }
 behavior(); hookCases()

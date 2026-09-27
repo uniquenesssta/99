@@ -5,6 +5,11 @@ module.exports = async function checkLayout() {
   // that do not deliver animation frames to hidden/minimized windows.
   const frame = () => new Promise(resolve => setTimeout(resolve, 0))
   const host = document.getElementById('fixture')
+  if(webFontData) {
+    const font = new FontFace('HfmV03WebFont', 'url(data:font/ttf;base64,'+webFontData+')')
+    await font.load(); document.fonts.add(font)
+    if(font.status!=='loaded')throw Error('real WebFont did not load')
+  }
   let count = 0, mutationCaught = false
   for (const entry of cases) {
     host.innerHTML = entry.html
@@ -109,6 +114,10 @@ module.exports = async function checkLayout() {
       close(img.getBoundingClientRect().height,img.naturalHeight,'PNG was scaled vertically')
     }else{
       const text=canvas.querySelector('.preview-layout-list'),lines=[...text.querySelectorAll('.font-sample-line')]
+      if(lines.map(line=>line.textContent).join('\n')!==entry.expectedText)throw Error('route changed sample text: '+entry.route)
+      const family=getComputedStyle(text).fontFamily
+      if(entry.route==='webfont'&&!family.includes('HfmV03WebFont'))throw Error('WebFont route lost its loaded family')
+      if(entry.route==='system'&&!family.includes('Arial'))throw Error('system route lost its installed family')
       close(parseFloat(getComputedStyle(text).fontSize),entry.size,'user font size')
       if(getComputedStyle(text).textAlign!=='left')throw Error('text not left aligned')
       close(lines[0].getBoundingClientRect().left-canvas.getBoundingClientRect().left,36,'text start')
@@ -130,5 +139,5 @@ module.exports = async function checkLayout() {
   region.parentElement.parentElement.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}))
   if(selects!==1)throw Error('card selection listener not active')
   root.unmount()
-  return { count, listSamples:listSamples.length, actualEventIsolation:true, sampleCases: samples.length, blankLineHeights, familyBaselineMatched: true, viewport: innerWidth, legacyGapMutantCaught: mutationCaught }
+  return { count, realWebFontLoaded:Boolean(webFontData), listSamples:listSamples.length, actualEventIsolation:true, sampleCases: samples.length, blankLineHeights, familyBaselineMatched: true, viewport: innerWidth, legacyGapMutantCaught: mutationCaught }
 }
