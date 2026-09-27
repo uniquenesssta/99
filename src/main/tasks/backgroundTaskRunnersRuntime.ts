@@ -1,3 +1,5 @@
+import { validatePreviewInput } from '../preview/runtime/previewInputPolicy'
+import { nativePreviewLayoutKey, type NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 import type {
 FontItem,
 InstallCompareResult,
@@ -41,6 +43,8 @@ export interface BackgroundTaskRunnersRuntimeOptions {
     height: number,
     force: boolean,
     returnDataUrl: boolean,
+    foreground?: boolean,
+    layout?: NativePreviewLayout,
   ) => Promise<unknown>;
   withGlobalIo: <T>(
     label: string,
@@ -133,17 +137,20 @@ export function createBackgroundTaskRunnersRuntime(
       80,
       Math.min(2048, Number(payload.height || 260) || 260),
     );
+    const input = validatePreviewInput(payload.layout === undefined ? { text, fontSize, width, height } : { text: payload.text, fontSize: payload.fontSize, width: payload.width, height: payload.height, layout: payload.layout })
     await options.withGlobalIo(
       "preview:background-task",
       () =>
         options.ensureFontPreviewImageFile(
           item,
-          text,
-          fontSize,
-          width,
-          height,
+          input.text,
+          input.fontSize,
+          input.width,
+          input.height,
           true,
           false,
+          false,
+          input.layout,
         ),
       { priority: "background", storagePath: item.path },
     );

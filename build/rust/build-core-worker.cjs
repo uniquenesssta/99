@@ -47,8 +47,8 @@ if (!fs.existsSync(builtBinary)) {
 const handshake = spawnSync(builtBinary, ['--handshake'], { encoding: 'utf-8', timeout: 5000, windowsHide: true })
 try {
   const receipt = JSON.parse(handshake.stdout.trim().split(/\r?\n/)[0])
-  if (handshake.error || handshake.status !== 0 || !receipt.ok || !['preview-cache-read-only-v1', 'shared-owned-rename-v1'].every(capability => receipt.capabilities?.includes(capability))) throw new Error('missing S0-05.5 capabilities')
-  console.log('[hfm] Rust preview read-only and owned publication capabilities verified')
+  if (handshake.error || handshake.status !== 0 || !receipt.ok || !['preview-cache-read-only-v1', 'shared-owned-rename-v1', 'preview-layout-list-v1'].every(capability => receipt.capabilities?.includes(capability))) throw new Error('missing required preview cache / list layout capabilities')
+  console.log('[hfm] Rust preview cache, owned publication and list layout capabilities verified')
 } catch (error) {
   fail(`built worker handshake failed: ${error.message}`)
   process.exit(required ? 1 : 0)

@@ -64,6 +64,16 @@ if ($text.Length -eq 0) { $text = '${DEFAULT_PREVIEW_TEXT}' }
 $fontSize = [float]$inputJson.fontSize
 $width = [int]$inputJson.width
 $height = [int]$inputJson.height
+$layout = $null
+if ($inputJson.PSObject.Properties.Name -contains 'layout') {
+  $layout = $inputJson.layout
+  $lineCount = $text.Split([char]10).Length
+  if ($null -eq $layout -or @($layout.PSObject.Properties).Count -ne 12 -or $layout.version -cne 'list-v1' -or $layout.textAlign -cne 'left' -or $layout.whiteSpace -cne 'pre' -or $lineCount -gt 2 -or $text.Contains([string][char]13)) { throw "PREVIEW_INPUT_INVALID: layout" }
+  Assert-PreviewNumber $inputJson.fontSize 18 72 $false
+  $expected = @{ fontSizeCssPx = [double]$inputJson.fontSize; lineHeight = 1.16; paddingTop = 20; paddingRight = 36; paddingBottom = 20; paddingLeft = 36; canvasWidth = 4096; canvasHeight = [Math]::Ceiling([double]$inputJson.fontSize * 1.16 * $lineCount + 40); pixelRatio = 1 }
+  foreach ($key in $expected.Keys) { Assert-PreviewNumber $layout.$key $expected[$key] $expected[$key] $false }
+  if ($width -ne 4096 -or $height -ne $expected.canvasHeight) { throw "PREVIEW_INPUT_INVALID: layout" }
+}
 `
 }
 
@@ -132,7 +142,27 @@ $stringFormat.FormatFlags = [System.Drawing.StringFormatFlags]::LineLimit
 $stringFormat.Alignment = [System.Drawing.StringAlignment]::Center
 $stringFormat.LineAlignment = [System.Drawing.StringAlignment]::Center
 
-$graphics.DrawString($text, $font, $brush, $rect, $stringFormat)
+if ($null -ne $layout) {
+  $stringFormat.Dispose()
+  $stringFormat = [System.Drawing.StringFormat]::GenericTypographic.Clone()
+  $stringFormat.Alignment = [System.Drawing.StringAlignment]::Near
+  $stringFormat.LineAlignment = [System.Drawing.StringAlignment]::Near
+  $stringFormat.Trimming = [System.Drawing.StringTrimming]::None
+  $stringFormat.FormatFlags = [System.Drawing.StringFormatFlags]::NoWrap -bor [System.Drawing.StringFormatFlags]::NoClip -bor [System.Drawing.StringFormatFlags]::NoFitBlackBox -bor [System.Drawing.StringFormatFlags]::MeasureTrailingSpaces
+  $em = $family.GetEmHeight($fontStyle)
+  if ($em -eq 0) { throw 'invalid font em height' }
+  $cellHeight = ($family.GetCellAscent($fontStyle) + $family.GetCellDescent($fontStyle)) * [double]$fontSize / $em
+  $lineHeight = [double]$fontSize * $layout.lineHeight
+  $lines = $text.Split([char]10)
+  for ($i = 0; $i -lt $lines.Length; $i++) {
+    if ($lines[$i].Length -eq 0) { continue }
+    $lineRect = New-Object System.Drawing.RectangleF($layout.paddingLeft, ($layout.paddingTop + $i * $lineHeight + ($lineHeight - $cellHeight) / 2), ($width - $layout.paddingLeft - $layout.paddingRight), $height)
+    $graphics.DrawString($lines[$i], $font, $brush, $lineRect, $stringFormat)
+  }
+} else {
+  $graphics.DrawString($text, $font, $brush, $rect, $stringFormat)
+}
+$stringFormat.Dispose()
 
 $bitmap.Save($outputPath, [System.Drawing.Imaging.ImageFormat]::Png)
 

@@ -64,8 +64,8 @@ export interface FontCardProps {
   previewImage?: string
   previewText?: string
   listPreviewFontSize?: number
-  onSelect: (event: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>) => void
-  onOpenDetail?: (event: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>) => void
+  onSelect: (event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) => void
+  onOpenDetail?: (event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) => void
   onVisible: (acceptsResult?: () => boolean) => void
   onContextMenu: (event: React.MouseEvent) => void
   draggable?: boolean

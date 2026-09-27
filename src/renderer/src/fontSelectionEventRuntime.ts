@@ -29,7 +29,7 @@ export type FontSelectRuntimeOptions = {
 }
 
 export function handleFontSelectRuntime(
-  event: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>,
+  event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
   font: FontItem,
   options: FontSelectRuntimeOptions
 ): void {
@@ -72,7 +72,7 @@ export function handleFontSelectRuntime(
 }
 
 export function handleFontOpenDetailRuntime(
-  event: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLButtonElement>,
+  event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
   font: FontItem,
   options: Pick<FontSelectRuntimeOptions, 'setSingleFontSelection' | 'setSelectedFontId' | 'setDetailVisible' | 'requestDetailReveal' | 'detailCardClickLockUntilRef'>
 ): void {

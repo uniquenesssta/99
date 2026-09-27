@@ -225,6 +225,10 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
   async function runRustPreviewRenderImage(input: RustPreviewRenderImageInput): Promise<RustPreviewRenderImageResult | null> {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'preview-render-image')) return null
+    if (input.layout && !hasCapability(status, 'preview-layout-list-v1')) {
+      options.appendStartupLog('rust preview layout unavailable: preview-layout-list-v1; rebuild worker required')
+      return null
+    }
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-preview-render`)
@@ -239,7 +243,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         maxBuffer: 1024 * 1024,
       })
       const payload = parseJsonLine<RustPreviewRenderImagePayload>(commandOutput.stdout)
-      if (!payload.ok || !payload.outputPath) {
+      if (!payload.ok || !payload.outputPath || (input.layout && payload.layoutVersion !== input.layout.version)) {
         const error = new Error(payload.message || 'rust preview render returned ok=false')
         throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, '--preview-render-image') : error
       }

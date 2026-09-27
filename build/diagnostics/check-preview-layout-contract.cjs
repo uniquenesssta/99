@@ -112,7 +112,7 @@ async function mainIdentities() {
   const requests=[]
   const scheduler=load('src/main/preview/runtime/previewRequestSchedulerRuntime.ts').createPreviewRequestSchedulerRuntime({readCachedPreviewImages:async(_items,...parameters)=>{requests.push(parameters);return {[font.id]:'image'}}})
   await Promise.all([scheduler.readCachedPreviewImages([font],...args(list)),scheduler.readCachedPreviewImages([font],...args(grid)),scheduler.readCachedPreviewImages([font],...args(sameGrid))])
-  assert.equal(requests.length,2);assert(requests.some(x=>JSON.stringify(x)===JSON.stringify(args(list))));assert(requests.some(x=>JSON.stringify(x)===JSON.stringify(args(grid))))
+  assert.equal(requests.length,2);assert(requests.some(x=>JSON.stringify(x.slice(0,4))===JSON.stringify(args(list))));assert(requests.some(x=>JSON.stringify(x.slice(0,4))===JSON.stringify(args(grid))))
   scheduler.cancelPending()
 }
 function resetAndResize() {

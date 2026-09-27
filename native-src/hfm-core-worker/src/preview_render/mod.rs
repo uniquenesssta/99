@@ -24,8 +24,9 @@ pub fn render_preview_image(config: &PreviewRenderCommandConfig) -> Result<Strin
     platform_render_preview_image(&request)?;
 
     Ok(format!(
-        "{{\"ok\":true,\"engine\":\"rust-private-gdi\",\"outputPath\":\"{}\",\"elapsedMs\":{}}}",
+        "{{\"ok\":true,\"engine\":\"rust-private-gdi\",\"outputPath\":\"{}\",\"layoutVersion\":\"{}\",\"elapsedMs\":{}}}",
         escape_json(&request.output_path),
+        request.layout.as_ref().map(|layout| layout.version.as_str()).unwrap_or("legacy"),
         started_at.elapsed().as_millis()
     ))
 }

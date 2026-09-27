@@ -1,3 +1,4 @@
+import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 import type {
 FontItem,
 FontQueryRequest,
@@ -160,6 +161,7 @@ export interface IpcHandlerRuntime {
     fontSize: number,
     width: number,
     height: number,
+    layout?: NativePreviewLayout,
   ) => unknown | Promise<unknown>;
   readCachedFontPreviewImage: (
     item: FontItem,
@@ -167,6 +169,7 @@ export interface IpcHandlerRuntime {
     fontSize: number,
     width: number,
     height: number,
+    layout?: NativePreviewLayout,
   ) => unknown | Promise<unknown>;
   readCachedFontPreviewImages: (
     items: FontItem[],
@@ -174,6 +177,7 @@ export interface IpcHandlerRuntime {
     fontSize: number,
     width: number,
     height: number,
+    layout?: NativePreviewLayout,
   ) => unknown | Promise<unknown>;
   ensureFontPreviewCache: (
     item: FontItem,

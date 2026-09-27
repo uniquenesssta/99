@@ -1,3 +1,4 @@
+import { nativePreviewLayoutKey, type NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 import type { FontItem } from '../../../shared/types'
 import { CACHED_PREVIEW_READ_BATCH_LIMIT, CACHED_PREVIEW_READ_COALESCE_DELAY_MS } from './cachedPreviewBatchPolicyRuntime'
 
@@ -9,6 +10,7 @@ export type CachedPreviewReadCoalescer = {
     width: number,
     height: number,
     task: () => Promise<string>,
+    layout?: NativePreviewLayout,
   ) => Promise<string>
   readBatch: (
     items: FontItem[],
@@ -17,6 +19,7 @@ export type CachedPreviewReadCoalescer = {
     width: number,
     height: number,
     task: (items: FontItem[]) => Promise<Record<string, string>>,
+    layout?: NativePreviewLayout,
   ) => Promise<Record<string, string>>
 }
 
@@ -44,13 +47,13 @@ function itemSignature(item: FontItem): string {
   ].join('@')
 }
 
-function requestKey(prefix: string, items: FontItem[], text: string, fontSize: number, width: number, height: number): string {
+function requestKey(prefix: string, items: FontItem[], text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout): string {
   const itemKey = items.map(itemSignature).sort().join('|')
-  return [prefix, text || '', fontSize, width, height, itemKey].join('::')
+  return [prefix, text || '', fontSize, width, height, itemKey, nativePreviewLayoutKey(layout)].join('::')
 }
 
-function batchGroupKey(text: string, fontSize: number, width: number, height: number): string {
-  return ['batch', text || '', fontSize, width, height].join('::')
+function batchGroupKey(text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout): string {
+  return ['batch', text || '', fontSize, width, height, nativePreviewLayoutKey(layout)].join('::')
 }
 
 function filterResultForItems(items: FontItem[], result: Record<string, string>): Record<string, string> {
@@ -89,8 +92,9 @@ export function createCachedPreviewReadCoalescerRuntime(): CachedPreviewReadCoal
     width: number,
     height: number,
     task: () => Promise<string>,
+    layout?: NativePreviewLayout,
   ): Promise<string> {
-    return rememberPromise(singleReads, requestKey('single', [item], text, fontSize, width, height), task)
+    return rememberPromise(singleReads, requestKey('single', [item], text, fontSize, width, height, layout), task)
   }
 
   function removePendingBatch(key: string, pending: PendingBatch): void {
@@ -146,8 +150,9 @@ export function createCachedPreviewReadCoalescerRuntime(): CachedPreviewReadCoal
     width: number,
     height: number,
     task: (items: FontItem[]) => Promise<Record<string, string>>,
+    layout?: NativePreviewLayout,
   ): Promise<Record<string, string>> {
-    const key = batchGroupKey(text, fontSize, width, height)
+    const key = batchGroupKey(text, fontSize, width, height, layout)
     return new Promise((resolve, reject) => {
       const pending = findPendingBatch(key, items.length, task)
       for (const item of items) pending.itemsBySignature.set(itemSignature(item), item)
@@ -162,13 +167,14 @@ export function createCachedPreviewReadCoalescerRuntime(): CachedPreviewReadCoal
     width: number,
     height: number,
     task: (items: FontItem[]) => Promise<Record<string, string>>,
+    layout?: NativePreviewLayout,
   ): Promise<Record<string, string>> {
     const validItems = (items || []).filter((item) => item?.id)
     if (!validItems.length) return Promise.resolve({})
-    return rememberPromise(batchReads, requestKey('batch-exact', validItems, text, fontSize, width, height), async () => {
+    return rememberPromise(batchReads, requestKey('batch-exact', validItems, text, fontSize, width, height, layout), async () => {
       const chunks = splitBatchItems(validItems)
-      if (chunks.length === 1) return readBatchChunk(chunks[0], text, fontSize, width, height, task)
-      const results = await Promise.all(chunks.map((chunk) => readBatchChunk(chunk, text, fontSize, width, height, task)))
+      if (chunks.length === 1) return readBatchChunk(chunks[0], text, fontSize, width, height, task, layout)
+      const results = await Promise.all(chunks.map((chunk) => readBatchChunk(chunk, text, fontSize, width, height, task, layout)))
       return Object.assign({}, ...results)
     })
   }

@@ -1,3 +1,4 @@
+import { listNativeLayout } from '@shared/preview-layout/nativePreviewLayout'
 import type { CardPoolViewMode, ViewMode } from '../../appTypes'
 import { getVirtualGridColumns, VIEW_MODE_LAYOUT, VIRTUAL_GRID_GAP, VIRTUAL_PANEL_PADDING } from '../../constants/layoutConstants'
 import { listPreviewFontSizeRowHeightPadding } from '../preview/listPreviewSizeRuntime'
@@ -38,8 +39,10 @@ export function buildFontViewLayout(mode: CardPoolViewMode, density: ViewMode, w
   const cardPaddingX = listLayout === 'wide' ? 16 : 12
   // Stacked cards allocate a separate information row. Its space must not also
   // be counted as preview space (the former rowHeight - 32 rule did this).
-  const previewHeight = Math.max(86, base[density] - cardPaddingY * 2 - 2)
-    + listPreviewFontSizeRowHeightPadding(fontSize, density, lineCount)
+  const previewHeight = Math.max(
+    Math.max(86, base[density] - cardPaddingY * 2 - 2) + listPreviewFontSizeRowHeightPadding(fontSize, density, lineCount),
+    listNativeLayout(fontSize, Math.max(1, Math.min(2, lineCount))).canvasHeight + 38,
+  )
   const infoHeight = listLayout === 'stacked' ? 104 : 0
   const innerRowGap = listLayout === 'stacked' ? 8 : 0
   const cardHeight = cardPaddingY * 2 + 2 + previewHeight + infoHeight + innerRowGap

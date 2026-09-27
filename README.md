@@ -50,7 +50,7 @@ npm run build:win
 
 ## 当前工程任务
 
-- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S11-V01 几何与滚动优化已完成并通过验证；V02 样本与模式契约已完成，160 项诊断、320 次 DOM 场景及 CI 通过；V03～V07 未开始。
+- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S11-V01 几何与滚动优化已完成并通过验证；V02 样本与模式契约已完成，160 项诊断、320 次 DOM 场景及 CI 通过；V03 列表完整显示实施与验证中，见任务书 §12；V04～V07 未开始。
 - [文档索引与旧任务归档](docs/README.md)：原 16 份任务书已移动至 `docs/old task`，历史回执及未验事项保留。
 
 当前专项工作分支为 `stage/11-list-grid-view`（基线 `6012cb6`）；Stage 10 保持原提交不变。S10-06 既有工程核查结论保持；新任务书不恢复已取消的固定卡片数或冷热重复次数验收。
@@ -60,6 +60,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-28：在 `stage/11-list-grid-view` 实施 S11-V03：列表预览左对齐，文字/PNG 按用户 CSS px 字号显示，长行独立横向查看；新 `list-v1` 布局贯通 IPC、缓存身份、后台重试及 Rust/允许的兼容后备，旧调用保留。已完成本地类型、专项行为与 bundle 检查；全量诊断及 Windows 原生/DOM 验证进行中。详见 [任务书 §12](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md#12-s11-v03-列表完整显示2026-09-28)。
 
 - 2026-09-28：在 `stage/11-list-grid-view` 实施 S11-V02。统一前两行卡片样本并保留空格、空行和完整输入；列表/网格采用各自字号与画布，网格不再读取隐藏列表字号；统一请求身份、过期图片保护与缓存版本。新增样本/请求链路行为回归及 Electron 空行/空格检查；本地 160 项诊断分段全覆盖、Windows 完整 160 项、320 次真实 DOM 场景、Windows/Linux 原生回归、构建与混淆通过（[CI 36338903640](https://github.com/uniquenesssta/99/actions/runs/36338903640)，受测基线 `ceb6b42`）。完整回执见 [任务书 §11](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md#11-s11-v02-设计与执行2026-09-28)。Stage 10 保持不变，V03～V07 未开始。
 

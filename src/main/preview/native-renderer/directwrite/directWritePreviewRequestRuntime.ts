@@ -33,6 +33,13 @@ export async function renderWithDirectWritePreviewHelper(
     maxBuffer: 1024 * 1024 * 2
   })
 
+  // Old helpers may silently ignore unknown JSON. Require explicit receipt
+  // before accepting their output under a new layout cache identity.
+  if (request.layout) {
+    let version: unknown
+    try { version = JSON.parse(result.stdout).layoutVersion } catch { /* no capability receipt */ }
+    if (version !== request.layout.version) return { ok: false, engine: 'directwrite', message: 'Preview helper lacks list-v1 layout support.' }
+  }
   const parsed = parseHelperResult(result.stdout, request.outputPath)
   if (!parsed.ok) return parsed
   return { ...parsed, outputPath: parsed.outputPath || request.outputPath }

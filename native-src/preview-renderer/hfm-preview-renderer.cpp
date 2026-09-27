@@ -42,6 +42,7 @@ struct Request {
   float fontSize = 72.0f;
   UINT width = 900;
   UINT height = 260;
+  bool listLayout = false;
 };
 
 static std::wstring widenUtf8(const std::string& value) {
@@ -107,6 +108,25 @@ static bool parseRequest(const std::wstring& inputPath, Request& request, std::w
   request.width = (UINT)width;
   request.height = (UINT)height;
 
+  const size_t layoutStart = preview_input::valueStart(json, "layout");
+  if (layoutStart != std::string::npos) {
+    const size_t layoutEnd = json.find('}', layoutStart);
+    if (json[layoutStart] != '{' || layoutEnd == std::string::npos) { error = L"PREVIEW_INPUT_INVALID: layout"; return false; }
+    const std::string layout = json.substr(layoutStart, layoutEnd - layoutStart + 1);
+    const size_t lines = 1 + std::count(request.text.begin(), request.text.end(), L'\n');
+    if (std::count(layout.begin(), layout.end(), ':') != 12 || jsonStringValue(layout, "version") != "list-v1" || fontSize < 18 || fontSize > 72
+      || preview_input::numberValue(layout, "fontSizeCssPx") != fontSize
+      || preview_input::numberValue(layout, "lineHeight") != 1.16
+      || preview_input::numberValue(layout, "paddingTop") != 20 || preview_input::numberValue(layout, "paddingBottom") != 20
+      || preview_input::numberValue(layout, "paddingLeft") != 36 || preview_input::numberValue(layout, "paddingRight") != 36
+      || jsonStringValue(layout, "textAlign") != "left" || jsonStringValue(layout, "whiteSpace") != "pre"
+      || preview_input::numberValue(layout, "pixelRatio") != 1 || width != 4096
+      || preview_input::numberValue(layout, "canvasWidth") != width || preview_input::numberValue(layout, "canvasHeight") != height
+      || lines > 2 || request.text.find(L'\r') != std::wstring::npos || height != std::ceil(fontSize * 1.16 * lines + 40)) {
+      error = L"PREVIEW_INPUT_INVALID: layout"; return false;
+    }
+    request.listLayout = true;
+  }
   if (request.fontPath.empty()) { error = L"fontPath is empty"; return false; }
   if (request.outputPath.empty()) { error = L"outputPath is empty"; return false; }
   if (request.text.empty()) request.text = L"字体预览 AaBb 123";
@@ -315,6 +335,34 @@ static int renderPngWithPrivateGdi(const Request& request, std::wstring& error) 
   outputGraphics.SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
   outputGraphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
 
+  if (request.listLayout) {
+    Gdiplus::Font font(family.get(), request.fontSize, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    if (font.GetLastStatus() != Gdiplus::Ok) { error = L"failed to create list font"; return 24; }
+    std::unique_ptr<Gdiplus::StringFormat> format(Gdiplus::StringFormat::GenericTypographic()->Clone());
+    format->SetAlignment(Gdiplus::StringAlignmentNear);
+    format->SetLineAlignment(Gdiplus::StringAlignmentNear);
+    format->SetTrimming(Gdiplus::StringTrimmingNone);
+    format->SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap | Gdiplus::StringFormatFlagsNoClip | Gdiplus::StringFormatFlagsNoFitBlackBox | Gdiplus::StringFormatFlagsMeasureTrailingSpaces);
+    outputGraphics.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
+    Gdiplus::SolidBrush brush(Gdiplus::Color(255, 242, 244, 248));
+    const double em = family->GetEmHeight(0);
+    if (em == 0) { error = L"invalid font em height"; return 24; }
+    const double cellHeight = (family->GetCellAscent(0) + family->GetCellDescent(0)) * (double)request.fontSize / em;
+    const double lineHeight = request.fontSize * 1.16;
+    size_t start = 0, index = 0;
+    do {
+      const size_t end = request.text.find(L'\n', start);
+      const auto line = request.text.substr(start, end == std::wstring::npos ? end : end - start);
+      Gdiplus::RectF rect(36, (float)(20 + index * lineHeight + (lineHeight - cellHeight) / 2), (float)request.width - 72, (float)request.height);
+      if (!line.empty() && outputGraphics.DrawString(line.c_str(), (INT)line.size(), &font, rect, format.get(), &brush) != Gdiplus::Ok) { error = L"list DrawString failed"; return 24; }
+      if (end == std::wstring::npos) break;
+      start = end + 1; ++index;
+    } while (start <= request.text.size());
+    CLSID encoder;
+    if (!getPngEncoderClsid(encoder) || bitmap.Save(request.outputPath.c_str(), &encoder, nullptr) != Gdiplus::Ok) { error = L"failed to save list PNG"; return 26; }
+    return 0;
+  }
+
   const float marginXCandidate = (float)request.width * 0.045f;
   const float marginX = marginXCandidate < 18.0f ? 18.0f : marginXCandidate;
   const float marginYCandidate = (float)request.height * 0.12f;
@@ -414,7 +462,7 @@ int wmain(int argc, wchar_t** argv) {
     return code;
   }
 
-  std::cout << "{\"ok\":true,\"engine\":\"private-gdi\",\"outputPath\":\"" << jsonEscape(narrowUtf8(request.outputPath)) << "\"}";
+  std::cout << "{\"layoutVersion\":\"" << (request.listLayout ? "list-v1" : "legacy") << "\",\"ok\":true,\"engine\":\"private-gdi\",\"outputPath\":\"" << jsonEscape(narrowUtf8(request.outputPath)) << "\"}";
   if (gdiplusToken) Gdiplus::GdiplusShutdown(gdiplusToken);
   return 0;
 }

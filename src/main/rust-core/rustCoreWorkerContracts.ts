@@ -1,3 +1,4 @@
+import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 // Stable public worker types. Runtime consumers use the facade; type consumers use this module.
 import type { CachedFontStatLike } from '../fonts/fontRuntime'
 import type {
@@ -799,6 +800,7 @@ export type RustFontNotifyResult = {
 }
 
 export type RustPreviewRenderImageInput = {
+  layout?: NativePreviewLayout
   fontPath: string
   preferSystemFont?: boolean
   systemFontFamilyCandidates?: string[]

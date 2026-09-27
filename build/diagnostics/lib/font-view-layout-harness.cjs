@@ -38,7 +38,7 @@ function css(file = prefix + 'styles.css', source = read) {
   return source(file).replace(/@import\s+["']([^"']+)["'];/g, (_match, target) => css(path.posix.join(path.posix.dirname(file), target), source))
 }
 const fonts = Array.from({ length: 1003 }, (_, i) => ({ id: `f${i}`, path: `C:/fonts/f${i}.ttf`, fileName: `Font ${i}.ttf`, family: `测试字体 ${i}`, fullName: `Font ${i} Regular`, postscriptName: `Font${i}-Regular`, format: 'ttf', fileSize: 12000, tagNames: ['测试'], scripts: ['latin'], installStatusKnown: true }))
-function renderCase(load, { mode, density, width, size = 44, lines = 2, scrollTop = 0, offset = 0, total = fonts.length, previewText: suppliedPreviewText }) {
+function renderCase(load, { mode, density, width, size = 44, lines = 2, scrollTop = 0, offset = 0, total = fonts.length, previewText: suppliedPreviewText, previewImage }) {
   const React = require('react'), { renderToStaticMarkup } = require('react-dom/server')
   const layout = load(prefix + 'runtime/app/fontViewLayoutRuntime.ts').buildFontViewLayout(mode, density, width, size, lines)
   const visibleFonts = offset ? fonts.slice(offset, offset + 100) : fonts.slice(0, total)
@@ -50,7 +50,7 @@ function renderCase(load, { mode, density, width, size = 44, lines = 2, scrollTo
     listPreviewFontSize: size, fontScrollerRef: { current: null }, updatePageToolbar: noop, visibleFonts, visibleFontTotal: total, databasePageReady: !!offset,
     virtualLayout: virtual, viewLayout: layout,
     fontFamilyGroupResult: { groups: [{ id: 'family', name: '测试家族', styles: ['Regular', 'Bold'], fonts: fonts.slice(0, 2), primaryFont: fonts[0] }] }, expandedFontFamilyIds: { family: true }, toggleFontFamilyExpanded: noop,
-    renderFontCard: (font, compact) => React.createElement(FontCard, { key: font.id, font, compact, previewText, listPreviewFontSize: size, onVisible: noop, onSelect: noop })
+    renderFontCard: (font, compact) => React.createElement(FontCard, { key: font.id, font, compact, previewText, previewImage, listPreviewFontSize: size, onVisible: noop, onSelect: noop })
   }))
   return { html, layout, virtual: { ...virtual, items: virtual.items.map(font => font.id) }, width, scrollTop, offset, total, label: `${mode}/${density}/${width}/${size}/${lines}/${scrollTop}/${offset}` }
 }

@@ -92,5 +92,43 @@ module.exports = async function checkLayout() {
     }
     if (lines.length === 2 && lines[1].getBoundingClientRect().top <= lines[0].getBoundingClientRect().top) throw Error('Explicit lines overlap: ' + entry.label)
   }
-  return { count, sampleCases: samples.length, blankLineHeights, familyBaselineMatched: true, viewport: innerWidth, legacyGapMutantCaught: mutationCaught }
+  for (const entry of listSamples) {
+    host.innerHTML=entry.html
+    const panel=host.querySelector('.font-list-panel');panel.style.width='720px';panel.style.height='620px'
+    await frame()
+    const region=host.querySelector('.list-preview-scroll'),canvas=region.querySelector('.list-preview-canvas')
+    if(region.closest('button'))throw Error('nested interactive preview')
+    close(canvas.getBoundingClientRect().width,entry.canvasWidth,'list canvas width')
+    close(canvas.getBoundingClientRect().height,entry.canvasHeight,'list canvas height')
+    if(region.scrollWidth<=region.clientWidth)throw Error('horizontal preview inaccessible')
+    if(region.clientHeight<entry.canvasHeight)throw Error('list preview height clipped')
+    region.scrollLeft=600; if(region.scrollLeft<500)throw Error('preview cannot scroll')
+    if(entry.native){
+      const img=canvas.querySelector('img');if(!img.complete)await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject})
+      close(img.getBoundingClientRect().width,img.naturalWidth,'PNG was scaled horizontally')
+      close(img.getBoundingClientRect().height,img.naturalHeight,'PNG was scaled vertically')
+    }else{
+      const text=canvas.querySelector('.preview-layout-list'),lines=[...text.querySelectorAll('.font-sample-line')]
+      close(parseFloat(getComputedStyle(text).fontSize),entry.size,'user font size')
+      if(getComputedStyle(text).textAlign!=='left')throw Error('text not left aligned')
+      close(lines[0].getBoundingClientRect().left-canvas.getBoundingClientRect().left,36,'text start')
+      if(lines.length===2)close(lines[1].getBoundingClientRect().top-lines[0].getBoundingClientRect().top,entry.size*1.16,'explicit line stride')
+    }
+  }
+  host.innerHTML=''
+  let selects=0,drags=0
+  const root=ReactDOM.createRoot(host)
+  const pixelLayout={canvasWidth:4096,canvasHeight:92,paddingLeft:36,paddingTop:20}
+  ReactDOM.flushSync(()=>root.render(React.createElement('div',{className:'font-row-preview-wide',onMouseDown:()=>selects++,onKeyDown:()=>selects++,onDragStart:()=>drags++},React.createElement(ListPreviewViewport,{layout:pixelLayout},'long preview'))))
+  const region=host.querySelector('.list-preview-scroll');region.style.width='400px';region.style.height='100px'
+  region.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}))
+  region.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}))
+  if(region.scrollLeft!==80||selects!==0)throw Error('preview key/selection isolation failed')
+  for(const key of ['Enter',' '])region.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}))
+  const drag=new Event('dragstart',{bubbles:true,cancelable:true});region.dispatchEvent(drag)
+  if(!drag.defaultPrevented||drags||selects)throw Error('preview event escaped into card')
+  region.parentElement.parentElement.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}))
+  if(selects!==1)throw Error('card selection listener not active')
+  root.unmount()
+  return { count, listSamples:listSamples.length, actualEventIsolation:true, sampleCases: samples.length, blankLineHeights, familyBaselineMatched: true, viewport: innerWidth, legacyGapMutantCaught: mutationCaught }
 }

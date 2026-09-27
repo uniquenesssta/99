@@ -1,3 +1,4 @@
+import type { NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 import { onApplicationClosing } from '../../app/shutdownCoordinatorRuntime';
 import { shell } from "electron";
 import { createPreviewRequestSchedulerRuntime } from "../../preview/runtime/previewRequestSchedulerRuntime";
@@ -6,20 +7,20 @@ import type { IpcHandleRegistrar,IpcHandlerRuntime } from "../ipcHandlerTypes";
 
 export function registerPreviewAndFolderIpcHandlers(handle: IpcHandleRegistrar, runtime: IpcHandlerRuntime): void {
   const previewRequestScheduler = createPreviewRequestSchedulerRuntime({
-    readCachedPreviewImages: (items, text, fontSize, width, height) => runtime.readCachedFontPreviewImages(items, text, fontSize, width, height) as Promise<Record<string, string>>,
+    readCachedPreviewImages: (items, text, fontSize, width, height, layout) => runtime.readCachedFontPreviewImages(items, text, fontSize, width, height, layout) as Promise<Record<string, string>>,
     appendStartupLog: runtime.appendLog
   });
   onApplicationClosing(() => previewRequestScheduler.cancelPending());
   handle("path:toFontUrl", (_event, filePath: string) => `hfm-font://local/${encodeURIComponent(filePath)}`);
   handle("fonts:readPreviewFontData", (_event, item: FontItem) => runtime.readPreviewFontData(item));
-  handle("fonts:renderPreviewImage", (_event, item: FontItem, text: string, fontSize: number, width: number, height: number) =>
-    runtime.renderFontPreviewImage(item, text, fontSize, width, height),
+  handle("fonts:renderPreviewImage", (_event, item: FontItem, text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout) =>
+    runtime.renderFontPreviewImage(item, text, fontSize, width, height, layout),
   );
-  handle("fonts:getCachedPreviewImage", (_event, item: FontItem, text: string, fontSize: number, width: number, height: number) =>
-    runtime.readCachedFontPreviewImage(item, text, fontSize, width, height),
+  handle("fonts:getCachedPreviewImage", (_event, item: FontItem, text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout) =>
+    runtime.readCachedFontPreviewImage(item, text, fontSize, width, height, layout),
   );
-  handle("fonts:getCachedPreviewImages", (_event, items: FontItem[], text: string, fontSize: number, width: number, height: number) =>
-    previewRequestScheduler.readCachedPreviewImages(items, text, fontSize, width, height),
+  handle("fonts:getCachedPreviewImages", (_event, items: FontItem[], text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout) =>
+    previewRequestScheduler.readCachedPreviewImages(items, text, fontSize, width, height, undefined, layout),
   );
   handle("fonts:ensurePreviewCache", (_event, item: FontItem, text: string, fontSize: number, width: number, height: number) =>
     runtime.ensureFontPreviewCache(item, text, fontSize, width, height),

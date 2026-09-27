@@ -1,0 +1,36 @@
+/* Explicit canvas pixels: no contain/scale-down or per-font ink normalization. */
+.font-row-preview-wide .font-row-preview-box.list-preview-viewport {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+}
+.list-preview-hint { flex: 0 0 20px; padding: 2px 8px; font: 10px/16px sans-serif; opacity: .65; }
+.list-preview-scroll {
+  display: block; flex: 1 1 auto; min-height: 0; width: 100%; overflow: auto;
+  overscroll-behavior-x: contain; scrollbar-width: thin; touch-action: pan-x pan-y;
+}
+.list-preview-scroll:focus-visible { outline: 2px solid var(--accent, #8a93ff); outline-offset: -2px; }
+.list-preview-canvas {
+  display: block; position: relative; width: var(--list-canvas-width); height: var(--list-canvas-height);
+  flex: none; overflow: hidden; contain: layout paint;
+}
+.font-row-preview-wide .list-preview-canvas .font-sample-image.compact {
+  display: block; width: var(--list-canvas-width) !important; height: var(--list-canvas-height) !important;
+  min-width: 0; max-width: none !important; max-height: none !important; margin: 0; padding: 0; object-fit: fill;
+}
+.font-row-preview-wide .list-preview-canvas .preview-layout-list {
+  display: block !important; box-sizing: border-box; width: var(--list-canvas-width) !important;
+  height: var(--list-canvas-height) !important; min-height: 0 !important; max-height: none !important;
+  max-width: none !important; padding: var(--list-padding-y) var(--list-padding-x) !important;
+  margin: 0 !important; overflow: visible !important; text-align: left !important; transform: none !important;
+}
+.font-row-preview-wide .list-preview-canvas .preview-layout-list .font-sample-line {
+  display: block !important; width: max-content !important; min-width: 0 !important; max-width: none !important;
+  height: 1lh; min-height: 1lh; margin: 0 !important; padding: 0 !important;
+  font-size: inherit !important; line-height: inherit !important; letter-spacing: normal !important;
+  white-space: pre !important; text-align: left !important; overflow: visible !important;
+}

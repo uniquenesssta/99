@@ -1,3 +1,4 @@
+import type { NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 import { join } from "node:path";
 import type { FontItem, LibraryState } from "../../../shared/types";
 import type { PreviewCacheStorage, PreviewRuntimeOptions } from "./previewRuntimeTypes";
@@ -11,7 +12,7 @@ export function createPreviewBatchRowsRuntime(
 ) {
   function buildPreviewCacheGroups(
     items: FontItem[], libraryShell: LibraryState, normalizedText: string,
-    fontSize: number, width: number, height: number, onInvalidId?: (id: string) => void,
+    fontSize: number, width: number, height: number, onInvalidId?: (id: string) => void, layout?: NativePreviewLayout,
   ) {
     const groups = new Map<
       string,
@@ -43,6 +44,7 @@ export function createPreviewBatchRowsRuntime(
         width,
         height,
         normalizedText,
+        undefined, layout,
       );
       const outputPath = join(storage.dir, `${key}.png`);
       const dbKey =

@@ -1,8 +1,9 @@
+import { nativePreviewLayoutKey, type NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 import type { FontItem } from '../../../shared/types'
 import { resolveInstalledFontPreviewRoute } from './previewInstalledFontRouteRuntime'
 
 export type CachedPreviewImageDataUriCache = {
-  keyForItem: (item: FontItem, text: string, fontSize: number, width: number, height: number) => string
+  keyForItem: (item: FontItem, text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout) => string
   get: (key: string) => string
   remember: (key: string, dataUri: string) => string
   rememberMany: (entries: Array<{ key: string; dataUri: string }>) => void
@@ -31,8 +32,8 @@ export function createCachedPreviewImageDataUriCacheRuntime(limit = DEFAULT_LIMI
     }
   }
 
-  function keyForItem(item: FontItem, text: string, fontSize: number, width: number, height: number): string {
-    return [itemSignature(item), text || '', fontSize, width, height].join('::')
+  function keyForItem(item: FontItem, text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout): string {
+    return [itemSignature(item), text || '', fontSize, width, height, nativePreviewLayoutKey(layout)].join('::')
   }
 
   function get(key: string): string {

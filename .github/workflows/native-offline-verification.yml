@@ -18,6 +18,23 @@ jobs:
       - run: npm run diagnostics:shared-io-integration
       - run: npm run diagnostics:shared-filesystem
       - run: npm run rust:build
+      - name: Build compatible preview helper
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          cmd /c "`"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 && native-src\preview-renderer\build-win.cmd"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: node build/diagnostics/check-list-preview-native.cjs
+      - run: npm run test:font-view-layout-dom
+        env:
+          HFM_LIST_NATIVE_SAMPLES: artifacts/list-preview/dom-samples.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: list-preview-native
+          path: artifacts/list-preview
+          retention-days: 7
       - run: npm run diagnostics:mapped-drive-unicode
       - run: cargo fetch --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
       - run: npm run diagnostics:execution-lifecycle
@@ -49,6 +66,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
+      - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml preview_render::types::tests
       - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml shared_file_io::tests
       - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml preview_cache::readonly_tests
       - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml core_daemon::lanes::tests

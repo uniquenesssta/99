@@ -142,7 +142,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     const previewText = previewLayout.text
     const memberTraces = uniqueFonts.map(font => previewTrace(font.id, previewText, previewLayout.fontSize))
     const batchTrace = previewBatchTrace(memberTraces)
-    const cachedImages = await options.hfm.getCachedPreviewImages(uniqueFonts, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, batchTrace)
+    const cachedImages = await options.hfm.getCachedPreviewImages(uniqueFonts, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, batchTrace, previewLayout.nativeLayout)
     const accepted = isPreviewRequestCurrent(requestToken) && acceptsResult()
     previewEvent(batchTrace, 'cache-batch-result', accepted ? 'current' : 'stale')
     if (!accepted) return hitIds
@@ -204,7 +204,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     const loadCachedNativeCardPreview = async (): Promise<boolean> => {
       if (skipCachedPreview || hasLegacyMissingPreviewFlag(font) || hasCacheMiss(font.id)) return false
       if (typeof options.hfm.getCachedPreviewImage !== 'function') return false
-      const cachedImage = await options.hfm.getCachedPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, trace).catch((error) => {
+      const cachedImage = await options.hfm.getCachedPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, trace, previewLayout.nativeLayout).catch((error) => {
         reportRendererTrace({
           kind: 'font-preview-cache-read-failed',
           label: 'getCachedPreviewImage',
@@ -235,7 +235,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
       if (await loadCachedNativeCardPreview()) return ''
       if (!current()) return ''
       try {
-        const image = await options.hfm.renderPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, trace)
+        const image = await options.hfm.renderPreviewImage(font, previewText, previewLayout.fontSize, previewLayout.width, previewLayout.height, trace, previewLayout.nativeLayout)
         previewEvent(trace, 'image-return', current() ? 'current' : 'stale', startedAt)
         if (!current()) return ''
         rememberPreviewImageTrace(image, trace, font.id)

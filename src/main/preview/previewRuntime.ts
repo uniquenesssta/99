@@ -1,3 +1,4 @@
+import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 import { claimPreviewImage } from './runtime/previewImageCommitRuntime'
 import { isCompletePreviewPng } from './runtime/previewImageValidationRuntime'
 import { previewFailure, previewFailureKind, previewFailureMessage, hasLegacyMissingPreviewFlag } from '../../shared/previewFailure'
@@ -117,12 +118,13 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     height = 260,
     preferCachedFontStat = false,
     ignorePreviewIndex = false,
-    foreground = true
+    foreground = true,
+    layout?: NativePreviewLayout
   ): Promise<PreviewImageFileResult | null> {
     ensureWindows()
 
     const resolvedFontPath = resolve(item.path)
-    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog)
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height, layout }, appendStartupLog)
     const installedRoute = resolveInstalledFontPreviewRoute(item)
     const previewCache = await tracePreviewPhase('storage-prepare', () => previewCacheStorageForFont(resolvedFontPath))
     let verifiedSource: Awaited<ReturnType<typeof resolvePreviewSource>> | undefined
@@ -141,7 +143,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     }
 
     const cacheIdentity = previewCacheIdentityForInstalledRoute(previewCache.identity, installedRoute)
-    const key = previewCacheKey(sha1, cacheIdentity, stat.size, stat.mtimeMs, fontSize, width, height, normalizedText)
+    const key = previewCacheKey(sha1, cacheIdentity, stat.size, stat.mtimeMs, fontSize, width, height, normalizedText, undefined, layout)
     const recentFailure = failedUntil.get(key)
     if (recentFailure && recentFailure.until > Date.now()) throw recentFailure.error
     failedUntil.delete(key)
@@ -206,7 +208,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     }
 
     rememberPreviewCacheRenderQueued(1)
-    await upsertBackgroundTask(taskKey, 'preview_cache', 10, { fontId: item.id, path: item.path, previewKey: key, outputPath, text: normalizedText, fontSize, width, height }).catch(() => undefined)
+    await upsertBackgroundTask(taskKey, 'preview_cache', 10, { fontId: item.id, path: item.path, previewKey: key, outputPath, text: normalizedText, fontSize, width, height, layout }).catch(() => undefined)
     await startBackgroundTask(taskKey).catch(() => null)
     await heartbeatBackgroundTask(taskKey, 0.1, '正在准备字体预览输入').catch(() => undefined)
 
@@ -228,7 +230,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
           const lease = claimPreviewImage(outputPath, 'render')
           const inputPath = `${lease.temporaryPath}.json`
           try {
-            const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview({ ...request, outputPath: lease.temporaryPath }, inputPath))
+            const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview({ ...request, layout, outputPath: lease.temporaryPath }, inputPath))
             if (!renderResult.ok) throw new Error(renderResult.message || `${renderResult.engine} preview renderer did not create output.`)
             const bytes = await readValidCachedImage(renderResult.outputPath || lease.temporaryPath, true)
             if (!bytes) throw previewFailure('failed')
@@ -361,10 +363,11 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     text: string,
     fontSize = 44,
     width = 720,
-    height = 260
+    height = 260,
+    layout?: NativePreviewLayout
   ): Promise<string> {
-    text = validatePreviewInput({ text, fontSize, width, height }, appendStartupLog).text
-    const requestKey = previewImageMemoryRuntime.requestKey(item, text, fontSize, width, height)
+    text = validatePreviewInput({ text, fontSize, width, height, layout }, appendStartupLog).text
+    const requestKey = previewImageMemoryRuntime.requestKey(item, text, fontSize, width, height, layout)
     const cachedDataUri = previewImageMemoryRuntime.get(requestKey)
     if (cachedDataUri && !hasLegacyMissingPreviewFlag(item)) { logOperation({ stage: 'image-memory-hit' }); return cachedDataUri }
 
@@ -380,7 +383,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     logOperation({ stage: 'render-queued' })
     const task = withGlobalIo('preview:render', () => withSharedPreviewReads(() => withPhysicalIoCompletion(async () => {
       logOperation({ stage: 'render-start', elapsedMs: performance.now() - queuedAt })
-      let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, false, true)
+      let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, false, true, layout)
       if (!previewFile) throw previewFailure('missing')
 
       try {
@@ -394,9 +397,9 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
           const installedRoute = resolveInstalledFontPreviewRoute(item)
           const keyIdentity = previewCacheIdentityForInstalledRoute(storage.identity, installedRoute)
           const keyStat = previewCacheStatForInstalledRoute(item, installedRoute, { size: item.fileSize || 0, mtimeMs: item.modifiedAt || 0 }) || { size: 0, mtimeMs: 0 }
-          const key = previewCacheKey(sha1, keyIdentity, keyStat.size, keyStat.mtimeMs, fontSize, width, height, normalizedText)
+          const key = previewCacheKey(sha1, keyIdentity, keyStat.size, keyStat.mtimeMs, fontSize, width, height, normalizedText, undefined, layout)
           await deletePreviewCacheIndex(storage, key).catch(() => undefined)
-          previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, true, true)
+          previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, true, true, layout)
           if (previewFile) {
             const bytes = previewFile.bytes || await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
             if (!isCompletePreviewPng(bytes)) throw previewFailure('failed')

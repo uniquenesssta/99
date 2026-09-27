@@ -80,10 +80,21 @@ function makeDomFile() {
   const family = renderCase(load, { mode: 'family', density: 'comfortable', width: 900 })
   const familyBaselineCss = css(undefined, file => cp.execFileSync('git', ['show', `6012cb6:${file}`], { cwd: root, encoding: 'utf8' }))
   const samples = require('./check-preview-layout-contract.cjs').makeDomSamples()
+  const listSamples = []
+  for (const size of [18,44,72]) for (const text of ['Ag 字体', 'Wide '.repeat(80) + '\nSecond', '\nAg']) {
+    const spec=load('src/shared/preview-layout/previewTextFitRuntime.ts').getCardPreviewLayout('list',text,size)
+    listSamples.push({...renderCase(load,{mode:'list',density:'compact',width:720,total:1,size,lines:spec.lines.length,previewText:text}),size,canvasWidth:spec.width,canvasHeight:spec.height,native:false})
+  }
+  if(process.env.HFM_LIST_NATIVE_SAMPLES) for(const sample of JSON.parse(fs.readFileSync(path.resolve(root,process.env.HFM_LIST_NATIVE_SAMPLES),'utf8'))) {
+    listSamples.push({...renderCase(load,{mode:'list',density:'compact',width:720,total:1,size:sample.size,lines:sample.text.split('\n').length,previewText:sample.text,previewImage:sample.image}),size:sample.size,canvasWidth:sample.width,canvasHeight:sample.height,native:true})
+  }
+  const ts=require('typescript'), viewportSource=ts.transpileModule(read(prefix+'components/ListPreviewViewport.tsx'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText
+  const reactScripts='<script>'+fs.readFileSync(path.join(root,'node_modules/react/umd/react.development.js'),'utf8')+'</script><script>'+fs.readFileSync(path.join(root,'node_modules/react-dom/umd/react-dom.development.js'),'utf8')+'</script>'
+  const viewportScript='const viewportExports={};(function(require,exports){'+viewportSource+'})(()=>({jsx:(t,p,k)=>React.createElement(t,{...p,key:k}),jsxs:(t,p,k)=>React.createElement(t,{...p,key:k})}),viewportExports);window.ListPreviewViewport=viewportExports.ListPreviewViewport;'
   const checkDom = require('./lib/font-view-layout-dom.cjs')
   const select = load(prefix + 'fontSelectionRuntime.ts').fontIdsInClientRect
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-layout-')), file = path.join(temp, 'layout.html')
-  fs.writeFileSync(file, '<!doctype html><html data-theme="light"><meta charset="utf-8"><style>' + css() + '</style><body><div id="fixture"></div><script>const cases=' + JSON.stringify(cases).replace(/</g, '\\u003c') + ';const family=' + JSON.stringify(family).replace(/</g, '\u003c') + ';const familyBaselineCss=' + JSON.stringify(familyBaselineCss).replace(/</g, '\u003c') + ';const select=' + select.toString() + ';const samples=' + JSON.stringify(samples).replace(/</g, '\\u003c') + ';window.checkLayout=' + checkDom.toString() + '</script></body></html>')
+  fs.writeFileSync(file, '<!doctype html><html data-theme="light"><meta charset="utf-8"><style>' + css() + '</style><body><div id="fixture"></div>' + reactScripts + '<script>' + viewportScript + 'const listSamples=' + JSON.stringify(listSamples).replace(/</g, '\\u003c') + ';const cases=' + JSON.stringify(cases).replace(/</g, '\\u003c') + ';const family=' + JSON.stringify(family).replace(/</g, '\u003c') + ';const familyBaselineCss=' + JSON.stringify(familyBaselineCss).replace(/</g, '\u003c') + ';const select=' + select.toString() + ';const samples=' + JSON.stringify(samples).replace(/</g, '\\u003c') + ';window.checkLayout=' + checkDom.toString() + '</script></body></html>')
   return { file, temp, count: cases.length }
 }
 behavior(); hookCases()

@@ -1,3 +1,4 @@
+import { ListPreviewViewport } from './ListPreviewViewport'
 import { sharedPathBlocked } from '@shared/sharedAvailability'
 import { useSharedAvailability } from '../sharedAvailabilityRuntime'
 import { previewTrace, previewEvent, previewImageTrace, previewTraceEnabled } from '../runtime/preview/previewTraceRuntime'
@@ -41,7 +42,7 @@ function previewSampleStyle(font: FontCardProps['font'], mode: 'grid' | 'list', 
 
 
 function FontCardImpl({ closingLifecycle, font, active, selected, compact, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
-  const ref = useRef<HTMLButtonElement | null>(null)
+  const ref = useRef<HTMLElement | null>(null)
   const requestedLayout = useMemo(() => getCardPreviewLayout(compact ? 'list' : 'grid', previewText, listPreviewFontSize), [compact, previewText, listPreviewFontSize])
   // Re-arm after reset commits: the text/size render can still contain the old image.
   const previewReady = Boolean(previewFamily || previewImage)
@@ -185,8 +186,8 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
 
   if (compact) {
     return (
-      <button
-        ref={ref}
+      <div role="group" tabIndex={0} aria-label={displayName}
+        ref={node => { ref.current = node }}
         data-font-id={font.id}
         className={`font-card font-list-row font-list-row-simple${active ? ' active' : ''}${selected ? ' selected' : ''}${font.deleteProtected ? ' delete-protected' : ''}${previewErrorState ? ' has-error' : ''}`}
         onMouseDown={(event) => {
@@ -207,6 +208,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
           event.preventDefault()
         }}
         onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return
           if (event.key !== 'Enter' && event.key !== ' ') return
           event.preventDefault()
           event.stopPropagation()
@@ -247,7 +249,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
         </span>
 
         <span className="font-row-preview font-row-preview-wide">
-          <span className="font-row-preview-box">
+          <ListPreviewViewport key={displayLayout.token} layout={displayLayout.nativeLayout!}>
             {useNativePreviewImage ? (
               <img onLoad={() => previewEvent(imageTrace, 'image-load')} onError={() => previewEvent(imageTrace, 'image-error')} className="font-sample-image compact" src={displayPreviewImage} alt="字体预览" loading="lazy" decoding="async" style={listNativePreviewImageStyle} />
             ) : (
@@ -269,15 +271,15 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
                 )}
               </span>
             )}
-          </span>
+          </ListPreviewViewport>
         </span>
-      </button>
+      </div>
     )
   }
 
   return (
     <button
-      ref={ref}
+      ref={node => { ref.current = node }}
       data-font-id={font.id}
       className={`font-card${active ? ' active' : ''}${selected ? ' selected' : ''}${font.deleteProtected ? ' delete-protected' : ''}`}
       onMouseDown={(event) => {

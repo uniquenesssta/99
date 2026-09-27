@@ -1,3 +1,4 @@
+import { validateNativePreviewLayout, type NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 // Native mirrors in preview_render/types.rs and preview-input-policy.h are
 // checked by diagnostics:preview-input-boundary. PowerShell uses these directly.
 export const PREVIEW_INPUT_LIMITS = Object.freeze({
@@ -8,7 +9,7 @@ export const PREVIEW_INPUT_LIMITS = Object.freeze({
 })
 export const DEFAULT_PREVIEW_TEXT = '字体预览 AaBb 123'
 
-export type PreviewInput = { text: string; fontSize: number; width: number; height: number }
+export type PreviewInput = { text: string; fontSize: number; width: number; height: number; layout?: NativePreviewLayout }
 type UntrustedPreviewInput = { [K in keyof PreviewInput]: unknown }
 
 export class PreviewInputError extends Error {
@@ -40,7 +41,10 @@ export function normalizePreviewInput(input: UntrustedPreviewInput): PreviewInpu
       if (!(low >= 0xdc00 && low <= 0xdfff)) return invalid('text')
     } else if (unit >= 0xdc00 && unit <= 0xdfff) return invalid('text')
   }
-  return { width, height, fontSize, text: input.text || DEFAULT_PREVIEW_TEXT }
+  const text = input.text || DEFAULT_PREVIEW_TEXT
+  let layout: NativePreviewLayout | undefined
+  try { layout = validateNativePreviewLayout(input.layout, text, fontSize, width, height) } catch { return invalid('layout') }
+  return { width, height, fontSize, text, ...(layout ? { layout } : {}) }
 }
 
 // One bounded stream per application log sink; never log supplied text/paths.

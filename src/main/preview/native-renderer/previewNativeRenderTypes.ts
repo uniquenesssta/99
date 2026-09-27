@@ -1,6 +1,8 @@
+import type { NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 export type PreviewNativeRenderEngine = 'rust-directwrite' | 'directwrite' | 'powershell-gdi'
 
 export interface PreviewNativeRenderRequest {
+  layout?: NativePreviewLayout
   fontPath: string
   preferSystemFont?: boolean
   systemFontFamilyCandidates?: string[]

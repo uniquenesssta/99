@@ -1,3 +1,4 @@
+import type { NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 import { createPreviewBatchRowsRuntime } from "./previewBatchRowsRuntime";
 import { createPreviewBatchReadRuntime } from "./previewBatchReadRuntime";
 import { createPreviewStorageIoRuntime } from "./previewStorageIoRuntime";
@@ -70,6 +71,7 @@ export function createPreviewCacheStorageRuntime(
     fontSize?: number,
     width?: number,
     height?: number,
+    layout?: NativePreviewLayout,
   ) => Promise<Record<string, boolean>>;
   readCachedPreviewImages: (
     items: FontItem[],
@@ -77,6 +79,7 @@ export function createPreviewCacheStorageRuntime(
     fontSize?: number,
     width?: number,
     height?: number,
+    layout?: NativePreviewLayout,
   ) => Promise<Record<string, string>>;
   hydratePreviewCache: (
     storage: PreviewCacheStorage,

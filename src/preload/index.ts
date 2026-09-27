@@ -1,3 +1,4 @@
+import type { NativePreviewLayout } from '../shared/preview-layout/nativePreviewLayout'
 import type { OperationTrace } from '../shared/operationTrace'
 import { contextBridge,ipcRenderer } from 'electron'
 import { Buffer } from 'node:buffer'
@@ -233,9 +234,9 @@ const api = {
   uninstallManaged: (item: FontItem): Promise<InstallResult> => invoke('fonts:uninstallManaged', item),
   toFontUrl: (filePath: string): Promise<string> => Promise.resolve(fontPathToProtocolUrl(filePath)),
   readPreviewFontData: (item: FontItem): Promise<ArrayBuffer> => invoke('fonts:readPreviewFontData', item),
-  renderPreviewImage: (item: FontItem, text: string, fontSize: number, width: number, height: number, trace?: OperationTrace): Promise<string> => invoke('fonts:renderPreviewImage', item, text, fontSize, width, height, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
-  getCachedPreviewImage: (item: FontItem, text: string, fontSize: number, width: number, height: number, trace?: OperationTrace): Promise<string> => invoke('fonts:getCachedPreviewImage', item, text, fontSize, width, height, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
-  getCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number, trace?: OperationTrace): Promise<Record<string, string>> => invoke('fonts:getCachedPreviewImages', items, text, fontSize, width, height, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  renderPreviewImage: (item: FontItem, text: string, fontSize: number, width: number, height: number, trace?: OperationTrace, layout?: NativePreviewLayout): Promise<string> => invoke('fonts:renderPreviewImage', item, text, fontSize, width, height, ...(layout ? [layout] : []), ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  getCachedPreviewImage: (item: FontItem, text: string, fontSize: number, width: number, height: number, trace?: OperationTrace, layout?: NativePreviewLayout): Promise<string> => invoke('fonts:getCachedPreviewImage', item, text, fontSize, width, height, ...(layout ? [layout] : []), ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  getCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number, trace?: OperationTrace, layout?: NativePreviewLayout): Promise<Record<string, string>> => invoke('fonts:getCachedPreviewImages', items, text, fontSize, width, height, ...(layout ? [layout] : []), ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   ensurePreviewCache: (item: FontItem, text: string, fontSize: number, width: number, height: number): Promise<{ ok: boolean; cached: boolean; storage?: 'root' | 'fallback' | 'local'; message?: string }> => invoke('fonts:ensurePreviewCache', item, text, fontSize, width, height),
   getPreviewCacheStatus: (items: FontItem[], text: string, fontSize: number, width: number, height: number): Promise<Record<string, boolean>> => invoke('fonts:getPreviewCacheStatus', items, text, fontSize, width, height),
   showItemInFolder: (filePath: string): Promise<boolean> => invoke('shell:showItemInFolder', filePath),

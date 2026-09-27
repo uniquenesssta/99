@@ -86,7 +86,7 @@ export function normalizedSelectionRect(rect: SelectionRectState): DOMRect {
 }
 
 export function fontIdsInClientRect(rect: DOMRect, root: ParentNode = document): string[] {
-  return Array.from(root.querySelectorAll<HTMLButtonElement>('.font-card[data-font-id]'))
+  return Array.from(root.querySelectorAll<HTMLElement>('.font-card[data-font-id]'))
     .filter((node) => {
       const box = node.getBoundingClientRect()
       return box.right >= rect.left && box.left <= rect.right && box.bottom >= rect.top && box.top <= rect.bottom

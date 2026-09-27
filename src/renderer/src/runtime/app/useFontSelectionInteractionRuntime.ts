@@ -23,7 +23,7 @@ export function createAppFontSelectionInteractionRuntime(options: {
   reportUserActivity: (reason?: string, durationMs?: number) => void
   userActivityIdleWindowMs: number
 }) {
-  function handleFontSelect(event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, font: FontItem): void {
+  function handleFontSelect(event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>, font: FontItem): void {
     handleFontSelectRuntime(event, font, {
       visibleFonts: options.visibleFonts,
       selectedFontId: options.selectedFontId,
@@ -42,7 +42,7 @@ export function createAppFontSelectionInteractionRuntime(options: {
     })
   }
 
-  function handleFontOpenDetail(event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, font: FontItem): void {
+  function handleFontOpenDetail(event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>, font: FontItem): void {
     handleFontOpenDetailRuntime(event, font, {
       setSingleFontSelection: options.setSingleFontSelection,
       setSelectedFontId: options.setSelectedFontId,

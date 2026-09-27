@@ -1,3 +1,4 @@
+import type { NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 import { previewFailure, previewFailureKind } from '../../../shared/previewFailure'
 import { isCompletePreviewPng } from './previewImageValidationRuntime'
 import fs from 'node:fs'
@@ -17,7 +18,7 @@ export function createCachedPreviewReadRuntime(args: {
   sha1: (value: string) => string
   previewCacheStorageForFont: (fontPath: string) => Promise<any>
   readPreviewCacheIndexStatus: (storage: any, key: string, outputPath: string) => Promise<string | null>
-  readCachedPreviewImages: (items: FontItem[], text: string, fontSize?: number, width?: number, height?: number) => Promise<Record<string, string>>
+  readCachedPreviewImages: (items: FontItem[], text: string, fontSize?: number, width?: number, height?: number, layout?: NativePreviewLayout) => Promise<Record<string, string>>
 }) {
   const { ensureWindows, sha1, previewCacheStorageForFont, readPreviewCacheIndexStatus, readCachedPreviewImages } = args
   const coalescer = createCachedPreviewReadCoalescerRuntime()
@@ -29,10 +30,11 @@ export function createCachedPreviewReadRuntime(args: {
     text: string,
     fontSize = 34,
     width = 520,
-    height = 150
+    height = 150,
+    layout?: NativePreviewLayout
   ): Promise<string> {
-    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, args.appendStartupLog)
-    const memoryKey = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height)
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height, layout }, args.appendStartupLog)
+    const memoryKey = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height, layout)
     const memoryHit = dataUriCache.get(memoryKey)
     if (memoryHit) return memoryHit
     if (missCache.hasFreshMiss(memoryKey)) return ''
@@ -52,7 +54,7 @@ export function createCachedPreviewReadRuntime(args: {
         const stat = previewCacheStatForInstalledRoute(item, installedRoute)
         if (!stat) return ''
         const cacheIdentity = previewCacheIdentityForInstalledRoute(storage.identity, installedRoute)
-        const key = previewCacheKey(sha1, cacheIdentity, stat.size, stat.mtimeMs, fontSize, width, height, normalizedText)
+        const key = previewCacheKey(sha1, cacheIdentity, stat.size, stat.mtimeMs, fontSize, width, height, normalizedText, undefined, layout)
         const outputPath = join(storage.dir, `${key}.png`)
         const indexedStatus = await readPreviewCacheIndexStatus(storage, key, outputPath)
         if (indexedStatus && indexedStatus !== 'ok') {
@@ -71,7 +73,7 @@ export function createCachedPreviewReadRuntime(args: {
         }
         throw previewFailure(previewFailureKind(error))
       }
-    })
+    }, layout)
   }
 
   async function readCachedFontPreviewImages(
@@ -79,15 +81,16 @@ export function createCachedPreviewReadRuntime(args: {
     text: string,
     fontSize = 34,
     width = 520,
-    height = 150
+    height = 150,
+    layout?: NativePreviewLayout
   ): Promise<Record<string, string>> {
-    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, args.appendStartupLog)
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height, layout }, args.appendStartupLog)
     const result: Record<string, string> = {}
     const misses: FontItem[] = []
 
     for (const item of items || []) {
       if (!item?.id) continue
-      const memoryKey = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height)
+      const memoryKey = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height, layout)
       const memoryHit = dataUriCache.get(memoryKey)
       if (memoryHit) {
         missCache.forget(memoryKey)
@@ -105,7 +108,7 @@ export function createCachedPreviewReadRuntime(args: {
         const freshResult: Record<string, string> = {}
         const freshMisses: FontItem[] = []
         for (const item of batchItems) {
-          const memoryKey = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height)
+          const memoryKey = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height, layout)
           const memoryHit = dataUriCache.get(memoryKey)
           if (memoryHit) {
             missCache.forget(memoryKey)
@@ -115,11 +118,11 @@ export function createCachedPreviewReadRuntime(args: {
           }
         }
         if (freshMisses.length) {
-          const diskResult = await readCachedPreviewImages(freshMisses, normalizedText, fontSize, width, height)
+          const diskResult = await readCachedPreviewImages(freshMisses, normalizedText, fontSize, width, height, layout)
           const memoryEntries: Array<{ key: string; dataUri: string }> = []
           const missedKeys: string[] = []
           for (const item of freshMisses) {
-            const key = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height)
+            const key = dataUriCache.keyForItem(item, normalizedText, fontSize, width, height, layout)
             const dataUri = diskResult[item.id]
             if (!dataUri || !dataUri.startsWith('data:image/png;base64,') || !isCompletePreviewPng(Buffer.from(dataUri.slice(22), 'base64'))) {
               missedKeys.push(key)
@@ -139,7 +142,7 @@ export function createCachedPreviewReadRuntime(args: {
       } catch {
         return {}
       }
-    })
+    }, layout)
 
     return { ...result, ...loaded }
   }

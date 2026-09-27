@@ -1,3 +1,4 @@
+import { nativePreviewLayoutKey, type NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 import type { OperationTrace } from '../../../shared/operationTrace'
 import { currentOperationTrace, withOperationTrace, logOperation } from '../../logging/operationTraceContext'
 import { tracePreviewPhase } from './previewTraceRuntime'
@@ -15,12 +16,12 @@ const DEFAULT_PREVIEW_SCHEDULER_REQUEST_TIMEOUT_MS = 2000
 const DEFAULT_PREVIEW_SCHEDULER_LOG_INTERVAL_MS = 5000
 
 export type PreviewRequestSchedulerOptions = {
-  readCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number) => Promise<Record<string, string>>
+  readCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout) => Promise<Record<string, string>>
   appendStartupLog?: (message: string) => void
 }
 
 export type PreviewRequestSchedulerRuntime = {
-  readCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number, signal?: AbortSignal) => Promise<Record<string, string>>
+  readCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number, signal?: AbortSignal, layout?: NativePreviewLayout) => Promise<Record<string, string>>
   cancelPending: () => void
 }
 
@@ -44,6 +45,7 @@ type PendingGroup = {
   fontSize: number
   width: number
   height: number
+  layout?: NativePreviewLayout
   itemsBySignature: Map<string, FontItem>
   callers: PreviewCaller[]
   timer: ReturnType<typeof setTimeout>
@@ -54,6 +56,7 @@ type WorkBatch = {
   fontSize: number
   width: number
   height: number
+  layout?: NativePreviewLayout
   items: FontItem[]
   callers: PreviewCaller[]
   enqueuedAt: number
@@ -96,8 +99,8 @@ function itemSignature(item: FontItem): string {
   ].join('@')
 }
 
-function schedulerGroupKey(text: string, fontSize: number, width: number, height: number): string {
-  return JSON.stringify([text, fontSize, width, height])
+function schedulerGroupKey(text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout): string {
+  return JSON.stringify([text, fontSize, width, height, nativePreviewLayoutKey(layout)])
 }
 
 function uniqueValidItems(items: FontItem[]): FontItem[] {
@@ -247,6 +250,7 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
         fontSize: group.fontSize,
         width: group.width,
         height: group.height,
+        layout: group.layout,
         items: chunk.items,
         callers: chunkCallers,
         enqueuedAt: Date.now(),
@@ -254,7 +258,7 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     }
   }
 
-  function createPendingGroup(key: string, text: string, fontSize: number, width: number, height: number): PendingGroup {
+  function createPendingGroup(key: string, text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout): PendingGroup {
     let group: PendingGroup
     const timer = setTimeout(() => flushPendingGroup(group), previewSchedulerCoalesceDelayMs())
     group = {
@@ -262,7 +266,7 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
       text,
       fontSize,
       width,
-      height,
+      height, layout,
       itemsBySignature: new Map<string, FontItem>(),
       callers: [],
       timer,
@@ -273,11 +277,11 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     return group
   }
 
-  function findPendingGroup(key: string, incomingCount: number, text: string, fontSize: number, width: number, height: number): PendingGroup {
+  function findPendingGroup(key: string, incomingCount: number, text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout): PendingGroup {
     const batchLimit = previewSchedulerBatchLimit()
     const list = pendingGroups.get(key) || []
     const existing = list.find((group) => group.itemsBySignature.size + incomingCount <= batchLimit)
-    return existing || createPendingGroup(key, text, fontSize, width, height)
+    return existing || createPendingGroup(key, text, fontSize, width, height, layout)
   }
 
   async function runBatch(batch: WorkBatch): Promise<void> {
@@ -289,7 +293,7 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     const result = await withPhysicalIoCompletion(() => withIoDeadlineResult(
       taskLabel,
       () => withOperationTrace(liveCallers[0].trace, options.appendStartupLog, () => tracePreviewPhase('cache-physical', async () => {
-        try { return await withPhysicalIoCompletion(() => options.readCachedPreviewImages(batch.items, batch.text, batch.fontSize, batch.width, batch.height)) }
+        try { return await withPhysicalIoCompletion(() => options.readCachedPreviewImages(batch.items, batch.text, batch.fontSize, batch.width, batch.height, batch.layout)) }
         finally { for (const caller of liveCallers) logOperation({ trace: caller.trace, stage: 'cache-physical-settled', outcome: caller.completed ? 'caller-ended' : 'caller-live', jobId: taskId }, options.appendStartupLog) }
       })),
       previewSchedulerRequestTimeoutMs(),
@@ -306,9 +310,9 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     }
   }
 
-  function readCachedPreviewImages(items: FontItem[], text: string, fontSize = 34, width = 520, height = 150, signal?: AbortSignal): Promise<Record<string, string>> {
+  function readCachedPreviewImages(items: FontItem[], text: string, fontSize = 34, width = 520, height = 150, signal?: AbortSignal, layout?: NativePreviewLayout): Promise<Record<string, string>> {
     try {
-      text = validatePreviewInput({ text, fontSize, width, height }, options.appendStartupLog).text
+      text = validatePreviewInput({ text, fontSize, width, height, layout }, options.appendStartupLog).text
     } catch (error) {
       return Promise.reject(error)
     }
@@ -337,8 +341,8 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
       signal?.addEventListener('abort', abort, { once: true })
       caller.unsubscribe = () => signal?.removeEventListener('abort', abort)
       if (signal?.aborted) { abort(); return }
-      const key = schedulerGroupKey(text, fontSize, width, height)
-      const group = findPendingGroup(key, validItems.length, text, fontSize, width, height)
+      const key = schedulerGroupKey(text, fontSize, width, height, layout)
+      const group = findPendingGroup(key, validItems.length, text, fontSize, width, height, layout)
       for (const item of validItems) group.itemsBySignature.set(itemSignature(item), item)
       group.callers.push(caller)
 

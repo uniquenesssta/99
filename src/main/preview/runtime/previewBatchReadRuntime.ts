@@ -1,3 +1,4 @@
+import type { NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 import { hasLegacyMissingPreviewFlag } from '../../../shared/previewFailure'
 import type { FontItem, LibraryState } from "../../../shared/types";
 import { validatePreviewInput } from "./previewInputPolicy";
@@ -51,14 +52,15 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
     fontSize = 34,
     width = 520,
     height = 150,
+    layout?: NativePreviewLayout,
   ): Promise<Record<string, boolean>> {
-    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, options.appendStartupLog);
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height, layout }, options.appendStartupLog);
     const libraryShell = await loadLibraryShellCached();
     const result: Record<string, boolean> = {};
     prefetchRuntime.beginPreviewCachePrefetchGeneration("preview-cache-status");
     const groups = buildPreviewCacheGroups(
       items, libraryShell, normalizedText, fontSize, width, height,
-      (id) => { result[id] = false; },
+      (id) => { result[id] = false; }, layout,
     );
 
     const recheckIds = new Set(items.filter(item => item && hasLegacyMissingPreviewFlag(item)).map(item => item.id));
@@ -222,12 +224,13 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
     fontSize = 34,
     width = 520,
     height = 150,
+    layout?: NativePreviewLayout,
   ): Promise<Record<string, string>> {
-    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height }, options.appendStartupLog);
+    const { text: normalizedText } = validatePreviewInput({ text, fontSize, width, height, layout }, options.appendStartupLog);
     const libraryShell = await loadLibraryShellCached();
     const result: Record<string, string> = {};
     const groups = buildPreviewCacheGroups(
-      items, libraryShell, normalizedText, fontSize, width, height,
+      items, libraryShell, normalizedText, fontSize, width, height, undefined, layout,
     );
 
     const now = new Date().toISOString();

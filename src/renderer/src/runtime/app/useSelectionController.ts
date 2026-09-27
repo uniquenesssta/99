@@ -58,8 +58,8 @@ export function useSelectionController(scopeKey = '') {
   }
 
   function createInteractionRuntime(options: SelectionInteractionRuntimeOptions): {
-    handleFontSelect: (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, font: FontItem) => void
-    handleFontOpenDetail: (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, font: FontItem) => void
+    handleFontSelect: (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>, font: FontItem) => void
+    handleFontOpenDetail: (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>, font: FontItem) => void
     beginMarqueeSelection: (event: MouseEvent<HTMLDivElement>) => void
   } {
     const inCurrentScope = () => previousScopeRef.current === scopeKey

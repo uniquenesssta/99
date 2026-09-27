@@ -15,8 +15,8 @@ interface FontCardRendererOptions {
   previewText: string
   listPreviewFontSize: number
   selectedFontIds: string[]
-  handleFontSelect: (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, font: FontItem) => void
-  handleFontOpenDetail: (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, font: FontItem) => void
+  handleFontSelect: (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>, font: FontItem) => void
+  handleFontOpenDetail: (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>, font: FontItem) => void
   requestPreviewFont: (font: FontItem, priority: 'normal' | 'high', acceptsResult?: () => boolean) => void
   fontListScrolling: () => boolean
   openFontMenu: (event: MouseEvent, font: FontItem) => void

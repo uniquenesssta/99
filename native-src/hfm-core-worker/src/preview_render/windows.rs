@@ -89,6 +89,10 @@ unsafe extern "system" {
     fn GdipCreateFontFamilyFromName(name: *const u16, font_collection: *mut c_void, font_family: *mut *mut c_void) -> GpStatus;
     fn GdipDeleteFontFamily(family: *mut c_void) -> GpStatus;
     fn GdipCreateFont(family: *mut c_void, em_size: f32, style: i32, unit: i32, font: *mut *mut c_void) -> GpStatus;
+    fn GdipGetFamily(font: *mut c_void, family: *mut *mut c_void) -> GpStatus;
+    fn GdipGetEmHeight(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
+    fn GdipGetCellAscent(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
+    fn GdipGetCellDescent(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
     fn GdipDeleteFont(font: *mut c_void) -> GpStatus;
     fn GdipCreateStringFormat(format_attributes: i32, language: u16, format: *mut *mut c_void) -> GpStatus;
     fn GdipDeleteStringFormat(format: *mut c_void) -> GpStatus;
@@ -206,8 +210,37 @@ pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<(), String
         height: ((request.height as f32) - margin_y * 2.0).max(1.0),
     };
 
-    let text_len = text.len().saturating_sub(1).min(i32::MAX as usize) as i32;
-    status(unsafe { GdipDrawString(graphics.0, text.as_ptr(), text_len, preview_font.font.0, &rect, format.0, brush.0) }, "GdipDrawString failed")?;
+    if let Some(layout) = &request.layout {
+        // CSS px map directly to UnitPixel at pixelRatio=1. Explicit lines are
+        // drawn independently, so GDI+ can never introduce an additional wrap.
+        status(unsafe { GdipSetStringFormatAlign(format.0, 0) }, "list alignment failed")?;
+        status(unsafe { GdipSetStringFormatLineAlign(format.0, 0) }, "list line alignment failed")?;
+        status(unsafe { GdipSetStringFormatFlags(format.0, STRING_FORMAT_FLAGS_MEASURE_TRAILING_SPACES | STRING_FORMAT_FLAGS_NO_WRAP | 0x4000 | 0x4) }, "list flags failed")?;
+        let mut family = ptr::null_mut();
+        status(unsafe { GdipGetFamily(preview_font.font.0, &mut family) }, "font metrics family failed")?;
+        let family = SystemFontFamily(family);
+        let (mut em, mut ascent, mut descent) = (0u16, 0u16, 0u16);
+        status(unsafe { GdipGetEmHeight(family.0, 0, &mut em) }, "font em failed")?;
+        status(unsafe { GdipGetCellAscent(family.0, 0, &mut ascent) }, "font ascent failed")?;
+        status(unsafe { GdipGetCellDescent(family.0, 0, &mut descent) }, "font descent failed")?;
+        if em == 0 { return Err("invalid font em height".to_string()); }
+        let cell_height = (ascent as f64 + descent as f64) * request.font_size / em as f64;
+        let line_height = request.font_size * layout.line_height;
+        for (index, line) in request.text.split('\n').enumerate() {
+            if line.is_empty() { continue; }
+            let line_text = wide_null(line);
+            let line_rect = GpRectF {
+                x: layout.padding_left as f32,
+                y: (layout.padding_top + index as f64 * line_height + (line_height - cell_height) / 2.0) as f32,
+                width: (request.width as f64 - layout.padding_left - layout.padding_right) as f32,
+                height: request.height as f32,
+            };
+            status(unsafe { GdipDrawString(graphics.0, line_text.as_ptr(), (line_text.len() - 1) as i32, preview_font.font.0, &line_rect, format.0, brush.0) }, "list DrawString failed")?;
+        }
+    } else {
+        let text_len = text.len().saturating_sub(1).min(i32::MAX as usize) as i32;
+        status(unsafe { GdipDrawString(graphics.0, text.as_ptr(), text_len, preview_font.font.0, &rect, format.0, brush.0) }, "GdipDrawString failed")?;
+    }
     let png_encoder = png_encoder_clsid()?;
     status(unsafe { GdipSaveImageToFile(bitmap.0, output_path.as_ptr(), &png_encoder, ptr::null()) }, "failed to save PNG")?;
 

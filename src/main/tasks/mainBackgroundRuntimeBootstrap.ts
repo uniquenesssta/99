@@ -99,6 +99,8 @@ export function createMainBackgroundRuntime(deps: MainBackgroundRuntimeOptions):
       height,
       force,
       returnDataUrl,
+      foreground,
+      layout,
     ) =>
       deps.ensureFontPreviewImageFile(
         item,
@@ -108,6 +110,8 @@ export function createMainBackgroundRuntime(deps: MainBackgroundRuntimeOptions):
         height,
         force,
         returnDataUrl,
+        foreground,
+        layout,
       ),
     withGlobalIo: deps.withGlobalIo,
     scanFolders: (folders, knownFonts) =>

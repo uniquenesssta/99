@@ -30,7 +30,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "bc7a7316f542cd8d831426ed2f061692c6f0eedcb3eaa222fbdb59da29bb8bb3"
+      "tokenHash": "27d4514b33552345c96fb0ef8d27cd97b5914656ecf28d344138ea07359a52b4"
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [

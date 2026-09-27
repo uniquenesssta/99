@@ -247,7 +247,8 @@ export function registerTracedIpcHandler(runtime: IpcHandlerRuntime, channel: st
   ipcMain.handle(channel, async (event, ...args) => {
     assertTrustedIpcSender(event, channel, append)
     const tail = args[args.length - 1]
-    const envelope = args.length === OPERATION_TRACE_ARGUMENTS[channel] + 1 && tail && typeof tail === 'object' && Object.keys(tail).length === 1 && Object.hasOwn(tail, '__hfmOperationTrace')
+    const previewLayoutChannel = ['fonts:renderPreviewImage', 'fonts:getCachedPreviewImage', 'fonts:getCachedPreviewImages'].includes(channel)
+    const envelope = (args.length === OPERATION_TRACE_ARGUMENTS[channel] + 1 || (previewLayoutChannel && args.length === OPERATION_TRACE_ARGUMENTS[channel] + 2)) && tail && typeof tail === 'object' && Object.keys(tail).length === 1 && Object.hasOwn(tail, '__hfmOperationTrace')
       ? args.pop() as { __hfmOperationTrace?: unknown } : undefined
     return withOperationTrace(envelope?.__hfmOperationTrace, append, async () => {
     const traceChannel = Object.hasOwn(OPERATION_TRACE_ARGUMENTS, channel)

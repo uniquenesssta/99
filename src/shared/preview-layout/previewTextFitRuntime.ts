@@ -1,3 +1,4 @@
+import { listNativeLayout } from './nativePreviewLayout'
 import { CARD_PREVIEW_LAYOUT_VERSION,CARD_PREVIEW_MAX_TEXT_LENGTH,DEFAULT_PREVIEW_TEXT,PREVIEW_LAYOUTS } from './previewLayoutConfig'
 import type { PreviewLayoutMode,PreviewTextFit } from './previewLayoutTypes'
 
@@ -111,13 +112,15 @@ export function getCardPreviewLayout(mode: 'list' | 'grid', text?: string, listF
   const spec = PREVIEW_LAYOUTS[mode]
   const fit = fitPreviewLines(mode, sample.lines)
   const fontSize = mode === 'list' ? clampListPreviewFontSize(listFontSize ?? LIST_PREVIEW_FONT_SIZE_DEFAULT) : fit.fontSize
-  const width = spec.width
-  const height = mode === 'list' ? listPreviewNativeImageHeight(fontSize, sample.lines.length) : spec.height
+  const nativeLayout = mode === 'list' ? listNativeLayout(fontSize, sample.lines.length) : undefined
+  const width = nativeLayout?.canvasWidth ?? spec.width
+  const height = nativeLayout?.canvasHeight ?? spec.height
   return {
-    ...sample, ...fit, fontSize, width, height, mode,
+    ...sample, ...fit, fontSize, width, height, mode, nativeLayout,
+    textAlign: mode === 'list' ? 'left' as const : fit.textAlign,
     version: CARD_PREVIEW_LAYOUT_VERSION,
     // Only pixel-relevant input is included: edits to hidden lines and the hidden
     // list control in grid mode must not invalidate an identical image.
-    token: JSON.stringify([CARD_PREVIEW_LAYOUT_VERSION, mode, sample.text, fontSize, width, height])
+    token: JSON.stringify([CARD_PREVIEW_LAYOUT_VERSION, mode, sample.text, fontSize, width, height, nativeLayout])
   }
 }
