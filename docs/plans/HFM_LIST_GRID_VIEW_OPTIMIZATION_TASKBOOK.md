@@ -280,7 +280,9 @@ flowchart TD
 
 ### 11.2 验证回执
 
-实现完成，完整本地诊断及 Windows CI/DOM 验证中；结束 SHA 待填写。
+实现提交 `2acef0f41028e0ffe494fa9a1dd673995f6f85e0`，完整本地诊断及 Windows CI/DOM 验证中；结束 SHA 待填写。
+
+首轮 [CI 36338633961](https://github.com/uniquenesssta/99/actions/runs/36338633961) 的空行高度断言失败：原断言直接比较 DOM 布局值与计算行高，没有允许子像素取整。补充实际/预期高度输出，并限定最多 1/64px 容差；仍拒绝空行塌陷。复验结果待补，不能把首轮记为通过。
 
 - 新增 `diagnostics:preview-layout-contract`：48 组样本/模式/字号组合的真实 renderer 请求参数，DOM 源样本与输入提示、UTF-16 边界、晚到结果、reset/resize、main 内存/合并/调度身份、legacy/strict 两种缓存与两种 rendererVersion；三个旧缺陷变体必须被拒绝。
 - 将 10 组真实 DOM 空行/空格场景加入既有 Electron 门，在两种窗口宽度执行，保留原 300 次几何场景及家族基线比较。最终 CSS 层叠同时修正列表 `!important` 覆盖，不能只改公共规则。
