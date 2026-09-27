@@ -2,13 +2,13 @@
 
 日期：2026-09-16。代码基线：`7e0e6d74b4a7f06abf06edae92c3b587970a96c6`，分支 `stage/09-preview-tags-app`。本轮为审计，不修改生产代码或冻结测试期望。
 
-执行顺序更新：用户要求日志最先。后续以[修复任务书](../plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)为准：R-01关联日志→三类Rust事务→标签意图/确认→广播去重→总验收。下文原始发现与原建议保留为审计历史，不作为当前实施顺序。
+执行顺序更新：用户要求日志最先。后续以[修复任务书](../old%20task/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md)为准：R-01关联日志→三类Rust事务→标签意图/确认→广播去重→总验收。下文原始发现与原建议保留为审计历史，不作为当前实施顺序。
 
-R-05修复进展（2026-09-17）：F-01a/b与F-02原始反例在b7f68e1分别复现，当前观察均为false；真实队列/页面/弹窗与失败重试门、Node SQLite关联链及LF/CRLF退化检查见[修复任务书§20](../plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#20-r-05-执行卡)。Windows/NAS实机待验；F-03仍留R-06。以下旧审计结果保留原基线含义。
+R-05修复进展（2026-09-17）：F-01a/b与F-02原始反例在b7f68e1分别复现，当前观察均为false；真实队列/页面/弹窗与失败重试门、Node SQLite关联链及LF/CRLF退化检查见[修复任务书§20](../old%20task/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#20-r-05-执行卡)。Windows/NAS实机待验；F-03仍留R-06。以下旧审计结果保留原基线含义。
 
-R-06修复进展（2026-09-17）：F-03a/b及相同IDs不同目录内容三项旧反例已转真实生产门；完整存储域/提交身份、双通道去重、保守旧消息与容量/过期边界见[修复任务书§21](../plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#21-r-06-执行卡)。未修改只读observer，F-03a/b当前均false；Rust原生/Windows/NAS仍待验。
+R-06修复进展（2026-09-17）：F-03a/b及相同IDs不同目录内容三项旧反例已转真实生产门；完整存储域/提交身份、双通道去重、保守旧消息与容量/过期边界见[修复任务书§21](../old%20task/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#21-r-06-执行卡)。未修改只读observer，F-03a/b当前均false；Rust原生/Windows/NAS仍待验。
 
-R-07验收进展（2026-09-17）：TypeScript与113/113通过，原observer的F-01a/b、F-02、F-03a/b均false；历史原生反例夹具补齐可选字段并严格区分编译失败和SQL断言失败。F-01～F-05证据、Node SQLite真实关联样本及X矩阵见[修复任务书§22](../plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#22-r-07-执行卡)。原生入口缺Cargo未执行，Windows/NAS待验；保留下面原审计基线、未宣称全部关项。
+R-07验收进展（2026-09-17）：TypeScript与113/113通过，原observer的F-01a/b、F-02、F-03a/b均false；历史原生反例夹具补齐可选字段并严格区分编译失败和SQL断言失败。F-01～F-05证据、Node SQLite真实关联样本及X矩阵见[修复任务书§22](../old%20task/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md#22-r-07-执行卡)。原生入口缺Cargo未执行，Windows/NAS待验；保留下面原审计基线、未宣称全部关项。
 
 ## 结论
 

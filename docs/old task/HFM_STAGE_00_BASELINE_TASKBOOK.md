@@ -1,5 +1,7 @@
 # HFM Stage 0：基线与行为锁任务书
 
+> 历史任务归档（2026-09-27）：本文件中的“当前阶段/下一项”为原记录，归档不改变已实现、待验收或未开始状态。当前工作入口见 [文档索引](../README.md) 与 [列表/网格优化任务书](../plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)。
+
 ## 1. 阶段信息
 
 - 上级任务书：[`HFM_REMEDIATION_MASTER_TASKBOOK.md`](HFM_REMEDIATION_MASTER_TASKBOOK.md)

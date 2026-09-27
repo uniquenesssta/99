@@ -1,5 +1,7 @@
 # HanFontManager：预览缓存、本地标签与 App 专项拆分任务书
 
+> 历史任务归档（2026-09-27）：本文件中的“当前阶段/下一项”为原记录，归档不改变已实现、待验收或未开始状态。当前工作入口见 [文档索引](../README.md) 与 [列表/网格优化任务书](../plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)。
+
 ## 0. 状态、目标与执行边界
 
 - 文档版本：1.3；更新日期：2026-09-16；软件：3.0.0。
@@ -508,7 +510,7 @@ Windows 仅使用 npm run dev，在隔离测试目录执行 Y-01/Y-02/Y-03，GUI
 | `build/diagnostics/fixtures/decomposition-baseline.fixture.json` | 新增静态基线清单；无运行时可变状态，仅该诊断读取 |
 | `package.json` | 注册默认门禁与独立观察命令 |
 | `README.md` | 用户可见变更记录 |
-| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡、范围、证据和后续验收边界 |
+| `docs/old task/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡、范围、证据和后续验收边界 |
 
 实际 changed files 为以上 5 项；无 src、Rust、锁文件、构建产物变化。
 
@@ -554,7 +556,7 @@ fixture 冻结三目标文件及七控制器的函数、具名导出、直接返
 
 全量 `npm run verify`：本轮 TypeScript 与 92/92 诊断通过，退出 0；最终结构清单增强后新增门禁再次通过。Linux 本地 VM 隔离测试，未运行 Windows GUI/原生 SQLite。无生产变更，不重复安装依赖或打包；用户后续仅需开发模式验收，不提供 build:win。
 
-提交：本执行卡随 D-01 原子提交发布，以 `git log -1 --format=%H -- docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` 查询实际 SHA；远端发布后核对同一文件树。回滚使用该 D-01 发布提交的 revert，不重写历史。
+提交：本执行卡随 D-01 原子提交发布，以 `git log -1 --format=%H -- "docs/old task/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md"` 查询实际 SHA；远端发布后核对同一文件树。回滚使用该 D-01 发布提交的 revert，不重写历史。
 
 Mermaid Chart 已输出真实四域写入关系图。Create State 返回“无 active world model”，未获得项目持久化成功证据；Git、fixture 与任务书为权威交接。
 
@@ -573,7 +575,7 @@ Mermaid Chart 已输出真实四域写入关系图。Create State 返回“无 a
 | `build/diagnostics/fixtures/watcher-activation-baseline.fixture.json` | 监听/激活直接链路的公开契约和源码基线 |
 | `package.json` | 注册默认基线门禁和独立已知故障观察入口 |
 | `README.md` | 本轮简洁变更记录 |
-| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡、生命周期及 active 来源、测试结果、遗留边界 |
+| `docs/old task/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡、生命周期及 active 来源、测试结果、遗留边界 |
 
 - 原 owner → 新 owner：全部生产所有者保持不变；不新增生产队列、句柄或状态镜像。
 - 实施计划：真实函数加载与受控 I/O/时钟；四故障各自控制失败时点并输出句柄/记录/结果/UI/count；健康行为及真实退化变异进入默认门禁；已知问题观察不进入默认 verify。
@@ -651,7 +653,7 @@ Mermaid Chart 已输出真实四域写入关系图。Create State 返回“无 a
 | `src/main/watcher/folderWatcherRuntime.ts` | 启动代次、实际监听健康判断、失效句柄及旧回调清理；仍为唯一监听状态所有者 |
 | `build/diagnostics/check-watcher-activation-baseline.cjs` | F-W1/F-W2 转为必过；补启动/停止/恢复/错误矩阵及变异 |
 | `build/diagnostics/fixtures/watcher-activation-baseline.fixture.json` | 只迁移监听文件的已审查基线，其他条目不变 |
-| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡、验证与接口语义说明 |
+| `docs/old task/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡、验证与接口语义说明 |
 | `README.md` | 修复结果记录 |
 
 不改调用方、IPC、依赖、激活逻辑或增量索引处理。boolean 接口保留；同签名仅在当前句柄全部健康时跳过，无无限重试。先以受控 I/O 建立失败门，再改生产实现。测试/提交结果收尾补录。
@@ -706,7 +708,7 @@ Create State 本轮返回无 active world model，未取得项目级持久化确
 | `src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts` | renderer：单项 resolved 失败/reject 恢复与计数重查 |
 | `build/diagnostics/check-watcher-activation-baseline.cjs` | 两侧真实函数测试、失败先行、跨 IPC 组合与变异 |
 | `build/diagnostics/fixtures/watcher-activation-baseline.fixture.json` | 分别迁移两个目标条目，不动其他契约 |
-| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡与两提交验证证据 |
+| `docs/old task/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡与两提交验证证据 |
 | `README.md` | 各提交用户可见修复记录 |
 
 状态 owner/调用方保持；不改批量停用协议、标签/收藏/保护、依赖或数据库格式。失败记录保留以便后续重试，计数响应倒序通过既有查询失效入口协调，不能通过再次停用核对状态。测试及最终 SHA 收尾记录。
@@ -774,7 +776,7 @@ metrics 隔离测试运行实际 hook 的第一个 effect，仅替换 React 调�
 | `build/diagnostics/check-watcher-activation-baseline.cjs` | 迁移 grace 断言，保持 W/A 既有门禁 |
 | `build/diagnostics/fixtures/watcher-activation-baseline.fixture.json` | 仅迁移实际变化的冻结条目 |
 | `package.json` | 注册新门禁 |
-| `docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡与分项验证 |
+| `docs/old task/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md` | 本执行卡与分项验证 |
 | `README.md` | 各笔提交结果 |
 
 W-03a 删除证据、W-03b 失败恢复、W-03c 字段来源分别原子提交；生产可变状态仍归原模块，不增加第二队列 owner。失败注入先行；测试、变异、验证、实机限制和提交后续据实回填。
@@ -1134,7 +1136,7 @@ Windows 待回执：收藏后连续切换全部/收藏，确认即时且不消�
 
 - npm run verify退出0：TypeScript及104/104诊断；Node v24.19.0/npm11.9.0/Linux。本轮10k查询20.1ms、500次布局2.1ms、万项选择0.6ms、最多60卡；非Windows实机性能结论。
 - 已通过自动门的领域修复包括字段隔离/重试、监听删除证据/失败重读、收藏与激活意图、预览提交失效、标签重复身份、事务回滚及提交后日志故障；对应实机历史问题不因自动门通过而全部关闭。GUI、NAS及Rust定向缺口见上表。
-- Mermaid已同步真实职责链；Create State返回Context Captured成功回执（Project: `.`）。无新API或版本问题，未触发Context7。git diff --check通过，提交只含3份文档；以git log -1 --format=%H -- docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md定位本轮报告提交。
+- Mermaid已同步真实职责链；Create State返回Context Captured成功回执（Project: `.`）。无新API或版本问题，未触发Context7。git diff --check通过，提交只含3份文档；以git log -1 --format=%H -- "docs/old task/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md"定位本轮报告提交。
 
 ## 28. D-11之后的全链路审计补充
 

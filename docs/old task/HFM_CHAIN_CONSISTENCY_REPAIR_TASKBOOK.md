@@ -1,5 +1,7 @@
 # HFM 全链路一致性修复任务书
 
+> 历史任务归档（2026-09-27）：本文件中的“当前阶段/下一项”为原记录，归档不改变已实现、待验收或未开始状态。当前工作入口见 [文档索引](../README.md) 与 [列表/网格优化任务书](../plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)。
+
 ## 0. 状态与执行入口
 
 - 文档版本1.8；日期2026-09-17；软件3.0.0；仓库uniquenesssta/99。
@@ -317,7 +319,7 @@ Context7已核对Node 24 AsyncLocalStorage.run并发作用域与异常恢复语�
 - build/diagnostics/check-local-tag-rust-atomicity.cjs
 - package.json
 - README.md
-- docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+- docs/old task/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
 
 范围：只修本地Rust标签事务；同文件连接函数供实际命令调用和SQLite提交失败测试共用，不新增业务所有者。绑定/目录/必要更新时间及其前后读取在Immediate事务中；身份、目录保留、返回结构、显式回退不变。共享/预览事务留R-03/R-04。
 旧证据：基线set/delete均在save_known_tags、localTagsUpdatedAt之前commit，目录读取也在事务前；原生旧失败/新通过暂待工具链，不用SQL重建冒充。
@@ -364,7 +366,7 @@ Windows复验：连续改单个/批量本地标签，清空后目录保留，显
   - build/diagnostics/check-shared-metadata-rust-atomicity.cjs
   - package.json
   - README.md
-  - docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+  - docs/old task/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
 - 实现范围：apply/remove-tag的行、ops、events、updatedAt/writerHost/rootPath、signature读纳入同一Immediate事务；删除目标读取在锁内。signature缺少meta记录仍兼容空值，真实SQL错误不再吞掉。空tag无数据库写入、无目标不更新metadata的旧语义保留。
 - 状态所有者：仍为原Rust命令；同文件私有连接函数供真实入口及commit故障测试共用，无新store/队列。lease、冲突合并、归档回放、Node路径、信号身份、UI及schema不改。
 - 旧证据：两个入口均先commit再写meta/读signature；本轮建立真实worker触发器和第二连接回读用例。原生旧失败/新通过如无法执行必须保持待验。
@@ -420,7 +422,7 @@ npm run dev
 - build/diagnostics/fixtures/rust-worker-clients.fixture.json
 - package.json
 - README.md
-- docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+- docs/old task/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
 
 边界：updatedAt是apply原有成功要求，放入行事务；保留第一输入行时间来源、空输入与无效行跳过语义，delete没有更新时间输入且原本不写meta，不扩展协议。修复Rust apply/delete提交后异常返回null触发Node回退，记录结果未知，保留命令不可用时null兼容。补R-01预览系统操作trace：起点为实际Rust客户端操作，不虚称来自用户点击；复用既有日志作用域、容量和临时输入，不加业务store/队列。
 只迁移rust-worker-clients fixture中runRustPreviewCacheInputCommand这一函数hash；先用实际客户端故障行为验证，再精确更新，其他方法/接口不变。测试使用真实Rust命令+第二连接回读、真实客户端及既有D-02迟到/代次/句柄门；无Cargo时原生测试仍独立待验。
@@ -493,7 +495,7 @@ npm run dev
 - build/diagnostics/fixtures/react-composition-domain-controllers.fixture.json
 - package.json
 - README.md
-- docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+- docs/old task/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
 
 无新业务状态所有者。新增门加载真实刷新、索引分流和监听实现，外部SQLite/Rust/文件系统由端口夹具替代，仍须Windows日志确认实际性能。仅迁移刷新函数所属文件冻结hash及失效后统计应保留的旧断言，不整体重录。启动等待、文件夹计数波动、维护缺文件继续定位，未确认根因不写成已修。PowerShell详细日志使用 $env:HFM_LOG_DETAIL = "debug"。
 
@@ -542,7 +544,7 @@ F-06收尾：npm run verify退出0（109/109），日志/tmp/f06-verify.log；�
 - build/diagnostics/check-activation-save-queue-durability.cjs
 - package.json
 - README.md
-- docs/plans/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
+- docs/old task/HFM_CHAIN_CONSISTENCY_REPAIR_TASKBOOK.md
 
 无新增业务模块/状态所有者、schema、IPC/preload、依赖、UI/CSS变化。新门加载真实TS入口，替换磁盘/Rust/窗口和数据库外部端口，先对基线逐项复现，再对新代码验收并执行LF/CRLF退化变异。队列的实际持久化结果读取在flush内进行，保留失败重试/新意图覆盖旧失败/关闭顺序。Rust渲染实机效果必须由Windows日志补证；mock结果不作原生验收。
 
@@ -622,7 +624,7 @@ F-07推送阻塞：实际git push被自动审批拒绝，理由为本次11个源
 
 日志验证补充白名单：src/renderer/src/fontOperationTrace.ts仅提供已有WeakMap的单条目诊断身份读取；build/diagnostics/check-operation-chain.cjs增加可选真实乐观编辑入口。发现此前token记录的是整批trace，无法区分批内同代次字体；改为单成员身份，生命周期阶段与原dispatch/queue-settled区分。业务确认仍仅使用token身份，不依赖trace。复用R-01真实preload/IPC/Node SQLite/第二连接回读验收成功与两次失败后重试；不替代Rust实机证据。
 
-文档收尾白名单：docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md仅同步本修复入口状态；docs/audits/HFM_FULL_CHAIN_AUDIT.md仅新增F-01/F-02修复证据链接，保留原始审计事实。
+文档收尾白名单：docs/old task/HFM_REMEDIATION_MASTER_TASKBOOK.md仅同步本修复入口状态；docs/audits/HFM_FULL_CHAIN_AUDIT.md仅新增F-01/F-02修复证据链接，保留原始审计事实。
 
 ### R-05 实现与验收边界
 
@@ -672,7 +674,7 @@ npm run dev
 - native-src/hfm-core-worker/src/mutation_protocol.rs、local_tags/types.rs、local_tags/state_machine.rs、shared_metadata/types.rs、shared_metadata/state_machine.rs：提交后生成一次独立于trace的mutationId，两通道从同一结果复制。
 - native-src/hfm-core-worker/tests/local_tags_atomicity.rs、shared_metadata_atomicity.rs：真实命令回执与协议身份相等/不同提交不同身份的原生断言。
 - 新增build/diagnostics/check-tag-mutation-identity.cjs；package.json：真实生产模块的完整R-06门及注册。
-- README.md、本任务书、docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md、docs/audits/HFM_FULL_CHAIN_AUDIT.md：结果与原审计修复入口。
+- README.md、本任务书、docs/old task/HFM_REMEDIATION_MASTER_TASKBOOK.md、docs/audits/HFM_FULL_CHAIN_AUDIT.md：结果与原审计修复入口。
 
 设计：现有updatedAt由调用方提供，shared signature为统计摘要，均不保证逐提交唯一。仅新增内部stateSignal.mutationId可选字段，Rust在事务提交后的signal构造点生成一次，Node仅为自身已提交信号生成UUID；旧Rust无字段不由适配器伪造身份。传输、daemon事件与worker响应复用同一字段，不修改数据库主键/schema、IPC通道/方法签名、preload或renderer广播；原回执mutationProtocol.stateSignal透传可选字段。生产端mutationId不参与数据库写入/重放，不从R-01trace/attempt计算。
 
@@ -744,7 +746,7 @@ R-03算法冻结补充白名单：build/diagnostics/check-shared-metadata-rust-a
 
 状态：自动验证通过待实机。基线5406f74c247e7a9dfd5d67b2fc7926453b6f7dbf，stage/09-preview-tags-app，起始工作树干净；R-01～R-06已交付，继承Cargo、Windows/NAS/GUI未验缺口。执行全量verify，保留原性能/引用门；整理F-01～F-05及X-01～X-13证据，缺失必需原生/实机证据不得关项。
 
-精确白名单：README.md；本任务书；docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md；docs/plans/HFM_REMEDIATION_MASTER_TASKBOOK.md；docs/audits/HFM_FULL_CHAIN_AUDIT.md；build/diagnostics/check-local-tag-rust-atomicity.cjs；build/diagnostics/check-shared-metadata-rust-atomicity.cjs；新增build/diagnostics/helpers/nativeTagMutationFixture.cjs与build/diagnostics/check-native-tag-mutation-fixtures.cjs；package.json。
+精确白名单：README.md；本任务书；docs/old task/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md；docs/old task/HFM_REMEDIATION_MASTER_TASKBOOK.md；docs/audits/HFM_FULL_CHAIN_AUDIT.md；build/diagnostics/check-local-tag-rust-atomicity.cjs；build/diagnostics/check-shared-metadata-rust-atomicity.cjs；新增build/diagnostics/helpers/nativeTagMutationFixture.cjs与build/diagnostics/check-native-tag-mutation-fixtures.cjs；package.json。
 
 已发现验收阻断：R-02/R-03的--native把修复前state_machine.rs复制到当前crate，而当前signal struct新增mutation_id: Option<String>，历史构造器缺字段；原生反例会先编译失败，无法到达必须的数据库断言。无Cargo时此为源码结构确认，不能声称运行得到Rust编译错误。仅测试夹具新增mutation_id: None，不回填当前业务算法或改变历史事务顺序；必须证明移除兼容行后字节等于原始历史源码。两脚本复用同一夹具适配所有者；不改生产代码、Rust类型/业务、数据库schema、依赖、IPC或既有反例期待。新默认门覆盖两域历史输入、LF/CRLF、重复迁移/锚点缺失拒绝及编译错误不可当SQL反例通过；真正Rust编译/SQL失败仍由--native确认。容量与生命周期、公开API另按原生产门及源码审查登记。
 

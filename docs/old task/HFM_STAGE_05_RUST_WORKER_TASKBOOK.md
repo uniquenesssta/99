@@ -1,5 +1,7 @@
 # HanFontManager Stage 5：Rust Worker 门面拆分任务书
 
+> 历史任务归档（2026-09-27）：本文件中的“当前阶段/下一项”为原记录，归档不改变已实现、待验收或未开始状态。当前工作入口见 [文档索引](../README.md) 与 [列表/网格优化任务书](../plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)。
+
 ## 0. 状态与执行边界
 
 - 版本：1.8；日期：2026-09-12；软件：HanFontManager 3.0.0。
