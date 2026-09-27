@@ -25,7 +25,6 @@ function main(){
  const fonts=[['Arial','arial.ttf'],['Gabriola','Gabriola.ttf'],['Microsoft YaHei','msyh.ttc']].filter(([,name])=>fs.existsSync(path.join(process.env.WINDIR,'Fonts',name)))
  assert(fonts.some(([name])=>name==='Arial'))
  const report=[],domSamples=[],failures=[]
- process.env.HFM_TEST_PREVIEW_DROP_TRACE='1'
  for(const engine of ['cpp','powershell','rust']) { try { for(const [family,file] of fonts)for(const size of [18,44,72])for(const [kind,text] of [['short','Ag jf'],['two','字体 Ag\n汉字 fj'],['long','Wide Ag '.repeat(100)+'\nSecond'],['blank','\nAg']]){
   const d=shared.getCardPreviewLayout('list',text,size),stem=`${engine}-${family.replaceAll(' ','_')}-${size}-${kind}`,outputPath=path.join(out,stem+'.png'),inputPath=path.join(out,stem+'.json')
   const request={fontPath:path.join(process.env.WINDIR,'Fonts',file),text:d.text,fontSize:size,width:d.width,height:d.height,layout:d.nativeLayout,outputPath}

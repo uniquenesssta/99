@@ -110,7 +110,6 @@ unsafe extern "system" {
 struct GdiplusToken(usize);
 impl Drop for GdiplusToken {
     fn drop(&mut self) {
-        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop GdiplusToken"); }
         if self.0 != 0 {
             unsafe { GdiplusShutdown(self.0) };
         }
@@ -120,7 +119,6 @@ impl Drop for GdiplusToken {
 struct Image(*mut c_void);
 impl Drop for Image {
     fn drop(&mut self) {
-        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop Image"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDisposeImage(self.0); }
         }
@@ -130,7 +128,6 @@ impl Drop for Image {
 struct Graphics(*mut c_void);
 impl Drop for Graphics {
     fn drop(&mut self) {
-        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop Graphics"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteGraphics(self.0); }
         }
@@ -140,7 +137,6 @@ impl Drop for Graphics {
 struct PrivateFontCollection(*mut c_void);
 impl Drop for PrivateFontCollection {
     fn drop(&mut self) {
-        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop PrivateFontCollection"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeletePrivateFontCollection(&mut self.0); }
         }
@@ -150,7 +146,6 @@ impl Drop for PrivateFontCollection {
 struct FontFamily(*mut c_void);
 impl Drop for FontFamily {
     fn drop(&mut self) {
-        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop FontFamily"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteFontFamily(self.0); }
         }
@@ -160,7 +155,6 @@ impl Drop for FontFamily {
 struct Font(*mut c_void);
 impl Drop for Font {
     fn drop(&mut self) {
-        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop Font"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteFont(self.0); }
         }
@@ -177,7 +171,6 @@ struct PreviewFont {
 struct StringFormat(*mut c_void);
 impl Drop for StringFormat {
     fn drop(&mut self) {
-        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop StringFormat"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteStringFormat(self.0); }
         }
@@ -187,7 +180,6 @@ impl Drop for StringFormat {
 struct Brush(*mut c_void);
 impl Drop for Brush {
     fn drop(&mut self) {
-        if std::env::var_os("HFM_TEST_PREVIEW_DROP_TRACE").is_some() { eprintln!("drop Brush"); }
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteBrush(self.0); }
         }
@@ -201,11 +193,12 @@ pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<(), String
     let output_path = wide_null(&request.output_path);
     let text = wide_null(&request.text);
 
+    // Graphics may retain private-font data. Keep its collection alive until
+    // graphics and bitmap have been destroyed (locals drop in reverse order).
+    let preview_font = create_preview_font(request)?;
     let bitmap = create_bitmap(request.width, request.height)?;
     let graphics = create_graphics(bitmap.0)?;
     configure_graphics(graphics.0)?;
-
-    let preview_font = create_preview_font(request)?;
     let format = create_string_format(&request.text)?;
     let brush = create_solid_brush(GLYPH_COLOR)?;
 

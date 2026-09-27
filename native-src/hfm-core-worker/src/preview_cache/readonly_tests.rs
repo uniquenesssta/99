@@ -1,12 +1,14 @@
 use super::*;
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, sync::atomic::{AtomicU64, Ordering}};
+
+static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("hfm-preview-readonly-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let path = std::env::temp_dir().join(format!("hfm-preview-readonly-{}-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(), NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)));
         fs::create_dir_all(&path).unwrap(); Self(path)
     }
     fn call(&self, command: fn(&PreviewCacheCommandConfig) -> Result<String,String>, db: &str, read_only: bool) -> Result<Value,String> {
