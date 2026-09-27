@@ -50,7 +50,7 @@ npm run build:win
 
 ## 当前工程任务
 
-- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S11-V01 几何与滚动优化已完成并通过验证；V02 已实现，完整验证中；V03～V07 未开始。
+- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S11-V01 几何与滚动优化已完成并通过验证；V02 样本与模式契约已完成，160 项诊断、320 次 DOM 场景及 CI 通过；V03～V07 未开始。
 - [文档索引与旧任务归档](docs/README.md)：原 16 份任务书已移动至 `docs/old task`，历史回执及未验事项保留。
 
 当前专项工作分支为 `stage/11-list-grid-view`（基线 `6012cb6`）；Stage 10 保持原提交不变。S10-06 既有工程核查结论保持；新任务书不恢复已取消的固定卡片数或冷热重复次数验收。
@@ -61,7 +61,7 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-28：在 `stage/11-list-grid-view` 实施 S11-V02。统一前两行卡片样本并保留空格、空行和完整输入；列表/网格采用各自字号与画布，网格不再读取隐藏列表字号；统一请求身份、过期图片保护与缓存版本。新增样本/请求链路行为回归及 Electron 空行/空格检查；完整验证回执见 [任务书 §11](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md#11-s11-v02-设计与执行2026-09-28)。Stage 10 保持不变，V03～V07 未开始。
+- 2026-09-28：在 `stage/11-list-grid-view` 实施 S11-V02。统一前两行卡片样本并保留空格、空行和完整输入；列表/网格采用各自字号与画布，网格不再读取隐藏列表字号；统一请求身份、过期图片保护与缓存版本。新增样本/请求链路行为回归及 Electron 空行/空格检查；本地 160 项诊断分段全覆盖、Windows 完整 160 项、320 次真实 DOM 场景、Windows/Linux 原生回归、构建与混淆通过（[CI 36338903640](https://github.com/uniquenesssta/99/actions/runs/36338903640)，受测基线 `ceb6b42`）。完整回执见 [任务书 §11](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md#11-s11-v02-设计与执行2026-09-28)。Stage 10 保持不变，V03～V07 未开始。
 
 - 2026-09-28：按用户要求在新分支 `stage/11-list-grid-view` 完成 S11-V01，Stage 10 保持 `6012cb6`。统一列表/网格几何与容器断点，修复虚拟窗口末尾、分页列位置和尺寸变化后的滚动锚点；保留家族卡片布局。本地及 Windows 159 项诊断、300 次真实 Electron DOM 场景、Windows/Linux 原生回归、构建与混淆通过（[CI 36336287398](https://github.com/uniquenesssta/99/actions/runs/36336287398)）。V02～V07 未开始；开发入口继续使用 `npm run dev`。
 
