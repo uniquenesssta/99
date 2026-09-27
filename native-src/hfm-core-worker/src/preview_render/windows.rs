@@ -88,6 +88,7 @@ unsafe extern "system" {
     fn GdipGetFontCollectionFamilyList(font_collection: *mut c_void, num_sought: i32, families: *mut *mut c_void, num_found: *mut i32) -> GpStatus;
     fn GdipCreateFontFamilyFromName(name: *const u16, font_collection: *mut c_void, font_family: *mut *mut c_void) -> GpStatus;
     fn GdipDeleteFontFamily(family: *mut c_void) -> GpStatus;
+    fn GdipCloneFontFamily(family: *mut c_void, cloned: *mut *mut c_void) -> GpStatus;
     fn GdipCreateFont(family: *mut c_void, em_size: f32, style: i32, unit: i32, font: *mut *mut c_void) -> GpStatus;
     fn GdipGetEmHeight(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
     fn GdipGetCellAscent(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
@@ -318,8 +319,15 @@ fn first_font_family(collection: *mut c_void) -> Result<FontFamily, String> {
     let mut families = vec![ptr::null_mut(); count as usize];
     let mut found = 0i32;
     status(unsafe { GdipGetFontCollectionFamilyList(collection, count, families.as_mut_ptr(), &mut found) }, "GdipGetFontCollectionFamilyList failed")?;
-    let owned: Vec<_> = families.into_iter().filter(|family| !family.is_null()).map(FontFamily).collect();
-    owned.into_iter().next().ok_or_else(|| "font file contains no loadable family".to_string())
+    // GdipGetFontCollectionFamilyList returns collection-owned handles. Match
+    // the Windows SDK FontCollection::GetFamilies wrapper: clone the selected
+    // family before placing it in an independently owned RAII value.
+    let borrowed = families.into_iter().take(found.max(0) as usize).find(|family| !family.is_null())
+        .ok_or_else(|| "font file contains no loadable family".to_string())?;
+    let mut owned = ptr::null_mut();
+    status(unsafe { GdipCloneFontFamily(borrowed, &mut owned) }, "failed to clone private font family")?;
+    if owned.is_null() { return Err("private font family clone is empty".to_string()); }
+    Ok(FontFamily(owned))
 }
 
 fn create_bitmap(width: u32, height: u32) -> Result<Image, String> {
