@@ -97,7 +97,7 @@ export const sharedFileSystem: typeof localFs = new Proxy(localFs, { get(target,
         identity=write.result.value
       }}
     }
-    const output=await executeSharedFile(request,bytes), value=output.result.value
+    const output=await executeSharedFile(request,bytes,operation === 'readFile' ? option.signal : undefined), value=output.result.value
     if (operation==='stat'||operation==='lstat') return fileInfo(value)
     if (operation==='readdir') return option.withFileTypes ? value.map((entry:any)=>({...fileInfo(entry),parentPath:request.path,path:request.path})) : value.map((entry:any)=>entry.name)
     if (operation==='readFile') return encoding(args[1]) ? output.bytes!.toString(encoding(args[1])) : Buffer.from(output.bytes!)

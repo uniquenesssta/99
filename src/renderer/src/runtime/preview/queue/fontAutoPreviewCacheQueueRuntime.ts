@@ -12,12 +12,26 @@ import type { FontAutoPreviewCacheQueueRuntime,FontPreviewQueueRuntimeOptions } 
 import { networkAwarePreviewLimit } from './fontPreviewNetworkPathRuntime'
 
 export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueueRuntimeOptions): FontAutoPreviewCacheQueueRuntime {
-  async function startAutoPreviewCache(fonts: FontItem[]): Promise<void> {
-    const candidates = fonts.filter((font) => !options.isBadFontRecord(previewRecordForProbe(font)))
+  let disposed = false
+  let retryTimer: number | undefined
+  let statusInFlight = false
+  let pendingStart: FontItem[] | null = null
+  function resetAutoPreviewCacheQueue(): void {
+    pendingStart = null
     options.autoPreviewCacheRunId.current += 1
-    const runId = options.autoPreviewCacheRunId.current
+    window.clearTimeout(retryTimer)
+    retryTimer = undefined
     options.autoPreviewCacheQueue.current = []
     options.queuedAutoPreviewCacheIds.current.clear()
+  }
+  function disposeAutoPreviewCacheQueue(): void { disposed = true; resetAutoPreviewCacheQueue() }
+  function resumeAutoPreviewCacheQueue(): void { disposed = false }
+  async function startAutoPreviewCache(fonts: FontItem[]): Promise<void> {
+    if (disposed) return
+    if (statusInFlight) { resetAutoPreviewCacheQueue(); pendingStart = fonts; return }
+    resetAutoPreviewCacheQueue()
+    const candidates = fonts.filter((font) => !options.isBadFontRecord(previewRecordForProbe(font)))
+    const runId = options.autoPreviewCacheRunId.current
     options.autoPreviewCacheStats.current = { total: candidates.length, done: 0, cached: 0, generated: 0, failed: 0 }
 
     if (!candidates.length) return
@@ -25,6 +39,7 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
     options.setStatus(`正在核验预览缓存：${candidates.length} 个字体……`)
 
     let missing = candidates
+    statusInFlight = true
     try {
       const statusMap = await options.hfm.getPreviewCacheStatus(candidates, AUTO_PREVIEW_CACHE_TEXT, AUTO_PREVIEW_CACHE_FONT_SIZE, AUTO_PREVIEW_CACHE_WIDTH, AUTO_PREVIEW_CACHE_HEIGHT)
       if (runId !== options.autoPreviewCacheRunId.current) return
@@ -36,8 +51,14 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
         return
       }
     } catch {
+      if (disposed || runId !== options.autoPreviewCacheRunId.current) return
       missing = candidates
       options.autoPreviewCacheStats.current = { total: candidates.length, done: 0, cached: 0, generated: 0, failed: 0 }
+    } finally {
+      statusInFlight = false
+      const next = pendingStart
+      pendingStart = null
+      if (next && !disposed) void startAutoPreviewCache(next)
     }
 
     for (const font of missing) {
@@ -56,10 +77,13 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
   }
 
   function processAutoPreviewCacheQueue(runId = options.autoPreviewCacheRunId.current): void {
-    if (runId !== options.autoPreviewCacheRunId.current) return
-    if (options.indexingActive) return
+    if (disposed || runId !== options.autoPreviewCacheRunId.current) return
+    if (!options.autoPreviewCacheQueue.current.length || options.indexingActive) return
     if (options.fontListScrollingRef.current || options.rendererUserActive() || rendererMemoryPressure() !== 'normal') {
-      window.setTimeout(() => processAutoPreviewCacheQueue(runId), 600)
+      if (retryTimer === undefined) retryTimer = window.setTimeout(() => {
+        retryTimer = undefined
+        processAutoPreviewCacheQueue(runId)
+      }, 600)
       return
     }
 
@@ -97,6 +121,7 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
         })
         .finally(() => {
           options.activeAutoPreviewCacheLoads.current = Math.max(0, options.activeAutoPreviewCacheLoads.current - 1)
+          if (disposed) return
           if (runId !== options.autoPreviewCacheRunId.current) {
             processAutoPreviewCacheQueue(options.autoPreviewCacheRunId.current)
             return
@@ -112,6 +137,9 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
   }
 
   return {
+    resetAutoPreviewCacheQueue,
+    disposeAutoPreviewCacheQueue,
+    resumeAutoPreviewCacheQueue,
     startAutoPreviewCache,
     processAutoPreviewCacheQueue
   }

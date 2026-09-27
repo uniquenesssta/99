@@ -1,3 +1,4 @@
+import { onApplicationClosing } from '../../app/shutdownCoordinatorRuntime';
 import { shell } from "electron";
 import { createPreviewRequestSchedulerRuntime } from "../../preview/runtime/previewRequestSchedulerRuntime";
 import type { FontItem } from "../../../shared/types";
@@ -8,6 +9,7 @@ export function registerPreviewAndFolderIpcHandlers(handle: IpcHandleRegistrar, 
     readCachedPreviewImages: (items, text, fontSize, width, height) => runtime.readCachedFontPreviewImages(items, text, fontSize, width, height) as Promise<Record<string, string>>,
     appendStartupLog: runtime.appendLog
   });
+  onApplicationClosing(() => previewRequestScheduler.cancelPending());
   handle("path:toFontUrl", (_event, filePath: string) => `hfm-font://local/${encodeURIComponent(filePath)}`);
   handle("fonts:readPreviewFontData", (_event, item: FontItem) => runtime.readPreviewFontData(item));
   handle("fonts:renderPreviewImage", (_event, item: FontItem, text: string, fontSize: number, width: number, height: number) =>

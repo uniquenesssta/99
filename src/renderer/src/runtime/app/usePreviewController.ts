@@ -1,3 +1,4 @@
+import type { RendererClosingLifecycleRuntime } from './rendererClosingLifecycleRuntime'
 import type { FontItem } from '@shared/types'
 import { normalizePreviewText } from '@shared/preview-layout/previewTextFitRuntime'
 import { useEffect,useRef,useState } from 'react'
@@ -27,7 +28,7 @@ type PreviewControllerOwnedOptions =
   'setNativePreviewImages' |
   'setNativeDetailImage'
 
-export type PreviewControllerOptions = Omit<FontPreviewQueueRuntimeOptions, PreviewControllerOwnedOptions>
+export type PreviewControllerOptions = Omit<FontPreviewQueueRuntimeOptions, PreviewControllerOwnedOptions> & { closingLifecycle?: RendererClosingLifecycleRuntime }
 
 export function usePreviewController(options: PreviewControllerOptions) {
   const [previewFamilies, setPreviewFamilies] = useState<Record<string, string>>({})
@@ -76,9 +77,14 @@ export function usePreviewController(options: PreviewControllerOptions) {
   if (!queueRuntimeRef.current) queueRuntimeRef.current = createFontPreviewQueueRuntime(runtimeOptionsRef.current)
   const queueRuntime = queueRuntimeRef.current
   useEffect(() => {
-    queueRuntime.resumePreviewQueue()
-    return () => queueRuntime.disposePreviewQueue()
-  }, [queueRuntime])
+    const sync = (closing: boolean) => {
+      if (closing) { clearFontListScrollIdleTimer(); queueRuntime.disposePreviewQueue() }
+      else queueRuntime.resumePreviewQueue()
+    }
+    sync(options.closingLifecycle?.isClosing() || false)
+    const unsubscribe = options.closingLifecycle?.subscribe(sync)
+    return () => { unsubscribe?.(); clearFontListScrollIdleTimer(); queueRuntime.disposePreviewQueue() }
+  }, [queueRuntime, options.closingLifecycle])
 
   usePreviewTextResetRuntime({
     previewText: options.previewText,

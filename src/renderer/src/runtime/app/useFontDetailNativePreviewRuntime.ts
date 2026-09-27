@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 
 export function useFontDetailNativePreviewRuntime(options: {
+  previewConsumerEnabled?: boolean
   hfm: typeof window.hfm
   detailVisible: boolean
   selectedFont: FontItem | undefined
@@ -32,7 +33,7 @@ export function useFontDetailNativePreviewRuntime(options: {
     const requestId = requestSeqRef.current + 1
     requestSeqRef.current = requestId
 
-    if (!detailVisible || !selectedFont || isBadFontRecord(selectedFont)) {
+    if (!options.previewConsumerEnabled || !detailVisible || !selectedFont || isBadFontRecord(selectedFont)) {
       setNativeDetailImage('')
       return undefined
     }
@@ -76,7 +77,8 @@ export function useFontDetailNativePreviewRuntime(options: {
     }, 180)
 
     return () => {
+      if (requestSeqRef.current === requestId) requestSeqRef.current += 1
       window.clearTimeout(timer)
     }
-  }, [selectedFont?.id, selectedFont?.previewDisabled, selectedFontPreviewFamily, selectedFailedPreview, selectedNativePreviewImage, previewText, detailVisible])
+  }, [options.previewConsumerEnabled, selectedFont?.id, selectedFont?.previewDisabled, selectedFontPreviewFamily, selectedFailedPreview, selectedNativePreviewImage, previewText, detailVisible])
 }

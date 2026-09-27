@@ -47,9 +47,10 @@ export type FontPreviewStateRuntime = {
 }
 
 export type FontPreviewLoadRuntime = {
+  disposePreviewLoads?: () => void
   resetPreviewLoads: () => void
-  ensurePreviewFont: (font: FontItem, skipCachedPreview?: boolean) => Promise<string>
-  loadCachedNativeCardPreviews: (fonts: FontItem[], acceptsResult?: () => boolean) => Promise<Set<string>>
+  ensurePreviewFont: (font: FontItem, skipCachedPreview?: boolean, acceptsResult?: () => boolean) => Promise<string>
+  loadCachedNativeCardPreviews: (fonts: FontItem[], acceptsResult?: (font?: FontItem) => boolean) => Promise<Set<string>>
 }
 
 export type FontVisiblePreviewQueueRuntime = {
@@ -57,10 +58,13 @@ export type FontVisiblePreviewQueueRuntime = {
   disposePreviewQueue: () => void
   resumePreviewQueue: () => void
   processPreviewQueue: () => void
-  requestPreviewFont: (font: FontItem, priority?: 'normal' | 'high') => void
+  requestPreviewFont: (font: FontItem, priority?: 'normal' | 'high', acceptsResult?: () => boolean) => void
 }
 
 export type FontAutoPreviewCacheQueueRuntime = {
+  resetAutoPreviewCacheQueue: () => void
+  disposeAutoPreviewCacheQueue: () => void
+  resumeAutoPreviewCacheQueue: () => void
   startAutoPreviewCache: (fonts: FontItem[]) => Promise<void>
   processAutoPreviewCacheQueue: (runId?: number) => void
 }

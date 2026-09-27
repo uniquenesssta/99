@@ -5,7 +5,7 @@ async function run(){
  let now=1000, source='ok', renderFailure=false, index='failed', renders=0, writes=[], files=new Map();
  class Clock extends Date {static now(){return now}}
  const fs={stat:async()=>{if(source!=='ok')throw Object.assign(Error(source),{code:source});return {size:100,mtimeMs:1}},access:async p=>{if(p.endsWith('.png')&&!files.has(p))throw Object.assign(Error('missing'),{code:'ENOENT'})},readFile:async p=>{if(!files.has(p))throw Object.assign(Error('missing'),{code:'ENOENT'});return files.get(p)},mkdir:async()=>{},copyFile:async()=>{}};
- const deadline={fileExistsTimeoutMs:()=>500,previewCacheQueryTimeoutMs:()=>2000,fileExistsWithDeadline:async p=>files.has(p),withIoDeadlineResult:async(label,f)=>{if(source==='timeout'&&label==='preview-font-stat')return {ok:false,timedOut:true};try{return {ok:true,value:await f(),timedOut:false}}catch(error){return {ok:false,error,timedOut:false}}}};
+ const deadline={withPhysicalIoCompletion:fn=>fn(),fileExistsTimeoutMs:()=>500,previewCacheQueryTimeoutMs:()=>2000,fileExistsWithDeadline:async p=>files.has(p),withIoDeadlineResult:async(label,f)=>{if(source==='timeout'&&label==='preview-font-stat')return {ok:false,timedOut:true};try{return {ok:true,value:await f(),timedOut:false}}catch(error){return {ok:false,error,timedOut:false}}}};
  const storage={previewCacheStorageForFont:async()=>({identity:'font',dir:'/cache',storage:'local'}),readPreviewCacheIndexStatus:async()=>index,writePreviewCacheIndex:async(_s,_k,v)=>{writes.push(v.status);index=v.status},deletePreviewCacheIndex:async()=>{index=null},rememberPreviewCacheRenderQueued(){}};
  const load=loader({
  '../native-renderer/directwrite/directWritePreviewHelperPathRuntime':{hasDirectWritePreviewHelper:()=>false},

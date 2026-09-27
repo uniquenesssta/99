@@ -20,7 +20,7 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
   assignSharedTagName: string
   latestVisibleFontsRef: MutableRefObject<FontItem[]>
   latestViewLayoutRef: MutableRefObject<{ rowHeight: number; minCardWidth: number }>
-  requestPreviewFont: (font: FontItem) => void
+  requestPreviewFont: (font: FontItem, priority?: 'normal' | 'high', acceptsResult?: () => boolean) => void
   contextFontTargets: (available?: FontItem[]) => FontItem[]
 }) {
   const { cardPoolViewLayout, virtualViewport, selectedFontId, selectedFontIds, contextMenu, previewFamilies, nativePreviewImages, failedPreviewFontIds, assignTagName, assignSharedTagName, latestVisibleFontsRef, latestViewLayoutRef, requestPreviewFont, contextFontTargets, library, sidebarPage, databasePageReady, databasePageResult } = args
@@ -73,10 +73,12 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
   )
 
   useEffect(() => {
+    let current = true
     for (const font of previewPrefetchFonts) {
       if (font.__earlyVisible) continue
-      requestPreviewFont(font)
+      requestPreviewFont(font, 'normal', () => current)
     }
+    return () => { current = false }
   }, [previewPrefetchKey, library.previewText])
 
   const selectedFont = useMemo(

@@ -112,7 +112,7 @@ async function run() {
  render(retryCard,'retry',44,undefined);let retryObserver=observers.at(-1);retryObserver.emit();assert.equal(visibleCalls,1);
  const fire=()=>{const [id,timer]=pendingTimers.entries().next().value;pendingTimers.delete(id);timer.fn();return timer.delay;};
  assert.equal(fire(),31000);assert.equal(visibleCalls,2);retryObserver.emit(false);assert.equal(pendingTimers.size,0);
- retryObserver.emit();assert.equal(fire(),61000);assert.equal(fire(),121000);assert.equal(visibleCalls,4);assert.equal(pendingTimers.size,0);
+ retryObserver.emit();assert.equal(fire(),61000);assert.equal(fire(),121000);assert.equal(visibleCalls,5);assert.equal(pendingTimers.size,0);
  render(retryCard,'changed',44,undefined);retryObserver=observers.at(-1);retryObserver.emit();assert.equal(pendingTimers.size,1);
  availability={roots:[{path:'C:/fonts',rootId:'C:/fonts',state:'offline',generation:2,tags:[]}],tags:[],unattributedTags:[]};
  render(retryCard,'changed',44,undefined);assert.equal(pendingTimers.size,0);const countBefore=visibleCalls;retryObserver.emit();assert.equal(visibleCalls,countBefore);

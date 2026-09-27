@@ -1,6 +1,6 @@
 import { isCompletePreviewPng } from './previewImageValidationRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
-import { fileExistsTimeoutMs,withIoDeadlineResult } from '../../path/ioDeadlineRuntime'
+import { fileExistsTimeoutMs,withIoDeadlineResult,withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
 
 export type PreviewCachedImageReadItem = {
   id: string
@@ -30,7 +30,15 @@ export async function readCachedPreviewImageDataUris(
       index += 1
       if (!item?.outputPath) continue
       try {
-        const readResult = await withIoDeadlineResult(`preview-cache-image-read:${item.outputPath}`, () => fsp.readFile(item.outputPath || ''), readTimeoutMs)
+        const controller = new AbortController()
+        const readResult = await withPhysicalIoCompletion(() => withIoDeadlineResult(
+          `preview-cache-image-read:${item.outputPath}`,
+          () => fsp.readFile(item.outputPath || '', { signal: controller.signal }),
+          readTimeoutMs
+        ).then(result => {
+          if (!result.ok && result.timedOut) controller.abort()
+          return result
+        }))
         if (!readResult.ok) {
           if (readResult.timedOut) options.onReadTimeout?.(item, readResult.error)
           continue

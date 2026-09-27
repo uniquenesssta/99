@@ -113,7 +113,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
         retryTimer = undefined
         if (cancelled || closingLifecycle?.isClosing() || !intersecting) return
         retryCount += 1
-        if (!isWindowResizeActive()) onVisible()
+        if (!isWindowResizeActive()) onVisible(() => !cancelled && intersecting && !closingLifecycle?.isClosing() && !knownRootBlocked)
         scheduleRetry()
       }, retryDelays[retryCount])
     }
@@ -127,7 +127,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       if (revealed) { scheduleRetry(); return }
       revealed = true
       previewEvent(previewTrace(font.id, previewText || '', listPreviewFontSize ?? 44), 'visible')
-      onVisible()
+      onVisible(() => !cancelled && intersecting && !closingLifecycle?.isClosing() && !knownRootBlocked)
       scheduleRetry()
       unsubscribeResizeSettled?.()
       unsubscribeResizeSettled = null
@@ -139,6 +139,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
         intersecting = entries[entries.length - 1]?.isIntersecting === true
         if (!intersecting) {
           stopRetry()
+          revealed = false
           deferVisibleUntilResizeSettled = false
           return
         }
@@ -160,7 +161,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
 
     const unsubscribeClosing = closingLifecycle?.subscribe(closing => {
       if (closing) stopRetry()
-      else scheduleRetry()
+      else { revealed = false; if (intersecting) reveal() }
     })
     observer.observe(node)
     return () => {

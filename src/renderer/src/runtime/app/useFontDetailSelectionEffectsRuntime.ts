@@ -23,12 +23,8 @@ export function useFontDetailSelectionEffectsRuntime(options: {
     library,
     visibleFonts,
     selectedFontId,
-    selectedFont,
-    detailVisible,
     setSelectedFontIds,
-    setSelectedFontId,
-    requestPreviewFont,
-    isBadFontRecord
+    setSelectedFontId
   } = options
 
   useEffect(() => {
@@ -63,9 +59,5 @@ export function useFontDetailSelectionEffectsRuntime(options: {
     }
   }, [visibleFonts, selectedFontId])
 
-  useEffect(() => {
-    if (detailVisible && selectedFont && !isBadFontRecord(selectedFont)) {
-      requestPreviewFont(selectedFont, 'high')
-    }
-  }, [selectedFont?.id, detailVisible])
+  // Detail selection has no preview consumer; cards own preview demand.
 }

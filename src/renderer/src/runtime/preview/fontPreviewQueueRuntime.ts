@@ -18,10 +18,20 @@ export function createFontPreviewQueueRuntime(options: FontPreviewQueueRuntimeOp
     ...loadRuntime,
     ...visibleQueueRuntime,
     ...autoPreviewCacheQueueRuntime,
+    disposePreviewQueue() {
+      visibleQueueRuntime.disposePreviewQueue()
+      autoPreviewCacheQueueRuntime.disposeAutoPreviewCacheQueue()
+      loadRuntime.disposePreviewLoads?.()
+    },
+    resumePreviewQueue() {
+      visibleQueueRuntime.resumePreviewQueue()
+      autoPreviewCacheQueueRuntime.resumeAutoPreviewCacheQueue()
+    },
     resetPreviewRuntimeState() {
       resetPreviewTrace()
       visibleQueueRuntime.resetVisiblePreviewQueue()
       loadRuntime.resetPreviewLoads()
+      autoPreviewCacheQueueRuntime.resetAutoPreviewCacheQueue()
       stateRuntime.resetPreviewRuntimeState()
     }
   }

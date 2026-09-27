@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { sharedFileSystem as fsp } from './sharedFileSystemRuntime'
 export class IoDeadlineTimeoutError extends Error {
   readonly timeoutMs: number
@@ -63,6 +64,16 @@ export async function withIoDeadlineResult<T>(label: string, operation: () => Pr
   const boundedTimeoutMs = Math.max(100, Math.min(30000, Math.floor(Number(timeoutMs) || DEFAULT_UNC_ROOT_PROBE_TIMEOUT_MS)))
   const operationPromise = Promise.resolve().then(operation)
   operationPromise.catch(() => null)
+  const pending = physicalIoScope.getStore()
+  if (pending) {
+    const physical = operationPromise.then(() => undefined, async error => {
+      // Isolated shared I/O can reject before its child exits. The existing
+      // transport's closed promise is the physical ownership boundary.
+      await error?.closed
+    })
+    pending.add(physical)
+    void physical.then(() => pending.delete(physical), () => pending.delete(physical))
+  }
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new IoDeadlineTimeoutError(label, boundedTimeoutMs)), boundedTimeoutMs)
@@ -84,4 +95,16 @@ export async function fileExistsWithDeadline(filePath: string, timeoutMs = fileE
     return true
   }, timeoutMs)
   return result.ok ? result.value : false
+}
+
+// A deadline ends a caller's wait, not the operation. Preview owners retain their
+// concurrency slot until every nested deadline operation has actually settled.
+const physicalIoScope = new AsyncLocalStorage<Set<Promise<unknown>>>()
+export async function withPhysicalIoCompletion<T>(operation: () => Promise<T>): Promise<T> {
+  const pending = new Set<Promise<unknown>>()
+  return physicalIoScope.run(pending, async () => {
+    try { return await operation() }
+    catch (error) { await (error as { closed?: Promise<unknown> } | null)?.closed; throw error }
+    finally { while (pending.size) await Promise.allSettled([...pending]) }
+  })
 }

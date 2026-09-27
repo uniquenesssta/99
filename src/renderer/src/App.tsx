@@ -260,6 +260,7 @@ export default function App(): JSX.Element {
     fontListScrollingRef,
     isFontListScrolling
   } = usePreviewController({
+    closingLifecycle: rendererClosingLifecycle,
     hfm: window.hfm,
     previewText: library.previewText,
     listPreviewFontSize,
@@ -803,6 +804,7 @@ export default function App(): JSX.Element {
   })
 
   useFontDetailNativePreviewRuntime({
+    previewConsumerEnabled: false, // FontDetailPanel currently consumes no preview image.
     hfm: window.hfm,
     detailVisible,
     selectedFont,

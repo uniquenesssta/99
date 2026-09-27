@@ -90,7 +90,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "8cf7270ea8ee2187415a19134eddcfae920694de7be8bb9ca39ce9ea48259e92"
+      "tokenHash": "586cb1f4037813ecac1009cd3e110652ad282c23d408f64312cc4718beae76bd"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -728,7 +728,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "0b84cf9c712d2f4572ba2e68912a5e5a3af483d20f691c780145b6fcab6dd6b8"
+      "tokenHash": "600b1f876497dfc766ea9f71ff09bdc5b79a3b6c56f902e00c132d410557e95a"
     },
     "src/renderer/src/runtime/app/useSelectionController.ts": {
       "functions": [

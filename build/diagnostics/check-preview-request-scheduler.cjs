@@ -97,7 +97,8 @@ async function testSplitBatchResultsAreAggregated() {
       (id) => {
         if (id === '../../path/ioDeadlineRuntime') {
           return {
-            previewCacheQueryTimeoutMs: () => 2000,
+            withPhysicalIoCompletion: operation => operation(),
+      previewCacheQueryTimeoutMs: () => 2000,
             withIoDeadlineResult: async (_label, operation) => ({ ok: true, value: await operation() })
           }
         }

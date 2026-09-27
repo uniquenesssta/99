@@ -29,7 +29,7 @@ function loader(mocks = {}, globals = {}, transforms = {}) {
       }
       throw Error(`Unmocked port: ${file} -> ${id}`)
     }
-    vm.runInNewContext(code, { module, exports: module.exports, require: localRequire, console, Date, Map, WeakMap, Set, Math, Buffer, performance, setTimeout, clearTimeout, process, ...globals }, { filename: file })
+    vm.runInNewContext(code, { module, exports: module.exports, require: localRequire, console, AbortController, Date, Map, WeakMap, Set, Math, Buffer, performance, setTimeout, clearTimeout, process, ...globals }, { filename: file })
     return module.exports
   }
   return load

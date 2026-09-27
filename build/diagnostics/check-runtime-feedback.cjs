@@ -161,6 +161,7 @@ async function preview() {
   // StrictMode cleanup/setup retains the pending cache slot and rejects its old result.
   controller.requestPreviewFont({...font,id:'d'},'high');assert.equal(calls.length,4)
   for(const slot of slots)if(slot?.setup){slot.cleanup?.();slot.cleanup=slot.setup()}
+  controller.requestPreviewFont({...font,id:'d'},'high');
   controller.processPreviewQueue();assert.equal(calls.length,4,'cleanup/setup released pending cache slot')
   await tick();controller=render();assert.equal(controller.nativePreviewImages.d,'data:image/png;base64,native-new-39-d')
   calls[3].g.resolve({d:'disposed-image'});await tick();controller=render()
@@ -175,7 +176,7 @@ async function preview() {
   // The per-font fallback path must also stop at await boundaries after reset.
   for(const boundary of ['cache','url','webfont']) {
     const gate=deferred(), effects=[]
-    const quick={QUICK_WEBFONT_URL_TIMEOUT_MS:100,remainingQuickPreviewBudget:()=>100,loadFontFaceFromUrlWithinBudget:async()=>{effects.push('webfont');if(boundary==='webfont')await gate.promise},isFontCollectionOrLargeFont:()=>true}
+    const quick={createFontFaceLoadOwner:()=>({}),QuickPreviewTimeoutError:class extends Error {},QUICK_WEBFONT_URL_TIMEOUT_MS:100,remainingQuickPreviewBudget:()=>100,loadFontFaceFromUrlWithinBudget:async()=>{effects.push('webfont');if(boundary==='webfont')await gate.promise},isFontCollectionOrLargeFont:()=>true}
     const perFontLoad=loadFor({'../../../appRuntime':app,'../../../rendererPerformance':{reportRendererTrace(){}},'./fontPreviewQuickFallbackRuntime':quick})
     const o={...options,previewText:'audit',previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:{current:new Set()},previewRequestTokenRef:{current:'audit::39'},
       setPreviewFamilies:()=>effects.push('state'),setFailedPreviewFontIds:()=>effects.push('state'),setNativePreviewImages:()=>effects.push('state'),updateFont:()=>effects.push('update'),
@@ -210,7 +211,7 @@ async function main(){
   if(selected || mutant || baseline || crlf)return
   const positive=spawnSync(process.execPath,[__filename,'--crlf'],{cwd:root,encoding:'utf8',timeout:60000})
   assert.equal(positive.status,0,positive.stdout+positive.stderr)
-  const expected={activation:'older in-flight state won',incremental:'single font became full rebuild',storage:'network drive fell into media probing',preview:'rerender duplicated pending batch'}
+  const expected={activation:'older in-flight state won',incremental:'single font became full rebuild',storage:'network drive fell into media probing',preview:'reset released pending cache IPC'}
   for(const newline of [[],['--crlf']])for(const [key,needle]of Object.entries(expected)){
     const result=spawnSync(process.execPath,[__filename,`--case=${key}`,`--mutant=${key}`,...newline],{cwd:root,encoding:'utf8',timeout:60000})
     assert.equal(result.status,1,`mutation ${key} did not exit with assertion: ${result.error || result.stdout}`)

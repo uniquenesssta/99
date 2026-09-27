@@ -7,10 +7,8 @@ export function createFontPreviewStateRuntime(options: FontPreviewQueueRuntimeOp
     options.previewQueue.current = []
     options.queuedPreviewFontIds.current.clear()
     options.loadingFonts.current.clear()
-    options.activePreviewLoads.current = 0
     options.autoPreviewCacheQueue.current = []
     options.queuedAutoPreviewCacheIds.current.clear()
-    options.activeAutoPreviewCacheLoads.current = 0
     options.autoPreviewCacheStats.current = { total: 0, done: 0, cached: 0, generated: 0, failed: 0 }
     options.setFailedPreviewFontIds({})
     options.setNativePreviewImages({})

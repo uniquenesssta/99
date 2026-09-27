@@ -20,7 +20,7 @@ export function previewFailureKind(error: unknown): PreviewFailureKind {
   const code = value?.code || value?.reason || ''
   if (message.includes('软件正在退出，此操作未继续执行。')) return 'cancelled'
   if (['stale-generation', 'aborted', 'closing', 'cancelled'].includes(code) || value?.name === 'AbortError') return 'cancelled'
-  if (code === 'timeout' || code === 'ETIMEDOUT' || value?.name === 'IoDeadlineTimeoutError') return 'timeout'
+  if (code === 'timeout' || code === 'ETIMEDOUT' || ['IoDeadlineTimeoutError', 'QuickPreviewTimeoutError'].includes(value?.name || '')) return 'timeout'
   if (['EACCES', 'EPERM', 'EIO', 'ENETUNREACH', 'root-offline', 'executor-unavailable'].includes(code) || message.includes('共享位置离线')) return 'unavailable'
   return 'failed'
 }

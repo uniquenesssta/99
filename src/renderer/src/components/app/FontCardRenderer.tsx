@@ -17,7 +17,7 @@ interface FontCardRendererOptions {
   selectedFontIds: string[]
   handleFontSelect: (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, font: FontItem) => void
   handleFontOpenDetail: (event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>, font: FontItem) => void
-  requestPreviewFont: (font: FontItem, priority: 'normal' | 'high') => void
+  requestPreviewFont: (font: FontItem, priority: 'normal' | 'high', acceptsResult?: () => boolean) => void
   fontListScrolling: () => boolean
   openFontMenu: (event: MouseEvent, font: FontItem) => void
   setDraggingFontId: (fontId: string) => void
@@ -55,9 +55,9 @@ export function useFontCardRenderer(options: FontCardRendererOptions) {
       handlers = {
         onSelect: (event) => latestOptionsRef.current.handleFontSelect(event, font),
         onOpenDetail: (event) => latestOptionsRef.current.handleFontOpenDetail(event, font),
-        onVisible: () => {
+        onVisible: (acceptsResult) => {
           const current = latestOptionsRef.current
-          current.requestPreviewFont(font, current.fontListScrolling() ? 'normal' : 'high')
+          current.requestPreviewFont(font, current.fontListScrolling() ? 'normal' : 'high', acceptsResult)
         },
         onContextMenu: (event) => latestOptionsRef.current.openFontMenu(event, font),
         onDragStart: (event) => {

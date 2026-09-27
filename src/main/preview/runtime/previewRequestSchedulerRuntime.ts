@@ -3,7 +3,7 @@ import { currentOperationTrace, withOperationTrace, logOperation } from '../../l
 import { tracePreviewPhase } from './previewTraceRuntime'
 import type { FontItem } from '../../../shared/types'
 import { validatePreviewInput } from './previewInputPolicy'
-import { previewCacheQueryTimeoutMs,withIoDeadlineResult } from '../../path/ioDeadlineRuntime'
+import { previewCacheQueryTimeoutMs,withIoDeadlineResult,withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
 
 let traceBatchSequence = 0
 
@@ -20,7 +20,8 @@ export type PreviewRequestSchedulerOptions = {
 }
 
 export type PreviewRequestSchedulerRuntime = {
-  readCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number) => Promise<Record<string, string>>
+  readCachedPreviewImages: (items: FontItem[], text: string, fontSize: number, width: number, height: number, signal?: AbortSignal) => Promise<Record<string, string>>
+  cancelPending: () => void
 }
 
 type PreviewCaller = {
@@ -30,6 +31,7 @@ type PreviewCaller = {
   resolve: (value: Record<string, string>) => void
   reject: (error: unknown) => void
   createdAt: number
+  unsubscribe?: () => void
   completed: boolean
   remainingBatches: number
   result: Record<string, string>
@@ -122,6 +124,7 @@ function filterResultForItems(items: FontItem[], result: Record<string, string>)
 export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSchedulerOptions): PreviewRequestSchedulerRuntime {
   const pendingGroups = new Map<string, PendingGroup[]>()
   const queue: WorkBatch[] = []
+  const callers = new Set<PreviewCaller>()
   let active = 0
   let lastPressureLogAt = 0
 
@@ -137,6 +140,8 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     if (caller.completed) return
     caller.completed = true
     clearTimeout(caller.timer)
+    caller.unsubscribe?.()
+    callers.delete(caller)
     caller.resolve(value)
   }
 
@@ -144,14 +149,15 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     if (caller.completed) return
     caller.completed = true
     clearTimeout(caller.timer)
+    caller.unsubscribe?.()
+    callers.delete(caller)
     caller.reject(error)
   }
 
   function expireCaller(caller: PreviewCaller): void {
     if (caller.completed) return
-    caller.completed = true
     logOperation({ trace: caller.trace, stage: 'cache-caller-deadline', elapsedMs: performance.now() - caller.monotonicStartedAt }, options.appendStartupLog)
-    caller.resolve({ ...caller.result })
+    resolveCaller(caller, { ...caller.result })
   }
 
   function completeCallerBatch(caller: PreviewCaller, value: Record<string, string>): void {
@@ -184,6 +190,8 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
       if (!batch) continue
       const liveCallers = batch.callers.filter((caller) => !caller.completed)
       if (!liveCallers.length) continue
+      const signatures = new Set(liveCallers.flatMap(caller => caller.items.map(itemSignature)))
+      batch.items = batch.items.filter(item => signatures.has(itemSignature(item)))
       active += 1
       runBatch({ ...batch, callers: liveCallers })
         .finally(() => {
@@ -278,14 +286,14 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     const taskId = `cache-batch-${++traceBatchSequence}`
     for (const caller of liveCallers) logOperation({ trace: caller.trace, stage: 'cache-physical-member', elapsedMs: performance.now() - caller.monotonicStartedAt, jobId: taskId }, options.appendStartupLog)
     const taskLabel = `preview-scheduler-cache-read:${batch.items.length}:${Date.now()}`
-    const result = await withIoDeadlineResult(
+    const result = await withPhysicalIoCompletion(() => withIoDeadlineResult(
       taskLabel,
       () => withOperationTrace(liveCallers[0].trace, options.appendStartupLog, () => tracePreviewPhase('cache-physical', async () => {
-        try { return await options.readCachedPreviewImages(batch.items, batch.text, batch.fontSize, batch.width, batch.height) }
+        try { return await withPhysicalIoCompletion(() => options.readCachedPreviewImages(batch.items, batch.text, batch.fontSize, batch.width, batch.height)) }
         finally { for (const caller of liveCallers) logOperation({ trace: caller.trace, stage: 'cache-physical-settled', outcome: caller.completed ? 'caller-ended' : 'caller-live', jobId: taskId }, options.appendStartupLog) }
       })),
       previewSchedulerRequestTimeoutMs(),
-    )
+    ))
 
     if (!result.ok) {
       logPressure(`preview request scheduler deadline dropped: items=${batch.items.length}, queueWaitMs=${Date.now() - batch.enqueuedAt}, ${result.error instanceof Error ? result.error.message : String(result.error)}`)
@@ -298,14 +306,14 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     }
   }
 
-  function readCachedPreviewImages(items: FontItem[], text: string, fontSize = 34, width = 520, height = 150): Promise<Record<string, string>> {
+  function readCachedPreviewImages(items: FontItem[], text: string, fontSize = 34, width = 520, height = 150, signal?: AbortSignal): Promise<Record<string, string>> {
     try {
       text = validatePreviewInput({ text, fontSize, width, height }, options.appendStartupLog).text
     } catch (error) {
       return Promise.reject(error)
     }
     const validItems = uniqueValidItems(items || [])
-    if (!validItems.length) return Promise.resolve({})
+    if (signal?.aborted || !validItems.length) return Promise.resolve({})
 
     const timeoutMs = previewSchedulerRequestTimeoutMs()
     return new Promise((resolve, reject) => {
@@ -324,6 +332,11 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
         timer,
       }
 
+      callers.add(caller)
+      const abort = () => resolveCaller(caller, {})
+      signal?.addEventListener('abort', abort, { once: true })
+      caller.unsubscribe = () => signal?.removeEventListener('abort', abort)
+      if (signal?.aborted) { abort(); return }
       const key = schedulerGroupKey(text, fontSize, width, height)
       const group = findPendingGroup(key, validItems.length, text, fontSize, width, height)
       for (const item of validItems) group.itemsBySignature.set(itemSignature(item), item)
@@ -336,5 +349,12 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     })
   }
 
-  return { readCachedPreviewImages }
+  function cancelPending(): void {
+    for (const groups of pendingGroups.values()) for (const group of groups) clearTimeout(group.timer)
+    pendingGroups.clear()
+    queue.length = 0
+    for (const caller of callers) resolveCaller(caller, {})
+    // Active physical work retains its slot and settles through the existing owner.
+  }
+  return { readCachedPreviewImages, cancelPending }
 }

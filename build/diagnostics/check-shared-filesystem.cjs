@@ -24,6 +24,11 @@ async function main() {
   try {
     const local=path.join(dir,'local');await io.writeFile(local,'local');assert.equal(await io.readFile(local,'utf8'),'local');assert.equal(requests.length,0)
     assert.deepEqual(await io.readFile(remote),bytes);assert.equal(requests.at(-1).availabilityRoot,'\\\\nas\\fonts')
+    const signal = new AbortController().signal
+    let receivedSignal
+    configureSharedFileExecutor(async (request, input, ownedSignal) => { receivedSignal = ownedSignal; return executor(request, input) })
+    await io.readFile(remote, { signal }); assert.equal(receivedSignal, signal, 'owned read signal lost before isolated executor')
+    configureSharedFileExecutor(executor)
     await io.writeFile(remote,bytes);assert.deepEqual(writes.pop(),bytes)
     const stat=await io.stat(remote);assert(stat.isFile());assert.equal(stat.mtime.getTime(),100)
     assert.equal((await io.readdir(remote,{withFileTypes:true}))[0].isFile(),true)

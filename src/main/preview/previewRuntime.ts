@@ -8,7 +8,7 @@ import { validatePreviewInput } from './runtime/previewInputPolicy'
 import { join,resolve } from 'node:path'
 import type { FontItem } from '../../shared/types'
 import { findBestWatchedRootForFile } from '../path/fontPathPolicy'
-import { fileExistsWithDeadline,withIoDeadlineResult,fileExistsTimeoutMs,previewCacheQueryTimeoutMs } from '../path/ioDeadlineRuntime'
+import { fileExistsWithDeadline,withIoDeadlineResult,withPhysicalIoCompletion,fileExistsTimeoutMs,previewCacheQueryTimeoutMs } from '../path/ioDeadlineRuntime'
 import { createCachedPreviewReadRuntime } from './runtime/cachedPreviewReadRuntime'
 import { createPreviewFontDataRuntime } from './runtime/previewFontDataRuntime'
 import { createPreviewImageMemoryRuntime } from './runtime/previewImageMemoryRuntime'
@@ -359,7 +359,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     }
     const queuedAt = performance.now()
     logOperation({ stage: 'render-queued' })
-    const task = withGlobalIo('preview:render', async () => {
+    const task = withGlobalIo('preview:render', () => withPhysicalIoCompletion(async () => {
       logOperation({ stage: 'render-start', elapsedMs: performance.now() - queuedAt })
       let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false)
       if (!previewFile) throw previewFailure('missing')
@@ -386,7 +386,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         }
         throw error
       }
-    }, { priority: 'foreground', storagePath: item.path })
+    }), { priority: 'foreground', storagePath: item.path })
       .finally(() => {
         renderTraceOwners.delete(requestKey)
         previewImageMemoryRuntime.inflight.delete(requestKey)
@@ -404,7 +404,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     height = 150
   ): Promise<{ ok: boolean; cached: boolean; storage?: 'root' | 'fallback' | 'local'; message?: string }> {
     try {
-      const previewFile = await withGlobalIo('preview:cache', () => ensureFontPreviewImageFile(item, text, fontSize, width, height, !hasLegacyMissingPreviewFlag(item)), { priority: 'background', storagePath: item.path })
+      const previewFile = await withGlobalIo('preview:cache', () => withPhysicalIoCompletion(() => ensureFontPreviewImageFile(item, text, fontSize, width, height, !hasLegacyMissingPreviewFlag(item))), { priority: 'background', storagePath: item.path })
       if (!previewFile) return { ok: false, cached: false, message: previewFailureMessage('missing') }
       return { ok: true, cached: previewFile.cached, storage: previewFile.storage }
     } catch (error) {
