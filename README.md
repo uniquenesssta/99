@@ -50,6 +50,8 @@ npm run build:win
 
 ## 当前工程任务
 
+- [当前 Stage 10：S10-06 全链路回归与最终关闭（S0-05.5 首轮 Windows/NAS 实机已通过，正式重复性能样本进行中）](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#19-s10-06-启动回执2026-09-27)
+
 - [操作一致性与刷新优化任务书（U-00～U-08 代码已实施，实机待验；U-08 性能测量未结案，U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
 
 - [预览缓存、本地标签与 App 专项拆分任务书（实现及自动验证已完成，实机待验）](docs/plans/HFM_PREVIEW_TAG_APP_DECOMPOSITION_TASKBOOK.md)
@@ -73,6 +75,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-27：S0-05.5 收到 Windows/NAS 首轮实机回执并放行 S10-06。新日志确认 worker 0.42.0 已携带 `preview-cache-read-only-v1`/`shared-owned-rename-v1`；可选共享缓存被取消后前台直接渲染成功，17 条记录到的慢路径 render IPC 为 1529/2109/4673ms（最小/中位/最大），无 ≥6s 样本；退出 started/closed 最终 1147/1147，`cleanupTimedOut=false`、`forced=false`。该会话不足以替代正式同条件 5 次性能统计，因此 Stage 10 进入 S10-06 最终验收但尚未全面关闭，详见 [Stage 10 §18.10–19](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#1810-windowsnas-首轮实机回执与-s10-06-放行2026-09-27)。
 
 - 2026-09-27：实施 [S0-05.5 共享预览修复](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#189-实施回执2026-09-27)：按文件/数据库/目录范围准入，能力门保护的 Rust 只读查询，前台出图不再等待慢共享拉取，修复负缓存、图片提交和发布锁所有权。保留 10 并发及停滚 150ms；`npm run dev` 会构建并核验新增 Rust 能力。实施提交 `faa77ec`：本地与 Windows `npm run verify`（158 项）、Windows/Linux 原生测试、构建与混淆通过（[CI 36306610050](https://github.com/uniquenesssta/99/actions/runs/36306610050)）；Windows/NAS 性能实测待验。
 

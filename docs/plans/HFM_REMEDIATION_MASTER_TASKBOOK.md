@@ -1,6 +1,6 @@
 # HanFontManager 修复与编排重构总任务书
 
-> 2026-09-27 当前入口：[Stage 10 预览性能任务书](HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。唯一分支 `stage/10-preview-performance`；S10-00 至 05 已实施，实机待验项及各次 CI 状态见阶段回执；并发 10/停滚 150ms 调整及共享隔离补修见第 16–17 节。最新补修提交 `5c97bf4` 的 Actions `36301125834` 已通过。新增第 18 节 **S0-05.5**（按用户指定编号）：共享资源冲突与前台缓存等待专项，实施提交 `faa77ec` 的代码、158 项诊断及 Windows/Linux CI 均通过（Actions `36306610050`），实机性能待验；实施回执见第 18.9 节，须先完成该专项再进入 S10-06。共享读写副作用、资源冲突、旧 worker 兼容、物理关闭、恢复及性能门均按该卡约束。S10-06 未开始，Windows/NAS 性能与 GUI 验收仍开放；DW 试验停止推进，原分支保留，不整分支合并。
+> 2026-09-27 当前入口：[Stage 10 预览性能任务书](HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)。唯一分支 `stage/10-preview-performance`；S10-00 至 05 与插入专项 S0-05.5 均已完成代码/自动化范围。S0-05.5 实施提交 `faa77ec` 的 158 项诊断、Windows/Linux 原生 CI（Actions `36306610050`）已通过；新增 Windows/NAS 首轮实机日志确认新 worker 能力生效、可选共享缓存取消后前台直接渲染、共享 I/O/退出最终收敛，未发现阻塞回归，因此用户已授权进入 **S10-06 全链路回归与最终关闭**。正式 24 卡片、连续滚动/改字及缓存冷热至少 5 次同条件性能样本现并入 S10-06；Stage 10 尚未全面关闭，DW 试验仍停止推进。
 
 > 2026-09-26 新试验任务书：[常驻 DirectWrite 预览](HFM_RESIDENT_DIRECTWRITE_PREVIEW_TASKBOOK.md)。当前仅完成计划，DW-00 未开始，默认后端保持不变；其他一般性能优化暂停，55 字体解析与 CIM 失败单列。该试验不覆盖 C-09/O-07 验收。
 
