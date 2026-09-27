@@ -143,6 +143,7 @@ $stringFormat.Alignment = [System.Drawing.StringAlignment]::Center
 $stringFormat.LineAlignment = [System.Drawing.StringAlignment]::Center
 
 if ($null -ne $layout) {
+  $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
   $stringFormat.Dispose()
   $stringFormat = [System.Drawing.StringFormat]::GenericTypographic.Clone()
   $stringFormat.Alignment = [System.Drawing.StringAlignment]::Near
