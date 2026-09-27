@@ -74,7 +74,7 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-27：实施 [S0-05.5 共享预览修复](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#189-实施回执2026-09-27)：按文件/数据库/目录范围准入，能力门保护的 Rust 只读查询，前台出图不再等待慢共享拉取，修复负缓存、图片提交和发布锁所有权。保留 10 并发及停滚 150ms；`npm run dev` 会构建并核验新增 Rust 能力。本地 `npm run verify`（158 项）、构建与混淆通过，原生 CI 及 Windows/NAS 性能实测待验。
+- 2026-09-27：实施 [S0-05.5 共享预览修复](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#189-实施回执2026-09-27)：按文件/数据库/目录范围准入，能力门保护的 Rust 只读查询，前台出图不再等待慢共享拉取，修复负缓存、图片提交和发布锁所有权。保留 10 并发及停滚 150ms；`npm run dev` 会构建并核验新增 Rust 能力。实施提交 `faa77ec`：本地与 Windows `npm run verify`（158 项）、Windows/Linux 原生测试、构建与混淆通过（[CI 36306610050](https://github.com/uniquenesssta/99/actions/runs/36306610050)）；Windows/NAS 性能实测待验。
 
 - 2026-09-27：完成共享预览等待专项审计，新增 [S0-05.5 执行卡（Stage 10 第 18 节）](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md)，约束共享范围互斥、缓存查询写副作用、前台拉取屏障、错误负缓存及并发资源所有权。已受控复现同共享无关读取被阻挡、渲染等待共享拉取、查询异常被记为 missing；既有共享预览、存储路由及物理生命周期专项通过。本次仅更新任务文档，修复实施未开始；最新生产补修 `5c97bf4` 的 CI 已通过，实机性能仍待验。
 

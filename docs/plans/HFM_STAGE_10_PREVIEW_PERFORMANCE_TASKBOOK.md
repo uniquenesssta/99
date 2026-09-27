@@ -6,7 +6,7 @@
 - 唯一分支：`stage/10-preview-performance`，从 Stage 9 `7d220c3d041291d4480210303ceae5dc3731145e` 建立。
 - 用户授权记录：建立 Stage 10，先带回 CIM 等独立修复；2026-09-26 追加审计并补齐执行任务书，当时未启动生产修复；随后用户依次授权 S10-01 至 S10-05 实施。常驻 DirectWrite 试验停止推进，原分支保留；本分支保持原预览路径。
 - 遵守根目录 AGENTS.md、ALL_AI_CODE.md、AI_PROJECT_RULES.md 和总任务书。无新依赖、无数据库迁移，不变更激活/收藏/标签行为。
-- 当前入口：第 18 节 `S0-05.5`，按用户指定编号登记为 S10-05 后、S10-06 前的共享预览专项，不改名、不另开 Stage 0 或分支。用户已授权“开始05.5”，代码已实施，本地自动化通过，原生 CI 待验；实机性能待验，见第 18.9 节。
+- 当前入口：第 18 节 `S0-05.5`，按用户指定编号登记为 S10-05 后、S10-06 前的共享预览专项，不改名、不另开 Stage 0 或分支。用户已授权“开始05.5”，代码及自动化已完成，实施提交 `faa77ec` 的 Windows/Linux CI 全部通过（Actions `36306610050`）；实机性能待验，见第 18.9 节。
 
 ## 1. S10-00：独立修复回移
 
@@ -590,7 +590,7 @@ flowchart TD
 
 ### 18.9 实施回执（2026-09-27）
 
-用户已追加授权“开始05.5”。沿用 `stage/10-preview-performance`，未进入 S10-06；下述代码以 `c28f20c`（生产基线仍为 `5c97bf4`）为父基线。
+用户已追加授权“开始05.5”。沿用 `stage/10-preview-performance`，未进入 S10-06；实施提交为 `faa77eca5d55d387807b760b15a5b68510970b94`，父基线为 `c28f20c`（生产回退基线仍为 `5c97bf4`）。
 
 | 审计项 | 实施与实际边界 |
 | --- | --- |
@@ -610,8 +610,10 @@ flowchart TD
 - 新增 `preview-optional-cache`：真实 previewRuntime 配受控缓存/原生端口，未释放慢缓存时前台已返回 PNG；同键多消费者共享一次实际渲染；查询失败不写 missing，第二次重试和历史 missing 复查有效。
 - 新增 `preview-image-ownership`：真实本地文件验证迟到拉取、render 接管取消、唯一提交、临时文件清理、PNG 单次读取、旧 worker 能力门、取消不熔断和根恢复。
 - 原有峰值 10、650ms 排队、500ms 实际检查、取消/退出/输入租约、24 项及 149/150ms、授权、事务及 unknown 写不重放门继续保留。只迁移本卡明确变更的等待/互斥/失败状态断言与冻结摘要。独立并发命令的一处 trace 顺序变化已对照旧源码确认：activation 的 exec 可早于 preview 的 daemon 提交，结果及各自生命周期不变。
-- 本地 `npm run verify` 通过（158/158 诊断），最终 typecheck、受影响图片/恢复/生命周期/共享文件行为门复核通过；Electron/Vite main、preload、renderer 构建和混淆通过。原生 CI 提交后核验，不把受控 JS 端口作为 Rust 通过证据。新增 Rust/SQLite 测试覆盖三种只读命令的 DB 字节/schema/meta/业务行/目录不变、缺库/旧 schema/损坏/busy 及恢复、旧默认 touch；原生锁测试覆盖锁被替换后的拒绝提交/拒绝删除。Windows/Linux workflow 已加入这些真实测试和 release build。
+- 本地 `npm run verify` 通过（158/158 诊断），最终 typecheck、受影响图片/恢复/生命周期/共享文件行为门复核通过；Electron/Vite main、preload、renderer 构建和混淆通过。新增 Rust/SQLite 测试覆盖三种只读命令的 DB 字节/schema/meta/业务行/目录不变、缺库/旧 schema/损坏/busy 及恢复、旧默认 touch；原生锁测试覆盖锁被替换后的拒绝提交/拒绝删除。Windows/Linux workflow 已执行这些真实测试和 release build，结果见下方 CI 回执。
 
 开发入口仍为 `npm run dev`。本轮有 Rust 修改：启动构建会复用 `../.hfm-deps/`，并在复制 worker 前检查 `preview-cache-read-only-v1` 和 `shared-owned-rename-v1`；应看到 “Rust preview read-only and owned publication capabilities verified”。不得沿用第 17 节“未修改 Rust”的旧结论。
 
-**未关闭项**：当前执行环境无 Cargo，也不是 Windows/NAS。原生通过与否以本次提交 CI 为准；真实 24 卡片首张/整屏显示、持续滚动改字和 NAS 冷热至少各 5 次对照仍待实机。自动化通过不等于性能问题已关闭，不清缓存、不恢复 DW 常驻渲染、不进入 S10-06。代码回退以第 18.8 节为准，不能单独留下新调度却拿掉能力门或所有权保护。
+CI 回执：实施提交的 [Actions 36306610050](https://github.com/uniquenesssta/99/actions/runs/36306610050) 已 completed/success，3 个任务全部通过。Windows 综合门的 `npm run verify` 完整通过（158/158），Rust 构建及新增能力握手核验、Electron/Vite 三端构建、混淆和 diff 检查通过；Windows/Linux `directory-metadata-native` 均通过。两平台的 SQLite 只读测试各 2 项、daemon lane 测试各 1 项通过；共享文件测试 Windows 5 项/Linux 6 项通过，包含锁替换后的所有权校验；两平台 release 构建、真实目录 worker 回执及后续回归/构建/混淆通过。
+
+**未关闭项**：真实 24 卡片首张/整屏显示、持续滚动改字和 NAS 冷热至少各 5 次对照仍待实机。自动化通过不等于性能问题已关闭，不清缓存、不恢复 DW 常驻渲染、不进入 S10-06。代码回退以第 18.8 节为准，不能单独留下新调度却拿掉能力门或所有权保护。
