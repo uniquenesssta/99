@@ -7,7 +7,7 @@ export type SharedIoProcessRequest = {
   roots: string[]
   timeoutMs: number
   label?: string
-  lane?: 'default' | 'root-probe'
+  lane?: 'default' | 'root-probe' | 'preview-read'
   queueTimeoutMs?: number
   maxBuffer?: number
   write: boolean
@@ -98,6 +98,13 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       if ([...active].some(other => laneOf(other) === 'root-probe')) return false
       return ![...active].some(other => rootsOverlap(job, other) && (other.request.write || laneOf(other) === 'root-probe'))
     }
+    if (laneOf(job) === 'preview-read') {
+      if ([...active].filter(other => laneOf(other) === 'preview-read').length >= 10) return false
+      // Existing same-root writes/default work remain exclusive. Do not let a
+      // stream of newer preview reads starve an earlier queued operation.
+      if (queue.some(other => other.id < job.id && laneOf(other) === 'default' && rootsOverlap(job, other))) return false
+      return ![...active].some(other => rootsOverlap(job, other) && laneOf(other) !== 'preview-read' && laneOf(other) !== 'root-probe')
+    }
     if ([...active].filter(other => laneOf(other) === 'default').length >= 2) return false
     return ![...active].some(other => rootsOverlap(job, other))
   }
@@ -154,6 +161,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       while (true) {
         let index = queue.findIndex(job => laneOf(job) === 'root-probe' && canStart(job))
         if (index < 0) index = queue.findIndex(job => laneOf(job) === 'default' && canStart(job))
+        if (index < 0) index = queue.findIndex(job => laneOf(job) === 'preview-read' && canStart(job))
         if (index < 0) break
         const job = queue.splice(index, 1)[0]
         if (job.timer) clearTimeout(job.timer)
@@ -220,6 +228,8 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     if (!request.roots.length) return reject('Shared I/O requires a resource identity', 'invalid-root')
     const requestLane = request.lane || 'default'
     const queuedInLane = queue.filter(job => laneOf(job) === requestLane).length
+    if (requestLane === 'preview-read' && request.write) return reject('Preview lane accepts shared reads only', 'invalid-lane')
+    if (requestLane === 'preview-read' && queuedInLane >= 128) return reject('Shared preview queue full', 'queue-full')
     if (requestLane === 'default' && queuedInLane >= 128) return reject('Shared I/O queue full', 'queue-full')
     if (requestLane === 'root-probe' && queuedInLane >= 8) return reject('Shared root probe queue full', 'queue-full')
     count(request, 'accepted')
@@ -251,6 +261,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       active: active.size,
       queued: queue.length,
       activeDefault: [...active].filter(job => laneOf(job) === 'default').length,
+      activePreviewRead: [...active].filter(job => laneOf(job) === 'preview-read').length,
       activeRootProbe: [...active].filter(job => laneOf(job) === 'root-probe').length,
       pids: [...active].map(job => job.child?.pid).filter(Boolean),
       metrics: snapshotMetrics(),

@@ -1,7 +1,12 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { getStartupPathRootState, markStartupPathRootUnavailable } from './startupPathAvailabilityRuntime'
 import { promises as localFs } from 'node:fs'
 import { sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
 import { SharedIoProcessError } from './sharedIoProcessRuntime'
+
+const previewReadScope = new AsyncLocalStorage<boolean>()
+export function withSharedPreviewReads<T>(operation: () => Promise<T>): Promise<T> { return previewReadScope.run(true, operation) }
+export function isSharedPreviewReadScope(): boolean { return previewReadScope.getStore() === true }
 
 export type SharedFileRequest = {
   operation: string; path: string; availabilityRoot?: string; dest?: string; transferPath?: string

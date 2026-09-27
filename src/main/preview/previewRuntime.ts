@@ -3,7 +3,7 @@ import { previewFailure, previewFailureKind, previewFailureMessage, hasLegacyMis
 import { resolvePreviewSource } from './runtime/previewSourceRuntime'
 import { tracePreviewPhase } from './runtime/previewTraceRuntime'
 import { logOperation, currentOperationTrace } from '../logging/operationTraceContext'
-import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
+import { sharedFileSystem as fsp, withSharedPreviewReads } from '../path/sharedFileSystemRuntime'
 import { validatePreviewInput } from './runtime/previewInputPolicy'
 import { join,resolve } from 'node:path'
 import type { FontItem } from '../../shared/types'
@@ -359,7 +359,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     }
     const queuedAt = performance.now()
     logOperation({ stage: 'render-queued' })
-    const task = withGlobalIo('preview:render', () => withPhysicalIoCompletion(async () => {
+    const task = withGlobalIo('preview:render', () => withSharedPreviewReads(() => withPhysicalIoCompletion(async () => {
       logOperation({ stage: 'render-start', elapsedMs: performance.now() - queuedAt })
       let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false)
       if (!previewFile) throw previewFailure('missing')
@@ -386,7 +386,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         }
         throw error
       }
-    }), { priority: 'foreground', storagePath: item.path })
+    })), { priority: 'foreground', storagePath: item.path })
       .finally(() => {
         renderTraceOwners.delete(requestKey)
         previewImageMemoryRuntime.inflight.delete(requestKey)

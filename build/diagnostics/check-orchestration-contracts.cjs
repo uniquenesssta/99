@@ -202,7 +202,15 @@ function collectRustFunctionStrings(functions, name, seen = new Set()) {
   const strings = []
   const delegatedFunctions = []
   visit(record.node, (node) => {
-    if (ts.isStringLiteral(node)) strings.push(node.text)
+    if (ts.isStringLiteral(node)) {
+      // These transport selectors inspect an existing request; they do not add
+      // flags to any caller's CLI. Keep the emitted command baselines unchanged.
+      const selector = name === 'runRustCoreScheduledCommand' && (
+        node.text === '--preview-render-image' && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
+        node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf'
+      )
+      if (!selector) strings.push(node.text)
+    }
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text.startsWith('runRust')) {
       delegatedFunctions.push(node.expression.text)
     }
@@ -264,7 +272,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
       if (target === 'src/main/app/shutdownCoordinatorRuntime') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
-      if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {} }
+      if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {}, isSharedPreviewReadScope: () => false }
       if (target === 'src/main/path/startupPathAvailabilityRuntime') return { getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }
       const core = 'src/main/rust-core/'
       if (target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/ioDeadlineRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {

@@ -2,13 +2,13 @@ import { assertLocalShutdownWorkAllowed } from '../app/shutdownCoordinatorRuntim
 import type { ChildProcess } from 'node:child_process'
 import { getStartupPathRootState } from '../path/startupPathAvailabilityRuntime'
 import { sharedIoAvailabilityRoot } from './rustSharedIoCommandRuntime'
-import { configureSharedFileExecutor } from '../path/sharedFileSystemRuntime'
+import { configureSharedFileExecutor, isSharedPreviewReadScope } from '../path/sharedFileSystemRuntime'
 import { traceRustInput, logOperation } from '../logging/operationTraceContext'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fsp } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, isAbsolute, win32 } from 'node:path'
 import { promisify } from 'node:util'
 import type { RustCoreWorkerRuntimeOptions, RustCoreWorkerStatus } from './rustCoreWorkerContracts'
 import type { RustCoreWorkerHandshake, RustCoreSchedulerProfilePayload } from './rustCoreWorkerPayloadTypes'
@@ -175,9 +175,20 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
     // Copy caller-owned identities before awaiting mapping discovery.
     const inferredPaths = sharedIoPathsInInput([args, ...args.map(path => temporaryFiles.get(path)?.input)])
-    const target = execOptions.sharedIo
+    let target = execOptions.sharedIo
       ? { paths: [...execOptions.sharedIo.paths], write: execOptions.sharedIo.write }
       : inferredPaths.length ? { paths: inferredPaths, write: true } : undefined
+    let previewRead = args[0] === '--shared-file-io' && isSharedPreviewReadScope() && target?.write === false
+    if (args[0] === '--preview-render-image') {
+      const inputIndex = args.indexOf('--input')
+      const input = temporaryFiles.get(args[inputIndex + 1])?.input as { outputPath?: string } | undefined
+      // Rendering reads the shared font but writes a local cache image. A remote
+      // output keeps the original exclusive write path; never bypass isolation.
+      if (target && inputIndex >= 0 && input?.outputPath && (isAbsolute(input.outputPath) || win32.isAbsolute(input.outputPath)) && !(await sharedIoResourceKeys([input.outputPath])).length) {
+        target = { ...target, write: false }
+        previewRead = true
+      }
+    }
     execOptions = { ...execOptions, sharedIo: target }
     args = [...args]
     const roots = target ? await sharedIoResourceKeys(target.paths) : []
@@ -201,10 +212,11 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
-      const result = await sharedIo.run({ file: workerPath, args, roots, write: target!.write, label: sharedIoRequestLabel(args),
+      const result = await sharedIo.run({ file: workerPath, args, roots, write: target!.write, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default',
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
-        queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(error => {
+        queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
+          if (previewRead) await error.closed
           throw error
         })
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {

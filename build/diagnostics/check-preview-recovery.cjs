@@ -9,7 +9,7 @@ async function run(){
  const storage={previewCacheStorageForFont:async()=>({identity:'font',dir:'/cache',storage:'local'}),readPreviewCacheIndexStatus:async()=>index,writePreviewCacheIndex:async(_s,_k,v)=>{writes.push(v.status);index=v.status},deletePreviewCacheIndex:async()=>{index=null},rememberPreviewCacheRenderQueued(){}};
  const load=loader({
  '../native-renderer/directwrite/directWritePreviewHelperPathRuntime':{hasDirectWritePreviewHelper:()=>false},
- '../path/sharedFileSystemRuntime':{sharedFileSystem:fs},'../../path/sharedFileSystemRuntime':{sharedFileSystem:fs},
+ '../path/sharedFileSystemRuntime':{sharedFileSystem:fs,withSharedPreviewReads:fn=>fn()},'../../path/sharedFileSystemRuntime':{sharedFileSystem:fs,withSharedPreviewReads:fn=>fn()},
  '../path/ioDeadlineRuntime':deadline,'../../path/ioDeadlineRuntime':deadline,
  './runtime/previewCacheStorageRuntime':{createPreviewCacheStorageRuntime:()=>storage},
  './runtime/previewCachePublishRuntime':{createPreviewCachePublishRuntime:()=>({enqueuePreviewCachePublish(){}})},

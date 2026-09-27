@@ -19,9 +19,9 @@ export function previewFailureKind(error: unknown): PreviewFailureKind {
   if (encoded) return encoded[1] as PreviewFailureKind
   const code = value?.code || value?.reason || ''
   if (message.includes('软件正在退出，此操作未继续执行。')) return 'cancelled'
-  if (['stale-generation', 'aborted', 'closing', 'cancelled'].includes(code) || value?.name === 'AbortError') return 'cancelled'
-  if (code === 'timeout' || code === 'ETIMEDOUT' || ['IoDeadlineTimeoutError', 'QuickPreviewTimeoutError'].includes(value?.name || '')) return 'timeout'
-  if (['EACCES', 'EPERM', 'EIO', 'ENETUNREACH', 'root-offline', 'executor-unavailable'].includes(code) || message.includes('共享位置离线')) return 'unavailable'
+  if (['stale-generation', 'aborted', 'closing', 'stopping', 'cancelled'].includes(code) || value?.name === 'AbortError') return 'cancelled'
+  if (code === 'timeout' || code === 'queue-timeout' || code === 'ETIMEDOUT' || ['IoDeadlineTimeoutError', 'QuickPreviewTimeoutError'].includes(value?.name || '')) return 'timeout'
+  if (['EACCES', 'EPERM', 'EIO', 'ENETUNREACH', 'root-offline', 'executor-unavailable', 'queue-full'].includes(code) || message.includes('共享位置离线')) return 'unavailable'
   return 'failed'
 }
 export function hasLegacyMissingPreviewFlag(font: { previewError?: string }): boolean {
