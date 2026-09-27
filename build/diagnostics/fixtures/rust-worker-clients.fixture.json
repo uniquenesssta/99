@@ -43,8 +43,8 @@
         "appendStartupLog"
       ],
       "functions": {
-        "runRustPreviewRenderImage": "43a8c030e4420543b7936f7f3177725b78299f4496e4753ecc3a23965dbae0cd",
-        "runRustPreviewCacheInputCommand": "f9d8df36d3b0d753c1de574037bbb3485ea903f8d76ab35cb72ec6db1a17bc8e",
+        "runRustPreviewRenderImage": "cdb41fb6f37b4b78688ec68ec25bb85f20ab8cf398ea0d5c382b564beb30c3bf",
+        "runRustPreviewCacheInputCommand": "0c4dabe553393e2e3773e728cf1be8447bb955bf38bfa683a0e7eae6633a1ced",
         "runRustPreviewCacheMaintenance": "eaad38eb2f51486894612442a9e33196207bc6e22274455ceec7d129ac4da9b2",
         "runRustPreviewCacheBatch": "eea2b11ed1aed52b27b194d86b1d724af66181d3478635f9a0aecff633aeffca",
         "runRustPreviewCacheTouch": "8c60eb153bef9986a4115c358bb316f08256cef394ad517dde8aa054c155f666",
@@ -112,17 +112,17 @@
         "appendStartupLog"
       ],
       "functions": {
-        "runRustSharedMetadataSignature": "2146110334062a90659ae17ec08ac2125df7188151661b8a397aa178014758e4",
-        "runRustSharedMetadataOverlayRead": "d5de20d5e803c803ebb7df98ff1344b530a4c28afc6c973e12b85e5d35c54f53",
-        "runRustSharedMetadataKnownTags": "c326ff2f4332c3eaeb93a50a0f29c30ade83544597422a32a2c2069eec3feac2",
-        "runRustSharedMetadataRemoveTag": "47b9dc2cf819762baf9fb79427bb53d6da5a59690ebeef9b979257a620352000",
-        "runRustSharedMetadataApply": "e7d9c2fb2c207dc168b06bbeb5c88d8b48692efea2802e6e607be47139e508fd",
-        "runRustLocalTagsDeleteTag": "fa84f7a0440e852e7db5c117db94021b695e5ef6697483365641f8be0d5092ad",
-        "runRustLocalTagsSet": "8c45a9feb3190f6ab16d00bbfbcf1c4c85b84e8cac2bc90f3858f2ca382ce0b4",
-        "runRustLocalTagsRead": "f7ab91661c994b377c8a1d8fc533dcb143035bbf12598faf943c1ecc972767d7",
+        "runRustSharedMetadataSignature": "b7a95943ae3ffebb8c34960d0288cb03cee19198dd795461fef4c85dede01805",
+        "runRustSharedMetadataOverlayRead": "40c714df3a240225229889c10f49fbdb3f1d5df2aaad79959b2549ca1a8d5914",
+        "runRustSharedMetadataKnownTags": "9cd92a767c5843cc08a501f0b2e50c0451c4563d0f22e32fcff19b8e1fc387d0",
+        "runRustSharedMetadataRemoveTag": "068ff943292e7c6cf84a67dc1ac0fd27d23343355588d094fcf5af73b1a697fd",
+        "runRustSharedMetadataApply": "8834023697e9fcfe14c9b36ec268cf070d5a97a6dba9aa80d32d4b9ec106ea5e",
+        "runRustLocalTagsDeleteTag": "0780736a5c5123f46279ae48b552b142b3fc2541633736fb4cdc2c5890f02a32",
+        "runRustLocalTagsSet": "ff1ea87e0dcfff825fff5451bd3f99589140bb43115dce2efb9dff582553359a",
+        "runRustLocalTagsRead": "214cf428c22e724ef39948a29bf60986ede9266fb254c68f3f2403a0ab4920c3",
         "runRustInstallStatusCompare": "cee3bf4746f9421652f9ade35e098458196e696202212844d9f3218354b4c679",
-        "runRustInstallStatusSave": "1752fa6ef19e74df233ffff797a1ee69f3abfb8caa5f9d80c6727fffc76d557a",
-        "runRustInstallStatusRead": "3769a558ad24071797c3c907e62d23f96609b62771080d6194af9ea368b3d78c",
+        "runRustInstallStatusSave": "98063e33a9eba8647478b476aa604963fbd8f86a57fc861d527cd339cc2383d0",
+        "runRustInstallStatusRead": "3169bfa62c855fe54cefb264e8d1e5b49947175ccf57bc011805ed9795266c55",
         "normalizeRustTagMutationProtocolResult": "34fbf99745f27921524676ffc2ac6559263d54f7f4842b8c227a4546453aab58",
         "cleanRustStringArray": "929e28495b80ee57c97d1b367a639a97928b63eac0d607083ed2a9bfe56a3949",
         "isRecord": "217772246fcbbf08de1db417b47409002c256da5c63f047c76fadfc12f5c2e00"
@@ -153,12 +153,12 @@
         "runRustWatcherPreflight": "c36ee19818f88fc07d08bb9d78503e3745e854faa6c51c9f12e60ffd21254f1b",
         "runRustMergedIndexSync": "466a39deae25e27c29cff64fd2337e0687d962305cc296061717eb84360b8361",
         "runRustMergedIndexRebuild": "825298f2f3a2b46cd32bdfae01277899d5bf0e3f3f639c7cdcea7d58420cdceb",
-        "runRustMergedIndexMetricsQuery": "b88a406e0bd980d1cb348365233c4771d3e28c65c0ecc372a4dd7ac87db69846",
-        "runRustMergedIndexIdsQuery": "7a8e072c16e60295bf192f2cfcf8c1520ee5f0b3a5e7751d130fffd162c0ff81",
-        "runRustMergedIndexPageQuery": "7ddb774216cf3663057260dd7018c1a13c8f46ffe0c421ff1b8007dc19cb7364",
-        "runRustRootIndexApplyChanges": "1269933b52379c2b8adf242be1f96048ff06cff0f48773cb3fa43c40d5ae6ee7",
+        "runRustMergedIndexMetricsQuery": "56510fd497445df64579c4210e081c5358d727482f0de52a6b8e756ae2091a5f",
+        "runRustMergedIndexIdsQuery": "17f9f1481f59607734b2e839ac2cba81c7a6939bba8971f573ac49442dd9cfd9",
+        "runRustMergedIndexPageQuery": "9c46ce653184f3fbd988860c7239a33735cd2813a7417895978a7878ba040dfd",
+        "runRustRootIndexApplyChanges": "310336b3aa871719cc16e3ba745f0404ac44f36dba0cf531f0bf8a09742e3843",
         "runRustFontParseBatch": "71a72816176adade0c673c66916c35c0a11595f8a05e60411c54077e0a49428d",
-        "runRustFontIndexListWorker": "260bfcf3ce7ac3ee9ee9c95229218f7c40791375fd2961321e63eb6b735c7b27",
+        "runRustFontIndexListWorker": "caeb9e168cb71620b452763a22d86a785c22d5c82443e62cfb1e88a50063a2dd",
         "normalizeRustParseBatchJob": "9d6df67524c061bc5e2723253fe8efd9eb6871b49972918a03cdd8f3a996ee73",
         "statFromRustFile": "35415cd340f9b4be989486e1c4e3bb8e13941a35b99d1b521dd8b9100ffe268b",
         "normalizeFamilyHint": "e659a53fbb5b687c55dfe60709dd5897405a0a9fa833f7d185f9da5ae9d34c96",
@@ -172,5 +172,6 @@
         "rustNameProbeEnabled": "39a72868c5a62a36675fafdd0abd02750288ed6264d665d5647e4662d44c2883"
       }
     }
-  ]
+  ],
+  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
 }

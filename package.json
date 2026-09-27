@@ -187,7 +187,10 @@
     "diagnostics:preview-recovery": "node build/diagnostics/check-preview-recovery.cjs",
     "diagnostics:preview-work-lifetime": "node build/diagnostics/check-preview-work-lifetime.cjs",
     "diagnostics:preview-scroll-admission": "node build/diagnostics/check-preview-scroll-admission.cjs",
-    "diagnostics:preview-shared-admission": "node build/diagnostics/check-preview-shared-admission.cjs"
+    "diagnostics:preview-shared-admission": "node build/diagnostics/check-preview-shared-admission.cjs",
+    "diagnostics:preview-resource-admission": "node build/diagnostics/check-preview-resource-admission.cjs",
+    "diagnostics:preview-optional-cache": "node build/diagnostics/check-preview-optional-cache.cjs",
+    "diagnostics:preview-image-ownership": "node build/diagnostics/check-preview-image-ownership.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

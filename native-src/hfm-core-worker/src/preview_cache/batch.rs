@@ -1,12 +1,11 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
 use std::time::Instant;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, OptionalExtension};
 
 use super::path::normalize_path_for_cache_compare;
-use super::schema::initialize_preview_cache_db;
+use super::schema::open_preview_cache_query;
 use super::status::{accepted_status_set, normalize_status};
 use super::types::{
     PreviewCacheBatchMatch, PreviewCacheBatchPayload, PreviewCacheBatchResult,
@@ -17,12 +16,7 @@ pub fn query_preview_cache_batch(config: &PreviewCacheCommandConfig) -> Result<S
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
     let payload: PreviewCacheBatchPayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
-    if let Some(parent) = Path::new(&payload.db_path).parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-
-    let mut conn = Connection::open(&payload.db_path).map_err(|error| error.to_string())?;
-    initialize_preview_cache_db(&conn, payload.schema_version).map_err(|error| error.to_string())?;
+    let mut conn = open_preview_cache_query(&payload.db_path, payload.schema_version, payload.read_only)?;
     let accepted = accepted_status_set(&payload.accepted_statuses);
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut rows = Vec::with_capacity(payload.rows.len());
@@ -55,7 +49,7 @@ pub fn query_preview_cache_batch(config: &PreviewCacheCommandConfig) -> Result<S
                     matched = file_exists;
                     if matched {
                         matched_count += 1;
-                        if payload.touch_matched {
+                        if !payload.read_only && payload.touch_matched {
                             touch_keys.push(row.preview_key.clone());
                         }
                     }
@@ -78,7 +72,7 @@ pub fn query_preview_cache_batch(config: &PreviewCacheCommandConfig) -> Result<S
     }
 
     let touched = touch_keys.len();
-    if payload.touch_matched && !touch_keys.is_empty() {
+    if !payload.read_only && payload.touch_matched && !touch_keys.is_empty() {
         let mut touch = tx.prepare("UPDATE preview_cache SET accessed_at = ?, updated_at = ? WHERE preview_key = ?").map_err(|error| error.to_string())?;
         for key in &touch_keys {
             touch.execute(params![&payload.now, &payload.now, key]).map_err(|error| error.to_string())?;

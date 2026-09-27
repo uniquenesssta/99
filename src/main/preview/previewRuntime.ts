@@ -1,3 +1,4 @@
+import { claimPreviewImage } from './runtime/previewImageCommitRuntime'
 import { isCompletePreviewPng } from './runtime/previewImageValidationRuntime'
 import { previewFailure, previewFailureKind, previewFailureMessage, hasLegacyMissingPreviewFlag } from '../../shared/previewFailure'
 import { resolvePreviewSource } from './runtime/previewSourceRuntime'
@@ -8,7 +9,7 @@ import { validatePreviewInput } from './runtime/previewInputPolicy'
 import { join,resolve } from 'node:path'
 import type { FontItem } from '../../shared/types'
 import { findBestWatchedRootForFile } from '../path/fontPathPolicy'
-import { fileExistsWithDeadline,withIoDeadlineResult,withPhysicalIoCompletion,fileExistsTimeoutMs,previewCacheQueryTimeoutMs } from '../path/ioDeadlineRuntime'
+import { withIoDeadlineResult,withPhysicalIoCompletion,fileExistsTimeoutMs } from '../path/ioDeadlineRuntime'
 import { createCachedPreviewReadRuntime } from './runtime/cachedPreviewReadRuntime'
 import { createPreviewFontDataRuntime } from './runtime/previewFontDataRuntime'
 import { createPreviewImageMemoryRuntime } from './runtime/previewImageMemoryRuntime'
@@ -25,6 +26,7 @@ export type { PreviewCacheStorage,PreviewImageFileResult,PreviewRuntimeOptions }
 
 export function createPreviewRuntime(options: PreviewRuntimeOptions) {
   const previewImageMemoryRuntime = createPreviewImageMemoryRuntime()
+  const nativeRenderInFlight = new Map<string, Promise<{ bytes: Buffer; message: string }>>()
   const failedUntil = new Map<string, { until: number; error: Error }>()
   const renderTraceOwners = new Map<string, string>()
 
@@ -40,7 +42,6 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     startBackgroundTask,
     heartbeatBackgroundTask,
     failBackgroundTask,
-    legacyRootPreviewCacheDir,
     execFileAsync,
     withGlobalIo
   } = options
@@ -53,6 +54,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     getPreviewCacheStatus,
     readCachedPreviewImages,
     hydratePreviewCache,
+    schedulePreviewCachePrefetch,
     rememberPreviewCacheRenderQueued,
     previewCacheStorageToShared,
     ensureSharedPreviewCacheAvailable,
@@ -114,7 +116,8 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     width = 720,
     height = 260,
     preferCachedFontStat = false,
-    ignorePreviewIndex = false
+    ignorePreviewIndex = false,
+    foreground = true
   ): Promise<PreviewImageFileResult | null> {
     ensureWindows()
 
@@ -146,7 +149,6 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     const fontSignature = previewFontSignature(cacheIdentity, stat.size, stat.mtimeMs)
     const textHash = previewCacheTextHash(sha1, normalizedText)
 
-    const inputPath = join(previewDir, `${key}.json`)
     const outputPath = join(previewDir, `${key}.png`)
     const taskKey = previewTaskKey(key)
 
@@ -159,14 +161,6 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       // Historical failed/missing rows are evidence of an old attempt, not current source absence.
       // Retry through current source validation; successful generation replaces this row.
 
-    }
-
-    if (!(await fileExistsWithDeadline(outputPath)) && previewCache.shared?.rootPath) {
-      const legacyOutputPath = join(legacyRootPreviewCacheDir(previewCache.shared.rootPath), `${key}.png`)
-      if (await fileExistsWithDeadline(legacyOutputPath)) {
-        const legacyMkdir = await withIoDeadlineResult(`preview-legacy-mkdir:${previewDir}`, () => fsp.mkdir(previewDir, { recursive: true }), previewCacheQueryTimeoutMs())
-        if (legacyMkdir.ok) await withIoDeadlineResult(`preview-legacy-copy:${legacyOutputPath}`, () => fsp.copyFile(legacyOutputPath, outputPath), previewCacheQueryTimeoutMs())
-      }
     }
 
     if (!ignorePreviewIndex && (imageBytes = await readValidCachedImage(outputPath))) {
@@ -185,7 +179,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     }
 
     if (!ignorePreviewIndex && previewCache.shared) {
-      const hydrated = await hydratePreviewCache(previewCache, {
+      const hydrationRow = {
         id: item.id,
         previewKey: key,
         outputPath,
@@ -196,11 +190,19 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         height,
         fontId: item.id,
         sourcePath: item.path,
-      })
+      }
+      if (foreground) schedulePreviewCachePrefetch(previewCache, [hydrationRow], true)
+      const hydrated = !foreground && await hydratePreviewCache(previewCache, hydrationRow)
       if (hydrated && (imageBytes = await readValidCachedImage(outputPath))) {
         await completeBackgroundTask(taskKey, '预览缓存已从共享缓存拉取到本地').catch(() => undefined)
         return { outputPath, cached: true, storage: previewCache.storage, bytes: imageBytes }
       }
+    }
+
+    // A foreground owner may have completed while background hydration settled.
+    // Reuse its committed image instead of starting a second native render.
+    if (!foreground && (imageBytes = await readValidCachedImage(outputPath))) {
+      return { outputPath, cached: true, storage: previewCache.storage, bytes: imageBytes }
     }
 
     rememberPreviewCacheRenderQueued(1)
@@ -220,15 +222,33 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       preferSystemFont?: boolean
       systemFontFamilyCandidates?: string[]
     }): Promise<void> {
-      const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview(request, inputPath))
-      if (!renderResult.ok) {
-        throw new Error(renderResult.message || `${renderResult.engine} preview renderer did not create output.`)
+      let task = nativeRenderInFlight.get(outputPath)
+      if (!task) {
+        task = withPhysicalIoCompletion(async () => {
+          const lease = claimPreviewImage(outputPath, 'render')
+          const inputPath = `${lease.temporaryPath}.json`
+          try {
+            const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview({ ...request, outputPath: lease.temporaryPath }, inputPath))
+            if (!renderResult.ok) throw new Error(renderResult.message || `${renderResult.engine} preview renderer did not create output.`)
+            const bytes = await readValidCachedImage(renderResult.outputPath || lease.temporaryPath, true)
+            if (!bytes) throw previewFailure('failed')
+            if (!(await lease.commit())) throw previewFailure('cancelled')
+            return { bytes, message: request.preferSystemFont
+              ? `${renderResult.engine}:system-installed:${installedRoute?.reason || 'matched'}`
+              : renderResult.engine }
+          } finally {
+            await lease.release()
+            await fsp.unlink(inputPath).catch(() => undefined)
+          }
+        })
+        nativeRenderInFlight.set(outputPath, task)
+        const ownedTask = task
+        void task.finally(() => { if (nativeRenderInFlight.get(outputPath) === ownedTask) nativeRenderInFlight.delete(outputPath) }).catch(() => undefined)
       }
-      imageBytes = await readValidCachedImage(renderResult.outputPath || outputPath, true)
-      if (!imageBytes) throw previewFailure('failed')
-      renderMessage = request.preferSystemFont
-        ? `${renderResult.engine}:system-installed:${installedRoute?.reason || 'matched'}`
-        : renderResult.engine
+      const result = await task
+      imageBytes = result.bytes
+      renderMessage = result.message
+
     }
 
     try {
@@ -269,7 +289,6 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         const source = verifiedSource || await tracePreviewPhase('font-resolve', () => resolvePreviewSource(item.path, resolveExistingFontFilePath))
         const fontPath = source.path
 
-        await fsp.access(fontPath)
         await heartbeatBackgroundTask(taskKey, 0.4, `正在生成字体预览图片（${nativePreviewRenderer.activeEngineLabel()}）`).catch(() => undefined)
         await renderRequest({
           fontPath,
@@ -361,7 +380,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     logOperation({ stage: 'render-queued' })
     const task = withGlobalIo('preview:render', () => withSharedPreviewReads(() => withPhysicalIoCompletion(async () => {
       logOperation({ stage: 'render-start', elapsedMs: performance.now() - queuedAt })
-      let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false)
+      let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, false, true)
       if (!previewFile) throw previewFailure('missing')
 
       try {
@@ -377,7 +396,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
           const keyStat = previewCacheStatForInstalledRoute(item, installedRoute, { size: item.fileSize || 0, mtimeMs: item.modifiedAt || 0 }) || { size: 0, mtimeMs: 0 }
           const key = previewCacheKey(sha1, keyIdentity, keyStat.size, keyStat.mtimeMs, fontSize, width, height, normalizedText)
           await deletePreviewCacheIndex(storage, key).catch(() => undefined)
-          previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, true)
+          previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, true, true)
           if (previewFile) {
             const bytes = previewFile.bytes || await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
             if (!isCompletePreviewPng(bytes)) throw previewFailure('failed')
@@ -404,7 +423,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     height = 150
   ): Promise<{ ok: boolean; cached: boolean; storage?: 'root' | 'fallback' | 'local'; message?: string }> {
     try {
-      const previewFile = await withGlobalIo('preview:cache', () => withPhysicalIoCompletion(() => ensureFontPreviewImageFile(item, text, fontSize, width, height, !hasLegacyMissingPreviewFlag(item))), { priority: 'background', storagePath: item.path })
+      const previewFile = await withGlobalIo('preview:cache', () => withPhysicalIoCompletion(() => ensureFontPreviewImageFile(item, text, fontSize, width, height, !hasLegacyMissingPreviewFlag(item), false, false)), { priority: 'background', storagePath: item.path })
       if (!previewFile) return { ok: false, cached: false, message: previewFailureMessage('missing') }
       return { ok: true, cached: previewFile.cached, storage: previewFile.storage }
     } catch (error) {

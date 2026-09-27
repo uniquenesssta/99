@@ -1,20 +1,47 @@
+import type { SharedIoAccessPath } from './sharedIoAccessRuntime'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { getStartupPathRootState, markStartupPathRootUnavailable } from './startupPathAvailabilityRuntime'
 import { promises as localFs } from 'node:fs'
-import { sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
+import { sharedDatabaseTarget, sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
 import { SharedIoProcessError } from './sharedIoProcessRuntime'
+
+const sharedIoSignalScope = new AsyncLocalStorage<AbortSignal>()
+export function withSharedIoSignal<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> { return sharedIoSignalScope.run(signal, operation) }
+export function currentSharedIoSignal(): AbortSignal | undefined { return sharedIoSignalScope.getStore() }
 
 const previewReadScope = new AsyncLocalStorage<boolean>()
 export function withSharedPreviewReads<T>(operation: () => Promise<T>): Promise<T> { return previewReadScope.run(true, operation) }
 export function isSharedPreviewReadScope(): boolean { return previewReadScope.getStore() === true }
 
 export type SharedFileRequest = {
-  operation: string; path: string; availabilityRoot?: string; dest?: string; transferPath?: string
+  operation: string; path: string; availabilityRoot?: string; dest?: string; source?: string; transferPath?: string
   recursive?: boolean; force?: boolean; exclusive?: boolean; append?: boolean
   kind?: "events" | "hash" | "metrics" | "root-index" | "preview"; rootPath?: string
   limitBytes?: number; olderThanMs?: number;
   schemaVersion?: number; cacheVersion?: number; scriptDetectionVersion?: number; repairCorrupt?: boolean
   identity?: unknown
+}
+/** Actual effects of the native filesystem command, excluding local transfer files. */
+export function sharedFileAccesses(request: SharedFileRequest): SharedIoAccessPath[] | undefined {
+  const read = (path: string, scope: SharedIoAccessPath['scope'] = 'file'): SharedIoAccessPath => ({ path, scope, mode: 'read' })
+  const write = (path: string, scope: SharedIoAccessPath['scope'] = 'file'): SharedIoAccessPath => ({ path, scope, mode: 'write' })
+  switch (request.operation) {
+    case 'stat': case 'lstat': case 'access': case 'readFile': return [read(request.path)]
+    // Resolving arbitrary symbolic links requires the conservative alias barrier.
+    case 'realpath': return undefined
+    case 'readdir': case 'directoryMetadata': case 'treeSnapshot': return [read(request.path, 'tree')]
+    case 'sqliteSnapshot': return [read(request.path, 'database')]
+    case 'copyFile': case 'link': return request.dest ? [read(request.path), write(request.dest)] : undefined
+    case 'renameOwnedFile': return request.source && request.dest ? [write(request.path), write(request.source), write(request.dest)] : undefined
+    case 'initializeRootCache': return sharedDatabaseTarget(request.path, true).accesses
+    case 'repairRootDatabase': return [...(sharedDatabaseTarget(request.path, true).accesses || []), ...(request.dest ? [write(request.dest, 'tree')] : [])]
+    case 'rename': return request.dest ? [write(request.path, 'tree'), write(request.dest, 'tree')] : undefined
+    case 'rm': return [write(request.path, request.recursive ? 'tree' : 'file')]
+    case 'mkdir': return [write(request.path)]
+    case 'writeFile': case 'appendFile': case 'openFile': case 'writeOwnedFile':
+    case 'removeOwnedFile': case 'removeStaleLock': case 'syncFile': case 'unlink': return [write(request.path)]
+    default: return undefined
+  }
 }
 export type SharedFileResult = { ok: boolean; operation: string; value?: any; code?: string; message?: string }
 export type SharedFileExecutor = (request: SharedFileRequest, bytes?: Buffer, signal?: AbortSignal) => Promise<{ result: SharedFileResult; bytes?: Buffer; snapshotPath?: string; dispose?: () => Promise<void> }>
@@ -23,6 +50,7 @@ const readsInFlight = new Map<string, ReturnType<SharedFileExecutor>>()
 const shareableReads = new Set(['stat','lstat','access','realpath','readdir','readFile','treeSnapshot','directoryMetadata'])
 export function configureSharedFileExecutor(value: SharedFileExecutor): void { executor = value }
 export async function executeSharedFile(request: SharedFileRequest, bytes?: Buffer, signal?: AbortSignal) {
+  signal ||= currentSharedIoSignal()
   if (!executor) throw new SharedIoProcessError('共享文件隔离执行器尚未就绪。', 'not-started', 'executor-unavailable')
   request = { ...request, availabilityRoot: sharedIoAvailabilityRoot(request.path) }
   const key = JSON.stringify(request)
@@ -97,7 +125,7 @@ export const sharedFileSystem: typeof localFs = new Proxy(localFs, { get(target,
       const opened=await executeSharedFile({...request,operation:'openFile',exclusive:flags.includes('x'),append:flags.startsWith('a')})
       let identity=opened.result.value, closed=false
       const check=()=>{if(closed)throw new Error('共享锁文件句柄已关闭。')}
-      return {removeOwned:async()=>{check();await executeSharedFile({...request,operation:'removeOwnedFile',identity})},close:async()=>{closed=true},sync:async()=>check(),stat:async()=>{check();return sharedFileSystem.stat(request.path)},writeFile:async(data:any,options?:any)=>{
+      return {renameOwned:async(source:string,dest:string)=>{check();await executeSharedFile({...request,operation:'renameOwnedFile',source,dest,identity})},removeOwned:async()=>{check();await executeSharedFile({...request,operation:'removeOwnedFile',identity})},close:async()=>{closed=true},sync:async()=>check(),stat:async()=>{check();return sharedFileSystem.stat(request.path)},writeFile:async(data:any,options?:any)=>{
         check();const write=await executeSharedFile({...request,operation:'writeOwnedFile',identity,append:flags.startsWith('a')},Buffer.isBuffer(data)?Buffer.from(data):Buffer.from(data,encoding(options)))
         identity=write.result.value
       }}

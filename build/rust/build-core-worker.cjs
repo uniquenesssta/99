@@ -44,6 +44,16 @@ if (!fs.existsSync(builtBinary)) {
   process.exit(required ? 1 : 0)
 }
 
+const handshake = spawnSync(builtBinary, ['--handshake'], { encoding: 'utf-8', timeout: 5000, windowsHide: true })
+try {
+  const receipt = JSON.parse(handshake.stdout.trim().split(/\r?\n/)[0])
+  if (handshake.error || handshake.status !== 0 || !receipt.ok || !['preview-cache-read-only-v1', 'shared-owned-rename-v1'].every(capability => receipt.capabilities?.includes(capability))) throw new Error('missing S0-05.5 capabilities')
+  console.log('[hfm] Rust preview read-only and owned publication capabilities verified')
+} catch (error) {
+  fail(`built worker handshake failed: ${error.message}`)
+  process.exit(required ? 1 : 0)
+}
+
 fs.mkdirSync(outDir, { recursive: true })
 fs.copyFileSync(builtBinary, targetBinary)
 console.log(`[hfm] Rust core worker copied: ${path.relative(root, targetBinary)}`)

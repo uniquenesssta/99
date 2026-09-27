@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs'
 import { applicationSharedIoProcessRuntime } from './sharedIoProcessRuntime'
 import { rootProbeQueueTimeoutMs } from './ioDeadlineRuntime'
-import { registerIsolatedRoot, sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
+import { registerIsolatedRoot, sharedIoResourceKeys, sharedIoAccesses } from '../rust-core/rustSharedIoCommandRuntime'
 
 const probes = applicationSharedIoProcessRuntime(() => undefined)
 // A separate JS worker watches the parent pipe even while stat/realpath blocks.
@@ -31,7 +31,7 @@ export async function probeStartupDirectory(rootPath: string, rootId: string, ti
   }
   const keys = await sharedIoResourceKeys([rootPath])
   const result = await probes.run({ file: process.execPath, args: ['-e', probeSource, rootPath],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, roots: keys.length ? keys : [rootId],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, roots: keys.length ? keys : [rootId], accesses: await sharedIoAccesses([{path: rootPath, mode: 'read', scope: 'file'}]),
     lane: 'root-probe', timeoutMs, queueTimeoutMs: rootProbeQueueTimeoutMs(), maxBuffer: 8192, write: false })
   const value = JSON.parse(result.stdout)
   if (typeof value.directory !== 'boolean' || typeof value.physicalPath !== 'string') throw new Error('Invalid directory probe receipt')

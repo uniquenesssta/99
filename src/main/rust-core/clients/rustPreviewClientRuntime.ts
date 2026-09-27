@@ -1,3 +1,5 @@
+import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
+import type { SharedIoAccessPath } from '../../path/sharedIoAccessRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { tracePreviewCacheMutation } from '../../logging/previewCacheMutationTrace'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
@@ -168,6 +170,14 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
       const mutation = label === 'apply' || label === 'delete'
       const status = await diagnoseRustCoreWorker()
       if (!status.available || !status.path) return null
+      const declaration = input as { dbPath: string; readOnly?: boolean; checkFiles?: boolean; rows?: Array<{outputPath: string}>; previewDirs?: string[] }
+      const query = label === 'read-status' || label === 'query' || label === 'batch'
+      // Old workers may ignore JSON fields. Never grant them a read description.
+      if (query && declaration.readOnly && !hasCapability(status, 'preview-cache-read-only-v1')) return null
+      const readOnly = query && declaration.readOnly === true
+      const accesses: SharedIoAccessPath[] = sharedDatabaseTarget(declaration.dbPath, !readOnly).accesses!
+      if (label === 'batch' && declaration.checkFiles) for (const row of declaration.rows || []) accesses.push({path: row.outputPath, scope: 'file', mode: 'read'})
+      if (label === 'maintenance') for (const path of declaration.previewDirs || []) accesses.push({path, scope: 'tree', mode: 'write'})
       const startedAt = Date.now()
       const inputFile = createTemporaryJsonFile(`hfm-rust-preview-cache-${label}`)
       const inputPath = inputFile.path
@@ -177,6 +187,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         submitted = true
         const { stdout } = await runRustCoreScheduledCommand(status.path, [command, '--input', inputPath], {
           timeout: Math.max(5000, Number(process.env.HFM_RUST_PREVIEW_CACHE_DB_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
+          sharedIo: { paths: accesses.map(access => access.path), accesses, write: !readOnly },
           windowsHide: true,
           maxBuffer: 8 * 1024 * 1024,
         })
@@ -222,6 +233,8 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
       await inputFile.writeJson(input)
       const commandOutput = await runRustCoreScheduledCommand(status.path, ['--preview-render-image', '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_PREVIEW_RENDER_TIMEOUT_MS || 30 * 1000) || 30 * 1000),
+        sharedIo: { paths: [input.fontPath, input.outputPath], write: true, preview: true,
+          accesses: [{ path: input.fontPath, mode: 'read', scope: 'file' }, { path: input.outputPath, mode: 'write', scope: 'file' }] },
         windowsHide: true,
         maxBuffer: 1024 * 1024,
       })

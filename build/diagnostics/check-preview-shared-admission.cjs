@@ -37,7 +37,7 @@ async function main(){
   // A remote output remains an exclusive write, despite a preview command.
   const remote=client.runRustPreviewRenderImage({fontPath:shared,outputPath:'\\\\nas\\fonts\\out.png',text:'x',fontSize:32,width:100,height:50});
   await until(()=>started===13);assert.equal(pool.status().activeDefault,1);assert(logs.some(s=>s.includes('label=preview-render-image')&&s.includes('write=true')));
-  const remoteFollower=render(14);await until(()=>pool.status().queued===1);assert.equal(started,13);await release(13);await remote;await until(()=>started===14);await release(14);await remoteFollower;
+  const remoteFollower=render(14);await until(()=>started===14);assert.equal(pool.status().activePreviewRead,1,'font read should not conflict with a different output file');await release(14);await remoteFollower;await release(13);await remote;
   // Exercise the actual source + shared filesystem + transport + process queue.
   // Only the native executable/handshake adapter is replaced with a real Node child.
   const files=load('src/main/path/sharedFileSystemRuntime.ts');
@@ -64,7 +64,7 @@ async function main(){
     await assert.rejects(load('src/main/preview/runtime/previewSourceRuntime.ts').resolvePreviewSource(shared,async()=>{throw Error('legacy bypass')}),error=>error.message.includes('[HFM_PREVIEW:'+expected+']'));
   }
   const invalid=await pool.run({file:process.execPath,args:[],roots:['a'],timeoutMs:500,write:true,lane:'preview-read'}).catch(e=>e);assert.equal(invalid.reason,'invalid-lane');
-  console.log('shared preview: real client/transport/children peak10; daemon bypass; write fairness and remote-output exclusion; source waits650ms then stat within500ms; queued abort, execution timeout and physical close preserved');
+  console.log('shared preview: real client/transport/children peak10; daemon bypass; write fairness and per-file remote-output exclusion; source waits650ms then stat within500ms; queued abort, execution timeout and physical close preserved');
  }finally{transport.stopRustCoreDaemon();for(const child of children)child.kill('SIGKILL');await pool.whenIdle();await fsp.rm(dir,{recursive:true,force:true})}
 }
 main().catch(error=>{console.error(error);process.exitCode=1});

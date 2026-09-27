@@ -1,3 +1,4 @@
+import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
@@ -96,6 +97,7 @@ export function createPreviewIndexAccessRuntime(options: IndexOptions, ports: In
       storage.indexDbPath || "local",
       previewKey,
       options.normalizePathForCacheCompare(outputPath),
+      storage.rootPath ? String(getStartupPathRootState(storage.rootPath).generation) : "local",
     ].join("\0");
   }
 
@@ -201,7 +203,7 @@ export function createPreviewIndexAccessRuntime(options: IndexOptions, ports: In
         storage.rootPath,
       ))
     )
-      return null;
+      throw new Error("共享预览缓存状态未确认");
 
     const rustDbPath = rustPreviewDbPathForStorage(storage);
     if (rustDbPath && options.runRustPreviewCacheReadStatus) {
@@ -211,16 +213,17 @@ export function createPreviewIndexAccessRuntime(options: IndexOptions, ports: In
         () =>
           options.runRustPreviewCacheReadStatus!({
             dbPath: rustDbPath,
+            readOnly: storage.storage === "root",
             schemaVersion: options.previewSqliteSchemaVersion,
             previewKey,
             outputPath,
             now: new Date().toISOString(),
           }),
       );
-      if (!readStatusResult.ok) return null;
+      if (!readStatusResult.ok) throw new Error("共享预览缓存读取不可用");
       if (readStatusResult.value) {
         const status = readStatusResult.value.status;
-        if (status)
+        if (status === 'ok')
           await rememberSharedPresence(
             storage,
             previewKey,
@@ -229,6 +232,8 @@ export function createPreviewIndexAccessRuntime(options: IndexOptions, ports: In
         return status;
       }
     }
+
+    if (storage.storage === "root" && storage.indexDbPath && (await sharedIoResourceKeys([storage.indexDbPath])).length) throw new Error("共享预览缓存只读能力或索引不可用");
 
     const { db, close } = await openPreviewIndexDb(storage);
     try {

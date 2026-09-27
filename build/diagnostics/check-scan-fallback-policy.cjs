@@ -89,7 +89,7 @@ function testC08NetworkListingBatchRouting() {
 
   const indexingClient = read('src/main/rust-core/clients/rustIndexingClientRuntime.ts')
   assert(indexingClient.includes('HFM_RUST_SCAN_LISTING_TIMEOUT_MS || 10 * 60 * 1000'), 'C-08.1 must not widen the existing list-font-files timeout')
-  assert(indexingClient.includes('sharedIo: { paths: [rootPath], write: false }'), 'list-font-files must enter Shared I/O as a read-only batch')
+  assert(indexingClient.includes("sharedIo: { paths: [rootPath], write: false, accesses: [{path: rootPath, mode: 'read', scope: 'tree'}] }"), 'list-font-files must enter Shared I/O as a read-only batch')
 
   const manualListing = read('src/main/watcher/manual-refresh/manualFolderRustListingRuntime.ts')
   assert(!manualListing.includes('profile?.isNetwork !== true'), 'manual network refresh must not skip the existing Rust list-font-files batch in auto mode')
@@ -104,9 +104,9 @@ function testC08NetworkListingBatchRouting() {
   assert(transport.includes('queueTimeoutMs: 3000'), 'Shared I/O queue timeout changed')
 
   const sharedProcess = read('src/main/path/sharedIoProcessRuntime.ts')
-  assert(sharedProcess.includes("filter(other => laneOf(other) === 'default').length >= 2"), 'Shared I/O default concurrency changed')
+  assert(sharedProcess.includes("lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2"), 'Shared I/O default concurrency changed')
   assert(sharedProcess.includes("child.kill('SIGTERM')") && sharedProcess.includes("child.kill('SIGKILL')"), 'Shared I/O terminate/kill settlement changed')
-  assert(sharedProcess.includes('return ![...active].some(other => rootsOverlap(job, other))'), 'Shared I/O root lock changed')
+  assert(sharedProcess.includes('return ![...active].some(other => conflicts(job, other))'), 'Shared I/O resource lock changed')
 }
 
 function testPackageScriptRegistered() {

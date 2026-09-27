@@ -1,3 +1,4 @@
+import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
 import type { CachedFontStatLike } from '../../fonts/fontRuntime'
@@ -221,7 +222,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
           windowsHide: true,
           maxBuffer: 256 * 1024,
           signal,
-          sharedIo: { paths: [rootPath], write: false },
+          sharedIo: { paths: [rootPath], write: false, accesses: [{path: rootPath, mode: 'read', scope: 'tree'}] },
         })
         const written = parseJsonLine<{ ok?: boolean; message?: string }>(stdout)
         if (!written.ok) throw new Error(written.message || 'rust listing output write failed')
@@ -335,6 +336,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
         '--script-detection-version', String(mutationInput.scriptDetectionVersion),
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_ROOT_INDEX_WRITE_TIMEOUT_MS || 10 * 60 * 1000) || 10 * 60 * 1000),
+        sharedIo: sharedDatabaseTarget(mutationInput.dbPath, true),
         windowsHide: true,
         maxBuffer: 256 * 1024,
       })
@@ -389,7 +391,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_MERGED_PAGE_QUERY_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
-        sharedIo: { paths: [input.mergedIndexDbPath, input.libraryDbPath], write: false },
+        sharedIo: { paths: [input.mergedIndexDbPath, input.libraryDbPath], write: false, accesses: [input.mergedIndexDbPath, input.libraryDbPath].flatMap(db => sharedDatabaseTarget(db, false).accesses!) },
         maxBuffer: 32 * 1024 * 1024,
       })
 
@@ -430,7 +432,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_MERGED_IDS_QUERY_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
-        sharedIo: { paths: [input.mergedIndexDbPath, input.libraryDbPath], write: false },
+        sharedIo: { paths: [input.mergedIndexDbPath, input.libraryDbPath], write: false, accesses: [input.mergedIndexDbPath, input.libraryDbPath].flatMap(db => sharedDatabaseTarget(db, false).accesses!) },
         maxBuffer: 32 * 1024 * 1024,
       })
 
@@ -470,7 +472,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_MERGED_METRICS_QUERY_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
-        sharedIo: { paths: [input.mergedIndexDbPath, input.libraryDbPath], write: false },
+        sharedIo: { paths: [input.mergedIndexDbPath, input.libraryDbPath], write: false, accesses: [input.mergedIndexDbPath, input.libraryDbPath].flatMap(db => sharedDatabaseTarget(db, false).accesses!) },
         maxBuffer: 32 * 1024 * 1024,
       })
 

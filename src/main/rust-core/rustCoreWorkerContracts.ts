@@ -570,6 +570,7 @@ export type RustSharedMetadataSignatureResult = {
 }
 
 export type RustPreviewCacheReadStatusInput = {
+  readOnly?: boolean
   dbPath: string
   schemaVersion: number
   previewKey: string
@@ -616,6 +617,7 @@ export type RustPreviewCacheQueryRow = {
 }
 
 export type RustPreviewCacheQueryInput = {
+  readOnly?: boolean
   dbPath: string
   schemaVersion: number
   rows: RustPreviewCacheQueryRow[]

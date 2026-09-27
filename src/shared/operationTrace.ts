@@ -52,6 +52,11 @@ export interface OperationTraceEvent {
   elapsedMs?: number
   monotonicMs?: number
   timestamp?: number
+  rootId?: string
+  resourceId?: string
+  blockedBy?: string
+  queuedMs?: number
+  executionMs?: number
   jobId?: string
 }
 
@@ -69,6 +74,9 @@ export function encodeOperationTraceEvent(event: OperationTraceEvent): string {
       monotonicMs: Number.isFinite(event.monotonicMs) ? event.monotonicMs : undefined,
       backendSequence: Number.isSafeInteger(event.backendSequence) ? event.backendSequence : undefined,
       jobId: token(event.jobId),
+      rootId: token(event.rootId), resourceId: token(event.resourceId), blockedBy: token(event.blockedBy),
+      queuedMs: Number.isFinite(event.queuedMs) ? event.queuedMs : undefined,
+      executionMs: Number.isFinite(event.executionMs) ? event.executionMs : undefined,
       dropped: Math.max(0, Number(event.dropped) || 0)
     })
     return text.length <= OPERATION_TRACE_MAX_BYTES ? text : '' // All permitted text is ASCII.

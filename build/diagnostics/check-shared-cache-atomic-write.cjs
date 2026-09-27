@@ -31,7 +31,7 @@ function testSharedWriteDoesNotBlockFrontendRender() {
 function testSharedWriteHasLeaseAndDeadline() {
   const text = readText('src/main/preview/runtime/previewCachePublishRuntime.ts')
   assert(text.includes('acquirePublishLock'), 'shared publish missing lease lock helper')
-  assert(text.includes('expiresAt'), 'shared publish lock has no expiry')
+  assert(text.includes('olderThanMs'), 'shared publish lock has no expiry')
   assert(text.includes('withIoDeadlineResult'), 'shared publish missing I/O deadline')
   assert(text.includes('if (await pathExists(sharedOutputPath)) return'), 'shared publish does not skip existing complete files')
 }

@@ -2,13 +2,13 @@ import { assertLocalShutdownWorkAllowed } from '../app/shutdownCoordinatorRuntim
 import type { ChildProcess } from 'node:child_process'
 import { getStartupPathRootState } from '../path/startupPathAvailabilityRuntime'
 import { sharedIoAvailabilityRoot } from './rustSharedIoCommandRuntime'
-import { configureSharedFileExecutor, isSharedPreviewReadScope } from '../path/sharedFileSystemRuntime'
+import { configureSharedFileExecutor, currentSharedIoSignal, sharedFileAccesses, isSharedPreviewReadScope } from '../path/sharedFileSystemRuntime'
 import { traceRustInput, logOperation } from '../logging/operationTraceContext'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fsp } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, isAbsolute, win32 } from 'node:path'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { RustCoreWorkerRuntimeOptions, RustCoreWorkerStatus } from './rustCoreWorkerContracts'
 import type { RustCoreWorkerHandshake, RustCoreSchedulerProfilePayload } from './rustCoreWorkerPayloadTypes'
@@ -18,7 +18,7 @@ import { resolveRustCoreWorkerPathWithDiagnostics } from './rustCoreWorkerPathRu
 import { createRustCoreSchedulerRuntime } from './rustCoreSchedulerRuntime'
 import { createRustCoreDaemonRuntime, isRustCoreDaemonSubmittedError } from './rustCoreDaemonRuntime'
 import { applicationSharedIoProcessRuntime, SharedIoProcessError } from '../path/sharedIoProcessRuntime'
-import { sharedIoResourceKeys, sharedIoPathsInInput, type RustSharedIoTarget } from './rustSharedIoCommandRuntime'
+import { sharedIoAccesses, sharedIoResourceKeys, sharedIoPathsInInput, type RustSharedIoTarget } from './rustSharedIoCommandRuntime'
 import { stopSharedPathProbes } from '../path/sharedPathProbeRuntime'
 
 const execFileAsync = promisify(execFile)
@@ -171,24 +171,17 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   }
 
   async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
+    execOptions = { ...execOptions, signal: execOptions.signal || currentSharedIoSignal() }
     assertLocalShutdownWorkAllowed()
     if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
     // Copy caller-owned identities before awaiting mapping discovery.
     const inferredPaths = sharedIoPathsInInput([args, ...args.map(path => temporaryFiles.get(path)?.input)])
-    let target = execOptions.sharedIo
-      ? { paths: [...execOptions.sharedIo.paths], write: execOptions.sharedIo.write }
+    let target: RustSharedIoTarget | undefined = execOptions.sharedIo
+      ? { ...execOptions.sharedIo, paths: [...execOptions.sharedIo.paths], accesses: execOptions.sharedIo.accesses?.map(access => ({ ...access })) }
       : inferredPaths.length ? { paths: inferredPaths, write: true } : undefined
-    let previewRead = args[0] === '--shared-file-io' && isSharedPreviewReadScope() && target?.write === false
-    if (args[0] === '--preview-render-image') {
-      const inputIndex = args.indexOf('--input')
-      const input = temporaryFiles.get(args[inputIndex + 1])?.input as { outputPath?: string } | undefined
-      // Rendering reads the shared font but writes a local cache image. A remote
-      // output keeps the original exclusive write path; never bypass isolation.
-      if (target && inputIndex >= 0 && input?.outputPath && (isAbsolute(input.outputPath) || win32.isAbsolute(input.outputPath)) && !(await sharedIoResourceKeys([input.outputPath])).length) {
-        target = { ...target, write: false }
-        previewRead = true
-      }
-    }
+    const accesses = target?.accesses ? await sharedIoAccesses(target.accesses) : undefined
+    if (target && accesses?.length) target = { ...target, write: accesses.some(access => access.mode === 'write') }
+    const previewRead = target?.write === false && (target.preview || (args[0] === '--shared-file-io' && isSharedPreviewReadScope()))
     execOptions = { ...execOptions, sharedIo: target }
     args = [...args]
     const roots = target ? await sharedIoResourceKeys(target.paths) : []
@@ -212,11 +205,11 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
-      const result = await sharedIo.run({ file: workerPath, args, roots, write: target!.write, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default',
+      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default',
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
-          if (previewRead) await error.closed
+          if (previewRead || accesses?.length) await error.closed
           throw error
         })
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
@@ -394,6 +387,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   configureSharedFileExecutor(async (request, bytes, signal) => {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'shared-file-io-v1')) throw new SharedIoProcessError('原生 worker 不支持共享文件隔离。', 'not-started', 'capability-unavailable')
+    if (request.operation === 'renameOwnedFile' && !hasCapability(status, 'shared-owned-rename-v1')) throw new SharedIoProcessError('共享发布需要新版原生执行器。', 'not-started', 'capability-missing')
     const inputFile = createTemporaryJsonFile('hfm-shared-file-input')
     const transferFile = createTemporaryJsonFile('hfm-shared-file-transfer')
     let retainSnapshot = false
@@ -405,7 +399,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       await inputFile.writeJson(input)
       const output = await runRustCoreScheduledCommand(status.path, ['--shared-file-io','--input',inputFile.path,'--transfer',transferFile.path], {
         timeout: ['stat','lstat','access','realpath','openFile'].includes(request.operation) ? 500 : write ? 5000 : 2000,
-        windowsHide: true, maxBuffer: 32*1024*1024, signal, sharedIo: { paths: [request.path, request.dest || ''], write },
+        windowsHide: true, maxBuffer: 32*1024*1024, signal, sharedIo: { paths: [request.path, request.dest || '', request.source || ''], write, accesses: sharedFileAccesses(request) },
       })
       const result = parseJsonLine<import('../path/sharedFileSystemRuntime').SharedFileResult>(output.stdout)
       if (typeof result.ok !== 'boolean' || result.operation !== request.operation) throw new SharedIoProcessError('共享文件隔离回执无效。','unknown','invalid-receipt')

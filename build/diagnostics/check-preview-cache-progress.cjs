@@ -79,7 +79,7 @@ async function availability() {
 }
 async function publication() {
  let ready=false, calls=[], timer;
- const fs={mkdir:async()=>calls.push('mkdir'),open:async()=>{calls.push('lock');return{writeFile:async()=>{},close:async()=>{}}},access:async()=>{throw Error('missing')},copyFile:async()=>calls.push('copy'),rename:async()=>calls.push('rename'),unlink:async()=>{}};
+ const fs={lstat:async()=>({dev:1,ino:1}),mkdir:async()=>calls.push('mkdir'),open:async()=>{calls.push('lock');return{stat:async()=>({dev:1,ino:1}),writeFile:async()=>{},close:async()=>{}}},access:async()=>{throw Error('missing')},copyFile:async()=>calls.push('copy'),rename:async()=>calls.push('rename'),unlink:async()=>{}};
  const load=loader({'../../path/sharedFileSystemRuntime':{sharedFileSystem:fs}},{setTimeout:f=>{timer=f;return 1}});
  const publish=load('src/main/preview/runtime/previewCachePublishRuntime.ts').createPreviewCachePublishRuntime({appendStartupLog(){},ensureSharedAvailable:async()=>{calls.push('prepare');return ready},previewCacheStorageToShared:s=>s,withIoDeadlineResult:async(_l,f)=>({ok:true,value:await f()}),writeSharedPreviewCacheMeta:async()=>{calls.push('meta')},validateSharedPreviewCacheMeta:async()=>({status:'valid'}),appendSharedPreviewCacheManifest:async()=>{calls.push('manifest')},writePreviewCacheIndex:async()=>{calls.push('index')}});
  const storage={rootPath:'/root',dir:'/shared',storage:'root'}, row={previewKey:'a',localOutputPath:'/local/a.png'};

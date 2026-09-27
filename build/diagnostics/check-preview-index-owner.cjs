@@ -67,7 +67,7 @@ async function backendsAndEviction() {
   for (const mode of ['throw', 'timeout']) {
     const h = harness('rust'), pending = gate()
     h.options.runRustPreviewCacheReadStatus = mode === 'throw' ? async () => { throw Error('worker') } : () => pending.promise
-    assert.equal(await h.read(), null); assert.equal(h.state.opens, 0, 'failed/timed-out root query must not fall back')
+    await assert.rejects(h.read(), /共享预览缓存读取不可用/); assert.equal(h.state.opens, 0, 'failed/timed-out root query must not fall back or become a cached miss')
     if (mode === 'timeout') { pending.reject(Error('late')); await tick() }
     await h.write()
     h.options.runRustPreviewCacheReadStatus = async () => ({ status: 'ok' })

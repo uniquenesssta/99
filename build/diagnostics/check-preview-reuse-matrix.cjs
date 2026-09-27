@@ -24,11 +24,13 @@ async function run(){
   const rows=load(base+'previewBatchRowsRuntime.ts').createPreviewBatchRowsRuntime(options,selectStorage)
   const hydrationOptions={appendStartupLog:options.appendStartupLog,withIoDeadlineResult:async(_label,fn)=>{try{return{ok:true,value:await fn()}}catch(error){return{ok:false,error}}},
     readPreviewCacheIndexStatus:async(storage,key)=>{sharedReads++;return dbFor(storage).prepare('SELECT status FROM preview_cache WHERE preview_key=?').get(key)?.status||null},writePreviewCacheIndex:writeIndex,previewCacheStorageToShared:tier.previewCacheStorageToShared,ensureSharedAvailable:async()=>true}
+  const pendingHydrations=[];
+  const hydration=load(base+'previewCacheHydrationRuntime.ts').createPreviewCacheHydrationRuntime(hydrationOptions);
   const create=()=>load(base+'previewBatchReadRuntime.ts').createPreviewBatchReadRuntime(options,{
     ...rows,loadLibraryShellCached:async()=>library,withPreviewIndexDb:async(storage,fn)=>fn(dbFor(storage)),
     rootAvailability:{ensureRootPreviewCacheAvailable:async()=>true,markRootPreviewCacheUnavailable(){}},
     rustPreviewDbPathForStorage:()=>null,runStoragePreviewCacheIo:async(_storage,_label,fn)=>({ok:true,value:await fn()}),
-    prefetchRuntime:{schedulePreviewCachePrefetch(){}},hydrationRuntime:load(base+'previewCacheHydrationRuntime.ts').createPreviewCacheHydrationRuntime(hydrationOptions)
+    prefetchRuntime:{schedulePreviewCachePrefetch(storage,rows){pendingHydrations.push(hydration.hydratePreviewCacheRows(storage,rows))}},hydrationRuntime:load(base+'previewCacheHydrationRuntime.ts').createPreviewCacheHydrationRuntime(hydrationOptions)
   })
   const png=require('./fixtures/preview-png.cjs')
   const font={id:'a',path:path.join(dir,'a.ttf'),fileName:'a.ttf',family:'Fixture',fileSize:1000,modifiedAt:1700000000000,active:false}
@@ -54,7 +56,7 @@ async function run(){
     for(const db of indexes.values())db.close();indexes.clear();runtime=create();const beforeRestart=sharedReads
     await assertHit(runtime);await assertHit(runtime,active);eq(sharedReads,beforeRestart,'restart lost local on-disk hit')
     const shared=rowFor(font,'共享样本');await seed(shared,true);const beforeHydrate=sharedReads
-    await Promise.all([assertHit(runtime,font,'共享样本'),assertHit(runtime,font,'共享样本')])
+    await Promise.all([runtime.readCachedPreviewImages([font],'共享样本'),runtime.readCachedPreviewImages([font],'共享样本')]);await Promise.all(pendingHydrations);await assertHit(runtime,font,'共享样本')
     eq(sharedReads,beforeHydrate+1,'same shared hydration was not coalesced')
     eq(fs.readFileSync(shared.outputPath).equals(png),true,'shared PNG not copied intact')
     await assertHit(runtime,font,'共享样本');eq(sharedReads,beforeHydrate+1,'hydrated image failed local reuse')

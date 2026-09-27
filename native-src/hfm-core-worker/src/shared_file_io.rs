@@ -13,6 +13,7 @@ struct Request {
     limit_bytes: Option<u64>,
     older_than_ms: Option<f64>,
     dest: Option<String>,
+    source: Option<String>,
     transfer_path: Option<String>,
     #[serde(default)] recursive: bool,
     #[serde(default)] force: bool,
@@ -69,6 +70,17 @@ fn execute(request: &Request) -> io::Result<Value> {
             let identity=crate::font_resource::activation_identity::identify(&mut file)?;drop(file);
             crate::font_resource::activation_identity::remove_owned(path,&identity)?;
             Ok(json!(true))
+        },
+        "renameOwnedFile" => {
+            let expected=request.identity.as_ref().ok_or_else(||io::Error::other("missing publish lock identity"))?;
+            let mut options=fs::OpenOptions::new(); options.read(true);
+            // On Windows/SMB hold the verified lock object against replacement through commit.
+            #[cfg(windows)] { use std::os::windows::fs::OpenOptionsExt; options.share_mode(0); }
+            let mut lock=options.open(path)?;
+            if crate::font_resource::activation_identity::identify(&mut lock)? != *expected { return Err(io::Error::other("publish lock identity changed")); }
+            let source=request.source.as_deref().ok_or_else(||io::Error::other("missing publish source"))?;
+            fs::rename(source,destination(request)?)?;
+            Ok(Value::Null)
         },
         "writeOwnedFile" => {
             let expected=request.identity.as_ref().ok_or_else(||io::Error::other("missing shared lock identity"))?;
@@ -273,6 +285,21 @@ mod tests {
         fs::rename(dir.0.join("lock"),dir.0.join("previous")).unwrap(); fs::write(dir.0.join("lock"),b"replacement").unwrap();
         assert!(execute(&dir.request("writeOwnedFile","lock",json!({"identity":identity,"transferPath":transfer}))).is_err());
         assert_eq!(fs::read(dir.0.join("lock")).unwrap(),b"replacement");
+    }
+    #[test]
+    fn late_publisher_cannot_commit_or_remove_a_replacement_lock() {
+        let dir = Directory::new();
+        let identity = execute(&dir.request("openFile","lock",json!({"exclusive":true}))).unwrap();
+        fs::write(dir.0.join("temporary"),b"old-image").unwrap();
+        fs::rename(dir.0.join("lock"),dir.0.join("previous")).unwrap();
+        fs::write(dir.0.join("lock"),b"new-owner").unwrap();
+        assert!(execute(&dir.request("renameOwnedFile","lock",json!({"identity":identity,"source":dir.0.join("temporary"),"dest":dir.0.join("image")}))).is_err());
+        assert!(execute(&dir.request("removeOwnedFile","lock",json!({"identity":identity}))).is_err());
+        assert_eq!(fs::read(dir.0.join("lock")).unwrap(),b"new-owner");
+        assert!(!dir.0.join("image").exists());
+        let identity = execute(&dir.request("openFile","other-lock",json!({"exclusive":true}))).unwrap();
+        execute(&dir.request("renameOwnedFile","other-lock",json!({"identity":identity,"source":dir.0.join("temporary"),"dest":dir.0.join("image")}))).unwrap();
+        assert_eq!(fs::read(dir.0.join("image")).unwrap(),b"old-image");
     }
     #[test]
     fn sqlite_snapshot_is_independent_and_schema_initialization_is_idempotent() {

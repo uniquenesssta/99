@@ -67,6 +67,9 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
 
   function markRootPreviewCacheUnavailable(rootPath: string, error: unknown): void {
     if (!rootPath) return
+    const failure = error as { reason?: string; name?: string } | null
+    if (failure?.name === 'AbortError' || ['cancelled', 'stopping', 'closing', 'stale-generation', 'queue-timeout', 'queue-full', 'capability-missing', 'capability-unavailable'].includes(failure?.reason || '')) return
+    const rootState = getStartupPathRootState(rootPath)
     const key = rootKey(rootPath)
     const message = errorMessage(error)
     const current = now()
@@ -75,6 +78,7 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
     const unavailableForMs = Math.max(unavailableTtlMs, circuitOpenMs || 0)
     entries.set(key, {
       available: false,
+      rootGeneration: rootState.generation, rootId: rootState.rootId,
       expiresAt: current + unavailableForMs,
       lastError: message,
       lastLoggedAt: previous?.lastLoggedAt,
@@ -85,13 +89,18 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
   function isRootPreviewCacheUnavailable(rootPath: string): boolean {
     if (!rootPath) return false
     const entry = entries.get(rootKey(rootPath))
-    return Boolean(entry && !entry.available && entry.expiresAt > now())
+    return Boolean(entry && !entry.available && entry.rootGeneration === getStartupPathRootState(rootPath).generation && entry.expiresAt > now())
   }
 
   async function ensureRootPreviewCacheAvailable(rootPath: string): Promise<boolean> {
     if (!rootPath) return true
-    if (!circuitBreaker.canUseSharedStorage(rootPath)) return false
     const key = rootKey(rootPath)
+    const previous = entries.get(key), currentState = getStartupPathRootState(rootPath)
+    if (previous && !previous.promise && previous.rootGeneration !== undefined && (previous.rootGeneration !== currentState.generation || previous.rootId !== currentState.rootId)) {
+      entries.delete(key)
+      circuitBreaker.recordSharedStorageSuccess(rootPath)
+    }
+    if (!circuitBreaker.canUseSharedStorage(rootPath)) return false
     const current = now()
     const existing = entries.get(key)
     if (existing?.promise) return existing.promise

@@ -37,7 +37,7 @@ function testPublishUsesLockTmpAndSharedIndex() {
   assert(text.includes('preview-cache-publish-mkdir'), 'publish runtime must create shared directory before acquiring lock')
   assert(text.includes('.publish.lock'), 'publish runtime missing per-preview lock')
   assert(text.includes('.tmp.'), 'publish runtime missing temporary file write')
-  assert(text.includes('await fsp.rename(tmpPath, sharedOutputPath)'), 'publish runtime does not finalize via rename')
+  assert(text.includes('await lock.rename(tmpPath, sharedOutputPath)'), 'publish runtime does not finalize via rename')
   assert(text.includes('published-from-local-preview-cache'), 'publish runtime does not mark shared index source')
   assert(text.includes('preview cache publish summary'), 'publish runtime missing publish summary log')
 }

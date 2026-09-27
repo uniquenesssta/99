@@ -93,6 +93,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
           () =>
             options.runRustPreviewCacheBatch!({
               dbPath: rustDbPath,
+              readOnly: group.storage.storage === "root",
               schemaVersion: options.previewSqliteSchemaVersion,
               rows: group.rows,
               acceptedStatuses: ["ok"],
@@ -130,6 +131,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
           () =>
             options.runRustPreviewCacheQuery!({
               dbPath: rustDbPath,
+              readOnly: group.storage.storage === "root",
               schemaVersion: options.previewSqliteSchemaVersion,
               rows: group.rows,
               acceptedStatuses: ["ok"],
@@ -249,6 +251,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
           () =>
             options.runRustPreviewCacheBatch!({
               dbPath: rustDbPath,
+              readOnly: group.storage.storage === "root",
               schemaVersion: options.previewSqliteSchemaVersion,
               rows: group.rows,
               acceptedStatuses: ["ok"],
@@ -295,6 +298,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
           () =>
             options.runRustPreviewCacheQuery!({
               dbPath: rustDbPath,
+              readOnly: group.storage.storage === "root",
               schemaVersion: options.previewSqliteSchemaVersion,
               rows: group.rows,
               acceptedStatuses: ["ok"],
@@ -407,25 +411,7 @@ export function createPreviewBatchReadRuntime(options: BatchOptions, ports: Batc
             (rowInfo) => !imageDataUris[rowInfo.id],
           );
           if (localMissRows.length && group.storage.shared) {
-            const hydratedIds = await hydrationRuntime.hydratePreviewCacheRows(
-              group.storage,
-              localMissRows,
-            );
-            if (hydratedIds.size) {
-              const hydratedRows = localMissRows.filter((rowInfo) =>
-                hydratedIds.has(rowInfo.id),
-              );
-              const hydratedImageDataUris =
-                await readCachedPreviewImageDataUris(hydratedRows, 6);
-              Object.assign(result, hydratedImageDataUris);
-              hydrationRuntime.rememberLocalHit(
-                Object.keys(hydratedImageDataUris).length,
-              );
-              for (const rowInfo of hydratedRows) {
-                if (hydratedImageDataUris[rowInfo.id])
-                  touchKeys.push(rowInfo.previewKey);
-              }
-            }
+            prefetchRuntime.schedulePreviewCachePrefetch(group.storage, localMissRows, true);
           }
           const unresolvedCount = chunk.filter(
             (rowInfo) => !result[rowInfo.id],

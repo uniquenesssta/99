@@ -89,12 +89,12 @@ async function policies(transform) {
   assert.deepEqual(h.events.filter(x => x[0] === 'prefetch'), [['prefetch', ['missing', 'failed', 'nofile', 'hydrate']]])
   h.events.length = 0
   const images = await h.runtime.readCachedPreviewImages(items, 'test')
-  assert.deepEqual(Object.keys(images).sort(), ['hydrate', 'ok'])
+  assert.deepEqual(Object.keys(images).sort(), ['ok'])
   for (const [key, id] of h.byId) if (['missing', 'failed'].includes(id)) assert(!h.state.reads.includes(h.rowsByKey.get(key).output_path), 'non-ok index must not read PNG')
-  assert.deepEqual(h.events.filter(x => x[0] === 'hydrate'), [['hydrate', ['missing', 'failed', 'nofile', 'hydrate']]])
-  assert.deepEqual(h.events.at(-1), ['touch', ['ok', 'hydrate']])
-  assert(h.events.findIndex(x => x[0] === 'hydrate') < h.events.findIndex(x => x[0] === 'touch'))
-  assert(h.events.some(x => x[0] === 'render' && x[1] === 3))
+  assert.deepEqual(h.events.filter(x => x[0] === 'prefetch'), [['prefetch', ['missing', 'failed', 'nofile', 'hydrate']]])
+  assert.deepEqual(h.events.at(-1), ['touch', ['ok']])
+  assert(h.events.findIndex(x => x[0] === 'prefetch') < h.events.findIndex(x => x[0] === 'touch'))
+  assert(h.events.some(x => x[0] === 'render' && x[1] === 4))
   assert(!h.events.some(x => x[0] === 'generation'))
   const active = { ...font('active'), fileSize: 0, modifiedAt: 0, active: true, family: 'Family', familyName: 'Family' }
   assert.equal([...h.buildPreviewCacheGroups([active], { folders: [] }, 'test', 34, 520, 150).values()].flatMap(x => x.rows).length, 1)
@@ -133,7 +133,7 @@ async function prefetchCancellation() {
   process.env.HFM_PREVIEW_BACKGROUND_PREFETCH = '1'; process.env.HFM_PREVIEW_PREFETCH_IDLE_DELAY_MS = '500'
   let done, timer; const completion = new Promise(resolve => { done = resolve }), calls = []
   try {
-    const runtime = load(base + 'previewCachePrefetchRuntime.ts', { './previewTaskGenerationRuntime': load(base + 'previewTaskGenerationRuntime.ts') }).createPreviewCachePrefetchRuntime({ appendStartupLog() {}, async hydratePreviewCacheRows(_storage, rows) { calls.push(...rows.map(x => x.id)); done(); return new Set(rows.map(x => x.id)) } })
+    const runtime = load(base + 'previewCachePrefetchRuntime.ts', { '../../path/ioDeadlineRuntime': require('./check-operation-chain.cjs').loader()('src/main/path/ioDeadlineRuntime.ts'), './previewTaskGenerationRuntime': load(base + 'previewTaskGenerationRuntime.ts') }).createPreviewCachePrefetchRuntime({ appendStartupLog() {}, async hydratePreviewCacheRows(_storage, rows) { calls.push(...rows.map(x => x.id)); done(); return new Set(rows.map(x => x.id)) } })
     const storage = { storage: 'local', dir: '/local', shared: { rootPath: '/root' } }
     runtime.schedulePreviewCachePrefetch(storage, [{ id: 'old', previewKey: 'old', outputPath: '/old' }])
     runtime.beginPreviewCachePrefetchGeneration('new-query')

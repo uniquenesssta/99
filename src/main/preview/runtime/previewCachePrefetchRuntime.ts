@@ -1,10 +1,12 @@
+import { isApplicationClosing, onApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
+import { withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
 import type { PreviewCacheHydrationRow } from './previewCacheHydrationRuntime'
 import type { PreviewCacheStorage } from './previewRuntimeTypes'
 import { createPreviewTaskGenerationRuntime } from './previewTaskGenerationRuntime'
 
 export type PreviewCachePrefetchRuntimeOptions = {
   appendStartupLog: (message: string) => void
-  hydratePreviewCacheRows: (storage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[]) => Promise<Set<string>>
+  hydratePreviewCacheRows: (storage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[], current?: () => boolean) => Promise<Set<string>>
 }
 
 const DEFAULT_PREFETCH_ENABLED = true
@@ -101,15 +103,17 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
     }
   }
 
-  function schedulePump(): void {
-    if (timer || !prefetchEnabled()) return
+  function schedulePump(immediate = false): void {
+    if (isApplicationClosing() || !prefetchEnabled()) return
+    if (timer && !immediate) return
+    if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
       timer = null
       pump()
-    }, prefetchIdleDelayMs())
+    }, immediate ? 0 : prefetchIdleDelayMs())
   }
 
-  function nextBatch(): { storage: PreviewCacheStorage; rows: PreviewCacheHydrationRow[] } | null {
+  function nextBatch(): { generation: number; storage: PreviewCacheStorage; rows: PreviewCacheHydrationRow[] } | null {
     while (queue.size) {
       const first = queue.entries().next().value as [string, { storage: PreviewCacheStorage; row: PreviewCacheHydrationRow; generation: number }] | undefined
       if (!first) return null
@@ -136,13 +140,13 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
         rows.push(task.row)
         if (rows.length >= prefetchBatchSize()) break
       }
-      if (rows.length) return { storage, rows }
+      if (rows.length) return { storage, rows, generation: firstGeneration }
     }
     return null
   }
 
   function pump(): void {
-    if (!prefetchEnabled()) {
+    if (isApplicationClosing() || !prefetchEnabled()) {
       stats.cancelled += queue.size
       queue.clear()
       return
@@ -152,7 +156,7 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
       const batch = nextBatch()
       if (!batch) break
       active += 1
-      options.hydratePreviewCacheRows(batch.storage, batch.rows)
+      withPhysicalIoCompletion(() => options.hydratePreviewCacheRows(batch.storage, batch.rows, () => !isApplicationClosing() && generationRuntime.isCurrentGeneration(batch.generation)))
         .then((hydratedIds) => {
           stats.hydrated += hydratedIds.size
           stats.failed += Math.max(0, batch.rows.length - hydratedIds.size)
@@ -169,15 +173,15 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
     }
   }
 
-  function schedulePreviewCachePrefetch(storage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[]): void {
-    if (!prefetchEnabled() || !storage.shared || !rows.length) return
+  function schedulePreviewCachePrefetch(storage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[], immediate = false): void {
+    if (isApplicationClosing() || !prefetchEnabled() || !storage.shared || !rows.length) return
     for (const row of rows) {
       if (!row?.id || !row.previewKey || !row.outputPath) continue
       queue.set(taskKey(storage, row), { storage, row, generation: generationRuntime.currentGeneration() })
       stats.queued += 1
     }
     trimQueue()
-    schedulePump()
+    schedulePump(immediate)
     logStats()
   }
 
@@ -187,6 +191,11 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
     return generationRuntime.beginGeneration(reason)
   }
 
+  onApplicationClosing(() => {
+    if (timer) clearTimeout(timer)
+    timer = null
+    beginPreviewCachePrefetchGeneration('closing')
+  })
   return {
     schedulePreviewCachePrefetch,
     beginPreviewCachePrefetchGeneration,

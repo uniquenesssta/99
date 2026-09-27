@@ -59,14 +59,14 @@
     "RustSharedMetadataOverlayMatchedEntry": "5496578b56d61b54d536bcfcd4b7d279fdb751097dd2f2b4e730f7b827e5a3ed",
     "RustSharedMetadataOverlayReadResult": "d5d79ac369c60f2919c2f6b450c7c1166fee96853b9024607595af7f7f7cdc16",
     "RustSharedMetadataSignatureResult": "8e8711868b13d5ca42096e0b77f62e8198a5c1417c662449bd2df1ff6c346ea4",
-    "RustPreviewCacheReadStatusInput": "924b96082ff3ddc4792f63058dccc8d7dafd64a4e6c9da836ddfb1720c1f4cb5",
+    "RustPreviewCacheReadStatusInput": "d6e6162e5fc0ce797a2371b5a33f1c769608af1f536556339d49b3b0d5f0903b",
     "RustPreviewCacheReadStatusResult": "010068b999f5cd4f01aad2f5bb98b9110f1570e384e0429c9826d67b72b0c788",
     "RustPreviewCacheApplyInput": "417cca0b8dc8c3904894687079dce31dc84ec0b6b58cc8fd8acb33ea12c87bf8",
     "RustPreviewCacheApplyResult": "aba19baaf0da46eac918dd80cc500b67e2f9d0145c9b668927e88a7d2e30fcca",
     "RustPreviewCacheDeleteInput": "6d71c9f122e7cc7cac75b1f8fec9431ed6a74cdb34832af7f266298a85c754ce",
     "RustPreviewCacheDeleteResult": "ead473a55018f483666d5698eb6a2231c1dc923b466b4677012dc50cf38d827a",
     "RustPreviewCacheQueryRow": "8ebfaa40c8b7bd7ef191122005d7cee4757d54ec51f67900a48170640a2d729b",
-    "RustPreviewCacheQueryInput": "54cad5d9c1e44ed6224e035edc1c689bf2dd8fd88905a4d6e7f11dd2b3afc75f",
+    "RustPreviewCacheQueryInput": "60b156bd01ba46c3f0a1cef280966b2ba726e401919057033bf280eb98b68e97",
     "RustPreviewCacheQueryMatch": "67208c913a8ee58e58e96d3c2757855c8611e7ec4dd04e6d949d943bfe374a34",
     "RustPreviewCacheQueryResult": "a9ac137bebd12b863a0f1f6eb9ef1e7d71cf351f4b6357cf994d649d14bae20e",
     "RustPreviewCacheTouchInput": "4ddaf3b924adc841b4e3da11eafbaa3166b1a6cb66b405029a4a67c7e6ced894",
@@ -218,5 +218,6 @@
       "imported": "FontParseJob",
       "module": "../indexing/fontScanWorkers"
     }
-  ]
+  ],
+  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
 }

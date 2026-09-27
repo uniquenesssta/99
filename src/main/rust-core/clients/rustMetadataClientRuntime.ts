@@ -1,3 +1,4 @@
+import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
 import type {
@@ -128,7 +129,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_INSTALL_STATUS_READ_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
-        sharedIo: { paths: groups.flatMap(group => [group.rootPath, group.dbPath]), write: false },
+        sharedIo: { paths: groups.flatMap(group => [group.rootPath, group.dbPath]), write: false, accesses: groups.flatMap(group => (sharedDatabaseTarget(group.dbPath, false, [group.rootPath]).accesses || [])) },
         windowsHide: true,
         maxBuffer: 32 * 1024 * 1024,
       })
@@ -170,7 +171,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_INSTALL_STATUS_SAVE_TIMEOUT_MS || 5 * 60 * 1000) || 5 * 60 * 1000),
-        sharedIo: { paths: groups.flatMap(group => [group.rootPath, group.dbPath]), write: true },
+        sharedIo: { paths: groups.flatMap(group => [group.rootPath, group.dbPath]), write: true, accesses: groups.flatMap(group => (sharedDatabaseTarget(group.dbPath, true, [group.rootPath]).accesses || [])) },
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024,
       })
@@ -259,7 +260,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_LOCAL_TAGS_READ_TIMEOUT_MS || 30 * 1000) || 30 * 1000),
         windowsHide: true,
-        sharedIo: { paths: [input.dbPath], write: false },
+        sharedIo: sharedDatabaseTarget(input.dbPath, true),
         maxBuffer: 8 * 1024 * 1024,
       })
 
@@ -304,7 +305,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_LOCAL_TAGS_WRITE_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
-        sharedIo: { paths: [input.dbPath], write: true },
+        sharedIo: sharedDatabaseTarget(input.dbPath, true),
         maxBuffer: 4 * 1024 * 1024,
       })
 
@@ -363,7 +364,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_LOCAL_TAGS_WRITE_TIMEOUT_MS || 60 * 1000) || 60 * 1000),
         windowsHide: true,
-        sharedIo: { paths: [input.dbPath], write: true },
+        sharedIo: sharedDatabaseTarget(input.dbPath, true),
         maxBuffer: 4 * 1024 * 1024,
       })
 
@@ -421,7 +422,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_SHARED_METADATA_WRITE_TIMEOUT_MS || 5 * 60 * 1000) || 5 * 60 * 1000),
-        sharedIo: { paths: [input.rootPath, input.dbPath], write: true },
+        sharedIo: sharedDatabaseTarget(input.dbPath, true, [input.rootPath]),
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024,
       })
@@ -482,7 +483,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_SHARED_METADATA_WRITE_TIMEOUT_MS || 5 * 60 * 1000) || 5 * 60 * 1000),
-        sharedIo: { paths: [input.rootPath || '', input.dbPath], write: true },
+        sharedIo: sharedDatabaseTarget(input.dbPath, true, [input.rootPath || '']),
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024,
       })
@@ -542,7 +543,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_SHARED_METADATA_KNOWN_TAGS_TIMEOUT_MS || 45 * 1000) || 45 * 1000),
-        sharedIo: { paths: input.roots.flatMap(root => [root.rootPath, root.dbPath]), write: false },
+        sharedIo: { paths: input.roots.flatMap(root => [root.rootPath, root.dbPath]), write: false, accesses: input.roots.flatMap(root => (sharedDatabaseTarget(root.dbPath, false, [root.rootPath]).accesses || [])) },
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024,
       })
@@ -620,7 +621,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_SHARED_METADATA_OVERLAY_READ_TIMEOUT_MS || 45 * 1000) || 45 * 1000),
-        sharedIo: { paths: [input.rootPath, input.dbPath], write: !!input.preflight },
+        sharedIo: { ...sharedDatabaseTarget(input.dbPath, true, [input.rootPath]), write: !!input.preflight },
         windowsHide: true,
         maxBuffer: 16 * 1024 * 1024,
       })
@@ -678,7 +679,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_SHARED_METADATA_SIGNATURE_TIMEOUT_MS || 30 * 1000) || 30 * 1000),
-        sharedIo: { paths: [input.dbPath], write: false },
+        sharedIo: sharedDatabaseTarget(input.dbPath, false),
         windowsHide: true,
         maxBuffer: 2 * 1024 * 1024,
       })

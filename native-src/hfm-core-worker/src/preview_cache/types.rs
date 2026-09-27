@@ -12,6 +12,8 @@ fn default_schema_version() -> i64 {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewCacheReadStatusPayload {
+    #[serde(default)]
+    pub read_only: bool,
     pub db_path: String,
     #[serde(default = "default_schema_version")]
     pub schema_version: i64,
@@ -43,6 +45,8 @@ pub struct PreviewCacheDeletePayload {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewCacheQueryPayload {
+    #[serde(default)]
+    pub read_only: bool,
     pub db_path: String,
     #[serde(default = "default_schema_version")]
     pub schema_version: i64,
@@ -69,6 +73,8 @@ pub struct PreviewCacheTouchPayload {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewCacheBatchPayload {
+    #[serde(default)]
+    pub read_only: bool,
     pub db_path: String,
     #[serde(default = "default_schema_version")]
     pub schema_version: i64,

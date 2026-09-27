@@ -8,8 +8,9 @@
     "runStoragePreviewCacheIo": "dd5245c2227fd99082208165242333ff37ad88d0034c2c473dcaf3cd0efd7c4c"
   },
   "queryTails": {
-    "getPreviewCacheStatus": "18ce41fceba03f17b4f2fa3e51be7e9a6173858be85c3065b23af4c7dc93650e",
-    "readCachedPreviewImages": "e965881c29040a76e77545d685986588afdcf4febe5121d5e6825e24c421050d"
+    "getPreviewCacheStatus": "50556f82555bdcd9858148fbc2beb46a5682dbf7f32c3a3e7ece55db42e3f312",
+    "readCachedPreviewImages": "1197b0d936316e03470d9f157f9170941bcbd6a524e0c64474595913ecf410a3"
   },
-  "rowBuilderBody": "13030cd6dd870418ae072d8d54e13c83aa499344b873d4515d6a503dd1f25d6a"
+  "rowBuilderBody": "13030cd6dd870418ae072d8d54e13c83aa499344b873d4515d6a503dd1f25d6a",
+  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
 }

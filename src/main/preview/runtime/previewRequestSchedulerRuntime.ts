@@ -296,7 +296,7 @@ export function createPreviewRequestSchedulerRuntime(options: PreviewRequestSche
     ))
 
     if (!result.ok) {
-      logPressure(`preview request scheduler deadline dropped: items=${batch.items.length}, queueWaitMs=${Date.now() - batch.enqueuedAt}, ${result.error instanceof Error ? result.error.message : String(result.error)}`)
+      logPressure(`preview request scheduler deadline dropped: items=${batch.items.length}, totalLifetimeMs=${Date.now() - batch.enqueuedAt}, ${result.error instanceof Error ? result.error.message : String(result.error)}`)
       for (const caller of liveCallers) completeCallerBatch(caller, {})
       return
     }

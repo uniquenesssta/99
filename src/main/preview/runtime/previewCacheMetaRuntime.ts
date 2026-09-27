@@ -50,8 +50,8 @@ function metaPathForOutput(outputPath: string): string {
   return `${outputPath}.meta.json`
 }
 
-async function sha1File(filePath: string): Promise<{ checksum: string; size: number }> {
-  const buffer = await fsp.readFile(filePath)
+async function sha1File(filePath: string, bytes?: Buffer): Promise<{ checksum: string; size: number }> {
+  const buffer = bytes || await fsp.readFile(filePath)
   return {
     checksum: createHash('sha1').update(buffer).digest('hex'),
     size: buffer.byteLength,
@@ -149,18 +149,19 @@ export function createPreviewCacheMetaRuntime(options: PreviewCacheMetaRuntimeOp
     }
   }
 
-  async function validatePreviewCacheMeta(outputPath: string, row: PreviewCachePublishRow | PreviewCacheHydrationRow): Promise<PreviewCacheMetaValidationResult> {
+  async function validatePreviewCacheMeta(outputPath: string, row: PreviewCachePublishRow | PreviewCacheHydrationRow, bytes?: Buffer): Promise<PreviewCacheMetaValidationResult> {
     const metaPath = metaPathForOutput(outputPath)
     let raw: string
     try {
       raw = await fsp.readFile(metaPath, 'utf-8')
-    } catch {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return {status: 'invalid', message: errorMessage(error)}
       return { status: 'missing', message: strictSharedMetaEnabled() ? 'meta-missing-strict' : 'meta-missing-legacy-compatible' }
     }
 
     try {
       const parsed = JSON.parse(raw) as Partial<PreviewCacheMetaPayload>
-      const file = await sha1File(outputPath)
+      const file = await sha1File(outputPath, bytes)
       return validateMetaPayload(parsed, row, file.checksum, file.size)
     } catch (error) {
       return { status: 'invalid', message: errorMessage(error) }

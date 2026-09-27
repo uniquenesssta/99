@@ -1,4 +1,8 @@
-import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { claimPreviewImage } from './previewImageCommitRuntime'
+import { isCompletePreviewPng } from './previewImageValidationRuntime'
+import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
+import { withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
+import { withSharedIoSignal, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname, join } from 'node:path'
 import type { PreviewCacheIndexStatus } from '../previewCacheRuntime'
 import type { PreviewCacheStorage } from './previewRuntimeTypes'
@@ -41,15 +45,17 @@ export type PreviewCacheHydrationRuntimeOptions = {
   writePreviewCacheIndex: (storage: PreviewCacheStorage, previewKey: string, data: { outputPath: string; fontSignature: string; textHash: string; fontSize: number; width: number; height: number; status: PreviewCacheIndexStatus; message?: string; fontId?: string; sourcePath?: string }) => Promise<void>
   previewCacheStorageToShared: (storage: PreviewCacheStorage) => PreviewCacheStorage | null
   ensureSharedAvailable: (rootPath: string) => Promise<boolean>
+  legacyRootPreviewCacheDir?: (rootPath: string) => string
+  touchSharedPreviewCache?: (storage: PreviewCacheStorage, keys: string[]) => Promise<void>
   sharedPresence?: PreviewCacheSharedPresenceRuntime
   sharedPresenceIndex?: PreviewCacheSharedPresenceIndexRuntime
-  validateSharedPreviewCacheMeta?: (outputPath: string, row: PreviewCacheHydrationRow) => Promise<PreviewCacheMetaValidationResult>
+  validateSharedPreviewCacheMeta?: (outputPath: string, row: PreviewCacheHydrationRow, bytes?: Buffer) => Promise<PreviewCacheMetaValidationResult>
   isStrictSharedMetaEnabled?: () => boolean
 }
 
 const DEFAULT_HYDRATE_MAX_IN_FLIGHT = 2
 const DEFAULT_HYDRATE_TIMEOUT_MS = 2000
-const DEFAULT_SHARED_NEGATIVE_TTL_MS = 10 * 60 * 1000
+const DEFAULT_SHARED_NEGATIVE_TTL_MS = 1000
 const DEFAULT_STATS_LOG_INTERVAL_MS = 10000
 
 function parseEnvInt(name: string, fallback: number, min: number, max: number): number {
@@ -69,7 +75,7 @@ function hydrateTimeoutMs(): number {
 }
 
 function sharedNegativeTtlMs(): number {
-  return parseEnvInt('HFM_PREVIEW_SHARED_NEGATIVE_TTL_MS', DEFAULT_SHARED_NEGATIVE_TTL_MS, 1000, 60 * 60 * 1000)
+  return parseEnvInt('HFM_PREVIEW_SHARED_NEGATIVE_TTL_MS', DEFAULT_SHARED_NEGATIVE_TTL_MS, 100, 1000)
 }
 
 function emptyStats(): PreviewCacheHydrationStats {
@@ -93,15 +99,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await fsp.access(filePath)
-    return true
-  } catch {
-    return false
-  }
-}
-
 export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydrationRuntimeOptions) {
   const inFlight = new Map<string, Promise<boolean>>()
   const negative = new Map<string, number>()
@@ -109,7 +106,7 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
   let lastStatsLogAt = 0
 
   function sharedKey(storage: PreviewCacheStorage, previewKey: string): string {
-    return `${storage.rootPath || storage.indexDbPath || storage.dir}:${previewKey}`
+    return `${storage.rootPath || storage.indexDbPath || storage.dir}:${storage.rootPath ? getStartupPathRootState(storage.rootPath).generation : 0}:${previewKey}`
   }
 
   function rememberSharedMiss(key: string): void {
@@ -141,131 +138,118 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
     stats = emptyStats()
   }
 
-  async function copySharedPreviewToLocal(sharedOutputPath: string, localOutputPath: string): Promise<boolean> {
-    const timeoutMs = hydrateTimeoutMs()
-    const tmpPath = `${localOutputPath}.hydrate.${process.pid}.${Date.now()}.tmp`
-    const copyResult = await options.withIoDeadlineResult(`preview-cache-hydrate-copy:${sharedOutputPath}`, async () => {
-      await fsp.mkdir(dirname(localOutputPath), { recursive: true })
-      if (await pathExists(localOutputPath)) return true
-      await fsp.copyFile(sharedOutputPath, tmpPath)
-      if (await pathExists(localOutputPath)) {
-        await fsp.unlink(tmpPath).catch(() => undefined)
-        return true
-      }
-      await fsp.rename(tmpPath, localOutputPath).catch(async (error) => {
-        await fsp.unlink(tmpPath).catch(() => undefined)
-        throw error
-      })
-      return true
-    }, timeoutMs)
-
-    if (!copyResult.ok) {
-      await fsp.unlink(tmpPath).catch(() => undefined)
-      if (copyResult.timedOut) stats.deadlineDropped += 1
-      return false
-    }
-    return true
-  }
-
   async function hydrateOne(localStorage: PreviewCacheStorage, row: PreviewCacheHydrationRow): Promise<boolean> {
     const sharedStorage = options.previewCacheStorageToShared(localStorage)
     if (!sharedStorage?.rootPath) return false
     const key = sharedKey(sharedStorage, row.previewKey)
-    if (hasSharedMiss(key)) {
-      stats.sharedNegativeHit += 1
-      return false
-    }
     if (!(await options.ensureSharedAvailable(sharedStorage.rootPath))) {
       stats.sharedUnavailable += 1
       return false
     }
-
-    const sharedOutputPath = join(sharedStorage.dir, `${row.previewKey}.png`)
-    const cachedPresence = options.sharedPresence?.getSharedPresence(sharedStorage, row.previewKey) || null
-    const persistentPresence = cachedPresence ? null : await options.sharedPresenceIndex?.getSharedPresenceIndex(sharedStorage, row.previewKey).catch(() => null) || null
-    const effectivePresence = cachedPresence || persistentPresence
-    if (effectivePresence === 'missing') {
-      stats.sharedNegativeHit += 1
-      if (persistentPresence === 'missing') stats.sharedPresenceIndexHit += 1
-      rememberSharedMiss(key)
-      return false
-    }
-
-    let indexedStatus: PreviewCacheIndexStatus | null = null
-    if (effectivePresence === 'ok') {
-      indexedStatus = 'ok'
-      if (cachedPresence === 'ok') stats.sharedPresenceHit += 1
-      if (persistentPresence === 'ok') stats.sharedPresenceIndexHit += 1
-    } else {
-      indexedStatus = await options.readPreviewCacheIndexStatus(sharedStorage, row.previewKey, sharedOutputPath).catch((error) => {
-        stats.sharedUnavailable += 1
-        options.appendStartupLog(`preview cache hydrate index failed: ${sharedOutputPath}, ${errorMessage(error)}`)
-        return null
-      })
-    }
-
-    if (indexedStatus !== 'ok') {
-      rememberSharedMiss(key)
-      options.sharedPresence?.rememberSharedPresence(sharedStorage, row.previewKey, 'missing')
-      await options.sharedPresenceIndex?.rememberSharedPresenceIndex(sharedStorage, row.previewKey, 'missing')
-      return false
-    }
-
-    const metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row).catch((error): PreviewCacheMetaValidationResult => ({ status: 'invalid', message: errorMessage(error) })) || { status: 'missing' as const }
-    if (metaValidation.status === 'ok') stats.sharedMetaValidated += 1
-    if (metaValidation.status === 'missing') stats.sharedMetaMissing += 1
-    if (metaValidation.status === 'invalid' || metaValidation.status === 'mismatch') {
-      stats.checksumMismatch += 1
-      rememberSharedMiss(key)
-      options.sharedPresence?.forgetSharedPresence(sharedStorage, row.previewKey)
-      await options.sharedPresenceIndex?.forgetSharedPresenceIndex(sharedStorage, row.previewKey)
-      options.appendStartupLog(`preview cache hydrate meta rejected: ${sharedOutputPath}, ${metaValidation.status}${metaValidation.message ? `, ${metaValidation.message}` : ''}`)
-      return false
-    }
-    if (metaValidation.status === 'missing' && options.isStrictSharedMetaEnabled?.()) {
-      stats.checksumMismatch += 1
-      rememberSharedMiss(key)
-      options.sharedPresence?.rememberSharedPresence(sharedStorage, row.previewKey, 'missing')
-      await options.sharedPresenceIndex?.rememberSharedPresenceIndex(sharedStorage, row.previewKey, 'missing')
-      return false
-    }
-
-    stats.sharedHit += 1
-    options.sharedPresence?.rememberSharedPresence(sharedStorage, row.previewKey, 'ok')
-    await options.sharedPresenceIndex?.rememberSharedPresenceIndex(sharedStorage, row.previewKey, 'ok')
-    const hydrated = await copySharedPreviewToLocal(sharedOutputPath, row.outputPath)
-    if (!hydrated) {
-      options.sharedPresence?.forgetSharedPresence(sharedStorage, row.previewKey)
-      await options.sharedPresenceIndex?.forgetSharedPresenceIndex(sharedStorage, row.previewKey)
-      return false
-    }
-
-    await options.writePreviewCacheIndex(localStorage, row.previewKey, {
-      outputPath: row.outputPath,
-      fontSignature: row.fontSignature,
-      textHash: row.textHash,
-      fontSize: row.fontSize,
-      width: row.width,
-      height: row.height,
-      status: 'ok',
-      message: 'hydrated-from-shared-preview-cache',
-      fontId: row.fontId,
-      sourcePath: row.sourcePath,
-    }).catch((error) => {
-      options.appendStartupLog(`preview cache hydrate local index failed: ${row.outputPath}, ${errorMessage(error)}`)
+    const generation = getStartupPathRootState(sharedStorage.rootPath).generation
+    const lease = claimPreviewImage(row.outputPath, 'hydrate', () => {
+      const state = getStartupPathRootState(sharedStorage.rootPath!)
+      return state.generation === generation && state.state !== 'offline'
     })
+    try {
+    return await withSharedIoSignal(lease.signal, async () => {
+        if (!lease.current()) return false
+        let sharedOutputPath = join(sharedStorage.dir, `${row.previewKey}.png`)
+        const cachedPresence = options.sharedPresence?.getSharedPresence(sharedStorage, row.previewKey) || null
+        const persistentPresence = cachedPresence ? null : await options.sharedPresenceIndex?.getSharedPresenceIndex(sharedStorage, row.previewKey).catch(() => null) || null
+        const effectivePresence = cachedPresence || persistentPresence
+        // Historical missing rows have no trustworthy provenance. Recheck them;
+        // only this generation's successful query may briefly suppress a repeat.
+        if (effectivePresence !== 'ok' && hasSharedMiss(key)) { stats.sharedNegativeHit += 1; return false }
+        let indexedStatus: PreviewCacheIndexStatus | null = null
+        if (effectivePresence === 'ok') {
+          indexedStatus = 'ok'
+          if (cachedPresence === 'ok') stats.sharedPresenceHit += 1
+          if (persistentPresence === 'ok') stats.sharedPresenceIndexHit += 1
+        } else {
+          try {
+            indexedStatus = await options.readPreviewCacheIndexStatus(sharedStorage, row.previewKey, sharedOutputPath)
+          } catch (error) {
+            stats.sharedUnavailable += 1
+            options.appendStartupLog(`preview cache hydrate index failed: ${sharedOutputPath}, ${errorMessage(error)}`)
+            // Legacy image-only caches need no DB. This stays background work;
+            // an index outage is never persisted as an absent image.
+            if (!options.legacyRootPreviewCacheDir) return false
+          }
+        }
+        if (!lease.current()) return false
 
-    stats.hydrated += 1
-    return true
+        if (indexedStatus !== 'ok') {
+          if (!options.legacyRootPreviewCacheDir) { rememberSharedMiss(key); return false }
+          sharedOutputPath = join(options.legacyRootPreviewCacheDir(sharedStorage.rootPath!), `${row.previewKey}.png`)
+        }
+
+        // One network PNG read; validation and the local copy consume exactly these bytes.
+        const read = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(`preview-cache-hydrate-read:${sharedOutputPath}`, () => fsp.readFile(sharedOutputPath), hydrateTimeoutMs()))
+        if (!read.ok || !lease.current()) {
+          stats.sharedUnavailable += 1
+          options.sharedPresence?.forgetSharedPresence(sharedStorage, row.previewKey)
+          await options.sharedPresenceIndex?.forgetSharedPresenceIndex(sharedStorage, row.previewKey)
+          return false
+        }
+        const bytes = read.value
+        if (!isCompletePreviewPng(bytes)) return false
+        const metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row, bytes).catch((error): PreviewCacheMetaValidationResult => ({ status: 'invalid', message: errorMessage(error) })) || { status: 'missing' as const }
+        if (metaValidation.status === 'ok') stats.sharedMetaValidated += 1
+        if (metaValidation.status === 'missing') stats.sharedMetaMissing += 1
+        if (metaValidation.status === 'invalid' || metaValidation.status === 'mismatch') {
+          stats.checksumMismatch += 1
+          rememberSharedMiss(key)
+          options.sharedPresence?.forgetSharedPresence(sharedStorage, row.previewKey)
+          await options.sharedPresenceIndex?.forgetSharedPresenceIndex(sharedStorage, row.previewKey)
+          options.appendStartupLog(`preview cache hydrate meta rejected: ${sharedOutputPath}, ${metaValidation.status}${metaValidation.message ? `, ${metaValidation.message}` : ''}`)
+          return false
+        }
+        if (metaValidation.status === 'missing' && options.isStrictSharedMetaEnabled?.()) {
+          stats.checksumMismatch += 1
+          rememberSharedMiss(key)
+          return false
+        }
+
+        stats.sharedHit += 1
+        if (indexedStatus === 'ok') {
+          options.sharedPresence?.rememberSharedPresence(sharedStorage, row.previewKey, 'ok')
+          await options.sharedPresenceIndex?.rememberSharedPresenceIndex(sharedStorage, row.previewKey, 'ok')
+        }
+        if (!lease.current()) return false
+        await fsp.mkdir(dirname(row.outputPath), { recursive: true })
+        await fsp.writeFile(lease.temporaryPath, bytes)
+        if (!(await lease.commit())) return false
+        negative.delete(key)
+
+        await options.writePreviewCacheIndex(localStorage, row.previewKey, {
+          outputPath: row.outputPath,
+          fontSignature: row.fontSignature,
+          textHash: row.textHash,
+          fontSize: row.fontSize,
+          width: row.width,
+          height: row.height,
+          status: 'ok',
+          message: 'hydrated-from-shared-preview-cache',
+          fontId: row.fontId,
+          sourcePath: row.sourcePath,
+        }).catch((error) => {
+          options.appendStartupLog(`preview cache hydrate local index failed: ${row.outputPath}, ${errorMessage(error)}`)
+        })
+
+        stats.hydrated += 1
+        return true
+    })
+    } finally { await lease.release() }
   }
 
   async function hydratePreviewCache(localStorage: PreviewCacheStorage, row: PreviewCacheHydrationRow): Promise<boolean> {
     const sharedStorage = options.previewCacheStorageToShared(localStorage)
     if (!sharedStorage) return false
-    const key = sharedKey(sharedStorage, row.previewKey)
+    const key = `${sharedKey(sharedStorage, row.previewKey)}:${row.outputPath}`
     const existing = inFlight.get(key)
     if (existing) return existing
-    const task = hydrateOne(localStorage, row)
+    const task = withPhysicalIoCompletion(() => hydrateOne(localStorage, row))
       .finally(() => {
         inFlight.delete(key)
         logStats()
@@ -274,21 +258,31 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
     return task
   }
 
-  async function hydratePreviewCacheRows(localStorage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[]): Promise<Set<string>> {
+  async function hydratePreviewCacheRows(localStorage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[], current = () => true): Promise<Set<string>> {
     const hydratedIds = new Set<string>()
+    const sharedStorage = options.previewCacheStorageToShared(localStorage)
+    const generation = sharedStorage?.rootPath ? getStartupPathRootState(sharedStorage.rootPath).generation : undefined
     const queue = rows.filter((row) => row?.id && row.previewKey && row.outputPath)
     if (!queue.length) return hydratedIds
 
     let index = 0
     const workerCount = Math.max(1, Math.min(hydrateMaxInFlight(), queue.length))
     await Promise.all(Array.from({ length: workerCount }, async () => {
-      while (index < queue.length) {
+      while (current() && index < queue.length) {
         const row = queue[index]
         index += 1
         if (!row) continue
         if (await hydratePreviewCache(localStorage, row)) hydratedIds.add(row.id)
       }
     }))
+    // The existing bounded prefetch batch owns one deduplicated maintenance write.
+    // Single-item lookups never spawn a touch task of their own.
+    if (current() && sharedStorage && hydratedIds.size && (!sharedStorage.rootPath || getStartupPathRootState(sharedStorage.rootPath).generation === generation)) {
+      const keys = [...new Set(queue.filter(row => hydratedIds.has(row.id)).map(row => row.previewKey))]
+      await options.touchSharedPreviewCache?.(sharedStorage, keys).catch(error => {
+        options.appendStartupLog(`preview cache batch touch unavailable: ${errorMessage(error)}`)
+      })
+    }
     logStats()
     return hydratedIds
   }

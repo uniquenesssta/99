@@ -73,3 +73,30 @@ pub fn set_meta(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<(
     Ok(())
 }
 
+
+/// An optional cache is not initialized by a reader. Errors stay unavailable,
+/// including missing/old schema, permission, busy and corruption.
+pub fn open_preview_cache_query(path: &str, version: i64, read_only: bool) -> Result<Connection, String> {
+    if !read_only {
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        let conn = Connection::open(path).map_err(|error| error.to_string())?;
+        initialize_preview_cache_db(&conn, version).map_err(|error| error.to_string())?;
+        return Ok(conn);
+    }
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| format!("preview-cache-unavailable: {}", error))?;
+    let tables: i64 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','preview_cache')", [], |row| row.get(0))
+        .map_err(|error| format!("preview-cache-unavailable: {}", error))?;
+    if tables != 2 { return Err("preview-cache-incompatible: missing tables".into()); }
+    let mut columns = conn.prepare("PRAGMA table_info(preview_cache)").map_err(|error| format!("preview-cache-unavailable: {}",error))?;
+    let names = columns.query_map([], |row| row.get::<_,String>(1)).map_err(|error|error.to_string())?
+        .collect::<rusqlite::Result<HashSet<_>>>().map_err(|error|error.to_string())?;
+    if !["preview_key","output_path","status"].iter().all(|name|names.contains(*name)) { return Err("preview-cache-incompatible: missing columns".into()); }
+    drop(columns);
+    let schema: String = conn.query_row("SELECT value FROM meta WHERE key = 'schemaVersion'", [], |row| row.get(0))
+        .map_err(|error| format!("preview-cache-incompatible: {}", error))?;
+    if schema != version.to_string() { return Err("preview-cache-incompatible: schemaVersion".to_string()); }
+    Ok(conn)
+}

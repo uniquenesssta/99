@@ -1,9 +1,14 @@
+import { detailedStartupLogsEnabled } from '../logging/startupLogPolicy'
+import { createHash } from 'node:crypto'
+import { currentOperationTrace, logOperation } from '../logging/operationTraceContext'
+import { sharedIoAccessConflict, type SharedIoAccess } from './sharedIoAccessRuntime'
 import { isApplicationClosing, onApplicationClosing } from '../app/shutdownCoordinatorRuntime'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 
 export type SharedIoProcessRequest = {
   file: string
   args: string[]
+  accesses?: SharedIoAccess[]
   roots: string[]
   timeoutMs: number
   label?: string
@@ -42,6 +47,7 @@ export type SharedIoProcessMetrics = SharedIoProcessMetricRow & {
   byLabel: Record<string, SharedIoProcessMetricRow>
 }
 type Job = {
+  trace?: ReturnType<typeof currentOperationTrace>
   id: number
   request: SharedIoProcessRequest
   resolve: (result: Result) => void
@@ -92,21 +98,27 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       executionMs: job.startedAt ? Math.max(0, current - job.startedAt) : 0,
     }
   }
-  const rootsOverlap = (a: Job, b: Job) => a.request.roots.some(root => b.request.roots.includes(root))
+  const rootsOverlap = (a: Job, b: Job) => [...a.request.roots, ...b.request.roots].some(root => root.startsWith('configured-root:')) || a.request.roots.some(root => b.request.roots.includes(root))
+  const conflicts = (a: Job, b: Job) => {
+    if (!rootsOverlap(a, b)) return false
+    if (a.request.accesses?.length && b.request.accesses?.length)
+      return a.request.accesses.some(left => b.request.accesses!.some(right => sharedIoAccessConflict(left, right)))
+    if ((laneOf(a) === 'root-probe' || laneOf(b) === 'root-probe') && !a.request.write && !b.request.write) return false
+    // Legacy callers remain conservative. Preserve the two explicitly read-only lanes.
+    if (laneOf(a) !== 'default' && laneOf(b) !== 'default' && !a.request.write && !b.request.write) return false
+    return true
+  }
   const canStart = (job: Job) => {
-    if (laneOf(job) === 'root-probe') {
-      if ([...active].some(other => laneOf(other) === 'root-probe')) return false
-      return ![...active].some(other => rootsOverlap(job, other) && (other.request.write || laneOf(other) === 'root-probe'))
-    }
-    if (laneOf(job) === 'preview-read') {
-      if ([...active].filter(other => laneOf(other) === 'preview-read').length >= 10) return false
-      // Existing same-root writes/default work remain exclusive. Do not let a
-      // stream of newer preview reads starve an earlier queued operation.
-      if (queue.some(other => other.id < job.id && laneOf(other) === 'default' && rootsOverlap(job, other))) return false
-      return ![...active].some(other => rootsOverlap(job, other) && laneOf(other) !== 'preview-read' && laneOf(other) !== 'root-probe')
-    }
-    if ([...active].filter(other => laneOf(other) === 'default').length >= 2) return false
-    return ![...active].some(other => rootsOverlap(job, other))
+    const lane = laneOf(job)
+    const limit = lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2
+    if ([...active].filter(other => laneOf(other) === lane).length >= limit) return false
+    if (queue.some(other => other.id < job.id && conflicts(job, other))) return false
+    return ![...active].some(other => conflicts(job, other))
+  }
+  const traceJob = (job: Job, stage: string, reason?: string, blockedBy?: number) => {
+    if (!detailedStartupLogsEnabled()) return
+    const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 20)
+    logOperation({ trace: job.trace, stage, reason, jobId: String(job.id), blockedBy: blockedBy === undefined ? undefined : String(blockedBy), rootId: hash(job.request.roots), resourceId: hash(job.request.accesses || job.request.roots), ...timingOf(job) }, appendLog)
   }
   const release = (job: Job) => {
     if (job.released) return
@@ -182,6 +194,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       job.startedAt = Date.now()
       active.add(job)
       count(request, 'started')
+      traceJob(job, 'shared-started')
       child.stdin.on('error', () => cancel(job, 'stdin-error'))
       child.stdin.end()
       log(`shared io started: request=${job.id}, pid=${child.pid}, label=${requestLabel(request)}, lane=${request.lane || 'default'}, roots=${request.roots.length}, queuedMs=${job.startedAt - job.enqueuedAt}, write=${request.write}`)
@@ -201,6 +214,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
         if (job.killTimer) clearTimeout(job.killTimer)
         active.delete(job)
         count(request, 'closed')
+        traceJob(job, 'shared-closed')
         release(job)
         if (!job.settled) {
           if (code === 0) settle(job, { stdout, stderr, ...timingOf(job) })
@@ -217,7 +231,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     }
   }
   function run(request: SharedIoProcessRequest): Promise<Result> {
-    request = { ...request, args: [...request.args], roots: [...new Set(request.roots)], env: request.env ? { ...request.env } : undefined }
+    request = { ...request, accesses: request.accesses?.map(access => ({ ...access })), args: [...request.args], roots: [...new Set(request.roots)], env: request.env ? { ...request.env } : undefined }
     count(request, 'requests')
     const reject = (message: string, reason: string) => {
       count(request, 'failed')
@@ -226,6 +240,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     }
     if (closed || request.signal?.aborted) return reject('Shared I/O is closed or cancelled', 'cancelled')
     if (!request.roots.length) return reject('Shared I/O requires a resource identity', 'invalid-root')
+    if (request.accesses && (request.roots.some(root => !request.accesses!.some(access => access.root === root)) || request.accesses.some(access => !request.roots.includes(access.root) || !access.path || !['file','database','tree'].includes(access.scope) || !['read','write'].includes(access.mode)))) request.accesses = undefined
     const requestLane = request.lane || 'default'
     const queuedInLane = queue.filter(job => laneOf(job) === requestLane).length
     if (requestLane === 'preview-read' && request.write) return reject('Preview lane accepts shared reads only', 'invalid-lane')
@@ -236,11 +251,13 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     return new Promise((resolve, reject) => {
       let close!: () => void
       const whenClosed = new Promise<void>(resolve => { close = resolve })
-      const job: Job = { whenClosed, close, id: ++nextId, request, resolve, reject, settled: false, enqueuedAt: Date.now() }
+      const job: Job = { trace: currentOperationTrace(), whenClosed, close, id: ++nextId, request, resolve, reject, settled: false, enqueuedAt: Date.now() }
       job.abort = () => cancel(job, 'cancelled')
       request.signal?.addEventListener('abort', job.abort, { once: true })
       job.timer = setTimeout(() => cancel(job, 'queue-timeout'), request.queueTimeoutMs ?? 3000)
+      const blocker = [...active, ...queue].find(other => conflicts(job, other))
       queue.push(job)
+      traceJob(job, 'shared-admission', !request.accesses ? 'conservative-scope' : blocker ? 'resource-conflict' : canStart(job) ? 'ready' : 'capacity', blocker?.id)
       drain()
     })
   }

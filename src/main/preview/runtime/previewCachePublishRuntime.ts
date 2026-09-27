@@ -1,4 +1,9 @@
-import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { randomUUID } from 'node:crypto'
+import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
+import { applicationWorkEpoch, isApplicationClosing, onApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
+import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
+import { withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
+import { executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname, join } from 'node:path'
 import { hostname } from 'node:os'
 import type { PreviewCacheIndexStatus } from '../previewCacheRuntime'
@@ -77,31 +82,41 @@ async function pathExists(filePath: string): Promise<boolean> {
   }
 }
 
-async function acquirePublishLock(lockPath: string): Promise<(() => Promise<void>) | null> {
-  const now = Date.now()
-  const payload = JSON.stringify({ machineId: machineId(), operation: 'preview-cache-publish', createdAt: now, expiresAt: now + lockTtlMs() })
-  try {
-    const handle = await fsp.open(lockPath, 'wx')
-    await handle.writeFile(payload, 'utf-8')
-    await handle.close()
-    return async () => {
-      await fsp.unlink(lockPath).catch(() => undefined)
-    }
-  } catch {
-    try {
-      const raw = await fsp.readFile(lockPath, 'utf-8')
-      const parsed = JSON.parse(raw) as { expiresAt?: number }
-      if (Number(parsed.expiresAt || 0) > now) return null
-      await fsp.unlink(lockPath).catch(() => undefined)
-      const handle = await fsp.open(lockPath, 'wx')
-      await handle.writeFile(payload, 'utf-8')
-      await handle.close()
-      return async () => {
-        await fsp.unlink(lockPath).catch(() => undefined)
+async function acquirePublishLock(lockPath: string) {
+  const isolated = (await sharedIoResourceKeys([lockPath])).length > 0
+  const open = () => fsp.open(lockPath, 'wx')
+  let handle: Awaited<ReturnType<typeof open>>
+  try { handle = await open() }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !isolated) return null
+    // Native removal compares the exact object, never a read-then-blind-unlink.
+    await executeSharedFile({operation: 'removeStaleLock', path: lockPath, olderThanMs: Date.now() - lockTtlMs()}).catch(() => undefined)
+    try { handle = await open() } catch { return null }
+  }
+  type Owned = { removeOwned: () => Promise<void>; renameOwned: (source: string, dest: string) => Promise<void> }
+  const owned = handle as unknown as Owned
+  const identity = isolated ? undefined : await handle.stat()
+  const localCurrent = async () => {
+    const current = await fsp.lstat(lockPath)
+    return current.dev === identity?.dev && current.ino === identity?.ino
+  }
+  try { await handle.writeFile(JSON.stringify({ machineId: machineId(), operation: 'preview-cache-publish', createdAt: Date.now(), token: randomUUID() }), 'utf-8') }
+  catch { await handle.close().catch(() => undefined); return null }
+  return {
+    rename: async (source: string, dest: string) => {
+      if (isolated) await owned.renameOwned(source, dest)
+      else {
+        if (!(await localCurrent())) throw new Error('preview publish lock replaced')
+        await fsp.rename(source, dest)
       }
-    } catch {
-      return null
-    }
+    },
+    release: async () => {
+      try {
+        if (isolated) await owned.removeOwned()
+        else if (await localCurrent()) await fsp.unlink(lockPath)
+      } catch { /* A later owner is authoritative; never remove it by pathname. */ }
+      finally { await handle.close().catch(() => undefined) }
+    },
   }
 }
 
@@ -143,7 +158,7 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
   }
 
   function schedulePump(): void {
-    if (timer) return
+    if (timer || isApplicationClosing()) return
     timer = setTimeout(() => {
       timer = null
       pump()
@@ -155,7 +170,9 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
   }
 
   async function publishOne(storage: PreviewCacheStorage, row: PreviewCachePublishRow): Promise<void> {
-    if (!storage.rootPath) return
+    if (!storage.rootPath || isApplicationClosing()) return
+    const epoch = applicationWorkEpoch(), generation = getStartupPathRootState(storage.rootPath).generation
+    const current = () => !isApplicationClosing() && applicationWorkEpoch() === epoch && getStartupPathRootState(storage.rootPath!).generation === generation && getStartupPathRootState(storage.rootPath!).state !== 'offline'
     if (!(await options.ensureSharedAvailable(storage.rootPath))) {
       stats.sharedUnavailable += 1
       return
@@ -163,29 +180,34 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
 
     const sharedOutputPath = join(storage.dir, `${row.previewKey}.png`)
     const lockPath = `${sharedOutputPath}.publish.lock`
-    const tmpPath = `${sharedOutputPath}.tmp.${process.pid}.${Date.now()}`
-    const mkdirResult = await options.withIoDeadlineResult(`preview-cache-publish-mkdir:${dirname(sharedOutputPath)}`, () => fsp.mkdir(dirname(sharedOutputPath), { recursive: true }), publishTimeoutMs())
+    const tmpPath = `${sharedOutputPath}.tmp.${randomUUID()}`
+    const mkdirResult = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(`preview-cache-publish-mkdir:${dirname(sharedOutputPath)}`, () => fsp.mkdir(dirname(sharedOutputPath), { recursive: true }), publishTimeoutMs()))
     if (!mkdirResult.ok) {
       if (mkdirResult.timedOut) stats.deadlineDropped += 1
       options.appendStartupLog(`preview cache publish mkdir dropped: ${dirname(sharedOutputPath)}, ${errorMessage(mkdirResult.error)}`)
       return
     }
-    const release = await acquirePublishLock(lockPath)
-    if (!release) {
+    if (!current()) return
+    const lock = await acquirePublishLock(lockPath)
+    if (!lock) {
       stats.lockBusy += 1
       return
     }
 
     try {
-      const result = await options.withIoDeadlineResult(`preview-cache-publish:${sharedOutputPath}`, async () => {
+      let expired = false
+      const result = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(`preview-cache-publish:${sharedOutputPath}`, async () => {
+        if (!current()) throw new Error('preview publish cancelled')
         if (await pathExists(sharedOutputPath)) return 'exists' as const
         await fsp.copyFile(row.localOutputPath, tmpPath)
         if (await pathExists(sharedOutputPath)) return 'exists-after-copy' as const
-        await fsp.rename(tmpPath, sharedOutputPath)
+        if (expired || !current()) throw new Error('preview publish expired')
+        await lock.rename(tmpPath, sharedOutputPath)
         return 'published' as const
-      }, publishTimeoutMs())
+      }, publishTimeoutMs()).then(result => { expired = !result.ok; return result }))
 
       await fsp.unlink(tmpPath).catch(() => undefined)
+      if (!current()) return
       if (!result.ok) {
         if (result.timedOut) stats.deadlineDropped += 1
         options.appendStartupLog(`preview cache publish dropped: ${sharedOutputPath}, ${errorMessage(result.error)}`)
@@ -220,6 +242,7 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
         }
       }
 
+      if (!current()) return
       await options.appendSharedPreviewCacheManifest?.(storage, row, sharedOutputPath, manifestEvent, metaValidation)
         .then(() => {
           stats.manifestWritten += 1
@@ -228,7 +251,7 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
           options.appendStartupLog(`preview cache publish manifest failed: ${sharedOutputPath}, ${errorMessage(error)}`)
         })
 
-      if (shouldWriteSharedIndex) {
+      if (shouldWriteSharedIndex && current()) {
         await options.writePreviewCacheIndex(storage, row.previewKey, {
           outputPath: sharedOutputPath,
           fontSignature: row.fontSignature,
@@ -245,20 +268,20 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
         })
       }
     } finally {
-      await release()
+      await lock.release()
       await fsp.unlink(tmpPath).catch(() => undefined)
       logStats()
     }
   }
 
   function pump(): void {
-    while (active < publishMaxInFlight() && queue.size) {
+    while (!isApplicationClosing() && active < publishMaxInFlight() && queue.size) {
       const first = queue.entries().next().value as [string, { storage: PreviewCacheStorage; row: PreviewCachePublishRow }] | undefined
       if (!first) break
       const [key, task] = first
       queue.delete(key)
       active += 1
-      publishOne(task.storage, task.row)
+      withPhysicalIoCompletion(() => publishOne(task.storage, task.row))
         .catch((error) => options.appendStartupLog(`preview cache publish failed: ${errorMessage(error)}`))
         .finally(() => {
           active = Math.max(0, active - 1)
@@ -268,14 +291,17 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
   }
 
   function enqueuePreviewCachePublish(localStorage: PreviewCacheStorage, row: PreviewCachePublishRow): void {
+    if (isApplicationClosing()) return
     const sharedStorage = options.previewCacheStorageToShared(localStorage)
     if (!sharedStorage?.rootPath) return
     queue.set(publishKey(sharedStorage, row.previewKey), { storage: sharedStorage, row })
+    while (queue.size > 2000) queue.delete(queue.keys().next().value!)
     stats.queued += 1
     schedulePump()
     logStats()
   }
 
+  onApplicationClosing(() => { if (timer) clearTimeout(timer); timer = null; queue.clear() })
   return {
     enqueuePreviewCachePublish,
     logStats,

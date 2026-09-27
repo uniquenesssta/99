@@ -5507,7 +5507,7 @@
           }
         }
       ],
-      "traceHash": "5ee3f314954702d94e2b68d2df8dcd082b414b38d30663ae517b105ed5c397e6",
+      "traceHash": "b4dea918aac84df44b7cd121a4768e0537c6ae911b94eaa7f36ddc3f8af7b82e",
       "pendingFiles": 0
     },
     {
@@ -5534,5 +5534,6 @@
       "traceHash": "f2a7256221ff59bc64ce45c01d7a85c71ffb1b52f14f7476b77aff29800168b0",
       "pendingFiles": 0
     }
-  ]
+  ],
+  "s0055": "Resource canonicalization adds an async boundary: independent activation exec can precede preview daemon submit; results, per-command order and temporary file lifetime unchanged."
 }

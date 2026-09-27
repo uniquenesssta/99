@@ -21,6 +21,7 @@
           "getPreviewCacheStatus",
           "readCachedPreviewImages",
           "hydratePreviewCache",
+          "schedulePreviewCachePrefetch",
           "rememberPreviewCacheRenderQueued",
           "previewCacheStorageToShared",
           "ensureSharedPreviewCacheAvailable",
@@ -29,7 +30,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "9a23cef97e8138073df24b70a67b9c67e662073e43a0c8c90d3366e1a537617a"
+      "tokenHash": "bc7a7316f542cd8d831426ed2f061692c6f0eedcb3eaa222fbdb59da29bb8bb3"
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [
@@ -960,7 +961,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "7c9f7294319a904f160b93eb9222ec6aa2ddf65c8b81f5c5ebc9960f4f4045a9"
+      "tokenHash": "2d5735b76b94dc0163b0446ea90131d5ecdf21ec98b8e53df2fe3e98b002bb2d"
     },
     "src/main/preview/runtime/previewBatchRowsRuntime.ts": {
       "functions": [
@@ -1000,7 +1001,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "26144d0b028732d0632d2a9f647f678a20810f7e0f13a5af79781c75acb85c98"
+      "tokenHash": "572b5e2cd2da129c13587e208a4ad50267fb652cbe521fb698f8c343edb36b41"
     },
     "src/main/preview/runtime/previewStorageIoRuntime.ts": {
       "functions": [
@@ -1189,5 +1190,6 @@
       "ipcChannels": [],
       "tokenHash": "c8dd53380d4b1009dcdeb99fb6a9a2ce5c6d3a18635cbc5fc39cb2dbecfb2c10"
     }
-  }
+  },
+  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
 }

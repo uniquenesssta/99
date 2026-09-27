@@ -6,6 +6,7 @@ import type { FontItem, LibraryState } from "../../../shared/types";
 import { createPreviewStorageRoutingRuntime } from "./previewStorageRoutingRuntime";
 import {
   withIoDeadlineResult,
+  withPhysicalIoCompletion,
 } from "../../path/ioDeadlineRuntime";
 import type { PreviewCacheIndexStatus } from "../previewCacheRuntime";
 import { createPreviewCacheRootAvailabilityRuntime } from "./previewCacheRootAvailabilityRuntime";
@@ -81,6 +82,7 @@ export function createPreviewCacheStorageRuntime(
     storage: PreviewCacheStorage,
     row: PreviewCacheHydrationRow,
   ) => Promise<boolean>;
+  schedulePreviewCachePrefetch: (storage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[], immediate?: boolean) => void;
   rememberPreviewCacheRenderQueued: (count?: number) => void;
   previewCacheStorageToShared: (
     storage: PreviewCacheStorage,
@@ -177,8 +179,15 @@ export function createPreviewCacheStorageRuntime(
     withIoDeadlineResult,
     readPreviewCacheIndexStatus,
     writePreviewCacheIndex,
+    legacyRootPreviewCacheDir: options.legacyRootPreviewCacheDir,
     previewCacheStorageToShared: tierRuntime.previewCacheStorageToShared,
     ensureSharedAvailable: rootAvailability.ensureRootPreviewCacheAvailable,
+    touchSharedPreviewCache: async (storage, keys) => {
+      if (!storage.indexDbPath || !options.runRustPreviewCacheTouch || !keys.length) return
+      await withPhysicalIoCompletion(() => runStoragePreviewCacheIo(storage, 'preview-cache-prefetch-touch', () => options.runRustPreviewCacheTouch!({
+        dbPath: storage.indexDbPath!, schemaVersion: options.previewSqliteSchemaVersion, keys, now: new Date().toISOString(),
+      })))
+    },
     sharedPresence: sharedPresenceRuntime,
     sharedPresenceIndex: sharedPresenceIndexRuntime,
     validateSharedPreviewCacheMeta:
@@ -208,6 +217,7 @@ export function createPreviewCacheStorageRuntime(
     getPreviewCacheStatus,
     readCachedPreviewImages,
     hydratePreviewCache: hydrationRuntime.hydratePreviewCache,
+    schedulePreviewCachePrefetch: prefetchRuntime.schedulePreviewCachePrefetch,
     rememberPreviewCacheRenderQueued: hydrationRuntime.rememberRenderQueued,
     previewCacheStorageToShared: tierRuntime.previewCacheStorageToShared,
     ensureSharedPreviewCacheAvailable:

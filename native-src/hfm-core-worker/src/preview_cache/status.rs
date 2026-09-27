@@ -6,19 +6,14 @@ use std::time::Instant;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::path::normalize_path_for_cache_compare;
-use super::schema::initialize_preview_cache_db;
+use super::schema::{initialize_preview_cache_db, open_preview_cache_query};
 use super::types::{PreviewCacheCommandConfig, PreviewCacheQueryMatch, PreviewCacheQueryPayload, PreviewCacheQueryResult, PreviewCacheReadStatusPayload, PreviewCacheReadStatusResult, PreviewCacheTimings, PreviewCacheTouchPayload, PreviewCacheTouchResult};
 
 pub fn read_preview_cache_status(config: &PreviewCacheCommandConfig) -> Result<String, String> {
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
     let payload: PreviewCacheReadStatusPayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
-    if let Some(parent) = Path::new(&payload.db_path).parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-
-    let conn = Connection::open(&payload.db_path).map_err(|error| error.to_string())?;
-    initialize_preview_cache_db(&conn, payload.schema_version).map_err(|error| error.to_string())?;
+    let conn = open_preview_cache_query(&payload.db_path, payload.schema_version, payload.read_only)?;
     let row = select_status_row(&conn, &payload.preview_key).map_err(|error| error.to_string())?;
     let mut status = None;
     let mut matched = false;
@@ -28,7 +23,7 @@ pub fn read_preview_cache_status(config: &PreviewCacheCommandConfig) -> Result<S
         matched = normalize_path_for_cache_compare(&output_path) == normalize_path_for_cache_compare(&payload.output_path);
         if matched {
             status = normalized_status;
-            if status.is_some() {
+            if status.is_some() && !payload.read_only {
                 conn.execute(
                     "UPDATE preview_cache SET accessed_at = ?, updated_at = ? WHERE preview_key = ?",
                     params![&payload.now, &payload.now, &payload.preview_key],
@@ -53,12 +48,7 @@ pub fn query_preview_cache_status(config: &PreviewCacheCommandConfig) -> Result<
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
     let payload: PreviewCacheQueryPayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
-    if let Some(parent) = Path::new(&payload.db_path).parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-
-    let mut conn = Connection::open(&payload.db_path).map_err(|error| error.to_string())?;
-    initialize_preview_cache_db(&conn, payload.schema_version).map_err(|error| error.to_string())?;
+    let mut conn = open_preview_cache_query(&payload.db_path, payload.schema_version, payload.read_only)?;
     let accepted = accepted_status_set(&payload.accepted_statuses);
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut rows = Vec::with_capacity(payload.rows.len());
@@ -78,7 +68,7 @@ pub fn query_preview_cache_status(config: &PreviewCacheCommandConfig) -> Result<
                 matched = status_accepted && normalize_path_for_cache_compare(&output_path) == normalize_path_for_cache_compare(&row.output_path);
                 if matched {
                     matched_count += 1;
-                    if payload.touch_matched {
+                    if !payload.read_only && payload.touch_matched {
                         touch_keys.push(row.preview_key.clone());
                     }
                 }
@@ -94,7 +84,7 @@ pub fn query_preview_cache_status(config: &PreviewCacheCommandConfig) -> Result<
         }
     }
     let touched = touch_keys.len();
-    if payload.touch_matched && !touch_keys.is_empty() {
+    if !payload.read_only && payload.touch_matched && !touch_keys.is_empty() {
         let mut touch = tx.prepare("UPDATE preview_cache SET accessed_at = ?, updated_at = ? WHERE preview_key = ?").map_err(|error| error.to_string())?;
         for key in &touch_keys {
             touch.execute(params![&payload.now, &payload.now, key]).map_err(|error| error.to_string())?;

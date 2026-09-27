@@ -266,7 +266,7 @@ async function checkListCommandIsReadOnlySharedIo() {
 
   await client.runRustFontIndexListWorker([sharedRoot], ['ttf'])
   assert.equal(calls.length, 1)
-  assert.deepEqual(plain(calls[0].sharedIo), { paths: [sharedRoot], write: false })
+  assert.deepEqual(plain(calls[0].sharedIo), { paths: [sharedRoot], write: false, accesses: [{path: sharedRoot, mode: 'read', scope: 'tree'}] })
   const transport = fs.readFileSync(abs(transportPath), 'utf8').replace(/\r\n/g, '\n')
   assert(
     transport.includes("if (!target!.write && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"),
