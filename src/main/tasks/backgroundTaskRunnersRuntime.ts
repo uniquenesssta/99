@@ -1,5 +1,5 @@
 import { validatePreviewInput } from '../preview/runtime/previewInputPolicy'
-import { nativePreviewLayoutKey, type NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
+import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 import type {
 FontItem,
 InstallCompareResult,

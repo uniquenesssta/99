@@ -89,7 +89,6 @@ unsafe extern "system" {
     fn GdipCreateFontFamilyFromName(name: *const u16, font_collection: *mut c_void, font_family: *mut *mut c_void) -> GpStatus;
     fn GdipDeleteFontFamily(family: *mut c_void) -> GpStatus;
     fn GdipCreateFont(family: *mut c_void, em_size: f32, style: i32, unit: i32, font: *mut *mut c_void) -> GpStatus;
-    fn GdipGetFamily(font: *mut c_void, family: *mut *mut c_void) -> GpStatus;
     fn GdipGetEmHeight(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
     fn GdipGetCellAscent(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
     fn GdipGetCellDescent(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
@@ -144,8 +143,8 @@ impl Drop for PrivateFontCollection {
     }
 }
 
-struct SystemFontFamily(*mut c_void);
-impl Drop for SystemFontFamily {
+struct FontFamily(*mut c_void);
+impl Drop for FontFamily {
     fn drop(&mut self) {
         if !self.0.is_null() {
             unsafe { let _ = GdipDeleteFontFamily(self.0); }
@@ -164,8 +163,9 @@ impl Drop for Font {
 
 struct PreviewFont {
     font: Font,
+    // Keep the metrics family alive through drawing; release font, family, then collection.
+    family: FontFamily,
     _private_collection: Option<PrivateFontCollection>,
-    _system_family: Option<SystemFontFamily>,
 }
 
 struct StringFormat(*mut c_void);
@@ -216,9 +216,7 @@ pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<(), String
         status(unsafe { GdipSetStringFormatAlign(format.0, 0) }, "list alignment failed")?;
         status(unsafe { GdipSetStringFormatLineAlign(format.0, 0) }, "list line alignment failed")?;
         status(unsafe { GdipSetStringFormatFlags(format.0, STRING_FORMAT_FLAGS_MEASURE_TRAILING_SPACES | STRING_FORMAT_FLAGS_NO_WRAP | 0x4000 | 0x4) }, "list flags failed")?;
-        let mut family = ptr::null_mut();
-        status(unsafe { GdipGetFamily(preview_font.font.0, &mut family) }, "font metrics family failed")?;
-        let family = SystemFontFamily(family);
+        let family = &preview_font.family;
         let (mut em, mut ascent, mut descent) = (0u16, 0u16, 0u16);
         status(unsafe { GdipGetEmHeight(family.0, 0, &mut em) }, "font em failed")?;
         status(unsafe { GdipGetCellAscent(family.0, 0, &mut ascent) }, "font ascent failed")?;
@@ -268,8 +266,8 @@ fn create_preview_font(request: &PreviewRenderRequest) -> Result<PreviewFont, St
                 let font = create_font(family.0, request.font_size as f32)?;
                 Ok(PreviewFont {
                     font,
+                    family,
                     _private_collection: None,
-                    _system_family: Some(family),
                 })
             }) {
                 Ok(font) => return Ok(font),
@@ -282,25 +280,25 @@ fn create_preview_font(request: &PreviewRenderRequest) -> Result<PreviewFont, St
         let font_path = wide_null(&request.font_path);
         let collection = create_private_font_collection(&font_path)?;
         let family = first_font_family(collection.0)?;
-        let font = create_font(family, request.font_size as f32)?;
+        let font = create_font(family.0, request.font_size as f32)?;
         return Ok(PreviewFont {
             font,
+            family,
             _private_collection: Some(collection),
-            _system_family: None,
         });
     }
 
     Err(last_system_error.unwrap_or_else(|| "fontPath is empty".to_string()))
 }
 
-fn create_system_font_family(family_name: &str) -> Result<SystemFontFamily, String> {
+fn create_system_font_family(family_name: &str) -> Result<FontFamily, String> {
     let name = wide_null(family_name);
     let mut family = ptr::null_mut();
     status(unsafe { GdipCreateFontFamilyFromName(name.as_ptr(), ptr::null_mut(), &mut family) }, "failed to create installed font family")?;
     if family.is_null() {
         return Err("installed font family not found".to_string());
     }
-    Ok(SystemFontFamily(family))
+    Ok(FontFamily(family))
 }
 
 fn create_private_font_collection(font_path: &[u16]) -> Result<PrivateFontCollection, String> {
@@ -310,7 +308,7 @@ fn create_private_font_collection(font_path: &[u16]) -> Result<PrivateFontCollec
     Ok(PrivateFontCollection(collection))
 }
 
-fn first_font_family(collection: *mut c_void) -> Result<*mut c_void, String> {
+fn first_font_family(collection: *mut c_void) -> Result<FontFamily, String> {
     let mut count = 0i32;
     status(unsafe { GdipGetFontCollectionFamilyCount(collection, &mut count) }, "GdipGetFontCollectionFamilyCount failed")?;
     if count < 1 {
@@ -319,7 +317,8 @@ fn first_font_family(collection: *mut c_void) -> Result<*mut c_void, String> {
     let mut families = vec![ptr::null_mut(); count as usize];
     let mut found = 0i32;
     status(unsafe { GdipGetFontCollectionFamilyList(collection, count, families.as_mut_ptr(), &mut found) }, "GdipGetFontCollectionFamilyList failed")?;
-    families.into_iter().find(|family| !family.is_null()).ok_or_else(|| "font file contains no loadable family".to_string())
+    let owned: Vec<_> = families.into_iter().filter(|family| !family.is_null()).map(FontFamily).collect();
+    owned.into_iter().next().ok_or_else(|| "font file contains no loadable family".to_string())
 }
 
 fn create_bitmap(width: u32, height: u32) -> Result<Image, String> {

@@ -15,7 +15,7 @@ function decode(file){
  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(rgba[(y*w+x)*4+3]>8){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);ink++}
  return {w,h,rgba,bounds:{left,top,right,bottom,ink}}
 }
-function run(file,args){const r=cp.spawnSync(file,args,{cwd:root,encoding:'utf8',timeout:120000});if(r.status!==0)throw Error(`${file}: ${r.error||r.stderr||r.stdout}`);return r.stdout}
+function run(file,args){const r=cp.spawnSync(file,args,{cwd:root,encoding:'utf8',timeout:120000});if(r.status!==0)throw Error(`${file} status=${r.status} signal=${r.signal} args=${JSON.stringify(args)}: ${r.error||r.stderr||r.stdout}`);return r.stdout}
 function main(){
  assert.equal(process.platform,'win32','native display gate requires Windows')
  fs.mkdirSync(out,{recursive:true})

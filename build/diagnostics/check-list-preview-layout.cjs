@@ -33,6 +33,8 @@ async function identities() {
     assert.notEqual(cache[key](...args),cache[key](...args,layout),'new pixels reused legacy cache')
     for(const [field,value] of Object.entries(layout)) assert.notEqual(cache[key](...args,layout),cache[key](...args,{...layout,[field]:typeof value==='string'?value+'x':value+1}),field+' missing from disk identity')
   }
+  const legacyTextArgs=[...args];legacyTextArgs[7]+='|'+nativePreviewLayoutKey(layout)
+  assert.notEqual(cache.legacyPreviewCacheKey(...legacyTextArgs),cache.legacyPreviewCacheKey(...args,layout),'user text collided with layout suffix')
   const params=[input.text,input.fontSize,input.width,input.height],font=fonts[0]
   for(const [file,factory,method] of [['previewImageMemoryRuntime','createPreviewImageMemoryRuntime','requestKey'],['cachedPreviewImageDataUriCacheRuntime','createCachedPreviewImageDataUriCacheRuntime','keyForItem']]) {
     const m=load('src/main/preview/runtime/'+file+'.ts')[factory]()

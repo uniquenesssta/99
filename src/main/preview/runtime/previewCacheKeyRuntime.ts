@@ -83,7 +83,8 @@ export function previewCacheKeyDescriptor(
 }
 
 export function legacyPreviewCacheKey(sha1: (value: string) => string, identity: string, size: number, mtimeMs: number, fontSize: number, width: number, height: number, text: string, rendererVersion = getPreviewRendererVersion(), layout?: NativePreviewLayout): string {
-  return sha1(`${rendererVersion}|${previewFontSignature(identity, size, mtimeMs)}|${fontSize}|${width}|${height}|${text}${layout ? `|${nativePreviewLayoutKey(layout)}` : ''}`)
+  if (layout) return sha1(JSON.stringify(['preview-layout', rendererVersion, previewFontSignature(identity, size, mtimeMs), fontSize, width, height, text, nativePreviewLayoutKey(layout)]))
+  return sha1(`${rendererVersion}|${previewFontSignature(identity, size, mtimeMs)}|${fontSize}|${width}|${height}|${text}`)
 }
 
 export function strictPreviewCacheKey(sha1: (value: string) => string, identity: string, size: number, mtimeMs: number, fontSize: number, width: number, height: number, text: string, rendererVersion = getPreviewRendererVersion(), layout?: NativePreviewLayout): string {
