@@ -50,7 +50,7 @@ npm run build:win
 
 ## 当前工程任务
 
-- [当前 Stage 10：S10-06 全链路回归与最终关闭（S0-05.5 首轮 Windows/NAS 实机已通过，正式重复性能样本进行中）](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#19-s10-06-启动回执2026-09-27)
+- [当前 Stage 10：S10-06 工程回归与收尾（05.5 实施收拢，专项人工性能验收已按用户要求取消）](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#191-用户取消专项人工验收并推进-s10-062026-09-27)
 
 - [操作一致性与刷新优化任务书（U-00～U-08 代码已实施，实机待验；U-08 性能测量未结案，U-09 待实施）](docs/plans/HFM_INTERACTION_REFRESH_OPTIMIZATION_TASKBOOK.md)
 
@@ -75,6 +75,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-27：按用户要求取消固定 24 卡片首张/整屏、连续滚动/改字/字号专项人工验收及冷热至少各 5 次同条件对照，推进 S10-06 工程收尾；不再以这组人工测试阻塞 05.5/06，保留既有自动化与正确性、恢复、退出约束。执行结果见 [Stage 10 §19.1](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#191-用户取消专项人工验收并推进-s10-062026-09-27)；未测性能不记为通过。
 
 - 2026-09-27：S0-05.5 收到 Windows/NAS 首轮实机回执并放行 S10-06。新日志确认 worker 0.42.0 已携带 `preview-cache-read-only-v1`/`shared-owned-rename-v1`；可选共享缓存被取消后前台直接渲染成功，17 条记录到的慢路径 render IPC 为 1529/2109/4673ms（最小/中位/最大），无 ≥6s 样本；退出 started/closed 最终 1147/1147，`cleanupTimedOut=false`、`forced=false`。该会话不足以替代正式同条件 5 次性能统计，因此 Stage 10 进入 S10-06 最终验收但尚未全面关闭，详见 [Stage 10 §18.10–19](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#1810-windowsnas-首轮实机回执与-s10-06-放行2026-09-27)。
 
