@@ -50,10 +50,10 @@ npm run build:win
 
 ## 当前工程任务
 
-- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S10-V01～V07 优化实施未开始，等待实施授权。
+- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S11-V01 已授权并在新分支实施、验证中；V02～V07 未开始。
 - [文档索引与旧任务归档](docs/README.md)：原 16 份任务书已移动至 `docs/old task`，历史回执及未验事项保留。
 
-当前工作分支为 `stage/10-preview-performance`。S10-06 既有工程核查结论保持；新任务书不恢复已取消的固定卡片数或冷热重复次数验收。
+当前专项工作分支为 `stage/11-list-grid-view`（基线 `6012cb6`）；Stage 10 保持原提交不变。S10-06 既有工程核查结论保持；新任务书不恢复已取消的固定卡片数或冷热重复次数验收。
 
 ## 安全说明
 

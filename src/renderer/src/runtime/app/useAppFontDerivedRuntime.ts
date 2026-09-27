@@ -2,13 +2,14 @@ import { useLayoutEffect, useMemo } from 'react'
 import type { MutableRefObject } from 'react'
 import type { FontItem } from '@shared/types'
 import type { ContextMenuState, VirtualLayout, VirtualViewport } from '../../appRuntime'
+import type { FontViewLayout } from './fontViewLayoutRuntime'
 import { traceRendererSyncComputation } from '../../appRuntime'
 import { buildTagSuggestions, buildVirtualLayout } from '../../fontViewRuntime'
 
 import { useBrowseDerivedRuntime, type BrowseDerivedOptions } from './useBrowseDerivedRuntime'
 
 export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
-  cardPoolViewLayout: { rowHeight: number; minCardWidth: number }
+  cardPoolViewLayout: FontViewLayout
   virtualViewport: VirtualViewport
   selectedFontId: string
   selectedFontIds: string[]
@@ -60,8 +61,11 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
     visibleFonts,
     virtualViewport,
     minCardWidth: cardPoolViewLayout.minCardWidth,
-    rowHeight: cardPoolViewLayout.rowHeight
-  }), sidebarPage), [databasePageReady, databasePageResult, visibleFonts, virtualViewport, cardPoolViewLayout.rowHeight, cardPoolViewLayout.minCardWidth, sidebarPage])
+    rowHeight: cardPoolViewLayout.rowHeight,
+    columns: cardPoolViewLayout.columns,
+    rowGap: cardPoolViewLayout.rowGap,
+    panelPadding: cardPoolViewLayout.panelPadding
+  }), sidebarPage), [databasePageReady, databasePageResult, visibleFonts, virtualViewport, cardPoolViewLayout, sidebarPage])
 
   const selectedFont = useMemo(
     () => library.fonts[selectedFontId] || visibleFonts.find((item) => item.id === selectedFontId) || visibleFonts[0],

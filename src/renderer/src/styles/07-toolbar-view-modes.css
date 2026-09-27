@@ -37,9 +37,9 @@
 }
 
 .font-virtual-page.view-compact .font-card {
-  min-height: 252px;
-  height: 252px;
-  contain-intrinsic-size: 218px 252px;
+  min-height: var(--hfm-card-height, 252px);
+  height: var(--hfm-card-height, 252px);
+  contain-intrinsic-size: 218px var(--hfm-card-height, 252px);
 }
 
 .font-virtual-page.view-compact .font-sample {
@@ -48,9 +48,9 @@
 }
 
 .font-virtual-page.view-large .font-card {
-  min-height: 372px;
-  height: 372px;
-  contain-intrinsic-size: 292px 372px;
+  min-height: var(--hfm-card-height, 372px);
+  height: var(--hfm-card-height, 372px);
+  contain-intrinsic-size: 292px var(--hfm-card-height, 372px);
 }
 
 .font-virtual-page.view-large .font-sample {

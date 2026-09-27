@@ -36,11 +36,11 @@
 }
 
 .font-virtual-page.waterfall .font-card {
-  min-height: 328px;
-  height: 328px;
+  min-height: var(--hfm-card-height, 328px);
+  height: var(--hfm-card-height, 328px);
   overflow: hidden;
   content-visibility: auto;
-  contain-intrinsic-size: 245px 328px;
+  contain-intrinsic-size: 245px var(--hfm-card-height, 328px);
 }
 
 .font-virtual-page.list .font-card {

@@ -15,28 +15,18 @@
 .font-virtual-scroller.font-list-scroller {
   grid-row: 2;
   margin: 0;
-  padding: 12px 14px 14px;
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
 .font-virtual-page.font-list-rows {
-  left: 14px;
-  right: 14px;
   display: grid;
-  gap: 12px;
   align-content: start;
 }
 
 .font-card.font-list-row.font-list-row-simple {
-  min-height: 156px !important;
-  height: 156px !important;
-  padding: 12px 18px;
   display: grid;
-  grid-template-columns: 30px minmax(220px, 300px) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  gap: 18px;
   align-items: center;
   text-align: left;
   border-radius: 24px;
@@ -44,7 +34,6 @@
   background:
     radial-gradient(circle at 78% 0%, rgba(122, 162, 255, 0.075), transparent 34%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.58));
-  contain-intrinsic-size: 640px 156px;
 }
 
 :root:not([data-theme="light"]) .font-card.font-list-row.font-list-row-simple {
@@ -69,22 +58,6 @@
   background:
     radial-gradient(circle at 80% 0%, rgba(122, 162, 255, 0.25), transparent 36%),
     linear-gradient(180deg, rgba(122, 162, 255, 0.24), rgba(18, 22, 32, 0.72)) !important;
-}
-
-.font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple {
-  min-height: 132px !important;
-  height: 132px !important;
-  padding-top: 10px;
-  padding-bottom: 10px;
-  contain-intrinsic-size: 640px 132px;
-}
-
-.font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
-  min-height: 204px !important;
-  height: 204px !important;
-  padding-top: 16px;
-  padding-bottom: 16px;
-  contain-intrinsic-size: 640px 204px;
 }
 
 .font-card.font-list-row.font-list-row-simple .font-row-select {

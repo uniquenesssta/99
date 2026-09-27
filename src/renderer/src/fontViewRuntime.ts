@@ -169,10 +169,15 @@ export interface VirtualLayoutOptions {
   virtualViewport: VirtualViewport
   minCardWidth: number
   rowHeight: number
+  columns?: number
+  rowGap?: number
+  panelPadding?: number
 }
 
 export function buildVirtualLayout(options: VirtualLayoutOptions): VirtualLayout {
-  const columns = getVirtualGridColumns(options.virtualViewport.width, options.minCardWidth)
+  const columns = options.columns ?? getVirtualGridColumns(options.virtualViewport.width, options.minCardWidth)
+  const panelPadding = options.panelPadding ?? VIRTUAL_PANEL_PADDING
+  const rowGap = options.rowGap ?? 0
   const incrementalDatabasePage = Boolean(options.databasePageReady && options.databasePageResult && options.databasePageResult.offset === 0)
   const totalCount = incrementalDatabasePage
     ? options.visibleFonts.length
@@ -185,25 +190,25 @@ export function buildVirtualLayout(options: VirtualLayoutOptions): VirtualLayout
     const pageRow = Math.floor(options.databasePageResult.offset / Math.max(1, columns))
     return {
       items: options.visibleFonts,
-      top: VIRTUAL_PANEL_PADDING + pageRow * options.rowHeight,
-      totalHeight: Math.max(280, VIRTUAL_PANEL_PADDING * 2 + totalRows * options.rowHeight),
+      top: panelPadding + pageRow * options.rowHeight,
+      totalHeight: Math.max(280, panelPadding * 2 + Math.max(0, totalRows * options.rowHeight - rowGap)),
       columns,
       startIndex: options.databasePageResult.offset,
       endIndex: options.databasePageResult.offset + options.visibleFonts.length
     }
   }
 
-  const firstVisibleRow = Math.max(0, Math.floor(Math.max(0, options.virtualViewport.scrollTop - VIRTUAL_PANEL_PADDING) / options.rowHeight) - VIRTUAL_OVERSCAN_ROWS)
+  const firstVisibleRow = Math.max(0, Math.floor(Math.max(0, options.virtualViewport.scrollTop - panelPadding) / options.rowHeight) - VIRTUAL_OVERSCAN_ROWS)
   const visibleRows = Math.ceil(Math.max(1, options.virtualViewport.height) / options.rowHeight) + VIRTUAL_OVERSCAN_ROWS * 2
-  const maxStartIndex = Math.max(0, options.visibleFonts.length - visibleRows * columns)
+  const maxStartIndex = Math.max(0, Math.ceil(options.visibleFonts.length / columns) - visibleRows) * columns
   const startIndex = Math.min(maxStartIndex, Math.max(0, firstVisibleRow * columns))
   const endIndex = Math.min(options.visibleFonts.length, (Math.floor(startIndex / columns) + visibleRows) * columns)
   const topRow = Math.floor(startIndex / columns)
 
   return {
     items: options.visibleFonts.slice(startIndex, endIndex),
-    top: VIRTUAL_PANEL_PADDING + topRow * options.rowHeight,
-    totalHeight: Math.max(280, VIRTUAL_PANEL_PADDING * 2 + totalRows * options.rowHeight),
+    top: panelPadding + topRow * options.rowHeight,
+    totalHeight: Math.max(280, panelPadding * 2 + Math.max(0, totalRows * options.rowHeight - rowGap)),
     columns,
     startIndex,
     endIndex

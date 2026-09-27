@@ -1,25 +1,5 @@
 
-@media (max-width: 1280px) {
-  .font-card.font-list-row.font-list-row-simple,
-  .font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple,
-  .font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
-    grid-template-columns: 24px minmax(128px, 172px) minmax(0, 1fr) !important;
-    gap: 8px !important;
-  }
-
-  .font-row-preview-wide .font-row-preview-box {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
-}
-
 @media (max-width: 1080px) {
-  .font-card.font-list-row.font-list-row-simple,
-  .font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple,
-  .font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
-    grid-template-columns: 24px minmax(112px, 150px) minmax(0, 1fr) !important;
-    gap: 8px !important;
-  }
 
   .font-row-name-simple .font-row-title {
     font-size: 0.86rem;
@@ -28,20 +8,6 @@
   .font-row-name-simple .font-row-subtitle,
   .font-row-name-simple .font-row-postscript {
     font-size: 0.66rem;
-  }
-
-  .font-row-preview-wide .font-row-preview-box {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
-}
-
-@media (max-width: 720px) {
-  .font-card.font-list-row.font-list-row-simple,
-  .font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple,
-  .font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
-    grid-template-columns: 24px minmax(0, 1fr) !important;
-    gap: 8px 10px !important;
   }
 }
 
@@ -99,29 +65,6 @@
   margin-top: 0.02em;
 }
 
-
-/* v2.0 list preview full-fit: use the virtual row height as the single source
-   of truth. Two-line preview text gets a taller fixed row from App.tsx, and the
-   preview frame follows that height so CJK + Latin/script samples are not cut
-   off by the old 100px/108px list box overrides. */
-.font-virtual-page.font-list-rows {
-  --hfm-list-row-height: 140px;
-}
-
-.font-virtual-page.font-list-rows .font-card.font-list-row.font-list-row-simple,
-.font-virtual-page.font-list-rows.view-compact .font-card.font-list-row.font-list-row-simple,
-.font-virtual-page.font-list-rows.view-large .font-card.font-list-row.font-list-row-simple {
-  min-height: var(--hfm-list-row-height) !important;
-  height: var(--hfm-list-row-height) !important;
-}
-
-.font-virtual-page.font-list-rows .font-row-preview-wide .font-row-preview-box,
-.font-virtual-page.font-list-rows.view-compact .font-row-preview-wide .font-row-preview-box,
-.font-virtual-page.font-list-rows.view-large .font-row-preview-wide .font-row-preview-box {
-  height: max(86px, calc(var(--hfm-list-row-height) - 32px)) !important;
-  padding-top: 10px;
-  padding-bottom: 10px;
-}
 
 .font-virtual-page.font-list-rows .font-row-preview-wide .font-sample-image.compact,
 .font-virtual-page.font-list-rows.view-compact .font-row-preview-wide .font-sample-image.compact,

@@ -1,6 +1,7 @@
 import type { FontItem } from '@shared/types'
 import type { RefObject, UIEvent, MouseEvent } from 'react'
-import type { CardPoolViewMode, SortMode, SidebarPage, ActiveFilter, PageToolbarState, DeveloperStatusEntry, VirtualLayout, VIEW_MODE_LAYOUT } from '../../appRuntime'
+import type { CardPoolViewMode, SortMode, SidebarPage, ActiveFilter, PageToolbarState, DeveloperStatusEntry, VirtualLayout } from '../../appRuntime'
+import type { FontViewLayout } from '../../runtime/app/fontViewLayoutRuntime'
 import type { FontFamilyGroupResult } from '../../runtime/family/fontFamilyGroupingRuntime'
 
 export type FontListPanelProps = {
@@ -33,7 +34,7 @@ export type FontListPanelProps = {
   handleFontScroll: (event: UIEvent<HTMLDivElement>) => void
   beginMarqueeSelection: (event: MouseEvent<HTMLDivElement>) => void
   virtualLayout: VirtualLayout
-  viewLayout: (typeof VIEW_MODE_LAYOUT)[keyof typeof VIEW_MODE_LAYOUT]
+  viewLayout: FontViewLayout
   renderFontCard: (font: FontItem, compact?: boolean) => JSX.Element
   databasePageReady: boolean
   visibleFontTotal: number

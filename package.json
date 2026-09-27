@@ -190,7 +190,9 @@
     "diagnostics:preview-shared-admission": "node build/diagnostics/check-preview-shared-admission.cjs",
     "diagnostics:preview-resource-admission": "node build/diagnostics/check-preview-resource-admission.cjs",
     "diagnostics:preview-optional-cache": "node build/diagnostics/check-preview-optional-cache.cjs",
-    "diagnostics:preview-image-ownership": "node build/diagnostics/check-preview-image-ownership.cjs"
+    "diagnostics:preview-image-ownership": "node build/diagnostics/check-preview-image-ownership.cjs",
+    "diagnostics:font-view-layout": "node build/diagnostics/check-font-view-layout.cjs",
+    "test:font-view-layout-dom": "node build/diagnostics/check-font-view-layout.cjs --dom"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

@@ -8,13 +8,14 @@ export function buildRendererDatabasePageWindow(options: {
   scrollTop: number
   rowHeight: number
   minCardWidth: number
+  columns?: number
   pageOffset?: number
 }): {
   columns: number
   offset: number
   limit: number
 } {
-  const columns = Math.max(1, getVirtualGridColumns(options.width, options.minCardWidth))
+  const columns = Math.max(1, options.columns ?? getVirtualGridColumns(options.width, options.minCardWidth))
   const offset = Math.max(0, Math.floor(Number(options.pageOffset || 0) / DATABASE_INCREMENTAL_PAGE_SIZE) * DATABASE_INCREMENTAL_PAGE_SIZE)
   return { columns, offset, limit: DATABASE_INCREMENTAL_PAGE_SIZE }
 }

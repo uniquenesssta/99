@@ -72,7 +72,7 @@ export type RendererDatabasePageRuntimeOptions = {
   databasePageResult: FontQueryPageResult | null
   databaseQueryFailedKey: string
   virtualViewport: VirtualViewport
-  viewLayout: { rowHeight: number; minCardWidth: number }
+  viewLayout: { rowHeight: number; minCardWidth: number; columns?: number }
   skipPageQuery?: boolean
   allFontsLength: number
   sidebarPage: SidebarPage
@@ -185,8 +185,9 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
     scrollTop: options.virtualViewport.scrollTop,
     rowHeight: options.viewLayout.rowHeight,
     minCardWidth: options.viewLayout.minCardWidth,
+    columns: options.viewLayout.columns,
     pageOffset: incrementalPageOffset
-  }), [options.virtualViewport.width, options.virtualViewport.height, options.virtualViewport.scrollTop, options.viewLayout.rowHeight, options.viewLayout.minCardWidth, incrementalPageOffset])
+  }), [options.virtualViewport.width, options.virtualViewport.height, options.virtualViewport.scrollTop, options.viewLayout.rowHeight, options.viewLayout.minCardWidth, options.viewLayout.columns, incrementalPageOffset])
   const databasePageOffset = databasePageWindow.offset
   const databasePageLimit = databasePageWindow.limit
 

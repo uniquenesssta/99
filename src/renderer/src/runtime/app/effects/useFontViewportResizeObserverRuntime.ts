@@ -5,9 +5,10 @@ import type { VirtualViewport } from '../../../appRuntime'
 
 export function useFontViewportResizeObserverRuntime(args: {
   fontScrollerRef: MutableRefObject<HTMLDivElement | null>
+  viewportKey: string
   setVirtualViewport: Dispatch<SetStateAction<VirtualViewport>>
 }): void {
-  const { fontScrollerRef, setVirtualViewport } = args
+  const { fontScrollerRef, setVirtualViewport, viewportKey } = args
 
   useEffect(() => {
     const node = fontScrollerRef.current
@@ -28,7 +29,7 @@ export function useFontViewportResizeObserverRuntime(args: {
         const nextScrollTop = node.scrollTop
         if (
           Math.abs((prev.height || 0) - nextHeight) < 2 &&
-          Math.abs((prev.width || 0) - nextWidth) < 2 &&
+          (prev.width || 0) === nextWidth &&
           Math.abs((prev.scrollTop || 0) - nextScrollTop) < 1
         ) return prev
         return {
@@ -83,5 +84,5 @@ export function useFontViewportResizeObserverRuntime(args: {
       observer.disconnect()
       unsubscribeResizeSettled()
     }
-  }, [])
+  }, [viewportKey])
 }

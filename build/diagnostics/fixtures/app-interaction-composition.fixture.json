@@ -137,6 +137,7 @@
     "useRendererDatabasePageRuntime",
     "useFontFamilyGroupsRuntime",
     "useAppFontDerivedRuntime",
+    "useFontLayoutScrollAnchor",
     "useTagSuggestionResetRuntime",
     "useFontDetailSelectionEffectsRuntime",
     "useFontDetailNativePreviewRuntime",

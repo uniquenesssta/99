@@ -1,47 +1,15 @@
 
 @media (max-width: 980px) {
-  .font-virtual-scroller.font-list-scroller {
-    padding: 10px 12px 12px;
-  }
-
-  .font-virtual-page.font-list-rows {
-    left: 12px;
-    right: 12px;
-  }
 
   .font-card.font-list-row.font-list-row-simple,
   .font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple,
   .font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
-    grid-template-columns: 28px minmax(0, 1fr);
-    height: 240px !important;
-    min-height: 240px !important;
     align-items: center;
   }
 
   .font-card.font-list-row.font-list-row-simple .font-row-select,
   .font-row-name-simple {
     transform: none;
-  }
-
-  .font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple {
-    height: 212px !important;
-    min-height: 212px !important;
-  }
-
-  .font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
-    height: 280px !important;
-    min-height: 280px !important;
-  }
-
-  .font-card.font-list-row.font-list-row-simple .font-row-preview-wide {
-    grid-column: 2;
-  }
-
-  .font-row-preview-wide .font-row-preview-box {
-    height: 140px;
-    min-height: 0;
-    padding-top: 12px;
-    padding-bottom: 12px;
   }
 
   .font-row-preview-wide .font-sample-line:first-child {
@@ -138,43 +106,7 @@
 }
 
 /* v2.0 1080p list layout: keep rows horizontal and compact until the card pool is truly narrow. */
-.font-card.font-list-row.font-list-row-simple {
-  min-height: 140px !important;
-  height: 140px !important;
-  padding: 10px 16px;
-  grid-template-columns: 28px minmax(190px, 270px) minmax(0, 1fr);
-  gap: 14px;
-  contain-intrinsic-size: 640px 140px;
-}
-
-.font-virtual-page.view-compact .font-card.font-list-row.font-list-row-simple {
-  min-height: 118px !important;
-  height: 118px !important;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  contain-intrinsic-size: 640px 118px;
-}
-
-.font-virtual-page.view-large .font-card.font-list-row.font-list-row-simple {
-  min-height: 176px !important;
-  height: 176px !important;
-  padding-top: 12px;
-  padding-bottom: 12px;
-  contain-intrinsic-size: 640px 176px;
-}
 
 .font-row-preview-wide .font-row-preview-box {
-  height: 108px;
-  padding: 10px 22px;
   border-radius: 18px;
-}
-
-.font-virtual-page.view-compact .font-row-preview-wide .font-row-preview-box {
-  height: 88px;
-  padding: 8px 18px;
-}
-
-.font-virtual-page.view-large .font-row-preview-wide .font-row-preview-box {
-  height: 142px;
-  padding: 12px 24px;
 }

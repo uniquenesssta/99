@@ -1,0 +1,106 @@
+#!/usr/bin/env node
+const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), os = require('node:os'), cp = require('node:child_process')
+const { root, prefix, read, loader, css, fonts, renderCase } = require('./lib/font-view-layout-harness.cjs')
+const geometryFile = prefix + 'runtime/app/fontViewLayoutRuntime.ts'
+function behavior(overrides = {}) {
+  const load = loader({ overrides }), build = load(geometryFile).buildFontViewLayout
+  const virtual = load(prefix + 'fontViewRuntime.ts').buildVirtualLayout
+  const scroll = load(prefix + 'fontScrollRuntime.ts'), grid = load(prefix + 'constants/layoutConstants.ts').getVirtualGridColumns
+  for (const mode of ['list', 'grid']) for (const density of ['compact', 'comfortable', 'large']) for (const width of [420, 719, 720, 1179, 1180, 1500]) for (const size of [18, 44, 72]) for (const lines of [1, 2]) {
+    const layout = build(mode, density, width, size, lines)
+    assert.equal(layout.rowHeight, layout.cardHeight + layout.rowGap, 'row stride must include the real gap')
+    if (mode === 'grid') assert.equal(layout.rowHeight, { compact: 266, comfortable: 342, large: 386 }[density], 'grid baseline changed')
+    else {
+      assert.equal(layout.listLayout, width < 720 ? 'stacked' : width < 1180 ? 'medium' : 'wide')
+      assert.equal(layout.cardHeight, layout.previewHeight + 2 * layout.cardPaddingY + 2 + layout.infoHeight + layout.innerRowGap)
+    }
+    for (const top of [0, 15000, 1e9]) {
+      const result = virtual({ ...layout, visibleFonts: fonts, virtualViewport: { width, height: 520, scrollTop: top }, databasePageReady: false, databasePageResult: null })
+      assert.equal(result.startIndex % layout.columns, 0, 'last virtual slice lost row alignment')
+      assert.equal(result.top, layout.panelPadding + result.startIndex / layout.columns * layout.rowHeight)
+      assert.equal(result.totalHeight, layout.panelPadding * 2 + Math.ceil(fonts.length / layout.columns) * layout.rowHeight - layout.rowGap)
+      if (top === 1e9) assert.equal(result.endIndex, fonts.length)
+    }
+  }
+  const before = build('grid', 'comfortable', 1180, 44, 2), after = build('list', 'comfortable', 600, 72, 2)
+  const node = { scrollTop: 14 + before.rowHeight * 20 + 27, clientWidth: 600, clientHeight: 520, scrollHeight: 1e6 }
+  // The DOM already has its new width: capture must use committed old columns.
+  const selected = fonts[20 * before.columns + 1].id
+  const snapshot = scroll.captureFontScrollSnapshotFromNode(node, fonts, before, 600, 14, grid, selected)
+  assert.equal(snapshot.anchor.fontId, selected)
+  const target = scroll.scrollTopForSnapshotAnchor(snapshot, node, fonts, after, 600, 14, grid)
+  assert.equal(target, 14 + (20 * before.columns + 1) * after.rowHeight + 27)
+  assert.equal(scroll.applyFontScrollTopToNode(node, 1e9, { width: 600, height: 520, scrollTop: 0 }).viewport.scrollTop, 1e6 - 520)
+  const paged = virtual({ ...before, databasePageReady: true, databasePageResult: { offset: 100, total: 1003 }, visibleFonts: fonts.slice(100, 200), virtualViewport: { width: 1180, height: 520, scrollTop: 0 } })
+  assert.equal(paged.top, 14 + Math.floor(100 / before.columns) * before.rowHeight)
+  assert.equal(paged.startIndex, 100)
+  const page = load(prefix + 'runtime/database/rendererDatabasePageWindowRuntime.ts').buildRendererDatabasePageWindow({ ...before, width: 600, height: 520, scrollTop: 5000, pageOffset: 199 })
+  assert.equal(page.columns, before.columns); assert.equal(page.offset, 100); assert.equal(page.limit, 100)
+  const fallback = load(prefix + 'runtime/app/cardPoolViewModePolicyRuntime.ts').effectiveCardPoolViewMode
+  for (const tab of ['tags', 'sharedTags']) assert.equal(fallback('family', tab, { kind: 'all' }), 'grid')
+  assert.equal(fallback('family', 'library', { kind: 'favorites' }), 'grid')
+  assert.equal(fallback('list', 'tags', { kind: 'all' }), 'list')
+}
+function hookCases() {
+  let slots = [], cursor = 0, effects = [], observed = [], disconnected = []
+  const hooks = { useRef(value) { const i = cursor++; return slots[i] ||= { current: value } }, useLayoutEffect: effect, useEffect: effect }
+  function effect(fn, deps) { const i = cursor++, prior = slots[i]; if (!prior || deps.some((d, j) => d !== prior.deps[j])) { prior?.cleanup?.(); const slot = slots[i] = { deps }; effects.push(() => { slot.cleanup = fn() }) } }
+  const render = (hook, args) => { cursor = 0; hook(args); const pending = effects; effects = []; pending.forEach(fn => fn()) }
+  const load = loader({ hooks, globals: { window: { addEventListener() {}, removeEventListener() {} }, ResizeObserver: class { observe(node) { observed.push(node) } disconnect() { disconnected.push(true) } } } })
+  const build = load(geometryFile).buildFontViewLayout, anchor = load(prefix + 'runtime/app/useFontScrollRestoreRuntime.ts').useFontLayoutScrollAnchor
+  const before = build('list', 'comfortable', 1200, 44, 2), after = build('list', 'comfortable', 719, 72, 2)
+  const node = { scrollTop: 14 + before.rowHeight * 40 + 17, scrollHeight: 1e6, clientWidth: 1200, clientHeight: 520 }
+  let viewport = { scrollTop: node.scrollTop, width: 1200, height: 520 }
+  const options = { layout: before, fonts, viewport, fontScrollerRef: { current: node }, setVirtualViewport: value => { viewport = value }, preferredFontId: '', enabled: true }
+  render(anchor, options); node.clientWidth = 719
+  render(anchor, { ...options, layout: after })
+  assert.equal(node.scrollTop, 14 + after.rowHeight * 40 + 17, 'resize/size change lost anchor')
+  assert.equal(viewport.scrollTop, node.scrollTop)
+  render(anchor, { ...options, fonts: fonts.slice().reverse(), layout: before, viewport })
+  assert.equal(node.scrollTop, viewport.scrollTop, 'filter/sort must own their reset')
+  slots = []; cursor = 0
+  const resize = load(prefix + 'runtime/app/effects/useFontViewportResizeObserverRuntime.ts').useFontViewportResizeObserverRuntime
+  viewport = { scrollTop: 0, width: 719, height: 520 }; node.clientWidth = 720; node.scrollTop = 0
+  const resizeOptions = { viewportKey: 'library:list', fontScrollerRef: { current: node }, setVirtualViewport: update => { viewport = update(viewport) } }
+  render(resize, resizeOptions); assert.equal(viewport.width, 720, 'one-pixel breakpoint change was dropped')
+  const replacement = { ...node, clientWidth: 1180 }; resizeOptions.fontScrollerRef.current = replacement
+  render(resize, { ...resizeOptions, viewportKey: 'library:family' })
+  assert.equal(observed[1], replacement); assert.equal(disconnected.length, 1)
+}
+function makeDomFile() {
+  const load = loader(), cases = []
+  for (const mode of ['list', 'grid']) for (const density of ['compact', 'comfortable', 'large']) for (const width of [420, 719, 720, 1179, 1180, 1500]) for (const size of [18, 72]) for (const lines of [1, 2]) {
+    cases.push(renderCase(load, { mode, density, width, size, lines, scrollTop: cases.length % 2 ? 15000 : 0 }))
+  }
+  for (const mode of ['list', 'grid']) {
+    cases.push(renderCase(load, { mode, density: 'comfortable', width: 900, scrollTop: 1e9 }))
+    cases.push(renderCase(load, { mode, density: 'comfortable', width: 900, offset: 100, scrollTop: 11000 }))
+    cases.push(renderCase(load, { mode, density: 'comfortable', width: 900, total: 0 }))
+  }
+  const family = renderCase(load, { mode: 'family', density: 'comfortable', width: 900 })
+  const familyBaselineCss = css(undefined, file => cp.execFileSync('git', ['show', `6012cb6:${file}`], { cwd: root, encoding: 'utf8' }))
+  const checkDom = require('./lib/font-view-layout-dom.cjs')
+  const select = load(prefix + 'fontSelectionRuntime.ts').fontIdsInClientRect
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-layout-')), file = path.join(temp, 'layout.html')
+  fs.writeFileSync(file, '<!doctype html><html data-theme="light"><meta charset="utf-8"><style>' + css() + '</style><body><div id="fixture"></div><script>const cases=' + JSON.stringify(cases).replace(/</g, '\\u003c') + ';const family=' + JSON.stringify(family).replace(/</g, '\u003c') + ';const familyBaselineCss=' + JSON.stringify(familyBaselineCss).replace(/</g, '\u003c') + ';const select=' + select.toString() + ';window.checkLayout=' + checkDom.toString() + '</script></body></html>')
+  return { file, temp, count: cases.length }
+}
+behavior(); hookCases()
+assert.throws(() => behavior({ [geometryFile]: read(geometryFile).replace('rowHeight: cardHeight + rowGap', 'rowHeight: cardHeight') }), /stride/)
+const virtualFile = prefix + 'fontViewRuntime.ts'
+assert.throws(() => behavior({ [virtualFile]: read(virtualFile).replace('Math.max(0, Math.ceil(options.visibleFonts.length / columns) - visibleRows) * columns', 'Math.max(0, options.visibleFonts.length - visibleRows * columns)') }), /alignment/)
+console.log('[font-view-layout] geometry matrix, paging, anchors, resize rebind/breakpoints, fallback and two regression mutants passed')
+if (process.argv.includes('--dom') || process.argv.includes('--emit-dom')) {
+  const { file, temp, count } = makeDomFile()
+  if (process.argv.includes('--emit-dom')) console.log(file)
+  else {
+    try {
+      const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
+      const result = cp.spawnSync(require('electron'), [path.join(__dirname, 'lib/font-view-layout-electron.cjs'), file], { cwd: root, env, encoding: 'utf8', timeout: 210000 })
+      process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || '')
+      if (result.error) throw result.error
+      assert.equal(result.status, 0, 'real Electron DOM geometry gate failed')
+      console.log(`[font-view-layout] ${count} real DOM scenarios and legacy-gap mutant passed`)
+    } finally { fs.rmSync(temp, { recursive: true, force: true }) }
+  }
+}

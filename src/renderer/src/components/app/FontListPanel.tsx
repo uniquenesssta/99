@@ -184,6 +184,7 @@ export function FontListPanel({
           ) : (
             <div
               ref={fontScrollerRef}
+              data-virtual-layout="cards"
               className={`font-virtual-scroller waterfall view-${viewMode} pool-${effectiveCardPoolViewMode}${effectiveCardPoolViewMode === 'list' ? ' font-list-scroller' : ''}`}
               onScroll={handleFontScroll}
               onMouseDown={(event) => {
@@ -193,11 +194,20 @@ export function FontListPanel({
             >
               <div className="font-virtual-inner" style={{ height: virtualLayout.totalHeight }}>
                 <div
+                  data-list-layout={viewLayout.listLayout}
                   className={`font-virtual-page waterfall view-${viewMode} pool-${effectiveCardPoolViewMode}${effectiveCardPoolViewMode === 'list' ? ' font-list-rows' : ''}`}
                   style={{
                     transform: `translateY(${virtualLayout.top}px)`,
-                    gridTemplateColumns: effectiveCardPoolViewMode === 'list' ? 'minmax(0, 1fr)' : `repeat(${virtualLayout.columns}, minmax(${viewLayout.minCardWidth}px, 1fr))`,
-                    '--hfm-list-row-height': `${viewLayout.rowHeight}px`
+                    gridTemplateColumns: effectiveCardPoolViewMode === 'list' ? 'minmax(0, 1fr)' : `repeat(${virtualLayout.columns}, minmax(0, 1fr))`,
+                    '--hfm-card-height': `${viewLayout.cardHeight}px`,
+                    '--hfm-row-gap': `${viewLayout.rowGap}px`,
+                    '--hfm-panel-padding': `${viewLayout.panelPadding}px`,
+                    '--hfm-card-padding-y': `${viewLayout.cardPaddingY}px`,
+                    '--hfm-card-padding-x': `${viewLayout.cardPaddingX}px`,
+                    '--hfm-preview-height': `${viewLayout.previewHeight}px`,
+                    '--hfm-info-height': `${viewLayout.infoHeight}px`,
+                    '--hfm-inner-row-gap': `${viewLayout.innerRowGap}px`,
+                    '--hfm-first-column': String(virtualLayout.startIndex % virtualLayout.columns + 1)
                   } as CSSProperties}
                 >
                   {virtualLayout.items.map((font: FontItem) => renderFontCard(font, effectiveCardPoolViewMode === 'list'))}

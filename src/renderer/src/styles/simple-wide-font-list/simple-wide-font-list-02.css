@@ -62,9 +62,6 @@
 .font-row-preview-wide .font-row-preview-box {
   width: 100%;
   min-width: 0;
-  min-height: 0;
-  height: 122px;
-  padding: 12px 28px;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -80,22 +77,6 @@
   background:
     radial-gradient(circle at 14% 0%, rgba(122, 162, 255, 0.16), transparent 34%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
-}
-
-.font-virtual-page.view-compact .font-row-preview-wide .font-row-preview-box {
-  height: 104px;
-  min-height: 0;
-  padding-top: 10px;
-  padding-bottom: 10px;
-}
-
-.font-virtual-page.view-large .font-row-preview-wide .font-row-preview-box {
-  height: 166px;
-  min-height: 0;
-  padding-top: 14px;
-  padding-bottom: 14px;
-  padding-left: 30px;
-  padding-right: 30px;
 }
 
 .font-row-preview-wide .font-sample {
@@ -176,11 +157,4 @@
 .font-list-row-simple .font-row-status,
 .font-list-row-simple .font-row-actions {
   display: none !important;
-}
-
-@media (max-width: 1280px) {
-  .font-card.font-list-row.font-list-row-simple {
-    grid-template-columns: 30px minmax(210px, 280px) minmax(0, 1fr);
-    gap: 16px;
-  }
 }

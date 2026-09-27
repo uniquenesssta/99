@@ -46,7 +46,7 @@ import { useRendererReadyNotification } from './runtime/app/useRendererReadyNoti
 import { useRendererClosingLifecycleRuntime } from './runtime/app/rendererClosingLifecycleRuntime'
 import { useAppFontShellDerivedRuntime } from './runtime/app/useAppFontShellDerivedRuntime'
 import { useAppFontDerivedRuntime } from './runtime/app/useAppFontDerivedRuntime'
-import { createAppFontScrollRestoreRuntime } from './runtime/app/useFontScrollRestoreRuntime'
+import { createAppFontScrollRestoreRuntime, useFontLayoutScrollAnchor } from './runtime/app/useFontScrollRestoreRuntime'
 import { useFolderController } from './runtime/app/useFolderController'
 import { useDeveloperController } from './runtime/app/useDeveloperController'
 import { useFontOperationsController } from './runtime/app/useFontOperationsController'
@@ -565,7 +565,11 @@ export default function App(): JSX.Element {
     sortMode
   })
 
+  const familyViewAllowed = isFontFamilyViewAllowed(sidebarPage, activeFilter)
+  const effectiveCardPoolMode = resolveEffectiveCardPoolViewMode(cardPoolViewMode, sidebarPage, activeFilter)
+
   useFontViewportResizeObserverRuntime({
+    viewportKey: `${sidebarPage}:${effectiveCardPoolMode}`,
     fontScrollerRef,
     setVirtualViewport
   })
@@ -578,12 +582,10 @@ export default function App(): JSX.Element {
     library,
     sidebarPage,
     viewMode,
-    cardPoolViewMode,
+    cardPoolViewMode: effectiveCardPoolMode,
     listPreviewFontSize,
     virtualViewport
   })
-  const familyViewAllowed = isFontFamilyViewAllowed(sidebarPage, activeFilter)
-  const effectiveCardPoolMode = resolveEffectiveCardPoolViewMode(cardPoolViewMode, sidebarPage, activeFilter)
 
   const databaseRuntime = useRendererDatabasePageRuntime({
     hfm: window.hfm,
@@ -706,6 +708,16 @@ export default function App(): JSX.Element {
     latestViewLayoutRef,
     requestPreviewFont,
     contextFontTargets
+  })
+
+  useFontLayoutScrollAnchor({
+    layout: cardPoolViewLayout,
+    fonts: visibleFonts,
+    viewport: virtualViewport,
+    fontScrollerRef,
+    setVirtualViewport,
+    preferredFontId: selectedFontId || selectedFontIds[0] || '',
+    enabled: effectiveCardPoolMode !== 'family' && (!databasePageReady || !databasePageResult?.offset)
   })
   const installStatusSyncSuffix = installStatusReady ? '' : ' · 同步中'
 
