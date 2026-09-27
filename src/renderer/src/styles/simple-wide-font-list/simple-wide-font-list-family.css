@@ -209,23 +209,13 @@
     gap: 8px 10px !important
   }
 }
-:where(.font-family-group-scroller) .font-row-preview-wide .preview-hard-fit-text {
-  width: max-content !important;
-  max-width: none !important;
-  height: auto !important;
-  max-height: none !important;
-  flex: 0 0 auto;
-  transform: none !important;
-  transform-origin: center center;
-  transform: none !important;
-  will-change: auto;
-  overflow: visible !important;
-  white-space: nowrap !important
-}
-:where(.font-family-group-scroller) .font-row-preview-wide .preview-hard-fit-text .font-sample-line {
-  width: max-content !important;
-  max-width: none !important;
-  min-width: 0 !important;
-  text-overflow: clip !important;
-  white-space: nowrap !important
+/* Preserve the final typography override from simple-wide-font-list-05. */
+@media (max-width: 1080px) {
+  :where(.font-family-group-scroller) .font-row-name-simple .font-row-title {
+    font-size: 0.86rem;
+  }
+  :where(.font-family-group-scroller) .font-row-name-simple .font-row-subtitle,
+  :where(.font-family-group-scroller) .font-row-name-simple .font-row-postscript {
+    font-size: 0.66rem;
+  }
 }
