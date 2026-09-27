@@ -68,7 +68,7 @@ export async function withQuickPreviewTimeout<T>(
 
 // FontFace.load has no cancellation API. Slots follow the load promise, never
 // its UI deadline. Only a current caller may attach a completed face to the DOM.
-export function createFontFaceLoadOwner(limit = 5, retainedLimit = 128) {
+export function createFontFaceLoadOwner(limit = 10, retainedLimit = 128) {
   const entries = new Map<string, { promise: Promise<FontFace>; pending: boolean }>()
   const waiters = new Set<() => void>()
   function withinBudget<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {

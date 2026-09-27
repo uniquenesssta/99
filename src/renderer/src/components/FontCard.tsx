@@ -156,7 +156,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
         }
         reveal()
       },
-      { root: null, rootMargin: '260px' }
+      { root: null, rootMargin: '0px' }
     )
 
     const unsubscribeClosing = closingLifecycle?.subscribe(closing => {

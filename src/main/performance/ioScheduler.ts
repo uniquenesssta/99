@@ -1,7 +1,7 @@
 import { AdaptiveIoQueue,type IoTaskPriority } from './ioQueue'
 import type { StorageProfile,StorageProfileType } from './storageProfile'
 
-export type IoStorageLane = StorageProfileType | 'global' | 'sqlite'
+export type IoStorageLane = StorageProfileType | 'global' | 'sqlite' | 'preview'
 
 export interface GlobalIoOptions {
   priority?: IoTaskPriority | number
@@ -38,7 +38,7 @@ export interface IoScheduler {
   recheck(): void
 }
 
-const laneNames: IoStorageLane[] = ['global', 'network', 'hdd', 'ssd', 'nvme', 'removable', 'sqlite']
+const laneNames: IoStorageLane[] = ['global', 'network', 'hdd', 'ssd', 'nvme', 'removable', 'sqlite', 'preview']
 
 export function createIoScheduler(options: IoSchedulerOptions): IoScheduler {
   const queues = new Map<IoStorageLane, AdaptiveIoQueue>()
@@ -51,6 +51,7 @@ export function createIoScheduler(options: IoSchedulerOptions): IoScheduler {
   }
 
   const currentStorageConcurrency = (lane: IoStorageLane): number => {
+    if (lane === 'preview') return 10
     if (lane === 'sqlite') return options.sqliteWriteConcurrency
 
     // 前端活跃时，所有后台 IO 自动降档。这样扫描、预览、维护仍可继续，
@@ -83,6 +84,9 @@ export function createIoScheduler(options: IoSchedulerOptions): IoScheduler {
   }
 
   const resolveLane = (label: string, taskOptions: GlobalIoOptions): IoStorageLane => {
+    // Visible preview admission is paused by its renderer owner while scrolling.
+    // Keep this foreground budget independent from background network throttling.
+    if (label === 'preview:render') return 'preview'
     if (taskOptions.lane && taskOptions.lane !== 'auto') return taskOptions.lane
     if (taskOptions.storagePath) return laneForProfile(options.storageProfileForPath(taskOptions.storagePath).type)
     const normalizedLabel = String(label || '').toLowerCase()

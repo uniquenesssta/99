@@ -107,17 +107,19 @@ export function usePreviewController(options: PreviewControllerOptions) {
   }
 
   function beginFontListScroll(previewScrollIdleMs: number): void {
+    if (!fontListScrollingRef.current) queueRuntime.pausePreviewForScroll()
     fontListScrollingRef.current = true
     if (fontListScrollIdleTimerRef.current !== null) window.clearTimeout(fontListScrollIdleTimerRef.current)
     fontListScrollIdleTimerRef.current = window.setTimeout(() => {
       fontListScrollingRef.current = false
       fontListScrollIdleTimerRef.current = null
-      queueRuntime.processPreviewQueue()
+      queueRuntime.resumePreviewAfterScroll()
       queueRuntime.processAutoPreviewCacheQueue()
     }, previewScrollIdleMs)
   }
 
   function clearFontListScrollIdleTimer(): void {
+    fontListScrollingRef.current = false
     if (fontListScrollIdleTimerRef.current === null) return
     window.clearTimeout(fontListScrollIdleTimerRef.current)
     fontListScrollIdleTimerRef.current = null

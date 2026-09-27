@@ -11,7 +11,7 @@ mod types;
 mod write_barrier;
 
 use std::io::{self, BufRead};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
@@ -19,7 +19,7 @@ use serde_json::json;
 
 use self::dispatcher::run_daemon_command;
 use self::events::{emit_event, error_json, SharedStdout};
-use self::lanes::DaemonLaneSenders;
+use self::lanes::{DaemonLaneSenders, receive_job, spawn_preview_render_workers};
 use self::progress::{emit_domain_events, emit_progress};
 use self::state::{cancel_after_start, cancel_before_start, enqueue, finish, new_cancel_set, new_shared_state, queued_len_for_lane, reject_enqueue, snapshot, start, take_cancelled, CancelSet, SharedDaemonState};
 use self::types::{command_from_args, lane_for_command, max_queued_for_lane, DaemonJob, DaemonLane, DaemonRequest};
@@ -31,6 +31,7 @@ pub fn run_core_daemon_stdio() -> i32 {
     let daemon_state: SharedDaemonState = new_shared_state();
 
     let (foreground_sender, foreground_receiver) = mpsc::channel::<DaemonJob>();
+    let (preview_render_sender, preview_render_receiver) = mpsc::channel::<DaemonJob>();
     let (preview_sender, preview_receiver) = mpsc::channel::<DaemonJob>();
     let (scan_sender, scan_receiver) = mpsc::channel::<DaemonJob>();
     let (write_sender, write_receiver) = mpsc::channel::<DaemonJob>();
@@ -41,6 +42,7 @@ pub fn run_core_daemon_stdio() -> i32 {
     let senders = DaemonLaneSenders {
         foreground: foreground_sender,
         preview: preview_sender,
+        preview_render: preview_render_sender,
         scan: scan_sender,
         write: write_sender,
         maintenance: maintenance_sender,
@@ -58,7 +60,7 @@ pub fn run_core_daemon_stdio() -> i32 {
         }),
     );
 
-    let workers = vec![
+    let mut workers = vec![
         spawn_lane_worker(DaemonLane::Foreground, foreground_receiver, Arc::clone(&stdout), Arc::clone(&cancelled), Arc::clone(&daemon_state)),
         spawn_lane_worker(DaemonLane::Preview, preview_receiver, Arc::clone(&stdout), Arc::clone(&cancelled), Arc::clone(&daemon_state)),
         spawn_lane_worker(DaemonLane::Scan, scan_receiver, Arc::clone(&stdout), Arc::clone(&cancelled), Arc::clone(&daemon_state)),
@@ -67,6 +69,14 @@ pub fn run_core_daemon_stdio() -> i32 {
         spawn_lane_worker(DaemonLane::Activation, activation_receiver, Arc::clone(&stdout), Arc::clone(&cancelled), Arc::clone(&daemon_state)),
         spawn_lane_worker(DaemonLane::Background, background_receiver, Arc::clone(&stdout), Arc::clone(&cancelled), Arc::clone(&daemon_state)),
     ];
+
+    // Render jobs are independent; cache/index commands keep their single worker.
+    let output = Arc::clone(&stdout);
+    let cancel = Arc::clone(&cancelled);
+    let state = Arc::clone(&daemon_state);
+    workers.extend(spawn_preview_render_workers(preview_render_receiver, move |receiver| {
+        run_worker_loop(DaemonLane::Preview, receiver, Arc::clone(&output), Arc::clone(&cancel), Arc::clone(&state));
+    }));
 
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
@@ -215,11 +225,14 @@ pub fn run_core_daemon_stdio() -> i32 {
 }
 
 fn spawn_lane_worker(lane: DaemonLane, receiver: mpsc::Receiver<DaemonJob>, stdout: SharedStdout, cancelled: CancelSet, daemon_state: SharedDaemonState) -> thread::JoinHandle<()> {
-    thread::spawn(move || run_worker_loop(lane, receiver, stdout, cancelled, daemon_state))
+    thread::spawn(move || run_worker_loop(lane, Arc::new(Mutex::new(receiver)), stdout, cancelled, daemon_state))
 }
 
-fn run_worker_loop(lane: DaemonLane, receiver: mpsc::Receiver<DaemonJob>, stdout: SharedStdout, cancelled: CancelSet, daemon_state: SharedDaemonState) {
-    while let Ok(job) = receiver.recv() {
+fn run_worker_loop(lane: DaemonLane, receiver: Arc<Mutex<mpsc::Receiver<DaemonJob>>>, stdout: SharedStdout, cancelled: CancelSet, daemon_state: SharedDaemonState) {
+    loop {
+        // Release the receiver lock before executing the job.
+        let received = receive_job(&receiver);
+        let Ok(job) = received else { break };
         let id = job.id;
         let args = job.args;
         let command = job.command;

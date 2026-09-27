@@ -66,7 +66,7 @@ async function cacheAbort() {
  await flush();time.fire(100);await flush();assert.equal(aborted,true);assert.equal(calls,1,'abort requested but unsettled read released worker');gate.resolve(Buffer.from('invalid'));await p;assert.equal(calls,2);
  console.log('cache: deadline signals the owned read; a still-running abort retains the worker');
 }
-function rendererHarness() {
+function rendererHarness(limit = 5) {
  const time=clock(),ref=current=>({current}),faces=[],native=[],applied=[];
  class FontFace {constructor(family,source){this.family=family;this.source=source;this.gate=deferred();faces.push(this)}load(){return this.gate.promise.then(()=>this)}}
  const opt={previewText:'text',listPreviewFontSize:44,previewRequestTokenRef:ref('text::44'),selectedFontId:'',selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:ref(new Set()),queuedPreviewFontIds:ref(new Set()),previewQueue:ref([]),activePreviewLoads:ref(0),fontListScrollingRef:ref(false),isBadFontRecord:()=>false,rendererUserActive:()=>false,
@@ -75,7 +75,7 @@ function rendererHarness() {
  };
  const quickPath=path.join(root,'src/renderer/src/runtime/preview/queue/fontPreviewQuickFallbackRuntime.ts');
  const attached=[];
- const load=loader({'../../../appRuntime':{PREVIEW_STATE_LRU_LIMIT:800,pruneRecordByKeyLimit:x=>x,requestIdleWindow:f=>time.setTimeout(f,0),rendererMemoryPressure:()=> 'normal',INDEXING_PREVIEW_LOADS:1,SCROLLING_PREVIEW_LOADS:1,MAX_CONCURRENT_PREVIEW_LOADS:5},'../../../rendererPerformance':{reportRendererTrace(){}},'./fontPreviewIndexCooldownRuntime':{previewQueueCooldownRemaining:()=>0}}, {window:time,FontFace,document:{fonts:{add:f=>attached.push(f)}},AbortController},{[quickPath]:s=>s.replaceAll('import.meta.env','({})')});
+ const load=loader({'../../../appRuntime':{PREVIEW_STATE_LRU_LIMIT:800,pruneRecordByKeyLimit:x=>x,requestIdleWindow:f=>time.setTimeout(f,0),rendererMemoryPressure:()=> 'normal',INDEXING_PREVIEW_LOADS:1,SCROLLING_PREVIEW_LOADS:1,MAX_CONCURRENT_PREVIEW_LOADS:limit},'../../../rendererPerformance':{reportRendererTrace(){}},'./fontPreviewIndexCooldownRuntime':{previewQueueCooldownRemaining:()=>0}}, {window:time,FontFace,document:{fonts:{add:f=>attached.push(f)}},AbortController},{[quickPath]:s=>s.replaceAll('import.meta.env','({})')});
  const availability=load('src/renderer/src/runtime/preview/previewAvailabilitySnapshotRuntime.ts');
  const stamp=g=>availability.rememberPreviewAvailability({roots:[{path:'C:/fonts',rootId:'c:/fonts',generation:g,state:'online',resourceKeys:[],tags:[]}],tags:[],unattributedTags:[]});stamp(1);
  const runtime=load('src/renderer/src/runtime/preview/fontPreviewQueueRuntime.ts').createFontPreviewQueueRuntime(opt);
@@ -91,7 +91,7 @@ async function renderer() {
  opt.previewFamilies={};r.resetPreviewRuntimeState();h.stamp(2);p=r.ensurePreviewFont(font,true);await flush();assert.equal(faces.length,2);faces[1].gate.reject(Error('invalid font'));await p;assert.equal(opt.failedPreviewFontIds.web,true);
  // More edits than the physical WebFont limit: timeout is not slot release.
  for(let i=0;i<14;i++){opt.previewText='edit'+i;opt.previewRequestTokenRef.current=opt.previewText+'::44';r.resetPreviewRuntimeState();p=r.ensurePreviewFont({id:'f'+i,path:'C:/fonts/'+i+'.ttf',fileSize:100},true);await flush();time.fire(180);await p;}
- assert.equal(faces.length,7,'physical FontFace cap was bypassed across reset');
+ assert.equal(faces.length,12,'physical FontFace cap was bypassed across reset');
  for(const f of faces.slice(2))f.gate.resolve();await flush();
  r.disposePreviewQueue();assert.equal(time.timers.size,0);
  const closing=rendererHarness();const waiting=closing.runtime.ensurePreviewFont(font,true);await flush();assert(closing.time.timers.size>0);closing.runtime.disposePreviewQueue();await waiting;assert.equal(closing.time.timers.size,0,'close retained a WebFont UI deadline');closing.faces[0].gate.resolve();await flush();assert.equal(closing.attached.length,0);
@@ -111,7 +111,7 @@ async function renderer() {
  const c=rendererHarness(),cg=deferred();let ca=true,cb=true,cc=0;
  c.opt.hfm.renderPreviewImage=()=>{cc++;return cg.promise};c.runtime.requestPreviewFont(nativeFont,'high',()=>ca);c.runtime.requestPreviewFont(nativeFont,'high',()=>cb);await flush();ca=false;cg.resolve('data:image/png;base64,current');await flush();assert.equal(cc,1);assert.equal(c.opt.nativePreviewImages.native,'data:image/png;base64,current');
  c.opt.activePreviewLoads.current=5;let visible=true;c.runtime.requestPreviewFont({...nativeFont,id:'off'},'normal',()=>visible);visible=false;c.opt.activePreviewLoads.current=0;c.runtime.processPreviewQueue();await flush();assert.equal(cc,1);assert.equal(c.opt.previewQueue.current.length,0);c.runtime.disposePreviewQueue();
- console.log('renderer: timeout/format split, late authorized reuse, root-generation isolation, 14 WebFont edits capped at 5, 15 native edits capped at 5, two consumers/leave/dispose');
+ console.log('renderer: timeout/format split, late authorized reuse, root-generation isolation, 14 WebFont edits capped at 10, 15 native edits capped at 5, two consumers/leave/dispose');
 }
 async function background() {
  const h=rendererHarness(),{runtime:r,opt,time}=h, status=deferred(),work=deferred();let queries=0,calls=0;
@@ -130,8 +130,8 @@ async function prefetch() {
  const effects=[],demands=[],fonts=[{id:'a'},{id:'b',__earlyVisible:true}],ref=current=>({current});
  const load=loader({react:{useEffect:fn=>effects.push(fn),useLayoutEffect(){},useMemo:fn=>fn()},'../../appRuntime':{PREVIEW_PREFETCH_LIMIT:18,traceRendererSyncComputation:(_l,_d,fn)=>fn()},'../../fontViewRuntime':{buildVirtualLayout:()=>({items:fonts}),buildTagSuggestions:()=>[]},'./useBrowseDerivedRuntime':{useBrowseDerivedRuntime:()=>({visibleFonts:fonts,fontMetrics:{}})}});
  load('src/renderer/src/runtime/app/useAppFontDerivedRuntime.ts').useAppFontDerivedRuntime({cardPoolViewLayout:{},virtualViewport:{},selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},latestVisibleFontsRef:ref([]),latestViewLayoutRef:ref({}),requestPreviewFont:(f,_p,current)=>demands.push({f,current}),contextFontTargets:()=>[],library:{fonts:{},previewText:'text'}});
- const cleanup=effects[0]();assert.equal(demands.length,1);assert.equal(demands[0].current(),true);cleanup();assert.equal(demands[0].current(),false);
- console.log('prefetch: actual effect excludes early rows and revokes demand on page/text cleanup');
+ assert.equal(effects.length,0);assert.equal(demands.length,0);
+ console.log('prefetch: derived layout emits no offscreen or first-18 preview requests');
 }
 async function detail() {
  const time=clock();let effect,requests=0,writes=0;
@@ -144,7 +144,8 @@ async function detail() {
  assert.equal((panel.match(/nativeDetailImage/g)||[]).length,2,'detail consumer changed: re-audit producer gate');
  console.log('detail: no-consumer default emits zero IO; opted-in pending work cannot commit after unmount');
 }
-(async()=>{
+module.exports = { rendererHarness, deferred, flush, clock };
+if (require.main === module) (async()=>{
  await mainQueue();await cacheAbort();await renderer();await detail();await background();await prefetch();
  if (!mutant) for(const [name,needle] of Object.entries({physical:'1',counter:'5',webfont:'physical FontFace cap'})) {
   const result=spawnSync(process.execPath,[__filename,'--mutant='+name],{encoding:'utf8',timeout:30000});

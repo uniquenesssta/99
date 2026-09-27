@@ -74,7 +74,9 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-27：S10-05 修复预览超时/reset 后提前释放实际并发槽、离屏旧需求及迟到结果；WebFont 超时与真实失败分开，迟到成功按字体身份与根代次复用；停用无消费者的详情预览请求并清理退出资源。typecheck、153 项诊断分段完整覆盖、三端构建与混淆通过；S10-04 Windows CI 已通过，S10-05 CI/实机待验。见 [Stage 10 第 15 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#15-s10-05-执行回执2026-09-27)。
+- 2026-09-27：S10-06 前按用户要求调整前台预览：并发 10，滚动暂停新任务及旧结果提交，连续停滚 150ms 后处理当前视口全部卡片；移除 18 项预取路径，Rust 独立图片渲染使用 10 个线程，缓存索引仍串行。不可取消任务保留实际计数到结算；不宣称滚动能立即终止底层 I/O。验证和回退范围见 [Stage 10 第 16 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#16-s10-06-前置调整滚动与并发2026-09-27)。
+
+- 2026-09-27：S10-05 修复预览超时/reset 后提前释放实际并发槽、离屏旧需求及迟到结果；WebFont 超时与真实失败分开，迟到成功按字体身份与根代次复用；停用无消费者的详情预览请求并清理退出资源。typecheck、153 项诊断分段完整覆盖、三端构建与混淆通过；S10-04 Windows CI 已通过，S10-05 Windows/Linux CI 已通过（Actions `36293858291`），实机待验。见 [Stage 10 第 15 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#15-s10-05-执行回执2026-09-27)。
 
 - 2026-09-27：S10-04 将共享目录准备移出本地缓存读取路径；可见缓存批次采用有限等待预算，迟到结果不覆盖当前预览；调度复用主进程共享身份分类。补正 S10-03 卡片退出接线的旧 CI 断言。typecheck、152 项诊断分段回归、三端构建与 3/3 混淆通过；Windows CI/实机待验。范围见 [Stage 10 第 14 节](docs/plans/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#14-s10-04-执行回执2026-09-27)。
 

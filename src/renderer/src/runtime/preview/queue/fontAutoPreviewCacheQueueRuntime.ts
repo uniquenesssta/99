@@ -72,7 +72,7 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
       return
     }
 
-    options.setStatus(`后台预览缓存开始：待生成 ${missing.length} 个，索引已命中 ${options.autoPreviewCacheStats.current.cached} 个，并发 ${networkAwarePreviewLimit(missing, MAX_CONCURRENT_PREVIEW_LOADS)} 个。`)
+    options.setStatus(`后台预览缓存开始：待生成 ${missing.length} 个，索引已命中 ${options.autoPreviewCacheStats.current.cached} 个，并发 ${networkAwarePreviewLimit(missing, Math.min(5, MAX_CONCURRENT_PREVIEW_LOADS))} 个。`)
     processAutoPreviewCacheQueue(runId)
   }
 
@@ -87,7 +87,7 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
       return
     }
 
-    const maxConcurrentLoads = networkAwarePreviewLimit(options.autoPreviewCacheQueue.current, MAX_CONCURRENT_PREVIEW_LOADS)
+    const maxConcurrentLoads = networkAwarePreviewLimit(options.autoPreviewCacheQueue.current, Math.min(5, MAX_CONCURRENT_PREVIEW_LOADS))
     while (options.activeAutoPreviewCacheLoads.current < maxConcurrentLoads && options.autoPreviewCacheQueue.current.length) {
       const font = options.autoPreviewCacheQueue.current.shift()
       if (!font) continue

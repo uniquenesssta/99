@@ -7,9 +7,9 @@
     "schedulerDrainStartsOneTaskPerLanePerPass": true
   },
   "after": {
-    "rendererVisiblePreviewConcurrency": 5,
-    "rustPreviewRenderMaxConcurrency": 5,
-    "rustGlobalMaxConcurrencyFloor": 6,
+    "rendererVisiblePreviewConcurrency": 10,
+    "rustPreviewRenderMaxConcurrency": 10,
+    "rustGlobalMaxConcurrencyFloor": 11,
     "schedulerDrainCanFillSameLaneCapacity": true,
     "cacheQueryInFlightRemainsSerialized": true
   }

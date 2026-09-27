@@ -54,6 +54,8 @@ export type FontPreviewLoadRuntime = {
 }
 
 export type FontVisiblePreviewQueueRuntime = {
+  pausePreviewForScroll: () => void
+  resumePreviewAfterScroll: () => void
   resetVisiblePreviewQueue: () => void
   disposePreviewQueue: () => void
   resumePreviewQueue: () => void

@@ -395,6 +395,8 @@ function checkPreviewBehavior() {
             resetPreviewRuntimeState() { processed.push('reset') },
             disposePreviewQueue() {},
             resumePreviewQueue() {},
+            pausePreviewForScroll() {},
+            resumePreviewAfterScroll() { processed.push('visible') },
             processPreviewQueue() { processed.push('visible') },
             requestPreviewFont() {},
             processAutoPreviewCacheQueue() { processed.push('auto') }

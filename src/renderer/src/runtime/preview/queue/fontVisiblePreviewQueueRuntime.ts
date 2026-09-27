@@ -3,15 +3,11 @@ import { previewTrace, previewEvent } from '../previewTraceRuntime'
 import type { FontItem } from '@shared/types'
 import type { PreviewQueueEntry } from '../../../appRuntime'
 import {
-INDEXING_PREVIEW_LOADS,
 MAX_CONCURRENT_PREVIEW_LOADS,
-SCROLLING_PREVIEW_LOADS,
 rendererMemoryPressure,
 requestIdleWindow
 } from '../../../appRuntime'
-import { previewQueueCooldownRemaining } from './fontPreviewIndexCooldownRuntime'
 import { VISIBLE_PREVIEW_CACHE_BATCH_LIMIT, VISIBLE_PREVIEW_CACHE_WAIT_MS } from './fontPreviewBatchPolicyRuntime'
-import { networkAwarePreviewLimit } from './fontPreviewNetworkPathRuntime'
 import { resolveFontPreviewRoute } from './fontPreviewRouteRuntime'
 import type { FontPreviewLoadRuntime,FontPreviewQueueRuntimeOptions,FontPreviewStateRuntime,FontVisiblePreviewQueueRuntime } from './fontPreviewQueueTypes'
 
@@ -21,10 +17,10 @@ export function createFontVisiblePreviewQueueRuntime(
   stateRuntime: Pick<FontPreviewStateRuntime, 'canRequestPreviewFont'>,
   loadRuntime: FontPreviewLoadRuntime
 ): FontVisiblePreviewQueueRuntime {
-  const demand = new Map<string, Set<() => boolean>>()
+  const demand = new Map<string, { font: FontItem; callers: Set<() => boolean> }>()
   const alwaysCurrent = () => true
   function hasDemand(id: string): boolean {
-    const callers = demand.get(id)
+    const callers = demand.get(id)?.callers
     if (!callers) return false
     for (const caller of callers) if (!caller()) callers.delete(caller)
     if (!callers.size) demand.delete(id)
@@ -42,9 +38,9 @@ export function createFontVisiblePreviewQueueRuntime(
   const cachedPreviewBatchCheckedIds = new Set<string>()
   const cachedPreviewBatchMissIds = new Set<string>()
 
-  function resetVisiblePreviewQueue(): void {
+  function resetVisiblePreviewQueue(keepDemand = false): void {
     queueGeneration += 1
-    demand.clear()
+    if (!keepDemand) demand.clear()
     cacheWaitExpired = cachedPreviewBatchInFlight
     if (cacheWaitTimer !== null) window.clearTimeout(cacheWaitTimer)
     cacheWaitTimer = null
@@ -62,6 +58,22 @@ export function createFontVisiblePreviewQueueRuntime(
   function disposePreviewQueue(): void { disposed = true; resetVisiblePreviewQueue(); loadRuntime.resetPreviewLoads(); options.loadingFonts.current.clear() }
   function resumePreviewQueue(): void { disposed = false }
 
+
+  function pausePreviewForScroll(): void {
+    resetVisiblePreviewQueue(true)
+    loadRuntime.resetPreviewLoads()
+    options.loadingFonts.current.clear()
+    options.previewQueue.current = []
+    options.queuedPreviewFontIds.current.clear()
+  }
+  function resumePreviewAfterScroll(): void {
+    if (disposed) return
+    for (const [id, entry] of [...demand]) {
+      if (!hasDemand(id)) continue
+      for (const caller of entry.callers) requestPreviewFont(entry.font, 'high', caller)
+    }
+    processPreviewQueue()
+  }
 
   function currentPreviewText(): string {
     return options.previewText.trim() || '字体预览\nAaBb 123'
@@ -189,18 +201,12 @@ export function createFontVisiblePreviewQueueRuntime(
   }
 
   function processPreviewQueue(): void {
-    if (disposed) return
+    if (disposed || options.fontListScrollingRef.current) return
     options.previewQueue.current = options.previewQueue.current.filter(entry => {
       if (hasDemand(entry.font.id)) return true
       options.queuedPreviewFontIds.current.delete(entry.font.id)
       return false
     })
-    const cooldownMs = previewQueueCooldownRemaining()
-    if (cooldownMs > 0) {
-      scheduleDeferredPreviewRetry(Math.min(cooldownMs + 80, 2200))
-      return
-    }
-
     const memory = rendererMemoryPressure()
     const userActive = options.rendererUserActive()
     if ((memory === 'hard' || userActive) && !options.previewQueue.current.some((entry) => entry.priority === 'high')) {
@@ -210,20 +216,10 @@ export function createFontVisiblePreviewQueueRuntime(
 
     if (processCachedPreviewBatchIfNeeded()) return
 
-    const baseLimit = options.indexingActive ? INDEXING_PREVIEW_LOADS : (options.fontListScrollingRef.current || userActive) ? SCROLLING_PREVIEW_LOADS : MAX_CONCURRENT_PREVIEW_LOADS
-    const storageAwareLimit = networkAwarePreviewLimit(options.previewQueue.current.map((entry) => entry.font), baseLimit)
-    const limit = memory === 'soft' ? Math.min(storageAwareLimit, 1) : storageAwareLimit
+    const limit = MAX_CONCURRENT_PREVIEW_LOADS
 
     while (options.activePreviewLoads.current < limit && options.previewQueue.current.length) {
-      const entryIndex = options.fontListScrollingRef.current || userActive
-        ? options.previewQueue.current.findIndex((item) => item.priority === 'high')
-        : 0
-      if (entryIndex < 0) {
-        scheduleDeferredPreviewRetry(240)
-        return
-      }
-
-      const entry = options.previewQueue.current.splice(entryIndex, 1)[0]
+      const entry = options.previewQueue.current.shift()
       if (!entry) continue
       const font = entry.font
       options.queuedPreviewFontIds.current.delete(font.id)
@@ -244,10 +240,10 @@ export function createFontVisiblePreviewQueueRuntime(
 
   function requestPreviewFont(font: FontItem, priority: 'normal' | 'high' = 'normal', acceptsResult: () => boolean = alwaysCurrent): void {
     if (disposed || !acceptsResult()) return
-    const callers = demand.get(font.id) || new Set<() => boolean>()
+    const callers = demand.get(font.id)?.callers || new Set<() => boolean>()
     for (const caller of callers) if (!caller()) callers.delete(caller)
     callers.add(acceptsResult)
-    demand.set(font.id, callers)
+    demand.set(font.id, { font, callers })
     const trace = previewTrace(font.id, options.previewText, options.listPreviewFontSize)
     previewEvent(trace, 'request', priority)
     if (!stateRuntime.canRequestPreviewFont(font, true)) {
@@ -292,6 +288,8 @@ export function createFontVisiblePreviewQueueRuntime(
 
   return {
     resetVisiblePreviewQueue,
+    pausePreviewForScroll,
+    resumePreviewAfterScroll,
     disposePreviewQueue,
     resumePreviewQueue,
     processPreviewQueue,

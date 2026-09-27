@@ -1,5 +1,5 @@
-const DEFAULT_PREVIEW_RENDER_CONCURRENCY = 5
-const DEFAULT_PREVIEW_RENDER_GLOBAL_MAX = 6
+const DEFAULT_PREVIEW_RENDER_CONCURRENCY = 10
+const DEFAULT_PREVIEW_RENDER_GLOBAL_MAX = 11
 
 function parseEnvInt(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name]
@@ -10,13 +10,13 @@ function parseEnvInt(name: string, fallback: number, min: number, max: number): 
 }
 
 export function previewRenderConcurrency(): number {
-  return parseEnvInt('HFM_PREVIEW_RENDER_CONCURRENCY', DEFAULT_PREVIEW_RENDER_CONCURRENCY, 1, 8)
+  return parseEnvInt('HFM_PREVIEW_RENDER_CONCURRENCY', DEFAULT_PREVIEW_RENDER_CONCURRENCY, 1, 10)
 }
 
 export function previewRenderGlobalConcurrencyFloor(): number {
   const renderConcurrency = previewRenderConcurrency()
   const fallback = Math.max(DEFAULT_PREVIEW_RENDER_GLOBAL_MAX, renderConcurrency + 1)
-  return parseEnvInt('HFM_RUST_CORE_GLOBAL_MAX_CONCURRENCY', fallback, Math.max(2, renderConcurrency), 8)
+  return parseEnvInt('HFM_RUST_CORE_GLOBAL_MAX_CONCURRENCY', fallback, Math.max(2, renderConcurrency), 11)
 }
 
 export function normalizePreviewRenderConcurrency(command: string, maxConcurrency: number): number {

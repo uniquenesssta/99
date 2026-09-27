@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo } from 'react'
+import { useLayoutEffect, useMemo } from 'react'
 import type { MutableRefObject } from 'react'
 import type { FontItem } from '@shared/types'
 import type { ContextMenuState, VirtualLayout, VirtualViewport } from '../../appRuntime'
-import { PREVIEW_PREFETCH_LIMIT, traceRendererSyncComputation } from '../../appRuntime'
+import { traceRendererSyncComputation } from '../../appRuntime'
 import { buildTagSuggestions, buildVirtualLayout } from '../../fontViewRuntime'
 
 import { useBrowseDerivedRuntime, type BrowseDerivedOptions } from './useBrowseDerivedRuntime'
@@ -23,7 +23,7 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
   requestPreviewFont: (font: FontItem, priority?: 'normal' | 'high', acceptsResult?: () => boolean) => void
   contextFontTargets: (available?: FontItem[]) => FontItem[]
 }) {
-  const { cardPoolViewLayout, virtualViewport, selectedFontId, selectedFontIds, contextMenu, previewFamilies, nativePreviewImages, failedPreviewFontIds, assignTagName, assignSharedTagName, latestVisibleFontsRef, latestViewLayoutRef, requestPreviewFont, contextFontTargets, library, sidebarPage, databasePageReady, databasePageResult } = args
+  const { cardPoolViewLayout, virtualViewport, selectedFontId, selectedFontIds, contextMenu, previewFamilies, nativePreviewImages, failedPreviewFontIds, assignTagName, assignSharedTagName, latestVisibleFontsRef, latestViewLayoutRef, contextFontTargets, library, sidebarPage, databasePageReady, databasePageResult } = args
   const { fontIndexById, fontMetrics, localTagCounts, sharedTagCounts, localTagList, sharedTagList, flatFolderNodes, advancedFilterCount, visibleFonts } = useBrowseDerivedRuntime({
     library: args.library,
     sidebarPage: args.sidebarPage,
@@ -62,24 +62,6 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
     minCardWidth: cardPoolViewLayout.minCardWidth,
     rowHeight: cardPoolViewLayout.rowHeight
   }), sidebarPage), [databasePageReady, databasePageResult, visibleFonts, virtualViewport, cardPoolViewLayout.rowHeight, cardPoolViewLayout.minCardWidth, sidebarPage])
-
-  const previewPrefetchFonts = useMemo(
-    () => virtualLayout.items.slice(0, PREVIEW_PREFETCH_LIMIT),
-    [virtualLayout.items]
-  )
-  const previewPrefetchKey = useMemo(
-    () => previewPrefetchFonts.map((font) => `${font.id}:${font.__earlyVisible ? 'early' : 'ready'}`).join('|'),
-    [previewPrefetchFonts]
-  )
-
-  useEffect(() => {
-    let current = true
-    for (const font of previewPrefetchFonts) {
-      if (font.__earlyVisible) continue
-      requestPreviewFont(font, 'normal', () => current)
-    }
-    return () => { current = false }
-  }, [previewPrefetchKey, library.previewText])
 
   const selectedFont = useMemo(
     () => library.fonts[selectedFontId] || visibleFonts.find((item) => item.id === selectedFontId) || visibleFonts[0],
