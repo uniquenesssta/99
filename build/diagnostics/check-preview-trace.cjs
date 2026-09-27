@@ -21,7 +21,7 @@ function loader(mocks = {}) {
             if (!id.startsWith('.') && !id.startsWith('@shared/'))
                 throw Error(`Unmocked ${id}`);
             const target = id.startsWith('@shared/') ? path.join(root, 'src/shared', id.slice(8)) : path.resolve(path.dirname(file), id);
-            return load(target + '.ts');
+            return load(fs.existsSync(target + '.ts') ? target + '.ts' : target + '.tsx');
         }, module, module.exports);
         return module.exports;
     }

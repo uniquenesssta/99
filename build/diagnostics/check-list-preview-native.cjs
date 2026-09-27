@@ -47,6 +47,14 @@ function main(){
   const short=render('Ag\nSecond','wrap-short'),long=render('Ag '.repeat(200)+'\nSecond','wrap-long')
   const y=Math.ceil(20+44*1.16);assert.deepEqual(long.rgba.subarray(y*long.w*4),short.rgba.subarray(y*short.w*4),engine+' auto-wrapped first line changed second line')
  }
+ const sample=shared.getCardPreviewLayout('list','Ag',44)
+ for(const engine of ['rust','cpp','powershell'])for(const patch of [{layout:null},{layout:{...sample.nativeLayout,version:'old'}},{layout:{...sample.nativeLayout,pixelRatio:2}},{width:760},{text:'a\nb\nc'}]){
+  const outputPath=path.join(out,'invalid.png'),inputPath=outputPath+'.json'
+  fs.writeFileSync(inputPath,JSON.stringify({fontPath:path.join(process.env.WINDIR,'Fonts','arial.ttf'),text:'Ag',fontSize:44,width:sample.width,height:sample.height,layout:sample.nativeLayout,outputPath,...patch}))
+  let error
+  try{if(engine==='rust')run(worker,['--preview-render-image','--input',inputPath]);else if(engine==='cpp')run(helper,['--input',inputPath]);else run('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(ps.buildNativePreviewPowerShellScript(inputPath),'utf16le').toString('base64')])}catch(e){error=e}
+  assert(error,engine+' accepted invalid layout');assert(!fs.existsSync(outputPath),'invalid input created output');fs.unlinkSync(inputPath)
+ }
  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({fonts,report},null,2));fs.writeFileSync(path.join(out,'dom-samples.json'),JSON.stringify(domSamples))
  console.log('[list-preview-native]',report.length,'real PNGs; no-wrap suffix checks passed; fonts:',fonts.map(f=>f[0]).join(', '))
 }

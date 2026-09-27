@@ -22,7 +22,7 @@ function loader(mocks = {}) {
             if (!id.startsWith('.') && !id.startsWith('@shared/'))
                 throw Error(`Unmocked ${id}`);
             const target = id.startsWith('@shared/') ? path.join(root, 'src/shared', id.slice(8)) : path.resolve(path.dirname(file), id);
-            return load(target + '.ts');
+            return load(fs.existsSync(target + '.ts') ? target + '.ts' : target + '.tsx');
         }, module, module.exports);
         return module.exports;
     }
@@ -83,7 +83,7 @@ async function run() {
  const Card=cardLoad('src/renderer/src/components/FontCard.tsx').FontCard;
  const cards=Array.from({length:24},(_,i)=>({font:{id:'card'+i,path:'C:/fonts/'+i+'.ttf'},slots:[],onVisible(){queue.requestPreviewFont(this.font,'high');}}));
  cards.forEach(c=>c.onVisible=c.onVisible.bind(c));
- function render(c,text,size,image,early=false){active=c;c.pos=0;c.effects=[];c.font.__earlyVisible=early;const tree=Card({font:c.font,closingLifecycle:c.closingLifecycle,onVisible:c.onVisible,compact:true,previewText:text,listPreviewFontSize:size,previewImage:image});tree.props.ref.current={};c.effects.forEach(f=>f());}
+ function render(c,text,size,image,early=false){active=c;c.pos=0;c.effects=[];c.font.__earlyVisible=early;const tree=Card({font:c.font,closingLifecycle:c.closingLifecycle,onVisible:c.onVisible,compact:true,previewText:text,listPreviewFontSize:size,previewImage:image});tree.props.ref({});c.effects.forEach(f=>f());}
  function emit(){observers.filter(o=>!o.off).forEach(o=>o.emit());}
  async function drain(){for(let i=0;i<40;i++){await flush();finish.splice(0).forEach(f=>f());}await flush();assert.equal(opt.previewQueue.current.length,0);assert.equal(opt.activePreviewLoads.current,0);}
  for(const [text,size] of [['abc',44],['changed',44],['changed',64],['final',48]]) {

@@ -90,7 +90,7 @@
     "RustFontResourceBatchResult": "8f7de28087518de03f2048ab076890fb76f8e5d658ca2effe8bfc332561a6508",
     "RustFontRegistryResult": "1a6671031790cb57c7c32e963ce2e58a213b7050951f8399c83a6190c0b01c00",
     "RustFontNotifyResult": "94f455f5f2f33e7f6b9b52a749d474f0a58e9dec9abe943f251f8b253a916c33",
-    "RustPreviewRenderImageInput": "4b685cc410b08b16a684228dcf1e19ff5e3eec02082cc739b3aaa4814ce20241",
+    "RustPreviewRenderImageInput": "544bb07bb0af503a4b935aec7e44d4a94f9f2a0f8c67e10b726b81b9da8c0c28",
     "RustPreviewRenderImageResult": "9c09f8603373c4500dc9c3a4116c7ce52094b1a8d283e1be725610380cd70c0b",
     "RustCoreWorkerRuntimeOptions": "86f86a0f98f515e8ff5e63da6f912bd6b1171af0e7c58768085e8d1d4b0d731f",
     "RustManagedActivationRegistryClaim": "9ef43d7b14ff5bd987460aec03c13783bd2963351cb04b54ea1cc033b40d76d2"
@@ -133,9 +133,14 @@
     "RustFontResourceBatchPayload": "88973bfbb39085c0729378216cffb8749cd2a64a4076ea2931717858168db8f5",
     "RustFontRegistryPayload": "60c88d979038f6e406b8ead808eef2ca90e9da75aff6761c1673733d67b4d5d7",
     "RustFontNotifyPayload": "9e1636b05644b5b6c79db5efb66640d29e81ac8f0876a6c876814dab5b9c02cd",
-    "RustPreviewRenderImagePayload": "91645f8f7ef8e4b743a09a6707efa2adfa14fc9d5db15e2d06082fe7c23d0f90"
+    "RustPreviewRenderImagePayload": "66e34fcfd875669b8c34e63f41fe39f667df43c0e877338e5f78dcacd156ef29"
   },
   "publicDependencies": [
+    {
+      "name": "NativePreviewLayout",
+      "imported": "NativePreviewLayout",
+      "module": "../../shared/preview-layout/nativePreviewLayout"
+    },
     {
       "name": "CachedFontStatLike",
       "imported": "CachedFontStatLike",

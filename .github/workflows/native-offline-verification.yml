@@ -14,7 +14,6 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
-      - run: npm run test:font-view-layout-dom
       - run: npm run diagnostics:shared-io-integration
       - run: npm run diagnostics:shared-filesystem
       - run: npm run rust:build

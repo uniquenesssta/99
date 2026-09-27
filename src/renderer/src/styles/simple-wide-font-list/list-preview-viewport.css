@@ -1,5 +1,5 @@
 /* Explicit canvas pixels: no contain/scale-down or per-font ink normalization. */
-.font-row-preview-wide .font-row-preview-box.list-preview-viewport {
+.font-card .font-row-preview-wide .font-row-preview-box.list-preview-viewport {
   display: flex;
   flex-direction: column;
   align-items: stretch;

@@ -36,6 +36,7 @@ async function testEvictedPreviewPromiseCannotDeleteReplacement() {
       if (id === './cachedPreviewBatchPolicyRuntime') {
         return { CACHED_PREVIEW_READ_BATCH_LIMIT: 20, CACHED_PREVIEW_READ_COALESCE_DELAY_MS: 0 }
       }
+      if (id === '../../../shared/preview-layout/nativePreviewLayout') return loadTypeScriptModule('src/shared/preview-layout/nativePreviewLayout.ts')
       return require(id)
     },
   )

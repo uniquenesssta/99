@@ -32,7 +32,10 @@ function loadTypeScriptModule(relativePath, localRequire = require) {
     }
   }).outputText
   const module = { exports: {} }
-  new Function('exports', 'require', 'module', output)(module.exports, localRequire, module)
+  new Function('exports', 'require', 'module', output)(module.exports, id => {
+    if (id === '../../../shared/preview-layout/nativePreviewLayout') return require('./check-operation-chain.cjs').loader()('src/shared/preview-layout/nativePreviewLayout.ts')
+    return localRequire(id)
+  }, module)
   return module.exports
 }
 
@@ -105,6 +108,7 @@ async function testSplitBatchResultsAreAggregated() {
         if (id === '../../logging/operationTraceContext') return { currentOperationTrace: () => undefined, logOperation() {}, withOperationTrace: (_trace, _append, run) => run() }
         if (id === './previewTraceRuntime') return { tracePreviewPhase: (_stage, run) => run() }
         if (id === './previewInputPolicy') return loadTypeScriptModule('src/main/preview/runtime/previewInputPolicy.ts')
+        if (id === '../../../shared/preview-layout/nativePreviewLayout') return require('./check-operation-chain.cjs').loader()('src/shared/preview-layout/nativePreviewLayout.ts')
         return require(id)
       }
     )
@@ -143,7 +147,7 @@ function testIpcHandlerUsesScheduler() {
   const text = readText('src/main/ipc/handlers/previewAndFolderIpcHandlers.ts')
   assert(text.includes('createPreviewRequestSchedulerRuntime'), 'preview IPC handler missing scheduler import')
   assert(text.includes('const previewRequestScheduler = createPreviewRequestSchedulerRuntime'), 'preview IPC handler missing scheduler instance')
-  assert(text.includes('previewRequestScheduler.readCachedPreviewImages(items, text, fontSize, width, height)'), 'fonts:getCachedPreviewImages is not routed through scheduler')
+  assert(text.includes('previewRequestScheduler.readCachedPreviewImages(items, text, fontSize, width, height, undefined, layout)'), 'fonts:getCachedPreviewImages is not routed through scheduler')
 }
 
 function testRendererBatchPolicyStillCapsVisiblePrefetch() {

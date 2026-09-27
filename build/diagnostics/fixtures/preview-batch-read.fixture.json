@@ -11,6 +11,6 @@
     "getPreviewCacheStatus": "50556f82555bdcd9858148fbc2beb46a5682dbf7f32c3a3e7ece55db42e3f312",
     "readCachedPreviewImages": "1197b0d936316e03470d9f157f9170941bcbd6a524e0c64474595913ecf410a3"
   },
-  "rowBuilderBody": "13030cd6dd870418ae072d8d54e13c83aa499344b873d4515d6a503dd1f25d6a",
+  "rowBuilderBody": "e5f78551003fc05c6455a03ec99e23b324eddff928a0ba8ff1d18571ec657ad0",
   "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
 }

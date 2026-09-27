@@ -851,7 +851,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "6ce13f25378fe157a80b5b81d03f8b7806e4ac9459482c0e85c20e03f8a8b4bf"
+      "tokenHash": "4a61c360ba9a087399a67221b8efb95654eb58541f6f9a630e4bbb742c01b85f"
     },
     "src/main/ipc/handlers/fontTagIpcHandlers.ts": {
       "functions": [
@@ -979,7 +979,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "15f4c67843b829cfbf56b271123c273ef21c675b8dc5554c5d453ce0e0e8eca1"
+      "tokenHash": "ffb828920ad4bae51cabdd5399bde7e1828cb264f2ae540a9c5fe670bb71ea1d"
     },
     "src/main/preview/runtime/previewBatchReadRuntime.ts": {
       "functions": [
@@ -1001,7 +1001,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "572b5e2cd2da129c13587e208a4ad50267fb652cbe521fb698f8c343edb36b41"
+      "tokenHash": "afbe9eb18ab4108b14b9de5d73650346c00e3a64210e2b558f98cc8019826608"
     },
     "src/main/preview/runtime/previewStorageIoRuntime.ts": {
       "functions": [

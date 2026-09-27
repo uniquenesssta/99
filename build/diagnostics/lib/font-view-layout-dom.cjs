@@ -101,7 +101,7 @@ module.exports = async function checkLayout() {
     close(canvas.getBoundingClientRect().width,entry.canvasWidth,'list canvas width')
     close(canvas.getBoundingClientRect().height,entry.canvasHeight,'list canvas height')
     if(region.scrollWidth<=region.clientWidth)throw Error('horizontal preview inaccessible')
-    if(region.clientHeight<entry.canvasHeight)throw Error('list preview height clipped')
+    if(region.clientHeight<entry.canvasHeight)throw Error(`list preview height clipped: ${entry.label} client=${region.clientHeight} canvas=${entry.canvasHeight} box=${region.parentElement.getBoundingClientRect().height} padding=${getComputedStyle(region.parentElement).padding}`)
     region.scrollLeft=600; if(region.scrollLeft<500)throw Error('preview cannot scroll')
     if(entry.native){
       const img=canvas.querySelector('img');if(!img.complete)await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject})
