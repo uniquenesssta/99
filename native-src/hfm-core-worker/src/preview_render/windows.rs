@@ -95,6 +95,8 @@ unsafe extern "system" {
     fn GdipGetCellDescent(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
     fn GdipDeleteFont(font: *mut c_void) -> GpStatus;
     fn GdipCreateStringFormat(format_attributes: i32, language: u16, format: *mut *mut c_void) -> GpStatus;
+    fn GdipStringFormatGetGenericTypographic(format: *mut *mut c_void) -> GpStatus;
+    fn GdipCloneStringFormat(format: *mut c_void, cloned: *mut *mut c_void) -> GpStatus;
     fn GdipDeleteStringFormat(format: *mut c_void) -> GpStatus;
     fn GdipSetStringFormatAlign(format: *mut c_void, align: i32) -> GpStatus;
     fn GdipSetStringFormatLineAlign(format: *mut c_void, align: i32) -> GpStatus;
@@ -200,7 +202,7 @@ pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<(), String
     let bitmap = create_bitmap(request.width, request.height)?;
     let graphics = create_graphics(bitmap.0)?;
     configure_graphics(graphics.0)?;
-    let format = create_string_format(&request.text)?;
+    let format = if request.layout.is_some() { create_list_string_format()? } else { create_string_format(&request.text)? };
     let brush = create_solid_brush(GLYPH_COLOR)?;
 
     let margin_x = ((request.width as f32) * 0.045).max(18.0);
@@ -217,6 +219,7 @@ pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<(), String
         // drawn independently, so GDI+ can never introduce an additional wrap.
         status(unsafe { GdipSetStringFormatAlign(format.0, 0) }, "list alignment failed")?;
         status(unsafe { GdipSetStringFormatLineAlign(format.0, 0) }, "list line alignment failed")?;
+        status(unsafe { GdipSetStringFormatTrimming(format.0, STRING_TRIMMING_NONE) }, "list trimming failed")?;
         status(unsafe { GdipSetStringFormatFlags(format.0, STRING_FORMAT_FLAGS_MEASURE_TRAILING_SPACES | STRING_FORMAT_FLAGS_NO_WRAP | 0x4000 | 0x4) }, "list flags failed")?;
         let family = &preview_font.family;
         let (mut em, mut ascent, mut descent) = (0u16, 0u16, 0u16);
@@ -357,6 +360,17 @@ fn create_font(family: *mut c_void, font_size: f32) -> Result<Font, String> {
     let mut font = ptr::null_mut();
     status(unsafe { GdipCreateFont(family, font_size, FONT_STYLE_REGULAR, UNIT_PIXEL, &mut font) }, "failed to create private font")?;
     Ok(Font(font))
+}
+
+fn create_list_string_format() -> Result<StringFormat, String> {
+    // Setting the public flags on the default format does not remove its extra
+    // em-based margins. Clone the SDK's borrowed typographic format, as C++ and
+    // PowerShell do, to preserve the explicit padding and glyph advance.
+    let mut borrowed = ptr::null_mut();
+    status(unsafe { GdipStringFormatGetGenericTypographic(&mut borrowed) }, "typographic format unavailable")?;
+    let mut owned = ptr::null_mut();
+    status(unsafe { GdipCloneStringFormat(borrowed, &mut owned) }, "typographic format clone failed")?;
+    Ok(StringFormat(owned))
 }
 
 fn create_string_format(text: &str) -> Result<StringFormat, String> {

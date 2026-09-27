@@ -43,6 +43,12 @@ function main(){
  } catch(error) { failures.push(String(error)) } }
  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({fonts,report,failures},null,2));fs.writeFileSync(path.join(out,'dom-samples.json'),JSON.stringify(domSamples))
  if(failures.length)throw Error(failures.join('\n'))
+ // Compare positions across adapters, allowing only the pixel-edge differences
+ // caused by GDI+ antialiasing; default-format em margins must not reappear.
+ for(const row of report.filter(r=>r.engine==='rust'))for(const engine of ['cpp','powershell']) {
+  const other=report.find(r=>r.engine===engine&&r.family===row.family&&r.size===row.size&&r.kind===row.kind)
+  for(const edge of ['left','top','right','bottom'])assert(Math.abs(row[edge]-other[edge])<=2,`${row.family}/${row.size}/${row.kind} ${engine} ${edge}: rust=${row[edge]} other=${other[edge]}`)
+ }
  // Same suffix line must be pixel-identical under short/very long first lines.
  // Reintroducing automatic wrap makes this fail without source-string checks.
  for(const engine of ['rust','cpp','powershell']){
