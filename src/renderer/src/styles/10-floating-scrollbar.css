@@ -24,15 +24,20 @@
 
 .hfm-floating-scrollbar {
   position: fixed;
+  top: 0;
+  left: 0;
   z-index: 12000;
   pointer-events: none;
   opacity: 0;
   transition: opacity 120ms linear;
   contain: strict;
+  touch-action: none;
+  user-select: none;
 }
 
 .hfm-floating-scrollbar.visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .hfm-floating-scrollbar-thumb {

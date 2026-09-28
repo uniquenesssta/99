@@ -81,7 +81,7 @@ async function previewConsumesCentralOwner(){
  const l=loader({
   [abs('src/main/path/startupPathAvailabilityRuntime.ts')]:{ensureStartupPathRootAvailable:async()=>{ensures++;return rootState.state==='online'},getStartupPathRootState:()=>({rootId:'r',...rootState})},
   [abs('src/main/path/cachePath.ts')]:{normalizePathForCacheCompare:x=>x},
-  [abs('src/main/path/ioDeadlineRuntime.ts')]:{unavailableRootTtlMs:()=>30000},
+  [abs('src/main/path/ioDeadlineRuntime.ts')]:{...loader()('src/main/path/ioDeadlineRuntime.ts'),unavailableRootTtlMs:()=>30000},
   [abs('src/main/preview/runtime/previewSharedStorageCircuitBreakerRuntime.ts')]:{createPreviewSharedStorageCircuitBreakerRuntime:()=>({canUseSharedStorage:()=>true,recordSharedStorageSuccess(){},recordSharedStorageFailure:()=>0})}
  })
  const r=l('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts').createPreviewCacheRootAvailabilityRuntime({availableTtlMs:1000,unavailableTtlMs:1000,now:()=>0})

@@ -58,6 +58,8 @@ export interface MainMaintenanceCompositionOptions {
   loadLibraryShell: Data['storage']['loadLibraryShell'];
   localPreviewImageDir: Data['storage']['localPreviewImageDir'];
   rootPreviewImageDir: Data['storage']['rootPreviewImageDir'];
+  rootPreviewDbPath: Data['storage']['rootPreviewDbPath'];
+  fallbackPreviewDbPath: Data['storage']['fallbackPreviewDbPath'];
   rootCacheDir: Data['storage']['rootCacheDir'];
   rootIndexDbPath: Data['storage']['rootIndexDbPath'];
   legacyRootPreviewCacheDir: Data['storage']['legacyRootPreviewCacheDir'];
@@ -113,6 +115,8 @@ export function createMainMaintenanceCompositionRuntime(options: MainMaintenance
     loadLibraryShell,
     localPreviewImageDir,
     rootPreviewImageDir,
+    rootPreviewDbPath,
+    fallbackPreviewDbPath,
     rootCacheDir,
     rootIndexDbPath,
     legacyRootPreviewCacheDir,
@@ -150,6 +154,7 @@ export function createMainMaintenanceCompositionRuntime(options: MainMaintenance
   } = sharedMetadataFrontendDiagnosticsRuntime;
 
   const databaseMaintenanceRuntime = createApplicationDatabaseMaintenanceRuntime({
+    appWatchedFolders,
     appName: APP_NAME,
     maintenanceSqliteSchemaVersion: MAINTENANCE_SQLITE_SCHEMA_VERSION,
     databaseBackupRetentionCount: DATABASE_BACKUP_RETENTION_COUNT,
@@ -184,6 +189,8 @@ export function createMainMaintenanceCompositionRuntime(options: MainMaintenance
     loadLibraryShell,
     localPreviewImageDir,
     rootPreviewImageDir,
+    rootPreviewDbPath,
+    fallbackPreviewDbPath,
     rootCacheDir,
     rootIndexDbPath,
     legacyRootPreviewCacheDir,

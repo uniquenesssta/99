@@ -32,6 +32,7 @@ export type ScanCacheStorageRuntimeOptions = {
   localPreviewImageDir: () => string
   previewSqlitePath: () => string
   loadLibraryShell: () => Promise<LibraryShell>
+  appWatchedFolders: () => Promise<string[]>
   exists: (filePath: string) => Promise<boolean>
   sha1: (value: string) => string
   appendStartupLog: (message: string) => void

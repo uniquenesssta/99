@@ -1,4 +1,5 @@
 mod batch;
+mod bounded_maintenance;
 mod maintenance;
 mod path;
 mod schema;

@@ -151,6 +151,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
   async function runRustPreviewCacheMaintenance(input: RustPreviewCacheMaintenanceInput): Promise<RustPreviewCacheMaintenanceResult | null> {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'preview-cache-maintenance')) return null
+    if (input.batch && !hasCapability(status, 'preview-cache-maintenance-bounded-v1')) return null
 
     const payload = await runRustPreviewCacheInputCommand<RustPreviewCacheMaintenancePayload>('maintenance', '--preview-cache-maintenance', input)
     if (!payload || !payload.ok) return null
@@ -168,16 +169,25 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
   async function runRustPreviewCacheInputCommand<T extends { ok?: boolean; message?: string }>(label: string, command: string, input: unknown): Promise<T | null> {
     return tracePreviewCacheMutation(label, options.appendStartupLog, async () => {
       const mutation = label === 'apply' || label === 'delete'
+      const boundedMaintenance = label === 'maintenance' && !!(input as RustPreviewCacheMaintenanceInput).batch
       const status = await diagnoseRustCoreWorker()
       if (!status.available || !status.path) return null
-      const declaration = input as { dbPath: string; readOnly?: boolean; checkFiles?: boolean; rows?: Array<{outputPath: string}>; previewDirs?: string[] }
+      const declaration = input as { dbPath: string; readOnly?: boolean; checkFiles?: boolean; rows?: Array<{outputPath: string}>; previewDirs?: string[]; batch?: RustPreviewCacheMaintenanceInput['batch'] }
       const query = label === 'read-status' || label === 'query' || label === 'batch'
       // Old workers may ignore JSON fields. Never grant them a read description.
       if (query && declaration.readOnly && !hasCapability(status, 'preview-cache-read-only-v1')) return null
       const readOnly = query && declaration.readOnly === true
       const accesses: SharedIoAccessPath[] = sharedDatabaseTarget(declaration.dbPath, !readOnly).accesses!
       if (label === 'batch' && declaration.checkFiles) for (const row of declaration.rows || []) accesses.push({path: row.outputPath, scope: 'file', mode: 'read'})
-      if (label === 'maintenance') for (const path of declaration.previewDirs || []) accesses.push({path, scope: 'tree', mode: 'write'})
+      if (label === 'maintenance') {
+        if (declaration.batch) {
+          // Repeat the capability check at the actual submission boundary.
+          if (!hasCapability(status, 'preview-cache-maintenance-bounded-v1')) return null
+          for (const path of [...declaration.batch.rows.map(row => row.outputPath), ...declaration.batch.orphanFiles])
+            if (path) accesses.push({ path, scope: 'file', mode: 'write' })
+          if (declaration.batch.referenceDbPath) accesses.push(...sharedDatabaseTarget(declaration.batch.referenceDbPath, false).accesses!)
+        } else for (const path of declaration.previewDirs || []) accesses.push({path, scope: 'tree', mode: 'write'})
+      }
       const startedAt = Date.now()
       const inputFile = createTemporaryJsonFile(`hfm-rust-preview-cache-${label}`)
       const inputPath = inputFile.path
@@ -193,6 +203,15 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         })
         const payload = parseJsonLine<T>(stdout)
         if (!payload.ok) throw new Error(payload.message || `rust preview cache ${label} returned ok=false`)
+        if (boundedMaintenance) {
+          const report = payload as unknown as RustPreviewCacheMaintenanceResult
+          if (!['checkedRows', 'staleRows', 'removedFiles', 'removedOrphanFiles'].every(key => {
+            const value = (report as unknown as Record<string, unknown>)[key]
+            return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+          }) || !Array.isArray(report.errors) || report.checkedRows > declaration.batch!.rows.length ||
+            report.staleRows > report.checkedRows || report.removedFiles > report.checkedRows ||
+            report.removedOrphanFiles > declaration.batch!.orphanFiles.length) throw new Error('rust bounded maintenance missing valid commit result')
+        }
         if (mutation) {
           const count = (payload as { written?: unknown; deleted?: unknown })[label === 'apply' ? 'written' : 'deleted']
           if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) throw new Error(`rust preview cache ${label} missing valid commit result`)
@@ -206,7 +225,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         return payload
       } catch (error) {
       rethrowSharedIoProcessError(error)
-        if (mutation && submitted) {
+        if ((mutation || boundedMaintenance) && submitted) {
           try { appendPreviewCacheFailureLog(label, error instanceof Error ? error.message : String(error)) } catch { /* Preserve the original uncertainty. */ }
           throw error
         }
@@ -216,7 +235,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         try { await inputFile.dispose() } catch (error) {
       rethrowSharedIoProcessError(error)
           // Cleanup failure cannot turn a settled write into replay.
-          if (!mutation) throw error
+          if (!mutation && !boundedMaintenance) throw error
         }
       }
     })

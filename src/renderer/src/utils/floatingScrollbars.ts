@@ -7,12 +7,14 @@ export type FloatingScrollbarState = {
   hovered: boolean
   focused: boolean
   scrolling: boolean
+  barHovered: boolean
+  dragging: boolean
   hideTimer: number | null
   cleanup: Array<() => void>
 }
 
 export function setupFloatingScrollbars(): () => void {
-  const selector = '.sidebar, .font-list, .font-waterfall, .font-virtual-scroller, .detail-panel, .toolbar-left'
+  const selector = '.sidebar, .font-list, .font-waterfall, .font-virtual-scroller, .detail-panel, .toolbar-left, .list-preview-scroll'
   const states = new Map<HTMLElement, FloatingScrollbarState>()
   let updateRaf = 0
   let syncRaf = 0
@@ -22,13 +24,17 @@ export function setupFloatingScrollbars(): () => void {
     const thumb = document.createElement('div')
     bar.className = `hfm-floating-scrollbar ${axis}`
     thumb.className = 'hfm-floating-scrollbar-thumb'
+    bar.setAttribute('role', 'scrollbar')
+    bar.setAttribute('aria-orientation', axis)
+    bar.setAttribute('aria-label', axis === 'vertical' ? '垂直滚动' : '水平滚动')
+    bar.tabIndex = 0
     bar.appendChild(thumb)
     document.body.appendChild(bar)
     return { bar, thumb }
   }
 
   function isActive(state: FloatingScrollbarState): boolean {
-    return state.hovered || state.focused || state.scrolling
+    return state.hovered || state.focused || state.scrolling || state.barHovered || state.dragging
   }
 
   function scheduleUpdate(): void {
@@ -58,11 +64,21 @@ export function setupFloatingScrollbars(): () => void {
     }
 
     const rect = host.getBoundingClientRect()
-    const visible = isActive(state) && rect.width > 0 && rect.height > 0
+    // Per-card horizontal bars must be clipped to the actual scroll viewport,
+    // including when virtualization keeps overscan cards outside the screen.
+    let left = Math.max(0, rect.left), top = Math.max(0, rect.top)
+    let right = Math.min(window.innerWidth, rect.right), bottom = Math.min(window.innerHeight, rect.bottom)
+    for (let parent = host.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent)
+      const bounds = parent.getBoundingClientRect()
+      if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) { left = Math.max(left, bounds.left); right = Math.min(right, bounds.right) }
+      if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) { top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.bottom) }
+    }
+    const visible = isActive(state) && right - left > 8 && bottom - top > 8
     const maxTop = host.scrollHeight - host.clientHeight
     const maxLeft = host.scrollWidth - host.clientWidth
-    const hasVertical = maxTop > 1
-    const hasHorizontal = maxLeft > 1
+    const hasVertical = maxTop > 1 && right - left > 8 && bottom - top > 8
+    const hasHorizontal = maxLeft > 1 && right - left > 8 && bottom - top > 8
 
     state.verticalBar.style.display = hasVertical ? 'block' : 'none'
     state.horizontalBar.style.display = hasHorizontal ? 'block' : 'none'
@@ -70,23 +86,29 @@ export function setupFloatingScrollbars(): () => void {
     state.horizontalBar.classList.toggle('visible', visible && hasHorizontal)
 
     if (hasVertical) {
-      const trackHeight = Math.max(0, rect.height - 8)
-      const thumbHeight = Math.max(28, Math.min(trackHeight, (host.clientHeight / host.scrollHeight) * trackHeight))
-      const thumbTop = maxTop > 0 ? (host.scrollTop / maxTop) * Math.max(0, trackHeight - thumbHeight) : 0
+      const trackHeight = Math.max(0, bottom - top - 8)
+      const thumbHeight = Math.min(trackHeight, Math.max(28, (host.clientHeight / host.scrollHeight) * trackHeight))
+      const thumbTop = (Math.max(0, Math.min(maxTop, host.scrollTop)) / maxTop) * Math.max(0, trackHeight - thumbHeight)
       state.verticalBar.style.width = '6px'
       state.verticalBar.style.height = `${trackHeight}px`
-      state.verticalBar.style.transform = `translate3d(${Math.round(rect.right - 9)}px, ${Math.round(rect.top + 4)}px, 0)`
+      state.verticalBar.style.transform = `translate3d(${Math.round(right - 9)}px, ${Math.round(top + 4)}px, 0)`
+      state.verticalBar.setAttribute('aria-valuemin', '0')
+      state.verticalBar.setAttribute('aria-valuemax', String(maxTop))
+      state.verticalBar.setAttribute('aria-valuenow', String(Math.round(host.scrollTop)))
       state.verticalThumb.style.height = `${thumbHeight}px`
       state.verticalThumb.style.transform = `translate3d(0, ${thumbTop}px, 0)`
     }
 
     if (hasHorizontal) {
-      const trackWidth = Math.max(0, rect.width - 8)
-      const thumbWidth = Math.max(28, Math.min(trackWidth, (host.clientWidth / host.scrollWidth) * trackWidth))
-      const thumbLeft = maxLeft > 0 ? (host.scrollLeft / maxLeft) * Math.max(0, trackWidth - thumbWidth) : 0
+      const trackWidth = Math.max(0, right - left - 8)
+      const thumbWidth = Math.min(trackWidth, Math.max(28, (host.clientWidth / host.scrollWidth) * trackWidth))
+      const thumbLeft = (Math.max(0, Math.min(maxLeft, host.scrollLeft)) / maxLeft) * Math.max(0, trackWidth - thumbWidth)
       state.horizontalBar.style.width = `${trackWidth}px`
       state.horizontalBar.style.height = '6px'
-      state.horizontalBar.style.transform = `translate3d(${Math.round(rect.left + 4)}px, ${Math.round(rect.bottom - 9)}px, 0)`
+      state.horizontalBar.style.transform = `translate3d(${Math.round(left + 4)}px, ${Math.round(bottom - 9)}px, 0)`
+      state.horizontalBar.setAttribute('aria-valuemin', '0')
+      state.horizontalBar.setAttribute('aria-valuemax', String(maxLeft))
+      state.horizontalBar.setAttribute('aria-valuenow', String(Math.round(host.scrollLeft)))
       state.horizontalThumb.style.width = `${thumbWidth}px`
       state.horizontalThumb.style.transform = `translate3d(${thumbLeft}px, 0, 0)`
     }
@@ -111,6 +133,8 @@ export function setupFloatingScrollbars(): () => void {
       hovered: false,
       focused: false,
       scrolling: false,
+      barHovered: false,
+      dragging: false,
       hideTimer: null,
       cleanup: []
     }
@@ -120,6 +144,59 @@ export function setupFloatingScrollbars(): () => void {
     addListener(host, 'mouseleave', () => { state.hovered = false; scheduleUpdate() }, state)
     addListener(host, 'focusin', () => { state.focused = true; scheduleUpdate() }, state)
     addListener(host, 'focusout', () => { state.focused = false; scheduleUpdate() }, state)
+
+    for (const axis of ['vertical', 'horizontal'] as const) {
+      const bar = axis === 'vertical' ? vertical.bar : horizontal.bar
+      const thumb = axis === 'vertical' ? vertical.thumb : horizontal.thumb
+      const position = axis === 'vertical' ? 'scrollTop' : 'scrollLeft'
+      let pointerId: number | null = null
+      let grabOffset = 0
+      const move = (event: PointerEvent) => {
+        const bounds = bar.getBoundingClientRect()
+        const length = axis === 'vertical' ? bounds.height : bounds.width
+        const thumbLength = axis === 'vertical' ? thumb.offsetHeight : thumb.offsetWidth
+        const coordinate = axis === 'vertical' ? event.clientY - bounds.top : event.clientX - bounds.left
+        const max = axis === 'vertical' ? host.scrollHeight - host.clientHeight : host.scrollWidth - host.clientWidth
+        if (length > thumbLength) host[position] = Math.max(0, Math.min(max, (coordinate - grabOffset) / (length - thumbLength) * max))
+        showTemporarily(state)
+      }
+      addListener(bar, 'pointerdown', event => {
+        if (event.button !== 0) return
+        event.preventDefault()
+        event.stopPropagation()
+        const bounds = thumb.getBoundingClientRect()
+        grabOffset = event.target === thumb
+          ? axis === 'vertical' ? event.clientY - bounds.top : event.clientX - bounds.left
+          : (axis === 'vertical' ? bounds.height : bounds.width) / 2
+        pointerId = event.pointerId
+        state.dragging = true
+        bar.setPointerCapture(pointerId)
+        move(event)
+      }, state)
+      addListener(bar, 'pointermove', event => { if (event.pointerId === pointerId) move(event) }, state)
+      const endDrag = () => { pointerId = null; state.dragging = false; showTemporarily(state) }
+      addListener(bar, 'pointerup', event => { if (event.pointerId === pointerId) { bar.releasePointerCapture(event.pointerId); endDrag() } }, state)
+      addListener(bar, 'lostpointercapture', endDrag, state)
+      addListener(bar, 'pointercancel', endDrag, state)
+      addListener(bar, 'mouseenter', () => { state.barHovered = true; scheduleUpdate() }, state)
+      addListener(bar, 'mouseleave', () => { state.barHovered = false; showTemporarily(state) }, state)
+      addListener(bar, 'focus', () => { state.focused = true; scheduleUpdate() }, state)
+      addListener(bar, 'blur', () => { state.focused = false; scheduleUpdate() }, state)
+      addListener(bar, 'click', event => event.stopPropagation(), state)
+      addListener(bar, 'keydown', event => {
+        const extent = axis === 'vertical' ? host.clientHeight : host.clientWidth
+        const max = axis === 'vertical' ? host.scrollHeight - extent : host.scrollWidth - extent
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? max
+          : event.key === 'PageDown' ? host[position] + extent : event.key === 'PageUp' ? host[position] - extent
+            : event.key === (axis === 'vertical' ? 'ArrowDown' : 'ArrowRight') ? host[position] + 40
+              : event.key === (axis === 'vertical' ? 'ArrowUp' : 'ArrowLeft') ? host[position] - 40 : null
+        if (next === null) return
+        event.preventDefault()
+        event.stopPropagation()
+        host[position] = Math.max(0, Math.min(max, next))
+        showTemporarily(state)
+      }, state)
+    }
 
     states.set(host, state)
     resizeObserver?.observe(host)
@@ -159,6 +236,7 @@ export function setupFloatingScrollbars(): () => void {
   const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(scheduleUpdate) : null
   const syncTimer = window.setInterval(scheduleSync, 1200)
   window.addEventListener('resize', scheduleSync)
+  document.addEventListener('scroll', scheduleUpdate, true)
 
   syncHosts()
 
@@ -167,6 +245,7 @@ export function setupFloatingScrollbars(): () => void {
     window.cancelAnimationFrame(syncRaf)
     window.clearInterval(syncTimer)
     window.removeEventListener('resize', scheduleSync)
+    document.removeEventListener('scroll', scheduleUpdate, true)
     mutationObserver.disconnect()
     resizeObserver?.disconnect()
     Array.from(states.keys()).forEach(removeState)

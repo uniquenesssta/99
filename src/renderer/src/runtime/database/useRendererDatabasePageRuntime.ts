@@ -16,7 +16,7 @@ normalizeFontMetricsResult,
 rendererFontQueryCacheKey
 } from '../../appRuntime'
 import { createRendererFontQueryRequest } from '../../fontViewRuntime'
-import { DATABASE_INCREMENTAL_PAGE_SIZE,buildRendererDatabasePageWindow,nextRendererDatabasePageOffset,shouldGrowRendererDatabasePage } from './rendererDatabasePageWindowRuntime'
+import { DATABASE_INCREMENTAL_PAGE_SIZE,buildRendererDatabasePageWindow,rendererDatabaseViewportPageOffset } from './rendererDatabasePageWindowRuntime'
 
 function databaseQueryScopeKey(queryKey: string | undefined): string {
   if (!queryKey) return ''
@@ -36,18 +36,23 @@ function databaseTraceSeverity(durationMs: number): 'info' | 'slow' | 'warn' {
   return 'info'
 }
 
-function mergeIncrementalDatabasePage(previous: FontQueryPageResult | null, result: FontQueryPageResult): FontQueryPageResult {
-  if (!previous || result.offset <= 0 || previous.offset !== 0) return result
+export function mergeIncrementalDatabasePage(previous: FontQueryPageResult | null, result: FontQueryPageResult): FontQueryPageResult {
+  if (!previous || result.offset <= 0 || previous.total !== result.total) return result
   if (databaseQueryScopeKey(previous.queryKey) !== databaseQueryScopeKey(result.queryKey)) return result
+  // Only join overlapping/adjacent ranges. A jump to page 80 is not page 2.
+  if (result.offset > previous.offset + previous.items.length || result.offset + result.items.length < previous.offset) return result
+  // A response for the same range replaces it; a refresh cannot retain stale rows.
+  if (result.offset === previous.offset) return result
 
   const seen = new Set<string>()
   const items: FontItem[] = []
-  for (const font of previous.items || []) {
+  const pages = result.offset < previous.offset ? [result, previous] : [previous, result]
+  for (const font of pages[0].items || []) {
     if (!font?.id || seen.has(font.id)) continue
     seen.add(font.id)
     items.push(font)
   }
-  for (const font of result.items || []) {
+  for (const font of pages[1].items || []) {
     if (!font?.id || seen.has(font.id)) continue
     seen.add(font.id)
     items.push(font)
@@ -56,9 +61,9 @@ function mergeIncrementalDatabasePage(previous: FontQueryPageResult | null, resu
   return {
     ...result,
     items,
-    offset: 0,
+    offset: Math.min(previous.offset, result.offset),
     limit: items.length,
-    truncated: items.length < result.total
+    truncated: Math.min(previous.offset, result.offset) + items.length < result.total
   }
 }
 
@@ -364,20 +369,17 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
 
   useEffect(() => {
     if (!databasePageReady || !options.databasePageResult) return
-    if (options.databasePageResult.offset !== 0) return
     const loadedItems = options.databasePageResult.items.length
-    if (!shouldGrowRendererDatabasePage({
+    const nextOffset = rendererDatabaseViewportPageOffset({
+      offset: options.databasePageResult.offset,
       loadedItems,
       totalItems: options.databasePageResult.total,
       viewportHeight: options.virtualViewport.height,
       scrollTop: options.virtualViewport.scrollTop,
       rowHeight: options.viewLayout.rowHeight,
       columns: databasePageWindow.columns
-    })) return
-    setIncrementalPageOffset((current) => {
-      const nextOffset = nextRendererDatabasePageOffset(loadedItems, options.databasePageResult?.total || 0)
-      return nextOffset > current ? nextOffset : current
     })
+    if (nextOffset !== null) setIncrementalPageOffset(nextOffset)
   }, [databasePageReady, options.databasePageResult, options.virtualViewport.height, options.virtualViewport.scrollTop, options.viewLayout.rowHeight, databasePageWindow.columns])
 
   return {

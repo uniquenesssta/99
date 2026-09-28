@@ -344,6 +344,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
       legacyRootPreviewCacheDir: storage.legacyRootPreviewCacheDir,
       rootPreviewImageDir: storage.rootPreviewImageDir,
       rootPreviewDbPath: storage.rootPreviewDbPath,
+      fallbackPreviewDbPath: storage.fallbackPreviewDbPath,
       fallbackPreviewImageDir: storage.fallbackPreviewImageDir,
       localPreviewImageDir: storage.localPreviewImageDir,
       cacheKeyForRootFile: storage.cacheKeyForRootFile,

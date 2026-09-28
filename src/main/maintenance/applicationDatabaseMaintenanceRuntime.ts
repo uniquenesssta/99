@@ -42,8 +42,11 @@ export type ApplicationDatabaseMaintenanceRuntimeOptions = {
   getOpenLibraryDb: () => any | null;
   getOpenPreviewDb: () => any | null;
   loadLibraryShell: () => Promise<LibraryShell>;
+  appWatchedFolders: () => Promise<string[]>;
   localPreviewImageDir: () => string;
   rootPreviewImageDir: (rootPath: string) => string;
+  rootPreviewDbPath: (rootPath: string) => string;
+  fallbackPreviewDbPath: (rootPath: string) => string;
   rootCacheDir: (rootPath: string) => string;
   rootIndexDbPath: (rootPath: string) => string;
   legacyRootPreviewCacheDir: (rootPath: string) => string;
@@ -106,8 +109,11 @@ export function createApplicationDatabaseMaintenanceRuntime(
     getOpenLibraryDb,
     getOpenPreviewDb,
     loadLibraryShell,
+    appWatchedFolders,
     localPreviewImageDir,
     rootPreviewImageDir,
+    rootPreviewDbPath,
+    fallbackPreviewDbPath,
     rootCacheDir,
     rootIndexDbPath,
     legacyRootPreviewCacheDir,
@@ -167,23 +173,22 @@ export function createApplicationDatabaseMaintenanceRuntime(
     return metricsSqlitePath();
   }
 
-  async function collectPreviewMaintenanceDirs(): Promise<string[]> {
-    const dirs = new Set<string>([localPreviewImageDir()]);
+  async function collectPreviewMaintenanceDirs(): Promise<Array<{ dirPath: string; referenceDbPath: string }>> {
+    const dirs = new Map<string, string>([[localPreviewImageDir(), previewSqlitePath()]]);
     try {
-      const library = await loadLibraryShell();
-      for (const rawFolder of library.folders || []) {
+      for (const rawFolder of await appWatchedFolders()) {
         if (!rawFolder) continue;
         const folder = resolve(rawFolder);
-        dirs.add(rootPreviewImageDir(folder));
-        dirs.add(legacyRootPreviewCacheDir(folder));
-        dirs.add(fallbackPreviewImageDir(folder));
+        dirs.set(rootPreviewImageDir(folder), rootPreviewDbPath(folder));
+        dirs.set(legacyRootPreviewCacheDir(folder), rootPreviewDbPath(folder));
+        dirs.set(fallbackPreviewImageDir(folder), fallbackPreviewDbPath(folder));
       }
     } catch (error) {
       appendStartupLog(
         `preview maintenance folder lookup skipped: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    return Array.from(dirs);
+    return Array.from(dirs, ([dirPath, referenceDbPath]) => ({ dirPath, referenceDbPath }));
   }
 
   const { runSharedIndexSnapshotAutoMaintenance } = createSharedIndexSnapshotAutoMaintenanceRuntime({

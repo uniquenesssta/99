@@ -81,11 +81,11 @@ export type DatabaseMaintenanceRuntimeOptions = {
   openPreviewDb: () => Promise<any>
   previewSqlitePath: () => string
   previewSqliteSchemaVersion: number
-  collectPreviewMaintenanceDirs: () => Promise<string[]>
+  collectPreviewMaintenanceDirs: () => Promise<Array<{ dirPath: string; referenceDbPath: string }>>
   normalizePathForCacheCompare: (value: string) => string
   runTaskMaintenance: () => Promise<TaskMaintenanceReport>
   runSharedIndexSnapshotAutoMaintenance?: () => Promise<SharedIndexSnapshotAutoMaintenanceReport>
   runRustDatabaseHealthCheck?: (input: { items: Array<{ label: string; filePath: string }>; busyTimeoutMs?: number }) => Promise<{ items: DatabaseHealthItem[]; elapsedMs: number; workerMode: 'rust-database-health-check' } | null>
   runRustDatabaseBackup?: (input: { appName: string; schemaVersion: number; dataRoot: string; backupsRoot: string; retentionCount: number; reason: string; createdAt: string; backupDirName: string; items: Array<{ label: string; filePath: string }>; busyTimeoutMs?: number }) => Promise<(DatabaseBackupReport & { elapsedMs: number; workerMode: 'rust-database-backup' }) | null>
-  runRustPreviewCacheMaintenance?: (input: { dbPath: string; schemaVersion: number; now: string; previewDirs: string[]; previewOkRetentionMs: number; orphanRetentionMs: number }) => Promise<(PreviewMaintenanceReport & { workerMode: 'rust-preview-cache-maintenance' }) | null>
+  runRustPreviewCacheMaintenance?: (input: import('../rust-core/rustCoreWorkerContracts').RustPreviewCacheMaintenanceInput) => Promise<(PreviewMaintenanceReport & { workerMode: 'rust-preview-cache-maintenance' }) | null>
 }

@@ -102,6 +102,23 @@ pub struct PreviewCacheMaintenancePayload {
     pub preview_ok_retention_ms: i64,
     #[serde(default)]
     pub orphan_retention_ms: i64,
+    #[serde(default)]
+    pub batch: Option<PreviewCacheMaintenanceBatch>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewCacheMaintenanceBatch {
+    pub rows: Vec<PreviewCacheMaintenanceRow>,
+    pub orphan_files: Vec<String>,
+    pub reference_db_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewCacheMaintenanceRow {
+    pub preview_key: String,
+    pub output_path: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

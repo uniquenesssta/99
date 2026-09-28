@@ -44,8 +44,8 @@
       ],
       "functions": {
         "runRustPreviewRenderImage": "4abd0a6c1f64ef4cb84622b83290fe79455502f7b10fb4f8cb032a5576038adf",
-        "runRustPreviewCacheInputCommand": "0c4dabe553393e2e3773e728cf1be8447bb955bf38bfa683a0e7eae6633a1ced",
-        "runRustPreviewCacheMaintenance": "eaad38eb2f51486894612442a9e33196207bc6e22274455ceec7d129ac4da9b2",
+        "runRustPreviewCacheInputCommand": "484c07a8a5f50e3e70504c5bf452b04febdcc581ec426aea74d2a4c890da9e35",
+        "runRustPreviewCacheMaintenance": "47b12d8cbb1901fece5aaa9d38043eaa8b4a6a32083e10f1f9012f9de5f80371",
         "runRustPreviewCacheBatch": "eea2b11ed1aed52b27b194d86b1d724af66181d3478635f9a0aecff633aeffca",
         "runRustPreviewCacheTouch": "8c60eb153bef9986a4115c358bb316f08256cef394ad517dde8aa054c155f666",
         "runRustPreviewCacheQuery": "73f4b317875cfe133fbe73dbec527b6167e3025723bc4c647ff1bccef7179a33",

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { normalizePathForCacheCompare } from '../../path/cachePath'
-import { unavailableRootTtlMs } from '../../path/ioDeadlineRuntime'
+import { isIoDeadlineTimeout, unavailableRootTtlMs } from '../../path/ioDeadlineRuntime'
 import { ensureStartupPathRootAvailable, getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
 import { createPreviewSharedStorageCircuitBreakerRuntime } from './previewSharedStorageCircuitBreakerRuntime'
 
@@ -67,6 +67,9 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
 
   function markRootPreviewCacheUnavailable(rootPath: string, error: unknown): void {
     if (!rootPath) return
+    // A caller's response budget includes scheduler wait; it is not evidence
+    // that the device/root is offline. Physical I/O remains owned until closed.
+    if (isIoDeadlineTimeout(error)) return
     const failure = error as { reason?: string; name?: string } | null
     if (failure?.name === 'AbortError' || ['cancelled', 'stopping', 'closing', 'stale-generation', 'queue-timeout', 'queue-full', 'capability-missing', 'capability-unavailable'].includes(failure?.reason || '')) return
     const rootState = getStartupPathRootState(rootPath)
@@ -129,7 +132,10 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
         entries.set(key, { available: true, rootGeneration: state.generation, rootId: state.rootId, expiresAt: now() + availableTtlMs })
         return true
       } catch (error) {
-        if (entries.get(key)?.probeToken === probeToken) markRootPreviewCacheUnavailable(rootPath, error)
+        if (entries.get(key)?.probeToken === probeToken) {
+          entries.delete(key)
+          markRootPreviewCacheUnavailable(rootPath, error)
+        }
         return false
       }
     })()

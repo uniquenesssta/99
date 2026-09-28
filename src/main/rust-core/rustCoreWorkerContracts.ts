@@ -677,6 +677,12 @@ export type RustPreviewCacheMaintenanceInput = {
   previewDirs: string[]
   previewOkRetentionMs: number
   orphanRetentionMs: number
+  /** Capability-gated: only these declared files may be inspected/mutated. */
+  batch?: {
+    rows: Array<{ previewKey: string; outputPath: string }>
+    orphanFiles: string[]
+    referenceDbPath?: string
+  }
 }
 
 export type RustPreviewCacheMaintenanceResult = {

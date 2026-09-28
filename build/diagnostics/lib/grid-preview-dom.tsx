@@ -34,7 +34,15 @@ function check(ok:unknown,label:string){if(!ok)throw Error('[grid-preview] '+lab
    const lines=[...host.querySelectorAll('.font-sample-line')]
    check(lines.map(e=>e.textContent).join('\n')===layout.text,'text was shortened or whitespace lost')
    if(layout.lines.some((s:string)=>s===''))check(lines.every(e=>e.getBoundingClientRect().height>0),'empty explicit line collapsed')
-  }else check(!!host.querySelector('img'),'PNG never displayed')
+  }else {
+   const image=host.querySelector('img')!
+   check(!!image,'PNG never displayed')
+   for(const theme of ['light','dark']) {
+    document.documentElement.dataset.theme=theme
+    check(getComputedStyle(image).filter===(theme==='light'?'invert(1)':'none'),'native PNG theme color differs from text route: '+theme)
+   }
+   document.documentElement.dataset.theme='light'
+  }
   const overflow=host.querySelector('.grid-preview')!.getAttribute('data-overflow')==='true'
   if(rect.width>box.width+1||rect.height>box.height+1)check(overflow,'clipping without disclosure')
   if(overflow)check(host.querySelector('.grid-preview-hint')!.textContent!.includes('打开详情'),'missing overflow hint')

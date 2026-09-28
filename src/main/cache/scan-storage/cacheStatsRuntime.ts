@@ -1,4 +1,5 @@
 import type { Dirent } from "node:fs";
+import { readSharedDirectoryMetadata, type SharedDirectoryEntry } from '../../path/sharedDirectoryMetadataRuntime'
 import { sharedSqliteReadSnapshot, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname, join, resolve } from "node:path";
 import type { CacheStats } from "../../../shared/types";
@@ -23,6 +24,7 @@ export function createCacheStatsRuntime(
   },
 ) {
   let cachedStats: { value: CacheStats; expiresAt: number } | null = null;
+  let statsInFlight: Promise<CacheStats> | null = null;
   const directorySizeCache = new Map<
     string,
     { value: number; expiresAt: number }
@@ -132,8 +134,11 @@ export function createCacheStatsRuntime(
     }
     const inFlight = fileStatsInFlight.get(key);
     if (inFlight) return { ...(await inFlight) };
-    const value = await readCacheStatsForFile(filePath, rootPath, storage);
-    return { ...rememberFileStats(filePath, value) };
+    const task = readCacheStatsForFile(filePath, rootPath, storage)
+      .then(value => rememberFileStats(filePath, value))
+      .finally(() => fileStatsInFlight.delete(key));
+    fileStatsInFlight.set(key, task);
+    return { ...(await task) };
   }
 
   function addCacheStats(a: CacheStats, b: CacheStats): CacheStats {
@@ -147,9 +152,10 @@ export function createCacheStatsRuntime(
 
   async function directorySizeBytes(dirPath: string): Promise<number> {
     let total = 0;
-    let entries: Dirent[];
+    let entries: Array<Dirent | SharedDirectoryEntry>;
     try {
-      entries = await fsp.readdir(dirPath, { withFileTypes: true });
+      const receipt = await readSharedDirectoryMetadata(dirPath);
+      entries = receipt?.entries ?? await fsp.readdir(dirPath, { withFileTypes: true });
     } catch {
       return 0;
     }
@@ -160,7 +166,7 @@ export function createCacheStatsRuntime(
         if (entry.isDirectory()) {
           total += await directorySizeBytes(fullPath);
         } else if (entry.isFile()) {
-          total += (await fsp.stat(fullPath)).size;
+          total += ('stat' in entry && entry.stat ? entry.stat : await fsp.stat(fullPath)).size;
         }
       } catch {
         // ignore disappearing cache files
@@ -255,7 +261,7 @@ export function createCacheStatsRuntime(
     }
   }
 
-  async function getCacheStats(): Promise<CacheStats> {
+  async function readCacheStats(): Promise<CacheStats> {
     const now = Date.now();
     if (cachedStats && cachedStats.expiresAt > now)
       return { ...cachedStats.value };
@@ -289,8 +295,7 @@ export function createCacheStatsRuntime(
     }
 
     try {
-      const library = await options.loadLibraryShell();
-      for (const rawFolder of library.folders || []) {
+      for (const rawFolder of await options.appWatchedFolders()) {
         if (!rawFolder) continue;
         const folder = resolve(rawFolder);
         for (const dbPath of await options.listRootIndexDatabaseFiles(
@@ -334,6 +339,12 @@ export function createCacheStatsRuntime(
       expiresAt: Date.now() + DEFAULT_CACHE_STATS_TTL_MS,
     };
     return stats;
+  }
+
+  async function getCacheStats(): Promise<CacheStats> {
+    if (cachedStats && cachedStats.expiresAt > Date.now()) return { ...cachedStats.value };
+    if (!statsInFlight) statsInFlight = readCacheStats().finally(() => { statsInFlight = null; });
+    return { ...(await statsInFlight) };
   }
 
   return {

@@ -71,6 +71,7 @@ jobs:
       - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml preview_render::types::tests
       - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml shared_file_io::tests
       - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml preview_cache::readonly_tests
+      - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml preview_cache::bounded_maintenance::tests
       - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml core_daemon::lanes::tests
       - run: cargo build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml
       - name: Exercise native directory receipts through scan listing

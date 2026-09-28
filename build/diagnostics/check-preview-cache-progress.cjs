@@ -71,7 +71,7 @@ async function queue(mode) {
 }
 async function availability() {
  let generation=1, probes=0, online=true;
- const load=loader({'../../path/startupPathAvailabilityRuntime':{getStartupPathRootState:()=>({rootId:'root',generation,state:online?'online':'offline'}),ensureStartupPathRootAvailable:async()=>{probes++;return online}},'../../path/ioDeadlineRuntime':{unavailableRootTtlMs:()=>30000}});
+ const load=loader({'../../path/startupPathAvailabilityRuntime':{getStartupPathRootState:()=>({rootId:'root',generation,state:online?'online':'offline'}),ensureStartupPathRootAvailable:async()=>{probes++;return online}}});
  const owner=load('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts').createPreviewCacheRootAvailabilityRuntime();
  assert.equal(await owner.ensureRootPreviewCacheAvailable('/root'),true);
  assert.equal(await owner.ensureRootPreviewCacheAvailable('/root'),true);assert.equal(probes,1);

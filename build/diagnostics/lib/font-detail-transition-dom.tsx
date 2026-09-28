@@ -1,5 +1,6 @@
 import './grid-preview-dom'
 import './grid-preview-postprocess-dom'
+import './view-feedback-dom'
 // Real React mounting, production cards/panel/layout and transition owners.
 // Font data and detail content are fixtures; no native renderer or database I/O.
 import React, { useRef, useState } from 'react'
@@ -48,7 +49,8 @@ function snapshot(id?:string) {
  const cards=[...node.querySelectorAll<HTMLElement>('[data-font-id]')]
  const target=id?cards.find(c=>c.dataset.fontId===id):cards.find(c=>c.getBoundingClientRect().bottom>node.getBoundingClientRect().top+20)
  const r=target?.getBoundingClientRect()
- return {top:node.scrollTop,width:node.clientWidth,id:target?.dataset.fontId,x:r?.x,y:r?.y,preview:(target?.querySelector('.list-preview-scroll') as HTMLElement)?.scrollLeft||0}
+ const preview=target?.querySelector('.list-preview-scroll') as HTMLElement
+ return {top:node.scrollTop,width:node.clientWidth,id:target?.dataset.fontId,x:r?.x,y:r?.y,preview:preview?.scrollLeft||0,previewX:preview?.getBoundingClientRect().x,stride:current.layout.rowHeight,titleSize:target?getComputedStyle(target.querySelector('.font-row-title')||target).fontSize:''}
 }
 async function settleAndTrack(id:string) {
  const samples=[]
@@ -81,7 +83,12 @@ async function settleAndTrack(id:string) {
      const target=mode==='list'?card.querySelector('.font-row-name-simple') as HTMLElement:card
      flushSync(()=>round===0?target.dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true,cancelable:true})):card.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})))
      check(current.selection.detailVisible,`${mode}/${offset}/${position}/${round}: card input failed to open detail`)
-     await settleAndTrack(before.id!)
+     const docked=await settleAndTrack(before.id!)
+     if(mode==='list'&&before.width>=720&&docked.width>=720) {
+      check(docked.previewX===before.previewX,'detail docking moved preview column')
+      check(docked.stride===before.stride,'detail docking changed row stride')
+      check(docked.titleSize===before.titleSize,'detail docking changed title size')
+     }
      check(document.querySelector(`[data-font-id="${before.id}"]`),'selected card disappeared')
      if(round===1)flushSync(()=>current.scroll(current.node.scrollTop+600))
      flushSync(()=>document.getElementById('cancel-detail')!.click())

@@ -119,6 +119,7 @@ export interface MainOperationsCompositionOptions {
     | 'writeRootPreviewCacheManifest'
     | 'rootPreviewCacheDir'
     | 'rootPreviewDbPath'
+    | 'fallbackPreviewDbPath'
     | 'isIgnoredWatcherPath'
   >;
   logging: Pick<Core['logging'],
@@ -261,6 +262,7 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     writeRootPreviewCacheManifest,
     rootPreviewCacheDir,
     rootPreviewDbPath,
+    fallbackPreviewDbPath,
     isIgnoredWatcherPath,
   } = options.storage;
   const { appendStartupLog } = options.logging;
@@ -438,6 +440,8 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     loadLibraryShell,
     localPreviewImageDir,
     rootPreviewImageDir,
+    rootPreviewDbPath,
+    fallbackPreviewDbPath,
     rootCacheDir,
     rootIndexDbPath,
     legacyRootPreviewCacheDir,

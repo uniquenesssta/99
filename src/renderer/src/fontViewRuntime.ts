@@ -179,22 +179,27 @@ export function buildVirtualLayout(options: VirtualLayoutOptions): VirtualLayout
   const panelPadding = options.panelPadding ?? VIRTUAL_PANEL_PADDING
   const rowGap = options.rowGap ?? 0
   const incrementalDatabasePage = Boolean(options.databasePageReady && options.databasePageResult && options.databasePageResult.offset === 0)
-  const totalCount = incrementalDatabasePage
-    ? options.visibleFonts.length
-    : options.databasePageReady
-      ? (options.databasePageResult?.total || 0)
-      : options.visibleFonts.length
+  // The scrollbar represents the query, not the number of pages fetched so far.
+  // Replacing/refilling a page must never shorten the browser's scroll range.
+  const totalCount = options.databasePageReady
+    ? (options.databasePageResult?.total || 0)
+    : options.visibleFonts.length
   const totalRows = Math.ceil(totalCount / columns)
 
   if (options.databasePageReady && options.databasePageResult && !incrementalDatabasePage) {
-    const pageRow = Math.floor(options.databasePageResult.offset / Math.max(1, columns))
+    const offset = options.databasePageResult.offset
+    const visibleRows = Math.ceil(Math.max(1, options.virtualViewport.height) / options.rowHeight) + VIRTUAL_OVERSCAN_ROWS * 2
+    const firstRow = Math.max(0, Math.floor(Math.max(0, options.virtualViewport.scrollTop - panelPadding) / options.rowHeight) - VIRTUAL_OVERSCAN_ROWS)
+    const lastStartRow = Math.max(0, Math.ceil((offset + options.visibleFonts.length) / columns) - visibleRows)
+    const startIndex = Math.max(offset, Math.min(firstRow, lastStartRow) * columns)
+    const endIndex = Math.min(offset + options.visibleFonts.length, (Math.floor(startIndex / columns) + visibleRows) * columns)
     return {
-      items: options.visibleFonts,
-      top: panelPadding + pageRow * options.rowHeight,
+      items: options.visibleFonts.slice(startIndex - offset, endIndex - offset),
+      top: panelPadding + Math.floor(startIndex / columns) * options.rowHeight,
       totalHeight: Math.max(280, panelPadding * 2 + Math.max(0, totalRows * options.rowHeight - rowGap)),
       columns,
-      startIndex: options.databasePageResult.offset,
-      endIndex: options.databasePageResult.offset + options.visibleFonts.length
+      startIndex,
+      endIndex
     }
   }
 

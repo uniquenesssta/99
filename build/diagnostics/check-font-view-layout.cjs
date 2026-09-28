@@ -23,6 +23,10 @@ function behavior(overrides = {}) {
     }
   }
   const before = build('grid', 'comfortable', 1180, 44, 2), after = build('list', 'comfortable', 600, 72, 2)
+  for (const density of ['compact', 'comfortable', 'large']) for (const size of [18, 57, 72]) for (const lines of [1, 2]) {
+    const wide = build('list', density, 1218, size, lines), docked = build('list', density, 848, size, lines)
+    for (const key of ['rowHeight', 'cardHeight', 'rowGap', 'cardPaddingX', 'previewHeight']) assert.equal(wide[key], docked[key], 'detail docking changed list geometry: ' + key)
+  }
   const node = { scrollTop: 14 + before.rowHeight * 20 + 27, clientWidth: 600, clientHeight: 520, scrollHeight: 1e6 }
   // The DOM already has its new width: capture must use committed old columns.
   const selected = fonts[20 * before.columns + 1].id
@@ -34,6 +38,22 @@ function behavior(overrides = {}) {
   const paged = virtual({ ...before, databasePageReady: true, databasePageResult: { offset: 100, total: 1003 }, visibleFonts: fonts.slice(100, 200), virtualViewport: { width: 1180, height: 520, scrollTop: 0 } })
   assert.equal(paged.top, 14 + Math.floor(100 / before.columns) * before.rowHeight)
   assert.equal(paged.startIndex, 100)
+  const windowPolicy = load(prefix + 'runtime/database/rendererDatabasePageWindowRuntime.ts').rendererDatabaseViewportPageOffset
+  for (const mode of ['list', 'grid']) {
+    const layout = build(mode, 'comfortable', 1218, 57, 1), viewport = { width: 1218, height: 520, scrollTop: 25000 }
+    const heights = [100, 200, 50].map(count => virtual({ ...layout, visibleFonts: fonts.slice(0, count), virtualViewport: viewport,
+      databasePageReady: true, databasePageResult: { offset: 0, total: 10000 } }).totalHeight)
+    assert.equal(new Set(heights).size, 1, 'page refill shrank browser scroll range')
+    const jump = windowPolicy({ offset: 0, loadedItems: 100, totalItems: 10000, viewportHeight: 520, scrollTop: 500 * layout.rowHeight + 14, rowHeight: layout.rowHeight, columns: layout.columns })
+    assert.equal(jump, Math.floor(500 * layout.columns / 100) * 100, 'fast jump serially crawls intermediate pages')
+    assert.equal(windowPolicy({ offset: jump, loadedItems: 100, totalItems: 10000, viewportHeight: 520, scrollTop: 0, rowHeight: layout.rowHeight, columns: layout.columns }), 0, 'backward jump cannot reload page zero')
+  }
+  const merge = load(prefix + 'runtime/database/useRendererDatabasePageRuntime.ts').mergeIncrementalDatabasePage
+  const pageResult = (offset, count = 100) => ({ offset, items: fonts.slice(offset, offset + count), total: 1003, queryKey: JSON.stringify({ offset, limit: count, keyword: '' }) })
+  assert.equal(merge(pageResult(0), pageResult(500)).offset, 500, 'noncontiguous ranges falsely concatenated')
+  assert.equal(merge(pageResult(500), pageResult(600)).items.length, 200)
+  assert.equal(merge(pageResult(500), pageResult(400)).offset, 400)
+  assert.equal(merge(pageResult(500), pageResult(0)).offset, 0)
   const page = load(prefix + 'runtime/database/rendererDatabasePageWindowRuntime.ts').buildRendererDatabasePageWindow({ ...before, width: 600, height: 520, scrollTop: 5000, pageOffset: 199 })
   assert.equal(page.columns, before.columns); assert.equal(page.offset, 100); assert.equal(page.limit, 100)
   const fallback = load(prefix + 'runtime/app/cardPoolViewModePolicyRuntime.ts').effectiveCardPoolViewMode

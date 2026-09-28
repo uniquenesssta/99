@@ -5,6 +5,7 @@
 }
 
 :root[data-theme="light"] .font-sample-image,
+:root[data-theme="light"] .grid-native-preview-image,
 :root[data-theme="light"] .large-preview-image {
   filter: invert(1) !important;
 }

@@ -14,6 +14,9 @@ pub fn run_preview_cache_maintenance(config: &PreviewCacheCommandConfig) -> Resu
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
     let payload: PreviewCacheMaintenancePayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
+    if payload.batch.is_some() {
+        return super::bounded_maintenance::run(&payload);
+    }
     if let Some(parent) = Path::new(&payload.db_path).parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -115,7 +118,7 @@ pub fn run_preview_cache_maintenance(config: &PreviewCacheCommandConfig) -> Resu
     serde_json::to_string(&result).map_err(|error| error.to_string())
 }
 
-fn is_iso_older_than(value: Option<&String>, retention_ms: i64) -> bool {
+pub(super) fn is_iso_older_than(value: Option<&String>, retention_ms: i64) -> bool {
     if retention_ms <= 0 {
         return false;
     }

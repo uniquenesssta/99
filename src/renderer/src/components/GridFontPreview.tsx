@@ -21,7 +21,7 @@ export function GridFontPreview({ layout, image, enabled = true, fontFamily, onI
   return <div className="grid-preview" data-overflow={fit.overflow || undefined}>
     <div className="grid-preview-viewport" ref={fit.viewportRef}>
       <div className={`grid-preview-content${nativeImage ? ' grid-preview-png' : ' preview-layout-text preview-layout-grid'}`} ref={fit.contentRef} style={style}>
-        {nativeImage ? trimmed && <img src={trimmed.image} alt="字体预览" decoding="async" onLoad={onImageLoad} onError={onImageError} />
+        {nativeImage ? trimmed && <img className="grid-native-preview-image" src={trimmed.image} alt="字体预览" decoding="async" onLoad={onImageLoad} onError={onImageError} />
           : layout.lines.map((line, index) => <span key={index} className="font-sample-line">{line}</span>)}
       </div>
     </div>
