@@ -9,6 +9,7 @@
 - S10-06 工程核查既有结论保留，参见[旧 Stage 10 §19.1](../old%20task/HFM_STAGE_10_PREVIEW_PERFORMANCE_TASKBOOK.md#191-用户取消专项人工验收并推进-s10-062026-09-27)。本专项不是重开 05.5，也不把历史未验收事项自动判定完成。
 - V03 初始显示和详情开合修复已通过自动化复验，用户本机显示待确认，见 §12.4～§12.5。用户随后明确授权推进 V04 并允许提交；V04 实现与自动化验证已完成，见 §14；V05 实现与自动化验证已完成，见 §15。授权单项只执行该项；授权整个专项后按依赖推进，不逐项索要重复许可。
 - 2026-09-28 用户要求核对预览链路优化归属，缺项则补为最终收官前的最后优化，并授权推进 V05。新增 **S11-V06.5**，放在 V06 后、V07 前；本次仅授权该项任务编制，不提前实施。当时 V05 因 V04 未开始而等待，历史核查见 §13；现 V04 自动化前置已满足，V05 已按新授权实施并通过自动化验证，见 §15。
+- 2026-09-28 用户明确“开始06”；以 `e388b114a4e293676cdcc50213ef1e9cb4fa1f56` 为基线推进 V06 相关回归，提交仍在 Stage 11 分支。V06.5/V07 不随本次授权启动；目标显示缺少的实际回执按 §16 保留。
 - 本次没有用户指定或任务书引用的 Figma 文件/节点，未据此虚构设计基准；沿现有应用风格提出下述方案。如后续明确指定 Figma，再核对相关节点。
 - 项目文档总入口：[docs/README.md](../README.md)；原总任务书及 15 份旧专项/阶段任务全部归档，旧任务状态与回执保留。
 
@@ -115,7 +116,7 @@ P1 表示显示内容/定位正确性或明确浪费，P2 表示体验及验证�
 | S11-V03 | 列表字号、对齐、换行及原生链路 | V02 | 初始显示及详情开合修复通过自动化复验，用户本机显示待确认；见 §12.4～§12.5 |
 | S11-V04 | 网格完整内容与图片/文字一致性 | V03 | 实现与自动化验证已完成；161 项诊断、54 张网格 PNG、140 次网格 DOM 场景及 CI 通过，见 §14 |
 | S11-V05 | 图片后处理及视图切换资源优化 | V04 | 实现与自动化验证已完成；161 项诊断、Windows 真实组件资源/生命周期门及三组 CI 通过，见 §15 |
-| S11-V06 | 相关回归与目标环境显示核实 | V01～V05 | 未开始 |
+| S11-V06 | 相关回归与目标环境显示核实 | V01～V05 | 联合回归已补齐，验证进行中；Windows 开发窗口相关显示待验，见 §16 |
 | S11-V06.5 | 收官前预览完整链路定位与优化 | V06、实施授权 | 已补入计划，未实施；必须在 V07 前完成 |
 | S11-V07 | 清理、兼容复核与工程收尾 | V06、V06.5 必需门通过 | 未开始 |
 
@@ -210,7 +211,7 @@ P1 表示显示内容/定位正确性或明确浪费，P2 表示体验及验证�
 | 并发与滚动不回退 | 真实队列/底层生命周期 | `diagnostics:preview-scroll-admission`、`diagnostics:preview-render-concurrency` |
 | 错图、输入与兼容 | 新旧参数、legacy/strict 键和版本隔离 | `diagnostics:preview-input-boundary`、`diagnostics:preview-cache-key-policy`、`diagnostics:preview-cache-generation`、`diagnostics:preview-image-ownership` |
 | 共享缓存和离线退出 | 延迟、取消、根代次、读取/发布所有权 | `diagnostics:preview-resource-admission`、`diagnostics:preview-optional-cache`、`diagnostics:preview-recovery` |
-| 原生字形正确性 | 当前默认 Windows 后端真实输出及实际 Electron 显示 | Windows 开发模式及受影响原生 CI；本轮未执行 |
+| 原生字形正确性 | 当前默认 Windows 后端真实输出及实际 Electron 显示 | Windows 开发模式及受影响原生 CI；自动化与实机证据边界见 §16 |
 
 全量验证从 package.json 读取，不发明脚本名。若测性能，记录机器/字体来源/样本/路由/缓存状态及真实可见完成，而不是把 native 渲染毫秒当整屏时间；没有数据就只报告消除的工作与正确性变化。
 
@@ -465,3 +466,26 @@ flowchart TD
 - 结论：V05 实现与自动化验证完成；V06 相关回归/目标核实、V06.5 完整预览链路优化和 V07 收尾仍未启动，不将本项资源约束等同整库预览提速。Stage 10 远端仍为 `6012cb6c18fc52c9db181a2251dd54a235ac6e81`；旧任务归档未改。三份文档的 105 个本地链接有效，git diff --check 通过。
 - 插件：Context7 核对 React 18 useSyncExternalStore 的稳定快照和取消订阅语义；Mermaid Chart 展示实际后处理/暂停/释放链路。Create State 未发现 HFM 项目，创建仍因 2/2 项目容量上限失败；未写入其他项目，状态以 Git、本任务书和 README 为准。
 - 恢复：整体 revert 本项后处理 owner、trim Hook、可见性/滚动/退出接线及对应诊断；保留 V04 显示协议与旧缓存、用户数据，不修改 Stage 10。开发入口仍为 `npm run dev`，无生产依赖、协议或磁盘缓存迁移。
+
+
+## 16. S11-V06 相关回归与目标核实（2026-09-28）
+
+- 授权与基线：用户“开始06”；起始 SHA `e388b114a4e293676cdcc50213ef1e9cb4fa1f56`，本地/远端一致，工作区干净。仅推进 V06，沿用 `stage/11-list-grid-view`；Stage 10、main 和旧任务归档不改。
+- 缺口与补齐：既有缓存矩阵主要调用旧参数，不能证明新布局的磁盘实际复用；既有 renderer 参数与 preload 测试分别通过，也不能代替两者联接后的行为。本轮扩充现有 `check-preview-reuse-matrix.cjs` 和 `check-list-preview-layout.cjs`，未新增重复诊断入口，未改生产策略、依赖、缓存版本或构建工作流。
+- 缓存矩阵：真实 SQLite、PNG 文件、生产批次构键/读取与共享回填 owner；75 项断言覆盖 legacy/strict 两种键下 list/grid × 文件/已安装路由，完全相同标量参数的旧图不能命中新布局，隐藏第三行/列表字号不影响网格复用，可见内容/列表字号变化不能命中旧图，重建 runtime/数据库句柄后本地命中、共享不可用时保留本地图、新布局共享恢复和并发回填合并。删除磁盘 layout 身份的负向变异会在实际读取上失败。共享可用性与生成端受控，临时本地目录模拟共享层，不声称真实 NAS/UNC 网络验收。
+- 联合请求：真实 renderer load owner → 运行时/构建版 preload → traced IPC → main 预览处理器；两种模式共 16 条代表路由，覆盖已安装、成功 WebFont、集合 WebFont 失败后 PNG、共享路径 PNG 分支；核对完整两行样本、空格、字号、画布和 nativeLayout 到达 main。额外验证单张/批量命中不误触发绘制，批量 miss 不重复单张探测，旧模式 native 迟到不能覆盖新模式命中。FontFace、原生生成和缓存返回使用受控端口，不声称该联合夹具执行了 GDI 或实际共享读取。
+
+| 风险/路径 | 本轮验证入口与证据边界 |
+| --- | --- |
+| 列表/网格布局与正确字体路由 | `diagnostics:list-preview-layout` 新联合路径；真实 Windows 字形和 DOM 由现有 native/显示 CI 核对 |
+| 本地/共享缓存及模式身份 | `diagnostics:preview-reuse-matrix` 的真实临时 SQLite/PNG；共享联网条件受控 |
+| 字符完整、WebFont 迟到、PNG 切换 | 既有 Windows grid/list DOM、native PNG 门重跑；旧删尾部断言已在 V04 迁移，不删溢出/错图检查 |
+| 几何、详情开合和返回定位 | 既有 Windows 398 次 DOM 场景、48 组开合/2112 帧检查 |
+| 无效裁边与生命周期 | 既有 Windows FontCard/usePreviewController/Canvas 资源门，及 `grid-preview-clip-safe` 的预算/取消反例 |
+| 滚动、失败恢复、离线、退出 | 全量 verify 保留 `preview-scroll-admission`、`preview-work-lifetime`、`preview-recovery`、`preview-shared-admission`、`bounded-local-exit` 等原门；原生 10 并发与 150ms 停滚规则未改 |
+
+- V-10 核实：请求与字体族接线正确不能证明逐字形无系统回退；代表性 Windows 图片也不能推导用户所有字体的字符覆盖。未取得指定字体/字符的回退证据，因此保留“待核实”，不新增“不支持字符”提示、不引入逐字体扫描。
+- 当前验证：两个扩充诊断通过，包含新增磁盘布局反例；全量 verify 和本轮 Windows CI 回执待补；本地三端 bundle 与 3/3 混淆通过。`npm run build` 含再次 verify 与 Cargo 原生编译，本地未完整执行（Cargo 不可用，已停止重复 verify）；原生构建由现有 Windows/Linux CI 承担，不将 bundle 冒充完整 build。首轮新断言误把生成字体族名称中的连字符处理预期为下划线；已改为核对实际加载且已附加的 FontFace 家族与请求源路径，没有改生产命名规则。
+- 目标边界：本环境没有可用 Windows 桌面，不能直接执行用户本机的 `npm run dev` 显示核验。CI 原生图片/真实组件覆盖代表路径，但应用默认开发窗口、用户字体库及真实共享环境相关显示仍待实际回执；不恢复固定卡片数量、冷热次数或全排列人工门。V06 不据此标记全面关闭，也不进入 V07；V06.5 本轮未实施。
+- 恢复：仅需整体 revert 本轮两份诊断及对应文档；没有生产或数据迁移，不清库、不 reset、不强推。
+- 插件：本轮以既有 API 补诊断，没有新增框架/API 兼容问题，未额外查询 Context7；Mermaid Chart 已展示真实联合回归与受控端口边界。Create State 仍无 HFM 项目，创建因 2/2 项目容量上限失败，未写入其他项目；续接状态保存在 Git 与任务书。

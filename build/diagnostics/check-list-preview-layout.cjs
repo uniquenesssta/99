@@ -3,6 +3,7 @@ const assert = require('node:assert/strict'), path = require('node:path')
 const { loader } = require('./check-operation-chain.cjs')
 const { loader: cardLoader, fonts, prefix } = require('./lib/font-view-layout-harness.cjs')
 const { previewBridge } = require('./lib/preview-preload-harness.cjs')
+const { rendererHarness, deferred, flush } = require('./check-preview-work-lifetime.cjs')
 const shared = loader()('src/shared/preview-layout/previewTextFitRuntime.ts')
 const { nativePreviewLayoutKey } = loader()('src/shared/preview-layout/nativePreviewLayout.ts')
 const { normalizePreviewInput: validate } = loader()('src/main/preview/runtime/previewInputPolicy.ts')
@@ -125,8 +126,82 @@ async function preloadContracts(options = {}) {
     }
   }
 }
+async function rendererBridgeRoutes() {
+  let routes=0
+  const png='data:image/png;base64,'+require('./fixtures/preview-png.cjs').toString('base64')
+  for(const kind of ['runtime','built']) for(const mode of ['list','grid']) {
+    const h=rendererHarness(),calls=[]
+    let cached=false,renderGate
+    const capture=(method,args)=>{calls.push({method,args:plain(args)});return cached?png:''}
+    const bridge=previewBridge({
+      readCachedFontPreviewImage:async(...args)=>capture('single',args),
+      readCachedFontPreviewImages:async(...args)=>{capture('batch',args);return cached?{[args[0][0].id]:png}:{}},
+      renderFontPreviewImage:async(...args)=>{capture('render',args);return renderGate?renderGate.promise:png},appendLog(){}
+    },{kind})
+    // Keep the controlled FontFace URL port; use the production bridge for all
+    // cache/native requests emitted by the production renderer load owner.
+    for(const method of ['getCachedPreviewImage','getCachedPreviewImages','renderPreviewImage'])h.opt.hfm[method]=bridge.api[method]
+    const apply=(nextMode,text='  安盛aaaa  \r\nSecond\r\nhidden')=>{
+      const spec=shared.getCardPreviewLayout(nextMode,text,44)
+      Object.assign(h.opt,{previewLayoutMode:nextMode,previewText:text,listPreviewFontSize:44})
+      h.opt.previewRequestTokenRef.current=spec.token;h.runtime.resetPreviewRuntimeState();return spec
+    }
+    const checkRequests=spec=>{
+      for(const {method,args} of calls){
+        assert.deepEqual(args.slice(1),plain([spec.text,spec.fontSize,spec.width,spec.height,spec.nativeLayout]),`${kind}/${mode}/${method} renderer to main layout mismatch`)
+        validate({text:args[1],fontSize:args[2],width:args[3],height:args[4],layout:args[5]})
+      }
+    }
+    try {
+      for(const route of ['installed','webfont','collection-fallback','shared-native']) {
+        const spec=apply(mode),font={...fonts[0],id:kind+'-'+mode+'-'+route,path:route==='shared-native'?'\\\\server\\fonts\\sample.ttc':'C:/fonts/'+route+(route==='collection-fallback'?'.ttc':'.ttf'),systemInstalled:route==='installed'}
+        calls.length=0
+        if(route==='installed')h.opt.previewFamilies[font.id]='HFM_stale_file_route'
+        if(route==='shared-native')h.opt.failedPreviewFontIds[font.id]=true
+        await h.runtime.loadCachedNativeCardPreviews([font])
+        const faceCount=h.faces.length,pending=h.runtime.ensurePreviewFont(font)
+        await flush()
+        if(route==='webfont'||route==='collection-fallback'){
+          assert.equal(h.faces.length,faceCount+1,'file route never attempted FontFace')
+          if(route==='webfont')h.faces.at(-1).gate.resolve()
+          else h.faces.at(-1).gate.reject(Error('controlled collection WebFont rejection'))
+        }
+        await pending;checkRequests(spec)
+        assert.equal(calls[0].method,'batch')
+        assert.equal(calls.filter(x=>x.method==='single').length,0,'batch miss repeated a single cache probe')
+        assert.equal(calls.filter(x=>x.method==='render').length,route==='webfont'?0:1)
+        if(route==='webfont'){
+          assert.equal(h.opt.previewFamilies[font.id],h.attached.at(-1)?.family,'wrong loaded FontFace family applied')
+          assert(h.faces.at(-1).source.includes(font.path),'WebFont source differs from requested font')
+          assert.equal(h.opt.nativePreviewImages[font.id],undefined,'WebFont success retained PNG')
+        }else{
+          assert.equal(h.opt.nativePreviewImages[font.id],png)
+          assert.equal(h.opt.previewFamilies[font.id],undefined,'native route retained stale CSS family')
+          if(route!=='collection-fallback')assert.equal(h.faces.length,faceCount,'native route unexpectedly opened a FontFace')
+        }
+        routes++
+      }
+      const font={...fonts[0],id:'bridge-cache',systemInstalled:true}
+      let spec=apply(mode);calls.length=0;cached=true
+      await h.runtime.ensurePreviewFont(font);checkRequests(spec)
+      assert.deepEqual(calls.map(x=>x.method),['single']);assert.equal(h.opt.nativePreviewImages[font.id],png)
+      spec=apply(mode);calls.length=0
+      await h.runtime.loadCachedNativeCardPreviews([font]);checkRequests(spec)
+      assert.deepEqual(calls.map(x=>x.method),['batch']);assert.equal(h.opt.nativePreviewImages[font.id],png)
+      // A native completion from the previous mode must not replace the new hit.
+      apply(mode);cached=false;renderGate=deferred()
+      const old=h.runtime.ensurePreviewFont(font,true);await flush()
+      assert.equal(calls.at(-1).method,'render')
+      apply(mode==='list'?'grid':'list');cached=true
+      await h.runtime.loadCachedNativeCardPreviews([font])
+      renderGate.resolve('data:image/png;base64,stale');await old
+      assert.equal(h.opt.nativePreviewImages[font.id],png,'late native result crossed mode through preload')
+    } finally {h.runtime.disposePreviewQueue()}
+  }
+  console.log(`[list-preview-layout] ${routes} renderer/bridge routes, single/batch hits and late-mode rejection passed; controlled FontFace/native ports`)
+}
 async function main(){
-  contracts();await identities();interactions();await capabilityGate();await preloadContracts()
+  contracts();await identities();interactions();await capabilityGate();await preloadContracts();await rendererBridgeRoutes()
   await assert.rejects(preloadContracts({ transformSource: source => source.replaceAll('...(layout ? [layout] : []), ', '') }), /dropped or changed layout/, 'old runtime bridge must fail the layout contract')
   console.log('[list-preview-layout] pixel contract, cache identities, both preload/IPC chains (layout and trace), dropped-layout mutant, event isolation and backend gates passed')
 }
