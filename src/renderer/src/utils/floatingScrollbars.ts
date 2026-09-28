@@ -179,7 +179,9 @@ export function setupFloatingScrollbars(): () => void {
       addListener(bar, 'lostpointercapture', endDrag, state)
       addListener(bar, 'pointercancel', endDrag, state)
       addListener(bar, 'mouseenter', () => { state.barHovered = true; scheduleUpdate() }, state)
-      addListener(bar, 'mouseleave', () => { state.barHovered = false; showTemporarily(state) }, state)
+      // Leaving/hiding the overlay is not fresh scroll activity. In particular,
+      // a hit-test change when pointer-events turns off must not revive its timer.
+      addListener(bar, 'mouseleave', () => { state.barHovered = false; scheduleUpdate() }, state)
       addListener(bar, 'focus', () => { state.focused = true; scheduleUpdate() }, state)
       addListener(bar, 'blur', () => { state.focused = false; scheduleUpdate() }, state)
       addListener(bar, 'click', event => event.stopPropagation(), state)

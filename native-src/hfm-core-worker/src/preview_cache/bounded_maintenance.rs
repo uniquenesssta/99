@@ -89,7 +89,7 @@ pub(super) fn run(payload: &PreviewCacheMaintenancePayload) -> Result<String, St
 }
 
 fn references(conn: &Connection) -> Result<HashSet<String>, String> {
-    let mut statement = conn.prepare("SELECT output_path FROM preview_cache WHERE output_path != ''").map_err(|e| e.to_string())?;
+    let mut statement = conn.prepare("SELECT output_path FROM preview_cache WHERE output_path != '' AND status IN ('ok', 'pending', 'generating')").map_err(|e| e.to_string())?;
     let rows = statement.query_map([], |row| row.get::<_, String>(0)).map_err(|e| e.to_string())?;
     let mut paths = HashSet::new();
     for path in rows { paths.insert(normalize_path_for_cache_compare(&path.map_err(|e| e.to_string())?)); }
@@ -140,9 +140,11 @@ mod tests {
         for p in [&kept,&orphan,&pending] { fs::write(p,b"png").unwrap(); }
         seed(&shared,"remote",kept.to_str().unwrap());seed(&local,"pending",pending.to_str().unwrap());
         local.execute("UPDATE preview_cache SET status='generating'",[]).unwrap();drop(shared);
-        let input=f.input(json!({"rows":[],"orphanFiles":[kept,orphan,pending],"referenceDbPath":f.0.join("shared.sqlite")}));
+        let stale=f.0.join("stale.png");fs::write(&stale,b"expired").unwrap();seed(&local,"stale",stale.to_str().unwrap());
+        local.execute("UPDATE preview_cache SET status='stale' WHERE preview_key='stale'",[]).unwrap();
+        let input=f.input(json!({"rows":[],"orphanFiles":[kept,orphan,pending,stale],"referenceDbPath":f.0.join("shared.sqlite")}));
         let result:Value=serde_json::from_str(&run(&input).unwrap()).unwrap();
-        assert_eq!(result["removedOrphanFiles"],1);assert!(kept.exists());assert!(pending.exists());assert!(!orphan.exists());
+        assert_eq!(result["removedOrphanFiles"],2);assert!(kept.exists());assert!(pending.exists());assert!(!orphan.exists());assert!(!stale.exists());
         let invalid=f.input(json!({"rows":[],"orphanFiles":[kept],"referenceDbPath":f.0.join("missing.sqlite")}));
         assert!(run(&invalid).is_err());assert!(kept.exists());assert!(!f.0.join("missing.sqlite").exists());
     }

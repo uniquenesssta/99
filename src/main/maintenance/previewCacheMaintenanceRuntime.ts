@@ -28,7 +28,7 @@ export function createPreviewCacheMaintenanceRuntime(deps: PreviewCacheMaintenan
     const input = { dbPath: deps.previewSqlitePath(), schemaVersion: deps.previewSqliteSchemaVersion,
       now: new Date().toISOString(), previewDirs: [], previewOkRetentionMs: deps.previewOkRetentionMs, orphanRetentionMs: ORPHAN_RETENTION_MS }
     const normalize = deps.normalizePathForCacheCompare
-    const referenced = () => new Set<string>((db.prepare("SELECT output_path FROM preview_cache WHERE output_path != ''").all() as Array<{ output_path: string }>).map(row => normalize(row.output_path)))
+    const referenced = () => new Set<string>((db.prepare("SELECT output_path FROM preview_cache WHERE output_path != '' AND status IN ('ok', 'pending', 'generating')").all() as Array<{ output_path: string }>).map(row => normalize(row.output_path)))
 
     async function runBatch(batch: NonNullable<RustPreviewCacheMaintenanceInput['batch']>): Promise<void> {
       // Release admission/physical ownership between bounded calls, giving queued

@@ -81,11 +81,15 @@ let scrollHost:HTMLDivElement,cleanup:()=>void
 ;(window as any).finishScrollbarDrag=async()=>{
  await frame();await frame()
  check(scrollHost.scrollTop>9000,'trusted pointer drag did not reach bottom')
+ const focusedBeforeIdle=(document.activeElement as HTMLElement)?.className
+ // Keyboard focus deliberately keeps a scrollbar visible. Idle means both
+ // pointer and focus have left, rather than merely a pause during navigation.
+ ;(document.activeElement as HTMLElement)?.blur()
  scrollHost.dispatchEvent(new MouseEvent('mouseleave'))
  for(const bar of document.querySelectorAll('.hfm-floating-scrollbar'))bar.dispatchEvent(new MouseEvent('mouseleave'))
  await wait(1050);await frame()
- check(document.querySelectorAll('.hfm-floating-scrollbar.visible').length===0,'idle scrollbar failed to hide')
+ check(document.querySelectorAll('.hfm-floating-scrollbar.visible').length===0,'idle scrollbar failed to hide: '+JSON.stringify({focusedBeforeIdle,active:(document.activeElement as HTMLElement)?.className,visible:[...document.querySelectorAll('.hfm-floating-scrollbar.visible')].map(el=>({class:el.className,top:el.getBoundingClientRect().top,left:el.getBoundingClientRect().left}))}))
  cleanup();scrollHost.remove()
  check(document.querySelectorAll('.hfm-floating-scrollbar').length===0,'scrollbar observers/hosts leaked on cleanup')
- return {drag:true,autoHide:true,cleanup:true}
+ return {drag:true,autoHide:true,cleanup:true,focusedBeforeIdle}
 }
