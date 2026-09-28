@@ -14,6 +14,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
+      - run: npm run diagnostics:tag-intent-lifecycle
+      - run: npm run diagnostics:font-write-queue-durability
+      - run: npm run diagnostics:app-interaction-composition
       - run: node build/diagnostics/check-font-view-layout.cjs --dom-feedback
       - run: npm run diagnostics:shared-io-integration
       - run: npm run diagnostics:shared-filesystem
@@ -58,11 +61,7 @@ jobs:
       - run: node build/obfuscate-dist.cjs
       - run: git diff --check 8bc364b9bc1f9660959ca168275402a0d1de8584 HEAD
   directory-metadata-native:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7.0.1

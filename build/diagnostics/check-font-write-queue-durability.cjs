@@ -62,8 +62,8 @@ for (const needle of [
 ]) assert(runtime.includes(needle), `font write runtime missing ${needle}`)
 
 assert(!runtime.includes('library: LibraryState'), 'font write runtime must not capture a stale LibraryState snapshot')
-assert(runtime.includes('while (queuedFontWriteCount(options.queueRef.current))'), 'flush must drain writes added while a pass is active')
-assert(runtime.includes('folders: options.getFolders()'), 'each flush pass must use the latest watched folders')
+assert(runtime.includes('while (queuedFontWriteCount(options.queueRef.current) || fieldTasks.size)'), 'flush must drain writes added while a pass is active')
+assert(runtime.includes('const folders = options.getFolders()'), 'each flush pass must use the latest watched folders')
 
 const unload = read('src/renderer/src/runtime/app/effects/useAppFlushOnUnloadRuntime.ts')
 assert(unload.includes('if (result === false) fontWritesSaved = false'), 'window close acknowledgement must reject partial write failures')

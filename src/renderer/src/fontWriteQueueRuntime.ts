@@ -17,6 +17,19 @@ type BooleanRef = { current: boolean }
 type NumberRef = { current: number }
 type PromiseRef = { current: Promise<boolean> | null }
 type QueueRef = { current: QueuedFontWriteState }
+type WriteField = keyof QueuedFontWriteState
+const WRITE_FIELDS: WriteField[] = ['localTags', 'sharedTags', 'favorite', 'protection']
+// Runtime factories are recreated by React. Ownership follows the stable queue ref,
+// not a render closure; the maps in queueRef remain the only pending-write store.
+const activeFieldsByQueue = new WeakMap<QueueRef, Map<WriteField, Promise<boolean>>>()
+
+function takeQueuedField<K extends WriteField>(state: QueuedFontWriteState, field: K): QueuedFontWriteState {
+  const snapshot = createEmptyQueuedFontWriteState()
+  const pending = state[field]
+  state[field] = snapshot[field]
+  snapshot[field] = pending
+  return snapshot
+}
 
 const FOREGROUND_RETRY_DELAYS_MS = [120, 360, 900]
 const BACKGROUND_RETRY_DELAYS_MS = [1800, 4000, 8000]
@@ -48,7 +61,7 @@ export interface RendererFontWriteQueueRuntime {
   queueFavoriteWrite: (font: FontItem, favorite: boolean) => void
   queueFavoriteWrites: (fonts: FontItem[], favorite: boolean) => Promise<void>
   queueProtectionWrite: (font: FontItem, protect: boolean) => void
-  flush: (reason?: string) => Promise<boolean>
+  flush: (reason?: string, scope?: 'local' | 'shared') => Promise<boolean>
 }
 
 function waitForRetry(options: RendererFontWriteQueueRuntimeOptions, delayMs: number): Promise<void> {
@@ -58,6 +71,12 @@ function waitForRetry(options: RendererFontWriteQueueRuntimeOptions, delayMs: nu
 export function createRendererFontWriteQueueRuntime(
   options: RendererFontWriteQueueRuntimeOptions
 ): RendererFontWriteQueueRuntime {
+  let activeFields = activeFieldsByQueue.get(options.queueRef)
+  if (!activeFields) {
+    activeFields = new Map()
+    activeFieldsByQueue.set(options.queueRef, activeFields)
+  }
+  const fieldTasks = activeFields
   const clearWriteTimer = (): void => {
     if (options.timerRef.current === null) return
     options.clearTimeout(options.timerRef.current)
@@ -86,29 +105,25 @@ export function createRendererFontWriteQueueRuntime(
     }, delayMs)
   }
 
-  const flush = async (reason: string = 'manual'): Promise<boolean> => {
-    if (options.activeRef.current) {
-      const activePromise = options.activePromiseRef.current
-      const activeSaved = activePromise ? await activePromise : true
-      if (!activeSaved) return false
-      return queuedFontWriteCount(options.queueRef.current) ? flush(reason) : true
+  const flushField = async (field: WriteField, reason: string): Promise<boolean> => {
+    const active = fieldTasks.get(field)
+    if (active) {
+      if (!await active) return false
+      return options.queueRef.current[field].size ? flushField(field, reason) : true
     }
-
-    clearTimer()
-    options.activeRef.current = true
 
     const task = (async (): Promise<boolean> => {
       let foregroundRetryIndex = 0
       let totalWroteCount = 0
 
-      while (queuedFontWriteCount(options.queueRef.current)) {
-        const queue = options.queueRef.current
-        options.queueRef.current = createEmptyQueuedFontWriteState()
+      while (options.queueRef.current[field].size) {
+        const folders = options.getFolders()
+        const queue = takeQueuedField(options.queueRef.current, field)
 
         const result = await flushQueuedFontWriteQueue({
           queue,
           hfm: options.hfm,
-          folders: options.getFolders()
+          folders
         })
         totalWroteCount += result.wroteCount
 
@@ -141,7 +156,7 @@ export function createRendererFontWriteQueueRuntime(
         options.retryAttemptRef.current = 0
       }
 
-      if (totalWroteCount >= 20 || reason !== 'delay') {
+      if (totalWroteCount > 0 && (totalWroteCount >= 20 || reason !== 'delay')) {
         options.setStatus(`后台写入队列已落库：${totalWroteCount} 项。`)
       }
       return true
@@ -150,10 +165,37 @@ export function createRendererFontWriteQueueRuntime(
       scheduleBackgroundRetry()
       return false
     }).finally(() => {
+      if (fieldTasks.get(field) === task) fieldTasks.delete(field)
+    })
+
+    fieldTasks.set(field, task)
+    return task
+  }
+
+  const flush = async (reason: string = 'manual', scope?: 'local' | 'shared'): Promise<boolean> => {
+    // A catalog operation waits only for writes that could recreate its tags.
+    // Do not join a global drain stalled on an unrelated shared database.
+    if (scope) return flushField(scope === 'shared' ? 'sharedTags' : 'localTags', reason)
+    if (options.activeRef.current) {
+      const activeSaved = options.activePromiseRef.current ? await options.activePromiseRef.current : true
+      if (!activeSaved) return false
+      return queuedFontWriteCount(options.queueRef.current) || fieldTasks.size ? flush(reason) : true
+    }
+    clearTimer()
+    options.activeRef.current = true
+    const task = (async (): Promise<boolean> => {
+      do {
+        let saved = true
+        // Full drains (including window close) still join every field, even
+        // when an in-flight snapshot has already left the pending maps.
+        for (const field of WRITE_FIELDS) if (!await flushField(field, reason)) saved = false
+        if (!saved) return false
+      } while (queuedFontWriteCount(options.queueRef.current) || fieldTasks.size)
+      return true
+    })().finally(() => {
       options.activeRef.current = false
       if (options.activePromiseRef.current === task) options.activePromiseRef.current = null
     })
-
     options.activePromiseRef.current = task
     return task
   }
@@ -189,11 +231,11 @@ export function createRendererFontWriteQueueRuntime(
     scheduleFlush,
     queueLocalTagsWrite: (item, tagNames) => {
       options.queueRef.current.localTags.set(item.id, trackFontWrite({ item: { ...item, localTagNames: tagNames }, tagNames }, 'localTags', options.queueRef.current.localTags.get(item.id)))
-      void flush('local-tags-immediate')
+      void flush('local-tags-immediate', 'local')
     },
     queueSharedTagsWrite: (item, tagNames) => {
       options.queueRef.current.sharedTags.set(item.id, trackFontWrite({ item: { ...item, tagNames }, tagNames }, 'sharedTags', options.queueRef.current.sharedTags.get(item.id)))
-      void flush('shared-tags-immediate')
+      void flush('shared-tags-immediate', 'shared')
     },
     queueFavoriteWrites: async (fonts, favorite) => {
       for (const font of fonts) options.queueRef.current.favorite.set(font.id, trackFontWrite({ font: { ...font, favorite }, favorite }, 'favorite', options.queueRef.current.favorite.get(font.id)))

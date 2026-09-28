@@ -1,4 +1,4 @@
-import { traceDirectFontOperation } from './fontOperationTrace'
+import { createFontOperationTrace, reportFontOperation, traceDirectFontOperation } from './fontOperationTrace'
 import type { FontItem,LibraryState } from '@shared/types'
 import type { Dispatch,SetStateAction } from 'react'
 import type { ContextMenuState,EditableMenuTarget,MenuTarget,SidebarPage } from './appRuntime'
@@ -56,7 +56,7 @@ export type FontDialogRuntimeOptions = {
   setSidebarPage: Dispatch<SetStateAction<SidebarPage>>
   setStatus: Dispatch<SetStateAction<string>>
   refreshDatabaseDerivedState: () => void
-  flushFontWriteQueue?: (reason?: string) => Promise<boolean>
+  flushFontWriteQueue?: (reason?: string, scope?: 'local' | 'shared') => Promise<boolean>
 }
 
 
@@ -204,6 +204,9 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
         await options.removeFolderTarget(deleteTarget)
       } else {
         const shared = deleteTarget.scope === 'shared'
+        const trace = createFontOperationTrace(shared ? 'sharedTags' : 'localTags')
+        const startedAt = Date.now()
+        reportFontOperation({ trace, stage: 'tag-delete-intent', reason: 'confirm-delete' })
         const affectedFonts = options.fontsForTag(deleteTarget.name, deleteTarget.scope)
         const direct = shared ? typeof options.hfm.deleteSharedTag === 'function' : typeof options.hfm.deleteLocalTag === 'function'
         setStatus(`正在删除${shared ? '共享标签' : '标签'}“${deleteTarget.name}”…`)
@@ -211,18 +214,29 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
           // Catalog operations have no per-font queue representation. Keep the
           // current view until the authority commits; never create orphan intents
           // or retry a catalog delete as an unbind (which retains empty tags).
+          let dispatched = false
           try {
-            const flushed = await options.flushFontWriteQueue?.(`${shared ? 'shared' : 'local'}-tag-delete`)
-            if (flushed === false) throw new Error('仍有标签写入未保存，请重试。')
+            reportFontOperation({ trace, stage: 'tag-delete-wait', reason: 'same-scope-writes', blockedBy: trace.domain })
+            const flushed = await options.flushFontWriteQueue?.(`${shared ? 'shared' : 'local'}-tag-delete`, deleteTarget.scope)
+            if (flushed === false) {
+              reportFontOperation({ trace, stage: 'tag-delete-blocked', outcome: 'not-dispatched', reason: 'same-scope-writes-unsaved', blockedBy: trace.domain, elapsedMs: Date.now() - startedAt })
+              setStatus(`删除标签失败，请重试：仍有${shared ? '共享' : '本地'}标签写入未保存。`)
+              options.refreshDatabaseDerivedState()
+              return
+            }
+            dispatched = true
+            reportFontOperation({ trace, stage: 'tag-delete-dispatch', elapsedMs: Date.now() - startedAt })
             const result = shared
-              ? await traceDirectFontOperation('sharedTags', trace => options.hfm.deleteSharedTag(deleteTarget.name, options.watchedFolders, trace))
-              : await traceDirectFontOperation('localTags', trace => options.hfm.deleteLocalTag(deleteTarget.name, trace))
+              ? await options.hfm.deleteSharedTag(deleteTarget.name, options.watchedFolders, trace)
+              : await options.hfm.deleteLocalTag(deleteTarget.name, trace)
+            reportFontOperation({ trace, stage: 'tag-delete-result', outcome: result.ok ? 'success' : 'failed', reason: result.ok ? 'backend-acknowledged' : 'backend-rejected', elapsedMs: Date.now() - startedAt })
             if (result.ok) {
               if (shared && options.selectedSharedTagName === deleteTarget.name) options.setSelectedSharedTagName('')
               if (!shared && options.selectedTagName === deleteTarget.name) options.setSelectedTagName('')
             }
             setStatus(result.message || (result.ok ? '标签删除成功。' : '标签删除未全部成功，请重试。'))
           } catch (error) {
+            reportFontOperation({ trace, stage: dispatched ? 'tag-delete-result' : 'tag-delete-blocked', outcome: dispatched ? 'unknown' : 'not-dispatched', reason: dispatched ? 'delete-ipc-rejected' : 'queue-flush-rejected', blockedBy: dispatched ? undefined : trace.domain, elapsedMs: Date.now() - startedAt })
             setStatus(`删除标签失败，请重试：${error instanceof Error ? error.message : String(error)}`)
           }
         } else {
@@ -236,6 +250,7 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
             ? { ...font, __sharedTagWriteMode: 'remove', __sharedTagWriteTag: deleteTarget.name } as FontItem : font, deleteTarget.scope)
           if (shared && options.selectedSharedTagName === deleteTarget.name) options.setSelectedSharedTagName('')
           if (!shared && options.selectedTagName === deleteTarget.name) options.setSelectedTagName('')
+          reportFontOperation({ trace, stage: 'tag-delete-result', outcome: 'queued', reason: 'legacy-per-font-fallback', elapsedMs: Date.now() - startedAt })
           setStatus(`已提交标签删除：${deleteTarget.name}`)
         }
         options.refreshDatabaseDerivedState()

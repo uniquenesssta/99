@@ -8,6 +8,7 @@ const scope = new AsyncLocalStorage<TraceScope>()
 let bytes = 0
 let dropped = 0
 const MAX_SESSION_BYTES = 16 * 1024 * 1024
+const TAG_DELETE_STAGES = new Set(['tag-delete-intent', 'tag-delete-wait', 'tag-delete-blocked', 'tag-delete-dispatch', 'tag-delete-result'])
 
 export function currentOperationTrace(): OperationTrace | undefined { return scope.getStore()?.trace }
 export function withOperationTrace<T>(trace: unknown, append: TraceScope['append'], run: () => T): T {
@@ -15,8 +16,13 @@ export function withOperationTrace<T>(trace: unknown, append: TraceScope['append
 }
 export function logOperation(event: OperationTraceEvent, append = scope.getStore()?.append): void {
   try {
-    if (!append || !detailedStartupLogsEnabled()) return
-    const encoded = encodeOperationTraceEvent({ ...event, trace: Object.hasOwn(event, 'trace') ? event.trace : currentOperationTrace(), dropped })
+    if (!append) return
+    const trace = cleanOperationTrace(Object.hasOwn(event, 'trace') ? event.trace : currentOperationTrace())
+    // User-confirmed catalog deletion is auditable in normal startup logs too.
+    // Keep generic high-volume operation tracing behind the existing debug gate.
+    const tagDelete = (trace?.domain === 'localTags' || trace?.domain === 'sharedTags') && TAG_DELETE_STAGES.has(event.stage)
+    if (!tagDelete && !detailedStartupLogsEnabled()) return
+    const encoded = encodeOperationTraceEvent({ ...event, trace, dropped })
     if (!encoded) { dropped++; return }
     if (bytes + encoded.length > MAX_SESSION_BYTES) {
       dropped++

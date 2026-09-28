@@ -214,6 +214,87 @@ async function dialogCases() {
   for(const entry of queued)assert(a.isSameFontTagIntent(library.fonts[entry.item.id],entry.item,'local'))
   assert(messages.some(m=>m.includes('失败')))
 }
+async function catalogDeleteCases() {
+  const previousDetail=process.env.HFM_LOG_DETAIL
+  process.env.HFM_LOG_DETAIL=''
+  try {
+    const logs=[], statuses=[], window={hfm:{}}, mocks={
+      [path.join(root,dir+'appRuntime.ts')]:{fontDisplayName:f=>f.id},
+      [path.join(root,dir+'fontDialogContextActionsRuntime.ts')]:{createFontDialogContextActions:()=>({})}
+    }
+    const {load}=environment(x=>x,mocks,{window})
+    const logPolicy=load('src/main/logging/startupLogPolicy.ts').createStartupLogPolicy()
+    const perf=load('src/main/performance/rendererInteractionRuntime.ts').createRendererInteractionRuntime({appendLog:s=>{if(logPolicy.shouldAppend(s))logs.push(JSON.parse(s.slice(17)))}})
+    window.hfm.reportPerformanceEvent=async e=>perf.reportPerformanceEvent(e)
+    const q=load(dir+'fontWriteQueue.ts'), create=load(dir+'fontWriteQueueRuntime.ts').createRendererFontWriteQueueRuntime
+    const dialog=load(dir+'fontDialogRuntime.ts').createFontDialogRuntime
+    const options=hfm=>({queueRef:{current:q.createEmptyQueuedFontWriteState()},timerRef:{current:null},retryTimerRef:{current:null},retryAttemptRef:{current:0},activeRef:{current:false},activePromiseRef:{current:null},hfm,getFolders:()=>['D:/fonts'],writeBehindDelayMs:1,writeBehindMaxItems:10,writeBehindMaxBufferBytes:10000,memoryPressure:()=> 'normal',setTimeout:(fn,ms)=>{if(ms<1800)queueMicrotask(fn);return 1},clearTimeout(){},setStatus:s=>statuses.push(s),scheduleDatabaseDerivedStateRefresh(){}})
+    const base=(scope,hfm,flush)=>({deleteTarget:{kind:'tag',scope,name:'private-tag'},hfm,flushFontWriteQueue:flush,library:{fonts:{},tags:[],localTags:[]},fontsForTag:()=>[],setDeleteTarget(){},setStatus:s=>statuses.push(s),setSelectedTagName(){},setSelectedSharedTagName(){},refreshDatabaseDerivedState(){},watchedFolders:['D:/fonts']})
+    const receipt=items=>({ok:true,updatedIds:items.map(x=>x.item.id),failed:[]})
+    const events=()=>logs.filter(e=>e.stage.startsWith('tag-delete-'))
+    // An already active whole-queue drain must not hold a local catalog deletion
+    // behind a shared IPC that has not even returned yet.
+    const blocked=gate();let sharedCalls=0, deletes=0, dispatchedTrace
+    const hfm={setSharedTagsBatch:async()=>{sharedCalls++;await blocked.promise;throw Error('offline')},deleteLocalTag:async(_name,trace)=>{deletes++;dispatchedTrace=trace;return {ok:true}}}
+    const opts=options(hfm), runtime=create(opts)
+    opts.queueRef.current.sharedTags.set('s',{item:font('s'),tagNames:['shared']})
+    const globalFlush=runtime.flush('close')
+    await tick();assert.equal(sharedCalls,1)
+    let done=false
+    const deleting=dialog(base('local',hfm,create(opts).flush)).confirmDelete().then(()=>{done=true})
+    await tick();assert(done,'local delete must finish while shared IPC is still pending');assert.equal(deletes,1)
+    assert.deepEqual(events().map(e=>e.stage),['tag-delete-intent','tag-delete-wait','tag-delete-dispatch','tag-delete-result'])
+    assert(events().every(e=>e.trace.operationId===dispatchedTrace.operationId),'preflight and IPC need one operation ID')
+    assert.equal(events().at(-1).outcome,'success')
+    blocked.resolve();assert.equal(await globalFlush,false);await deleting
+    assert.equal(opts.queueRef.current.sharedTags.size,1,'unrelated failure must remain available for retry')
+    await dialog(base('local',hfm,create(opts).flush)).confirmDelete()
+    assert.equal(sharedCalls,4,'local delete must not dispatch an unrelated failed shared retry');assert.equal(deletes,2)
+    // Symmetric isolation, including ownership surviving a render/factory change.
+    const localGate=gate();let sharedDeletes=0
+    const reverse=options({setLocalTagsBatch:async()=>{await localGate.promise;throw Error('disk')},deleteSharedTag:async()=>{sharedDeletes++;return {ok:true}}})
+    create(reverse).queueLocalTagsWrite(font('l'),['old']);await tick()
+    await dialog(base('shared',reverse.hfm,create(reverse).flush)).confirmDelete()
+    assert.equal(sharedDeletes,1);localGate.resolve();assert.equal(await create(reverse).flush('close'),false)
+    assert.equal(reverse.queueRef.current.localTags.size,1)
+    // Same-field in-flight writes still prevent premature deletion. A newer
+    // queued edit wins over a failed older attempt before the delete can run.
+    const sameGate=gate(), order=[];let attempts=0
+    const same=options({setLocalTagsBatch:async items=>{order.push(items[0].tagNames[0]);if(++attempts===1){await sameGate.promise;throw Error('transient')}return receipt(items)},deleteLocalTag:async()=>{order.push('delete');return {ok:true}}})
+    create(same).queueLocalTagsWrite(font('a'),['old']);await tick()
+    let sameDone=false
+    const sameDelete=dialog(base('local',same.hfm,create(same).flush)).confirmDelete().then(()=>{sameDone=true})
+    create(same).queueLocalTagsWrite(font('a'),['new']);await tick()
+    assert(!sameDone);assert.deepEqual(order,['old'])
+    sameGate.resolve();await sameDelete;assert.deepEqual(order,['old','new','delete'])
+    assert.equal(same.queueRef.current.localTags.size,0)
+    // A failed matching field must block, never report a dispatch or success.
+    const failing=options({setLocalTagsBatch:async()=>{throw Error('disk')},deleteLocalTag:async()=>{throw Error('must not dispatch')}})
+    failing.queueRef.current.localTags.set('f',{item:font('f'),tagNames:['old']})
+    let start=logs.length
+    await dialog(base('local',failing.hfm,create(failing).flush)).confirmDelete()
+    const rejected=logs.slice(start)
+    assert.deepEqual(rejected.map(e=>e.stage),['tag-delete-intent','tag-delete-wait','tag-delete-blocked'])
+    assert.equal(rejected.at(-1).reason,'same-scope-writes-unsaved');assert.equal(rejected.at(-1).blockedBy,'localTags')
+    assert.equal(failing.queueRef.current.localTags.size,1)
+    for(const [flush,result,stage,outcome,reason] of [
+      [async()=>{throw Error('queue')},async()=>({ok:true}),'tag-delete-blocked','not-dispatched','queue-flush-rejected'],
+      [async()=>true,async()=>({ok:false}),'tag-delete-result','failed','backend-rejected'],
+      [async()=>true,async()=>{throw Error('ipc')},'tag-delete-result','unknown','delete-ipc-rejected']
+    ]) {
+      start=logs.length;await dialog(base('local',{deleteLocalTag:result},flush)).confirmDelete()
+      const last=logs.slice(start).at(-1);assert.equal(last.stage,stage);assert.equal(last.outcome,outcome);assert.equal(last.reason,reason)
+    }
+    assert(!JSON.stringify(logs).includes('private-tag'),'audit records must not include raw tag names')
+    assert(logs.every(e=>e.stage.startsWith('tag-delete-')),'normal mode must not enable high-volume debug traces')
+    // Logging failure cannot change deletion, including a synchronous IPC bridge throw.
+    for(const report of [()=>{throw Error('log')},async()=>{throw Error('log')}]) {
+      window.hfm.reportPerformanceEvent=report
+      const before=deletes;await dialog(base('local',hfm,async()=>true)).confirmDelete();assert.equal(deletes,before+1)
+      await tick()
+    }
+  } finally { if(previousDetail===undefined)delete process.env.HFM_LOG_DETAIL;else process.env.HFM_LOG_DETAIL=previousDetail }
+}
 function lruCase() {
   const {a,load}=environment(x=>x,{[path.join(root,dir+'appConstants.ts')]:{FONT_OBJECT_LRU_LIMIT:1}})
   const edited=a.markFontTagsOptimistic({...font('a'),favorite:false,deleteProtected:false},'local',['pending'])
@@ -222,7 +303,7 @@ function lruCase() {
   assert(next.fonts.a,'LRU must retain pending intent owner')
 }
 async function main() {
-  basic(); lruCase(); draftCatalogCase(); successfulReadCatalogCases(); await queueCases(); readConfirmationCases(); await pageConfirmationCase(); await pageConfirmationCase(true); await closeFailureCase(); await dialogCases()
+  basic(); lruCase(); draftCatalogCase(); successfulReadCatalogCases(); await queueCases(); readConfirmationCases(); await pageConfirmationCase(); await pageConfirmationCase(true); await closeFailureCase(); await dialogCases(); await catalogDeleteCases()
   for (const ending of ['\n','\r\n']) {
     const normalize=s=>s.replace(/\r?\n/g,ending)
     basic(normalize);await queueCases(normalize)
@@ -236,7 +317,7 @@ async function main() {
   process.env.HFM_LOG_DETAIL='debug'
   try { await chain({tagIntent:true});await chain({tagIntent:true,failures:2,runtimePreload:true}) }
   finally { if(logDetail===undefined)delete process.env.HFM_LOG_DETAIL;else process.env.HFM_LOG_DETAIL=logDetail }
-  console.log('[diagnostics:tag-intent-lifecycle] F-01a/b F-02, real queue/dialog/page/LRU/close, successful read versus old catalog, external delete; real preload/IPC/SQLite confirmation and retry; LF/CRLF and 10 mutation runs passed')
+  console.log('[diagnostics:tag-intent-lifecycle] F-01a/b F-02, real queue/dialog/page/LRU/close; scoped delete isolation, rerender/in-flight/newer retry, normal-mode audit, successful read versus old catalog, external delete; real preload/IPC/SQLite confirmation and retry; LF/CRLF and 10 mutation runs passed')
 }
 function baseline(ref) {
   const source=execFileSync('git',['show',`${ref}:${authorityFile}`],{cwd:root,encoding:'utf8'})
