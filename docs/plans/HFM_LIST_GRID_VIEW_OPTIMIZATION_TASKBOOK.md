@@ -655,7 +655,7 @@ Create State 当前连接返回 `UNAUTHORIZED`，要求重新认证；未向其�
 
 - Windows 定向门新增实际队列/对话框/主进程日志接收链路：共享在途时本地删除完成、失败共享队列保留且本地删除不触发它、反向隔离、工厂重建后的同范围等待、旧失败与新写入顺序、同范围失败阻止 IPC、等待抛错/后端拒绝/IPC 抛错分类、默认日志可见且无原始标签名、日志同步/异步失败不影响删除。
 - 仅迁移 fontDialogRuntime 与 fontWriteQueueRuntime 的既有算法冻结 hash；原组合输入/调用顺序及其他冻结不放宽。持久化静态断言随字段排空迁移，行为门保留。
-- Windows CI 结果待回填。没有运行 Linux/macOS 测试或更新它们的平台代码。无依赖、schema 或数据迁移。
+- 最终 Windows CI 全部通过，见 §19.3。没有运行 Linux/macOS 测试或更新它们的平台代码。无依赖、schema 或数据迁移。
 - 日志中的共享活动索引回退到不存在 index.sqlite、启动维护 ok=false 缺明细、关闭冻结早于待写排空，仍是独立待查事项；本轮不声称修复这些根因，也不关闭真实 Windows/NAS 验收，V07 未开始。
 - Mermaid Chart 已呈现当前删除/全量排空链路。Create State 已知连接 UNAUTHORIZED 且上轮等待阻塞，遵循插件失败不得阻断要求，不重复调用；续接由 Git/README/本任务书保存。
 
@@ -668,3 +668,18 @@ Create State 当前连接返回 `UNAUTHORIZED`，要求重新认证；未向其�
 `e8e01df325fd0d7fb81ebc0e3fbe0e29bd7ccbc5` 的 Windows 提前门已通过增量刷新和标签回归。继续静态审阅操作链门发现：旧完整排空通过替换 queueRef.current 保留历史快照，字段排空也应保持此约束；改为替换带空目标 map 的新队列对象，其他字段沿用当前 map，旧快照不原地清空。既有 operation-chain 断言完整保留并前移，不修改期望。最终提交重新执行 Windows 门禁。
 
 `e7926fc1db0069f41474bb6c99e3ff56f6eae18f` 的 [CI 36467195927](https://github.com/uniquenesssta/99/actions/runs/36467195927) 中，Windows 原生任务 `109080129038` 成功，主任务 `109080128503` 的操作链、删除、增量刷新、PNG/DOM 和类型检查成功；全量诊断到 React domain controller 时因迁移 hash 格式错误中止。该夹具使用 TypeScript scanner token 序列的 SHA256，不是原始文件 SHA256；按同一源码的 Windows 实测 token hash `18d9cb5ffb66ee3ada3d3807db16039c35b16b2bab0411b575ed2dfba19d7ee1` 修正唯一对应项，其他 hash/算法/断言不变。生产源码未再修改，新增提前执行原 domain controller 门，最终以修正后的完整 Windows 回执为准。
+
+### 19.3 最终 Windows 验证回执
+
+受测提交：**`6d21f2321f4035626848d7051f0f6fc979d8acfb`**；[CI 36469246021](https://github.com/uniquenesssta/99/actions/runs/36469246021)，整体 **success**。后续仅补文档回执，不改变受测源码。
+
+| 任务 | Job ID | Runner | 结果 |
+| --- | --- | --- | --- |
+| Windows 主任务 | 109087020358 | windows-latest | success |
+| Windows 原生回归 | 109087019773 | windows-latest | success |
+
+- Windows 完整 `npm run verify`：**165/165 项诊断**，类型检查成功。提前门和完整门均通过标签意图/删除隔离、普通日志、操作链、增量刷新及 React domain controller；原有 LF/CRLF、反例与关闭排空检查继续保留。
+- Windows 原生回归的五组 Rust 用例为 3/5/2/3/1 全部通过；主任务通过列表/网格原生 PNG 与真实 Electron DOM、详情开合、快速分页/滚动条检查。两个任务的主进程/预加载/渲染构建及混淆 **3/3** 成功；完整差异检查成功。
+- 新增行为验证确认：未返回或失败的共享写入不阻塞本地删除；失败项保留；跨工厂重建同字段继续等待；新写入不会被旧失败覆盖；同字段未保存拒绝删除 IPC；默认日志按同一操作 ID 区分等待、阻塞、派发、后端失败及结果未知，日志异常不改变业务结果。全量混合写入保留一次合并刷新及旧快照语义。
+- 只改原 `stage/11-list-grid-view`。Stage 10 与 main 分别保持 `6012cb6c18fc52c9db181a2251dd54a235ac6e81`、`9d9be77b4761a3c1e169ffe15fbda059b556064f`；依赖、schema 和旧任务归档未修改。
+- 本轮两个修复点的自动化验证完成；用户 Windows 实库/NAS 的删除体验仍需更新后复核。拉取原分支后完整重启 `npm run dev`，使渲染端队列和主进程普通日志同时更新。共享活动索引定位、维护错误明细及关闭冻结时序仍按 §19.2 单独待查，不将本轮结果扩展为所有共享标签故障已修复。V06.5 真实共享环境待验，V07 未开始。
