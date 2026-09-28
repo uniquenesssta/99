@@ -107,11 +107,20 @@ module.exports = async function checkLayout() {
     close(canvas.getBoundingClientRect().height,entry.canvasHeight,'list canvas height')
     if(region.scrollWidth<=region.clientWidth)throw Error('horizontal preview inaccessible')
     if(region.clientHeight<entry.canvasHeight)throw Error(`list preview height clipped: ${entry.label} client=${region.clientHeight} canvas=${entry.canvasHeight} box=${region.parentElement.getBoundingClientRect().height} padding=${getComputedStyle(region.parentElement).padding}`)
-    region.scrollLeft=600; if(region.scrollLeft<500)throw Error('preview cannot scroll')
+    close(region.scrollLeft,0,'initial preview scroll position')
+    const viewportLeft=region.getBoundingClientRect().left+region.clientLeft
+    close(canvas.getBoundingClientRect().left,viewportLeft,'initial canvas origin')
     if(entry.native){
       const img=canvas.querySelector('img');if(!img.complete)await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject})
       close(img.getBoundingClientRect().width,img.naturalWidth,'PNG was scaled horizontally')
       close(img.getBoundingClientRect().height,img.naturalHeight,'PNG was scaled vertically')
+      const pixels=document.createElement('canvas');pixels.width=img.naturalWidth;pixels.height=img.naturalHeight
+      const ctx=pixels.getContext('2d');ctx.drawImage(img,0,0)
+      const data=ctx.getImageData(0,0,pixels.width,pixels.height).data
+      let firstInk=pixels.width
+      for(let y=0;y<pixels.height;y++)for(let x=0;x<firstInk;x++)if(data[(y*pixels.width+x)*4+3]>8){firstInk=x;break}
+      const inkLeft=img.getBoundingClientRect().left+firstInk-viewportLeft
+      if(firstInk===pixels.width||inkLeft<0||inkLeft>=Math.min(region.clientWidth,120))throw Error(`PNG first ink outside initial left viewport: ${inkLeft}`)
     }else{
       const text=canvas.querySelector('.preview-layout-list'),lines=[...text.querySelectorAll('.font-sample-line')]
       if(lines.map(line=>line.textContent).join('\n')!==entry.expectedText)throw Error('route changed sample text: '+entry.route)
@@ -121,8 +130,15 @@ module.exports = async function checkLayout() {
       close(parseFloat(getComputedStyle(text).fontSize),entry.size,'user font size')
       if(getComputedStyle(text).textAlign!=='left')throw Error('text not left aligned')
       close(lines[0].getBoundingClientRect().left-canvas.getBoundingClientRect().left,36,'text start')
+      const firstText=lines.find(line=>line.textContent.trim())
+      if(firstText){
+        const range=document.createRange();range.setStart(firstText.firstChild,0);range.setEnd(firstText.firstChild,1)
+        const rect=range.getBoundingClientRect()
+        if(rect.left<viewportLeft||rect.right>viewportLeft+region.clientWidth)throw Error('first character outside initial viewport')
+      }
       if(lines.length===2)close(lines[1].getBoundingClientRect().top-lines[0].getBoundingClientRect().top,entry.size*1.16,'explicit line stride')
     }
+    region.scrollLeft=600; if(region.scrollLeft<500)throw Error('preview cannot scroll')
   }
   host.innerHTML=''
   let selects=0,drags=0

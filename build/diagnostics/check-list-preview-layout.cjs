@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict'), path = require('node:path')
 const { loader } = require('./check-operation-chain.cjs')
 const { loader: cardLoader, fonts, prefix } = require('./lib/font-view-layout-harness.cjs')
+const { previewBridge } = require('./lib/preview-preload-harness.cjs')
 const shared = loader()('src/shared/preview-layout/previewTextFitRuntime.ts')
 const { nativePreviewLayoutKey } = loader()('src/shared/preview-layout/nativePreviewLayout.ts')
 const { normalizePreviewInput: validate } = loader()('src/main/preview/runtime/previewInputPolicy.ts')
@@ -88,5 +89,35 @@ async function capabilityGate() {
   assert.equal((await helper.renderWithDirectWritePreviewHelper(request,'input',async()=>({stdout:'{"ok":true}'}))).ok,false)
   assert.equal((await helper.renderWithDirectWritePreviewHelper(request,'input',async()=>({stdout:'{"ok":true,"layoutVersion":"list-v1"}'}))).ok,true)
 }
-async function main(){contracts();await identities();interactions();await capabilityGate();console.log('[list-preview-layout] pixel contract, invalid inputs, all cache identities, coalescing, event isolation and old backend gates passed')}
+async function preloadContracts(options = {}) {
+  for (const kind of ['runtime', 'built']) {
+    const received = []
+    let bridge
+    const capture = async (...args) => {
+      received.push({ args: plain(args), trace: bridge.currentTrace() })
+      validate({ text: args[1], fontSize: args[2], width: args[3], height: args[4], layout: args[5] })
+      return Array.isArray(args[0]) ? { [fonts[0].id]: 'png' } : 'png'
+    }
+    bridge = previewBridge({ renderFontPreviewImage: capture, readCachedFontPreviewImage: capture, readCachedFontPreviewImages: capture, appendLog() {} }, { kind, ...options })
+    const trace = { version: 1, sessionId: 'test-session', operationId: 'preview-layout-operation', attemptId: 'preview-layout-attempt', batchId: 'preview-batch', domain: 'preview', members: [], omitted: 0 }
+    for (const method of ['renderPreviewImage', 'getCachedPreviewImage', 'getCachedPreviewImages']) {
+      const subject = method === 'getCachedPreviewImages' ? [fonts[0]] : fonts[0]
+      for (const metadata of [undefined, trace]) for (const descriptor of [undefined, layout]) {
+        received.length = 0
+        await bridge.api[method](subject, input.text, input.fontSize, input.width, input.height, metadata, descriptor)
+        assert.equal(received.length, 1)
+        assert.deepEqual(received[0].args.slice(0, 5), plain([subject, input.text, input.fontSize, input.width, input.height]))
+        assert.deepEqual(received[0].args[5] ?? null, plain(descriptor ?? null), `${kind}/${method} dropped or changed layout`)
+        if (metadata) assert.equal(received[0].trace?.operationId, trace.operationId, 'layout displaced trace envelope')
+        else assert.equal(received[0].trace, undefined)
+      }
+      await assert.rejects(bridge.api[method](subject, input.text, input.fontSize, input.width, input.height, undefined, { ...layout, version: 'invalid' }), /PREVIEW_INPUT_INVALID/)
+    }
+  }
+}
+async function main(){
+  contracts();await identities();interactions();await capabilityGate();await preloadContracts()
+  await assert.rejects(preloadContracts({ transformSource: source => source.replaceAll('...(layout ? [layout] : []), ', '') }), /dropped or changed layout/, 'old runtime bridge must fail the layout contract')
+  console.log('[list-preview-layout] pixel contract, cache identities, both preload/IPC chains (layout and trace), dropped-layout mutant, event isolation and backend gates passed')
+}
 if(require.main===module)main().catch(e=>{console.error(e);process.exitCode=1})
