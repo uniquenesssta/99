@@ -23,11 +23,12 @@ const WRITE_FIELDS: WriteField[] = ['localTags', 'sharedTags', 'favorite', 'prot
 // not a render closure; the maps in queueRef remain the only pending-write store.
 const activeFieldsByQueue = new WeakMap<QueueRef, Map<WriteField, Promise<boolean>>>()
 
-function takeQueuedField<K extends WriteField>(state: QueuedFontWriteState, field: K): QueuedFontWriteState {
+function takeQueuedField<K extends WriteField>(queueRef: QueueRef, field: K): QueuedFontWriteState {
   const snapshot = createEmptyQueuedFontWriteState()
-  const pending = state[field]
-  state[field] = snapshot[field]
-  snapshot[field] = pending
+  const empty = snapshot[field]
+  snapshot[field] = queueRef.current[field]
+  // Preserve prior snapshots just as the original whole-queue drain did.
+  queueRef.current = { ...queueRef.current, [field]: empty }
   return snapshot
 }
 
@@ -118,7 +119,7 @@ export function createRendererFontWriteQueueRuntime(
 
       while (options.queueRef.current[field].size) {
         const folders = options.getFolders()
-        const queue = takeQueuedField(options.queueRef.current, field)
+        const queue = takeQueuedField(options.queueRef, field)
 
         const result = await flushQueuedFontWriteQueue({
           queue,
