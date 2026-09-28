@@ -43,7 +43,7 @@
         "appendStartupLog"
       ],
       "functions": {
-        "runRustPreviewRenderImage": "2ce2d82399691cfbe0d6ca095ef98151451071abb1d67bd9536b366071f38ac9",
+        "runRustPreviewRenderImage": "4abd0a6c1f64ef4cb84622b83290fe79455502f7b10fb4f8cb032a5576038adf",
         "runRustPreviewCacheInputCommand": "0c4dabe553393e2e3773e728cf1be8447bb955bf38bfa683a0e7eae6633a1ced",
         "runRustPreviewCacheMaintenance": "eaad38eb2f51486894612442a9e33196207bc6e22274455ceec7d129ac4da9b2",
         "runRustPreviewCacheBatch": "eea2b11ed1aed52b27b194d86b1d724af66181d3478635f9a0aecff633aeffca",

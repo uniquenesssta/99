@@ -3,7 +3,6 @@ import { isGridNativePreviewImage } from './gridNativePreviewImageRuntime'
 
 const ALPHA_THRESHOLD = 8
 const CROP_PADDING_X = 18
-const CROP_PADDING_Y = 12
 const TRIM_CACHE_LIMIT = 240
 
 export type TrimmedPreviewImage = { image: string; clipped: boolean }
@@ -86,11 +85,18 @@ async function trimGridNativePreviewImage(source: string): Promise<TrimmedPrevie
         }
       }
 
-      if (maxX < minX || maxY < minY) return rememberTrimmedImage(source, source)
+      if (maxX < minX || maxY < minY) {
+        const blank = document.createElement('canvas')
+        blank.width = CROP_PADDING_X * 2
+        blank.height = height
+        return rememberTrimmedImage(source, canvasToDataUrl(blank) || source)
+      }
 
       const clipped = minX <= 1 || minY <= 1 || maxX >= width - 2 || maxY >= height - 2
       const [cropX1, cropX2] = clampCropRange(minX, maxX, width, CROP_PADDING_X)
-      const [cropY1, cropY2] = clampCropRange(minY, maxY, height, CROP_PADDING_Y)
+      // Vertical space belongs to grid-v1's explicit lines, not the ink box.
+      // Cropping it would erase a leading blank line and change the shared scale.
+      const [cropY1, cropY2] = [0, height - 1]
       const cropWidth = Math.max(1, cropX2 - cropX1 + 1)
       const cropHeight = Math.max(1, cropY2 - cropY1 + 1)
 

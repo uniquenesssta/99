@@ -12,7 +12,7 @@ export function GridFontPreview({ layout, image, fontFamily, onImageLoad, onImag
 }): JSX.Element {
   const nativeImage = image?.startsWith('data:image/png') ? image : undefined
   const trimmed = useGridNativePreviewImageTrim(nativeImage)
-  const fit = useGridPreviewVisualFit(`${layout.token}:${fontFamily || ''}:${trimmed?.image || ''}`, layout.fontSize, trimmed?.clipped)
+  const fit = useGridPreviewVisualFit(`${layout.token}:${fontFamily || ''}`, layout.fontSize, trimmed?.clipped, trimmed?.image)
   const style: CSSProperties = { fontFamily, fontSize: layout.fontSize, lineHeight: layout.lineHeight,
     transform: `scale(${fit.scale})` }
   const hints = [layout.hasHiddenLines ? '仅展示前两行' : '', layout.lengthLimited ? '已达预览长度上限' : '',

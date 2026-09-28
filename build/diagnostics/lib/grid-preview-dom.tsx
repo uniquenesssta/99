@@ -34,7 +34,7 @@ function check(ok:unknown,label:string){if(!ok)throw Error('[grid-preview] '+lab
   if(overflow)check(host.querySelector('.grid-preview-hint')!.textContent!.includes('打开详情'),'missing overflow hint')
   count++;return {scale,overflow,text:content.textContent}
  }
- for(const text of ['安盛aaaa','  Ag  \nSecond','\nAg','Wide '.repeat(80)+'\nSecond']){
+ for(const text of ['安盛aaaa','  Ag  \nSecond','\nAg','\n\nthird','Wide '.repeat(80)+'\nSecond']){
   for(const width of [180,300,520]){
    const layout=render(text,width);await inspect(text,layout)
    const before=(host.querySelector('.grid-preview-content') as HTMLElement).style.transform

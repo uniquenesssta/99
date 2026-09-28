@@ -5,7 +5,7 @@
 .font-card .grid-preview .grid-preview-content {
   width: max-content; min-width: 0; max-width: none; height: auto; min-height: 0; max-height: none;
   flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 0; padding: 12px 18px; margin: 0; overflow: visible; text-align: center;
+  gap: 0; padding: 20px 18px; margin: 0; overflow: visible; text-align: center;
   white-space: pre; transform-origin: center center;
 }
 .font-card .grid-preview .grid-preview-content .font-sample-line {

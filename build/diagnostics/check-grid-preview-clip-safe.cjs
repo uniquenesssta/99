@@ -10,11 +10,12 @@ async function main(){
  const load=loader({react:require('react')},{Image:ImageFixture,document:{createElement(){const canvas={width:0,height:0,getContext:()=>({drawImage(){},getImageData(){scans++;return {data:pixels}}}),toDataURL(){cropSize=[canvas.width,canvas.height];return 'data:image/png;cropped'}};return canvas}}}, {[path.resolve(file)]:s=>s.replace('async function trimGridNativePreviewImage','export async function trimGridNativePreviewImage')})
  const trim=load(file).trimGridNativePreviewImage
  const [a,b]=await Promise.all([trim('data:image/png;first'),trim('data:image/png;first')])
- assert.equal(images,1);assert.equal(scans,1);assert.equal(a,b);assert.deepEqual(cropSize,[76,44]);assert.equal(a.clipped,false)
+ assert.equal(images,1);assert.equal(scans,1);assert.equal(a,b);assert.deepEqual(cropSize,[76,50]);assert.equal(a.clipped,false)
  pixels[3]=255
  assert.equal((await trim('data:image/png;edge')).clipped,true,'canvas boundary must disclose clipped ink')
  assert.equal((await trim('not-png')).image,'not-png');assert.equal(images,2)
  await trim('data:image/png;first');assert.equal(images,2,'same image should reuse crop')
+ pixels.fill(0);const blank=await trim('data:image/png;blank');assert.deepEqual(cropSize,[36,50]);assert.equal(blank.clipped,false,'blank lines must not report overflow')
  const card=fs.readFileSync('src/renderer/src/components/FontCard.tsx','utf8')
  assert(!card.includes('useGridNativePreviewImageTrim'),'list mounts grid-only processing')
  assert(card.indexOf('<GridFontPreview')>card.indexOf('if (compact)'),'grid component must be after compact return')

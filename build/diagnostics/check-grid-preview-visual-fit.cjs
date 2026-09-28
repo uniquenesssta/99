@@ -12,9 +12,14 @@ const overflow=actual(2000,100,300,112,42)
 assert.equal(overflow.scale,26/42);assert.equal(overflow.overflow,true)
 assert.equal(actual(500,100,300,112,26).scale,1,'26px floor must not shrink further')
 assert.equal(actual(300,200,300,150,42).scale,.75,'fit both axes as one block')
+function contentChecks(load){
 for(const text of JSON.parse(read('build/diagnostics/fixtures/grid-preview-visual-fit.fixture.json')).samples){
  const html=renderCase(load,{mode:'grid',density:'comfortable',width:420,total:1,previewText:text}).html
  const lines=[...html.matchAll(/class="font-sample-line">([^<]*)<\/span>/g)].map(m=>m[1])
  assert.equal(lines.join('\n'),text,'grid changed visible source text')
 }
+}
+contentChecks(load)
+const component='src/renderer/src/components/GridFontPreview.tsx'
+assert.throws(()=>contentChecks(loader({overrides:{[component]:read(component).replace('{line}</span>','{line.slice(0,-1)}</span>')}})),/grid changed visible source text/,'truncation mutant escaped')
 console.log('[grid-preview-visual-fit] complete text, no enlargement, bounded whole-sample scaling, overflow and both-axis cases passed')

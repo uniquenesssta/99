@@ -8,7 +8,7 @@ export function gridPreviewVisualFit(width: number, height: number, availableWid
   return { scale, overflow: width * scale > availableWidth + 1 || height * scale > availableHeight + 1 }
 }
 
-export function useGridPreviewVisualFit(identity: string, fontSize: number, clipped = false) {
+export function useGridPreviewVisualFit(identity: string, fontSize: number, clipped = false, source?: string) {
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
   const [content, setContent] = useState<HTMLDivElement | null>(null)
   const [fit, setFit] = useState({ scale: 1, overflow: false })
@@ -36,6 +36,6 @@ export function useGridPreviewVisualFit(identity: string, fontSize: number, clip
       document.fonts.removeEventListener('loadingdone', measure)
       document.fonts.removeEventListener('loadingerror', measure)
     }
-  }, [viewport, content, identity, fontSize, clipped])
+  }, [viewport, content, identity, fontSize, clipped, source])
   return { ...fit, viewportRef: setViewport, contentRef: setContent }
 }

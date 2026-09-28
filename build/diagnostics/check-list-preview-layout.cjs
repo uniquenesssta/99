@@ -70,6 +70,7 @@ function interactions() {
 }
 async function capabilityGate() {
   const calls=[], status={available:true,path:'worker',capabilities:['preview-render-image']}
+  let resultVersion='list-v1'
   const load=loader({
     '../rustSharedIoCommandRuntime':{sharedDatabaseTarget(){}},'../../path/sharedIoProcessRuntime':{rethrowSharedIoProcessError(){}},
     '../../logging/previewCacheMutationTrace':{tracePreviewCacheMutation(){}},
@@ -79,12 +80,21 @@ async function capabilityGate() {
   const client=load('src/main/rust-core/clients/rustPreviewClientRuntime.ts').createRustPreviewClientRuntime({
     diagnoseRustCoreWorker:async()=>status,appendStartupLog(){},appendPreviewCacheFailureLog(){},
     createTemporaryJsonFile:()=>({path:'input',writeJson:async v=>calls.push(v),dispose:async()=>{}}),
-    runRustCoreScheduledCommand:async()=>({stdout:JSON.stringify({ok:true,outputPath:'out',layoutVersion:'list-v1'})})
+    runRustCoreScheduledCommand:async()=>({stdout:JSON.stringify({ok:true,outputPath:'out',layoutVersion:resultVersion})})
   })
   const request={...input,fontPath:'font',outputPath:'out'}
   assert.equal(await client.runRustPreviewRenderImage(request),null);assert.equal(calls.length,0,'old worker invoked new layout')
   status.capabilities.push('preview-layout-list-v1');assert.equal((await client.runRustPreviewRenderImage(request)).ok,true)
   assert.deepEqual(plain(calls[0].layout),plain(layout))
+  const grid=shared.getCardPreviewLayout('grid','安盛aaaa\nSecond',72)
+  const gridRequest={fontPath:'font',outputPath:'out',text:grid.text,fontSize:grid.fontSize,width:grid.width,height:grid.height,layout:grid.nativeLayout}
+  assert.equal(await client.runRustPreviewRenderImage(gridRequest),null,'list-only worker accepted grid layout')
+  assert.equal(calls.length,1,'list-only capability must not submit grid work')
+  status.capabilities.push('preview-layout-grid-v1')
+  assert.equal(await client.runRustPreviewRenderImage(gridRequest),null,'mismatched layout receipt accepted')
+  resultVersion='grid-v1';assert.equal((await client.runRustPreviewRenderImage(gridRequest)).ok,true)
+  assert.equal(calls.at(-1).layout.version,'grid-v1')
+
   const helper=loader({'./directWritePreviewHelperPathRuntime':{findDirectWritePreviewHelperPath:()=> 'helper'}})('src/main/preview/native-renderer/directwrite/directWritePreviewRequestRuntime.ts')
   assert.equal((await helper.renderWithDirectWritePreviewHelper(request,'input',async()=>({stdout:'{"ok":true}'}))).ok,false)
   assert.equal((await helper.renderWithDirectWritePreviewHelper(request,'input',async()=>({stdout:'{"ok":true,"layoutVersion":"list-v1"}'}))).ok,true)
