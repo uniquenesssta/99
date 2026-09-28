@@ -30,16 +30,17 @@ function Fixture({mode, offset=0, scope='all'}:any) {
   const detail=createFontDetailPanelRuntime({...selection,selectedFont:undefined,previewFamilies:{},library:{},hfm:{}} as any)
   const interaction=selection.createInteractionRuntime({visibleFonts:visible,setStatus:noop,setSingleFontSelection:id=>selection.setSelectedFontIds([id]),toggleFontDetail:detail.toggleFontDetail,hydrateFont:noop,reportUserActivity:noop,userActivityIdleWindowMs:150})
   current={node:node.current,layout,viewport,selection,virtual,scroll:(top:number)=>{node.current!.scrollTop=top;setViewport(v=>({...v,scrollTop:node.current!.scrollTop}))},close:detail.closeDetail}
-  return <AppLayout detailVisible={selection.detailVisible} renderSidebar={()=> <aside className="sidebar"/>}>
+  return <div className="app"><header className="topbar"/><AppLayout detailVisible={selection.detailVisible} renderSidebar={()=> <aside className="sidebar"/>}>
     <FontListPanel {...({sidebarPage:'library',activeFilter:{kind:'all'},status:'',search:'',installStatus:'all',viewMode:'comfortable',cardPoolViewMode:mode,listPreviewFontSize:52,fontScrollerRef:node,updatePageToolbar:noop,visibleFonts:visible,visibleFontTotal:fonts.length,databasePageReady:!!offset,virtualLayout:virtual,viewLayout:layout,handleFontScroll:(e:any)=>{const top=e.currentTarget.scrollTop;setViewport(v=>({...v,scrollTop:top}))},closeDetailFromBlankClick:noop,beginMarqueeSelection:noop,
       renderFontCard:(font:any,compact:boolean)=><FontCard key={font.id} font={font} compact={compact} active={selection.detailVisible&&selection.selectedFontId===font.id} selected={selection.selectedFontIds.includes(font.id)} previewFamily="Arial" previewText={'Wide '.repeat(60)+'\nSecond'} listPreviewFontSize={52} onVisible={noop} onSelect={event=>interaction.handleFontSelect(event,font)} onOpenDetail={event=>interaction.handleFontOpenDetail(event,font)}/>
     } as any)}/>
     {selection.detailVisible&&<section className="detail-panel detail-dock-panel"><button id="cancel-detail" onClick={detail.closeDetail}>取消</button></section>}
-  </AppLayout>
+  </AppLayout></div>
 }
 const frame=()=>new Promise<void>(r=>requestAnimationFrame(()=>r()))
 const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms))
-function check(ok:any,label:string) {if(!ok)throw Error(label)}
+let scenario=''
+function check(ok:any,label:string) {if(!ok)throw Error(`${scenario}: ${label}`)}
 function snapshot(id?:string) {
  const node=document.querySelector('[data-virtual-layout="cards"]') as HTMLElement
  const cards=[...node.querySelectorAll<HTMLElement>('[data-font-id]')]
@@ -62,11 +63,13 @@ async function settleAndTrack(id:string) {
  const host=document.getElementById('fixture')!,root=createRoot(host)
  let count=0
  for(const mode of ['grid','list'])for(const offset of [0,100])for(const position of ['top','middle','bottom']) {
+   scenario=`${innerWidth}/${mode}/${offset}/${position}`
    flushSync(()=>root.render(<Fixture key={`${mode}/${offset}/${position}`} mode={mode} offset={offset}/>))
    await wait(350)
+   check(current.node.clientHeight>100&&current.node.clientHeight<innerHeight,'fixture must use the bounded app viewport')
    flushSync(()=>current.scroll(offset?current.layout.panelPadding+Math.floor((offset+(position==='top'?0:position==='middle'?40:85))/current.layout.columns)*current.layout.rowHeight+17:position==='top'?0:position==='middle'?8000:1e9))
    await frame()
-   const original=snapshot();check(original.id,'no visible card')
+   const original=snapshot();check(original.id,'no visible card '+JSON.stringify({original,viewport:current.viewport,layout:current.layout,virtualStart:current.virtual.startIndex,virtualEnd:current.virtual.endIndex,scrollHeight:current.node.scrollHeight}))
    const preview=document.querySelector(`[data-font-id="${original.id}"] .list-preview-scroll`) as HTMLElement
    if(preview)preview.scrollLeft=173
    const before=snapshot(original.id)
