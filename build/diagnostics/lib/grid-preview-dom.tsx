@@ -21,8 +21,14 @@ function check(ok:unknown,label:string){if(!ok)throw Error('[grid-preview] '+lab
   }
   await frame()
   const viewport=host.querySelector('.grid-preview-viewport') as HTMLElement,content=host.querySelector('.grid-preview-content') as HTMLElement
-  const rect=content.getBoundingClientRect(),box=viewport.getBoundingClientRect(),scale=rect.width/Math.max(1,content.offsetWidth)
-  check(scale<=1.001&&scale>=26/layout.fontSize-.001,'scale outside reading floor')
+  const rect=content.getBoundingClientRect(),box=viewport.getBoundingClientRect()
+  // offsetWidth rounds CSS pixels to integers, so rect.width / offsetWidth is
+  // not the applied scale (even an unscaled fractional-width line can exceed 1).
+  const transform=getComputedStyle(content).transform
+  const scale=transform==='none'?1:new DOMMatrixReadOnly(transform).a
+  const geometry=JSON.stringify({text:text.slice(0,80),native,fontSize:layout.fontSize,scale,transform,
+   width:rect.width,offsetWidth:content.offsetWidth,availableWidth:box.width,height:rect.height,availableHeight:box.height})
+  check(scale<=1.001&&scale>=26/layout.fontSize-.001,'scale outside reading floor: '+geometry)
   check(Math.abs((rect.left+rect.right)/2-(box.left+box.right)/2)<1,'not horizontally centered')
   if(!native){
    const lines=[...host.querySelectorAll('.font-sample-line')]
