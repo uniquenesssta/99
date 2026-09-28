@@ -6,7 +6,9 @@ const { createHarness, root, entry } = require('../helpers/mainCompositionHarnes
 const execFile = promisify(cp.execFile)
 async function createRuntime({ directory, baseline, appendLog, electron, traceContext }) {
   fs.mkdirSync(directory, { recursive: true })
-  const load = loader({ ...(traceContext ? { [path.join(root, 'src/main/logging/operationTraceContext.ts')]: traceContext } : {}), electron, '../security/ipcSenderValidation': { assertTrustedIpcSender() {} } })
+  const helperPath = path.join(root, 'src/main/preview/native-renderer/directwrite/directWritePreviewHelperPathRuntime.ts')
+  const transforms = { [helperPath]: source => source.replaceAll('import.meta.url', JSON.stringify(require('node:url').pathToFileURL(helperPath).href)) }
+  const load = loader({ ...(traceContext ? { [path.join(root, 'src/main/logging/operationTraceContext.ts')]: traceContext } : {}), electron, '../security/ipcSenderValidation': { assertTrustedIpcSender() {} } }, {}, transforms)
   const raw = new DatabaseSync(path.join(directory, 'preview.sqlite'))
   const db = { prepare: sql => raw.prepare(sql), exec: sql => raw.exec(sql), transaction: fn => () => {
     raw.exec('BEGIN'); try { const result = fn(); raw.exec('COMMIT'); return result } catch (e) { raw.exec('ROLLBACK'); throw e }

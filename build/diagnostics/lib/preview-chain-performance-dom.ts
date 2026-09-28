@@ -2,7 +2,7 @@
 // browser PNG decoding. The containing DOM is deliberately small, not App.tsx.
 import { createFontPreviewQueueRuntime } from '../../../src/renderer/src/runtime/preview/fontPreviewQueueRuntime'
 import { getCardPreviewLayout } from '../../../src/shared/preview-layout/previewTextFitRuntime'
-import { resetPreviewTrace } from '../../../src/renderer/src/runtime/preview/previewTraceRuntime'
+import { resetPreviewTrace, previewImageTrace, previewEvent } from '../../../src/renderer/src/runtime/preview/previewTraceRuntime'
 
 ;(window as any).measurePreviewChain = async (fonts: any[], mode: 'list' | 'grid') => {
   resetPreviewTrace()
@@ -10,7 +10,7 @@ import { resetPreviewTrace } from '../../../src/renderer/src/runtime/preview/pre
   const ref = (current: any) => ({ current })
   const text = '字体 Ag fj', size = 44
   const spec = getCardPreviewLayout(mode, text, size)
-  const started = performance.now(), applied = new Set<string>(), images = new Map<string, HTMLImageElement>()
+  const started = performance.now(), applied = new Set<string>(), images = new Map<string, HTMLImageElement>(), visibleTraces: any[] = []
   let first = 0, completed = 0, resolveDone: (value?: unknown) => void, rejectDone: (error: unknown) => void
   const done = new Promise((resolve, reject) => { resolveDone = resolve; rejectDone = reject })
   const options: any = {
@@ -28,10 +28,15 @@ import { resetPreviewTrace } from '../../../src/renderer/src/runtime/preview/pre
         if (!source || applied.has(font.id)) continue
         applied.add(font.id)
         const image = new Image(); image.style.maxWidth = '600px'; image.style.display = 'block'
+        const trace = previewImageTrace(source, font.id)
+        if (!trace) { rejectDone(Error('visible image lost request trace')); return }
+        previewEvent(trace, 'card-image-applied')
         images.set(font.id, image); image.src = source; document.body.append(image)
         void image.decode().then(() => {
           if (image.naturalWidth !== spec.width || image.naturalHeight !== spec.height) throw Error('wrong PNG layout')
+          previewEvent(trace, 'image-load')
           const elapsed = performance.now() - started
+          visibleTraces.push({ fontId: font.id, operationId: trace.operationId, attemptId: trace.attemptId, elapsedMs: elapsed })
           if (!first) first = elapsed
           completed++
           if (completed === fonts.length) resolveDone(elapsed)
@@ -50,7 +55,7 @@ import { resetPreviewTrace } from '../../../src/renderer/src/runtime/preview/pre
     for (const font of fonts) runtime.requestPreviewFont(font, 'high')
     const all = await done
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    return { mode, text, size, fontCount: fonts.length, firstValidPreviewMs: first, visibleCompleteMs: all, decoded: completed, dimensions: [spec.width, spec.height] }
+    return { mode, text, size, fontCount: fonts.length, firstValidPreviewMs: first, visibleCompleteMs: all, decoded: completed, visibleTraces, dimensions: [spec.width, spec.height] }
   } finally {
     clearTimeout(timeout); runtime.disposePreviewQueue()
     for (const image of images.values()) image.removeAttribute('src')

@@ -15,7 +15,10 @@ app.whenReady().then(async () => {
   // Forward only the fixture runtime; real handler scheduling and trace wrapping remain.
   const runtime = new Proxy({ appendLog }, { get(target, key) { return key in target ? target[key] : (...args) => active.runtime[key](...args) } })
   bootstrap('src/main/ipc/handlers/previewAndFolderIpcHandlers.ts').registerPreviewAndFolderIpcHandlers((channel, handler) => traced({ appendLog }, channel, handler), runtime)
-  ipcMain.handle('performance:rendererTrace', (_event, payload) => { appendLog(JSON.stringify(payload)); return true })
+  ipcMain.handle('performance:rendererTrace', (_event, payload) => {
+    if (payload?.kind === 'operation-chain') appendLog('operation-chain: ' + payload.details.event)
+    return true
+  })
   const win = new BrowserWindow({ show: true, width: 900, height: 700, webPreferences: { preload, nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false } })
   await win.loadFile(html)
   const fontDir = path.join(directory, 'fonts'); fs.mkdirSync(fontDir, { recursive: true })
@@ -48,6 +51,14 @@ app.whenReady().then(async () => {
     // Timing is reported, never a machine-speed assertion. Counts prove causality.
     assert(after.sharedCounts === 0)
   }
+  const events = logs.filter(line => line.startsWith('operation-chain: ')).map(line => JSON.parse(line.slice(17)))
+  for (const row of reports) for (const visible of row.visibleTraces) {
+    const chain = events.filter(event => event.trace?.operationId === visible.operationId)
+    assert(chain.some(event => event.stage === 'queued'), 'visible request has no queue origin')
+    assert(chain.some(event => event.stage === 'image-load'), 'visible request has no decode receipt')
+    if (row.cache === 'cold') assert(chain.some(event => event.stage === 'native-render-end'), 'native phase lost IPC request identity')
+  }
+  assert(events.some(event => event.stage === 'preview-library-context-end' && event.trace), 'configuration phase has no request identity')
   fs.writeFileSync(path.join(directory, 'report.json'), JSON.stringify({ sha: process.env.GITHUB_SHA || null, platform: process.platform, versions: process.versions,
     scope: 'real renderer queues/runtime preload/IPC/local SQLite/preview runtime/Rust PNG/browser decode; controlled 400ms shared counter, fixture DOM; not real NAS or full App', reports }, null, 2))
   fs.writeFileSync(path.join(directory, 'operation-chain.log'), logs.join('\n'))

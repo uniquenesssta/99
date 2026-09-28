@@ -61,13 +61,14 @@ async function dbScopes(transform) {
     }
   }
 }
-async function backendsAndEviction() {
+async function backendsAndEviction(transform) {
   const absent = harness('rust'); absent.options.runRustPreviewCacheReadStatus = async () => null
   assert.equal(await absent.read(), 'missing'); assert.equal(absent.state.opens, 1); assert.equal(absent.state.closes, 1)
-  for (const mode of ['throw', 'timeout']) {
-    const h = harness('rust'), pending = gate()
-    h.options.runRustPreviewCacheReadStatus = mode === 'throw' ? async () => { throw Error('worker') } : () => pending.promise
-    await assert.rejects(h.read(), /共享预览缓存读取不可用/); assert.equal(h.state.opens, 0, 'failed/timed-out root query must not fall back or become a cached miss')
+  for (const mode of ['throw', 'timeout', 'cancelled']) {
+    const h = harness('rust', transform), pending = gate()
+    const original = Object.assign(Error('worker'), mode === 'cancelled' ? { name: 'AbortError' } : {})
+    h.options.runRustPreviewCacheReadStatus = mode !== 'timeout' ? async () => { throw original } : () => pending.promise
+    await assert.rejects(h.read(), error => mode === 'timeout' ? error.name === 'IoDeadlineTimeoutError' : error === original); assert.equal(h.state.opens, 0, 'failed/timed-out root query must not fall back or become a cached miss')
     if (mode === 'timeout') { pending.reject(Error('late')); await tick() }
     await h.write()
     h.options.runRustPreviewCacheReadStatus = async () => ({ status: 'ok' })
@@ -85,6 +86,7 @@ async function main() {
   await assert.rejects(() => cacheCases(s => s.replace('while (readStatusCache.size > 512)', 'while (false)')), assert.AssertionError)
   await assert.rejects(() => dbScopes(s => s.replaceAll('if (close) options.closeSqliteDb(db);', 'options.closeSqliteDb(db);')), assert.AssertionError)
   await assert.rejects(() => dbScopes(s => s.replace('return await operation(db);', 'return operation(db);')), assert.AssertionError)
-  console.log('[diagnostics:preview-index-owner] exact single-item migration LF/CRLF, batch-only scope rewrite, private Maps/public commands, capacity/coalescing/retry, scoped close, Rust null/failure/timeout, eviction timing; three mutants rejected')
+  await assert.rejects(() => backendsAndEviction(s => s.replace('throw readStatusResult.error ??', 'throw')), assert.AssertionError)
+  console.log('[diagnostics:preview-index-owner] exact single-item migration LF/CRLF, batch-only scope rewrite, private Maps/public commands, capacity/coalescing/retry, scoped close, Rust null/failure/timeout, eviction timing; four mutants rejected')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

@@ -8,13 +8,13 @@
     "forgetReadStatus": "625edcf789afce7aef4bf9ba8a2c2db46a97b9bdbae20d9685f61240f4288856",
     "rememberReadStatus": "4d2300f23f59bfdc29169a0fc2433e964a1faec2169e441a210fd14045a20bf6",
     "readPreviewCacheIndexStatus": "4feb205b48ba34facea73f6a23fcd7de5e8c3df7f5a3fa77d64bf3b839a7ce9b",
-    "readPreviewCacheIndexStatusUncached": "b4b105d756bfecde9779a22a6da7363484bacbda02a84e9ee36794e0adcdb05b",
+    "readPreviewCacheIndexStatusUncached": "a26c550f466523ac0474744d0ecf996c447a280df37700a7db8742eabc5c0d6d",
     "writePreviewCacheIndex": "370b1e7e7d8f9ddeac20bb9154927a62f6315164872bd86fb332bc8de9c13541",
     "deletePreviewCacheIndex": "04379451428463a97dc6915d13219491aa0af1232207a0c8038b111b88e3b1dd"
   },
   "batchBodiesAfterScope": {
-    "getPreviewCacheStatus": "17afa5ac3329b7c0e3570fced44d0a15a9ef3ae3cc10e6934f3e407bbe11745e",
-    "readCachedPreviewImages": "3804f17b93ef467448dcd018361b249dd3a4150287ffb6b3b395533e35e492b7"
+    "getPreviewCacheStatus": "3d6d24fe9c14085c896531202298a0028290e3debd371f2f293d98716bf285ec",
+    "readCachedPreviewImages": "8873a8a93237dd63b698175752dc26ddb439d1ca04da2cec5d7ddaa9b6d7a352"
   },
   "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
 }
