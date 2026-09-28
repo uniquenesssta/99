@@ -17,6 +17,7 @@ jobs:
       - run: npm run diagnostics:tag-intent-lifecycle
       - run: npm run diagnostics:font-write-queue-durability
       - run: npm run diagnostics:app-interaction-composition
+      - run: npm run diagnostics:incremental-metadata-refresh
       - run: node build/diagnostics/check-font-view-layout.cjs --dom-feedback
       - run: npm run diagnostics:shared-io-integration
       - run: npm run diagnostics:shared-filesystem
@@ -44,7 +45,6 @@ jobs:
       - run: npm run diagnostics:mapped-drive-unicode
       - run: cargo fetch --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
       - run: npm run diagnostics:execution-lifecycle
-      - run: npm run diagnostics:incremental-metadata-refresh
       - run: npm run diagnostics:font-physical-path-authorization
       - run: npm run diagnostics:decomposition-baseline
       - run: npm run diagnostics:deactivation-refresh

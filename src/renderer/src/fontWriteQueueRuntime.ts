@@ -105,11 +105,11 @@ export function createRendererFontWriteQueueRuntime(
     }, delayMs)
   }
 
-  const flushField = async (field: WriteField, reason: string): Promise<boolean> => {
+  const flushField = async (field: WriteField, reason: string, refresh: RendererFontWriteQueueRuntimeOptions['scheduleDatabaseDerivedStateRefresh'] = options.scheduleDatabaseDerivedStateRefresh): Promise<boolean> => {
     const active = fieldTasks.get(field)
     if (active) {
       if (!await active) return false
-      return options.queueRef.current[field].size ? flushField(field, reason) : true
+      return options.queueRef.current[field].size ? flushField(field, reason, refresh) : true
     }
 
     const task = (async (): Promise<boolean> => {
@@ -134,7 +134,7 @@ export function createRendererFontWriteQueueRuntime(
           if (queue.localTags.size) fields.push('localTags')
           if (queue.sharedTags.size) fields.push('sharedTags')
           if (queue.protection.size) fields.push('protection')
-          options.scheduleDatabaseDerivedStateRefresh(queue.favorite.size > 0 ? 0 : includesTagWrites ? 80 : reason === 'memory' ? 120 : 520, fields)
+          refresh(queue.favorite.size > 0 ? 0 : includesTagWrites ? 80 : reason === 'memory' ? 120 : 520, fields)
         }
 
         const retryCount = queuedFontWriteCount(result.retryQueue)
@@ -186,9 +186,18 @@ export function createRendererFontWriteQueueRuntime(
     const task = (async (): Promise<boolean> => {
       do {
         let saved = true
+        let refreshDelay = Infinity
+        const changedFields = new Set<FontRefreshField>()
+        const collectRefresh: RendererFontWriteQueueRuntimeOptions['scheduleDatabaseDerivedStateRefresh'] = (delay = 0, fields = []) => {
+          refreshDelay = Math.min(refreshDelay, delay)
+          for (const field of fields) changedFields.add(field)
+        }
         // Full drains (including window close) still join every field, even
         // when an in-flight snapshot has already left the pending maps.
-        for (const field of WRITE_FIELDS) if (!await flushField(field, reason)) saved = false
+        for (const field of WRITE_FIELDS) if (!await flushField(field, reason, collectRefresh)) saved = false
+        // Preserve one merged refresh for a full pass; scoped foreground drains
+        // retain their own refresh and do not wait for unrelated fields.
+        if (changedFields.size) options.scheduleDatabaseDerivedStateRefresh(refreshDelay, (['favorite', 'localTags', 'sharedTags', 'protection'] as FontRefreshField[]).filter(field => changedFields.has(field)))
         if (!saved) return false
       } while (queuedFontWriteCount(options.queueRef.current) || fieldTasks.size)
       return true
