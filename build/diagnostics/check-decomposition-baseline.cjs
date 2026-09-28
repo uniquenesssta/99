@@ -32,6 +32,7 @@ function load(file, mocks = {}, transform = x => x) {
       const target = path.resolve(path.dirname(path.join(root, file)), id + '.ts')
       return require('./check-operation-chain.cjs').loader()(target)
     }
+    if (id === './previewTraceRuntime') return require('./check-operation-chain.cjs').loader()('src/main/preview/runtime/previewTraceRuntime.ts')
     if (id.startsWith('node:')) return require(id)
     if (id === './fontTagStateAuthorityRuntime') return load('src/renderer/src/fontTagStateAuthorityRuntime.ts')
     if (id === './tagMutationSignalIdentityRuntime') return require('./check-operation-chain.cjs').loader()('src/main/library/tagMutationSignalIdentityRuntime.ts')

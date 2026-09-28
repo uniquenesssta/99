@@ -1,4 +1,5 @@
 import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
+import { tracePreviewPhase } from './previewTraceRuntime'
 import { applicationWorkEpoch, isApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname, resolve } from "node:path";
@@ -36,8 +37,7 @@ export function createPreviewStorageRoutingRuntime(options: RoutingOptions, port
     if (libraryShellCachePromise) return libraryShellCachePromise;
     const taskGeneration = libraryShellGeneration;
     let task: Promise<LibraryState>;
-    task = options
-      .loadLibraryShell()
+    task = tracePreviewPhase('preview-library-context', () => options.loadLibraryShell())
       .then((value) => {
         if (taskGeneration === libraryShellGeneration)
           libraryShellCache = { value, expiresAt: Date.now() + 5000 };
