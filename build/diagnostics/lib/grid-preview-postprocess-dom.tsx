@@ -33,7 +33,7 @@ const check = (ok: unknown, message: string) => { if (!ok) throw Error('[grid-po
  function Fixture({ compact, source, hidden = false }: {compact:boolean;source:string;hidden?:boolean}) {
   controller = usePreviewController({closingLifecycle:closing,previewText:'Ag',previewLayoutMode:compact?'list':'grid',listPreviewFontSize:42,
    hfm:{} as any,selectedFontId:'',selectedFontIds:[],indexingActive:false,rendererUserActive:()=>false,isBadFontRecord:()=>false,setStatus:noop,updateFont:noop})
-  return <div style={{position:'fixed',left:20,top:hidden?2000:20,width:300}}><FontCard font={{id:'postprocess',path:'C:/font.ttf',family:'Arial',fileName:'font.ttf',fileSize:100,style:'Regular'} as any}
+  return <div style={{position:'fixed',left:20,top:hidden?2000:20,width:300}}><FontCard font={{id:'postprocess',path:'C:/font.ttf',family:'Arial',fileName:'font.ttf',format:'ttf',fileSize:100,style:'Regular'} as any}
    closingLifecycle={closing} compact={compact} active={false} selected={false} previewImage={source} previewText="Ag" listPreviewFontSize={42}
    onSelect={noop} onOpenDetail={noop} onVisible={noop}/></div>
  }

@@ -29,13 +29,21 @@ async function debounce() {
  let now=0,sequence=0,paused=0,resumed=0;const timers=new Map();
  const window={setTimeout:(fn,ms)=>{timers.set(++sequence,{fn,at:now+ms});return sequence},clearTimeout:id=>timers.delete(id)};
  const advance=ms=>{now+=ms;for(const[id,t]of[...timers])if(t.at<=now){timers.delete(id);t.fn()}};
- const load=loader({react:{useState:value=>[value,()=>{}],useRef:current=>({current}),useEffect(){}},'../preview/fontPreviewQueueRuntime':{createFontPreviewQueueRuntime:()=>({pausePreviewForScroll:()=>paused++,resumePreviewAfterScroll:()=>resumed++,processAutoPreviewCacheQueue(){}})},'./effects/usePreviewTextResetRuntime':{usePreviewTextResetRuntime(){}}},{window});
- const controller=load('src/renderer/src/runtime/app/usePreviewController.ts').usePreviewController({previewText:'text',listPreviewFontSize:44});
+ const effects=[];let disposed=0;
+ const load=loader({react:{useState:value=>[value,()=>{}],useRef:current=>({current}),useEffect:fn=>effects.push(fn)},'../preview/fontPreviewQueueRuntime':{createFontPreviewQueueRuntime:()=>({pausePreviewForScroll:()=>paused++,resumePreviewAfterScroll:()=>resumed++,processAutoPreviewCacheQueue(){},disposePreviewQueue:()=>disposed++,resumePreviewQueue(){}})},'./effects/usePreviewTextResetRuntime':{usePreviewTextResetRuntime(){}}},{window});
+ const closingLifecycle=load('src/renderer/src/runtime/app/rendererClosingLifecycleRuntime.ts').createRendererClosingLifecycleRuntime();
+ const controller=load('src/renderer/src/runtime/app/usePreviewController.ts').usePreviewController({previewText:'text',listPreviewFontSize:44,closingLifecycle});
+ const cleanups=effects.map(fn=>fn()), postprocess=load('src/renderer/src/runtime/preview/gridNativePreviewImageTrimRuntime.ts').gridPreviewPostprocess;
  assert.equal(constants.PREVIEW_SCROLL_IDLE_MS,150);
  controller.beginFontListScroll(constants.PREVIEW_SCROLL_IDLE_MS);advance(149);assert.equal(resumed,0);
+ assert.equal(postprocess.getStats().paused,true,'scroll did not pause grid postprocessing');
  controller.beginFontListScroll(constants.PREVIEW_SCROLL_IDLE_MS);advance(149);assert.equal(resumed,0);assert.equal(paused,1);
  advance(1);assert.equal(resumed,1);assert.equal(controller.isFontListScrolling(),false);assert.equal(timers.size,0);
+ assert.equal(postprocess.getStats().paused,false,'150ms idle did not resume grid postprocessing');
  controller.beginFontListScroll(constants.PREVIEW_SCROLL_IDLE_MS);assert.equal(paused,2);controller.clearFontListScrollIdleTimer();advance(150);assert.equal(resumed,1);assert.equal(controller.isFontListScrolling(),false,'cancelled exit must not leave scrolling latched');
+ closingLifecycle.beginClosing();assert.equal(postprocess.getStats().paused,true);assert.equal(disposed,1);assert.equal(timers.size,0);
+ closingLifecycle.resume();assert.equal(postprocess.getStats().paused,false,'cancelled exit did not resume grid demand');
+ cleanups.forEach(fn=>fn?.());assert.equal(postprocess.getStats().paused,true,'controller unmount retained grid admission');
  console.log('controller: each scroll renews 150ms; 149ms stays paused; one invalidation per gesture; teardown cancels resume');
 }
 async function mainBudget() {

@@ -734,7 +734,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "9ee7c406f611f47ada7ba9f1eeabb94197dab8a918e0fe84496594b3d2841e71"
+      "tokenHash": "1bfb9e59652d0cac5f5042eeff6373866ee1a57c375607022c838df6e1eaaaec"
     },
     "src/renderer/src/runtime/app/useSelectionController.ts": {
       "functions": [
