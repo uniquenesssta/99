@@ -158,6 +158,7 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
         let sharedOutputPath = join(sharedStorage.dir, `${row.previewKey}.png`)
         const cachedPresence = options.sharedPresence?.getSharedPresence(sharedStorage, row.previewKey) || null
         const persistentPresence = cachedPresence ? null : await options.sharedPresenceIndex?.getSharedPresenceIndex(sharedStorage, row.previewKey).catch(() => null) || null
+        if (!lease.current()) return 'cancelled'
         const effectivePresence = cachedPresence || persistentPresence
         // Historical missing rows have no trustworthy provenance. Recheck them;
         // only this generation's successful query may briefly suppress a repeat.
@@ -171,6 +172,7 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
           try {
             indexedStatus = await options.readPreviewCacheIndexStatus(sharedStorage, row.previewKey, sharedOutputPath)
           } catch (error) {
+            if (!lease.current()) return 'cancelled'
             const outcome = previewCacheErrorOutcome(error)
             if (outcome === 'cancelled') return outcome
             if (outcome === 'timeout') stats.deadlineDropped += 1
@@ -207,6 +209,7 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
           return 'error'
         }
         const metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row, bytes).catch((error): PreviewCacheMetaValidationResult => ({ status: 'invalid', message: errorMessage(error) })) || { status: 'missing' as const }
+        if (!lease.current()) return 'cancelled'
         if (metaValidation.status === 'ok') stats.sharedMetaValidated += 1
         if (metaValidation.status === 'missing') stats.sharedMetaMissing += 1
         if (metaValidation.status === 'invalid' || metaValidation.status === 'mismatch') {

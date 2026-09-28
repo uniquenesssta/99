@@ -53,6 +53,22 @@ async function main() {
     const a = runtime.hydratePreviewCache(local, row), b = runtime.hydratePreviewCacheRows(local, [row])
     await tick(); assert.equal(calls, before + 1, 'same key duplicated physical hydration')
     hold.resolve(); hold = undefined; assert.equal(await a, true); assert((await b).has(row.id))
+    // A metadata rejection arriving after its image lease was superseded must
+    // not become checksum damage or poison the same key's negative cache.
+    const staleRow = { id: 'stale-meta', previewKey: 'stale-meta', outputPath: path.join(dir, 'local', 'stale-meta.png') }
+    fs.writeFileSync(path.join(dir, 'stale-meta.png'), png)
+    let competing
+    options.validateSharedPreviewCacheMeta = async () => {
+      competing = load(base + 'previewImageCommitRuntime.ts').claimPreviewImage(staleRow.outputPath, 'render')
+      return { status: 'invalid', message: 'late cancelled validation' }
+    }
+    const staleOutcomes = [], beforeStale = calls
+    const staleIds = await runtime.hydratePreviewCacheRows(local, [staleRow], () => true, (_row, outcome) => staleOutcomes.push(outcome))
+    assert.equal(staleIds.size, 0); assert.deepEqual(staleOutcomes, ['cancelled'])
+    assert(!logs.some(line => line.includes('late cancelled validation')), 'obsolete metadata logged as corruption')
+    await competing.release(); delete options.validateSharedPreviewCacheMeta
+    assert.equal(await runtime.hydratePreviewCache(local, staleRow), true)
+    assert.equal(calls, beforeStale + 2, 'obsolete metadata poisoned same-key recovery')
     console.log('PASS cache outcomes: real IO errors retained, six hydration results, timeout/cancel same-key retry, physical coalescing')
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
   // Summary observes typed results; compatibility failed still means non-hydrated.
