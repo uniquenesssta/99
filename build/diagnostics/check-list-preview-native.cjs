@@ -93,5 +93,5 @@ async function main(){
  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({fonts,report,bridgeRegression:regression},null,2));fs.writeFileSync(path.join(out,'dom-samples.json'),JSON.stringify(domSamples))
  console.log('[list-preview-native]',report.length,'real PNGs; runtime bridge before/after:',JSON.stringify(regression),'; no-wrap suffix checks passed; fonts:',fonts.map(f=>f[0]).join(', '))
 }
-if(require.main===module)main().catch(error=>{console.error(error);process.exitCode=1})
+if(require.main===module)main().then(() => require('./check-preview-chain-performance.cjs').run()).catch(error=>{console.error(error);process.exitCode=1})
 module.exports={decode}
