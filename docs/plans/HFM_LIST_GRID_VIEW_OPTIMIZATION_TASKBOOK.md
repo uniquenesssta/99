@@ -608,6 +608,14 @@ flowchart TD
 
 - 类型检查、布局/页范围/详情锚点、维护小批次、请求超时与离线分流、精细准入、旧能力拒绝及不确定提交不重放已执行；完整诊断和 Windows CI 正在执行，最终受测 SHA/结果在完成后补入本节。
 - 新维护定向回归：70 行分 32/32/6 三批，前批标 stale 不漏后续行；模拟 4820 个文件元数据只读一次目录，无逐文件 stat。此为机制验证，不能转换为真实共享盘加速倍数。
-- 客户端冻结基线仅迁移 `runRustPreviewCacheMaintenance` 与 `runRustPreviewCacheInputCommand` 两个函数，以容纳能力门、精细声明和提交回执验证；38 个方法身份、单一 transport、旧调用结果及失败语义仍由原诊断保留。其余冻结函数未放宽。
+- 客户端函数冻结基线仅迁移 `runRustPreviewCacheMaintenance` 与 `runRustPreviewCacheInputCommand` 两个函数，以容纳能力门、精细声明和提交回执验证；38 个方法身份、单一 transport、旧调用结果及失败语义仍由原诊断保留。其余冻结函数未放宽。维护输入类型仅增加可选 batch 字段，并单独迁移这一类型的冻结 hash；原输入仍通过编译，旧 worker 能力拒绝由定向测试保留。
 - Context7 查询了指针捕获的官方 MDN 文档并对照 Electron 42.11.3；Mermaid Chart 已呈现真实维护/前台读取链路。本地 Electron headless 尝试因容器 DBus/udev/进程能力限制后 SIGSEGV，未获得 DOM 结果；不把此记为界面通过，Windows 原生与 DOM 门是下一验证边界。
 - 运行时无新增依赖；`npm run dev` 的原有 Rust 构建步骤会更新支持有界维护的 worker。可按这次提交整体回退，缓存结构及现存预览无需迁移。用户真实 UNC/映射盘与默认开发窗口仍需新的操作/日志回执，V06.5/V07 状态保持原约束。
+
+#### 18.3.1 首轮回归发现与修正
+
+`fdd0c007e82ad2622502258ce71b92ab2e81119f` 的 [CI 36450436553](https://github.com/uniquenesssta/99/actions/runs/36450436553) 中，Windows/Linux 原生组成功，新增 3 个 Rust 维护用例通过；Windows 生成 108 张列表、54 张网格 PNG。720 视口基础布局、24 次详情开合/1056 帧、浅深主题 PNG、后处理及 8 次快速往返跳页通过，浮动条键盘端点断言失败：夹具把有内边距的滚动区末端写死为 700，改按实际 scrollWidth/clientWidth 校验端点，并保留必须发生水平移动的下限。
+
+本地完整诊断暴露维护输入类型的冻结基线，以及域类型反向引用 worker 契约造成的类型环。已按原方向保留域端口的结构输入、单独更新可选 batch 契约的 hash；93 个公开类型、38 个私有结构、41 个编译拒绝、依赖方向/环和 9 个反例检查再次通过。未删除或跳过门禁。额外覆盖单文件物理 I/O 预算超时，不将其等同于根离线。
+
+Create State 当前连接返回 `UNAUTHORIZED`，要求重新认证；未向其他项目写入状态，续接信息保存在本任务书与 Git。后续最终回执以补充修正后的代码为准。

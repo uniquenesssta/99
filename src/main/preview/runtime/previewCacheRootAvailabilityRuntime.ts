@@ -71,7 +71,7 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
     // that the device/root is offline. Physical I/O remains owned until closed.
     if (isIoDeadlineTimeout(error)) return
     const failure = error as { reason?: string; name?: string } | null
-    if (failure?.name === 'AbortError' || ['cancelled', 'stopping', 'closing', 'stale-generation', 'queue-timeout', 'queue-full', 'capability-missing', 'capability-unavailable'].includes(failure?.reason || '')) return
+    if (failure?.name === 'AbortError' || ['cancelled', 'stopping', 'closing', 'stale-generation', 'timeout', 'queue-timeout', 'queue-full', 'capability-missing', 'capability-unavailable'].includes(failure?.reason || '')) return
     const rootState = getStartupPathRootState(rootPath)
     const key = rootKey(rootPath)
     const message = errorMessage(error)

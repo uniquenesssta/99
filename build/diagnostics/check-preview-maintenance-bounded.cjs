@@ -47,6 +47,7 @@ async function main(){
   const availability=availabilityLoad('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts').createPreviewCacheRootAvailabilityRuntime()
   const Deadline=availabilityLoad('src/main/path/ioDeadlineRuntime.ts').IoDeadlineTimeoutError
   for(let i=0;i<12;i++)availability.markRootPreviewCacheUnavailable(dir,new Deadline('queue-inclusive-response',2000))
+  availability.markRootPreviewCacheUnavailable(dir,Object.assign(Error('one file exceeded its physical I/O budget'),{reason:'timeout'}))
   assert.equal(availability.isRootPreviewCacheUnavailable(dir),false);assert.equal(await availability.ensureRootPreviewCacheAvailable(dir),true,'response timeout poisoned root circuit')
   availability.markRootPreviewCacheUnavailable(dir,Object.assign(Error('network down'),{code:'ENETUNREACH'}))
   assert.equal(availability.isRootPreviewCacheUnavailable(dir),true,'real unavailable evidence no longer trips circuit')

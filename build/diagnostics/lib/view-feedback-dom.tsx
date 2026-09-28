@@ -74,7 +74,8 @@ let scrollHost:HTMLDivElement,cleanup:()=>void
  const horizontal=[...document.querySelectorAll<HTMLElement>('.hfm-floating-scrollbar.horizontal.visible')].find(el=>Math.abs(el.getBoundingClientRect().top-371)<2)!
  check(horizontal,'horizontal overflow has no position indicator')
  horizontal.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true,cancelable:true}))
- check(scrollHost.scrollLeft===700,'horizontal scrollbar cannot navigate')
+ const maxLeft=scrollHost.scrollWidth-scrollHost.clientWidth
+ check(maxLeft>600&&scrollHost.scrollLeft===maxLeft,'horizontal scrollbar cannot navigate: '+JSON.stringify({actual:scrollHost.scrollLeft,maxLeft,clientWidth:scrollHost.clientWidth,scrollWidth:scrollHost.scrollWidth}))
  return {x:Math.round(thumb.x+thumb.width/2),y:Math.round(thumb.y+thumb.height/2),endY:Math.round(r.bottom-2)}
 }
 ;(window as any).finishScrollbarDrag=async()=>{
