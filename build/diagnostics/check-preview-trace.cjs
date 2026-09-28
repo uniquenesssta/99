@@ -133,7 +133,7 @@ async function run() {
     renderer.rememberPreviewImageTrace('data:image/png;base64,CARD', a, 'font');
     renderer.rememberPreviewImageTrace('data:image/png;base64,CARD', b, 'other-font');
     const cardLoad = loader({
-        react: { memo: f => f, useEffect: () => { }, useMemo: f => f(), useRef: () => ({ current: null }) },
+        react: { memo: f => f, useState: value => [value, () => {}], useEffect: () => { }, useMemo: f => f(), useRef: () => ({ current: null }) },
         'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
         '../sharedAvailabilityRuntime':{useSharedAvailability:()=>({roots:[],tags:[],unattributedTags:[]})},
  '../runtime/preview/previewTraceRuntime': renderer,
