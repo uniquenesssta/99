@@ -10,9 +10,7 @@ import { fontDisplayName,fontFileDisplayName,formatSize,installLabel,isInstalled
 import { buildListPreviewCssFamily } from '../runtime/preview/fontPreviewCssFamilyRuntime'
 import { isWindowResizeActive,subscribeWindowResizeSettled } from '../runtime/app/windowResizePhaseRuntime'
 import { useResizeFrozenPreviewRuntime } from '../runtime/preview/useResizeFrozenPreviewRuntime'
-import { gridNativePreviewImageClassName } from '../runtime/preview/gridNativePreviewImageRuntime'
-import { useGridNativePreviewImageTrim } from '../runtime/preview/gridNativePreviewImageTrimRuntime'
-import { useGridPreviewVisualFitText } from '../runtime/preview/gridPreviewVisualFitRuntime'
+import { GridFontPreview } from './GridFontPreview'
 
 function previewStatusLabel(font: FontCardProps['font']): string {
   const message = font.previewError || ''
@@ -65,26 +63,15 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
     if (displayPreviewImage && !displayPreviewFamily) previewEvent(imageTrace, 'card-image-applied')
     else if (displayPreviewFamily) previewEvent(previewTrace(font.id, displayLayout.text, displayLayout.fontSize), 'card-webfont-applied')
   }, [font.id, displayPreviewImage, displayPreviewFamily, displayLayout.text, displayLayout.fontSize, imageTrace])
-  const gridPreviewLines = displayLayout.lines
   const listPreviewLines = displayLayout.lines
   const hasLoadedPreviewFamily = Boolean(displayPreviewFamily)
   const useNativePreviewImage = Boolean(displayPreviewImage && !hasLoadedPreviewFamily)
-  const useGridNativePreviewImage = Boolean(displayPreviewImage && !hasLoadedPreviewFamily)
-  const {
-    fittedText: gridVisualPreviewText,
-    visualFitRef: gridVisualFitRef,
-    visualFitActive: gridVisualFitActive,
-  } = useGridPreviewVisualFitText(displayLayout.text, gridPreviewLines, !useGridNativePreviewImage)
-  const gridVisualPreviewLines = useMemo(() => gridVisualPreviewText.split('\n'), [gridVisualPreviewText])
-  const gridSampleStyle = useMemo(() => previewSampleStyle(font, 'grid', displayPreviewFamily, gridVisualPreviewText), [font, displayPreviewFamily, gridVisualPreviewText])
   const listSampleStyle = useMemo(() => previewSampleStyle(font, 'list', displayPreviewFamily, displayPreviewText, displayListPreviewFontSize), [font, displayPreviewFamily, displayPreviewText, displayListPreviewFontSize])
   const listNativePreviewImageStyle = useMemo<CSSProperties>(() => ({
     height: `${displayLayout.height}px`,
     maxHeight: 'none'
   }), [displayLayout.height])
   const hasListTextPreviewFamily = Boolean(listSampleStyle.fontFamily)
-  const hasGridTextPreviewFamily = Boolean(gridSampleStyle.fontFamily)
-  const gridNativePreviewImageSrc = useGridNativePreviewImageTrim(useGridNativePreviewImage ? displayPreviewImage : undefined) || displayPreviewImage
   const displayName = fontDisplayName(font)
   const fileDisplayName = fontFileDisplayName(font)
   const secondaryName = font.fullName && font.fullName !== displayName
@@ -326,24 +313,10 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       <div className="script-row small">
         {scriptLabels(font).slice(0, 4).map((label) => <span key={label} className="script-pill">{label}</span>)}
       </div>
-      {useGridNativePreviewImage ? (
-        <img onLoad={() => previewEvent(imageTrace, 'image-load')} onError={() => previewEvent(imageTrace, 'image-error')} className={gridNativePreviewImageClassName(gridNativePreviewImageSrc)} src={gridNativePreviewImageSrc} alt="字体预览" loading="lazy" decoding="async" />
-      ) : (
-        <div ref={gridVisualFitRef} className={`font-sample preview-layout-text preview-layout-grid${gridVisualFitActive ? ' grid-preview-visual-fit-active' : ''}`} style={gridSampleStyle}>
-          {font.previewDisabled && !hasGridTextPreviewFamily ? (
-            <>
-              <span className="font-sample-line">原生预览生成中</span>
-              <span className="font-sample-line font-sample-latin">AaBb 123</span>
-            </>
-          ) : (
-            <>
-              {gridVisualPreviewLines.map((line, index) => (
-                <span key={`${index}-${line}`} className={/^[\x00-\x7F\s]+$/.test(line) ? 'font-sample-line font-sample-latin' : 'font-sample-line'}>{line}</span>
-              ))}
-            </>
-          )}
-        </div>
-      )}
+      <GridFontPreview layout={displayLayout} image={useNativePreviewImage ? displayPreviewImage : undefined}
+        fontFamily={buildListPreviewCssFamily(font, displayPreviewFamily) || undefined}
+        onImageLoad={() => previewEvent(imageTrace, 'image-load')}
+        onImageError={() => previewEvent(imageTrace, 'image-error')} />
       <div className="tag-row small">
         {(font.tagNames || []).slice(0, 4).map((tag) => <span key={tag} className="tag-pill">{tag}</span>)}
       </div>

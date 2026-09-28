@@ -165,27 +165,3 @@
   min-height: 1lh;
   flex-shrink: 0;
 }
-
-/* Grid native PNG previews already contain a fixed preview canvas.
-   Keep their glyphs at native render size instead of shrinking the whole canvas
-   into the card, otherwise grid cards mix tiny PNG previews with normal CSS text previews. */
-.font-card .font-sample-image.grid-native-preview-image {
-  object-fit: none;
-  object-position: center center;
-}
-
-/* Clip-safe grid native previews: transparent margins are trimmed in the renderer.
-   Keep the native visual size when it fits, but scale down only when the actual
-   ink box would hit the card edge. */
-.font-card .font-sample-image.grid-native-preview-image.grid-native-preview-image-clip-safe {
-  object-fit: scale-down;
-  object-position: center center;
-  box-sizing: border-box;
-  padding-inline: 10px;
-}
-
-/* Grid visual fit: script/handwriting fonts with long latin tails are shortened
-   in the renderer only after the real rendered line overflows the card box. */
-.font-card .preview-layout-grid.grid-preview-visual-fit-active .font-sample-line {
-  max-width: 100%;
-}

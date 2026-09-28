@@ -38,7 +38,7 @@ export async function renderWithDirectWritePreviewHelper(
   if (request.layout) {
     let version: unknown
     try { version = JSON.parse(result.stdout).layoutVersion } catch { /* no capability receipt */ }
-    if (version !== request.layout.version) return { ok: false, engine: 'directwrite', message: 'Preview helper lacks list-v1 layout support.' }
+    if (version !== request.layout.version) return { ok: false, engine: 'directwrite', message: `Preview helper lacks ${request.layout.version} layout support.` }
   }
   const parsed = parseHelperResult(result.stdout, request.outputPath)
   if (!parsed.ok) return parsed

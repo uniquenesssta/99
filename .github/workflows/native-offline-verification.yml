@@ -25,10 +25,12 @@ jobs:
           cmd /c "`"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 && native-src\preview-renderer\build-win.cmd"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run: node build/diagnostics/check-list-preview-native.cjs
+      - run: node build/diagnostics/check-grid-preview-native.cjs
       - run: npm run test:font-view-layout-dom
         if: ${{ !cancelled() }}
         env:
           HFM_LIST_NATIVE_SAMPLES: artifacts/list-preview/dom-samples.json
+          HFM_GRID_NATIVE_SAMPLES: artifacts/list-preview/grid/dom-samples.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -68,9 +68,13 @@ $layout = $null
 if ($inputJson.PSObject.Properties.Name -contains 'layout') {
   $layout = $inputJson.layout
   $lineCount = $text.Split([char]10).Length
-  if ($null -eq $layout -or @($layout.PSObject.Properties).Count -ne 12 -or $layout.version -cne 'list-v1' -or $layout.textAlign -cne 'left' -or $layout.whiteSpace -cne 'pre' -or $lineCount -gt 2 -or $text.Contains([string][char]13)) { throw "PREVIEW_INPUT_INVALID: layout" }
-  Assert-PreviewNumber $inputJson.fontSize 18 72 $false
-  $expected = @{ fontSizeCssPx = [double]$inputJson.fontSize; lineHeight = 1.16; paddingTop = 20; paddingRight = 36; paddingBottom = 20; paddingLeft = 36; canvasWidth = 4096; canvasHeight = [Math]::Ceiling([double]$inputJson.fontSize * 1.16 * $lineCount + 40); pixelRatio = 1 }
+  if ($null -eq $layout -or @($layout.PSObject.Properties).Count -ne 12 -or ($layout.version -cne 'list-v1' -and $layout.version -cne 'grid-v1') -or $layout.whiteSpace -cne 'pre' -or $lineCount -gt 2 -or $text.Contains([string][char]13)) { throw "PREVIEW_INPUT_INVALID: layout" }
+  $grid = $layout.version -ceq 'grid-v1'
+  $lineHeightFactor = 1.16; $paddingX = 36; $align = 'left'
+  if ($grid) { $lineHeightFactor = 1.04; $paddingX = 28; $align = 'center'; Assert-PreviewNumber $inputJson.fontSize 26 42 $false }
+  else { Assert-PreviewNumber $inputJson.fontSize 18 72 $false }
+  if ($layout.textAlign -cne $align) { throw 'PREVIEW_INPUT_INVALID: layout' }
+  $expected = @{ fontSizeCssPx = [double]$inputJson.fontSize; lineHeight = $lineHeightFactor; paddingTop = 20; paddingRight = $paddingX; paddingBottom = 20; paddingLeft = $paddingX; canvasWidth = 4096; canvasHeight = [Math]::Ceiling([double]$inputJson.fontSize * $lineHeightFactor * $lineCount + 40); pixelRatio = 1 }
   foreach ($key in $expected.Keys) { Assert-PreviewNumber $layout.$key $expected[$key] $expected[$key] $false }
   if ($width -ne 4096 -or $height -ne $expected.canvasHeight) { throw "PREVIEW_INPUT_INVALID: layout" }
 }
@@ -146,6 +150,7 @@ if ($null -ne $layout) {
   $stringFormat.Dispose()
   $stringFormat = [System.Drawing.StringFormat]::GenericTypographic.Clone()
   $stringFormat.Alignment = [System.Drawing.StringAlignment]::Near
+  if ($layout.textAlign -ceq 'center') { $stringFormat.Alignment = [System.Drawing.StringAlignment]::Center }
   $stringFormat.LineAlignment = [System.Drawing.StringAlignment]::Near
   $stringFormat.Trimming = [System.Drawing.StringTrimming]::None
   $stringFormat.FormatFlags = [System.Drawing.StringFormatFlags]::NoWrap -bor [System.Drawing.StringFormatFlags]::NoClip -bor [System.Drawing.StringFormatFlags]::NoFitBlackBox -bor [System.Drawing.StringFormatFlags]::MeasureTrailingSpaces

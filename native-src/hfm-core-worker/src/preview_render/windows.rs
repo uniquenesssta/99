@@ -217,7 +217,7 @@ pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<(), String
     if let Some(layout) = &request.layout {
         // CSS px map directly to UnitPixel at pixelRatio=1. Explicit lines are
         // drawn independently, so GDI+ can never introduce an additional wrap.
-        status(unsafe { GdipSetStringFormatAlign(format.0, 0) }, "list alignment failed")?;
+        status(unsafe { GdipSetStringFormatAlign(format.0, if layout.text_align == "center" { 1 } else { 0 }) }, "card alignment failed")?;
         status(unsafe { GdipSetStringFormatLineAlign(format.0, 0) }, "list line alignment failed")?;
         status(unsafe { GdipSetStringFormatTrimming(format.0, STRING_TRIMMING_NONE) }, "list trimming failed")?;
         status(unsafe { GdipSetStringFormatFlags(format.0, STRING_FORMAT_FLAGS_MEASURE_TRAILING_SPACES | STRING_FORMAT_FLAGS_NO_WRAP | 0x4000 | 0x4) }, "list flags failed")?;

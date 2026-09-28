@@ -1,10 +1,5 @@
 {
-  "sample": "安盛aaaa",
-  "candidates": ["安盛aaaa", "安盛aaa", "安盛aa", "安盛a", "安盛"],
-  "policy": {
-    "scope": "grid css text preview only",
-    "trigger": "real rendered line overflow",
-    "nativePngPreview": "unchanged",
-    "maxCandidates": 5
-  }
+  "samples": ["安盛aaaa", "  安盛aaaa  \nAa Bb", "\nAg", "Wide Wide Wide Wide Wide Wide Wide Wide Wide Wide"],
+  "minimumFontSize": 26,
+  "policy": "Preserve both explicit lines; scale the whole sample without enlarging or deleting characters; disclose remaining overflow."
 }

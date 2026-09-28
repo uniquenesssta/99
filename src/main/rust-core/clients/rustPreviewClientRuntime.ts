@@ -225,8 +225,9 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
   async function runRustPreviewRenderImage(input: RustPreviewRenderImageInput): Promise<RustPreviewRenderImageResult | null> {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'preview-render-image')) return null
-    if (input.layout && !hasCapability(status, 'preview-layout-list-v1')) {
-      options.appendStartupLog('rust preview layout unavailable: preview-layout-list-v1; rebuild worker required')
+    const layoutCapability = input.layout ? `preview-layout-${input.layout.version}` : ''
+    if (input.layout && !hasCapability(status, layoutCapability)) {
+      options.appendStartupLog(`rust preview layout unavailable: ${layoutCapability}; rebuild worker required`)
       return null
     }
 

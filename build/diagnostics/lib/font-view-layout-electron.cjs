@@ -13,6 +13,8 @@ app.whenReady().then(async () => {
     console.log('[font-view-layout:electron]', JSON.stringify(result))
     const detail = await win.webContents.executeJavaScript('window.checkDetailTransitions()')
     console.log('[font-detail-transition:electron]', JSON.stringify(detail))
+    const grid = await win.webContents.executeJavaScript('window.checkGridPreviews()')
+    console.log('[grid-preview:electron]', JSON.stringify(grid))
   }
   clearTimeout(watchdog); app.exit(0)
 }).catch(error => { console.error(error); clearTimeout(watchdog); app.exit(1) })

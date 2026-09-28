@@ -6,10 +6,12 @@ const CROP_PADDING_X = 18
 const CROP_PADDING_Y = 12
 const TRIM_CACHE_LIMIT = 240
 
-const trimCache = new Map<string, string>()
-const trimInflight = new Map<string, Promise<string>>()
+export type TrimmedPreviewImage = { image: string; clipped: boolean }
+const trimCache = new Map<string, TrimmedPreviewImage>()
+const trimInflight = new Map<string, Promise<TrimmedPreviewImage>>()
 
-function rememberTrimmedImage(source: string, value: string): string {
+function rememberTrimmedImage(source: string, image: string, clipped = false): TrimmedPreviewImage {
+  const value = { image, clipped }
   if (trimCache.has(source)) trimCache.delete(source)
   trimCache.set(source, value)
   while (trimCache.size > TRIM_CACHE_LIMIT) {
@@ -42,8 +44,8 @@ function canvasToDataUrl(canvas: HTMLCanvasElement): string {
   }
 }
 
-async function trimGridNativePreviewImage(source: string): Promise<string> {
-  if (!source.startsWith('data:image/png')) return source
+async function trimGridNativePreviewImage(source: string): Promise<TrimmedPreviewImage> {
+  if (!source.startsWith('data:image/png')) return { image: source, clipped: false }
   const cached = trimCache.get(source)
   if (cached) {
     trimCache.delete(source)
@@ -86,6 +88,7 @@ async function trimGridNativePreviewImage(source: string): Promise<string> {
 
       if (maxX < minX || maxY < minY) return rememberTrimmedImage(source, source)
 
+      const clipped = minX <= 1 || minY <= 1 || maxX >= width - 2 || maxY >= height - 2
       const [cropX1, cropX2] = clampCropRange(minX, maxX, width, CROP_PADDING_X)
       const [cropY1, cropY2] = clampCropRange(minY, maxY, height, CROP_PADDING_Y)
       const cropWidth = Math.max(1, cropX2 - cropX1 + 1)
@@ -94,7 +97,7 @@ async function trimGridNativePreviewImage(source: string): Promise<string> {
       // If the rendered ink already uses almost the full canvas, keep the source.
       // This avoids lossy re-encoding for fonts whose native renderer did not add
       // large transparent margins. Scale-down CSS will still protect the card edge.
-      if (cropWidth >= width - 4 && cropHeight >= height - 4) return rememberTrimmedImage(source, source)
+      if (cropWidth >= width - 4 && cropHeight >= height - 4) return rememberTrimmedImage(source, source, clipped)
 
       const targetCanvas = document.createElement('canvas')
       targetCanvas.width = cropWidth
@@ -102,7 +105,7 @@ async function trimGridNativePreviewImage(source: string): Promise<string> {
       const targetContext = targetCanvas.getContext('2d')
       if (!targetContext) return rememberTrimmedImage(source, source)
       targetContext.drawImage(sourceCanvas, cropX1, cropY1, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight)
-      return rememberTrimmedImage(source, canvasToDataUrl(targetCanvas) || source)
+      return rememberTrimmedImage(source, canvasToDataUrl(targetCanvas) || source, clipped)
     } catch {
       return rememberTrimmedImage(source, source)
     }
@@ -114,28 +117,16 @@ async function trimGridNativePreviewImage(source: string): Promise<string> {
   return task
 }
 
-export function useGridNativePreviewImageTrim(source?: string): string | undefined {
-  const [trimmedSource, setTrimmedSource] = useState<string | undefined>(source)
-
+export function useGridNativePreviewImageTrim(source?: string): TrimmedPreviewImage | undefined {
+  const [result, setResult] = useState<{ source: string; value: TrimmedPreviewImage } | undefined>()
   useEffect(() => {
     let cancelled = false
-    if (!source || !isGridNativePreviewImage(source)) {
-      setTrimmedSource(source)
-      return () => {
-        cancelled = true
-      }
-    }
-
-    setTrimmedSource(source)
-    void trimGridNativePreviewImage(source).then((nextSource) => {
-      if (cancelled) return
-      setTrimmedSource(nextSource)
+    if (!source || !isGridNativePreviewImage(source)) return
+    void trimGridNativePreviewImage(source).then(value => {
+      if (!cancelled) setResult({ source, value })
     })
-
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [source])
-
-  return trimmedSource
+  // Never expose a previous font's crop during the render before effect cleanup.
+  return result && result.source === source ? result.value : undefined
 }

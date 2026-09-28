@@ -1,4 +1,4 @@
-import { listNativeLayout } from './nativePreviewLayout'
+import { gridNativeLayout,listNativeLayout } from './nativePreviewLayout'
 import { CARD_PREVIEW_LAYOUT_VERSION,CARD_PREVIEW_MAX_TEXT_LENGTH,DEFAULT_PREVIEW_TEXT,PREVIEW_LAYOUTS } from './previewLayoutConfig'
 import type { PreviewLayoutMode,PreviewTextFit } from './previewLayoutTypes'
 
@@ -112,7 +112,7 @@ export function getCardPreviewLayout(mode: 'list' | 'grid', text?: string, listF
   const spec = PREVIEW_LAYOUTS[mode]
   const fit = fitPreviewLines(mode, sample.lines)
   const fontSize = mode === 'list' ? clampListPreviewFontSize(listFontSize ?? LIST_PREVIEW_FONT_SIZE_DEFAULT) : fit.fontSize
-  const nativeLayout = mode === 'list' ? listNativeLayout(fontSize, sample.lines.length) : undefined
+  const nativeLayout = (mode === 'list' ? listNativeLayout : gridNativeLayout)(fontSize, sample.lines.length)
   const width = nativeLayout?.canvasWidth ?? spec.width
   const height = nativeLayout?.canvasHeight ?? spec.height
   return {

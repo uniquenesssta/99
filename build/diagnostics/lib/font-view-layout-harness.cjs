@@ -16,8 +16,8 @@ function loader({ hooks = require('react'), overrides = {}, globals = {} } = {})
     if (name === 'sharedAvailabilityRuntime') return { useSharedAvailability: () => null }
     if (name === 'previewTraceRuntime') return { previewTrace: () => null, previewEvent: () => {}, previewImageTrace: () => null, previewTraceEnabled: () => false }
     if (name === 'useResizeFrozenPreviewRuntime') return { useResizeFrozenPreviewRuntime: (_id, preview) => preview }
-    if (name === 'gridNativePreviewImageTrimRuntime') return { useGridNativePreviewImageTrim: src => src }
-    if (name === 'gridPreviewVisualFitRuntime') return { useGridPreviewVisualFitText: text => ({ fittedText: text, visualFitRef: null, visualFitActive: false }) }
+    if (name === 'gridNativePreviewImageTrimRuntime') return { useGridNativePreviewImageTrim: src => src ? { image: src, clipped: false } : undefined }
+    if (name === 'gridPreviewVisualFitRuntime') return { useGridPreviewVisualFit: () => ({ scale: 1, overflow: false, viewportRef: null, contentRef: null }) }
     if (name === 'windowResizePhaseRuntime') return { markWindowResizeActive() {}, isWindowResizeActive: () => false, subscribeWindowResizeSettled: () => () => {} }
     const exports = {}; cache.set(file, exports)
     const output = ts.transpileModule(overrides[file] ?? read(file), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText

@@ -1,61 +1,25 @@
 #!/usr/bin/env node
-const fs = require('node:fs')
-const path = require('node:path')
-
-const root = process.cwd()
-const checks = []
-function assertCheck(name, condition, detail) {
-  checks.push({ name, ok: Boolean(condition), detail })
+const assert=require('node:assert/strict')
+const {loader}=require('./check-operation-chain.cjs')
+const {previewBridge}=require('./lib/preview-preload-harness.cjs')
+async function main(){
+ const load=loader(),api=load('src/shared/preview-layout/previewTextFitRuntime.ts'),validate=load('src/shared/preview-layout/nativePreviewLayout.ts').validateNativePreviewLayout
+ for(const text of ['安盛aaaa','  Ag  \nSecond','\nAg','Wide '.repeat(100)+'\nSecond']){
+  const d=api.getCardPreviewLayout('grid',text,18),other=api.getCardPreviewLayout('grid',text,72)
+  assert.equal(d.token,other.token,'hidden list size changed grid')
+  assert.equal(d.text,text);assert.equal(d.nativeLayout.version,'grid-v1');assert.equal(d.nativeLayout.textAlign,'center')
+  assert(d.fontSize>=26&&d.fontSize<=42);assert.equal(d.width,4096)
+  assert.equal(validate(d.nativeLayout,d.text,d.fontSize,d.width,d.height).version,'grid-v1')
+  for(const field of Object.keys(d.nativeLayout))assert.throws(()=>validate({...d.nativeLayout,[field]:'invalid'},d.text,d.fontSize,d.width,d.height),/PREVIEW_INPUT_INVALID/)
+  for(const source of ['runtime','typed']){
+   let delivered
+   const apiBridge=previewBridge({renderFontPreviewImage:async(...args)=>{delivered=args;return 'image'},appendLog(){}},{kind:source}).api
+   await apiBridge.renderPreviewImage({id:'f',path:'font'},d.text,d.fontSize,d.width,d.height,undefined,d.nativeLayout)
+   assert.equal(delivered[1],text);assert.equal(delivered[5].version,'grid-v1')
+  }
+ }
+ const d=api.getCardPreviewLayout('list','Ag',44)
+ assert.equal(d.nativeLayout.version,'list-v1');assert.equal(d.nativeLayout.paddingLeft,36)
+ console.log('[grid-preview-size] full sample, hidden-control independence, dual runtime bridge, strict versioned contract and list compatibility passed')
 }
-function read(rel) {
-  return fs.readFileSync(path.join(root, rel), 'utf8')
-}
-
-const runtimePath = 'src/renderer/src/runtime/preview/gridNativePreviewImageRuntime.ts'
-const fontCardPath = 'src/renderer/src/components/FontCard.tsx'
-const cssPath = 'src/renderer/src/styles/font-list-card-detail/font-list-card-detail-03.css'
-
-const runtime = read(runtimePath)
-const fontCard = read(fontCardPath)
-const css = read(cssPath)
-
-assertCheck(
-  'grid native preview runtime exists',
-  runtime.includes('gridNativePreviewImageClassName') && runtime.includes('GRID_NATIVE_PREVIEW_IMAGE_CLASS'),
-  runtimePath,
-)
-assertCheck(
-  'svg placeholders are not treated as native png previews',
-  runtime.includes("!source.startsWith('data:image/svg+xml')"),
-  runtimePath,
-)
-assertCheck(
-  'grid card image uses grid native class resolver',
-  fontCard.includes("import { gridNativePreviewImageClassName }") && fontCard.includes('className={gridNativePreviewImageClassName(gridNativePreviewImageSrc)}'),
-  fontCardPath,
-)
-assertCheck(
-  'list row native preview image class remains compact',
-  fontCard.includes('className="font-sample-image compact"'),
-  fontCardPath,
-)
-assertCheck(
-  'grid native image does not shrink full png canvas',
-  css.includes('.font-card .font-sample-image.grid-native-preview-image') && css.includes('object-fit: none'),
-  cssPath,
-)
-assertCheck(
-  'grid native image stays centered after clipping transparent canvas',
-  css.includes('object-position: center center'),
-  cssPath,
-)
-
-const failed = checks.filter((check) => !check.ok)
-for (const check of checks) {
-  console.log(`${check.ok ? '✓' : '✗'} ${check.name}${check.detail ? ` — ${check.detail}` : ''}`)
-}
-if (failed.length) {
-  console.error(`grid preview size policy failed: ${failed.length}/${checks.length}`)
-  process.exit(1)
-}
-console.log(`grid preview size policy passed: ${checks.length} checks`)
+main().catch(e=>{console.error(e);process.exitCode=1})

@@ -77,14 +77,18 @@ impl PreviewRenderRequest {
         }
         if let Some(layout) = &self.layout {
             let lines = self.text.split('\n').count();
-            if layout.version != "list-v1" || !(18.0..=72.0).contains(&self.font_size)
-                || layout.font_size_css_px != self.font_size || layout.line_height != 1.16
+            let grid = layout.version == "grid-v1";
+            let line_height = if grid { 1.04 } else { 1.16 };
+            let padding_x = if grid { 28.0 } else { 36.0 };
+            let sizes = if grid { 26.0..=42.0 } else { 18.0..=72.0 };
+            if (!grid && layout.version != "list-v1") || !sizes.contains(&self.font_size)
+                || layout.font_size_css_px != self.font_size || layout.line_height != line_height
                 || layout.padding_top != 20.0 || layout.padding_bottom != 20.0
-                || layout.padding_left != 36.0 || layout.padding_right != 36.0
-                || layout.text_align != "left" || layout.white_space != "pre" || layout.pixel_ratio != 1.0
+                || layout.padding_left != padding_x || layout.padding_right != padding_x
+                || layout.text_align != (if grid { "center" } else { "left" }) || layout.white_space != "pre" || layout.pixel_ratio != 1.0
                 || layout.canvas_width != 4096.0 || self.width != 4096
                 || self.text.contains('\r') || lines > 2
-                || layout.canvas_height != (self.font_size * 1.16 * lines as f64 + 40.0).ceil()
+                || layout.canvas_height != (self.font_size * line_height * lines as f64 + 40.0).ceil()
                 || layout.canvas_height != self.height as f64 {
                 return Err("PREVIEW_INPUT_INVALID: layout".to_string());
             }
@@ -124,6 +128,24 @@ mod tests {
         let mut unknown = request.clone(); unknown["layout"]["extra"] = true.into(); assert!(check(unknown).is_err());
         let mut null = request.clone(); null["layout"] = serde_json::Value::Null; assert!(check(null).is_err());
         let mut legacy = request; legacy.as_object_mut().unwrap().remove("layout"); assert!(check(legacy).is_ok());
+    }
+
+    #[test]
+    fn grid_layout_contract() {
+        let layout = serde_json::json!({"version":"grid-v1","fontSizeCssPx":42,"lineHeight":1.04,
+            "paddingTop":20,"paddingRight":28,"paddingBottom":20,"paddingLeft":28,
+            "textAlign":"center","whiteSpace":"pre","canvasWidth":4096,"canvasHeight":128,"pixelRatio":1});
+        let request = serde_json::json!({"text":"安盛aaaa\nSecond","fontSize":42,"width":4096,"height":128,"outputPath":"out","layout":layout});
+        let check = |value: serde_json::Value| serde_json::from_value::<PreviewRenderRequest>(value)
+            .map_err(|e| e.to_string()).and_then(|r| r.normalized());
+        assert!(check(request.clone()).is_ok());
+        for key in layout.as_object().unwrap().keys() {
+            let mut changed = request.clone(); changed["layout"][key] = "unsupported".into();
+            assert!(check(changed).is_err(), "accepted invalid {}", key);
+        }
+        let mut third = request.clone(); third["text"] = "a\nb\nc".into(); assert!(check(third).is_err());
+        let mut list = request.clone(); list["layout"]["version"] = "list-v1".into(); assert!(check(list).is_err());
+        let mut large = request; large["fontSize"] = 72.into(); assert!(check(large).is_err());
     }
 
     #[test]
