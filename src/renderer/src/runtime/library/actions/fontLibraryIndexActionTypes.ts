@@ -2,7 +2,10 @@ import type { CacheStats,FontItem,FontQueryPageResult,FontQueryResult,LibrarySta
 import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
 import type { FontMetrics,FontScrollRestoreSnapshot,MenuTarget } from '../../../appRuntime'
 
+import type { RendererClosingLifecycleRuntime } from '../../app/rendererClosingLifecycleRuntime'
+
 export type FontLibraryIndexActionRuntimeOptions = {
+  closingLifecycle: RendererClosingLifecycleRuntime
   hfm: typeof window.hfm
   library: LibraryState
   selectedFolderId: string

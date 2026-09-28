@@ -80,8 +80,14 @@ async function measure({ baseline = false, source } = {}) {
 }
 
 async function main() {
-  if (process.argv.includes('--baseline')) console.log(JSON.stringify(await measure({ baseline: true })))
-  else console.log(JSON.stringify(await measure({ baseline: true })))
+  const source = fs.readFileSync(composition, 'utf8')
+  const anchor = 'loadLibraryShell: async () => loadLibraryShellFromSqlite(await openLibraryDb()),'
+  assert(source.includes(anchor), 'baseline mutation anchor missing')
+  const before = source.replace(anchor, 'loadLibraryShell,')
+  console.log(JSON.stringify(await measure({ baseline: true, source: before })))
+  console.log(JSON.stringify(await measure()))
+  await assert.rejects(() => measure({ source: before }), assert.AssertionError)
+  console.log('PASS reconnecting shared counts is rejected; UI counts and context invalidation retained')
 }
 if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })
 module.exports = { measure, composition }

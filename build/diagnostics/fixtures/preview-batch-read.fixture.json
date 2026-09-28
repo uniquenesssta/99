@@ -4,7 +4,7 @@
     "rustPreviewDbPathForStorage": "2ee1a925c7f32a274dc24bf05f2c8f187a171df32cb45da787d647fb523eb6a7",
     "previewCacheIoErrorMessage": "254b1b9e430ad49bbf836b238d91974d68d0f781262844f1809a61ed952f4227",
     "runRequiredRootPreviewCacheIo": "26196e6b26544bb563f9d952c3190f4fde3b4d157b5420cd61306910f0d001f5",
-    "runOptionalRootPreviewCacheIo": "0dffe87b78ae812e3f4f6a79302f489359c2cd9a91aa6acdc1376c5499ce6517",
+    "runOptionalRootPreviewCacheIo": "e17bc542d89fcf00fe120b81df1ca87c4c07cea534ec0e337c75c51981c4dc27",
     "runStoragePreviewCacheIo": "dd5245c2227fd99082208165242333ff37ad88d0034c2c473dcaf3cd0efd7c4c"
   },
   "queryTails": {

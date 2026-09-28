@@ -28,7 +28,7 @@ type IndexPorts = {
   evictionRuntime: Pick<ReturnType<typeof createPreviewLocalCacheEvictionRuntime>, "schedulePreviewLocalCacheEviction">;
   rustPreviewDbPathForStorage: (storage: PreviewCacheStorage) => string | null;
   runRequiredRootPreviewCacheIo: <T>(rootPath: string, label: string, operation: () => Promise<T>) => Promise<T>;
-  runStoragePreviewCacheIo: <T>(storage: PreviewCacheStorage, label: string, operation: () => Promise<T>) => Promise<{ ok: true; value: T } | { ok: false }>;
+  runStoragePreviewCacheIo: <T>(storage: PreviewCacheStorage, label: string, operation: () => Promise<T>) => Promise<{ ok: true; value: T } | { ok: false; error?: unknown }>;
   rememberSharedPresence: (storage: PreviewCacheStorage, previewKey: string, status: PreviewCacheSharedPresenceStatus) => Promise<void>;
   forgetSharedPresence: (storage: PreviewCacheStorage, previewKey: string) => Promise<void>;
 };
@@ -220,7 +220,7 @@ export function createPreviewIndexAccessRuntime(options: IndexOptions, ports: In
             now: new Date().toISOString(),
           }),
       );
-      if (!readStatusResult.ok) throw new Error("共享预览缓存读取不可用");
+      if (!readStatusResult.ok) throw readStatusResult.error ?? new Error("共享预览缓存读取不可用");
       if (readStatusResult.value) {
         const status = readStatusResult.value.status;
         if (status === 'ok')

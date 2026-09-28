@@ -1,3 +1,4 @@
+import { previewCacheErrorOutcome, type PreviewCacheHydrationOutcome } from './previewCacheOutcomeRuntime'
 import { isApplicationClosing, onApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import { withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
 import type { PreviewCacheHydrationRow } from './previewCacheHydrationRuntime'
@@ -6,7 +7,7 @@ import { createPreviewTaskGenerationRuntime } from './previewTaskGenerationRunti
 
 export type PreviewCachePrefetchRuntimeOptions = {
   appendStartupLog: (message: string) => void
-  hydratePreviewCacheRows: (storage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[], current?: () => boolean) => Promise<Set<string>>
+  hydratePreviewCacheRows: (storage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[], current?: () => boolean, report?: (row: PreviewCacheHydrationRow, outcome: PreviewCacheHydrationOutcome) => void) => Promise<Set<string>>
 }
 
 const DEFAULT_PREFETCH_ENABLED = true
@@ -76,7 +77,14 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
     dropped: 0,
     cancelled: 0,
     hydrated: 0,
+    // Compatibility: failed remains the historical non-hydrated count.
     failed: 0,
+    miss: 0,
+    unavailable: 0,
+    timeout: 0,
+    error: 0,
+    unclassified: 0,
+    hydrationCancelled: 0,
   }
 
   function logStats(force = false): void {
@@ -85,12 +93,18 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
     const total = stats.queued + stats.dropped + stats.cancelled + stats.hydrated + stats.failed
     if (!total) return
     lastStatsLogAt = now
-    options.appendStartupLog(`preview cache prefetch summary: queued=${stats.queued}, hydrated=${stats.hydrated}, failed=${stats.failed}, dropped=${stats.dropped}, cancelled=${stats.cancelled}`)
+    options.appendStartupLog(`preview cache prefetch summary: queued=${stats.queued}, hydrated=${stats.hydrated}, failed=${stats.failed}, dropped=${stats.dropped}, cancelled=${stats.cancelled}, miss=${stats.miss}, unavailable=${stats.unavailable}, timeout=${stats.timeout}, error=${stats.error}, hydrationCancelled=${stats.hydrationCancelled}, unclassified=${stats.unclassified}`)
     stats.queued = 0
     stats.dropped = 0
     stats.hydrated = 0
     stats.failed = 0
     stats.cancelled = 0
+    stats.miss = 0
+    stats.unavailable = 0
+    stats.timeout = 0
+    stats.error = 0
+    stats.unclassified = 0
+    stats.hydrationCancelled = 0
   }
 
   function trimQueue(): void {
@@ -156,14 +170,26 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
       const batch = nextBatch()
       if (!batch) break
       active += 1
-      withPhysicalIoCompletion(() => options.hydratePreviewCacheRows(batch.storage, batch.rows, () => !isApplicationClosing() && generationRuntime.isCurrentGeneration(batch.generation)))
-        .then((hydratedIds) => {
-          stats.hydrated += hydratedIds.size
-          stats.failed += Math.max(0, batch.rows.length - hydratedIds.size)
-        })
+      const outcomes = new Map<PreviewCacheHydrationRow, PreviewCacheHydrationOutcome>()
+      const current = () => !isApplicationClosing() && generationRuntime.isCurrentGeneration(batch.generation)
+      const record = (hydratedIds: Set<string>, fallback?: PreviewCacheHydrationOutcome) => {
+        for (const row of batch.rows) {
+          const outcome = !current() ? 'cancelled' : outcomes.get(row) || (hydratedIds.has(row.id) ? 'hydrated' : fallback)
+          if (outcome === 'hydrated') stats.hydrated += 1
+          else {
+            stats.failed += 1
+            if (outcome === 'cancelled') stats.hydrationCancelled += 1
+            else if (outcome) stats[outcome] += 1
+            else stats.unclassified += 1
+          }
+        }
+      }
+      withPhysicalIoCompletion(() => options.hydratePreviewCacheRows(batch.storage, batch.rows, current, (row, outcome) => outcomes.set(row, outcome)))
+        .then((hydratedIds) => record(hydratedIds))
         .catch((error) => {
-          stats.failed += batch.rows.length
-          options.appendStartupLog(`preview cache prefetch failed: ${errorMessage(error)}`)
+          const outcome = previewCacheErrorOutcome(error)
+          record(new Set(), outcome)
+          if (current() && outcome !== 'cancelled') options.appendStartupLog(`preview cache prefetch ${outcome}: ${errorMessage(error)}`)
         })
         .finally(() => {
           active = Math.max(0, active - 1)

@@ -1,3 +1,4 @@
+import { previewCacheErrorOutcome } from './previewCacheOutcomeRuntime'
 import { previewCacheQueryTimeoutMs, withIoDeadlineResult } from "../../path/ioDeadlineRuntime";
 import type { PreviewCacheStorage, PreviewRuntimeOptions } from "./previewRuntimeTypes";
 import type { createPreviewCacheRootAvailabilityRuntime } from "./previewCacheRootAvailabilityRuntime";
@@ -39,18 +40,20 @@ export function createPreviewStorageIoRuntime(
     rootPath: string,
     label: string,
     operation: () => Promise<T>,
-  ): Promise<{ ok: true; value: T } | { ok: false }> {
+  ): Promise<{ ok: true; value: T } | { ok: false; error?: unknown }> {
     const result = await withIoDeadlineResult(
       label,
       operation,
       previewCacheIoTimeoutMs,
     );
     if (!result.ok) {
-      rootAvailability.markRootPreviewCacheUnavailable(rootPath, result.error);
+      const outcome = previewCacheErrorOutcome(result.error);
+      if (outcome !== 'cancelled' && outcome !== 'miss')
+        rootAvailability.markRootPreviewCacheUnavailable(rootPath, result.error);
       options.appendStartupLog(
-        `preview cache io deadline dropped: ${label}, ${previewCacheIoErrorMessage(result.error)}`,
+        `preview cache io ${outcome}: ${label}, ${previewCacheIoErrorMessage(result.error)}`,
       );
-      return { ok: false };
+      return { ok: false, error: result.error };
     }
     return { ok: true, value: result.value };
   }
@@ -59,7 +62,7 @@ export function createPreviewStorageIoRuntime(
     storage: PreviewCacheStorage,
     label: string,
     operation: () => Promise<T>,
-  ): Promise<{ ok: true; value: T } | { ok: false }> {
+  ): Promise<{ ok: true; value: T } | { ok: false; error?: unknown }> {
     if (storage.storage === "root" && storage.rootPath)
       return runOptionalRootPreviewCacheIo(storage.rootPath, label, operation);
     return { ok: true, value: await operation() };

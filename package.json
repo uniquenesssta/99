@@ -190,6 +190,8 @@
     "diagnostics:preview-scroll-admission": "node build/diagnostics/check-preview-scroll-admission.cjs",
     "diagnostics:preview-shared-admission": "node build/diagnostics/check-preview-shared-admission.cjs",
     "diagnostics:preview-resource-admission": "node build/diagnostics/check-preview-resource-admission.cjs",
+    "diagnostics:preview-cache-outcomes": "node build/diagnostics/check-preview-cache-outcomes.cjs",
+    "diagnostics:preview-closing-stats": "node build/diagnostics/check-preview-closing-stats.cjs",
     "diagnostics:preview-context-latency": "node build/diagnostics/check-preview-context-latency.cjs",
     "diagnostics:preview-optional-cache": "node build/diagnostics/check-preview-optional-cache.cjs",
     "diagnostics:preview-image-ownership": "node build/diagnostics/check-preview-image-ownership.cjs",

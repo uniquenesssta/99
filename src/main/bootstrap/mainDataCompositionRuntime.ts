@@ -260,7 +260,8 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     normalizePathForCacheCompare,
     normalizePreviewCacheIndexStatus,
     upsertPreviewCacheRows,
-    loadLibraryShell,
+    // Preview routing needs local folder configuration, never shared font totals.
+    loadLibraryShell: async () => loadLibraryShellFromSqlite(await openLibraryDb()),
     ensureWindows,
     resolveExistingFontFilePath,
     authorizeFontRead,

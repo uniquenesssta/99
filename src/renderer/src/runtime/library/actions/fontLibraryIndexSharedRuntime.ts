@@ -11,11 +11,19 @@ export function createFontLibraryIndexSharedRuntime(options: FontLibraryIndexAct
   }
 
   async function loadCacheStats(): Promise<void> {
+    if (options.closingLifecycle.isClosing()) return
+    // A cancelled close starts a new UI lifetime: old replies stay obsolete.
+    let current = true
+    const unsubscribe = options.closingLifecycle.subscribe(closing => {
+      if (closing) current = false
+    })
     try {
       const stats = await options.hfm.getCacheStats()
-      options.setCacheStats(stats)
+      if (current) options.setCacheStats(stats)
     } catch {
-      options.setCacheStats(null)
+      if (current) options.setCacheStats(null)
+    } finally {
+      unsubscribe()
     }
   }
 

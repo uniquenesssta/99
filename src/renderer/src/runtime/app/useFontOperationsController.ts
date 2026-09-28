@@ -179,6 +179,7 @@ export function useFontOperationsController(options: {
 
   const { nextIndexOperationRunId, isCurrentIndexOperation } = useIndexOperationRunRuntime(indexOperationRunIdRef)
   const libraryIndexActionRuntime = createFontLibraryIndexActionRuntime({
+    closingLifecycle: options.closingLifecycle,
     hfm: options.hfm,
     library: options.library.library,
     selectedFolderId: options.library.selectedFolderId,

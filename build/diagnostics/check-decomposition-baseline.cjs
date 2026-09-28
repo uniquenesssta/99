@@ -23,7 +23,7 @@ function load(file, mocks = {}, transform = x => x) {
     if (id === '../../../shared/preview-layout/nativePreviewLayout') return load('src/shared/preview-layout/nativePreviewLayout.ts', mocks)
     if (id === '../../../shared/preview-layout/previewLayoutConfig') return load('src/shared/preview-layout/previewLayoutConfig.ts', mocks)
     if (id === '../../../shared/previewFailure') return load('src/shared/previewFailure.ts', mocks)
-    if (['./previewBatchRowsRuntime', './previewBatchReadRuntime', './previewStorageIoRuntime'].includes(id)) return load('src/main/preview/runtime/' + id.slice(2) + '.ts', mocks)
+    if (['./previewBatchRowsRuntime', './previewBatchReadRuntime', './previewStorageIoRuntime', './previewCacheOutcomeRuntime'].includes(id)) return load('src/main/preview/runtime/' + id.slice(2) + '.ts', mocks)
     if (['./localFontTagRustAdapterRuntime', './localFontTagMutationEffectsRuntime'].includes(id)) return load('src/main/library/runtime/' + id.slice(2) + '.ts', mocks)
     if (id === './localFontTagNodePersistenceRuntime') return load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts', mocks)
     if (id === './previewIndexAccessRuntime') return load('src/main/preview/runtime/previewIndexAccessRuntime.ts', mocks)

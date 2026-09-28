@@ -417,6 +417,7 @@ async function checkOperationsBehavior() {
   assert.equal(calls.index.autoInstallStatusRefreshStartedRef, calls.auto.startedRef)
   assert.equal(calls.close.flushFontWriteQueue, queueRuntime.flush)
   assert.equal(calls.close.flushLibraryPersistence instanceof Function, true)
+  assert.equal(calls.index.closingLifecycle, calls.close.closingLifecycle)
   assert.equal(calls.close.closingLifecycle, calls.progress.closingLifecycle)
   assert.equal(calls.auto.isClosing, calls.close.closingLifecycle.isClosing)
   await controller.toggleFontDeleteProtection(['a'], true)

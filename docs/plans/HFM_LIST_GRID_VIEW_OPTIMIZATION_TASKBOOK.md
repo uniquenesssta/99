@@ -503,3 +503,12 @@ flowchart TD
 - 新增 `diagnostics:preview-context-latency`：执行真实 bootstrap 接线、真实 SQLite 配置读取、真实预览配置缓存；在共享计数 I/O 边界挂起，证明配置请求未完成。并发消费者只读一次、热配置复用、目录失效后重读、UI 总数保留也进入门禁。该证据是受控依赖反例，不是用户 NAS 的速度测量。
 - A 仅补 `preview-library-context` 与批量读取的 `cache-context` 阶段，复用现有 operation trace、日志级别与容量约束；起止保持同一 operation/attempt，异常仍抛出。其余排队、物理缓存、存储准备、原生绘制、返回与 image-load 沿用已有链路。普通历史日志无法补出缺失的关联。
 - 路由函数指纹仅迁移 `loadLibraryShellCached` 的新增追踪包装；真实 coalescing/失效/重试及三项负变体继续通过。新增诊断基线通过；完整回归与目标验证在 B/C 记录。A 可独立回退，不改变超时、并发、缓存键、物理槽位或权限策略。
+
+
+### 17.2 B 定向修复
+
+- 预览配置改接已有的 `loadLibraryShellFromSqlite(await openLibraryDb())`；不等待共享字体计数。真实接线反例的修改前结果为 `blockedBeforeRelease=true`、计数 1 次；修改后为 `false`、计数 0 次。重新接回旧接口的负变体被拒绝；目录配置的并发合并、5 秒缓存及代次失效保持原状，UI 仍取得总数 4068（测试数据）。不把这项受控等待的消除换算成用户实际提速比例。
+- 可选共享 I/O 保留原始 error，索引读取继续传递取消/超时类别；取消与文件不存在不再被当作根不可用。hydration 区分 hydrated/miss/unavailable/timeout/cancelled/error；批量回调携带各条结果，单条 boolean 与批量 Set 接口兼容。prefetch 的历史 `failed` 仍表示未取得缓存，新增六项细分（含 `unclassified`），不偷偷改变旧指标含义。真实 PNG/校验错误保留日志。
+- 缓存统计集中入口接入已有 renderer 关闭生命周期：关闭中不发新 IPC；关闭再取消后，旧成功/失败均不覆盖新界面；新请求恢复。只在请求期间订阅，完成即释放，不增加常驻状态所有者。
+- 新增 outcome 与关闭行为门：覆盖正常未命中、无权限、超时、取消、损坏 PNG、同键合并、超时/取消后同键恢复、过期批量结果和订阅清理。原 `preview-work-lifetime` 仍检查逻辑超时/子进程退出前不释放实际槽位；原可选共享不阻塞前台、75 项实际 SQLite/PNG 复用矩阵、路由三项负变体、main composition 六项负变体、trace 关联门均保留。
+- 仅迁移实际变更文件的 token hash 与可选 I/O 函数指纹；函数/接口所有权清单不放宽。前台原生并发 10、滚动静默 150ms、缓存读取 2000ms、权限/根代次/所有权与实际工作计数不变。
