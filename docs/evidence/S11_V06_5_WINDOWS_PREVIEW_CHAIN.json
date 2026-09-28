@@ -1,0 +1,489 @@
+{
+  "sha": "85de98530e5d9fe88cecdf7098c482e23284e6d8",
+  "platform": "win32",
+  "versions": {
+    "node": "24.19.0",
+    "acorn": "8.17.0",
+    "ada": "3.4.4",
+    "amaro": "1.1.10",
+    "ares": "1.34.6",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.2",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "146",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.69.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "0.0.0",
+    "simdjson": "4.6.4",
+    "simdutf": "7.7.0",
+    "sqlite": "3.53.3",
+    "tz": "2025c",
+    "undici": "7.29.0",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "14.8.178.38-electron.0",
+    "zlib": "1.3.2.1-motley",
+    "zstd": "1.6.0",
+    "electron": "42.11.3",
+    "chrome": "148.0.7778.280"
+  },
+  "scope": "real renderer queues/runtime preload/IPC/local SQLite/preview runtime/Rust PNG/browser decode; controlled 400ms shared counter, fixture DOM; not real NAS or full App",
+  "reports": [
+    {
+      "mode": "list",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 597.9000000000233,
+      "visibleCompleteMs": 598,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:5",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:8",
+          "elapsedMs": 597.9000000000233
+        },
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:1",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:10",
+          "elapsedMs": 598
+        }
+      ],
+      "dimensions": [
+        4096,
+        92
+      ],
+      "variant": "before",
+      "cache": "cold",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 1,
+      "nativeRenders": 2
+    },
+    {
+      "mode": "list",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 508.29999999998836,
+      "visibleCompleteMs": 509.79999999998836,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:11",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:20",
+          "elapsedMs": 508.29999999998836
+        },
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:15",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:18",
+          "elapsedMs": 509.79999999998836
+        }
+      ],
+      "dimensions": [
+        4096,
+        92
+      ],
+      "variant": "before",
+      "cache": "disk-hot",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 1,
+      "nativeRenders": 0
+    },
+    {
+      "mode": "list",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 35.90000000002328,
+      "visibleCompleteMs": 98.90000000002328,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:21",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:22",
+          "elapsedMs": 35.90000000002328
+        },
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:25",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:26",
+          "elapsedMs": 98.90000000002328
+        }
+      ],
+      "dimensions": [
+        4096,
+        92
+      ],
+      "variant": "before",
+      "cache": "memory-hot",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 0,
+      "nativeRenders": 0
+    },
+    {
+      "mode": "list",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 238.29999999998836,
+      "visibleCompleteMs": 241.70000000001164,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:33",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:38",
+          "elapsedMs": 238.29999999998836
+        },
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:29",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:40",
+          "elapsedMs": 241.70000000001164
+        }
+      ],
+      "dimensions": [
+        4096,
+        92
+      ],
+      "variant": "after",
+      "cache": "cold",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 0,
+      "nativeRenders": 2
+    },
+    {
+      "mode": "list",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 102.70000000001164,
+      "visibleCompleteMs": 165.40000000002328,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:41",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:42",
+          "elapsedMs": 102.70000000001164
+        },
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:45",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:46",
+          "elapsedMs": 165.40000000002328
+        }
+      ],
+      "dimensions": [
+        4096,
+        92
+      ],
+      "variant": "after",
+      "cache": "disk-hot",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 0,
+      "nativeRenders": 0
+    },
+    {
+      "mode": "list",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 36.09999999997672,
+      "visibleCompleteMs": 70.39999999996508,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:49",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:50",
+          "elapsedMs": 36.09999999997672
+        },
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:53",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:54",
+          "elapsedMs": 70.39999999996508
+        }
+      ],
+      "dimensions": [
+        4096,
+        92
+      ],
+      "variant": "after",
+      "cache": "memory-hot",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 0,
+      "nativeRenders": 0
+    },
+    {
+      "mode": "grid",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 580.1000000000349,
+      "visibleCompleteMs": 582,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:57",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:66",
+          "elapsedMs": 580.1000000000349
+        },
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:61",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:64",
+          "elapsedMs": 582
+        }
+      ],
+      "dimensions": [
+        4096,
+        84
+      ],
+      "variant": "before",
+      "cache": "cold",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 1,
+      "nativeRenders": 2
+    },
+    {
+      "mode": "grid",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 507.0999999999767,
+      "visibleCompleteMs": 507.19999999995343,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:71",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:74",
+          "elapsedMs": 507.0999999999767
+        },
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:67",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:76",
+          "elapsedMs": 507.19999999995343
+        }
+      ],
+      "dimensions": [
+        4096,
+        84
+      ],
+      "variant": "before",
+      "cache": "disk-hot",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 1,
+      "nativeRenders": 0
+    },
+    {
+      "mode": "grid",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 35.899999999965075,
+      "visibleCompleteMs": 97.89999999996508,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:77",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:78",
+          "elapsedMs": 35.899999999965075
+        },
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:81",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:82",
+          "elapsedMs": 97.89999999996508
+        }
+      ],
+      "dimensions": [
+        4096,
+        84
+      ],
+      "variant": "before",
+      "cache": "memory-hot",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 0,
+      "nativeRenders": 0
+    },
+    {
+      "mode": "grid",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 222.90000000002328,
+      "visibleCompleteMs": 248.90000000002328,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:85",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:96",
+          "elapsedMs": 222.90000000002328
+        },
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:89",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:94",
+          "elapsedMs": 248.90000000002328
+        }
+      ],
+      "dimensions": [
+        4096,
+        84
+      ],
+      "variant": "after",
+      "cache": "cold",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 0,
+      "nativeRenders": 2
+    },
+    {
+      "mode": "grid",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 94,
+      "visibleCompleteMs": 167.70000000001164,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:97",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:98",
+          "elapsedMs": 94
+        },
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:101",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:102",
+          "elapsedMs": 167.70000000001164
+        }
+      ],
+      "dimensions": [
+        4096,
+        84
+      ],
+      "variant": "after",
+      "cache": "disk-hot",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 0,
+      "nativeRenders": 0
+    },
+    {
+      "mode": "grid",
+      "text": "字体 Ag fj",
+      "size": 44,
+      "fontCount": 2,
+      "firstValidPreviewMs": 35,
+      "visibleCompleteMs": 68.90000000002328,
+      "decoded": 2,
+      "visibleTraces": [
+        {
+          "fontId": "a",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:105",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:106",
+          "elapsedMs": 35
+        },
+        {
+          "fontId": "b",
+          "operationId": "renderer-mulaapz2-xvrdb711gf:109",
+          "attemptId": "renderer-mulaapz2-xvrdb711gf:110",
+          "elapsedMs": 68.90000000002328
+        }
+      ],
+      "dimensions": [
+        4096,
+        84
+      ],
+      "variant": "after",
+      "cache": "memory-hot",
+      "source": "local active file",
+      "backend": "rust-directwrite",
+      "sharedCounterDelayMs": 400,
+      "sharedCounts": 0,
+      "nativeRenders": 0
+    }
+  ],
+  "evidence": {
+    "workflowRun": 36428495138,
+    "artifactId": 10972289061,
+    "artifactDigest": "sha256:21053c9bae880579a2b41ab1fd8f969178981d55070a93856159195d13012c01",
+    "observedOperationStages": {
+      "request": 24,
+      "queued": 24,
+      "cache-batch-member": 20,
+      "ipc-start": 32,
+      "cache-physical-member": 20,
+      "cache-physical-start": 20,
+      "cache-context-start": 14,
+      "preview-library-context-start": 8,
+      "load-start": 12,
+      "load-attempt": 12,
+      "render-queued": 12,
+      "render-start": 12,
+      "storage-prepare-start": 12,
+      "preview-library-context-end": 8,
+      "cache-context-end": 14,
+      "cache-physical-settled": 20,
+      "cache-physical-end": 20,
+      "ipc-result": 32,
+      "cache-batch-result": 20,
+      "storage-prepare-end": 12,
+      "index-read-start": 12,
+      "index-read-end": 12,
+      "image-read-start": 20,
+      "image-read-end": 20,
+      "font-resolve-start": 8,
+      "font-resolve-end": 8,
+      "native-render-start": 8,
+      "native-render-end": 8,
+      "image-return": 12,
+      "image-classified": 24,
+      "card-image-applied": 24,
+      "load-settled": 12,
+      "image-load": 24,
+      "cache-result": 16
+    }
+  }
+}
