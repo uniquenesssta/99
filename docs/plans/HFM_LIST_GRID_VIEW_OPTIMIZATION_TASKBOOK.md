@@ -666,3 +666,5 @@ Create State 当前连接返回 `UNAUTHORIZED`，要求重新认证；未向其�
 保留原断言：全量排空收集字段并沿用最短延迟，仅发一次合并刷新；明确范围的前台排空保持自己的刷新，不等待其他字段。将原增量刷新门前移以尽早捕捉，未删除或放宽测试。下一提交继续完整 Windows 验证。
 
 `e8e01df325fd0d7fb81ebc0e3fbe0e29bd7ccbc5` 的 Windows 提前门已通过增量刷新和标签回归。继续静态审阅操作链门发现：旧完整排空通过替换 queueRef.current 保留历史快照，字段排空也应保持此约束；改为替换带空目标 map 的新队列对象，其他字段沿用当前 map，旧快照不原地清空。既有 operation-chain 断言完整保留并前移，不修改期望。最终提交重新执行 Windows 门禁。
+
+`e7926fc1db0069f41474bb6c99e3ff56f6eae18f` 的 [CI 36467195927](https://github.com/uniquenesssta/99/actions/runs/36467195927) 中，Windows 原生任务 `109080129038` 成功，主任务 `109080128503` 的操作链、删除、增量刷新、PNG/DOM 和类型检查成功；全量诊断到 React domain controller 时因迁移 hash 格式错误中止。该夹具使用 TypeScript scanner token 序列的 SHA256，不是原始文件 SHA256；按同一源码的 Windows 实测 token hash `18d9cb5ffb66ee3ada3d3807db16039c35b16b2bab0411b575ed2dfba19d7ee1` 修正唯一对应项，其他 hash/算法/断言不变。生产源码未再修改，新增提前执行原 domain controller 门，最终以修正后的完整 Windows 回执为准。
