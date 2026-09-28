@@ -77,7 +77,12 @@
         "cleanupRemovedFontViewState",
         "cleanupRemovedFolderFontState"
       ],
-      "owners": [],
+      "owners": [
+        {
+          "binding": "detailViewportTransitionRef",
+          "kind": "useRef"
+        }
+      ],
       "exports": [
         "App"
       ],
@@ -91,7 +96,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "9ffcd780aa344d4a920c5f0c73b4e5248fafa3344f2fe4dc05bdaafcb0df7e96"
+      "tokenHash": "b736b93ad40868dcc2dacbdf974cd8c55a34ce7496424de054680af1531a70d4"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -763,6 +768,14 @@
           "kind": "useState"
         },
         {
+          "binding": "detailVisibleRef",
+          "kind": "useRef"
+        },
+        {
+          "binding": "beforeDetailChangeRef",
+          "kind": "useRef"
+        },
+        {
           "binding": "detailCardClickLockUntilRef",
           "kind": "useRef"
         },
@@ -851,7 +864,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "4a61c360ba9a087399a67221b8efb95654eb58541f6f9a630e4bbb742c01b85f"
+      "tokenHash": "615fc10dfb10a48e55d8bbfa3ee81f9f0e444f540fe6ae67cd136dab82fabdc5"
     },
     "src/main/ipc/handlers/fontTagIpcHandlers.ts": {
       "functions": [

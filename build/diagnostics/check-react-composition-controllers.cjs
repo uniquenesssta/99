@@ -219,8 +219,9 @@ function checkSelectionBehavior() {
   const statuses = []
   const activity = []
   let controller
+  const detailChanges = []
   const render = () => {
-    controller = harness.render(useSelectionController)
+    controller = harness.render(() => useSelectionController('', visible => detailChanges.push(visible)))
     return controller
   }
   const interaction = () => controller.createInteractionRuntime({
@@ -244,11 +245,13 @@ function checkSelectionBehavior() {
   assert.deepEqual(Array.from(controller.selectedFontIds), ['a'])
   assert.equal(controller.detailVisible, true)
   assert.equal(controller.pendingDetailRevealFontId, 'a')
+  assert.deepEqual(detailChanges, [true], 'detail open must capture once before mutation')
 
   interaction().handleFontSelect({ shiftKey: false, ctrlKey: true, metaKey: false }, visibleFonts[1])
   render()
   assert.deepEqual(Array.from(controller.selectedFontIds), ['a', 'b'])
   assert.equal(controller.selectionAnchorFontId, 'b')
+  assert.deepEqual(detailChanges, [true], 'selection within open detail must not replace entry snapshot')
   assert.equal(controller.detailVisible, true)
 
   interaction().handleFontSelect({ shiftKey: true, ctrlKey: false, metaKey: false }, visibleFonts[2])
@@ -291,6 +294,7 @@ function checkSelectionBehavior() {
   assert.deepEqual(Array.from(controller.selectedFontIds), ['a'])
   assert.equal(controller.selectedFontIdRef, selectedRef)
   assert(hydrated.length >= 4)
+  assert.equal(detailChanges.at(-1), false, 'removal closure must pass through the viewport owner')
 }
 
 function checkFolderBehavior() {

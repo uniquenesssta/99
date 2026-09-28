@@ -64,7 +64,7 @@ async function settleAndTrack(id:string) {
  for(const mode of ['grid','list'])for(const offset of [0,100])for(const position of ['top','middle','bottom']) {
    flushSync(()=>root.render(<Fixture key={`${mode}/${offset}/${position}`} mode={mode} offset={offset}/>))
    await wait(350)
-   flushSync(()=>current.scroll(offset?current.layout.panelPadding+Math.floor(offset/current.layout.columns)*current.layout.rowHeight+17:position==='top'?0:position==='middle'?8000:1e9))
+   flushSync(()=>current.scroll(offset?current.layout.panelPadding+Math.floor((offset+(position==='top'?0:position==='middle'?40:85))/current.layout.columns)*current.layout.rowHeight+17:position==='top'?0:position==='middle'?8000:1e9))
    await frame()
    const original=snapshot();check(original.id,'no visible card')
    const preview=document.querySelector(`[data-font-id="${original.id}"] .list-preview-scroll`) as HTMLElement
@@ -74,8 +74,8 @@ async function settleAndTrack(id:string) {
      const card=document.querySelector(`[data-font-id="${before.id}"]`) as HTMLElement
      // Native click targets exercise production FontCard and selection entry.
      const target=mode==='list'?card.querySelector('.font-row-name-simple') as HTMLElement:card
-     flushSync(()=>round===0?target.click():card.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})))
-     check(current.selection.detailVisible,'card click failed to open detail')
+     flushSync(()=>round===0?target.dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true,cancelable:true})):card.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})))
+     check(current.selection.detailVisible,`${mode}/${offset}/${position}/${round}: card input failed to open detail`)
      await settleAndTrack(before.id!)
      check(document.querySelector(`[data-font-id="${before.id}"]`),'selected card disappeared')
      if(round===1)flushSync(()=>current.scroll(current.node.scrollTop+600))
