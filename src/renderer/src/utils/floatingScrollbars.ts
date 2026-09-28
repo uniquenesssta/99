@@ -174,8 +174,19 @@ export function setupFloatingScrollbars(): () => void {
         move(event)
       }, state)
       addListener(bar, 'pointermove', event => { if (event.pointerId === pointerId) move(event) }, state)
-      const endDrag = () => { pointerId = null; state.dragging = false; showTemporarily(state) }
-      addListener(bar, 'pointerup', event => { if (event.pointerId === pointerId) { bar.releasePointerCapture(event.pointerId); endDrag() } }, state)
+      const endDrag = () => {
+        if (pointerId === null) return
+        pointerId = null
+        state.dragging = false
+        showTemporarily(state)
+      }
+      addListener(bar, 'pointerup', event => {
+        if (event.pointerId !== pointerId) return
+        // Clear our state before releasing browser capture: capture may already
+        // have ended, and its loss event must not restart the idle timer.
+        endDrag()
+        if (bar.hasPointerCapture(event.pointerId)) bar.releasePointerCapture(event.pointerId)
+      }, state)
       addListener(bar, 'lostpointercapture', endDrag, state)
       addListener(bar, 'pointercancel', endDrag, state)
       addListener(bar, 'mouseenter', () => { state.barHovered = true; scheduleUpdate() }, state)

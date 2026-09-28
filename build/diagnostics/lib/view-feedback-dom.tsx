@@ -60,12 +60,22 @@ function Paging({mode}:{mode:'list'|'grid'}) {
  flushSync(()=>root.unmount())
  return {fastPageJumps:checks}
 }
-let scrollHost:HTMLDivElement,cleanup:()=>void
+let scrollHost:HTMLDivElement,cleanup:()=>void,removeProbe:()=>void,events:any[]=[]
 ;(window as any).prepareScrollbarDrag=async()=>{
  scrollHost=document.createElement('div');scrollHost.className='font-virtual-scroller'
  scrollHost.style.cssText='position:fixed;left:40px;top:80px;width:500px;height:300px;overflow:auto;z-index:1;'
  scrollHost.innerHTML='<div style="height:10000px;width:1200px"></div>';document.body.append(scrollHost)
  cleanup=setupFloatingScrollbars();scrollHost.dispatchEvent(new MouseEvent('mouseenter'))
+ events=[]
+ const probe=(event:Event)=>{
+  const target=event.target as HTMLElement,pointer=event as PointerEvent
+  if(target!==scrollHost&&!target?.closest?.('.hfm-floating-scrollbar'))return
+  events.push({type:event.type,target:target.className,trusted:event.isTrusted,buttons:pointer.buttons,id:pointer.pointerId,x:pointer.clientX,y:pointer.clientY})
+  if(events.length>80)events.shift()
+ }
+ const types=['pointerdown','pointermove','pointerup','pointercancel','gotpointercapture','lostpointercapture','mouseenter','mouseleave','focus','blur','scroll']
+ types.forEach(type=>document.addEventListener(type,probe,true))
+ removeProbe=()=>types.forEach(type=>document.removeEventListener(type,probe,true))
  await frame();await frame()
  const vertical=[...document.querySelectorAll<HTMLElement>('.hfm-floating-scrollbar.vertical.visible')].find(el=>Math.abs(el.getBoundingClientRect().right-537)<2)!
  check(vertical,'visible scrollbar missing or outside host')
@@ -80,6 +90,7 @@ let scrollHost:HTMLDivElement,cleanup:()=>void
 }
 ;(window as any).finishScrollbarDrag=async()=>{
  await frame();await frame()
+ check(events.some(event=>event.type==='pointerdown'&&event.trusted&&event.buttons===1)&&events.some(event=>event.type==='pointerup'&&event.trusted&&event.buttons===0),'native drag button lifecycle missing: '+JSON.stringify(events))
  check(scrollHost.scrollTop>9000,'trusted pointer drag did not reach bottom')
  const focusedBeforeIdle=(document.activeElement as HTMLElement)?.className
  // Keyboard focus deliberately keeps a scrollbar visible. Idle means both
@@ -88,8 +99,8 @@ let scrollHost:HTMLDivElement,cleanup:()=>void
  scrollHost.dispatchEvent(new MouseEvent('mouseleave'))
  for(const bar of document.querySelectorAll('.hfm-floating-scrollbar'))bar.dispatchEvent(new MouseEvent('mouseleave'))
  await wait(1050);await frame()
- check(document.querySelectorAll('.hfm-floating-scrollbar.visible').length===0,'idle scrollbar failed to hide: '+JSON.stringify({focusedBeforeIdle,active:(document.activeElement as HTMLElement)?.className,visible:[...document.querySelectorAll('.hfm-floating-scrollbar.visible')].map(el=>({class:el.className,top:el.getBoundingClientRect().top,left:el.getBoundingClientRect().left}))}))
- cleanup();scrollHost.remove()
+ check(document.querySelectorAll('.hfm-floating-scrollbar.visible').length===0,'idle scrollbar failed to hide: '+JSON.stringify({focusedBeforeIdle,active:(document.activeElement as HTMLElement)?.className,events,visible:[...document.querySelectorAll<HTMLElement>('.hfm-floating-scrollbar.visible')].map(el=>({class:el.className,hover:el.matches(':hover'),capture:el.hasPointerCapture(1),top:el.getBoundingClientRect().top,left:el.getBoundingClientRect().left}))}))
+ removeProbe();cleanup();scrollHost.remove()
  check(document.querySelectorAll('.hfm-floating-scrollbar').length===0,'scrollbar observers/hosts leaked on cleanup')
  return {drag:true,autoHide:true,cleanup:true,focusedBeforeIdle}
 }

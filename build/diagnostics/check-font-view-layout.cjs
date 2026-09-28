@@ -128,17 +128,17 @@ assert.throws(() => behavior({ [geometryFile]: read(geometryFile).replace('rowHe
 const virtualFile = prefix + 'fontViewRuntime.ts'
 assert.throws(() => behavior({ [virtualFile]: read(virtualFile).replace('Math.max(0, Math.ceil(options.visibleFonts.length / columns) - visibleRows) * columns', 'Math.max(0, options.visibleFonts.length - visibleRows * columns)') }), /alignment/)
 console.log('[font-view-layout] geometry matrix, paging, anchors, resize rebind/breakpoints, fallback and two regression mutants passed')
-if (process.argv.includes('--dom') || process.argv.includes('--emit-dom')) {
+if (process.argv.includes('--dom') || process.argv.includes('--dom-feedback') || process.argv.includes('--emit-dom')) {
   const { file, temp, count } = makeDomFile()
   if (process.argv.includes('--emit-dom')) console.log(file)
   else {
     try {
       const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
-      const result = cp.spawnSync(require('electron'), [path.join(__dirname, 'lib/font-view-layout-electron.cjs'), file], { cwd: root, env, encoding: 'utf8', timeout: 210000 })
+      const result = cp.spawnSync(require('electron'), [path.join(__dirname, 'lib/font-view-layout-electron.cjs'), file, ...(process.argv.includes('--dom-feedback') ? ['--dom-feedback'] : [])], { cwd: root, env, encoding: 'utf8', timeout: 210000 })
       process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || '')
       if (result.error) throw result.error
       assert.equal(result.status, 0, 'real Electron DOM geometry gate failed')
-      console.log(`[font-view-layout] ${count} real DOM scenarios and legacy-gap mutant passed`)
+      console.log(process.argv.includes('--dom-feedback') ? '[font-view-layout] real DOM paging and scrollbar feedback passed' : `[font-view-layout] ${count} real DOM scenarios and legacy-gap mutant passed`)
     } finally { fs.rmSync(temp, { recursive: true, force: true }) }
   }
 }

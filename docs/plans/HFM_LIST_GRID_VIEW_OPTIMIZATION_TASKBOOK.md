@@ -621,3 +621,5 @@ flowchart TD
 Create State 当前连接返回 `UNAUTHORIZED`，要求重新认证；未向其他项目写入状态，续接信息保存在本任务书与 Git。后续最终回执以补充修正后的代码为准。
 
 第二轮 Windows 验证中真实指针已将滑块拖到底，闲置隐藏检查未通过。修正了覆盖条 mouseleave 不应重新启动“正在滚动”计时的边界；闲置夹具显式移走键盘焦点（有焦点时保持可见属于既有行为），失败回执增加焦点与残留条坐标。孤立文件保护范围同步限定为 ok/pending/generating，补充 stale 文件过期删除断言，避免无限保留历史失效图片。
+
+`7b9b828` 本地完整 165/165 诊断通过，Windows/Linux 原生组通过；Windows 闲置隐藏仍失败，尚不能记为界面全部通过。进一步按 Electron 42.11.3 的已安装类型补齐原生拖动事件的 leftbuttondown 状态和窗口 focus，增加可信 pointerdown/up 及 capture/hover 事件证据。生产 pointerup 先结束本地拖动状态，再检查并释放捕获，重复 lostpointercapture 不重复延长计时。现有 Windows 主任务新增编译原生 worker 前的定向反馈门，保留后续完整原生 PNG/DOM 门；最终结果继续以新提交回执为准。
