@@ -50,7 +50,7 @@ npm run build:win
 
 ## 当前工程任务
 
-- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S11-V01 几何与滚动优化已完成并通过验证；V02 样本与模式契约已完成，160 项诊断、320 次 DOM 场景及 CI 通过；V03 因实机初始显示缺陷重新打开，首次桥接修复复验中，见任务书 §12.4；V04～V07 未开始。
+- [列表与网格视图审计及优化任务书](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md)：S10-V00 审计与归档完成；S11-V01 几何与滚动优化已完成并通过验证；V02 样本与模式契约已完成，160 项诊断、320 次 DOM 场景及 CI 通过；V03 初始显示缺陷首次修复已实现并通过自动化复验，用户实机显示待确认，见任务书 §12.4；V04～V07 未开始。
 - [文档索引与旧任务归档](docs/README.md)：原 16 份任务书已移动至 `docs/old task`，历史回执及未验事项保留。
 
 当前专项工作分支为 `stage/11-list-grid-view`（基线 `6012cb6`）；Stage 10 保持原提交不变。S10-06 既有工程核查结论保持；新任务书不恢复已取消的固定卡片数或冷热重复次数验收。
@@ -61,7 +61,7 @@ npm run build:win
 
 ## 变更记录
 
-- 2026-09-28：修复实际运行时 preload 漏传列表布局参数，覆盖生成预览及单张/批量缓存读取；避免文字按旧居中规则落在宽画布中间、需要向右拖很远才能看见。补充双 preload/IPC 参数回归与初始视区首字检查，Windows 图像复验进行中。无需清缓存或重新安装依赖，拉取后重启 `npm run dev`。见 [V03 首次修复](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md#124-首次修复初始画面必须看见文字起点2026-09-28)。
+- 2026-09-28：修复实际运行时 preload 漏传列表布局参数，覆盖生成预览及单张/批量缓存读取；避免文字按旧居中规则落在宽画布中间、需要向右拖很远才能看见。补充双 preload/IPC 参数回归与初始视区首字检查；Windows 实测同一短文本首个墨迹由 x=2026 回到 x=36，108 张 PNG 与 398 次 DOM 场景通过。本地/Windows 161 项诊断、Windows/Linux 原生回归及构建混淆通过（[CI 36382074882](https://github.com/uniquenesssta/99/actions/runs/36382074882)，代码 `c75a697`）；用户本机显示仍待确认。无需清缓存或重新安装依赖，拉取后重启 `npm run dev`。见 [V03 首次修复](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md#124-首次修复初始画面必须看见文字起点2026-09-28)。
 
 - 2026-09-28：在 `stage/11-list-grid-view` 实施 S11-V03：列表预览左对齐，文字/PNG 按用户 CSS px 字号显示，长行独立横向查看；新 `list-v1` 布局贯通 IPC、缓存身份、后台重试及 Rust/允许的兼容后备，旧调用保留。本地与 Windows 完整 161 项诊断、三后端 108 张真实 PNG、系统字体/实际 WebFont/PNG 的 398 次 DOM 场景、Windows/Linux 原生回归及构建混淆通过（[CI 36346096242](https://github.com/uniquenesssta/99/actions/runs/36346096242)，受测 SHA `d14b838`）。同时修正私有字体句柄所有权、Typographic 额外边距及旧 CSS 覆盖；PowerShell 墨迹末端允许独立栅格化差异，字号/原点/高度/无折行保持契约。Stage 10 不变，无新增依赖，入口仍为 `npm run dev`。详见 [任务书 §12](docs/plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md#12-s11-v03-列表完整显示2026-09-28)。
 
