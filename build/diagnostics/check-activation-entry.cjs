@@ -63,8 +63,8 @@ function harness({runtimePreload=false,cache=['a','b','c'],mode='success',throwL
   const mocks={electron,react:new Proxy({}, {get:(_,key)=>hook[key]}),'react-dom':{flushSync:fn=>fn()}}
   mocks[path.join(root,'src/main/security/ipcSenderValidation.ts')]={assertTrustedIpcSender:noop}
   // Visual-only preview ports. Selection/card handlers themselves are the production TSX.
-  mocks[path.join(root,renderer+'runtime/preview/useGridNativePreviewImageTrim.ts')]={useGridNativePreviewImageTrim:x=>x}
-  mocks[path.join(root,renderer+'runtime/preview/gridPreviewVisualFitRuntime.ts')]={useGridPreviewVisualFitText:text=>({fittedText:text,visualFitRef:null,visualFitActive:false})}
+  mocks[path.join(root,renderer+'runtime/preview/gridNativePreviewImageTrimRuntime.ts')]={useGridNativePreviewImageTrim:()=>undefined}
+  mocks[path.join(root,renderer+'runtime/preview/gridPreviewVisualFitRuntime.ts')]={useGridPreviewVisualFit:()=>({scale:1,overflow:false,viewportRef:noop,contentRef:noop})}
   const load=loadModules({window,document,DOMRect:Rect,...(clock?{performance:{now:clock}}:{})},mocks,transforms)
   const append=line=>{if(throwLog)throw Error('log unavailable');if(line.startsWith('operation-chain: '))events.push(JSON.parse(line.slice(17)))}
   const perf=load('src/main/performance/rendererInteractionRuntime.ts').createRendererInteractionRuntime({appendLog:append})

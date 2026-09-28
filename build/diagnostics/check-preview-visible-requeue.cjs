@@ -68,7 +68,7 @@ async function run() {
  // Stable callbacks and FontItem objects: run the actual FontCard effects, including cleanup.
  let active, observers=[];
  global.IntersectionObserver=class {constructor(cb){this.cb=cb;this.off=false;observers.push(this);}observe(){}disconnect(){this.off=true;}emit(visible=true){this.cb([{isIntersecting:visible}]);}};
- const react={memo:f=>f,useMemo:f=>f(),useRef:v=>{let i=active.pos++;return active.slots[i]??=ref(v);},useEffect:(f,deps)=>{let i=active.pos++,old=active.slots[i];if(!old||deps.some((v,j)=>!Object.is(v,old.deps[j])))active.effects.push(()=>{old?.cleanup?.();active.slots[i]={deps,cleanup:f()};});}};
+ const react={memo:f=>f,useMemo:f=>f(),useState:v=>{let i=active.pos++;active.slots[i]??={current:v};return [active.slots[i].current,n=>{active.slots[i].current=n}];},useRef:v=>{let i=active.pos++;return active.slots[i]??=ref(v);},useEffect:(f,deps)=>{let i=active.pos++,old=active.slots[i];if(!old||deps.some((v,j)=>!Object.is(v,old.deps[j])))active.effects.push(()=>{old?.cleanup?.();active.slots[i]={deps,cleanup:f()};});}};
  let availability={roots:[],tags:[],unattributedTags:[]};
  const cardLoad=loader({react,'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})},
  '../sharedAvailabilityRuntime':{useSharedAvailability:()=>availability},

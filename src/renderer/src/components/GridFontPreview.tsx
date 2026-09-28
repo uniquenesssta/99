@@ -3,15 +3,16 @@ import type { getCardPreviewLayout } from '@shared/preview-layout/previewTextFit
 import { useGridNativePreviewImageTrim } from '../runtime/preview/gridNativePreviewImageTrimRuntime'
 import { useGridPreviewVisualFit } from '../runtime/preview/gridPreviewVisualFitRuntime'
 
-export function GridFontPreview({ layout, image, fontFamily, onImageLoad, onImageError }: {
+export function GridFontPreview({ layout, image, enabled = true, fontFamily, onImageLoad, onImageError }: {
   layout: ReturnType<typeof getCardPreviewLayout>
   image?: string
+  enabled?: boolean
   fontFamily?: string
   onImageLoad: () => void
   onImageError: () => void
 }): JSX.Element {
   const nativeImage = image?.startsWith('data:image/png') ? image : undefined
-  const trimmed = useGridNativePreviewImageTrim(nativeImage)
+  const trimmed = useGridNativePreviewImageTrim(enabled ? nativeImage : undefined)
   const fit = useGridPreviewVisualFit(`${layout.token}:${fontFamily || ''}`, layout.fontSize, trimmed?.clipped, trimmed?.image)
   const style: CSSProperties = { fontFamily, fontSize: layout.fontSize, lineHeight: layout.lineHeight,
     transform: `scale(${fit.scale})` }

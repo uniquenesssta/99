@@ -2,7 +2,7 @@ import { ListPreviewViewport } from './ListPreviewViewport'
 import { sharedPathBlocked } from '@shared/sharedAvailability'
 import { useSharedAvailability } from '../sharedAvailabilityRuntime'
 import { previewTrace, previewEvent, previewImageTrace, previewTraceEnabled } from '../runtime/preview/previewTraceRuntime'
-import { memo,useEffect,useMemo,useRef } from 'react'
+import { memo,useEffect,useMemo,useRef,useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { FontCardProps } from '../appRuntime'
 import { getCardPreviewLayout } from '@shared/preview-layout/previewTextFitRuntime'
@@ -41,6 +41,7 @@ function previewSampleStyle(font: FontCardProps['font'], mode: 'grid' | 'list', 
 
 function FontCardImpl({ closingLifecycle, font, active, selected, compact, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
   const ref = useRef<HTMLElement | null>(null)
+  const [previewIntersecting, setPreviewIntersecting] = useState(false)
   const requestedLayout = useMemo(() => getCardPreviewLayout(compact ? 'list' : 'grid', previewText, listPreviewFontSize), [compact, previewText, listPreviewFontSize])
   // Re-arm after reset commits: the text/size render can still contain the old image.
   const previewReady = Boolean(previewFamily || previewImage)
@@ -123,6 +124,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       (entries) => {
         if (cancelled) return
         intersecting = entries[entries.length - 1]?.isIntersecting === true
+        if (!compact) setPreviewIntersecting(intersecting)
         if (!intersecting) {
           stopRetry()
           revealed = false
@@ -158,7 +160,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       observer?.disconnect()
       unsubscribeResizeSettled?.()
     }
-  }, [onVisible, closingLifecycle, font.id, font.__earlyVisible, requestedLayout.token, previewReady, retryBlocked, knownRootBlocked])
+  }, [onVisible, closingLifecycle, font.id, font.__earlyVisible, requestedLayout.token, previewReady, retryBlocked, knownRootBlocked, compact])
 
   useEffect(() => {
     if (!previewTraceEnabled() || !ref.current) return
@@ -314,6 +316,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
         {scriptLabels(font).slice(0, 4).map((label) => <span key={label} className="script-pill">{label}</span>)}
       </div>
       <GridFontPreview layout={displayLayout} image={useNativePreviewImage ? displayPreviewImage : undefined}
+        enabled={previewIntersecting}
         fontFamily={buildListPreviewCssFamily(font, displayPreviewFamily) || undefined}
         onImageLoad={() => previewEvent(imageTrace, 'image-load')}
         onImageError={() => previewEvent(imageTrace, 'image-error')} />

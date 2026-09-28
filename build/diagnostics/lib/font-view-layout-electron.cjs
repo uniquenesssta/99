@@ -15,6 +15,8 @@ app.whenReady().then(async () => {
     console.log('[font-detail-transition:electron]', JSON.stringify(detail))
     const grid = await win.webContents.executeJavaScript('window.checkGridPreviews()')
     console.log('[grid-preview:electron]', JSON.stringify(grid))
+    const postprocess = await win.webContents.executeJavaScript('window.checkGridPostprocess()')
+    console.log('[grid-postprocess:electron]', JSON.stringify(postprocess))
   }
   clearTimeout(watchdog); app.exit(0)
 }).catch(error => { console.error(error); clearTimeout(watchdog); app.exit(1) })

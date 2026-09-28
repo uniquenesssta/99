@@ -1,4 +1,5 @@
 import './grid-preview-dom'
+import './grid-preview-postprocess-dom'
 // Real React mounting, production cards/panel/layout and transition owners.
 // Font data and detail content are fixtures; no native renderer or database I/O.
 import React, { useRef, useState } from 'react'

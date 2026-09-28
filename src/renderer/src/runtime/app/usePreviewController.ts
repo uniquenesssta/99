@@ -6,6 +6,7 @@ import type { PreviewQueueEntry } from '../../appRuntime'
 import { createFontPreviewQueueRuntime } from '../preview/fontPreviewQueueRuntime'
 import type { FontPreviewQueueRuntimeOptions } from '../preview/fontPreviewQueueRuntime'
 import { usePreviewTextResetRuntime } from './effects/usePreviewTextResetRuntime'
+import { gridPreviewPostprocess } from '../preview/gridNativePreviewImageTrimRuntime'
 
 type PreviewControllerOwnedOptions =
   'previewFamilies' |
@@ -77,12 +78,13 @@ export function usePreviewController(options: PreviewControllerOptions) {
   const queueRuntime = queueRuntimeRef.current
   useEffect(() => {
     const sync = (closing: boolean) => {
+      gridPreviewPostprocess.setPaused(closing)
       if (closing) { clearFontListScrollIdleTimer(); queueRuntime.disposePreviewQueue() }
       else queueRuntime.resumePreviewQueue()
     }
     sync(options.closingLifecycle?.isClosing() || false)
     const unsubscribe = options.closingLifecycle?.subscribe(sync)
-    return () => { unsubscribe?.(); clearFontListScrollIdleTimer(); queueRuntime.disposePreviewQueue() }
+    return () => { unsubscribe?.(); clearFontListScrollIdleTimer(); queueRuntime.disposePreviewQueue(); gridPreviewPostprocess.setPaused(true) }
   }, [queueRuntime, options.closingLifecycle])
 
   const previewImagesCurrent = usePreviewTextResetRuntime({
@@ -105,12 +107,14 @@ export function usePreviewController(options: PreviewControllerOptions) {
   }
 
   function beginFontListScroll(previewScrollIdleMs: number): void {
+    gridPreviewPostprocess.setPaused(true, false)
     if (!fontListScrollingRef.current) queueRuntime.pausePreviewForScroll()
     fontListScrollingRef.current = true
     if (fontListScrollIdleTimerRef.current !== null) window.clearTimeout(fontListScrollIdleTimerRef.current)
     fontListScrollIdleTimerRef.current = window.setTimeout(() => {
       fontListScrollingRef.current = false
       fontListScrollIdleTimerRef.current = null
+      if (!options.closingLifecycle?.isClosing()) gridPreviewPostprocess.setPaused(false)
       queueRuntime.resumePreviewAfterScroll()
       queueRuntime.processAutoPreviewCacheQueue()
     }, previewScrollIdleMs)
