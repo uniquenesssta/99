@@ -98,9 +98,13 @@ async function trimGridNativePreviewImage(source: string, wanted: () => boolean)
 }
 
 export const gridPreviewPostprocess = createGridPreviewPostprocessRuntime(trimGridNativePreviewImage)
+const noSubscription = () => () => {}
+const inactiveSnapshot = () => 0
 
 export function useGridNativePreviewImageTrim(source?: string): TrimmedPreviewImage | undefined {
-  const revision = useSyncExternalStore(gridPreviewPostprocess.subscribe, gridPreviewPostprocess.getSnapshot, gridPreviewPostprocess.getSnapshot)
+  const enabled = isGridNativePreviewImage(source)
+  const revision = useSyncExternalStore(enabled ? gridPreviewPostprocess.subscribe : noSubscription,
+    enabled ? gridPreviewPostprocess.getSnapshot : inactiveSnapshot, inactiveSnapshot)
   const [result, setResult] = useState<{ source: string; value: TrimmedPreviewImage } | undefined>()
   useEffect(() => {
     setResult(previous => previous?.source === source ? previous : undefined)
