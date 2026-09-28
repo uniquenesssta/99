@@ -114,6 +114,7 @@
     "useRendererReadyNotification",
     "useBrowseController",
     "useFolderController",
+    "useRef",
     "useSelectionController",
     "useRendererDisplayPreferences",
     "useLibraryController",
@@ -153,7 +154,7 @@
     "src/renderer/src/fontDialogTagActionsRuntime.ts": "9b5bc4b4b683c0f3b758f21fc5e1954136c45f8c5bf6065a9ba97576c1a9767c",
     "src/renderer/src/fontDetailPanelRuntime.ts": "ef5ba91f22fa915de270e90513a6de0cdc5848aa7f63a75e682222c24b12b9b0",
     "src/renderer/src/fontTagInputRuntime.ts": "296b77a1412004e68c390c96e732479f90faa57f9a7aa5fa9984efa6ca4a6c07",
-    "src/renderer/src/runtime/app/useSelectionController.ts": "98669b7f6c15cfc0aa2d28be21b729073e2dab98340cc531cf7e05ab2127b2e2",
+    "src/renderer/src/runtime/app/useSelectionController.ts": "f60ccdd2504e3e40f464af161eea92b37f5cb9e2bc98c24fadc948600efe86df",
     "src/renderer/src/runtime/app/fontSelectionHydrationRuntime.ts": "87633750b764db93d484bccce6b0f5d87dfc686b04049b5ab7b7e3960cdd363a"
   }
 }

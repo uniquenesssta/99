@@ -11,6 +11,8 @@ app.whenReady().then(async () => {
     console.log('[font-view-layout:electron] checking viewport', width)
     const result = await win.webContents.executeJavaScript('window.checkLayout()')
     console.log('[font-view-layout:electron]', JSON.stringify(result))
+    const detail = await win.webContents.executeJavaScript('window.checkDetailTransitions()')
+    console.log('[font-detail-transition:electron]', JSON.stringify(detail))
   }
   clearTimeout(watchdog); app.exit(0)
 }).catch(error => { console.error(error); clearTimeout(watchdog); app.exit(1) })

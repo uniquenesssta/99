@@ -6,7 +6,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .layout.detail-docked-layout.hfm-smooth-layout {
+  :root[data-hfm-layout-transitioning="1"] .layout.detail-docked-layout.hfm-smooth-layout {
     transition:
       grid-template-columns var(--hfm-layout-motion-duration) var(--hfm-layout-motion-ease),
       grid-template-rows var(--hfm-layout-motion-duration) var(--hfm-layout-motion-ease),

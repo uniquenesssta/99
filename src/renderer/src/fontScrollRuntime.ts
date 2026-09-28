@@ -16,7 +16,8 @@ export function captureFontScrollSnapshotFromNode(
   viewportWidth: number,
   panelPadding: number,
   getGridColumns: (width: number, minCardWidth: number) => number,
-  preferredAnchorFontId = ''
+  preferredAnchorFontId = '',
+  fontOffset = 0
 ): FontScrollRestoreSnapshot {
   if (!node) return { scrollTop: null, anchor: null }
 
@@ -26,10 +27,10 @@ export function captureFontScrollSnapshotFromNode(
   const viewportBottom = scrollTop + Math.max(1, node.clientHeight)
   const topRowIndex = Math.max(0, Math.floor(Math.max(0, scrollTop - (layout.panelPadding ?? panelPadding)) / rowHeight))
 
-  let anchorIndex = Math.min(fonts.length - 1, topRowIndex * columns)
+  let anchorIndex = Math.min(fonts.length - 1, Math.max(0, topRowIndex * columns - fontOffset))
   const preferredIndex = preferredAnchorFontId ? fonts.findIndex((font) => font.id === preferredAnchorFontId) : -1
   if (preferredIndex >= 0) {
-    const preferredRowIndex = Math.floor(preferredIndex / columns)
+    const preferredRowIndex = Math.floor((preferredIndex + fontOffset) / columns)
     const preferredRowTop = (layout.panelPadding ?? panelPadding) + preferredRowIndex * rowHeight
     const preferredRowBottom = preferredRowTop + rowHeight
     if (preferredRowBottom >= scrollTop && preferredRowTop <= viewportBottom) {
@@ -38,7 +39,7 @@ export function captureFontScrollSnapshotFromNode(
   }
 
   const anchorFont = anchorIndex >= 0 ? fonts[anchorIndex] : null
-  const rowIndex = anchorIndex >= 0 ? Math.floor(anchorIndex / columns) : topRowIndex
+  const rowIndex = anchorIndex >= 0 ? Math.floor((anchorIndex + fontOffset) / columns) : topRowIndex
   const rowTop = (layout.panelPadding ?? panelPadding) + rowIndex * rowHeight
   const rowOffset = Math.max(0, Math.min(rowHeight - 1, scrollTop - rowTop))
   const viewportOffset = Math.round(rowTop - scrollTop)
@@ -81,7 +82,8 @@ export function scrollTopForSnapshotAnchor(
   layout: FontScrollLayoutState,
   viewportWidth: number,
   panelPadding: number,
-  getGridColumns: (width: number, minCardWidth: number) => number
+  getGridColumns: (width: number, minCardWidth: number) => number,
+  fontOffset = 0
 ): number | null {
   const anchor = snapshot.anchor
   if (anchor) {
@@ -89,7 +91,7 @@ export function scrollTopForSnapshotAnchor(
     if (index >= 0) {
       const columns = Math.max(1, layout.columns ?? getGridColumns(node.clientWidth || viewportWidth, layout.minCardWidth))
       const rowHeight = Math.max(1, layout.rowHeight)
-      const rowIndex = Math.floor(index / columns)
+      const rowIndex = Math.floor((index + fontOffset) / columns)
       const rowTop = (layout.panelPadding ?? panelPadding) + rowIndex * rowHeight
       if (typeof anchor.viewportOffset === 'number') return rowTop - anchor.viewportOffset
       const rowOffset = typeof anchor.rowOffsetRatio === 'number'

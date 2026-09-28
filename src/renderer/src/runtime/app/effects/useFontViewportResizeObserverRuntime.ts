@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect,useLayoutEffect } from 'react'
 import { markWindowResizeActive,subscribeWindowResizeSettled } from '../windowResizePhaseRuntime'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import type { VirtualViewport } from '../../../appRuntime'
@@ -6,9 +6,19 @@ import type { VirtualViewport } from '../../../appRuntime'
 export function useFontViewportResizeObserverRuntime(args: {
   fontScrollerRef: MutableRefObject<HTMLDivElement | null>
   viewportKey: string
+  detailVisible?: boolean
   setVirtualViewport: Dispatch<SetStateAction<VirtualViewport>>
 }): void {
   const { fontScrollerRef, setVirtualViewport, viewportKey } = args
+
+  // Docking is discrete: measure in the same commit, before any stale virtual
+  // columns/row heights can paint. Window dragging retains its existing throttle.
+  useLayoutEffect(() => {
+    const node = fontScrollerRef.current
+    if (!node) return
+    setVirtualViewport(prev => prev.width === node.clientWidth && prev.height === node.clientHeight
+      ? prev : { ...prev, width: node.clientWidth, height: node.clientHeight })
+  }, [viewportKey, args.detailVisible, fontScrollerRef, setVirtualViewport])
 
   useEffect(() => {
     const node = fontScrollerRef.current

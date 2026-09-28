@@ -1,6 +1,6 @@
 import { flushSync } from 'react-dom'
 import type { FontItem } from '@shared/types'
-import { useDeferredValue } from 'react'
+import { useDeferredValue,useRef } from 'react'
 import { useBrowseController } from './runtime/app/useBrowseController'
 import type {
 CardPoolViewMode,
@@ -149,6 +149,8 @@ export default function App(): JSX.Element {
     clearAutoRefreshTimer,
     createRuntime: createFolderRuntime
   } = useFolderController()
+  const fontBrowseScopeKey = JSON.stringify([sidebarPage, activeFilterKey, selectedFolderId, selectedTagName, selectedSharedTagName, search, installStatus, timeSortMode, selectedWatchedFoldersKey, selectedFormatsKey, selectedScriptsKey, selectedCategory])
+  const detailViewportTransitionRef = useRef<(visible: boolean) => void>(() => {})
   const {
     selectedFontId,
     selectedFontIdRef,
@@ -180,7 +182,7 @@ export default function App(): JSX.Element {
     setDeleteTarget,
     removeFontIds: removeSelectedFontIds,
     createInteractionRuntime: createSelectionInteractionRuntime
-  } = useSelectionController(JSON.stringify([sidebarPage, activeFilterKey, selectedFolderId, selectedTagName, selectedSharedTagName, search, installStatus, timeSortMode, selectedWatchedFoldersKey, selectedFormatsKey, selectedScriptsKey, selectedCategory]))
+  } = useSelectionController(fontBrowseScopeKey, visible => detailViewportTransitionRef.current(visible))
   const {
     themeMode,
     setThemeMode,
@@ -572,6 +574,7 @@ export default function App(): JSX.Element {
 
   useFontViewportResizeObserverRuntime({
     viewportKey: `${sidebarPage}:${effectiveCardPoolMode}`,
+    detailVisible,
     fontScrollerRef,
     setVirtualViewport
   })
@@ -712,14 +715,17 @@ export default function App(): JSX.Element {
     contextFontTargets
   })
 
-  useFontLayoutScrollAnchor({
+  detailViewportTransitionRef.current = useFontLayoutScrollAnchor({
     layout: cardPoolViewLayout,
     fonts: visibleFonts,
     viewport: virtualViewport,
     fontScrollerRef,
     setVirtualViewport,
     preferredFontId: selectedFontId || selectedFontIds[0] || '',
-    enabled: effectiveCardPoolMode !== 'family' && (!databasePageReady || !databasePageResult?.offset)
+    enabled: effectiveCardPoolMode !== 'family',
+    detailVisible,
+    scopeKey: `${fontBrowseScopeKey}:${sortMode}:${effectiveCardPoolMode}`,
+    fontOffset: displayDatabasePageReady ? databasePageResult?.offset || 0 : 0
   })
   const installStatusSyncSuffix = installStatusReady ? '' : ' · 同步中'
 

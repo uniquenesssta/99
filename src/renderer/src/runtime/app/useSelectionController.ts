@@ -1,5 +1,5 @@
 import type { FontItem } from '@shared/types'
-import { useEffect,useRef,useState } from 'react'
+import { useCallback,useEffect,useRef,useState } from 'react'
 import type { Dispatch,KeyboardEvent,MouseEvent,SetStateAction } from 'react'
 import type { ContextMenuState,EditableMenuTarget,SelectionRectState } from '../../appRuntime'
 import { createAppFontSelectionInteractionRuntime } from './useFontSelectionInteractionRuntime'
@@ -14,7 +14,7 @@ export type SelectionInteractionRuntimeOptions = {
   userActivityIdleWindowMs: number
 }
 
-export function useSelectionController(scopeKey = '') {
+export function useSelectionController(scopeKey = '', beforeDetailChange?: (visible: boolean) => void) {
   const [selectedFontId, setSelectedFontId] = useState<string>('')
   const selectedFontIdRef = useRef('')
   selectedFontIdRef.current = selectedFontId
@@ -22,6 +22,16 @@ export function useSelectionController(scopeKey = '') {
   const [selectionAnchorFontId, setSelectionAnchorFontId] = useState<string>('')
   const [selectionRect, setSelectionRect] = useState<SelectionRectState | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
+  const detailVisibleRef = useRef(false)
+  const beforeDetailChangeRef = useRef(beforeDetailChange)
+  beforeDetailChangeRef.current = beforeDetailChange
+  const setDetailVisibleWithViewport = useCallback<Dispatch<SetStateAction<boolean>>>((value) => {
+    const next = typeof value === 'function' ? value(detailVisibleRef.current) : value
+    if (next === detailVisibleRef.current) return
+    beforeDetailChangeRef.current?.(next)
+    detailVisibleRef.current = next
+    setDetailVisible(next)
+  }, [])
   const detailCardClickLockUntilRef = useRef(0)
   const [pendingDetailRevealFontId, setPendingDetailRevealFontId] = useState('')
   const [assignTagName, setAssignTagName] = useState('')
@@ -41,7 +51,7 @@ export function useSelectionController(scopeKey = '') {
     setSelectedFontIds([])
     setSelectionAnchorFontId('')
     setSelectedFontId('')
-    setDetailVisible(false)
+    setDetailVisibleWithViewport(false)
     setSelectionRect(null)
     setContextMenu(null)
   }, [scopeKey])
@@ -52,7 +62,7 @@ export function useSelectionController(scopeKey = '') {
     const selectedFontRemoved = removedFontIds.has(selectedFontIdRef.current)
     if (selectedFontRemoved) {
       setSelectedFontId('')
-      setDetailVisible(false)
+      setDetailVisibleWithViewport(false)
     }
     return selectedFontRemoved
   }
@@ -72,7 +82,7 @@ export function useSelectionController(scopeKey = '') {
       setSelectedFontIds: value => { if (inCurrentScope()) setSelectedFontIds(value) },
       setSelectionAnchorFontId: value => { if (inCurrentScope()) setSelectionAnchorFontId(value) },
       setSelectedFontId: value => { if (inCurrentScope()) setSelectedFontId(value) },
-      setDetailVisible: value => { if (inCurrentScope()) setDetailVisible(value) },
+      setDetailVisible: value => { if (inCurrentScope()) setDetailVisibleWithViewport(value) },
       detailVisible,
       detailCardClickLockUntilRef,
       setSelectionRect: value => { if (inCurrentScope()) setSelectionRect(value) },
@@ -109,7 +119,7 @@ export function useSelectionController(scopeKey = '') {
     setSelectionAnchorFontId,
     selectionRect,
     detailVisible,
-    setDetailVisible,
+    setDetailVisible: setDetailVisibleWithViewport,
     pendingDetailRevealFontId,
     setPendingDetailRevealFontId,
     assignTagName,

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import type { VirtualLayout, VirtualViewport } from '../../appRuntime'
 import { revealFontCardInScroller } from './fontCardDomRuntime'
@@ -22,67 +22,18 @@ export function usePendingDetailRevealRuntime(options: {
     setPendingDetailRevealFontId
   } = options
 
-  useEffect(() => {
-    if (!detailVisible || !pendingDetailRevealFontId) return
-
-    let disposed = false
-    let attempt = 0
-    let rafId = 0
-    let timerId: number | null = null
-    let lastScrollTop = -1
-    let stablePasses = 0
-    const maxAttempts = 18
-
-    const syncViewportAfterReveal = (node: HTMLDivElement): void => {
-      setVirtualViewport((prev) => ({
-        ...prev,
-        scrollTop: node.scrollTop,
-        height: node.clientHeight || prev.height,
-        width: node.clientWidth || prev.width
-      }))
+  // Geometry and anchor restoration commit first. Reveal once before paint;
+  // retries across animation frames used to visibly fight scroll restoration.
+  useLayoutEffect(() => {
+    if (!pendingDetailRevealFontId) return
+    if (!detailVisible) { setPendingDetailRevealFontId(''); return }
+    const node = fontScrollerRef.current
+    if (!node || node.clientWidth !== virtualViewport.width || node.clientHeight !== virtualViewport.height ||
+      Math.abs(node.scrollTop - virtualViewport.scrollTop) > 1) return
+    if (!revealFontCardInScroller(node, pendingDetailRevealFontId)) return
+    if (node.scrollTop !== virtualViewport.scrollTop) {
+      setVirtualViewport(prev => ({ ...prev, scrollTop: node.scrollTop }))
     }
-
-    const finishReveal = (): void => {
-      if (!disposed) setPendingDetailRevealFontId('')
-    }
-
-    const tryReveal = (): void => {
-      if (disposed) return
-      const node = fontScrollerRef.current
-      const revealed = Boolean(node && revealFontCardInScroller(node, pendingDetailRevealFontId))
-      if (node && revealed) {
-        syncViewportAfterReveal(node)
-        const currentScrollTop = Math.round(node.scrollTop)
-        stablePasses = currentScrollTop === lastScrollTop ? stablePasses + 1 : 0
-        lastScrollTop = currentScrollTop
-      } else {
-        stablePasses = 0
-      }
-
-      attempt += 1
-      if (revealed && stablePasses >= 3) {
-        finishReveal()
-        return
-      }
-      if (attempt >= maxAttempts) {
-        finishReveal()
-        return
-      }
-      timerId = window.setTimeout(scheduleReveal, revealed ? 55 : 35)
-    }
-
-    const scheduleReveal = (): void => {
-      rafId = window.requestAnimationFrame(() => {
-        rafId = window.requestAnimationFrame(tryReveal)
-      })
-    }
-
-    scheduleReveal()
-
-    return () => {
-      disposed = true
-      if (rafId) window.cancelAnimationFrame(rafId)
-      if (timerId !== null) window.clearTimeout(timerId)
-    }
-  }, [detailVisible, pendingDetailRevealFontId, fontScrollerRef, virtualLayout.columns, virtualLayout.startIndex, virtualLayout.endIndex, virtualViewport.width, virtualViewport.height, setVirtualViewport, setPendingDetailRevealFontId])
+    setPendingDetailRevealFontId('')
+  }, [detailVisible, pendingDetailRevealFontId, fontScrollerRef, virtualLayout, virtualViewport, setVirtualViewport, setPendingDetailRevealFontId])
 }

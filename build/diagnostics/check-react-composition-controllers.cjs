@@ -123,6 +123,11 @@ function createHookHarness() {
   const slots = []
   return {
     hooks: {
+      useCallback(fn, deps) {
+        const index = cursor++, previous = slots[index]
+        if (!previous || deps.some((value, i) => value !== previous.deps[i])) slots[index] = { deps, fn }
+        return slots[index].fn
+      },
       useState(initial) {
         const index = cursor++
         if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial
@@ -232,7 +237,7 @@ function checkSelectionBehavior() {
   })
 
   render()
-  assert.equal(harness.slots.length, 19, '17 existing hook slots plus the scope ref/effect')
+  assert.equal(harness.slots.length, 22, '17 existing hook slots, scope ref/effect, and detail transition refs/callback')
   interaction().handleFontSelect({ shiftKey: false, ctrlKey: false, metaKey: false }, visibleFonts[0])
   render()
   assert.equal(controller.selectedFontId, 'a')

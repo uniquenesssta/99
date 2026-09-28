@@ -85,3 +85,6 @@
 .font-card[title] {
   cursor: pointer;
 }
+
+/* Virtual layout owns scroll anchoring, including detail docking. */
+.font-virtual-scroller[data-virtual-layout="cards"] { overflow-anchor: none; }

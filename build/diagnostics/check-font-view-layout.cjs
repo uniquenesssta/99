@@ -96,9 +96,12 @@ function makeDomFile() {
   const select = load(prefix + 'fontSelectionRuntime.ts').fontIdsInClientRect
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-layout-')), file = path.join(temp, 'layout.html')
   fs.writeFileSync(file, '<!doctype html><html data-theme="light"><meta charset="utf-8"><style>' + css() + '</style><body><div id="fixture"></div>' + reactScripts + '<script>' + viewportScript + 'const webFontData=' + JSON.stringify(webFontData) + ';const listSamples=' + JSON.stringify(listSamples).replace(/</g, '\\u003c') + ';const cases=' + JSON.stringify(cases).replace(/</g, '\\u003c') + ';const family=' + JSON.stringify(family).replace(/</g, '\u003c') + ';const familyBaselineCss=' + JSON.stringify(familyBaselineCss).replace(/</g, '\u003c') + ';const select=' + select.toString() + ';const samples=' + JSON.stringify(samples).replace(/</g, '\\u003c') + ';window.checkLayout=' + checkDom.toString() + '</script></body></html>')
+  const detailBundle = require('esbuild').buildSync({ entryPoints: [path.join(__dirname, 'lib/font-detail-transition-dom.tsx')], bundle: true, write: false, format: 'iife', platform: 'browser', alias: { '@shared': path.join(root, 'src/shared') }, define: { 'process.env.NODE_ENV': '"development"', 'import.meta.env': '{}' } }).outputFiles[0].text
+  fs.appendFileSync(file, '<script>' + detailBundle.replace(/<\/script/gi, '<\\/script') + '</script>')
   return { file, temp, count: cases.length }
 }
 behavior(); hookCases()
+require('./lib/font-detail-transition-cases.cjs')()
 assert.throws(() => behavior({ [geometryFile]: read(geometryFile).replace('rowHeight: cardHeight + rowGap', 'rowHeight: cardHeight') }), /stride/)
 const virtualFile = prefix + 'fontViewRuntime.ts'
 assert.throws(() => behavior({ [virtualFile]: read(virtualFile).replace('Math.max(0, Math.ceil(options.visibleFonts.length / columns) - visibleRows) * columns', 'Math.max(0, options.visibleFonts.length - visibleRows * columns)') }), /alignment/)
