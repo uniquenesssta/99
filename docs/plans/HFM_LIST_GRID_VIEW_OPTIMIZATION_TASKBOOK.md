@@ -742,3 +742,12 @@ flowchart TD
 - Windows CI 原有真实映射查询步骤增加 `--require-native-mapping`，继续要求真实返回 Map；该严格模式拒绝同一个 1201 环境回执。默认本机封包则验证已知断开时的安全失败行为。既有 Unicode、去重、合并请求、缓存、旧版反例和路径后缀门保留。
 - 应用与 Rust 源码、映射协议、共享盘配置、缓存、依赖及签名流程未修改。符号链接测试仍需相应 Windows 权限；此次不放宽该门。无新增模块或复杂链路，不需要新增架构图；Create State 已知 UNAUTHORIZED，续接继续由 Git 和本任务书保存。
 - 本地仅源码静态审阅与 `git diff --check`，未执行 Linux/macOS 应用测试或构建。推送后由现有 Windows CI 验证；结果待回填。用户可以先单独运行 `npm run diagnostics:mapped-drive-unicode`，通过后再执行完整封包，避免每次重复跑全套诊断。V07 未开始。
+
+## 22. 2026-09-29 封包与回归测试分离
+
+用户明确要求“封包就是封包”，授权独立封包入口。沿原分支，基线 `33cf4218bf9a9322a2c3db0d1f8da36ba9f6330a`。用户本机已确认 §21 的 Z 盘 1201 分类诊断通过；后续全量运行在 startup-database-health 返回终端但没有完整错误/成功回执，原因尚未确定，不将其登记为通过。
+
+- `build:win` 和 `pack:dir` 删除前置 `npm run verify`，保留原有必需 Rust 编译、公钥同步、Electron/Vite 编译、混淆、electron-builder 及 afterPack 完整性签名。封包不再执行映射盘、临时数据库、激活等回归测试。既有 `&&` 失败短路保留，编译或签名失败仍停止。
+- `verify` 与 165 项诊断保持独立可用，Windows CI 继续完整执行；`build` 的先验证再编译行为保留。原 release-build-gate 的契约按用户要求迁移：封包只允许有序的编译/签名/生成链，禁止通过 pre/post npm 生命周期重新引入诊断；仍断言 Rust required、独立 verify 及完整诊断入口。
+- 仅修改脚本入口、对应既有契约和文档，依赖/锁文件、应用运行时代码、数据库、共享盘配置及签名私钥机制不变。无新增模块或架构图需要。§21 关于默认封包执行映射诊断的说明由本节更新为仅独立 verify/CI 执行。
+- 本地只做配置/源码静态审阅与差异检查，不运行 Linux/macOS 应用测试或构建；Windows CI 待回执。没有在此环境生成安装包，用户本机封包仍需编译工具、资源和有效签名私钥。Create State 已知 UNAUTHORIZED，续接由 Git/README/任务书保存；V07 未开始。

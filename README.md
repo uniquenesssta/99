@@ -40,7 +40,9 @@ npm run build
 npm run build:win
 ```
 
-`npm run verify` 会执行 TypeScript 类型检查和项目诊断。正式打包还需要本机私钥；配置方式见 [`build/security/README.md`](build/security/README.md)。
+`npm run build:win` 只执行 Rust 必需编译、公钥同步、应用编译、混淆及 Windows 安装包生成，输出到 `release/`；`npm run pack:dir` 执行相同编译流程并生成未封装的应用目录。两个封包入口均不运行回归诊断，不依赖本机共享盘连接状态或测试数据库检查。
+
+`npm run verify` 单独执行 TypeScript 类型检查和全部项目诊断，Windows CI 继续运行完整验证；`npm run build` 保留先验证再编译的开发构建行为。正式打包仍需要本机签名私钥；配置方式见 [`build/security/README.md`](build/security/README.md)。
 
 ## 目录说明
 
@@ -62,6 +64,8 @@ npm run build:win
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-09-29：将 `build:win` / `pack:dir` 封包入口与完整回归测试分离，直接编译并生成安装包或应用目录；保留 Rust 必需构建、公钥同步、混淆与完整性签名。全部诊断继续由 `verify` 和 Windows CI 执行，见任务书 §22。
 
 - 2026-09-29：封包前的映射盘诊断识别 Windows 1201（已记住但当前断开的映射），验证安全失败与恢复行为，不再要求无关共享盘在线；未知错误、超时、缺失 worker 和损坏响应仍阻止封包。Windows CI 保留真实映射查询成功的严格门，详见任务书 §21。
 
