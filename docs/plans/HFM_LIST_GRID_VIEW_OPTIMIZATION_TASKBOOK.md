@@ -714,6 +714,21 @@ flowchart TD
 
 新回归在两项 Windows CI 的 worker 构建后执行，缺少 exe 或非 Windows 均失败，不以模拟成功替代。夹具使用 Windows 本地临时目录注册到生产隔离路由，真实调用原生进程，但不等同物理 NAS/映射盘或用户实库验收。故障分类用受控边界注入，与正常路径真实原生证据分开。原有 165 项诊断、原生/界面回归、类型检查、构建/混淆门全部保留。
 
-本地仅源码编辑和静态差异审阅，未在 Linux/macOS 运行测试或构建。Windows 结果待回填。按本轮提交整体回退；无 schema/用户数据变更。更新后完整重启 npm run dev（包含 worker 编译与能力核验）。
+本地仅源码编辑和静态差异审阅，未在 Linux/macOS 运行测试或构建。Windows 完整结果见 §20.3。按本轮提交整体回退；无 schema/用户数据变更。更新后完整重启 npm run dev（包含 worker 编译与能力核验）。
 
 续接由本任务书和 Git 保存；Create State 已知 UNAUTHORIZED 不重试阻塞。当前可用 Mermaid Chart 无图写入能力，以本节项目内图保存真实修复链。
+
+### 20.3 最终 Windows 验证回执
+
+受测提交：**`2477c53e21a3f1f48a719c57845080cfb104456e`**；[CI 36525182920](https://github.com/uniquenesssta/99/actions/runs/36525182920)，两项 Windows 任务全部成功。本节为独立文档回执，不改变受测源码。
+
+| 任务 | Job ID | Runner | 结果 |
+| --- | --- | --- | --- |
+| Windows 主任务 | 109266546569 | windows-latest | success |
+| Windows 原生回归 | 109266546459 | windows-latest | success |
+
+- 两组均通过新增真实 Rust 共享标签删除回归：带/不带 trace 的时间戳索引读取、生产包装函数选项透传、两个根的标签删除及数据库读回、保留其他标签与删除保护、重复删除、指针缺失恢复、未知业务字段错误保留及故障分类。两根均不存在固定 index.sqlite。
+- 五组 Rust 用例分别为 3/6/2/3/1 全部通过；共享文件组包含新增 trace 可选及异常诊断值兼容、真实 ENOENT 和未知业务字段拒绝用例。
+- Windows 主任务完整 `npm run verify`：**165/165 项诊断**，类型检查成功；标签写入隔离、普通日志、操作链、增量刷新、列表/网格原生预览及 Electron DOM 回归全部通过。两个任务的构建与混淆成功，主任务混淆 **3/3**，完整差异检查成功。
+- 没有执行 Linux/macOS 测试、构建或平台更新。只向原 `stage/11-list-grid-view` 发布；依赖、schema、用户缓存和数据未修改。V06.5 真实共享环境待验，V07 未开始。
+- 自动化验证完成，不替代用户 Windows 实库/NAS 验收。拉取原分支后完整重启 `npm run dev`，使 Rust worker 与主进程同时更新，无需清空共享缓存；本轮已定位的协议拒绝不能解释为文件被占用或实际不存在。
