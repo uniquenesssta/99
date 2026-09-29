@@ -1,4 +1,5 @@
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
+import { rethrowSharedIoProcessError } from '../path/sharedIoProcessRuntime'
 import { resolve } from "node:path";
 import type { FontItem,ScanResult } from "../../shared/types";
 import { isRootIndexDbPath } from "../cache/cachePaths";
@@ -42,6 +43,7 @@ export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
         storage,
       };
     } catch (error) {
+      rethrowSharedIoProcessError(error)
       deps.appendStartupLog(
         `folder cache candidate skipped: storage=${storage}, path=${cachePath}, ${deps.recoveryMessage(error)}`,
       );

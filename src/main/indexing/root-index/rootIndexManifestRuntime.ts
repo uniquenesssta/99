@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import os from 'node:os'
 import { join } from 'node:path'
 import {
@@ -54,13 +55,15 @@ export function createRootIndexManifestRuntime(deps: RootIndexRuntimeDeps) {
     try {
       const raw = await fsp.readFile(rootCacheManifestPath(cacheDir), 'utf-8')
       return JSON.parse(raw) as RootCacheManifestFile
-    } catch {
+    } catch (error) {
+      rethrowSharedIoProcessError(error)
       return null
     }
   }
 
   async function resolveActiveRootIndexDbPath(cacheDir: string, defaultDbPath: string): Promise<string> {
     const latestPath = await resolveLatestRootIndexDbPath(cacheDir).catch((error) => {
+      rethrowSharedIoProcessError(error)
       deps.appendStartupLog(`root index latest pointer resolve skipped: ${error instanceof Error ? error.message : String(error)}`)
       return null
     })

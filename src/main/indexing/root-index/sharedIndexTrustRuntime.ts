@@ -1,4 +1,5 @@
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { resolve } from 'node:path'
 import { ROOT_INDEX_DB_SCHEMA_VERSION } from '../../cache/constants'
 import { normalizePathCompareText } from '../../path/pathCanonicalizer'
@@ -28,7 +29,8 @@ export interface SharedIndexTrustRuntimeDeps {
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
     return JSON.parse(await fsp.readFile(filePath, 'utf-8')) as T
-  } catch {
+  } catch (error) {
+    rethrowSharedIoProcessError(error)
     return null
   }
 }
@@ -53,9 +55,9 @@ export function createSharedIndexTrustRuntime(deps: SharedIndexTrustRuntimeDeps)
     const resolvedRoot = resolve(rootPath)
     const cacheDir = deps.rootCacheDir(resolvedRoot)
     const defaultDbPath = deps.rootIndexDbPath(resolvedRoot)
-    const activeDbPath = await deps.resolveActiveRootIndexDbPath(cacheDir, defaultDbPath).catch(() => defaultDbPath)
+    const activeDbPath = await deps.resolveActiveRootIndexDbPath(cacheDir, defaultDbPath)
 
-    if (!(await deps.exists(activeDbPath).catch(() => false))) {
+    if (!(await deps.exists(activeDbPath))) {
       return { trusted: false, reason: 'active-database-missing', cacheDir, activeDbPath }
     }
 

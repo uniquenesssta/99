@@ -34,6 +34,16 @@ export class SharedIoProcessError extends Error {
 export function rethrowSharedIoProcessError(error: unknown): void {
   if (error && typeof error === 'object' && (error as SharedIoProcessError).sharedIo === true) throw error
 }
+function workerFailureDetail(stdout: string): string {
+  try {
+    const receipt = JSON.parse(stdout.split(/\r?\n/).find(line => line.trim()) || '')
+    // Preserve only the bounded error message, never echo inputs or arbitrary output.
+    if (receipt.ok === false && typeof receipt.message === 'string') {
+      return receipt.message.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 1024)
+    }
+  } catch { /* A malformed envelope still retains its process-exit classification. */ }
+  return ''
+}
 type Result = { stdout: string; stderr: string; queuedMs: number; executionMs: number }
 export type SharedIoProcessMetricRow = {
   requests: number
@@ -218,7 +228,12 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
         release(job)
         if (!job.settled) {
           if (code === 0) settle(job, { stdout, stderr, ...timingOf(job) })
-          else settle(job, undefined, new SharedIoProcessError(`Shared I/O process failed: code=${code}, signal=${signal}`, 'unknown', 'process-exit'))
+          else {
+            const detail = workerFailureDetail(stdout)
+            const error = new SharedIoProcessError(`Shared I/O process failed: code=${code}, signal=${signal}${detail ? `, message=${detail}` : ''}`, 'unknown', 'process-exit')
+            log(`shared io failed: request=${job.id}, label=${requestLabel(request)}, ${error.message}`)
+            settle(job, undefined, error)
+          }
         }
         log(`shared io closed: request=${job.id}, pid=${child.pid}, label=${requestLabel(request)}, code=${code}, signal=${signal}, active=${active.size}, startedTotal=${metricTotals.started}, closedTotal=${metricTotals.closed}`)
         drain()

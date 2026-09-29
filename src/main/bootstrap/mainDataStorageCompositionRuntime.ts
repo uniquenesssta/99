@@ -597,8 +597,9 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
 
   async function loadExistingFolderCache(
     rootPath: string,
+    options?: { applySharedMetadataOverlay?: boolean },
   ): Promise<FolderCacheSource | null> {
-    return requireFolderCacheRuntime().loadExistingFolderCache(rootPath);
+    return requireFolderCacheRuntime().loadExistingFolderCache(rootPath, options);
   }
 
   async function loadFolderCache(folders: string[]): Promise<ScanResult> {

@@ -683,3 +683,37 @@ Create State 当前连接返回 `UNAUTHORIZED`，要求重新认证；未向其�
 - 新增行为验证确认：未返回或失败的共享写入不阻塞本地删除；失败项保留；跨工厂重建同字段继续等待；新写入不会被旧失败覆盖；同字段未保存拒绝删除 IPC；默认日志按同一操作 ID 区分等待、阻塞、派发、后端失败及结果未知，日志异常不改变业务结果。全量混合写入保留一次合并刷新及旧快照语义。
 - 只改原 `stage/11-list-grid-view`。Stage 10 与 main 分别保持 `6012cb6c18fc52c9db181a2251dd54a235ac6e81`、`9d9be77b4761a3c1e169ffe15fbda059b556064f`；依赖、schema 和旧任务归档未修改。
 - 本轮两个修复点的自动化验证完成；用户 Windows 实库/NAS 的删除体验仍需更新后复核。拉取原分支后完整重启 `npm run dev`，使渲染端队列和主进程普通日志同时更新。共享活动索引定位、维护错误明细及关闭冻结时序仍按 §19.2 单独待查，不将本轮结果扩展为所有共享标签故障已修复。V06.5 真实共享环境待验，V07 未开始。
+
+
+## 20. 2026-09-29 共享标签删除协议修复
+
+用户在实际 Windows 日志确认共享标签仍无法删除，审计后明确授权“开始修复”。沿 `stage/11-list-grid-view`，基线 `3f8ada71e9147b85f8b22f458ab9cd6a3c104261`，工作区初始干净。只修复本次确认的协议、错误传播及参数透传链，不推进 V07，不清空缓存、不迁移数据、不新增依赖。
+
+### 20.1 根因和修复
+
+- 删除 IPC 的追踪上下文经 `traceRustInput` 自动加入共享文件 JSON。Rust `shared_file_io::Request` 有 `deny_unknown_fields` 但未声明 trace，导致解析在实际文件访问前失败，进程退出 2。该退出码并非 Windows os error 2；旧日志的“active-database-missing”不能证明文件不存在或被其他软件占用。
+- Request 只增加可选诊断字段 trace；无 trace / 无效诊断值均不改变文件行为，其他未知业务字段继续拒绝。新增 `shared-file-trace-v1` 握手能力并纳入运行时兼容和构建检查，旧 worker 不能冒充新版。
+- 共享子进程失败保留结构化原生错误的有界消息，不回显整个输入/输出。索引 latest、候选快照、manifest、信任和加载边界，以及共享 exists，保留 SharedIoProcessError，不再将协议/权限/超时等不确定错误转成文件缺失。真实 ENOENT 和旧快照恢复保持原行为。
+- `mainDataStorageCompositionRuntime.loadExistingFolderCache` 透传 `applySharedMetadataOverlay`，使删除/重命名要求的无叠加加载实际生效。
+
+```mermaid
+flowchart TD
+  A["确认删除与 trace"] --> B["索引文件请求"]
+  B --> C["严格协议接收可选 trace"]
+  C --> D["解析有效索引与元数据删除"]
+  D --> E["数据库回执与目录刷新"]
+  C --> F["原生错误保留"]
+  F --> G["报告失败并保留标签"]
+```
+
+### 20.2 Atomic Task 与验证
+
+1. 协议兼容及能力门：Rust 文件原生用例覆盖 trace 可选/异常值、真实缺失和未知业务字段拒绝。
+2. 错误传播和选项透传：保留现有流程职责；定向覆盖 process-exit/EACCES/timeout 不得伪报 missing，确认包装函数实际透传选项。
+3. Windows 完整回归：新增 `check-shared-tag-native-delete.cjs`，使用真实传输、Rust 文件命令、活动索引解析、SQLite 快照、共享元数据预处理/删除及数据库读回；两根均只有带时间戳索引，没有固定 index.sqlite；包括 trace/无 trace、重复删除、指针缺失恢复、旧 worker 拒绝、保留其他标签及保护字段。
+
+新回归在两项 Windows CI 的 worker 构建后执行，缺少 exe 或非 Windows 均失败，不以模拟成功替代。夹具使用 Windows 本地临时目录注册到生产隔离路由，真实调用原生进程，但不等同物理 NAS/映射盘或用户实库验收。故障分类用受控边界注入，与正常路径真实原生证据分开。原有 165 项诊断、原生/界面回归、类型检查、构建/混淆门全部保留。
+
+本地仅源码编辑和静态差异审阅，未在 Linux/macOS 运行测试或构建。Windows 结果待回填。按本轮提交整体回退；无 schema/用户数据变更。更新后完整重启 npm run dev（包含 worker 编译与能力核验）。
+
+续接由本任务书和 Git 保存；Create State 已知 UNAUTHORIZED 不重试阻塞。当前可用 Mermaid Chart 无图写入能力，以本节项目内图保存真实修复链。

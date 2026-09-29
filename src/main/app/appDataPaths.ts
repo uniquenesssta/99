@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
+import { rethrowSharedIoProcessError } from '../path/sharedIoProcessRuntime'
 import { dirname,join,resolve } from 'node:path'
 import { normalizePathForCacheCompare } from '../path/cachePath'
 import {
@@ -81,7 +82,8 @@ export function createAppDataPaths(options: AppDataPathsOptions) {
     try {
       await fsp.access(filePath)
       return true
-    } catch {
+    } catch (error) {
+      rethrowSharedIoProcessError(error)
       return false
     }
   }

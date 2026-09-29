@@ -24,6 +24,7 @@ jobs:
       - run: npm run diagnostics:shared-io-integration
       - run: npm run diagnostics:shared-filesystem
       - run: npm run rust:build
+      - run: node build/diagnostics/check-shared-tag-native-delete.cjs
       - name: Build compatible preview helper
         shell: pwsh
         run: |
@@ -76,6 +77,9 @@ jobs:
       - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml preview_cache::bounded_maintenance::tests
       - run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml core_daemon::lanes::tests
       - run: cargo build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml
+      - run: node build/diagnostics/check-shared-tag-native-delete.cjs
+        env:
+          HFM_TEST_NATIVE_WORKER: native-src/hfm-core-worker/target/release/hfm-core-worker.exe
       - name: Exercise native directory receipts through scan listing
         shell: bash
         run: |

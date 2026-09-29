@@ -7,6 +7,10 @@ use serde_json::{json, Value};
 #[derive(Clone, Deserialize)]
 #[serde(rename_all="camelCase", deny_unknown_fields)]
 struct Request {
+    // Diagnostic metadata is optional and must never change filesystem semantics.
+    // Keep rejecting unknown business fields instead of relaxing the whole envelope.
+    #[serde(default, rename="trace")]
+    _trace: Option<Value>,
     operation: String,
     path: String,
     availability_root: Option<String>,
@@ -275,6 +279,23 @@ mod tests {
         }
     }
     impl Drop for Directory { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+    #[test]
+    fn traced_requests_preserve_file_results_and_strict_business_fields() {
+        let dir = Directory::new();
+        fs::write(dir.0.join("index.snapshot.sqlite"), b"fixture").unwrap();
+        let input = dir.0.join("request.json");
+        for trace in [Value::Null, json!({"version":1,"operationId":"delete-tag"}), json!("invalid-diagnostic-only")] {
+            let mut request = json!({"operation":"access","path":dir.0.join("index.snapshot.sqlite"),"trace":trace});
+            fs::write(&input, request.to_string()).unwrap();
+            assert_eq!(serde_json::from_str::<Value>(&run(input.to_str().unwrap()).unwrap()).unwrap()["ok"], true);
+            request["path"] = json!(dir.0.join("missing.sqlite"));
+            fs::write(&input, request.to_string()).unwrap();
+            assert_eq!(serde_json::from_str::<Value>(&run(input.to_str().unwrap()).unwrap()).unwrap()["code"], "ENOENT");
+            request["unexpectedBusinessField"] = json!(true);
+            fs::write(&input, request.to_string()).unwrap();
+            assert!(run(input.to_str().unwrap()).unwrap_err().contains("unknown field"));
+        }
+    }
     #[test]
     fn owned_handle_rejects_replaced_lock_and_binary_round_trips() {
         let dir = Directory::new(); let transfer = dir.0.join("input"); fs::write(&transfer,[0,255,128,1]).unwrap();

@@ -1,4 +1,5 @@
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import os from 'node:os'
 import { basename, join } from 'node:path'
 import {
@@ -43,7 +44,8 @@ export function createRootIndexLatestRuntime(deps: RootIndexLatestRuntimeDeps) {
       const parsed = JSON.parse(raw) as Partial<RootIndexLatestPointerFile>
       if (parsed.pointerType !== 'root-index-latest' || typeof parsed.activeDatabase !== 'string') return null
       return parsed as RootIndexLatestPointerFile
-    } catch {
+    } catch (error) {
+      rethrowSharedIoProcessError(error)
       return null
     }
   }
@@ -53,7 +55,8 @@ export function createRootIndexLatestRuntime(deps: RootIndexLatestRuntimeDeps) {
     let names: string[]
     try {
       names = await fsp.readdir(dbDir)
-    } catch {
+    } catch (error) {
+      rethrowSharedIoProcessError(error)
       return null
     }
 
@@ -61,7 +64,7 @@ export function createRootIndexLatestRuntime(deps: RootIndexLatestRuntimeDeps) {
     for (const name of names) {
       if (name.toLowerCase() !== ROOT_INDEX_DB_FILE_NAME && !/^index\..+\.sqlite$/i.test(name)) continue
       const filePath = join(dbDir, name)
-      const stat = await fsp.stat(filePath).catch(() => null)
+      const stat = await fsp.stat(filePath).catch(error => { rethrowSharedIoProcessError(error); return null })
       if (!stat?.isFile() || Number(stat.size || 0) <= 0) continue
       candidates.push({ path: filePath, mtimeMs: Number(stat.mtimeMs || 0) })
     }
@@ -109,13 +112,13 @@ export function createRootIndexLatestRuntime(deps: RootIndexLatestRuntimeDeps) {
     reason?: string
   }> {
     const latestPath = rootIndexLatestPointerPath(cacheDir)
-    const pointerExists = await deps.exists(latestPath).catch(() => false)
+    const pointerExists = await deps.exists(latestPath)
     if (!pointerExists) return { ok: false, pointerExists: false, reason: 'latest pointer missing' }
     const pointer = await readRootIndexLatestPointer(cacheDir)
     if (!pointer) return { ok: false, pointerExists: true, reason: 'latest pointer invalid json or type' }
     const activeDbPath = safeManifestDatabasePath(cacheDir, pointer.activeDatabase)
     if (!activeDbPath) return { ok: false, pointerExists: true, activeDatabase: pointer.activeDatabase, reason: 'active database path unsafe' }
-    if (!(await deps.exists(activeDbPath).catch(() => false))) return { ok: false, pointerExists: true, activeDatabase: pointer.activeDatabase, activeDbPath, reason: 'active database missing' }
+    if (!(await deps.exists(activeDbPath))) return { ok: false, pointerExists: true, activeDatabase: pointer.activeDatabase, activeDbPath, reason: 'active database missing' }
     return { ok: true, pointerExists: true, activeDatabase: pointer.activeDatabase, activeDbPath }
   }
 
