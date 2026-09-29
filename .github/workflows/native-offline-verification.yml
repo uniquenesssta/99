@@ -45,7 +45,7 @@ jobs:
           name: list-preview-native
           path: artifacts/list-preview
           retention-days: 7
-      - run: npm run diagnostics:mapped-drive-unicode
+      - run: npm run diagnostics:mapped-drive-unicode -- --require-native-mapping
       - run: cargo fetch --locked --manifest-path native-src/hfm-core-worker/Cargo.toml
       - run: npm run diagnostics:execution-lifecycle
       - run: npm run diagnostics:font-physical-path-authorization

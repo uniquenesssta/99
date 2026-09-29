@@ -3,6 +3,36 @@ const fs = require('node:fs'), path = require('node:path'), cp = require('node:c
 const { loader } = require('./check-operation-chain.cjs')
 const file = 'src/main/path/pathCanonicalizer.ts', root = path.resolve(__dirname, '../..')
 const encode = rows => JSON.stringify(rows)
+function nativeErrorMessage(stdout) {
+  try {
+    const receipt = JSON.parse(String(stdout || ''))
+    return receipt?.ok === false && typeof receipt.message === 'string' ? receipt.message.slice(0, 1024) : null
+  } catch { return null }
+}
+function assertNativeOutcome(result, observation, requireAvailable = false) {
+  if (result instanceof Map) return 'available'
+  // A remembered, disconnected mapping is a valid host state, not a valid table.
+  // Keep the production null result; never substitute an empty/partial mapping.
+  const disconnected = observation?.code === 2 && !observation.killed && observation.signal == null
+    && /^mapped drive [A-Z]: query failed: 1201$/.test(observation.nativeError || '')
+  assert(!requireAvailable && disconnected && result === null,
+    'real native mapping query failed: ' + JSON.stringify(observation))
+  return 'disconnected'
+}
+function nativeOutcomeContracts() {
+  const output = encode({ok:false,message:'mapped drive Z: query failed: 1201'})
+  const observation = {code:2,killed:false,signal:null,nativeError:nativeErrorMessage(output)}
+  assert.equal(assertNativeOutcome(new Map(), {}), 'available')
+  assert.equal(assertNativeOutcome(null, observation), 'disconnected')
+  assert.throws(() => assertNativeOutcome(null, observation, true), /real native mapping query failed/)
+  for (const changed of [undefined, {...observation,code:0}, {...observation,code:'ENOENT'},
+    {...observation,killed:true}, {...observation,signal:'SIGTERM'},
+    ...['broken', encode({ok:true,message:'mapped drive Z: query failed: 1201'}),
+      encode({ok:false,message:'mapped drive Z: query failed: 5'}),
+      encode({ok:false,message:'unknown argument --mapped-drive-table'})].map(s=>({...observation,nativeError:nativeErrorMessage(s)}))]) {
+    assert.throws(() => assertNativeOutcome(null, changed), /real native mapping query failed/)
+  }
+}
 function harness(transform = s => s) {
   let now = 10000
   const calls = []
@@ -54,6 +84,19 @@ async function failures() {
   h.advance(30001);const stale=h.runtime.mappedDriveTableAsync();await new Promise(resolve=>setImmediate(resolve));h.calls[2].done(Error('timeout'));await stale
   assert.equal(h.runtime.canonicalizeWatchedFolderPathText('Z:\\字体'),'Z:\\字体','failed refresh must discard previous mapping')
 }
+async function disconnectedMapping() {
+  const h=harness(),r=h.runtime,remote='\\\\nas\\中文'
+  let task=r.mappedDriveTableAsync();await new Promise(resolve=>setImmediate(resolve))
+  h.calls[0].done(null,encode([{drive:'Z:',remote}]));await task
+  h.advance(30001);task=r.mappedDriveTableAsync();await new Promise(resolve=>setImmediate(resolve))
+  h.calls[1].done(Object.assign(Error('native disconnected'),{code:2}),encode({ok:false,message:'mapped drive Z: query failed: 1201'}))
+  assert.equal(await task,null,'disconnected identity must stay unknown, not an empty table')
+  assert.equal(r.canonicalizeWatchedFolderPathText('Z:\\字体'),'Z:\\字体','discard stale UNC mapping')
+  assert.equal(await r.mappedDriveTableAsync(),null);assert.equal(h.calls.length,2,'failure cooldown')
+  h.advance(5001);task=r.mappedDriveTableAsync();await new Promise(resolve=>setImmediate(resolve))
+  h.calls[2].done(null,encode([{drive:'Z:',remote}]));await task
+  assert.equal(r.canonicalizeWatchedFolderPathText('Z:\\字体'),remote+'\\字体','recover after reconnect')
+}
 async function baseline() {
   const old=cp.execFileSync('git',['show','848764d:'+file],{cwd:root,encoding:'utf8'})
   const h=harness(()=>old), task=h.runtime.mappedDriveTableAsync()
@@ -63,7 +106,8 @@ async function baseline() {
   assert(h.runtime.canonicalizeWatchedFolderPathText('Z:\\字体').includes('�'))
 }
 async function main() {
-  await baseline();await unicode(s=>s);await failures();await unicode(s=>s.replace(/\r?\n/g,'\r\n'))
+  nativeOutcomeContracts()
+  await baseline();await unicode(s=>s);await failures();await disconnectedMapping();await unicode(s=>s.replace(/\r?\n/g,'\r\n'))
   await assert.rejects(()=>unicode(s=>s.replace("normalizeNativePathText(`${remoteRoot}${suffix}`)","normalizeNativePathText(`${remoteRoot}`)")),undefined,'lost suffix mutant escaped')
   if(process.platform==='win32') {
     let observation
@@ -72,12 +116,14 @@ async function main() {
       return cp.execFile(command, args, options, (error, stdout, stderr) => {
         observation = { elapsedMs: Date.now() - started, timeoutMs: options.timeout,
           code: error?.code, signal: error?.signal, killed: error?.killed,
-          stdoutBytes: Buffer.byteLength(stdout || ''), stderr: String(stderr || '').slice(0, 2000) }
+          stdoutBytes: Buffer.byteLength(stdout || ''), nativeError: nativeErrorMessage(stdout), stderr: String(stderr || '').slice(0, 2000) }
         done(error, stdout, stderr)
       })
     }}})(file)
-    assert(await actual.mappedDriveTableAsync() instanceof Map, 'real native mapping query failed: ' + JSON.stringify(observation))
-    console.log('[diagnostics:mapped-drive-unicode] actual native mapping execution: ' + JSON.stringify(observation))
+    const result = await actual.mappedDriveTableAsync()
+    const outcome = assertNativeOutcome(result, observation, process.argv.includes('--require-native-mapping'))
+    console.log('[diagnostics:mapped-drive-unicode] actual native mapping execution: ' + JSON.stringify({...observation,outcome}))
+    if(outcome === 'disconnected') console.log('[diagnostics:mapped-drive-unicode] known disconnected host mapping: production returned null as required; native success is not claimed; no host mapping changed')
   }
   console.log('[diagnostics:mapped-drive-unicode] old OEM corruption reproduced; Unicode/space/device aliases, actual watched-root dedupe, no sync IO, coalescing/cache/retry/invalid receipts, CRLF and suffix regression passed; Windows native mapping/NAS '+(process.platform==='win32'?'native mapping executed; NAS acceptance separate':'not executed'))
 }
