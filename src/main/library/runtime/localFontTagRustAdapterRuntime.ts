@@ -18,12 +18,9 @@ function rustLocalTagReadRow(item: Pick<FontItem, "id" | "sourceId" | "path">) {
 }
 
 function rustLocalTagRow(item: FontItem, tagNames: string[]) {
-  const aliases = localTagFontIdAliases(item);
-  const storageId = localTagFontStorageId(item);
-  if (storageId && !aliases.includes(storageId)) aliases.push(storageId);
   return {
     itemId: String(item.id || '').trim(),
-    aliases: Array.from(new Set(aliases.map((id) => String(id || '').trim()).filter(Boolean))),
+    aliases: localTagFontIdAliases(item),
     fontPath: localTagFontPath(item),
     tagNames: cleanLocalTagNames(tagNames),
   };

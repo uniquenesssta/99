@@ -12,11 +12,12 @@ export function localTagFontPath(item: Pick<FontItem, "path"> | undefined): stri
   return normalizeLocalTagFontPath(item?.path);
 }
 
-export function localTagFontStorageId(item: Pick<FontItem, "id" | "sourceId"> | undefined): string {
-  return String(item?.id || "").trim() || String(item?.sourceId || "").trim();
+export function localTagFontStorageId(item: Pick<FontItem, "id" | "sourceId"> & Partial<Pick<FontItem, "path">> | undefined): string {
+  const path = item?.path ? localTagFontPath({ path: item.path }) : "";
+  return path ? `local-path:${path}` : String(item?.id || "").trim() || String(item?.sourceId || "").trim();
 }
 
-export function localTagFontIdAliases(item: Pick<FontItem, "id" | "sourceId"> | undefined): string[] {
+export function localTagFontIdAliases(item: Pick<FontItem, "id" | "sourceId"> & Partial<Pick<FontItem, "path">> | undefined): string[] {
   const aliases = new Set<string>();
   for (const raw of [item?.id, item?.sourceId, localTagFontStorageId(item)]) {
     const id = String(raw || "").trim();

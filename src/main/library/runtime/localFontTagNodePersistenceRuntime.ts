@@ -10,7 +10,7 @@ function deleteLocalTagForFontIdentity(
   const aliases = localTagFontIdAliases(item);
   const fontPath = localTagFontPath(item);
   if (aliases.length) {
-    db.prepare(`DELETE FROM local_font_tags WHERE font_id IN (${aliases.map(() => "?").join(",")})`).run(...aliases);
+    db.prepare(`DELETE FROM local_font_tags WHERE COALESCE(font_path, '') = '' AND font_id IN (${aliases.map(() => "?").join(",")})`).run(...aliases);
   }
   if (fontPath) db.prepare("DELETE FROM local_font_tags WHERE font_path = ?").run(fontPath);
 }
@@ -82,18 +82,14 @@ function insertLocalTagsForFont(
   tagNames: string[],
   updatedAt: string,
 ): void {
-  const aliases = localTagFontIdAliases(item);
   const storageId = localTagFontStorageId(item);
-  if (storageId && !aliases.includes(storageId)) aliases.push(storageId);
-  const cleanAliases = Array.from(new Set(aliases.map((id) => String(id || "").trim()).filter(Boolean)));
-  if (!cleanAliases.length) return;
+  if (!storageId) return;
   const fontPath = localTagFontPath(item);
   const insert = db.prepare(
     "INSERT OR REPLACE INTO local_font_tags (font_id, font_path, tag_name, updated_at) VALUES (?, ?, ?, ?)",
   );
-  for (const id of cleanAliases) {
-    for (const tag of tagNames) insert.run(id, fontPath, tag, updatedAt);
-  }
+  const storageIds = fontPath ? [storageId] : localTagFontIdAliases(item);
+  for (const id of storageIds) for (const tag of tagNames) insert.run(id, fontPath, tag, updatedAt);
 }
 
 export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Promise<SqliteDb>) {
@@ -154,7 +150,7 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
       const chunk = ids.slice(index, index + chunkSize);
       const rows = db
         .prepare(
-          `SELECT font_id, tag_name FROM local_font_tags WHERE font_id IN (${chunk.map(() => "?").join(",")}) ORDER BY tag_name`,
+          `SELECT font_id, tag_name FROM local_font_tags WHERE COALESCE(font_path, '') = '' AND font_id IN (${chunk.map(() => "?").join(",")}) ORDER BY tag_name`,
         )
         .all(...chunk) as Array<{ font_id: string; tag_name: string }>;
       for (const row of rows) {

@@ -18,6 +18,14 @@ jobs:
         run: npm run typecheck
       - name: Verify renderer query and user intent regressions
         run: node build/diagnostics/check-user-intent-consistency.cjs
+      - name: Verify local state path isolation and favorites
+        run: |
+          node build/diagnostics/check-local-user-state.cjs --case=identity
+          node build/diagnostics/check-local-user-state.cjs --case=favorites
+          node build/diagnostics/check-local-tag-node-persistence.cjs
+          node build/diagnostics/check-local-tag-rust-adapter.cjs
+      - name: Verify Rust local tag reads and writes
+        run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags
       - name: Verify Rust identity contract vectors
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::path_utils::tests
       - name: Build real Windows Rust worker

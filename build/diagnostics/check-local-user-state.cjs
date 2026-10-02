@@ -62,7 +62,7 @@ async function favorites() {
   await ra.setFavorite([changedId],[],false)
   assert.equal((await ra.hydrate([font('b',{favorite:true})]))[0].favorite,false,'old ID resurrected canceled favorite')
   await ra.setFavorite([font('a')],[],true)
-  a.exec("CREATE TRIGGER deny_bad BEFORE INSERT ON local_font_favorites WHEN NEW.font_id = 'bad' BEGIN SELECT RAISE(ABORT, 'disk'); END")
+  a.exec("CREATE TRIGGER deny_bad BEFORE INSERT ON local_font_favorites WHEN NEW.font_path LIKE '%bad.ttf' BEGIN SELECT RAISE(ABORT, 'disk'); END")
   await assert.rejects(ra.setFavorite([font('a'),font('bad')],[],false),/disk/)
   assert.equal((await ra.hydrate([font('a')]))[0].favorite,true,'partial local write escaped transaction')
   const hydrated=(await ra.hydrate([font('a')]))[0]
@@ -97,6 +97,53 @@ async function favorites() {
   assert.equal(closed,3)
   assert(invalidated>=4)
   a.close();b.close()
+}
+async function localIdentityPaths() {
+  const load=loader(), db=database()
+  load('src/main/library/runtime/librarySchemaRuntime.ts').initializeLibraryDb(db)
+  const first=font('legacy',{path:'C:\\one\\same.ttf',sourceId:'shared'})
+  const second=font('legacy',{path:'C:\\two\\same.ttf',sourceId:'shared'})
+  const favorite=load('src/main/library/runtime/localFontFavoritesRuntime.ts').createLocalFontFavoritesRuntime({
+    openLibraryDb:async()=>db,loadLegacyLocalSnapshot:async()=>[],invalidate(){},appendLog(){},
+  })
+  await favorite.initialize()
+  db.prepare('INSERT INTO local_font_favorites VALUES (?,?,1)').run('legacy',first.path.toLowerCase())
+  assert.deepEqual((await favorite.hydrate([second])).map(f=>f.favorite),[false], 'path-bearing old ID leaked to another copy')
+  await favorite.setFavorite([first,second],[],true)
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM local_font_favorites').get().n,2,'same-ID batch lost a path')
+  await favorite.setFavorite([first],[],false)
+  assert.deepEqual((await favorite.hydrate([first,second])).map(f=>f.favorite),[false,true],'clear removed another copy')
+  const tags=load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts').createLocalFontTagNodePersistenceRuntime(async()=>db)
+  const writer=await tags.openWriter()
+  db.prepare('INSERT INTO local_font_tags VALUES (?,?,?,?)').run('shared',first.path.toLowerCase(),'old','before')
+  assert.deepEqual(plain((await tags.hydrateLocalTagsForFonts([second]))[0].localTagNames),[],'path-bearing tag leaked through shared alias')
+  writer.setLocalFontTags(first,['one'],'now');writer.setLocalFontTags(second,['two'],'now')
+  // Distinct response IDs model the F02 candidate while persisted aliases still collide.
+  const items=[{...first,id:'one'},{...second,id:'two'}]
+  assert.deepEqual(plain((await tags.hydrateLocalTagsForFonts(items)).map(f=>f.localTagNames)),[['one'],['two']])
+  writer.setLocalFontTags(first,[],'later')
+  assert.deepEqual(plain((await tags.hydrateLocalTagsForFonts(items)).map(f=>f.localTagNames)),[[],['two']])
+  db.prepare('INSERT INTO local_font_tags VALUES (?,?,?,?)').run('shared',first.path.toLowerCase(),'old','before')
+  db.exec("ATTACH DATABASE ':memory:' AS local_db; CREATE TABLE local_db.local_font_tags AS SELECT * FROM main.local_font_tags; CREATE TABLE local_db.local_font_favorites AS SELECT * FROM main.local_font_favorites;")
+  // Actual generated worker hydration, including its independent alias reader.
+  const context={module:{exports:{}},require:id=>id==='better-sqlite3'?DatabaseSync:require(id)}
+  require('node:vm').runInNewContext(load('src/main/db/query-worker/dbQueryWorkerSharedSource.ts').buildDbQueryWorkerSharedSource()+'\nmodule.exports={hydrateLocalTags}',{...context,process})
+  assert.deepEqual(plain(context.module.exports.hydrateLocalTags(db,items).map(f=>f.localTagNames)),[['old'],['two']])
+  db.exec("CREATE TABLE entries(root_path TEXT, relative_path TEXT, file_size INTEGER, modified_at INTEGER, font_json TEXT)")
+  db.prepare('INSERT INTO entries VALUES (?,?,?,?,?)').run('C:\\one','same.ttf',1,1,JSON.stringify({id:'shared'}))
+  db.prepare('INSERT INTO entries VALUES (?,?,?,?,?)').run('C:\\two','same.ttf',1,1,JSON.stringify({id:'shared'}))
+  db.function('hfm_shared_font_id',()=> 'legacy')
+  const sql=load('src/main/indexing/root-query/rootIndexQuerySharedSql.ts')
+  assert.deepEqual(db.prepare('SELECT '+sql.mergedIndexLocalFavoriteExpr()+' AS favorite FROM entries ORDER BY root_path').all().map(r=>r.favorite),[0,1])
+  assert.deepEqual(db.prepare("SELECT root_path FROM entries WHERE EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE lft.tag_name='old' AND "+sql.rootIndexLocalTagMatchExpr()+')').all().map(r=>r.root_path),['C:\\one'])
+  const metrics=await load('src/main/library/fontMetricsRuntime.ts').createFontMetricsRuntime({
+    appWatchedFolders:async()=>[],loadSharedFontsForFolders:async()=>items,
+    hydrateInstallStatusForFonts:async fonts=>fonts,hydrateLocalTagsForFonts:tags.hydrateLocalTagsForFonts,
+    openLibraryDb:async()=>db,loadLibraryShellFromSqlite:()=>({}),saveMetricsSnapshot:async()=>{},
+    inferFontSearchCategory:()=> 'sansSerif',sharedFontMatchesPathPrefixes:()=>false,
+  }).getFontMetricsFromLibrary()
+  assert.deepEqual(plain(metrics.localTagCounts),{old:1,two:1},'fallback counts lost path-owned tags')
+  db.close()
 }
 async function tags() {
   const db=database();db.exec('CREATE TABLE bindings(root TEXT, id TEXT, tags TEXT)')
@@ -235,10 +282,11 @@ async function idsRace() {
   await facade.queryFontsInLibrary({activeFilter:{kind:'active'}});assert.equal(calls,1,'active IDs bypassed pending install state')
 }
 async function main(){
+  if(selected==='identity'){await localIdentityPaths();return}
   const cases={favorites,tags,activation,metrics:metricsRace}
   if(selected){await cases[selected]();return}
   for(const run of Object.values(cases))await run()
-  await knownCatalog();await idsRace();await pageRace();await compositionPorts()
+  await localIdentityPaths();await knownCatalog();await idsRace();await pageRace();await compositionPorts()
   if(!crlf){
     for(const kind of Object.keys(cases)){
       for(const mode of ['--mutant','--baseline']){

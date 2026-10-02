@@ -34,3 +34,19 @@ fn local_tags_atomicity_commit_failure_rolls_back_both_commands() {
         drop(reader); drop(conn); let _=fs::remove_file(path);
     }
 }
+
+#[test]
+fn local_tags_path_writes_preserve_other_copies() {
+    let mut conn = Connection::open_in_memory().unwrap();
+    initialize_local_tags_db(&conn).unwrap();
+    conn.execute_batch(r"INSERT INTO local_font_tags VALUES ('shared','c:\one.ttf','old','before');").unwrap();
+    for (path, tags) in [(r"c:\two.ttf", vec!["two"]), (r"c:\one.ttf", vec!["one"]), (r"c:\one.ttf", vec![])] {
+        let mut trace = crate::operation_trace::OperationTrace::from_input("{}");
+        let payload = serde_json::from_value(json!({"dbPath":"test","updatedAt":"next",
+            "rows":[{"itemId":"shared","aliases":["shared"],"fontPath":path,"tagNames":tags}]})).unwrap();
+        set_on_connection(&mut conn, &payload, &mut trace, Instant::now()).unwrap();
+        let count: i64 = conn.query_row(r"SELECT COUNT(*) FROM local_font_tags WHERE font_path='c:\two.ttf' AND tag_name='two'", [], |r|r.get(0)).unwrap();
+        assert_eq!(count, 1);
+    }
+    assert_eq!(conn.query_row("SELECT COUNT(*) FROM local_font_tags", [], |r|r.get::<_,i64>(0)).unwrap(), 1);
+}

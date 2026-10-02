@@ -23,7 +23,10 @@ export function createLocalFontFavoritesRuntime(options: {
         const fonts = await options.loadLegacyLocalSnapshot()
         const insert = db.prepare('INSERT OR IGNORE INTO local_font_favorites (font_id, font_path, favorite) VALUES (?, ?, 1)')
         db.transaction(() => {
-          for (const font of fonts) if (font.favorite && font.id) insert.run(font.id.toLowerCase(), normalizePathForCacheCompare(font.path || ''))
+          for (const font of fonts) if (font.favorite && font.id) {
+            const path = normalizePathForCacheCompare(font.path || '')
+            insert.run(path ? `local-path:${path}` : font.id.toLowerCase(), path)
+          }
           db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run('localFavoritesMigrated', '1')
         })()
         options.appendLog(`local favorites migrated from existing local snapshot: favorites=${fonts.filter(font => font.favorite).length}`)
@@ -37,7 +40,7 @@ export function createLocalFontFavoritesRuntime(options: {
     await initialize()
     const db = await options.openLibraryDb()
     const rows = db.prepare('SELECT font_id, font_path, favorite FROM local_font_favorites').all() as FavoriteRow[]
-    const byId = new Map(rows.map(row => [row.font_id, !!row.favorite]))
+    const byId = new Map(rows.filter(row => !row.font_path).map(row => [row.font_id, !!row.favorite]))
     const byPath = new Map(rows.filter(row => row.font_path).map(row => [row.font_path, !!row.favorite]))
     return items.map(font => {
       const favorite = byPath.get(normalizePathForCacheCompare(font.path || ''))
@@ -50,16 +53,18 @@ export function createLocalFontFavoritesRuntime(options: {
   async function setFavorite(items: FontItem[], _watchedFolders: string[], favorite: boolean): Promise<FontProtectionResult> {
     await initialize()
     const db = await options.openLibraryDb()
-    const unique = [...new Map((items || []).filter(item => item?.id).map(item => [item.id, item])).values()]
+    const unique = [...new Map((items || []).filter(item => item?.id).map(item => [normalizePathForCacheCompare(item.path || '') || item.id, item])).values()]
     const save = db.prepare('INSERT OR REPLACE INTO local_font_favorites (font_id, font_path, favorite) VALUES (?, ?, ?)')
-    const clearAliases = db.prepare('DELETE FROM local_font_favorites WHERE font_id = ? OR font_id = ? OR (font_path <> ? AND font_path = ?)')
+    const clearPath = db.prepare('DELETE FROM local_font_favorites WHERE font_path = ?')
+    const clearPathless = db.prepare("DELETE FROM local_font_favorites WHERE COALESCE(font_path, '') = '' AND (font_id = ? OR font_id = ?)")
     db.transaction(() => {
       for (const item of unique) {
         const path = normalizePathForCacheCompare(item.path || '')
-        clearAliases.run(item.id.toLowerCase(), String(item.sourceId || '').toLowerCase(), '', path)
+        if (path) clearPath.run(path)
+        else clearPathless.run(item.id.toLowerCase(), String(item.sourceId || '').toLowerCase())
         // Keep false as a local decision as well: neither a stale snapshot nor an
         // alternate identity may resurrect an explicitly removed favorite.
-        save.run(item.id.toLowerCase(), path, favorite ? 1 : 0)
+        save.run(path ? `local-path:${path}` : item.id.toLowerCase(), path, favorite ? 1 : 0)
       }
     })()
     options.invalidate()

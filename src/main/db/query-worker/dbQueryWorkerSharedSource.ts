@@ -211,7 +211,8 @@ function hydrateLocalTags(db, items) {
   for (let index = 0; index < ids.length; index += chunkSize) {
     const chunk = ids.slice(index, index + chunkSize)
     const placeholders = chunk.map(() => '?').join(',')
-    const rows = db.prepare('SELECT font_id, tag_name FROM local_db.local_font_tags WHERE font_id IN (' + placeholders + ') ORDER BY tag_name').all(...chunk)
+    const pathless = localTagColumns.has('font_path') ? "COALESCE(font_path, '') = '' AND " : ''
+    const rows = db.prepare('SELECT font_id, tag_name FROM local_db.local_font_tags WHERE ' + pathless + 'font_id IN (' + placeholders + ') ORDER BY tag_name').all(...chunk)
     for (const row of rows) addTag(aliasToRuntimeId[row.font_id] || row.font_id, row.tag_name)
   }
   if (localTagColumns.has('font_path')) {

@@ -68,7 +68,7 @@ async function matrix(transform) {
         assert(e.indexOf(outcome==='success'?'rust-result':'commit')<e.indexOf('revision'));assert.equal(h.calls.broadcasts.length,1)
       }
       if(outcome==='success' && [methods[1],methods[2],methods[3]].includes(method)) {
-        const row=h.calls.rust[0].request.rows[0];assert.equal(row.itemId,'a');assert.deepEqual(row.aliases,['a','s']);assert.equal(row.fontPath,'c:\\f\\a.ttf')
+        const row=h.calls.rust[0].request.rows[0];assert.equal(row.itemId,'a');assert.deepEqual(row.aliases,['a','s','local-path:c:\\f\\a.ttf']);assert.equal(row.fontPath,'c:\\f\\a.ttf')
         if(writing)assert.deepEqual(row.tagNames,['a','z'])
         assert.equal(h.calls.rust[0].request.rows.length,1)
       }

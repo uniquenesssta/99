@@ -75,7 +75,8 @@ pub fn hydrate_local_tags(conn: &Connection, items: Vec<Value>) -> Vec<Value> {
 
     for chunk in ids.chunks(500) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("SELECT font_id, tag_name FROM local_db.local_font_tags WHERE font_id IN ({}) ORDER BY tag_name", placeholders);
+        let pathless = if columns.contains("font_path") { "COALESCE(font_path, '') = '' AND " } else { "" };
+        let sql = format!("SELECT font_id, tag_name FROM local_db.local_font_tags WHERE {pathless}font_id IN ({}) ORDER BY tag_name", placeholders);
         let params = chunk.iter().map(|value| SqlValue::Text(value.clone())).collect::<Vec<_>>();
         if let Ok(rows) = query_string_pairs(conn, &sql, params) {
             for (font_id, tag_name) in rows {
@@ -116,4 +117,22 @@ pub fn hydrate_local_tags(conn: &Connection, items: Vec<Value>) -> Vec<Value> {
             item
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn path_bearing_alias_is_not_shared_between_roots() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(r"ATTACH DATABASE ':memory:' AS local_db;
+            CREATE TABLE local_db.local_font_tags(font_id TEXT, font_path TEXT, tag_name TEXT);
+            INSERT INTO local_db.local_font_tags VALUES ('shared','c:\one.ttf','private');").unwrap();
+        let items = vec![json!({"id":"b","sourceId":"shared","path":r"c:\two.ttf"})];
+        assert_eq!(hydrate_local_tags(&conn, items)[0]["localTagNames"], json!([]));
+        let items = vec![json!({"id":"a","sourceId":"shared","path":r"c:\one.ttf"})];
+        assert_eq!(hydrate_local_tags(&conn, items)[0]["localTagNames"], json!(["private"]));
+    }
 }

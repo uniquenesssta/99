@@ -10,7 +10,7 @@ export type FontMetricsRuntimeOptions = {
   loadSharedFontsForFolders: (folders: string[]) => Promise<FontItem[]>
   hydrateInstallStatusForFonts: (items: FontItem[]) => Promise<FontItem[]>
   getInstallStatusIndexSnapshot?: (items: FontItem[]) => Promise<{ results: Record<string, InstallCompareResult>; missingIds: string[] }>
-  localTagsByFontIds: (fontIds: string[]) => Promise<Record<string, string[]>>
+  hydrateLocalTagsForFonts: (items: FontItem[]) => Promise<FontItem[]>
   openLibraryDb: () => Promise<any>
   loadLibraryShellFromSqlite: (db: any) => LibraryShell
   saveMetricsSnapshot: (name: string, value: unknown) => Promise<void>
@@ -100,7 +100,7 @@ export function createFontMetricsRuntime(options: FontMetricsRuntimeOptions): {
       installStatusKnownCount = hydrated.filter((font) => font.installStatusKnown).length
       installStatusMissingCount = Math.max(0, rawFonts.length - installStatusKnownCount)
     }
-    const localTagsByFont = await options.localTagsByFontIds(hydrated.map((font) => font.id)).catch(() => ({} as Record<string, string[]>))
+    hydrated = await options.hydrateLocalTagsForFonts(hydrated)
     const shell = options.loadLibraryShellFromSqlite(await options.openLibraryDb())
 
     metrics.total = hydrated.length
@@ -133,7 +133,7 @@ export function createFontMetricsRuntime(options: FontMetricsRuntimeOptions): {
 
       for (const script of font.scripts || []) metrics.scriptCounts[script] = (metrics.scriptCounts[script] || 0) + 1
       for (const collectionId of font.collectionIds || []) metrics.collectionCounts[collectionId] = (metrics.collectionCounts[collectionId] || 0) + 1
-      for (const tagName of localTagsByFont[font.id] || font.localTagNames || []) {
+      for (const tagName of font.localTagNames || []) {
         metrics.localTagCounts![tagName] = (metrics.localTagCounts![tagName] || 0) + 1
       }
       for (const tagName of font.tagNames || []) {

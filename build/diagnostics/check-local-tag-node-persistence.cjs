@@ -23,7 +23,7 @@ function harness({ fault, logThrows = false, signalThrows = false, transform = x
     INSERT INTO fonts VALUES ('a',1,'["shared"]',1),('b',1,'["shared"]',1);
     INSERT INTO app_state VALUES ('localTags','["old","empty"]'),('other','{"untouched":true}');
     INSERT INTO local_font_tags VALUES ('a','\\fonts\\a.ttf','old','before'),('b','\\fonts\\b.ttf','old','before');`)
-  if (fault === 'second') db.exec(`CREATE TRIGGER fail_row BEFORE INSERT ON local_font_tags WHEN NEW.font_id = 'b' BEGIN SELECT RAISE(ABORT,'second item failure'); END;`)
+  if (fault === 'second') db.exec(`CREATE TRIGGER fail_row BEFORE INSERT ON local_font_tags WHEN NEW.font_path = '\\fonts\\b.ttf' BEGIN SELECT RAISE(ABORT,'second item failure'); END;`)
   if (fault === 'catalog') db.exec(`CREATE TRIGGER fail_catalog BEFORE INSERT ON app_state WHEN NEW.key = 'localTags' BEGIN SELECT RAISE(ABORT,'catalog failure'); END;`)
   const events = []
   const adapter = {
@@ -61,7 +61,7 @@ async function postCommit(transform) {
       for (const id of ['a','b']) assert.deepEqual(plain(byIds[id] || []), after.bindings.filter(x=>x.font_id===id).map(x=>x.tag_name))
       const hydrated = await h.runtime.hydrateLocalTagsForFonts([item('a'),item('b')])
       for (const font of hydrated) {
-        assert.deepEqual(plain(font.localTagNames), after.bindings.filter(x=>x.font_id===font.id).map(x=>x.tag_name))
+        assert.deepEqual(plain(font.localTagNames), after.bindings.filter(x=>x.font_path===font.path.replaceAll('/', '\\').toLowerCase()).map(x=>x.tag_name))
         assert.equal(font.favorite, true); assert.equal(font.deleteProtected, true); assert.deepEqual(plain(font.tagNames), ['shared'])
       }
       assert.deepEqual(after.fonts, h.before.fonts)

@@ -27,14 +27,14 @@ export function rootIndexRuntimePathExpr(): string {
 }
 
 export function rootIndexLocalTagMatchExpr(alias = 'lft'): string {
-  return `(LOWER(${alias}.font_id) = ${rootIndexJsonTextExpr('id')} OR LOWER(${alias}.font_id) = ${rootIndexRuntimeFontIdExpr()} OR (COALESCE(${alias}.font_path, '') <> '' AND LOWER(${alias}.font_path) = ${rootIndexRuntimePathExpr()}))`
+  return `((COALESCE(${alias}.font_path, '') = '' AND (LOWER(${alias}.font_id) = ${rootIndexJsonTextExpr('id')} OR LOWER(${alias}.font_id) = ${rootIndexRuntimeFontIdExpr()})) OR (COALESCE(${alias}.font_path, '') <> '' AND LOWER(${alias}.font_path) = ${rootIndexRuntimePathExpr()}))`
 }
 
 export function mergedIndexLocalFavoriteExpr(): string {
   return `COALESCE(
     (SELECT favorite FROM local_db.local_font_favorites WHERE font_path <> '' AND font_path = ${rootIndexRuntimePathExpr()} LIMIT 1),
-    (SELECT favorite FROM local_db.local_font_favorites WHERE font_id = ${rootIndexRuntimeFontIdExpr()} LIMIT 1),
-    (SELECT favorite FROM local_db.local_font_favorites WHERE font_id = ${rootIndexJsonTextExpr('id')} LIMIT 1), 0)`
+    (SELECT favorite FROM local_db.local_font_favorites WHERE COALESCE(font_path, '') = '' AND font_id = ${rootIndexRuntimeFontIdExpr()} LIMIT 1),
+    (SELECT favorite FROM local_db.local_font_favorites WHERE COALESCE(font_path, '') = '' AND font_id = ${rootIndexJsonTextExpr('id')} LIMIT 1), 0)`
 }
 
 export function rootIndexInstalledExpr(hasInstallJoin: boolean): string {

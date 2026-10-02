@@ -109,8 +109,9 @@ fn read_tags_by_column(
     }
     for chunk in values.chunks(SQLITE_IN_CHUNK_SIZE) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let pathless = if column == "font_id" { "COALESCE(font_path, '') = '' AND " } else { "" };
         let sql = format!(
-            "SELECT {column} AS lookup_value, tag_name FROM local_font_tags WHERE {column} IN ({placeholders}) ORDER BY tag_name"
+            "SELECT {column} AS lookup_value, tag_name FROM local_font_tags WHERE {pathless}{column} IN ({placeholders}) ORDER BY tag_name"
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(chunk.iter()), |row| {
@@ -219,6 +220,18 @@ mod tests {
         assert_eq!(payload.rows.len(), 6);
         let empty = LocalTagsReadPayload { db_path: payload.db_path, rows: vec![] };
         assert!(read_local_tags(&empty, Instant::now()).unwrap().tag_map.is_empty());
+    }
+    #[test]
+    fn path_bearing_alias_cannot_match_another_file() {
+        let (file, conn) = fixture();
+        conn.execute_batch(r"INSERT INTO local_font_tags VALUES ('shared','c:\one.ttf','private','');").unwrap();
+        drop(conn);
+        let payload = LocalTagsReadPayload { db_path: file.0.to_string_lossy().into_owned(),
+            rows: vec![row("b", &["b", "shared"], r"c:\two.ttf")] };
+        assert!(read_local_tags(&payload, Instant::now()).unwrap().tag_map.is_empty());
+        let payload = LocalTagsReadPayload { db_path: payload.db_path,
+            rows: vec![row("a", &["a", "shared"], r"c:\one.ttf")] };
+        assert_eq!(read_local_tags(&payload, Instant::now()).unwrap().tag_map["a"], vec!["private"]);
     }
     #[test]
     fn hydration_chunks_over_five_hundred_keep_alias_and_path_matches() {

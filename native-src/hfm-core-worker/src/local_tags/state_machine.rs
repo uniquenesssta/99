@@ -48,7 +48,7 @@ fn set_on_connection(
     let mut updated_ids: Vec<String> = Vec::new();
     let mut written = 0usize;
     {
-        let delete_by_id = tx.prepare("DELETE FROM local_font_tags WHERE font_id = ?").map_err(|error| error.to_string())?;
+        let delete_by_id = tx.prepare("DELETE FROM local_font_tags WHERE COALESCE(font_path, '') = '' AND font_id = ?").map_err(|error| error.to_string())?;
         let delete_by_path = tx.prepare("DELETE FROM local_font_tags WHERE font_path = ?").map_err(|error| error.to_string())?;
         let insert = tx.prepare(
             "INSERT OR REPLACE INTO local_font_tags (font_id, font_path, tag_name, updated_at)
@@ -133,7 +133,8 @@ fn apply_set_rows(
             delete_by_path.execute(params![&font_path]).map_err(|error| error.to_string())?;
         }
         let tag_names = clean_tag_names(&row.tag_names);
-        for alias in &aliases {
+        let storage_ids = if font_path.is_empty() { aliases.clone() } else { vec![format!("local-path:{font_path}")] };
+        for alias in &storage_ids {
             for tag_name in &tag_names {
                 insert.execute(params![alias, &font_path, tag_name, &payload.updated_at]).map_err(|error| error.to_string())?;
                 *written += 1;

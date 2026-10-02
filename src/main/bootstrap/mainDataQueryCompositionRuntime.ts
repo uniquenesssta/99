@@ -71,7 +71,6 @@ export interface MainDataQueryOptions {
   cachedFontForRuntime: Storage['cachedFontForRuntime'];
   cacheEntryRuntimePath: Storage['cacheEntryRuntimePath'];
   getInstallStatusIndexSnapshot: Storage['getInstallStatusIndexSnapshot'];
-  localTagsByFontIds: Storage['localTagsByFontIds'];
   loadLibraryShellFromSqlite: Storage['loadLibraryShellFromSqlite'];
   saveMetricsSnapshot: Storage['saveMetricsSnapshot'];
   readInstallStatusIndex: Storage['readInstallStatusIndex'];
@@ -110,7 +109,6 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     cachedFontForRuntime,
     cacheEntryRuntimePath,
     getInstallStatusIndexSnapshot,
-    localTagsByFontIds,
     loadLibraryShellFromSqlite,
     saveMetricsSnapshot,
     readInstallStatusIndex,
@@ -301,11 +299,11 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   }
 
   const fontMetricsFallbackRuntime = createFontMetricsRuntime({
+    hydrateLocalTagsForFonts,
     appWatchedFolders,
     loadSharedFontsForFolders,
     hydrateInstallStatusForFonts,
     getInstallStatusIndexSnapshot,
-    localTagsByFontIds,
     openLibraryDb,
     loadLibraryShellFromSqlite,
     saveMetricsSnapshot,
