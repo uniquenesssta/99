@@ -63,10 +63,25 @@ try {
   const mergedLibrary=libRuntime.libraryWithMergedFonts(base,all.items)
   assert.equal(Object.keys(mergedLibrary.fonts).length,1,'expected baseline dictionary overwrite')
   report.observations.native={rows:all.items.map(f=>({id:f.id,sourceId:f.sourceId,path:f.path,installed:f.systemInstalled})), distinctPaths:3,distinctIds:1,installedRows:2,notInstalledRows:1,searchAbsentRows:0,pagination:{before:page1.items.length+page2.items.length,after:merged.items.length,total:merged.total},dictionaryRows:Object.keys(mergedLibrary.fonts).length}
+  // F02 contract candidate: production queries deliberately retain legacy IDs
+  // until persistent references and shared writes have a compatible adapter.
+  const {fileRuntimeFontId}=load('src/main/fonts/fontFileIdentity.ts')
+  const vectors=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/font-file-identity.json'),'utf8'))
+  for(const vector of vectors) assert.equal(fileRuntimeFontId(vector.path,vector.size,vector.mtimeMs),vector.expected)
+  assert.throws(()=>fileRuntimeFontId('same.ttf',1234,1))
+  assert.throws(()=>fileRuntimeFontId('C:\\a\\..\\same.ttf',1234,1))
+  const scoped=all.items.map(font=>({...font,id:fileRuntimeFontId(font.path,font.fileSize,font.modifiedAt)}))
+  assert.equal(new Set(scoped.map(font=>font.id)).size,3)
+  assert.deepEqual(scoped.map(font=>font.sourceId),all.items.map(font=>font.sourceId))
+  const candidatePage=pageRuntime.mergeIncrementalDatabasePage({...page1,items:scoped.slice(0,2)},{...page2,items:scoped.slice(2)})
+  assert.equal(candidatePage.items.length,3)
+  const candidateLibrary=libRuntime.libraryWithMergedFonts(base,scoped)
+  assert.equal(Object.keys(candidateLibrary.fonts).length,3)
+  report.observations.identityCandidate={productionEnabled:false,vectorCount:vectors.length,distinctIds:3,paginationRows:candidatePage.items.length,dictionaryRows:Object.keys(candidateLibrary.fonts).length,sourceIdsPreserved:true}
   fs.writeFileSync(path.join(output,'native.json'),JSON.stringify(all.items))
   const bundle=require('esbuild').buildSync({entryPoints:[path.join(__dirname,'lib/font-identity-reproduction-dom.tsx')],bundle:true,write:false,format:'iife',platform:'browser',alias:{'@shared':path.join(root,'src/shared')},define:{'process.env.NODE_ENV':'"development"','import.meta.env':'{}'}}).outputFiles[0].text
   const html=path.join(temp,'identity.html')
-  fs.writeFileSync(html,'<!doctype html><meta charset="utf-8"><div id="fixture"></div><script>window.nativeFonts='+JSON.stringify(all.items).replace(/</g,'\\u003c')+';</script><script>'+bundle.replace(/<\/script/gi,'<\\/script')+'</script>')
+  fs.writeFileSync(html,'<!doctype html><meta charset="utf-8"><div id="fixture"></div><script>window.nativeFonts='+JSON.stringify(all.items).replace(/</g,'\\u003c')+';window.scopedFonts='+JSON.stringify(scoped).replace(/</g,'\\u003c')+';</script><script>'+bundle.replace(/<\/script/gi,'<\\/script')+'</script>')
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE
   const dom=cp.spawnSync(require('electron'),[path.join(__dirname,'lib/font-identity-reproduction-electron.cjs'),html,output],{cwd:root,env,encoding:'utf8',timeout:90000})
   process.stdout.write(dom.stdout||'');process.stderr.write(dom.stderr||'');if(dom.error)throw dom.error

@@ -1,0 +1,38 @@
+[
+  {
+    "path": "C:\\root-a\\same.ttf",
+    "size": 1234,
+    "mtimeMs": 1700000000000,
+    "expected": "file-v2:a20d334639dc506df5e06123ae8f24282a594c9f"
+  },
+  {
+    "path": "\\\\?\\C:/ROOT-A//same.ttf",
+    "size": 1234,
+    "mtimeMs": 1700000000000,
+    "expected": "file-v2:a20d334639dc506df5e06123ae8f24282a594c9f"
+  },
+  {
+    "path": "C:\\root-b\\same.ttf",
+    "size": 1234,
+    "mtimeMs": 1700000000000,
+    "expected": "file-v2:26221f2135ae4a53e0c49a0aae54aa95237a0ac4"
+  },
+  {
+    "path": "\\\\?\\UNC\\SERVER\\share\\字体.ttf",
+    "size": 1234,
+    "mtimeMs": 1700000000000,
+    "expected": "file-v2:e4e8fb69040b378c19bc43c76f0f0ad44c2b3577"
+  },
+  {
+    "path": "\\\\server\\share\\字体.ttf",
+    "size": 1234,
+    "mtimeMs": 1700000000000,
+    "expected": "file-v2:e4e8fb69040b378c19bc43c76f0f0ad44c2b3577"
+  },
+  {
+    "path": "C:\\root-a\\same.ttf",
+    "size": 1234,
+    "mtimeMs": -1.5,
+    "expected": "file-v2:04820c2185a95492d033d3033881963a1dd76436"
+  }
+]
