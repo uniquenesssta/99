@@ -1,3 +1,4 @@
+import { fontFileNameToken } from '../fonts/fontFileIdentity'
 import { extname,parse,resolve } from 'node:path'
 import type { FontItem,InstallCompareResult,SystemInstalledFont } from '../../shared/types'
 import { normalizePathForCacheCompare } from '../path/cachePath'
@@ -31,7 +32,7 @@ export function createInstallCompareRuntime(options: InstallCompareRuntimeOption
 
   function safeManagedFontName(item: FontItem): string {
     const cleanStem = parse(item.fileName).name.replace(/[^\w\u4e00-\u9fa5 -]/g, '').trim().slice(0, 80) || 'font'
-    return `${appName}_${item.id.slice(0, 12)}_${cleanStem}${extname(item.fileName).toLowerCase()}`
+    return `${appName}_${fontFileNameToken(item.id)}_${cleanStem}${extname(item.fileName).toLowerCase()}`
   }
 
   function registryNameFor(item: FontItem): string {
@@ -46,7 +47,7 @@ export function createInstallCompareRuntime(options: InstallCompareRuntimeOption
       .replace(/[^\w\u4e00-\u9fa5 -]/g, '')
       .trim()
       .slice(0, 64) || 'font'
-    return `${appName}_ACTIVE_${item.id.slice(0, 12)}_${Date.now().toString(36)}_${cleanStem}${ext}`
+    return `${appName}_ACTIVE_${fontFileNameToken(item.id)}_${Date.now().toString(36)}_${cleanStem}${ext}`
   }
 
   function temporaryActiveRegistryNameFor(item: FontItem): string {

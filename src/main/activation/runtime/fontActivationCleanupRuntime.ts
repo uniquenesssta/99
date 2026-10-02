@@ -1,3 +1,6 @@
+import { fileRuntimeFontId } from '../../fonts/fontFileIdentity';
+import { sharedFileSystem } from '../../path/sharedFileSystemRuntime';
+import { basename } from 'node:path';
 import { createManagedActivationIdentityRuntime } from './managedActivationIdentityRuntime';
 import { createFontActivationTraceRuntime } from "./fontActivationTraceRuntime";
 import type { FontItem } from '../../../shared/types';
@@ -202,8 +205,17 @@ export function createFontActivationCleanupRuntime(
     if (removed.length) {
       try {
         await createFontActivationInstallStatusRuntime(deps).reconcileDeactivatedInstallStatus(
-          removed.map(record => ({ id: record.fontId, path: record.sourcePath, fileName: record.fileName,
-            managedInstallPath: record.installPath } as FontItem)), removed.map(record => record.installPath));
+          (await Promise.all(removed.map(async record => {
+            try {
+              const stat = await sharedFileSystem.stat(record.sourcePath);
+              return { id: fileRuntimeFontId(record.sourcePath, stat.size, stat.mtimeMs), sourceId: record.fontId,
+                path: record.sourcePath, fileName: basename(record.sourcePath), fileSize: stat.size, modifiedAt: stat.mtimeMs,
+                managedInstallPath: record.installPath } as FontItem;
+            } catch (error) {
+              appendStartupLog(`临时字体清理后状态暂缓：${record.sourcePath}，${String(error)}`);
+              return null;
+            }
+          }))).filter((item): item is FontItem => item !== null), removed.map(record => record.installPath));
       } catch (error) {
         appendStartupLog(`temporary cleanup status reconciliation failed: ${String(error)}`);
       }

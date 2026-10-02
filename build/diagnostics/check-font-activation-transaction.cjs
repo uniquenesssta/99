@@ -38,7 +38,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    id => id.endsWith('/shutdownCoordinatorRuntime') ? require('./check-operation-chain.cjs').loader()('src/main/app/shutdownCoordinatorRuntime.ts') : id === './managedActivationIdentityRuntime' ? identityPort : id === './localRecoveryFileRuntime'
+    id => id.endsWith('/fontFileIdentity') ? require('./check-operation-chain.cjs').loader()('src/main/fonts/fontFileIdentity.ts') : id.endsWith('/sharedFileSystemRuntime') ? {sharedFileSystem:{stat:async()=>({size:12,mtimeMs:1})}} : id.endsWith('/shutdownCoordinatorRuntime') ? require('./check-operation-chain.cjs').loader()('src/main/app/shutdownCoordinatorRuntime.ts') : id === './managedActivationIdentityRuntime' ? identityPort : id === './localRecoveryFileRuntime'
       ? loadTypeScriptModule('src/main/activation/runtime/localRecoveryFileRuntime.ts', localRequire)
       : id === './fontActivationTraceRuntime'
       ? loadTypeScriptModule('src/main/activation/runtime/fontActivationTraceRuntime.ts')

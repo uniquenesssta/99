@@ -195,6 +195,7 @@ pub(super) fn read_rows_for_source(
     if !table_exists(&conn, "entries") {
         return Ok(Vec::new());
     }
+    super::snapshot::register_shared_font_id(&conn).map_err(|error| error.to_string())?;
     let has_install_join = attach_install_status_if_available(&conn, source);
     let install_columns = if has_install_join {
         ", install_status.installed AS installed, install_status.by_type AS installed_by, install_status.matches_json AS matches_json"
@@ -202,9 +203,9 @@ pub(super) fn read_rows_for_source(
         ", NULL AS installed, NULL AS installed_by, NULL AS matches_json"
     };
     let join_sql = if has_install_join {
-        "LEFT JOIN install_db.install_status AS install_status ON install_status.font_id = json_extract(entries.font_json, '$.id')"
+        format!("LEFT JOIN install_db.install_status AS install_status ON install_status.font_id = hfm_file_font_id('{}', entries.relative_path, entries.file_size, entries.modified_at)", source.root.replace('\'', "''"))
     } else {
-        ""
+        String::new()
     };
     let base_sql = format!(
         "SELECT ? AS root_path, entries.relative_path, entries.cache_key, entries.file_size, entries.modified_at, entries.created_at,

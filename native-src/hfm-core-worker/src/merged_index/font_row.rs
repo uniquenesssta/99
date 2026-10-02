@@ -1,7 +1,7 @@
 use rusqlite::Row;
 use serde_json::{json, Map, Value};
 
-use super::path_utils::{file_name_from_path, runtime_path, shared_font_id};
+use super::path_utils::{file_name_from_path, runtime_path, file_runtime_font_id};
 
 #[derive(Clone, Debug)]
 pub struct MergedRow {
@@ -64,21 +64,8 @@ pub fn font_from_merged_row(row: &MergedRow) -> Option<Value> {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let source_path = source
-        .get("path")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    let cache_identity = if !row.relative_path.is_empty() {
-        row.relative_path.clone()
-    } else if !source_path.is_empty() {
-        source_path
-    } else {
-        file_path.clone()
-    };
-
     let mut font: Map<String, Value> = source;
-    font.insert("id".to_string(), Value::String(shared_font_id(&cache_identity, size, modified_at)));
+    font.insert("id".to_string(), Value::String(file_runtime_font_id(&file_path, size, modified_at).ok()?));
     font.insert("sourceId".to_string(), Value::String(source_id));
     font.insert("path".to_string(), Value::String(file_path.clone()));
     font.insert("fileName".to_string(), Value::String(file_name_from_path(&file_path)));

@@ -1,3 +1,4 @@
+import { registerFileIdentitySql } from '../../fonts/fontFileIdentity'
 import { sharedSqliteReadSnapshot } from '../../path/sharedFileSystemRuntime'
 import { resolveRootIndexAccessKind } from './rootIndexAccessRuntime'
 import { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
@@ -9,6 +10,7 @@ import type { FontScanCacheEntry, FontScanCacheFile, RootIndexRuntimeDeps, RootI
 
 export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
   function initializeRootIndexDb(db: any, rootPath: string, storage: RootIndexStorage, touchMeta = true): void {
+    registerFileIdentitySql(db);
     db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;

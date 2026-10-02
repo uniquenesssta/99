@@ -36,13 +36,12 @@ export function createFontDeactivationBatchRuntime(
     const unique = uniqueFontItems(items).slice(0, 1000);
     const results: FontActivationBatchResult["results"] = {};
     const state = await activationTraceStep("deactivate:session-load", undefined, () => loadTemporaryActiveFonts());
-    const targetIds = new Set(unique.map((item) => item.id));
     const targetPaths = new Set(
       unique.map((item) => fontDeactivationPathKey(item.path)),
     );
     const targets = state.records.filter(
       (record) =>
-        targetIds.has(record.fontId) ||
+        !!record.sourcePath &&
         targetPaths.has(fontDeactivationPathKey(record.sourcePath)),
     );
     const recordsByItemId = new Map<string, TemporaryActiveFontRecord[]>();
@@ -50,7 +49,6 @@ export function createFontDeactivationBatchRuntime(
 
     for (const record of targets) {
       const item =
-        unique.find((candidate) => candidate.id === record.fontId) ||
         unique.find(
           (candidate) =>
             fontDeactivationPathKey(candidate.path) ===

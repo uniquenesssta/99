@@ -2,7 +2,7 @@ import type { FontItem,InstallCompareResult,SystemInstalledFont } from '../../..
 
 export type SqliteDb = any
 
-export type InstallStatusWorkerItem = Pick<FontItem, 'id' | 'path' | 'fileName' | 'fileSize' | 'modifiedAt' | 'managedInstallPath' | 'managedRegistryName'> & { signature: string }
+export type InstallStatusWorkerItem = Pick<FontItem, 'id' | 'sourceId' | 'path' | 'fileName' | 'fileSize' | 'modifiedAt' | 'managedInstallPath' | 'managedRegistryName'> & { signature: string }
 
 export type InstallStatusReadWorkerGroup = {
   rootLabel: string

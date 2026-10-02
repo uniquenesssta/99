@@ -19,15 +19,15 @@ export function rootIndexJsonBoolExpr(field: string): string {
 }
 
 export function rootIndexRuntimeFontIdExpr(): string {
-  return `LOWER(hfm_shared_font_id(COALESCE(NULLIF(entries.relative_path, ''), ${rootIndexJsonExpr('path')}, ''), entries.file_size, entries.modified_at))`
+  return `hfm_file_font_id(entries.root_path, entries.relative_path, entries.file_size, entries.modified_at)`
 }
 
 export function rootIndexRuntimePathExpr(): string {
-  return `LOWER(REPLACE(COALESCE(NULLIF(entries.root_path, ''), '') || CASE WHEN COALESCE(NULLIF(entries.relative_path, ''), '') = '' THEN '' WHEN COALESCE(NULLIF(entries.root_path, ''), '') = '' THEN '' WHEN SUBSTR(COALESCE(entries.root_path, ''), -1) IN ('\\', '/') THEN '' ELSE '\\' END || COALESCE(entries.relative_path, ''), '/', '\\'))`
+  return `hfm_file_path(entries.root_path, entries.relative_path)`
 }
 
 export function rootIndexLocalTagMatchExpr(alias = 'lft'): string {
-  return `((COALESCE(${alias}.font_path, '') = '' AND (LOWER(${alias}.font_id) = ${rootIndexJsonTextExpr('id')} OR LOWER(${alias}.font_id) = ${rootIndexRuntimeFontIdExpr()})) OR (COALESCE(${alias}.font_path, '') <> '' AND LOWER(${alias}.font_path) = ${rootIndexRuntimePathExpr()}))`
+  return `((COALESCE(${alias}.font_path, '') = '' AND (LOWER(${alias}.font_id) = ${rootIndexJsonTextExpr('id')} OR LOWER(${alias}.font_id) = ${rootIndexRuntimeFontIdExpr()})) OR (COALESCE(${alias}.font_path, '') <> '' AND LTRIM(LOWER(${alias}.font_path), '\\') = LTRIM(${rootIndexRuntimePathExpr()}, '\\')))`
 }
 
 export function mergedIndexLocalFavoriteExpr(): string {
@@ -193,4 +193,8 @@ export function addRootIndexTimeRangeClause(parts: RootIndexQueryParts, mode?: s
   if (!start) return
   parts.clauses.push(`COALESCE(entries.modified_at, entries.created_at, 0) >= ?`)
   parts.params.push(start)
+}
+
+export function rootIndexInstallIdExpr(root: string): string {
+  return `hfm_file_font_id(${sqliteLiteral(root)}, entries.relative_path, entries.file_size, entries.modified_at)`
 }

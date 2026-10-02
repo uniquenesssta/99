@@ -21,6 +21,16 @@ function normalizePathText(value) {
 function normalizePathForCompare(value) {
   return normalizePathText(value).toLowerCase()
 }
+function fileRuntimeFontId(filePath, size, mtimeMs) {
+  const native = normalizePathText(filePath)
+  const unc = native.startsWith('\\\\')
+  const body = (unc ? native.slice(2) : native).replace(/\\+/g, '\\')
+  const normalized = (unc ? '\\\\' + body : body).toLowerCase()
+  if ((!/^[a-z]:\\.+/i.test(normalized) && !/^\\\\[^\\]+\\[^\\]+\\.+/.test(normalized))
+    || normalized.split('\\').some(part => part === '.' || part === '..')
+    || !Number.isSafeInteger(size) || size < 0 || !Number.isFinite(mtimeMs) || Math.abs(mtimeMs) > Number.MAX_SAFE_INTEGER) throw new Error('Invalid concrete font identity')
+  return 'file-v2:' + sha1(normalized + '|' + size + '|' + Math.round(mtimeMs))
+}
 function sqliteLiteral(value) { return "'" + String(value || '').replace(/'/g, "''") + "'" }
 function parseJson(value, fallback) {
   if (value === null || value === undefined || value === '') return fallback
@@ -124,7 +134,7 @@ function fontFromMergedRow(row) {
   const installedBy = String(row.installed_by || 'none')
   const sourceId = String(source.id || '')
   const font = Object.assign({}, source, {
-    id: sharedFontId(row.relative_path || source.path || filePath, size, modifiedAt),
+    id: fileRuntimeFontId(filePath, size, modifiedAt),
     sourceId,
     path: filePath,
     fileName: path.basename(filePath),
@@ -159,6 +169,7 @@ function rootsSnapshotUsable(db, roots, schemaVersion) {
   try {
     const metaRow = db.prepare("SELECT value FROM meta WHERE key = 'schemaVersion' LIMIT 1").get()
     if (String(metaRow && metaRow.value || '') !== String(schemaVersion)) return false
+    if (Number(schemaVersion) >= 7 && !db.prepare("SELECT value FROM meta WHERE key = 'sourcesKey'").get()?.value) return false
     if (!mergedIndexRequiredSchemaUsable(db)) return false
     const sourceRows = db.prepare('SELECT root_path FROM sources ORDER BY root_path').all()
     const expected = Array.from(new Set((roots || []).map(normalizePathForCompare).filter(Boolean))).sort()
@@ -171,7 +182,7 @@ function rootsSnapshotUsable(db, roots, schemaVersion) {
   }
 }
 function normalizeLocalTagFontPath(value) {
-  return normalizePathForCompare(value)
+  return normalizePathForCompare(value).replace(/\\+/g, '\\')
 }
 function localDbTableColumns(db, tableName) {
   try { return new Set(db.prepare('PRAGMA local_db.table_info(' + tableName + ')').all().map((column) => column.name)) } catch { return new Set() }

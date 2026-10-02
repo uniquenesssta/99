@@ -16,9 +16,10 @@ function load(mocks={},globals={}) {
 const tick=()=>new Promise(r=>setImmediate(r)),plain=x=>JSON.parse(JSON.stringify(x))
 async function settlement() {
  const db=new DatabaseSync(':memory:');db.function('hfm_shared_font_id',(relative,_size,_mtime)=>String(relative).replace('.ttf',''))
- db.exec('CREATE TABLE entries(relative_path TEXT,file_size INTEGER,modified_at TEXT,font_json TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT)')
- const insert=db.prepare('INSERT INTO entries VALUES (?,1,?, ?,0,?,?)')
- for(const id of ['a','b'])insert.run(id+'.ttf','now',JSON.stringify({id,path:'\\\\nas\\fonts\\'+id+'.ttf',localTagNames:['keep']}),'none','[]')
+  require('./check-operation-chain.cjs').loader()('src/main/fonts/fontFileIdentity.ts').registerFileIdentitySql(db)
+ db.exec('CREATE TABLE entries(relative_path TEXT,file_size INTEGER,modified_at INTEGER,font_json TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,root_path TEXT)')
+ const insert=db.prepare('INSERT INTO entries VALUES (?,1,?, ?,0,?,?,?)')
+ for(const id of ['a','b'])insert.run(id+'.ttf',1,JSON.stringify({id,path:'\\\\nas\\fonts\\'+id+'.ttf',localTagNames:['keep']}),'none','[]','\\\\nas\\fonts')
  let committed=0,failProjection=true,projectionCalls=0,saves=0,persisted={}
  const deny=()=>{throw Error('NAS must not be queried')}
  const runtime=load()(mergeFile).createMergedIndexValidationRuntime({
@@ -29,14 +30,14 @@ async function settlement() {
   appWatchedFolders:deny,rootForFontPath:deny,clearFontQueryCaches(){},appendStartupLog(){},batchDelayMs:60000,
   syncMergedIndexAfterInstallStatusRefresh:async(roots,items)=>{projectionCalls++;assert.equal(roots.length,0);if(failProjection){failProjection=false;throw Error('local busy')}await runtime.syncMergedIndexAfterInstallStatusRefresh(roots,deny,items,deny)}
  })
- const item={id:'a',path:'\\\\nas\\fonts\\a.ttf'}
+ const item={id:load()('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId('\\\\nas\\fonts\\a.ttf',1,1),path:'\\\\nas\\fonts\\a.ttf'}
  try {
-  queue.schedule({a:{installed:true,by:'managed',matches:[]}},new Map([['a',item]]),'activate')
+  queue.schedule({[item.id]:{installed:true,by:'managed',matches:[]}},new Map([[item.id,item]]),'activate')
   await queue.flush('first');assert.equal(queue.hasPending(),true);assert.equal(db.prepare('SELECT installed FROM entries WHERE relative_path=?').get('a.ttf').installed,0)
   await queue.flush('retry');assert.equal(projectionCalls,2,'persisted install facts must not suppress failed local projection');assert.equal(queue.hasPending(),false)
   assert.equal(db.prepare('SELECT installed_by FROM entries WHERE relative_path=?').get('a.ttf').installed_by,'managed')
   assert.equal(db.prepare('SELECT installed_by FROM entries WHERE relative_path=?').get('b.ttf').installed_by,'none')
-  queue.schedule({a:{installed:false,by:'none',matches:[]}},new Map([['a',item]]),'deactivate');await queue.flush('deactivate')
+  queue.schedule({[item.id]:{installed:false,by:'none',matches:[]}},new Map([[item.id,item]]),'deactivate');await queue.flush('deactivate')
   assert.equal(db.prepare('SELECT installed FROM entries WHERE relative_path=?').get('a.ttf').installed,0)
   assert.deepEqual(JSON.parse(db.prepare('SELECT font_json FROM entries WHERE relative_path=?').get('a.ttf').font_json).localTagNames,['keep']);assert.equal(committed,2);assert.equal(saves,3)
  } finally {db.close()}

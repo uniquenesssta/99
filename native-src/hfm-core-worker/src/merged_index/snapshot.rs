@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OptionalExtension};
 
-use super::path_utils::{normalize_path_for_compare, shared_font_id};
+use super::path_utils::{normalize_path_for_compare, shared_font_id, runtime_path, file_runtime_font_id};
 
 pub fn table_columns(conn: &Connection, table_name: &str) -> BTreeSet<String> {
     let Ok(mut stmt) = conn.prepare(&format!("PRAGMA table_info({})", table_name)) else {
@@ -73,6 +73,10 @@ pub fn roots_snapshot_usable(conn: &Connection, roots: &[String], schema_version
     if schema.unwrap_or_default() != schema_version.to_string() {
         return Ok(false);
     }
+    if schema_version >= 7 {
+        let key: Option<String> = conn.query_row("SELECT value FROM meta WHERE key='sourcesKey'", [], |row| row.get(0)).optional()?;
+        if key.unwrap_or_default().is_empty() { return Ok(false); }
+    }
     if !merged_index_required_schema_usable(conn) {
         return Ok(false);
     }
@@ -97,6 +101,18 @@ pub fn roots_snapshot_usable(conn: &Connection, roots: &[String], schema_version
 }
 
 pub fn register_shared_font_id(conn: &Connection) -> rusqlite::Result<()> {
+    conn.create_scalar_function("hfm_file_path", 2, FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
+        let root: String = ctx.get(0)?;
+        let entry: String = ctx.get(1)?;
+        Ok(normalize_path_for_compare(&runtime_path(&root, &entry)))
+    })?;
+    conn.create_scalar_function("hfm_file_font_id", 4, FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
+        let root: String = ctx.get(0)?;
+        let entry: String = ctx.get(1)?;
+        file_runtime_font_id(&runtime_path(&root, &entry), ctx.get(2)?, ctx.get(3)?)
+            .map_err(|message| rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, message))))
+    })?;
+
     conn.create_scalar_function(
         "hfm_shared_font_id",
         3,

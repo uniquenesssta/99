@@ -48,7 +48,7 @@ export function createFontActivationSessionRuntime(
     const state = await activationTraceStep("deactivate:session-load", item.id, () => loadTemporaryActiveFonts());
     const targets = state.records.filter(
       (record) =>
-        record.fontId === item.id ||
+        !!record.sourcePath &&
         fontDeactivationPathKey(record.sourcePath) === fontDeactivationPathKey(item.path),
     );
 

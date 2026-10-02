@@ -8,6 +8,8 @@ function queryMergedIndexPage(payload) {
   try {
     timings.open = nowMs() - openStartedAt
     if (!hasSqliteJson(db)) throw Object.assign(new Error('sqlite JSON1 unavailable'), { code: 'json-unavailable' })
+    db.function('hfm_file_path', { deterministic: true }, (root, entry) => normalizePathForCompare(runtimePath(root, entry)))
+    db.function('hfm_file_font_id', { deterministic: true }, (root, entry, size, mtime) => fileRuntimeFontId(runtimePath(root, entry), size, mtime))
     try { db.function('hfm_shared_font_id', { deterministic: true }, (cacheIdentity, size, mtimeMs) => sharedFontId(cacheIdentity, size, mtimeMs)) } catch {}
     if (!rootsSnapshotUsable(db, payload.roots || [], payload.schemaVersion)) throw Object.assign(new Error('merged index snapshot is not usable'), { code: 'snapshot-unusable' })
     const needsLocalDb = /local_db\./i.test(payload.sql.sql) || /local_db\./i.test(payload.sql.countSql)

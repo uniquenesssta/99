@@ -1,3 +1,4 @@
+import { migrateInstallStatusIdentity } from '../install/status/installStatusIdentityMigration'
 import { createLocalFontLegacyIdentityRuntime, readCompleteFontIdentityIndex } from '../library/runtime/localFontLegacyIdentityRuntime';
 import { createLocalFontFavoritesRuntime } from '../library/runtime/localFontFavoritesRuntime';
 import type { DatabaseArgument } from './mainDatabasePorts';
@@ -315,8 +316,44 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     },
   });
 
+  let lastInstallIdentitySnapshot = '';
+  let installIdentityPending = true;
+  async function prepareFontIdentities(db: any): Promise<void> {
+    await legacyFontIdentity.prepare(db);
+    if (!installIdentityPending) return;
+    try {
+      const path = dataPath('db', 'merged-index.sqlite');
+      if (!(await exists(path))) return;
+      const snapshot = openStableSqliteDb(path, 'install-identity-snapshot');
+      let rows: ReturnType<typeof readCompleteFontIdentityIndex>;
+      let key: string;
+      try {
+        const roots = db.prepare('SELECT path FROM folders').all().map((row: {path: string}) => row.path);
+        key = JSON.stringify([roots, getSqliteMeta(snapshot, 'sourcesKey'), getSqliteMeta(snapshot, 'updatedAt')]);
+        if (key === lastInstallIdentitySnapshot) return;
+        rows = readCompleteFontIdentityIndex(snapshot, roots);
+      } finally { closeSqliteDb(snapshot); }
+      if (!rows) return;
+      const installPath = await installStatusRuntime.fallbackInstallStatusDbPath();
+      if (await exists(installPath)) {
+        const installDb = openStableSqliteDb(installPath, 'install-identity-migration');
+        try {
+          installStatusRuntime.initializeMachineInstallDb(installDb, 'local-fallback');
+          const count = migrateInstallStatusIdentity(installDb, rows);
+          const unresolved = installDb.prepare("SELECT COUNT(*) AS count FROM install_status s WHERE s.font_id NOT LIKE 'file-v2:%' AND NOT EXISTS (SELECT 1 FROM install_identity_migrations m WHERE m.legacy_id=s.font_id AND m.signature=s.signature)").get().count;
+          installIdentityPending = unresolved > 0;
+          if (count) clearFontQueryCaches();
+          if (count || unresolved) appendStartupLog(`安装索引文件身份迁移：${count}，未能唯一匹配=${unresolved}，原行保留。`);
+        } finally { closeSqliteDb(installDb); }
+      }
+      lastInstallIdentitySnapshot = key;
+    } catch (error) {
+      appendStartupLog(`安装索引身份迁移暂缓，原记录保留：${String(error)}`);
+    }
+  }
+
   const libraryRuntime = createLibraryRuntime({
-    prepareLocalFontIdentity: legacyFontIdentity.prepare,
+    prepareLocalFontIdentity: prepareFontIdentities,
     librarySqlitePath,
     openRecoverableApplicationSqliteDb,
     closeSqliteDb,
@@ -452,6 +489,16 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     completeBackgroundTask,
     appendStartupLog,
     readInstallStatusIndexInWorker: async (groups) => {
+      await openLibraryDb();
+      for (const group of groups) {
+        if (!(await exists(group.dbPath))) continue;
+        const db = openStableSqliteDb(group.dbPath, 'install-identity-items');
+        try {
+          installStatusRuntime.initializeMachineInstallDb(db, group.rootPath);
+          migrateInstallStatusIdentity(db, group.items.map(item => ({ root_path: '', relative_path: item.path,
+            file_size: item.fileSize, modified_at: item.modifiedAt, font_json: JSON.stringify(item) })));
+        } finally { closeSqliteDb(db); }
+      }
       const rustResult =
         await rustCoreWorkerRuntime.runRustInstallStatusRead(groups);
       if (rustResult) {

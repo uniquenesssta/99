@@ -18,6 +18,16 @@ jobs:
         run: npm run typecheck
       - name: Verify renderer query and user intent regressions
         run: node build/diagnostics/check-user-intent-consistency.cjs
+      - name: Verify production identity compatibility and operation targets
+        run: node build/diagnostics/check-font-identity-compatibility.cjs
+      - name: Verify activation transaction regressions
+        run: node build/diagnostics/check-font-activation-transaction.cjs
+      - name: Verify deactivation reconciliation regressions
+        run: node build/diagnostics/check-deactivation-refresh.cjs
+      - name: Verify local projection and offline settlement
+        run: node build/diagnostics/check-offline-settlement-watcher.cjs
+      - name: Verify installation filters across query routes
+        run: node build/diagnostics/check-install-status-filter.cjs
       - name: Verify historical font state ownership
         run: node build/diagnostics/check-local-user-state.cjs --case=legacy-identity
       - name: Verify local state path isolation
@@ -34,7 +44,7 @@ jobs:
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::path_utils::tests
       - name: Build real Windows Rust worker
         run: cargo build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml
-      - name: Reproduce baseline defects and unique-ID control (not repair acceptance)
+      - name: Accept production IDs, pagination and actual Electron DOM
         run: node build/diagnostics/check-font-identity-reproduction.cjs
       - uses: actions/upload-artifact@v4
         if: always()

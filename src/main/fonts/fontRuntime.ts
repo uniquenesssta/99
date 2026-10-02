@@ -1,3 +1,4 @@
+import { fileRuntimeFontId } from './fontFileIdentity'
 import * as fontkit from 'fontkit'
 import crypto from 'node:crypto'
 import { sharedFileSystem as fsp, executeSharedFile } from '../path/sharedFileSystemRuntime'
@@ -241,7 +242,7 @@ export function readFontMetadata(filePath: string, bytes?: Buffer): Pick<FontIte
 
 export async function fontItemFromPath(filePath: string): Promise<FontItem> {
   const stat = await fsp.stat(filePath)
-  const id = sha1(`${filePath.toLowerCase()}|${stat.size}|${Math.round(stat.mtimeMs)}`)
+  const id = fileRuntimeFontId(filePath, stat.size, stat.mtimeMs)
   const names = readFontMetadata(filePath, await fsp.readFile(filePath))
 
   return {
@@ -279,6 +280,7 @@ export function createCachedFontRuntime(deps: { sharedFontId: (cacheIdentity: st
     return {
       ...font,
       id: deps.sharedFontId(cacheKey, stat.size, stat.mtimeMs),
+      sourceId: undefined,
       path: cacheKey,
       fileName: basename(filePath),
       fileSize: stat.size,
@@ -299,7 +301,8 @@ export function createCachedFontRuntime(deps: { sharedFontId: (cacheIdentity: st
   function cachedFontForRuntime(font: FontItem, filePath: string, stat: CachedFontStatLike, cacheKey?: string): FontItem {
     return {
       ...font,
-      id: cacheKey ? deps.sharedFontId(cacheKey, stat.size, stat.mtimeMs) : font.id,
+      id: fileRuntimeFontId(filePath, stat.size, stat.mtimeMs),
+      sourceId: font.sourceId || font.id,
       path: filePath,
       fileName: basename(filePath),
       fileSize: stat.size,

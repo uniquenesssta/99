@@ -1,3 +1,4 @@
+import { registerFileIdentitySql } from '../fonts/fontFileIdentity'
 import { createHash } from "node:crypto";
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { dirname, resolve } from "node:path";
@@ -52,6 +53,7 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
   }
 
   function registerMergedIndexSqlFunctions(db: any): void {
+    registerFileIdentitySql(db);
     try {
       db.function(
         "hfm_shared_font_id",
@@ -465,6 +467,7 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
     try {
       const schemaVersion = deps.getSqliteMeta(db, "schemaVersion");
       if (schemaVersion !== String(deps.schemaVersion)) return false;
+      if (deps.schemaVersion >= 7 && !deps.getSqliteMeta(db, "sourcesKey")) return false;
       if (!mergedIndexRequiredSchemaUsable(db)) return false;
       const expected = JSON.parse(mergedIndexRootsKey(roots)) as string[];
       const sourceRows = db

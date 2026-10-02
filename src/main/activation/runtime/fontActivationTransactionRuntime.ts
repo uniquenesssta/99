@@ -1,3 +1,4 @@
+import { fontDeactivationPathKey } from './fontDeactivationSettlementRuntime';
 import { assertApplicationOpen, applicationWorkEpoch } from '../../app/shutdownCoordinatorRuntime';
 import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
@@ -76,9 +77,10 @@ export function createFontActivationTransactionRuntime(
     const state = await activationTraceStep("load-session-state", item.id, () =>
       loadTemporaryActiveFonts(),
     );
-    const existing = state.records.find((record) => record.fontId === item.id);
+    const existing = state.records.find((record) => !!record.sourcePath && fontDeactivationPathKey(record.sourcePath) === fontDeactivationPathKey(item.path));
 
     if (existing) {
+      if (existing.fontId.startsWith('file-v2:') && existing.fontId !== item.id) throw new Error('此路径已有不同文件版本的激活记录，请先停用旧版本。');
       if (existing.stage && existing.stage !== 'active') throw new Error('此字体有未完成的清理记录，请先处理残留。');
       if (!await identityRuntime.verify(existing)) throw new Error('本机激活副本缺失，请先处理残留记录。');
       deps.requestFontRefresh('already-active', 'standard');
@@ -166,7 +168,7 @@ export function createFontActivationTransactionRuntime(
       assertApplicationOpen(workEpoch);
       record.stage = 'active';
       const nextRecords = state.records.filter(
-        (old) => old.fontId !== item.id,
+        (old) => !old.sourcePath || fontDeactivationPathKey(old.sourcePath) !== fontDeactivationPathKey(item.path),
       );
       nextRecords.push(record);
       await activationTraceStep("save-session-state", item.id, () =>

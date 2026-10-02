@@ -9,7 +9,7 @@ use super::snapshot::local_table_columns;
 use super::sqlite_params::query_string_pairs;
 
 fn normalize_local_tag_font_path(value: &str) -> String {
-    normalize_path_for_compare(value.trim())
+    normalize_path_for_compare(value.trim()).replace(r"\\", r"\")
 }
 
 fn text_field(value: &Value, field: &str) -> String {

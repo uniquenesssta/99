@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import type { FontItem } from '../../../shared/types'
 import type { FontScanCacheEntry } from '../rootIndexRuntime'
@@ -28,6 +29,8 @@ function createSyntheticEntryForItem(
   const runtimePath = runtimeDeps.cacheEntryRuntimePath(rootPath, relativePath)
   const font: FontItem = {
     ...item,
+    id: createHash('sha1').update(`${relativePath.toLowerCase()}|${Number(item.fileSize || 0)}|${Math.round(Number(item.modifiedAt || 0))}`).digest('hex'),
+    sourceId: undefined,
     path: item.path || runtimePath,
     fileName: item.fileName || basename(item.path || runtimePath),
     fileSize: Number(item.fileSize || 0),
@@ -66,7 +69,6 @@ export function findSharedMetadataMatchedEntry(
     const normalizedItemPath = runtimeDeps.normalizePathForCacheCompare(item.path || '')
     const matched = Object.entries(cache.entries || {}).find(([, candidate]) => {
       if (candidate.status !== 'ok' || !candidate.font) return false
-      if (candidate.font.id === item.id) return true
       const runtimePath = runtimeDeps.cacheEntryRuntimePath(rootPath, candidate.path || '')
       return runtimeDeps.normalizePathForCacheCompare(runtimePath) === normalizedItemPath
     })

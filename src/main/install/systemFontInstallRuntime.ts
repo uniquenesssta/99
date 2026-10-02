@@ -1,3 +1,4 @@
+import { fontFileNameToken } from '../fonts/fontFileIdentity'
 import fs from 'node:fs';
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime';
 import { basename,extname,join,resolve } from "node:path";
@@ -44,7 +45,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
 
     const original = basename(item.path).replace(/[<>:"/\\|?*]/g, "_");
     const ext = extname(original) || extname(item.fileName) || ".ttf";
-    const copyName = original || `${item.id.slice(0, 12)}${ext}`;
+    const copyName = original || `${fontFileNameToken(item.id)}${ext}`;
     const fallbackDest = join(fontsDir, copyName);
     const installed = await deps.getSystemInstalledFontsCached(true);
     const dest = installOverwriteTarget(item, installed, fontsDir, fallbackDest, deps);

@@ -21,6 +21,7 @@ export function createInstallStatusSignatureRuntime(deps: InstallStatusRuntimeDe
   function installStatusWorkerItem(item: FontItem): InstallStatusWorkerItem {
     return {
       id: item.id,
+      sourceId: item.sourceId,
       path: item.path,
       fileName: item.fileName,
       fileSize: item.fileSize,

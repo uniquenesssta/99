@@ -1,3 +1,4 @@
+import { win32 } from 'node:path'
 import { createHash } from 'node:crypto'
 import { normalizeNativePathText } from '../path/pathCanonicalizer'
 
@@ -16,4 +17,19 @@ export function fileRuntimeFontId(filePath: string, size: number, mtimeMs: numbe
   }
   const signature = `${normalized}|${size}|${Math.round(mtimeMs)}`
   return `file-v2:${createHash('sha1').update(signature).digest('hex')}`
+}
+
+export function runtimeFontIdFromEntry(root: string, entry: string, size: number, mtime: number): string {
+  return fileRuntimeFontId(win32.isAbsolute(entry) ? entry : win32.join(root, entry), size, mtime)
+}
+
+export function registerFileIdentitySql(db: any): void {
+  db.function('hfm_file_path', { deterministic: true }, (root: string, entry: string) => normalizeNativePathText(win32.isAbsolute(entry) ? entry : win32.join(root, entry)).toLowerCase())
+  db.function('hfm_file_font_id', { deterministic: true }, (root: string, entry: string, size: number, mtime: number) => runtimeFontIdFromEntry(root, entry, size, mtime))
+}
+
+// Runtime IDs contain a namespace separator which cannot appear in Windows names.
+export function fontFileNameToken(id: string): string {
+  return id.replace(/^file-v2:/, '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 12)
+    || createHash('sha1').update(id).digest('hex').slice(0, 12)
 }

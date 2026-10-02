@@ -145,8 +145,8 @@ export function createRootIndexCoordinator(deps: RootIndexCoordinatorDeps) {
         ]
         const params: unknown[] = []
         const matchClauses: string[] = []
-        if (fontId) {
-          matchClauses.push(`${rootIndexJsonExpr('id')} = ?`)
+        if (fontId && !normalizedFontPath && fontId.startsWith('file-v2:')) {
+          matchClauses.push(`hfm_file_font_id('${root.replace(/'/g, "''")}', relative_path, file_size, modified_at) = ?`)
           params.push(fontId)
         }
         if (normalizedFontPath) {

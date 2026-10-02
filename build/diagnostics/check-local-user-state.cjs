@@ -72,6 +72,7 @@ async function favorites() {
   a.exec('CREATE TABLE local_db.local_font_favorites AS SELECT * FROM main.local_font_favorites')
   a.exec(`CREATE TABLE entries(root_path TEXT,relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at INTEGER,created_at INTEGER,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,is_deleted INTEGER,search_text TEXT,category_index TEXT)`)
   a.function('hfm_shared_font_id',(relative,_size,_mtime)=>String(relative).replace('.ttf',''))
+  require('./check-operation-chain.cjs').loader()('src/main/fonts/fontFileIdentity.ts').registerFileIdentitySql(a)
   const insert=a.prepare("INSERT INTO entries VALUES ('C:\\fonts',?, '',1,1,1,'ok',?,'','',0,'none','[]',0,'','')")
   insert.run('a.ttf',JSON.stringify(font('a',{favorite:false,active:true})))
   insert.run('b.ttf',JSON.stringify(font('b',{favorite:true,active:true})))
@@ -80,7 +81,7 @@ async function favorites() {
   assert.equal(a.prepare(built.countSql).get(...built.countParams).count,1)
   assert.deepEqual(a.prepare(built.sql).all(...built.params).map(row=>row.relative_path),['a.ttf'])
   const ids=sql.buildMergedIndexIdsQuerySql({activeFilter:{kind:'favorites'}},50)
-  assert.deepEqual(a.prepare(ids.sql).all(...ids.params).map(row=>row.id),['a'])
+  assert.deepEqual(a.prepare(ids.sql).all(...ids.params).map(row=>row.id),[load('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId('C:\\fonts\\a.ttf',1,1)])
   built=sql.buildMergedIndexQuerySql({activeFilter:{kind:'active'}},50,0)
   assert.equal(a.prepare(built.countSql).get(...built.countParams).count,0,'shared active flag overrode local inactive snapshot')
   built=sql.buildMergedIndexQuerySql({},1,0)
@@ -90,7 +91,7 @@ async function favorites() {
   let closed=0
   const metricOptions={roots:['C:\\fonts'],expectedTotal:2,openLibraryDb:async()=>a,
     openMergedIndexDb:async()=>({exec:sql=>assert(sql.includes('ATTACH DATABASE')),prepare:sql=>a.prepare(sql)}),
-    librarySqlitePath:()=>':memory:',closeSqliteDb:()=>closed++,applyPendingActivationState:fonts=>fonts.map(font=>font.id==='a'?{...font,active:true}:font)}
+    librarySqlitePath:()=>':memory:',closeSqliteDb:()=>closed++,applyPendingActivationState:fonts=>fonts.map(font=>font.id===load('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId('C:\\fonts\\a.ttf',1,1)?{...font,active:true}:font)}
   assert.deepEqual(plain(await localCounts(metricOptions)),{favoriteCount:1,activeCount:1},'local metrics missed favorites or pending activation')
   assert.equal(await localCounts({...metricOptions,expectedTotal:3}),null,'incomplete snapshot must fall back')
   assert.equal(await localCounts({...metricOptions,roots:['/other']}),null,'old root snapshot leaked into new root metrics')
@@ -212,6 +213,7 @@ async function localIdentityPaths() {
   db.prepare('INSERT INTO entries VALUES (?,?,?,?,?)').run('C:\\one','same.ttf',1,1,JSON.stringify({id:'shared'}))
   db.prepare('INSERT INTO entries VALUES (?,?,?,?,?)').run('C:\\two','same.ttf',1,1,JSON.stringify({id:'shared'}))
   db.function('hfm_shared_font_id',(_relative,_size,_mtime)=> 'legacy')
+  require('./check-operation-chain.cjs').loader()('src/main/fonts/fontFileIdentity.ts').registerFileIdentitySql(db)
   const sql=load('src/main/indexing/root-query/rootIndexQuerySharedSql.ts')
   assert.deepEqual(db.prepare('SELECT '+sql.mergedIndexLocalFavoriteExpr()+' AS favorite FROM entries ORDER BY root_path').all().map(r=>r.favorite),[0,1])
   assert.deepEqual(db.prepare("SELECT root_path FROM entries WHERE EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE lft.tag_name='old' AND "+sql.rootIndexLocalTagMatchExpr()+')').all().map(r=>r.root_path),['C:\\one'])
