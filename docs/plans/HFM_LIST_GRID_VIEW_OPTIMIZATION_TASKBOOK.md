@@ -764,3 +764,8 @@ flowchart TD
 - 主任务日志明确记录 `[diagnostics:release-build-gate] ok` 与 `[diagnostics:all] ok (165 checks)`；类型检查、严格映射查询、原生/界面步骤、应用编译及混淆 3/3、差异检查通过。封包入口有序编译/签名/生成链与独立完整验证的契约已通过。
 - 仅回填 README 和本任务书，不修改源码、依赖或工作流，不重跑 CI；文档提交使用 `[skip ci]`，不新增 Linux/macOS 应用测试。Create State 保存调用未取得成功回执，Git/README/任务书为续接依据。
 - CI 没有用户签名私钥，也未运行完整 electron-builder/NSIS 封包；本回执不能证明正式安装包已生成、签名成功或完成安装/启动验收，也不解决用户本机私钥缺失问题。用户本机 startup-database-health 此前无完整回执的记录仍保留，不用 CI 结果覆盖本机事实。V07 未开始。
+
+
+## 23. 字体身份、残留卡片及卸载删除权限补充任务（2026-10-02）
+
+用户要求整理本轮审计问题并创建任务书，执行细节统一见 [HFM_FONT_IDENTITY_PERMISSIONS_TASKBOOK.md](HFM_FONT_IDENTITY_PERMISSIONS_TASKBOOK.md)。原编号 S11-F01～F07；用户随后要求“新建分支，开始 F01”，现转为 Stage 12（S12-F01～F07），分支 `stage/12-font-identity-permissions`。F01 已开始编写 Windows 复现用例，动态结果待 CI；F02～F07 尚未实施或验收。跨根 ID 碰撞与滑块层级有源码依据，用户截图残留是否由碰撞引起仍待 Windows 动态核对。历史 V01～V06.5 回执不变，V07 不因此自动开始或完成；最终收官前应明确本轮问题状态。

@@ -2,6 +2,8 @@
 
 ## 当前工作
 
+- [字体身份、页面残留与卸载删除权限任务书](plans/HFM_FONT_IDENTITY_PERMISSIONS_TASKBOOK.md)：Stage 12 专项 S12-F01～F07；源码基线 `55b5b01`，分支 `stage/12-font-identity-permissions`。F01 进行中，Windows 反例已编写、CI 待执行；F02～F07 未开始。
+
 [列表与网格视图审计及优化任务书](plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md) 是本次专项的执行与状态入口。
 
 - 仓库：`uniquenesssta/99`；实施分支：`stage/11-list-grid-view`（基线 `6012cb6`，Stage 10 保持不变）；审计基线：`8582526`。

@@ -1,0 +1,10 @@
+const { app, BrowserWindow } = require('electron')
+const fs=require('node:fs'),path=require('node:path')
+const watchdog=setTimeout(()=>{console.error('F01 DOM timed out');app.exit(1)},60000)
+app.whenReady().then(async()=>{
+ const win=new BrowserWindow({show:true,width:1320,height:900,webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}})
+ await win.loadFile(process.argv[2])
+ const result=await win.webContents.executeJavaScript('window.checkIdentityReproduction()')
+ fs.writeFileSync(path.join(process.argv[3],'dom.json'),JSON.stringify(result,null,2))
+ console.log('[F01 DOM]',JSON.stringify(result));clearTimeout(watchdog);app.exit(0)
+}).catch(error=>{console.error(error);clearTimeout(watchdog);app.exit(1)})
