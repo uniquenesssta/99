@@ -108,32 +108,44 @@ async function main() {
     }
     const create = negativeLoad(base + 'previewCacheHydrationRuntime.ts').createPreviewCacheHydrationRuntime
     const cached = create(opts), local = { storage: 'local' }
-    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'miss')
-    for (let i=0; i<3; i++) assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'miss')
+    async function readOutcome(runtime, item) {
+      const outcomes = []
+      const ids = await runtime.hydratePreviewCacheRows(local, [item], () => true, (reportedRow, outcome) => {
+        assert.equal(reportedRow, item, 'outcome reported for another row')
+        outcomes.push(outcome)
+      })
+      assert.equal(outcomes.length, 1, 'one row must report exactly one outcome')
+      const outcome = outcomes[0], ready = outcome === 'hydrated' || outcome === 'local-hit'
+      assert.equal(ids.has(item.id), ready, 'hydrated membership disagrees with outcome')
+      assert.equal(ids.size, ready ? 1 : 0, 'batch returned unexpected hydrated IDs')
+      return outcome
+    }
+    assert.equal(await readOutcome(cached, row), 'miss')
+    for (let i=0; i<3; i++) assert.equal(await readOutcome(cached, row), 'miss')
     assert.deepEqual([probes, indexes, reads], [1,1,1], 'negative hit still performed shared IO')
     clock += 31000
-    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'miss')
+    assert.equal(await readOutcome(cached, row), 'miss')
     assert.deepEqual([probes, indexes, reads], [2,2,2], 'confirmed miss never expired')
     generation++
-    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'miss')
+    assert.equal(await readOutcome(cached, row), 'miss')
     assert.equal(reads, 3, 'old root generation suppressed a fresh read')
-    assert.equal(await create(opts).hydratePreviewCacheOutcome(local, row), 'miss')
+    assert.equal(await readOutcome(create(opts), row), 'miss')
     assert.equal(reads, 4, 'new runtime trusted an old transient miss')
     const outageRow = { ...row, id: 'index-outage', previewKey: 'index-outage', outputPath: path.join(negativeDir, 'local', 'index-outage.png') }
     const indexReader = opts.readPreviewCacheIndexStatus
     opts.readPreviewCacheIndexStatus = async () => { throw errors.timeout }
-    assert.equal(await cached.hydratePreviewCacheOutcome(local, outageRow), 'miss')
+    assert.equal(await readOutcome(cached, outageRow), 'miss')
     opts.readPreviewCacheIndexStatus = indexReader
     fs.writeFileSync(path.join(negativeDir, 'index-outage.png'), png)
-    assert.equal(await cached.hydratePreviewCacheOutcome(local, outageRow), 'hydrated', 'index outage plus legacy miss suppressed later recovery')
+    assert.equal(await readOutcome(cached, outageRow), 'hydrated', 'index outage plus legacy miss suppressed later recovery')
     const beforePublication = reads
     fs.writeFileSync(path.join(negativeDir, 'absent.png'), png); presence = 'ok'
-    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'hydrated', 'new publication did not override a recent miss')
+    assert.equal(await readOutcome(cached, row), 'hydrated', 'new publication did not override a recent miss')
     assert.equal(reads, beforePublication + 1)
     fs.unlinkSync(row.outputPath)
     opts.validateSharedPreviewCacheMeta = async () => ({ status: 'mismatch' })
-    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'error')
-    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'error', 'checksum failure became a missing image')
+    assert.equal(await readOutcome(cached, row), 'error')
+    assert.equal(await readOutcome(cached, row), 'error', 'checksum failure became a missing image')
     console.log('PASS confirmed PNG miss avoids repeat shared IO; TTL, root generation, restart and successful publication restore reads; corruption remains error')
   } finally { fs.rmSync(negativeDir, {recursive: true, force: true}) }
   // Summary observes typed results; compatibility failed still means non-hydrated.
