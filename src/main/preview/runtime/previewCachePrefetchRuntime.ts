@@ -77,6 +77,7 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
     dropped: 0,
     cancelled: 0,
     hydrated: 0,
+    localHit: 0,
     // Compatibility: failed remains the historical non-hydrated count.
     failed: 0,
     miss: 0,
@@ -90,13 +91,14 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
   function logStats(force = false): void {
     const now = Date.now()
     if (!force && now - lastStatsLogAt < DEFAULT_STATS_LOG_INTERVAL_MS) return
-    const total = stats.queued + stats.dropped + stats.cancelled + stats.hydrated + stats.failed
+    const total = stats.localHit + stats.queued + stats.dropped + stats.cancelled + stats.hydrated + stats.failed
     if (!total) return
     lastStatsLogAt = now
-    options.appendStartupLog(`preview cache prefetch summary: queued=${stats.queued}, hydrated=${stats.hydrated}, failed=${stats.failed}, dropped=${stats.dropped}, cancelled=${stats.cancelled}, miss=${stats.miss}, unavailable=${stats.unavailable}, timeout=${stats.timeout}, error=${stats.error}, hydrationCancelled=${stats.hydrationCancelled}, unclassified=${stats.unclassified}`)
+    options.appendStartupLog(`preview cache prefetch summary: queued=${stats.queued}, hydrated=${stats.hydrated}, localHit=${stats.localHit}, failed=${stats.failed}, dropped=${stats.dropped}, cancelled=${stats.cancelled}, miss=${stats.miss}, unavailable=${stats.unavailable}, timeout=${stats.timeout}, error=${stats.error}, hydrationCancelled=${stats.hydrationCancelled}, unclassified=${stats.unclassified}`)
     stats.queued = 0
     stats.dropped = 0
     stats.hydrated = 0
+    stats.localHit = 0
     stats.failed = 0
     stats.cancelled = 0
     stats.miss = 0
@@ -175,7 +177,8 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
       const record = (hydratedIds: Set<string>, fallback?: PreviewCacheHydrationOutcome) => {
         for (const row of batch.rows) {
           const outcome = !current() ? 'cancelled' : outcomes.get(row) || (hydratedIds.has(row.id) ? 'hydrated' : fallback)
-          if (outcome === 'hydrated') stats.hydrated += 1
+          if (outcome === 'local-hit') stats.localHit += 1
+          else if (outcome === 'hydrated') stats.hydrated += 1
           else {
             stats.failed += 1
             if (outcome === 'cancelled') stats.hydrationCancelled += 1

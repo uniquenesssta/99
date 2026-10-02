@@ -1,3 +1,4 @@
+import { promises as localFs } from 'node:fs'
 import { previewCacheErrorOutcome, type PreviewCacheHydrationOutcome } from './previewCacheOutcomeRuntime'
 import { claimPreviewImage } from './previewImageCommitRuntime'
 import { isCompletePreviewPng } from './previewImageValidationRuntime'
@@ -140,6 +141,16 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
   }
 
   async function hydrateOne(localStorage: PreviewCacheStorage, row: PreviewCacheHydrationRow): Promise<PreviewCacheHydrationOutcome> {
+    // A delayed prefetch may outlive the foreground render that queued it.
+    // Recheck the actual local PNG before any network probe or image claim.
+    if (localStorage.storage === 'local') {
+      try {
+        if (isCompletePreviewPng(await localFs.readFile(row.outputPath))) {
+          stats.localHit += 1
+          return 'local-hit'
+        }
+      } catch { /* Missing/unreadable local cache still permits shared hydration. */ }
+    }
     const sharedStorage = options.previewCacheStorageToShared(localStorage)
     if (!sharedStorage?.rootPath) return 'unavailable'
     const key = sharedKey(sharedStorage, row.previewKey)
@@ -274,11 +285,13 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
   }
 
   async function hydratePreviewCache(localStorage: PreviewCacheStorage, row: PreviewCacheHydrationRow): Promise<boolean> {
-    return (await hydratePreviewCacheOutcome(localStorage, row)) === 'hydrated'
+    const outcome = await hydratePreviewCacheOutcome(localStorage, row)
+    return outcome === 'hydrated' || outcome === 'local-hit'
   }
 
   async function hydratePreviewCacheRows(localStorage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[], current = () => true, report?: (row: PreviewCacheHydrationRow, outcome: PreviewCacheHydrationOutcome) => void): Promise<Set<string>> {
     const hydratedIds = new Set<string>()
+    const sharedHydratedKeys = new Set<string>()
     const sharedStorage = options.previewCacheStorageToShared(localStorage)
     const generation = sharedStorage?.rootPath ? getStartupPathRootState(sharedStorage.rootPath).generation : undefined
     const queue = rows.filter((row) => row?.id && row.previewKey && row.outputPath)
@@ -298,15 +311,16 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
           options.appendStartupLog(`preview cache hydrate ${outcome}: ${row.previewKey}, ${errorMessage(error)}`)
         }
         if (!current()) outcome = 'cancelled'
-        if (outcome === 'hydrated') hydratedIds.add(row.id)
+        if (outcome === 'hydrated' || outcome === 'local-hit') hydratedIds.add(row.id)
+        if (outcome === 'hydrated') sharedHydratedKeys.add(row.previewKey)
         report?.(row, outcome)
       }
     }))
     for (; index < queue.length; index++) report?.(queue[index]!, 'cancelled')
     // The existing bounded prefetch batch owns one deduplicated maintenance write.
     // Single-item lookups never spawn a touch task of their own.
-    if (current() && sharedStorage && hydratedIds.size && (!sharedStorage.rootPath || getStartupPathRootState(sharedStorage.rootPath).generation === generation)) {
-      const keys = [...new Set(queue.filter(row => hydratedIds.has(row.id)).map(row => row.previewKey))]
+    if (current() && sharedStorage && sharedHydratedKeys.size && (!sharedStorage.rootPath || getStartupPathRootState(sharedStorage.rootPath).generation === generation)) {
+      const keys = [...sharedHydratedKeys]
       await options.touchSharedPreviewCache?.(sharedStorage, keys).catch(error => {
         options.appendStartupLog(`preview cache batch touch unavailable: ${errorMessage(error)}`)
       })

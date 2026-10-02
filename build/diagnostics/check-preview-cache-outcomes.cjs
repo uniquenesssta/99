@@ -34,6 +34,23 @@ async function main() {
       return row
     }
     await run('hydrated')
+    // A foreground render completed during the prefetch delay. A valid local
+    // PNG must avoid all shared probes, even while the share is unavailable.
+    const localRow = { id: 'already-local', previewKey: 'already-local', outputPath: path.join(dir, 'local', 'ready.png') }
+    fs.writeFileSync(localRow.outputPath, png)
+    const beforeLocal = calls
+    available = false
+    let sharedTouches = 0
+    options.touchSharedPreviewCache = async () => { sharedTouches++ }
+    const localOutcomes = []
+    const ready = await runtime.hydratePreviewCacheRows(local, [localRow], () => true, (_row, outcome) => localOutcomes.push(outcome))
+    assert(ready.has(localRow.id)); assert.deepEqual(localOutcomes, ['local-hit'])
+    assert.equal(calls, beforeLocal); assert.equal(sharedTouches, 0)
+    assert.equal(await runtime.hydratePreviewCache(local, localRow), true)
+    fs.writeFileSync(localRow.outputPath, 'incomplete PNG')
+    assert.equal(await runtime.hydratePreviewCache(local, localRow), false, 'invalid local image accepted')
+    available = true
+
     await run('miss', () => { status = null })
     await run('miss', row => fs.unlinkSync(path.join(dir, row.previewKey + '.png')))
     await run('unavailable', () => { available = false })
@@ -51,7 +68,8 @@ async function main() {
     const row = { id: 'pair', previewKey: 'pair', outputPath: path.join(dir, 'local', 'pair.png') }
     fs.writeFileSync(path.join(dir, 'pair.png'), png)
     const a = runtime.hydratePreviewCache(local, row), b = runtime.hydratePreviewCacheRows(local, [row])
-    await tick(); assert.equal(calls, before + 1, 'same key duplicated physical hydration')
+    for (let i=0; calls === before && i<100; i++) await new Promise(resolve => setTimeout(resolve, 10))
+    assert.equal(calls, before + 1, 'same key duplicated physical hydration')
     hold.resolve(); hold = undefined; assert.equal(await a, true); assert((await b).has(row.id))
     // A metadata rejection arriving after its image lease was superseded must
     // not become checksum damage or poison the same key's negative cache.

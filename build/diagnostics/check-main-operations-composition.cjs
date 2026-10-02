@@ -53,7 +53,7 @@ async function checkBindings() {
   h.reset()
   scan.closeRuntimeDatabases()
   assert.deepEqual(h.calls.map(call => call[0]), [
-    'createPreviewDbRuntime.closePreviewDb', 'createMainBackgroundRuntime.closeTasksDb', 'createLibraryRuntime.closeLibraryDb',
+    'createPreviewDbRuntime.closePreviewDb', 'createMainBackgroundRuntime.closeTasksDb',
   ])
   const partial = createHarness().load(path.join(bootstrap, 'mainCompositionFeedback.ts')).createMainCompositionFeedback()
   partial.bindOperations(ops.feedback)

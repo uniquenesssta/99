@@ -103,3 +103,74 @@ const tests = [
 
 for (const test of tests) test()
 console.log(`library DB handle lifecycle checks passed (${tests.length})`)
+
+async function testPreparationLifetime() {
+  const strict = require('node:assert/strict')
+  const os = require('node:os')
+  const { DatabaseSync } = require('node:sqlite')
+  const { loader } = require('./check-operation-chain.cjs')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-library-lifetime-'))
+  const gate = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
+  let hold, entered, fail = false, preparations = 0, initializations = 0
+  const handles = []
+  const load = loader({ [path.join(root, 'src/main/library/runtime/librarySchemaRuntime.ts')]: {
+    initializeLibraryDb(db) { initializations++; db.exec('CREATE TABLE IF NOT EXISTS sample(value INTEGER)') }
+  } })
+  const runtime = load('src/main/library/runtime/libraryDbConnectionRuntime.ts').createLibraryDbConnectionRuntime({
+    librarySqlitePath: () => path.join(dir, 'library.sqlite'),
+    openRecoverableApplicationSqliteDb: async () => {
+      const db = new DatabaseSync(':memory:')
+      Object.defineProperty(db, 'open', { get: () => db.isOpen })
+      handles.push(db); return db
+    },
+    closeSqliteDb: db => { if (db?.isOpen) db.close() },
+    prepareLocalFontIdentity: async db => {
+      preparations++; entered?.resolve()
+      if (hold) await hold.promise
+      // A close request must not physically close the handle under preparation.
+      strict.equal(db.prepare('SELECT 1 AS n').get().n, 1)
+      if (fail) throw Error('controlled migration failure')
+    }
+  })
+  try {
+    const first = await runtime.openLibraryDb()
+    hold = gate(); entered = gate()
+    const pending = runtime.openLibraryDb()
+    await entered.promise
+    const joined = runtime.openLibraryDb()
+    strict.equal(preparations, 2, 'cached preparation was duplicated')
+    runtime.closeLibraryDb()
+    strict.equal(runtime.getOpenLibraryDb(), null)
+    strict.equal(first.isOpen, true, 'close interrupted active migration')
+    const rejected = Promise.all([strict.rejects(pending, /连接已失效/), strict.rejects(joined, /连接已失效/)])
+    hold.resolve(); await rejected
+    strict.equal(first.isOpen, false)
+    strict.equal(runtime.getOpenLibraryDb(), null, 'obsolete handle was republished')
+    hold = undefined; entered = undefined
+    const second = await runtime.openLibraryDb()
+    strict.notEqual(first, second); strict.equal(second.isOpen, true)
+    strict.equal(initializations, 2, 'cached opens reran schema initialization')
+    runtime.closeLibraryDb()
+    // Also invalidate the first open while its migration is pending.
+    hold = gate(); entered = gate()
+    const opening = runtime.openLibraryDb(); await entered.promise
+    runtime.closeLibraryDb()
+    const closed = strict.rejects(opening, /连接已失效/)
+    hold.resolve(); await closed
+    strict.equal(handles.at(-1).isOpen, false)
+    hold = undefined; entered = undefined; fail = true
+    await strict.rejects(runtime.openLibraryDb(), /controlled migration failure/)
+    strict.equal(handles.at(-1).isOpen, false)
+    fail = false
+    strict.equal((await runtime.openLibraryDb()).isOpen, true, 'failed preparation blocked retry')
+    const watcher = readText('src/main/bootstrap/mainScanCompositionRuntime.ts')
+    const closeBlock = watcher.slice(watcher.indexOf('closeRuntimeDatabases: () => {'), watcher.indexOf('watcherChangeBatchLooksUnchanged:', watcher.indexOf('closeRuntimeDatabases: () => {')))
+    strict(!closeBlock.includes('closeLibraryDb()'), 'watcher restart closes application library')
+    console.log('PASS actual SQLite: cached/initial preparation invalidation, single flight, no stale publication, failure recovery')
+  } finally {
+    runtime.closeLibraryDb()
+    for (const db of handles) if (db.isOpen) db.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+testPreparationLifetime().catch(error => { console.error(error); process.exitCode = 1 })

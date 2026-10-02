@@ -325,11 +325,8 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
       } catch {
         /* ignore */
       }
-      try {
-        closeLibraryDb();
-      } catch {
-        /* ignore */
-      }
+      // The application library is independent of watched roots. Closing it here
+      // interrupts startup identity preparation and concurrent library readers.
     },
     watcherChangeBatchLooksUnchanged:
       watchedFolderIndexRuntime.watcherChangeBatchLooksUnchanged,

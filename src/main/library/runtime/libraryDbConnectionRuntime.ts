@@ -10,6 +10,7 @@ export function createLibraryDbConnectionRuntime(options: Pick<
   const { librarySqlitePath, openRecoverableApplicationSqliteDb, closeSqliteDb } = options;
   let libraryDb: SqliteDb | null = null;
   let libraryDbOpening: Promise<SqliteDb> | null = null;
+  let generation = 0;
 
   function isSqliteDbOpen(db: SqliteDb | null): db is SqliteDb {
     if (!db) return false;
@@ -17,34 +18,39 @@ export function createLibraryDbConnectionRuntime(options: Pick<
   }
 
   async function openLibraryDb(): Promise<SqliteDb> {
-    if (isSqliteDbOpen(libraryDb)) {
-      await options.prepareLocalFontIdentity?.(libraryDb);
-      return libraryDb;
-    }
-    if (libraryDb) libraryDb = null;
+    // Cached handles also need preparation. Coalesce the whole operation, not
+    // just the initial SQLite open, so startup callers cannot run migrations twice.
     if (libraryDbOpening) return libraryDbOpening;
-
-    libraryDbOpening = (async () => {
-      await fsp.mkdir(dirname(librarySqlitePath()), { recursive: true });
-      const db = await openRecoverableApplicationSqliteDb(
-        librarySqlitePath(),
-        "library",
-      );
+    const openedGeneration = generation;
+    const task = (async () => {
+      let db = libraryDb;
+      if (!isSqliteDbOpen(db)) {
+        libraryDb = null;
+        await fsp.mkdir(dirname(librarySqlitePath()), { recursive: true });
+        if (openedGeneration !== generation) throw new Error("字体库连接已失效，请重试。");
+        db = await openRecoverableApplicationSqliteDb(librarySqlitePath(), "library");
+      }
+      const preparingDb = db as SqliteDb;
       try {
-        initializeLibraryDb(db);
-        await options.prepareLocalFontIdentity?.(db);
-        libraryDb = db;
-        return db;
+        if (openedGeneration !== generation) throw new Error("字体库连接已失效，请重试。");
+        if (preparingDb !== libraryDb) initializeLibraryDb(preparingDb);
+        await options.prepareLocalFontIdentity?.(preparingDb);
+        if (openedGeneration !== generation || !isSqliteDbOpen(preparingDb)) {
+          throw new Error("字体库连接已失效，请重试。");
+        }
+        libraryDb = preparingDb;
+        return preparingDb;
       } catch (error) {
-        closeSqliteDb(db);
+        if (libraryDb === preparingDb) libraryDb = null;
+        closeSqliteDb(preparingDb);
         throw error;
       }
     })();
-
+    libraryDbOpening = task;
     try {
-      return await libraryDbOpening;
+      return await task;
     } finally {
-      libraryDbOpening = null;
+      if (libraryDbOpening === task) libraryDbOpening = null;
     }
   }
 
@@ -55,14 +61,12 @@ export function createLibraryDbConnectionRuntime(options: Pick<
   }
 
   function closeLibraryDb(): void {
-    closeSqliteDb(libraryDb);
+    generation += 1;
+    // An in-flight preparation owns its handle until it settles. It will close
+    // that handle and reject rather than publish it after this invalidation.
+    if (!libraryDbOpening) closeSqliteDb(libraryDb);
     libraryDb = null;
-    libraryDbOpening = null;
   }
 
-  return {
-    openLibraryDb,
-    getOpenLibraryDb,
-    closeLibraryDb,
-  };
+  return { openLibraryDb, getOpenLibraryDb, closeLibraryDb };
 }

@@ -18,6 +18,16 @@ jobs:
         run: npm run typecheck
       - name: Verify renderer query and user intent regressions
         run: node build/diagnostics/check-user-intent-consistency.cjs
+      - name: Verify library connection migration lifetime
+        run: node build/diagnostics/check-library-db-handle-lifecycle.cjs
+      - name: Verify preview cache outcomes and delayed local hits
+        run: node build/diagnostics/check-preview-cache-outcomes.cjs
+      - name: Verify startup composition and connection ownership
+        run: node build/diagnostics/check-main-composition-runtime.cjs
+      - name: Verify operation composition lifecycle
+        run: node build/diagnostics/check-main-operations-composition.cjs
+      - name: Verify preview reuse matrix
+        run: node build/diagnostics/check-preview-reuse-matrix.cjs
       - name: Verify production identity compatibility and operation targets
         run: node build/diagnostics/check-font-identity-compatibility.cjs
       - name: Verify activation transaction regressions

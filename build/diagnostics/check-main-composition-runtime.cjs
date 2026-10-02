@@ -147,7 +147,7 @@ function checkOutputTypes() {
 async function checkRejectedMutations() {
   const mutations = [
     ['eager DB open', compositionFile('Data'), '  const query = createMainDataQueryCompositionRuntime({', '  void storage.openLibraryDb();\n  const query = createMainDataQueryCompositionRuntime({'],
-    ['wrong close owner', compositionFile('Scan'), 'closeLibraryDb();', 'closePreviewDb();'],
+    ['wrong close owner', compositionFile('Scan'), 'closeTasksDb();', 'closeLibraryDb();'],
     ['false-save notification', compositionFile('DataStorage'), 'if (saved) notifyPreviewLibraryShellChanged()', 'notifyPreviewLibraryShellChanged()'],
     ['lost preview task binding', compositionFile('Data'), '    completeBackgroundTask,\n    skipBackgroundTask,', '    completeBackgroundTask: () => undefined,\n    skipBackgroundTask,'],
     ['missing DB worker shutdown', compositionFile('Data'), 'dbQueryWorkerShutdown: () => dbQueryWorkerRuntime.shutdown()', 'dbQueryWorkerShutdown: () => undefined'],
