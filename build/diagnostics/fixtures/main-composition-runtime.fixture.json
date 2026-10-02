@@ -212,6 +212,10 @@
         1
       ],
       [
+        "createLocalFontLegacyIdentityRuntime",
+        1
+      ],
+      [
         "createMainActivationInstallStatusSaveRuntime",
         1
       ],
