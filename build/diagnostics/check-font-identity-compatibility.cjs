@@ -106,10 +106,15 @@ async function operations(){
  const trashLoad=loader({electron:{shell:{trashItem:async p=>trashed.push(p)}},[path.resolve(__dirname,'../../src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:{access:async()=>{}},executeSharedFile:async()=>{throw Error('unexpected shared route')}},[path.resolve(__dirname,'../../src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>[]},[path.resolve(__dirname,'../../src/main/storage/runtime/sharedLeaseLockRuntime.ts')]:{withSharedLeaseLock:async(_opts,fn)=>fn()}})
  const trash=trashLoad('src/main/install/fontTrashDeleteRuntime.ts').deleteFontFilesToTrashRuntime
  const trashDeps={fontExtensions:new Set(['.ttf']),isCleanWindowsDefaultItem:()=>false,isPathInsideAnyRoot:()=>true,appendStartupLog(){}}
- const protectedResult=await trash([fonts[1]],roots,trashDeps)
- assert.equal(protectedResult.skippedProtected,1);assert.deepEqual(trashed,[])
- const deleted=await trash([{...fonts[1],deleteProtected:false}],roots,trashDeps)
- assert.equal(deleted.ok,true);assert.equal(deleted.deleted,1)
+ // Cache sanitization clears protection; operation fixtures must set it explicitly.
+ const unprotectedFont={...fonts[1],deleteProtected:false,systemInstalled:false,systemImported:false,active:false}
+ const protectedFont={...unprotectedFont,deleteProtected:true}
+ const protectedResult=await trash([protectedFont],roots,trashDeps)
+ assert.equal(protectedResult.skippedProtected,1,JSON.stringify(protectedResult))
+ assert.equal(protectedResult.deleted,0);assert.deepEqual(plain(protectedResult.deletedIds),[])
+ assert.deepEqual(trashed,[],'protected font reached the filesystem port')
+ const deleted=await trash([unprotectedFont],roots,trashDeps)
+ assert.equal(deleted.ok,true,JSON.stringify(deleted));assert.equal(deleted.deleted,1,JSON.stringify(deleted))
  assert.deepEqual(trashed,[fonts[1].path]);assert.deepEqual(plain(deleted.deletedIds),[fonts[1].id])
  console.log('[F02] Node/SQL identity, install migration/rollback, shared metadata and precise operation targets passed')
 }
