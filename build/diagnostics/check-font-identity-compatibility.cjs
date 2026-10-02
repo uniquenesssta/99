@@ -97,7 +97,7 @@ async function operations(){
  const deps={normalizePathForCacheCompare:p=>p.toLowerCase(),ensureWindows(){},appendStartupLog(){},loadTemporaryActiveFonts:async()=>({version:1,records}),saveTemporaryActiveFonts:async s=>saved.push(plain(s)),removeFontResourceSessionBatch:async paths=>{calls.push(...paths);return Object.fromEntries(paths.map(p=>[p,{ok:true,count:1}]))},scheduleBackgroundFontRefreshTail(){},clearInstalledFontsMemoryCache(){},getSystemInstalledFontsCached:async()=>[],compareFontInstalledWithList:()=>({installed:false,by:'none',matches:[]}),isTemporaryActiveInstalledRecord:()=>false,scheduleActivationInstallStatusSave(){}}
  const cleanup={verifyManagedRecord:async()=>true,persistRecordStage:async()=>{},deleteManagedRegistryRecords:async()=>{},queueTemporaryFontFileDeletes:async values=>Object.fromEntries(values.map(r=>[r.installPath,{ok:true}]))}
  const batch=load('src/main/activation/runtime/fontDeactivationBatchRuntime.ts').createFontDeactivationBatchRuntime(deps,cleanup)
- const deactivated=await batch.runDeactivationBatch([fonts[1]])
+ const deactivated=await batch.deactivateFontSessionsBatch([fonts[1]])
  assert.equal(deactivated.ok,true)
  assert.deepEqual(calls,[records[1].installPath])
  assert.deepEqual(saved.at(-1).records.map(r=>r.sourcePath),[fonts[0].path])
@@ -105,7 +105,11 @@ async function operations(){
  const trashed=[]
  const trashLoad=loader({electron:{shell:{trashItem:async p=>trashed.push(p)}},[path.resolve(__dirname,'../../src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:{access:async()=>{}},executeSharedFile:async()=>{throw Error('unexpected shared route')}},[path.resolve(__dirname,'../../src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>[]},[path.resolve(__dirname,'../../src/main/storage/runtime/sharedLeaseLockRuntime.ts')]:{withSharedLeaseLock:async(_opts,fn)=>fn()}})
  const trash=trashLoad('src/main/install/fontTrashDeleteRuntime.ts').deleteFontFilesToTrashRuntime
- const deleted=await trash([fonts[1]],roots,{fontExtensions:new Set(['.ttf']),isCleanWindowsDefaultItem:()=>false,isPathInsideAnyRoot:()=>true,appendStartupLog(){}})
+ const trashDeps={fontExtensions:new Set(['.ttf']),isCleanWindowsDefaultItem:()=>false,isPathInsideAnyRoot:()=>true,appendStartupLog(){}}
+ const protectedResult=await trash([fonts[1]],roots,trashDeps)
+ assert.equal(protectedResult.skippedProtected,1);assert.deepEqual(trashed,[])
+ const deleted=await trash([{...fonts[1],deleteProtected:false}],roots,trashDeps)
+ assert.equal(deleted.ok,true);assert.equal(deleted.deleted,1)
  assert.deepEqual(trashed,[fonts[1].path]);assert.deepEqual(plain(deleted.deletedIds),[fonts[1].id])
  console.log('[F02] Node/SQL identity, install migration/rollback, shared metadata and precise operation targets passed')
 }
