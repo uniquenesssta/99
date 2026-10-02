@@ -5,7 +5,7 @@ import { initializeLibraryDb } from "./librarySchemaRuntime";
 
 export function createLibraryDbConnectionRuntime(options: Pick<
   LibraryRuntimeOptions,
-  "librarySqlitePath" | "openRecoverableApplicationSqliteDb" | "closeSqliteDb"
+  "librarySqlitePath" | "openRecoverableApplicationSqliteDb" | "closeSqliteDb" | "prepareLocalFontIdentity"
 >) {
   const { librarySqlitePath, openRecoverableApplicationSqliteDb, closeSqliteDb } = options;
   let libraryDb: SqliteDb | null = null;
@@ -17,7 +17,10 @@ export function createLibraryDbConnectionRuntime(options: Pick<
   }
 
   async function openLibraryDb(): Promise<SqliteDb> {
-    if (isSqliteDbOpen(libraryDb)) return libraryDb;
+    if (isSqliteDbOpen(libraryDb)) {
+      await options.prepareLocalFontIdentity?.(libraryDb);
+      return libraryDb;
+    }
     if (libraryDb) libraryDb = null;
     if (libraryDbOpening) return libraryDbOpening;
 
@@ -29,6 +32,7 @@ export function createLibraryDbConnectionRuntime(options: Pick<
       );
       try {
         initializeLibraryDb(db);
+        await options.prepareLocalFontIdentity?.(db);
         libraryDb = db;
         return db;
       } catch (error) {

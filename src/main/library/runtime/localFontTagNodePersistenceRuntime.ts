@@ -1,3 +1,4 @@
+import { ensureLocalFontIdentitySchema } from './localFontLegacyIdentityRuntime'
 import { logOperation } from '../../logging/operationTraceContext'
 import type { FontItem, FontTagBatchItem } from "../../../shared/types";
 import type { SqliteDb } from "./libraryRuntimeTypes";
@@ -12,7 +13,10 @@ function deleteLocalTagForFontIdentity(
   if (aliases.length) {
     db.prepare(`DELETE FROM local_font_tags WHERE COALESCE(font_path, '') = '' AND font_id IN (${aliases.map(() => "?").join(",")})`).run(...aliases);
   }
-  if (fontPath) db.prepare("DELETE FROM local_font_tags WHERE font_path = ?").run(fontPath);
+  if (fontPath) {
+    db.prepare("INSERT OR IGNORE INTO local_font_tag_decisions(font_path) VALUES (?)").run(fontPath);
+    db.prepare("DELETE FROM local_font_tags WHERE font_path = ?").run(fontPath);
+  }
 }
 
 export function cleanKnownTagNames(tagNamesInput: string[]): string[] {
@@ -180,6 +184,7 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
 
   async function openWriter() {
     const db = await openLibraryDb();
+    ensureLocalFontIdentitySchema(db);
     function setLocalFontTags(item: FontItem, tagNames: string[], now: string) {
       const previousKnownTags = readPersistedLocalTags(db);
       const previousBoundTags = readBoundLocalTags(db);
@@ -253,6 +258,7 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
           .all(tagName) as Array<{ font_id?: string; font_path?: string }>;
 
         const tx = db.transaction(() => {
+          db.prepare("UPDATE local_font_legacy_state SET status = 'dismissed' WHERE kind = 'tag' AND tag_name = ? AND status IN ('pending','ambiguous','missing')").run(tagName);
           db.prepare("DELETE FROM local_font_tags WHERE tag_name = ?").run(tagName);
           knownTags = previousKnownTags.filter((tag) => tag !== tagName);
           saveKnownLocalTags(db, knownTags);

@@ -10,6 +10,7 @@ fn local_tags_atomicity_commit_failure_rolls_back_both_commands() {
         conn.execute_batch("INSERT INTO local_font_tags VALUES ('a','a.ttf','old','before');
             INSERT INTO app_state VALUES ('localTags','[\"old\"]');
             INSERT INTO meta VALUES ('localTagsUpdatedAt','before');
+            INSERT INTO local_font_legacy_state(kind,font_id,tag_name,payload_json) VALUES ('tag','historical','old','{}');
             PRAGMA foreign_keys=ON;
             CREATE TABLE parent(id INTEGER PRIMARY KEY);
             CREATE TABLE deferred_fault(id INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED);
@@ -31,6 +32,8 @@ fn local_tags_atomicity_commit_failure_rolls_back_both_commands() {
             ("SELECT value FROM meta WHERE key='localTagsUpdatedAt'", "before")
         ] { assert_eq!(reader.query_row(sql, [], |r|r.get::<_,String>(0)).unwrap(), expected); }
         assert_eq!(reader.query_row("SELECT COUNT(*) FROM deferred_fault",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(reader.query_row("SELECT COUNT(*) FROM local_font_tag_decisions",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(reader.query_row("SELECT status FROM local_font_legacy_state WHERE font_id='historical'",[],|r|r.get::<_,String>(0)).unwrap(),"pending");
         drop(reader); drop(conn); let _=fs::remove_file(path);
     }
 }

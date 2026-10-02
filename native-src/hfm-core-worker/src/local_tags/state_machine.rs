@@ -45,6 +45,12 @@ fn set_on_connection(
         &payload.rows.iter().flat_map(|row| row.tag_names.clone()).collect::<Vec<_>>(),
     );
 
+    for row in &payload.rows {
+        let path = normalize_font_path(&row.font_path);
+        if !path.is_empty() && !clean_aliases(&row.aliases).is_empty() {
+            tx.execute("INSERT OR IGNORE INTO local_font_tag_decisions(font_path) VALUES (?)", params![path]).map_err(|error| error.to_string())?;
+        }
+    }
     let mut updated_ids: Vec<String> = Vec::new();
     let mut written = 0usize;
     {
@@ -181,6 +187,7 @@ fn delete_on_connection(
     };
     let updated = updated_ids.len();
     if !tag_name.is_empty() {
+        tx.execute("UPDATE local_font_legacy_state SET status='dismissed' WHERE kind='tag' AND tag_name=? AND status IN ('pending','ambiguous','missing')", params![&tag_name]).map_err(|error| error.to_string())?;
         tx.execute("DELETE FROM local_font_tags WHERE tag_name = ?", params![&tag_name])
             .map_err(|error| error.to_string())?;
     }

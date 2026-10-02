@@ -20,7 +20,12 @@ export function createLocalFontFavoritesRuntime(options: {
     initializing = (async () => {
       const db = await options.openLibraryDb()
       if (db.prepare('SELECT value FROM meta WHERE key = ?').get('localFavoritesMigrated')?.value !== '1') {
-        const fonts = await options.loadLegacyLocalSnapshot()
+        // A local decision (including an unresolved archived false) is already
+        // authoritative. Never re-import shared snapshot flags over that history.
+        const hasArchive = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='local_font_legacy_state'").get()
+        const hasLocalHistory = db.prepare('SELECT 1 FROM local_font_favorites LIMIT 1').get()
+          || (hasArchive && db.prepare("SELECT 1 FROM local_font_legacy_state WHERE kind='favorite' LIMIT 1").get())
+        const fonts = hasLocalHistory ? [] : await options.loadLegacyLocalSnapshot()
         const insert = db.prepare('INSERT OR IGNORE INTO local_font_favorites (font_id, font_path, favorite) VALUES (?, ?, 1)')
         db.transaction(() => {
           for (const font of fonts) if (font.favorite && font.id) {

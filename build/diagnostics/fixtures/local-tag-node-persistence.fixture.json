@@ -28,7 +28,7 @@
   "transactions": [
     "41a493e243c60d07511b2b4c1d99e556d8c5dea0d3b0ab4d15cc25bf5bf44990",
     "f12e5d0b0a1a49833174208d2bc5fd9e4cc4b38da520cfceb0b1e5f00cace387",
-    "00d969c1180b1e43e4fe737bb5855b83c0ad12667ec56e3430f46b86ac12cf9c"
+    null
   ],
   "behavioralChecks": {
     "reason": "F02 intentionally changes path ownership; old decomposition hashes cannot require the former cross-path behavior. Unchanged function/transaction locks remain.",
@@ -36,12 +36,14 @@
       "deleteLocalTagForFontIdentity",
       "insertLocalTagsForFont",
       "hydrateLocalTagsForFonts",
-      "rustLocalTagRow"
+      "rustLocalTagRow",
+      "deleteLocalFontTag transaction: archive dismissal rolls back with active bindings and catalog"
     ],
     "commands": [
       "node build/diagnostics/check-local-user-state.cjs --case=identity",
       "node build/diagnostics/check-local-tag-node-persistence.cjs",
-      "node build/diagnostics/check-local-tag-rust-adapter.cjs"
+      "node build/diagnostics/check-local-tag-rust-adapter.cjs",
+      "node build/diagnostics/check-local-user-state.cjs --case=legacy-identity"
     ]
   }
 }

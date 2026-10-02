@@ -80,6 +80,7 @@ export type RustLocalTagsDeleteTagResult = {
 }
 
 export type LocalFontTagsRuntimeDeps = {
+  prepareIdentity?: () => Promise<void>
   openLibraryDb: () => Promise<SqliteDb>
   librarySqlitePath: () => string
   appendStartupLog?: (message: string) => void
@@ -99,6 +100,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
   ): Promise<Record<string, string[]>> {
     const ids = Array.from(new Set((fontIds || []).filter(Boolean)));
     if (!ids.length) return {};
+    await deps.prepareIdentity?.();
     const rustResult = await tryReadLocalTagsWithRust(ids.map((id) => ({ itemId: id, aliases: [id], fontPath: '' })));
     if (rustResult?.tagMap) return rustResult.tagMap;
     if (nodeFallbackDenial({ source: 'local-tags-read', reason: 'rust-read-returned-empty', detail: `ids=${ids.length}` }) !== null) return {};
@@ -108,6 +110,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
 
   async function hydrateLocalTagsForFonts(items: FontItem[]): Promise<FontItem[]> {
     if (!items.length) return items;
+    await deps.prepareIdentity?.();
     const rustResult = await tryReadLocalTagsWithRust(items.map((item) => rustLocalTagReadRow(item)));
     if (rustResult?.tagMap) {
       return items.map((item) => ({
@@ -126,6 +129,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
   ): Promise<FontTagUpdateResult> {
     const tagNames = cleanLocalTagNames(tagNamesInput);
     const now = new Date().toISOString();
+    await deps.prepareIdentity?.();
     const rustResult = await trySetLocalTagsWithRust([rustLocalTagRow(item, tagNames)], now);
     if (rustResult) {
       const updatedIds = rustResult.updatedIds.length ? rustResult.updatedIds : [item.id];
@@ -202,6 +206,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
 
     const now = new Date().toISOString();
     const rustRows = items.map((entry) => rustLocalTagRow(entry.item, entry.tagNames || []));
+    await deps.prepareIdentity?.();
     const rustResult = await trySetLocalTagsWithRust(rustRows, now);
     if (rustResult) {
       logKnownLocalTagLifecycle({
@@ -289,6 +294,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
     }
 
     const now = new Date().toISOString();
+    await deps.prepareIdentity?.();
     const rustResult = await tryDeleteLocalTagWithRust(tagName, now);
     if (rustResult) {
       logKnownLocalTagLifecycle({

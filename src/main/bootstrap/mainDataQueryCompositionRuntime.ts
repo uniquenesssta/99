@@ -188,6 +188,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     keywordInput: string,
     limitInput?: number,
   ): Promise<FontSearchResult> {
+    await openLibraryDb();
     return requireFontQueryFacadeRuntime().searchFontsInLibrary(
       keywordInput,
       limitInput,
@@ -288,6 +289,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     limit: number,
     offset: number,
   ): Promise<FontQueryPageResult> {
+    await openLibraryDb();
     const result = await requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(request, limit, offset);
     return { ...result, items: await options.hydrateLocalFavoritesForFonts(await hydrateInstallStatusForFonts(result.items)) };
   }
@@ -295,6 +297,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   async function queryFontsInLibrary(
     requestInput: FontQueryRequest,
   ): Promise<FontQueryResult> {
+    await openLibraryDb();
     return requireFontQueryFacadeRuntime().queryFontsInLibrary(requestInput);
   }
 
@@ -345,6 +348,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   });
 
   async function getFontMetricsFromLibrary(): Promise<FontMetricsResult> {
+    await openLibraryDb();
     return requireFontQueryFacadeRuntime().getFontMetricsFromLibrary();
   }
   return {

@@ -18,6 +18,7 @@ export type LocalTagsMutationStateSignal = {
 
 export type LibraryRuntimeOptions = {
   librarySqlitePath: () => string;
+  prepareLocalFontIdentity?: (db: SqliteDb) => Promise<void>;
   openRecoverableApplicationSqliteDb: (
     path: string,
     label: "library",

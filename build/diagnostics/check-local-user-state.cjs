@@ -98,6 +98,85 @@ async function favorites() {
   assert(invalidated>=4)
   a.close();b.close()
 }
+async function legacyIdentity() {
+  const load=loader(), legacy=load('src/main/library/runtime/localFontLegacyIdentityRuntime.ts')
+  const db=database(), index=database()
+  load('src/main/library/runtime/librarySchemaRuntime.ts').initializeLibraryDb(db)
+  index.exec('CREATE TABLE sources(root_path TEXT,index_signature TEXT); CREATE TABLE entries(root_path TEXT,relative_path TEXT,file_size INTEGER,modified_at INTEGER,font_json TEXT,is_deleted INTEGER,status TEXT)')
+  const roots=['C:\\one','C:\\two']
+  for(const root of roots)index.prepare("INSERT INTO sources VALUES (?,'snapshot')").run(root)
+  const row=(root,id,rel='same.ttf')=>({root_path:root,relative_path:rel,file_size:10,modified_at:100,font_json:JSON.stringify({id})})
+  const rows=[row(roots[0],'shared'),row(roots[1],'shared'),row(roots[0],'unique','unique.ttf')]
+  for(const r of rows)index.prepare("INSERT INTO entries VALUES (?,?,?,?,?,0,'ok')").run(...Object.values(r))
+  const addTag=(id,tag)=>db.prepare("INSERT INTO local_font_tags VALUES (?,'',?,'old')").run(id,tag)
+  const addFavorite=(id,value)=>db.prepare("INSERT INTO local_font_favorites VALUES (?,'',?)").run(id,value)
+  addTag('shared','ambiguous');addFavorite('shared',1);addTag('unique','retained');addTag('unique','another');addFavorite('unique',1)
+  addTag('absent','missing')
+  const before=plain(db.prepare('SELECT * FROM local_font_tags ORDER BY font_id,tag_name').all())
+  assert.equal(legacy.archivePathlessFontState(db),6)
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM local_font_tags').get().n,0)
+  assert.deepEqual(db.prepare("SELECT payload_json FROM local_font_legacy_state WHERE kind='tag' ORDER BY font_id,tag_name").all().map(r=>JSON.parse(r.payload_json)),before)
+  assert.equal(legacy.readCompleteFontIdentityIndex(index,[...roots,'C:\\offline']),null,'partial catalog was treated as complete')
+  assert.equal(legacy.reconcileLegacyFontState(db,null).deferred,6)
+  const report=legacy.reconcileLegacyFontState(db,legacy.readCompleteFontIdentityIndex(index,roots))
+  assert.deepEqual(plain(report),{resolved:3,ambiguous:2,missing:1,deferred:0})
+  assert.deepEqual(db.prepare('SELECT tag_name FROM local_font_tags ORDER BY tag_name').all().map(r=>r.tag_name),['another','retained'])
+  assert.equal(db.prepare('SELECT font_path FROM local_font_favorites').get().font_path,'c:\\one\\unique.ttf')
+  // A one-row page must not assign a globally ambiguous record; the production
+  // owner reads the complete snapshot, never the incoming page.
+  let logs=[],invalidated=0
+  for(const root of roots)db.prepare('INSERT INTO folders VALUES (?,0)').run(root)
+  const owner=legacy.createLocalFontLegacyIdentityRuntime({readCompleteIndex:async requested=>legacy.readCompleteFontIdentityIndex(index,requested),appendLog:x=>logs.push(x),invalidate:()=>invalidated++})
+  await owner.prepare(db)
+  assert.equal(db.prepare("SELECT status FROM local_font_legacy_state WHERE font_id='shared' LIMIT 1").get().status,'ambiguous')
+  assert(logs.some(x=>x.includes('多义=2')))
+  const tags=load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts').createLocalFontTagNodePersistenceRuntime(async()=>db)
+  const writer=await tags.openWriter()
+  writer.deleteLocalFontTag('ambiguous')
+  assert.equal(db.prepare("SELECT status FROM local_font_legacy_state WHERE kind='tag' AND font_id='shared'").get().status,'dismissed')
+  // User clears a tag while its historical binding cannot yet be resolved.
+  writer.setLocalFontTags(font('current',{path:'C:\\one\\missing.ttf'}),[],'now')
+  legacy.reconcileLegacyFontState(db,[...rows,row(roots[0],'absent','missing.ttf')])
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM local_font_tags WHERE tag_name='missing'").get().n,0)
+  assert.equal(db.prepare("SELECT status FROM local_font_legacy_state WHERE font_id='absent'").get().status,'superseded')
+  // Existing explicit false wins over late legacy favorite resolution.
+  db.prepare('INSERT INTO local_font_favorites VALUES (?,?,0)').run('local-path:c:\\one\\same.ttf','c:\\one\\same.ttf')
+  legacy.reconcileLegacyFontState(db,[rows[0],rows[2]])
+  assert.equal(db.prepare('SELECT favorite FROM local_font_favorites WHERE font_path=?').get('c:\\one\\same.ttf').favorite,0)
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM local_font_tags WHERE tag_name='ambiguous'").get().n,0)
+  assert.equal(legacy.archivePathlessFontState(db),0,'repeat preparation must be idempotent')
+  // Archive and active-table removal are atomic even if the second table fails.
+  const fault=database();load('src/main/library/runtime/librarySchemaRuntime.ts').initializeLibraryDb(fault)
+  fault.exec("INSERT INTO local_font_tags VALUES ('x','','original','before'); INSERT INTO local_font_favorites VALUES ('x','',1); CREATE TRIGGER fail_archive BEFORE DELETE ON local_font_favorites BEGIN SELECT RAISE(ABORT,'archive failure'); END;")
+  assert.throws(()=>legacy.archivePathlessFontState(fault),/archive failure/)
+  assert.equal(fault.prepare('SELECT COUNT(*) AS n FROM local_font_tags').get().n,1)
+  assert.equal(fault.prepare('SELECT COUNT(*) AS n FROM local_font_legacy_state').get().n,0)
+  fault.exec('DROP TRIGGER fail_archive');legacy.archivePathlessFontState(fault)
+  fault.exec("CREATE TRIGGER fail_restore BEFORE INSERT ON local_font_favorites BEGIN SELECT RAISE(ABORT,'restore failure'); END;")
+  assert.throws(()=>legacy.reconcileLegacyFontState(fault,[row(roots[0],'x')]),/restore failure/)
+  assert.equal(fault.prepare('SELECT COUNT(*) AS n FROM local_font_tags').get().n,0)
+  assert.equal(fault.prepare("SELECT COUNT(*) AS n FROM local_font_legacy_state WHERE status='pending'").get().n,2)
+  const more=database();load('src/main/library/runtime/librarySchemaRuntime.ts').initializeLibraryDb(more)
+  more.exec("INSERT INTO local_font_tags VALUES ('overlap','','once','old'); INSERT INTO local_font_favorites VALUES ('left','',0),('right','',1)")
+  legacy.archivePathlessFontState(more)
+  const overlapping=[row(roots[0],'overlap','nested\\same.ttf'),row(roots[0]+'\\nested','overlap')]
+  assert.equal(legacy.reconcileLegacyFontState(more,overlapping).resolved,1,'overlapping roots must deduplicate physical paths')
+  const conflict=row(roots[0],'left');conflict.font_json=JSON.stringify({id:'left',sourceId:'right'})
+  assert.equal(legacy.reconcileLegacyFontState(more,[conflict]).ambiguous,2,'conflicting favorites must remain archived')
+  const favorites=load('src/main/library/runtime/localFontFavoritesRuntime.ts').createLocalFontFavoritesRuntime({openLibraryDb:async()=>more,loadLegacyLocalSnapshot:async()=>{throw Error('archived local history must suppress stale snapshot import')},invalidate(){},appendLog(){}})
+  await favorites.initialize()
+  assert.equal(more.prepare('SELECT COUNT(*) AS n FROM local_font_favorites').get().n,0)
+  const malformed={...conflict,font_json:'invalid'}
+  assert.throws(()=>legacy.reconcileLegacyFontState(more,[conflict,malformed]))
+  assert.equal(more.prepare('SELECT COUNT(*) AS n FROM local_font_favorites').get().n,0)
+  more.prepare('INSERT INTO folders VALUES (?,0)').run(roots[0])
+  const moving=legacy.createLocalFontLegacyIdentityRuntime({readCompleteIndex:async()=>{more.prepare('INSERT INTO folders VALUES (?,1)').run(roots[1]);return [conflict]},appendLog(){},invalidate(){}})
+  await moving.prepare(more)
+  assert.equal(more.prepare('SELECT COUNT(*) AS n FROM local_font_favorites').get().n,0,'root changes must defer ownership')
+  index.exec("UPDATE sources SET index_signature='pending-snapshot'")
+  assert.equal(legacy.readCompleteFontIdentityIndex(index,roots),null,'pending sources must not authorize resolution')
+  more.close();fault.close();index.close();db.close()
+}
 async function localIdentityPaths() {
   const load=loader(), db=database()
   load('src/main/library/runtime/librarySchemaRuntime.ts').initializeLibraryDb(db)
@@ -282,11 +361,12 @@ async function idsRace() {
   await facade.queryFontsInLibrary({activeFilter:{kind:'active'}});assert.equal(calls,1,'active IDs bypassed pending install state')
 }
 async function main(){
+  if(selected==='legacy-identity'){await legacyIdentity();return}
   if(selected==='identity'){await localIdentityPaths();return}
   const cases={favorites,tags,activation,metrics:metricsRace}
   if(selected){await cases[selected]();return}
   for(const run of Object.values(cases))await run()
-  await localIdentityPaths();await knownCatalog();await idsRace();await pageRace();await compositionPorts()
+  await legacyIdentity();await localIdentityPaths();await knownCatalog();await idsRace();await pageRace();await compositionPorts()
   if(!crlf){
     for(const kind of Object.keys(cases)){
       for(const mode of ['--mutant','--baseline']){

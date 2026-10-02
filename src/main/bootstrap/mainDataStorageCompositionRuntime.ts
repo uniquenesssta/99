@@ -1,3 +1,4 @@
+import { createLocalFontLegacyIdentityRuntime, readCompleteFontIdentityIndex } from '../library/runtime/localFontLegacyIdentityRuntime';
 import { createLocalFontFavoritesRuntime } from '../library/runtime/localFontFavoritesRuntime';
 import type { DatabaseArgument } from './mainDatabasePorts';
 import type { FontItem, LibraryState, ScanResult } from "../../shared/types";
@@ -294,7 +295,28 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     clearLocalPreviewDbHandle,
   } = previewDbRuntime;
 
+  let lastLegacyIdentitySnapshot = '';
+  const legacyFontIdentity = createLocalFontLegacyIdentityRuntime({
+    retryIndex: () => { lastLegacyIdentitySnapshot = ''; },
+    appendLog: appendStartupLog,
+    invalidate: clearFontQueryCaches,
+    readCompleteIndex: async (roots, force) => {
+      const path = dataPath('db', 'merged-index.sqlite');
+      if (!(await exists(path))) return null;
+      const db = openStableSqliteDb(path, 'local-font-identity');
+      try {
+        const key = JSON.stringify([roots, getSqliteMeta(db,'sourcesKey'), getSqliteMeta(db,'updatedAt')]);
+        if (!force && key === lastLegacyIdentitySnapshot) return undefined;
+        const rows = readCompleteFontIdentityIndex(db, roots);
+        lastLegacyIdentitySnapshot = key;
+        return rows;
+      }
+      finally { closeSqliteDb(db); }
+    },
+  });
+
   const libraryRuntime = createLibraryRuntime({
+    prepareLocalFontIdentity: legacyFontIdentity.prepare,
     librarySqlitePath,
     openRecoverableApplicationSqliteDb,
     closeSqliteDb,

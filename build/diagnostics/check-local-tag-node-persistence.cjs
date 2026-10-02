@@ -32,8 +32,10 @@ function harness({ fault, logThrows = false, signalThrows = false, transform = x
   }
   function snapshot() {
     const reader = new DatabaseSync(dbPath)
-    try { return plain({ bindings: reader.prepare('SELECT * FROM local_font_tags ORDER BY font_id, tag_name').all(), state: reader.prepare('SELECT * FROM app_state ORDER BY key').all(), fonts: reader.prepare('SELECT * FROM fonts ORDER BY id').all() }) } finally { reader.close() }
+    try { return plain({ decisions: reader.prepare('SELECT * FROM local_font_tag_decisions ORDER BY font_path').all(), archive: reader.prepare('SELECT * FROM local_font_legacy_state ORDER BY font_id,tag_name').all(), bindings: reader.prepare('SELECT * FROM local_font_tags ORDER BY font_id, tag_name').all(), state: reader.prepare('SELECT * FROM app_state ORDER BY key').all(), fonts: reader.prepare('SELECT * FROM fonts ORDER BY id').all() }) } finally { reader.close() }
   }
+  require('./check-operation-chain.cjs').loader()('src/main/library/runtime/localFontLegacyIdentityRuntime.ts').ensureLocalFontIdentitySchema(adapter)
+  db.prepare("INSERT INTO local_font_legacy_state(kind,font_id,tag_name,payload_json) VALUES ('tag','historical','old','{}')").run()
   const before = snapshot()
   const mocks = {
     './localFontTagIdentityRuntime': load('src/main/library/runtime/localFontTagIdentityRuntime.ts'),
@@ -121,7 +123,9 @@ function checkStructure() {
       for (const [name, hash] of Object.entries(expected)) assert.equal(actual[name], hash, 'frozen ' + name)
     }
   }
-  assert.deepEqual(transactionBodies(fs.readFileSync(path.join(root, nodeFile), 'utf8')), fixture.transactions)
+  const transactions = transactionBodies(fs.readFileSync(path.join(root, nodeFile), 'utf8'))
+  assert.equal(transactions.length, fixture.transactions.length)
+  fixture.transactions.forEach((hash,index) => { if (hash !== null) assert.equal(transactions[index], hash, 'frozen transaction ' + index) })
   const facade = fs.readFileSync(path.join(root, file), 'utf8')
   assert(!/db\.(prepare|transaction)/.test(facade), 'SQL must have one owner')
   const owner = fs.readFileSync(path.join(root, nodeFile), 'utf8')

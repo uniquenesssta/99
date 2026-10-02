@@ -30,6 +30,7 @@ export function createLibraryRuntime(options: LibraryRuntimeOptions) {
   const localFontTagsRuntime = createLocalFontTagsRuntime({
     openLibraryDb,
     librarySqlitePath: options.librarySqlitePath,
+    prepareIdentity: options.prepareLocalFontIdentity ? async () => { await openLibraryDb(); } : undefined,
     appendStartupLog,
     runRustLocalTagsRead: options.runRustLocalTagsRead,
     runRustLocalTagsSet: options.runRustLocalTagsSet,

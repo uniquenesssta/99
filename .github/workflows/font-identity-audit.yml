@@ -18,6 +18,8 @@ jobs:
         run: npm run typecheck
       - name: Verify renderer query and user intent regressions
         run: node build/diagnostics/check-user-intent-consistency.cjs
+      - name: Verify historical font state ownership
+        run: node build/diagnostics/check-local-user-state.cjs --case=legacy-identity
       - name: Verify local state path isolation
         run: node build/diagnostics/check-local-user-state.cjs --case=identity
       - name: Verify local favorites

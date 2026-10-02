@@ -12,6 +12,12 @@ pub fn initialize_local_tags_db(conn: &Connection) -> rusqlite::Result<()> {
            key TEXT PRIMARY KEY,
            value TEXT NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS local_font_tag_decisions (font_path TEXT PRIMARY KEY);
+         CREATE TABLE IF NOT EXISTS local_font_legacy_state (
+           kind TEXT NOT NULL, font_id TEXT NOT NULL, tag_name TEXT NOT NULL DEFAULT '',
+           payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', resolved_path TEXT NOT NULL DEFAULT '',
+           PRIMARY KEY(kind, font_id, tag_name)
+         );
          CREATE TABLE IF NOT EXISTS local_font_tags (
            font_id TEXT NOT NULL,
            font_path TEXT NOT NULL DEFAULT '',
