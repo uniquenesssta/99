@@ -28,13 +28,13 @@ function cleanId(value: unknown): string {
 function requestUsesLocalTags(request: FontQueryRequest): boolean {
   const sidebarPage = request.sidebarPage || 'library'
   const kind = request.activeFilter?.kind || 'all'
-  return sidebarPage === 'tags' || kind === 'tag'
+  return Boolean(String(request.keyword || '').trim()) || sidebarPage === 'tags' || kind === 'tag'
 }
 
 function requestUsesSharedTags(request: FontQueryRequest): boolean {
   const sidebarPage = request.sidebarPage || 'library'
   const kind = request.activeFilter?.kind || 'all'
-  return sidebarPage === 'sharedTags' || kind === 'sharedTag'
+  return Boolean(String(request.keyword || '').trim()) || sidebarPage === 'sharedTags' || kind === 'sharedTag'
 }
 
 function addChangedIds(target: Set<string>, ids: string[]): void {

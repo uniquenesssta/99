@@ -1,8 +1,10 @@
+import { inferMergedIndexCategory } from '../../shared/fontSearchCategory'
+import { buildFontSearchText } from '../../shared/fontSearchText'
 import type { FontFormat,FontItem,FontMetricsResult,FontScript,LibraryState } from '@shared/types'
-import { FONT_CATEGORY_LABELS,SCRIPT_LANGUAGE_LABELS,SCRIPT_LANGUAGE_ORDER } from './appConstants'
+import { SCRIPT_LANGUAGE_ORDER } from './appConstants'
 import type { ActiveFilter,FontCategory,FontComputedIndex,FontMetrics,TimeSortMode } from './appTypes'
-import { fontScripts,inferFontCategory } from './fontClassification'
-import { installLabel,isCleanWindowsDefaultFont,isInstalled,isInstallStatusKnown,isSystemBuiltinFont } from './fontDisplay'
+import { fontScripts } from './fontClassification'
+import { isCleanWindowsDefaultFont,isInstalled,isInstallStatusKnown,isSystemBuiltinFont } from './fontDisplay'
 import { fontCreatedAtMs,isTimeRangeMode,timeRangeStartMs } from './fontSort'
 import { isDefinitelyBadFontRecord,normalizeFolderPathForCompare } from './libraryNormalize'
 import { addLegacyCollectionCounts,createLegacyCollectionCounts,legacyCollectionMatchesFilter } from './runtime/legacy/legacyCollectionRuntime'
@@ -25,33 +27,12 @@ export function filterMatchesFont(filter: ActiveFilter, font: FontItem): boolean
 
 export function buildFontComputedIndex(font: FontItem): FontComputedIndex {
   const scripts = fontScripts(font)
-  const category = inferFontCategory(font)
+  const category = inferMergedIndexCategory(font)
   const systemBuiltin = isSystemBuiltinFont(font)
   const cleanSystem = isCleanWindowsDefaultFont(font)
   const installed = isInstalled(font)
   const installStatusKnown = isInstallStatusKnown(font)
-  const scriptNames = scripts.map((script) => SCRIPT_LANGUAGE_LABELS[script] || script)
-  const searchText = [
-    font.family,
-    font.fullName,
-    font.postscriptName,
-    font.style,
-    font.fileName,
-    font.path,
-    installLabel(font),
-    font.systemImported ? '系统字体' : '',
-    systemBuiltin ? 'Windows Fonts' : '',
-    cleanSystem ? 'Windows default clean install' : '',
-    font.deleteProtected ? '保护 不可删除 删除保护' : '',
-    font.format,
-    font.format.toUpperCase(),
-    ...scriptNames,
-    ...scripts,
-    FONT_CATEGORY_LABELS[category],
-    category,
-    ...(font.tagNames || []),
-    ...(font.localTagNames || [])
-  ].join(' ').toLowerCase()
+  const searchText = buildFontSearchText(font)
 
   return {
     id: font.id,

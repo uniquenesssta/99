@@ -1,4 +1,4 @@
-import type { FontQueryRequest } from '@shared/types'
+import type { FontQueryRequest, FontQueryPageResult } from '@shared/types'
 
 export function sanitizeQueryStringArray(value: unknown): string[] {
   return Array.isArray(value)
@@ -29,5 +29,25 @@ export function rendererFontQueryCacheKey(request: FontQueryRequest): string {
     offset: Math.max(0, Number(request.offset || 0) || 0),
     limit: Math.max(1, Math.min(500000, Number(request.limit || defaultLimit) || defaultLimit))
   })
+}
+
+
+export function databaseQueryScopeKey(queryKey: string | undefined): string {
+  if (!queryKey) return ''
+  try {
+    const parsed = JSON.parse(queryKey) as Record<string, unknown>
+    delete parsed.offset
+    delete parsed.limit
+    return JSON.stringify(parsed)
+  } catch {
+    return queryKey
+  }
+}
+
+export function assertDatabasePageResponseMatchesRequest(result: FontQueryPageResult, request: FontQueryRequest): void {
+  if (databaseQueryScopeKey(result.queryKey) !== databaseQueryScopeKey(rendererFontQueryCacheKey(request))
+    || result.offset !== (request.offset || 0)) {
+    throw new Error('数据库分页响应与当前请求的筛选范围或起点不一致')
+  }
 }
 

@@ -186,4 +186,4 @@ export const FONT_QUERY_RESULT_CACHE_MAX = Math.max(
   8,
   Math.min(128, Number(process.env.HFM_FONT_QUERY_CACHE_MAX || 48) || 48),
 );
-export const MERGED_INDEX_SCHEMA_VERSION = 7;
+export const MERGED_INDEX_SCHEMA_VERSION = 8;

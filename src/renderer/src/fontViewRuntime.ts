@@ -1,12 +1,12 @@
 import { isInstalled } from './fontDisplay'
-import { hasFavoriteIntent } from './fontUserIntentRuntime'
+import { hasFontUserIntent, mergeFontUserIntent } from './fontUserIntentRuntime'
 import type { FontFormat,FontItem,FontQueryPageResult,FontQueryRequest,FontScript,LibraryState } from '@shared/types'
 import { VIRTUAL_OVERSCAN_ROWS,VIRTUAL_PANEL_PADDING,getVirtualGridColumns } from './appConstants'
 import type { ActiveFilter,FontCategory,FontComputedIndex,InstallStatusFilter,SidebarPage,SortMode,TimeSortMode,VirtualLayout,VirtualViewport } from './appTypes'
 import { buildFontComputedIndex,filterMatchesFontIndex,inTimeSortRangeIndex } from './fontFilteringMetrics'
 import { compareFontsForSort,compareFontsForTimeSort } from './fontSort'
 import { fontBelongsToAnyFolder,fontBelongsToFolder,fontInsideRootFolder,normalizeFontPathForCompare } from './libraryNormalize'
-import { filterFontByLibraryTagAuthority } from './fontTagStateAuthorityRuntime'
+import { filterFontByLibraryTagAuthority, isFontTagStateDirty } from './fontTagStateAuthorityRuntime'
 
 export interface RendererFontQueryRequestOptions {
   deferredSearch: string
@@ -75,55 +75,41 @@ function matchesInstallStatus(font: FontItem, status: InstallStatusFilter): bool
   return true
 }
 
-function optimisticTagPageMatches(font: FontItem, options: VisibleFontsOptions): boolean {
-  if (options.sidebarPage === 'tags') {
-    if (options.selectedTagName) return !!font.localTagNames?.includes(options.selectedTagName)
-    return !!font.localTagNames?.length
-  }
-  if (options.sidebarPage === 'sharedTags') {
-    if (options.selectedSharedTagName) return !!font.tagNames?.includes(options.selectedSharedTagName)
-    return !!font.tagNames?.length
-  }
-  return true
+// Raw database offsets always remain untouched. Only a complete result can
+// accept unseen optimistic members without guessing their pagination position.
+export function visibleFontResultTotal(result: FontQueryPageResult | null, fonts: FontItem[]): number {
+  return result ? Math.max(0, result.total + fonts.length - result.items.length) : fonts.length
 }
 
-function mergeOptimisticTagPageFonts(items: FontItem[], options: VisibleFontsOptions): FontItem[] {
-  if (options.sidebarPage !== 'tags' && options.sidebarPage !== 'sharedTags') return items
-
-  const seen = new Set(items.map((font) => font.id).filter(Boolean))
-  const optimisticFonts = options.allFonts.filter((font) => {
-    if (!font?.id || seen.has(font.id)) return false
-    return optimisticTagPageMatches(font, options)
-  })
-  if (!optimisticFonts.length) return items.filter((font) => optimisticTagPageMatches(font, options))
-  return [...optimisticFonts, ...items.filter((font) => optimisticTagPageMatches(font, options))]
+function pendingFont(font: FontItem): boolean {
+  return hasFontUserIntent(font) || isFontTagStateDirty(font, 'local') || isFontTagStateDirty(font, 'shared')
 }
 
 export function buildVisibleFonts(options: VisibleFontsOptions): FontItem[] {
   if (options.databasePageReady && options.databasePageResult) {
-    const items = options.databasePageResult.items.map((font) => {
+    const page = options.databasePageResult
+    const items = page.items.map((font) => {
       const cached = options.library.fonts[font.id]
-      // Accepted database rows own installation state. Keep existing optimistic
-      // tag/favorite/protection state only when the ID also refers to this path.
       const sameFile = cached && normalizeFontPathForCompare(cached.path) === normalizeFontPathForCompare(font.path)
-      const current = sameFile ? {
-        ...cached,
-        systemInstalled: font.systemInstalled,
-        installStatusKnown: font.installStatusKnown,
-        systemInstallMatches: font.systemInstallMatches || []
-      } : font
+      const current = sameFile ? mergeFontUserIntent(cached, {
+        ...font,
+        deleteProtected: cached.deleteProtected,
+        ...(isFontTagStateDirty(cached, 'local') ? { localTagNames: cached.localTagNames } : {}),
+        ...(isFontTagStateDirty(cached, 'shared') ? { tagNames: cached.tagNames } : {})
+      }) : font
       return filterFontByLibraryTagAuthority(options.library, current)
     })
-    if (options.sidebarPage === 'library' && (options.activeFilter.kind === 'favorites' || options.activeFilter.kind === 'active')) {
-      const seen = new Set(items.map((font) => font.id))
-      const pending = options.allFonts.filter((font) => !seen.has(font.id) &&
-        (options.activeFilter.kind === 'active' ? font.active : hasFavoriteIntent(font)))
-      // Reuse the exact memory-route filters and ordering for both pending and indexed rows.
-      const candidates = [...items, ...pending]
-      const fontIndexById = new Map(candidates.map((font) => [font.id, buildFontComputedIndex(font)]))
-      return buildVisibleFonts({ ...options, databasePageReady: false, allFonts: candidates, fontIndexById })
-    }
-    return mergeOptimisticTagPageFonts(items, options).filter(font => matchesInstallStatus(font, options.installStatus))
+    const complete = page.offset === 0 && page.items.length >= page.total
+    const seen = new Set(items.map((font) => font.id))
+    const pending = complete ? options.allFonts.filter((font) => !seen.has(font.id) && pendingFont(font)) : []
+    const candidates = [...items, ...pending]
+    const fontIndexById = new Map(candidates.map((font) => [font.id, buildFontComputedIndex(font)]))
+    const filtered = buildVisibleFonts({ ...options, databasePageReady: false, allFonts: candidates, fontIndexById })
+    if (complete && candidates.some(pendingFont)) return filtered
+    // Preserve the server's order for a partial page; pending sort changes are
+    // resolved by the mutation-triggered query, never by reordering one window.
+    const accepted = new Set(filtered.map(font => font.id))
+    return items.filter(font => accepted.has(font.id))
   }
 
   const keyword = options.deferredSearch.trim().toLowerCase()
@@ -192,7 +178,7 @@ export function buildVirtualLayout(options: VirtualLayoutOptions): VirtualLayout
   // The scrollbar represents the query, not the number of pages fetched so far.
   // Replacing/refilling a page must never shorten the browser's scroll range.
   const totalCount = options.databasePageReady
-    ? (options.databasePageResult?.total || 0)
+    ? visibleFontResultTotal(options.databasePageResult, options.visibleFonts)
     : options.visibleFonts.length
   const totalRows = Math.ceil(totalCount / columns)
 

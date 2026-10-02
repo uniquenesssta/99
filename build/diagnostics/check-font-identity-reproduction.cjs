@@ -24,26 +24,27 @@ try {
   assert(stats.every(s=>s.size===stats[0].size && s.mtimeMs===stats[0].mtimeMs))
   const dbPath=path.join(temp,'merged.sqlite'), libraryPath=path.join(temp,'library.sqlite')
   const db=new DatabaseSync(dbPath), library=new DatabaseSync(libraryPath)
-  library.exec('CREATE TABLE local_font_favorites(font_id TEXT, font_path TEXT, favorite INTEGER)');library.close()
+  library.exec('CREATE TABLE local_font_favorites(font_id TEXT, font_path TEXT, favorite INTEGER); CREATE TABLE local_font_tags(font_id TEXT, font_path TEXT, tag_name TEXT)')
   db.exec(`CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-    INSERT INTO meta VALUES('schemaVersion','7');
+    INSERT INTO meta VALUES('schemaVersion','8');
     INSERT INTO meta VALUES('sourcesKey','fixture-v2');
     CREATE TABLE sources(root_path TEXT PRIMARY KEY,index_db_path TEXT,install_db_path TEXT,index_signature TEXT,install_signature TEXT,shared_metadata_signature TEXT,synced_at TEXT);
     CREATE TABLE entries(root_path TEXT,relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at REAL,created_at REAL,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,is_deleted INTEGER,installed INTEGER,installed_by TEXT,matches_json TEXT,category_index TEXT,search_text TEXT,PRIMARY KEY(root_path,relative_path));`)
   for(const [i,dir] of roots.entries()) {
     db.prepare('INSERT INTO sources VALUES(?,?,?,?,?,?,?)').run(dir,'fixture-index','fixture-install','fixture','fixture','metadata:none','fixture')
+    if(i===1) library.prepare('INSERT INTO local_font_tags VALUES (?,?,?)').run('source-1',path.join(dir,'same.ttf').replaceAll('/', '\\').toLowerCase(),'私有%_标记')
     const font={id:`source-${i}`,path:path.join(dir,'same.ttf'),fileName:'same.ttf',family:'Arial',fullName:'F01 same',format:'ttf',tagNames:[],scripts:['latin']}
     db.prepare('INSERT INTO entries VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(dir,'same.ttf',`cache-${i}`,stats[i].size,stats[i].mtimeMs,stats[i].mtimeMs,'ok',JSON.stringify(font),'','fixture',0,i===1?0:1,i===1?'none':'system','[]','sans','f01 same arial')
   }
-  db.close()
+  db.close();library.close()
   // Replace only build-time environment syntax; run actual runtime helpers.
   const load=loader({react:{}}, {}, {
     [path.join(root,'src/renderer/src/constants/environmentConstants.ts')]: source=>source.replace(/import\.meta/g, '({})')
   })
   const sqlBuilder=load('src/main/indexing/root-query/mergedIndexPageQuerySql.ts').buildMergedIndexQuerySql
-  function query(kind='all',offset=0,limit=100,keyword='') {
-    const request={sidebarPage:'library',activeFilter:{kind},installStatus:'all',sortMode:'nameAsc',keyword,offset,limit}
-    const input={queryKey:JSON.stringify(request),request,offset,limit,roots,mergedIndexDbPath:dbPath,libraryDbPath:libraryPath,schemaVersion:7,sql:sqlBuilder(request,limit,offset)}
+  function query(kind='all',offset=0,limit=100,keyword='',scope={}) {
+    const request={sidebarPage:'library',activeFilter:{kind},installStatus:'all',sortMode:'nameAsc',keyword,offset,limit,...scope}
+    const input={queryKey:JSON.stringify(request),request,offset,limit,roots,mergedIndexDbPath:dbPath,libraryDbPath:libraryPath,schemaVersion:8,sql:sqlBuilder(request,limit,offset)}
     const file=path.join(temp,'query.json');fs.writeFileSync(file,JSON.stringify(input))
     const result=cp.spawnSync(worker,['--merged-index-query-page','--input',file],{encoding:'utf8',timeout:30000,windowsHide:true})
     if(result.error)throw result.error
@@ -53,7 +54,7 @@ try {
   function queryIds() {
     const request={sidebarPage:'library',activeFilter:{kind:'all'},sortMode:'nameAsc'}
     const sql=load('src/main/indexing/root-query/mergedIndexPageQuerySql.ts').buildMergedIndexIdsQuerySql(request,100)
-    const file=path.join(temp,'ids.json');fs.writeFileSync(file,JSON.stringify({queryKey:'ids',request,limit:100,roots,mergedIndexDbPath:dbPath,libraryDbPath:libraryPath,schemaVersion:7,sql}))
+    const file=path.join(temp,'ids.json');fs.writeFileSync(file,JSON.stringify({queryKey:'ids',request,limit:100,roots,mergedIndexDbPath:dbPath,libraryDbPath:libraryPath,schemaVersion:8,sql}))
     const result=cp.spawnSync(worker,['--merged-index-query-ids','--input',file],{encoding:'utf8',timeout:30000,windowsHide:true})
     assert.equal(result.status,0,result.stdout+'\n'+result.stderr)
     const parsed=JSON.parse(result.stdout.trim());assert.equal(parsed.ok,true);return parsed.ids
@@ -64,6 +65,14 @@ try {
   assert.equal(new Set(all.items.map(f=>f.id)).size,3,'production IDs must isolate all roots')
   assert.equal(installed.items.length,2);assert.equal(notInstalled.items.length,1);assert.equal(absent.items.length,0)
   assert(installed.items.every(f=>f.systemInstalled));assert(notInstalled.items.every(f=>!f.systemInstalled))
+  for(const sidebarPage of ['library','tags','folders','filters']) {
+    const tagged=query('all',0,100,'私有%_标记',{sidebarPage})
+    assert.equal(tagged.total,1,'Rust local tag search/count '+sidebarPage)
+    assert.equal(tagged.items[0].path,path.join(roots[1],'same.ttf'))
+    assert.equal(query('all',0,100,'absent-token',{sidebarPage}).total,0)
+  }
+  assert.equal(query('all',0,100,'已安装').total,2,'Rust live install search')
+  assert.equal(query('all',0,100,'未安装').total,1,'Rust live not-installed search')
   const page1=query('all',0,2),page2=query('all',2,2)
   const pageRuntime=load('src/renderer/src/runtime/database/useRendererDatabasePageRuntime.ts')
   const merged=pageRuntime.mergeIncrementalDatabasePage(page1,page2)

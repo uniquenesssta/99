@@ -143,6 +143,7 @@ export function createMergedIndexPageQueryRuntime(
       return null;
     }
 
+    if (String(request.keyword || '').trim()) await ctx.openLibraryDb();
     const queryPayload = {
       queryKey: fontQueryCacheKey({ ...request, limit, offset }),
       request,
@@ -272,10 +273,10 @@ export function createMergedIndexPageQueryRuntime(
     const { db, mode: ensureMode } = ready;
     try {
       if (!ctx.rootIndexSqliteJsonAvailable(db)) return null;
-      if (
-        request.sidebarPage === "tags" ||
-        request.activeFilter?.kind === "tag"
-      ) {
+      const buildStartedAt = Date.now();
+      const built = buildMergedIndexQuerySql(request, limit, offset);
+      const buildMs = Date.now() - buildStartedAt;
+      if (/local_db\./i.test(built.sql) || /local_db\./i.test(built.countSql)) {
         await ctx.openLibraryDb();
         try {
           db.exec(
@@ -285,9 +286,7 @@ export function createMergedIndexPageQueryRuntime(
           /* already attached or unavailable */
         }
       }
-      const buildStartedAt = Date.now();
-      const built = buildMergedIndexQuerySql(request, limit, offset);
-      const buildMs = Date.now() - buildStartedAt;
+
       if (built.unsupportedReason) {
         ctx.appendStartupLog(
           `local merged index page query fallback: ${built.unsupportedReason}`,

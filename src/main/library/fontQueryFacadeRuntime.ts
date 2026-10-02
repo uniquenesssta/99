@@ -346,7 +346,7 @@ export function createFontQueryFacadeRuntime(
     );
     const memoryElapsedMs = Date.now() - startedAt;
     options.appendLog(
-      `memory fallback page query: total=${items.length}, items=${pageItems.length}, offset=${offset}, limit=${limit}, elapsed=${memoryElapsedMs}ms`,
+      `memory fallback page query: page=${request.sidebarPage || 'library'}, filter=${request.activeFilter?.kind || 'all'}, keyword=${JSON.stringify(String(request.keyword || '').slice(0, 160))}, reason=${request.activeFilter?.kind === 'active' ? 'active-state-authority' : 'indexed-unavailable'}, total=${items.length}, items=${pageItems.length}, offset=${offset}, limit=${limit}, elapsed=${memoryElapsedMs}ms`,
     );
     options.migrationDiagnostics?.record({
       source: 'memory-query',

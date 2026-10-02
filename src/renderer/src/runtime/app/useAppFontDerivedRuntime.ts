@@ -1,10 +1,11 @@
-import { useLayoutEffect, useMemo } from 'react'
+import { reportRendererTrace } from '../../rendererPerformance'
+import { useEffect, useRef, useLayoutEffect, useMemo } from 'react'
 import type { MutableRefObject } from 'react'
 import type { FontItem } from '@shared/types'
 import type { ContextMenuState, VirtualLayout, VirtualViewport } from '../../appRuntime'
 import type { FontViewLayout } from './fontViewLayoutRuntime'
 import { traceRendererSyncComputation } from '../../appRuntime'
-import { buildTagSuggestions, buildVirtualLayout } from '../../fontViewRuntime'
+import { buildTagSuggestions, buildVirtualLayout, visibleFontResultTotal } from '../../fontViewRuntime'
 
 import { useBrowseDerivedRuntime, type BrowseDerivedOptions } from './useBrowseDerivedRuntime'
 
@@ -46,6 +47,33 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
     deferredSearch: args.deferredSearch,
     expandedFolderIds: args.expandedFolderIds,
   })
+
+  const lastQueryView = useRef('')
+  useEffect(() => {
+    const ids = visibleFonts.map(font => font.id)
+    const signature = JSON.stringify([databasePageReady, databasePageResult?.queryKey, databasePageResult?.total, ids,
+      args.deferredSearch, sidebarPage, args.selectedTagName, args.selectedSharedTagName, args.selectedFolderId, cardPoolViewLayout.listLayout])
+    if (lastQueryView.current === signature) return
+    lastQueryView.current = signature
+    const visibleIds = new Set(ids)
+    const indexed = new Set(databasePageResult?.items.map(font => font.id) || [])
+    reportRendererTrace({ kind: 'font-query-view', label: 'resolved-membership', page: sidebarPage, severity: 'info', details: {
+      keyword: args.deferredSearch,
+      keywordLength: args.deferredSearch.length,
+      scope: { view: cardPoolViewLayout.listLayout === 'none' ? 'grid' : 'list', filter: args.activeFilter.kind, localTag: args.selectedTagName, sharedTag: args.selectedSharedTagName,
+        folder: args.selectedFolderId, install: args.installStatus, time: args.timeSortMode, sort: args.sortMode },
+      databaseReady: databasePageReady,
+      databaseTotal: databasePageResult?.total ?? null,
+      loaded: databasePageResult?.items.length || 0,
+      visible: visibleFonts.length,
+      displayTotal: databasePageReady ? visibleFontResultTotal(databasePageResult, visibleFonts) : visibleFonts.length,
+      added: databasePageReady ? ids.filter(id => !indexed.has(id)).length : 0,
+      removed: databasePageReady ? (databasePageResult?.items || []).filter(font => !visibleIds.has(font.id)).length : 0,
+      duplicateIds: ids.length - new Set(ids).size,
+      sampleIds: ids.slice(0, 3).join(',')
+    } })
+  }, [cardPoolViewLayout.listLayout, visibleFonts, databasePageReady, databasePageResult, args.deferredSearch, sidebarPage,
+    args.activeFilter, args.selectedTagName, args.selectedSharedTagName, args.selectedFolderId, args.installStatus, args.timeSortMode, args.sortMode])
 
   useLayoutEffect(() => {
     latestVisibleFontsRef.current = visibleFonts

@@ -126,6 +126,7 @@ export function buildRootIndexQuerySql(rootPath: string, request: FontQueryReque
     usedLike: false
   }
   addRootIndexKeywordClause(parts, String(request.keyword || ''))
+  if (String(request.keyword || '').trim()) parts.unsupportedReason = 'keyword query requires merged search contract or hydrated memory'
   addRootIndexTimeRangeClause(parts, request.timeSortMode)
   if ((request.sidebarPage || 'library') === 'library') addRootIndexActiveFilterClauses(parts, request)
   addRootIndexPageFilterClauses(parts, rootPath, request)

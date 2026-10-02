@@ -1,3 +1,5 @@
+import { assertDatabasePageResponseMatchesRequest } from '../../constants/queryCacheRuntime'
+import { reportRendererTrace } from '../../rendererPerformance'
 import type { FontItem,FontQueryRequest } from '@shared/types'
 import { fontDisplayName,fontFileDisplayName } from '../../appRuntime'
 
@@ -203,13 +205,19 @@ export async function loadFontFamilyGroups(
   let truncated = false
 
   while (!isStale() && fonts.length < FAMILY_MAX_FONTS) {
-    const page = await hfm.queryFontPage({
+    const request = {
       ...baseRequest,
       sortMode: 'nameAsc',
       limit: FAMILY_PAGE_LIMIT,
       offset
-    })
+    } as FontQueryRequest
+    const page = await hfm.queryFontPage(request)
     if (isStale()) break
+    assertDatabasePageResponseMatchesRequest(page, request)
+    if (offset > 0 && page.total !== total) throw new Error('字体家族分页期间总数发生变化，请重试')
+    const known = new Set(fonts.map(font => font.id))
+    if (page.items.some(font => known.has(font.id)) || new Set(page.items.map(font => font.id)).size !== page.items.length) throw new Error('字体家族分页出现重复字体，请重试')
+    if (!page.items.length && offset < page.total) throw new Error('字体家族分页未向前推进，请重试')
     total = page.total
     fonts.push(...page.items)
     offset += page.items.length
@@ -218,6 +226,8 @@ export async function loadFontFamilyGroups(
   }
 
   const result = buildFontFamilyGroups(fonts)
+  reportRendererTrace({ kind: 'font-query-view', label: 'family-membership', page: baseRequest.sidebarPage, severity: 'info',
+    details: { keyword: baseRequest.keyword, loaded: fonts.length, total, groups: result.groups.length, hiddenSingles: result.hiddenSingleFontCount, hiddenDuplicateStyles: result.hiddenDuplicateStyleCount, truncated, stale: isStale() } })
   return {
     groups: result.groups,
     totalFonts: total || fonts.length,

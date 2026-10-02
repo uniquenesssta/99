@@ -83,8 +83,92 @@ async function favoriteCombination(){
  await h.command()('unfavorite');assert.deepEqual(s.favorites,[['a',true],['a',false]]);assert.equal(visible('favorites').length,0);assert(!h.library.fonts.b.favorite&&!h.library.fonts.c.favorite)
  h.select().setSelectedFontIds(['a']);h.setScope('library:favorites:notInstalled');assert.equal(h.select().selectedFontIds.length,0,'old filter selection survived scope change');cases++
 }
+async function searchMatrix(){
+ for(const f of records) if(f.group==='a') f.localTagNames.push('私有%_标记')
+ const load=loader({'node:path':path.win32}),r=renderLoader(hooks()),db=fixture(load)
+ for(const f of records) if(f.group==='a') db.prepare("INSERT INTO local_db.local_font_tags VALUES (?,'','私有%_标记')").run(f.id)
+ const view=r(renderer+'fontViewRuntime.ts'),index=r(renderer+'fontFilteringMetrics.ts').buildFontComputedIndex
+ const search=load('src/shared/fontSearchText.ts'),sql=load('src/main/indexing/root-query/mergedIndexPageQuerySql.ts')
+ const matcher=load('src/main/library/fontMemoryQueryMatcherRuntime.ts').createFontMemoryQueryMatcher({normalizePathForCacheCompare:p=>p.replaceAll('/','\\').toLowerCase(),isSystemInstalledRecord:()=>false,isPathInWindowsFonts:()=>false,inferFontSearchCategory:()=> 'sansSerif'})
+ const tag=r(renderer+'fontTagStateAuthorityRuntime.ts')
+ const barrier=load('src/main/library/tagMetadataRevisionBarrierRuntime.ts').createTagMetadataRevisionBarrierRuntime({appendStartupLog:noop})
+ for(const page of ['library','tags','sharedTags','folders','filters']) for(const scope of ['local','shared']) {
+  const req={sidebarPage:page,keyword:'私有标签'},before=barrier.snapshotForRequest(req)
+  barrier.noteMutation({scope,reason:'test',committed:true})
+  assert(barrier.resultBecameStaleForRequest(req,before),'keyword missed tag invalidation '+page+'/'+scope)
+ }
+
+ try {
+  for(const f of records) db.prepare('UPDATE entries SET search_text=?,category_index=? WHERE json_extract(font_json,\'$.id\')=?').run(search.buildMergedIndexSearchText(f,{rootPath:'C:\\fonts',relativePath:f.path.slice(9)}),load('src/shared/fontSearchCategory.ts').inferMergedIndexCategory(f),f.id)
+  for(const [page,kind] of scopes)for(const keyword of ['a0','私有%_标记','S','英文','已安装','未安装','安装状态未知','临时激活','NOT-A-FONT','%_']) {
+   const opts={...options(page,kind,'all'),deferredSearch:keyword},request=view.createRendererFontQueryRequest(opts)
+   opts.fontIndexById=new Map(records.map(f=>[f.id,index(f)]))
+   const expectedIds=records.filter(f=>matcher.sharedFontMatchesRequest(f,request)).map(f=>f.id).sort()
+   assert.deepEqual(plain(view.buildVisibleFonts(opts).map(f=>f.id).sort()),expectedIds,`search memory ${page}/${keyword}`)
+   const q=sql.buildMergedIndexQuerySql(request,2,0),count=db.prepare(q.countSql).get(...q.countParams).count
+   assert.equal(count,expectedIds.length,`search count ${page}/${keyword}`)
+   const found=[]
+   for(let offset=0;offset<count;offset+=2){const p=sql.buildMergedIndexQuerySql(request,2,offset);found.push(...db.prepare(p.sql).all(...p.params).map(row=>JSON.parse(row.font_json).id))}
+   assert.deepEqual(found.sort(),expectedIds,`search pages ${page}/${keyword}`)
+   const items=records.filter(f=>expectedIds.includes(f.id)),pageResult={items,total:count,offset:0,limit:100}
+   const visible=view.buildVisibleFonts({...opts,databasePageReady:true,databasePageResult:pageResult})
+   assert.deepEqual(plain(visible.map(f=>f.id).sort()),expectedIds,`cached rows resurrected ${page}/${keyword}`)
+   assert.equal(view.visibleFontResultTotal(pageResult,visible),count)
+   cases++
+  }
+  // A name match must not depend on stale installation text in font_json.
+  const target=records.find(f=>f.id==='a0n')
+  db.prepare("UPDATE entries SET installed=1,installed_by='system' WHERE json_extract(font_json,'$.id')=?").run(target.id)
+  const installed=sql.buildMergedIndexQuerySql({keyword:'已安装',sortMode:'nameAsc'},100,0)
+  assert(db.prepare(installed.sql).all(...installed.params).some(row=>JSON.parse(row.font_json).id===target.id),'live status search did not see install projection')
+  const uninstalled=sql.buildMergedIndexQuerySql({keyword:'未安装',sortMode:'nameAsc'},100,0)
+  assert(!db.prepare(uninstalled.sql).all(...uninstalled.params).some(row=>JSON.parse(row.font_json).id===target.id),'stale JSON install label leaked')
+  for(const scope of ['local','shared']) {
+   const page=scope==='local'?'tags':'sharedTags',base=options(page,'all','all'),f=records[0]
+   const edited=tag.markFontTagsOptimistic({...f,modifiedAt:1,createdAt:1},scope,scope==='local'?['L']:['S'])
+   const opts={...base,allFonts:[edited],library:{...library,fonts:{[edited.id]:edited}},databasePageReady:true,databasePageResult:{items:[],total:0,offset:0,limit:2}}
+   let visible=view.buildVisibleFonts(opts)
+   assert.equal(visible.length,1,'pending tag disappeared');assert.equal(view.visibleFontResultTotal(opts.databasePageResult,visible),1)
+   assert.equal(view.buildVisibleFonts({...opts,deferredSearch:'NOT-A-FONT'}).length,0,'pending tag bypassed search')
+   assert.equal(view.buildVisibleFonts({...opts,timeSortMode:'today'}).length,0,'pending tag bypassed time')
+   const partial={...opts.databasePageResult,total:200}
+   assert.equal(view.buildVisibleFonts({...opts,databasePageResult:partial}).length,0,'unseen pending tag shifted server pagination')
+   assert.equal(view.visibleFontResultTotal(partial,[]),200)
+   for(const columns of [1,3]) {
+    const layout=view.buildVirtualLayout({databasePageReady:true,databasePageResult:opts.databasePageResult,visibleFonts:visible,virtualViewport:{width:900,height:600,scrollTop:0},rowHeight:100,minCardWidth:200,columns})
+    assert.equal(layout.items.length,1,'list/grid omitted optimistic member')
+   }
+   // Settled cached membership is not evidence of a pending edit.
+   assert.equal(view.buildVisibleFonts({...opts,allFonts:[f],library:{...library,fonts:{[f.id]:f}}}).length,0,'plain cache repopulated empty tag query')
+   cases++
+  }
+  const family=r(renderer+'runtime/family/fontFamilyGroupingRuntime.ts')
+  const key=r(renderer+'constants/queryCacheRuntime.ts').rendererFontQueryCacheKey
+  for(const page of ['library','folders','filters']) {
+   const request=view.createRendererFontQueryRequest({...options(page,'all','all'),deferredSearch:'a0'})
+   const q=sql.buildMergedIndexQuerySql(request,100,0),items=db.prepare(q.sql).all(...q.params).map(row=>JSON.parse(row.font_json))
+   const result=await family.loadFontFamilyGroups({queryFontPage:async req=>({queryKey:key(req),items,total:items.length,offset:req.offset,limit:req.limit,truncated:false})},request,()=>false)
+   assert.equal(result.totalFonts,items.length)
+   assert(result.groups.flatMap(group=>group.fonts).every(font=>items.some(item=>item.id===font.id)))
+   for(const defect of ['scope','offset','duplicate']) await assert.rejects(()=>family.loadFontFamilyGroups({queryFontPage:async req=>({queryKey:key(defect==='scope'?{...req,keyword:'wrong'}:req),items:defect==='duplicate'?[records[0],records[0]]:items,total:defect==='duplicate'?2:items.length,offset:defect==='offset'?180:0,limit:req.limit,truncated:false})},request,()=>false))
+   cases++
+  }
+  const familyHook=hooks(),familyPending=[],familyLoad=renderLoader(familyHook)
+  let familyRequest={sidebarPage:'library',keyword:'old',sortMode:'nameAsc'}
+  const renderFamily=()=>{familyHook.begin();const value=familyLoad(renderer+'runtime/app/useFontFamilyGroupsRuntime.ts').useFontFamilyGroupsRuntime({hfm:{queryFontPage:req=>new Promise(resolve=>familyPending.push({req,resolve}))},cardPoolViewMode:'family',databaseQueryRequest:familyRequest,databaseQueryKey:key(familyRequest),shouldUseDatabaseQuery:true,databaseRefreshToken:0,sidebarPage:'library'});familyHook.flush();return value}
+  renderFamily()
+  familyPending[0].resolve({queryKey:key(familyPending[0].req),items:records.slice(0,2),total:2,offset:0,limit:180,truncated:false})
+  await tick();assert.equal(renderFamily().fontFamilyGroupResult.totalFonts,2)
+  familyRequest={...familyRequest,keyword:'new'}
+  assert.equal(renderFamily().fontFamilyGroupResult,null,'old family result visible in new search scope')
+  familyPending[1].resolve({queryKey:key(familyPending[1].req),items:[],total:0,offset:0,limit:180,truncated:false})
+  await tick();assert.equal(renderFamily().fontFamilyGroupResult.totalFonts,0)
+  cases++
+ } finally {db.close()}
+}
+
 async function main(){
- await matrix();ui();await race();await favoriteCombination()
+ await matrix();ui();await race();await favoriteCombination();await searchMatrix()
  const mutants=[
   ['src/main/indexing/root-query/mergedIndexPageQuerySql.ts',"if (request.installStatus === 'notInstalled')","if (request.sidebarPage !== 'library' && request.installStatus === 'notInstalled')"],
   ['src/main/indexing/root-query/rootIndexPageQuerySql.ts',"if (request.installStatus === 'notInstalled')","if (request.sidebarPage !== 'library' && request.installStatus === 'notInstalled')"],

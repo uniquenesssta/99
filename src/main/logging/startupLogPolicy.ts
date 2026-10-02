@@ -154,6 +154,7 @@ export function createStartupLogPolicy(): StartupLogPolicy {
     }
 
     if (text.startsWith('renderer perf event:')) {
+      if (/kind=(db-query-start|db-query-end|db-query-rejected|font-query-view),/.test(text)) return true
       if (text.includes('severity=error')) return true
       const durationMs = extractDurationMs(text, [/durationMs=(\d+)/])
       return durationMs >= 300 || text.includes('severity=warn')

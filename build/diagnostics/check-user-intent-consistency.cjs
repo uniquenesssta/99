@@ -11,7 +11,7 @@ function load(file, mocks = {}) {
   if(mutation==='active') source=source.replace('...intent.active,','')
   if(mutation==='favorite') source=source.replace('favorite && (!favorite.settled || incoming.favorite !== favorite.value)','false')
   if(mutation==='query') source=source.replaceAll('intentRevision !== fontUserIntentRevision()', 'false')
-  if(mutation==='installation') source=source.replace('systemInstalled: font.systemInstalled', 'systemInstalled: cached.systemInstalled')
+  if(mutation==='installation') source=source.replace('deleteProtected: cached.deleteProtected,', 'deleteProtected: cached.deleteProtected, systemInstalled: cached.systemInstalled,')
   if(mutation==='scope') source=source.replace('assertDatabasePageResponseMatchesRequest(result, databaseQueryRequest)', 'void 0')
   if(mutation==='membership') source=source.replace('const candidates = [...items, ...pending]','const candidates = items')
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,console,performance,window:{setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout(){}},require(id){
@@ -51,10 +51,10 @@ library={...library,fonts:{a:fav}}
 library=normalize.libraryWithMergedFonts(library,[{...font,favorite:false}])
 assert.equal(library.fonts.a.favorite,true,'uncommitted favorite must survive old query')
 assert.equal(library.fonts.a.active,false)
-const options={databasePageReady:true,databasePageResult:{items:[]},allFonts:[library.fonts.a],fontIndexById:new Map(),deferredSearch:'',activeFilter:{kind:'favorites'},sidebarPage:'library',timeSortMode:'all',sortMode:'name',library,selectedWatchedFolders:[],selectedFormats:[],selectedScripts:[],selectedCategory:'all',selectedTagName:'',selectedSharedTagName:'',selectedFolderId:'',installStatus:'all'}
+const options={databasePageReady:true,databasePageResult:{items:[],total:0,offset:0,limit:100},allFonts:[library.fonts.a],fontIndexById:new Map(),deferredSearch:'',activeFilter:{kind:'favorites'},sidebarPage:'library',timeSortMode:'all',sortMode:'name',library,selectedWatchedFolders:[],selectedFormats:[],selectedScripts:[],selectedCategory:'all',selectedTagName:'',selectedSharedTagName:'',selectedFolderId:'',installStatus:'all'}
 assert.deepEqual(plain(view.buildVisibleFonts(options).map(f=>f.id)),['a'],'pending favorite must appear even with empty page')
 assert.equal(view.buildVisibleFonts({...options,deferredSearch:'unmatched'}).length,0,'overlay must respect search')
-assert.equal(view.buildVisibleFonts({...options,activeFilter:{kind:'active'},databasePageResult:{items:[font]}}).length,0,'stopped favorite must not enter active list')
+assert.equal(view.buildVisibleFonts({...options,activeFilter:{kind:'active'},databasePageResult:{items:[font],total:1,offset:0,limit:100}}).length,0,'stopped favorite must not enter active list')
 const rev=intent.fontUserIntentRevision()
 intent.settleFavoriteIntent({...fav})
 assert(intent.fontUserIntentRevision()>rev,'write settlement invalidates in-flight reads')
@@ -79,7 +79,7 @@ console.log('favorite membership, stale activation, acknowledgment, newer toggle
 // Installation truth must come from the accepted row without discarding unrelated
 // optimistic favorite/protection state or overlaying another file's object.
 const fresh={...font,installStatusKnown:true,systemInstalled:false}
-const cached={...fresh,systemInstalled:true,deleteProtected:true,favorite:true}
+const cached=intent.markFavoriteIntent({...fresh,systemInstalled:true,deleteProtected:true},true)
 const pageOptions={...options,activeFilter:{kind:'notInstalled'},allFonts:[],library:{...library,fonts:{a:cached}},databasePageResult:{items:[fresh],total:1,offset:0}}
 let visible=view.buildVisibleFonts(pageOptions)
 assert.equal(visible.length,1)
@@ -133,7 +133,7 @@ async function queryRaceCheck() {
     for(const timer of timers.splice(0))timer()
     if(scenario==='intent')intent.markFavoriteIntent(font,true)
     if(scenario==='disposed')for(const fn of cleanup)if(typeof fn==='function')fn()
-    resolveQuery({queryKey:JSON.stringify(scenario==='wrong-scope'?{...request,keyword:'old search'}:request),items:[font],total:1,offset:scenario==='wrong-offset'?100:0,limit:100})
+    resolveQuery({queryKey:load(base+'constants/queryCacheRuntime.ts',mocks).rendererFontQueryCacheKey(scenario==='wrong-scope'?{...request,keyword:'old search'}:request),items:[font],total:1,offset:scenario==='wrong-offset'?100:0,limit:100})
     for(let i=0;i<10;i++)await Promise.resolve()
     assert.equal(pageWrites,scenario==='accepted'?1:0,scenario+' response admission')
     assert.equal(failures,scenario.startsWith('wrong-')?1:0,scenario+' failure state')

@@ -1,3 +1,4 @@
+import { databaseQueryScopeKey, assertDatabasePageResponseMatchesRequest } from '../../constants/queryCacheRuntime'
 import { SHARED_UNAVAILABLE_MESSAGE } from '../../../../shared/sharedAvailability'
 import { captureFontTagReadConfirmation } from '../../fontTagStateAuthorityRuntime'
 import { fontUserIntentRevision,hasUnsettledFavoriteIntent } from '../../fontUserIntentRuntime'
@@ -17,25 +18,6 @@ rendererFontQueryCacheKey
 } from '../../appRuntime'
 import { createRendererFontQueryRequest } from '../../fontViewRuntime'
 import { DATABASE_INCREMENTAL_PAGE_SIZE,buildRendererDatabasePageWindow,rendererDatabaseViewportPageOffset } from './rendererDatabasePageWindowRuntime'
-
-function databaseQueryScopeKey(queryKey: string | undefined): string {
-  if (!queryKey) return ''
-  try {
-    const parsed = JSON.parse(queryKey) as Record<string, unknown>
-    delete parsed.offset
-    delete parsed.limit
-    return JSON.stringify(parsed)
-  } catch {
-    return queryKey
-  }
-}
-
-function assertDatabasePageResponseMatchesRequest(result: FontQueryPageResult, request: FontQueryRequest): void {
-  if (databaseQueryScopeKey(result.queryKey) !== databaseQueryScopeKey(rendererFontQueryCacheKey(request))
-    || result.offset !== (request.offset || 0)) {
-    throw new Error('数据库分页响应与当前请求的筛选范围或起点不一致')
-  }
-}
 
 function databaseTraceSeverity(durationMs: number): 'info' | 'slow' | 'warn' {
   if (durationMs >= 180) return 'warn'
@@ -275,20 +257,22 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           offset: databaseQueryRequest.offset,
           limit: databaseQueryRequest.limit,
           keyword: databaseQueryRequest.keyword,
-          activeFilterKind: databaseQueryRequest.activeFilter?.kind || 'all',
-          activeFilterName: databaseQueryRequest.activeFilter?.name,
-          installStatus: databaseQueryRequest.installStatus,
-          sortMode: databaseQueryRequest.sortMode,
-          timeSortMode: databaseQueryRequest.timeSortMode,
-          selectedFolderId: databaseQueryRequest.selectedFolderId,
-          selectedWatchedFolders: databaseQueryRequest.selectedWatchedFolders?.length || 0,
+          keywordLength: databaseQueryRequest.keyword?.length || 0,
+          scope: { filter: databaseQueryRequest.activeFilter?.kind, tag: databaseQueryRequest.selectedTagName, folder: databaseQueryRequest.selectedFolderId,
+            install: databaseQueryRequest.installStatus, sort: databaseQueryRequest.sortMode, time: databaseQueryRequest.timeSortMode,
+            category: databaseQueryRequest.selectedCategory, formats: databaseQueryRequest.selectedFormats?.join(','), scripts: databaseQueryRequest.selectedScripts?.join(','),
+            watchedFolders: databaseQueryRequest.selectedWatchedFolders?.join('|') },
           scrolling: options.fontListScrollingRef.current
         }
-      }, `db-query-start:${options.sidebarPage}`)
+      })
       const intentRevision = fontUserIntentRevision()
       const confirmTagRead = captureFontTagReadConfirmation(options.library)
       options.hfm.queryFontPage(databaseQueryRequest).then(async (result) => {
-        if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) return
+        if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) {
+          options.reportTrace({ kind: 'db-query-rejected', label: disposed ? 'scope-disposed' : 'newer-request', page: options.sidebarPage,
+            severity: 'info', details: { requestSeq, currentSeq: options.databasePageRequestSeqRef.current, keyword: databaseQueryRequest.keyword, total: result.total } })
+          return
+        }
         if (intentRevision !== fontUserIntentRevision()) {
           options.reportTrace({ kind: 'db-query-rejected', label: 'user-intent-changed', page: options.sidebarPage,
             severity: 'warn', details: { requestSeq, intentRevision, currentIntentRevision: fontUserIntentRevision() } })
@@ -326,6 +310,8 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           durationMs,
           details: {
             requestSeq,
+            keyword: databaseQueryRequest.keyword,
+            keywordLength: databaseQueryRequest.keyword?.length || 0,
             total: result.total,
             items: result.items.length,
             offset: result.offset,

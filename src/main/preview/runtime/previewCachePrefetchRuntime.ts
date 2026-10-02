@@ -94,7 +94,7 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
     const total = stats.localHit + stats.queued + stats.dropped + stats.cancelled + stats.hydrated + stats.failed
     if (!total) return
     lastStatsLogAt = now
-    options.appendStartupLog(`preview cache prefetch summary: queued=${stats.queued}, hydrated=${stats.hydrated}, localHit=${stats.localHit}, failed=${stats.failed}, dropped=${stats.dropped}, cancelled=${stats.cancelled}, miss=${stats.miss}, unavailable=${stats.unavailable}, timeout=${stats.timeout}, error=${stats.error}, hydrationCancelled=${stats.hydrationCancelled}, unclassified=${stats.unclassified}`)
+    options.appendStartupLog(`preview cache prefetch summary: queued=${stats.queued}, hydrated=${stats.hydrated}, localHit=${stats.localHit}, failed=${stats.failed}, failedMeaning=non-hydrated-including-miss-and-cancel, dropped=${stats.dropped}, cancelled=${stats.cancelled}, miss=${stats.miss}, unavailable=${stats.unavailable}, timeout=${stats.timeout}, error=${stats.error}, hydrationCancelled=${stats.hydrationCancelled}, unclassified=${stats.unclassified}`)
     stats.queued = 0
     stats.dropped = 0
     stats.hydrated = 0

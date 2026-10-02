@@ -34,7 +34,7 @@ applyInstallCompareToFont
 import {
 normalizedSelectionRect
 } from './fontSelectionRuntime'
-import { buildTagSuggestions,buildVirtualLayout,buildVisibleFonts } from './fontViewRuntime'
+import { buildTagSuggestions,buildVirtualLayout,buildVisibleFonts,visibleFontResultTotal } from './fontViewRuntime'
 import type { FontFamilyGroupResult } from './runtime/family/fontFamilyGroupingRuntime'
 import { fontFamilyQueryScopeKey,loadFontFamilyGroups } from './runtime/family/fontFamilyGroupingRuntime'
 import { useFontDetailNativePreviewRuntime } from './runtime/app/useFontDetailNativePreviewRuntime'
@@ -634,7 +634,6 @@ export default function App(): JSX.Element {
   })
   const databasePageReady = databaseRuntime.databasePageReady
   const displayDatabasePageReady = databasePageReady && !indexingActive
-  const visibleFontTotal = displayDatabasePageReady ? databaseRuntime.visibleFontTotal : 0
   const {
     fontFamilyGroupResult,
     fontFamilyGroupLoading,
@@ -714,6 +713,8 @@ export default function App(): JSX.Element {
     requestPreviewFont,
     contextFontTargets
   })
+
+  const visibleFontTotal = displayDatabasePageReady ? visibleFontResultTotal(databasePageResult, visibleFonts) : visibleFonts.length
 
   detailViewportTransitionRef.current = useFontLayoutScrollAnchor({
     layout: cardPoolViewLayout,

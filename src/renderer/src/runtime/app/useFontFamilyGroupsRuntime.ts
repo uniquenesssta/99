@@ -20,11 +20,14 @@ export function useFontFamilyGroupsRuntime(args: {
   toggleFontFamilyExpanded: (groupId: string) => void
 } {
   const { hfm, cardPoolViewMode, databaseQueryRequest, databaseQueryKey, shouldUseDatabaseQuery, databaseRefreshToken, sidebarPage } = args
-  const [fontFamilyGroupResult, setFontFamilyGroupResult] = useState<FontFamilyGroupResult | null>(null)
+  const [resolved, setResolved] = useState<{ scope: string; result: FontFamilyGroupResult } | null>(null)
   const [fontFamilyGroupLoading, setFontFamilyGroupLoading] = useState(false)
-  const [fontFamilyGroupError, setFontFamilyGroupError] = useState('')
+  const [failure, setFailure] = useState<{ scope: string; message: string } | null>(null)
   const [expandedFontFamilyIds, setExpandedFontFamilyIds] = useState<Record<string, true>>({})
   const familyQueryScopeKey = useMemo(() => fontFamilyQueryScopeKey(databaseQueryRequest), [databaseQueryKey])
+  const resultScope = `${familyQueryScopeKey}:${databaseRefreshToken}`
+  const fontFamilyGroupResult = resolved?.scope === resultScope ? resolved.result : null
+  const fontFamilyGroupError = failure?.scope === resultScope ? failure.message : ''
 
   useEffect(() => {
     if (cardPoolViewMode !== 'family' || !shouldUseDatabaseQuery) {
@@ -34,13 +37,13 @@ export function useFontFamilyGroupsRuntime(args: {
 
     let disposed = false
     setFontFamilyGroupLoading(true)
-    setFontFamilyGroupError('')
+    setFailure(null)
 
     loadFontFamilyGroups(hfm, databaseQueryRequest, () => disposed)
       .then((result) => {
         if (disposed) return
-        setFontFamilyGroupResult(result)
-        setFontFamilyGroupError('')
+        setResolved({ scope: resultScope, result })
+        setFailure(null)
         reportRendererTrace({
           kind: 'font-family-groups-loaded',
           label: 'familyGroupView',
@@ -52,7 +55,9 @@ export function useFontFamilyGroupsRuntime(args: {
       })
       .catch((error) => {
         if (disposed) return
-        setFontFamilyGroupError(error instanceof Error ? error.message : String(error))
+        const message = error instanceof Error ? error.message : String(error)
+        setFailure({ scope: resultScope, message })
+        reportRendererTrace({ kind: 'db-query-error', label: 'family-query', page: sidebarPage, severity: 'error', details: { keyword: databaseQueryRequest.keyword, message } })
       })
       .finally(() => {
         if (!disposed) setFontFamilyGroupLoading(false)
@@ -76,7 +81,7 @@ export function useFontFamilyGroupsRuntime(args: {
 
   return {
     fontFamilyGroupResult,
-    fontFamilyGroupLoading,
+    fontFamilyGroupLoading: fontFamilyGroupLoading || (cardPoolViewMode === 'family' && shouldUseDatabaseQuery && !fontFamilyGroupResult && !fontFamilyGroupError),
     fontFamilyGroupError,
     expandedFontFamilyIds,
     toggleFontFamilyExpanded

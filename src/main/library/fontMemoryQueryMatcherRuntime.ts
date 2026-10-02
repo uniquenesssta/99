@@ -1,26 +1,9 @@
+import { buildFontSearchText } from '../../shared/fontSearchText'
 import type { FontItem,FontQueryRequest,FontScript } from '../../shared/types'
 import { legacyCollectionIdsForFont } from './legacy/legacyCollectionSearchRuntime'
 import { sanitizeStringArray,timeRangeStartForSql } from './fontQuerySqlRuntime'
 import { normalizeFontFormat } from './fontSqliteMapper'
 import type { FontMemoryQueryRuntimeOptions } from './fontMemoryQueryTypes'
-
-function fontTextForQuery(font: FontItem): string {
-  return [
-    font.fileName,
-    font.family,
-    font.fullName,
-    font.postscriptName,
-    font.style,
-    font.format,
-    font.path,
-    ...(Array.isArray(font.scripts) ? font.scripts : []),
-    ...(Array.isArray(font.tagNames) ? font.tagNames : []),
-    ...(Array.isArray(font.localTagNames) ? font.localTagNames : []),
-    ...legacyCollectionIdsForFont(font),
-  ]
-    .join(' ')
-    .toLowerCase()
-}
 
 export function createFontMemoryQueryMatcher(options: FontMemoryQueryRuntimeOptions) {
   function sharedFontIsSystemDefault(font: FontItem): boolean {
@@ -53,7 +36,7 @@ export function createFontMemoryQueryMatcher(options: FontMemoryQueryRuntimeOpti
     const keyword = String(request.keyword || '')
       .trim()
       .toLowerCase()
-    if (keyword && !fontTextForQuery(font).includes(keyword)) return false
+    if (keyword && !buildFontSearchText(font).includes(keyword)) return false
 
     const start = timeRangeStartForSql(String(request.timeSortMode || ''))
     if (

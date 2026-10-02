@@ -11,6 +11,7 @@ mergedIndexInstalledExpr,
 mergedIndexNotInstalledExpr,
 mergedIndexSystemDefaultExpr,
 rootIndexJsonTextExpr,
+rootIndexJsonBoolExpr,
 rootIndexJsonArrayHasAnyValueExpr,
 rootIndexLocalTagMatchExpr,
 rootIndexRuntimeFontIdExpr,
@@ -27,7 +28,12 @@ function escapeMergedIndexSearchLike(value: string): string {
 function addMergedIndexKeywordClause(parts: RootIndexQueryParts, keyword: string): void {
   const clean = String(keyword || '').trim().toLowerCase()
   if (!clean) return
-  parts.clauses.push(`LOWER(COALESCE(entries.search_text, '')) LIKE ? ESCAPE '\\'`)
+  // Stable text is indexed; local tags and installation state are read live.
+  const localTags = `(SELECT COALESCE(group_concat(tag_name, ' '), '') FROM local_db.local_font_tags lft WHERE ${rootIndexLocalTagMatchExpr('lft')})`
+  const state = `(CASE WHEN ${mergedIndexInstalledExpr()} THEN '已安装 installed system' WHEN ${mergedIndexNotInstalledExpr()} THEN '未安装 not installed' ELSE '安装状态未知 unknown' END
+    || CASE WHEN ${mergedIndexActiveExpr()} THEN ' 临时激活 已激活 active' ELSE '' END
+    || CASE WHEN ${rootIndexJsonBoolExpr('deleteProtected')} = 1 THEN ' 保护 不可删除 删除保护 protected' ELSE '' END)`
+  parts.clauses.push(`LOWER(COALESCE(entries.search_text, '') || ' ' || ${localTags} || ' ' || ${state}) LIKE ? ESCAPE '\\'`)
   parts.params.push(`%${escapeMergedIndexSearchLike(clean)}%`)
   parts.usedLike = true
 }

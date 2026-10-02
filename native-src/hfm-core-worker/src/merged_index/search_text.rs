@@ -121,14 +121,6 @@ pub fn build_search_text(font_json: Option<&str>, root_path: &str, relative_path
         for collection_id in string_array(font, "collectionIds") {
             push_part(&mut parts, collection_id);
         }
-        if bool_field(font, "systemInstalled") {
-            push_part(&mut parts, "已安装 installed system");
-        } else {
-            push_part(&mut parts, "未安装 not installed");
-        }
-        if bool_field(font, "deleteProtected") {
-            push_part(&mut parts, "保护 不可删除 删除保护 protected");
-        }
         if bool_field(font, "systemImported") {
             push_part(&mut parts, "系统字体 system font");
         }

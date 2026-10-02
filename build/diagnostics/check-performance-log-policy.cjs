@@ -60,3 +60,17 @@ const packageJson = JSON.parse(read('package.json'))
 assert(packageJson.scripts['diagnostics:performance-log-policy'] === 'node build/diagnostics/check-performance-log-policy.cjs', 'package.json missing diagnostics:performance-log-policy script')
 
 console.log('[diagnostics:performance-log-policy] ok')
+
+// Fast query events must survive BOTH renderer aggregation and startup policy.
+const strictAssert = require('node:assert/strict')
+const { loader } = require('./check-operation-chain.cjs')
+const load = loader()
+const runtime = load('src/main/performance/rendererInteractionRuntime.ts')
+const shouldAppend = load('src/main/logging/startupLogPolicy.ts').createStartupLogPolicy().shouldAppend
+const events = []
+const interaction = runtime.createRendererInteractionRuntime({ appendLog: line => { if (shouldAppend(line)) events.push(line) } })
+for (const kind of ['db-query-start','db-query-end','db-query-rejected','font-query-view']) {
+  interaction.reportPerformanceEvent({kind,label:'acceptance',severity:'info',durationMs:1,page:'tags',details:{keyword:'私有标签',visible:0}})
+  strictAssert(events.some(line => line.includes('kind='+kind+',') && line.includes('私有标签')), 'fast evidence suppressed: '+kind)
+}
+strictAssert.equal(interaction.isRendererUserActive(), false, 'diagnostics must not postpone background idle work')

@@ -60,7 +60,8 @@ function browse() {
     same(last.fontIndexById,index,'count-only update rebuilt index')
     apply({deferredSearch:'0'})
     apply({deferredSearch:'',activeFilter:{kind:'favorites'}})
-    const changed={...options.allFonts[0],favorite:true,active:true,deleteProtected:true,localTagNames:['changed']}
+    const userIntent=h.load(r+'fontUserIntentRuntime.ts'),tagIntent=h.load(r+'fontTagStateAuthorityRuntime.ts')
+    const changed=tagIntent.markFontTagsOptimistic(userIntent.markFavoriteIntent(userIntent.markActiveIntent({...options.allFonts[0],active:true,deleteProtected:true}),true),'local',['changed'])
     const allFonts=[changed,...options.allFonts.slice(1)]
     apply({allFonts,library:{...options.library,fonts:{...options.library.fonts,[changed.id]:changed},localTags:['changed']}})
     same(last.visibleFonts[0].id,changed.id,'favorite overlay omitted')
