@@ -12,7 +12,7 @@ const states=['all','installed','notInstalled']
 const records=[]
 for(const group of ['a','b'])for(const favorite of [false,true])for(const kind of ['i','n','t','b','u']){const id=group+Number(favorite)+kind;records.push({...font(id),path:`C:\\fonts\\${group==='a'?'scope':'other'}\\${id}.ttf`,favorite,systemInstalled:['i','b'].includes(kind),installStatusKnown:kind!=='u',systemInstallMatches:kind==='u'?[{family:'old',path:'C:\\old.ttf'}]:[],active:['t','b'].includes(kind),localTagNames:group==='a'?['L']:[],tagNames:group==='a'?['S']:[],scripts:['latin'],group,kind})}
 const library={fonts:Object.fromEntries(records.map(f=>[f.id,f])),folders:['C:\\fonts'],folderNodes:[{id:'C:\\fonts\\scope',parentId:'C:\\fonts'}],fontFolderIds:{},tags:['S'],localTags:['L'],collections:[]}
-function options(page,kind,status){return {sidebarPage:page,activeFilter:{kind},installStatus:status,deferredSearch:'',databasePageLimit:2,databasePageOffset:0,selectedFolderId:'C:\\fonts\\scope',selectedTagName:'L',selectedSharedTagName:'S',selectedWatchedFolders:['C:\\fonts\\scope'],selectedFormats:['ttf'],selectedScripts:['latin'],selectedCategory:'all',timeSortMode:'all',sortMode:'nameAsc',library,allFonts:records,databasePageReady:false,fontIndexById:new Map()}}
+function options(page,kind,status){return {sidebarPage:page,activeFilter:{kind},installStatus:status,deferredSearch:'',databasePageLimit:2,databasePageOffset:0,selectedFolderId:'C:\\fonts\\scope',selectedTagName:'L',selectedSharedTagName:'S',selectedWatchedFolders:['C:\\fonts\\scope'],selectedFormats:['ttf'],selectedScripts:['latin'],selectedCategory:'all',timeSortMode:'created',sortMode:'nameAsc',library,allFonts:records,databasePageReady:false,fontIndexById:new Map()}}
 function expected(page,kind,status){return records.filter(f=>(page==='library'?(kind!=='favorites'||f.favorite):f.group==='a')&&(status==='all'||(status==='installed'?['i','b'].includes(f.kind):['n','t'].includes(f.kind)))).map(f=>f.id).sort()}
 function fixture(load){
  const db=new DatabaseSync(':memory:');db.exec(`ATTACH DATABASE ':memory:' AS local_db; ATTACH DATABASE ':memory:' AS install_db;
@@ -130,7 +130,19 @@ async function searchMatrix(){
    let visible=view.buildVisibleFonts(opts)
    assert.equal(visible.length,1,'pending tag disappeared');assert.equal(view.visibleFontResultTotal(opts.databasePageResult,visible),1)
    assert.equal(view.buildVisibleFonts({...opts,deferredSearch:'NOT-A-FONT'}).length,0,'pending tag bypassed search')
-   assert.equal(view.buildVisibleFonts({...opts,timeSortMode:'today'}).length,0,'pending tag bypassed time')
+   // Current toolbar time modes order members; they do not filter by age.
+   const byCreated={...edited,createdAt:10,modifiedAt:1}
+   const byModified=tag.markFontTagsOptimistic({...records[1],createdAt:1,modifiedAt:10},scope,scope==='local'?['L']:['S'])
+   const timeOptions={...opts,allFonts:[byCreated,byModified],library:{...library,fonts:{[byCreated.id]:byCreated,[byModified.id]:byModified}}}
+   for(const [timeSortMode,sortMode,want] of [
+    ['created','smart',[byCreated.id,byModified.id]],
+    ['modified','smart',[byModified.id,byCreated.id]],
+    ['custom','createdAsc',[byModified.id,byCreated.id]]
+   ]) {
+    const ordered=view.buildVisibleFonts({...timeOptions,timeSortMode,sortMode})
+    assert.deepEqual(plain(ordered.map(font=>font.id)),want,`pending ${scope} tag time order ${timeSortMode}`)
+    assert.equal(view.visibleFontResultTotal(opts.databasePageResult,ordered),2,'time ordering changed membership count')
+   }
    const partial={...opts.databasePageResult,total:200}
    assert.equal(view.buildVisibleFonts({...opts,databasePageResult:partial}).length,0,'unseen pending tag shifted server pagination')
    assert.equal(view.visibleFontResultTotal(partial,[]),200)
