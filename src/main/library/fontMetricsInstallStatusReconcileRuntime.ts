@@ -1,29 +1,6 @@
 import type { FontMetricsResult } from '../../shared/types'
 
-const MAX_SMALL_SNAPSHOT_DRIFT = 64
 const MAX_BLOCKING_RECONCILE_MISSING = 16
-
-function finalizeSmallMissingInstallStatusSnapshot(
-  primary: FontMetricsResult,
-  source: string,
-  missing: number,
-  limit: number,
-  appendLog: (message: string) => void
-): FontMetricsResult {
-  const total = numericMetric(primary.total)
-  const installedCount = Math.min(numericMetric(primary.installedCount), total)
-  appendLog(
-    `metrics install status small missing finalized: source=${source}, missing=${missing}, limit=${limit}, installed=${installedCount}, notInstalled=${Math.max(0, total - installedCount)}`
-  )
-  return {
-    ...primary,
-    installStatusKnownCount: total,
-    installStatusMissingCount: 0,
-    installStatusReady: true,
-    installedCount,
-    notInstalledCount: Math.max(0, total - installedCount),
-  }
-}
 
 function numericMetric(value: unknown): number {
   const numberValue = Number(value || 0)
@@ -76,13 +53,8 @@ export function createMetricsInstallStatusReconcileCacheRuntime(
     const total = numericMetric(args.primary.total)
     const smallMissingLimit = Math.min(MAX_BLOCKING_RECONCILE_MISSING, Math.max(1, Math.ceil(total * 0.01)))
     if (missing <= smallMissingLimit) {
-      return finalizeSmallMissingInstallStatusSnapshot(
-        args.primary,
-        args.source,
-        missing,
-        smallMissingLimit,
-        args.appendLog,
-      )
+      args.appendLog(`metrics install status unknown retained: source=${args.source}, missing=${missing}, installed=${numericMetric(args.primary.installedCount)}, notInstalled=${numericMetric(args.primary.notInstalledCount)}`)
+      return args.primary
     }
 
     const key = metricsReconcileCacheKey(args.primary, args.source)
@@ -146,11 +118,8 @@ export function shouldReconcileInstallStatusSnapshot(
   const fallbackMissing = numericMetric(fallback.installStatusMissingCount)
   if (primaryTotal <= 0 || fallbackTotal <= 0) return false
   if (primaryMissing <= 0 || fallbackMissing > 0 || fallback.installStatusReady === false) return false
-  if (fallbackTotal > primaryTotal) return false
-
-  const drift = primaryTotal - fallbackTotal
-  const allowedDrift = Math.max(MAX_SMALL_SNAPSHOT_DRIFT, Math.ceil(primaryTotal * 0.01))
-  return drift <= allowedDrift
+  // Different populations cannot confirm the missing members.
+  return fallbackTotal === primaryTotal && numericMetric(fallback.installedCount) + numericMetric(fallback.notInstalledCount) === fallbackTotal
 }
 
 export function reconcileMergedMetricsInstallStatusSnapshot(
@@ -163,7 +132,7 @@ export function reconcileMergedMetricsInstallStatusSnapshot(
 
   const total = numericMetric(primary.total)
   const installedCount = numericMetric(fallback.installedCount)
-  const notInstalledCount = Math.max(0, total - installedCount)
+  const notInstalledCount = numericMetric(fallback.notInstalledCount)
   const primaryMissing = numericMetric(primary.installStatusMissingCount)
   const fallbackTotal = numericMetric(fallback.total)
 

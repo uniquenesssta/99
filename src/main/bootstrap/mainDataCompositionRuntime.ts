@@ -18,6 +18,7 @@ import { createMainDataStorageCompositionRuntime, type MainDataStorageOptions } 
 import { createMainDataQueryCompositionRuntime, type MainDataQueryOptions } from './mainDataQueryCompositionRuntime';
 export interface MainDataCompositionOptions {
   applyPendingActivationState: MainDataQueryOptions['applyPendingActivationState'];
+  hasPendingActivationState?: MainDataQueryOptions['hasPendingActivationState'];
   host: {
     execFileAsync: Core['execFileAsync'];
     delayToEventLoop: Core['delayToEventLoop'];
@@ -181,6 +182,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
   } = storage;
   const query = createMainDataQueryCompositionRuntime({
     applyPendingActivationState: options.applyPendingActivationState,
+    hasPendingActivationState: options.hasPendingActivationState,
     appWatchedFolders,
     loadSharedFontsForFolders,
     loadSharedFontsForFoldersFresh,

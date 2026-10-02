@@ -105,11 +105,11 @@ function strictSharedMetaEnabled(): boolean {
 }
 
 export function createPreviewCacheMetaRuntime(options: PreviewCacheMetaRuntimeOptions) {
-  async function writePreviewCacheMeta(outputPath: string, row: PreviewCachePublishRow | PreviewCacheHydrationRow): Promise<void> {
+  async function writePreviewCacheMeta(outputPath: string, row: PreviewCachePublishRow | PreviewCacheHydrationRow, bytes?: Buffer): Promise<void> {
     const metaPath = metaPathForOutput(outputPath)
     const tmpPath = `${metaPath}.tmp.${process.pid}.${Date.now()}`
     try {
-      const file = await sha1File(outputPath)
+      const file = await sha1File(outputPath, bytes)
       const payload: PreviewCacheMetaPayload = {
         version: 1,
         previewKey: row.previewKey,

@@ -34,6 +34,7 @@ type Storage = ReturnType<typeof createMainDataStorageCompositionRuntime>;
 
 export interface MainDataQueryOptions {
   applyPendingActivationState: (items: FontItem[]) => FontItem[];
+  hasPendingActivationState?: () => boolean;
   appWatchedFolders: Storage['appWatchedFolders'];
   loadSharedFontsForFolders: Storage['loadSharedFontsForFolders'];
   loadSharedFontsForFoldersFresh: Storage['loadSharedFontsForFoldersFresh'];
@@ -246,6 +247,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   });
 
   const {
+    ensureMergedIndexReadyForWorker,
     mergedIndexDbPath,
     openMergedIndexDb,
     scheduleMergedIndexBackgroundValidation,
@@ -315,7 +317,9 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   });
 
   fontQueryFacadeRuntimeRef = createFontQueryFacadeRuntime({
+    ensureMergedIndexReadyForWorker,
     applyPendingActivationState: options.applyPendingActivationState,
+    hasPendingActivationState: options.hasPendingActivationState,
     reconcileLocalUserMetrics: async metrics => {
       try {
         const counts = await readLocalUserMetricsFromMergedIndex({

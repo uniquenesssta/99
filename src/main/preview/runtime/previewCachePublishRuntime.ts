@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { promises as localFs } from 'node:fs'
+import { isCompletePreviewPng } from './previewImageValidationRuntime'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { applicationWorkEpoch, isApplicationClosing, onApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
@@ -30,8 +32,8 @@ export type PreviewCachePublishRuntimeOptions = {
   writePreviewCacheIndex: (storage: PreviewCacheStorage, previewKey: string, data: { outputPath: string; fontSignature: string; textHash: string; fontSize: number; width: number; height: number; status: PreviewCacheIndexStatus; message?: string; fontId?: string; sourcePath?: string }) => Promise<void>
   previewCacheStorageToShared: (storage: PreviewCacheStorage) => PreviewCacheStorage | null
   ensureSharedAvailable: (rootPath: string) => Promise<boolean>
-  writeSharedPreviewCacheMeta?: (outputPath: string, row: PreviewCachePublishRow) => Promise<void>
-  validateSharedPreviewCacheMeta?: (outputPath: string, row: PreviewCachePublishRow) => Promise<PreviewCacheMetaValidationResult>
+  writeSharedPreviewCacheMeta?: (outputPath: string, row: PreviewCachePublishRow, bytes?: Buffer) => Promise<void>
+  validateSharedPreviewCacheMeta?: (outputPath: string, row: PreviewCachePublishRow, bytes?: Buffer) => Promise<PreviewCacheMetaValidationResult>
   appendSharedPreviewCacheManifest?: (storage: PreviewCacheStorage, row: PreviewCachePublishRow, outputPath: string, event: PreviewCacheManifestEvent, metaValidation?: PreviewCacheMetaValidationResult | null) => Promise<void>
 }
 
@@ -122,11 +124,13 @@ async function acquirePublishLock(lockPath: string) {
 
 export function createPreviewCachePublishRuntime(options: PreviewCachePublishRuntimeOptions) {
   const queue = new Map<string, { storage: PreviewCacheStorage; row: PreviewCachePublishRow }>()
+  const inFlight = new Set<string>()
   let timer: ReturnType<typeof setTimeout> | null = null
   let active = 0
   let lastStatsLogAt = 0
   const stats = {
     queued: 0,
+    coalesced: 0,
     published: 0,
     skippedExisting: 0,
     sharedUnavailable: 0,
@@ -141,11 +145,12 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
   function logStats(force = false): void {
     const now = Date.now()
     if (!force && now - lastStatsLogAt < DEFAULT_STATS_LOG_INTERVAL_MS) return
-    const total = stats.queued + stats.published + stats.skippedExisting + stats.sharedUnavailable + stats.deadlineDropped + stats.lockBusy + stats.metaWritten + stats.checksumMismatch + stats.manifestWritten + stats.indexSkipped
+    const total = stats.queued + stats.coalesced + stats.published + stats.skippedExisting + stats.sharedUnavailable + stats.deadlineDropped + stats.lockBusy + stats.metaWritten + stats.checksumMismatch + stats.manifestWritten + stats.indexSkipped
     if (!total) return
     lastStatsLogAt = now
-    options.appendStartupLog(`preview cache publish summary: queued=${stats.queued}, published=${stats.published}, skippedExisting=${stats.skippedExisting}, sharedUnavailable=${stats.sharedUnavailable}, deadlineDropped=${stats.deadlineDropped}, lockBusy=${stats.lockBusy}, metaWritten=${stats.metaWritten}, checksumMismatch=${stats.checksumMismatch}, manifestWritten=${stats.manifestWritten}, indexSkipped=${stats.indexSkipped}`)
+    options.appendStartupLog(`preview cache publish summary: queued=${stats.queued}, coalesced=${stats.coalesced}, published=${stats.published}, skippedExisting=${stats.skippedExisting}, sharedUnavailable=${stats.sharedUnavailable}, deadlineDropped=${stats.deadlineDropped}, lockBusy=${stats.lockBusy}, metaWritten=${stats.metaWritten}, checksumMismatch=${stats.checksumMismatch}, manifestWritten=${stats.manifestWritten}, indexSkipped=${stats.indexSkipped}`)
     stats.queued = 0
+    stats.coalesced = 0
     stats.published = 0
     stats.skippedExisting = 0
     stats.sharedUnavailable = 0
@@ -166,7 +171,7 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
   }
 
   function publishKey(storage: PreviewCacheStorage, previewKey: string): string {
-    return `${storage.rootPath || storage.indexDbPath || storage.dir}:${previewKey}`
+    return `${storage.rootPath || storage.indexDbPath || storage.dir}:${storage.rootPath ? getStartupPathRootState(storage.rootPath).generation : 0}:${previewKey}`
   }
 
   async function publishOne(storage: PreviewCacheStorage, row: PreviewCachePublishRow): Promise<void> {
@@ -196,10 +201,16 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
 
     try {
       let expired = false
+      let publishedBytes: Buffer | undefined
       const result = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(`preview-cache-publish:${sharedOutputPath}`, async () => {
         if (!current()) throw new Error('preview publish cancelled')
         if (await pathExists(sharedOutputPath)) return 'exists' as const
-        await fsp.copyFile(row.localOutputPath, tmpPath)
+        // Publish a stable local byte snapshot. The image and its checksum use
+        // these exact bytes, avoiding two additional reads of the shared PNG.
+        const bytes = await localFs.readFile(row.localOutputPath)
+        if (!isCompletePreviewPng(bytes)) throw new Error('preview publish invalid local PNG')
+        await fsp.writeFile(tmpPath, bytes)
+        publishedBytes = bytes
         if (await pathExists(sharedOutputPath)) return 'exists-after-copy' as const
         if (expired || !current()) throw new Error('preview publish expired')
         await lock.rename(tmpPath, sharedOutputPath)
@@ -221,7 +232,7 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
       if (result.value === 'published') {
         stats.published += 1
         manifestEvent = 'published'
-        await options.writeSharedPreviewCacheMeta?.(sharedOutputPath, row)
+        await options.writeSharedPreviewCacheMeta?.(sharedOutputPath, row, publishedBytes)
           .then(() => {
             stats.metaWritten += 1
           })
@@ -229,7 +240,13 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
             stats.checksumMismatch += 1
             options.appendStartupLog(`preview cache publish meta failed: ${sharedOutputPath}, ${errorMessage(error)}`)
           })
-        metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row).catch((error): PreviewCacheMetaValidationResult => ({ status: 'invalid', message: errorMessage(error) })) || null
+        metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row, publishedBytes).catch((error): PreviewCacheMetaValidationResult => ({ status: 'invalid', message: errorMessage(error) })) || null
+        if (metaValidation && metaValidation.status !== 'ok') {
+          shouldWriteSharedIndex = false
+          manifestEvent = 'meta-mismatch'
+          stats.checksumMismatch += 1
+          stats.indexSkipped += 1
+        }
       } else {
         stats.skippedExisting += 1
         metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row).catch((error): PreviewCacheMetaValidationResult => ({ status: 'invalid', message: errorMessage(error) })) || null
@@ -280,10 +297,12 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
       if (!first) break
       const [key, task] = first
       queue.delete(key)
+      inFlight.add(key)
       active += 1
       withPhysicalIoCompletion(() => publishOne(task.storage, task.row))
         .catch((error) => options.appendStartupLog(`preview cache publish failed: ${errorMessage(error)}`))
         .finally(() => {
+          inFlight.delete(key)
           active = Math.max(0, active - 1)
           if (queue.size) schedulePump()
         })
@@ -294,7 +313,13 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
     if (isApplicationClosing()) return
     const sharedStorage = options.previewCacheStorageToShared(localStorage)
     if (!sharedStorage?.rootPath) return
-    queue.set(publishKey(sharedStorage, row.previewKey), { storage: sharedStorage, row })
+    const key = publishKey(sharedStorage, row.previewKey)
+    if (queue.has(key) || inFlight.has(key)) {
+      stats.coalesced += 1
+      logStats()
+      return
+    }
+    queue.set(key, { storage: sharedStorage, row })
     while (queue.size > 2000) queue.delete(queue.keys().next().value!)
     stats.queued += 1
     schedulePump()

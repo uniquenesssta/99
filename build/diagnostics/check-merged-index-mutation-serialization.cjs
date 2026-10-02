@@ -199,7 +199,42 @@ async function runWatcherBehaviorChecks() {
   singleFlightRuntime.stopFolderWatchers()
 }
 
-Promise.all([runBehaviorChecks(), runWatcherBehaviorChecks()])
+async function runInitialSnapshotChecks() {
+  const load = require('./check-operation-chain.cjs').loader()
+  let usable = false, sourceCalls = 0, builds = 0, opens = 0, closes = 0, fail = false
+  const gate = deferred(), logs = []
+  const ctx = {
+    staleFirstPageEnabled: true, backgroundValidateIntervalMs: 60000,
+    mergedIndexValidateInFlight: new Map(), mergedIndexLastValidateAt: new Map(),
+    mergedIndexRootsKey: roots => JSON.stringify(roots), mergedIndexSourcesKey: () => 'same',
+    openMergedIndexDb: async () => { opens++; return {} }, closeSqliteDb: () => { closes++ },
+    mergedIndexLocalSnapshotUsable: () => usable, appendStartupLog: line => logs.push(line),
+  }
+  const source = { mergedIndexSourcesForRoots: async () => { sourceCalls++; await gate.promise; if (fail) throw Error('offline snapshot'); return [{}] } }
+  const build = { ensureMergedIndexBuilt: async () => { builds++; usable = true } }
+  const validation = load('src/main/indexing/merged-page/mergedIndexValidationRuntime.ts').createMergedIndexValidationRuntime(ctx, source, build)
+  const query = load('src/main/indexing/merged-page/mergedIndexPageQueryRuntime.ts').createMergedIndexPageQueryRuntime(ctx, source, build, validation.scheduleMergedIndexBackgroundValidation)
+  const roots = ['C:\\fonts']
+  let settled = 0
+  const tasks = Array.from({length: 3}, () => query.ensureMergedIndexReadyForWorker(roots).then(value => { settled++; return value }))
+  await new Promise(resolve => setImmediate(resolve))
+  assert(sourceCalls === 1 && settled === 0, 'page/IDs/metrics did not join the initial index rebuild')
+  gate.resolve()
+  assert((await Promise.all(tasks)).every(Boolean), 'readers did not observe the prepared snapshot')
+  assert(builds === 1, 'initial readers duplicated the rebuild')
+  assert(await query.ensureMergedIndexReadyForWorker(roots), 'usable snapshot was rejected')
+  assert(sourceCalls === 1, 'hot read unnecessarily queried shared root signatures')
+  usable = false; fail = true
+  assert(!(await query.ensureMergedIndexReadyForWorker(roots)), 'failed readiness fabricated a usable snapshot')
+  fail = false
+  assert(await query.ensureMergedIndexReadyForWorker(roots), 'failed readiness stayed cached and blocked retry')
+  ctx.staleFirstPageEnabled = false; ctx.mergedIndexLocalSnapshotUsable = () => false
+  assert(await query.ensureMergedIndexReadyForWorker(roots), 'explicit validated mode disabled all Rust reads')
+  assert(opens === closes, 'readiness leaked or double-closed a SQLite handle')
+  assert(logs.some(line => line.includes('joinedValidation=true')), 'initial wait lacks evidence')
+}
+
+Promise.all([runBehaviorChecks(), runWatcherBehaviorChecks(), runInitialSnapshotChecks()])
   .then(() => console.log('[diagnostics:merged-index-mutation] ok'))
   .catch((error) => {
     console.error(`[diagnostics:merged-index-mutation] ${error instanceof Error ? error.stack || error.message : String(error)}`)

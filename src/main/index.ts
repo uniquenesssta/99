@@ -30,6 +30,7 @@ const dataComposition = createMainDataCompositionRuntime({
   migrationDiagnosticsRuntime: coreComposition.migrationDiagnosticsRuntime,
   listPhysicalFolderTree: feedback.listPhysicalFolderTree,
   applyPendingActivationState: feedback.applyPendingActivationState,
+  hasPendingActivationState: feedback.hasPendingActivationState,
 });
 feedback.bindData({
   appWatchedFolders: dataComposition.storage.appWatchedFolders,

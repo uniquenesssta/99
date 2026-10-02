@@ -1,4 +1,4 @@
-import { migrateInstallStatusIdentity } from '../install/status/installStatusIdentityMigration'
+import { migrateInstallStatusIdentity, installIdentitySnapshotKey } from '../install/status/installStatusIdentityMigration'
 import { createLocalFontLegacyIdentityRuntime, readCompleteFontIdentityIndex } from '../library/runtime/localFontLegacyIdentityRuntime';
 import { createLocalFontFavoritesRuntime } from '../library/runtime/localFontFavoritesRuntime';
 import type { DatabaseArgument } from './mainDatabasePorts';
@@ -317,6 +317,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
   });
 
   let lastInstallIdentitySnapshot = '';
+  let lastInstallIdentityCandidates = '';
   let installIdentityPending = true;
   async function prepareFontIdentities(db: any): Promise<void> {
     await legacyFontIdentity.prepare(db);
@@ -339,11 +340,16 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
         const installDb = openStableSqliteDb(installPath, 'install-identity-migration');
         try {
           installStatusRuntime.initializeMachineInstallDb(installDb, 'local-fallback');
-          const count = migrateInstallStatusIdentity(installDb, rows);
-          const unresolved = installDb.prepare("SELECT COUNT(*) AS count FROM install_status s WHERE s.font_id NOT LIKE 'file-v2:%' AND NOT EXISTS (SELECT 1 FROM install_identity_migrations m WHERE m.legacy_id=s.font_id AND m.signature=s.signature)").get().count;
-          installIdentityPending = unresolved > 0;
-          if (count) clearFontQueryCaches();
-          if (count || unresolved) appendStartupLog(`安装索引文件身份迁移：${count}，未能唯一匹配=${unresolved}，原行保留。`);
+          const candidatesKey = installIdentitySnapshotKey(rows);
+          const beforeKey = `${candidatesKey}|${getSqliteMeta(installDb, 'updatedAt')}`;
+          if (beforeKey !== lastInstallIdentityCandidates) {
+            const count = migrateInstallStatusIdentity(installDb, rows, report => {
+              installIdentityPending = report.unresolved > 0;
+              if (report.migrated || report.unresolved) appendStartupLog(`安装索引文件身份迁移：${report.migrated}，未能唯一匹配=${report.unresolved}，无当前身份候选=${report.noIdentityCandidate}，签名不一致=${report.signatureMismatch}，候选歧义=${report.ambiguous}，原行保留。`);
+            });
+            if (count) clearFontQueryCaches();
+            lastInstallIdentityCandidates = `${candidatesKey}|${getSqliteMeta(installDb, 'updatedAt')}`;
+          }
         } finally { closeSqliteDb(installDb); }
       }
       lastInstallIdentitySnapshot = key;

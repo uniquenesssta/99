@@ -519,5 +519,5 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     hasPendingActivationInstallStatusSave,
     hasInFlightActivationInstallStatusSave
   };
-  return { capabilities, lifecycle, listPhysicalFolderTree, refreshKnownSharedTagsFromMetadata, applyPendingActivationState };
+  return { capabilities, lifecycle, listPhysicalFolderTree, refreshKnownSharedTagsFromMetadata, applyPendingActivationState, hasPendingActivationState: () => hasPendingActivationInstallStatusSave() || hasInFlightActivationInstallStatusSave() };
 }

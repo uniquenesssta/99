@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import os from 'node:os'
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { basename,isAbsolute,join,relative } from 'node:path'
 import { CACHE_ARCHITECTURE_VERSION,ROOT_CACHE_MANIFEST_FILE_NAME,ROOT_INDEX_DB_DIR_NAME } from '../constants'
 import { writeJsonAtomic } from '../jsonAtomic'
@@ -61,7 +62,13 @@ export function createRootPreviewManifestRuntime(options: ScanCacheStorageRuntim
       writerPid: process.pid,
       updatedAt: new Date().toISOString()
     }
-    await writeJsonAtomic(rootPreviewCacheManifestPath(previewCacheDir), manifest)
+    const manifestPath = rootPreviewCacheManifestPath(previewCacheDir)
+    try {
+      const existing = JSON.parse(await fsp.readFile(manifestPath, 'utf-8')) as Record<string, unknown>
+      const stableKeys = ['version', 'architectureVersion', 'app', 'storage', 'rootPath', 'cacheType', 'cacheSafety', 'previewDatabase', 'imageDirectory', 'schemaVersion'] as const
+      if (stableKeys.every(key => existing[key] === manifest[key])) return
+    } catch { /* Deleted, unreadable or stale metadata is prepared again. */ }
+    await writeJsonAtomic(manifestPath, manifest)
   }
 
   return { writeRootPreviewCacheManifest }

@@ -57,7 +57,7 @@ export type PreviewCacheHydrationRuntimeOptions = {
 
 const DEFAULT_HYDRATE_MAX_IN_FLIGHT = 2
 const DEFAULT_HYDRATE_TIMEOUT_MS = 2000
-const DEFAULT_SHARED_NEGATIVE_TTL_MS = 1000
+const DEFAULT_SHARED_NEGATIVE_TTL_MS = 30000
 const DEFAULT_STATS_LOG_INTERVAL_MS = 10000
 
 function parseEnvInt(name: string, fallback: number, min: number, max: number): number {
@@ -77,7 +77,7 @@ function hydrateTimeoutMs(): number {
 }
 
 function sharedNegativeTtlMs(): number {
-  return parseEnvInt('HFM_PREVIEW_SHARED_NEGATIVE_TTL_MS', DEFAULT_SHARED_NEGATIVE_TTL_MS, 100, 1000)
+  return parseEnvInt('HFM_PREVIEW_SHARED_NEGATIVE_TTL_MS', DEFAULT_SHARED_NEGATIVE_TTL_MS, 100, 60000)
 }
 
 function emptyStats(): PreviewCacheHydrationStats {
@@ -153,11 +153,17 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
     }
     const sharedStorage = options.previewCacheStorageToShared(localStorage)
     if (!sharedStorage?.rootPath) return 'unavailable'
-    const key = sharedKey(sharedStorage, row.previewKey)
+    let key = sharedKey(sharedStorage, row.previewKey)
+    // A new successful publication overrides a recent miss. Otherwise a confirmed
+    // miss needs no root probe, presence database query or network image read.
+    const cachedPresence = options.sharedPresence?.getSharedPresence(sharedStorage, row.previewKey) || null
+    if (cachedPresence === 'ok') negative.delete(key)
+    else if (hasSharedMiss(key)) { stats.sharedNegativeHit += 1; return 'miss' }
     if (!(await options.ensureSharedAvailable(sharedStorage.rootPath))) {
       stats.sharedUnavailable += 1
       return 'unavailable'
     }
+    key = sharedKey(sharedStorage, row.previewKey)
     const generation = getStartupPathRootState(sharedStorage.rootPath).generation
     const lease = claimPreviewImage(row.outputPath, 'hydrate', () => {
       const state = getStartupPathRootState(sharedStorage.rootPath!)
@@ -175,6 +181,7 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
         // only this generation's successful query may briefly suppress a repeat.
         if (effectivePresence !== 'ok' && hasSharedMiss(key)) { stats.sharedNegativeHit += 1; return 'miss' }
         let indexedStatus: PreviewCacheIndexStatus | null = null
+        let indexUnavailable = false
         if (effectivePresence === 'ok') {
           indexedStatus = 'ok'
           if (cachedPresence === 'ok') stats.sharedPresenceHit += 1
@@ -183,6 +190,7 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
           try {
             indexedStatus = await options.readPreviewCacheIndexStatus(sharedStorage, row.previewKey, sharedOutputPath)
           } catch (error) {
+            indexUnavailable = true
             if (!lease.current()) return 'cancelled'
             const outcome = previewCacheErrorOutcome(error)
             if (outcome === 'cancelled') return outcome
@@ -210,6 +218,7 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
           if (outcome === 'timeout') stats.deadlineDropped += 1
           else if (outcome !== 'miss') stats.sharedUnavailable += 1
           options.appendStartupLog(`preview cache hydrate read ${outcome}: ${sharedOutputPath}, ${errorMessage(read.error)}`)
+          if (outcome === 'miss' && !indexUnavailable) rememberSharedMiss(key)
           options.sharedPresence?.forgetSharedPresence(sharedStorage, row.previewKey)
           await options.sharedPresenceIndex?.forgetSharedPresenceIndex(sharedStorage, row.previewKey)
           return outcome
@@ -225,7 +234,6 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
         if (metaValidation.status === 'missing') stats.sharedMetaMissing += 1
         if (metaValidation.status === 'invalid' || metaValidation.status === 'mismatch') {
           stats.checksumMismatch += 1
-          rememberSharedMiss(key)
           options.sharedPresence?.forgetSharedPresence(sharedStorage, row.previewKey)
           await options.sharedPresenceIndex?.forgetSharedPresenceIndex(sharedStorage, row.previewKey)
           options.appendStartupLog(`preview cache hydrate meta rejected: ${sharedOutputPath}, ${metaValidation.status}${metaValidation.message ? `, ${metaValidation.message}` : ''}`)
@@ -233,7 +241,6 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
         }
         if (metaValidation.status === 'missing' && options.isStrictSharedMetaEnabled?.()) {
           stats.checksumMismatch += 1
-          rememberSharedMiss(key)
           return 'error'
         }
 

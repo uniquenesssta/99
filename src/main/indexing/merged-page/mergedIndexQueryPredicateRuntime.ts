@@ -1,6 +1,6 @@
 import type { FontQueryRequest } from "../../../shared/types";
 
-export function requestNeedsValidatedMergedIndex(request: FontQueryRequest): boolean {
-  const activeKind = request.activeFilter?.kind || "all";
-  return activeKind === "active";
+export function requestNeedsValidatedMergedIndex(_request: FontQueryRequest): boolean {
+  // Pending activation is gated by the facade; persisted state is indexed.
+  return false;
 }

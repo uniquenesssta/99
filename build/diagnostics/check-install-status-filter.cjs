@@ -7,13 +7,13 @@ let cases=0
 function hooks(){let cursor=0,pending=[];const slots=[];return {begin(){cursor=0;pending=[]},flush(){for(const f of pending)f()},useState(initial){const i=cursor++;if(!(i in slots))slots[i]=typeof initial==='function'?initial():initial;return [slots[i],v=>slots[i]=typeof v==='function'?v(slots[i]):v]},useRef:v=>{const i=cursor++;return slots[i]||=( {current:v})},useMemo(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((v,j)=>v!==old.deps[j]))slots[i]={deps,value:fn()};return slots[i].value},useEffect(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((v,j)=>v!==old.deps[j])){pending.push(()=>{old?.cleanup?.();slots[i]={deps,cleanup:fn()}})}},useCallback(fn){return fn}}}
 function renderLoader(hook,globals={},transforms={}){const base=loadModules(globals,{}),app={...base(renderer+'libraryNormalize.ts'),...base(renderer+'fontDisplay.ts'),...base(renderer+'fontClassification.ts'),...base(renderer+'constants/toolbarStateRuntime.ts'),...base(renderer+'constants/queryCacheRuntime.ts'),...base(renderer+'constants/filterConstants.ts'),VIEW_MODE_LAYOUT:{comfortable:{rowHeight:100,minCardWidth:100}},USER_ACTIVITY_IDLE_WINDOW_MS:100,IS_DEVELOPMENT:false,getVirtualGridColumns:()=>1,reportRendererTrace:noop};return loadModules(globals,{react:hook,[path.join(root,renderer+'appRuntime.ts')]:app},transforms)}
 function nodes(tree){if(Array.isArray(tree))return tree.flatMap(nodes);if(!tree||typeof tree!=='object')return [];if(typeof tree.type==='function'&&['InstallStatusControl','NameSortCycleButton','CardPoolViewToggle','ListPreviewSizeControl'].includes(tree.type.name))return nodes(tree.type(tree.props));return [tree,...nodes(tree.props?.children)]}
-const scopes=[['library','all'],['library','favorites'],['folders','all'],['tags','all'],['sharedTags','all'],['filters','all']]
+const scopes=[['library','all'],['library','favorites'],['library','active'],['folders','all'],['tags','all'],['sharedTags','all'],['filters','all']]
 const states=['all','installed','notInstalled']
 const records=[]
 for(const group of ['a','b'])for(const favorite of [false,true])for(const kind of ['i','n','t','b','u']){const id=group+Number(favorite)+kind;records.push({...font(id),path:`C:\\fonts\\${group==='a'?'scope':'other'}\\${id}.ttf`,favorite,systemInstalled:['i','b'].includes(kind),installStatusKnown:kind!=='u',systemInstallMatches:kind==='u'?[{family:'old',path:'C:\\old.ttf'}]:[],active:['t','b'].includes(kind),localTagNames:group==='a'?['L']:[],tagNames:group==='a'?['S']:[],scripts:['latin'],group,kind})}
 const library={fonts:Object.fromEntries(records.map(f=>[f.id,f])),folders:['C:\\fonts'],folderNodes:[{id:'C:\\fonts\\scope',parentId:'C:\\fonts'}],fontFolderIds:{},tags:['S'],localTags:['L'],collections:[]}
 function options(page,kind,status){return {sidebarPage:page,activeFilter:{kind},installStatus:status,deferredSearch:'',databasePageLimit:2,databasePageOffset:0,selectedFolderId:'C:\\fonts\\scope',selectedTagName:'L',selectedSharedTagName:'S',selectedWatchedFolders:['C:\\fonts\\scope'],selectedFormats:['ttf'],selectedScripts:['latin'],selectedCategory:'all',timeSortMode:'created',sortMode:'nameAsc',library,allFonts:records,databasePageReady:false,fontIndexById:new Map()}}
-function expected(page,kind,status){return records.filter(f=>(page==='library'?(kind!=='favorites'||f.favorite):f.group==='a')&&(status==='all'||(status==='installed'?['i','b'].includes(f.kind):['n','t'].includes(f.kind)))).map(f=>f.id).sort()}
+function expected(page,kind,status){return records.filter(f=>(page==='library'?(kind==='favorites'?f.favorite:kind==='active'?f.active:true):f.group==='a')&&(status==='all'||(status==='installed'?['i','b'].includes(f.kind):['n','t'].includes(f.kind)))).map(f=>f.id).sort()}
 function fixture(load){
  const db=new DatabaseSync(':memory:');db.exec(`ATTACH DATABASE ':memory:' AS local_db; ATTACH DATABASE ':memory:' AS install_db;
  CREATE TABLE entries(root_path TEXT,relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at INTEGER,created_at INTEGER,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,is_deleted INTEGER,search_text TEXT,category_index TEXT);
@@ -179,8 +179,56 @@ async function searchMatrix(){
  } finally {db.close()}
 }
 
+async function activeFacade(){
+ const load=loader({'node:path':path.win32}),db=fixture(load),logs=[]
+ let memoryCalls=0,pageCalls=0,idCalls=0,readHook,saveRelease,saveStarted=false
+ const saveGate=new Promise(resolve=>{saveRelease=resolve})
+ const memory=load('src/main/library/fontMemoryQueryRuntime.ts').createFontMemoryQueryRuntime({resultCacheMax:100,resultCacheTtlMs:10000,appWatchedFolders:async()=>library.folders,loadSharedFontsForFolders:async()=>records,hydrateLocalTagsForFonts:async fonts=>fonts,hydrateInstallStatusForFonts:async fonts=>queue.applyPendingState(fonts),normalizePathForCacheCompare:p=>p.toLowerCase(),isSystemInstalledRecord:()=>false,isPathInWindowsFonts:()=>false,inferFontSearchCategory:()=> 'serif'})
+ const queue=load('src/main/activation/activationInstallStatusSaveQueue.ts').createActivationInstallStatusSaveQueue({
+  batchDelayMs:60000,appendStartupLog:line=>logs.push(line),clearFontQueryCaches:()=>memory.invalidateFontQueryResultCache(),appWatchedFolders:async()=>library.folders,rootForFontPath:async()=>library.folders[0],
+  readInstallStatusIndex:async fonts=>({results:Object.fromEntries(fonts.map(f=>{const row=db.prepare("SELECT installed,installed_by FROM entries WHERE json_extract(font_json,'$.id')=?").get(f.id);return [f.id,{installed:Boolean(row.installed),by:row.installed_by,matches:[]}]})),misses:[]}),
+  saveInstallStatusIndex:async()=>{saveStarted=true;await saveGate},
+  syncMergedIndexAfterInstallStatusRefresh:async(_roots,fonts)=>{for(const f of fonts){db.prepare("UPDATE entries SET installed=?,installed_by=? WHERE json_extract(font_json,'$.id')=?").run(Number(f.active||f.systemInstalled),f.active?'managed':f.systemInstalled?'system':'none',f.id);const old=records.find(item=>item.id===f.id);Object.assign(old,{active:f.active,systemInstalled:f.systemInstalled,installStatusKnown:true})}},
+ })
+ const facade=load('src/main/library/fontQueryFacadeRuntime.ts').createFontQueryFacadeRuntime({
+  fontSearchResultLimitDefault:100,mergedIndexSchemaVersion:8,appendLog:line=>logs.push(line),appWatchedFolders:async()=>library.folders,
+  hasPendingActivationState:()=>queue.hasPending()||queue.hasInFlight(),applyPendingActivationState:queue.applyPendingState,
+  cleanSharedFontsForQuery:async request=>{memoryCalls++;return memory.cleanSharedFontsForQuery(request)},
+  queryFontPageFromMergedIndexWorker:async(request,limit,offset)=>{pageCalls++;const sql=load('src/main/indexing/root-query/mergedIndexPageQuerySql.ts').buildMergedIndexQuerySql(request,limit,offset),total=db.prepare(sql.countSql).get(...sql.countParams).count,items=db.prepare(sql.sql).all(...sql.params).map(row=>({...JSON.parse(row.font_json),active:['managed','both'].includes(row.installed_by)}));if(readHook){const hook=readHook;readHook=undefined;hook()}return {queryKey:'active',items,total,limit,offset,engine:'sql'}},
+  queryFontPageFromMergedIndex:async()=>null,queryFontPageFromRootIndexes:async()=>null,scheduleMergedIndexBackgroundValidation(){},mergedIndexDbPath:()=>'',librarySqlitePath:()=>'',
+  rustCoreWorkerRuntime:{runRustMergedIndexIdsQuery:async payload=>{idCalls++;const ids=db.prepare(payload.sql.sql).all(...payload.sql.params).map(row=>row.id);if(readHook){const hook=readHook;readHook=undefined;hook()}return {ids,total:ids.length,truncated:false,engine:'sql'}}},
+ })
+ const request={sidebarPage:'library',activeFilter:{kind:'active'},sortMode:'nameAsc',limit:100}
+ try {
+  const initial=await facade.queryFontPageInLibraryUncached(request,100,0)
+  assert.equal(initial.total,8);assert.equal(memoryCalls,0)
+  assert.equal((await facade.queryFontPageInLibraryUncached({...request,keyword:'momo'},100,0)).total,0)
+  assert.equal(memoryCalls,0,'settled empty active query hydrated the entire library')
+  assert.equal((await facade.queryFontsInLibrary(request)).total,8);assert.equal(idCalls,1)
+  const target=records.find(f=>f.kind==='n'),original={...target}
+  const schedule=result=>queue.schedule({[target.id]:result},new Map([[target.id,target]]),'active-query-test')
+  schedule({installed:true,by:'managed',matches:[]})
+  const before=pageCalls
+  assert.equal((await facade.queryFontPageInLibraryUncached(request,100,0)).total,9)
+  assert.equal(pageCalls,before,'pending activation used a persisted active snapshot')
+  const flush=queue.flush('active-query-test');await tick();assert(saveStarted);assert(queue.hasInFlight());assert(!queue.hasPending())
+  assert.equal((await facade.queryFontsInLibrary(request)).total,9);assert.equal(idCalls,1,'in-flight activation used indexed IDs')
+  saveRelease();await flush;assert(!queue.hasPending()&&!queue.hasInFlight())
+  assert.equal((await facade.queryFontPageInLibraryUncached(request,100,0)).total,9);assert.equal(pageCalls,before+1)
+  const beforeMemory=memoryCalls
+  readHook=()=>schedule({installed:false,by:'none',matches:[]})
+  assert.equal((await facade.queryFontPageInLibraryUncached(request,100,0)).total,8,'mutation during indexed read published stale membership')
+  assert.equal(memoryCalls,beforeMemory+1);assert(logs.some(line=>line.includes('active indexed result rejected')))
+  await queue.flush('active-query-test')
+  readHook=()=>schedule({installed:true,by:'managed',matches:[]})
+  assert.equal((await facade.queryFontsInLibrary(request)).total,9,'mutation during ID read published stale membership')
+  await queue.flush('active-query-test');Object.assign(target,original)
+  cases+=7
+ } finally {db.close()}
+}
+
 async function main(){
- await matrix();ui();await race();await favoriteCombination();await searchMatrix()
+ await matrix();ui();await race();await favoriteCombination();await searchMatrix();await activeFacade()
  const mutants=[
   ['src/main/indexing/root-query/mergedIndexPageQuerySql.ts',"if (request.installStatus === 'notInstalled')","if (request.sidebarPage !== 'library' && request.installStatus === 'notInstalled')"],
   ['src/main/indexing/root-query/rootIndexPageQuerySql.ts',"if (request.installStatus === 'notInstalled')","if (request.sidebarPage !== 'library' && request.installStatus === 'notInstalled')"],
@@ -188,6 +236,6 @@ async function main(){
   [renderer+'fontViewRuntime.ts','font.installStatusKnown === true && !isInstalled(font)','!isInstalled(font)']
  ]
  for(const [file,from,to] of mutants){const before=cases;assert(fs.readFileSync(path.join(root,file),'utf8').includes(from),'mutation anchor missing: '+file);await assert.rejects(()=>matrix({[path.join(root,file)]:s=>s.replace(from,to)}),assert.AssertionError);cases=before+1}
- console.log(`[diagnostics:install-status-filter] ${cases} scenarios: actual toolbar/controller, six scopes x three states, three SQL builders + SQLite rows/count/IDs/paging, memory and optimistic fallback, permanent/managed/both/unknown, empty intersection, page state/cache keys/late response/scroll reset; four regressions rejected. Controlled DOM/hooks and Windows path adapter; Windows GUI pending.`)
+ console.log(`[diagnostics:install-status-filter] ${cases} scenarios: actual toolbar/controller, seven scopes x three states, three SQL builders + SQLite rows/count/IDs/paging, memory and optimistic fallback, permanent/managed/both/unknown, settled active empty queries, pending/in-flight queue and read-time mutation, page state/cache keys/late response/scroll reset; four regressions rejected. Controlled DOM/hooks and Windows path adapter; Windows GUI pending.`)
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

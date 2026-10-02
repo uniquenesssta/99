@@ -24,6 +24,14 @@ jobs:
         run: node build/diagnostics/check-library-db-handle-lifecycle.cjs
       - name: Verify preview cache outcomes and delayed local hits
         run: node build/diagnostics/check-preview-cache-outcomes.cjs
+      - name: Verify unknown install metrics and indexed query protocol
+        run: node build/diagnostics/check-query-protocol.cjs
+      - name: Verify merged index writes and initial snapshot coalescing
+        run: node build/diagnostics/check-merged-index-mutation-serialization.cjs
+      - name: Verify in-flight cache generation ownership
+        run: node build/diagnostics/check-inflight-cache-lifecycle.cjs
+      - name: Verify owned preview publication and manifest reuse
+        run: node build/diagnostics/check-preview-cache-publish.cjs
       - name: Verify startup composition and connection ownership
         run: node build/diagnostics/check-main-composition-runtime.cjs
       - name: Verify operation composition lifecycle

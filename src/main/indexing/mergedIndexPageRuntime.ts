@@ -82,6 +82,7 @@ export function createMergedIndexPageRuntime(
   );
 
   return {
+    ensureMergedIndexReadyForWorker: queryRuntime.ensureMergedIndexReadyForWorker,
     mergedIndexDbPath,
     openMergedIndexDb,
     scheduleMergedIndexBackgroundValidation:

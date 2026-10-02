@@ -57,6 +57,8 @@ export type FontQueryFacadeRuntimeOptions = {
   hydrateLocalTagsForFonts: (items: FontItem[]) => Promise<FontItem[]>;
   reconcileLocalUserMetrics?: (metrics: FontMetricsResult) => Promise<FontMetricsResult>;
   applyPendingActivationState?: (items: FontItem[]) => FontItem[];
+  hasPendingActivationState?: () => boolean;
+  ensureMergedIndexReadyForWorker?: (roots: string[]) => Promise<boolean>;
   readInstallStatusIndex: (
     items: FontItem[],
     options?: { enqueueMissTasks?: boolean },
@@ -171,6 +173,10 @@ export function createFontQueryFacadeRuntime(
       stale,
       allowLegacyFallback: nodeIndexedQueryFallbackAllowed(),
     });
+    if (result && request.activeFilter?.kind === 'active' && (options.hasPendingActivationState?.() ?? true)) {
+      options.appendLog(`active indexed result rejected: pending activation state, total=${result.total}`);
+      return false;
+    }
     if (!decision.accept && result) {
       options.appendLog(
         `tag-aware indexed page result rejected: source=${source}, reason=${decision.reason || 'unknown'}, page=${request.sidebarPage || 'library'}, activeFilter=${request.activeFilter?.kind || 'all'}, total=${result.total || 0}, engine=${result.engine}`
@@ -279,7 +285,7 @@ export function createFontQueryFacadeRuntime(
     let tagBarrierSnapshot = options.tagMetadataRevisionBarrier?.snapshotForRequest(request);
     const allowNodeIndexedFallback = nodeIndexedQueryFallbackAllowed();
 
-    let workerMergedPage = shouldUseMergedIndexWorkerForPage(request)
+    let workerMergedPage = shouldUseMergedIndexWorkerForPage(request, options.hasPendingActivationState?.() ?? true)
       ? await options
           .queryFontPageFromMergedIndexWorker(request, limit, offset)
           .catch((error) => {
@@ -293,7 +299,7 @@ export function createFontQueryFacadeRuntime(
     if (workerMergedPage && options.tagMetadataRevisionBarrier?.resultBecameStaleForRequest(request, tagBarrierSnapshot as any)) {
       await waitForTagIndexedQueryGrace(request, 'page');
       tagBarrierSnapshot = options.tagMetadataRevisionBarrier?.snapshotForRequest(request);
-      workerMergedPage = shouldUseMergedIndexWorkerForPage(request)
+      workerMergedPage = shouldUseMergedIndexWorkerForPage(request, options.hasPendingActivationState?.() ?? true)
         ? await options.queryFontPageFromMergedIndexWorker(request, limit, offset).catch((error) => {
             options.appendLog(
               `db worker merged index page retry failed, fallback to main merged index: ${error instanceof Error ? error.message : String(error)}`,
@@ -345,13 +351,15 @@ export function createFontQueryFacadeRuntime(
       items.slice(offset, offset + limit),
     );
     const memoryElapsedMs = Date.now() - startedAt;
+    const fallbackReason = request.activeFilter?.kind === 'active' && (options.hasPendingActivationState?.() ?? true)
+      ? 'pending-activation-state' : 'indexed-unavailable';
     options.appendLog(
-      `memory fallback page query: page=${request.sidebarPage || 'library'}, filter=${request.activeFilter?.kind || 'all'}, keyword=${JSON.stringify(String(request.keyword || '').slice(0, 160))}, reason=${request.activeFilter?.kind === 'active' ? 'active-state-authority' : 'indexed-unavailable'}, total=${items.length}, items=${pageItems.length}, offset=${offset}, limit=${limit}, elapsed=${memoryElapsedMs}ms`,
+      `memory fallback page query: page=${request.sidebarPage || 'library'}, filter=${request.activeFilter?.kind || 'all'}, keyword=${JSON.stringify(String(request.keyword || '').slice(0, 160))}, reason=${fallbackReason}, total=${items.length}, items=${pageItems.length}, offset=${offset}, limit=${limit}, elapsed=${memoryElapsedMs}ms`,
     );
     options.migrationDiagnostics?.record({
       source: 'memory-query',
       kind: 'fresh-memory',
-      reason: 'indexed-unavailable',
+      reason: fallbackReason,
       page: request.sidebarPage || 'library',
       activeFilterKind: request.activeFilter?.kind || 'all',
       activeFilterName: request.activeFilter?.name || '',
@@ -381,7 +389,10 @@ export function createFontQueryFacadeRuntime(
   ): Promise<{ ids: string[]; total: number; truncated: boolean; engine: "like" | "sql" } | null> {
     // Active IDs need the same pending state as active pages, before the async
     // installation snapshot is persisted and merged.
-    if (request.activeFilter?.kind === 'active') return null;
+    if (request.activeFilter?.kind === 'active' && (options.hasPendingActivationState?.() ?? true)) {
+      options.appendLog(`active indexed ids skipped: reason=${reason}, pending activation state`);
+      return null;
+    }
     const generation = queryGeneration;
     try {
       const folders = await options.appWatchedFolders();
@@ -400,6 +411,7 @@ export function createFontQueryFacadeRuntime(
         options.appendLog(`rust ids query fallback: ${built.unsupportedReason}`);
         return null;
       }
+      if (options.ensureMergedIndexReadyForWorker && !(await options.ensureMergedIndexReadyForWorker(roots))) return null;
       const tagRevisionSnapshot = options.tagMetadataRevisionBarrier?.snapshotForRequest(request);
       const rustResult = await options.rustCoreWorkerRuntime.runRustMergedIndexIdsQuery({
         queryKey: fontQueryCacheKey({ ...request, limit }),
@@ -417,6 +429,10 @@ export function createFontQueryFacadeRuntime(
         },
       });
       if (!rustResult || generation !== queryGeneration) return null;
+      if (request.activeFilter?.kind === 'active' && (options.hasPendingActivationState?.() ?? true)) {
+        options.appendLog(`active indexed ids rejected: reason=${reason}, pending activation state, total=${rustResult.total}`);
+        return null;
+      }
       if (tagRevisionCacheToken(tagRevisionSnapshot) && !tagRevisionMatchesSnapshot(tagRevisionSnapshot, rustResult.tagRevision as any)) {
         options.appendLog(`rust ids query rejected: reason=missing-or-mismatched-tag-revision, reasonKind=${reason}`);
         options.migrationDiagnostics?.record({
@@ -507,6 +523,7 @@ export function createFontQueryFacadeRuntime(
         new Set((folders || []).filter(Boolean).map((folder) => resolve(folder))),
       );
       if (!roots.length) return defaultFontMetricsResult();
+      if (options.ensureMergedIndexReadyForWorker) await options.ensureMergedIndexReadyForWorker(roots);
       const queryPayload = {
         roots,
         mergedIndexDbPath: options.mergedIndexDbPath(),

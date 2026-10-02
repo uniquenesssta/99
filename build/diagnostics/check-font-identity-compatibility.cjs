@@ -30,7 +30,7 @@ for(const font of fonts) {
 assert.notEqual(names.safeManagedFontName(fonts[0]),names.safeManagedFontName(fonts[1]))
 db.prepare('INSERT INTO install_status VALUES (?,?,1,?, ?,?,0)').run(legacy.id,sig(oldFont),'system','[]','original')
 const original=plain(db.prepare('SELECT * FROM install_status').get())
-const migrate=load('src/main/install/status/installStatusIdentityMigration.ts').migrateInstallStatusIdentity
+const migration=load('src/main/install/status/installStatusIdentityMigration.ts'),migrate=migration.migrateInstallStatusIdentity
 assert.equal(migrate(db,rows),1)
 assert.equal(db.prepare('SELECT signature FROM install_status WHERE font_id=?').get(fonts[0].id).signature,sig(fonts[0]))
 assert.equal(db.prepare('SELECT 1 FROM install_status WHERE font_id=?').get(fonts[1].id),undefined,'legacy install signature leaked across roots')
@@ -45,6 +45,24 @@ assert.throws(()=>migrate(failed,rows),/denied/)
 assert.equal(failed.prepare('SELECT COUNT(*) n FROM install_identity_migrations').get().n,0)
 assert.deepEqual(plain(failed.prepare('SELECT * FROM install_status').get()),original)
 failed.close()
+// Historical display names are accepted only for the same proven physical
+// identity. Unresolved rows retain their original payload and an honest reason.
+const diagnostic=database();diagnostic.exec('CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT); CREATE TABLE install_status(font_id TEXT PRIMARY KEY,signature TEXT,installed INTEGER,by_type TEXT,matches_json TEXT,checked_at TEXT,system_default INTEGER)')
+const namedSource={...oldFont,fileName:'Original Display Name.ttf'}
+const namedRows=[{...rows[0],font_json:JSON.stringify(namedSource)}]
+diagnostic.prepare('INSERT INTO install_status VALUES (?,?,1,?,?,?,0)').run(legacy.id,sig(namedSource),'system','[]','original-name')
+let report
+assert.equal(migrate(diagnostic,namedRows,value=>{report=plain(value)}),1)
+assert.equal(report.unresolved,0)
+assert.equal(diagnostic.prepare('SELECT signature FROM install_status WHERE font_id=?').get(fonts[0].id).signature,sig(fonts[0]))
+diagnostic.prepare('INSERT INTO install_status VALUES (?,?,1,?,?,?,0)').run('missing-old-id','opaque-signature','system','[]','retained')
+diagnostic.prepare('UPDATE install_status SET signature=? WHERE font_id=?').run('changed-signature',legacy.id)
+assert.equal(migrate(diagnostic,namedRows,value=>{report=plain(value)}),0)
+assert.deepEqual(report,{migrated:0,unresolved:2,noIdentityCandidate:1,signatureMismatch:1,ambiguous:0})
+assert.equal(diagnostic.prepare('SELECT checked_at FROM install_status WHERE font_id=?').get('missing-old-id').checked_at,'retained')
+assert.equal(migration.installIdentitySnapshotKey(namedRows),migration.installIdentitySnapshotKey([{...namedRows[0],font_json:JSON.stringify({...namedSource,tagNames:['changed'],favorite:true,active:true})}]),'labels/state forced identity migration retry')
+assert.notEqual(migration.installIdentitySnapshotKey(namedRows),migration.installIdentitySnapshotKey([{...namedRows[0],modified_at:101}]),'changed file identity did not permit migration retry')
+diagnostic.close()
 // Real root join and generated ID expression agree with runtime identity.
 db.exec("ATTACH DATABASE ':memory:' AS install_db; CREATE TABLE install_db.install_status AS SELECT * FROM install_status; CREATE TABLE entries(root_path TEXT,relative_path TEXT,file_size INTEGER,modified_at INTEGER,font_json TEXT)")
 identity.registerFileIdentitySql(db)

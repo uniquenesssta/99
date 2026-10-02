@@ -29,6 +29,55 @@ export function createMergedIndexPageQueryRuntime(
     reason: string,
   ) => void,
 ) {
+  const readyInFlight = new Map<string, Promise<boolean>>();
+  async function ensureMergedIndexReadyForWorker(roots: string[]): Promise<boolean> {
+    if (!roots.length) return true;
+    const key = ctx.mergedIndexRootsKey(roots);
+    const previous = readyInFlight.get(key);
+    if (previous) return previous;
+    const task = (async () => {
+      const usable = async () => {
+        const db = await ctx.openMergedIndexDb();
+        try { return ctx.mergedIndexLocalSnapshotUsable(db, roots); }
+        finally { ctx.closeSqliteDb(db); }
+      };
+      try {
+        if (await usable()) {
+          scheduleMergedIndexBackgroundValidation(roots, 'worker-ready-validation');
+          return true;
+        }
+        const startedAt = Date.now();
+        scheduleMergedIndexBackgroundValidation(roots, 'worker-initial-snapshot');
+        const validation = ctx.mergedIndexValidateInFlight.get(key);
+        if (validation) await validation;
+        if (!(await usable())) {
+          const ready = await openReadyMergedIndexForRoots(roots, {
+            allowLocalSnapshot: true, allowBlockingBuild: true,
+            validationReason: 'worker-initial-snapshot-retry',
+          });
+          if (!ready) {
+            ctx.appendStartupLog(`merged index worker readiness: roots=${roots.length}, ready=false, reason=no-index-sources, elapsed=${Date.now() - startedAt}ms`);
+            return false;
+          }
+          let readyForWorker: boolean;
+          try { readyForWorker = ready.mode === 'validated' || ctx.mergedIndexLocalSnapshotUsable(ready.db, roots); }
+          finally { ctx.closeSqliteDb(ready.db); }
+          ctx.appendStartupLog(`merged index worker readiness: roots=${roots.length}, ready=${readyForWorker}, joinedValidation=${Boolean(validation)}, elapsed=${Date.now() - startedAt}ms`);
+          return readyForWorker;
+        }
+        const ready = await usable();
+        ctx.appendStartupLog(`merged index worker readiness: roots=${roots.length}, ready=${ready}, joinedValidation=${Boolean(validation)}, elapsed=${Date.now() - startedAt}ms`);
+        return ready;
+      } catch (error) {
+        ctx.appendStartupLog(`merged index worker readiness failed: roots=${roots.length}, ${error instanceof Error ? error.message : String(error)}`);
+        return false;
+      }
+    })();
+    readyInFlight.set(key, task);
+    try { return await task; }
+    finally { if (readyInFlight.get(key) === task) readyInFlight.delete(key); }
+  }
+
   async function ensurePendingSnapshotForWorkerQuery(
     roots: string[],
     reason: string,
@@ -130,11 +179,6 @@ export function createMergedIndexPageQueryRuntime(
       return null;
     }
 
-    scheduleMergedIndexBackgroundValidation(
-      roots,
-      "worker-page-query-validation",
-    );
-
     const built = buildMergedIndexQuerySql(request, limit, offset);
     if (built.unsupportedReason) {
       ctx.appendStartupLog(
@@ -142,6 +186,8 @@ export function createMergedIndexPageQueryRuntime(
       );
       return null;
     }
+
+    if (!(await ensureMergedIndexReadyForWorker(roots))) return null;
 
     if (String(request.keyword || '').trim()) await ctx.openLibraryDb();
     const queryPayload = {
@@ -182,6 +228,7 @@ export function createMergedIndexPageQueryRuntime(
           roots,
           "worker-page-query-pending-snapshot",
         );
+        if (!(await ensureMergedIndexReadyForWorker(roots))) return null;
         try {
           const retryResult =
             await ctx.rustCoreWorkerRuntime.runRustMergedIndexPageQuery(
@@ -332,6 +379,7 @@ export function createMergedIndexPageQueryRuntime(
   }
 
   return {
+    ensureMergedIndexReadyForWorker,
     openReadyMergedIndexForRoots,
     queryFontPageFromMergedIndexWorker,
     queryFontPageFromMergedIndex,

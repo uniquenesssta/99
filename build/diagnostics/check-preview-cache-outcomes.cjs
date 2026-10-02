@@ -89,6 +89,53 @@ async function main() {
     assert.equal(calls, beforeStale + 2, 'obsolete metadata poisoned same-key recovery')
     console.log('PASS cache outcomes: real IO errors retained, six hydration results, timeout/cancel same-key retry, physical coalescing')
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  // Confirmed ENOENT is remembered before any further shared probes. Time and
+  // generations are controlled; physical PNG reads remain real filesystem IO.
+  const negativeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-negative-'))
+  try {
+    let clock = 10000, generation = 1, probes = 0, reads = 0, indexes = 0, presence = null
+    const share = { storage: 'root', rootPath: negativeDir, dir: negativeDir }
+    const row = { id: 'miss', previewKey: 'absent', outputPath: path.join(negativeDir, 'local', 'absent.png') }
+    const negativeLoad = loader({
+      '../../path/startupPathAvailabilityRuntime': { getStartupPathRootState: () => ({ generation, state: 'online' }) },
+      '../../path/sharedFileSystemRuntime': { withSharedIoSignal: (_signal, fn) => fn(), sharedFileSystem: { ...fs.promises, readFile: async (...args) => { reads++; return fs.promises.readFile(...args) } } },
+    }, { Date: class extends Date { static now() { return clock } } })
+    const opts = { appendStartupLog() {}, withIoDeadlineResult: load('src/main/path/ioDeadlineRuntime.ts').withIoDeadlineResult,
+      previewCacheStorageToShared: () => share, ensureSharedAvailable: async () => { probes++; return true },
+      legacyRootPreviewCacheDir: () => negativeDir,
+      readPreviewCacheIndexStatus: async () => { indexes++; return null }, writePreviewCacheIndex: async () => {},
+      sharedPresence: { getSharedPresence: () => presence, forgetSharedPresence: () => { presence = null }, rememberSharedPresence: () => { presence = 'ok' } },
+    }
+    const create = negativeLoad(base + 'previewCacheHydrationRuntime.ts').createPreviewCacheHydrationRuntime
+    const cached = create(opts), local = { storage: 'local' }
+    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'miss')
+    for (let i=0; i<3; i++) assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'miss')
+    assert.deepEqual([probes, indexes, reads], [1,1,1], 'negative hit still performed shared IO')
+    clock += 31000
+    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'miss')
+    assert.deepEqual([probes, indexes, reads], [2,2,2], 'confirmed miss never expired')
+    generation++
+    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'miss')
+    assert.equal(reads, 3, 'old root generation suppressed a fresh read')
+    assert.equal(await create(opts).hydratePreviewCacheOutcome(local, row), 'miss')
+    assert.equal(reads, 4, 'new runtime trusted an old transient miss')
+    const outageRow = { ...row, id: 'index-outage', previewKey: 'index-outage', outputPath: path.join(negativeDir, 'local', 'index-outage.png') }
+    const indexReader = opts.readPreviewCacheIndexStatus
+    opts.readPreviewCacheIndexStatus = async () => { throw errors.timeout }
+    assert.equal(await cached.hydratePreviewCacheOutcome(local, outageRow), 'miss')
+    opts.readPreviewCacheIndexStatus = indexReader
+    fs.writeFileSync(path.join(negativeDir, 'index-outage.png'), png)
+    assert.equal(await cached.hydratePreviewCacheOutcome(local, outageRow), 'hydrated', 'index outage plus legacy miss suppressed later recovery')
+    const beforePublication = reads
+    fs.writeFileSync(path.join(negativeDir, 'absent.png'), png); presence = 'ok'
+    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'hydrated', 'new publication did not override a recent miss')
+    assert.equal(reads, beforePublication + 1)
+    fs.unlinkSync(row.outputPath)
+    opts.validateSharedPreviewCacheMeta = async () => ({ status: 'mismatch' })
+    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'error')
+    assert.equal(await cached.hydratePreviewCacheOutcome(local, row), 'error', 'checksum failure became a missing image')
+    console.log('PASS confirmed PNG miss avoids repeat shared IO; TTL, root generation, restart and successful publication restore reads; corruption remains error')
+  } finally { fs.rmSync(negativeDir, {recursive: true, force: true}) }
   // Summary observes typed results; compatibility failed still means non-hydrated.
   let clock = 10001, finish = gate(), closing = false, closeListener
   const lines = [], rows = ['hydrated', 'miss', 'unavailable', 'timeout', 'cancelled', 'error'].map((id, i) => ({ id, previewKey: id, outputPath: '/p/' + i }))

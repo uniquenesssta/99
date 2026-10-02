@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * Regression checks for Rust-first query protocol and explicit Node fallback policy.
- * The checks are dependency-free and simulate the protocol rules used by the TS runtime.
+ * Protocol fixtures cover compatibility rules; metrics execute the production TS owner.
  */
 const fs = require('node:fs')
 const path = require('node:path')
@@ -106,11 +106,25 @@ function testMetricsCacheKeysAreRevisionScoped() {
 }
 
 
-function testSmallInstallStatusMissingDoesNotLeaveSidebarSyncing() {
-  assertIncludes('src/main/library/fontMetricsInstallStatusReconcileRuntime.ts', 'metrics install status small missing finalized')
-  assertIncludes('src/main/library/fontMetricsInstallStatusReconcileRuntime.ts', 'installStatusMissingCount: 0')
-  assertIncludes('src/main/library/fontMetricsInstallStatusReconcileRuntime.ts', 'installStatusReady: true')
-  assertIncludes('src/main/library/fontMetricsInstallStatusReconcileRuntime.ts', 'notInstalledCount: Math.max(0, total - installedCount)')
+async function testUnknownInstallStatusRequiresConfirmedSnapshot() {
+  const check = require('node:assert/strict')
+  const actual = require('./check-operation-chain.cjs').loader()('src/main/library/fontMetricsInstallStatusReconcileRuntime.ts')
+  const runtime = actual.createMetricsInstallStatusReconcileCacheRuntime()
+  const primary = { total: 4068, installedCount: 702, notInstalledCount: 3364, installStatusKnownCount: 4066, installStatusMissingCount: 2, installStatusReady: false }
+  let calls = 0
+  const logs = []
+  const result = await runtime.reconcileWithFallback({ primary, source: 'log-reproduction', appendLog: line => logs.push(line), loadFallback: async () => { calls++; throw Error('must not hydrate 4068 rows for two unknowns') } })
+  check.equal(result, primary); check.equal(calls, 0)
+  check.equal(result.notInstalledCount, 3364); check.equal(result.installStatusMissingCount, 2); check.equal(result.installStatusReady, false)
+  check(logs.some(line => line.includes('unknown retained')))
+  const confirmed = { ...primary, notInstalledCount: 3366, installStatusKnownCount: 4068, installStatusMissingCount: 0, installStatusReady: true }
+  check.equal(actual.reconcileMergedMetricsInstallStatusSnapshot(primary, confirmed, 'confirmed', () => {}).notInstalledCount, 3366)
+  for (const changed of [
+    { ...confirmed, total: 4067, notInstalledCount: 3365 },
+    { ...confirmed, installedCount: 703 },
+    { ...confirmed, installStatusReady: false },
+    { ...confirmed, installStatusMissingCount: 1 },
+  ]) check.equal(actual.reconcileMergedMetricsInstallStatusSnapshot(primary, changed, 'unconfirmed', () => {}), primary)
 }
 
 function testTagBarrierUsesRustIndexedGraceInsteadOfMemoryBypass() {
@@ -142,13 +156,13 @@ const tests = [
   testStaleResultAlwaysRejected,
   testMetricsRequiresRevisionWhenTokenExists,
   testMetricsCacheKeysAreRevisionScoped,
-  testSmallInstallStatusMissingDoesNotLeaveSidebarSyncing,
+  testUnknownInstallStatusRequiresConfirmedSnapshot,
   testTagBarrierUsesRustIndexedGraceInsteadOfMemoryBypass,
   testRuntimeWiring,
 ]
 
-for (const test of tests) {
-  test()
-  console.log(`ok ${test.name}`)
+async function main() {
+  for (const test of tests) { await test(); console.log(`ok ${test.name}`) }
+  console.log(`query protocol checks passed (${tests.length})`)
 }
-console.log(`query protocol checks passed (${tests.length})`)
+main().catch(error => { console.error(error); process.exitCode = 1 })
