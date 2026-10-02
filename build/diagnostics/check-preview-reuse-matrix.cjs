@@ -26,6 +26,7 @@ async function run({dropLayout=false}={}){
   const hydrationOptions={appendStartupLog:options.appendStartupLog,withIoDeadlineResult:async(_label,fn)=>{try{return{ok:true,value:await fn()}}catch(error){return{ok:false,error}}},
     readPreviewCacheIndexStatus:async(storage,key)=>{sharedReads++;return dbFor(storage).prepare('SELECT status FROM preview_cache WHERE preview_key=?').get(key)?.status||null},writePreviewCacheIndex:writeIndex,previewCacheStorageToShared:tier.previewCacheStorageToShared,ensureSharedAvailable:async()=>sharedOnline}
   const pendingHydrations=[];
+  const settleHydrations=()=>Promise.all(pendingHydrations.splice(0));
   const hydration=load(base+'previewCacheHydrationRuntime.ts').createPreviewCacheHydrationRuntime(hydrationOptions);
   const create=()=>load(base+'previewBatchReadRuntime.ts').createPreviewBatchReadRuntime(options,{
     ...rows,loadLibraryShellCached:async()=>library,withPreviewIndexDb:async(storage,fn)=>fn(dbFor(storage)),
@@ -40,6 +41,9 @@ async function run({dropLayout=false}={}){
   const assertHit=async(runtime,item=font,text='预览',size=34,width=520,height=150,layout)=>eq((await runtime.readCachedPreviewImages([item],text,size,width,height,layout))[item.id],'data:image/png;base64,'+png.toString('base64'),'expected exact cached PNG')
   try {
     let runtime=create();eq(Object.keys(await runtime.readCachedPreviewImages([font],'预览')).length,0,'cold miss must not fabricate a hit')
+    // A cold read schedules background work. Finish that scenario before
+    // attributing shared access to the subsequent local-hit scenario.
+    await settleHydrations()
     const original=rowFor();await seed(original);const beforeWarm=sharedReads
     await assertHit(runtime);await assertHit(runtime);eq(sharedReads,beforeWarm,'local hit probed shared tier')
     // Separate font/page then revisit; changing selection/favorite cannot alter the complete key.
@@ -54,10 +58,10 @@ async function run({dropLayout=false}={}){
     eq(Object.keys(await runtime.readCachedPreviewImages([active],'预览')).length,0,'new installed route should be cold')
     await seed(activated);await assertHit(runtime,active);await assertHit(runtime,active);await assertHit(runtime,font)
     // Reconstruct runtime and SQLite handles, preserving only on-disk data.
-    for(const db of indexes.values())db.close();indexes.clear();runtime=create();const beforeRestart=sharedReads
+    await settleHydrations();for(const db of indexes.values())db.close();indexes.clear();runtime=create();const beforeRestart=sharedReads
     await assertHit(runtime);await assertHit(runtime,active);eq(sharedReads,beforeRestart,'restart lost local on-disk hit')
     const shared=rowFor(font,'共享样本');await seed(shared,true);const beforeHydrate=sharedReads
-    await Promise.all([runtime.readCachedPreviewImages([font],'共享样本'),runtime.readCachedPreviewImages([font],'共享样本')]);await Promise.all(pendingHydrations);await assertHit(runtime,font,'共享样本')
+    await Promise.all([runtime.readCachedPreviewImages([font],'共享样本'),runtime.readCachedPreviewImages([font],'共享样本')]);await settleHydrations();await assertHit(runtime,font,'共享样本')
     eq(sharedReads,beforeHydrate+1,'same shared hydration was not coalesced')
     eq(fs.readFileSync(shared.outputPath).equals(png),true,'shared PNG not copied intact')
     await assertHit(runtime,font,'共享样本');eq(sharedReads,beforeHydrate+1,'hydrated image failed local reuse')
@@ -80,17 +84,17 @@ async function run({dropLayout=false}={}){
       await assertHit(runtime,font,...params(card('grid',text+'\nhidden',72)))
       for(const changed of [card('list',text,72),card('grid',text+'changed',18)])
         eq(Object.keys(await runtime.readCachedPreviewImages([font],...params(changed))).length,0,'changed visible layout reused old pixels')
-      for(const db of indexes.values())db.close();indexes.clear();runtime=create()
+      await settleHydrations();for(const db of indexes.values())db.close();indexes.clear();runtime=create()
       const before=sharedReads;sharedOnline=false
       for(const {item,args} of records)await assertHit(runtime,item,...args)
       eq(sharedReads,before,'new layout local hit depended on shared availability after restart')
       const remote=card('grid',`共享 ${strict}\n安盛aaaa`,18),args=params(remote),row=rowFor(font,...args)
       await seed(row,true)
-      await runtime.readCachedPreviewImages([font],...args);await Promise.all(pendingHydrations)
+      await runtime.readCachedPreviewImages([font],...args);await settleHydrations()
       eq(fs.existsSync(row.outputPath),false,'offline shared image was published locally')
       sharedOnline=true
       await Promise.all([runtime.readCachedPreviewImages([font],...args),runtime.readCachedPreviewImages([font],...args)])
-      await Promise.all(pendingHydrations);await assertHit(runtime,font,...args)
+      await settleHydrations();await assertHit(runtime,font,...args)
       eq(sharedReads,before+1,'new layout shared recovery failed to coalesce')
       eq(fs.readFileSync(row.outputPath).equals(png),true,'new layout hydration changed PNG bytes')
     }
@@ -99,7 +103,7 @@ async function run({dropLayout=false}={}){
     env.HFM_PREVIEW_CACHE_KEY_STRICT='1';const strict=keys.previewCacheKey(...args);env.HFM_PREVIEW_DPI_BUCKET='dpi-other';assert.notEqual(keys.previewCacheKey(...args),strict);checks++
     const dpi=keys.previewCacheKey(...args);env.HFM_PREVIEW_FOREGROUND_MODE='foreground-other';assert.notEqual(keys.previewCacheKey(...args),dpi);checks++
     console.log(`[diagnostics:preview-reuse-matrix] ${checks} checks passed; actual SQLite + PNG, legacy/strict list/grid/installed identities, restart/offline/shared recovery; controlled generation/network`)
-  } finally {for(const db of indexes.values())db.close();fs.rmSync(dir,{recursive:true,force:true})}
+  } finally {await Promise.allSettled(pendingHydrations.splice(0));for(const db of indexes.values())db.close();fs.rmSync(dir,{recursive:true,force:true})}
 }
 if(require.main===module)(async()=>{await run();await assert.rejects(run({dropLayout:true}),/layout-qualified read reused legacy pixels/);console.log('[diagnostics:preview-reuse-matrix] dropped disk layout mutant rejected')})().catch(e=>{console.error(e);process.exitCode=1})
 module.exports={run}
