@@ -30,6 +30,13 @@ function databaseQueryScopeKey(queryKey: string | undefined): string {
   }
 }
 
+function assertDatabasePageResponseMatchesRequest(result: FontQueryPageResult, request: FontQueryRequest): void {
+  if (databaseQueryScopeKey(result.queryKey) !== databaseQueryScopeKey(rendererFontQueryCacheKey(request))
+    || result.offset !== (request.offset || 0)) {
+    throw new Error('数据库分页响应与当前请求的筛选范围或起点不一致')
+  }
+}
+
 function databaseTraceSeverity(durationMs: number): 'info' | 'slow' | 'warn' {
   if (durationMs >= 180) return 'warn'
   if (durationMs >= 50) return 'slow'
@@ -281,6 +288,13 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
       const intentRevision = fontUserIntentRevision()
       const confirmTagRead = captureFontTagReadConfirmation(options.library)
       options.hfm.queryFontPage(databaseQueryRequest).then(async (result) => {
+        if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) return
+        if (intentRevision !== fontUserIntentRevision()) {
+          options.reportTrace({ kind: 'db-query-rejected', label: 'user-intent-changed', page: options.sidebarPage,
+            severity: 'warn', details: { requestSeq, intentRevision, currentIntentRevision: fontUserIntentRevision() } })
+          return
+        }
+        assertDatabasePageResponseMatchesRequest(result, databaseQueryRequest)
         // Refill the previously loaded favorites window before publishing it. A
         // one-page replacement would shrink the scroll area after a bulk removal.
         const previous = options.databasePageResult
@@ -289,7 +303,9 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           const target = Math.min(previous.items.length, result.total)
           while (result.items.length < target) {
             if (disposed || requestSeq !== options.databasePageRequestSeqRef.current || intentRevision !== fontUserIntentRevision()) return
-            const next = await options.hfm.queryFontPage({ ...databaseQueryRequest, offset: result.items.length, limit: DATABASE_INCREMENTAL_PAGE_SIZE })
+            const nextRequest = { ...databaseQueryRequest, offset: result.items.length, limit: DATABASE_INCREMENTAL_PAGE_SIZE }
+            const next = await options.hfm.queryFontPage(nextRequest)
+            assertDatabasePageResponseMatchesRequest(next, nextRequest)
             if (next.total !== result.total || !next.items.length) throw new Error('收藏分页在补齐期间发生变化，请重试')
             const merged = mergeIncrementalDatabasePage(result, next)
             if (merged.items.length <= result.items.length) throw new Error('收藏分页未向前推进，请重试')

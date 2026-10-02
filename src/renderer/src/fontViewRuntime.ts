@@ -5,7 +5,7 @@ import { VIRTUAL_OVERSCAN_ROWS,VIRTUAL_PANEL_PADDING,getVirtualGridColumns } fro
 import type { ActiveFilter,FontCategory,FontComputedIndex,InstallStatusFilter,SidebarPage,SortMode,TimeSortMode,VirtualLayout,VirtualViewport } from './appTypes'
 import { buildFontComputedIndex,filterMatchesFontIndex,inTimeSortRangeIndex } from './fontFilteringMetrics'
 import { compareFontsForSort,compareFontsForTimeSort } from './fontSort'
-import { fontBelongsToAnyFolder,fontBelongsToFolder,fontInsideRootFolder } from './libraryNormalize'
+import { fontBelongsToAnyFolder,fontBelongsToFolder,fontInsideRootFolder,normalizeFontPathForCompare } from './libraryNormalize'
 import { filterFontByLibraryTagAuthority } from './fontTagStateAuthorityRuntime'
 
 export interface RendererFontQueryRequestOptions {
@@ -101,9 +101,19 @@ function mergeOptimisticTagPageFonts(items: FontItem[], options: VisibleFontsOpt
 
 export function buildVisibleFonts(options: VisibleFontsOptions): FontItem[] {
   if (options.databasePageReady && options.databasePageResult) {
-    const items = options.databasePageResult.items.map((font) =>
-      filterFontByLibraryTagAuthority(options.library, options.library.fonts[font.id] || font)
-    )
+    const items = options.databasePageResult.items.map((font) => {
+      const cached = options.library.fonts[font.id]
+      // Accepted database rows own installation state. Keep existing optimistic
+      // tag/favorite/protection state only when the ID also refers to this path.
+      const sameFile = cached && normalizeFontPathForCompare(cached.path) === normalizeFontPathForCompare(font.path)
+      const current = sameFile ? {
+        ...cached,
+        systemInstalled: font.systemInstalled,
+        installStatusKnown: font.installStatusKnown,
+        systemInstallMatches: font.systemInstallMatches || []
+      } : font
+      return filterFontByLibraryTagAuthority(options.library, current)
+    })
     if (options.sidebarPage === 'library' && (options.activeFilter.kind === 'favorites' || options.activeFilter.kind === 'active')) {
       const seen = new Set(items.map((font) => font.id))
       const pending = options.allFonts.filter((font) => !seen.has(font.id) &&

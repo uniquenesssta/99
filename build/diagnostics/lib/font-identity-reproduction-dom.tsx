@@ -57,10 +57,10 @@ function Fixture({fonts,mode,search='',kind='all'}:any) {
   const requestBase:any={databasePageOffset:0,databasePageLimit:100,sidebarPage:'library',activeFilter:{kind:'all'},selectedWatchedFolders:[],selectedFormats:[],selectedScripts:[],selectedCategory:'all',selectedTagName:'',selectedSharedTagName:'',selectedFolderId:'',installStatus:'all',timeSortMode:'created',sortMode:'nameAsc'}
   check(createRendererFontQueryRequest({...requestBase,deferredSearch:' abc '}).keyword==='abc','keyword forwarding')
   check(createRendererFontQueryRequest({...requestBase,deferredSearch:''}).keyword==='','keyword clearing')
-  // Independent stale-memory counterexample after eliminating duplicate identities.
+  // F03 repair acceptance: database installation state wins over stale memory.
   const font={...native[0],id:'status-control',systemInstalled:false,installStatusKnown:true}
   const shown=buildVisibleFonts({...requestBase,databasePageReady:true,databasePageResult:{items:[font],total:1,offset:0},allFonts:[],fontIndexById:new Map(),deferredSearch:'',activeFilter:{kind:'notInstalled'},library:{fonts:{[font.id]:{...font,systemInstalled:true}}}} as any)
-  check(shown.length===1&&shown[0].systemInstalled===true,'stale-memory baseline no longer present')
+  check(shown.length===1&&shown[0].systemInstalled===false&&shown[0].installStatusKnown===true,'stale installed memory overrode accepted database row')
   check(messages.some(m=>m.includes('same key')),'expected actual React duplicate-key warning')
-  return {cases:results,duplicateKeyWarnings:messages.filter(m=>m.includes('same key')).length,staleMemoryInstalledOnNotInstalledPage:true,requestBuilderSearchClear:true,candidateSelectionTargets:selections,scope:'Production React panel/card renderer/layout with Rust fixture rows; not the full App IPC interaction or user database.'}
+  return {cases:results,duplicateKeyWarnings:messages.filter(m=>m.includes('same key')).length,staleMemoryInstallationRepair:true,requestBuilderSearchClear:true,candidateSelectionTargets:selections,scope:'Production React panel/card renderer/layout with Rust fixture rows; not the full App IPC interaction or user database.'}
 }

@@ -11,6 +11,8 @@ function load(file, mocks = {}) {
   if(mutation==='active') source=source.replace('...intent.active,','')
   if(mutation==='favorite') source=source.replace('favorite && (!favorite.settled || incoming.favorite !== favorite.value)','false')
   if(mutation==='query') source=source.replaceAll('intentRevision !== fontUserIntentRevision()', 'false')
+  if(mutation==='installation') source=source.replace('systemInstalled: font.systemInstalled', 'systemInstalled: cached.systemInstalled')
+  if(mutation==='scope') source=source.replace('assertDatabasePageResponseMatchesRequest(result, databaseQueryRequest)', 'void 0')
   if(mutation==='membership') source=source.replace('const candidates = [...items, ...pending]','const candidates = items')
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,console,performance,window:{setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout(){}},require(id){
     if (id in mocks) return mocks[id]
@@ -29,7 +31,7 @@ const mocks={
  './appConstants':{},
  './fontFilteringMetrics':{buildFontComputedIndex:f=>({searchText:'alpha',bad:false,active:f.active}),filterMatchesFontIndex:(filter,f)=>filter.kind==='favorites'?f.favorite:filter.kind==='active'?f.active:true,inTimeSortRangeIndex:()=>true},
  './fontSort':{compareFontsForSort:(a,b)=>a.id.localeCompare(b.id),compareFontsForTimeSort:(a,b)=>a.id.localeCompare(b.id)},
- './libraryNormalize':{},
+ './libraryNormalize':{normalizeFontPathForCompare:x=>x.replaceAll('/', '\\').toLowerCase()},
  './libraryFolderTreeRuntime':{buildFolderTreeFromCachedFonts:()=>({nodes:[]})}
 }
 const font={id:'a',path:'/fonts/a.ttf',favorite:false,active:true,tagNames:[],collectionIds:[],systemInstalled:false,systemInstallMatches:[]}
@@ -74,6 +76,23 @@ assert(!JSON.stringify(fav).includes('settled'))
 assert.equal(Object.getOwnPropertySymbols(structuredClone(fav)).length,0)
 console.log('favorite membership, stale activation, acknowledgment, newer toggles, search and session boundaries passed')
 
+// Installation truth must come from the accepted row without discarding unrelated
+// optimistic favorite/protection state or overlaying another file's object.
+const fresh={...font,installStatusKnown:true,systemInstalled:false}
+const cached={...fresh,systemInstalled:true,deleteProtected:true,favorite:true}
+const pageOptions={...options,activeFilter:{kind:'notInstalled'},allFonts:[],library:{...library,fonts:{a:cached}},databasePageResult:{items:[fresh],total:1,offset:0}}
+let visible=view.buildVisibleFonts(pageOptions)
+assert.equal(visible.length,1)
+assert.equal(visible[0].systemInstalled,false)
+assert.equal(visible[0].deleteProtected,true)
+assert.equal(visible[0].favorite,true)
+visible=view.buildVisibleFonts({...pageOptions,databasePageResult:{items:[{...fresh,installStatusKnown:false}],total:1,offset:0}})
+assert.equal(visible[0].installStatusKnown,false,'unknown must not inherit cached known state')
+visible=view.buildVisibleFonts({...pageOptions,library:{...library,fonts:{a:{...cached,path:'/other/a.ttf'}}}})
+assert.equal(visible[0].path,fresh.path,'colliding ID must not substitute another path')
+assert.equal(visible[0].favorite,false,'other path favorite leaked')
+console.log('F03 database installation authority and path isolation passed')
+
 async function queueSettlementCheck() {
   const queueApi=load(base+'fontWriteQueue.ts',mocks)
   for(const success of [false,true]) {
@@ -87,34 +106,41 @@ async function queueSettlementCheck() {
   }
   await queryRaceCheck()
   if(!process.argv[2]) {
-    for(const mutant of ['active','favorite','membership','query']) {
+    for(const mutant of ['active','favorite','membership','query','installation','scope']) {
       const r=require('node:child_process').spawnSync(process.execPath,[__filename,mutant],{encoding:'utf8'})
       assert.notEqual(r.status,0,mutant+' escaped');assert(r.stderr.includes('AssertionError'),r.stderr)
     }
   }
-  console.log('real write queue success/failure settlement; four regression mutations rejected')
+  console.log('real write queue success/failure settlement; six regression mutations rejected')
 }
 queueSettlementCheck().catch(e=>{console.error(e);process.exitCode=1})
 
 async function queryRaceCheck() {
-  const effects=[],traces=[];let resolveQuery,pageWrites=0
-  const response=new Promise(resolve=>{resolveQuery=resolve})
+  const effects=[],traces=[]
   const hook=load(base+'runtime/database/useRendererDatabasePageRuntime.ts',{
     ...mocks,
     react:{useEffect:fn=>effects.push(fn),useMemo:fn=>fn(),useState:()=>[0,()=>{}]},
     '../../appRuntime':{rendererFontQueryCacheKey:JSON.stringify,libraryWithMergedFonts:normalize.libraryWithMergedFonts},
     './rendererDatabasePageWindowRuntime':{buildRendererDatabasePageWindow:()=>({offset:0,limit:100,columns:1})}
   }).useRendererDatabasePageRuntime
-  const cleanup=[]
-  hook({...options,library:{...library,folders:['/fonts']},libraryLoadedRef:{current:true},hfm:{queryFontPage:()=>response},databasePageResult:null,databasePageRequestSeqRef:{current:0},fontListScrollingRef:{current:false},virtualViewport:{width:500,height:500,scrollTop:0},viewLayout:{rowHeight:100,minCardWidth:100},reportTrace:e=>traces.push(e),setDatabasePageResult:()=>{pageWrites++},setDatabaseQueryResult(){},setDatabaseQueryFailedKey(){},setLibrary(){}})
-  for(const effect of effects)cleanup.push(effect())
-  for(const timer of timers.splice(0))timer()
-  intent.markFavoriteIntent(font,true)
-  resolveQuery({items:[font],total:1,offset:0,limit:100})
-  for(let i=0;i<10;i++)await Promise.resolve()
-  assert.equal(pageWrites,0,'late real hook response must be rejected after mutation')
-  assert(traces.some(e=>e.label==='user-intent-changed'),'rejection must be logged')
-  for(const fn of cleanup)if(typeof fn==='function')fn()
+  for(const scenario of ['intent','accepted','wrong-scope','wrong-offset','disposed']) {
+    effects.length=0;traces.length=0
+    let resolveQuery,request,pageWrites=0,failures=0
+    const response=new Promise(resolve=>{resolveQuery=resolve})
+    const cleanup=[]
+    hook({...options,library:{...library,folders:['/fonts']},libraryLoadedRef:{current:true},hfm:{queryFontPage:r=>{request=r;return response}},databasePageResult:null,databasePageRequestSeqRef:{current:0},fontListScrollingRef:{current:false},virtualViewport:{width:500,height:500,scrollTop:0},viewLayout:{rowHeight:100,minCardWidth:100},reportTrace:e=>traces.push(e),setDatabasePageResult:r=>{if(r)pageWrites++},setDatabaseQueryResult(){},setDatabaseQueryFailedKey:key=>{if(key)failures++},setLibrary(){},setStatus(){}})
+    for(const effect of effects)cleanup.push(effect())
+    for(const timer of timers.splice(0))timer()
+    if(scenario==='intent')intent.markFavoriteIntent(font,true)
+    if(scenario==='disposed')for(const fn of cleanup)if(typeof fn==='function')fn()
+    resolveQuery({queryKey:JSON.stringify(scenario==='wrong-scope'?{...request,keyword:'old search'}:request),items:[font],total:1,offset:scenario==='wrong-offset'?100:0,limit:100})
+    for(let i=0;i<10;i++)await Promise.resolve()
+    assert.equal(pageWrites,scenario==='accepted'?1:0,scenario+' response admission')
+    assert.equal(failures,scenario.startsWith('wrong-')?1:0,scenario+' failure state')
+    if(scenario==='intent')assert(traces.some(e=>e.label==='user-intent-changed'),'rejection must be logged')
+    for(const fn of cleanup)if(typeof fn==='function')fn()
+  }
+  console.log('F03 actual query hook accepted current response and rejected changed intent, scope, offset and disposed responses')
 }
 
 const indexChange=load(base+'library-normalize/libraryIndexChangeRuntime.ts',mocks)

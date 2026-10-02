@@ -216,7 +216,7 @@ export function FontListPanel({
                 {!visibleFonts.length && !(databasePageReady ? visibleFontTotal : 0) && (
                   <div className="empty-state virtual-empty">
                     <div>没有找到字体</div>
-                    <p>{installStatus && installStatus !== 'all' ? '当前范围没有符合安装状态的字体，可切换“全部状态”。' : '点击顶部“更新索引”建立或增量更新 SQLite 共享索引库；已有索引会自动读取。'}</p>
+                    <p>{sidebarPage === 'library' && activeFilter.kind === 'favorites' ? '当前收藏范围没有符合条件的字体。' : sidebarPage === 'library' && activeFilter.kind === 'active' ? '当前激活范围没有符合条件的字体。' : search.trim() ? '当前范围没有匹配搜索条件的字体，可清空搜索或切换范围。' : installStatus && installStatus !== 'all' ? '当前范围没有符合安装状态的字体，可切换“全部状态”。' : '点击顶部“更新索引”建立或增量更新 SQLite 共享索引库；已有索引会自动读取。'}</p>
                   </div>
                 )}
               </div>
