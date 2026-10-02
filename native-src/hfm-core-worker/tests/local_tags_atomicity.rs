@@ -55,7 +55,7 @@ fn success(output: &Output) -> Value {
 #[test]
 fn local_tags_atomicity_nth_row_catalog_and_metadata_failures() {
     for (label, trigger) in [
-        ("nth-row", "CREATE TRIGGER fail BEFORE INSERT ON local_font_tags WHEN NEW.font_id='b' BEGIN SELECT RAISE(ABORT,'nth row'); END;"),
+        ("nth-row", "CREATE TRIGGER fail BEFORE INSERT ON local_font_tags WHEN NEW.font_path='b.ttf' BEGIN SELECT RAISE(ABORT,'nth row'); END;"),
         ("catalog", "CREATE TRIGGER fail BEFORE INSERT ON app_state WHEN NEW.key='localTags' BEGIN SELECT RAISE(ABORT,'catalog'); END;"),
         ("metadata", "CREATE TRIGGER fail BEFORE INSERT ON meta WHEN NEW.key='localTagsUpdatedAt' BEGIN SELECT RAISE(ABORT,'metadata'); END;")
     ] {
@@ -91,7 +91,11 @@ fn local_tags_atomicity_success_empty_duplicate_and_catalog_contracts() {
     assert_eq!(result["updatedIds"], json!(["a","b"])); assert_eq!(result["written"], 3);
     assert_eq!(result["retainedEmptyTags"], json!(["old"]));
     assert_eq!(result["knownTags"], json!(["new","old"]));
-    assert_eq!(f.snapshot()[0].len(), 2);
+    assert_eq!(f.snapshot()[0], vec!["local-path:a.ttf|a.ttf|new|next", "local-path:b.ttf|b.ttf|new|next"]);
+    let readback = f.run("--local-tags-read", json!({"rows":[row("a",""),row("b","")]}));
+    assert!(readback.status.success(), "{}", String::from_utf8_lossy(&readback.stderr));
+    let readback: Value = serde_json::from_slice(&readback.stdout).unwrap();
+    assert_eq!(readback["tagMap"], json!({"a":["new"],"b":["new"]}));
     let before = f.snapshot();
     let unchanged = success(&f.run("--local-tags-set", json!({"rows":[row("a","new")]})));
     assert_eq!(unchanged["addedKnownTags"], json!([]));
@@ -102,7 +106,7 @@ fn local_tags_atomicity_success_empty_duplicate_and_catalog_contracts() {
     let blank = success(&f.run("--local-tags-delete-tag", json!({"tagName":" "})));
     assert_eq!(blank["updated"], 0); assert_eq!(f.snapshot(), before);
     let deleted = success(&f.run("--local-tags-delete-tag", json!({"tagName":"new"})));
-    assert_eq!(deleted["updatedIds"], json!(["a","b"])); assert_eq!(deleted["knownTags"], json!(["old"]));
+    assert_eq!(deleted["updatedIds"], json!(["local-path:a.ttf","local-path:b.ttf"])); assert_eq!(deleted["knownTags"], json!(["old"]));
     assert!(f.snapshot()[0].is_empty());
     let removed_empty = success(&f.run("--local-tags-delete-tag", json!({"tagName":"old"})));
     assert_eq!(removed_empty["knownTags"], json!([]));

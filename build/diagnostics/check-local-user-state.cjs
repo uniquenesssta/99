@@ -132,7 +132,7 @@ async function localIdentityPaths() {
   db.exec("CREATE TABLE entries(root_path TEXT, relative_path TEXT, file_size INTEGER, modified_at INTEGER, font_json TEXT)")
   db.prepare('INSERT INTO entries VALUES (?,?,?,?,?)').run('C:\\one','same.ttf',1,1,JSON.stringify({id:'shared'}))
   db.prepare('INSERT INTO entries VALUES (?,?,?,?,?)').run('C:\\two','same.ttf',1,1,JSON.stringify({id:'shared'}))
-  db.function('hfm_shared_font_id',()=> 'legacy')
+  db.function('hfm_shared_font_id',(_relative,_size,_mtime)=> 'legacy')
   const sql=load('src/main/indexing/root-query/rootIndexQuerySharedSql.ts')
   assert.deepEqual(db.prepare('SELECT '+sql.mergedIndexLocalFavoriteExpr()+' AS favorite FROM entries ORDER BY root_path').all().map(r=>r.favorite),[0,1])
   assert.deepEqual(db.prepare("SELECT root_path FROM entries WHERE EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE lft.tag_name='old' AND "+sql.rootIndexLocalTagMatchExpr()+')').all().map(r=>r.root_path),['C:\\one'])
