@@ -2,7 +2,7 @@
 
 ## 当前工作
 
-- [字体身份、页面残留与卸载删除权限任务书](plans/HFM_FONT_IDENTITY_PERMISSIONS_TASKBOOK.md)：Stage 12 专项 S12-F01～F07；源码基线 `55b5b01`，分支 `stage/12-font-identity-permissions`。F01 Windows 反例审计已收尾；F02 首批 CI 通过，本地状态路径隔离适配待新 CI，生产兼容切换未完成；F03 独立状态/响应校验 CI 已通过，整项未验收；F04～F07 未开始。
+- [字体身份、页面残留与卸载删除权限任务书](plans/HFM_FONT_IDENTITY_PERMISSIONS_TASKBOOK.md)：Stage 12 专项 S12-F01～F07；源码基线 `55b5b01`，分支 `stage/12-font-identity-permissions`。F01 Windows 反例审计已收尾；F02 首批 CI 通过，本地状态路径隔离适配 CI `36984371273` 已通过，生产兼容切换未完成；F03 独立状态/响应校验 CI 已通过，整项未验收；F04～F07 未开始。
 
 [列表与网格视图审计及优化任务书](plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md) 是本次专项的执行与状态入口。
 
