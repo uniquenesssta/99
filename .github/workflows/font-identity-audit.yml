@@ -53,6 +53,8 @@ jobs:
         run: node build/diagnostics/check-local-user-state.cjs --case=legacy-identity
       - name: Verify local state path isolation
         run: node build/diagnostics/check-local-user-state.cjs --case=identity
+      - name: Verify explicit local protection persistence
+        run: node build/diagnostics/check-local-user-state.cjs --case=protection
       - name: Verify local favorites
         run: node build/diagnostics/check-local-user-state.cjs --case=favorites
       - name: Verify Node local tag persistence

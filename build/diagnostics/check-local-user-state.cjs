@@ -41,6 +41,34 @@ function database() {
   db.transaction = fn => () => { db.exec('BEGIN'); try { const result=fn(); db.exec('COMMIT'); return result } catch(e) { db.exec('ROLLBACK'); throw e } }
   return db
 }
+async function protection() {
+  const create=loader()('src/main/library/runtime/localFontProtectionRuntime.ts').createLocalFontProtectionRuntime
+  const db=database();let roots=[],invalidated=0
+  const make=()=>create({openLibraryDb:async()=>db,watchedFolders:async()=>roots,invalidate:()=>invalidated++})
+  let runtime=make()
+  const a=font('a',{path:'C:\\outside\\a.ttf',deleteProtected:false,systemImported:true,systemInstalled:true})
+  const copy={...a,path:'D:\\copy\\a.ttf'}
+  assert.equal((await runtime.hydrate([a]))[0].deleteProtected,false,'installed flag created protection')
+  await runtime.set([a],true);runtime=make()
+  const changed={...a,id:'changed',systemInstalled:false}
+  assert.deepEqual((await runtime.hydrate([changed,copy])).map(f=>f.deleteProtected),[true,false],'restart/identity/copy protection mismatch')
+  await runtime.set([changed],false)
+  assert.equal((await runtime.hydrate([{...a,deleteProtected:true}]))[0].deleteProtected,false,'stale scan resurrected local protection')
+  roots=['C:\\outside']
+  assert.equal((await runtime.hydrate([{...a,deleteProtected:true}]))[0].deleteProtected,true,'local false cleared shared protection')
+  await runtime.set([a],true)
+  await runtime.clear([a])
+  assert.equal((await runtime.hydrate([a]))[0].deleteProtected,false,'shared ownership handoff retained local flag')
+  roots=[];await runtime.set([a],true)
+  db.exec("CREATE TRIGGER deny_protection BEFORE INSERT ON local_font_protection WHEN NEW.font_path LIKE '%bad.ttf' BEGIN SELECT RAISE(ABORT, 'disk'); END")
+  await assert.rejects(runtime.set([a,{...a,id:'bad',path:'C:\\outside\\bad.ttf'}],false),/disk/)
+  assert.equal((await runtime.hydrate([a]))[0].deleteProtected,true,'partial protection write escaped transaction')
+  await assert.rejects(runtime.set([{...a,path:''}],false),/路径为空/)
+  assert(invalidated>0)
+  db.close()
+  await assert.rejects(runtime.hydrate([a]),'unreadable authority silently became unprotected')
+  console.log('[local-protection] explicit decisions, restart, path identity, shared precedence, cancellation and failed-write atomicity passed')
+}
 async function favorites() {
   const load = loader()
   const schema = load('src/main/library/runtime/librarySchemaRuntime.ts')
@@ -364,11 +392,12 @@ async function idsRace() {
 }
 async function main(){
   if(selected==='legacy-identity'){await legacyIdentity();return}
+  if(selected==='protection'){await protection();return}
   if(selected==='identity'){await localIdentityPaths();return}
   const cases={favorites,tags,activation,metrics:metricsRace}
   if(selected){await cases[selected]();return}
   for(const run of Object.values(cases))await run()
-  await legacyIdentity();await localIdentityPaths();await knownCatalog();await idsRace();await pageRace();await compositionPorts()
+  await protection();await legacyIdentity();await localIdentityPaths();await knownCatalog();await idsRace();await pageRace();await compositionPorts()
   if(!crlf){
     for(const kind of Object.keys(cases)){
       for(const mode of ['--mutant','--baseline']){

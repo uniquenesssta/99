@@ -1,3 +1,4 @@
+import { createLocalFontProtectionRuntime } from '../library/runtime/localFontProtectionRuntime';
 import { migrateInstallStatusIdentity, installIdentitySnapshotKey } from '../install/status/installStatusIdentityMigration'
 import { createLocalFontLegacyIdentityRuntime, readCompleteFontIdentityIndex } from '../library/runtime/localFontLegacyIdentityRuntime';
 import { createLocalFontFavoritesRuntime } from '../library/runtime/localFontFavoritesRuntime';
@@ -111,7 +112,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     clearInstalledFontsMemoryCache,
     getSystemInstalledFonts,
     getSystemInstalledFontsCached,
-    scanSystemInstalledFonts,
+    scanSystemInstalledFonts: scanSystemInstalledFontsBase,
   } = createMainSystemInstalledFontsBootstrap({
     execFileAsync,
     fontExtensions: FONT_EXTENSIONS,
@@ -409,16 +410,27 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
       } finally { closeSqliteDb(db); }
     },
   });
+  const localProtection = createLocalFontProtectionRuntime({
+    openLibraryDb: openLibraryDbBase,
+    invalidate: clearFontQueryCaches,
+    watchedFolders: appWatchedFolders,
+  });
+  const setLocalFontProtection = localProtection.set;
+  const clearLocalFontProtection = localProtection.clear;
+  async function scanSystemInstalledFonts(): Promise<ScanResult> {
+    const result = await scanSystemInstalledFontsBase();
+    return { ...result, fonts: await localProtection.hydrate(result.fonts) };
+  }
   async function openLibraryDb() {
     const db = await openLibraryDbBase();
     await localFavorites.initialize();
     return db;
   }
   async function hydrateLocalTagsForFonts(items: FontItem[]): Promise<FontItem[]> {
-    return localFavorites.hydrate(await hydrateLocalTagsForFontsBase(items));
+    return localProtection.hydrate(await localFavorites.hydrate(await hydrateLocalTagsForFontsBase(items)));
   }
   const setLocalFontFavorite = localFavorites.setFavorite;
-  const hydrateLocalFavoritesForFonts = localFavorites.hydrate;
+  const hydrateLocalFavoritesForFonts = async (items: FontItem[]) => localProtection.hydrate(await localFavorites.hydrate(items));
 
   async function saveLibrary(state: LibraryState): Promise<boolean> {
     const saved = await saveLibraryBase(state);
@@ -821,6 +833,8 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     closePreviewDb,
     closeLibraryDb,
     setLocalFontFavorite,
+    setLocalFontProtection,
+    clearLocalFontProtection,
     hydrateLocalFavoritesForFonts,
     hydrateLocalTagsForFonts,
     localTagsByFontIds,

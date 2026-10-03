@@ -29,6 +29,8 @@ export interface MainMutationCompositionOptions {
   };
   storage: Pick<Data['storage'],
     | 'setLocalFontFavorite'
+    | 'setLocalFontProtection'
+    | 'clearLocalFontProtection'
     | 'setLocalFontTagsBase'
     | 'invalidateSharedFontRuntimeCaches'
     | 'setLocalFontTagsBatchBase'
@@ -116,6 +118,8 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
   const { tagMutationWriteProtocolRuntime } = options.tags;
   const {
     setLocalFontFavorite,
+    setLocalFontProtection,
+    clearLocalFontProtection,
     setLocalFontTagsBase,
     invalidateSharedFontRuntimeCaches,
     setLocalFontTagsBatchBase,
@@ -378,12 +382,35 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
   });
 
   const {
-    setFontDeleteProtectionInIndex,
+    setFontDeleteProtectionInIndex: setSharedFontProtection,
     setSharedFontTagsInIndex: setSharedFontTagsInIndexBase,
     setSharedFontTagsBatchInIndex: setSharedFontTagsBatchInIndexBase,
     renameSharedFontTagInIndex: renameSharedFontTagInIndexBase,
     deleteSharedFontTagInIndex: deleteSharedFontTagInIndexBase,
   } = sharedFontMetadataMutations;
+
+  async function setFontDeleteProtectionInIndex(items: FontItem[], _folders: string[], protect: boolean) {
+    // Use persisted roots, never renderer-provided roots, to select the owner.
+    const roots = await appWatchedFolders();
+    const shared = items.filter(item => isPathInsideAnyRoot(item.path, roots));
+    const local = items.filter(item => !isPathInsideAnyRoot(item.path, roots));
+    const result = { ok: true, updatedIds: [] as string[], failed: [] as Array<{ id: string; fileName: string; message: string }>, message: '' };
+    for (const [targets, action] of [[shared, () => setSharedFontProtection(shared, roots, protect)], [local, () => setLocalFontProtection(local, protect)]] as const) {
+      if (!targets.length) continue;
+      try {
+        const reply = await action();
+        if (targets === shared) await clearLocalFontProtection(shared.filter(item => reply.updatedIds.includes(item.id)));
+        result.updatedIds.push(...reply.updatedIds);
+        result.failed.push(...reply.failed);
+      } catch (error) {
+        for (const item of targets) result.failed.push({ id: item.id, fileName: item.fileName, message: String(error) });
+      }
+    }
+    result.ok = result.failed.length === 0;
+    result.message = `${protect ? '加入保护' : '取消保护'} ${result.updatedIds.length} 个，失败 ${result.failed.length} 个。${result.failed[0]?.message || ''}`;
+    appendStartupLog(`manual protection write: protect=${protect}, shared=${shared.length}, local=${local.length}, committed=${result.updatedIds.length}, failed=${result.failed.length}`);
+    return result;
+  }
 
   async function setSharedFontTagsInIndex(
     items: FontItem[],
