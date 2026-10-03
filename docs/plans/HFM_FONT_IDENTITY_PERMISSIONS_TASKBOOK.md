@@ -548,3 +548,12 @@ Windows 专项 CI 调用现有 `check-font-view-layout.cjs --dom-feedback`；che
 原因是旧诊断的偏移页及补页高度场景只提供 offset/total，没有提供 F03 计数逻辑必需的原始 items。补齐两处夹具，使原始页成员与该场景 visibleFonts 一致；保留补页高度稳定断言，并增加按查询总数计算高度的精确断言，避免仅比较相等掩盖无效高度。静态检查同链路 DOM 与 renderCase 夹具已携带 items，无需修改。生产分页、滚动条实现和全部门禁保持不变。
 
 本轮只做源码与差异静态审阅、`git diff --check`，未在 Linux 执行 Node/Rust、类型检查、构建或测试。推送后由 Windows CI 动态验证，启动后停止轮询等待回执；F04 仍待 CI 与实机验收，F02/F03 保持收尾，F05～F07 未开始。
+
+
+### 16.4 工具栏覆盖夹具修正（2026-10-03）
+
+提交 `ebd5014def1ea88d4503d500521a3e4afdc7155d` 的 [Windows CI 37095102251](https://github.com/uniquenesssta/99/actions/runs/37095102251)，job `111123310300`：前 30 步成功；第 31 步前置几何、分页、锚点、两个变异检查均通过，720 宽 Electron 快速分页、原生拖动/自隐藏/清理以及前四个覆盖场景通过。第五个 toolbar-left/cache-menu 场景准备时报 `F04 host has no visible track: toolbar-left`，后续场景及 1600 宽尚未验证。
+
+生产 toolbar-left 为 flex 容器，测试中仅指定 1400px 宽的子内容仍会收缩，未形成所需横向溢出。为夹具内容设置 flex:none，保留真实宿主 CSS；同时按横/纵轴设置最近滚动，并断言确实滚动到 100，修正横向场景此前误操作 scrollTop。轨道缺失日志补充宿主类型、活动、轴、客户区/滚动尺寸与位置。全部原生输入、覆盖命中、恢复、清理断言保留，生产代码不变。
+
+仅源码静态复核及 git diff --check，动态验证交给 Windows CI；启动后停止轮询。F04 待 CI 和实机验收，其余阶段状态保持。

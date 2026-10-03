@@ -115,17 +115,21 @@ const point=(node:Element)=>{const r=node.getBoundingClientRect();return {x:Math
  overlayApp=document.createElement('div');overlayApp.className='app'
  overlayHost=document.createElement('div');overlayHost.className=hostClass
  overlayHost.style.cssText='position:absolute;left:40px;top:80px;width:500px;height:300px;overflow:auto;flex:none;padding:0;border:0;'
- overlayHost.innerHTML='<div style="height:1800px;width:1400px">F04 background scroll content</div>'
+ overlayHost.innerHTML='<div style="height:1800px;width:1400px;flex:none">F04 background scroll content</div>'
  overlayApp.append(overlayHost);document.body.append(overlayApp)
  overlayCleanup=setupFloatingScrollbars();overlayHost.dispatchEvent(new MouseEvent('mouseenter'))
- if(activity==='scroll'){overlayHost.scrollTop=100;overlayHost.dispatchEvent(new Event('scroll'))}
- await frames()
  overlayAxis=['toolbar-left','list-preview-scroll'].includes(hostClass)?'scrollLeft':'scrollTop'
+ if(activity==='scroll'){
+  overlayHost[overlayAxis]=100
+  check(overlayHost[overlayAxis]===100,'F04 recent-scroll fixture did not scroll: '+hostClass)
+  overlayHost.dispatchEvent(new Event('scroll'))
+ }
+ await frames()
  const horizontal=overlayAxis==='scrollLeft',bounds=overlayHost.getBoundingClientRect()
  overlayBar=[...document.querySelectorAll<HTMLElement>(`.hfm-floating-scrollbar.${horizontal?'horizontal':'vertical'}.visible`)].find(bar=>{
   const r=bar.getBoundingClientRect();return horizontal?Math.abs(r.y-(bounds.bottom-9))<2:Math.abs(r.x-(bounds.right-9))<2
  })!
- check(overlayBar,'F04 host has no visible track: '+hostClass)
+ check(overlayBar,'F04 host has no visible track: '+JSON.stringify({hostClass,activity,axis:overlayAxis,clientWidth:overlayHost.clientWidth,scrollWidth:overlayHost.scrollWidth,clientHeight:overlayHost.clientHeight,scrollHeight:overlayHost.scrollHeight,position:overlayHost[overlayAxis]}))
  overlayBar.addEventListener('pointerdown',event=>{capturedPointer=event.pointerId})
  overlayClicks=0;capturedPointer=0
  overlayDragging=activity==='drag'
