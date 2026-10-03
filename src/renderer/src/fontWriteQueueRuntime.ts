@@ -62,6 +62,7 @@ export interface RendererFontWriteQueueRuntime {
   queueFavoriteWrite: (font: FontItem, favorite: boolean) => void
   queueFavoriteWrites: (fonts: FontItem[], favorite: boolean) => Promise<void>
   queueProtectionWrite: (font: FontItem, protect: boolean) => void
+  flushProtectionWrites: () => Promise<boolean>
   flush: (reason?: string, scope?: 'local' | 'shared') => Promise<boolean>
 }
 
@@ -237,6 +238,7 @@ export function createRendererFontWriteQueueRuntime(
   }
 
   return {
+    flushProtectionWrites: () => flushField('protection', 'destructive-action'),
     clearTimer,
     scheduleFlush,
     queueLocalTagsWrite: (item, tagNames) => {

@@ -51,7 +51,7 @@ export function toggleFontSelectionId(selectedFontIds: string[], fontId: string)
 }
 
 export function isFontDeleteProtected(font: FontItem): boolean {
-  return !!font.deleteProtected || isCleanWindowsDefaultFont(font)
+  return !!font.deleteProtected
 }
 
 export function selectionLabel(

@@ -1,3 +1,4 @@
+import { FontProtectionError } from './fontProtectionAuthorityRuntime';
 import { shell } from "electron";
 import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime';
 import { executeSharedFile, sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime';
@@ -9,7 +10,7 @@ import type { SystemFontInstallRuntimeDeps } from "./systemFontInstallRuntime";
 export async function deleteFontFilesToTrashRuntime(
   items: FontItem[],
   watchedFolders: string[],
-  deps: Pick<SystemFontInstallRuntimeDeps, "fontExtensions" | "isCleanWindowsDefaultItem" | "isPathInsideAnyRoot" | "appendStartupLog">,
+  deps: Pick<SystemFontInstallRuntimeDeps, "fontExtensions" | "withFontProtection" | "isPathInsideAnyRoot" | "appendStartupLog">,
 ): Promise<FontDeleteResult> {
   const deletedIds: string[] = [];
   const failed: FontDeleteResult["failed"] = [];
@@ -20,11 +21,6 @@ export async function deleteFontFilesToTrashRuntime(
   for (const item of items || []) {
     if (!item?.id || !item.path) {
       skippedUnsafe += 1;
-      continue;
-    }
-
-    if (item.deleteProtected || deps.isCleanWindowsDefaultItem(item)) {
-      skippedProtected += 1;
       continue;
     }
 
@@ -43,18 +39,23 @@ export async function deleteFontFilesToTrashRuntime(
     }
 
     try {
-      await withSharedLeaseLock({
-        operation: 'delete-font',
-        resourcePath: resolvedPath,
-        roots: watchedFolders || [],
-        appendStartupLog: deps.appendStartupLog
-      }, async () => {
-        await fsp.access(resolvedPath);
-        if ((await sharedIoResourceKeys([resolvedPath])).length) await executeSharedFile({ operation:'trash',path:resolvedPath });
-        else await shell.trashItem(resolvedPath);
+      await deps.withFontProtection([item], async checkProtection => {
+        await withSharedLeaseLock({
+          operation: 'delete-font',
+          resourcePath: resolvedPath,
+          roots: watchedFolders || [],
+          appendStartupLog: deps.appendStartupLog
+        }, async () => {
+          await fsp.access(resolvedPath);
+          const shared = (await sharedIoResourceKeys([resolvedPath])).length > 0;
+          await checkProtection();
+          if (shared) await executeSharedFile({ operation:'trash',path:resolvedPath });
+          else await shell.trashItem(resolvedPath);
+        });
       });
       deletedIds.push(item.id);
     } catch (error) {
+      if (error instanceof FontProtectionError && error.reason === 'protected') { skippedProtected += 1; continue; }
       failed.push({
         id: item.id,
         fileName: item.fileName || basename(resolvedPath),

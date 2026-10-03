@@ -26,7 +26,10 @@ async function checkImportAndOwnership() {
   const protection = h.options('createLocalFontProtectionRuntime')
   assert.equal(protection.openLibraryDb.fixtureOperation, 'library.open', 'protection must use the existing library connection owner')
   assert.equal(protection.watchedFolders, storage.appWatchedFolders, 'protection lost persisted root authority')
-  for (const key of ['setLocalFontProtection', 'clearLocalFontProtection']) {
+  const authority = h.options('createFontProtectionAuthorityRuntime')
+  assert.equal(authority.roots, storage.fontProtectionRoots, 'destructive protection lost historical root authority')
+  assert.equal(typeof h.options('createSystemFontInstallRuntime').withFontProtection, 'function', 'install/delete/uninstall lost their guard')
+  for (const key of ['setLocalFontProtection', 'clearLocalFontProtection', 'readLocalFontProtection', 'fontProtectionRoots']) {
     assert.equal(typeof storage[key], 'function', `${key} is missing`)
     assert.equal(data.storage[key], storage[key], `${key} lost its storage owner`)
   }

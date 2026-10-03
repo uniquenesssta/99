@@ -155,6 +155,7 @@ export function useFontOperationsController(options: {
     setDatabaseFontMetrics: options.database.setDatabaseFontMetrics,
     refreshDatabaseDerivedState: options.library.refreshDatabaseDerivedState,
     scheduleDatabaseDerivedStateRefresh: options.library.scheduleDatabaseDerivedStateRefresh,
+    flushProtectionWrites: fontWriteQueueRuntime.flushProtectionWrites,
     queueFavoriteWrites: fontWriteQueueRuntime.queueFavoriteWrites,
     queueFavoriteWrite: fontWriteQueueRuntime.queueFavoriteWrite
   })

@@ -834,6 +834,8 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     closeLibraryDb,
     setLocalFontFavorite,
     setLocalFontProtection,
+    readLocalFontProtection: localProtection.read,
+    fontProtectionRoots: localProtection.roots,
     clearLocalFontProtection,
     hydrateLocalFavoritesForFonts,
     hydrateLocalTagsForFonts,

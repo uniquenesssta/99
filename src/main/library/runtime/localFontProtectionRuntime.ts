@@ -12,6 +12,7 @@ export function createLocalFontProtectionRuntime(options: {
   async function database() {
     const db = await options.openLibraryDb()
     db.exec('CREATE TABLE IF NOT EXISTS local_font_protection (font_path TEXT PRIMARY KEY, protected INTEGER NOT NULL CHECK (protected IN (0, 1)))')
+    db.exec('CREATE TABLE IF NOT EXISTS local_font_protection_roots (root_path TEXT PRIMARY KEY)')
     return db
   }
   function key(font: FontItem): string {
@@ -19,15 +20,21 @@ export function createLocalFontProtectionRuntime(options: {
     if (!font.id || !path) throw new Error('字体标识或路径为空，未写入保护状态。')
     return path
   }
+  async function roots(): Promise<string[]> {
+    const current = await options.watchedFolders(), db = await database()
+    const save = db.prepare('INSERT OR IGNORE INTO local_font_protection_roots (root_path) VALUES (?)')
+    db.transaction(() => { for (const root of current) save.run(normalizePathForCacheCompare(root)) })()
+    return (db.prepare('SELECT root_path FROM local_font_protection_roots').all() as Array<{ root_path: string }>).map(row => row.root_path)
+  }
   async function hydrate(items: FontItem[]): Promise<FontItem[]> {
     if (!items.length) return items
-    const roots = await options.watchedFolders()
+    const knownRoots = await roots()
     const db = await database()
     const read = db.prepare('SELECT protected FROM local_font_protection WHERE font_path = ?')
     return items.map(font => {
       const row = read.get(normalizePathForCacheCompare(font.path || ''))
       // A local cancellation must never clear a shared protection decision.
-      return row ? { ...font, deleteProtected: !!row.protected || (isPathInsideAnyRoot(font.path, roots) && !!font.deleteProtected) } : font
+      return row ? { ...font, deleteProtected: !!row.protected || (isPathInsideAnyRoot(font.path, knownRoots) && !!font.deleteProtected) } : font
     })
   }
   async function set(items: FontItem[], protect: boolean): Promise<FontProtectionResult> {
@@ -45,5 +52,9 @@ export function createLocalFontProtectionRuntime(options: {
     db.transaction(() => { for (const path of paths) remove.run(path) })()
     options.invalidate()
   }
-  return { hydrate, set, clear }
+  async function read(item: FontItem): Promise<boolean> {
+    const path = key(item), db = await database()
+    return !!db.prepare('SELECT protected FROM local_font_protection WHERE font_path = ?').get(path)?.protected
+  }
+  return { hydrate, set, clear, read, roots }
 }

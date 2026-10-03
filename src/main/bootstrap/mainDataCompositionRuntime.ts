@@ -392,6 +392,8 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
       loadLibraryShellFromSqlite: storage.loadLibraryShellFromSqlite,
       setLocalFontFavorite: storage.setLocalFontFavorite,
       setLocalFontProtection: storage.setLocalFontProtection,
+      readLocalFontProtection: storage.readLocalFontProtection,
+      fontProtectionRoots: storage.fontProtectionRoots,
       clearLocalFontProtection: storage.clearLocalFontProtection,
       setLocalFontTagsBase: storage.setLocalFontTagsBase,
       setLocalFontTagsBatchBase: storage.setLocalFontTagsBatchBase,

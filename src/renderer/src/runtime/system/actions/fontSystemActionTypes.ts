@@ -19,6 +19,7 @@ export type FontSystemActionRuntimeOptions = {
   setDatabaseFontMetrics: Dispatch<SetStateAction<FontMetrics | null>>
   refreshDatabaseDerivedState: (fields?: FontRefreshField[]) => void
   scheduleDatabaseDerivedStateRefresh: (delay?: number, fields?: FontRefreshField[]) => void
+  flushProtectionWrites: () => Promise<boolean>
   queueFavoriteWrites: (fonts: FontItem[], favorite: boolean) => Promise<void>
   queueFavoriteWrite: (font: FontItem, favorite: boolean) => void
 }

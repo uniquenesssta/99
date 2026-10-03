@@ -30,7 +30,7 @@ function mergeEarlyVisibleFont(oldFont: FontItem | undefined, nextFont: FontItem
     activeSince: oldFont.activeSince || nextFont.activeSince,
     managedInstallPath: oldFont.managedInstallPath || nextFont.managedInstallPath,
     managedRegistryName: oldFont.managedRegistryName || nextFont.managedRegistryName,
-    deleteProtected: oldFont.deleteProtected || nextFont.deleteProtected,
+    deleteProtected: oldFont.deleteProtected ?? nextFont.deleteProtected,
     previewDisabled: oldFont.previewDisabled || nextFont.previewDisabled,
     previewError: oldFont.previewError || nextFont.previewError,
     __earlyVisible: true

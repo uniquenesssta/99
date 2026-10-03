@@ -11,7 +11,6 @@ fontPostScriptDisplayName,
 formatSize,
 installLabel,
 IS_DEVELOPMENT,
-isCleanWindowsDefaultFont,
 isInstalled,
 scriptLabels
 } from '../../appRuntime'
@@ -212,7 +211,7 @@ export function FontDetailPanel({
             <div>路径</div><div className="path">{selectedFont.path}</div>
             <div>来源</div><div>{selectedFont.systemImported ? 'Windows 已安装字体' : '字体文件夹扫描'}</div>
             <div>临时激活</div><div>{selectedFont.active ? `已激活 ${selectedFont.activeSince || ''}` : '未激活'}</div>
-            <div>删除保护</div><div>{selectedFont.deleteProtected ? '已保护，不允许删除/卸载' : isCleanWindowsDefaultFont(selectedFont) ? '自动保护' : '未保护'}</div>
+            <div>删除保护</div><div>{selectedFont.deleteProtected ? '已手动保护，不允许删除/卸载' : '未保护'}</div>
           </div>
         </>
       ) : (

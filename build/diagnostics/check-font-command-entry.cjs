@@ -6,7 +6,7 @@ function setup(config={}) {
   const h=harness(config), calls=[], confirmations=[], favorites=[], tags=[], edited=[]
   let confirm=true, refreshes=0
   h.window.confirm=text=>{confirmations.push(text);return confirm}
-  const options=()=>({hfm:h.window.hfm,library:h.library,getCurrentLibrary:()=>h.library,setLibrary:h.setLibrary,setStatus:x=>h.status.push(x),setContextMenu:noop,activeOperationFontIds:{current:h.busy},refreshDatabaseDerivedState:()=>refreshes++,setSelectedFontIds:h.select().setSelectedFontIds,getCurrentSelectedFontId:()=>'',setSelectedFontId:noop,setDetailVisible:noop,setDatabaseFontMetrics:noop,queueFavoriteWrites:async(fonts,v)=>{for(const f of fonts){favorites.push([f.id,v]);h.load(renderer+'fontUserIntentRuntime.ts').settleFavoriteIntent(f)}},scheduleDatabaseDerivedStateRefresh:()=>refreshes++})
+  const options=()=>({flushProtectionWrites:config.protectionFlush || (async()=>true),hfm:h.window.hfm,library:h.library,getCurrentLibrary:()=>h.library,setLibrary:h.setLibrary,setStatus:x=>h.status.push(x),setContextMenu:noop,activeOperationFontIds:{current:h.busy},refreshDatabaseDerivedState:()=>refreshes++,setSelectedFontIds:h.select().setSelectedFontIds,getCurrentSelectedFontId:()=>'',setSelectedFontId:noop,setDetailVisible:noop,setDatabaseFontMetrics:noop,queueFavoriteWrites:async(fonts,v)=>{for(const f of fonts){favorites.push([f.id,v]);h.load(renderer+'fontUserIntentRuntime.ts').settleFavoriteIntent(f)}},scheduleDatabaseDerivedStateRefresh:()=>refreshes++})
   const state=h.load(renderer+'runtime/system/actions/fontSystemStateRuntime.ts').createFontSystemStateRuntime(options())
   const install=h.load(renderer+'runtime/system/actions/fontInstallActionRuntime.ts').createFontInstallActionRuntime(options(),state,h.actions())
   const deletion=h.load(renderer+'runtime/system/actions/fontDeleteActionRuntime.ts').createFontDeleteActionRuntime(options())
@@ -59,6 +59,19 @@ async function run(){let cases=0
   {
     const file=renderer+'components/app/FontCommandButtons.tsx',source=require('node:child_process').execFileSync('git',['show','0ea2635:'+file],{cwd:root,encoding:'utf8'}),s=setup({transforms:{[path.join(root,file)]:()=>source}});s.select().setSelectedFontIds(['a']);
     const names=labels(s.detail());assert(names.includes('激活')&&names.includes('取消激活'));assert.throws(()=>assert.equal(names.filter(n=>['安装','卸载字体','激活','取消激活','加入保护','取消保护','收藏','取消收藏','删除字体文件'].includes(n)).length,5),assert.AssertionError);cases++
+  }
+  for (const action of ['remove','deleteFile','install']) {
+    const s=setup({protectionFlush:async()=>false}),h=s.base
+    h.select().setSelectedFontIds(['a']);h.library.fonts.a.systemInstalled=action==='remove'
+    await h.command()(action);await tick()
+    assert.deepEqual(s.calls,[],'unsaved protection reached a native operation')
+    assert.match(h.status.at(-1),/保护状态尚未保存/);cases++
+  }
+  {
+    const s=setup(),h=s.base
+    const isProtected=h.load(renderer+'fontSelectionRuntime.ts').isFontDeleteProtected
+    assert.equal(isProtected({...h.library.fonts.a,path:'C:/Windows/Fonts/arial.ttf',systemImported:true,systemInstalled:true,deleteProtected:false}),false)
+    assert.equal(isProtected({...h.library.fonts.a,deleteProtected:true}),true);cases++
   }
   const outside=setup();outside.select().setSelectedFontIds(['a','b']);button(outside.overlay('c'),'安装').props.onClick();await tick();assert.deepEqual(outside.calls,[['installSystem','c']]);assert.deepEqual(plain(outside.select().selectedFontIds),['c']);cases++
   for(const label of ['卸载字体','删除字体文件']){const s=setup(),h=s.base;h.select().setSelectedFontIds(['a','b']);h.library.fonts.a.systemInstalled=true;s.setConfirm(false);await h.command()(label==='卸载字体'?'remove':'deleteFile');await tick();assert.equal(s.calls.length,0);assert.match(h.status.at(-1),/已取消/);cases++}

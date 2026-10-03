@@ -308,6 +308,7 @@ async function checkOperationsBehavior() {
     clearTimer: noOp,
     queueLocalTagsWrite: noOp,
     queueSharedTagsWrite: noOp,
+    flushProtectionWrites: async () => true,
     queueFavoriteWrite: noOp,
     queueProtectionWrite: (font, protect) => protectionWrites.push([font.id, protect]),
     flush: async () => true

@@ -68,27 +68,13 @@ async function isProcessElevated(): Promise<boolean> {
 }
 
 async function deleteRegistryValueHKLM(name: string): Promise<void> {
-  try {
-    await execFileAsync(
-      "reg",
-      [
-        "delete",
-        "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts",
-        "/v",
-        name,
-        "/f",
-      ],
-      { windowsHide: true },
-    );
-  } catch {
-    // The registry entry may already be gone.
-  }
+  await execFileAsync("reg", ["delete", "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts", "/v", name, "/f"], { windowsHide: true });
 }
 
 async function unlinkFontFileIfSafe(
   filePath: string,
   allowedRoot: string,
-  deps: Pick<SystemFontInstallRuntimeDeps, "fontExtensions" | "isCleanWindowsDefaultFontName">,
+  deps: Pick<SystemFontInstallRuntimeDeps, "fontExtensions">,
 ): Promise<void> {
   const normalized = filePath.toLowerCase();
   const root = allowedRoot.toLowerCase();
@@ -99,10 +85,6 @@ async function unlinkFontFileIfSafe(
 
   if (!deps.fontExtensions.has(extname(filePath).toLowerCase())) {
     throw new Error(`unsafe font delete extension: ${filePath}`);
-  }
-
-  if (deps.isCleanWindowsDefaultFontName(filePath)) {
-    throw new Error(`protected system default font: ${filePath}`);
   }
 
   try {
@@ -119,7 +101,9 @@ async function unlinkFontFileIfSafe(
 export async function removeSystemFontsWithCurrentPermission(
   hklmNames: string[],
   windowsFontPaths: string[],
-  deps: Pick<SystemFontInstallRuntimeDeps, "windowsFontsDir" | "fontExtensions" | "isCleanWindowsDefaultFontName">,
+  deps: Pick<SystemFontInstallRuntimeDeps, "windowsFontsDir" | "fontExtensions">,
+  checkProtection: () => Promise<void>,
+  onMutation: () => void,
 ): Promise<void> {
   if (!hklmNames.length && !windowsFontPaths.length) return;
 
@@ -129,11 +113,15 @@ export async function removeSystemFontsWithCurrentPermission(
   }
 
   for (const name of hklmNames) {
+    await checkProtection();
     await deleteRegistryValueHKLM(name);
+    onMutation();
   }
 
   for (const filePath of windowsFontPaths) {
+    await checkProtection();
     await unlinkFontFileIfSafe(filePath, deps.windowsFontsDir(), deps);
+    onMutation();
   }
 }
 

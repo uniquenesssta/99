@@ -1,3 +1,7 @@
+import { createFontProtectionAuthorityRuntime, readSharedFontProtection } from '../install/fontProtectionAuthorityRuntime';
+import { withSharedLeaseLocks } from '../storage/runtime/sharedLeaseLockRuntime';
+import { sharedFileSystem as protectionFs } from '../path/sharedFileSystemRuntime';
+import { findBestWatchedRootForFile } from '../path/fontPathPolicy';
 import { sharedSqliteReadSnapshot } from '../path/sharedFileSystemRuntime';
 import type { FontIndexChangePayload, FontItem, FontTagBatchItem, FontTagUpdateResult } from '../../shared/types';
 import { createFontActivationRuntime } from '../activation/fontActivationRuntime';
@@ -9,7 +13,6 @@ import { createPhysicalFolderActions, pathInsideFolder } from '../folders/physic
 import { createCurrentUserManagedInstallRuntime } from '../install/currentUserManagedInstallRuntime';
 import { createManagedFontOwnershipRuntime } from '../install/managedFontOwnershipRuntime';
 import { createSystemFontInstallRuntime } from '../install/systemFontInstallRuntime';
-import { isCleanWindowsDefaultCandidate, isCleanWindowsDefaultFontName, isCleanWindowsDefaultItem } from '../install/windowsDefaultFonts';
 import { createSharedFontMetadataMutations } from '../library/sharedFontMetadataMutations';
 import { createSharedKnownTagsRuntime } from '../library/sharedKnownTagsRuntime';
 import { createSharedMetadataMergedIndexSyncRuntime } from '../library/sharedMetadataMergedIndexSyncRuntime';
@@ -30,6 +33,8 @@ export interface MainMutationCompositionOptions {
   storage: Pick<Data['storage'],
     | 'setLocalFontFavorite'
     | 'setLocalFontProtection'
+    | 'readLocalFontProtection'
+    | 'fontProtectionRoots'
     | 'clearLocalFontProtection'
     | 'setLocalFontTagsBase'
     | 'invalidateSharedFontRuntimeCaches'
@@ -119,6 +124,8 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
   const {
     setLocalFontFavorite,
     setLocalFontProtection,
+    readLocalFontProtection,
+    fontProtectionRoots,
     clearLocalFontProtection,
     setLocalFontTagsBase,
     invalidateSharedFontRuntimeCaches,
@@ -289,17 +296,40 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     flushPendingTemporaryFontDeletes,
   } = fontActivationRuntime;
 
+  const protectionAuthority = createFontProtectionAuthorityRuntime({
+    roots: fontProtectionRoots,
+    log: appendStartupLog,
+    lock: (items, roots, action) => {
+      if (String(process.env.HFM_SHARED_LEASE_LOCKS || '').trim() === '0') throw new Error('保护锁已禁用，无法确认并发保护状态。');
+      return withSharedLeaseLocks({
+        operation: 'manual-font-protection',
+        resourcePaths: [...new Set(items.map(item => findBestWatchedRootForFile(item.path, roots)).filter((root): root is string => !!root))].map(sharedMetadataDbPathForRoot),
+        roots, ttlMs: 120000, appendStartupLog,
+      }, action);
+    },
+    read: async (item, roots) => {
+      if (await readLocalFontProtection(item)) return true;
+      const root = findBestWatchedRootForFile(item.path, roots);
+      if (!root) return false;
+      // access must throw for offline/denied/missing authorities. Never create
+      // a new empty database and interpret it as an unprotected font.
+      await protectionFs.access(sharedMetadataDbPathForRoot(root));
+      const db = await openMetadataReadSnapshot(root, 'manual-protection-authority');
+      try {
+        return readSharedFontProtection(db, item, root);
+      } finally { closeSqliteDb(db); }
+    },
+  });
+
   const systemFontInstallRuntime = createSystemFontInstallRuntime({
     fontExtensions: FONT_EXTENSIONS,
+    withFontProtection: protectionAuthority.guard,
     ensureWindows,
     currentUserFontsDir,
     windowsFontsDir,
     registryNameFor,
     normalizePathForCacheCompare,
     normalizeCompareText,
-    isCleanWindowsDefaultFontName,
-    isCleanWindowsDefaultCandidate,
-    isCleanWindowsDefaultItem,
     isTemporaryActiveInstalledRecord,
     isPathInsideAnyRoot,
     getSystemInstalledFonts,
@@ -389,9 +419,9 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     deleteSharedFontTagInIndex: deleteSharedFontTagInIndexBase,
   } = sharedFontMetadataMutations;
 
-  async function setFontDeleteProtectionInIndex(items: FontItem[], _folders: string[], protect: boolean) {
+  async function setFontDeleteProtectionInIndexBase(items: FontItem[], _folders: string[], protect: boolean) {
     // Use persisted roots, never renderer-provided roots, to select the owner.
-    const roots = await appWatchedFolders();
+    const roots = await fontProtectionRoots();
     const shared = items.filter(item => isPathInsideAnyRoot(item.path, roots));
     const local = items.filter(item => !isPathInsideAnyRoot(item.path, roots));
     const result = { ok: true, updatedIds: [] as string[], failed: [] as Array<{ id: string; fileName: string; message: string }>, message: '' };
@@ -410,6 +440,11 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     result.message = `${protect ? '加入保护' : '取消保护'} ${result.updatedIds.length} 个，失败 ${result.failed.length} 个。${result.failed[0]?.message || ''}`;
     appendStartupLog(`manual protection write: protect=${protect}, shared=${shared.length}, local=${local.length}, committed=${result.updatedIds.length}, failed=${result.failed.length}`);
     return result;
+  }
+
+  async function setFontDeleteProtectionInIndex(items: FontItem[], folders: string[], protect: boolean) {
+    if (!items.length) return { ok: true, updatedIds: [], failed: [], message: '没有可更新的字体。' };
+    return protectionAuthority.mutate(items, () => setFontDeleteProtectionInIndexBase(items, folders, protect));
   }
 
   async function setSharedFontTagsInIndex(

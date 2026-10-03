@@ -67,7 +67,114 @@ async function protection() {
   assert(invalidated>0)
   db.close()
   await assert.rejects(runtime.hydrate([a]),'unreadable authority silently became unprotected')
+  const directory=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'hfm-protection-'))
+  const diskPath=path.join(directory,'library.sqlite')
+  const open=()=>{const handle=new DatabaseSync(diskPath);handle.transaction=fn=>()=>{handle.exec('BEGIN');try{const value=fn();handle.exec('COMMIT');return value}catch(error){handle.exec('ROLLBACK');throw error}};return handle}
+  let disk=open()
+  const persisted=()=>create({openLibraryDb:async()=>disk,watchedFolders:async()=>[],invalidate(){}})
+  try {
+    await persisted().set([a],true);disk.close();disk=open()
+    assert.equal((await persisted().hydrate([{...a,id:'restart-id'}]))[0].deleteProtected,true,'disk reopen lost protection')
+    await persisted().set([a],false);disk.close();disk=open()
+    assert.equal((await persisted().hydrate([{...a,deleteProtected:true}]))[0].deleteProtected,false,'disk reopen resurrected protection')
+  } finally {disk.close();fs.rmSync(directory,{recursive:true,force:true})}
+  await protectionAuthority()
   console.log('[local-protection] explicit decisions, restart, path identity, shared precedence, cancellation and failed-write atomicity passed')
+}
+async function protectionAuthority() {
+  const load=loader(), authorityModule=load('src/main/install/fontProtectionAuthorityRuntime.ts')
+  const {createFontProtectionAuthorityRuntime:create,readSharedFontProtection:readShared}=authorityModule
+  const shared=database()
+  shared.exec('CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT); CREATE TABLE font_metadata(relative_path TEXT,path_key TEXT,delete_protected INTEGER,font_id TEXT)')
+  const source=font('source',{path:'C:\\fonts\\sample.ttf',fileName:'sample.ttf',deleteProtected:false,systemInstalled:false})
+  assert.throws(()=>readShared(shared,source,'C:\\fonts'),/迁移尚未确认/)
+  shared.prepare('INSERT INTO meta VALUES (?,?)').run('legacyRootIndexMetadataImportedAt','done')
+  assert.equal(readShared(shared,source,'C:\\fonts'),false)
+  shared.prepare('INSERT INTO font_metadata(relative_path,path_key,delete_protected) VALUES (?,?,?)').run('sample.ttf','',0)
+  shared.prepare('INSERT INTO font_metadata(relative_path,path_key,delete_protected) VALUES (?,?,?)').run('SAMPLE.TTF','',1)
+  assert.equal(readShared(shared,source,'C:\\fonts'),true,'one protected collection member must protect the physical file')
+  assert.equal(readShared(shared,{...source,path:'D:\\copy\\sample.ttf'},'C:\\fonts'),false,'different root inherited protection')
+  shared.exec('UPDATE font_metadata SET delete_protected=7')
+  assert.throws(()=>readShared(shared,source,'C:\\fonts'),/格式无效/)
+  shared.close()
+
+  let roots=[],effects=[],blocked=new Set(),offline=false
+  const authority=create({roots:async()=>roots,read:async item=>{if(offline)throw Error('offline');return blocked.has(item.path)},lock:async(_items,_roots,action)=>action(),log(){}})
+  blocked.add(source.path)
+  await assert.rejects(authority.guard([source],async()=>effects.push('bad')),/手动保护/)
+  blocked.clear();offline=true
+  await assert.rejects(authority.guard([source],async()=>effects.push('bad')),/保护状态未知/)
+  offline=false
+  await assert.rejects(authority.guard([source],async check=>{blocked.add(source.path);await check();effects.push('bad')}),/手动保护/)
+  blocked.clear()
+  await assert.rejects(authority.guard([source],async check=>{roots=['C:\\new'];await check();effects.push('bad')}),/保护状态未知/)
+  roots=[]
+  let release;const barrier=new Promise(resolve=>release=resolve)
+  const write=authority.mutate([source],async()=>{await barrier;blocked.add(source.path)})
+  const remove=authority.guard([source],async()=>effects.push('bad'))
+  release();await write;await assert.rejects(remove,/手动保护/)
+  assert.deepEqual(effects,[],'protected or unknown target reached a side effect')
+  await authority.mutate([source],async()=>blocked.clear())
+  await authority.guard([source],async check=>{await check();effects.push('allowed')})
+  assert.deepEqual(effects,['allowed'],'failed guard poisoned the operation queue')
+  effects=[]
+  let begin,continueWaiting
+  const entered=new Promise(resolve=>begin=resolve),waiting=new Promise(resolve=>continueWaiting=resolve)
+  const pendingOperation=authority.guard([source],async check=>{begin();await waiting;await check();effects.push('bad')})
+  await entered
+  const pendingProtection=authority.mutate([source],async()=>blocked.add(source.path))
+  continueWaiting()
+  await assert.rejects(pendingOperation,/保护修改正在等待提交/);await pendingProtection
+  assert.deepEqual(effects,[],'pending protection intent was ignored during a wait')
+  blocked.clear()
+
+
+  // Exercise real install/uninstall/trash code. Only OS mutation ports are
+  // replaced; authority, candidate planning and per-effect rechecks are real.
+  effects=[]
+  const portFile=path.join(root,'src/main/path/sharedFileSystemRuntime.ts')
+  const io={access:async()=>{},mkdir:async()=>{},copyFile:async()=>effects.push('copy'),unlink:async()=>effects.push('unlink')}
+  let protectAfterPermission=''
+  const runtimeLoad=loader({electron:{shell:{trashItem:async()=>effects.push('trash')}},
+    'node:fs':{existsSync:()=>true},
+    'node:child_process':{execFile:(exe,_args,_options,done)=>{effects.push(exe==='net'?'permission-check':'registry-native');if(exe==='net'&&protectAfterPermission)blocked.add(protectAfterPermission);done(null,'')}},
+    [portFile]:{sharedFileSystem:io,executeSharedFile:async()=>{throw Error('unexpected network mutation')}},
+    [path.join(root,'src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>[]},
+    [path.join(root,'src/main/storage/runtime/sharedLeaseLockRuntime.ts')]:{withSharedLeaseLock:async(_opts,action)=>action()}})
+  const authority2=runtimeLoad('src/main/install/fontProtectionAuthorityRuntime.ts').createFontProtectionAuthorityRuntime({roots:async()=>[],read:async item=>{if(offline)throw Error('offline');return blocked.has(item.path)},lock:async(_items,_roots,action)=>action(),log(){}})
+  const installedPath='C:\\user-fonts\\sample.ttf'
+  const records=[{path:installedPath,fileName:'sample.ttf',registryName:'Sample',value:installedPath,source:'HKCU'}]
+  const deps={withFontProtection:authority2.guard,fontExtensions:new Set(['.ttf']),ensureWindows(){},currentUserFontsDir:()=> 'C:\\user-fonts',windowsFontsDir:()=> 'C:\\Windows\\Fonts',registryNameFor:()=> 'Sample',normalizePathForCacheCompare:p=>p.toLowerCase(),normalizeCompareText:s=>s.toLowerCase(),isCleanWindowsDefaultFontName:()=>true,isCleanWindowsDefaultCandidate:()=>true,isCleanWindowsDefaultItem:()=>true,isTemporaryActiveInstalledRecord:()=>false,isPathInsideAnyRoot:()=>true,getSystemInstalledFonts:async()=>records,getSystemInstalledFontsCached:async()=>records,clearInstalledFontsMemoryCache(){},writeFontRegistryValuesHKCUBatch:async()=>effects.push('registry-write'),deleteFontRegistryValuesHKCUBatch:async()=>effects.push('registry-delete'),advancedFontRefresh:async()=>{},activationTraceStep:async(_label,_id,fn)=>fn(),appendStartupLog(){}}
+  const system=runtimeLoad('src/main/install/systemFontInstallRuntime.ts').createSystemFontInstallRuntime(deps)
+  blocked.add(installedPath)
+  assert.equal((await system.uninstallFontSystemWide(source)).ok,false)
+  await assert.rejects(system.installFontSystemWide(source),/手动保护/)
+  assert.deepEqual(effects,[],'protected installation copy was changed')
+  blocked.clear();blocked.add(source.path)
+  assert.equal((await system.uninstallFontSystemWide(source)).ok,false)
+  assert.deepEqual(effects,[],'forged false bypassed source protection')
+  blocked.clear();offline=true
+  assert.equal((await system.uninstallFontSystemWide(source)).ok,false)
+  assert.deepEqual(effects,[],'offline authority caused registry/file effects')
+  offline=false
+  assert.equal((await system.uninstallFontSystemWide({...source,deleteProtected:true})).ok,true,'default classification or stale snapshot still blocked unprotected font')
+  assert.deepEqual(effects,['registry-delete','unlink'])
+  effects=[];await system.installFontSystemWide(source)
+  assert.deepEqual(effects,['copy','registry-write']);assert.equal(blocked.size,0,'installation created implicit protection')
+  effects=[];blocked.add(source.path)
+  const other={...source,id:'other',path:'C:\\fonts\\other.ttf'}
+  const deleted=await system.deleteFontFilesToTrash([source,other],['C:\\fonts'])
+  assert.equal(deleted.skippedProtected,1);assert.equal(deleted.deleted,1)
+  assert.deepEqual(effects,['trash'],'mixed batch damaged protected member')
+  effects=[];blocked.clear()
+  records[0]={...records[0],source:'HKLM',path:'C:\\Windows\\Fonts\\arial.ttf',value:'C:\\Windows\\Fonts\\arial.ttf'}
+  protectAfterPermission=records[0].path
+  assert.equal((await system.uninstallFontSystemWide(source)).ok,false)
+  assert.deepEqual(effects,['permission-check'],'protection changed during permission wait but registry/file was modified')
+  effects=[];blocked.clear();protectAfterPermission=''
+  assert.equal((await system.uninstallFontSystemWide(source)).ok,true)
+  assert.deepEqual(effects,['permission-check','registry-native','unlink'],'HKLM/default filename still implicitly protected')
+  console.log('[protection-authority] shared SQLite, unknown/offline, queue ordering, recheck, collection paths, install copies, mixed batch and zero protected effects passed')
 }
 async function favorites() {
   const load = loader()

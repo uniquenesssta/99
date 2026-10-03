@@ -8,6 +8,7 @@ export function createFontDeleteActionRuntime(options: FontSystemActionRuntimeOp
 } {
   async function deleteFontsBatch(fonts: FontItem[], label: string): Promise<void> {
     options.setContextMenu(null)
+    if (!await options.flushProtectionWrites()) { options.setStatus('保护状态尚未保存，未执行。请等待保护写入成功后重试。'); return }
     const busy = options.activeOperationFontIds?.current
     const selected = uniqueFontsById(fonts)
     const unique = selected.filter(font => !busy?.has(font.id))
