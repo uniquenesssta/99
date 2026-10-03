@@ -23,6 +23,13 @@ async function checkImportAndOwnership() {
     assert.equal(data.resources[key], storage[key], `${key} lost its single storage owner`)
   }
   assert.equal(data.capabilities.queryFontsInLibrary, query.queryFontsInLibrary)
+  const protection = h.options('createLocalFontProtectionRuntime')
+  assert.equal(protection.openLibraryDb.fixtureOperation, 'library.open', 'protection must use the existing library connection owner')
+  assert.equal(protection.watchedFolders, storage.appWatchedFolders, 'protection lost persisted root authority')
+  for (const key of ['setLocalFontProtection', 'clearLocalFontProtection']) {
+    assert.equal(typeof storage[key], 'function', `${key} is missing`)
+    assert.equal(data.storage[key], storage[key], `${key} lost its storage owner`)
+  }
   h.librarySnapshot = { fonts: { a: { id: 'a', active: true, favorite: true, tagNames: ['shared'] } }, previewText: 'retained' }
   const hydrate = query.hydrateInstallStatusForFonts
   query.hydrateInstallStatusForFonts = async items => items.map(item => ({ ...item, active: false }))

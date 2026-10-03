@@ -590,3 +590,12 @@ F04 登记为自动化通过，当前用户“已通过”对应 CI 回执，尚
 - 补齐混合批量、共享离线、并发取消/加入、重新安装与重启真实链路验收。提权等待期间重验接口与 F06 对接。
 
 本轮只进行源码、差异与接口静态审阅和 git diff --check，Windows 动态验证交由 CI。首批推送启动即停止轮询，F05 整项保持进行中，不标完成；F06/F07 未开始。
+
+
+### 17.3 首批启动组合清单修正（2026-10-03）
+
+提交 `e220504d4be488df456744b9c96bef4b4598df21` 的 [CI 37128989993](https://github.com/uniquenesssta/99/actions/runs/37128989993)，Windows job `111220098227`：类型检查及第 6～13 步通过，第 14 步启动组合门禁报 `AT-4.1 composition behavior changed`。实际新增 createLocalFontProtectionRuntime 单一 owner，冻结夹具未登记；后续步骤跳过，包括 protection SQLite 场景，不能记为已验证。
+
+本次只在预期 owner 清单添加该模块，保留已有注册、构造副作用、流程、资源生命周期、类型和变异检查；额外核对保护模块使用既有 library.open 连接入口、持久化 appWatchedFolders，以及 set/clear 接口由 DataStorage 原样透传到 Data。生产实现不改，不重录或屏蔽其他基线差异。
+
+Linux 仅源码和差异静态复核及 git diff --check，Windows 动态结果待新 CI。F04 保持收尾，F05 首批待验，§17.2 未完成项保持，F06/F07 未开始。
