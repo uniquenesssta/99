@@ -539,3 +539,12 @@ Linux 仅源码、公开调用边界和差异静态复核及 `git diff --check`�
 Windows 专项 CI 调用现有 `check-font-view-layout.cjs --dom-feedback`；checkout 获取历史以满足该诊断原有 `6012cb6` 布局基线读取，未改冻结基线。重叠截图写入 `artifacts/font-identity-f04`，与既有身份材料一起上传。截图、hit-test 和原生事件断言均待这次 Windows 执行，不把 Linux 静态复核登记为实际 Electron 验收。
 
 本轮仅源码编辑、接口与事件生命周期静态审阅、工作流和 `git diff --check`。推送启动 CI 后停止轮询，待回执；CI 通过后在 Windows 列表预览滑块位置打开右键菜单，并检查拖动中打开弹窗、关闭后恢复，确认后才能收尾 F04。
+
+
+### 16.3 首轮 CI 失败与分页夹具修正（2026-10-03）
+
+受测提交 `6f8c798b7ed48fb7e856341301b80279cfd4683d`，[CI 37093207147](https://github.com/uniquenesssta/99/actions/runs/37093207147)，Windows job `111117743295`：前 30 步成功；第 31 步浮动滚动条诊断在 `check-font-view-layout.cjs` 的前置 geometry behavior 报 `TypeError: Cannot read properties of undefined (reading 'length')`，尚未进入 Electron 滑块场景，不能登记层级或原生输入通过。
+
+原因是旧诊断的偏移页及补页高度场景只提供 offset/total，没有提供 F03 计数逻辑必需的原始 items。补齐两处夹具，使原始页成员与该场景 visibleFonts 一致；保留补页高度稳定断言，并增加按查询总数计算高度的精确断言，避免仅比较相等掩盖无效高度。静态检查同链路 DOM 与 renderCase 夹具已携带 items，无需修改。生产分页、滚动条实现和全部门禁保持不变。
+
+本轮只做源码与差异静态审阅、`git diff --check`，未在 Linux 执行 Node/Rust、类型检查、构建或测试。推送后由 Windows CI 动态验证，启动后停止轮询等待回执；F04 仍待 CI 与实机验收，F02/F03 保持收尾，F05～F07 未开始。
