@@ -9,15 +9,37 @@ export type FloatingScrollbarState = {
   scrolling: boolean
   barHovered: boolean
   dragging: boolean
+  blocked: boolean
+  cancelDrag: Array<() => void>
   hideTimer: number | null
   cleanup: Array<() => void>
 }
 
 export function setupFloatingScrollbars(): () => void {
-  const selector = '.sidebar, .font-list, .font-waterfall, .font-virtual-scroller, .detail-panel, .toolbar-left, .list-preview-scroll'
+  const popupSelector = '.context-menu, .cache-menu, .toolbar-popover, .tag-suggestion-list'
+  const selector = `.sidebar, .font-list, .font-waterfall, .font-virtual-scroller, .detail-panel, .toolbar-left, .list-preview-scroll, .modal-card, ${popupSelector}`
   const states = new Map<HTMLElement, FloatingScrollbarState>()
+  let activeOverlay: HTMLElement | null = null
   let updateRaf = 0
   let syncRaf = 0
+
+  function findActiveOverlay(): HTMLElement | null {
+    const visible = (node: HTMLElement) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden'
+    const modals = [...document.querySelectorAll<HTMLElement>('.modal-backdrop')].filter(visible)
+    const modal = modals.at(-1) || null
+    // A modal owns input even if a background popup has not unmounted yet.
+    const popups = [...(modal || document).querySelectorAll<HTMLElement>(popupSelector)].filter(visible)
+    return popups.at(-1) || modal
+  }
+
+  function acceptsInput(state: FloatingScrollbarState): boolean {
+    activeOverlay = findActiveOverlay()
+    if (!document.body.contains(state.host) || (activeOverlay && !activeOverlay.contains(state.host))) {
+      updateState(state)
+      return false
+    }
+    return true
+  }
 
   function createBar(axis: 'vertical' | 'horizontal'): { bar: HTMLDivElement; thumb: HTMLDivElement } {
     const bar = document.createElement('div')
@@ -41,6 +63,7 @@ export function setupFloatingScrollbars(): () => void {
     if (updateRaf) return
     updateRaf = window.requestAnimationFrame(() => {
       updateRaf = 0
+      activeOverlay = findActiveOverlay()
       states.forEach(updateState)
     })
   }
@@ -62,6 +85,30 @@ export function setupFloatingScrollbars(): () => void {
       removeState(host)
       return
     }
+
+    const blocked = !!activeOverlay && !activeOverlay.contains(host)
+    if (blocked && !state.blocked) {
+      state.cancelDrag.forEach(cancel => cancel())
+      if (state.hideTimer !== null) window.clearTimeout(state.hideTimer)
+      state.hideTimer = null
+      state.hovered = state.barHovered = state.focused = state.scrolling = false
+      for (const bar of [state.verticalBar, state.horizontalBar]) {
+        if (document.activeElement === bar) bar.blur()
+      }
+    } else if (!blocked && state.blocked) {
+      state.hovered = host.matches(':hover')
+      state.focused = host.contains(document.activeElement)
+    }
+    state.blocked = blocked
+    for (const bar of [state.verticalBar, state.horizontalBar]) {
+      bar.tabIndex = blocked ? -1 : 0
+      bar.setAttribute('aria-hidden', String(blocked))
+      if (blocked) {
+        bar.classList.remove('visible')
+        bar.style.display = 'none'
+      }
+    }
+    if (blocked) return
 
     const rect = host.getBoundingClientRect()
     // Per-card horizontal bars must be clipped to the actual scroll viewport,
@@ -135,6 +182,8 @@ export function setupFloatingScrollbars(): () => void {
       scrolling: false,
       barHovered: false,
       dragging: false,
+      blocked: false,
+      cancelDrag: [],
       hideTimer: null,
       cleanup: []
     }
@@ -152,6 +201,7 @@ export function setupFloatingScrollbars(): () => void {
       let pointerId: number | null = null
       let grabOffset = 0
       const move = (event: PointerEvent) => {
+        if (!acceptsInput(state)) return
         const bounds = bar.getBoundingClientRect()
         const length = axis === 'vertical' ? bounds.height : bounds.width
         const thumbLength = axis === 'vertical' ? thumb.offsetHeight : thumb.offsetWidth
@@ -161,7 +211,7 @@ export function setupFloatingScrollbars(): () => void {
         showTemporarily(state)
       }
       addListener(bar, 'pointerdown', event => {
-        if (event.button !== 0) return
+        if (event.button !== 0 || !acceptsInput(state)) return
         event.preventDefault()
         event.stopPropagation()
         const bounds = thumb.getBoundingClientRect()
@@ -180,6 +230,12 @@ export function setupFloatingScrollbars(): () => void {
         state.dragging = false
         showTemporarily(state)
       }
+      state.cancelDrag.push(() => {
+        const captured = pointerId
+        pointerId = null
+        state.dragging = false
+        if (captured !== null && bar.hasPointerCapture(captured)) bar.releasePointerCapture(captured)
+      })
       addListener(bar, 'pointerup', event => {
         if (event.pointerId !== pointerId) return
         // Clear our state before releasing browser capture: capture may already
@@ -197,6 +253,7 @@ export function setupFloatingScrollbars(): () => void {
       addListener(bar, 'blur', () => { state.focused = false; scheduleUpdate() }, state)
       addListener(bar, 'click', event => event.stopPropagation(), state)
       addListener(bar, 'keydown', event => {
+        if (!acceptsInput(state)) return
         const extent = axis === 'vertical' ? host.clientHeight : host.clientWidth
         const max = axis === 'vertical' ? host.scrollHeight - extent : host.scrollWidth - extent
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? max
@@ -220,6 +277,7 @@ export function setupFloatingScrollbars(): () => void {
     const state = states.get(host)
     if (!state) return
     states.delete(host)
+    state.cancelDrag.forEach(cancel => cancel())
     if (state.hideTimer !== null) window.clearTimeout(state.hideTimer)
     state.cleanup.forEach((cleanup) => cleanup())
     resizeObserver?.unobserve(host)
@@ -228,6 +286,7 @@ export function setupFloatingScrollbars(): () => void {
   }
 
   function syncHosts(): void {
+    activeOverlay = findActiveOverlay()
     const hosts = new Set(Array.from(document.querySelectorAll<HTMLElement>(selector)))
     hosts.forEach(ensureState)
     Array.from(states.keys()).forEach((host) => {
@@ -244,8 +303,15 @@ export function setupFloatingScrollbars(): () => void {
     })
   }
 
-  const mutationObserver = new MutationObserver(scheduleSync)
-  mutationObserver.observe(document.body, { childList: true, subtree: true })
+  const mutationObserver = new MutationObserver(records => {
+    // Our own geometry/ARIA/class writes must not create a perpetual RAF loop.
+    if (records.some(record => {
+      if (record.target instanceof Element && record.target.closest('.hfm-floating-scrollbar')) return false
+      if (record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].every(node => node instanceof Element && node.matches('.hfm-floating-scrollbar'))) return false
+      return true
+    })) scheduleSync()
+  })
+  mutationObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] })
   const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(scheduleUpdate) : null
   const syncTimer = window.setInterval(scheduleSync, 1200)
   window.addEventListener('resize', scheduleSync)

@@ -1,4 +1,5 @@
 const { app, BrowserWindow } = require('electron')
+const fs = require('node:fs'), path = require('node:path')
 const file = process.argv[2]
 const feedbackOnly = process.argv.includes('--dom-feedback')
 const watchdog = setTimeout(() => { console.error('DOM layout gate timed out'); app.exit(1) }, 180000)
@@ -29,6 +30,35 @@ app.whenReady().then(async () => {
     win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', x: drag.x, y: drag.endY, clickCount: 1 })
     win.webContents.sendInputEvent({ type: 'mouseMove', x: 5, y: 5 })
     console.log('[floating-scrollbar:electron]', JSON.stringify(await win.webContents.executeJavaScript('window.finishScrollbarDrag()')))
+    const evidence = path.resolve('artifacts/font-identity-f04')
+    fs.mkdirSync(evidence, { recursive: true })
+    const overlayCases = [
+      ['list-preview-scroll','hover','context-menu'], ['font-virtual-scroller','drag','context-menu'],
+      ['sidebar','scroll','context-menu'], ['detail-panel','hover','toolbar-popover'],
+      ['toolbar-left','scroll','cache-menu'], ['font-list','hover','tag-suggestion-list'],
+      ['font-waterfall','scroll','context-menu'], ['list-preview-scroll','drag','context-menu'],
+      ['font-virtual-scroller','drag','modal-backdrop'],
+    ]
+    for (let index = 0; index < overlayCases.length; index++) {
+      const [host, activity, kind] = overlayCases[index]
+      const start = await win.webContents.executeJavaScript(`window.prepareScrollbarOverlay(${JSON.stringify(host)},${JSON.stringify(activity)})`)
+      win.webContents.sendInputEvent({ type:'mouseMove', ...start })
+      if (activity === 'drag') win.webContents.sendInputEvent({ type:'mouseDown', button:'left', modifiers:['leftbuttondown'], ...start, clickCount:1 })
+      // Let native pointer capture take effect before the overlay appears.
+      await win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      const target = await win.webContents.executeJavaScript(`window.openScrollbarOverlay(${JSON.stringify(kind)})`)
+      fs.writeFileSync(path.join(evidence, `${width}-${index}-${kind}.png`), (await win.webContents.capturePage()).toPNG())
+      if (activity === 'drag') {
+        win.webContents.sendInputEvent({ type:'mouseMove', button:'left', modifiers:['leftbuttondown'], x:start.x+20, y:start.y+20 })
+        win.webContents.sendInputEvent({ type:'mouseUp', button:'left', x:start.x+20, y:start.y+20, clickCount:1 })
+      }
+      win.webContents.sendInputEvent({ type:'mouseMove', x:target.x, y:target.y })
+      win.webContents.sendInputEvent({ type:'mouseDown', button:'left', modifiers:['leftbuttondown'], x:target.x, y:target.y, clickCount:1 })
+      if (kind === 'modal-backdrop') win.webContents.sendInputEvent({ type:'mouseMove', button:'left', modifiers:['leftbuttondown'], x:target.x, y:target.endY })
+      win.webContents.sendInputEvent({ type:'mouseUp', button:'left', x:target.x, y:target.endY || target.y, clickCount:1 })
+      win.webContents.sendInputEvent({ type:'mouseMove', x:5, y:5 })
+      console.log('[floating-scrollbar-overlay:electron]', JSON.stringify(await win.webContents.executeJavaScript(`window.finishScrollbarOverlay(${JSON.stringify(kind)})`)))
+    }
   }
   clearTimeout(watchdog); app.exit(0)
 }).catch(error => { console.error(error); clearTimeout(watchdog); app.exit(1) })

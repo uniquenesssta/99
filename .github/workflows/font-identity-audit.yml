@@ -11,6 +11,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
@@ -66,9 +67,13 @@ jobs:
         run: cargo build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml
       - name: Accept production IDs, pagination and actual Electron DOM
         run: node build/diagnostics/check-font-identity-reproduction.cjs
+      - name: Verify floating scrollbar overlays with native Electron input
+        run: node build/diagnostics/check-font-view-layout.cjs --dom-feedback
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: font-identity-f01-evidence
-          path: artifacts/font-identity-f01
+          path: |
+            artifacts/font-identity-f01
+            artifacts/font-identity-f04
           retention-days: 14

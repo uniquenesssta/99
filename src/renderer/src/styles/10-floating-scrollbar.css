@@ -22,6 +22,12 @@
   overflow-x: auto !important;
 }
 
+/* Modal content owns its own scrollbar while background hosts are suspended. */
+.modal-card {
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
+
 .hfm-floating-scrollbar {
   position: fixed;
   top: 0;

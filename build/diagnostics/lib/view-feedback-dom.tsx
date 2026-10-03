@@ -104,3 +104,79 @@ let scrollHost:HTMLDivElement,cleanup:()=>void,removeProbe:()=>void,events:any[]
  check(document.querySelectorAll('.hfm-floating-scrollbar').length===0,'scrollbar observers/hosts leaked on cleanup')
  return {drag:true,autoHide:true,cleanup:true,focusedBeforeIdle}
 }
+
+// F04 uses the production .app stacking context and scrollbar owner. Native
+// mouse input is supplied by Electron; synthetic events only select visibility.
+let overlayApp:HTMLDivElement,overlayHost:HTMLDivElement,overlayBar:HTMLElement,overlayNode:HTMLDivElement
+let overlayCleanup:()=>void,overlayAxis:'scrollTop'|'scrollLeft',overlayStart=0,overlayClicks=0,capturedPointer=0,overlayDragging=false
+const frames=async()=>{await frame();await frame();await frame()}
+const point=(node:Element)=>{const r=node.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}}
+;(window as any).prepareScrollbarOverlay=async(hostClass:string,activity:string)=>{
+ overlayApp=document.createElement('div');overlayApp.className='app'
+ overlayHost=document.createElement('div');overlayHost.className=hostClass
+ overlayHost.style.cssText='position:absolute;left:40px;top:80px;width:500px;height:300px;overflow:auto;flex:none;padding:0;border:0;'
+ overlayHost.innerHTML='<div style="height:1800px;width:1400px">F04 background scroll content</div>'
+ overlayApp.append(overlayHost);document.body.append(overlayApp)
+ overlayCleanup=setupFloatingScrollbars();overlayHost.dispatchEvent(new MouseEvent('mouseenter'))
+ if(activity==='scroll'){overlayHost.scrollTop=100;overlayHost.dispatchEvent(new Event('scroll'))}
+ await frames()
+ overlayAxis=['toolbar-left','list-preview-scroll'].includes(hostClass)?'scrollLeft':'scrollTop'
+ const horizontal=overlayAxis==='scrollLeft',bounds=overlayHost.getBoundingClientRect()
+ overlayBar=[...document.querySelectorAll<HTMLElement>(`.hfm-floating-scrollbar.${horizontal?'horizontal':'vertical'}.visible`)].find(bar=>{
+  const r=bar.getBoundingClientRect();return horizontal?Math.abs(r.y-(bounds.bottom-9))<2:Math.abs(r.x-(bounds.right-9))<2
+ })!
+ check(overlayBar,'F04 host has no visible track: '+hostClass)
+ overlayBar.addEventListener('pointerdown',event=>{capturedPointer=event.pointerId})
+ overlayClicks=0;capturedPointer=0
+ overlayDragging=activity==='drag'
+ return point(overlayBar.firstElementChild!)
+}
+;(window as any).openScrollbarOverlay=async(kind:string)=>{
+ if(overlayDragging)check(capturedPointer>0&&overlayBar.hasPointerCapture(capturedPointer),'native background drag did not establish capture')
+ const p=point(overlayBar.firstElementChild!)
+ overlayNode=document.createElement('div');overlayNode.className=kind
+ if(kind==='modal-backdrop'){
+  overlayNode.innerHTML='<div class="modal-card" style="position:absolute;left:40px;top:80px;width:500px;height:300px;padding:0;border:0"><div style="height:1800px;width:1400px">F04 modal scroll content</div></div>'
+ }else{
+  overlayNode.style.cssText=`position:fixed;left:${p.x-30}px;top:${p.y-15}px;width:130px;height:70px;padding:0;`
+  const button=document.createElement('button');button.textContent='F04 menu action';button.style.cssText='width:100%;height:100%;padding:0'
+  button.onclick=()=>{overlayClicks++};overlayNode.append(button)
+ }
+ overlayApp.append(overlayNode);await frames()
+ overlayStart=overlayHost[overlayAxis]
+ check(getComputedStyle(overlayBar).display==='none','background scrollbar remains visible through overlay')
+ check(overlayBar.tabIndex===-1,'blocked background scrollbar remains in tab order')
+ check(!capturedPointer||!overlayBar.hasPointerCapture(capturedPointer),'overlay did not release an existing drag')
+ overlayBar.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true,cancelable:true}))
+ check(overlayHost[overlayAxis]===overlayStart,'blocked scrollbar accepted keyboard input')
+ if(kind==='modal-backdrop'){
+  const card=overlayNode.querySelector<HTMLElement>('.modal-card')!
+  card.dispatchEvent(new MouseEvent('mouseenter'));await frames()
+  const bar=document.querySelector<HTMLElement>('.hfm-floating-scrollbar.vertical.visible')!
+  check(bar,'modal lost its own scrollbar')
+  const start=point(bar.firstElementChild!),r=bar.getBoundingClientRect()
+  check(document.elementFromPoint(start.x,start.y)?.closest('.hfm-floating-scrollbar')===bar,'modal scrollbar is not hit-testable')
+  return {...start,endY:Math.round(r.bottom-2)}
+ }
+ check(overlayNode.contains(document.elementFromPoint(p.x,p.y)),'menu is not above the old track in hit testing')
+ return p
+}
+;(window as any).finishScrollbarOverlay=async(kind:string)=>{
+ await frames()
+ check(overlayHost[overlayAxis]===overlayStart,'captured background drag continued under overlay')
+ if(kind==='modal-backdrop')check(overlayNode.querySelector<HTMLElement>('.modal-card')!.scrollTop>1000,'native modal scrollbar drag failed')
+ else check(overlayClicks===1,'native overlapping click did not reach the menu action')
+ overlayNode.remove();overlayHost.dispatchEvent(new MouseEvent('mouseenter'));await frames()
+ // Re-enter after the overlay owner has been released.
+ overlayHost.dispatchEvent(new MouseEvent('mouseenter'));await frames()
+ check(overlayBar.classList.contains('visible'),'scrollbar did not restore after overlay closed')
+ overlayBar.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true,cancelable:true}))
+ check(overlayHost[overlayAxis]>overlayStart,'restored scrollbar cannot navigate')
+ overlayHost.style.top='-2200px';await frames()
+ check(!overlayBar.classList.contains('visible'),'offscreen virtual host kept a visible track')
+ overlayHost.remove();await frames()
+ check(!overlayBar.isConnected,'removed virtual host leaked its track')
+ overlayCleanup();overlayApp.remove();await frames()
+ check(document.querySelectorAll('.hfm-floating-scrollbar').length===0,'F04 scrollbar cleanup leaked nodes')
+ return {overlay:kind,nativeInput:true,restored:true,offscreenCleanup:true}
+}
