@@ -45,7 +45,7 @@ async function entries(){
 async function failures(){
   for(const mode of ['throw','missing-receipt','sql-rollback','partial','retry']){
     const f=await fixture();let attempt=0
-    if(mode==='sql-rollback')f.db.exec("CREATE TRIGGER deny_b BEFORE INSERT ON local_font_favorites WHEN NEW.font_id='b' BEGIN SELECT RAISE(ABORT,'disk'); END")
+    if(mode==='sql-rollback')f.db.exec("CREATE TRIGGER deny_b BEFORE INSERT ON local_font_favorites WHEN NEW.font_path='c:\\fixture\\b.ttf' BEGIN SELECT RAISE(ABORT,'disk'); END")
     else f.response(async(fonts,folders,value)=>{
       attempt++
       if(mode==='throw')throw Error('offline')

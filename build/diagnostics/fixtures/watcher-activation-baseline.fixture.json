@@ -93,7 +93,7 @@
         "runDeactivation",
         "deactivateFontSession"
       ],
-      "sha256": "33f4b91d92e2b20bc61dc5fd98c9b856cab0420741e8f7a8236f844505138e1e"
+      "sha256": "fa6ba51181005f0078b8392ba7a6749216a46593473a8cbc73a27ba7366c7f85"
     },
     "src/main/activation/runtime/fontActivationInstallStatusRuntime.ts": {
       "exports": [
@@ -166,7 +166,7 @@
       "functions": [
         "shouldUseMergedIndexWorkerForPage"
       ],
-      "sha256": "8bdca38f858ddb921689869ed99887787a7541e954ed153a220d7a8f8012accc"
+      "sha256": "b42589292bca26cd886242524087625ac24f19dc1651d051928ef05b8ad72503"
     }
   },
   "migrations": [

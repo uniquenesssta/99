@@ -5,6 +5,7 @@ const os = require('node:os')
 const path = require('node:path')
 const ts = require('typescript')
 const { spawnSync, execFileSync } = require('node:child_process')
+const { dependencyCacheEnv } = require('../dependencies/run-with-cache.cjs')
 const root = path.resolve(__dirname, '../..')
 let checks = 0
 const baseline = process.argv.find((arg) => arg.startsWith('--baseline='))?.slice(11)
@@ -152,7 +153,7 @@ function nativeTests() {
     } else skipped.push('PowerShell runtime')
 
     if (!run('cargo', ['--version']).error) {
-      const result = run('cargo', ['test', '--offline', '--manifest-path', 'native-src/hfm-core-worker/Cargo.toml', 'shared_preview_input_boundaries'])
+      const result = run('cargo', ['test', '--locked', '--offline', '--manifest-path', 'native-src/hfm-core-worker/Cargo.toml', 'shared_preview_input_boundaries'], { env: dependencyCacheEnv(root) })
       assert.equal(result.status, 0, result.stderr + result.stdout)
       console.log('Rust actual input policy: shared fixtures passed')
     } else skipped.push('Rust/Cargo')

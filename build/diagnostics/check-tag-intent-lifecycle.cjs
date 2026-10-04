@@ -136,20 +136,21 @@ function successfulReadCatalogCases(transform) {
 }
 async function pageConfirmationCase(stale = false) {
   const effects=[],timers=[],pending=gate()
-  let normalize
-  const appPort={rendererFontQueryCacheKey:JSON.stringify,libraryWithMergedFonts:(...args)=>normalize.libraryWithMergedFonts(...args)}
+  let normalize,request
+  const appPort={libraryWithMergedFonts:(...args)=>normalize.libraryWithMergedFonts(...args)}
   const {a,load}=environment(x=>x,{
     react:{useEffect:fn=>effects.push(fn),useMemo:fn=>fn(),useState:()=>[0,()=>{}]},
     [path.join(root,dir+'appRuntime.ts')]:appPort
   },{window:{setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout(){}}})
   appPort.getVirtualGridColumns=load(dir+'constants/layoutConstants.ts').getVirtualGridColumns
+  appPort.rendererFontQueryCacheKey=load(dir+'constants/queryCacheRuntime.ts').rendererFontQueryCacheKey
   normalize=load(dir+'library-normalize/libraryNormalizeStateRuntime.ts')
   const edit=a.markFontTagsOptimistic(font('a'),'local',[]);a.settleFontTagWrite(edit,'local',true)
   let library={fonts:{a:edit},folders:['/fonts'],localTags:['old'],tags:['shared']}
   const beforeLibrary=library
   const seq={current:0}
   load(dir+'runtime/database/useRendererDatabasePageRuntime.ts').useRendererDatabasePageRuntime({
-    library,libraryLoadedRef:{current:true},hfm:{queryFontPage:()=>pending.promise},
+    library,libraryLoadedRef:{current:true},hfm:{queryFontPage:input=>{request=input;return pending.promise}},
     databasePageResult:null,databaseQueryFailedKey:'',databaseRefreshToken:1,
     databasePageRequestSeqRef:seq,fontListScrollingRef:{current:false},
     virtualViewport:{width:500,height:500,scrollTop:0},viewLayout:{rowHeight:100,minCardWidth:100},
@@ -158,7 +159,8 @@ async function pageConfirmationCase(stale = false) {
   })
   const cleanup=effects.map(fn=>fn());for(const timer of timers)timer()
   if(stale)seq.current++
-  pending.resolve({items:[],total:0,offset:0,limit:100})
+  assert(request,'page query was not dispatched')
+  pending.resolve({queryKey:appPort.rendererFontQueryCacheKey(request),items:[],total:0,offset:request.offset,limit:request.limit})
   await tick()
   assert.equal(library === beforeLibrary,stale,'empty accepted page must publish changed intent to memoized views')
   assert.equal(a.isFontTagStateDirty(library.fonts.a,'local'),stale,'real page hook must confirm only accepted post-ack response, including empty results')

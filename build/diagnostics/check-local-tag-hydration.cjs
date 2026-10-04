@@ -25,7 +25,8 @@ function harness({ rows = [], allowed = true, rust, transform = x => x } = {}) {
         calls.queries.push({ field, args })
         assert(args.length <= 500)
         assert.equal(new Set(args).size, args.length)
-        return rows.filter(row => args.includes(row[field]))
+        if (field === 'font_id') assert(sql.includes("COALESCE(font_path, '') = ''"))
+        return rows.filter(row => args.includes(row[field]) && (field !== 'font_id' || !row.font_path))
       } } } }
     }
   })
@@ -61,7 +62,12 @@ async function chunks() {
   const rows = items.map(x => ({ font_id: x.id, font_path: identity.localTagFontPath(x), tag_name: x.id }))
   const h = harness({ rows }); const result = await h.read(items)
   assert.deepEqual(plain(result.map(x => x.localTagNames)), items.map(x => [x.id]))
-  for (const field of ['font_id', 'font_path']) assert.deepEqual(h.calls.queries.filter(x => x.field === field).map(x => x.args.length), [500, 500, 1])
+  const idQueries = h.calls.queries.filter(x => x.field === 'font_id')
+  const pathQueries = h.calls.queries.filter(x => x.field === 'font_path')
+  assert.deepEqual(idQueries.map(x => x.args.length), [500, 500, 500, 500, 2])
+  assert.deepEqual(pathQueries.map(x => x.args.length), [500, 500, 1])
+  assert.deepEqual(idQueries.flatMap(x => x.args), items.flatMap(x => [x.id, `local-path:${identity.localTagFontPath(x)}`]))
+  assert.deepEqual(pathQueries.flatMap(x => x.args), items.map(x => identity.localTagFontPath(x)))
 }
 async function backendCases() {
   const items = [{ id: 'a', sourceId: 'shared', path: 'C:/A.ttf', localTagNames: ['old'] }, { id: 'b', sourceId: 'shared', path: 'c:\\a.ttf' }]
@@ -72,7 +78,7 @@ async function backendCases() {
       const out = await h.read(items)
       assert.deepEqual(plain(out.map(x => x.localTagNames)), [tagMap.a || [], tagMap.b || []])
       assert.equal(h.calls.opens, 0); assert.equal(h.calls.used, 0); assert.equal(h.calls.disabled, 0)
-      assert.deepEqual(h.calls.rust[0].rows, [ { itemId: 'a', aliases: ['a', 'shared'], fontPath: 'c:\\a.ttf' }, { itemId: 'b', aliases: ['b', 'shared'], fontPath: 'c:\\a.ttf' } ])
+      assert.deepEqual(h.calls.rust[0].rows, [ { itemId: 'a', aliases: ['a', 'shared', 'local-path:c:\\a.ttf'], fontPath: 'c:\\a.ttf' }, { itemId: 'b', aliases: ['b', 'shared', 'local-path:c:\\a.ttf'], fontPath: 'c:\\a.ttf' } ])
     }
     for (const rust of [undefined, async () => null, async () => { throw Error('Rust read failed') }]) {
       const h = harness({ allowed, rust, rows: [{ font_id: 'shared', font_path: '', tag_name: 'tag' }] })

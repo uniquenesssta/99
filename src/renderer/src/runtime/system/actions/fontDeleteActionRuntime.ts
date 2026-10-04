@@ -41,7 +41,10 @@ export function createFontDeleteActionRuntime(options: FontSystemActionRuntimeOp
         refreshSuffix = physicalMutationIndexRefreshSuffix(refreshReport)
       }
 
-      options.refreshDatabaseDerivedState()
+      // Deleted rows stay removed until the background root refresh publishes
+      // its index change. A premature page query can resurrect the stale rows.
+      // If recycling failed after uninstall preparation, still reconcile status.
+      if (!result.deletedIds.length) options.refreshDatabaseDerivedState()
       options.setStatus(`${result.message} 删除 ${result.deletedIds.length} 个，跳过 ${(result.skippedProtected || 0) + (result.skippedInstalled || 0) + (result.skippedUnsafe || 0)} 个，失败 ${result.failed?.length || 0} 个；跳过处理中 ${skippedBusy} 个。${refreshSuffix}`)
     } finally {
       for (const font of unique) busy?.delete(font.id)

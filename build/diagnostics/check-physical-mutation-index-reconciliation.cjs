@@ -42,7 +42,6 @@ const deleteRuntime = read('src/renderer/src/runtime/system/actions/fontDeleteAc
 assert(deleteRuntime.includes('const currentLibrary = options.getCurrentLibrary()'), 'physical delete must use the latest watched roots')
 assert(deleteRuntime.includes('affectedPaths: deletedPaths'), 'physical delete must refresh roots containing deleted files')
 assert(deleteRuntime.includes('options.getCurrentSelectedFontId()'), 'physical delete must not clear a newer selection through a stale async closure')
-assert(!deleteRuntime.includes('options.refreshDatabaseDerivedState()'), 'physical delete must not query the stale merged index before root reconciliation')
 
 function loadRuntime() {
   const output = ts.transpileModule(runtimeSource, {
@@ -91,6 +90,41 @@ async function runBehaviorChecks() {
   assert(calls.length === 3, 'behavior: each affected root must receive one refresh request')
   assert(report.scheduled === 2 && report.failed.length === 1, 'behavior: partial refresh scheduling failures must be reported precisely')
   await runMoveResultBehaviorChecks(runtime)
+  await runDeleteResultBehaviorChecks()
+}
+
+async function runDeleteResultBehaviorChecks() {
+  const check = require('node:assert/strict')
+  const { setup } = require('./check-font-command-entry.cjs')
+  const file = 'src/renderer/src/runtime/system/actions/fontDeleteActionRuntime.ts'
+  async function scenario(deletedIds, refreshFails = false, transform) {
+    const s = setup(transform ? { transforms: { [path.join(root, file)]: transform } } : {})
+    const h = s.base, roots = [], pending = new Map()
+    h.setLibrary(prev => ({ ...prev, folders: ['C:/fixture'] }))
+    h.select().setSelectedFontIds(['a', 'b'])
+    h.handlers.set('fonts:deleteFiles', () => ({ ok: deletedIds.length === 2, deletedIds, failed: [], message: 'controlled recycle result' }))
+    h.handlers.set('folders:refreshWatched', async (_event, folder) => {
+      roots.push(folder)
+      // Scheduling completes, but the background index still contains old rows.
+      pending.set(folder, ['a', 'b'])
+      if (refreshFails) throw Error('refresh scheduling failed')
+      return { mode: 'background' }
+    })
+    await h.command()('deleteFile')
+    check.equal(s.refreshes, deletedIds.length ? 0 : 1, 'deleted rows must not trigger an immediate stale page query')
+    check.equal(roots.length, deletedIds.length ? 1 : 0)
+    for (const id of ['a', 'b']) check.equal(!!h.library.fonts[id], !deletedIds.includes(id))
+    check.equal(h.busy.size, 0)
+    if (deletedIds.length) check.deepEqual(pending.get('C:/fixture'), ['a', 'b'])
+    if (refreshFails) check.match(h.status.at(-1), /安排失败/)
+  }
+  for (const ids of [[], ['a'], ['a', 'b']]) await scenario(ids)
+  await scenario(['a'], true)
+  await check.rejects(() => scenario(['a'], false, source => {
+    const anchor = 'if (!result.deletedIds.length) options.refreshDatabaseDerivedState()'
+    check(source.includes(anchor))
+    return source.replace(anchor, 'options.refreshDatabaseDerivedState()')
+  }), /deleted rows must not trigger an immediate stale page query/)
 }
 
 async function runMoveResultBehaviorChecks(indexRuntime) {

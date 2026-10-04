@@ -80,14 +80,21 @@ async function availability() {
 }
 async function publication() {
  let ready=false, calls=[], timer;
- const fs={lstat:async()=>({dev:1,ino:1}),mkdir:async()=>calls.push('mkdir'),open:async()=>{calls.push('lock');return{stat:async()=>({dev:1,ino:1}),writeFile:async()=>{},close:async()=>{}}},access:async()=>{throw Error('missing')},copyFile:async()=>calls.push('copy'),rename:async()=>calls.push('rename'),unlink:async()=>{}};
- const load=loader({'../../path/sharedFileSystemRuntime':{sharedFileSystem:fs}},{setTimeout:f=>{timer=f;return 1}});
- const publish=load('src/main/preview/runtime/previewCachePublishRuntime.ts').createPreviewCachePublishRuntime({appendStartupLog(){},ensureSharedAvailable:async()=>{calls.push('prepare');return ready},previewCacheStorageToShared:s=>s,withIoDeadlineResult:async(_l,f)=>({ok:true,value:await f()}),writeSharedPreviewCacheMeta:async()=>{calls.push('meta')},validateSharedPreviewCacheMeta:async()=>({status:'valid'}),appendSharedPreviewCacheManifest:async()=>{calls.push('manifest')},writePreviewCacheIndex:async()=>{calls.push('index')}});
- const storage={rootPath:'/root',dir:'/shared',storage:'root'}, row={previewKey:'a',localOutputPath:'/local/a.png'};
+ const png=require('./fixtures/preview-png.cjs'),logs=[];
+ const fs={lstat:async()=>({dev:1,ino:1}),mkdir:async()=>calls.push('mkdir'),open:async()=>{calls.push('lock');return{stat:async()=>({dev:1,ino:1}),writeFile:async()=>{},close:async()=>{}}},access:async()=>{throw Error('missing')},writeFile:async(_path,bytes)=>{assert.equal(bytes,png);calls.push('write')},rename:async()=>calls.push('rename'),unlink:async()=>{}};
+ const load=loader({
+  'node:fs':{promises:{readFile:async file=>{assert.equal(file,'/local/a.png');calls.push('read');return png}}},
+  '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs},
+  '../../rust-core/rustSharedIoCommandRuntime':{sharedIoResourceKeys:async()=>[]},
+  '../../path/startupPathAvailabilityRuntime':{getStartupPathRootState:()=>({generation:1,state:'online'})},
+  '../../app/shutdownCoordinatorRuntime':{applicationWorkEpoch:()=>1,isApplicationClosing:()=>false,onApplicationClosing(){}},
+ },{setTimeout:f=>{timer=f;return 1}});
+ const publish=load('src/main/preview/runtime/previewCachePublishRuntime.ts').createPreviewCachePublishRuntime({appendStartupLog:line=>logs.push(line),ensureSharedAvailable:async()=>{calls.push('prepare');return ready},previewCacheStorageToShared:s=>s,withIoDeadlineResult:async(_l,f)=>({ok:true,value:await f()}),writeSharedPreviewCacheMeta:async(_path,_row,bytes)=>{assert.equal(bytes,png);calls.push('meta')},validateSharedPreviewCacheMeta:async(_path,_row,bytes)=>{assert.equal(bytes,png);return {status:'ok'}},appendSharedPreviewCacheManifest:async()=>{calls.push('manifest')},writePreviewCacheIndex:async()=>{calls.push('index')}});
+ const storage={rootPath:'/root',dir:'/shared',storage:'root'}, row={previewKey:'a',localOutputPath:'/local/a.png',fontSignature:'font',textHash:'text',fontSize:44,width:1,height:1};
  publish.enqueuePreviewCachePublish(storage,row);timer();await flush();assert.deepEqual(calls,['prepare'],'failed preparation still wrote shared files');
- ready=true;calls=[];publish.enqueuePreviewCachePublish(storage,row);timer();await flush();assert.deepEqual(calls,['prepare','mkdir','lock','copy','rename','meta','manifest','index']);
+ ready=true;calls=[];publish.enqueuePreviewCachePublish(storage,row);timer();await flush();assert.deepEqual(calls,['prepare','mkdir','lock','read','write','rename','meta','manifest','index'],logs.join('\n'));
  const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../../src/main/preview/runtime/previewCacheStorageRuntime.ts'),'utf8');assert(/ensureSharedPreviewCacheAvailable:\s*ensureSharedPreviewCachePrepared/.test(source),'publisher bypassed preparation owner');
- console.log('publication: failed preparation writes nothing; successful publication keeps lock/copy/rename/meta/manifest/index order');
+ console.log('publication: failed preparation writes nothing; valid PNG snapshot keeps lock/read/write/rename/meta/manifest/index order and reuses exact bytes');
 }
 async function classification() {
  let mapping = new Map([['Z:', '\\\\nas\\share']]);

@@ -1001,3 +1001,19 @@ Context7 已查询 SetFileInformationByHandle / FILE_BASIC_INFO，Rust 官方 Fi
 生产代码、用户数据库与字体卸载策略没有改动；真实字体系统操作仍本机专用，不要求用户重复 F06 实机验收。完成静态差异复核及 git diff --check，动态回执待新 Windows CI；F07 仍未通过，不承诺未执行的全部诊断已成功。按既有偏好推送启动后交付，不轮询完成。
 
 Context7 已核对 GitHub Actions 状态条件覆盖默认 success() 的语义，保留原 checkout/setup-node/upload-artifact v4，无版本升级。未改生产模块或架构，不新增架构图。Create State 再次仅返回 Markdown/足球项目，没有 HFM，未写入无关项目；续接记录保存于 Git 和本节。
+
+### 19.8 完整失败清单修复与源删除刷新时机（2026-10-04）
+
+用户反馈“依然未通过”。读取 `bc7a0b3` 的完整 CI `37203531475` / job `111439890066`：Rust worker 构建和类型检查通过；165 项诊断全部运行，158 通过、7 失败、0 未运行。后续身份/目标兼容、激活事务、精确卸载计划、Node/Rust 本地标签、Rust 身份向量、Unicode 注册表、有限重试、真实 Rust 分页/Electron DOM、列表网格 DOM、滑块输入及 bundle 构建均通过。本轮按七项完整清单修复，不将失败门改为可选。
+
+1. **physical-mutation-index：生产刷新时机回归。** F06 在源文件回收后增加无条件 `refreshDatabaseDerivedState()`，但 `refreshIndexesAfterPhysicalMutation()` 只等待后台根刷新被安排，未等待索引完成，立即查询可能重新读出已删除记录。改为有实际删除时保留 UI 移除结果，交由现有根索引变更通知刷新；没有删除成功时仍刷新，核对回收失败前可能已完成的卸载状态。原禁止调用字符串断言改为真实命令/动作/预加载受控链路，覆盖零删除、部分删除、全删除及根刷新安排失败，并用恢复无条件查询的变异证明断言可拒绝回归。未修改字体系统卸载、只读权限或 Rust 原生逻辑。
+2. **batch-favorites：旧 ID 回滚触发器。** 持久收藏 ID 已为 `local-path:`，以 `NEW.font_id='b'` 注入失败已不命中。改用规范化具体源路径注入事务失败，保留原回滚、UI、计数与重试断言。
+3. **local-tag-hydration：具体路径身份已扩展 aliases。** 1001 项现有运行时 ID 与 local-path 别名共 2002 项，ID 查询应为五批，路径仍为三批；断言完整参数序列及 Rust aliases。SQLite 受控读取同时遵守生产 SQL 的“仅无路径旧记录走 ID 匹配”约束，保留路径隔离与变异断言。
+4. **preview-cache-progress：发布夹具仍模拟 copyFile。** 生产已读取并校验本地完整 PNG，写入同一字节快照，再发布元数据。夹具使用已有有效 PNG、受控文件系统/应用存活/根世代端口，核验 read/write/rename/meta/manifest/index 顺序及元数据复用相同字节；验证状态使用实际 `ok`，准备失败仍不得写共享文件。
+5. **preview-input-boundary：Cargo 离线缓存位置不一致。** C++ 与 PowerShell 各 68 场景已通过，Rust 子命令离线读取默认 Cargo home，找不到 worker 构建已下载在统一缓存的 rusqlite。复用 `dependencyCacheEnv(root)`，保持 `--offline` 并加 `--locked`；不增加依赖、不跳过 Rust 边界测试。
+6. **tag-intent-lifecycle：分页回执缺失查询身份。** 使用实际 query-cache-key 模块，捕获请求并返回对应 queryKey、offset、limit；保留已接受空页确认标签意图及过期页不得确认断言，不放宽生产查询范围核验。
+7. **watcher-activation-baseline：两处冻结源码未迁移。** 对照基线 `35a2f92`：会话归属已由历史 ID 匹配改为必须存在且规范化相同的源路径；活动视图路由已增加 pending activation 判断。仅迁移这两处 SHA-256，函数/导出清单及行为/变异门保留，其他九处源码哈希逐项静态核对一致。
+
+完成改动文件的静态语法解析、源码/夹具逐项审阅和 `git diff --check`；没有在非 Windows 编辑环境执行项目测试、类型检查或构建。这些静态结果不能替代 Windows 动态回执，F07 仍未通过验收；提交后启动完整 Windows CI，按用户偏好只查询启动链接，不轮询完成。F06 已确认的实机卸载结果保留，本轮不要求用户重复真实字体系统测试。
+
+Context7 已核对 Cargo 的 `CARGO_HOME` 缓存与 `--offline` 语义并结合现有构建入口确认；无依赖升级。仅修改一个生产动作模块，无架构调整。Create State 本轮仍只列出 Markdown/足球项目，未向无关项目写入；HFM 续接状态保存在 Git、README 与本节。下一步只按本次新 CI 回执处理剩余实际失败，不提前登记成功。
