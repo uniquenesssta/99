@@ -21,7 +21,7 @@ assert(diagnosticsRunner.includes('process.env.npm_execpath'), 'diagnostics runn
 assert(diagnosticsRunner.includes('command: process.execPath'), 'diagnostics runner must launch npm-cli.js through the active Node executable')
 assert(diagnosticsRunner.includes("shell: process.platform === 'win32'"), 'diagnostics runner must keep a Windows shell fallback when npm_execpath is unavailable')
 
-for (const name of ['build', 'build:win', 'pack:dir']) {
+for (const name of ['dev', 'dev:debug', 'build', 'build:win', 'pack:dir']) {
   const script = String(packageJson.scripts?.[name] || '')
   if (name === 'build') assert(script.startsWith('npm run verify && '), 'build retains the verified development build')
   assert(script.includes('build/rust/build-core-worker.cjs --required'), `${name} must fail when the Rust core cannot be rebuilt`)

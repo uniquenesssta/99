@@ -174,7 +174,7 @@ mod platform {
                 &mut disposition as *mut Dword,
             )
         };
-        if status != ERROR_SUCCESS || key == 0 {
+        if status != ERROR_SUCCESS || key.is_null() {
             return Err(format!("RegCreateKeyExW failed: {}", status));
         }
         Ok(key)

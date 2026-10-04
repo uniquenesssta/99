@@ -892,3 +892,12 @@ flowchart TD
 完成源码与差异静态复核、`git diff --check`；非 Windows 编辑环境未运行 Node/Rust 编译和测试。普通 Windows CI 推送后启动，不轮询完成。不要求用户立即重复整套真实验收；本轮代码尚不等于新实机成功回执，不宣布此前映射故障或 F06 全项解决。
 
 Context7 已查询 SetFileInformationByHandle / FILE_BASIC_INFO，Rust 官方 File::set_permissions 文档确认 Windows 使用句柄接口。Mermaid Chart 已绘制真实预检链路。Create State 仍仅返回 Markdown/足球项目，未向无关项目写入；续接状态保存在 Git 与本节。
+
+
+### 18.16 编译遗漏与旧 worker 混用（2026-10-04）
+
+`56e7ecd` 的 Windows CI `37195625495` / job `111416762304`：类型检查及卸载计划诊断通过，首次 Rust 编译报 E0308，`font_resource/windows.rs:177` 在 Hkey 改为指针后仍使用 `key == 0`。这是上一轮修改遗漏，不是只读处理或真实字体测试失败。修正为 `key.is_null()`，复核该模块所有 Hkey 初始化及判断。
+
+用户新日志 `startup-2026-10-04_10-37-29-206-31452.log` 三次报 `unknown field allow_readonly_copy`，完成步骤均为 0：新主进程启动了不支持新增字段的旧原生 worker，尚未执行解除只读。开发入口原 `--optional` 会在 Rust 构建失败时返回成功并保留旧二进制；本轮仅将 `dev` / `dev:debug` 改为已有 `--required` 模式，阻止这条失败链，复用现有构建门诊断约束。不修改其他卸载策略或增加重试，真实字体测试继续本机专用。
+
+完成静态差异检查；本环境不运行 Node/Rust 测试，Windows 编译结果交给新 CI。Context7 核对 RegCreateKeyExW 的输出句柄与返回状态；本轮没有新增架构，不需绘图。Create State 前轮已确认没有 HFM 项目，状态继续保存在 Git 和任务书。推送后启动 CI 即交付，不轮询完成，不将尚未验证的实机卸载声明为通过。
