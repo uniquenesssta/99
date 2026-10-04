@@ -188,6 +188,27 @@ fn retry_file_disposition(mut attempt:impl FnMut()->io::Result<()>,mut wait:impl
     }
     unreachable!()
 }
+fn mark_file_for_deletion(file:&File)->io::Result<()> {
+    // Windows 10 RS1+: remove the directory entry on closing this handle,
+    // rather than waiting for every delete-sharing reader to close. Keep image
+    // section checks and read-only protection: never use IGNORE_READONLY (0x10).
+    // The DELETE handle and its no-write/no-replace sharing contract are unchanged.
+    const FILE_DISPOSITION_INFO_EX:u32=21;
+    const DELETE_POSIX_CHECK_IMAGE:u32=0x01|0x02|0x04;
+    let flags=DELETE_POSIX_CHECK_IMAGE;
+    if unsafe{SetFileInformationByHandle(file.as_raw_handle(),FILE_DISPOSITION_INFO_EX,&flags as *const _ as *const c_void,std::mem::size_of_val(&flags) as u32)}!=0{return Ok(())}
+    let error=last();
+    // Only OS/filesystem feature absence permits legacy fallback. In particular,
+    // access denied, sharing violations and mapped-image refusal stay errors.
+    if !matches!(error.raw_os_error(),Some(1)|Some(50)|Some(87)) {
+        eprintln!("font deletion API failed: method=FileDispositionInfoEx, code={:?}, readonly={:?}",error.raw_os_error(),file.metadata().map(|m|m.permissions().readonly()));
+        return Err(error);
+    }
+    let delete=1u8;
+    let result=unsafe{checked(SetFileInformationByHandle(file.as_raw_handle(),4,&delete as *const _ as *const c_void,std::mem::size_of_val(&delete) as u32))};
+    eprintln!("font deletion API fallback: unsupported={:?}, method=FileDispositionInfo, result={:?}",error.raw_os_error(),result.as_ref().err().and_then(|e|e.raw_os_error()));
+    result
+}
 fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufRead,out:&mut impl Write)->io::Result<()> {
     let mut stage="validate-plan";
     let result=(||->io::Result<()> {
@@ -232,12 +253,12 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         gate(input,out,if elevated{"elevated-file"}else{"file"})?;
         if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before disposition"))}
         stage="file-disposition";
-        let delete=1u8;unsafe{checked(SetFileInformationByHandle(file.as_raw_handle(),4,&delete as *const _ as *const c_void,1))}
+        mark_file_for_deletion(&file)
         },|ms|std::thread::sleep(std::time::Duration::from_millis(ms)))?;
         drop(file);
         // A new object at the old path must never be removed during verification.
         stage="file-removal-verification";
-        if Path::new(&p.path).exists(){return Err(fail("file deletion not confirmed; do not retry without new identity"))}
+        if Path::new(&p.path).try_exists()?{return Err(fail("file deletion not confirmed; do not retry without new identity"))}
         emit(out,&json!({"effect":"file"}))?;
     }
     Ok(())
@@ -252,6 +273,69 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
 #[cfg(test)]
 mod disposition_tests {
     use super::*;
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new()->Self {
+            let nonce=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+            let path=std::env::temp_dir().join(format!("hfm-disposition-{}-{nonce}.ttf",std::process::id()));
+            let mut file=OpenOptions::new().write(true).create_new(true).open(&path).unwrap();
+            // This is a file API fixture, not a substitute for the real-font
+            // broker acceptance in check-local-user-state.cjs.
+            file.write_all(b"\0\x01\0\0isolated file API fixture").unwrap();
+            Self(path)
+        }
+        fn path(&self)->&str {self.0.to_str().unwrap()}
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if let Ok(metadata)=std::fs::metadata(&self.0) {
+                let mut permissions=metadata.permissions();permissions.set_readonly(false);
+                let _=std::fs::set_permissions(&self.0,permissions);
+                let _=std::fs::remove_file(&self.0);
+            }
+        }
+    }
+    #[test]
+    fn real_handle_delete_blocks_target_replacement() {
+        let fixture=Fixture::new();
+        let file=open_font(fixture.path(),true).unwrap();
+        let error=OpenOptions::new().write(true).open(&fixture.0).unwrap_err();
+        assert_eq!(error.raw_os_error(),Some(32));
+        let error=std::fs::rename(&fixture.0,fixture.0.with_extension("replacement")).unwrap_err();
+        assert_eq!(error.raw_os_error(),Some(32));
+        mark_file_for_deletion(&file).unwrap();drop(file);
+        assert!(!fixture.0.try_exists().unwrap());
+    }
+    #[test]
+    fn real_readonly_file_is_not_force_deleted() {
+        let fixture=Fixture::new();let mut permissions=std::fs::metadata(&fixture.0).unwrap().permissions();
+        permissions.set_readonly(true);std::fs::set_permissions(&fixture.0,permissions).unwrap();
+        let file=open_font(fixture.path(),true).unwrap();
+        assert_eq!(mark_file_for_deletion(&file).unwrap_err().raw_os_error(),Some(5));drop(file);
+        assert!(fixture.0.try_exists().unwrap());
+        assert!(std::fs::metadata(&fixture.0).unwrap().permissions().readonly());
+    }
+    #[test]
+    fn real_handle_without_delete_access_is_denied() {
+        let fixture=Fixture::new();let file=open_font(fixture.path(),false).unwrap();
+        assert_eq!(mark_file_for_deletion(&file).unwrap_err().raw_os_error(),Some(5));drop(file);
+        assert!(fixture.0.try_exists().unwrap());
+    }
+    #[test]
+    fn real_reader_without_delete_sharing_blocks_open() {
+        let fixture=Fixture::new();let reader=OpenOptions::new().read(true).share_mode(1).open(&fixture.0).unwrap();
+        assert_eq!(open_font(fixture.path(),true).unwrap_err().raw_os_error(),Some(32));
+        assert!(fixture.0.try_exists().unwrap());drop(reader);
+    }
+    #[test]
+    fn real_delete_sharing_reader_keeps_data_without_retaining_path() {
+        let fixture=Fixture::new();let mut reader=OpenOptions::new().read(true).share_mode(1|4).open(&fixture.0).unwrap();
+        let file=open_font(fixture.path(),true).unwrap();
+        mark_file_for_deletion(&file).unwrap();drop(file);
+        assert!(!fixture.0.try_exists().unwrap(),"reader retained deleted installation path");
+        let mut bytes=Vec::new();reader.read_to_end(&mut bytes).unwrap();
+        assert_eq!(&bytes[..4],b"\0\x01\0\0");
+    }
     #[test]
     fn transient_failure_rechecks_before_success() {
         let mut checks=0;let mut waits=Vec::new();

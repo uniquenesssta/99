@@ -707,3 +707,17 @@ Windows API 依据：[ShellExecuteEx](https://learn.microsoft.com/en-us/windows/
 已确认实现缺口：F06 只调用一次 RemoveFontResourceExW，未处理字体多次加载引用及最终 disposition 的短暂拒绝；项目既有 font_resource 已有最多 8 次释放处理。按 [微软 RemoveFontResourceExW 文档](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-removefontresourceexw) 的引用计数说明，本轮补齐最多 8 次资源释放，每次副作用前重新保护核验。最终 disposition 对错误 5/32 采用最多 5 次尝试，间隔 50/100/200/400ms；同一 DELETE 句柄贯穿，重试不重开路径、不重放注册表、不转提权、不改 ACL/只读属性，每轮核验保护及身份，最终删除前再次核验。上限后原错误仍失败传播，不用等待或重试冒充成功。日志未识别具体占用进程，因此资源引用/短暂占用属于有依据的修复方向，效果仍待真实 Windows 验证。
 
 新增 Windows Rust 定向单测覆盖暂时失败后成功、持续拒绝次数上限和原错误保留、等待后保护拒绝、其他错误不重试；原生真实场景增加资源释放期间第二次保护关卡拒绝时零文件删除断言，保留全部既有成功、部分完成和剩余文件重试断言。CI 保留原有门禁并加入上述单测。Linux 仅静态审阅及 `git diff --check`，未本地运行测试。推送启动 Windows CI 后停止轮询，F06 尚未验收，§18.3 遗留项保持。
+
+### 18.7 删除 API 语义修正与真实句柄验证（2026-10-04，待验证）
+
+提交 `bc16685700b325ef2fdb56a7386ef2a9be60c5aa` 的 [CI 37172905900](https://github.com/uniquenesssta/99/actions/runs/37172905900)，job `111349364652`：第 5～33 步通过，其中新增 4 项只是重试控制逻辑测试，不能替代内核验证。第 34 步首次删除在第 5 次尝试成功，剩余文件重试仍在 5 次尝试后返回 `file-disposition/code=5`；文件模式为 33206（普通可写文件），文件存在、无 file effect。后续 Electron 两项跳过。增加等待/释放次数未解决本问题，本轮不再增加重试预算。
+
+复查 Win32 SDK 声明、libuv Windows unlink 和 Rust 1.98 Windows 删除实现，确认 F06 始终使用旧 FileDispositionInfo，与 Node 最终清理使用的扩展删除接口不同；原生失败后测试清理成功不能证明旧接口实现正确。替换为同一个已验证 DELETE 句柄上的 FileDispositionInfoEx（Win32 类 21），标志 DELETE | POSIX_SEMANTICS | FORCE_IMAGE_SECTION_CHECK。不使用 IGNORE_READONLY，不改变 ACL、所有权、WRP、共享模式或重新按路径删除。POSIX 语义允许已同意 delete-sharing 的读者继续使用已有数据句柄，但安装文件名在删除句柄关闭后移除；不允许 delete-sharing 的占用仍在打开阶段拒绝，映像检查保留。仅错误 1/50/87 表示 API/文件系统不支持时回退旧接口，错误 5/32 不触发接口回退；旧有重试上限保持。
+
+新增 5 项真实 Windows 文件 API 验证：同一 DELETE 句柄删除及写入/换名拦截、只读文件保持、无 DELETE 权限拒绝、不允许删除共享的读者拒绝、允许删除共享的读者存活时路径已移除且已有数据仍可读取。这些使用唯一临时内核文件夹具，不充当真实字体测试；原有 HKCU/真实字体/保护关卡/部分完成/剩余文件重试断言全部保留。扩展接口失败日志标明 API 与只读属性，避免再次只看裸 error 5 猜测。
+
+当前只能确认失败位置和接口差异，尚不能确认具体外部占用者，也不能提前声称该改动已经解决真实字体失败。Linux 只做源码和差异静态复核及 `git diff --check`，Windows CI 启动后按用户要求停止轮询。F06 未收尾，§18.3 剩余实施和实机验收要求仍有效。
+
+同时将删除后的路径检查从 `exists()` 改为 `try_exists()?`：访问拒绝等查询错误必须传播，不能被布尔 false 冒充文件已移除；不增加删除副作用、不扩大操作目标。
+
+依据：[微软 FILE_DISPOSITION_INFORMATION_EX 语义](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-_file_disposition_information_ex)、[Win32 SDK WinBase.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/WinBase.h)、[libuv Windows fs.c](https://github.com/libuv/libuv/blob/v1.x/src/win/fs.c)、[Rust 1.98 Windows fs](https://github.com/rust-lang/rust/blob/1.98.0/library/std/src/sys/fs/windows.rs)。
