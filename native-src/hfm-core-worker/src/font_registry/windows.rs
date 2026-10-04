@@ -1,11 +1,9 @@
-use std::{ffi::c_void, io, os::windows::ffi::OsStrExt, ptr};
+use std::{io, os::windows::ffi::OsStrExt, ptr};
 use super::Entry;
-type Handle = *mut c_void;
+use crate::windows_ffi::{Handle, RegOpenKeyExW, RegCloseKey};
 const FONT_KEY: &str = "Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
 #[link(name="advapi32")] extern "system" {
-    fn RegOpenKeyExW(root:Handle, subkey:*const u16, options:u32, access:u32, out:*mut Handle)->i32;
     fn RegEnumValueW(key:Handle,index:u32,name:*mut u16,name_len:*mut u32,reserved:Handle,kind:*mut u32,data:*mut u8,bytes:*mut u32)->i32;
-    fn RegCloseKey(key:Handle)->i32;
 }
 struct Registry(Handle);
 impl Drop for Registry {fn drop(&mut self){unsafe{RegCloseKey(self.0);}}}

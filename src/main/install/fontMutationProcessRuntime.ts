@@ -13,6 +13,8 @@ export type FontMutationPlan = {
   path: string
   sha256: string
   delete_file: boolean
+  preflight_file?: boolean
+  allow_readonly_copy?: boolean
   records: Array<{ scope: 'HKCU' | 'HKLM'; name: string; value: string }>
   identity?: undefined
 }

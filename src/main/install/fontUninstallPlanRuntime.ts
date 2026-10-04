@@ -42,13 +42,15 @@ export async function planFontUninstall(item: FontItem, installed: SystemInstall
     const references = registry.filter(record => record.path && key(record.path) === key(target.path))
     if (references.some(temporary)) throw new Error('此安装文件仍被临时激活记录引用，请先取消关联激活。')
     const deleteFile = roots.some(root => isPathInsideAbsoluteBoundary(target.path, root) && key(dirname(target.path)) === key(resolve(root)))
+    const allowReadonlyCopy = deleteFile && key(target.path) !== key(source.path)
+      && !!roots[0] && key(dirname(target.path)) === key(resolve(roots[0]))
     // No recursive/prefix deletion, and no removal of an independent source
     // outside the actual installation directories.
     for (const scope of ['HKCU', 'HKLM'] as const) {
       const records = references.filter(record => record.source === scope).map(record => ({ scope, name: record.registryName, value: record.value }))
-      if (records.length) plans.push({ path: target.path, sha256: target.sha256, delete_file: false, records })
+      if (records.length) plans.push({ path: target.path, sha256: target.sha256, delete_file: false, preflight_file: deleteFile, allow_readonly_copy: allowReadonlyCopy, records })
     }
-    if (deleteFile) plans.push({ path: target.path, sha256: target.sha256, delete_file: true, records: [] })
+    if (deleteFile) plans.push({ path: target.path, sha256: target.sha256, delete_file: true, allow_readonly_copy: allowReadonlyCopy, records: [] })
   }
   return plans
 }

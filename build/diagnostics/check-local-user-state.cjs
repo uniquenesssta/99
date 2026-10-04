@@ -567,6 +567,12 @@ async function uninstallPlanning() {
   const record={source:'HKCU',path:b,registryName:'Face',value:b}
   let result=await plan(item,[record],[record],['C:\\user-fonts'],()=>false)
   assert.equal(result.length,2);assert.equal(result[0].records[0].name,'Face');assert.equal(result[1].delete_file,true)
+  assert.equal(result[0].preflight_file,true,'copy attributes must be checked before registry effects')
+  assert(result.every(p=>p.allow_readonly_copy),'separate current-user copy was not authorized')
+  const selected=await plan({...item,path:b},[record],[record],['C:\\user-fonts'],()=>false)
+  assert(selected.every(p=>!p.allow_readonly_copy),'selected source must retain its readonly policy')
+  const system=await plan(item,[record],[record],['C:\\another-user','C:\\user-fonts'],()=>false)
+  assert(system.every(p=>!p.allow_readonly_copy),'system directory must not clear readonly')
   contents.set(b,Buffer.from('0001000000000001','hex'))
   assert.equal((await plan(item,[record],[record],['C:\\user-fonts'],()=>false)).length,0,'same name authorized different bytes')
   contents.set(b,bytes)
@@ -683,10 +689,23 @@ async function uninstallNative() {
     reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])
     fs.chmodSync(target,0o444)
     r=await command(plan);assert.equal(r.ok,false);assert.match(r.message,/read-only/);assert.equal(r.effects.length,0,'read-only preflight removed an installation record');assert(fs.existsSync(target));assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
+    const readonlyRegistry={...plan,delete_file:false,preflight_file:true}
+    r=await command(readonlyRegistry);assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
+    r=await command({...readonlyRegistry,allow_readonly_copy:true},stage=>stage!=='attributes')
+    assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert.equal(fs.statSync(target).mode&0o200,0,'denied attribute gate changed readonly')
     fs.chmodSync(target,0o666)
     r=await command(plan);assert.equal(r.ok,true,JSON.stringify(r));assert.deepEqual(r.effects.map(e=>e.effect),['registry','file']);assert(!fs.existsSync(target));assert.throws(()=>reg(['query',regRoot,'/v',token]));assert(fs.existsSync(original),'test touched the original system font')
     const notified=r.events.findIndex(event=>event.notification==='registry-change')
     assert(notified>r.events.findIndex(event=>event.effect==='registry')&&notified<r.events.findIndex(event=>event.gate==='file'),'registry notification did not precede file cleanup')
+    make();plan={...plan,sha256:digest()}
+    fs.chmodSync(target,0o444)
+    r=await command({...plan,delete_file:false,preflight_file:true,allow_readonly_copy:true})
+    assert.equal(r.ok,true,JSON.stringify(r));assert.deepEqual(r.effects.map(e=>e.effect),['registry'])
+    assert(fs.existsSync(target));assert(fs.statSync(target).mode&0o200,'verified installation copy is still readonly')
+    assert(r.events.findIndex(e=>e.gate==='attributes')<r.events.findIndex(e=>e.effect==='registry'),'readonly normalization came after registry deletion')
+    fs.chmodSync(target,0o444) // Also cover an already orphaned readonly installation copy.
+    r=await command({...plan,records:[],allow_readonly_copy:true})
+    assert.equal(r.ok,true,JSON.stringify(r));assert(!fs.existsSync(target));assert(fs.existsSync(original))
     make();plan={...plan,sha256:digest()}
     r=await command({...plan,path:path.join(require('node:os').tmpdir(),token+'.ttf')});assert.equal(r.ok,false);assert.equal(r.effects.length,0)
     r=await command({...plan,records:[{scope:'HKCU',name:token,value:original}]});assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target))

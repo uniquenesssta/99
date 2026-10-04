@@ -136,7 +136,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
           // operation below, never the native permanent installation cleanup.
           if (sourceDelete && deps.normalizePathForCacheCompare(plan.path) === deps.normalizePathForCacheCompare(source.path) && plan.delete_file) continue;
           stage = plan.delete_file ? 'file-delete' : 'registry-delete';
-          const result = await native!.execute(plan, async references => {
+          const result = await native!.execute(sourceDelete ? { ...plan, preflight_file: false, allow_readonly_copy: false } : plan, async references => {
             await check();
             if (plan.delete_file) {
               // Before the first native request no gate snapshot exists yet.

@@ -29,11 +29,7 @@ pub(crate) fn file_id(file: &File) -> io::Result<(String,String)> {
 #[cfg(windows)]
 pub(crate) fn file_id(file: &File) -> io::Result<(String,String)> {
     use std::os::windows::io::AsRawHandle;
-    #[repr(C)]
-    #[derive(Default)]
-    struct Information { attributes:u32, creation:[u32;2], access:[u32;2], write:[u32;2], volume:u32, size_high:u32, size_low:u32, links:u32, index_high:u32, index_low:u32 }
-    #[link(name="kernel32")]
-    extern "system" { fn GetFileInformationByHandle(handle:*mut std::ffi::c_void, info:*mut Information) -> i32; }
+    use crate::windows_ffi::{FileInformation as Information, GetFileInformationByHandle};
     let mut info=Information::default();
     if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 { return Err(io::Error::last_os_error()); }
     Ok((info.volume.to_string(), (((info.index_high as u64)<<32)|info.index_low as u64).to_string()))
@@ -54,8 +50,7 @@ pub(crate) fn remove_owned(path: &Path, expected: &Identity) -> io::Result<()> {
         // The handle denies replacement until disposition targets this exact file.
         let mut file = fs::OpenOptions::new().read(true).access_mode(0x80000000 | 0x00010000).share_mode(0).open(path)?;
         if identify(&mut file)? != *expected { return Err(io::Error::other("managed font identity changed")); }
-        #[link(name="kernel32")]
-        extern "system" { fn SetFileInformationByHandle(handle:*mut std::ffi::c_void, class:u32, info:*const std::ffi::c_void, size:u32) -> i32; }
+        use crate::windows_ffi::SetFileInformationByHandle;
         let delete:u8=1;
         if unsafe { SetFileInformationByHandle(file.as_raw_handle(), 4, &delete as *const _ as _, 1) } == 0 { return Err(io::Error::last_os_error()); }
         Ok(())

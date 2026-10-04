@@ -877,3 +877,18 @@ flowchart TD
 本轮仅静态源码/差异审阅和 `git diff --check`，没有在非 Windows 环境执行 Node/Rust 编译或测试。新 CI 启动即交付，不轮询。现有实际卸载成功证据有效；新增通知能否解除隔离测试中的具体映射尚未验证，不宣布 C0000121 或 F06 全部解决。正常开发使用保持 `npm run dev`；不要求用户现在再跑一轮专项验收，若正常使用自然复发，新日志会自动携带占用信息。
 
 已查询 Context7、微软 [RmGetList](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmgetlist)、[RM_PROCESS_INFO](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/ns-restartmanager-rm_process_info)、[FILE_DISPOSITION_INFORMATION_EX](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-_file_disposition_information_ex)。Mermaid Chart 已绘制本轮实际链路。Create State 再次只返回 Markdown/足球项目，没有 HFM，未向其他项目写入；续接依据为本节和 Git。
+
+
+### 18.15 Win32 声明统一与只读安装副本（2026-10-04）
+
+基线 `cf7f59a3c9ce844f20f7a9d16db64ad45b11016c`；用户确认上一轮 CI 已通过。本轮 `startup-2026-10-04_10-21-00-853-26968.log` 中梦源宋体 W8/W20、字魂字体均完成删除；老報宋.ttf 在 10:21:57、10:22:07、10:22:25、10:22:31 四次失败于 `readonly-preflight`，不是错误 32 或 C0000121。首次注册记录已在前一计划删除，说明原只读检查虽位于单计划记录删除之前，却位于整个卸载的记录删除之后。编译签名警告与这次只读拒绝是两个独立问题。
+
+- 新增 `windows_ffi` 作为共享 Win32 ABI 唯一声明位置，统一文件信息结构、句柄类型及 GetFileInformationByHandle / SetFileInformationByHandle / RegOpenKeyExW / RegDeleteValueW / RegCloseKey；相关模块引用同一声明。Rust 入口启用 `deny(clashing_extern_declarations)`，不屏蔽警告，不新增依赖。
+- 卸载计划增加默认关闭的 `preflight_file` / `allow_readonly_copy`。记录计划先检查待清理安装文件的只读属性，避免本次已定位的“记录已删、只读文件留下”。文件权限、映射在后续仍可变化，这不是跨注册表与文件系统的原子事务；原部分完成语义保留。
+- 对本次用户明确要求修复的独立安装副本调整旧只读策略：仅当真实路径不同于所选源文件、且位于当前用户字体目录的直属文件时授权解除只读。原生端再次校验目录、实体文件身份、内容哈希、硬链接/重解析点/WRP；只读副本才申请 FILE_WRITE_ATTRIBUTES，在保护关卡通过后调用已核验 File 句柄的 set_permissions，保留其他属性。不要改成路径 chmod、IGNORE_READONLY、ACL 接管或任意目录放行。
+- 解除只读是本次卸载副本的持久属性调整；后续记录或文件删除失败时不恢复只读，以便剩余步骤按原身份重新规划重试，日志明确记录这一步。它不表示文件已删除；文件完成仍由原 file effect 和路径核验判定。源文件、Windows 字体目录以及源删除回收站流程不授权此调整。已经只剩文件的计划同样支持该独立副本策略。
+- 普通 Windows 纯逻辑诊断增加源文件/系统目录拒绝及副本计划属性检查；现有真实本机入口保留全部断言，追加记录计划只读拒绝、属性关卡拒绝、授权副本的属性处理先于记录删除、只读剩余文件清理场景。所有真实字体与属性修改依旧只在 `test:font-system-local`，不加入 CI。
+
+完成源码与差异静态复核、`git diff --check`；非 Windows 编辑环境未运行 Node/Rust 编译和测试。普通 Windows CI 推送后启动，不轮询完成。不要求用户立即重复整套真实验收；本轮代码尚不等于新实机成功回执，不宣布此前映射故障或 F06 全项解决。
+
+Context7 已查询 SetFileInformationByHandle / FILE_BASIC_INFO，Rust 官方 File::set_permissions 文档确认 Windows 使用句柄接口。Mermaid Chart 已绘制真实预检链路。Create State 仍仅返回 Markdown/足球项目，未向无关项目写入；续接状态保存在 Git 与本节。

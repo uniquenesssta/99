@@ -1,3 +1,6 @@
+#![deny(clashing_extern_declarations)]
+#[cfg(windows)]
+mod windows_ffi;
 mod commands;
 mod font_mutation;
 #[cfg(windows)]

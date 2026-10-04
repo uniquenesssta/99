@@ -12,7 +12,7 @@ mod platform {
     type Bool = i32;
     type Dword = u32;
     type Long = i32;
-    type Hkey = isize;
+    use crate::windows_ffi::{Handle as Hkey, RegDeleteValueW, RegCloseKey};
 
     const HWND_BROADCAST: *mut c_void = 0xffffusize as *mut c_void;
     const WM_FONTCHANGE: u32 = 0x001D;
@@ -20,7 +20,7 @@ mod platform {
     const REG_SZ: u32 = 1;
     const KEY_SET_VALUE: u32 = 0x0002;
     const ERROR_SUCCESS: i32 = 0;
-    const HKEY_CURRENT_USER: Hkey = 0x80000001u32 as i32 as isize;
+    const HKEY_CURRENT_USER: Hkey = 0x80000001u32 as i32 as isize as Hkey;
     const HKCU_FONT_REGISTRY_KEY: &str = "Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
 
     #[link(name = "gdi32")]
@@ -66,8 +66,6 @@ mod platform {
             data_len: Dword,
         ) -> Long;
         fn RegGetValueW(hkey: Hkey, sub_key: *const u16, value: *const u16, flags: Dword, value_type: *mut Dword, data: *mut c_void, data_len: *mut Dword) -> Long;
-        fn RegDeleteValueW(hkey: Hkey, value_name: *const u16) -> Long;
-        fn RegCloseKey(hkey: Hkey) -> Long;
     }
 
     pub fn verify_registry_value(name: &str, expected: &str) -> Result<bool, String> {
@@ -160,7 +158,7 @@ mod platform {
     }
 
     fn open_fonts_key() -> Result<Hkey, String> {
-        let mut key: Hkey = 0;
+        let mut key: Hkey = std::ptr::null_mut();
         let mut disposition: Dword = 0;
         let sub_key = wide(HKCU_FONT_REGISTRY_KEY);
         let status = unsafe {
@@ -184,7 +182,7 @@ mod platform {
 
     pub fn schedule_cleanup_restart(command: &str) -> Result<(), String> {
         if command.is_empty() || command.contains('\0') || command.encode_utf16().count() > 260 { return Err("RunOnce command must be 1..260 UTF-16 units".into()); }
-        let mut key: Hkey=0; let mut disposition:Dword=0;
+        let mut key: Hkey=std::ptr::null_mut(); let mut disposition:Dword=0;
         let status=unsafe { RegCreateKeyExW(HKEY_CURRENT_USER,wide("Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce").as_ptr(),0,std::ptr::null_mut(),0,KEY_SET_VALUE,std::ptr::null_mut(),&mut key,&mut disposition) };
         if status != ERROR_SUCCESS { return Err(format!("RunOnce permission denied: {}",status)); }
         let value=wide(command);

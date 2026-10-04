@@ -1,12 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{ffi::c_void, fs::{File, OpenOptions}, io::{self, BufRead, BufReader, Read, Write}, os::windows::{ffi::OsStrExt, fs::OpenOptionsExt, io::{AsRawHandle, FromRawHandle}}, path::{Path, PathBuf}, ptr};
-type Handle = *mut c_void;
+use crate::windows_ffi::{Handle, FileInformation as Info, GetFileInformationByHandle, SetFileInformationByHandle, RegOpenKeyExW, RegDeleteValueW, RegCloseKey};
 const FONT_KEY: &str = "Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
 const HKCU: Handle = (-2147483647isize) as Handle;
 const HKLM: Handle = (-2147483646isize) as Handle;
-#[repr(C)] #[derive(Default)] struct FileTime { low:u32, high:u32 }
-#[repr(C)] #[derive(Default)] struct Info { attributes:u32, created:FileTime, accessed:FileTime, modified:FileTime, volume:u32, size_high:u32, size_low:u32, links:u32, index_high:u32, index_low:u32 }
 #[repr(C)] struct Security { length:u32, descriptor:Handle, inherit:i32 }
 #[repr(C)] #[derive(Default)] struct IoStatus { status:usize, information:usize }
 #[link(name="ntdll")] extern "system" {
@@ -15,9 +13,7 @@ const HKLM: Handle = (-2147483646isize) as Handle;
 }
 #[repr(C)] struct ShellInfo { size:u32, mask:u32, window:Handle, verb:*const u16, file:*const u16, parameters:*const u16, directory:*const u16, show:i32, instance:Handle, id_list:Handle, class:*const u16, class_key:Handle, hot_key:u32, icon:Handle, process:Handle }
 #[link(name="kernel32")] extern "system" {
-    fn GetFileInformationByHandle(file:Handle, info:*mut Info)->i32;
     fn GetFinalPathNameByHandleW(file:Handle, path:*mut u16, size:u32, flags:u32)->u32;
-    fn SetFileInformationByHandle(file:Handle, class:u32, data:*const c_void, size:u32)->i32;
     fn GetWindowsDirectoryW(path:*mut u16, size:u32)->u32;
     fn CreateNamedPipeW(name:*const u16, access:u32, mode:u32, instances:u32, out_size:u32, in_size:u32, timeout:u32, security:*const Security)->Handle;
     fn ConnectNamedPipe(pipe:Handle, overlapped:Handle)->i32;
@@ -31,11 +27,8 @@ const HKLM: Handle = (-2147483646isize) as Handle;
 }
 #[link(name="advapi32")] extern "system" {
     fn RegOpenKeyTransactedW(root:Handle, subkey:*const u16, options:u32, access:u32, out:*mut Handle, transaction:Handle, extended:Handle)->i32;
-    fn RegOpenKeyExW(root:Handle, subkey:*const u16, options:u32, access:u32, out:*mut Handle)->i32;
     fn OpenProcessToken(process:Handle,access:u32,token:*mut Handle)->i32;
     fn RegQueryValueExW(key:Handle, name:*const u16, reserved:Handle, kind:*mut u32, data:*mut u8, bytes:*mut u32)->i32;
-    fn RegDeleteValueW(key:Handle, name:*const u16)->i32;
-    fn RegCloseKey(key:Handle)->i32;
     fn ConvertStringSecurityDescriptorToSecurityDescriptorW(text:*const u16, revision:u32, out:*mut Handle, size:*mut u32)->i32;
 }
 #[link(name="KtmW32")] extern "system" {
@@ -83,9 +76,10 @@ fn identity(file:&File)->io::Result<Identity>{let mut i=Info::default();unsafe{c
     Ok(Identity{volume:i.volume,high:i.index_high,low:i.index_low,size_high:i.size_high,size_low:i.size_low,modified_high:i.modified.high,modified_low:i.modified.low})
 }
 fn physical(file:&File)->io::Result<String>{let mut p=vec![0u16;32768];let n=unsafe{GetFinalPathNameByHandleW(file.as_raw_handle(),p.as_mut_ptr(),p.len() as u32,0)};if n==0{return Err(last())}if n as usize>=p.len(){return Err(fail("path too long"))}Ok(String::from_utf16_lossy(&p[..n as usize]))}
-fn open_font(path:&str,delete:bool)->io::Result<File>{
+fn open_font(path:&str,delete:bool)->io::Result<File>{open_font_access(path,delete,false)}
+fn open_font_access(path:&str,delete:bool,write_attributes:bool)->io::Result<File>{
     if path.contains('\0') || path.len()>32000 || !Path::new(path).is_absolute() || !matches!(Path::new(path).extension().and_then(|s|s.to_str()).unwrap_or("").to_lowercase().as_str(),"ttf"|"otf"|"ttc"|"otc") {return Err(fail("invalid font path"));}
-    let f=OpenOptions::new().access_mode(0x80000000|if delete{0x10000}else{0}).share_mode(1).custom_flags(0x00200000).open(path)?;
+    let f=OpenOptions::new().access_mode(0x80000000 | (if delete{0x10000}else{0}) | (if write_attributes{0x100}else{0})).share_mode(1).custom_flags(0x00200000).open(path)?;
     identity(&f)?;
     if key(&physical(&f)?)!=key(path){return Err(fail("font path resolves through an alias/reparse point; resolve before planning"));}
     let mut magic=[0;4];(&f).read_exact(&mut magic)?;
@@ -116,7 +110,10 @@ fn direct_child(path:&str,root:&str)->bool {Path::new(path.trim_start_matches("\
 #[derive(Clone, Deserialize, Serialize)] #[serde(deny_unknown_fields)]
 struct Record { scope:String, name:String, value:String }
 #[derive(Clone, Deserialize, Serialize)] #[serde(deny_unknown_fields)]
-struct Plan { path:String, sha256:String, delete_file:bool, records:Vec<Record>, identity:Option<Identity> }
+struct Plan { path:String, sha256:String, delete_file:bool, records:Vec<Record>, identity:Option<Identity>,
+    #[serde(default)] preflight_file:bool,
+    #[serde(default)] allow_readonly_copy:bool,
+}
 struct Registry(Handle);impl Drop for Registry{fn drop(&mut self){unsafe{RegCloseKey(self.0);}}}
 fn registry(record:&Record,write:bool,elevated:bool)->io::Result<Registry>{
     if record.name.is_empty()||record.name.contains('\0')||record.name.len()>16383||record.value.contains('\0'){return Err(fail("invalid registry record"))}
@@ -155,7 +152,10 @@ fn validate(p:&Plan,elevated:bool,original_user:Option<&str>)->io::Result<()> {
     let (windows,current_user)=roots()?;
     let user=original_user.unwrap_or(&current_user);
     if p.records.len()>512||p.sha256.len()!=64||!p.sha256.bytes().all(|c|c.is_ascii_hexdigit()){return Err(fail("invalid plan"))}
-    if p.delete_file && !direct_child(&p.path,&windows) && !direct_child(&p.path,user){return Err(fail("file deletion outside installed font directories refused"))}
+    if (p.delete_file || p.preflight_file) && !direct_child(&p.path,&windows) && !direct_child(&p.path,user){return Err(fail("file deletion outside installed font directories refused"))}
+    if p.allow_readonly_copy && (!(p.delete_file || p.preflight_file) || !direct_child(&p.path,user)) {
+        return Err(fail("read-only normalization is limited to the current user's installed copy"));
+    }
     // The elevated endpoint has no HKCU, UNC, arbitrary file or command capability.
     if elevated && ((!direct_child(&p.path,&windows)&&!direct_child(&p.path,user))||p.records.iter().any(|r|r.scope!="HKLM")){return Err(fail("elevated operation outside original-user/Windows font directories refused"))}
     for r in &p.records {
@@ -239,12 +239,15 @@ fn notify_registry_change(changed:&mut bool,out:&mut impl Write) {
     notify_font_change("registry-change",out);
 }
 fn open_mutation_target(p:&Plan,elevated:bool,input:&mut impl BufRead,out:&mut impl Write)->io::Result<File> {
-    match open_font(&p.path,p.delete_file) {
+    // Request attribute access only when the explicit copy policy needs it.
+    // The opened handle is still identity/hash checked before any attribute write.
+    let write_attributes=p.allow_readonly_copy && std::fs::metadata(&p.path)?.permissions().readonly();
+    match open_font_access(&p.path,p.delete_file,write_attributes) {
         // The separate file-cleanup plan has no registrations left. A loaded
         // session font can refuse DELETE sharing before the old release step.
         Err(error) if error.raw_os_error()==Some(32) && p.delete_file && p.records.is_empty()=>{
             let pin=open_font(&p.path,false)?;
-            if pin.metadata()?.permissions().readonly(){return Err(fail("font file is read-only"))}
+            if pin.metadata()?.permissions().readonly() && !p.allow_readonly_copy{return Err(fail("font file is read-only"))}
             if p.identity.as_ref()!=Some(&identity(&pin)?) || digest(&pin)?!=p.sha256 {
                 return Err(fail("font identity/content changed before resource release"));
             }
@@ -254,7 +257,7 @@ fn open_mutation_target(p:&Plan,elevated:bool,input:&mut impl BufRead,out:&mut i
             // The read pin prevents replacement during release. Reopening is
             // followed by the caller's original identity and digest checks.
             drop(pin);
-            open_font(&p.path,true)
+            open_font_access(&p.path,true,write_attributes)
         },
         result=>result,
     }
@@ -278,15 +281,25 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     // cleanup may first release gated session resources; it marks prepared.
     stage="open-font";
     let file=open_mutation_target(p,elevated,input,out)?;
-    // DELETE access can be granted on a read-only file, while setting its
-    // disposition still fails. Reject before removing any registry records;
-    // elevation cannot fix this attribute and must not silently clear it.
-    stage="readonly-preflight";
-    if p.delete_file && file.metadata()?.permissions().readonly() {
-        return Err(fail("font file is read-only; no registry records were removed; clear the attribute explicitly before retrying"));
-    }
     stage="identity-preflight";
     if p.identity.as_ref()!=Some(&identity(&file)?)||digest(&file)?!=p.sha256{return Err(fail("font identity/content changed"))}
+    stage="readonly-preflight";
+    let mut permissions=file.metadata()?.permissions();
+    if (p.delete_file || p.preflight_file) && permissions.readonly() {
+        if !p.allow_readonly_copy {
+            return Err(fail("字体文件为只读；本步骤尚未删除注册记录。源文件和系统目录的只读属性不会自动更改。 (read-only)"));
+        }
+        // Explicit uninstall of a separate, verified per-user installation copy.
+        // Do not use IGNORE_READONLY, path-based chmod, ACL changes or elevation
+        // replay after an attribute change. Keep other attributes intact.
+        emit(out,&json!({"prepared":true}))?;
+        stage="readonly-normalization";
+        gate(input,out,"attributes")?;
+        permissions.set_readonly(false);
+        file.set_permissions(permissions)?;
+        if file.metadata()?.permissions().readonly(){return Err(fail("安装副本的只读属性未能解除；未删除本步骤的注册记录。"))}
+        eprintln!("font installed copy: read-only attribute cleared on verified handle");
+    }
     stage="registry-preflight";
     let mut keys=Vec::new();for r in &p.records{let k=registry(r,true,elevated)?;verify_record(&k,r)?;keys.push(k);}
     emit(out,&json!({"prepared":true}))?;
@@ -432,7 +445,7 @@ mod disposition_tests {
     #[ignore = "local Windows mutation acceptance: npm run test:font-system-local"]
     fn real_external_reader_is_not_forced_after_resource_release() {
         let fixture=Fixture::new();let pin=open_font(fixture.path(),false).unwrap();
-        let plan=Plan{path:fixture.path().into(),sha256:digest(&pin).unwrap(),identity:Some(identity(&pin).unwrap()),delete_file:true,records:Vec::new()};
+        let plan=Plan{path:fixture.path().into(),sha256:digest(&pin).unwrap(),identity:Some(identity(&pin).unwrap()),delete_file:true,records:Vec::new(),preflight_file:false,allow_readonly_copy:false};
         let mut denied=std::io::Cursor::new(b"{\"allow\":false}\n");let mut output=Vec::new();
         assert!(open_mutation_target(&plan,true,&mut denied,&mut output).unwrap_err().to_string().contains("protection recheck refused"));
         let mut allowed=std::io::Cursor::new(b"{\"allow\":true}\n");let mut output=Vec::new();
@@ -446,7 +459,7 @@ mod disposition_tests {
     #[ignore = "local Windows mutation acceptance: npm run test:font-system-local"]
     fn real_handle_renewal_rejects_same_content_replacement() {
         let fixture=Fixture::new();let file=open_font(fixture.path(),true).unwrap();
-        let plan=Plan{path:fixture.path().into(),sha256:digest(&file).unwrap(),identity:Some(identity(&file).unwrap()),delete_file:true,records:Vec::new()};
+        let plan=Plan{path:fixture.path().into(),sha256:digest(&file).unwrap(),identity:Some(identity(&file).unwrap()),delete_file:true,records:Vec::new(),preflight_file:false,allow_readonly_copy:false};
         let file=reopen_verified_target(&plan,file,||open_font(fixture.path(),true)).unwrap();
         let replacement=Fixture::new();
         let error=reopen_verified_target(&plan,file,||{
