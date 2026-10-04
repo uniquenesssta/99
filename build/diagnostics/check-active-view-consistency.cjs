@@ -211,22 +211,28 @@ async function restartPolicy(){
 
 
 function viewScopeMatrix(){
+ // Use the production path/record helpers so new consumers do not encounter
+ // a partial mock export surface during paged-row reconciliation.
+ const normalize=loader({
+  '../appConstants':{},
+  '@shared/legacy/legacyCollectionCompatibility':{}
+ })(base+'library-normalize/libraryNormalizeBase.ts')
  const load=loader({
  './appConstants':{FONT_CATEGORY_FILTERS:[],FONT_CATEGORY_LABELS:{},SCRIPT_LANGUAGE_LABELS:{},SCRIPT_LANGUAGE_ORDER:['latin']},
- './libraryNormalize':{normalizeFolderPathForCompare:x=>x.toLowerCase(),isDefinitelyBadFontRecord:()=>false},
+ './libraryNormalize':normalize,
  '@shared/legacy/legacyCollectionCompatibility':{legacyCollectionIdsForFont:f=>f.collectionIds||[]}
  })
  const filter=load(base+'fontFilteringMetrics.ts'),view=load(base+'fontViewRuntime.ts'),install=load(base+'fontInstallStateRuntime.ts')
- const f=(id,active,systemInstalled)=>({id,path:'/fonts/'+id+'.ttf',fileName:id+'.ttf',family:id,format:'ttf',scripts:['latin'],modifiedAt:1,active,systemInstalled,installStatusKnown:true,systemInstallMatches:[],favorite:true,collectionIds:[],tagNames:[]})
+ const f=(id,active,systemInstalled)=>({id,path:'/fonts/'+id+'.ttf',fileName:id+'.ttf',family:id,format:'ttf',fileSize:123,scripts:['latin'],modifiedAt:1,active,systemInstalled,installStatusKnown:true,systemInstallMatches:[],favorite:true,collectionIds:[],tagNames:[]})
  let fonts=[f('alpha',true,false),f('beta',true,false),f('system',false,true)]
  const library={fonts:Object.fromEntries(fonts.map(f=>[f.id,f])),folders:[],collections:[],tags:[],localTags:[]}
  const indexes=new Map(fonts.map(f=>[f.id,filter.buildFontComputedIndex(f)]))
- const options={databasePageReady:false,databasePageResult:null,allFonts:fonts,fontIndexById:indexes,deferredSearch:'alpha',sidebarPage:'library',activeFilter:{kind:'active'},timeSortMode:'all',sortMode:'name',library}
+ const options={databasePageReady:false,databasePageResult:null,allFonts:fonts,fontIndexById:indexes,deferredSearch:'alpha',sidebarPage:'library',activeFilter:{kind:'active'},timeSortMode:'all',sortMode:'name',installStatus:'all',selectedWatchedFolders:[],selectedFormats:[],selectedScripts:[],selectedCategory:'all',selectedTagName:'',selectedSharedTagName:'',selectedFolderId:'',library}
  assert.equal(view.buildVisibleFonts(options).length,1)
  assert.equal(filter.buildFontMetrics(fonts,indexes,library).activeCount,2,'global count need not equal search result count')
  library.fonts.alpha=install.applyFontActiveRuntimePatch(library.fonts.alpha,false)
  fonts=Object.values(library.fonts)
- const common={...options,allFonts:fonts,deferredSearch:'',databasePageReady:true,databasePageResult:{items:fonts}}
+ const common={...options,allFonts:fonts,deferredSearch:'',databasePageReady:true,databasePageResult:{items:fonts,total:fonts.length,offset:0,limit:fonts.length}}
  assert.deepEqual(plain(view.buildVisibleFonts(common).map(f=>f.id)),['beta'])
  const favorites=view.buildVisibleFonts({...common,activeFilter:{kind:'favorites'}})
  assert.equal(favorites.find(f=>f.id==='alpha').active,false)

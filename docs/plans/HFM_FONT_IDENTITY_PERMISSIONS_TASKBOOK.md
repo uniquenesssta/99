@@ -967,3 +967,12 @@ Context7 已查询 SetFileInformationByHandle / FILE_BASIC_INFO，Rust 官方 Fi
 本次在原受控端口夹具补齐源 stat 成功回执，断言实际回写具体 file-v2 身份而非历史 ID；新增 source-offline 场景明确抛出离线错误，断言本机资源/注册表/队列清理仍完成、恢复记录已清空、未写入未经核实的状态，并记录暂缓原因。原所有权拒绝、注册表拒绝/缺失回执、队列拒绝、持久阶段恢复及变异断言保留。没有修改生产清理或卸载代码，没有实际访问 NAS。
 
 完成静态差异审阅及 git diff --check；Windows 动态验证由新完整 CI 执行，非 Windows 环境不运行测试。F07 仍待通过，启动 CI 后不轮询。无新 API/架构，状态沿用 Git 与任务书保存。
+
+
+### 19.6 活跃视图分页依赖修正（2026-10-04）
+
+`5a9ef6b` 的 CI `37200530449` / job `111431124282`：Rust 构建、activation-entry 及 restartPolicy 已通过，active-view-consistency 后续 viewScopeMatrix 报 normalizeFontPathForCompare is not a function。其局部 libraryNormalize 模拟只有文件夹规范化和坏文件判断两项，没有提供分页身份核对新增使用的函数；上一轮未完整核对该文件后续依赖。
+
+本轮将该场景的模拟导出替换为实际 libraryNormalizeBase 模块，避免逐个补模拟函数造成同类遗漏；字体样本补齐有效 fileSize，分页与筛选输入按现有接口提供。静态核对该场景的真实模块运行时导入，以及其他诊断中 libraryNormalize 模拟的直接用途；保留原活跃过滤、收藏页停用状态、系统安装及全局计数断言，不修改生产代码、不删除诊断或改变失败标准。
+
+完成 git diff --check 和静态差异审阅；Windows 执行仍交由完整 F07 CI，非 Windows 环境不运行 Node/Rust。F07 尚未通过验收，推送启动后不轮询。无新 API 或架构，Git 和任务书继续保存状态。
