@@ -324,6 +324,14 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
   const systemFontInstallRuntime = createSystemFontInstallRuntime({
     fontExtensions: FONT_EXTENSIONS,
     withFontProtection: protectionAuthority.guard,
+    deactivateForFileDelete: deactivateFontSessionsBatch,
+    persistUninstallResult: async item => {
+      const state = await loadTemporaryActiveFonts();
+      const active = state.records.filter(record => normalizePathForCacheCompare(record.sourcePath || '') === normalizePathForCacheCompare(item.path));
+      const matches = active.map(record => ({ source: 'HKCU' as const, registryName: record.registryName, value: record.installPath, path: record.installPath, fileName: record.fileName }));
+      scheduleActivationInstallStatusSave({ [item.id]: { installed: active.length > 0, by: active.length ? 'managed' : 'none', matches } }, new Map([[item.id, item]]), 'uninstall-verified');
+      await flushActivationInstallStatusSave('uninstall-verified');
+    },
     ensureWindows,
     currentUserFontsDir,
     windowsFontsDir,

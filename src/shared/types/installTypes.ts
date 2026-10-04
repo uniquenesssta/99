@@ -47,6 +47,7 @@ export interface InstallStatusRefreshResult {
 }
 
 export interface InstallResult {
+  results?: Record<string, InstallResult>
   ok: boolean
   managedInstallPath?: string
   managedRegistryName?: string

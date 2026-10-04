@@ -121,11 +121,11 @@ async function operations(){
  assert.deepEqual(saved.at(-1).records.map(r=>r.sourcePath),[fonts[0].path])
  // Execute production trash target selection with controlled filesystem/shell I/O.
  const trashed=[]
- const trashLoad=loader({electron:{shell:{trashItem:async p=>trashed.push(p)}},[path.resolve(__dirname,'../../src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:{access:async()=>{}},executeSharedFile:async()=>{throw Error('unexpected shared route')}},[path.resolve(__dirname,'../../src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>[]},[path.resolve(__dirname,'../../src/main/storage/runtime/sharedLeaseLockRuntime.ts')]:{withSharedLeaseLock:async(_opts,fn)=>fn()}})
+ const trashLoad=loader({electron:{shell:{trashItem:async p=>trashed.push(p)}},[path.resolve(__dirname,'../../src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:{access:async p=>{if(trashed.includes(p))throw Object.assign(Error('missing'),{code:'ENOENT'})},realpath:async p=>p,stat:async()=>({isFile:()=>true,size:8,mtimeMs:1,ino:1}),readFile:async()=>Buffer.from("0001000000000000","hex")},executeSharedFile:async request=>{assert.equal(request.operation,'trash');trashed.push(request.path)}},[path.resolve(__dirname,'../../src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>[]},[path.resolve(__dirname,'../../src/main/storage/runtime/sharedLeaseLockRuntime.ts')]:{withSharedLeaseLock:async(_opts,fn)=>fn()}})
  const trash=trashLoad('src/main/install/fontTrashDeleteRuntime.ts').deleteFontFilesToTrashRuntime
  const ProtectionError=trashLoad('src/main/install/fontProtectionAuthorityRuntime.ts').FontProtectionError
  let authorityProtected=true
- const trashDeps={withFontProtection:async(_items,action)=>{const check=async()=>{if(authorityProtected)throw new ProtectionError('protected')};await check();return action(check)},fontExtensions:new Set(['.ttf']),isCleanWindowsDefaultItem:()=>false,isPathInsideAnyRoot:()=>true,appendStartupLog(){}}
+ const trashDeps={prepareSourceDelete:async item=>{if(authorityProtected)throw new ProtectionError("protected")},withFontProtection:async(_items,action)=>{const check=async()=>{if(authorityProtected)throw new ProtectionError('protected')};await check();return action(check)},fontExtensions:new Set(['.ttf']),isCleanWindowsDefaultItem:()=>false,isPathInsideAnyRoot:()=>true,appendStartupLog(){}}
  // Cache sanitization clears protection; operation fixtures must set it explicitly.
  const unprotectedFont={...fonts[1],deleteProtected:false,systemInstalled:false,systemImported:false,active:false}
  const protectedFont={...unprotectedFont,deleteProtected:true}

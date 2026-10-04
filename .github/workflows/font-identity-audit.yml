@@ -57,6 +57,8 @@ jobs:
         run: node build/diagnostics/check-font-command-entry.cjs
       - name: Verify explicit local protection persistence
         run: node build/diagnostics/check-local-user-state.cjs --case=protection
+      - name: Verify exact uninstall planning
+        run: node build/diagnostics/check-local-user-state.cjs --case=uninstall
       - name: Verify local favorites
         run: node build/diagnostics/check-local-user-state.cjs --case=favorites
       - name: Verify Node local tag persistence
@@ -68,7 +70,9 @@ jobs:
       - name: Verify Rust identity contract vectors
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::path_utils::tests
       - name: Build real Windows Rust worker
-        run: cargo build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml
+        run: node build/rust/build-core-worker.cjs --required
+      - name: Verify real Windows font mutation protocol
+        run: node build/diagnostics/check-local-user-state.cjs --case=uninstall-native
       - name: Accept production IDs, pagination and actual Electron DOM
         run: node build/diagnostics/check-font-identity-reproduction.cjs
       - name: Verify floating scrollbar overlays with native Electron input

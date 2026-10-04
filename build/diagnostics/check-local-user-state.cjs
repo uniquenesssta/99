@@ -133,18 +133,31 @@ async function protectionAuthority() {
   // replaced; authority, candidate planning and per-effect rechecks are real.
   effects=[]
   const portFile=path.join(root,'src/main/path/sharedFileSystemRuntime.ts')
-  const io={access:async()=>{},mkdir:async()=>{},copyFile:async()=>effects.push('copy'),unlink:async()=>effects.push('unlink')}
+  const trashedPaths=new Set()
+  const io={access:async p=>{if(trashedPaths.has(p))throw Object.assign(Error('missing'),{code:'ENOENT'})},realpath:async p=>p,stat:async()=>({isFile:()=>true,size:8,mtimeMs:1,ino:1}),readFile:async()=>Buffer.from('0001000000000000','hex'),mkdir:async()=>{},copyFile:async()=>effects.push('copy'),unlink:async()=>effects.push('unlink')}
   let protectAfterPermission=''
   const runtimeLoad=loader({electron:{shell:{trashItem:async()=>effects.push('trash')}},
     'node:fs':{existsSync:()=>true},
     'node:child_process':{execFile:(exe,_args,_options,done)=>{effects.push(exe==='net'?'permission-check':'registry-native');if(exe==='net'&&protectAfterPermission)blocked.add(protectAfterPermission);done(null,'')}},
-    [portFile]:{sharedFileSystem:io,executeSharedFile:async()=>{throw Error('unexpected network mutation')}},
+    [portFile]:{sharedFileSystem:io,executeSharedFile:async request=>{assert.equal(request.operation,'trash');effects.push('trash');trashedPaths.add(request.path)}},
     [path.join(root,'src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>[]},
     [path.join(root,'src/main/storage/runtime/sharedLeaseLockRuntime.ts')]:{withSharedLeaseLock:async(_opts,action)=>action()}})
   const authority2=runtimeLoad('src/main/install/fontProtectionAuthorityRuntime.ts').createFontProtectionAuthorityRuntime({roots:async()=>[],read:async item=>{if(offline)throw Error('offline');return blocked.has(item.path)},lock:async(_items,_roots,action)=>action(),log(){}})
   const installedPath='C:\\user-fonts\\sample.ttf'
   const records=[{path:installedPath,fileName:'sample.ttf',registryName:'Sample',value:installedPath,source:'HKCU'}]
-  const deps={withFontProtection:authority2.guard,fontExtensions:new Set(['.ttf']),ensureWindows(){},currentUserFontsDir:()=> 'C:\\user-fonts',windowsFontsDir:()=> 'C:\\Windows\\Fonts',registryNameFor:()=> 'Sample',normalizePathForCacheCompare:p=>p.toLowerCase(),normalizeCompareText:s=>s.toLowerCase(),isCleanWindowsDefaultFontName:()=>true,isCleanWindowsDefaultCandidate:()=>true,isCleanWindowsDefaultItem:()=>true,isTemporaryActiveInstalledRecord:()=>false,isPathInsideAnyRoot:()=>true,getSystemInstalledFonts:async()=>records,getSystemInstalledFontsCached:async()=>records,clearInstalledFontsMemoryCache(){},writeFontRegistryValuesHKCUBatch:async()=>effects.push('registry-write'),deleteFontRegistryValuesHKCUBatch:async()=>effects.push('registry-delete'),advancedFontRefresh:async()=>{},activationTraceStep:async(_label,_id,fn)=>fn(),appendStartupLog(){}}
+  const deps={persistUninstallResult:async()=>{},deactivateForFileDelete:async()=>({ok:true,message:'settled'}),readUninstallRegistry:async()=>records.filter(record=>!record.__removed),
+    createMutationSession:async()=>({close(){},execute:async(plan,check)=>{
+      let count=0;
+      if(plan.records.some(r=>r.scope==='HKLM')){effects.push('permission-check');if(protectAfterPermission)blocked.add(protectAfterPermission)}
+      try {
+        await check();
+        for(const record of plan.records){await check();effects.push(record.scope==='HKLM'?'registry-native':'registry-delete');count++}
+        if(plan.delete_file){await check();effects.push('unlink');count++}
+        // The controlled native port reflects committed registry removals.
+        for(const record of plan.records){const found=records.find(r=>r.registryName===record.name&&r.source===record.scope);if(found)found.__removed=true}
+        return {ok:true,message:'native',completedSteps:count,fileRemoved:plan.delete_file}
+      }catch(error){return {ok:false,message:String(error),completedSteps:count,fileRemoved:false}}
+    }}),withFontProtection:authority2.guard,fontExtensions:new Set(['.ttf']),ensureWindows(){},currentUserFontsDir:()=> 'C:\\user-fonts',windowsFontsDir:()=> 'C:\\Windows\\Fonts',registryNameFor:()=> 'Sample',normalizePathForCacheCompare:p=>p.toLowerCase(),normalizeCompareText:s=>s.toLowerCase(),isCleanWindowsDefaultFontName:()=>true,isCleanWindowsDefaultCandidate:()=>true,isCleanWindowsDefaultItem:()=>true,isTemporaryActiveInstalledRecord:()=>false,isPathInsideAnyRoot:()=>true,getSystemInstalledFonts:async()=>records,getSystemInstalledFontsCached:async()=>records,clearInstalledFontsMemoryCache(){},writeFontRegistryValuesHKCUBatch:async()=>effects.push('registry-write'),deleteFontRegistryValuesHKCUBatch:async()=>effects.push('registry-delete'),advancedFontRefresh:async()=>{},activationTraceStep:async(_label,_id,fn)=>fn(),appendStartupLog(){}}
   const system=runtimeLoad('src/main/install/systemFontInstallRuntime.ts').createSystemFontInstallRuntime(deps)
   blocked.add(installedPath)
   assert.equal((await system.uninstallFontSystemWide(source)).ok,false)
@@ -159,6 +172,7 @@ async function protectionAuthority() {
   offline=false
   assert.equal((await system.uninstallFontSystemWide({...source,deleteProtected:true})).ok,true,'default classification or stale snapshot still blocked unprotected font')
   assert.deepEqual(effects,['registry-delete','unlink'])
+  delete records[0].__removed
   effects=[];await system.installFontSystemWide(source)
   assert.deepEqual(effects,['copy','registry-write']);assert.equal(blocked.size,0,'installation created implicit protection')
   effects=[];blocked.add(source.path)
@@ -168,6 +182,7 @@ async function protectionAuthority() {
   assert.deepEqual(effects,['trash'],'mixed batch damaged protected member')
   effects=[];blocked.clear()
   records[0]={...records[0],source:'HKLM',path:'C:\\Windows\\Fonts\\arial.ttf',value:'C:\\Windows\\Fonts\\arial.ttf'}
+  source.systemInstallMatches=records
   protectAfterPermission=records[0].path
   assert.equal((await system.uninstallFontSystemWide(source)).ok,false)
   assert.deepEqual(effects,['permission-check'],'protection changed during permission wait but registry/file was modified')
@@ -499,6 +514,8 @@ async function idsRace() {
 }
 async function main(){
   if(selected==='legacy-identity'){await legacyIdentity();return}
+  if(selected==='uninstall-native'){await uninstallNative();return}
+  if(selected==='uninstall'){await uninstallPlanning();return}
   if(selected==='protection'){await protection();return}
   if(selected==='identity'){await localIdentityPaths();return}
   const cases={favorites,tags,activation,metrics:metricsRace}
@@ -518,3 +535,74 @@ async function main(){
   console.log('[diagnostics:local-user-state] real SQLite/local isolation + catalog/view + single/batch deactivation + page/ID/metrics races; LF/CRLF and 4 old-code/4 regression assertions passed')
 }
 main().catch(error=>{console.error(error);process.exitCode=1})
+
+async function uninstallPlanning() {
+  const contents=new Map(),stats=new Map(),a='C:\\source\\face.ttf',b='C:\\user-fonts\\face.ttf',other='C:\\user-fonts-other\\face.ttf'
+  const bytes=Buffer.from('0001000000000000','hex')
+  for(const file of [a,b,other])contents.set(file,bytes)
+  const io={realpath:async p=>p,stat:async p=>{if(!contents.has(p))throw Error('missing');return {isFile:()=>true,size:contents.get(p).length,mtimeMs:1,ino:stats.get(p)||1}},readFile:async p=>contents.get(p)}
+  const load=loader({[path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:io}})
+  const plan=load('src/main/install/fontUninstallPlanRuntime.ts').planFontUninstall
+  const item={id:'source',path:a,fileName:'face.ttf',systemInstallMatches:[]}
+  const record={source:'HKCU',path:b,registryName:'Face',value:b}
+  let result=await plan(item,[record],[record],['C:\\user-fonts'],()=>false)
+  assert.equal(result.length,2);assert.equal(result[0].records[0].name,'Face');assert.equal(result[1].delete_file,true)
+  contents.set(b,Buffer.from('0001000000000001','hex'))
+  assert.equal((await plan(item,[record],[record],['C:\\user-fonts'],()=>false)).length,0,'same name authorized different bytes')
+  contents.set(b,bytes)
+  await assert.rejects(plan(item,[record,{...record,path:other,value:other}],[],['C:\\user-fonts'],()=>false),/多个内容相同/)
+  result=await plan({...item,path:other},[{...record,path:other,value:other}],[{...record,path:other,value:other}],['C:\\user-fonts'],()=>false)
+  assert(result.every(p=>!p.delete_file),'prefix sibling escaped path boundary')
+  const renamed='C:\\user-fonts\\different.ttf';contents.set(renamed,bytes)
+  assert.equal((await plan(item,[{...record,path:renamed,value:renamed}],[],['C:\\user-fonts'],()=>false)).length,0,'fuzzy display name matched')
+  await assert.rejects(plan({...item,path:b},[record],[{...record,registryName:'temporary'}],['C:\\user-fonts'],r=>r.registryName==='temporary'),/临时激活/)
+  console.log('[F06] exact-content planning, ambiguous copies, names and directory boundaries passed')
+}
+
+async function uninstallNative() {
+  assert.equal(process.platform,'win32','F06 native acceptance requires Windows')
+  const {spawn}=require('node:child_process'),{createInterface}=require('node:readline'),crypto=require('node:crypto')
+  const worker=path.join(root,'build/native/hfm-core-worker.exe')
+  const userRoot=path.join(process.env.LOCALAPPDATA,'Microsoft/Windows/Fonts')
+  fs.mkdirSync(userRoot,{recursive:true})
+  const token='HFM_F06_TEST_'+crypto.randomUUID()+'_中文',target=path.join(userRoot,token+'.ttf')
+  const original=path.join(process.env.WINDIR,'Fonts/arial.ttf')
+  const regRoot='HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts'
+  const reg=(args)=>execFileSync('reg',args,{encoding:'utf8',windowsHide:true})
+  const make=()=>{fs.copyFileSync(original,target,fs.constants.COPYFILE_EXCL);reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])}
+  const digest=()=>crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex')
+  const child=spawn(worker,['--font-mutation-broker'],{stdio:['pipe','pipe','pipe'],windowsHide:true,env:{...process.env,HFM_PARENT_PID:String(process.pid)}})
+  const line=createInterface({input:child.stdout}),queue=[],wait=[];let failure,stderr=''
+  child.stderr.on('data',b=>stderr+=b)
+  child.on('error',e=>{failure=e;for(const w of wait.splice(0))w.reject(e)})
+  child.on('exit',code=>{failure=Error(`broker exit ${code}: ${stderr}`);for(const w of wait.splice(0))w.reject(failure)})
+  line.on('line',s=>{const value=JSON.parse(s),w=wait.shift();if(w)w.resolve(value);else queue.push(value)})
+  const next=()=>queue.length?Promise.resolve(queue.shift()):failure?Promise.reject(failure):new Promise((resolve,reject)=>wait.push({resolve,reject}))
+  const timeout=setTimeout(()=>child.kill(),45000)
+  async function command(plan,onGate=()=>true) {
+    child.stdin.write(JSON.stringify(plan)+'\n');const effects=[];let done
+    for(;;){const r=await next();if(r.gate){const allow=await onGate(r.gate);child.stdin.write(JSON.stringify({allow})+'\n')}if(r.effect)effects.push(r);if(r.done)done=r;if(r.brokerDone)return {...r,effects,elevated:done}}
+  }
+  try {
+    assert.equal((await next()).protocol,'font-mutation-v1');make()
+    child.stdin.write('{"snapshot":true}\n');const snapshot=await next();assert(snapshot.ok);assert(snapshot.records.some(r=>r.registryName===token&&r.path===target),'native registry snapshot corrupted Unicode')
+    let plan={path:target,sha256:digest(),delete_file:true,records:[{scope:'HKCU',name:token,value:target}]}
+    let r=await command(plan,()=>false);assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target));assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
+    r=await command({...plan,sha256:'0'.repeat(64)});assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target))
+    r=await command(plan,stage=>{if(stage==='registry')reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',original,'/f']);return true})
+    assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target));assert(reg(['query',regRoot,'/v',token]).includes('arial.ttf'))
+    reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])
+    r=await command(plan);assert.equal(r.ok,true,JSON.stringify(r));assert.deepEqual(r.effects.map(e=>e.effect),['registry','file']);assert(!fs.existsSync(target));assert.throws(()=>reg(['query',regRoot,'/v',token]));assert(fs.existsSync(original),'test touched the original system font')
+    make();plan={...plan,sha256:digest()}
+    r=await command({...plan,path:path.join(require('node:os').tmpdir(),token+'.ttf')});assert.equal(r.ok,false);assert.equal(r.effects.length,0)
+    r=await command({...plan,records:[{scope:'HKCU',name:token,value:original}]});assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target))
+    r=await command(plan,stage=>stage!=='file');assert.equal(r.ok,false);assert.deepEqual(r.effects.map(e=>e.effect),['registry']);assert(fs.existsSync(target),'partial failure lost the remaining file')
+    r=await command({...plan,records:[]});assert.equal(r.ok,true);assert(!fs.existsSync(target),'remaining-step retry failed')
+    const invalid=spawnSync(worker,['--font-mutation-elevated','bad-pipe','1'],{encoding:'utf8',timeout:5000,windowsHide:true});assert.notEqual(invalid.status,0,'unauthenticated elevated endpoint accepted')
+    console.log('[F06 native] original-user HKCU/file effects, denial, content mismatch, changed registry, boundary refusal, partial completion and remaining-step retry passed; real UAC/HKLM/UNC remain manual acceptance')
+  } finally {
+    clearTimeout(timeout);child.kill();line.close()
+    try{reg(['delete',regRoot,'/v',token,'/f'])}catch{}
+    try{fs.unlinkSync(target)}catch(e){if(e.code!=='ENOENT')throw e}
+  }
+}

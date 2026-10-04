@@ -16,7 +16,7 @@ export function registerFontSystemIpcHandlers(handle: IpcHandleRegistrar, runtim
   );
   handle("fonts:getInstallStatusIndex", (_event, items: FontItem[]) => runtime.getInstallStatusIndexSnapshot(items));
   handle("fonts:installSystem", (_event, item: FontItem) => runtime.installFontSystemWide(item));
-  handle("fonts:uninstallSystem", (_event, item: FontItem) => runtime.uninstallFontSystemWide(item));
+  handle("fonts:uninstallSystem", (_event, item: FontItem | FontItem[]) => runtime.uninstallFontSystemWide(item));
   handle("fonts:deleteFiles", (_event, items: FontItem[], watchedFolders: string[]) =>
     runtime.deleteFontFilesToTrash(items, watchedFolders),
   );

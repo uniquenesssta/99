@@ -105,7 +105,7 @@ export interface IpcHandlerRuntime {
     items: FontItem[],
   ) => unknown | Promise<unknown>;
   installFontSystemWide: (item: FontItem) => unknown | Promise<unknown>;
-  uninstallFontSystemWide: (item: FontItem) => unknown | Promise<unknown>;
+  uninstallFontSystemWide: (item: FontItem | FontItem[]) => unknown | Promise<unknown>;
   deleteFontFilesToTrash: (
     items: FontItem[],
     watchedFolders: string[],

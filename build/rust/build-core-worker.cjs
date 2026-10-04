@@ -28,7 +28,7 @@ if (cargoVersion.error || cargoVersion.status !== 0) {
 }
 
 console.log(`[hfm] building Rust core worker with ${cargoVersion.stdout.trim()}`)
-const build = spawnSync('cargo', ['build', '--release', '--manifest-path', manifest], {
+const build = spawnSync('cargo', ['build', '--locked', '--release', '--manifest-path', manifest], {
   cwd: root,
   stdio: 'inherit',
   env: dependencyCacheEnv(root),
@@ -56,4 +56,5 @@ try {
 
 fs.mkdirSync(outDir, { recursive: true })
 fs.copyFileSync(builtBinary, targetBinary)
+fs.writeFileSync(targetBinary + '.sha256', require('node:crypto').createHash('sha256').update(fs.readFileSync(targetBinary)).digest('hex') + '\n')
 console.log(`[hfm] Rust core worker copied: ${path.relative(root, targetBinary)}`)

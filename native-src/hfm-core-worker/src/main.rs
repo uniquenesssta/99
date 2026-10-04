@@ -1,4 +1,5 @@
 mod commands;
+mod font_mutation;
 mod mapped_drives;
 mod shared_file_io;
 mod isolated_lifetime;
@@ -28,6 +29,13 @@ mod system_fonts;
 mod watcher;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).is_some_and(|v| v == "--font-mutation-broker" || v == "--font-mutation-elevated") {
+        if args[1] == "--font-mutation-broker" {
+            if let Err(error) = isolated_lifetime::watch_parent() { eprintln!("{error}"); std::process::exit(70); }
+        }
+        std::process::exit(font_mutation::run(&args));
+    }
     if let Err(error) = isolated_lifetime::watch_parent() { eprintln!("{}", error); std::process::exit(70); }
     let code = commands::run_from_env();
     if code != 0 {

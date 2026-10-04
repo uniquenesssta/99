@@ -13,7 +13,7 @@ function setup(config={}) {
   const favorite=h.load(renderer+'runtime/system/actions/fontFavoriteActionRuntime.ts').createFontFavoriteActionRuntime(options(),state)
   const protect=async(ids,value)=>{calls.push(['protect',plain(ids),value])}
   h.setCommandActions({...install,...deletion,...favorite,toggleFontDeleteProtection:protect,editFontTags:(fonts,scope)=>edited.push([fonts.map(f=>f.id),scope])})
-  for(const name of ['installSystem','uninstallSystem'])h.handlers.set('fonts:'+name,(_,f)=>{calls.push([name,f.id]);return {ok:true,message:'native'}})
+  for(const name of ['installSystem','uninstallSystem'])h.handlers.set('fonts:'+name,(_,f)=>{const fonts=Array.isArray(f)?f:[f];for(const font of fonts)calls.push([name,font.id]);return Array.isArray(f)?{ok:true,results:Object.fromEntries(fonts.map(font=>[font.id,{ok:true,message:'native'}]))}:{ok:true,message:'native'}})
   h.handlers.set('fonts:compareInstalled',()=>({installed:true,by:'system',matches:[]}))
   h.handlers.set('fonts:deleteFiles',(_,fonts)=>{calls.push(['delete',fonts.map(f=>f.id)]);return {ok:true,deletedIds:fonts.map(f=>f.id),skippedInstalled:0,skippedProtected:0,skippedUnsafe:0,failed:[],message:'deleted'}})
   function overlay(id='a') {h.context().openFontMenu(h.event(),h.all.find(f=>f.id===id));const c=h.context();return h.load(renderer+'components/app/AppOverlays.tsx').AppOverlays({contextMenu:h.menu,contextSelectedFonts:c.contextFontTargets(),contextTargetCount:c.contextTargetCount,runFontContextAction:c.runFontContextAction,selectionLabel:c.selectionLabel})}
@@ -72,6 +72,12 @@ async function run(){let cases=0
     const isProtected=h.load(renderer+'fontSelectionRuntime.ts').isFontDeleteProtected
     assert.equal(isProtected({...h.library.fonts.a,path:'C:/Windows/Fonts/arial.ttf',systemImported:true,systemInstalled:true,deleteProtected:false}),false)
     assert.equal(isProtected({...h.library.fonts.a,deleteProtected:true}),true);cases++
+  }
+  for(const preload of [false,true]) {
+    const s=setup({runtimePreload:preload}),h=s.base;let requests=0
+    h.select().setSelectedFontIds(['a','b']);h.library.fonts.a.systemInstalled=true;h.library.fonts.b.systemInstalled=true
+    h.handlers.set('fonts:uninstallSystem',(_,fonts)=>{requests++;assert(Array.isArray(fonts));assert.deepEqual(plain(fonts.map(f=>f.id)),['a','b']);return {ok:false,results:{a:{ok:true},b:{ok:false,message:'UAC cancelled'}}}})
+    await h.command()('remove');await tick();assert.equal(requests,1,'batch split into multiple elevation sessions');assert.equal(h.library.fonts.a.systemInstalled,false);assert.equal(h.library.fonts.b.systemInstalled,true);assert.match(h.status.at(-1),/成功 1 个，失败或未确认 1 个/);cases++
   }
   const outside=setup();outside.select().setSelectedFontIds(['a','b']);button(outside.overlay('c'),'安装').props.onClick();await tick();assert.deepEqual(outside.calls,[['installSystem','c']]);assert.deepEqual(plain(outside.select().selectedFontIds),['c']);cases++
   for(const label of ['卸载字体','删除字体文件']){const s=setup(),h=s.base;h.select().setSelectedFontIds(['a','b']);h.library.fonts.a.systemInstalled=true;s.setConfirm(false);await h.command()(label==='卸载字体'?'remove':'deleteFile');await tick();assert.equal(s.calls.length,0);assert.match(h.status.at(-1),/已取消/);cases++}

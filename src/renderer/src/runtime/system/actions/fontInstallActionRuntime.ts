@@ -30,7 +30,7 @@ export function createFontInstallActionRuntime(
     })
     const skipped = `跳过保护 ${skippedProtected} 个，${uninstall ? '未安装' : '已安装'} ${skippedState} 个，处理中 ${skippedBusy} 个`
     if (!targets.length) { options.setStatus(`没有可${verb}的字体：成功 0 个，失败 0 个；${skipped}。`); return }
-    if (uninstall && !window.confirm(`将卸载“${label}”中的 ${targets.length} 个已安装字体（所选 ${unique.length} 个）。${skipped}。会清理关联安装文件；若所选源路径就是安装路径，该文件也会被删除。独立源副本保留，不取消临时激活；Windows 系统目录受权限限制。确定继续？`)) {
+    if (uninstall && !window.confirm(`将卸载“${label}”中的 ${targets.length} 个已安装字体（所选 ${unique.length} 个）。${skipped}。会清理关联安装文件；若所选源路径就是安装路径，该文件也会被删除。独立源副本保留，不取消临时激活；需要时将弹出一次 Windows 授权确认。确定继续？`)) {
       options.setStatus(`已取消卸载，未执行 ${targets.length} 个；${skipped}。`)
       return
     }
@@ -38,10 +38,11 @@ export function createFontInstallActionRuntime(
     let succeeded = 0, failed = 0, firstFailure = ''
     try {
       options.setLibrary(prev => libraryWithMergedFonts(prev, targets.filter(font => !prev.fonts[font.id]), targets.map(font => font.id)))
+      const batch = uninstall ? await options.hfm.uninstallSystem(targets) : undefined
       for (const font of targets) {
         options.setStatus(`正在${verb}：${succeeded + failed + 1} / ${targets.length} · ${fontDisplayName(font)}`)
         try {
-          const result = uninstall ? await options.hfm.uninstallSystem(font) : await options.hfm.installSystem(font)
+          const result = uninstall ? batch?.results?.[font.id] || { ok: false, message: batch?.message || '未收到逐项卸载回执。' } : await options.hfm.installSystem(font)
           if (!result.ok) { failed++; firstFailure ||= result.message; continue }
           if (uninstall) stateRuntime.updateFont(font.id, current => ({ ...current, systemInstalled: false, systemInstallMatches: [] }))
           else {
