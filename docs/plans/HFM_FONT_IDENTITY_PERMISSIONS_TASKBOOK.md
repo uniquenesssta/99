@@ -794,3 +794,16 @@ flowchart TD
 本轮仅做源码静态审阅和 `git diff --check`，非 Windows 环境未执行 Node/Rust 编译或测试。推送启动普通 CI 后停止轮询；本机更新同一分支后仍使用 `npm run test:font-system-local`，回传本轮 `local-acceptance.log` 和失败 JSON。若快照仍失败，日志应直接指出失败记录，届时据实处理；不能提前认定本机就是缺失终止符，也不能宣称后续真实 disposition 错误已修复。自动项通过后再测试应用界面并回传 startup 日志。F06 继续进行中，§18.3 的提权源回收等剩余范围保持，F07 未开始。
 
 已查询 Context7 并核对微软 [RegEnumValueW](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regenumvaluew)、[RegQueryValueExW](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regqueryvalueexw)；Mermaid Chart 已绘制本节真实链路。Create State 未找到 HFM 项目，未写入其他项目，续接状态保存在本任务书与 Git。
+
+
+### 18.12 整数元数据阻塞全部卸载（2026-10-04，根因已定位、待本机复验）
+
+用户提供 `粘贴的文本 (1)(10).txt`、`startup-2026-10-04_07-31-22-450-24136.log` 和 `startup-2026-10-04_07-34-06-411-29492.log`。更新后的 worker 构建与全部 13 项 Rust 测试通过；真实验收的初始快照明确返回 `scope=HKCU, index=110, name="sdk_init_timestamp", type=4, bytes=4`，原因是仅接受 REG_SZ。两份应用日志中的三次卸载及一次删除源文件均在同一快照记录失败，`completedSteps=0`；两次安装成功，两个会话正常退出。因此本次阻塞是非路径整数值导致全量快照失败，尚未进入真实文件删除；不能再归因于 CI、字体占用或未构建 Rust。上一轮终止符修正没有命中这个本机根因，保留为 API 兼容修正，不记作卸载已解决。不推断该元数据由哪个软件写入，也不要求用户清理系统注册表。
+
+修改限定在既有 `registry_value.rs`：通过类型和固定宽度识别 REG_DWORD / REG_DWORD_BIG_ENDIAN（4 字节）、REG_QWORD（8 字节），将其判为无字体路径引用。不要按 `sdk_init_timestamp` 名称写特例；同名 REG_SZ 仍按路径读取。数字宽度错误、缓冲越界、未知/二进制/未支持字符串类型继续拒绝，既有字符串边界检查保持。原生快照跳过此类无路径数据而不修改注册表；删除前复核仍要求实际路径与计划精确相等，因此记录改为整数必须拒绝删除。
+
+在现有模块新增一项纯测试，覆盖本次记录的类型/长度、其他名称、全部合法整数宽度、异常长度和同名字符串保留；旧零长度 DWORD 拒绝断言移入整数异常长度测试，没有取消拒绝要求。本机 `uninstall-native --local` 增加唯一命名 DWORD 元数据夹具，验证快照保留字体引用、排除整数引用且不改变元数据，完整卸载后整数值仍在；另在注册表关卡将本次测试字体记录改为 DWORD，要求失败、零副作用及文件和值保留，然后恢复测试记录继续原有验收。finally 只清理本次唯一夹具。真实 `sdk_init_timestamp` 从不作为写入/删除目标。
+
+普通 CI 沿用现有入口执行 5 项纯解析和 4 项纯重试，5 项真实句柄测试继续忽略；本机同一命令执行全部 14 项及真实字体场景。非 Windows 编辑环境只做静态审阅和 `git diff --check`，未运行编译或测试。推送启动普通 CI 后停止轮询。用户拉取当前分支后先运行 `npm run test:font-system-local`；自动项通过再用 `npm run dev` 验证应用，失败回传完整本轮日志。此前真实 disposition 拒绝和 §18.3 未完成范围仍待验证/实施，F06 不收尾、F07 不开始。
+
+已查询 Context7，结合微软 [Registry value types](https://learn.microsoft.com/en-us/windows/win32/sysinfo/registry-value-types) 核对整数与字符串定义；生产仅修改现有解析模块，无架构改动，沿用 §18.11 图。Create State 前次未找到 HFM 项目，本轮续接继续保存在 Git 与任务书。

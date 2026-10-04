@@ -582,7 +582,8 @@ async function uninstallNative() {
   const reg=(args)=>execFileSync('reg',args,{encoding:'utf8',windowsHide:true})
   // Create a writable fixture from bytes, without inheriting system-file
   // attributes. Read-only behavior is exercised explicitly below.
-  let fixtureCreated=false,primaryFailure=false
+  let fixtureCreated=false,metadataCreated=false,primaryFailure=false
+  const metadataToken=token+'_metadata'
   const make=()=>{fs.writeFileSync(target,fs.readFileSync(original),{flag:'wx'});fixtureCreated=true;assert.equal(fs.statSync(target).mode & 0o200,0o200);reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])}
   const digest=()=>crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex')
   const child=spawn(worker,['--font-mutation-broker'],{stdio:['pipe','pipe','pipe'],windowsHide:true,env:{...process.env,HFM_PARENT_PID:String(process.pid)}})
@@ -601,13 +602,19 @@ async function uninstallNative() {
     assert.equal((await next()).protocol,'font-mutation-v1')
     // Establish registry readability before creating any real font fixture.
     child.stdin.write('{"snapshot":true}\n');const initialSnapshot=await next();assert.equal(initialSnapshot.ok,true,JSON.stringify(initialSnapshot))
+    reg(['add',regRoot,'/v',metadataToken,'/t','REG_DWORD','/d','1','/f']);metadataCreated=true
     make()
     child.stdin.write('{"snapshot":true}\n');const snapshot=await next();assert.equal(snapshot.ok,true,JSON.stringify(snapshot));assert(snapshot.records.some(r=>r.registryName===token&&r.path===target),'native registry snapshot corrupted Unicode')
+    assert(!snapshot.records.some(r=>r.registryName===metadataToken),'numeric metadata became a font reference')
+    assert.match(reg(['query',regRoot,'/v',metadataToken]),/REG_DWORD/,'snapshot altered metadata')
     let plan={path:target,sha256:digest(),delete_file:true,records:[{scope:'HKCU',name:token,value:target}]}
     let r=await command(plan,()=>false);assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target));assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
     r=await command({...plan,sha256:'0'.repeat(64)});assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target))
     r=await command(plan,stage=>{if(stage==='registry')reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',original,'/f']);return true})
     assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target));assert(reg(['query',regRoot,'/v',token]).includes('arial.ttf'))
+    reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])
+    r=await command(plan,stage=>{if(stage==='registry')reg(['add',regRoot,'/v',token,'/t','REG_DWORD','/d','1','/f']);return true})
+    assert.equal(r.ok,false);assert.equal(r.effects.length,0,'changed numeric target was deleted');assert(fs.existsSync(target));assert.match(reg(['query',regRoot,'/v',token]),/REG_DWORD/)
     reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])
     fs.chmodSync(target,0o444)
     r=await command(plan);assert.equal(r.ok,false);assert.match(r.message,/read-only/);assert.equal(r.effects.length,0,'read-only preflight removed an installation record');assert(fs.existsSync(target));assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
@@ -621,6 +628,7 @@ async function uninstallNative() {
     r=await command({...plan,records:[]},stage=>stage!=='file'||++fileGates<2);assert.equal(r.ok,false,JSON.stringify(r));assert.equal(r.effects.length,0,'protection change during resource release reached deletion');assert.equal(fileGates,2);assert(fs.existsSync(target))
     r=await command({...plan,records:[]});assert.equal(r.ok,true,JSON.stringify({scenario:'remaining-file-retry',receipt:r,targetExists:fs.existsSync(target),targetMode:fs.existsSync(target)?fs.statSync(target).mode:null,stderr}));assert.deepEqual(r.effects.map(e=>e.effect),['file'],'remaining-step retry must perform exactly one file effect');assert(!fs.existsSync(target),'remaining-step retry failed')
     const invalid=spawnSync(worker,['--font-mutation-elevated','bad-pipe','1'],{encoding:'utf8',timeout:5000,windowsHide:true});assert.notEqual(invalid.status,0,'unauthenticated elevated endpoint accepted')
+    assert.match(reg(['query',regRoot,'/v',metadataToken]),/REG_DWORD/,'uninstall removed unrelated metadata')
     console.log('[F06 native] original-user HKCU/file effects, denial, content mismatch, changed registry, boundary refusal, partial completion and remaining-step retry passed; real UAC/HKLM/UNC remain manual acceptance')
   } catch(error) {
     // Evidence only: retain the original failing assertion even if the probe
@@ -639,6 +647,7 @@ async function uninstallNative() {
     throw error
   } finally {
     clearTimeout(timeout);child.kill();line.close()
+    if(metadataCreated) {try{reg(['delete',regRoot,'/v',metadataToken,'/f'])}catch(e){console.error('[F06 metadata cleanup failed]',e);if(!primaryFailure)process.exitCode=1}}
     if(fixtureCreated) {
       try{reg(['delete',regRoot,'/v',token,'/f'])}catch{}
       try{fs.chmodSync(target,0o666);fs.unlinkSync(target)}catch(e){if(e.code!=='ENOENT'){console.error('[F06 fixture cleanup failed]',e);if(!primaryFailure)throw e}}

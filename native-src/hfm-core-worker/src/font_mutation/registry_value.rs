@@ -5,7 +5,13 @@ use std::io;
 pub(super) fn decode(name:&str,kind:u32,data:&[u16],bytes:u32)->io::Result<Option<String>> {
     let invalid=|reason:&str|io::Error::other(reason);
     if bytes%2!=0 || bytes as usize/2>data.len() {
-        return Err(invalid("invalid registry string byte length"));
+        return Err(invalid("invalid registry value byte length"));
+    }
+    // Numeric metadata is not a font path. Classify by type and exact width,
+    // never by a special value name; preserve the registry entry untouched.
+    let numeric_bytes=match kind {4|5=>Some(4),11=>Some(8),_=>None};
+    if let Some(expected)=numeric_bytes {
+        return if bytes==expected {Ok(None)}else{Err(invalid("invalid numeric registry value byte length"))};
     }
     if name.is_empty() && kind==0 && bytes==0 {return Ok(None)}
     if kind!=1 {return Err(invalid("unsupported font registry type (expected REG_SZ)"))}
@@ -43,8 +49,22 @@ mod tests {
     }
     #[test]
     fn unsupported_types_do_not_become_missing_references() {
-        for kind in [0,2,3,4,7] {assert!(decode("Font",kind,&[],0).is_err());}
+        for kind in [0,2,3,6,7,99] {assert!(decode("Font",kind,&[],0).is_err());}
         assert!(decode("",0,&[1],2).is_err());
+    }
+    #[test]
+    fn numeric_metadata_is_not_a_font_reference() {
+        // Reproduce the observed DWORD without depending on its name/value.
+        assert_eq!(decode("sdk_init_timestamp",4,&[0xD800,0xFFFF],4).unwrap(),None);
+        for (kind,bytes) in [(4,4),(5,4),(11,8)] {
+            assert_eq!(decode("Other metadata",kind,&[0xFFFF;4],bytes).unwrap(),None);
+            for invalid_bytes in [0,2,6,10] {
+                assert!(decode("Metadata",kind,&[0;5],invalid_bytes).is_err());
+            }
+            assert!(decode("Metadata",kind,&[0],bytes).is_err());
+        }
+        // A string with the observed metadata name remains a real reference.
+        assert_eq!(decode("sdk_init_timestamp",1,&[65,0],4).unwrap(),Some("A".into()));
     }
     #[test]
     fn malformed_strings_are_refused() {
