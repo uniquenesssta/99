@@ -103,7 +103,7 @@ async function metricsRace(){
 }
 
 async function restartPolicy(){
- for(const initialFault of ['success','ownership-rejected','registry-rejected','registry-missing-receipt','queue-rejected']){
+ for(const initialFault of ['success','source-offline','ownership-rejected','registry-rejected','registry-missing-receipt','queue-rejected']){
   const identity={device:'1',inode:'2',sha1:'a'.repeat(40),size:123}
   const record={fontId:'a',sourcePath:'\\\\nas\\offline\\a.ttf',installPath:'/managed/test_ACTIVE_a_session.ttf',registryName:'A (TrueType) [session]',sessionId:'session',identity,activatedAt:'2026-09-22T00:00:00.000Z',fileName:'a.ttf',stage:'active'}
   let fault=initialFault,disk=null,removed=0,refreshes=0,installedRows={}
@@ -112,6 +112,11 @@ async function restartPolicy(){
   // Keep the production ownership, cleanup, reconciliation and recovery-file owners.
   // Only filesystem, native Windows and deferred-delete ports are controlled here.
   const load=loader({
+   '../../path/sharedFileSystemRuntime':{sharedFileSystem:{stat:async source=>{
+    assert.equal(source,record.sourcePath)
+    if(initialFault==='source-offline')throw Error('source offline')
+    return {size:123,mtimeMs:1000}
+   }}},
    'node:fs':{promises:{
     mkdir:async p=>{local(p)},
     readFile:async p=>{local(p);if(disk===null)throw Object.assign(Error('missing'),{code:'ENOENT'});return disk},
@@ -159,9 +164,9 @@ async function restartPolicy(){
   }
   const cleanup=load('src/main/activation/runtime/fontActivationCleanupRuntime.ts').createFontActivationCleanupRuntime(deps,{temporaryActiveRecordStillVisible:async()=>false})
   const result=await cleanup.cleanupTemporaryActiveFonts('startup')
-  if(initialFault==='success'){
+  if(initialFault==='success'||initialFault==='source-offline'){
    assert.deepEqual(plain(result),{cleaned:1,remaining:0})
-   assert.deepEqual(calls,['ownership','resource','registry','queue','status'])
+   assert.deepEqual(calls,initialFault==='source-offline'?['ownership','resource','registry','queue']:['ownership','resource','registry','queue','status'])
    assert.deepEqual(stages,['resource-removal-pending','registry-removal-pending','file-pending','empty'])
   }else{
    assert.deepEqual(plain(result),{cleaned:0,remaining:1},initialFault)
@@ -188,7 +193,14 @@ async function restartPolicy(){
   }
   assert.equal(removed,1,'resource removal must not repeat after its durable settlement')
   assert.equal(queued.length,1);assert.equal(refreshes,1)
-  assert.equal(installedRows.a.by,'none','startup cleanup left persisted active state stale')
+  if(initialFault==='source-offline'){
+   assert.deepEqual(installedRows,{},'offline source must not persist an unverified identity')
+   assert(logs.some(s=>s.includes('临时字体清理后状态暂缓')&&s.includes('source offline')))
+  }else{
+   const currentId=load('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId(record.sourcePath,123,1000)
+   assert.deepEqual(Object.keys(installedRows),[currentId],'cleanup must persist the concrete source identity')
+   assert.equal(installedRows[currentId].by,'none','startup cleanup left persisted active state stale')
+  }
   assert.equal((await store.loadTemporaryActiveFonts()).records.length,0,'restart must use cleaned persisted session')
   assert.equal(temporary.size,0,'recovery-file temporary writes leaked')
  }

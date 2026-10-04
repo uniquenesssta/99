@@ -958,3 +958,12 @@ Context7 已查询 SetFileInformationByHandle / FILE_BASIC_INFO，Rust 官方 Fi
 旧夹具依赖数据库分页分支直接返回列表，没有传完整 VisibleFontsOptions；生产分页链路如今会重新检查筛选，夹具必须提供同样的有效输入。本次只补齐该调用的空搜索、筛选默认值、计算索引和完整分页元数据。保留真实 1400 项 LRU、1499 项分页数据、被淘汰 a/b/c 的选择与批量激活断言；不修改生产函数默认值，不跳过诊断或删除原断言。静态检查其他直接调用，未发现第二处同类 deferredSearch 缺失。
 
 完成源码/差异静态复核及 git diff --check，非 Windows 环境未运行 Node/Rust。推送后沿用完整 F07 Windows CI，启动即交付；F07 待新回执。本次仅夹具输入修正，无 API 或架构变化，Create State 仍沿用先前无 HFM 项目的结论，状态保存在 Git 与本节。
+
+
+### 19.5 启动清理身份回写夹具修正（2026-10-04）
+
+`2c63e37` 的 CI `37198349289` / job `111424741196`：Rust 构建及上一轮 activation-entry 已通过，完整 verify 停在 active-view-consistency 的 restartPolicy，预期 status 回写未发生。生产清理在回写前通过 sharedFileSystem.stat 核对源文件并生成 file-v2 身份；旧夹具只提供本机恢复文件端口，没有提供该源读取端口，并仍要求写入历史 ID a。
+
+本次在原受控端口夹具补齐源 stat 成功回执，断言实际回写具体 file-v2 身份而非历史 ID；新增 source-offline 场景明确抛出离线错误，断言本机资源/注册表/队列清理仍完成、恢复记录已清空、未写入未经核实的状态，并记录暂缓原因。原所有权拒绝、注册表拒绝/缺失回执、队列拒绝、持久阶段恢复及变异断言保留。没有修改生产清理或卸载代码，没有实际访问 NAS。
+
+完成静态差异审阅及 git diff --check；Windows 动态验证由新完整 CI 执行，非 Windows 环境不运行测试。F07 仍待通过，启动 CI 后不轮询。无新 API/架构，状态沿用 Git 与任务书保存。
