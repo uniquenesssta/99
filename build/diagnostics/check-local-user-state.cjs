@@ -602,6 +602,8 @@ async function uninstallNative() {
     r=await command({...plan,path:path.join(require('node:os').tmpdir(),token+'.ttf')});assert.equal(r.ok,false);assert.equal(r.effects.length,0)
     r=await command({...plan,records:[{scope:'HKCU',name:token,value:original}]});assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target))
     r=await command(plan,stage=>stage!=='file');assert.equal(r.ok,false);assert.deepEqual(r.effects.map(e=>e.effect),['registry']);assert(fs.existsSync(target),'partial failure lost the remaining file')
+    let fileGates=0
+    r=await command({...plan,records:[]},stage=>stage!=='file'||++fileGates<2);assert.equal(r.ok,false,JSON.stringify(r));assert.equal(r.effects.length,0,'protection change during resource release reached deletion');assert.equal(fileGates,2);assert(fs.existsSync(target))
     r=await command({...plan,records:[]});assert.equal(r.ok,true,JSON.stringify({scenario:'remaining-file-retry',receipt:r,targetExists:fs.existsSync(target),targetMode:fs.existsSync(target)?fs.statSync(target).mode:null,stderr}));assert.deepEqual(r.effects.map(e=>e.effect),['file'],'remaining-step retry must perform exactly one file effect');assert(!fs.existsSync(target),'remaining-step retry failed')
     const invalid=spawnSync(worker,['--font-mutation-elevated','bad-pipe','1'],{encoding:'utf8',timeout:5000,windowsHide:true});assert.notEqual(invalid.status,0,'unauthenticated elevated endpoint accepted')
     console.log('[F06 native] original-user HKCU/file effects, denial, content mismatch, changed registry, boundary refusal, partial completion and remaining-step retry passed; real UAC/HKLM/UNC remain manual acceptance')

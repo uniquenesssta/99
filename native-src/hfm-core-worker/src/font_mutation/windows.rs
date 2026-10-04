@@ -171,6 +171,23 @@ fn validate(p:&Plan,elevated:bool,original_user:Option<&str>)->io::Result<()> {
     }
     Ok(())
 }
+fn retry_file_disposition(mut attempt:impl FnMut()->io::Result<()>,mut wait:impl FnMut(u64))->io::Result<()> {
+    // A writable file with an already granted DELETE handle may still have
+    // short-lived GDI/mapped-file references. Keep the same handle throughout;
+    // never reopen by path, replay registry changes, or request elevation here.
+    const DELAYS:[u64;4]=[50,100,200,400];
+    for index in 0..=DELAYS.len() {
+        match attempt() {
+            Ok(())=>return Ok(()),
+            Err(error) if matches!(error.raw_os_error(),Some(5)|Some(32)) && index<DELAYS.len()=>{
+                eprintln!("font file disposition retry: attempt={}, code={:?}, delay_ms={}",index+1,error.raw_os_error(),DELAYS[index]);
+                wait(DELAYS[index]);
+            },
+            Err(error)=>return Err(error),
+        }
+    }
+    unreachable!()
+}
 fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufRead,out:&mut impl Write)->io::Result<()> {
     let mut stage="validate-plan";
     let result=(||->io::Result<()> {
@@ -199,13 +216,24 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         emit(out,&json!({"effect":"registry","scope":r.scope,"name":r.name}))?;
     }
     if p.delete_file {
+        retry_file_disposition(|| {
         stage="file-gate";
         gate(input,out,if elevated{"elevated-file"}else{"file"})?;
         stage="file-identity-recheck";
         if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before delete"))}
-        unsafe{RemoveFontResourceExW(wide(&p.path).as_ptr(),0,ptr::null_mut());}
+        if file.metadata()?.permissions().readonly(){return Err(fail("font became read-only before delete"))}
+        // Multiple loads can retain multiple resource references. Each removal
+        // is separately gated; private or other-session resources are not forced.
+        stage="font-resource-release";
+        for index in 0..8 {
+            if index>0 { gate(input,out,if elevated{"elevated-file"}else{"file"})?; }
+            if unsafe{RemoveFontResourceExW(wide(&p.path).as_ptr(),0,ptr::null_mut())}==0 {break;}
+        }
+        gate(input,out,if elevated{"elevated-file"}else{"file"})?;
+        if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before disposition"))}
         stage="file-disposition";
-        let delete=1u8;unsafe{checked(SetFileInformationByHandle(file.as_raw_handle(),4,&delete as *const _ as *const c_void,1))?;}
+        let delete=1u8;unsafe{checked(SetFileInformationByHandle(file.as_raw_handle(),4,&delete as *const _ as *const c_void,1))}
+        },|ms|std::thread::sleep(std::time::Duration::from_millis(ms)))?;
         drop(file);
         // A new object at the old path must never be removed during verification.
         stage="file-removal-verification";
@@ -219,6 +247,34 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     // suppress the broker's existing UAC decision.
     if let Err(error)=&result { eprintln!("font mutation failure: stage={stage}, elevated={elevated}, delete_file={}, records={}, code={:?}, detail={error}",p.delete_file,p.records.len(),error.raw_os_error()); }
     result
+}
+
+#[cfg(test)]
+mod disposition_tests {
+    use super::*;
+    #[test]
+    fn transient_failure_rechecks_before_success() {
+        let mut checks=0;let mut waits=Vec::new();
+        retry_file_disposition(||{checks+=1;if checks<3{Err(io::Error::from_raw_os_error(5))}else{Ok(())}},|ms|waits.push(ms)).unwrap();
+        assert_eq!(checks,3);assert_eq!(waits,vec![50,100]);
+    }
+    #[test]
+    fn persistent_denial_keeps_error_and_is_bounded() {
+        let mut attempts=0;let mut waits=Vec::new();
+        let error=retry_file_disposition(||{attempts+=1;Err(io::Error::from_raw_os_error(5))},|ms|waits.push(ms)).unwrap_err();
+        assert_eq!(error.raw_os_error(),Some(5));assert_eq!(attempts,5);assert_eq!(waits,vec![50,100,200,400]);
+    }
+    #[test]
+    fn protection_refusal_after_wait_stops_retry() {
+        let mut checks=0;let mut mutations=0;
+        let error=retry_file_disposition(||{checks+=1;if checks>1{return Err(fail("protection changed"))}mutations+=1;Err(io::Error::from_raw_os_error(32))},|_|{}).unwrap_err();
+        assert_eq!(error.to_string(),"protection changed");assert_eq!(checks,2);assert_eq!(mutations,1);
+    }
+    #[test]
+    fn unrelated_error_is_not_retried() {
+        let error=retry_file_disposition(||Err(io::Error::from_raw_os_error(87)),|_|panic!("unexpected retry")).unwrap_err();
+        assert_eq!(error.raw_os_error(),Some(87));
+    }
 }
 struct Elevated { input:BufReader<File>, output:File, _process:Process }
 struct Process(Handle);impl Drop for Process{fn drop(&mut self){unsafe{CloseHandle(self.0);}}}

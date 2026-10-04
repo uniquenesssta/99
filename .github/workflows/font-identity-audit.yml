@@ -71,6 +71,8 @@ jobs:
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::path_utils::tests
       - name: Build real Windows Rust worker
         run: node build/rust/build-core-worker.cjs --required
+      - name: Verify bounded file disposition retries
+        run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_mutation::windows::disposition_tests
       - name: Verify real Windows font mutation protocol
         run: node build/diagnostics/check-local-user-state.cjs --case=uninstall-native
       - name: Accept production IDs, pagination and actual Electron DOM

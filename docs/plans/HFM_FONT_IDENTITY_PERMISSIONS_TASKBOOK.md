@@ -699,3 +699,11 @@ Windows API 依据：[ShellExecuteEx](https://learn.microsoft.com/en-us/windows/
 本轮补齐该断言的完整回执、保护关卡决策、测试文件存在/模式及 stderr，并要求成功重试只能产生一个 file effect。原生 execute 记录失败所在步骤（打开、只读/身份/注册表预检、保护关卡、注册表删除、文件 disposition、删除确认），保留原始 OS 错误对象和 code；只向 stderr 写失败日志，避免 stdout 写入被 broker 当作 prepared 而改变按需提权条件。无自动重试、延时、忽略失败或权限放宽。属于补证诊断提交，不能记为重试故障已修复。
 
 仅静态审阅和 `git diff --check`；Windows CI 启动后停止轮询。下一次根据新的原生 message/code/stage 定位并修复 remaining-file retry，保留 §18.3 未完成范围；F06 仍进行中，不进入 F07。
+
+### 18.6 文件 disposition 失败修正（2026-10-04，待 Windows 回执）
+
+提交 `abbec2c46993dcb4717adac2008b0dc89ef47982` 的 [CI 37172238492](https://github.com/uniquenesssta/99/actions/runs/37172238492)，job `111347390234`：失败重新出现在首次成功删除断言，第 33 步日志明确为 `stage=file-disposition`、`code=5`；打开 DELETE 句柄、只读预检、身份校验及两个保护关卡通过，已执行 registry effect。不能再把只读属性当作本次根因；也不能将它限定为仅剩余文件重试问题。第 5～32 步通过，Electron 两项跳过。
+
+已确认实现缺口：F06 只调用一次 RemoveFontResourceExW，未处理字体多次加载引用及最终 disposition 的短暂拒绝；项目既有 font_resource 已有最多 8 次释放处理。按 [微软 RemoveFontResourceExW 文档](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-removefontresourceexw) 的引用计数说明，本轮补齐最多 8 次资源释放，每次副作用前重新保护核验。最终 disposition 对错误 5/32 采用最多 5 次尝试，间隔 50/100/200/400ms；同一 DELETE 句柄贯穿，重试不重开路径、不重放注册表、不转提权、不改 ACL/只读属性，每轮核验保护及身份，最终删除前再次核验。上限后原错误仍失败传播，不用等待或重试冒充成功。日志未识别具体占用进程，因此资源引用/短暂占用属于有依据的修复方向，效果仍待真实 Windows 验证。
+
+新增 Windows Rust 定向单测覆盖暂时失败后成功、持续拒绝次数上限和原错误保留、等待后保护拒绝、其他错误不重试；原生真实场景增加资源释放期间第二次保护关卡拒绝时零文件删除断言，保留全部既有成功、部分完成和剩余文件重试断言。CI 保留原有门禁并加入上述单测。Linux 仅静态审阅及 `git diff --check`，未本地运行测试。推送启动 Windows CI 后停止轮询，F06 尚未验收，§18.3 遗留项保持。
