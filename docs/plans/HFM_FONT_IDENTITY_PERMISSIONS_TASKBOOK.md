@@ -683,3 +683,11 @@ flowchart TD
 回退：整体回退本轮主进程、renderer 批量协议、Rust 入口、摘要生成与配套诊断，恢复前重新构建 worker；保护数据表保留。已产生的系统副作用只能按逐项记录、原源文件及回收站恢复，不能依赖代码回退。下一次从本节和本次 CI 继续 F06，不重新询问启动授权，不开始 F07。
 
 Windows API 依据：[ShellExecuteEx](https://learn.microsoft.com/en-us/windows/win32/shell/launch)、[命名管道进程识别](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid)、[事务注册表](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regopenkeytransactedw)。
+
+### 18.4 首轮 Windows 回执与只读预检修正（2026-10-04）
+
+受测提交 `01ce44645f21a2ebc9be27f25a29d0a471ddf435`，CI [37170789335](https://github.com/uniquenesssta/99/actions/runs/37170789335)，job `111343155668`。类型检查、第 6～31 步诊断和 Rust 测试、第 32 步真实 Windows worker 构建通过。第 33 步 `uninstall-native` 在首次预期成功删除处失败：回执已确认 HKCU registry effect，随后返回 Windows error 5；后两项 Electron 验收跳过，整项未通过。
+
+测试原先通过 copyFile 复制系统 arial.ttf，未控制继承的文件属性；只读属性是与该失败位置一致的待复验原因，原日志没有属性快照，不能将其记为已实机证实。现将普通成功夹具改为从字体字节独占创建可写副本，保留原系统文件只读访问；新增显式只读场景，要求拒绝、零副作用、注册表及文件保留，再恢复测试副本可写属性并执行原有成功/部分失败/重试断言，不删除或放宽原断言。
+
+生产原生入口在取得文件句柄后、任何注册表副作用前检查只读属性，明确拒绝而不自动清除属性、不以 UAC 重放该失败。仅调整 F06 路径；未修改 ACL、所有权或原系统字体。Linux 环境只完成源码静态审阅及 `git diff --check`，新 Windows 回执待执行；如果普通可写副本仍失败，继续根据新回执定位，不冒认修复通过。原编译中的 FFI 重声明警告不属于本次失败的判定依据。§18.3 剩余范围保持，F06 不收尾、F07 不开始。

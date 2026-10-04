@@ -176,6 +176,12 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     // Acquire all permissions before the first effect. A denied preflight is the
     // only condition under which the broker may request elevation.
     let file=open_font(&p.path,p.delete_file)?;
+    // DELETE access can be granted on a read-only file, while setting its
+    // disposition still fails. Reject before removing any registry records;
+    // elevation cannot fix this attribute and must not silently clear it.
+    if p.delete_file && file.metadata()?.permissions().readonly() {
+        return Err(fail("font file is read-only; no registry records were removed; clear the attribute explicitly before retrying"));
+    }
     if p.identity.as_ref()!=Some(&identity(&file)?)||digest(&file)?!=p.sha256{return Err(fail("font identity/content changed"))}
     let mut keys=Vec::new();for r in &p.records{let k=registry(r,true,elevated)?;verify_record(&k,r)?;keys.push(k);}
     emit(out,&json!({"prepared":true}))?;

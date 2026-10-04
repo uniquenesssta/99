@@ -569,7 +569,9 @@ async function uninstallNative() {
   const original=path.join(process.env.WINDIR,'Fonts/arial.ttf')
   const regRoot='HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts'
   const reg=(args)=>execFileSync('reg',args,{encoding:'utf8',windowsHide:true})
-  const make=()=>{fs.copyFileSync(original,target,fs.constants.COPYFILE_EXCL);reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])}
+  // Create a writable fixture from bytes, without inheriting system-file
+  // attributes. Read-only behavior is exercised explicitly below.
+  const make=()=>{fs.writeFileSync(target,fs.readFileSync(original),{flag:'wx'});assert.equal(fs.statSync(target).mode & 0o200,0o200);reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])}
   const digest=()=>crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex')
   const child=spawn(worker,['--font-mutation-broker'],{stdio:['pipe','pipe','pipe'],windowsHide:true,env:{...process.env,HFM_PARENT_PID:String(process.pid)}})
   const line=createInterface({input:child.stdout}),queue=[],wait=[];let failure,stderr=''
@@ -592,6 +594,9 @@ async function uninstallNative() {
     r=await command(plan,stage=>{if(stage==='registry')reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',original,'/f']);return true})
     assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target));assert(reg(['query',regRoot,'/v',token]).includes('arial.ttf'))
     reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])
+    fs.chmodSync(target,0o444)
+    r=await command(plan);assert.equal(r.ok,false);assert.match(r.message,/read-only/);assert.equal(r.effects.length,0,'read-only preflight removed an installation record');assert(fs.existsSync(target));assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
+    fs.chmodSync(target,0o666)
     r=await command(plan);assert.equal(r.ok,true,JSON.stringify(r));assert.deepEqual(r.effects.map(e=>e.effect),['registry','file']);assert(!fs.existsSync(target));assert.throws(()=>reg(['query',regRoot,'/v',token]));assert(fs.existsSync(original),'test touched the original system font')
     make();plan={...plan,sha256:digest()}
     r=await command({...plan,path:path.join(require('node:os').tmpdir(),token+'.ttf')});assert.equal(r.ok,false);assert.equal(r.effects.length,0)
@@ -603,6 +608,6 @@ async function uninstallNative() {
   } finally {
     clearTimeout(timeout);child.kill();line.close()
     try{reg(['delete',regRoot,'/v',token,'/f'])}catch{}
-    try{fs.unlinkSync(target)}catch(e){if(e.code!=='ENOENT')throw e}
+    try{fs.chmodSync(target,0o666);fs.unlinkSync(target)}catch(e){if(e.code!=='ENOENT')throw e}
   }
 }
