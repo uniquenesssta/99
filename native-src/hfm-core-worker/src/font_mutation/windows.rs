@@ -289,6 +289,7 @@ mod disposition_tests {
     struct Fixture(PathBuf);
     impl Fixture {
         fn new()->Self {
+            assert!(std::env::var_os("CI").is_none() && std::env::var_os("GITHUB_ACTIONS").is_none(), "real file mutation fixtures are local-only");
             let nonce=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
             let path=std::env::temp_dir().join(format!("hfm-disposition-{}-{nonce}.ttf",std::process::id()));
             let mut file=OpenOptions::new().write(true).create_new(true).open(&path).unwrap();
@@ -312,6 +313,7 @@ mod disposition_tests {
         }
     }
     #[test]
+    #[ignore = "local Windows mutation acceptance: npm run test:font-system-local"]
     fn real_handle_delete_blocks_target_replacement() {
         let fixture=Fixture::new();
         let file=open_font(fixture.path(),true).unwrap();
@@ -323,6 +325,7 @@ mod disposition_tests {
         assert!(!fixture.0.try_exists().unwrap());
     }
     #[test]
+    #[ignore = "local Windows mutation acceptance: npm run test:font-system-local"]
     fn real_readonly_file_is_not_force_deleted() {
         let fixture=Fixture::new();let mut permissions=std::fs::metadata(&fixture.0).unwrap().permissions();
         permissions.set_readonly(true);std::fs::set_permissions(&fixture.0,permissions).unwrap();
@@ -332,18 +335,21 @@ mod disposition_tests {
         assert!(std::fs::metadata(&fixture.0).unwrap().permissions().readonly());
     }
     #[test]
+    #[ignore = "local Windows mutation acceptance: npm run test:font-system-local"]
     fn real_handle_without_delete_access_is_denied() {
         let fixture=Fixture::new();let file=open_font(fixture.path(),false).unwrap();
         assert_eq!(mark_file_for_deletion(&file).unwrap_err().raw_os_error(),Some(5));drop(file);
         assert!(fixture.0.try_exists().unwrap());
     }
     #[test]
+    #[ignore = "local Windows mutation acceptance: npm run test:font-system-local"]
     fn real_reader_without_delete_sharing_blocks_open() {
         let fixture=Fixture::new();let reader=OpenOptions::new().read(true).share_mode(1).open(&fixture.0).unwrap();
         assert_eq!(open_font(fixture.path(),true).unwrap_err().raw_os_error(),Some(32));
         assert!(fixture.0.try_exists().unwrap());drop(reader);
     }
     #[test]
+    #[ignore = "local Windows mutation acceptance: npm run test:font-system-local"]
     fn real_delete_sharing_reader_keeps_data_without_retaining_path() {
         let fixture=Fixture::new();let mut reader=OpenOptions::new().read(true).share_mode(1|4).open(&fixture.0).unwrap();
         let file=open_font(fixture.path(),true).unwrap();

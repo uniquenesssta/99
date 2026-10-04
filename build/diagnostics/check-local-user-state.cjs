@@ -561,6 +561,8 @@ async function uninstallPlanning() {
 
 async function uninstallNative() {
   assert.equal(process.platform,'win32','F06 native acceptance requires Windows')
+  assert(process.argv.includes('--local'),'Real font mutation is local-only; use npm run test:font-system-local')
+  assert(!process.env.CI && !process.env.GITHUB_ACTIONS,'Real font mutation must not run in CI')
   const {spawn}=require('node:child_process'),{createInterface}=require('node:readline'),crypto=require('node:crypto')
   const worker=path.join(root,'build/native/hfm-core-worker.exe')
   const userRoot=path.join(process.env.LOCALAPPDATA,'Microsoft/Windows/Fonts')
