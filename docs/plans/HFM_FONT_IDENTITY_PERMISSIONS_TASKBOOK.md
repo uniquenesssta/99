@@ -721,3 +721,9 @@ Windows API 依据：[ShellExecuteEx](https://learn.microsoft.com/en-us/windows/
 同时将删除后的路径检查从 `exists()` 改为 `try_exists()?`：访问拒绝等查询错误必须传播，不能被布尔 false 冒充文件已移除；不增加删除副作用、不扩大操作目标。
 
 依据：[微软 FILE_DISPOSITION_INFORMATION_EX 语义](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-_file_disposition_information_ex)、[Win32 SDK WinBase.h](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/WinBase.h)、[libuv Windows fs.c](https://github.com/libuv/libuv/blob/v1.x/src/win/fs.c)、[Rust 1.98 Windows fs](https://github.com/rust-lang/rust/blob/1.98.0/library/std/src/sys/fs/windows.rs)。
+
+### 18.8 Windows 句柄测试路径修正（2026-10-04，待回执）
+
+提交 `17c97af0c11cb42040e790fa335765b6013a09e3` 的 [CI 37178421797](https://github.com/uniquenesssta/99/actions/runs/37178421797)，job `111365822654`：第 5～32 步通过，第 33 步 9 项测试中 5 项通过、4 项失败；四项均在 open_font 路径核验处返回 `font path resolves through an alias/reparse point; resolve before planning`，尚未执行待测删除 API。真实字体 mutation 和后续两项 Electron 验收均跳过，不能据此判断扩展删除接口成功或失败。
+
+根因是新增 Fixture 直接使用 temp_dir 拼接路径，遗漏生产规划已有的 realpath 前置步骤。本次仅在测试文件写入并关闭后执行 `std::fs::canonicalize`，所有打开、检查及清理均使用该真实规范路径。不修改生产路径校验、删除策略、重试预算或任何断言，也不新增测试替代现有失败场景。静态差异审阅及 `git diff --check` 通过；Linux 未执行测试，Windows 验证待新 CI。按用户要求推送启动后停止轮询。原错误 5 是否已解决仍须真实字体场景证明，F06 不收尾，§18.3 遗留项保持。

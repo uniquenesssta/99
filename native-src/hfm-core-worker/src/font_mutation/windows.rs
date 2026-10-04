@@ -282,7 +282,10 @@ mod disposition_tests {
             // This is a file API fixture, not a substitute for the real-font
             // broker acceptance in check-local-user-state.cjs.
             file.write_all(b"\0\x01\0\0isolated file API fixture").unwrap();
-            Self(path)
+            drop(file);
+            // Match production planning: Windows temp paths can contain aliases
+            // or short names, while open_font requires the resolved physical path.
+            Self(std::fs::canonicalize(&path).unwrap())
         }
         fn path(&self)->&str {self.0.to_str().unwrap()}
     }
