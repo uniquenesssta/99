@@ -172,35 +172,53 @@ fn validate(p:&Plan,elevated:bool,original_user:Option<&str>)->io::Result<()> {
     Ok(())
 }
 fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufRead,out:&mut impl Write)->io::Result<()> {
+    let mut stage="validate-plan";
+    let result=(||->io::Result<()> {
     validate(p,elevated,original_user)?;
     // Acquire all permissions before the first effect. A denied preflight is the
     // only condition under which the broker may request elevation.
+    stage="open-font";
     let file=open_font(&p.path,p.delete_file)?;
     // DELETE access can be granted on a read-only file, while setting its
     // disposition still fails. Reject before removing any registry records;
     // elevation cannot fix this attribute and must not silently clear it.
+    stage="readonly-preflight";
     if p.delete_file && file.metadata()?.permissions().readonly() {
         return Err(fail("font file is read-only; no registry records were removed; clear the attribute explicitly before retrying"));
     }
+    stage="identity-preflight";
     if p.identity.as_ref()!=Some(&identity(&file)?)||digest(&file)?!=p.sha256{return Err(fail("font identity/content changed"))}
+    stage="registry-preflight";
     let mut keys=Vec::new();for r in &p.records{let k=registry(r,true,elevated)?;verify_record(&k,r)?;keys.push(k);}
     emit(out,&json!({"prepared":true}))?;
     for (r,k) in p.records.iter().zip(keys.iter()) {
+        stage="registry-gate";
         gate(input,out,"registry")?;verify_record(k,r)?;
+        stage="registry-delete";
         delete_record(r)?;
         emit(out,&json!({"effect":"registry","scope":r.scope,"name":r.name}))?;
     }
     if p.delete_file {
+        stage="file-gate";
         gate(input,out,if elevated{"elevated-file"}else{"file"})?;
+        stage="file-identity-recheck";
         if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before delete"))}
         unsafe{RemoveFontResourceExW(wide(&p.path).as_ptr(),0,ptr::null_mut());}
+        stage="file-disposition";
         let delete=1u8;unsafe{checked(SetFileInformationByHandle(file.as_raw_handle(),4,&delete as *const _ as *const c_void,1))?;}
         drop(file);
         // A new object at the old path must never be removed during verification.
+        stage="file-removal-verification";
         if Path::new(&p.path).exists(){return Err(fail("file deletion not confirmed; do not retry without new identity"))}
         emit(out,&json!({"effect":"file"}))?;
     }
     Ok(())
+    })();
+    // Keep the original OS error code and stdout protocol untouched. In
+    // particular, logging must not mark a denied preflight as prepared and
+    // suppress the broker's existing UAC decision.
+    if let Err(error)=&result { eprintln!("font mutation failure: stage={stage}, elevated={elevated}, delete_file={}, records={}, code={:?}, detail={error}",p.delete_file,p.records.len(),error.raw_os_error()); }
+    result
 }
 struct Elevated { input:BufReader<File>, output:File, _process:Process }
 struct Process(Handle);impl Drop for Process{fn drop(&mut self){unsafe{CloseHandle(self.0);}}}
