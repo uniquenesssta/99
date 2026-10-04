@@ -33,6 +33,8 @@ function resolveNpmInvocation() {
 
 const npmInvocation = resolveNpmInvocation()
 async function main() {
+  const failed = []
+  let completed = 0
   for (const script of scripts) {
     console.log(`\n[diagnostics:all] running ${script}`)
     const result = await runDiagnosticProcess(
@@ -48,18 +50,25 @@ async function main() {
         onTimeout: () => console.error(`[diagnostics:all] ${script} exceeded its deadline; terminating its process tree`)
       }
     )
+    completed++
     if (result.error || result.timedOut || result.terminationError) {
       console.error(`[diagnostics:all] ${script} failed: ${result.terminationError?.message || result.error?.message || 'deadline exceeded'}`)
-      process.exitCode = 1
-      return
+      failed.push(script)
+      // Do not start another check if the previous process tree may still be alive.
+      if (result.terminationError) break
+      continue
     }
     if (result.code !== 0) {
       console.error(`[diagnostics:all] ${script} failed with exit code ${result.code}, signal=${result.signal || 'none'}`)
-      process.exitCode = result.code || 1
-      return
+      failed.push(script)
     }
   }
 
+  if (failed.length) {
+    console.error(`\n[diagnostics:all] failed ${failed.length}/${completed} completed checks; ${scripts.length - completed} not run:\n${failed.join('\n')}`)
+    process.exitCode = 1
+    return
+  }
   console.log(`\n[diagnostics:all] ok (${scripts.length} checks)`)
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

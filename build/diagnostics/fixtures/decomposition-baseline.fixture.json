@@ -64,7 +64,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "5cf004fb5083c6edb64209111ce54ed0e769b269f42427c6919e587c69fd04d5"
+      "tokenHash": "c2061bc839f3567c0c4c62b715e9d104dd72c186dda3701618afed007c3791c3"
     },
     "src/renderer/src/App.tsx": {
       "functions": [
@@ -96,7 +96,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "b736b93ad40868dcc2dacbdf974cd8c55a34ce7496424de054680af1531a70d4"
+      "tokenHash": "5702cf2c9df9967c893b23aa695e29185088fc9e7e2a0625dca977d205db6bfe"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -521,7 +521,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "7d29cc0a1ac865a32ce4b2160d08af3a80a0f150a4fbb336b6b3b939fdb904a4"
+      "tokenHash": "5ab2746c92e81a44aaad948e44ef819394a046f30178587ec759bfa46cab7f2c"
     },
     "src/renderer/src/runtime/app/useLibraryController.ts": {
       "functions": [
@@ -917,7 +917,7 @@
         "fonts:installCurrentUser",
         "fonts:uninstallManaged"
       ],
-      "tokenHash": "352b3911e06d22270aebd49e3e5f10742ad073bc5d8e113b663ea50cf0b6d802"
+      "tokenHash": "ef2469b77fcb15b8f674a44029f801ebf9aff02e5f38ec2a84f404acdff53be9"
     },
     "src/main/preview/runtime/previewStorageRoutingRuntime.ts": {
       "functions": [
@@ -1075,7 +1075,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "5e239faf5a10c9629db5db04ccf83bca684eb05622f86b08c3de9c5f4dd8bd62"
+      "tokenHash": "9854ed79cdea064655a310766b8c78aa3ac1681986127489de1f07bff44e10f9"
     },
     "src/main/library/runtime/localFontTagRustAdapterRuntime.ts": {
       "functions": [
@@ -1114,7 +1114,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "c6a24bf0cfe431ef19d11217cae98f6b8767eff15447564eb75ef973e6f0db28"
+      "tokenHash": "1ad4cd9b96d9bfd4ac8ef3fa7b4d75979684fbf6168f2a4b21dd8f230bf1ad09"
     },
     "src/main/library/runtime/localFontTagMutationEffectsRuntime.ts": {
       "functions": [

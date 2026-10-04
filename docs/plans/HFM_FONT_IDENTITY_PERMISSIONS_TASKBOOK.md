@@ -976,3 +976,28 @@ Context7 已查询 SetFileInformationByHandle / FILE_BASIC_INFO，Rust 官方 Fi
 本轮将该场景的模拟导出替换为实际 libraryNormalizeBase 模块，避免逐个补模拟函数造成同类遗漏；字体样本补齐有效 fileSize，分页与筛选输入按现有接口提供。静态核对该场景的真实模块运行时导入，以及其他诊断中 libraryNormalize 模拟的直接用途；保留原活跃过滤、收藏页停用状态、系统安装及全局计数断言，不修改生产代码、不删除诊断或改变失败标准。
 
 完成 git diff --check 和静态差异审阅；Windows 执行仍交由完整 F07 CI，非 Windows 环境不运行 Node/Rust。F07 尚未通过验收，推送启动后不轮询。无新 API 或架构，Git 和任务书继续保存状态。
+
+
+### 19.7 集中修正过期验收契约与首错遮蔽（2026-10-04）
+
+用户要求“未通过，一次性解决问题”。已读取 `b9256e6` 的 CI `37202394858` / job `111436569165`：Rust 构建、activation-entry、active-view-consistency 已通过；本轮停止于 app-root-view-contracts 的 App 生命周期前缀哈希。前几轮只处理首个报错，未充分检查后续契约；原 diagnostics:all 首错退出，使其他问题持续被遮蔽。本轮不继续逐个等待同类快照报错，集中静态检查并修正已确认影响。
+
+**冻结证据迁移（共 9 个哈希）**
+
+- App 生命周期前缀及 decomposition 的 App token：对照 `55d6d01`，仅新增 visibleFontResultTotal 引用并把显示总数计算移到 visibleFonts 就绪后。AppRootView 内容、六组 UI 接线、Hook 顺序及原生命周期反例保持。
+- decomposition 中三个本地标签模块：对照 F02 已交付源码，差异为 prepareIdentity、路径优先读写、历史状态决策和 Rust aliases；函数清单、所有者、导出及返回接口未变。仅更新 tokenHash，既有 SQLite 事务/回滚与 Rust 适配器行为门保留。
+- decomposition 的 useFontOperationsController、React domain 的 fontWriteQueueRuntime，以及 React controllers 的 fontSelectionRuntime：对照 `e0e5ffd`，记录破坏性操作前 flushProtectionWrites 接线，以及人工保护标志作为 UI 权威；原状态所有权、生命周期及保护行为门保留。
+- decomposition 的 fontSystemIpcHandlers：对照 `01ce446`，卸载入口类型扩展为单项或数组；频道和入口所有权未变。
+
+另对照 App/浏览器/React 组合、Rust worker 类型、本地标签函数与预览路由冻结源；没有依据的快照不更新。使用源码 AST/Token 静态清单比对，没有执行生产模块、项目测试、类型检查或构建；这不代表 Windows 动态验收通过。
+
+**夹具与完整失败报告**
+
+- preview-work-lifetime 的旧 prefetch 用例缺失 useRef，并断言没有任何 effect；F03 已新增 font-query-view 日志 effect。本轮补齐 Hook/日志端口和查询输入，实际执行所有普通 effect 后要求预览请求仍为零，同时核验查询日志。加入强制预览请求反例，保证新断言能拒绝预取回归；原三个生命周期反例保留。
+- batch-favorites 补齐同类 VisibleFontsOptions 与分页 total/offset/limit，保留取消收藏后旧页不得使 a/b 回弹的断言。
+- 复用 run-all：每个独立诊断仍在单独子进程串行执行，普通非零退出、启动失败或已清理的超时均记录后继续，最后统一列出失败名并退出 1。子进程树清理失败则停止并列明未运行数；保持原时限，不把失败降为警告。现有 execution-lifecycle 增加成功、多项失败、启动错误、超时和清理失败五类受控 runner 场景。
+- F07 工作流以必需 Rust worker 成功为前提，让后续独立专项、DOM 与 bundle 构建在其他验证失败后仍执行；取消时停止。没有 continue-on-error，任何步骤失败仍判 job 失败；安装依赖或 worker 构建失败时不运行这些检查。
+
+生产代码、用户数据库与字体卸载策略没有改动；真实字体系统操作仍本机专用，不要求用户重复 F06 实机验收。完成静态差异复核及 git diff --check，动态回执待新 Windows CI；F07 仍未通过，不承诺未执行的全部诊断已成功。按既有偏好推送启动后交付，不轮询完成。
+
+Context7 已核对 GitHub Actions 状态条件覆盖默认 success() 的语义，保留原 checkout/setup-node/upload-artifact v4，无版本升级。未改生产模块或架构，不新增架构图。Create State 再次仅返回 Markdown/足球项目，没有 HFM，未写入无关项目；续接记录保存于 Git 和本节。

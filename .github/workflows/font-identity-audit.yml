@@ -16,32 +16,45 @@ jobs:
         with: { node-version: '24', cache: npm }
       - run: npm ci
       - name: Build real Windows Rust worker
+        id: worker
         run: node build/rust/build-core-worker.cjs --required
       - name: Verify complete existing Windows diagnostics
         run: npm run verify
       - name: Verify production identity compatibility and operation targets
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-identity-compatibility.cjs
       - name: Verify activation transaction regressions
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-activation-transaction.cjs
       - name: Verify exact uninstall planning
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-local-user-state.cjs --case=uninstall
       - name: Verify Node local tag persistence
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-local-tag-node-persistence.cjs
       - name: Verify Rust local tag reads and writes
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags
       - name: Verify Rust identity contract vectors
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::path_utils::tests
       - name: Verify Unicode registry decoding
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_registry::'
       - name: Verify bounded retries (real mutations are local-only)
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_mutation::'
       - name: Accept production IDs, pagination and actual Electron DOM
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-identity-reproduction.cjs
       - name: Verify complete list and grid Electron DOM scenarios
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: npm run test:font-view-layout-dom
       - name: Verify floating scrollbar overlays with native Electron input
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-view-layout.cjs --dom-feedback
       - name: Build application bundles
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node node_modules/electron-vite/bin/electron-vite.js build
       - uses: actions/upload-artifact@v4
         if: always()

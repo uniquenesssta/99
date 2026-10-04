@@ -43,7 +43,7 @@
     "autoPreviewCacheStats": "cb620c04850364c83f3b81a0d300b8eef17e9b62dbc3d11382f0b78786ecef9f"
   },
   "sourceHashes": {
-    "src/renderer/src/fontSelectionRuntime.ts": "72228322a04ee1e51c612da3cbe446618b020ff467fae1cd1e42b81b99f38bb4",
+    "src/renderer/src/fontSelectionRuntime.ts": "706f87840b4960a11954da6805c68fe6447582194ba20cb45174d355b247e144",
     "src/renderer/src/runtime/app/fontSelectionHydrationRuntime.ts": "276b2eb4267077ae63a5bc165a56af16a33ed28906dd6d9ca7ace92ba9227cf1",
     "src/renderer/src/runtime/app/useFontDetailSelectionEffectsRuntime.ts": "ed1bc0d45e2dc1894ee2d1bd5b4b21969e83e818a6fffb3517805e9c4aff8720",
     "src/renderer/src/runtime/app/useFontDetailNativePreviewRuntime.ts": "73f1f00d8f8af4b7cedf74d5097a759eb3f6933ed205272c51a49656da5157ba",

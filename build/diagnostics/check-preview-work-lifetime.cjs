@@ -127,11 +127,15 @@ async function background() {
 work.resolve({ok:true,cached:false});await flush();assert.equal(opt.activeAutoPreviewCacheLoads.current,0);assert.equal(calls,5);assert.equal(opt.autoPreviewCacheQueue.current.length,0);
  console.log('background: latest status intent coalesced, stale rejection ignored, active slots preserved, one retry timer disposed');
 }
-async function prefetch() {
- const effects=[],demands=[],fonts=[{id:'a'},{id:'b',__earlyVisible:true}],ref=current=>({current});
- const load=loader({react:{useEffect:fn=>effects.push(fn),useLayoutEffect(){},useMemo:fn=>fn()},'../../appRuntime':{PREVIEW_PREFETCH_LIMIT:18,traceRendererSyncComputation:(_l,_d,fn)=>fn()},'../../fontViewRuntime':{buildVirtualLayout:()=>({items:fonts}),buildTagSuggestions:()=>[]},'./useBrowseDerivedRuntime':{useBrowseDerivedRuntime:()=>({visibleFonts:fonts,fontMetrics:{}})}});
- load('src/renderer/src/runtime/app/useAppFontDerivedRuntime.ts').useAppFontDerivedRuntime({cardPoolViewLayout:{},virtualViewport:{},selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},latestVisibleFontsRef:ref([]),latestViewLayoutRef:ref({}),requestPreviewFont:(f,_p,current)=>demands.push({f,current}),contextFontTargets:()=>[],library:{fonts:{},previewText:'text'}});
- assert.equal(effects.length,0);assert.equal(demands.length,0);
+async function prefetch(transform) {
+ const effects=[],demands=[],traces=[],fonts=[{id:'a'},{id:'b',__earlyVisible:true}],ref=current=>({current});
+ const file='src/renderer/src/runtime/app/useAppFontDerivedRuntime.ts';
+ const load=loader({react:{useRef:ref,useEffect:fn=>effects.push(fn),useLayoutEffect(){},useMemo:fn=>fn()},'../../rendererPerformance':{reportRendererTrace:event=>traces.push(event)},'../../appRuntime':{PREVIEW_PREFETCH_LIMIT:18,traceRendererSyncComputation:(_l,_d,fn)=>fn()},'../../fontViewRuntime':{buildVirtualLayout:()=>({items:fonts}),buildTagSuggestions:()=>[]},'./useBrowseDerivedRuntime':{useBrowseDerivedRuntime:()=>({visibleFonts:fonts,fontMetrics:{}})}},{},transform?{[path.join(root,file)]:transform}:{});
+ load(file).useAppFontDerivedRuntime({databasePageReady:false,databasePageResult:null,deferredSearch:'',sidebarPage:'library',activeFilter:{kind:'all'},selectedTagName:'',selectedSharedTagName:'',selectedFolderId:'',installStatus:'all',timeSortMode:'all',sortMode:'name',cardPoolViewLayout:{listLayout:'none'},virtualViewport:{},selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},latestVisibleFontsRef:ref([]),latestViewLayoutRef:ref({}),requestPreviewFont:(f,_p,current)=>demands.push({f,current}),contextFontTargets:()=>[],library:{fonts:{},previewText:'text'}});
+ assert.equal(demands.length,0,'derived render requested an offscreen preview');
+ for(const effect of effects)effect();
+ assert.equal(demands.length,0,'derived effect requested an offscreen preview');
+ assert.equal(traces.length,1);assert.equal(traces[0].kind,'font-query-view');assert.equal(traces[0].details.visible,2);
  console.log('prefetch: derived layout emits no offscreen or first-18 preview requests');
 }
 async function detail() {
@@ -148,6 +152,10 @@ async function detail() {
 module.exports = { rendererHarness, deferred, flush, clock };
 if (require.main === module) (async()=>{
  await mainQueue();await cacheAbort();await renderer();await detail();await background();await prefetch();
+ await assert.rejects(()=>prefetch(source=>{
+  const anchor="  const lastQueryView = useRef('')";assert(source.includes(anchor));
+  return source.replace(anchor,"  useEffect(() => { args.requestPreviewFont(visibleFonts[0], 'normal') }, [visibleFonts])\n"+anchor);
+ }),/derived effect requested an offscreen preview/);
  if (!mutant) for(const [name,needle] of Object.entries({physical:'1',counter:'5',webfont:'physical FontFace cap'})) {
   const result=spawnSync(process.execPath,[__filename,'--mutant='+name],{encoding:'utf8',timeout:30000});
   assert.equal(result.status,1,result.stdout+result.stderr);assert.match(result.stderr,/AssertionError/);assert(result.stderr.includes(needle),result.stderr);

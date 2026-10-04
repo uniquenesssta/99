@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const vm = require('node:vm')
 const { spawnSync } = require('node:child_process')
 const { runDiagnosticProcess } = require('./diagnosticProcessRuntime.cjs')
 const root = path.resolve(__dirname, '../..')
@@ -86,9 +87,50 @@ async function processDeadlines() {
   }
 }
 
+async function completeSuiteReporting() {
+  const source = fs.readFileSync(path.join(__dirname, 'run-all.cjs'), 'utf8')
+  for (const mode of ['success', 'exit', 'spawn', 'timeout', 'termination']) {
+    const calls = [], messages = [], errors = []
+    const fakeProcess = { env: {}, platform: 'win32', execPath: process.execPath, exitCode: 0 }
+    await vm.runInNewContext(source, {
+      __dirname, process: fakeProcess,
+      console: { log: text => messages.push(text), error: text => errors.push(text) },
+      require(id) {
+        if (id === 'node:path') return path
+        if (id === 'node:fs') return { readFileSync: () => JSON.stringify({ scripts: {
+          'diagnostics:c': 'c', 'diagnostics:all': 'recursive', build: 'build', 'diagnostics:b': 'b', 'diagnostics:a': 'a'
+        } }) }
+        assert.equal(id, './diagnosticProcessRuntime.cjs')
+        return { runDiagnosticProcess: async (_command, args, options) => {
+          const script = args.at(-1); calls.push(script)
+          assert.equal(options.timeoutMs, 300000)
+          if (script === 'diagnostics:a') {
+            if (mode === 'exit') return { code: 7 }
+            if (mode === 'spawn') return { error: Error('spawn failed') }
+            if (mode === 'timeout') return { timedOut: true }
+            if (mode === 'termination') return { timedOut: true, terminationError: Error('tree still alive') }
+          }
+          return { code: mode === 'exit' && script === 'diagnostics:c' ? 3 : 0 }
+        } }
+      }
+    })
+    assert.deepEqual(calls, mode === 'termination' ? ['diagnostics:a'] : ['diagnostics:a', 'diagnostics:b', 'diagnostics:c'])
+    assert.equal(fakeProcess.exitCode, mode === 'success' ? 0 : 1)
+    if (mode === 'success') assert(messages.some(text => text.includes('ok (3 checks)')))
+    else {
+      assert(!messages.some(text => text.includes('ok (')))
+      const summary = errors.at(-1)
+      assert(summary.includes(mode === 'termination' ? '2 not run' : '0 not run'))
+      assert(summary.includes('diagnostics:a'))
+      if (mode === 'exit') assert(summary.includes('failed 2/3') && summary.includes('diagnostics:c'))
+    }
+  }
+}
+
 async function main() {
   observerModesAndFailureCleanup()
   await processDeadlines()
-  console.log('[diagnostics:execution-lifecycle] pinned/current LF/CRLF, strict defects, assertion cleanup, exit codes and real process-tree deadline passed')
+  await completeSuiteReporting()
+  console.log('[diagnostics:execution-lifecycle] pinned/current LF/CRLF, strict defects, assertion cleanup, process-tree deadline and complete failure reporting passed')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })
