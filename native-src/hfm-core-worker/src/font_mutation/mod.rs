@@ -1,6 +1,8 @@
 // This is a dedicated, short-lived protocol, never a daemon/RPC command.
 #[cfg(windows)]
 mod windows;
+#[cfg(windows)]
+mod registry_value;
 
 pub fn run(args: &[String]) -> i32 {
     #[cfg(windows)]

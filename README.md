@@ -61,13 +61,15 @@ npm run build:win
 
 当前专项工作分支为 `stage/12-font-identity-permissions`；Stage 10/11 历史回执保留，不恢复已取消的固定卡片数或冷热重复次数验收。
 
-F06 真实字体系统操作由本机 Windows 验收：更新上述分支后，在普通用户开发终端运行 `npm run test:font-system-local`。入口重建 Rust worker，执行 9 项句柄/重试测试及隔离 HKCU 字体副本卸载，保存 `artifacts/font-identity-f06/local-acceptance.log`；失败时另有 `disposition-failure.json`。只操作唯一测试副本和值，原 Arial 只读。该命令不进入 CI、`verify`、`diagnostics:all` 或开发启动。自动项通过后再以 `npm run dev` 验收界面；真实 UAC/HKLM/共享权限等项目与未完成边界见任务书 §18.3、§18.10。CI 通过不代表这些本机项通过。
+F06 真实字体系统操作由本机 Windows 验收：更新上述分支后，在普通用户开发终端运行 `npm run test:font-system-local`。入口重建 Rust worker，执行 13 项注册表解析/句柄/重试测试及隔离 HKCU 字体副本卸载，保存 `artifacts/font-identity-f06/local-acceptance.log`；失败时另有 `disposition-failure.json`。只操作唯一测试副本和值，原 Arial 只读。该命令不进入 CI、`verify`、`diagnostics:all` 或开发启动。自动项通过后再以 `npm run dev` 验收界面；真实 UAC/HKLM/共享权限等项目与未完成边界见任务书 §18.3、§18.10～18.11。CI 通过不代表这些本机项通过。
 
 ## 安全说明
 
 仓库只应保存公钥。私钥、许可证、构建输出、日志和本地缓存均由 `.gitignore` 排除。任何曾提交到 Git 的私钥都必须立即停用并轮换；从当前分支删除文件不会清除旧提交中的内容。
 
 ## 变更记录
+
+- 2026-10-04：修正 F06 注册表读取错误要求末尾空字符的问题，快照与删除前复核共用有界解析；保留异常记录拒绝，补齐逐项卸载失败阶段和原始原因。本机验收先读取快照再创建副本，避免快照失败被删除探针错误掩盖；新增 4 项纯解析回归，真实字体操作仍只在本机验证，卸载故障尚待复验。
 
 - 2026-10-04：按用户要求将 F06 真实文件句柄删除和字体注册表/文件变更验收转为本机专用入口，保留原测试及失败断言；CI 保留 4 项无文件副作用的重试测试、构建及普通回归。既有 error 5 未登记修复，本机验收待执行。
 

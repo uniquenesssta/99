@@ -764,3 +764,33 @@ Windows API 依据：[ShellExecuteEx](https://learn.microsoft.com/en-us/windows/
 4. 真实 UAC 同意/取消、HKLM、凭据切换、网络权限、回收站及重启状态仍按原 F06 任务验收；其中 §18.3 未完成实施不因本次调整标为可验收完成。当前先收集隔离自动项与已实现路径回执，不要求用户测试尚未完成的提权源回收能力。
 
 本次只调整执行入口、CI 分工和说明，没有进一步修改生产删除策略或扩大重试预算。静态差异复核与 `git diff --check` 通过；Linux 未执行 Node/Rust/Windows 测试。本机尚未执行，普通 CI 启动后停止轮询。F06 保持进行中，F07 不开始。Create State 前次未找到 HFM 项目，续接继续以 Git 和本任务书为准。
+
+
+### 18.11 本机快照失败与注册表解析修正（2026-10-04，待复验）
+
+本机回执对应 `c84b5021583cdb688514c3e2e659cb016eba941b`：Windows 10 19045、Cargo 1.97.1，worker 构建和 9 项句柄/重试测试通过；真实字体场景在首次 `snapshot.ok` 断言失败，尚未进入待测卸载。原断言遗漏原生 message，所以不能确定本机具体哪条记录、哪种类型失败。随后通用 catch 运行的参数对照返回 flags=7 / NTSTATUS C0000121 / Win32 5、flags=3 / C0000043 / Win32 32；这是失败后的额外探针，不是主测试已执行文件删除的证据。两份 startup 日志记录两次安装成功、四次卸载失败，但只记录批次摘要，缺少逐项原因；两个会话正常退出。预览取消/旧代次日志不属于本次修复范围。
+
+**已确认的源码缺陷与修正**
+
+- Windows 的 RegEnumValueW / RegQueryValueExW 不保证 REG_SZ 返回数据自带终止空字符；原快照与删除前复核都强制要求最后一个 UTF-16 单元为零，会拒绝可以有界读取的字符串。新增 `font_mutation/registry_value.rs` 专门解析返回字节范围，两处统一使用，支持缺失终止符和末尾空字符填充，严格验证 UTF-16，不再使用有损转换进行删除前比较。
+- 空 REG_SZ 与空默认 REG_NONE 不含文件引用，跳过；非空/命名 REG_NONE、REG_EXPAND_SZ、REG_MULTI_SZ 等未知类型仍拒绝。奇数字节、长度越界、异常 UTF-16、空字符后仍有非零内容均拒绝，不能把无法解析的引用当作不存在。快照错误带作用域、索引、记录名、类型和字节数；打开/枚举失败记录对应阶段及原始错误码。
+- `fontMutationProcessRuntime.ts` 将快照原始原因向上传递，记录原生 stderr 与执行失败；`systemFontInstallRuntime.ts` 保留逐项 ID、路径、失败阶段和已确认步骤。错误 5 的描述不再直接断言是 ACL 问题。没有改变删除 flags、权限策略、保护/身份关卡、重试预算或 UI 返回协议。
+- `check-local-user-state.cjs` 在创建测试字体前先验证系统快照，断言输出完整回执；失败证据包含最后的实际操作回执，只有已允许文件关卡且返回错误 5 才执行副本参数对照。清理失败不覆盖原断言，未创建副本时不尝试清理注册表。原有成功、拒绝、部分完成及重试断言保留。
+
+```mermaid
+flowchart TD
+ A["注册表快照"] --> C["按字节长度解析字符串"]
+ B["删除前复核"] --> C
+ C --> D{"记录可安全解析？"}
+ D -->|"是"| E["继续身份与保护核验"]
+ D -->|"否"| F["拒绝操作并保留记录详情"]
+ F --> G["会话回传与逐项失败日志"]
+```
+
+**验证和续接**
+
+新增 4 项纯解析测试，覆盖有/无终止符、尾部填充、返回长度之外的数据、空记录、未知类型和损坏数据；现有保护诊断增加真实卸载 owner 的快照异常回传、阶段日志和零副作用断言。普通 Windows CI 执行 4 项解析与 4 项纯重试测试，5 项真实句柄测试保持 ignored；本机入口执行全部 13 项后再运行真实 HKCU 字体验收。没有把真实字体操作重新加入 CI。
+
+本轮仅做源码静态审阅和 `git diff --check`，非 Windows 环境未执行 Node/Rust 编译或测试。推送启动普通 CI 后停止轮询；本机更新同一分支后仍使用 `npm run test:font-system-local`，回传本轮 `local-acceptance.log` 和失败 JSON。若快照仍失败，日志应直接指出失败记录，届时据实处理；不能提前认定本机就是缺失终止符，也不能宣称后续真实 disposition 错误已修复。自动项通过后再测试应用界面并回传 startup 日志。F06 继续进行中，§18.3 的提权源回收等剩余范围保持，F07 未开始。
+
+已查询 Context7 并核对微软 [RegEnumValueW](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regenumvaluew)、[RegQueryValueExW](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regqueryvalueexw)；Mermaid Chart 已绘制本节真实链路。Create State 未找到 HFM 项目，未写入其他项目，续接状态保存在本任务书与 Git。

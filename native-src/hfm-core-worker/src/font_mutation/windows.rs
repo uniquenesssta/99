@@ -139,26 +139,27 @@ fn verify_record(k:&Registry,r:&Record)->io::Result<()> {
     let mut bytes=65536u32;let mut data=vec![0u16;32768];let mut kind=0;
     let code=unsafe{RegQueryValueExW(k.0,wide(&r.name).as_ptr(),ptr::null_mut(),&mut kind,data.as_mut_ptr() as *mut u8,&mut bytes)};
     if code!=0{return Err(io::Error::from_raw_os_error(code))}
-    if kind!=1||bytes%2!=0||bytes<2||bytes>65536{return Err(fail("unsupported or malformed registry value"))}
-    data.truncate(bytes as usize/2);if data.pop()!=Some(0){return Err(fail("unterminated registry value"))}
-    if String::from_utf16_lossy(&data)!=r.value{return Err(fail("registry target changed since planning"))}Ok(())
+    let value=super::registry_value::decode(&r.name,kind,&data,bytes)
+        .map_err(|error|fail(&format!("registry verification: scope={}, name={:?}, type={kind}, bytes={bytes}: {error}",r.scope,r.name)))?;
+    if value.as_deref()!=Some(r.value.as_str()){return Err(fail("registry target changed since planning"))}Ok(())
 }
 fn snapshot()->io::Result<Value> {
     let (windows,_)=roots()?;let mut rows=Vec::new();
     for (scope,root) in [("HKCU",HKCU),("HKLM",HKLM)] {
         let mut raw=ptr::null_mut();let code=unsafe{RegOpenKeyExW(root,wide(FONT_KEY).as_ptr(),0,0x101,&mut raw)};
-        if code==2 && scope=="HKCU"{continue}if code!=0{return Err(io::Error::from_raw_os_error(code))}let k=Registry(raw);
+        if code==2 && scope=="HKCU"{continue}if code!=0{return Err(fail(&format!("registry snapshot open: scope={scope}, key={FONT_KEY:?}, code={code}")))}let k=Registry(raw);
         for index in 0..100000u32 {
             let mut name=vec![0u16;16384];let mut name_len=name.len() as u32;let mut data=vec![0u16;32768];let mut bytes=(data.len()*2) as u32;let mut kind=0;
             let code=unsafe{RegEnumValueW(k.0,index,name.as_mut_ptr(),&mut name_len,ptr::null_mut(),&mut kind,data.as_mut_ptr() as *mut u8,&mut bytes)};
-            if code==259{break}if code!=0{return Err(io::Error::from_raw_os_error(code))}
-            if kind!=1 || bytes<2 || bytes%2!=0{return Err(fail("font registry contains an unsupported value"))}
-            data.truncate(bytes as usize/2);if data.pop()!=Some(0){return Err(fail("unterminated font registry value"))}
-            let name=String::from_utf16(&name[..name_len as usize]).map_err(|_|fail("invalid registry name"))?;
-            let value=String::from_utf16(&data).map_err(|_|fail("invalid registry path"))?;
+            if code==259{break}if code!=0{return Err(fail(&format!("registry snapshot enum: scope={scope}, index={index}, code={code}, type={kind}, bytes={bytes}")))}
+            let name_units=name.get(..name_len as usize).ok_or_else(||fail(&format!("registry snapshot invalid name length: scope={scope}, index={index}")))?;
+            let name=String::from_utf16(name_units).map_err(|_|fail(&format!("registry snapshot invalid UTF-16 name: scope={scope}, index={index}")))?;
+            let value=super::registry_value::decode(&name,kind,&data,bytes)
+                .map_err(|error|fail(&format!("registry snapshot decode: scope={scope}, index={index}, name={name:?}, type={kind}, bytes={bytes}: {error}")))?;
+            if index==99999{return Err(fail("font registry snapshot limit exceeded"))}
+            let Some(value)=value else {continue};
             let bare=value.trim_matches('"');let path=if Path::new(bare).is_absolute(){PathBuf::from(bare)}else{PathBuf::from(&windows).join(bare)};
             rows.push(json!({"source":scope,"registryName":name,"value":value,"path":path.to_string_lossy(),"fileName":path.file_name().map(|v|v.to_string_lossy())}));
-            if index==99999{return Err(fail("font registry snapshot limit exceeded"))}
         }
     }
     Ok(Value::Array(rows))

@@ -42,7 +42,10 @@ export async function createFontMutationSession(log: (message: string) => void):
   let errorText = ''
   let busy = false
   const die = (error: Error) => { dead ||= error; for (const waiter of pending.splice(0)) waiter.reject(dead); child.kill() }
-  child.stderr.on('data', data => { errorText = (errorText + String(data)).slice(-4096) })
+  child.stderr.on('data', data => {
+    errorText = (errorText + String(data)).slice(-4096)
+    log(`font mutation native: operation=${operationId}, stderr=${JSON.stringify(String(data).slice(-4096))}`)
+  })
   child.on('error', die)
   child.on('exit', (code, signal) => die(new Error(`字体操作进程退出，结果可能部分完成：${code ?? signal} ${errorText}`)))
   lines.on('line', line => {
@@ -77,6 +80,10 @@ export async function createFontMutationSession(log: (message: string) => void):
         const reply = await next()
         if (!reply.snapshot || !reply.ok || !Array.isArray(reply.records)) throw new Error(reply.message || '安装注册表无法确认。')
         return reply.records
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        log(`font mutation: operation=${operationId}, stage=registry-snapshot, ok=false, reason=${JSON.stringify(message)}`)
+        throw new Error(`读取字体安装注册表失败：${message}`)
       } finally { busy = false }
     },
     async execute(plan, check) {
@@ -106,12 +113,14 @@ export async function createFontMutationSession(log: (message: string) => void):
             break
           }
         }
-        const nativeReason = code === 1223 ? '用户取消 UAC 授权。' : code === 5 ? 'Windows 访问被拒绝（ACL 或权限限制）。' : code === 32 ? '字体文件正在被占用。' : ''
+        const nativeReason = code === 1223 ? '用户取消 UAC 授权。' : code === 5 ? 'Windows 拒绝操作（可能涉及权限、文件属性或占用）。' : code === 32 ? '字体文件正在被占用。' : ''
         const message = failure ? `${nativeReason}${failure}${!fileRemoved && completedSteps ? ' 安装记录已部分清理，字体文件尚未确认删除。' : ''}${completedSteps ? ` 已完成 ${completedSteps} 个步骤，未完成部分保留供重试。` : ''}` : '关联安装记录及安装副本已移除。'
-        log(`font mutation: operation=${operationId}, target=${plan.path}, stage=verified, ok=${!failure}, native=${code ?? 0}, completed=${completedSteps}`)
+        log(`font mutation: operation=${operationId}, target=${plan.path}, stage=verified, ok=${!failure}, native=${code ?? 0}, completed=${completedSteps}, reason=${JSON.stringify(message)}`)
         return { ok: !failure, message, completedSteps, fileRemoved, code }
       } catch (error) {
-        return { ok: false, message: `${error instanceof Error ? error.message : String(error)} 已确认完成 ${completedSteps} 个步骤；其余状态未知。`, completedSteps, fileRemoved }
+        const message = `${error instanceof Error ? error.message : String(error)} 已确认完成 ${completedSteps} 个步骤；其余状态未知。`
+        log(`font mutation: operation=${operationId}, target=${plan.path}, stage=execute, ok=false, completed=${completedSteps}, reason=${JSON.stringify(message)}`)
+        return { ok: false, message, completedSteps, fileRemoved }
       } finally { busy = false }
     }
   }

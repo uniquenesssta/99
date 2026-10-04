@@ -189,6 +189,15 @@ async function protectionAuthority() {
   effects=[];blocked.clear();protectAfterPermission=''
   assert.equal((await system.uninstallFontSystemWide(source)).ok,true)
   assert.deepEqual(effects,['permission-check','registry-native','unlink'],'HKLM/default filename still implicitly protected')
+  effects=[]
+  const failureLogs=[]
+  deps.appendStartupLog=message=>failureLogs.push(message)
+  deps.readUninstallRegistry=async()=>{throw Error('registry snapshot decode: scope=HKCU, name="bad-font", type=7')}
+  const rejected=await system.uninstallFontSystemWide([source])
+  assert.equal(rejected.ok,false)
+  assert.match(rejected.results[source.id].message,/scope=HKCU.*bad-font/)
+  assert(failureLogs.some(message=>message.includes('"stage":"registry-snapshot"')&&message.includes('bad-font')),'snapshot failure lost its stage or specific record')
+  assert.deepEqual(effects,[],'failed snapshot reached registry/file mutation')
   console.log('[protection-authority] shared SQLite, unknown/offline, queue ordering, recheck, collection paths, install copies, mixed batch and zero protected effects passed')
 }
 async function favorites() {
@@ -573,10 +582,11 @@ async function uninstallNative() {
   const reg=(args)=>execFileSync('reg',args,{encoding:'utf8',windowsHide:true})
   // Create a writable fixture from bytes, without inheriting system-file
   // attributes. Read-only behavior is exercised explicitly below.
-  const make=()=>{fs.writeFileSync(target,fs.readFileSync(original),{flag:'wx'});assert.equal(fs.statSync(target).mode & 0o200,0o200);reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])}
+  let fixtureCreated=false,primaryFailure=false
+  const make=()=>{fs.writeFileSync(target,fs.readFileSync(original),{flag:'wx'});fixtureCreated=true;assert.equal(fs.statSync(target).mode & 0o200,0o200);reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])}
   const digest=()=>crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex')
   const child=spawn(worker,['--font-mutation-broker'],{stdio:['pipe','pipe','pipe'],windowsHide:true,env:{...process.env,HFM_PARENT_PID:String(process.pid)}})
-  const line=createInterface({input:child.stdout}),queue=[],wait=[];let failure,stderr=''
+  const line=createInterface({input:child.stdout}),queue=[],wait=[];let failure,stderr='',lastReceipt=null
   child.stderr.on('data',b=>{stderr+=b;process.stderr.write(b)})
   child.on('error',e=>{failure=e;for(const w of wait.splice(0))w.reject(e)})
   child.on('exit',code=>{failure=Error(`broker exit ${code}: ${stderr}`);for(const w of wait.splice(0))w.reject(failure)})
@@ -585,11 +595,14 @@ async function uninstallNative() {
   const timeout=setTimeout(()=>child.kill(),45000)
   async function command(plan,onGate=()=>true) {
     child.stdin.write(JSON.stringify(plan)+'\n');const effects=[],gates=[];let done
-    for(;;){const r=await next();if(r.gate){const allow=await onGate(r.gate);gates.push({stage:r.gate,allow});child.stdin.write(JSON.stringify({allow})+'\n')}if(r.effect)effects.push(r);if(r.done)done=r;if(r.brokerDone)return {...r,effects,gates,elevated:done}}
+    for(;;){const r=await next();if(r.gate){const allow=await onGate(r.gate);gates.push({stage:r.gate,allow});child.stdin.write(JSON.stringify({allow})+'\n')}if(r.effect)effects.push(r);if(r.done)done=r;if(r.brokerDone){lastReceipt={...r,effects,gates,elevated:done};return lastReceipt}}
   }
   try {
-    assert.equal((await next()).protocol,'font-mutation-v1');make()
-    child.stdin.write('{"snapshot":true}\n');const snapshot=await next();assert(snapshot.ok);assert(snapshot.records.some(r=>r.registryName===token&&r.path===target),'native registry snapshot corrupted Unicode')
+    assert.equal((await next()).protocol,'font-mutation-v1')
+    // Establish registry readability before creating any real font fixture.
+    child.stdin.write('{"snapshot":true}\n');const initialSnapshot=await next();assert.equal(initialSnapshot.ok,true,JSON.stringify(initialSnapshot))
+    make()
+    child.stdin.write('{"snapshot":true}\n');const snapshot=await next();assert.equal(snapshot.ok,true,JSON.stringify(snapshot));assert(snapshot.records.some(r=>r.registryName===token&&r.path===target),'native registry snapshot corrupted Unicode')
     let plan={path:target,sha256:digest(),delete_file:true,records:[{scope:'HKCU',name:token,value:target}]}
     let r=await command(plan,()=>false);assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target));assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
     r=await command({...plan,sha256:'0'.repeat(64)});assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target))
@@ -612,9 +625,10 @@ async function uninstallNative() {
   } catch(error) {
     // Evidence only: retain the original failing assertion even if the probe
     // can subsequently delete this disposable fixture. Never probe real fonts.
-    const evidence={failure:String(error),stderr,probe:null}
+    primaryFailure=true
+    const evidence={failure:String(error),stderr,receipt:lastReceipt,probe:null}
     try {
-      if(fs.existsSync(target)) {
+      if(lastReceipt?.ok===false && lastReceipt.code===5 && lastReceipt.gates.some(gate=>gate.stage==='file'&&gate.allow) && fs.existsSync(target)) {
         const probe=spawnSync('pwsh',['-NoProfile','-NonInteractive','-File',path.join(__dirname,'lib/font-disposition-probe.ps1')],{encoding:'utf8',timeout:15000,windowsHide:true,env:{...process.env,HFM_DISPOSITION_FIXTURE:target,HFM_DISPOSITION_SHA256:digest()}})
         evidence.probe={status:probe.status,stdout:probe.stdout,stderr:probe.stderr,error:probe.error?.message}
         console.error('[F06 disposition probe]',JSON.stringify(evidence.probe))
@@ -625,7 +639,9 @@ async function uninstallNative() {
     throw error
   } finally {
     clearTimeout(timeout);child.kill();line.close()
-    try{reg(['delete',regRoot,'/v',token,'/f'])}catch{}
-    try{fs.chmodSync(target,0o666);fs.unlinkSync(target)}catch(e){if(e.code!=='ENOENT')throw e}
+    if(fixtureCreated) {
+      try{reg(['delete',regRoot,'/v',token,'/f'])}catch{}
+      try{fs.chmodSync(target,0o666);fs.unlinkSync(target)}catch(e){if(e.code!=='ENOENT'){console.error('[F06 fixture cleanup failed]',e);if(!primaryFailure)throw e}}
+    }
   }
 }

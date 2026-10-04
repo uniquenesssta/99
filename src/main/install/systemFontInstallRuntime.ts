@@ -94,16 +94,26 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
   async function uninstallOne(item: FontItem, session: ReturnType<typeof batchSession>, sourceDelete = false): Promise<InstallResult> {
     deps.ensureWindows();
     let completedSteps = 0;
+    let stage = 'protection-preflight';
+    const failed = (message: string): InstallResult => {
+      deps.appendStartupLog(`font uninstall failure: ${JSON.stringify({ id: item.id, path: item.path, sourceDelete, stage, completedSteps, message })}`);
+      return { ok: false, message };
+    };
     try {
       await deps.withFontProtection([item], async () => undefined);
+      stage = 'source-identity';
       const source = await readFontMutationIdentity(item.path);
+      stage = 'registry-snapshot';
       const registry = await readUninstallRegistry(session);
+      stage = 'installed-fonts';
       const installed = await deps.getSystemInstalledFonts();
+      stage = 'uninstall-plan';
       const candidates = sourceDelete ? [...registry, ...installed].filter(record => record.path && deps.normalizePathForCacheCompare(record.path) === deps.normalizePathForCacheCompare(source.path)) : [...registry, ...installed];
       const plans = sourceDelete && !candidates.length ? [] : await planFontUninstall(item, candidates, registry,
         [deps.currentUserFontsDir(), deps.windowsFontsDir()], deps.isTemporaryActiveInstalledRecord);
-      if (!plans.length && !sourceDelete) return { ok: false, message: '未找到可以唯一关联的安装记录；没有按名称猜测删除。' };
+      if (!plans.length && !sourceDelete) return failed('未找到可以唯一关联的安装记录；没有按名称猜测删除。');
       const targets = [item, { ...item, path: source.path }, ...plans.map(plan => ({ ...item, path: plan.path }))];
+      stage = 'target-protection';
       return await deps.withFontProtection(targets, async checkProtection => {
         const check = async () => {
           await checkProtection();
@@ -111,15 +121,18 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
           if (current.path !== source.path || current.sha256 !== source.sha256) throw new Error('源字体身份已变化，后续操作停止。');
         };
         if (sourceDelete) {
+          stage = 'source-deactivation';
           await check();
           const deactivated = await deps.deactivateForFileDelete([item]);
           if (!deactivated.ok) throw new Error(`关联激活清理未完成：${deactivated.message}`);
         }
+        stage = 'mutation-session';
         const native = plans.length ? await session.get() : undefined;
         for (const plan of plans) {
           // Deleting the selected installation source uses its recycle-bin
           // operation below, never the native permanent installation cleanup.
           if (sourceDelete && deps.normalizePathForCacheCompare(plan.path) === deps.normalizePathForCacheCompare(source.path) && plan.delete_file) continue;
+          stage = plan.delete_file ? 'file-delete' : 'registry-delete';
           const result = await native!.execute(plan, async references => {
             await check();
             if (plan.delete_file) {
@@ -129,16 +142,17 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
             }
           });
           completedSteps += result.completedSteps;
-          if (!result.ok) return { ok: false, message: `已确认完成 ${completedSteps} 个步骤。${result.message}` };
+          if (!result.ok) return failed(`已确认完成 ${completedSteps} 个步骤。${result.message}`);
         }
         deps.clearInstalledFontsMemoryCache();
+        stage = 'persist-result';
         if (!sourceDelete || plans.length) await deps.persistUninstallResult(item);
         let refreshWarning = '';
         try { await deps.advancedFontRefresh('uninstall-font'); } catch (error) { refreshWarning = ` 字体通知失败：${String(error)}`; }
         return { ok: true, message: '关联安装记录与安装副本已清理，独立源文件保留。' + refreshWarning };
       });
     } catch (error) {
-      return { ok: false, message: `${completedSteps ? `已完成 ${completedSteps} 个步骤，后续已停止：` : ''}${error instanceof Error ? error.message : String(error)}` };
+      return failed(`${completedSteps ? `已完成 ${completedSteps} 个步骤，后续已停止：` : ''}${error instanceof Error ? error.message : String(error)}`);
     } finally { deps.clearInstalledFontsMemoryCache(); }
   }
 
