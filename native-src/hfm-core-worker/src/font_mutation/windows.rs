@@ -213,13 +213,30 @@ fn mark_file_for_deletion_status(file:&File,native_status:&mut Option<u32>)->io:
 }
 fn release_font_resources(p:&Plan,elevated:bool,input:&mut impl BufRead,out:&mut impl Write)->io::Result<()> {
     let mut released=0;
+    let result=(|| {
     for _ in 0..8 {
         gate(input,out,if elevated{"elevated-file"}else{"file"})?;
         if unsafe{RemoveFontResourceExW(wide(&p.path).as_ptr(),0,ptr::null_mut())}==0 {break;}
         released+=1;
     }
-    eprintln!("font resource release: removed={released}, limit=8");
     Ok(())
+    })();
+    eprintln!("font resource release: removed={released}, limit=8");
+    if released>0 {notify_font_change("resource-release",out);}
+    result
+}
+#[derive(Default)]
+struct FailureDetails { stage:&'static str, ntstatus:Option<u32> }
+fn notify_font_change(reason:&str,out:&mut impl Write) {
+    let result=crate::font_resource::notify_font_change_now(false);
+    eprintln!("font change notification: reason={reason}, ok={}, detail={:?}",result.is_ok(),result.as_ref().err());
+    let _=emit(out,&json!({"notification":reason,"ok":result.is_ok()}));
+}
+fn notify_registry_change(changed:&mut bool,out:&mut impl Write) {
+    if !std::mem::take(changed) {return;}
+    // Consumers must hear about committed registry removals even when the
+    // subsequent file cleanup fails. Never wait for file deletion to notify.
+    notify_font_change("registry-change",out);
 }
 fn open_mutation_target(p:&Plan,elevated:bool,input:&mut impl BufRead,out:&mut impl Write)->io::Result<File> {
     match open_font(&p.path,p.delete_file) {
@@ -251,8 +268,10 @@ fn reopen_verified_target(p:&Plan,previous:File,open:impl FnOnce()->io::Result<F
     }
     Ok(file)
 }
-fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufRead,out:&mut impl Write)->io::Result<()> {
+fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufRead,out:&mut impl Write,details:&mut FailureDetails)->io::Result<()> {
     let mut stage="validate-plan";
+    let mut registry_changed=false;
+    let mut native_status=None;
     let result=(||->io::Result<()> {
     validate(p,elevated,original_user)?;
     // Check mutation permissions before registry/file effects. A sharing-only
@@ -276,11 +295,14 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         gate(input,out,"registry")?;verify_record(k,r)?;
         stage="registry-delete";
         delete_record(r)?;
+        registry_changed=true;
         emit(out,&json!({"effect":"registry","scope":r.scope,"name":r.name}))?;
     }
+    notify_registry_change(&mut registry_changed,out);
     if p.delete_file {
         let mut held=Some(file);let mut renewal_pending=false;let mut renewed=false;let mut renewal_error=None;
         let disposition=retry_file_disposition(|| {
+        native_status=None;
         if renewal_pending {
             stage="file-handle-renewal";
             // The original DELETE handle is closed once only for CANNOT_DELETE.
@@ -303,7 +325,6 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         gate(input,out,if elevated{"elevated-file"}else{"file"})?;
         if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before disposition"))}
         stage="file-disposition";
-        let mut native_status=None;
         let result=mark_file_for_deletion_status(file,&mut native_status);
         if !renewed && native_status==Some(0xC0000121) {
             renewal_pending=true;
@@ -322,6 +343,9 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     }
     Ok(())
     })();
+    // A later record/gate may fail after an earlier record was committed.
+    notify_registry_change(&mut registry_changed,out);
+    details.stage=stage;details.ntstatus=native_status;
     // Keep the original OS error code and stdout protocol untouched. In
     // particular, logging must not mark a denied preflight as prepared and
     // suppress the broker's existing UAC decision.
@@ -503,8 +527,9 @@ fn elevated(args:&[String])->io::Result<()> {
     std::env::set_var("HFM_PARENT_PID",pid.to_string());crate::isolated_lifetime::watch_parent().map_err(|e|fail(&e))?;
     let mut input=BufReader::new(output.try_clone()?);
     loop {let value=receive(&mut input)?;let plan:Plan=serde_json::from_value(value)?;
-        let result=execute(&plan,true,Some(&original_user),&mut input,&mut output);
-        emit(&mut output,&json!({"done":true,"ok":result.is_ok(),"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
+        let mut details=FailureDetails::default();
+        let result=execute(&plan,true,Some(&original_user),&mut input,&mut output,&mut details);
+        emit(&mut output,&json!({"done":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
     }
 }
 pub fn run(args:&[String])->io::Result<()> {
@@ -521,6 +546,7 @@ pub fn run(args:&[String])->io::Result<()> {
             continue;
         }
         let mut plan:Plan=serde_json::from_value(value)?;
+        let mut details=FailureDetails{stage:"plan-identity",ntstatus:None};
         let result=(||->io::Result<()> {
             validate(&plan,false,None)?;
             // Capture identity without DELETE permission before any UAC wait.
@@ -532,7 +558,7 @@ pub fn run(args:&[String])->io::Result<()> {
             struct Track<'a,W>{out:&'a mut W,prepared:bool}
             impl<W:Write> Write for Track<'_,W>{fn write(&mut self,b:&[u8])->io::Result<usize>{self.prepared=true;self.out.write(b)}fn flush(&mut self)->io::Result<()>{self.out.flush()}}
             let mut tracked=Track{out:&mut output,prepared:false};
-            let result=execute(&plan,false,None,&mut input,&mut tracked);
+            let result=execute(&plan,false,None,&mut input,&mut tracked,&mut details);
             let denied=result.as_ref().err().and_then(|e|e.raw_os_error())==Some(5);
             if !denied||tracked.prepared{return result}
             validate(&plan,true,Some(&roots()?.1))?;
@@ -545,6 +571,6 @@ pub fn run(args:&[String])->io::Result<()> {
         })();
         // Elevated replies already contain a done receipt. Suppress the broker
         // duplicate using a separate completion marker at the transport layer.
-        emit(&mut output,&json!({"brokerDone":true,"ok":result.is_ok(),"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
+        emit(&mut output,&json!({"brokerDone":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
     }
 }

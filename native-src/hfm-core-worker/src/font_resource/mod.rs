@@ -6,6 +6,8 @@ pub(crate) mod activation_identity;
 mod types;
 mod windows;
 
+pub(crate) use windows::notify_font_change as notify_font_change_now;
+
 pub use activation_files::run_font_activation_files;
 pub use types::FontResourceCommandConfig;
 

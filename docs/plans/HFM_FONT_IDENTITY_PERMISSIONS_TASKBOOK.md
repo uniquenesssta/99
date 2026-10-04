@@ -846,3 +846,34 @@ flowchart TD
 - 根因已确认范围：错误解码、私有 collection 失败释放缺口、共享冲突时释放步骤不可达、失败状态反馈缺失。具体外部占用者及 C0000121 的运行时成因仍未确认，句柄调整效果必须由新本机回执证明。F06 不收尾，§18.3 未完成范围仍有效，F07 不开始。
 
 已查询 Context7 和微软 [AddMemoryFont](https://learn.microsoft.com/en-us/windows/win32/api/gdiplusheaders/nf-gdiplusheaders-privatefontcollection-addmemoryfont)、[RemoveFontResourceEx](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-removefontresourceexw)，Mermaid Chart 已绘制本轮真实链路。Create State 前次未找到 HFM 项目，本轮续接记录保存在 Git 与本任务书，不写入其他项目。
+
+### 18.14 实机成功回执、卸载通知顺序及占用诊断（2026-10-04）
+
+基线 `76c943a5d7901415e314be9aea1a57464f0cba50`；[普通 Windows CI 37191425077](https://github.com/uniquenesssta/99/actions/runs/37191425077) 已全部通过（job `111404239358`）。用户明确更正“突然卸载失败”为“突然卸载成功”。`09-23-57` 日志中 Alibaba 安装文件删除成功，华康注册表删除成功但文件两次 error 32；`startup-2026-10-04_09-27-15-242-22668.log` 新会话中，华康于 09:27:26Z 完成 file effect、逐项 ok=true，批量结果也为 true。两次记录说明卸载结果已变化，不能据此认定占用者是谁，也不再将本次成功描述为新失败。
+
+同批 `粘贴的文本 (1)(20261004-092458).txt` 的 17 项 Rust 测试成功，但真实 HKCU 副本首次删除仍 C0000121，后续探针 flags=7 成功。上一轮句柄重开并未使该测试通过，具体映射持有者仍未查明。**只处理这条卸载故障链，不推进 F07 或 §18.3 的其他能力，不增加猜测性重试/延时，也不要求用户反复重造失败。**
+
+**本轮修正**
+
+- 明确的通知顺序缺口：原先只有全部文件删除成功后才调用主进程强刷新；已提交注册表删除但文件仍占用时，其他字体使用者收不到本次变化通知。原生卸载现在复用现有 font_resource 的非阻塞 WM_FONTCHANGE 通知，在已提交记录之后、文件清理之前发送；后续记录/保护关卡失败时也通知此前已提交的变化。实际资源引用释放后同样通知。失败前零副作用不发送；不等待所有窗口，也不把通知已发送当作文件已删除。
+- 原生回执增加可选 `stage` / `ntstatus`，保留 Win32 原错误码、既有 prepared/UAC 判定与逐项完成语义。每轮删除尝试清空上一轮状态，保护拒绝/重开失败不能沿用旧 C0000121。主进程只在 error 32 或明确 C0000121 时查询文件使用进程；普通权限拒绝不冒称占用。
+- 独立职责 `font_mutation/file_usage.rs` 实现只读 Restart Manager 查询，`fontFileUsageRuntime.ts` 负责独立子进程、三秒超时、结果校验和提示格式。查询在本次删除句柄释放后运行；限定单目标、最多 128 个结果、最多 4 次列表扩容，RAII 结束会话，父进程退出时诊断子进程随之退出。查询不调用 RmShutdown/RmRestart、不终止使用者、不提升权限、不自动重试删除。
+- 现有卸载失败提示直接附加程序名、PID 和服务名，完整可见结果进入现有启动日志。列出的是 Windows 报告的文件使用者，不能单凭此列表断言每个进程均阻止删除；空结果明确为“未识别”，不冒称没有占用，系统映射和短暂占用仍可能不可见。没有新增 UI 页面、后台轮询、数据库表或依赖。
+
+```mermaid
+flowchart TD
+ A["注册表删除已提交"] --> B["立即通知字体变化"]
+ B --> C["保护复核与文件清理"]
+ C -->|"成功"| D["确认未安装状态"]
+ C -->|"共享冲突或映射限制"| E["释放本次句柄后查询使用进程"]
+ E --> F["现有失败提示与日志"]
+ G["其他权限或保护拒绝"] --> F
+```
+
+**验证与剩余证据**
+
+沿用 `check-local-user-state.cjs --case=uninstall`，通过受控进程端口覆盖实际生产 transport 的错误 32、提权 C0000121、权限拒绝、查询超时、成功不查询、原错误及部分步骤保留；补充查询目标/PID 校验。Rust 增加纯 SDK 结构布局检查。真实本机入口保留原全部断言，增加通知发生在已提交 registry effect 与 file gate 之间、部分完成不漏通知的断言；失败时先自动记录进程查询，再执行原临时副本参数探针，查询/探针成功不改变原失败结论。真实字体仍仅本机执行，普通 CI 不变。
+
+本轮仅静态源码/差异审阅和 `git diff --check`，没有在非 Windows 环境执行 Node/Rust 编译或测试。新 CI 启动即交付，不轮询。现有实际卸载成功证据有效；新增通知能否解除隔离测试中的具体映射尚未验证，不宣布 C0000121 或 F06 全部解决。正常开发使用保持 `npm run dev`；不要求用户现在再跑一轮专项验收，若正常使用自然复发，新日志会自动携带占用信息。
+
+已查询 Context7、微软 [RmGetList](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmgetlist)、[RM_PROCESS_INFO](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/ns-restartmanager-rm_process_info)、[FILE_DISPOSITION_INFORMATION_EX](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-_file_disposition_information_ex)。Mermaid Chart 已绘制本轮实际链路。Create State 再次只返回 Markdown/足球项目，没有 HFM，未向其他项目写入；续接依据为本节和 Git。

@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { resolveRustCoreWorkerPath } from '../rust-core/rustCoreWorkerPathRuntime'
+import { readFontFileUsage, type FontFileUsage } from './fontFileUsageRuntime'
 
 export type FontMutationPlan = {
   path: string
@@ -15,7 +16,7 @@ export type FontMutationPlan = {
   records: Array<{ scope: 'HKCU' | 'HKLM'; name: string; value: string }>
   identity?: undefined
 }
-export type FontMutationReceipt = { ok: boolean; message: string; completedSteps: number; fileRemoved: boolean; code?: number }
+export type FontMutationReceipt = { ok: boolean; message: string; completedSteps: number; fileRemoved: boolean; code?: number; ntstatus?: number; stage?: string; usage?: FontFileUsage }
 export type FontMutationSession = {
   execute: (plan: FontMutationPlan, check: (references?: SystemInstalledFont[]) => Promise<void>) => Promise<FontMutationReceipt>
   readRegistry: () => Promise<SystemInstalledFont[]>
@@ -91,6 +92,7 @@ export async function createFontMutationSession(log: (message: string) => void):
       busy = true
       let completedSteps = 0, fileRemoved = false
       let failure = '', code: number | undefined
+      let ntstatus: number | undefined, stage: string | undefined
       try {
         await check()
         child.stdin.write(JSON.stringify(plan) + '\n')
@@ -107,16 +109,18 @@ export async function createFontMutationSession(log: (message: string) => void):
             if (value.effect === 'file') fileRemoved = true
             log(`font mutation: operation=${operationId}, target=${plan.path}, stage=${value.effect}, completed=${completedSteps}`)
           }
-          if (value.done && !value.ok) { failure ||= value.message || '提权操作失败。'; code = value.code }
+          if (value.done && !value.ok) { failure ||= value.message || '提权操作失败。'; code = value.code; ntstatus = value.ntstatus ?? undefined; stage = value.stage }
           if (value.brokerDone) {
-            if (!value.ok) { failure ||= value.message || '字体操作失败。'; code ??= value.code }
+            if (!value.ok) { failure ||= value.message || '字体操作失败。'; code ??= value.code; ntstatus ??= value.ntstatus ?? undefined; stage ??= value.stage }
             break
           }
         }
-        const nativeReason = code === 1223 ? '用户取消 UAC 授权。' : code === 5 ? 'Windows 拒绝操作（可能涉及权限、文件属性或占用）。' : code === 32 ? '字体文件正在被占用。' : ''
-        const message = failure ? `${nativeReason}${failure}${!fileRemoved && completedSteps ? ' 安装记录已部分清理，字体文件尚未确认删除。' : ''}${completedSteps ? ` 已完成 ${completedSteps} 个步骤，未完成部分保留供重试。` : ''}` : plan.delete_file ? '安装文件已移除。' : '本项安装记录已移除，文件清理结果另行确认。'
+        const usage = failure && (code === 32 || ntstatus === 0xc0000121) ? await readFontFileUsage(worker, plan.path) : undefined
+        if (usage) log(`font file usage: operation=${operationId}, target=${plan.path}, stage=${stage || 'unknown'}, native=${code}, ntstatus=${ntstatus ?? 'none'}, result=${JSON.stringify(usage)}`)
+        const nativeReason = code === 1223 ? '用户取消 UAC 授权。' : ntstatus === 0xc0000121 ? 'Windows 拒绝删除字体（C0000121：只读或文件映射限制）。' : code === 5 ? 'Windows 拒绝操作（可能涉及权限、文件属性或占用）。' : code === 32 ? '字体文件正在被占用。' : ''
+        const message = failure ? `${nativeReason}${failure}${usage ? ` ${usage.message}` : ''}${!fileRemoved && completedSteps ? ' 安装记录已部分清理，字体文件尚未确认删除。' : ''}${completedSteps ? ` 已完成 ${completedSteps} 个步骤，未完成部分保留供重试。` : ''}` : plan.delete_file ? '安装文件已移除。' : '本项安装记录已移除，文件清理结果另行确认。'
         log(`font mutation: operation=${operationId}, target=${plan.path}, stage=verified, ok=${!failure}, native=${code ?? 0}, completed=${completedSteps}, reason=${JSON.stringify(message)}`)
-        return { ok: !failure, message, completedSteps, fileRemoved, code }
+        return { ok: !failure, message, completedSteps, fileRemoved, code, ntstatus, stage, usage }
       } catch (error) {
         const message = `${error instanceof Error ? error.message : String(error)} 已确认完成 ${completedSteps} 个步骤；其余状态未知。`
         log(`font mutation: operation=${operationId}, target=${plan.path}, stage=execute, ok=false, completed=${completedSteps}, reason=${JSON.stringify(message)}`)

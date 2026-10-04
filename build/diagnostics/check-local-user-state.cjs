@@ -576,7 +576,57 @@ async function uninstallPlanning() {
   const renamed='C:\\user-fonts\\different.ttf';contents.set(renamed,bytes)
   assert.equal((await plan(item,[{...record,path:renamed,value:renamed}],[],['C:\\user-fonts'],()=>false)).length,0,'fuzzy display name matched')
   await assert.rejects(plan({...item,path:b},[record],[{...record,registryName:'temporary'}],['C:\\user-fonts'],r=>r.registryName==='temporary'),/临时激活/)
+  await uninstallTransport()
   console.log('[F06] exact-content planning, ambiguous copies, names and directory boundaries passed')
+}
+
+async function uninstallTransport() {
+  const {EventEmitter}=require('node:events'),{PassThrough}=require('node:stream'),crypto=require('node:crypto')
+  const worker='C:\\hfm\\worker.exe',target='C:\\user-fonts\\中文.ttf',bytes=Buffer.from('controlled worker')
+  const hash=crypto.createHash('sha256').update(bytes).digest('hex'),logs=[],queries=[],replies=[]
+  let queryError=null,queryValue={ok:true,target,processes:[{pid:123,name:'字体程序',service:'',started:'000001'}]}
+  const child=new EventEmitter();child.stdin=new PassThrough();child.stdout=new PassThrough();child.stderr=new PassThrough()
+  child.kill=()=>{child.stdout.end();child.stderr.end();return true}
+  child.stdin.on('data',()=>{for(const reply of replies.shift())child.stdout.write(JSON.stringify(reply)+'\n')})
+  const load=loader({
+    electron:{app:{isPackaged:false}},
+    'node:fs':{promises:{readFile:async file=>file.endsWith('.sha256')?hash:bytes}},
+    'node:child_process':{
+      spawn:()=>{setImmediate(()=>child.stdout.write('{"protocol":"font-mutation-v1"}\n'));return child},
+      execFile:(file,args,options,done)=>{queries.push({file,args,options});done(queryError,JSON.stringify(queryValue));return {}},
+    },
+    [path.join(root,'src/main/rust-core/rustCoreWorkerPathRuntime.ts')]:{resolveRustCoreWorkerPath:()=>worker},
+    [path.join(root,'src/main/security/appIntegrityRuntime.ts')]:{verifyPackagedAppIntegrity:()=>({ok:true})},
+  })
+  const usage=load('src/main/install/fontFileUsageRuntime.ts')
+  assert.throws(()=>usage.parseFontFileUsage(JSON.stringify({...queryValue,target:'C:\\other.ttf'}),target),/目标不一致/)
+  assert.throws(()=>usage.parseFontFileUsage(JSON.stringify({...queryValue,processes:[{pid:-1}]}),target),/编号无效/)
+  assert.equal(usage.parseFontFileUsage(JSON.stringify({...queryValue,processes:[]}),target).status,'unidentified','empty result claimed no occupancy')
+  const session=await load('src/main/install/fontMutationProcessRuntime.ts').createFontMutationSession(message=>logs.push(message))
+  const request={path:target,sha256:hash,delete_file:true,records:[]}
+  try {
+    replies.push([{brokerDone:true,ok:false,code:5,message:'permission denied',stage:'open-font'}])
+    let result=await session.execute(request,async()=>{})
+    assert.equal(result.ok,false);assert.equal(queries.length,0,'permission refusal was mislabeled as occupancy')
+    replies.push([{brokerDone:true,ok:false,code:32,message:'sharing violation',stage:'open-font'}])
+    result=await session.execute(request,async()=>{})
+    assert.equal(result.ok,false);assert.equal(result.code,32);assert.match(result.message,/字体程序.*PID 123/)
+    assert.deepEqual(plain(queries[0].args),['--font-file-usage',target]);assert.equal(queries[0].options.timeout,3000)
+    assert.equal(queries[0].file,worker);assert.equal(queries[0].options.env.HFM_PARENT_PID,String(process.pid))
+    replies.push([{effect:'registry'},{done:true,ok:false,code:5,message:'cannot delete',stage:'file-disposition',ntstatus:0xc0000121},{brokerDone:true,ok:true,stage:'open-font'}])
+    result=await session.execute(request,async()=>{})
+    assert.equal(result.completedSteps,1);assert.equal(result.fileRemoved,false);assert.equal(result.ntstatus,0xc0000121)
+    assert.equal(result.stage,'file-disposition');assert.equal(queries.length,2);assert.match(result.message,/C0000121/)
+    queryError=Error('query timeout')
+    replies.push([{brokerDone:true,ok:false,code:32,message:'sharing violation',stage:'open-font'}])
+    result=await session.execute(request,async()=>{})
+    assert.equal(result.code,32);assert.equal(result.usage.status,'unavailable');assert.equal(result.ok,false)
+    assert.match(result.message,/sharing violation/);assert.match(result.message,/查询未完成/)
+    replies.push([{effect:'file'},{brokerDone:true,ok:true}])
+    result=await session.execute(request,async()=>{})
+    assert.equal(result.ok,true);assert.equal(result.fileRemoved,true);assert.equal(queries.length,3,'successful deletion ran unnecessary diagnostics')
+    assert(logs.some(line=>line.includes('font file usage:')&&line.includes('123')))
+  } finally {session.close()}
 }
 
 async function uninstallNative() {
@@ -606,8 +656,8 @@ async function uninstallNative() {
   const next=()=>queue.length?Promise.resolve(queue.shift()):failure?Promise.reject(failure):new Promise((resolve,reject)=>wait.push({resolve,reject}))
   const timeout=setTimeout(()=>child.kill(),45000)
   async function command(plan,onGate=()=>true) {
-    child.stdin.write(JSON.stringify(plan)+'\n');const effects=[],gates=[];let done
-    for(;;){const r=await next();if(r.gate){const allow=await onGate(r.gate);gates.push({stage:r.gate,allow});child.stdin.write(JSON.stringify({allow})+'\n')}if(r.effect)effects.push(r);if(r.done)done=r;if(r.brokerDone){lastReceipt={...r,effects,gates,elevated:done};return lastReceipt}}
+    child.stdin.write(JSON.stringify(plan)+'\n');const effects=[],gates=[],events=[];let done
+    for(;;){const r=await next();events.push(r);if(r.gate){const allow=await onGate(r.gate);gates.push({stage:r.gate,allow});child.stdin.write(JSON.stringify({allow})+'\n')}if(r.effect)effects.push(r);if(r.done)done=r;if(r.brokerDone){lastReceipt={...r,effects,gates,events,elevated:done};return lastReceipt}}
   }
   try {
     assert.equal((await next()).protocol,'font-mutation-v1')
@@ -635,10 +685,13 @@ async function uninstallNative() {
     r=await command(plan);assert.equal(r.ok,false);assert.match(r.message,/read-only/);assert.equal(r.effects.length,0,'read-only preflight removed an installation record');assert(fs.existsSync(target));assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
     fs.chmodSync(target,0o666)
     r=await command(plan);assert.equal(r.ok,true,JSON.stringify(r));assert.deepEqual(r.effects.map(e=>e.effect),['registry','file']);assert(!fs.existsSync(target));assert.throws(()=>reg(['query',regRoot,'/v',token]));assert(fs.existsSync(original),'test touched the original system font')
+    const notified=r.events.findIndex(event=>event.notification==='registry-change')
+    assert(notified>r.events.findIndex(event=>event.effect==='registry')&&notified<r.events.findIndex(event=>event.gate==='file'),'registry notification did not precede file cleanup')
     make();plan={...plan,sha256:digest()}
     r=await command({...plan,path:path.join(require('node:os').tmpdir(),token+'.ttf')});assert.equal(r.ok,false);assert.equal(r.effects.length,0)
     r=await command({...plan,records:[{scope:'HKCU',name:token,value:original}]});assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target))
     r=await command(plan,stage=>stage!=='file');assert.equal(r.ok,false);assert.deepEqual(r.effects.map(e=>e.effect),['registry']);assert(fs.existsSync(target),'partial failure lost the remaining file')
+    assert(r.events.some(event=>event.notification==='registry-change'),'partial completion did not notify registry removal')
     let fileGates=0
     r=await command({...plan,records:[]},stage=>stage!=='file'||++fileGates<2);assert.equal(r.ok,false,JSON.stringify(r));assert.equal(r.effects.length,0,'protection change during resource release reached deletion');assert.equal(fileGates,2);assert(fs.existsSync(target))
     r=await command({...plan,records:[]});assert.equal(r.ok,true,JSON.stringify({scenario:'remaining-file-retry',receipt:r,targetExists:fs.existsSync(target),targetMode:fs.existsSync(target)?fs.statSync(target).mode:null,stderr}));assert.deepEqual(r.effects.map(e=>e.effect),['file'],'remaining-step retry must perform exactly one file effect');assert(!fs.existsSync(target),'remaining-step retry failed')
@@ -649,8 +702,12 @@ async function uninstallNative() {
     // Evidence only: retain the original failing assertion even if the probe
     // can subsequently delete this disposable fixture. Never probe real fonts.
     primaryFailure=true
-    const evidence={failure:String(error),stderr,receipt:lastReceipt,probe:null}
+    const evidence={failure:String(error),stderr,receipt:lastReceipt,usage:null,probe:null}
     try {
+      if(lastReceipt?.code===32 || lastReceipt?.ntstatus===0xc0000121) {
+        evidence.usage=await loader()('src/main/install/fontFileUsageRuntime.ts').readFontFileUsage(worker,target)
+        console.error('[F06 file usage]',JSON.stringify(evidence.usage))
+      }
       if(lastReceipt?.ok===false && lastReceipt.code===5 && lastReceipt.gates.some(gate=>gate.stage==='file'&&gate.allow) && fs.existsSync(target)) {
         const probe=spawnSync('pwsh',['-NoProfile','-NonInteractive','-File',path.join(__dirname,'lib/font-disposition-probe.ps1')],{encoding:'utf8',timeout:15000,windowsHide:true,env:{...process.env,HFM_DISPOSITION_FIXTURE:target,HFM_DISPOSITION_SHA256:digest()}})
         evidence.probe={status:probe.status,stdout:probe.stdout,stderr:probe.stderr,error:probe.error?.message}

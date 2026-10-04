@@ -32,8 +32,8 @@ mod watcher;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.get(1).is_some_and(|v| v == "--font-mutation-broker" || v == "--font-mutation-elevated") {
-        if args[1] == "--font-mutation-broker" {
+    if args.get(1).is_some_and(|v| matches!(v.as_str(), "--font-mutation-broker" | "--font-mutation-elevated" | "--font-file-usage")) {
+        if args[1] != "--font-mutation-elevated" {
             if let Err(error) = isolated_lifetime::watch_parent() { eprintln!("{error}"); std::process::exit(70); }
         }
         std::process::exit(font_mutation::run(&args));
