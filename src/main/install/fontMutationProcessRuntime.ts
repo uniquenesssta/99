@@ -114,7 +114,7 @@ export async function createFontMutationSession(log: (message: string) => void):
           }
         }
         const nativeReason = code === 1223 ? '用户取消 UAC 授权。' : code === 5 ? 'Windows 拒绝操作（可能涉及权限、文件属性或占用）。' : code === 32 ? '字体文件正在被占用。' : ''
-        const message = failure ? `${nativeReason}${failure}${!fileRemoved && completedSteps ? ' 安装记录已部分清理，字体文件尚未确认删除。' : ''}${completedSteps ? ` 已完成 ${completedSteps} 个步骤，未完成部分保留供重试。` : ''}` : '关联安装记录及安装副本已移除。'
+        const message = failure ? `${nativeReason}${failure}${!fileRemoved && completedSteps ? ' 安装记录已部分清理，字体文件尚未确认删除。' : ''}${completedSteps ? ` 已完成 ${completedSteps} 个步骤，未完成部分保留供重试。` : ''}` : plan.delete_file ? '安装文件已移除。' : '本项安装记录已移除，文件清理结果另行确认。'
         log(`font mutation: operation=${operationId}, target=${plan.path}, stage=verified, ok=${!failure}, native=${code ?? 0}, completed=${completedSteps}, reason=${JSON.stringify(message)}`)
         return { ok: !failure, message, completedSteps, fileRemoved, code }
       } catch (error) {

@@ -52,6 +52,13 @@ async function snapshotBoundaries(transform=x=>x) {
   h.reads[3].resolve({items:[installed('retry')]});await retried
   check(()=>assert.equal(h.reads.length,4,'failed gate blocked retry'))
 }
+async function nativeRegistryAuthority() {
+  const h=cacheHarness(),empty=h.runtime.getSystemInstalledFonts()
+  h.reads[0].resolve({items:[]})
+  check(()=>assert.equal(h.reads.length,1));assert.equal((await empty).length,0);cases++
+  const failure=h.runtime.getSystemInstalledFonts(),rejected=assert.rejects(failure,/Unicode registry read failed/)
+  h.reads[1].reject(Error('Unicode registry read failed'));await rejected;cases++
+}
 async function consecutiveMutations() {
   const h=cacheHarness(),reads=[]
   for(let i=0;i<3;i++){h.runtime.clearInstalledFontsMemoryCache();reads.push(h.runtime.getSystemInstalledFontsCached(true));await tick()}
@@ -167,7 +174,7 @@ async function main() {
     console.log(`[diagnostics:deactivation-refresh] C-05 batch settlement passed: batch counts, ownership-checked registry isolation, queue boundaries and 2 rejected regressions; renderer timing intentionally not entered`)
     return
   }
-  await snapshotBoundaries();await consecutiveMutations();await obsoleteFailure();await batchCases();await temporaryIndex();await rendererTiming()
+  await snapshotBoundaries();await nativeRegistryAuthority();await consecutiveMutations();await obsoleteFailure();await batchCases();await temporaryIndex();await rendererTiming()
   for (const crlf of [false, true]) {
     await assert.rejects(snapshotBoundaries(source => {
       const lf = source.replace(/\r\n/g, '\n');

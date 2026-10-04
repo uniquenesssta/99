@@ -95,9 +95,11 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
     deps.ensureWindows();
     let completedSteps = 0;
     let stage = 'protection-preflight';
+    let remainingPaths: string[] = [];
     const failed = (message: string): InstallResult => {
       deps.appendStartupLog(`font uninstall failure: ${JSON.stringify({ id: item.id, path: item.path, sourceDelete, stage, completedSteps, message })}`);
-      return { ok: false, message };
+      const detail = remainingPaths.length ? `${message} 安装文件尚未清理完成：${remainingPaths.join('；')}。请核对失败原因后重试卸载。` : message;
+      return { ok: false, message: detail, uninstall: { completedSteps, remainingPaths: [...remainingPaths], stage } };
     };
     try {
       await deps.withFontProtection([item], async () => undefined);
@@ -111,6 +113,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
       const candidates = sourceDelete ? [...registry, ...installed].filter(record => record.path && deps.normalizePathForCacheCompare(record.path) === deps.normalizePathForCacheCompare(source.path)) : [...registry, ...installed];
       const plans = sourceDelete && !candidates.length ? [] : await planFontUninstall(item, candidates, registry,
         [deps.currentUserFontsDir(), deps.windowsFontsDir()], deps.isTemporaryActiveInstalledRecord);
+      remainingPaths = plans.filter(plan => plan.delete_file).map(plan => plan.path);
       if (!plans.length && !sourceDelete) return failed('未找到可以唯一关联的安装记录；没有按名称猜测删除。');
       const targets = [item, { ...item, path: source.path }, ...plans.map(plan => ({ ...item, path: plan.path }))];
       stage = 'target-protection';
@@ -142,6 +145,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
             }
           });
           completedSteps += result.completedSteps;
+          if (result.fileRemoved) remainingPaths = remainingPaths.filter(path => path !== plan.path);
           if (!result.ok) return failed(`已确认完成 ${completedSteps} 个步骤。${result.message}`);
         }
         deps.clearInstalledFontsMemoryCache();

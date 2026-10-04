@@ -198,6 +198,17 @@ async function protectionAuthority() {
   assert.match(rejected.results[source.id].message,/scope=HKCU.*bad-font/)
   assert(failureLogs.some(message=>message.includes('"stage":"registry-snapshot"')&&message.includes('bad-font')),'snapshot failure lost its stage or specific record')
   assert.deepEqual(effects,[],'failed snapshot reached registry/file mutation')
+  records[0]={source:'HKCU',path:installedPath,value:installedPath,fileName:'sample.ttf',registryName:'Sample'}
+  deps.readUninstallRegistry=async()=>records
+  deps.createMutationSession=async()=>({close(){},execute:async(plan,check)=>{
+    await check()
+    if(plan.delete_file)return {ok:false,message:'sharing violation',completedSteps:0,fileRemoved:false,code:32}
+    effects.push('registry-delete');return {ok:true,message:'record removed',completedSteps:plan.records.length,fileRemoved:false}
+  }})
+  const incomplete=await system.uninstallFontSystemWide(source)
+  assert.equal(incomplete.ok,false);assert.equal(incomplete.uninstall.completedSteps,1)
+  assert.deepEqual(Array.from(incomplete.uninstall.remainingPaths),[installedPath]);assert.equal(incomplete.uninstall.stage,'file-delete')
+  assert.match(incomplete.message,/安装文件尚未清理完成/);assert.deepEqual(effects,['registry-delete'])
   console.log('[protection-authority] shared SQLite, unknown/offline, queue ordering, recheck, collection paths, install copies, mixed batch and zero protected effects passed')
 }
 async function favorites() {
@@ -607,6 +618,10 @@ async function uninstallNative() {
     child.stdin.write('{"snapshot":true}\n');const snapshot=await next();assert.equal(snapshot.ok,true,JSON.stringify(snapshot));assert(snapshot.records.some(r=>r.registryName===token&&r.path===target),'native registry snapshot corrupted Unicode')
     assert(!snapshot.records.some(r=>r.registryName===metadataToken),'numeric metadata became a font reference')
     assert.match(reg(['query',regRoot,'/v',metadataToken]),/REG_DWORD/,'snapshot altered metadata')
+    const discovered=JSON.parse(execFileSync(worker,['--system-installed-fonts','--windows-fonts-dir',path.join(process.env.WINDIR,'Fonts'),'--current-user-fonts-dir',userRoot,'--extensions','ttf,otf,ttc,otc'],{encoding:'utf8',windowsHide:true,timeout:15000,maxBuffer:32*1024*1024}))
+    assert.equal(discovered.ok,true,JSON.stringify(discovered))
+    assert(discovered.items.some(r=>r.registryName===token&&r.value===target&&r.path===target),'installed-font reader corrupted Unicode registry data')
+    assert(!discovered.items.some(r=>r.registryName===metadataToken),'installed-font reader included numeric metadata')
     let plan={path:target,sha256:digest(),delete_file:true,records:[{scope:'HKCU',name:token,value:target}]}
     let r=await command(plan,()=>false);assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target));assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
     r=await command({...plan,sha256:'0'.repeat(64)});assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target))

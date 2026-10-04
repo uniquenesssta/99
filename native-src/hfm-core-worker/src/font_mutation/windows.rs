@@ -33,7 +33,6 @@ const HKLM: Handle = (-2147483646isize) as Handle;
     fn RegOpenKeyTransactedW(root:Handle, subkey:*const u16, options:u32, access:u32, out:*mut Handle, transaction:Handle, extended:Handle)->i32;
     fn RegOpenKeyExW(root:Handle, subkey:*const u16, options:u32, access:u32, out:*mut Handle)->i32;
     fn OpenProcessToken(process:Handle,access:u32,token:*mut Handle)->i32;
-    fn RegEnumValueW(key:Handle,index:u32,name:*mut u16,name_len:*mut u32,reserved:Handle,kind:*mut u32,data:*mut u8,bytes:*mut u32)->i32;
     fn RegQueryValueExW(key:Handle, name:*const u16, reserved:Handle, kind:*mut u32, data:*mut u8, bytes:*mut u32)->i32;
     fn RegDeleteValueW(key:Handle, name:*const u16)->i32;
     fn RegCloseKey(key:Handle)->i32;
@@ -139,29 +138,17 @@ fn verify_record(k:&Registry,r:&Record)->io::Result<()> {
     let mut bytes=65536u32;let mut data=vec![0u16;32768];let mut kind=0;
     let code=unsafe{RegQueryValueExW(k.0,wide(&r.name).as_ptr(),ptr::null_mut(),&mut kind,data.as_mut_ptr() as *mut u8,&mut bytes)};
     if code!=0{return Err(io::Error::from_raw_os_error(code))}
-    let value=super::registry_value::decode(&r.name,kind,&data,bytes)
+    let value=crate::font_registry::decode(&r.name,kind,&data,bytes)
         .map_err(|error|fail(&format!("registry verification: scope={}, name={:?}, type={kind}, bytes={bytes}: {error}",r.scope,r.name)))?;
     if value.as_deref()!=Some(r.value.as_str()){return Err(fail("registry target changed since planning"))}Ok(())
 }
 fn snapshot()->io::Result<Value> {
-    let (windows,_)=roots()?;let mut rows=Vec::new();
-    for (scope,root) in [("HKCU",HKCU),("HKLM",HKLM)] {
-        let mut raw=ptr::null_mut();let code=unsafe{RegOpenKeyExW(root,wide(FONT_KEY).as_ptr(),0,0x101,&mut raw)};
-        if code==2 && scope=="HKCU"{continue}if code!=0{return Err(fail(&format!("registry snapshot open: scope={scope}, key={FONT_KEY:?}, code={code}")))}let k=Registry(raw);
-        for index in 0..100000u32 {
-            let mut name=vec![0u16;16384];let mut name_len=name.len() as u32;let mut data=vec![0u16;32768];let mut bytes=(data.len()*2) as u32;let mut kind=0;
-            let code=unsafe{RegEnumValueW(k.0,index,name.as_mut_ptr(),&mut name_len,ptr::null_mut(),&mut kind,data.as_mut_ptr() as *mut u8,&mut bytes)};
-            if code==259{break}if code!=0{return Err(fail(&format!("registry snapshot enum: scope={scope}, index={index}, code={code}, type={kind}, bytes={bytes}")))}
-            let name_units=name.get(..name_len as usize).ok_or_else(||fail(&format!("registry snapshot invalid name length: scope={scope}, index={index}")))?;
-            let name=String::from_utf16(name_units).map_err(|_|fail(&format!("registry snapshot invalid UTF-16 name: scope={scope}, index={index}")))?;
-            let value=super::registry_value::decode(&name,kind,&data,bytes)
-                .map_err(|error|fail(&format!("registry snapshot decode: scope={scope}, index={index}, name={name:?}, type={kind}, bytes={bytes}: {error}")))?;
-            if index==99999{return Err(fail("font registry snapshot limit exceeded"))}
-            let Some(value)=value else {continue};
-            let bare=value.trim_matches('"');let path=if Path::new(bare).is_absolute(){PathBuf::from(bare)}else{PathBuf::from(&windows).join(bare)};
-            rows.push(json!({"source":scope,"registryName":name,"value":value,"path":path.to_string_lossy(),"fileName":path.file_name().map(|v|v.to_string_lossy())}));
-        }
-    }
+    let (windows,_)=roots()?;
+    let rows=crate::font_registry::read()?.into_iter().map(|entry| {
+        let value=entry.value;let bare=value.trim_matches('"');
+        let path=if Path::new(bare).is_absolute(){PathBuf::from(bare)}else{PathBuf::from(&windows).join(bare)};
+        json!({"source":entry.scope,"registryName":entry.name,"value":value,"path":path.to_string_lossy(),"fileName":path.file_name().map(|v|v.to_string_lossy())})
+    }).collect::<Vec<_>>();
     Ok(Value::Array(rows))
 }
 fn validate(p:&Plan,elevated:bool,original_user:Option<&str>)->io::Result<()> {
@@ -179,8 +166,8 @@ fn validate(p:&Plan,elevated:bool,original_user:Option<&str>)->io::Result<()> {
 }
 fn retry_file_disposition(mut attempt:impl FnMut()->io::Result<()>,mut wait:impl FnMut(u64))->io::Result<()> {
     // A writable file with an already granted DELETE handle may still have
-    // short-lived GDI/mapped-file references. Keep the same handle throughout;
-    // never reopen by path, replay registry changes, or request elevation here.
+    // short-lived GDI/mapped-file references. Never replay registry changes or
+    // request elevation here; the caller bounds any verified handle renewal.
     const DELAYS:[u64;4]=[50,100,200,400];
     for index in 0..=DELAYS.len() {
         match attempt() {
@@ -194,11 +181,14 @@ fn retry_file_disposition(mut attempt:impl FnMut()->io::Result<()>,mut wait:impl
     }
     unreachable!()
 }
-fn mark_file_for_deletion(file:&File)->io::Result<()> {
+#[cfg(test)]
+fn mark_file_for_deletion(file:&File)->io::Result<()> {mark_file_for_deletion_status(file,&mut None)}
+fn mark_file_for_deletion_status(file:&File,native_status:&mut Option<u32>)->io::Result<()> {
+    *native_status=None;
     // Windows 10 RS1+: remove the directory entry on closing this handle,
     // rather than waiting for every delete-sharing reader to close. Keep image
     // section checks and read-only protection: never use IGNORE_READONLY (0x10).
-    // The DELETE handle and its no-write/no-replace sharing contract are unchanged.
+    // Every DELETE handle keeps the no-write/no-replace sharing contract.
     // Native class 64 is the equivalent of Win32 FileDispositionInfoEx (21).
     // Preserve the NTSTATUS: both CANNOT_DELETE and ACCESS_DENIED map to error 5.
     const FILE_DISPOSITION_INFORMATION_EX:u32=64;
@@ -208,6 +198,7 @@ fn mark_file_for_deletion(file:&File)->io::Result<()> {
     // OpenOptions creates a synchronous file handle; this request completes inline.
     let status=unsafe{NtSetInformationFile(file.as_raw_handle(),&mut io_status,&flags as *const _ as *const c_void,std::mem::size_of_val(&flags) as u32,FILE_DISPOSITION_INFORMATION_EX)};
     if status>=0{return Ok(())}
+    *native_status=Some(status as u32);
     let error=io::Error::from_raw_os_error(unsafe{RtlNtStatusToDosError(status)} as i32);
     // Only OS/filesystem feature absence permits legacy fallback. In particular,
     // access denied, sharing violations and mapped-image refusal stay errors.
@@ -220,14 +211,54 @@ fn mark_file_for_deletion(file:&File)->io::Result<()> {
     eprintln!("font deletion API fallback: unsupported={:?}, method=FileDispositionInfo, result={:?}",error.raw_os_error(),result.as_ref().err().and_then(|e|e.raw_os_error()));
     result
 }
+fn release_font_resources(p:&Plan,elevated:bool,input:&mut impl BufRead,out:&mut impl Write)->io::Result<()> {
+    let mut released=0;
+    for _ in 0..8 {
+        gate(input,out,if elevated{"elevated-file"}else{"file"})?;
+        if unsafe{RemoveFontResourceExW(wide(&p.path).as_ptr(),0,ptr::null_mut())}==0 {break;}
+        released+=1;
+    }
+    eprintln!("font resource release: removed={released}, limit=8");
+    Ok(())
+}
+fn open_mutation_target(p:&Plan,elevated:bool,input:&mut impl BufRead,out:&mut impl Write)->io::Result<File> {
+    match open_font(&p.path,p.delete_file) {
+        // The separate file-cleanup plan has no registrations left. A loaded
+        // session font can refuse DELETE sharing before the old release step.
+        Err(error) if error.raw_os_error()==Some(32) && p.delete_file && p.records.is_empty()=>{
+            let pin=open_font(&p.path,false)?;
+            if pin.metadata()?.permissions().readonly(){return Err(fail("font file is read-only"))}
+            if p.identity.as_ref()!=Some(&identity(&pin)?) || digest(&pin)?!=p.sha256 {
+                return Err(fail("font identity/content changed before resource release"));
+            }
+            // Once resources may change, never replay through automatic UAC.
+            emit(out,&json!({"prepared":true}))?;
+            release_font_resources(p,elevated,input,out)?;
+            // The read pin prevents replacement during release. Reopening is
+            // followed by the caller's original identity and digest checks.
+            drop(pin);
+            open_font(&p.path,true)
+        },
+        result=>result,
+    }
+}
+fn reopen_verified_target(p:&Plan,previous:File,open:impl FnOnce()->io::Result<File>)->io::Result<File> {
+    drop(previous);
+    let file=open()?;
+    if file.metadata()?.permissions().readonly(){return Err(fail("font became read-only during handle renewal"))}
+    if p.identity.as_ref()!=Some(&identity(&file)?) || digest(&file)?!=p.sha256 {
+        return Err(fail("font identity/content changed during handle renewal"));
+    }
+    Ok(file)
+}
 fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufRead,out:&mut impl Write)->io::Result<()> {
     let mut stage="validate-plan";
     let result=(||->io::Result<()> {
     validate(p,elevated,original_user)?;
-    // Acquire all permissions before the first effect. A denied preflight is the
-    // only condition under which the broker may request elevation.
+    // Check mutation permissions before registry/file effects. A sharing-only
+    // cleanup may first release gated session resources; it marks prepared.
     stage="open-font";
-    let file=open_font(&p.path,p.delete_file)?;
+    let file=open_mutation_target(p,elevated,input,out)?;
     // DELETE access can be granted on a read-only file, while setting its
     // disposition still fails. Reject before removing any registry records;
     // elevation cannot fix this attribute and must not silently clear it.
@@ -248,28 +279,42 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         emit(out,&json!({"effect":"registry","scope":r.scope,"name":r.name}))?;
     }
     if p.delete_file {
-        retry_file_disposition(|| {
-        stage="file-gate";
-        gate(input,out,if elevated{"elevated-file"}else{"file"})?;
+        let mut held=Some(file);let mut renewal_pending=false;let mut renewed=false;let mut renewal_error=None;
+        let disposition=retry_file_disposition(|| {
+        if renewal_pending {
+            stage="file-handle-renewal";
+            // The original DELETE handle is closed once only for CANNOT_DELETE.
+            // The new handle must identify the same file, not just equal bytes.
+            let previous=held.take().ok_or_else(||fail("missing deletion handle"))?;
+            let reopened=match reopen_verified_target(p,previous,||open_font(&p.path,true)) {
+                Ok(file)=>file,
+                Err(error)=>{renewal_error=Some(error);return Err(fail("file handle renewal refused"));}
+            };
+            held=Some(reopened);renewal_pending=false;renewed=true;
+        }
+        let file=held.as_ref().ok_or_else(||fail("missing deletion handle"))?;
         stage="file-identity-recheck";
         if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before delete"))}
         if file.metadata()?.permissions().readonly(){return Err(fail("font became read-only before delete"))}
         // Multiple loads can retain multiple resource references. Each removal
         // is separately gated; private or other-session resources are not forced.
         stage="font-resource-release";
-        let mut released=0;
-        for index in 0..8 {
-            if index>0 { gate(input,out,if elevated{"elevated-file"}else{"file"})?; }
-            if unsafe{RemoveFontResourceExW(wide(&p.path).as_ptr(),0,ptr::null_mut())}==0 {break;}
-            released+=1;
-        }
-        eprintln!("font resource release: removed={released}, limit=8");
+        release_font_resources(p,elevated,input,out)?;
         gate(input,out,if elevated{"elevated-file"}else{"file"})?;
         if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before disposition"))}
         stage="file-disposition";
-        mark_file_for_deletion(&file)
-        },|ms|std::thread::sleep(std::time::Duration::from_millis(ms)))?;
-        drop(file);
+        let mut native_status=None;
+        let result=mark_file_for_deletion_status(file,&mut native_status);
+        if !renewed && native_status==Some(0xC0000121) {
+            renewal_pending=true;
+            eprintln!("font deletion handle renewal scheduled: ntstatus=0xC0000121, same identity required, retry budget unchanged");
+        }
+        result
+        },|ms|std::thread::sleep(std::time::Duration::from_millis(ms)));
+        // Stop renewal errors immediately while retaining their original OS code.
+        if let Some(error)=renewal_error{return Err(error)}
+        disposition?;
+        drop(held);
         // A new object at the old path must never be removed during verification.
         stage="file-removal-verification";
         if Path::new(&p.path).try_exists()?{return Err(fail("file deletion not confirmed; do not retry without new identity"))}
@@ -358,6 +403,33 @@ mod disposition_tests {
         assert!(!fixture.0.try_exists().unwrap(),"reader retained deleted installation path");
         let mut bytes=Vec::new();reader.read_to_end(&mut bytes).unwrap();
         assert_eq!(&bytes[..4],b"\0\x01\0\0");
+    }
+    #[test]
+    #[ignore = "local Windows mutation acceptance: npm run test:font-system-local"]
+    fn real_external_reader_is_not_forced_after_resource_release() {
+        let fixture=Fixture::new();let pin=open_font(fixture.path(),false).unwrap();
+        let plan=Plan{path:fixture.path().into(),sha256:digest(&pin).unwrap(),identity:Some(identity(&pin).unwrap()),delete_file:true,records:Vec::new()};
+        let mut denied=std::io::Cursor::new(b"{\"allow\":false}\n");let mut output=Vec::new();
+        assert!(open_mutation_target(&plan,true,&mut denied,&mut output).unwrap_err().to_string().contains("protection recheck refused"));
+        let mut allowed=std::io::Cursor::new(b"{\"allow\":true}\n");let mut output=Vec::new();
+        assert_eq!(open_mutation_target(&plan,true,&mut allowed,&mut output).unwrap_err().raw_os_error(),Some(32));
+        assert!(fixture.0.try_exists().unwrap());assert!(!String::from_utf8(output).unwrap().contains("\"effect\""));
+        drop(pin);
+        let mut input=std::io::Cursor::new(Vec::<u8>::new());
+        assert!(open_mutation_target(&plan,false,&mut input,&mut Vec::new()).is_ok());
+    }
+    #[test]
+    #[ignore = "local Windows mutation acceptance: npm run test:font-system-local"]
+    fn real_handle_renewal_rejects_same_content_replacement() {
+        let fixture=Fixture::new();let file=open_font(fixture.path(),true).unwrap();
+        let plan=Plan{path:fixture.path().into(),sha256:digest(&file).unwrap(),identity:Some(identity(&file).unwrap()),delete_file:true,records:Vec::new()};
+        let file=reopen_verified_target(&plan,file,||open_font(fixture.path(),true)).unwrap();
+        let replacement=Fixture::new();
+        let error=reopen_verified_target(&plan,file,||{
+            std::fs::remove_file(&fixture.0)?;std::fs::rename(&replacement.0,&fixture.0)?;
+            open_font(fixture.path(),true)
+        }).unwrap_err();
+        assert!(error.to_string().contains("identity/content changed"));assert!(fixture.0.try_exists().unwrap());
     }
     #[test]
     fn transient_failure_rechecks_before_success() {

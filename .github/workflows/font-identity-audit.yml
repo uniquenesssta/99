@@ -71,7 +71,9 @@ jobs:
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::path_utils::tests
       - name: Build real Windows Rust worker
         run: node build/rust/build-core-worker.cjs --required
-      - name: Verify registry decoding and bounded retries (real mutations are local-only)
+      - name: Verify Unicode registry decoding
+        run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_registry::'
+      - name: Verify bounded retries (real mutations are local-only)
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_mutation::'
       - name: Accept production IDs, pagination and actual Electron DOM
         run: node build/diagnostics/check-font-identity-reproduction.cjs

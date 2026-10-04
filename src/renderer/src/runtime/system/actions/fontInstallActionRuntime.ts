@@ -1,6 +1,7 @@
 import type { FontItem } from '@shared/types'
 import { fontDisplayName,isInstalled,libraryWithMergedFonts } from '../../../appRuntime'
 import { uniqueFontsById } from '../../../fontFolderMutationRuntime'
+import { setUninstallIssue } from '../../../fontUserIntentRuntime'
 import { applyInstallCompareToFont } from '../../../fontInstallStateRuntime'
 import { isFontDeleteProtected } from '../../../fontSelectionRuntime'
 import type { FontSystemActionRuntimeOptions,FontSystemStateRuntime } from './fontSystemActionTypes'
@@ -43,15 +44,22 @@ export function createFontInstallActionRuntime(
         options.setStatus(`正在${verb}：${succeeded + failed + 1} / ${targets.length} · ${fontDisplayName(font)}`)
         try {
           const result = uninstall ? batch?.results?.[font.id] || { ok: false, message: batch?.message || '未收到逐项卸载回执。' } : await options.hfm.installSystem(font)
-          if (!result.ok) { failed++; firstFailure ||= result.message; continue }
-          if (uninstall) stateRuntime.updateFont(font.id, current => ({ ...current, systemInstalled: false, systemInstallMatches: [] }))
+          if (!result.ok) {
+            failed++; firstFailure ||= result.message
+            if (uninstall) stateRuntime.updateFont(font.id, current => setUninstallIssue(current, result.message || '卸载未完成，请重试。'))
+            continue
+          }
+          if (uninstall) stateRuntime.updateFont(font.id, current => setUninstallIssue({ ...current, systemInstalled: false, systemInstallMatches: [] }))
           else {
             const compare = await options.hfm.compareFontInstalled(font)
-            stateRuntime.updateFont(font.id, current => applyInstallCompareToFont(current, compare))
+            stateRuntime.updateFont(font.id, current => setUninstallIssue(applyInstallCompareToFont(current, compare)))
             if (!compare.installed) { failed++; continue }
           }
           succeeded++
-        } catch (error) { failed++; firstFailure ||= error instanceof Error ? error.message : String(error) }
+        } catch (error) {
+          failed++; const message = error instanceof Error ? error.message : String(error); firstFailure ||= message
+          if (uninstall) stateRuntime.updateFont(font.id, current => setUninstallIssue(current, message))
+        }
       }
     } finally {
       for (const font of targets) options.activeOperationFontIds.current.delete(font.id)

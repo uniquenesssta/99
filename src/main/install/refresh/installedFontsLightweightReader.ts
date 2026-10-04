@@ -23,10 +23,12 @@ export function createInstalledFontsLightweightReader(deps: InstallStatusRefresh
           )
           return rustResult.items
         }
+        throw new Error('原生字体安装信息读取未返回结果。')
       } catch (error) {
         deps.appendStartupLog(
           `system installed fonts lightweight rust read failed: ${error instanceof Error ? error.message : String(error)}`
         )
+        throw error
       }
     }
 

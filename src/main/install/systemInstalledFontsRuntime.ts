@@ -110,12 +110,14 @@ export function createSystemInstalledFontsRuntime(deps: {
           extensions: Array.from(deps.fontExtensions),
           includeNameCandidates: true
         })
-        if (rustResult?.items?.length) {
+        if (rustResult?.items) {
           deps.appendStartupLog(`getSystemInstalledFonts used rust fast path: total=${rustResult.items.length}`)
           return rustResult.items
         }
+        throw new Error('原生字体安装信息读取未返回结果。')
       } catch (error) {
         deps.appendStartupLog(`getSystemInstalledFonts rust fast path failed: ${error instanceof Error ? error.message : String(error)}`)
+        throw error
       }
     }
 

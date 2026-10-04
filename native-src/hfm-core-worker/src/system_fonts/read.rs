@@ -13,7 +13,7 @@ fn dedup_key(source: &str, registry_name: &str, value: &str) -> String {
 
 pub fn read_system_installed_fonts(config: &SystemInstalledFontsConfig) -> Result<SystemInstalledFontsResult, String> {
     let started_at = Instant::now();
-    let registry_items = read_registry_installed_fonts(&config.windows_fonts_dir);
+    let registry_items = read_registry_installed_fonts(&config.windows_fonts_dir)?;
     let folder_items = read_folder_installed_fonts(
         &config.windows_fonts_dir,
         &config.current_user_fonts_dir,

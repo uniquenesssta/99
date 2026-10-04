@@ -1,4 +1,5 @@
 import type { FontItem } from '@shared/types'
+import { getUninstallIssue } from './fontUserIntentRuntime'
 
 export function formatSize(bytes: number): string {
   if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -43,6 +44,7 @@ export function isCleanWindowsDefaultFont(font: FontItem): boolean {
 }
 
 export function installLabel(font: FontItem): string {
+  if (getUninstallIssue(font)) return '卸载未完成'
   if (font.systemInstalled && font.active) return '系统已安装 · 已激活'
   if (font.systemInstalled) return '系统已安装'
   if (font.active) return '已激活'

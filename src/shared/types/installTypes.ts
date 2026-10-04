@@ -47,6 +47,7 @@ export interface InstallStatusRefreshResult {
 }
 
 export interface InstallResult {
+  uninstall?: { completedSteps: number; remainingPaths: string[]; stage: string }
   results?: Record<string, InstallResult>
   ok: boolean
   managedInstallPath?: string

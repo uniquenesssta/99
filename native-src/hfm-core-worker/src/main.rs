@@ -1,5 +1,7 @@
 mod commands;
 mod font_mutation;
+#[cfg(windows)]
+mod font_registry;
 mod mapped_drives;
 mod shared_file_io;
 mod isolated_lifetime;

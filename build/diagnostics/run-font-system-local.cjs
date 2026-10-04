@@ -30,7 +30,9 @@ function run(command, args) {
 async function main() {
   record('Run from a normal user terminal. Only uniquely named test copies and HKCU test entries are mutated.\n')
   await run(process.execPath, ['build/rust/build-core-worker.cjs', '--required'])
+  await run('cargo', ['test', '--locked', '--manifest-path', 'native-src/hfm-core-worker/Cargo.toml', 'font_registry::'])
   await run('cargo', ['test', '--locked', '--manifest-path', 'native-src/hfm-core-worker/Cargo.toml', 'font_mutation::', '--', '--include-ignored'])
+  await run('cargo', ['test', '--locked', '--manifest-path', 'native-src/hfm-core-worker/Cargo.toml', 'preview_render::windows::local_font_tests', '--', '--include-ignored'])
   await run(process.execPath, ['build/diagnostics/check-local-user-state.cjs', '--case=uninstall-native', '--local'])
   record('\nPASS: local handle and HKCU fixture checks. Interactive app/UAC/HKLM/network acceptance is still separate.\n')
 }

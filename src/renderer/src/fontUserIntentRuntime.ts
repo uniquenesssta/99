@@ -3,7 +3,7 @@ import type { FontItem } from '@shared/types'
 // Symbols survive renderer object spreads, but are excluded from IPC/JSON persistence.
 const intentKey = Symbol('fontUserIntent')
 type ActiveState = Pick<FontItem, 'active' | 'activeSince' | 'managedInstallPath' | 'managedRegistryName'>
-type Intent = { active?: ActiveState; favorite?: { value: boolean; settled: boolean; confirmed: { value: boolean } } }
+type Intent = { uninstallIssue?: string; active?: ActiveState; favorite?: { value: boolean; settled: boolean; confirmed: { value: boolean } } }
 type IntentFont = FontItem & { [intentKey]?: Intent }
 let revision = 0
 
@@ -45,9 +45,18 @@ export function rollbackFavoriteIntent(current: FontItem, request: FontItem): Fo
   } } as IntentFont
 }
 
+export function setUninstallIssue(font: FontItem, message?: string): FontItem {
+  revision += 1
+  return { ...font, [intentKey]: { ...(font as IntentFont)[intentKey], uninstallIssue: message } } as IntentFont
+}
+
+export function getUninstallIssue(font: FontItem): string | undefined {
+  return (font as IntentFont)[intentKey]?.uninstallIssue
+}
+
 export function hasFontUserIntent(font: FontItem): boolean {
   const intent = (font as IntentFont)[intentKey]
-  return !!(intent?.active || intent?.favorite)
+  return !!(intent?.active || intent?.favorite || intent?.uninstallIssue)
 }
 
 export function hasUnsettledFavoriteIntent(font: FontItem): boolean {
@@ -69,6 +78,6 @@ export function mergeFontUserIntent(existing: FontItem | undefined, incoming: Fo
     ...incoming,
     ...intent.active,
     ...(keepFavorite ? { favorite: favorite.value } : {}),
-    [intentKey]: { active: intent.active, favorite: keepFavorite ? favorite : undefined }
+    [intentKey]: { active: intent.active, favorite: keepFavorite ? favorite : undefined, uninstallIssue: intent.uninstallIssue }
   } as IntentFont
 }

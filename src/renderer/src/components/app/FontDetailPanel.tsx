@@ -1,3 +1,4 @@
+import { getUninstallIssue } from '../../fontUserIntentRuntime'
 import { useSharedAvailability } from '../../sharedAvailabilityRuntime'
 import { sharedPathBlocked, fontSharedActionBlocked, SHARED_UNAVAILABLE_MESSAGE } from '../../../../shared/sharedAvailability'
 import { resolveFontCommandTargets } from '../../fontCommandTargetsRuntime'
@@ -106,6 +107,7 @@ export function FontDetailPanel({
               <span className={isInstalled(selectedFont) || selectedFont.active ? 'state-pill active' : 'state-pill'}>
                 {installLabel(selectedFont)}
               </span>
+              {getUninstallIssue(selectedFont) ? <div role="status">{getUninstallIssue(selectedFont)}</div> : null}
               {IS_DEVELOPMENT && installMatches.length ? (
                 <div className="match-list">
                   {installMatches.slice(0, 5).map((match, index) => (

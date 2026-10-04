@@ -2,7 +2,7 @@
 // verification. Win32 does not guarantee a stored REG_SZ terminator.
 use std::io;
 
-pub(super) fn decode(name:&str,kind:u32,data:&[u16],bytes:u32)->io::Result<Option<String>> {
+pub(crate) fn decode(name:&str,kind:u32,data:&[u16],bytes:u32)->io::Result<Option<String>> {
     let invalid=|reason:&str|io::Error::other(reason);
     if bytes%2!=0 || bytes as usize/2>data.len() {
         return Err(invalid("invalid registry value byte length"));

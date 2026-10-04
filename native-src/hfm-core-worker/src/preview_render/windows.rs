@@ -83,7 +83,7 @@ unsafe extern "system" {
     fn GdipSetTextRenderingHint(graphics: *mut c_void, mode: i32) -> GpStatus;
     fn GdipNewPrivateFontCollection(font_collection: *mut *mut c_void) -> GpStatus;
     fn GdipDeletePrivateFontCollection(font_collection: *mut *mut c_void) -> GpStatus;
-    fn GdipPrivateAddFontFile(font_collection: *mut c_void, filename: *const u16) -> GpStatus;
+    fn GdipPrivateAddMemoryFont(font_collection: *mut c_void, memory: *const c_void, length: i32) -> GpStatus;
     fn GdipGetFontCollectionFamilyCount(font_collection: *mut c_void, num_found: *mut i32) -> GpStatus;
     fn GdipGetFontCollectionFamilyList(font_collection: *mut c_void, num_sought: i32, families: *mut *mut c_void, num_found: *mut i32) -> GpStatus;
     fn GdipCreateFontFamilyFromName(name: *const u16, font_collection: *mut c_void, font_family: *mut *mut c_void) -> GpStatus;
@@ -137,7 +137,8 @@ impl Drop for Graphics {
     }
 }
 
-struct PrivateFontCollection(*mut c_void);
+// The collection borrows these bytes; Drop deletes it before the Vec is freed.
+struct PrivateFontCollection(*mut c_void, Vec<u8>);
 impl Drop for PrivateFontCollection {
     fn drop(&mut self) {
         if !self.0.is_null() {
@@ -282,8 +283,7 @@ fn create_preview_font(request: &PreviewRenderRequest) -> Result<PreviewFont, St
     }
 
     if !request.font_path.trim().is_empty() {
-        let font_path = wide_null(&request.font_path);
-        let collection = create_private_font_collection(&font_path)?;
+        let collection = create_private_font_collection(&request.font_path)?;
         let family = first_font_family(collection.0)?;
         let font = create_font(family.0, request.font_size as f32)?;
         return Ok(PreviewFont {
@@ -306,11 +306,21 @@ fn create_system_font_family(family_name: &str) -> Result<FontFamily, String> {
     Ok(FontFamily(family))
 }
 
-fn create_private_font_collection(font_path: &[u16]) -> Result<PrivateFontCollection, String> {
-    let mut collection = ptr::null_mut();
-    status(unsafe { GdipNewPrivateFontCollection(&mut collection) }, "GdipNewPrivateFontCollection failed")?;
-    status(unsafe { GdipPrivateAddFontFile(collection, font_path.as_ptr()) }, "PrivateFontCollection.AddFontFile failed")?;
-    Ok(PrivateFontCollection(collection))
+fn create_private_font_collection(font_path: &str) -> Result<PrivateFontCollection, String> {
+    use std::io::Read;
+    // Close the source handle before GDI+ sees the data. Rendering must not
+    // keep the installation file mapped or locked through AddFontFile.
+    const MAX_FONT_BYTES:u64=256*1024*1024;
+    let mut bytes=Vec::new();
+    fs::File::open(font_path).map_err(|e|e.to_string())?.take(MAX_FONT_BYTES+1)
+        .read_to_end(&mut bytes).map_err(|e|e.to_string())?;
+    if bytes.is_empty() || bytes.len() as u64>MAX_FONT_BYTES {return Err("invalid preview font size".into())}
+    let mut raw=ptr::null_mut();
+    status(unsafe { GdipNewPrivateFontCollection(&mut raw) }, "GdipNewPrivateFontCollection failed")?;
+    // Own the collection before AddMemoryFont so its failure path also drops it.
+    let collection=PrivateFontCollection(raw,bytes);
+    status(unsafe { GdipPrivateAddMemoryFont(collection.0,collection.1.as_ptr() as *const c_void,collection.1.len() as i32) }, "PrivateFontCollection.AddMemoryFont failed")?;
+    Ok(collection)
 }
 
 fn first_font_family(collection: *mut c_void) -> Result<FontFamily, String> {
@@ -442,5 +452,31 @@ fn status(status: GpStatus, message: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("{} (status={})", message, status))
+    }
+}
+
+#[cfg(test)]
+mod local_font_tests {
+    use super::*;
+    #[test]
+    #[ignore = "local Windows font acceptance: npm run test:font-system-local"]
+    fn private_memory_font_survives_source_removal() {
+        assert!(std::env::var_os("CI").is_none() && std::env::var_os("GITHUB_ACTIONS").is_none());
+        let nonce=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let path=std::env::temp_dir().join(format!("hfm-memory-font-{}-{nonce}.ttf",std::process::id()));
+        struct Fixture(PathBuf);impl Drop for Fixture{fn drop(&mut self){let _=fs::remove_file(&self.0);}}
+        let fixture=Fixture(path);
+        let original=PathBuf::from(std::env::var_os("WINDIR").unwrap()).join("Fonts/arial.ttf");
+        use std::io::Write;
+        let mut output=fs::OpenOptions::new().write(true).create_new(true).open(&fixture.0).unwrap();
+        output.write_all(&fs::read(original).unwrap()).unwrap();drop(output);
+        let _token=start_gdiplus().unwrap();
+        let collection=create_private_font_collection(fixture.0.to_str().unwrap()).unwrap();
+        let family=first_font_family(collection.0).unwrap();let font=create_font(family.0,24.0).unwrap();
+        fs::remove_file(&fixture.0).expect("preview retained a source file lock");
+        let bitmap=create_bitmap(120,60).unwrap();let graphics=create_graphics(bitmap.0).unwrap();
+        let format=create_string_format("Aa").unwrap();let brush=create_solid_brush(GLYPH_COLOR).unwrap();
+        let rect=GpRectF{x:0.0,y:0.0,width:120.0,height:60.0};let text=wide_null("Aa");
+        status(unsafe{GdipDrawString(graphics.0,text.as_ptr(),2,font.0,&rect,format.0,brush.0)},"memory font drawing after removal").unwrap();
     }
 }
