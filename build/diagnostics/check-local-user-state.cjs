@@ -589,11 +589,11 @@ async function uninstallPlanning() {
 async function uninstallTransport() {
   const {EventEmitter}=require('node:events'),{PassThrough}=require('node:stream'),crypto=require('node:crypto')
   const worker='C:\\hfm\\worker.exe',target='C:\\user-fonts\\中文.ttf',bytes=Buffer.from('controlled worker')
-  const hash=crypto.createHash('sha256').update(bytes).digest('hex'),logs=[],queries=[],replies=[]
+  const hash=crypto.createHash('sha256').update(bytes).digest('hex'),logs=[],queries=[],replies=[],sent=[]
   let queryError=null,queryValue={ok:true,target,processes:[{pid:123,name:'字体程序',service:'',started:'000001'}]}
   const child=new EventEmitter();child.stdin=new PassThrough();child.stdout=new PassThrough();child.stderr=new PassThrough()
   child.kill=()=>{child.stdout.end();child.stderr.end();return true}
-  child.stdin.on('data',()=>{for(const reply of replies.shift())child.stdout.write(JSON.stringify(reply)+'\n')})
+  child.stdin.on('data',data=>{sent.push(JSON.parse(String(data)));for(const reply of replies.shift())child.stdout.write(JSON.stringify(reply)+'\n')})
   const load=loader({
     electron:{app:{isPackaged:false}},
     'node:fs':{promises:{readFile:async file=>file.endsWith('.sha256')?hash:bytes}},
@@ -632,6 +632,28 @@ async function uninstallTransport() {
     result=await session.execute(request,async()=>{})
     assert.equal(result.ok,true);assert.equal(result.fileRemoved,true);assert.equal(queries.length,3,'successful deletion ran unnecessary diagnostics')
     assert(logs.some(line=>line.includes('font file usage:')&&line.includes('123')))
+    const before=sent.length
+    result=await session.execute(request,async()=>{throw Error('initial protection refused')})
+    assert.equal(result.ok,false);assert.equal(sent.length,before,'initial refusal reached the worker')
+    for(const stage of ['attributes','before-uac','registry','file']) {
+      let checks=0
+      replies.push([{gate:stage,...(stage==='file'?{references:[]}: {})}],[{brokerDone:true,ok:false,message:'gate refused'}])
+      result=await session.execute(request,async()=>{if(++checks===2)throw Error('protection changed at '+stage)})
+      assert.equal(checks,2);assert.equal(result.ok,false);assert.equal(result.completedSteps,0)
+      assert.deepEqual(sent.at(-1),{allow:false},stage+' refusal was not sent to worker')
+      assert(result.message.includes('protection changed at '+stage))
+    }
+    const cancelStart=sent.length
+    replies.push([{done:true,ok:false,code:1223,message:'cancelled'},{brokerDone:true,ok:true}])
+    result=await session.execute(request,async()=>{})
+    assert.equal(result.ok,false);assert.equal(result.code,1223);assert.equal(result.completedSteps,0)
+    assert.equal(sent.length,cancelStart+1,'UAC cancellation replayed the request')
+    replies.push([{effect:'registry'},{gate:'file',references:[]}],[{brokerDone:true,ok:false,message:'gate refused'}])
+    let checks=0
+    result=await session.execute(request,async()=>{if(++checks===2)throw Error('protected after registry removal')})
+    assert.equal(result.ok,false);assert.equal(result.completedSteps,1);assert.equal(result.fileRemoved,false)
+    assert.deepEqual(sent.at(-1),{allow:false});assert.equal(queries.length,3,'protection/UAC refusal triggered occupancy query')
+
   } finally {session.close()}
 }
 

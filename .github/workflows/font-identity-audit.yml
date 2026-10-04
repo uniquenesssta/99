@@ -8,82 +8,47 @@ permissions:
 jobs:
   reproduce:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: '24', cache: npm }
       - run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Verify renderer query and user intent regressions
-        run: node build/diagnostics/check-user-intent-consistency.cjs
-      - name: Verify search evidence logging policy
-        run: node build/diagnostics/check-performance-log-policy.cjs
-      - name: Verify library connection migration lifetime
-        run: node build/diagnostics/check-library-db-handle-lifecycle.cjs
-      - name: Verify preview cache outcomes and delayed local hits
-        run: node build/diagnostics/check-preview-cache-outcomes.cjs
-      - name: Verify unknown install metrics and indexed query protocol
-        run: node build/diagnostics/check-query-protocol.cjs
-      - name: Verify merged index writes and initial snapshot coalescing
-        run: node build/diagnostics/check-merged-index-mutation-serialization.cjs
-      - name: Verify in-flight cache generation ownership
-        run: node build/diagnostics/check-inflight-cache-lifecycle.cjs
-      - name: Verify owned preview publication and manifest reuse
-        run: node build/diagnostics/check-preview-cache-publish.cjs
-      - name: Verify startup composition and connection ownership
-        run: node build/diagnostics/check-main-composition-runtime.cjs
-      - name: Verify operation composition lifecycle
-        run: node build/diagnostics/check-main-operations-composition.cjs
-      - name: Verify preview reuse matrix
-        run: node build/diagnostics/check-preview-reuse-matrix.cjs
+      - name: Build real Windows Rust worker
+        run: node build/rust/build-core-worker.cjs --required
+      - name: Verify complete existing Windows diagnostics
+        run: npm run verify
       - name: Verify production identity compatibility and operation targets
         run: node build/diagnostics/check-font-identity-compatibility.cjs
       - name: Verify activation transaction regressions
         run: node build/diagnostics/check-font-activation-transaction.cjs
-      - name: Verify deactivation reconciliation regressions
-        run: node build/diagnostics/check-deactivation-refresh.cjs
-      - name: Verify local projection and offline settlement
-        run: node build/diagnostics/check-offline-settlement-watcher.cjs
-      - name: Verify installation filters across query routes
-        run: node build/diagnostics/check-install-status-filter.cjs
-      - name: Verify historical font state ownership
-        run: node build/diagnostics/check-local-user-state.cjs --case=legacy-identity
-      - name: Verify local state path isolation
-        run: node build/diagnostics/check-local-user-state.cjs --case=identity
-      - name: Verify manual protection command barriers
-        run: node build/diagnostics/check-font-command-entry.cjs
-      - name: Verify explicit local protection persistence
-        run: node build/diagnostics/check-local-user-state.cjs --case=protection
       - name: Verify exact uninstall planning
         run: node build/diagnostics/check-local-user-state.cjs --case=uninstall
-      - name: Verify local favorites
-        run: node build/diagnostics/check-local-user-state.cjs --case=favorites
       - name: Verify Node local tag persistence
         run: node build/diagnostics/check-local-tag-node-persistence.cjs
-      - name: Verify local tag Rust adapter
-        run: node build/diagnostics/check-local-tag-rust-adapter.cjs
       - name: Verify Rust local tag reads and writes
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags
       - name: Verify Rust identity contract vectors
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::path_utils::tests
-      - name: Build real Windows Rust worker
-        run: node build/rust/build-core-worker.cjs --required
       - name: Verify Unicode registry decoding
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_registry::'
       - name: Verify bounded retries (real mutations are local-only)
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_mutation::'
       - name: Accept production IDs, pagination and actual Electron DOM
         run: node build/diagnostics/check-font-identity-reproduction.cjs
+      - name: Verify complete list and grid Electron DOM scenarios
+        run: npm run test:font-view-layout-dom
       - name: Verify floating scrollbar overlays with native Electron input
         run: node build/diagnostics/check-font-view-layout.cjs --dom-feedback
+      - name: Build application bundles
+        run: node node_modules/electron-vite/bin/electron-vite.js build
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: font-identity-f01-evidence
+          name: font-identity-f07-evidence
           path: |
             artifacts/font-identity-f01
             artifacts/font-identity-f04
+            artifacts/list-preview
           retention-days: 14
