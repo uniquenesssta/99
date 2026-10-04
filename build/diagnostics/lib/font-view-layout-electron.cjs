@@ -59,6 +59,36 @@ app.whenReady().then(async () => {
       win.webContents.sendInputEvent({ type:'mouseMove', x:5, y:5 })
       console.log('[floating-scrollbar-overlay:electron]', JSON.stringify(await win.webContents.executeJavaScript(`window.finishScrollbarOverlay(${JSON.stringify(kind)})`)))
     }
+    // No window/webContents refocus between closing a dialog and real input:
+    // doing so would hide the Windows focus regression this gate must detect.
+    const click = p => {
+      win.webContents.sendInputEvent({type:'mouseMove', ...p})
+      win.webContents.sendInputEvent({type:'mouseDown', button:'left', modifiers:['leftbuttondown'], ...p, clickCount:1})
+      win.webContents.sendInputEvent({type:'mouseUp', button:'left', ...p, clickCount:1})
+    }
+    const key = keyCode => {
+      win.webContents.sendInputEvent({type:'keyDown', keyCode})
+      win.webContents.sendInputEvent({type:'keyUp', keyCode})
+    }
+    await win.webContents.executeJavaScript('window.prepareConfirmationFocus()')
+    let accepted=0,tagWrites=0
+    for (const [index,choice] of ['accept','cancel','Escape','Enter','accept','cancel'].entries()) {
+      click(await win.webContents.executeJavaScript('window.confirmationOpenPoint()'))
+      const buttons=await win.webContents.executeJavaScript('window.checkConfirmationOpen()')
+      if(choice==='accept'||choice==='cancel')click(buttons[choice]);else key(choice)
+      if(choice==='accept')accepted++
+      await win.webContents.executeJavaScript(`window.checkConfirmationClosed(${choice==='accept'},${accepted})`)
+      for(const scope of ['local','shared']) {
+        const value=`${scope}-${index}`
+        click(await win.webContents.executeJavaScript(`window.confirmationInputPoint(${JSON.stringify(scope)})`))
+        for(const character of value)win.webContents.sendInputEvent({type:'char',keyCode:character})
+        const add=await win.webContents.executeJavaScript(`window.checkConfirmationTyping(${JSON.stringify(scope)},${JSON.stringify(value)})`)
+        if(index%2===0)click(add);else key('Enter')
+        await win.webContents.executeJavaScript(`window.checkConfirmationTag(${JSON.stringify(scope)},${JSON.stringify(value)},${++tagWrites})`)
+      }
+    }
+    fs.writeFileSync(path.join(evidence, `${width}-confirmation-tags.png`), (await win.webContents.capturePage()).toPNG())
+    console.log('[confirmation-focus:electron]',JSON.stringify(await win.webContents.executeJavaScript('window.checkConfirmationLifecycle()')))
   }
   clearTimeout(watchdog); app.exit(0)
 }).catch(error => { console.error(error); clearTimeout(watchdog); app.exit(1) })

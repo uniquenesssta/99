@@ -1,3 +1,4 @@
+import { confirmUserAction } from '../../../confirmationDialogRuntime'
 import type { FontLibraryIndexActionRuntimeOptions } from './fontLibraryIndexActionTypes'
 
 export function createFontLibraryCacheMaintenanceActionRuntime(options: FontLibraryIndexActionRuntimeOptions): {
@@ -5,7 +6,7 @@ export function createFontLibraryCacheMaintenanceActionRuntime(options: FontLibr
   clearPreviewCacheAction: () => Promise<void>
 } {
   async function clearAllCacheAction(): Promise<void> {
-    if (!window.confirm('清理索引缓存和预览缓存？字体库记录、标签、共享标签和文件本身不会删除。')) return
+    if (!await confirmUserAction('清理索引缓存和预览缓存？字体库记录、标签、共享标签和文件本身不会删除。')) return
 
     try {
       options.setStatus('正在清理缓存：索引缓存和预览缓存都会删除，字体库记录保留……')

@@ -1,3 +1,4 @@
+import { confirmUserAction } from '../../../confirmationDialogRuntime'
 import type { FontItem } from '@shared/types'
 import { fontDisplayName,isInstalled,libraryWithMergedFonts } from '../../../appRuntime'
 import { uniqueFontsById } from '../../../fontFolderMutationRuntime'
@@ -31,13 +32,14 @@ export function createFontInstallActionRuntime(
     })
     const skipped = `跳过保护 ${skippedProtected} 个，${uninstall ? '未安装' : '已安装'} ${skippedState} 个，处理中 ${skippedBusy} 个`
     if (!targets.length) { options.setStatus(`没有可${verb}的字体：成功 0 个，失败 0 个；${skipped}。`); return }
-    if (uninstall && !window.confirm(`将卸载“${label}”中的 ${targets.length} 个已安装字体（所选 ${unique.length} 个）。${skipped}。会清理关联安装文件；若所选源路径就是安装路径，该文件也会被删除。独立源副本保留，不取消临时激活；需要时将弹出一次 Windows 授权确认。确定继续？`)) {
-      options.setStatus(`已取消卸载，未执行 ${targets.length} 个；${skipped}。`)
-      return
-    }
     for (const font of targets) options.activeOperationFontIds.current.add(font.id)
-    let succeeded = 0, failed = 0, firstFailure = ''
+    let succeeded = 0, failed = 0, firstFailure = '', dispatched = false
     try {
+      if (uninstall && !await confirmUserAction(`将卸载“${label}”中的 ${targets.length} 个已安装字体（所选 ${unique.length} 个）。${skipped}。会清理关联安装文件；若所选源路径就是安装路径，该文件也会被删除。独立源副本保留，不取消临时激活；需要时将弹出一次 Windows 授权确认。确定继续？`)) {
+        options.setStatus(`已取消卸载，未执行 ${targets.length} 个；${skipped}。`)
+        return
+      }
+      dispatched = true
       options.setLibrary(prev => libraryWithMergedFonts(prev, targets.filter(font => !prev.fonts[font.id]), targets.map(font => font.id)))
       const batch = uninstall ? await options.hfm.uninstallSystem(targets) : undefined
       for (const font of targets) {
@@ -63,7 +65,7 @@ export function createFontInstallActionRuntime(
       }
     } finally {
       for (const font of targets) options.activeOperationFontIds.current.delete(font.id)
-      options.refreshDatabaseDerivedState()
+      if (dispatched) options.refreshDatabaseDerivedState()
     }
     options.setStatus(`${verb}完成：成功 ${succeeded} 个，失败或未确认 ${failed} 个；${skipped}。${firstFailure ? `原因：${firstFailure}` : ''}`)
   }

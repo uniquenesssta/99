@@ -1030,3 +1030,41 @@ Context7 已核对 Cargo 的 `CARGO_HOME` 缓存与 `--offline` 语义并结合�
 - 本次只更新 README 和任务书，未改生产代码或验证入口；`git diff --check` 通过。文档提交使用 `[skip ci]`，避免对同一源码重复运行。后续工作另按用户安排，不自动推进其他专项；若需撤销 §19.8 的源删除修复，应同时回退对应行为诊断并重新执行 Windows 验证，不更改用户字体或数据库。
 
 Create State 本轮查询仍只有 Markdown/足球项目，没有 HFM，未写入无关项目；续接记录已保存在仓库。没有 API、依赖或架构变更。
+
+
+## 20. 全局确认框与标签输入焦点补修（2026-10-05，Windows 动态待验）
+
+用户报告详情区本地/共享两个标签输入框偶发无法点击进入，不知道触发步骤，并要求全局处理。只修复确认弹窗和焦点链路；F07 已交付收尾状态、F06 实机卸载成功证据保留，不重新要求真实字体系统验收。
+
+### 20.1 证据与范围
+
+本地标签输入没有 disabled 限制；共享标签另有共享位置可用性门，不能用共享离线解释两个输入同时失去焦点。源码发现五个 window.confirm：卸载字体、回收源文件、清理全部缓存、共享元数据孤儿归档清理、共享索引快照维护。旧受控诊断只模拟确认回执，没有关闭真实弹窗后再点击输入框的验证。
+
+Electron Windows 已有类似原生 JavaScript 对话框后输入失焦报告：[41602](https://github.com/electron/electron/issues/41602)、[50647](https://github.com/electron/electron/issues/50647)。这支持排查方向，但不是 HFM Electron 42.11.3 下原始故障的复现证明。当前不宣称所有“不能点击”原因均已消除；共享位置离线时共享输入禁用策略仍有效。正式版顶部 selection-command-status 会显示操作状态，不能把底部开发状态栏隐藏误记为全部失败提示隐藏。
+
+### 20.2 实际变更
+
+- 新增唯一 `confirmationDialogRuntime.ts` 所有者，五个入口全部 await 同一 Promise。使用 HTML dialog.showModal 的浏览器顶层模态层，后台控件 inert；不再使用 Windows 原生 JavaScript 消息框的焦点交接。
+- 默认聚焦取消；确认、取消、Escape、外部关闭统一清理并在原控件仍连接且文档有焦点时恢复焦点；页面退出取消在途确认。消息使用 textContent，重复确认直接返回 false，不排队执行破坏性操作。
+- 卸载/源文件删除在等待选择前预占目标，finally 释放；取消不调用后端，也不额外刷新数据库。字体卸载实现、只读权限、Rust、标签持久化与共享离线策略未变。
+- 样式复用现有 modal-card；与现有浮动滚动条遮挡识别共用 modal-backdrop。没有新增依赖、预加载 API 或 IPC。
+
+```mermaid
+flowchart TD
+  A["五个操作入口"] --> B["统一应用内确认框"]
+  B --> C{"用户选择"}
+  C -->|确认| D["清理弹窗并恢复焦点"]
+  C -->|取消或关闭| E["清理并返回取消"]
+  D --> F["继续原操作"]
+  E --> G["结束操作"]
+```
+
+### 20.3 验证与后续
+
+沿用既有 Windows 完整 CI，不增设真实字体系统测试。font-command-entry 增加等待确认期间重复请求、接受/取消、目标释放及取消不刷新场景，并禁止渲染源码重新出现 window.confirm/alert/prompt。原命令、保护、部分失败、删除刷新及标签行为断言保留。
+
+既有 font-view-layout Electron 门新增真实 FontDetailPanel、标签动作所有者及统一确认框夹具：720/1600 两档视口各六轮，确认/取消/Escape/默认 Enter/连续弹窗；关闭后不调用窗口 refocus，用 Electron 原生鼠标事件点击两个输入框、键盘字符输入，分别通过添加按钮和 Enter 提交到受控持久化端口。检查实际 activeElement、受控输入值、标签更新和请求次数；同时覆盖重复确认、背景 inert、原输入焦点恢复、触发控件移除、外部 close、pagehide 清理，以及拒绝失去焦点的输入反例。证据截图随既有 artifacts/font-identity-f04 上传。夹具不安装、卸载或删除任何真实字体，不访问 NAS。
+
+本次只完成改动文件的静态语法解析、导入/调用及差异审阅、git diff --check；非 Windows 环境没有执行项目模块、诊断、类型检查或构建。Windows 回执待本次提交，不能提前登记通过。按既有约定推送后只查询一次 CI 启动链接，不轮询完成；后续按新回执处理实际失败。正式安装包需在通过后重新构建以包含新的渲染代码，本轮无需改动或专门重编 Rust。
+
+Context7 已查询 Electron 输入/焦点 API，并结合官方 webContents 文档与 MDN showModal 顶层/inert 语义审阅；Electron 42.11.3、React 18.3.1 未升级。Mermaid Chart 已创建本次确认链路图。Create State 再查仍只有 Markdown/足球项目，没有 HFM，未写入无关项目；续接状态保存在 Git、README 与本节。

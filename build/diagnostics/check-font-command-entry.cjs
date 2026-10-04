@@ -5,7 +5,7 @@ const {harness,treeNodes,button,plain,noop,tick,renderer,root}=require('./check-
 function setup(config={}) {
   const h=harness(config), calls=[], confirmations=[], favorites=[], tags=[], edited=[]
   let confirm=true, refreshes=0
-  h.window.confirm=text=>{confirmations.push(text);return confirm}
+  h.load(renderer+'confirmationDialogRuntime.ts').confirmUserAction=async text=>{confirmations.push(text);return config.confirmation ? config.confirmation(text) : confirm}
   const options=()=>({flushProtectionWrites:config.protectionFlush || (async()=>true),hfm:h.window.hfm,library:h.library,getCurrentLibrary:()=>h.library,setLibrary:h.setLibrary,setStatus:x=>h.status.push(x),setContextMenu:noop,activeOperationFontIds:{current:h.busy},refreshDatabaseDerivedState:()=>refreshes++,setSelectedFontIds:h.select().setSelectedFontIds,getCurrentSelectedFontId:()=>'',setSelectedFontId:noop,setDetailVisible:noop,setDatabaseFontMetrics:noop,queueFavoriteWrites:async(fonts,v)=>{for(const f of fonts){favorites.push([f.id,v]);h.load(renderer+'fontUserIntentRuntime.ts').settleFavoriteIntent(f)}},scheduleDatabaseDerivedStateRefresh:()=>refreshes++})
   const state=h.load(renderer+'runtime/system/actions/fontSystemStateRuntime.ts').createFontSystemStateRuntime(options())
   const install=h.load(renderer+'runtime/system/actions/fontInstallActionRuntime.ts').createFontInstallActionRuntime(options(),state,h.actions())
@@ -23,6 +23,20 @@ function setup(config={}) {
 }
 const labels=tree=>treeNodes(tree).filter(n=>n.type==='button').map(n=>n.props.children).filter(x=>typeof x==='string')
 async function run(){let cases=0
+  const scan=directory=>fs.readdirSync(directory,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?scan(path.join(directory,entry.name)):/\.tsx?$/.test(entry.name)?[path.join(directory,entry.name)]:[])
+  for(const file of scan(path.join(root,renderer)))assert(!/\bwindow\.(?:confirm|alert|prompt)\s*\(/.test(fs.readFileSync(file,'utf8')),'native blocking dialog returned: '+file)
+  for(const action of ['remove','deleteFile'])for(const accepted of [false,true]){
+    let release
+    const s=setup({confirmation:()=>new Promise(resolve=>{release=resolve})}),h=s.base
+    h.select().setSelectedFontIds(['a','b'])
+    for(const f of Object.values(h.library.fonts))f.systemInstalled=action==='remove'
+    const pending=h.command()(action);await tick()
+    assert.equal(s.confirmations.length,1);assert.equal(h.busy.size,2);assert.equal(s.calls.length,0)
+    await h.command()(action);assert.equal(s.confirmations.length,1);assert.equal(s.calls.length,0)
+    release(accepted);await pending;await tick();assert.equal(h.busy.size,0)
+    assert.equal(s.calls.length,accepted?(action==='remove'?2:1):0)
+    if(!accepted)assert.equal(s.refreshes,0,'cancel must not refresh or execute');cases++
+  }
   for(const preload of [false,true])for(const entry of ['context','detail'])for(const count of [1,3]){
     const s=setup({runtimePreload:preload,cache:[]}),h=s.base;h.select().setSelectedFontIds(h.all.slice(0,count).map(f=>f.id))
     const tree=entry==='context'?s.overlay():s.detail(), names=labels(tree)

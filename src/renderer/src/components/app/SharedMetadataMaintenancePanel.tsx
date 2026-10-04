@@ -1,3 +1,4 @@
+import { confirmUserAction } from '../../confirmationDialogRuntime'
 import { useState } from 'react'
 import { stringifyDeveloperValue } from '../../appRuntime'
 
@@ -113,8 +114,8 @@ export function SharedMetadataMaintenancePanel({
     }), false)
   }
 
-  function purgeArchivedOrphans(): Promise<void> {
-    const confirmed = window.confirm('会归档并清理已确认孤儿的共享标签操作记录。确认继续？')
+  async function purgeArchivedOrphans(): Promise<void> {
+    const confirmed = await confirmUserAction('会归档并清理已确认孤儿的共享标签操作记录。确认继续？')
     if (!confirmed) return Promise.resolve()
     return runPanelAction('归档并清理孤儿操作', () => window.hfm.repairSharedMetadata({
       apply: true,

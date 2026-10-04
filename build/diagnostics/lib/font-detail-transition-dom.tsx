@@ -1,3 +1,4 @@
+import './confirmation-dialog-dom'
 import './grid-preview-dom'
 import './grid-preview-postprocess-dom'
 import './view-feedback-dom'
