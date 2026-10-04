@@ -157,7 +157,14 @@ async function run() {
   const merge=lru.load(renderer+'libraryNormalize.ts').libraryWithMergedFonts
   lru.setLibrary(merge(lru.library,rows.slice(0,1400),[]));lru.setLibrary(merge(lru.library,rows.slice(1400),[]))
   assert.equal(Object.keys(lru.library.fonts).length,1400);assert.equal(lru.library.fonts.a,undefined)
-  const visible=lru.load(renderer+'fontViewRuntime.ts').buildVisibleFonts({databasePageReady:true,databasePageResult:{items:rows},library:lru.library,sidebarPage:'library',activeFilter:{kind:'all'},allFonts:Object.values(lru.library.fonts)})
+  const buildIndex=lru.load(renderer+'fontFilteringMetrics.ts').buildFontComputedIndex
+  const visible=lru.load(renderer+'fontViewRuntime.ts').buildVisibleFonts({
+    databasePageReady:true,databasePageResult:{items:rows,total:rows.length,offset:0,limit:rows.length},
+    library:lru.library,sidebarPage:'library',activeFilter:{kind:'all'},allFonts:Object.values(lru.library.fonts),
+    fontIndexById:new Map(Object.values(lru.library.fonts).map(f=>[f.id,buildIndex(f)])),
+    deferredSearch:'',selectedWatchedFolders:[],selectedFormats:[],selectedScripts:[],selectedCategory:'all',
+    selectedTagName:'',selectedSharedTagName:'',selectedFolderId:'',installStatus:'all',timeSortMode:'all',sortMode:'name'
+  })
   assert.equal(visible.length,1499);lru.setVisible(visible.slice(0,3));lru.marquee();await lru.click('detail');assert.deepEqual(plain(lru.requests),[['a','b','c']]);assert.equal(lru.count,3);assert(lru.library.fonts.a.active);assert(lru.events.some(e=>e.reason==='selected:3.resolved:3.missing:0'));cases++
   // Original defect evidence: visible page rows with no matching library cache, actual marquee callback.
   for(const view of ['grid','list']) {

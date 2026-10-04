@@ -949,3 +949,12 @@ Context7 已查询 SetFileInformationByHandle / FILE_BASIC_INFO，Rust 官方 Fi
 仅做源码和差异静态审阅、git diff --check；本非 Windows 编辑环境不执行 Node/Rust 测试。推送启动 Windows CI 后即交付，收到查询再读取结果，不轮询。CI 待结果期间 F07 保持进行中；即使普通 CI 通过，也不能把未完成的提权源文件回收、安装目录外 HKLM 能力或未执行的真实权限验收写成通过，不自动扩大阶段实施范围。
 
 本轮仅工作流与既有诊断变化，回退这两处及配套文档即可恢复 F06 的验证入口；不涉及用户数据或安装字体回滚。没有新增 API 或架构，不需要 Context7/架构绘图。Create State 已确认没有 HFM 项目，续接记录仍存 Git 与本任务书，不写入无关项目。
+
+
+### 19.4 首轮完整诊断夹具修正（2026-10-04）
+
+提交 `04402127a37d192be177a84e5e73990387da027d` 的 [CI 37196843394](https://github.com/uniquenesssta/99/actions/runs/37196843394)，job `111420395688`：原生 worker 构建通过；第 6 步完整 verify 在 diagnostics:activation-entry 失败，`buildVisibleFonts` 读取缺失 deferredSearch 时调用 trim 报 TypeError。后续验证未执行，不能登记 F07 通过。
+
+旧夹具依赖数据库分页分支直接返回列表，没有传完整 VisibleFontsOptions；生产分页链路如今会重新检查筛选，夹具必须提供同样的有效输入。本次只补齐该调用的空搜索、筛选默认值、计算索引和完整分页元数据。保留真实 1400 项 LRU、1499 项分页数据、被淘汰 a/b/c 的选择与批量激活断言；不修改生产函数默认值，不跳过诊断或删除原断言。静态检查其他直接调用，未发现第二处同类 deferredSearch 缺失。
+
+完成源码/差异静态复核及 git diff --check，非 Windows 环境未运行 Node/Rust。推送后沿用完整 F07 Windows CI，启动即交付；F07 待新回执。本次仅夹具输入修正，无 API 或架构变化，Create State 仍沿用先前无 HFM 项目的结论，状态保存在 Git 与本节。
