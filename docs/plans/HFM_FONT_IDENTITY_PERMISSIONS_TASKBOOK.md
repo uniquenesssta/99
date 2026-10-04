@@ -727,3 +727,17 @@ Windows API 依据：[ShellExecuteEx](https://learn.microsoft.com/en-us/windows/
 提交 `17c97af0c11cb42040e790fa335765b6013a09e3` 的 [CI 37178421797](https://github.com/uniquenesssta/99/actions/runs/37178421797)，job `111365822654`：第 5～32 步通过，第 33 步 9 项测试中 5 项通过、4 项失败；四项均在 open_font 路径核验处返回 `font path resolves through an alias/reparse point; resolve before planning`，尚未执行待测删除 API。真实字体 mutation 和后续两项 Electron 验收均跳过，不能据此判断扩展删除接口成功或失败。
 
 根因是新增 Fixture 直接使用 temp_dir 拼接路径，遗漏生产规划已有的 realpath 前置步骤。本次仅在测试文件写入并关闭后执行 `std::fs::canonicalize`，所有打开、检查及清理均使用该真实规范路径。不修改生产路径校验、删除策略、重试预算或任何断言，也不新增测试替代现有失败场景。静态差异审阅及 `git diff --check` 通过；Linux 未执行测试，Windows 验证待新 CI。按用户要求推送启动后停止轮询。原错误 5 是否已解决仍须真实字体场景证明，F06 不收尾，§18.3 遗留项保持。
+
+### 18.9 路径修正回执与底层拒绝取证（2026-10-04，未确认修复）
+
+提交 `69d9f47247a09573f705f0d666759dac108809cb` 的 [CI 37179357897](https://github.com/uniquenesssta/99/actions/runs/37179357897)，job `111368587581`：第 5～33 步成功，包括全部 9 项 Windows 句柄/重试测试。第 34 步首次真实字体删除仍在五次 disposition 尝试后返回 error 5，readonly=false，只有 registry effect；Electron 两项跳过。路径夹具缺陷已修正，原真实字体删除问题没有解决。现有日志不能区分权限拒绝、映射文件不可删除等底层状态，也不能证明哪个进程占用；此前接口替换及重试方向均不能登记为根因修复。
+
+本轮补证，不放宽成功条件：
+
+- 扩展 disposition 使用 `NtSetInformationFile(FileDispositionInformationEx=64)` 执行与 Win32 class 21 相同的请求，保持同一同步 DELETE 句柄、flags=7、旧接口回退条件和全部保护/身份检查。直接记录返回的 NTSTATUS，再用 `RtlNtStatusToDosError` 保留原 Win32 错误协议；避免不同底层拒绝被 error 5 抹平。记录每轮 `RemoveFontResourceExW` 成功释放数，不把返回 0 当成已证明卸载。
+- 原 `uninstall-native` 任一断言失败时保存原错误和 broker stderr，并启动仅限该次唯一 `HFM_F06_TEST_<UUID>_中文.ttf` 副本的 PowerShell/C# 对照。对照验证用户字体直接目录、规范物理路径、单硬链接、非重解析点、非只读和 SHA-256；取得与生产相同访问/共享模式的句柄后先试 flags=7，仅失败时再试 flags=3，输出各次原始状态。对照不接入生产回退，不修改 ACL、不提权、不触及原 Arial。即使对照删除成功，原断言仍抛出，CI 仍失败。对照发生在原失败后重新打开句柄，结果只能与时间/句柄生命周期差异一并解释，不能把后来的成功冒认原操作成功。
+- 失败证据写入 `artifacts/font-identity-f06/disposition-failure.json` 并纳入现有 always 上传步骤；未删除或跳过任何原测试。新文件 `font-disposition-probe.ps1` 单独承载测试侧 Windows API 对照，不加入生产入口。
+
+下一次依据原始 NTSTATUS、释放计数和同一对照句柄的 7/3 结果确定修改方向；如为实际权限拒绝，不再增加等待；如为映射限制，须用对照证明具体语义影响后再改生产策略。当前没有声称根因已查明或删除已修复。Linux 仅源码与差异静态审阅、`git diff --check`；Windows 执行待本次 CI，启动后停止轮询。F06 不收尾，§18.3 遗留实施保持。
+
+依据：[微软 FileDispositionInformationEx 标志及状态](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/2e860264-018a-47b3-8555-565a13b35a45)、[IO_STATUS_BLOCK 布局](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ns-wdm-_io_status_block)、[libuv 原生调用及错误映射](https://github.com/libuv/libuv/blob/v1.x/src/win/fs.c)。Context7 已查询，精确 disposition 依据以微软文档和 libuv 源码为准。Create State 未找到 HFM 对应项目，未写入其他项目；续接以本节和 Git 为准。

@@ -607,6 +607,20 @@ async function uninstallNative() {
     r=await command({...plan,records:[]});assert.equal(r.ok,true,JSON.stringify({scenario:'remaining-file-retry',receipt:r,targetExists:fs.existsSync(target),targetMode:fs.existsSync(target)?fs.statSync(target).mode:null,stderr}));assert.deepEqual(r.effects.map(e=>e.effect),['file'],'remaining-step retry must perform exactly one file effect');assert(!fs.existsSync(target),'remaining-step retry failed')
     const invalid=spawnSync(worker,['--font-mutation-elevated','bad-pipe','1'],{encoding:'utf8',timeout:5000,windowsHide:true});assert.notEqual(invalid.status,0,'unauthenticated elevated endpoint accepted')
     console.log('[F06 native] original-user HKCU/file effects, denial, content mismatch, changed registry, boundary refusal, partial completion and remaining-step retry passed; real UAC/HKLM/UNC remain manual acceptance')
+  } catch(error) {
+    // Evidence only: retain the original failing assertion even if the probe
+    // can subsequently delete this disposable fixture. Never probe real fonts.
+    const evidence={failure:String(error),stderr,probe:null}
+    try {
+      if(fs.existsSync(target)) {
+        const probe=spawnSync('pwsh',['-NoProfile','-NonInteractive','-File',path.join(__dirname,'lib/font-disposition-probe.ps1')],{encoding:'utf8',timeout:15000,windowsHide:true,env:{...process.env,HFM_DISPOSITION_FIXTURE:target,HFM_DISPOSITION_SHA256:digest()}})
+        evidence.probe={status:probe.status,stdout:probe.stdout,stderr:probe.stderr,error:probe.error?.message}
+        console.error('[F06 disposition probe]',JSON.stringify(evidence.probe))
+      }
+      const dir=path.join(root,'artifacts/font-identity-f06');fs.mkdirSync(dir,{recursive:true})
+      fs.writeFileSync(path.join(dir,'disposition-failure.json'),JSON.stringify(evidence,null,2))
+    } catch(probeError) { console.error('[F06 disposition probe failed]',probeError) }
+    throw error
   } finally {
     clearTimeout(timeout);child.kill();line.close()
     try{reg(['delete',regRoot,'/v',token,'/f'])}catch{}

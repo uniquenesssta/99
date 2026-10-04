@@ -86,4 +86,5 @@ jobs:
           path: |
             artifacts/font-identity-f01
             artifacts/font-identity-f04
+            artifacts/font-identity-f06
           retention-days: 14

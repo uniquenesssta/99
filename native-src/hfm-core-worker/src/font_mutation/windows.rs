@@ -8,6 +8,11 @@ const HKLM: Handle = (-2147483646isize) as Handle;
 #[repr(C)] #[derive(Default)] struct FileTime { low:u32, high:u32 }
 #[repr(C)] #[derive(Default)] struct Info { attributes:u32, created:FileTime, accessed:FileTime, modified:FileTime, volume:u32, size_high:u32, size_low:u32, links:u32, index_high:u32, index_low:u32 }
 #[repr(C)] struct Security { length:u32, descriptor:Handle, inherit:i32 }
+#[repr(C)] #[derive(Default)] struct IoStatus { status:usize, information:usize }
+#[link(name="ntdll")] extern "system" {
+    fn NtSetInformationFile(file:Handle, status:*mut IoStatus, data:*const c_void, size:u32, class:u32)->i32;
+    fn RtlNtStatusToDosError(status:i32)->u32;
+}
 #[repr(C)] struct ShellInfo { size:u32, mask:u32, window:Handle, verb:*const u16, file:*const u16, parameters:*const u16, directory:*const u16, show:i32, instance:Handle, id_list:Handle, class:*const u16, class_key:Handle, hot_key:u32, icon:Handle, process:Handle }
 #[link(name="kernel32")] extern "system" {
     fn GetFileInformationByHandle(file:Handle, info:*mut Info)->i32;
@@ -193,15 +198,20 @@ fn mark_file_for_deletion(file:&File)->io::Result<()> {
     // rather than waiting for every delete-sharing reader to close. Keep image
     // section checks and read-only protection: never use IGNORE_READONLY (0x10).
     // The DELETE handle and its no-write/no-replace sharing contract are unchanged.
-    const FILE_DISPOSITION_INFO_EX:u32=21;
+    // Native class 64 is the equivalent of Win32 FileDispositionInfoEx (21).
+    // Preserve the NTSTATUS: both CANNOT_DELETE and ACCESS_DENIED map to error 5.
+    const FILE_DISPOSITION_INFORMATION_EX:u32=64;
     const DELETE_POSIX_CHECK_IMAGE:u32=0x01|0x02|0x04;
     let flags=DELETE_POSIX_CHECK_IMAGE;
-    if unsafe{SetFileInformationByHandle(file.as_raw_handle(),FILE_DISPOSITION_INFO_EX,&flags as *const _ as *const c_void,std::mem::size_of_val(&flags) as u32)}!=0{return Ok(())}
-    let error=last();
+    let mut io_status=IoStatus::default();
+    // OpenOptions creates a synchronous file handle; this request completes inline.
+    let status=unsafe{NtSetInformationFile(file.as_raw_handle(),&mut io_status,&flags as *const _ as *const c_void,std::mem::size_of_val(&flags) as u32,FILE_DISPOSITION_INFORMATION_EX)};
+    if status>=0{return Ok(())}
+    let error=io::Error::from_raw_os_error(unsafe{RtlNtStatusToDosError(status)} as i32);
     // Only OS/filesystem feature absence permits legacy fallback. In particular,
     // access denied, sharing violations and mapped-image refusal stay errors.
     if !matches!(error.raw_os_error(),Some(1)|Some(50)|Some(87)) {
-        eprintln!("font deletion API failed: method=FileDispositionInfoEx, code={:?}, readonly={:?}",error.raw_os_error(),file.metadata().map(|m|m.permissions().readonly()));
+        eprintln!("font deletion API failed: method=FileDispositionInformationEx, ntstatus=0x{:08X}, flags=0x{flags:02X}, code={:?}, readonly={:?}",status as u32,error.raw_os_error(),file.metadata().map(|m|m.permissions().readonly()));
         return Err(error);
     }
     let delete=1u8;
@@ -246,10 +256,13 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         // Multiple loads can retain multiple resource references. Each removal
         // is separately gated; private or other-session resources are not forced.
         stage="font-resource-release";
+        let mut released=0;
         for index in 0..8 {
             if index>0 { gate(input,out,if elevated{"elevated-file"}else{"file"})?; }
             if unsafe{RemoveFontResourceExW(wide(&p.path).as_ptr(),0,ptr::null_mut())}==0 {break;}
+            released+=1;
         }
+        eprintln!("font resource release: removed={released}, limit=8");
         gate(input,out,if elevated{"elevated-file"}else{"file"})?;
         if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before disposition"))}
         stage="file-disposition";
