@@ -34,6 +34,12 @@ pub struct LocalTagsSetPayload {
     pub updated_at: String,
     #[serde(default)]
     pub rows: Vec<LocalTagsSetRow>,
+    #[serde(default)]
+    pub recovery_moves: Vec<LocalRecoveryMove>,
+    #[serde(default)]
+    pub recovery_files: Vec<LocalRecoveryFile>,
+    #[serde(default)]
+    pub recovery_missing_sources: Vec<LocalRecoveryMissing>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -47,7 +53,16 @@ pub struct LocalTagsSetRow {
     pub font_path: String,
     #[serde(default)]
     pub tag_names: Vec<String>,
+    #[serde(default)]
+    pub expected_tag_names: Option<Vec<String>>,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct LocalRecoveryMove { pub from: String, pub to: String }
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalRecoveryFile { pub path: String, pub physical_path: String, pub sha256: String }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,3 +142,7 @@ pub struct LocalTagsDeleteResult {
     pub timings: LocalTagsTimings,
     pub worker_mode: String,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalRecoveryMissing { pub path: String, pub root_path: String }

@@ -1,24 +1,11 @@
-import { createHash } from 'node:crypto'
-import { basename, dirname, extname, resolve } from 'node:path'
+import { readFontContentIdentity as readFontMutationIdentity } from '../fonts/fontContentIdentityRuntime'
+import { basename, dirname, resolve } from 'node:path'
 import type { FontItem, SystemInstalledFont } from '../../shared/types'
-import { sharedFileSystem as fs } from '../path/sharedFileSystemRuntime'
 import { normalizePathForCacheCompare as key } from '../path/cachePath'
-import { canonicalizeAbsolutePath, isPathInsideAbsoluteBoundary } from '../path/pathBoundaryPolicy'
+import { isPathInsideAbsoluteBoundary } from '../path/pathBoundaryPolicy'
 import type { FontMutationPlan } from './fontMutationProcessRuntime'
 
-export async function readFontMutationIdentity(path: string) {
-  const canonical = canonicalizeAbsolutePath(path)
-  if (!canonical || canonical.flavor !== 'windows' || !['.ttf', '.otf', '.ttc', '.otc'].includes(extname(path).toLowerCase())) throw new Error('字体操作路径无效。')
-  const physical = await fs.realpath(canonical.ioPath)
-  const stat = await fs.stat(physical)
-  if (!stat.isFile() || stat.size > 256 * 1024 * 1024) throw new Error('字体文件类型或大小不符合操作要求。')
-  const bytes = await fs.readFile(physical)
-  const magic = bytes.subarray(0, 4).toString("hex")
-  if (!["00010000", "4f54544f", "74746366", "74727565", "74797031"].includes(magic)) throw new Error("文件内容不是受支持的字体。")
-  const after = await fs.stat(physical)
-  if (stat.size !== after.size || stat.mtimeMs !== after.mtimeMs || stat.ino !== after.ino) throw new Error('字体读取过程中发生变化，未执行。')
-  return { path: physical, sha256: createHash('sha256').update(bytes).digest('hex'), size: stat.size, modified: stat.mtimeMs, ino: stat.ino }
-}
+export { readFontContentIdentity as readFontMutationIdentity } from '../fonts/fontContentIdentityRuntime'
 
 export async function planFontUninstall(item: FontItem, installed: SystemInstalledFont[], registry: SystemInstalledFont[], roots: string[], temporary: (record: SystemInstalledFont) => boolean): Promise<FontMutationPlan[]> {
   const source = await readFontMutationIdentity(item.path)

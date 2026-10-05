@@ -101,8 +101,22 @@ function structure() {
   }
   assert(!fs.readFileSync(path.join(root,adapter),'utf8').includes('openLibraryDb'),'adapter cannot write Node')
 }
+async function recoveryTransport() {
+  const h=harness({outcome:'success'})
+  const next={...font,id:'b',path:'C:/F/B.ttf'}
+  const options={recoveryMoves:[{from:'c:\\f\\a.ttf',to:'c:\\f\\b.ttf'}],recoveryFiles:[{path:next.path,physicalPath:next.path,sha256:'a'.repeat(64)}]}
+  await h.runtime.setLocalFontTagsBatch([{item:next,tagNames:['old'],expectedTagNames:[]},{item:font,tagNames:[],expectedTagNames:['old']}],options)
+  const request=h.calls.rust[0].request
+  assert.deepEqual(request.rows.map(row=>row.expectedTagNames),[[],['old']])
+  assert.deepEqual(request.recoveryMoves,options.recoveryMoves)
+  assert.deepEqual(request.recoveryFiles,options.recoveryFiles)
+  const copyOnly=harness({outcome:'success'})
+  await copyOnly.runtime.setLocalFontTagsBatch([],{recoveryMoves:options.recoveryMoves})
+  assert.equal(copyOnly.calls.rust.length,1,'shared recovery state preservation must reach the worker without tag rows')
+  assert.deepEqual(copyOnly.calls.rust[0].request.rows,[])
+}
 async function main(){
-  structure();await matrix();await resultsAndSignals()
+  structure();await matrix();await resultsAndSignals();await recoveryTransport()
   for(const mutate of [s=>s.replaceAll('throw error;','return null;'),s=>s.replace('if (!nodeStateFallbackCompatibilityAllowed())','if (false)'),s=>s.replace('if (!nodeStateFallbackCompatibilityAllowed())','if (true)')])await assert.rejects(()=>matrix(mutate),assert.AssertionError)
   console.log('[diagnostics:local-tag-rust-adapter] five contracts; success/null/missing/error x 3 policies; row identity; real revision/cache/broadcast order, dedupe/no-op/catalog; 9 moved bodies and 3 mutants passed')
 }

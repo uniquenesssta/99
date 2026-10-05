@@ -330,6 +330,7 @@ export type RustLocalTagsSetRow = {
   aliases: string[]
   fontPath: string
   tagNames: string[]
+  expectedTagNames?: string[]
 }
 
 export type RustLocalTagsReadRow = {
@@ -355,6 +356,9 @@ export type RustLocalTagsSetInput = {
   dbPath: string
   updatedAt: string
   rows: RustLocalTagsSetRow[]
+  recoveryMoves?: import("../../shared/types").FontRecoveryStateMove[]
+  recoveryFiles?: import("../../shared/types").FontTagRecoveryFile[]
+  recoveryMissingSources?: import("../../shared/types").FontTagRecoveryMissing[]
 }
 
 export type RustLocalTagsDeleteTagInput = {

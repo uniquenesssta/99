@@ -39,6 +39,8 @@ fn set_on_connection(
 ) -> Result<String, String> {
     // Acquire the writer lock before reading the catalog used by this mutation.
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
+    let _recovery_pins = super::recovery::pin_recovery_files(payload)?;
+    super::recovery::validate_recovery_rows(&tx, payload)?;
     let previous_known_tags = read_known_tags(&tx).map_err(|error| error.to_string())?;
     let previous_bound_tags = read_bound_tags(&tx).map_err(|error| error.to_string())?;
     let requested_tags = clean_tag_names(
@@ -62,6 +64,7 @@ fn set_on_connection(
         ).map_err(|error| error.to_string())?;
         apply_set_rows(delete_by_id, delete_by_path, insert, &payload, &mut updated_ids, &mut written)?;
     }
+    super::recovery::preserve_recovery_state(&tx, &payload.recovery_moves)?;
     let next_bound_tags = read_bound_tags(&tx).map_err(|error| error.to_string())?;
     let known_tags = merge_tag_sets([
         previous_known_tags.as_slice(),
@@ -270,7 +273,7 @@ fn clean_aliases(values: &[String]) -> Vec<String> {
     set.into_iter().collect()
 }
 
-fn normalize_font_path(value: &str) -> String {
+pub(super) fn normalize_font_path(value: &str) -> String {
     let mut path = value.trim().replace('/', "\\").to_lowercase();
     while path.ends_with('\\') {
         path.pop();

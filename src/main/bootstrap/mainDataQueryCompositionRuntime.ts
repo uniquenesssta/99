@@ -327,7 +327,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     const db = await openLibraryDb();
     if (tagQueryScope(request)) return tagFonts!.query(request, limit, offset);
     const result = await requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(request, limit, offset);
-    openTagFontSnapshots(db).remember(result.items.filter(item => item.tagNames?.length || item.localTagNames?.length));
+    await openTagFontSnapshots(db).capture(result.items.filter(item => item.tagNames?.length || item.localTagNames?.length));
     return { ...result, items: await options.hydrateLocalFavoritesForFonts(await hydrateInstallStatusForFonts(result.items)) };
   }
 

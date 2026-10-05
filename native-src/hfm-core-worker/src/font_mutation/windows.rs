@@ -587,3 +587,18 @@ pub fn run(args:&[String])->io::Result<()> {
         emit(&mut output,&json!({"brokerDone":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
     }
 }
+
+pub(super) fn pin_recovery_file(path: &str, expected_physical: &str, expected_sha256: &str) -> io::Result<File> {
+    let file = OpenOptions::new().read(true).share_mode(1).open(path)?;
+    if !file.metadata()?.is_file() || file.metadata()?.len() > 256 * 1024 * 1024
+        || recovery_path_key(&physical(&file)?) != recovery_path_key(expected_physical) || digest(&file)? != expected_sha256 {
+        return Err(fail("recovery target identity/content changed; bindings retained"));
+    }
+    Ok(file)
+}
+
+fn recovery_path_key(path: &str) -> String {
+    let lower = path.replace('/', "\\").to_lowercase();
+    let native = if let Some(unc) = lower.strip_prefix(r"\\?\unc\") { format!(r"\\{unc}") } else { lower };
+    key(&native)
+}

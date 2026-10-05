@@ -53,3 +53,47 @@ fn local_tags_path_writes_preserve_other_copies() {
     }
     assert_eq!(conn.query_row("SELECT COUNT(*) FROM local_font_tags", [], |r|r.get::<_,i64>(0)).unwrap(), 1);
 }
+
+#[test]
+fn recovery_tag_conflict_rolls_back_entire_batch_and_state() {
+    for conflict in [false, true] {
+        let mut conn = Connection::open_in_memory().unwrap();
+        initialize_local_tags_db(&conn).unwrap();
+        conn.execute_batch(r"INSERT INTO local_font_tags VALUES ('old','c:\old.ttf','Keep','before');
+          CREATE TABLE local_font_favorites(font_id TEXT PRIMARY KEY,font_path TEXT,favorite INTEGER);
+          INSERT INTO local_font_favorites VALUES ('source','c:\old.ttf',1);
+          INSERT INTO local_font_favorites VALUES ('legacy-target','c:\new.ttf',0);
+          CREATE TABLE local_font_protection(font_path TEXT PRIMARY KEY,protected INTEGER);
+          INSERT INTO local_font_protection VALUES ('c:\old.ttf',1);").unwrap();
+        let payload = serde_json::from_value(json!({"dbPath":"test","updatedAt":"after","rows":[
+          {"itemId":"new","aliases":["new"],"fontPath":r"c:\new.ttf","tagNames":["Keep"],"expectedTagNames":[]},
+          {"itemId":"old","aliases":["old"],"fontPath":r"c:\old.ttf","tagNames":[],"expectedTagNames":if conflict {vec!["Changed"]} else {vec!["Keep"]}}
+        ],"recoveryMoves":[{"from":r"c:\old.ttf","to":r"c:\new.ttf"}]})).unwrap();
+        let mut trace = crate::operation_trace::OperationTrace::from_input("{}");
+        let result=set_on_connection(&mut conn,&payload,&mut trace,Instant::now());
+        assert_eq!(result.is_err(), conflict);
+        assert_eq!(conn.query_row(r"SELECT COUNT(*) FROM local_font_tags WHERE font_path='c:\old.ttf'", [], |r|r.get::<_,i64>(0)).unwrap(), if conflict {1} else {0});
+        assert_eq!(conn.query_row(r"SELECT COUNT(*) FROM local_font_tags WHERE font_path='c:\new.ttf'", [], |r|r.get::<_,i64>(0)).unwrap(), if conflict {0} else {1});
+        assert_eq!(conn.query_row(r"SELECT COUNT(*) FROM local_font_protection WHERE font_path='c:\new.ttf'", [], |r|r.get::<_,i64>(0)).unwrap(), if conflict {0} else {1});
+        assert_eq!(conn.query_row(r"SELECT favorite FROM local_font_favorites WHERE font_path='c:\new.ttf'", [], |r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(conn.query_row(r"SELECT COUNT(*) FROM local_font_favorites WHERE font_path='c:\new.ttf'", [], |r|r.get::<_,i64>(0)).unwrap(),1);
+    }
+}
+
+#[test]
+#[cfg(windows)]
+fn recovery_target_is_pinned_and_changed_content_is_rejected() {
+    let dir=std::env::temp_dir().join(format!("hfm-recovery-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir(&dir).unwrap();
+    let target=dir.join("target.ttf");
+    let mut bytes=vec![0u8;100];bytes[1]=1;
+    std::fs::write(&target,&bytes).unwrap();
+    let path=target.to_string_lossy().into_owned();
+    let expected="16b1d4dcb432a18c4511ff04d5af0786937fd6d3e38a5bfca703132654e85073";
+    let pin=crate::font_mutation::pin_recovery_file(&path,&path,expected).unwrap();
+    assert!(std::fs::write(&target,&bytes).is_err(),"target writes must stay blocked during commit");
+    drop(pin);
+    bytes[99]=1;std::fs::write(&target,&bytes).unwrap();
+    assert!(crate::font_mutation::pin_recovery_file(&path,&path,expected).is_err(),"same-size changed bytes must be rejected");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

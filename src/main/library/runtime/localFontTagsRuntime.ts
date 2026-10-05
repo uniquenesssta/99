@@ -1,8 +1,10 @@
+import { localTagFontPath } from './localFontTagIdentityRuntime'
 import { createLocalFontTagRustAdapterRuntime } from "./localFontTagRustAdapterRuntime";
 import { createLocalFontTagMutationEffectsRuntime, logKnownLocalTagLifecycle } from "./localFontTagMutationEffectsRuntime";
 import type {
 FontItem,
 FontTagBatchItem,
+FontTagRecoveryCommitOptions,
 FontTagUpdateResult,
 } from "../../../shared/types";
 import { createLocalFontTagNodePersistenceRuntime, cleanLocalTagNames } from "./localFontTagNodePersistenceRuntime";
@@ -32,7 +34,11 @@ export type RustLocalTagsSetInput = {
     aliases: string[]
     fontPath: string
     tagNames: string[]
+    expectedTagNames?: string[]
   }>
+  recoveryMoves?: import("../../../shared/types").FontRecoveryStateMove[]
+  recoveryFiles?: import("../../../shared/types").FontTagRecoveryFile[]
+  recoveryMissingSources?: import("../../../shared/types").FontTagRecoveryMissing[]
 }
 
 export type RustLocalTagsSetResult = {
@@ -189,15 +195,16 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
 
   async function setLocalFontTagsBatch(
     itemsInput: FontTagBatchItem[],
+    options?: FontTagRecoveryCommitOptions,
   ): Promise<FontTagUpdateResult> {
     const unique = new Map<string, FontTagBatchItem>();
     for (const entry of itemsInput || []) {
       if (!entry?.item?.id) continue;
-      unique.set(entry.item.id, entry);
+      unique.set(localTagFontPath(entry.item) || entry.item.id, entry);
     }
 
     const items = Array.from(unique.values());
-    if (!items.length) {
+    if (!items.length && !options?.recoveryMoves.length) {
       return {
         ok: true,
         updatedIds: [],
@@ -207,10 +214,10 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
     }
 
     const now = new Date().toISOString();
-    const rustRows = items.map((entry) => rustLocalTagRow(entry.item, entry.tagNames || []));
+    const rustRows = items.map((entry) => ({ ...rustLocalTagRow(entry.item, entry.tagNames || []), ...(entry.expectedTagNames ? { expectedTagNames: cleanLocalTagNames(entry.expectedTagNames) } : {}) }));
     await deps.prepareIdentity?.();
     await deps.rememberFontMetadata?.(items.map(entry => entry.item));
-    const rustResult = await trySetLocalTagsWithRust(rustRows, now);
+    const rustResult = await trySetLocalTagsWithRust(rustRows, now, options);
     if (rustResult) {
       logKnownLocalTagLifecycle({
         appendStartupLog: deps.appendStartupLog,
@@ -247,7 +254,7 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
       };
     }
 
-    const { updatedIds, failed, previousKnownTags, knownTags, retainedEmptyTags } = (await nodePersistence.openWriter()).setLocalFontTagsBatch(items, now);
+    const { updatedIds, failed, previousKnownTags, knownTags, retainedEmptyTags } = (await nodePersistence.openWriter()).setLocalFontTagsBatch(items, now, options);
     let batchStateSignal: RustLocalTagsMutationStateSignal | undefined;
     if (!failed.length) {
       logKnownLocalTagLifecycle({ appendStartupLog: deps.appendStartupLog, kind: 'setBatch', source: 'node-fallback', changedIds: updatedIds, previousKnownTags, knownTags, retainedEmptyTags });

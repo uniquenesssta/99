@@ -151,6 +151,21 @@ async function checkMaintenanceFailureReports() {
   assert.equal(backup.files.size, 0)
   assert(!backup.trace.some(e => e[0] === 'schedule'), 'failed submitted backup executed again')
 }
+async function checkRecoveryCapability() {
+  for (const guard of [{ expectedTagNames: [] }, { recoveryFiles: [{ path: 'C:/a.ttf' }] }, { recoveryMissingSources: [{ path: 'C:/old.ttf' }] }, { recoveryMoves: [{ from: 'old', to: 'new' }] }]) {
+    const env=h.createHarness(), input=h.argsFor('runRustLocalTagsSet',env)[0]
+    if (guard.expectedTagNames) input.rows[0].expectedTagNames=guard.expectedTagNames
+    else Object.assign(input,guard)
+    await assert.rejects(env.runtime.runRustLocalTagsSet(input),/重新编译 worker/)
+    assert.equal(env.files.size,0,'old worker denial must precede recovery submission')
+    assert(!env.trace.some(entry=>JSON.stringify(entry).includes('--local-tags-set')))
+  }
+  const capabilities=[...new Set(h.commands.flatMap(command=>command.capabilities)),'local-tags-recovery-guard']
+  const env=h.createHarness({capabilities}), input=h.argsFor('runRustLocalTagsSet',env)[0]
+  input.rows[0].expectedTagNames=[]
+  assert.deepEqual(JSON.parse(JSON.stringify((await env.runtime.runRustLocalTagsSet(input)).updatedIds)),['f'])
+  assert.equal(env.files.size,0)
+}
 async function main() {
   checkFunctions()
   checkFacadeClosure()
@@ -158,6 +173,7 @@ async function main() {
   checkClosureMutations()
   checkComposition()
   await checkMaintenanceFailureReports()
+  await checkRecoveryCapability()
   for (const group of fixture.groups) {
     const changed = new Map(sources)
     const name = Object.keys(group.functions)[0]

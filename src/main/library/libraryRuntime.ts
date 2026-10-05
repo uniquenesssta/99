@@ -29,7 +29,7 @@ export function createLibraryRuntime(options: LibraryRuntimeOptions) {
   const { openLibraryDb, getOpenLibraryDb, closeLibraryDb } = dbConnectionRuntime;
 
   const localFontTagsRuntime = createLocalFontTagsRuntime({
-    rememberFontMetadata: async items => openTagFontSnapshots(await openLibraryDb()).remember(items),
+    rememberFontMetadata: async items => openTagFontSnapshots(await openLibraryDb()).capture(items),
     openLibraryDb,
     librarySqlitePath: options.librarySqlitePath,
     prepareIdentity: options.prepareLocalFontIdentity ? async () => { await openLibraryDb(); } : undefined,

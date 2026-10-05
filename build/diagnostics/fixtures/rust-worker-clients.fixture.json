@@ -118,7 +118,7 @@
         "runRustSharedMetadataRemoveTag": "068ff943292e7c6cf84a67dc1ac0fd27d23343355588d094fcf5af73b1a697fd",
         "runRustSharedMetadataApply": "8834023697e9fcfe14c9b36ec268cf070d5a97a6dba9aa80d32d4b9ec106ea5e",
         "runRustLocalTagsDeleteTag": "0780736a5c5123f46279ae48b552b142b3fc2541633736fb4cdc2c5890f02a32",
-        "runRustLocalTagsSet": "ff1ea87e0dcfff825fff5451bd3f99589140bb43115dce2efb9dff582553359a",
+        "runRustLocalTagsSet": "5df6bc248c57940955db40517b199e01e94427a88a866af6a364c42b884dd891",
         "runRustLocalTagsRead": "214cf428c22e724ef39948a29bf60986ede9266fb254c68f3f2403a0ab4920c3",
         "runRustInstallStatusCompare": "cee3bf4746f9421652f9ade35e098458196e696202212844d9f3218354b4c679",
         "runRustInstallStatusSave": "98063e33a9eba8647478b476aa604963fbd8f86a57fc861d527cd339cc2383d0",
@@ -173,5 +173,6 @@
       }
     }
   ],
-  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
+  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes.",
+  "f09": "F09 intentionally gates recovery-only payloads on local-tags-recovery-guard before submission. Ordinary local tag commands, transport ownership and unrelated domain methods remain frozen; old worker denial and supported-worker submission have behavioral coverage."
 }

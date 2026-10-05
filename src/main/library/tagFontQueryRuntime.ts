@@ -119,7 +119,7 @@ export function createTagFontQueryRuntime(deps: {
       if (!page.items.length || previousSize === seenLive.size) throw new Error('字体索引在读取期间发生变化，请重试。')
       at += page.items.length
     }
-    snapshots.remember([...live.values()])
+    await snapshots.capture([...live.values()])
     // Existing legacy ID-only associations are already resolved by the live query.
     const items = new Map(live)
     async function resolveBinding([pathKey, binding]: [string, TagFontBinding]): Promise<void> {
@@ -143,10 +143,10 @@ export function createTagFontQueryRuntime(deps: {
       if (!request.tagBindingsOnly && !live.has(pathKey) && availability === 'available') {
         try {
           font = await fontItemFromPath(binding.path)
-          snapshots.remember([font])
+          await snapshots.capture([font])
         } catch { availability = 'unavailable' }
       }
-      items.set(pathKey, { ...font, fileAvailability: availability, fileRelinkRequired, tagBindingReadOnly,
+      items.set(pathKey, { ...font, recoveryContentHash: snapshots.read(binding.path)?.recoveryContentHash, fileAvailability: availability, fileRelinkRequired, tagBindingReadOnly,
         ...(scope === 'local' ? { localTagNames: binding.tags } : { tagNames: binding.tags, sourceId: binding.id }),
         ...(availability !== 'available' ? { previewDisabled: true, previewError: tagBindingReadOnly ? '共享标签暂不可读取' : fileRelinkRequired ? '文件已变化，请右键重新链接确认' : availability === 'missing' ? '文件丢失' : '文件暂不可访问' } : font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable' ? { previewDisabled: false, previewError: undefined } : {}),
       })
@@ -160,7 +160,7 @@ export function createTagFontQueryRuntime(deps: {
     }
     const scoped = [...items.values()].filter(font => inScope(font.path))
     const sorted = (request.tagBindingsOnly ? scoped : await deps.hydrate(scoped)).filter(font => deps.matches(font, request)).sort((a, b) => deps.compare(a, b, request))
-    return { queryKey: JSON.stringify(request), ...first, engine: 'mixed', items: sorted.slice(offset, offset + limit), total: sorted.length, offset, limit,
+    return { queryKey: JSON.stringify(request), ...first, tagRevision: { source: 'tag-bindings', localTagsSignature: JSON.stringify({ bindings: [...bindings].map(([path, binding]) => [path, binding.id, [...binding.tags].sort()]).sort(), legacy: [...legacyTags].map(([id, names]) => [id, [...names].sort()]).sort() }), sharedMetadataSignatures: { unavailableRoots: JSON.stringify(unavailableRoots) } }, engine: 'mixed', items: sorted.slice(offset, offset + limit), total: sorted.length, offset, limit,
       truncated: offset + limit < sorted.length, elapsedMs: Date.now() - start }
   }
   let generation = 0

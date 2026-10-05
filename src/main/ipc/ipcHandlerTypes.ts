@@ -129,6 +129,7 @@ export interface IpcHandlerRuntime {
   ) => unknown | Promise<unknown>;
   setLocalFontTagsBatch: (
     items: FontTagBatchItem[],
+    options?: import("../../shared/types").FontTagRecoveryCommitOptions,
   ) => unknown | Promise<unknown>;
   deleteLocalFontTag: (tagName: string) => unknown | Promise<unknown>;
   setSharedFontTagsInIndex: (

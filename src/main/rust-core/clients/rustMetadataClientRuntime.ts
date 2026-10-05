@@ -293,6 +293,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
   async function runRustLocalTagsSet(input: RustLocalTagsSetInput): Promise<RustLocalTagsSetResult | null> {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'local-tags-set')) return null
+    if ((input.recoveryFiles?.length || input.recoveryMissingSources?.length || input.recoveryMoves?.length || input.rows.some(row => row.expectedTagNames)) && !hasCapability(status, 'local-tags-recovery-guard')) throw new Error('Rust worker 不支持安全关联恢复，请重新编译 worker。')
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-local-tags-set`)

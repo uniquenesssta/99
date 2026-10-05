@@ -1,6 +1,7 @@
+import { validateRecoveryTagWrites, preserveLocalRecoveryState, validateRecoveryFiles, validateRecoveryMissingSources } from './localFontRecoveryTransactionRuntime'
 import { ensureLocalFontIdentitySchema } from './localFontLegacyIdentityRuntime'
 import { logOperation } from '../../logging/operationTraceContext'
-import type { FontItem, FontTagBatchItem } from "../../../shared/types";
+import type { FontItem, FontTagBatchItem, FontTagRecoveryCommitOptions } from "../../../shared/types";
 import type { SqliteDb } from "./libraryRuntimeTypes";
 import { localTagFontIdAliases, localTagFontPath, localTagFontStorageId } from "./localFontTagIdentityRuntime";
 
@@ -204,7 +205,7 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
       return { previousKnownTags, knownTags, retainedEmptyTags };
     }
 
-    function setLocalFontTagsBatch(items: FontTagBatchItem[], now: string) {
+    function setLocalFontTagsBatch(items: FontTagBatchItem[], now: string, options?: FontTagRecoveryCommitOptions) {
       const previousKnownTags = readPersistedLocalTags(db);
       const previousBoundTags = readBoundLocalTags(db);
       const requestedKnownTags = cleanKnownTagNames(items.flatMap((entry) => entry.tagNames || []));
@@ -215,6 +216,9 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
       let retainedEmptyTags: string[] = [];
       try {
         const tx = db.transaction(() => {
+          validateRecoveryMissingSources(options?.recoveryMissingSources || []);
+          validateRecoveryFiles(options?.recoveryFiles || []);
+          validateRecoveryTagWrites(db, items);
           for (const entry of items) {
             const tagNames = cleanLocalTagNames(entry.tagNames || []);
             deleteLocalTagForFontIdentity(db, entry.item);
@@ -222,6 +226,7 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
             updatedIds.push(entry.item.id);
           }
 
+          preserveLocalRecoveryState(db, options?.recoveryMoves || []);
           const nextBoundTags = readBoundLocalTags(db);
           knownTags = mergeKnownLocalTags(previousKnownTags, nextBoundTags, requestedKnownTags);
           retainedEmptyTags = retainedEmptyLocalTags(previousBoundTags, nextBoundTags, knownTags);
@@ -233,6 +238,7 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
       logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'local-tag-transaction' });
       } catch (error) {
         logOperation({ stage: 'backend-result', outcome: 'unknown', backend: 'node', reason: 'node-transaction-failed' });
+        if (!items.length) throw error;
         const message = error instanceof Error ? error.message : String(error);
         for (const entry of items) {
           failed.push({

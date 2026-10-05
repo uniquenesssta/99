@@ -15,3 +15,9 @@ pub fn run(args: &[String]) -> i32 {
     #[cfg(not(windows))]
     { let _ = args; 2 }
 }
+
+// Read-only pins; no registry, resources, attributes or deletion APIs are called.
+pub fn pin_recovery_file(path: &str, physical: &str, sha256: &str) -> std::io::Result<std::fs::File> {
+    #[cfg(windows)] { windows::pin_recovery_file(path, physical, sha256) }
+    #[cfg(not(windows))] { let _ = (path, physical, sha256); Err(std::io::Error::other("Windows recovery pins required")) }
+}

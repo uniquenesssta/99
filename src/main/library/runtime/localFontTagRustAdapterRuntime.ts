@@ -42,15 +42,18 @@ export function createLocalFontTagRustAdapterRuntime(deps: RustAdapterDeps) {
     }
   }
 
-  async function trySetLocalTagsWithRust(rows: RustLocalTagsSetInput['rows'], updatedAt: string): Promise<RustLocalTagsSetResult | null> {
+  async function trySetLocalTagsWithRust(rows: RustLocalTagsSetInput['rows'], updatedAt: string, options?: import("../../../shared/types").FontTagRecoveryCommitOptions): Promise<RustLocalTagsSetResult | null> {
     if (!deps.runRustLocalTagsSet) return null;
     const usableRows = rows.filter((row) => row.aliases.length > 0);
-    if (!usableRows.length) return null;
+    if (!usableRows.length && !options?.recoveryMoves.length) return null;
     try {
       return await deps.runRustLocalTagsSet({
         dbPath: deps.librarySqlitePath(),
         updatedAt,
         rows: usableRows,
+        ...(options?.recoveryMoves.length ? { recoveryMoves: options.recoveryMoves } : {}),
+        ...(options?.recoveryFiles?.length ? { recoveryFiles: options.recoveryFiles } : {}),
+        ...(options?.recoveryMissingSources?.length ? { recoveryMissingSources: options.recoveryMissingSources } : {}),
       });
     } catch (error) {
       deps.appendStartupLog?.(`rust local tags mutation blocked fallback: ${error instanceof Error ? error.message : String(error)}`);

@@ -138,9 +138,27 @@ async function concurrentOrder() {
     assert.deepEqual(h.events.filter(x => x === 'commit' || x === 'signal'), ['commit','signal','commit','signal'], 'no await between commit and signal')
   } finally { h.close() }
 }
+async function recoveryGuards() {
+  for (const conflict of [false,true]) {
+    const h=harness()
+    try {
+      const old=item('a'), next={...item('new'),path:'/fonts/new.ttf'}
+      const sourceExpected=conflict?['obsolete']:['old']
+      const receipt=await h.runtime.setLocalFontTagsBatch([
+        {item:next,tagNames:['old'],expectedTagNames:[]},
+        {item:old,tagNames:[],expectedTagNames:sourceExpected},
+      ])
+      assert.equal(receipt.ok,!conflict)
+      const after=h.snapshot()
+      assert.equal(after.bindings.some(row=>row.font_path==='\\fonts\\new.ttf'),!conflict)
+      assert.equal(after.bindings.some(row=>row.font_path==='\\fonts\\a.ttf'),conflict)
+      if(conflict) assert.deepEqual(after,h.before,'CAS mismatch must roll back tags, decisions, catalog and legacy state')
+    } finally { h.close() }
+  }
+}
 async function main() {
   checkStructure()
-  await postCommit(); await rollbackAndLifecycle(); await concurrentOrder()
+  await postCommit(); await rollbackAndLifecycle(); await concurrentOrder(); await recoveryGuards()
   for (const mutate of [
     s => s.replaceAll('db.transaction(', '((work) => work)('),
     s => s.replaceAll('saveKnownLocalTags(db, knownTags);', ''),

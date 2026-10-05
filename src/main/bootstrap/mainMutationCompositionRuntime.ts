@@ -212,12 +212,13 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
 
   async function setLocalFontTagsBatch(
     items: FontTagBatchItem[],
+    options?: import("../../shared/types").FontTagRecoveryCommitOptions,
   ): Promise<FontTagUpdateResult> {
     return tagMutationWriteProtocolRuntime.run({
       scope: "local",
       mutationKind: "local-tags-batch-set",
       inputIds: (items || []).map((entry) => entry?.item?.id),
-      action: () => setLocalFontTagsBatchBase(items || []),
+      action: () => setLocalFontTagsBatchBase(items || [], options),
       afterCommit: () => invalidateSharedFontRuntimeCaches(),
     });
   }
@@ -466,7 +467,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
       mutationKind: "shared-tags-set",
       inputIds: (items || []).map((item) => item?.id),
       action: async () => {
-        openTagFontSnapshots(await openLibraryDb()).remember(items);
+        await openTagFontSnapshots(await openLibraryDb()).capture(items);
         return setSharedFontTagsInIndexBase(items, watchedFolders, tagNames);
       },
     });
@@ -481,7 +482,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
       mutationKind: "shared-tags-batch-set",
       inputIds: (items || []).map((entry) => entry?.item?.id),
       action: async () => {
-        openTagFontSnapshots(await openLibraryDb()).remember(items.map(entry => entry.item));
+        await openTagFontSnapshots(await openLibraryDb()).capture(items.map(entry => entry.item));
         return setSharedFontTagsBatchInIndexBase(items, watchedFolders);
       },
     });

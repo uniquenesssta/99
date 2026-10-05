@@ -61,7 +61,7 @@ function createHarness(settings = {}, overrides = new Map()) {
       handshakeCount++
       if (settings.handshake === 'invalid-json') return { stdout: '{bad', stderr: '' }
       if (settings.handshake === 'throw') throw failure('Error', 'handshake failed')
-      return { stdout: JSON.stringify({ ok: settings.handshake !== 'false', version: 'fixture', protocolVersion: settings.stale && handshakeCount === 1 ? 0 : 1, capabilities: settings.noCapabilities ? [] : capabilities }), stderr: '' }
+      return { stdout: JSON.stringify({ ok: settings.handshake !== 'false', version: 'fixture', protocolVersion: settings.stale && handshakeCount === 1 ? 0 : 1, capabilities: settings.noCapabilities ? [] : (settings.capabilities || capabilities) }), stderr: '' }
     }
     if (args[0] === '--core-scheduler-profile') {
       if (settings.profileFailure) throw failure('Error', 'profile failed')

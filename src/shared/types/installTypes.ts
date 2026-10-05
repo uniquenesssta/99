@@ -78,7 +78,13 @@ export interface FontActivationBatchResult {
 export interface FontTagBatchItem {
   item: FontItem
   tagNames: string[]
+  expectedTagNames?: string[]
 }
+
+export type FontRecoveryStateMove = { from: string; to: string }
+export type FontTagRecoveryFile = { path: string; physicalPath: string; sha256: string }
+export type FontTagRecoveryMissing = { path: string; rootPath: string }
+export type FontTagRecoveryCommitOptions = { recoveryMoves: FontRecoveryStateMove[]; recoveryFiles?: FontTagRecoveryFile[]; recoveryMissingSources?: FontTagRecoveryMissing[] }
 
 export interface FontTagMutationProtocolResult {
   ok?: boolean

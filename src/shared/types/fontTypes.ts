@@ -17,6 +17,8 @@ export interface FontItem {
   fileAvailability?: 'available' | 'missing' | 'unavailable'
   fileRelinkRequired?: boolean
   tagBindingReadOnly?: boolean
+  recoveryContentHash?: string
+  recoveryFileStamp?: string
   fileName: string
   family: string
   fullName: string
