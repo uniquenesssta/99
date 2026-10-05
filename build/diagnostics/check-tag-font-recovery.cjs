@@ -388,7 +388,8 @@ async function f08QueryCases() {
     assert.equal((await stale.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)).total, 2)
     stale.db.prepare('DELETE FROM local_font_tags WHERE font_path = ?').run(key(liveFont.path)); stale.query.invalidate()
     const page = await stale.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)
-    assert.deepEqual(page.items.map(font => font.id), [legacy.id], 'stale live pages and history must not resurrect a deleted path binding; ID-only legacy membership remains')
+    // The query returns a VM array; compare its data in this realm, as above.
+    assert.deepEqual(plain(page.items.map(font => font.id)), [legacy.id], 'stale live pages and history must not resurrect a deleted path binding; ID-only legacy membership remains')
   } finally { stale.close() }
   const mixed = harness(), blocked = '\\\\server\\blocked'
   try {
@@ -514,7 +515,13 @@ async function f08RefreshCases() {
 async function main() {
   const display = load('src/renderer/src/fontDisplay.ts', { './fontUserIntentRuntime': { getUninstallIssue: () => undefined } })
   assert.equal(display.installLabel({ ...make('A'), systemInstalled: true, fileAvailability: 'missing' }), '文件丢失')
-  await queryCases(); await recoveryCases(); await targetedRecoveryCases(); await batchedAvailabilityCase(); await bulkRecoveryCases(); await sharedRecoveryCases(); await detachedAuthorizationCase(); await backgroundWaitCase(); await f08QueryCases(); await f08RecoveryCases(); await f08RefreshCases()
+  const failures = []
+  // Each group owns and closes its fixtures; collect errors without hiding later groups.
+  for (const run of [queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
+    sharedRecoveryCases, detachedAuthorizationCase, backgroundWaitCase, f08QueryCases, f08RecoveryCases, f08RefreshCases]) {
+    try { await run() } catch (error) { failures.push(`${run.name}: ${error?.stack || String(error)}`) }
+  }
+  assert.equal(failures.length, 0, failures.join('\n\n'))
   console.log('[diagnostics:tag-font-recovery] retained local/shared rows and counts, deleted binding cannot resurrect from stale live/history, read-only shared metadata isolation/legacy alias cache, mapped longest root ownership, changed detached credential/native re-confirmation, batched pages, one clicked picker, tag union, actual complete/partial/cancelled/failed scan barriers')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })
