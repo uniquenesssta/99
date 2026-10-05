@@ -185,7 +185,7 @@ export function AppOverlays({
             <>
               <div className="context-menu-title">已选择 {contextTargetCount} 个字体</div>
               {contextSelectedFonts.length !== contextTargetCount && <div role="status">部分字体待重新读取，点击操作将检查完整范围。</div>}
-              {contextMenu.font.fileAvailability === 'missing' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} onClick={runContextRelinkFont}>重新链接文件</button>}
+              {(contextMenu.font.fileAvailability === 'missing' || contextMenu.font.fileRelinkRequired) && !contextMenu.font.tagBindingReadOnly && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} onClick={runContextRelinkFont}>重新链接文件</button>}
               <FontCommandButtons fonts={contextSelectedFonts} count={contextTargetCount} onCommand={action => void runFontContextAction(action)} />
             </>
           ) : (

@@ -33,6 +33,7 @@ export interface CacheStats {
 
 export interface WatchedFolderRefreshResult {
   ok: boolean
+  cancelled?: boolean
   folder: string
   rootPath: string
   mode: 'background' | 'cache-read' | 'incremental' | 'repair-rebuild'

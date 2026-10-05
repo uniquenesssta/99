@@ -49,7 +49,7 @@ export function createFontDialogContextActions(options: FontDialogRuntimeOptions
     },
     runContextRelinkFont(): void {
       const menu = options.contextMenu
-      if (menu?.kind !== 'font' || menu.font.fileAvailability !== 'missing') return
+      if (menu?.kind !== 'font' || (menu.font.fileAvailability !== 'missing' && !menu.font.fileRelinkRequired) || menu.font.tagBindingReadOnly) return
       // The clicked card is the anchor, even when other cards are selected.
       const scope = options.sidebarPage === 'sharedTags' ? 'shared'
         : menu.font.localTagNames?.length ? 'local' : menu.font.tagNames?.length ? 'shared' : 'local'

@@ -306,13 +306,14 @@ async function metricsResponseOrderCheck(transform = x => x) {
 async function manualBackgroundHealthy(transform = x => x) {
   const logs = [], r = load(backgroundFile, {}, {}, transform).createManualFolderRefreshBackgroundRuntime({ appendStartupLog: s => logs.push(s) })
   const gate = deferred(); let runs = 0
-  const first = r.scheduleRefresh('root', 'job1', async () => { runs++; await gate.promise })
-  const second = r.scheduleRefresh('root', 'job2', async () => { runs++ })
+  const receipt = r.backgroundResult({ folder: 'C:\\Fonts', rootPath: 'C:\\Fonts', jobId: 'job1', elapsedMs: 0, message: 'pending' })
+  const first = r.scheduleRefresh('root', 'job1', async () => { runs++; await gate.promise; return receipt })
+  const second = r.scheduleRefresh('root', 'job2', async () => { runs++; return receipt })
   await drain(); assert.equal(runs, 1); assert.equal(first.scheduled, true); assert.equal(second.scheduled, false)
   assert.equal(second.jobId, 'job1')
   assert.equal(r.backgroundResult({ folder: '/fonts', rootPath: '/fonts', jobId: 'job1', elapsedMs: 0, message: 'pending' }).mode, 'background')
   gate.reject(Error('injected')); await drain(); assert.equal(r.activeRefresh('root'), null); assert.equal(logs.length, 1)
-  r.scheduleRefresh('root', 'job3', async () => { runs++ }); await drain(); assert.equal(runs, 2)
+  r.scheduleRefresh('root', 'job3', async () => { runs++; return receipt }); await drain(); assert.equal(runs, 2)
 }
 function snapshot(file, source = read(file)) {
   source = source.replace(/\r\n/g, '\n')

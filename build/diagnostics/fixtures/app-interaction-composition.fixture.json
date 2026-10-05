@@ -151,11 +151,19 @@
     "src/renderer/src/fontContextActionRuntime.ts": "f1ab7466c61191a73e1014f59b84522c6ee02013127d791023d2eafdf8165bd3",
     "src/renderer/src/fontContextMenuRuntime.ts": "fd620a07186f0a74db86bba1e4e67164241bb9ec3550ab6fcf951683fa6f7e44",
     "src/renderer/src/fontDialogRuntime.ts": "81269d17b71d110d48ee12117d18487c852e69177b498592e6b08e1e63c69fc5",
-    "src/renderer/src/fontDialogContextActionsRuntime.ts": "795df470c4311c32563efe55c5b91305701f1ed647b2bf2cef3906d8da3a4d20",
+    "src/renderer/src/fontDialogContextActionsRuntime.ts": "f4295782ec27cf6ce49eeb967f115600a47c73a8329da3efe643a820e1931c25",
     "src/renderer/src/fontDialogTagActionsRuntime.ts": "9b5bc4b4b683c0f3b758f21fc5e1954136c45f8c5bf6065a9ba97576c1a9767c",
     "src/renderer/src/fontDetailPanelRuntime.ts": "ef5ba91f22fa915de270e90513a6de0cdc5848aa7f63a75e682222c24b12b9b0",
     "src/renderer/src/fontTagInputRuntime.ts": "296b77a1412004e68c390c96e732479f90faa57f9a7aa5fa9984efa6ca4a6c07",
     "src/renderer/src/runtime/app/useSelectionController.ts": "f60ccdd2504e3e40f464af161eea92b37f5cb9e2bc98c24fadc948600efe86df",
     "src/renderer/src/runtime/app/fontSelectionHydrationRuntime.ts": "87633750b764db93d484bccce6b0f5d87dfc686b04049b5ab7b7e3960cdd363a"
-  }
+  },
+  "migrations": [
+    {
+      "task": "S12-F08",
+      "parent": "3e94afb1e7bf24caae435ae53c1c851159f6ddaa",
+      "file": "src/renderer/src/fontDialogContextActionsRuntime.ts",
+      "reason": "card relink allows changed main-process-authorized file; offline/read-only shared metadata blocked; no hook/composition input changes; both preload/menu gates in check-font-command-entry.cjs"
+    }
+  ]
 }

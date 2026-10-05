@@ -248,7 +248,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
                 className="font-sample compact preview-layout-text preview-layout-list preview-hard-fit-text"
                 style={listSampleStyle}
               >
-                {fileUnavailable ? <span className="font-sample-line">{font.fileAvailability === 'missing' ? '请右键重新链接文件' : '文件暂不可访问'}</span> : font.previewDisabled && !hasListTextPreviewFamily ? (
+                {fileUnavailable ? <span className="font-sample-line">{font.fileRelinkRequired || font.fileAvailability === 'missing' ? '请右键重新链接文件' : installLabel(font)}</span> : font.previewDisabled && !hasListTextPreviewFamily ? (
                   <>
                     <span className="font-sample-line">原生预览生成中</span>
                     <span className="font-sample-line font-sample-latin">AaBb 123</span>
@@ -318,7 +318,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
         {scriptLabels(font).slice(0, 4).map((label) => <span key={label} className="script-pill">{label}</span>)}
       </div>
       {fileUnavailable ? <div className="font-sample" style={{ height: displayLayout.height }}>
-        {font.fileAvailability === 'missing' ? '请右键重新链接文件' : '文件暂不可访问'}
+        {font.fileRelinkRequired || font.fileAvailability === 'missing' ? '请右键重新链接文件' : installLabel(font)}
       </div> : <GridFontPreview layout={displayLayout} image={useNativePreviewImage ? displayPreviewImage : undefined}
         enabled={previewIntersecting}
         fontFamily={buildListPreviewCssFamily(font, displayPreviewFamily) || undefined}

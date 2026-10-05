@@ -5,7 +5,7 @@ import type { FontItem, FontQueryPageResult, FontQueryRequest, FontTagUpdateResu
 import type { TagFontRecoveryRequest, TagFontRecoveryResult } from '../../shared/tagFontRecovery'
 import type { IpcHandlerRuntime } from '../ipc/ipcHandlerTypes'
 import { normalizePathForCacheCompare as key } from '../path/cachePath'
-import { pathInsideFolder } from '../folders/physicalFolders'
+import { createTagRecoveryPaths } from './tagRecoveryPathRuntime'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { asFormat, fontItemFromPath, hasValidFontSignature } from '../fonts/fontRuntime'
 import { fontFileAvailability } from './tagFontQueryRuntime'
@@ -67,15 +67,17 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
     let linked = 0, canceled = false
     try {
       const library = await runtime.loadLibraryShell() as LibraryState
-      const roots = library.folders || []
+      const paths = await createTagRecoveryPaths(library.folders || [])
+      const roots = paths.roots
       const request: FontQueryRequest = { tagBindingsOnly: true, sidebarPage: input.scope === 'local' ? 'tags' : 'sharedTags',
         selectedTagName: input.mode === 'reindex' ? input.tagName : undefined, sortMode: 'nameAsc',
         selectedWatchedFolders: input.mode === 'relink' ? [dirname(input.fontPath)] : undefined }
       const initial = await readAll(request)
       let missing = initial.filter(font => font.fileAvailability === 'missing')
-      const anchor = input.mode === 'relink' ? missing.find(font => key(font.path) === key(input.fontPath)) : undefined
+      const anchor = input.mode === 'relink' ? initial.find(font => key(font.path) === key(input.fontPath) &&
+        (font.fileAvailability === 'missing' || font.fileRelinkRequired) && !font.tagBindingReadOnly) : undefined
       if (input.mode === 'relink' && !anchor) throw new Error('此字体已恢复、暂不可访问或标签关联已变化，请刷新后重试。')
-      if (anchor) missing = missing.filter(font => key(dirname(font.path)) === key(dirname(anchor.path)))
+      if (anchor) missing = [anchor, ...missing.filter(font => key(font.path) !== key(anchor.path) && key(dirname(font.path)) === key(dirname(anchor.path)))]
       const targetPaths = new Set((anchor ? missing : initial.filter(font => font.fileAvailability !== 'available')).map(font => key(font.path)))
       const report = (message: string) => runtime.appendLog?.(`tag font recovery: ${message}`)
       report(`mode=${input.mode}, scope=${input.scope}, missing=${missing.length}${anchor ? `, anchor=${anchor.path}` : ''}`)
@@ -89,11 +91,13 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
         const prepared: Array<{ old: FontItem; next: FontItem; combined: string[] }> = []
         for (const [old, next] of pairs) {
           try {
-            if (key(old.path) === key(next.path)) throw new Error('请选择新的字体文件。')
-            if (await fontFileAvailability(old.path, roots) !== 'missing') throw new Error('原路径已恢复或暂不可访问，未修改关联。')
-            if (await fontFileAvailability(next.path, roots) !== 'available') throw new Error('所选字体文件不可访问。')
-            if (input.scope === 'shared' && !roots.some(root => pathInsideFolder(next.path, root))) throw new Error('共享标签的目标文件必须位于监听文件夹中。')
             const source = byPath.get(key(old.path))
+            if (source?.tagBindingReadOnly || byPath.get(key(next.path))?.tagBindingReadOnly) throw new Error('共享标签暂不可读取，未修改历史关联。')
+            const reconfirm = input.scope === 'local' && !!source?.fileRelinkRequired
+            if (key(old.path) === key(next.path) && !reconfirm) throw new Error('请选择新的字体文件。')
+            if (!reconfirm && await fontFileAvailability(old.path, roots) !== 'missing') throw new Error('原路径已恢复或暂不可访问，未修改关联。')
+            if (await fontFileAvailability(next.path, roots) !== 'available') throw new Error('所选字体文件不可访问。')
+            if (input.scope === 'shared' && !paths.contains(next.path)) throw new Error('共享标签的目标文件必须位于监听文件夹中。')
             if (!source || !tags(source).length || (input.mode === 'reindex' && !tags(source).includes(input.tagName))) throw new Error('原标签关联已变化，未执行过期的重新链接。')
             prepared.push({ old: source, next, combined: [...new Set([...tags(byPath.get(key(next.path)) || next), ...tags(source)])] })
           } catch (error) {
@@ -103,14 +107,16 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
         }
         const completed = (old: FontItem, next: FontItem) => {
           missing = missing.filter(font => key(font.path) !== key(old.path))
+          targetPaths.delete(key(old.path))
           linked++
           report(`linked: from=${old.path}, to=${next.path}`)
         }
         if (input.scope === 'local') {
           const writes: FontTagBatchItem[] = []
           for (const { old, next, combined } of prepared) {
-            if (!roots.some(root => pathInsideFolder(next.path, root))) await runtime.rememberRelinkedFontFile(next)
-            writes.push({ item: next, tagNames: combined }, { item: old, tagNames: [] })
+            if (!paths.contains(next.path)) await runtime.rememberRelinkedFontFile(next)
+            writes.push({ item: next, tagNames: combined })
+            if (key(old.path) !== key(next.path)) writes.push({ item: old, tagNames: [] })
           }
           assertApplicationOpen(ticket)
           if (writes.length) {
@@ -139,20 +145,24 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
       if (input.mode === 'reindex') {
         // Resolve ownership before touching any root. Unrelated NAS roots must not
         // delay a recovery completed within the missing font's own watched root.
-        const owner = (font: FontItem) => roots.filter(root => pathInsideFolder(font.path, root)).sort((a, b) => b.length - a.length)[0]
+        const owner = (font: FontItem) => paths.owner(font.path)
         const preferred = [...new Set(missing.map(owner).filter((root): root is string => !!root))]
         const ordered = [...preferred, ...roots.filter(root => !preferred.includes(root))]
+        report(`scan plan: preferred=${JSON.stringify(preferred)}, fallback=${JSON.stringify(ordered.slice(preferred.length))}`)
         for (const root of ordered) {
           if (!missing.length) break
           try {
             assertApplicationOpen(ticket)
-            report(`scan: root=${root}, remaining=${missing.length}`)
+            report(`scan: root=${root}, reason=${preferred.includes(root) ? 'longest-owner' : preferred.length ? 'unmatched-after-preferred' : 'no-confirmed-owner'}, remaining=${missing.length}`)
             await admit('folders:refreshWatched', [root, root])
-            await runtime.refreshWatchedFolder(root, root, true)
+            const result = await runtime.refreshWatchedFolder(root, root, true)
+            report(`scan result: root=${root}, mode=${result.mode}, errors=${result.errors}, canceled=${!!result.cancelled}, files=${result.totalFiles}`)
+            if (result.cancelled) { canceled = true; break }
+            if (!result.ok || result.errors) failures.push(`${root}：${result.message}`)
             const current = await readAll(request)
             missing = missing.filter(old => current.some(font => key(font.path) === key(old.path) && font.fileAvailability === 'missing'))
             const candidates = await readAll({ sidebarPage: 'filters', activeFilter: { kind: 'all' }, selectedWatchedFolders: [root] })
-            await linkPairs(uniqueRecoveryPairs(missing, candidates.filter(font => pathInsideFolder(font.path, root))))
+            await linkPairs(uniqueRecoveryPairs(missing, candidates.filter(font => paths.inside(font.path, root))))
           } catch (error) {
             failures.push(`${root}：${String(error)}`)
             report(`scan failed: root=${root}, error=${String(error)}`)
@@ -194,7 +204,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
       const remaining = canceled ? targetPaths.size : (await readAll(request)).filter(font => targetPaths.has(key(font.path)) && font.fileAvailability !== 'available').length
       report(`finished: linked=${linked}, remaining=${remaining}, canceled=${canceled}, failures=${failures.length}`)
       return { linked, remaining, canceled, failures,
-        message: `${canceled ? '已取消重新链接' : failures.length || remaining ? '字体关联恢复未全部完成' : '字体关联恢复完成'}：已链接 ${linked} 个，仍有 ${remaining} 个文件缺失或暂不可访问${failures.length ? `；${failures.length} 项未完成：${failures.join('；')}` : ''}。` }
+        message: `${canceled ? input.mode === 'reindex' ? '已取消重新索引' : '已取消重新链接' : failures.length || remaining ? '字体关联恢复未全部完成' : '字体关联恢复完成'}：已链接 ${linked} 个，仍有 ${remaining} 个文件缺失或暂不可访问${failures.length ? `；${failures.length} 项未完成：${failures.join('；')}` : ''}。` }
     } finally { running = false }
   }
   return { recover }

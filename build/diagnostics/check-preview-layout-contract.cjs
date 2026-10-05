@@ -41,6 +41,15 @@ function domCases() {
     assert(!html.includes('原生预览生成中'), 'missing file must not show a perpetual loading placeholder')
     assert(!html.includes('data:image/png;base64,stale'), 'missing file must not show stale preview pixels')
   }
+  for (const [flags, badge, hint] of [
+    [{ fileRelinkRequired: true }, '文件已变化，需重新链接', '请右键重新链接文件'],
+    [{ tagBindingReadOnly: true }, '共享标签暂不可读取', '共享标签暂不可读取'],
+  ]) for (const compact of [true, false]) {
+    const html = renderToStaticMarkup(React.createElement(Card, { font: { ...fonts[0], fileAvailability:'unavailable', previewDisabled:true, ...flags }, compact,
+      previewText:'字体预览', previewImage:'data:image/png;base64,stale', listPreviewFontSize:44, onVisible() {}, onSelect() {} }))
+    assert(html.includes(badge));assert(html.includes(hint))
+    assert(!html.includes('原生预览生成中'));assert(!html.includes('data:image/png;base64,stale'))
+  }
   const html = renderToStaticMarkup(React.createElement(Sidebar, { activeFilter: {kind:'all'}, categoryCounts:{}, allFonts:[], previewText:'a\nb\nthird', installStatusReady:true }))
   assert(html.includes('a\nb\nthird</textarea>'), 'full input was truncated')
   assert(html.includes('卡片仅展示前两行。')); assert(html.includes('aria-describedby="card-preview-sample-hint"'))

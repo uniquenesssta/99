@@ -54,7 +54,26 @@ async function run(){let cases=0
     create().runContextRelinkFont();await tick();assert.equal(requests.length,3,'cancel must release the guard')
     release({linked:26,remaining:0,canceled:false,failures:[],message:'done'});await tick()
     assert.equal(refreshes,1)
+    Object.assign(h.all[1], { fileAvailability: 'unavailable', fileRelinkRequired: true })
+    assert(labels(overlays({contextMenu:h.menu})).includes('重新链接文件'), 'changed authorized file needs a card picker')
+    h.handlers.set('fonts:recoverTagFiles',(_event,request)=>{requests.push(plain(request));return {linked:1,remaining:0,canceled:false,failures:[],message:'confirmed'}})
+    actions.runContextRelinkFont();await tick()
+    assert.equal(requests.length,4);assert.equal(requests[3].fontPath,h.all[1].path)
+    for (const flags of [{ fileRelinkRequired:false }, { fileRelinkRequired:true,tagBindingReadOnly:true }]) {
+      Object.assign(h.all[1],flags)
+      assert(!labels(overlays({contextMenu:h.menu})).includes('重新链接文件'), 'offline/read-only metadata must not offer an unsafe relink')
+      actions.runContextRelinkFont();await tick();assert.equal(requests.length,4)
+    }
     cases++
+  }
+  for (const [flags,label] of [
+    [{fileAvailability:'missing'},'文件丢失'],
+    [{fileAvailability:'unavailable'},'文件暂不可访问'],
+    [{fileAvailability:'unavailable',fileRelinkRequired:true},'文件已变化，需重新链接'],
+    [{fileAvailability:'unavailable',tagBindingReadOnly:true},'共享标签暂不可读取'],
+  ]) {
+    const s=setup();Object.assign(s.all[0],flags)
+    assert(treeNodes(s.detail()).some(node=>node.props?.children===label),'detail must use the same availability badge: '+label);cases++
   }
   const scan=directory=>fs.readdirSync(directory,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?scan(path.join(directory,entry.name)):/\.tsx?$/.test(entry.name)?[path.join(directory,entry.name)]:[])
   for(const file of scan(path.join(root,renderer)))assert(!/\bwindow\.(?:confirm|alert|prompt)\s*\(/.test(fs.readFileSync(file,'utf8')),'native blocking dialog returned: '+file)

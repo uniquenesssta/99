@@ -8,6 +8,7 @@ const plain = value => JSON.parse(JSON.stringify(value))
 const key = value => String(value).replaceAll('/', '\\').toLowerCase()
 const inside = (file, root) => key(file) === key(root) || key(file).startsWith(key(root) + '\\')
 const root = 'C:\\Fonts'
+const refreshReceipt = (folder, extra = {}) => ({ ok: true, folder, rootPath: folder, mode: 'cache-read', cacheRepairs: [], upserts: 0, deletes: 0, errors: 0, totalFiles: 0, parsed: 0, fromCache: 0, skippedBad: 0, elapsedMs: 0, message: 'done', ...extra })
 const make = (name, folder = 'old') => ({ id: `${folder}-${name}`, path: `${root}\\${folder}\\${name}.ttf`, fileName: `${name}.ttf`, family: name, fullName: name,
   postscriptName: name, style: 'Regular', format: 'ttf', fileSize: 100, modifiedAt: 1, addedAt: '', favorite: false,
   collectionIds: [], tagNames: [], localTagNames: [], systemInstalled: false, systemInstallMatches: [], active: false })
@@ -19,7 +20,7 @@ function harness() {
     db.exec('BEGIN'); try { const value = fn(); db.exec('COMMIT'); return value } catch (e) { db.exec('ROLLBACK'); throw e }
   } }
   const files = new Map(), parsed = new Map(), roots = [root], sharedRows = []
-  const reads = [], queryRequests = []
+  const reads = [], queryRequests = [], mappings = new Map()
   const counts = { live: 0, hydrate: 0, parse: 0 }
   const filesystem = {
     async stat(file) {
@@ -40,6 +41,8 @@ function harness() {
   }
   const mocks = {
     'node:path': path,
+    '../path/pathCanonicalizer': { mappedDriveTableAsync: async () => mappings },
+    '../path/pathBoundaryPolicy': load('src/main/path/pathBoundaryPolicy.ts'),
     '../path/cachePath': { normalizePathForCacheCompare: key },
     '../folders/physicalFolders': { pathInsideFolder: inside },
     '../path/sharedFileSystemRuntime': { sharedFileSystem: filesystem },
@@ -53,6 +56,9 @@ function harness() {
     '../ipc/sharedActionAdmissionRuntime': { createSharedActionAdmission: () => async () => {} },
     '../app/shutdownCoordinatorRuntime': { applicationWorkEpoch: () => 0, assertApplicationOpen() {} },
   }
+  const pathsModule = load('src/main/library/tagRecoveryPathRuntime.ts', mocks)
+  mocks['./tagRecoveryPathRuntime'] = pathsModule
+  mocks['./tagFontBindingRuntime'] = load('src/main/library/tagFontBindingRuntime.ts', mocks)
   const snapshots = load('src/main/library/tagFontSnapshotRuntime.ts', mocks)
   mocks['./tagFontSnapshotRuntime'] = snapshots
   const queryModule = load('src/main/library/tagFontQueryRuntime.ts', mocks)
@@ -62,20 +68,21 @@ function harness() {
   const add = (font, tags) => { for (const tag of tags) db.prepare('INSERT INTO local_font_tags VALUES (?, ?, ?)').run(font.id, key(font.path), tag) }
   const put = font => { files.set(key(font.path), true); parsed.set(key(font.path), font) }
   let live = []
-  const query = queryModule.createTagFontQueryRuntime({ canReadDetached: async () => true, openLibraryDb: async () => adapter, roots: async () => roots,
+  const queryDeps = { canReadDetached: async () => true, openLibraryDb: async () => adapter, roots: async () => roots,
     readShared: async () => ({ preflight: { snapshot: { rows: sharedRows } } }),
     queryLive: async (_request, limit, offset) => { counts.live++; return { items: live.slice(offset, offset + limit), total: live.length, offset, limit, queryKey: 'tags', engine: 'sql', truncated: false, elapsedMs: 0 } },
     hydrate: async items => { counts.hydrate++; return items },
     matches: (font, request) => (!request.keyword || font.fileName.includes(request.keyword)) && (!request.selectedTagName || (request.sidebarPage === 'sharedTags' ? font.tagNames : font.localTagNames || []).includes(request.selectedTagName)),
     compare: (a, b) => a.fileName.localeCompare(b.fileName),
-  })
+  }
+  const query = queryModule.createTagFontQueryRuntime(queryDeps)
   const events = []
   const runtime = {
     loadLibraryShell: async () => ({ folders: roots }),
     queryFontPageInLibrary: async request => { queryRequests.push(request); return ['library', 'filters'].includes(request.sidebarPage)
       ? { items: [...parsed.values()].slice(request.offset, request.offset + request.limit), total: parsed.size }
       : query.query(request, request.limit || 500, request.offset || 0) },
-    refreshWatchedFolder: async (_folder, _root, wait) => { assert.equal(wait, true); events.push('scan-complete') },
+    refreshWatchedFolder: async (_folder, _root, wait) => { assert.equal(wait, true); events.push('scan-complete'); return refreshReceipt(_root) },
     setLocalFontTagsBatch: async entries => {
       events.push('write')
       adapter.transaction(() => { for (const { item, tagNames } of entries) { db.prepare('DELETE FROM local_font_tags WHERE font_path = ?').run(key(item.path)); add(item, tagNames) } })()
@@ -84,7 +91,7 @@ function harness() {
     },
   }
   return { db, adapter, files, roots, parsed, sharedRows, reads, queryRequests, counts, put, add, remember, query, queryModule, recoveryModule, runtime, events,
-    live: fonts => { live = fonts; query.invalidate() }, close: () => db.close() }
+    pathsModule, mappings, queryDeps, live: fonts => { live = fonts; query.invalidate() }, close: () => db.close() }
 }
 
 async function queryCases() {
@@ -152,6 +159,7 @@ async function targetedRecoveryCases() {
         assert.equal(wait, true); scanned.push(folder)
         if (scenario === 'own-root-failure' && folder === root) throw Error('root index sync failed')
         if (scenario === 'own-root' && folder === nas) throw Error('unrelated NAS must not run')
+        return refreshReceipt(folder)
       }
       const service = h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => { throw Error('reindex opened picker') })
       const result = await service.recover({ mode: 'reindex', scope: 'local', tagName: 'T' })
@@ -285,24 +293,39 @@ async function sharedRecoveryCases() {
 
 async function detachedAuthorizationCase() {
   const h = harness(), font = make('A')
-  let modifiedAt = font.modifiedAt
+  let modifiedAt = font.modifiedAt, real = font.path, denied = false
   try {
     const module = load('src/main/library/tagRelinkAuthorizationRuntime.ts', {
       '../path/cachePath': { normalizePathForCacheCompare: key },
-      '../path/sharedFileSystemRuntime': { sharedFileSystem: { realpath: async file => file, stat: async () => ({ isFile: () => true, size: font.fileSize, mtimeMs: modifiedAt }) } },
+      '../path/sharedFileSystemRuntime': { sharedFileSystem: { realpath: async () => real, stat: async () => {
+        if (denied) throw Object.assign(Error('offline'), { code: 'EACCES' })
+        return { isFile: () => true, size: font.fileSize, mtimeMs: modifiedAt }
+      } } },
     })
     const service = module.createTagRelinkAuthorizationRuntime(async () => h.adapter)
     await service.rememberRelinkedFontFile(font)
     assert.equal(await service.contains(font.path), false, 'a credential without tag membership must not grant access')
+    assert.equal(await service.readDetachedState(font.path), 'unknown')
     h.add(font, ['T'])
     assert.equal(await service.contains(font.path), true)
     const restored = module.createTagRelinkAuthorizationRuntime(async () => h.adapter)
     assert.equal(await restored.canReadDetached(font.path), true)
+    assert.equal(await restored.readDetachedState(font.path), 'authorized')
     modifiedAt++
     assert.equal(await restored.contains(font.path), false, 'replaced files require explicit authorization again')
+    assert.equal(await restored.readDetachedState(font.path), 'changed')
     modifiedAt--
+    denied = true; assert.equal(await restored.readDetachedState(font.path), 'unknown', 'offline is not reauthorization'); denied = false
+    real = 'D:\\new-target.ttf'
+    assert.equal(await restored.readDetachedState(font.path), 'changed', 'changed real-path target needs a new picker')
+    assert.equal(await restored.contains(real), false, 'changed real path must not grant file access')
+    await restored.rememberRelinkedFontFile(font)
+    assert.equal(await restored.contains(real),true)
+    assert.equal(await restored.contains(font.path),false,'same-path renewed credential must retire its superseded real target')
+    real = font.path
     h.db.exec('DELETE FROM local_font_tags')
     assert.equal(await restored.contains(font.path), false)
+    assert.equal(await restored.readDetachedState(font.path), 'unknown')
   } finally { h.close() }
 }
 
@@ -311,17 +334,187 @@ async function backgroundWaitCase() {
   const runtime = createManualFolderRefreshBackgroundRuntime({ appendStartupLog() {} })
   let finish, done = false
   runtime.scheduleRefresh('root', 'job', () => new Promise(resolve => { finish = resolve }))
-  const waiting = runtime.waitForRefresh('root').then(() => { done = true })
-  await Promise.resolve(); assert.equal(done, false); finish(); await waiting; assert.equal(done, true)
+  const waiting = runtime.waitForRefresh('root').then(result => { done = true; return result })
+  const receipt = refreshReceipt('root', { ok: false, errors: 2 })
+  await Promise.resolve(); assert.equal(done, false); finish(receipt); assert.equal(await waiting, receipt); assert.equal(done, true)
   const error = Error('failed scan')
   runtime.scheduleRefresh('other', 'failed', async () => { throw error })
   await assert.rejects(runtime.waitForRefresh('other'), value => value === error)
 }
 
+async function f08QueryCases() {
+  const h = harness(), font = make('History')
+  try {
+    h.sharedRows.push({ font_id: 'history', relative_path: 'old/History.ttf', tag_names_json: '["Shared"]' })
+    const request = { sidebarPage: 'sharedTags', selectedTagName: 'Shared' }
+    const first = await h.query.query(request, 10, 0)
+    assert.equal(first.total, 1); assert.equal(first.items[0].fileAvailability, 'missing')
+    assert.equal((await h.query.sharedTagCounts()).Shared, 1, 'missing shared bindings must remain in sidebar counts')
+    h.queryDeps.readShared = async () => { throw Error('metadata busy') }
+    h.queryDeps.queryLive = async () => { throw Error('unavailable root must not reach live query') }
+    h.query.invalidate()
+    const retained = await h.query.query(request, 10, 0)
+    assert.equal(retained.total, 1); assert.equal(retained.items[0].tagBindingReadOnly, true)
+    assert.equal(retained.items[0].fileAvailability, 'unavailable')
+    assert.equal((await h.query.sharedTagCounts()).Shared, 1)
+    const display = load('src/renderer/src/fontDisplay.ts', { './fontUserIntentRuntime': { getUninstallIssue: () => undefined } })
+    assert.equal(display.installLabel(retained.items[0]), '共享标签暂不可读取')
+    await assert.rejects(h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => { throw Error('must not open') })
+      .recover({ mode: 'relink', scope: 'shared', fontPath: retained.items[0].path }), /此字体已恢复/)
+    // A successful authoritative empty snapshot removes the old binding.
+    h.sharedRows.length = 0
+    h.queryDeps.readShared = async () => ({ preflight: { snapshot: { rows: h.sharedRows } } })
+    h.queryDeps.queryLive = async () => ({ items: [], total: 0 })
+    h.query.invalidate(); assert.equal((await h.query.query(request, 10, 0)).total, 0)
+    assert.deepEqual(plain(await h.query.sharedTagCounts()), {})
+  } finally { h.close() }
+  const d = harness(), outside = { ...make('Outside'), path: 'D:\\Outside\\Outside.ttf' }
+  try {
+    d.add(outside, ['T']); d.remember([outside]); d.put(outside)
+    d.queryDeps.readDetachedState = async () => 'changed'
+    const page = await d.query.query({ sidebarPage: 'tags', selectedTagName: 'T', tagBindingsOnly: true }, 10, 0)
+    assert.equal(page.total, 1); assert.equal(page.items[0].fileRelinkRequired, true)
+    assert.equal(page.items[0].fileAvailability, 'unavailable')
+    assert.equal(d.counts.parse, 0, 'unconfirmed changed file must not be parsed/previewed by a query')
+    d.files.set(key(outside.path), Object.assign(Error('denied'), { code: 'EACCES' })); d.query.invalidate()
+    const offline = await d.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)
+    assert.equal(offline.items[0].fileRelinkRequired, false, 'access failure is not permission to reauthorize')
+  } finally { d.close() }
+  const stale = harness(), liveFont = make('Stale'), legacy = make('Legacy')
+  try {
+    stale.add(liveFont, ['T']); stale.remember([liveFont]); stale.put(liveFont)
+    stale.db.prepare('INSERT INTO local_font_tags VALUES (?, NULL, ?)').run(legacy.id, 'T'); stale.put(legacy)
+    stale.live([{ ...liveFont, localTagNames: ['T'] }, { ...legacy, localTagNames: ['T'] }])
+    assert.equal((await stale.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)).total, 2)
+    stale.db.prepare('DELETE FROM local_font_tags WHERE font_path = ?').run(key(liveFont.path)); stale.query.invalidate()
+    const page = await stale.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)
+    assert.deepEqual(page.items.map(font => font.id), [legacy.id], 'stale live pages and history must not resurrect a deleted path binding; ID-only legacy membership remains')
+  } finally { stale.close() }
+  const mixed = harness(), blocked = '\\\\server\\blocked'
+  try {
+    mixed.roots.push(blocked)
+    mixed.queryDeps.readShared = async ({rootPath}) => {
+      if (rootPath===blocked) throw Error('offline without historical metadata')
+      return { preflight:{ snapshot:{ rows:[{font_id:'healthy',relative_path:'old/A.ttf',tag_names_json:'["Shared"]'}] } } }
+    }
+    mixed.queryDeps.queryLive = async request => {
+      assert.deepEqual(plain(request.selectedWatchedFolders), [root], 'failed shared root must be excluded from the live page range')
+      return {items:[],total:0}
+    }
+    assert.equal((await mixed.query.query({sidebarPage:'sharedTags',selectedTagName:'Shared',selectedWatchedFolders:[root,blocked]},10,0)).total,1)
+    assert.equal(await mixed.query.sharedTagCounts(),undefined,'unknown membership on an unreadable root must not be reported as zero')
+  } finally { mixed.close() }
+  const p = harness()
+  try {
+    p.mappings.set('R:', '\\\\server\\share')
+    const paths = await p.pathsModule.createTagRecoveryPaths(['R:\\Fonts', '\\\\server\\share\\Fonts', '\\\\server\\share\\Fonts\\Nested'])
+    assert.equal(paths.roots.length, 2, 'proven aliases should scan once')
+    assert.equal(paths.owner('R:\\Fonts\\Nested\\gone.ttf'), '\\\\server\\share\\Fonts\\Nested')
+    assert.equal(paths.contains('\\\\?\\UNC\\server\\share\\Fonts\\A.ttf'), true)
+    assert.equal(paths.contains('R:\\FontsElsewhere\\A.ttf'), false)
+    p.roots.splice(0,p.roots.length,'\\\\server\\share\\Fonts')
+    p.db.exec('CREATE TABLE tag_shared_binding_snapshots (root_path TEXT PRIMARY KEY, rows_json TEXT NOT NULL)')
+    p.db.prepare('INSERT INTO tag_shared_binding_snapshots VALUES (?, ?)').run(key('R:\\Fonts'),JSON.stringify([{font_id:'legacy-alias',relative_path:'A.ttf',tag_names_json:'["Shared"]'}]))
+    p.queryDeps.readShared=async()=>{throw Error('offline')}
+    const retained=await p.query.query({sidebarPage:'sharedTags',selectedTagName:'Shared'},10,0)
+    assert.equal(retained.total,1);assert.equal(retained.items[0].tagBindingReadOnly,true,'legacy snapshot root keys must survive a proven alias change')
+    p.mappings.clear()
+    assert.equal((await p.pathsModule.createTagRecoveryPaths(['\\\\server\\share\\Fonts'])).owner('R:\\Fonts\\A.ttf'), undefined, 'unverified drive identity must not guess a root')
+  } finally { p.close() }
+}
+
+async function f08RecoveryCases() {
+  const alias = harness(), old = make('A'), next = make('A','new'), scanned=[]
+  try {
+    alias.mappings.set('R:','\\\\server\\share')
+    alias.roots.splice(0,alias.roots.length,'\\\\unrelated\\nas','R:\\Fonts','\\\\server\\share\\Fonts','\\\\server\\share\\Fonts\\Nested')
+    old.path='R:\\Fonts\\Nested\\old\\A.ttf';next.path='R:\\Fonts\\Nested\\new\\A.ttf'
+    alias.add(old,['T']);alias.remember([old]);alias.put(next)
+    alias.runtime.refreshWatchedFolder=async folder=>{scanned.push(folder);return refreshReceipt(folder)}
+    const result=await alias.recoveryModule.createTagFontRecoveryRuntime(alias.runtime,async()=>undefined).recover({mode:'reindex',scope:'local',tagName:'T'})
+    assert.equal(result.linked,1);assert.deepEqual(scanned,['\\\\server\\share\\Fonts\\Nested'],'the longest proven owner is scanned first, and unrelated roots are not scanned after recovery')
+  } finally { alias.close() }
+  for (const cancelled of [false, true]) {
+    const h = harness(), old = make('A'), next = make('A', 'new')
+    try {
+      h.add(old, ['T']); h.remember([old]); h.put(next)
+      h.runtime.refreshWatchedFolder = async () => refreshReceipt(root, { ok: false, errors: cancelled ? 0 : 2, cancelled, message: 'partial scan' })
+      const result = await h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => undefined).recover({ mode: 'reindex', scope: 'local', tagName: 'T' })
+      assert.equal(result.canceled, cancelled)
+      assert.equal(result.linked, cancelled ? 0 : 1)
+      assert.equal(result.failures.length, cancelled ? 0 : 1, 'partial scan errors must not turn into clean success')
+      if (cancelled) assert(!h.events.includes('write'))
+      else assert.match(result.message, /未全部完成/)
+    } finally { h.close() }
+  }
+  const partial = harness(), a = make('A'), b = make('B'), replacement = make('A','new'), nas = '\\\\server\\fallback'
+  try {
+    partial.roots.push(nas);partial.add(a,['T']);partial.add(b,['T']);partial.remember([a,b]);partial.put(replacement)
+    partial.runtime.refreshWatchedFolder=async folder=>refreshReceipt(folder,folder===nas?{ok:false,cancelled:true}:{})
+    const result=await partial.recoveryModule.createTagFontRecoveryRuntime(partial.runtime,async()=>undefined).recover({mode:'reindex',scope:'local',tagName:'T'})
+    assert.equal(result.linked,1);assert.equal(result.remaining,1);assert.equal(result.canceled,true)
+    assert.match(result.message,/已取消重新索引/)
+  } finally { partial.close() }
+  const h = harness(), outside = { ...make('Changed'), path: 'D:\\Outside\\Changed.ttf' }
+  try {
+    h.add(outside, ['T', 'Keep']); h.remember([outside]); h.put(outside)
+    h.queryDeps.readDetachedState = async () => 'changed'
+    let renewals = 0, picks = 0
+    h.runtime.rememberRelinkedFontFile = async font => {
+      renewals++; assert.equal(key(font.path), key(outside.path)); h.queryDeps.readDetachedState = async () => 'authorized'
+    }
+    const result = await h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => { picks++; return outside.path })
+      .recover({ mode: 'relink', scope: 'local', fontPath: outside.path })
+    assert.equal(result.linked, 1); assert.equal(result.remaining, 0); assert.equal(renewals, 1); assert.equal(picks, 1)
+    assert.deepEqual(h.db.prepare('SELECT tag_name FROM local_font_tags WHERE font_path = ? ORDER BY tag_name').all(key(outside.path)).map(row => row.tag_name), ['Keep', 'T'], 'same-path confirmation must not append a clear-old operation')
+    const page = await h.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)
+    assert.equal(page.items[0].fileRelinkRequired, false); assert.equal(page.items[0].fileAvailability, 'available')
+  } finally { h.close() }
+}
+
+async function f08RefreshCases() {
+  const backgroundModule = load('src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts')
+  const module = load('src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts', {
+    'node:path': path,
+    '../../path/sharedFileSystemRuntime': { sharedFileSystem: { stat: async () => ({ isDirectory: () => true }) } },
+    '../../folders/physicalFolders': { pathInsideFolder: inside },
+  })
+  for (const scenario of ['complete', 'partial', 'cancelled', 'failed']) {
+    let release, runs = 0
+    const gate = new Promise(resolve => { release = resolve }), log = [], progress = []
+    let snapshots = 0
+    const deps = { appendStartupLog: message => log.push(message), withGlobalIo: (_name, run) => run(), emitFontIndexProgress: p => progress.push(p),
+      createFontScanJobId: () => 'job', appWatchedFolders: async () => [root], findBestWatchedRootForFile: () => root,
+      scanFoldersRuntime: () => ({ scanFoldersManaged: async () => { runs++; await gate; return { fonts: [make('A')], errors: [], stats: { cancelled: true } } } }),
+      sendFontIndexChanged() {}, syncMergedIndexForRootSnapshot: async () => { snapshots++ }, syncMergedIndexForRootIncremental: async () => {} }
+    const runtime = module.createManualWatchedFolderRefreshRuntime(deps,
+      { repairRootIndexCacheIfNeeded: async () => ({ rebuildRequired: scenario === 'cancelled' }), repairRootPreviewCacheIfNeeded: async () => ({}) },
+      { applyManualFolderRefreshToIndex: async () => { runs++; await gate; if (scenario === 'failed') throw Error('injected scan failure')
+        return { payload: { upserts: [], deletes: [], errors: scenario==='partial'?[{ path: 'bad', message: 'denied' }]:[] }, totalFiles: 12, parsed: 2, fromCache: 10, skippedBad: 0, workerCount: 1 } } },
+      backgroundModule.createManualFolderRefreshBackgroundRuntime(deps))
+    const first = runtime.refreshWatchedFolder(root, root, true)
+    // Wait for scheduling without completing the controlled scan.
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+    const second = runtime.refreshWatchedFolder(root, root, true)
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+    release()
+    if (scenario === 'failed') {
+      const settled = await Promise.allSettled([first, second]); assert(settled.every(item => item.status === 'rejected')); assert.equal(runs, 1)
+    } else {
+      const [a, b] = await Promise.all([first, second]); assert.equal(runs, 1); assert.equal(a, b)
+      assert.notEqual(a.mode, 'background'); assert.equal(a.ok, scenario==='complete')
+      assert.equal(a.errors, scenario === 'partial' ? 1 : 0); assert.equal(!!a.cancelled, scenario === 'cancelled')
+      assert.equal(a.totalFiles, scenario === 'cancelled' ? 0 : 12)
+      assert.equal(snapshots,0,'cancelled rebuild must not publish a complete merged snapshot')
+      assert(progress.some(p => p.stage === (scenario === 'cancelled' ? 'cancelled' : 'done')))
+    }
+  }
+}
+
 async function main() {
   const display = load('src/renderer/src/fontDisplay.ts', { './fontUserIntentRuntime': { getUninstallIssue: () => undefined } })
   assert.equal(display.installLabel({ ...make('A'), systemInstalled: true, fileAvailability: 'missing' }), '文件丢失')
-  await queryCases(); await recoveryCases(); await targetedRecoveryCases(); await batchedAvailabilityCase(); await bulkRecoveryCases(); await sharedRecoveryCases(); await detachedAuthorizationCase(); await backgroundWaitCase()
-  console.log('[diagnostics:tag-font-recovery] retained local/shared rows, batched directory availability/concurrent pages, root ownership before NAS/fallback/failure, clicked anchor and one picker, unmatched siblings, cancellation, failed write, tag union, completed scan barrier')
+  await queryCases(); await recoveryCases(); await targetedRecoveryCases(); await batchedAvailabilityCase(); await bulkRecoveryCases(); await sharedRecoveryCases(); await detachedAuthorizationCase(); await backgroundWaitCase(); await f08QueryCases(); await f08RecoveryCases(); await f08RefreshCases()
+  console.log('[diagnostics:tag-font-recovery] retained local/shared rows and counts, deleted binding cannot resurrect from stale live/history, read-only shared metadata isolation/legacy alias cache, mapped longest root ownership, changed detached credential/native re-confirmation, batched pages, one clicked picker, tag union, actual complete/partial/cancelled/failed scan barriers')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

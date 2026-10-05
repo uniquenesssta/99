@@ -1,5 +1,6 @@
 import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 import type {
+WatchedFolderRefreshResult,
 FontItem,
 FontQueryRequest,
 FontTagBatchItem,
@@ -61,7 +62,7 @@ export interface IpcHandlerRuntime {
     folderPath: string,
     rootPath?: string,
     waitForCompletion?: boolean,
-  ) => unknown | Promise<unknown>;
+  ) => Promise<WatchedFolderRefreshResult>;
   getCacheStats: () => unknown | Promise<unknown>;
   cacheArchitectureInfo: () => unknown | Promise<unknown>;
   getMigrationDiagnostics?: () => unknown | Promise<unknown>;

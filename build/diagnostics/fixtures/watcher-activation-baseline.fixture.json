@@ -66,7 +66,7 @@
         "runWatchedFolderRefreshJob",
         "refreshWatchedFolder"
       ],
-      "sha256": "04e1e70ae025a9376b008298238a92a852f06d139ffcf65c9bf57419baea27ea"
+      "sha256": "ae42a1763572b3a9c19535102af9c469513088f0ca74922a2fabc2cc45ac534a"
     },
     "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts": {
       "exports": [
@@ -80,7 +80,7 @@
         "scheduleRefresh",
         "backgroundResult"
       ],
-      "sha256": "60395c6c538f59f96cc3cb325110f3890c2e1c71cbdaaf27186150abe3c27ade"
+      "sha256": "8ebc84c79b85139528716f01a05aef6559dd95be418a991910eb49ecc5ff32d9"
     },
     "src/main/activation/runtime/fontActivationSessionRuntime.ts": {
       "exports": [
@@ -210,6 +210,18 @@
       "commit": "f6ad3f8c5fa8333e94e5a0ec5a7af436a3965bba",
       "file": "src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts",
       "reason": "Dispatch inactive fonts despite stale renderer installed hints; activation-entry checks fresh main admission and existing rollback/metrics gates remain required."
+    },
+    {
+      "task": "S12-F08",
+      "parent": "3e94afb1e7bf24caae435ae53c1c851159f6ddaa",
+      "file": "src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts",
+      "reason": "typed completion receipt preserves partial errors and cancellation; same-root coalescing/export surfaces unchanged; controlled result/failed-wait gates in check-tag-font-recovery.cjs"
+    },
+    {
+      "task": "S12-F08",
+      "parent": "3e94afb1e7bf24caae435ae53c1c851159f6ddaa",
+      "file": "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts",
+      "reason": "typed completion receipt preserves partial errors and cancellation; same-root coalescing/export surfaces unchanged; controlled result/failed-wait gates in check-tag-font-recovery.cjs"
     }
   ]
 }

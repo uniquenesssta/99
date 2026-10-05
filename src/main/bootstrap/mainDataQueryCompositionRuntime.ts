@@ -310,6 +310,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
 
   tagFonts = createTagFontQueryRuntime({
     canReadDetached: relinkAuthorization.canReadDetached,
+    readDetachedState: relinkAuthorization.readDetachedState,
     findPrevious: path => findFontItemInRootIndexes("", normalizePathForCacheCompare(path), true),
     openLibraryDb, roots: appWatchedFolders,
     readShared: rustCoreWorkerRuntime.runRustSharedMetadataOverlayRead,
@@ -391,7 +392,15 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
 
   async function getFontMetricsFromLibrary(): Promise<FontMetricsResult> {
     await openLibraryDb();
-    return requireFontQueryFacadeRuntime().getFontMetricsFromLibrary();
+    const metrics = await requireFontQueryFacadeRuntime().getFontMetricsFromLibrary();
+    try {
+      const counts = await tagFonts!.sharedTagCounts();
+      if (counts) {
+        const sharedTagCounts = { ...Object.fromEntries(Object.keys(metrics.sharedTagCounts || {}).map(tag => [tag, 0])), ...counts };
+        return { ...metrics, sharedTagCounts, tagCounts: { ...sharedTagCounts, ...metrics.localTagCounts } };
+      }
+    } catch (error) { appendStartupLog(`shared tag counts retained: ${String(error)}`); }
+    return metrics;
   }
   return {
 

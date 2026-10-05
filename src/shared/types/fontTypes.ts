@@ -15,6 +15,8 @@ export interface FontItem {
   sourceId?: string
   path: string
   fileAvailability?: 'available' | 'missing' | 'unavailable'
+  fileRelinkRequired?: boolean
+  tagBindingReadOnly?: boolean
   fileName: string
   family: string
   fullName: string

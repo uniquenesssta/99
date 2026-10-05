@@ -10,7 +10,7 @@ export type ManualFolderRefreshBackgroundStart = {
 export function createManualFolderRefreshBackgroundRuntime(
   deps: Pick<ManualFolderRefreshDeps, "appendStartupLog">,
 ) {
-  const activeRefreshes = new Map<string, { jobId: string; startedAt: number; completion: Promise<void> }>();
+  const activeRefreshes = new Map<string, { jobId: string; startedAt: number; completion: Promise<WatchedFolderRefreshResult> }>();
 
   function activeRefresh(key: string): ManualFolderRefreshBackgroundStart | null {
     const active = activeRefreshes.get(key);
@@ -22,7 +22,7 @@ export function createManualFolderRefreshBackgroundRuntime(
   function scheduleRefresh(
     key: string,
     jobId: string,
-    run: () => Promise<void>,
+    run: () => Promise<WatchedFolderRefreshResult>,
   ): ManualFolderRefreshBackgroundStart {
     const active = activeRefresh(key);
     if (active) return active;
@@ -71,7 +71,11 @@ export function createManualFolderRefreshBackgroundRuntime(
     };
   }
 
-  const waitForRefresh = (key: string): Promise<void> => activeRefreshes.get(key)?.completion || Promise.resolve();
+  const waitForRefresh = (key: string): Promise<WatchedFolderRefreshResult> => {
+    const completion = activeRefreshes.get(key)?.completion;
+    if (!completion) return Promise.reject(new Error('没有可等待的文件夹刷新任务。'));
+    return completion;
+  };
   return { activeRefresh, scheduleRefresh, backgroundResult, waitForRefresh };
 }
 

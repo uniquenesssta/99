@@ -1,13 +1,11 @@
-import os from 'node:os'
-import { basename, dirname, resolve, parse } from 'node:path'
+import { basename, dirname, parse } from 'node:path'
 import type { FontItem, FontQueryPageResult, FontQueryRequest } from '../../shared/types'
 import type { RustSharedMetadataOverlayReadInput, RustSharedMetadataOverlayReadResult } from '../rust-core/rustCoreWorkerContracts'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { normalizePathForCacheCompare as key } from '../path/cachePath'
-import { pathInsideFolder } from '../folders/physicalFolders'
+import { createTagRecoveryPaths, type TagRecoveryPaths } from './tagRecoveryPathRuntime'
+import { readTagFontBindings, type TagFontBinding } from './tagFontBindingRuntime'
 import { asFormat, fontItemFromPath } from '../fonts/fontRuntime'
-import { sharedMetadataDbPathForRoot } from '../indexing/shared-metadata/sharedMetadataPathsRuntime'
-import { stateFromRow } from '../indexing/shared-metadata/sharedMetadataStateRuntime'
 import { openTagFontSnapshots } from './tagFontSnapshotRuntime'
 
 export function tagQueryScope(request: FontQueryRequest): 'local' | 'shared' | undefined {
@@ -23,8 +21,8 @@ export function tagQueryScope(request: FontQueryRequest): 'local' | 'shared' | u
 
 type FileAvailability = NonNullable<FontItem['fileAvailability']>
 type FileStat = (path: string) => Promise<Pick<import('node:fs').Stats, 'isFile' | 'isDirectory'>>
-async function missingFileAvailability(path: string, roots: string[], stat: FileStat): Promise<FileAvailability> {
-  const root = roots.filter(root => pathInsideFolder(path, root)).sort((a, b) => b.length - a.length)[0] || parse(path).root
+async function missingFileAvailability(path: string, roots: string[], stat: FileStat, paths?: TagRecoveryPaths): Promise<FileAvailability> {
+  const root = (paths || await createTagRecoveryPaths(roots)).owner(path) || parse(path).root
   try { if (root && (await stat(root)).isDirectory()) return 'missing' }
   catch (rootError) {
     if ((rootError as NodeJS.ErrnoException).code !== 'ENOENT') return 'unavailable'
@@ -44,7 +42,7 @@ export async function fontFileAvailability(path: string, roots: string[]): Promi
 
 // A tag often holds dozens of siblings. List each parent once per query instead
 // of submitting one isolated process for every missing file and root probe.
-function createAvailabilityReader(roots: string[]) {
+function createAvailabilityReader(roots: string[], paths: TagRecoveryPaths) {
   const stats = new Map<string, ReturnType<FileStat>>()
   const stat: FileStat = path => {
     const id = key(path)
@@ -60,7 +58,7 @@ function createAvailabilityReader(roots: string[]) {
       pending = fsp.readdir(parent, { withFileTypes: true })
         .then(entries => new Map(entries.map(entry => [entry.name.toLowerCase(), entry])))
         .catch(error => (error as NodeJS.ErrnoException).code === 'ENOENT'
-          ? missingFileAvailability(path, roots, stat) : 'unavailable' as const)
+          ? missingFileAvailability(path, roots, stat, paths) : 'unavailable' as const)
       directories.set(id, pending)
     }
     const entries = await pending
@@ -73,12 +71,12 @@ function createAvailabilityReader(roots: string[]) {
   }
 }
 
-type Binding = { path: string; id: string; tags: string[] }
 export function createTagFontQueryRuntime(deps: {
   openLibraryDb: () => Promise<any>
   roots: () => Promise<string[]>
   findPrevious?: (path: string) => Promise<FontItem | null>
   canReadDetached?: (path: string) => Promise<boolean>
+  readDetachedState?: (path: string) => Promise<'authorized' | 'changed' | 'unknown'>
   readShared: (input: RustSharedMetadataOverlayReadInput) => Promise<RustSharedMetadataOverlayReadResult | null>
   queryLive: (request: FontQueryRequest, limit: number, offset: number) => Promise<FontQueryPageResult>
   hydrate: (items: FontItem[]) => Promise<FontItem[]>
@@ -90,65 +88,41 @@ export function createTagFontQueryRuntime(deps: {
     const scope = tagQueryScope(request)!
     const name = String(request.sidebarPage === 'tags' || request.sidebarPage === 'sharedTags' ? request.selectedTagName || '' : request.activeFilter?.name || '').trim()
     const roots = await deps.roots()
-    const availabilityFor = createAvailabilityReader(roots)
-    const inScope = (path: string) => !request.selectedWatchedFolders?.length || request.selectedWatchedFolders.some(root => pathInsideFolder(path, root))
+    const paths = await createTagRecoveryPaths(roots)
+    const availabilityFor = createAvailabilityReader(roots, paths)
+    const inScope = (path: string) => !request.selectedWatchedFolders?.length || request.selectedWatchedFolders.some(root => paths.inside(path, root))
     const db = await deps.openLibraryDb()
     const snapshots = openTagFontSnapshots(db)
-    const bindings = new Map<string, Binding>()
-    const offlineRoots = new Set<string>()
-    if (scope === 'local') {
-      const rows = db.prepare("SELECT font_id, font_path, tag_name FROM local_font_tags WHERE font_path IS NOT NULL AND font_path <> ''").all() as Array<{ font_id: string; font_path: string; tag_name: string }>
-      for (const row of rows) {
-        if (!inScope(row.font_path)) continue
-        const pathKey = key(row.font_path)
-        const binding = bindings.get(pathKey) || { path: row.font_path, id: row.font_id, tags: [] }
-        if (!binding.tags.includes(row.tag_name)) binding.tags.push(row.tag_name)
-        bindings.set(pathKey, binding)
-      }
-    } else {
-      for (const root of roots.filter(root => !request.selectedWatchedFolders?.length || request.selectedWatchedFolders.some(folder => pathInsideFolder(folder, root) || pathInsideFolder(root, folder)))) {
-        db.exec('CREATE TABLE IF NOT EXISTS tag_shared_binding_snapshots (root_path TEXT PRIMARY KEY, rows_json TEXT NOT NULL)')
-        let rows: import('../indexing/shared-metadata/sharedMetadataStateRuntime').SharedMetadataRow[]
-        try {
-          const result = await deps.readShared({ rootPath: root, dbPath: sharedMetadataDbPathForRoot(root), entries: [],
-            preflight: { phase: 'snapshot', updatedAt: new Date().toISOString(), updatedBy: os.hostname(), writerPid: process.pid } })
-          if (!result?.preflight?.snapshot?.rows) throw new Error('共享标签快照未确认。')
-          rows = result.preflight.snapshot.rows
-          db.prepare('INSERT OR REPLACE INTO tag_shared_binding_snapshots (root_path, rows_json) VALUES (?, ?)').run(key(root), JSON.stringify(rows))
-        } catch (error) {
-          let reachable = false
-          try { reachable = (await fsp.stat(root)).isDirectory() } catch { /* Offline snapshots are display-only. */ }
-          if (reachable) throw error
-          offlineRoots.add(key(root))
-          const cached = db.prepare('SELECT rows_json FROM tag_shared_binding_snapshots WHERE root_path = ?').get(key(root))
-          rows = cached ? JSON.parse(cached.rows_json) : []
-        }
-        for (const row of rows) {
-          const state = stateFromRow(row)
-          if (!state?.tagNames.length || !row.relative_path) continue
-          const path = resolve(root, row.relative_path)
-          if (!pathInsideFolder(path, root) || !inScope(path)) continue
-          bindings.set(key(path), { path, id: String(row.font_id || ''), tags: state.tagNames })
-        }
-      }
-    }
-    const broad: FontQueryRequest = { sidebarPage: scope === 'local' ? 'tags' : 'sharedTags', selectedTagName: name, selectedWatchedFolders: request.selectedWatchedFolders, sortMode: 'nameAsc' }
+    const { bindings, legacyTags, unavailableRoots } = await readTagFontBindings({ db, paths, scope,
+      folders: request.selectedWatchedFolders, readShared: deps.readShared })
+    const liveRoots = paths.roots.filter(root => !unavailableRoots.includes(root))
+    const liveFolders = scope === 'shared' && unavailableRoots.length
+      ? request.selectedWatchedFolders?.length ? liveRoots.flatMap(root => request.selectedWatchedFolders!.flatMap(folder =>
+          paths.inside(folder, root) ? [folder] : paths.inside(root, folder) ? [root] : [])) : liveRoots
+      : request.selectedWatchedFolders
+    const broad: FontQueryRequest = { sidebarPage: scope === 'local' ? 'tags' : 'sharedTags', selectedTagName: name, selectedWatchedFolders: liveFolders, sortMode: 'nameAsc' }
     const live = new Map<string, FontItem>()
+    const seenLive = new Set<string>()
     let first: FontQueryPageResult | undefined
-    for (let at = 0; !request.tagBindingsOnly; ) {
+    for (let at = 0; !request.tagBindingsOnly && (scope !== 'shared' || (liveRoots.length > 0 && (!unavailableRoots.length || !!liveFolders?.length))); ) {
       const page = await deps.queryLive(broad, 500, at)
       if (first && (first.total !== page.total || JSON.stringify(first.tagRevision) !== JSON.stringify(page.tagRevision))) throw new Error('标签索引在读取期间发生变化，请重试。')
       first ||= page
-      const previousSize = live.size
-      for (const item of page.items) live.set(key(item.path), item)
+      const previousSize = seenLive.size
+      for (const item of page.items) {
+        const id = key(item.path)
+        seenLive.add(id)
+        const tags = bindings.get(id)?.tags || legacyTags.get(item.id) || legacyTags.get(item.sourceId || '')
+        if (tags?.length && (!name || tags.includes(name))) live.set(id, item)
+      }
       if (at + page.items.length >= page.total) break
-      if (!page.items.length || previousSize === live.size) throw new Error('字体索引在读取期间发生变化，请重试。')
+      if (!page.items.length || previousSize === seenLive.size) throw new Error('字体索引在读取期间发生变化，请重试。')
       at += page.items.length
     }
     snapshots.remember([...live.values()])
     // Existing legacy ID-only associations are already resolved by the live query.
     const items = new Map(live)
-    async function resolveBinding([pathKey, binding]: [string, Binding]): Promise<void> {
+    async function resolveBinding([pathKey, binding]: [string, TagFontBinding]): Promise<void> {
       if (name && !binding.tags.includes(name)) return
       const old = live.get(pathKey) || snapshots.read(binding.path) || await deps.findPrevious?.(binding.path).catch(() => null)
       if (old) snapshots.remember([old])
@@ -157,17 +131,24 @@ export function createTagFontQueryRuntime(deps: {
         family: fileName, fullName: fileName, postscriptName: '', style: '', format: asFormat(binding.path),
         fileSize: 0, modifiedAt: 0, addedAt: '', favorite: false, collectionIds: [], tagNames: [],
         systemInstalled: false, systemInstallMatches: [], active: false }
-      let availability: NonNullable<FontItem['fileAvailability']> = roots.some(root => offlineRoots.has(key(root)) && pathInsideFolder(binding.path, root)) ? 'unavailable' : await availabilityFor(binding.path)
+      const tagBindingReadOnly = unavailableRoots.some(root => paths.inside(binding.path, root))
+      let availability: NonNullable<FontItem['fileAvailability']> = tagBindingReadOnly ? 'unavailable' : await availabilityFor(binding.path)
+      let fileRelinkRequired = false
+      if (availability === 'available' && scope === 'local' && !paths.contains(binding.path)) {
+        const state = deps.readDetachedState ? await deps.readDetachedState(binding.path)
+          : await deps.canReadDetached?.(binding.path) ? 'authorized' : 'unknown'
+        fileRelinkRequired = state === 'changed'
+        if (state !== 'authorized') availability = 'unavailable'
+      }
       if (!request.tagBindingsOnly && !live.has(pathKey) && availability === 'available') {
         try {
-          if (!roots.some(root => pathInsideFolder(binding.path, root)) && !await deps.canReadDetached?.(binding.path)) throw new Error('文件尚未由重新链接操作授权。')
           font = await fontItemFromPath(binding.path)
           snapshots.remember([font])
         } catch { availability = 'unavailable' }
       }
-      items.set(pathKey, { ...font, fileAvailability: availability,
+      items.set(pathKey, { ...font, fileAvailability: availability, fileRelinkRequired, tagBindingReadOnly,
         ...(scope === 'local' ? { localTagNames: binding.tags } : { tagNames: binding.tags, sourceId: binding.id }),
-        ...(availability !== 'available' ? { previewDisabled: true, previewError: availability === 'missing' ? '文件丢失' : '文件暂不可访问' } : font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable' ? { previewDisabled: false, previewError: undefined } : {}),
+        ...(availability !== 'available' ? { previewDisabled: true, previewError: tagBindingReadOnly ? '共享标签暂不可读取' : fileRelinkRequired ? '文件已变化，请右键重新链接确认' : availability === 'missing' ? '文件丢失' : '文件暂不可访问' } : font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable' ? { previewDisabled: false, previewError: undefined } : {}),
       })
     }
     const entries = [...bindings.entries()]
@@ -207,5 +188,13 @@ export function createTagFontQueryRuntime(deps: {
     }
     return { ...result, queryKey: JSON.stringify({ ...criteria, offset, limit }), items: result.items.slice(offset, offset + limit), offset, limit, truncated: offset + limit < result.total }
   }
-  return { query, invalidate: () => { generation++; cache.clear(); inFlight.clear() } }
+  async function sharedTagCounts(): Promise<Record<string, number> | undefined> {
+    const paths = await createTagRecoveryPaths(await deps.roots())
+    const { bindings, complete } = await readTagFontBindings({ db: await deps.openLibraryDb(), paths, scope: 'shared', readShared: deps.readShared })
+    if (!complete) return undefined
+    const counts: Record<string, number> = {}
+    for (const binding of bindings.values()) for (const tag of binding.tags) counts[tag] = (counts[tag] || 0) + 1
+    return counts
+  }
+  return { query, sharedTagCounts, invalidate: () => { generation++; cache.clear(); inFlight.clear() } }
 }
