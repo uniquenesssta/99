@@ -2,9 +2,13 @@
 
 ## 当前工作
 
-- [字体身份、页面残留与卸载删除权限任务书](plans/HFM_FONT_IDENTITY_PERMISSIONS_TASKBOOK.md)：Stage 12 专项 S12-F01～F07；分支 `stage/12-font-identity-permissions`。F01～F04 按任务书既有边界收尾；F05 完整 Windows CI `37134748077` 通过并由用户确认收尾（§17.6）。F06 正在实施，准确卸载、批量受限提权与源引用清理已接入；新 Windows 回执、提权源文件回收及其余权限边界仍待完成（§18）。F07 未开始。
+- [缺失字体恢复、匹配与关联状态全链路任务书](plans/HFM_FONT_RECOVERY_STABILITY_TASKBOOK.md)：本批问题唯一执行入口，S12-F08～F14；继续使用 `stage/12-font-identity-permissions`。已完成文档与静态审计，全部实施任务未开始；§2.1 列明 18 项功能可用性，§2.2 为 10 项源码发现，§4 为分阶段修复与验收。范围包含此前全部缺失恢复/匹配能力和直接相关状态链，不限于最新一次日志报错。
 
-[列表与网格视图审计及优化任务书](plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md) 是本次专项的执行与状态入口。
+## 前序阶段与验收边界
+
+- [字体身份、页面残留与卸载删除权限任务书](plans/HFM_FONT_IDENTITY_PERMISSIONS_TASKBOOK.md)：Stage 12 F01～F07 已按各自回执及边界收尾，F06/F07 准确状态见 §18.17、§19.9；§20～§22 为后续补修历史，最新 `9a4f225` Windows CI `37283308553` 通过。实机仍存在的问题与新增审计缺口由 F08～F14 接续，不沿用旧结果提前判定完成。
+
+[列表与网格视图审计及优化任务书](plans/HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md) 保留 Stage 11 的执行历史与未验边界，以下分支和状态为前序记录，不是当前实施分支。
 
 - 仓库：`uniquenesssta/99`；实施分支：`stage/11-list-grid-view`（基线 `6012cb6`，Stage 10 保持不变）；审计基线：`8582526`。
 - S10-V00：审计、计划与归档已完成；S11-V01：已完成，本地/Windows 159 项诊断、300 次真实 DOM 场景及 Windows/Linux CI 通过；S11-V02：已完成，160 项诊断、320 次真实 DOM 场景及 Windows/Linux CI 通过，见任务书 §11；V03：初始显示与详情开合定位修复已实现，自动化验证见任务书 §12.4～§12.5，用户本机体验待确认；V04 实现与自动化验证已完成，161 项诊断、54 张网格 PNG、140 次网格 DOM 场景及 CI 通过（任务书 §14）；V05 实现与自动化验证已完成，161 项诊断、Windows 组件资源/生命周期门及三组 CI 通过，见任务书 §15；V06 回归实现与自动化验证完成，本地/Windows 161 项诊断和三组 CI 通过，相关显示待验（任务书 §16）；V07 未开始。
