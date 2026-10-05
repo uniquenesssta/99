@@ -182,6 +182,7 @@ export function createManualWatchedFolderRefreshRuntime(
   async function refreshWatchedFolder(
     folderPath: string,
     rootPath?: string,
+    waitForCompletion = false,
   ): Promise<WatchedFolderRefreshResult> {
     const startedAt = Date.now();
     const resolvedFolder = resolve(folderPath || "");
@@ -207,6 +208,7 @@ export function createManualWatchedFolderRefreshRuntime(
     const activeKey = `${bestRoot}\n${resolvedFolder}`;
     const active = backgroundRuntime.activeRefresh(activeKey);
     if (active) {
+      if (waitForCompletion) await backgroundRuntime.waitForRefresh(activeKey);
       return backgroundRuntime.backgroundResult({
         folder: resolvedFolder,
         rootPath: bestRoot,
@@ -237,6 +239,7 @@ export function createManualWatchedFolderRefreshRuntime(
       `manual watched folder refresh scheduled background: root=${bestRoot}, folder=${resolvedFolder}, job=${scheduled.jobId}, scheduled=${scheduled.scheduled}`,
     );
 
+    if (waitForCompletion) await backgroundRuntime.waitForRefresh(activeKey);
     return backgroundRuntime.backgroundResult({
       folder: resolvedFolder,
       rootPath: bestRoot,

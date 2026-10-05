@@ -80,6 +80,7 @@
       "refreshInstallStatusIndex",
       "refreshWatchedFolder",
       "registerFontProtocol",
+      "rememberRelinkedFontFile",
       "renamePhysicalFolder",
       "renameSharedFontTagInIndex",
       "renderFontPreviewImage",
@@ -161,6 +162,10 @@
       ],
       [
         "createFontActivationRuntime",
+        1
+      ],
+      [
+        "createFontMemoryQueryMatcher",
         1
       ],
       [
@@ -352,6 +357,10 @@
         1
       ],
       [
+        "createTagFontQueryRuntime",
+        1
+      ],
+      [
         "createTagMetadataRevisionBarrierRuntime",
         1
       ],
@@ -361,6 +370,10 @@
       ],
       [
         "createTagMutationWriteProtocolRuntime",
+        1
+      ],
+      [
+        "createTagRelinkAuthorizationRuntime",
         1
       ],
       [
@@ -449,6 +462,10 @@
             []
           ],
           [
+            "createTagFontQueryRuntime.invalidate",
+            []
+          ],
+          [
             "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
             []
           ],
@@ -509,6 +526,10 @@
       "mergedCommit": {
         "result": "<undefined>",
         "calls": [
+          [
+            "createTagFontQueryRuntime.invalidate",
+            []
+          ],
           [
             "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
             []

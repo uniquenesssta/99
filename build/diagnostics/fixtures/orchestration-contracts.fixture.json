@@ -79,6 +79,7 @@
     "refreshInstallStatusIndex",
     "refreshWatchedFolder",
     "registerFontProtocol",
+    "rememberRelinkedFontFile",
     "renamePhysicalFolder",
     "renameSharedFontTagInIndex",
     "renderFontPreviewImage",

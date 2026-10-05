@@ -66,7 +66,7 @@
         "runWatchedFolderRefreshJob",
         "refreshWatchedFolder"
       ],
-      "sha256": "37da0f4c2782af93ca7caf7a3d1c3b36d502fb766c10d76c466fc18fc085ccc9"
+      "sha256": "04e1e70ae025a9376b008298238a92a852f06d139ffcf65c9bf57419baea27ea"
     },
     "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts": {
       "exports": [
@@ -80,7 +80,7 @@
         "scheduleRefresh",
         "backgroundResult"
       ],
-      "sha256": "68a94586d7ba2c1aa42c71fc1c542b63d2b3f2b64c7a922432c149d396004685"
+      "sha256": "60395c6c538f59f96cc3cb325110f3890c2e1c71cbdaaf27186150abe3c27ade"
     },
     "src/main/activation/runtime/fontActivationSessionRuntime.ts": {
       "exports": [

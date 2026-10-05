@@ -10,7 +10,7 @@ export type ManualFolderRefreshBackgroundStart = {
 export function createManualFolderRefreshBackgroundRuntime(
   deps: Pick<ManualFolderRefreshDeps, "appendStartupLog">,
 ) {
-  const activeRefreshes = new Map<string, { jobId: string; startedAt: number }>();
+  const activeRefreshes = new Map<string, { jobId: string; startedAt: number; completion: Promise<void> }>();
 
   function activeRefresh(key: string): ManualFolderRefreshBackgroundStart | null {
     const active = activeRefreshes.get(key);
@@ -28,9 +28,9 @@ export function createManualFolderRefreshBackgroundRuntime(
     if (active) return active;
 
     const startedAt = Date.now();
-    activeRefreshes.set(key, { jobId, startedAt });
-    void Promise.resolve()
-      .then(run)
+    const completion = Promise.resolve().then(run);
+    activeRefreshes.set(key, { jobId, startedAt, completion });
+    void completion
       .catch((error) => {
         deps.appendStartupLog(
           `manual watched folder background refresh unhandled error: key=${key}, job=${jobId}, ${error instanceof Error ? error.message : String(error)}`,
@@ -71,7 +71,8 @@ export function createManualFolderRefreshBackgroundRuntime(
     };
   }
 
-  return { activeRefresh, scheduleRefresh, backgroundResult };
+  const waitForRefresh = (key: string): Promise<void> => activeRefreshes.get(key)?.completion || Promise.resolve();
+  return { activeRefresh, scheduleRefresh, backgroundResult, waitForRefresh };
 }
 
 export type ManualFolderRefreshBackgroundRuntime = ReturnType<typeof createManualFolderRefreshBackgroundRuntime>;

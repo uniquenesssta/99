@@ -133,8 +133,8 @@ export function useFontOperationsController(options: {
     writeBehindMaxItems: WRITE_BEHIND_MAX_ITEMS,
     writeBehindMaxBufferBytes: WRITE_BEHIND_MAX_BUFFER_BYTES,
     memoryPressure: rendererMemoryPressure,
-    setTimeout: window.setTimeout,
-    clearTimeout: window.clearTimeout,
+    setTimeout: window.setTimeout.bind(window),
+    clearTimeout: window.clearTimeout.bind(window),
     setStatus: options.library.setStatus,
     scheduleDatabaseDerivedStateRefresh: options.library.scheduleDatabaseDerivedStateRefresh
   })

@@ -14,6 +14,7 @@ export interface FontItem {
   id: string
   sourceId?: string
   path: string
+  fileAvailability?: 'available' | 'missing' | 'unavailable'
   fileName: string
   family: string
   fullName: string

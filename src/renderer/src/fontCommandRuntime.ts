@@ -54,6 +54,10 @@ export function createFontCommandRuntime(options: FontCommandOptions): RunFontCo
       return
     }
     if (!fonts.length) { options.setStatus('请先选择字体，本次操作未执行。'); return }
+    if (['install', 'activate', 'deleteFile'].includes(action) && fonts.some(font => font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable')) {
+      options.setStatus('所选字体包含丢失或暂不可访问的文件，请先在标签右键菜单中重新链接。')
+      return
+    }
     const label = `已选择 ${fonts.length} 个字体`
     try {
       if (action === 'install') await options.installFontsBatch(fonts, label)

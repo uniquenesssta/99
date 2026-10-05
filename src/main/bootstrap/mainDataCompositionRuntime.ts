@@ -316,6 +316,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     closeLibraryDb, closePreviewDb, clearLocalPreviewDbHandle, checkpointOpenCacheDbs, closeCacheDb,
   };
   const capabilities: MainDataCompositionRuntime['capabilities'] = {
+    rememberRelinkedFontFile: query.rememberRelinkedFontFile,
     getSharedAvailability: createSharedAvailabilityReader(openLibraryDb),
     loadLibrary, loadLibraryShell, loadFolderCache, searchFontsInLibrary, queryFontsInLibrary,
     queryFontPageInLibrary, checkSharedMetadataUpdates, getFontMetricsFromLibrary,

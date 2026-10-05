@@ -201,6 +201,8 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
         contextSelectedFonts={overlays.contextSelectedFonts}
         runFontContextAction={overlays.runFontContextAction}
         contextTargetCount={overlays.contextTargetCount}
+        runContextReindexTag={overlays.runContextReindexTag}
+        runContextRelinkTag={overlays.runContextRelinkTag}
         runContextBatchActivate={overlays.runContextBatchActivate}
         runContextBatchDeactivate={overlays.runContextBatchDeactivate}
         runContextRefreshFolder={overlays.runContextRefreshFolder}

@@ -65,6 +65,8 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
   runContextDelete: () => void
   runContextAddSubfolder: () => void
   runContextRefreshFolder: () => void
+  runContextReindexTag: () => void
+  runContextRelinkTag: () => void
   runContextBatchActivate: () => void
   runContextBatchDeactivate: () => void
   confirmRename: () => Promise<void>

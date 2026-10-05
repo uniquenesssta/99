@@ -128,6 +128,7 @@ const api = {
   deleteFontFiles: (items, watchedFolders) => invoke('fonts:deleteFiles', items, watchedFolders),
   setDeleteProtection: (items, watchedFolders, protect, trace) => invoke('fonts:setDeleteProtection', items, watchedFolders, protect, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   setFavorite: (items, watchedFolders, favorite, trace) => invoke('fonts:setFavorite', items, watchedFolders, favorite, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
+  recoverTagFiles: (request) => invoke('fonts:recoverTagFiles', request),
   setLocalTags: (item, tagNames, trace) => invoke('fonts:setLocalTags', item, tagNames, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   setLocalTagsBatch: (items, trace) => invoke('fonts:setLocalTagsBatch', items, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   deleteLocalTag: (tagName, trace) => invoke('fonts:deleteLocalTag', tagName, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),

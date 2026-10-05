@@ -13,6 +13,7 @@ import { useResizeFrozenPreviewRuntime } from '../runtime/preview/useResizeFroze
 import { GridFontPreview } from './GridFontPreview'
 
 function previewStatusLabel(font: FontCardProps['font']): string {
+  if (font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable') return installLabel(font)
   const message = font.previewError || ''
   if (!message) return installLabel(font)
   if (message.includes('字体文件不存在') || message.includes('路径已失效')) return '路径失效'

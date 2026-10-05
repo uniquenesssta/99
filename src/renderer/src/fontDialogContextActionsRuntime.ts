@@ -12,12 +12,31 @@ export type FontDialogContextActionsRuntime = {
   runContextDelete: () => void
   runContextAddSubfolder: () => void
   runContextRefreshFolder: () => void
+  runContextReindexTag: () => void
+  runContextRelinkTag: () => void
   runContextBatchActivate: () => void
   runContextBatchDeactivate: () => void
 }
 
 export function createFontDialogContextActions(options: FontDialogRuntimeOptions): FontDialogContextActionsRuntime {
+  function recoverTag(mode: 'reindex' | 'relink'): void {
+    const action = tagBatchActionFromContextMenu(options.contextMenu)
+    if (!action) return
+    options.setContextMenu(null)
+    options.setStatus(mode === 'reindex' ? '正在重新索引监听文件夹，完成后自动匹配缺失字体……' : '请选择缺失字体的新文件，同目录的其他字体将自动匹配……')
+    void (async () => {
+      try {
+        if (options.flushFontWriteQueue && !await options.flushFontWriteQueue('tag-recovery')) throw new Error('标签修改尚未保存，请稍后重试。')
+        const result = await options.hfm.recoverTagFiles({ tagName: action.name, scope: action.scope, mode })
+        options.setStatus(result.message)
+      } catch (error) {
+        options.setStatus(`恢复未完成：${error instanceof Error ? error.message : String(error)}`)
+      } finally { options.refreshDatabaseDerivedState() }
+    })()
+  }
   return {
+    runContextReindexTag: () => recoverTag('reindex'),
+    runContextRelinkTag: () => recoverTag('relink'),
     runContextRename(): void {
       const target = editableTargetFromContextMenu(options.contextMenu)
       if (!target) return

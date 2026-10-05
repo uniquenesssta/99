@@ -78,7 +78,7 @@ export function useLibraryController(options: {
     setDatabaseMetricsRefreshToken(value => value + 1)
     refreshDatabaseDerivedStateRuntime({
       timerRef: databaseRefreshTimerRef,
-      clearTimeout: window.clearTimeout,
+      clearTimeout: window.clearTimeout.bind(window),
       setDatabasePageResult: options.database.setDatabasePageResult,
       setDatabaseQueryResult: options.database.setDatabaseQueryResult,
       setDatabaseFontMetrics: options.database.setDatabaseFontMetrics,
@@ -99,8 +99,8 @@ export function useLibraryController(options: {
     scheduleDatabaseDerivedStateRefreshRuntime({
       timerRef: databaseRefreshTimerRef,
       delay,
-      clearTimeout: window.clearTimeout,
-      setTimeout: window.setTimeout,
+      clearTimeout: window.clearTimeout.bind(window),
+      setTimeout: window.setTimeout.bind(window),
       requestIdleWindow,
       rendererUserActive: options.rendererUserActive,
       scheduleAgain: nextDelay => scheduleDatabaseDerivedStateRefresh(nextDelay, []),

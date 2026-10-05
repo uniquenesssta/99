@@ -28,6 +28,8 @@ type AppOverlaysProps = {
   contextSelectedFonts: FontItem[]
   runFontContextAction: (action: FontCommand) => Promise<void>
   contextTargetCount: number
+  runContextReindexTag: () => void
+  runContextRelinkTag: () => void
   runContextBatchActivate: () => void
   runContextBatchDeactivate: () => void
   runContextRefreshFolder: () => void
@@ -58,6 +60,8 @@ export function AppOverlays({
   contextSelectedFonts,
   runFontContextAction,
   contextTargetCount,
+  runContextReindexTag,
+  runContextRelinkTag,
   runContextBatchActivate,
   runContextBatchDeactivate,
   runContextRefreshFolder,
@@ -188,6 +192,8 @@ export function AppOverlays({
               <div className="context-menu-title">{contextMenu.kind === 'tag' ? `${contextMenu.scope === 'shared' ? '共享标签' : '本地标签'}：${contextMenu.name}（全部匹配字体）` : '文件夹操作'}</div>
               {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextBatchActivate() }}>激活</button>}
               {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextBatchDeactivate}>取消激活</button>}
+              {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} onClick={runContextReindexTag}>重新索引监听文件夹</button>}
+              {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} onClick={runContextRelinkTag}>重新链接文件</button>}
               {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextRefreshFolder() }}>刷新</button>}
               <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextRename() }}>重命名</button>
               {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextAddSubfolder() }}>新增子文件夹</button>}

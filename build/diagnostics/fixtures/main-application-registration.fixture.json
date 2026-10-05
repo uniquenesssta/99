@@ -84,6 +84,7 @@
     "readFontCleanupRemnants",
     "refreshInstallStatusIndex",
     "refreshWatchedFolder",
+    "rememberRelinkedFontFile",
     "renamePhysicalFolder",
     "renameSharedFontTagInIndex",
     "runFontCleanupAction",

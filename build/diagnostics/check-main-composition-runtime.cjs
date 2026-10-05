@@ -23,6 +23,7 @@ async function checkImportAndOwnership() {
     assert.equal(data.resources[key], storage[key], `${key} lost its single storage owner`)
   }
   assert.equal(data.capabilities.queryFontsInLibrary, query.queryFontsInLibrary)
+  assert.equal(data.capabilities.rememberRelinkedFontFile, query.rememberRelinkedFontFile)
   const protection = h.options('createLocalFontProtectionRuntime')
   assert.equal(protection.openLibraryDb.fixtureOperation, 'library.open', 'protection must use the existing library connection owner')
   assert.equal(protection.watchedFolders, storage.appWatchedFolders, 'protection lost persisted root authority')

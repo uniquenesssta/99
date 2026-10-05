@@ -1,3 +1,4 @@
+import { openTagFontSnapshots } from '../library/tagFontSnapshotRuntime';
 import { createFontProtectionAuthorityRuntime, readSharedFontProtection } from '../install/fontProtectionAuthorityRuntime';
 import { withSharedLeaseLocks } from '../storage/runtime/sharedLeaseLockRuntime';
 import { sharedFileSystem as protectionFs } from '../path/sharedFileSystemRuntime';
@@ -464,7 +465,10 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
       scope: "shared",
       mutationKind: "shared-tags-set",
       inputIds: (items || []).map((item) => item?.id),
-      action: () => setSharedFontTagsInIndexBase(items, watchedFolders, tagNames),
+      action: async () => {
+        openTagFontSnapshots(await openLibraryDb()).remember(items);
+        return setSharedFontTagsInIndexBase(items, watchedFolders, tagNames);
+      },
     });
   }
 
@@ -476,7 +480,10 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
       scope: "shared",
       mutationKind: "shared-tags-batch-set",
       inputIds: (items || []).map((entry) => entry?.item?.id),
-      action: () => setSharedFontTagsBatchInIndexBase(items, watchedFolders),
+      action: async () => {
+        openTagFontSnapshots(await openLibraryDb()).remember(items.map(entry => entry.item));
+        return setSharedFontTagsBatchInIndexBase(items, watchedFolders);
+      },
     });
   }
 

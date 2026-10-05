@@ -44,6 +44,8 @@ export function isCleanWindowsDefaultFont(font: FontItem): boolean {
 }
 
 export function installLabel(font: FontItem): string {
+  if (font.fileAvailability === 'missing') return '文件丢失'
+  if (font.fileAvailability === 'unavailable') return '文件暂不可访问'
   if (getUninstallIssue(font)) return '卸载未完成'
   if (font.systemInstalled && font.active) return '系统已安装 · 已激活'
   if (font.systemInstalled) return '系统已安装'

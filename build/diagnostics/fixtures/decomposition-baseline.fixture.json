@@ -64,7 +64,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "c2061bc839f3567c0c4c62b715e9d104dd72c186dda3701618afed007c3791c3"
+      "tokenHash": "db3d46fec2341de25e563987aa5e022fdcc031634006c443360f74882a6183e3"
     },
     "src/renderer/src/App.tsx": {
       "functions": [
@@ -96,7 +96,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "5702cf2c9df9967c893b23aa695e29185088fc9e7e2a0625dca977d205db6bfe"
+      "tokenHash": "e6ebcadb78c3e007f81b7229cedeea64e1f0f8f19c51102681d01cce4c3e32df"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -521,7 +521,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "5ab2746c92e81a44aaad948e44ef819394a046f30178587ec759bfa46cab7f2c"
+      "tokenHash": "a754bf800cda295bfefa359c27d574307c34c7df979bb42bb06b916ef3bea8bd"
     },
     "src/renderer/src/runtime/app/useLibraryController.ts": {
       "functions": [
@@ -621,7 +621,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "33dd9246910ce927d0ab17cea5ad5ec8ca1395ebf0da9b726f5dc3eca9442c3b"
+      "tokenHash": "2ce3df2d4e73a3b8da47c898e8ddcdfc811eda1124fdcda67b967fab907a6ec5"
     },
     "src/renderer/src/runtime/app/usePreviewController.ts": {
       "functions": [
@@ -877,6 +877,7 @@
       "surfaces": {},
       "viewGroups": [],
       "ipcChannels": [
+        "fonts:recoverTagFiles",
         "fonts:setLocalTags",
         "fonts:setLocalTagsBatch",
         "fonts:deleteLocalTag",
@@ -885,7 +886,7 @@
         "fonts:renameSharedTag",
         "fonts:deleteSharedTag"
       ],
-      "tokenHash": "a6d54bdff22aed6f3602ad3eacb66806f506cb7b3e41dc6255b41fbcf304f980"
+      "tokenHash": "f4fca5136e5dce5eb4d0c7fb6eba2a00e1a91d719f4d5f9a13e0b1364067c399"
     },
     "src/main/ipc/handlers/fontSystemIpcHandlers.ts": {
       "functions": [
