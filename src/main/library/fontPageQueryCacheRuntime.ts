@@ -47,6 +47,7 @@ export function createFontPageQueryCacheRuntime(
     const request = requestInput || {};
     const limit = Math.max(1, Math.min(500, Number(request.limit || 200) || 200));
     const offset = Math.max(0, Number(request.offset || 0) || 0);
+    if (request.tagBindingsOnly) return options.queryUncached(request, limit, offset);
     const baseCacheKey = fontQueryCacheKey({ ...request, limit, offset });
     const suffix = options.cacheKeySuffix?.(request) || '';
     const cacheKey = suffix ? `${baseCacheKey}:${suffix}` : baseCacheKey;

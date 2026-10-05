@@ -19,11 +19,13 @@ function harness() {
     db.exec('BEGIN'); try { const value = fn(); db.exec('COMMIT'); return value } catch (e) { db.exec('ROLLBACK'); throw e }
   } }
   const files = new Map(), parsed = new Map(), roots = [root], sharedRows = []
-  const reads = []
+  const reads = [], queryRequests = []
+  const counts = { live: 0, hydrate: 0, parse: 0 }
   const filesystem = {
     async stat(file) {
       if (files.get(key(file)) instanceof Error) throw files.get(key(file))
-      if (files.has(key(file))) return { isDirectory: () => files.get(key(file)) === 'directory', isFile: () => files.get(key(file)) !== 'directory' }
+      if (files.has(key(file))) return { size: parsed.get(key(file))?.fileSize, mtimeMs: parsed.get(key(file))?.modifiedAt,
+        isDirectory: () => files.get(key(file)) === 'directory', isFile: () => files.get(key(file)) !== 'directory' }
       if (roots.includes(file)) return { isDirectory: () => true, isFile: () => false }
       throw Object.assign(Error('missing'), { code: 'ENOENT' })
     },
@@ -42,6 +44,7 @@ function harness() {
     '../folders/physicalFolders': { pathInsideFolder: inside },
     '../path/sharedFileSystemRuntime': { sharedFileSystem: filesystem },
     '../fonts/fontRuntime': { hasValidFontSignature: async file => parsed.has(key(file)), asFormat: file => /\.ttf$/i.test(file) ? 'ttf' : 'unknown', fontItemFromPath: async file => {
+      counts.parse++
       if (!parsed.has(key(file))) throw Error('bad font')
       return { ...parsed.get(key(file)) }
     } },
@@ -61,17 +64,17 @@ function harness() {
   let live = []
   const query = queryModule.createTagFontQueryRuntime({ canReadDetached: async () => true, openLibraryDb: async () => adapter, roots: async () => roots,
     readShared: async () => ({ preflight: { snapshot: { rows: sharedRows } } }),
-    queryLive: async (_request, limit, offset) => ({ items: live.slice(offset, offset + limit), total: live.length, offset, limit, queryKey: 'tags', engine: 'sql', truncated: false, elapsedMs: 0 }),
-    hydrate: async items => items,
+    queryLive: async (_request, limit, offset) => { counts.live++; return { items: live.slice(offset, offset + limit), total: live.length, offset, limit, queryKey: 'tags', engine: 'sql', truncated: false, elapsedMs: 0 } },
+    hydrate: async items => { counts.hydrate++; return items },
     matches: (font, request) => (!request.keyword || font.fileName.includes(request.keyword)) && (!request.selectedTagName || (request.sidebarPage === 'sharedTags' ? font.tagNames : font.localTagNames || []).includes(request.selectedTagName)),
     compare: (a, b) => a.fileName.localeCompare(b.fileName),
   })
   const events = []
   const runtime = {
     loadLibraryShell: async () => ({ folders: roots }),
-    queryFontPageInLibrary: async request => ['library', 'filters'].includes(request.sidebarPage)
+    queryFontPageInLibrary: async request => { queryRequests.push(request); return ['library', 'filters'].includes(request.sidebarPage)
       ? { items: [...parsed.values()].slice(request.offset, request.offset + request.limit), total: parsed.size }
-      : query.query(request, request.limit || 500, request.offset || 0),
+      : query.query(request, request.limit || 500, request.offset || 0) },
     refreshWatchedFolder: async (_folder, _root, wait) => { assert.equal(wait, true); events.push('scan-complete') },
     setLocalFontTagsBatch: async entries => {
       events.push('write')
@@ -80,7 +83,7 @@ function harness() {
       return { ok: true, failed: [], updatedIds: entries.map(entry => entry.item.id) }
     },
   }
-  return { db, adapter, files, roots, parsed, sharedRows, reads, put, add, remember, query, queryModule, recoveryModule, runtime, events,
+  return { db, adapter, files, roots, parsed, sharedRows, reads, queryRequests, counts, put, add, remember, query, queryModule, recoveryModule, runtime, events,
     live: fonts => { live = fonts; query.invalidate() }, close: () => db.close() }
 }
 
@@ -187,6 +190,60 @@ async function batchedAvailabilityCase() {
   } finally { h.close() }
 }
 
+async function bulkRecoveryCases() {
+  for (const failWrite of [false, true]) {
+    const h = harness(), originals = Array.from({ length: 26 }, (_, i) => make('W' + i)), replacements = originals.map(font => make(font.family, 'new'))
+    try {
+      for (const font of originals) { h.add(font, ['T', 'Keep']); h.remember([font]) }
+      for (const font of replacements) h.put(font)
+      const unrelated = make('Unrelated', 'elsewhere'); h.add(unrelated, ['Other']); h.remember([unrelated]); h.put(unrelated)
+      let writes = 0
+      const originalWrite = h.runtime.setLocalFontTagsBatch
+      h.runtime.setLocalFontTagsBatch = async entries => {
+        writes++; assert.equal(entries.length, 52)
+        return failWrite ? { ok: false, failed: [{}], message: 'disk denied' } : originalWrite(entries)
+      }
+      const service = h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async font => {
+        assert.equal(key(font.path), key(originals[8].path))
+        assert.equal(h.counts.live, 0, 'picker must not wait for a full live index query')
+        assert.equal(h.counts.hydrate, 0, 'picker must not wait for install/preview hydration')
+        assert(h.reads.every(folder => key(folder) === key(path.dirname(font.path))), 'unrelated font directories read before picker')
+        return replacements[8].path
+      })
+      const result = await service.recover({ mode: 'relink', scope: 'local', fontPath: originals[8].path })
+      assert.equal(writes, 1, '26 files must use one local tag transaction/notification')
+      assert.equal(result.linked, failWrite ? 0 : 26); assert.equal(result.remaining, failWrite ? 26 : 0)
+      assert.equal(h.counts.parse, 0, 'unchanged indexed candidates must not be reparsed')
+      assert.equal(h.counts.live, 0); assert.equal(h.counts.hydrate, 0)
+      assert.equal(h.queryRequests.filter(r => r.tagBindingsOnly).length, 3, 'source/destination tags must not be reread per file')
+      assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(key(originals[0].path)).n, failWrite ? 2 : 0)
+    } finally { h.close() }
+  }
+  const h = harness(), old = make('A'), next = make('A', 'new')
+  try {
+    h.add(old, ['T']); h.remember([old]); h.put(next)
+    const originalQuery = h.runtime.queryFontPageInLibrary
+    h.runtime.queryFontPageInLibrary = async request => {
+      const result = await originalQuery(request)
+      return request.sidebarPage === 'filters' ? { ...result, items: result.items.map(font => ({ ...font, modifiedAt: 0 })) } : result
+    }
+    let release, opened
+    let ready = new Promise(resolve => { opened = resolve })
+    const service = h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => { opened(); return new Promise(resolve => { release = resolve }) })
+    const request = { mode: 'relink', scope: 'local', fontPath: old.path }
+    const first = service.recover(request); await ready
+    const busy = await service.recover(request)
+    assert.equal(busy.busy, true); assert.equal(h.events.length, 0)
+    release(undefined); assert.equal((await first).canceled, true)
+    ready = new Promise(resolve => { opened = resolve })
+    const second = service.recover(request); await ready
+    release(undefined); assert.equal((await second).canceled, true, 'cancel must release the in-flight guard')
+    const finishService = h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => next.path)
+    const result = await finishService.recover(request)
+    assert.equal(result.linked, 1); assert.equal(h.counts.parse, 1, 'stale index metadata must trigger actual parsing')
+  } finally { h.close() }
+}
+
 async function sharedRecoveryCases() {
   for (const failDestination of [false, true]) {
     const h = harness(), old = make('A'), next = make('A', 'new'), writes = []
@@ -264,7 +321,7 @@ async function backgroundWaitCase() {
 async function main() {
   const display = load('src/renderer/src/fontDisplay.ts', { './fontUserIntentRuntime': { getUninstallIssue: () => undefined } })
   assert.equal(display.installLabel({ ...make('A'), systemInstalled: true, fileAvailability: 'missing' }), '文件丢失')
-  await queryCases(); await recoveryCases(); await targetedRecoveryCases(); await batchedAvailabilityCase(); await sharedRecoveryCases(); await detachedAuthorizationCase(); await backgroundWaitCase()
+  await queryCases(); await recoveryCases(); await targetedRecoveryCases(); await batchedAvailabilityCase(); await bulkRecoveryCases(); await sharedRecoveryCases(); await detachedAuthorizationCase(); await backgroundWaitCase()
   console.log('[diagnostics:tag-font-recovery] retained local/shared rows, batched directory availability/concurrent pages, root ownership before NAS/fallback/failure, clicked anchor and one picker, unmatched siblings, cancellation, failed write, tag union, completed scan barrier')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

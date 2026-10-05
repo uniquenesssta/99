@@ -41,6 +41,19 @@ async function run(){let cases=0
     assert(!labels(overlays({contextMenu:{kind:'font',font:h.all[0],x:0,y:0}})).includes('重新链接文件'))
     const rejected=h.load(renderer+'fontDialogContextActionsRuntime.ts').createFontDialogContextActions({...opts,flushFontWriteQueue:async()=>false})
     rejected.runContextRelinkFont();await tick();assert.equal(requests.length,1,'unsaved writes must block relink')
+    let release, refreshes=0
+    h.handlers.set('fonts:recoverTagFiles',(_event,request)=>{requests.push(plain(request));return new Promise(resolve=>{release=resolve})})
+    const pendingOptions={...opts,refreshDatabaseDerivedState:()=>refreshes++}
+    const create=()=>h.load(renderer+'fontDialogContextActionsRuntime.ts').createFontDialogContextActions(pendingOptions)
+    create().runContextRelinkFont();await tick()
+    create().runContextRelinkFont();await tick()
+    assert.equal(requests.length,2,'rerendered dialog factory must share the in-flight recovery guard')
+    assert.equal(refreshes,0,'duplicate click must not refresh queries while a picker is open')
+    release({linked:0,remaining:26,canceled:true,failures:[],message:'canceled'});await tick()
+    assert.equal(refreshes,0,'cancel must not start another query wave')
+    create().runContextRelinkFont();await tick();assert.equal(requests.length,3,'cancel must release the guard')
+    release({linked:26,remaining:0,canceled:false,failures:[],message:'done'});await tick()
+    assert.equal(refreshes,1)
     cases++
   }
   const scan=directory=>fs.readdirSync(directory,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?scan(path.join(directory,entry.name)):/\.tsx?$/.test(entry.name)?[path.join(directory,entry.name)]:[])

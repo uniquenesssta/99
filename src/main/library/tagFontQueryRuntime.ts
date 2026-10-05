@@ -135,7 +135,7 @@ export function createTagFontQueryRuntime(deps: {
     const broad: FontQueryRequest = { sidebarPage: scope === 'local' ? 'tags' : 'sharedTags', selectedTagName: name, selectedWatchedFolders: request.selectedWatchedFolders, sortMode: 'nameAsc' }
     const live = new Map<string, FontItem>()
     let first: FontQueryPageResult | undefined
-    for (let at = 0; ; ) {
+    for (let at = 0; !request.tagBindingsOnly; ) {
       const page = await deps.queryLive(broad, 500, at)
       if (first && (first.total !== page.total || JSON.stringify(first.tagRevision) !== JSON.stringify(page.tagRevision))) throw new Error('标签索引在读取期间发生变化，请重试。')
       first ||= page
@@ -158,7 +158,7 @@ export function createTagFontQueryRuntime(deps: {
         fileSize: 0, modifiedAt: 0, addedAt: '', favorite: false, collectionIds: [], tagNames: [],
         systemInstalled: false, systemInstallMatches: [], active: false }
       let availability: NonNullable<FontItem['fileAvailability']> = roots.some(root => offlineRoots.has(key(root)) && pathInsideFolder(binding.path, root)) ? 'unavailable' : await availabilityFor(binding.path)
-      if (!live.has(pathKey) && availability === 'available') {
+      if (!request.tagBindingsOnly && !live.has(pathKey) && availability === 'available') {
         try {
           if (!roots.some(root => pathInsideFolder(binding.path, root)) && !await deps.canReadDetached?.(binding.path)) throw new Error('文件尚未由重新链接操作授权。')
           font = await fontItemFromPath(binding.path)
@@ -177,14 +177,16 @@ export function createTagFontQueryRuntime(deps: {
       const availability = await availabilityFor(item.path)
       items.set(pathKey, { ...item, fileAvailability: availability, ...(availability === 'available' ? {} : { previewDisabled: true }) })
     }
-    const sorted = (await deps.hydrate([...items.values()].filter(font => inScope(font.path)))).filter(font => deps.matches(font, request)).sort((a, b) => deps.compare(a, b, request))
-    return { ...first!, engine: 'mixed', items: sorted.slice(offset, offset + limit), total: sorted.length, offset, limit,
+    const scoped = [...items.values()].filter(font => inScope(font.path))
+    const sorted = (request.tagBindingsOnly ? scoped : await deps.hydrate(scoped)).filter(font => deps.matches(font, request)).sort((a, b) => deps.compare(a, b, request))
+    return { queryKey: JSON.stringify(request), ...first, engine: 'mixed', items: sorted.slice(offset, offset + limit), total: sorted.length, offset, limit,
       truncated: offset + limit < sorted.length, elapsedMs: Date.now() - start }
   }
   let generation = 0
   const inFlight = new Map<string, Promise<FontQueryPageResult>>()
   const cache = new Map<string, { at: number; result: FontQueryPageResult }>()
   async function query(request: FontQueryRequest, limit: number, offset: number): Promise<FontQueryPageResult> {
+    if (request.tagBindingsOnly) return collect(request, limit, offset)
     const { limit: _limit, offset: _offset, ...criteria } = request
     const cacheKey = JSON.stringify(criteria)
     const found = cache.get(cacheKey)

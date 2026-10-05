@@ -7,6 +7,9 @@ import {
 } from './fontContextMenuRuntime'
 import type { FontDialogRuntimeOptions } from './fontDialogRuntime'
 
+// Dialog factories are recreated on render; the API object owns the in-flight operation.
+const activeRecoveries = new WeakSet<object>()
+
 export type FontDialogContextActionsRuntime = {
   runContextRename: () => void
   runContextDelete: () => void
@@ -21,15 +24,22 @@ export type FontDialogContextActionsRuntime = {
 export function createFontDialogContextActions(options: FontDialogRuntimeOptions): FontDialogContextActionsRuntime {
   function recover(input: import('@shared/tagFontRecovery').TagFontRecoveryRequest): void {
     options.setContextMenu(null)
+    if (activeRecoveries.has(options.hfm)) {
+      options.setStatus('正在恢复字体关联，请完成文件选择或等待本次恢复结束。')
+      return
+    }
+    activeRecoveries.add(options.hfm)
     options.setStatus(input.mode === 'reindex' ? '正在按缺失字体所属目录重新索引……' : '请选择此字体的新文件，同目录内能匹配的缺失字体会自动链接。')
     void (async () => {
       try {
         if (options.flushFontWriteQueue && !await options.flushFontWriteQueue('tag-recovery')) throw new Error('标签修改尚未保存，请稍后重试。')
         const result = await options.hfm.recoverTagFiles(input)
         options.setStatus(result.message)
+        if (!result.busy && !result.canceled) options.refreshDatabaseDerivedState()
       } catch (error) {
         options.setStatus(`恢复未完成：${error instanceof Error ? error.message : String(error)}`)
-      } finally { options.refreshDatabaseDerivedState() }
+        options.refreshDatabaseDerivedState()
+      } finally { activeRecoveries.delete(options.hfm) }
     })()
   }
   return {

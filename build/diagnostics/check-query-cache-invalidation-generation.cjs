@@ -95,6 +95,11 @@ async function runPageCacheBehavior() {
   assert((await oldRequest).queryKey === 'new', 'old page caller received stale data after invalidation')
   assert((await newRequest).queryKey === 'new' && (await joinedNewRequest).queryKey === 'new', 'new page query callers did not share the current-generation result')
   assert((await runtime.queryFontPageInLibrary(request)).queryKey === 'new' && loads === 2, 'current-generation page result was not cached')
+  await runtime.queryFontPageInLibrary({ ...request, tagBindingsOnly: true })
+  await runtime.queryFontPageInLibrary({ ...request, tagBindingsOnly: true })
+  assert(loads === 4, 'recovery binding reads must bypass both cached pages and in-flight view queries')
+  await runtime.queryFontPageInLibrary(request)
+  assert(loads === 4, 'recovery reads must not evict the ordinary view cache')
 }
 
 async function runMetricsCacheBehavior() {
