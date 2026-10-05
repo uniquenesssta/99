@@ -1131,3 +1131,17 @@ Context7 查询后，对照项目固定 Electron 42.11.3 的官方源码核实�
 当前非 Windows 环境只进行源码审阅、改动文件静态语法解析、导入/调用核对及 git diff --check，没有运行项目诊断、类型检查、构建或生产模块。推送后只查一次 Windows CI 启动，不轮询完成。应用主进程和渲染代码均变化，CI 通过后需重新封包；Rust 源码未变，不新增真实字体操作验收要求。
 
 Context7 已核对 Electron 异步文件选择框及取消回执 API，保持当前 Electron/React/依赖版本。Mermaid Chart 已生成实际链路。Create State 查询仍仅有 Markdown/足球项目，未将 HFM 写入无关项目；续接状态保存在本任务书与 Git。
+
+### 21.4 三处旧契约基线补齐（2026-10-05）
+
+用户反馈未通过。已读取 `040ce5d0e29ebf9facc5066acfd05ba055ca41ad` 的 [Windows CI 37265514347](https://github.com/uniquenesssta/99/actions/runs/37265514347)，job `111621394606` 完整日志：类型检查成功；166 项诊断全部执行，163 项通过、3 项失败。新增 tag-font-recovery 专项已通过，Rust、各独立专项、身份 DOM、两档列表网格/原生输入 DOM 和应用 bundle 全部成功。阶段尚未整体通过，不能用这些分项回执代替完整验收。
+
+失败及本次修改：
+
+1. app-root-view-contracts：App 解构新增两个恢复回调，旧生命周期前缀哈希未同步。继续审阅被首断言挡住的后续检查，发现 overlaysViewProps 两个新属性使用简写，违反原有显式属性契约，且四种界面快照尚未包含它们。改为显式绑定，迁移前缀/视图哈希、绑定清单和四种快照；对应 App token 哈希同步。通过静态 AST 投影先重现四个旧快照，再确认新结构仅增加这两个回调；没有执行生产模块或渲染器。新增两个错接恢复回调反例，保留全部生命周期、类型、禁止展开及 LF/CRLF 检查。
+2. main-composition-compiler-paths：实际编译契约门成功产生 129 个拒绝用例，外层仍要求旧日志中的 128，导致 case 0 失败、后续路径场景未运行。新增可信链接能力对应新增一个必填能力缺失反例，明确同步期望为 129，保留全部路径/换行与三个负例；能力总数日志改读权威清单，避免打印过期 116。
+3. main-operations-composition：刷新缓存链已新增 createTagFontQueryRuntime.invalidate，但旧 operations 快照只从内存查询缓存开始。仅在 refreshInvalidation 最前面补入该调用，不修改其他操作、启动、关闭证据；增加删除此调用必须失败的反例。
+
+本轮生产改动仅为 App 两个属性的等价显式绑定，不重写文件恢复逻辑，不修改 Rust、真实字体操作、依赖版本或业务架构。Context7 不触发（没有 API/版本/编译错误），Mermaid 沿用 §21.2 实际链路。Create State 仍无 HFM 项目时沿用 Git/README/任务书保存续接，不写入无关项目。
+
+非 Windows 编辑环境仅完成静态语法/AST、调用与差异审阅、git diff --check；没有执行项目诊断、类型检查、构建或生产模块。新反例与此前被阻断的后续门仍待 Windows CI 回执，推送后只查询一次启动链接，不轮询完成。本轮无需用户重新测试真实字体安装/卸载。

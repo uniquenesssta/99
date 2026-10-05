@@ -1,5 +1,6 @@
 {
   "baseline": "0a9b82bfe84dff77992eecb4c2a52df2cf649d07",
-  "lifecyclePrefixSha256": "f68d2290d884ebaf3242d50af13a24d8aa1ceb7d01dcad849ef8a2970ecb5e5c",
-  "rootViewSha256": "b2cbd27e98c70d9c619d6d221395ea2cbc622076de78205683e479cb89611f37"
+  "lifecyclePrefixSha256": "4b27597554f3e71775b2a2e116e8c848b18047add54f9d7b3001f9626cb8f55f",
+  "rootViewSha256": "81b66045216f7d5474d6e80c089d4199f7c8ebab216555d9463ddcc40d7ffa1b",
+  "migration": "040ce5d: two dialog callbacks; lifecycle prefix confirmed by Windows CI 37265514347"
 }

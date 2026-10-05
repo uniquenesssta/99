@@ -164,6 +164,8 @@
     "contextSelectedFonts",
     "selectionLabel",
     "runFontContextAction",
+    "runContextReindexTag",
+    "runContextRelinkTag",
     "runContextBatchActivate",
     "runContextBatchDeactivate",
     "runContextRefreshFolder",
@@ -179,22 +181,23 @@
     {
       "development": false,
       "collapsed": false,
-      "hash": "134689641c9d41fffc9c718a63d03229344e8aac938ac2aff592ab5280c64ca8"
+      "hash": "b13fbea7d603ad5659c92b58aea80eda0bf704bf0d9d852d41c5ed8ddf76bfc9"
     },
     {
       "development": false,
       "collapsed": true,
-      "hash": "34875d591e5a6b088eb0a4d2a3b770f8c5a3fb632a0233169e1c2fe060adc095"
+      "hash": "126d8c8ca58f62d39765270eb33a1850f19d03f4efa807b5dbe09b3f349a5701"
     },
     {
       "development": true,
       "collapsed": false,
-      "hash": "8f5873a9c16a570e25c21db8e57094909408c6bda19ff437186ba7bf30628f7d"
+      "hash": "5bb4f510748326a1ff7d9f2c987ce416d0389560b29fbe47f0eacbb7cfa454a4"
     },
     {
       "development": true,
       "collapsed": true,
-      "hash": "e27674e8a33506ab1446a8723992106536b86bfe2783ee428aedac6d3f3e47bd"
+      "hash": "3afbb0ed7451d06b8121517c90b7e7d1ba81cfc5bac5961d9726e191952c9c73"
     }
-  ]
+  ],
+  "migration": "040ce5d: tag recovery callbacks; static projection preserves every previous binding"
 }
