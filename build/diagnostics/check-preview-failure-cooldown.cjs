@@ -25,6 +25,18 @@ async function check(transform = s => s) {
     hfm:{getCachedPreviewImage:async()=>'',renderPreviewImage:async()=>{calls++;if(pending)await pending;if(failure)throw Error("Error invoking remote method: "+SHARED_UNAVAILABLE_MESSAGE);return 'data:image/png;base64,ok'}},
   }
   const runtime = load(file).createFontPreviewLoadRuntime(options)
+  let cacheReads=0
+  options.hfm.getCachedPreviewImages=async()=>{cacheReads++;return {}}
+  for(const fileAvailability of ['missing','unavailable']) {
+    const missing={...font,fileAvailability,previewDisabled:true,previewError:'文件丢失'}
+    assert.equal(await runtime.ensurePreviewFont(missing),'')
+    assert.equal((await runtime.loadCachedNativeCardPreviews([missing])).size,0)
+    assert.equal(calls,0);assert.equal(cacheReads,0)
+    const state=load('src/renderer/src/fontPreviewStateRuntime.ts')
+    assert.equal(state.canQueuePreviewFont({font:missing,...options,loadingFontIds:new Set(),queuedPreviewFontIds:new Set()}),false)
+    const cleared=state.clearPreviewFailureFlagsInLibrary({fonts:{a:missing}})
+    assert.equal(cleared.library.fonts.a.previewDisabled,true,'cache reset must not erase missing state')
+  }
   await runtime.ensurePreviewFont(font)
   for(let i=0;i<3000;i++) await runtime.ensurePreviewFont(font)
   assert.equal(calls,1,'offline rerenders must not produce repeated IPC')

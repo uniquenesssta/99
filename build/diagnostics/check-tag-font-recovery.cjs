@@ -19,6 +19,7 @@ function harness() {
     db.exec('BEGIN'); try { const value = fn(); db.exec('COMMIT'); return value } catch (e) { db.exec('ROLLBACK'); throw e }
   } }
   const files = new Map(), parsed = new Map(), roots = [root], sharedRows = []
+  const reads = []
   const filesystem = {
     async stat(file) {
       if (files.get(key(file)) instanceof Error) throw files.get(key(file))
@@ -26,7 +27,14 @@ function harness() {
       if (roots.includes(file)) return { isDirectory: () => true, isFile: () => false }
       throw Object.assign(Error('missing'), { code: 'ENOENT' })
     },
-    async readdir(folder) { return [...parsed.values()].filter(font => key(path.dirname(font.path)) === key(folder)).map(font => ({ name: font.fileName, isFile: () => true })) },
+    async readdir(folder) {
+      reads.push(folder)
+      const blocked = [...files].find(([file, state]) => inside(folder, file) && state instanceof Error)
+      if (blocked) throw blocked[1]
+      const entries = [...files].filter(([file, state]) => key(path.dirname(file)) === key(folder) && !(state instanceof Error))
+      if (!entries.length) throw Object.assign(Error('missing directory'), { code: 'ENOENT' })
+      return entries.map(([file, state]) => ({ name: path.basename(file), isFile: () => state !== 'directory', isSymbolicLink: () => false }))
+    },
   }
   const mocks = {
     'node:path': path,
@@ -61,7 +69,7 @@ function harness() {
   const events = []
   const runtime = {
     loadLibraryShell: async () => ({ folders: roots }),
-    queryFontPageInLibrary: async request => request.sidebarPage === 'library'
+    queryFontPageInLibrary: async request => ['library', 'filters'].includes(request.sidebarPage)
       ? { items: [...parsed.values()].slice(request.offset, request.offset + request.limit), total: parsed.size }
       : query.query(request, request.limit || 500, request.offset || 0),
     refreshWatchedFolder: async (_folder, _root, wait) => { assert.equal(wait, true); events.push('scan-complete') },
@@ -72,7 +80,7 @@ function harness() {
       return { ok: true, failed: [], updatedIds: entries.map(entry => entry.item.id) }
     },
   }
-  return { db, adapter, files, roots, parsed, sharedRows, put, add, remember, query, queryModule, recoveryModule, runtime, events,
+  return { db, adapter, files, roots, parsed, sharedRows, reads, put, add, remember, query, queryModule, recoveryModule, runtime, events,
     live: fonts => { live = fonts; query.invalidate() }, close: () => db.close() }
 }
 
@@ -110,7 +118,7 @@ async function recoveryCases() {
       let picks = 0
       const service = h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => { picks++; return mode === 'cancel' ? undefined : nextA.path })
       if (mode === 'failure') h.runtime.setLocalFontTagsBatch = async () => ({ ok: false, failed: [{}], message: 'injected disk error' })
-      const result = await service.recover({ tagName: 'T', scope: 'local', mode: mode === 'reindex' || mode === 'failure' ? 'reindex' : 'relink' })
+      const result = await service.recover(mode === 'reindex' || mode === 'failure' ? { tagName: 'T', scope: 'local', mode: 'reindex' } : { fontPath: a.path, scope: 'local', mode: 'relink' })
       if (mode === 'cancel' || mode === 'failure') {
         assert.equal(result.linked, 0); assert.equal(result.remaining, 2)
         assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(key(a.path)).n, 2)
@@ -127,6 +135,56 @@ async function recoveryCases() {
       assert.equal(h.recoveryModule.sameRecoveryFont(a, { ...nextA, fileSize: 101 }), false)
     } finally { h.close() }
   }
+}
+
+async function targetedRecoveryCases() {
+  const nas = '\\\\server\\fonts'
+  for (const scenario of ['own-root', 'expanded-root', 'own-root-failure']) {
+    const h = harness(), old = make('A'), next = make('A', 'new'), scanned = []
+    try {
+      h.roots.unshift(nas); h.add(old, ['T']); h.remember([old])
+      if (scenario !== 'own-root') next.path = nas + '\\new\\A.ttf'
+      h.put(next)
+      h.runtime.refreshWatchedFolder = async (folder, _root, wait) => {
+        assert.equal(wait, true); scanned.push(folder)
+        if (scenario === 'own-root-failure' && folder === root) throw Error('root index sync failed')
+        if (scenario === 'own-root' && folder === nas) throw Error('unrelated NAS must not run')
+      }
+      const service = h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => { throw Error('reindex opened picker') })
+      const result = await service.recover({ mode: 'reindex', scope: 'local', tagName: 'T' })
+      assert.equal(result.linked, 1); assert.equal(result.remaining, 0)
+      assert.deepEqual(scanned, scenario === 'own-root' ? [root] : [root, nas])
+      assert.equal(result.failures.length, scenario === 'own-root-failure' ? 1 : 0)
+    } finally { h.close() }
+  }
+  const h = harness(), a = make('A'), b = make('B'), c = make('C', 'elsewhere'), nextB = make('B', 'new'), chosen = []
+  try {
+    for (const font of [a, b, c]) { h.add(font, ['T']); h.remember([font]) }
+    h.put(nextB)
+    const service = h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async font => { chosen.push(font.path); return nextB.path })
+    const result = await service.recover({ mode: 'relink', scope: 'local', fontPath: b.path })
+    assert.deepEqual(chosen.map(key), [key(b.path)], 'only the clicked card opens a dialog')
+    assert.equal(result.linked, 1); assert.equal(result.remaining, 1, 'unmatched sibling stays without a second picker')
+    assert.match(result.message, /未全部完成/, 'unmatched files must not claim complete recovery')
+    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(key(c.path)).n, 1)
+    await assert.rejects(service.recover({ mode: 'relink', scope: 'local', fontPath: 'C:\\invented.ttf' }), /此字体已恢复/)
+    assert.equal(chosen.length, 1, 'unknown renderer path must not open a picker')
+  } finally { h.close() }
+}
+
+async function batchedAvailabilityCase() {
+  const h = harness()
+  try {
+    const fonts = Array.from({ length: 26 }, (_, i) => make('Missing' + i))
+    for (const font of fonts) { h.add(font, ['T']); h.remember([font]) }
+    const request = { sidebarPage: 'tags', selectedTagName: 'T' }
+    const pages = await Promise.all([h.query.query(request, 10, 0), h.query.query(request, 10, 10)])
+    assert(pages.every(page => page.total === 26)); assert.equal(h.reads.length, 1, 'siblings and simultaneous pages share one directory read')
+    h.put(fonts[0]); h.query.invalidate()
+    const refreshed = await h.query.query(request, 100, 0)
+    assert.equal(refreshed.items.find(font => key(font.path) === key(fonts[0].path)).fileAvailability, 'available')
+    assert.equal(h.reads.length, 2, 'invalidation must recheck restored files')
+  } finally { h.close() }
 }
 
 async function sharedRecoveryCases() {
@@ -150,7 +208,7 @@ async function sharedRecoveryCases() {
         h.query.invalidate(); return { ok: true, failed: [], updatedIds: entries.map(entry => entry.item.id) }
       }
       const service = h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => next.path)
-      const result = await service.recover({ tagName: 'T', scope: 'shared', mode: 'relink' })
+      const result = await service.recover({ fontPath: old.path, scope: 'shared', mode: 'relink' })
       if (failDestination) {
         assert.equal(result.linked, 0); assert(!writes.includes('remove'))
         assert.deepEqual(JSON.parse(h.sharedRows[0].tag_names_json), ['T', 'Keep'])
@@ -206,7 +264,7 @@ async function backgroundWaitCase() {
 async function main() {
   const display = load('src/renderer/src/fontDisplay.ts', { './fontUserIntentRuntime': { getUninstallIssue: () => undefined } })
   assert.equal(display.installLabel({ ...make('A'), systemInstalled: true, fileAvailability: 'missing' }), '文件丢失')
-  await queryCases(); await recoveryCases(); await sharedRecoveryCases(); await detachedAuthorizationCase(); await backgroundWaitCase()
-  console.log('[diagnostics:tag-font-recovery] retained missing/local/shared rows, metadata snapshot restoration, paging/search, offline/corrupt file, matching ambiguity, sibling linking, cancellation, failed write, destination tag union, completed scan barrier')
+  await queryCases(); await recoveryCases(); await targetedRecoveryCases(); await batchedAvailabilityCase(); await sharedRecoveryCases(); await detachedAuthorizationCase(); await backgroundWaitCase()
+  console.log('[diagnostics:tag-font-recovery] retained local/shared rows, batched directory availability/concurrent pages, root ownership before NAS/fallback/failure, clicked anchor and one picker, unmatched siblings, cancellation, failed write, tag union, completed scan barrier')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

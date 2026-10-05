@@ -1,6 +1,6 @@
 {
   "baseline": "0a9b82bfe84dff77992eecb4c2a52df2cf649d07",
-  "lifecyclePrefixSha256": "4b27597554f3e71775b2a2e116e8c848b18047add54f9d7b3001f9626cb8f55f",
-  "rootViewSha256": "81b66045216f7d5474d6e80c089d4199f7c8ebab216555d9463ddcc40d7ffa1b",
-  "migration": "040ce5d: two dialog callbacks; lifecycle prefix confirmed by Windows CI 37265514347"
+  "lifecyclePrefixSha256": "8ba6cc0c33f5eb4e6447fd698557749dc1b633c7a99809b2cdac321238dc8360",
+  "rootViewSha256": "e26abd7ee505518f601ec9622cbe6f3471afd79f4d71f2ade76a60a86b734708",
+  "migration": "9fcce70: clicked-card relink callback and dialog sidebar scope; old normalized prefix reproduced before migration"
 }

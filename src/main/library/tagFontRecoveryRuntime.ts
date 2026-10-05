@@ -55,7 +55,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
   }
   async function recover(input: TagFontRecoveryRequest): Promise<TagFontRecoveryResult> {
     if (running) throw new Error('正在恢复字体关联，请等待当前操作完成。')
-    if (!input || !['local', 'shared'].includes(input.scope) || !['reindex', 'relink'].includes(input.mode) || !String(input.tagName || '').trim()) throw new Error('无效的标签恢复请求。')
+    if (!input || !['local', 'shared'].includes(input.scope) || !['reindex', 'relink'].includes(input.mode) || !(input.mode === 'reindex' ? String(input.tagName || '').trim() : String(input.fontPath || '').trim())) throw new Error('无效的标签恢复请求。')
     const ticket = applicationWorkEpoch()
     assertApplicationOpen(ticket)
     running = true
@@ -64,14 +64,17 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
     try {
       const library = await runtime.loadLibraryShell() as LibraryState
       const roots = library.folders || []
-      const request: FontQueryRequest = { sidebarPage: input.scope === 'local' ? 'tags' : 'sharedTags', selectedTagName: input.tagName, sortMode: 'nameAsc' }
-      if (input.mode === 'reindex') {
-        for (const root of roots) {
-          try { assertApplicationOpen(ticket); await admit('folders:refreshWatched', [root, root]); await runtime.refreshWatchedFolder(root, root, true) }
-          catch (error) { failures.push(`${root}：${String(error)}`) }
-        }
-      }
-      let missing = (await readAll(request)).filter(font => font.fileAvailability === 'missing')
+      const request: FontQueryRequest = { sidebarPage: input.scope === 'local' ? 'tags' : 'sharedTags',
+        selectedTagName: input.mode === 'reindex' ? input.tagName : undefined, sortMode: 'nameAsc',
+        selectedWatchedFolders: input.mode === 'relink' && input.scope === 'shared' ? roots.filter(root => pathInsideFolder(input.fontPath, root)) : undefined }
+      const initial = await readAll(request)
+      let missing = initial.filter(font => font.fileAvailability === 'missing')
+      const anchor = input.mode === 'relink' ? missing.find(font => key(font.path) === key(input.fontPath)) : undefined
+      if (input.mode === 'relink' && !anchor) throw new Error('此字体已恢复、暂不可访问或标签关联已变化，请刷新后重试。')
+      if (anchor) missing = missing.filter(font => key(dirname(font.path)) === key(dirname(anchor.path)))
+      const targetPaths = new Set((anchor ? missing : initial.filter(font => font.fileAvailability !== 'available')).map(font => key(font.path)))
+      const report = (message: string) => runtime.appendLog?.(`tag font recovery: ${message}`)
+      report(`mode=${input.mode}, scope=${input.scope}, missing=${missing.length}${anchor ? `, anchor=${anchor.path}` : ''}`)
       const tags = (font: FontItem) => input.scope === 'local' ? font.localTagNames || [] : font.tagNames || []
       async function link(old: FontItem, next: FontItem): Promise<void> {
         if (key(old.path) === key(next.path)) throw new Error('请选择新的字体文件。')
@@ -80,9 +83,10 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
         if (input.scope === 'shared' && !roots.some(root => pathInsideFolder(next.path, root))) throw new Error('共享标签的目标文件必须位于监听文件夹中。')
         assertApplicationOpen(ticket)
         if (input.scope === 'shared') await admit('fonts:setSharedTagsBatch', [[{ item: old }, { item: next }], roots])
-        const current = await readAll({ sidebarPage: request.sidebarPage })
+        const current = await readAll({ sidebarPage: request.sidebarPage,
+          selectedWatchedFolders: input.scope === 'shared' ? roots.filter(root => pathInsideFolder(old.path, root) || pathInsideFolder(next.path, root)) : undefined })
         const source = current.find(font => key(font.path) === key(old.path))
-        if (!source || !tags(source).includes(input.tagName)) throw new Error('原标签关联已变化，未执行过期的重新链接。')
+        if (!source || !tags(source).length || (input.mode === 'reindex' && !tags(source).includes(input.tagName))) throw new Error('原标签关联已变化，未执行过期的重新链接。')
         assertApplicationOpen(ticket)
         old = source
         const previous = current.find(font => key(font.path) === key(next.path)) || next
@@ -102,6 +106,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
         }
         missing = missing.filter(font => key(font.path) !== key(old.path))
         linked++
+        report(`linked: from=${old.path}, to=${next.path}`)
       }
       async function automatic(candidates: FontItem[], targets = missing): Promise<void> {
         for (const [old, next] of uniqueRecoveryPairs(targets, candidates)) {
@@ -109,30 +114,50 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
         }
       }
       if (input.mode === 'reindex') {
-        await automatic(await readAll({ sidebarPage: 'library', activeFilter: { kind: 'all' } }))
-      } else {
-        for (const old of [...missing]) {
-          if (!missing.some(font => key(font.path) === key(old.path))) continue
-          const selected = await pick(old)
-          if (!selected) { canceled = true; break }
+        // Resolve ownership before touching any root. Unrelated NAS roots must not
+        // delay a recovery completed within the missing font's own watched root.
+        const owner = (font: FontItem) => roots.filter(root => pathInsideFolder(font.path, root)).sort((a, b) => b.length - a.length)[0]
+        const preferred = [...new Set(missing.map(owner).filter((root): root is string => !!root))]
+        const ordered = [...preferred, ...roots.filter(root => !preferred.includes(root))]
+        for (const root of ordered) {
+          if (!missing.length) break
           try {
-            const next = await readReplacement(selected)
-            await link(old, next)
-            const candidates: FontItem[] = []
-            const siblings = missing.filter(font => key(dirname(font.path)) === key(dirname(old.path)))
-            if (siblings.length) {
-              for (const entry of await fsp.readdir(dirname(selected), { withFileTypes: true })) {
-                if (!entry.isFile() || asFormat(entry.name) === 'unknown' || key(join(dirname(selected), entry.name)) === key(selected)) continue
-                try { candidates.push(await readReplacement(join(dirname(selected), entry.name))) } catch { /* Bad fonts are never matched. */ }
-              }
-              await automatic(candidates, siblings)
-            }
-          } catch (error) { failures.push(`${old.fileName}：${String(error)}`) }
+            assertApplicationOpen(ticket)
+            report(`scan: root=${root}, remaining=${missing.length}`)
+            await admit('folders:refreshWatched', [root, root])
+            await runtime.refreshWatchedFolder(root, root, true)
+            const current = await readAll(request)
+            missing = missing.filter(old => current.some(font => key(font.path) === key(old.path) && font.fileAvailability === 'missing'))
+            const candidates = await readAll({ sidebarPage: 'filters', activeFilter: { kind: 'all' }, selectedWatchedFolders: [root] })
+            await automatic(candidates.filter(font => pathInsideFolder(font.path, root)))
+          } catch (error) {
+            failures.push(`${root}：${String(error)}`)
+            report(`scan failed: root=${root}, error=${String(error)}`)
+          }
         }
+      } else if (anchor) {
+        // One native picker for the clicked card; unmatched siblings remain for
+        // their own card action instead of forcing a sequence of dialogs.
+        const selected = await pick(anchor)
+        assertApplicationOpen(ticket)
+        if (!selected) canceled = true
+        else try {
+          const next = await readReplacement(selected)
+          await link(anchor, next)
+          const candidates: FontItem[] = []
+          if (missing.length) {
+            for (const entry of await fsp.readdir(dirname(selected), { withFileTypes: true })) {
+              if (!entry.isFile() || asFormat(entry.name) === 'unknown' || key(join(dirname(selected), entry.name)) === key(selected)) continue
+              try { candidates.push(await readReplacement(join(dirname(selected), entry.name))) } catch { /* Bad fonts are never matched. */ }
+            }
+            await automatic(candidates)
+          }
+        } catch (error) { failures.push(`${anchor.fileName}：${String(error)}`) }
       }
-      const remaining = (await readAll(request)).filter(font => font.fileAvailability !== 'available').length
+      const remaining = (await readAll(request)).filter(font => targetPaths.has(key(font.path)) && font.fileAvailability !== 'available').length
+      report(`finished: linked=${linked}, remaining=${remaining}, canceled=${canceled}, failures=${failures.length}`)
       return { linked, remaining, canceled, failures,
-        message: `${canceled ? '已停止重新链接' : '字体关联恢复完成'}：已链接 ${linked} 个，仍有 ${remaining} 个文件缺失或暂不可访问${failures.length ? `；${failures.length} 项未完成：${failures.join('；')}` : ''}。` }
+        message: `${canceled ? '已取消重新链接' : failures.length || remaining ? '字体关联恢复未全部完成' : '字体关联恢复完成'}：已链接 ${linked} 个，仍有 ${remaining} 个文件缺失或暂不可访问${failures.length ? `；${failures.length} 项未完成：${failures.join('；')}` : ''}。` }
     } finally { running = false }
   }
   return { recover }

@@ -127,7 +127,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     const seen = new Set<string>()
     const uniqueFonts: FontItem[] = []
     for (const font of fonts || []) {
-      if (!font?.id || seen.has(font.id)) continue
+      if (!font?.id || seen.has(font.id) || font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable') continue
       seen.add(font.id)
       const routeForcesNative = resolveFontPreviewRoute(font).shouldSkipWebFontFileLoad
       if ((!routeForcesNative && options.previewFamilies[font.id]) || options.nativePreviewImages[font.id] || options.loadingFonts.current.has(font.id)) continue
@@ -165,7 +165,7 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
   }
 
   async function ensurePreviewFont(font: FontItem, skipCachedPreview = false, acceptsResult: () => boolean = () => true): Promise<string> {
-    if (!acceptsResult()) return ''
+    if (!acceptsResult() || font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable') return ''
     const previewLayout = getCardPreviewLayout(options.previewLayoutMode ?? 'list', options.previewText, options.listPreviewFontSize)
     const previewText = previewLayout.text
     const trace = previewLoadTrace(font.id, previewText, previewLayout.fontSize)

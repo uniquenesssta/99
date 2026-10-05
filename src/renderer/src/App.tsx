@@ -740,6 +740,7 @@ export default function App(): JSX.Element {
 
 
   const dialogRuntime = contextActionRuntime.createDialogs({
+    sidebarPage,
     selectedFontIds,
     getVisibleFonts: () => latestVisibleFontsRef.current,
     renameTarget,
@@ -777,7 +778,7 @@ export default function App(): JSX.Element {
     refreshDatabaseDerivedState,
     flushFontWriteQueue
   }, newTagName, newSharedTagName)
-  const { runContextReindexTag, runContextRelinkTag, runContextRename, runContextDelete, runContextAddSubfolder, runContextRefreshFolder, runContextBatchActivate, runContextBatchDeactivate, confirmRename, confirmDelete, addTagToSelectedByName, addSharedTagToSelectedByName, removeTagFromSelected, removeSharedTagFromSelected, createTagOnlyFromInput, createSharedTagOnlyFromInput } = dialogRuntime
+  const { runContextReindexTag, runContextRelinkFont, runContextRename, runContextDelete, runContextAddSubfolder, runContextRefreshFolder, runContextBatchActivate, runContextBatchDeactivate, confirmRename, confirmDelete, addTagToSelectedByName, addSharedTagToSelectedByName, removeTagFromSelected, removeSharedTagFromSelected, createTagOnlyFromInput, createSharedTagOnlyFromInput } = dialogRuntime
 
   const detailPanelRuntime = createAppDetailSelectionRuntime({
     selectedFont,
@@ -1052,7 +1053,7 @@ export default function App(): JSX.Element {
     runFontContextAction: runFontContextAction,
     contextTargetCount: contextTargetCount,
     runContextReindexTag: runContextReindexTag,
-    runContextRelinkTag: runContextRelinkTag,
+    runContextRelinkFont: runContextRelinkFont,
     runContextBatchActivate: runContextBatchActivate,
     runContextBatchDeactivate: runContextBatchDeactivate,
     runContextRefreshFolder: runContextRefreshFolder,

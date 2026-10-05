@@ -47,7 +47,8 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
   // Re-arm after reset commits: the text/size render can still contain the old image.
   const previewReady = Boolean(previewFamily || previewImage)
   const availability = useSharedAvailability()
-  const retryBlocked = sharedPathBlocked(availability, font.path)
+  const fileUnavailable = font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable'
+  const retryBlocked = fileUnavailable || sharedPathBlocked(availability, font.path)
   const knownRootBlocked = availability !== null && retryBlocked
   const frozenPreview = useResizeFrozenPreviewRuntime(`${font.id}:${requestedLayout.token}`, {
     previewFamily,
@@ -55,8 +56,8 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
     previewText,
     listPreviewFontSize
   })
-  const displayPreviewFamily = frozenPreview.previewFamily
-  const displayPreviewImage = frozenPreview.previewImage
+  const displayPreviewFamily = fileUnavailable ? undefined : frozenPreview.previewFamily
+  const displayPreviewImage = fileUnavailable ? undefined : frozenPreview.previewImage
   const imageTrace = previewImageTrace(displayPreviewImage, font.id)
   const displayPreviewText = frozenPreview.previewText
   const displayListPreviewFontSize = frozenPreview.listPreviewFontSize
@@ -87,7 +88,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
 
   useEffect(() => {
     const node = ref.current
-    if (!node || knownRootBlocked) return
+    if (!node || knownRootBlocked || fileUnavailable) return
 
     let cancelled = false
     let intersecting = false
@@ -161,7 +162,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       observer?.disconnect()
       unsubscribeResizeSettled?.()
     }
-  }, [onVisible, closingLifecycle, font.id, font.__earlyVisible, requestedLayout.token, previewReady, retryBlocked, knownRootBlocked, compact])
+  }, [onVisible, closingLifecycle, font.id, font.__earlyVisible, requestedLayout.token, previewReady, retryBlocked, knownRootBlocked, fileUnavailable, compact])
 
   useEffect(() => {
     if (!previewTraceEnabled() || !ref.current) return
@@ -247,7 +248,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
                 className="font-sample compact preview-layout-text preview-layout-list preview-hard-fit-text"
                 style={listSampleStyle}
               >
-                {font.previewDisabled && !hasListTextPreviewFamily ? (
+                {fileUnavailable ? <span className="font-sample-line">{font.fileAvailability === 'missing' ? '请右键重新链接文件' : '文件暂不可访问'}</span> : font.previewDisabled && !hasListTextPreviewFamily ? (
                   <>
                     <span className="font-sample-line">原生预览生成中</span>
                     <span className="font-sample-line font-sample-latin">AaBb 123</span>
@@ -316,11 +317,13 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       <div className="script-row small">
         {scriptLabels(font).slice(0, 4).map((label) => <span key={label} className="script-pill">{label}</span>)}
       </div>
-      <GridFontPreview layout={displayLayout} image={useNativePreviewImage ? displayPreviewImage : undefined}
+      {fileUnavailable ? <div className="font-sample" style={{ height: displayLayout.height }}>
+        {font.fileAvailability === 'missing' ? '请右键重新链接文件' : '文件暂不可访问'}
+      </div> : <GridFontPreview layout={displayLayout} image={useNativePreviewImage ? displayPreviewImage : undefined}
         enabled={previewIntersecting}
         fontFamily={buildListPreviewCssFamily(font, displayPreviewFamily) || undefined}
         onImageLoad={() => previewEvent(imageTrace, 'image-load')}
-        onImageError={() => previewEvent(imageTrace, 'image-error')} />
+        onImageError={() => previewEvent(imageTrace, 'image-error')} />}
       <div className="tag-row small">
         {(font.tagNames || []).slice(0, 4).map((tag) => <span key={tag} className="tag-pill">{tag}</span>)}
       </div>

@@ -30,7 +30,7 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
     if (disposed) return
     if (statusInFlight) { resetAutoPreviewCacheQueue(); pendingStart = fonts; return }
     resetAutoPreviewCacheQueue()
-    const candidates = fonts.filter((font) => !options.isBadFontRecord(previewRecordForProbe(font)))
+    const candidates = fonts.filter((font) => font.fileAvailability !== 'missing' && font.fileAvailability !== 'unavailable' && !options.isBadFontRecord(previewRecordForProbe(font)))
     const runId = options.autoPreviewCacheRunId.current
     options.autoPreviewCacheStats.current = { total: candidates.length, done: 0, cached: 0, generated: 0, failed: 0 }
 

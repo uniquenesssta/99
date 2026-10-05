@@ -13,21 +13,19 @@ export type FontDialogContextActionsRuntime = {
   runContextAddSubfolder: () => void
   runContextRefreshFolder: () => void
   runContextReindexTag: () => void
-  runContextRelinkTag: () => void
+  runContextRelinkFont: () => void
   runContextBatchActivate: () => void
   runContextBatchDeactivate: () => void
 }
 
 export function createFontDialogContextActions(options: FontDialogRuntimeOptions): FontDialogContextActionsRuntime {
-  function recoverTag(mode: 'reindex' | 'relink'): void {
-    const action = tagBatchActionFromContextMenu(options.contextMenu)
-    if (!action) return
+  function recover(input: import('@shared/tagFontRecovery').TagFontRecoveryRequest): void {
     options.setContextMenu(null)
-    options.setStatus(mode === 'reindex' ? '正在重新索引监听文件夹，完成后自动匹配缺失字体……' : '请选择缺失字体的新文件，同目录的其他字体将自动匹配……')
+    options.setStatus(input.mode === 'reindex' ? '正在按缺失字体所属目录重新索引……' : '请选择此字体的新文件，同目录内能匹配的缺失字体会自动链接。')
     void (async () => {
       try {
         if (options.flushFontWriteQueue && !await options.flushFontWriteQueue('tag-recovery')) throw new Error('标签修改尚未保存，请稍后重试。')
-        const result = await options.hfm.recoverTagFiles({ tagName: action.name, scope: action.scope, mode })
+        const result = await options.hfm.recoverTagFiles(input)
         options.setStatus(result.message)
       } catch (error) {
         options.setStatus(`恢复未完成：${error instanceof Error ? error.message : String(error)}`)
@@ -35,8 +33,18 @@ export function createFontDialogContextActions(options: FontDialogRuntimeOptions
     })()
   }
   return {
-    runContextReindexTag: () => recoverTag('reindex'),
-    runContextRelinkTag: () => recoverTag('relink'),
+    runContextReindexTag(): void {
+      const action = tagBatchActionFromContextMenu(options.contextMenu)
+      if (action) recover({ mode: 'reindex', tagName: action.name, scope: action.scope })
+    },
+    runContextRelinkFont(): void {
+      const menu = options.contextMenu
+      if (menu?.kind !== 'font' || menu.font.fileAvailability !== 'missing') return
+      // The clicked card is the anchor, even when other cards are selected.
+      const scope = options.sidebarPage === 'sharedTags' ? 'shared'
+        : menu.font.localTagNames?.length ? 'local' : menu.font.tagNames?.length ? 'shared' : 'local'
+      recover({ mode: 'relink', fontPath: menu.font.path, scope })
+    },
     runContextRename(): void {
       const target = editableTargetFromContextMenu(options.contextMenu)
       if (!target) return

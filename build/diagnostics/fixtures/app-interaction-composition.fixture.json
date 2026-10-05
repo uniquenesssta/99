@@ -69,7 +69,8 @@
       "contextMenu": "contextMenu",
       "setContextMenu": "setContextMenu",
       "activateFontsBatch": "activateFontsBatch",
-      "deactivateFontsBatch": "deactivateFontsBatch"
+      "deactivateFontsBatch": "deactivateFontsBatch",
+      "sidebarPage": "sidebarPage"
     },
     "createFontDetailPanelRuntime:0": {
       "selectedFont": "selectedFont",
@@ -149,8 +150,8 @@
   "sources": {
     "src/renderer/src/fontContextActionRuntime.ts": "f1ab7466c61191a73e1014f59b84522c6ee02013127d791023d2eafdf8165bd3",
     "src/renderer/src/fontContextMenuRuntime.ts": "fd620a07186f0a74db86bba1e4e67164241bb9ec3550ab6fcf951683fa6f7e44",
-    "src/renderer/src/fontDialogRuntime.ts": "32e81cd018e7bcb562146df65496858498a831519979fd2d179f577a921777fa",
-    "src/renderer/src/fontDialogContextActionsRuntime.ts": "b0578f787503c992137d4b084f857e1267be5638eb4ddc481d647c1e696f7686",
+    "src/renderer/src/fontDialogRuntime.ts": "81269d17b71d110d48ee12117d18487c852e69177b498592e6b08e1e63c69fc5",
+    "src/renderer/src/fontDialogContextActionsRuntime.ts": "d1a8e76a0e52bc7d5c0ff03bd2c103240b04b24a26ebf388c741973787c480e3",
     "src/renderer/src/fontDialogTagActionsRuntime.ts": "9b5bc4b4b683c0f3b758f21fc5e1954136c45f8c5bf6065a9ba97576c1a9767c",
     "src/renderer/src/fontDetailPanelRuntime.ts": "ef5ba91f22fa915de270e90513a6de0cdc5848aa7f63a75e682222c24b12b9b0",
     "src/renderer/src/fontTagInputRuntime.ts": "296b77a1412004e68c390c96e732479f90faa57f9a7aa5fa9984efa6ca4a6c07",

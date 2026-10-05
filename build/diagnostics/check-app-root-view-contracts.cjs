@@ -156,7 +156,7 @@ function main() {
   const broken=app.replace('search: search,','search: status,')
   assert.notEqual(broken,app)
   assert.notEqual(snapshot(broken,view,fixture.bindings,false,false),fixture.cases.find(c=>!c.development&&!c.collapsed).hash,'wrong wiring was not detected')
-  for (const callback of ['runContextReindexTag', 'runContextRelinkTag']) {
+  for (const callback of ['runContextReindexTag', 'runContextRelinkFont']) {
     const disconnected = app.replace(`${callback}: ${callback},`, `${callback}: runContextDelete,`)
     assert.notEqual(disconnected, app, `${callback}: mutation anchor drifted`)
     assert.notEqual(snapshot(disconnected,view,fixture.bindings,false,false),fixture.cases.find(c=>!c.development&&!c.collapsed).hash,`${callback}: wrong recovery action escaped the wiring gate`)

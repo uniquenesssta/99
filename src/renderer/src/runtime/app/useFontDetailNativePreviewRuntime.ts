@@ -33,7 +33,7 @@ export function useFontDetailNativePreviewRuntime(options: {
     const requestId = requestSeqRef.current + 1
     requestSeqRef.current = requestId
 
-    if (!options.previewConsumerEnabled || !detailVisible || !selectedFont || isBadFontRecord(selectedFont)) {
+    if (!options.previewConsumerEnabled || !detailVisible || !selectedFont || selectedFont.fileAvailability === 'missing' || selectedFont.fileAvailability === 'unavailable' || isBadFontRecord(selectedFont)) {
       setNativeDetailImage('')
       return undefined
     }
@@ -80,5 +80,5 @@ export function useFontDetailNativePreviewRuntime(options: {
       if (requestSeqRef.current === requestId) requestSeqRef.current += 1
       window.clearTimeout(timer)
     }
-  }, [options.previewConsumerEnabled, selectedFont?.id, selectedFont?.previewDisabled, selectedFontPreviewFamily, selectedFailedPreview, selectedNativePreviewImage, previewText, detailVisible])
+  }, [options.previewConsumerEnabled, selectedFont?.id, selectedFont?.fileAvailability, selectedFont?.previewDisabled, selectedFontPreviewFamily, selectedFailedPreview, selectedNativePreviewImage, previewText, detailVisible])
 }
