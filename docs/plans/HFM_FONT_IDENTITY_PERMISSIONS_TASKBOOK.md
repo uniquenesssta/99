@@ -1145,3 +1145,11 @@ Context7 已核对 Electron 异步文件选择框及取消回执 API，保持当
 本轮生产改动仅为 App 两个属性的等价显式绑定，不重写文件恢复逻辑，不修改 Rust、真实字体操作、依赖版本或业务架构。Context7 不触发（没有 API/版本/编译错误），Mermaid 沿用 §21.2 实际链路。Create State 仍无 HFM 项目时沿用 Git/README/任务书保存续接，不写入无关项目。
 
 非 Windows 编辑环境仅完成静态语法/AST、调用与差异审阅、git diff --check；没有执行项目诊断、类型检查、构建或生产模块。新反例与此前被阻断的后续门仍待 Windows CI 回执，推送后只查询一次启动链接，不轮询完成。本轮无需用户重新测试真实字体安装/卸载。
+
+### 21.5 已通过回执（2026-10-05）
+
+用户确认“已通过”。已核对 `c2032af9962c009cabfaa72241833bff5741a703` 的 [Windows CI 37267301037](https://github.com/uniquenesssta/99/actions/runs/37267301037)，job `111626707249` 全部步骤成功。完整诊断、tag-font-recovery、Rust 与独立专项、身份/列表网格/原生输入 DOM、应用 bundle 均成功；前轮 app-root-view-contracts、main-composition-compiler-paths、main-operations-composition 三个失败门及被阻断的后续检查均已通过，日志确认 129 个编译拒绝用例及 8 个操作组合反例。
+
+§21 收尾。本次仅登记回执，应用代码与依赖不再修改；文档提交使用 `[skip ci]`，避免为相同应用代码重复触发验证。正式安装包通过 `npm run build:win` 重新生成；不新增或重复已验收的真实字体安装/卸载测试。
+
+Create State 再查仍仅有 Markdown/足球项目，没有 HFM，未写入无关项目；阶段记录保存在 Git、根 README 与本任务书。
