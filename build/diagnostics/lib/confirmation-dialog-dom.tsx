@@ -19,6 +19,12 @@ const point=(node:HTMLElement)=>{
  check(r.width>0&&r.height>0&&node.contains(document.elementFromPoint(p.x,p.y)),'target is covered: '+node.outerHTML.slice(0,160))
  return p
 }
+const checkTagInputLayout=()=>{
+ for(const scope of ['local','shared']){
+  const node=input(scope),r=node?.getBoundingClientRect()
+  check(r&&r.width>0&&r.height>0,scope+' tag input has no layout box at width '+innerWidth)
+ }
+}
 let host:HTMLDivElement,root:Root,oldHfm:unknown,current:any,writes:any[]=[],outcome:boolean|undefined,executed=0,cleanupScrollbars:()=>void
 function Fixture(){
  const font={id:'confirmation-font',path:'C:/fixture/dialog.ttf',fileName:'Dialog.ttf',format:'ttf',fileSize:100,tagNames:[],localTagNames:[],scripts:['latin']}
@@ -43,6 +49,16 @@ function Fixture(){
  document.body.append(host);root=createRoot(host);flushSync(()=>root.render(<Fixture/>));cleanupScrollbars=setupFloatingScrollbars()
  for(let n=0;n<60&&(!input('shared')||input('shared').matches(':disabled'));n++)await frames()
  check(!input('shared').matches(':disabled'),'shared fixture did not become available')
+ checkTagInputLayout()
+ if(innerWidth<=1080){
+  // Restore the old unscoped compact-sidebar rule: this must hide the real
+  // detail inputs and be rejected by the same layout assertion above.
+  const legacy=document.createElement('style');legacy.textContent='@media (max-width:1080px){.inline-create{display:none!important}}'
+  document.head.append(legacy);let rejected=false
+  try{checkTagInputLayout()}catch(error){rejected=String(error).includes('tag input has no layout box')}
+  finally{legacy.remove()}
+  check(rejected,'legacy compact-sidebar selector was not rejected');checkTagInputLayout()
+ }
  return point(document.getElementById('confirmation-open')!)
 }
 ;(window as any).confirmationOpenPoint=()=>{outcome=undefined;return point(document.getElementById('confirmation-open')!)}

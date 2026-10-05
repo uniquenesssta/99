@@ -1068,3 +1068,18 @@ flowchart TD
 本次只完成改动文件的静态语法解析、导入/调用及差异审阅、git diff --check；非 Windows 环境没有执行项目模块、诊断、类型检查或构建。Windows 回执待本次提交，不能提前登记通过。按既有约定推送后只查询一次 CI 启动链接，不轮询完成；后续按新回执处理实际失败。正式安装包需在通过后重新构建以包含新的渲染代码，本轮无需改动或专门重编 Rust。
 
 Context7 已查询 Electron 输入/焦点 API，并结合官方 webContents 文档与 MDN showModal 顶层/inert 语义审阅；Electron 42.11.3、React 18.3.1 未升级。Mermaid Chart 已创建本次确认链路图。Create State 再查仍只有 Markdown/足球项目，没有 HFM，未写入无关项目；续接状态保存在 Git、README 与本节。
+
+
+### 20.4 窄窗口标签隐藏与 DOM 失败证据补修（2026-10-05）
+
+用户反馈未通过。已读取提交 `ca6ebeb` 的 [CI 37224340714](https://github.com/uniquenesssta/99/actions/runs/37224340714)，job `111500774731` 完整日志：类型检查、165 项诊断（包含异步确认的重复请求/取消门）、Rust 构建及全部独立专项、生产身份 Electron DOM 和应用 bundle 构建成功。两个 font-view-layout DOM 步骤均在 720 像素、既有九组滑块遮挡场景成功之后失败，只有 Electron 的通用 Script failed to execute，没有保留新标签回归的内部断言；1600 像素场景未运行。不能把该日志推断为卸载或 Rust 失败，也不能证明以下问题是全部失败的唯一原因。
+
+静态核对完整生产样式发现：studio-interface-04.css 的 max-width:1080px 规则本应折叠侧栏，但使用无范围的 `.inline-create { display:none!important }`，同时命中 FontDetailPanel 两个 `.inline-create.detail-create`。这会让 720 像素夹具的真实标签输入没有布局尺寸，也影响应用实际窄窗口中的详情区；此前只核对 disabled/焦点，漏审了该 CSS 断点。
+
+本次仅把该隐藏选择器收窄为 `.sidebar .inline-create`，保留侧栏紧凑模式；确认框、卸载、Rust 和标签保存实现不变。真实详情 DOM 在弹窗测试前明确检查两个输入具有布局尺寸；窄窗口注入原错误选择器，要求同一断言拒绝，再移除并继续全部原生点击/输入/提交验证。未跳过窄窗口场景、放宽成功标准或用程序 focus 掩盖点击失败。
+
+Electron runner 将页面检查的原始异常消息、堆栈、执行表达式、窗口宽度、焦点及输入布局/禁用状态作为普通数据带回主进程，失败仍退出 1；同时保存对应 JSON/截图至既有证据目录，并区分 full/feedback，防止第二个步骤覆盖首个失败。确认轮次输出选择和索引，后续若仍失败可直接定位断言。
+
+完成两个改动脚本及嵌入页面表达式的静态语法解析、样式选择器/调用差异审阅、git diff --check；非 Windows 环境未执行项目诊断、类型检查或构建。动态结果仍待新 Windows CI，推送后只查询一次启动链接，不轮询完成；F06 已通过的实机卸载不重复测试。
+
+Context7 已核对 Electron executeJavaScript 的 Promise/异常跨进程语义，无依赖或接口版本变更。本次是一个 CSS 选择器及原有验证入口补修，不调整生产架构，沿用 §20.2 图。Create State 再查仍无 HFM 项目，续接记录保存在 Git、README 与本节。
