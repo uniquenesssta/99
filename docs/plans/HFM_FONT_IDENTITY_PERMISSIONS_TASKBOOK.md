@@ -1083,3 +1083,16 @@ Electron runner 将页面检查的原始异常消息、堆栈、执行表达式�
 完成两个改动脚本及嵌入页面表达式的静态语法解析、样式选择器/调用差异审阅、git diff --check；非 Windows 环境未执行项目诊断、类型检查或构建。动态结果仍待新 Windows CI，推送后只查询一次启动链接，不轮询完成；F06 已通过的实机卸载不重复测试。
 
 Context7 已核对 Electron executeJavaScript 的 Promise/异常跨进程语义，无依赖或接口版本变更。本次是一个 CSS 选择器及原有验证入口补修，不调整生产架构，沿用 §20.2 图。Create State 再查仍无 HFM 项目，续接记录保存在 Git、README 与本节。
+
+
+### 20.5 默认回车确认用例的原生事件补齐（2026-10-05）
+
+用户反馈仍失败。读取 `205921a` 的 [CI 37257922911](https://github.com/uniquenesssta/99/actions/runs/37257922911)，job `111598850934`：类型检查、165 项诊断、Rust 及各独立专项、生产身份 DOM 与应用构建全部成功；两个布局 DOM 门均在 720 像素第 4 轮 Enter 的 `checkConfirmationClosed(false,1)` 失败。
+
+新失败证据显示 document.hasFocus 为 true，activeElement 仍是模态框取消按钮；两个输入均已显示为 grid、具有 514×34 布局尺寸、没有 disabled。前三轮 accept/cancel/Escape 和每轮随后两个标签输入的真实点击、字符输入、按钮/Enter 添加已顺序通过。因此窄窗口隐藏问题已获该场景回执，这次阻塞定位在测试注入默认按钮回车动作；1600 像素及第 4 轮之后的场景未获通过证据。
+
+Context7 查询后，对照项目固定 Electron 42.11.3 的官方源码核实：`SendInputEvent` 将 keyDown 转为 kRawKeyDown 后直接转发，不补字符事件；blink_converter 把 char 的 keyCode 文本放入事件文本，keyboard_util 明确把 0x0D 映射为 VKEY_RETURN。旧测试只有 keyDown/keyUp，缺少触发 HTML 按钮默认动作的回车字符。本次只在现有 key 帮助函数的 Enter 分支补入 `type:'char', keyCode:'\r'`，保持 Escape 序列、原生点击/输入、所有结果断言及失败退出条件；不改应用确认框、样式、Rust 或卸载实现，也不使用程序 click/focus 代替键盘行为。
+
+核对来源：Electron v42.11.3 的 [electron_api_web_contents.cc](https://github.com/electron/electron/blob/v42.11.3/shell/browser/api/electron_api_web_contents.cc)、[blink_converter.cc](https://github.com/electron/electron/blob/v42.11.3/shell/common/gin_converters/blink_converter.cc)、[keyboard_util.cc](https://github.com/electron/electron/blob/v42.11.3/shell/common/keyboard_util.cc) 及 sendInputEvent 官方规格测试。版本与依赖不变。
+
+改动脚本静态语法解析及 git diff --check 完成；非 Windows 环境未执行项目诊断、类型检查或构建。新 Windows CI 待回执，推送后只查询一次启动，不轮询完成。本轮无需用户重测真实字体。单一测试入口补修，无生产架构变更；Create State 仍无 HFM 项目，记录保存在 Git、README 和本节。

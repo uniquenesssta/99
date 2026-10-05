@@ -94,6 +94,9 @@ app.whenReady().then(async () => {
     }
     const key = keyCode => {
       win.webContents.sendInputEvent({type:'keyDown', keyCode})
+      // Electron forwards raw keyDown; it does not synthesize the char event
+      // that activates a focused HTML button on Enter (Windows WM_CHAR).
+      if(keyCode==='Enter')win.webContents.sendInputEvent({type:'char', keyCode:'\r'})
       win.webContents.sendInputEvent({type:'keyUp', keyCode})
     }
     await evaluate('window.prepareConfirmationFocus()')
