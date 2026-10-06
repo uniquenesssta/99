@@ -1,3 +1,4 @@
+import { detailedStartupLogsEnabled } from '../logging/startupLogPolicy'
 import { dirname, parse, resolve } from 'node:path'
 import type { FontItem, InstallResult, SystemInstalledFont } from '../../shared/types'
 import { sharedFileSystem as fs } from '../path/sharedFileSystemRuntime'
@@ -11,7 +12,7 @@ import type { FontMutationSession } from './fontMutationProcessRuntime'
 import type { FontUninstallReceipt, FontUninstallReceiptStore, FontUninstallStep } from './fontUninstallReceiptRuntime'
 import type { SystemFontInstallRuntimeDeps } from './systemFontInstallRuntime'
 
-type Session = { get: () => Promise<FontMutationSession> }
+type Session = { get: () => Promise<FontMutationSession>; planningInstalled?: () => Promise<SystemInstalledFont[]>; forgetPlanningPath?: (path: string) => void }
 const sameTarget = (a: InstallSourceIdentity, b: InstallSourceIdentity) => key(a.path) === key(b.path) && a.sha256 === b.sha256
   && !!fontPhysicalKey(a) && fontPhysicalKey(a) === fontPhysicalKey(b) && a.size === b.size && a.modified === b.modified
 
@@ -59,7 +60,7 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
         stage = 'registry-snapshot'
         const records = await registry()
         stage = 'installed-fonts'
-        const installed = await deps.getSystemInstalledFonts()
+        const installed = await (session.planningInstalled?.() || deps.getSystemInstalledFonts())
         stage = 'activation-ownership'
         const temporary = await temporaryReferences()
         stage = 'uninstall-plan'
@@ -67,7 +68,7 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
         let evidence: Record<string, unknown> = {}
         const plans = await planFontUninstall(item, [...records, ...installed], records, [deps.currentUserFontsDir(), deps.windowsFontsDir()], temporary.matches, {
           source, appName: deps.appName, onTarget: target => targets.set(key(target.path), target),
-          report: value => { evidence = value; deps.appendStartupLog(`font uninstall evidence: ${JSON.stringify({ id: item.id, ...value })}`) },
+          report: value => { evidence = value; if (detailedStartupLogsEnabled()) deps.appendStartupLog(`font uninstall evidence: ${JSON.stringify({ id: item.id, ...value })}`) },
         })
         if (!plans.length) throw new Error(evidence.candidateCount === 0 ? '当前系统记录没有关联安装候选，旧卡片状态不能授予卸载目标。' : evidence.confirmedCount === 0 ? '名称候选的文件内容均不一致，未关联或删除安装文件。' : '已确认字体内容，但没有可解除的登记或独立安装副本；源文件保留。')
         // Individual registry steps make an acknowledgement unambiguous. They
@@ -206,6 +207,7 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
             checkOpen()
           })
           step = receipt!.steps[index]
+          if (result.fileRemoved) session.forgetPlanningPath?.(step.plan.path)
           receipt!.completedSteps += result.completedSteps
           const acknowledged = step.plan.delete_file ? result.fileRemoved : result.completedSteps === 1
           if (acknowledged) step.state = 'done'

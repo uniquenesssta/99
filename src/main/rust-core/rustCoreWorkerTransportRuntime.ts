@@ -2,8 +2,8 @@ import { assertLocalShutdownWorkAllowed } from '../app/shutdownCoordinatorRuntim
 import type { ChildProcess } from 'node:child_process'
 import { getStartupPathRootState } from '../path/startupPathAvailabilityRuntime'
 import { sharedIoAvailabilityRoot } from './rustSharedIoCommandRuntime'
-import { configureSharedFileExecutor, currentSharedIoSignal, sharedFileAccesses, isSharedPreviewReadScope } from '../path/sharedFileSystemRuntime'
-import { traceRustInput, logOperation } from '../logging/operationTraceContext'
+import { configureSharedFileExecutor, currentSharedIoSignal, sharedFileAccesses, isSharedPreviewReadScope, currentSharedIoPriority } from '../path/sharedFileSystemRuntime'
+import { traceRustInput, logOperation, recordOperationWork } from '../logging/operationTraceContext'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fsp } from 'node:fs'
@@ -205,7 +205,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
-      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default',
+      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
@@ -247,6 +247,8 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         const execution = execFileAsync(workerPath, args, { ...execOptionsWithoutExternalSignal(execOptions), signal: mergedSignal.signal,
           env: { ...process.env, HFM_PARENT_PID: String(process.pid) }, killSignal: 'SIGKILL' })
         if (execution.child) {
+          recordOperationWork({ processStarts: 1 });
+          execution.child.once('close', () => recordOperationWork({ processCloses: 1 }));
           localChildren.add(execution.child)
           execution.child.once('close', () => localChildren.delete(execution.child))
         }
@@ -408,7 +410,9 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         retainSnapshot = true
         return { result, snapshotPath: transferFile.path, dispose: transferFile.dispose }
       }
-      return { result, bytes: result.ok && request.operation === 'readFile' ? await fsp.readFile(transferFile.path) : undefined }
+      const transferred = result.ok && request.operation === 'readFile' ? await fsp.readFile(transferFile.path) : undefined
+      if (transferred) recordOperationWork({ transferBytes: transferred.length })
+      return { result, bytes: transferred }
     } finally {
       await inputFile.dispose()
       if (!retainSnapshot) await transferFile.dispose()

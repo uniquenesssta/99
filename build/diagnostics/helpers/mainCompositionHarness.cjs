@@ -12,7 +12,8 @@ const bootstrap = path.join(root, 'src/main/bootstrap')
 // Execute the real entry/composition code with recording domain ports. These
 // stand-ins own no real windows, fonts, files, threads, database or task timers.
 // Domain correctness continues to be checked by its existing dedicated gates.
-function createHarness(overrides = new Map()) {
+function createHarness(overrides = new Map(), sourceRoot = root) {
+  const root = path.resolve(sourceRoot), entry = path.join(root, 'src/main/index.ts'), bootstrap = path.join(root, 'src/main/bootstrap')
   const calls = [], constructors = new Map(), modules = new Map()
   const state = { calls, constructors, compositions: new Map(), timers: [], payload: null, saveSucceeds: true, failOperations: new Set() }
   const clean = value => {

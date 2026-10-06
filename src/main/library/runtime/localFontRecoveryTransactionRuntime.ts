@@ -1,3 +1,4 @@
+import { recordOperationWork } from '../../logging/operationTraceContext'
 import { createHash } from 'node:crypto'
 import * as fs from 'node:fs'
 import { normalizePathForCacheCompare as key } from '../../path/cachePath'
@@ -32,7 +33,10 @@ export function preserveLocalRecoveryState(db: any, moves: FontRecoveryStateMove
 export function validateRecoveryFiles(files: FontTagRecoveryFile[]): void {
   for (const file of files) {
     const physical = fs.realpathSync(file.path)
-    if (key(physical) !== key(file.physicalPath) || createHash('sha256').update(fs.readFileSync(physical)).digest('hex') !== file.sha256) throw new Error('准备后的字体文件已变化，原关联已保留。')
+    if (key(physical) !== key(file.physicalPath)) throw new Error('准备后的字体文件已变化，原关联已保留。')
+    const bytes = fs.readFileSync(physical)
+    recordOperationWork({ reads: 1, sourceBytes: bytes.length })
+    if (key(physical) !== key(file.physicalPath) || createHash('sha256').update(bytes).digest('hex') !== file.sha256) throw new Error('准备后的字体文件已变化，原关联已保留。')
   }
 }
 

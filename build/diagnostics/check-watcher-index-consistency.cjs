@@ -13,12 +13,12 @@ const drain = async () => { for (let i=0;i<30;i++) await Promise.resolve() }
 function load(file, mocks = {}, globals = {}, transform = s => s) {
   const exports = {}
   const code = ts.transpileModule(transform(read(file)), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
-  vm.runInNewContext(code, { exports, console, process, ...globals, require(id) {
+  vm.runInNewContext(code, { exports, console, process, performance, ...globals, require(id) {
     if (Object.hasOwn(mocks,id)) return mocks[id]
     if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id==='node:path') return path
-    if (['node:async_hooks', 'node:perf_hooks'].includes(id)) return require(id)
+    if (['node:async_hooks', 'node:perf_hooks', 'node:crypto'].includes(id)) return require(id)
     if (id.startsWith('.')) return load(path.relative(root,path.resolve(root,path.dirname(file),id+'.ts')),mocks,globals)
     throw Error(`Unmocked dependency ${file} -> ${id}`)
   } }, { filename:file })

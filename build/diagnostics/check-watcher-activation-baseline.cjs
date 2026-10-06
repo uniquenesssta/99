@@ -19,12 +19,12 @@ const drain = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 function load(file, mocks = {}, globals = {}, transform = x => x) {
   const output = ts.transpileModule(transform(read(file)), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
   const exports = {}
-  vm.runInNewContext(output, { exports, console, process, ...globals, require(id) {
+  vm.runInNewContext(output, { exports, console, process, performance, ...globals, require(id) {
     if (Object.hasOwn(mocks, id)) return mocks[id]
     if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id === 'node:path') return path
-    if (['node:async_hooks', 'node:perf_hooks'].includes(id)) return require(id)
+    if (['node:async_hooks', 'node:perf_hooks', 'node:crypto'].includes(id)) return require(id)
     if (id.startsWith('.')) return load(path.relative(root, path.resolve(root, path.dirname(file), id + '.ts')), mocks, globals)
     throw Error(`Unexpected external dependency ${file}: ${id}`)
   } }, { filename: file })

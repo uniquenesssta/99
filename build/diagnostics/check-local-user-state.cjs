@@ -140,7 +140,7 @@ async function protectionAuthority() {
   const runtimeLoad=loader({electron:{shell:{trashItem:async()=>effects.push('trash')}},
     'node:fs':{existsSync:()=>true},
     'node:child_process':{execFile:(exe,_args,_options,done)=>{effects.push(exe==='net'?'permission-check':'registry-native');if(exe==='net'&&protectAfterPermission)blocked.add(protectAfterPermission);done(null,'')}},
-    [portFile]:{sharedFileSystem:io,executeSharedFile:async request=>{assert.equal(request.operation,'trash');effects.push('trash');trashedPaths.add(request.path)}},
+    [portFile]:{sharedFileSystem:io,withSharedIoPriority:(_priority,run)=>run(),executeSharedFile:async request=>{assert.equal(request.operation,'trash');effects.push('trash');trashedPaths.add(request.path)}},
     [path.join(root,'src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>[]},
     [path.join(root,'src/main/storage/runtime/sharedLeaseLockRuntime.ts')]:{withSharedLeaseLock:async(_opts,action)=>action()}})
   const authority2=runtimeLoad('src/main/install/fontProtectionAuthorityRuntime.ts').createFontProtectionAuthorityRuntime({roots:async()=>[],read:async item=>{if(offline)throw Error('offline');return blocked.has(item.path)},lock:async(_items,_roots,action)=>action(),log(){}})
@@ -572,7 +572,7 @@ async function uninstallPlanning() {
   },readFile:async p=>{readCounts.set(p,(readCounts.get(p)||0)+1);return contents.get(p)}}
   const load=loader({
     'node:path':path.win32,
-    [path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:io},
+    [path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:io,withSharedIoPriority:(_priority,run)=>run()},
     // The runtime below injects its controlled mutation session. Refuse the
     // default OS launcher rather than importing Electron or spawning a worker.
     [path.join(root,'src/main/install/fontMutationProcessRuntime.ts')]:{createFontMutationSession:async()=>{throw Error('uninstall planning must use the injected mutation session')}},

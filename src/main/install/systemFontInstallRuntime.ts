@@ -1,3 +1,5 @@
+import { withOperationWork } from '../logging/operationTraceContext';
+import { withSharedIoPriority } from '../path/sharedFileSystemRuntime';
 import { createFontUninstallRecoveryRuntime } from './fontUninstallRecoveryRuntime';
 import type { FontUninstallReceiptStore } from './fontUninstallReceiptRuntime';
 import { fontPhysicalKey } from '../fonts/fontContentIdentityRuntime';
@@ -91,7 +93,14 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
 
   function batchSession() {
     let pending: Promise<FontMutationSession> | undefined;
+    let planning: Promise<SystemInstalledFont[]> | undefined;
+    const removedPlanningPaths = new Set<string>();
     return {
+      // Candidate discovery only; fresh registry/content/protection gates and
+      // each durable result projection remain owned by the recovery runtime.
+      planningInstalled: async () => (await (planning ||= (deps.getSystemInstalledFontsCached?.(true) || deps.getSystemInstalledFonts())))
+        .filter(record => !record.path || !removedPlanningPaths.has(deps.normalizePathForCacheCompare(record.path))),
+      forgetPlanningPath: (path: string) => removedPlanningPaths.add(deps.normalizePathForCacheCompare(path)),
       get: () => pending ||= (deps.createMutationSession?.() || createFontMutationSession(deps.appendStartupLog)),
       close: async () => { if (pending) { try { (await pending).close(); } catch { /* Failed creation has no live session. */ } } },
     };
@@ -206,7 +215,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
 
   return {
     installFontSystemWide,
-    uninstallFontSystemWide,
+    uninstallFontSystemWide: input => withOperationWork('font-uninstall', deps.appendStartupLog, () => withSharedIoPriority('foreground', () => uninstallFontSystemWide(input))),
     deleteFontFilesToTrash,
   };
 }

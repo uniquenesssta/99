@@ -1,3 +1,4 @@
+import { AsyncResource } from 'node:async_hooks'
 export type IoTaskPriority = 'background' | 'normal' | 'foreground'
 
 export class OperationCancelledError extends Error {
@@ -56,7 +57,7 @@ export class AdaptiveIoQueue {
         priority,
         sequence: this.sequence += 1,
         signal: options.signal,
-        fn,
+        fn: AsyncResource.bind(fn),
         resolve: resolveTask,
         reject: rejectTask
       }

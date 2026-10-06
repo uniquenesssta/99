@@ -1,3 +1,6 @@
+import { withOperationWork, measureOperationPhase } from '../logging/operationTraceContext'
+import { withSharedIoPriority } from '../path/sharedFileSystemRuntime'
+import { detailedStartupLogsEnabled } from '../logging/startupLogPolicy'
 import { createSharedActionAdmission } from '../ipc/sharedActionAdmissionRuntime'
 import { assertApplicationOpen, applicationWorkEpoch } from '../app/shutdownCoordinatorRuntime'
 import { dirname, join, parse } from 'node:path'
@@ -8,9 +11,9 @@ import { normalizePathForCacheCompare as key } from '../path/cachePath'
 import { createTagRecoveryPaths } from './tagRecoveryPathRuntime'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { asFormat, fontItemFromPath, hasValidFontSignature } from '../fonts/fontRuntime'
-import { fontFileAvailability } from './tagFontQueryRuntime'
+import { fontFileAvailability, withTagFontQuerySnapshot } from './tagFontQueryRuntime'
 
-import { readFontContentIdentity } from '../fonts/fontContentIdentityRuntime'
+import { readFontContentIdentity, fontPhysicalKey } from '../fonts/fontContentIdentityRuntime'
 import { recoveryCandidate, sameRecoveryFont, uniqueRecoveryPairs } from './tagRecoveryMatchRuntime'
 export { sameRecoveryFont, uniqueRecoveryPairs } from './tagRecoveryMatchRuntime'
 
@@ -20,7 +23,8 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
   async function readReplacement(file: string, indexed?: FontItem, expectedHashes: string[] = []): Promise<FontItem> {
     const identity = await readFontContentIdentity(file)
     physicalPaths.set(key(file), identity.path)
-    if (identity.ino) fileKeys.set(key(file), `${identity.dev}:${identity.ino}`)
+    const physicalKey = fontPhysicalKey(identity)
+    if (physicalKey) fileKeys.set(key(file), physicalKey)
     let font: FontItem
     if (indexed && identity.size === indexed.fileSize && identity.modified === indexed.modifiedAt
       && indexed.postscriptName && (expectedHashes.includes(identity.sha256) || indexed.recoveryContentHash === identity.sha256)) font = { ...indexed, path: file }
@@ -34,6 +38,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
   let running = false
   const admit = createSharedActionAdmission(runtime.getSharedAvailability)
   async function readAll(request: FontQueryRequest): Promise<FontItem[]> {
+    return withTagFontQuerySnapshot(async () => {
     const items: FontItem[] = []
     const seen = new Set<string>()
     let first: FontQueryPageResult | undefined
@@ -51,6 +56,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
       if (!page.items.length) throw new Error('字体范围读取不完整，请重试。')
       offset += page.items.length
     }
+    })
   }
   function check(result: unknown): void {
     const receipt = result as FontTagUpdateResult
@@ -75,7 +81,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
       const request: FontQueryRequest = { tagBindingsOnly: true, sidebarPage: input.scope === 'local' ? 'tags' : 'sharedTags',
         selectedTagName: input.mode === 'reindex' ? input.tagName : undefined, sortMode: 'nameAsc',
         selectedWatchedFolders: input.mode === 'relink' ? [dirname(input.fontPath)] : undefined }
-      const initial = await readAll(request)
+      const initial = await measureOperationPhase('preparation', () => readAll(request))
       let missing = initial.filter(font => font.fileAvailability === 'missing')
       const anchor = input.mode === 'relink' ? initial.find(font => key(font.path) === key(input.fontPath) &&
         (font.fileAvailability === 'missing' || font.fileRelinkRequired) && !font.tagBindingReadOnly) : undefined
@@ -83,18 +89,27 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
       if (anchor) missing = [anchor, ...missing.filter(font => key(font.path) !== key(anchor.path) && paths.compare(dirname(font.path)) === paths.compare(dirname(anchor.path)))]
       const completedPaths = new Set<string>()
       const targetPaths = new Set((anchor ? missing : initial.filter(font => font.fileAvailability !== 'available')).map(font => key(font.path)))
-      const report = (message: string) => runtime.appendLog?.(`tag font recovery: ${message}`)
+      const report = (message: string) => { if (detailedStartupLogsEnabled() || message.startsWith('scan failed:')) runtime.appendLog?.(`tag font recovery: ${message}`) }
       report(`mode=${input.mode}, scope=${input.scope}, missing=${missing.length}${anchor ? `, anchor=${anchor.path}` : ''}`)
       const tags = (font: FontItem) => input.scope === 'local' ? font.localTagNames || [] : font.tagNames || []
       const signature = (names: string[]) => JSON.stringify([...new Set(names)].sort())
       const compare = (file: string) => paths.compare(physicalPaths.get(key(file)) || file)
+      // This cache owns candidate preparation only. Every link and transaction
+      // below still reads content freshly at its own mutation safety boundary.
+      let preparedCandidates = new Map<string, Promise<FontItem>>()
+      const prepareReplacement = (file: string, hint?: FontItem, hashes: string[] = []) => {
+        const identity = key(file)
+        let pending = preparedCandidates.get(identity)
+        if (!pending) { pending = measureOperationPhase('candidate', () => readReplacement(file, hint, hashes)); preparedCandidates.set(identity, pending) }
+        return pending
+      }
       async function matchPairs(sources: FontItem[], hints: FontItem[], reserved?: FontItem): Promise<Array<[FontItem, FontItem]>> {
         const candidates: FontItem[] = []
         for (const font of hints) {
           const relevant = sources.filter(old => recoveryCandidate(old, font) && /^[a-f0-9]{64}$/.test(old.recoveryContentHash || ''))
           if (!relevant.length) continue
           try {
-            const next = await readReplacement(font.path, font, relevant.map(old => old.recoveryContentHash!))
+            const next = await prepareReplacement(font.path, font, relevant.map(old => old.recoveryContentHash!))
             if (!paths.contains(physicalPaths.get(key(next.path))!)) throw new Error('候选实际文件位于监听范围外，需从卡片手选确认。')
             if (reserved && (fileKeys.get(key(next.path)) || compare(next.path)) === (fileKeys.get(key(reserved.path)) || compare(reserved.path))) continue
             candidates.push(next)
@@ -111,6 +126,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
       }
 
       async function linkPairs(pairs: Array<[FontItem, FontItem]>, requiredPath?: string): Promise<void> {
+        preparedCandidates.clear()
         if (!pairs.length) return
         // Read current source AND destination tags once, after candidate parsing.
         const folders = [...new Set(pairs.flatMap(([old, next]) => [dirname(old.path), dirname(next.path)]))]
@@ -143,7 +159,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
           unresolved.delete(key(old.path))
           linked++
           if (paths.contains(old.path) && old.deleteProtected) pendingAssociations.push(`${old.fileName}：监听库保护记录保留在原路径，请在目标字体卡确认保护。`)
-          report(`linked: from=${old.path}, to=${next.path}`)
+          if (detailedStartupLogsEnabled()) report(`linked: from=${old.path}, to=${next.path}`)
         }
         if (input.scope === 'local') {
           const writes: FontTagBatchItem[] = []
@@ -206,6 +222,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
             if (!result.ok || result.errors) failures.push(`${root}：${result.message}`)
             const current = await readAll(request)
             missing = missing.filter(old => current.some(font => key(font.path) === key(old.path) && font.fileAvailability === 'missing'))
+            preparedCandidates = new Map()
             const candidates = await readAll({ sidebarPage: 'filters', activeFilter: { kind: 'all' }, selectedWatchedFolders: [root] })
             await linkPairs(await matchPairs(missing, candidates.filter(font => paths.inside(font.path, root))))
           } catch (error) {
@@ -217,7 +234,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
         // One native picker for the clicked card; unmatched siblings remain for
         // their own card action instead of forcing a sequence of dialogs.
         report('picker opening')
-        const selected = await pick(anchor)
+        const selected = await measureOperationPhase('picker', () => pick(anchor))
         report(`picker closed: canceled=${!selected}`)
         assertApplicationOpen(ticket)
         if (!selected) canceled = true
@@ -229,7 +246,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
               if (paths.compare(dirname(font.path)) === paths.compare(directory)) indexed.set(key(font.path), font)
             }
           } catch (error) { report(`candidate index unavailable: ${String(error)}`) }
-          const next = await readReplacement(selected, indexed.get(key(selected)), anchor.recoveryContentHash ? [anchor.recoveryContentHash] : [])
+          const next = await prepareReplacement(selected, indexed.get(key(selected)), anchor.recoveryContentHash ? [anchor.recoveryContentHash] : [])
           const siblings = missing.filter(font => key(font.path) !== key(anchor.path))
           const candidates: FontItem[] = []
           const eligibleSiblings = siblings.filter(old => /^[a-f0-9]{64}$/.test(old.recoveryContentHash || ''))
@@ -240,7 +257,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
               try {
                 const hint = indexed.get(key(file))
                 if (hint) { if (eligibleSiblings.some(old => recoveryCandidate(old, hint))) candidates.push(hint) }
-                else { const stat = await fsp.stat(file); if (eligibleSiblings.some(old => old.fileSize === stat.size && old.format === asFormat(file))) candidates.push(await readReplacement(file, undefined)) }
+                else { const stat = await fsp.stat(file); if (eligibleSiblings.some(old => old.fileSize === stat.size && old.format === asFormat(file))) candidates.push(await prepareReplacement(file, undefined)) }
               }
               catch (error) { failures.push(`${entry.name}：${String(error)}`) }
             }
@@ -248,7 +265,7 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
           catch (error) { for (const old of siblings) unresolved.set(key(old.path), `同目录读取失败：${String(error)}`) }
           const pairs = await matchPairs(siblings, candidates, next)
           report(`matched: candidates=${candidates.length}, siblings=${siblings.length}, pairs=${pairs.length}`)
-          await linkPairs([[anchor, next], ...pairs], anchor.path)
+          await measureOperationPhase('commit', () => linkPairs([[anchor, next], ...pairs], anchor.path))
         } catch (error) { failures.push(`${anchor.fileName}：${String(error)}`) }
       }
       const remaining = canceled ? targetPaths.size : (await readAll(request)).filter(font => targetPaths.has(key(font.path)) && font.fileAvailability !== 'available').length
@@ -263,5 +280,5 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
         message: `${canceled ? input.mode === 'reindex' ? '已取消重新索引' : '已取消重新链接' : failures.length || remaining ? '字体关联恢复未全部完成' : '字体关联恢复完成'}：已链接 ${linked} 个，仍有 ${remaining} 个文件缺失或暂不可访问${failures.length ? `；${failures.length} 项未完成：${failures.join('；')}` : ''}。本次处理${input.scope === 'local' ? '本地' : '共享'}标签${pendingAssociations.length ? `；${pendingAssociations.join('；')}` : ''}${remaining && unresolved.size ? `；${[...unresolved.values()].join('；')}` : ''}。` }
     } finally { running = false }
   }
-  return { recover }
+  return { recover: (input: TagFontRecoveryRequest) => withOperationWork('tag-recovery', runtime.appendLog, () => withSharedIoPriority('foreground', () => recover(input))) }
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Windows CI: real query/recovery/snapshot code, SQLite, controlled filesystem/dialog ports.
 const assert = require('node:assert/strict')
+process.env.HFM_LOG_DETAIL = 'debug'
 const { DatabaseSync } = require('node:sqlite')
 const path = require('node:path').win32
 const crypto = require('node:crypto')
@@ -19,16 +20,16 @@ const make = (name, folder = 'old') => ({ recoveryContentHash: hashFor({ postscr
 function harness() {
   const db = new DatabaseSync(':memory:')
   db.exec('CREATE TABLE local_font_tags (font_id TEXT, font_path TEXT, tag_name TEXT)')
-  const adapter = { exec: sql => db.exec(sql), prepare: sql => db.prepare(sql), transaction: fn => () => {
+  const adapter = { exec: sql => db.exec(sql), prepare: sql => { const statement=db.prepare(sql); if(/^SELECT font_id, font_path, tag_name FROM local_font_tags/.test(sql))return {all:(...args)=>{counts.collections++;const rows=statement.all(...args);counts.bindingRows+=rows.length;return rows}};return statement }, transaction: fn => () => {
     db.exec('BEGIN'); try { const value = fn(); db.exec('COMMIT'); return value } catch (e) { db.exec('ROLLBACK'); throw e }
   } }
   const files = new Map(), parsed = new Map(), roots = [root], sharedRows = []
   const reads = [], queryRequests = [], mappings = new Map()
-  const counts = { live: 0, hydrate: 0, parse: 0 }
+  const counts = { live: 0, hydrate: 0, parse: 0, contentReads: 0, collections: 0, bindingRows: 0 }
   const contents = new Map()
   const filesystem = {
     realpath: async file => { await filesystem.stat(file); return file },
-    readFile: async file => contents.get(key(file)) || bytesFor(parsed.get(key(file))),
+    readFile: async file => { counts.contentReads++; return contents.get(key(file)) || bytesFor(parsed.get(key(file))) },
     async stat(file) {
       if (files.get(key(file)) instanceof Error) throw files.get(key(file))
       if (files.has(key(file))) return { size: parsed.get(key(file))?.fileSize, mtimeMs: parsed.get(key(file))?.modifiedAt,
@@ -51,7 +52,7 @@ function harness() {
     '../path/pathBoundaryPolicy': load('src/main/path/pathBoundaryPolicy.ts'),
     '../path/cachePath': { normalizePathForCacheCompare: key },
     '../folders/physicalFolders': { pathInsideFolder: inside },
-    '../path/sharedFileSystemRuntime': { sharedFileSystem: filesystem },
+    '../path/sharedFileSystemRuntime': { sharedFileSystem: filesystem, withSharedIoPriority: (_priority, run) => run() },
     '../fonts/fontRuntime': { hasValidFontSignature: async file => parsed.has(key(file)), asFormat: file => /\.(ttf|otf|ttc|otc)$/i.exec(file)?.[1].toLowerCase() || 'unknown', fontItemFromPath: async file => {
       counts.parse++
       if (!parsed.has(key(file))) throw Error('bad font')
@@ -715,6 +716,51 @@ async function f09EvidenceCases() {
   } finally { h.close() }
 }
 
+
+async function f13ScopedWorkCases() {
+  const h=harness()
+  try {
+    for(let i=0;i<1001;i++)h.add(make('Page'+i,'page'),['P'])
+    for(let i=0;i<512;i++)h.add(make('Other'+i,'other'),['P'])
+    const request={sidebarPage:'tags',tagBindingsOnly:true,selectedWatchedFolders:[root+'\\page']}
+    await h.queryModule.withTagFontQuerySnapshot(async()=>{
+      const pages=[];for(const offset of [0,500,1000])pages.push(await h.query.query(request,500,offset))
+      assert.deepEqual(pages.map(p=>p.items.length),[500,500,1]);assert(pages.every(p=>p.total===1001))
+      assert.equal(h.counts.collections,1);assert.equal(h.counts.bindingRows,1001)
+    })
+    await h.queryModule.withTagFontQuerySnapshot(()=>h.query.query(request,500,0));assert.equal(h.counts.collections,2,'a new authority phase must recollect')
+    await h.queryModule.withTagFontQuerySnapshot(async()=>{await h.query.query(request,500,0);h.query.invalidate();await assert.rejects(h.query.query(request,500,500),/分页读取期间发生变化/)})
+    await h.query.query(request,500,0);await h.query.query(request,500,0);assert.equal(h.counts.collections,5,'unscoped authority reads cannot reuse snapshots')
+  } finally {h.close()}
+  const scoped=harness()
+  try {
+    scoped.mappings.set('R:','\\\\server\\share')
+    const values=['R:\\Fonts%_\\a.ttf','\\\\server\\share\\Fonts%_\\b.ttf','\\\\?\\UNC\\server\\share\\Fonts%_\\c.ttf','R:/Fonts%_/D.ttf','R:\\ignored\\..\\Fonts%_\\e.ttf','R:\\FontsXX\\bad.ttf','R:\\Fonts%_sibling\\bad.ttf']
+    for(const [i,file] of values.entries())scoped.db.prepare('INSERT INTO local_font_tags VALUES(?,?,?)').run('row'+i,file,'P')
+    scoped.db.prepare('INSERT INTO local_font_tags VALUES(?,?,?)').run('legacy',null,'P')
+    const result=await scoped.query.query({sidebarPage:'tags',tagBindingsOnly:true,selectedWatchedFolders:['\\\\server\\share\\Fonts%_']},500,0)
+    assert.equal(result.total,5,'SQL scoping lost verified alias/device/slash/dot/wildcard paths or admitted sibling')
+  } finally {scoped.close()}
+  const prep=harness()
+  try {
+    const old=Array.from({length:8},(_,i)=>make('Unique'+i)),next=old.map(font=>({...font,id:font.id+'-new',path:root+'\\new\\'+font.fileName}))
+    for(const font of old){prep.add(font,['T']);prep.remember([font])}for(const font of next)prep.put(font)
+    // The actual candidate index is empty; enumeration and parsing must prepare siblings.
+    const query=prep.runtime.queryFontPageInLibrary;prep.runtime.queryFontPageInLibrary=request=>request.sidebarPage==='filters'?Promise.resolve({items:[],total:0}):query(request)
+    const result=await prep.recoveryModule.createTagFontRecoveryRuntime(prep.runtime,async()=>next[0].path).recover({mode:'relink',scope:'local',fontPath:old[0].path})
+    assert.equal(result.linked,8);assert.equal(prep.counts.contentReads,16,'preparation reads must be eight; eight fresh link reads remain')
+  } finally {prep.close()}
+  const collision=harness()
+  try {
+    const a=make('A'),b=make('B'),anchor=make('A','new'),one=make('B','new'),two={...one,id:'independent',path:root+'\\new\\independent.ttf'}
+    for(const old of [a,b]){collision.add(old,['T']);collision.remember([old])}for(const font of [anchor,one,two])collision.put(font)
+    const stat=collision.filesystem.stat
+    collision.filesystem.stat=async(file,options)=>{const value=await stat(file);const ino=key(file)===key(two.path)?9007199254740993n:key(file)===key(one.path)?9007199254740992n:42n;return {...value,dev:options?.bigint?1n:1,ino:options?.bigint?ino:Number(ino)}}
+    const result=await collision.recoveryModule.createTagFontRecoveryRuntime(collision.runtime,async()=>anchor.path).recover({mode:'relink',scope:'local',fontPath:a.path})
+    assert.equal(result.linked,1,'rounded 64-bit IDs collapsed two independent candidate copies');assert.equal(result.remaining,1)
+  }finally{collision.close()}
+}
+
 async function main() {
   const display = load('src/renderer/src/fontDisplay.ts', { './fontUserIntentRuntime': { getUninstallIssue: () => undefined } })
   assert.equal(display.installLabel({ ...make('A'), systemInstalled: true, fileAvailability: 'missing' }), '文件丢失')
@@ -722,10 +768,11 @@ async function main() {
   // Each group owns and closes its fixtures; collect errors without hiding later groups.
   for (const run of [queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
     sharedRecoveryCases, detachedAuthorizationCase, backgroundWaitCase, f08QueryCases, f08RecoveryCases, f08RefreshCases,
-    f09MatchCases, f09AliasCase, f09CommitCases, f09SharedCases, f09EvidenceCases]) {
+    f09MatchCases, f09AliasCase, f09CommitCases, f09SharedCases, f09EvidenceCases, f13ScopedWorkCases]) {
     try { await run() } catch (error) { failures.push(`${run.name}: ${error?.stack || String(error)}`) }
   }
   assert.equal(failures.length, 0, failures.join('\n\n'))
   console.log('[diagnostics:tag-font-recovery] retained local/shared rows and counts, deleted binding cannot resurrect from stale live/history, read-only shared metadata isolation/legacy alias cache, mapped longest root ownership, changed detached credential/native re-confirmation, batched pages, one clicked picker, tag union, actual complete/partial/cancelled/failed scan barriers')
 }
-main().catch(error => { console.error(error); process.exitCode = 1 })
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })
+module.exports = { harness, main }

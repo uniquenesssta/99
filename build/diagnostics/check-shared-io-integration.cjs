@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict')
+process.env.HFM_LOG_DETAIL = 'debug'
 const fs = require('node:fs'), fsp = fs.promises, path = require('node:path'), os = require('node:os')
 const cp = require('node:child_process')
 const { loader } = require('./check-operation-chain.cjs')
@@ -72,6 +73,15 @@ async function main() {
    await client.runRustSharedMetadataSignature({dbPath:path.join(dir,'local.sqlite')})
    assert.equal(daemonCalls.length,localBefore+1)
    cases.push('local metadata keeps existing transport')
+   const priorityPool=load('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime(),originalRun=priorityPool.run,priorities=[]
+   priorityPool.run=request=>{priorities.push(request.priority);return originalRun(request)}
+   try {
+     const global=load('src/main/performance/globalIoRuntime.ts').createGlobalIoRuntime({env:{},localScanWorkers:1,appendLog(){},isIndexingActive:()=>false,isUserActive:()=>false,storageProfileForPath:()=>({type:'unknown'})})
+     await global.withGlobalIo('fixture:foreground',()=>run(['\\\\nas\\priority'],{timeout:2000}),{priority:'foreground'})
+     assert.deepEqual(priorities,['foreground'],'global priority did not reach the real transport/shared queue')
+   }finally{priorityPool.run=originalRun}
+   cases.push('actual global queue context -> transport -> shared process priority propagation')
+
    const seven=[
      ['runRustInstallStatusRead', [{rootPath:'\\\\nas\\a',dbPath:'\\\\nas\\a\\install.sqlite',items:[]}], {ok:true,results:{},missingIds:[]}],
      ['runRustInstallStatusSave', [{rootPath:'\\\\nas\\a',dbPath:'\\\\nas\\a\\install.sqlite',rows:[]}], {ok:true,written:0,groups:1}],

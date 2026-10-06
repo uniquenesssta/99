@@ -1,3 +1,4 @@
+import { recordOperationWork } from '../../logging/operationTraceContext'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
@@ -44,6 +45,7 @@ export function createPreviewNativeRenderer(options: PreviewNativeRendererOption
 
     if (options.runRustPreviewRenderImage) {
       try {
+        recordOperationWork({ renders: 1 })
         const result = await options.runRustPreviewRenderImage(request)
         if (result?.ok && result.outputPath && await fsp.access(result.outputPath).then(()=>true,()=>false)) return result
       } catch (error) {

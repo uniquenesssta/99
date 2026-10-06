@@ -16,6 +16,7 @@
         "queueRecovery",
         "deferRecovery",
         "releaseDeferredRecovery",
+        "flushPendingFolderChangesPassUnmeasured",
         "flushPendingFolderChangesPass",
         "flushPendingFolderChanges",
         "schedulePendingFolderFlush",
@@ -23,7 +24,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "ba8a4d8ce7bd45f413db74bf7dab3dc3395219ca16d1c9bd422332422c4c3540"
+      "sha256": "5757626335b119b807db9b01ab9574cdb73f463b6cd18989394eddcfc78b5e11"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -234,6 +235,12 @@
       "parent": "2770afd519b1c2930c0a0a62eebb9e5364be779b",
       "file": "src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts",
       "reason": "Bounded watcher provenance and commit-before-notification; current recovery/lifecycle gates retained."
+    },
+    {
+      "task": "S12-F13",
+      "parent": "b617ddd3b45a4eb32f83835c2923fd267fc061ec",
+      "file": "src/main/watcher/folderWatcherRuntime.ts",
+      "reason": "One observational operation scope around the existing batch pass; recovery, ordering and notification behavior unchanged."
     }
   ]
 }

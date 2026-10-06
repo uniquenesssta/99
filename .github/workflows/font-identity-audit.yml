@@ -59,6 +59,9 @@ jobs:
       - name: Verify floating scrollbar overlays with native Electron input
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-view-layout.cjs --dom-feedback
+      - name: Compare real F13 operation and PNG decode workload
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: node build/diagnostics/check-preview-chain-performance.cjs --work-comparison
       - name: Build application bundles
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node node_modules/electron-vite/bin/electron-vite.js build

@@ -24,7 +24,20 @@ export async function readTagFontBindings(options: {
   const unavailableRoots: string[] = []
   let complete = true
   if (scope === 'local') {
-    const rows = db.prepare('SELECT font_id, font_path, tag_name FROM local_font_tags').all() as Array<{ font_id: string; font_path: string | null; tag_name: string }>
+    const prefixes = [...new Set((options.folders || []).flatMap(folder => paths.aliases(folder)).map(folder => folder.replace(/\\+$/, '')))]
+    const normalized = "lower(replace(trim(font_path), '/', char(92)))"
+    const escape = (value: string) => value.replace(/[!%_]/g, character => '!' + character)
+    // Legacy noncanonical paths may contain Unicode case folds, dot segments or
+    // repeated separators. Keep that small compatibility subset for JS checking.
+    const legacy = `font_path GLOB '*[^ -~]*' OR instr(${normalized}, char(92)||'.') > 0 OR instr(substr(${normalized},3),char(92)||char(92)) > 0`
+    const rows: Array<{ font_id: string; font_path: string | null; tag_name: string }> = []
+    // Bound expression depth and variable count for large multi-directory batches.
+    for (let index = 0; index < Math.max(1, prefixes.length); index += 128) {
+      const group = prefixes.slice(index, index + 128)
+      const where = group.length ? ` WHERE COALESCE(font_path, '') = '' OR ${group.map(() => `(${normalized} = ? OR ${normalized} LIKE ? ESCAPE '!')`).join(' OR ')} OR ${legacy}` : ''
+      rows.push(...db.prepare('SELECT font_id, font_path, tag_name FROM local_font_tags' + where)
+        .all(...group.flatMap(prefix => [prefix, escape(prefix) + '\\%'])))
+    }
     for (const row of rows) {
       if (!row.font_path) {
         const tags = legacyTags.get(row.font_id) || []

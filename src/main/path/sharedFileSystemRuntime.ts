@@ -1,5 +1,7 @@
 import type { SharedIoAccessPath } from './sharedIoAccessRuntime'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { recordOperationWork } from '../logging/operationTraceContext'
+import type { IoTaskPriority } from '../performance/ioQueue'
 import { getStartupPathRootState, markStartupPathRootUnavailable } from './startupPathAvailabilityRuntime'
 import { promises as localFs } from 'node:fs'
 import { sharedDatabaseTarget, sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
@@ -8,6 +10,10 @@ import { SharedIoProcessError } from './sharedIoProcessRuntime'
 const sharedIoSignalScope = new AsyncLocalStorage<AbortSignal>()
 export function withSharedIoSignal<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> { return sharedIoSignalScope.run(signal, operation) }
 export function currentSharedIoSignal(): AbortSignal | undefined { return sharedIoSignalScope.getStore() }
+
+const priorityScope = new AsyncLocalStorage<IoTaskPriority | number>()
+export function withSharedIoPriority<T>(priority: IoTaskPriority | number, operation: () => Promise<T>): Promise<T> { return priorityScope.run(priority, operation) }
+export function currentSharedIoPriority(): IoTaskPriority | number | undefined { return priorityScope.getStore() }
 
 const previewReadScope = new AsyncLocalStorage<boolean>()
 export function withSharedPreviewReads<T>(operation: () => Promise<T>): Promise<T> { return previewReadScope.run(true, operation) }
@@ -102,7 +108,23 @@ export const sharedFileSystem: typeof localFs = new Proxy(localFs, { get(target,
   if (typeof original !== 'function') return original
   return async (...args: any[]) => {
     const paths = [args[0], ...(['copyFile','rename','link','symlink'].includes(String(property)) ? [args[1]] : [])].filter(value => typeof value === 'string')
-    if (!(await sharedIoResourceKeys(paths)).length) return original.apply(target, args)
+    if (!(await sharedIoResourceKeys(paths)).length) {
+      const result = await original.apply(target, args)
+      if (property === 'readFile' && (Buffer.isBuffer(result) || typeof result === 'string')) {
+        const bytes = Buffer.isBuffer(result) ? result.length : Buffer.byteLength(result, encoding(args[1]) || 'utf8')
+        recordOperationWork({ reads: 1, [/\.(ttf|otf|ttc|otc)$/i.test(String(args[0])) ? 'sourceBytes' : 'cacheBytes']: bytes })
+      }
+      if (property === 'open') return new Proxy(result, { get(handle, name) {
+        const member = Reflect.get(handle, name)
+        if (name === 'read') return async (...input: any[]) => {
+          const read = await member.apply(handle, input)
+          recordOperationWork({ reads: 1, [/\.(ttf|otf|ttc|otc)$/i.test(String(args[0])) ? 'sourceBytes' : 'cacheBytes']: read.bytesRead })
+          return read
+        }
+        return typeof member === 'function' ? member.bind(handle) : member
+      } })
+      return result
+    }
     const operation = String(property)
     if (!supported.has(operation)) throw new SharedIoProcessError(`共享文件操作尚无隔离协议：${operation}`, 'not-started', 'unsupported-file-operation')
     const option = args[1] && typeof args[1] === 'object' ? args[1] : {}
@@ -133,7 +155,10 @@ export const sharedFileSystem: typeof localFs = new Proxy(localFs, { get(target,
     const output=await executeSharedFile(request,bytes,operation === 'readFile' ? option.signal : undefined), value=output.result.value
     if (operation==='stat'||operation==='lstat') return fileInfo(value)
     if (operation==='readdir') return option.withFileTypes ? value.map((entry:any)=>({...fileInfo(entry),parentPath:request.path,path:request.path})) : value.map((entry:any)=>entry.name)
-    if (operation==='readFile') return encoding(args[1]) ? output.bytes!.toString(encoding(args[1])) : Buffer.from(output.bytes!)
+    if (operation==='readFile') {
+      recordOperationWork({ reads: 1, [/\.(ttf|otf|ttc|otc)$/i.test(request.path) ? 'sourceBytes' : 'cacheBytes']: output.bytes!.length })
+      return encoding(args[1]) ? output.bytes!.toString(encoding(args[1])) : Buffer.from(output.bytes!)
+    }
     return value === null ? undefined : value
   }
 } })

@@ -1,3 +1,4 @@
+import { withOperationWork } from '../logging/operationTraceContext'
 import { isApplicationClosing, onApplicationResumed } from '../app/shutdownCoordinatorRuntime';
 import { BrowserWindow } from "electron";
 import fs from 'node:fs'
@@ -194,7 +195,7 @@ export function createFolderWatcherRuntime(
     return true;
   }
 
-  async function flushPendingFolderChangesPass(
+  async function flushPendingFolderChangesPassUnmeasured(
     generation: number,
   ): Promise<void> {
     const changes = Array.from(pendingFolderChanges.values());
@@ -276,6 +277,10 @@ export function createFolderWatcherRuntime(
         );
       }
     }
+  }
+
+  function flushPendingFolderChangesPass(generation: number): Promise<void> {
+    return withOperationWork('watcher-batch', options.appendStartupLog, () => flushPendingFolderChangesPassUnmeasured(generation));
   }
 
   async function flushPendingFolderChanges(): Promise<void> {

@@ -1,4 +1,5 @@
 import { basename, dirname, parse } from 'node:path'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { FontItem, FontQueryPageResult, FontQueryRequest } from '../../shared/types'
 import type { RustSharedMetadataOverlayReadInput, RustSharedMetadataOverlayReadResult } from '../rust-core/rustCoreWorkerContracts'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
@@ -7,6 +8,12 @@ import { createTagRecoveryPaths, type TagRecoveryPaths } from './tagRecoveryPath
 import { readTagFontBindings, type TagFontBinding } from './tagFontBindingRuntime'
 import { asFormat, fontItemFromPath } from '../fonts/fontRuntime'
 import { openTagFontSnapshots } from './tagFontSnapshotRuntime'
+
+// Main-only lifetime: one paginated read, never a whole recovery or mutation.
+const bindingReadScope = new AsyncLocalStorage<Map<object, Map<string, { generation: number; pending: Promise<FontQueryPageResult> }>>>()
+export function withTagFontQuerySnapshot<T>(read: () => Promise<T>): Promise<T> {
+  return bindingReadScope.run(new Map(), read)
+}
 
 export function tagQueryScope(request: FontQueryRequest): 'local' | 'shared' | undefined {
   if (!request) return undefined
@@ -167,8 +174,19 @@ export function createTagFontQueryRuntime(deps: {
   const inFlight = new Map<string, Promise<FontQueryPageResult>>()
   const cache = new Map<string, { at: number; result: FontQueryPageResult }>()
   async function query(request: FontQueryRequest, limit: number, offset: number): Promise<FontQueryPageResult> {
-    if (request.tagBindingsOnly) return collect(request, limit, offset)
     const { limit: _limit, offset: _offset, ...criteria } = request
+    if (request.tagBindingsOnly) {
+      const scope = bindingReadScope.getStore()
+      if (!scope) return collect(request, limit, offset)
+      let reads = scope.get(deps)
+      if (!reads) { reads = new Map(); scope.set(deps, reads) }
+      const version = generation, identity = JSON.stringify(criteria)
+      let entry = reads.get(identity)
+      if (!entry) { entry = { generation: version, pending: collect(criteria, Number.MAX_SAFE_INTEGER, 0) }; reads.set(identity, entry) }
+      const result = await entry.pending
+      if (entry.generation !== generation) throw new Error('标签关联在分页读取期间发生变化，请重试。')
+      return { ...result, queryKey: JSON.stringify({ ...criteria, offset, limit }), items: result.items.slice(offset, offset + limit), offset, limit, truncated: offset + limit < result.total }
+    }
     const cacheKey = JSON.stringify(criteria)
     const found = cache.get(cacheKey)
     const version = generation

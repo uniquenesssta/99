@@ -3,6 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), cp = require('node:c
 const root = path.resolve(__dirname, '../..')
 async function run() {
   assert.equal(process.platform, 'win32', 'actual preview chain requires Windows')
+  if (process.argv.includes('--work-comparison')) return require('./lib/operation-work-performance-runner.cjs').run()
   const directory = path.join(root, 'artifacts/list-preview/chain'), html = path.join(directory, 'index.html'), preload = path.join(directory, 'preload.cjs')
   fs.mkdirSync(directory, { recursive: true })
   await require('esbuild').build({ entryPoints: [path.join(__dirname, 'lib/preview-chain-performance-dom.ts')], bundle: true,

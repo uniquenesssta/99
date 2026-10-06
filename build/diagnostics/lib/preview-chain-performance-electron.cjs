@@ -2,11 +2,14 @@ const electron = require('electron'), { app, BrowserWindow, ipcMain } = electron
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict')
 const { createRuntime } = require('./preview-chain-performance-runtime.cjs')
 const { loader } = require('../check-operation-chain.cjs')
-const [directory, html, preload] = process.argv.slice(2)
+const [directory, html, preload, workConfig] = process.argv.slice(2)
 process.env.HFM_LOG_DETAIL = 'debug'
 const logs = [], reports = [], appendLog = line => logs.push(line)
 const watchdog = setTimeout(() => { console.error('preview chain integration timed out'); app.exit(1) }, 120000)
-app.whenReady().then(async () => {
+if (workConfig) {
+  clearTimeout(watchdog)
+  require('./operation-work-performance-electron.cjs').run({ directory, html, preload, config: JSON.parse(fs.readFileSync(workConfig,'utf8')), electron }).then(()=>app.exit(0),error=>{console.error(error);app.exit(1)})
+} else app.whenReady().then(async () => {
   const bootstrap = loader({ electron, '../security/ipcSenderValidation': { assertTrustedIpcSender() {} } })
   const source = bootstrap('src/main/preload/runtimePreloadSource.ts').runtimePreloadSource
   fs.writeFileSync(preload, source)
@@ -31,7 +34,7 @@ app.whenReady().then(async () => {
     const cacheDir = path.join(directory, mode, variant)
     for (const cache of ['cold', 'disk-hot', 'memory-hot']) {
       if (cache !== 'memory-hot') {
-        active?.close()
+        await active?.close()
         active = await createRuntime({ directory: cacheDir, baseline: variant === 'before', appendLog, electron, traceContext: bootstrap('src/main/logging/operationTraceContext.ts') })
       }
       const nativeBefore = active.native(), countsBefore = active.counts()
@@ -43,7 +46,7 @@ app.whenReady().then(async () => {
       reports.push(row); console.log('[preview-chain-performance]', JSON.stringify(row))
     }
   }
-  active.close()
+  await active.close()
   for (const mode of ['list', 'grid']) for (const cache of ['cold', 'disk-hot']) {
     const before = reports.find(r => r.mode === mode && r.cache === cache && r.variant === 'before')
     const after = reports.find(r => r.mode === mode && r.cache === cache && r.variant === 'after')

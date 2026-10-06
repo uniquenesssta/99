@@ -26,7 +26,7 @@ function harness() {
   const snapshot=()=>plain(h.records)
   const mocks={
     'node:path':path.win32,
-    [path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:io},
+    [path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:io,withSharedIoPriority:(_priority,run)=>run()},
     [path.join(root,'src/main/install/fontMutationProcessRuntime.ts')]:{createFontMutationSession:async()=>{throw Error('real native launcher forbidden')}},
     [path.join(root,'src/main/app/shutdownCoordinatorRuntime.ts')]:{applicationWorkEpoch:()=>epoch,isApplicationClosing:()=>closing,assertApplicationOpen:ticket=>{if(closing||ticket!==epoch)throw Error('software closing')},noteRecoveryPersistenceFailure(){}},
   }

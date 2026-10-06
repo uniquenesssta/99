@@ -4,6 +4,8 @@ type GlobalIoOptions,
 type IoQueueSnapshot,
 } from "./ioScheduler";
 import type { StorageProfile } from "./storageProfile";
+import { recordOperationWork } from '../logging/operationTraceContext';
+import { withSharedIoPriority } from '../path/sharedFileSystemRuntime';
 import { shouldLogSuccessfulGlobalIo } from './globalIoLogPolicyRuntime';
 
 export interface GlobalIoRuntimeOptions {
@@ -126,6 +128,8 @@ export function createGlobalIoRuntime(
     taskOptions: GlobalIoOptions = {},
   ): Promise<T> {
     const startedAt = Date.now();
+    let admittedAt: number | undefined;
+    recordOperationWork({ tasks: 1 });
     const before = ioScheduler.snapshot();
     const shouldTraceStart =
       detailedIoLogs && (before.pending > 0 || before.active >= before.concurrency);
@@ -135,9 +139,14 @@ export function createGlobalIoRuntime(
       );
     }
     return ioScheduler
-      .withGlobalIo(label, fn, taskOptions)
+      .withGlobalIo(label, () => {
+        admittedAt = Date.now();
+        recordOperationWork({ queuedMs: admittedAt - startedAt });
+        return withSharedIoPriority(taskOptions.priority ?? 'normal', fn);
+      }, taskOptions)
       .then((result) => {
         const durationMs = Date.now() - startedAt;
+        recordOperationWork({ executionMs: admittedAt === undefined ? 0 : Date.now() - admittedAt });
         const after = ioScheduler.snapshot();
         const priority = String(taskOptions.priority || 'normal')
         const thresholdMs = slowIoLogThresholdMs(label, priority)
@@ -155,6 +164,7 @@ export function createGlobalIoRuntime(
       })
       .catch((error) => {
         const durationMs = Date.now() - startedAt;
+        recordOperationWork({ executionMs: admittedAt === undefined ? 0 : Date.now() - admittedAt });
         options.appendLog(
           `perf io end: label=${label}, status=failed, durationMs=${durationMs}, lane=${String(taskOptions.lane || "auto")}, priority=${String(taskOptions.priority || "normal")}, storagePath=${String(taskOptions.storagePath || "").slice(0, 180)}, error=${error instanceof Error ? error.message : String(error)}, after=${JSON.stringify(ioScheduler.snapshot())}`,
         );
