@@ -35,9 +35,14 @@ async function main() {
     const handle=await io.open(remote,'wx');await handle.writeFile('owned');assert.equal(writes.pop().toString(),'owned');await handle.close();await assert.rejects(handle.writeFile('late'),/关闭/)
     let release;hold=new Promise(resolve=>release=resolve)
     const before=requests.length
-    const first=io.readFile(remote),second=io.readFile(remote)
-    await new Promise(resolve=>setImmediate(resolve));release();hold=undefined
-    const pair=await Promise.all([first,second]);assert.equal(requests.length,before+1,'same-key read was not coalesced');pair[0][0]=77;assert.equal(pair[1][0],0,'coalesced readers share mutable bytes')
+    const work=load('src/main/logging/operationTraceContext.ts');let measured
+    const pair=await work.withOperationWork('coalesced-read',()=>{},async()=>{
+      const first=io.readFile(remote),second=io.readFile(remote)
+      await new Promise(resolve=>setImmediate(resolve));release();hold=undefined
+      const pair=await Promise.all([first,second]);measured=work.operationWorkSnapshot();return pair
+    })
+    assert.equal(requests.length,before+1,'same-key read was not coalesced');assert.equal(measured.reads,1,'logical subscribers inflated underlying source reads');assert.equal(measured.sourceBytes,bytes.length)
+    pair[0][0]=77;assert.equal(pair[1][0],0,'coalesced readers share mutable bytes')
     hold=new Promise(resolve=>release=resolve)
     const stale=io.readFile(remote).catch(error=>error)
     await new Promise(resolve=>setImmediate(resolve))

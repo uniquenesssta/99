@@ -1,3 +1,4 @@
+import { noteFontRefreshRequest, cancelFontRefreshObservation } from '../../fontOperationTrace'
 import { fontUserIntentRevision,hasUnsettledFavoriteIntent } from '../../fontUserIntentRuntime'
 import type { CacheStats,FontQueryPageResult,FontQueryResult,LibraryState } from '@shared/types'
 import { useEffect,useMemo,useRef,useState } from 'react'
@@ -72,7 +73,7 @@ export function useLibraryController(options: {
   })
 
   function refreshDatabaseDerivedState(fields?: FontRefreshField[]): void {
-    if (options.closingLifecycle.isClosing()) return
+    if (options.closingLifecycle.isClosing()) { noteFontRefreshRequest(options.database.databasePageRequestSeqRef, 'closing'); return }
     if (fields) { scheduleDatabaseDerivedStateRefresh(0, fields); return }
     pendingRefreshScope.current = { page: false, metrics: false }
     setDatabaseMetricsRefreshToken(value => value + 1)
@@ -86,9 +87,11 @@ export function useLibraryController(options: {
       databasePageRequestSeqRef: options.database.databasePageRequestSeqRef,
       fontMetricsRequestSeqRef: options.database.fontMetricsRequestSeqRef
     })
+    noteFontRefreshRequest(options.database.databasePageRequestSeqRef)
   }
 
   function scheduleDatabaseDerivedStateRefresh(delay = 420, fields?: FontRefreshField[]): void {
+    cancelFontRefreshObservation(options.database.databasePageRequestSeqRef, 'superseded-refresh')
     if (options.closingLifecycle.isClosing()) return
     const scope = fields ? fontMutationRefreshScope(fields, activeFilterKindRef.current.kind) : { page: true, metrics: true }
     if (fields?.length && !activeFilterKindRef.current.hasPage) scope.page = true
@@ -161,6 +164,12 @@ export function useLibraryController(options: {
     const notice = parseLeaseLockConflictNotice(status)
     if (notice) setLeaseLockConflictNotice(notice)
   }, [status])
+
+  useEffect(() => {
+    const owner = options.database.databasePageRequestSeqRef
+    const unsubscribe = options.closingLifecycle.subscribe(closing => { if (closing) cancelFontRefreshObservation(owner, 'closing') })
+    return () => { unsubscribe(); cancelFontRefreshObservation(owner, 'unmount') }
+  }, [options.closingLifecycle, options.database.databasePageRequestSeqRef])
 
   useInitialLibraryShellRuntime({
     hfm: options.hfm,

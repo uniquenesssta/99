@@ -1,3 +1,4 @@
+import { noteFontQueryScope, bindFontRefreshQuery, dispatchFontRefreshQuery, finishFontRefreshQuery } from '../../fontOperationTrace'
 import { databaseQueryScopeKey, assertDatabasePageResponseMatchesRequest } from '../../constants/queryCacheRuntime'
 import { SHARED_UNAVAILABLE_MESSAGE } from '../../../../shared/sharedAvailability'
 import { captureFontTagReadConfirmation } from '../../fontTagStateAuthorityRuntime'
@@ -236,6 +237,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
   const pageQueryEnabled = shouldUseDatabaseQuery && !options.skipPageQuery
 
   useEffect(() => {
+    noteFontQueryScope(options.databasePageRequestSeqRef, pageQueryEnabled ? databaseQueryScope : undefined)
     if (!pageQueryEnabled) {
       options.setDatabaseQueryResult(null)
       options.setDatabasePageResult(null)
@@ -245,6 +247,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
 
     let disposed = false
     const requestSeq = ++options.databasePageRequestSeqRef.current
+    const observation = bindFontRefreshQuery(options.databasePageRequestSeqRef, requestSeq, databaseQueryScope)
     const timer = window.setTimeout(() => {
       const startedAt = performance.now()
       options.reportTrace({
@@ -265,15 +268,18 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           scrolling: options.fontListScrollingRef.current
         }
       })
+      dispatchFontRefreshQuery(observation)
       const intentRevision = fontUserIntentRevision()
       const confirmTagRead = captureFontTagReadConfirmation(options.library)
       options.hfm.queryFontPage(databaseQueryRequest).then(async (result) => {
         if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) {
+          finishFontRefreshQuery(observation, undefined, disposed ? 'query-disposed' : 'query-superseded')
           options.reportTrace({ kind: 'db-query-rejected', label: disposed ? 'scope-disposed' : 'newer-request', page: options.sidebarPage,
             severity: 'info', details: { requestSeq, currentSeq: options.databasePageRequestSeqRef.current, keyword: databaseQueryRequest.keyword, total: result.total } })
           return
         }
         if (intentRevision !== fontUserIntentRevision()) {
+          finishFontRefreshQuery(observation, undefined, disposed ? 'query-disposed' : 'query-superseded')
           options.reportTrace({ kind: 'db-query-rejected', label: 'user-intent-changed', page: options.sidebarPage,
             severity: 'warn', details: { requestSeq, intentRevision, currentIntentRevision: fontUserIntentRevision() } })
           return
@@ -286,7 +292,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
             previous && databaseQueryScopeKey(previous.queryKey) === databaseQueryScopeKey(result.queryKey)) {
           const target = Math.min(previous.items.length, result.total)
           while (result.items.length < target) {
-            if (disposed || requestSeq !== options.databasePageRequestSeqRef.current || intentRevision !== fontUserIntentRevision()) return
+            if (disposed || requestSeq !== options.databasePageRequestSeqRef.current || intentRevision !== fontUserIntentRevision()) { finishFontRefreshQuery(observation); return }
             const nextRequest = { ...databaseQueryRequest, offset: result.items.length, limit: DATABASE_INCREMENTAL_PAGE_SIZE }
             const next = await options.hfm.queryFontPage(nextRequest)
             assertDatabasePageResponseMatchesRequest(next, nextRequest)
@@ -297,6 +303,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           }
         }
         if (intentRevision !== fontUserIntentRevision()) {
+          finishFontRefreshQuery(observation, undefined, disposed ? 'query-disposed' : 'query-superseded')
           options.reportTrace({ kind: 'db-query-rejected', label: 'user-intent-changed', page: options.sidebarPage,
             severity: 'warn', details: { requestSeq, intentRevision, currentIntentRevision: fontUserIntentRevision() } })
           return
@@ -324,8 +331,9 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
             scrolling: options.fontListScrollingRef.current
           }
         })
-        if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) return
+        if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) { finishFontRefreshQuery(observation); return }
         const mergedResult = mergeIncrementalDatabasePage(options.databasePageResult, result)
+        finishFontRefreshQuery(observation, mergedResult)
         options.setDatabasePageResult(mergedResult)
         options.setDatabaseQueryResult({
           queryKey: mergedResult.queryKey,
@@ -342,8 +350,9 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
         options.setDatabaseQueryFailedKey('')
       }).catch((error) => {
         const durationMs = Math.round(performance.now() - startedAt)
+        finishFontRefreshQuery(observation, undefined, 'query-failed')
         options.reportTrace({ kind: 'db-query-error', label: 'queryFontPage', page: options.sidebarPage, severity: 'error', durationMs, details: { requestSeq, error: error instanceof Error ? error.message : String(error), queryKey: databaseQueryKey } })
-        if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) return
+        if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) { finishFontRefreshQuery(observation); return }
         if (String(error).includes(SHARED_UNAVAILABLE_MESSAGE)) {
           options.setStatus(SHARED_UNAVAILABLE_MESSAGE)
           return
@@ -357,6 +366,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
 
     return () => {
       disposed = true
+      finishFontRefreshQuery(observation, undefined, 'query-disposed')
       window.clearTimeout(timer)
     }
   }, [pageQueryEnabled, databaseQueryRequest, databaseQueryKey, options.databaseRefreshToken])

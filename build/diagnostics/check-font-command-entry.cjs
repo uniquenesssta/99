@@ -24,17 +24,18 @@ function setup(config={}) {
 const labels=tree=>treeNodes(tree).filter(n=>n.type==='button').map(n=>n.props.children).filter(x=>typeof x==='string')
 async function run(){let cases=0
   for (const runtimePreload of [false, true]) {
-    const h=harness({runtimePreload}), requests=[]
+    const h=harness({runtimePreload}), requests=[], recoveryTraces=[]
     h.select().setSelectedFontIds(['a','b'])
     h.all[1].fileAvailability='missing'; h.all[1].localTagNames=['T']
     h.context().openFontMenu(h.event(),h.all[1])
-    h.handlers.set('fonts:recoverTagFiles',(_event,request)=>{requests.push(plain(request));return {linked:1,remaining:0,canceled:false,failures:[],message:'linked'}})
+    h.handlers.set('fonts:recoverTagFiles',(_event,request,envelope)=>{requests.push(plain(request));recoveryTraces.push(envelope?.__hfmOperationTrace);return {linked:1,remaining:0,canceled:false,failures:[],message:'linked'}})
     const opts={contextMenu:h.menu,sidebarPage:'tags',hfm:h.window.hfm,setContextMenu:noop,setStatus:noop,refreshDatabaseDerivedState:noop,flushFontWriteQueue:async()=>true}
     const actions=h.load(renderer+'fontDialogContextActionsRuntime.ts').createFontDialogContextActions(opts)
     const overlays=props=>h.load(renderer+'components/app/AppOverlays.tsx').AppOverlays({contextSelectedFonts:h.all.slice(0,2),contextTargetCount:2,...actions,...props})
     const tree=overlays({contextMenu:h.menu})
     button(tree,'重新链接文件').props.onClick();await tick()
     assert.deepEqual(requests,[{mode:'relink',fontPath:h.all[1].path,scope:'local'}],'clicked card must own the relink even with a multiselection')
+    assert.equal(recoveryTraces[0]?.domain,'tag-recovery','actual preload lost recovery correlation')
     const tagMenu={kind:'tag',name:'T',scope:'local',x:0,y:0}
     assert(!labels(overlays({contextMenu:tagMenu})).includes('重新链接文件'))
     assert(labels(overlays({contextMenu:tagMenu})).includes('重新索引监听文件夹'))

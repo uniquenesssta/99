@@ -738,3 +738,17 @@ flowchart TD
 ```
 
 本次仅在非 Windows 环境执行源码、AST/导入、CJS 语法和 Git 差异静态复核。Node 24 官方文档确认 AsyncLocalStorage 的异步范围语义；现有应用支持 Node ≥22.12，未增加依赖。Mermaid/状态插件仍无 HFM 对应项目，未写其他项目，图和续接以本文/Git 为准。Windows 动态结果待实际回执后登记。
+
+
+### 13.3 首轮 Windows 回执与补修
+
+首轮候选 `d36479e1d6d5f767a37908b1025015247c560c1e`，源码树 `c2458fb7de83cdd01cd46c4848d49a24444a3f3d`，[Windows CI 37434644141](https://github.com/uniquenesssta/99/actions/runs/37434644141) / job `112173362977` 失败，未提前进入 F14。
+
+- 类型检查成功，166 项诊断全部执行，162 通过、4 失败：merged-index-mutation/tag-font-recovery 的旧自定义加载器未接入新增 trace/log 依赖；preview-shared-admission/root-availability-evidence 仍在普通模式要求逐请求明细。补齐实际模块端口，并让原有明细断言明确在 debug 模式运行，断言和物理进程约束保留。preview-shared-admission 的 stopping 是断言失败后的清理报错，不据此修改取消策略。
+- 独立身份、激活、F10/F11 准确卸载与 42 项恢复、Node/Rust 标签、Rust 身份/登记/变更/共享文件/watcher、实际 DOM/输入和 bundle 均成功；7 项真实变更继续忽略。
+- ABBA 只完成 A1 的主进程操作和读取争用，不能称前后比较通过：基线分页 3 次集合/4,563 返回行，恢复 23 次内容身份读取、10,755,160 逻辑源字节，卸载 5 次规划快照/5 次逐项结算/1 个受控 broker 会话，14 个真实读取子进程全部关闭，前台 6 个等待样本 p95/max 均 244ms。真实 watcher 重复批次 0 upsert、内容变化 1 upsert。以上仅为该失败 job 的基线证据，最终比较必须重跑同环境完整 A–B–B–A。
+- 首个 PNG 范围因既有 preload 在 log-off 时关闭图像 trace，夹具拒绝无来源 trace 的有效结果并开始清理；尚未形成任何完整 PNG 阶段回执。补修仅在主进程工作量/争用结束后，为原有 PNG 关联回执开启 debug。没有延长超时、禁用真实 transport 或重新接入直接 exec。主进程工作量继续在详细日志关闭时测量。
+- 主动复核另修正共享读取计数归属：同一底层在途读取的多个订阅者只计一次源读取/有效负载，保持每个订阅者独立字节与代次检查。原 shared-filesystem 门新增双订阅反例。
+- 补足恢复页面阶段：沿既有可选 operation trace、数据库请求序号及被接纳结果建立弱关联；既有 React effect 在 membership 日志去重前记录“已接纳页面在 React commit 后被观察”。未变化成员也可完成；新导航/刷新、拒绝、失败、无查询、关闭/卸载终止观察，迟到旧请求不能结束新观察。这里不是浏览器 paint 或用户看到屏幕的承诺，未改变刷新返回类型、状态所有权、查询接纳或预览需求。实际页面阶段的持续测量由此进入现有详细回执，整链真实 UI 证据留 F14。
+
+新增页面观察回归继续放入 operation-refresh-scope、preview-work-lifetime、font-command-entry：涵盖真实 query hook 接纳与 effect 观察分离、未变化成员、所有终止分支及双 preload 传递。仅按实际源码变化迁移 Library controller token inventory 与 dialog source hash，不增加状态/ref owner，不删改原有安全断言。补修动态结果待下一次完整 Windows 回执。

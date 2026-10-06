@@ -152,7 +152,7 @@
     "src/renderer/src/fontContextActionRuntime.ts": "f1ab7466c61191a73e1014f59b84522c6ee02013127d791023d2eafdf8165bd3",
     "src/renderer/src/fontContextMenuRuntime.ts": "fd620a07186f0a74db86bba1e4e67164241bb9ec3550ab6fcf951683fa6f7e44",
     "src/renderer/src/fontDialogRuntime.ts": "81269d17b71d110d48ee12117d18487c852e69177b498592e6b08e1e63c69fc5",
-    "src/renderer/src/fontDialogContextActionsRuntime.ts": "f4295782ec27cf6ce49eeb967f115600a47c73a8329da3efe643a820e1931c25",
+    "src/renderer/src/fontDialogContextActionsRuntime.ts": "3c9011747a2d7c4a9c69ada715efdf3302e354919ac6ce1575f606d4e40cf21c",
     "src/renderer/src/fontDialogTagActionsRuntime.ts": "9b5bc4b4b683c0f3b758f21fc5e1954136c45f8c5bf6065a9ba97576c1a9767c",
     "src/renderer/src/fontDetailPanelRuntime.ts": "8d263e5217dee48fc320e31e027126e6c890790019c5e969237a0ba63cdadb47",
     "src/renderer/src/fontTagInputRuntime.ts": "296b77a1412004e68c390c96e732479f90faa57f9a7aa5fa9984efa6ca4a6c07",

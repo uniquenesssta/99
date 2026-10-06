@@ -12,6 +12,10 @@ async function run({directory,html,preload,config,electron}) {
   await app.whenReady()
   fixture=await createFixture({sourceRoot:config.sourceRoot,directory,fixtureDirectory:config.fixtureDirectory,manifest:config.manifest,workerPath:config.workerPath,electron})
   report.operations=await fixture.operations();report.watcher=await fixture.watcher();report.contention=await fixture.contention()
+  // Existing image attribution is explicitly opt-in in the actual preload.
+  // Work/count reductions above were measured with detailed logging disabled.
+  process.env.HFM_LOG_DETAIL='debug'
+  report.logging={operations:'off',contention:'off',preview:'debug for existing image receipt attribution'}
   const bootstrap=fixture.load
   fs.writeFileSync(preload,bootstrap('src/main/preload/runtimePreloadSource.ts').runtimePreloadSource)
   const traced=bootstrap('src/main/ipc/ipcTraceRuntime.ts').registerTracedIpcHandler

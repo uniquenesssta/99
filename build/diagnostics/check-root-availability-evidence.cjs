@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.env.HFM_LOG_DETAIL = 'debug'
 const assert=require('node:assert/strict'),fs=require('node:fs'),fsp=fs.promises,path=require('node:path'),os=require('node:os')
 const {loader}=require('./check-operation-chain.cjs')
 const root=path.resolve(__dirname,'../..'),abs=p=>path.join(root,p),tick=ms=>new Promise(r=>setTimeout(r,ms))

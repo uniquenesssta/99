@@ -1,3 +1,4 @@
+import { observeFontRefreshPage } from '../../fontOperationTrace'
 import { reportRendererTrace } from '../../rendererPerformance'
 import { useEffect, useRef, useLayoutEffect, useMemo } from 'react'
 import type { MutableRefObject } from 'react'
@@ -51,6 +52,7 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
 
   const lastQueryView = useRef('')
   useEffect(() => {
+    observeFontRefreshPage(databasePageResult, databasePageReady)
     const ids = visibleFonts.map(font => font.id)
     const signature = JSON.stringify([databasePageReady, databasePageResult?.queryKey, databasePageResult?.total, ids,
       args.deferredSearch, sidebarPage, args.selectedTagName, args.selectedSharedTagName, args.selectedFolderId, cardPoolViewLayout.listLayout])

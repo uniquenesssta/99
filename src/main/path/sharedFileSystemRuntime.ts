@@ -66,7 +66,12 @@ export async function executeSharedFile(request: SharedFileRequest, bytes?: Buff
   const generation = rootState?.generation
   let task = !signal && shareableReads.has(request.operation) ? readsInFlight.get(key) : undefined
   if (!task) {
-    task = executor(request, bytes, signal)
+    task = executor(request, bytes, signal).then(output => {
+      if (request.operation === 'readFile' && output.result.ok && output.result.operation === request.operation && output.bytes) {
+        recordOperationWork({ reads: 1, [/\.(ttf|otf|ttc|otc)$/i.test(request.path) ? 'sourceBytes' : 'cacheBytes']: output.bytes.length })
+      }
+      return output
+    })
     if (!signal && shareableReads.has(request.operation)) {
       readsInFlight.set(key, task)
       const pending = task
@@ -156,7 +161,6 @@ export const sharedFileSystem: typeof localFs = new Proxy(localFs, { get(target,
     if (operation==='stat'||operation==='lstat') return fileInfo(value)
     if (operation==='readdir') return option.withFileTypes ? value.map((entry:any)=>({...fileInfo(entry),parentPath:request.path,path:request.path})) : value.map((entry:any)=>entry.name)
     if (operation==='readFile') {
-      recordOperationWork({ reads: 1, [/\.(ttf|otf|ttc|otc)$/i.test(request.path) ? 'sourceBytes' : 'cacheBytes']: output.bytes!.length })
       return encoding(args[1]) ? output.bytes!.toString(encoding(args[1])) : Buffer.from(output.bytes!)
     }
     return value === null ? undefined : value

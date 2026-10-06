@@ -186,6 +186,20 @@ async function prefetch(transform) {
  assert.equal(traces.length,1);assert.equal(traces[0].kind,'font-query-view');assert.equal(traces[0].details.visible,2);
  console.log('prefetch: derived layout emits no offscreen or first-18 preview requests');
 }
+
+async function unchangedRefreshObservation() {
+ const effects=[],events=[],views=[],last={current:''},fonts=[],ref=current=>({current})
+ const file='src/renderer/src/runtime/app/useAppFontDerivedRuntime.ts'
+ const load=loader({react:{useRef:()=>last,useEffect:fn=>effects.push(fn),useLayoutEffect(){},useMemo:fn=>fn()},'../../rendererPerformance':{reportRendererTrace:event=>views.push(event)},'../../appRuntime':{traceRendererSyncComputation:(_l,_d,fn)=>fn()},'../../fontViewRuntime':{buildVirtualLayout:()=>({items:fonts}),buildTagSuggestions:()=>[],visibleFontResultTotal:result=>result.total},'./useBrowseDerivedRuntime':{useBrowseDerivedRuntime:()=>({visibleFonts:fonts,fontMetrics:{}})}},{window:{hfm:{reportPerformanceEvent:async payload=>events.push(JSON.parse(payload.details.event))}}})
+ const trace=load('src/renderer/src/fontOperationTrace.ts'),owner={current:0};trace.noteFontQueryScope(owner,'tags')
+ const args={databasePageReady:true,deferredSearch:'',sidebarPage:'tags',activeFilter:{kind:'all'},selectedTagName:'T',selectedSharedTagName:'',selectedFolderId:'',installStatus:'all',timeSortMode:'all',sortMode:'name',cardPoolViewLayout:{listLayout:'none'},virtualViewport:{},selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},latestVisibleFontsRef:ref([]),latestViewLayoutRef:ref({}),requestPreviewFont(){throw Error('observation added preview work')},contextFontTargets:()=>[],library:{fonts:{},previewText:'text'}}
+ for(let i=0;i<2;i++) {
+  const operation=trace.createFontOperationTrace('tag-recovery');owner.current++;trace.withFontRefreshTrace(operation,()=>trace.noteFontRefreshRequest(owner));const bound=trace.bindFontRefreshQuery(owner,++owner.current,'tags'),page={queryKey:'same',items:[],total:0};trace.finishFontRefreshQuery(bound,page)
+  effects.length=0;load(file).useAppFontDerivedRuntime({...args,databasePageResult:page});assert.equal(events.filter(e=>e.stage==='page-view-observed').length,i,'render itself completed observation')
+  for(const effect of effects)effect();assert.equal(events.filter(e=>e.stage==='page-view-observed').length,i+1,'unchanged membership suppressed accepted React-commit observation')
+ }
+ assert.equal(views.length,1,'ordinary membership evidence should retain its existing dedupe')
+}
 async function detail() {
  const time=clock();let effect,requests=0,writes=0;
  const load=loader({react:{useEffect:fn=>effect=fn}},{window:time});
@@ -199,7 +213,7 @@ async function detail() {
 }
 module.exports = { rendererHarness, deferred, flush, clock };
 if (require.main === module) (async()=>{
- await mainQueue();await cacheAbort();await renderer();await sourceOwnership();await cacheCancellation();await backgroundSharedKey();await detail();await background();await prefetch();
+ await mainQueue();await cacheAbort();await renderer();await sourceOwnership();await cacheCancellation();await backgroundSharedKey();await unchangedRefreshObservation();await detail();await background();await prefetch();
  await assert.rejects(()=>prefetch(source=>{
   const anchor="  const lastQueryView = useRef('')";assert(source.includes(anchor));
   return source.replace(anchor,"  useEffect(() => { args.requestPreviewFont(visibleFonts[0], 'normal') }, [visibleFonts])\n"+anchor);

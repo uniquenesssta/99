@@ -1,3 +1,4 @@
+import { createFontOperationTrace, reportFontOperation, withFontRefreshTrace } from './fontOperationTrace'
 import { readTagCommandTargets } from './fontCommandTargetsRuntime'
 import { traceActivationEntry } from './fontActivationTrace'
 import {
@@ -29,14 +30,19 @@ export function createFontDialogContextActions(options: FontDialogRuntimeOptions
       return
     }
     activeRecoveries.add(options.hfm)
+    const trace = createFontOperationTrace('tag-recovery')
+    reportFontOperation({ trace, stage: 'intent' })
     options.setStatus(input.mode === 'reindex' ? '正在按缺失字体所属目录重新索引……' : '请选择此字体的新文件，同目录内能匹配的缺失字体会自动链接。')
     void (async () => {
       try {
         if (options.flushFontWriteQueue && !await options.flushFontWriteQueue('tag-recovery')) throw new Error('标签修改尚未保存，请稍后重试。')
-        const result = await options.hfm.recoverTagFiles(input)
+        reportFontOperation({ trace, stage: 'dispatch' })
+        const result = await options.hfm.recoverTagFiles(input, trace)
+        reportFontOperation({ trace, stage: 'operation-result', outcome: result.canceled ? 'canceled' : result.busy ? 'busy' : 'returned' })
         options.setStatus(result.message)
-        if (!result.busy && !result.canceled) options.refreshDatabaseDerivedState()
+        if (!result.busy && !result.canceled) withFontRefreshTrace(trace, () => options.refreshDatabaseDerivedState())
       } catch (error) {
+        reportFontOperation({ trace, stage: 'operation-result', outcome: 'unknown', reason: 'recovery-rejected' })
         options.setStatus(`恢复未完成：${error instanceof Error ? error.message : String(error)}`)
         options.refreshDatabaseDerivedState()
       } finally { activeRecoveries.delete(options.hfm) }

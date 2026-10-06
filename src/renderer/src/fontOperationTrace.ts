@@ -90,3 +90,65 @@ export async function traceDirectFontOperation<T>(domain: string, run: (trace: O
     throw error
   }
 }
+
+
+// Recovery refresh evidence follows the existing query sequence owner. These
+// weak associations never choose data, invalidate queries, or affect acceptance.
+type PageSequence = { current: number }
+type PageObservation = { trace: OperationTrace; owner: PageSequence; sequence: number; scope: string; started: number; request?: number; accepted?: object }
+let refreshTrace: OperationTrace | undefined
+const pageScopes = new WeakMap<PageSequence, string>()
+const pageObservations = new WeakMap<PageSequence, PageObservation>()
+const acceptedPages = new WeakMap<object, PageObservation>()
+export function withFontRefreshTrace<T>(trace: OperationTrace, refresh: () => T): T {
+  const previous = refreshTrace; refreshTrace = trace
+  try { return refresh() } finally { refreshTrace = previous }
+}
+export function cancelFontRefreshObservation(owner: PageSequence, reason: string, expected?: PageObservation): void {
+  const observation = pageObservations.get(owner)
+  if (!observation || expected && expected !== observation) return
+  pageObservations.delete(owner)
+  if (observation.accepted) acceptedPages.delete(observation.accepted)
+  reportFontOperation({ trace: observation.trace, stage: 'page-observation-ended', outcome: 'unobserved', reason, elapsedMs: performance.now() - observation.started })
+}
+export function noteFontRefreshRequest(owner: PageSequence, endedReason?: string): void {
+  cancelFontRefreshObservation(owner, endedReason || 'superseded-refresh')
+  if (!refreshTrace) return
+  if (endedReason) { reportFontOperation({ trace: refreshTrace, stage: 'page-observation-ended', outcome: 'unobserved', reason: endedReason }); return }
+  const scope = pageScopes.get(owner)
+  if (!scope) { reportFontOperation({ trace: refreshTrace, stage: 'page-observation-ended', outcome: 'unobserved', reason: 'no-query' }); return }
+  pageObservations.set(owner, { trace: refreshTrace, owner, scope, sequence: owner.current, started: performance.now() })
+  reportFontOperation({ trace: refreshTrace, stage: 'page-refresh-requested' })
+}
+export function noteFontQueryScope(owner: PageSequence, scope?: string): void {
+  const observation = pageObservations.get(owner)
+  if (observation && observation.scope !== scope) cancelFontRefreshObservation(owner, scope ? 'view-scope-changed' : 'no-query')
+  if (scope) pageScopes.set(owner, scope)
+  else pageScopes.delete(owner)
+}
+export function bindFontRefreshQuery(owner: PageSequence, request: number, scope: string): PageObservation | undefined {
+  const observation = pageObservations.get(owner)
+  if (!observation) return undefined
+  if (observation.request !== undefined || observation.sequence + 1 !== request || observation.scope !== scope) {
+    cancelFontRefreshObservation(owner, 'superseded-request'); return undefined
+  }
+  observation.request = request
+  return observation
+}
+export function dispatchFontRefreshQuery(observation?: PageObservation): void {
+  if (observation && pageObservations.get(observation.owner) === observation)
+    reportFontOperation({ trace: observation.trace, stage: 'page-query-dispatched', queuedMs: performance.now() - observation.started })
+}
+export function finishFontRefreshQuery(observation: PageObservation | undefined, result?: object, reason = 'query-rejected'): void {
+  if (!observation || pageObservations.get(observation.owner) !== observation) return
+  if (!result || observation.owner.current !== observation.request) { cancelFontRefreshObservation(observation.owner, reason, observation); return }
+  observation.accepted = result; acceptedPages.set(result, observation)
+  reportFontOperation({ trace: observation.trace, stage: 'page-query-accepted', elapsedMs: performance.now() - observation.started })
+}
+export function observeFontRefreshPage(result: object | null | undefined, ready: boolean): void {
+  const observation = result && acceptedPages.get(result)
+  if (!observation || pageObservations.get(observation.owner) !== observation) return
+  if (!ready || observation.owner.current !== observation.request) { cancelFontRefreshObservation(observation.owner, 'view-not-current', observation); return }
+  acceptedPages.delete(result!); pageObservations.delete(observation.owner)
+  reportFontOperation({ trace: observation.trace, stage: 'page-view-observed', outcome: 'observed', reason: 'react-commit-observation', elapsedMs: performance.now() - observation.started })
+}

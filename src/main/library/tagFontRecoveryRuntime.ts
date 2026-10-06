@@ -224,7 +224,8 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
             missing = missing.filter(old => current.some(font => key(font.path) === key(old.path) && font.fileAvailability === 'missing'))
             preparedCandidates = new Map()
             const candidates = await readAll({ sidebarPage: 'filters', activeFilter: { kind: 'all' }, selectedWatchedFolders: [root] })
-            await linkPairs(await matchPairs(missing, candidates.filter(font => paths.inside(font.path, root))))
+            const pairs = await matchPairs(missing, candidates.filter(font => paths.inside(font.path, root)))
+            await measureOperationPhase('commit', () => linkPairs(pairs))
           } catch (error) {
             failures.push(`${root}：${String(error)}`)
             report(`scan failed: root=${root}, error=${String(error)}`)
