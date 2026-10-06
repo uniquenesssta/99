@@ -38,6 +38,13 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
       deps.appendStartupLog(`font uninstall failure: ${JSON.stringify({ id: item.id, path: item.path, stage, completedSteps: receipt?.completedSteps || 0, pending: durable, cancelled, message, remainingPaths })}`)
       return { ok: false, message, uninstall: { completedSteps: receipt?.completedSteps || 0, remainingPaths, stage, pending: durable, cancelled } }
     }
+    const temporaryReferences = async () => {
+      const claims = await deps.readUninstallActivationClaims()
+      if (!Array.isArray(claims) || claims.some(claim => !claim || typeof claim.registryName !== 'string' || !claim.registryName || typeof claim.installPath !== 'string' || !claim.installPath)) throw new Error('临时激活归属记录无法核实，未执行卸载。')
+      const owned = new Set(claims.map(claim => `${claim.registryName.toLowerCase()}|${key(claim.installPath)}`))
+      return { claims, matches: (record: SystemInstalledFont) => deps.isTemporaryActiveInstalledRecord(record)
+        || record.source === 'HKCU' && !!record.path && owned.has(`${record.registryName.toLowerCase()}|${key(record.path)}`) }
+    }
     const registry = () => deps.readUninstallRegistry?.() || session.get().then(native => native.readRegistry())
     const checkOpen = () => assertApplicationOpen(ticket)
     try {
@@ -53,10 +60,12 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
         const records = await registry()
         stage = 'installed-fonts'
         const installed = await deps.getSystemInstalledFonts()
+        stage = 'activation-ownership'
+        const temporary = await temporaryReferences()
         stage = 'uninstall-plan'
         const targets = new Map<string, InstallSourceIdentity>()
         let evidence: Record<string, unknown> = {}
-        const plans = await planFontUninstall(item, [...records, ...installed], records, [deps.currentUserFontsDir(), deps.windowsFontsDir()], deps.isTemporaryActiveInstalledRecord, {
+        const plans = await planFontUninstall(item, [...records, ...installed], records, [deps.currentUserFontsDir(), deps.windowsFontsDir()], temporary.matches, {
           source, appName: deps.appName, onTarget: target => targets.set(key(target.path), target),
           report: value => { evidence = value; deps.appendStartupLog(`font uninstall evidence: ${JSON.stringify({ id: item.id, ...value })}`) },
         })
@@ -87,6 +96,7 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
           || !!step.plan.allow_readonly_copy && key(dirname(step.plan.path)) !== key(resolve(roots[0]))) throw new Error('安装副本角色或目录已变化，未允许文件或属性清理。')
       }
       const checkReferences = async (records: SystemInstalledFont[], current: FontUninstallStep) => {
+        const temporary = await temporaryReferences()
         const byName = new Map<string, SystemInstalledFont[]>()
         for (const record of records) {
           const identity = fontRegistryRecordKey({ scope: record.source, name: record.registryName })
@@ -95,10 +105,14 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
         for (const step of receipt!.steps.filter(step => !step.plan.delete_file)) {
           const expected = step.plan.records[0]
           const actual = byName.get(fontRegistryRecordKey(expected)) || []
-          if (actual.length > 1 || actual.some(record => record.value !== expected.value || deps.isTemporaryActiveInstalledRecord(record))) throw new Error('原登记值或临时引用已变化，原计划不会删除新的登记。')
+          if (actual.length > 1 || actual.some(record => record.value !== expected.value || temporary.matches(record))) throw new Error('原登记值或临时引用已变化，原计划不会删除新的登记。')
           if (step.state === 'done' && actual.length) throw new Error('已完成的登记名称被重新使用，保留新登记和剩余文件；请核对后处理。')
         }
         if (!current.plan.delete_file && !current.plan.preflight_file) return
+        // File-pending/legacy activation records retain ownership even after
+        // their registry row is gone. This is only a veto on their exact copy.
+        const claimedPaths = await resolveFontRegistryPaths(temporary.claims.map(claim => ({ source: 'HKCU' as const, registryName: claim.registryName, value: claim.installPath, path: claim.installPath })))
+        if ([...claimedPaths.values()].includes(key(current.plan.path))) throw new Error('此安装副本仍由临时激活恢复记录持有，文件和属性保留；请先完成取消激活。')
         const paths = await resolveFontRegistryPaths(records)
         const allowed = new Map(receipt!.steps.filter(step => !step.plan.delete_file && step.state !== 'done').map(step => {
           const record = step.plan.records[0]; return [fontRegistryRecordKey(record), record.value]
@@ -106,7 +120,7 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
         for (const record of records) {
           if (paths.get(key(record.path!)) !== key(current.plan.path)) continue
           const identity = fontRegistryRecordKey({ scope: record.source, name: record.registryName })
-          if (deps.isTemporaryActiveInstalledRecord(record) || current.plan.delete_file || allowed.get(identity) !== record.value) throw new Error('安装引用已变化或存在临时/未授权引用，文件及属性保留；原计划不会吸收新引用。')
+          if (temporary.matches(record) || current.plan.delete_file || allowed.get(identity) !== record.value) throw new Error('安装引用已变化或存在临时/未授权引用，文件及属性保留；原计划不会吸收新引用。')
         }
       }
       const settle = async (): Promise<InstallResult> => {

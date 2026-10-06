@@ -14,6 +14,7 @@ import { readInstallSourceIdentity, type ReadHistoricalFont, type InstallSourceI
 
 export interface SystemFontInstallRuntimeDeps {
   openUninstallReceipts: () => Promise<FontUninstallReceiptStore>;
+  readUninstallActivationClaims: () => Promise<Array<{ registryName: string; installPath: string }>>;
   readHistoricalFont?: ReadHistoricalFont;
   appName?: string;
   persistUninstallResult: (item: FontItem) => Promise<InstallCompareResult | void>;

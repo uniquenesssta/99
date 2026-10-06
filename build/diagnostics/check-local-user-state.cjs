@@ -147,7 +147,7 @@ async function protectionAuthority() {
   const installedPath='C:\\user-fonts\\sample.ttf'
   const records=[{path:installedPath,fileName:'sample.ttf',registryName:'Sample',value:installedPath,source:'HKCU'}]
   const receiptDb=database()
-  const deps={openUninstallReceipts:async()=>runtimeLoad('src/main/install/fontUninstallReceiptRuntime.ts').openFontUninstallReceipts(receiptDb),persistUninstallResult:async()=>{},deactivateForFileDelete:async()=>({ok:true,message:'settled'}),readUninstallRegistry:async()=>records.filter(record=>!record.__removed),
+  const deps={readUninstallActivationClaims:async()=>[],openUninstallReceipts:async()=>runtimeLoad('src/main/install/fontUninstallReceiptRuntime.ts').openFontUninstallReceipts(receiptDb),persistUninstallResult:async()=>{},deactivateForFileDelete:async()=>({ok:true,message:'settled'}),readUninstallRegistry:async()=>records.filter(record=>!record.__removed),
     createMutationSession:async()=>({close(){},execute:async(plan,check)=>{
       let count=0;
       if(plan.records.some(r=>r.scope==='HKLM')){effects.push('permission-check');if(protectAfterPermission)blocked.add(protectAfterPermission)}
@@ -666,7 +666,7 @@ async function uninstallPlanning() {
   const effects=[];let liveRegistry=[record],changed=false,targetChanged=false
   const receiptDb=database()
   const runtime=load('src/main/install/systemFontInstallRuntime.ts').createSystemFontInstallRuntime({
-    openUninstallReceipts:async()=>load('src/main/install/fontUninstallReceiptRuntime.ts').openFontUninstallReceipts(receiptDb),
+    openUninstallReceipts:async()=>load('src/main/install/fontUninstallReceiptRuntime.ts').openFontUninstallReceipts(receiptDb),readUninstallActivationClaims:async()=>[],
     readHistoricalFont:async()=>historical,ensureWindows(){},withFontProtection:async(_items,fn)=>fn(async()=>{}),
     currentUserFontsDir:()=> 'C:\\user-fonts',windowsFontsDir:()=> 'C:\\Windows\\Fonts',normalizePathForCacheCompare:p=>p.toLowerCase(),isTemporaryActiveInstalledRecord:()=>false,
     getSystemInstalledFonts:async()=>liveRegistry,readUninstallRegistry:async()=>liveRegistry,clearInstalledFontsMemoryCache(){},appendStartupLog(){},persistUninstallResult:async()=>effects.push('persist'),advancedFontRefresh:async()=>{},

@@ -327,6 +327,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
 
   const systemFontInstallRuntime = createSystemFontInstallRuntime({
     openUninstallReceipts: async () => openFontUninstallReceipts(await openLibraryDb()),
+    readUninstallActivationClaims: async () => (await loadTemporaryActiveFonts()).records,
     appName: APP_NAME,
     readHistoricalFont: async path => openTagFontSnapshots(await openLibraryDb()).read(path),
     fontExtensions: FONT_EXTENSIONS,

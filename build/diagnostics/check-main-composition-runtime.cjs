@@ -30,6 +30,7 @@ async function checkImportAndOwnership() {
   const authority = h.options('createFontProtectionAuthorityRuntime')
   assert.equal(authority.roots, storage.fontProtectionRoots, 'destructive protection lost historical root authority')
   assert.equal(typeof h.options('createSystemFontInstallRuntime').withFontProtection, 'function', 'install/delete/uninstall lost their guard')
+  assert.equal(typeof h.options('createSystemFontInstallRuntime').readUninstallActivationClaims, 'function', 'uninstall lost main-owned legacy activation claims')
   assert.equal(typeof h.options('createSystemFontInstallRuntime').openUninstallReceipts, 'function', 'uninstall lost durable receipt storage')
   assert.equal(typeof h.options('createSystemFontInstallRuntime').persistUninstallResult, 'function', 'uninstall lost the existing local projection owner')
   assert.equal(typeof h.options('createSystemFontInstallRuntime').deactivateForFileDelete, 'function', 'source deletion lost activation settlement')

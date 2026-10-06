@@ -565,3 +565,14 @@ flowchart TD
 Linux 编辑环境仅做 TS AST/相对导入/LF-CRLF、CJS 语法、Git diff/断言保存静态复核；未运行项目测试、类型检查、构建或转译生产模块。Context7 核对 Node 24 bigint Stat 行为及 better-sqlite3 同步事务/changes API（后者为主线文档，结合锁定 12.11.1 与既有项目接口核对）。Mermaid/状态插件未找到 HFM 对应项目，未写入其他项目；实际图与续接记录保存在本文和 Git。后续以本次精确提交的完整 Windows 回执登记结果，再交接 F12；F12～F14 尚未由本阶段实施。
 
 本次发布前静态回执：28 个变更文件，17 个 TS 文件 LF/CRLF 共 34 次 AST 解析及相对导入定位通过；5 个 CJS 文件语法通过；492 条既有断言原文全部保留；工作流 YAML 与 Git 差异检查通过。动态门尚未在本编辑环境运行，等待 Windows。
+
+
+### 11.4 首次候选发布与临时归属补修（2026-10-06）
+
+首次候选 [`a481ea859ea0fbffa10a907bc7f728d8165c32a3`](https://github.com/uniquenesssta/99/commit/a481ea859ea0fbffa10a907bc7f728d8165c32a3) 已核实 28 个远端 blob 与本地一致；[Windows CI 37417967536](https://github.com/uniquenesssta/99/actions/runs/37417967536) 于 05:19:37 UTC 启动，当前回执为运行中。此候选不会作为 F11 最终通过依据，以下补修后需在新精确提交完整重跑。
+
+发布后对现有激活恢复记录作针对性核查，确认前缀判断存在历史归属缺口：当前创建器采用固定 ACTIVE 名称，但本机恢复文件合法接受旧/自定义登记名与安装路径，清理失败会保留这些记录；F10 安装证据已按精确 HKCU 名称+路径识别它们，普通卸载却未读该归属。
+
+补修增加主进程 `readUninstallActivationClaims`，使用既有 `loadTemporaryActiveFonts`；初次规划和每个副作用 gate 重新读精确 HKCU 名称+安装路径归属，与既有前缀保护并用。恢复库不可读/格式不明即停止，渲染提示不能制造归属。针对 file/preflight_file，file-pending 记录即使登记已不存在仍持有其精确安装副本，按每个快照的物理路径核对作删除/属性修改否决；不扩展家族/目录/名称猜测，不替代取消激活。来源登记仅解除时继续按精确元组核对。
+
+新反例覆盖非前缀历史记录+元数据候选、从已安装页面选择该文件、规划后在登记/属性/文件 gate 新增归属、登记已不存在的 file-pending、读库失败与独立路径的不匹配归属。保留首次候选的所有断言和 Windows 门。
