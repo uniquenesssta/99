@@ -24,7 +24,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "5757626335b119b807db9b01ab9574cdb73f463b6cd18989394eddcfc78b5e11"
+      "sha256": "d2a6e8632b9490b3e7ef5ed9923ed295b1a2b074e3bf20f582c1af29fdd1e28a"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -242,5 +242,9 @@
       "file": "src/main/watcher/folderWatcherRuntime.ts",
       "reason": "One observational operation scope around the existing batch pass; recovery, ordering and notification behavior unchanged."
     }
-  ]
+  ],
+  "realFeedbackMigration": {
+    "parent": "6620b3bafd5b3d894987585dd06c5d5eabc54933",
+    "reason": "Explicit projection-only notifications now pass the existing empty-row sender gate; watcher row, recovery and process-lifecycle assertions retained."
+  }
 }

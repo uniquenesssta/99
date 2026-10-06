@@ -127,7 +127,7 @@ async function failedBackup(transforms={}) {
   const h=fixture({transforms,backupResult:async input=>({ok:false,reason:input.reason,createdAt:input.createdAt,backupDir:path.join(input.backupsRoot,input.backupDirName),items:input.items.map(item=>({label:item.label,sourcePath:item.filePath,ok:false,sizeBytes:0,message:'backup readonly'})),elapsedMs:1})})
   try {
     await h.runtime.runStartupDatabaseMaintenance()
-    check(()=>{assert(h.logs.includes('startup database maintenance finished: ok=false'),'failed automatic backup reported success');assert(!fs.existsSync(path.join(h.dir,'maintenance.json')));assert(h.logs.some(x=>x.includes('next startup remains eligible')))})
+    check(()=>{assert(h.logs.some(line=>line.startsWith('startup database maintenance finished: ok=false')&&line.includes('failures=')&&line.includes('backup')),'failed automatic backup reported success');assert(!fs.existsSync(path.join(h.dir,'maintenance.json')));assert(h.logs.some(x=>x.includes('next startup remains eligible')))})
   }finally{h.close()}
 }
 async function requiredStartup(transforms={}) {
@@ -170,7 +170,14 @@ async function backupAbsenceError() {
     check(()=>{assert.equal(report.ok,false);assert.equal(report.items.find(x=>x.label==='events').ok,false);assert.match(report.items.find(x=>x.label==='events').message,/EACCES/);assert(!h.opens.includes('events'));assert(!fs.existsSync(h.file('events')))})
   }finally{h.close()}
 }
+function failureDetails(){
+  const summarize=loader()(base+'databaseMaintenance.ts').summarizeMaintenanceFailures
+  const report={ok:false,health:[{label:'library',ok:false,message:'permission denied'}],preview:{errors:['preview unavailable','preview unavailable','x'.repeat(600)]},tasks:{removedFailed:99,removedErrors:99},backup:{ok:false,items:[{label:'kvs',ok:false,message:'backup denied'}]},sharedIndexSnapshots:{ok:false,warnings:['root offline'],roots:[{ok:false,staleSnapshotCount:0,orphanSidecarCount:0,tmpFileCount:1,warnings:['temporary only']}]}}
+  const before=JSON.stringify(report),value=JSON.parse(summarize(report))
+  check(()=>{assert.equal(JSON.stringify(report),before);assert.equal(value.preview.count,3);assert.equal(value.preview.samples.length,2);assert.match(value.preview.samples[1],/truncated/);assert.equal(value.tasks,undefined);assert.deepEqual(value.sharedIndex.samples,['root offline']);assert.deepEqual(Object.keys(JSON.parse(summarize(report,true))),['backup'])})
+}
 async function main() {
+  failureDetails()
   await absence();await failures();await racesAndProtocol();await writers();await failedBackup();await requiredStartup();await backupAbsenceError()
   const helper=path.join(root,base+'databaseMaintenanceHelpers.ts'),coordinator=path.join(root,base+'databaseMaintenance.ts')
   function mutation(file, before, after, eol) {

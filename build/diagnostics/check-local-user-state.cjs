@@ -532,7 +532,7 @@ async function pageRace() {
 async function idsRace() {
   const load=loader();let release;const gate=new Promise(r=>release=r);let calls=0
   const facade=load('src/main/library/fontQueryFacadeRuntime.ts').createFontQueryFacadeRuntime({fontSearchResultLimitDefault:100,appWatchedFolders:async()=>['/root'],appendLog(){},scheduleMergedIndexBackgroundValidation(){},mergedIndexDbPath:()=>'/merged',librarySqlitePath:()=>'/app',cleanSharedFontsForQuery:async()=>[],rustCoreWorkerRuntime:{runRustMergedIndexIdsQuery:async()=>{calls++;await gate;return {ids:['old'],total:1,engine:'sql'}}}})
-  const response=facade.queryFontsInLibrary({activeFilter:{kind:'favorites'}});await tick();facade.clearFontMetricsQueryCache();release();assert.deepEqual(plain((await response).ids),[],'in-flight favorite IDs survived invalidation')
+  const response=facade.queryFontsInLibrary({activeFilter:{kind:'favorites'}});await tick();facade.clearFontMetricsQueryCache();release();await assert.rejects(response,/查询修订已变化/,'in-flight favorite IDs must stop without fallback after invalidation')
   await facade.queryFontsInLibrary({activeFilter:{kind:'active'}});assert.equal(calls,1,'active IDs bypassed pending install state')
 }
 async function main(){
@@ -768,21 +768,69 @@ async function uninstallNative() {
   assert.equal(process.platform,'win32','F06 native acceptance requires Windows')
   assert(process.argv.includes('--local'),'Real font mutation is local-only; use npm run test:font-system-local')
   assert(!process.env.CI && !process.env.GITHUB_ACTIONS,'Real font mutation must not run in CI')
+  const crypto=require('node:crypto')
+  const run={runId:process.env.HFM_NATIVE_ACCEPTANCE_RUN_ID||crypto.randomUUID(),commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),worktreeDirty:!!execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim(),startedAt:new Date().toISOString(),scenarios:[]}
+  // Each scenario owns a fresh UUID fixture and broker. A combined-contract
+  // failure must not prevent evidence from the production-shaped split control.
+  for(const scenario of ['combined','split']) {
+    const evidenceFile=path.join(root,'artifacts/font-identity-f06',`native-${scenario}-evidence.json`)
+    try {await uninstallNativeScenario(scenario,run);run.scenarios.push({scenario,ok:true,evidenceFile})}
+    catch(error) {
+      run.scenarios.push({scenario,ok:false,errorName:error?.name,errorCode:error?.code,errorSummary:String(error?.message||error).slice(0,512),evidenceFile})
+      console.error(`[F06 native ${scenario}] failed; full primary assertion and receipt: ${evidenceFile}`)
+    }
+  }
+  run.finishedAt=new Date().toISOString()
+  const dir=path.join(root,'artifacts/font-identity-f06');fs.mkdirSync(dir,{recursive:true})
+  fs.writeFileSync(path.join(dir,'native-scenarios.json'),JSON.stringify(run,null,2))
+  const failed=run.scenarios.filter(scenario=>!scenario.ok)
+  assert.equal(failed.length,0,`Native acceptance remains failed: ${failed.map(value=>value.scenario).join(', ')}. See native-scenarios.json and the per-scenario evidence; later probes never turn a failed assertion into a pass.`)
+}
+
+async function uninstallNativeScenario(scenario,run) {
+  assert.equal(process.platform,'win32','F06 native acceptance requires Windows')
+  assert(process.argv.includes('--local'),'Real font mutation is local-only; use npm run test:font-system-local')
+  assert(!process.env.CI && !process.env.GITHUB_ACTIONS,'Real font mutation must not run in CI')
   const {spawn}=require('node:child_process'),{createInterface}=require('node:readline'),crypto=require('node:crypto')
   const worker=path.join(root,'build/native/hfm-core-worker.exe')
+  const manifest=file=>{const stat=fs.statSync(file);return {path:file,size:stat.size,mtimeMs:stat.mtimeMs,birthtimeMs:stat.birthtimeMs,mode:stat.mode,dev:stat.dev,ino:stat.ino,sha256:crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')}}
+  const started=process.hrtime.bigint(),timeline=[]
+  const mark=(phase,extra={})=>{const value={phase,at:new Date().toISOString(),elapsedMs:Number(process.hrtime.bigint()-started)/1e6,...extra};timeline.push(value);return value}
+  const evidence={schemaVersion:2,runId:run.runId,commit:run.commit,worktreeDirty:run.worktreeDirty,scenario,startedAt:new Date().toISOString(),worker:{path:worker,sha256:crypto.createHash('sha256').update(fs.readFileSync(worker)).digest('hex')},failure:null,stderr:'',receipt:null,usage:null,probe:null,timeline,cleanup:null}
+  const evidenceDir=path.join(root,'artifacts/font-identity-f06')
+  const evidenceFile=path.join(evidenceDir,`native-${scenario}-evidence.json`)
+  const failureFile=path.join(evidenceDir,scenario==='combined'?'disposition-failure.json':'split-disposition-failure.json')
+  const saveEvidence=()=>{fs.mkdirSync(evidenceDir,{recursive:true});const serialized=JSON.stringify(evidence,null,2);fs.writeFileSync(evidenceFile,serialized);if(evidence.failure)fs.writeFileSync(failureFile,serialized)}
   const userRoot=path.join(process.env.LOCALAPPDATA,'Microsoft/Windows/Fonts')
   fs.mkdirSync(userRoot,{recursive:true})
   const token='HFM_F06_TEST_'+crypto.randomUUID()+'_中文',target=path.join(userRoot,token+'.ttf')
   const original=path.join(process.env.WINDIR,'Fonts/arial.ttf')
+  evidence.originalBefore=manifest(original)
+  evidence.fixture={token,target}
   const regRoot='HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts'
   const reg=(args)=>execFileSync('reg',args,{encoding:'utf8',windowsHide:true})
   // Create a writable fixture from bytes, without inheriting system-file
   // attributes. Read-only behavior is exercised explicitly below.
   let fixtureCreated=false,metadataCreated=false,primaryFailure=false
   const metadataToken=token+'_metadata'
-  const make=()=>{fs.writeFileSync(target,fs.readFileSync(original),{flag:'wx'});fixtureCreated=true;assert.equal(fs.statSync(target).mode & 0o200,0o200);reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f'])}
+  const make=()=>{fs.writeFileSync(target,fs.readFileSync(original),{flag:'wx'});fixtureCreated=true;assert.equal(fs.statSync(target).mode & 0o200,0o200);reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',target,'/f']);evidence.fixture.created=manifest(target);mark('fixture-created')}
+  const verifyCleanup=()=>{
+    const result={targetAbsent:false,registryReadable:false,fixtureRegistrationAndMetadataAbsent:false,originalUnchanged:false,errors:[]}
+    try{fs.statSync(target)}catch(error){if(error.code==='ENOENT')result.targetAbsent=true;else result.errors.push(`target verification: ${error.message}`)}
+    // A failed query of one value does not prove absence: require a successful
+    // root read, then search the UUID's ASCII stem in both supported byte forms.
+    const query=spawnSync('reg',['query',regRoot],{windowsHide:true,timeout:5000,maxBuffer:4*1024*1024})
+    result.registryReadable=query.status===0&&!query.error
+    if(result.registryReadable){const stem=token.slice(0,-'中文'.length);result.fixtureRegistrationAndMetadataAbsent=!query.stdout.includes(Buffer.from(stem))&&!query.stdout.includes(Buffer.from(stem,'utf16le'))}
+    else result.errors.push(`registry verification: exit=${query.status}, error=${query.error?.message||'none'}`)
+    try{evidence.originalAfter=manifest(original);result.originalUnchanged=JSON.stringify(evidence.originalAfter)===JSON.stringify(evidence.originalBefore)}catch(error){result.errors.push(`original verification: ${error.message}`)}
+    result.ok=result.targetAbsent&&result.registryReadable&&result.fixtureRegistrationAndMetadataAbsent&&result.originalUnchanged&&result.errors.length===0
+    return result
+  }
   const digest=()=>crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex')
   const child=spawn(worker,['--font-mutation-broker'],{stdio:['pipe','pipe','pipe'],windowsHide:true,env:{...process.env,HFM_PARENT_PID:String(process.pid)}})
+  const brokerClosed=new Promise(resolve=>child.once('close',(code,signal)=>resolve({observed:true,code,signal})))
+  evidence.worker.pid=child.pid;mark('broker-started',{pid:child.pid})
   const line=createInterface({input:child.stdout}),queue=[],wait=[];let failure,stderr='',lastReceipt=null
   child.stderr.on('data',b=>{stderr+=b;process.stderr.write(b)})
   child.on('error',e=>{failure=e;for(const w of wait.splice(0))w.reject(e)})
@@ -791,8 +839,9 @@ async function uninstallNative() {
   const next=()=>queue.length?Promise.resolve(queue.shift()):failure?Promise.reject(failure):new Promise((resolve,reject)=>wait.push({resolve,reject}))
   const timeout=setTimeout(()=>child.kill(),45000)
   async function command(plan,onGate=()=>true) {
+    mark('command-start',{deleteFile:plan.delete_file,records:plan.records.length})
     child.stdin.write(JSON.stringify(plan)+'\n');const effects=[],gates=[],events=[];let done
-    for(;;){const r=await next();events.push(r);if(r.gate){const allow=await onGate(r.gate);gates.push({stage:r.gate,allow});child.stdin.write(JSON.stringify({allow})+'\n')}if(r.effect)effects.push(r);if(r.done)done=r;if(r.brokerDone){lastReceipt={...r,effects,gates,events,elevated:done};return lastReceipt}}
+    for(;;){const r=await next();events.push(r);if(r.gate){mark('gate',{stage:r.gate});const allow=await onGate(r.gate,r);gates.push({stage:r.gate,allow});child.stdin.write(JSON.stringify({allow})+'\n')}if(r.effect)effects.push(r);if(r.done)done=r;if(r.brokerDone){lastReceipt={...r,effects,gates,events,elevated:done};mark('command-finished',{ok:r.ok,stage:r.stage,code:r.code,ntstatus:r.ntstatus,effects:effects.map(effect=>effect.effect)});return lastReceipt}}
   }
   try {
     assert.equal((await next()).protocol,'font-mutation-v1')
@@ -808,6 +857,36 @@ async function uninstallNative() {
     assert(discovered.items.some(r=>r.registryName===token&&r.value===target&&r.path===target),'installed-font reader corrupted Unicode registry data')
     assert(!discovered.items.some(r=>r.registryName===metadataToken),'installed-font reader included numeric metadata')
     let plan={path:target,sha256:digest(),delete_file:true,records:[{scope:'HKCU',name:token,value:target}]}
+    if(scenario==='split') {
+      let before=manifest(target)
+      const sameTarget=()=>assert.deepEqual(manifest(target),before,'split target identity/content changed')
+      const noReferences=reply=>assert(!reply.references.some(record=>record.path?.toLowerCase()===target.toLowerCase()),'split file step still has a registered reference')
+      const registry=await command({...plan,delete_file:false,preflight_file:true,allow_readonly_copy:true},()=>{sameTarget();return true})
+      assert.equal(registry.ok,true,JSON.stringify(registry));assert.deepEqual(registry.effects.map(effect=>effect.effect),['registry'])
+      assert(fs.existsSync(target),'registry-only split step removed its file')
+      sameTarget();assert.throws(()=>reg(['query',regRoot,'/v',token]))
+      assert(registry.events.some(event=>event.notification==='registry-change'),'split registry removal did not notify')
+      // First collect the direct production-shaped registry -> file sequence.
+      // Do not insert a refused gate, deliberate wait or probe before this case.
+      let filePlan={...plan,records:[],allow_readonly_copy:true}
+      let file=await command(filePlan,(_stage,reply)=>{sameTarget();noReferences(reply);return true})
+      assert.equal(file.ok,true,JSON.stringify(file));assert.deepEqual(file.effects.map(effect=>effect.effect),['file'])
+      assert(!fs.existsSync(target),'split file step did not remove the target')
+      // A fresh fixture also covers refusing the separate file gate, retaining
+      // that file, and retrying only the remaining step. No registration replay.
+      make();before=manifest(target);plan={...plan,sha256:digest()}
+      const retryRegistry=await command({...plan,delete_file:false,preflight_file:true,allow_readonly_copy:true},()=>{sameTarget();return true})
+      assert.equal(retryRegistry.ok,true,JSON.stringify(retryRegistry));assert.deepEqual(retryRegistry.effects.map(effect=>effect.effect),['registry']);sameTarget()
+      filePlan={...plan,records:[],allow_readonly_copy:true}
+      file=await command(filePlan,(stage,reply)=>{sameTarget();noReferences(reply);return stage!=='file'})
+      assert.equal(file.ok,false,JSON.stringify(file));assert.equal(file.effects.length,0);sameTarget()
+      file=await command(filePlan,(_stage,reply)=>{sameTarget();noReferences(reply);return true})
+      assert.equal(file.ok,true,JSON.stringify(file));assert.deepEqual(file.effects.map(effect=>effect.effect),['file'])
+      assert(!fs.existsSync(target),'split remaining-file retry did not remove the target')
+      assert.deepEqual(manifest(original),evidence.originalBefore,'split cleanup modified the original font')
+      console.log('[F06 native split] separate registry/file plans, refused file gate and remaining-step retry passed; full application orchestration remains separately covered')
+      return
+    }
     let r=await command(plan,()=>false);assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target));assert.doesNotThrow(()=>reg(['query',regRoot,'/v',token]))
     r=await command({...plan,sha256:'0'.repeat(64)});assert.equal(r.ok,false);assert.equal(r.effects.length,0);assert(fs.existsSync(target))
     r=await command(plan,stage=>{if(stage==='registry')reg(['add',regRoot,'/v',token,'/t','REG_SZ','/d',original,'/f']);return true})
@@ -847,30 +926,48 @@ async function uninstallNative() {
     assert.match(reg(['query',regRoot,'/v',metadataToken]),/REG_DWORD/,'uninstall removed unrelated metadata')
     console.log('[F06 native] original-user HKCU/file effects, denial, content mismatch, changed registry, boundary refusal, partial completion and remaining-step retry passed; real UAC/HKLM/UNC remain manual acceptance')
   } catch(error) {
-    // Evidence only: retain the original failing assertion even if the probe
-    // can subsequently delete this disposable fixture. Never probe real fonts.
+    // Snapshot the primary failure BEFORE diagnostics or cleanup. Never replace
+    // its receipt or verdict with a later successful probe/control scenario.
     primaryFailure=true
-    const evidence={failure:String(error),stderr,receipt:lastReceipt,usage:null,probe:null}
+    evidence.failure=String(error);evidence.stderr=stderr;evidence.receipt=lastReceipt?plain(lastReceipt):null
+    evidence.primaryFailedAt=new Date().toISOString();mark('primary-failed')
+    try{saveEvidence()}catch(writeError){console.error('[F06 evidence write failed]',writeError)}
     try {
       if(lastReceipt?.code===32 || lastReceipt?.ntstatus===0xc0000121) {
+        mark('usage-start')
         evidence.usage=await loader()('src/main/install/fontFileUsageRuntime.ts').readFontFileUsage(worker,target)
+        mark('usage-finished',{status:evidence.usage.status})
         console.error('[F06 file usage]',JSON.stringify(evidence.usage))
       }
       if(lastReceipt?.ok===false && lastReceipt.code===5 && lastReceipt.gates.some(gate=>gate.stage==='file'&&gate.allow) && fs.existsSync(target)) {
+        mark('probe-start');evidence.probeBefore=manifest(target)
         const probe=spawnSync('pwsh',['-NoProfile','-NonInteractive','-File',path.join(__dirname,'lib/font-disposition-probe.ps1')],{encoding:'utf8',timeout:15000,windowsHide:true,env:{...process.env,HFM_DISPOSITION_FIXTURE:target,HFM_DISPOSITION_SHA256:digest()}})
         evidence.probe={status:probe.status,stdout:probe.stdout,stderr:probe.stderr,error:probe.error?.message}
+        mark('probe-finished',{status:probe.status})
         console.error('[F06 disposition probe]',JSON.stringify(evidence.probe))
       }
-      const dir=path.join(root,'artifacts/font-identity-f06');fs.mkdirSync(dir,{recursive:true})
-      fs.writeFileSync(path.join(dir,'disposition-failure.json'),JSON.stringify(evidence,null,2))
-    } catch(probeError) { console.error('[F06 disposition probe failed]',probeError) }
+    } catch(probeError) {evidence.diagnosticError=String(probeError);console.error('[F06 disposition probe failed]',probeError)}
     throw error
   } finally {
-    clearTimeout(timeout);child.kill();line.close()
-    if(metadataCreated) {try{reg(['delete',regRoot,'/v',metadataToken,'/f'])}catch(e){console.error('[F06 metadata cleanup failed]',e);if(!primaryFailure)process.exitCode=1}}
+    mark('cleanup-start');clearTimeout(timeout);child.kill();line.close()
+    let closeTimer
+    try{evidence.brokerClose=await Promise.race([brokerClosed,new Promise(resolve=>{closeTimer=setTimeout(()=>resolve({observed:false,error:'broker close was not observed within 3000 ms'}),3000)})])}
+    finally{clearTimeout(closeTimer)}
+    // Keep the primary snapshot intact, but include drained diagnostic output.
+    evidence.stderrFinal=stderr
+    const cleanupErrors=[]
+    if(!evidence.brokerClose.observed)cleanupErrors.push(evidence.brokerClose.error)
+    if(metadataCreated) {try{reg(['delete',regRoot,'/v',metadataToken,'/f'])}catch(error){cleanupErrors.push(`metadata cleanup: ${error.message}`);console.error('[F06 metadata cleanup failed]',error)}}
     if(fixtureCreated) {
       try{reg(['delete',regRoot,'/v',token,'/f'])}catch{}
-      try{fs.chmodSync(target,0o666);fs.unlinkSync(target)}catch(e){if(e.code!=='ENOENT'){console.error('[F06 fixture cleanup failed]',e);if(!primaryFailure)throw e}}
+      try{fs.chmodSync(target,0o666);fs.unlinkSync(target)}catch(error){if(error.code!=='ENOENT'){cleanupErrors.push(`fixture cleanup: ${error.message}`);console.error('[F06 fixture cleanup failed]',error)}}
     }
+    evidence.cleanup=verifyCleanup();evidence.cleanup.errors.push(...cleanupErrors)
+    evidence.cleanup.ok&&=cleanupErrors.length===0
+    evidence.finishedAt=new Date().toISOString();mark('cleanup-finished',{ok:evidence.cleanup.ok})
+    if(!primaryFailure){evidence.stderr=stderr;evidence.receipt=lastReceipt?plain(lastReceipt):null}
+    try{saveEvidence()}catch(writeError){console.error('[F06 evidence write failed]',writeError);if(!primaryFailure)throw writeError}
+    // A cleanup failure cannot mask an earlier assertion or make a passing case green.
+    if(!primaryFailure)assert.equal(evidence.cleanup.ok,true,JSON.stringify(evidence.cleanup))
   }
 }

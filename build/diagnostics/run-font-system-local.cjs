@@ -12,16 +12,18 @@ const output = path.join(root, 'artifacts/font-identity-f06')
 fs.mkdirSync(output, { recursive: true })
 const log = path.join(output, 'local-acceptance.log')
 const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
-fs.writeFileSync(log, `F06 local Windows acceptance\ncommit=${commit}\ntime=${new Date().toISOString()}\n`)
+const runId = require('node:crypto').randomUUID()
+fs.writeFileSync(log, `F06 local Windows acceptance\ncommit=${commit}\nrunId=${runId}\ntime=${new Date().toISOString()}\n`)
 function record(text) { process.stdout.write(text); fs.appendFileSync(log, text) }
 function run(command, args) {
-  record(`\n> ${command} ${args.join(' ')}\n`)
+  record(`\n> ${command} ${args.join(' ')}\nstarted=${new Date().toISOString()}\n`)
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: root, stdio: ['inherit', 'pipe', 'pipe'], windowsHide: true })
+    const child = spawn(command, args, { cwd: root, stdio: ['inherit', 'pipe', 'pipe'], windowsHide: true, env: { ...process.env, HFM_NATIVE_ACCEPTANCE_RUN_ID: runId } })
     child.stdout.on('data', data => { process.stdout.write(data); fs.appendFileSync(log, data) })
     child.stderr.on('data', data => { process.stderr.write(data); fs.appendFileSync(log, data) })
     child.on('error', reject)
     child.on('close', (code, signal) => {
+      record(`finished=${new Date().toISOString()}, exit=${code}, signal=${signal || 'none'}\n`)
       if (code === 0) resolve()
       else reject(new Error(`${command} failed: exit=${code}, signal=${signal || 'none'}`))
     })
@@ -39,4 +41,4 @@ async function main() {
 main().catch(error => {
   record(`\nFAIL: ${error.stack || error}\n`)
   process.exitCode = 1
-}).finally(() => { process.stdout.write(`\nLog: ${log}\n`) })
+}).finally(() => { record(`\nended=${new Date().toISOString()}, runId=${runId}\n`); process.stdout.write(`\nLog: ${log}\n`) })

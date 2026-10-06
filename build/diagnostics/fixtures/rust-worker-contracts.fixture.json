@@ -91,7 +91,7 @@
     "RustFontRegistryResult": "1a6671031790cb57c7c32e963ce2e58a213b7050951f8399c83a6190c0b01c00",
     "RustFontNotifyResult": "94f455f5f2f33e7f6b9b52a749d474f0a58e9dec9abe943f251f8b253a916c33",
     "RustPreviewRenderImageInput": "544bb07bb0af503a4b935aec7e44d4a94f9f2a0f8c67e10b726b81b9da8c0c28",
-    "RustPreviewRenderImageResult": "9c09f8603373c4500dc9c3a4116c7ce52094b1a8d283e1be725610380cd70c0b",
+    "RustPreviewRenderImageResult": "8c8544d708917bc7cf55e28e37df7efe266e09133828834b956aa371a5baa9db",
     "RustCoreWorkerRuntimeOptions": "86f86a0f98f515e8ff5e63da6f912bd6b1171af0e7c58768085e8d1d4b0d731f",
     "RustManagedActivationRegistryClaim": "9ef43d7b14ff5bd987460aec03c13783bd2963351cb04b54ea1cc033b40d76d2"
   },
@@ -133,7 +133,7 @@
     "RustFontResourceBatchPayload": "88973bfbb39085c0729378216cffb8749cd2a64a4076ea2931717858168db8f5",
     "RustFontRegistryPayload": "60c88d979038f6e406b8ead808eef2ca90e9da75aff6761c1673733d67b4d5d7",
     "RustFontNotifyPayload": "9e1636b05644b5b6c79db5efb66640d29e81ac8f0876a6c876814dab5b9c02cd",
-    "RustPreviewRenderImagePayload": "66e34fcfd875669b8c34e63f41fe39f667df43c0e877338e5f78dcacd156ef29"
+    "RustPreviewRenderImagePayload": "2adf07d96d6e94ef0fcdaf1e2944aef160f6e1f34498a3c661541f1af1de1588"
   },
   "publicDependencies": [
     {
@@ -239,6 +239,22 @@
         "name": "RustLocalTagsSetInput",
         "oldShape": "d79720338ac2e740b1af1cf70034c59ec9be59768da30e8dce2e97a508f716df",
         "newShape": "1c5af80419d3b8c68857c2cc9ac20376ae62cbfc357fba96b2f2a4df1ced2157"
+      }
+    ]
+  },
+  "realFeedbackPreviewMigration": {
+    "parent": "6620b3bafd5b3d894987585dd06c5d5eabc54933",
+    "reason": "Optional native backend/provenance diagnostics only; legacy engine and existing required fields remain, malformed metadata cannot reject valid rendering.",
+    "types": [
+      {
+        "name": "RustPreviewRenderImageResult",
+        "old": "9c09f8603373c4500dc9c3a4116c7ce52094b1a8d283e1be725610380cd70c0b",
+        "new": "8c8544d708917bc7cf55e28e37df7efe266e09133828834b956aa371a5baa9db"
+      },
+      {
+        "name": "RustPreviewRenderImagePayload",
+        "old": "66e34fcfd875669b8c34e63f41fe39f667df43c0e877338e5f78dcacd156ef29",
+        "new": "2adf07d96d6e94ef0fcdaf1e2944aef160f6e1f34498a3c661541f1af1de1588"
       }
     ]
   }

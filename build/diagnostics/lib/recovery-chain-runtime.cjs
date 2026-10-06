@@ -63,7 +63,7 @@ async function createChain(options) {
   assert(await availability.ensureStartupPathRootAvailable(options.fixtureDirectory,appendLog,'f14-local-fixture'),'fixture root must be verified online')
   const readAvailability=load('src/main/path/sharedAvailabilityRuntime.ts').createSharedAvailabilityReader(async()=>db)
   runtime.getSharedAvailability=async()=>{const value=await readAvailability();return controls.offline?{...value,roots:value.roots.map(root=>({...root,state:'offline'}))}:value}
-  const scenarioFeatures=new Set(['library:getSharedAvailability','fonts:queryPage','fonts:query','fonts:getMetrics','fonts:recoverTagFiles','fonts:setLocalTagsBatch','fonts:setSharedTagsBatch','fonts:installSystem','fonts:uninstallSystem','fonts:compareInstalled','fonts:getCachedPreviewImage','fonts:getCachedPreviewImages','fonts:renderPreviewImage','fonts:readPreviewFontData','path:toFontUrl','performance:rendererTrace'])
+  const scenarioFeatures=new Set(['fonts:cancelQuery','library:getSharedAvailability','fonts:queryPage','fonts:query','fonts:getMetrics','fonts:recoverTagFiles','fonts:setLocalTagsBatch','fonts:setSharedTagsBatch','fonts:installSystem','fonts:uninstallSystem','fonts:compareInstalled','fonts:getCachedPreviewImage','fonts:getCachedPreviewImages','fonts:renderPreviewImage','fonts:readPreviewFontData','path:toFontUrl','performance:rendererTrace'])
   observed.featureChannels=[]
   runtime.assertFeatureForChannel=channel=>{assert(scenarioFeatures.has(channel),'unexpected fixture feature gate: '+channel);if(!observed.featureChannels.includes(channel))observed.featureChannels.push(channel)}
   const writeTags=runtime.setLocalFontTagsBatch

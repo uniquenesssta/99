@@ -95,6 +95,22 @@ async function checkFailures() {
   await assert.rejects(directory.listFontFilesWithDirectoryCache(context(networkRoot), [], undefined, active.signal), e => e.name === 'OperationCancelledError')
 
 }
+async function checkSiblingBatches() {
+  const rootReceipt={stat:{...metadata(),isDirectory:true},entries:Array.from({length:8},(_,i)=>({name:`dir-${i}`,isFile:false,isDirectory:true,isSymbolicLink:false}))}
+  const emitted=[],operations=[];let split=false,mutated=false
+  const childReceipt=file=>({stat:{...metadata(),isDirectory:true},entries:[{name:'font.ttf',isFile:true,isDirectory:false,isSymbolicLink:false,stat:metadata(17,mutated&&file.endsWith('dir-7')?200:100)},...(!file.endsWith('deep')?[{name:'deep',isFile:false,isDirectory:true,isSymbolicLink:false}]:[])]})
+  response=request=>{
+    operations.push({operation:request.operation,paths:request.paths||[request.path]})
+    if(request.path===networkRoot)return rootReceipt
+    if(request.paths?.some(file=>file.endsWith('deep'))){assert(emitted.includes(path.join(networkRoot,'dir-7','font.ttf')),'later sibling receipt was retained across subtree work');mutated=true}
+    if(split&&request.paths?.length>2){const error=new SharedIoProcessError('controlled batch size cap','unknown','timeout');error.closed=Promise.resolve();throw error}
+    return request.operation==='directoryMetadataBatch'?request.paths.map(file=>({path:file,value:childReceipt(file)})):childReceipt(request.path)
+  }
+  const run=()=>directory.listFontFilesWithDirectoryCache(context(networkRoot),[],undefined,undefined,networkRoot,rows=>emitted.push(...rows.map(row=>row.file)))
+  const first=await run();assert.equal(first.length,16);assert.deepEqual(operations.map(op=>op.operation),['directoryMetadata','directoryMetadataBatch','directoryMetadataBatch']);assert.equal(first.find(row=>row.file===path.join(networkRoot,'dir-7','font.ttf')).stat.mtimeMs,100)
+  const next=await run();assert.equal(next.find(row=>row.file===path.join(networkRoot,'dir-7','font.ttf')).stat.mtimeMs,200,'following fresh batch missed child update')
+  operations.length=0;split=true;const reduced=await run();assert.equal(reduced.length,16);assert.deepEqual(operations.slice(0,4).map(op=>op.paths.length),[1,8,4,2]);assert(operations.slice(3).every(op=>op.paths.length<=2),'batch cap did not remain bounded after split')
+}
 async function checkLocal() {
   fs.mkdirSync(localRoot); fs.writeFileSync(path.join(localRoot, 'local.ttf'), 'font')
   calls = []
@@ -125,8 +141,9 @@ async function checkNative() {
   console.log('[network-directory-metadata] real native executable: 4096 files, one directory request, sizes/times and missing-directory failure passed')
 }
 async function main() {
-  try { await checkBatchAndCache(); await checkFailures(); await checkLocal(); await checkNative() }
+  try { await checkBatchAndCache(); await checkFailures(); await checkSiblingBatches(); await checkLocal(); await checkNative() }
   finally { fs.rmSync(dir, { recursive: true, force: true }) }
   console.log('[diagnostics:network-directory-metadata] batch, cache reuse/change, failure, cancellation, generation and local controls passed')
 }
-main().catch(error => { console.error(error); process.exitCode = 1 })
+let completed=false;process.once('beforeExit',()=>{if(!completed){console.error('Directory metadata diagnostic did not complete');process.exitCode=1}})
+main().then(()=>{completed=true}).catch(error => { console.error(error); process.exitCode = 1 })

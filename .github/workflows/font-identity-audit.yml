@@ -20,6 +20,12 @@ jobs:
         run: node build/rust/build-core-worker.cjs --required
       - name: Verify complete existing Windows diagnostics
         run: npm run verify
+      - name: Verify actual legacy storage and merged projection composition
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: node build/diagnostics/check-production-projection.cjs --report artifacts/real-feedback/projection.json
+      - name: Complete real-file refresh with interleaved foreground work
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: node build/diagnostics/run-real-feedback-work.cjs
       - name: Same-state recovery, status, private preview and uninstall reopen
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-preview-chain-performance.cjs --recovery-chain
@@ -76,4 +82,5 @@ jobs:
             artifacts/font-identity-f01
             artifacts/font-identity-f04
             artifacts/list-preview
+            artifacts/real-feedback
           retention-days: 14

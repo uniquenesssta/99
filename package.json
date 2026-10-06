@@ -200,7 +200,10 @@
     "diagnostics:font-view-layout": "node build/diagnostics/check-font-view-layout.cjs",
     "test:font-view-layout-dom": "node build/diagnostics/check-font-view-layout.cjs --dom",
     "diagnostics:list-preview-layout": "node build/diagnostics/check-list-preview-layout.cjs",
-    "diagnostics:preview-maintenance-bounded": "node build/diagnostics/check-preview-maintenance-bounded.cjs"
+    "diagnostics:preview-maintenance-bounded": "node build/diagnostics/check-preview-maintenance-bounded.cjs",
+    "diagnostics:query-work-lifetime": "node build/diagnostics/check-query-work-lifetime.cjs",
+    "diagnostics:recovery-snapshot-lifetime": "node build/diagnostics/check-recovery-snapshot-lifetime.cjs",
+    "diagnostics:preview-provenance": "node build/diagnostics/check-preview-provenance.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

@@ -164,6 +164,6 @@ async function createFixture({sourceRoot,directory,fixtureDirectory,manifest,wor
     try{await Promise.all(jobs);await pool.whenIdle();assert.equal(pool.status().metrics.started,pool.status().metrics.closed);assert.equal(pool.status().pids.length,0);return {...observer.snapshot(),foreground:summarize(foreground),all,pool:pool.status().metrics}}
     finally{pool.stop();await pool.whenIdle();await Promise.allSettled(jobs)}
   }
-  return {queryDeps,deps,records,effects,store,snapshots,writer,recovery,uninstall,key,saveExternalState,sourceManifest:before,load,observer,global,withGlobalIo:observer.global(global),runtime,query,raw,db,old,next,folders,logs,appendLog,operations,watcher,contention,close(){raw.close();assert.equal(observer.children.size,0,'fixture leaked children')}}
+  return {queryDeps,deps,records,effects,store,snapshots,writer,recovery,uninstall,key,saveExternalState,sourceManifest:before,load,observer,global,withGlobalIo:observer.global(global),runtime,query,raw,db,old,next,folders,logs,appendLog,operations,watcher,contention,close(){snapshots.dispose?.();raw.close();assert.equal(observer.children.size,0,'fixture leaked children')}}
 }
 module.exports={createObserver,createFixture,selectFonts,hash,summarize}
