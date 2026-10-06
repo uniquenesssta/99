@@ -9,7 +9,7 @@ function harness() {
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-uninstall-receipt-')),file=path.join(directory,'library.sqlite')
   const open=()=>{const db=new DatabaseSync(file);db.transaction=fn=>()=>{db.exec('BEGIN');try{const result=fn();db.exec('COMMIT');return result}catch(error){db.exec('ROLLBACK');throw error}};return db}
   let db=open(),epoch=0,closing=false,runtime
-  const h={files:new Map([[source,{id:'9007199254740992',bytes:Buffer.from(bytes),readonly:true,mtime:1.125,ctime:1}],[target,{id:'9007199254740993',bytes:Buffer.from(bytes),readonly:false,mtime:1.125,ctime:1}]]),aliases:new Map(),denied:new Set(),protected:new Set(),records:[{source:'HKCU',path:target,fileName:'renamed.ttf',registryName:'Face',value:target}],effects:[],calls:[],claims:[],claimsFail:false,mode:'success',persistFails:false,hook:null}
+  const h={files:new Map([[source,{id:'9007199254740992',bytes:Buffer.from(bytes),readonly:true,mtime:1.125,ctime:1}],[target,{id:'9007199254740993',bytes:Buffer.from(bytes),readonly:false,mtime:1.125,ctime:1}]]),aliases:new Map(),denied:new Set(),protected:new Set(),records:[{source:'HKCU',path:target,fileName:'renamed.ttf',registryName:'Face',value:target}],effects:[],calls:[],claims:[],claimsFail:false,mode:'success',persistFails:false,projectionCalls:0,projectionHook:null,projectionResult:{known:true,installed:false,by:'none',matches:[]},hook:null}
   const missing=()=>Object.assign(Error('missing'),{code:'ENOENT'})
   const physical=p=>h.aliases.get(p)||p
   const io={
@@ -39,7 +39,7 @@ function harness() {
   const deps={readUninstallActivationClaims:async()=>{if(h.claimsFail)throw Error('activation store unavailable');return h.claims},openUninstallReceipts:async()=>store(),ensureWindows(){},currentUserFontsDir:()=> 'C:\\user-fonts',windowsFontsDir:()=> 'C:\\Windows\\Fonts',normalizePathForCacheCompare:key,isTemporaryActiveInstalledRecord:record=>record.registryName.startsWith('TEMP'),
     withFontProtection:async(items,action)=>{const check=async()=>{if(items.some(item=>h.protected.has(item.path)))throw Error('protected')};await check();return action(check)},
     getSystemInstalledFonts:async()=>snapshot(),readUninstallRegistry:async()=>snapshot(),clearInstalledFontsMemoryCache(){},appendStartupLog(){},advancedFontRefresh:async()=>{},
-    persistUninstallResult:async()=>{if(h.persistFails)throw Error('projection disk failed');return {known:true,installed:false,by:'none',matches:[]}},
+    persistUninstallResult:async(_item,assertCurrent)=>{assertCurrent?.();h.projectionCalls++;await h.projectionHook?.();assertCurrent?.();if(h.persistFails)throw Error('projection disk failed');return h.projectionResult},
     createMutationSession:async()=>({close(){},execute:async(plan,check)=>{
       h.calls.push(plain(plan));let completedSteps=0,fileRemoved=false
       try {
@@ -69,6 +69,7 @@ function harness() {
   return Object.assign(h,{item,io,load,store,initial,run:(selected=item)=>runtime.uninstallFontSystemWide(selected),restart(){db.close();db=open();make()},db:()=>db,
     sourceUnchanged(){assert.deepEqual(initial().find(entry=>entry.path===source),original,'source content/path/attributes changed');assert.deepEqual(item.tagNames,['retain']);assert.deepEqual(item.localTagNames,['private'])},
     quitAndResume(){closing=true;epoch++;closing=false;epoch++},
+    startClosing(){closing=true;epoch++},
     close(){db.close();fs.rmSync(directory,{recursive:true,force:true})},make,
   })
 }
@@ -120,6 +121,13 @@ async function run() {
   await scenario(async h=>{h.claims=[{registryName:'Other',installPath:'C:\\another\\copy.ttf'},{registryName:'Face',installPath:'C:\\another\\face.ttf'}];assert.equal((await h.run()).ok,true,'inexact legacy claim broadened ownership');h.sourceUnchanged()})
   await scenario(async h=>{h.mode='blocked';await h.run();h.restart();h.claims=[{registryName:'Legacy file-pending',installPath:target}];h.mode='success';h.effects.length=0;assert.equal((await h.run()).ok,false,'registry-free activation remnant lost copy ownership');assert.deepEqual(h.effects,[]);assert(h.files.has(target));h.sourceUnchanged()})
   await scenario(async h=>{h.hook=async stage=>{if(stage==='file')h.claims=[{registryName:'Legacy pending intent',installPath:target}]};assert.equal((await h.run()).ok,false,'late pending activation copy crossed file gate');assert.deepEqual(h.effects,[['registry','HKCU','Face']]);assert(h.files.has(target));h.sourceUnchanged()})
+  // F14: partial failure must expose the current authoritative comparison,
+  // independently of the journal's pending retry ownership.
+  await scenario(async h=>{h.mode='blocked';const result=await h.run();assert.equal(result.ok,false);assert.equal(result.installCompare.known,true);assert.equal(result.installCompare.installed,false);assert.equal(h.projectionCalls,1);assert(h.store().load(source));h.sourceUnchanged()})
+  await scenario(async h=>{h.mode='blocked';h.projectionResult={known:true,installed:true,by:'user',matches:[{source:'HKCU',path:'C:\\other\\copy.ttf',value:'C:\\other\\copy.ttf',registryName:'another copy'}]};const result=await h.run();assert.equal(result.installCompare.installed,true);assert.equal(result.installCompare.matches[0].registryName,'another copy');assert(h.store().load(source));h.sourceUnchanged()})
+  await scenario(async h=>{h.mode='blocked';h.projectionResult={known:false,installed:false,by:'none',matches:[],reason:'candidate-unavailable'};const result=await h.run();assert.equal(result.installCompare.known,false);assert.equal(result.installCompare.reason,'candidate-unavailable');assert(h.store().load(source));h.sourceUnchanged()})
+  await scenario(async h=>{h.mode='blocked';h.persistFails=true;const result=await h.run();assert.equal(result.installCompare,undefined);assert.match(result.message,/状态回查未确认/);assert.equal(h.projectionCalls,1);assert(h.store().load(source));h.sourceUnchanged()})
+  await scenario(async h=>{h.mode='blocked';h.projectionHook=async()=>h.startClosing();const result=await h.run();assert.equal(result.installCompare,undefined);assert.equal(result.uninstall.cancelled,true);assert.equal(h.projectionCalls,1);assert(h.store().load(source));assert.deepEqual(h.effects,[['registry','HKCU','Face']]);h.sourceUnchanged()})
   console.log(`[F11] ${cases} SQLite reopen/CAS, partial retry, exact 64-bit replacement, ref reuse/alias/temp, cancellation/exit, readonly/source invariants and no-target cases passed`)
 }
 module.exports={run}

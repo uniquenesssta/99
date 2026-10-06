@@ -5,7 +5,7 @@
 - 编制日期：2026-10-05（Asia/Shanghai）；仓库：`uniquenesssta/99`。
 - 源码与审计基线：`9a4f22519ba0923e162d83bc4fb658f2c5aadb64`；编制前工作树干净，本地与远端一致。
 - 唯一实施分支：`stage/12-font-identity-permissions`。本专项承接 Stage 12，编号 **S12-F08～F14**，不创建第二条分支、不重编号已有任务。
-- 编制时用户授权为“创建任务书”，文档基线提交为 `3e94afb`。2026-10-05 用户授权“开始 F08”；2026-10-06 用户确认“已通过，收尾并开始 F09”，首轮失败补修后再次确认“已通过”。F08/F09 均已核对完整 Windows 自动化并按用户确认收尾。2026-10-06 用户授权“开始 F10”，随后授权连续完成 F10～F14 开发和自动化验证；F10 安装确认与卸载目标统一及首轮补修已通过完整 Windows 自动化，见 §10.7；F11～F13 也已完成开发与完整 Windows 自动化，分别见 §11.5、§12.6、§13.4；下一阶段为 F14 整链验收。实现、自动化通过和最终本机验收分别登记。
+- 编制时用户授权为“创建任务书”，文档基线提交为 `3e94afb`。2026-10-05 用户授权“开始 F08”；2026-10-06 用户确认“已通过，收尾并开始 F09”，首轮失败补修后再次确认“已通过”。F08/F09 均已核对完整 Windows 自动化并按用户确认收尾。2026-10-06 用户授权“开始 F10”，随后授权连续完成 F10～F14 开发和自动化验证；F10 安装确认与卸载目标统一及首轮补修已通过完整 Windows 自动化，见 §10.7；F11～F13 也已完成开发与完整 Windows 自动化，分别见 §11.5、§12.6、§13.4；F14 已实现同状态整链和半失败回查补修，等待本次完整 Windows CI，见 §14。实现、自动化通过和最终本机验收分别登记。
 - 历史依据：[身份与权限任务书](HFM_FONT_IDENTITY_PERMISSIONS_TASKBOOK.md) §18～§19、§21～§22；[列表与网格任务书](HFM_LIST_GRID_VIEW_OPTIMIZATION_TASKBOOK.md) §1 的并发、滚动和退出约束继续有效。旧回执保留，不把本次新问题写成旧阶段从未通过，也不以旧 CI 代替本专项验收。
 - 用户补充要求：重新审计此前缺失字体显示、路径识别、自动/手动/同目录匹配及关联功能，建立可用性清单，不能只将最近反馈转抄为任务。§2.1～§2.3 是源码、既有回归和实机证据对照。
 - 本文是这批问题的唯一实施与验收入口。原任务书只保留引用，根 README 记录变更结果；不再把同一问题分散成多套补修清单。
@@ -256,7 +256,7 @@ flowchart TD
 | F11 副本限定卸载 | 实现与完整 Windows 自动化完成，见 §11.5 | `c0daaa4` / CI `37418747610` 全部成功；42 项恢复、166 项诊断及原生/DOM/构建 | 真实占用/权限仅最终本机核实 |
 | F12 监听与预览收敛 | 实现与完整 Windows 自动化完成，见 §12.6 | `e4eec49` / CI `37428694400`，166 项诊断及独立原生/DOM/构建通过 | 历史 394 项具体原因仍缺原始证据；新批次可解释 |
 | F13 I/O 与日志 | 实现、标准化比较与完整 Windows 自动化完成，见 §13.4 | `a66c73d` / CI `37438281091`，166 项诊断、A–B–B–A 和真实 PNG→decode 通过 | 逻辑读取/等待改善有实测；物理磁盘/NAS、恢复→页面浏览器整链留 F14 |
-| F14 整链验收 | 尚未实施；F08～F13 已具备自动化前置 | 未运行 | 需同一持久夹具贯穿恢复/状态/预览/卸载/重开，另交付最终本机清单 |
+| F14 整链验收 | 已实现同状态集成与半失败状态回查，见 §14 | 等待本次完整 Windows CI | 最终本机清单见 §14.4；用户实机未执行 |
 
 每阶段在本文追加一份简明执行记录：实际根因及证据、修改责任、受测提交/Windows 回执、源文件不变证据、性能对照（涉及性能时）、未验证边界和下一步。不新建修复日志；根 README 保留唯一变更记录。
 
@@ -795,3 +795,115 @@ flowchart TD
 24 个 list/grid × cold/disk-hot/memory-hot × 4 轮真实 PNG 阶段全部通过，共 288 次 decode。每轮每布局 cold 为 8 个 global 预览任务；cold 的 3 次实际进程启动含 worker 诊断与 daemon，阶段快照中 daemon 尚活着，关闭后逐一确认零遗留。disk-hot 为 2 个诊断进程、memory-hot 为 0；这些开销两边相同。列表/网格每次 cold/disk-hot 逻辑 PNG 返回量分别为 51,723 / 48,991 字节，memory-hot 为 0。cold global admission p95/max 约 0.068～0.120ms、每阶段 8 样本，其微小差异不足以宣称整体 PNG 延迟改善；原始首图/完成时间保留在报告。此预览阶段与共享池争用阶段顺序执行，仍不是并发 NAS 压力下的可见延迟实验。
 
 F13 的开发、计数预算、受控等待比较与完整 Windows 自动化收尾；该收尾只改 README、索引和本文，源码不再追加未验证修改。F14 接续同一真实持久夹具的恢复→状态→页面/预览→受控卸载→重开整链；恢复页面观察已有生产接线与受控 query/effect 反例，尚不把它写成 ABBA 实际浏览器恢复→页面时长。物理磁盘字节、SQLite/DirectWrite 内部读取、真实系统字体/登记、UAC/HKLM、占用、NAS 权限、历史 W7/W20 与历史 394 项归因继续保留明确本机/历史证据边界。
+
+## 14. F14 同状态整链与最终本机验收（2026-10-06）
+
+实施基线为 F13 收尾 `bf16cb619ebf4c5ac3d07cf22bbf2fa46769ea81`，对应受测源码 `a66c73d` 与完整 Windows 回执见 §13.4。仍使用原分支。**本节初次发布状态为已实现、静态审阅完成、等待本次完整 Windows CI；用户本机验收尚未执行。** 不将此前分立成功门拼成整链已通过。
+
+### 14.1 真实状态链与控制边界
+
+在既有 `check-preview-chain-performance.cjs` 增加 `--recovery-chain` 模式，并在当前 Windows workflow 显式执行；不新增 npm 门、依赖或平行框架。复用 F13 的字体 manifest、文件/SQLite owner、生产模块加载器、runtime preload、preview runtime 与真实 Rust PNG transport；F13 的不可变 before、A–B–B–A 和预算保持不变，完整 workflow 继续运行比较。
+
+- 同一批 8 个实际字体的测试副本：保存历史内容证据/本地标签→移动到新目录→生产 React FontCard/菜单点击→双端生产 IPC 与恢复事务→一个 picker/同目录恢复→权威安装状态/筛选→真实预览→安装/卸载→来源、收藏/保护与另一标签范围保留→关闭全部 DB/子进程→同文件重开、新模块 loader 与新窗口。
+- 安装状态使用生产内容确认、`createMainActivationInstallStatusSaveRuntime` schedule/flush、真实签名和 Rust install-status read/save；页面使用实际 tag binding query、生产 matcher、安装/本地状态 hydrate、page cache 和缓存后 receipt hydrate。验证同页行、IDs、count 与 all/installed/notInstalled 三筛选。此集成选择生产标签页路径，不声称覆盖合并索引投影或完整 App 启动；相应既有专项继续保留。
+- 字体登记端口使用受控 reg 查询输出；生产 parser、临时安装目录枚举与元数据合并真实运行，因此残留安装副本可以继续被内容确认。精确 registry gate 则只看真实受控登记列表，不把目录候选伪作可删除登记。安装函数实际复制到夹具独占安装目录；原生变更 launcher 一旦调用即失败，副作用端口只允许该临时目录的精确目标，不访问真实 Windows Fonts/注册表/NAS。
+- 私有源预览顺序为：恢复后的真实未安装查询行→显式受控 WebFont 已失败提示→生产 native fallback→Rust 私有内存字体 PNG→实际 FontCard 图片加载；断言 native `fontPath` 为本次恢复路径、`preferSystemFont=false`、当前内容 hash、真实 transport stdout 中的 backend 与图像尺寸，并保存列表/网格截图；客户端现有归一化 engine 标签另记，不冒充底层 receipt。安装后的 family route 不被当作私有源像素证据。再次卸载及重开后同来源继续可读；纯 metadata 重复需求不新增 render。
+- 取消 picker/重复点击、确认框取消、半失败/精确物理文件替换拒绝与原目标重试、多独立副本歧义、一物理文件多个登记、同名不同内容、旧 name-only 行、共享快照离线保留和退出旧代次分别断言。共享端口是持久的受控远端快照，不冒充 NAS 真实权限测试。
+- 恢复请求沿既有 trace→生产 refresh helper→真实 query hook 的接受结果→React effect 关联，采集 `page-view-observed`。终点是 React commit 后观察，不是浏览器 paint；PNG decode/实际卡片加载独立计量，不能把二者混写成同一延迟。
+
+```mermaid
+flowchart LR
+  A[同库历史标签与内容快照] --> B[真实卡片菜单与预加载 IPC]
+  B --> C[一次选择与恢复事务]
+  C --> D[真实标签页查询与状态库]
+  D --> E[来源私有字体 PNG 与卡片加载]
+  D --> F[临时安装副本与受控精确登记]
+  F --> G[生产卸载与持久回执]
+  G --> H[当前内容确认与状态写回]
+  H --> D
+  G --> I[关闭全部连接与自有子进程]
+  I --> J[同库新运行时与新窗口]
+  J --> D
+```
+
+### 14.2 整链发现的半失败状态补修
+
+`fontUninstallRecoveryRuntime` 之前只在全部目标完成的 `settle()` 调用 `persistUninstallResult`。登记已解除而后续文件步骤失败时，持久 pending 回执正确保留，但安装索引及渲染回执没有同步当前证据。不能据“登记已删”直接推断未安装：当前安装目录残留、另一独立副本或不可访问候选分别可能得到 installed、notInstalled 或 unknown。
+
+现在 durable 失败先保存原步骤/错误，再在原 application epoch 仍有效时调用同一生产权威回查/写回，并随失败回执返回实际 `installCompare`；失败仍为失败，原目标与 pending 回执不清除、不扩展、不重新规划。来源/登记/文件/保护安全检查不减少。原失败阶段已是结果持久化或回执清理时不隐式重试同一写入；回查本身失败追加说明，不伪造比较结果。组合入口在状态读取、当前枚举、内容确认与持久化边界核对调用方 epoch，退出后不发起新阶段，不接受晚返回证据。
+
+现有 F11 门新增 5 条：真实结果为未安装、仍有其他安装、unknown、回查写入失败、回查中退出；保留原 42 条断言与场景。真实整链另验证目录残留仍被确认、失败回执更换为当前 matches、同库重开保持提示与精确重试。
+
+### 14.3 自动化入口与结果登记
+
+本轮 Windows 入口：`node build/diagnostics/check-preview-chain-performance.cjs --recovery-chain`。完整工作流 `.github/workflows/font-identity-audit.yml` 仍包括 `npm run verify`、身份/激活/卸载、Node/Rust 标签与原生专项、身份 DOM、150 项列表/网格 DOM、原生输入、F13 A–B–B–A、应用 bundle 与 always artifacts。7 项真实字体变更仍不在 CI 执行。
+
+F14 产物为 `artifacts/list-preview/recovery-chain/report.json`、`operation-chain.log` 与阶段截图；失败也写 report/error。报告保留精确 SHA、runtime/worker hash、真实字体 manifest、逐阶段 DB 行/IDs/count、状态/回执、来源前后属性、受控 effects、native 请求路径/模式与实际卡片解码证据、关闭后 child 数。F13 比较仍为 `artifacts/list-preview/work/comparison.json`，历史结果见 §13.4。
+
+本次 Linux 编辑环境只作源码读写、AST/导入、CJS 语法及 Git 差异检查，未执行项目诊断、类型检查、构建或生产模块。没有新增依赖/API 选型。状态插件未找到 HFM 对应项目，未写入无关项目；当前图与续接记录以本文/Git 为准。精确受测提交、完整 Windows 结果和失败修复记录在实际取得后补记。
+
+### 14.4 一次性用户 Windows 验收清单
+
+以下只在最终自动化通过后执行；本机结果单独登记，不由 CI 代填。保留同一业务 profile 与现有历史数据，不清库/清缓存来制造通过。
+
+#### 准备与安全条件
+
+1. 正常关闭旧 HFM/开发进程，更新原分支到本节最终交付提交。保留本地改动，不用 `reset --hard`。保留所有数据库、缓存、监听根、旧记录，以及已有 `HFM_DATA_DIR`、`HFM_ELECTRON_USER_DATA_DIR`。普通用户终端即可，不把整个应用以管理员身份启动。
+2. 使用专属可丢弃目录中的第三方字体副本，另留主文件只读对照；至少两份内容不同，方便同目录匹配。不要用 Windows 必需字体、业务原件或 W7/W20 制造故障。真实安装前还必须排除内部 family/full/PostScript 名称、实际 HKCU/HKLM/临时激活登记名，以及用户 Fonts 目标 basename 冲突。仅给文件加前缀不会改变内部字体名；当前安装存在覆盖同登记/文件名目标的行为。无法确认无碰撞时，停在非破坏性恢复/预览，不做安装卸载。
+3. 记录 commit、时间和主文件的路径、长度、SHA-256、LastWriteTimeUtc、CreationTimeUtc、Attributes。后续移动/重新链接完成后，**再为实际恢复的来源文件记录一份卸载前 manifest**；比较卸载前后同一路径的内容/属性，不能只核对从未被选中的备份，也不把已授权移动造成的路径/时间变化误报为卸载破坏。
+
+#### 先运行已有本机专用入口
+
+在仓库普通 PowerShell：
+
+```powershell
+git rev-parse HEAD
+npm run test:font-system-local
+```
+
+此脚本仅 Windows、拒绝 CI，先构建必需 Rust worker。它运行真实测试副本的句柄/内存预览/HKCU 验证：用户 Fonts/HKCU 使用 `HFM_F06_TEST_<UUID>_中文` 唯一名称；Rust 句柄及内存字体另使用 `%TEMP%\hfm-disposition-*`、`hfm-memory-font-*`。Arial 原件仅读取，不修改业务库/缓存。它不代表 UAC/HKLM/NAS 全部通过。
+
+结果位于 `artifacts/font-identity-f06/local-acceptance.log`；入口会覆盖该 log，先按需要归档旧证据。`disposition-failure.json` 仅特定失败会写入，旧文件不会自动清除；只在时间/回执确认属于本次失败时一并回传，不能凭存在认作本次失败。若失败，保存完整回执并暂停真实系统卸载项，不用业务字体补测；非破坏性页面观察仍可做。
+
+#### 打开应用，连续走完同一条链
+
+已有依赖/工具链可用时，使用当前入口；它同样会构建/更新 Rust worker，不需要本轮另行打安装包：
+
+```powershell
+$previousLogDetail = $env:HFM_LOG_DETAIL
+$env:HFM_LOG_DETAIL = 'debug'
+try { npm run dev } finally {
+  if ($null -eq $previousLogDetail) { Remove-Item Env:HFM_LOG_DETAIL -ErrorAction SilentlyContinue }
+  else { $env:HFM_LOG_DETAIL = $previousLogDetail }
+}
+```
+
+4. 启动后先导入临时 `old` 目录，为测试副本加本地标签/收藏并确认已保存，再把这些副本移到临时 `new` 目录；主文件不动。保护测试另用一个副本，别混入应当允许卸载的成功主线。
+5. 标签页仍显示原缺失卡片。先重新链接并取消，再从同一卡片只选择一个新文件；同目录中有充分内容证据的兄弟项应一起恢复，不能连续弹多个 picker。快速重复点击不应形成并行操作。记录实际 linked/remaining；歧义或旧证据不足项应留下，不要求强行自动成功。
+6. 核对新路径、标签、收藏/保护，以及详情与 all/已安装/未安装筛选；恢复本身不安装字体，unknown 不冒充未安装。列表/网格应显示当前来源，滚动/切页/普通标签改变后不闪回旧图、不无限重复加载；停止操作后工作应收敛。记录实际时间点，不额外要求固定重复次数或用户硬盘毫秒指标。
+7. 只有满足第 2 项无碰撞条件的专属未安装测试字体，才通过应用正常安装并从来源卡片卸载；核对确认框说明保留来源，**不要点“删除字体文件”**。核对精确安装副本/登记，卸载前后实际来源 hash/路径/属性、本地标签/收藏及其他标签范围保持。多个独立同内容副本或目标不能唯一证明时，安全拒绝是正常结果，不手改登记或强删目录。
+8. 正常退出，重开同一 profile。来源/标签/状态应一致；有未完成卸载时仍可见“重试卸载”。真实占用/权限自然导致半失败时，记录 stage/code/NTSTATUS、完成步骤和剩余路径；关闭自己明确知道的占用应用后，从同一项重试。目录残留可能仍被确认 installed；关键是当前证据一致且 pending 可见，不一律要求 false。没有出现自然半失败就记未观察，不补造全机故障、杀未知进程、改 ACL 或循环强删。
+
+#### 单独记录真实边界
+
+9. UAC/HKLM：只对已有安全、可丢弃的专属测试安装核对。先取消一次，验证明确取消、零越权副作用与可重试提示；需要同意时由用户自行处理 UAC，再核对精确目标。无安全夹具就记未执行，不新建 HKLM 脚本或以管理员启动整个 HFM。
+10. NAS/映射盘：只在已有允许测试的独立目录观察本地/映射盘/UNC 一致性和当前权限。暂不可访问应保留旧关联并标 unavailable，恢复可用后再继续。不要改 NAS ACL、断开整机网络或删共享元数据制造故障；无安全测试条件记未执行。runner-local 隔离路由结果不能代替 NAS 性能。
+11. W7/W20：只读记录当前状态、来源及登记/文件证据；不要求重新卸载或重造历史失败。旧日志仅证明 uninstall-plan、completedSteps=0，缺当时 scope/name/value/文件快照；不能据当前快照声称两者都新安装、都误报或属于旧 94 行。历史未知仍是未知。
+
+可选只读取证（脚本更新 worker 后）：
+
+```powershell
+$evidence = Join-Path $PWD 'artifacts\font-identity-f06'
+New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+& .\build\native\hfm-core-worker.exe --system-installed-fonts --windows-fonts-dir "$env:WINDIR\Fonts" --current-user-fonts-dir "$env:LOCALAPPDATA\Microsoft\Windows\Fonts" --extensions 'ttf,otf,ttc,otc' --include-name-candidates 2> (Join-Path $evidence 'installed-current.stderr.txt') | Set-Content -Encoding utf8 (Join-Path $evidence 'installed-current.json')
+$workerExitCode = $LASTEXITCODE
+"exit=$workerExitCode" | Set-Content -Encoding utf8 (Join-Path $evidence 'installed-current.exit.txt')
+```
+
+可在测试前后分别保存 before/after 文件。此 CLI 合并登记与目录候选，没有完成内容身份确认；目录读取失败可能被跳过，所以 `ok:true` 时的缺项仍不能直接证明未安装，count 也不是已确认安装总数。按实际来源路径、内部名称和登记值交叉核对，不只搜索 W7/W20 字样。
+
+#### 日志与一次回传
+
+- 开发模式菜单“帮助 → 打开本次启动日志”会在资源管理器定位本次日志，优先用它确认路径。默认业务根 `%LOCALAPPDATA%\字体管理器`，日志为 `logs\startup-<时间>-<pid>.log`；若已有 `HFM_DATA_DIR` 则继续该根。
+- 本地 app DB 为业务根 `data\app.sqlite`；fallback 预览 DB 为 `cache\preview\preview-fallback.sqlite`，图片在 `cache\preview\images`。另有根级共享数据/缓存，不删除任何一类；不改 Electron 的独立 userData 根。
+- 一次回传：精确 commit、专用本机 log/属于本次的 failure JSON、每次启动的完整 startup log、最简操作顺序/时间、截图、实际来源卸载前后 manifest，以及可选只读登记快照。各项写明通过、失败、未执行；UAC/HKLM/NAS/自然占用和历史 W7/W20 分别说明。无须重复运行已完成的每阶段 CI。

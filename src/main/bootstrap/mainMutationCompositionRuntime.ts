@@ -333,13 +333,18 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     fontExtensions: FONT_EXTENSIONS,
     withFontProtection: protectionAuthority.guard,
     deactivateForFileDelete: deactivateFontSessionsBatch,
-    persistUninstallResult: async item => {
+    persistUninstallResult: async (item, assertCurrent) => {
+      assertCurrent?.();
       const state = await loadTemporaryActiveFonts();
+      assertCurrent?.();
       const current = await getSystemInstalledFontsCached(true);
+      assertCurrent?.();
       const permanent = compareFontInstalledWithList(item, current);
       const result = await createFontInstallEvidenceSession({ installed: current, temporaryRecords: state.records, readHistorical: async path => openTagFontSnapshots(await openLibraryDb()).read(path) }).confirm(item, permanent);
+      assertCurrent?.();
       scheduleActivationInstallStatusSave({ [item.id]: result }, new Map([[item.id, item]]), 'uninstall-verified');
       await flushActivationInstallStatusSave('uninstall-verified');
+      assertCurrent?.();
       return result;
     },
     ensureWindows,

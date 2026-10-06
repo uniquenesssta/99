@@ -26,7 +26,7 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
       try { receipt = store.save(receipt); durable = true }
       catch (error) { noteRecoveryPersistenceFailure(error); throw error }
     }
-    const failed = (error: unknown): InstallResult => {
+    const failed = async (error: unknown): Promise<InstallResult> => {
       let message = error instanceof Error ? error.message : String(error)
       cancelled ||= isApplicationClosing() || applicationWorkEpoch() !== ticket
       const remainingPaths = receipt?.steps.filter(step => step.plan.delete_file && step.state !== 'done').map(step => step.plan.path) || []
@@ -36,8 +36,25 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
         receipt = { ...receipt, stage, message, cancelled }
         try { write() } catch (saveError) { message += ` 恢复进度保存失败，原恢复记录保留：${String(saveError)}` }
       }
+      let installCompare: Awaited<ReturnType<SystemFontInstallRuntimeDeps['persistUninstallResult']>> = undefined
+      // A failed later step can leave the current registration different from
+      // the cached installed state. Reconcile that evidence without changing the
+      // durable target/steps or turning a partial failure into success.
+      if (durable && stage !== 'persist-result' && stage !== 'receipt-clear'
+        && !isApplicationClosing() && applicationWorkEpoch() === ticket) {
+        try {
+          checkOpen()
+          deps.clearInstalledFontsMemoryCache()
+          const current = await deps.persistUninstallResult(item, checkOpen)
+          checkOpen()
+          installCompare = current
+        } catch (projectionError) {
+          message += ` 当前安装状态回查未确认：${String(projectionError)}`
+          cancelled ||= isApplicationClosing() || applicationWorkEpoch() !== ticket
+        }
+      }
       deps.appendStartupLog(`font uninstall failure: ${JSON.stringify({ id: item.id, path: item.path, stage, completedSteps: receipt?.completedSteps || 0, pending: durable, cancelled, message, remainingPaths })}`)
-      return { ok: false, message, uninstall: { completedSteps: receipt?.completedSteps || 0, remainingPaths, stage, pending: durable, cancelled } }
+      return { ok: false, message, ...(installCompare ? { installCompare } : {}), uninstall: { completedSteps: receipt?.completedSteps || 0, remainingPaths, stage, pending: durable, cancelled } }
     }
     const temporaryReferences = async () => {
       const claims = await deps.readUninstallActivationClaims()
@@ -127,7 +144,8 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
       const settle = async (): Promise<InstallResult> => {
         stage = 'persist-result'
         deps.clearInstalledFontsMemoryCache()
-        const installCompare = await deps.persistUninstallResult(item)
+        const installCompare = await deps.persistUninstallResult(item, checkOpen)
+        checkOpen()
         stage = 'receipt-clear'
         try { store!.remove(receipt!) } catch (error) { noteRecoveryPersistenceFailure(error); throw error }
         durable = false

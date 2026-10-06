@@ -19,7 +19,7 @@ export interface SystemFontInstallRuntimeDeps {
   readUninstallActivationClaims: () => Promise<Array<{ registryName: string; installPath: string }>>;
   readHistoricalFont?: ReadHistoricalFont;
   appName?: string;
-  persistUninstallResult: (item: FontItem) => Promise<InstallCompareResult | void>;
+  persistUninstallResult: (item: FontItem, assertCurrent?: () => void) => Promise<InstallCompareResult | void>;
   deactivateForFileDelete: (items: FontItem[]) => Promise<{ ok: boolean; message: string }>;
   createMutationSession?: () => Promise<FontMutationSession>;
   readUninstallRegistry?: () => Promise<SystemInstalledFont[]>;

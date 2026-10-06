@@ -48,9 +48,9 @@ function selectFonts(directory) {
   fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'fixture-manifest.json'),JSON.stringify(chosen.map(({source,...rest})=>rest),null,2))
   return chosen
 }
-async function createFixture({sourceRoot,directory,fixtureDirectory,manifest,workerPath,electron}) {
+async function createFixture({sourceRoot,directory,fixtureDirectory,manifest,workerPath,electron,reopen=false,initialInstallCopies=true,persistControlledRegistry=false}) {
   assert.equal(process.platform,'win32')
-  fs.rmSync(fixtureDirectory,{recursive:true,force:true});fs.mkdirSync(fixtureDirectory,{recursive:true});fs.mkdirSync(directory,{recursive:true})
+  if(!reopen)fs.rmSync(fixtureDirectory,{recursive:true,force:true});fs.mkdirSync(fixtureDirectory,{recursive:true});fs.mkdirSync(directory,{recursive:true})
   const observer=createObserver(),logs=[],appendLog=line=>logs.push(line)
   const helper=path.join(sourceRoot,'src/main/preview/native-renderer/directwrite/directWritePreviewHelperPathRuntime.ts')
   const transforms={ [helper]:source=>source.replaceAll('import.meta.url',JSON.stringify(require('node:url').pathToFileURL(helper).href)) }
@@ -68,18 +68,24 @@ async function createFixture({sourceRoot,directory,fixtureDirectory,manifest,wor
   const old=[],next=[],byPath=new Map(),key=file=>load('src/main/path/cachePath.ts').normalizePathForCacheCompare(file)
   for(const [index,entry] of manifest.entries()) {
     const original=path.join(folders.old,`old-${index}.ttf`),replacement=path.join(folders.next,`renamed-${index}.ttf`)
-    copy(entry.source,original)
-    const item=await fontRuntime.fontItemFromPath(original);old.push(item);await snapshots.capture([item]);fs.renameSync(original,replacement)
+    if(!reopen) {
+      copy(entry.source,original)
+      const item=await fontRuntime.fontItemFromPath(original);await snapshots.capture([item]);fs.renameSync(original,replacement)
+    }
+    const item=snapshots.read(original);assert(item,'reopen must retain historical source evidence');old.push(item)
     const current=await fontRuntime.fontItemFromPath(replacement);next.push(current);byPath.set(key(current.path),current)
   }
   const insert=raw.prepare('INSERT INTO local_font_tags(font_id,font_path,tag_name,updated_at) VALUES(?,?,?,?)')
+  if(!reopen) {
   for(const item of old)insert.run(item.id,key(item.path),'Recover','fixture')
   for(let i=0;i<1001;i++)insert.run(`page-${i}`,key(path.join(folders.page,`${i}.ttf`)),'Page','fixture')
   for(let i=0;i<512;i++)insert.run(`other-${i}`,key(path.join(folders.other,`${i}.ttf`)),'Unrelated','fixture')
+  }
   const queryModule=load('src/main/library/tagFontQueryRuntime.ts')
-  const query=queryModule.createTagFontQueryRuntime({openLibraryDb:async()=>db,roots:async()=>[fixtureDirectory],findPrevious:async file=>byPath.get(key(file))||null,
+  const queryDeps={openLibraryDb:async()=>db,roots:async()=>[fixtureDirectory],findPrevious:async file=>byPath.get(key(file))||null,
     readShared:async()=>({preflight:{snapshot:{rows:[]}}}),queryLive:async()=>({items:[],total:0,offset:0,limit:500,queryKey:'fixture',elapsedMs:0,engine:'sql',truncated:false}),hydrate:async items=>items,
-    matches:(font,request)=>!request.selectedTagName||(request.sidebarPage==='sharedTags'?font.tagNames:font.localTagNames||[]).includes(request.selectedTagName),compare:(a,b)=>a.fileName.localeCompare(b.fileName)})
+    matches:(font,request)=>!request.selectedTagName||(request.sidebarPage==='sharedTags'?font.tagNames:font.localTagNames||[]).includes(request.selectedTagName),compare:(a,b)=>a.fileName.localeCompare(b.fileName)}
+  const query=queryModule.createTagFontQueryRuntime(queryDeps)
   const writer=await load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts').createLocalFontTagNodePersistenceRuntime(async()=>db).openWriter()
   let pickerCalls=0
   const runtime={appendLog,loadLibraryShell:async()=>({folders:[fixtureDirectory],fonts:{},tags:[],localTags:['Recover']}),getSharedAvailability:async()=>({roots:[]}),
@@ -87,7 +93,10 @@ async function createFixture({sourceRoot,directory,fixtureDirectory,manifest,wor
     rememberRelinkedFontFile:async()=>{throw Error('fixture recovery must remain in registered root')},refreshWatchedFolder:async()=>{throw Error('relink must not scan roots')},
     setLocalFontTagsBatch:async(items,options)=>{const result=writer.setLocalFontTagsBatch(items,new Date().toISOString(),options);query.invalidate();return {...result,ok:!result.failed.length,message:'controlled local transaction'}}}
   const recovery=load('src/main/library/tagFontRecoveryRuntime.ts').createTagFontRecoveryRuntime(runtime,async()=>{pickerCalls++;return next[0].path})
-  const records=next.slice(0,5).map((item,i)=>{const target=path.join(folders.installed,`copy-${i}.ttf`);copy(item.path,target);return {source:'HKCU',path:target,value:target,fileName:path.basename(target),registryName:item.fullName,nameCandidates:[item.family,item.fullName,item.postscriptName].filter(Boolean)}})
+  const externalStatePath=path.join(directory,'controlled-registry.json')
+  const records=reopen?JSON.parse(fs.readFileSync(externalStatePath,'utf8')):next.slice(0,initialInstallCopies?5:0).map((item,i)=>{const target=path.join(folders.installed,`copy-${i}.ttf`);copy(item.path,target);return {source:'HKCU',path:target,value:target,fileName:path.basename(target),registryName:item.fullName,nameCandidates:[item.family,item.fullName,item.postscriptName].filter(Boolean)}})
+  const saveExternalState=()=>{if(persistControlledRegistry)fs.writeFileSync(externalStatePath,JSON.stringify(records))}
+  if(!reopen)saveExternalState()
   const installedSnapshot=async()=>{observer.counts.planningSnapshots++;await load('src/main/path/sharedFileSystemRuntime.ts').sharedFileSystem.readdir(folders.installed,{withFileTypes:true});return plain(records)}
   const effects=[],store=()=>load('src/main/install/fontUninstallReceiptRuntime.ts').openFontUninstallReceipts(db)
   raw.exec('CREATE TABLE IF NOT EXISTS local_font_protection(font_path TEXT PRIMARY KEY, protected INTEGER NOT NULL)')
@@ -95,7 +104,7 @@ async function createFixture({sourceRoot,directory,fixtureDirectory,manifest,wor
   const deps={openUninstallReceipts:async()=>store(),readUninstallActivationClaims:async()=>[],ensureWindows(){assert.equal(process.platform,'win32')},currentUserFontsDir:()=>folders.installed,windowsFontsDir:()=>path.join(fixtureDirectory,'not-system'),normalizePathForCacheCompare:key,isTemporaryActiveInstalledRecord:()=>false,
     withFontProtection:protection.guard,getSystemInstalledFonts:installedSnapshot,getSystemInstalledFontsCached:installedSnapshot,readUninstallRegistry:async()=>plain(records),clearInstalledFontsMemoryCache(){},appendStartupLog:appendLog,advancedFontRefresh:async()=>{},
     persistUninstallResult:async item=>{observer.counts.projections++;const compare=load('src/main/install/fontInstallCompare.ts').createInstallCompareRuntime({appName:'HFM'}).compareFontInstalledWithList(item,records);return load('src/main/install/fontInstallEvidenceRuntime.ts').createFontInstallEvidenceSession().confirm(item,compare)},
-    createMutationSession:async()=>{observer.counts.brokerSessions++;return {close(){},readRegistry:async()=>plain(records),execute:async(plan,check)=>{let completedSteps=0,fileRemoved=false;await check();for(const record of plan.records){await check(plain(records),'registry');const index=records.findIndex(row=>row.source===record.scope&&row.registryName===record.name&&row.value===record.value);assert(index>=0);records.splice(index,1);effects.push(['registry',record.name]);completedSteps++}if(plan.delete_file){assert.equal(path.dirname(plan.path),folders.installed);await check(plain(records),'file');fs.unlinkSync(plan.path);effects.push(['file',plan.path]);completedSteps++;fileRemoved=true}return {ok:true,message:'controlled fixture effects',completedSteps,fileRemoved}}}},
+    createMutationSession:async()=>{observer.counts.brokerSessions++;return {close(){},readRegistry:async()=>plain(records),execute:async(plan,check)=>{let completedSteps=0,fileRemoved=false;await check();for(const record of plan.records){await check(plain(records),'registry');const index=records.findIndex(row=>row.source===record.scope&&row.registryName===record.name&&row.value===record.value);assert(index>=0);records.splice(index,1);saveExternalState();effects.push(['registry',record.name]);completedSteps++}if(plan.delete_file){assert.equal(path.dirname(plan.path),folders.installed);await check(plain(records),'file');fs.unlinkSync(plan.path);effects.push(['file',plan.path]);completedSteps++;fileRemoved=true}return {ok:true,message:'controlled fixture effects',completedSteps,fileRemoved}}}},
   }
   const uninstall=load('src/main/install/systemFontInstallRuntime.ts').createSystemFontInstallRuntime(deps)
   const global=load('src/main/performance/globalIoRuntime.ts').createGlobalIoRuntime({env:process.env,localScanWorkers:2,appendLog,isIndexingActive:()=>false,isUserActive:()=>false,storageProfileForPath:file=>({rootPath:path.parse(file).root,type:'ssd',reason:'controlled-runner-profile',isNetwork:false})})
@@ -155,6 +164,6 @@ async function createFixture({sourceRoot,directory,fixtureDirectory,manifest,wor
     try{await Promise.all(jobs);await pool.whenIdle();assert.equal(pool.status().metrics.started,pool.status().metrics.closed);assert.equal(pool.status().pids.length,0);return {...observer.snapshot(),foreground:summarize(foreground),all,pool:pool.status().metrics}}
     finally{pool.stop();await pool.whenIdle();await Promise.allSettled(jobs)}
   }
-  return {load,observer,global,withGlobalIo:observer.global(global),runtime,query,raw,db,old,next,folders,logs,appendLog,operations,watcher,contention,close(){raw.close();assert.equal(observer.children.size,0,'fixture leaked children')}}
+  return {queryDeps,deps,records,effects,store,snapshots,writer,recovery,uninstall,key,saveExternalState,sourceManifest:before,load,observer,global,withGlobalIo:observer.global(global),runtime,query,raw,db,old,next,folders,logs,appendLog,operations,watcher,contention,close(){raw.close();assert.equal(observer.children.size,0,'fixture leaked children')}}
 }
 module.exports={createObserver,createFixture,selectFonts,hash,summarize}

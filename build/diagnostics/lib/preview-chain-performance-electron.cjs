@@ -8,7 +8,8 @@ const logs = [], reports = [], appendLog = line => logs.push(line)
 const watchdog = setTimeout(() => { console.error('preview chain integration timed out'); app.exit(1) }, 120000)
 if (workConfig) {
   clearTimeout(watchdog)
-  require('./operation-work-performance-electron.cjs').run({ directory, html, preload, config: JSON.parse(fs.readFileSync(workConfig,'utf8')), electron }).then(()=>app.exit(0),error=>{console.error(error);app.exit(1)})
+  const config=JSON.parse(fs.readFileSync(workConfig,'utf8'))
+  require(config.mode==='recovery-chain'?'./recovery-chain-electron.cjs':'./operation-work-performance-electron.cjs').run({ directory, html, preload, config, electron }).then(()=>app.exit(0),error=>{console.error(error);app.exit(1)})
 } else app.whenReady().then(async () => {
   const bootstrap = loader({ electron, '../security/ipcSenderValidation': { assertTrustedIpcSender() {} } })
   const source = bootstrap('src/main/preload/runtimePreloadSource.ts').runtimePreloadSource

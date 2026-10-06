@@ -58,10 +58,19 @@ async function createRuntime({ directory, baseline, appendLog, electron, traceCo
     assert(fixture && observer, 'controlled mode needs the same selected-source fixture owner')
     options.withGlobalIo = fixture.withGlobalIo
     transport = load('src/main/rust-core/rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({ enabled:true,required:true,appendStartupLog:appendLog })
-    const client = load('src/main/rust-core/clients/rustPreviewClientRuntime.ts').createRustPreviewClientRuntime({ ...transport,appendStartupLog:appendLog })
+    const rawReceipts = new Map()
+    const clientTransport = fixture.observeNative ? { ...transport, runRustCoreScheduledCommand: async (...args) => {
+      const result = await transport.runRustCoreScheduledCommand(...args)
+      if (args[1]?.[0] === '--preview-render-image') {
+        const receipt = JSON.parse(result.stdout.split(/\r?\n/).map(line=>line.trim()).find(Boolean))
+        rawReceipts.set(receipt.outputPath, receipt)
+      }
+      return result
+    } } : transport
+    const client = load('src/main/rust-core/clients/rustPreviewClientRuntime.ts').createRustPreviewClientRuntime({ ...clientTransport,appendStartupLog:appendLog })
     await transport.diagnoseRustCoreWorker()
-    options.runRustPreviewRenderImage = async request => { native++;observer.counts.nativeRenders++;return client.runRustPreviewRenderImage(request) }
-    options.authorizeFontRead = async file => { await fs.promises.access(typeof file === 'string' ? file : file.path); return {ok:true,path:typeof file === 'string'?file:file.path} }
+    options.runRustPreviewRenderImage = async request => { native++;observer.counts.nativeRenders++;const result=await client.runRustPreviewRenderImage(request);fixture.observeNative?.(request,result,rawReceipts.get(request.outputPath));rawReceipts.delete(request.outputPath);return result }
+    options.authorizeFontRead = load('src/main/path/fontPathAuthorizationRuntime.ts').createFontPathAuthorizationRuntime({fontExtensions:new Set(['.ttf','.otf','.ttc','.otc']),readRoots:()=>Object.values(fixture.folders),watchedRoots:()=>Object.values(fixture.folders),appOwnedRoots:()=>[]}).authorizeFontRead
   }
   const runtime = load('src/main/preview/previewRuntime.ts').createPreviewRuntime(options)
   return { runtime, load, counts: () => counts, native: () => native, async close() { transport?.stopRustCoreDaemon(); if (controlled) { await load('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime().whenIdle(); const end=Date.now()+5000; while(observer.children.size && Date.now()<end) await new Promise(resolve=>setTimeout(resolve,10));assert.equal(observer.children.size,0,'preview transport child leaked') } raw.close(); config.close() } }
