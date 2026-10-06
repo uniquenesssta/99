@@ -2,7 +2,8 @@ const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs'), path = require('node:path')
 const file = process.argv[2]
 const feedbackOnly = process.argv.includes('--dom-feedback')
-const watchdog = setTimeout(() => { console.error('DOM layout gate timed out'); app.exit(1) }, 180000)
+let lastNativeCase = null
+const watchdog = setTimeout(() => { console.error('DOM layout gate timed out', JSON.stringify(lastNativeCase)); app.exit(1) }, 180000)
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: true, width: 1600, height: 900, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false } })
   // Electron may replace a rejected renderer exception with a generic error.
@@ -12,6 +13,7 @@ app.whenReady().then(async () => {
       try { return { ok: true, value: await (${code}) } }
       catch (error) {
         return { ok: false, message: String(error), stack: error?.stack,
+          overlayEvidence: window.scrollbarOverlayEvidence?.(),
           width: innerWidth, focused: document.hasFocus(), active: document.activeElement?.outerHTML?.slice(0, 300),
           inputs: ['local','shared'].map(scope => {
             const input = document.getElementById('font-' + scope + '-tag-input'), r = input?.getBoundingClientRect();
@@ -72,18 +74,50 @@ app.whenReady().then(async () => {
       if (activity === 'drag') win.webContents.sendInputEvent({ type:'mouseDown', button:'left', modifiers:['leftbuttondown'], ...start, clickCount:1 })
       // Let native pointer capture take effect before the overlay appears.
       await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
-      const target = await evaluate(`window.openScrollbarOverlay(${JSON.stringify(kind)})`)
-      fs.writeFileSync(path.join(evidence, `${width}-${index}-${kind}.png`), (await win.webContents.capturePage()).toPNG())
+      let target = await evaluate(`window.openScrollbarOverlay(${JSON.stringify(kind)})`)
+      const prefix = `${feedbackOnly ? 'feedback' : 'full'}-${width}-${index}-${kind}`
+      const record = data => {
+        lastNativeCase = { width, index, host, activity, kind, ...data }
+        fs.writeFileSync(path.join(evidence, prefix + '-native.json'), JSON.stringify(lastNativeCase, null, 2))
+      }
+      const mark = async phase => record({ phase, checkpoint: await evaluate(`window.markScrollbarOverlay(${JSON.stringify(phase)})`) })
+      record({ phase: 'opened', target, evidence: await evaluate('window.scrollbarOverlayEvidence()') })
+      fs.writeFileSync(path.join(evidence, prefix + '.png'), (await win.webContents.capturePage()).toPNG())
       if (activity === 'drag') {
+        await mark('background-release')
         win.webContents.sendInputEvent({ type:'mouseMove', button:'left', modifiers:['leftbuttondown'], x:start.x+20, y:start.y+20 })
         win.webContents.sendInputEvent({ type:'mouseUp', button:'left', x:start.x+20, y:start.y+20, clickCount:1 })
+        record({ phase: 'background-released', evidence: await evaluate('window.ackScrollbarBackgroundRelease()') })
+      }
+      if (kind === 'modal-backdrop') {
+        await mark('modal-native-hover')
+        win.webContents.sendInputEvent({ type:'mouseMove', x:target.hover.x, y:target.hover.y })
+        target = await evaluate('window.readyScrollbarModal()')
+        record({ phase: 'modal-native-hover-ready', target })
+        await mark('thumb-hover')
       }
       win.webContents.sendInputEvent({ type:'mouseMove', x:target.x, y:target.y })
+      if (kind === 'modal-backdrop') {
+        record({ phase: 'thumb-hover-ready', evidence: await evaluate('window.ackScrollbarModal("thumb-hover")') })
+        await mark('down')
+      }
       win.webContents.sendInputEvent({ type:'mouseDown', button:'left', modifiers:['leftbuttondown'], x:target.x, y:target.y, clickCount:1 })
-      if (kind === 'modal-backdrop') win.webContents.sendInputEvent({ type:'mouseMove', button:'left', modifiers:['leftbuttondown'], x:target.x, y:target.endY })
+      if (kind === 'modal-backdrop') {
+        record({ phase: 'down-captured', evidence: await evaluate('window.ackScrollbarModal("down")') })
+        await mark('move')
+        win.webContents.sendInputEvent({ type:'mouseMove', button:'left', modifiers:['leftbuttondown'], x:target.x, y:target.endY })
+        record({ phase: 'move-scrolled', evidence: await evaluate('window.ackScrollbarModal("move")') })
+        await mark('up')
+      }
       win.webContents.sendInputEvent({ type:'mouseUp', button:'left', x:target.x, y:target.endY || target.y, clickCount:1 })
+      if (kind === 'modal-backdrop') {
+        record({ phase: 'up-released', evidence: await evaluate('window.ackScrollbarModal("up")') })
+        fs.writeFileSync(path.join(evidence, prefix + '-scrolled.png'), (await win.webContents.capturePage()).toPNG())
+      }
       win.webContents.sendInputEvent({ type:'mouseMove', x:5, y:5 })
-      console.log('[floating-scrollbar-overlay:electron]', JSON.stringify(await evaluate(`window.finishScrollbarOverlay(${JSON.stringify(kind)})`)))
+      const result = await evaluate(`window.finishScrollbarOverlay(${JSON.stringify(kind)})`)
+      record({ phase: 'completed', ...result })
+      console.log('[floating-scrollbar-overlay:electron]', JSON.stringify({ overlay:kind, nativeInput:result.nativeInput, restored:result.restored, offscreenCleanup:result.offscreenCleanup, evidence:prefix+'-native.json' }))
     }
     // No window/webContents refocus between closing a dialog and real input:
     // doing so would hide the Windows focus regression this gate must detect.
@@ -117,7 +151,7 @@ app.whenReady().then(async () => {
         await evaluate(`window.checkConfirmationTag(${JSON.stringify(scope)},${JSON.stringify(value)},${++tagWrites})`)
       }
     }
-    fs.writeFileSync(path.join(evidence, `${width}-confirmation-tags.png`), (await win.webContents.capturePage()).toPNG())
+    fs.writeFileSync(path.join(evidence, `${feedbackOnly ? 'feedback' : 'full'}-${width}-confirmation-tags.png`), (await win.webContents.capturePage()).toPNG())
     console.log('[confirmation-focus:electron]',JSON.stringify(await evaluate('window.checkConfirmationLifecycle()')))
   }
   clearTimeout(watchdog); app.exit(0)

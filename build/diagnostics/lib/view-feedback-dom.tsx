@@ -108,11 +108,84 @@ let scrollHost:HTMLDivElement,cleanup:()=>void,removeProbe:()=>void,events:any[]
 // F04 uses the production .app stacking context and scrollbar owner. Native
 // mouse input is supplied by Electron; synthetic events only select visibility.
 let overlayApp:HTMLDivElement,overlayHost:HTMLDivElement,overlayBar:HTMLElement,overlayNode:HTMLDivElement
-let overlayCleanup:()=>void,overlayAxis:'scrollTop'|'scrollLeft',overlayStart=0,overlayClicks=0,capturedPointer=0,overlayDragging=false
+let overlayCleanup:()=>void,overlayProbeCleanup:()=>void,overlayAxis:'scrollTop'|'scrollLeft',overlayStart=0,overlayClicks=0,capturedPointer=0,overlayDragging=false
 const frames=async()=>{await frame();await frame();await frame()}
 const point=(node:Element)=>{const r=node.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}}
+let overlayNativePhase='prepare',overlayNativeEvents:any[]=[],overlayCheckpoints:any[]=[],overlayEventStart=0,modalPointer=0
+let modalBar:HTMLElement|undefined
+const describe=(node:EventTarget|null)=>node instanceof HTMLElement?{tag:node.tagName,className:node.className}:node===document?{tag:'#document'}:null
+const overlayElementState=(node:HTMLElement|undefined|null)=>{
+ if(!node)return null
+ const style=getComputedStyle(node),r=node.getBoundingClientRect()
+ return {node:describe(node),connected:node.isConnected,rect:r.toJSON(),display:style.display,visibility:style.visibility,opacity:style.opacity,pointerEvents:style.pointerEvents,
+  hovered:node.matches(':hover'),scrollTop:node.scrollTop,scrollLeft:node.scrollLeft,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,
+  capturedBackground:capturedPointer>0&&node.hasPointerCapture(capturedPointer),capturedModal:modalPointer>0&&node.hasPointerCapture(modalPointer)}
+}
+const overlayEvidence=()=>({phase:overlayNativePhase,at:performance.now(),focused:document.hasFocus(),active:describe(document.activeElement),
+ background:overlayElementState(overlayHost),backgroundBar:overlayElementState(overlayBar),modal:overlayElementState(overlayNode?.querySelector<HTMLElement>('.modal-card')),
+ modalBar:overlayElementState(modalBar),modalThumb:overlayElementState(modalBar?.firstElementChild as HTMLElement),capturedPointer,modalPointer,
+ events:overlayNativeEvents.slice(),checkpoints:overlayCheckpoints.slice()})
+;(window as any).scrollbarOverlayEvidence=overlayEvidence
+;(window as any).markScrollbarOverlay=(phase:string)=>{
+ overlayNativePhase=phase;overlayEventStart=overlayNativeEvents.length
+ const {events,checkpoints,...state}=overlayEvidence();overlayCheckpoints.push(state)
+ return overlayEvidence()
+}
+const nativeSince=(type:string,predicate:(event:any)=>boolean=()=>true)=>overlayNativeEvents.slice(overlayEventStart).some(event=>event.type===type&&event.trusted&&predicate(event))
+// One native action is sent per phase. This observes delivery/state, never
+// retries input or changes scroll/focus/hover; the existing main watchdog is
+// the wall-clock bound even if requestAnimationFrame stops delivering.
+const awaitOverlayNative=async(phase:string,ready:()=>boolean)=>{
+ for(let n=0;n<90;n++){if(ready()){const {events,checkpoints,...state}=overlayEvidence();overlayCheckpoints.push({...state,ack:phase,frames:n});return}await frame()}
+ check(false,'native overlay acknowledgement missing: '+phase+' '+JSON.stringify(overlayEvidence()))
+}
+;(window as any).ackScrollbarBackgroundRelease=async()=>{
+ await awaitOverlayNative('background-release',()=>nativeSince('pointerup',event=>event.id===capturedPointer&&event.buttons===0)&&!overlayBar.hasPointerCapture(capturedPointer))
+ check(overlayHost[overlayAxis]===overlayStart,'released background drag continued under overlay')
+ return overlayEvidence()
+}
+;(window as any).readyScrollbarModal=async()=>{
+ const card=overlayNode.querySelector<HTMLElement>('.modal-card')!
+ await awaitOverlayNative('modal-native-hover',()=>{
+  if(!nativeSince('pointermove',event=>event.inModal&&event.buttons===0)||!card.matches(':hover'))return false
+  const bounds=card.getBoundingClientRect()
+  modalBar=[...document.querySelectorAll<HTMLElement>('.hfm-floating-scrollbar.vertical.visible')].find(bar=>Math.abs(bar.getBoundingClientRect().right-(bounds.right-3))<2)
+  if(!modalBar)return false
+  const start=point(modalBar.firstElementChild!),style=getComputedStyle(modalBar)
+  return style.display!=='none'&&style.visibility!=='hidden'&&style.pointerEvents==='auto'&&document.elementFromPoint(start.x,start.y)?.closest('.hfm-floating-scrollbar')===modalBar
+ })
+ const start=point(modalBar!.firstElementChild!),r=modalBar!.getBoundingClientRect()
+ return {...start,endY:Math.round(r.bottom-2),evidence:overlayEvidence()}
+}
+;(window as any).ackScrollbarModal=async(phase:string)=>{
+ const card=overlayNode.querySelector<HTMLElement>('.modal-card')!
+ await awaitOverlayNative(phase,()=>{
+  if(!modalBar?.isConnected)return false
+  if(phase==='thumb-hover'){
+   const p=point(modalBar.firstElementChild!)
+   return nativeSince('pointermove',event=>event.onModalBar&&event.buttons===0)&&getComputedStyle(modalBar).pointerEvents==='auto'&&document.elementFromPoint(p.x,p.y)?.closest('.hfm-floating-scrollbar')===modalBar
+  }
+  if(phase==='down')return modalPointer>0&&nativeSince('pointerdown',event=>event.onModalBar&&event.id===modalPointer&&event.buttons===1)&&modalBar.hasPointerCapture(modalPointer)
+  if(phase==='move')return overlayNativeEvents.some(event=>event.type==='gotpointercapture'&&event.trusted&&event.onModalBar&&event.id===modalPointer)&&nativeSince('pointermove',event=>event.id===modalPointer&&event.buttons===1)&&card.scrollTop>1000&&modalBar.hasPointerCapture(modalPointer)
+  if(phase==='up')return nativeSince('pointerup',event=>event.id===modalPointer&&event.buttons===0)&&!modalBar.hasPointerCapture(modalPointer)
+  return false
+ })
+ return overlayEvidence()
+}
 ;(window as any).prepareScrollbarOverlay=async(hostClass:string,activity:string)=>{
+ overlayNativePhase='prepare';overlayNativeEvents=[];overlayCheckpoints=[];overlayEventStart=0;modalPointer=0;modalBar=undefined
  overlayApp=document.createElement('div');overlayApp.className='app'
+ const probe=(event:Event)=>{
+  const pointer=event as PointerEvent,target=event.target as HTMLElement,card=overlayNode?.querySelector('.modal-card')
+  const onModalBar=!!modalBar&&(target===modalBar||modalBar.contains(target))
+  if(event.type==='pointerdown'&&onModalBar&&event.isTrusted)modalPointer=pointer.pointerId
+  overlayNativeEvents.push({type:event.type,phase:overlayNativePhase,at:performance.now(),eventTime: event.timeStamp,trusted:event.isTrusted,target:describe(target),currentTarget:describe(event.currentTarget),
+   x:pointer.clientX,y:pointer.clientY,screenX:pointer.screenX,screenY:pointer.screenY,buttons:pointer.buttons,id:pointer.pointerId,onModalBar,inModal:!!card&&(target===card||card.contains(target)),
+   modalScrollTop:card?.scrollTop,backgroundPosition:overlayHost?.[overlayAxis],modalCapture:!!modalBar&&modalPointer>0&&modalBar.hasPointerCapture(modalPointer)})
+  if(overlayNativeEvents.length>300){overlayNativeEvents.shift();overlayEventStart=Math.max(0,overlayEventStart-1)}
+ }
+ const types=['pointerdown','pointermove','pointerup','pointercancel','gotpointercapture','lostpointercapture','mouseenter','mouseleave','focus','blur','scroll']
+ types.forEach(type=>document.addEventListener(type,probe,true));overlayProbeCleanup=()=>types.forEach(type=>document.removeEventListener(type,probe,true))
  overlayHost=document.createElement('div');overlayHost.className=hostClass
  overlayHost.style.cssText='position:absolute;left:40px;top:80px;width:500px;height:300px;overflow:auto;flex:none;padding:0;border:0;'
  overlayHost.innerHTML='<div style="height:1800px;width:1400px;flex:none">F04 background scroll content</div>'
@@ -155,12 +228,9 @@ const point=(node:Element)=>{const r=node.getBoundingClientRect();return {x:Math
  check(overlayHost[overlayAxis]===overlayStart,'blocked scrollbar accepted keyboard input')
  if(kind==='modal-backdrop'){
   const card=overlayNode.querySelector<HTMLElement>('.modal-card')!
-  card.dispatchEvent(new MouseEvent('mouseenter'));await frames()
-  const bar=document.querySelector<HTMLElement>('.hfm-floating-scrollbar.vertical.visible')!
-  check(bar,'modal lost its own scrollbar')
-  const start=point(bar.firstElementChild!),r=bar.getBoundingClientRect()
-  check(document.elementFromPoint(start.x,start.y)?.closest('.hfm-floating-scrollbar')===bar,'modal scrollbar is not hit-testable')
-  return {...start,endY:Math.round(r.bottom-2)}
+  // Coordinates for entering the host only. The thumb is resolved AFTER the
+  // previous native drag releases outside this card and native hover settles.
+  return {hover:point(card)}
  }
  check(overlayNode.contains(document.elementFromPoint(p.x,p.y)),'menu is not above the old track in hit testing')
  return p
@@ -170,6 +240,7 @@ const point=(node:Element)=>{const r=node.getBoundingClientRect();return {x:Math
  check(overlayHost[overlayAxis]===overlayStart,'captured background drag continued under overlay')
  if(kind==='modal-backdrop')check(overlayNode.querySelector<HTMLElement>('.modal-card')!.scrollTop>1000,'native modal scrollbar drag failed')
  else check(overlayClicks===1,'native overlapping click did not reach the menu action')
+ const nativeEvidence=overlayEvidence()
  overlayNode.remove();overlayHost.dispatchEvent(new MouseEvent('mouseenter'));await frames()
  // Re-enter after the overlay owner has been released.
  overlayHost.dispatchEvent(new MouseEvent('mouseenter'));await frames()
@@ -180,7 +251,7 @@ const point=(node:Element)=>{const r=node.getBoundingClientRect();return {x:Math
  check(!overlayBar.classList.contains('visible'),'offscreen virtual host kept a visible track')
  overlayHost.remove();await frames()
  check(!overlayBar.isConnected,'removed virtual host leaked its track')
- overlayCleanup();overlayApp.remove();await frames()
+ overlayProbeCleanup();overlayCleanup();overlayApp.remove();await frames()
  check(document.querySelectorAll('.hfm-floating-scrollbar').length===0,'F04 scrollbar cleanup leaked nodes')
- return {overlay:kind,nativeInput:true,restored:true,offscreenCleanup:true}
+ return {overlay:kind,nativeInput:true,restored:true,offscreenCleanup:true,nativeEvidence}
 }

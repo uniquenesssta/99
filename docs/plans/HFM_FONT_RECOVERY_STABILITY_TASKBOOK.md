@@ -1083,3 +1083,14 @@ F14仍通过五组同状态恢复/取消/安装/卸载/半失败重开/替换拒
 同一grid PNG做light→dark→light，使用原生产CSS、不重渲染原生字体；记录初始空白、首次观察可见时间、两个连续稳定frame实际contrast成功后再称可见。Node只接收有界观察，RGBA由browser canvas解码实际capture PNG，避免依赖Electron43新色彩参数或假定42的原始BGRA顺序；[Electron官方capturePage](https://www.electronjs.org/docs/latest/api/web-contents#contentscapturepagerect-opts)只保证截图，不把decode当paint。
 
 这一补充需要新的完整Windows运行；不改生产渲染/字体规格以猜测修复。未来artifact上传排除runner字体二进制，仍保留报告、PNG、SQLite、manifest及失败记录，旧云端artifact不删除、不额外分发含字体ZIP。
+
+
+### 14.15 视觉补证回执与原生输入夹具续修（2026-10-06）
+
+`8d2590057c08d8a4785f3d0f7ade1b715e3a7931` 的 [Windows CI 37516946035](https://github.com/uniquenesssta/99/actions/runs/37516946035) 整体失败，不能用单项绿灯收尾。171诊断、完整真实刷新ABBA、生产投影、F14、原生目录、其他原生/DOM/F13及bundle通过；唯一失败为独立 `--dom-feedback` 的720宽modal滚动条原生拖动。相同job较早的完整 `--dom` 在720/1600均通过此场景，不据此把失败判为随机噪声。失败断言为 `modal.scrollTop > 1000`，旧报告没记录实际数值/事件/几何，截图正文和thumb仍在顶部，不能补造实际scrollTop。
+
+视觉专项本次实际通过：grid live crop仍为116×84、SHA-256 `0c5169add748a6185ab356d41e1940f2194820f0defc5d2df781df81027506ba`。light→dark→light均589/589高alpha字形点匹配，1075个内部透明负样本无额外前景；3个list阶段均650/650匹配、1284负样本无额外前景。初始样本均已有字；最后dark→light正确主题采样延迟94ms，期间另极性字形可见，不能称空白持续94ms，也不能反推上一轮空白的paint根因。实际crop、初始/稳定截图及节点/几何/像素报告均保留。artifact `11439431660` 为47,013,742字节，SHA-256 `f2e3225b64e11d9b149cdd42656e6ff01debecd2b6e691d649692800f8d2d964`，字体二进制数量0；用户原始输入未上传。
+
+原生输入静态审计：thumb起点约(534,108)，轨道y84～376，终点374应到scrollTop上限1500，阈值1000不在临界处；Electron42.11.3输入x/y是viewport坐标，生产使用clientY，无依据增加屏幕偏移。旧driver先测modal thumb，再在modal右侧之外释放旧背景拖动，随后立即连发新move/down/move/up；hover可能在其间隐藏track，既有点位就绪结论已失效。这是有源码支持的夹具时序假设，原始失败缺事件证据，尚非已证明产品根因。
+
+本次仅补验证责任：保留原背景capture取消/禁止滚动和modal `>1000`断言；旧拖动原生释放后，使用真实native move进入modal，确认trusted事件、当前:hover、computed可见/pointer-events、实际hit-test后重新取得thumb坐标，再一次native down→该pointerId的hasPointerCapture→一次move及scroll/gotcapture→一次up及释放ACK。不重发失败输入、不改scroll/focus、不用合成pointer/scroll制造通过、不扩大超时或改生产代码。每ACK最多90个animation frame，仍受原180秒整个Electron进程wall-clock watchdog约束；无任意sleep。按phase保存bounded trusted事件、target/currentTarget、client/screen坐标、buttons/id、capture、scroll范围、rect/style/focus，失败及watchdog保留最后checkpoint；full/feedback产物名分别带前缀，避免后者覆盖前者。这些证据必须在新的完整Windows运行中验证，当前不宣称已通过。
