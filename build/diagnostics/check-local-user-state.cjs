@@ -568,7 +568,13 @@ async function uninstallPlanning() {
     if(!contents.has(p))throw missing()
     return {isFile:()=>true,size:contents.get(p).length,mtimeMs:1,ctimeMs:1,dev:1,ino:stats.get(p)||99}
   },readFile:async p=>{readCounts.set(p,(readCounts.get(p)||0)+1);return contents.get(p)}}
-  const load=loader({'node:path':path.win32,[path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:io}})
+  const load=loader({
+    'node:path':path.win32,
+    [path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:io},
+    // The runtime below injects its controlled mutation session. Refuse the
+    // default OS launcher rather than importing Electron or spawning a worker.
+    [path.join(root,'src/main/install/fontMutationProcessRuntime.ts')]:{createFontMutationSession:async()=>{throw Error('uninstall planning must use the injected mutation session')}},
+  })
   const plan=load('src/main/install/fontUninstallPlanRuntime.ts').planFontUninstall
   const evidence=load('src/main/install/fontInstallEvidenceRuntime.ts'),compare=load('src/main/install/fontInstallCompare.ts').createInstallCompareRuntime({appName:'HFM'})
   const item={id:'source',path:a,fileName:'face.ttf',fileSize:8,modifiedAt:1,systemInstallMatches:[]}

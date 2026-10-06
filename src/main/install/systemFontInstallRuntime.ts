@@ -108,7 +108,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
     try {
       await deps.withFontProtection([item], async () => undefined);
       stage = 'source-identity';
-      const source = sourceDelete ? await readFontMutationIdentity(item.path) : await readInstallSourceIdentity(item, deps.readHistoricalFont);
+      const source: InstallSourceIdentity = sourceDelete ? await readFontMutationIdentity(item.path) : await readInstallSourceIdentity(item, deps.readHistoricalFont);
       stage = 'registry-snapshot';
       const registry = await readUninstallRegistry(session);
       stage = 'installed-fonts';

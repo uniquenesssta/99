@@ -10,7 +10,7 @@ import { createFontInstallEvidenceSession, independentInstallCopy, type InstallS
 export { readFontContentIdentity as readFontMutationIdentity } from '../fonts/fontContentIdentityRuntime'
 
 export async function planFontUninstall(item: FontItem, installed: SystemInstalledFont[], registry: SystemInstalledFont[], roots: string[], temporary: (record: SystemInstalledFont) => boolean, options: { source?: InstallSourceIdentity; appName?: string; report?: (evidence: Record<string, unknown>) => void; onTarget?: (identity: InstallSourceIdentity) => void } = {}): Promise<FontMutationPlan[]> {
-  const source = options.source || await readFontMutationIdentity(item.path)
+  const source: InstallSourceIdentity = options.source || await readFontMutationIdentity(item.path)
   const exact = installed.filter(record => record.path && [item.path, source.path].some(path => key(record.path!) === key(path)) && !temporary(record))
   const compare = createInstallCompareRuntime({ appName: options.appName || '字体管理器' })
   const candidates = exact.length ? { installed: true, by: 'user' as const, matches: exact } : compare.compareFontInstalledWithList(item, installed.filter(record => !temporary(record)))
