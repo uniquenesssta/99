@@ -8,6 +8,8 @@ SystemInstalledFont
 } from '../../../shared/types';
 
 export interface InstallStatusRefreshRuntimeDeps {
+  readHistoricalFont?: import('../fontInstallEvidenceRuntime').ReadHistoricalFont
+  readTemporaryActiveFonts?: () => Promise<{ records: import('../../windows/fontRuntime').TemporaryActiveFontRecord[] }>
   appWatchedFolders: () => Promise<string[]>
   loadSharedFontsForFolders: (folders: string[]) => Promise<FontItem[]>
   readInstallStatusIndex: (

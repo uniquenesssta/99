@@ -1,4 +1,4 @@
-import { rootIndexInstallIdExpr } from '../root-query/rootIndexQuerySharedSql'
+import { rootIndexInstallJoinExpr } from '../root-query/rootIndexQuerySharedSql'
 import { resolve } from "node:path";
 import type { FontIndexChangePayload } from "../../../shared/types";
 import type { MergedIndexSourceInfo } from "../mergedIndexRuntime";
@@ -48,7 +48,7 @@ export function createMergedIndexSourceRuntime(ctx: MergedIndexPageContext) {
         ? ", install_status.installed AS installed, install_status.by_type AS installed_by, install_status.matches_json AS matches_json"
         : ", NULL AS installed, NULL AS installed_by, NULL AS matches_json";
       const joinSql = hasInstallJoin
-        ? `LEFT JOIN install_db.install_status AS install_status ON install_status.font_id = ${rootIndexInstallIdExpr(source.root)}`
+        ? `LEFT JOIN install_db.install_status AS install_status ON ${rootIndexInstallJoinExpr(source.root)}`
         : "";
       const baseSql = `
         SELECT ? AS root_path, entries.relative_path, entries.cache_key, entries.file_size, entries.modified_at, entries.created_at,

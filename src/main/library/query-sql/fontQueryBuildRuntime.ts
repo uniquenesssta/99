@@ -3,6 +3,7 @@ import { fontListSelectColumns } from '../fontSqliteMapper';
 import { addActiveFilterClauses, addKeywordClause, addPageFilterClauses, addTimeRangeClause, timeRangeStartForSql } from './fontQueryClausesRuntime';
 import { fontQueryOrderBy } from './fontQueryOrderRuntime';
 import { normalizeQueryLimit, type FontQuerySqlParts } from './fontQuerySqlTypes';
+import { INSTALL_STATUS_EVIDENCE_PREFIX } from '../../install/status/installStatusSignatureRuntime';
 
 function createBaseFontQuerySqlParts(): FontQuerySqlParts {
   return {
@@ -10,7 +11,7 @@ function createBaseFontQuerySqlParts(): FontQuerySqlParts {
     params: [],
     joins: [
       "LEFT JOIN font_search ON font_search.font_id = fonts.id",
-      "LEFT JOIN install_status ON install_status.font_id = fonts.id",
+      `LEFT JOIN install_status ON install_status.font_id = fonts.id AND install_status.signature LIKE '${INSTALL_STATUS_EVIDENCE_PREFIX}%'`,
     ],
     usedLike: false,
   };
@@ -75,7 +76,7 @@ export function buildFontQueryPageSql(request: FontQueryRequest): {
   const orderBy = fontQueryOrderBy(request);
   return {
     sql: `
-      SELECT ${fontListSelectColumns("fonts")}
+      SELECT ${fontListSelectColumns("fonts")}, install_status.installed AS installed, install_status.by_type AS installed_by, install_status.matches_json AS matches_json
       FROM fonts
       LEFT JOIN font_details ON font_details.font_id = fonts.id
       ${parts.joins.join(" ")}

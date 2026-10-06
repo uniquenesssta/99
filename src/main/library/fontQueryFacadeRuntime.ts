@@ -253,25 +253,25 @@ export function createFontQueryFacadeRuntime(
         enqueueMissTasks: false,
       });
       if (!Object.keys(results).length)
-        return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false })));
+        return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] })));
       return overlay(items.map((item) => {
         const result = results[item.id];
         return result
           ? {
               ...item,
-              installStatusKnown: true,
-              systemInstalled: result.installed && result.by !== "managed",
-              systemInstallMatches: result.matches || [],
+              installStatusKnown: result.known !== false,
+              systemInstalled: result.known !== false && result.installed && result.by !== "managed",
+              systemInstallMatches: result.known === false ? [] : result.matches || [],
               active:
-                result.by === "managed" || result.by === "both",
+                result.known !== false && (result.by === "managed" || result.by === "both"),
             }
-          : { ...item, active: false, installStatusKnown: false };
+          : { ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] };
       }));
     } catch (error) {
       options.appendLog(
         `hydrateInstallStatusForFonts failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false })));
+      return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] })));
     }
   }
 

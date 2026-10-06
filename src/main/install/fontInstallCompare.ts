@@ -215,6 +215,7 @@ export function createInstallCompareRuntime(options: InstallCompareRuntimeOption
     const user = matches.some((installedFont) => !installedRecordMatchesManagedItem(item, installedFont) && !isSystemInstalledRecord(installedFont))
 
     return {
+      known: false,
       installed: managed || system || user,
       by: managed && system ? 'both' : managed ? 'managed' : system ? 'system' : user ? 'user' : 'none',
       matches
@@ -271,6 +272,7 @@ export function createInstallCompareRuntime(options: InstallCompareRuntimeOption
     const user = matches.some((installedFont) => !installedRecordMatchesManagedItem(item, installedFont) && !isSystemInstalledRecord(installedFont))
 
     return {
+      known: false,
       installed: managed || system || user,
       by: managed && system ? 'both' : managed ? 'managed' : system ? 'system' : user ? 'user' : 'none',
       matches
@@ -280,8 +282,10 @@ export function createInstallCompareRuntime(options: InstallCompareRuntimeOption
   function applyCompare(item: FontItem, result: InstallCompareResult): FontItem {
     return {
       ...item,
-      systemInstalled: result.installed,
-      systemInstallMatches: result.matches
+      installStatusKnown: result.known !== false,
+      active: result.known !== false && (result.by === 'managed' || result.by === 'both'),
+      systemInstalled: result.known !== false && result.installed && result.by !== 'managed',
+      systemInstallMatches: result.known === false ? [] : result.matches
     }
   }
 

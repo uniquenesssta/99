@@ -151,7 +151,7 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
         | { count?: number; installed_count?: number; max_checked_at?: string }
         | undefined;
       return [
-        "install-v2",
+        "install-content-v1",
         checkedAt || "",
         total || "",
         Number(row?.count || 0),

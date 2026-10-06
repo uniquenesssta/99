@@ -161,7 +161,7 @@ export function addActiveFilterClauses(
       break;
     case "installed":
       parts.clauses.push(
-        "(COALESCE(install_status.installed, fonts.system_installed) = 1 AND COALESCE(install_status.by_type, '') <> 'managed')",
+        "(COALESCE(install_status.installed, 0) = 1 AND COALESCE(install_status.by_type, '') <> 'managed')",
       );
       break;
     case "notInstalled":
@@ -210,7 +210,7 @@ export function addPageFilterClauses(
   const sidebarPage = request.sidebarPage || "library";
   if (request.installStatus === "installed")
     parts.clauses.push(
-      "(COALESCE(install_status.installed, fonts.system_installed) = 1 AND COALESCE(install_status.by_type, '') <> 'managed')",
+      "(COALESCE(install_status.installed, 0) = 1 AND COALESCE(install_status.by_type, '') <> 'managed')",
     );
   if (request.installStatus === "notInstalled")
     parts.clauses.push(

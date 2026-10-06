@@ -20,6 +20,8 @@ export function createInstallStatusWriteRuntime(
 ) {
   async function saveInstallStatusIndex(results: Record<string, InstallCompareResult>, itemsById: Map<string, FontItem>, options: { completeTasks?: boolean } = {}): Promise<void> {
     if (!Object.keys(results).length) return
+    const unconfirmed = Object.entries(results).filter(([, result]) => result.known === false)
+    if (unconfirmed.length) deps.appendStartupLog(`install status unconfirmed: ${JSON.stringify({ count: unconfirmed.length, examples: unconfirmed.slice(0, 8).map(([fontId, result]) => ({ fontId, path: itemsById.get(fontId)?.path, reason: result.reason })) })}`)
     const fallbackRows: Array<[string, InstallCompareResult, FontItem]> = []
     for (const [fontId, result] of Object.entries(results)) {
       const item = itemsById.get(fontId)
@@ -31,11 +33,11 @@ export function createInstallStatusWriteRuntime(
         const workerGroups: InstallStatusSaveWorkerGroup[] = []
         const toWorkerRows = (rows: Array<[string, InstallCompareResult, FontItem]>) => rows.map(([fontId, result, item]) => ({
           fontId,
-          signature: helpers.installStatusSignature(item),
-          installed: !!result.installed,
-          by: result.by,
-          matches: result.matches || [],
-          systemDefault: deps.isCleanWindowsDefaultCompareResult(item, result)
+          signature: (result.known === false ? 'unknown:' : '') + helpers.installStatusSignature(item),
+          installed: result.known !== false && !!result.installed,
+          by: result.known === false ? 'none' as const : result.by,
+          matches: result.known === false ? [] : result.matches || [],
+          systemDefault: result.known !== false && deps.isCleanWindowsDefaultCompareResult(item, result)
         }))
         if (fallbackRows.length) {
           workerGroups.push({
@@ -48,7 +50,7 @@ export function createInstallStatusWriteRuntime(
         const workerResult = await deps.saveInstallStatusIndexInWorker(workerGroups)
         deps.appendStartupLog(`machine install status db worker write: groups=${workerResult.groups}, rows=${workerResult.written}, elapsed=${workerResult.timings?.elapsed || 0}ms`)
         if (options.completeTasks !== false) {
-          for (const [fontId, result] of Object.entries(results)) await deps.completeBackgroundTask(helpers.installStatusTaskKey(fontId), result.installed ? '已安装' : '未安装').catch(() => undefined)
+          for (const [fontId, result] of Object.entries(results)) await deps.completeBackgroundTask(helpers.installStatusTaskKey(fontId), result.known === false ? '安装状态未知' : result.installed && result.by !== 'managed' ? '已安装' : '未安装').catch(() => undefined)
         }
         return
       } catch (error) {
@@ -84,7 +86,7 @@ export function createInstallStatusWriteRuntime(
         db.exec('BEGIN IMMEDIATE')
         try {
           for (const [fontId, result, item] of rows) {
-            insert.run(fontId, helpers.installStatusSignature(item), result.installed ? 1 : 0, result.by, JSON.stringify(result.matches || []), checkedAt, deps.isCleanWindowsDefaultCompareResult(item, result) ? 1 : 0)
+            insert.run(fontId, (result.known === false ? 'unknown:' : '') + helpers.installStatusSignature(item), result.known !== false && result.installed ? 1 : 0, result.known === false ? 'none' : result.by, JSON.stringify(result.known === false ? [] : result.matches || []), checkedAt, result.known !== false && deps.isCleanWindowsDefaultCompareResult(item, result) ? 1 : 0)
           }
           deps.setSqliteMeta(db, 'updatedAt', checkedAt)
           db.exec('COMMIT')
@@ -102,7 +104,7 @@ export function createInstallStatusWriteRuntime(
 
     await writeRows('local-fallback', fallbackRows, () => helpers.openFallbackInstallDb())
     if (options.completeTasks !== false) {
-      for (const [fontId, result] of Object.entries(results)) await deps.completeBackgroundTask(helpers.installStatusTaskKey(fontId), result.installed ? '已安装' : '未安装').catch(() => undefined)
+      for (const [fontId, result] of Object.entries(results)) await deps.completeBackgroundTask(helpers.installStatusTaskKey(fontId), result.known === false ? '安装状态未知' : result.installed && result.by !== 'managed' ? '已安装' : '未安装').catch(() => undefined)
     }
   }
 

@@ -55,6 +55,7 @@ pub fn read_install_status_index(config: &InstallStatusCommandConfig) -> Result<
                     results.insert(
                         item.id,
                         InstallStatusCompareResult {
+                            known: true,
                             installed: installed != 0,
                             by: normalize_by_type(&by_type),
                             matches,

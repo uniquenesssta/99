@@ -142,7 +142,9 @@ function fontFromMergedRow(row) {
     modifiedAt,
     createdAt,
     installStatusKnown: false,
-    active: !!source.active || installedBy === 'managed' || installedBy === 'both',
+    systemInstalled: false,
+    systemInstallMatches: [],
+    active: installedBy === 'managed' || installedBy === 'both',
     activeSince: source.activeSince
   })
   if (row.installed !== null && row.installed !== undefined) {

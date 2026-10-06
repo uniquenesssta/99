@@ -1,6 +1,9 @@
 import type { FontItem, SystemInstalledFont } from './fontTypes'
 
 export interface InstallCompareResult {
+  /** False means access/evidence is incomplete; it is not an uninstalled verdict. */
+  known?: boolean
+  reason?: string
   installed: boolean
   by: 'managed' | 'system' | 'both' | 'user' | 'none'
   matches: SystemInstalledFont[]
@@ -47,6 +50,7 @@ export interface InstallStatusRefreshResult {
 }
 
 export interface InstallResult {
+  installCompare?: InstallCompareResult
   uninstall?: { completedSteps: number; remainingPaths: string[]; stage: string }
   results?: Record<string, InstallResult>
   ok: boolean

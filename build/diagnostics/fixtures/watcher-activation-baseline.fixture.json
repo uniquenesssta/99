@@ -112,7 +112,7 @@
         "temporaryActiveRecordToInstalledRecord",
         "saveActivationInstallStatus"
       ],
-      "sha256": "7004e33130f1d1b2f0fe51a07c24e9cb0a708867cac1b1aaa3f40d522d7a35cd"
+      "sha256": "97aad61efb4a29a98caf559ea7c33a6b390442b4de699b8e8cb6c120bf0c741a"
     },
     "src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts": {
       "exports": [
@@ -157,7 +157,7 @@
         "applyFontActiveRuntimePatch",
         "applyFontActiveRuntimeUpdatesToLibrary"
       ],
-      "sha256": "bff7faac2a786f0f695f62e7d7fb41cdae03c7baee27c21841aeb5ca4492e530"
+      "sha256": "e1399e46779a1304ace46e27d3aa7f880b475d762ce65ad8fedd362858938f9d"
     },
     "src/main/library/fontQueryWorkerRouteRuntime.ts": {
       "exports": [

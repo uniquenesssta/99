@@ -4,12 +4,15 @@ import { fontFileNameToken } from '../fonts/fontFileIdentity'
 import fs from 'node:fs';
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime';
 import { basename,extname,join,resolve } from "node:path";
-import type { FontDeleteResult,FontItem,InstallResult,SystemInstalledFont } from "../../shared/types";
+import type { FontDeleteResult,FontItem,InstallCompareResult,InstallResult,SystemInstalledFont } from "../../shared/types";
 import { deleteFontFilesToTrashRuntime } from "./fontTrashDeleteRuntime";
 import { installOverwriteTarget } from "./systemFontInstallHelpersRuntime";
+import { readInstallSourceIdentity, type ReadHistoricalFont, type InstallSourceIdentity } from './fontInstallEvidenceRuntime';
 
 export interface SystemFontInstallRuntimeDeps {
-  persistUninstallResult: (item: FontItem) => Promise<void>;
+  readHistoricalFont?: ReadHistoricalFont;
+  appName?: string;
+  persistUninstallResult: (item: FontItem) => Promise<InstallCompareResult | void>;
   deactivateForFileDelete: (items: FontItem[]) => Promise<{ ok: boolean; message: string }>;
   createMutationSession?: () => Promise<FontMutationSession>;
   readUninstallRegistry?: () => Promise<SystemInstalledFont[]>;
@@ -96,6 +99,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
     let completedSteps = 0;
     let stage = 'protection-preflight';
     let remainingPaths: string[] = [];
+    let planEvidence: Record<string, unknown> = {};
     const failed = (message: string): InstallResult => {
       deps.appendStartupLog(`font uninstall failure: ${JSON.stringify({ id: item.id, path: item.path, sourceDelete, stage, completedSteps, message })}`);
       const detail = remainingPaths.length ? `${message} 安装文件尚未清理完成：${remainingPaths.join('；')}。请核对失败原因后重试卸载。` : message;
@@ -104,24 +108,29 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
     try {
       await deps.withFontProtection([item], async () => undefined);
       stage = 'source-identity';
-      const source = await readFontMutationIdentity(item.path);
+      const source = sourceDelete ? await readFontMutationIdentity(item.path) : await readInstallSourceIdentity(item, deps.readHistoricalFont);
       stage = 'registry-snapshot';
       const registry = await readUninstallRegistry(session);
       stage = 'installed-fonts';
       const installed = await deps.getSystemInstalledFonts();
       stage = 'uninstall-plan';
+      const plannedTargets = new Map<string, InstallSourceIdentity>();
       const candidates = sourceDelete ? [...registry, ...installed].filter(record => record.path && deps.normalizePathForCacheCompare(record.path) === deps.normalizePathForCacheCompare(source.path)) : [...registry, ...installed];
       const plans = sourceDelete && !candidates.length ? [] : await planFontUninstall(item, candidates, registry,
-        [deps.currentUserFontsDir(), deps.windowsFontsDir()], deps.isTemporaryActiveInstalledRecord);
+        [deps.currentUserFontsDir(), deps.windowsFontsDir()], deps.isTemporaryActiveInstalledRecord, {
+          source, appName: deps.appName,
+          onTarget: target => plannedTargets.set(deps.normalizePathForCacheCompare(target.path), target),
+          report: evidence => { planEvidence = evidence; deps.appendStartupLog(`font uninstall evidence: ${JSON.stringify({ id: item.id, ...evidence })}`); },
+        });
       remainingPaths = plans.filter(plan => plan.delete_file).map(plan => plan.path);
-      if (!plans.length && !sourceDelete) return failed('未找到可以唯一关联的安装记录；没有按名称猜测删除。');
+      if (!plans.length && !sourceDelete) return failed(planEvidence.candidateCount === 0 ? '当前系统记录没有关联安装候选，旧卡片状态不能授予卸载目标。' : planEvidence.confirmedCount === 0 ? '名称候选的文件内容均不一致，未关联或删除安装文件。' : '已确认字体内容，但没有可解除的登记或独立安装副本；源文件保留。');
       const targets = [item, { ...item, path: source.path }, ...plans.map(plan => ({ ...item, path: plan.path }))];
       stage = 'target-protection';
       return await deps.withFontProtection(targets, async checkProtection => {
         const check = async () => {
           await checkProtection();
-          const current = await readFontMutationIdentity(item.path);
-          if (current.path !== source.path || current.sha256 !== source.sha256) throw new Error('源字体身份已变化，后续操作停止。');
+          const current = await readInstallSourceIdentity(item, sourceDelete ? undefined : deps.readHistoricalFont);
+          if (current.path !== source.path || current.sha256 !== source.sha256 || current.stamp !== source.stamp || !!current.historical !== !!source.historical) throw new Error('源字体身份已变化，后续操作停止。');
         };
         if (sourceDelete) {
           stage = 'source-deactivation';
@@ -138,6 +147,9 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
           stage = plan.delete_file ? 'file-delete' : 'registry-delete';
           const result = await native!.execute(sourceDelete ? { ...plan, preflight_file: false, allow_readonly_copy: false } : plan, async references => {
             await check();
+            const expected = plannedTargets.get(deps.normalizePathForCacheCompare(plan.path));
+            const currentTarget = await readFontMutationIdentity(plan.path);
+            if (!expected || currentTarget.path !== expected.path || currentTarget.sha256 !== expected.sha256 || Number(currentTarget.dev) !== expected.dev || Number(currentTarget.ino) !== expected.ino) throw new Error('安装目标身份已变化，文件和后续登记操作保留，需重新核对。');
             if (plan.delete_file) {
               // Before the first native request no gate snapshot exists yet.
               // The native file gate always provides the original user's fresh snapshot.
@@ -150,10 +162,10 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
         }
         deps.clearInstalledFontsMemoryCache();
         stage = 'persist-result';
-        if (!sourceDelete || plans.length) await deps.persistUninstallResult(item);
+        const installCompare = !sourceDelete || plans.length ? await deps.persistUninstallResult(item) : undefined;
         let refreshWarning = '';
         try { await deps.advancedFontRefresh('uninstall-font'); } catch (error) { refreshWarning = ` 字体通知失败：${String(error)}`; }
-        return { ok: true, message: '关联安装记录与安装副本已清理，独立源文件保留。' + refreshWarning };
+        return { ok: true, installCompare: installCompare || undefined, message: '计划内关联登记与独立安装副本已处理；所选源文件及其属性保留。' + refreshWarning };
       });
     } catch (error) {
       return failed(`${completedSteps ? `已完成 ${completedSteps} 个步骤，后续已停止：` : ''}${error instanceof Error ? error.message : String(error)}`);

@@ -53,9 +53,9 @@ export function createActivationInstallStatusSaveQueue(
     return items.map(item => {
       const result = pendingResults[item.id] || inFlightResults[item.id]
       if (!result) return item
-      return { ...item, active: result.by === 'managed' || result.by === 'both',
-        installStatusKnown: true, systemInstalled: result.installed && result.by !== 'managed',
-        systemInstallMatches: result.matches || [] }
+      return { ...item, active: result.known !== false && (result.by === 'managed' || result.by === 'both'),
+        installStatusKnown: result.known !== false, systemInstalled: result.known !== false && result.installed && result.by !== 'managed',
+        systemInstallMatches: result.known === false ? [] : result.matches || [] }
     })
   }
 
@@ -135,7 +135,7 @@ export function createActivationInstallStatusSaveQueue(
         const missingIds = new Set(persisted.misses.map((item) => item.id))
         for (const [id, result] of Object.entries(results)) {
           const previous = persisted.results[id]
-          if (!projectionPending.has(id) && previous && !missingIds.has(id) && previous.installed === result.installed && previous.by === result.by
+          if (!projectionPending.has(id) && previous && !missingIds.has(id) && (previous.known !== false) === (result.known !== false) && previous.installed === result.installed && previous.by === result.by
             && isDeepStrictEqual(previous.matches || [], result.matches || [])) unchangedIds.push(id)
         }
       } catch (error) {
@@ -180,8 +180,8 @@ export function createActivationInstallStatusSaveQueue(
       try {
         const settledItems = affectedItems.map(item => {
           const result = results[item.id]
-          return { ...item, installStatusKnown: true, active: result.by === 'managed' || result.by === 'both',
-            systemInstalled: result.installed && result.by !== 'managed', systemInstallMatches: result.matches || [] }
+          return { ...item, installStatusKnown: result.known !== false, active: result.known !== false && (result.by === 'managed' || result.by === 'both'),
+            systemInstalled: result.known !== false && result.installed && result.by !== 'managed', systemInstallMatches: result.known === false ? [] : result.matches || [] }
         })
         await deps.syncMergedIndexAfterInstallStatusRefresh([], settledItems)
         for (const item of settledItems) projectionPending.delete(item.id)

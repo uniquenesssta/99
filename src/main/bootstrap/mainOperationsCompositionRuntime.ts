@@ -21,6 +21,7 @@ import { FONT_EXTENSIONS } from '../bootstrap/mainIndexConstants';
 import { TASKS_SQLITE_SCHEMA_VERSION } from '../cache/constants';
 import { setSqliteMeta } from '../db/sqliteHelpers';
 import { createInstallStatusRefreshRuntime } from '../install/installStatusRefreshRuntime';
+import { openTagFontSnapshots } from '../library/tagFontSnapshotRuntime';
 import { createInstallStatusRefreshStarterRuntime } from '../install/installStatusRefreshStarterRuntime';
 import type { createSharedKnownTagsRuntime } from '../library/sharedKnownTagsRuntime';
 import { normalizePathForCacheCompare } from '../path/cachePath';
@@ -155,6 +156,7 @@ export interface MainOperationsCompositionOptions {
     nodeRequire: NodeRequire;
   };
   windows: Pick<Core['windows'],
+    | 'loadTemporaryActiveFonts'
     | 'sendToRendererWindows'
     | 'emitInstallStatusProgress'
     | 'windowsFontsDir'
@@ -322,6 +324,7 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
       findFontItemInRootIndexes(fontId, normalizedPath),
     getSystemInstalledFontsCached: (force?: boolean) =>
       getSystemInstalledFontsCached(force),
+    readTemporaryActiveFonts: options.windows.loadTemporaryActiveFonts,
     compareFontInstalledWithList,
     saveInstallStatusIndex: (
       results: Record<string, InstallCompareResult>,
@@ -528,6 +531,8 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
   });
 
   const installStatusRefreshRuntime = createInstallStatusRefreshRuntime({
+    readTemporaryActiveFonts: options.windows.loadTemporaryActiveFonts,
+    readHistoricalFont: async path => openTagFontSnapshots(await openLibraryDb()).read(path),
     appWatchedFolders,
     loadSharedFontsForFolders,
     readInstallStatusIndex,

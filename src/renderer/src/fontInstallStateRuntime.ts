@@ -9,9 +9,10 @@ export type FontActiveRuntimeUpdate = {
 export function applyInstallCompareToFont(font: FontItem, result: InstallCompareResult): FontItem {
   return {
     ...font,
-    installStatusKnown: true,
-    systemInstalled: result.installed,
-    systemInstallMatches: result.matches || []
+    installStatusKnown: result.known !== false,
+    active: result.known !== false && (result.by === 'managed' || result.by === 'both'),
+    systemInstalled: result.known !== false && result.installed && result.by !== 'managed',
+    systemInstallMatches: result.known === false ? [] : result.matches || []
   }
 }
 

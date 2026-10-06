@@ -1,5 +1,6 @@
 import type { FontItem,InstallCompareOptions,InstallCompareResult } from '../../../shared/types'
 import type { InstallStatusRefreshRuntimeDeps } from './installStatusRefreshTypes'
+import { createFontInstallEvidenceSession } from '../fontInstallEvidenceRuntime'
 
 export function createInstallStatusCompareRuntime(deps: InstallStatusRefreshRuntimeDeps) {
   async function compareFontInstalled(
@@ -7,10 +8,12 @@ export function createInstallStatusCompareRuntime(deps: InstallStatusRefreshRunt
   ): Promise<InstallCompareResult> {
     const installed = await deps.getSystemInstalledFontsCached(true)
     const rustCompare = await deps.runRustInstallStatusCompare?.({ appName: deps.appName || '字体管理器', items: [item], installed })
-    const result = rustCompare?.results?.[item.id] || deps.compareFontInstalledWithLookupIndex(
+    const candidates = rustCompare?.results?.[item.id] || deps.compareFontInstalledWithLookupIndex(
       item,
       deps.buildInstalledFontLookupIndex(installed)
     )
+    const temporary = await deps.readTemporaryActiveFonts?.()
+    const result = await createFontInstallEvidenceSession({ readHistorical: deps.readHistoricalFont, installed, temporaryRecords: temporary?.records }).confirm(item, candidates)
     await deps.saveInstallStatusIndex(
       { [item.id]: result },
       new Map([[item.id, item]])
@@ -43,6 +46,9 @@ export function createInstallStatusCompareRuntime(deps: InstallStatusRefreshRunt
           if (index > 0 && index % 100 === 0) await deps.delayToEventLoop()
         }
       }
+      const temporary = await deps.readTemporaryActiveFonts?.()
+      const evidence = createFontInstallEvidenceSession({ readHistorical: deps.readHistoricalFont, installed, temporaryRecords: temporary?.records })
+      for (const item of uniqueItems) freshResults[item.id] = await evidence.confirm(item, freshResults[item.id])
       await deps.saveInstallStatusIndex(
         freshResults,
         new Map(uniqueItems.map((item) => [item.id, item]))

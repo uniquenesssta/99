@@ -1,4 +1,5 @@
 import { validatePreviewInput } from '../preview/runtime/previewInputPolicy'
+import { createFontInstallEvidenceSession } from '../install/fontInstallEvidenceRuntime'
 import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 import type {
 FontItem,
@@ -12,6 +13,7 @@ type BackgroundTaskRecord,
 } from "./backgroundTasks";
 
 export interface BackgroundTaskRunnersRuntimeOptions {
+  readTemporaryActiveFonts?: () => Promise<{ records: import('../windows/fontRuntime').TemporaryActiveFontRecord[] }>;
   normalizePathForCacheCompare: (filePath: string) => string;
   findFontItemInRootIndexes: (
     fontId: string,
@@ -102,7 +104,8 @@ export function createBackgroundTaskRunnersRuntime(
       0.7,
       "正在比较字体安装状态。",
     );
-    const result = options.compareFontInstalledWithList(item, installed);
+    const temporary = await options.readTemporaryActiveFonts?.();
+    const result = await createFontInstallEvidenceSession({ installed, temporaryRecords: temporary?.records }).confirm(item, options.compareFontInstalledWithList(item, installed));
     await options.saveInstallStatusIndex(
       { [item.id]: result },
       new Map([[item.id, item]]),

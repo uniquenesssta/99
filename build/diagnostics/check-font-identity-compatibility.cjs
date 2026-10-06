@@ -20,7 +20,8 @@ for(const vector of require('./fixtures/font-file-identity.json'))assert.equal(n
 function database(){const db=new DatabaseSync(':memory:');db.transaction=fn=>()=>{db.exec('BEGIN');try{const r=fn();db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}};return db}
 const db=database()
 db.exec('CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT); CREATE TABLE install_status(font_id TEXT PRIMARY KEY,signature TEXT,installed INTEGER,by_type TEXT,matches_json TEXT,checked_at TEXT,system_default INTEGER)')
-const sig=load('src/main/install/status/installStatusSignatureRuntime.ts').createInstallStatusSignatureRuntime({sha1:hash,normalizePathForCacheCompare:p=>p.toLowerCase()}).installStatusSignature
+const confirmedSig=load('src/main/install/status/installStatusSignatureRuntime.ts').createInstallStatusSignatureRuntime({sha1:hash,normalizePathForCacheCompare:p=>p.toLowerCase()}).installStatusSignature
+const sig=font=>confirmedSig(font).slice('content-v1:'.length) // Legacy identity migration preserves unconfirmed status.
 const oldFont={...fonts[0],id:legacy.id}
 const names=load('src/main/install/fontInstallCompare.ts').createInstallCompareRuntime({appName:'HFM'})
 for(const font of fonts) {
@@ -32,6 +33,7 @@ db.prepare('INSERT INTO install_status VALUES (?,?,1,?, ?,?,0)').run(legacy.id,s
 const original=plain(db.prepare('SELECT * FROM install_status').get())
 const migration=load('src/main/install/status/installStatusIdentityMigration.ts'),migrate=migration.migrateInstallStatusIdentity
 assert.equal(migrate(db,rows),1)
+assert.notEqual(sig(fonts[0]),confirmedSig(fonts[0]),'legacy name-only row gained content confirmation')
 assert.equal(db.prepare('SELECT signature FROM install_status WHERE font_id=?').get(fonts[0].id).signature,sig(fonts[0]))
 assert.equal(db.prepare('SELECT 1 FROM install_status WHERE font_id=?').get(fonts[1].id),undefined,'legacy install signature leaked across roots')
 assert.deepEqual(JSON.parse(db.prepare('SELECT payload_json FROM install_identity_migrations').get().payload_json),original)

@@ -1,5 +1,5 @@
 import { confirmUserAction } from '../../../confirmationDialogRuntime'
-import type { FontItem } from '@shared/types'
+import type { FontItem, InstallResult } from '@shared/types'
 import { fontDisplayName,isInstalled,libraryWithMergedFonts } from '../../../appRuntime'
 import { uniqueFontsById } from '../../../fontFolderMutationRuntime'
 import { setUninstallIssue } from '../../../fontUserIntentRuntime'
@@ -35,7 +35,7 @@ export function createFontInstallActionRuntime(
     for (const font of targets) options.activeOperationFontIds.current.add(font.id)
     let succeeded = 0, failed = 0, firstFailure = '', dispatched = false
     try {
-      if (uninstall && !await confirmUserAction(`将卸载“${label}”中的 ${targets.length} 个已安装字体（所选 ${unique.length} 个）。${skipped}。会清理关联安装文件；若所选源路径就是安装路径，该文件也会被删除。独立源副本保留，不取消临时激活；需要时将弹出一次 Windows 授权确认。确定继续？`)) {
+      if (uninstall && !await confirmUserAction(`将卸载“${label}”中的 ${targets.length} 个已安装字体（所选 ${unique.length} 个）。${skipped}。会解除已核实的关联登记，并清理可确认的独立安装副本；所选源文件及其属性保留，不取消临时激活。需要时将弹出一次 Windows 授权确认。确定继续？`)) {
         options.setStatus(`已取消卸载，未执行 ${targets.length} 个；${skipped}。`)
         return
       }
@@ -45,13 +45,13 @@ export function createFontInstallActionRuntime(
       for (const font of targets) {
         options.setStatus(`正在${verb}：${succeeded + failed + 1} / ${targets.length} · ${fontDisplayName(font)}`)
         try {
-          const result = uninstall ? batch?.results?.[font.id] || { ok: false, message: batch?.message || '未收到逐项卸载回执。' } : await options.hfm.installSystem(font)
+          const result: InstallResult = uninstall ? batch?.results?.[font.id] || { ok: false, message: batch?.message || '未收到逐项卸载回执。' } : await options.hfm.installSystem(font)
           if (!result.ok) {
             failed++; firstFailure ||= result.message
             if (uninstall) stateRuntime.updateFont(font.id, current => setUninstallIssue(current, result.message || '卸载未完成，请重试。'))
             continue
           }
-          if (uninstall) stateRuntime.updateFont(font.id, current => setUninstallIssue({ ...current, systemInstalled: false, systemInstallMatches: [] }))
+          if (uninstall) stateRuntime.updateFont(font.id, current => setUninstallIssue(result.installCompare ? applyInstallCompareToFont(current, result.installCompare) : { ...current, systemInstalled: false, systemInstallMatches: [] }))
           else {
             const compare = await options.hfm.compareFontInstalled(font)
             stateRuntime.updateFont(font.id, current => setUninstallIssue(applyInstallCompareToFont(current, compare)))

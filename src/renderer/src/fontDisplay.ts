@@ -22,11 +22,11 @@ export function fontPostScriptDisplayName(font: FontItem): string {
 }
 
 export function isInstalled(font: FontItem): boolean {
-  return !!font.systemInstalled
+  return font.installStatusKnown !== false && !!font.systemInstalled
 }
 
 export function isInstallStatusKnown(font: FontItem): boolean {
-  return font.installStatusKnown === true || !!font.systemInstalled || !!font.systemInstallMatches?.length
+  return font.installStatusKnown !== false && (font.installStatusKnown === true || !!font.systemInstalled || !!font.systemInstallMatches?.length)
 }
 
 export function isSystemBuiltinFont(font: FontItem): boolean {
@@ -49,8 +49,9 @@ export function installLabel(font: FontItem): string {
   if (font.fileAvailability === 'missing') return '文件丢失'
   if (font.fileAvailability === 'unavailable') return '文件暂不可访问'
   if (getUninstallIssue(font)) return '卸载未完成'
-  if (font.systemInstalled && font.active) return '系统已安装 · 已激活'
-  if (font.systemInstalled) return '系统已安装'
+  if (isInstalled(font) && font.active) return '系统已安装 · 已激活'
+  if (isInstalled(font)) return '系统已安装'
   if (font.active) return '已激活'
+  if (font.installStatusKnown === false) return '安装状态未知'
   return '未安装'
 }

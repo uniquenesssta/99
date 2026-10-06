@@ -15,6 +15,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((a,b) 
 let cases = 0
 function check(fn) { fn(); cases++ }
 const normalize = value => value.toLowerCase().replace(/\\/g, '/')
+const evidenceIo={[path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:{realpath:async p=>p,stat:async()=>({isFile:()=>true,size:8,mtimeMs:1,ctimeMs:1,dev:1,ino:1}),readFile:async()=>Buffer.from('0001000000000000','hex')}}}
 const installed = name => ({source:'HKLM',registryName:name,path:`C:/Windows/Fonts/${name}.ttf`,value:name,fileName:name+'.ttf'})
 function cacheHarness(transform=x=>x) {
   const reads=[],logs=[],ioFailures=[]
@@ -81,7 +82,7 @@ async function obsoleteFailure() {
   check(()=>assert(values.every(items=>items[0].registryName==='current')))
 }
 function batchHarness({count=3,registryFail=false,resourceFail=false,queueFail=false,readFail=false,missing=false,orphan=false,permanent=false,transforms={}}={}) {
-  const load=loader({}, {}, transforms),logs=[],order=[],registry=[],queued=[],saved=[],statuses=[]
+  const load=loader(evidenceIo, {}, transforms),logs=[],order=[],registry=[],queued=[],saved=[],statuses=[]
   const fonts=Array.from({length:count},(_,i)=>({...font('f'+i),active:true,managedInstallPath:`C:/Managed/f${i}.ttf`}))
   const records=fonts.map(item=>({fontId:item.id,sourcePath:item.path,installPath:item.managedInstallPath,registryName:'HFM_'+item.id,fileName:item.fileName,activatedAt:'2026-09-18'}))
   let enumerations=0,resources=0,comparisons=0
@@ -139,7 +140,7 @@ async function temporaryIndex() {
   h.deps.getSystemInstalledFontsCached=async()=>records
   h.deps.isTemporaryActiveInstalledRecord=x=>x.registryName.startsWith('HFM_')
   h.deps.compareFontInstalledWithList=()=>({installed:true,by:'system',matches:[records[0]]})
-  const actual=await loader()(statusFile).createFontActivationInstallStatusRuntime(h.deps).reconcileDeactivatedInstallStatus(h.fonts,['c:/removed.ttf'])
+  const actual=await loader(evidenceIo)(statusFile).createFontActivationInstallStatusRuntime(h.deps).reconcileDeactivatedInstallStatus(h.fonts,['c:/removed.ttf'])
   check(()=>{assert.deepEqual(plain(actual[a.id].matches),[records[0],records[1],records[2]]);assert.equal(actual[a.id].by,'both')})
   check(()=>{assert.deepEqual(plain(actual[b.id].matches),[records[0],records[3]]);assert.equal(actual[b.id].by,'both');assert.equal(actual.f2.by,'system')})
 }

@@ -6,6 +6,7 @@ InstallStatusProgressPayload,
 InstallStatusRefreshResult
 } from '../../../shared/types'
 import type { InstallStatusRefreshRuntimeDeps } from './installStatusRefreshTypes'
+import { createFontInstallEvidenceSession } from '../fontInstallEvidenceRuntime'
 
 export function createInstallStatusRefreshRunner(
   deps: InstallStatusRefreshRuntimeDeps,
@@ -87,7 +88,7 @@ export function createInstallStatusRefreshRunner(
       existingResults = snapshot.results || {}
       const missingIds = new Set(snapshot.misses.map((item) => item.id))
       targetItems = items.filter((item) => missingIds.has(item.id))
-      existingInstalledCount = Object.values(existingResults).filter((result) => result.installed).length
+      existingInstalledCount = Object.values(existingResults).filter((result) => result.known !== false && result.installed && result.by !== 'managed').length
       missingCount = targetItems.length
 
       if (!targetItems.length) {
@@ -174,6 +175,8 @@ export function createInstallStatusRefreshRunner(
     let batchResults: Record<string, InstallCompareResult> = {}
     let batchItemsById = new Map<string, FontItem>()
     const affectedRoots = new Set<string>()
+    const temporary = await deps.readTemporaryActiveFonts?.()
+    const evidence = createFontInstallEvidenceSession({ readHistorical: deps.readHistoricalFont, installed, temporaryRecords: temporary?.records })
 
     const flushBatch = async (processed: number): Promise<void> => {
       const batchSize = Object.keys(batchResults).length
@@ -201,12 +204,13 @@ export function createInstallStatusRefreshRunner(
 
     for (let index = 0; index < targetItems.length; index += 1) {
       const item = targetItems[index]
-      const result = rustCompareResults?.[item.id] || deps.compareFontInstalledWithLookupIndex(item, installedLookup)
+      const candidates = rustCompareResults?.[item.id] || deps.compareFontInstalledWithLookupIndex(item, installedLookup)
+      const result = await evidence.confirm(item, candidates)
       refreshedResults[item.id] = result
       batchItemsById.set(item.id, item)
       batchResults[item.id] = result
       updatedCount += 1
-      if (result.installed) refreshedInstalledCount += 1
+      if (result.known !== false && result.installed && result.by !== 'managed') refreshedInstalledCount += 1
       if (result.by === 'managed' || result.by === 'both') managedCount += 1
       const root = await deps.rootForFontPath(item.path, folders).catch(() => null)
       if (root) affectedRoots.add(root)
@@ -244,19 +248,19 @@ export function createInstallStatusRefreshRunner(
     deps.clearFontQueryCaches()
 
     const finalResults = { ...existingResults, ...refreshedResults }
-    const matchedInstalledCount = Object.values(finalResults).filter((result) => result.installed).length
+    const matchedInstalledCount = Object.values(finalResults).filter((result) => result.known !== false && result.installed && result.by !== 'managed').length
     const elapsedMs = Date.now() - startedAt
     const summary: InstallStatusRefreshResult = {
       mode: forceFullRefresh ? 'full' : 'incremental',
       total: items.length,
       installedCount: matchedInstalledCount,
       installedTotalCount: installed.length,
-      notInstalledCount: Math.max(0, items.length - matchedInstalledCount),
+      notInstalledCount: Object.values(finalResults).filter(result => result.known !== false && (!result.installed || result.by === 'managed')).length,
       systemMatchedCount: matchedInstalledCount,
       systemDefaultCount: 0,
       managedCount,
       updatedCount,
-      missingCount: Math.max(0, missingCount - updatedCount),
+      missingCount: Object.values(finalResults).filter(result => result.known === false).length,
       elapsedMs
     }
 

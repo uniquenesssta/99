@@ -127,7 +127,7 @@ export function createRootIndexCoordinator(deps: RootIndexCoordinatorDeps) {
         active: installedBy === 'managed' || installedBy === 'both',
       }
     }
-    return { ...font, sourceId, installStatusKnown: false }
+    return { ...font, sourceId, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [], active: false }
   }
 
   async function findFontItemInRootIndexes(fontId: string, normalizedFontPath: string, includeDeleted = false): Promise<FontItem | null> {

@@ -171,6 +171,13 @@ async function run(){let cases=0
   assert(!JSON.stringify(refreshed).includes('文件占用'),'renderer notice leaked into persistence')
   u.select().setSelectedFontIds(['b']);u.handlers.set('fonts:uninstallSystem',()=>({ok:true,results:{b:{ok:true,message:'done'}}}))
   await u.command()('remove');await tick();assert.equal(intent.getUninstallIssue(u.library.fonts.b),undefined);assert.equal(display.installLabel(u.library.fonts.b),'未安装');cases++
+  for(const known of [true,false]) {
+    const s=setup(),h=s.base;h.select().setSelectedFontIds(['a']);h.library.fonts.a.systemInstalled=true
+    h.handlers.set('fonts:uninstallSystem',()=>({ok:true,results:{a:{ok:true,message:'registry only; source retained',installCompare:{known,installed:known,by:known?'system':'none',matches:[]}}}}))
+    await h.command()('remove');await tick()
+    assert.equal(h.library.fonts.a.installStatusKnown,known);assert.equal(h.library.fonts.a.systemInstalled,known,'uninstall ignored main-owned result and forced false')
+    assert.match(s.confirmations[0],/所选源文件及其属性保留/);cases++
+  }
   // Mutate the actual common dispatcher to use only the first item; the UI regression must fail.
   const file=path.join(root,renderer+'fontCommandRuntime.ts'),broken=setup({transforms:{[file]:s=>s.replace('options.installFontsBatch(fonts, label)','options.installFontsBatch(fonts.slice(0, 1), label)')}});broken.select().setSelectedFontIds(['a','b']);button(broken.base.detail(),'安装').props.onClick();await tick();assert.throws(()=>assert.equal(broken.calls.length,2),assert.AssertionError);cases++
   console.log(`[diagnostics:font-command-entry] ${cases} controlled cases: shared TSX context/detail, two preloads, complete targets, one confirmation, mixed state/busy/partial failure, local-only collection favorite, tag mouse/Enter/IME/delta isolation; first-item mutation rejected. Native Windows and browser focus/layout remain unverified.`)

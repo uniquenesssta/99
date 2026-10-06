@@ -14,6 +14,7 @@ import { createPhysicalFolderActions, pathInsideFolder } from '../folders/physic
 import { createCurrentUserManagedInstallRuntime } from '../install/currentUserManagedInstallRuntime';
 import { createManagedFontOwnershipRuntime } from '../install/managedFontOwnershipRuntime';
 import { createSystemFontInstallRuntime } from '../install/systemFontInstallRuntime';
+import { createFontInstallEvidenceSession } from '../install/fontInstallEvidenceRuntime';
 import { createSharedFontMetadataMutations } from '../library/sharedFontMetadataMutations';
 import { createSharedKnownTagsRuntime } from '../library/sharedKnownTagsRuntime';
 import { createSharedMetadataMergedIndexSyncRuntime } from '../library/sharedMetadataMergedIndexSyncRuntime';
@@ -324,15 +325,19 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
   });
 
   const systemFontInstallRuntime = createSystemFontInstallRuntime({
+    appName: APP_NAME,
+    readHistoricalFont: async path => openTagFontSnapshots(await openLibraryDb()).read(path),
     fontExtensions: FONT_EXTENSIONS,
     withFontProtection: protectionAuthority.guard,
     deactivateForFileDelete: deactivateFontSessionsBatch,
     persistUninstallResult: async item => {
       const state = await loadTemporaryActiveFonts();
-      const active = state.records.filter(record => normalizePathForCacheCompare(record.sourcePath || '') === normalizePathForCacheCompare(item.path));
-      const matches = active.map(record => ({ source: 'HKCU' as const, registryName: record.registryName, value: record.installPath, path: record.installPath, fileName: record.fileName }));
-      scheduleActivationInstallStatusSave({ [item.id]: { installed: active.length > 0, by: active.length ? 'managed' : 'none', matches } }, new Map([[item.id, item]]), 'uninstall-verified');
+      const current = await getSystemInstalledFontsCached(true);
+      const permanent = compareFontInstalledWithList(item, current);
+      const result = await createFontInstallEvidenceSession({ installed: current, temporaryRecords: state.records, readHistorical: async path => openTagFontSnapshots(await openLibraryDb()).read(path) }).confirm(item, permanent);
+      scheduleActivationInstallStatusSave({ [item.id]: result }, new Map([[item.id, item]]), 'uninstall-verified');
       await flushActivationInstallStatusSave('uninstall-verified');
+      return result;
     },
     ensureWindows,
     currentUserFontsDir,

@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import type { FontItem,InstallCompareResult,SystemInstalledFont } from "../../../shared/types";
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
 import type { FontActivationRuntimeDeps } from "./fontActivationTypes";
+import { createFontInstallEvidenceSession } from '../../install/fontInstallEvidenceRuntime';
 
 export function uniqueFontItems(items: FontItem[]): FontItem[] {
   return Array.from(
@@ -33,6 +34,7 @@ export function createFontActivationInstallStatusRuntime(
   ): InstallCompareResult | null {
     if (item.installStatusKnown !== true) return null;
     return {
+      known: false, // A renderer snapshot is a hint, never main-process authority.
       installed: !!item.systemInstalled,
       by: item.systemInstalled
         ? item.systemInstallMatches?.some(isTemporaryActiveInstalledRecord)
@@ -55,7 +57,7 @@ export function createFontActivationInstallStatusRuntime(
 
     for (const item of unique) {
       const snapshot = installCompareFromFontItemSnapshot(item);
-      if (snapshot) {
+      if (snapshot?.known === true) {
         results[item.id] = snapshot;
       } else {
         needsIndex.push(item);
@@ -92,7 +94,8 @@ export function createFontActivationInstallStatusRuntime(
 
     appendStartupLog(`activation install status cache miss: fontId=${item.id}`);
     const installed = await getSystemInstalledFontsCached(false);
-    const result = compareFontInstalledWithList(item, installed);
+    const temporary = await deps.loadTemporaryActiveFonts();
+    const result = await createFontInstallEvidenceSession({ installed, temporaryRecords: temporary.records }).confirm(item, compareFontInstalledWithList(item, installed));
     await saveInstallStatusIndex(
       { [item.id]: result },
       new Map([[item.id, item]]),
@@ -125,8 +128,10 @@ export function createFontActivationInstallStatusRuntime(
     );
     const installed = await getSystemInstalledFontsCached(false);
     const fresh: Record<string, InstallCompareResult> = {};
+    const temporary = await deps.loadTemporaryActiveFonts();
+    const evidence = createFontInstallEvidenceSession({ installed, temporaryRecords: temporary.records });
     for (const item of misses) {
-      const result = compareFontInstalledWithList(item, installed);
+      const result = await evidence.confirm(item, compareFontInstalledWithList(item, installed));
       results[item.id] = result;
       fresh[item.id] = result;
     }
@@ -150,7 +155,8 @@ export function createFontActivationInstallStatusRuntime(
     const removed = new Set(removedPaths.map(deps.normalizePathForCacheCompare));
     const installed = (await activationTraceStep("deactivate:system-enumerate", undefined, () => getSystemInstalledFontsCached(true))).filter(record =>
       !removed.has(deps.normalizePathForCacheCompare(record.path || record.value || '')));
-    const results = activationTraceSync("deactivate:status-compare", undefined, () => {
+    const results = await activationTraceStep("deactivate:status-compare", undefined, async () => {
+      const evidence = createFontInstallEvidenceSession({ temporary: isTemporaryActiveInstalledRecord });
       // Build once per snapshot; preserve original record order and OR-match semantics.
       const temporaryPaths = new Map<string, number[]>();
       const temporaryNames = new Map<string, number[]>();
@@ -168,7 +174,7 @@ export function createFontActivationInstallStatusRuntime(
       });
       const results: Record<string, InstallCompareResult> = {};
       for (const item of unique) {
-        const compared = compareFontInstalledWithList(item, installed);
+        const candidates = compareFontInstalledWithList(item, installed);
         // The permanent-install comparator intentionally excludes temporary
         // resources. Match those separately using this font's managed identity.
         const matchingIndexes = new Set<number>();
@@ -180,14 +186,8 @@ export function createFontActivationInstallStatusRuntime(
           ]) for (const index of indexes || []) matchingIndexes.add(index);
         }
         const temporaryMatches = [...matchingIndexes].sort((a, b) => a - b).map(index => installed[index]);
-        const matches = [...(compared.matches || []).filter(record => !isTemporaryActiveInstalledRecord(record)), ...temporaryMatches];
-        const temporary = temporaryMatches.length > 0;
-        const permanent = matches.some(record => !isTemporaryActiveInstalledRecord(record));
-        results[item.id] = {
-          ...compared, matches, installed: compared.installed || temporary,
-          by: temporary ? (permanent ? 'both' : 'managed')
-            : compared.by === 'managed' || compared.by === 'both' ? (matches.some(record => record.source === 'HKLM' || record.source === 'WindowsFontsFolder') ? 'system' : 'user') : compared.by,
-        };
+        const matches = [...(candidates.matches || []).filter(record => !isTemporaryActiveInstalledRecord(record)), ...temporaryMatches];
+        results[item.id] = await evidence.confirm(item, { ...candidates, matches });
       }
       return results;
     });
