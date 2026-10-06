@@ -1,4 +1,4 @@
-import { previewRecordForProbe, hasLegacyMissingPreviewFlag } from '@shared/previewFailure'
+import { previewFailureKind, previewRecordForProbe, hasLegacyMissingPreviewFlag } from '@shared/previewFailure'
 import type { FontItem } from '@shared/types'
 import {
 AUTO_PREVIEW_CACHE_FONT_SIZE,
@@ -16,6 +16,8 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
   let retryTimer: number | undefined
   let statusInFlight = false
   let pendingStart: FontItem[] | null = null
+  const inFlight = new Map<string, Promise<Awaited<ReturnType<typeof options.hfm.ensurePreviewCache>>>>()
+  const sourceKey = (font: FontItem): string => JSON.stringify([font.id, font.path, font.fileSize, font.modifiedAt, font.recoveryContentHash || ''])
   function resetAutoPreviewCacheQueue(): void {
     pendingStart = null
     options.autoPreviewCacheRunId.current += 1
@@ -24,13 +26,19 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
     options.autoPreviewCacheQueue.current = []
     options.queuedAutoPreviewCacheIds.current.clear()
   }
+  function cancelCurrentRun(runId: number): void {
+    if (disposed || runId !== options.autoPreviewCacheRunId.current) return
+    resetAutoPreviewCacheQueue()
+    options.setStatus('后台预览缓存已取消，未继续生成剩余项目。')
+  }
   function disposeAutoPreviewCacheQueue(): void { disposed = true; resetAutoPreviewCacheQueue() }
   function resumeAutoPreviewCacheQueue(): void { disposed = false }
   async function startAutoPreviewCache(fonts: FontItem[]): Promise<void> {
     if (disposed) return
     if (statusInFlight) { resetAutoPreviewCacheQueue(); pendingStart = fonts; return }
     resetAutoPreviewCacheQueue()
-    const candidates = fonts.filter((font) => font.fileAvailability !== 'missing' && font.fileAvailability !== 'unavailable' && !options.isBadFontRecord(previewRecordForProbe(font)))
+    const candidates = Array.from(new Map(fonts.map(font => [font.id, font])).values())
+      .filter((font) => font.fileAvailability !== 'missing' && font.fileAvailability !== 'unavailable' && !options.isBadFontRecord(previewRecordForProbe(font)))
     const runId = options.autoPreviewCacheRunId.current
     options.autoPreviewCacheStats.current = { total: candidates.length, done: 0, cached: 0, generated: 0, failed: 0 }
 
@@ -50,8 +58,9 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
         options.setStatus(`预览缓存核验已完成：${cachedCount} 个已有缓存，无需生成。`)
         return
       }
-    } catch {
+    } catch (error) {
       if (disposed || runId !== options.autoPreviewCacheRunId.current) return
+      if (previewFailureKind(error) === 'cancelled') { cancelCurrentRun(runId); return }
       missing = candidates
       options.autoPreviewCacheStats.current = { total: candidates.length, done: 0, cached: 0, generated: 0, failed: 0 }
     } finally {
@@ -88,20 +97,33 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
     }
 
     const maxConcurrentLoads = networkAwarePreviewLimit(options.autoPreviewCacheQueue.current, Math.min(5, MAX_CONCURRENT_PREVIEW_LOADS))
-    while (options.activeAutoPreviewCacheLoads.current < maxConcurrentLoads && options.autoPreviewCacheQueue.current.length) {
-      const font = options.autoPreviewCacheQueue.current.shift()
+    while (options.autoPreviewCacheQueue.current.length) {
+      const sharedIndex = options.autoPreviewCacheQueue.current.findIndex(font => inFlight.has(sourceKey(font)))
+      if (options.activeAutoPreviewCacheLoads.current >= maxConcurrentLoads && sharedIndex < 0) break
+      const [font] = options.autoPreviewCacheQueue.current.splice(sharedIndex >= 0 ? sharedIndex : 0, 1)
       if (!font) continue
       options.queuedAutoPreviewCacheIds.current.delete(font.id)
       if (options.isBadFontRecord(previewRecordForProbe(font))) continue
 
-      options.activeAutoPreviewCacheLoads.current += 1
-      void options.hfm.ensurePreviewCache(font, AUTO_PREVIEW_CACHE_TEXT, AUTO_PREVIEW_CACHE_FONT_SIZE, AUTO_PREVIEW_CACHE_WIDTH, AUTO_PREVIEW_CACHE_HEIGHT)
-        .then((result) => {
+      const key = sourceKey(font)
+      let work = inFlight.get(key)
+      if (!work) {
+        options.activeAutoPreviewCacheLoads.current += 1
+        const physical = options.hfm.ensurePreviewCache(font, AUTO_PREVIEW_CACHE_TEXT, AUTO_PREVIEW_CACHE_FONT_SIZE, AUTO_PREVIEW_CACHE_WIDTH, AUTO_PREVIEW_CACHE_HEIGHT)
+          .finally(() => {
+            options.activeAutoPreviewCacheLoads.current = Math.max(0, options.activeAutoPreviewCacheLoads.current - 1)
+            if (inFlight.get(key) === physical) inFlight.delete(key)
+          })
+        work = physical
+        inFlight.set(key, work)
+      }
+      void work.then((result) => {
           if (runId !== options.autoPreviewCacheRunId.current) return
+          if (!result.ok && previewFailureKind(result.message || '') === 'cancelled') { cancelCurrentRun(runId); return }
           const stats = options.autoPreviewCacheStats.current
           stats.done += 1
           if (result.ok) {
-            if (hasLegacyMissingPreviewFlag(font)) options.updateFont(font.id, current => hasLegacyMissingPreviewFlag(current)
+            if (hasLegacyMissingPreviewFlag(font)) options.updateFont(font.id, current => sourceKey(current) === key && hasLegacyMissingPreviewFlag(current)
               ? { ...current, previewDisabled: false, previewError: undefined } : current)
             if (result.cached) stats.cached += 1
             else stats.generated += 1
@@ -113,14 +135,14 @@ export function createFontAutoPreviewCacheQueueRuntime(options: FontPreviewQueue
             options.setStatus(`后台预览缓存：${stats.done}/${stats.total}，已有 ${stats.cached}，新生成 ${stats.generated}，失败 ${stats.failed}。`)
           }
         })
-        .catch(() => {
+        .catch((error) => {
           if (runId !== options.autoPreviewCacheRunId.current) return
+          if (previewFailureKind(error) === 'cancelled') { cancelCurrentRun(runId); return }
           const stats = options.autoPreviewCacheStats.current
           stats.done += 1
           stats.failed += 1
         })
         .finally(() => {
-          options.activeAutoPreviewCacheLoads.current = Math.max(0, options.activeAutoPreviewCacheLoads.current - 1)
           if (disposed) return
           if (runId !== options.autoPreviewCacheRunId.current) {
             processAutoPreviewCacheQueue(options.autoPreviewCacheRunId.current)

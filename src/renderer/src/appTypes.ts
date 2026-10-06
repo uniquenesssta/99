@@ -60,6 +60,7 @@ export interface FontCardProps {
   active: boolean
   selected?: boolean
   compact?: boolean
+  previewStateForFont?: (font: FontItem) => { key?: string; family?: string; image?: string; failed?: true; loading: boolean }
   previewFamily?: string
   previewImage?: string
   previewText?: string

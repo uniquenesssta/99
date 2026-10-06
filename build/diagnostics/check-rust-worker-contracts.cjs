@@ -149,6 +149,10 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
 type Assert<T extends true> = T
 ${publicNames.map((name, i) => `type Public${i} = Assert<Equal<C.${name}, L.${name}>>`).join('\n')}
 ${payloadNames.map((name, i) => `// @ts-expect-error Internal payload is not part of the public facade\ntype Private${i} = L.${name}`).join('\n')}
+const legacyWatcher: C.RustWatcherPreflightInput = { rootPath: 'C:/fonts', dbPath: 'index.sqlite', extensions: ['ttf'], changes: [] }
+const versionedWatcher: C.RustWatcherPreflightInput = { ...legacyWatcher, scriptDetectionVersion: 2 }
+// @ts-expect-error Watcher script version remains numeric.
+const invalidWatcherVersion: C.RustWatcherPreflightInput = { ...legacyWatcher, scriptDetectionVersion: '2' }
 // Legacy callers must remain valid without recovery-only fields.
 const legacyTagSet: C.RustLocalTagsSetInput = { dbPath: 'local.sqlite', updatedAt: 'now', rows: [{ itemId: 'font', aliases: ['font'], fontPath: 'C:/font.ttf', tagNames: ['Keep'] }] }
 const recoveryTagSet: C.RustLocalTagsSetInput = { ...legacyTagSet,
@@ -220,7 +224,7 @@ function main() {
   checkShapes(crlf)
   checkBoundaries(crlf)
   checkErasure(crlf)
-  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 44 compiler rejections, legacy/recovery tag inputs, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
+  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 45 compiler rejections, legacy/versioned watcher and recovery tag inputs, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
 }
 
 try { main() } catch (error) {

@@ -120,6 +120,9 @@
       "[databaseMetricsRefreshToken, setDatabaseMetricsRefreshToken]": "09fec8ddcb6ac113d94f6b35c80be1fce1667cbe09de5fb05380e3181c92bd93",
       "pendingRefreshScope": "dcd4a87150da75c1fc22f8b6ab5b4bebcb72f8c3ba1d5151005165dc05bd7485",
       "activeFilterKindRef": "004f7f8929d76b09d0d09a9447095d9e97e04dd25fd9dc185b044e8036b502b8"
+    },
+    "src/renderer/src/runtime/app/useFontOperationsController.ts": {
+      "cacheStatsRequestState": "0989e9946b2cfb1adfcee0f7ae9ecab550e6db6e286207be9aa8d707c95bd7da"
     }
   }
 }

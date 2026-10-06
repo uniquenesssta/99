@@ -125,7 +125,8 @@ fn execute(request: &Request) -> io::Result<Value> {
                     let kind = entry.file_type()?;
                     let full = entry.path();
                     // Cache writes must not generate another root refresh.
-                    if entry.file_name() == ".hfm" || entry.file_name() == ".hfm-cache" { continue; }
+                    let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                    if [".hfm", ".hfm-cache", ".hfm-preview-cache", ".hanfontmanager", ".hfm-locks"].contains(&name.as_str()) { continue; }
                     if kind.is_dir() && !kind.is_symlink() { pending.push(full); }
                     else if kind.is_file() {
                         let info = entry.metadata()?;
@@ -386,6 +387,10 @@ mod tests {
     fn snapshot_tracks_complete_tree_and_ignores_owned_cache() {
         let dir=Directory::new(); fs::create_dir(dir.0.join("nested")).unwrap(); fs::create_dir(dir.0.join(".hfm-cache")).unwrap();
         fs::write(dir.0.join("nested/font.ttf"),b"font").unwrap(); fs::write(dir.0.join(".hfm-cache/ignored"),b"cache").unwrap();
+        for name in [".HFM", ".HFM-preview-cache", ".hanfontmanager", ".hfm-locks"] {
+            fs::create_dir(dir.0.join(name)).unwrap();
+            fs::write(dir.0.join(name).join("ignored.ttf"), b"cache").unwrap();
+        }
         let snapshot=execute(&dir.request("treeSnapshot","",json!({}))).unwrap(); assert_eq!(snapshot.as_object().unwrap().len(),1);
         fs::remove_file(dir.0.join("nested/font.ttf")).unwrap();
         assert_eq!(execute(&dir.request("treeSnapshot","",json!({}))).unwrap(),json!({}));

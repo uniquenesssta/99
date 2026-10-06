@@ -196,7 +196,47 @@ function authorityCheck(transform=s=>s) {
     assert.equal(r.mergeIncrementalIndexedFont(undefined,incoming,'watcher').favorite,!active)
   }
 }
-async function main(){ authorityCheck();
+async function semanticDiffCheck() {
+  const baseLoad = require('./check-operation-chain.cjs').loader;
+  const helper = baseLoad({'../../path/sharedFileSystemRuntime':{sharedFileSystem:{}}})('src/main/watcher/manual-refresh/manualFolderIndexEntryRuntime.ts').createManualFolderIndexEntryRuntime({});
+  const entry = {path:'a.ttf',cacheKey:'a|10|1',status:'ok',cachedAt:'old',font:{id:'a',scripts:['latin'],scriptVersion:1}};
+  assert.equal(helper.fontIndexEntryChanged(entry,{...entry,cachedAt:'new'}),false,'bookkeeping timestamp became a semantic update');
+  assert.equal(helper.fontIndexEntryChanged(entry,{...entry,font:{scriptVersion:1,scripts:['latin'],id:'a'}}),false,'property order became a semantic update');
+  for(const changed of [{cacheKey:'a|11|2'},{status:'bad'},{contentHash:'new'},{font:{...entry.font,scriptVersion:2}}]) assert.equal(helper.fontIndexEntryChanged(entry,{...entry,...changed}),true);
+  const folder=path.resolve('/f12-fonts'), logs=[], writes=[];
+  const entries=Object.fromEntries(Array.from({length:394},(_,i)=>['f'+i+'.ttf',{...entry,path:'f'+i+'.ttf',font:{...entry.font,id:'f'+i,path:path.join(folder,'f'+i+'.ttf')}}]));
+  const cache={entries}; let changed='',invalid=false, visits=0;
+  const options={appendStartupLog:s=>logs.push(s),isIgnoredWatcherPath:()=>false,fontExtensions:new Set(['.ttf']),withGlobalIo:(_l,fn)=>fn(),
+    rootIndexDbPath:()=>'/db',rootCacheDir:()=>'/cache',resolveActiveRootIndexDbPath:async()=>'/db',exists:async()=>true,
+    ensureRootScanCacheStorage:async()=>({cachePath:'/db',cache,storage:'root'}),makeRootScanCacheContext:()=>({cache,directoryUpdates:[],directorySkipped:0}),
+    readRootDirectorySignatures:async()=>new Map([['',{modifiedAt:1,fileCount:394,dirCount:0}]]),saveRootDirectorySignatures:async()=>{},
+    cacheKeyForRootFile:(_root,file)=>path.basename(file),relativeDirectoryPathForRoot:(_root,file)=>file===folder?'':path.relative(folder,file),cacheKeyInsideDirectory:()=>true,
+    listFontFilesWithDirectoryCache:async context=>{assert.equal(context.requireFreshFileStats,true);return Object.keys(cache.entries).map(key=>({file:path.join(folder,key),stat:{size:10,mtimeMs:1},freshStat:true,error:''}))},
+    upsertFontIndexEntry:async(_root,file,working)=>{visits++;const key=path.basename(file);if(key===changed)working.entries[key]={...working.entries[key],cacheKey:'updated',status:invalid?'bad':'ok',font:invalid?undefined:{...working.entries[key].font,modifiedAt:2}};return working.entries[key].font||null},
+    fontIndexEntryChanged:helper.fontIndexEntryChanged,fontIndexDeleteRecord:(_root,key,e)=>({path:path.join(folder,key),relativePath:key,id:e?.font?.id}),removeFontIndexEntriesForPath:()=>[],
+    saveRootIndexSqliteChanges:async(_p,_root,_store,upserts,deletes)=>writes.push({upserts:upserts.length,deletes:deletes.length})};
+  const instance=load(indexFile,{'node:fs':{promises:{stat:async file=>({isDirectory:()=>file===folder,isFile:()=>file!==folder,mtimeMs:1,size:10}),readdir:async()=>[]}},'../cache/cachePaths':{fileCacheSignature:()=>'',isIgnoredInternalDirectoryName:()=>false,isRootIndexDbPath:()=>true}}).createWatchedFolderIndexRuntime(options);
+  const events=[{folder,fileName:'.',eventType:'change',origin:'shared-poll-initial',triggerEventType:'rename',receivedAt:1},{folder,fileName:'f0.ttf',eventType:'change',receivedAt:1},{folder,fileName:'f0.ttf',eventType:'rename',receivedAt:1}];
+  assert.equal(instance.normalizePendingFolderChanges([{...events[1],eventType:'rename'},events[1]])[0].eventType,'rename','later change erased stronger rename evidence');
+  assert.equal(await instance.watcherChangeBatchLooksUnchanged(folder,[events[0]]),false,'unchanged directory parent suppressed child enumeration');
+  let result=await instance.applyWatchedFolderChangesToIndex(events);
+  assert.equal(visits,394,'overlapping root/file events repeated work');assert.equal(result.upserts.length,0);assert.equal(writes.length,0);
+  let summary=JSON.parse(logs.at(-1).split('font index watcher diff: ')[1]);assert.equal(summary.unchanged,394);assert.equal(summary.examined,394);assert.equal(summary.expansion,'root-enumeration');assert.equal(summary.samples[0].origin,'shared-poll-initial');assert.equal(summary.samples[0].trigger,'rename');
+  changed='f0.ttf';visits=0;result=await instance.applyWatchedFolderChangesToIndex(events);assert.equal(result.upserts.length,1);assert.equal(visits,394);assert.equal(writes.at(-1).upserts,1);
+  changed='';result=await instance.applyWatchedFolderChangesToIndex(events,true);assert.equal(result.upserts.length,394,'recovery replay was lost');
+  changed='f1.ttf';invalid=true;result=await instance.applyWatchedFolderChangesToIndex([{...events[1],fileName:changed}]);assert.equal(result.deletes.length,1);assert.equal(cache.entries[changed].status,'bad','invalid entry evidence was deleted');assert.equal(writes.at(-1).deletes,0);
+  changed='';result=await instance.applyWatchedFolderChangesToIndex([{...events[1],fileName:'f1.ttf'}],true);assert.equal(result.deletes.length,1,'recovery lost persisted bad-row withdrawal');
+}
+async function freshDirectoryListingCheck() {
+  const folder=path.resolve('/fresh-fonts'), stale=path.join(folder,'old.ttf'), actual=path.join(folder,'new.ttf');let denied=false;
+  const stat=async file=>{if(file===folder)return{mtimeMs:1};if(denied)throw Object.assign(Error('denied'),{code:'EACCES'});assert.equal(file,actual,'cached stale filename was statted');return{size:5,mtimeMs:2,birthtimeMs:1,ctimeMs:1}};
+  const baseLoad=require('./check-operation-chain.cjs').loader;
+  const instance=baseLoad({[path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:{stat,readdir:async()=>[{name:'new.ttf',isDirectory:()=>false,isFile:()=>true}]}},'../../path/sharedDirectoryMetadataRuntime':{readSharedDirectoryMetadata:async()=>null}})('src/main/indexing/scan-orchestrator/rootDirectoryCacheRuntime.ts').createRootDirectoryCacheRuntime({fontExtensions:new Set(['.ttf']),appendStartupLog(){},cacheEntryRuntimePath:(_r,key)=>path.join(folder,key),withGlobalIo:(_l,fn)=>fn(),openRootIndexDb:async()=>({prepare:()=>({all:()=>[{relative_path:'',modified_at:1,file_count:1,dir_count:0}]})}),closeSqliteDb(){}});
+  const context=()=>({rootPath:folder,cachePath:'/test/index.sqlite',storage:'root',requireFreshFileStats:true,cache:{entries:{'old.ttf':{status:'ok',fileSize:5,modifiedAt:1}}},seenKeys:new Set(),directoryUpdates:[],directorySkipped:0});
+  const errors=[];let rows=await instance.listFontFilesWithDirectoryCache(context(),errors);assert.deepEqual(plain(rows.map(row=>row.file)),[actual]);assert.equal(rows[0].freshStat,true);assert.equal(errors.length,0);assert(!rows.some(row=>row.file===stale));
+  denied=true;const failures=[];rows=await instance.listFontFilesWithDirectoryCache(context(),failures);assert.equal(rows.length,0);assert.equal(failures.length,1,'fresh listing reused inaccessible cached stat without error');
+}
+async function main(){ await semanticDiffCheck(); await freshDirectoryListingCheck(); authorityCheck();
   assert.throws(()=>authorityCheck(s=>s.replace("source === 'watcher'", "source === 'never'")),assert.AssertionError); await manualIncompleteCheck();
   await assert.rejects(()=>manualIncompleteCheck(s=>s.replace('if (payload.errors?.length) break;','')),assert.AssertionError)
  await recoveryCheck(); await structuralRecoveryConvergenceCheck(); await multiRootIsolationCheck();

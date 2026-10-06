@@ -44,17 +44,24 @@ export type FontPreviewQueueRuntimeOptions = {
 
 export type FontPreviewStateRuntime = {
   resetPreviewRuntimeState: () => void
-  canRequestPreviewFont: (font: FontItem, allowQueued?: boolean) => boolean
+  canRequestPreviewFont: (font: FontItem, allowQueued?: boolean, ready?: FontPreviewReadyState) => boolean
 }
 
+export type FontPreviewReadyState = { key?: string; family?: string; image?: string; failed?: true; loading: boolean }
+
 export type FontPreviewLoadRuntime = {
+  previewStateForFont?: (font: FontItem) => FontPreviewReadyState
+  previewRequestKey?: (font: FontItem) => string
+  preparePreviewFont?: (font: FontItem) => string
+  removePreviewFontLoads?: (ids: ReadonlySet<string>) => void
   disposePreviewLoads?: () => void
-  resetPreviewLoads: () => void
+  resetPreviewLoads: (clearSettledImages?: boolean) => void
   ensurePreviewFont: (font: FontItem, skipCachedPreview?: boolean, acceptsResult?: () => boolean) => Promise<string>
   loadCachedNativeCardPreviews: (fonts: FontItem[], acceptsResult?: (font?: FontItem) => boolean) => Promise<Set<string>>
 }
 
 export type FontVisiblePreviewQueueRuntime = {
+  removePreviewFontDemand: (ids: ReadonlySet<string>) => void
   pausePreviewForScroll: () => void
   resumePreviewAfterScroll: () => void
   resetVisiblePreviewQueue: () => void

@@ -6,8 +6,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::json::escape_json;
 
 use super::path::{normalize_relative_path, normalized_extension, target_path};
-use super::signature::{compute_directory_signature, directory_signature_matches, file_cache_signature, metadata_modified_ms};
-use super::types::{DirectorySignature, WatcherPreflightConfig, WatcherPreflightInput, WatcherPreflightResult};
+use super::signature::{file_cache_signature, metadata_modified_ms};
+use super::types::{WatcherPreflightConfig, WatcherPreflightInput, WatcherPreflightResult};
 
 fn normalize_extensions(extensions: &[String]) -> HashSet<String> {
     extensions
@@ -17,33 +17,25 @@ fn normalize_extensions(extensions: &[String]) -> HashSet<String> {
         .collect()
 }
 
-fn read_directory_signature(conn: &Connection, relative_path: &str) -> rusqlite::Result<Option<DirectorySignature>> {
-    conn.query_row(
-        "SELECT modified_at, file_count, dir_count FROM directories WHERE relative_path = ?",
-        params![relative_path],
-        |row| {
-            Ok(DirectorySignature {
-                modified_at: row.get::<_, f64>(0)?,
-                file_count: row.get::<_, i64>(1)?,
-                dir_count: row.get::<_, i64>(2)?,
-            })
-        },
-    )
-    .optional()
-}
-
-fn file_entry_unchanged(conn: &Connection, relative_path: &str, cache_key: &str) -> rusqlite::Result<bool> {
-    let row: Option<(String, String)> = conn
+fn file_entry_unchanged(conn: &Connection, relative_path: &str, cache_key: &str, script_version: Option<u64>) -> rusqlite::Result<bool> {
+    let row: Option<(String, String, Option<String>)> = conn
         .query_row(
-            "SELECT cache_key, status FROM entries WHERE relative_path = ? AND COALESCE(is_deleted, 0) = 0",
+            "SELECT cache_key, status, font_json FROM entries WHERE relative_path = ? AND COALESCE(is_deleted, 0) = 0",
             params![relative_path],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    let Some((db_cache_key, status)) = row else {
+    let Some((db_cache_key, status, font_json)) = row else {
         return Ok(false);
     };
-    Ok(db_cache_key == cache_key && (status == "ok" || status == "bad"))
+    if db_cache_key != cache_key || (status != "ok" && status != "bad") { return Ok(false); }
+    if status == "ok" {
+        if let Some(version) = script_version {
+            let font = font_json.and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+            if !font.as_ref().is_some_and(|value| value["scriptVersion"].as_u64() == Some(version) && value["scripts"].as_array().is_some_and(|scripts| !scripts.is_empty())) { return Ok(false); }
+        }
+    }
+    Ok(true)
 }
 
 pub fn run_watcher_preflight(config: &WatcherPreflightConfig) -> Result<WatcherPreflightResult, String> {
@@ -106,7 +98,7 @@ pub fn run_watcher_preflight(config: &WatcherPreflightConfig) -> Result<WatcherP
                 });
             }
             let signature = file_cache_signature(&relative_path, metadata.len(), metadata_modified_ms(&metadata));
-            if !file_entry_unchanged(&conn, &relative_path, &signature).map_err(|error| error.to_string())? {
+            if !file_entry_unchanged(&conn, &relative_path, &signature, input.script_detection_version).map_err(|error| error.to_string())? {
                 return Ok(WatcherPreflightResult {
                     unchanged: false,
                     reason: "file-changed".to_string(),
@@ -119,28 +111,14 @@ pub fn run_watcher_preflight(config: &WatcherPreflightConfig) -> Result<WatcherP
         }
 
         if metadata.is_dir() {
-            let current = match compute_directory_signature(&path) {
-                Some(value) => value,
-                None => {
-                    return Ok(WatcherPreflightResult {
-                        unchanged: false,
-                        reason: "directory-signature".to_string(),
-                        checked_files,
-                        checked_dirs,
-                    });
-                }
-            };
-            let stored = read_directory_signature(&conn, &relative_path).map_err(|error| error.to_string())?;
-            if !stored.as_ref().map(|value| directory_signature_matches(value, &current)).unwrap_or(false) {
-                return Ok(WatcherPreflightResult {
-                    unchanged: false,
-                    reason: "directory-changed".to_string(),
-                    checked_files,
-                    checked_dirs,
-                });
-            }
+            // Parent mtime and counts cannot prove unchanged child content/names.
             checked_dirs += 1;
-            continue;
+            return Ok(WatcherPreflightResult {
+                unchanged: false,
+                reason: "directory-enumeration-required".to_string(),
+                checked_files,
+                checked_dirs,
+            });
         }
 
         return Ok(WatcherPreflightResult {
@@ -168,4 +146,34 @@ pub fn watcher_preflight_to_json(result: &WatcherPreflightResult, elapsed_ms: u1
         result.checked_dirs,
         elapsed_ms
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn directory_signals_require_enumeration_while_exact_file_signatures_can_skip() {
+        let root = std::env::temp_dir().join(format!("hfm-watcher-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(root.join("nested")).unwrap();
+        let file = root.join("nested/font.ttf"); fs::write(&file, b"font").unwrap();
+        let db = root.join("index.sqlite"); let conn = Connection::open(&db).unwrap();
+        conn.execute_batch("CREATE TABLE entries(relative_path TEXT,cache_key TEXT,status TEXT,is_deleted INTEGER,font_json TEXT)").unwrap();
+        let metadata = fs::metadata(&file).unwrap();
+        conn.execute("INSERT INTO entries VALUES(?1,?2,'ok',0,?3)", params!["nested/font.ttf", file_cache_signature("nested/font.ttf", metadata.len(), metadata_modified_ms(&metadata)), r#"{"scriptVersion":2,"scripts":["latin"]}"#]).unwrap();
+        drop(conn);
+        let input = root.join("input.json");
+        let run = |name: &str| {
+            fs::write(&input, serde_json::to_vec(&serde_json::json!({"rootPath":root.to_string_lossy(),"dbPath":db.to_string_lossy(),"extensions":["ttf"],"scriptDetectionVersion":2,"changes":[{"eventType":"change","fileName":name}]})).unwrap()).unwrap();
+            run_watcher_preflight(&WatcherPreflightConfig { input_path: input.to_string_lossy().into_owned() }).unwrap()
+        };
+        assert!(run("nested/font.ttf").unchanged);
+        let conn = Connection::open(&db).unwrap(); conn.execute("UPDATE entries SET font_json='{}'", []).unwrap(); drop(conn);
+        assert!(!run("nested/font.ttf").unchanged, "incomplete font metadata must be repaired");
+        let conn = Connection::open(&db).unwrap(); conn.execute("UPDATE entries SET font_json=?1", [r#"{"scriptVersion":2,"scripts":["latin"]}"#]).unwrap(); drop(conn);
+        let directory = run("nested"); assert!(!directory.unchanged); assert_eq!(directory.reason,"directory-enumeration-required"); assert_eq!(directory.checked_dirs,1);
+        fs::write(&file,b"changed font").unwrap(); assert!(!run("nested/font.ttf").unchanged); assert!(!run("nested").unchanged);
+        fs::remove_dir_all(root).unwrap();
+    }
 }

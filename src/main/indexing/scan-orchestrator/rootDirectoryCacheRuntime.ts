@@ -297,7 +297,7 @@ export function createRootDirectoryCacheRuntime(
 
       const previous = signatures.get(relativeDir);
       const directoryUnchanged = Boolean(
-        !shared && previous &&
+        !context.requireFreshFileStats && !shared && previous &&
         Math.round(previous.modifiedAt) === Math.round(stat.mtimeMs) &&
         previous.fileCount === fileCount &&
         previous.dirCount === dirCount,
@@ -350,7 +350,7 @@ export function createRootDirectoryCacheRuntime(
             );
             if (!fileStatResult.ok) {
               const cached = cachedListedFileForPath(context, full);
-              if (cached) {
+              if (cached && !context.requireFreshFileStats) {
                 files.push(cached);
                 listedBatch?.([cached]);
                 if (fileStatResult.timedOut) context.directorySkipped += 1;

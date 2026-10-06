@@ -4,7 +4,10 @@ import type { FontMetrics,FontScrollRestoreSnapshot,MenuTarget } from '../../../
 
 import type { RendererClosingLifecycleRuntime } from '../../app/rendererClosingLifecycleRuntime'
 
+export type CacheStatsRequestState = { active: Promise<void> | null; requested: number }
+
 export type FontLibraryIndexActionRuntimeOptions = {
+  cacheStatsRequestState?: MutableRefObject<CacheStatsRequestState>
   closingLifecycle: RendererClosingLifecycleRuntime
   hfm: typeof window.hfm
   library: LibraryState

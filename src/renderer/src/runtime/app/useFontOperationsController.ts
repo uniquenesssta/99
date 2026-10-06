@@ -18,6 +18,7 @@ import {
   isRendererUserActive,
   reportRendererUserActivity
 } from '../../rendererActivityRuntime'
+import type { CacheStatsRequestState } from '../library/actions/fontLibraryIndexActionTypes'
 import { createFontLibraryIndexActionRuntime } from '../library/fontLibraryIndexActionRuntime'
 import { createFontInstallStatusRuntime } from '../system/fontInstallStatusRuntime'
 import { createFontSystemActionRuntime } from '../system/fontSystemActionRuntime'
@@ -179,7 +180,9 @@ export function useFontOperationsController(options: {
   })
 
   const { nextIndexOperationRunId, isCurrentIndexOperation } = useIndexOperationRunRuntime(indexOperationRunIdRef)
+  const cacheStatsRequestState = useRef<CacheStatsRequestState>({ active: null, requested: 0 })
   const libraryIndexActionRuntime = createFontLibraryIndexActionRuntime({
+    cacheStatsRequestState,
     closingLifecycle: options.closingLifecycle,
     hfm: options.hfm,
     library: options.library.library,

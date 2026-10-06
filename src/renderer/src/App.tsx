@@ -250,6 +250,7 @@ export default function App(): JSX.Element {
 
   const {
     previewFamilies,
+    previewStateForFont,
     nativePreviewImages,
     nativeDetailImage,
     setNativeDetailImage,
@@ -535,7 +536,6 @@ export default function App(): JSX.Element {
     getCurrentLibrary,
     commitLibraryUpdate,
     saveLibraryImmediately,
-    requestPreviewFont,
     loadCacheStats,
     refreshDatabaseDerivedState,
     setStatus
@@ -704,6 +704,7 @@ export default function App(): JSX.Element {
     selectedFontIds,
     contextMenu,
     previewFamilies,
+    previewStateForFont,
     nativePreviewImages,
     failedPreviewFontIds,
     assignTagName,
@@ -785,6 +786,7 @@ export default function App(): JSX.Element {
     detailVisible,
     selectedFontId,
     previewFamilies,
+    previewStateForFont,
     library,
     setLibrary,
     setSelectedFontId,
@@ -880,6 +882,7 @@ export default function App(): JSX.Element {
     selectedFontId: selectedFont?.id,
     selectedFontIdSet,
     previewFamilies,
+    previewStateForFont,
     nativePreviewImages,
     previewText: library.previewText,
     listPreviewFontSize,

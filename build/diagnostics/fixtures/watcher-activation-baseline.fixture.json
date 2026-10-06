@@ -23,7 +23,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "0292fef2837bca7c9db9f19492db935cb93f7c8b93f263f05b54ce6ee95bbcd0"
+      "sha256": "ba8a4d8ce7bd45f413db74bf7dab3dc3395219ca16d1c9bd422332422c4c3540"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -66,7 +66,7 @@
         "runWatchedFolderRefreshJob",
         "refreshWatchedFolder"
       ],
-      "sha256": "ae42a1763572b3a9c19535102af9c469513088f0ca74922a2fabc2cc45ac534a"
+      "sha256": "b23e4b1a7f3e7afb3b9b76e882f3d3c4f392f9ea154bee40c68242c068b9dc58"
     },
     "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts": {
       "exports": [
@@ -222,6 +222,18 @@
       "parent": "3e94afb1e7bf24caae435ae53c1c851159f6ddaa",
       "file": "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts",
       "reason": "typed completion receipt preserves partial errors and cancellation; same-root coalescing/export surfaces unchanged; controlled result/failed-wait gates in check-tag-font-recovery.cjs"
+    },
+    {
+      "task": "S12-F12",
+      "parent": "2770afd519b1c2930c0a0a62eebb9e5364be779b",
+      "file": "src/main/watcher/folderWatcherRuntime.ts",
+      "reason": "Bounded watcher provenance and commit-before-notification; current recovery/lifecycle gates retained."
+    },
+    {
+      "task": "S12-F12",
+      "parent": "2770afd519b1c2930c0a0a62eebb9e5364be779b",
+      "file": "src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts",
+      "reason": "Bounded watcher provenance and commit-before-notification; current recovery/lifecycle gates retained."
     }
   ]
 }

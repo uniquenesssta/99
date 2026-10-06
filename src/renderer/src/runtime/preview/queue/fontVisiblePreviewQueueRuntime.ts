@@ -1,5 +1,5 @@
 import { getCardPreviewLayout } from '@shared/preview-layout/previewTextFitRuntime'
-import { previewRecordForProbe } from '@shared/previewFailure'
+import { previewFailureKind } from '@shared/previewFailure'
 import { previewTrace, previewEvent } from '../previewTraceRuntime'
 import type { FontItem } from '@shared/types'
 import type { PreviewQueueEntry } from '../../../appRuntime'
@@ -9,7 +9,6 @@ rendererMemoryPressure,
 requestIdleWindow
 } from '../../../appRuntime'
 import { VISIBLE_PREVIEW_CACHE_BATCH_LIMIT, VISIBLE_PREVIEW_CACHE_WAIT_MS } from './fontPreviewBatchPolicyRuntime'
-import { resolveFontPreviewRoute } from './fontPreviewRouteRuntime'
 import type { FontPreviewLoadRuntime,FontPreviewQueueRuntimeOptions,FontPreviewStateRuntime,FontVisiblePreviewQueueRuntime } from './fontPreviewQueueTypes'
 
 
@@ -18,14 +17,27 @@ export function createFontVisiblePreviewQueueRuntime(
   stateRuntime: Pick<FontPreviewStateRuntime, 'canRequestPreviewFont'>,
   loadRuntime: FontPreviewLoadRuntime
 ): FontVisiblePreviewQueueRuntime {
-  const demand = new Map<string, { font: FontItem; callers: Set<() => boolean> }>()
+  type Demand = { font: FontItem; key: string; callers: Set<() => boolean> }
+  const demand = new Map<string, Demand>()
   const alwaysCurrent = () => true
-  function hasDemand(id: string): boolean {
-    const callers = demand.get(id)?.callers
-    if (!callers) return false
-    for (const caller of callers) if (!caller()) callers.delete(caller)
-    if (!callers.size) demand.delete(id)
-    return !!callers.size
+  const requestKey = (font: FontItem): string => loadRuntime.previewRequestKey?.(font) || JSON.stringify([font.id, font.path, font.fileSize, font.modifiedAt, currentPreviewBatchToken()])
+  function hasDemand(id: string, expected?: Demand): boolean {
+    const entry = demand.get(id)
+    if (!entry || (expected && entry !== expected)) return false
+    for (const caller of entry.callers) if (!caller()) entry.callers.delete(caller)
+    if (!entry.callers.size || entry.key !== requestKey(entry.font)) {
+      demand.delete(id)
+      return false
+    }
+    return true
+  }
+  function canRequest(font: FontItem, allowQueued = false): boolean {
+    return stateRuntime.canRequestPreviewFont(font, allowQueued, loadRuntime.previewStateForFont?.(font))
+  }
+  function removePreviewFontDemand(ids: ReadonlySet<string>): void {
+    for (const id of ids) { demand.delete(id); options.queuedPreviewFontIds.current.delete(id) }
+    options.previewQueue.current = options.previewQueue.current.filter(entry => !ids.has(entry.font.id))
+    pruneCachedPreviewBatchCheckedIds()
   }
   let deferredPreviewRetryId: number | null = null
   let normalPreviewProcessScheduled = false
@@ -117,13 +129,9 @@ export function createFontVisiblePreviewQueueRuntime(
 
   function canBatchCheckCachedPreview(font: FontItem): boolean {
     syncCachedPreviewBatchText()
-    if (cachedPreviewBatchCheckedIds.has(font.id)) return false
-    if (cachedPreviewBatchMissIds.has(font.id)) return false
-    const routeForcesNative = resolveFontPreviewRoute(font).shouldSkipWebFontFileLoad
-    if (options.previewFamilies[font.id] && !routeForcesNative) return false
-    if (options.nativePreviewImages[font.id]) return false
-    if (options.loadingFonts.current.has(font.id)) return false
-    if (options.isBadFontRecord(previewRecordForProbe(font))) return false
+    const key = requestKey(font)
+    if (cachedPreviewBatchCheckedIds.has(key) || cachedPreviewBatchMissIds.has(key)) return false
+    if (!canRequest(font, true)) return false
     return true
   }
 
@@ -141,12 +149,9 @@ export function createFontVisiblePreviewQueueRuntime(
   }
 
   function pruneCachedPreviewBatchCheckedIds(): void {
-    for (const id of cachedPreviewBatchCheckedIds) {
-      if (!options.queuedPreviewFontIds.current.has(id)) cachedPreviewBatchCheckedIds.delete(id)
-    }
-    for (const id of cachedPreviewBatchMissIds) {
-      if (!options.queuedPreviewFontIds.current.has(id)) cachedPreviewBatchMissIds.delete(id)
-    }
+    const queuedKeys = new Set(options.previewQueue.current.map(entry => requestKey(entry.font)))
+    for (const key of cachedPreviewBatchCheckedIds) if (!queuedKeys.has(key)) cachedPreviewBatchCheckedIds.delete(key)
+    for (const key of cachedPreviewBatchMissIds) if (!queuedKeys.has(key)) cachedPreviewBatchMissIds.delete(key)
   }
 
   function processCachedPreviewBatchIfNeeded(): boolean {
@@ -158,11 +163,13 @@ export function createFontVisiblePreviewQueueRuntime(
     const generation = queueGeneration
     const token = currentPreviewBatchToken()
     cachedPreviewBatchInFlight = true
-    for (const font of candidates) cachedPreviewBatchCheckedIds.add(font.id)
+    const candidateOwners = new Map(candidates.map(font => [font.id, demand.get(font.id)]))
+    const candidateKeys = new Map(candidates.map(font => [font.id, requestKey(font)]))
+    for (const font of candidates) cachedPreviewBatchCheckedIds.add(requestKey(font))
 
     cacheWaitExpired = false
     let accepting = true
-    const acceptsResult = (font?: FontItem) => accepting && !disposed && generation === queueGeneration && token === currentPreviewBatchToken() && (!font || hasDemand(font.id))
+    const acceptsResult = (font?: FontItem) => accepting && !disposed && generation === queueGeneration && token === currentPreviewBatchToken() && (!font || (hasDemand(font.id, candidateOwners.get(font.id)) && candidateKeys.get(font.id) === requestKey(font)))
     cacheWaitTimer = window.setTimeout(() => {
       cacheWaitTimer = null
       accepting = false
@@ -173,20 +180,31 @@ export function createFontVisiblePreviewQueueRuntime(
       .then((hitIds) => {
         if (!acceptsResult()) return
         for (const font of candidates) {
-          if (!hitIds.has(font.id)) cachedPreviewBatchMissIds.add(font.id)
+          if (acceptsResult(font) && !hitIds.has(font.id)) cachedPreviewBatchMissIds.add(requestKey(font))
         }
         if (!hitIds.size) return
         options.previewQueue.current = options.previewQueue.current.filter((entry) => {
-          if (!hitIds.has(entry.font.id)) return true
+          if (!hitIds.has(entry.font.id) || !acceptsResult(entry.font) || candidateKeys.get(entry.font.id) !== requestKey(entry.font)) return true
           options.queuedPreviewFontIds.current.delete(entry.font.id)
           demand.delete(entry.font.id)
           return false
         })
       })
-      .catch(() => {
-        // A failed probe is a miss for this queue attempt, not a reason to probe forever.
+      .catch((error) => {
         if (!acceptsResult()) return
-        for (const font of candidates) cachedPreviewBatchMissIds.add(font.id)
+        if (previewFailureKind(error) === 'cancelled') {
+          // Cancel only these exact consumers. A replacement's demand survives,
+          // and a future request is allowed to probe again without failure cooldown.
+          options.previewQueue.current = options.previewQueue.current.filter(entry => {
+            if (!candidateOwners.has(entry.font.id) || !acceptsResult(entry.font)) return true
+            options.queuedPreviewFontIds.current.delete(entry.font.id)
+            demand.delete(entry.font.id)
+            return false
+          })
+          return
+        }
+        // A failed probe is a miss for this queue attempt, not a reason to probe forever.
+        for (const font of candidates) if (acceptsResult(font)) cachedPreviewBatchMissIds.add(requestKey(font))
       })
       .finally(() => {
         accepting = false
@@ -205,7 +223,7 @@ export function createFontVisiblePreviewQueueRuntime(
   function processPreviewQueue(): void {
     if (disposed || options.fontListScrollingRef.current) return
     options.previewQueue.current = options.previewQueue.current.filter(entry => {
-      if (hasDemand(entry.font.id)) return true
+      if (hasDemand(entry.font.id) && demand.get(entry.font.id)?.key === requestKey(entry.font)) return true
       options.queuedPreviewFontIds.current.delete(entry.font.id)
       return false
     })
@@ -225,15 +243,16 @@ export function createFontVisiblePreviewQueueRuntime(
       if (!entry) continue
       const font = entry.font
       options.queuedPreviewFontIds.current.delete(font.id)
-      if (!stateRuntime.canRequestPreviewFont(font)) continue
+      if (!canRequest(font)) continue
 
+      const owner = demand.get(font.id)
       const generation = queueGeneration
       previewEvent(currentPreviewTrace(font.id), 'load-start')
       options.activePreviewLoads.current += 1
-      void loadRuntime.ensurePreviewFont(font, true, () => !disposed && hasDemand(font.id)).finally(() => {
+      void loadRuntime.ensurePreviewFont(font, true, () => !disposed && !!owner && hasDemand(font.id, owner)).finally(() => {
         options.activePreviewLoads.current = Math.max(0, options.activePreviewLoads.current - 1)
         if (disposed) return
-        if (generation === queueGeneration && !options.queuedPreviewFontIds.current.has(font.id)) demand.delete(font.id)
+        if (generation === queueGeneration && demand.get(font.id) === owner && !options.queuedPreviewFontIds.current.has(font.id)) demand.delete(font.id)
         pruneCachedPreviewBatchCheckedIds()
         processPreviewQueue()
       })
@@ -242,42 +261,36 @@ export function createFontVisiblePreviewQueueRuntime(
 
   function requestPreviewFont(font: FontItem, priority: 'normal' | 'high' = 'normal', acceptsResult: () => boolean = alwaysCurrent): void {
     if (disposed || !acceptsResult()) return
-    const callers = demand.get(font.id)?.callers || new Set<() => boolean>()
-    for (const caller of callers) if (!caller()) callers.delete(caller)
-    callers.add(acceptsResult)
-    demand.set(font.id, { font, callers })
+    loadRuntime.preparePreviewFont?.(font)
+    const key = requestKey(font)
+    const previous = demand.get(font.id)
+    const owner = previous?.key === key ? previous : { font, key, callers: new Set<() => boolean>() }
+    for (const caller of owner.callers) if (!caller()) owner.callers.delete(caller)
+    owner.font = font
+    owner.callers.add(acceptsResult)
+    demand.set(font.id, owner)
     const trace = currentPreviewTrace(font.id)
     previewEvent(trace, 'request', priority)
-    if (!stateRuntime.canRequestPreviewFont(font, true)) {
-      if (!options.loadingFonts.current.has(font.id) && !options.queuedPreviewFontIds.current.has(font.id)) demand.delete(font.id)
+    if (!canRequest(font, true)) {
+      const loading = loadRuntime.previewStateForFont?.(font)?.loading ?? options.loadingFonts.current.has(font.id)
+      if (!loading && !options.queuedPreviewFontIds.current.has(font.id)) demand.delete(font.id)
       previewEvent(trace, 'admission-rejected'); return
     }
-    const routeForcesNative = resolveFontPreviewRoute(font).shouldSkipWebFontFileLoad
-    if ((!routeForcesNative && options.previewFamilies[font.id]) || options.nativePreviewImages[font.id] || options.loadingFonts.current.has(font.id)) return
-    if (routeForcesNative && options.previewFamilies[font.id]) {
-      options.setPreviewFamilies((prev) => {
-        if (!prev[font.id]) return prev
-        const next = { ...prev }
-        delete next[font.id]
-        return next
-      })
-    }
-
     if (options.queuedPreviewFontIds.current.has(font.id)) {
-      if (priority === 'high') {
-        const entryIndex = options.previewQueue.current.findIndex((entry) => entry.font.id === font.id)
-        if (entryIndex >= 0) {
-          const [entry] = options.previewQueue.current.splice(entryIndex, 1)
-          options.previewQueue.current.unshift({ ...entry, priority: 'high' })
-        }
-        processPreviewQueue()
+      const entryIndex = options.previewQueue.current.findIndex(entry => entry.font.id === font.id)
+      if (entryIndex >= 0) {
+        const [previousEntry] = options.previewQueue.current.splice(entryIndex, 1)
+        const entry: PreviewQueueEntry = { font, priority: priority === 'high' ? 'high' : previousEntry.priority }
+        if (entry.priority === 'high') options.previewQueue.current.unshift(entry)
+        else options.previewQueue.current.splice(entryIndex, 0, entry)
       }
+      if (priority === 'high') processPreviewQueue()
       return
     }
 
     previewEvent(trace, 'queued', priority)
     options.queuedPreviewFontIds.current.add(font.id)
-    cachedPreviewBatchCheckedIds.delete(font.id)
+    cachedPreviewBatchCheckedIds.delete(key)
     const entry: PreviewQueueEntry = { font, priority }
     if (priority === 'high') {
       options.previewQueue.current.unshift(entry)
@@ -289,6 +302,7 @@ export function createFontVisiblePreviewQueueRuntime(
   }
 
   return {
+    removePreviewFontDemand,
     resetVisiblePreviewQueue,
     pausePreviewForScroll,
     resumePreviewAfterScroll,

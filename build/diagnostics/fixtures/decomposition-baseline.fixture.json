@@ -96,7 +96,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "7ad6dcc06aa5031ff6a8cd2abd45c6a840a149d18cfa1cc102828cc303f0ae73"
+      "tokenHash": "2f1bc9426b3285a5ebda750648e4fe982182f5d75c2958649f078a2e32fb4c14"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -473,6 +473,10 @@
         {
           "binding": "autoInstallStatusRefreshSignatureRef",
           "kind": "useRef"
+        },
+        {
+          "binding": "cacheStatsRequestState",
+          "kind": "useRef"
         }
       ],
       "exports": [
@@ -521,7 +525,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "a754bf800cda295bfefa359c27d574307c34c7df979bb42bb06b916ef3bea8bd"
+      "tokenHash": "3e14a47a5d1daa1acff34b08a86af7e23c44d8c211a1a47d2c0620411079ff49"
     },
     "src/renderer/src/runtime/app/useLibraryController.ts": {
       "functions": [
@@ -716,6 +720,7 @@
       "surfaces": {
         "usePreviewController": [
           "previewFamilies",
+          "previewStateForFont",
           "nativePreviewImages",
           "nativeDetailImage",
           "setNativeDetailImage",
@@ -734,7 +739,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "1bfb9e59652d0cac5f5042eeff6373866ee1a57c375607022c838df6e1eaaaec"
+      "tokenHash": "b6eda8992ecb956281abca67feeced23b3a54c395b93d95a8ddf6f046ecff6e7"
     },
     "src/renderer/src/runtime/app/useSelectionController.ts": {
       "functions": [

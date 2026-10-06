@@ -10,6 +10,7 @@ interface FontCardRendererOptions {
   detailVisible: boolean
   selectedFontId?: string
   selectedFontIdSet: Set<string>
+  previewStateForFont?: FontCardProps['previewStateForFont']
   previewFamilies: Record<string, string>
   nativePreviewImages: Record<string, string>
   previewText: string
@@ -85,6 +86,7 @@ export function useFontCardRenderer(options: FontCardRendererOptions) {
         active={active}
         selected={selected}
         compact={compact}
+        previewStateForFont={options.previewStateForFont}
         previewFamily={previewFamilies[font.id]}
         previewImage={nativePreviewImages[font.id]}
         previewText={previewText}
@@ -98,7 +100,7 @@ export function useFontCardRenderer(options: FontCardRendererOptions) {
         onDragEnd={handlers.onDragEnd}
       />
     )
-  }, [closingLifecycle, detailVisible, selectedFontId, selectedFontIdSet, previewFamilies, nativePreviewImages, previewText, listPreviewFontSize])
+  }, [options.previewStateForFont, closingLifecycle, detailVisible, selectedFontId, selectedFontIdSet, previewFamilies, nativePreviewImages, previewText, listPreviewFontSize])
 
   return { renderFontCard }
 }

@@ -283,6 +283,7 @@ export type RustSystemInstalledFontsResult = {
 }
 
 export type RustWatcherPreflightInput = {
+  scriptDetectionVersion?: number
   rootPath: string
   dbPath: string
   extensions: string[]

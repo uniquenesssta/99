@@ -30,7 +30,7 @@ export function createFontPreviewQueueRuntime(options: FontPreviewQueueRuntimeOp
     resetPreviewRuntimeState() {
       resetPreviewTrace()
       visibleQueueRuntime.resetVisiblePreviewQueue()
-      loadRuntime.resetPreviewLoads()
+      loadRuntime.resetPreviewLoads(true)
       autoPreviewCacheQueueRuntime.resetAutoPreviewCacheQueue()
       stateRuntime.resetPreviewRuntimeState()
     }

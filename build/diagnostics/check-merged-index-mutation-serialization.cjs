@@ -66,7 +66,7 @@ for (const needle of [
 ]) assert(watcherSource.includes(needle), `watcher lifecycle protection missing ${needle}`)
 
 const rendererEventSource = read('src/renderer/src/runtime/app/effects/useFontIndexChangedEventRuntime.ts')
-assert(rendererEventSource.includes('current.refreshDatabaseDerivedState()'), 'watcher index commits must invalidate renderer database pages and metrics')
+assert(rendererEventSource.includes('current.refreshDatabaseDerivedState()') && rendererEventSource.includes('pendingRefresh') && !rendererEventSource.includes('current.requestPreviewFont('), 'watcher commits must coalesce database invalidation without foreground preview demand')
 
 async function runBehaviorChecks() {
   const { createMergedIndexMutationCoordinatorRuntime } = loadTypeScriptModule(

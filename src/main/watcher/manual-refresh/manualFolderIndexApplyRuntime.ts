@@ -182,6 +182,8 @@ export function createManualFolderIndexApplyRuntime(
         }
         if (existing.status === "bad") {
           fromCache += 1;
+          // Explicit refresh also repairs an earlier persisted-but-unnotified invalidation.
+          payload.deletes.push(fontIndexDeleteRecord(resolvedRoot, key, existing));
           continue;
         }
       }
@@ -247,6 +249,9 @@ export function createManualFolderIndexApplyRuntime(
           changedEntryMap.set(result.cacheKey, nextEntry);
           deletedKeySet.delete(result.cacheKey);
           skippedBad += 1;
+          if (oldEntry?.status === "ok" && oldEntry.font) {
+            payload.deletes.push(fontIndexDeleteRecord(resolvedRoot, result.cacheKey, oldEntry));
+          }
         }
         return;
       }

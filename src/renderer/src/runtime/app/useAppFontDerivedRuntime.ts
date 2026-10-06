@@ -15,6 +15,7 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
   selectedFontId: string
   selectedFontIds: string[]
   contextMenu: ContextMenuState
+  previewStateForFont?: (font: FontItem) => { key?: string; family?: string; image?: string; failed?: true; loading: boolean }
   previewFamilies: Record<string, string>
   nativePreviewImages: Record<string, string>
   failedPreviewFontIds: Record<string, true>
@@ -99,9 +100,10 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
     () => library.fonts[selectedFontId] || visibleFonts.find((item) => item.id === selectedFontId) || visibleFonts[0],
     [library.fonts, selectedFontId, visibleFonts]
   )
-  const selectedFontPreviewFamily = selectedFont?.id ? previewFamilies[selectedFont.id] || '' : ''
-  const selectedNativePreviewImage = selectedFont?.id ? nativePreviewImages[selectedFont.id] || '' : ''
-  const selectedFailedPreview = selectedFont?.id ? failedPreviewFontIds[selectedFont.id] : undefined
+  const selectedPreview = selectedFont && args.previewStateForFont?.(selectedFont)
+  const selectedFontPreviewFamily = selectedPreview ? selectedPreview.family || '' : selectedFont?.id ? previewFamilies[selectedFont.id] || '' : ''
+  const selectedNativePreviewImage = selectedPreview ? selectedPreview.image || '' : selectedFont?.id ? nativePreviewImages[selectedFont.id] || '' : ''
+  const selectedFailedPreview = selectedPreview ? selectedPreview.failed : selectedFont?.id ? failedPreviewFontIds[selectedFont.id] : undefined
   const localTagSuggestions = useMemo(() => buildTagSuggestions(library.localTags || [], selectedFont?.localTagNames, assignTagName), [assignTagName, library.localTags, selectedFont?.localTagNames])
   const sharedTagSuggestions = useMemo(() => buildTagSuggestions(library.tags || [], selectedFont?.tagNames, assignSharedTagName), [assignSharedTagName, library.tags, selectedFont?.tagNames])
   const selectedFontIdSet = useMemo(() => new Set(selectedFontIds), [selectedFontIds])

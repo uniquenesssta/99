@@ -40,7 +40,9 @@ function previewSampleStyle(font: FontCardProps['font'], mode: 'grid' | 'list', 
 }
 
 
-function FontCardImpl({ closingLifecycle, font, active, selected, compact, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
+function FontCardImpl({ closingLifecycle, font, active, selected, compact, previewStateForFont, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
+  const ready = previewStateForFont?.(font)
+  if (ready) { previewFamily = ready.family; previewImage = ready.image }
   const ref = useRef<HTMLElement | null>(null)
   const [previewIntersecting, setPreviewIntersecting] = useState(false)
   const requestedLayout = useMemo(() => getCardPreviewLayout(compact ? 'list' : 'grid', previewText, listPreviewFontSize), [compact, previewText, listPreviewFontSize])
@@ -50,7 +52,8 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
   const fileUnavailable = font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable'
   const retryBlocked = fileUnavailable || sharedPathBlocked(availability, font.path)
   const knownRootBlocked = availability !== null && retryBlocked
-  const frozenPreview = useResizeFrozenPreviewRuntime(`${font.id}:${requestedLayout.token}`, {
+  const previewIdentity = ready?.key || JSON.stringify([font.id, font.path, font.fileSize, font.modifiedAt, requestedLayout.token])
+  const frozenPreview = useResizeFrozenPreviewRuntime(previewIdentity, {
     previewFamily,
     previewImage,
     previewText,
@@ -162,7 +165,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       observer?.disconnect()
       unsubscribeResizeSettled?.()
     }
-  }, [onVisible, closingLifecycle, font.id, font.__earlyVisible, requestedLayout.token, previewReady, retryBlocked, knownRootBlocked, fileUnavailable, compact])
+  }, [onVisible, closingLifecycle, font.id, previewIdentity, font.__earlyVisible, requestedLayout.token, previewReady, retryBlocked, knownRootBlocked, fileUnavailable, compact])
 
   useEffect(() => {
     if (!previewTraceEnabled() || !ref.current) return

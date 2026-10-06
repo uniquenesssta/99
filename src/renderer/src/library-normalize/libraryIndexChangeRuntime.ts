@@ -8,6 +8,9 @@ import { applyEarlyVisibleFontIndexChangeToLibrary,isEarlyVisibleOnlyFontIndexCh
 
 export function mergeIncrementalIndexedFont(oldFont: FontItem | undefined, nextFont: FontItem, source?: FontIndexChangePayload['source']): FontItem {
   if (!oldFont) return mergeFontWithTagAuthority(undefined, nextFont)
+  const samePreviewSource = normalizeFontPathForCompare(oldFont.path) === normalizeFontPathForCompare(nextFont.path) &&
+    oldFont.fileSize === nextFont.fileSize && oldFont.modifiedAt === nextFont.modifiedAt &&
+    oldFont.recoveryContentHash === nextFont.recoveryContentHash
   // Physical-file snapshots cannot acknowledge user metadata or activation changes.
   if (source === 'watcher') {
     return {
@@ -23,8 +26,8 @@ export function mergeIncrementalIndexedFont(oldFont: FontItem | undefined, nextF
       managedInstallPath: oldFont.managedInstallPath,
       managedRegistryName: oldFont.managedRegistryName,
       deleteProtected: oldFont.deleteProtected,
-      previewDisabled: oldFont.previewDisabled || nextFont.previewDisabled,
-      previewError: oldFont.previewError || nextFont.previewError
+      previewDisabled: (samePreviewSource && oldFont.previewDisabled) || nextFont.previewDisabled,
+      previewError: (samePreviewSource ? oldFont.previewError : undefined) || nextFont.previewError
     }
   }
   return {
@@ -38,8 +41,8 @@ export function mergeIncrementalIndexedFont(oldFont: FontItem | undefined, nextF
     managedInstallPath: oldFont.active ? oldFont.managedInstallPath || nextFont.managedInstallPath : nextFont.managedInstallPath,
     managedRegistryName: oldFont.active ? oldFont.managedRegistryName || nextFont.managedRegistryName : nextFont.managedRegistryName,
     deleteProtected: !!nextFont.deleteProtected,
-    previewDisabled: oldFont.previewDisabled || nextFont.previewDisabled,
-    previewError: oldFont.previewError || nextFont.previewError
+    previewDisabled: (samePreviewSource && oldFont.previewDisabled) || nextFont.previewDisabled,
+    previewError: (samePreviewSource ? oldFont.previewError : undefined) || nextFont.previewError
   }
 }
 
@@ -95,9 +98,15 @@ export function applyFontIndexChangeToLibrary(state: LibraryState, payload: Font
     }
 
     const merged = mergeFontUserIntent(oldFont, mergeIncrementalIndexedFont(oldFont, font, payload.source))
+    const unchanged = oldFont && oldFont.id === merged.id &&
+      Object.keys(oldFont).length === Object.keys(merged).length &&
+      Object.keys(merged).every(key => JSON.stringify(oldFont[key as keyof FontItem]) === JSON.stringify(merged[key as keyof FontItem]))
+    if (unchanged) continue
     nextFonts[merged.id] = merged
     upsertedFonts.push(merged)
   }
+
+  if (!removedIds.size && !upsertedFonts.length) return { library: state, removedIds: [], upsertedFonts: [] }
 
   const nextFontFolderIds = { ...(state.fontFolderIds || {}) }
   for (const id of removedIds) delete nextFontFolderIds[id]

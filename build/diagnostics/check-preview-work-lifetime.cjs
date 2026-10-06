@@ -114,6 +114,54 @@ async function renderer() {
  c.opt.activePreviewLoads.current=5;let visible=true;c.runtime.requestPreviewFont({...nativeFont,id:'off'},'normal',()=>visible);visible=false;c.opt.activePreviewLoads.current=0;c.runtime.processPreviewQueue();await flush();assert.equal(cc,1);assert.equal(c.opt.previewQueue.current.length,0);c.runtime.disposePreviewQueue();
  console.log('renderer: timeout/format split, late authorized reuse, root-generation isolation, 14 WebFont edits capped at 10, 15 native edits capped at 5, two consumers/leave/dispose');
 }
+async function sourceOwnership() {
+ const font={id:'same',path:'C:/fonts/same.ttf',fileSize:10,modifiedAt:1,systemInstalled:true};
+ const h=rendererHarness(10),old=deferred(),latest=deferred();let calls=0;
+ h.opt.hfm.renderPreviewImage=()=>++calls===1?old.promise:latest.promise;
+ let wanted=true;h.runtime.requestPreviewFont(font,'high',()=>wanted);await flush();assert.equal(calls,1);
+ const replacement={...font,modifiedAt:2};h.runtime.requestPreviewFont(replacement,'high');await flush();assert.equal(calls,2,'same-ID new source stranded behind obsolete loading ID');assert.equal(h.opt.activePreviewLoads.current,2);
+ old.resolve('data:image/png;base64,old');await flush();assert.equal(h.runtime.previewStateForFont(replacement).image,undefined);assert.equal(h.opt.loadingFonts.current.has(font.id),true,'old cleanup revoked new owner');
+ latest.resolve('data:image/png;base64,new');await flush();assert.equal(h.runtime.previewStateForFont(replacement).image,'data:image/png;base64,new');assert.equal(h.runtime.previewStateForFont(font).image,undefined);assert.equal(h.opt.activePreviewLoads.current,0);
+ h.runtime.requestPreviewFont({...replacement,active:true,favorite:true,systemInstalled:false},'high');await flush();assert.equal(calls,2,'metadata-only change regenerated pixels');h.runtime.pausePreviewForScroll();assert.equal(h.runtime.previewStateForFont(replacement).image,'data:image/png;base64,new','scroll invalidated settled pixels');h.runtime.resumePreviewAfterScroll();h.runtime.resetPreviewRuntimeState();assert.equal(h.runtime.previewStateForFont(replacement).image,undefined,'full reset retained settled pixels');await h.runtime.ensurePreviewFont(replacement,true);assert.equal(calls,3);h.runtime.disposePreviewQueue();assert.equal(h.runtime.previewStateForFont(replacement).image,'data:image/png;base64,new','cancelled-close lifetime lost permitted settled pixels');
+ // Cache-batch completion must neither apply nor prune a replacement's demand.
+ const b=rendererHarness(10),cache=deferred();let probes=0,renders=0;
+ b.opt.hfm.getCachedPreviewImages=()=>++probes===1?cache.promise:Promise.resolve({});b.opt.hfm.renderPreviewImage=async f=>{renders++;assert.equal(f.modifiedAt,2);return 'data:image/png;base64,new'};
+ b.runtime.requestPreviewFont(font,'high');b.runtime.requestPreviewFont(replacement,'high');cache.resolve({same:'data:image/png;base64,old-cache'});await flush();assert.equal(renders,1);assert.equal(b.runtime.previewStateForFont(replacement).image,'data:image/png;base64,new');assert(!b.applied.some(value=>value.same==='data:image/png;base64,old-cache'));b.runtime.disposePreviewQueue();
+ // Replacing a queued snapshot retains its latest data, including normal priority.
+ const q=rendererHarness(10);q.opt.fontListScrollingRef.current=true;q.runtime.requestPreviewFont(font,'normal');q.runtime.requestPreviewFont({...replacement,family:'newest'},'normal');assert.equal(q.opt.previewQueue.current.length,1);assert.equal(q.opt.previewQueue.current[0].font.family,'newest');q.runtime.requestPreviewFont({...replacement,family:'high'},'high');assert.equal(q.opt.previewQueue.current[0].font.family,'high');assert.equal(q.opt.previewQueue.current[0].priority,'high');q.runtime.disposePreviewQueue();
+ // Loaded WebFont is pixel content, independent of installation metadata.
+ const w=rendererHarness(),web={...font,systemInstalled:false};const loading=w.runtime.ensurePreviewFont(web,true);await flush();w.faces[0].gate.resolve();await loading;const family=w.runtime.previewStateForFont(web).family;assert(family);await w.runtime.ensurePreviewFont({...web,systemInstalled:true},true);assert.equal(w.faces.length,1);assert.equal(w.native.length,0);assert.equal(w.runtime.previewStateForFont(web).family,family);
+ assert.equal(w.runtime.previewStateForFont({...web,modifiedAt:3}).family,undefined,'old-source family remained visible');w.runtime.disposePreviewQueue();
+ // Delete/re-add of even the same signature revokes prior logical ownership.
+ const d=rendererHarness(),first=deferred(),second=deferred();let version=0;d.opt.hfm.renderPreviewImage=()=>++version===1?first.promise:second.promise;
+ d.runtime.requestPreviewFont(font,'high');await flush();d.runtime.removePreviewFontDemand(new Set([font.id]));d.runtime.removePreviewFontLoads(new Set([font.id]));d.runtime.requestPreviewFont(font,'high');await flush();first.resolve('data:image/png;base64,deleted');await flush();assert.equal(d.runtime.previewStateForFont(font).image,undefined);second.resolve('data:image/png;base64,readded');await flush();assert.equal(d.runtime.previewStateForFont(font).image,'data:image/png;base64,readded');d.runtime.disposePreviewQueue();
+ // React setters may commit later than the physical reply; owner readiness is immediate.
+ const delayed=rendererHarness(),pendingState=[];let delayedCalls=0;delayed.opt.setNativePreviewImages=fn=>pendingState.push(fn);delayed.opt.hfm.renderPreviewImage=async()=>{delayedCalls++;return 'data:image/png;base64,owned'};
+ delayed.runtime.requestPreviewFont(font,'high');await flush();assert.equal(delayed.opt.nativePreviewImages.same,undefined);assert.equal(delayed.runtime.previewStateForFont(font).image,'data:image/png;base64,owned');delayed.runtime.requestPreviewFont(font,'high');await flush();assert.equal(delayedCalls,1,'uncommitted React state duplicated a settled effective key');delayed.runtime.removePreviewFontDemand(new Set([font.id]));delayed.runtime.removePreviewFontLoads(new Set([font.id]));for(const update of pendingState)delayed.opt.nativePreviewImages=typeof update==='function'?update(delayed.opt.nativePreviewImages):update;assert.equal(delayed.runtime.previewStateForFont(font).image,undefined,'late presentation commit revived revoked owner');delayed.runtime.disposePreviewQueue();
+ console.log('F12 source ownership: same-ID queued/cache/native replacement, ready provenance, metadata-only reuse and delete/re-add revoke; physical slots preserved');
+}
+async function cacheCancellation() {
+ const font={id:'cancel-cache',path:'C:/fonts/cancel.ttf',systemInstalled:true};
+ for(const batch of [false,true]) {
+  const h=rendererHarness();let renders=0;h.opt.hfm.renderPreviewImage=async()=>{renders++;return 'data:image/png;base64,retry'};
+  const cancelled=()=>Promise.reject(Object.assign(Error('[HFM_PREVIEW:cancelled] expired'),{name:'AbortError'}));
+  h.opt.hfm.getCachedPreviewImage=cancelled;h.opt.hfm.getCachedPreviewImages=cancelled;
+  if(batch){h.runtime.requestPreviewFont(font,'high');await flush();assert.equal(h.opt.previewQueue.current.length,0);}else await h.runtime.ensurePreviewFont(font);
+  assert.equal(renders,0,'cancelled cache read fell through to native render');
+  h.opt.hfm.getCachedPreviewImage=async()=>'';h.opt.hfm.getCachedPreviewImages=async()=>({});
+  if(batch){h.runtime.requestPreviewFont(font,'high');await flush();}else await h.runtime.ensurePreviewFont(font);
+  assert.equal(renders,1,'cache cancellation poisoned fresh retry');h.runtime.disposePreviewQueue();
+ }
+}
+async function backgroundSharedKey() {
+ const cancelled=rendererHarness();let cancelledCalls=0;cancelled.opt.hfm.getPreviewCacheStatus=async()=>{throw Error('[HFM_PREVIEW:cancelled] stale')};cancelled.opt.hfm.ensurePreviewCache=async()=>{cancelledCalls++;return{ok:true}};await cancelled.runtime.startAutoPreviewCache([{id:'cancelled',path:'C:/fonts/cancelled.ttf'}]);assert.equal(cancelledCalls,0,'cancelled background status probe started cache generation');cancelled.runtime.disposePreviewQueue();
+ for(const asResult of [false,true]) {const cancelledWork=rendererHarness();cancelledWork.opt.hfm.getPreviewCacheStatus=async()=>({});cancelledWork.opt.hfm.ensurePreviewCache=async()=>{if(asResult)return{ok:false,cached:false,message:'[HFM_PREVIEW:cancelled] stale'};throw Error('[HFM_PREVIEW:cancelled] stale')};await cancelledWork.runtime.startAutoPreviewCache([{id:'cancelled-work',path:'C:/fonts/cancelled.ttf'}]);await flush();assert.equal(cancelledWork.opt.autoPreviewCacheStats.current.failed,0,'background cancellation counted as font failure');assert.equal(cancelledWork.opt.activeAutoPreviewCacheLoads.current,0);cancelledWork.runtime.disposePreviewQueue();}
+ const h=rendererHarness(),gate=deferred();let physical=0;h.opt.hfm.getPreviewCacheStatus=async()=>({});h.opt.hfm.ensurePreviewCache=()=>{physical++;return gate.promise};
+ const font={id:'background',path:'C:/fonts/background.ttf',fileSize:10,modifiedAt:1};
+ await h.runtime.startAutoPreviewCache([font,font]);await flush();assert.equal(physical,1);assert.equal(h.opt.autoPreviewCacheStats.current.total,1);
+ await h.runtime.startAutoPreviewCache([{...font,favorite:true}]);await flush();assert.equal(physical,1,'new logical background run duplicated same-key physical work');assert.equal(h.opt.activeAutoPreviewCacheLoads.current,1);
+ gate.resolve({ok:true,cached:false});await flush();assert.equal(h.opt.activeAutoPreviewCacheLoads.current,0);assert.equal(h.opt.autoPreviewCacheStats.current.done,1);h.runtime.disposePreviewQueue();
+}
 async function background() {
  const h=rendererHarness(),{runtime:r,opt,time}=h, status=deferred(),work=deferred();let queries=0,calls=0;
  opt.hfm.getPreviewCacheStatus=()=>{queries++;return queries===1?status.promise:Promise.resolve({})};
@@ -151,7 +199,7 @@ async function detail() {
 }
 module.exports = { rendererHarness, deferred, flush, clock };
 if (require.main === module) (async()=>{
- await mainQueue();await cacheAbort();await renderer();await detail();await background();await prefetch();
+ await mainQueue();await cacheAbort();await renderer();await sourceOwnership();await cacheCancellation();await backgroundSharedKey();await detail();await background();await prefetch();
  await assert.rejects(()=>prefetch(source=>{
   const anchor="  const lastQueryView = useRef('')";assert(source.includes(anchor));
   return source.replace(anchor,"  useEffect(() => { args.requestPreviewFont(visibleFonts[0], 'normal') }, [visibleFonts])\n"+anchor);

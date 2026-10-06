@@ -1,6 +1,6 @@
 import type { FontItem } from '@shared/types'
 import { canQueuePreviewFont } from '../../../fontPreviewStateRuntime'
-import type { FontPreviewQueueRuntimeOptions,FontPreviewStateRuntime } from './fontPreviewQueueTypes'
+import type { FontPreviewQueueRuntimeOptions,FontPreviewStateRuntime,FontPreviewReadyState } from './fontPreviewQueueTypes'
 
 export function createFontPreviewStateRuntime(options: FontPreviewQueueRuntimeOptions): FontPreviewStateRuntime {
   function resetPreviewRuntimeState(): void {
@@ -15,10 +15,11 @@ export function createFontPreviewStateRuntime(options: FontPreviewQueueRuntimeOp
     options.setNativeDetailImage('')
   }
 
-  function canRequestPreviewFont(font: FontItem, allowQueued = false): boolean {
+  function canRequestPreviewFont(font: FontItem, allowQueued = false, ready?: FontPreviewReadyState): boolean {
     return canQueuePreviewFont({
       font,
       allowQueued,
+      ready,
       previewFamilies: options.previewFamilies,
       nativePreviewImages: options.nativePreviewImages,
       failedPreviewFontIds: options.failedPreviewFontIds,

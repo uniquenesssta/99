@@ -70,6 +70,7 @@ async function watcherHealthy(transform = x => x) {
   h.scanning(false); h.tick(); await drain()
   assert.deepEqual(h.applied[0].map(x => [x.eventType, x.fileName]), [['rename', 'startup.ttf'], ['rename', 'a.ttf'], ['rescan', '.']])
   assert.deepEqual(h.order, ['apply', 'sync', 'send'])
+  assert.equal(h.applied[0][0].origin,'fs-watch'); assert.equal(h.applied[0][2].triggerEventType,'change')
   await h.runtime.startWatchingFolders([folder]); assert.equal(h.handles.length, 1)
   h.handles[0].callback('change', 'b.otf'); h.runtime.stopFolderWatchers()
   assert.equal(h.timers.size, 0); assert.equal(h.handles[0].closed, 1)

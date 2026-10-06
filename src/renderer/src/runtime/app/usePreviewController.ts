@@ -94,6 +94,8 @@ export function usePreviewController(options: PreviewControllerOptions) {
 
   function removeFontIds(removedFontIds: ReadonlySet<string>, clearDetailImage: boolean): void {
     if (!removedFontIds.size) return
+    queueRuntime.removePreviewFontDemand?.(removedFontIds)
+    queueRuntime.removePreviewFontLoads?.(removedFontIds)
     previewQueue.current = previewQueue.current.filter((entry) => !removedFontIds.has(entry.font.id))
     autoPreviewCacheQueue.current = autoPreviewCacheQueue.current.filter((font) => !removedFontIds.has(font.id))
     for (const id of removedFontIds) {
@@ -101,6 +103,7 @@ export function usePreviewController(options: PreviewControllerOptions) {
       queuedAutoPreviewCacheIds.current.delete(id)
       loadingFonts.current.delete(id)
     }
+    setPreviewFamilies((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !removedFontIds.has(id))))
     setNativePreviewImages((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !removedFontIds.has(id))))
     setFailedPreviewFontIds((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !removedFontIds.has(id))))
     if (clearDetailImage) setNativeDetailImage('')
@@ -133,6 +136,7 @@ export function usePreviewController(options: PreviewControllerOptions) {
 
   return {
     previewFamilies,
+    previewStateForFont: queueRuntime.previewStateForFont,
     nativePreviewImages: previewImagesCurrent ? nativePreviewImages : {},
     nativeDetailImage,
     setNativeDetailImage,

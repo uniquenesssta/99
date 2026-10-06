@@ -1,6 +1,7 @@
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import type { CachedFontStatLike } from "../../fonts/fontRuntime";
 import { extname } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { FontItem,ScanResult } from "../../../shared/types";
 import type { FontScanCacheEntry,FontScanCacheFile } from "../../indexing/rootIndexRuntime";
 import { relativePathForRoot } from "../../path/cachePath";
@@ -166,7 +167,10 @@ export function createManualFolderIndexEntryRuntime(deps: ManualFolderRefreshDep
   ): boolean {
     if (!newEntry) return false;
     if (!oldEntry) return true;
-    return JSON.stringify(oldEntry) !== JSON.stringify(newEntry);
+    // Refresh timestamps are bookkeeping, not a font/index change.
+    const { cachedAt: _oldCachedAt, ...oldSemantic } = oldEntry;
+    const { cachedAt: _newCachedAt, ...newSemantic } = newEntry;
+    return !isDeepStrictEqual(oldSemantic, newSemantic);
   }
 
   function relativeDirectoryPathForRoot(

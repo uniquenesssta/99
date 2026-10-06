@@ -72,14 +72,14 @@ export function createManualWatchedFolderRefreshRuntime(
         errors = rebuilt.errors.length;
         cancelled = !!rebuilt.stats?.cancelled;
         upserts = rebuilt.fonts?.length || 0;
-        sendFontIndexChanged({
+        mergedIndexRefreshPayload = {
           source: "watcher",
           folder: bestRoot,
           at: new Date().toISOString(),
           upserts: rebuilt.fonts || [],
           deletes: [],
           errors: rebuilt.errors,
-        });
+        };
       } else {
         emitFontIndexProgress({
           jobId,
@@ -103,7 +103,6 @@ export function createManualWatchedFolderRefreshRuntime(
         workerCount = refreshed.workerCount;
         mode = upserts || deletes || errors ? "incremental" : "cache-read";
         mergedIndexRefreshPayload = refreshed.payload;
-        sendFontIndexChanged({ ...refreshed.payload, source: "watcher" });
       }
 
       if (mode === "repair-rebuild" && !cancelled) {
@@ -118,6 +117,9 @@ export function createManualWatchedFolderRefreshRuntime(
           `manual-folder-refresh:${bestRoot}`,
         );
       }
+
+      // The renderer must not query the previous merged snapshot after this event.
+      if (mergedIndexRefreshPayload) sendFontIndexChanged({ ...mergedIndexRefreshPayload, source: "watcher" });
 
       const elapsedMs = Date.now() - startedAt;
       const repairedCount = cacheRepairs.filter((item) => item.repaired).length;
