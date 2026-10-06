@@ -40,7 +40,8 @@ export function createFontUninstallRecoveryRuntime(deps: SystemFontInstallRuntim
       // A failed later step can leave the current registration different from
       // the cached installed state. Reconcile that evidence without changing the
       // durable target/steps or turning a partial failure into success.
-      if (durable && stage !== 'persist-result' && stage !== 'receipt-clear'
+      if (durable && receipt && (receipt.completedSteps > 0 || receipt.steps.some(step => step.state !== 'pending'))
+        && stage !== 'persist-result' && stage !== 'receipt-clear'
         && !isApplicationClosing() && applicationWorkEpoch() === ticket) {
         try {
           checkOpen()

@@ -6,13 +6,16 @@ const {hash}=require('./operation-work-performance.cjs')
 const plain=value=>JSON.parse(JSON.stringify(value))
 async function run({directory,html,preload,config,electron}) {
   const {app,BrowserWindow,ipcMain}=electron
+  // Reopen and asynchronous cleanup intentionally have a no-window interval.
+  // The existing runner, not Electron's default window-close policy, owns exit.
+  const keepAlive=()=>{};app.on('window-all-closed',keepAlive)
   process.env.ELECTRON_RENDERER_URL=require('node:url').pathToFileURL(html).href
   process.env.HFM_LOG_DETAIL='debug';process.env.HFM_VERBOSE_LOGS='0';process.env.HFM_RUST_CORE_WORKER=config.workerPath;process.env.HFM_RUST_CORE_AUTOBUILD='0'
   const report={sourceSha:config.sourceSha,platform:process.platform,versions:process.versions,workerSha256:config.workerSha256,manifest:config.manifest,passed:false,
     scope:'same persisted tag page/real React cards/menu/actions/preload/IPC/content status Rust DB/private-file PNG/controlled exact OS effects/reopen; remote snapshot and WebFont-failure trigger controlled; no actual registry mutation, NAS or full App startup; merged-index projection not exercised',checkpoints:[],previews:[],cases:[],sessions:[],logs:[]}
   let chain,preview,win,pickerCalls=0,pendingPicker,channels=[]
   const receipts=[];report.receipts=receipts
-  const timer=setTimeout(()=>{console.error('F14 integration watchdog');app.exit(1)},180000)
+  const timer=setTimeout(()=>{report.passed=false;report.error='F14 integration watchdog';report.logs.push(...(chain?.logs||[]));fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'));console.error(report.error);app.exit(1)},180000)
   const wait=async(test,label,timeout=15000)=>{const end=Date.now()+timeout;while(Date.now()<end){const value=await test();if(value)return value;await new Promise(resolve=>setTimeout(resolve,15))}throw Error('F14 wait timed out: '+label)}
   const js=code=>win.webContents.executeJavaScript(code)
   const ui=()=>js('window.recoveryChain.snapshot()')
@@ -37,7 +40,7 @@ async function run({directory,html,preload,config,electron}) {
     chain.load('src/main/ipc/handlers/previewAndFolderIpcHandlers.ts').registerPreviewAndFolderIpcHandlers(register,runtime)
     channels.push('performance:rendererTrace');ipcMain.handle('performance:rendererTrace',(_event,payload)=>{if(payload?.kind==='operation-chain')chain.appendLog('operation-chain: '+payload.details.event);return true})
     win=new BrowserWindow({show:true,width:1100,height:900,webPreferences:{preload,nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}})
-    win.webContents.on('console-message',(_event,level,message)=>{if(level>=2)chain.appendLog('renderer: '+message)})
+    win.webContents.on('console-message',event=>{if(event.level==='warning'||event.level==='error')chain.appendLog('renderer: '+event.message)})
     await win.loadFile(html);await js(`window.startRecoveryChain(${JSON.stringify(await chain.runtime.loadLibraryShell())})`);await ready()
   }
   async function close() {
@@ -56,8 +59,9 @@ async function run({directory,html,preload,config,electron}) {
     await js(`window.recoveryChain.preview([${JSON.stringify(item.id)}],${JSON.stringify(mode)})`)
     const result=await wait(async()=>{const value=await js('window.recoveryChain.previewSnapshot()');if(value?.error)throw Error(value.error);return value?.decoded.length===1&&value.running===0&&value.loading===0&&value.queued===0&&value},'private PNG decode')
     const decoded=result.decoded[0],imageSha256=hash(Buffer.from(decoded.image.split(',')[1],'base64'))
-    const cardImage=await wait(()=>js(`(()=>{const card=[...document.querySelectorAll('[data-font-id]')].find(card=>card.dataset.fontId===${JSON.stringify(item.id)});const image=card&&[...card.querySelectorAll('img')].find(image=>image.src===${JSON.stringify(decoded.image)});return image?.complete&&image.naturalWidth?{width:image.naturalWidth,height:image.naturalHeight}:null})()`),'actual FontCard image load')
-    assert.equal(cardImage.width,decoded.width);assert.equal(cardImage.height,decoded.height)
+    const expectedCard=await js(`window.recoveryChain.expectedCardImage(${JSON.stringify(item.id)},${JSON.stringify(mode)})`)
+    const cardImage=await wait(()=>js(`(()=>{const card=[...document.querySelectorAll('[data-font-id]')].find(card=>card.dataset.fontId===${JSON.stringify(item.id)});const image=card&&[...card.querySelectorAll('img')].find(image=>image.src===${JSON.stringify(expectedCard.image)});return image?.complete&&image.naturalWidth?{width:image.naturalWidth,height:image.naturalHeight}:null})()`),'actual FontCard image load')
+    assert.equal(cardImage.width,expectedCard.width);assert.equal(cardImage.height,expectedCard.height);assert(cardImage.width>0&&cardImage.width<=decoded.width);assert.equal(cardImage.height,decoded.height);cardImage.route=expectedCard.route;cardImage.sha256=hash(Buffer.from(expectedCard.image.split(',')[1],'base64'))
     fs.writeFileSync(path.join(directory,`${label}-${mode}.png`),(await win.webContents.capturePage()).toPNG())
     delete decoded.image
     const requests=chain.observed.nativeRequests.slice(before)
@@ -166,7 +170,7 @@ async function run({directory,html,preload,config,electron}) {
     fs.writeFileSync(path.join(directory,'final.png'),(await win.webContents.capturePage()).toPNG())
     await close();report.remainingChildren=0
     assert(report.cases.every(row=>row.passed),'incomplete integrated case');report.passed=true;console.log('[F14 integrated]',JSON.stringify({sourceSha:report.sourceSha,cases:report.cases.map(row=>row.name),previews:report.previews.length,remainingChildren:0,passed:true}))
-  }catch(error){report.error=error?.stack||String(error);throw error}
-  finally{try{await close()}catch(error){report.cleanupError=String(error);report.passed=false}report.pickerCalls=pickerCalls;clearTimeout(timer);fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'))}
+  }catch(error){report.error=error?.stack||String(error);if(win&&!win.isDestroyed()){try{fs.writeFileSync(path.join(directory,'failure.png'),(await win.webContents.capturePage()).toPNG())}catch{}}report.logs.push(...(chain?.logs||[]));fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'));throw error}
+  finally{try{await close()}catch(error){report.cleanupError=String(error);report.passed=false}report.pickerCalls=pickerCalls;clearTimeout(timer);fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'));app.removeListener('window-all-closed',keepAlive)}
 }
 module.exports={run}

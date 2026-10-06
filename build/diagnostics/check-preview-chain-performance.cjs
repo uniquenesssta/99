@@ -22,7 +22,8 @@ async function runRecoveryChain() {
   const config={mode:'recovery-chain',sourceRoot:root,sourceSha:cp.execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),fixtureDirectory:path.join(directory,'fixture'),manifest:selectFonts(directory),workerPath,workerSha256:hash(fs.readFileSync(workerPath))}
   const configPath=path.join(directory,'config.json');fs.writeFileSync(configPath,JSON.stringify(config))
   await require('esbuild').build({entryPoints:[path.join(__dirname,'lib/recovery-chain-dom.tsx')],bundle:true,outfile:path.join(directory,'renderer.js'),platform:'browser',format:'iife',define:{'import.meta.env':'{}'},tsconfig:path.join(root,'tsconfig.json')})
-  fs.writeFileSync(html,'<!doctype html><meta charset="utf-8"><style>body{font-family:sans-serif}article{min-height:90px}.context-menu{position:fixed;background:white;border:1px solid;padding:10px;z-index:20}dialog{background:white}</style><body><script src="renderer.js"></script></body>')
+  const css=require('./lib/font-view-layout-harness.cjs').css()
+  fs.writeFileSync(html,'<!doctype html><html data-theme="light"><meta charset="utf-8"><style>'+css+' body{display:block;overflow:auto;padding:16px}main{width:100%;display:block}.f14-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.f14-list{display:block}.context-menu{position:fixed;z-index:9999}dialog{background:white}</style><body><script src="renderer.js"></script></body></html>')
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE
   const result=cp.spawnSync(require('electron'),[path.join(__dirname,'lib/preview-chain-performance-electron.cjs'),directory,html,preload,configPath],{cwd:root,env,stdio:'inherit',timeout:210000})
   assert.equal(result.status,0,String(result.error||'recovery chain failed'))

@@ -830,9 +830,9 @@ flowchart LR
 
 `fontUninstallRecoveryRuntime` 之前只在全部目标完成的 `settle()` 调用 `persistUninstallResult`。登记已解除而后续文件步骤失败时，持久 pending 回执正确保留，但安装索引及渲染回执没有同步当前证据。不能据“登记已删”直接推断未安装：当前安装目录残留、另一独立副本或不可访问候选分别可能得到 installed、notInstalled 或 unknown。
 
-现在 durable 失败先保存原步骤/错误，再在原 application epoch 仍有效时调用同一生产权威回查/写回，并随失败回执返回实际 `installCompare`；失败仍为失败，原目标与 pending 回执不清除、不扩展、不重新规划。来源/登记/文件/保护安全检查不减少。原失败阶段已是结果持久化或回执清理时不隐式重试同一写入；回查本身失败追加说明，不伪造比较结果。组合入口在状态读取、当前枚举、内容确认与持久化边界核对调用方 epoch，退出后不发起新阶段，不接受晚返回证据。
+现在 durable 失败先保存原步骤/错误，仅在已有明确完成步骤或 attempted/done 不确定副作用、且原 application epoch 仍有效时调用同一生产权威回查/写回，并随失败回执返回实际 `installCompare`；失败仍为失败，原目标与 pending 回执不清除、不扩展、不重新规划。来源/登记/文件/保护安全检查不减少。原失败阶段已是结果持久化或回执清理时不隐式重试同一写入；回查本身失败追加说明，不伪造比较结果。组合入口在状态读取、当前枚举、内容确认与持久化边界核对调用方 epoch，退出后不发起新阶段，不接受晚返回证据。
 
-现有 F11 门新增 5 条：真实结果为未安装、仍有其他安装、unknown、回查写入失败、回查中退出；保留原 42 条断言与场景。真实整链另验证目录残留仍被确认、失败回执更换为当前 matches、同库重开保持提示与精确重试。
+现有 F11 门新增 8 条：真实结果为未安装、仍有其他安装、unknown、回查写入失败、回查中退出、零副作用身份拒绝/取消不写状态、零完成计数但 attempted 的不确定结果仍回查；保留原 42 条断言与场景。真实整链另验证目录残留仍被确认、失败回执更换为当前 matches、同库重开保持提示与精确重试。
 
 ### 14.3 自动化入口与结果登记
 
@@ -907,3 +907,12 @@ $workerExitCode = $LASTEXITCODE
 - 开发模式菜单“帮助 → 打开本次启动日志”会在资源管理器定位本次日志，优先用它确认路径。默认业务根 `%LOCALAPPDATA%\字体管理器`，日志为 `logs\startup-<时间>-<pid>.log`；若已有 `HFM_DATA_DIR` 则继续该根。
 - 本地 app DB 为业务根 `data\app.sqlite`；fallback 预览 DB 为 `cache\preview\preview-fallback.sqlite`，图片在 `cache\preview\images`。另有根级共享数据/缓存，不删除任何一类；不改 Electron 的独立 userData 根。
 - 一次回传：精确 commit、专用本机 log/属于本次的 failure JSON、每次启动的完整 startup log、最简操作顺序/时间、截图、实际来源卸载前后 manifest，以及可选只读登记快照。各项写明通过、失败、未执行；UAC/HKLM/NAS/自然占用和历史 W7/W20 分别说明。无须重复运行已完成的每阶段 CI。
+
+### 14.5 首轮完整 Windows 回执与夹具补修（2026-10-06）
+
+首轮受测 `4ac5d59371f03255f1a3ccc4dc9dd95c23410188` 的 [Windows CI 37445380323](https://github.com/uniquenesssta/99/actions/runs/37445380323) / job `112208795213` 已完整执行并失败。类型检查及 166/166 诊断、F13 A–B–B–A/24 个 PNG 阶段、其余原生/DOM/构建全部成功；两项失败如下，未用部分成功收尾：
+
+1. 准确卸载独立门在原有“来源重新出现/身份替换→零副作用”断言看到新增 `persist`。原回查条件只要求 durable，早于任何 effect 的持久计划也进入状态写入。现在必须已有 completedSteps 或 attempted/done 状态才回查；纯身份拒绝/UAC 取消保持零状态持久化，不削弱原断言。不确定 ACK 即使 completedSteps=0 仍回查真实证据。新增三个明确反例，补修 CI 将执行本轮全部 8 条新增反例与原有 42 条。
+2. F14 浏览器已完成缺失/取消/同目录恢复和真实列表源 PNG，但网格卡片等待使用了原始 PNG URI；生产网格会先按实际像素裁剪，卡片合法使用裁剪后的 URI，因此该断言在 15 秒后失败。失败 cleanup 销毁最后窗口后 Electron 默认退出，在异步 drain/report 完成前结束，外层只看到缺 report。现在沿生产 `gridPreviewPostprocess` 取得原 PNG 对应裁剪结果，严格核对真实目标卡片 src/实际尺寸与原图高度，不放宽为任意图片；引入现有生产 CSS。测试 runner 显式拥有无窗口重开/清理期间生命周期，异常先落 report/log/截图，watchdog 仍非零退出，完整关闭并写报告后才交回既有 runner。
+
+首轮产物 `font-identity-f07-evidence` / artifact `11404515888` 保留真实列表截图、两张源 PNG、SQLite 与成功 F13 比较；没有终态 F14 report，不宣称后续安装/卸载/重开场景已运行。补修后的精确完整 Windows 回执另行登记。

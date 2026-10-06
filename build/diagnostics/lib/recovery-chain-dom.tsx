@@ -13,6 +13,7 @@ import { refreshDatabaseDerivedStateRuntime } from '../../../src/renderer/src/da
 import { noteFontRefreshRequest, observeFontRefreshPage, cancelFontRefreshObservation } from '../../../src/renderer/src/fontOperationTrace'
 import { createFontPreviewQueueRuntime } from '../../../src/renderer/src/runtime/preview/fontPreviewQueueRuntime'
 import { getCardPreviewLayout } from '../../../src/shared/preview-layout/previewTextFitRuntime'
+import { gridPreviewPostprocess } from '../../../src/renderer/src/runtime/preview/gridNativePreviewImageTrimRuntime'
 import { previewImageTrace, previewEvent } from '../../../src/renderer/src/runtime/preview/previewTraceRuntime'
 const noop=()=>{}, ref=(current:any)=>({current}), stableEmpty:any[]=[], activeFilter={kind:'all'}
 const host=document.createElement('main');document.body.append(host)
@@ -42,7 +43,7 @@ function App({shell}:any) {
     staleInstalled:(id:string)=>setLibrary((old:any)=>({...old,fonts:{...old.fonts,[id]:{...old.fonts[id],systemInstalled:true,installStatusKnown:true}}})),
   }
   return <><p id="chain-status">{status}</p><select aria-label="安装状态" value={installStatus} onChange={event=>setInstallStatus(event.currentTarget.value)}><option value="all">全部状态</option><option value="installed">已安装</option><option value="notInstalled">未安装</option></select>
-    <div id="cards">{(page?.items||[]).map((font:any)=><FontCard key={font.id} {...{font,active:false,selected:false,compact:mode==='list',previewText:'Ag fj',listPreviewFontSize:44,onSelect:noop,onOpenDetail:noop,onVisible:()=>{if(preview?.targets.has(font.id))preview.runtime.requestPreviewFont(font,'high')},onContextMenu:(event:any)=>{event.preventDefault();open(font)},previewStateForFont:(item:any)=>preview?.runtime.previewStateForFont?.(item)} as any} />)}</div>
+    <div id="cards" className={mode==='grid'?'f14-grid':'f14-list'}>{(page?.items||[]).map((font:any)=><FontCard key={font.id} {...{font,active:false,selected:false,compact:mode==='list',previewText:'Ag fj',listPreviewFontSize:44,onSelect:noop,onOpenDetail:noop,onVisible:()=>{if(preview?.targets.has(font.id))preview.runtime.requestPreviewFont(font,'high')},onContextMenu:(event:any)=>{event.preventDefault();open(font)},previewStateForFont:(item:any)=>preview?.runtime.previewStateForFont?.(item)} as any} />)}</div>
     <AppOverlays {...{contextMenu:menu,contextSelectedFonts:menu?[menu.font]:[],contextTargetCount:menu?1:0,runFontContextAction:(action:any)=>command(action,[menu.font.id],[menu.font],'font-context'),...dialog,setLeaseLockConflictNotice:noop} as any}/></>
 }
 function makePreview(fonts:any[],mode:'list'|'grid') {
@@ -62,6 +63,7 @@ function makePreview(fonts:any[],mode:'list'|'grid') {
 ;(window as any).recoveryChain={
   snapshot:()=>api?.snapshot(),refresh:()=>api.refresh(),filter:(status:string)=>api.setInstallStatus(status),staleInstalled:(id:string)=>api.staleInstalled(id),
   preview:(ids:string[],mode:'list'|'grid')=>{const fonts=ids.map(id=>api.getFont(id));if(fonts.some(font=>!font))throw Error('preview item must come from current query page');makePreview(fonts,mode)},
+  expectedCardImage:async(id:string,mode:string)=>{const source=preview.decoded.get(id)?.image;if(!source)throw Error('raw decoded source absent');let image=source;if(mode==='grid'){let release=()=>{};try{image=await new Promise<string>(resolve=>{release=gridPreviewPostprocess.request(source,value=>resolve(value.image))})}finally{release()}}const decoded=new Image();decoded.src=image;await decoded.decode();return {image,width:decoded.naturalWidth,height:decoded.naturalHeight,route:mode==='grid'?'production-grid-crop':'original-list-png'}},
   previewSnapshot:()=>preview?{error:preview.error,decoded:[...preview.decoded.values()],queued:preview.options.previewQueue.current.length,running:preview.options.activePreviewLoads.current,loading:preview.options.loadingFonts.current.size}:null,
   reRequest:(id:string,metadataOnly=false)=>{const item=api.getFont(id);preview.runtime.requestPreviewFont(metadataOnly?{...item,favorite:!item.favorite,localTagNames:[...item.localTagNames,'metadata-only']}:item,'high')},
   disposePreview:()=>{preview?.runtime.disposePreviewQueue();preview=undefined;api.bump()},
