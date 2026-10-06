@@ -88,4 +88,10 @@ jobs:
             artifacts/font-identity-f04
             artifacts/list-preview
             artifacts/real-feedback
+            !artifacts/**/*.ttf
+            !artifacts/**/*.otf
+            !artifacts/**/*.ttc
+            !artifacts/**/*.otc
+            !artifacts/**/*.woff
+            !artifacts/**/*.woff2
           retention-days: 14

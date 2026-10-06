@@ -204,7 +204,8 @@
     "diagnostics:query-work-lifetime": "node build/diagnostics/check-query-work-lifetime.cjs",
     "diagnostics:recovery-snapshot-lifetime": "node build/diagnostics/check-recovery-snapshot-lifetime.cjs",
     "diagnostics:preview-provenance": "node build/diagnostics/check-preview-provenance.cjs",
-    "diagnostics:full-refresh-acceptance": "node build/diagnostics/check-full-refresh-acceptance.cjs"
+    "diagnostics:full-refresh-acceptance": "node build/diagnostics/check-full-refresh-acceptance.cjs",
+    "diagnostics:recovery-preview-pixels": "node build/diagnostics/check-recovery-preview-pixels.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

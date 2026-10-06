@@ -3,6 +3,7 @@ const {DatabaseSync}=require('node:sqlite')
 const {createChain}=require('./recovery-chain-runtime.cjs')
 const {createRuntime}=require('./preview-chain-performance-runtime.cjs')
 const {hash}=require('./operation-work-performance.cjs')
+const {capturePreviewEvidence}=require('./recovery-preview-visual.cjs')
 const plain=value=>JSON.parse(JSON.stringify(value))
 async function run({directory,html,preload,config,electron}) {
   const {app,BrowserWindow,ipcMain}=electron
@@ -59,9 +60,12 @@ async function run({directory,html,preload,config,electron}) {
     const result=await wait(async()=>{const value=await js('window.recoveryChain.previewSnapshot()');if(value?.error)throw Error(value.error);return value?.decoded.length===1&&value.running===0&&value.loading===0&&value.queued===0&&value},'private PNG decode')
     const decoded=result.decoded[0],imageSha256=hash(Buffer.from(decoded.image.split(',')[1],'base64'))
     const expectedCard=await js(`window.recoveryChain.expectedCardImage(${JSON.stringify(item.id)},${JSON.stringify(mode)})`)
-    const cardImage=await wait(()=>js(`(()=>{const card=[...document.querySelectorAll('[data-font-id]')].find(card=>card.dataset.fontId===${JSON.stringify(item.id)});const image=card&&[...card.querySelectorAll('img')].find(image=>image.src===${JSON.stringify(expectedCard.image)});return image?.complete&&image.naturalWidth?{width:image.naturalWidth,height:image.naturalHeight}:null})()`),'actual FontCard image load')
+    const visualDeadline=Date.now()+15000
+    const cardImage=await wait(()=>js(`(()=>{const card=[...document.querySelectorAll('[data-font-id]')].find(card=>card.dataset.fontId===${JSON.stringify(item.id)});const image=card&&[...card.querySelectorAll('img')].find(image=>image.src===${JSON.stringify(expectedCard.image)});return image?.complete&&image.naturalWidth?{width:image.naturalWidth,height:image.naturalHeight}:null})()`),'actual FontCard image load',Math.max(1,visualDeadline-Date.now()))
     assert.equal(cardImage.width,expectedCard.width);assert.equal(cardImage.height,expectedCard.height);assert(cardImage.width>0&&cardImage.width<=decoded.width);assert.equal(cardImage.height,decoded.height);cardImage.route=expectedCard.route;cardImage.sha256=hash(Buffer.from(expectedCard.image.split(',')[1],'base64'))
-    fs.writeFileSync(path.join(directory,`${label}-${mode}.png`),(await win.webContents.capturePage()).toPNG())
+    const nativeBeforeVisual=chain.observed.nativeRequests.length
+    await capturePreviewEvidence({win,js,report,directory,id:item.id,mode,label,source:expectedCard.image,key:decoded.key,deadline:visualDeadline})
+    assert.equal(chain.observed.nativeRequests.length,nativeBeforeVisual,'theme/paint evidence requested another native render')
     delete decoded.image
     const requests=chain.observed.nativeRequests.slice(before)
     for(const request of requests){assert.equal(chain.key(request.fontPath),chain.key(item.path));assert.equal(request.preferSystemFont,false);assert.equal(request.engine,'rust-private-gdi');assert.equal(request.ok,true);assert.equal(request.sourceSha256,hash(fs.readFileSync(item.path)))}

@@ -1,6 +1,7 @@
 // Small real React surface; production cards, menu, commands, page hook and
 // preview owners. This deliberately is not an App.tsx startup claim.
 import React, { useEffect, useRef, useState } from 'react'
+import { compareGlyphPixels } from './recovery-preview-pixels.cjs'
 import { createRoot } from 'react-dom/client'
 import { SharedAvailabilityProvider, useSharedAvailability } from '../../../src/renderer/src/sharedAvailabilityRuntime'
 import { FontCard } from '../../../src/renderer/src/components/FontCard'
@@ -61,8 +62,51 @@ function makePreview(fonts:any[],mode:'list'|'grid') {
   api.setMode(mode);api.bump()
   for(const font of fonts)preview.runtime.requestPreviewFont(font,'high')
 }
+const visualNodes = new WeakMap<Element, number>()
+let visualNodeSequence = 0
+const visualNodeId = (node: Element) => { let id=visualNodes.get(node); if(!id){id=++visualNodeSequence;visualNodes.set(node,id)}return id }
+function visualSnapshot(id: string, mode: string) {
+  const cards=[...document.querySelectorAll<HTMLElement>('[data-font-id]')].filter(card=>card.dataset.fontId===id)
+  if(cards.length!==1)throw Error('visual target is missing or duplicated')
+  const card=cards[0],images=[...card.querySelectorAll<HTMLImageElement>('img')].filter(image=>image.classList.contains(mode==='grid'?'grid-native-preview-image':'font-sample-image'))
+  if(images.length!==1)throw Error('visual target image is missing or duplicated')
+  const image=images[0],rect=(node:Element)=>{const value=node.getBoundingClientRect();return {x:value.x,y:value.y,width:value.width,height:value.height}}
+  const ancestors=[];let clip={x:0,y:0,width:window.innerWidth,height:window.innerHeight},visible=true,supported=true
+  const intersect=(a:any,b:any)=>{const x=Math.max(a.x,b.x),y=Math.max(a.y,b.y);return {x,y,width:Math.max(0,Math.min(a.x+a.width,b.x+b.width)-x),height:Math.max(0,Math.min(a.y+a.height,b.y+b.height)-y)}}
+  for(let node:Element|null=image;node;node=node.parentElement){
+    const c=getComputedStyle(node),box=rect(node),transform=c.transform
+    if(transform!=='none'){const match=/^matrix\(([^)]+)\)$/.exec(transform),values=match?.[1].split(',').map(Number);if(!values||values.length!==6||!values.every(Number.isFinite)||values[0]<=0||values[3]<=0||Math.abs(values[1])>0.0001||Math.abs(values[2])>0.0001)supported=false}
+    if(c.display==='none'||c.visibility!=='visible'||Number(c.opacity)<0.99)visible=false
+    if(c.clipPath!=='none'||(c.clip!=='auto'&&c.clip!==''))supported=false
+    if(c.filter!=='none'&&!(node===image&&c.filter==='invert(1)'))supported=false
+    const clipX=/(hidden|clip|auto|scroll)/.test(c.overflowX),clipY=/(hidden|clip|auto|scroll)/.test(c.overflowY)
+    if(node!==image&&(clipX||clipY))clip=intersect(clip,{x:clipX?box.x:clip.x,y:clipY?box.y:clip.y,width:clipX?box.width:clip.width,height:clipY?box.height:clip.height})
+    ancestors.push({node:visualNodeId(node),tag:node.tagName,className:node.className,rect:box,display:c.display,visibility:c.visibility,opacity:c.opacity,filter:c.filter,transform,transformOrigin:c.transformOrigin,overflowX:c.overflowX,overflowY:c.overflowY,clip:c.clip,clipPath:c.clipPath,background:c.backgroundColor,backgroundImage:c.backgroundImage})
+  }
+  const style=getComputedStyle(image),box=rect(image)
+  if(!['none','fill'].includes(style.objectFit))supported=false
+  if(style.objectFit==='none'&&(image.offsetWidth!==image.naturalWidth||image.offsetHeight!==image.naturalHeight))supported=false
+  const current=api.getFont(id),state=current&&preview?.runtime.previewStateForFont(current)
+  return {id,mode:api.snapshot().mode,node:visualNodeId(image),cardNode:visualNodeId(card),connected:image.isConnected&&card.isConnected,currentSrc:image.currentSrc||image.src,key:state?.key,
+    complete:image.complete,naturalWidth:image.naturalWidth,naturalHeight:image.naturalHeight,rect:box,clip,visible,supported,
+    objectFit:style.objectFit,objectPosition:style.objectPosition,theme:document.documentElement.dataset.theme,devicePixelRatio:window.devicePixelRatio,viewport:{width:window.innerWidth,height:window.innerHeight},ancestors}
+}
+async function visualFrames(id:string,mode:string,remainingMs:number) {
+  const value=visualSnapshot(id,mode),image=[...document.querySelectorAll<HTMLImageElement>('img')].find(node=>visualNodeId(node)===value.node)!
+  let timer:number|undefined
+  try {await Promise.race([(async()=>{await image.decode();await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))})(),new Promise((_,reject)=>{timer=window.setTimeout(()=>reject(Error('visual existing deadline')),remainingMs)})])}
+  finally {if(timer!==undefined)window.clearTimeout(timer)}
+  return visualSnapshot(id,mode)
+}
+async function visualPixels(id:string,mode:string,capture:string) {
+  const before=visualSnapshot(id,mode),image=[...document.querySelectorAll<HTMLImageElement>('img')].find(node=>visualNodeId(node)===before.node)!,shot=new Image(),canvases:HTMLCanvasElement[]=[]
+  const pixels=(source:CanvasImageSource,width:number,height:number)=>{const canvas=document.createElement('canvas');canvases.push(canvas);canvas.width=width;canvas.height=height;const ctx=canvas.getContext('2d',{willReadFrequently:true})!;ctx.drawImage(source,0,0);return {width,height,pixels:ctx.getImageData(0,0,width,height).data}}
+  try {shot.src=capture;await shot.decode();const source=pixels(image,image.naturalWidth,image.naturalHeight),captured=pixels(shot,shot.naturalWidth,shot.naturalHeight);const input={source,captured,rect:before.rect,clip:before.clip,viewport:before.viewport,theme:before.theme};const result=compareGlyphPixels(input),opposite=compareGlyphPixels({...input,theme:before.theme==='light'?'dark':'light'});return {before,after:visualSnapshot(id,mode),pixels:{...result,anyPolarityGlyphVisible:result.pass||opposite.pass}}}
+  finally {shot.removeAttribute('src');for(const canvas of canvases){canvas.width=0;canvas.height=0}}
+}
 ;(window as any).startRecoveryChain=(shell:any)=>{createRoot(host).render(<SharedAvailabilityProvider><App shell={shell}/></SharedAvailabilityProvider>)}
 ;(window as any).recoveryChain={
+  visualSnapshot,visualFrames,visualPixels,
   snapshot:()=>api?.snapshot(),refresh:()=>api.refresh(),filter:(status:string)=>api.setInstallStatus(status),staleInstalled:(id:string)=>api.staleInstalled(id),
   preview:(ids:string[],mode:'list'|'grid')=>{const fonts=ids.map(id=>api.getFont(id));if(fonts.some(font=>!font))throw Error('preview item must come from current query page');makePreview(fonts,mode)},
   expectedCardImage:async(id:string,mode:string)=>{const source=preview.decoded.get(id)?.image;if(!source)throw Error('raw decoded source absent');let image=source;if(mode==='grid'){let release=()=>{};try{image=await new Promise<string>(resolve=>{release=gridPreviewPostprocess.request(source,value=>resolve(value.image))})}finally{release()}}const decoded=new Image();decoded.src=image;await decoded.decode();return {image,width:decoded.naturalWidth,height:decoded.naturalHeight,route:mode==='grid'?'production-grid-crop':'original-list-png'}},
