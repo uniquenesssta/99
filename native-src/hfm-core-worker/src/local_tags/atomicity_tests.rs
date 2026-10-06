@@ -89,11 +89,19 @@ fn recovery_target_is_pinned_and_changed_content_is_rejected() {
     let mut bytes=vec![0u8;100];bytes[1]=1;
     std::fs::write(&target,&bytes).unwrap();
     let path=target.to_string_lossy().into_owned();
+    // Mirror main-process realpath evidence; TEMP can contain aliases/short names.
+    let physical=std::fs::canonicalize(&target).unwrap().to_string_lossy().into_owned();
     let expected="16b1d4dcb432a18c4511ff04d5af0786937fd6d3e38a5bfca703132654e85073";
-    let pin=crate::font_mutation::pin_recovery_file(&path,&path,expected).unwrap();
+    let wrong_target=dir.join("other.ttf").to_string_lossy().into_owned();
+    let wrong=crate::font_mutation::pin_recovery_file(&path,&wrong_target,expected).unwrap_err();
+    assert!(wrong.to_string().contains("physical path"),"different physical target must stay rejected");
+    let aliased=dir.join(".").join("target.ttf").to_string_lossy().into_owned();
+    let pin=crate::font_mutation::pin_recovery_file(&aliased,&physical,expected).unwrap();
     assert!(std::fs::write(&target,&bytes).is_err(),"target writes must stay blocked during commit");
+    assert!(std::fs::rename(&target,dir.join("moved.ttf")).is_err(),"target replacement must stay blocked during commit");
     drop(pin);
     bytes[99]=1;std::fs::write(&target,&bytes).unwrap();
-    assert!(crate::font_mutation::pin_recovery_file(&path,&path,expected).is_err(),"same-size changed bytes must be rejected");
+    let changed=crate::font_mutation::pin_recovery_file(&path,&physical,expected).unwrap_err();
+    assert!(changed.to_string().contains("content"),"same-size changed bytes must be rejected by content evidence");
     std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -32,11 +32,11 @@
     "RustInstallStatusSaveResult": "098a1edb76875415621eb546fef1275365b9e69b4017f8f94f808237b219fc92",
     "RustInstallStatusCompareInput": "4bf6ae3761d3eb99857b72fe81ae4d81c49f56a5090133ff841e90f11f4ed03c",
     "RustInstallStatusCompareResult": "ac951ffd74aab6d7b6c0ac98d17f443af1888aa0585884eb7823c695f8fb654c",
-    "RustLocalTagsSetRow": "83a859f1b6fd9392b37bb131717d16fb8fc9a15dd3872e15e17295d95e14b70c",
+    "RustLocalTagsSetRow": "64b1336b57b9c83d19b91a0c2efa7c164ddc3f8d9f186c0ca64222b4f2813187",
     "RustLocalTagsReadRow": "218bd86fa42d715a1c0ce2df9d057327590914dfc5b446b99e81e050a707572d",
     "RustLocalTagsReadInput": "fd81aadb46a69827d5d2fbf670d5af1aeacf144a045047e89e47bd04bcbd7267",
     "RustLocalTagsReadResult": "a89f811b97ebb910d071c45b368e1f7b262566407d4f84c397d2511fee88f35f",
-    "RustLocalTagsSetInput": "d79720338ac2e740b1af1cf70034c59ec9be59768da30e8dce2e97a508f716df",
+    "RustLocalTagsSetInput": "1c5af80419d3b8c68857c2cc9ac20376ae62cbfc357fba96b2f2a4df1ced2157",
     "RustLocalTagsDeleteTagInput": "905c9631c71084a11225360e6b2af51626d2ccd9f8bd1d87a7a4d059168aa270",
     "RustLocalTagsMutationStateSignal": "6f6c4a38cadeb67eb103c7c5989b7b516f108e8e7faa699048349608cfdf4340",
     "RustLocalTagsSetResult": "547f727e8d0e48f27bf129216089675a562b2b47ac903a036208c5eebefc3139",
@@ -224,5 +224,22 @@
       "module": "../indexing/fontScanWorkers"
     }
   ],
-  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
+  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes.",
+  "f09Migration": {
+    "baseline": "034391cb3acdd6a1430e4f5c3b5b912d9f964608",
+    "testedCommit": "9fcac9b55018e1fb3cbfed01d8f9a7ae3b0dc3c6",
+    "reason": "F09 deliberately adds optional current-tag/file/source guards and proven state moves. Legacy row/input fields, other public/private shapes and type-only dependencies stay frozen; compiler cases cover legacy inputs, guarded inputs and invalid guard fields.",
+    "types": [
+      {
+        "name": "RustLocalTagsSetRow",
+        "oldShape": "83a859f1b6fd9392b37bb131717d16fb8fc9a15dd3872e15e17295d95e14b70c",
+        "newShape": "64b1336b57b9c83d19b91a0c2efa7c164ddc3f8d9f186c0ca64222b4f2813187"
+      },
+      {
+        "name": "RustLocalTagsSetInput",
+        "oldShape": "d79720338ac2e740b1af1cf70034c59ec9be59768da30e8dce2e97a508f716df",
+        "newShape": "1c5af80419d3b8c68857c2cc9ac20376ae62cbfc357fba96b2f2a4df1ced2157"
+      }
+    ]
+  }
 }

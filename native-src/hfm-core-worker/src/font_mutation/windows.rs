@@ -590,9 +590,16 @@ pub fn run(args:&[String])->io::Result<()> {
 
 pub(super) fn pin_recovery_file(path: &str, expected_physical: &str, expected_sha256: &str) -> io::Result<File> {
     let file = OpenOptions::new().read(true).share_mode(1).open(path)?;
-    if !file.metadata()?.is_file() || file.metadata()?.len() > 256 * 1024 * 1024
-        || recovery_path_key(&physical(&file)?) != recovery_path_key(expected_physical) || digest(&file)? != expected_sha256 {
-        return Err(fail("recovery target identity/content changed; bindings retained"));
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > 256 * 1024 * 1024 {
+        return Err(fail("recovery target type/size changed; bindings retained"));
+    }
+    let actual_physical = physical(&file)?;
+    if recovery_path_key(&actual_physical) != recovery_path_key(expected_physical) {
+        return Err(fail(&format!("recovery target physical path changed: expected={expected_physical}, actual={actual_physical}; bindings retained")));
+    }
+    if digest(&file)? != expected_sha256 {
+        return Err(fail("recovery target content changed; bindings retained"));
     }
     Ok(file)
 }

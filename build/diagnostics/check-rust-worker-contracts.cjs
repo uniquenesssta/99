@@ -149,6 +149,20 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
 type Assert<T extends true> = T
 ${publicNames.map((name, i) => `type Public${i} = Assert<Equal<C.${name}, L.${name}>>`).join('\n')}
 ${payloadNames.map((name, i) => `// @ts-expect-error Internal payload is not part of the public facade\ntype Private${i} = L.${name}`).join('\n')}
+// Legacy callers must remain valid without recovery-only fields.
+const legacyTagSet: C.RustLocalTagsSetInput = { dbPath: 'local.sqlite', updatedAt: 'now', rows: [{ itemId: 'font', aliases: ['font'], fontPath: 'C:/font.ttf', tagNames: ['Keep'] }] }
+const recoveryTagSet: C.RustLocalTagsSetInput = { ...legacyTagSet,
+  rows: [{ ...legacyTagSet.rows[0], expectedTagNames: [] }],
+  recoveryMoves: [{ from: 'C:/old.ttf', to: 'C:/new.ttf' }],
+  recoveryFiles: [{ path: 'C:/new.ttf', physicalPath: 'C:/new.ttf', sha256: 'proof' }],
+  recoveryMissingSources: [{ path: 'C:/old.ttf', rootPath: 'C:/' }],
+}
+// @ts-expect-error Expected tags are names, never numeric identities.
+const invalidRecoveryTags: C.RustLocalTagsSetRow = { ...legacyTagSet.rows[0], expectedTagNames: [1] }
+// @ts-expect-error Recovery files must carry their verified physical target.
+const invalidRecoveryFile: C.RustLocalTagsSetInput = { ...legacyTagSet, recoveryFiles: [{ path: 'C:/new.ttf', sha256: 'proof' }] }
+// @ts-expect-error Missing-source validation must retain its accessible root.
+const invalidRecoverySource: C.RustLocalTagsSetInput = { ...legacyTagSet, recoveryMissingSources: [{ path: 'C:/old.ttf' }] }
 // @ts-expect-error Worker availability must be boolean
 const invalidStatus: C.RustCoreWorkerStatus = { available: 'yes' }
 // @ts-expect-error Preview dimensions must be numeric
@@ -191,6 +205,7 @@ function main() {
   const mutated = (rel, change) => view(new Map([[rel, change(actual.read(abs(rel)))]]))
   const rejects = [
     ['required field widened', () => checkShapes(mutated(contracts, text => text.replace('available: boolean', 'available?: boolean')))],
+    ['legacy recovery field made mandatory', () => checkShapes(mutated(contracts, text => text.replace('expectedTagNames?: string[]', 'expectedTagNames: string[]')))],
     ['public export removed', () => checkShapes(mutated(contracts, text => text.replace('export type RustCoreWorkerStatus', 'type RustCoreWorkerStatus')))],
     ['private payload narrowed', () => checkShapes(mutated(payloads, text => text.replace('ok?: boolean', 'ok: boolean')))],
     ['runtime import introduced', () => checkShapes(mutated(contracts, text => text.replace('import type', 'import')))],
@@ -205,7 +220,7 @@ function main() {
   checkShapes(crlf)
   checkBoundaries(crlf)
   checkErasure(crlf)
-  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 41 compiler rejections, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
+  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 44 compiler rejections, legacy/recovery tag inputs, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
 }
 
 try { main() } catch (error) {
