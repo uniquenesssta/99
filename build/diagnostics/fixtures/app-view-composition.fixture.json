@@ -1,6 +1,7 @@
 {
   "baseline": "0a9b82bfe84dff77992eecb4c2a52df2cf649d07",
   "lifecyclePrefixSha256": "b33c934801d53eb2e301ce446bc03723a8aa772027ad8eebf57f995b9355f94b",
-  "rootViewSha256": "e26abd7ee505518f601ec9622cbe6f3471afd79f4d71f2ade76a60a86b734708",
-  "migration": "9fcce70: clicked-card relink callback and dialog sidebar scope; old normalized prefix reproduced before migration; S12-F12: read-only source-owned preview getter wiring and removal of eager index preview calls; old normalized prefix reproduced, disposal and view boundaries retained"
+  "rootViewSha256": "dec6e42c35c9c1e6a19e380f3ffed0b50a7b9a4a99798282e77510ad03f5fda4",
+  "migration": "9fcce70: clicked-card relink callback and dialog sidebar scope; old normalized prefix reproduced before migration; S12-F12: read-only source-owned preview getter wiring and removal of eager index preview calls; old normalized prefix reproduced, disposal and view boundaries retained",
+  "realFeedbackMigration": "F14 feedback: pass existing sidebar root/status readiness and unknown count to list empty-state; lifecycle prefix and all legacy UI wiring hashes stay frozen."
 }

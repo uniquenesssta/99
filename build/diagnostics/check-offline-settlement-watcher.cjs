@@ -17,13 +17,13 @@ const tick=()=>new Promise(r=>setImmediate(r)),plain=x=>JSON.parse(JSON.stringif
 async function settlement() {
  const db=new DatabaseSync(':memory:');db.function('hfm_shared_font_id',(relative,_size,_mtime)=>String(relative).replace('.ttf',''))
   require('./check-operation-chain.cjs').loader()('src/main/fonts/fontFileIdentity.ts').registerFileIdentitySql(db)
- db.exec('CREATE TABLE entries(relative_path TEXT,file_size INTEGER,modified_at INTEGER,font_json TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,root_path TEXT)')
- const insert=db.prepare('INSERT INTO entries VALUES (?,1,?, ?,0,?,?,?)')
+ db.exec("CREATE TABLE entries(relative_path TEXT,file_size INTEGER,modified_at INTEGER,font_json TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,root_path TEXT,is_deleted INTEGER DEFAULT 0,status TEXT DEFAULT 'ok')")
+ const insert=db.prepare('INSERT INTO entries(relative_path,file_size,modified_at,font_json,installed,installed_by,matches_json,root_path) VALUES (?,1,?, ?,0,?,?,?)')
  for(const id of ['a','b'])insert.run(id+'.ttf',1,JSON.stringify({id,path:'\\\\nas\\fonts\\'+id+'.ttf',localTagNames:['keep']}),'none','[]','\\\\nas\\fonts')
  let committed=0,failProjection=true,projectionCalls=0,saves=0,persisted={}
  const deny=()=>{throw Error('NAS must not be queried')}
  const runtime=load()(mergeFile).createMergedIndexValidationRuntime({
-  runMergedIndexMutation:async(_,fn)=>fn({commit(){committed++}}),openMergedIndexDb:async()=>db,closeSqliteDb(){},appWatchedFolders:deny,
+  runMergedIndexMutation:async(_,fn)=>fn({commit(){committed++}}),openMergedIndexDb:async()=>db,closeSqliteDb(){},appendStartupLog(){},appWatchedFolders:deny,
  },{mergedIndexSourcesForRoots:deny},{ensureMergedIndexBuilt:deny})
  const queue=load()(queueFile).createActivationInstallStatusSaveQueue({
   readInstallStatusIndex:async()=>({results:persisted,misses:[]}),saveInstallStatusIndex:async results=>{saves++;persisted={...persisted,...results}},

@@ -24,7 +24,13 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
     if (value instanceof Set) return [...value].map(clean)
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, k === 'env' ? '<environment>' : clean(v)]))
   }
-  const record = (name, args) => calls.push([name, clean(args)])
+  const record = (name, args) => {
+    if (name === 'createFolderWatcherRuntime.sendFontIndexChanged' && args[0]?.source === 'projection') {
+      assert.equal(new Date(args[0].at).toISOString(), args[0].at, 'projection event timestamp must be an ISO instant')
+      args = [{ ...args[0], at: '<commit-time>' }, ...args.slice(1)]
+    }
+    calls.push([name, clean(args)])
+  }
   function operation(name, implementation = () => undefined) {
     const invoke = (...args) => {
       record(name, args)

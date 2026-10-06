@@ -63,6 +63,11 @@ function harness() {
     '../ipc/sharedActionAdmissionRuntime': { createSharedActionAdmission: () => async () => {} },
     '../app/shutdownCoordinatorRuntime': { applicationWorkEpoch: () => 0, assertApplicationOpen() {} },
   }
+  const sharedOwners = require('./check-operation-chain.cjs').loader()
+  const sharedIo = sharedOwners('src/main/path/sharedFileSystemRuntime.ts')
+  mocks['../path/sharedFileSystemRuntime'] = { ...sharedIo, sharedFileSystem: filesystem }
+  mocks['../app/shutdownCoordinatorRuntime'] = sharedOwners('src/main/app/shutdownCoordinatorRuntime.ts')
+  mocks['./fontQueryTaskRuntime'] = sharedOwners('src/main/library/fontQueryTaskRuntime.ts')
   const pathsModule = load('src/main/library/tagRecoveryPathRuntime.ts', mocks)
   mocks['./tagRecoveryPathRuntime'] = pathsModule
   mocks['./tagFontBindingRuntime'] = load('src/main/library/tagFontBindingRuntime.ts', mocks)
@@ -110,7 +115,7 @@ function harness() {
     },
   }
   return { db, adapter, files, roots, parsed, sharedRows, reads, queryRequests, counts, put, add, remember, query, queryModule, recoveryModule, runtime, events,
-    pathsModule, mappings, queryDeps, snapshots, filesystem, contents, transactionModule, live: fonts => { live = fonts; query.invalidate() }, close: () => db.close() }
+    pathsModule, mappings, queryDeps, snapshots, filesystem, contents, transactionModule, live: fonts => { live = fonts; query.invalidate() }, close: () => { snapshots.disposeTagFontSnapshots(adapter); db.close() } }
 }
 
 async function queryCases() {
@@ -774,5 +779,9 @@ async function main() {
   assert.equal(failures.length, 0, failures.join('\n\n'))
   console.log('[diagnostics:tag-font-recovery] retained local/shared rows and counts, deleted binding cannot resurrect from stale live/history, read-only shared metadata isolation/legacy alias cache, mapped longest root ownership, changed detached credential/native re-confirmation, batched pages, one clicked picker, tag union, actual complete/partial/cancelled/failed scan barriers')
 }
-if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })
+if (require.main === module) {
+  let completed=false
+  process.once('beforeExit',()=>{if(!completed){console.error('Tag recovery diagnostic did not complete');process.exitCode=1}})
+  main().then(()=>{completed=true}).catch(error => { console.error(error); process.exitCode = 1 })
+}
 module.exports = { harness, main }

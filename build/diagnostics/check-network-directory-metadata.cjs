@@ -137,8 +137,16 @@ async function checkNative() {
     assert.equal(row.stat.size, real.size)
     assert(Math.abs(row.stat.mtimeMs - real.mtimeMs) < 1)
   }
+  for (let i = 0; i < 8; i++) {
+    const folder=path.join(networkRoot,`sibling-${i}`);fs.mkdirSync(folder);fs.writeFileSync(path.join(folder,`child-${i}.ttf`),'fixture child')
+  }
+  calls=[]
+  const nested=await directory.listFontFilesWithDirectoryCache(context(networkRoot),[])
+  assert.equal(nested.length,4104);assert.equal(calls.length,2)
+  assert.equal(calls[1].operation,'directoryMetadataBatch');assert.equal(calls[1].paths.length,8)
+  assert.equal(invoke({operation:'directoryMetadataBatch',path:networkRoot,paths:[networkRoot,path.join(networkRoot,'missing')]}).ok,false)
   assert.equal(invoke({ operation: 'directoryMetadata', path: path.join(networkRoot, 'missing') }).ok, false)
-  console.log('[network-directory-metadata] real native executable: 4096 files, one directory request, sizes/times and missing-directory failure passed')
+  console.log('[network-directory-metadata] real native executable: 4096 root files plus 8 sibling files, real batch request, sizes/times and missing-directory failure passed')
 }
 async function main() {
   try { await checkBatchAndCache(); await checkFailures(); await checkSiblingBatches(); await checkLocal(); await checkNative() }

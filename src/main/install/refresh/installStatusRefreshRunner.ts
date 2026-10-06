@@ -214,9 +214,10 @@ export function createInstallStatusRefreshRunner(
     }
 
     let lastProgressAt = 0
-    // Two background confirmations bound full reads without changing the shared
-    // scheduler's physical slots, alias barriers or foreground priority.
-    for (let index = 0; index < targetItems.length; index += 2) {
+    // Admit one confirmation at a time. On conservative shared roots a second
+    // queued identity cannot run in parallel and would sit ahead of foreground
+    // PNG writes. Keep pool capacity, alias barriers and evidence work unchanged.
+    for (let index = 0; index < targetItems.length; index += 1) {
       assertApplicationOpen(epoch)
       if (Date.now() - lastProgressAt >= 250) {
         lastProgressAt = Date.now()
@@ -224,7 +225,7 @@ export function createInstallStatusRefreshRunner(
           total: items.length, processed: Object.keys(existingResults).length + index,
           updatedCount, missingCount: Math.max(0, targetItems.length - index), elapsedMs: Date.now() - startedAt })
       }
-      const settled = await withSharedIoPriority('background', () => Promise.all(targetItems.slice(index, index + 2).map(async item => {
+      const settled = await withSharedIoPriority('background', () => Promise.all(targetItems.slice(index, index + 1).map(async item => {
         let result: InstallCompareResult
         const root = await deps.rootForFontPath(item.path, folders).catch(() => null)
         try {

@@ -201,6 +201,10 @@
         1
       ],
       [
+        "createInstallStatusProjectionWriteRuntime",
+        1
+      ],
+      [
         "createInstallStatusRefreshRuntime",
         1
       ],
@@ -210,6 +214,10 @@
       ],
       [
         "createInstallStatusRuntime",
+        1
+      ],
+      [
+        "createInstallStatusWorkerReadRuntime",
         1
       ],
       [
@@ -581,6 +589,19 @@
             ]
           ],
           [
+            "createFolderWatcherRuntime.sendFontIndexChanged",
+            [
+              {
+                "folder": "",
+                "at": "<commit-time>",
+                "source": "projection",
+                "projectionRevision": 2,
+                "upserts": [],
+                "deletes": []
+              }
+            ]
+          ],
+          [
             "log",
             [
               "local merged index commit invalidated query caches: reason=fixture, sequence=1, revision=2"
@@ -891,5 +912,6 @@
         ]
       }
     }
-  }
+  },
+  "realFeedbackMigration": "F14 feedback adds one worker-read owner, one status/projection writer and commit-only empty-row revision event. All previous calls/results/ownership counts retained; dynamic ISO time separately validated."
 }

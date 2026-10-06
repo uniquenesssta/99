@@ -73,30 +73,33 @@ export function createFontMetricsRequestCoalescerRuntime(
     const inFlight = inFlightByKey.get(physicalKey)
     if (inFlight) {
       args.appendLog(`font metrics request joined in-flight: key=${key}`)
-      try { const result = await joinFontQueryTask(inFlight); assertFontQueryActive(); if (joinedGeneration !== cacheGeneration) return run(args); trace('joined'); return cloneMetricsResult(result) }
-      catch (error) { assertFontQueryActive(); if (inFlight.controller.signal.aborted) return run(args); throw error }
+      try { const result = await joinFontQueryTask(inFlight); assertFontQueryActive(); if (joinedGeneration !== cacheGeneration) { trace('invalidated-reread'); return run(args) }; trace('joined'); return cloneMetricsResult(result) }
+      catch (error) { assertFontQueryActive(); if (inFlight.controller.signal.aborted) { trace('invalidated-reread'); return run(args) }; throw error }
     }
 
     const requestGeneration = cacheGeneration
     trace('load-start')
     const task = createFontQueryTask(args.load)
     inFlightByKey.set(physicalKey, task)
-    void task.pending.finally(() => {
+    // Cache publication belongs to the physical owner, before retirement and
+    // independently of whether its first consumer is still present.
+    void task.pending.then(result => {
+      if (requestGeneration === cacheGeneration && !task.controller.signal.aborted) {
+        const entry = { result: cloneMetricsResult(result), expiresAt: Date.now() + ttlMs, key }
+        cachedByKey.set(key, entry); latestCacheEntry = entry
+      }
+    }).finally(() => {
       if (inFlightByKey.get(physicalKey) === task) inFlightByKey.delete(physicalKey)
     }).catch(() => undefined)
     try {
       const result = await joinFontQueryTask(task)
       assertFontQueryActive()
-      if (requestGeneration !== cacheGeneration) return run(args)
-      if (requestGeneration === cacheGeneration) {
-        const entry = { result: cloneMetricsResult(result), expiresAt: Date.now() + ttlMs, key }
-        cachedByKey.set(key, entry); latestCacheEntry = entry
-      }
+      if (requestGeneration !== cacheGeneration) { trace('invalidated-reread'); return run(args) }
       trace('load-end')
       return cloneMetricsResult(result)
     } catch (error) {
       assertFontQueryActive()
-      if (requestGeneration !== cacheGeneration) return run(args)
+      if (requestGeneration !== cacheGeneration) { trace('invalidated-reread'); return run(args) }
       trace('load-error'); throw error
     }
   }

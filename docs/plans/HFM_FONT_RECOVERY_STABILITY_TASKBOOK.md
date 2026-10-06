@@ -1005,3 +1005,27 @@ F10～F14 开发与受控 Windows 自动化已完成。本收尾仅更新 README
 
 
 发布前静态夹具审计已核对自定义 CJS loader、冻结源码/类型散列与 worker 握手：通用 React/主进程测试 loader 补 Node 原生 AbortController/AbortSignal，generation 及 merged 测试使用真实新生命周期 helper；冻结 watcher 导出/函数列表不变，只迁移 projection-only sender 的源码散列。两项 Rust preview optional diagnostic 类型散列明确迁移；传输黄金回执只规范化已纠正的 fallback 诊断句，新增独立 provenance 门验证真实字段、缺失/恶意字段兼容及零额外原生请求，其他参数/副作用/返回/顺序锁不变。握手要求完整内容身份能力，旧 worker 不能静默当新 worker 使用。以上只执行 AST/token/hash、CJS syntax 与 diff 静态检查，完整诊断和类型检查仍交 Windows。
+
+
+### 14.11 实机反馈补修首轮 Windows 失败回执（2026-10-06）
+
+首轮候选 `8b11148967b51041c8a94506bf4ee0fa54777ba1`（运行时提交 `112ae8492a082383eea25b7a07da989bb2c7e877`）的 [Windows CI 37502201623](https://github.com/uniquenesssta/99/actions/runs/37502201623) / job `112401756815` 完整执行并失败。类型检查、Rust 构建、真实旧库/merged 投影组合、F14 同状态恢复/预览/安装/卸载重开、身份/准确卸载/原生专项、全部 DOM、旧 F13 比较及 bundle 成功。169 项诊断完整执行，9 项失败；新增完整刷新门也失败，不把部分成功称为完成。产物 `11431626296`（206,132,911 字节，ZIP SHA-256 `989c48d4a2761c4cb616c1441f6447e66c7e2474db8d4a6ddf129fb6182790a8`）保留所有阶段日志、受控状态库、真实字体副本清单和失败报告。
+
+诊断失败逐项原因与补修：
+- `query-cache-generation` 暴露真实物理 owner/cache 发布竞态：先退休 in-flight，再由创建者消费者写 cache，活跃旧代次重入会产生第三次读取；创建者取消而其他订阅者仍活跃也会丢缓存。页面、统计和标签均改为物理成功完成时先按代次/未取消条件发布，再退休，新增 A 创建/B 加入/A 取消/结算重入/C 缓存复用，保留原 `loads===2` 代次断言。
+- `browse-metrics-reuse` 缺失原有 `invalidated-reread` 诊断阶段；在仍活跃消费者重新取当前值时恢复，取消消费者仍先拒绝。
+- `app-root-view-contracts`、`main-composition-runtime`、`rust-worker-clients` 的旧冻结契约尚未迁移新增空态 readiness 传参、单一写/读 owner、projection-only 修订通知和可选原生 provenance。明确迁移这些字段/函数，旧 lifecycle/UI 树/调用序列保留；新字段单独断言，动态时间必须是 ISO instant 后才归一化。
+- `offline-settlement-watcher` 的手建 entries 缺生产必需 `status/is_deleted` 列及 logger，导致投影重试失败；补等价 schema，继续要求失败 pending 保留、重试完成和其他行/标签不变。
+- `runtime-feedback` 的旧 targeted-status 测试仍走远程 root sync；针对现在仍保留的 root incremental owner 直接测试原有保守 fallback，新的 targeted local SQL 路径由真实投影组合与 offline 门验证。
+- `shared-io-integration` 在 await 读取失败之后才断言输入 lease 仍存在，与现在读取等待真实 child close 的契约冲突；将 pre-close lease/未 settle 断言放在真实 child 仍运行期间，再核对具体 child close、输入清理及队列结束。
+- `tag-font-recovery` 自定义 loader 缺新 task helper；接入同一真实信号/关闭 owner，只替换文件系统边界，关闭释放 snapshot owner，保留恢复新鲜读取数量和历史证据断言。
+
+完整刷新 A1 的 5490 项结算为 installed 247 / notInstalled 5234 / unknown 9：9 个已启动的旧基线 realpath/stat 子进程触发原 500ms 执行期限；原始文件字节/hash 与 manifest 一致，相同 9 项在 A2/B1/B2 成功。unknown 是安全结果，不把期望 256 改成 247，不扩大原期限或清除首轮失败；没有 CPU/系统证据可归因为具体外部程序。A2/B1/B2 各自完成并通过本轮单通道断言，CAS、5491 无效项完整结算、离线混合 unknown、取消消费者正确性通过。父目录时间不变场景另因夹具经 Date 恢复 NTFS 亚毫秒时间发生截断而失败；现先建立可精确表示的整秒目录时间再读前后快照，仍严格要求两次目录时间完全相同及真实子变化被检出。
+
+首轮 A1 未满足完整正确性，整体性能比较未获通过。原始子请求 queue p95 的样本数随前台完整 hash 消除而明显变化，正在按固定语义请求/标签审查可比性与同类退化；在独立审阅前不删除原门，不声称整体提速。下一轮继续完整 Windows 验证并保存全部原始分布。
+
+
+第二轮性能修改前预算修订：首轮实际队列证明未验证配置根保守 barrier 会串行执行这些读取，两个并发 confirmation 只是提前排入第二个后台 identity。B2 第一组两个 identity 先于前台到达；另一组还有历史 stat 在前，预览写PNG按现有 write 规则不能越过旧读，10次预览同类最大 queue 为173ms，对照A1/A2的148/155ms，存在18ms退化。将**刷新 confirmation 投递上限由2收为1**，避免后台提前排入第二项；不修改进程池/preview上限、读写公平/alias barrier、执行/排队期限或内容证明。仍要求唯一256+32个身份读取、完整5490结算、各类前台固定工作量、无遗留进程及严格同job包络。保留首轮失败和原始混合分布，不注入睡眠，不以减少必要读取换速度。新的完整门按1项上限断言；真实NAS的吞吐与交互仍须用户验证。
+
+
+第二轮测量口径修订已获独立静态审阅放行（动态结果仍待运行）：原混合child queue p95来自A的411个样本、B的30个样本，删除廉价子请求本身会把不变的10个高等待预览推入95%分位，不能作为等工作量接受依据。原始分布与原门判断仍保留在 `rawMixedQueue`，首轮不改判。新接受门按固定10个preview、4个treeSnapshot分别比较queue p95/max，固定16个browse整体比较实际发起child queue总成本，继续要求全局child queue max、browse/preview各自E2E p95/max及完整刷新时间均不退化。每个前台请求带单一ALS actionId，核对精确请求/索引/原生label/样本数量，缺失或误分组即失败；共享物理读取只记实际发起一次的成本，不伪称每个消费者等待。queuedMs包含原有同步spawn开销，继续标明。独立纯接受逻辑反例要求：删除廉价子请求不误拒绝同样/更快的固定操作；同一预览+18ms仍拒绝；漏样本/错分组/重复identity/未完成baseline均拒绝。没有使用本轮B数字抬高任何同类阈值；这些门仍等下一轮Windows验证。

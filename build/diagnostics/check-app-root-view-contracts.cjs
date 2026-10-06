@@ -84,7 +84,7 @@ function checkLifecycle(app, view) {
   assert.equal(hash(normalized.slice(0, marker)), fixture.lifecyclePrefixSha256, 'App hooks/effects/commands changed')
   assert.equal(hash(view.replace(/\r\n/g, '\n')), fixture.rootViewSha256, 'root view lifecycle/dev switch changed')
 }
-function snapshot(app, view, bindings, development, collapsed) {
+function snapshot(app, view, bindings, development, collapsed, hasFolders = false) {
   const runtime = { jsx: (type, props) => typeof type === 'function' ? type(props) : ({type, props}), jsxs: (type, props) => runtime.jsx(type, props) }
   function compile(text, imports) {
     const module = { exports: {} }
@@ -99,9 +99,17 @@ function snapshot(app, view, bindings, development, collapsed) {
   const caller=compile(source,()=>({AppRootView:actual}))
   const values=Object.fromEntries(bindings.map(name=>[name,'binding:'+name]))
   values.IS_DEVELOPMENT=development; values.library={previewText:'binding:library.previewText'}
+  Object.defineProperty(values.library, 'folders', { value: hasFolders ? ['fixture-root'] : [], enumerable: false })
   const tree=caller.render(values)
   function normalize(value) {
     if(Array.isArray(value))return value.map(normalize)
+    if(value?.type==='FontListPanel') {
+      assert.equal(value.props.hasWatchedFolders, hasFolders, 'list lost watched-root readiness')
+      assert.equal(value.props.installStatusReady, values.installStatusReady, 'list lost status readiness')
+      assert.equal(value.props.installStatusMissingCount, values.installStatusMissingCount, 'list lost unknown count')
+      const { hasWatchedFolders, installStatusReady, installStatusMissingCount, ...legacy } = value.props
+      value = { ...value, props: legacy }
+    }
     if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,v])=>[key,normalize(key==='renderSidebar'?v(collapsed,'collapse-callback'):v)]))
     return value
   }
@@ -154,6 +162,7 @@ function main() {
   assert.deepEqual(groupNames,['topbar','sidebar','content','detail','overlays','developer'])
   for(const entry of fixture.cases) {
     assert.equal(snapshot(app,view,fixture.bindings,entry.development,entry.collapsed),entry.hash,'UI wiring changed')
+    assert.equal(snapshot(app,view,fixture.bindings,entry.development,entry.collapsed,true),entry.hash,'watched-root readiness changed legacy wiring')
     assert.equal(snapshot(app.replace(/\r?\n/g,'\r\n'),view.replace(/\r?\n/g,'\r\n'),fixture.bindings,entry.development,entry.collapsed),entry.hash,'CRLF wiring changed')
   }
   const broken=app.replace('search: search,','search: status,')

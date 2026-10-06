@@ -106,16 +106,17 @@ async function main() {
    mode='hang';nextReady=path.join(dir,'ready');const file=transport.createTemporaryJsonFile('hfm-integration-lease');await file.writeJson({test:true})
    let hungSettled=false
    const hung=run(['\\\\nas\\bad'],{input:file.path,timeout:2000}).catch(e=>e).finally(()=>{hungSettled=true})
-   await until(()=>fs.existsSync(nextReady));nextReady='';mode='success';payload={ok:true}
+   await until(()=>fs.existsSync(nextReady));const hungChild=[...children][0];assert(hungChild);nextReady='';mode='success';payload={ok:true}
    const queued=run(['//NAS/bad/child'],{timeout:100}).catch(e=>e)
    await transport.runRustCoreScheduledCommand(process.execPath,['--font-resource-remove'],{timeout:100})
    const healthy=await run(['\\\\nas\\good'],{timeout:2000});assert.equal(healthy.sharedIo,true)
    assert.equal(hungSettled,false,'healthy root waited for hung root to settle')
    assert.equal(daemonCalls.length,localBefore+2,'local cleanup was blocked by network request')
-   const error=await hung;assert.equal(error.reason,'timeout');assert.equal(error.outcome,'unknown')
    await file.dispose();assert(fs.existsSync(file.path),'input removed before ignoring child closed')
-   assert(children.size>=1);await until(()=>!fs.existsSync(file.path))
-   await queued
+   assert(children.size>=1);assert.equal(hungSettled,false,'read promise settled while its child was still live')
+   const error=await hung;assert.equal(error.reason,'timeout');assert.equal(error.outcome,'unknown')
+   await error.closed;await until(()=>!fs.existsSync(file.path));assert.equal(children.has(hungChild),false,'read released before its physical close')
+   await queued;await until(()=>children.size===0)
    cases.push('hung root, other root and local cleanup; input held until true close')
    mode='hang';nextReady=path.join(dir,'abort-ready');const controller=new AbortController()
    const aborting=run(['\\\\nas\\cancel'],{signal:controller.signal,timeout:4000}).catch(e=>e)

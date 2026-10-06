@@ -203,17 +203,17 @@ export function createTagFontQueryRuntime(deps: {
       task = createFontQueryTask(() => collect(criteria, Number.MAX_SAFE_INTEGER, 0))
       inFlight.set(physicalKey, task)
       const own = task
-      void own.pending.finally(() => { if (inFlight.get(physicalKey) === own) inFlight.delete(physicalKey) }).catch(() => undefined)
+      void own.pending.then(result => {
+        if (version !== generation || own.controller.signal.aborted) return
+        if (cache.size >= 16) cache.delete(cache.keys().next().value!)
+        cache.set(cacheKey, { at: Date.now(), result })
+      }).finally(() => { if (inFlight.get(physicalKey) === own) inFlight.delete(physicalKey) }).catch(() => undefined)
     }
     let result: FontQueryPageResult
     try { result = fresh ? found!.result : await joinFontQueryTask(task!) }
     catch (error) { assertFontQueryActive(); if (version !== generation || task?.controller.signal.aborted) return query(request, limit, offset); throw error }
     assertFontQueryActive()
     if (version !== generation) return query(request, limit, offset)
-    if (version === generation) {
-      if (cache.size >= 16) cache.delete(cache.keys().next().value!)
-      cache.set(cacheKey, { at: found?.result === result ? found.at : Date.now(), result })
-    }
     return { ...result, queryKey: JSON.stringify({ ...criteria, offset, limit }), items: result.items.slice(offset, offset + limit), offset, limit, truncated: offset + limit < result.total }
   }
   async function sharedTagCounts(): Promise<Record<string, number> | undefined> {

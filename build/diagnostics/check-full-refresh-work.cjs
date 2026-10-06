@@ -2,9 +2,9 @@
 'use strict'
 
 /*
- * PROPOSED WINDOWS-ONLY FULL REFRESH / FOREGROUND BENCHMARK.
- * Prepared outside the repository; NO execution has been performed here.
- * Review/apply alongside hfm-production-projection-host.cjs, then run on Windows:
+ * WINDOWS-ONLY FULL REFRESH / FOREGROUND BENCHMARK.
+ * Actual run outcomes, including failed baselines, are retained in reports.
+ * Run alongside the production projection host on Windows:
  * node <this-file> --current-root <checkout> --baseline-root <clean-6620b3b-worktree>
  *   --worker <current-worker.exe> --baseline-worker <6620b3b-worker.exe> --host <projection-host.cjs> --output <private-output>
  *
@@ -34,12 +34,13 @@ const liveHosts = new Set()
 const BASELINE = '6620b3bafd5b3d894987585dd06c5d5eabc54933'
 const WORKLOAD = Object.freeze({ sourceFiles: 256, targetFiles: 32, sourcesPerTarget: 8,
   metadataOnly: 5234, validIndexed: 5490, invalidDisplay: 1, attemptedCorrectness: 5491,
-  legacyRows: 94, evidenceConcurrency: 2, previewConcurrency: 10,
+  legacyRows: 94, evidenceConcurrency: 1, previewConcurrency: 10,
   foregroundQueries: 16, nativePreviews: 10, treeEnumerations: 4 })
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const plain = value => JSON.parse(JSON.stringify(value))
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex')
-const errorInfo = error => ({ name: error?.name, code: error?.code, message: String(error?.message || error), stack: error?.stack })
+const errorInfo = error => ({ name: error?.name, code: error?.code, message: String(error?.message || error), stack: error?.stack,
+  reason: error?.reason, outcome: error?.outcome, queuedMs: error?.queuedMs, executionMs: error?.executionMs })
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const summarize = values => { const sorted = [...values].sort((a,b) => a-b); return { count: sorted.length,
   p95Ms: sorted.length ? sorted[Math.ceil(sorted.length * .95)-1] : null,
@@ -136,7 +137,7 @@ async function makeItems(currentRoot, fixture, hostModule) {
 // Observers wrap real owners and return their original values. They never decide
 // business state, replace SQL, insert latency or replace native transport results.
 function instrument(host, fixture) {
-  const scope = new AsyncLocalStorage()
+  const scope = new AsyncLocalStorage(), scopeSequences = new Map()
   const ioScope = host.load('src/main/path/sharedFileSystemRuntime.ts')
   const content = host.load('src/main/fonts/fontContentIdentityRuntime.ts')
   const originalRead = content.readFontContentIdentity
@@ -178,7 +179,9 @@ function instrument(host, fixture) {
   pool.run = function(request) {
     const inherited = scope.getStore()?.lane || 'unscoped'
     const lane = ioScope.currentSharedIoPriority?.() === 'background' && inherited === 'foreground-browse' ? 'background-history-capture' : inherited
-    const row = { lane, label: request.label, startedAt: performance.now() }
+    const row = { lane, actionId: scope.getStore()?.actionId, label: request.label, startedAt: performance.now(),
+      requestOrdinal: counters.tasks + 1, roots: [...request.roots], accesses: request.accesses ? plain(request.accesses) : null,
+      write: request.write, priority: request.priority, processLane: request.lane || 'default' }
     let input
     const inputAt = request.args?.indexOf('--input')
     if (inputAt >= 0) {
@@ -190,7 +193,7 @@ function instrument(host, fixture) {
       backgroundAdmissions++
       for(let i=backgroundWaiters.length-1;i>=0;i--)if(backgroundAdmissions>=backgroundWaiters[i].count)backgroundWaiters.splice(i,1)[0].resolve()
     }
-    return originalRun.call(pool, request).then(receipt => {
+    return originalRun.call(pool, { ...request, onClose: () => { row.closedAt = performance.now(); request.onClose?.() } }).then(receipt => {
       row.queuedMs = receipt.queuedMs; row.executionMs = receipt.executionMs
       if (lane.startsWith('foreground')) counters.foregroundQueueMs.push(Number(receipt.queuedMs || 0))
       try {
@@ -202,11 +205,11 @@ function instrument(host, fixture) {
         }
       } catch {}
       return receipt
-    }, error => { row.error = errorInfo(error); throw error }).finally(() => {
+    }, error => { row.error = errorInfo(error); row.queuedMs = error?.queuedMs; row.executionMs = error?.executionMs; throw error }).finally(() => {
       row.elapsedMs = performance.now()-row.startedAt; counters.processes.push(row)
     })
   }
-  const runScope = (lane, fn) => { const owned = { lane, active: true }; return scope.run(owned, async () => { try { return await fn() } finally { owned.active = false } }) }
+  const runScope = (lane, fn) => { const index=scopeSequences.get(lane)||0;scopeSequences.set(lane,index+1);const owned = { lane, actionId: `${lane}:${index}`, active: true }; return scope.run(owned, async () => { try { return await fn(owned) } finally { owned.active = false } }) }
   return { counters, pool, runScope, waitForBackgroundAdmission, finishBackground,
     snapshot: () => ({ hashes: counters.hashes, processRequests: counters.processes,
       confirmations: counters.confirmations, maxEvidence: counters.maxEvidence, maxPreview: counters.maxPreview,
@@ -296,17 +299,17 @@ async function interleave(host, meter, fixture, caseDirectory) {
   let submissionError
   try { for (let index = 0; index < WORKLOAD.foregroundQueries; index++) {
     if(index%4===0)await meter.waitForBackgroundAdmission([1,73,145,217][index/4])
-    queries.push(meter.runScope('foreground-browse', async () => {
+    queries.push(meter.runScope('foreground-browse', async action => {
       const start = performance.now()
       host.interaction.markRendererUserActivity(undefined, 'benchmark-query')
       try {
         const value = await host.query.queryFontPageInLibrary(pageRequest(kinds[index % kinds.length], index))
         if (kinds[index % kinds.length] !== 'tags') assert.equal(value.workerMode, 'rust-merged-index-page')
-        results.push({ index, kind: kinds[index % kinds.length], total: value.total, workerMode: value.workerMode, startedAt:start,finishedAt:performance.now(),elapsedMs:performance.now()-start })
+        results.push({ index, actionId: action.actionId, kind: kinds[index % kinds.length], total: value.total, workerMode: value.workerMode, startedAt:start,finishedAt:performance.now(),elapsedMs:performance.now()-start })
       } finally { meter.counters.foregroundEndToEndMs.push(performance.now()-start) }
     }))
     if (index < WORKLOAD.nativePreviews) {
-      previews.push(meter.runScope('foreground-preview', async () => {
+      previews.push(meter.runScope('foreground-preview', async action => {
         const startedAt=performance.now()
         meter.counters.activePreview++; meter.counters.maxPreview = Math.max(meter.counters.maxPreview, meter.counters.activePreview)
         const font = fixture.sourceItems[index], output = path.join(caseDirectory, `visible-${index}.png`)
@@ -318,14 +321,14 @@ async function interleave(host, meter, fixture, caseDirectory) {
           const bytes = fs.readFileSync(output)
           assert.equal(bytes.subarray(0,8).toString('hex'), '89504e470d0a1a0a')
           assert(bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(20) > 0)
-          return { index, output, bytes: bytes.length, sha256: sha256(bytes), receipt: plain(value),startedAt,finishedAt:performance.now(),elapsedMs:performance.now()-startedAt }
+          return { index, actionId: action.actionId, output, bytes: bytes.length, sha256: sha256(bytes), receipt: plain(value),startedAt,finishedAt:performance.now(),elapsedMs:performance.now()-startedAt }
         } finally { meter.counters.activePreview-- }
       }))
     }
-    if ([0,4,8,12].includes(index)) enumeration.push(meter.runScope('foreground-enumeration', async () => {
+    if ([0,4,8,12].includes(index)) enumeration.push(meter.runScope('foreground-enumeration', async action => {
       const receipt = await io.executeSharedFile({ operation: 'treeSnapshot', path: host.rootPaths[(index / 4) % 2] })
       assert(receipt.result?.ok && typeof receipt.result.value === 'object')
-      return { index, paths: Object.keys(receipt.result.value).length }
+      return { index, actionId: action.actionId, paths: Object.keys(receipt.result.value).length }
     }))
     for(const pending of [queries.at(-1),previews.at(-1),enumeration.at(-1)])pending?.catch(()=>undefined)
     if (index === 5 || index === 11) { meter.counters.invalidationCalls++; host.query.clearFontQueryCaches() }
@@ -626,6 +629,11 @@ async function unchangedParentChangedChild(resource, report, fixture) {
   const { host, meter } = resource
   const item = fixture.sourceItems[0], file = item.path, directory = path.dirname(file)
   const original = fs.readFileSync(file), stat = fs.statSync(file), parent = fs.statSync(directory)
+  // Establish an exactly representable whole-second fixture timestamp before
+  // either observation. Date round-tripping truncates real NTFS sub-ms time.
+  const parentMtimeSeconds = 1700000000
+  fs.utimesSync(directory, parent.atimeMs / 1000, parentMtimeSeconds)
+  const expectedParentMtimeMs = fs.statSync(directory).mtimeMs
   const directoryReader = host.load('src/main/path/sharedDirectoryMetadataRuntime.ts')
   const snapshotReader = host.load('src/main/path/sharedFileSystemRuntime.ts')
   const before = await directoryReader.readSharedDirectoryMetadata(directory)
@@ -637,11 +645,11 @@ async function unchangedParentChangedChild(resource, report, fixture) {
     const changed = Buffer.from(original); changed[changed.length - 1] ^= 1
     fs.writeFileSync(file, changed)
     fs.utimesSync(file, stat.atime, new Date(stat.mtimeMs + 2000))
-    fs.utimesSync(directory, parent.atime, parent.mtime)
+    fs.utimesSync(directory, parent.atimeMs / 1000, parentMtimeSeconds)
     const after = await directoryReader.readSharedDirectoryMetadata(directory)
     const treeAfter = await snapshotReader.executeSharedFile({ operation: 'treeSnapshot', path: directory })
     const afterChild = after.entries.find(entry => entry.name === path.basename(file))
-    assert.equal(fs.statSync(directory).mtimeMs, parent.mtimeMs, 'Parent timestamp preservation failed')
+    assert.equal(fs.statSync(directory).mtimeMs, expectedParentMtimeMs, 'Parent timestamp preservation failed')
     assert.notEqual(afterChild.stat.mtimeMs, beforeChild.stat.mtimeMs, 'Fresh native enumeration reused stale child attributes')
     assert.notDeepEqual(treeAfter.result.value, treeBefore.result.value)
     const content = host.load('src/main/fonts/fontContentIdentityRuntime.ts')
@@ -651,7 +659,7 @@ async function unchangedParentChangedChild(resource, report, fixture) {
     report.receipt = { parentMtimeUnchanged: true, childBefore: beforeChild.stat.mtimeMs, childAfter: afterChild.stat.mtimeMs,
       sourceSha256Before: fixture.manifest.sources[0].sha256, sourceSha256After: current.sha256,
       scope: 'Fresh production native directory metadata/tree snapshot and full content identity; not a claim of complete watcher event delivery' }
-  } finally { fs.writeFileSync(file, original); fs.utimesSync(file, stat.atime, stat.mtime); fs.utimesSync(directory, parent.atime, parent.mtime) }
+  } finally { fs.writeFileSync(file, original); fs.utimesSync(file, stat.atimeMs / 1000, stat.mtimeMs / 1000); fs.utimesSync(directory, parent.atimeMs / 1000, parent.mtimeMs / 1000) }
 }
 
 async function retiredQueryOwnership(resource, report) {
@@ -690,29 +698,95 @@ async function retiredQueryOwnership(resource, report) {
   report.physicalOwnerHeldUntilClose = true
 }
 
+function semanticQueueCohorts(row) {
+  const { foreground, work } = row
+  assert(foreground && work, 'Missing complete foreground/work receipts')
+  assert.equal(foreground.failures.length, 0, 'Failed foreground receipt')
+  assert.equal(work.tasks, work.processRequests.length, 'Missing physical request observation')
+  assert.equal(work.foregroundEndToEnd.count,WORKLOAD.foregroundQueries,'Missing browse E2E samples')
+  assert.equal(work.foregroundEndToEnd.values.length,WORKLOAD.foregroundQueries,'Missing browse E2E values')
+  assert.equal(row.previewEndToEnd.count,WORKLOAD.nativePreviews,'Missing preview E2E samples')
+  assert.equal(row.previewEndToEnd.values.length,WORKLOAD.nativePreviews,'Missing preview E2E values')
+  const groups = [
+    ['foreground-browse', foreground.queries, Array.from({length:WORKLOAD.foregroundQueries},(_,i)=>i)],
+    ['foreground-preview', foreground.previewReceipts, Array.from({length:WORKLOAD.nativePreviews},(_,i)=>i)],
+    ['foreground-enumeration', foreground.enumeration, [0,4,8,12]],
+  ]
+  const actions=new Map()
+  for(const [lane, receipts, indices] of groups) {
+    assert.equal(receipts.length,indices.length,`Missing/extra ${lane} request`)
+    assert.deepEqual(receipts.map(value=>value.index).sort((a,b)=>a-b),indices,`Wrong ${lane} indices`)
+    for(const value of receipts) {
+      const sequence=indices.indexOf(value.index),expected=`${lane}:${sequence}`
+      assert.equal(value.actionId,expected,`${lane} action identity mismatch`)
+      if(lane==='foreground-browse')assert.equal(value.kind,['all','installed','notInstalled','tags'][value.index%4],'Browse criteria cohort changed')
+      assert(!actions.has(expected),'Duplicate foreground action identity')
+      actions.set(expected,lane)
+    }
+  }
+  for(const request of work.processRequests) {
+    if(request.lane.startsWith('foreground')) {
+      assert.equal(actions.get(request.actionId),request.lane,'Misclassified/unattributed foreground process')
+      assert(!request.error,'Failed foreground physical request')
+      assert(Number.isFinite(request.queuedMs)&&request.queuedMs>=0,'Missing queue cost')
+    } else if(actions.has(request.actionId)) {
+      assert(request.lane==='background-history-capture'&&request.priority==='background'&&actions.get(request.actionId)==='foreground-browse',
+        'Foreground child was silently moved to another cohort')
+    }
+  }
+  const select=lane=>work.processRequests.filter(value=>value.lane===lane)
+  const preview=select('foreground-preview'),enumeration=select('foreground-enumeration'),browse=select('foreground-browse')
+  for(const [rows,lane,label,count] of [[preview,'foreground-preview','preview-render-image',WORKLOAD.nativePreviews],[enumeration,'foreground-enumeration','shared-file-io:treeSnapshot',WORKLOAD.treeEnumerations]]) {
+    assert.equal(rows.length,count,`${lane} physical population changed`)
+    assert.equal(new Set(rows.map(value=>value.actionId)).size,count,`${lane} physical ownership duplicated`)
+    assert(rows.every(value=>value.label===label),`${lane} native label changed`)
+    if(lane==='foreground-enumeration')assert(rows.every(value=>value.operation==='treeSnapshot'),'Enumeration operation changed')
+  }
+  return { preview:summarize(preview.map(value=>value.queuedMs)),enumeration:summarize(enumeration.map(value=>value.queuedMs)),
+    browse:{requests:WORKLOAD.foregroundQueries,childRequests:browse.length,totalQueuedMs:browse.reduce((total,value)=>total+value.queuedMs,0)},
+    scope:'Fixed semantic cohorts. Browse total is initiated child queue cost, not per-consumer latency; E2E separately gates all16 requests. queuedMs includes synchronous spawn overhead.' }
+}
+
 function compareRuns(runs) {
   const baseline = runs.filter(row => !row.changed), changed = runs.filter(row => row.changed)
-  if (runs.some(row => !row.passed || !row.comparable)) return { comparable: false,
+  const upper = field => Math.max(...baseline.map(field))
+  const queueP95Envelope = upper(row => row.work?.foregroundQueue?.p95Ms || 0)
+  const queueMaxEnvelope = upper(row => row.work?.foregroundQueue?.maxMs || 0)
+  const rawMixedQueue={baselineEnvelope:{p95Ms:queueP95Envelope,maxMs:queueMaxEnvelope},
+    cases:runs.map(row=>({caseId:row.caseId,distribution:row.work?.foregroundQueue})),
+    originalCandidates:changed.map(row=>({caseId:row.caseId,p95NoRegression:(row.work?.foregroundQueue?.p95Ms||0)<=queueP95Envelope,maxNoRegression:(row.work?.foregroundQueue?.maxMs||0)<=queueMaxEnvelope})),
+    interpretation:'Original mixed-child p95 retained, but different child populations cannot decide acceptance. Fixed10 preview/4 enumeration and16 browse cohort cost plus E2E are hard gates.'}
+  if (runs.some(row => !row.passed || !row.comparable)) return { comparable: false,rawMixedQueue,
     reason: 'One or more source versions failed the full real workload; no speedup claim is valid',
     failedCases: runs.filter(row => !row.passed || !row.comparable).map(row => ({ caseId: row.caseId, failure: row.failure || row.foregroundFailure })) }
-  const upper = field => Math.max(...baseline.map(field))
-  const queueP95Envelope = upper(row => row.work.foregroundQueue.p95Ms || 0)
-  const queueMaxEnvelope = upper(row => row.work.foregroundQueue.maxMs || 0)
+  try {
+    assert.deepEqual(runs.map(row=>row.caseId),['A1','B1','B2','A2'],'Missing/reordered ABBA run')
+    assert.equal(baseline.length,2);assert.equal(changed.length,2)
+    for(const row of runs) row.semanticQueue=semanticQueueCohorts(row)
+  } catch(error) { return {comparable:false,passed:false,rawMixedQueue,populationFailure:errorInfo(error)} }
   const endToEndEnvelope = upper(row => row.fullRefreshMs)
-  const foregroundP95Envelope=upper(row=>row.work.foregroundEndToEnd.p95Ms||0),foregroundMaxEnvelope=upper(row=>row.work.foregroundEndToEnd.maxMs||0)
-  const previewP95Envelope=upper(row=>row.previewEndToEnd.p95Ms||0),previewMaxEnvelope=upper(row=>row.previewEndToEnd.maxMs||0)
+  const foregroundP95Envelope=upper(row=>row.work.foregroundEndToEnd.p95Ms),foregroundMaxEnvelope=upper(row=>row.work.foregroundEndToEnd.maxMs)
+  const previewP95Envelope=upper(row=>row.previewEndToEnd.p95Ms),previewMaxEnvelope=upper(row=>row.previewEndToEnd.maxMs)
+  const previewQueueP95=upper(row=>row.semanticQueue.preview.p95Ms),previewQueueMax=upper(row=>row.semanticQueue.preview.maxMs)
+  const enumerationQueueP95=upper(row=>row.semanticQueue.enumeration.p95Ms),enumerationQueueMax=upper(row=>row.semanticQueue.enumeration.maxMs)
+  const browseQueueTotal=upper(row=>row.semanticQueue.browse.totalQueuedMs)
   const results = changed.map(row => ({ caseId: row.caseId,
-    foregroundP95NoRegression: (row.work.foregroundQueue.p95Ms || 0) <= queueP95Envelope,
-    foregroundMaxNoRegression: (row.work.foregroundQueue.maxMs || 0) <= queueMaxEnvelope,
+    foregroundMaxNoRegression: row.work.foregroundQueue.maxMs <= queueMaxEnvelope,
+    previewQueueP95NoRegression:row.semanticQueue.preview.p95Ms<=previewQueueP95,
+    previewQueueMaxNoRegression:row.semanticQueue.preview.maxMs<=previewQueueMax,
+    enumerationQueueP95NoRegression:row.semanticQueue.enumeration.p95Ms<=enumerationQueueP95,
+    enumerationQueueMaxNoRegression:row.semanticQueue.enumeration.maxMs<=enumerationQueueMax,
+    browseQueueCostNoRegression:row.semanticQueue.browse.totalQueuedMs<=browseQueueTotal,
     completeDurationNoRegression: row.fullRefreshMs <= endToEndEnvelope,
-    foregroundEndToEndP95NoRegression:(row.work.foregroundEndToEnd.p95Ms||0)<=foregroundP95Envelope,
-    foregroundEndToEndMaxNoRegression:(row.work.foregroundEndToEnd.maxMs||0)<=foregroundMaxEnvelope,
-    previewEndToEndP95NoRegression:(row.previewEndToEnd.p95Ms||0)<=previewP95Envelope,
-    previewEndToEndMaxNoRegression:(row.previewEndToEnd.maxMs||0)<=previewMaxEnvelope }))
-  return { comparable: true, sameWorker: false, nativeBinaryMatchesEachSourceVersion: true, sameFileManifest: true, syntheticLatency: false,
+    foregroundEndToEndP95NoRegression:row.work.foregroundEndToEnd.p95Ms<=foregroundP95Envelope,
+    foregroundEndToEndMaxNoRegression:row.work.foregroundEndToEnd.maxMs<=foregroundMaxEnvelope,
+    previewEndToEndP95NoRegression:row.previewEndToEnd.p95Ms<=previewP95Envelope,
+    previewEndToEndMaxNoRegression:row.previewEndToEnd.maxMs<=previewMaxEnvelope }))
+  return { comparable: true, sameWorker: false, nativeBinaryMatchesEachSourceVersion: true, sameFileManifest: true, syntheticLatency: false,rawMixedQueue,
     timingEnvelopeSource: 'Actual same-job A1 and A2 observations, without fabricated machine-specific millisecond targets',
-    baselineEnvelope: { queueP95Ms: queueP95Envelope, queueMaxMs: queueMaxEnvelope, fullRefreshMs: endToEndEnvelope,foregroundP95Ms:foregroundP95Envelope,foregroundMaxMs:foregroundMaxEnvelope,previewP95Ms:previewP95Envelope,previewMaxMs:previewMaxEnvelope },
-    candidates: results, passed: results.every(row => row.foregroundP95NoRegression && row.foregroundMaxNoRegression && row.completeDurationNoRegression && row.foregroundEndToEndP95NoRegression && row.foregroundEndToEndMaxNoRegression && row.previewEndToEndP95NoRegression && row.previewEndToEndMaxNoRegression) }
+    baselineEnvelope: { queueMaxMs:queueMaxEnvelope,previewQueueP95,previewQueueMax,enumerationQueueP95,enumerationQueueMax,browseQueueTotal,
+      fullRefreshMs:endToEndEnvelope,foregroundP95Ms:foregroundP95Envelope,foregroundMaxMs:foregroundMaxEnvelope,previewP95Ms:previewP95Envelope,previewMaxMs:previewMaxEnvelope },
+    candidates: results, passed: results.every(row => Object.entries(row).filter(([key])=>key!=='caseId').every(([,value])=>value===true)) }
 }
 
 async function main() {
@@ -805,4 +879,4 @@ async function main() {
 
 if (require.main === module) {let completed=false;process.once('beforeExit',()=>{if(!completed){console.error('Full refresh work diagnostic did not complete');process.exitCode=1}});main().then(()=>{completed=true}).catch(error=>{console.error(error);process.exitCode=1})}
 module.exports = { main, WORKLOAD, BASELINE, makeFiles, makeItems, instrument, createRunner, interleave,
-  readProjection, runPerformance, runCorrectness, compareRuns }
+  readProjection, runPerformance, runCorrectness, compareRuns, semanticQueueCohorts }

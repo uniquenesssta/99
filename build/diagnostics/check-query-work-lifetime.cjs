@@ -17,6 +17,24 @@ async function physicalOwnership(){
   else{b.abort();assert((await second).error);assert.equal(kills,1);assert.equal(task.settled,false);closed.resolve();await assert.rejects(task.pending);assert.equal(task.settled,true)}
  }
 }
+async function publicationOwnership(){
+ for(const kind of ['page','metrics']){
+  const load=loader(),io=load('src/main/path/sharedFileSystemRuntime.ts'),gate=deferred();let reads=0
+  const value=kind==='page'?{items:[],total:3,queryKey:'published',offset:0,limit:1,engine:'sql',elapsedMs:0}:{total:3,installedCount:1,notInstalledCount:2}
+  const read=()=>{reads++;return gate.promise}
+  const owner=kind==='page'?load('src/main/library/fontPageQueryCacheRuntime.ts').createFontPageQueryCacheRuntime({pageCacheMax:5,pageCacheTtlMs:5000,appendStartupLog(){},queryUncached:read}):load('src/main/library/fontMetricsRequestCoalescerRuntime.ts').createFontMetricsRequestCoalescerRuntime(5000)
+  const request=()=>kind==='page'?owner.queryFontPageInLibrary({limit:1}):owner.run({key:'published',load:read,appendLog(){}})
+  const a=new AbortController(),b=new AbortController()
+  const first=io.withSharedIoSignal(a.signal,request).then(()=>({ok:true}),error=>({error}))
+  const second=io.withSharedIoSignal(b.signal,request)
+  const atSettlement=gate.promise.then(request)
+  a.abort();assert((await first).error);assert.equal(reads,1)
+  gate.resolve(value)
+  for(const result of await Promise.all([second,atSettlement]))assert.equal(result.total,3)
+  assert.equal((await request()).total,3)
+  assert.equal(reads,1,kind+': creator cancellation or settlement gap lost the physical result cache')
+ }
+}
 async function ipcOwnership(){
  const handlers=new Map(),sender=Object.assign(new EventEmitter(),{id:17,getURL:()=> 'http://localhost:39217/',isDestroyed:()=>false})
  const electron={app:{isPackaged:false},ipcMain:{handle:(channel,fn)=>handlers.set(channel,fn)}}
@@ -93,7 +111,7 @@ async function sharedAuthorityLifetime(){
  const caller=new AbortController(),first=io.withSharedIoSignal(caller.signal,()=>db.openLibraryDb())
  try{await prepared.promise;caller.abort();const second=db.openLibraryDb();release.resolve();assert.equal(await first,await second);assert.equal(opens,1)}finally{db.closeLibraryDb();fs.rmSync(dir,{recursive:true,force:true})}
 }
-async function main(){await physicalOwnership();await ipcOwnership();await cacheCancellation();await tagCancellation();await sharedAuthorityLifetime();console.log('[diagnostics:query-work-lifetime] physical subscribers, admission cancellation, renderer lifecycle and close ownership passed')}
+async function main(){await physicalOwnership();await publicationOwnership();await ipcOwnership();await cacheCancellation();await tagCancellation();await sharedAuthorityLifetime();console.log('[diagnostics:query-work-lifetime] physical subscribers, admission cancellation, renderer lifecycle and close ownership passed')}
 let completed=false
 process.once('beforeExit',()=>{if(!completed){console.error('Query lifetime diagnostic did not complete');process.exitCode=1}})
 main().then(()=>{completed=true}).catch(error=>{console.error(error);process.exitCode=1})

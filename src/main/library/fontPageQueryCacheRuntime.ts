@@ -74,14 +74,17 @@ export function createFontPageQueryCacheRuntime(
     const requestGeneration = cacheGeneration;
     const task = createFontQueryTask(() => options.queryUncached(request, limit, offset));
     fontQueryPageInFlight.set(physicalKey, task);
-    void task.pending.finally(() => {
+    // Publish before removing the physical owner, even if its creator left
+    // while another consumer remained subscribed.
+    void task.pending.then(result => {
+      if (requestGeneration === cacheGeneration && !task.controller.signal.aborted) rememberFontQueryPageResult(cacheKey, result);
+    }).finally(() => {
       if (fontQueryPageInFlight.get(physicalKey) === task) fontQueryPageInFlight.delete(physicalKey);
     }).catch(() => undefined);
     try {
       const result = await joinFontQueryTask(task);
       assertFontQueryActive();
       if (requestGeneration !== cacheGeneration) return queryFontPageInLibrary(request);
-      if (requestGeneration === cacheGeneration) rememberFontQueryPageResult(cacheKey, result);
       return result;
     } catch (error) {
       assertFontQueryActive();
