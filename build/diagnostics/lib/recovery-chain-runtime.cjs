@@ -12,7 +12,7 @@ async function createChain(options) {
     // Rust returns extended-length canonical paths. Compare the same directory
     // identity, then require its resolved physical parent to remain our fixture.
     assert.equal(key(path.dirname(file)),key(folders.installed),'source file deletion forbidden')
-    assert.equal(key(fs.realpathSync(path.dirname(file))),key(fs.realpathSync(folders.installed)),'installation parent changed')
+    assert.equal(key(fs.realpathSync.native(path.dirname(file))),key(fs.realpathSync.native(folders.installed)),'installation parent changed')
   }
   assert.throws(()=>assertInstallCopyPath(fixture.next[0].path),/source file deletion forbidden/)
   assert.throws(()=>assertInstallCopyPath(path.join(folders.installed+'-other','copy.ttf')),/source file deletion forbidden/)

@@ -928,3 +928,9 @@ $workerExitCode = $LASTEXITCODE
 `047b15d60fff7e43f1f5fc5e30537a8ebd5e34e6` 的 [Windows CI 37451802192](https://github.com/uniquenesssta/99/actions/runs/37451802192) / job `112229873612` 已完整失败，仅 F14 集成门失败；166 诊断、50 卸载恢复反例、全部其他专项/DOM/构建和 F13 ABBA 成功。整链已通过真实可用性/完整 IPC admission、缺失/取消/恢复、list/grid 私有源图像、安装及三态筛选；首次卸载时，受控副作用端口用原始 dirname 字符串比较，把 Rust 返回的 Windows extended-length canonical 路径与普通盘符路径误判为不同目录。
 
 原卸载安全逻辑没有放行其他路径：登记已解除、文件端口拒绝，pending 和实际残留目录候选状态被正确保存/回传。现只修夹具白名单：用生产规范化 key 比较直接父目录，并再比较 `realpathSync` 的物理父目录，仍限本次专属安装目录。新增实际来源路径、相似前缀 sibling 目录拒绝，以及同目录 extended-length spelling 接受断言；不关闭隔离路由，不退回模拟文件身份，不改生产权限、目标规划或超时。命令驱动同时先核对真实逐项主进程回执与本分支期待结果，再等页面刷新，取消确认要求零新增 IPC；不再仅靠最终页面等待暴露前一步拒绝。第三轮 artifact `11408675832` 保留了完整失败回执/日志/SQLite/截图；后续重开与剩余分支仍待完整成功回执。
+
+### 14.8 第四轮回执与原生物理路径读取（2026-10-06）
+
+`eb88944440094d88586a1d64f4e8477ac9de9084` 的 [Windows CI 37454656753](https://github.com/uniquenesssta/99/actions/runs/37454656753) / job `112239188228` 已完整执行；其余全部门及 F13 ABBA 成功，F14 在新增 extended-length 正向边界断言进入主流程前失败。Electron 内普通 `fs.realpathSync` 的 JS 路径展开在 drive prefix 处抛 `EISDIR: lstat D:`，并非专属安装目录越界。
+
+物理父目录读取改为项目现有 Windows startup probe / watched-folder canonicalizer 已使用的 `fs.realpathSync.native`；Node 24 官方文档确认其使用 native 实现。保留规范化直接父目录与实际物理父目录双比较、source/sibling 负例、namespace 正例及精确登记三元组；不把异常当成功，不放宽删除目标，不改生产源码或 timeout。此轮未重新跑到安装/卸载，之前运行证据仍单列，等待最终完整通过。
