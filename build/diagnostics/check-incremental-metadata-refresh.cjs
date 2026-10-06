@@ -160,8 +160,9 @@ function renderer() {
 async function indexEventConvergence() {
   const effects=[];let listener,library={fonts:{},folders:['/fonts'],tags:[],localTags:[]},refreshes=0,saves=0,stats=0,previews=0,saveGate,saveOk=true;
   const baseLoader=require('./check-operation-chain.cjs').loader;
-  const normalize=baseLoader()('src/renderer/src/library-normalize/libraryIndexChangeRuntime.ts');
-  const hook=baseLoader({react:{useRef:current=>({current}),useEffect:fn=>effects.push(fn)},'../../../appRuntime':normalize})('src/renderer/src/runtime/app/effects/useFontIndexChangedEventRuntime.ts').useFontIndexChangedEventRuntime;
+  const environmentPort={[path.join(root,'src/renderer/src/constants/environmentConstants.ts')]:{RENDERER_ENV:{DEV:false,PROD:true},IS_DEVELOPMENT:false}};
+  const normalize=baseLoader(environmentPort)('src/renderer/src/library-normalize/libraryIndexChangeRuntime.ts');
+  const hook=baseLoader({...environmentPort,react:{useRef:current=>({current}),useEffect:fn=>effects.push(fn)},'../../../appRuntime':normalize})('src/renderer/src/runtime/app/effects/useFontIndexChangedEventRuntime.ts').useFontIndexChangedEventRuntime;
   const saved=[];hook({hfm:{onFontIndexChanged:fn=>{listener=fn;return()=>{}}},getCurrentLibrary:()=>library,commitLibraryUpdate:next=>library=next,captureFontScrollSnapshot:()=>0,restoreFontScrollSnapshot(){},cleanupRemovedFontState(){},requestPreviewFont:()=>previews++,refreshDatabaseDerivedState:()=>refreshes++,setStatus(){},saveLibraryImmediately:async latest=>{saves++;saved.push(latest);if(saveGate)await saveGate;return saveOk},loadCacheStats:()=>stats++});
   const cleanup=effects[0]();const settle=async()=>{for(let i=0;i<30;i++)await Promise.resolve()};
   const fonts=Array.from({length:394},(_,i)=>({...font('f'+i),path:'/fonts/f'+i+'.ttf'}));

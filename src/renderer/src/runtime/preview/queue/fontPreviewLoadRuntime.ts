@@ -91,9 +91,12 @@ export function createFontPreviewLoadRuntime(options: FontPreviewQueueRuntimeOpt
     const source = fontSourceKey(font)
     const previous = sourceKeys.get(font.id)
     if (previous !== source) {
+      // An old WebFont failure is only a native-route hint, never a ready pixel.
+      const initialFailureHint = !sourceKeys.has(font.id) && !!options.failedPreviewFontIds[font.id]
       ownershipTokens.set(font.id, {})
       settledFamilies.delete(font.id); settledImages.delete(font.id); failureKeys.delete(font.id)
-      if (sourceKeys.has(font.id)) clearFontState(font.id)
+      if (sourceKeys.has(font.id) || options.previewFamilies[font.id] || options.nativePreviewImages[font.id]) clearFontState(font.id)
+      if (initialFailureHint) failureKeys.set(font.id, source)
     }
     sourceKeys.delete(font.id)
     sourceKeys.set(font.id, source)

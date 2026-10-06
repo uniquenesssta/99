@@ -647,3 +647,14 @@ Windows workflow 保留所有既有步骤，并补充 `cargo test ... watcher::`
 非 Windows 编辑环境仅做 TS AST/相对导入、LF/CRLF 和冻结快照静态检查、CJS 语法与 Git diff；没有运行项目诊断、类型检查、Rust/Electron 构建或生产模块。Node 24 官方 Context7 文档确认 `util.isDeepStrictEqual` 对普通对象属性无序深比较；仅用兼容旧版本的两参数调用。Mermaid/状态插件仅发现其他项目，未创建或修改无关项目；当前实际图和状态保存于本文、README 与 Git。完整 Windows 受测提交和结果将在收到实际回执后补记。
 
 发布前静态回执：54 个变更文件，30 个 TS/TSX 的 LF/CRLF 共 60 次 AST 解析、236 个相对/共享导入定位、9 个 CJS 语法和 7 个 JSON 快照解析完成，Git diff 与 Windows workflow YAML 检查完成。首批受影响诊断中 533 条既有断言均保留，仅显式加强数据库刷新断言并将新增稳定统计 ref 对应的 hook 数量从 22 改为 23；后续类型门增加可选版本输入及非法字符串反例。此静态回执不替代 Windows 动态验证。
+
+### 12.4 首轮完整 Windows 回执与补修（2026-10-06）
+
+首次候选 [`3cc1624b610b3e4f3ffdccb19736506f36d511fc`](https://github.com/uniquenesssta/99/commit/3cc1624b610b3e4f3ffdccb19736506f36d511fc) 的 [Windows CI 37423730647](https://github.com/uniquenesssta/99/actions/runs/37423730647) / job `112138594415` 于 06:26:23 UTC 启动，06:38:03 UTC 完成。类型检查成功，166 项诊断全部执行，其中 163 项成功、3 项失败；独立 Rust 本地标签门另有一个临时夹具冲突。没有以部分通过收尾 F12。
+
+1. App root-view 门遗漏 F12 的只读预览查询端口/移除索引预览调用对应的规范化前缀迁移。静态重现 F11 基线前缀 `8ba6cc…` 后，迁移为本次 Windows 实际报告的 `b33c93…`；保留关闭 owner、四个 controller/卡片传递、无消费者详情、视图边界和渲染快照断言，追加只读预览端口与索引无前台需求的断言。
+2. 新增事件收敛夹具的真实 normalization 链经 DEFAULT_PREVIEW 读取 renderer environment，CommonJS VM 无法执行 import.meta。明确注入测试环境常量端口；库合并、事件保存、页刷新和统计逻辑仍使用生产实现，不改断言或期待值。此前隔离 deferred-install 模块未覆盖这条独立加载链，本轮补齐。
+3. 既有双 preload/列表网格桥接门发现，首次绑定来源时未经 provenance 确认的原始 CSS family 仍留在展示 map。现在清除未确认的原始 family/image；已确认同来源的 WebFont 继续复用。旧 WebFont 失败标志仅可作为本次原生重读的路由提示，不能当已加载图像或文件授权。保留既有“原生路径不残留旧 family”断言，以及 F12 已验证来源复用/晚返回隔离的反例。
+4. Rust `local_tags::read_state` 的并行测试以 PID+墙上时钟纳秒文本命名，实际出现 `table local_font_tags already exists`。Windows 时钟精度不能保证并发唯一。只修改 cfg(test) 夹具：加入原子序号并通过 create_new 原子保留独立文件，独占创建成功后才授予清理所有权，增加已有文件拒绝后字节不变，以及 12 个并行数据库的路径、表内容及释放后清理断言；没有改生产标签行为，也没有使用 IF NOT EXISTS、串行化全部测试或忽略失败来绕过隔离。
+
+首轮已通过的新 watcher Rust preflight、shared-file 内部目录排除、F12 来源/缓存/取消/迟提交/物理槽位回归、150 项实际列表网格 DOM、原生输入和 bundle 结果仍保留。F10/F11 身份/卸载与持久恢复专项通过。完整补修须在新的精确提交重跑全部 Windows 门后登记；本机真实系统变更边界不变。

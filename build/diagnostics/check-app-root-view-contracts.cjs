@@ -53,6 +53,9 @@ function checkLifecycle(app, view) {
   assert(normalizedApp.includes('useFontCardRenderer({\n    closingLifecycle: rendererClosingLifecycle,'), 'preview cards lost renderer closing lifecycle wiring')
   assert(normalizedApp.includes('usePreviewController({\n    closingLifecycle: rendererClosingLifecycle,'), 'preview controller lost closing ownership')
   assert(normalizedApp.includes('previewConsumerEnabled: false,'), 'unconsumed detail preview producer re-enabled')
+  assert.equal((normalizedApp.match(/^\s+previewStateForFont,$/gm) || []).length, 4, 'read-only preview owner must wire selected/card/detail views')
+  const indexEvent = normalizedApp.slice(normalizedApp.indexOf('  useFontIndexChangedEventRuntime({'), normalizedApp.indexOf('  useFontTagStateSignalEventRuntime({'))
+  assert(!indexEvent.includes('requestPreviewFont'), 'index notification regained invisible foreground demand')
   const normalized = normalizedApp
     .replace('usePreviewController({\n    closingLifecycle: rendererClosingLifecycle,', 'usePreviewController({')
     .replace('    previewConsumerEnabled: false, // FontDetailPanel currently consumes no preview image.\n', '')
