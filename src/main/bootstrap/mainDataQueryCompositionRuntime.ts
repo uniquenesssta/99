@@ -38,6 +38,7 @@ type Core = ReturnType<typeof createMainCoreCompositionRuntime>;
 type Storage = ReturnType<typeof createMainDataStorageCompositionRuntime>;
 
 export interface MainDataQueryOptions {
+  onProjectionCommitted?: (revision: number) => void;
   applyPendingActivationState: (items: FontItem[]) => FontItem[];
   hasPendingActivationState?: () => boolean;
   appWatchedFolders: Storage['appWatchedFolders'];
@@ -266,8 +267,18 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     delayToEventLoop,
     tagRevisionSnapshotForRequest: (request) =>
       tagMetadataRevisionBarrier.snapshotForRequest(request),
+    readInstallStatusForProjection: async items => {
+      const { results } = await readInstallStatusIndex(items, { enqueueMissTasks: false });
+      return items.map(item => {
+        const result = results[item.id];
+        const known = !!result && result.known !== false;
+        return { ...item, installStatusKnown: known, systemInstalled: known && result.installed && result.by !== 'managed',
+          active: known && (result.by === 'managed' || result.by === 'both'), systemInstallMatches: known ? result.matches : [] };
+      });
+    },
     onMergedIndexCommitted: ({ reason, sequence, revision }) => {
       clearFontQueryCaches();
+      options.onProjectionCommitted?.(revision);
       appendStartupLog(
         `local merged index commit invalidated query caches: reason=${reason}, sequence=${sequence}, revision=${revision}`,
       );
@@ -335,7 +346,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     const db = await openLibraryDb();
     if (tagQueryScope(request)) return tagFonts!.query(request, limit, offset);
     const result = await requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(request, limit, offset);
-    await openTagFontSnapshots(db).capture(result.items.filter(item => item.tagNames?.length || item.localTagNames?.length));
+    openTagFontSnapshots(db).schedule(result.items.filter(item => item.tagNames?.length || item.localTagNames?.length), appendStartupLog);
     return { ...result, items: await options.hydrateLocalFavoritesForFonts(await hydrateInstallStatusForFonts(result.items)) };
   }
 

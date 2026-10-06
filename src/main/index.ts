@@ -18,6 +18,8 @@ const tags = createMainTagCompositionRuntime({
 feedback.bindTags(tags);
 
 const dataComposition = createMainDataCompositionRuntime({
+  onProjectionCommitted: revision => feedback.sendFontIndexChanged({ source: 'projection', projectionRevision: revision,
+    folder: '', at: new Date().toISOString(), upserts: [], deletes: [] }),
   host: { execFileAsync: coreComposition.execFileAsync, delayToEventLoop: coreComposition.delayToEventLoop, nodeRequire },
   windows: coreComposition.windows,
   comparison: coreComposition.comparison,

@@ -44,6 +44,7 @@ export interface MainMutationCompositionOptions {
     | 'setLocalFontTagsBatchBase'
     | 'deleteLocalFontTagBase'
     | 'saveInstallStatusIndex'
+    | 'installStatusProjectionOwnedByWriter'
     | 'appWatchedFolders'
     | 'rootForFontPath'
     | 'clearInstalledFontsMemoryCache'
@@ -135,6 +136,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     setLocalFontTagsBatchBase,
     deleteLocalFontTagBase,
     saveInstallStatusIndex,
+    installStatusProjectionOwnedByWriter,
     appWatchedFolders,
     rootForFontPath,
     clearInstalledFontsMemoryCache,
@@ -246,6 +248,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
   } = createMainActivationInstallStatusSaveRuntime({
     readInstallStatusIndex,
     saveInstallStatusIndex,
+    installStatusProjectionOwnedByWriter,
     appWatchedFolders,
     rootForFontPath,
     syncMergedIndexAfterInstallStatusRefresh: (folders, items) =>

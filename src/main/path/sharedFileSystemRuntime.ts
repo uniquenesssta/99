@@ -7,8 +7,9 @@ import { promises as localFs } from 'node:fs'
 import { sharedDatabaseTarget, sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
 import { SharedIoProcessError } from './sharedIoProcessRuntime'
 
-const sharedIoSignalScope = new AsyncLocalStorage<AbortSignal>()
+const sharedIoSignalScope = new AsyncLocalStorage<AbortSignal | undefined>()
 export function withSharedIoSignal<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> { return sharedIoSignalScope.run(signal, operation) }
+export function withoutSharedIoSignal<T>(operation: () => Promise<T>): Promise<T> { return sharedIoSignalScope.run(undefined, operation) }
 export function currentSharedIoSignal(): AbortSignal | undefined { return sharedIoSignalScope.getStore() }
 
 const priorityScope = new AsyncLocalStorage<IoTaskPriority | number>()
@@ -26,6 +27,7 @@ export type SharedFileRequest = {
   limitBytes?: number; olderThanMs?: number;
   schemaVersion?: number; cacheVersion?: number; scriptDetectionVersion?: number; repairCorrupt?: boolean
   identity?: unknown
+  paths?: string[]
 }
 /** Actual effects of the native filesystem command, excluding local transfer files. */
 export function sharedFileAccesses(request: SharedFileRequest): SharedIoAccessPath[] | undefined {
@@ -34,7 +36,8 @@ export function sharedFileAccesses(request: SharedFileRequest): SharedIoAccessPa
   switch (request.operation) {
     case 'stat': case 'lstat': case 'access': case 'readFile': return [read(request.path)]
     // Resolving arbitrary symbolic links requires the conservative alias barrier.
-    case 'realpath': return undefined
+    case 'realpath': case 'fontContentIdentity': return undefined
+    case 'directoryMetadataBatch': return request.paths?.map(path => read(path, 'tree'))
     case 'readdir': case 'directoryMetadata': case 'treeSnapshot': return [read(request.path, 'tree')]
     case 'sqliteSnapshot': return [read(request.path, 'database')]
     case 'copyFile': case 'link': return request.dest ? [read(request.path), write(request.dest)] : undefined
@@ -53,7 +56,7 @@ export type SharedFileResult = { ok: boolean; operation: string; value?: any; co
 export type SharedFileExecutor = (request: SharedFileRequest, bytes?: Buffer, signal?: AbortSignal) => Promise<{ result: SharedFileResult; bytes?: Buffer; snapshotPath?: string; dispose?: () => Promise<void> }>
 let executor: SharedFileExecutor | undefined
 const readsInFlight = new Map<string, ReturnType<SharedFileExecutor>>()
-const shareableReads = new Set(['stat','lstat','access','realpath','readdir','readFile','treeSnapshot','directoryMetadata'])
+const shareableReads = new Set(['stat','lstat','access','realpath','readdir','readFile','treeSnapshot','directoryMetadata','directoryMetadataBatch','fontContentIdentity'])
 export function configureSharedFileExecutor(value: SharedFileExecutor): void { executor = value }
 export async function executeSharedFile(request: SharedFileRequest, bytes?: Buffer, signal?: AbortSignal) {
   signal ||= currentSharedIoSignal()
@@ -67,6 +70,9 @@ export async function executeSharedFile(request: SharedFileRequest, bytes?: Buff
   let task = !signal && shareableReads.has(request.operation) ? readsInFlight.get(key) : undefined
   if (!task) {
     task = executor(request, bytes, signal).then(output => {
+      if (request.operation === 'fontContentIdentity' && output.result.ok && Number.isSafeInteger(output.result.value?.readBytes) && output.result.value.readBytes >= 0) {
+        recordOperationWork({ reads: 1, sourceBytes: output.result.value.readBytes, hashedBytes: output.result.value.readBytes })
+      }
       if (request.operation === 'readFile' && output.result.ok && output.result.operation === request.operation && output.bytes) {
         recordOperationWork({ reads: 1, [/\.(ttf|otf|ttc|otc)$/i.test(request.path) ? 'sourceBytes' : 'cacheBytes']: output.bytes.length })
       }

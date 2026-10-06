@@ -118,6 +118,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
 
     let disposed = false
     const requestSeq = ++options.fontMetricsRequestSeqRef.current
+    const queryToken = `metrics:${requestSeq}:${Math.random().toString(36).slice(2)}`
     const scheduledAt = performance.now()
     let dispatched = false
     let settled = false
@@ -133,7 +134,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
       options.reportTrace({ kind: 'db-metrics-start', label: 'getFontMetrics', page: options.sidebarPage, durationMs: 0, details: { requestSeq, scheduledDelayMs: metricsDelayMs, queueMs, indexingActive: options.indexingActive, userActive: options.rendererUserActive(), fonts: options.allFontsLength } })
       const intentRevision = fontUserIntentRevision()
       const pendingFavorite = Object.values(options.library.fonts || {}).some(hasUnsettledFavoriteIntent)
-      options.hfm.getFontMetrics()
+      options.hfm.getFontMetrics(queryToken)
         .then((result) => {
           settled = true
           const durationMs = Math.round(performance.now() - startedAt)
@@ -169,6 +170,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
     return () => {
       disposed = true
       window.clearTimeout(timer)
+      if (!settled && dispatched) void options.hfm.cancelFontQuery?.(queryToken).catch(() => undefined)
       if (!settled) options.reportTrace({ kind: 'db-metrics-cancelled', label: dispatched ? 'in-flight' : 'queued', page: options.sidebarPage,
         details: { requestSeq, scheduledDelayMs: metricsDelayMs, totalMs: Math.round(performance.now() - scheduledAt) } })
     }
@@ -247,6 +249,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
 
     let disposed = false
     const requestSeq = ++options.databasePageRequestSeqRef.current
+    const queryToken = `page:${requestSeq}:${Math.random().toString(36).slice(2)}`
     const observation = bindFontRefreshQuery(options.databasePageRequestSeqRef, requestSeq, databaseQueryScope)
     const timer = window.setTimeout(() => {
       const startedAt = performance.now()
@@ -271,7 +274,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
       dispatchFontRefreshQuery(observation)
       const intentRevision = fontUserIntentRevision()
       const confirmTagRead = captureFontTagReadConfirmation(options.library)
-      options.hfm.queryFontPage(databaseQueryRequest).then(async (result) => {
+      options.hfm.queryFontPage(databaseQueryRequest, queryToken).then(async (result) => {
         if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) {
           finishFontRefreshQuery(observation, undefined, disposed ? 'query-disposed' : 'query-superseded')
           options.reportTrace({ kind: 'db-query-rejected', label: disposed ? 'scope-disposed' : 'newer-request', page: options.sidebarPage,
@@ -294,7 +297,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           while (result.items.length < target) {
             if (disposed || requestSeq !== options.databasePageRequestSeqRef.current || intentRevision !== fontUserIntentRevision()) { finishFontRefreshQuery(observation); return }
             const nextRequest = { ...databaseQueryRequest, offset: result.items.length, limit: DATABASE_INCREMENTAL_PAGE_SIZE }
-            const next = await options.hfm.queryFontPage(nextRequest)
+            const next = await options.hfm.queryFontPage(nextRequest, queryToken)
             assertDatabasePageResponseMatchesRequest(next, nextRequest)
             if (next.total !== result.total || !next.items.length) throw new Error('收藏分页在补齐期间发生变化，请重试')
             const merged = mergeIncrementalDatabasePage(result, next)
@@ -366,6 +369,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
 
     return () => {
       disposed = true
+      void options.hfm.cancelFontQuery?.(queryToken).catch(() => undefined)
       finishFontRefreshQuery(observation, undefined, 'query-disposed')
       window.clearTimeout(timer)
     }

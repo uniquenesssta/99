@@ -1,4 +1,5 @@
-import { rootIndexRuntimeFontIdExpr } from '../root-query/rootIndexQuerySharedSql';
+import { withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime';
+import { runtimeFontIdFromEntry } from '../../fonts/fontFileIdentity';
 import type { FontItem, FontIndexChangePayload } from "../../../shared/types";
 import { resolve } from "node:path";
 import type {
@@ -36,7 +37,7 @@ export function createMergedIndexValidationRuntime(
     )
       return;
     ctx.mergedIndexLastValidateAt.set(rootsKey, now);
-    const task = (async () => {
+    const task = withoutSharedIoSignal(async () => {
       const startedAt = Date.now();
       try {
         const sources = await sourceRuntime.mergedIndexSourcesForRoots(roots);
@@ -56,7 +57,7 @@ export function createMergedIndexValidationRuntime(
           `local merged index background validation skipped: reason=${reason}, ${error instanceof Error ? error.message : String(error)}`,
         );
       }
-    })();
+    });
     ctx.mergedIndexValidateInFlight.set(rootsKey, task);
     task
       .finally(() => {
@@ -137,22 +138,42 @@ export function createMergedIndexValidationRuntime(
     items?: FontItem[],
     syncIncremental?: (root: string, payload: FontIndexChangePayload, reason: string) => Promise<void>,
   ): Promise<void> {
-    if (items && items.every(item => item.installStatusKnown === true)) {
+    if (items) {
       await ctx.runMergedIndexMutation('local-install-status', async ({ commit }) => {
+        const currentItems = ctx.readInstallStatusForProjection ? await ctx.readInstallStatusForProjection(items) : items;
         const db = await ctx.openMergedIndexDb();
         try {
+          type Row = { root_path: string; relative_path: string; file_size: number; modified_at: number };
+          const wanted = new Set(currentItems.map(item => item.id));
+          const rows = db.prepare("SELECT root_path, relative_path, file_size, modified_at FROM entries WHERE COALESCE(is_deleted,0)=0 AND status='ok' AND json_valid(font_json)").all() as Row[];
+          const targets = new Map<string, Row[]>();
+          let invalidRows = 0;
+          // One bounded population pass per committed batch, then primary-key
+          // updates. Never execute the SHA-1 SQL function for every row x item.
+          for (const row of rows) {
+            try {
+              const id = runtimeFontIdFromEntry(row.root_path, row.relative_path, row.file_size, row.modified_at);
+              if (wanted.has(id)) targets.set(id, [...(targets.get(id) || []), row]);
+            } catch { invalidRows++; }
+          }
           const update = db.prepare(`UPDATE entries SET installed = ?, installed_by = ?, matches_json = ?
-            WHERE json_valid(font_json) AND ${rootIndexRuntimeFontIdExpr()} = ?`);
+            WHERE root_path=? AND relative_path=? AND file_size=? AND modified_at=?
+              AND (installed IS NOT ? OR installed_by IS NOT ? OR matches_json IS NOT ?)`);
           db.exec('BEGIN IMMEDIATE');
           try {
-            for (const item of items) {
-              if (item.installStatusKnown !== true) continue;
+            let changed = 0;
+            for (const item of currentItems) {
               const permanentBy = item.systemInstallMatches?.some(match => match.source === 'HKLM' || match.source === 'WindowsFontsFolder') ? 'system' : 'user';
               const by = item.active ? (item.systemInstalled ? 'both' : 'managed') : item.systemInstalled ? permanentBy : 'none';
-              update.run(item.active || item.systemInstalled ? 1 : 0, by, JSON.stringify(item.systemInstallMatches || []), item.id);
+              const installed = item.installStatusKnown === true ? item.active || item.systemInstalled ? 1 : 0 : null;
+              const knownBy = item.installStatusKnown === true ? by : null;
+              const matches = item.installStatusKnown === true ? JSON.stringify(item.systemInstallMatches || []) : null;
+              for (const row of targets.get(item.id) || []) changed += Number(update.run(installed, knownBy, matches,
+                row.root_path, row.relative_path, row.file_size, row.modified_at, installed, knownBy, matches).changes || 0);
             }
             db.exec('COMMIT');
-            commit('local-install-status');
+            if (changed) commit('local-install-status');
+            ctx.appendStartupLog(`local install projection batch: examined=${rows.length}, requested=${currentItems.length}, targets=${targets.size}, changed=${changed}, invalidRows=${invalidRows}`);
           } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
         } finally { ctx.closeSqliteDb(db); }
       });

@@ -6,10 +6,11 @@ function parseHelperResult(stdout: string, outputPath: string): PreviewNativeRen
   if (!text) return { ok: true, engine: 'directwrite', outputPath }
 
   try {
-    const parsed = JSON.parse(text) as { ok?: boolean; output?: string; outputPath?: string; message?: string; error?: string }
+    const parsed = JSON.parse(text) as { ok?: boolean; output?: string; outputPath?: string; message?: string; error?: string; engine?: string }
     return {
       ok: parsed.ok !== false,
       engine: 'directwrite',
+      nativeBackend: typeof parsed.engine === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(parsed.engine) ? parsed.engine : undefined,
       outputPath: parsed.outputPath || parsed.output || outputPath,
       message: parsed.message || parsed.error
     }

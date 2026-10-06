@@ -5,6 +5,7 @@ const SAVE_RETRY_DELAYS_MS = [120, 360, 900]
 const BACKGROUND_RETRY_DELAY_MS = 1800
 
 export interface ActivationInstallStatusSaveQueueDeps {
+  installStatusProjectionOwnedByWriter?: boolean
   readInstallStatusIndex: (
     items: FontItem[],
     options: { enqueueMissTasks: boolean },
@@ -183,7 +184,7 @@ export function createActivationInstallStatusSaveQueue(
           return { ...item, installStatusKnown: result.known !== false, active: result.known !== false && (result.by === 'managed' || result.by === 'both'),
             systemInstalled: result.known !== false && result.installed && result.by !== 'managed', systemInstallMatches: result.known === false ? [] : result.matches || [] }
         })
-        await deps.syncMergedIndexAfterInstallStatusRefresh([], settledItems)
+        if (!deps.installStatusProjectionOwnedByWriter) await deps.syncMergedIndexAfterInstallStatusRefresh([], settledItems)
         for (const item of settledItems) projectionPending.delete(item.id)
         deps.clearFontQueryCaches()
         deps.appendStartupLog(

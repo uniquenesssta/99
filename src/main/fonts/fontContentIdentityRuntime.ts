@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import { extname } from 'node:path'
-import { sharedFileSystem as fs } from '../path/sharedFileSystemRuntime'
+import { sharedFileSystem as fs, executeSharedFile } from '../path/sharedFileSystemRuntime'
+import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
+import { recordOperationWork } from '../logging/operationTraceContext'
 import { canonicalizeAbsolutePath } from '../path/pathBoundaryPolicy'
 
 // File IDs are 64-bit on Windows. Never use a rounded Number as ownership.
@@ -34,6 +36,20 @@ export async function readFontIdentityMetadata(path: string) {
 export async function readFontContentIdentity(path: string) {
   const canonical = canonicalizeAbsolutePath(path)
   if (!canonical || canonical.flavor !== 'windows' || !['.ttf', '.otf', '.ttc', '.otc'].includes(extname(path).toLowerCase())) throw new Error('字体操作路径无效。')
+  if ((await sharedIoResourceKeys([canonical.ioPath])).length) {
+    const { result } = await executeSharedFile({ operation: 'fontContentIdentity', path: canonical.ioPath })
+    const value = result.value
+    const dev = exactId(value?.dev), ino = exactId(value?.ino)
+    if (!value || !canonicalizeAbsolutePath(value.path) || !/^[a-f0-9]{64}$/.test(value.sha256 || '')
+      || !Number.isSafeInteger(value.size) || value.size < 4 || value.size > 256 * 1024 * 1024
+      || !Number.isFinite(value.modified) || value.readBytes !== value.size || dev === undefined || ino === undefined || ino === '0') {
+      throw new Error('字体完整内容身份回执无效。')
+    }
+    const encoded = (id: string) => Number.isSafeInteger(Number(id)) ? Number(id) : id
+    const stamp = JSON.stringify([encoded(dev), encoded(ino), value.size, value.modified, null])
+    return { path: value.path as string, sha256: value.sha256 as string, size: value.size as number, modified: value.modified as number,
+      ino: Number(ino), dev: Number(dev), stamp }
+  }
   const physical = await fs.realpath(canonical.ioPath)
   const before = await readFontIdentityMetadata(physical)
   const { stat } = before
@@ -44,5 +60,6 @@ export async function readFontContentIdentity(path: string) {
   const after = await readFontIdentityMetadata(physical)
   const resolvedAfter = await fs.realpath(canonical.ioPath)
   if (bytes.length !== stat.size || before.stamp !== after.stamp || physical.toLowerCase() !== resolvedAfter.toLowerCase()) throw new Error('字体读取过程中发生变化，未执行。')
+  recordOperationWork({ hashedBytes: bytes.length })
   return { path: physical, sha256: createHash('sha256').update(bytes).digest('hex'), size: stat.size, modified: stat.mtimeMs, ino: stat.ino, dev: stat.dev, stamp: before.stamp }
 }

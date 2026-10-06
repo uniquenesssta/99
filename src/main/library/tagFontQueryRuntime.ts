@@ -1,3 +1,4 @@
+import { createFontQueryTask, joinFontQueryTask, assertFontQueryActive, type FontQueryTask } from './fontQueryTaskRuntime'
 import { basename, dirname, parse } from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { FontItem, FontQueryPageResult, FontQueryRequest } from '../../shared/types'
@@ -91,6 +92,7 @@ export function createTagFontQueryRuntime(deps: {
   compare: (a: FontItem, b: FontItem, request: FontQueryRequest) => number
 }) {
   async function collect(request: FontQueryRequest, limit: number, offset: number): Promise<FontQueryPageResult> {
+    assertFontQueryActive()
     const start = Date.now()
     const scope = tagQueryScope(request)!
     const name = String(request.sidebarPage === 'tags' || request.sidebarPage === 'sharedTags' ? request.selectedTagName || '' : request.activeFilter?.name || '').trim()
@@ -112,7 +114,9 @@ export function createTagFontQueryRuntime(deps: {
     const seenLive = new Set<string>()
     let first: FontQueryPageResult | undefined
     for (let at = 0; !request.tagBindingsOnly && (scope !== 'shared' || (liveRoots.length > 0 && (!unavailableRoots.length || !!liveFolders?.length))); ) {
+      assertFontQueryActive()
       const page = await deps.queryLive(broad, 500, at)
+      assertFontQueryActive()
       if (first && (first.total !== page.total || JSON.stringify(first.tagRevision) !== JSON.stringify(page.tagRevision))) throw new Error('标签索引在读取期间发生变化，请重试。')
       first ||= page
       const previousSize = seenLive.size
@@ -126,10 +130,11 @@ export function createTagFontQueryRuntime(deps: {
       if (!page.items.length || previousSize === seenLive.size) throw new Error('字体索引在读取期间发生变化，请重试。')
       at += page.items.length
     }
-    await snapshots.capture([...live.values()])
+    if (!request.tagBindingsOnly) snapshots.schedule([...live.values()])
     // Existing legacy ID-only associations are already resolved by the live query.
     const items = new Map(live)
     async function resolveBinding([pathKey, binding]: [string, TagFontBinding]): Promise<void> {
+      assertFontQueryActive()
       if (name && !binding.tags.includes(name)) return
       const old = live.get(pathKey) || snapshots.read(binding.path) || await deps.findPrevious?.(binding.path).catch(() => null)
       if (old) snapshots.remember([old])
@@ -150,7 +155,7 @@ export function createTagFontQueryRuntime(deps: {
       if (!request.tagBindingsOnly && !live.has(pathKey) && availability === 'available') {
         try {
           font = await fontItemFromPath(binding.path)
-          await snapshots.capture([font])
+          snapshots.schedule([font])
         } catch { availability = 'unavailable' }
       }
       items.set(pathKey, { ...font, recoveryContentHash: snapshots.read(binding.path)?.recoveryContentHash, fileAvailability: availability, fileRelinkRequired, tagBindingReadOnly,
@@ -171,9 +176,10 @@ export function createTagFontQueryRuntime(deps: {
       truncated: offset + limit < sorted.length, elapsedMs: Date.now() - start }
   }
   let generation = 0
-  const inFlight = new Map<string, Promise<FontQueryPageResult>>()
+  const inFlight = new Map<string, FontQueryTask<FontQueryPageResult>>()
   const cache = new Map<string, { at: number; result: FontQueryPageResult }>()
   async function query(request: FontQueryRequest, limit: number, offset: number): Promise<FontQueryPageResult> {
+    assertFontQueryActive()
     const { limit: _limit, offset: _offset, ...criteria } = request
     if (request.tagBindingsOnly) {
       const scope = bindingReadScope.getStore()
@@ -191,14 +197,18 @@ export function createTagFontQueryRuntime(deps: {
     const found = cache.get(cacheKey)
     const version = generation
     const fresh = !!found && Date.now() - found.at < 2000
-    let pending = inFlight.get(cacheKey)
-    if (!fresh && !pending) {
-      pending = collect(criteria, Number.MAX_SAFE_INTEGER, 0)
-      inFlight.set(cacheKey, pending)
-      const own = pending
-      void own.finally(() => { if (inFlight.get(cacheKey) === own) inFlight.delete(cacheKey) }).catch(() => undefined)
+    const physicalKey = `${version}:${cacheKey}`
+    let task = inFlight.get(physicalKey)
+    if (!fresh && !task) {
+      task = createFontQueryTask(() => collect(criteria, Number.MAX_SAFE_INTEGER, 0))
+      inFlight.set(physicalKey, task)
+      const own = task
+      void own.pending.finally(() => { if (inFlight.get(physicalKey) === own) inFlight.delete(physicalKey) }).catch(() => undefined)
     }
-    const result = fresh ? found!.result : await pending!
+    let result: FontQueryPageResult
+    try { result = fresh ? found!.result : await joinFontQueryTask(task!) }
+    catch (error) { assertFontQueryActive(); if (version !== generation || task?.controller.signal.aborted) return query(request, limit, offset); throw error }
+    assertFontQueryActive()
     if (version !== generation) return query(request, limit, offset)
     if (version === generation) {
       if (cache.size >= 16) cache.delete(cache.keys().next().value!)
@@ -214,5 +224,5 @@ export function createTagFontQueryRuntime(deps: {
     for (const binding of bindings.values()) for (const tag of binding.tags) counts[tag] = (counts[tag] || 0) + 1
     return counts
   }
-  return { query, sharedTagCounts, invalidate: () => { generation++; cache.clear(); inFlight.clear() } }
+  return { query, sharedTagCounts, invalidate: () => { generation++; cache.clear(); for (const task of inFlight.values()) task.controller.abort() } }
 }

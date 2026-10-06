@@ -1,3 +1,7 @@
+import { withSharedIoPriority } from '../../path/sharedFileSystemRuntime'
+import { fileRuntimeFontId } from '../../fonts/fontFileIdentity'
+import { assertApplicationOpen, applicationWorkEpoch } from '../../app/shutdownCoordinatorRuntime'
+import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
 import type {
 FontItem,
 InstallCompareOptions,
@@ -21,6 +25,8 @@ export function createInstallStatusRefreshRunner(
     runtime: { jobId?: string; emitProgress?: boolean } = {}
   ): Promise<InstallStatusRefreshResult> {
     const startedAt = Date.now()
+    const epoch = applicationWorkEpoch()
+    const expectedRevision = deps.installStatusWriteRevision?.()
     const jobId = runtime.jobId || `install-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     const emitProgress = runtime.emitProgress !== false
     const forceFullRefresh = installOptions.force === true && installOptions.incremental !== true
@@ -174,7 +180,6 @@ export function createInstallStatusRefreshRunner(
     const refreshedResults: Record<string, InstallCompareResult> = {}
     let batchResults: Record<string, InstallCompareResult> = {}
     let batchItemsById = new Map<string, FontItem>()
-    const affectedRoots = new Set<string>()
     const temporary = await deps.readTemporaryActiveFonts?.()
     const evidence = createFontInstallEvidenceSession({ readHistorical: deps.readHistoricalFont, installed, temporaryRecords: temporary?.records })
 
@@ -193,61 +198,65 @@ export function createInstallStatusRefreshRunner(
         updatedCount,
         missingCount: Math.max(0, missingCount - processed)
       })
+      assertApplicationOpen(epoch)
+      let persistedIds: string[] | undefined
       await deps.saveInstallStatusIndex(batchResults, batchItemsById, {
-        completeTasks: false
+        completeTasks: false, expectedRevision, onPersisted: ids => { persistedIds = ids }
       })
-      deps.clearFontQueryCaches()
+      updatedCount += persistedIds?.length ?? (expectedRevision === undefined ? batchSize : 0)
+      assertApplicationOpen(epoch)
+      if (!deps.installStatusProjectionOwnedByWriter) await deps.syncMergedIndexAfterInstallStatusRefresh([], Array.from(batchItemsById.values()))
+      const persisted = await deps.readInstallStatusIndex(Array.from(batchItemsById.values()), { enqueueMissTasks: false })
+      for (const item of batchItemsById.values()) refreshedResults[item.id] = persisted.results[item.id] || { installed: false, by: 'none', matches: [], known: false }
       batchResults = {}
       batchItemsById = new Map<string, FontItem>()
       await deps.delayToEventLoop()
     }
 
-    for (let index = 0; index < targetItems.length; index += 1) {
-      const item = targetItems[index]
-      const candidates = rustCompareResults?.[item.id] || deps.compareFontInstalledWithLookupIndex(item, installedLookup)
-      const result = await evidence.confirm(item, candidates)
-      refreshedResults[item.id] = result
-      batchItemsById.set(item.id, item)
-      batchResults[item.id] = result
-      updatedCount += 1
-      if (result.known !== false && result.installed && result.by !== 'managed') refreshedInstalledCount += 1
-      if (result.by === 'managed' || result.by === 'both') managedCount += 1
-      const root = await deps.rootForFontPath(item.path, folders).catch(() => null)
-      if (root) affectedRoots.add(root)
-
-      const processed = index + 1
-      if (processed % options.installStatusRefreshBatchSize === 0) {
-        await deps.waitForRendererIdle(900)
-        progress({
-          stage: 'comparing',
-          message: forceFullRefresh
-            ? `正在匹配已安装状态：${processed}/${items.length}。`
-            : `正在增量匹配已安装状态：${processed}/${targetItems.length}。`,
-          total: items.length,
-          processed: forceFullRefresh ? processed : Object.keys(existingResults).length + processed,
-          installedCount: existingInstalledCount + refreshedInstalledCount,
-          installedTotalCount: installed.length,
-          updatedCount,
-          missingCount: Math.max(0, missingCount - processed)
-        })
-        await flushBatch(processed)
-      } else if (processed % 100 === 0) {
-        await deps.delayToEventLoop()
+    let lastProgressAt = 0
+    // Two background confirmations bound full reads without changing the shared
+    // scheduler's physical slots, alias barriers or foreground priority.
+    for (let index = 0; index < targetItems.length; index += 2) {
+      assertApplicationOpen(epoch)
+      if (Date.now() - lastProgressAt >= 250) {
+        lastProgressAt = Date.now()
+        progress({ stage: 'comparing', message: `正在确认字体内容与安装证据：${index}/${targetItems.length}。`,
+          total: items.length, processed: Object.keys(existingResults).length + index,
+          updatedCount, missingCount: Math.max(0, targetItems.length - index), elapsedMs: Date.now() - startedAt })
       }
+      const settled = await withSharedIoPriority('background', () => Promise.all(targetItems.slice(index, index + 2).map(async item => {
+        let result: InstallCompareResult
+        const root = await deps.rootForFontPath(item.path, folders).catch(() => null)
+        try {
+          fileRuntimeFontId(item.path, item.fileSize, item.modifiedAt)
+          if (root && getStartupPathRootState(root).state === 'offline') throw new Error('source root is offline')
+          const candidates = rustCompareResults?.[item.id] || deps.compareFontInstalledWithLookupIndex(item, installedLookup)
+          result = await evidence.confirm(item, candidates)
+          if (root && getStartupPathRootState(root).state === 'offline') throw new Error('source root became offline')
+        } catch (error) { result = { installed: false, by: 'none', matches: [], known: false, reason: `identity-unavailable: ${error instanceof Error ? error.message : String(error)}` } }
+        return { item, result, root }
+      })))
+      assertApplicationOpen(epoch)
+      for (const { item, result } of settled) {
+        refreshedResults[item.id] = result
+        batchItemsById.set(item.id, item); batchResults[item.id] = result
+        if (result.known !== false && result.installed && result.by !== 'managed') refreshedInstalledCount++
+        if (result.by === 'managed' || result.by === 'both') managedCount++
+      }
+      const processed = index + settled.length
+      if (Object.keys(batchResults).length >= options.installStatusRefreshBatchSize) {
+        await deps.waitForRendererIdle(900)
+        await flushBatch(processed)
+      } else if (processed % 100 === 0) await deps.delayToEventLoop()
     }
 
     await deps.waitForRendererIdle(900)
     await flushBatch(targetItems.length)
     await deps.saveInstalledTotalSummaryForRoots(folders, installed.length)
-    await deps.waitForRendererIdle(900)
-    if (updatedCount > 0) {
-      await deps.syncMergedIndexAfterInstallStatusRefresh(
-        Array.from(affectedRoots.size ? affectedRoots : new Set(folders))
-      )
-    }
-    deps.clearFontQueryCaches()
-
-    const finalResults = { ...existingResults, ...refreshedResults }
+    assertApplicationOpen(epoch)
+    const finalSnapshot = await deps.readInstallStatusIndex(items, { enqueueMissTasks: false })
+    const finalResults: Record<string, InstallCompareResult> = { ...finalSnapshot.results }
+    for (const item of finalSnapshot.misses) finalResults[item.id] = { installed: false, by: 'none', matches: [], known: false }
     const matchedInstalledCount = Object.values(finalResults).filter((result) => result.known !== false && result.installed && result.by !== 'managed').length
     const elapsedMs = Date.now() - startedAt
     const summary: InstallStatusRefreshResult = {

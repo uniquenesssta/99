@@ -275,6 +275,7 @@ export type RustFontNotifyPayload = Partial<RustFontNotifyResult> & {
 }
 
 export type RustPreviewRenderImagePayload = {
+  provenance?: unknown
   layoutVersion?: string
   ok?: boolean
   engine?: string

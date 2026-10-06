@@ -341,6 +341,7 @@ fn write_rebuild(
             }
         }
         set_meta(conn, "sourcesKey", &payload.sources_key)?;
+        set_meta(conn, "installEvidenceVersion", "content-v1")?;
         set_meta(conn, "updatedAt", &payload.synced_at)?;
         Ok(())
     })();

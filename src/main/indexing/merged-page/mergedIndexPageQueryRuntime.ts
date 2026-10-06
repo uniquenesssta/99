@@ -1,3 +1,4 @@
+import { withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime';
 import { resolve } from "node:path";
 import type {
   FontItem,
@@ -35,7 +36,7 @@ export function createMergedIndexPageQueryRuntime(
     const key = ctx.mergedIndexRootsKey(roots);
     const previous = readyInFlight.get(key);
     if (previous) return previous;
-    const task = (async () => {
+    const task = withoutSharedIoSignal(async () => {
       const usable = async () => {
         const db = await ctx.openMergedIndexDb();
         try { return ctx.mergedIndexLocalSnapshotUsable(db, roots); }
@@ -72,7 +73,7 @@ export function createMergedIndexPageQueryRuntime(
         ctx.appendStartupLog(`merged index worker readiness failed: roots=${roots.length}, ${error instanceof Error ? error.message : String(error)}`);
         return false;
       }
-    })();
+    });
     readyInFlight.set(key, task);
     try { return await task; }
     finally { if (readyInFlight.get(key) === task) readyInFlight.delete(key); }

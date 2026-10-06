@@ -155,6 +155,7 @@ export type CreateMergedIndexPageRuntimeOptions = {
   tagRevisionSnapshotForRequest?: (
     request: FontQueryRequest,
   ) => FontTagRevisionMetadata | Record<string, unknown>;
+  readInstallStatusForProjection?: (items: FontItem[]) => Promise<FontItem[]>;
   onMergedIndexCommitted?: (event: {
     reason: string;
     sequence: number;

@@ -1,3 +1,4 @@
+import { createFontQueryTask, joinFontQueryTask, assertFontQueryActive, type FontQueryTask } from './fontQueryTaskRuntime';
 import type { FontQueryPageResult,FontQueryRequest } from "../../shared/types";
 import { fontQueryCacheKey } from "./fontQuerySqlRuntime";
 
@@ -19,13 +20,13 @@ export function createFontPageQueryCacheRuntime(
   options: FontPageQueryCacheRuntimeOptions,
 ) {
   const fontQueryPageResultCache = new Map<string, FontQueryPageCacheEntry>();
-  const fontQueryPageInFlight = new Map<string, Promise<FontQueryPageResult>>();
+  const fontQueryPageInFlight = new Map<string, FontQueryTask<FontQueryPageResult>>();
   let cacheGeneration = 0;
 
   function invalidateFontQueryPageCache(): void {
     cacheGeneration += 1;
     fontQueryPageResultCache.clear();
-    fontQueryPageInFlight.clear();
+    for (const task of fontQueryPageInFlight.values()) task.controller.abort();
   }
 
   function rememberFontQueryPageResult(
@@ -44,6 +45,7 @@ export function createFontPageQueryCacheRuntime(
   async function queryFontPageInLibrary(
     requestInput: FontQueryRequest,
   ): Promise<FontQueryPageResult> {
+    assertFontQueryActive();
     const request = requestInput || {};
     const limit = Math.max(1, Math.min(500, Number(request.limit || 200) || 200));
     const offset = Math.max(0, Number(request.offset || 0) || 0);
@@ -58,32 +60,33 @@ export function createFontPageQueryCacheRuntime(
       return { ...cached.result, elapsedMs: 0 };
     }
 
-    const existing = fontQueryPageInFlight.get(cacheKey);
+    const joinedGeneration = cacheGeneration;
+    const physicalKey = `${cacheGeneration}:${cacheKey}`;
+    const existing = fontQueryPageInFlight.get(physicalKey);
     if (existing) {
       options.appendStartupLog(
         `font page query joined in-flight: offset=${offset}, limit=${limit}, page=${request.sidebarPage || "library"}, activeFilter=${request.activeFilter?.kind || "all"}`,
       );
-      return existing;
+      try { const result = await joinFontQueryTask(existing); assertFontQueryActive(); return joinedGeneration === cacheGeneration ? result : queryFontPageInLibrary(request); }
+      catch (error) { assertFontQueryActive(); if (existing.controller.signal.aborted) return queryFontPageInLibrary(request); throw error; }
     }
 
     const requestGeneration = cacheGeneration;
-    let promise!: Promise<FontQueryPageResult>;
-    promise = options.queryUncached(request, limit, offset).then((result) => {
-      if (requestGeneration !== cacheGeneration) {
-        return queryFontPageInLibrary(request);
-      }
-      if (requestGeneration === cacheGeneration) {
-        rememberFontQueryPageResult(cacheKey, result);
-      }
-      return result;
-    });
-    fontQueryPageInFlight.set(cacheKey, promise);
+    const task = createFontQueryTask(() => options.queryUncached(request, limit, offset));
+    fontQueryPageInFlight.set(physicalKey, task);
+    void task.pending.finally(() => {
+      if (fontQueryPageInFlight.get(physicalKey) === task) fontQueryPageInFlight.delete(physicalKey);
+    }).catch(() => undefined);
     try {
-      return await promise;
-    } finally {
-      if (fontQueryPageInFlight.get(cacheKey) === promise) {
-        fontQueryPageInFlight.delete(cacheKey);
-      }
+      const result = await joinFontQueryTask(task);
+      assertFontQueryActive();
+      if (requestGeneration !== cacheGeneration) return queryFontPageInLibrary(request);
+      if (requestGeneration === cacheGeneration) rememberFontQueryPageResult(cacheKey, result);
+      return result;
+    } catch (error) {
+      assertFontQueryActive();
+      if (requestGeneration !== cacheGeneration) return queryFontPageInLibrary(request);
+      throw error;
     }
   }
 

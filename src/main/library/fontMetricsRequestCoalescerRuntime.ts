@@ -1,3 +1,4 @@
+import { createFontQueryTask, joinFontQueryTask, assertFontQueryActive, type FontQueryTask } from './fontQueryTaskRuntime'
 import type { FontMetricsResult } from '../../shared/types'
 
 const DEFAULT_METRICS_RESULT_TTL_MS = 2_500
@@ -33,7 +34,7 @@ export function createFontMetricsRequestCoalescerRuntime(
   ttlMs = DEFAULT_METRICS_RESULT_TTL_MS,
 ): FontMetricsRequestCoalescerRuntime {
   const cachedByKey = new Map<string, MetricsCacheEntry>()
-  const inFlightByKey = new Map<string, Promise<FontMetricsResult>>()
+  const inFlightByKey = new Map<string, FontQueryTask<FontMetricsResult>>()
   let latestCacheEntry: MetricsCacheEntry | null = null
   let cacheGeneration = 0
   let nextRequestId = 0
@@ -43,6 +44,7 @@ export function createFontMetricsRequestCoalescerRuntime(
     load: () => Promise<FontMetricsResult>
     key?: string
   }): Promise<FontMetricsResult> {
+    assertFontQueryActive()
     const now = Date.now()
     const requestId = ++nextRequestId
     // Diagnostics must not turn a successful cache/read into a failed request.
@@ -66,36 +68,43 @@ export function createFontMetricsRequestCoalescerRuntime(
       return cloneMetricsResult(latestCacheEntry.result)
     }
 
-    const inFlight = inFlightByKey.get(key)
+    const joinedGeneration = cacheGeneration
+    const physicalKey = `${cacheGeneration}:${key}`
+    const inFlight = inFlightByKey.get(physicalKey)
     if (inFlight) {
       args.appendLog(`font metrics request joined in-flight: key=${key}`)
-      return inFlight.then(result => { trace('joined'); return cloneMetricsResult(result) })
+      try { const result = await joinFontQueryTask(inFlight); assertFontQueryActive(); if (joinedGeneration !== cacheGeneration) return run(args); trace('joined'); return cloneMetricsResult(result) }
+      catch (error) { assertFontQueryActive(); if (inFlight.controller.signal.aborted) return run(args); throw error }
     }
 
     const requestGeneration = cacheGeneration
     trace('load-start')
-    let promise!: Promise<FontMetricsResult>
-    promise = args.load().then((result) => {
+    const task = createFontQueryTask(args.load)
+    inFlightByKey.set(physicalKey, task)
+    void task.pending.finally(() => {
+      if (inFlightByKey.get(physicalKey) === task) inFlightByKey.delete(physicalKey)
+    }).catch(() => undefined)
+    try {
+      const result = await joinFontQueryTask(task)
+      assertFontQueryActive()
+      if (requestGeneration !== cacheGeneration) return run(args)
       if (requestGeneration === cacheGeneration) {
         const entry = { result: cloneMetricsResult(result), expiresAt: Date.now() + ttlMs, key }
-        cachedByKey.set(key, entry)
-        latestCacheEntry = entry
+        cachedByKey.set(key, entry); latestCacheEntry = entry
       }
-      if (requestGeneration === cacheGeneration) { trace('load-end'); return result }
-      trace('invalidated-reread', `startedGeneration=${requestGeneration}`)
-      return run(args)
-    }).catch(error => { trace('load-error'); throw error }).finally(() => {
-      if (inFlightByKey.get(key) === promise) inFlightByKey.delete(key)
-    })
-    inFlightByKey.set(key, promise)
-
-    return promise.then(cloneMetricsResult)
+      trace('load-end')
+      return cloneMetricsResult(result)
+    } catch (error) {
+      assertFontQueryActive()
+      if (requestGeneration !== cacheGeneration) return run(args)
+      trace('load-error'); throw error
+    }
   }
 
   function clear(): void {
     cacheGeneration += 1
     cachedByKey.clear()
-    inFlightByKey.clear()
+    for (const task of inFlightByKey.values()) task.controller.abort()
     latestCacheEntry = null
   }
 

@@ -1,5 +1,5 @@
 import type fs from "node:fs";
-import { readSharedDirectoryMetadata, type SharedDirectoryEntry } from "../../path/sharedDirectoryMetadataRuntime";
+import { readSharedDirectoryMetadata, readSharedDirectoryMetadataBatch, type SharedDirectoryEntry } from "../../path/sharedDirectoryMetadataRuntime";
 import { rethrowSharedIoProcessError } from "../../path/sharedIoProcessRuntime";
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { extname, join } from "node:path";
@@ -212,6 +212,9 @@ export function createRootDirectoryCacheRuntime(
       freshStat?: boolean;
       error: string;
     }> = [];
+    const pendingDirectories = [startDir];
+    let sharedWalk = false;
+    let directoryBatchLimit = 8;
     let foldersScanned = 0;
     let lastProgressAt = 0;
 
@@ -226,17 +229,18 @@ export function createRootDirectoryCacheRuntime(
       });
     };
 
-    async function walk(dir: string): Promise<void> {
+    async function walk(dir: string, prefetched?: NonNullable<Awaited<ReturnType<typeof readSharedDirectoryMetadata>>>): Promise<void> {
       throwIfAborted(signal);
       let stat: CachedFontStatLike;
       let entries: Array<fs.Dirent | SharedDirectoryEntry>;
       let shared: Awaited<ReturnType<typeof readSharedDirectoryMetadata>> = null;
       try {
-        shared = await deps.withGlobalIo("scan:directory-metadata", () => readSharedDirectoryMetadata(dir, signal), {
+        shared = prefetched || await deps.withGlobalIo("scan:directory-metadata", () => readSharedDirectoryMetadata(dir, signal), {
           priority: "normal", signal, storagePath: dir,
         });
         throwIfAborted(signal);
         if (shared) {
+          sharedWalk = true;
           stat = shared.stat;
           entries = shared.entries;
         } else {
@@ -393,14 +397,36 @@ export function createRootDirectoryCacheRuntime(
         }
       }
 
-      for (const full of childDirectories) {
-        throwIfAborted(signal);
-        await walk(full);
-      }
+      pendingDirectories.push(...childDirectories);
     }
 
     throwIfAborted(signal);
-    await walk(startDir);
+    while (pendingDirectories.length) {
+      throwIfAborted(signal);
+      const batch = pendingDirectories.splice(0, sharedWalk ? directoryBatchLimit : 1);
+      let receipts: Awaited<ReturnType<typeof readSharedDirectoryMetadataBatch>> = null;
+      if (sharedWalk && batch.length > 1) {
+        try {
+          receipts = await deps.withGlobalIo('scan:directory-metadata-batch', () => readSharedDirectoryMetadataBatch(batch, signal), {
+            priority: 'normal', signal, storagePath: context.rootPath,
+          });
+        } catch (error) {
+          throwIfAborted(signal);
+          const failure = error as import('../../path/sharedIoProcessRuntime').SharedIoProcessError;
+          if (batch.length > 1 && ['timeout', 'output-limit'].includes(failure.reason)) {
+            await failure.closed;
+            directoryBatchLimit = Math.ceil(batch.length / 2);
+            pendingDirectories.unshift(...batch);
+            continue;
+          }
+          rethrowSharedIoProcessError(error);
+          errors.push({ path: context.rootPath, message: error instanceof Error ? error.message : String(error) });
+          continue;
+        }
+      }
+      // Consume this whole sibling batch before descending into any subtree.
+      for (const dir of batch) { throwIfAborted(signal); await walk(dir, receipts?.get(dir)); }
+    }
     report(true);
     return files;
   }

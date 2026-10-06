@@ -43,7 +43,7 @@ export function traceRustInput(value: unknown): unknown {
 
 // Bounded operation evidence is collected before log filtering. It never grants
 // authority, caches a read, or changes task admission/settlement.
-type WorkCounts = { tasks: number; processStarts: number; processCloses: number; reads: number; sourceBytes: number; cacheBytes: number; transferBytes: number; renders: number; timeouts: number }
+type WorkCounts = { tasks: number; processStarts: number; processCloses: number; reads: number; sourceBytes: number; hashedBytes: number; cacheBytes: number; transferBytes: number; renders: number; timeouts: number }
 type WorkEvidence = { operationId: string; domain: string; counts: WorkCounts; waits: number[]; waitCount: number; waitMaxMs: number; executionMs: number; phases: Record<string, { count: number; elapsedMs: number }> }
 const workScope = new AsyncLocalStorage<WorkEvidence>()
 export function recordOperationWork(values: Partial<WorkCounts> & { queuedMs?: number; executionMs?: number }): void {
@@ -81,7 +81,7 @@ export function operationWorkSnapshot() {
 export async function withOperationWork<T>(domain: string, append: ((message: string) => void) | undefined, run: () => Promise<T>): Promise<T> {
   const prior = currentOperationTrace(), id = prior?.operationId || randomUUID(), start = performance.now()
   const trace = prior || { version: 1 as const, sessionId: 'main', operationId: id, attemptId: id, batchId: id, domain, members: [id], omitted: 0 }
-  const work: WorkEvidence = { operationId: id, domain, counts: { tasks: 0, processStarts: 0, processCloses: 0, reads: 0, sourceBytes: 0, cacheBytes: 0, transferBytes: 0, renders: 0, timeouts: 0 }, waits: [], waitCount: 0, waitMaxMs: 0, executionMs: 0, phases: {} }
+  const work: WorkEvidence = { operationId: id, domain, counts: { tasks: 0, processStarts: 0, processCloses: 0, reads: 0, sourceBytes: 0, hashedBytes: 0, cacheBytes: 0, transferBytes: 0, renders: 0, timeouts: 0 }, waits: [], waitCount: 0, waitMaxMs: 0, executionMs: 0, phases: {} }
   return workScope.run(work, () => withOperationTrace(trace, append, async () => {
     let outcome = 'returned', resultCounts: Record<string, number | boolean> = {}
     try {
@@ -97,7 +97,7 @@ export async function withOperationWork<T>(domain: string, append: ((message: st
     catch (error) { outcome = 'failed'; throw error }
     finally {
       const evidence = operationWorkSnapshot()
-      try { append?.(`operation work: ${JSON.stringify({ ...evidence, outcome, result: resultCounts, taskScope: 'global/shared scheduler admissions', elapsedMs: performance.now() - start, byteScope: 'logical delivered bytes; excludes SQLite pages and DirectWrite internals' })}`) } catch { /* Logging is never an execution gate. */ }
+      try { append?.(`operation work: ${JSON.stringify({ ...evidence, outcome, result: resultCounts, taskScope: 'global/shared scheduler admissions', elapsedMs: performance.now() - start, byteScope: 'successful logical source/cache read bytes including native hashing; failed/cancelled partial bytes unknown; hashedBytes is a subset; transferBytes separate; excludes physical I/O, SQLite and rendering internals' })}`) } catch { /* Logging is never an execution gate. */ }
     }
   }))
 }

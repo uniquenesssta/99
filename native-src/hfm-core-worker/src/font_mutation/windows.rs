@@ -42,14 +42,6 @@ const HKLM: Handle = (-2147483646isize) as Handle;
     fn SHGetFolderPathW(window:Handle, folder:i32, token:Handle, flags:u32, path:*mut u16)->i32;
 }
 #[link(name="sfc")] extern "system" { fn SfcIsFileProtected(rpc:Handle, path:*const u16)->i32; }
-#[link(name="bcrypt")] extern "system" {
-    fn BCryptOpenAlgorithmProvider(out:*mut Handle, name:*const u16, implementation:*const u16, flags:u32)->i32;
-    fn BCryptCreateHash(algorithm:Handle, out:*mut Handle, object:*mut u8, size:u32, secret:*const u8, secret_size:u32, flags:u32)->i32;
-    fn BCryptHashData(hash:Handle, data:*const u8, size:u32, flags:u32)->i32;
-    fn BCryptFinishHash(hash:Handle, output:*mut u8, size:u32, flags:u32)->i32;
-    fn BCryptDestroyHash(hash:Handle)->i32;
-    fn BCryptCloseAlgorithmProvider(algorithm:Handle, flags:u32)->i32;
-}
 fn wide(s:&str)->Vec<u16>{std::ffi::OsStr::new(s).encode_wide().chain(Some(0)).collect()}
 fn fail(s:&str)->io::Error{io::Error::other(s)}
 fn last()->io::Error{io::Error::last_os_error()}
@@ -89,14 +81,8 @@ fn open_font_access(path:&str,delete:bool,write_attributes:bool)->io::Result<Fil
 }
 fn digest(file:&File)->io::Result<String>{
     use std::io::{Seek,SeekFrom};
-    let mut f=file; f.seek(SeekFrom::Start(0))?;
-    struct Hash(Handle,Handle);impl Drop for Hash{fn drop(&mut self){unsafe{if !self.1.is_null(){BCryptDestroyHash(self.1);}BCryptCloseAlgorithmProvider(self.0,0);}}}
-    unsafe {
-        let mut a=ptr::null_mut();if BCryptOpenAlgorithmProvider(&mut a,wide("SHA256").as_ptr(),ptr::null(),0)<0{return Err(fail("SHA256 provider unavailable"))}
-        let mut h=Hash(a,ptr::null_mut());if BCryptCreateHash(a,&mut h.1,ptr::null_mut(),0,ptr::null(),0,0)<0{return Err(fail("SHA256 allocation failed"))}
-        let mut buffer=[0u8;65536];loop{let n=f.read(&mut buffer)?;if n==0{break}if BCryptHashData(h.1,buffer.as_ptr(),n as u32,0)<0{return Err(fail("SHA256 read failed"))}}
-        let mut hash=[0u8;32];if BCryptFinishHash(h.1,hash.as_mut_ptr(),32,0)<0{return Err(fail("SHA256 finish failed"))}Ok(hash.iter().map(|v|format!("{v:02x}")).collect())
-    }
+    let mut file=file; file.seek(SeekFrom::Start(0))?;
+    crate::windows_font_digest::sha256(file,u64::MAX).map(|(hash,_)|hash)
 }
 fn roots()->io::Result<(String,String)>{roots_for_token(ptr::null_mut())}
 fn roots_for_token(token:Handle)->io::Result<(String,String)>{
@@ -225,6 +211,19 @@ fn release_font_resources(p:&Plan,elevated:bool,input:&mut impl BufRead,out:&mut
     if released>0 {notify_font_change("resource-release",out);}
     result
 }
+// Diagnostic writes must stay on stderr: broker Track treats stdout writes as
+// prepared and uses that fact to forbid replay through automatic elevation.
+struct MutationTrace { operation:u64, started:std::time::Instant }
+impl MutationTrace {
+    fn new()->Self {
+        static NEXT:std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(1);
+        Self{operation:NEXT.fetch_add(1,std::sync::atomic::Ordering::Relaxed),started:std::time::Instant::now()}
+    }
+    fn event(&self,event:&str,generation:u32,detail:Value) {
+        let unix_ms=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|v|v.as_millis()).ok();
+        eprintln!("font mutation lifecycle: {}",json!({"pid":std::process::id(),"operation":self.operation,"unixMs":unix_ms,"elapsedMs":self.started.elapsed().as_millis(),"event":event,"handleGeneration":generation,"detail":detail}));
+    }
+}
 #[derive(Default)]
 struct FailureDetails { stage:&'static str, ntstatus:Option<u32>, uncertain:bool }
 // The caller clears uncertainty only after the matching effect/done receipt
@@ -280,6 +279,8 @@ fn reopen_verified_target(p:&Plan,previous:File,open:impl FnOnce()->io::Result<F
     Ok(file)
 }
 fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufRead,out:&mut impl Write,details:&mut FailureDetails)->io::Result<()> {
+    let trace=MutationTrace::new();
+    trace.event("execute-start",0,json!({"target":p.path,"deleteFile":p.delete_file,"records":p.records.len(),"elevated":elevated,"plannedIdentity":p.identity}));
     let mut stage="validate-plan";
     let mut registry_changed=false;
     let mut native_status=None;
@@ -288,9 +289,12 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     // Check mutation permissions before registry/file effects. A sharing-only
     // cleanup may first release gated session resources; it marks prepared.
     stage="open-font";
+    trace.event("target-open-start",1,json!({"deleteAccess":p.delete_file}));
     let file=open_mutation_target(p,elevated,input,out)?;
+    trace.event("target-opened",1,json!({"deleteAccess":p.delete_file}));
     stage="identity-preflight";
     if p.identity.as_ref()!=Some(&identity(&file)?)||digest(&file)?!=p.sha256{return Err(fail("font identity/content changed"))}
+    trace.event("target-identity-confirmed",1,json!({"identity":p.identity}));
     stage="readonly-preflight";
     let mut permissions=file.metadata()?.permissions();
     if (p.delete_file || p.preflight_file) && permissions.readonly() {
@@ -318,24 +322,37 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         until_receipted(details,|| {
             delete_record(r)?;
             registry_changed=true;
+            trace.event("registry-committed",1,json!({"scope":r.scope,"name":r.name}));
             emit(out,&json!({"effect":"registry","scope":r.scope,"name":r.name}))
         })?;
     }
+    if registry_changed {trace.event("registry-notification-start",1,json!({}));}
+    let had_registry_change=registry_changed;
     notify_registry_change(&mut registry_changed,out);
+    if had_registry_change {trace.event("registry-notification-finished",1,json!({}));}
     if p.delete_file {
         let mut held=Some(file);let mut renewal_pending=false;let mut renewed=false;let mut renewal_error=None;
+        let mut generation=1u32;let mut attempt=0u32;
         let disposition=retry_file_disposition(|| {
+        attempt+=1;
+        trace.event("disposition-attempt-start",generation,json!({"attempt":attempt,"renewalPending":renewal_pending}));
         native_status=None;
         if renewal_pending {
             stage="file-handle-renewal";
             // The original DELETE handle is closed once only for CANNOT_DELETE.
             // The new handle must identify the same file, not just equal bytes.
             let previous=held.take().ok_or_else(||fail("missing deletion handle"))?;
-            let reopened=match reopen_verified_target(p,previous,||open_font(&p.path,true)) {
+            trace.event("target-renewal-start",generation,json!({"attempt":attempt}));
+            let reopened=match reopen_verified_target(p,previous,|| {
+                // reopen_verified_target has dropped the old target before this closure.
+                trace.event("old-target-handle-closed",generation,json!({"attempt":attempt}));
+                open_font(&p.path,true)
+            }) {
                 Ok(file)=>file,
                 Err(error)=>{renewal_error=Some(error);return Err(fail("file handle renewal refused"));}
             };
-            held=Some(reopened);renewal_pending=false;renewed=true;
+            held=Some(reopened);renewal_pending=false;renewed=true;generation+=1;
+            trace.event("renewed-target-identity-confirmed",generation,json!({"attempt":attempt,"identity":p.identity}));
         }
         let file=held.as_ref().ok_or_else(||fail("missing deletion handle"))?;
         stage="file-identity-recheck";
@@ -344,21 +361,29 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         // Multiple loads can retain multiple resource references. Each removal
         // is separately gated; private or other-session resources are not forced.
         stage="font-resource-release";
+        trace.event("resource-release-start",generation,json!({"attempt":attempt}));
         release_font_resources(p,elevated,input,out)?;
+        trace.event("resource-release-finished",generation,json!({"attempt":attempt}));
         gate(input,out,if elevated{"elevated-file"}else{"file"})?;
         if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before disposition"))}
         stage="file-disposition";
         let result=mark_file_for_deletion_status(file,&mut native_status);
+        trace.event("disposition-returned",generation,json!({"attempt":attempt,"ok":result.is_ok(),"ntstatus":native_status,"code":result.as_ref().err().and_then(|e|e.raw_os_error())}));
         if !renewed && native_status==Some(0xC0000121) {
             renewal_pending=true;
             eprintln!("font deletion handle renewal scheduled: ntstatus=0xC0000121, same identity required, retry budget unchanged");
         }
         result
-        },|ms|std::thread::sleep(std::time::Duration::from_millis(ms)));
+        },|ms| {
+            trace.event("retry-wait-start",0,json!({"delayMs":ms,"targetHandleHeld":true}));
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            trace.event("retry-wait-finished",0,json!({"delayMs":ms,"targetHandleHeld":true}));
+        });
         // Stop renewal errors immediately while retaining their original OS code.
         if let Some(error)=renewal_error{return Err(error)}
         disposition?;
         drop(held);
+        trace.event("delete-target-handle-closed",generation,json!({"dispositionOk":true}));
         // A new object at the old path must never be removed during verification.
         stage="file-removal-verification";
         if Path::new(&p.path).try_exists()?{return Err(fail("file deletion not confirmed; do not retry without new identity"))}
@@ -366,6 +391,9 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     }
     Ok(())
     })();
+    // All target handles scoped inside execute's closure have now been dropped,
+    // including on an early error. This does not claim that external mappings closed.
+    trace.event("execute-target-handles-released",0,json!({"stage":stage,"ok":result.is_ok(),"ntstatus":native_status,"code":result.as_ref().err().and_then(|e|e.raw_os_error())}));
     // A later record/gate may fail after an earlier record was committed.
     notify_registry_change(&mut registry_changed,out);
     details.stage=stage;details.ntstatus=native_status;

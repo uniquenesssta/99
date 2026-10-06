@@ -1,3 +1,4 @@
+import { assertFontQueryActive, fontQuerySuperseded } from './fontQueryTaskRuntime'
 import type { FontItem,FontQueryRequest } from '../../shared/types'
 import { fontFilterCacheKey } from './fontMemoryQueryCacheKeyRuntime'
 import { createFontMemoryQueryMatcher } from './fontMemoryQueryMatcherRuntime'
@@ -18,6 +19,7 @@ export function createFontMemoryQueryRuntime(options: FontMemoryQueryRuntimeOpti
   async function cleanSharedFontsForQuery(
     request: FontQueryRequest,
   ): Promise<FontItem[]> {
+    assertFontQueryActive()
     const requestGeneration = cacheGeneration
     const folders = await options.appWatchedFolders()
     const cacheKey = fontFilterCacheKey(folders, request, options.normalizePathForCacheCompare)
@@ -35,13 +37,15 @@ export function createFontMemoryQueryRuntime(options: FontMemoryQueryRuntimeOpti
     const allFonts = await options.hydrateLocalTagsForFonts(
       await loadFonts(folders),
     )
+    assertFontQueryActive()
     const hydrated = await options.hydrateInstallStatusForFonts(allFonts)
+    assertFontQueryActive()
     const items = hydrated
       .filter((font) => sharedFontMatchesRequest(font, request))
       .sort((a, b) => compareSharedFonts(a, b, request))
+    if (requestGeneration !== cacheGeneration) return fontQuerySuperseded()
     if (freshMetadata) return items
 
-    if (requestGeneration !== cacheGeneration) return cleanSharedFontsForQuery(request)
 
     fontQueryResultCache.set(cacheKey, { at: now, items })
     if (fontQueryResultCache.size > options.resultCacheMax) {

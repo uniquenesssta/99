@@ -1,3 +1,4 @@
+import { createInstallStatusProjectionWriteRuntime } from '../install/status/installStatusProjectionWriteRuntime';
 import { createSharedAvailabilityReader } from '../path/sharedAvailabilityRuntime';
 import { cacheKeyForPath } from "../cache/cachePaths";
 import { PREVIEW_SQLITE_SCHEMA_VERSION } from "../cache/constants";
@@ -17,6 +18,7 @@ type Core = ReturnType<typeof createMainCoreCompositionRuntime>;
 import { createMainDataStorageCompositionRuntime, type MainDataStorageOptions } from './mainDataStorageCompositionRuntime';
 import { createMainDataQueryCompositionRuntime, type MainDataQueryOptions } from './mainDataQueryCompositionRuntime';
 export interface MainDataCompositionOptions {
+  onProjectionCommitted?: MainDataQueryOptions['onProjectionCommitted'];
   applyPendingActivationState: MainDataQueryOptions['applyPendingActivationState'];
   hasPendingActivationState?: MainDataQueryOptions['hasPendingActivationState'];
   host: {
@@ -181,6 +183,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     appWatchedFolders,
   } = storage;
   const query = createMainDataQueryCompositionRuntime({
+    onProjectionCommitted: options.onProjectionCommitted,
     applyPendingActivationState: options.applyPendingActivationState,
     hasPendingActivationState: options.hasPendingActivationState,
     appWatchedFolders,
@@ -315,6 +318,10 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
   const resources: MainDataCompositionRuntime['resources'] = {
     closeLibraryDb, closePreviewDb, clearLocalPreviewDbHandle, checkpointOpenCacheDbs, closeCacheDb,
   };
+  const installStatusWriter = createInstallStatusProjectionWriteRuntime({
+    saveInstallStatusIndex: storage.saveInstallStatusIndex,
+    syncMergedIndexAfterInstallStatusRefresh: query.syncMergedIndexAfterInstallStatusRefresh,
+  });
   const capabilities: MainDataCompositionRuntime['capabilities'] = {
     rememberRelinkedFontFile: query.rememberRelinkedFontFile,
     getSharedAvailability: createSharedAvailabilityReader(openLibraryDb),
@@ -418,7 +425,9 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
       readInstalledTotalSummaryForRoots: storage.readInstalledTotalSummaryForRoots,
       readInstallStatusIndex: storage.readInstallStatusIndex,
       getInstallStatusIndexSnapshot: storage.getInstallStatusIndexSnapshot,
-      saveInstallStatusIndex: storage.saveInstallStatusIndex,
+      saveInstallStatusIndex: installStatusWriter.saveInstallStatusIndex,
+      installStatusProjectionOwnedByWriter: installStatusWriter.installStatusProjectionOwnedByWriter,
+      installStatusWriteRevision: storage.installStatusWriteRevision,
       openRootIndexDb: storage.openRootIndexDb,
       saveRootIndexSqliteChanges: storage.saveRootIndexSqliteChanges,
       saveRootIndexDirectorySignatures: storage.saveRootIndexDirectorySignatures,

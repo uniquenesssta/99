@@ -108,6 +108,9 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
         )}
       >
         <FontListPanel
+          hasWatchedFolders={sidebar.library.folders.length > 0}
+          installStatusReady={sidebar.installStatusReady}
+          installStatusMissingCount={sidebar.installStatusMissingCount}
           sidebarPage={content.sidebarPage}
           refreshDeveloperStatusDetails={developer.refreshDeveloperStatusDetails}
           status={developer.status}

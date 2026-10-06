@@ -22,6 +22,11 @@ import { sharedIoAccesses, sharedIoResourceKeys, sharedIoPathsInInput, type Rust
 import { stopSharedPathProbes } from '../path/sharedPathProbeRuntime'
 
 const execFileAsync = promisify(execFile)
+// Preserve the former complete identity execution envelope: two 500ms realpath
+// stages, two 500ms stat stages and one 2000ms content read. This is one task,
+// not five new queue allowances, and does not change ordinary read deadlines.
+export const FONT_CONTENT_IDENTITY_TIMEOUT_MS = 2 * 500 + 2 * 500 + 2000
+
 
 export type RustCoreExecOptions = {
   timeout?: number
@@ -209,7 +214,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
-          if (previewRead || accesses?.length) await error.closed
+          if (!target!.write || previewRead || accesses?.length) await error.closed
           throw error
         })
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
@@ -389,19 +394,20 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   configureSharedFileExecutor(async (request, bytes, signal) => {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'shared-file-io-v1')) throw new SharedIoProcessError('原生 worker 不支持共享文件隔离。', 'not-started', 'capability-unavailable')
+    if (request.operation === 'fontContentIdentity' && !hasCapability(status, 'font-content-identity-v1')) throw new SharedIoProcessError('字体内容确认需要新版原生执行器。', 'not-started', 'capability-missing')
     if (request.operation === 'renameOwnedFile' && !hasCapability(status, 'shared-owned-rename-v1')) throw new SharedIoProcessError('共享发布需要新版原生执行器。', 'not-started', 'capability-missing')
     const inputFile = createTemporaryJsonFile('hfm-shared-file-input')
     const transferFile = createTemporaryJsonFile('hfm-shared-file-transfer')
     let retainSnapshot = false
-    const write = !['stat','lstat','access','realpath','readdir','readFile','sqliteSnapshot','treeSnapshot','directoryMetadata'].includes(request.operation)
+    const write = !['stat','lstat','access','realpath','readdir','readFile','sqliteSnapshot','treeSnapshot','directoryMetadata','directoryMetadataBatch','fontContentIdentity'].includes(request.operation)
     try {
       if (bytes) await fsp.writeFile(transferFile.path, bytes)
       else if (request.operation === 'readFile') await transferFile.writeJson(null)
       const input = { ...request, transferPath: transferFile.path }
       await inputFile.writeJson(input)
       const output = await runRustCoreScheduledCommand(status.path, ['--shared-file-io','--input',inputFile.path,'--transfer',transferFile.path], {
-        timeout: ['stat','lstat','access','realpath','openFile'].includes(request.operation) ? 500 : write ? 5000 : 2000,
-        windowsHide: true, maxBuffer: 32*1024*1024, signal, sharedIo: { paths: [request.path, request.dest || '', request.source || ''], write, accesses: sharedFileAccesses(request) },
+        timeout: request.operation === 'fontContentIdentity' ? FONT_CONTENT_IDENTITY_TIMEOUT_MS : ['stat','lstat','access','realpath','openFile'].includes(request.operation) ? 500 : write ? 5000 : 2000,
+        windowsHide: true, maxBuffer: 32*1024*1024, signal, sharedIo: { paths: [request.path, request.dest || '', request.source || '', ...(request.paths || [])], write, accesses: sharedFileAccesses(request) },
       })
       const result = parseJsonLine<import('../path/sharedFileSystemRuntime').SharedFileResult>(output.stdout)
       if (typeof result.ok !== 'boolean' || result.operation !== request.operation) throw new SharedIoProcessError('共享文件隔离回执无效。','unknown','invalid-receipt')

@@ -236,11 +236,8 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
 
     async function processDirectory(targetPath: string): Promise<boolean> {
       const relativeDir = options.relativeDirectoryPathForRoot(rootPath, targetPath)
-      const currentSignature = await computeWatchedDirectorySignature(targetPath)
-      if (!currentSignature) {
-        payload.errors?.push({ path: targetPath, message: '目录状态读取不完整，保留现有索引。' })
-        return false
-      }
+      // The fresh directory-cache walk below owns enumeration and completeness.
+      // A separate stat/readdir signature probe duplicates that same work.
       counts.directories += 1
 
       const errors = payload.errors || []

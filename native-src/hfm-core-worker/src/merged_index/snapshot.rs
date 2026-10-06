@@ -77,6 +77,8 @@ pub fn roots_snapshot_usable(conn: &Connection, roots: &[String], schema_version
         let key: Option<String> = conn.query_row("SELECT value FROM meta WHERE key='sourcesKey'", [], |row| row.get(0)).optional()?;
         if key.unwrap_or_default().is_empty() { return Ok(false); }
     }
+    let evidence: Option<String> = conn.query_row("SELECT value FROM meta WHERE key='installEvidenceVersion'", [], |row| row.get(0)).optional()?;
+    if evidence.as_deref() != Some("content-v1") { return Ok(false); }
     if !merged_index_required_schema_usable(conn) {
         return Ok(false);
     }

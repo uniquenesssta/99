@@ -44,6 +44,8 @@ export interface MainOperationsCompositionOptions {
     | 'getOpenLibraryDb'
     | 'getSystemInstalledFontsCached'
     | 'saveInstallStatusIndex'
+    | 'installStatusProjectionOwnedByWriter'
+    | 'installStatusWriteRevision'
     | 'appWatchedFolders'
     | 'loadSharedFontsForFolders'
     | 'readInstallStatusIndex'
@@ -188,6 +190,8 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     getOpenLibraryDb,
     getSystemInstalledFontsCached,
     saveInstallStatusIndex,
+    installStatusProjectionOwnedByWriter,
+    installStatusWriteRevision,
     appWatchedFolders,
     loadSharedFontsForFolders,
     readInstallStatusIndex,
@@ -537,6 +541,8 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     loadSharedFontsForFolders,
     readInstallStatusIndex,
     saveInstallStatusIndex,
+    installStatusProjectionOwnedByWriter,
+    installStatusWriteRevision,
     readInstalledTotalSummaryForRoots,
     saveInstalledTotalSummaryForRoots,
     getSystemInstalledFontsCached,

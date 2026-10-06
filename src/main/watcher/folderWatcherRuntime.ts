@@ -100,7 +100,8 @@ export function createFolderWatcherRuntime(
     if (
       !payload.upserts.length &&
       !payload.deletes.length &&
-      !payload.errors?.length
+      !payload.errors?.length &&
+      payload.source !== 'projection'
     )
       return;
 

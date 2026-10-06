@@ -93,6 +93,8 @@ unsafe extern "system" {
     fn GdipGetEmHeight(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
     fn GdipGetCellAscent(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
     fn GdipGetCellDescent(family: *mut c_void, style: i32, value: *mut u16) -> GpStatus;
+    fn GdipGetFamilyName(family: *mut c_void, name: *mut u16, language: u16) -> GpStatus;
+    fn GdipGetFontStyle(font: *mut c_void, style: *mut i32) -> GpStatus;
     fn GdipDeleteFont(font: *mut c_void) -> GpStatus;
     fn GdipCreateStringFormat(format_attributes: i32, language: u16, format: *mut *mut c_void) -> GpStatus;
     fn GdipStringFormatGetGenericTypographic(format: *mut *mut c_void) -> GpStatus;
@@ -190,7 +192,7 @@ impl Drop for Brush {
     }
 }
 
-pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<(), String> {
+pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, String> {
     let _token = start_gdiplus()?;
     ensure_parent_dir(&request.output_path)?;
 
@@ -248,7 +250,18 @@ pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<(), String
     let png_encoder = png_encoder_clsid()?;
     status(unsafe { GdipSaveImageToFile(bitmap.0, output_path.as_ptr(), &png_encoder, ptr::null()) }, "failed to save PNG")?;
 
-    Ok(())
+    // Best-effort observations from the already-selected native objects. These
+    // calls cannot fail rendering or change selection; family is not a TTC face.
+    let mut name = [0u16;32];
+    let observed_name = unsafe { GdipGetFamilyName(preview_font.family.0,name.as_mut_ptr(),0) } == 0;
+    let mut style = 0i32;
+    let observed_style = unsafe { GdipGetFontStyle(preview_font.font.0,&mut style) } == 0;
+    let private = preview_font._private_collection.is_some();
+    Ok(serde_json::json!({"route":if private {"private-file"} else {"system-family"},
+        "selection":if private {"first-private-family"} else {"first-successful-system-candidate"},
+        "familyName":if observed_name {Some(String::from_utf16_lossy(&name[..name.iter().position(|c|*c==0).unwrap_or(name.len())]))} else {None},
+        "familyNameStatus":if observed_name {"observed"} else {"unavailable"},"requestedStyleBits":0,
+        "selectedStyleBits":if observed_style {Some(style)} else {None},"faceStatus":"not-exposed","glyphFallbackStatus":"not-observed"}))
 }
 
 fn start_gdiplus() -> Result<GdiplusToken, String> {

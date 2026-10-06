@@ -18,7 +18,7 @@ export function createInstallStatusWriteRuntime(
   deps: InstallStatusRuntimeDeps,
   helpers: InstallStatusDbRuntime & InstallStatusSignatureRuntime
 ) {
-  async function saveInstallStatusIndex(results: Record<string, InstallCompareResult>, itemsById: Map<string, FontItem>, options: { completeTasks?: boolean } = {}): Promise<void> {
+  async function saveInstallStatusIndex(results: Record<string, InstallCompareResult>, itemsById: Map<string, FontItem>, options: { completeTasks?: boolean; expectedRevision?: number; onPersisted?: (ids: string[]) => void } = {}): Promise<void> {
     if (!Object.keys(results).length) return
     const unconfirmed = Object.entries(results).filter(([, result]) => result.known === false)
     if (unconfirmed.length) deps.appendStartupLog(`install status unconfirmed: ${JSON.stringify({ count: unconfirmed.length, examples: unconfirmed.slice(0, 8).map(([fontId, result]) => ({ fontId, path: itemsById.get(fontId)?.path, reason: result.reason })) })}`)

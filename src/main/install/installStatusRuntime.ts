@@ -44,6 +44,33 @@ export function createInstallStatusRuntime(deps: InstallStatusRuntimeDeps) {
   })
   const deleteRuntime = createInstallStatusDeleteRuntime(deps, dbRuntime)
 
+  // All state writers share one short write lane. A background refresh captures
+  // this revision before reading candidates and cannot overwrite newer targets.
+  let writeRevision = 0
+  let writeTail: Promise<void> = Promise.resolve()
+  const itemWriteRevisions = new Map<string, number>()
+  const serialize = (run: () => Promise<void>) => {
+    const task = writeTail.catch(() => undefined).then(run)
+    writeTail = task.catch(() => undefined)
+    return task
+  }
+  const mark = (ids: string[], revision: number) => { for (const id of ids) itemWriteRevisions.set(id, Math.max(revision, itemWriteRevisions.get(id) || 0)) }
+  const saveInstallStatusIndex: typeof writeRuntime.saveInstallStatusIndex = (results, items, options = {}) => {
+    const revision = ++writeRevision
+    if (options.expectedRevision === undefined) mark(Object.keys(results), revision)
+    return serialize(async () => {
+      const accepted = Object.fromEntries(Object.entries(results).filter(([id]) => options.expectedRevision === undefined || (itemWriteRevisions.get(id) || 0) <= options.expectedRevision))
+      if (Object.keys(accepted).length !== Object.keys(results).length) deps.appendStartupLog(`install status stale refresh rows skipped: rows=${Object.keys(results).length - Object.keys(accepted).length}, expectedRevision=${options.expectedRevision}, revision=${writeRevision}`)
+      if (!Object.keys(accepted).length) return
+      mark(Object.keys(accepted), revision)
+      await writeRuntime.saveInstallStatusIndex(accepted, items, options)
+      options.onPersisted?.(Object.keys(accepted))
+    })
+  }
+  const deleteInstallStatusIndex = (ids: string[]) => {
+    mark(ids, ++writeRevision)
+    return serialize(() => deleteRuntime.deleteInstallStatusIndex(ids))
+  }
   return {
     ...signatureRuntime,
     ...machineIdentityRuntime,
@@ -53,6 +80,8 @@ export function createInstallStatusRuntime(deps: InstallStatusRuntimeDeps) {
     ...normalizeRuntime,
     ...readRuntime,
     ...writeRuntime,
-    ...deleteRuntime
+    ...deleteRuntime,
+    saveInstallStatusIndex, deleteInstallStatusIndex,
+    installStatusWriteRevision: () => writeRevision,
   }
 }

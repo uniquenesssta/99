@@ -825,6 +825,8 @@ export type RustPreviewRenderImageInput = {
 export type RustPreviewRenderImageResult = {
   ok: boolean
   engine: 'rust-directwrite'
+  nativeBackend?: string
+  provenance?: Record<string, string | number>
   outputPath: string
   elapsedMs: number
   workerMode: 'rust-preview-render-image'

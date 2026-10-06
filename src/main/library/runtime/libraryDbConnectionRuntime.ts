@@ -1,3 +1,5 @@
+import { withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime';
+import { disposeTagFontSnapshots } from '../tagFontSnapshotRuntime';
 import { promises as fsp } from "node:fs";
 import { dirname } from "node:path";
 import type { LibraryRuntimeOptions,SqliteDb } from "./libraryRuntimeTypes";
@@ -22,7 +24,7 @@ export function createLibraryDbConnectionRuntime(options: Pick<
     // just the initial SQLite open, so startup callers cannot run migrations twice.
     if (libraryDbOpening) return libraryDbOpening;
     const openedGeneration = generation;
-    const task = (async () => {
+    const task = withoutSharedIoSignal(async () => {
       let db = libraryDb;
       if (!isSqliteDbOpen(db)) {
         libraryDb = null;
@@ -42,10 +44,11 @@ export function createLibraryDbConnectionRuntime(options: Pick<
         return preparingDb;
       } catch (error) {
         if (libraryDb === preparingDb) libraryDb = null;
+        disposeTagFontSnapshots(preparingDb);
         closeSqliteDb(preparingDb);
         throw error;
       }
-    })();
+    });
     libraryDbOpening = task;
     try {
       return await task;
@@ -64,6 +67,7 @@ export function createLibraryDbConnectionRuntime(options: Pick<
     generation += 1;
     // An in-flight preparation owns its handle until it settles. It will close
     // that handle and reject rather than publish it after this invalidation.
+    disposeTagFontSnapshots(libraryDb);
     if (!libraryDbOpening) closeSqliteDb(libraryDb);
     libraryDb = null;
   }

@@ -18,6 +18,9 @@ export type FontListPanelProps = {
   developerTasks: unknown[]
   developerStatusLog: DeveloperStatusEntry[]
   installStatus: PageToolbarState['installStatus']
+  hasWatchedFolders?: boolean
+  installStatusReady?: boolean
+  installStatusMissingCount?: number
   timeSortMode: PageToolbarState['timeSortMode']
   sortMode: SortMode
   viewMode: PageToolbarState['viewMode']

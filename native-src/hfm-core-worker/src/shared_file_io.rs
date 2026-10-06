@@ -13,6 +13,7 @@ struct Request {
     _trace: Option<Value>,
     operation: String,
     path: String,
+    paths: Option<Vec<String>>,
     availability_root: Option<String>,
     limit_bytes: Option<u64>,
     older_than_ms: Option<f64>,
@@ -49,10 +50,43 @@ fn metadata(value: &fs::Metadata) -> Value {
     let millis = |date: io::Result<SystemTime>| date.ok().map(unix_millis).unwrap_or(0.0);
     json!({"size":value.len(),"mtimeMs":millis(value.modified()),"birthtimeMs":millis(value.created()),"atimeMs":millis(value.accessed()),"isFile":value.is_file(),"isDirectory":value.is_dir(),"isSymbolicLink":value.file_type().is_symlink()})
 }
+#[cfg(windows)]
+fn font_content_identity(path: &Path) -> io::Result<Value> { font_content_identity_checked(path, || {}) }
+#[cfg(windows)]
+fn font_content_identity_checked(path: &Path, after_read: impl FnOnce()) -> io::Result<Value> {
+    let max_size = 256 * 1024 * 1024;
+    if !path.is_absolute() || !matches!(path.extension().and_then(|value|value.to_str()).unwrap_or("").to_ascii_lowercase().as_str(),"ttf"|"otf"|"ttc"|"otc") {
+        return Err(io::Error::other("invalid font identity path"));
+    }
+    let physical = fs::canonicalize(path)?;
+    let mut file = fs::File::open(&physical)?;
+    let before = file.metadata()?;
+    let identity = crate::font_resource::activation_identity::file_id(&file)?;
+    if !before.is_file() || before.len() > max_size { return Err(io::Error::other("invalid font identity size or type")); }
+    let mut magic = [0u8;4]; file.read_exact(&mut magic)?;
+    if !matches!(&magic,b"\0\x01\0\0"|b"OTTO"|b"ttcf"|b"true"|b"typ1") { return Err(io::Error::other("unsupported font signature")); }
+    file.seek(SeekFrom::Start(0))?;
+    let (digest,bytes) = crate::windows_font_digest::sha256(&mut file,max_size)?;
+    after_read();
+    let after = file.metadata()?;
+    let resolved_after = fs::canonicalize(path)?;
+    let current = fs::File::open(&resolved_after)?;
+    let current_meta = current.metadata()?;
+    if bytes != before.len() || before.len() != after.len() || before.modified()? != after.modified()?
+        || current_meta.len() != before.len() || current_meta.modified()? != before.modified()?
+        || identity != crate::font_resource::activation_identity::file_id(&current)?
+        || physical.to_string_lossy().to_lowercase() != resolved_after.to_string_lossy().to_lowercase() {
+        return Err(io::Error::other("font changed while reading content identity"));
+    }
+    Ok(json!({"path":physical.to_string_lossy(),"sha256":digest,"size":before.len(),"modified":unix_millis(before.modified()?),
+        "dev":identity.0,"ino":identity.1,"readBytes":bytes}))
+}
 fn execute(request: &Request) -> io::Result<Value> {
     if request.path.is_empty() || request.path.contains('\0') { return Err(io::Error::other("invalid shared path")); }
     let path = Path::new(&request.path);
     match request.operation.as_str() {
+        #[cfg(windows)]
+        "fontContentIdentity" => font_content_identity(path),
         "openFile" => {
             let mut file=fs::OpenOptions::new().read(true).write(true).create(!request.exclusive).create_new(request.exclusive).truncate(!request.append).open(path)?;
             file.sync_all()?;
@@ -190,6 +224,16 @@ fn execute(request: &Request) -> io::Result<Value> {
             tx.commit().map_err(io::Error::other)?;
             Ok(Value::Null)
         },
+        "directoryMetadataBatch" => {
+            let paths = request.paths.as_ref().ok_or_else(||io::Error::other("missing directory batch"))?;
+            if paths.is_empty() || paths.len() > 8 { return Err(io::Error::other("directory batch limit exceeded")); }
+            let mut rows = Vec::new();
+            for path in paths {
+                let value = execute(&Request { operation:"directoryMetadata".into(), path:path.clone(), ..request.clone() })?;
+                rows.push(json!({"path":path,"value":value}));
+            }
+            Ok(Value::Array(rows))
+        },
         "directoryMetadata" => {
             let directory = fs::metadata(path)?;
             let mut entries = Vec::new();
@@ -287,6 +331,33 @@ mod tests {
         }
     }
     impl Drop for Directory { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+    #[cfg(windows)]
+    #[test]
+    fn full_font_identity_keeps_digest_bytes_and_detects_replacement() {
+        let dir=Directory::new(); let path=dir.0.join("font.ttf");
+        let bytes=b"\0\x01\0\0controlled whole font bytes";
+        fs::write(&path,bytes).unwrap();
+        let before=font_content_identity(&path).unwrap();
+        let digest=crate::windows_font_digest::sha256(&bytes[..],256*1024*1024).unwrap();
+        assert_eq!(before["sha256"],digest.0); assert_eq!(before["readBytes"],bytes.len());
+        assert!(before["dev"].is_string()); assert!(before["ino"].is_string());
+        let replacement=font_content_identity_checked(&path,|| {
+            fs::rename(&path,dir.0.join("original.ttf")).unwrap(); fs::write(&path,bytes).unwrap();
+        });
+        assert!(replacement.unwrap_err().to_string().contains("changed while reading"));
+        fs::write(&path,b"invalid font bytes").unwrap(); assert!(font_content_identity(&path).is_err());
+        assert!(font_content_identity(&dir.0.join("missing.ttf")).is_err());
+    }
+    #[test]
+    fn directory_metadata_batch_is_bounded_and_never_turns_failure_into_empty() {
+        let dir=Directory::new(); let mut paths=Vec::new();
+        for index in 0..8 { let path=dir.0.join(index.to_string());fs::create_dir(&path).unwrap();fs::write(path.join("font.ttf"),b"font").unwrap();paths.push(path); }
+        let rows=execute(&dir.request("directoryMetadataBatch","",json!({"paths":paths}))).unwrap();
+        assert_eq!(rows.as_array().unwrap().len(),8);
+        assert!(rows.as_array().unwrap().iter().all(|row|row["value"]["entries"].as_array().unwrap().len()==1));
+        paths.push(dir.0.join("9")); assert!(execute(&dir.request("directoryMetadataBatch","",json!({"paths":paths}))).is_err());
+        assert!(execute(&dir.request("directoryMetadataBatch","",json!({"paths":[dir.0.join("0"),dir.0.join("missing")]}))).is_err());
+    }
     #[test]
     fn traced_requests_preserve_file_results_and_strict_business_fields() {
         let dir = Directory::new();

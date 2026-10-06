@@ -21,13 +21,14 @@ pub fn render_preview_image(config: &PreviewRenderCommandConfig) -> Result<Strin
     let request = request.normalized()?;
     validate_request(&request)?;
 
-    platform_render_preview_image(&request)?;
+    let provenance = platform_render_preview_image(&request)?;
 
     Ok(format!(
-        "{{\"ok\":true,\"engine\":\"rust-private-gdi\",\"outputPath\":\"{}\",\"layoutVersion\":\"{}\",\"elapsedMs\":{}}}",
+        "{{\"ok\":true,\"engine\":\"rust-private-gdi\",\"outputPath\":\"{}\",\"layoutVersion\":\"{}\",\"elapsedMs\":{},\"provenance\":{}}}",
         escape_json(&request.output_path),
         request.layout.as_ref().map(|layout| layout.version.as_str()).unwrap_or("legacy"),
-        started_at.elapsed().as_millis()
+        started_at.elapsed().as_millis(),
+        provenance
     ))
 }
 
@@ -42,11 +43,11 @@ fn validate_request(request: &PreviewRenderRequest) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn platform_render_preview_image(request: &PreviewRenderRequest) -> Result<(), String> {
+fn platform_render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, String> {
     windows::render_preview_image(request)
 }
 
 #[cfg(not(windows))]
-fn platform_render_preview_image(request: &PreviewRenderRequest) -> Result<(), String> {
+fn platform_render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, String> {
     non_windows::render_preview_image(request)
 }

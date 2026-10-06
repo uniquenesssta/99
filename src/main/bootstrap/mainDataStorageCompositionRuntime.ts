@@ -1,3 +1,4 @@
+import { createInstallStatusWorkerReadRuntime } from '../install/status/installStatusWorkerReadRuntime'
 import { createLocalFontProtectionRuntime } from '../library/runtime/localFontProtectionRuntime';
 import { migrateInstallStatusIdentity, installIdentitySnapshotKey } from '../install/status/installStatusIdentityMigration'
 import { createLocalFontLegacyIdentityRuntime, readCompleteFontIdentityIndex } from '../library/runtime/localFontLegacyIdentityRuntime';
@@ -346,6 +347,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
           if (beforeKey !== lastInstallIdentityCandidates) {
             const count = migrateInstallStatusIdentity(installDb, rows, report => {
               installIdentityPending = report.unresolved > 0;
+              if (report.invalidCandidates) appendStartupLog(`安装索引身份候选隔离：invalid=${report.invalidCandidates}, samples=${JSON.stringify(report.invalidSamples)}`);
               if (report.migrated || report.unresolved) appendStartupLog(`安装索引文件身份迁移：${report.migrated}，未能唯一匹配=${report.unresolved}，无当前身份候选=${report.noIdentityCandidate}，签名不一致=${report.signatureMismatch}，候选歧义=${report.ambiguous}，原行保留。`);
             });
             if (count) clearFontQueryCaches();
@@ -506,33 +508,12 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     isCleanWindowsDefaultCompareResult,
     completeBackgroundTask,
     appendStartupLog,
-    readInstallStatusIndexInWorker: async (groups) => {
-      await openLibraryDb();
-      for (const group of groups) {
-        if (!(await exists(group.dbPath))) continue;
-        const db = openStableSqliteDb(group.dbPath, 'install-identity-items');
-        try {
-          installStatusRuntime.initializeMachineInstallDb(db, group.rootPath);
-          migrateInstallStatusIdentity(db, group.items.map(item => ({ root_path: '', relative_path: item.path,
-            file_size: item.fileSize, modified_at: item.modifiedAt, font_json: JSON.stringify(item) })));
-        } finally { closeSqliteDb(db); }
-      }
-      const rustResult =
-        await rustCoreWorkerRuntime.runRustInstallStatusRead(groups);
-      if (rustResult) {
-        appendStartupLog(
-          `machine install status rust read: groups=${groups.length}, known=${Object.keys(rustResult.results || {}).length}, missing=${rustResult.missingIds.length}, elapsed=${rustResult.timings?.elapsed || 0}ms`,
-        );
-        return rustResult;
-      }
-      const result = await dbQueryWorkerRuntime.readInstallStatusIndex({
-        groups,
-      });
-      appendStartupLog(
-        `machine install status db worker read: groups=${groups.length}, known=${Object.keys(result.results || {}).length}, missing=${result.missingIds.length}, elapsed=${result.timings?.elapsed || 0}ms`,
-      );
-      return result;
-    },
+    readInstallStatusIndexInWorker: createInstallStatusWorkerReadRuntime({
+      openLibraryDb, exists, openStableSqliteDb, closeSqliteDb, appendStartupLog,
+      initializeMachineInstallDb: (db, root) => installStatusRuntime.initializeMachineInstallDb(db, root),
+      readRust: groups => rustCoreWorkerRuntime.runRustInstallStatusRead(groups),
+      readWorker: groups => dbQueryWorkerRuntime.readInstallStatusIndex({ groups }),
+    }),
     saveInstallStatusIndexInWorker: async (groups) => {
       const rustResult =
         await rustCoreWorkerRuntime.runRustInstallStatusSave(groups);
@@ -555,6 +536,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     readInstallStatusIndex,
     getInstallStatusIndexSnapshot,
     saveInstallStatusIndex,
+    installStatusWriteRevision,
   } = installStatusRuntime;
 
   const rootIndexRuntime = createRootIndexRuntime({
@@ -861,6 +843,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     readInstallStatusIndex,
     getInstallStatusIndexSnapshot,
     saveInstallStatusIndex,
+    installStatusWriteRevision,
     saveRootIndexSqliteChanges,
     saveRootIndexDirectorySignatures,
     writeRootCacheManifest,
