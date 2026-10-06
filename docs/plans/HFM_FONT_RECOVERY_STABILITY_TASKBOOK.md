@@ -1094,3 +1094,31 @@ F14仍通过五组同状态恢复/取消/安装/卸载/半失败重开/替换拒
 原生输入静态审计：thumb起点约(534,108)，轨道y84～376，终点374应到scrollTop上限1500，阈值1000不在临界处；Electron42.11.3输入x/y是viewport坐标，生产使用clientY，无依据增加屏幕偏移。旧driver先测modal thumb，再在modal右侧之外释放旧背景拖动，随后立即连发新move/down/move/up；hover可能在其间隐藏track，既有点位就绪结论已失效。这是有源码支持的夹具时序假设，原始失败缺事件证据，尚非已证明产品根因。
 
 本次仅补验证责任：保留原背景capture取消/禁止滚动和modal `>1000`断言；旧拖动原生释放后，使用真实native move进入modal，确认trusted事件、当前:hover、computed可见/pointer-events、实际hit-test后重新取得thumb坐标，再一次native down→该pointerId的hasPointerCapture→一次move及scroll/gotcapture→一次up及释放ACK。不重发失败输入、不改scroll/focus、不用合成pointer/scroll制造通过、不扩大超时或改生产代码。每ACK最多90个animation frame，仍受原180秒整个Electron进程wall-clock watchdog约束；无任意sleep。按phase保存bounded trusted事件、target/currentTarget、client/screen坐标、buttons/id、capture、scroll范围、rect/style/focus，失败及watchdog保留最后checkpoint；full/feedback产物名分别带前缀，避免后者覆盖前者。这些证据必须在新的完整Windows运行中验证，当前不宣称已通过。
+
+
+### 14.16 实机反馈补修最终自动化回执（2026-10-06）
+
+**受测提交**：`03b7f73a901d1ffc8246c3a9bdd3c1cc14f8f43c`，原分支 `stage/12-font-identity-permissions`。[完整Windows CI 37522626020](https://github.com/uniquenesssta/99/actions/runs/37522626020)，job `112471605075`，全部成功。171项诊断、真实worker/目录批次、旧库迁移/实际merged投影、完整刷新ABBA、同状态F14、全部原生边界、150列表/网格场景及原生输入、F13比较和bundle均通过。`src/`、`native-src/` 与已通过第二轮的 `3133f884` 字节一致；后两轮只加强真实像素和原生输入验证及产物卫生，不据夹具证据猜改字体渲染。
+
+**最新完整负载**：同一job A1→B1→B2→A2，各自源码构建匹配worker，同288个真实文件（256来源、32独立目标）、5234个仅元数据行，共5490合法索引项；单独5491项坏路径正确性保留。每轮完整结束均为256已安装、5234未安装、0未知，保存5490。16次真实浏览、10次原生PNG、4次真实枚举，全部16次浏览与实际后台字体读取执行区间重叠，不用人工延迟构造竞争。
+
+| 指标 | A1旧基线 | B1补修 | B2补修 | A2旧基线 |
+| --- | ---: | ---: | ---: | ---: |
+| 完整刷新秒（含相同逐批核对读） | 85.69 | 37.48 | 39.02 | 95.21 |
+| 16次浏览主进程返回p95/max，ms | 11243.91 | 1229.90 | 1372.78 | 10766.61 |
+| 10次原生PNG端到端p95/max，ms | 306.09 | 277.56 | 299.81 | 400.53 |
+| 固定10次PNG子请求queue p95/max，ms | 242 | 215 | 236 | 325 |
+| 固定4次枚举子请求queue p95/max，ms | 32 | 39 | 47 | 207 |
+| 16次browse整组子请求queue累计，ms | 17356 | 374 | 439 | 22278 |
+
+按实施前已审定的同job基线包络，完整时间、browse/PNG端到端、固定语义queue与全局max门全部通过；不是每一个B数值都低于每个A样本。原混合queue分布仍记录396/30/30/450个不同子任务，其p95=87/187/229/111ms，不把不等样本分位数包装成互动退化或删除。A2保留3次旧stat执行timeout：位于保存第2000项后的校验页面→旧tag历史snapshot capture→readFontIdentityMetadata原路径stat；内容identity此前已成功，capture catch保留旧证据，没有进入新的完整hash失败。最终内容确认/总量仍完整正确，没有称旧基线无错误；全部耗时计入，没有剔除或重跑该样本。端点是主进程结果返回/原生PNG完成，不是实际NAS、paint或用户机器速度承诺。
+
+B1/B2各11个保存批次全部由真实SQL、page、metrics验证收敛；各11次一次性mapping SELECT、60390行映射、5490次索引定位UPDATE、0次投影identity UDF调用，无逐项全表计算。每轮保留288次刷新内容确认，成功逻辑hash字节292816512；另26次后台历史捕获、26434824字节，前台关键路径hash为0。成功字节不是物理磁盘计量，失败/取消读量不冒充0。B1/B2进程672/672及674/674 started/closed，失败0、最终children0；确认实际并发上限1，预览观测最大4。6项独立正确性均通过：原始非法行失败复现、5491完整保留1未知、较新定向写CAS拒旧且updated=5489、根离线保留2745未知、父mtime相等子文件真变化、旧consumer取消不复活。
+
+**实际可见像素**：本次list三个阶段（恢复后/卸载后/同库重启）650/650字形点匹配、1284个内部透明负样本无误入；同一grid crop light→dark→light均589/589匹配、1075负样本无误入，clipped=0，light/dark平均contrast242.67/213.67。已人工检查实际light和dark稳定截图，目标卡片均可见“Ag fj”。初始均有字；主题切换正确极性采样延迟87/99ms，`observedBlankUntilVisibleMs=null`，不是测得空白时长，也不据此证明上一张空白原因。节点/src/key/祖先几何与实际PNG共同验证，两次连续稳定capture才通过；不是仅凭DOM complete/同SHA。
+
+**原生输入证据**：full/feedback各720/1600四组modal均由0拖到scrollTop1500、背景保持0。trusted hover ACK 1～2RAF、thumb hover1RAF、down capture0RAF、move/scroll1RAF、up release0RAF；一次down/move/up，没有重试或focus补丁。实际事件链及滚动后截图保留。此次验证了当前真实输入生命周期；旧失败因缺该链只能保留“stale-hover就绪竞态假设”，不称已证明系统随机噪声。菜单、旧背景capture取消、关闭后恢复、offscreen/cleanup原断言均通过。
+
+**可追溯产物**：artifact `11442666566`，54,700,809字节、482项、字体二进制0；ZIP SHA-256 `504e3d06ab50e6c3f2705520bde4505d172587a3c43b85709e5bbea310f1a942`。完整刷新report SHA-256 `5bcd7435e04805d6d048b1b7dd8be77836292043086241947315a159ecdd6b9f`；生产投影report `ab9d698aa8e254fd28ed2bad59e3522bdd46e4c479b1fb1e5bf2831c0df4264b`；F14report `d2a156e2290bada205bc4cc97ffd0a074cc68ecb1a95c39156e890eb741efbc6`。本轮worker `ac4bbd5107f42db352684c1182ac387076c377c0a69583812e1b6987f9d2e1e1`，独立旧源码worker `8cb48caab1beb0afad40f967411f345d4794d79b3968bf15073ec60cc59fc0f6`；构建机变化可改变二进制hash，报告逐次固定真实值。用户原始日志/登记清单/设备标识/字体未提交或上传；旧失败artifact不删除。
+
+**收尾边界**：此后只更新README、文档索引和本任务书，`[skip ci]`文档提交的源码/构建/依赖/workflow必须与受测 `03b7f73a` 完全相同，并核本地远端一致、工作区干净。自动化修复与补证到此完成，实际机器仅执行§14.13定向复测：保留旧profile，观察自动未知状态确认时的数量一致/导航响应/实际预览。真实NAS、原生C0000121物理根因、W7/W8具体face尚未验收；不要求重复整份历史F14清单，也不提供不存在的状态刷新按钮。
