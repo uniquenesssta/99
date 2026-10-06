@@ -2,6 +2,7 @@
 // preview owners. This deliberately is not an App.tsx startup claim.
 import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { SharedAvailabilityProvider, useSharedAvailability } from '../../../src/renderer/src/sharedAvailabilityRuntime'
 import { FontCard } from '../../../src/renderer/src/components/FontCard'
 import { AppOverlays } from '../../../src/renderer/src/components/app/AppOverlays'
 import { createFontDialogContextActions } from '../../../src/renderer/src/fontDialogContextActionsRuntime'
@@ -19,6 +20,7 @@ const noop=()=>{}, ref=(current:any)=>({current}), stableEmpty:any[]=[], activeF
 const host=document.createElement('main');document.body.append(host)
 let api:any, preview:any
 function App({shell}:any) {
+  const availability=useSharedAvailability()
   const [library,setLibrary]=useState(shell),[page,setPage]=useState<any>(null),[failed,setFailed]=useState(''),[status,setStatus]=useState(''),[refreshToken,setRefresh]=useState(0),[installStatus,setInstallStatus]=useState<any>('all'),[menu,setMenu]=useState<any>(null),[mode,setMode]=useState<any>('list'),[revision,bump]=useState(0)
   const current=useRef(library);current.current=library
   const refreshTimer=useRef<number|null>(null),acceptedRevision=useRef(0),seq=useRef(0),metrics=useRef(0),busy=useRef(new Set<string>()),loaded=useRef(true),scrolling=useRef(false)
@@ -37,7 +39,7 @@ function App({shell}:any) {
   const dialog=createFontDialogContextActions({contextMenu:menu,sidebarPage:'tags',hfm:window.hfm,setContextMenu:setMenu,setStatus,refreshDatabaseDerivedState:refresh,flushFontWriteQueue:async()=>true} as any)
   const open=(font:any)=>setMenu({kind:'font',font,x:10,y:10})
   api={refresh,setInstallStatus,setMode,bump:()=>bump(value=>value+1),getFont:(id:string)=>page?.items.find((item:any)=>item.id===id),
-    snapshot:()=>({ready:derived.databasePageReady,page,library,status,refreshToken,requestSeq:seq.current,acceptedRevision:acceptedRevision.current,busy:[...busy.current],failed,revision,mode}),
+    snapshot:()=>({ready:derived.databasePageReady,availability,page,library,status,refreshToken,requestSeq:seq.current,acceptedRevision:acceptedRevision.current,busy:[...busy.current],failed,revision,mode}),
     // Deliberately stale UI is used only to challenge authority; source preview
     // always takes the truthful query row, never this stale library mutation.
     staleInstalled:(id:string)=>setLibrary((old:any)=>({...old,fonts:{...old.fonts,[id]:{...old.fonts[id],systemInstalled:true,installStatusKnown:true}}})),
@@ -59,7 +61,7 @@ function makePreview(fonts:any[],mode:'list'|'grid') {
   api.setMode(mode);api.bump()
   for(const font of fonts)preview.runtime.requestPreviewFont(font,'high')
 }
-;(window as any).startRecoveryChain=(shell:any)=>{createRoot(host).render(<App shell={shell}/>)}
+;(window as any).startRecoveryChain=(shell:any)=>{createRoot(host).render(<SharedAvailabilityProvider><App shell={shell}/></SharedAvailabilityProvider>)}
 ;(window as any).recoveryChain={
   snapshot:()=>api?.snapshot(),refresh:()=>api.refresh(),filter:(status:string)=>api.setInstallStatus(status),staleInstalled:(id:string)=>api.staleInstalled(id),
   preview:(ids:string[],mode:'list'|'grid')=>{const fonts=ids.map(id=>api.getFont(id));if(fonts.some(font=>!font))throw Error('preview item must come from current query page');makePreview(fonts,mode)},

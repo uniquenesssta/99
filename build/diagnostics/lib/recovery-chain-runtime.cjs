@@ -49,8 +49,14 @@ async function createChain(options) {
     raw.prepare('INSERT INTO fixture_shared_metadata(row_json) VALUES (?)').run(JSON.stringify({font_id:fixture.old[0].id,relative_path:path.relative(options.fixtureDirectory,fixture.old[0].path),tag_names_json:JSON.stringify(['SharedKeep']),favorite:0,delete_protected:0,revision:1}))
   }
   queryDeps.readShared=async()=>{if(controls.offline)throw Error('controlled remote unavailable');return {preflight:{snapshot:{rows:raw.prepare('SELECT row_json FROM fixture_shared_metadata ORDER BY id').all().map(row=>JSON.parse(row.row_json))}}}}
-  runtime.getSharedAvailability=async()=>({roots:[]})
-  runtime.assertFeatureForChannel=channel=>assert(['fonts:setLocalTagsBatch','fonts:setSharedTagsBatch'].includes(channel),'unexpected feature gate')
+  if(!options.reopen){raw.prepare('INSERT OR IGNORE INTO folders(path,sort_order) VALUES (?,0)').run(options.fixtureDirectory);raw.prepare('INSERT OR IGNORE INTO tags(name,sort_order) VALUES (?,0)').run('SharedKeep')}
+  const availability=load('src/main/path/startupPathAvailabilityRuntime.ts')
+  assert(await availability.ensureStartupPathRootAvailable(options.fixtureDirectory,appendLog,'f14-local-fixture'),'fixture root must be verified online')
+  const readAvailability=load('src/main/path/sharedAvailabilityRuntime.ts').createSharedAvailabilityReader(async()=>db)
+  runtime.getSharedAvailability=async()=>{const value=await readAvailability();return controls.offline?{...value,roots:value.roots.map(root=>({...root,state:'offline'}))}:value}
+  const scenarioFeatures=new Set(['library:getSharedAvailability','fonts:queryPage','fonts:query','fonts:getMetrics','fonts:recoverTagFiles','fonts:setLocalTagsBatch','fonts:setSharedTagsBatch','fonts:installSystem','fonts:uninstallSystem','fonts:compareInstalled','fonts:getCachedPreviewImage','fonts:getCachedPreviewImages','fonts:renderPreviewImage','fonts:readPreviewFontData','path:toFontUrl','performance:rendererTrace'])
+  observed.featureChannels=[]
+  runtime.assertFeatureForChannel=channel=>{assert(scenarioFeatures.has(channel),'unexpected fixture feature gate: '+channel);if(!observed.featureChannels.includes(channel))observed.featureChannels.push(channel)}
   const writeTags=runtime.setLocalFontTagsBatch
   runtime.setLocalFontTagsBatch=async(...args)=>{const result=await writeTags(...args);observed.transactions++;invalidate();return result}
   const queryKey=load('src/main/library/fontQuerySqlRuntime.ts').fontQueryCacheKey

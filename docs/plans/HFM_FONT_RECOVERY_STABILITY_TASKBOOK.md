@@ -916,3 +916,9 @@ $workerExitCode = $LASTEXITCODE
 2. F14 浏览器已完成缺失/取消/同目录恢复和真实列表源 PNG，但网格卡片等待使用了原始 PNG URI；生产网格会先按实际像素裁剪，卡片合法使用裁剪后的 URI，因此该断言在 15 秒后失败。失败 cleanup 销毁最后窗口后 Electron 默认退出，在异步 drain/report 完成前结束，外层只看到缺 report。现在沿生产 `gridPreviewPostprocess` 取得原 PNG 对应裁剪结果，严格核对真实目标卡片 src/实际尺寸与原图高度，不放宽为任意图片；引入现有生产 CSS。测试 runner 显式拥有无窗口重开/清理期间生命周期，异常先落 report/log/截图，watchdog 仍非零退出，完整关闭并写报告后才交回既有 runner。
 
 首轮产物 `font-identity-f07-evidence` / artifact `11404515888` 保留真实列表截图、两张源 PNG、SQLite 与成功 F13 比较；没有终态 F14 report，不宣称后续安装/卸载/重开场景已运行。补修后的精确完整 Windows 回执另行登记。
+
+### 14.6 第二轮回执与界面可用性接线（2026-10-06）
+
+补修 `0c13ab549d3f95b9393053663488ecfed23b8dc2` 的 [Windows CI 37448648281](https://github.com/uniquenesssta/99/actions/runs/37448648281) / job `112219492451` 已完整执行。类型检查/166 项诊断、准确卸载和全部 50 条持久恢复反例、其余 Rust/身份/150 DOM/构建与 F13 A–B–B–A 全部成功。F14 实际缺失/取消/恢复、私有源 list/grid PNG、真实卡片裁剪显示及双 daemon 关闭也已执行；后续安装前停止，未宣称整链通过。
+
+剩余失败是小型 React 集成夹具未装配生产 `SharedAvailabilityProvider`，其 Context 为 null，生产 `fontSharedActionBlocked` 正确按未知可用性禁用了“安装”；不是安装操作已经失败。现在复用既有 provider、生产本地根可用性 reader 与完整生产 IPC 注册根（含 shared admission/退出 guards），先实际验证临时根在线，再允许真实命令按钮。F14 整链门移到完整 verify 之后，其余独立门保持原 !cancelled/worker-success 条件继续收集，不跳过后续失败。没有把策略改为默认放行、手改 disabled 或绕过命令入口。报告记录实际可用性快照，异常仍保存 report/log/截图并非零退出。产物 `11407091139` 保留第二轮完整证据，补修继续完整 Windows 验证。

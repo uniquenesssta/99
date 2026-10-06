@@ -19,11 +19,11 @@ async function run({directory,html,preload,config,electron}) {
   const wait=async(test,label,timeout=15000)=>{const end=Date.now()+timeout;while(Date.now()<end){const value=await test();if(value)return value;await new Promise(resolve=>setTimeout(resolve,15))}throw Error('F14 wait timed out: '+label)}
   const js=code=>win.webContents.executeJavaScript(code)
   const ui=()=>js('window.recoveryChain.snapshot()')
-  const ready=()=>wait(async()=>{const value=await ui();if(value?.failed)throw Error(value.status);return value?.ready&&value},'authoritative React page')
+  const ready=()=>wait(async()=>{const value=await ui();if(value?.failed)throw Error(value.status);return value?.ready&&value.availability?.roots.some(root=>chain.key(root.path)===chain.key(config.fixtureDirectory))&&value.availability.roots.every(root=>root.state==='online')&&value},'authoritative React page and availability')
   const click=async label=>{await js(`(()=>{const button=[...document.querySelectorAll('button')].find(button=>button.textContent===${JSON.stringify(label)});if(!button||button.disabled)throw Error('enabled button absent: '+${JSON.stringify(label)});button.click()})()`)}
   const menu=async id=>{await js(`(()=>{const card=[...document.querySelectorAll('[data-font-id]')].find(card=>card.dataset.fontId===${JSON.stringify(id)});if(!card)throw Error('font card missing');card.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))})()`);await wait(()=>js("!!document.querySelector('.context-menu')"),'actual card menu')}
   const refresh=async()=>{const before=(await ui()).acceptedRevision;await js('window.recoveryChain.refresh()');await wait(async()=>{const value=await ready();return value.acceptedRevision>before&&value},'fresh page')}
-  const checkpoint=async label=>{report.checkpoints.push(await chain.checkpoint(label));console.log('[F14 checkpoint]',label)}
+  const checkpoint=async label=>{const value=await chain.checkpoint(label),browser=await ready();const fields=Object.keys(value.states.all.items[0]||{}),items=browser.page.items.map(item=>Object.fromEntries(fields.map(field=>[field,item[field]])));assert.deepEqual(plain(items),plain(value.states.all.items),'browser rows do not match current same-state query');value.browser={items,availability:browser.availability,ids:browser.page.items.map(item=>item.id),total:browser.page.total,requestSeq:browser.requestSeq,acceptedRevision:browser.acceptedRevision};report.checkpoints.push(value);console.log('[F14 checkpoint]',label)}
   const useCommand=async(item,label,confirm=true)=>{const initial=await ui(),before=initial.refreshToken;await menu(item.id);await click(label);if(label!=='安装'){await wait(()=>js("!!document.querySelector('dialog[open]')"),'real confirmation');await js(`document.querySelector('[data-confirmation="${confirm?'accept':'cancel'}"]').click()`)}await wait(async()=>{const value=await ui();return !value.busy.length&&(confirm?value.refreshToken>before:/已取消/.test(value.status))},label+' settlement');if(confirm)await wait(async()=>{const value=await ready();return value.acceptedRevision>initial.acceptedRevision&&value},label+' authoritative refresh')}
   async function start(reopen=false) {
     const controlledElectron={...electron,dialog:{...electron.dialog,showOpenDialog:async()=>{pickerCalls++;return new Promise(resolve=>{pendingPicker=resolve})}}}
@@ -31,14 +31,13 @@ async function run({directory,html,preload,config,electron}) {
     chain.observeNative=(request,result,receipt)=>{assert(receipt,'raw native transport receipt missing');assert.equal(receipt.outputPath,request.outputPath);chain.observed.nativeRequests.push({fontPath:request.fontPath,preferSystemFont:!!request.preferSystemFont,engine:receipt.engine,normalizedClientEngine:result?.engine,ok:receipt.ok,rawReceipt:receipt,width:request.width,height:request.height,sourceSha256:request.fontPath?hash(fs.readFileSync(request.fontPath)):null})}
     preview=await createRuntime({directory:path.join(directory,'preview'),baseline:false,sourceRoot:config.sourceRoot,controlled:true,observer:chain.observer,fixture:chain,appendLog:chain.appendLog,electron})
     fs.writeFileSync(preload,chain.load('src/main/preload/runtimePreloadSource.ts').runtimePreloadSource)
-    const traced=chain.load('src/main/ipc/ipcTraceRuntime.ts').registerTracedIpcHandler
-    const register=(channel,handler)=>{channels.push(channel);traced({appendLog:chain.appendLog},channel,async(event,...args)=>{const result=await handler(event,...args);if(['fonts:recoverTagFiles','fonts:installSystem','fonts:uninstallSystem'].includes(channel))receipts.push({channel,result:plain(result)});return result})}
+    const traceModule=chain.load('src/main/ipc/ipcTraceRuntime.ts'),traced=traceModule.registerTracedIpcHandler
+    // Observe real root registration/receipts while preserving its admission,
+    // shutdown guards, trusted-sender validation and per-domain handlers.
+    traceModule.registerTracedIpcHandler=(runtime,channel,handler)=>{channels.push(channel);traced(runtime,channel,async(event,...args)=>{const result=await handler(event,...args);if(['fonts:recoverTagFiles','fonts:installSystem','fonts:uninstallSystem'].includes(channel))receipts.push({channel,result:plain(result)});return result})}
+    chain.runtime.reportPerformanceEvent=payload=>{if(payload?.kind==='operation-chain')chain.appendLog('operation-chain: '+payload.details.event);return {ok:true}}
     const runtime=new Proxy(chain.runtime,{get(target,key){if(key in target)return target[key];if(key in preview.runtime)return preview.runtime[key];return ()=>{throw Error('unexpected production port '+String(key))}}})
-    chain.load('src/main/ipc/handlers/fontTagIpcHandlers.ts').registerFontTagIpcHandlers(register,runtime)
-    chain.load('src/main/ipc/handlers/fontSystemIpcHandlers.ts').registerFontSystemIpcHandlers(register,runtime)
-    chain.load('src/main/ipc/handlers/libraryIpcHandlers.ts').registerLibraryIpcHandlers(register,runtime)
-    chain.load('src/main/ipc/handlers/previewAndFolderIpcHandlers.ts').registerPreviewAndFolderIpcHandlers(register,runtime)
-    channels.push('performance:rendererTrace');ipcMain.handle('performance:rendererTrace',(_event,payload)=>{if(payload?.kind==='operation-chain')chain.appendLog('operation-chain: '+payload.details.event);return true})
+    chain.load('src/main/ipc/ipcHandlers.ts').registerIpcHandlers(runtime)
     win=new BrowserWindow({show:true,width:1100,height:900,webPreferences:{preload,nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}})
     win.webContents.on('console-message',event=>{if(event.level==='warning'||event.level==='error')chain.appendLog('renderer: '+event.message)})
     await win.loadFile(html);await js(`window.startRecoveryChain(${JSON.stringify(await chain.runtime.loadLibraryShell())})`);await ready()
