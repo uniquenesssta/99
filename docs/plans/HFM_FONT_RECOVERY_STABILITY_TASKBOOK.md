@@ -922,3 +922,9 @@ $workerExitCode = $LASTEXITCODE
 补修 `0c13ab549d3f95b9393053663488ecfed23b8dc2` 的 [Windows CI 37448648281](https://github.com/uniquenesssta/99/actions/runs/37448648281) / job `112219492451` 已完整执行。类型检查/166 项诊断、准确卸载和全部 50 条持久恢复反例、其余 Rust/身份/150 DOM/构建与 F13 A–B–B–A 全部成功。F14 实际缺失/取消/恢复、私有源 list/grid PNG、真实卡片裁剪显示及双 daemon 关闭也已执行；后续安装前停止，未宣称整链通过。
 
 剩余失败是小型 React 集成夹具未装配生产 `SharedAvailabilityProvider`，其 Context 为 null，生产 `fontSharedActionBlocked` 正确按未知可用性禁用了“安装”；不是安装操作已经失败。现在复用既有 provider、生产本地根可用性 reader 与完整生产 IPC 注册根（含 shared admission/退出 guards），先实际验证临时根在线，再允许真实命令按钮。F14 整链门移到完整 verify 之后，其余独立门保持原 !cancelled/worker-success 条件继续收集，不跳过后续失败。没有把策略改为默认放行、手改 disabled 或绕过命令入口。报告记录实际可用性快照，异常仍保存 report/log/截图并非零退出。产物 `11407091139` 保留第二轮完整证据，补修继续完整 Windows 验证。
+
+### 14.7 第三轮回执与原生路径边界补修（2026-10-06）
+
+`047b15d60fff7e43f1f5fc5e30537a8ebd5e34e6` 的 [Windows CI 37451802192](https://github.com/uniquenesssta/99/actions/runs/37451802192) / job `112229873612` 已完整失败，仅 F14 集成门失败；166 诊断、50 卸载恢复反例、全部其他专项/DOM/构建和 F13 ABBA 成功。整链已通过真实可用性/完整 IPC admission、缺失/取消/恢复、list/grid 私有源图像、安装及三态筛选；首次卸载时，受控副作用端口用原始 dirname 字符串比较，把 Rust 返回的 Windows extended-length canonical 路径与普通盘符路径误判为不同目录。
+
+原卸载安全逻辑没有放行其他路径：登记已解除、文件端口拒绝，pending 和实际残留目录候选状态被正确保存/回传。现只修夹具白名单：用生产规范化 key 比较直接父目录，并再比较 `realpathSync` 的物理父目录，仍限本次专属安装目录。新增实际来源路径、相似前缀 sibling 目录拒绝，以及同目录 extended-length spelling 接受断言；不关闭隔离路由，不退回模拟文件身份，不改生产权限、目标规划或超时。命令驱动同时先核对真实逐项主进程回执与本分支期待结果，再等页面刷新，取消确认要求零新增 IPC；不再仅靠最终页面等待暴露前一步拒绝。第三轮 artifact `11408675832` 保留了完整失败回执/日志/SQLite/截图；后续重开与剩余分支仍待完整成功回执。

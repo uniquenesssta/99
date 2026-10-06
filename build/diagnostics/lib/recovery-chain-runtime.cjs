@@ -8,6 +8,15 @@ const plain=value=>JSON.parse(JSON.stringify(value))
 async function createChain(options) {
   const fixture=await createFixture({...options,initialInstallCopies:false,persistControlledRegistry:true})
   const {load,raw,db,key,query,queryDeps,runtime,records,effects,folders,appendLog}=fixture
+  function assertInstallCopyPath(file) {
+    // Rust returns extended-length canonical paths. Compare the same directory
+    // identity, then require its resolved physical parent to remain our fixture.
+    assert.equal(key(path.dirname(file)),key(folders.installed),'source file deletion forbidden')
+    assert.equal(key(fs.realpathSync(path.dirname(file))),key(fs.realpathSync(folders.installed)),'installation parent changed')
+  }
+  assert.throws(()=>assertInstallCopyPath(fixture.next[0].path),/source file deletion forbidden/)
+  assert.throws(()=>assertInstallCopyPath(path.join(folders.installed+'-other','copy.ttf')),/source file deletion forbidden/)
+  assertInstallCopyPath(path.toNamespacedPath(path.join(folders.installed,'boundary-probe.ttf')))
   const controls={mutation:'success',beforeEffect:null,offline:false},observed={transactions:0,statusWrites:0,queryReads:0,registrations:[],nativeRequests:[]}
   const invalidate=()=>{query.invalidate();pages?.invalidateFontQueryPageCache()}
   let pages
@@ -95,14 +104,14 @@ async function createChain(options) {
   }
   fixture.deps.persistUninstallResult=confirmAndSave
   Object.assign(fixture.deps,{fontExtensions:new Set(['.ttf','.otf','.ttc','.otc']),registryNameFor:compare.registryNameFor,normalizeCompareText:value=>String(value).toLowerCase(),activationTraceStep:async(_label,_id,run)=>run(),
-    writeFontRegistryValuesHKCUBatch:async items=>{for(const item of items){assert.equal(path.dirname(item.path),folders.installed);assert(fs.existsSync(item.path));assert(!records.some(row=>row.registryName===item.name),'fixture install must not overwrite another registration');records.push({source:'HKCU',path:item.path,value:item.path,fileName:path.basename(item.path),registryName:item.name,nameCandidates:[item.name]});observed.registrations.push(plain(item))}fixture.saveExternalState()},
+    writeFontRegistryValuesHKCUBatch:async items=>{for(const item of items){assertInstallCopyPath(item.path);assert(fs.existsSync(item.path));assert(!records.some(row=>row.registryName===item.name),'fixture install must not overwrite another registration');records.push({source:'HKCU',path:item.path,value:item.path,fileName:path.basename(item.path),registryName:item.name,nameCandidates:[item.name]});observed.registrations.push(plain(item))}fixture.saveExternalState()},
   })
   fixture.deps.createMutationSession=async()=>{fixture.observer.counts.brokerSessions++;return {close(){},readRegistry:async()=>plain(records),execute:async(plan,check)=>{
     let completedSteps=0,fileRemoved=false
     try {
       await check()
       for(const record of plan.records){await controls.beforeEffect?.('registry',plan);await check(plain(records),'registry');const index=records.findIndex(row=>row.source===record.scope&&row.registryName===record.name&&row.value===record.value);assert(index>=0,'exact controlled registration no longer exists');records.splice(index,1);fixture.saveExternalState();effects.push(['registry',record.scope,record.name,record.value]);completedSteps++}
-      if(plan.delete_file){assert.equal(path.dirname(plan.path),folders.installed,'source file deletion forbidden');await controls.beforeEffect?.('file',plan);await check(plain(records),'file');if(controls.mutation==='blocked')return {ok:false,message:'controlled sharing violation',code:32,completedSteps,fileRemoved};fs.unlinkSync(plan.path);effects.push(['file',plan.path]);completedSteps++;fileRemoved=true}
+      if(plan.delete_file){assertInstallCopyPath(plan.path);await controls.beforeEffect?.('file',plan);await check(plain(records),'file');if(controls.mutation==='blocked')return {ok:false,message:'controlled sharing violation',code:32,completedSteps,fileRemoved};fs.unlinkSync(plan.path);effects.push(['file',plan.path]);completedSteps++;fileRemoved=true}
       return {ok:true,message:'controlled exact effects',completedSteps,fileRemoved}
     }catch(error){return {ok:false,message:String(error),completedSteps,fileRemoved}}
   }}}
