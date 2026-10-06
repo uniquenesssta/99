@@ -658,3 +658,11 @@ Windows workflow 保留所有既有步骤，并补充 `cargo test ... watcher::`
 4. Rust `local_tags::read_state` 的并行测试以 PID+墙上时钟纳秒文本命名，实际出现 `table local_font_tags already exists`。Windows 时钟精度不能保证并发唯一。只修改 cfg(test) 夹具：加入原子序号并通过 create_new 原子保留独立文件，独占创建成功后才授予清理所有权，增加已有文件拒绝后字节不变，以及 12 个并行数据库的路径、表内容及释放后清理断言；没有改生产标签行为，也没有使用 IF NOT EXISTS、串行化全部测试或忽略失败来绕过隔离。
 
 首轮已通过的新 watcher Rust preflight、shared-file 内部目录排除、F12 来源/缓存/取消/迟提交/物理槽位回归、150 项实际列表网格 DOM、原生输入和 bundle 结果仍保留。F10/F11 身份/卸载与持久恢复专项通过。完整补修须在新的精确提交重跑全部 Windows 门后登记；本机真实系统变更边界不变。
+
+### 12.5 第二轮回执与可选字段语义补修（2026-10-06）
+
+补修提交 [`87483d44ea06f32962840b611674b31f40e5810e`](https://github.com/uniquenesssta/99/commit/87483d44ea06f32962840b611674b31f40e5810e) 的 [Windows CI 37426184197](https://github.com/uniquenesssta/99/actions/runs/37426184197) / job `112146253028` 于 06:52:03 UTC 启动并完成：类型检查、165/166 项诊断以及所有独立身份/卸载、Rust、Electron DOM/原生输入、bundle 和上传步骤成功。首轮四个问题均已在 Windows 消除；Rust 标签夹具新增独占保留拒绝及并发隔离反例通过。
+
+唯一失败为事件收敛反例要求相同库投影不重复保存，但实际保存次数为 2 而非 1。真实 watcher 合并补充了原先不存在的可选字段（值为 undefined），旧比较器按 own-key 数量认为这是实质变化。修复为对字段集合逐值比较，缺省与显式 undefined 等价；使用 Reflect.ownKeys 纳入私有 intent Symbol，避免 JSON 投影相同却遗漏“卸载问题已清除”等会话状态变化。保留原失败期待值，并增加真实 intent owner 的清除反例；相同本地投影伴随的部分读取错误仍显示，不能被无变化早返回吞掉。没有删除刷新、保存失败或页外删除的断言。此补修仍须新提交完整 Windows 回执。
+
+本阶段的预览证据为受控生产队列/缓存/IPC 布局及资源生命周期测试，另有当前 workflow 的实际 Electron DOM 和原生输入门；尚未执行独立的真实 Rust PNG→解码预览性能/像素链。该链由 F13 的显式 Windows 门继续验证，不能把上述受控或 DOM 结果当作该链的性能/像素验收。

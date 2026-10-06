@@ -84,6 +84,7 @@ export function useFontIndexChangedEventRuntime(args: {
           pendingStats = true
           scheduleFlush()
         }
+        if (payload.errors?.length) current.setStatus(fontIndexChangeStatusText({ upserted: 0, removed: 0, errors: payload.errors.length }))
         return
       }
       const scrollSnapshot = current.captureFontScrollSnapshot()

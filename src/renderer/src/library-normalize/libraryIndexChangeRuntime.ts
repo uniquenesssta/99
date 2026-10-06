@@ -98,9 +98,11 @@ export function applyFontIndexChangeToLibrary(state: LibraryState, payload: Font
     }
 
     const merged = mergeFontUserIntent(oldFont, mergeIncrementalIndexedFont(oldFont, font, payload.source))
+    // An absent optional field and explicit undefined have the same value. Session
+    // intent symbols still participate, even though IPC/JSON omit their property keys.
     const unchanged = oldFont && oldFont.id === merged.id &&
-      Object.keys(oldFont).length === Object.keys(merged).length &&
-      Object.keys(merged).every(key => JSON.stringify(oldFont[key as keyof FontItem]) === JSON.stringify(merged[key as keyof FontItem]))
+      Array.from(new Set([...Reflect.ownKeys(oldFont), ...Reflect.ownKeys(merged)]))
+        .every(key => JSON.stringify(Reflect.get(oldFont, key)) === JSON.stringify(Reflect.get(merged, key)))
     if (unchanged) continue
     nextFonts[merged.id] = merged
     upsertedFonts.push(merged)
