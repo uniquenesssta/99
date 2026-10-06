@@ -51,7 +51,7 @@ export interface InstallStatusRefreshResult {
 
 export interface InstallResult {
   installCompare?: InstallCompareResult
-  uninstall?: { completedSteps: number; remainingPaths: string[]; stage: string }
+  uninstall?: { completedSteps: number; remainingPaths: string[]; stage: string; pending?: boolean; cancelled?: boolean }
   results?: Record<string, InstallResult>
   ok: boolean
   managedInstallPath?: string

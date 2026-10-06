@@ -30,6 +30,7 @@ async function checkImportAndOwnership() {
   const authority = h.options('createFontProtectionAuthorityRuntime')
   assert.equal(authority.roots, storage.fontProtectionRoots, 'destructive protection lost historical root authority')
   assert.equal(typeof h.options('createSystemFontInstallRuntime').withFontProtection, 'function', 'install/delete/uninstall lost their guard')
+  assert.equal(typeof h.options('createSystemFontInstallRuntime').openUninstallReceipts, 'function', 'uninstall lost durable receipt storage')
   assert.equal(typeof h.options('createSystemFontInstallRuntime').persistUninstallResult, 'function', 'uninstall lost the existing local projection owner')
   assert.equal(typeof h.options('createSystemFontInstallRuntime').deactivateForFileDelete, 'function', 'source deletion lost activation settlement')
   for (const key of ['setLocalFontProtection', 'clearLocalFontProtection', 'readLocalFontProtection', 'fontProtectionRoots']) {
@@ -46,6 +47,14 @@ async function checkImportAndOwnership() {
   assert.deepEqual(h.clean(library), { fonts: { a: { id: 'a', active: false, favorite: true, tagNames: ['shared'] } }, previewText: 'retained' }, 'complete load did not apply local activation authority')
   assert.equal(h.options('createPreviewRuntime').openPreviewDb, storage.openPreviewDb)
   assert.equal(h.options('createMainBackgroundRuntime').openRecoverableApplicationSqliteDb, storage.openRecoverableApplicationSqliteDb)
+  h.cachedPage = { items: [{ id: 'a', path: 'C:\\fonts\\a.ttf', systemInstalled: false, pendingUninstall: undefined }], total: 1 }
+  h.pendingUninstall = { message: 'pending after cached page' }
+  let page = await query.queryFontPageInLibrary({})
+  assert.equal(page.items[0].pendingUninstall.message, 'pending after cached page', 'cached page hid durable retry hint')
+  h.pendingUninstall = undefined
+  page = await query.queryFontPageInLibrary({})
+  assert.equal(page.items[0].pendingUninstall, undefined, 'cached page revived cleared receipt')
+  assert.equal(page.items[0].systemInstalled, false, 'pending hint changed installation truth')
   h.reset()
   data.resources.checkpointOpenCacheDbs()
   for (const label of ['kvs', 'events', 'hash', 'metrics']) data.resources.closeCacheDb(label)

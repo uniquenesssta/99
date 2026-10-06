@@ -1,7 +1,6 @@
-import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import type { FontItem } from '../../shared/types'
 import { normalizePathForCacheCompare } from '../path/cachePath'
-import { readFontContentIdentity } from '../fonts/fontContentIdentityRuntime'
+import { readFontContentIdentity, readFontIdentityMetadata } from '../fonts/fontContentIdentityRuntime'
 
 // Display/matching metadata only. Tag membership remains in the existing tag stores.
 export function openTagFontSnapshots(db: any) {
@@ -34,8 +33,7 @@ export function openTagFontSnapshots(db: any) {
         if (item.fileAvailability === 'missing' || item.fileAvailability === 'unavailable') continue
         const old = previous(item.path)
         try {
-          const stat = await fsp.stat(item.path)
-          const stamp = JSON.stringify([stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs])
+          const { stamp } = await readFontIdentityMetadata(item.path)
           if (old?.recoveryContentHash && old.recoveryFileStamp === stamp) continue
           const evidence = await readFontContentIdentity(item.path)
           if (evidence.size !== item.fileSize || evidence.modified !== item.modifiedAt) continue

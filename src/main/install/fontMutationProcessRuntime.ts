@@ -1,3 +1,4 @@
+import { onApplicationClosing, isApplicationClosing } from '../app/shutdownCoordinatorRuntime'
 import type { SystemInstalledFont } from '../../shared/types'
 import { app } from 'electron'
 import { join } from 'node:path'
@@ -18,9 +19,9 @@ export type FontMutationPlan = {
   records: Array<{ scope: 'HKCU' | 'HKLM'; name: string; value: string }>
   identity?: undefined
 }
-export type FontMutationReceipt = { ok: boolean; message: string; completedSteps: number; fileRemoved: boolean; code?: number; ntstatus?: number; stage?: string; usage?: FontFileUsage }
+export type FontMutationReceipt = { ok: boolean; message: string; completedSteps: number; fileRemoved: boolean; code?: number; ntstatus?: number; stage?: string; usage?: FontFileUsage; uncertain?: boolean; cancelled?: boolean }
 export type FontMutationSession = {
-  execute: (plan: FontMutationPlan, check: (references?: SystemInstalledFont[]) => Promise<void>) => Promise<FontMutationReceipt>
+  execute: (plan: FontMutationPlan, check: (references?: SystemInstalledFont[], gate?: string) => Promise<void>) => Promise<FontMutationReceipt>
   readRegistry: () => Promise<SystemInstalledFont[]>
   close: () => void
 }
@@ -67,7 +68,8 @@ export async function createFontMutationSession(log: (message: string) => void):
     return new Promise((resolve, reject) => pending.push({ resolve, reject }))
   }
   const timeout = setTimeout(() => die(new Error('字体操作超时；已停止辅助进程，须核对部分完成结果后重试。')), 180000)
-  const close = () => { clearTimeout(timeout); lines.close(); die(new Error('字体操作会话已关闭。')) }
+  const detachClosing = onApplicationClosing(() => die(new Error('软件正在退出，卸载会话已取消；已保存目标供下次核验。')))
+  const close = () => { detachClosing(); clearTimeout(timeout); lines.close(); die(new Error('字体操作会话已关闭。')) }
   try {
     if ((await next()).protocol !== 'font-mutation-v1') throw new Error('字体操作协议版本不匹配。')
     if (createHash('sha256').update(await fs.readFile(worker)).digest('hex') !== expected) throw new Error('启动期间辅助程序发生变化。')
@@ -92,18 +94,20 @@ export async function createFontMutationSession(log: (message: string) => void):
     async execute(plan, check) {
       if (busy) throw new Error('字体操作会话不接受并发计划。')
       busy = true
-      let completedSteps = 0, fileRemoved = false
+      let completedSteps = 0, fileRemoved = false, dispatched = false, uncertain = false
       let failure = '', code: number | undefined
       let ntstatus: number | undefined, stage: string | undefined
       try {
         await check()
+        dispatched = true
         child.stdin.write(JSON.stringify(plan) + '\n')
         for (;;) {
           const value = await next()
+          uncertain ||= value.uncertain === true
           if (value.gate) {
             try {
-              if (value.gate === 'file' && !Array.isArray(value.references)) throw new Error('文件删除前缺少原用户安装引用快照。')
-              await check(value.references); child.stdin.write('{"allow":true}\n') }
+              if (!Array.isArray(value.references)) throw new Error('操作前缺少原用户安装引用快照。')
+              await check(value.references, value.gate); child.stdin.write('{"allow":true}\n') }
             catch (error) { failure = error instanceof Error ? error.message : String(error); child.stdin.write('{"allow":false}\n') }
           }
           if (value.effect) {
@@ -122,11 +126,11 @@ export async function createFontMutationSession(log: (message: string) => void):
         const nativeReason = code === 1223 ? '用户取消 UAC 授权。' : ntstatus === 0xc0000121 ? 'Windows 拒绝删除字体（C0000121：只读或文件映射限制）。' : code === 5 ? 'Windows 拒绝操作（可能涉及权限、文件属性或占用）。' : code === 32 ? '字体文件正在被占用。' : ''
         const message = failure ? `${nativeReason}${failure}${usage ? ` ${usage.message}` : ''}${!fileRemoved && completedSteps ? ' 安装记录已部分清理，字体文件尚未确认删除。' : ''}${completedSteps ? ` 已完成 ${completedSteps} 个步骤，未完成部分保留供重试。` : ''}` : plan.delete_file ? '安装文件已移除。' : '本项安装记录已移除，文件清理结果另行确认。'
         log(`font mutation: operation=${operationId}, target=${plan.path}, stage=verified, ok=${!failure}, native=${code ?? 0}, completed=${completedSteps}, reason=${JSON.stringify(message)}`)
-        return { ok: !failure, message, completedSteps, fileRemoved, code, ntstatus, stage, usage }
+        return { ok: !failure, message, completedSteps, fileRemoved, code, ntstatus, stage, usage, uncertain, cancelled: code === 1223 || isApplicationClosing() }
       } catch (error) {
         const message = `${error instanceof Error ? error.message : String(error)} 已确认完成 ${completedSteps} 个步骤；其余状态未知。`
         log(`font mutation: operation=${operationId}, target=${plan.path}, stage=execute, ok=false, completed=${completedSteps}, reason=${JSON.stringify(message)}`)
-        return { ok: false, message, completedSteps, fileRemoved }
+        return { ok: false, message, completedSteps, fileRemoved, uncertain: dispatched, cancelled: isApplicationClosing() }
       } finally { busy = false }
     }
   }

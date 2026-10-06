@@ -146,7 +146,8 @@ async function protectionAuthority() {
   const authority2=runtimeLoad('src/main/install/fontProtectionAuthorityRuntime.ts').createFontProtectionAuthorityRuntime({roots:async()=>[],read:async item=>{if(offline)throw Error('offline');return blocked.has(item.path)},lock:async(_items,_roots,action)=>action(),log(){}})
   const installedPath='C:\\user-fonts\\sample.ttf'
   const records=[{path:installedPath,fileName:'sample.ttf',registryName:'Sample',value:installedPath,source:'HKCU'}]
-  const deps={persistUninstallResult:async()=>{},deactivateForFileDelete:async()=>({ok:true,message:'settled'}),readUninstallRegistry:async()=>records.filter(record=>!record.__removed),
+  const receiptDb=database()
+  const deps={openUninstallReceipts:async()=>runtimeLoad('src/main/install/fontUninstallReceiptRuntime.ts').openFontUninstallReceipts(receiptDb),persistUninstallResult:async()=>{},deactivateForFileDelete:async()=>({ok:true,message:'settled'}),readUninstallRegistry:async()=>records.filter(record=>!record.__removed),
     createMutationSession:async()=>({close(){},execute:async(plan,check)=>{
       let count=0;
       if(plan.records.some(r=>r.scope==='HKLM')){effects.push('permission-check');if(protectAfterPermission)blocked.add(protectAfterPermission)}
@@ -200,16 +201,17 @@ async function protectionAuthority() {
   assert(failureLogs.some(message=>message.includes('"stage":"registry-snapshot"')&&message.includes('bad-font')),'snapshot failure lost its stage or specific record')
   assert.deepEqual(effects,[],'failed snapshot reached registry/file mutation')
   records[0]={source:'HKCU',path:installedPath,value:installedPath,fileName:'sample.ttf',registryName:'Sample'}
-  deps.readUninstallRegistry=async()=>records
+  deps.readUninstallRegistry=async()=>records.filter(record=>!record.__removed)
   deps.createMutationSession=async()=>({close(){},execute:async(plan,check)=>{
     await check()
     if(plan.delete_file)return {ok:false,message:'sharing violation',completedSteps:0,fileRemoved:false,code:32}
-    effects.push('registry-delete');return {ok:true,message:'record removed',completedSteps:plan.records.length,fileRemoved:false}
+    effects.push('registry-delete');for(const entry of records)if(plan.records.some(record=>record.scope===entry.source&&record.name===entry.registryName))entry.__removed=true;return {ok:true,message:'record removed',completedSteps:plan.records.length,fileRemoved:false}
   }})
   const incomplete=await system.uninstallFontSystemWide(source)
   assert.equal(incomplete.ok,false);assert.equal(incomplete.uninstall.completedSteps,1)
   assert.deepEqual(Array.from(incomplete.uninstall.remainingPaths),[installedPath]);assert.equal(incomplete.uninstall.stage,'file-delete')
   assert.match(incomplete.message,/安装文件尚未清理完成/);assert.deepEqual(effects,['registry-delete'])
+  receiptDb.close()
   console.log('[protection-authority] shared SQLite, unknown/offline, queue ordering, recheck, collection paths, install copies, mixed batch and zero protected effects passed')
 }
 async function favorites() {
@@ -662,7 +664,9 @@ async function uninstallPlanning() {
   io.stat=stat
   io.stat=async p=>{const s=await stat(p);return p===b?{...s,dev:String(s.dev),ino:String(s.ino)}:s}
   const effects=[];let liveRegistry=[record],changed=false,targetChanged=false
+  const receiptDb=database()
   const runtime=load('src/main/install/systemFontInstallRuntime.ts').createSystemFontInstallRuntime({
+    openUninstallReceipts:async()=>load('src/main/install/fontUninstallReceiptRuntime.ts').openFontUninstallReceipts(receiptDb),
     readHistoricalFont:async()=>historical,ensureWindows(){},withFontProtection:async(_items,fn)=>fn(async()=>{}),
     currentUserFontsDir:()=> 'C:\\user-fonts',windowsFontsDir:()=> 'C:\\Windows\\Fonts',normalizePathForCacheCompare:p=>p.toLowerCase(),isTemporaryActiveInstalledRecord:()=>false,
     getSystemInstalledFonts:async()=>liveRegistry,readUninstallRegistry:async()=>liveRegistry,clearInstalledFontsMemoryCache(){},appendStartupLog(){},persistUninstallResult:async()=>effects.push('persist'),advancedFontRefresh:async()=>{},
@@ -678,7 +682,9 @@ async function uninstallPlanning() {
   const replaced=await runtime.uninstallFontSystemWide(missingItem)
   assert.equal(replaced.ok,false);assert.equal(replaced.uninstall.completedSteps,0);assert.deepEqual(effects,[],'same-content target replacement crossed the physical identity gate')
   io.stat=stat
+  receiptDb.close()
   await uninstallTransport()
+  await require('./check-font-uninstall-recovery.cjs').run()
   console.log('[F10] whole-content status/planning, renamed candidates, unknown access, historical missing source, effect gates, distinct copies, aliases/hard links and original preservation passed')
 }
 
@@ -733,16 +739,21 @@ async function uninstallTransport() {
     assert.equal(result.ok,false);assert.equal(sent.length,before,'initial refusal reached the worker')
     for(const stage of ['attributes','before-uac','registry','file']) {
       let checks=0
-      replies.push([{gate:stage,...(stage==='file'?{references:[]}: {})}],[{brokerDone:true,ok:false,message:'gate refused'}])
+      replies.push([{gate:stage,references:[]}],[{brokerDone:true,ok:false,message:'gate refused'}])
       result=await session.execute(request,async()=>{if(++checks===2)throw Error('protection changed at '+stage)})
       assert.equal(checks,2);assert.equal(result.ok,false);assert.equal(result.completedSteps,0)
       assert.deepEqual(sent.at(-1),{allow:false},stage+' refusal was not sent to worker')
       assert(result.message.includes('protection changed at '+stage))
     }
+    replies.push([{gate:'registry',references:[]}],[{brokerDone:true,ok:false,uncertain:true,stage:'elevated-transport',message:'child disconnected after allow'}])
+    const stages=[]
+    result=await session.execute(request,async(_references,stage)=>{stages.push(stage)})
+    assert.equal(result.uncertain,true,'broker transport failure lost uncertainty');assert.equal(result.ok,false);assert(stages.includes('registry'))
+    assert.deepEqual(sent.at(-1),{allow:true})
     const cancelStart=sent.length
     replies.push([{done:true,ok:false,code:1223,message:'cancelled'},{brokerDone:true,ok:true}])
     result=await session.execute(request,async()=>{})
-    assert.equal(result.ok,false);assert.equal(result.code,1223);assert.equal(result.completedSteps,0)
+    assert.equal(result.ok,false);assert.equal(result.code,1223);assert.equal(result.completedSteps,0);assert.equal(result.cancelled,true)
     assert.equal(sent.length,cancelStart+1,'UAC cancellation replayed the request')
     replies.push([{effect:'registry'},{gate:'file',references:[]}],[{brokerDone:true,ok:false,message:'gate refused'}])
     let checks=0

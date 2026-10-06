@@ -64,7 +64,7 @@ fn receive(input:&mut impl BufRead)->io::Result<Value>{
 }
 fn gate(input:&mut impl BufRead,out:&mut impl Write,stage:&str)->io::Result<()> {
     let mut message=json!({"gate":stage});
-    if stage=="file" {message["references"]=snapshot()?;}
+    if !stage.starts_with("elevated-") {message["references"]=snapshot()?;}
     emit(out,&message)?;
     if receive(input)?.get("allow")!=Some(&Value::Bool(true)){return Err(fail("protection recheck refused mutation"));} Ok(())
 }
@@ -226,7 +226,15 @@ fn release_font_resources(p:&Plan,elevated:bool,input:&mut impl BufRead,out:&mut
     result
 }
 #[derive(Default)]
-struct FailureDetails { stage:&'static str, ntstatus:Option<u32> }
+struct FailureDetails { stage:&'static str, ntstatus:Option<u32>, uncertain:bool }
+// The caller clears uncertainty only after the matching effect/done receipt
+// has crossed the transport. A committed effect without ACK is never replayable.
+fn until_receipted(details:&mut FailureDetails,action:impl FnOnce()->io::Result<()>)->io::Result<()> {
+    details.uncertain=true;
+    action()?;
+    details.uncertain=false;
+    Ok(())
+}
 fn notify_font_change(reason:&str,out:&mut impl Write) {
     let result=crate::font_resource::notify_font_change_now(false);
     eprintln!("font change notification: reason={reason}, ok={}, detail={:?}",result.is_ok(),result.as_ref().err());
@@ -294,7 +302,7 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         // replay after an attribute change. Keep other attributes intact.
         emit(out,&json!({"prepared":true}))?;
         stage="readonly-normalization";
-        gate(input,out,"attributes")?;
+        gate(input,out,if elevated{"elevated-attributes"}else{"attributes"})?;
         permissions.set_readonly(false);
         file.set_permissions(permissions)?;
         if file.metadata()?.permissions().readonly(){return Err(fail("安装副本的只读属性未能解除；未删除本步骤的注册记录。"))}
@@ -305,11 +313,13 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     emit(out,&json!({"prepared":true}))?;
     for (r,k) in p.records.iter().zip(keys.iter()) {
         stage="registry-gate";
-        gate(input,out,"registry")?;verify_record(k,r)?;
+        gate(input,out,if elevated{"elevated-registry"}else{"registry"})?;verify_record(k,r)?;
         stage="registry-delete";
-        delete_record(r)?;
-        registry_changed=true;
-        emit(out,&json!({"effect":"registry","scope":r.scope,"name":r.name}))?;
+        until_receipted(details,|| {
+            delete_record(r)?;
+            registry_changed=true;
+            emit(out,&json!({"effect":"registry","scope":r.scope,"name":r.name}))
+        })?;
     }
     notify_registry_change(&mut registry_changed,out);
     if p.delete_file {
@@ -369,6 +379,15 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
 #[cfg(test)]
 mod disposition_tests {
     use super::*;
+    #[test]
+    fn committed_or_dispatched_work_without_receipt_stays_uncertain() {
+        let mut details=FailureDetails::default();let mut committed=0;
+        let error=until_receipted(&mut details,|| {committed+=1;Err(io::Error::new(io::ErrorKind::BrokenPipe,"ACK lost"))}).unwrap_err();
+        assert_eq!(committed,1);assert_eq!(error.kind(),io::ErrorKind::BrokenPipe);assert!(details.uncertain);
+        let error=until_receipted(&mut details,|| {let mut child=io::Cursor::new(Vec::<u8>::new());receive(&mut child).map(|_|())}).unwrap_err();
+        assert!(error.to_string().contains("closed"));assert!(details.uncertain);
+        until_receipted(&mut details,|| Ok(())).unwrap();assert!(!details.uncertain);
+    }
     struct Fixture(PathBuf);
     impl Fixture {
         fn new()->Self {
@@ -520,7 +539,10 @@ impl Elevated {
     fn execute(&mut self,plan:&Plan,input:&mut impl BufRead,out:&mut impl Write)->io::Result<()> {
         emit(&mut self.output,&serde_json::to_value(plan)?)?;
         loop {let mut reply=receive(&mut self.input)?;
-            if reply.get("gate").and_then(Value::as_str)==Some("elevated-file") {reply["gate"]=json!("file");reply["references"]=snapshot()?;}
+            if let Some(stage)=reply.get("gate").and_then(Value::as_str) {
+                let original_stage=stage.trim_start_matches("elevated-").to_string();
+                reply["gate"]=json!(original_stage);reply["references"]=snapshot()?;
+            }
             emit(out,&reply)?;
             if reply.get("gate").is_some(){let allow=receive(input)?;emit(&mut self.output,&allow)?;}
             if reply.get("done").is_some(){return Ok(())}
@@ -542,7 +564,7 @@ fn elevated(args:&[String])->io::Result<()> {
     loop {let value=receive(&mut input)?;let plan:Plan=serde_json::from_value(value)?;
         let mut details=FailureDetails::default();
         let result=execute(&plan,true,Some(&original_user),&mut input,&mut output,&mut details);
-        emit(&mut output,&json!({"done":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
+        emit(&mut output,&json!({"done":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"uncertain":details.uncertain,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
     }
 }
 pub fn run(args:&[String])->io::Result<()> {
@@ -559,7 +581,7 @@ pub fn run(args:&[String])->io::Result<()> {
             continue;
         }
         let mut plan:Plan=serde_json::from_value(value)?;
-        let mut details=FailureDetails{stage:"plan-identity",ntstatus:None};
+        let mut details=FailureDetails{stage:"plan-identity",ntstatus:None,uncertain:false};
         let result=(||->io::Result<()> {
             validate(&plan,false,None)?;
             // Capture identity without DELETE permission before any UAC wait.
@@ -579,12 +601,13 @@ pub fn run(args:&[String])->io::Result<()> {
             if let Some(code)=elevation_failure{return Err(io::Error::from_raw_os_error(code))}
             if elevated.is_none(){match Elevated::start(){Ok(child)=>elevated=Some(child),Err(error)=>{elevation_failure=Some(error.raw_os_error().unwrap_or(5));return Err(error)}}}
             // Parent revalidates protection again on each gate from the child.
-            elevated.as_mut().unwrap().execute(&plan,&mut input,&mut output)?;
+            details.stage="elevated-transport";
+            until_receipted(&mut details,|| elevated.as_mut().unwrap().execute(&plan,&mut input,&mut output))?;
             Ok(())
         })();
         // Elevated replies already contain a done receipt. Suppress the broker
         // duplicate using a separate completion marker at the transport layer.
-        emit(&mut output,&json!({"brokerDone":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
+        emit(&mut output,&json!({"brokerDone":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"uncertain":details.uncertain,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
     }
 }
 

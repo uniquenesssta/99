@@ -44,6 +44,9 @@ jobs:
       - name: Verify bounded retries (real mutations are local-only)
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_mutation::'
+      - name: Verify shared file identity evidence
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml shared_file_io::'
       - name: Accept production IDs, pagination and actual Electron DOM
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-identity-reproduction.cjs

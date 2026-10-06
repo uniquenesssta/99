@@ -1,4 +1,4 @@
-import { readFontContentIdentity as readFontMutationIdentity } from '../fonts/fontContentIdentityRuntime'
+import { readFontContentIdentity as readFontMutationIdentity, fontPhysicalKey } from '../fonts/fontContentIdentityRuntime'
 import { dirname, resolve } from 'node:path'
 import type { FontItem, SystemInstalledFont } from '../../shared/types'
 import { normalizePathForCacheCompare as key } from '../path/cachePath'
@@ -24,7 +24,7 @@ export async function planFontUninstall(item: FontItem, installed: SystemInstall
     const aliases = recordPaths.get(key(target.path)) || new Set<string>()
     aliases.add(key(record.path!)); aliases.add(key(target.path)); recordPaths.set(key(target.path), aliases)
   }
-  const identities = new Set([...matched.values()].map(target => target.ino > 0 && Number.isFinite(target.dev) ? `${target.dev}:${target.ino}` : key(target.path)))
+  const identities = new Set([...matched.values()].map(target => fontPhysicalKey(target) || key(target.path)))
   options.report?.({ source: item.path, sourceKind: source.historical ? 'main-history' : 'current-file', candidateCount: candidates.matches.length, confirmedCount: matched.size, candidates: candidates.matches.map(record => ({ path: record.path, scope: record.source, name: record.registryName })), confirmed: [...matched.values()].map(target => ({ path: target.path, independentCopy: independentInstallCopy(source, target) })), reason: confirmed.reason, ambiguous: !exact.length && identities.size > 1 })
   if (confirmed.known === false || session.unavailablePaths().length) throw new Error(`安装候选当前不可访问，不能确认唯一卸载目标。${confirmed.reason}`)
   if (!exact.length && identities.size > 1) throw new Error('存在多个内容相同的安装副本，无法唯一关联。请从已安装字体页面选择实际安装文件后重试。')

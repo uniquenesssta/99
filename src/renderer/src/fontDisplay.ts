@@ -48,7 +48,7 @@ export function installLabel(font: FontItem): string {
   if (font.fileRelinkRequired) return '文件已变化，需重新链接'
   if (font.fileAvailability === 'missing') return '文件丢失'
   if (font.fileAvailability === 'unavailable') return '文件暂不可访问'
-  if (getUninstallIssue(font)) return '卸载未完成'
+  if (getUninstallIssue(font)) return font.pendingUninstall?.cancelled ? '卸载已取消' : '卸载未完成'
   if (isInstalled(font) && font.active) return '系统已安装 · 已激活'
   if (isInstalled(font)) return '系统已安装'
   if (font.active) return '已激活'

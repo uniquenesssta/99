@@ -1,3 +1,4 @@
+import { openFontUninstallReceipts } from '../install/fontUninstallReceiptRuntime';
 import { openTagFontSnapshots } from '../library/tagFontSnapshotRuntime';
 import { createFontProtectionAuthorityRuntime, readSharedFontProtection } from '../install/fontProtectionAuthorityRuntime';
 import { withSharedLeaseLocks } from '../storage/runtime/sharedLeaseLockRuntime';
@@ -325,6 +326,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
   });
 
   const systemFontInstallRuntime = createSystemFontInstallRuntime({
+    openUninstallReceipts: async () => openFontUninstallReceipts(await openLibraryDb()),
     appName: APP_NAME,
     readHistoricalFont: async path => openTagFontSnapshots(await openLibraryDb()).read(path),
     fontExtensions: FONT_EXTENSIONS,

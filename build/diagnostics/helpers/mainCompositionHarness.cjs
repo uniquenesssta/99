@@ -66,6 +66,7 @@ function createHarness(overrides = new Map()) {
       getOpenLibraryDb: operation('library.get', () => database),
       saveLibrary: operation('library.save', async () => state.saveSucceeds),
     })
+    if (name === 'createFontPageQueryCacheRuntime') specific.queryFontPageInLibrary = operation('page.cached', async () => state.cachedPage)
     if (name === 'createRootIndexCoordinator') specific.findFontItemInRootIndexes = operation('index.find', async () => ({ id: 'font' }))
     if (name === 'createMergedIndexPageRuntime') specific.checkMergedIndexExternalChanges = operation('merged.external', async () => ({ changed: true }))
     if (name === 'createMainWindowAndFontRuntime') Object.assign(specific, {
@@ -87,6 +88,7 @@ function createHarness(overrides = new Map()) {
       if (key === 'registerMainProcessRuntime') return options => { assert.equal(state.payload, null, 'application registered twice'); state.payload = options }
       if (key === 'normalizeWatchedFontFolders') return folders => folders
       if (key === 'normalizePathForCacheCompare') return value => value
+      if (key === 'openFontUninstallReceipts') return () => ({ hydrate: items => items.map(item => ({ ...item, pendingUninstall: state.pendingUninstall })) })
       if (key === 'sha1') return value => require('node:crypto').createHash('sha1').update(value).digest('hex')
       target[key] = key.startsWith('create') ? options => factory(key, options) : operation(key)
       return target[key]

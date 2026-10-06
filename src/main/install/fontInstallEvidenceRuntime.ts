@@ -1,6 +1,6 @@
 import { parse } from 'node:path'
 import type { FontItem, InstallCompareResult, SystemInstalledFont } from '../../shared/types'
-import { readFontContentIdentity } from '../fonts/fontContentIdentityRuntime'
+import { readFontContentIdentity, fontPhysicalKey } from '../fonts/fontContentIdentityRuntime'
 import { normalizePathForCacheCompare as key } from '../path/cachePath'
 import { sharedFileSystem as fs } from '../path/sharedFileSystemRuntime'
 import type { TemporaryActiveFontRecord } from '../windows/fontRuntime'
@@ -28,7 +28,7 @@ export async function readInstallSourceIdentity(item: FontItem, readHistorical?:
     const values = Array.isArray(stamp) ? stamp.map(value => typeof value === 'number' || typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : NaN) : []
     if (!saved || saved.id !== item.id || key(saved.path) !== key(item.path)
       || !/^[a-f0-9]{64}$/.test(saved.recoveryContentHash || '') || values.length !== 5
-      || !values.every(Number.isFinite) || values[2] !== saved.fileSize || values[3] !== saved.modifiedAt) {
+      || !fontPhysicalKey({ stamp: saved.recoveryFileStamp! }) || !values.slice(2, 4).every(Number.isFinite) || (stamp[4] !== null && !Number.isFinite(values[4])) || values[2] !== saved.fileSize || values[3] !== saved.modifiedAt) {
       throw new Error('原文件已丢失，主进程没有可核实的历史完整内容指纹，未按名称关联安装。')
     }
     return { path: saved.path, sha256: saved.recoveryContentHash!, size: values[2], modified: values[3], dev: values[0], ino: values[1], stamp: saved.recoveryFileStamp!, historical: true }
@@ -36,8 +36,8 @@ export async function readInstallSourceIdentity(item: FontItem, readHistorical?:
 }
 
 export function independentInstallCopy(source: InstallSourceIdentity, target: InstallSourceIdentity): boolean {
-  return key(source.path) !== key(target.path) && Number.isFinite(Number(source.dev)) && Number.isFinite(Number(target.dev))
-    && Number(source.ino) > 0 && Number(target.ino) > 0 && (Number(source.dev) !== Number(target.dev) || Number(source.ino) !== Number(target.ino))
+  const sourceKey = fontPhysicalKey(source), targetKey = fontPhysicalKey(target)
+  return key(source.path) !== key(target.path) && !!sourceKey && !!targetKey && sourceKey !== targetKey
 }
 
 // One explicit refresh/operation owns this cache. Queries only read the confirmed

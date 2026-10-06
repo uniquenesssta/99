@@ -178,6 +178,23 @@ async function run(){let cases=0
     assert.equal(h.library.fonts.a.installStatusKnown,known);assert.equal(h.library.fonts.a.systemInstalled,known,'uninstall ignored main-owned result and forced false')
     assert.match(s.confirmations[0],/所选源文件及其属性保留/);cases++
   }
+  for(const known of [true,false])for(const entry of ['context','detail']) {
+    const s=setup(),h=s.base;h.select().setSelectedFontIds(['a'])
+    h.library.fonts.a={...h.library.fonts.a,systemInstalled:false,installStatusKnown:known,pendingUninstall:{message:'saved pending copy'}}
+    const display=h.load(renderer+'fontDisplay.ts'),intent=h.load(renderer+'fontUserIntentRuntime.ts')
+    assert.equal(display.isInstalled(h.library.fonts.a),false,'pending uninstall changed installation truth')
+    button(entry==='context'?s.overlay():s.detail(),'重试卸载').props.onClick();await tick()
+    assert.deepEqual(s.calls,[['uninstallSystem','a']]);assert.equal(h.library.fonts.a.pendingUninstall,undefined)
+    const failed=intent.setUninstallIssue({...h.library.fonts.a,pendingUninstall:{message:'old'}},'old failure')
+    const fresh=intent.mergeFontUserIntent(failed,{...h.library.fonts.a,pendingUninstall:undefined})
+    assert.equal(intent.getUninstallIssue(fresh),undefined,'authoritative receipt clear retained stale renderer notice');cases++
+  }
+  {
+    const s=setup(),h=s.base;h.select().setSelectedFontIds(['a']);h.library.fonts.a.systemInstalled=true
+    h.handlers.set('fonts:uninstallSystem',()=>({ok:false,results:{a:{ok:false,message:'UAC cancelled',uninstall:{completedSteps:0,remainingPaths:[],stage:'before-uac',pending:true,cancelled:true}}}}))
+    await h.command()('remove');assert.match(h.status.at(-1),/失败或未确认 0 个，取消 1 个/)
+    assert.equal(h.load(renderer+'fontDisplay.ts').installLabel(h.library.fonts.a),'卸载已取消');cases++
+  }
   // Mutate the actual common dispatcher to use only the first item; the UI regression must fail.
   const file=path.join(root,renderer+'fontCommandRuntime.ts'),broken=setup({transforms:{[file]:s=>s.replace('options.installFontsBatch(fonts, label)','options.installFontsBatch(fonts.slice(0, 1), label)')}});broken.select().setSelectedFontIds(['a','b']);button(broken.base.detail(),'安装').props.onClick();await tick();assert.throws(()=>assert.equal(broken.calls.length,2),assert.AssertionError);cases++
   console.log(`[diagnostics:font-command-entry] ${cases} controlled cases: shared TSX context/detail, two preloads, complete targets, one confirmation, mixed state/busy/partial failure, local-only collection favorite, tag mouse/Enter/IME/delta isolation; first-item mutation rejected. Native Windows and browser focus/layout remain unverified.`)

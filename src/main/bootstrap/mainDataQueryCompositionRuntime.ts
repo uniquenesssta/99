@@ -1,3 +1,4 @@
+import { openFontUninstallReceipts } from '../install/fontUninstallReceiptRuntime';
 import { createTagRelinkAuthorizationRuntime } from '../library/tagRelinkAuthorizationRuntime';
 import { createTagFontQueryRuntime, tagQueryScope } from '../library/tagFontQueryRuntime';
 import { openTagFontSnapshots } from '../library/tagFontSnapshotRuntime';
@@ -175,8 +176,13 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
       tagMetadataRevisionBarrier.cacheKeySuffixForRequest(request),
   });
 
-  const { invalidateFontQueryPageCache, queryFontPageInLibrary } =
+  const { invalidateFontQueryPageCache, queryFontPageInLibrary: queryCachedFontPage } =
     fontPageQueryCacheRuntime;
+
+  async function queryFontPageInLibrary(request: FontQueryRequest): Promise<FontQueryPageResult> {
+    const page = await queryCachedFontPage(request);
+    return { ...page, items: openFontUninstallReceipts(await openLibraryDb()).hydrate(page.items) };
+  }
 
   function clearFontQueryCaches(): void {
     tagFonts?.invalidate();
@@ -219,7 +225,9 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   async function hydrateInstallStatusForFonts(
     items: FontItem[],
   ): Promise<FontItem[]> {
-    return requireFontQueryFacadeRuntime().hydrateInstallStatusForFonts(items);
+    const hydrated = await requireFontQueryFacadeRuntime().hydrateInstallStatusForFonts(items);
+    if (!hydrated.length) return hydrated;
+    return openFontUninstallReceipts(await openLibraryDb()).hydrate(hydrated);
   }
 
   const mergedIndexPageRuntime = createMergedIndexPageRuntime({

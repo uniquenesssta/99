@@ -1,3 +1,4 @@
+import { getUninstallIssue } from './fontUserIntentRuntime'
 import { isInstalled } from './fontDisplay'
 import { batchActivationCandidates } from './fontSelectionRuntime'
 import type { FontItem, LibraryState } from '@shared/types'
@@ -17,13 +18,13 @@ export const FONT_COMMANDS = [
 export function visibleFontCommands(fonts: FontItem[], count: number) {
   const complete = count > 0 && fonts.length === count
   const shownActions = new Set<string>([
-    complete && fonts.every(isInstalled) ? 'remove' : 'install',
+    complete && fonts.every(font => isInstalled(font) || !!getUninstallIssue(font)) ? 'remove' : 'install',
     complete && fonts.some(font => !!font.active) && !batchActivationCandidates(fonts).length ? 'deactivate' : 'activate',
     complete && fonts.every(font => !!font.deleteProtected) ? 'unprotect' : 'protect',
     complete && fonts.every(font => !!font.favorite) ? 'unfavorite' : 'favorite',
     'deleteFile', 'localTags', 'sharedTags'
   ])
-  return FONT_COMMANDS.filter(command => shownActions.has(command.action))
+  return FONT_COMMANDS.filter(command => shownActions.has(command.action)).map(command => command.action === 'remove' && fonts.some(font => !!getUninstallIssue(font)) ? { ...command, label: '重试卸载' } : command)
 }
 export type FontCommand = typeof FONT_COMMANDS[number]['action']
 export type RunFontCommand = (action: FontCommand, ids?: string[], available?: FontItem[], entry?: 'selection-toolbar' | 'font-context' | 'detail', outcome?: string) => Promise<void>

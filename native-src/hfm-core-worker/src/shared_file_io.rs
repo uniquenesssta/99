@@ -96,7 +96,14 @@ fn execute(request: &Request) -> io::Result<Value> {
             io::copy(&mut fs::File::open(transfer(request)?)?,&mut file)?; file.sync_all()?;
             Ok(json!(crate::font_resource::activation_identity::identify(&mut file)?))
         },
-        "stat" => Ok(metadata(&fs::metadata(path)?)),
+        "stat" => {
+            let info=fs::metadata(path)?;let mut value=metadata(&info);
+            if info.is_file() {
+                let (device,inode)=crate::font_resource::activation_identity::file_id(&fs::File::open(path)?)?;
+                value["dev"]=json!(device);value["ino"]=json!(inode);
+            }
+            Ok(value)
+        },
         "lstat" => {
             let info=fs::symlink_metadata(path)?;let mut value=metadata(&info);
             if info.is_file() {
@@ -295,6 +302,17 @@ mod tests {
             fs::write(&input, request.to_string()).unwrap();
             assert!(run(input.to_str().unwrap()).unwrap_err().contains("unknown field"));
         }
+    }
+    #[test]
+    fn stat_transports_exact_file_ids_for_uninstall_receipts() {
+        let dir=Directory::new();fs::write(dir.0.join("font.ttf"),b"fixture").unwrap();
+        let stat=execute(&dir.request("stat","font.ttf",json!({}))).unwrap();
+        let link=execute(&dir.request("lstat","font.ttf",json!({}))).unwrap();
+        assert!(stat["dev"].is_string());assert!(stat["ino"].is_string());
+        assert_eq!(stat["dev"],link["dev"]);assert_eq!(stat["ino"],link["ino"]);
+        fs::rename(dir.0.join("font.ttf"),dir.0.join("old.ttf")).unwrap();fs::write(dir.0.join("font.ttf"),b"fixture").unwrap();
+        let replaced=execute(&dir.request("stat","font.ttf",json!({}))).unwrap();
+        assert_ne!(stat["ino"],replaced["ino"]);
     }
     #[test]
     fn owned_handle_rejects_replaced_lock_and_binary_round_trips() {

@@ -47,11 +47,11 @@ export function rollbackFavoriteIntent(current: FontItem, request: FontItem): Fo
 
 export function setUninstallIssue(font: FontItem, message?: string): FontItem {
   revision += 1
-  return { ...font, [intentKey]: { ...(font as IntentFont)[intentKey], uninstallIssue: message } } as IntentFont
+  return { ...font, ...(!message ? { pendingUninstall: undefined } : {}), [intentKey]: { ...(font as IntentFont)[intentKey], uninstallIssue: message } } as IntentFont
 }
 
 export function getUninstallIssue(font: FontItem): string | undefined {
-  return (font as IntentFont)[intentKey]?.uninstallIssue
+  return (font as IntentFont)[intentKey]?.uninstallIssue || font.pendingUninstall?.message
 }
 
 export function hasFontUserIntent(font: FontItem): boolean {
@@ -78,6 +78,6 @@ export function mergeFontUserIntent(existing: FontItem | undefined, incoming: Fo
     ...incoming,
     ...intent.active,
     ...(keepFavorite ? { favorite: favorite.value } : {}),
-    [intentKey]: { active: intent.active, favorite: keepFavorite ? favorite : undefined, uninstallIssue: intent.uninstallIssue }
+    [intentKey]: { active: intent.active, favorite: keepFavorite ? favorite : undefined, uninstallIssue: Object.prototype.hasOwnProperty.call(incoming, 'pendingUninstall') ? undefined : intent.uninstallIssue }
   } as IntentFont
 }
