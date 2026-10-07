@@ -10,11 +10,12 @@ function refreshCheck(transform = x => x) {
   const runtime = loader({}, {}, { [path.join(root, refreshFile)]: transform })(refreshFile)
   const metrics = { installedCount: 295, notInstalledCount: 1204, favoriteCount: 4, activeCount: 1 }
   let current = metrics, token = 0, page = {}, query = {}, cancelled = 0
+  const previousPage = page, previousQuery = query
   const pageSeq = { current: 3 }, metricsSeq = { current: 5 }, timer = { current: 9 }
   runtime.refreshDatabaseDerivedStateRuntime({ timerRef: timer, clearTimeout: () => cancelled++, setDatabasePageResult: v => page = v, setDatabaseQueryResult: v => query = v,
     setDatabaseFontMetrics: v => current = v, setDatabaseRefreshToken: fn => token = fn(token), databasePageRequestSeqRef: pageSeq, fontMetricsRequestSeqRef: metricsSeq })
   assert.equal(current, metrics, 'refresh must retain last authoritative installed/uninstalled counts')
-  assert.equal(page, null); assert.equal(query, null)
+  assert.equal(page,previousPage,'refresh must retain same-scope page'); assert.equal(query,previousQuery)
   assert.equal(pageSeq.current, 4); assert.equal(metricsSeq.current, 6); assert.equal(token, 1); assert.equal(cancelled, 1); assert.equal(timer.current, null)
 }
 async function syncCheck(transform = x => x) {
@@ -99,9 +100,10 @@ async function main() {
     refreshCheck(s=>s.replace(/\r?\n/g,'\r\n'))
     await syncCheck(s=>s.replace(/\r?\n/g,'\r\n'))
     assert.throws(()=>refreshCheck(s=>s.replace('options.setDatabaseRefreshToken((value) => value + 1)','options.setDatabaseFontMetrics(null)\n  options.setDatabaseRefreshToken((value) => value + 1)')),/retain last authoritative/)
+    assert.throws(()=>refreshCheck(s=>s.replace('options.setDatabaseRefreshToken((value) => value + 1)','options.setDatabasePageResult(null)\n  options.setDatabaseRefreshToken((value) => value + 1)')),/retain same-scope/)
     await assert.rejects(()=>syncCheck(s=>s.replace("value.startsWith('shared-favorite-')","false")),/only affected root/)
     await assert.rejects(()=>syncCheck(s=>s.replace('changedRoot !== undefined && nextEntry.root !== changedRoot','false')),/only affected root/)
   }
-  console.log('[diagnostics:operation-refresh-scope] retained metrics/request invalidation, 60 real sync routing cases, LF/CRLF and three mutants passed')
+  console.log('[diagnostics:operation-refresh-scope] retained metrics/request invalidation, 60 real sync routing cases, LF/CRLF and four mutants passed')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

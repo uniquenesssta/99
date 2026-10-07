@@ -403,12 +403,14 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     invalidate: clearFontQueryCaches,
     appendLog: appendStartupLog,
     loadLegacyLocalSnapshot: async () => {
+      const roots = await appWatchedFolders();
+      if (!roots.length) return [];
       const path = await resolveMergedIndexDbPath(dataPath('db', 'merged-index.sqlite'));
-      if (!(await exists(path))) return [];
+      if (!(await exists(path))) throw new Error('旧收藏迁移等待完整合并索引。');
       const db = await openStableSqliteDb(path, 'local-favorite-migration');
       try {
-        if (!sqliteTableExists(db, 'entries')) return [];
-        const rows = db.prepare("SELECT root_path, relative_path, file_size, modified_at, font_json FROM entries WHERE COALESCE(is_deleted, 0) = 0 AND status = 'ok' AND json_valid(font_json)").all() as Array<{ root_path: string; relative_path: string; file_size: number; modified_at: number; font_json: string }>;
+        const rows = readCompleteFontIdentityIndex(db, roots);
+        if (!rows) throw new Error('旧收藏迁移来源尚未覆盖全部监听根。');
         return rows.map(row => cachedFontForRuntime(JSON.parse(row.font_json), cacheEntryRuntimePath(row.root_path, row.relative_path), { size: row.file_size, mtimeMs: row.modified_at }, row.relative_path));
       } finally { closeSqliteDb(db); }
     },

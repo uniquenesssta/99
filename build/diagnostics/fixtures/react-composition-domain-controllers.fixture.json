@@ -105,7 +105,7 @@
   ],
   "sourceHashes": {
     "src/renderer/src/fontWriteQueueRuntime.ts": "f188acec1185af880fa28968e4e788c794bb09f6427366bc1733d5f57117cfea",
-    "src/renderer/src/databaseDerivedStateRuntime.ts": "c9968c6de408e8b0af97891471ba6e9a7d82d503f0070009936b00add1061cf6",
+    "src/renderer/src/databaseDerivedStateRuntime.ts": "692bb0c2e0022a11ba47b9a15b18f6d22782c45c4f07a790338251b34728583d",
     "src/renderer/src/sharedMetadataSyncRuntime.ts": "13da66e8840e39aa8562b8fd6119eb5f6f7d21adf86f08fb73f60a0d14b7bda6",
     "src/renderer/src/rendererDeveloperStatusRuntime.ts": "e1d7cfcb6b5d0c4c5bf33af84b9153044efaa875c1126972e3360d2443d5fd35",
     "src/renderer/src/runtime/app/effects/useLibraryAutosaveRuntime.ts": "e3295dfa7b88644afcaace8b209fab4d9bf30993b90c0dfeb3ac2c3ff86b1f86",
@@ -124,5 +124,6 @@
     "src/renderer/src/runtime/app/useFontOperationsController.ts": {
       "cacheStatsRequestState": "0989e9946b2cfb1adfcee0f7ae9ecab550e6db6e286207be9aa8d707c95bd7da"
     }
-  }
+  },
+  "recoveryMigration": "F14 recovery: retain last same-scope page while request generations advance; operation-refresh-scope tests and null-page mutant protect the changed contract."
 }

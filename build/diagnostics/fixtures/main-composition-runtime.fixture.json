@@ -471,7 +471,9 @@
           ],
           [
             "createTagFontQueryRuntime.invalidate",
-            []
+            [
+              true
+            ]
           ],
           [
             "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
@@ -479,7 +481,9 @@
           ],
           [
             "createFontPageQueryCacheRuntime.invalidateFontQueryPageCache",
-            []
+            [
+              true
+            ]
           ],
           [
             "createRustCoreWorkerRuntime.invalidateRustCoreSchedulerCaches",
@@ -505,7 +509,9 @@
           ],
           [
             "createFontQueryFacadeRuntime.clearFontMetricsQueryCache",
-            []
+            [
+              true
+            ]
           ],
           [
             "createRustCoreWorkerRuntime.noteRustCoreSchedulerInteractiveActivity",
@@ -536,7 +542,9 @@
         "calls": [
           [
             "createTagFontQueryRuntime.invalidate",
-            []
+            [
+              true
+            ]
           ],
           [
             "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
@@ -544,7 +552,9 @@
           ],
           [
             "createFontPageQueryCacheRuntime.invalidateFontQueryPageCache",
-            []
+            [
+              true
+            ]
           ],
           [
             "createRustCoreWorkerRuntime.invalidateRustCoreSchedulerCaches",
@@ -570,7 +580,9 @@
           ],
           [
             "createFontQueryFacadeRuntime.clearFontMetricsQueryCache",
-            []
+            [
+              true
+            ]
           ],
           [
             "createRustCoreWorkerRuntime.noteRustCoreSchedulerInteractiveActivity",
@@ -619,10 +631,6 @@
         "calls": [
           [
             "library.open",
-            []
-          ],
-          [
-            "createLocalFontFavoritesRuntime.initialize",
             []
           ],
           [

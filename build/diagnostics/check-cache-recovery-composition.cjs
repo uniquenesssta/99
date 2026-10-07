@@ -8,8 +8,12 @@ const { DatabaseSync } = require('node:sqlite')
 const { loader } = require('./check-operation-chain.cjs')
 const root = path.resolve(__dirname, '../..'), abs = value => path.join(root, value)
 const plain = value => JSON.parse(JSON.stringify(value))
+const handles = new Set()
 function openDb(file) {
   const db = new DatabaseSync(file)
+  handles.add(db)
+  const close = db.close.bind(db)
+  db.close = () => { if (handles.delete(db)) close() }
   db.transaction = fn => () => { db.exec('BEGIN IMMEDIATE'); try { const value = fn(); db.exec('COMMIT'); return value } catch (error) { db.exec('ROLLBACK'); throw error } }
   return db
 }
@@ -105,7 +109,7 @@ async function main() {
     assert.equal((await folderCache.loadSharedFontsForFolders(roots)).length, 2)
     stages.push('cancelled and failed second-root hydration cannot populate complete memory cache')
 
-    const rootLoad = loader({ [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [] } })
+    const rootLoad = loader({ [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [] } }, { setInterval, clearInterval })
     const rootRuntime = rootLoad('src/main/indexing/rootIndexRuntime.ts').createRootIndexRuntime({ appName: 'HFM', fontScanCacheVersion: 1, scriptDetectionVersion: 1,
       exists, openStableSqliteDb: openDb, closeSqliteDb: db => db.close(), appendStartupLog() {}, withGlobalIo: async (_label, run) => run(), invalidateSharedFontRuntimeCaches() {}, recordCacheEvent: async () => {} })
     const missingTableRoot = path.join(directory,'missing-root-table.sqlite'), missingRootDb = openDb(missingTableRoot)
@@ -243,6 +247,9 @@ async function main() {
     stages.push('failed initial profile load cannot autosave empty state when database becomes writable')
 
     console.log(JSON.stringify({ ok: true, stages }, null, 2))
-  } finally { await fsp.rm(directory, { recursive: true, force: true }) }
+  } finally {
+    for (const db of [...handles]) { try { db.close() } catch { /* retain the original failed assertion */ } }
+    await fsp.rm(directory, { recursive: true, force: true })
+  }
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

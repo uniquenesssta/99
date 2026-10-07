@@ -133,7 +133,7 @@ export function useLibraryController(options: {
         if (!isCurrent()) return
         options.database.setDatabaseFontMetrics(normalizeFontMetricsResult(metrics))
       })
-      .catch(() => { if (isCurrent()) options.database.setDatabaseFontMetrics(null) })
+      .catch(() => { if (isCurrent()) setStatus('字体统计暂时不可用，保留上次结果。') })
   }
 
   function checkSharedMetadataUpdates(reason: string, minIntervalMs = 5000): Promise<void> | null {

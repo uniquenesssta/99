@@ -1167,3 +1167,35 @@ flowchart TD
 已经通过的独立步骤：真实 Windows Rust worker、原生目录批次、真实旧库与 merged 生产投影（含新增批次来源签名断言）、同库 F14 恢复/预览/卸载/重开、两项 populated Rust legacy_schema、全部后续身份/激活/精确卸载/标签/Rust 边界、实际 Electron DOM、列表网格与浮动滚动条原生输入、F13 真实预览比较及应用 bundle。它们不能替代未执行的 aggregate diagnostics 或未通过的性能门。
 
 artifact `11468167104`，54,252,000 字节，ZIP SHA-256 `f0f6e9fca2237ec55e5c42a7eed358c8383af9356fbbceb7b8c53deb751d12c6`。原回执不改写。下一步：新提交完整 Windows CI；仍未请求用户删除缓存或清空 profile。
+
+### 14.19 第二轮回执与共享预览写足迹修正（2026-10-07，待新提交 Windows 验证）
+
+`5de75fcd15bd98612db9fbaecef624e79cf0c6d5` 的 [Windows CI 37590777494](https://github.com/uniquenesssta/99/actions/runs/37590777494)，job `112691472636`，**整体失败**。TypeScript 通过；aggregate 实际运行172项，158通过、14失败。错误包括新回归缺少 timer/transaction 端口、旧测试缺新增查询信号/退出端口、fixture仍断言主动清页或旧composition轨迹，以及共享根全写只返回假native回执却不生成候选。逐项补端口/迁移预期，保留代次、令牌、次序和原路由反例；仅更新受影响冻结hash并注明新契约。共享根测试改用真实Windows worker候选和隔离本地验证副本，断言主进程不打开共享SQLite、旧文件字节保留、候选数量/内容正确。没有删除失败检查或批量重录基线。
+
+完整负载四轮正确性通过，其他独立native/production/F14/DOM/F13/bundle步骤通过；目录枚举门再次失败：B1两次排队212/123ms，同job A包络72ms。B1/B2完整刷新34.88/34.21秒，A1/A2为84.38/87.68秒；总时长不能抵消前台失败。artifact `11470280283`，54,325,851字节，ZIP SHA-256 `576f1792d6a0b0fa6b392b326eae1402e71ad0df90f5673f42434bd0ad98bd0e`。不将实测失败归因系统噪声，不重复相同源码碰运气。
+
+轨迹与源码共同定位：原生PNG命令整体 `write=true`；未验证物理路径的配置根有意放弃精确accesses，对其他配置根保守串行。两项PNG因而阻塞另一根只读枚举。此次不放宽未知alias与真实共享写者的屏障，不提升并发/超时，也不把写操作改成可重试读取。
+
+新增两阶段路径：
+- 只有transport保存的预览JSON输入可进入。用现有killable目录probe验证临时目录physical path，`registerRoot:false`避免把本地temp注册为配置根；必须明确SystemDrive本地canonical路径且无共享映射，才创建唯一自有stage。映射/probe/redirect失败不授予例外。
+- 只有仍存活的确切stage路径与恰好source-read/stage-write足迹获得 `sharedReadOnlyPreview`。整体仍是write/unknown outcome；该已证明的共享读取阶段可以与真正只读枚举相交，未知/真实共享写者及较早排队写者仍阻塞。原队列容量、并发10、超时及close-held槽位不变。
+- render真实关闭并确认回执后，在原调用方输出位置/外层发布锁内执行native copy。保留原来源/输出保守写屏障，额外输出键串行化不同已验证共享根写同一目标。copy回执成功前不报告成功；失败/丢回执保留unknown并禁止重放。
+- 来源generation贯穿两阶段及排队admission。用户取消、退出、整体deadline拒绝后续发布；deadline与用户取消区分timeout/cancelled。文件和进程槽位持有到真实child close，提交后各项清理独立非抛出记录，不能把已提交结果改成可重试失败。日志总elapsed包含发布，workerElapsed仅是native render时间。
+
+```mermaid
+flowchart LR
+  A[自有预览输入] --> B[隔离探测本地临时目录]
+  B --> C[原生渲染到唯一自有文件]
+  C --> D[真实关闭 回执和代次校验]
+  D --> E[保守写屏障 原目标发布]
+  E --> F[确认复制回执 返回原目标]
+  G[共享只读枚举] <--> C
+  H[未知或真实共享写者] -.保留串行屏障.-> C
+  H -.保留串行屏障.-> E
+```
+
+新增 `diagnostics:preview-owned-stage`：生产stage/transport/队列与真实子进程，覆盖locality/伪造/失效stage、映射/probe错误、未验证alias读相交、写者公平、不同已验证根同输出、render/copy取消及physical close、whole deadline分类、渲染后代次变化、copy unknown无重放、提交后清理失败。deadline故障回归等待真实child启动后触发捕获回调，不靠100ms机器速度假设。旧non-staged admission专项保留。固定10次预览改为逐动作累计全部probe/render/copy子请求queue成本，保留全动作E2E门；4次枚举/16次浏览及所有阈值不改。新增copy-only退化与缺失/重复/错误归属/未知子进程/错误operation反例，不能隐藏新发布工作。
+
+另补两个保留条件：已配置根的旧收藏导入遇缺失/不完整merged来源时保持pending，无根profile正常初始化；即时统计查询失败保留最后权威统计，增加真实controller失败断言。
+
+编辑执行器一度断线并恢复到旧文件系统快照；已从远端重新取得受测 `5de75fc`，核原本地/远端分支仍为 `a7f00bb`，仅在既有恢复分支重建未发布差异并重新静态审阅。不是Windows运行结果。此轮仅Linux源码/静态语法/差异检查，未运行项目/测试/typecheck；必须在新精确提交完成完整Windows workflow才可收尾，两轮失败证据继续保留。

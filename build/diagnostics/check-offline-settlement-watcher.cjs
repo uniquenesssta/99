@@ -20,9 +20,11 @@ async function settlement() {
  db.exec("CREATE TABLE entries(relative_path TEXT,file_size INTEGER,modified_at INTEGER,font_json TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,root_path TEXT,is_deleted INTEGER DEFAULT 0,status TEXT DEFAULT 'ok')")
  const insert=db.prepare('INSERT INTO entries(relative_path,file_size,modified_at,font_json,installed,installed_by,matches_json,root_path) VALUES (?,1,?, ?,0,?,?,?)')
  for(const id of ['a','b'])insert.run(id+'.ttf',1,JSON.stringify({id,path:'\\\\nas\\fonts\\'+id+'.ttf',localTagNames:['keep']}),'none','[]','\\\\nas\\fonts')
+ db.exec('CREATE TABLE sources(root_path TEXT PRIMARY KEY,index_db_path TEXT,install_db_path TEXT,index_signature TEXT,install_signature TEXT,shared_metadata_signature TEXT); CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT)')
  let committed=0,failProjection=true,projectionCalls=0,saves=0,persisted={}
  const deny=()=>{throw Error('NAS must not be queried')}
  const runtime=load()(mergeFile).createMergedIndexValidationRuntime({
+  mergedIndexSourcesKey:JSON.stringify,getSqliteMeta:()=>'',setSqliteMeta:deny,writeMergedIndexSourceRow:deny,installStatusContentSignature:deny,
   runMergedIndexMutation:async(_,fn)=>fn({commit(){committed++}}),openMergedIndexDb:async()=>db,closeSqliteDb(){},appendStartupLog(){},appWatchedFolders:deny,
  },{mergedIndexSourcesForRoots:deny},{ensureMergedIndexBuilt:deny})
  const queue=load()(queueFile).createActivationInstallStatusSaveQueue({

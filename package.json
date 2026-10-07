@@ -190,6 +190,7 @@
     "diagnostics:preview-recovery": "node build/diagnostics/check-preview-recovery.cjs",
     "diagnostics:preview-work-lifetime": "node build/diagnostics/check-preview-work-lifetime.cjs",
     "diagnostics:preview-scroll-admission": "node build/diagnostics/check-preview-scroll-admission.cjs",
+    "diagnostics:preview-owned-stage": "node build/diagnostics/check-preview-owned-stage.cjs",
     "diagnostics:preview-shared-admission": "node build/diagnostics/check-preview-shared-admission.cjs",
     "diagnostics:preview-resource-admission": "node build/diagnostics/check-preview-resource-admission.cjs",
     "diagnostics:preview-cache-outcomes": "node build/diagnostics/check-preview-cache-outcomes.cjs",

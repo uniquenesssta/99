@@ -71,6 +71,7 @@ async function runManagedScanBehavior() {
       if (id === '../../path/fontPathPolicy') return { normalizeWatchedFontFolders: (folders) => folders.slice() }
       if (id === '../../performance/ioQueue') return cancellationModule
       if (id === './scanOrchestratorUtils') return { createFontScanJobId: () => `job-${++nextJob}` }
+      if (id === '../../app/shutdownCoordinatorRuntime') return { isApplicationClosing: () => false }
       return require(id)
     }
   )

@@ -181,7 +181,7 @@ function instrument(host, fixture) {
     const lane = ioScope.currentSharedIoPriority?.() === 'background' && inherited === 'foreground-browse' ? 'background-history-capture' : inherited
     const row = { lane, actionId: scope.getStore()?.actionId, label: request.label, startedAt: performance.now(),
       requestOrdinal: counters.tasks + 1, roots: [...request.roots], accesses: request.accesses ? plain(request.accesses) : null,
-      write: request.write, priority: request.priority, processLane: request.lane || 'default' }
+      write: request.write, sharedReadOnlyPreview: request.sharedReadOnlyPreview === true, priority: request.priority, processLane: request.lane || 'default' }
     let input
     const inputAt = request.args?.indexOf('--input')
     if (inputAt >= 0) {
@@ -736,15 +736,28 @@ function semanticQueueCohorts(row) {
   }
   const select=lane=>work.processRequests.filter(value=>value.lane===lane)
   const preview=select('foreground-preview'),enumeration=select('foreground-enumeration'),browse=select('foreground-browse')
-  for(const [rows,lane,label,count] of [[preview,'foreground-preview','preview-render-image',WORKLOAD.nativePreviews],[enumeration,'foreground-enumeration','shared-file-io:treeSnapshot',WORKLOAD.treeEnumerations]]) {
-    assert.equal(rows.length,count,`${lane} physical population changed`)
-    assert.equal(new Set(rows.map(value=>value.actionId)).size,count,`${lane} physical ownership duplicated`)
-    assert(rows.every(value=>value.label===label),`${lane} native label changed`)
-    if(lane==='foreground-enumeration')assert(rows.every(value=>value.operation==='treeSnapshot'),'Enumeration operation changed')
+  assert.equal(enumeration.length,WORKLOAD.treeEnumerations,'Enumeration physical population changed')
+  assert.equal(new Set(enumeration.map(value=>value.actionId)).size,WORKLOAD.treeEnumerations,'Enumeration ownership duplicated')
+  assert(enumeration.every(value=>value.label==='shared-file-io:treeSnapshot'&&value.operation==='treeSnapshot'),'Enumeration operation changed')
+  const previewCost=[]
+  for(let index=0;index<WORKLOAD.nativePreviews;index++) {
+    const children=preview.filter(value=>value.actionId===`foreground-preview:${index}`)
+    const renders=children.filter(value=>value.label==='preview-render-image')
+    assert.equal(renders.length,1,'Each preview must render exactly once')
+    const proofs=children.filter(value=>value.label==='preview-stage-locality')
+    assert(proofs.length<=1,'Stage locality probe duplicated')
+    const copies=children.filter(value=>value.label==='shared-file-io:copyFile')
+    assert.equal(copies.length,renders[0].sharedReadOnlyPreview?1:0,'Staged preview publication missing/duplicated or unowned')
+    assert(copies.every(value=>value.operation==='copyFile'),'Preview copy operation mislabeled')
+    if(renders[0].sharedReadOnlyPreview)assert.equal(proofs.length,1,'Staged render locality proof missing')
+    assert.equal(children.length,1+copies.length+proofs.length,'Unknown preview child hidden from fixed cohort')
+    // Same ten user actions: count every physical proof/render/publication queue cost.
+    previewCost.push(children.reduce((total,value)=>total+value.queuedMs,0))
   }
-  return { preview:summarize(preview.map(value=>value.queuedMs)),enumeration:summarize(enumeration.map(value=>value.queuedMs)),
+  assert.equal(preview.length,previewCost.length+preview.filter(value=>['shared-file-io:copyFile','preview-stage-locality'].includes(value.label)).length,'Unattributed preview child')
+  return { preview:summarize(previewCost),enumeration:summarize(enumeration.map(value=>value.queuedMs)),
     browse:{requests:WORKLOAD.foregroundQueries,childRequests:browse.length,totalQueuedMs:browse.reduce((total,value)=>total+value.queuedMs,0)},
-    scope:'Fixed semantic cohorts. Browse total is initiated child queue cost, not per-consumer latency; E2E separately gates all16 requests. queuedMs includes synchronous spawn overhead.' }
+    scope:'Fixed semantic cohorts; each preview sums all proof/render/publication child queue costs. Browse total is initiated child queue cost, not per-consumer latency; E2E separately gates all16 requests. queuedMs includes synchronous spawn overhead.' }
 }
 
 function compareRuns(runs) {

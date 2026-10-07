@@ -48,6 +48,27 @@ for(const mutate of [
  assert.equal(value.passed,false,'Missing/misclassified observation silently shrank the fixed cohort')
  assert(value.populationFailure)
 }
+// Publication cost belongs to the same fixed preview action, never a hidden cohort.
+function stagedSample() {
+ const runs=clone(original),row=runs[1],render=row.work.processRequests.findLast(value=>value.lane==='foreground-preview')
+ render.sharedReadOnlyPreview=true
+ row.work.processRequests.push({lane:render.lane,actionId:render.actionId,label:'shared-file-io:copyFile',operation:'copyFile',queuedMs:0},
+   {lane:render.lane,actionId:render.actionId,label:'preview-stage-locality',queuedMs:0})
+ row.work.tasks+=2
+ return runs
+}
+assert.equal(compareRuns(stagedSample()).passed,true,'Same total staged queue cost rejected')
+const copyOnly=stagedSample();copyOnly[1].work.processRequests.find(value=>value.operation==='copyFile').queuedMs=18
+assert.equal(compareRuns(copyOnly).candidates[0].previewQueueP95NoRegression,false,'Copy-only queue regression escaped')
+for(const mutate of [
+ row=>{row.work.processRequests.splice(row.work.processRequests.findIndex(value=>value.operation==='copyFile'),1);row.work.tasks--},
+ row=>{row.work.processRequests.push({...row.work.processRequests.find(value=>value.operation==='copyFile')});row.work.tasks++},
+ row=>{row.work.processRequests.find(value=>value.operation==='copyFile').operation='rename'},
+ row=>{row.work.processRequests.find(value=>value.operation==='copyFile').actionId='foreground-preview:0'},
+ row=>{row.work.processRequests.push({lane:'foreground-preview',actionId:'foreground-preview:9',label:'hidden-child',queuedMs:0});row.work.tasks++},
+]) {
+ const altered=stagedSample();mutate(altered[1]);assert(compareRuns(altered).populationFailure,'Unowned/omitted staged child escaped')
+}
 const failedBaseline=clone(original);failedBaseline[0].passed=false;failedBaseline[0].comparable=false
 assert.equal(compareRuns(failedBaseline).comparable,false,'Failed full baseline was made comparable')
-console.log('[diagnostics:full-refresh-acceptance] fixed-cohort equality, observed +18ms regression, missing/misclassified/duplicate samples and failed baseline rejection passed')
+console.log('[diagnostics:full-refresh-acceptance] fixed-cohort equality, observed +18ms regression, missing/misclassified/duplicate samples copy-only cost/ownership and failed baseline rejection passed')

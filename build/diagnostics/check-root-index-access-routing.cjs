@@ -7,6 +7,7 @@ const os = require('node:os')
 const cp = require('node:child_process')
 const { DatabaseSync } = require('node:sqlite')
 const { loader } = require('./check-operation-chain.cjs')
+const { applyNativeRootIndex } = require('./root-index-native-fixture.cjs')
 
 const root = path.resolve(__dirname, '../..')
 const crlf = process.argv.includes('--crlf')
@@ -33,7 +34,7 @@ for (const rel of [
   }
 }
 
-function mocks() {
+function mocks(dir, published) {
   const isShared = value => String(value || '').includes(sharedMarker)
   return {
     [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: {
@@ -41,7 +42,12 @@ function mocks() {
     },
     [abs('src/main/path/sharedFileSystemRuntime.ts')]: {
       sharedFileSystem: fsp, currentSharedIoSignal: () => undefined,
-      sharedSqliteReadSnapshot: async () => { throw new Error('unexpected shared SQLite snapshot in C-01 route test') },
+      sharedSqliteReadSnapshot: async file => {
+        const target = path.join(dir, `read-${require('node:crypto').randomUUID()}.sqlite`)
+        const db = new DatabaseSync(file)
+        try { db.prepare('VACUUM INTO ?').run(target) } finally { db.close() }
+        return { path: target, dispose: () => fsp.rm(target, { force: true }) }
+      },
     },
     [abs('src/main/indexing/root-index/rootIndexLockRuntime.ts')]: {
       createRootIndexLockRuntime: () => ({
@@ -52,7 +58,7 @@ function mocks() {
     [abs('src/main/indexing/root-index/rootIndexManifestRuntime.ts')]: {
       createRootIndexManifestRuntime: () => ({
         resolveActiveRootIndexDbPath: async (_dir, fallback) => fallback,
-        writeRootCacheManifest: async () => undefined,
+        writeRootCacheManifest: async (_dir, _root, _storage, _count, selected) => { published.push(selected) },
         validateRootIndexLatestPointer: async () => undefined,
       }),
     },
@@ -71,7 +77,8 @@ function mocks() {
 async function main() {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'hfm-c01-routing-'))
   try {
-    const load = loader(mocks(), {}, transforms)
+    const published = []
+    const load = loader(mocks(dir, published), {}, transforms)
     const access = load('src/main/indexing/root-index/rootIndexAccessRuntime.ts')
     const localRoot = path.join(dir, 'local-root')
     const sharedRoot = path.join(dir, sharedMarker)
@@ -103,7 +110,7 @@ async function main() {
       recordCacheEvent: async (_source, eventType, payload) => events.push(JSON.stringify({ eventType, payload })),
       runRustRootIndexApplyChanges: async input => {
         rustCalls.push(input)
-        return { applied: true, count: input.upserts.length, upserts: input.upserts.length, deletes: input.deletes.length, durationMs: 1 }
+        return applyNativeRootIndex(root, dir, input)
       },
     })
     const entryFor = base => ({
@@ -129,10 +136,18 @@ async function main() {
     assert.equal(rustCalls.length, 1, 'shared root incremental write did not reach isolated native route')
     assert.equal(openCalls.length, 0, 'shared root incremental write opened main-process SQLite')
 
+    const oldBytes = await fsp.readFile(sharedDb)
     await runtime.saveRootIndexSqliteFile(sharedDb, sharedRoot, 'root', { version: 1, entries: { 'a.ttf': entryFor(sharedRoot) } })
     assert.equal(rustCalls.length, 2, 'shared root full write did not reach isolated native replace route')
     assert.equal(rustCalls[1].mode, 'replace')
-    assert.equal(openCalls.length, 0, 'shared full write reached main-process SQLite')
+    assert(openCalls.length > 0, 'candidate was not validated')
+    assert(openCalls.every(file => !file.includes(sharedMarker)), 'main SQLite opened a shared DB instead of isolated validation copy')
+    assert.deepEqual(await fsp.readFile(sharedDb), oldBytes, 'full recovery mutated retained original')
+    const candidate = new DatabaseSync(published.at(-1))
+    try {
+      assert.equal(candidate.prepare('SELECT COUNT(*) AS count FROM entries').get().count, 1)
+      assert.equal(JSON.parse(candidate.prepare('SELECT font_json FROM entries').get().font_json).path, entryFor(sharedRoot).font.path)
+    } finally { candidate.close() }
 
     console.log(JSON.stringify({
       ok: true,

@@ -294,6 +294,10 @@ async function checkLibraryBehavior() {
   controller.refreshDatabaseMetricsNow()
   pending[2]({ activeCount: 0 }); await Promise.resolve(); await Promise.resolve()
   assert.equal(metricWrites[0].activeCount, 0)
+  options.hfm.getFontMetrics = async () => { throw Error('temporary database failure') }
+  controller.refreshDatabaseMetricsNow()
+  for (let i = 0; i < 5; i++) await Promise.resolve()
+  assert.equal(metricWrites.length, 1, 'failed immediate refresh discarded last authoritative metrics')
 
 }
 

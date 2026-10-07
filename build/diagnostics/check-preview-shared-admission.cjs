@@ -17,7 +17,8 @@ async function main(){
   const code=`const fs=require('node:fs'); const send=()=>{process.stdout.write(${JSON.stringify(JSON.stringify(result))})}; ${hold?`const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(release)})){clearInterval(timer);send()}},5);`:'send();'}`;
   const child=cp.spawn(process.execPath,['-e',code],options);children.add(child);peak=Math.max(peak,children.size);child.once('close',()=>children.delete(child));return child;
  };
- const load=loader({electron:{app:{}},'node:child_process':{...cp,spawn},[path.join(root,'src/main/rust-core/rustCoreDaemonRuntime.ts')]:{createRustCoreDaemonRuntime:()=>({tryRun:async()=>{daemonCalls++;return {stdout:'{"ok":true}',stderr:''}},stopImmediately(){},status(){},pollStatus(){}}),isRustCoreDaemonSubmittedError:()=>false}});
+ // Preserve the non-staged fallback contract; owned-stage behavior has a separate real-child regression.
+ const load=loader({[path.join(root,'src/main/rust-core/ownedPreviewStageRuntime.ts')]:{createOwnedPreviewStageRuntime:()=>({allocate:async()=>null,provesReadOnly:()=>false})},electron:{app:{}},'node:child_process':{...cp,spawn},[path.join(root,'src/main/rust-core/rustCoreDaemonRuntime.ts')]:{createRustCoreDaemonRuntime:()=>({tryRun:async()=>{daemonCalls++;return {stdout:'{"ok":true}',stderr:''}},stopImmediately(){},status(){},pollStatus(){}}),isRustCoreDaemonSubmittedError:()=>false}});
  const transport=load('src/main/rust-core/rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({appendStartupLog:s=>logs.push(s),enabled:false,required:false});
  const pool=load('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime();
  const client=load('src/main/rust-core/clients/rustPreviewClientRuntime.ts').createRustPreviewClientRuntime({...transport,appendStartupLog(){},diagnoseRustCoreWorker:async()=>({available:true,path:process.execPath,capabilities:['preview-render-image']})});

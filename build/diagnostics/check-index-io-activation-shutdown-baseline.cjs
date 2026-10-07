@@ -39,7 +39,7 @@ async function observeRootIndexAccess(dir) {
   const isNetwork = value => String(value || '').includes('network-root')
   const mocks = {
     [abs('src/main/path/sharedFileSystemRuntime.ts')]: {
-      sharedFileSystem: fsp,
+      sharedFileSystem: fsp, currentSharedIoSignal: () => undefined,
       sharedSqliteReadSnapshot: async () => undefined,
     },
     [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: {
@@ -124,7 +124,7 @@ async function observeWatcherRecovery(dir) {
     electron: { BrowserWindow: { getAllWindows: () => [] } },
     [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => ['\\\\nas\\share'] },
     [abs('src/main/path/sharedFileSystemRuntime.ts')]: {
-      sharedFileSystem: fsp,
+      sharedFileSystem: fsp, currentSharedIoSignal: () => undefined,
       executeSharedFile: async () => never,
     },
     [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: {

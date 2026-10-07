@@ -8,7 +8,8 @@ import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fsp } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
+import { createOwnedPreviewStageRuntime } from './ownedPreviewStageRuntime'
 import { promisify } from 'node:util'
 import type { RustCoreWorkerRuntimeOptions, RustCoreWorkerStatus } from './rustCoreWorkerContracts'
 import type { RustCoreWorkerHandshake, RustCoreSchedulerProfilePayload } from './rustCoreWorkerPayloadTypes'
@@ -100,6 +101,9 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   let transportStopped = false
   const localChildren = new Set<ChildProcess>()
   const sharedIo = applicationSharedIoProcessRuntime(options.appendStartupLog)
+  const previewStages = createOwnedPreviewStageRuntime(sharedIoResourceKeys)
+  const previewPublications = new Map<string, string>()
+  const previewAdmissions = new Map<string, () => boolean>()
   const temporaryFiles = new Map<string, { holds: number; disposed: boolean; file: RustCoreJsonFile; input?: unknown }>()
   function createTemporaryJsonFile(prefix: string): RustCoreJsonFile {
     const file = allocateTemporaryJsonFile(prefix)
@@ -175,7 +179,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     return `shared-file-io:${operation}`
   }
 
-  async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
+  async function runRustCoreScheduledCommandDirect(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
     execOptions = { ...execOptions, signal: execOptions.signal || currentSharedIoSignal() }
     assertLocalShutdownWorkAllowed()
     if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
@@ -184,17 +188,23 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     let target: RustSharedIoTarget | undefined = execOptions.sharedIo
       ? { ...execOptions.sharedIo, paths: [...execOptions.sharedIo.paths], accesses: execOptions.sharedIo.accesses?.map(access => ({ ...access })) }
       : inferredPaths.length ? { paths: inferredPaths, write: true } : undefined
+    const inputIndex = args.indexOf('--input')
+    const inputPath = inputIndex >= 0 ? args[inputIndex + 1] : ''
+    const sharedReadOnlyPreview = args[0] === '--preview-render-image' && target?.write === true
+      && previewStages.provesReadOnly(temporaryFiles.get(inputPath)?.input, target.accesses)
     const accesses = target?.accesses ? await sharedIoAccesses(target.accesses) : undefined
-    if (target && accesses?.length) target = { ...target, write: accesses.some(access => access.mode === 'write') }
-    const previewRead = target?.write === false && (target.preview || (args[0] === '--shared-file-io' && isSharedPreviewReadScope()))
+    if (target && accesses?.length && !sharedReadOnlyPreview) target = { ...target, write: accesses.some(access => access.mode === 'write') }
+    const previewRead = sharedReadOnlyPreview || (target?.write === false && (target.preview || (args[0] === '--shared-file-io' && isSharedPreviewReadScope())))
     execOptions = { ...execOptions, sharedIo: target }
     args = [...args]
     const roots = target ? await sharedIoResourceKeys(target.paths) : []
+    const publicationOutput = previewPublications.get(inputPath)
+    if (publicationOutput) roots.push(`preview-output:${win32.normalize(publicationOutput).toLowerCase()}`)
     // Preflight writes must never enter a replaceable/cached daemon read lane.
     if (!roots.length && target?.write && args[0] === '--shared-metadata-overlay-read') roots.push(`local-metadata:${target.paths.join('|').toLowerCase()}`)
     if (roots.length) {
       const rootGenerations = new Map(target!.paths.map(sharedIoAvailabilityRoot).filter((root): root is string => !!root).map(root => [root,getStartupPathRootState(root).generation]));
-      const admit = () => [...rootGenerations].every(([root,generation]) => {
+      const admit = () => (previewAdmissions.get(inputPath)?.() ?? true) && [...rootGenerations].every(([root,generation]) => {
         const current = getStartupPathRootState(root);
         return current.generation === generation && current.state !== 'offline';
       });
@@ -210,7 +220,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
-      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
+      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, sharedReadOnlyPreview, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
@@ -220,7 +230,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
         try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Preserve the worker result. */ }
       }
-      if (!target!.write && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
+      if ((!target!.write || sharedReadOnlyPreview) && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
       // A malformed success envelope can follow a commit. It must never trigger a fallback write.
       try {
         const payload = parseJsonLine<{ ok?: boolean }>(result.stdout)
@@ -277,6 +287,77 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       }
     }
     return { ...result, daemon: false }
+  }
+
+  async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
+    const inputIndex = args.indexOf('--input')
+    const original = inputIndex >= 0 ? temporaryFiles.get(args[inputIndex + 1])?.input : undefined
+    if (args[0] !== '--preview-render-image' || !original || typeof original !== 'object')
+      return runRustCoreScheduledCommandDirect(workerPath, args, execOptions)
+    const input = original as { fontPath?: string; outputPath?: string }
+    if (typeof input.fontPath !== 'string' || typeof input.outputPath !== 'string')
+      return runRustCoreScheduledCommandDirect(workerPath, args, execOptions)
+    assertLocalShutdownWorkAllowed()
+    const signal = execOptions.signal || currentSharedIoSignal()
+    if (signal?.aborted || transportStopped) throw new SharedIoProcessError('预览已经取消。', 'not-started', 'cancelled')
+    const root = sharedIoAvailabilityRoot(input.fontPath)
+    const generation = root ? getStartupPathRootState(root).generation : undefined
+    const admit = () => !root || (getStartupPathRootState(root).generation === generation && getStartupPathRootState(root).state !== 'offline')
+    const deadline = Date.now() + 3000 + Math.min(30000, Math.max(100, execOptions.timeout || 30000))
+    const stage = await previewStages.allocate(input.fontPath, signal)
+    if (!stage) return runRustCoreScheduledCommandDirect(workerPath, args, execOptions)
+    const logCleanup = (error: unknown) => { try { options.appendStartupLog(`preview stage cleanup deferred: ${String(error)}`) } catch { /* Cleanup diagnostics cannot trigger replay. */ } }
+    const deadlineController = new AbortController()
+    const lifetime = mergeAbortSignals(deadlineController.signal, signal)
+    const deadlineTimer = setTimeout(() => deadlineController.abort(), Math.max(1, deadline - Date.now()))
+    const renderInput = createTemporaryJsonFile('hfm-preview-stage-input')
+    const publishInput = createTemporaryJsonFile('hfm-preview-publish-input')
+    previewAdmissions.set(renderInput.path, admit)
+    previewAdmissions.set(publishInput.path, admit)
+    try {
+      await renderInput.writeJson({ ...original, outputPath: stage.path })
+      const result = await runRustCoreScheduledCommandDirect(workerPath, ['--preview-render-image', '--input', renderInput.path], {
+        ...execOptions, signal: lifetime.signal, timeout: Math.max(100, Math.min(execOptions.timeout || 30000, deadline - Date.now())), sharedIo: { paths: [input.fontPath, stage.path], write: true, preview: true,
+          accesses: [{ path: input.fontPath, mode: 'read', scope: 'file' }, { path: stage.path, mode: 'write', scope: 'file' }] },
+      })
+      const receipt = parseJsonLine<{ ok?: boolean; outputPath?: string }>(result.stdout)
+      if (receipt.ok !== true || receipt.outputPath !== stage.path)
+        throw new SharedIoProcessError('预览暂存回执无效。', 'unknown', 'invalid-receipt')
+      assertLocalShutdownWorkAllowed()
+      if (lifetime.signal.aborted || transportStopped) throw new SharedIoProcessError('预览发布已经取消。', 'not-started', 'cancelled')
+      if (!admit()) throw new SharedIoProcessError('共享根状态已变化，旧预览已经丢弃。', 'not-started', 'stale-generation')
+      await publishInput.writeJson({ operation: 'copyFile', path: stage.path, dest: input.outputPath })
+      previewPublications.set(publishInput.path, input.outputPath)
+      // Keep the original source/output conservative write barrier and the caller's
+      // outer publication lease. No alias/locality assumption is made for its output.
+      const publication = await runRustCoreScheduledCommandDirect(workerPath, ['--shared-file-io', '--input', publishInput.path, '--transfer', publishInput.path + '.unused'], {
+        ...execOptions, timeout: Math.max(100, Math.min(5000, deadline - Date.now())), signal: lifetime.signal, sharedIo: { paths: [input.fontPath, input.outputPath, stage.path], write: true },
+      })
+      const copied = parseJsonLine<{ ok?: boolean; operation?: string; message?: string }>(publication.stdout)
+      if (copied.ok !== true || copied.operation !== 'copyFile')
+        throw new SharedIoProcessError(copied.message || '预览发布结果未确认。', 'unknown', 'invalid-receipt')
+      return { ...result, stdout: JSON.stringify({ ...receipt, outputPath: input.outputPath }) + '\n' }
+    } catch (error) {
+      // A cancelled write keeps ownership of its stage until the child really closes.
+      if (error instanceof SharedIoProcessError) {
+        await error.closed
+        if (deadlineController.signal.aborted && !signal?.aborted && error.reason === 'cancelled') {
+          const timeout = new SharedIoProcessError('Shared preview timeout', error.outcome, 'timeout')
+          timeout.closed = error.closed; timeout.queuedMs = error.queuedMs; timeout.executionMs = error.executionMs
+          throw timeout
+        }
+      }
+      throw error
+    } finally {
+      previewPublications.delete(publishInput.path)
+      previewAdmissions.delete(publishInput.path)
+      previewAdmissions.delete(renderInput.path)
+      clearTimeout(deadlineTimer)
+      lifetime.cleanup()
+      await renderInput.dispose().catch(logCleanup)
+      await publishInput.dispose().catch(logCleanup)
+      await stage.dispose().catch(logCleanup)
+    }
   }
 
   function invalidateRustCoreSchedulerCaches(commands?: string[]): number {

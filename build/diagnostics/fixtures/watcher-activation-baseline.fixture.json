@@ -67,7 +67,7 @@
         "runWatchedFolderRefreshJob",
         "refreshWatchedFolder"
       ],
-      "sha256": "b23e4b1a7f3e7afb3b9b76e882f3d3c4f392f9ea154bee40c68242c068b9dc58"
+      "sha256": "5c1fcc5c3ecaf65b53608a32920f6c5326960dc200f0035eafe07207c1e7759c"
     },
     "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts": {
       "exports": [
@@ -246,5 +246,6 @@
   "realFeedbackMigration": {
     "parent": "6620b3bafd5b3d894987585dd06c5d5eabc54933",
     "reason": "Explicit projection-only notifications now pass the existing empty-row sender gate; watcher row, recovery and process-lifecycle assertions retained."
-  }
+  },
+  "cacheRecoveryMigration": "F14 recovery requires complete successful scan before publishing repaired snapshot and notifying merged projection; prior baseline remains recorded."
 }

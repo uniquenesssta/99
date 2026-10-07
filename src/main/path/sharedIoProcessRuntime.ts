@@ -18,6 +18,8 @@ export type SharedIoProcessRequest = {
   queueTimeoutMs?: number
   maxBuffer?: number
   write: boolean
+  /** Granted only by the transport for its live, verified local preview stage. */
+  sharedReadOnlyPreview?: boolean
   signal?: AbortSignal
   env?: NodeJS.ProcessEnv
   onClose?: () => void
@@ -118,6 +120,8 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     if (a.request.accesses?.length && b.request.accesses?.length)
       return a.request.accesses.some(left => b.request.accesses!.some(right => sharedIoAccessConflict(left, right)))
     if ((laneOf(a) === 'root-probe' || laneOf(b) === 'root-probe') && !a.request.write && !b.request.write) return false
+    const sharedReadOnly = (job: Job) => job.request.sharedReadOnlyPreview || !job.request.write
+    if ((a.request.sharedReadOnlyPreview || b.request.sharedReadOnlyPreview) && sharedReadOnly(a) && sharedReadOnly(b)) return false
     // Legacy callers remain conservative. Preserve the two explicitly read-only lanes.
     if (laneOf(a) !== 'default' && laneOf(b) !== 'default' && !a.request.write && !b.request.write) return false
     return true
@@ -273,10 +277,14 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     }
     if (closed || request.signal?.aborted) return reject('Shared I/O is closed or cancelled', 'cancelled')
     if (!request.roots.length) return reject('Shared I/O requires a resource identity', 'invalid-root')
+    if ((!request.write || request.sharedReadOnlyPreview) && request.accesses?.some(access => access.mode === 'write'))
+      return reject('Read-only shared footprint contradicts declared writes', 'invalid-access')
+    if (request.sharedReadOnlyPreview && (!request.write || request.label !== 'preview-render-image' || request.lane !== 'preview-read'))
+      return reject('Invalid staged preview admission', 'invalid-preview-stage')
     if (request.accesses && (request.roots.some(root => !request.accesses!.some(access => access.root === root)) || request.accesses.some(access => !request.roots.includes(access.root) || !access.path || !['file','database','tree'].includes(access.scope) || !['read','write'].includes(access.mode)))) request.accesses = undefined
     const requestLane = request.lane || 'default'
     const queuedInLane = queue.filter(job => laneOf(job) === requestLane).length
-    if (requestLane === 'preview-read' && request.write) return reject('Preview lane accepts shared reads only', 'invalid-lane')
+    if (requestLane === 'preview-read' && request.write && !request.sharedReadOnlyPreview) return reject('Preview lane accepts shared reads only', 'invalid-lane')
     if (requestLane === 'preview-read' && queuedInLane >= 128) return reject('Shared preview queue full', 'queue-full')
     if (requestLane === 'default' && queuedInLane >= 128) return reject('Shared I/O queue full', 'queue-full')
     if (requestLane === 'root-probe' && queuedInLane >= 8) return reject('Shared root probe queue full', 'queue-full')

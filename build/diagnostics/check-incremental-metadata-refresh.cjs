@@ -133,7 +133,7 @@ function renderer() {
   ctl.scheduleDatabaseDerivedStateRefresh(80,['sharedTags']);ctl.scheduleDatabaseDerivedStateRefresh(80,['localTags']);ctl.scheduleDatabaseDerivedStateRefresh(0,['activation']);drain();ctl=render()
   assert.equal(ctl.databaseRefreshToken,2);assert.equal(ctl.databaseMetricsRefreshToken,3);assert.equal(clears,0);cases++
   ctl.refreshDatabaseDerivedState();ctl=render()
-  assert.equal(clears,2);assert.equal(args.database.databasePageRequestSeqRef.current,1);assert.equal(ctl.databaseMetricsRefreshToken,4);cases++
+  assert.equal(clears,0,'same-scope refresh retains last page');assert.equal(args.database.databasePageRequestSeqRef.current,1);assert.equal(ctl.databaseMetricsRefreshToken,4);cases++
   ctl.setDatabaseRefreshToken(v=>v+1);ctl=render()
   assert.equal(ctl.databaseMetricsRefreshToken,5,'legacy structural/install invalidation must still refresh metrics');cases++
   args.hasDatabasePageSnapshot=false;ctl=render();ctl.scheduleDatabaseDerivedStateRefresh(0,['favorite']);drain();ctl=render()
