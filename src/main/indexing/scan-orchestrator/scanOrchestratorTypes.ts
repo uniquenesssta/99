@@ -99,6 +99,7 @@ export interface ActiveFontScanStatus {
 export interface ScanOrchestratorRuntime {
   scanFolders: (folders: string[], knownFonts?: FontItem[], options?: { jobId?: string; signal?: AbortSignal }) => Promise<ScanResult>
   scanFoldersManaged: (folders: string[], knownFonts?: FontItem[]) => Promise<ScanResult>
+  scanFoldersWhenIdle: (folders: string[]) => Promise<ScanResult>
   cancelActiveFontScan: (reason?: string) => { cancelled: boolean; jobId?: string; message: string }
   activeFontScanStatus: () => ActiveFontScanStatus
   isActive: () => boolean

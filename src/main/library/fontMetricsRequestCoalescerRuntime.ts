@@ -9,7 +9,7 @@ export type FontMetricsRequestCoalescerRuntime = {
     load: () => Promise<FontMetricsResult>
     key?: string
   }) => Promise<FontMetricsResult>
-  clear: () => void
+  clear: (cancelInFlight?: boolean) => void
 }
 
 type MetricsCacheEntry = {
@@ -104,10 +104,10 @@ export function createFontMetricsRequestCoalescerRuntime(
     }
   }
 
-  function clear(): void {
+  function clear(cancelInFlight = true): void {
     cacheGeneration += 1
     cachedByKey.clear()
-    for (const task of inFlightByKey.values()) task.controller.abort()
+    if (cancelInFlight) for (const task of inFlightByKey.values()) task.controller.abort()
     latestCacheEntry = null
   }
 

@@ -205,7 +205,8 @@
     "diagnostics:recovery-snapshot-lifetime": "node build/diagnostics/check-recovery-snapshot-lifetime.cjs",
     "diagnostics:preview-provenance": "node build/diagnostics/check-preview-provenance.cjs",
     "diagnostics:full-refresh-acceptance": "node build/diagnostics/check-full-refresh-acceptance.cjs",
-    "diagnostics:recovery-preview-pixels": "node build/diagnostics/check-recovery-preview-pixels.cjs"
+    "diagnostics:recovery-preview-pixels": "node build/diagnostics/check-recovery-preview-pixels.cjs",
+    "diagnostics:cache-recovery-composition": "node --experimental-sqlite build/diagnostics/check-cache-recovery-composition.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

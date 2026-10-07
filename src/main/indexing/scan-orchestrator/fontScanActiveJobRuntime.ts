@@ -1,3 +1,4 @@
+import { isApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import type { FontItem,ScanResult } from '../../../shared/types'
 import { normalizeWatchedFontFolders } from '../../path/fontPathPolicy'
 import { isOperationCancelledError } from '../../performance/ioQueue'
@@ -29,6 +30,7 @@ export function createFontScanActiveJobRuntime(
   scanFolders: (folders: string[], knownFonts?: FontItem[], options?: { jobId?: string; signal?: AbortSignal }) => Promise<ScanResult>,
 ): {
   scanFoldersManaged: (folders: string[], knownFonts?: FontItem[]) => Promise<ScanResult>
+  scanFoldersWhenIdle: (folders: string[]) => Promise<ScanResult>
   cancelActiveFontScan: (reason?: string) => { cancelled: boolean; jobId?: string; message: string }
   activeFontScanStatus: () => ActiveFontScanStatus
   isActive: () => boolean
@@ -132,8 +134,17 @@ export function createFontScanActiveJobRuntime(
     })
   }
 
+  async function scanFoldersWhenIdle(folders: string[]): Promise<ScanResult> {
+    const foregroundRevision = latestManagedRequestId
+    await managedScanTail
+    // A newer user request wins. Do not cancel it or revive a cancelled repair.
+    if (isApplicationClosing() || foregroundRevision !== latestManagedRequestId || activeFontScanJob) return cancelledScanResult(folders)
+    return scanFoldersManaged(folders, [])
+  }
+
   return {
     scanFoldersManaged,
+    scanFoldersWhenIdle,
     cancelActiveFontScan,
     activeFontScanStatus,
     isActive: () => Boolean(activeFontScanJob),

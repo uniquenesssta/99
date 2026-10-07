@@ -9,8 +9,20 @@ export async function writeRootScanCacheContexts(
   deps: ScanOrchestratorDeps,
   directoryCacheRuntime: Pick<RootDirectoryCacheRuntime, 'saveRootDirectorySignatures'>,
   rootCacheContexts: Iterable<RootScanCacheContext>,
+  errors: Array<{ path: string; message: string }> = [],
 ): Promise<void> {
   for (const context of rootCacheContexts) {
+    if (context.cache.rebuildRequired) {
+      // Any incomplete recovery scan retains the prior database and pointer.
+      if (errors.length) {
+        deps.appendStartupLog(`root index recovery publication deferred: root=${context.rootPath}, errors=${errors.length}`)
+        continue
+      }
+      const entries = Object.fromEntries([...context.seenKeys].flatMap(key => context.nextEntries[key] ? [[key, context.nextEntries[key]]] : []))
+      if (Object.keys(entries).length !== context.seenKeys.size) throw new Error('恢复索引条目不完整，已保留旧索引。')
+      await deps.saveScanCacheFile(context.cachePath, { version: deps.fontScanCacheVersion, entries }, context.rootPath, context.storage)
+      continue
+    }
     const changedEntries: Array<[string, FontScanCacheEntry]> = []
     const deletedKeys: string[] = []
 

@@ -25,8 +25,8 @@ export function refreshDatabaseDerivedStateRuntime(options: {
     options.clearTimeout(options.timerRef.current)
     options.timerRef.current = null
   }
-  options.setDatabasePageResult(null)
-  options.setDatabaseQueryResult(null)
+  // Keep the same-scope authoritative page while revalidating. Scope keys and
+  // request sequences still reject a page from a different view or older request.
   // Keep the last authoritative counts while requests are invalidated and revalidated.
   options.setDatabaseRefreshToken((value) => value + 1)
 }

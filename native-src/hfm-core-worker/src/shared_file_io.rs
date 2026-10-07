@@ -307,7 +307,14 @@ pub fn run(input_path: &str) -> Result<String,String> {
             let kind = if root_unavailable { io::ErrorKind::Other } else { error.kind() };
             let cross_device = error.raw_os_error() == Some(if cfg!(windows) {17} else {18});
             let network_error = error.raw_os_error().is_some_and(|code| if cfg!(windows) { [53,64,67,121,1231,1232,1236,2250].contains(&code) } else { [101,104,107,110,113].contains(&code) });
-            let code = if root_unavailable || network_error {"ENETUNREACH"} else if cross_device {"EXDEV"} else { match kind { io::ErrorKind::NotFound=>"ENOENT",io::ErrorKind::AlreadyExists=>"EEXIST",io::ErrorKind::PermissionDenied=>"EACCES",io::ErrorKind::NotADirectory=>"ENOTDIR",io::ErrorKind::IsADirectory=>"EISDIR",_=>"EIO" } };
+            let sqlite_code = error.get_ref().and_then(|error| error.downcast_ref::<rusqlite::Error>()).and_then(|error| match error {
+                rusqlite::Error::SqliteFailure(code, _) => match code.code {
+                    rusqlite::ErrorCode::DatabaseCorrupt => Some("SQLITE_CORRUPT"),
+                    rusqlite::ErrorCode::NotADatabase => Some("SQLITE_NOTADB"),
+                    _ => None,
+                }, _ => None,
+            });
+            let code = if let Some(code) = sqlite_code { code } else if root_unavailable || network_error {"ENETUNREACH"} else if cross_device {"EXDEV"} else { match kind { io::ErrorKind::NotFound=>"ENOENT",io::ErrorKind::AlreadyExists=>"EEXIST",io::ErrorKind::PermissionDenied=>"EACCES",io::ErrorKind::NotADirectory=>"ENOTDIR",io::ErrorKind::IsADirectory=>"EISDIR",_=>"EIO" } };
             json!({"ok":false,"operation":request.operation,"code":code,"message":error.to_string()})
         },
     };

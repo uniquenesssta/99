@@ -20,7 +20,7 @@ export async function deleteFontFilesToTrashRuntime(
   let skippedUnsafe = 0;
 
   for (const item of items || []) {
-    if (!item?.id || !item.path) {
+    if (!item?.id || !item.path || item.recoveryPlaceholder === true || item.id.startsWith('missing:')) {
       skippedUnsafe += 1;
       continue;
     }

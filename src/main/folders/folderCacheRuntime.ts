@@ -1,3 +1,4 @@
+import { assertFontQueryActive, fontQuerySuperseded } from '../library/fontQueryTaskRuntime'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import { rethrowSharedIoProcessError } from '../path/sharedIoProcessRuntime'
 import { resolve } from "node:path";
@@ -14,6 +15,7 @@ import { sharedFontsFoldersKey } from "./sharedFontsFoldersKeyRuntime";
 
 export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
   let sharedFontsMemoryCache: SharedFontsMemoryCache | null = null;
+  let sharedFontsGeneration = 0;
   const { readExistingScanCacheFile } = createFolderCacheJsonRuntime(deps);
   const sharedIndexTrustRuntime = createSharedIndexTrustRuntime({
     fontScanCacheVersion: deps.fontScanCacheVersion,
@@ -47,20 +49,8 @@ export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
       deps.appendStartupLog(
         `folder cache candidate skipped: storage=${storage}, path=${cachePath}, ${deps.recoveryMessage(error)}`,
       );
-      if (storage === "fallback") {
-        await deps
-          .quarantineSqliteFiles(
-            cachePath,
-            `fallback-root-index-${deps.sha1(rootPath).slice(0, 10)}`,
-            deps.recoveryMessage(error),
-            deps.fallbackCacheRootDir(rootPath),
-          )
-          .catch((quarantineError) => {
-            deps.appendStartupLog(
-              `fallback root index quarantine skipped: ${deps.recoveryMessage(quarantineError)}`,
-            );
-          });
-      }
+      // A failed read is not permission to remove a database (busy/offline and
+      // cancellation are not corruption). The writer owns validated replacement.
       return null;
     }
   }
@@ -243,11 +233,14 @@ export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
   }
 
   function invalidateSharedFontRuntimeCaches(): void {
+    sharedFontsGeneration += 1;
     sharedFontsMemoryCache = null;
     deps.clearExternalFontQueryCaches();
   }
 
   async function loadSharedFontsForFoldersUncached(folders: string[]): Promise<FontItem[]> {
+    assertFontQueryActive();
+    const incomplete: string[] = [];
     const fonts: FontItem[] = [];
     const seen = new Set<string>();
     const availableFoldersResult = await filterFolderCacheAvailableRoots(
@@ -255,10 +248,11 @@ export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
       deps.appendStartupLog,
       "shared-font-cache-load",
     );
+    incomplete.push(...availableFoldersResult.skippedFolders);
     for (const folder of availableFoldersResult.folders) {
       try {
         const cacheSource = await loadExistingFolderCache(folder);
-        if (!cacheSource) continue;
+        if (!cacheSource) { incomplete.push(folder); continue; }
         for (const [cacheKey, entry] of Object.entries(cacheSource.cache.entries || {})) {
           if (entry.status !== "ok" || !entry.font) continue;
           const runtimePath = deps.cacheEntryRuntimePath(folder, entry.path || cacheKey);
@@ -279,11 +273,16 @@ export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
           fonts.push(font);
         }
       } catch (error) {
+        assertFontQueryActive();
+        rethrowSharedIoProcessError(error);
+        incomplete.push(folder);
         deps.appendStartupLog(
           `shared font load skipped: ${folder} ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
+    assertFontQueryActive();
+    if (incomplete.length) throw new Error(`字体索引尚未完整读取，保留上次结果：${incomplete.join('、')}`);
     return fonts;
   }
 
@@ -302,8 +301,11 @@ export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
     ) {
       return sharedFontsMemoryCache.fonts;
     }
+    const generation = sharedFontsGeneration;
     const fonts = await loadSharedFontsForFoldersUncached(folders);
-    sharedFontsMemoryCache = { foldersKey, loadedAt: now, fonts };
+    assertFontQueryActive();
+    if (generation !== sharedFontsGeneration) return fontQuerySuperseded();
+    sharedFontsMemoryCache = { foldersKey, loadedAt: Date.now(), fonts };
     return fonts;
   }
 
@@ -319,24 +321,30 @@ export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
     }
 
     let total = 0;
+    let incomplete = false;
     const availableFoldersResult = await filterFolderCacheAvailableRoots(
       folders,
       deps.appendStartupLog,
       "shared-font-cache-count",
     );
+    incomplete = availableFoldersResult.skippedFolders.length > 0;
     for (const folder of availableFoldersResult.folders) {
       try {
         const cacheSource = await loadExistingFolderCache(folder, { applySharedMetadataOverlay: false });
-        if (!cacheSource) continue;
+        if (!cacheSource) { incomplete = true; continue; }
         total += Object.values(cacheSource.cache.entries || {}).filter(
           (entry) => entry.status === "ok" && !!entry.font,
         ).length;
       } catch (error) {
+        assertFontQueryActive();
+        rethrowSharedIoProcessError(error);
+        incomplete = true;
         deps.appendStartupLog(
           `shared font count skipped: ${folder} ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
+    if (incomplete) throw new Error('字体根索引尚未完整读取，不能用部分数量替代上次统计。');
     return total;
   }
 

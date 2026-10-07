@@ -1,3 +1,4 @@
+import type { MergedIndexSourceInfo } from '../mergedIndexRuntime';
 import { withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime';
 import { runtimeFontIdFromEntry } from '../../fonts/fontFileIdentity';
 import type { FontItem, FontIndexChangePayload } from "../../../shared/types";
@@ -156,6 +157,21 @@ export function createMergedIndexValidationRuntime(
               if (wanted.has(id)) targets.set(id, [...(targets.get(id) || []), row]);
             } catch { invalidRows++; }
           }
+          const sourceRows = db.prepare('SELECT * FROM sources').all() as Array<{
+            root_path: string; index_db_path: string; install_db_path?: string; index_signature: string;
+            install_signature: string; shared_metadata_signature: string;
+          }>;
+          const sources: MergedIndexSourceInfo[] = sourceRows.map(row => ({ root: row.root_path,
+            indexDbPath: row.index_db_path, installDbPath: row.install_db_path || undefined,
+            indexSignature: row.index_signature, installSignature: row.install_signature,
+            sharedMetadataSignature: row.shared_metadata_signature }));
+          const previousSourcesKey = ctx.mergedIndexSourcesKey(sources);
+          const signatures = new Map<string, string>();
+          for (const source of sources) {
+            const path = source.installDbPath || '';
+            if (!signatures.has(path)) signatures.set(path, await ctx.installStatusContentSignature(source.installDbPath));
+          }
+          const nextSources = sources.map(source => ({ ...source, installSignature: signatures.get(source.installDbPath || '')! }));
           const update = db.prepare(`UPDATE entries SET installed = ?, installed_by = ?, matches_json = ?
             WHERE root_path=? AND relative_path=? AND file_size=? AND modified_at=?
               AND (installed IS NOT ? OR installed_by IS NOT ? OR matches_json IS NOT ?)`);
@@ -170,6 +186,14 @@ export function createMergedIndexValidationRuntime(
               const matches = item.installStatusKnown === true ? JSON.stringify(item.systemInstallMatches || []) : null;
               for (const row of targets.get(item.id) || []) changed += Number(update.run(installed, knownBy, matches,
                 row.root_path, row.relative_path, row.file_size, row.modified_at, installed, knownBy, matches).changes || 0);
+            }
+            // Acknowledge exactly the install source projected by this writer.
+            // Never bless an unrelated pending root/metadata change.
+            if (sources.length && ctx.getSqliteMeta(db, 'sourcesKey') === previousSourcesKey) {
+              const now = new Date().toISOString();
+              for (const source of nextSources) ctx.writeMergedIndexSourceRow(db, source, now);
+              ctx.setSqliteMeta(db, 'sourcesKey', ctx.mergedIndexSourcesKey(nextSources));
+              ctx.setSqliteMeta(db, 'updatedAt', now);
             }
             db.exec('COMMIT');
             if (changed) commit('local-install-status');

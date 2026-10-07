@@ -111,6 +111,7 @@ export function createFontMoveTransactionRuntime(deps: FontMoveTransactionDeps) 
   }
 
   const prepareMoveFont = async (item: FontItem, target: ValidatedMoveTarget): Promise<PreparedMoveFont | MoveFontFileResult> => {
+    if (item.recoveryPlaceholder === true || item.id.startsWith('missing:')) return moveFailure(item, '历史字体记录需要先重新链接，不能直接移动源文件。')
     const sourcePath = await deps.resolveExistingFontFilePath(item.path)
     if (!sourcePath) return moveFailure(item, '字体文件不存在或路径已失效，无法物理移动。')
 

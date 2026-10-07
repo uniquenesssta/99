@@ -1,3 +1,6 @@
+import { throwIfAborted } from '../../performance/ioQueue'
+import { currentSharedIoSignal } from '../../path/sharedFileSystemRuntime'
+import { randomUUID } from 'node:crypto'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { basename,dirname,extname,isAbsolute,join,relative,resolve } from 'node:path'
 import { ROOT_CACHE_MANIFEST_FILE_NAME,ROOT_INDEX_DB_DIR_NAME } from '../../cache/constants'
@@ -12,35 +15,15 @@ export function rootCacheIdentityPath(cacheDir: string): string {
 }
 
 export async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
-  const json = JSON.stringify(value)
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
-  async function writeTemp(): Promise<void> {
-    await fsp.mkdir(dirname(tempPath), { recursive: true })
-    await fsp.writeFile(tempPath, json, 'utf-8')
-  }
-  async function renameTemp(): Promise<void> {
-    try {
-      await fsp.rename(tempPath, filePath)
-    } catch (error: any) {
-      if (error?.code === 'EEXIST' || error?.code === 'EPERM' || error?.code === 'EACCES') {
-        await fsp.rm(filePath, { force: true }).catch(() => undefined)
-        await fsp.rename(tempPath, filePath)
-        return
-      }
-      throw error
-    }
-  }
-
-  await writeTemp()
+  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`
+  await fsp.mkdir(dirname(tempPath), { recursive: true })
   try {
-    await renameTemp()
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') {
-      await fsp.rm(tempPath, { force: true }).catch(() => undefined)
-      await writeTemp()
-      await renameTemp()
-      return
-    }
+    await fsp.writeFile(tempPath, JSON.stringify(value), { encoding: 'utf-8', flag: 'wx' })
+    // Windows sharing/permission failures must retain the last-good pointer.
+    // Never unlink it as a workaround for a failed replacement rename.
+    throwIfAborted(currentSharedIoSignal())
+    await fsp.rename(tempPath, filePath)
+  } catch (error) {
     await fsp.rm(tempPath, { force: true }).catch(() => undefined)
     throw error
   }

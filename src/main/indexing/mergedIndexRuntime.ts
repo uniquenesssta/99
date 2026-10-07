@@ -1,7 +1,9 @@
+import { assertOwnedSqliteTables, assertSupportedSqliteVersion, DerivedSqliteIncompatibleError } from '../db/sqliteRecoveryPolicy';
+import { createMergedIndexRecoveryRuntime } from './mergedIndexRecoveryRuntime';
 import { registerFileIdentitySql } from '../fonts/fontFileIdentity'
 import { createHash } from "node:crypto";
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { FontIndexChangePayload } from "../../shared/types";
 import { normalizePathForCacheCompare } from "../path/cachePath";
 import { inferMergedIndexCategoryFromJson } from "./merged-page/mergedIndexCategoryRuntime";
@@ -39,9 +41,12 @@ type MergedIndexRuntimeDeps = {
 };
 
 export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
-  function mergedIndexDbPath(): string {
-    return deps.dataPath("db", "merged-index.sqlite");
-  }
+  const recovery = createMergedIndexRecoveryRuntime({
+    defaultPath: deps.dataPath('db', 'merged-index.sqlite'),
+    open: path => { const db = deps.openStableSqliteDb(path, 'merged-index'); registerMergedIndexSqlFunctions(db); return db },
+    initialize: initializeMergedIndexDb, close: deps.closeSqliteDb, log: deps.appendStartupLog,
+  });
+  function mergedIndexDbPath(): string { return recovery.path(); }
 
   function sharedFontId(
     cacheIdentity: unknown,
@@ -135,8 +140,6 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
     const db = deps.openStableSqliteDb(installDbPath, "install-signature");
     try {
       if (!deps.sqliteTableExists(db, "install_status")) return "missing-table";
-      const checkedAt = deps.getSqliteMeta(db, "installedTotalCheckedAt");
-      const total = deps.getSqliteMeta(db, "installedTotalCount");
       const row = db
         .prepare(
           `
@@ -152,8 +155,6 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
         | undefined;
       return [
         "install-content-v1",
-        checkedAt || "",
-        total || "",
         Number(row?.count || 0),
         Number(row?.installed_count || 0),
         Number((row as any)?.active_count || 0),
@@ -204,6 +205,12 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
   }
 
   function initializeMergedIndexDb(db: any): void {
+    assertOwnedSqliteTables(db, ['meta', 'sources', 'entries'], 'merged-index');
+    assertSupportedSqliteVersion(db, ['schemaVersion', 'schema_version'], deps.schemaVersion, 'merged-index');
+    const priorTables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('meta','sources','entries')").all() as Array<{name: string}>;
+    if (priorTables.length && (!priorTables.some(row => row.name === 'sources') || !priorTables.some(row => row.name === 'entries'))) {
+      throw new DerivedSqliteIncompatibleError('已存在合并索引缺少必要数据表，需要完整重建。');
+    }
     let invalidated = false;
     const previousSchemaVersion =
       deps.getSqliteMeta(db, "schemaVersion") ||
@@ -239,21 +246,13 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
       deps.sqliteTableExists(db, "sources") &&
       !hasColumns(db, "sources", requiredSourceColumns)
     ) {
-      db.exec("DROP TABLE IF EXISTS sources;");
-      invalidated = true;
-      deps.appendStartupLog(
-        "sqlite schema self-heal: reset merged-index.sources due to incompatible columns",
-      );
+      throw new DerivedSqliteIncompatibleError('合并索引 sources 结构需要从根索引重建。');
     }
     if (
       deps.sqliteTableExists(db, "entries") &&
       !hasColumns(db, "entries", requiredEntryColumns)
     ) {
-      db.exec("DROP TABLE IF EXISTS entries;");
-      invalidated = true;
-      deps.appendStartupLog(
-        "sqlite schema self-heal: reset merged-index.entries due to incompatible columns",
-      );
+      throw new DerivedSqliteIncompatibleError('合并索引 entries 结构需要从根索引重建。');
     }
 
     db.exec(`
@@ -436,13 +435,7 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
     );
   }
 
-  async function openMergedIndexDb(): Promise<any> {
-    await fsp.mkdir(dirname(mergedIndexDbPath()), { recursive: true });
-    const db = deps.openStableSqliteDb(mergedIndexDbPath(), "merged-index");
-    registerMergedIndexSqlFunctions(db);
-    initializeMergedIndexDb(db);
-    return db;
-  }
+  async function openMergedIndexDb(): Promise<any> { return recovery.open(); }
 
   function mergedIndexSourcesKey(sources: MergedIndexSourceInfo[]): string {
     return JSON.stringify(
@@ -656,6 +649,7 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
 
   return {
     mergedIndexDbPath,
+    setMergedIndexRecoveryBuilder: recovery.setRebuild,
     fileStatSignature,
     rootIndexContentSignature,
     installStatusContentSignature,

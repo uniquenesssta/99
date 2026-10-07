@@ -14,12 +14,13 @@ export function createMergedIndexBuildRuntime(
     db: SqliteDb,
     sources: MergedIndexSourceInfo[],
     sourcesKey: string,
+    targetPath = ctx.mergedIndexDbPath(),
   ): Promise<void> {
     const startedAt = Date.now();
     const now = new Date().toISOString();
     try {
       const rustResult = await ctx.rustCoreWorkerRuntime.runRustMergedIndexRebuild({
-        mergedIndexDbPath: ctx.mergedIndexDbPath(),
+        mergedIndexDbPath: targetPath,
         schemaVersion: ctx.schemaVersion,
         sourcesKey,
         syncedAt: now,

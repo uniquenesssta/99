@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use rusqlite::{params, Connection};
 
 pub fn initialize_preview_cache_db(conn: &Connection, schema_version: i64) -> rusqlite::Result<()> {
+    crate::sqlite_schema::assert_supported_version(conn, &["schemaVersion"], schema_version)?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS meta (
            key TEXT PRIMARY KEY,
@@ -38,6 +39,7 @@ pub fn initialize_preview_cache_db(conn: &Connection, schema_version: i64) -> ru
          CREATE INDEX IF NOT EXISTS idx_preview_cache_accessed ON preview_cache(accessed_at);
          CREATE INDEX IF NOT EXISTS idx_preview_cache_storage ON preview_cache(storage);",
     )?;
+    conn.execute("UPDATE preview_cache SET updated_at=COALESCE(generated_at, accessed_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE updated_at=''", [])?;
     set_meta(conn, "schemaVersion", &schema_version.to_string())?;
     Ok(())
 }
@@ -56,7 +58,7 @@ fn ensure_preview_cache_columns(conn: &Connection) -> rusqlite::Result<()> {
     add_column(conn, &mut names, "fail_count", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, &mut names, "generated_at", "TEXT")?;
     add_column(conn, &mut names, "accessed_at", "TEXT")?;
-    add_column(conn, &mut names, "updated_at", "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")?;
+    add_column(conn, &mut names, "updated_at", "TEXT NOT NULL DEFAULT ''")?;
     Ok(())
 }
 
@@ -99,4 +101,21 @@ pub fn open_preview_cache_query(path: &str, version: i64, read_only: bool) -> Re
         .map_err(|error| format!("preview-cache-incompatible: {}", error))?;
     if schema != version.to_string() { return Err("preview-cache-incompatible: schemaVersion".to_string()); }
     Ok(conn)
+}
+
+#[cfg(test)]
+mod legacy_schema {
+    use super::*;
+    #[test]
+    fn populated_preview_adds_constant_default_before_indexes() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE preview_cache(preview_key TEXT PRIMARY KEY,relative_path TEXT,output_path TEXT,font_signature TEXT,text_hash TEXT,font_size INTEGER,width INTEGER,height INTEGER,storage TEXT,status TEXT);
+          INSERT INTO preview_cache VALUES('old','font.ttf','keep.png','sig','text',12,100,30,'root','ok');").unwrap();
+        initialize_preview_cache_db(&conn, 1).unwrap();
+        initialize_preview_cache_db(&conn, 1).unwrap();
+        let (output, timestamp): (String, String) = conn.query_row("SELECT output_path,updated_at FROM preview_cache", [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        assert_eq!(output, "keep.png"); assert!(!timestamp.is_empty());
+        conn.execute("UPDATE meta SET value='999' WHERE key='schemaVersion'", []).unwrap();
+        assert!(initialize_preview_cache_db(&conn, 1).is_err());
+    }
 }

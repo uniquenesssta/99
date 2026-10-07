@@ -1,3 +1,4 @@
+import { withSharedIoSignal } from '../path/sharedFileSystemRuntime'
 import type { FontItem,ScanResult } from '../../shared/types'
 import { fileCacheSignature } from '../cache/cachePaths'
 import { normalizePathForCacheCompare } from '../path/cachePath'
@@ -59,7 +60,11 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
       jobId,
       batchSizes: [10, 50, 100, 200],
       signal,
-      sendFontIndexChanged: deps.sendFontIndexChanged,
+      sendFontIndexChanged: payload => {
+        // Recovery candidates are invisible until the full snapshot commits.
+        const context = rootCacheContexts.get(normalizePathForCacheCompare(payload.folder));
+        if (!context?.cache.rebuildRequired) deps.sendFontIndexChanged?.(payload);
+      },
       appendStartupLog: deps.appendStartupLog,
     })
     const earlyVisibleRuntime = createFontScanEarlyVisibleRuntime({
@@ -433,7 +438,9 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
           }, true)
 
           throwIfAborted(signal)
-          await writeRootScanCacheContexts(deps, directoryCacheRuntime, writableRootCacheContexts())
+          const persist = () => writeRootScanCacheContexts(deps, directoryCacheRuntime, writableRootCacheContexts(), errors)
+          if (signal) await withSharedIoSignal(signal, persist)
+          else await persist()
 
           const durationMs = Date.now() - startedAt
           reportProgress({

@@ -1,3 +1,4 @@
+import { assertSupportedSqliteVersion } from '../db/sqliteRecoveryPolicy'
 export type PreviewCacheIndexStatus = 'ok' | 'missing' | 'failed' | 'pending' | 'generating' | 'stale'
 
 export type PreviewCacheRow = {
@@ -28,6 +29,8 @@ export type InitializePreviewDbDeps = {
 }
 
 export function initializePreviewDbSchema(db: any, deps: InitializePreviewDbDeps): void {
+  assertSupportedSqliteVersion(db, ['schemaVersion'], deps.schemaVersion, 'preview')
+  const migrate = db.transaction(() => {
   db.exec(`
     CREATE TABLE IF NOT EXISTS meta (
       key TEXT PRIMARY KEY,
@@ -53,12 +56,6 @@ export function initializePreviewDbSchema(db: any, deps: InitializePreviewDbDeps
       accessed_at TEXT,
       updated_at TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_preview_cache_relative_path ON preview_cache(relative_path);
-    CREATE INDEX IF NOT EXISTS idx_preview_cache_source_path ON preview_cache(source_path);
-    CREATE INDEX IF NOT EXISTS idx_preview_cache_root_path ON preview_cache(root_path);
-    CREATE INDEX IF NOT EXISTS idx_preview_cache_status ON preview_cache(status);
-    CREATE INDEX IF NOT EXISTS idx_preview_cache_accessed ON preview_cache(accessed_at);
-    CREATE INDEX IF NOT EXISTS idx_preview_cache_storage ON preview_cache(storage);
   `)
   deps.ensureSqliteColumn(db, 'preview_cache', 'font_id', 'TEXT')
   deps.ensureSqliteColumn(db, 'preview_cache', 'source_path', 'TEXT')
@@ -67,9 +64,19 @@ export function initializePreviewDbSchema(db: any, deps: InitializePreviewDbDeps
   deps.ensureSqliteColumn(db, 'preview_cache', 'fail_count', 'INTEGER NOT NULL DEFAULT 0')
   deps.ensureSqliteColumn(db, 'preview_cache', 'generated_at', 'TEXT')
   deps.ensureSqliteColumn(db, 'preview_cache', 'accessed_at', 'TEXT')
-  deps.ensureSqliteColumn(db, 'preview_cache', 'updated_at', 'TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP')
+  deps.ensureSqliteColumn(db, 'preview_cache', 'updated_at', "TEXT NOT NULL DEFAULT ''")
+  db.exec(`    CREATE INDEX IF NOT EXISTS idx_preview_cache_relative_path ON preview_cache(relative_path);
+    CREATE INDEX IF NOT EXISTS idx_preview_cache_source_path ON preview_cache(source_path);
+    CREATE INDEX IF NOT EXISTS idx_preview_cache_root_path ON preview_cache(root_path);
+    CREATE INDEX IF NOT EXISTS idx_preview_cache_status ON preview_cache(status);
+    CREATE INDEX IF NOT EXISTS idx_preview_cache_accessed ON preview_cache(accessed_at);
+    CREATE INDEX IF NOT EXISTS idx_preview_cache_storage ON preview_cache(storage);
+`)
+  db.prepare("UPDATE preview_cache SET updated_at=COALESCE(generated_at, accessed_at, ?) WHERE updated_at=''").run(new Date().toISOString())
   deps.setSqliteMeta(db, 'schemaVersion', String(deps.schemaVersion))
   deps.setSqliteMeta(db, 'updatedAt', new Date().toISOString())
+  })
+  migrate()
 }
 
 export function normalizePreviewCacheIndexStatus(value: unknown): PreviewCacheIndexStatus | null {

@@ -360,6 +360,10 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           options.setStatus(SHARED_UNAVAILABLE_MESSAGE)
           return
         }
+        if (options.databasePageResult && databaseQueryScopeKey(options.databasePageResult.queryKey) === databaseQueryScope) {
+          options.setStatus(`字体索引暂时不可用，保留上次结果：${String(error)}`)
+          return
+        }
         options.setDatabasePageResult(null)
         options.setDatabaseQueryResult(null)
         options.setDatabaseQueryFailedKey(databaseQueryKey)

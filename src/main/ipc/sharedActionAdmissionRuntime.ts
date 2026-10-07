@@ -2,12 +2,19 @@ import { ensureStartupPathRootAvailable, getStartupPathRootState } from '../path
 import { pathRoots, sharedPathBlocked, sharedTagBlocked, SHARED_UNAVAILABLE_MESSAGE, type SharedAvailability } from '../../shared/sharedAvailability'
 
 const itemChannels = new Set(['fonts:installSystem', 'fonts:installCurrentUser', 'fonts:activateFont', 'fonts:activateFonts', 'fonts:deleteFiles', 'fonts:moveFileToFolder', 'fonts:moveFilesToFolder', 'fonts:readPreviewFontData', 'fonts:renderPreviewImage', 'fonts:ensurePreviewCache'])
+const physicalFontChannels = new Set([...itemChannels, 'fonts:uninstallSystem', 'fonts:uninstallManaged', 'fonts:deactivateFont', 'fonts:deactivateFonts'])
 const pathChannels = new Set(['folders:createPhysical', 'folders:renamePhysical', 'folders:refreshWatched', 'shell:showItemInFolder'])
 const listChannels = new Set(['fonts:scanFolders', 'fonts:loadFolderCache', 'folders:listPhysicalTree'])
 const queryChannels = new Set(['fonts:query', 'fonts:queryPage'])
 const sharedChannels = new Set(['fonts:setSharedTags', 'fonts:setSharedTagsBatch', 'fonts:renameSharedTag', 'fonts:deleteSharedTag'])
 export function createSharedActionAdmission(read: (() => Promise<SharedAvailability>) | undefined) {
   return async (channel: string, args: any[]): Promise<void> => {
+    if (physicalFontChannels.has(channel)) {
+      const items = Array.isArray(args[0]) ? args[0] : [args[0]]
+      if (items.some(item => item?.recoveryPlaceholder === true || String(item?.id || '').startsWith('missing:'))) {
+        throw new Error('历史字体记录仅供显示和重新链接，请先确认源文件。')
+      }
+    }
     if (!itemChannels.has(channel) && !pathChannels.has(channel) && !listChannels.has(channel) && !sharedChannels.has(channel) && !queryChannels.has(channel) && channel !== 'library:save') return
     if (!read) throw new Error(SHARED_UNAVAILABLE_MESSAGE)
     const current = await read()

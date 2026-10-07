@@ -105,7 +105,8 @@ export function createManualWatchedFolderRefreshRuntime(
         mergedIndexRefreshPayload = refreshed.payload;
       }
 
-      if (mode === "repair-rebuild" && !cancelled) {
+      if (mode === "repair-rebuild" && (cancelled || errors)) mergedIndexRefreshPayload = null;
+      if (mode === "repair-rebuild" && !cancelled && !errors) {
         await syncMergedIndexForRootSnapshot(
           bestRoot,
           `manual-folder-refresh-repair:${bestRoot}`,

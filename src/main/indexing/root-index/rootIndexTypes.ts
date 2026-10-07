@@ -17,6 +17,8 @@ export interface FontScanCacheEntry {
 }
 
 export interface FontScanCacheFile {
+  /** In-memory only: full successful enumeration is required before replacement. */
+  rebuildRequired?: boolean
   version: number
   entries: Record<string, FontScanCacheEntry>
 }

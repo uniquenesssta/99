@@ -1,3 +1,4 @@
+import { isRecoverableDerivedSqliteError } from '../../db/sqliteRecoveryPolicy'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { resolve } from 'node:path'
 import type { FontScanCacheFile } from '../../indexing/rootIndexRuntime'
@@ -23,17 +24,6 @@ export function createRootIndexStorageRuntime(
         options.appendStartupLog(
           `root index read failed: storage=${storage}, path=${cacheDbPath}, ${options.recoveryMessage(error)}`
         )
-        if (storage === 'fallback') {
-          await options.quarantineSqliteFiles(
-            cacheDbPath,
-            `fallback-root-index-${options.sha1(rootPath).slice(0, 10)}`,
-            options.recoveryMessage(error),
-            options.fallbackCacheRootDir(rootPath)
-          ).catch((quarantineError) => {
-            options.appendStartupLog(`fallback root index quarantine skipped: ${options.recoveryMessage(quarantineError)}`)
-          })
-          return { version: options.fontScanCacheVersion, entries: {} }
-        }
         throw error
       }
     }
@@ -68,8 +58,17 @@ export function createRootIndexStorageRuntime(
     await deps.hideDirectoryOnWindows(rootDir)
     await options.ensureRootArchitectureDatabases(resolvedRoot)
     const activeRootDbPath = await options.resolveActiveRootIndexDbPath(rootDir, rootDefaultDbPath)
-    const cache = await options.readRootIndexSqliteFile(activeRootDbPath, resolvedRoot, 'root')
-    if (await options.exists(activeRootDbPath).catch(() => false)) {
+    let cache: FontScanCacheFile
+    try {
+      cache = await options.readRootIndexSqliteFile(activeRootDbPath, resolvedRoot, 'root')
+      if (!await options.exists(activeRootDbPath)) cache = { ...cache, rebuildRequired: true }
+      if (cache.rebuildRequired) cache = { version: options.fontScanCacheVersion, entries: {}, rebuildRequired: true }
+    } catch (error) {
+      if (!isRecoverableDerivedSqliteError(error)) throw error
+      options.appendStartupLog(`root index rebuild required; original retained: ${activeRootDbPath}, ${options.recoveryMessage(error)}`)
+      cache = { version: options.fontScanCacheVersion, entries: {}, rebuildRequired: true }
+    }
+    if (!cache.rebuildRequired && await options.exists(activeRootDbPath).catch(() => false)) {
       await options.writeRootCacheManifest(rootDir, resolvedRoot, 'root', Object.keys(cache.entries || {}).length, activeRootDbPath).catch((error) => {
         options.appendStartupLog(`root index manifest recovery pending: root=${resolvedRoot}, db=${activeRootDbPath}, ${options.recoveryMessage(error)}`)
       })

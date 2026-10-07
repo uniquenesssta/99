@@ -1,3 +1,4 @@
+import { assertOwnedSqliteTables, assertSupportedSqliteVersion, DerivedSqliteIncompatibleError } from '../../db/sqliteRecoveryPolicy'
 import { registerFileIdentitySql } from '../../fonts/fontFileIdentity'
 import { sharedSqliteReadSnapshot } from '../../path/sharedFileSystemRuntime'
 import { resolveRootIndexAccessKind } from './rootIndexAccessRuntime'
@@ -10,6 +11,13 @@ import type { FontScanCacheEntry, FontScanCacheFile, RootIndexRuntimeDeps, RootI
 
 export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
   function initializeRootIndexDb(db: any, rootPath: string, storage: RootIndexStorage, touchMeta = true): void {
+    assertSupportedSqliteVersion(db, ['schema_version', 'schemaVersion'], ROOT_INDEX_DB_SCHEMA_VERSION, 'root-index')
+    assertSupportedSqliteVersion(db, ['index_version', 'cacheVersion'], deps.fontScanCacheVersion, 'root-index-cache')
+    assertOwnedSqliteTables(db, ['meta', 'entries', 'directories', 'index_events'], 'root-index')
+    const columns = new Set((db.prepare('PRAGMA table_info(entries)').all() as Array<{name: string}>).map(row => row.name))
+    const base = ['relative_path','cache_key','file_size','modified_at','status','font_json','cached_at']
+    const existingMeta = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='meta'").get()
+    if ((columns.size || existingMeta) && !base.every(name => columns.has(name))) throw new DerivedSqliteIncompatibleError('已识别的根索引缺少必要字段，需要完整重建。')
     registerFileIdentitySql(db);
     db.exec(`
       PRAGMA journal_mode = WAL;
@@ -59,6 +67,8 @@ export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
       CREATE INDEX IF NOT EXISTS idx_directories_modified ON directories(modified_at);
     `)
 
+    sqliteEnsureColumn(db, 'entries', 'created_at', 'ALTER TABLE entries ADD COLUMN created_at REAL')
+    sqliteEnsureColumn(db, 'entries', 'message', 'ALTER TABLE entries ADD COLUMN message TEXT')
     sqliteEnsureColumn(db, 'entries', 'is_deleted', 'ALTER TABLE entries ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0')
     sqliteEnsureColumn(db, 'entries', 'deleted_at', 'ALTER TABLE entries ADD COLUMN deleted_at TEXT')
     sqliteEnsureColumn(db, 'entries', 'revision', 'ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 1')
@@ -121,9 +131,11 @@ export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
         WHERE COALESCE(is_deleted, 0) = 0 AND status <> 'deleted'
         ORDER BY relative_path
       `).all() as Array<{ relative_path: string; cache_key: string; file_size: number; modified_at: number; created_at?: number; status: string; font_json?: string; message?: string; content_hash?: string; cached_at: string }>
+      const versionRows = db.prepare("SELECT key,value FROM meta WHERE key IN ('cacheVersion','index_version','schemaVersion','schema_version')").all() as Array<{key: string; value: string}>
+      const rebuildRequired = versionRows.some(row => Number(row.value) < (row.key === 'cacheVersion' || row.key === 'index_version' ? deps.fontScanCacheVersion : ROOT_INDEX_DB_SCHEMA_VERSION))
       const entries: Record<string, FontScanCacheEntry> = {}
       for (const row of rows) entries[row.relative_path] = sqliteRowToScanEntry(row)
-      return { version: deps.fontScanCacheVersion, entries }
+      return { version: deps.fontScanCacheVersion, entries, ...(rebuildRequired ? { rebuildRequired: true } : {}) }
     } finally {
       deps.closeSqliteDb(db)
     }

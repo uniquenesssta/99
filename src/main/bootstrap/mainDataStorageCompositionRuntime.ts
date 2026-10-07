@@ -1,3 +1,4 @@
+import { resolveMergedIndexDbPath } from '../indexing/mergedIndexRecoveryRuntime';
 import { createInstallStatusWorkerReadRuntime } from '../install/status/installStatusWorkerReadRuntime'
 import { createLocalFontProtectionRuntime } from '../library/runtime/localFontProtectionRuntime';
 import { migrateInstallStatusIdentity, installIdentitySnapshotKey } from '../install/status/installStatusIdentityMigration'
@@ -304,7 +305,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     appendLog: appendStartupLog,
     invalidate: clearFontQueryCaches,
     readCompleteIndex: async (roots, force) => {
-      const path = dataPath('db', 'merged-index.sqlite');
+      const path = await resolveMergedIndexDbPath(dataPath('db', 'merged-index.sqlite'));
       if (!(await exists(path))) return null;
       const db = openStableSqliteDb(path, 'local-font-identity');
       try {
@@ -325,7 +326,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     await legacyFontIdentity.prepare(db);
     if (!installIdentityPending) return;
     try {
-      const path = dataPath('db', 'merged-index.sqlite');
+      const path = await resolveMergedIndexDbPath(dataPath('db', 'merged-index.sqlite'));
       if (!(await exists(path))) return;
       const snapshot = openStableSqliteDb(path, 'install-identity-snapshot');
       let rows: ReturnType<typeof readCompleteFontIdentityIndex>;
@@ -402,7 +403,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     invalidate: clearFontQueryCaches,
     appendLog: appendStartupLog,
     loadLegacyLocalSnapshot: async () => {
-      const path = dataPath('db', 'merged-index.sqlite');
+      const path = await resolveMergedIndexDbPath(dataPath('db', 'merged-index.sqlite'));
       if (!(await exists(path))) return [];
       const db = await openStableSqliteDb(path, 'local-favorite-migration');
       try {
@@ -702,7 +703,9 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
   }
 
   async function appWatchedFolders(): Promise<string[]> {
-    const db = await openLibraryDb();
+    // Root configuration is user state and must not depend on importing favorites
+    // from the very derived snapshot whose recovery needs these roots.
+    const db = await openLibraryDbBase();
     return normalizeWatchedFontFolders(
       (
         db

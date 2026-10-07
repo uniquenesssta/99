@@ -64,6 +64,23 @@ export function createMergedIndexPageRuntime(
 
   const sourceRuntime = createMergedIndexSourceRuntime(context);
   const buildRuntime = createMergedIndexBuildRuntime(context);
+  mergedIndexRuntime.setMergedIndexRecoveryBuilder(async (db, targetPath) => {
+    const roots = await context.appWatchedFolders();
+    const sources = await sourceRuntime.mergedIndexSourcesForRoots(roots);
+    if (!roots.length || context.mergedIndexRootsKey(sources.map(source => source.root)) !== context.mergedIndexRootsKey(roots)) {
+      throw new Error('监听根索引尚未全部可用，暂不替换合并索引。');
+    }
+    const sourceKey = context.mergedIndexSourcesKey(sources);
+    await buildRuntime.rebuildMergedIndexDb(db, sources, sourceKey, targetPath);
+    const actual = db.prepare('SELECT COUNT(*) AS count FROM entries').get();
+    let expected = 0;
+    for (const source of sources) {
+      const sourceDb = await context.openRootIndexDb(source.indexDbPath, source.root, 'root', false);
+      try { expected += Number(sourceDb.prepare("SELECT COUNT(*) AS count FROM entries WHERE COALESCE(is_deleted,0)=0 AND status='ok' AND font_json IS NOT NULL AND json_valid(font_json)").get()?.count || 0); }
+      finally { context.closeSqliteDb(sourceDb); }
+    }
+    if (Number(actual?.count) !== expected) throw new Error('合并索引恢复条目计数不一致，保留原文件。');
+  });
   const validationRuntime = createMergedIndexValidationRuntime(
     context,
     sourceRuntime,

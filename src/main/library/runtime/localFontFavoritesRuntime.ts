@@ -25,7 +25,14 @@ export function createLocalFontFavoritesRuntime(options: {
         const hasArchive = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='local_font_legacy_state'").get()
         const hasLocalHistory = db.prepare('SELECT 1 FROM local_font_favorites LIMIT 1').get()
           || (hasArchive && db.prepare("SELECT 1 FROM local_font_legacy_state WHERE kind='favorite' LIMIT 1").get())
-        const fonts = hasLocalHistory ? [] : await options.loadLegacyLocalSnapshot()
+        let fonts: FontItem[]
+        try { fonts = hasLocalHistory ? [] : await options.loadLegacyLocalSnapshot() }
+        catch (error) {
+          // An unavailable derived snapshot cannot block opening app.sqlite or
+          // roots needed to rebuild it. Keep migration pending for the next read.
+          options.appendLog(`local favorite migration deferred; user rows retained: ${String(error)}`)
+          return
+        }
         const insert = db.prepare('INSERT OR IGNORE INTO local_font_favorites (font_id, font_path, favorite) VALUES (?, ?, 1)')
         db.transaction(() => {
           for (const font of fonts) if (font.favorite && font.id) {

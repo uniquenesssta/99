@@ -1,10 +1,10 @@
+import { assertApplicationOpen } from '../../app/shutdownCoordinatorRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import os from 'node:os'
 import { basename, join } from 'node:path'
 import {
   ROOT_INDEX_DB_DIR_NAME,
-  ROOT_INDEX_DB_FILE_NAME,
   ROOT_INDEX_LATEST_FILE_NAME,
   ROOT_INDEX_DB_SCHEMA_VERSION,
 } from '../../cache/constants'
@@ -36,7 +36,6 @@ export function rootIndexLatestPointerPath(cacheDir: string): string {
 }
 
 export function createRootIndexLatestRuntime(deps: RootIndexLatestRuntimeDeps) {
-  const reportedRecoveredPathByCache = new Map<string, string>()
 
   async function readRootIndexLatestPointer(cacheDir: string): Promise<RootIndexLatestPointerFile | null> {
     try {
@@ -50,39 +49,11 @@ export function createRootIndexLatestRuntime(deps: RootIndexLatestRuntimeDeps) {
     }
   }
 
-  async function recoverRootIndexSnapshotPath(cacheDir: string): Promise<string | null> {
-    const dbDir = join(cacheDir, ROOT_INDEX_DB_DIR_NAME)
-    let names: string[]
-    try {
-      names = await fsp.readdir(dbDir)
-    } catch (error) {
-      rethrowSharedIoProcessError(error)
-      return null
-    }
-
-    const candidates: Array<{ path: string; mtimeMs: number }> = []
-    for (const name of names) {
-      if (name.toLowerCase() !== ROOT_INDEX_DB_FILE_NAME && !/^index\..+\.sqlite$/i.test(name)) continue
-      const filePath = join(dbDir, name)
-      const stat = await fsp.stat(filePath).catch(error => { rethrowSharedIoProcessError(error); return null })
-      if (!stat?.isFile() || Number(stat.size || 0) <= 0) continue
-      candidates.push({ path: filePath, mtimeMs: Number(stat.mtimeMs || 0) })
-    }
-
-    candidates.sort((left, right) => right.mtimeMs - left.mtimeMs)
-    const recovered = candidates[0]?.path || null
-    if (recovered && reportedRecoveredPathByCache.get(cacheDir) !== recovered) {
-      reportedRecoveredPathByCache.set(cacheDir, recovered)
-      deps.appendStartupLog(`root index latest pointer recovered from immutable snapshot: cacheDir=${cacheDir}, db=${recovered}`)
-    }
-    return recovered
-  }
-
   async function resolveLatestRootIndexDbPath(cacheDir: string): Promise<string | null> {
     const latest = await readRootIndexLatestPointer(cacheDir)
     const activePath = safeManifestDatabasePath(cacheDir, latest?.activeDatabase)
     if (activePath && await deps.exists(activePath)) return activePath
-    return recoverRootIndexSnapshotPath(cacheDir)
+    return null
   }
 
   async function writeRootIndexLatestPointer(cacheDir: string, rootPath: string, storage: RootIndexStorage, fileCount: number, activeDbPath: string): Promise<void> {
@@ -101,6 +72,7 @@ export function createRootIndexLatestRuntime(deps: RootIndexLatestRuntimeDeps) {
       switchMode: 'atomic-latest-pointer',
       updatedAt: new Date().toISOString(),
     }
+    assertApplicationOpen()
     await writeJsonAtomic(rootIndexLatestPointerPath(cacheDir), pointer)
   }
 

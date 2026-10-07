@@ -72,12 +72,12 @@ export function createSharedIndexTrustRuntime(deps: SharedIndexTrustRuntimeDeps)
     }
 
     const manifestSchemaVersion = finiteNumber(manifest?.schemaVersion)
-    if (manifestSchemaVersion !== null && manifestSchemaVersion !== ROOT_INDEX_DB_SCHEMA_VERSION) {
+    if (manifestSchemaVersion !== null && manifestSchemaVersion > ROOT_INDEX_DB_SCHEMA_VERSION) {
       return { trusted: false, reason: 'schema-version-mismatch', cacheDir, activeDbPath, rootId }
     }
 
     const manifestCacheVersion = finiteNumber(manifest?.indexCacheVersion)
-    if (manifestCacheVersion !== null && manifestCacheVersion !== deps.fontScanCacheVersion) {
+    if (manifestCacheVersion !== null && manifestCacheVersion > deps.fontScanCacheVersion) {
       return { trusted: false, reason: 'index-cache-version-mismatch', cacheDir, activeDbPath, rootId }
     }
 

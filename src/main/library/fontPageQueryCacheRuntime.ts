@@ -23,10 +23,10 @@ export function createFontPageQueryCacheRuntime(
   const fontQueryPageInFlight = new Map<string, FontQueryTask<FontQueryPageResult>>();
   let cacheGeneration = 0;
 
-  function invalidateFontQueryPageCache(): void {
+  function invalidateFontQueryPageCache(cancelInFlight = true): void {
     cacheGeneration += 1;
     fontQueryPageResultCache.clear();
-    for (const task of fontQueryPageInFlight.values()) task.controller.abort();
+    if (cancelInFlight) for (const task of fontQueryPageInFlight.values()) task.controller.abort();
   }
 
   function rememberFontQueryPageResult(

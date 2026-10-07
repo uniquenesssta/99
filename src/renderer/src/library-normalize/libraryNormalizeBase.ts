@@ -18,6 +18,10 @@ export function createEmptyLibrary(): LibraryState {
 }
 
 export function isDefinitelyBadFontRecord(font: FontItem): boolean {
+  // Missing historical bindings must remain visible for relinking. This flag
+  // does not supply an identity and never makes a live malformed font valid.
+  if (font.recoveryPlaceholder === true && (font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable')
+    && !!font.path && !!font.id && !!(font.localTagNames?.length || font.tagNames?.length)) return false
   return font.fileName.startsWith('._') || font.path.includes('\\._') || font.path.includes('/._') || font.fileSize < 64 || !!font.previewError?.includes('字体文件不存在') || !!font.previewError?.includes('路径已失效')
 }
 

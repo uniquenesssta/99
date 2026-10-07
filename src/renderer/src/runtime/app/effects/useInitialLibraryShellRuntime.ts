@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import type { FontQueryPageResult, FontQueryResult, LibraryState } from '@shared/types'
-import { createEmptyLibrary, markPartialLibrary, normalizeLibrary } from '../../../appRuntime'
+import { markPartialLibrary, normalizeLibrary } from '../../../appRuntime'
 
 export function useInitialLibraryShellRuntime(args: {
   hfm: Window['hfm']
@@ -30,11 +30,11 @@ export function useInitialLibraryShellRuntime(args: {
 
     const loadInitialLibrary = async (): Promise<void> => {
       try {
-        const shell = typeof hfm.loadLibraryShell === 'function'
-          ? await hfm.loadLibraryShell()
-          : null
+        if (typeof hfm.loadLibraryShell !== 'function') throw new Error('库配置读取接口不可用，已暂停保存以保护原数据。')
+        const shell = await hfm.loadLibraryShell()
+        if (!shell || !Array.isArray(shell.folders)) throw new Error('库配置读取结果无效，已保留原数据。')
         const normalized = markPartialLibrary(normalizeLibrary({
-          ...(shell || createEmptyLibrary()),
+          ...shell,
           fonts: {},
           fontFolderIds: {}
         } as LibraryState))
@@ -48,8 +48,8 @@ export function useInitialLibraryShellRuntime(args: {
         setDatabaseRefreshToken((value) => value + 1)
       } catch (error) {
         setStatus(`库配置加载失败：${error instanceof Error ? error.message : String(error)}`)
-        libraryLoadedRef.current = true
-        setLibrary(markPartialLibrary(normalizeLibrary(createEmptyLibrary())))
+        libraryLoadedRef.current = false
+        initialLibraryLoadStartedRef.current = false
       }
     }
 

@@ -1,3 +1,4 @@
+import { SqliteIntegrityError } from './sqliteRecoveryPolicy'
 import { rethrowSharedIoProcessError } from '../path/sharedIoProcessRuntime'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import type { createRequire } from 'node:module'
@@ -117,7 +118,7 @@ export function createSqliteRuntime(options: SqliteRuntimeOptions): {
     try {
       const row = db.prepare('PRAGMA quick_check').get() as Record<string, unknown> | undefined
       const result = row ? String(Object.values(row)[0] || '') : ''
-      if (result && result.toLowerCase() !== 'ok') throw new Error(result)
+      if (!result || result.toLowerCase() !== 'ok') throw new SqliteIntegrityError(result || 'quick_check returned no result')
       if (key) sqliteQuickCheckAt.set(key, now)
       if (options.verboseSqliteLogs || !key || !sqliteOpenedLogKeys.has(`quick:${key}`)) {
         options.appendLog(`sqlite quick_check ok: ${label}, ${filePath}`)
@@ -125,7 +126,7 @@ export function createSqliteRuntime(options: SqliteRuntimeOptions): {
       }
     } catch (error) {
       clearSqliteOpenCaches(filePath)
-      throw new Error(`SQLite 数据库健康检查失败：${label}, ${filePath}, ${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(`SQLite 数据库健康检查失败：${label}, ${filePath}, ${error instanceof Error ? error.message : String(error)}`, { cause: error })
     }
   }
 
@@ -280,27 +281,11 @@ export function createSqliteRuntime(options: SqliteRuntimeOptions): {
     }
   }
 
-  const recoverApplicationSqliteFile = async (label: string, filePath: string, cause: unknown): Promise<void> => {
-    const reason = recoveryMessage(cause)
-    options.appendLog(`sqlite recovery started: ${label}, ${filePath}, reason=${reason}`)
-    await quarantineSqliteFiles(filePath, label, reason)
-
-    const restored = await restoreLatestDatabaseBackupForLabel(label, filePath)
-    if (restored.ok) {
-      options.appendLog(`sqlite recovery finished from backup: ${label}, backup=${restored.backupPath}`)
-      return
-    }
-
-    options.appendLog(`sqlite recovery fallback to fresh database: ${label}, ${restored.message}`)
-  }
-
   const openRecoverableApplicationSqliteDb = async (filePath: string, label: ApplicationDatabaseLabel): Promise<any> => {
-    try {
-      return openStableSqliteDb(filePath, label)
-    } catch (error) {
-      await recoverApplicationSqliteFile(label, filePath, error)
-      return openStableSqliteDb(filePath, `${label}:recovered`)
-    }
+    // Replacement requires an owning store to build/validate a candidate. The
+    // generic connection layer cannot know whether a file contains user intent.
+    // Root and merged indexes have their own snapshot recovery owners.
+    return openStableSqliteDb(filePath, label)
   }
 
   return {

@@ -1,3 +1,8 @@
+import { ensureStartupPathRootAvailable } from '../path/startupPathAvailabilityRuntime';
+import { isApplicationClosing } from '../app/shutdownCoordinatorRuntime';
+import { withoutSharedIoSignal } from '../path/sharedFileSystemRuntime';
+import { isRecoverableDerivedSqliteError } from '../db/sqliteRecoveryPolicy';
+import { ROOT_INDEX_DB_SCHEMA_VERSION } from '../cache/constants';
 import type { FontIndexChangePayload } from '../../shared/types';
 import {
   FONT_SCAN_CACHE_VERSION,
@@ -342,11 +347,47 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
 
   const startWatchingFoldersUnsafe = folderWatcherRuntime.startWatchingFolders;
 
-  function startWatchingFolders(folders: string[]): Promise<boolean> {
+  let startupRecoveryTail: Promise<void> = Promise.resolve();
+  const startupRecoveryAttempted = new Set<string>();
+  async function startWatchingFolders(folders: string[]): Promise<boolean> {
     assertFeedbackReady();
-    return startWatchingFoldersUnsafe(
-      normalizeWatchedFontFolders(folders, appendStartupLog),
-    );
+    const normalized = normalizeWatchedFontFolders(folders, appendStartupLog);
+    const started = await startWatchingFoldersUnsafe(normalized);
+    // One bounded compatibility pass, sequential roots; ordinary valid indexes
+    // are reused. Recovery owns its lifetime rather than the opening page query.
+    startupRecoveryTail = startupRecoveryTail.catch(() => undefined).then(() => withoutSharedIoSignal(async () => {
+      for (const root of normalized) {
+        if (isApplicationClosing()) return;
+        if (startupRecoveryAttempted.has(root)) continue;
+        if (!await ensureStartupPathRootAvailable(root, appendStartupLog, 'root-index-startup-recovery')) continue;
+        let required = false;
+        try {
+          const active = await resolveActiveRootIndexDbPath(rootCacheDir(root), rootIndexDbPath(root));
+          required = !await exists(active);
+          if (!required) {
+            const db = await openRootIndexDb(active, root, 'root', false);
+            try {
+              sqliteQuickCheck(db, 'root-index-startup-compatibility', active, true);
+              const versions = db.prepare("SELECT key,value FROM meta WHERE key IN ('schemaVersion','schema_version','cacheVersion','index_version')").all() as Array<{key: string; value: string}>;
+              required = versions.some(row => Number(row.value) < (row.key === 'schemaVersion' || row.key === 'schema_version' ? ROOT_INDEX_DB_SCHEMA_VERSION : FONT_SCAN_CACHE_VERSION));
+            } finally { closeSqliteDb(db); }
+          }
+        } catch (error) {
+          if (!isRecoverableDerivedSqliteError(error)) { appendStartupLog(`root index automatic recovery deferred: root=${root}, ${recoveryMessage(error)}`); continue; }
+          required = true;
+        }
+        if (!required) { startupRecoveryAttempted.add(root); continue; }
+        if (isApplicationClosing() || !(await appWatchedFolders()).includes(root)) continue;
+        startupRecoveryAttempted.add(root);
+        try {
+          const result = await scanFoldersRuntime().scanFoldersWhenIdle([root]);
+          if (result.stats?.cancelled || result.errors.length || isApplicationClosing()) continue;
+          await syncMergedIndexForRootSnapshot(root, 'startup-cache-recovery');
+          appendStartupLog(`root index automatic recovery complete: root=${root}, fonts=${result.fonts.length}`);
+        } catch (error) { appendStartupLog(`root index automatic recovery retained old snapshot: root=${root}, ${recoveryMessage(error)}`); }
+      }
+    })).catch(error => { appendStartupLog(`root index startup recovery deferred: ${recoveryMessage(error)}`); });
+    return started;
   }
   const scanFoldersManaged: MainOperationsCompositionRuntime['capabilities']['scanFoldersManaged'] = async (folders, knownFonts) => {
     assertFeedbackReady();

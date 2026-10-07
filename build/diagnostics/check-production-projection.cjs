@@ -52,7 +52,7 @@ async function main() {
     host = await createHost({ sourceRoot, workerPath, directory, fixtureDirectory: directory, roots: [fontRoot] })
     assert.equal(host.readerProvenance.mode, 'production-extracted-reader', 'Projection correctness gate requires candidate production reader')
     const { load, status, query, indexing, nativeReceipts, queue, readBoundary, projectionEvents,
-      rendererState, openDb, config, fontIdentity } = host
+      rendererState, openDb, config, fontIdentity, rootStorage } = host
     const { mergedPath, libraryPath, installPath } = host.paths
     const fonts = load('src/main/fonts/fontRuntime.ts')
     const manifests = selectFonts(path.join(directory, 'manifest')).slice(0, 3)
@@ -119,6 +119,24 @@ async function main() {
       await tick()
       assert(!queue.hasPendingActivationInstallStatusSave() && !queue.hasInFlightActivationInstallStatusSave(), `${label}: save queue not drained`)
       assert(projectionEvents.length > before, `${label}: persistence did not commit a real merged projection`)
+      const rebuilds = nativeReceipts.filter(row => row.method === 'runRustMergedIndexRebuild').length
+      // Expire the external-check reuse window without wall-clock sleeps by
+      // checking the actual persistent key through the production owner.
+      const snapshot = await query.openMergedIndexDb()
+      try {
+        const key = JSON.parse(snapshot.prepare("SELECT value FROM meta WHERE key='sourcesKey'").get().value)
+        assert(key.length && key.every(source => source.installSignature.startsWith('install-content-v1|')))
+        const signature = load('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({
+          dataPath: host.dataPath, exists: host.exists, openStableSqliteDb: openDb, openRootIndexDb: rootStorage.openRootIndexDb,
+          closeSqliteDb: db => db.close(), getSqliteMeta: load('src/main/db/sqliteHelpers.ts').getSqliteMeta,
+          setSqliteMeta: load('src/main/db/sqliteHelpers.ts').setSqliteMeta, sqliteTableExists: load('src/main/db/sqliteHelpers.ts').sqliteTableExists,
+          appendStartupLog() {}, schemaVersion: config.MERGED_INDEX_SCHEMA_VERSION, staleFirstPageEnabled: true,
+        })
+        for (const source of key) assert.equal(source.installSignature, await signature.installStatusContentSignature(source.installDbPath), `${label}: saved source signature lagged its committed projection`)
+      } finally { snapshot.close() }
+      await status.saveInstalledTotalSummaryForRoots([fontRoot], 999)
+      await query.checkMergedIndexExternalChanges(`batch-coherency:${label}`)
+      assert.equal(nativeReceipts.filter(row => row.method === 'runRustMergedIndexRebuild').length, rebuilds, 'A status-only projection triggered full rebuild')
     }
     await persist('all current evidence', [result(true, true), result(true, false), result(true, true)])
     await checkState('known mixed installed/uninstalled', { installed: 2, notInstalled: 1, unknown: 0 })

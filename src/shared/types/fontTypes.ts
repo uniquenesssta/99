@@ -15,6 +15,8 @@ export interface FontItem {
   sourceId?: string
   path: string
   fileAvailability?: 'available' | 'missing' | 'unavailable'
+  /** Display-only historical tag binding, never a concrete-file operation identity. */
+  recoveryPlaceholder?: boolean
   fileRelinkRequired?: boolean
   tagBindingReadOnly?: boolean
   recoveryContentHash?: string

@@ -1,7 +1,7 @@
 name: Windows font identity audit
 on:
   push:
-    branches: ['stage/12-font-identity-permissions']
+    branches: ['stage/12-font-identity-permissions', 'stage/12-font-recovery-f14']
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,6 +34,9 @@ jobs:
       - name: Same-state recovery, status, private preview and uninstall reopen
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-preview-chain-performance.cjs --recovery-chain
+      - name: Verify populated legacy database migrations in native owners
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml legacy_schema
       - name: Verify production identity compatibility and operation targets
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-identity-compatibility.cjs

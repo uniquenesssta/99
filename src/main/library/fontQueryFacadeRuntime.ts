@@ -46,7 +46,7 @@ export type FontQueryFacadeRuntime = {
   ) => Promise<FontQueryPageResult>;
   queryFontsInLibrary: (requestInput: FontQueryRequest) => Promise<FontQueryResult>;
   getFontMetricsFromLibrary: () => Promise<FontMetricsResult>;
-  clearFontMetricsQueryCache: () => void;
+  clearFontMetricsQueryCache: (cancelInFlight?: boolean) => void;
 };
 
 export type FontQueryFacadeRuntimeOptions = {
@@ -707,9 +707,9 @@ export function createFontQueryFacadeRuntime(
   }
 
 
-  function clearFontMetricsQueryCache(): void {
+  function clearFontMetricsQueryCache(cancelInFlight = true): void {
     queryGeneration += 1;
-    metricsRequestCoalescer.clear();
+    metricsRequestCoalescer.clear(cancelInFlight);
   }
 
   return {

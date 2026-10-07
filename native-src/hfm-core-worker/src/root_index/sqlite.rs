@@ -14,6 +14,8 @@ fn ensure_parent_dir(path: &str) -> Result<(), String> {
 }
 
 pub(crate) fn initialize_root_index_db(conn: &Connection, config: &RootIndexApplyConfig) -> rusqlite::Result<()> {
+    crate::sqlite_schema::assert_supported_version(conn, &["schema_version", "schemaVersion"], config.schema_version)?;
+    crate::sqlite_schema::assert_supported_version(conn, &["index_version", "cacheVersion"], config.cache_version)?;
     conn.execute_batch(
         r#"
         PRAGMA journal_mode = WAL;
@@ -61,17 +63,20 @@ pub(crate) fn initialize_root_index_db(conn: &Connection, config: &RootIndexAppl
           scanned_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_directories_modified ON directories(modified_at);
-        CREATE INDEX IF NOT EXISTS idx_entries_deleted ON entries(is_deleted);
-        CREATE INDEX IF NOT EXISTS idx_entries_identity ON entries(file_identity);
         "#,
     )?;
 
-    let _ = conn.execute_batch("ALTER TABLE entries ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;");
-    let _ = conn.execute_batch("ALTER TABLE entries ADD COLUMN deleted_at TEXT;");
-    let _ = conn.execute_batch("ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;");
-    let _ = conn.execute_batch("ALTER TABLE entries ADD COLUMN opstamp INTEGER NOT NULL DEFAULT 0;");
-    let _ = conn.execute_batch("ALTER TABLE entries ADD COLUMN file_identity TEXT;");
-    let _ = conn.execute_batch("ALTER TABLE entries ADD COLUMN content_hash TEXT;");
+    let names = {
+        let mut statement = conn.prepare("PRAGMA table_info(entries)")?;
+        let names = statement.query_map([], |row| row.get::<_, String>(1))?.collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
+        names
+    };
+    for (name, definition) in [("created_at", "REAL"), ("message", "TEXT"), ("is_deleted", "INTEGER NOT NULL DEFAULT 0"),
+        ("deleted_at", "TEXT"), ("revision", "INTEGER NOT NULL DEFAULT 1"), ("opstamp", "INTEGER NOT NULL DEFAULT 0"),
+        ("file_identity", "TEXT"), ("content_hash", "TEXT")] {
+        if !names.contains(name) { conn.execute_batch(&format!("ALTER TABLE entries ADD COLUMN {name} {definition}"))?; }
+    }
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_entries_deleted ON entries(is_deleted); CREATE INDEX IF NOT EXISTS idx_entries_identity ON entries(file_identity);")?;
 
     let now = sqlite_now(conn)?;
     conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params!["schema_version", config.schema_version.to_string()])?;
@@ -283,7 +288,9 @@ pub fn replace_root_index(config: &RootIndexApplyConfig) -> Result<RootIndexAppl
     set_meta(&tx, "last_update.entry_state_check", &now).map_err(|error| error.to_string())?;
     set_meta(&tx, "fileCount", &count.to_string()).map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())?;
-    let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    let integrity: String = conn.query_row("PRAGMA quick_check", [], |row| row.get(0)).map_err(|error| error.to_string())?;
+    if integrity != "ok" { return Err(format!("root index candidate integrity failed: {integrity}")); }
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);").map_err(|error| error.to_string())?;
     Ok(RootIndexApplyResult { count, upserts: payload.upserts.len(), deletes: 0 })
 }
 
@@ -328,5 +335,26 @@ pub fn apply_root_index_changes(config: &RootIndexApplyConfig) -> Result<RootInd
             Ok(summary)
         }
         Err(error) => Err(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod legacy_schema {
+    use super::*;
+    #[test]
+    fn populated_root_adds_columns_before_indexes_and_refuses_future_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); INSERT INTO meta VALUES('schemaVersion','1');
+          CREATE TABLE entries(relative_path TEXT PRIMARY KEY,cache_key TEXT,file_size INTEGER,modified_at REAL,created_at REAL,status TEXT,font_json TEXT,message TEXT,cached_at TEXT);
+          INSERT INTO entries VALUES('font.ttf','old',100,1,1,'ok','{\"tagNames\":[\"keep\"],\"favorite\":true}',NULL,'before');").unwrap();
+        let config = RootIndexApplyConfig { db_path: String::new(), root_path: "C:\\Fonts".into(), storage: "root".into(), input_path: String::new(), schema_version: 4, cache_version: 1, script_detection_version: 1 };
+        initialize_root_index_db(&conn, &config).unwrap();
+        initialize_root_index_db(&conn, &config).unwrap();
+        let font: String = conn.query_row("SELECT font_json FROM entries", [], |row| row.get(0)).unwrap();
+        assert!(font.contains("keep"));
+        conn.execute("UPDATE meta SET value='999' WHERE key='schemaVersion'", []).unwrap();
+        assert!(initialize_root_index_db(&conn, &config).is_err());
+        let version: String = conn.query_row("SELECT value FROM meta WHERE key='schemaVersion'", [], |row| row.get(0)).unwrap();
+        assert_eq!(version, "999");
     }
 }

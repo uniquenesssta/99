@@ -30,9 +30,6 @@ function testLatestRuntimeExists() {
     'ROOT_INDEX_LATEST_FILE_NAME',
     'atomic-latest-pointer',
     'safeManifestDatabasePath',
-    'recoverRootIndexSnapshotPath',
-    'root index latest pointer recovered from immutable snapshot',
-    "!/^index\\..+\\.sqlite$/i.test(name)",
   ]) {
     assert(text.includes(needle), `root index latest runtime missing ${needle}`)
   }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { basename, join } from 'node:path'
 import { sqliteSidecarPaths } from '../../cache/cachePaths'
@@ -61,10 +62,10 @@ async function existingFileSize(filePath: string): Promise<number> {
 export function createRootIndexSnapshotRuntime(deps: RootIndexSnapshotRuntimeDeps) {
   function rootIndexSnapshotDbPath(cacheDir: string): string {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 23)
-    return join(cacheDir, ROOT_INDEX_DB_DIR_NAME, `index.${stamp}.${process.pid}.sqlite`)
+    return join(cacheDir, ROOT_INDEX_DB_DIR_NAME, `index.${stamp}.${process.pid}.${randomUUID()}.sqlite`)
   }
 
-  async function cleanupOldRootIndexSnapshots(cacheDir: string, activeDbPath: string): Promise<void> {
+  async function cleanupOldRootIndexSnapshots(cacheDir: string, activeDbPath: string, retainedDbPath?: string): Promise<void> {
     try {
       const dbDir = join(cacheDir, ROOT_INDEX_DB_DIR_NAME)
       const files = await fsp.readdir(dbDir)
@@ -73,7 +74,7 @@ export function createRootIndexSnapshotRuntime(deps: RootIndexSnapshotRuntimeDep
       for (const file of files) {
         if (!/^index\..+\.sqlite$/i.test(file)) continue
         const filePath = join(dbDir, file)
-        if (normalizePathForCacheCompare(filePath) === activeNormalized) continue
+        if (normalizePathForCacheCompare(filePath) === activeNormalized || (retainedDbPath && normalizePathForCacheCompare(filePath) === normalizePathForCacheCompare(retainedDbPath))) continue
         const stat = await fsp.stat(filePath).catch(() => null)
         if (stat?.isFile()) snapshots.push({ path: filePath, mtimeMs: stat.mtimeMs })
       }

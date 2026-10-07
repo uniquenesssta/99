@@ -18,7 +18,7 @@ export function parseSqliteJson<T>(value: unknown, fallback: T): T {
 export function sqliteEnsureColumn(db: any, tableName: string, columnName: string, addSql: string): void {
   const columns = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>
   if (columns.some((column) => column.name === columnName)) return
-  try { db.exec(addSql) } catch { /* already exists or older sqlite restriction */ }
+  db.exec(addSql)
 }
 
 export function sqliteGetMetaNumber(db: any, key: string, fallback = 0): number {

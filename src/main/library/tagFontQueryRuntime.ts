@@ -141,7 +141,7 @@ export function createTagFontQueryRuntime(deps: {
       const fileName = basename(binding.path)
       let font: FontItem = old || { id: `missing:${pathKey}`, sourceId: binding.id, path: binding.path, fileName,
         family: fileName, fullName: fileName, postscriptName: '', style: '', format: asFormat(binding.path),
-        fileSize: 0, modifiedAt: 0, addedAt: '', favorite: false, collectionIds: [], tagNames: [],
+        fileSize: 0, modifiedAt: 0, recoveryPlaceholder: true, installStatusKnown: false, addedAt: '', favorite: false, collectionIds: [], tagNames: [],
         systemInstalled: false, systemInstallMatches: [], active: false }
       const tagBindingReadOnly = unavailableRoots.some(root => paths.inside(binding.path, root))
       let availability: NonNullable<FontItem['fileAvailability']> = tagBindingReadOnly ? 'unavailable' : await availabilityFor(binding.path)
@@ -158,7 +158,9 @@ export function createTagFontQueryRuntime(deps: {
           snapshots.schedule([font])
         } catch { availability = 'unavailable' }
       }
+      if (availability !== 'available' && (font.id.startsWith('missing:') || font.fileSize < 64)) font = { ...font, recoveryPlaceholder: true }
       items.set(pathKey, { ...font, recoveryContentHash: snapshots.read(binding.path)?.recoveryContentHash, fileAvailability: availability, fileRelinkRequired, tagBindingReadOnly,
+        ...(font.recoveryPlaceholder ? { installStatusKnown: false, systemInstalled: false, systemInstallMatches: [], active: false } : {}),
         ...(scope === 'local' ? { localTagNames: binding.tags } : { tagNames: binding.tags, sourceId: binding.id }),
         ...(availability !== 'available' ? { previewDisabled: true, previewError: tagBindingReadOnly ? '共享标签暂不可读取' : fileRelinkRequired ? '文件已变化，请右键重新链接确认' : availability === 'missing' ? '文件丢失' : '文件暂不可访问' } : font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable' ? { previewDisabled: false, previewError: undefined } : {}),
       })
@@ -171,7 +173,8 @@ export function createTagFontQueryRuntime(deps: {
       items.set(pathKey, { ...item, fileAvailability: availability, ...(availability === 'available' ? {} : { previewDisabled: true }) })
     }
     const scoped = [...items.values()].filter(font => inScope(font.path))
-    const sorted = (request.tagBindingsOnly ? scoped : await deps.hydrate(scoped)).filter(font => deps.matches(font, request)).sort((a, b) => deps.compare(a, b, request))
+    const sorted = (request.tagBindingsOnly ? scoped : await deps.hydrate(scoped)).map(font => font.recoveryPlaceholder
+      ? { ...font, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [], active: false } : font).filter(font => deps.matches(font, request)).sort((a, b) => deps.compare(a, b, request))
     return { queryKey: JSON.stringify(request), ...first, tagRevision: { source: 'tag-bindings', localTagsSignature: JSON.stringify({ bindings: [...bindings].map(([path, binding]) => [path, binding.id, [...binding.tags].sort()]).sort(), legacy: [...legacyTags].map(([id, names]) => [id, [...names].sort()]).sort() }), sharedMetadataSignatures: { unavailableRoots: JSON.stringify(unavailableRoots) } }, engine: 'mixed', items: sorted.slice(offset, offset + limit), total: sorted.length, offset, limit,
       truncated: offset + limit < sorted.length, elapsedMs: Date.now() - start }
   }
@@ -224,5 +227,5 @@ export function createTagFontQueryRuntime(deps: {
     for (const binding of bindings.values()) for (const tag of binding.tags) counts[tag] = (counts[tag] || 0) + 1
     return counts
   }
-  return { query, sharedTagCounts, invalidate: () => { generation++; cache.clear(); for (const task of inFlight.values()) task.controller.abort() } }
+  return { query, sharedTagCounts, invalidate: (cancelInFlight = true) => { generation++; cache.clear(); if (cancelInFlight) for (const task of inFlight.values()) task.controller.abort() } }
 }

@@ -1,3 +1,5 @@
+import { assertSupportedSqliteVersion } from '../../db/sqliteRecoveryPolicy';
+import { ensureSqliteColumn } from '../../db/sqliteHelpers';
 import type { FontItem } from "../../../shared/types";
 import {
 parseSqliteJson,
@@ -150,11 +152,12 @@ export function migrateLegacyFontJsonRows(
 }
 
 export function initializeLibraryDb(db: SqliteDb): void {
+  assertSupportedSqliteVersion(db, ['schemaVersion', 'schema_version'], 100, 'app');
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+  const migrate = db.transaction(() => {
   // v2.0 stable architecture: local app.sqlite stores only software settings.
   // Font records, shared events, shared metrics and preview cache live in the watched font root.
   db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = NORMAL;
     CREATE TABLE IF NOT EXISTS meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -186,7 +189,6 @@ export function initializeLibraryDb(db: SqliteDb): void {
       font_path TEXT NOT NULL DEFAULT '',
       favorite INTEGER NOT NULL DEFAULT 0
     );
-    CREATE INDEX IF NOT EXISTS idx_local_favorites_path ON local_font_favorites(font_path);
     CREATE TABLE IF NOT EXISTS local_font_tags (
       font_id TEXT NOT NULL,
       font_path TEXT NOT NULL DEFAULT '',
@@ -196,19 +198,19 @@ export function initializeLibraryDb(db: SqliteDb): void {
     );
   `);
 
-  try {
-    db.prepare("ALTER TABLE local_font_tags ADD COLUMN font_path TEXT NOT NULL DEFAULT ''").run();
-  } catch {
-    // Existing databases already have this column.
-  }
+  ensureSqliteColumn(db, 'local_font_tags', 'font_path', "TEXT NOT NULL DEFAULT ''");
+  ensureSqliteColumn(db, 'local_font_favorites', 'font_path', "TEXT NOT NULL DEFAULT ''");
 
   db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_local_favorites_path ON local_font_favorites(font_path);
     CREATE INDEX IF NOT EXISTS idx_local_font_tags_tag ON local_font_tags(tag_name, font_id);
     CREATE INDEX IF NOT EXISTS idx_local_font_tags_path ON local_font_tags(font_path, tag_name);
     CREATE INDEX IF NOT EXISTS idx_local_font_tags_tag_path ON local_font_tags(tag_name, font_path);
   `);
   setSqliteMeta(db, "schemaVersion", "100");
   setSqliteMeta(db, "cacheArchitecture", "v1-clean-shared-root");
+  });
+  migrate();
 }
 
 export function sqliteHasLibraryData(db: SqliteDb): boolean {

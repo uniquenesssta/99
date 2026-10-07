@@ -1,3 +1,4 @@
+import { isRecoverableDerivedSqliteError } from '../../db/sqliteRecoveryPolicy'
 import { ROOT_INDEX_DB_SCHEMA_VERSION, PREVIEW_SQLITE_SCHEMA_VERSION } from '../../cache/constants'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
@@ -82,7 +83,7 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
     for (const item of databases) {
       try {
         if ((await sharedIoResourceKeys([item.path])).length) {
-          await executeSharedFile({ operation:'repairRootDatabase', path:item.path, rootPath:resolvedRoot, kind:item.label.slice(5) as 'events' | 'hash' | 'metrics', repairCorrupt:true, dest:join(rootCacheDir(resolvedRoot),'corrupt') });
+          await executeSharedFile({ operation:'repairRootDatabase', path:item.path, rootPath:resolvedRoot, kind:item.label.slice(5) as 'events' | 'hash' | 'metrics', repairCorrupt:false, dest:join(rootCacheDir(resolvedRoot),'corrupt') });
           continue;
         }
         const db = openStableSqliteDb(item.path, `${item.label}:manual-refresh`);
@@ -93,36 +94,8 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
           closeSqliteDb(db);
         }
       } catch (error) {
-        if ((await sharedIoResourceKeys([item.path])).length) throw error;
-        const message = error instanceof Error ? error.message : String(error);
-        await quarantineSqliteFiles(
-          item.path,
-          `${item.label}-manual-refresh-${sha1(resolvedRoot).slice(0, 10)}`,
-          message,
-          join(rootCacheDir(resolvedRoot), "corrupt"),
-        ).catch((quarantineError) => {
-          appendStartupLog(
-            `manual refresh ${item.label} quarantine skipped: ${item.path} ${recoveryMessage(quarantineError)}`,
-          );
-        });
-        const db = openStableSqliteDb(
-          item.path,
-          `${item.label}:manual-refresh-recreated`,
-        );
-        try {
-          item.init(db, resolvedRoot);
-          sqliteQuickCheck(
-            db,
-            `${item.label}:manual-refresh-recreated`,
-            item.path,
-            true,
-          );
-        } finally {
-          closeSqliteDb(db);
-        }
-        appendStartupLog(
-          `manual refresh ${item.label} repaired: root=${resolvedRoot}, reason=${message}`,
-        );
+        appendStartupLog(`manual refresh ${item.label} unavailable; original retained: ${item.path} ${recoveryMessage(error)}`);
+        throw error;
       }
     }
   }
@@ -144,15 +117,8 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
       dbPath = await resolveActiveRootIndexDbPath(cacheDir, defaultDbPath);
       existedBefore = await exists(dbPath);
 
-      if ((await sharedIoResourceKeys([dbPath])).length) {
-        const { result } = await executeSharedFile({ operation:'repairRootDatabase', kind:'root-index', path:dbPath, rootPath:resolvedRoot,
-          schemaVersion:ROOT_INDEX_DB_SCHEMA_VERSION, cacheVersion:deps.fontScanCacheVersion, scriptDetectionVersion:deps.scriptDetectionVersion,
-          repairCorrupt:true, dest:join(cacheDir,'corrupt') });
-        await writeRootCacheManifest(cacheDir,resolvedRoot,'root',Number(result.value.entries),dbPath);
-        const repaired = result.value.repaired === true;
-        return { ...cacheRepairStatus('index',dbPath,true,repaired,repaired ? '索引缓存已修复，将重新扫描。' : '索引缓存正常。'), rebuildRequired:repaired };
-      }
-      const db = await openRootIndexDb(dbPath, resolvedRoot, "root", true);
+      if (!existedBefore) return { ...cacheRepairStatus('index', dbPath, true, false, '索引缺失，将完整扫描后建立新快照。'), rebuildRequired: true };
+      const db = await openRootIndexDb(dbPath, resolvedRoot, "root", false);
       try {
         sqliteQuickCheck(db, "root-index-manual-refresh", dbPath, true);
         if (!sqliteTableExists(db, "entries"))
@@ -163,13 +129,10 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
             "SELECT COUNT(*) AS count FROM entries WHERE COALESCE(is_deleted, 0) = 0 AND status <> 'deleted'",
           )
           .get() as { count?: number } | undefined;
-        await writeRootCacheManifest(
-          cacheDir,
-          resolvedRoot,
-          "root",
-          Number(row?.count || 0),
-          dbPath,
-        );
+        const versions = db.prepare("SELECT key,value FROM meta WHERE key IN ('schemaVersion','schema_version','cacheVersion','index_version')").all() as Array<{key: string; value: string}>;
+        if (versions.some(row => Number(row.value) < (row.key === 'schemaVersion' || row.key === 'schema_version' ? ROOT_INDEX_DB_SCHEMA_VERSION : deps.fontScanCacheVersion))) {
+          return { ...cacheRepairStatus('index', dbPath, true, false, '旧索引将自动升级，完整新快照就绪前保留原文件。'), rebuildRequired: true };
+        }
       } finally {
         closeSqliteDb(db);
       }
@@ -188,52 +151,10 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
         rebuildRequired: repaired,
       };
     } catch (error) {
-      if ((await sharedIoResourceKeys([dbPath])).length) throw error;
-      const message = error instanceof Error ? error.message : String(error);
-      dbPath = dbPath || defaultDbPath;
-      await quarantineSqliteFiles(
-        dbPath,
-        `root-index-manual-refresh-${sha1(resolvedRoot).slice(0, 10)}`,
-        message,
-        join(cacheDir, "corrupt"),
-      ).catch((quarantineError) => {
-        appendStartupLog(
-          `manual refresh index cache quarantine skipped: ${dbPath} ${recoveryMessage(quarantineError)}`,
-        );
-      });
-
-      const db = await openRootIndexDb(defaultDbPath, resolvedRoot, "root", true);
-      try {
-        sqliteQuickCheck(
-          db,
-          "root-index-manual-refresh-recreated",
-          defaultDbPath,
-          true,
-        );
-        await writeRootCacheManifest(
-          cacheDir,
-          resolvedRoot,
-          "root",
-          0,
-          defaultDbPath,
-        );
-      } finally {
-        closeSqliteDb(db);
-      }
-
-      appendStartupLog(
-        `manual refresh index cache repaired: root=${resolvedRoot}, reason=${message}`,
-      );
-      return {
-        ...cacheRepairStatus(
-          "index",
-          defaultDbPath,
-          true,
-          true,
-          `索引缓存异常，已隔离旧文件并覆盖重建：${message}`,
-        ),
-        rebuildRequired: true,
-      };
+      if (!isRecoverableDerivedSqliteError(error)) throw error;
+      const message = recoveryMessage(error);
+      appendStartupLog(`manual refresh index replacement deferred until complete scan: root=${resolvedRoot}, reason=${message}`);
+      return { ...cacheRepairStatus('index', dbPath, true, false, `索引需要重建，旧文件保留：${message}`), rebuildRequired: true };
     }
   }
 
@@ -254,7 +175,7 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
 
       if ((await sharedIoResourceKeys([previewDbPath])).length) {
         const { result } = await executeSharedFile({ operation:'repairRootDatabase', kind:'preview', path:previewDbPath, rootPath:resolvedRoot,
-          schemaVersion:PREVIEW_SQLITE_SCHEMA_VERSION, repairCorrupt:true, dest:join(previewCacheDir,'corrupt') });
+          schemaVersion:PREVIEW_SQLITE_SCHEMA_VERSION, repairCorrupt:false, dest:join(previewCacheDir,'corrupt') });
         await writeRootPreviewCacheManifest(previewCacheDir,resolvedRoot,'root',previewDbPath,previewImageDir);
         return cacheRepairStatus('preview',previewDbPath,true,result.value.repaired === true,result.value.repaired ? '预览缓存已修复。' : '预览缓存正常。');
       }
@@ -283,54 +204,9 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
           : "预览缓存缺失，已创建新的 preview.sqlite。",
       );
     } catch (error) {
-      if ((await sharedIoResourceKeys([previewDbPath])).length) throw error;
-      const message = error instanceof Error ? error.message : String(error);
-      await quarantineSqliteFiles(
-        previewDbPath,
-        `root-preview-manual-refresh-${sha1(resolvedRoot).slice(0, 10)}`,
-        message,
-        join(previewCacheDir, "corrupt"),
-      ).catch((quarantineError) => {
-        appendStartupLog(
-          `manual refresh preview cache quarantine skipped: ${previewDbPath} ${recoveryMessage(quarantineError)}`,
-        );
-      });
-
-      await fsp.mkdir(previewImageDir, { recursive: true });
-      await fsp.mkdir(dirname(previewDbPath), { recursive: true });
-      const db = openStableSqliteDb(
-        previewDbPath,
-        "preview:manual-refresh-recreated",
-      );
-      try {
-        initializePreviewDb(db);
-        sqliteQuickCheck(
-          db,
-          "preview:manual-refresh-recreated",
-          previewDbPath,
-          true,
-        );
-        await writeRootPreviewCacheManifest(
-          previewCacheDir,
-          resolvedRoot,
-          "root",
-          previewDbPath,
-          previewImageDir,
-        );
-      } finally {
-        closeSqliteDb(db);
-      }
-
-      appendStartupLog(
-        `manual refresh preview cache repaired: root=${resolvedRoot}, reason=${message}`,
-      );
-      return cacheRepairStatus(
-        "preview",
-        previewDbPath,
-        true,
-        true,
-        `预览缓存异常，已隔离旧文件并重新创建：${message}`,
-      );
+      const message = recoveryMessage(error);
+      appendStartupLog(`manual refresh optional preview cache unavailable; original retained: ${previewDbPath} ${message}`);
+      return cacheRepairStatus('preview', previewDbPath, false, false, `预览索引暂不可用，已保留原文件：${message}`);
     }
   }
 

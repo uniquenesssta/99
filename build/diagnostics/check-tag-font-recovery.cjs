@@ -766,12 +766,30 @@ async function f13ScopedWorkCases() {
   }finally{collision.close()}
 }
 
+async function missingHistoricalCardsRemainVisible() {
+  const h = harness()
+  try {
+    for (let index=0; index<8; index++) h.add(make('Historical'+index), ['模板'])
+    const page = await h.query.query({ sidebarPage:'tags', selectedTagName:'模板' }, 100, 0)
+    assert.equal(page.total,8); assert(page.items.every(item=>item.recoveryPlaceholder&&item.fileAvailability==='missing'))
+    const rootPath=require('node:path').resolve(__dirname,'../..')
+    const render=require('./check-operation-chain.cjs').loader({ [require('node:path').join(rootPath,'src/renderer/src/constants/environmentConstants.ts')]: { RENDERER_ENV:{DEV:false,PROD:true},IS_DEVELOPMENT:false } })
+    const library=render('src/renderer/src/library-normalize/libraryNormalizeBase.ts').createEmptyLibrary()
+    library.folders=[root];library.localTags=['模板'];library.fonts=Object.fromEntries(page.items.map(font=>[font.id,font]))
+    const visible=render('src/renderer/src/fontViewRuntime.ts').buildVisibleFonts({databasePageReady:true,databasePageResult:page,
+      allFonts:page.items,fontIndexById:new Map(),deferredSearch:'',activeFilter:{kind:'all'},selectedWatchedFolders:[],selectedFormats:[],selectedScripts:[],
+      selectedCategory:'all',selectedTagName:'模板',selectedSharedTagName:'',selectedFolderId:'',installStatus:'all',timeSortMode:'all',sortMode:'nameAsc',sidebarPage:'tags',library})
+    assert.equal(visible.length,8,'backend eight historical bindings disappeared in renderer')
+    assert(visible.every(font=>font.installStatusKnown===false&&!font.systemInstalled&&!font.active))
+  } finally {h.close()}
+}
+
 async function main() {
   const display = load('src/renderer/src/fontDisplay.ts', { './fontUserIntentRuntime': { getUninstallIssue: () => undefined } })
   assert.equal(display.installLabel({ ...make('A'), systemInstalled: true, fileAvailability: 'missing' }), '文件丢失')
   const failures = []
   // Each group owns and closes its fixtures; collect errors without hiding later groups.
-  for (const run of [queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
+  for (const run of [missingHistoricalCardsRemainVisible, queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
     sharedRecoveryCases, detachedAuthorizationCase, backgroundWaitCase, f08QueryCases, f08RecoveryCases, f08RefreshCases,
     f09MatchCases, f09AliasCase, f09CommitCases, f09SharedCases, f09EvidenceCases, f13ScopedWorkCases]) {
     try { await run() } catch (error) { failures.push(`${run.name}: ${error?.stack || String(error)}`) }

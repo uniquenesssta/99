@@ -40,7 +40,7 @@ function mocks() {
       sharedIoResourceKeys: async paths => paths.some(isShared) ? ['\\\\nas\\share'] : [],
     },
     [abs('src/main/path/sharedFileSystemRuntime.ts')]: {
-      sharedFileSystem: fsp,
+      sharedFileSystem: fsp, currentSharedIoSignal: () => undefined,
       sharedSqliteReadSnapshot: async () => { throw new Error('unexpected shared SQLite snapshot in C-01 route test') },
     },
     [abs('src/main/indexing/root-index/rootIndexLockRuntime.ts')]: {

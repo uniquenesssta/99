@@ -9,6 +9,7 @@ mod font_mutation;
 mod font_registry;
 mod mapped_drives;
 mod shared_file_io;
+mod sqlite_schema;
 mod isolated_lifetime;
 mod config;
 mod core_scheduler;

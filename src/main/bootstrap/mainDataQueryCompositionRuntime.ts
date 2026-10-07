@@ -185,23 +185,23 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     return { ...page, items: openFontUninstallReceipts(await openLibraryDb()).hydrate(page.items) };
   }
 
-  function clearFontQueryCaches(): void {
-    tagFonts?.invalidate();
+  function clearFontQueryCaches(cancelInFlight = true): void {
+    tagFonts?.invalidate(cancelInFlight);
     invalidateFontQueryResultCache();
-    invalidateFontQueryPageCache();
+    invalidateFontQueryPageCache(cancelInFlight);
     rustCoreWorkerRuntime.invalidateRustCoreSchedulerCaches([
       "--merged-index-query-page",
       "--merged-index-query-metrics",
       "--merged-index-query-ids",
       "--shared-metadata-signature",
     ]);
-    rustCoreWorkerRuntime.cancelRustCoreSchedulerScopes([
+    if (cancelInFlight) rustCoreWorkerRuntime.cancelRustCoreSchedulerScopes([
       "page-query",
       "metrics",
       "ids-query",
       "shared-metadata-signature",
     ]);
-    fontQueryFacadeRuntimeRef?.clearFontMetricsQueryCache();
+    fontQueryFacadeRuntimeRef?.clearFontMetricsQueryCache(cancelInFlight);
     rustCoreWorkerRuntime.noteRustCoreSchedulerInteractiveActivity(
       "font-query-cache-clear",
     );
@@ -277,7 +277,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
       });
     },
     onMergedIndexCommitted: ({ reason, sequence, revision }) => {
-      clearFontQueryCaches();
+      clearFontQueryCaches(reason !== 'local-install-status');
       options.onProjectionCommitted?.(revision);
       appendStartupLog(
         `local merged index commit invalidated query caches: reason=${reason}, sequence=${sequence}, revision=${revision}`,

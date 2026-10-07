@@ -73,7 +73,7 @@ export function createRootDirectoryCacheRuntime(
     context: RootScanCacheContext,
   ): Promise<Map<string, RootDirectorySignature>> {
     const signatures = new Map<string, RootDirectorySignature>();
-    if (!isRootIndexDbPath(context.cachePath)) return signatures;
+    if (context.cache.rebuildRequired || !isRootIndexDbPath(context.cachePath)) return signatures;
     const db = await deps.openRootIndexDb(
       context.cachePath,
       context.rootPath,

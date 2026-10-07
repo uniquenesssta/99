@@ -112,8 +112,13 @@ export function createRootIndexManifestRuntime(deps: RootIndexRuntimeDeps) {
       writerPid: process.pid,
       updatedAt: new Date().toISOString()
     }
-    await writeJsonAtomic(rootCacheManifestPath(cacheDir), manifest)
+    // The latest pointer is the single activation commit point. A denied rename
+    // leaves the previous pointer and manifest untouched. Manifest repair after
+    // a successful switch is advisory and must not undo an already committed DB.
     await writeRootIndexLatestPointer(cacheDir, rootPath, storage, fileCount, activeDbPath || join(cacheDir, ROOT_INDEX_DB_DIR_NAME, ROOT_INDEX_DB_FILE_NAME))
+    await writeJsonAtomic(rootCacheManifestPath(cacheDir), manifest).catch(error => {
+      deps.appendStartupLog(`root index committed manifest publication pending: ${cacheDir}, ${String(error)}`)
+    })
   }
 
   return {
