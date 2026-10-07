@@ -154,7 +154,7 @@ async function composition(native = false) {
     requests.push(request)
     return run({ ...request, initialPhase: request.initialPhase ? { ...request.initialPhase, acceptLine: line => {
       const accepted = request.initialPhase.acceptLine(line)
-      if (accepted) { const job = jobs.find(job => job.args === request.args); assert(job); job.ready = true }
+      if (accepted) { const inputPath = request.args[request.args.indexOf('--input') + 1]; const job = jobs.find(job => job.args[job.args.indexOf('--input') + 1] === inputPath); assert(job); job.ready = true }
       return accepted
     } } : undefined })
   }

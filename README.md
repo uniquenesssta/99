@@ -12,6 +12,8 @@ HanFontManager（汉字字体工作台）是面向 Windows 的本地字体管理
 
 第四轮完整负载的正确性和排队门通过，预览端到端仍超出原包络。当前将本地目录证明折入带独立能力门的原生渲染进程，保留 500ms 证明期限、目录句柄保护和最终复制屏障；新 Windows 回执待完成，见[任务书 §14.22](docs/plans/HFM_FONT_RECOVERY_STABILITY_TASKBOOK.md#1422-专用原生暂存命令与同进程目录证明2026-10-07待完整-windows-验证)。
 
+第五轮真实原生测试发现 metadata-only 目录句柄未阻止 stage rename；已按原失败断言补强读取访问，另修新测试的 child 身份匹配。完整新提交验收仍未完成，详见[任务书 §14.23](docs/plans/HFM_FONT_RECOVERY_STABILITY_TASKBOOK.md#1423-第五轮原生边界反例与补修2026-10-07仍待收口)。
+
 2026-10-06：F14 实机反馈补修及验证补证 `03b7f73a` 已通过完整 [Windows CI 37522626020](https://github.com/uniquenesssta/99/actions/runs/37522626020)：171项诊断、真实旧库/投影组合、完整刷新ABBA、F14实际像素、两套DOM原生输入、F13与bundle全部成功。最新同job 5490项完整刷新由85.69～95.21秒降到37.48～39.02秒，16次浏览主进程返回p95由10.77～11.24秒降到1.23～1.37秒；仅为受控真实文件负载，不是NAS或整窗paint保证。网格light/dark及列表实际字形/透明空隙像素均通过；旧空白截图原因仍不反推。原生C0000121根因与W7/W8精确face仍待本机证据。保留原profile的定向复测见[任务书 §14.13](docs/plans/HFM_FONT_RECOVERY_STABILITY_TASKBOOK.md#1413-本次定向用户复测保留原profile不重复旧清单)，最终自动化回执见§14.16；失败尝试继续保留。
 
 ## 主要能力

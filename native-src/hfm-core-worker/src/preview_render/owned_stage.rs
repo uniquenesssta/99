@@ -43,9 +43,10 @@ fn excluded(path: &str, roots: &[String]) -> bool {
     roots.iter().any(|root| { let root = key(root); path == root || path.starts_with(&(root + "\\")) })
 }
 fn pin_directory(path: &Path) -> Result<(File, String), String> {
-    // FILE_READ_ATTRIBUTES; only FILE_SHARE_READ. No write/delete sharing:
-    // existing writable handles fail admission and later rename/reparse writes fail.
-    let file = OpenOptions::new().access_mode(0x80).share_mode(1)
+    // GENERIC_READ participates in Windows sharing checks; metadata-only
+    // FILE_READ_ATTRIBUTES does not prevent stage rename (CI regression).
+    // Only FILE_SHARE_READ: existing writers and later rename/reparse writes fail.
+    let file = OpenOptions::new().access_mode(0x8000_0000).share_mode(1)
         .custom_flags(0x0200_0000 | 0x0020_0000).open(path).map_err(|e| format!("owned preview directory pin failed: {e}"))?;
     let metadata = file.metadata().map_err(|e| e.to_string())?;
     if !metadata.is_dir() || metadata.file_attributes() & 0x400 != 0 { return Err("owned preview directory is a reparse point or not a directory".into()); }
@@ -114,6 +115,12 @@ mod tests {
         assert!(OpenOptions::new().access_mode(0x4000_0000).share_mode(7).custom_flags(0x0200_0000 | 0x0020_0000).open(&stage.proof.directory_path).is_err(), "writable reparse handle admitted");
         fs::write(&stage.proof.output_path, b"owned").unwrap();
         drop(stage);
+        // The exact same rename succeeds after release: denial must come from
+        // the live pin, not unrelated ACL/fixture permissions.
+        let directory = Path::new(&output).parent().unwrap();
+        let renamed = fixture.0.join("redirected");
+        fs::rename(directory, &renamed).unwrap();
+        fs::rename(&renamed, directory).unwrap();
         assert!(PreparedOwnedPreviewStage::prepare(&request, &output).is_err(), "existing reservation reused");
         assert_eq!(fs::read(&output).unwrap(), b"owned");
     }

@@ -1238,3 +1238,15 @@ artifact `11476795453`，54,307,096字节，ZIP SHA-256 `443419a9d82d246b67cbc97
 固定十个预览仍计入所有真实子进程及 whole-action E2E。新模式的 proof 被计入 render 自身，须观测匹配的 ready/final nonce、实际 JSON 排除根与 canonical 路径、时序及写屏障；不接受缺失 proof、伪造 receipt、stage 根重叠、去除屏障、write:false 或独立孤儿 proof。旧模式每个共享 proof 的唯一归属与全部负例继续保留。
 
 工作流在 release worker 后增加真实 Windows native owned-stage 边界测试并提前归档日志；aggregate 与后续完整门仍运行、原 exit code 原样传播，native 失败仍使 job 失败。Linux 仅源码与 CJS 语法、差异检查，不运行项目/typecheck/测试。当前源码尚待精确提交的完整 Windows 回执，不能以静态审查代替原生安全或性能验收。
+
+
+### 14.23 第五轮原生边界反例与补修（2026-10-07，仍待收口）
+
+`32e7fa025c0e5d59a6ea25bec86d61266d7e3fc0` 的 [Windows CI 37615691936](https://github.com/uniquenesssta/99/actions/runs/37615691936)，job `112773348003`，原生构建与 TypeScript 通过；新增真实原生边界测试 2/3 通过，但 **stage 目录在 metadata-only 句柄持有期间仍可 rename**。此为真实安全缺陷，未获验收，失败断言原样保留。`FILE_READ_ATTRIBUTES (0x80)` 只请求属性；[Microsoft CreateFile 文档](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea) 明确属性/扩展属性访问不受通常共享检查影响。改为与现有 font_mutation owner 相同的 `GENERIC_READ (0x80000000)`，维持 FILE_SHARE_READ、原 flags、完整句柄生命周期及全部反例，等待 Windows 证明实际阻断 rename/write。非法目标与真实 junction canonical 输出两项已通过，不用它们替代失败的子目录保护。
+
+aggregate 172/173 项通过，唯一失败为新 capability-true 测试观察器用 args 数组对象身份匹配 child，而生产进程所有者刻意复制 args；观察器自身抛错后生产 parser 正确拒绝 ready。改为按 exact unique --input 文件路径匹配，不修改 parser、回执、安全断言或生产 clone。提前归档的 native 日志 artifact `11478839704`（ZIP SHA-256 `1b2089c44b2cfd45ceb9ed61afd22d215d5eb1c9f285fab355cf2f6c22a66e8f`）与 aggregate 日志 `11479867056`（`76ebfcec0a42b6f5267e8ccb13815a4430149163da8ba21c62bf03a2663c0d64`）保留。独立 production/native/F14/DOM/F13/bundle 最终全部通过，但整 job 仍失败。
+
+
+第五轮完整 ABBA 四轮正确性成功；A1/B1/B2/A2 时长65.98/25.39/24.89/64.96秒。所有固定 queue、枚举、浏览、完整时长门通过；B1/B2 预览 p95/max227.4554/262.9202ms 对 A 包络261.3513ms，B2 仍超出1.5689ms，正式判定失败。新 proof 没有独立进程，实际 ready/final/全部 copy 人口与归属通过；B2 首批最后一个预览的 render 执行88ms、copy 排队104ms及执行21ms均被计入，不称作机器噪声，也不降低阈值。完整产物 artifact `11480688328`，54,264,993字节、478项、字体二进制0，ZIP SHA-256 `fd664954d70cb107bcc6a2d1f6bb1ea110e557d1aaec43a1a65ac6da6251cd05`。
+
+下一次完整运行用于验证必需的 GENERIC_READ 原生修正及精确 input 身份观察器，性能门保持不变；不将这个必要新提交的复验描述为已解决1.57ms差距。目录回归另在 drop(stage) 后执行同一个 rename 并成功改回，证明 live 阶段拒绝源于句柄保护而非无关 ACL。Linux仍只静态检查，新的原生安全结论以未弱化的 Windows 断言为准。
