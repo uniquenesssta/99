@@ -1223,3 +1223,18 @@ flowchart LR
 artifact `11476795453`，54,307,096字节，ZIP SHA-256 `443419a9d82d246b67cbc9793118bb3c1c876975a760134e191cee5c48282570`。后续准备将本地目录证明与专用原生stage渲染放入同一受保护进程，仍须先证明确切本地目录再写入、维持500ms证明期限/整体期限/真实close/输出发布屏障；此段为待实现方向，不是已通过或既有代码行为。
 
 工作流现在将未改动的 `npm run verify` stdout/stderr写入独立日志，立即保存原exit code，输出日志后按同一code退出，再always上传日志；后续完整门条件不改。这样可以在长负载仍运行时定位已经结束的aggregate失败，而不是等待整job归档。执行器第二次回退到旧快照后，仅从已核远端恢复1233e9c；原分支仍a7f00bb。当前小型加载器/观测检查点不重新启动相同性能源码的CI；完成下一项生产修正后再运行完整Windows门。
+
+
+### 14.22 专用原生暂存命令与同进程目录证明（2026-10-07，待完整 Windows 验证）
+
+第四轮真实 E2E 退化继续保留，不调整样本、阈值或并发。新增可选能力 `preview-owned-stage-v1` 与专用 `--preview-render-owned-stage` 命令，将目录 canonicalize/pin 与 GDI 渲染放在同一个已计时的隔离进程，消除独立 Node/Worker-thread proof 启动。旧 worker 不具备能力或路径与已核 handshake 不同，不能取得新命令的读足迹授权；正常预览保留原保守/合并 proof 路径。协议主版本不因此强制升级，未知新命令也不能退回旧渲染入口。
+
+传输所有者生成唯一 UUID reservation，绑定 exact worker、源字体、逻辑 stage 与配置根快照；renderer/普通内部 JSON 不可伪造 live reservation。原始发布目标不传给新命令。原生在任何写入前核 SystemDrive、普通绝对路径、token、canonical base 与配置根排除，拒绝 UNC/device/ADS/越界和已有目录；只使用 exclusive create_dir 创建唯一子目录，固定输出 preview.png。base 与 stage 以只读共享句柄持续固定，拒绝 reparse attributes，不允许 write/delete sharing，覆盖 rename/reparse 替换窗口；旧 renderer 的 create_dir_all 在此模式禁用。API 依据现有 native Windows owner 模式及 [Rust OpenOptionsExt](https://doc.rust-lang.org/stable/std/os/windows/fs/trait.OpenOptionsExt.html) / [MetadataExt](https://doc.rust-lang.org/stable/std/os/windows/fs/trait.MetadataExt.html)，经 Context7 查证，没有新增依赖。
+
+原生证明完成后写一个有界换行 ready 回执，含 nonce 与 canonical base/directory/output；主进程验证后才解除原 500ms proof 阶段期限。分块输入、缺失换行、重复/畸形/错 nonce、超长回执不能解除期限；完整 render deadline 与 whole-action deadline 继续有效。最终回执必须与 ready 完全相同，再校验来源 generation 后进入原 copy 发布。新模式仍为 write:true/unknown-commit，新增全局未知 alias 只读屏障不被 precise accesses 窄化；只可与真正只读枚举并行，所有真实/未知写者仍阻挡。副作用不重放、同输出串行、持槽至 physical close 均保留。
+
+未收到有效 ready 的路径不被猜测删除，强杀后可能保留唯一 orphan；收到证明的 cleanup 也只 unlink 固定 PNG 与非递归 rmdir，失败记录而不改变已提交成功。测试增加真实 Windows base/stage rename 与 writable-handle 拒绝、真实 junction 改指但不能重定向 canonical 输出、非法/碰撞目标不写入；传输组合分别执行旧能力路径和 capability-true 路径，验证新命令/global barrier/无独立 probe、ready→final→copy、prepared 取消后真实关闭才清理、missing-ready 保留、错 worker/无能力拒绝。阶段 parser 的分块/重复/错误/超时用真实子进程验证。
+
+固定十个预览仍计入所有真实子进程及 whole-action E2E。新模式的 proof 被计入 render 自身，须观测匹配的 ready/final nonce、实际 JSON 排除根与 canonical 路径、时序及写屏障；不接受缺失 proof、伪造 receipt、stage 根重叠、去除屏障、write:false 或独立孤儿 proof。旧模式每个共享 proof 的唯一归属与全部负例继续保留。
+
+工作流在 release worker 后增加真实 Windows native owned-stage 边界测试并提前归档日志；aggregate 与后续完整门仍运行、原 exit code 原样传播，native 失败仍使 job 失败。Linux 仅源码与 CJS 语法、差异检查，不运行项目/typecheck/测试。当前源码尚待精确提交的完整 Windows 回执，不能以静态审查代替原生安全或性能验收。

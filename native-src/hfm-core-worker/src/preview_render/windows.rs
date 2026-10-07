@@ -194,7 +194,7 @@ impl Drop for Brush {
 
 pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, String> {
     let _token = start_gdiplus()?;
-    ensure_parent_dir(&request.output_path)?;
+    if request.owned_stage.is_none() { ensure_parent_dir(&request.output_path)?; }
 
     let output_path = wide_null(&request.output_path);
     let text = wide_null(&request.text);

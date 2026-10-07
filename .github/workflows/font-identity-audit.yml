@@ -18,7 +18,25 @@ jobs:
       - name: Build real Windows Rust worker
         id: worker
         run: node build/rust/build-core-worker.cjs --required
+      - name: Verify native owned preview directory boundary
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          cmd /d /c "cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml owned_preview_stage > artifacts\native-owned-stage.log 2>&1"
+          $nativeExit = $LASTEXITCODE
+          Get-Content -LiteralPath artifacts/native-owned-stage.log -Encoding utf8
+          exit $nativeExit
+      - name: Retain native stage log before remaining full gates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-recovery-native-stage-log
+          path: artifacts/native-owned-stage.log
+          retention-days: 14
       - name: Verify complete existing Windows diagnostics
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force artifacts | Out-Null

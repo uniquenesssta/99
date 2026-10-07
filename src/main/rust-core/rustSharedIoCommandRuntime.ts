@@ -28,6 +28,11 @@ export function registerIsolatedRoot(rootPath: string, physicalPath?: string): v
   if (!previous?.startsWith('\\\\') || resource.startsWith('\\\\')) configuredRoots.set(root, { resource, physical: share ? physical.replace(/\\+$/, '') : undefined })
 }
 
+// Transport-owned exclusion snapshot; never supplied by a renderer request.
+export function configuredSharedIoRoots(): string[] {
+  return [...new Set([...configuredRoots].flatMap(([root, value]) => value.physical ? [root, value.physical] : [root]))]
+}
+
 export function sharedIoAvailabilityRoot(path: string): string | undefined {
   const normalized = win32.normalize(normalizeNativePathText(path))
   const match = [...configuredRoots.keys()].filter(root => normalized.toLowerCase() === root || normalized.toLowerCase().startsWith(root + '\\')).sort((a,b) => b.length-a.length)[0]

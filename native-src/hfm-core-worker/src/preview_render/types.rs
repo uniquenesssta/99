@@ -12,6 +12,7 @@ const MAX_TEXT_LENGTH: usize = 4096;
 #[derive(Clone, Debug)]
 pub struct PreviewRenderCommandConfig {
     pub input_path: String,
+    pub owned_stage_required: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -30,8 +31,18 @@ pub struct PreviewRenderRequest {
     #[serde(deserialize_with = "deserialize_dimension")]
     pub height: u32,
     pub output_path: String,
+    #[serde(default)]
+    pub owned_stage: Option<OwnedPreviewStageRequest>,
     #[serde(default, deserialize_with = "deserialize_layout")]
     pub layout: Option<NativePreviewLayout>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OwnedPreviewStageRequest {
+    pub base_path: String,
+    pub token: String,
+    pub excluded_roots: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

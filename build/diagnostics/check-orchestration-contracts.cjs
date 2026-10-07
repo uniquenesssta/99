@@ -226,7 +226,7 @@ function collectRustFunctionStrings(functions, name, seen = new Set(), route = n
       // These transport selectors inspect an existing request; they do not add
       // flags to any caller's CLI. Keep the emitted command baselines unchanged.
       const selector = ['runRustCoreScheduledCommand','runRustCoreScheduledCommandDirect'].includes(name) && (
-        node.text === '--preview-render-image' && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
+        ['--preview-render-image','--preview-render-owned-stage'].includes(node.text) && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
         node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf'
       )
       if (!selector) strings.push(node.text)
@@ -310,7 +310,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
       if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {}, isSharedPreviewReadScope: () => false, currentSharedIoSignal: () => undefined, currentSharedIoPriority: () => undefined }
       if (target === 'src/main/path/startupPathAvailabilityRuntime') return { getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }
       const core = 'src/main/rust-core/'
-      if (target === core + 'ownedPreviewStageRuntime' || target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/path/sharedIoAccessRuntime', 'src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/ioDeadlineRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
+      if (target === core + 'nativeOwnedPreviewStageRuntime' || target === core + 'ownedPreviewStageRuntime' || target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/path/sharedIoAccessRuntime', 'src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/ioDeadlineRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
         return loadTypeScriptModule(target + '.ts', localRequire)
       }
       return localRequire(target.startsWith(core) ? './' + target.slice(core.length) : id)

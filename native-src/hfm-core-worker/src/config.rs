@@ -143,6 +143,7 @@ fn parse_preview_cache_command_args(args: &[String]) -> Result<PreviewCacheComma
 fn parse_preview_render_command_args(args: &[String]) -> Result<PreviewRenderCommandConfig, String> {
     Ok(PreviewRenderCommandConfig {
         input_path: parse_input_only_command_args(args)?,
+        owned_stage_required: args.iter().any(|arg| arg == "--preview-render-owned-stage"),
     })
 }
 
@@ -464,7 +465,7 @@ pub fn parse_args(args: &[String]) -> Command {
         return Command::PreviewCacheMaintenance(parse_preview_cache_command_args(args));
     }
 
-    if args.iter().any(|arg| arg == "--preview-render-image") {
+    if args.iter().any(|arg| arg == "--preview-render-image" || arg == "--preview-render-owned-stage") {
         return Command::PreviewRenderImage(parse_preview_render_command_args(args));
     }
 

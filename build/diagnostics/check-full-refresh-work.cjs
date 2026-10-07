@@ -195,18 +195,23 @@ function instrument(host, fixture) {
         assert(fs.statSync(inputPath).size<=1024*1024,'Preview instrumentation input exceeds bound')
         input=JSON.parse(fs.readFileSync(inputPath,'utf8'))
       }
-      if (input) { row.operation = input.operation; row.path = input.path }
+      if (input) { row.operation = input.operation; row.path = input.path; if(input.ownedStage)row.nativeStageInput=plain(input.ownedStage) }
     }
     counters.tasks++
     if(lane==='background-refresh' && (input?.operation==='fontContentIdentity'||input?.operation==='readFile'&&/\.(ttf|otf|ttc|otc)$/i.test(input.path))){
       backgroundAdmissions++
       for(let i=backgroundWaiters.length-1;i>=0;i--)if(backgroundAdmissions>=backgroundWaiters[i].count)backgroundWaiters.splice(i,1)[0].resolve()
     }
-    return originalRun.call(pool, { ...request, onClose: () => { row.closedAt = performance.now(); request.onClose?.() } }).then(receipt => {
+    return originalRun.call(pool, { ...request, initialPhase: request.initialPhase ? { ...request.initialPhase, acceptLine: line => {
+      const accepted=request.initialPhase.acceptLine(line)
+      if(accepted){row.stageReadyAt=performance.now();row.stageReadyReceipt=JSON.parse(line.slice('hfm-owned-preview-ready: '.length))}
+      return accepted
+    } } : undefined, onClose: () => { row.closedAt = performance.now(); request.onClose?.() } }).then(receipt => {
       row.queuedMs = receipt.queuedMs; row.executionMs = receipt.executionMs
       if (lane.startsWith('foreground')) counters.foregroundQueueMs.push(Number(receipt.queuedMs || 0))
       try {
         const result = JSON.parse(receipt.stdout.trim().split(/\r?\n/).find(Boolean))
+        if (result.ownedStage) row.nativeStageReceipt = plain(result.ownedStage)
         if (request.label === 'preview-stage-locality') { row.proofPhysicalPath = result.physicalPath; row.proofDirectory = result.directory }
         if (input?.operation === 'fontContentIdentity') counters.nativeHashedBytes += Number(result.value?.readBytes || 0)
         if (input?.operation === 'readFile' && /\.(ttf|otf|ttc|otc)$/i.test(input.path)) {
@@ -761,14 +766,26 @@ function semanticQueueCohorts(row) {
   const previewCost=[]
   for(let index=0;index<WORKLOAD.nativePreviews;index++) {
     const children=preview.filter(value=>value.actionId===`foreground-preview:${index}`)
-    const renders=children.filter(value=>value.label==='preview-render-image')
+    const renders=children.filter(value=>['preview-render-image','preview-render-owned-stage'].includes(value.label))
     assert.equal(renders.length,1,'Each preview must render exactly once')
     const proofs=children.filter(value=>value.label==='preview-stage-locality')
     assert(proofs.length<=1,'Stage locality probe duplicated')
     const copies=children.filter(value=>value.label==='shared-file-io:copyFile')
     assert.equal(copies.length,renders[0].sharedReadOnlyPreview?1:0,'Staged preview publication missing/duplicated or unowned')
     assert(copies.every(value=>value.operation==='copyFile'),'Preview copy operation mislabeled')
-    if(renders[0].sharedReadOnlyPreview) {
+    if(renders[0].label==='preview-render-owned-stage') {
+      const render=renders[0],input=render.nativeStageInput,receipt=render.nativeStageReceipt
+      assert(render.sharedReadOnlyPreview&&render.write&&render.processLane==='preview-read','Native ownership lost mutation/physical lane semantics')
+      assert(render.roots.includes('configured-root:owned-preview-stage')&&render.accesses===null,'Native unknown-alias write barrier was narrowed')
+      assert(input&&receipt&&receipt.version===1&&receipt.token===input.token&&receipt.token===render.previewStageProof?.id,'Missing native stage ownership')
+      assert.deepEqual(receipt,render.stageReadyReceipt,'Native ready/final stage receipts differ')
+      assert(Number.isFinite(render.stageReadyAt)&&render.stageReadyAt>=render.startedAt&&render.stageReadyAt<=render.closedAt,'Native stage readiness was not observed during execution')
+      assert(/^[a-z]:\\/i.test(receipt.basePath)&&receipt.basePath.slice(0,2).toLowerCase()===String(process.env.SystemDrive).toLowerCase(),'Native stage escaped SystemDrive')
+      assert.equal(pathKey(receipt.directoryPath),pathKey(path.win32.join(receipt.basePath,`.hfm-preview-stage-${input.token}`)))
+      assert.equal(pathKey(receipt.outputPath),pathKey(path.win32.join(receipt.directoryPath,'preview.png')))
+      assert(!input.excludedRoots.some(root=>pathKey(receipt.basePath)===pathKey(root)||pathKey(receipt.basePath).startsWith(pathKey(root)+'\\')),'Native proof overlapped configured root')
+      assert.equal(proofs.length,0,'Folded native proof still submitted separate work')
+    } else if(renders[0].sharedReadOnlyPreview) {
       const witness=renders[0].previewStageProof,proof=proofsById.get(witness?.id)
       assert(proof,'Staged render locality proof missing')
       assert.equal(pathKey(witness.base),pathKey(proof.proofPhysicalPath),'Stage canonical base differs from actual proof receipt')

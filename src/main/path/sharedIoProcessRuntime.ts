@@ -20,7 +20,8 @@ export type SharedIoProcessRequest = {
   write: boolean
   /** Granted only by the transport for its live, verified local preview stage. */
   sharedReadOnlyPreview?: boolean
-  previewStageProof?: { id: string; base: string; openedAt: number; joinedAt?: number }
+  initialPhase?: { timeoutMs: number; acceptLine: (line: string) => boolean }
+  previewStageProof?: { mode?: 'native'; id: string; base: string; openedAt: number; joinedAt?: number }
   signal?: AbortSignal
   env?: NodeJS.ProcessEnv
   onClose?: () => void
@@ -70,6 +71,8 @@ type Job = {
   child?: ChildProcessWithoutNullStreams
   timer?: ReturnType<typeof setTimeout>
   killTimer?: ReturnType<typeof setTimeout>
+  phaseTimer?: ReturnType<typeof setTimeout>
+  phaseComplete?: boolean
   abort?: () => void
   settled: boolean
   enqueuedAt: number
@@ -152,6 +155,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   }
   const detach = (job: Job) => {
     if (job.timer) clearTimeout(job.timer)
+    if (job.phaseTimer) clearTimeout(job.phaseTimer)
     if (job.abort) job.request.signal?.removeEventListener('abort', job.abort)
   }
   function settle(job: Job, result?: Result, error?: unknown): void {
@@ -216,7 +220,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     const request = job.request
     if (request.signal?.aborted) { cancel(job, 'cancelled'); return }
     if (request.admit && !request.admit()) { cancel(job, 'stale-generation'); return }
-    let stdout = '', stderr = '', bytes = 0
+    let stdout = '', stderr = '', bytes = 0, phaseBuffer = ''
     try {
       const child = spawn(request.file, request.args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe'], windowsHide: true, shell: false, env: { ...process.env, ...request.env, HFM_PARENT_PID: String(process.pid) } })
       child.stdio[3]?.on('error', () => undefined)
@@ -236,7 +240,26 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
         bytes += Buffer.byteLength(chunk, 'utf8')
         if (bytes > (request.maxBuffer ?? 8 * 1024 * 1024)) { cancel(job, 'output-limit'); return }
         if (kind === 'stdout') stdout += chunk
-        else stderr += chunk
+        else {
+          stderr += chunk
+          if (request.initialPhase) {
+            phaseBuffer += chunk
+            let newline: number
+            while ((newline = phaseBuffer.indexOf('\n')) >= 0) {
+              const line = phaseBuffer.slice(0, newline).replace(/\r$/, '')
+              phaseBuffer = phaseBuffer.slice(newline + 1)
+              if (line.length > 8192) { cancel(job, 'invalid-stage-receipt'); return }
+              try {
+                if (request.initialPhase.acceptLine(line)) {
+                  if (job.phaseComplete) { cancel(job, 'invalid-stage-receipt'); return }
+                  job.phaseComplete = true
+                  if (job.phaseTimer) clearTimeout(job.phaseTimer)
+                }
+              } catch { cancel(job, 'invalid-stage-receipt'); return }
+            }
+            if (phaseBuffer.length > 8192) { cancel(job, 'invalid-stage-receipt'); return }
+          }
+        }
       }
       child.stdout.on('data', chunk => collect('stdout', chunk))
       child.stderr.on('data', chunk => collect('stderr', chunk))
@@ -249,7 +272,8 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
         traceJob(job, 'shared-closed')
         release(job)
         if (!job.settled) {
-          if (code === 0) settle(job, { stdout, stderr, ...timingOf(job) })
+          if (code === 0 && request.initialPhase && !job.phaseComplete) settle(job, undefined, new SharedIoProcessError('Owned stage proof receipt missing', 'unknown', 'invalid-stage-receipt'))
+          else if (code === 0) settle(job, { stdout, stderr, ...timingOf(job) })
           else {
             const detail = workerFailureDetail(stdout)
             const error = new SharedIoProcessError(`Shared I/O process failed: code=${code}, signal=${signal}${detail ? `, message=${detail}` : ''}`, 'unknown', 'process-exit')
@@ -261,6 +285,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
         drain()
       })
       job.timer = setTimeout(() => cancel(job, 'timeout'), Math.max(1, request.timeoutMs))
+      if (request.initialPhase) job.phaseTimer = setTimeout(() => { log(`shared io initial phase timeout: request=${job.id}`); cancel(job, 'timeout') }, Math.max(1, Math.min(500, request.initialPhase.timeoutMs)))
     } catch (error) {
       settle(job, undefined, new SharedIoProcessError(`Shared I/O spawn failed: ${String(error)}`, 'not-started', 'spawn-error'))
       release(job)
@@ -280,7 +305,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     if (!request.roots.length) return reject('Shared I/O requires a resource identity', 'invalid-root')
     if ((!request.write || request.sharedReadOnlyPreview) && request.accesses?.some(access => access.mode === 'write'))
       return reject('Read-only shared footprint contradicts declared writes', 'invalid-access')
-    if (request.sharedReadOnlyPreview && (!request.write || request.label !== 'preview-render-image' || request.lane !== 'preview-read'))
+    if (request.sharedReadOnlyPreview && (!request.write || !['preview-render-image','preview-render-owned-stage'].includes(request.label || '') || request.lane !== 'preview-read' || (request.label === 'preview-render-owned-stage' && !request.initialPhase)))
       return reject('Invalid staged preview admission', 'invalid-preview-stage')
     if (request.accesses && (request.roots.some(root => !request.accesses!.some(access => access.root === root)) || request.accesses.some(access => !request.roots.includes(access.root) || !access.path || !['file','database','tree'].includes(access.scope) || !['read','write'].includes(access.mode)))) request.accesses = undefined
     const requestLane = request.lane || 'default'

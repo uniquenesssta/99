@@ -84,6 +84,25 @@ for(const mutate of [
 ]) {
  const altered=stagedSample();mutate(altered[1]);assert(compareRuns(altered).populationFailure,'Unowned/omitted staged child escaped')
 }
+function nativeSample() {
+ const runs=clone(original),row=runs[1],render=row.work.processRequests.findLast(value=>value.lane==='foreground-preview')
+ const drive=String(process.env.SystemDrive||'C:'),token='00000000-0000-4000-8000-000000000001',basePath=drive+'\\Temp'
+ const directoryPath=basePath+'\\.hfm-preview-stage-'+token,outputPath=directoryPath+'\\preview.png'
+ Object.assign(render,{label:'preview-render-owned-stage',sharedReadOnlyPreview:true,write:true,processLane:'preview-read',accesses:null,
+  roots:['configured-root:owned-preview-stage'],previewStageProof:{mode:'native',id:token},startedAt:0,stageReadyAt:1,closedAt:2,
+  nativeStageInput:{basePath,token,excludedRoots:[]},nativeStageReceipt:{version:1,token,basePath,directoryPath,outputPath}})
+ render.stageReadyReceipt=clone(render.nativeStageReceipt)
+ row.work.processRequests.push({lane:render.lane,actionId:render.actionId,label:'shared-file-io:copyFile',operation:'copyFile',queuedMs:0});row.work.tasks++
+ return runs
+}
+assert.equal(compareRuns(nativeSample()).passed,true,'Folded native proof changed semantic population')
+for(const mutate of [
+ render=>{render.roots=[]},render=>{render.write=false},render=>{render.stageReadyReceipt.token='wrong'},
+ render=>{delete render.nativeStageReceipt},render=>{render.stageReadyAt=3},render=>{render.nativeStageInput.excludedRoots=[render.nativeStageReceipt.basePath]},
+]) {
+ const value=nativeSample();mutate(value[1].work.processRequests.find(row=>row.label==='preview-render-owned-stage'))
+ assert(compareRuns(value).populationFailure,'Invalid native ownership/cost attribution accepted')
+}
 const failedBaseline=clone(original);failedBaseline[0].passed=false;failedBaseline[0].comparable=false
 assert.equal(compareRuns(failedBaseline).comparable,false,'Failed full baseline was made comparable')
 console.log('[diagnostics:full-refresh-acceptance] fixed-cohort equality, observed +18ms regression, missing/misclassified/duplicate samples copy-only cost/ownership and failed baseline rejection passed')

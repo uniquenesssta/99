@@ -10,6 +10,7 @@ import { promises as fsp } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, win32 } from 'node:path'
 import { createOwnedPreviewStageRuntime } from './ownedPreviewStageRuntime'
+import { createNativeOwnedPreviewStageRuntime } from './nativeOwnedPreviewStageRuntime'
 import { promisify } from 'node:util'
 import type { RustCoreWorkerRuntimeOptions, RustCoreWorkerStatus } from './rustCoreWorkerContracts'
 import type { RustCoreWorkerHandshake, RustCoreSchedulerProfilePayload } from './rustCoreWorkerPayloadTypes'
@@ -19,7 +20,7 @@ import { resolveRustCoreWorkerPathWithDiagnostics } from './rustCoreWorkerPathRu
 import { createRustCoreSchedulerRuntime } from './rustCoreSchedulerRuntime'
 import { createRustCoreDaemonRuntime, isRustCoreDaemonSubmittedError } from './rustCoreDaemonRuntime'
 import { applicationSharedIoProcessRuntime, SharedIoProcessError } from '../path/sharedIoProcessRuntime'
-import { sharedIoAccesses, sharedIoResourceKeys, sharedIoPathsInInput, type RustSharedIoTarget } from './rustSharedIoCommandRuntime'
+import { sharedIoAccesses, sharedIoResourceKeys, sharedIoPathsInInput, configuredSharedIoRoots, type RustSharedIoTarget } from './rustSharedIoCommandRuntime'
 import { stopSharedPathProbes } from '../path/sharedPathProbeRuntime'
 
 const execFileAsync = promisify(execFile)
@@ -102,6 +103,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   const localChildren = new Set<ChildProcess>()
   const sharedIo = applicationSharedIoProcessRuntime(options.appendStartupLog)
   const previewStages = createOwnedPreviewStageRuntime(sharedIoResourceKeys)
+  const nativePreviewStages = createNativeOwnedPreviewStageRuntime(sharedIoResourceKeys, configuredSharedIoRoots)
   const previewPublications = new Map<string, string>()
   const previewAdmissions = new Map<string, () => boolean>()
   const temporaryFiles = new Map<string, { holds: number; disposed: boolean; file: RustCoreJsonFile; input?: unknown }>()
@@ -190,14 +192,24 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       : inferredPaths.length ? { paths: inferredPaths, write: true } : undefined
     const inputIndex = args.indexOf('--input')
     const inputPath = inputIndex >= 0 ? args[inputIndex + 1] : ''
-    const sharedReadOnlyPreview = args[0] === '--preview-render-image' && target?.write === true
-      && previewStages.provesReadOnly(temporaryFiles.get(inputPath)?.input, target.accesses)
-    const accesses = target?.accesses ? await sharedIoAccesses(target.accesses) : undefined
+    const ownedNativeStage = args[0] === '--preview-render-owned-stage' && cachedStatus?.path === workerPath && hasCapability(cachedStatus, 'preview-owned-stage-v1')
+      ? nativePreviewStages.forInput(temporaryFiles.get(inputPath)?.input, workerPath) : undefined
+    if (args[0] === '--preview-render-owned-stage' && (!ownedNativeStage || target?.write !== true || !target.preview
+      || target.paths.length !== 2 || !target.paths.includes(ownedNativeStage.fontPath) || !target.paths.includes(ownedNativeStage.logicalPath)
+      || target.accesses?.length !== 2 || !target.accesses.some(access => access.path === ownedNativeStage.fontPath && access.mode === 'read' && access.scope === 'file')
+      || !target.accesses.some(access => access.path === ownedNativeStage.logicalPath && access.mode === 'write' && access.scope === 'file')))
+      throw new SharedIoProcessError('Native preview stage reservation is not authorized', 'not-started', 'invalid-stage-reservation')
+    const sharedReadOnlyPreview = target?.write === true && (Boolean(ownedNativeStage) || (args[0] === '--preview-render-image'
+      && previewStages.provesReadOnly(temporaryFiles.get(inputPath)?.input, target.accesses)))
+    let accesses = target?.accesses ? await sharedIoAccesses(target.accesses) : undefined
     if (target && accesses?.length && !sharedReadOnlyPreview) target = { ...target, write: accesses.some(access => access.mode === 'write') }
     const previewRead = sharedReadOnlyPreview || (target?.write === false && (target.preview || (args[0] === '--shared-file-io' && isSharedPreviewReadScope())))
     execOptions = { ...execOptions, sharedIo: target }
     args = [...args]
     const roots = target ? await sharedIoResourceKeys(target.paths) : []
+    // A folded proof starts with unknown physical aliases: this global read
+    // barrier must not be narrowed away by a verified font-source footprint.
+    if (ownedNativeStage) { roots.push('configured-root:owned-preview-stage'); accesses = undefined }
     const publicationOutput = previewPublications.get(inputPath)
     if (publicationOutput) roots.push(`preview-output:${win32.normalize(publicationOutput).toLowerCase()}`)
     // Preflight writes must never enter a replaceable/cached daemon read lane.
@@ -220,7 +232,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
-      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, sharedReadOnlyPreview, previewStageProof: sharedReadOnlyPreview ? previewStages.proofForInput(temporaryFiles.get(inputPath)?.input) : undefined, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
+      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, sharedReadOnlyPreview, previewStageProof: ownedNativeStage?.proof || (sharedReadOnlyPreview ? previewStages.proofForInput(temporaryFiles.get(inputPath)?.input) : undefined), initialPhase: ownedNativeStage ? { timeoutMs: 500, acceptLine: ownedNativeStage.acceptLine } : undefined, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
@@ -304,7 +316,9 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     const generation = root ? getStartupPathRootState(root).generation : undefined
     const admit = () => !root || (getStartupPathRootState(root).generation === generation && getStartupPathRootState(root).state !== 'offline')
     const deadline = Date.now() + 3000 + Math.min(30000, Math.max(100, execOptions.timeout || 30000))
-    const stage = await previewStages.allocate(input.fontPath, signal)
+    const nativeStage = cachedStatus?.path === workerPath && hasCapability(cachedStatus, 'preview-owned-stage-v1')
+      ? await nativePreviewStages.reserve(input.fontPath, workerPath) : null
+    const stage = nativeStage || await previewStages.allocate(input.fontPath, signal)
     if (!stage) return runRustCoreScheduledCommandDirect(workerPath, args, execOptions)
     const logCleanup = (error: unknown) => { try { options.appendStartupLog(`preview stage cleanup deferred: ${String(error)}`) } catch { /* Cleanup diagnostics cannot trigger replay. */ } }
     const deadlineController = new AbortController()
@@ -315,12 +329,13 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     previewAdmissions.set(renderInput.path, admit)
     previewAdmissions.set(publishInput.path, admit)
     try {
-      await renderInput.writeJson({ ...original, outputPath: stage.path })
-      const result = await runRustCoreScheduledCommandDirect(workerPath, ['--preview-render-image', '--input', renderInput.path], {
+      await renderInput.writeJson({ ...original, outputPath: stage.path, ownedStage: nativeStage?.request })
+      const result = await runRustCoreScheduledCommandDirect(workerPath, [nativeStage ? '--preview-render-owned-stage' : '--preview-render-image', '--input', renderInput.path], {
         ...execOptions, signal: lifetime.signal, timeout: Math.max(100, Math.min(execOptions.timeout || 30000, deadline - Date.now())), sharedIo: { paths: [input.fontPath, stage.path], write: true, preview: true,
           accesses: [{ path: input.fontPath, mode: 'read', scope: 'file' }, { path: stage.path, mode: 'write', scope: 'file' }] },
       })
-      const receipt = parseJsonLine<{ ok?: boolean; outputPath?: string }>(result.stdout)
+      const receipt = parseJsonLine<{ ok?: boolean; outputPath?: string; ownedStage?: unknown }>(result.stdout)
+      if (nativeStage) nativeStage.acceptFinal(receipt.ownedStage, receipt.outputPath)
       if (receipt.ok !== true || receipt.outputPath !== stage.path)
         throw new SharedIoProcessError('预览暂存回执无效。', 'unknown', 'invalid-receipt')
       assertLocalShutdownWorkAllowed()

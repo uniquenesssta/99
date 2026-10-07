@@ -2,6 +2,8 @@ mod types;
 
 #[cfg(windows)]
 mod windows;
+#[cfg(windows)]
+mod owned_stage;
 #[cfg(not(windows))]
 mod non_windows;
 
@@ -18,17 +20,37 @@ pub fn render_preview_image(config: &PreviewRenderCommandConfig) -> Result<Strin
         .map_err(|error| format!("failed to read preview render input: {}", error))?;
     let request: PreviewRenderRequest = serde_json::from_str(&input)
         .map_err(|error| format!("failed to parse preview render input: {}", error))?;
-    let request = request.normalized()?;
+    let mut request = request.normalized()?;
     validate_request(&request)?;
+    if config.owned_stage_required != request.owned_stage.is_some() {
+        return Err("owned stage requires the dedicated native command and reservation".into());
+    }
+    #[cfg(not(windows))]
+    if config.owned_stage_required { return Err("owned preview staging requires Windows".into()); }
+    #[cfg(windows)]
+    let owned = request.owned_stage.as_ref().map(|input| owned_stage::PreparedOwnedPreviewStage::prepare(input, &request.output_path)).transpose()?;
+    #[cfg(windows)]
+    if let Some(stage) = &owned {
+        request.output_path = stage.proof.output_path.clone();
+        use std::io::Write;
+        let mut stderr = std::io::stderr().lock();
+        writeln!(stderr, "hfm-owned-preview-ready: {}", serde_json::to_string(&stage.proof).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        stderr.flush().map_err(|e| e.to_string())?;
+    }
+
 
     let provenance = platform_render_preview_image(&request)?;
 
+    #[cfg(windows)]
+    let owned_json = if let Some(stage) = &owned { format!(",\"ownedStage\":{}", serde_json::to_string(&stage.proof).map_err(|e| e.to_string())?) } else { String::new() };
+    #[cfg(not(windows))]
+    let owned_json = String::new();
     Ok(format!(
-        "{{\"ok\":true,\"engine\":\"rust-private-gdi\",\"outputPath\":\"{}\",\"layoutVersion\":\"{}\",\"elapsedMs\":{},\"provenance\":{}}}",
+        "{{\"ok\":true,\"engine\":\"rust-private-gdi\",\"outputPath\":\"{}\",\"layoutVersion\":\"{}\",\"elapsedMs\":{},\"provenance\":{}{}}}",
         escape_json(&request.output_path),
         request.layout.as_ref().map(|layout| layout.version.as_str()).unwrap_or("legacy"),
         started_at.elapsed().as_millis(),
-        provenance
+        provenance, owned_json
     ))
 }
 
