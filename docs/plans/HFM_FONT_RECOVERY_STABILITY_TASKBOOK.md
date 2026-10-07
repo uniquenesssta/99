@@ -1199,3 +1199,17 @@ flowchart LR
 另补两个保留条件：已配置根的旧收藏导入遇缺失/不完整merged来源时保持pending，无根profile正常初始化；即时统计查询失败保留最后权威统计，增加真实controller失败断言。
 
 编辑执行器一度断线并恢复到旧文件系统快照；已从远端重新取得受测 `5de75fc`，核原本地/远端分支仍为 `a7f00bb`，仅在既有恢复分支重建未发布差异并重新静态审阅。不是Windows运行结果。此轮仅Linux源码/静态语法/差异检查，未运行项目/测试/typecheck；必须在新精确提交完成完整Windows workflow才可收尾，两轮失败证据继续保留。
+
+### 14.20 第三轮证据与临时目录探测合并（2026-10-07，待验证）
+
+`86ebce1abbe80c099618cc70424b507a5df64433` 的 [Windows CI 37600347417](https://github.com/uniquenesssta/99/actions/runs/37600347417)，job `112722910040`，**整体失败**。TypeScript通过，173项诊断中167通过；新populated cache恢复组合、真实stage子进程、原生root候选/旧文件保留、取消/拒写/重启及历史标签专项已通过。独立production/native/F14/DOM/F13/bundle全部通过。失败六项为：useLibraryController的D-01 token hash、tag invalidation负例锚点、两项旧generation门精确字符串、CLI结构遍历把预览专用分支的flags计入其他命令、databaseDerived fixture错误使用原始文件SHA而非既有token hash。仅迁移有实测Windows输出/明确行为回归保护的冻结值和锚点；保留负例数量。CLI遍历先证明非preview命令在stage分配前返回Direct，才排除不可达的预览发布flags，预览自身追加实际 `--transfer` 契约。
+
+完整ABBA四轮正确性成功，A1/B1/B2/A2耗时86.05/33.45/36.54/88.89秒。正式比较因内部copy输入未被外部facade metadata hook观测、`operation`缺失而拒绝，未获得性能通过结论。原始值又证实一个真实预览退化：B1/B2预览p95/max为789.08/842.50ms，A包络324.02ms；B枚举已降为11～26ms，不能用它掩盖预览退化。四项并发预览分别启动四个serialized locality probe，单probe执行99～148ms、重复probe排队最高424ms，并阻挡随后copy。原样保留失败产物：artifact `11474365173`，54,329,872字节、478项、字体二进制0，ZIP SHA-256 `27f9e6634a1ab9a24d50a293121f8147bc4f7c878fffe2e5449c5f4858c3d8ad`。
+
+修正仅合并同一owner、同规范base和SystemDrive下**仍在执行**的locality proof，不缓存已完成结论、不增加probe/preview并发和queue cap。共享proof不绑定任一消费者取消信号；单个/全部消费者可及时取消，剩余bounded owner probe仍持槽直到physical close，没有消费者时不能生成stage/render。超时错误也先等待close再移除对应pending promise；每消费者在wait前后和mkdir前检查取消，并重新核canonical路径与资源归属。每个render仍有独立唯一stage，来源generation和最终copy写屏障均不改。这也消除十个同时预览面对probe容量1+8时第十项被提前拒绝的独立容量缺陷。
+
+增加十个真实并行stage、一个真实pending probe、十个独立输出及发布的回归；确定先启动proof所有者后才加入第二消费者，验证取消发起者不取消后者；全部取消保留owner直到close，失败共享proof在close后新批次重新探测，proof期间来源generation变化不启动render。
+
+观测字段明确保留proof ID、创建/加入时点、原词法base与实际canonical目录回执。固定十个预览中，每个stage须对应一个实测成功proof且在pending区间加入；每个proof成本仅归属实际最先加入的发起动作，禁止缺失、重复、孤儿、错误base、迟到复用或转移成本。两render共享一proof的正例与这些反例同时保留，E2E/枚举/浏览/总时长阈值不变。内部stage/copy JSON只在已核本地临时目录、限定文件名和1MiB大小后读取实际字节，不从label猜operation，不删除失去归属的子进程。
+
+本轮后续代码仍只做Linux静态源码/语法/差异检查，待精确提交完整Windows回执；不把前三轮独立绿灯或改善指标当成完成，也不重跑未改源码碰运气。

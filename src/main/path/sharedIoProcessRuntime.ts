@@ -20,6 +20,7 @@ export type SharedIoProcessRequest = {
   write: boolean
   /** Granted only by the transport for its live, verified local preview stage. */
   sharedReadOnlyPreview?: boolean
+  previewStageProof?: { id: string; base: string; openedAt: number; joinedAt?: number }
   signal?: AbortSignal
   env?: NodeJS.ProcessEnv
   onClose?: () => void

@@ -681,7 +681,8 @@
         "--input",
         "--preview-render-image",
         "--shared-file-io",
-        "--shared-metadata-overlay-read"
+        "--shared-metadata-overlay-read",
+        "--transfer"
       ]
     },
     {
@@ -844,5 +845,6 @@
         ]
       }
     ]
-  }
+  },
+  "previewStagingMigration": "Preview-only transport now renders owned local stage and publishes through native shared-file-io with --transfer. Non-preview guard and separate emitted flag routes remain structural assertions."
 }

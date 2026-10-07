@@ -220,7 +220,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
-      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, sharedReadOnlyPreview, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
+      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, sharedReadOnlyPreview, previewStageProof: sharedReadOnlyPreview ? previewStages.proofForInput(temporaryFiles.get(inputPath)?.input) : undefined, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
         timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)

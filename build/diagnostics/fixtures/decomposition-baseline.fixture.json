@@ -625,7 +625,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "1db849fc9167c465cac9158fce8c902065a7dbb64f29081239d62c2ff49174eb"
+      "tokenHash": "a97f54bc40ed16a3eb4acc6bb67b79fce864f46f553cfef127b95fd1d1813eeb"
     },
     "src/renderer/src/runtime/app/usePreviewController.ts": {
       "functions": [
@@ -1219,5 +1219,6 @@
       "src/main/library/runtime/localFontTagRustAdapterRuntime.ts"
     ],
     "reason": "F09 adds main-process-only recovery CAS/content guards and proven local state retention to the existing local tag batch; unchanged public surfaces/owners remain frozen. Existing rollback, isolation, signal and mutation tests remain."
-  }
+  },
+  "recoveryMigration": "F14 immediate metrics query failure retains prior authority; actual controller failure regression preserves sequencing and local-intent guards. Token hash observed on exact Windows commit 86ebce1."
 }

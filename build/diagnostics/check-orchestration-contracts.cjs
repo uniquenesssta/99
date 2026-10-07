@@ -194,18 +194,38 @@ function rustFacadeKeys() {
   return objectPropertyKeys(facade)
 }
 
-function collectRustFunctionStrings(functions, name, seen = new Set()) {
+function collectRustFunctionStrings(functions, name, seen = new Set(), route = name) {
   if (seen.has(name)) return []
   seen.add(name)
   const record = functions.get(name)
   assert(record, `Rust command implementation is missing: ${name}`)
+  let reachable=[record.node]
+  if (name === 'runRustCoreScheduledCommand' && route !== 'runRustPreviewRenderImage') {
+    // Prove mismatch is a top-level OR disjunct and returns unchanged arguments.
+    const unwrap=node=>ts.isParenthesizedExpression(node)?unwrap(node.expression):node
+    const disjuncts=node=>{node=unwrap(node);return ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.BarBarToken?[...disjuncts(node.left),...disjuncts(node.right)]:[node]}
+    const mismatch=node=>ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.ExclamationEqualsEqualsToken
+      && ts.isElementAccessExpression(node.left)&&ts.isIdentifier(node.left.expression)&&node.left.expression.text==='args'
+      && ts.isNumericLiteral(node.left.argumentExpression)&&node.left.argumentExpression.text==='0'
+      && ts.isStringLiteral(node.right)&&node.right.text==='--preview-render-image'
+    const unchangedReturn=node=>ts.isReturnStatement(node)&&node.expression&&ts.isCallExpression(node.expression)
+      && ts.isIdentifier(node.expression.expression)&&node.expression.expression.text==='runRustCoreScheduledCommandDirect'
+      && node.expression.arguments.length===3&&node.expression.arguments.every((argument,index)=>ts.isIdentifier(argument)&&argument.text===['workerPath','args','execOptions'][index])
+    const statements=record.node.body.statements
+    const guard=statements.findIndex(statement=>ts.isIfStatement(statement)&&disjuncts(statement.expression).some(mismatch)&&unchangedReturn(statement.thenStatement))
+    const allocation=statements.findIndex(statement=>ts.isVariableStatement(statement)
+      && statement.declarationList.declarations.some(declaration=>declaration.name.getText(record.file)==='stage'))
+    assert(guard>=0&&allocation>guard,'Non-preview command can enter preview staging')
+    // Still inventory every emitted/delegated CLI before the proved return.
+    reachable=statements.slice(0,guard+1)
+  }
   const strings = []
   const delegatedFunctions = []
-  visit(record.node, (node) => {
+  for(const reachableNode of reachable) visit(reachableNode, (node) => {
     if (ts.isStringLiteral(node)) {
       // These transport selectors inspect an existing request; they do not add
       // flags to any caller's CLI. Keep the emitted command baselines unchanged.
-      const selector = name === 'runRustCoreScheduledCommand' && (
+      const selector = ['runRustCoreScheduledCommand','runRustCoreScheduledCommandDirect'].includes(name) && (
         node.text === '--preview-render-image' && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
         node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf'
       )
@@ -216,7 +236,7 @@ function collectRustFunctionStrings(functions, name, seen = new Set()) {
     }
   })
   for (const delegated of sortedUnique(delegatedFunctions)) {
-    if (functions.has(delegated)) strings.push(...collectRustFunctionStrings(functions, delegated, seen))
+    if (functions.has(delegated)) strings.push(...collectRustFunctionStrings(functions, delegated, seen, route))
   }
   return strings
 }
@@ -231,6 +251,21 @@ function testRustStructuralContract() {
     const actualCapabilities = sortedUnique(strings.filter((value) => knownCapabilities.has(value)))
     assertExactSet(`${command.method} CLI flags`, actualFlags, command.flags)
     assertExactSet(`${command.method} capabilities`, actualCapabilities, command.capabilities)
+  }
+  const wrapper=functions.get('runRustCoreScheduledCommand'),original=wrapper.node.getText(wrapper.file)
+  const command=fixture.rustCommands.find(value=>value.method==='runRustFontIndexListWorker')
+  for(const [label,before,after] of [
+    ['AND guard',"args[0] !== '--preview-render-image' || !original","args[0] !== '--preview-render-image' && !original"],
+    ['inverted guard',"args[0] !== '--preview-render-image'","args[0] === '--preview-render-image'"],
+    ['removed return','return runRustCoreScheduledCommandDirect(workerPath, args, execOptions)','await runRustCoreScheduledCommandDirect(workerPath, args, execOptions)'],
+    ['pre-guard CLI',"    const inputIndex = args.indexOf('--input')","    await runRustCoreScheduledCommandDirect(workerPath, ['--unexpected-before-guard'], execOptions)\n    const inputIndex = args.indexOf('--input')"],
+  ]) {
+    assert(original.includes(before),`${label}: staging guard mutation anchor drifted`)
+    const file=ts.createSourceFile('staging-mutant.ts',original.replace(before,after),ts.ScriptTarget.Latest,true)
+    const altered=new Map(functions);altered.set('runRustCoreScheduledCommand',{node:file.statements[0],file})
+    let rejected=false
+    try { const strings=collectRustFunctionStrings(altered,command.method);assertExactSet(label,strings.filter(value=>value.startsWith('--')),command.flags) } catch { rejected=true }
+    assert(rejected,`${label}: non-preview reachability mutant accepted`)
   }
   console.log(`[diagnostics:orchestration-contracts] Rust facade locked (${fixture.rustFacadeMethods.length} methods, ${fixture.rustCommands.length} command routes)`)
 }

@@ -77,7 +77,7 @@ async function checkMutations() {
   const lifecycle = path.join(root, 'src/main/app/mainProcessLifecycleRuntime.ts')
   const mutants = [
     ['missing binding', entry, 'feedback.bindOperations(operationsComposition.feedback);', ''],
-    ['lost tag query invalidation', compositionFile('DataQuery'), 'tagFonts?.invalidate();', ''],
+    ['lost tag query invalidation', compositionFile('DataQuery'), 'tagFonts?.invalidate(cancelInFlight);', ''],
     ['lost index sync', compositionFile('Scan'), 'await syncMergedIndexForRootSnapshot(root, "scan-finished");', ''],
     ['lost watcher notification', compositionFile('Scan'), 'folderWatcherRuntime.sendFontIndexChanged(payload);', ''],
     ['lost activation flush', lifecycle, 'await flushActivationInstallStatusSave("before-quit");', ''],

@@ -99,7 +99,7 @@ function testC08NetworkListingBatchRouting() {
   assert(watcher.includes('if (rustResult) return rustResult.unchanged'), 'watcher preflight result must remain authoritative when available')
 
   const transport = read('src/main/rust-core/rustCoreWorkerTransportRuntime.ts')
-  assert(transport.includes("if (!target!.write && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"), 'read-only Shared I/O receipts must retain the root-generation gate')
+  assert(transport.includes("if ((!target!.write || sharedReadOnlyPreview) && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"), 'read-only Shared I/O receipts must retain the root-generation gate')
   assert(transport.includes('timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000))'), 'Shared I/O execution timeout cap changed')
   assert(transport.includes('queueTimeoutMs: 3000'), 'Shared I/O queue timeout changed')
 

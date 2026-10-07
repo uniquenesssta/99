@@ -36,15 +36,39 @@ async function proofCases() {
   await assert.rejects(moved.owner.allocate('Z:\\font.ttf'), /locality/); assert.equal(moved.removed(), 1)
   for (const options of [{ mappingError: true }, { probeError: true }]) await assert.rejects(make(options).owner.allocate('Z:\\font.ttf'))
 }
+async function proofLifetimeCases() {
+  let base='C:\\Temp',serial=0,calls=0,rejectProof,closeProof,successful=false
+  const env={SystemDrive:'C:'},closed=new Promise(resolve=>{closeProof=resolve})
+  const load=loader({
+    'node:os':{tmpdir:()=>base},'node:fs':{promises:{realpath:async value=>value,mkdtemp:async prefix=>prefix+(++serial),rm:async()=>{}}},
+    [abs('src/main/path/sharedPathProbeRuntime.ts')]:{probeStartupDirectory:async path=>{calls++;if(successful)return{directory:true,physicalPath:path};return new Promise((_resolve,reject)=>{rejectProof=reject})}},
+  },{process:{...process,platform:'win32',env}})
+  const owner=load('src/main/rust-core/ownedPreviewStageRuntime.ts').createOwnedPreviewStageRuntime(async paths=>paths.includes('Z:\\font.ttf')?['source']:[])
+  const first=Array.from({length:10},()=>owner.allocate('Z:\\font.ttf').catch(e=>e));for(let i=0;i<30;i++)await Promise.resolve()
+  assert.equal(calls,1)
+  const ErrorType=load('src/main/path/sharedIoProcessRuntime.ts').SharedIoProcessError
+  const error=new ErrorType('probe timeout','unknown','timeout');error.closed=closed;rejectProof(error)
+  for(let i=0;i<30;i++)await Promise.resolve()
+  const late=owner.allocate('Z:\\font.ttf').catch(e=>e);for(let i=0;i<30;i++)await Promise.resolve()
+  assert.equal(calls,1,'failed proof evicted before physical close')
+  closeProof();assert((await Promise.all([...first,late])).every(value=>value.reason==='timeout'))
+  successful=true;const retry=await owner.allocate('Z:\\font.ttf');assert.equal(calls,2,'later batch reused settled proof');await retry.dispose()
+  base='D:\\Temp';env.SystemDrive='D:';const changed=await owner.allocate('Z:\\font.ttf');assert.equal(calls,3,'changed base/drive reused proof');await changed.dispose()
+}
 async function composition() {
   assert.equal(process.platform, 'win32', 'Owned preview staging integration requires Windows')
   const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'hfm-stage-test-'))
   const jobs = [], children = new Set(), requests = [], logs = [], failedCleanups = new Set()
   let generation = 1, changeBeforeCopy = false, badCopy = false, daemonCalls = 0, cleanupFailure = false, shortenDeadline = false
-  let fireDeadline
+  let fireDeadline, holdProof = false, allocationStarts = 0, proofStarts = 0
+  const proofRelease = path.join(directory, 'proof-release')
   const source = 'Z:\\unverified-fonts\\a.ttf', other = 'Y:\\unverified-fonts\\b.ttf'
   const spawn = (_file, args, options) => {
-    if (args[0] === '-e') return cp.spawn(process.execPath, args, options)
+    if (args[0] === '-e') {
+      proofStarts++
+      const probeArgs = holdProof ? ['-e', `const gate=require('node:fs');const wait=setInterval(()=>{if(gate.existsSync(${JSON.stringify(proofRelease)})){clearInterval(wait);${args[1]}}},5)`, ...args.slice(2)] : args
+      const child = cp.spawn(process.execPath, probeArgs, options); children.add(child); child.once('close', () => children.delete(child)); return child
+    }
     const input = JSON.parse(fs.readFileSync(args[args.indexOf('--input') + 1], 'utf8'))
     const job = { args, input, release: path.join(directory, `release-${jobs.length}`), closed: false }
     jobs.push(job)
@@ -69,6 +93,8 @@ async function composition() {
   }, { setTimeout: (fn, ms) => { if (shortenDeadline && ms > 7000) { fireDeadline = fn; return setTimeout(fn, 10000) } return setTimeout(fn, ms) } })
   const routing = load('src/main/rust-core/rustSharedIoCommandRuntime.ts')
   routing.registerIsolatedRoot('Z:\\unverified-fonts'); routing.registerIsolatedRoot('Y:\\unverified-fonts')
+  const stageModule = load('src/main/rust-core/ownedPreviewStageRuntime.ts'), createStage = stageModule.createOwnedPreviewStageRuntime
+  stageModule.createOwnedPreviewStageRuntime = (...args) => { const owner = createStage(...args), allocate = owner.allocate; owner.allocate = (...input) => { allocationStarts++; return allocate(...input) }; return owner }
   const transport = load('src/main/rust-core/rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({ enabled: false, required: false, appendStartupLog: value => logs.push(value) })
   const pool = load('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime(), run = pool.run
   pool.run = request => { requests.push(request); return run(request) }
@@ -132,6 +158,51 @@ async function composition() {
     const committed = render(output); await until(() => jobs.length === start + 1); await release(jobs[start]); await until(() => jobs.length === start + 2); await release(jobs[start + 1])
     assert.equal(JSON.parse((await committed).stdout).outputPath, output, 'cleanup loss changed a committed result into retryable failure')
     assert.equal(jobs.length, start + 2); assert.equal(failedCleanups.size, 2); cleanupFailure = false
+    // Ten callers share only the still-running proof, then retain the existing render capacity ten.
+    start = jobs.length; let beforeAllocations = allocationStarts, beforeProofs = proofStarts; holdProof = true
+    await fsp.rm(proofRelease, { force: true })
+    const ten = Array.from({length:10}, (_,i) => render(path.join(directory, `ten-${i}.png`)))
+    await until(() => allocationStarts === beforeAllocations + 10 && proofStarts === beforeProofs + 1)
+    for(let i=0;i<30;i++)await Promise.resolve()
+    assert.equal(proofStarts,beforeProofs+1,'ten callers filled the probe queue with duplicate work')
+    await fsp.writeFile(proofRelease,'go'); await until(() => jobs.length === start + 10)
+    assert.equal(pool.status().activePreviewRead,10)
+    assert.equal(new Set(jobs.slice(start).map(job=>job.input.outputPath)).size,10,'render stages collided')
+    const phase = requests.filter(request=>request.label==='preview-render-image').slice(-10)
+    assert.equal(new Set(phase.map(request=>request.previewStageProof.id)).size,1)
+    await Promise.all(jobs.slice(start,start+10).map(release))
+    for(let count=1;count<=10;count++) {
+      await until(()=>jobs.length>=start+10+count)
+      assert.equal(jobs[start+9+count].input.operation,'copyFile');await release(jobs[start+9+count])
+    }
+    await Promise.all(ten);holdProof=false
+    // Cancelling the initiating waiter does not cancel a different preview's shared proof.
+    start=jobs.length;beforeAllocations=allocationStarts;beforeProofs=proofStarts;holdProof=true
+    await fsp.rm(proofRelease,{force:true})
+    const cancelFirst=new AbortController(),one=render(output,cancelFirst.signal).catch(e=>e)
+    await until(()=>proofStarts===beforeProofs+1)
+    const two=render(output)
+    await until(()=>allocationStarts===beforeAllocations+2&&proofStarts===beforeProofs+1)
+    for(let i=0;i<30;i++)await Promise.resolve()
+    cancelFirst.abort();assert.equal((await one).reason,'cancelled');assert.equal(jobs.length,start)
+    await fsp.writeFile(proofRelease,'go');await until(()=>jobs.length===start+1);await release(jobs[start])
+    await until(()=>jobs.length===start+2);await release(jobs[start+1]);await two
+    assert.equal(proofStarts,beforeProofs+1);holdProof=false
+    start=jobs.length;beforeProofs=proofStarts;holdProof=true
+    await fsp.rm(proofRelease,{force:true})
+    const changedDuringProof=render(output).catch(e=>e);await until(()=>proofStarts===beforeProofs+1)
+    generation++;await fsp.writeFile(proofRelease,'go')
+    assert.equal((await changedDuringProof).reason,'stale-generation');assert.equal(jobs.length,start);holdProof=false
+    // All consumers can cancel promptly without disposing the bounded owner probe.
+    start=jobs.length;beforeAllocations=allocationStarts;beforeProofs=proofStarts;holdProof=true
+    await fsp.rm(proofRelease,{force:true})
+    const cancellations=[new AbortController(),new AbortController()]
+    const allCancelled=cancellations.map(controller=>render(output,controller.signal).catch(e=>e))
+    await until(()=>allocationStarts===beforeAllocations+2&&proofStarts===beforeProofs+1)
+    cancellations.forEach(controller=>controller.abort())
+    assert((await Promise.all(allCancelled)).every(error=>error.reason==='cancelled'))
+    assert.equal(jobs.length,start);assert.equal(pool.status().activeRootProbe,1)
+    await fsp.writeFile(proofRelease,'go');await pool.whenIdle();assert.equal(jobs.length,start);holdProof=false
     const contradictory = await pool.run({ file: process.execPath, args: [], roots: ['r'], accesses: [{ root: 'r', path: 'x', mode: 'write', scope: 'file' }], timeoutMs: 100, write: false }).catch(e => e)
     assert.equal(contradictory.reason, 'invalid-access')
     const forged = await pool.run({ file: process.execPath, args: [], roots: ['r'], timeoutMs: 100, write: true, sharedReadOnlyPreview: true }).catch(e => e)
@@ -142,5 +213,5 @@ async function composition() {
     await fsp.rm(directory, { recursive: true, force: true })
   }
 }
-async function main() { await proofCases(); await composition(); console.log('owned preview stage: locality/live proof; unverified-alias read overlap; write fairness; same-output serialization; render/copy cancel-close; stale generation; unknown copy no replay passed') }
+async function main() { await proofCases(); await proofLifetimeCases(); await composition(); console.log('owned preview stage: locality/live proof; unverified-alias read overlap; write fairness; same-output serialization; render/copy cancel-close; stale generation; unknown copy no replay passed') }
 main().catch(error => { console.error(error); process.exitCode = 1 })

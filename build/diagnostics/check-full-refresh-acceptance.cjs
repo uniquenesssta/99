@@ -52,18 +52,33 @@ for(const mutate of [
 function stagedSample() {
  const runs=clone(original),row=runs[1],render=row.work.processRequests.findLast(value=>value.lane==='foreground-preview')
  render.sharedReadOnlyPreview=true
+ render.previewStageProof={id:'proof-one',base:'C:\\Temp',openedAt:0,joinedAt:0.5}
  row.work.processRequests.push({lane:render.lane,actionId:render.actionId,label:'shared-file-io:copyFile',operation:'copyFile',queuedMs:0},
-   {lane:render.lane,actionId:render.actionId,label:'preview-stage-locality',queuedMs:0})
+   {lane:render.lane,actionId:render.actionId,label:'preview-stage-locality',queuedMs:0,previewStageProof:{id:'proof-one',base:'C:\\Temp',openedAt:0},proofPhysicalPath:'C:\\Temp',proofDirectory:true,closedAt:1})
  row.work.tasks+=2
  return runs
 }
 assert.equal(compareRuns(stagedSample()).passed,true,'Same total staged queue cost rejected')
+const sharedProof=stagedSample(),sharedRow=sharedProof[1],secondRender=sharedRow.work.processRequests.filter(value=>value.lane==='foreground-preview'&&value.label==='preview-render-image').at(-2)
+secondRender.sharedReadOnlyPreview=true;secondRender.previewStageProof={id:'proof-one',base:'C:\\Temp',openedAt:0,joinedAt:0.75}
+sharedRow.work.processRequests.push({lane:secondRender.lane,actionId:secondRender.actionId,label:'shared-file-io:copyFile',operation:'copyFile',queuedMs:0});sharedRow.work.tasks++
+assert.equal(compareRuns(clone(sharedProof)).passed,true,'Two renders sharing one actual proof rejected')
+const wrongProofOwner=clone(sharedProof);wrongProofOwner[1].work.processRequests.find(value=>value.label==='preview-stage-locality').actionId=secondRender.actionId
+assert(compareRuns(wrongProofOwner).populationFailure,'Shared proof cost moved away from its initiator')
+
 const copyOnly=stagedSample();copyOnly[1].work.processRequests.find(value=>value.operation==='copyFile').queuedMs=18
 assert.equal(compareRuns(copyOnly).candidates[0].previewQueueP95NoRegression,false,'Copy-only queue regression escaped')
 for(const mutate of [
  row=>{row.work.processRequests.splice(row.work.processRequests.findIndex(value=>value.operation==='copyFile'),1);row.work.tasks--},
  row=>{row.work.processRequests.push({...row.work.processRequests.find(value=>value.operation==='copyFile')});row.work.tasks++},
  row=>{row.work.processRequests.find(value=>value.operation==='copyFile').operation='rename'},
+ row=>{row.work.processRequests.find(value=>value.label==='preview-stage-locality').previewStageProof.id='unowned'},
+ row=>{row.work.processRequests.push({...row.work.processRequests.find(value=>value.label==='preview-stage-locality')});row.work.tasks++},
+ row=>{const proof={...row.work.processRequests.find(value=>value.label==='preview-stage-locality'),actionId:'foreground-preview:0',previewStageProof:{id:'orphan',base:'C:\\Temp',openedAt:0}};row.work.processRequests.push(proof);row.work.tasks++},
+ row=>{row.work.processRequests.find(value=>value.label==='preview-stage-locality').proofDirectory=false},
+ row=>{row.work.processRequests.find(value=>value.sharedReadOnlyPreview).previewStageProof.joinedAt=2},
+ row=>{row.work.processRequests.find(value=>value.sharedReadOnlyPreview).previewStageProof.base='C:\\elsewhere'},
+ row=>{row.work.processRequests.splice(row.work.processRequests.findIndex(value=>value.label==='preview-stage-locality'),1);row.work.tasks--},
  row=>{row.work.processRequests.find(value=>value.operation==='copyFile').actionId='foreground-preview:0'},
  row=>{row.work.processRequests.push({lane:'foreground-preview',actionId:'foreground-preview:9',label:'hidden-child',queuedMs:0});row.work.tasks++},
 ]) {

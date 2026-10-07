@@ -181,11 +181,20 @@ function instrument(host, fixture) {
     const lane = ioScope.currentSharedIoPriority?.() === 'background' && inherited === 'foreground-browse' ? 'background-history-capture' : inherited
     const row = { lane, actionId: scope.getStore()?.actionId, label: request.label, startedAt: performance.now(),
       requestOrdinal: counters.tasks + 1, roots: [...request.roots], accesses: request.accesses ? plain(request.accesses) : null,
+      previewStageProof: request.previewStageProof ? plain(request.previewStageProof) : undefined,
       write: request.write, sharedReadOnlyPreview: request.sharedReadOnlyPreview === true, priority: request.priority, processLane: request.lane || 'default' }
     let input
     const inputAt = request.args?.indexOf('--input')
     if (inputAt >= 0) {
-      input = host.inputMetadata?.get(String(request.args[inputAt+1]))
+      const inputPath=String(request.args[inputAt+1])
+      input = host.inputMetadata?.get(inputPath)
+      if (!input && /^hfm-preview-(?:stage|publish)-input-[^\\/]+\.json$/.test(path.basename(inputPath))) {
+        // Internal transport JSON is not exposed by the facade metadata hook.
+        // Observe its actual owned local bytes rather than guessing from label.
+        assert.equal(fs.realpathSync(path.dirname(inputPath)).toLowerCase(),fs.realpathSync(os.tmpdir()).toLowerCase(),'Preview input escaped temporary-file owner')
+        assert(fs.statSync(inputPath).size<=1024*1024,'Preview instrumentation input exceeds bound')
+        input=JSON.parse(fs.readFileSync(inputPath,'utf8'))
+      }
       if (input) { row.operation = input.operation; row.path = input.path }
     }
     counters.tasks++
@@ -198,6 +207,7 @@ function instrument(host, fixture) {
       if (lane.startsWith('foreground')) counters.foregroundQueueMs.push(Number(receipt.queuedMs || 0))
       try {
         const result = JSON.parse(receipt.stdout.trim().split(/\r?\n/).find(Boolean))
+        if (request.label === 'preview-stage-locality') { row.proofPhysicalPath = result.physicalPath; row.proofDirectory = result.directory }
         if (input?.operation === 'fontContentIdentity') counters.nativeHashedBytes += Number(result.value?.readBytes || 0)
         if (input?.operation === 'readFile' && /\.(ttf|otf|ttc|otc)$/i.test(input.path)) {
           const transfer = input.transferPath
@@ -739,6 +749,15 @@ function semanticQueueCohorts(row) {
   assert.equal(enumeration.length,WORKLOAD.treeEnumerations,'Enumeration physical population changed')
   assert.equal(new Set(enumeration.map(value=>value.actionId)).size,WORKLOAD.treeEnumerations,'Enumeration ownership duplicated')
   assert(enumeration.every(value=>value.label==='shared-file-io:treeSnapshot'&&value.operation==='treeSnapshot'),'Enumeration operation changed')
+  const proofsById=new Map(),usedProofs=new Set()
+  for(const proof of preview.filter(value=>value.label==='preview-stage-locality')) {
+    const id=proof.previewStageProof?.id
+    assert(id&&!proofsById.has(id),'Missing/duplicate locality proof identity')
+    assert.equal(proof.proofDirectory,true,'Locality receipt did not prove a directory')
+    assert(Number.isFinite(proof.previewStageProof.openedAt)&&Number.isFinite(proof.closedAt),'Missing proof lifetime')
+    proofsById.set(id,proof)
+  }
+  const pathKey=value=>path.win32.normalize(String(value||'')).toLowerCase()
   const previewCost=[]
   for(let index=0;index<WORKLOAD.nativePreviews;index++) {
     const children=preview.filter(value=>value.actionId===`foreground-preview:${index}`)
@@ -749,10 +768,23 @@ function semanticQueueCohorts(row) {
     const copies=children.filter(value=>value.label==='shared-file-io:copyFile')
     assert.equal(copies.length,renders[0].sharedReadOnlyPreview?1:0,'Staged preview publication missing/duplicated or unowned')
     assert(copies.every(value=>value.operation==='copyFile'),'Preview copy operation mislabeled')
-    if(renders[0].sharedReadOnlyPreview)assert.equal(proofs.length,1,'Staged render locality proof missing')
+    if(renders[0].sharedReadOnlyPreview) {
+      const witness=renders[0].previewStageProof,proof=proofsById.get(witness?.id)
+      assert(proof,'Staged render locality proof missing')
+      assert.equal(pathKey(witness.base),pathKey(proof.proofPhysicalPath),'Stage canonical base differs from actual proof receipt')
+      assert.equal(witness.openedAt,proof.previewStageProof.openedAt,'Proof ownership changed')
+      assert(Number.isFinite(witness.joinedAt)&&witness.joinedAt>=proof.previewStageProof.openedAt&&witness.joinedAt<=proof.closedAt,'Proof reused after settlement or before ownership')
+      usedProofs.add(witness.id)
+    }
     assert.equal(children.length,1+copies.length+proofs.length,'Unknown preview child hidden from fixed cohort')
     // Same ten user actions: count every physical proof/render/publication queue cost.
     previewCost.push(children.reduce((total,value)=>total+value.queuedMs,0))
+  }
+  assert.equal(usedProofs.size,proofsById.size,'Unowned/orphan locality proof')
+  for(const [id,proof] of proofsById) {
+    const users=preview.filter(row=>row.label==='preview-render-image'&&row.previewStageProof?.id===id)
+    const owner=users.find(row=>row.actionId===proof.actionId)
+    assert(owner&&owner.previewStageProof.joinedAt===Math.min(...users.map(row=>row.previewStageProof.joinedAt)),'Locality cost moved away from its initiating preview')
   }
   assert.equal(preview.length,previewCost.length+preview.filter(value=>['shared-file-io:copyFile','preview-stage-locality'].includes(value.label)).length,'Unattributed preview child')
   return { preview:summarize(previewCost),enumeration:summarize(enumeration.map(value=>value.queuedMs)),
