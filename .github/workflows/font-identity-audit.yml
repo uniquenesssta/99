@@ -19,7 +19,21 @@ jobs:
         id: worker
         run: node build/rust/build-core-worker.cjs --required
       - name: Verify complete existing Windows diagnostics
-        run: npm run verify
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          cmd /d /c "npm run verify > artifacts\verification.log 2>&1"
+          $verifyExit = $LASTEXITCODE
+          Get-Content -LiteralPath artifacts/verification.log -Encoding utf8
+          exit $verifyExit
+      - name: Retain verification log before remaining full gates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-recovery-verification-log
+          path: artifacts/verification.log
+          retention-days: 14
       - name: Verify production directory batches against native worker
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         env:

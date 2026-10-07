@@ -1213,3 +1213,13 @@ flowchart LR
 观测字段明确保留proof ID、创建/加入时点、原词法base与实际canonical目录回执。固定十个预览中，每个stage须对应一个实测成功proof且在pending区间加入；每个proof成本仅归属实际最先加入的发起动作，禁止缺失、重复、孤儿、错误base、迟到复用或转移成本。两render共享一proof的正例与这些反例同时保留，E2E/枚举/浏览/总时长阈值不变。内部stage/copy JSON只在已核本地临时目录、限定文件名和1MiB大小后读取实际字节，不从label猜operation，不删除失去归属的子进程。
 
 本轮后续代码仍只做Linux静态源码/语法/差异检查，待精确提交完整Windows回执；不把前三轮独立绿灯或改善指标当成完成，也不重跑未改源码碰运气。
+
+### 14.21 第四轮回执与验证日志独立保存（2026-10-07，继续修正）
+
+`1233e9c926069b6bcc5f4f1be8a4fc7e0a30a230` 的 [Windows CI 37605556994](https://github.com/uniquenesssta/99/actions/runs/37605556994)，job `112740035479`，**整体失败**。TypeScript及172/173项诊断通过（含十预览共享proof、独立取消/关闭、新旧库恢复与实际native写入）；唯一诊断失败是orchestration测试加载器未纳入 `ownedPreviewStageRuntime`，当前仅补这个真实模块的加载路径。独立production/native/F14/DOM/F13/bundle全部通过。
+
+完整ABBA的真实人口/成本归属已经可比，所有queue、枚举、浏览、总时长门通过；仍是预览E2E失败。A1/B1/B2/A2完整时长78.24/31.67/32.27/78.18秒；B1/B2预览p95/max456.90/438.42ms，A包络312.55ms。重复probe已合并，每个四预览burst只有一个，但Node/Worker-thread目录proof本身仍耗123～156ms。B固定预览动作累计queue最大142/125ms，A包络225ms。不能将queue改善作为E2E通过，也不因差距减小而改阈值或重跑同源码。
+
+artifact `11476795453`，54,307,096字节，ZIP SHA-256 `443419a9d82d246b67cbc9793118bb3c1c876975a760134e191cee5c48282570`。后续准备将本地目录证明与专用原生stage渲染放入同一受保护进程，仍须先证明确切本地目录再写入、维持500ms证明期限/整体期限/真实close/输出发布屏障；此段为待实现方向，不是已通过或既有代码行为。
+
+工作流现在将未改动的 `npm run verify` stdout/stderr写入独立日志，立即保存原exit code，输出日志后按同一code退出，再always上传日志；后续完整门条件不改。这样可以在长负载仍运行时定位已经结束的aggregate失败，而不是等待整job归档。执行器第二次回退到旧快照后，仅从已核远端恢复1233e9c；原分支仍a7f00bb。当前小型加载器/观测检查点不重新启动相同性能源码的CI；完成下一项生产修正后再运行完整Windows门。
