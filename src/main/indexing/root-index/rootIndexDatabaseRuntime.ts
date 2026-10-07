@@ -9,6 +9,11 @@ import { ROOT_INDEX_DB_SCHEMA_VERSION } from '../../cache/constants'
 import { sqliteEnsureColumn, sqliteEntryFileIdentity, sqliteNextOpstamp, sqliteRowToScanEntry } from './rootIndexSqliteRuntime'
 import type { FontScanCacheEntry, FontScanCacheFile, RootIndexRuntimeDeps, RootIndexStorage } from './rootIndexTypes'
 
+export function rootIndexCacheNeedsRebuild(db: any, fontScanCacheVersion: number): boolean {
+  const rows = db.prepare("SELECT key,value FROM meta WHERE key IN ('cacheVersion','index_version','schemaVersion','schema_version')").all() as Array<{key: string; value: string}>
+  return rows.some(row => Number(row.value) < (row.key === 'cacheVersion' || row.key === 'index_version' ? fontScanCacheVersion : ROOT_INDEX_DB_SCHEMA_VERSION))
+}
+
 export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
   function initializeRootIndexDb(db: any, rootPath: string, storage: RootIndexStorage, touchMeta = true): void {
     assertSupportedSqliteVersion(db, ['schema_version', 'schemaVersion'], ROOT_INDEX_DB_SCHEMA_VERSION, 'root-index')
@@ -131,8 +136,7 @@ export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
         WHERE COALESCE(is_deleted, 0) = 0 AND status <> 'deleted'
         ORDER BY relative_path
       `).all() as Array<{ relative_path: string; cache_key: string; file_size: number; modified_at: number; created_at?: number; status: string; font_json?: string; message?: string; content_hash?: string; cached_at: string }>
-      const versionRows = db.prepare("SELECT key,value FROM meta WHERE key IN ('cacheVersion','index_version','schemaVersion','schema_version')").all() as Array<{key: string; value: string}>
-      const rebuildRequired = versionRows.some(row => Number(row.value) < (row.key === 'cacheVersion' || row.key === 'index_version' ? deps.fontScanCacheVersion : ROOT_INDEX_DB_SCHEMA_VERSION))
+      const rebuildRequired = rootIndexCacheNeedsRebuild(db, deps.fontScanCacheVersion)
       const entries: Record<string, FontScanCacheEntry> = {}
       for (const row of rows) entries[row.relative_path] = sqliteRowToScanEntry(row)
       return { version: deps.fontScanCacheVersion, entries, ...(rebuildRequired ? { rebuildRequired: true } : {}) }

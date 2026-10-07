@@ -2,7 +2,7 @@ import { ensureStartupPathRootAvailable } from '../path/startupPathAvailabilityR
 import { isApplicationClosing } from '../app/shutdownCoordinatorRuntime';
 import { withoutSharedIoSignal } from '../path/sharedFileSystemRuntime';
 import { isRecoverableDerivedSqliteError } from '../db/sqliteRecoveryPolicy';
-import { ROOT_INDEX_DB_SCHEMA_VERSION } from '../cache/constants';
+import { rootIndexCacheNeedsRebuild } from '../indexing/root-index/rootIndexDatabaseRuntime';
 import type { FontIndexChangePayload } from '../../shared/types';
 import {
   FONT_SCAN_CACHE_VERSION,
@@ -368,8 +368,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
             const db = await openRootIndexDb(active, root, 'root', false);
             try {
               sqliteQuickCheck(db, 'root-index-startup-compatibility', active, true);
-              const versions = db.prepare("SELECT key,value FROM meta WHERE key IN ('schemaVersion','schema_version','cacheVersion','index_version')").all() as Array<{key: string; value: string}>;
-              required = versions.some(row => Number(row.value) < (row.key === 'schemaVersion' || row.key === 'schema_version' ? ROOT_INDEX_DB_SCHEMA_VERSION : FONT_SCAN_CACHE_VERSION));
+              required = rootIndexCacheNeedsRebuild(db, FONT_SCAN_CACHE_VERSION);
             } finally { closeSqliteDb(db); }
           }
         } catch (error) {

@@ -1,3 +1,4 @@
+import { rootIndexCacheNeedsRebuild } from '../../indexing/root-index/rootIndexDatabaseRuntime'
 import { isRecoverableDerivedSqliteError } from '../../db/sqliteRecoveryPolicy'
 import { ROOT_INDEX_DB_SCHEMA_VERSION, PREVIEW_SQLITE_SCHEMA_VERSION } from '../../cache/constants'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
@@ -129,8 +130,7 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
             "SELECT COUNT(*) AS count FROM entries WHERE COALESCE(is_deleted, 0) = 0 AND status <> 'deleted'",
           )
           .get() as { count?: number } | undefined;
-        const versions = db.prepare("SELECT key,value FROM meta WHERE key IN ('schemaVersion','schema_version','cacheVersion','index_version')").all() as Array<{key: string; value: string}>;
-        if (versions.some(row => Number(row.value) < (row.key === 'schemaVersion' || row.key === 'schema_version' ? ROOT_INDEX_DB_SCHEMA_VERSION : deps.fontScanCacheVersion))) {
+        if (rootIndexCacheNeedsRebuild(db, deps.fontScanCacheVersion)) {
           return { ...cacheRepairStatus('index', dbPath, true, false, '旧索引将自动升级，完整新快照就绪前保留原文件。'), rebuildRequired: true };
         }
       } finally {

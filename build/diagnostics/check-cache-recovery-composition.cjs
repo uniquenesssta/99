@@ -108,6 +108,16 @@ async function main() {
     const rootLoad = loader({ [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [] } })
     const rootRuntime = rootLoad('src/main/indexing/rootIndexRuntime.ts').createRootIndexRuntime({ appName: 'HFM', fontScanCacheVersion: 1, scriptDetectionVersion: 1,
       exists, openStableSqliteDb: openDb, closeSqliteDb: db => db.close(), appendStartupLog() {}, withGlobalIo: async (_label, run) => run(), invalidateSharedFontRuntimeCaches() {}, recordCacheEvent: async () => {} })
+    const missingTableRoot = path.join(directory,'missing-root-table.sqlite'), missingRootDb = openDb(missingTableRoot)
+    missingRootDb.exec("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT); INSERT INTO meta VALUES('schemaVersion','4');");missingRootDb.close()
+    await assert.rejects(()=>rootRuntime.openRootIndexDb(missingTableRoot,roots[0],'root',false),/缺少必要字段/)
+    const futureRoot = path.join(directory,'future-root.sqlite'), futureRootDb = openDb(futureRoot)
+    futureRootDb.exec("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT); INSERT INTO meta VALUES('schemaVersion','999');");futureRootDb.close()
+    await assert.rejects(()=>rootRuntime.openRootIndexDb(futureRoot,roots[0],'root',false),/版本不受支持/)
+    const retainedFuture = openDb(futureRoot);assert.equal(retainedFuture.prepare("SELECT value FROM meta").get().value,'999');retainedFuture.close()
+    const unknownRoot = path.join(directory,'unknown-root.sqlite'), unknownRootDb = openDb(unknownRoot)
+    unknownRootDb.exec("CREATE TABLE unknown_business(value TEXT); INSERT INTO unknown_business VALUES('keep');");unknownRootDb.close()
+    await assert.rejects(()=>rootRuntime.openRootIndexDb(unknownRoot,roots[0],'root',false),/未识别数据表/)
     const cacheDir = path.join(roots[0], '.hfm-cache'), dbPath = path.join(cacheDir, 'database', 'index.sqlite')
     await fsp.mkdir(path.dirname(dbPath), { recursive: true }); fs.writeFileSync(dbPath, 'old-corrupt-index')
     const context = { rootPath: roots[0], cacheDir, cachePath: dbPath, storage: 'root', cache: { version: 1, entries: {}, rebuildRequired: true },
@@ -144,6 +154,21 @@ async function main() {
     stages.push('cancellation and denied atomic rename retain the last-good active pointer')
 
 
+    const mergedMissingDir = path.join(directory,'merged-missing-table');await fsp.mkdir(path.join(mergedMissingDir,'db'),{recursive:true})
+    const mergedMissingPath = path.join(mergedMissingDir,'db','merged-index.sqlite'), incompleteMerged = openDb(mergedMissingPath)
+    incompleteMerged.exec("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT); INSERT INTO meta VALUES('schemaVersion','8'),('sourcesKey','old-current'); CREATE TABLE sources(root_path TEXT PRIMARY KEY);")
+    incompleteMerged.close()
+    let missingTableBuilds = 0
+    const mergedOwner = load('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({
+      dataPath:(...parts)=>path.join(mergedMissingDir,...parts),exists,openStableSqliteDb:openDb,openRootIndexDb:rootRuntime.openRootIndexDb,
+      closeSqliteDb:db=>db.close(),getSqliteMeta:helpers.getSqliteMeta,setSqliteMeta:helpers.setSqliteMeta,sqliteTableExists:helpers.sqliteTableExists,
+      appendStartupLog(){},schemaVersion:8,staleFirstPageEnabled:true,
+    })
+    mergedOwner.setMergedIndexRecoveryBuilder(async db=>{missingTableBuilds++;helpers.setSqliteMeta(db,'sourcesKey','[{"root":"verified"}]')})
+    const missingTableRepaired = await mergedOwner.openMergedIndexDb();missingTableRepaired.close()
+    assert.equal(missingTableBuilds,1,'Current-version missing entries was accepted as an empty usable snapshot')
+    assert.notEqual(mergedOwner.mergedIndexDbPath(),mergedMissingPath)
+    assert(await exists(mergedMissingPath),'Original malformed schema was not retained')
     const oldMerged = path.join(directory, 'merged-index.sqlite'); fs.writeFileSync(oldMerged, 'old-derived')
     let rebuilds = 0
     const recoveryModule = load('src/main/indexing/mergedIndexRecoveryRuntime.ts')

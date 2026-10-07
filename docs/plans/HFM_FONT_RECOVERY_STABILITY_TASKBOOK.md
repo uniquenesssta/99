@@ -1156,3 +1156,14 @@ flowchart TD
 回归准备：新增 `diagnostics:cache-recovery-composition`，复用现有生产模块加载器和真实 SQLite；覆盖 populated 旧 app/preview、业务表及实际 license 路径保留、WAL 提交后重开、取消/半根缓存、完整/部分扫描发布、指针取消/拒写、merged 损坏/锁/离线/重启/缺失目标、显示占位与操作拦截、初始加载失败后 autosave。扩展既有标签回归串联 8 条历史绑定到真实 renderer filtering；生产 projection 回归检查每批持久化签名与原生重建次数；根原生事务回归使用真实 worker 创建候选。Rust 增加 populated legacy_schema 测试；完整 Windows workflow 增加恢复分支和相应专项。
 
 当前验证状态：Linux 仅源码/差异审阅及 CJS 语法检查，`git diff --check`；未运行项目、测试、TypeScript 类型检查、构建或生产模块。当前环境没有独立 TypeScript parser，因此 TS 本地 AST 也未执行。以上新实现/新回归尚不能记为通过，下一步是推送本分支并完成精确提交的完整 Windows CI；受控验证不替代真实 NAS、W7/W8 face 或 C0000121 的本机未决边界。没有新增生产依赖，也没有提交用户原始日志或改动授权密钥文件。
+
+### 14.18 首轮 Windows 回执与继续修正（2026-10-07）
+
+首轮源码 `c5a482f95b086de38b49b8d65943aba3345ead72`（树 `425d44a370479f94a2e51fc8926afa9cbed71266`）的 [Windows CI 37588103143](https://github.com/uniquenesssta/99/actions/runs/37588103143) **整体失败**，job `112682855458`。两处失败分别保留：
+
+1. `npm run verify` 在 TypeScript 阶段报告 `mainScanCompositionRuntime.ts(371,32) TS18046: db is of type unknown`，后续 172 项诊断因此没有执行，不能记为诊断通过。数据库端口有意保持 opaque；本次把版本 SQL 判断移到 root-index 所有者 `rootIndexCacheNeedsRebuild`，组合层不通过 any 强行访问句柄。补充缺少必要表、未来版本与未知表拒绝覆盖的实际 SQLite 断言。
+2. 完整刷新四轮正确性全部通过，B1/B2 为 27.86/25.86 秒，A1/A2 为 65.77/70.34 秒；仍按原判定失败。B2 第三个真实目录枚举在两项原生 PNG 写入后排队 83ms，而同 job A1/A2 四个目录枚举的最大包络为 31ms，触发既定 enumeration queue p95/max 门。该项不是混合人口 p95，不能以样本不等为理由删除；其余完整时长、浏览、预览及队列门通过。不改预算、不删样本，也不据这一次排队断言真实 NAS 根因。类型修正后新提交重新执行原完整门，旧失败持续保留。
+
+已经通过的独立步骤：真实 Windows Rust worker、原生目录批次、真实旧库与 merged 生产投影（含新增批次来源签名断言）、同库 F14 恢复/预览/卸载/重开、两项 populated Rust legacy_schema、全部后续身份/激活/精确卸载/标签/Rust 边界、实际 Electron DOM、列表网格与浮动滚动条原生输入、F13 真实预览比较及应用 bundle。它们不能替代未执行的 aggregate diagnostics 或未通过的性能门。
+
+artifact `11468167104`，54,252,000 字节，ZIP SHA-256 `f0f6e9fca2237ec55e5c42a7eed358c8383af9356fbbceb7b8c53deb751d12c6`。原回执不改写。下一步：新提交完整 Windows CI；仍未请求用户删除缓存或清空 profile。
