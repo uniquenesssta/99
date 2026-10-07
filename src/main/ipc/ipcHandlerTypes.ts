@@ -1,6 +1,5 @@
 import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 import type {
-WatchedFolderRefreshResult,
 FontItem,
 FontQueryRequest,
 FontTagBatchItem,
@@ -25,7 +24,6 @@ export type IpcInvokeHandler = (event: Electron.IpcMainInvokeEvent, ...args: any
 export type IpcHandleRegistrar = (channel: string, handler: IpcInvokeHandler) => void
 
 export interface IpcHandlerRuntime {
-  rememberRelinkedFontFile: (font: FontItem) => Promise<void>;
   readFontCleanupRemnants: () => Promise<import('../../shared/fontCleanup').FontCleanupReport>;
   runFontCleanupAction: (input: import('../../shared/fontCleanup').FontCleanupAction) => Promise<import('../../shared/fontCleanup').FontCleanupReport>;
   getSharedAvailability: () => Promise<import('../../shared/sharedAvailability').SharedAvailability>;
@@ -61,8 +59,7 @@ export interface IpcHandlerRuntime {
   refreshWatchedFolder: (
     folderPath: string,
     rootPath?: string,
-    waitForCompletion?: boolean,
-  ) => Promise<WatchedFolderRefreshResult>;
+  ) => unknown | Promise<unknown>;
   getCacheStats: () => unknown | Promise<unknown>;
   cacheArchitectureInfo: () => unknown | Promise<unknown>;
   getMigrationDiagnostics?: () => unknown | Promise<unknown>;
@@ -129,7 +126,6 @@ export interface IpcHandlerRuntime {
   ) => unknown | Promise<unknown>;
   setLocalFontTagsBatch: (
     items: FontTagBatchItem[],
-    options?: import("../../shared/types").FontTagRecoveryCommitOptions,
   ) => unknown | Promise<unknown>;
   deleteLocalFontTag: (tagName: string) => unknown | Promise<unknown>;
   setSharedFontTagsInIndex: (

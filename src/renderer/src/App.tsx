@@ -250,7 +250,6 @@ export default function App(): JSX.Element {
 
   const {
     previewFamilies,
-    previewStateForFont,
     nativePreviewImages,
     nativeDetailImage,
     setNativeDetailImage,
@@ -536,6 +535,7 @@ export default function App(): JSX.Element {
     getCurrentLibrary,
     commitLibraryUpdate,
     saveLibraryImmediately,
+    requestPreviewFont,
     loadCacheStats,
     refreshDatabaseDerivedState,
     setStatus
@@ -704,7 +704,6 @@ export default function App(): JSX.Element {
     selectedFontIds,
     contextMenu,
     previewFamilies,
-    previewStateForFont,
     nativePreviewImages,
     failedPreviewFontIds,
     assignTagName,
@@ -741,7 +740,6 @@ export default function App(): JSX.Element {
 
 
   const dialogRuntime = contextActionRuntime.createDialogs({
-    sidebarPage,
     selectedFontIds,
     getVisibleFonts: () => latestVisibleFontsRef.current,
     renameTarget,
@@ -779,14 +777,13 @@ export default function App(): JSX.Element {
     refreshDatabaseDerivedState,
     flushFontWriteQueue
   }, newTagName, newSharedTagName)
-  const { runContextReindexTag, runContextRelinkFont, runContextRename, runContextDelete, runContextAddSubfolder, runContextRefreshFolder, runContextBatchActivate, runContextBatchDeactivate, confirmRename, confirmDelete, addTagToSelectedByName, addSharedTagToSelectedByName, removeTagFromSelected, removeSharedTagFromSelected, createTagOnlyFromInput, createSharedTagOnlyFromInput } = dialogRuntime
+  const { runContextRename, runContextDelete, runContextAddSubfolder, runContextRefreshFolder, runContextBatchActivate, runContextBatchDeactivate, confirmRename, confirmDelete, addTagToSelectedByName, addSharedTagToSelectedByName, removeTagFromSelected, removeSharedTagFromSelected, createTagOnlyFromInput, createSharedTagOnlyFromInput } = dialogRuntime
 
   const detailPanelRuntime = createAppDetailSelectionRuntime({
     selectedFont,
     detailVisible,
     selectedFontId,
     previewFamilies,
-    previewStateForFont,
     library,
     setLibrary,
     setSelectedFontId,
@@ -882,7 +879,6 @@ export default function App(): JSX.Element {
     selectedFontId: selectedFont?.id,
     selectedFontIdSet,
     previewFamilies,
-    previewStateForFont,
     nativePreviewImages,
     previewText: library.previewText,
     listPreviewFontSize,
@@ -1055,8 +1051,6 @@ export default function App(): JSX.Element {
     contextSelectedFonts: contextSelectedFonts,
     runFontContextAction: runFontContextAction,
     contextTargetCount: contextTargetCount,
-    runContextReindexTag: runContextReindexTag,
-    runContextRelinkFont: runContextRelinkFont,
     runContextBatchActivate: runContextBatchActivate,
     runContextBatchDeactivate: runContextBatchDeactivate,
     runContextRefreshFolder: runContextRefreshFolder,

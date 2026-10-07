@@ -23,8 +23,6 @@ export interface FontActiveFilterQuery {
 }
 
 export interface FontQueryRequest {
-  /** Recovery reads authoritative path bindings without preview/install hydration or page caching. */
-  tagBindingsOnly?: boolean
   keyword?: string
   limit?: number
   offset?: number

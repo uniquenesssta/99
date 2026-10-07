@@ -1,4 +1,4 @@
-import { rootIndexInstallJoinExpr } from './rootIndexQuerySharedSql'
+import { rootIndexInstallIdExpr } from './rootIndexQuerySharedSql'
 import type { FontQueryRequest } from '../../../shared/types'
 import {
 addRootIndexJsonArrayAnyClause,
@@ -132,7 +132,7 @@ export function buildRootIndexQuerySql(rootPath: string, request: FontQueryReque
   addRootIndexPageFilterClauses(parts, rootPath, request)
 
   const joinSql = hasInstallJoin
-    ? `LEFT JOIN install_db.install_status AS install_status ON ${rootIndexInstallJoinExpr(rootPath)}`
+    ? `LEFT JOIN install_db.install_status AS install_status ON install_status.font_id = ${rootIndexInstallIdExpr(rootPath)}`
     : ''
   if ((request.sortMode || 'smart') === 'smart') parts.unsupportedReason = 'favorite sort needs local app database'
   const where = parts.clauses.length ? `WHERE ${parts.clauses.join(' AND ')}` : ''

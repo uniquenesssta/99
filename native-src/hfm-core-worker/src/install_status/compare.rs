@@ -161,7 +161,6 @@ fn compare_font_installed_with_lookup_index(item: &InstallStatusCompareFontItem,
     let by = if managed && system { "both" } else if managed { "managed" } else if system { "system" } else if user { "user" } else { "none" };
 
     InstallStatusCompareResult {
-        known: false,
         installed: managed || system || user,
         by: by.to_string(),
         matches: serde_json::to_value(matches).unwrap_or_else(|_| Value::Array(Vec::new())),

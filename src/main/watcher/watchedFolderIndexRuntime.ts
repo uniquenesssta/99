@@ -8,21 +8,24 @@ import type { FontScanCacheEntry } from '../indexing/rootIndexRuntime'
 import type { PendingFolderChange } from './folderWatcherRuntime'
 import type { RootDirectorySignature, WatchedFolderIndexRuntime, WatchedFolderIndexRuntimeOptions, WatcherDeleteRecord } from './watched-folder-index/watchedFolderIndexTypes'
 export type { RootDirectorySignature, RootScanCacheContext, RootScanCacheStorage, WatchedFolderIndexRuntime } from './watched-folder-index/watchedFolderIndexTypes'
-import { watcherPathDepth, watcherPathIsInside, watcherRelativePath } from './watched-folder-index/watchedFolderPathRuntime'
+import { directorySignatureMatches, watcherPathDepth, watcherPathIsInside, watcherRelativePath } from './watched-folder-index/watchedFolderPathRuntime'
 
 export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRuntimeOptions): WatchedFolderIndexRuntime {
   function normalizePendingFolderChanges(changes: PendingFolderChange[]): PendingFolderChange[] {
-    const byPath = new Map<string, PendingFolderChange>()
-    for (const change of changes || []) {
-      const fileName = String(change.fileName || '').replace(/^[/\\]+/, '')
-      if (!fileName || options.isIgnoredWatcherPath(fileName)) continue
-      const key = watcherRelativePath(fileName)
-      const previous = byPath.get(key)
-      // A later low-information change must not erase a rename/rescan signal.
-      if (previous && previous.eventType !== 'change' && change.eventType === 'change') continue
-      byPath.set(key, { ...change, fileName })
-    }
-    return Array.from(byPath.values()).sort((a, b) => watcherPathDepth(a.fileName) - watcherPathDepth(b.fileName))
+    return Array.from(
+      new Map(
+        (changes || [])
+          .map((change) => ({
+            ...change,
+            fileName: String(change.fileName || '').replace(/^[/\\]+/, ''),
+          }))
+          .filter((change) => change.fileName && !options.isIgnoredWatcherPath(change.fileName))
+          .map(
+            (change) =>
+              [`${watcherRelativePath(change.fileName)}\0${change.eventType}`, change] as const,
+          ),
+      ).values(),
+    ).sort((a, b) => watcherPathDepth(a.fileName) - watcherPathDepth(b.fileName))
   }
 
   async function computeWatchedDirectorySignature(dirPath: string): Promise<RootDirectorySignature | null> {
@@ -82,7 +85,6 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
         rootPath,
         dbPath,
         extensions: Array.from(options.fontExtensions),
-        scriptDetectionVersion: options.scriptDetectionVersion,
         changes: normalizedChanges.map((change) => ({
           eventType: change.eventType,
           fileName: watcherRelativePath(change.fileName),
@@ -92,6 +94,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
     }
 
     const fontTargets: Array<{ relativePath: string; cacheKey: string }> = []
+    const directoryTargets: Array<{ relativePath: string; signature: RootDirectorySignature }> = []
 
     for (const change of normalizedChanges) {
       if (String(change.eventType || '').toLowerCase() !== 'change') return false
@@ -118,31 +121,53 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
         continue
       }
 
-      // A child overwrite/rename need not change the parent mtime or counts.
-      // Directory signals require current enumeration and per-file comparison.
-      if (stat.isDirectory()) return false
+      if (stat.isDirectory()) {
+        const signature = await computeWatchedDirectorySignature(targetPath)
+        if (!signature) return false
+        directoryTargets.push({
+          relativePath: options.relativeDirectoryPathForRoot(rootPath, targetPath),
+          signature,
+        })
+        continue
+      }
 
       return false
     }
 
-    if (!fontTargets.length) return true
+    if (!fontTargets.length && !directoryTargets.length) return true
 
     let db: any | null = null
     try {
       db = await options.openRootIndexDb(dbPath, rootPath, 'root', false)
       const entryStmt = db.prepare(
-        'SELECT cache_key, status, font_json FROM entries WHERE relative_path = ? AND is_deleted = 0',
+        'SELECT cache_key, status FROM entries WHERE relative_path = ? AND is_deleted = 0',
       )
       for (const target of fontTargets) {
-        const row = entryStmt.get(target.relativePath) as { cache_key?: string; status?: string; font_json?: string } | undefined
+        const row = entryStmt.get(target.relativePath) as { cache_key?: string; status?: string } | undefined
         if (!row || row.cache_key !== target.cacheKey) return false
         if (row.status !== 'ok' && row.status !== 'bad') return false
-        if (row.status === 'ok' && options.scriptDetectionVersion !== undefined) {
-          const font = JSON.parse(row.font_json || 'null') as FontItem | null
-          if (!font || !Array.isArray(font.scripts) || !font.scripts.length || font.scriptVersion !== options.scriptDetectionVersion) return false
-        }
       }
 
+      const dirStmt = db.prepare(
+        'SELECT modified_at, file_count, dir_count FROM directories WHERE relative_path = ?',
+      )
+      for (const target of directoryTargets) {
+        const row = dirStmt.get(target.relativePath) as
+          | { modified_at?: number; file_count?: number; dir_count?: number }
+          | undefined
+        if (!row) return false
+        if (
+          !directorySignatureMatches(
+            {
+              modifiedAt: Number(row.modified_at || 0),
+              fileCount: Number(row.file_count || 0),
+              dirCount: Number(row.dir_count || 0),
+            },
+            target.signature,
+          )
+        )
+          return false
+      }
 
       return true
     } catch {
@@ -171,18 +196,10 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
     const context = options.makeRootScanCacheContext(rootPath, storage)
     const sourceCache = context.cache
     context.cache = { ...sourceCache, entries: { ...sourceCache.entries } }
-    context.requireFreshFileStats = true
+    const directorySignatures = await options.readRootDirectorySignatures(context)
     const changedEntryMap = new Map<string, FontScanCacheEntry>()
     const deletedKeySet = new Set<string>()
     const processedDirectories: string[] = []
-    const processedFiles = new Set<string>()
-    const upserts = new Map<string, FontItem>()
-    const deletes = new Map<string, WatcherDeleteRecord>()
-    const counts = { examined: 0, added: 0, changed: 0, unchanged: 0, replayed: 0, directories: 0, invalidated: 0 }
-    const eventSummary = normalizedChanges.slice(0, 8).map(change => ({
-      path: change.fileName, type: change.eventType,
-      trigger: change.triggerEventType || change.eventType, origin: change.origin || 'unspecified',
-    }))
 
     const recordChangedEntry = (
       key: string,
@@ -192,53 +209,40 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       if (!entry) return
       deletedKeySet.delete(key)
       changedEntryMap.set(key, entry)
-      if (font && entry.status === 'ok') upserts.set(key, font)
+      if (font && entry.status === 'ok') payload.upserts.push(font)
     }
 
     const recordDelete = (item: WatcherDeleteRecord): void => {
       const key = item.relativePath
       changedEntryMap.delete(key)
       deletedKeySet.add(key)
-      deletes.set(key, item)
-      upserts.delete(key)
+      payload.deletes.push(item)
       delete context.cache.entries[key]
     }
 
     async function processFontFile(filePath: string, freshStat?: CachedFontStatLike): Promise<void> {
       const key = options.cacheKeyForRootFile(rootPath, filePath)
-      if (processedFiles.has(key)) return
-      counts.examined += 1
       const oldEntry = context.cache.entries[key]
       const font = await options.upsertFontIndexEntry(rootPath, filePath, context.cache, freshStat)
       const newEntry = context.cache.entries[key]
-      processedFiles.add(key)
-      if (options.fontIndexEntryChanged(oldEntry, newEntry)) {
-        if (oldEntry) counts.changed += 1
-        else counts.added += 1
-        recordChangedEntry(key, newEntry, font)
-        // Keep the bad entry as evidence, but withdraw an obsolete valid merged row.
-        if (oldEntry?.status === 'ok' && oldEntry.font && newEntry?.status === 'bad') {
-          deletes.set(key, options.fontIndexDeleteRecord(rootPath, key, oldEntry))
-          counts.invalidated += 1
-        }
-      } else {
-        counts.unchanged += 1
-        // Recovery may need to redeliver rows committed before a failed notification.
-        if (replayUnchanged && font && newEntry?.status === 'ok') {
-          upserts.set(key, font)
-          counts.replayed += 1
-        } else if (replayUnchanged && newEntry?.status === 'bad') {
-          deletes.set(key, options.fontIndexDeleteRecord(rootPath, key, oldEntry))
-          counts.invalidated += 1
-        }
-      }
+      if (options.fontIndexEntryChanged(oldEntry, newEntry)) recordChangedEntry(key, newEntry, font)
+      // Recovery may need to redeliver rows committed before a failed notification.
+      else if (replayUnchanged && font && newEntry?.status === 'ok') payload.upserts.push(font)
     }
 
-    async function processDirectory(targetPath: string): Promise<boolean> {
+    async function processDirectory(targetPath: string, force: boolean): Promise<boolean> {
       const relativeDir = options.relativeDirectoryPathForRoot(rootPath, targetPath)
-      // The fresh directory-cache walk below owns enumeration and completeness.
-      // A separate stat/readdir signature probe duplicates that same work.
-      counts.directories += 1
+      const currentSignature = await computeWatchedDirectorySignature(targetPath)
+      if (!currentSignature) {
+        payload.errors?.push({ path: targetPath, message: '目录状态读取不完整，保留现有索引。' })
+        return false
+      }
+      if (!force && directorySignatureMatches(directorySignatures.get(relativeDir), currentSignature)) {
+        options.appendStartupLog(
+          `font index watcher skipped unchanged directory: ${rootPath} ${relativeDir || '.'}`,
+        )
+        return false
+      }
 
       const errors = payload.errors || []
       const errorCount = errors.length
@@ -294,7 +298,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
           throw error
         }
         if (stat.isDirectory()) {
-          const processed = await processDirectory(targetPath)
+          const processed = await processDirectory(targetPath, change.eventType === 'rescan')
           if (processed) processedDirectories.push(options.relativeDirectoryPathForRoot(rootPath, targetPath))
         } else if (stat.isFile() && options.fontExtensions.has(extname(targetPath).toLowerCase())) {
           await processFontFile(targetPath)
@@ -307,8 +311,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
         const removed = options.removeFontIndexEntriesForPath(rootPath, targetPath, context.cache)
         for (const item of removed) recordDelete(item)
         if (!removed.length && options.fontExtensions.has(extname(targetPath).toLowerCase())) {
-          const key = options.cacheKeyForRootFile(rootPath, targetPath)
-          deletes.set(key, { path: targetPath, relativePath: key })
+          payload.deletes.push({ path: targetPath, relativePath: options.cacheKeyForRootFile(rootPath, targetPath) })
           options.appendStartupLog(
             `index event missing file without cache entry: ${targetPath} ${error instanceof Error ? error.message : String(error)}`,
           )
@@ -316,15 +319,6 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       }
     }
 
-    payload.upserts = Array.from(upserts.values())
-    payload.deletes = Array.from(deletes.values())
-    options.appendStartupLog(`font index watcher diff: ${JSON.stringify({
-      root: rootPath, recovery: replayUnchanged, events: changes.length, targets: normalizedChanges.length,
-      deduplicated: changes.length - normalizedChanges.length,
-      expansion: counts.directories ? (normalizedChanges.some(change => change.fileName === '.') ? 'root-enumeration' : 'directory-enumeration') : 'targeted-files',
-      samples: eventSummary, omittedEvents: Math.max(0, normalizedChanges.length - eventSummary.length),
-      ...counts, deleted: deletedKeySet.size, upserts: payload.upserts.length, errors: payload.errors?.length || 0,
-    })}`)
     try {
       const changedEntries = Array.from(changedEntryMap.entries())
       const deletedKeys = Array.from(deletedKeySet)

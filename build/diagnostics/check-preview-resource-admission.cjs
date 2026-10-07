@@ -22,7 +22,7 @@ async function run(){
  const repairAccess=fileAccess({operation:'repairRootDatabase',path:db,dest:root+'\\quarantine'});assert.equal(repairAccess[0].scope,'database');assert.equal(repairAccess.at(-1).scope,'tree');
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-resource-')); const runtime=load('src/main/path/sharedIoProcessRuntime.ts').createSharedIoProcessRuntime(()=>{});
  const jobs=[];
- const start=(name,accesses,lane='default',priority='normal')=>{ const held=runtime.run({file:process.execPath,args:['-e',`const f=require('fs');f.writeFileSync(${JSON.stringify(path.join(directory,name+'.started'))},'');const timer=setInterval(()=>{if(f.existsSync(${JSON.stringify(path.join(directory,name+'.end'))}))clearInterval(timer)},5)`],roots:[...new Set(accesses.map(a=>a.root))],accesses,lane,priority,write:accesses.some(a=>a.mode==='write'),timeoutMs:5000,queueTimeoutMs:5000});jobs.push(held);return held;};
+ const start=(name,accesses,lane='default')=>{ const held=runtime.run({file:process.execPath,args:['-e',`const f=require('fs');f.writeFileSync(${JSON.stringify(path.join(directory,name+'.started'))},'');const timer=setInterval(()=>{if(f.existsSync(${JSON.stringify(path.join(directory,name+'.end'))}))clearInterval(timer)},5)`],roots:[...new Set(accesses.map(a=>a.root))],accesses,lane,write:accesses.some(a=>a.mode==='write'),timeoutMs:5000,queueTimeoutMs:5000});jobs.push(held);return held;};
  const started=name=>fs.existsSync(path.join(directory,name+'.started'));
  const end=name=>fs.writeFileSync(path.join(directory,name+'.end'),'');
  try {
@@ -41,30 +41,6 @@ async function run(){
   const copy=start('copy',[await access(font),await access(db,'write','database')]);
   const free=start('free',[await access(db,'read','database')],'preview-read');await tick(30);assert(!started('copy'));assert(!started('free'),'writer fairness was lost');
   end('first');await first;await until(()=>started('copy'));end('copy');await copy;await until(()=>started('free'));end('free');await free;
-
-  // Read/read resources can still contend for capacity. Bound overtakes there too.
-  const capacityA=start('capacity-a',[await access(font)],'default','background'),capacityB=start('capacity-b',[await access(font)],'default','background')
-  await until(()=>started('capacity-a')&&started('capacity-b'))
-  const capacityOld=start('capacity-old',[await access(font)],'default','background'),capacityForeground=[]
-  for(let i=0;i<6;i++)capacityForeground.push(start('capacity-f'+i,[await access(font)],'default','foreground'))
-  end('capacity-a');await capacityA
-  for(let i=0;i<4;i++){await until(()=>started('capacity-f'+i));assert(!started('capacity-old'));end('capacity-f'+i);await capacityForeground[i]}
-  await until(()=>started('capacity-old'));assert(!started('capacity-f4'),'capacity-only contention starved background')
-  end('capacity-old');await capacityOld
-  for(let i=4;i<6;i++){await until(()=>started('capacity-f'+i));end('capacity-f'+i);await capacityForeground[i]}
-  end('capacity-b');await capacityB
-  const priorityPool=load('src/main/path/sharedIoProcessRuntime.ts').createSharedIoProcessRuntime(()=>{}),order=[]
-  const held=path.join(directory,'priority-release')
-  const request=(name,priority,write=false,hold=false)=>priorityPool.run({file:process.execPath,args:['-e',hold?`const fs=require('fs');const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(held)})){clearInterval(timer);console.log('held')}},5)`:`console.log(${JSON.stringify(name)})`],roots:['configured-root:priority'],timeoutMs:5000,queueTimeoutMs:5000,priority,write,label:name}).then(result=>{order.push(name);return result})
-  try {
-   const first=request('held','background',false,true)
-   const waiting=[];for(let i=0;i<6;i++)waiting.push(request('b'+i,'background'))
-   for(let i=0;i<6;i++)waiting.push(request('f'+i,'foreground'))
-   fs.writeFileSync(held,'');await Promise.all([first,...waiting]);await priorityPool.whenIdle()
-   assert(order.indexOf('f0')<order.indexOf('b0'),'foreground did not overtake queued reads')
-   assert(order.indexOf('b0')<order.indexOf('f4'),'bounded bypass did not give background a turn')
-   const writerOrder=[];const one=request('write','background',true).then(()=>writerOrder.push('write'));const two=request('read','foreground').then(()=>writerOrder.push('read'));await Promise.all([one,two]);assert.deepEqual(writerOrder,['write','read'])
-  }finally{priorityPool.stop();await priorityPool.whenIdle()}
   await runtime.whenIdle();assert.equal(runtime.status().metrics.started,runtime.status().metrics.closed);
  } finally {runtime.stop();await runtime.whenIdle();await Promise.allSettled(jobs);fs.rmSync(directory,{recursive:true,force:true});}
  console.log('PASS precise shared resources: real children, unrelated progress, DB sidecars, tree boundaries, fairness, atomic sets and close');

@@ -19,12 +19,12 @@ const drain = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 function load(file, mocks = {}, globals = {}, transform = x => x) {
   const output = ts.transpileModule(transform(read(file)), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
   const exports = {}
-  vm.runInNewContext(output, { exports, console, process, performance, ...globals, require(id) {
+  vm.runInNewContext(output, { exports, console, process, ...globals, require(id) {
     if (Object.hasOwn(mocks, id)) return mocks[id]
     if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id === 'node:path') return path
-    if (['node:async_hooks', 'node:perf_hooks', 'node:crypto'].includes(id)) return require(id)
+    if (['node:async_hooks', 'node:perf_hooks'].includes(id)) return require(id)
     if (id.startsWith('.')) return load(path.relative(root, path.resolve(root, path.dirname(file), id + '.ts')), mocks, globals)
     throw Error(`Unexpected external dependency ${file}: ${id}`)
   } }, { filename: file })
@@ -70,7 +70,6 @@ async function watcherHealthy(transform = x => x) {
   h.scanning(false); h.tick(); await drain()
   assert.deepEqual(h.applied[0].map(x => [x.eventType, x.fileName]), [['rename', 'startup.ttf'], ['rename', 'a.ttf'], ['rescan', '.']])
   assert.deepEqual(h.order, ['apply', 'sync', 'send'])
-  assert.equal(h.applied[0][0].origin,'fs-watch'); assert.equal(h.applied[0][2].triggerEventType,'change')
   await h.runtime.startWatchingFolders([folder]); assert.equal(h.handles.length, 1)
   h.handles[0].callback('change', 'b.otf'); h.runtime.stopFolderWatchers()
   assert.equal(h.timers.size, 0); assert.equal(h.handles[0].closed, 1)
@@ -307,14 +306,13 @@ async function metricsResponseOrderCheck(transform = x => x) {
 async function manualBackgroundHealthy(transform = x => x) {
   const logs = [], r = load(backgroundFile, {}, {}, transform).createManualFolderRefreshBackgroundRuntime({ appendStartupLog: s => logs.push(s) })
   const gate = deferred(); let runs = 0
-  const receipt = r.backgroundResult({ folder: 'C:\\Fonts', rootPath: 'C:\\Fonts', jobId: 'job1', elapsedMs: 0, message: 'pending' })
-  const first = r.scheduleRefresh('root', 'job1', async () => { runs++; await gate.promise; return receipt })
-  const second = r.scheduleRefresh('root', 'job2', async () => { runs++; return receipt })
+  const first = r.scheduleRefresh('root', 'job1', async () => { runs++; await gate.promise })
+  const second = r.scheduleRefresh('root', 'job2', async () => { runs++ })
   await drain(); assert.equal(runs, 1); assert.equal(first.scheduled, true); assert.equal(second.scheduled, false)
   assert.equal(second.jobId, 'job1')
   assert.equal(r.backgroundResult({ folder: '/fonts', rootPath: '/fonts', jobId: 'job1', elapsedMs: 0, message: 'pending' }).mode, 'background')
   gate.reject(Error('injected')); await drain(); assert.equal(r.activeRefresh('root'), null); assert.equal(logs.length, 1)
-  r.scheduleRefresh('root', 'job3', async () => { runs++; return receipt }); await drain(); assert.equal(runs, 2)
+  r.scheduleRefresh('root', 'job3', async () => { runs++ }); await drain(); assert.equal(runs, 2)
 }
 function snapshot(file, source = read(file)) {
   source = source.replace(/\r\n/g, '\n')

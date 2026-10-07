@@ -20,5 +20,5 @@ export async function renderWithPowerShellPreview(
     maxBuffer: 1024 * 1024 * 4
   })
 
-  return { ok: true, engine: 'powershell-gdi', nativeBackend: 'powershell-system-drawing', outputPath: request.outputPath }
+  return { ok: true, engine: 'powershell-gdi', outputPath: request.outputPath }
 }

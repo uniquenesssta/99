@@ -80,7 +80,6 @@
       "refreshInstallStatusIndex",
       "refreshWatchedFolder",
       "registerFontProtocol",
-      "rememberRelinkedFontFile",
       "renamePhysicalFolder",
       "renameSharedFontTagInIndex",
       "renderFontPreviewImage",
@@ -165,10 +164,6 @@
         1
       ],
       [
-        "createFontMemoryQueryMatcher",
-        1
-      ],
-      [
         "createFontMemoryQueryRuntime",
         1
       ],
@@ -201,10 +196,6 @@
         1
       ],
       [
-        "createInstallStatusProjectionWriteRuntime",
-        1
-      ],
-      [
         "createInstallStatusRefreshRuntime",
         1
       ],
@@ -214,10 +205,6 @@
       ],
       [
         "createInstallStatusRuntime",
-        1
-      ],
-      [
-        "createInstallStatusWorkerReadRuntime",
         1
       ],
       [
@@ -365,10 +352,6 @@
         1
       ],
       [
-        "createTagFontQueryRuntime",
-        1
-      ],
-      [
         "createTagMetadataRevisionBarrierRuntime",
         1
       ],
@@ -378,10 +361,6 @@
       ],
       [
         "createTagMutationWriteProtocolRuntime",
-        1
-      ],
-      [
-        "createTagRelinkAuthorizationRuntime",
         1
       ],
       [
@@ -470,10 +449,6 @@
             []
           ],
           [
-            "createTagFontQueryRuntime.invalidate",
-            []
-          ],
-          [
             "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
             []
           ],
@@ -535,10 +510,6 @@
         "result": "<undefined>",
         "calls": [
           [
-            "createTagFontQueryRuntime.invalidate",
-            []
-          ],
-          [
             "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
             []
           ],
@@ -585,19 +556,6 @@
                 "source": "font-query-cache",
                 "kind": "cache-clear",
                 "reason": "global-font-query-cache-clear"
-              }
-            ]
-          ],
-          [
-            "createFolderWatcherRuntime.sendFontIndexChanged",
-            [
-              {
-                "folder": "",
-                "at": "<commit-time>",
-                "source": "projection",
-                "projectionRevision": 2,
-                "upserts": [],
-                "deletes": []
               }
             ]
           ],
@@ -912,6 +870,5 @@
         ]
       }
     }
-  },
-  "realFeedbackMigration": "F14 feedback adds one worker-read owner, one status/projection writer and commit-only empty-row revision event. All previous calls/results/ownership counts retained; dynamic ISO time separately validated."
+  }
 }

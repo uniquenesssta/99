@@ -83,7 +83,6 @@ export function createMainApplicationRuntime({ core, data, mutation, operations 
       compareFontsInstalled: operations.capabilities.compareFontsInstalled,
     },
     mutation: {
-      rememberRelinkedFontFile: data.capabilities.rememberRelinkedFontFile,
       saveLibrary: mutation.capabilities.saveLibrary,
       installFontSystemWide: mutation.capabilities.installFontSystemWide,
       uninstallFontSystemWide: mutation.capabilities.uninstallFontSystemWide,

@@ -80,7 +80,6 @@ export function createMainBackgroundRuntime(deps: MainBackgroundRuntimeOptions):
   } = backgroundTaskRuntime;
 
   const backgroundTaskRunnersRuntime = createBackgroundTaskRunnersRuntime({
-    readTemporaryActiveFonts: deps.readTemporaryActiveFonts,
     normalizePathForCacheCompare: deps.normalizePathForCacheCompare,
     findFontItemInRootIndexes: (fontId, normalizedPath) =>
       deps.findFontItemInRootIndexes(fontId, normalizedPath),

@@ -6,6 +6,6 @@ export function rememberPreviewAvailability(value: SharedAvailability | null): v
   snapshot = value
   expiresAt = Date.now() + 6000
 }
-export function readPreviewAvailability(includeLastKnown = false): SharedAvailability | null {
-  return includeLastKnown || expiresAt > Date.now() ? snapshot : null
+export function readPreviewAvailability(): SharedAvailability | null {
+  return expiresAt > Date.now() ? snapshot : null
 }

@@ -12,8 +12,7 @@ const bootstrap = path.join(root, 'src/main/bootstrap')
 // Execute the real entry/composition code with recording domain ports. These
 // stand-ins own no real windows, fonts, files, threads, database or task timers.
 // Domain correctness continues to be checked by its existing dedicated gates.
-function createHarness(overrides = new Map(), sourceRoot = root) {
-  const root = path.resolve(sourceRoot), entry = path.join(root, 'src/main/index.ts'), bootstrap = path.join(root, 'src/main/bootstrap')
+function createHarness(overrides = new Map()) {
   const calls = [], constructors = new Map(), modules = new Map()
   const state = { calls, constructors, compositions: new Map(), timers: [], payload: null, saveSucceeds: true, failOperations: new Set() }
   const clean = value => {
@@ -24,13 +23,7 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
     if (value instanceof Set) return [...value].map(clean)
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, k === 'env' ? '<environment>' : clean(v)]))
   }
-  const record = (name, args) => {
-    if (name === 'createFolderWatcherRuntime.sendFontIndexChanged' && args[0]?.source === 'projection') {
-      assert.equal(new Date(args[0].at).toISOString(), args[0].at, 'projection event timestamp must be an ISO instant')
-      args = [{ ...args[0], at: '<commit-time>' }, ...args.slice(1)]
-    }
-    calls.push([name, clean(args)])
-  }
+  const record = (name, args) => calls.push([name, clean(args)])
   function operation(name, implementation = () => undefined) {
     const invoke = (...args) => {
       record(name, args)
@@ -73,7 +66,6 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
       getOpenLibraryDb: operation('library.get', () => database),
       saveLibrary: operation('library.save', async () => state.saveSucceeds),
     })
-    if (name === 'createFontPageQueryCacheRuntime') specific.queryFontPageInLibrary = operation('page.cached', async () => state.cachedPage)
     if (name === 'createRootIndexCoordinator') specific.findFontItemInRootIndexes = operation('index.find', async () => ({ id: 'font' }))
     if (name === 'createMergedIndexPageRuntime') specific.checkMergedIndexExternalChanges = operation('merged.external', async () => ({ changed: true }))
     if (name === 'createMainWindowAndFontRuntime') Object.assign(specific, {
@@ -95,7 +87,6 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
       if (key === 'registerMainProcessRuntime') return options => { assert.equal(state.payload, null, 'application registered twice'); state.payload = options }
       if (key === 'normalizeWatchedFontFolders') return folders => folders
       if (key === 'normalizePathForCacheCompare') return value => value
-      if (key === 'openFontUninstallReceipts') return () => ({ hydrate: items => items.map(item => ({ ...item, pendingUninstall: state.pendingUninstall })) })
       if (key === 'sha1') return value => require('node:crypto').createHash('sha1').update(value).digest('hex')
       target[key] = key.startsWith('create') ? options => factory(key, options) : operation(key)
       return target[key]

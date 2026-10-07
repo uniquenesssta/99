@@ -16,8 +16,6 @@ export interface PreviewNativeRenderRequest {
 export interface PreviewNativeRenderResult {
   ok: boolean
   engine: PreviewNativeRenderEngine
-  nativeBackend?: string
-  provenance?: Record<string, string | number>
   outputPath?: string
   message?: string
 }

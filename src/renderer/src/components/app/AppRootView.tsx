@@ -108,9 +108,6 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
         )}
       >
         <FontListPanel
-          hasWatchedFolders={sidebar.library.folders.length > 0}
-          installStatusReady={sidebar.installStatusReady}
-          installStatusMissingCount={sidebar.installStatusMissingCount}
           sidebarPage={content.sidebarPage}
           refreshDeveloperStatusDetails={developer.refreshDeveloperStatusDetails}
           status={developer.status}
@@ -204,8 +201,6 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
         contextSelectedFonts={overlays.contextSelectedFonts}
         runFontContextAction={overlays.runFontContextAction}
         contextTargetCount={overlays.contextTargetCount}
-        runContextReindexTag={overlays.runContextReindexTag}
-        runContextRelinkFont={overlays.runContextRelinkFont}
         runContextBatchActivate={overlays.runContextBatchActivate}
         runContextBatchDeactivate={overlays.runContextBatchDeactivate}
         runContextRefreshFolder={overlays.runContextRefreshFolder}

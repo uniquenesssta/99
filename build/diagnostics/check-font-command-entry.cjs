@@ -5,7 +5,7 @@ const {harness,treeNodes,button,plain,noop,tick,renderer,root}=require('./check-
 function setup(config={}) {
   const h=harness(config), calls=[], confirmations=[], favorites=[], tags=[], edited=[]
   let confirm=true, refreshes=0
-  h.load(renderer+'confirmationDialogRuntime.ts').confirmUserAction=async text=>{confirmations.push(text);return config.confirmation ? config.confirmation(text) : confirm}
+  h.window.confirm=text=>{confirmations.push(text);return confirm}
   const options=()=>({flushProtectionWrites:config.protectionFlush || (async()=>true),hfm:h.window.hfm,library:h.library,getCurrentLibrary:()=>h.library,setLibrary:h.setLibrary,setStatus:x=>h.status.push(x),setContextMenu:noop,activeOperationFontIds:{current:h.busy},refreshDatabaseDerivedState:()=>refreshes++,setSelectedFontIds:h.select().setSelectedFontIds,getCurrentSelectedFontId:()=>'',setSelectedFontId:noop,setDetailVisible:noop,setDatabaseFontMetrics:noop,queueFavoriteWrites:async(fonts,v)=>{for(const f of fonts){favorites.push([f.id,v]);h.load(renderer+'fontUserIntentRuntime.ts').settleFavoriteIntent(f)}},scheduleDatabaseDerivedStateRefresh:()=>refreshes++})
   const state=h.load(renderer+'runtime/system/actions/fontSystemStateRuntime.ts').createFontSystemStateRuntime(options())
   const install=h.load(renderer+'runtime/system/actions/fontInstallActionRuntime.ts').createFontInstallActionRuntime(options(),state,h.actions())
@@ -23,73 +23,6 @@ function setup(config={}) {
 }
 const labels=tree=>treeNodes(tree).filter(n=>n.type==='button').map(n=>n.props.children).filter(x=>typeof x==='string')
 async function run(){let cases=0
-  for (const runtimePreload of [false, true]) {
-    const h=harness({runtimePreload}), requests=[], recoveryTraces=[]
-    h.select().setSelectedFontIds(['a','b'])
-    h.all[1].fileAvailability='missing'; h.all[1].localTagNames=['T']
-    h.context().openFontMenu(h.event(),h.all[1])
-    h.handlers.set('fonts:recoverTagFiles',(_event,request,envelope)=>{requests.push(plain(request));recoveryTraces.push(envelope?.__hfmOperationTrace);return {linked:1,remaining:0,canceled:false,failures:[],message:'linked'}})
-    const opts={contextMenu:h.menu,sidebarPage:'tags',hfm:h.window.hfm,setContextMenu:noop,setStatus:noop,refreshDatabaseDerivedState:noop,flushFontWriteQueue:async()=>true}
-    const actions=h.load(renderer+'fontDialogContextActionsRuntime.ts').createFontDialogContextActions(opts)
-    const overlays=props=>h.load(renderer+'components/app/AppOverlays.tsx').AppOverlays({contextSelectedFonts:h.all.slice(0,2),contextTargetCount:2,...actions,...props})
-    const tree=overlays({contextMenu:h.menu})
-    button(tree,'重新链接文件').props.onClick();await tick()
-    assert.deepEqual(requests,[{mode:'relink',fontPath:h.all[1].path,scope:'local'}],'clicked card must own the relink even with a multiselection')
-    assert.equal(recoveryTraces[0]?.domain,'tag-recovery','actual preload lost recovery correlation')
-    const tagMenu={kind:'tag',name:'T',scope:'local',x:0,y:0}
-    assert(!labels(overlays({contextMenu:tagMenu})).includes('重新链接文件'))
-    assert(labels(overlays({contextMenu:tagMenu})).includes('重新索引监听文件夹'))
-    assert(!labels(overlays({contextMenu:{kind:'font',font:h.all[0],x:0,y:0}})).includes('重新链接文件'))
-    const rejected=h.load(renderer+'fontDialogContextActionsRuntime.ts').createFontDialogContextActions({...opts,flushFontWriteQueue:async()=>false})
-    rejected.runContextRelinkFont();await tick();assert.equal(requests.length,1,'unsaved writes must block relink')
-    let release, refreshes=0
-    h.handlers.set('fonts:recoverTagFiles',(_event,request)=>{requests.push(plain(request));return new Promise(resolve=>{release=resolve})})
-    const pendingOptions={...opts,refreshDatabaseDerivedState:()=>refreshes++}
-    const create=()=>h.load(renderer+'fontDialogContextActionsRuntime.ts').createFontDialogContextActions(pendingOptions)
-    create().runContextRelinkFont();await tick()
-    create().runContextRelinkFont();await tick()
-    assert.equal(requests.length,2,'rerendered dialog factory must share the in-flight recovery guard')
-    assert.equal(refreshes,0,'duplicate click must not refresh queries while a picker is open')
-    release({linked:0,remaining:26,canceled:true,failures:[],message:'canceled'});await tick()
-    assert.equal(refreshes,0,'cancel must not start another query wave')
-    create().runContextRelinkFont();await tick();assert.equal(requests.length,3,'cancel must release the guard')
-    release({linked:26,remaining:0,canceled:false,failures:[],message:'done'});await tick()
-    assert.equal(refreshes,1)
-    Object.assign(h.all[1], { fileAvailability: 'unavailable', fileRelinkRequired: true })
-    assert(labels(overlays({contextMenu:h.menu})).includes('重新链接文件'), 'changed authorized file needs a card picker')
-    h.handlers.set('fonts:recoverTagFiles',(_event,request)=>{requests.push(plain(request));return {linked:1,remaining:0,canceled:false,failures:[],message:'confirmed'}})
-    actions.runContextRelinkFont();await tick()
-    assert.equal(requests.length,4);assert.equal(requests[3].fontPath,h.all[1].path)
-    for (const flags of [{ fileRelinkRequired:false }, { fileRelinkRequired:true,tagBindingReadOnly:true }]) {
-      Object.assign(h.all[1],flags)
-      assert(!labels(overlays({contextMenu:h.menu})).includes('重新链接文件'), 'offline/read-only metadata must not offer an unsafe relink')
-      actions.runContextRelinkFont();await tick();assert.equal(requests.length,4)
-    }
-    cases++
-  }
-  for (const [flags,label] of [
-    [{fileAvailability:'missing'},'文件丢失'],
-    [{fileAvailability:'unavailable'},'文件暂不可访问'],
-    [{fileAvailability:'unavailable',fileRelinkRequired:true},'文件已变化，需重新链接'],
-    [{fileAvailability:'unavailable',tagBindingReadOnly:true},'共享标签暂不可读取'],
-  ]) {
-    const s=setup();Object.assign(s.all[0],flags)
-    assert(treeNodes(s.detail()).some(node=>node.props?.children===label),'detail must use the same availability badge: '+label);cases++
-  }
-  const scan=directory=>fs.readdirSync(directory,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?scan(path.join(directory,entry.name)):/\.tsx?$/.test(entry.name)?[path.join(directory,entry.name)]:[])
-  for(const file of scan(path.join(root,renderer)))assert(!/\bwindow\.(?:confirm|alert|prompt)\s*\(/.test(fs.readFileSync(file,'utf8')),'native blocking dialog returned: '+file)
-  for(const action of ['remove','deleteFile'])for(const accepted of [false,true]){
-    let release
-    const s=setup({confirmation:()=>new Promise(resolve=>{release=resolve})}),h=s.base
-    h.select().setSelectedFontIds(['a','b'])
-    for(const f of Object.values(h.library.fonts))f.systemInstalled=action==='remove'
-    const pending=h.command()(action);await tick()
-    assert.equal(s.confirmations.length,1);assert.equal(h.busy.size,2);assert.equal(s.calls.length,0)
-    await h.command()(action);assert.equal(s.confirmations.length,1);assert.equal(s.calls.length,0)
-    release(accepted);await pending;await tick();assert.equal(h.busy.size,0)
-    assert.equal(s.calls.length,accepted?(action==='remove'?2:1):0)
-    if(!accepted)assert.equal(s.refreshes,0,'cancel must not refresh or execute');cases++
-  }
   for(const preload of [false,true])for(const entry of ['context','detail'])for(const count of [1,3]){
     const s=setup({runtimePreload:preload,cache:[]}),h=s.base;h.select().setSelectedFontIds(h.all.slice(0,count).map(f=>f.id))
     const tree=entry==='context'?s.overlay():s.detail(), names=labels(tree)
@@ -172,30 +105,6 @@ async function run(){let cases=0
   assert(!JSON.stringify(refreshed).includes('文件占用'),'renderer notice leaked into persistence')
   u.select().setSelectedFontIds(['b']);u.handlers.set('fonts:uninstallSystem',()=>({ok:true,results:{b:{ok:true,message:'done'}}}))
   await u.command()('remove');await tick();assert.equal(intent.getUninstallIssue(u.library.fonts.b),undefined);assert.equal(display.installLabel(u.library.fonts.b),'未安装');cases++
-  for(const known of [true,false]) {
-    const s=setup(),h=s.base;h.select().setSelectedFontIds(['a']);h.library.fonts.a.systemInstalled=true
-    h.handlers.set('fonts:uninstallSystem',()=>({ok:true,results:{a:{ok:true,message:'registry only; source retained',installCompare:{known,installed:known,by:known?'system':'none',matches:[]}}}}))
-    await h.command()('remove');await tick()
-    assert.equal(h.library.fonts.a.installStatusKnown,known);assert.equal(h.library.fonts.a.systemInstalled,known,'uninstall ignored main-owned result and forced false')
-    assert.match(s.confirmations[0],/所选源文件及其属性保留/);cases++
-  }
-  for(const known of [true,false])for(const entry of ['context','detail']) {
-    const s=setup(),h=s.base;h.select().setSelectedFontIds(['a'])
-    h.library.fonts.a={...h.library.fonts.a,systemInstalled:false,installStatusKnown:known,pendingUninstall:{message:'saved pending copy'}}
-    const display=h.load(renderer+'fontDisplay.ts'),intent=h.load(renderer+'fontUserIntentRuntime.ts')
-    assert.equal(display.isInstalled(h.library.fonts.a),false,'pending uninstall changed installation truth')
-    button(entry==='context'?s.overlay():s.detail(),'重试卸载').props.onClick();await tick()
-    assert.deepEqual(s.calls,[['uninstallSystem','a']]);assert.equal(h.library.fonts.a.pendingUninstall,undefined)
-    const failed=intent.setUninstallIssue({...h.library.fonts.a,pendingUninstall:{message:'old'}},'old failure')
-    const fresh=intent.mergeFontUserIntent(failed,{...h.library.fonts.a,pendingUninstall:undefined})
-    assert.equal(intent.getUninstallIssue(fresh),undefined,'authoritative receipt clear retained stale renderer notice');cases++
-  }
-  {
-    const s=setup(),h=s.base;h.select().setSelectedFontIds(['a']);h.library.fonts.a.systemInstalled=true
-    h.handlers.set('fonts:uninstallSystem',()=>({ok:false,results:{a:{ok:false,message:'UAC cancelled',uninstall:{completedSteps:0,remainingPaths:[],stage:'before-uac',pending:true,cancelled:true}}}}))
-    await h.command()('remove');assert.match(h.status.at(-1),/失败或未确认 0 个，取消 1 个/)
-    assert.equal(h.load(renderer+'fontDisplay.ts').installLabel(h.library.fonts.a),'卸载已取消');cases++
-  }
   // Mutate the actual common dispatcher to use only the first item; the UI regression must fail.
   const file=path.join(root,renderer+'fontCommandRuntime.ts'),broken=setup({transforms:{[file]:s=>s.replace('options.installFontsBatch(fonts, label)','options.installFontsBatch(fonts.slice(0, 1), label)')}});broken.select().setSelectedFontIds(['a','b']);button(broken.base.detail(),'安装').props.onClick();await tick();assert.throws(()=>assert.equal(broken.calls.length,2),assert.AssertionError);cases++
   console.log(`[diagnostics:font-command-entry] ${cases} controlled cases: shared TSX context/detail, two preloads, complete targets, one confirmation, mixed state/busy/partial failure, local-only collection favorite, tag mouse/Enter/IME/delta isolation; first-item mutation rejected. Native Windows and browser focus/layout remain unverified.`)

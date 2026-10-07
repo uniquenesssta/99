@@ -283,7 +283,6 @@ export type RustSystemInstalledFontsResult = {
 }
 
 export type RustWatcherPreflightInput = {
-  scriptDetectionVersion?: number
   rootPath: string
   dbPath: string
   extensions: string[]
@@ -331,7 +330,6 @@ export type RustLocalTagsSetRow = {
   aliases: string[]
   fontPath: string
   tagNames: string[]
-  expectedTagNames?: string[]
 }
 
 export type RustLocalTagsReadRow = {
@@ -357,9 +355,6 @@ export type RustLocalTagsSetInput = {
   dbPath: string
   updatedAt: string
   rows: RustLocalTagsSetRow[]
-  recoveryMoves?: import("../../shared/types").FontRecoveryStateMove[]
-  recoveryFiles?: import("../../shared/types").FontTagRecoveryFile[]
-  recoveryMissingSources?: import("../../shared/types").FontTagRecoveryMissing[]
 }
 
 export type RustLocalTagsDeleteTagInput = {
@@ -825,8 +820,6 @@ export type RustPreviewRenderImageInput = {
 export type RustPreviewRenderImageResult = {
   ok: boolean
   engine: 'rust-directwrite'
-  nativeBackend?: string
-  provenance?: Record<string, string | number>
   outputPath: string
   elapsedMs: number
   workerMode: 'rust-preview-render-image'

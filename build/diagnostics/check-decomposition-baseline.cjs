@@ -29,16 +29,13 @@ function load(file, mocks = {}, transform = x => x) {
     if (id === './localFontTagNodePersistenceRuntime') return load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts', mocks)
     if (id === './previewIndexAccessRuntime') return load('src/main/preview/runtime/previewIndexAccessRuntime.ts', mocks)
     if (id === './previewStorageRoutingRuntime') return load('src/main/preview/runtime/previewStorageRoutingRuntime.ts', mocks)
-    if (/\/(operationTraceContext|fontOperationTrace|operationTrace|startupPathAvailabilityRuntime|shutdownCoordinatorRuntime|startupLogPolicy)$/.test(id)) {
+    if (/\/(operationTraceContext|fontOperationTrace|operationTrace|startupPathAvailabilityRuntime|shutdownCoordinatorRuntime)$/.test(id)) {
       const target = path.resolve(path.dirname(path.join(root, file)), id + '.ts')
       return require('./check-operation-chain.cjs').loader()(target)
     }
     if (id === './previewTraceRuntime') return require('./check-operation-chain.cjs').loader()('src/main/preview/runtime/previewTraceRuntime.ts')
     if (id.startsWith('node:')) return require(id)
     if (id === './fontTagStateAuthorityRuntime') return load('src/renderer/src/fontTagStateAuthorityRuntime.ts')
-    if (id.endsWith('/path/pathBoundaryPolicy')) return load('src/main/path/pathBoundaryPolicy.ts', mocks)
-    if (id.endsWith('/path/cachePath')) return require('./check-operation-chain.cjs').loader()('src/main/path/cachePath.ts')
-    if (['../fonts/fontContentIdentityRuntime', './tagRecoveryMatchRuntime', './localFontRecoveryTransactionRuntime'].includes(id)) return load(path.relative(root, path.resolve(path.dirname(path.join(root, file)), id + '.ts')), mocks)
     if (id === './tagMutationSignalIdentityRuntime') return require('./check-operation-chain.cjs').loader()('src/main/library/tagMutationSignalIdentityRuntime.ts')
     if (id === './fontUserIntentRuntime') return load('src/renderer/src/fontUserIntentRuntime.ts')
     throw new Error(`Unmocked dependency: ${file} -> ${id}`)

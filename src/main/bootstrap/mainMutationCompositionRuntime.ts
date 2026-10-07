@@ -1,5 +1,3 @@
-import { openFontUninstallReceipts } from '../install/fontUninstallReceiptRuntime';
-import { openTagFontSnapshots } from '../library/tagFontSnapshotRuntime';
 import { createFontProtectionAuthorityRuntime, readSharedFontProtection } from '../install/fontProtectionAuthorityRuntime';
 import { withSharedLeaseLocks } from '../storage/runtime/sharedLeaseLockRuntime';
 import { sharedFileSystem as protectionFs } from '../path/sharedFileSystemRuntime';
@@ -15,7 +13,6 @@ import { createPhysicalFolderActions, pathInsideFolder } from '../folders/physic
 import { createCurrentUserManagedInstallRuntime } from '../install/currentUserManagedInstallRuntime';
 import { createManagedFontOwnershipRuntime } from '../install/managedFontOwnershipRuntime';
 import { createSystemFontInstallRuntime } from '../install/systemFontInstallRuntime';
-import { createFontInstallEvidenceSession } from '../install/fontInstallEvidenceRuntime';
 import { createSharedFontMetadataMutations } from '../library/sharedFontMetadataMutations';
 import { createSharedKnownTagsRuntime } from '../library/sharedKnownTagsRuntime';
 import { createSharedMetadataMergedIndexSyncRuntime } from '../library/sharedMetadataMergedIndexSyncRuntime';
@@ -44,7 +41,6 @@ export interface MainMutationCompositionOptions {
     | 'setLocalFontTagsBatchBase'
     | 'deleteLocalFontTagBase'
     | 'saveInstallStatusIndex'
-    | 'installStatusProjectionOwnedByWriter'
     | 'appWatchedFolders'
     | 'rootForFontPath'
     | 'clearInstalledFontsMemoryCache'
@@ -136,7 +132,6 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
     setLocalFontTagsBatchBase,
     deleteLocalFontTagBase,
     saveInstallStatusIndex,
-    installStatusProjectionOwnedByWriter,
     appWatchedFolders,
     rootForFontPath,
     clearInstalledFontsMemoryCache,
@@ -216,13 +211,12 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
 
   async function setLocalFontTagsBatch(
     items: FontTagBatchItem[],
-    options?: import("../../shared/types").FontTagRecoveryCommitOptions,
   ): Promise<FontTagUpdateResult> {
     return tagMutationWriteProtocolRuntime.run({
       scope: "local",
       mutationKind: "local-tags-batch-set",
       inputIds: (items || []).map((entry) => entry?.item?.id),
-      action: () => setLocalFontTagsBatchBase(items || [], options),
+      action: () => setLocalFontTagsBatchBase(items || []),
       afterCommit: () => invalidateSharedFontRuntimeCaches(),
     });
   }
@@ -248,7 +242,6 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
   } = createMainActivationInstallStatusSaveRuntime({
     readInstallStatusIndex,
     saveInstallStatusIndex,
-    installStatusProjectionOwnedByWriter,
     appWatchedFolders,
     rootForFontPath,
     syncMergedIndexAfterInstallStatusRefresh: (folders, items) =>
@@ -329,26 +322,15 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
   });
 
   const systemFontInstallRuntime = createSystemFontInstallRuntime({
-    openUninstallReceipts: async () => openFontUninstallReceipts(await openLibraryDb()),
-    readUninstallActivationClaims: async () => (await loadTemporaryActiveFonts()).records,
-    appName: APP_NAME,
-    readHistoricalFont: async path => openTagFontSnapshots(await openLibraryDb()).read(path),
     fontExtensions: FONT_EXTENSIONS,
     withFontProtection: protectionAuthority.guard,
     deactivateForFileDelete: deactivateFontSessionsBatch,
-    persistUninstallResult: async (item, assertCurrent) => {
-      assertCurrent?.();
+    persistUninstallResult: async item => {
       const state = await loadTemporaryActiveFonts();
-      assertCurrent?.();
-      const current = await getSystemInstalledFontsCached(true);
-      assertCurrent?.();
-      const permanent = compareFontInstalledWithList(item, current);
-      const result = await createFontInstallEvidenceSession({ installed: current, temporaryRecords: state.records, readHistorical: async path => openTagFontSnapshots(await openLibraryDb()).read(path) }).confirm(item, permanent);
-      assertCurrent?.();
-      scheduleActivationInstallStatusSave({ [item.id]: result }, new Map([[item.id, item]]), 'uninstall-verified');
+      const active = state.records.filter(record => normalizePathForCacheCompare(record.sourcePath || '') === normalizePathForCacheCompare(item.path));
+      const matches = active.map(record => ({ source: 'HKCU' as const, registryName: record.registryName, value: record.installPath, path: record.installPath, fileName: record.fileName }));
+      scheduleActivationInstallStatusSave({ [item.id]: { installed: active.length > 0, by: active.length ? 'managed' : 'none', matches } }, new Map([[item.id, item]]), 'uninstall-verified');
       await flushActivationInstallStatusSave('uninstall-verified');
-      assertCurrent?.();
-      return result;
     },
     ensureWindows,
     currentUserFontsDir,
@@ -482,10 +464,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
       scope: "shared",
       mutationKind: "shared-tags-set",
       inputIds: (items || []).map((item) => item?.id),
-      action: async () => {
-        await openTagFontSnapshots(await openLibraryDb()).capture(items);
-        return setSharedFontTagsInIndexBase(items, watchedFolders, tagNames);
-      },
+      action: () => setSharedFontTagsInIndexBase(items, watchedFolders, tagNames),
     });
   }
 
@@ -497,10 +476,7 @@ export function createMainMutationCompositionRuntime(options: MainMutationCompos
       scope: "shared",
       mutationKind: "shared-tags-batch-set",
       inputIds: (items || []).map((entry) => entry?.item?.id),
-      action: async () => {
-        await openTagFontSnapshots(await openLibraryDb()).capture(items.map(entry => entry.item));
-        return setSharedFontTagsBatchInIndexBase(items, watchedFolders);
-      },
+      action: () => setSharedFontTagsBatchInIndexBase(items, watchedFolders),
     });
   }
 

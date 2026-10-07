@@ -1,4 +1,3 @@
-import { detailedStartupLogsEnabled } from '../../logging/startupLogPolicy'
 import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import type { SharedIoAccessPath } from '../../path/sharedIoAccessRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
@@ -46,19 +45,6 @@ export type RustPreviewClientOptions = Pick<RustCoreWorkerTransportRuntime,
 function normalizePreviewCacheStatusPayload(value: unknown): PreviewCacheIndexStatus | null {
   return value === 'ok' || value === 'missing' || value === 'failed' || value === 'pending' || value === 'generating' || value === 'stale' ? value : null
 }
-
-function previewProvenance(input: unknown): Record<string, string | number> | undefined {
-  if (!input || typeof input !== 'object') return undefined
-  const source = input as Record<string, unknown>, result: Record<string, string | number> = {}
-  const allowed: Record<string, string[]> = {route:['private-file','system-family'],selection:['first-private-family','first-successful-system-candidate'],familyNameStatus:['observed','unavailable'],faceStatus:['not-exposed'],glyphFallbackStatus:['not-observed']}
-  for (const key of ['route', 'selection', 'familyName', 'familyNameStatus', 'faceStatus', 'glyphFallbackStatus']) {
-    const value = source[key]
-    if (typeof value === 'string' && (key === 'familyName' || allowed[key]?.includes(value))) result[key] = value.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 64)
-  }
-  for (const key of ['requestedStyleBits', 'selectedStyleBits']) if (Number.isSafeInteger(source[key]) && Number(source[key]) >= 0 && Number(source[key]) <= 15) result[key] = Number(source[key])
-  return Object.keys(result).length ? result : undefined
-}
-let provenanceSamples = 0
 
 export function createRustPreviewClientRuntime(options: RustPreviewClientOptions) {
   const { diagnoseRustCoreWorker, runRustCoreScheduledCommand, createTemporaryJsonFile, appendPreviewCacheFailureLog } = options
@@ -284,19 +270,16 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
       const result: RustPreviewRenderImageResult = {
         ok: true,
         engine: 'rust-directwrite',
-        nativeBackend: typeof payload.engine === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(payload.engine) ? payload.engine : undefined,
-        provenance: previewProvenance(payload.provenance),
         outputPath: payload.outputPath || input.outputPath,
         elapsedMs: Number(payload.elapsedMs || Date.now() - startedAt),
         workerMode: 'rust-preview-render-image',
       }
-      const provenanceDetail = result.provenance && detailedStartupLogsEnabled() && provenanceSamples++ < 32 ? `, provenance=${JSON.stringify(result.provenance)}` : ''
-      options.appendStartupLog(`rust preview render finished: output=${result.outputPath}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms${result.nativeBackend ? `, engine=${result.engine}, nativeBackend=${result.nativeBackend}${provenanceDetail}` : ''}`)
+      options.appendStartupLog(`rust preview render finished: output=${result.outputPath}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
       rethrowSharedIoProcessError(error)
       rethrowRustCoreDaemonSubmittedJob(error, options.appendStartupLog, 'rust preview render')
-      options.appendStartupLog(`rust preview render failed: ${error instanceof Error ? error.message : String(error)}; fallback decision deferred to preview dispatcher`)
+      options.appendStartupLog(`rust preview render failed: ${error instanceof Error ? error.message : String(error)}; directwrite helper fallback remains active`)
       return null
     } finally {
       await inputFile.dispose()

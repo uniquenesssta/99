@@ -1,7 +1,6 @@
 import { isAbsolute,relative,resolve } from 'node:path'
 import { normalizePathForCacheCompare } from '../../path/cachePath'
 import type { RootIndexQueryParts } from './rootIndexQueryTypes'
-import { INSTALL_STATUS_EVIDENCE_PREFIX } from '../../install/status/installStatusSignatureRuntime'
 
 export function sqliteLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
@@ -40,8 +39,8 @@ export function mergedIndexLocalFavoriteExpr(): string {
 
 export function rootIndexInstalledExpr(hasInstallJoin: boolean): string {
   return hasInstallJoin
-    ? `(COALESCE(install_status.installed, 0) = 1 AND COALESCE(install_status.by_type, '') <> 'managed')`
-    : `0`
+    ? `(COALESCE(install_status.installed, ${rootIndexJsonBoolExpr('systemInstalled')}, 0) = 1 AND COALESCE(install_status.by_type, '') <> 'managed')`
+    : `COALESCE(${rootIndexJsonBoolExpr('systemInstalled')}, 0)`
 }
 
 export function rootIndexNotInstalledExpr(hasInstallJoin: boolean): string {
@@ -62,7 +61,7 @@ export function rootIndexSystemDefaultExpr(hasInstallJoin: boolean): string {
 }
 
 export function mergedIndexInstalledExpr(): string {
-  return `(COALESCE(entries.installed, 0) = 1 AND COALESCE(entries.installed_by, '') <> 'managed')`
+  return `(COALESCE(entries.installed, ${rootIndexJsonBoolExpr('systemInstalled')}, 0) = 1 AND COALESCE(entries.installed_by, '') <> 'managed')`
 }
 
 export function mergedIndexNotInstalledExpr(): string {
@@ -198,8 +197,4 @@ export function addRootIndexTimeRangeClause(parts: RootIndexQueryParts, mode?: s
 
 export function rootIndexInstallIdExpr(root: string): string {
   return `hfm_file_font_id(${sqliteLiteral(root)}, entries.relative_path, entries.file_size, entries.modified_at)`
-}
-
-export function rootIndexInstallJoinExpr(root: string): string {
-  return `install_status.font_id = ${rootIndexInstallIdExpr(root)} AND install_status.signature LIKE '${INSTALL_STATUS_EVIDENCE_PREFIX}%'`
 }

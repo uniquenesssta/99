@@ -53,9 +53,6 @@ function checkLifecycle(app, view) {
   assert(normalizedApp.includes('useFontCardRenderer({\n    closingLifecycle: rendererClosingLifecycle,'), 'preview cards lost renderer closing lifecycle wiring')
   assert(normalizedApp.includes('usePreviewController({\n    closingLifecycle: rendererClosingLifecycle,'), 'preview controller lost closing ownership')
   assert(normalizedApp.includes('previewConsumerEnabled: false,'), 'unconsumed detail preview producer re-enabled')
-  assert.equal((normalizedApp.match(/^\s+previewStateForFont,$/gm) || []).length, 4, 'read-only preview owner must wire selected/card/detail views')
-  const indexEvent = normalizedApp.slice(normalizedApp.indexOf('  useFontIndexChangedEventRuntime({'), normalizedApp.indexOf('  useFontTagStateSignalEventRuntime({'))
-  assert(!indexEvent.includes('requestPreviewFont'), 'index notification regained invisible foreground demand')
   const normalized = normalizedApp
     .replace('usePreviewController({\n    closingLifecycle: rendererClosingLifecycle,', 'usePreviewController({')
     .replace('    previewConsumerEnabled: false, // FontDetailPanel currently consumes no preview image.\n', '')
@@ -84,7 +81,7 @@ function checkLifecycle(app, view) {
   assert.equal(hash(normalized.slice(0, marker)), fixture.lifecyclePrefixSha256, 'App hooks/effects/commands changed')
   assert.equal(hash(view.replace(/\r\n/g, '\n')), fixture.rootViewSha256, 'root view lifecycle/dev switch changed')
 }
-function snapshot(app, view, bindings, development, collapsed, hasFolders = false) {
+function snapshot(app, view, bindings, development, collapsed) {
   const runtime = { jsx: (type, props) => typeof type === 'function' ? type(props) : ({type, props}), jsxs: (type, props) => runtime.jsx(type, props) }
   function compile(text, imports) {
     const module = { exports: {} }
@@ -99,17 +96,9 @@ function snapshot(app, view, bindings, development, collapsed, hasFolders = fals
   const caller=compile(source,()=>({AppRootView:actual}))
   const values=Object.fromEntries(bindings.map(name=>[name,'binding:'+name]))
   values.IS_DEVELOPMENT=development; values.library={previewText:'binding:library.previewText'}
-  Object.defineProperty(values.library, 'folders', { value: hasFolders ? ['fixture-root'] : [], enumerable: false })
   const tree=caller.render(values)
   function normalize(value) {
     if(Array.isArray(value))return value.map(normalize)
-    if(value?.type==='FontListPanel') {
-      assert.equal(value.props.hasWatchedFolders, hasFolders, 'list lost watched-root readiness')
-      assert.equal(value.props.installStatusReady, values.installStatusReady, 'list lost status readiness')
-      assert.equal(value.props.installStatusMissingCount, values.installStatusMissingCount, 'list lost unknown count')
-      const { hasWatchedFolders, installStatusReady, installStatusMissingCount, ...legacy } = value.props
-      value = { ...value, props: legacy }
-    }
     if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,v])=>[key,normalize(key==='renderSidebar'?v(collapsed,'collapse-callback'):v)]))
     return value
   }
@@ -162,17 +151,11 @@ function main() {
   assert.deepEqual(groupNames,['topbar','sidebar','content','detail','overlays','developer'])
   for(const entry of fixture.cases) {
     assert.equal(snapshot(app,view,fixture.bindings,entry.development,entry.collapsed),entry.hash,'UI wiring changed')
-    assert.equal(snapshot(app,view,fixture.bindings,entry.development,entry.collapsed,true),entry.hash,'watched-root readiness changed legacy wiring')
     assert.equal(snapshot(app.replace(/\r?\n/g,'\r\n'),view.replace(/\r?\n/g,'\r\n'),fixture.bindings,entry.development,entry.collapsed),entry.hash,'CRLF wiring changed')
   }
   const broken=app.replace('search: search,','search: status,')
   assert.notEqual(broken,app)
   assert.notEqual(snapshot(broken,view,fixture.bindings,false,false),fixture.cases.find(c=>!c.development&&!c.collapsed).hash,'wrong wiring was not detected')
-  for (const callback of ['runContextReindexTag', 'runContextRelinkFont']) {
-    const disconnected = app.replace(`${callback}: ${callback},`, `${callback}: runContextDelete,`)
-    assert.notEqual(disconnected, app, `${callback}: mutation anchor drifted`)
-    assert.notEqual(snapshot(disconnected,view,fixture.bindings,false,false),fixture.cases.find(c=>!c.development&&!c.collapsed).hash,`${callback}: wrong recovery action escaped the wiring gate`)
-  }
   compilerGate()
   console.log('[diagnostics:app-root-view-contracts] six typed local groups; explicit renderer-closing owner/wiring plus frozen legacy lifecycle; 18 compiler negatives; frozen UI in four modes; wiring/type/spread/lifecycle mutations and CRLF passed')
 }

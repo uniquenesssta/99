@@ -8,7 +8,6 @@ export type FontDetailPanelRuntimeOptions = {
   selectedFont: FontItem | undefined
   detailVisible: boolean
   selectedFontId: string
-  previewStateForFont?: (font: FontItem) => { family?: string }
   previewFamilies: Record<string, string>
   library: LibraryState
   setLibrary: React.Dispatch<React.SetStateAction<LibraryState>>
@@ -48,7 +47,7 @@ export function createFontDetailPanelRuntime(options: FontDetailPanelRuntimeOpti
   deactivateSelected: () => Promise<void>
 } {
   return {
-    selectedPreviewFamily: options.selectedFont ? (options.previewStateForFont ? options.previewStateForFont(options.selectedFont).family || '' : options.previewFamilies[options.selectedFont.id]) : '',
+    selectedPreviewFamily: options.selectedFont ? options.previewFamilies[options.selectedFont.id] : '',
 
     closeDetail(): void {
       flushSync(() => {

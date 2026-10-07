@@ -26,17 +26,17 @@
     "RustMergedIndexSyncResult": "d38ec5d9c46fa75ba739edb25d1513dc229d02e0d749c6603ec39448ea4537de",
     "RustSystemInstalledFontsInput": "d761f1ca2ce1c2b8f6d2be203c711aa67b6c670c2d7af082c77219969a39c9a2",
     "RustSystemInstalledFontsResult": "0653c979c3abd76def1a774bfa60b50b3daa5438cf329f8a5ce0dc91ff0f30f9",
-    "RustWatcherPreflightInput": "d6b26af533ef95b49f27e1a876ed3d59721d8d634c4e705829f8a38bc5c24a0a",
+    "RustWatcherPreflightInput": "748b6a329ee6ccd40262df20c0dea5d8e8ebc55d994e68d3522af73b5c1cfca2",
     "RustWatcherPreflightResult": "6b620ec72059c3ddad344bd1c55929af3c387c83cc785f0fd50e9ce3aba90ee0",
     "RustInstallStatusReadResult": "ed92937f945116d5ebde90e0e57e6b49a8395551500e64b9b9328efe601e580e",
     "RustInstallStatusSaveResult": "098a1edb76875415621eb546fef1275365b9e69b4017f8f94f808237b219fc92",
     "RustInstallStatusCompareInput": "4bf6ae3761d3eb99857b72fe81ae4d81c49f56a5090133ff841e90f11f4ed03c",
     "RustInstallStatusCompareResult": "ac951ffd74aab6d7b6c0ac98d17f443af1888aa0585884eb7823c695f8fb654c",
-    "RustLocalTagsSetRow": "64b1336b57b9c83d19b91a0c2efa7c164ddc3f8d9f186c0ca64222b4f2813187",
+    "RustLocalTagsSetRow": "83a859f1b6fd9392b37bb131717d16fb8fc9a15dd3872e15e17295d95e14b70c",
     "RustLocalTagsReadRow": "218bd86fa42d715a1c0ce2df9d057327590914dfc5b446b99e81e050a707572d",
     "RustLocalTagsReadInput": "fd81aadb46a69827d5d2fbf670d5af1aeacf144a045047e89e47bd04bcbd7267",
     "RustLocalTagsReadResult": "a89f811b97ebb910d071c45b368e1f7b262566407d4f84c397d2511fee88f35f",
-    "RustLocalTagsSetInput": "1c5af80419d3b8c68857c2cc9ac20376ae62cbfc357fba96b2f2a4df1ced2157",
+    "RustLocalTagsSetInput": "d79720338ac2e740b1af1cf70034c59ec9be59768da30e8dce2e97a508f716df",
     "RustLocalTagsDeleteTagInput": "905c9631c71084a11225360e6b2af51626d2ccd9f8bd1d87a7a4d059168aa270",
     "RustLocalTagsMutationStateSignal": "6f6c4a38cadeb67eb103c7c5989b7b516f108e8e7faa699048349608cfdf4340",
     "RustLocalTagsSetResult": "547f727e8d0e48f27bf129216089675a562b2b47ac903a036208c5eebefc3139",
@@ -91,7 +91,7 @@
     "RustFontRegistryResult": "1a6671031790cb57c7c32e963ce2e58a213b7050951f8399c83a6190c0b01c00",
     "RustFontNotifyResult": "94f455f5f2f33e7f6b9b52a749d474f0a58e9dec9abe943f251f8b253a916c33",
     "RustPreviewRenderImageInput": "544bb07bb0af503a4b935aec7e44d4a94f9f2a0f8c67e10b726b81b9da8c0c28",
-    "RustPreviewRenderImageResult": "8c8544d708917bc7cf55e28e37df7efe266e09133828834b956aa371a5baa9db",
+    "RustPreviewRenderImageResult": "9c09f8603373c4500dc9c3a4116c7ce52094b1a8d283e1be725610380cd70c0b",
     "RustCoreWorkerRuntimeOptions": "86f86a0f98f515e8ff5e63da6f912bd6b1171af0e7c58768085e8d1d4b0d731f",
     "RustManagedActivationRegistryClaim": "9ef43d7b14ff5bd987460aec03c13783bd2963351cb04b54ea1cc033b40d76d2"
   },
@@ -133,7 +133,7 @@
     "RustFontResourceBatchPayload": "88973bfbb39085c0729378216cffb8749cd2a64a4076ea2931717858168db8f5",
     "RustFontRegistryPayload": "60c88d979038f6e406b8ead808eef2ca90e9da75aff6761c1673733d67b4d5d7",
     "RustFontNotifyPayload": "9e1636b05644b5b6c79db5efb66640d29e81ac8f0876a6c876814dab5b9c02cd",
-    "RustPreviewRenderImagePayload": "2adf07d96d6e94ef0fcdaf1e2944aef160f6e1f34498a3c661541f1af1de1588"
+    "RustPreviewRenderImagePayload": "66e34fcfd875669b8c34e63f41fe39f667df43c0e877338e5f78dcacd156ef29"
   },
   "publicDependencies": [
     {
@@ -224,38 +224,5 @@
       "module": "../indexing/fontScanWorkers"
     }
   ],
-  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes.",
-  "f09Migration": {
-    "baseline": "034391cb3acdd6a1430e4f5c3b5b912d9f964608",
-    "testedCommit": "9fcac9b55018e1fb3cbfed01d8f9a7ae3b0dc3c6",
-    "reason": "F09 deliberately adds optional current-tag/file/source guards and proven state moves. Legacy row/input fields, other public/private shapes and type-only dependencies stay frozen; compiler cases cover legacy inputs, guarded inputs and invalid guard fields.",
-    "types": [
-      {
-        "name": "RustLocalTagsSetRow",
-        "oldShape": "83a859f1b6fd9392b37bb131717d16fb8fc9a15dd3872e15e17295d95e14b70c",
-        "newShape": "64b1336b57b9c83d19b91a0c2efa7c164ddc3f8d9f186c0ca64222b4f2813187"
-      },
-      {
-        "name": "RustLocalTagsSetInput",
-        "oldShape": "d79720338ac2e740b1af1cf70034c59ec9be59768da30e8dce2e97a508f716df",
-        "newShape": "1c5af80419d3b8c68857c2cc9ac20376ae62cbfc357fba96b2f2a4df1ced2157"
-      }
-    ]
-  },
-  "realFeedbackPreviewMigration": {
-    "parent": "6620b3bafd5b3d894987585dd06c5d5eabc54933",
-    "reason": "Optional native backend/provenance diagnostics only; legacy engine and existing required fields remain, malformed metadata cannot reject valid rendering.",
-    "types": [
-      {
-        "name": "RustPreviewRenderImageResult",
-        "old": "9c09f8603373c4500dc9c3a4116c7ce52094b1a8d283e1be725610380cd70c0b",
-        "new": "8c8544d708917bc7cf55e28e37df7efe266e09133828834b956aa371a5baa9db"
-      },
-      {
-        "name": "RustPreviewRenderImagePayload",
-        "old": "66e34fcfd875669b8c34e63f41fe39f667df43c0e877338e5f78dcacd156ef29",
-        "new": "2adf07d96d6e94ef0fcdaf1e2944aef160f6e1f34498a3c661541f1af1de1588"
-      }
-    ]
-  }
+  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
 }

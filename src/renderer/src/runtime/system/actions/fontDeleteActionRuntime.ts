@@ -1,4 +1,3 @@
-import { confirmUserAction } from '../../../confirmationDialogRuntime'
 import type { FontItem } from '@shared/types'
 import { removeFontsFromLibrary,uniqueFontsById } from '../../../fontFolderMutationRuntime'
 import { physicalMutationIndexRefreshSuffix,refreshIndexesAfterPhysicalMutation } from '../../library/fontPhysicalMutationIndexRuntime'
@@ -16,11 +15,11 @@ export function createFontDeleteActionRuntime(options: FontSystemActionRuntimeOp
     const skippedBusy = selected.length - unique.length
     if (!unique.length) { options.setStatus(`没有可删除字体：删除 0 个，跳过处理中 ${skippedBusy} 个。`); return }
 
+    const ok = window.confirm(`将把“${label}”中的 ${unique.length} 个字体文件删除到回收站（所选 ${selected.length} 个，跳过处理中 ${skippedBusy} 个）。受保护字体不会删除；会先清理真正依赖所选源文件的安装和激活引用。无法移入回收站时报告失败，不会永久删除。确定继续？`)
+    if (!ok) { options.setStatus(`已取消删除，未执行 ${unique.length} 个。`); return }
+
     for (const font of unique) busy?.add(font.id)
     try {
-      const ok = await confirmUserAction(`将把“${label}”中的 ${unique.length} 个字体文件删除到回收站（所选 ${selected.length} 个，跳过处理中 ${skippedBusy} 个）。受保护字体不会删除；会先清理真正依赖所选源文件的安装和激活引用。无法移入回收站时报告失败，不会永久删除。确定继续？`)
-      if (!ok) { options.setStatus(`已取消删除，未执行 ${unique.length} 个。`); return }
-
       const currentLibrary = options.getCurrentLibrary()
       options.setStatus(`正在删除字体文件：${unique.length} 个，安全检查后移入回收站……`)
       const result = await options.hfm.deleteFontFiles(unique, currentLibrary.folders || [])

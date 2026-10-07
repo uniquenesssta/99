@@ -8,8 +8,6 @@ pub struct WatcherPreflightConfig {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WatcherPreflightInput {
-    #[serde(default)]
-    pub script_detection_version: Option<u64>,
     pub root_path: String,
     pub db_path: String,
     #[serde(default)]
@@ -25,6 +23,13 @@ pub struct WatcherPreflightChange {
     pub event_type: String,
     #[serde(default)]
     pub file_name: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct DirectorySignature {
+    pub modified_at: f64,
+    pub file_count: i64,
+    pub dir_count: i64,
 }
 
 #[derive(Clone, Debug)]

@@ -36,7 +36,6 @@ function createHarness(settings = {}, overrides = new Map()) {
       files: [{ path: 'C:/fonts/a.ttf', size: 2, modifiedMs: 1 }], directories: [], foldersScanned: 1,
       errors: [], ids: ['f'], total: 1, missingIds: [], tagMap: { f: ['tag'] }, knownTags: ['tag'], updatedIds: ['f'],
       matched: [], signature: 's', folders: ['C:/fonts'], nodes: [], outputPath: 'C:/preview.png', backupDir: 'C:/backup',
-      ...(command === '--preview-render-image' ? settings.previewPayload || {} : {}),
       results: command === '--font-parse-batch' ? [job] : command.startsWith('--font-resource-') ? [{ path: 'C:/fonts/a.ttf', ok: true, count: 1 }] : { f: { installed: true } },
     }
   }
@@ -62,7 +61,7 @@ function createHarness(settings = {}, overrides = new Map()) {
       handshakeCount++
       if (settings.handshake === 'invalid-json') return { stdout: '{bad', stderr: '' }
       if (settings.handshake === 'throw') throw failure('Error', 'handshake failed')
-      return { stdout: JSON.stringify({ ok: settings.handshake !== 'false', version: 'fixture', protocolVersion: settings.stale && handshakeCount === 1 ? 0 : 1, capabilities: settings.noCapabilities ? [] : (settings.capabilities || capabilities) }), stderr: '' }
+      return { stdout: JSON.stringify({ ok: settings.handshake !== 'false', version: 'fixture', protocolVersion: settings.stale && handshakeCount === 1 ? 0 : 1, capabilities: settings.noCapabilities ? [] : capabilities }), stderr: '' }
     }
     if (args[0] === '--core-scheduler-profile') {
       if (settings.profileFailure) throw failure('Error', 'profile failed')

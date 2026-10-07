@@ -94,7 +94,6 @@ export function createFontActivationTransactionRuntime(
       () => compareActivationInstallStatus(item),
     );
 
-    if (compare.known === false) throw new Error('安装状态当前无法确认，请检查来源或安装候选的访问状态后重试。');
     if (compare.installed) {
       const message = quickInstalledActivationMessage(item);
       return {

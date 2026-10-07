@@ -142,9 +142,7 @@ function fontFromMergedRow(row) {
     modifiedAt,
     createdAt,
     installStatusKnown: false,
-    systemInstalled: false,
-    systemInstallMatches: [],
-    active: installedBy === 'managed' || installedBy === 'both',
+    active: !!source.active || installedBy === 'managed' || installedBy === 'both',
     activeSince: source.activeSince
   })
   if (row.installed !== null && row.installed !== undefined) {
@@ -172,7 +170,6 @@ function rootsSnapshotUsable(db, roots, schemaVersion) {
     const metaRow = db.prepare("SELECT value FROM meta WHERE key = 'schemaVersion' LIMIT 1").get()
     if (String(metaRow && metaRow.value || '') !== String(schemaVersion)) return false
     if (Number(schemaVersion) >= 7 && !db.prepare("SELECT value FROM meta WHERE key = 'sourcesKey'").get()?.value) return false
-    if (db.prepare("SELECT value FROM meta WHERE key = 'installEvidenceVersion'").get()?.value !== 'content-v1') return false
     if (!mergedIndexRequiredSchemaUsable(db)) return false
     const sourceRows = db.prepare('SELECT root_path FROM sources ORDER BY root_path').all()
     const expected = Array.from(new Set((roots || []).map(normalizePathForCompare).filter(Boolean))).sort()

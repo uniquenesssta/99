@@ -1,4 +1,3 @@
-import { getUninstallIssue } from './fontUserIntentRuntime'
 import { isInstalled } from './fontDisplay'
 import { batchActivationCandidates } from './fontSelectionRuntime'
 import type { FontItem, LibraryState } from '@shared/types'
@@ -18,13 +17,13 @@ export const FONT_COMMANDS = [
 export function visibleFontCommands(fonts: FontItem[], count: number) {
   const complete = count > 0 && fonts.length === count
   const shownActions = new Set<string>([
-    complete && fonts.every(font => isInstalled(font) || !!getUninstallIssue(font)) ? 'remove' : 'install',
+    complete && fonts.every(isInstalled) ? 'remove' : 'install',
     complete && fonts.some(font => !!font.active) && !batchActivationCandidates(fonts).length ? 'deactivate' : 'activate',
     complete && fonts.every(font => !!font.deleteProtected) ? 'unprotect' : 'protect',
     complete && fonts.every(font => !!font.favorite) ? 'unfavorite' : 'favorite',
     'deleteFile', 'localTags', 'sharedTags'
   ])
-  return FONT_COMMANDS.filter(command => shownActions.has(command.action)).map(command => command.action === 'remove' && fonts.some(font => !!getUninstallIssue(font)) ? { ...command, label: '重试卸载' } : command)
+  return FONT_COMMANDS.filter(command => shownActions.has(command.action))
 }
 export type FontCommand = typeof FONT_COMMANDS[number]['action']
 export type RunFontCommand = (action: FontCommand, ids?: string[], available?: FontItem[], entry?: 'selection-toolbar' | 'font-context' | 'detail', outcome?: string) => Promise<void>
@@ -55,10 +54,6 @@ export function createFontCommandRuntime(options: FontCommandOptions): RunFontCo
       return
     }
     if (!fonts.length) { options.setStatus('请先选择字体，本次操作未执行。'); return }
-    if (['install', 'activate', 'deleteFile'].includes(action) && fonts.some(font => font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable')) {
-      options.setStatus('所选字体包含丢失或暂不可访问的文件；丢失或已变化的文件请在字体卡片右键重新链接，离线或无权限的文件请先恢复访问。')
-      return
-    }
     const label = `已选择 ${fonts.length} 个字体`
     try {
       if (action === 'install') await options.installFontsBatch(fonts, label)

@@ -20,8 +20,7 @@ for(const vector of require('./fixtures/font-file-identity.json'))assert.equal(n
 function database(){const db=new DatabaseSync(':memory:');db.transaction=fn=>()=>{db.exec('BEGIN');try{const r=fn();db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}};return db}
 const db=database()
 db.exec('CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT); CREATE TABLE install_status(font_id TEXT PRIMARY KEY,signature TEXT,installed INTEGER,by_type TEXT,matches_json TEXT,checked_at TEXT,system_default INTEGER)')
-const confirmedSig=load('src/main/install/status/installStatusSignatureRuntime.ts').createInstallStatusSignatureRuntime({sha1:hash,normalizePathForCacheCompare:p=>p.toLowerCase()}).installStatusSignature
-const sig=font=>confirmedSig(font).slice('content-v1:'.length) // Legacy identity migration preserves unconfirmed status.
+const sig=load('src/main/install/status/installStatusSignatureRuntime.ts').createInstallStatusSignatureRuntime({sha1:hash,normalizePathForCacheCompare:p=>p.toLowerCase()}).installStatusSignature
 const oldFont={...fonts[0],id:legacy.id}
 const names=load('src/main/install/fontInstallCompare.ts').createInstallCompareRuntime({appName:'HFM'})
 for(const font of fonts) {
@@ -33,7 +32,6 @@ db.prepare('INSERT INTO install_status VALUES (?,?,1,?, ?,?,0)').run(legacy.id,s
 const original=plain(db.prepare('SELECT * FROM install_status').get())
 const migration=load('src/main/install/status/installStatusIdentityMigration.ts'),migrate=migration.migrateInstallStatusIdentity
 assert.equal(migrate(db,rows),1)
-assert.notEqual(sig(fonts[0]),confirmedSig(fonts[0]),'legacy name-only row gained content confirmation')
 assert.equal(db.prepare('SELECT signature FROM install_status WHERE font_id=?').get(fonts[0].id).signature,sig(fonts[0]))
 assert.equal(db.prepare('SELECT 1 FROM install_status WHERE font_id=?').get(fonts[1].id),undefined,'legacy install signature leaked across roots')
 assert.deepEqual(JSON.parse(db.prepare('SELECT payload_json FROM install_identity_migrations').get().payload_json),original)
@@ -60,9 +58,8 @@ assert.equal(diagnostic.prepare('SELECT signature FROM install_status WHERE font
 diagnostic.prepare('INSERT INTO install_status VALUES (?,?,1,?,?,?,0)').run('missing-old-id','opaque-signature','system','[]','retained')
 diagnostic.prepare('UPDATE install_status SET signature=? WHERE font_id=?').run('changed-signature',legacy.id)
 assert.equal(migrate(diagnostic,namedRows,value=>{report=plain(value)}),0)
-assert.deepEqual(report,{migrated:0,unresolved:2,noIdentityCandidate:1,signatureMismatch:1,ambiguous:0,invalidCandidates:0,invalidSamples:[]})
+assert.deepEqual(report,{migrated:0,unresolved:2,noIdentityCandidate:1,signatureMismatch:1,ambiguous:0})
 assert.equal(diagnostic.prepare('SELECT checked_at FROM install_status WHERE font_id=?').get('missing-old-id').checked_at,'retained')
-assert.doesNotThrow(()=>migration.installIdentitySnapshotKey([...namedRows,{root_path:'',relative_path:'relative.ttf',file_size:1,modified_at:1,font_json:'{}'},{...namedRows[0],font_json:'invalid-json'}]),'one invalid migration candidate must not poison valid rows')
 assert.equal(migration.installIdentitySnapshotKey(namedRows),migration.installIdentitySnapshotKey([{...namedRows[0],font_json:JSON.stringify({...namedSource,tagNames:['changed'],favorite:true,active:true})}]),'labels/state forced identity migration retry')
 assert.notEqual(migration.installIdentitySnapshotKey(namedRows),migration.installIdentitySnapshotKey([{...namedRows[0],modified_at:101}]),'changed file identity did not permit migration retry')
 diagnostic.close()

@@ -26,8 +26,6 @@ export interface RootScanCacheContext {
     dirCount: number
   }>
   directorySkipped: number
-  /** Watcher evidence must enumerate current names and may not reuse stale file attributes. */
-  requireFreshFileStats?: boolean
 }
 
 export interface RootScanCacheStorage {
@@ -93,7 +91,6 @@ export interface WatchedFolderIndexRuntimeOptions {
     cachePath: string,
   ) => Promise<void>
   fontScanCacheVersion: number
-  scriptDetectionVersion?: number
   runRustWatcherPreflight?: (input: RustWatcherPreflightInput) => Promise<RustWatcherPreflightResult | null>
 }
 

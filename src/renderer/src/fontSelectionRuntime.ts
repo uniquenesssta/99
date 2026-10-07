@@ -74,7 +74,7 @@ export function fontsForTagFromLibrary(
 }
 
 export function batchActivationCandidates(fonts: FontItem[]): FontItem[] {
-  return fonts.filter((font) => font.fileAvailability !== 'missing' && font.fileAvailability !== 'unavailable' && !font.active && !isInstalled(font) && !isCleanWindowsDefaultFont(font))
+  return fonts.filter((font) => !font.active && !isInstalled(font) && !isCleanWindowsDefaultFont(font))
 }
 
 export function normalizedSelectionRect(rect: SelectionRectState): DOMRect {

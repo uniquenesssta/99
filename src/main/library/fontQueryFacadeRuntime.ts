@@ -1,4 +1,3 @@
-import { assertFontQueryActive, fontQuerySuperseded, rethrowFontQuerySuperseded } from './fontQueryTaskRuntime';
 import { resolve } from "node:path";
 import type {
 FontItem,
@@ -232,7 +231,6 @@ export function createFontQueryFacadeRuntime(
         elapsedMs: Date.now() - startedAt,
       };
     }
-    assertFontQueryActive();
     const items = await options.cleanSharedFontsForQuery(request);
     const ids = items.slice(0, limit).map((font) => font.id);
     return {
@@ -255,26 +253,25 @@ export function createFontQueryFacadeRuntime(
         enqueueMissTasks: false,
       });
       if (!Object.keys(results).length)
-        return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] })));
+        return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false })));
       return overlay(items.map((item) => {
         const result = results[item.id];
         return result
           ? {
               ...item,
-              installStatusKnown: result.known !== false,
-              systemInstalled: result.known !== false && result.installed && result.by !== "managed",
-              systemInstallMatches: result.known === false ? [] : result.matches || [],
+              installStatusKnown: true,
+              systemInstalled: result.installed && result.by !== "managed",
+              systemInstallMatches: result.matches || [],
               active:
-                result.known !== false && (result.by === "managed" || result.by === "both"),
+                result.by === "managed" || result.by === "both",
             }
-          : { ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] };
+          : { ...item, active: false, installStatusKnown: false };
       }));
     } catch (error) {
-      rethrowFontQuerySuperseded(error);
       options.appendLog(
         `hydrateInstallStatusForFonts failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] })));
+      return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false })));
     }
   }
 
@@ -292,7 +289,6 @@ export function createFontQueryFacadeRuntime(
       ? await options
           .queryFontPageFromMergedIndexWorker(request, limit, offset)
           .catch((error) => {
-            rethrowFontQuerySuperseded(error);
             options.appendLog(
               `db worker merged index page query failed, fallback to main merged index: ${error instanceof Error ? error.message : String(error)}`,
             );
@@ -305,7 +301,6 @@ export function createFontQueryFacadeRuntime(
       tagBarrierSnapshot = options.tagMetadataRevisionBarrier?.snapshotForRequest(request);
       workerMergedPage = shouldUseMergedIndexWorkerForPage(request, options.hasPendingActivationState?.() ?? true)
         ? await options.queryFontPageFromMergedIndexWorker(request, limit, offset).catch((error) => {
-            rethrowFontQuerySuperseded(error);
             options.appendLog(
               `db worker merged index page retry failed, fallback to main merged index: ${error instanceof Error ? error.message : String(error)}`,
             );
@@ -318,7 +313,6 @@ export function createFontQueryFacadeRuntime(
     const mergedPage = !allowNodeIndexedFallback ? null : await options
       .queryFontPageFromMergedIndex(request, limit, offset)
       .catch((error) => {
-            rethrowFontQuerySuperseded(error);
         options.appendLog(
           `local merged index page query failed, fallback to root indexes: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -345,7 +339,6 @@ export function createFontQueryFacadeRuntime(
     const sqlPage = !allowNodeIndexedFallback ? null : await options
       .queryFontPageFromRootIndexes(request, limit, offset)
       .catch((error) => {
-            rethrowFontQuerySuperseded(error);
         options.appendLog(
           `root index page query failed, fallback to memory filter: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -353,7 +346,6 @@ export function createFontQueryFacadeRuntime(
       });
     if (shouldAcceptIndexedPageResult('root-index', request, sqlPage, tagBarrierSnapshot)) return sqlPage as FontQueryPageResult;
 
-    assertFontQueryActive();
     const items = await options.cleanSharedFontsForQuery(request);
     const pageItems = await options.hydrateLocalTagsForFonts(
       items.slice(offset, offset + limit),
@@ -436,9 +428,7 @@ export function createFontQueryFacadeRuntime(
           usedLike: built.usedLike,
         },
       });
-      assertFontQueryActive();
-      if (generation !== queryGeneration) return fontQuerySuperseded();
-      if (!rustResult) return null;
+      if (!rustResult || generation !== queryGeneration) return null;
       if (request.activeFilter?.kind === 'active' && (options.hasPendingActivationState?.() ?? true)) {
         options.appendLog(`active indexed ids rejected: reason=${reason}, pending activation state, total=${rustResult.total}`);
         return null;
@@ -480,7 +470,6 @@ export function createFontQueryFacadeRuntime(
         engine: rustResult.engine,
       };
     } catch (error) {
-      rethrowFontQuerySuperseded(error);
       options.appendLog(
         `rust ids query fallback to memory: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -567,7 +556,6 @@ export function createFontQueryFacadeRuntime(
           const loadFallbackMetrics = (): Promise<FontMetricsResult | null> => {
             if (!fallbackMetricsTask) {
               fallbackMetricsTask = options.fontMetricsFallbackRuntime.getFontMetricsFromLibrary().catch((error) => {
-            rethrowFontQuerySuperseded(error);
                 options.appendLog(
                   `rust metrics fallback snapshot skipped: ${error instanceof Error ? error.message : String(error)}`,
                 );
@@ -606,7 +594,6 @@ export function createFontQueryFacadeRuntime(
           }
         }
       } catch (error) {
-      rethrowFontQuerySuperseded(error);
         options.appendLog(
           `rust metrics query fallback to db worker: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -627,7 +614,6 @@ export function createFontQueryFacadeRuntime(
       const loadFallbackMetrics = (): Promise<FontMetricsResult | null> => {
         if (!fallbackMetricsTask) {
           fallbackMetricsTask = options.fontMetricsFallbackRuntime.getFontMetricsFromLibrary().catch((error) => {
-            rethrowFontQuerySuperseded(error);
             options.appendLog(
               `db worker metrics fallback snapshot skipped: ${error instanceof Error ? error.message : String(error)}`,
             );
@@ -664,7 +650,6 @@ export function createFontQueryFacadeRuntime(
       }
       return reconciledFolderMetrics;
     } catch (error) {
-      rethrowFontQuerySuperseded(error);
       options.appendLog(
         `db worker metrics query fallback: ${error instanceof Error ? error.message : String(error)}`,
       );

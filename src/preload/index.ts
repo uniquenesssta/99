@@ -1,4 +1,3 @@
-import type { TagFontRecoveryRequest, TagFontRecoveryResult } from '../shared/tagFontRecovery'
 import type { NativePreviewLayout } from '../shared/preview-layout/nativePreviewLayout'
 import type { OperationTrace } from '../shared/operationTrace'
 import { contextBridge,ipcRenderer } from 'electron'
@@ -148,10 +147,9 @@ const api = {
   loadFolderCache: (folders: string[]): Promise<ScanResult> => invoke('fonts:loadFolderCache', folders),
   searchFonts: (keyword: string, limit?: number): Promise<FontSearchResult> => invoke('fonts:search', keyword, limit),
   queryFonts: (request: FontQueryRequest): Promise<FontQueryResult> => invoke('fonts:query', request),
-  queryFontPage: (request: FontQueryRequest, token?: string): Promise<FontQueryPageResult> => invoke('fonts:queryPage', request, token),
+  queryFontPage: (request: FontQueryRequest): Promise<FontQueryPageResult> => invoke('fonts:queryPage', request),
   checkSharedMetadataUpdates: (reason?: string): Promise<{ changed: boolean; rebuilt: boolean; roots: number; elapsedMs: number; reason: string }> => invoke('fonts:checkSharedMetadataUpdates', reason),
-  getFontMetrics: (token?: string): Promise<FontMetricsResult> => invoke('fonts:getMetrics', token),
-  cancelFontQuery: (token: string): Promise<void> => invoke('fonts:cancelQuery', token),
+  getFontMetrics: (): Promise<FontMetricsResult> => invoke('fonts:getMetrics'),
   watchFolders: (folders: string[]): Promise<boolean> => invoke('folders:watch', folders),
   refreshWatchedFolder: (folderPath: string, rootPath?: string): Promise<WatchedFolderRefreshResult> => invoke('folders:refreshWatched', folderPath, rootPath),
   createPhysicalFolder: (parentPath: string, name: string): Promise<string> => invoke('folders:createPhysical', parentPath, name),
@@ -221,7 +219,6 @@ const api = {
   deleteFontFiles: (items: FontItem[], watchedFolders: string[]): Promise<FontDeleteResult> => invoke('fonts:deleteFiles', items, watchedFolders),
   setDeleteProtection: (items: FontItem[], watchedFolders: string[], protect: boolean, trace?: OperationTrace): Promise<FontProtectionResult> => invoke('fonts:setDeleteProtection', items, watchedFolders, protect, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   setFavorite: (items: FontItem[], watchedFolders: string[], favorite: boolean, trace?: OperationTrace): Promise<FontProtectionResult> => invoke('fonts:setFavorite', items, watchedFolders, favorite, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
-  recoverTagFiles: (request: TagFontRecoveryRequest, trace?: OperationTrace): Promise<TagFontRecoveryResult> => invoke('fonts:recoverTagFiles', request, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   setLocalTags: (item: FontItem, tagNames: string[], trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:setLocalTags', item, tagNames, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   setLocalTagsBatch: (items: FontTagBatchItem[], trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:setLocalTagsBatch', items, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),
   deleteLocalTag: (tagName: string, trace?: OperationTrace): Promise<FontTagUpdateResult> => invoke('fonts:deleteLocalTag', tagName, ...(trace ? [{ __hfmOperationTrace: trace }] : [])),

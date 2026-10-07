@@ -38,7 +38,7 @@ function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
-    id => id.endsWith('/fontInstallEvidenceRuntime') ? require('./check-operation-chain.cjs').loader({[path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:{realpath:async p=>p,stat:async()=>({isFile:()=>true,size:12,mtimeMs:1,ctimeMs:1,dev:1,ino:1}),readFile:async()=>Buffer.from('000100000000000000000000','hex')}}})('src/main/install/fontInstallEvidenceRuntime.ts') : id.endsWith('/fontFileIdentity') ? require('./check-operation-chain.cjs').loader()('src/main/fonts/fontFileIdentity.ts') : id.endsWith('/sharedFileSystemRuntime') ? {sharedFileSystem:{stat:async()=>({size:12,mtimeMs:1})}} : id.endsWith('/shutdownCoordinatorRuntime') ? require('./check-operation-chain.cjs').loader()('src/main/app/shutdownCoordinatorRuntime.ts') : id === './managedActivationIdentityRuntime' ? identityPort : id === './localRecoveryFileRuntime'
+    id => id.endsWith('/fontFileIdentity') ? require('./check-operation-chain.cjs').loader()('src/main/fonts/fontFileIdentity.ts') : id.endsWith('/sharedFileSystemRuntime') ? {sharedFileSystem:{stat:async()=>({size:12,mtimeMs:1})}} : id.endsWith('/shutdownCoordinatorRuntime') ? require('./check-operation-chain.cjs').loader()('src/main/app/shutdownCoordinatorRuntime.ts') : id === './managedActivationIdentityRuntime' ? identityPort : id === './localRecoveryFileRuntime'
       ? loadTypeScriptModule('src/main/activation/runtime/localRecoveryFileRuntime.ts', localRequire)
       : id === './fontActivationTraceRuntime'
       ? loadTypeScriptModule('src/main/activation/runtime/fontActivationTraceRuntime.ts')

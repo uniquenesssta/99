@@ -30,7 +30,7 @@ function initializeMachineInstallDb(db, rootPath) {
 function normalizeInstallCompareResult(result) {
   if (!result || typeof result !== 'object') return null
   const by = ['managed', 'system', 'both', 'user', 'none'].includes(result.by) ? result.by : 'none'
-  return { known: true, installed: !!result.installed, by, matches: Array.isArray(result.matches) ? result.matches : [] }
+  return { installed: !!result.installed, by, matches: Array.isArray(result.matches) ? result.matches : [] }
 }
 function readInstallStatusIndex(payload) {
   const startedAt = nowMs()

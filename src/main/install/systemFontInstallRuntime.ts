@@ -1,25 +1,15 @@
-import { withOperationWork } from '../logging/operationTraceContext';
-import { withSharedIoPriority } from '../path/sharedFileSystemRuntime';
-import { createFontUninstallRecoveryRuntime } from './fontUninstallRecoveryRuntime';
-import type { FontUninstallReceiptStore } from './fontUninstallReceiptRuntime';
-import { fontPhysicalKey } from '../fonts/fontContentIdentityRuntime';
 import { planFontUninstall, readFontMutationIdentity } from "./fontUninstallPlanRuntime";
 import { createFontMutationSession, type FontMutationSession } from "./fontMutationProcessRuntime";
 import { fontFileNameToken } from '../fonts/fontFileIdentity'
 import fs from 'node:fs';
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime';
 import { basename,extname,join,resolve } from "node:path";
-import type { FontDeleteResult,FontItem,InstallCompareResult,InstallResult,SystemInstalledFont } from "../../shared/types";
+import type { FontDeleteResult,FontItem,InstallResult,SystemInstalledFont } from "../../shared/types";
 import { deleteFontFilesToTrashRuntime } from "./fontTrashDeleteRuntime";
 import { installOverwriteTarget } from "./systemFontInstallHelpersRuntime";
-import { readInstallSourceIdentity, type ReadHistoricalFont, type InstallSourceIdentity } from './fontInstallEvidenceRuntime';
 
 export interface SystemFontInstallRuntimeDeps {
-  openUninstallReceipts: () => Promise<FontUninstallReceiptStore>;
-  readUninstallActivationClaims: () => Promise<Array<{ registryName: string; installPath: string }>>;
-  readHistoricalFont?: ReadHistoricalFont;
-  appName?: string;
-  persistUninstallResult: (item: FontItem, assertCurrent?: () => void) => Promise<InstallCompareResult | void>;
+  persistUninstallResult: (item: FontItem) => Promise<void>;
   deactivateForFileDelete: (items: FontItem[]) => Promise<{ ok: boolean; message: string }>;
   createMutationSession?: () => Promise<FontMutationSession>;
   readUninstallRegistry?: () => Promise<SystemInstalledFont[]>;
@@ -48,7 +38,6 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
   uninstallFontSystemWide: (item: FontItem | FontItem[]) => Promise<InstallResult>;
   deleteFontFilesToTrash: (items: FontItem[], watchedFolders: string[]) => Promise<FontDeleteResult>;
 } {
-  const recovery = createFontUninstallRecoveryRuntime(deps);
   async function installFontSystemWide(item: FontItem): Promise<InstallResult> {
     deps.ensureWindows();
     await fsp.access(item.path);
@@ -69,7 +58,6 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
     const target = deps.normalizePathForCacheCompare(resolve(dest));
     const replacing = fs.existsSync(dest) && source !== target;
     const performInstall = async (check: () => Promise<void>) => {
-      if ((await deps.openUninstallReceipts()).load(item.path)) throw new Error('此来源仍有未完成卸载，请先重试核验原卸载目标。');
       if (source !== target) {
         await check();
         await fsp.copyFile(item.path, dest);
@@ -93,14 +81,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
 
   function batchSession() {
     let pending: Promise<FontMutationSession> | undefined;
-    let planning: Promise<SystemInstalledFont[]> | undefined;
-    const removedPlanningPaths = new Set<string>();
     return {
-      // Candidate discovery only; fresh registry/content/protection gates and
-      // each durable result projection remain owned by the recovery runtime.
-      planningInstalled: async () => (await (planning ||= (deps.getSystemInstalledFontsCached?.(true) || deps.getSystemInstalledFonts())))
-        .filter(record => !record.path || !removedPlanningPaths.has(deps.normalizePathForCacheCompare(record.path))),
-      forgetPlanningPath: (path: string) => removedPlanningPaths.add(deps.normalizePathForCacheCompare(path)),
       get: () => pending ||= (deps.createMutationSession?.() || createFontMutationSession(deps.appendStartupLog)),
       close: async () => { if (pending) { try { (await pending).close(); } catch { /* Failed creation has no live session. */ } } },
     };
@@ -110,58 +91,53 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
     return deps.readUninstallRegistry?.() || (await session.get()).readRegistry();
   }
 
-  async function prepareSourceDelete(item: FontItem, session: ReturnType<typeof batchSession>): Promise<InstallResult> {
+  async function uninstallOne(item: FontItem, session: ReturnType<typeof batchSession>, sourceDelete = false): Promise<InstallResult> {
     deps.ensureWindows();
     let completedSteps = 0;
     let stage = 'protection-preflight';
     let remainingPaths: string[] = [];
     const failed = (message: string): InstallResult => {
-      deps.appendStartupLog(`font uninstall failure: ${JSON.stringify({ id: item.id, path: item.path, sourceDelete: true, stage, completedSteps, message })}`);
+      deps.appendStartupLog(`font uninstall failure: ${JSON.stringify({ id: item.id, path: item.path, sourceDelete, stage, completedSteps, message })}`);
       const detail = remainingPaths.length ? `${message} 安装文件尚未清理完成：${remainingPaths.join('；')}。请核对失败原因后重试卸载。` : message;
       return { ok: false, message: detail, uninstall: { completedSteps, remainingPaths: [...remainingPaths], stage } };
     };
     try {
       await deps.withFontProtection([item], async () => undefined);
       stage = 'source-identity';
-      const source: InstallSourceIdentity = await readFontMutationIdentity(item.path);
+      const source = await readFontMutationIdentity(item.path);
       stage = 'registry-snapshot';
       const registry = await readUninstallRegistry(session);
       stage = 'installed-fonts';
       const installed = await deps.getSystemInstalledFonts();
       stage = 'uninstall-plan';
-      const plannedTargets = new Map<string, InstallSourceIdentity>();
-      const candidates = [...registry, ...installed].filter(record => record.path && deps.normalizePathForCacheCompare(record.path) === deps.normalizePathForCacheCompare(source.path));
-      const plans = !candidates.length ? [] : await planFontUninstall(item, candidates, registry,
-        [deps.currentUserFontsDir(), deps.windowsFontsDir()], deps.isTemporaryActiveInstalledRecord, {
-          source, appName: deps.appName,
-          onTarget: target => plannedTargets.set(deps.normalizePathForCacheCompare(target.path), target),
-          report: evidence => { deps.appendStartupLog(`font uninstall evidence: ${JSON.stringify({ id: item.id, ...evidence })}`); },
-        });
+      const candidates = sourceDelete ? [...registry, ...installed].filter(record => record.path && deps.normalizePathForCacheCompare(record.path) === deps.normalizePathForCacheCompare(source.path)) : [...registry, ...installed];
+      const plans = sourceDelete && !candidates.length ? [] : await planFontUninstall(item, candidates, registry,
+        [deps.currentUserFontsDir(), deps.windowsFontsDir()], deps.isTemporaryActiveInstalledRecord);
       remainingPaths = plans.filter(plan => plan.delete_file).map(plan => plan.path);
+      if (!plans.length && !sourceDelete) return failed('未找到可以唯一关联的安装记录；没有按名称猜测删除。');
       const targets = [item, { ...item, path: source.path }, ...plans.map(plan => ({ ...item, path: plan.path }))];
       stage = 'target-protection';
       return await deps.withFontProtection(targets, async checkProtection => {
         const check = async () => {
           await checkProtection();
-          const current = await readInstallSourceIdentity(item);
-          if (current.path !== source.path || current.sha256 !== source.sha256 || current.stamp !== source.stamp || !!current.historical !== !!source.historical) throw new Error('源字体身份已变化，后续操作停止。');
+          const current = await readFontMutationIdentity(item.path);
+          if (current.path !== source.path || current.sha256 !== source.sha256) throw new Error('源字体身份已变化，后续操作停止。');
         };
-        stage = 'source-deactivation';
-        await check();
-        const deactivated = await deps.deactivateForFileDelete([item]);
-        if (!deactivated.ok) throw new Error(`关联激活清理未完成：${deactivated.message}`);
+        if (sourceDelete) {
+          stage = 'source-deactivation';
+          await check();
+          const deactivated = await deps.deactivateForFileDelete([item]);
+          if (!deactivated.ok) throw new Error(`关联激活清理未完成：${deactivated.message}`);
+        }
         stage = 'mutation-session';
         const native = plans.length ? await session.get() : undefined;
         for (const plan of plans) {
           // Deleting the selected installation source uses its recycle-bin
           // operation below, never the native permanent installation cleanup.
-          if (deps.normalizePathForCacheCompare(plan.path) === deps.normalizePathForCacheCompare(source.path) && plan.delete_file) continue;
+          if (sourceDelete && deps.normalizePathForCacheCompare(plan.path) === deps.normalizePathForCacheCompare(source.path) && plan.delete_file) continue;
           stage = plan.delete_file ? 'file-delete' : 'registry-delete';
-          const result = await native!.execute({ ...plan, preflight_file: false, allow_readonly_copy: false }, async references => {
+          const result = await native!.execute(sourceDelete ? { ...plan, preflight_file: false, allow_readonly_copy: false } : plan, async references => {
             await check();
-            const expected = plannedTargets.get(deps.normalizePathForCacheCompare(plan.path));
-            const currentTarget = await readFontMutationIdentity(plan.path);
-            if (!expected || currentTarget.path !== expected.path || currentTarget.sha256 !== expected.sha256 || fontPhysicalKey(currentTarget) !== fontPhysicalKey(expected)) throw new Error('安装目标身份已变化，文件和后续登记操作保留，需重新核对。');
             if (plan.delete_file) {
               // Before the first native request no gate snapshot exists yet.
               // The native file gate always provides the original user's fresh snapshot.
@@ -174,10 +150,10 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
         }
         deps.clearInstalledFontsMemoryCache();
         stage = 'persist-result';
-        const installCompare = plans.length ? await deps.persistUninstallResult(item) : undefined;
+        if (!sourceDelete || plans.length) await deps.persistUninstallResult(item);
         let refreshWarning = '';
         try { await deps.advancedFontRefresh('uninstall-font'); } catch (error) { refreshWarning = ` 字体通知失败：${String(error)}`; }
-        return { ok: true, installCompare: installCompare || undefined, message: '计划内关联登记与独立安装副本已处理；所选源文件及其属性保留。' + refreshWarning };
+        return { ok: true, message: '关联安装记录与安装副本已清理，独立源文件保留。' + refreshWarning };
       });
     } catch (error) {
       return failed(`${completedSteps ? `已完成 ${completedSteps} 个步骤，后续已停止：` : ''}${error instanceof Error ? error.message : String(error)}`);
@@ -192,7 +168,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
     const byPath = new Map<string, InstallResult>();
     try { for (const item of items) {
       const key = deps.normalizePathForCacheCompare(item.path);
-      const result = byPath.get(key) || await recovery.uninstall(item, session);
+      const result = byPath.get(key) || await uninstallOne(item, session);
       byPath.set(key, result); results[item.id] = result;
     } }
     finally { await session.close(); }
@@ -206,7 +182,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
       return await deleteFontFilesToTrashRuntime(items, watchedFolders, {
         ...deps,
         prepareSourceDelete: async item => {
-          const result = await prepareSourceDelete(item, session);
+          const result = await uninstallOne(item, session, true);
           if (!result.ok) throw new Error(result.message);
         },
       });
@@ -215,7 +191,7 @@ export function createSystemFontInstallRuntime(deps: SystemFontInstallRuntimeDep
 
   return {
     installFontSystemWide,
-    uninstallFontSystemWide: input => withOperationWork('font-uninstall', deps.appendStartupLog, () => withSharedIoPriority('foreground', () => uninstallFontSystemWide(input))),
+    uninstallFontSystemWide,
     deleteFontFilesToTrash,
   };
 }

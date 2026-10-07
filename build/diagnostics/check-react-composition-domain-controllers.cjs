@@ -411,8 +411,7 @@ async function checkOperationsBehavior() {
     appendDeveloperStatus: noOp,
     closingLifecycle: { isClosing: () => false, beginClosing: noOp, resume: noOp, subscribe: () => () => {} }
   })
-  assert.equal(harness.slots.length, 23)
-  assert.deepEqual(Object.keys(calls.index.cacheStatsRequestState.current), ['active', 'requested'])
+  assert.equal(harness.slots.length, 22)
   assert.equal(calls.queue.scheduleDatabaseDerivedStateRefresh, noOp)
   assert.equal(calls.install.knownInstallStatusIds, calls.index.knownInstallStatusIds)
   assert.equal(calls.index.autoInstallStatusRefreshStartedRef, calls.progress.autoInstallStatusRefreshStartedRef)

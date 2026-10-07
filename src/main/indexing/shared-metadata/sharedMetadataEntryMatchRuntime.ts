@@ -29,7 +29,7 @@ function createSyntheticEntryForItem(
   const runtimePath = runtimeDeps.cacheEntryRuntimePath(rootPath, relativePath)
   const font: FontItem = {
     ...item,
-    id: item.fileAvailability === 'missing' && item.sourceId ? item.sourceId : createHash('sha1').update(`${relativePath.toLowerCase()}|${Number(item.fileSize || 0)}|${Math.round(Number(item.modifiedAt || 0))}`).digest('hex'),
+    id: createHash('sha1').update(`${relativePath.toLowerCase()}|${Number(item.fileSize || 0)}|${Math.round(Number(item.modifiedAt || 0))}`).digest('hex'),
     sourceId: undefined,
     path: item.path || runtimePath,
     fileName: item.fileName || basename(item.path || runtimePath),

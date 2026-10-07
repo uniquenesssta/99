@@ -26,9 +26,6 @@ export function FontListPanel({
   developerTasks,
   developerStatusLog,
   installStatus,
-  hasWatchedFolders = true,
-  installStatusReady = true,
-  installStatusMissingCount = 0,
   timeSortMode,
   sortMode,
   viewMode,
@@ -218,8 +215,8 @@ export function FontListPanel({
 
                 {!visibleFonts.length && !(databasePageReady ? visibleFontTotal : 0) && (
                   <div className="empty-state virtual-empty">
-                    <div>{databasePageReady || !hasWatchedFolders ? '没有找到字体' : '正在读取字体'}</div>
-                    <p>{!databasePageReady && hasWatchedFolders ? '正在读取当前范围，请稍候。' : !installStatusReady && (activeFilter.kind === 'installed' || activeFilter.kind === 'notInstalled' || installStatus !== 'all') ? `还有 ${installStatusMissingCount} 个字体的安装状态待确认；当前仅显示已确认结果，可切换“全部状态”继续浏览。` : activeFilter.kind === 'installed' || activeFilter.kind === 'notInstalled' ? '当前安装筛选没有已确认的匹配字体，可切换“全部字体”浏览。' : sidebarPage === 'library' && activeFilter.kind === 'favorites' ? '当前收藏范围没有符合条件的字体。' : sidebarPage === 'library' && activeFilter.kind === 'active' ? '当前激活范围没有符合条件的字体。' : search.trim() ? '当前范围没有匹配搜索条件的字体，可清空搜索或切换范围。' : installStatus && installStatus !== 'all' ? '当前范围没有符合安装状态的字体，可切换“全部状态”。' : '点击顶部“更新索引”建立或增量更新 SQLite 共享索引库；已有索引会自动读取。'}</p>
+                    <div>没有找到字体</div>
+                    <p>{sidebarPage === 'library' && activeFilter.kind === 'favorites' ? '当前收藏范围没有符合条件的字体。' : sidebarPage === 'library' && activeFilter.kind === 'active' ? '当前激活范围没有符合条件的字体。' : search.trim() ? '当前范围没有匹配搜索条件的字体，可清空搜索或切换范围。' : installStatus && installStatus !== 'all' ? '当前范围没有符合安装状态的字体，可切换“全部状态”。' : '点击顶部“更新索引”建立或增量更新 SQLite 共享索引库；已有索引会自动读取。'}</p>
                   </div>
                 )}
               </div>

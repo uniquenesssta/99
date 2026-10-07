@@ -1,4 +1,3 @@
-import { withOperationWork } from '../logging/operationTraceContext'
 import { isApplicationClosing, onApplicationResumed } from '../app/shutdownCoordinatorRuntime';
 import { BrowserWindow } from "electron";
 import fs from 'node:fs'
@@ -14,8 +13,6 @@ export interface PendingFolderChange {
   eventType: string;
   fileName: string;
   receivedAt: number;
-  origin?: "fs-watch" | "shared-poll-initial" | "shared-poll-diff";
-  triggerEventType?: string;
 }
 
 interface FolderWatcherRuntimeOptions {
@@ -100,8 +97,7 @@ export function createFolderWatcherRuntime(
     if (
       !payload.upserts.length &&
       !payload.deletes.length &&
-      !payload.errors?.length &&
-      payload.source !== 'projection'
+      !payload.errors?.length
     )
       return;
 
@@ -196,7 +192,7 @@ export function createFolderWatcherRuntime(
     return true;
   }
 
-  async function flushPendingFolderChangesPassUnmeasured(
+  async function flushPendingFolderChangesPass(
     generation: number,
   ): Promise<void> {
     const changes = Array.from(pendingFolderChanges.values());
@@ -222,9 +218,10 @@ export function createFolderWatcherRuntime(
       try {
         if (!recovery && await options.watcherChangeBatchLooksUnchanged(rootPath, group)) {
           if (generation !== watcherGeneration) return;
-          options.appendStartupLog(
-            `font index watcher batch skipped unchanged: ${rootPath}, events=${group.length}, recovery=false, samples=${JSON.stringify(group.slice(0, 8).map(change => ({ path: change.fileName, type: change.eventType, trigger: change.triggerEventType || change.eventType, origin: change.origin || 'unspecified' })))}, omitted=${Math.max(0, group.length - 8)}`,
-          );
+          if (options.verboseLogs)
+            options.appendStartupLog(
+              `font index watcher batch skipped unchanged: ${rootPath}, events=${group.length}`,
+            );
           continue;
         }
 
@@ -278,10 +275,6 @@ export function createFolderWatcherRuntime(
         );
       }
     }
-  }
-
-  function flushPendingFolderChangesPass(generation: number): Promise<void> {
-    return withOperationWork('watcher-batch', options.appendStartupLog, () => flushPendingFolderChangesPassUnmeasured(generation));
   }
 
   async function flushPendingFolderChanges(): Promise<void> {
@@ -340,7 +333,6 @@ export function createFolderWatcherRuntime(
     folder: string,
     eventType: string,
     fileName?: string,
-    origin: PendingFolderChange['origin'] = 'fs-watch',
   ): void {
     if (isApplicationClosing()) return;
     if (options.isIgnoredWatcherPath(fileName)) return;
@@ -360,8 +352,6 @@ export function createFolderWatcherRuntime(
       eventType: changeEventType,
       fileName: changeFileName,
       receivedAt: Date.now(),
-      origin,
-      triggerEventType: eventType,
     };
     const rootKey = recoveryRootKey(folder);
     if (!normalizedFileName) {
@@ -399,11 +389,11 @@ export function createFolderWatcherRuntime(
         if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('无效的共享目录快照');
         if (baseline) {
           for (const name of new Set([...Object.keys(baseline), ...Object.keys(next)])) {
-            if (JSON.stringify(baseline[name]) !== JSON.stringify(next[name])) notifyFolderChanged(folder, 'rename', name, 'shared-poll-diff');
+            if (JSON.stringify(baseline[name]) !== JSON.stringify(next[name])) notifyFolderChanged(folder, 'rename', name);
           }
         } else {
           // Refresh once on first confirmed access; never infer deletions from an error.
-          notifyFolderChanged(folder, 'rescan', undefined, 'shared-poll-initial');
+          notifyFolderChanged(folder, 'rescan');
         }
         baseline = next;
       } catch (error) {

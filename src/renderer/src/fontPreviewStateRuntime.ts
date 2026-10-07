@@ -17,14 +17,13 @@ export function canQueuePreviewFont(options: {
   loadingFontIds: Set<string>
   queuedPreviewFontIds: Set<string>
   allowQueued?: boolean
-  ready?: { family?: string; image?: string; loading: boolean }
   isBadFontRecord: (font: FontItem) => boolean
 }): boolean {
-  const { font, previewFamilies, nativePreviewImages, loadingFontIds, queuedPreviewFontIds, isBadFontRecord } = options
-  if (font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable') return false
-  if (options.ready) {
-    if (options.ready.family || options.ready.image || options.ready.loading) return false
-  } else if (previewFamilies[font.id] || nativePreviewImages[font.id] || loadingFontIds.has(font.id)) return false
+  const { font, previewFamilies, nativePreviewImages, failedPreviewFontIds, loadingFontIds, queuedPreviewFontIds, isBadFontRecord } = options
+  const forceNativePreview = !!font.systemInstalled || !!font.active || !!font.systemImported || (Array.isArray(font.systemInstallMatches) && font.systemInstallMatches.length > 0)
+  if (previewFamilies[font.id] && !forceNativePreview) return false
+  if (nativePreviewImages[font.id] && failedPreviewFontIds[font.id]) return false
+  if (loadingFontIds.has(font.id)) return false
   if (!options.allowQueued && queuedPreviewFontIds.has(font.id)) return false
   if (isBadFontRecord(previewRecordForProbe(font))) return false
   return true
@@ -34,7 +33,6 @@ export function clearPreviewFailureFlagsInLibrary(library: LibraryState): { libr
   let count = 0
   const fonts = Object.fromEntries(
     Object.entries(library.fonts || {}).map(([id, font]) => {
-      if (font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable') return [id, font]
       if (font.previewDisabled || font.previewError) count += 1
       return [
         id,

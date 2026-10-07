@@ -1,4 +1,4 @@
-import { rootIndexInstallJoinExpr } from '../root-query/rootIndexQuerySharedSql'
+import { rootIndexInstallIdExpr } from '../root-query/rootIndexQuerySharedSql'
 import { rethrowRustCoreDaemonSubmittedWrite } from "../../rust-core/rustCoreDaemonWriteBoundaryRuntime";
 import type { MergedIndexSourceInfo } from "../mergedIndexRuntime";
 import { type MergedIndexPageRow } from "../rootIndexQuerySql";
@@ -80,7 +80,7 @@ export function createMergedIndexBuildRuntime(
           ? ", install_status.installed AS installed, install_status.by_type AS installed_by, install_status.matches_json AS matches_json"
           : ", NULL AS installed, NULL AS installed_by, NULL AS matches_json";
         const joinSql = hasInstallJoin
-          ? `LEFT JOIN install_db.install_status AS install_status ON ${rootIndexInstallJoinExpr(source.root)}`
+          ? `LEFT JOIN install_db.install_status AS install_status ON install_status.font_id = ${rootIndexInstallIdExpr(source.root)}`
           : "";
         const rawRows = sourceDb
           .prepare(

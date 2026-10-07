@@ -9,12 +9,10 @@ const ts = require('typescript')
 const { DatabaseSync } = require('node:sqlite')
 const root = path.resolve(__dirname, '../..')
 const plain = v => JSON.parse(JSON.stringify(v))
-function loader(mocks = {}, globals = {}, transforms = {}, sourceRoot = root) {
-  const root = path.resolve(sourceRoot)
+function loader(mocks = {}, globals = {}, transforms = {}) {
   const cache = new Map()
   function load(file) {
     file = path.resolve(root, file)
-    assert(file === root || file.startsWith(root + path.sep), 'production module escaped selected source root: ' + file)
     if (mocks[file]) return mocks[file]
     if (cache.has(file)) return cache.get(file).exports
     const module = { exports: {} }; cache.set(file, module)
@@ -31,7 +29,7 @@ function loader(mocks = {}, globals = {}, transforms = {}, sourceRoot = root) {
       }
       throw Error(`Unmocked port: ${file} -> ${id}`)
     }
-    vm.runInNewContext(code, { module, exports: module.exports, require: localRequire, console, AbortController, Date, Map, WeakMap, Set, Math, Buffer, URL, performance, setTimeout, clearTimeout, process, ...globals }, { filename: file })
+    vm.runInNewContext(code, { module, exports: module.exports, require: localRequire, console, AbortController, Date, Map, WeakMap, Set, Math, Buffer, performance, setTimeout, clearTimeout, process, ...globals }, { filename: file })
     return module.exports
   }
   return load
@@ -296,20 +294,6 @@ async function transportAndSignals() {
   assert.throws(()=>validateNativeStages(native.slice(1)),/signal propagation/)
 }
 
-async function workEvidence() {
-  const load=loader(),context=load('src/main/logging/operationTraceContext.ts'),io=load('src/main/path/sharedFileSystemRuntime.ts')
-  const global=load('src/main/performance/globalIoRuntime.ts').createGlobalIoRuntime({env:{HFM_IO_WORKERS:'1'},localScanWorkers:1,appendLog(){},isIndexingActive:()=>false,isUserActive:()=>false,storageProfileForPath:()=>({type:'unknown'})})
-  const summaries=[],seen=[];let release,entered
-  const gate=new Promise(resolve=>release=resolve),started=new Promise(resolve=>entered=resolve)
-  const first=context.withOperationWork('first',line=>summaries.push(line),()=>global.withGlobalIo('fixture:first',async()=>{entered();await gate;seen.push([context.currentOperationTrace().domain,io.currentSharedIoPriority()])},{priority:'background'}))
-  await started
-  const second=context.withOperationWork('second',line=>summaries.push(line),()=>global.withGlobalIo('fixture:second',async()=>{seen.push([context.currentOperationTrace().domain,io.currentSharedIoPriority()]);context.recordOperationWork({reads:1,sourceBytes:4});return true},{priority:'foreground'}))
-  release();await Promise.all([first,second])
-  assert.deepEqual(plain(seen),[['first','background'],['second','foreground']],'queued callback lost operation or priority context')
-  const reports=summaries.map(line=>JSON.parse(line.slice(16)));assert.equal(reports.length,2);assert.equal(reports.find(row=>row.domain==='second').sourceBytes,4)
-  assert.equal(context.operationWorkSnapshot(),undefined,'measurement scope leaked')
-}
-
 async function main() {
   process.env.HFM_LOG_DETAIL='debug'
   const shared=loader()('src/shared/operationTrace.ts')
@@ -317,7 +301,6 @@ async function main() {
   const circular={};circular.trace=circular
   assert.doesNotThrow(()=>shared.encodeOperationTraceEvent(circular))
   assert.equal(shared.encodeOperationTraceEvent({get stage(){throw Error('bad getter')}}),'')
-  await workEvidence()
   await queueAndLimits()
   await transportAndSignals()
   const success=await chain()

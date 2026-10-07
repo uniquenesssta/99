@@ -88,19 +88,13 @@ async function incremental() {
     const b={...a,root:otherRoot}, before=[a,b], after=[{...a,installSignature:mode==='unchanged'?'s1':'s2',...(mode==='index'?{indexSignature:'i2'}:{})},{...b,...(mode==='other-root'?{installSignature:'s2'}:{})}]
     const calls=[];const ctx={normalizePathForCacheCompare:x=>x,runMergedIndexMutation:async(_,fn)=>fn({commit(){}}),appWatchedFolders:async()=>[auditRoot,otherRoot],mergedIndexSourcesKey:()=>JSON.stringify(after),openMergedIndexDb:async()=>({}),getSqliteMeta:()=>JSON.stringify(before),mergedIndexSourcesMatchRoots:()=>mode!=='roots',mergedIndexReadyProcessKeys:new Set(),appendStartupLog(){},closeSqliteDb(){},mergedIndexDbPath:()=>'/merged',schemaVersion:1,rustCoreWorkerRuntime:{runRustMergedIndexSync:async x=>{calls.push(x);return{synced:true,rows:1}}}}
     const runtime=load(files.incremental).createMergedIndexSyncRuntime(ctx,{mergedIndexSourcesForRoots:async()=>after,relativePathsFromFontIndexPayload:(_,p)=>p.upserts.map(x=>path.basename(x.path))},{rebuildMergedIndexDb:async()=>calls.push('rebuild')})
-    // Exercise the existing root incremental responsibility directly. Targeted
-    // status writes now use local SQL projection, covered by production-projection
-    // and offline-settlement fixtures, rather than fetching these source roots.
-    await runtime.syncMergedIndexForRootIncremental(auditRoot,{folder:auditRoot,at:new Date().toISOString(),upserts:[{id:'a',path:path.join(auditRoot,'a.ttf')}],deletes:[]},'install-status-refresh')
+    const validation=load('src/main/indexing/merged-page/mergedIndexValidationRuntime.ts').createMergedIndexValidationRuntime({appendStartupLog(){},delayToEventLoop:async()=>{}},{},{})
+    await validation.syncMergedIndexAfterInstallStatusRefresh([auditRoot,auditRoot],async()=>calls.push('snapshot'),[{id:'a',path:path.join(auditRoot,'a.ttf')}],runtime.syncMergedIndexForRootIncremental)
     assert.equal(calls.length,1)
     if(['install','unchanged'].includes(mode)){assert.equal(calls[0].fullSnapshot,false,'single font became full rebuild');assert.deepEqual(plain(calls[0].relativePaths),['a.ttf']);assert.equal(calls[0].source.installDbPath,'/s')}
     else assert.equal(calls[0],'rebuild',mode+' must remain conservative')
   }
-  const snapshots=[]
-  const validation=load('src/main/indexing/merged-page/mergedIndexValidationRuntime.ts').createMergedIndexValidationRuntime({appendStartupLog(){},delayToEventLoop:async()=>{}},{},{})
-  await validation.syncMergedIndexAfterInstallStatusRefresh([auditRoot,auditRoot],async root=>snapshots.push(root))
-  assert.deepEqual(snapshots,[auditRoot],'root snapshot path must still deduplicate roots')
-  console.log('W-02 one-row root incremental sync, index/other-root/root-set conservative fallback: passed')
+  console.log('W-02 one-row install sync, deduped roots, index/other-root/root-set fallback: passed')
 }
 async function storage() {
   let clock=10000,sync=0;const commands=[]

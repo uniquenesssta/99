@@ -16,7 +16,6 @@
         "queueRecovery",
         "deferRecovery",
         "releaseDeferredRecovery",
-        "flushPendingFolderChangesPassUnmeasured",
         "flushPendingFolderChangesPass",
         "flushPendingFolderChanges",
         "schedulePendingFolderFlush",
@@ -24,7 +23,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "d2a6e8632b9490b3e7ef5ed9923ed295b1a2b074e3bf20f582c1af29fdd1e28a"
+      "sha256": "0292fef2837bca7c9db9f19492db935cb93f7c8b93f263f05b54ce6ee95bbcd0"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -67,7 +66,7 @@
         "runWatchedFolderRefreshJob",
         "refreshWatchedFolder"
       ],
-      "sha256": "b23e4b1a7f3e7afb3b9b76e882f3d3c4f392f9ea154bee40c68242c068b9dc58"
+      "sha256": "37da0f4c2782af93ca7caf7a3d1c3b36d502fb766c10d76c466fc18fc085ccc9"
     },
     "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts": {
       "exports": [
@@ -81,7 +80,7 @@
         "scheduleRefresh",
         "backgroundResult"
       ],
-      "sha256": "8ebc84c79b85139528716f01a05aef6559dd95be418a991910eb49ecc5ff32d9"
+      "sha256": "68a94586d7ba2c1aa42c71fc1c542b63d2b3f2b64c7a922432c149d396004685"
     },
     "src/main/activation/runtime/fontActivationSessionRuntime.ts": {
       "exports": [
@@ -113,7 +112,7 @@
         "temporaryActiveRecordToInstalledRecord",
         "saveActivationInstallStatus"
       ],
-      "sha256": "97aad61efb4a29a98caf559ea7c33a6b390442b4de699b8e8cb6c120bf0c741a"
+      "sha256": "7004e33130f1d1b2f0fe51a07c24e9cb0a708867cac1b1aaa3f40d522d7a35cd"
     },
     "src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts": {
       "exports": [
@@ -158,7 +157,7 @@
         "applyFontActiveRuntimePatch",
         "applyFontActiveRuntimeUpdatesToLibrary"
       ],
-      "sha256": "e1399e46779a1304ace46e27d3aa7f880b475d762ce65ad8fedd362858938f9d"
+      "sha256": "bff7faac2a786f0f695f62e7d7fb41cdae03c7baee27c21841aeb5ca4492e530"
     },
     "src/main/library/fontQueryWorkerRouteRuntime.ts": {
       "exports": [
@@ -211,40 +210,6 @@
       "commit": "f6ad3f8c5fa8333e94e5a0ec5a7af436a3965bba",
       "file": "src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts",
       "reason": "Dispatch inactive fonts despite stale renderer installed hints; activation-entry checks fresh main admission and existing rollback/metrics gates remain required."
-    },
-    {
-      "task": "S12-F08",
-      "parent": "3e94afb1e7bf24caae435ae53c1c851159f6ddaa",
-      "file": "src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts",
-      "reason": "typed completion receipt preserves partial errors and cancellation; same-root coalescing/export surfaces unchanged; controlled result/failed-wait gates in check-tag-font-recovery.cjs"
-    },
-    {
-      "task": "S12-F08",
-      "parent": "3e94afb1e7bf24caae435ae53c1c851159f6ddaa",
-      "file": "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts",
-      "reason": "typed completion receipt preserves partial errors and cancellation; same-root coalescing/export surfaces unchanged; controlled result/failed-wait gates in check-tag-font-recovery.cjs"
-    },
-    {
-      "task": "S12-F12",
-      "parent": "2770afd519b1c2930c0a0a62eebb9e5364be779b",
-      "file": "src/main/watcher/folderWatcherRuntime.ts",
-      "reason": "Bounded watcher provenance and commit-before-notification; current recovery/lifecycle gates retained."
-    },
-    {
-      "task": "S12-F12",
-      "parent": "2770afd519b1c2930c0a0a62eebb9e5364be779b",
-      "file": "src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts",
-      "reason": "Bounded watcher provenance and commit-before-notification; current recovery/lifecycle gates retained."
-    },
-    {
-      "task": "S12-F13",
-      "parent": "b617ddd3b45a4eb32f83835c2923fd267fc061ec",
-      "file": "src/main/watcher/folderWatcherRuntime.ts",
-      "reason": "One observational operation scope around the existing batch pass; recovery, ordering and notification behavior unchanged."
     }
-  ],
-  "realFeedbackMigration": {
-    "parent": "6620b3bafd5b3d894987585dd06c5d5eabc54933",
-    "reason": "Explicit projection-only notifications now pass the existing empty-row sender gate; watcher row, recovery and process-lifecycle assertions retained."
-  }
+  ]
 }

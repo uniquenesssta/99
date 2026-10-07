@@ -305,7 +305,6 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     saveScanCacheFile,
     writeRootCacheManifest,
     fontScanCacheVersion: FONT_SCAN_CACHE_VERSION,
-    scriptDetectionVersion: SCRIPT_DETECTION_VERSION,
     runRustWatcherPreflight: rustCoreWorkerRuntime.runRustWatcherPreflight,
   });
 

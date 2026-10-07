@@ -103,22 +103,6 @@
   place-items: center;
 }
 
-dialog.hfm-confirmation-dialog {
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
-  margin: 0;
-  padding: 20px;
-  border: 0;
-  box-sizing: border-box;
-  color: var(--text);
-}
-
-dialog.hfm-confirmation-dialog::backdrop { background: transparent; }
-dialog.hfm-confirmation-dialog:not([open]) { display: none; }
-.hfm-confirmation-dialog .modal-subtitle { white-space: pre-wrap; overflow-wrap: anywhere; }
-
 .modal-card {
   width: min(420px, calc(100vw - 40px));
   background: var(--modal-bg);

@@ -77,17 +77,17 @@ export function createFontMetricsRuntime(options: FontMetricsRuntimeOptions): {
         const snapshot = await options.getInstallStatusIndexSnapshot(rawFonts)
         const missingIds = new Set(snapshot.missingIds || [])
         const results = snapshot.results || {}
-        installStatusKnownCount = Object.values(results).filter(result => result.known !== false).length
+        installStatusKnownCount = Object.keys(results).length
         installStatusMissingCount = missingIds.size
         hydrated = rawFonts.map((item) => {
           const result = results[item.id]
-          if (!result) return { ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] }
+          if (!result) return { ...item, active: false, installStatusKnown: false }
           return {
             ...item,
-            installStatusKnown: result.known !== false,
-            systemInstalled: result.known !== false && result.installed && result.by !== 'managed',
-            systemInstallMatches: result.known === false ? [] : result.matches || [],
-            active: result.known !== false && (result.by === 'managed' || result.by === 'both')
+            installStatusKnown: true,
+            systemInstalled: result.installed && result.by !== 'managed',
+            systemInstallMatches: result.matches || [],
+            active: result.by === 'managed' || result.by === 'both'
           }
         })
       } catch {

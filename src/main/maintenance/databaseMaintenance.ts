@@ -19,28 +19,6 @@ export type {
   PreviewMaintenanceReport,
 } from './databaseMaintenanceTypes'
 
-export function summarizeMaintenanceFailures(report: DatabaseMaintenanceReport, backupOnly = false): string {
-  const groups: Record<string, string[]> = {}
-  if (!backupOnly) {
-    const health = report.health.filter(item => !item.ok).map(item => `${item.label}: ${item.message}`)
-    if (health.length) groups.health = health
-    if (report.preview.errors.length) groups.preview = report.preview.errors
-    const shared = report.sharedIndexSnapshots
-    if (shared && !shared.ok) {
-      groups.sharedIndex = [...shared.warnings, ...shared.roots.filter(item => !item.ok && !(item.staleSnapshotCount === 0 && item.orphanSidecarCount === 0 && item.tmpFileCount > 0)).flatMap(item => item.warnings)]
-      if (!groups.sharedIndex.length) groups.sharedIndex = ['report ok=false without failed-root detail']
-    }
-  }
-  if (report.backup && !report.backup.ok) {
-    groups.backup = report.backup.items.filter(item => !item.ok).map(item => `${item.label}: ${item.message}`)
-    if (!groups.backup.length) groups.backup = ['report ok=false without failed-item detail']
-  }
-  return JSON.stringify(Object.fromEntries(Object.entries(groups).map(([group, values]) => {
-    const unique = [...new Set(values)]
-    return [group, { count: values.length, omitted: Math.max(0, unique.length - 2), samples: unique.slice(0, 2).map(value => value.length > 512 ? `${value.slice(0, 512)} [truncated]` : value) }]
-  })))
-}
-
 export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRuntimeOptions) {
   const {
     appName,
@@ -231,7 +209,7 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
       message: ok ? '数据库维护完成。' : '数据库维护完成，但存在需要查看的警告。'
     }
 
-    appendStartupLog(`database maintenance finished: ok=${report.ok}, previewStale=${preview.staleRows}, previewRemoved=${preview.removedFiles + preview.removedOrphanFiles}, tasksRemoved=${tasks.removedCompleted + tasks.removedFailed}, sharedIndexChecked=${sharedIndexSnapshots?.checkedRoots ?? 0}, sharedIndexDeleted=${sharedIndexSnapshots?.deletedFiles ?? 0}${report.ok ? '' : `, failures=${summarizeMaintenanceFailures(report)}`}`)
+    appendStartupLog(`database maintenance finished: ok=${report.ok}, previewStale=${preview.staleRows}, previewRemoved=${preview.removedFiles + preview.removedOrphanFiles}, tasksRemoved=${tasks.removedCompleted + tasks.removedFailed}, sharedIndexChecked=${sharedIndexSnapshots?.checkedRoots ?? 0}, sharedIndexDeleted=${sharedIndexSnapshots?.deletedFiles ?? 0}`)
     return report
   }
 
@@ -258,7 +236,7 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
         report.ok = report.ok && backup.ok
         if (!report.ok) report.message = '数据库维护完成，但存在需要查看的警告。'
       }
-      appendStartupLog(`startup database maintenance finished: ok=${report.ok}${backup && !backup.ok ? `, failures=${summarizeMaintenanceFailures(report, true)}` : ''}`)
+      appendStartupLog(`startup database maintenance finished: ok=${report.ok}`)
     } catch (error) {
       appendStartupLog(`startup database maintenance skipped: ${error instanceof Error ? error.message : String(error)}`)
     }

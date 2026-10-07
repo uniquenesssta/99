@@ -1,4 +1,3 @@
-import { openTagFontSnapshots } from './tagFontSnapshotRuntime';
 import { defaultLibrary,normalizeLoadedLibrary } from "./libraryState";
 import { createLibraryDbConnectionRuntime } from "./runtime/libraryDbConnectionRuntime";
 import { createLibraryLoadRuntime } from "./runtime/libraryLoadRuntime";
@@ -29,7 +28,6 @@ export function createLibraryRuntime(options: LibraryRuntimeOptions) {
   const { openLibraryDb, getOpenLibraryDb, closeLibraryDb } = dbConnectionRuntime;
 
   const localFontTagsRuntime = createLocalFontTagsRuntime({
-    rememberFontMetadata: async items => openTagFontSnapshots(await openLibraryDb()).capture(items),
     openLibraryDb,
     librarySqlitePath: options.librarySqlitePath,
     prepareIdentity: options.prepareLocalFontIdentity ? async () => { await openLibraryDb(); } : undefined,

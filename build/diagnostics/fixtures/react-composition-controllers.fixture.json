@@ -43,16 +43,16 @@
     "autoPreviewCacheStats": "cb620c04850364c83f3b81a0d300b8eef17e9b62dbc3d11382f0b78786ecef9f"
   },
   "sourceHashes": {
-    "src/renderer/src/fontSelectionRuntime.ts": "61f4b6bf64357f00f2d033d7b99ec5ff8b28aaffdd93a6024886cc57c1a87d76",
+    "src/renderer/src/fontSelectionRuntime.ts": "706f87840b4960a11954da6805c68fe6447582194ba20cb45174d355b247e144",
     "src/renderer/src/runtime/app/fontSelectionHydrationRuntime.ts": "276b2eb4267077ae63a5bc165a56af16a33ed28906dd6d9ca7ace92ba9227cf1",
     "src/renderer/src/runtime/app/useFontDetailSelectionEffectsRuntime.ts": "ed1bc0d45e2dc1894ee2d1bd5b4b21969e83e818a6fffb3517805e9c4aff8720",
-    "src/renderer/src/runtime/app/useFontDetailNativePreviewRuntime.ts": "59eb55e1950e0014fd77e3657a554bece342a88223323f4e33b4c883e09d1391",
+    "src/renderer/src/runtime/app/useFontDetailNativePreviewRuntime.ts": "73f1f00d8f8af4b7cedf74d5097a759eb3f6933ed205272c51a49656da5157ba",
     "src/renderer/src/runtime/app/usePendingDetailRevealRuntime.ts": "c4e590c8e92c2a3ea60cd4ab94070cc518c46733001ae31547a45648a9e45b8b",
-    "src/renderer/src/runtime/preview/fontPreviewQueueRuntime.ts": "686da1b852f4a03a1214c0612c4b7a800956855e1dc239e93925d19390e682f2",
-    "src/renderer/src/runtime/preview/queue/fontPreviewStateRuntime.ts": "95d23531827522763506f23deefb02775c494192de144a65cfad32b621dd3fa0",
-    "src/renderer/src/runtime/preview/queue/fontPreviewLoadRuntime.ts": "a2dc087bc5122f873ca2db1568eb5f930a90fcfa82a218bd7378f3a0a0152a51",
-    "src/renderer/src/runtime/preview/queue/fontVisiblePreviewQueueRuntime.ts": "1df6ef6567ce1b7e4116002845e9ac1eb59d47d9ec6705105dd5e6617becd29e",
-    "src/renderer/src/runtime/preview/queue/fontAutoPreviewCacheQueueRuntime.ts": "325bd68333a960bad3fb18e06a602d2b0a13cc079ade7e1306b1eb5a3b0c3ce3"
+    "src/renderer/src/runtime/preview/fontPreviewQueueRuntime.ts": "2366ad31bb71e38cbb168f79531cdb9db99ea764c4cf51b2b625b2ee6e0ac45b",
+    "src/renderer/src/runtime/preview/queue/fontPreviewStateRuntime.ts": "2867651f05161af0f6b755c3e5520235939deed024a54098a2e7ce64c0501fe1",
+    "src/renderer/src/runtime/preview/queue/fontPreviewLoadRuntime.ts": "9a0013a55f2f183f2ee275c8bf7b84cce5630a1a73979088407587e6f1371b16",
+    "src/renderer/src/runtime/preview/queue/fontVisiblePreviewQueueRuntime.ts": "24358379f3f0a1c287d84e80bb53f964da4c0f31128a83716ecd285023da0cfb",
+    "src/renderer/src/runtime/preview/queue/fontAutoPreviewCacheQueueRuntime.ts": "6a29e69c86c2efedda33d68f1bc6f6bb2408ca888e69a13878b7f36f2984da74"
   },
   "functionHashes": {
     "src/renderer/src/fontSelectionEventRuntime.ts#handleFontSelectRuntime": "b13c36f817b06ae1e0b76a283fca2c4e78e771a7033a72d7b5d4e55fcb1965f0",

@@ -1,4 +1,3 @@
-import { confirmUserAction } from '../../confirmationDialogRuntime'
 import { useState } from 'react'
 import { stringifyDeveloperValue } from '../../appRuntime'
 
@@ -53,8 +52,8 @@ export function SharedIndexSnapshotMaintenancePanel(): JSX.Element {
     return runAction('预检 shared index snapshot 维护', () => window.hfm.repairSharedIndexSnapshots({ apply: false }))
   }
 
-  async function applyRepair(): Promise<void> {
-    const confirmed = await confirmUserAction('会清理旧的非活动 shared index snapshot、过期 tmp 文件和孤儿 SQLite sidecar。确认继续？')
+  function applyRepair(): Promise<void> {
+    const confirmed = window.confirm('会清理旧的非活动 shared index snapshot、过期 tmp 文件和孤儿 SQLite sidecar。确认继续？')
     if (!confirmed) return Promise.resolve()
     return runAction('应用 shared index snapshot 维护', () => window.hfm.repairSharedIndexSnapshots({ apply: true }))
   }

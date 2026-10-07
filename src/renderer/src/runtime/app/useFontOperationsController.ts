@@ -18,7 +18,6 @@ import {
   isRendererUserActive,
   reportRendererUserActivity
 } from '../../rendererActivityRuntime'
-import type { CacheStatsRequestState } from '../library/actions/fontLibraryIndexActionTypes'
 import { createFontLibraryIndexActionRuntime } from '../library/fontLibraryIndexActionRuntime'
 import { createFontInstallStatusRuntime } from '../system/fontInstallStatusRuntime'
 import { createFontSystemActionRuntime } from '../system/fontSystemActionRuntime'
@@ -134,8 +133,8 @@ export function useFontOperationsController(options: {
     writeBehindMaxItems: WRITE_BEHIND_MAX_ITEMS,
     writeBehindMaxBufferBytes: WRITE_BEHIND_MAX_BUFFER_BYTES,
     memoryPressure: rendererMemoryPressure,
-    setTimeout: window.setTimeout.bind(window),
-    clearTimeout: window.clearTimeout.bind(window),
+    setTimeout: window.setTimeout,
+    clearTimeout: window.clearTimeout,
     setStatus: options.library.setStatus,
     scheduleDatabaseDerivedStateRefresh: options.library.scheduleDatabaseDerivedStateRefresh
   })
@@ -180,9 +179,7 @@ export function useFontOperationsController(options: {
   })
 
   const { nextIndexOperationRunId, isCurrentIndexOperation } = useIndexOperationRunRuntime(indexOperationRunIdRef)
-  const cacheStatsRequestState = useRef<CacheStatsRequestState>({ active: null, requested: 0 })
   const libraryIndexActionRuntime = createFontLibraryIndexActionRuntime({
-    cacheStatsRequestState,
     closingLifecycle: options.closingLifecycle,
     hfm: options.hfm,
     library: options.library.library,

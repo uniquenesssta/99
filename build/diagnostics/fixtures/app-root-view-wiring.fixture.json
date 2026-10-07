@@ -164,8 +164,6 @@
     "contextSelectedFonts",
     "selectionLabel",
     "runFontContextAction",
-    "runContextReindexTag",
-    "runContextRelinkFont",
     "runContextBatchActivate",
     "runContextBatchDeactivate",
     "runContextRefreshFolder",
@@ -181,23 +179,22 @@
     {
       "development": false,
       "collapsed": false,
-      "hash": "664c2aecd5cdad530a5d368e3168fee5664bc2b08538d7ee3aaee6c5d159f616"
+      "hash": "134689641c9d41fffc9c718a63d03229344e8aac938ac2aff592ab5280c64ca8"
     },
     {
       "development": false,
       "collapsed": true,
-      "hash": "04aaf52b4ffb6bb13a6c3e64ee8b91c2b281c815c7c6a07bebebd8042f5d8b91"
+      "hash": "34875d591e5a6b088eb0a4d2a3b770f8c5a3fb632a0233169e1c2fe060adc095"
     },
     {
       "development": true,
       "collapsed": false,
-      "hash": "ca4aeeff4fccc66f7898762540f576ec185f8465fd97a691bfe20ca34eb98d97"
+      "hash": "8f5873a9c16a570e25c21db8e57094909408c6bda19ff437186ba7bf30628f7d"
     },
     {
       "development": true,
       "collapsed": true,
-      "hash": "832f5991cfce2da77e3ac0128f75f2c291147cc4b8ec2a3b4b57dd5a97cc3dd4"
+      "hash": "e27674e8a33506ab1446a8723992106536b86bfe2783ee428aedac6d3f3e47bd"
     }
-  ],
-  "migration": "9fcce70: move relink ownership from tag to clicked font; all other bindings preserved by static AST projection"
+  ]
 }

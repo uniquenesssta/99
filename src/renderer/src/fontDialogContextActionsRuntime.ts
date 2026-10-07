@@ -1,4 +1,3 @@
-import { createFontOperationTrace, reportFontOperation, withFontRefreshTrace } from './fontOperationTrace'
 import { readTagCommandTargets } from './fontCommandTargetsRuntime'
 import { traceActivationEntry } from './fontActivationTrace'
 import {
@@ -8,59 +7,17 @@ import {
 } from './fontContextMenuRuntime'
 import type { FontDialogRuntimeOptions } from './fontDialogRuntime'
 
-// Dialog factories are recreated on render; the API object owns the in-flight operation.
-const activeRecoveries = new WeakSet<object>()
-
 export type FontDialogContextActionsRuntime = {
   runContextRename: () => void
   runContextDelete: () => void
   runContextAddSubfolder: () => void
   runContextRefreshFolder: () => void
-  runContextReindexTag: () => void
-  runContextRelinkFont: () => void
   runContextBatchActivate: () => void
   runContextBatchDeactivate: () => void
 }
 
 export function createFontDialogContextActions(options: FontDialogRuntimeOptions): FontDialogContextActionsRuntime {
-  function recover(input: import('@shared/tagFontRecovery').TagFontRecoveryRequest): void {
-    options.setContextMenu(null)
-    if (activeRecoveries.has(options.hfm)) {
-      options.setStatus('正在恢复字体关联，请完成文件选择或等待本次恢复结束。')
-      return
-    }
-    activeRecoveries.add(options.hfm)
-    const trace = createFontOperationTrace('tag-recovery')
-    reportFontOperation({ trace, stage: 'intent' })
-    options.setStatus(input.mode === 'reindex' ? '正在按缺失字体所属目录重新索引……' : '请选择此字体的新文件，同目录内能匹配的缺失字体会自动链接。')
-    void (async () => {
-      try {
-        if (options.flushFontWriteQueue && !await options.flushFontWriteQueue('tag-recovery')) throw new Error('标签修改尚未保存，请稍后重试。')
-        reportFontOperation({ trace, stage: 'dispatch' })
-        const result = await options.hfm.recoverTagFiles(input, trace)
-        reportFontOperation({ trace, stage: 'operation-result', outcome: result.canceled ? 'canceled' : result.busy ? 'busy' : 'returned' })
-        options.setStatus(result.message)
-        if (!result.busy && !result.canceled) withFontRefreshTrace(trace, () => options.refreshDatabaseDerivedState())
-      } catch (error) {
-        reportFontOperation({ trace, stage: 'operation-result', outcome: 'unknown', reason: 'recovery-rejected' })
-        options.setStatus(`恢复未完成：${error instanceof Error ? error.message : String(error)}`)
-        options.refreshDatabaseDerivedState()
-      } finally { activeRecoveries.delete(options.hfm) }
-    })()
-  }
   return {
-    runContextReindexTag(): void {
-      const action = tagBatchActionFromContextMenu(options.contextMenu)
-      if (action) recover({ mode: 'reindex', tagName: action.name, scope: action.scope })
-    },
-    runContextRelinkFont(): void {
-      const menu = options.contextMenu
-      if (menu?.kind !== 'font' || (menu.font.fileAvailability !== 'missing' && !menu.font.fileRelinkRequired) || menu.font.tagBindingReadOnly) return
-      // The clicked card is the anchor, even when other cards are selected.
-      const scope = options.sidebarPage === 'sharedTags' ? 'shared'
-        : menu.font.localTagNames?.length ? 'local' : menu.font.tagNames?.length ? 'shared' : 'local'
-      recover({ mode: 'relink', fontPath: menu.font.path, scope })
-    },
     runContextRename(): void {
       const target = editableTargetFromContextMenu(options.contextMenu)
       if (!target) return

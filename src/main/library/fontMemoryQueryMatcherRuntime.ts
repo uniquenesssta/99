@@ -53,7 +53,7 @@ export function createFontMemoryQueryMatcher(options: FontMemoryQueryRuntimeOpti
           if (!font.favorite) return false
           break
         case 'installed':
-          if (font.installStatusKnown === false || !font.systemInstalled) return false
+          if (!font.systemInstalled) return false
           break
         case 'notInstalled':
           if (!font.installStatusKnown || font.systemInstalled) return false
@@ -103,7 +103,7 @@ export function createFontMemoryQueryMatcher(options: FontMemoryQueryRuntimeOpti
       }
     }
 
-    if (request.installStatus === 'installed' && (font.installStatusKnown === false || !font.systemInstalled))
+    if (request.installStatus === 'installed' && !font.systemInstalled)
       return false
     if (
       request.installStatus === 'notInstalled' &&

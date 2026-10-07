@@ -17,7 +17,6 @@ import { physicalMutationIndexRefreshSuffix,refreshIndexesAfterPhysicalMutation 
 
 export type FontDialogRuntimeOptions = {
   contextMenu: ContextMenuState
-  sidebarPage?: SidebarPage
   renameTarget: EditableMenuTarget | null
   renameValue: string
   deleteTarget: EditableMenuTarget | null
@@ -66,8 +65,6 @@ export function createFontDialogRuntime(options: FontDialogRuntimeOptions): {
   runContextDelete: () => void
   runContextAddSubfolder: () => void
   runContextRefreshFolder: () => void
-  runContextReindexTag: () => void
-  runContextRelinkFont: () => void
   runContextBatchActivate: () => void
   runContextBatchDeactivate: () => void
   confirmRename: () => Promise<void>

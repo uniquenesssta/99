@@ -151,7 +151,7 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
         | { count?: number; installed_count?: number; max_checked_at?: string }
         | undefined;
       return [
-        "install-content-v1",
+        "install-v2",
         checkedAt || "",
         total || "",
         Number(row?.count || 0),
@@ -387,16 +387,6 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
     }
     deps.setSqliteMeta(db, "schemaVersion", String(deps.schemaVersion));
     deps.setSqliteMeta(db, "cacheArchitecture", "local-derived-merged-index");
-    if (deps.getSqliteMeta(db, 'installEvidenceVersion') !== 'content-v1') {
-      // Old name-only flags are derived data, not content evidence. Preserve the
-      // complete offline font/tag population while atomically withdrawing them.
-      db.transaction(() => {
-        db.prepare(`UPDATE entries SET installed=NULL, installed_by=NULL, matches_json=NULL
-          WHERE root_path NOT IN (SELECT root_path FROM sources WHERE install_signature LIKE 'install-content-v1|%')`).run();
-        deps.setSqliteMeta(db, 'installEvidenceVersion', 'content-v1');
-      })();
-      deps.appendStartupLog('local merged index install evidence prepared: version=content-v1, legacy flags withdrawn, font population retained');
-    }
   }
 
   function mergedIndexRequiredSchemaUsable(db: any): boolean {
@@ -478,7 +468,6 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
       const schemaVersion = deps.getSqliteMeta(db, "schemaVersion");
       if (schemaVersion !== String(deps.schemaVersion)) return false;
       if (deps.schemaVersion >= 7 && !deps.getSqliteMeta(db, "sourcesKey")) return false;
-      if (deps.getSqliteMeta(db, 'installEvidenceVersion') !== 'content-v1') return false;
       if (!mergedIndexRequiredSchemaUsable(db)) return false;
       const expected = JSON.parse(mergedIndexRootsKey(roots)) as string[];
       const sourceRows = db

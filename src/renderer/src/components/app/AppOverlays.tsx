@@ -28,8 +28,6 @@ type AppOverlaysProps = {
   contextSelectedFonts: FontItem[]
   runFontContextAction: (action: FontCommand) => Promise<void>
   contextTargetCount: number
-  runContextReindexTag: () => void
-  runContextRelinkFont: () => void
   runContextBatchActivate: () => void
   runContextBatchDeactivate: () => void
   runContextRefreshFolder: () => void
@@ -60,8 +58,6 @@ export function AppOverlays({
   contextSelectedFonts,
   runFontContextAction,
   contextTargetCount,
-  runContextReindexTag,
-  runContextRelinkFont,
   runContextBatchActivate,
   runContextBatchDeactivate,
   runContextRefreshFolder,
@@ -185,7 +181,6 @@ export function AppOverlays({
             <>
               <div className="context-menu-title">已选择 {contextTargetCount} 个字体</div>
               {contextSelectedFonts.length !== contextTargetCount && <div role="status">部分字体待重新读取，点击操作将检查完整范围。</div>}
-              {(contextMenu.font.fileAvailability === 'missing' || contextMenu.font.fileRelinkRequired) && !contextMenu.font.tagBindingReadOnly && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} onClick={runContextRelinkFont}>重新链接文件</button>}
               <FontCommandButtons fonts={contextSelectedFonts} count={contextTargetCount} onCommand={action => void runFontContextAction(action)} />
             </>
           ) : (
@@ -193,7 +188,6 @@ export function AppOverlays({
               <div className="context-menu-title">{contextMenu.kind === 'tag' ? `${contextMenu.scope === 'shared' ? '共享标签' : '本地标签'}：${contextMenu.name}（全部匹配字体）` : '文件夹操作'}</div>
               {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextBatchActivate() }}>激活</button>}
               {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} onClick={runContextBatchDeactivate}>取消激活</button>}
-              {contextMenu.kind === 'tag' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} onClick={runContextReindexTag}>重新索引监听文件夹</button>}
               {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextRefreshFolder() }}>刷新</button>}
               <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextRename() }}>重命名</button>
               {contextMenu.kind === 'folder' && <button onMouseDown={(event) => event.preventDefault()} disabled={menuBlocked} aria-disabled={menuBlocked} onClick={() => { if (!menuBlocked) runContextAddSubfolder() }}>新增子文件夹</button>}

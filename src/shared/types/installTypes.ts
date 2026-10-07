@@ -1,9 +1,6 @@
 import type { FontItem, SystemInstalledFont } from './fontTypes'
 
 export interface InstallCompareResult {
-  /** False means access/evidence is incomplete; it is not an uninstalled verdict. */
-  known?: boolean
-  reason?: string
   installed: boolean
   by: 'managed' | 'system' | 'both' | 'user' | 'none'
   matches: SystemInstalledFont[]
@@ -50,8 +47,7 @@ export interface InstallStatusRefreshResult {
 }
 
 export interface InstallResult {
-  installCompare?: InstallCompareResult
-  uninstall?: { completedSteps: number; remainingPaths: string[]; stage: string; pending?: boolean; cancelled?: boolean }
+  uninstall?: { completedSteps: number; remainingPaths: string[]; stage: string }
   results?: Record<string, InstallResult>
   ok: boolean
   managedInstallPath?: string
@@ -82,13 +78,7 @@ export interface FontActivationBatchResult {
 export interface FontTagBatchItem {
   item: FontItem
   tagNames: string[]
-  expectedTagNames?: string[]
 }
-
-export type FontRecoveryStateMove = { from: string; to: string }
-export type FontTagRecoveryFile = { path: string; physicalPath: string; sha256: string }
-export type FontTagRecoveryMissing = { path: string; rootPath: string }
-export type FontTagRecoveryCommitOptions = { recoveryMoves: FontRecoveryStateMove[]; recoveryFiles?: FontTagRecoveryFile[]; recoveryMissingSources?: FontTagRecoveryMissing[] }
 
 export interface FontTagMutationProtocolResult {
   ok?: boolean

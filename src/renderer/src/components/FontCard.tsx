@@ -13,7 +13,6 @@ import { useResizeFrozenPreviewRuntime } from '../runtime/preview/useResizeFroze
 import { GridFontPreview } from './GridFontPreview'
 
 function previewStatusLabel(font: FontCardProps['font']): string {
-  if (font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable') return installLabel(font)
   const message = font.previewError || ''
   if (!message) return installLabel(font)
   if (message.includes('字体文件不存在') || message.includes('路径已失效')) return '路径失效'
@@ -40,27 +39,23 @@ function previewSampleStyle(font: FontCardProps['font'], mode: 'grid' | 'list', 
 }
 
 
-function FontCardImpl({ closingLifecycle, font, active, selected, compact, previewStateForFont, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
-  const ready = previewStateForFont?.(font)
-  if (ready) { previewFamily = ready.family; previewImage = ready.image }
+function FontCardImpl({ closingLifecycle, font, active, selected, compact, previewFamily, previewImage, previewText, listPreviewFontSize, onSelect, onOpenDetail, onVisible, onContextMenu, draggable, onDragStart, onDragEnd }: FontCardProps): JSX.Element {
   const ref = useRef<HTMLElement | null>(null)
   const [previewIntersecting, setPreviewIntersecting] = useState(false)
   const requestedLayout = useMemo(() => getCardPreviewLayout(compact ? 'list' : 'grid', previewText, listPreviewFontSize), [compact, previewText, listPreviewFontSize])
   // Re-arm after reset commits: the text/size render can still contain the old image.
   const previewReady = Boolean(previewFamily || previewImage)
   const availability = useSharedAvailability()
-  const fileUnavailable = font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable'
-  const retryBlocked = fileUnavailable || sharedPathBlocked(availability, font.path)
+  const retryBlocked = sharedPathBlocked(availability, font.path)
   const knownRootBlocked = availability !== null && retryBlocked
-  const previewIdentity = ready?.key || JSON.stringify([font.id, font.path, font.fileSize, font.modifiedAt, requestedLayout.token])
-  const frozenPreview = useResizeFrozenPreviewRuntime(previewIdentity, {
+  const frozenPreview = useResizeFrozenPreviewRuntime(`${font.id}:${requestedLayout.token}`, {
     previewFamily,
     previewImage,
     previewText,
     listPreviewFontSize
   })
-  const displayPreviewFamily = fileUnavailable ? undefined : frozenPreview.previewFamily
-  const displayPreviewImage = fileUnavailable ? undefined : frozenPreview.previewImage
+  const displayPreviewFamily = frozenPreview.previewFamily
+  const displayPreviewImage = frozenPreview.previewImage
   const imageTrace = previewImageTrace(displayPreviewImage, font.id)
   const displayPreviewText = frozenPreview.previewText
   const displayListPreviewFontSize = frozenPreview.listPreviewFontSize
@@ -91,7 +86,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
 
   useEffect(() => {
     const node = ref.current
-    if (!node || knownRootBlocked || fileUnavailable) return
+    if (!node || knownRootBlocked) return
 
     let cancelled = false
     let intersecting = false
@@ -165,7 +160,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       observer?.disconnect()
       unsubscribeResizeSettled?.()
     }
-  }, [onVisible, closingLifecycle, font.id, previewIdentity, font.__earlyVisible, requestedLayout.token, previewReady, retryBlocked, knownRootBlocked, fileUnavailable, compact])
+  }, [onVisible, closingLifecycle, font.id, font.__earlyVisible, requestedLayout.token, previewReady, retryBlocked, knownRootBlocked, compact])
 
   useEffect(() => {
     if (!previewTraceEnabled() || !ref.current) return
@@ -251,7 +246,7 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
                 className="font-sample compact preview-layout-text preview-layout-list preview-hard-fit-text"
                 style={listSampleStyle}
               >
-                {fileUnavailable ? <span className="font-sample-line">{font.fileRelinkRequired || font.fileAvailability === 'missing' ? '请右键重新链接文件' : installLabel(font)}</span> : font.previewDisabled && !hasListTextPreviewFamily ? (
+                {font.previewDisabled && !hasListTextPreviewFamily ? (
                   <>
                     <span className="font-sample-line">原生预览生成中</span>
                     <span className="font-sample-line font-sample-latin">AaBb 123</span>
@@ -320,13 +315,11 @@ function FontCardImpl({ closingLifecycle, font, active, selected, compact, previ
       <div className="script-row small">
         {scriptLabels(font).slice(0, 4).map((label) => <span key={label} className="script-pill">{label}</span>)}
       </div>
-      {fileUnavailable ? <div className="font-sample" style={{ height: displayLayout.height }}>
-        {font.fileRelinkRequired || font.fileAvailability === 'missing' ? '请右键重新链接文件' : installLabel(font)}
-      </div> : <GridFontPreview layout={displayLayout} image={useNativePreviewImage ? displayPreviewImage : undefined}
+      <GridFontPreview layout={displayLayout} image={useNativePreviewImage ? displayPreviewImage : undefined}
         enabled={previewIntersecting}
         fontFamily={buildListPreviewCssFamily(font, displayPreviewFamily) || undefined}
         onImageLoad={() => previewEvent(imageTrace, 'image-load')}
-        onImageError={() => previewEvent(imageTrace, 'image-error')} />}
+        onImageError={() => previewEvent(imageTrace, 'image-error')} />
       <div className="tag-row small">
         {(font.tagNames || []).slice(0, 4).map((tag) => <span key={tag} className="tag-pill">{tag}</span>)}
       </div>

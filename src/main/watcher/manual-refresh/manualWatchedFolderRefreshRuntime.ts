@@ -48,7 +48,6 @@ export function createManualWatchedFolderRefreshRuntime(
     let fromCache = 0;
     let skippedBad = 0;
     let workerCount = 0;
-    let cancelled = false;
     let mergedIndexRefreshPayload: FontIndexChangePayload | null = null;
 
     try {
@@ -70,16 +69,14 @@ export function createManualWatchedFolderRefreshRuntime(
         fromCache = rebuilt.stats?.fromCache || 0;
         skippedBad = rebuilt.stats?.skippedBad || 0;
         errors = rebuilt.errors.length;
-        cancelled = !!rebuilt.stats?.cancelled;
-        upserts = rebuilt.fonts?.length || 0;
-        mergedIndexRefreshPayload = {
+        sendFontIndexChanged({
           source: "watcher",
           folder: bestRoot,
           at: new Date().toISOString(),
           upserts: rebuilt.fonts || [],
           deletes: [],
           errors: rebuilt.errors,
-        };
+        });
       } else {
         emitFontIndexProgress({
           jobId,
@@ -103,9 +100,10 @@ export function createManualWatchedFolderRefreshRuntime(
         workerCount = refreshed.workerCount;
         mode = upserts || deletes || errors ? "incremental" : "cache-read";
         mergedIndexRefreshPayload = refreshed.payload;
+        sendFontIndexChanged({ ...refreshed.payload, source: "watcher" });
       }
 
-      if (mode === "repair-rebuild" && !cancelled) {
+      if (mode === "repair-rebuild") {
         await syncMergedIndexForRootSnapshot(
           bestRoot,
           `manual-folder-refresh-repair:${bestRoot}`,
@@ -118,23 +116,18 @@ export function createManualWatchedFolderRefreshRuntime(
         );
       }
 
-      // The renderer must not query the previous merged snapshot after this event.
-      if (mergedIndexRefreshPayload) sendFontIndexChanged({ ...mergedIndexRefreshPayload, source: "watcher" });
-
       const elapsedMs = Date.now() - startedAt;
       const repairedCount = cacheRepairs.filter((item) => item.repaired).length;
-      const completedMessage =
+      const message =
         mode === "repair-rebuild"
           ? `文件夹刷新完成：已修复 ${repairedCount} 个缓存文件并覆盖重建索引，索引 ${totalFiles} 个字体，跳过 ${skippedBad} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`
           : mode === "incremental"
             ? `文件夹刷新完成：缓存正常，检测到新增/更新 ${upserts} 个、删除 ${deletes} 个，重新解析 ${parsed} 个，复用 ${fromCache} 个${workerCount ? `，Worker ${workerCount} 个` : ""}，用时 ${Math.round(elapsedMs / 1000)} 秒。`
             : `文件夹刷新完成：缓存正常，没有发现新增或删除字体，已重新读取缓存，复用 ${fromCache} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`;
 
-      const message = cancelled ? `文件夹刷新已取消：本次已返回 ${upserts} 个字体，索引结果尚未完整确认，用时 ${Math.round(elapsedMs / 1000)} 秒。`
-        : errors ? `文件夹刷新未全部完成：${errors} 项读取或解析失败。${completedMessage}` : completedMessage;
       emitFontIndexProgress({
         jobId,
-        stage: cancelled ? "cancelled" : "done",
+        stage: "done",
         message,
         at: new Date().toISOString(),
         folders: [resolvedFolder],
@@ -146,12 +139,11 @@ export function createManualWatchedFolderRefreshRuntime(
         errors,
       });
       appendStartupLog(
-        `manual watched folder refresh finished: root=${bestRoot}, folder=${resolvedFolder}, mode=${mode}, repairs=${repairedCount}, upserts=${upserts}, deletes=${deletes}, files=${totalFiles}, errors=${errors}, cancelled=${cancelled}, elapsed=${elapsedMs}ms`,
+        `manual watched folder refresh finished: root=${bestRoot}, folder=${resolvedFolder}, mode=${mode}, repairs=${repairedCount}, upserts=${upserts}, deletes=${deletes}, files=${totalFiles}, elapsed=${elapsedMs}ms`,
       );
 
       return {
-        ok: !cancelled && errors === 0,
-        cancelled,
+        ok: true,
         folder: resolvedFolder,
         rootPath: bestRoot,
         mode,
@@ -190,7 +182,6 @@ export function createManualWatchedFolderRefreshRuntime(
   async function refreshWatchedFolder(
     folderPath: string,
     rootPath?: string,
-    waitForCompletion = false,
   ): Promise<WatchedFolderRefreshResult> {
     const startedAt = Date.now();
     const resolvedFolder = resolve(folderPath || "");
@@ -216,7 +207,6 @@ export function createManualWatchedFolderRefreshRuntime(
     const activeKey = `${bestRoot}\n${resolvedFolder}`;
     const active = backgroundRuntime.activeRefresh(activeKey);
     if (active) {
-      if (waitForCompletion) return backgroundRuntime.waitForRefresh(activeKey);
       return backgroundRuntime.backgroundResult({
         folder: resolvedFolder,
         rootPath: bestRoot,
@@ -230,13 +220,13 @@ export function createManualWatchedFolderRefreshRuntime(
     emitFontIndexProgress({
       jobId,
       stage: "start",
-      message: `正在刷新文件夹：${basename(resolvedFolder) || resolvedFolder}……`,
+      message: `正在后台刷新文件夹：${basename(resolvedFolder) || resolvedFolder}，前端不再等待完整扫描……`,
       at: new Date().toISOString(),
       folders: [resolvedFolder],
     });
 
     const scheduled = backgroundRuntime.scheduleRefresh(activeKey, jobId, async () => {
-      return runWatchedFolderRefreshJob({
+      await runWatchedFolderRefreshJob({
         startedAt: Date.now(),
         resolvedFolder,
         bestRoot,
@@ -247,7 +237,6 @@ export function createManualWatchedFolderRefreshRuntime(
       `manual watched folder refresh scheduled background: root=${bestRoot}, folder=${resolvedFolder}, job=${scheduled.jobId}, scheduled=${scheduled.scheduled}`,
     );
 
-    if (waitForCompletion) return backgroundRuntime.waitForRefresh(activeKey);
     return backgroundRuntime.backgroundResult({
       folder: resolvedFolder,
       rootPath: bestRoot,

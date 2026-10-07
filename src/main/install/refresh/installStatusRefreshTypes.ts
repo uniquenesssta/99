@@ -8,10 +8,6 @@ SystemInstalledFont
 } from '../../../shared/types';
 
 export interface InstallStatusRefreshRuntimeDeps {
-  installStatusWriteRevision?: () => number
-  installStatusProjectionOwnedByWriter?: boolean
-  readHistoricalFont?: import('../fontInstallEvidenceRuntime').ReadHistoricalFont
-  readTemporaryActiveFonts?: () => Promise<{ records: import('../../windows/fontRuntime').TemporaryActiveFontRecord[] }>
   appWatchedFolders: () => Promise<string[]>
   loadSharedFontsForFolders: (folders: string[]) => Promise<FontItem[]>
   readInstallStatusIndex: (
@@ -21,7 +17,7 @@ export interface InstallStatusRefreshRuntimeDeps {
   saveInstallStatusIndex: (
     results: Record<string, InstallCompareResult>,
     itemsById: Map<string, FontItem>,
-    options?: { completeTasks?: boolean; expectedRevision?: number; onPersisted?: (ids: string[]) => void }
+    options?: { completeTasks?: boolean }
   ) => Promise<void>
   readInstalledTotalSummaryForRoots: (folders: string[]) => Promise<number | null>
   saveInstalledTotalSummaryForRoots: (folders: string[], total: number) => Promise<void>
@@ -32,7 +28,7 @@ export interface InstallStatusRefreshRuntimeDeps {
   buildInstalledFontLookupIndex: (installed: SystemInstalledFont[]) => any
   compareFontInstalledWithLookupIndex: (item: FontItem, lookup: any) => InstallCompareResult
   rootForFontPath: (filePath: string, folders: string[]) => Promise<string | null>
-  syncMergedIndexAfterInstallStatusRefresh: (roots: string[], items?: FontItem[]) => Promise<void>
+  syncMergedIndexAfterInstallStatusRefresh: (roots: string[]) => Promise<void>
   clearFontQueryCaches: () => void
   emitInstallStatusProgress: (
     payload: Omit<InstallStatusProgressPayload, 'at'>

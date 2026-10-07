@@ -27,7 +27,6 @@ export function createMainActivationInstallStatusSaveRuntime(
   const queue = createActivationInstallStatusSaveQueue({
     readInstallStatusIndex: options.readInstallStatusIndex,
     saveInstallStatusIndex: options.saveInstallStatusIndex,
-    installStatusProjectionOwnedByWriter: options.installStatusProjectionOwnedByWriter,
     appWatchedFolders: options.appWatchedFolders,
     rootForFontPath: options.rootForFontPath,
     syncMergedIndexAfterInstallStatusRefresh:

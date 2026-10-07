@@ -37,6 +37,15 @@ impl MergedRow {
     }
 }
 
+fn bool_from_json(value: Option<&Value>) -> bool {
+    match value {
+        Some(Value::Bool(flag)) => *flag,
+        Some(Value::Number(number)) => number.as_i64().unwrap_or(0) != 0,
+        Some(Value::String(text)) => text == "true" || text == "1",
+        _ => false,
+    }
+}
+
 pub fn font_from_merged_row(row: &MergedRow) -> Option<Value> {
     let Value::Object(source) = serde_json::from_str::<Value>(&row.font_json).ok()? else {
         return None;
@@ -64,11 +73,10 @@ pub fn font_from_merged_row(row: &MergedRow) -> Option<Value> {
     font.insert("modifiedAt".to_string(), json!(modified_at));
     font.insert("createdAt".to_string(), json!(created_at));
     font.insert("installStatusKnown".to_string(), Value::Bool(false));
-    font.insert("systemInstalled".to_string(), Value::Bool(false));
-    font.insert("systemInstallMatches".to_string(), Value::Array(Vec::new()));
+    let source_active = bool_from_json(font.get("active"));
     font.insert(
         "active".to_string(),
-        Value::Bool(installed_by == "managed" || installed_by == "both"),
+        Value::Bool(source_active || installed_by == "managed" || installed_by == "both"),
     );
     if !font.contains_key("activeSince") {
         font.insert("activeSince".to_string(), Value::Null);

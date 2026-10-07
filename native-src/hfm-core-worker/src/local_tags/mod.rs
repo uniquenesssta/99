@@ -1,4 +1,3 @@
-mod recovery;
 mod catalog;
 mod read_state;
 mod schema;

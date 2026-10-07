@@ -24,8 +24,7 @@ function transpile(rel) {
 }
 function loadTypeScriptModule(rel, localRequire = require) {
   const module = { exports: {} }
-  const lifecycle = require('./check-operation-chain.cjs').loader()('src/main/library/fontQueryTaskRuntime.ts')
-  new Function('exports', 'require', 'module', transpile(rel))(module.exports, id => id === './fontQueryTaskRuntime' ? lifecycle : localRequire(id), module)
+  new Function('exports', 'require', 'module', transpile(rel))(module.exports, localRequire, module)
   return module.exports
 }
 function deferred() {
@@ -39,16 +38,16 @@ const pageSource = read('src/main/library/fontPageQueryCacheRuntime.ts')
 for (const needle of [
   'let cacheGeneration = 0',
   'cacheGeneration += 1',
-  'for (const task of fontQueryPageInFlight.values()) task.controller.abort()',
+  'fontQueryPageInFlight.clear()',
   'requestGeneration === cacheGeneration',
-  'fontQueryPageInFlight.get(physicalKey) === task'
+  'fontQueryPageInFlight.get(cacheKey) === promise'
 ]) assert(pageSource.includes(needle), `page query cache missing ${needle}`)
 
 const metricsSource = read('src/main/library/fontMetricsRequestCoalescerRuntime.ts')
 for (const needle of [
   'let cacheGeneration = 0',
   'requestGeneration === cacheGeneration',
-  'inFlightByKey.get(physicalKey) === task',
+  'inFlightByKey.get(key) === promise',
   'cacheGeneration += 1'
 ]) assert(metricsSource.includes(needle), `metrics cache missing ${needle}`)
 
@@ -56,7 +55,7 @@ const memorySource = read('src/main/library/fontMemoryQueryRuntime.ts')
 for (const needle of [
   'let cacheGeneration = 0',
   'const requestGeneration = cacheGeneration',
-  'if (requestGeneration !== cacheGeneration) return fontQuerySuperseded()'
+  'if (requestGeneration !== cacheGeneration) return cleanSharedFontsForQuery(request)'
 ]) assert(memorySource.includes(needle), `memory query cache missing ${needle}`)
 
 async function runPageCacheBehavior() {
@@ -96,11 +95,6 @@ async function runPageCacheBehavior() {
   assert((await oldRequest).queryKey === 'new', 'old page caller received stale data after invalidation')
   assert((await newRequest).queryKey === 'new' && (await joinedNewRequest).queryKey === 'new', 'new page query callers did not share the current-generation result')
   assert((await runtime.queryFontPageInLibrary(request)).queryKey === 'new' && loads === 2, 'current-generation page result was not cached')
-  await runtime.queryFontPageInLibrary({ ...request, tagBindingsOnly: true })
-  await runtime.queryFontPageInLibrary({ ...request, tagBindingsOnly: true })
-  assert(loads === 4, 'recovery binding reads must bypass both cached pages and in-flight view queries')
-  await runtime.queryFontPageInLibrary(request)
-  assert(loads === 4, 'recovery reads must not evict the ordinary view cache')
 }
 
 async function runMetricsCacheBehavior() {
@@ -166,8 +160,8 @@ async function runMemoryCacheBehavior() {
   const oldRequest = runtime.cleanSharedFontsForQuery({})
   runtime.invalidateFontQueryResultCache()
   oldGate.resolve([{ id: 'old', path: 'D:/Fonts/old.ttf' }])
-  await require('node:assert/strict').rejects(oldRequest, /查询修订已变化/, 'invalidated memory read must stop before creating replacement work')
-  assert(loads === 1, 'obsolete memory read recursively performed another full-library read')
+  const lateResult = await oldRequest
+  assert(lateResult[0].id === 'new', 'an invalidated memory query returned obsolete state to its original caller')
   const fresh = await runtime.cleanSharedFontsForQuery({})
   assert(loads === 2 && fresh[0].id === 'new', 'an invalidated memory query repopulated the result cache after completing late')
 }

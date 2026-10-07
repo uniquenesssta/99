@@ -1,4 +1,4 @@
-import { logOperation, currentOperationTrace, recordOperationWork } from '../logging/operationTraceContext'
+import { logOperation, currentOperationTrace } from '../logging/operationTraceContext'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
@@ -421,8 +421,6 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       })
-      recordOperationWork({ processStarts: 1 })
-      child.once('close', () => recordOperationWork({ processCloses: 1 }))
       const active = child
       childPath = workerPath
       lineReader = createInterface({ input: child.stdout })

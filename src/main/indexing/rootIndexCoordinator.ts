@@ -127,10 +127,10 @@ export function createRootIndexCoordinator(deps: RootIndexCoordinatorDeps) {
         active: installedBy === 'managed' || installedBy === 'both',
       }
     }
-    return { ...font, sourceId, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [], active: false }
+    return { ...font, sourceId, installStatusKnown: false }
   }
 
-  async function findFontItemInRootIndexes(fontId: string, normalizedFontPath: string, includeDeleted = false): Promise<FontItem | null> {
+  async function findFontItemInRootIndexes(fontId: string, normalizedFontPath: string): Promise<FontItem | null> {
     const roots = await deps.appWatchedFolders().catch(() => [])
     for (const rawRoot of roots || []) {
       const root = resolve(rawRoot)
@@ -139,7 +139,8 @@ export function createRootIndexCoordinator(deps: RootIndexCoordinatorDeps) {
       const db = await deps.openRootIndexDb(dbPath, root, 'root', false)
       try {
         const clauses = [
-          ...(includeDeleted ? [] : [`COALESCE(is_deleted, 0) = 0`, `status = 'ok'`]),
+          `COALESCE(is_deleted, 0) = 0`,
+          `status = 'ok'`,
           `font_json IS NOT NULL`,
         ]
         const params: unknown[] = []
@@ -170,7 +171,7 @@ export function createRootIndexCoordinator(deps: RootIndexCoordinatorDeps) {
           )
           .get(...params) as RootIndexPageRow | undefined
         if (!row) continue
-        const font = fontFromRootIndexPageRow(root, includeDeleted ? { ...row, status: 'ok' } : row)
+        const font = fontFromRootIndexPageRow(root, row)
         if (font) return font
       } catch (error) {
         deps.appendStartupLog(

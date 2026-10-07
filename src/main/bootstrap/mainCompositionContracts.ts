@@ -41,7 +41,6 @@ export interface MainDataResourceLifecycle {
 
 export interface MainDataCompositionRuntime {
   readonly capabilities: Pick<RegistrationSurface,
-    | 'rememberRelinkedFontFile'
     | 'getSharedAvailability' | 'loadLibrary' | 'loadLibraryShell' | 'loadFolderCache'
     | 'searchFontsInLibrary' | 'queryFontsInLibrary' | 'queryFontPageInLibrary'
     | 'checkSharedMetadataUpdates' | 'getFontMetricsFromLibrary'
@@ -187,7 +186,6 @@ export interface MainApplicationRegistrationGroups {
     | 'compareFontsInstalled'
   >
   readonly mutation: Pick<MainApplicationRegistration,
-    | 'rememberRelinkedFontFile'
     | 'saveLibrary'
     | 'installFontSystemWide'
     | 'uninstallFontSystemWide'

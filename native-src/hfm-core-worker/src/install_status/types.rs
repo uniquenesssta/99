@@ -99,7 +99,6 @@ pub struct InstallStatusTimings {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallStatusCompareResult {
-    pub known: bool,
     pub installed: bool,
     pub by: String,
     pub matches: Value,

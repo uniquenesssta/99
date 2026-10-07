@@ -1,7 +1,6 @@
-import { AsyncResource } from 'node:async_hooks'
 import { detailedStartupLogsEnabled } from '../logging/startupLogPolicy'
 import { createHash } from 'node:crypto'
-import { currentOperationTrace, logOperation, recordOperationWork } from '../logging/operationTraceContext'
+import { currentOperationTrace, logOperation } from '../logging/operationTraceContext'
 import { sharedIoAccessConflict, type SharedIoAccess } from './sharedIoAccessRuntime'
 import { isApplicationClosing, onApplicationClosing } from '../app/shutdownCoordinatorRuntime'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
@@ -14,7 +13,6 @@ export type SharedIoProcessRequest = {
   timeoutMs: number
   label?: string
   lane?: 'default' | 'root-probe' | 'preview-read'
-  priority?: 'background' | 'normal' | 'foreground' | number
   queueTimeoutMs?: number
   maxBuffer?: number
   write: boolean
@@ -72,8 +70,6 @@ type Job = {
   enqueuedAt: number
   startedAt?: number
   released?: boolean
-  bypassedReads?: number
-  start?: () => void
   whenClosed: Promise<void>
   close: () => void
 }
@@ -122,16 +118,11 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     if (laneOf(a) !== 'default' && laneOf(b) !== 'default' && !a.request.write && !b.request.write) return false
     return true
   }
-  const priorityOf = (job: Job) => typeof job.request.priority === 'number' ? job.request.priority
-    : job.request.priority === 'foreground' ? 20 : job.request.priority === 'background' ? 0 : 10
-  const canOvertake = (job: Job, other: Job) => !job.request.write && !other.request.write
-    && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) < 4
   const canStart = (job: Job) => {
     const lane = laneOf(job)
     const limit = lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2
     if ([...active].filter(other => laneOf(other) === lane).length >= limit) return false
-    if (!job.request.write && queue.some(other => other.id < job.id && !other.request.write && laneOf(other) === lane && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) >= 4)) return false
-    if (queue.some(other => other.id < job.id && conflicts(job, other) && !canOvertake(job, other))) return false
+    if (queue.some(other => other.id < job.id && conflicts(job, other))) return false
     return ![...active].some(other => conflicts(job, other))
   }
   const traceJob = (job: Job, stage: string, reason?: string, blockedBy?: number) => {
@@ -170,7 +161,6 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   }
   function cancel(job: Job, reason: string): void {
     if (job.settled) return
-    if (reason === 'timeout' || reason === 'queue-timeout') recordOperationWork({ timeouts: 1 })
     const started = Boolean(job.child?.pid)
     settle(job, undefined, new SharedIoProcessError(`Shared I/O ${reason}: request=${job.id}`, started ? 'unknown' : 'not-started', reason))
     if (!job.child) {
@@ -191,18 +181,13 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   function drain(): void {
     if (!closed) {
       while (true) {
-        const ordered = [...queue].sort((a, b) => priorityOf(b) - priorityOf(a) || a.id - b.id)
-        let next = ordered.find(job => laneOf(job) === 'root-probe' && canStart(job))
-        next ||= ordered.find(canStart)
-        const index = next ? queue.indexOf(next) : -1
+        let index = queue.findIndex(job => laneOf(job) === 'root-probe' && canStart(job))
+        if (index < 0) index = queue.findIndex(job => laneOf(job) === 'default' && canStart(job))
+        if (index < 0) index = queue.findIndex(job => laneOf(job) === 'preview-read' && canStart(job))
         if (index < 0) break
         const job = queue.splice(index, 1)[0]
-        for (const other of queue) {
-          if (!job.request.write && !other.request.write && laneOf(job) === laneOf(other) && priorityOf(job) <= priorityOf(other)) other.bypassedReads = 0
-          if (other.id < job.id && (conflicts(job, other) || laneOf(job) === laneOf(other)) && canOvertake(job, other)) other.bypassedReads = (other.bypassedReads || 0) + 1
-        }
         if (job.timer) clearTimeout(job.timer)
-        job.start!()
+        start(job)
       }
     }
     if (!active.size && !queue.length) for (const done of idleWaiters.splice(0)) done()
@@ -219,11 +204,10 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       job.startedAt = Date.now()
       active.add(job)
       count(request, 'started')
-      recordOperationWork({ processStarts: 1, queuedMs: job.startedAt - job.enqueuedAt })
       traceJob(job, 'shared-started')
       child.stdin.on('error', () => cancel(job, 'stdin-error'))
       child.stdin.end()
-      if (detailedStartupLogsEnabled()) log(`shared io started: request=${job.id}, pid=${child.pid}, label=${requestLabel(request)}, lane=${request.lane || 'default'}, roots=${request.roots.length}, queuedMs=${job.startedAt - job.enqueuedAt}, write=${request.write}`)
+      log(`shared io started: request=${job.id}, pid=${child.pid}, label=${requestLabel(request)}, lane=${request.lane || 'default'}, roots=${request.roots.length}, queuedMs=${job.startedAt - job.enqueuedAt}, write=${request.write}`)
       child.stdout.setEncoding('utf8')
       child.stderr.setEncoding('utf8')
       const collect = (kind: 'stdout' | 'stderr', chunk: string) => {
@@ -240,7 +224,6 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
         if (job.killTimer) clearTimeout(job.killTimer)
         active.delete(job)
         count(request, 'closed')
-        recordOperationWork({ processCloses: 1, executionMs: timingOf(job).executionMs })
         traceJob(job, 'shared-closed')
         release(job)
         if (!job.settled) {
@@ -252,7 +235,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
             settle(job, undefined, error)
           }
         }
-        if (detailedStartupLogsEnabled() || timingOf(job).queuedMs + timingOf(job).executionMs >= 600 || code !== 0) log(`shared io closed: request=${job.id}, pid=${child.pid}, label=${requestLabel(request)}, code=${code}, signal=${signal}, active=${active.size}, startedTotal=${metricTotals.started}, closedTotal=${metricTotals.closed}`)
+        log(`shared io closed: request=${job.id}, pid=${child.pid}, label=${requestLabel(request)}, code=${code}, signal=${signal}, active=${active.size}, startedTotal=${metricTotals.started}, closedTotal=${metricTotals.closed}`)
         drain()
       })
       job.timer = setTimeout(() => cancel(job, 'timeout'), Math.max(1, request.timeoutMs))
@@ -265,7 +248,6 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   function run(request: SharedIoProcessRequest): Promise<Result> {
     request = { ...request, accesses: request.accesses?.map(access => ({ ...access })), args: [...request.args], roots: [...new Set(request.roots)], env: request.env ? { ...request.env } : undefined }
     count(request, 'requests')
-    recordOperationWork({ tasks: 1 })
     const reject = (message: string, reason: string) => {
       count(request, 'failed')
       try { request.onClose?.() } catch (error) { log(`shared io cleanup failed: ${String(error)}`) }
@@ -285,7 +267,6 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       let close!: () => void
       const whenClosed = new Promise<void>(resolve => { close = resolve })
       const job: Job = { trace: currentOperationTrace(), whenClosed, close, id: ++nextId, request, resolve, reject, settled: false, enqueuedAt: Date.now() }
-      job.start = AsyncResource.bind(() => start(job))
       job.abort = () => cancel(job, 'cancelled')
       request.signal?.addEventListener('abort', job.abort, { once: true })
       job.timer = setTimeout(() => cancel(job, 'queue-timeout'), request.queueTimeoutMs ?? 3000)

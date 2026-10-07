@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import type { FontItem,SystemInstalledFont } from "../../../shared/types";
 import type { TemporaryActiveFontRecord } from "../../windows/fontRuntime";
 import type { FontActivationRuntimeDeps } from "./fontActivationTypes";
-import { createFontInstallEvidenceSession } from '../../install/fontInstallEvidenceRuntime';
 
 export function createFontActivationVerifyRuntime(deps: FontActivationRuntimeDeps) {
   const {
@@ -106,11 +105,11 @@ export function createFontActivationVerifyRuntime(deps: FontActivationRuntimeDep
 
     clearInstalledFontsMemoryCache();
     const installed = await getSystemInstalledFontsCached(true);
-    const compare = await createFontInstallEvidenceSession().confirm(item, compareFontInstalledWithList(item, installed));
+    const compare = compareFontInstalledWithList(item, installed);
     const pathVisible = installed.some((record) =>
       installedFontRecordMatchesPath(record, item.path),
     );
-    const ok = compare.known !== false && compare.installed;
+    const ok = compare.installed || pathVisible;
     const detail = `安装记录${compare.installed ? "可见" : "未匹配"}，路径索引${pathVisible ? "可见" : "未匹配"}。`;
     appendStartupLog(
       `installed activation verify: fontId=${item.id}, ok=${ok}, ${detail}`,

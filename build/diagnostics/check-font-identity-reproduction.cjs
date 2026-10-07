@@ -28,7 +28,6 @@ try {
   db.exec(`CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
     INSERT INTO meta VALUES('schemaVersion','8');
     INSERT INTO meta VALUES('sourcesKey','fixture-v2');
-    INSERT INTO meta VALUES('installEvidenceVersion','content-v1');
     CREATE TABLE sources(root_path TEXT PRIMARY KEY,index_db_path TEXT,install_db_path TEXT,index_signature TEXT,install_signature TEXT,shared_metadata_signature TEXT,synced_at TEXT);
     CREATE TABLE entries(root_path TEXT,relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at REAL,created_at REAL,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,is_deleted INTEGER,installed INTEGER,installed_by TEXT,matches_json TEXT,category_index TEXT,search_text TEXT,PRIMARY KEY(root_path,relative_path));`)
   for(const [i,dir] of roots.entries()) {

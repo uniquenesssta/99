@@ -111,7 +111,7 @@ export function buildMergedIndexSearchTextFromJson(
 // Mutable, machine-local state must never be frozen into a shared search index.
 export function fontSearchStateText(font: Partial<FontItem>): string {
   return [
-    font.installStatusKnown !== false && font.systemInstalled ? '已安装 installed system' : font.installStatusKnown ? '未安装 not installed' : '安装状态未知 unknown',
+    font.systemInstalled ? '已安装 installed system' : font.installStatusKnown ? '未安装 not installed' : '安装状态未知 unknown',
     font.active ? '临时激活 已激活 active' : '',
     font.deleteProtected ? '保护 不可删除 删除保护 protected' : '',
   ].filter(Boolean).join(' ')

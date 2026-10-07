@@ -157,36 +157,5 @@ function renderer() {
   const next=library.fonts.a
   assert.equal(next.deleteProtected,true);assert.equal(next.favorite,true);assert.deepEqual(plain(next.tagNames),['shared']);assert.deepEqual(plain(next.localTagNames),['local']);assert.equal(next.active,true);assert.equal(next.previewKey,'unchanged');assert.equal(library.fonts.b,other);cases++
 }
-async function indexEventConvergence() {
-  const effects=[],statuses=[];let listener,library={fonts:{},folders:['/fonts'],tags:[],localTags:[]},refreshes=0,saves=0,stats=0,previews=0,saveGate,saveOk=true;
-  const baseLoader=require('./check-operation-chain.cjs').loader;
-  const environmentPort={[path.join(root,'src/renderer/src/constants/environmentConstants.ts')]:{RENDERER_ENV:{DEV:false,PROD:true},IS_DEVELOPMENT:false}};
-  const normalizationLoad=baseLoader(environmentPort);
-  const normalize=normalizationLoad('src/renderer/src/library-normalize/libraryIndexChangeRuntime.ts');
-  const hook=baseLoader({...environmentPort,react:{useRef:current=>({current}),useEffect:fn=>effects.push(fn)},'../../../appRuntime':normalize})('src/renderer/src/runtime/app/effects/useFontIndexChangedEventRuntime.ts').useFontIndexChangedEventRuntime;
-  const saved=[];hook({hfm:{onFontIndexChanged:fn=>{listener=fn;return()=>{}}},getCurrentLibrary:()=>library,commitLibraryUpdate:next=>library=next,captureFontScrollSnapshot:()=>0,restoreFontScrollSnapshot(){},cleanupRemovedFontState(){},requestPreviewFont:()=>previews++,refreshDatabaseDerivedState:()=>refreshes++,setStatus:message=>statuses.push(message),saveLibraryImmediately:async latest=>{saves++;saved.push(latest);if(saveGate)await saveGate;return saveOk},loadCacheStats:()=>stats++});
-  const cleanup=effects[0]();const settle=async()=>{for(let i=0;i<30;i++)await Promise.resolve()};
-  const fonts=Array.from({length:394},(_,i)=>({...font('f'+i),path:'/fonts/f'+i+'.ttf'}));
-  const payload={folder:'/fonts',source:'watcher',upserts:fonts,deletes:[]};
-  listener(payload);listener({folder:'/fonts',source:'watcher',upserts:[{...fonts[0],family:'latest'}],deletes:[]});await settle();
-  assert.equal(previews,0,'394 index rows became foreground preview demands');assert.equal(refreshes,1);assert.equal(saves,1);assert.equal(stats,1);assert.equal(saved[0].fonts.f0.family,'latest');cases++;
-  const before=[refreshes,saves,stats];listener({folder:'/fonts',upserts:[],deletes:[],errors:[{message:'offline'}]});listener({folder:'/other',upserts:fonts,deletes:[]});await settle();assert.deepEqual([refreshes,saves,stats],before,'empty/error-only or unrelated-root event restarted work');cases++;
-  listener({...payload,upserts:Object.values(library.fonts),errors:[{message:'read failed'},{message:'other failed'}]});listener({...payload,upserts:[],deletes:[{id:'offscreen',path:'/fonts/offscreen.ttf',relativePath:'offscreen.ttf'}]});await settle();assert.equal(refreshes,before[0]+1,'off-window delete/recovery lost database invalidation');assert.equal(saves,before[1]);assert.equal(stats,before[2]+1);assert(statuses.some(message=>message.includes('错误 2 个')),'unchanged projection hid partial errors');cases++;
-  let release;saveGate=new Promise(resolve=>release=resolve);listener({...payload,upserts:[{...fonts[0],family:'pending'}]});await settle();listener({...payload,upserts:[{...fonts[0],family:'newest'}]});await settle();assert.equal(stats,2);release();await settle();assert.equal(saved.at(-1).fonts.f0.family,'newest');assert.equal(stats,3,'coalesced save triggered repeated stats');cases++;
-  saveGate=null;saveOk=false;listener({...payload,upserts:[{...fonts[0],family:'unsaved'}]});await settle();assert.equal(stats,3,'failed shell save queried stats');cases++;
-  const settled=[refreshes,saves,stats];await settle();assert.deepEqual([refreshes,saves,stats],settled,'event processing self-triggered work');cleanup();
-  const intents=normalizationLoad('src/renderer/src/fontUserIntentRuntime.ts');const blocked=intents.setUninstallIssue(library.fonts.f0,'retry pending');
-  const withIntent={...library,fonts:{...library.fonts,f0:blocked}};const cleared=normalize.applyFontIndexChangeToLibrary(withIntent,{...payload,upserts:[{...library.fonts.f0,pendingUninstall:undefined}]});
-  assert.notEqual(cleared.library,withIntent,'private intent change was discarded as an equal JSON projection');assert.equal(intents.getUninstallIssue(cleared.library.fonts.f0),undefined);assert.equal(cleared.library.fonts.f0.path,blocked.path);cases++;
-}
-async function cacheStatsConvergence() {
-  const make=loader({'./deferredInstallStatusRefreshRuntime':{scheduleDeferredInstallStatusRefresh(){}}})('src/renderer/src/runtime/library/actions/fontLibraryIndexSharedRuntime.ts').createFontLibraryIndexSharedRuntime;
-  const state={current:{active:null,requested:0}},calls=[],applied=[],subscribers=new Set();let closing=false;
-  const lifecycle={isClosing:()=>closing,subscribe:fn=>{subscribers.add(fn);return()=>subscribers.delete(fn)}};
-  const options={cacheStatsRequestState:state,closingLifecycle:lifecycle,hfm:{getCacheStats:()=>new Promise(resolve=>calls.push(resolve))},setCacheStats:value=>applied.push(value)};
-  const first=make(options).loadCacheStats();const second=make({...options}).loadCacheStats();assert.equal(first,second);assert.equal(calls.length,1,'render recreation bypassed single-flight stats');
-  calls[0]({version:1});for(let i=0;i<10;i++)await Promise.resolve();assert.equal(calls.length,2);assert.equal(applied.length,0,'superseded stats reply applied');calls[1]({version:2});await first;assert.equal(applied[0].version,2);cases++;
-  const old=make(options).loadCacheStats();closing=true;for(const fn of subscribers)fn(true);closing=false;for(const fn of subscribers)fn(false);const resumed=make({...options}).loadCacheStats();calls[2]({version:3});for(let i=0;i<10;i++)await Promise.resolve();assert.equal(calls.length,4,'cancelled-close new intent was lost');assert.equal(applied.length,1);calls[3]({version:4});await Promise.all([old,resumed]);assert.equal(applied.at(-1).version,4);assert.equal(subscribers.size,0);cases++;
-}
-async function main(){await indexEventConvergence();await cacheStatsConvergence();await metadata();await queueScopes();await multipleRoots();renderer();await metadata(s=>s.replace(/\r?\n/g,'\r\n'));await assert.rejects(()=>metadata(s=>s.replace('if (deps.syncSharedMetadataChangedIdsToMergedIndex)', 'if (false)')),/one committed shared tag/);console.log(`[diagnostics:incremental-metadata-refresh] ${cases} SQLite 1499-row/commit/fallback/catalog, actual controller/event/preview isolation cases; original root snapshot mutant rejected`)}
+async function main(){await metadata();await queueScopes();await multipleRoots();renderer();await metadata(s=>s.replace(/\r?\n/g,'\r\n'));await assert.rejects(()=>metadata(s=>s.replace('if (deps.syncSharedMetadataChangedIdsToMergedIndex)', 'if (false)')),/one committed shared tag/);console.log(`[diagnostics:incremental-metadata-refresh] ${cases} SQLite 1499-row/commit/fallback/catalog, actual controller/event/preview isolation cases; original root snapshot mutant rejected`)}
 main().catch(e=>{console.error(e);process.exitCode=1})

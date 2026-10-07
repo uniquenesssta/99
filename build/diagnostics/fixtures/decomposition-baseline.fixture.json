@@ -64,7 +64,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "0c04c2a3c5a73cda66f91ca2692b60a6b32dba6857964c4112d3756a74b41751"
+      "tokenHash": "c2061bc839f3567c0c4c62b715e9d104dd72c186dda3701618afed007c3791c3"
     },
     "src/renderer/src/App.tsx": {
       "functions": [
@@ -96,7 +96,7 @@
         "developer"
       ],
       "ipcChannels": [],
-      "tokenHash": "2f1bc9426b3285a5ebda750648e4fe982182f5d75c2958649f078a2e32fb4c14"
+      "tokenHash": "5702cf2c9df9967c893b23aa695e29185088fc9e7e2a0625dca977d205db6bfe"
     },
     "src/renderer/src/runtime/app/useBrowseController.ts": {
       "functions": [
@@ -473,10 +473,6 @@
         {
           "binding": "autoInstallStatusRefreshSignatureRef",
           "kind": "useRef"
-        },
-        {
-          "binding": "cacheStatsRequestState",
-          "kind": "useRef"
         }
       ],
       "exports": [
@@ -525,7 +521,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "3e14a47a5d1daa1acff34b08a86af7e23c44d8c211a1a47d2c0620411079ff49"
+      "tokenHash": "5ab2746c92e81a44aaad948e44ef819394a046f30178587ec759bfa46cab7f2c"
     },
     "src/renderer/src/runtime/app/useLibraryController.ts": {
       "functions": [
@@ -625,7 +621,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "1db849fc9167c465cac9158fce8c902065a7dbb64f29081239d62c2ff49174eb"
+      "tokenHash": "33dd9246910ce927d0ab17cea5ad5ec8ca1395ebf0da9b726f5dc3eca9442c3b"
     },
     "src/renderer/src/runtime/app/usePreviewController.ts": {
       "functions": [
@@ -720,7 +716,6 @@
       "surfaces": {
         "usePreviewController": [
           "previewFamilies",
-          "previewStateForFont",
           "nativePreviewImages",
           "nativeDetailImage",
           "setNativeDetailImage",
@@ -739,7 +734,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "b6eda8992ecb956281abca67feeced23b3a54c395b93d95a8ddf6f046ecff6e7"
+      "tokenHash": "1bfb9e59652d0cac5f5042eeff6373866ee1a57c375607022c838df6e1eaaaec"
     },
     "src/renderer/src/runtime/app/useSelectionController.ts": {
       "functions": [
@@ -882,7 +877,6 @@
       "surfaces": {},
       "viewGroups": [],
       "ipcChannels": [
-        "fonts:recoverTagFiles",
         "fonts:setLocalTags",
         "fonts:setLocalTagsBatch",
         "fonts:deleteLocalTag",
@@ -891,7 +885,7 @@
         "fonts:renameSharedTag",
         "fonts:deleteSharedTag"
       ],
-      "tokenHash": "f4fca5136e5dce5eb4d0c7fb6eba2a00e1a91d719f4d5f9a13e0b1364067c399"
+      "tokenHash": "a6d54bdff22aed6f3602ad3eacb66806f506cb7b3e41dc6255b41fbcf304f980"
     },
     "src/main/ipc/handlers/fontSystemIpcHandlers.ts": {
       "functions": [
@@ -1081,7 +1075,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "a08814773507eecf29eb1431b6c4b53e719f47faf9206c317b9cc8f0e9e1ef32"
+      "tokenHash": "9854ed79cdea064655a310766b8c78aa3ac1681986127489de1f07bff44e10f9"
     },
     "src/main/library/runtime/localFontTagRustAdapterRuntime.ts": {
       "functions": [
@@ -1120,7 +1114,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "c2c3ba6882789f5bdfc470d05ae6c778ad48d9877af6033b7604269b9b89845a"
+      "tokenHash": "1ad4cd9b96d9bfd4ac8ef3fa7b4d75979684fbf6168f2a4b21dd8f230bf1ad09"
     },
     "src/main/library/runtime/localFontTagMutationEffectsRuntime.ts": {
       "functions": [
@@ -1210,14 +1204,5 @@
       "tokenHash": "c8dd53380d4b1009dcdeb99fb6a9a2ce5c6d3a18635cbc5fc39cb2dbecfb2c10"
     }
   },
-  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes.",
-  "recoveryF09Migration": {
-    "baseline": "034391cb3acdd6a1430e4f5c3b5b912d9f964608",
-    "files": [
-      "src/main/library/runtime/localFontTagsRuntime.ts",
-      "src/main/library/runtime/localFontTagNodePersistenceRuntime.ts",
-      "src/main/library/runtime/localFontTagRustAdapterRuntime.ts"
-    ],
-    "reason": "F09 adds main-process-only recovery CAS/content guards and proven local state retention to the existing local tag batch; unchanged public surfaces/owners remain frozen. Existing rollback, isolation, signal and mutation tests remain."
-  }
+  "s0055": "S0-05.5: capability-gated readOnly, precise access declarations, generation-aware status, foreground prefetch and owned image commit. Behaviour gates cover these changes."
 }

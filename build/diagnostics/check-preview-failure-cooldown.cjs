@@ -25,18 +25,6 @@ async function check(transform = s => s) {
     hfm:{getCachedPreviewImage:async()=>'',renderPreviewImage:async()=>{calls++;if(pending)await pending;if(failure)throw Error("Error invoking remote method: "+SHARED_UNAVAILABLE_MESSAGE);return 'data:image/png;base64,ok'}},
   }
   const runtime = load(file).createFontPreviewLoadRuntime(options)
-  let cacheReads=0
-  options.hfm.getCachedPreviewImages=async()=>{cacheReads++;return {}}
-  for(const fileAvailability of ['missing','unavailable']) {
-    const missing={...font,fileAvailability,previewDisabled:true,previewError:'文件丢失'}
-    assert.equal(await runtime.ensurePreviewFont(missing),'')
-    assert.equal((await runtime.loadCachedNativeCardPreviews([missing])).size,0)
-    assert.equal(calls,0);assert.equal(cacheReads,0)
-    const state=load('src/renderer/src/fontPreviewStateRuntime.ts')
-    assert.equal(state.canQueuePreviewFont({font:missing,...options,loadingFontIds:new Set(),queuedPreviewFontIds:new Set()}),false)
-    const cleared=state.clearPreviewFailureFlagsInLibrary({fonts:{a:missing}})
-    assert.equal(cleared.library.fonts.a.previewDisabled,true,'cache reset must not erase missing state')
-  }
   await runtime.ensurePreviewFont(font)
   for(let i=0;i<3000;i++) await runtime.ensurePreviewFont(font)
   assert.equal(calls,1,'offline rerenders must not produce repeated IPC')
@@ -53,15 +41,6 @@ async function check(transform = s => s) {
   reject(Error('late failure'));await stale;pending=undefined
   const after=calls;await runtime.ensurePreviewFont({...font,id:'c'});assert.equal(calls,after+1,'stale failure poisoned new generation')
 }
-async function failureIdentity() {
- let calls=0,kind='failed';const load=loader({'../../../appRuntime':{PREVIEW_STATE_LRU_LIMIT:800,pruneRecordByKeyLimit:x=>x},'../../../rendererPerformance':{reportRendererTrace(){}},'./fontPreviewQuickFallbackRuntime':{}});
- const options={previewText:'audit',listPreviewFontSize:39,previewRequestTokenRef:{current:cardToken('audit',39)},selectedFontId:'',selectedFontIds:[],previewFamilies:{},nativePreviewImages:{},failedPreviewFontIds:{},loadingFonts:{current:new Set()},isBadFontRecord:()=>false,setPreviewFamilies(){},setNativePreviewImages(){},setFailedPreviewFontIds(){},updateFont(){},hfm:{renderPreviewImage:async()=>{calls++;throw Error('[HFM_PREVIEW:'+kind+'] rejected')}}};
- const runtime=load(file).createFontPreviewLoadRuntime(options),font={id:'identity',path:'C:/font.ttf',fileSize:10,modifiedAt:1,systemInstalled:true};
- await runtime.ensurePreviewFont(font,true);await runtime.ensurePreviewFont(font,true);assert.equal(calls,1);
- await runtime.ensurePreviewFont({...font,modifiedAt:2},true);assert.equal(calls,2,'replacement inherited old-content failure cooldown');
- kind='cancelled';for(let i=0;i<3;i++)await runtime.ensurePreviewFont({...font,id:'cancelled'},true);assert.equal(calls,5,'cancelled work poisoned immediate fresh demand');
- kind='missing';await runtime.ensurePreviewFont({...font,id:'missing'},true);await runtime.ensurePreviewFont({...font,id:'missing'},true);assert.equal(calls,6,'missing classification retried without cooldown');
-}
 async function main() {
   const protocol=loader()('src/main/rust-core/rustCoreProtocolRuntime.ts')
   const status={protocolVersion:protocol.EXPECTED_RUST_CORE_PROTOCOL_VERSION,capabilities:[...protocol.REQUIRED_RUST_CORE_CAPABILITIES]}
@@ -72,7 +51,7 @@ async function main() {
   const literal=source.match(/^\s*("\{\{.*")\s*,\s*$/m)[1]
   const handshake=JSON.parse(JSON.parse(literal).replaceAll('{{','{').replaceAll('}}','}').replace('"{}"','"worker"').replace('"{}"','"version"').replace('{}',String(status.protocolVersion)).replaceAll('"{}"','"platform"'))
   assert(protocol.rustCoreWorkerIsCompatible(handshake).ok,'actual handshake differs from Electron admission')
-  await failureIdentity();await check();await check(s=>s.replace(/\r?\n/g,'\r\n'))
+  await check();await check(s=>s.replace(/\r?\n/g,'\r\n'))
   await assert.rejects(()=>check(s=>s.replace("if ((failedPreviewUntil.get(failureKey) || 0) > Date.now()) return ''",'')),undefined,'cooldown removal mutant escaped')
   console.log('preview failure cooldown: 3000 requests bounded, no offline record mutation, expiry/reset recovery, stale failure, real handshake literal/old worker rejection and CRLF/mutation passed')
 }

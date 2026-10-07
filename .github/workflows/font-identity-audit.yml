@@ -20,20 +20,6 @@ jobs:
         run: node build/rust/build-core-worker.cjs --required
       - name: Verify complete existing Windows diagnostics
         run: npm run verify
-      - name: Verify production directory batches against native worker
-        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
-        env:
-          HFM_TEST_NATIVE_WORKER: build/native/hfm-core-worker.exe
-        run: node build/diagnostics/check-network-directory-metadata.cjs
-      - name: Verify actual legacy storage and merged projection composition
-        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
-        run: node build/diagnostics/check-production-projection.cjs --report artifacts/real-feedback/projection.json
-      - name: Complete real-file refresh with interleaved foreground work
-        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
-        run: node build/diagnostics/run-real-feedback-work.cjs
-      - name: Same-state recovery, status, private preview and uninstall reopen
-        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
-        run: node build/diagnostics/check-preview-chain-performance.cjs --recovery-chain
       - name: Verify production identity compatibility and operation targets
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-identity-compatibility.cjs
@@ -58,12 +44,6 @@ jobs:
       - name: Verify bounded retries (real mutations are local-only)
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_mutation::'
-      - name: Verify shared file identity evidence
-        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
-        run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml shared_file_io::'
-      - name: Verify watcher diff evidence
-        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
-        run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml watcher::'
       - name: Accept production IDs, pagination and actual Electron DOM
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-identity-reproduction.cjs
@@ -73,9 +53,6 @@ jobs:
       - name: Verify floating scrollbar overlays with native Electron input
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node build/diagnostics/check-font-view-layout.cjs --dom-feedback
-      - name: Compare real F13 operation and PNG decode workload
-        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
-        run: node build/diagnostics/check-preview-chain-performance.cjs --work-comparison
       - name: Build application bundles
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: node node_modules/electron-vite/bin/electron-vite.js build
@@ -87,11 +64,4 @@ jobs:
             artifacts/font-identity-f01
             artifacts/font-identity-f04
             artifacts/list-preview
-            artifacts/real-feedback
-            !artifacts/**/*.ttf
-            !artifacts/**/*.otf
-            !artifacts/**/*.ttc
-            !artifacts/**/*.otc
-            !artifacts/**/*.woff
-            !artifacts/**/*.woff2
           retention-days: 14

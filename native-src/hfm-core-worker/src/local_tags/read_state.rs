@@ -183,26 +183,14 @@ mod tests {
     use super::*;
     use super::super::types::LocalTagsReadRow;
     use std::time::{SystemTime, UNIX_EPOCH};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static FIXTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     struct TestDb(std::path::PathBuf);
-    impl TestDb {
-        fn reserve(path: std::path::PathBuf) -> std::io::Result<Self> {
-            drop(fs::OpenOptions::new().write(true).create_new(true).open(&path)?);
-            // Cleanup ownership begins only after successful exclusive creation.
-            Ok(Self(path))
-        }
-    }
     impl Drop for TestDb {
         fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
     }
     fn fixture() -> (TestDb, Connection) {
-        let sequence = FIXTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let name = format!("hfm-local-tags-{}-{}-{}.db", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(), sequence);
-        // Windows wall-clock resolution is not unique across parallel tests.
-        // Reserve a fresh file atomically; never open another fixture's database.
-        let file = TestDb::reserve(std::env::temp_dir().join(name)).unwrap();
+        let name = format!("hfm-local-tags-{}-{}.db", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
+        let file = TestDb(std::env::temp_dir().join(name));
         let conn = Connection::open(&file.0).unwrap();
         conn.execute_batch("CREATE TABLE local_font_tags(font_id TEXT, font_path TEXT, tag_name TEXT, updated_at TEXT);
             CREATE TABLE app_state(key TEXT PRIMARY KEY, value TEXT);").unwrap();
@@ -210,26 +198,6 @@ mod tests {
     }
     fn row(id: &str, aliases: &[&str], path: &str) -> LocalTagsReadRow {
         LocalTagsReadRow { item_id: id.into(), aliases: aliases.iter().map(|x| x.to_string()).collect(), font_path: path.into() }
-    }
-    #[test]
-    fn failed_reservation_never_removes_another_fixture() {
-        let (file, conn) = fixture(); drop(conn);
-        let before = fs::read(&file.0).unwrap();
-        let error = TestDb::reserve(file.0.clone()).err().unwrap();
-        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
-        assert_eq!(fs::read(&file.0).unwrap(), before);
-    }
-    #[test]
-    fn concurrent_fixtures_have_independent_paths_tables_and_cleanup() {
-        let workers: Vec<_> = (0..12).map(|_| std::thread::spawn(|| {
-            let (file, conn) = fixture();
-            conn.execute("INSERT INTO local_font_tags VALUES ('own','','private','')", []).unwrap();
-            assert_eq!(conn.query_row("SELECT COUNT(*) FROM local_font_tags", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
-            let path = file.0.clone(); drop(conn); drop(file);
-            assert!(!path.exists()); path
-        })).collect();
-        let paths: std::collections::HashSet<_> = workers.into_iter().map(|worker| worker.join().unwrap()).collect();
-        assert_eq!(paths.len(), 12);
     }
     #[test]
     fn hydration_shared_alias_and_path_preserve_all_items() {

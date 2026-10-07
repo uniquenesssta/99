@@ -14,11 +14,6 @@ export interface FontItem {
   id: string
   sourceId?: string
   path: string
-  fileAvailability?: 'available' | 'missing' | 'unavailable'
-  fileRelinkRequired?: boolean
-  tagBindingReadOnly?: boolean
-  recoveryContentHash?: string
-  recoveryFileStamp?: string
   fileName: string
   family: string
   fullName: string
@@ -42,8 +37,6 @@ export interface FontItem {
   __localTagRevision?: number
   __sharedTagDirtyUntil?: number
   __localTagDirtyUntil?: number
-  /** Display-only main-owned recovery hint; never installation or mutation authority. */
-  pendingUninstall?: { message: string; cancelled?: boolean }
   systemInstalled: boolean
   installStatusKnown?: boolean
   systemInstallMatches: SystemInstalledFont[]

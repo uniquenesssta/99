@@ -15,7 +15,7 @@
     "src/main/library/runtime/localFontTagRustAdapterRuntime.ts": {
       "rustLocalTagReadRow": "6f476772233cf9b990aa0d1d485dd892d8bf608ac3c98764fa3b034033beb8a0",
       "tryReadLocalTagsWithRust": "1c1eae36adc0f37a2338cdac70e6ad28e57573fd678fe85ed0d051b313b7f874",
-      "trySetLocalTagsWithRust": "9218f19c7998dc515cd1acfd5bd7e8161569eb2285246f19504f7a3418ba6170",
+      "trySetLocalTagsWithRust": "f7ddecbcbe3893fca82999334e75c402202f8aaa8ddbcaf423650647d6e8af73",
       "tryDeleteLocalTagWithRust": "2010a9088b4baabcd0a9966c20d53e4a1534141dcb013be997263074b314215e"
     },
     "src/main/library/runtime/localFontTagMutationEffectsRuntime.ts": {
@@ -27,18 +27,17 @@
   },
   "transactions": [
     "41a493e243c60d07511b2b4c1d99e556d8c5dea0d3b0ab4d15cc25bf5bf44990",
-    "b3d7cb2110a275e55c405f4f0863a4449c990a6c5c32308c77ce97e86bb4e4c3",
+    "f12e5d0b0a1a49833174208d2bc5fd9e4cc4b38da520cfceb0b1e5f00cace387",
     null
   ],
   "behavioralChecks": {
-    "reason": "F02 intentionally changes path ownership; old decomposition hashes cannot require the former cross-path behavior. Unchanged function/transaction locks remain. F09 intentionally adds current-tag compare-and-set, current-file/missing-source validation and proven favorite/protection preservation to batch transaction 1 and private Rust transport. Single/delete transactions and unrelated helper locks retain their exact hashes.",
+    "reason": "F02 intentionally changes path ownership; old decomposition hashes cannot require the former cross-path behavior. Unchanged function/transaction locks remain.",
     "functions": [
       "deleteLocalTagForFontIdentity",
       "insertLocalTagsForFont",
       "hydrateLocalTagsForFonts",
       "rustLocalTagRow",
-      "deleteLocalFontTag transaction: archive dismissal rolls back with active bindings and catalog",
-      "F09 recovery batch: source/destination tag conflicts roll back the whole transaction; proven state moves retain source and explicit target decisions"
+      "deleteLocalFontTag transaction: archive dismissal rolls back with active bindings and catalog"
     ],
     "commands": [
       "node build/diagnostics/check-local-user-state.cjs --case=identity",

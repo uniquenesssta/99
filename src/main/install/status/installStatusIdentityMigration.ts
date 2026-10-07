@@ -8,7 +8,7 @@ type IndexRow = { root_path: string; relative_path: string; file_size: number; m
 const hash = (value: string) => createHash('sha1').update(value).digest('hex')
 export type InstallIdentityMigrationReport = {
   migrated: number; unresolved: number; noIdentityCandidate: number;
-  signatureMismatch: number; ambiguous: number; invalidCandidates: number; invalidSamples: Array<{ row: number; reason: string }>;
+  signatureMismatch: number; ambiguous: number;
 }
 function signature(font: FontItem, id: string): string {
   return hash([id, normalizePathForCacheCompare(font.path), font.fileName || '', Math.round(font.fileSize || 0), Math.round(font.modifiedAt || 0), font.managedInstallPath || '', font.managedRegistryName || ''].join('|'))
@@ -19,10 +19,7 @@ function signature(font: FontItem, id: string): string {
 function installIdentityCandidates(rows: IndexRow[]) {
   const candidates = new Map<string, Map<string, FontItem>>()
   const legacyIds = new Set<string>()
-  const invalidSamples: Array<{ row: number; reason: string }> = []
-  let invalidCandidates = 0
-  for (const [index, row] of rows.entries()) {
-    try {
+  for (const row of rows) {
     const source = JSON.parse(row.font_json) as FontItem
     const path = win32.isAbsolute(row.relative_path) ? row.relative_path : win32.join(row.root_path, row.relative_path)
     const font = { ...source, path, fileName: win32.basename(path), fileSize: row.file_size, modifiedAt: row.modified_at }
@@ -43,12 +40,8 @@ function installIdentityCandidates(rows: IndexRow[]) {
         candidates.get(key)!.set(font.id, font)
       }
     }
-    } catch (error) {
-      invalidCandidates++
-      if (invalidSamples.length < 3) invalidSamples.push({ row: index, reason: (error instanceof Error ? error.message : String(error)).slice(0, 160) })
-    }
   }
-  return { candidates, legacyIds, invalidCandidates, invalidSamples }
+  return { candidates, legacyIds }
 }
 
 // Ignore unrelated index timestamps/labels. A retry is needed only when the
@@ -63,10 +56,10 @@ export function migrateInstallStatusIdentity(db: any, rows: IndexRow[], report?:
     legacy_id TEXT NOT NULL, signature TEXT NOT NULL, runtime_id TEXT NOT NULL, payload_json TEXT NOT NULL,
     PRIMARY KEY(legacy_id, signature)
   )`).run()
-  const { candidates, legacyIds, invalidCandidates, invalidSamples } = installIdentityCandidates(rows)
+  const { candidates, legacyIds } = installIdentityCandidates(rows)
   const result = db.transaction(() => {
     let migrated = 0
-    const summary: InstallIdentityMigrationReport = { migrated: 0, unresolved: 0, noIdentityCandidate: 0, signatureMismatch: 0, ambiguous: 0, invalidCandidates, invalidSamples }
+    const summary: InstallIdentityMigrationReport = { migrated: 0, unresolved: 0, noIdentityCandidate: 0, signatureMismatch: 0, ambiguous: 0 }
     const receipt = db.prepare('SELECT 1 FROM install_identity_migrations WHERE legacy_id=? AND signature=?')
     const saveReceipt = db.prepare('INSERT INTO install_identity_migrations VALUES (?,?,?,?)')
     const insert = db.prepare('INSERT OR IGNORE INTO install_status(font_id,signature,installed,by_type,matches_json,checked_at,system_default) VALUES (?,?,?,?,?,?,?)')

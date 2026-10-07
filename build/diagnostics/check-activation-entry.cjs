@@ -39,7 +39,7 @@ function loadModules(globals, mocks, transforms = {}) {
       }
       throw Error('Unmocked dependency '+id)
     }
-    vm.runInNewContext(code, {module,exports:module.exports,require:req,console,process,Buffer,Date,Map,WeakMap,Set,Math,performance,AbortController,AbortSignal,setTimeout,clearTimeout,...globals},{filename:file})
+    vm.runInNewContext(code, {module,exports:module.exports,require:req,console,process,Buffer,Date,Map,WeakMap,Set,Math,performance,setTimeout,clearTimeout,...globals},{filename:file})
     return module.exports
   }
   return load

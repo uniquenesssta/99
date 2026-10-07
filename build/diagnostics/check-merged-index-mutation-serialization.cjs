@@ -20,8 +20,8 @@ function loadTypeScriptModule(rel, localRequire = require) {
     }
   }).outputText
   const module = { exports: {} }
-  new Function('exports', 'require', 'module', output)(module.exports, id => id.endsWith('/operationTraceContext') ? require('./check-operation-chain.cjs').loader()('src/main/logging/operationTraceContext.ts') : id.endsWith('/shutdownCoordinatorRuntime') ? require('./check-operation-chain.cjs').loader()('src/main/app/shutdownCoordinatorRuntime.ts') : id.endsWith('/sharedFileSystemRuntime')
-      ? { ...require('./check-operation-chain.cjs').loader()('src/main/path/sharedFileSystemRuntime.ts'), sharedFileSystem: localRequire('node:fs').promises, sharedSqliteReadSnapshot: async () => undefined }
+  new Function('exports', 'require', 'module', output)(module.exports, id => id.endsWith('/shutdownCoordinatorRuntime') ? require('./check-operation-chain.cjs').loader()('src/main/app/shutdownCoordinatorRuntime.ts') : id.endsWith('/sharedFileSystemRuntime')
+      ? { sharedFileSystem: localRequire('node:fs').promises, sharedSqliteReadSnapshot: async () => undefined }
       : id.endsWith('/sharedIoProcessRuntime')
         ? require('./check-operation-chain.cjs').loader()('src/main/path/sharedIoProcessRuntime.ts')
         : id.endsWith('/rustSharedIoCommandRuntime') ? { sharedIoResourceKeys: async () => [] } : localRequire(id), module)
@@ -66,7 +66,7 @@ for (const needle of [
 ]) assert(watcherSource.includes(needle), `watcher lifecycle protection missing ${needle}`)
 
 const rendererEventSource = read('src/renderer/src/runtime/app/effects/useFontIndexChangedEventRuntime.ts')
-assert(rendererEventSource.includes('current.refreshDatabaseDerivedState()') && rendererEventSource.includes('pendingRefresh') && !rendererEventSource.includes('current.requestPreviewFont('), 'watcher commits must coalesce database invalidation without foreground preview demand')
+assert(rendererEventSource.includes('current.refreshDatabaseDerivedState()'), 'watcher index commits must invalidate renderer database pages and metrics')
 
 async function runBehaviorChecks() {
   const { createMergedIndexMutationCoordinatorRuntime } = loadTypeScriptModule(

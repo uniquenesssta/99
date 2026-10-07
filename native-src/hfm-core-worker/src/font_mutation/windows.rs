@@ -42,6 +42,14 @@ const HKLM: Handle = (-2147483646isize) as Handle;
     fn SHGetFolderPathW(window:Handle, folder:i32, token:Handle, flags:u32, path:*mut u16)->i32;
 }
 #[link(name="sfc")] extern "system" { fn SfcIsFileProtected(rpc:Handle, path:*const u16)->i32; }
+#[link(name="bcrypt")] extern "system" {
+    fn BCryptOpenAlgorithmProvider(out:*mut Handle, name:*const u16, implementation:*const u16, flags:u32)->i32;
+    fn BCryptCreateHash(algorithm:Handle, out:*mut Handle, object:*mut u8, size:u32, secret:*const u8, secret_size:u32, flags:u32)->i32;
+    fn BCryptHashData(hash:Handle, data:*const u8, size:u32, flags:u32)->i32;
+    fn BCryptFinishHash(hash:Handle, output:*mut u8, size:u32, flags:u32)->i32;
+    fn BCryptDestroyHash(hash:Handle)->i32;
+    fn BCryptCloseAlgorithmProvider(algorithm:Handle, flags:u32)->i32;
+}
 fn wide(s:&str)->Vec<u16>{std::ffi::OsStr::new(s).encode_wide().chain(Some(0)).collect()}
 fn fail(s:&str)->io::Error{io::Error::other(s)}
 fn last()->io::Error{io::Error::last_os_error()}
@@ -56,7 +64,7 @@ fn receive(input:&mut impl BufRead)->io::Result<Value>{
 }
 fn gate(input:&mut impl BufRead,out:&mut impl Write,stage:&str)->io::Result<()> {
     let mut message=json!({"gate":stage});
-    if !stage.starts_with("elevated-") {message["references"]=snapshot()?;}
+    if stage=="file" {message["references"]=snapshot()?;}
     emit(out,&message)?;
     if receive(input)?.get("allow")!=Some(&Value::Bool(true)){return Err(fail("protection recheck refused mutation"));} Ok(())
 }
@@ -81,8 +89,14 @@ fn open_font_access(path:&str,delete:bool,write_attributes:bool)->io::Result<Fil
 }
 fn digest(file:&File)->io::Result<String>{
     use std::io::{Seek,SeekFrom};
-    let mut file=file; file.seek(SeekFrom::Start(0))?;
-    crate::windows_font_digest::sha256(file,u64::MAX).map(|(hash,_)|hash)
+    let mut f=file; f.seek(SeekFrom::Start(0))?;
+    struct Hash(Handle,Handle);impl Drop for Hash{fn drop(&mut self){unsafe{if !self.1.is_null(){BCryptDestroyHash(self.1);}BCryptCloseAlgorithmProvider(self.0,0);}}}
+    unsafe {
+        let mut a=ptr::null_mut();if BCryptOpenAlgorithmProvider(&mut a,wide("SHA256").as_ptr(),ptr::null(),0)<0{return Err(fail("SHA256 provider unavailable"))}
+        let mut h=Hash(a,ptr::null_mut());if BCryptCreateHash(a,&mut h.1,ptr::null_mut(),0,ptr::null(),0,0)<0{return Err(fail("SHA256 allocation failed"))}
+        let mut buffer=[0u8;65536];loop{let n=f.read(&mut buffer)?;if n==0{break}if BCryptHashData(h.1,buffer.as_ptr(),n as u32,0)<0{return Err(fail("SHA256 read failed"))}}
+        let mut hash=[0u8;32];if BCryptFinishHash(h.1,hash.as_mut_ptr(),32,0)<0{return Err(fail("SHA256 finish failed"))}Ok(hash.iter().map(|v|format!("{v:02x}")).collect())
+    }
 }
 fn roots()->io::Result<(String,String)>{roots_for_token(ptr::null_mut())}
 fn roots_for_token(token:Handle)->io::Result<(String,String)>{
@@ -211,29 +225,8 @@ fn release_font_resources(p:&Plan,elevated:bool,input:&mut impl BufRead,out:&mut
     if released>0 {notify_font_change("resource-release",out);}
     result
 }
-// Diagnostic writes must stay on stderr: broker Track treats stdout writes as
-// prepared and uses that fact to forbid replay through automatic elevation.
-struct MutationTrace { operation:u64, started:std::time::Instant }
-impl MutationTrace {
-    fn new()->Self {
-        static NEXT:std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(1);
-        Self{operation:NEXT.fetch_add(1,std::sync::atomic::Ordering::Relaxed),started:std::time::Instant::now()}
-    }
-    fn event(&self,event:&str,generation:u32,detail:Value) {
-        let unix_ms=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|v|v.as_millis()).ok();
-        eprintln!("font mutation lifecycle: {}",json!({"pid":std::process::id(),"operation":self.operation,"unixMs":unix_ms,"elapsedMs":self.started.elapsed().as_millis(),"event":event,"handleGeneration":generation,"detail":detail}));
-    }
-}
 #[derive(Default)]
-struct FailureDetails { stage:&'static str, ntstatus:Option<u32>, uncertain:bool }
-// The caller clears uncertainty only after the matching effect/done receipt
-// has crossed the transport. A committed effect without ACK is never replayable.
-fn until_receipted(details:&mut FailureDetails,action:impl FnOnce()->io::Result<()>)->io::Result<()> {
-    details.uncertain=true;
-    action()?;
-    details.uncertain=false;
-    Ok(())
-}
+struct FailureDetails { stage:&'static str, ntstatus:Option<u32> }
 fn notify_font_change(reason:&str,out:&mut impl Write) {
     let result=crate::font_resource::notify_font_change_now(false);
     eprintln!("font change notification: reason={reason}, ok={}, detail={:?}",result.is_ok(),result.as_ref().err());
@@ -279,8 +272,6 @@ fn reopen_verified_target(p:&Plan,previous:File,open:impl FnOnce()->io::Result<F
     Ok(file)
 }
 fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufRead,out:&mut impl Write,details:&mut FailureDetails)->io::Result<()> {
-    let trace=MutationTrace::new();
-    trace.event("execute-start",0,json!({"target":p.path,"deleteFile":p.delete_file,"records":p.records.len(),"elevated":elevated,"plannedIdentity":p.identity}));
     let mut stage="validate-plan";
     let mut registry_changed=false;
     let mut native_status=None;
@@ -289,12 +280,9 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     // Check mutation permissions before registry/file effects. A sharing-only
     // cleanup may first release gated session resources; it marks prepared.
     stage="open-font";
-    trace.event("target-open-start",1,json!({"deleteAccess":p.delete_file}));
     let file=open_mutation_target(p,elevated,input,out)?;
-    trace.event("target-opened",1,json!({"deleteAccess":p.delete_file}));
     stage="identity-preflight";
     if p.identity.as_ref()!=Some(&identity(&file)?)||digest(&file)?!=p.sha256{return Err(fail("font identity/content changed"))}
-    trace.event("target-identity-confirmed",1,json!({"identity":p.identity}));
     stage="readonly-preflight";
     let mut permissions=file.metadata()?.permissions();
     if (p.delete_file || p.preflight_file) && permissions.readonly() {
@@ -306,7 +294,7 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         // replay after an attribute change. Keep other attributes intact.
         emit(out,&json!({"prepared":true}))?;
         stage="readonly-normalization";
-        gate(input,out,if elevated{"elevated-attributes"}else{"attributes"})?;
+        gate(input,out,"attributes")?;
         permissions.set_readonly(false);
         file.set_permissions(permissions)?;
         if file.metadata()?.permissions().readonly(){return Err(fail("安装副本的只读属性未能解除；未删除本步骤的注册记录。"))}
@@ -317,42 +305,27 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     emit(out,&json!({"prepared":true}))?;
     for (r,k) in p.records.iter().zip(keys.iter()) {
         stage="registry-gate";
-        gate(input,out,if elevated{"elevated-registry"}else{"registry"})?;verify_record(k,r)?;
+        gate(input,out,"registry")?;verify_record(k,r)?;
         stage="registry-delete";
-        until_receipted(details,|| {
-            delete_record(r)?;
-            registry_changed=true;
-            trace.event("registry-committed",1,json!({"scope":r.scope,"name":r.name}));
-            emit(out,&json!({"effect":"registry","scope":r.scope,"name":r.name}))
-        })?;
+        delete_record(r)?;
+        registry_changed=true;
+        emit(out,&json!({"effect":"registry","scope":r.scope,"name":r.name}))?;
     }
-    if registry_changed {trace.event("registry-notification-start",1,json!({}));}
-    let had_registry_change=registry_changed;
     notify_registry_change(&mut registry_changed,out);
-    if had_registry_change {trace.event("registry-notification-finished",1,json!({}));}
     if p.delete_file {
         let mut held=Some(file);let mut renewal_pending=false;let mut renewed=false;let mut renewal_error=None;
-        let mut generation=1u32;let mut attempt=0u32;
         let disposition=retry_file_disposition(|| {
-        attempt+=1;
-        trace.event("disposition-attempt-start",generation,json!({"attempt":attempt,"renewalPending":renewal_pending}));
         native_status=None;
         if renewal_pending {
             stage="file-handle-renewal";
             // The original DELETE handle is closed once only for CANNOT_DELETE.
             // The new handle must identify the same file, not just equal bytes.
             let previous=held.take().ok_or_else(||fail("missing deletion handle"))?;
-            trace.event("target-renewal-start",generation,json!({"attempt":attempt}));
-            let reopened=match reopen_verified_target(p,previous,|| {
-                // reopen_verified_target has dropped the old target before this closure.
-                trace.event("old-target-handle-closed",generation,json!({"attempt":attempt}));
-                open_font(&p.path,true)
-            }) {
+            let reopened=match reopen_verified_target(p,previous,||open_font(&p.path,true)) {
                 Ok(file)=>file,
                 Err(error)=>{renewal_error=Some(error);return Err(fail("file handle renewal refused"));}
             };
-            held=Some(reopened);renewal_pending=false;renewed=true;generation+=1;
-            trace.event("renewed-target-identity-confirmed",generation,json!({"attempt":attempt,"identity":p.identity}));
+            held=Some(reopened);renewal_pending=false;renewed=true;
         }
         let file=held.as_ref().ok_or_else(||fail("missing deletion handle"))?;
         stage="file-identity-recheck";
@@ -361,29 +334,21 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
         // Multiple loads can retain multiple resource references. Each removal
         // is separately gated; private or other-session resources are not forced.
         stage="font-resource-release";
-        trace.event("resource-release-start",generation,json!({"attempt":attempt}));
         release_font_resources(p,elevated,input,out)?;
-        trace.event("resource-release-finished",generation,json!({"attempt":attempt}));
         gate(input,out,if elevated{"elevated-file"}else{"file"})?;
         if p.identity.as_ref()!=Some(&identity(&file)?){return Err(fail("font identity changed before disposition"))}
         stage="file-disposition";
         let result=mark_file_for_deletion_status(file,&mut native_status);
-        trace.event("disposition-returned",generation,json!({"attempt":attempt,"ok":result.is_ok(),"ntstatus":native_status,"code":result.as_ref().err().and_then(|e|e.raw_os_error())}));
         if !renewed && native_status==Some(0xC0000121) {
             renewal_pending=true;
             eprintln!("font deletion handle renewal scheduled: ntstatus=0xC0000121, same identity required, retry budget unchanged");
         }
         result
-        },|ms| {
-            trace.event("retry-wait-start",0,json!({"delayMs":ms,"targetHandleHeld":true}));
-            std::thread::sleep(std::time::Duration::from_millis(ms));
-            trace.event("retry-wait-finished",0,json!({"delayMs":ms,"targetHandleHeld":true}));
-        });
+        },|ms|std::thread::sleep(std::time::Duration::from_millis(ms)));
         // Stop renewal errors immediately while retaining their original OS code.
         if let Some(error)=renewal_error{return Err(error)}
         disposition?;
         drop(held);
-        trace.event("delete-target-handle-closed",generation,json!({"dispositionOk":true}));
         // A new object at the old path must never be removed during verification.
         stage="file-removal-verification";
         if Path::new(&p.path).try_exists()?{return Err(fail("file deletion not confirmed; do not retry without new identity"))}
@@ -391,9 +356,6 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
     }
     Ok(())
     })();
-    // All target handles scoped inside execute's closure have now been dropped,
-    // including on an early error. This does not claim that external mappings closed.
-    trace.event("execute-target-handles-released",0,json!({"stage":stage,"ok":result.is_ok(),"ntstatus":native_status,"code":result.as_ref().err().and_then(|e|e.raw_os_error())}));
     // A later record/gate may fail after an earlier record was committed.
     notify_registry_change(&mut registry_changed,out);
     details.stage=stage;details.ntstatus=native_status;
@@ -407,15 +369,6 @@ fn execute(p:&Plan,elevated:bool,original_user:Option<&str>,input:&mut impl BufR
 #[cfg(test)]
 mod disposition_tests {
     use super::*;
-    #[test]
-    fn committed_or_dispatched_work_without_receipt_stays_uncertain() {
-        let mut details=FailureDetails::default();let mut committed=0;
-        let error=until_receipted(&mut details,|| {committed+=1;Err(io::Error::new(io::ErrorKind::BrokenPipe,"ACK lost"))}).unwrap_err();
-        assert_eq!(committed,1);assert_eq!(error.kind(),io::ErrorKind::BrokenPipe);assert!(details.uncertain);
-        let error=until_receipted(&mut details,|| {let mut child=io::Cursor::new(Vec::<u8>::new());receive(&mut child).map(|_|())}).unwrap_err();
-        assert!(error.to_string().contains("closed"));assert!(details.uncertain);
-        until_receipted(&mut details,|| Ok(())).unwrap();assert!(!details.uncertain);
-    }
     struct Fixture(PathBuf);
     impl Fixture {
         fn new()->Self {
@@ -567,10 +520,7 @@ impl Elevated {
     fn execute(&mut self,plan:&Plan,input:&mut impl BufRead,out:&mut impl Write)->io::Result<()> {
         emit(&mut self.output,&serde_json::to_value(plan)?)?;
         loop {let mut reply=receive(&mut self.input)?;
-            if let Some(stage)=reply.get("gate").and_then(Value::as_str) {
-                let original_stage=stage.trim_start_matches("elevated-").to_string();
-                reply["gate"]=json!(original_stage);reply["references"]=snapshot()?;
-            }
+            if reply.get("gate").and_then(Value::as_str)==Some("elevated-file") {reply["gate"]=json!("file");reply["references"]=snapshot()?;}
             emit(out,&reply)?;
             if reply.get("gate").is_some(){let allow=receive(input)?;emit(&mut self.output,&allow)?;}
             if reply.get("done").is_some(){return Ok(())}
@@ -592,7 +542,7 @@ fn elevated(args:&[String])->io::Result<()> {
     loop {let value=receive(&mut input)?;let plan:Plan=serde_json::from_value(value)?;
         let mut details=FailureDetails::default();
         let result=execute(&plan,true,Some(&original_user),&mut input,&mut output,&mut details);
-        emit(&mut output,&json!({"done":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"uncertain":details.uncertain,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
+        emit(&mut output,&json!({"done":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
     }
 }
 pub fn run(args:&[String])->io::Result<()> {
@@ -609,7 +559,7 @@ pub fn run(args:&[String])->io::Result<()> {
             continue;
         }
         let mut plan:Plan=serde_json::from_value(value)?;
-        let mut details=FailureDetails{stage:"plan-identity",ntstatus:None,uncertain:false};
+        let mut details=FailureDetails{stage:"plan-identity",ntstatus:None};
         let result=(||->io::Result<()> {
             validate(&plan,false,None)?;
             // Capture identity without DELETE permission before any UAC wait.
@@ -629,34 +579,11 @@ pub fn run(args:&[String])->io::Result<()> {
             if let Some(code)=elevation_failure{return Err(io::Error::from_raw_os_error(code))}
             if elevated.is_none(){match Elevated::start(){Ok(child)=>elevated=Some(child),Err(error)=>{elevation_failure=Some(error.raw_os_error().unwrap_or(5));return Err(error)}}}
             // Parent revalidates protection again on each gate from the child.
-            details.stage="elevated-transport";
-            until_receipted(&mut details,|| elevated.as_mut().unwrap().execute(&plan,&mut input,&mut output))?;
+            elevated.as_mut().unwrap().execute(&plan,&mut input,&mut output)?;
             Ok(())
         })();
         // Elevated replies already contain a done receipt. Suppress the broker
         // duplicate using a separate completion marker at the transport layer.
-        emit(&mut output,&json!({"brokerDone":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"uncertain":details.uncertain,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
+        emit(&mut output,&json!({"brokerDone":true,"ok":result.is_ok(),"stage":details.stage,"ntstatus":details.ntstatus,"code":result.as_ref().err().and_then(|e|e.raw_os_error()),"message":result.err().map(|e|e.to_string())}))?;
     }
-}
-
-pub(super) fn pin_recovery_file(path: &str, expected_physical: &str, expected_sha256: &str) -> io::Result<File> {
-    let file = OpenOptions::new().read(true).share_mode(1).open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.len() > 256 * 1024 * 1024 {
-        return Err(fail("recovery target type/size changed; bindings retained"));
-    }
-    let actual_physical = physical(&file)?;
-    if recovery_path_key(&actual_physical) != recovery_path_key(expected_physical) {
-        return Err(fail(&format!("recovery target physical path changed: expected={expected_physical}, actual={actual_physical}; bindings retained")));
-    }
-    if digest(&file)? != expected_sha256 {
-        return Err(fail("recovery target content changed; bindings retained"));
-    }
-    Ok(file)
-}
-
-fn recovery_path_key(path: &str) -> String {
-    let lower = path.replace('/', "\\").to_lowercase();
-    let native = if let Some(unc) = lower.strip_prefix(r"\\?\unc\") { format!(r"\\{unc}") } else { lower };
-    key(&native)
 }

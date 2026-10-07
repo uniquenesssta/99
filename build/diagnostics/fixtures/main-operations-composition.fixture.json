@@ -169,10 +169,6 @@
       "result": "<undefined>",
       "calls": [
         [
-          "createTagFontQueryRuntime.invalidate",
-          []
-        ],
-        [
           "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
           []
         ],

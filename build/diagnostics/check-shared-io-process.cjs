@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict')
-process.env.HFM_LOG_DETAIL = 'debug'
 const fs = require('node:fs'), fsp = fs.promises, os = require('node:os'), path = require('node:path')
 const { loader } = require('./check-operation-chain.cjs')
 const root = path.resolve(__dirname,'../..')
@@ -62,10 +61,6 @@ async function main(){
   const ready4=path.join(dir,'late'), end=new AbortController()
   const late=run(`require('node:fs').writeFileSync(${JSON.stringify(ready4)},'ready');setTimeout(()=>console.log('late'),1000)`,['late'],{signal:end.signal}).catch(e=>e)
   await until(()=>fs.existsSync(ready4));end.abort();assert.equal((await late).reason,'cancelled');await runtime.whenIdle()
-  const beforeQuiet=runtime.status().metrics.started, logStart=logs.length
-  process.env.HFM_LOG_DETAIL='';await run("console.log('quiet')",['quiet']);await runtime.whenIdle()
-  assert.equal(runtime.status().metrics.started,beforeQuiet+1);assert(!logs.slice(logStart).some(line=>line.startsWith('shared io started:')))
-  process.env.HFM_LOG_DETAIL='debug'
   runtime.stop();assert.equal((await run('').catch(e=>e)).outcome,'not-started')
   completed.push('late result discarded, stop closes admission')
  }finally{runtime.stop();await runtime.whenIdle();clearTimeout(watchdog);await fsp.rm(dir,{recursive:true,force:true})}

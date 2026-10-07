@@ -1,8 +1,3 @@
-import { openFontUninstallReceipts } from '../install/fontUninstallReceiptRuntime';
-import { createTagRelinkAuthorizationRuntime } from '../library/tagRelinkAuthorizationRuntime';
-import { createTagFontQueryRuntime, tagQueryScope } from '../library/tagFontQueryRuntime';
-import { openTagFontSnapshots } from '../library/tagFontSnapshotRuntime';
-import { createFontMemoryQueryMatcher } from '../library/fontMemoryQueryMatcherRuntime';
 import type {
   FontItem,
   FontMetricsResult,
@@ -38,7 +33,6 @@ type Core = ReturnType<typeof createMainCoreCompositionRuntime>;
 type Storage = ReturnType<typeof createMainDataStorageCompositionRuntime>;
 
 export interface MainDataQueryOptions {
-  onProjectionCommitted?: (revision: number) => void;
   applyPendingActivationState: (items: FontItem[]) => FontItem[];
   hasPendingActivationState?: () => boolean;
   appWatchedFolders: Storage['appWatchedFolders'];
@@ -54,7 +48,7 @@ export interface MainDataQueryOptions {
     'invalidateRustCoreSchedulerCaches' | 'cancelRustCoreSchedulerScopes' |
     'noteRustCoreSchedulerInteractiveActivity' | 'runRustMergedIndexPageQuery' |
     'runRustMergedIndexRebuild' | 'runRustMergedIndexSync' |
-    'runRustMergedIndexIdsQuery' | 'runRustMergedIndexMetricsQuery' | 'runRustSharedMetadataOverlayRead'
+    'runRustMergedIndexIdsQuery' | 'runRustMergedIndexMetricsQuery'
   >;
   migrationDiagnosticsRuntime: Core['migrationDiagnosticsRuntime'];
   dataPath: Core['paths']['dataPath'];
@@ -121,7 +115,6 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     readInstallStatusIndex,
   } = options;
   let fontQueryFacadeRuntimeRef: FontQueryFacadeRuntime | null = null;
-  let tagFonts: ReturnType<typeof createTagFontQueryRuntime> | undefined;
 
   function requireFontQueryFacadeRuntime(): FontQueryFacadeRuntime {
     if (!fontQueryFacadeRuntimeRef)
@@ -134,20 +127,6 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   const { inferFontSearchCategory } = fontSearchRuntime;
 
   const fontMemoryQueryRuntime = createFontMemoryQueryRuntime({
-    resultCacheMax: FONT_QUERY_RESULT_CACHE_MAX,
-    resultCacheTtlMs: FONT_QUERY_RESULT_CACHE_TTL_MS,
-    appWatchedFolders,
-    loadSharedFontsForFolders,
-    loadSharedFontsForFoldersFresh,
-    hydrateLocalTagsForFonts,
-    hydrateInstallStatusForFonts,
-    normalizePathForCacheCompare,
-    isSystemInstalledRecord,
-    isPathInWindowsFonts,
-    inferFontSearchCategory,
-  });
-
-  const { sharedFontMatchesRequest } = createFontMemoryQueryMatcher({
     resultCacheMax: FONT_QUERY_RESULT_CACHE_MAX,
     resultCacheTtlMs: FONT_QUERY_RESULT_CACHE_TTL_MS,
     appWatchedFolders,
@@ -177,16 +156,10 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
       tagMetadataRevisionBarrier.cacheKeySuffixForRequest(request),
   });
 
-  const { invalidateFontQueryPageCache, queryFontPageInLibrary: queryCachedFontPage } =
+  const { invalidateFontQueryPageCache, queryFontPageInLibrary } =
     fontPageQueryCacheRuntime;
 
-  async function queryFontPageInLibrary(request: FontQueryRequest): Promise<FontQueryPageResult> {
-    const page = await queryCachedFontPage(request);
-    return { ...page, items: openFontUninstallReceipts(await openLibraryDb()).hydrate(page.items) };
-  }
-
   function clearFontQueryCaches(): void {
-    tagFonts?.invalidate();
     invalidateFontQueryResultCache();
     invalidateFontQueryPageCache();
     rustCoreWorkerRuntime.invalidateRustCoreSchedulerCaches([
@@ -226,9 +199,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   async function hydrateInstallStatusForFonts(
     items: FontItem[],
   ): Promise<FontItem[]> {
-    const hydrated = await requireFontQueryFacadeRuntime().hydrateInstallStatusForFonts(items);
-    if (!hydrated.length) return hydrated;
-    return openFontUninstallReceipts(await openLibraryDb()).hydrate(hydrated);
+    return requireFontQueryFacadeRuntime().hydrateInstallStatusForFonts(items);
   }
 
   const mergedIndexPageRuntime = createMergedIndexPageRuntime({
@@ -267,18 +238,8 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     delayToEventLoop,
     tagRevisionSnapshotForRequest: (request) =>
       tagMetadataRevisionBarrier.snapshotForRequest(request),
-    readInstallStatusForProjection: async items => {
-      const { results } = await readInstallStatusIndex(items, { enqueueMissTasks: false });
-      return items.map(item => {
-        const result = results[item.id];
-        const known = !!result && result.known !== false;
-        return { ...item, installStatusKnown: known, systemInstalled: known && result.installed && result.by !== 'managed',
-          active: known && (result.by === 'managed' || result.by === 'both'), systemInstallMatches: known ? result.matches : [] };
-      });
-    },
     onMergedIndexCommitted: ({ reason, sequence, revision }) => {
       clearFontQueryCaches();
-      options.onProjectionCommitted?.(revision);
       appendStartupLog(
         `local merged index commit invalidated query caches: reason=${reason}, sequence=${sequence}, revision=${revision}`,
       );
@@ -319,34 +280,19 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   const { findFontItemInRootIndexes, queryFontPageFromRootIndexes } =
     rootIndexCoordinator;
 
-  const relinkAuthorization = createTagRelinkAuthorizationRuntime(openLibraryDb);
-
   async function mainProcessFontIndexContains(identity: {
     comparePath: string;
   }): Promise<boolean> {
-    return Boolean(await findFontItemInRootIndexes("", identity.comparePath)) || relinkAuthorization.contains(identity.comparePath);
+    return Boolean(await findFontItemInRootIndexes("", identity.comparePath));
   }
-
-  tagFonts = createTagFontQueryRuntime({
-    canReadDetached: relinkAuthorization.canReadDetached,
-    readDetachedState: relinkAuthorization.readDetachedState,
-    findPrevious: path => findFontItemInRootIndexes("", normalizePathForCacheCompare(path), true),
-    openLibraryDb, roots: appWatchedFolders,
-    readShared: rustCoreWorkerRuntime.runRustSharedMetadataOverlayRead,
-    queryLive: (request, limit, offset) => requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(request, limit, offset),
-    hydrate: async items => options.hydrateLocalFavoritesForFonts(await hydrateInstallStatusForFonts(await hydrateLocalTagsForFonts(items))),
-    matches: sharedFontMatchesRequest, compare: compareSharedFonts,
-  });
 
   async function queryFontPageInLibraryUncached(
     request: FontQueryRequest,
     limit: number,
     offset: number,
   ): Promise<FontQueryPageResult> {
-    const db = await openLibraryDb();
-    if (tagQueryScope(request)) return tagFonts!.query(request, limit, offset);
+    await openLibraryDb();
     const result = await requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(request, limit, offset);
-    openTagFontSnapshots(db).schedule(result.items.filter(item => item.tagNames?.length || item.localTagNames?.length), appendStartupLog);
     return { ...result, items: await options.hydrateLocalFavoritesForFonts(await hydrateInstallStatusForFonts(result.items)) };
   }
 
@@ -354,10 +300,6 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     requestInput: FontQueryRequest,
   ): Promise<FontQueryResult> {
     await openLibraryDb();
-    if (tagQueryScope(requestInput)) {
-      const page = await tagFonts!.query(requestInput, Math.max(1, requestInput.limit || FONT_SEARCH_RESULT_LIMIT_DEFAULT), 0);
-      return { queryKey: page.queryKey, ids: page.items.map(item => item.id), total: page.total, truncated: page.truncated, engine: page.engine, elapsedMs: page.elapsedMs };
-    }
     return requireFontQueryFacadeRuntime().queryFontsInLibrary(requestInput);
   }
 
@@ -411,15 +353,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
 
   async function getFontMetricsFromLibrary(): Promise<FontMetricsResult> {
     await openLibraryDb();
-    const metrics = await requireFontQueryFacadeRuntime().getFontMetricsFromLibrary();
-    try {
-      const counts = await tagFonts!.sharedTagCounts();
-      if (counts) {
-        const sharedTagCounts = { ...Object.fromEntries(Object.keys(metrics.sharedTagCounts || {}).map(tag => [tag, 0])), ...counts };
-        return { ...metrics, sharedTagCounts, tagCounts: { ...sharedTagCounts, ...metrics.localTagCounts } };
-      }
-    } catch (error) { appendStartupLog(`shared tag counts retained: ${String(error)}`); }
-    return metrics;
+    return requireFontQueryFacadeRuntime().getFontMetricsFromLibrary();
   }
   return {
 
@@ -444,7 +378,6 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     findFontItemInRootIndexes,
 
     mainProcessFontIndexContains,
-    rememberRelinkedFontFile: relinkAuthorization.rememberRelinkedFontFile,
 
     queryFontsInLibrary,
 

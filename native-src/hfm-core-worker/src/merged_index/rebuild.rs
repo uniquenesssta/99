@@ -203,7 +203,7 @@ pub(super) fn read_rows_for_source(
         ", NULL AS installed, NULL AS installed_by, NULL AS matches_json"
     };
     let join_sql = if has_install_join {
-        format!("LEFT JOIN install_db.install_status AS install_status ON install_status.font_id = hfm_file_font_id('{}', entries.relative_path, entries.file_size, entries.modified_at) AND install_status.signature LIKE 'content-v1:%'", source.root.replace('\'', "''"))
+        format!("LEFT JOIN install_db.install_status AS install_status ON install_status.font_id = hfm_file_font_id('{}', entries.relative_path, entries.file_size, entries.modified_at)", source.root.replace('\'', "''"))
     } else {
         String::new()
     };
@@ -341,7 +341,6 @@ fn write_rebuild(
             }
         }
         set_meta(conn, "sourcesKey", &payload.sources_key)?;
-        set_meta(conn, "installEvidenceVersion", "content-v1")?;
         set_meta(conn, "updatedAt", &payload.synced_at)?;
         Ok(())
     })();

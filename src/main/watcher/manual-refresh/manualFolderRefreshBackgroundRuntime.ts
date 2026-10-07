@@ -10,7 +10,7 @@ export type ManualFolderRefreshBackgroundStart = {
 export function createManualFolderRefreshBackgroundRuntime(
   deps: Pick<ManualFolderRefreshDeps, "appendStartupLog">,
 ) {
-  const activeRefreshes = new Map<string, { jobId: string; startedAt: number; completion: Promise<WatchedFolderRefreshResult> }>();
+  const activeRefreshes = new Map<string, { jobId: string; startedAt: number }>();
 
   function activeRefresh(key: string): ManualFolderRefreshBackgroundStart | null {
     const active = activeRefreshes.get(key);
@@ -22,15 +22,15 @@ export function createManualFolderRefreshBackgroundRuntime(
   function scheduleRefresh(
     key: string,
     jobId: string,
-    run: () => Promise<WatchedFolderRefreshResult>,
+    run: () => Promise<void>,
   ): ManualFolderRefreshBackgroundStart {
     const active = activeRefresh(key);
     if (active) return active;
 
     const startedAt = Date.now();
-    const completion = Promise.resolve().then(run);
-    activeRefreshes.set(key, { jobId, startedAt, completion });
-    void completion
+    activeRefreshes.set(key, { jobId, startedAt });
+    void Promise.resolve()
+      .then(run)
       .catch((error) => {
         deps.appendStartupLog(
           `manual watched folder background refresh unhandled error: key=${key}, job=${jobId}, ${error instanceof Error ? error.message : String(error)}`,
@@ -71,12 +71,7 @@ export function createManualFolderRefreshBackgroundRuntime(
     };
   }
 
-  const waitForRefresh = (key: string): Promise<WatchedFolderRefreshResult> => {
-    const completion = activeRefreshes.get(key)?.completion;
-    if (!completion) return Promise.reject(new Error('没有可等待的文件夹刷新任务。'));
-    return completion;
-  };
-  return { activeRefresh, scheduleRefresh, backgroundResult, waitForRefresh };
+  return { activeRefresh, scheduleRefresh, backgroundResult };
 }
 
 export type ManualFolderRefreshBackgroundRuntime = ReturnType<typeof createManualFolderRefreshBackgroundRuntime>;

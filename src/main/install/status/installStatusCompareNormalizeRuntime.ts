@@ -5,8 +5,6 @@ export function createInstallStatusCompareNormalizeRuntime() {
     if (!result || typeof result !== 'object') return null
     const by = result.by === 'managed' || result.by === 'system' || result.by === 'both' || result.by === 'user' || result.by === 'none' ? result.by : 'none'
     return {
-      known: result.known !== false,
-      reason: result.reason,
       installed: !!result.installed,
       by,
       matches: Array.isArray(result.matches) ? result.matches : []
