@@ -1,5 +1,8 @@
+import { FONT_QUERY_SUPERSEDED } from '../../shared/fontQueryFailure'
+
 export const runtimePreloadSource = `
 const { contextBridge, ipcRenderer } = require('electron');
+const FONT_QUERY_SUPERSEDED = ${JSON.stringify(FONT_QUERY_SUPERSEDED)};
 
 const PRELOAD_TRACE_ALWAYS = new Set([
   'library:load', 'library:loadShell', 'fonts:scanFolders', 'fonts:loadFolderCache',
@@ -38,7 +41,9 @@ function invoke(channel, ...args) {
     return result;
   }).catch((error) => {
     const durationMs = Date.now() - startedAt;
-    if (!channel.startsWith('performance:')) reportPreloadTrace({ source: 'preload', kind: 'ipc-renderer-error', label: channel, severity: 'error', durationMs, timestamp: Date.now(), details: { error: error && error.message ? error.message : String(error) } });
+    const message = error && error.message ? error.message : String(error);
+    const superseded = error && error.reason === 'query-superseded' || message.includes(FONT_QUERY_SUPERSEDED);
+    if (!channel.startsWith('performance:')) reportPreloadTrace({ source: 'preload', kind: superseded ? 'ipc-renderer-cancelled' : 'ipc-renderer-error', label: channel, severity: superseded ? 'info' : 'error', durationMs, timestamp: Date.now(), details: superseded ? { reason: 'query-superseded' } : { error: message } });
     throw error;
   });
 }

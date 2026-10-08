@@ -103,6 +103,99 @@ for(const mutate of [
  const value=nativeSample();mutate(value[1].work.processRequests.find(row=>row.label==='preview-render-owned-stage'))
  assert(compareRuns(value).populationFailure,'Invalid native ownership/cost attribution accepted')
 }
+// Full production foreground composition adds source stat and four metrics IPCs.
+// These remain synthetic acceptance-counterexamples, never measured performance.
+function fullIpcSamples() {
+ const runs=clone(original)
+ for(const row of runs) {
+  row.foreground.invocationBoundary='production-ipc-preview-composition'
+  row.foreground.metrics=[];row.foreground.invocations=[]
+  for(const query of row.foreground.queries) {
+   query.channel='fonts:queryPage'
+   row.foreground.invocations.push({channel:query.channel,actionId:query.actionId,ok:true,elapsedMs:query.elapsedMs})
+  }
+  for(const preview of row.foreground.previewReceipts) {
+   preview.channel='fonts:renderPreviewImage';preview.sourcePath=`C:\\fixture\\font-${preview.index}.ttf`
+   row.foreground.invocations.push({channel:preview.channel,actionId:preview.actionId,ok:true,elapsedMs:preview.elapsedMs})
+   row.work.processRequests.push({lane:'foreground-preview',actionId:preview.actionId,label:'shared-file-io:stat',operation:'stat',path:preview.sourcePath,queuedMs:0})
+   row.work.tasks++
+  }
+  for(let i=0;i<4;i++) {
+   const value={index:i*4,actionId:`foreground-metrics:${i}`,channel:'fonts:getMetrics',elapsedMs:100}
+   row.foreground.metrics.push(value)
+   row.foreground.invocations.push({channel:value.channel,actionId:value.actionId,ok:true,elapsedMs:value.elapsedMs})
+   row.work.processRequests.push({lane:'foreground-metrics',actionId:value.actionId,label:'merged-index-query-metrics',queuedMs:10})
+   row.work.tasks++
+  }
+  row.metricsEndToEnd=stats(row.foreground.metrics.map(value=>value.elapsedMs))
+ }
+ return runs
+}
+assert.equal(compareRuns(fullIpcSamples()).passed,true,'Equal full IPC composition rejected')
+for(const mutate of [
+ row=>{const at=row.work.processRequests.findIndex(value=>value.lane==='foreground-preview'&&value.operation==='stat');row.work.processRequests.splice(at,1);row.work.tasks--},
+ row=>{row.work.processRequests.find(value=>value.lane==='foreground-preview'&&value.operation==='stat').path='C:\\wrong.ttf'},
+ row=>{row.foreground.metrics.pop()},
+ row=>{row.metricsEndToEnd.values.pop()},
+ row=>{row.foreground.invocations.pop()},
+ row=>{row.foreground.invocations[0].ok=false},
+ row=>{row.foreground.invocations[0].actionId=row.foreground.invocations[1].actionId},
+ row=>{row.foreground.invocations[0].elapsedMs=row.foreground.queries[0].elapsedMs+1},
+ row=>{row.foreground.previewReceipts[0].channel='rust-client-only'},
+ row=>{row.foreground.invocationBoundary=undefined},
+ row=>{row.work.processRequests.push({lane:'foreground-preview',actionId:'foreground-preview:0',label:'hidden-child',queuedMs:0});row.work.tasks++},
+]) {
+ const runs=fullIpcSamples();mutate(runs[1]);assert(compareRuns(runs).populationFailure,'Incomplete/bypassed/misattributed full IPC evidence accepted')
+}
+const metricRegression=fullIpcSamples();metricRegression[1].metricsEndToEnd=stats([100,100,100,101])
+assert.equal(compareRuns(metricRegression).candidates[0].metricsEndToEndMaxNoRegression,false,'Full metrics IPC latency regression escaped')
+const statRegression=fullIpcSamples();statRegression[1].work.processRequests.findLast(value=>value.lane==='foreground-preview'&&value.operation==='stat').queuedMs=18
+assert.equal(compareRuns(statRegression).candidates[0].previewQueueMaxNoRegression,false,'Pre-stat queue cost was omitted from full preview')
+// Detached read-only count cancellation is not a failed returned metrics IPC.
+// Exact input/effect/priority evidence is required, and all its cost stays visible.
+function detachedCountsSample() {
+ const runs=fullIpcSamples(),row=runs[1]
+ row.work.processRequests.push({lane:'background-shared-counts',actionId:'foreground-metrics:0',priority:'background',
+  label:'shared-metadata-overlay-read',command:'--shared-metadata-overlay-read',bindingSnapshot:true,preflight:false,entryCount:0,
+  verifiedReadOnly:true,write:false,queuedMs:17,executionMs:3,error:{reason:'cancelled'}})
+ row.work.tasks++
+ return runs
+}
+const detached=compareRuns(detachedCountsSample())
+assert.equal(detached.passed,true,'Detached count cancellation invalidated successful metrics IPC')
+const detachedRows=detachedCountsSample();compareRuns(detachedRows)
+assert.equal(detachedRows[1].semanticQueue.backgroundSharedCounts.totalQueuedMs,17,'Detached count cost disappeared')
+for(const mutate of [
+ row=>{row.bindingSnapshot=false},row=>{row.preflight=true},row=>{row.entryCount=1},row=>{row.write=true},
+ row=>{row.verifiedReadOnly=false},row=>{row.priority='foreground'},row=>{row.actionId='foreground-preview:0'},row=>{row.actionId='foreground-metrics:99'},
+ row=>{row.command='--shared-metadata-apply'},row=>{row.error.reason='timeout'},row=>{row.queuedMs=undefined},
+]) {
+ const runs=detachedCountsSample();mutate(runs[1].work.processRequests.at(-1));assert(compareRuns(runs).populationFailure,'Unproved/erroring foreground work hidden as detached counts')
+}
+// Byte-only success is a different, fully proved native output route. It may
+// omit publication only when the same bounded PNG reaches the full IPC result.
+function byteOnlySample() {
+ const runs=fullIpcSamples(),row=runs[1],render=row.work.processRequests.findLast(value=>value.lane==='foreground-preview'&&value.label==='preview-render-image')
+ const native=nativeSample()[1].work.processRequests.find(value=>value.label==='preview-render-owned-stage')
+ Object.assign(render,native,{foregroundBytes:true,nativePreviewBytes:{valid:true,png:true,bytes:1024,sha256:'a'.repeat(64),width:600,height:100}})
+ const action=row.foreground.previewReceipts.find(value=>value.actionId===render.actionId)
+ Object.assign(action,{bytes:1024,sha256:'a'.repeat(64),width:600,height:100,receipt:{ok:true,transient:true,bytes:{diagnosticByteLength:1024,diagnosticSha256:'a'.repeat(64)}}})
+ return runs
+}
+assert.equal(compareRuns(byteOnlySample()).passed,true,'Proved transient native bytes require an unrequested persistence write')
+for(const mutate of [
+ (row,render)=>{delete render.nativePreviewBytes},
+ (row,render)=>{render.nativePreviewBytes.valid=false},
+ (row,render)=>{render.nativePreviewBytes.bytes=2*1024*1024+1},
+ (row,render)=>{render.nativePreviewBytes.sha256='b'.repeat(64)},
+ (row,render)=>{render.foregroundBytes=false},
+ (row,render)=>{render.label='preview-render-image'},
+ (row,render)=>{row.foreground.previewReceipts.at(-1).receipt.transient=false},
+ (row,render)=>{delete row.foreground.previewReceipts.at(-1).receipt.bytes},
+ (row,render)=>{row.work.processRequests.push({lane:render.lane,actionId:render.actionId,label:'shared-file-io:copyFile',operation:'copyFile',queuedMs:0});row.work.tasks++},
+]) {
+ const runs=byteOnlySample(),row=runs[1];mutate(row,row.work.processRequests.find(value=>value.foregroundBytes));assert(compareRuns(runs).populationFailure,'Invalid or secretly persisted transient route accepted')
+}
 const failedBaseline=clone(original);failedBaseline[0].passed=false;failedBaseline[0].comparable=false
 assert.equal(compareRuns(failedBaseline).comparable,false,'Failed full baseline was made comparable')
 console.log('[diagnostics:full-refresh-acceptance] fixed-cohort equality, observed +18ms regression, missing/misclassified/duplicate samples copy-only cost/ownership and failed baseline rejection passed')

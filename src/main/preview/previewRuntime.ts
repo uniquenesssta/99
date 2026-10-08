@@ -27,7 +27,7 @@ export type { PreviewCacheStorage,PreviewImageFileResult,PreviewRuntimeOptions }
 
 export function createPreviewRuntime(options: PreviewRuntimeOptions) {
   const previewImageMemoryRuntime = createPreviewImageMemoryRuntime()
-  const nativeRenderInFlight = new Map<string, Promise<{ bytes: Buffer; message: string }>>()
+  const nativeRenderInFlight = new Map<string, Promise<{ bytes: Buffer; message: string; transient: boolean }>>()
   const failedUntil = new Map<string, { until: number; error: Error }>()
   const renderTraceOwners = new Map<string, string>()
 
@@ -55,7 +55,6 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     getPreviewCacheStatus,
     readCachedPreviewImages,
     hydratePreviewCache,
-    schedulePreviewCachePrefetch,
     rememberPreviewCacheRenderQueued,
     previewCacheStorageToShared,
     ensureSharedPreviewCacheAvailable,
@@ -144,9 +143,6 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
 
     const cacheIdentity = previewCacheIdentityForInstalledRoute(previewCache.identity, installedRoute)
     const key = previewCacheKey(sha1, cacheIdentity, stat.size, stat.mtimeMs, fontSize, width, height, normalizedText, undefined, layout)
-    const recentFailure = failedUntil.get(key)
-    if (recentFailure && recentFailure.until > Date.now()) throw recentFailure.error
-    failedUntil.delete(key)
     const previewDir = previewCache.dir
     const fontSignature = previewFontSignature(cacheIdentity, stat.size, stat.mtimeMs)
     const textHash = previewCacheTextHash(sha1, normalizedText)
@@ -157,7 +153,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     if (!ignorePreviewIndex) {
       const indexedStatus = await tracePreviewPhase('index-read', () => readPreviewCacheIndexStatus(previewCache, key, outputPath))
       if (indexedStatus === 'ok' && (imageBytes = await readValidCachedImage(outputPath))) {
-        await completeBackgroundTask(taskKey, '预览缓存已存在').catch(() => undefined)
+        if (!foreground) await completeBackgroundTask(taskKey, '预览缓存已存在').catch(() => undefined)
         return { outputPath, cached: true, storage: previewCache.storage, bytes: imageBytes }
       }
       // Historical failed/missing rows are evidence of an old attempt, not current source absence.
@@ -180,7 +176,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       return { outputPath, cached: true, storage: previewCache.storage, bytes: imageBytes }
     }
 
-    if (!ignorePreviewIndex && previewCache.shared) {
+    if (!foreground && !ignorePreviewIndex && previewCache.shared) {
       const hydrationRow = {
         id: item.id,
         previewKey: key,
@@ -193,8 +189,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         fontId: item.id,
         sourcePath: item.path,
       }
-      if (foreground) schedulePreviewCachePrefetch(previewCache, [hydrationRow], true)
-      const hydrated = !foreground && await hydratePreviewCache(previewCache, hydrationRow)
+      const hydrated = await hydratePreviewCache(previewCache, hydrationRow)
       if (hydrated && (imageBytes = await readValidCachedImage(outputPath))) {
         await completeBackgroundTask(taskKey, '预览缓存已从共享缓存拉取到本地').catch(() => undefined)
         return { outputPath, cached: true, storage: previewCache.storage, bytes: imageBytes }
@@ -207,11 +202,21 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       return { outputPath, cached: true, storage: previewCache.storage, bytes: imageBytes }
     }
 
-    rememberPreviewCacheRenderQueued(1)
-    await upsertBackgroundTask(taskKey, 'preview_cache', 10, { fontId: item.id, path: item.path, previewKey: key, outputPath, text: normalizedText, fontSize, width, height, layout }).catch(() => undefined)
-    await startBackgroundTask(taskKey).catch(() => null)
-    await heartbeatBackgroundTask(taskKey, 0.1, '正在准备字体预览输入').catch(() => undefined)
+    // A failed display attempt cannot suppress an explicit cache job, and valid
+    // cache hits above remain usable even during this lane's failure cooldown.
+    const laneKey = `${foreground ? 'visible' : 'cache'}:${key}`
+    const recentFailure = failedUntil.get(laneKey)
+    if (recentFailure && recentFailure.until > Date.now()) throw recentFailure.error
+    failedUntil.delete(laneKey)
 
+    if (!foreground) {
+      rememberPreviewCacheRenderQueued(1)
+      await upsertBackgroundTask(taskKey, 'preview_cache', 10, { fontId: item.id, path: item.path, previewKey: key, outputPath, text: normalizedText, fontSize, width, height, layout }).catch(() => undefined)
+      await startBackgroundTask(taskKey).catch(() => null)
+      await heartbeatBackgroundTask(taskKey, 0.1, '正在准备字体预览输入').catch(() => undefined)
+    }
+
+    let transient = false
     let renderMessage: string = nativePreviewRenderer.activeEngineLabel()
 
     async function renderRequest(request: {
@@ -224,31 +229,39 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       preferSystemFont?: boolean
       systemFontFamilyCandidates?: string[]
     }): Promise<void> {
-      let task = nativeRenderInFlight.get(outputPath)
+      const renderKey = `${foreground ? 'visible' : 'cache'}:${outputPath}`
+      let task = nativeRenderInFlight.get(renderKey)
       if (!task) {
         task = withPhysicalIoCompletion(async () => {
-          const lease = claimPreviewImage(outputPath, 'render')
+          const lease = claimPreviewImage(outputPath, foreground ? 'display' : 'render')
           const inputPath = `${lease.temporaryPath}.json`
           try {
-            const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview({ ...request, layout, outputPath: lease.temporaryPath }, inputPath))
+            const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview({ ...request, layout, ...(foreground ? { foregroundBytes: true } : {}), outputPath: lease.temporaryPath }, inputPath))
             if (!renderResult.ok) throw new Error(renderResult.message || `${renderResult.engine} preview renderer did not create output.`)
+            const message = request.preferSystemFont
+              ? `${renderResult.engine}:system-installed:${installedRoute?.reason || 'matched'}`
+              : renderResult.engine
+            if (renderResult.transient) {
+              if (!foreground || !Buffer.isBuffer(renderResult.bytes) || !isCompletePreviewPng(renderResult.bytes)) throw previewFailure('failed')
+              if (!lease.current()) throw previewFailure('cancelled')
+              return { bytes: renderResult.bytes, message, transient: true }
+            }
             const bytes = await readValidCachedImage(renderResult.outputPath || lease.temporaryPath, true)
             if (!bytes) throw previewFailure('failed')
             if (!(await lease.commit())) throw previewFailure('cancelled')
-            return { bytes, message: request.preferSystemFont
-              ? `${renderResult.engine}:system-installed:${installedRoute?.reason || 'matched'}`
-              : renderResult.engine }
+            return { bytes, message, transient: false }
           } finally {
             await lease.release()
             await fsp.unlink(inputPath).catch(() => undefined)
           }
         })
-        nativeRenderInFlight.set(outputPath, task)
+        nativeRenderInFlight.set(renderKey, task)
         const ownedTask = task
-        void task.finally(() => { if (nativeRenderInFlight.get(outputPath) === ownedTask) nativeRenderInFlight.delete(outputPath) }).catch(() => undefined)
+        void task.finally(() => { if (nativeRenderInFlight.get(renderKey) === ownedTask) nativeRenderInFlight.delete(renderKey) }).catch(() => undefined)
       }
       const result = await task
       imageBytes = result.bytes
+      transient = result.transient
       renderMessage = result.message
 
     }
@@ -262,14 +275,14 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         : null
       if (activeFontPath) {
         await fsp.access(activeFontPath)
-        await heartbeatBackgroundTask(taskKey, 0.35, '正在使用字体文件生成已激活字体预览').catch(() => undefined)
+        if (!foreground) await heartbeatBackgroundTask(taskKey, 0.35, '正在使用字体文件生成已激活字体预览').catch(() => undefined)
         await renderRequest({ fontPath: activeFontPath, text: normalizedText, fontSize, width, height, outputPath })
         rendered = true
         appendStartupLog(`active font preview file route: fontId=${item.id}, engine=${renderMessage}`)
       }
       if (!rendered && installedRoute) {
         try {
-          await heartbeatBackgroundTask(taskKey, 0.35, '正在使用系统已安装字体快速生成预览').catch(() => undefined)
+          if (!foreground) await heartbeatBackgroundTask(taskKey, 0.35, '正在使用系统已安装字体快速生成预览').catch(() => undefined)
           await renderRequest({
             fontPath: '',
             preferSystemFont: true,
@@ -291,7 +304,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         const source = verifiedSource || await tracePreviewPhase('font-resolve', () => resolvePreviewSource(item.path, resolveExistingFontFilePath))
         const fontPath = source.path
 
-        await heartbeatBackgroundTask(taskKey, 0.4, `正在生成字体预览图片（${nativePreviewRenderer.activeEngineLabel()}）`).catch(() => undefined)
+        if (!foreground) await heartbeatBackgroundTask(taskKey, 0.4, `正在生成字体预览图片（${nativePreviewRenderer.activeEngineLabel()}）`).catch(() => undefined)
         await renderRequest({
           fontPath,
           text: normalizedText,
@@ -304,7 +317,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const kind = previewFailureKind(error)
-      if (kind === 'failed' || kind === 'missing') await writePreviewCacheIndex(previewCache, key, {
+      if (!foreground && (kind === 'failed' || kind === 'missing')) await writePreviewCacheIndex(previewCache, key, {
         outputPath,
         fontSignature,
         textHash,
@@ -316,13 +329,15 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         fontId: item.id,
         sourcePath: item.path
       }).catch(() => undefined)
-      await failBackgroundTask(taskKey, message, error instanceof Error ? error.stack : undefined).catch(() => undefined)
+      if (!foreground) await failBackgroundTask(taskKey, message, error instanceof Error ? error.stack : undefined).catch(() => undefined)
       appendStartupLog(`native preview failed: ${item.path} ${message}`)
       const failure = previewFailure(previewFailureKind(error))
-      if (kind !== 'cancelled') failedUntil.set(key, { until: Date.now() + 30000, error: failure })
+      if (kind !== 'cancelled') failedUntil.set(laneKey, { until: Date.now() + 30000, error: failure })
       while (failedUntil.size > 512) failedUntil.delete(failedUntil.keys().next().value!)
       throw failure
     }
+
+    if (transient) return { outputPath, cached: false, storage: previewCache.storage, bytes: imageBytes, transient: true }
 
     await writePreviewCacheIndex(previewCache, key, {
       outputPath,
@@ -350,7 +365,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       message: renderMessage,
     })
 
-    await completeBackgroundTask(taskKey, '预览缓存已生成').catch(() => undefined)
+    if (!foreground) await completeBackgroundTask(taskKey, '预览缓存已生成').catch(() => undefined)
     return { outputPath, cached: false, storage: previewCache.storage, bytes: imageBytes }
   }
 

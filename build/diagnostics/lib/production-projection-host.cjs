@@ -10,6 +10,7 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const { createRequire } = require('node:module')
 const { pathToFileURL } = require('node:url')
+const { EventEmitter } = require('node:events')
 const plain = value => JSON.parse(JSON.stringify(value))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex')
@@ -154,7 +155,7 @@ async function createHost(options) {
     projectionUpdatedRows: 0, projectionIdentityUdfCalls: 0, identityUdfCalls: 0,
   }
   let projectionUpdateDepth = 0
-  let transport, watcher, queue, query, libraryDb, cleanupRenderer, snapshotRuntime, snapshotOwner
+  let transport, watcher, queue, query, libraryDb, cleanupRenderer, snapshotRuntime, snapshotOwner, foregroundShutdown
   let closed = false
   let initialized = false
   let rootOnline = true
@@ -237,7 +238,9 @@ async function createHost(options) {
   }
   const dataPath = (...parts) => path.join(dataDirectory, ...parts)
   const closeSqliteDb = db => db.close()
+  const ipcHandlers = new Map()
   const electron = {
+    ipcMain: { handle: (channel, handler) => { assert(!ipcHandlers.has(channel), `Duplicate IPC registration: ${channel}`); ipcHandlers.set(channel, handler) } },
     app: { isPackaged: false, getAppPath: () => sourceRoot, getPath: name => name === 'temp' ? directory : dataDirectory },
     BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: {
       send(channel, payload) {
@@ -424,6 +427,8 @@ async function createHost(options) {
       clearFontQueryCaches: () => query.clearFontQueryCaches(), appendStartupLog, batchDelayMs: 60000,
     })
     query = load('src/main/bootstrap/mainDataQueryCompositionRuntime.ts').createMainDataQueryCompositionRuntime({
+      onSharedTagCountsChanged: revision => { watcher.sendFontIndexChanged({ folder: '', at: new Date().toISOString(),
+        source: 'metrics', metricsRevision: revision, upserts: [], deletes: [] }); options.onSharedTagCountsChanged?.(revision) },
       onProjectionCommitted: revision => { watcher.sendFontIndexChanged({ folder: '', at: new Date().toISOString(),
         source: 'projection', projectionRevision: revision, upserts: [], deletes: [] }); options.onProjectionCommitted?.(revision) },
       applyPendingActivationState: queue.applyPendingActivationState,
@@ -459,6 +464,118 @@ async function createHost(options) {
       },
       readInstallStatusIndex: status.readInstallStatusIndex,
     })
+
+
+    let foreground
+    async function createForegroundRuntime({ withGlobalIo, interaction }) {
+      assert(!foreground, 'Configure the production foreground composition once per host')
+      assert.equal(typeof withGlobalIo, 'function')
+      const availability = load('src/main/path/startupPathAvailabilityRuntime.ts')
+      for (const root of roots) assert(await availability.ensureStartupPathRootAvailable(root, appendStartupLog, 'foreground-fixture-bootstrap'), 'Foreground fixture root is unavailable')
+      const constants = load('src/main/cache/constants.ts')
+      const previewCache = load('src/main/preview/previewCacheRuntime.ts')
+      const previewDb = openDb(dataPath('preview.sqlite'))
+      const initializePreviewDb = db => previewCache.initializePreviewDbSchema(db, {
+        schemaVersion: constants.PREVIEW_SQLITE_SCHEMA_VERSION, ...sqlite,
+      })
+      initializePreviewDb(previewDb)
+      const tasksDb = openDb(dataPath('tasks.sqlite'))
+      load('src/main/tasks/background-runtime/backgroundTaskSchemaRuntime.ts').initializeTasksDb({
+        ...sqlite, taskSqliteSchemaVersion: constants.TASKS_SQLITE_SCHEMA_VERSION,
+      }, tasksDb)
+      const tasks = load('src/main/tasks/background-runtime/backgroundTaskStoreRuntime.ts').createBackgroundTaskStoreRuntime({ openTasksDb: async () => tasksDb })
+      const resolver = load('src/main/windows/runtime/fontPathResolverRuntime.ts').createFontPathResolverRuntime({
+        fontExtensions: new Set(['.ttf', '.otf', '.ttc', '.otc']), appendStartupLog,
+        windowsFontsDir: () => fontRoot, currentUserFontsDir: () => fontRoot,
+      })
+      const authorization = load('src/main/path/fontPathAuthorizationRuntime.ts').createFontPathAuthorizationRuntime({
+        readRoots: appWatchedFolders, watchedRoots: appWatchedFolders, appOwnedRoots: async () => [],
+        fontExtensions: new Set(['.ttf', '.otf', '.ttc', '.otc']),
+      })
+      const rootPreviewCacheDir = root => path.join(directory, 'root-preview', sha256(key(root)).slice(0, 20))
+      const rootPreviewImageDir = root => path.join(rootPreviewCacheDir(root), 'images')
+      const rootPreviewDbPath = root => path.join(rootPreviewCacheDir(root), 'preview.sqlite')
+      const routing = load('src/main/rust-core/rustSharedIoCommandRuntime.ts')
+      for (const root of roots) {
+        fs.mkdirSync(rootPreviewImageDir(root), { recursive: true })
+        const sharedPreviewDb = openDb(rootPreviewDbPath(root))
+        try { initializePreviewDb(sharedPreviewDb) } finally { closeSqliteDb(sharedPreviewDb) }
+        // Case-private backing stores avoid cross-run cache reuse, while their
+        // native shared-cache operations still enter the real isolated owner.
+        routing.registerIsolatedRoot(rootPreviewCacheDir(root))
+      }
+      const manifest = load('src/main/cache/scan-storage/rootPreviewManifestRuntime.ts').createRootPreviewManifestRuntime({
+        exists, sha1: fonts.sha1, appName: 'HFMFixture', appendStartupLog,
+        previewSqliteSchemaVersion: constants.PREVIEW_SQLITE_SCHEMA_VERSION,
+      })
+      const hidden = load('src/main/cache/scan-storage/cacheWindowsHiddenRuntime.ts').createCacheWindowsHiddenRuntime({ appendStartupLog })
+      const previewReceipts = []
+      const preview = load('src/main/preview/previewRuntime.ts').createPreviewRuntime({
+        ...tasks, ...previewClient, ...resolver, ...authorization, ...manifest, ...hidden,
+        cacheKeyForRootFile: paths.relativePathForRoot, cacheKeyForPath: key,
+        rootPreviewCacheDir, rootPreviewImageDir, rootPreviewDbPath,
+        legacyRootPreviewCacheDir: rootPreviewCacheDir,
+        localPreviewImageDir: () => dataPath('preview-images'), previewSqlitePath: () => dataPath('preview.sqlite'),
+        sha1: fonts.sha1, appendStartupLog, openPreviewDb: async () => previewDb,
+        openStableSqliteDb: openDb, initializePreviewDb, closeSqliteDb, normalizePathForCacheCompare: key,
+        normalizePreviewCacheIndexStatus: previewCache.normalizePreviewCacheIndexStatus,
+        upsertPreviewCacheRows: previewCache.upsertPreviewCacheRows,
+        loadLibraryShell: async () => load('src/main/library/runtime/libraryPersistenceRuntime.ts').loadLibraryShellFromSqlite(await openLibraryDb()),
+        ensureWindows: () => assert.equal(process.platform, 'win32'), previewTaskKey: key => `preview_cache:${key}`,
+        execFileAsync: forbidden('preview renderer fallback'), withGlobalIo,
+        missingFontPreviewDataUri: forbidden('missing preview substitution'),
+        previewSqliteSchemaVersion: constants.PREVIEW_SQLITE_SCHEMA_VERSION,
+        runRustPreviewRenderImage: async input => {
+          const result = await previewClient.runRustPreviewRenderImage(input)
+          const observed = result && Object.fromEntries(Object.entries(result).map(([key, value]) => [key, Buffer.isBuffer(value)
+            ? { diagnosticByteLength: value.length, diagnosticSha256: sha256(value) } : value]))
+          previewReceipts.push({ input: plain(input), result: plain(observed) })
+          return result
+        },
+      })
+      const runtime = {
+        ...query, ...preview, ...interaction, appendLog: appendStartupLog,
+        getSharedAvailability: load('src/main/path/sharedAvailabilityRuntime.ts').createSharedAvailabilityReader(openLibraryDb),
+      }
+      load('src/main/ipc/ipcHandlers.ts').registerIpcHandlers(runtime)
+      // This is an Electron boundary adapter, not a sender-validation bypass.
+      // Development security already trusts this exact renderer document.
+      const rendererUrl = pathToFileURL(path.join(process.cwd(), 'out', 'renderer', 'index.html')).href
+      assert(load('src/main/security/appSecurityRuntime.ts').isTrustedRendererUrl(rendererUrl), 'Synthetic renderer URL is not trusted by production policy')
+      const allowed = new Set(['fonts:queryPage', 'fonts:getMetrics', 'fonts:cancelQuery', 'fonts:renderPreviewImage', 'fonts:ensurePreviewCache', 'performance:userActivity'])
+      let nextSender = 0
+      const renderers = new Set(), invocations = []
+      function createRenderer() {
+        const sender = new EventEmitter()
+        sender.id = ++nextSender
+        sender.isDestroyed = () => false
+        sender.getURL = () => rendererUrl
+        renderers.add(sender)
+        return { sender, senderFrame: { url: rendererUrl } }
+      }
+      async function invoke(channel, args = [], event = createRenderer(), actionId) {
+        assert(allowed.has(channel), `Unrequested diagnostic IPC: ${channel}`)
+        const handler = ipcHandlers.get(channel)
+        assert.equal(typeof handler, 'function', `Production IPC missing: ${channel}`)
+        const row = { channel, actionId, sender: event.sender.id, startedAt: performance.now() }
+        invocations.push(row)
+        try { const value = await handler(event, ...args); row.ok = true; return value }
+        catch (error) { row.ok = false; row.error = { name: error?.name, message: String(error?.message || error), reason: error?.reason }; throw error }
+        finally { row.finishedAt = performance.now(); row.elapsedMs = row.finishedAt - row.startedAt }
+      }
+      foregroundShutdown = load('src/main/app/shutdownCoordinatorRuntime.ts').createShutdownCoordinator({
+        log: appendStartupLog, closeRenderers: async () => true,
+        freeze: () => { for (const sender of renderers) sender.emit('destroyed'); renderers.clear() },
+        restore: forbidden('fixture shutdown restoration'), cleanup: async () => ({ remaining: 0 }), save: async () => {},
+        confirmLoss: async () => false, drainLogs: async () => {}, terminate: () => {},
+      })
+      foreground = { preview, previewDb, tasksDb, previewReceipts, invocations, createRenderer, invoke,
+        provenance: { mode: 'production-ipc-preview-composition', renderer: 'synthetic trusted Electron sender; no renderer paint or Electron serialization',
+          preview: 'createPreviewRuntime: storage, source stat, local SQLite, native render and image commit',
+          caches: 'Case-private initialized preview/task/shared-cache SQLite; isolated shared backing paths avoid cross-run image reuse; no injected latency',
+          responseBoundary: 'Full production IPC response; deferred shared-cache publication is not forced into foreground response time' } }
+      return foreground
+    }
 
 
     const mergedPath = dataPath('db', 'merged-index.sqlite')
@@ -525,7 +642,7 @@ async function createHost(options) {
       libraryDb, openDb, closeSqliteDb, readBoundary, readerProvenance,
       loadSharedFontsForFolders, rootStorage, observer, logs, appendLog: appendStartupLog, appendStartupLog,
       receipts: nativeReceipts, nativeReceipts, queue, projectionEvents, rendererState,
-      initialize, rootPaths: roots, roots, setRootOnline: value => { rootOnline = !!value },
+      initialize, createForegroundRuntime, rootPaths: roots, roots, setRootOnline: value => { rootOnline = !!value },
       paths: { sourceRoot, workerPath, directory, fixtureDirectory, dataDirectory, libraryPath, mergedPath, installPath, rootDbForRoot, rootCacheForRoot },
       openLibraryDb, appWatchedFolders, exists, dataPath,
       close: closeHost, deliverRendererEvent: payload => eventListener?.(payload),
@@ -543,6 +660,8 @@ async function createHost(options) {
   async function closeHost() {
     if (closed) return
     closed = true
+    await query?.disposeSharedTagMetrics?.()
+    if (foregroundShutdown) await foregroundShutdown.request()
     cleanupRenderer?.()
     watcher?.stopFolderWatchers()
     let captureCleanupError

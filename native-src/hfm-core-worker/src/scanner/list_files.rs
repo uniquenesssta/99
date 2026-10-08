@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 
 use super::directory::{has_font_extension, should_skip_directory_name};
@@ -13,6 +14,7 @@ pub fn list_font_files(root: &Path, extensions: &[String], max_entries: usize, p
     let mut directories = Vec::new();
     let mut errors = Vec::new();
     let mut truncated = false;
+    let mut last_progress = Instant::now();
     let scan_options = FontFileScanOptions {
         probe_names,
         probe_scripts,
@@ -87,6 +89,10 @@ pub fn list_font_files(root: &Path, extensions: &[String], max_entries: usize, p
         });
 
         for path in font_files {
+            if last_progress.elapsed() >= Duration::from_secs(1) {
+                eprintln!("hfm-scan-progress: {{\"files\":{},\"foldersScanned\":{}}}", files.len(), directories.len());
+                last_progress = Instant::now();
+            }
             let metadata = match fs::metadata(&path) {
                 Ok(metadata) => metadata,
                 Err(error) => {

@@ -1,3 +1,4 @@
+import { rethrowFontQuerySuperseded } from '../../library/fontQueryTaskRuntime';
 import { withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime';
 import { resolve } from "node:path";
 import type {
@@ -70,6 +71,7 @@ export function createMergedIndexPageQueryRuntime(
         ctx.appendStartupLog(`merged index worker readiness: roots=${roots.length}, ready=${ready}, joinedValidation=${Boolean(validation)}, elapsed=${Date.now() - startedAt}ms`);
         return ready;
       } catch (error) {
+        rethrowFontQuerySuperseded(error);
         ctx.appendStartupLog(`merged index worker readiness failed: roots=${roots.length}, ${error instanceof Error ? error.message : String(error)}`);
         return false;
       }
@@ -223,6 +225,7 @@ export function createMergedIndexPageQueryRuntime(
         return rustResult;
       }
     } catch (error) {
+      rethrowFontQuerySuperseded(error);
       const message = error instanceof Error ? error.message : String(error);
       if (/merged index snapshot is not usable/i.test(message)) {
         await ensurePendingSnapshotForWorkerQuery(
@@ -243,6 +246,7 @@ export function createMergedIndexPageQueryRuntime(
             return retryResult;
           }
         } catch (retryError) {
+          rethrowFontQuerySuperseded(retryError);
           ctx.appendStartupLog(
             `rust merged index page query pending snapshot retry failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
           );
@@ -269,6 +273,7 @@ export function createMergedIndexPageQueryRuntime(
       );
       return result;
     } catch (error) {
+      rethrowFontQuerySuperseded(error);
       ctx.appendStartupLog(
         `db worker merged index page query fallback: ${error instanceof Error ? error.message : String(error)}`,
       );

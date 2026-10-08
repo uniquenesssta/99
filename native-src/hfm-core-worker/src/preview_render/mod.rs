@@ -22,6 +22,9 @@ pub fn render_preview_image(config: &PreviewRenderCommandConfig) -> Result<Strin
         .map_err(|error| format!("failed to parse preview render input: {}", error))?;
     let mut request = request.normalized()?;
     validate_request(&request)?;
+    if request.foreground_bytes && !config.owned_stage_required {
+        return Err("foreground preview bytes require the dedicated owned-stage command".into());
+    }
     if config.owned_stage_required != request.owned_stage.is_some() {
         return Err("owned stage requires the dedicated native command and reservation".into());
     }
@@ -45,12 +48,21 @@ pub fn render_preview_image(config: &PreviewRenderCommandConfig) -> Result<Strin
     let owned_json = if let Some(stage) = &owned { format!(",\"ownedStage\":{}", serde_json::to_string(&stage.proof).map_err(|e| e.to_string())?) } else { String::new() };
     #[cfg(not(windows))]
     let owned_json = String::new();
+    // Read while both native directory pins are still alive. The regular cache
+    // route retains its existing file receipt and never serializes image bytes.
+    #[cfg(windows)]
+    let image_json = if request.foreground_bytes {
+        let stage = owned.as_ref().ok_or("foreground preview bytes require an owned stage")?;
+        format!(",\"imageHex\":\"{}\"", stage.image_hex()?)
+    } else { String::new() };
+    #[cfg(not(windows))]
+    let image_json = String::new();
     Ok(format!(
-        "{{\"ok\":true,\"engine\":\"rust-private-gdi\",\"outputPath\":\"{}\",\"layoutVersion\":\"{}\",\"elapsedMs\":{},\"provenance\":{}{}}}",
+        "{{\"ok\":true,\"engine\":\"rust-private-gdi\",\"outputPath\":\"{}\",\"layoutVersion\":\"{}\",\"elapsedMs\":{},\"provenance\":{}{}{}}}",
         escape_json(&request.output_path),
         request.layout.as_ref().map(|layout| layout.version.as_str()).unwrap_or("legacy"),
         started_at.elapsed().as_millis(),
-        provenance, owned_json
+        provenance, owned_json, image_json
     ))
 }
 

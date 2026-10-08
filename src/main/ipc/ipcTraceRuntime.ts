@@ -1,3 +1,4 @@
+import { isFontQuerySuperseded } from '../../shared/fontQueryFailure'
 import { withOperationTrace, logOperation } from '../logging/operationTraceContext'
 import { ipcMain } from "electron";
 import { PreviewInputError } from "../preview/runtime/previewInputPolicy";
@@ -284,6 +285,11 @@ export function registerTracedIpcHandler(runtime: IpcHandlerRuntime, channel: st
       if (traceChannel) logOperation({ stage: 'ipc-result', outcome: 'returned' })
       return result
     } catch (error) {
+      if (isFontQuerySuperseded(error)) {
+        if (traceChannel) logOperation({ stage: 'ipc-result', outcome: 'cancelled', reason: 'query-superseded' })
+        append(`perf ipc end: channel=${channel}, severity=info, status=cancelled, reason=query-superseded, durationMs=${Date.now() - startedAt}`)
+        throw error
+      }
       if (traceChannel) logOperation({ stage: 'ipc-result', outcome: 'unknown', reason: 'handler-rejected' })
       // The preview policy already records these through its bounded log sink.
       // Preserve the rejection without a second per-request error/argument log.

@@ -18,6 +18,9 @@ export type SharedIoProcessRequest = {
   queueTimeoutMs?: number
   maxBuffer?: number
   write: boolean
+  /** Granted only for audited transport-owned complete read effects. */
+  verifiedReadOnly?: boolean
+  onStderrLine?: (line: string) => void
   /** Granted only by the transport for its live, verified local preview stage. */
   sharedReadOnlyPreview?: boolean
   initialPhase?: { timeoutMs: number; acceptLine: (line: string) => boolean }
@@ -126,6 +129,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     if ((laneOf(a) === 'root-probe' || laneOf(b) === 'root-probe') && !a.request.write && !b.request.write) return false
     const sharedReadOnly = (job: Job) => job.request.sharedReadOnlyPreview || !job.request.write
     if ((a.request.sharedReadOnlyPreview || b.request.sharedReadOnlyPreview) && sharedReadOnly(a) && sharedReadOnly(b)) return false
+    if (a.request.verifiedReadOnly && b.request.verifiedReadOnly && !a.request.write && !b.request.write) return false
     // Legacy callers remain conservative. Preserve the two explicitly read-only lanes.
     if (laneOf(a) !== 'default' && laneOf(b) !== 'default' && !a.request.write && !b.request.write) return false
     return true
@@ -180,6 +184,8 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   function cancel(job: Job, reason: string): void {
     if (job.settled) return
     if (reason === 'timeout' || reason === 'queue-timeout') recordOperationWork({ timeouts: 1 })
+    const blocker = [...active, ...queue].find(other => other !== job && conflicts(job, other))
+    traceJob(job, 'shared-cancelled', reason, blocker?.id)
     const started = Boolean(job.child?.pid)
     settle(job, undefined, new SharedIoProcessError(`Shared I/O ${reason}: request=${job.id}`, started ? 'unknown' : 'not-started', reason))
     if (!job.child) {
@@ -242,7 +248,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
         if (kind === 'stdout') stdout += chunk
         else {
           stderr += chunk
-          if (request.initialPhase) {
+          if (request.initialPhase || request.onStderrLine) {
             phaseBuffer += chunk
             let newline: number
             while ((newline = phaseBuffer.indexOf('\n')) >= 0) {
@@ -250,12 +256,13 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
               phaseBuffer = phaseBuffer.slice(newline + 1)
               if (line.length > 8192) { cancel(job, 'invalid-stage-receipt'); return }
               try {
-                if (request.initialPhase.acceptLine(line)) {
+                if (request.initialPhase?.acceptLine(line)) {
                   if (job.phaseComplete) { cancel(job, 'invalid-stage-receipt'); return }
                   job.phaseComplete = true
                   if (job.phaseTimer) clearTimeout(job.phaseTimer)
                 }
               } catch { cancel(job, 'invalid-stage-receipt'); return }
+              try { request.onStderrLine?.(line) } catch { /* Progress cannot change settlement. */ }
             }
             if (phaseBuffer.length > 8192) { cancel(job, 'invalid-stage-receipt'); return }
           }
@@ -303,6 +310,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     }
     if (closed || request.signal?.aborted) return reject('Shared I/O is closed or cancelled', 'cancelled')
     if (!request.roots.length) return reject('Shared I/O requires a resource identity', 'invalid-root')
+    if (request.verifiedReadOnly && request.write) return reject('Read-only effect proof contradicts writes', 'invalid-access')
     if ((!request.write || request.sharedReadOnlyPreview) && request.accesses?.some(access => access.mode === 'write'))
       return reject('Read-only shared footprint contradicts declared writes', 'invalid-access')
     if (request.sharedReadOnlyPreview && (!request.write || !['preview-render-image','preview-render-owned-stage'].includes(request.label || '') || request.lane !== 'preview-read' || (request.label === 'preview-render-owned-stage' && !request.initialPhase)))

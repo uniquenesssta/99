@@ -16,7 +16,7 @@ use crate::preview_cache::{apply_preview_cache_rows, delete_preview_cache_rows, 
 use crate::preview_render::render_preview_image;
 use crate::root_index::{apply_root_index_changes, replace_root_index};
 use crate::shared_metadata::{apply_shared_metadata, read_shared_metadata_known_tags, read_shared_metadata_overlay, read_shared_metadata_signature, remove_shared_metadata_tag};
-use crate::scanner::{list_font_files, result_to_json};
+use crate::scanner::{list_font_files, result_to_json, bounded_stdout_listing};
 use crate::scanner::parse_batch::parse_font_batch;
 use crate::system_fonts::read_system_installed_fonts;
 use crate::watcher::{run_watcher_preflight, watcher_preflight_to_json};
@@ -724,7 +724,9 @@ fn print_font_file_list(config: ListFontFilesConfig) -> i32 {
             }
         }
     } else {
-        println!("{}", json);
-        0
+        match bounded_stdout_listing(json) {
+            Ok(json) => { println!("{}", json); 0 },
+            Err(error) => { print_error(&error); 2 },
+        }
     }
 }

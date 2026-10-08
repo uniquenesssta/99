@@ -1,6 +1,6 @@
 import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
-import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
+import { parseJsonLine, hasCapability, FONT_SCAN_LISTING_MAX_TIMEOUT_MS, FONT_SCAN_LISTING_STDOUT_MAX_BYTES } from '../rustCoreWorkerTransportRuntime'
 import type { CachedFontStatLike } from '../../fonts/fontRuntime'
 import type { FontParseJob } from '../../indexing/fontScanWorkers'
 import { isRustCoreDaemonSubmittedError } from '../rustCoreDaemonRuntime'
@@ -189,6 +189,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'list-font-files')) return null
 
+    const stdoutListing = hasCapability(status, 'list-font-files-stdout-v1')
     const startedAt = Date.now()
     const files: RustListedFontFile[] = []
     const directories: RustListedDirectory[] = []
@@ -198,8 +199,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
 
     for (const rootPath of folders) {
       if (signal?.aborted) throw new Error('Rust listing cancelled')
-      const outputFile = createTemporaryJsonFile(`hfm-rust-list`)
-      const outputPath = outputFile.path
+      const outputFile = stdoutListing ? undefined : createTemporaryJsonFile(`hfm-rust-list`)
       try {
         const args = [
           '--list-font-files',
@@ -209,25 +209,38 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
           extensions.map((value) => value.replace(/^\./, '').toLowerCase()).join(','),
           '--max',
           String(Math.max(1, Number(process.env.HFM_RUST_SCAN_LISTING_MAX || 300000) || 300000)),
-          '--output',
-          outputPath,
         ]
+        if (outputFile) args.push('--output', outputFile.path)
         if (rustNameProbeEnabled() && hasCapability(status, 'font-name-table-probe')) args.push('--probe-names')
         if (rustScriptProbeEnabled() && hasCapability(status, 'font-script-table-probe')) args.push('--probe-scripts')
         if (rustStyleProbeEnabled() && hasCapability(status, 'font-style-table-probe')) args.push('--probe-style')
         if (rustFamilyProbeEnabled() && hasCapability(status, 'font-family-hint-probe')) args.push('--probe-family')
         if (rustFullHashEnabled() && hasCapability(status, 'font-full-fingerprint')) args.push('--full-hash')
         const { stdout } = await runRustCoreScheduledCommand(status.path, args, {
-          timeout: Math.max(5000, Number(process.env.HFM_RUST_SCAN_LISTING_TIMEOUT_MS || 10 * 60 * 1000) || 10 * 60 * 1000),
+          timeout: Math.min(FONT_SCAN_LISTING_MAX_TIMEOUT_MS, Math.max(5000, Number(process.env.HFM_RUST_SCAN_LISTING_TIMEOUT_MS) || FONT_SCAN_LISTING_MAX_TIMEOUT_MS)),
+          onStderrLine: line => {
+            if (signal?.aborted || !line.startsWith('hfm-scan-progress: ')) return
+            try {
+              const value = JSON.parse(line.slice('hfm-scan-progress: '.length))
+              if (Number.isSafeInteger(value.files) && value.files >= 0 && Number.isSafeInteger(value.foldersScanned) && value.foldersScanned >= 0)
+                progress?.({ files: files.length + value.files, foldersScanned: foldersScanned + value.foldersScanned })
+            } catch { /* Only the final receipt supplies indexed rows. */ }
+          },
           windowsHide: true,
-          maxBuffer: 256 * 1024,
+          maxBuffer: stdoutListing ? FONT_SCAN_LISTING_STDOUT_MAX_BYTES + 256 * 1024 : 256 * 1024,
           signal,
-          sharedIo: { paths: [rootPath], write: false, accesses: [{path: rootPath, mode: 'read', scope: 'tree'}] },
+          sharedIo: outputFile ? { paths: [rootPath, outputFile.path], write: true }
+            : { paths: [rootPath], write: false, accesses: [{path: rootPath, mode: 'read', scope: 'tree'}] },
         })
-        const written = parseJsonLine<{ ok?: boolean; message?: string }>(stdout)
-        if (!written.ok) throw new Error(written.message || 'rust listing output write failed')
-        const raw = await outputFile.readText()
-        const payload = JSON.parse(raw) as RustListFontFilesPayload
+        let payload: RustListFontFilesPayload
+        if (outputFile) {
+          const written = parseJsonLine<{ ok?: boolean; message?: string }>(stdout)
+          if (!written.ok) throw new Error(written.message || 'rust listing output write failed')
+          payload = JSON.parse(await outputFile.readText()) as RustListFontFilesPayload
+        } else {
+          payload = parseJsonLine<RustListFontFilesPayload>(stdout)
+          if (!Array.isArray(payload.files) || !Array.isArray(payload.directories) || !Array.isArray(payload.errors)) throw new Error('rust stdout listing receipt incomplete')
+        }
         if (!payload.ok) throw new Error(payload.message || 'rust listing returned ok=false')
 
         for (const item of payload.files || []) {
@@ -243,7 +256,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
         truncated = truncated || Boolean(payload.truncated)
         progress?.({ files: files.length, foldersScanned })
       } finally {
-        await outputFile.dispose()
+        await outputFile?.dispose()
       }
     }
 

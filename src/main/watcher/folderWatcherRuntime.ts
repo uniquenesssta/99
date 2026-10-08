@@ -97,11 +97,13 @@ export function createFolderWatcherRuntime(
   }
 
   function sendFontIndexChanged(payload: FontIndexChangePayload): void {
+    const metricsOnly = payload.source === 'metrics' && Number.isSafeInteger(payload.metricsRevision) && Number(payload.metricsRevision) > 0;
+    if (payload.source === 'metrics' && !metricsOnly) return;
     if (
       !payload.upserts.length &&
       !payload.deletes.length &&
       !payload.errors?.length &&
-      payload.source !== 'projection'
+      payload.source !== 'projection' && !metricsOnly
     )
       return;
 

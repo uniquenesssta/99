@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::config::ListFontFilesConfig;
 use crate::json::escape_json;
-use crate::scanner::{list_font_files, result_to_json};
+use crate::scanner::{list_font_files, result_to_json, bounded_stdout_listing};
 use crate::scanner::parse_batch::{parse_font_batch, FontParseBatchCommandConfig};
 
 pub fn run_daemon_list_font_files(config: &ListFontFilesConfig) -> Result<String, String> {
@@ -22,7 +22,7 @@ pub fn run_daemon_list_font_files(config: &ListFontFilesConfig) -> Result<String
         fs::write(output_path, payload).map_err(|error| error.to_string())?;
         Ok("{\"ok\":true,\"written\":true,\"workerMode\":\"rust-core-daemon-scan-listing\"}".to_string())
     } else {
-        Ok(payload)
+        bounded_stdout_listing(payload)
     }
 }
 

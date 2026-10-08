@@ -55,6 +55,21 @@ async function main(){
   queueControllers.forEach(c=>c.abort());for(const error of await Promise.all(queuedJobs))assert.equal(error.outcome,'not-started')
   stop.abort();await holding;await runtime.whenIdle()
   completed.push('128 queue limit and cancelled queued jobs never spawn')
+
+  // Release gates model latency only, never actual NAS measurements.
+  const readReady=path.join(dir,'unknown-read'),readStop=new AbortController()
+  const scan=run(hang(readReady),['configured-root:unresolved-alias'],{verifiedReadOnly:true,signal:readStop.signal,label:'synthetic-long-scan',timeoutMs:10000}).catch(e=>e)
+  await until(()=>fs.existsSync(readReady))
+  const fast=await run("console.log('foreground-stat')",["\\\\nas\\share"],{lane:'preview-read',verifiedReadOnly:true,priority:'foreground',timeoutMs:500})
+  assert.equal(fast.stdout.trim(),'foreground-stat')
+  const writerMarker=path.join(dir,'writer-started'),readMarker=path.join(dir,'late-read-started')
+  const writer=run(`require('node:fs').writeFileSync(${JSON.stringify(writerMarker)},'writer');setTimeout(()=>console.log('writer'),150)`,['configured-root:writer-alias'],{write:true,queueTimeoutMs:5000})
+  const afterWriter=run(`require('node:fs').writeFileSync(${JSON.stringify(readMarker)},'reader');console.log('reader')`,["\\\\nas\\share"],{verifiedReadOnly:true,lane:'preview-read',priority:'foreground',queueTimeoutMs:5000})
+  await tick(60);assert(!fs.existsSync(writerMarker));assert(!fs.existsSync(readMarker),'read bypassed pending writer')
+  readStop.abort();assert.equal((await scan).reason,'cancelled');await writer;await afterWriter;await runtime.whenIdle()
+  await assert.rejects(run('', ['a'], {verifiedReadOnly:true,write:true}), error=>error.reason==='invalid-access')
+  completed.push('verified metadata read overlaps delayed scan, pending unknown writer remains barrier')
+
   const limit=await run("process.stdout.write('x'.repeat(4096))",['output'],{maxBuffer:100}).catch(e=>e);assert.equal(limit.reason,'output-limit');await runtime.whenIdle()
   const spawnFailure=await runtime.run({file:path.join(dir,'missing-executable'),args:[],roots:['spawn'],timeoutMs:1000,write:true}).catch(e=>e)
   assert.equal(spawnFailure.reason,'process-error');await runtime.whenIdle()

@@ -58,8 +58,9 @@ export interface FontIndexChangePayload {
   deletes: Array<{ path: string; relativePath: string; id?: string }>
   errors?: Array<{ path: string; message: string }>
   metadataFields?: Array<'deleteProtected'>
-  source?: 'watcher' | 'scan-stream' | 'shared-metadata' | 'projection'
+  source?: 'watcher' | 'scan-stream' | 'shared-metadata' | 'projection' | 'metrics'
   projectionRevision?: number
+  metricsRevision?: number
   jobId?: string
 }
 

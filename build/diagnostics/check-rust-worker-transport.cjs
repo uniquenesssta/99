@@ -18,6 +18,7 @@ const clients = fs.existsSync(clientDir) ? fs.readdirSync(clientDir).filter(name
 }) : []
 const cases = new Map(fixture.cases.map(s => [s.id, s]))
 const sequences = new Map(fixture.sequences.map(s => [s.name, s]))
+const plain = value => JSON.parse(JSON.stringify(value))
 
 // Only an intentionally corrected diagnostic sentence differs from the frozen
 // transport transcript. Process arguments, effects, outcomes and ordering stay exact;
@@ -28,9 +29,140 @@ function legacyDiagnosticWording(observed) {
 }
 
 async function checkCase(scenario, overrides) {
+  if (scenario.method === 'runRustFontIndexListWorker') return checkListingCase(scenario, overrides)
   const observed = await h.observe(scenario.method, scenario.settings, overrides)
   const summary = legacyDiagnosticWording(observed)
   assert.deepEqual({ id: scenario.id, ...summary }, cases.get(scenario.id), scenario.id + ' differs from AT-5.1')
+}
+
+// Explicit AT-5.1 exception: listing now owns an unknown TEMP write effect,
+// even for a lexical C: source. Do not regenerate the frozen hashes. The other
+// commands and lifecycle sequences keep their original exact comparisons.
+async function checkListingCase(scenario, overrides) {
+  const observed = await h.observe(scenario.method, { ...scenario.settings, listTransport: true }, overrides)
+  const { summary, h: env } = observed
+  const mode = scenario.settings.mode || 'oneshot'
+  const preAbort = !!scenario.settings.preAbort
+  const invalid = ['false-oneshot', 'false-daemon', 'bad-json'].includes(mode)
+  const cancelled = mode === 'external-abort'
+  const readFailed = mode === 'read-fail'
+  const output = '/fixture-tmp/hfm-rust-list-1-1000-id-1.json'
+  let expected = cases.get('runRustFontIndexListWorker/oneshot').outcome
+  if (preAbort) expected = { kind: 'error', name: 'Error', message: 'Rust listing cancelled', submitted: false }
+  else if (cancelled) expected = { kind: 'error', name: 'SharedIoProcessError', message: 'fixture shared cancelled', submitted: false }
+  else if (invalid) expected = { kind: 'error', name: 'SharedIoProcessError',
+    message: 'Shared I/O invalid receipt: ' + (mode === 'bad-json' ? 'SyntaxError: fixture invalid JSON' : 'Error: worker returned ok=false'), submitted: false }
+  else if (readFailed) expected = { kind: 'error', name: 'Error', message: 'read failed', submitted: false }
+  // Daemon submitted/pre-submit/scheduler fault injection no longer affects this
+  // command: it must enter the isolated Shared I/O owner exactly once.
+  assert.deepEqual(summary.outcome, expected, scenario.id + ' listing outcome')
+  assert.equal(summary.pendingFiles, mode === 'cleanup-fail' ? 1 : 0, scenario.id + ' listing cleanup')
+  assert.equal(env.sharedRequests.length, preAbort ? 0 : 1, scenario.id + ' shared submission count')
+  assert(!env.trace.some(row => row[0] === 'daemon' || row[0] === 'schedule' || (row[0] === 'exec' && row[2][0] === '--list-font-files')), scenario.id + ' escaped conservative listing owner')
+  if (!preAbort) {
+    assert.deepEqual(env.sharedRequests[0], {
+      file: 'C:/worker.exe',
+      args: ['--list-font-files', '--root', 'C:/fonts', '--extensions', 'ttf', '--max', '300000', '--output', output, '--probe-names', '--probe-scripts', '--probe-style', '--probe-family'],
+      roots: ['configured-root:listing-output'], write: true, verifiedReadOnly: false, sharedReadOnlyPreview: false,
+      label: 'list-font-files', lane: 'default', priority: 'normal', timeoutMs: 30000, queueTimeoutMs: 3000,
+      maxBuffer: 256 * 1024, signalAborted: false, hasClose: true, admitted: true,
+    }, scenario.id + ' complete legacy listing footprint')
+    assert.deepEqual(plain(env.trace.filter(row => row[0] === 'rm')), [['rm', output, { force: true }]])
+    assert.deepEqual(plain(env.trace.filter(row => row[0] === 'read')), invalid || cancelled ? [] : [['read', output, 'utf-8']])
+  }
+  const effects = env.trace.filter(row => ['uuid', 'write', 'shared', 'shared.close', 'read', 'progress', 'rm'].includes(row[0])).map(row => row[0])
+  assert.deepEqual(effects, preAbort ? [] : ['uuid', 'shared', 'shared.close', ...(!invalid && !cancelled ? ['read', ...(!readFailed ? ['progress'] : [])] : []), 'rm'], scenario.id + ' listing effect order')
+}
+
+async function checkStdoutListing(overrides) {
+  const capabilities = ['list-font-files', 'list-font-files-stdout-v1']
+  const rootPath = '\\\\server\\share\\fonts'
+  const args = ['--list-font-files', '--root', rootPath, '--extensions', 'ttf', '--max', '300000']
+  const expectedResult = JSON.parse(JSON.stringify(cases.get('runRustFontIndexListWorker/oneshot').outcome))
+  expectedResult.value.files[0].rootPath = rootPath
+  const observed = await h.observe('runRustFontIndexListWorker', {
+    listTransport: true, capabilities, listFolders: [rootPath],
+    stderrLines: ['not progress', 'hfm-scan-progress: {"files":0,"foldersScanned":0}', 'hfm-scan-progress: {"files":-1,"foldersScanned":0}', 'hfm-scan-progress: {broken'],
+  }, overrides)
+  assert.deepEqual(observed.summary.outcome, expectedResult)
+  assert.equal(observed.summary.pendingFiles, 0)
+  assert.deepEqual(observed.h.sharedRequests, [{
+    file: 'C:/worker.exe', args, roots: ['\\\\server\\share'],
+    accesses: [{ path: rootPath, mode: 'read', scope: 'tree', root: '\\\\server\\share' }],
+    write: false, verifiedReadOnly: true, sharedReadOnlyPreview: false,
+    label: 'list-font-files', lane: 'default', priority: 'normal', timeoutMs: 600000, queueTimeoutMs: 3000,
+    maxBuffer: 32 * 1024 * 1024 + 256 * 1024, signalAborted: false, hasClose: true, admitted: true,
+  }], 'stdout capability must produce the complete pinned read description')
+  assert(!observed.h.trace.some(row => ['uuid', 'write', 'read', 'rm', 'daemon', 'schedule'].includes(row[0])), 'stdout listing touched TEMP or a daemon lane')
+  assert.deepEqual(plain(observed.h.trace.filter(row => row[0] === 'progress')), [['progress', { files: 0, foldersScanned: 0 }], ['progress', { files: 1, foldersScanned: 1 }]])
+  const local = await h.observe('runRustFontIndexListWorker', { listTransport: true, capabilities }, overrides)
+  assert.deepEqual(local.summary.outcome, cases.get('runRustFontIndexListWorker/oneshot').outcome)
+  assert.equal(local.h.sharedRequests.length, 0, 'proven local stdout unnecessarily acquired the global write barrier')
+  const localExec = local.h.trace.filter(row => row[0] === 'exec' && row[2][0] === '--list-font-files')
+  assert.equal(localExec.length, 1)
+  assert.deepEqual(plain(localExec[0][2]), ['--list-font-files', '--root', 'C:/fonts', '--extensions', 'ttf', '--max', '300000'])
+  assert.equal(localExec[0][3].maxBuffer, 32 * 1024 * 1024 + 256 * 1024)
+  assert(!local.h.trace.some(row => ['uuid', 'write', 'read', 'rm'].includes(row[0])), 'local stdout listing allocated a transfer file')
+
+  const localRoot = 'C:/fonts'
+  const readTarget = () => ({ paths: [localRoot], write: false, accesses: [{ path: localRoot, mode: 'read', scope: 'tree' }] })
+  const localArgs = ['--list-font-files', '--root', localRoot, '--extensions', 'ttf', '--max', '300000']
+  // These are independent invalid proofs, rather than a snapshot of current
+  // implementation output. Every one must retain a global, unnarrowed writer.
+  const negatives = [
+    { name: 'old worker without stdout capability', capabilities: ['list-font-files'] },
+    { name: 'no cached worker handshake', diagnose: false },
+    { name: 'different worker executable', worker: 'C:/other-worker.exe' },
+    { name: 'legacy output', args: [...localArgs, '--output', '\\\\temp\\share\\out.json'] },
+    { name: 'equals-style output', args: [...localArgs, '--output=\\\\temp\\share\\out.json'] },
+    { name: 'second command', args: [...localArgs, '--shared-file-io'] },
+    { name: 'unknown option', args: [...localArgs, '--unexpected'] },
+    { name: 'extra positional value', args: [...localArgs, 'unapproved'] },
+    { name: 'duplicate root', args: [...localArgs, '--root', 'C:/other'] },
+    { name: 'duplicate probe', args: [...localArgs, '--probe-names', '--probe-names'] },
+    { name: 'missing max', args: localArgs.slice(0, -2) },
+    { name: 'missing max value', args: localArgs.slice(0, -1) },
+    { name: 'zero max', args: [...localArgs.slice(0, -1), '0'] },
+    { name: 'noninteger max', args: [...localArgs.slice(0, -1), '1.5'] },
+    { name: 'wrong root footprint', target: { paths: ['C:/other'], write: false, accesses: [{ path: 'C:/other', mode: 'read', scope: 'tree' }] } },
+    { name: 'extra root footprint', target: { paths: [localRoot, 'C:/other'], write: false, accesses: [{ path: localRoot, mode: 'read', scope: 'tree' }, { path: 'C:/other', mode: 'read', scope: 'tree' }] } },
+    { name: 'file-only footprint', target: { paths: [localRoot], write: false, accesses: [{ path: localRoot, mode: 'read', scope: 'file' }] } },
+    { name: 'write access in read declaration', target: { paths: [localRoot], write: false, accesses: [{ path: localRoot, mode: 'write', scope: 'tree' }] } },
+    { name: 'missing access footprint', target: { paths: [localRoot], write: false } },
+    { name: 'undeclared effects', target: null },
+  ]
+  for (const negative of negatives) {
+    const env = h.createHarness({ listTransport: true, capabilities: negative.capabilities || capabilities }, overrides)
+    const module = env.load(transportPath)
+    assert.equal(module.FONT_SCAN_LISTING_STDOUT_MAX_BYTES, 32 * 1024 * 1024)
+    const runtime = module.createRustCoreWorkerTransportRuntime({ enabled: true, required: false, appendStartupLog() {} })
+    if (negative.diagnose !== false) await runtime.diagnoseRustCoreWorker()
+    const requestArgs = negative.args || localArgs
+    await runtime.runRustCoreScheduledCommand(negative.worker || 'C:/worker.exe', requestArgs, {
+      timeout: 600000, maxBuffer: 1024 * 1024, sharedIo: negative.target === null ? undefined : negative.target || readTarget(),
+    })
+    assert.equal(env.sharedRequests.length, 1, negative.name + ' avoided isolated submission')
+    const request = env.sharedRequests[0]
+    assert.equal(request.write, true, negative.name + ' claimed read effects')
+    assert.equal(request.verifiedReadOnly, false, negative.name + ' obtained a read proof')
+    assert.equal(request.accesses, undefined, negative.name + ' narrowed its unknown writes')
+    assert(request.roots.includes('configured-root:listing-output'), negative.name + ' omitted the global barrier')
+    if (negative.name.includes('output')) assert(request.roots.includes('\\\\temp\\share'), negative.name + ' omitted the actual output share')
+    assert.equal(request.timeoutMs, 30000, negative.name + ' borrowed the long read-only timeout')
+    assert.equal(request.lane, 'default'); assert.equal(request.sharedReadOnlyPreview, false)
+    assert(!env.trace.some(row => row[0] === 'daemon' || row[0] === 'schedule' || (row[0] === 'exec' && row[2][0] === '--list-font-files')), negative.name + ' fell back outside Shared I/O')
+  }
+  // Explicit overflow/failure does not become an empty successful scan or retry.
+  for (const sharedFailure of ['max-buffer', 'timeout']) {
+    const failed = await h.observe('runRustFontIndexListWorker', { listTransport: true, capabilities, listFolders: [rootPath], sharedFailure }, overrides)
+    assert.deepEqual(failed.summary.outcome, { kind: 'error', name: 'SharedIoProcessError', message: 'fixture shared ' + sharedFailure, submitted: false })
+    assert.equal(failed.h.sharedRequests.length, 1); assert.equal(failed.summary.pendingFiles, 0)
+    assert(!failed.h.trace.some(row => row[0] === 'progress' || row[0] === 'daemon' || row[0] === 'schedule'))
+  }
+  const incomplete = await h.observe('runRustFontIndexListWorker', { listTransport: true, capabilities, listFolders: [rootPath], payloads: { '--list-font-files': { ok: true, files: [] } } }, overrides)
+  assert.deepEqual(incomplete.summary.outcome, { kind: 'error', name: 'Error', message: 'rust stdout listing receipt incomplete', submitted: false })
+  assert.equal(incomplete.h.sharedRequests.length, 1); assert.equal(incomplete.summary.pendingFiles, 0)
+  return negatives.length
 }
 
 async function checkSequence(name, overrides) {
@@ -116,12 +248,17 @@ async function checkMutants() {
     ['cleanup masks result', '.catch(() => undefined)', '', 'runRustFontActivationFiles/cleanup-fail'],
     ['throttle threshold', 'now - previous.at < 8000', 'now - previous.at < 7999', 'throttled-preview-daemon'],
     ['command options', '...execOptionsWithoutExternalSignal(execOptions)', 'timeout: 1, maxBuffer: 1', 'runRustFontActivationFiles/oneshot'],
+    ['listing capability proof', "hasCapability(cachedStatus, 'list-font-files-stdout-v1') && isStdoutFontListingArgs(args)", 'true && isStdoutFontListingArgs(args)', 'stdout-listing'],
+    ['listing worker proof', 'const verifiedListing = completeReadFootprint && cachedStatus?.path === workerPath', 'const verifiedListing = completeReadFootprint', 'stdout-listing'],
+    ['listing CLI proof', '&& isStdoutFontListingArgs(args)', '', 'stdout-listing'],
+    ['listing conservative barrier', "const conservativeListing = args[0] === '--list-font-files' && !verifiedListing", "const conservativeListing = args[0] === '--list-font-files' && args.includes('--output')", 'stdout-listing'],
+    ['listing stdout bound', 'FONT_SCAN_LISTING_STDOUT_MAX_BYTES = 32 * 1024 * 1024', 'FONT_SCAN_LISTING_STDOUT_MAX_BYTES = 64 * 1024 * 1024', 'stdout-listing'],
   ]
   for (const [name, before, after, id] of tests) {
     assert(transport.includes(before), 'mutant no longer applies: ' + name)
     const overrides = new Map([[transportPath, transport.replaceAll(before, after)]])
     const scenario = h.scenarios().find(s => s.id === id)
-    await assert.rejects(() => scenario ? checkCase(scenario, overrides) : checkSequence(id, overrides), 'mutant was accepted: ' + name)
+    await assert.rejects(() => id === 'stdout-listing' ? checkStdoutListing(overrides) : scenario ? checkCase(scenario, overrides) : checkSequence(id, overrides), 'mutant was accepted: ' + name)
   }
   return tests.length
 }
@@ -133,11 +270,12 @@ async function main() {
   checkOwnership()
   for (const scenario of scenarios) await checkCase(scenario)
   for (const name of h.sequenceNames) await checkSequence(name)
+  const listingNegatives = await checkStdoutListing()
   await checkFileScope()
   await checkRealChildProcess()
   const mutants = await checkMutants()
   const crlf = new Map([[transportPath, transport], [workerPath, worker], ...clients].map(([rel, text]) => [rel, text.replace(/\r?\n/g, '\r\n')]))
   for (const scenario of scenarios.filter(s => ['oneshot', 'submitted'].includes(s.settings.mode))) await checkCase(scenario, crlf)
-  console.log(`[diagnostics:rust-worker-transport] ${scenarios.length} frozen command cases, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
+  console.log(`[diagnostics:rust-worker-transport] ${scenarios.filter(s => s.method !== 'runRustFontIndexListWorker').length} frozen non-list command cases, ${scenarios.filter(s => s.method === 'runRustFontIndexListWorker').length} explicit migrated list cases, ${listingNegatives} rejected listing read proofs, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-transport]', error.stack || error); process.exitCode = 1 })

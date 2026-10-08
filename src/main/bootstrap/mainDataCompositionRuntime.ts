@@ -19,6 +19,7 @@ import { createMainDataStorageCompositionRuntime, type MainDataStorageOptions } 
 import { createMainDataQueryCompositionRuntime, type MainDataQueryOptions } from './mainDataQueryCompositionRuntime';
 export interface MainDataCompositionOptions {
   onProjectionCommitted?: MainDataQueryOptions['onProjectionCommitted'];
+  onSharedTagCountsChanged?: MainDataQueryOptions['onSharedTagCountsChanged'];
   applyPendingActivationState: MainDataQueryOptions['applyPendingActivationState'];
   hasPendingActivationState?: MainDataQueryOptions['hasPendingActivationState'];
   host: {
@@ -184,6 +185,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
   } = storage;
   const query = createMainDataQueryCompositionRuntime({
     onProjectionCommitted: options.onProjectionCommitted,
+    onSharedTagCountsChanged: options.onSharedTagCountsChanged,
     applyPendingActivationState: options.applyPendingActivationState,
     hasPendingActivationState: options.hasPendingActivationState,
     appWatchedFolders,

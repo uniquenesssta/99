@@ -47,7 +47,8 @@ export function createPreviewNativeRenderer(options: PreviewNativeRendererOption
       try {
         recordOperationWork({ renders: 1 })
         const result = await options.runRustPreviewRenderImage(request)
-        if (result?.ok && result.outputPath && await fsp.access(result.outputPath).then(()=>true,()=>false)) return result
+        if (request.foregroundBytes && result?.ok && result.transient && Buffer.isBuffer(result.bytes)) return result
+        if (result?.ok && !result.transient && result.outputPath && await fsp.access(result.outputPath).then(()=>true,()=>false)) return result
       } catch (error) {
         rethrowSharedIoProcessError(error)
         const message = error instanceof Error ? error.message : String(error)

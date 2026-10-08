@@ -84,6 +84,12 @@ jobs:
       - name: Verify Rust local tag reads and writes
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags
+      - name: Verify bounded stdout listing without output writes
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml stdout_listing_tests
+      - name: Verify read-only shared binding snapshot boundary
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml binding_snapshot_tests
       - name: Verify Rust identity contract vectors
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::path_utils::tests

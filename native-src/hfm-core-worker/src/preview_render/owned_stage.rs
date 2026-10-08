@@ -1,6 +1,6 @@
 // A dedicated command owns this contract: no write until the base is proven
 // local, then only one exclusive subtree. Handles pin that proof through GDI.
-use std::{fs::{self, File, OpenOptions}, io, os::windows::{fs::{MetadataExt, OpenOptionsExt}, io::AsRawHandle}, path::{Path, PathBuf}};
+use std::{fs::{self, File, OpenOptions}, io::{self, Read}, os::windows::{fs::{MetadataExt, OpenOptionsExt}, io::AsRawHandle}, path::{Path, PathBuf}};
 use serde::Serialize;
 use super::types::OwnedPreviewStageRequest;
 
@@ -61,6 +61,32 @@ fn token_valid(token: &str) -> bool {
     })
 }
 impl PreparedOwnedPreviewStage {
+    pub fn image_hex(&self) -> Result<String, String> {
+        const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;
+        const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        // Keep the directory proof pinned through this read, and open the leaf
+        // itself without following a reparse point or permitting a live writer.
+        let file = OpenOptions::new().read(true).share_mode(1).custom_flags(0x0020_0000)
+            .open(&self.proof.output_path).map_err(|e| format!("owned preview image read failed: {e}"))?;
+        let metadata = file.metadata().map_err(|e| e.to_string())?;
+        if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0
+            || metadata.len() < 45 || metadata.len() > MAX_IMAGE_BYTES as u64 {
+            return Err("owned preview image is not a bounded regular PNG".into());
+        }
+        let mut bytes = Vec::with_capacity(metadata.len() as usize);
+        file.take(MAX_IMAGE_BYTES as u64 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        if bytes.len() < 45 || bytes.len() > MAX_IMAGE_BYTES || !bytes.starts_with(PNG_SIGNATURE) {
+            return Err("owned preview image is not a bounded PNG".into());
+        }
+        let mut encoded = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 15) as usize] as char);
+        }
+        Ok(encoded)
+    }
+
     pub fn prepare(input: &OwnedPreviewStageRequest, requested_output: &str) -> Result<Self, String> {
         let system = std::env::var("SystemDrive").map_err(|_| "SystemDrive is unavailable".to_string())?;
         if system.len() != 2 || !system.as_bytes()[0].is_ascii_alphabetic() || !system.ends_with(':')
@@ -123,6 +149,41 @@ mod tests {
         fs::rename(&renamed, directory).unwrap();
         assert!(PreparedOwnedPreviewStage::prepare(&request, &output).is_err(), "existing reservation reused");
         assert_eq!(fs::read(&output).unwrap(), b"owned");
+    }
+    #[test]
+    fn owned_preview_stage_image_hex_is_bounded_and_keeps_directory_pins() {
+        let fixture = Fixture::new(); let (request, output) = request(&fixture.0);
+        let stage = PreparedOwnedPreviewStage::prepare(&request, &output).unwrap();
+        let mut png = vec![0u8; 45]; png[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+        png[8] = 0xab;
+        fs::write(&output, &png).unwrap();
+        let hex = stage.image_hex().unwrap();
+        assert_eq!(hex.len(), png.len() * 2);
+        assert!(hex.starts_with("89504e470d0a1a0aab"));
+        assert!(fs::rename(&stage.proof.directory_path, fixture.0.join("redirected")).is_err());
+        assert!(fs::rename(&fixture.0, fixture.0.with_extension("renamed")).is_err());
+        let writer = OpenOptions::new().write(true).share_mode(7).open(&output).unwrap();
+        assert!(stage.image_hex().is_err(), "live writer admitted during byte read");
+        drop(writer);
+        assert!(stage.image_hex().is_ok());
+        png.resize(2 * 1024 * 1024, 0);
+        fs::write(&output, &png).unwrap();
+        assert_eq!(stage.image_hex().unwrap().len(), 4 * 1024 * 1024);
+        png.push(0);
+        fs::write(&output, &png).unwrap();
+        assert!(stage.image_hex().is_err(), "oversized PNG admitted");
+        fs::write(&output, &png[..44]).unwrap();
+        assert!(stage.image_hex().is_err(), "truncated PNG admitted");
+        fs::write(&output, [0u8; 45]).unwrap();
+        assert!(stage.image_hex().is_err(), "non-PNG admitted");
+        fs::remove_file(&output).unwrap();
+        fs::create_dir(&output).unwrap();
+        assert!(stage.image_hex().is_err(), "directory admitted as a PNG");
+        fs::remove_dir(&output).unwrap();
+        drop(stage);
+        let directory = Path::new(&output).parent().unwrap();
+        let renamed = fixture.0.join("released");
+        fs::rename(directory, &renamed).unwrap();
     }
     #[test]
     fn owned_preview_stage_rejects_unsafe_targets_before_write() {

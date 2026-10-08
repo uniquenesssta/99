@@ -1,3 +1,4 @@
+import { isFontQuerySuperseded } from '../shared/fontQueryFailure'
 import type { TagFontRecoveryRequest, TagFontRecoveryResult } from '../shared/tagFontRecovery'
 import type { NativePreviewLayout } from '../shared/preview-layout/nativePreviewLayout'
 import type { OperationTrace } from '../shared/operationTrace'
@@ -115,15 +116,16 @@ function invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T> {
     })
     .catch((error: unknown) => {
       const durationMs = Date.now() - startedAt
+      const superseded = isFontQuerySuperseded(error)
       if (!channel.startsWith('performance:')) {
         reportPreloadTrace({
           source: 'preload',
-          kind: 'ipc-renderer-error',
+          kind: superseded ? 'ipc-renderer-cancelled' : 'ipc-renderer-error',
           label: channel,
-          severity: 'error',
+          severity: superseded ? 'info' : 'error',
           durationMs,
           timestamp: Date.now(),
-          details: { error: error instanceof Error ? error.message : String(error) }
+          details: superseded ? { reason: 'query-superseded' } : { error: error instanceof Error ? error.message : String(error) }
         })
       }
       throw error

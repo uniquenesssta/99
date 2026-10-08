@@ -24,6 +24,7 @@ export function useFontIndexChangedEventRuntime(args: {
     if (typeof args.hfm.onFontIndexChanged !== 'function') return
 
     let projectionRevision = 0
+    let metricsRevision = 0
     let disposed = false
     let scheduled = false
     let saveInFlight = false
@@ -68,6 +69,15 @@ export function useFontIndexChangedEventRuntime(args: {
 
     const dispose = args.hfm.onFontIndexChanged((payload: FontIndexChangePayload) => {
       const current = argsRef.current
+      if (payload.source === 'metrics') {
+        const revision = Number(payload.metricsRevision)
+        if (Number.isSafeInteger(revision) && revision > metricsRevision) {
+          metricsRevision = revision
+          pendingRefresh = true
+          scheduleFlush()
+        }
+        return
+      }
       if (payload.source === 'projection') {
         const revision = Number(payload.projectionRevision);
         if (Number.isSafeInteger(revision) && revision > projectionRevision) {

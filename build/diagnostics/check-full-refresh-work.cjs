@@ -35,7 +35,7 @@ const BASELINE = '6620b3bafd5b3d894987585dd06c5d5eabc54933'
 const WORKLOAD = Object.freeze({ sourceFiles: 256, targetFiles: 32, sourcesPerTarget: 8,
   metadataOnly: 5234, validIndexed: 5490, invalidDisplay: 1, attemptedCorrectness: 5491,
   legacyRows: 94, evidenceConcurrency: 1, previewConcurrency: 10,
-  foregroundQueries: 16, nativePreviews: 10, treeEnumerations: 4 })
+  foregroundQueries: 16, foregroundMetrics: 4, nativePreviews: 10, treeEnumerations: 4 })
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const plain = value => JSON.parse(JSON.stringify(value))
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex')
@@ -178,25 +178,30 @@ function instrument(host, fixture) {
   }
   pool.run = function(request) {
     const inherited = scope.getStore()?.lane || 'unscoped'
-    const lane = ioScope.currentSharedIoPriority?.() === 'background' && inherited === 'foreground-browse' ? 'background-history-capture' : inherited
+    let lane = ioScope.currentSharedIoPriority?.() === 'background' && inherited === 'foreground-browse' ? 'background-history-capture' : inherited
     const row = { lane, actionId: scope.getStore()?.actionId, label: request.label, startedAt: performance.now(),
+      command: request.args?.[0], signalAbortedAtAdmission: request.signal?.aborted === true,
       requestOrdinal: counters.tasks + 1, roots: [...request.roots], accesses: request.accesses ? plain(request.accesses) : null,
       previewStageProof: request.previewStageProof ? plain(request.previewStageProof) : undefined,
-      write: request.write, sharedReadOnlyPreview: request.sharedReadOnlyPreview === true, priority: request.priority, processLane: request.lane || 'default' }
+      write: request.write, verifiedReadOnly: request.verifiedReadOnly === true, sharedReadOnlyPreview: request.sharedReadOnlyPreview === true, priority: request.priority, processLane: request.lane || 'default' }
     let input
     const inputAt = request.args?.indexOf('--input')
     if (inputAt >= 0) {
       const inputPath=String(request.args[inputAt+1])
       input = host.inputMetadata?.get(inputPath)
-      if (!input && /^hfm-preview-(?:stage|publish)-input-[^\\/]+\.json$/.test(path.basename(inputPath))) {
+      if (!input && /^(?:hfm-preview-(?:stage|publish)-input|hfm-rust-shared-metadata-overlay-read)-[^\\/]+\.json$/.test(path.basename(inputPath))) {
         // Internal transport JSON is not exposed by the facade metadata hook.
         // Observe its actual owned local bytes rather than guessing from label.
-        assert.equal(fs.realpathSync(path.dirname(inputPath)).toLowerCase(),fs.realpathSync(os.tmpdir()).toLowerCase(),'Preview input escaped temporary-file owner')
-        assert(fs.statSync(inputPath).size<=1024*1024,'Preview instrumentation input exceeds bound')
+        assert.equal(fs.realpathSync(path.dirname(inputPath)).toLowerCase(),fs.realpathSync(os.tmpdir()).toLowerCase(),'Observed input escaped temporary-file owner')
+        assert(fs.statSync(inputPath).size<=1024*1024,'Observed instrumentation input exceeds bound')
         input=JSON.parse(fs.readFileSync(inputPath,'utf8'))
       }
-      if (input) { row.operation = input.operation; row.path = input.path; if(input.ownedStage)row.nativeStageInput=plain(input.ownedStage) }
+      if (input) { row.operation = input.operation; row.path = input.path || input.fontPath; row.dest = input.dest; row.foregroundBytes = input.foregroundBytes === true; row.bindingSnapshot = input.bindingSnapshot === true; row.preflight = !!input.preflight; row.entryCount = input.entries?.length; if(input.ownedStage)row.nativeStageInput=plain(input.ownedStage) }
     }
+    if (lane === 'foreground-metrics' && ioScope.currentSharedIoPriority?.() === 'background' && request.priority === 'background'
+      && request.label === 'shared-metadata-overlay-read' && request.args[0] === '--shared-metadata-overlay-read'
+      && input?.bindingSnapshot === true && !input.preflight && Array.isArray(input.entries) && input.entries.length === 0
+      && request.verifiedReadOnly === true && request.write === false) row.lane = lane = 'background-shared-counts'
     counters.tasks++
     if(lane==='background-refresh' && (input?.operation==='fontContentIdentity'||input?.operation==='readFile'&&/\.(ttf|otf|ttc|otc)$/i.test(input.path))){
       backgroundAdmissions++
@@ -212,7 +217,14 @@ function instrument(host, fixture) {
       try {
         const result = JSON.parse(receipt.stdout.trim().split(/\r?\n/).find(Boolean))
         if (result.ownedStage) row.nativeStageReceipt = plain(result.ownedStage)
-        if (request.label === 'preview-stage-locality') { row.proofPhysicalPath = result.physicalPath; row.proofDirectory = result.directory }
+        if (Object.hasOwn(result, 'imageHex')) {
+          const valid = typeof result.imageHex === 'string' && result.imageHex.length > 0 && result.imageHex.length <= 4 * 1024 * 1024 && result.imageHex.length % 2 === 0 && /^[0-9a-f]+$/.test(result.imageHex)
+          const bytes = valid ? Buffer.from(result.imageHex, 'hex') : null
+          row.nativePreviewBytes = { valid, bytes: bytes?.length, sha256: bytes ? sha256(bytes) : undefined,
+            png: !!bytes && bytes.length >= 24 && bytes.subarray(0,8).toString('hex') === '89504e470d0a1a0a',
+            width: bytes?.length >= 24 ? bytes.readUInt32BE(16) : undefined, height: bytes?.length >= 24 ? bytes.readUInt32BE(20) : undefined }
+        }
+        if (request.lane === 'root-probe') { row.proofPhysicalPath = result.physicalPath; row.proofDirectory = result.directory }
         if (input?.operation === 'fontContentIdentity') counters.nativeHashedBytes += Number(result.value?.readBytes || 0)
         if (input?.operation === 'readFile' && /\.(ttf|otf|ttc|otc)$/i.test(input.path)) {
           const transfer = input.transferPath
@@ -220,7 +232,15 @@ function instrument(host, fixture) {
         }
       } catch {}
       return receipt
-    }, error => { row.error = errorInfo(error); row.queuedMs = error?.queuedMs; row.executionMs = error?.executionMs; throw error }).finally(() => {
+    }, error => {
+      row.error = errorInfo(error); row.queuedMs = error?.queuedMs; row.executionMs = error?.executionMs
+      if (row.signalAbortedAtAdmission && error?.reason === 'cancelled' && error?.outcome === 'not-started' && error?.queuedMs === undefined) {
+        // The production pool synchronously rejects this flag before enqueueing
+        // any job. Distinguish observed non-admission from an unknown wait.
+        row.notAdmitted = true; row.queuedMs = 0; row.executionMs = 0
+      }
+      throw error
+    }).finally(() => {
       row.elapsedMs = performance.now()-row.startedAt; counters.processes.push(row)
     })
   }
@@ -305,10 +325,8 @@ async function readProjection(host, expected, label) {
 }
 
 async function interleave(host, meter, fixture, caseDirectory) {
-  const results = [], previews = [], queries = [], enumeration = []
-  const preview = host.load('src/main/rust-core/clients/rustPreviewClientRuntime.ts').createRustPreviewClientRuntime({
-    ...host.transport, appendStartupLog: host.appendStartupLog,
-  })
+  const results = [], previews = [], queries = [], enumeration = [], metrics = []
+  assert(host.foreground, 'Real foreground IPC/preview composition is required')
   const io = host.load('src/main/path/sharedFileSystemRuntime.ts')
   const kinds = ['all', 'installed', 'notInstalled', 'tags']
   let submissionError
@@ -318,9 +336,9 @@ async function interleave(host, meter, fixture, caseDirectory) {
       const start = performance.now()
       host.interaction.markRendererUserActivity(undefined, 'benchmark-query')
       try {
-        const value = await host.query.queryFontPageInLibrary(pageRequest(kinds[index % kinds.length], index))
+        const value = await host.foreground.invoke('fonts:queryPage', [pageRequest(kinds[index % kinds.length], index), action.actionId], undefined, action.actionId)
         if (kinds[index % kinds.length] !== 'tags') assert.equal(value.workerMode, 'rust-merged-index-page')
-        results.push({ index, actionId: action.actionId, kind: kinds[index % kinds.length], total: value.total, workerMode: value.workerMode, startedAt:start,finishedAt:performance.now(),elapsedMs:performance.now()-start })
+        results.push({ index, actionId: action.actionId, channel: 'fonts:queryPage', kind: kinds[index % kinds.length], total: value.total, workerMode: value.workerMode, startedAt:start,finishedAt:performance.now(),elapsedMs:performance.now()-start })
       } finally { meter.counters.foregroundEndToEndMs.push(performance.now()-start) }
     }))
     if (index < WORKLOAD.nativePreviews) {
@@ -329,32 +347,48 @@ async function interleave(host, meter, fixture, caseDirectory) {
         meter.counters.activePreview++; meter.counters.maxPreview = Math.max(meter.counters.maxPreview, meter.counters.activePreview)
         const font = fixture.sourceItems[index], output = path.join(caseDirectory, `visible-${index}.png`)
         try {
-          const value = await preview.runRustPreviewRenderImage({ fontPath: font.path, text: 'HFM Preview Aa 123',
-            fontSize: 36, width: 600, height: 100, outputPath: output,
-            preferSystemFont: false })
+          const dataUri = await host.foreground.invoke('fonts:renderPreviewImage', [font, 'HFM Preview Aa 123', 36, 600, 100], undefined, action.actionId)
+          assert.equal(typeof dataUri, 'string')
+          assert(dataUri.startsWith('data:image/png;base64,'), `production preview ${index} did not return PNG bytes`)
+          const bytes = Buffer.from(dataUri.slice('data:image/png;base64,'.length), 'base64')
+          const finishedAt = performance.now()
+          fs.writeFileSync(output, bytes) // Artifact copy after the full invocation finishes.
+          const native = host.foreground.previewReceipts.filter(row => row.input.fontPath === font.path)
+          assert.equal(native.length, 1, 'Production preview must perform exactly one actual native source render')
+          const value = native[0].result
           assert(value?.ok, `native source preview ${index} failed`)
-          const bytes = fs.readFileSync(output)
           assert.equal(bytes.subarray(0,8).toString('hex'), '89504e470d0a1a0a')
           assert(bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(20) > 0)
-          return { index, actionId: action.actionId, output, bytes: bytes.length, sha256: sha256(bytes), receipt: plain(value),startedAt,finishedAt:performance.now(),elapsedMs:performance.now()-startedAt }
+          return { index, actionId: action.actionId, channel: 'fonts:renderPreviewImage', sourcePath: font.path, output, bytes: bytes.length, sha256: sha256(bytes), width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), receipt: plain(value), startedAt, finishedAt, elapsedMs: finishedAt-startedAt }
         } finally { meter.counters.activePreview-- }
       }))
     }
+    if ([0,4,8,12].includes(index)) metrics.push(meter.runScope('foreground-metrics', async action => {
+      const startedAt = performance.now()
+      const value = await host.foreground.invoke('fonts:getMetrics', [action.actionId], undefined, action.actionId)
+      const finishedAt = performance.now()
+      assert.equal(value.workerMode, 'rust-merged-index-metrics')
+      assert.equal(value.total, WORKLOAD.validIndexed)
+      return { index, actionId: action.actionId, channel: 'fonts:getMetrics', total: value.total, workerMode: value.workerMode,
+        startedAt, finishedAt, elapsedMs: finishedAt-startedAt }
+    }))
     if ([0,4,8,12].includes(index)) enumeration.push(meter.runScope('foreground-enumeration', async action => {
       const receipt = await io.executeSharedFile({ operation: 'treeSnapshot', path: host.rootPaths[(index / 4) % 2] })
       assert(receipt.result?.ok && typeof receipt.result.value === 'object')
       return { index, actionId: action.actionId, paths: Object.keys(receipt.result.value).length }
     }))
-    for(const pending of [queries.at(-1),previews.at(-1),enumeration.at(-1)])pending?.catch(()=>undefined)
+    for(const pending of [queries.at(-1),previews.at(-1),enumeration.at(-1),metrics.at(-1)])pending?.catch(()=>undefined)
     if (index === 5 || index === 11) { meter.counters.invalidationCalls++; host.query.clearFontQueryCaches() }
     await tick()
   }
   } catch(error) { submissionError=error }
-  const settled = await Promise.allSettled([...queries, ...previews, ...enumeration])
+  const settled = await Promise.allSettled([...queries, ...previews, ...enumeration, ...metrics])
   const failures = settled.filter(row => row.status === 'rejected').map(row => errorInfo(row.reason));if(submissionError)failures.push(errorInfo(submissionError))
   return { queries: results.sort((a,b) => a.index-b.index), previewReceipts: settled.slice(queries.length,queries.length+previews.length)
-    .filter(row => row.status === 'fulfilled').map(row => row.value), enumeration: settled.slice(queries.length+previews.length)
-    .filter(row => row.status === 'fulfilled').map(row => row.value), failures }
+    .filter(row => row.status === 'fulfilled').map(row => row.value), enumeration: settled.slice(queries.length+previews.length, queries.length+previews.length+enumeration.length)
+    .filter(row => row.status === 'fulfilled').map(row => row.value), metrics: settled.slice(queries.length+previews.length+enumeration.length)
+    .filter(row => row.status === 'fulfilled').map(row => row.value), failures,
+    invocationBoundary: 'production-ipc-preview-composition', invocations: plain(host.foreground.invocations) }
 }
 
 async function openCase(config, fixture, caseId, sourceRoot, options = {}) {
@@ -394,6 +428,7 @@ async function openCase(config, fixture, caseId, sourceRoot, options = {}) {
   const tags = writer.setLocalFontTagsBatch(fixture.sourceItems.slice(0,26).map(item => ({ item, tagNames: ['FixtureTag'] })), new Date().toISOString())
   assert.equal(tags.failed.length, 0, 'setup tag assignment failed')
   await host.query.checkMergedIndexExternalChanges('benchmark-production-bootstrap')
+  host.foreground = await host.createForegroundRuntime({ withGlobalIo: host.withGlobalIo, interaction: host.interaction })
   const meter = instrument(host, fixture)
   return { host, meter, directory }
   } catch (error) {
@@ -454,6 +489,7 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     resource = await openCase(config, fixture, caseId, sourceRoot)
     const { host, meter, directory } = resource
     report.readerProvenance = host.readerProvenance
+    report.foregroundProvenance = host.foreground.provenance
     report.initialization = 'Unversioned legacy state seeded, then actual production external-change rebuild before timed comparable lane; raw-old snapshot refusal is a separate correctness diagnostic.'
     const runner = createRunner(host, { ...fixture, includeInvalid: false, targetRoot: fixture.manifest.targetRoot }, {
       onProgress: value => progress.push(value), afterSave: async batch => { committedBatches.push(await verifyCommittedBatch(host, batch, changed)) } })
@@ -495,6 +531,7 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     report.contentionOverlap={foregroundQueries:overlap.map(row=>row.index),requiredEvidenceAdmissions:[1,73,145,217],actualBackgroundReads:backgroundReads.length}
     assert(overlap.length>=4,'Foreground did not overlap real background font reads; contention is non-comparable')
     report.previewEndToEnd=summarize(report.foreground.previewReceipts.map(row=>row.elapsedMs))
+    report.metricsEndToEnd=summarize(report.foreground.metrics.map(row=>row.elapsedMs))
     assert.equal(report.foreground.failures.length, 0, 'foreground workload failed; timings are not comparable')
     report.comparable = true
     report.passed = true
@@ -726,7 +763,19 @@ function semanticQueueCohorts(row) {
     ['foreground-browse', foreground.queries, Array.from({length:WORKLOAD.foregroundQueries},(_,i)=>i)],
     ['foreground-preview', foreground.previewReceipts, Array.from({length:WORKLOAD.nativePreviews},(_,i)=>i)],
     ['foreground-enumeration', foreground.enumeration, [0,4,8,12]],
+    ...(foreground.invocationBoundary === 'production-ipc-preview-composition' ? [['foreground-metrics', foreground.metrics, [0,4,8,12]]] : []),
   ]
+  const fullIpc = foreground.invocationBoundary === 'production-ipc-preview-composition'
+  assert(foreground.invocationBoundary === undefined || fullIpc, 'Unrecognized foreground invocation boundary')
+  if (fullIpc) {
+    assert.equal(row.metricsEndToEnd.count, WORKLOAD.foregroundMetrics, 'Missing metrics E2E samples')
+    assert.equal(row.metricsEndToEnd.values.length, WORKLOAD.foregroundMetrics, 'Missing metrics E2E values')
+    for (const [channel, count] of [['fonts:queryPage', WORKLOAD.foregroundQueries], ['fonts:getMetrics', WORKLOAD.foregroundMetrics], ['fonts:renderPreviewImage', WORKLOAD.nativePreviews]]) {
+      const calls = foreground.invocations.filter(value => value.channel === channel)
+      assert.equal(calls.length, count, `Missing/extra full IPC invocation: ${channel}`)
+      assert(calls.every(value => value.ok && Number.isFinite(value.elapsedMs) && value.elapsedMs >= 0), `Failed/untimed full IPC invocation: ${channel}`)
+    }
+  }
   const actions=new Map()
   for(const [lane, receipts, indices] of groups) {
     assert.equal(receipts.length,indices.length,`Missing/extra ${lane} request`)
@@ -737,6 +786,13 @@ function semanticQueueCohorts(row) {
       if(lane==='foreground-browse')assert.equal(value.kind,['all','installed','notInstalled','tags'][value.index%4],'Browse criteria cohort changed')
       assert(!actions.has(expected),'Duplicate foreground action identity')
       actions.set(expected,lane)
+      if (fullIpc && lane !== 'foreground-enumeration') {
+        const channel = { 'foreground-browse': 'fonts:queryPage', 'foreground-preview': 'fonts:renderPreviewImage', 'foreground-metrics': 'fonts:getMetrics' }[lane]
+        assert.equal(value.channel, channel, 'Action bypassed its production IPC channel')
+        const calls = foreground.invocations.filter(call => call.actionId === expected && call.channel === channel)
+        assert.equal(calls.length, 1, 'Missing/duplicate or misattributed full IPC invocation')
+        assert(Number.isFinite(value.elapsedMs) && value.elapsedMs >= calls[0].elapsedMs, 'Action timing omitted part of its IPC invocation')
+      }
     }
   }
   for(const request of work.processRequests) {
@@ -744,9 +800,16 @@ function semanticQueueCohorts(row) {
       assert.equal(actions.get(request.actionId),request.lane,'Misclassified/unattributed foreground process')
       assert(!request.error,'Failed foreground physical request')
       assert(Number.isFinite(request.queuedMs)&&request.queuedMs>=0,'Missing queue cost')
-    } else if(actions.has(request.actionId)) {
-      assert(request.lane==='background-history-capture'&&request.priority==='background'&&actions.get(request.actionId)==='foreground-browse',
-        'Foreground child was silently moved to another cohort')
+    } else if(actions.has(request.actionId) || request.lane === 'background-shared-counts') {
+      const history = request.lane==='background-history-capture'&&request.priority==='background'&&actions.get(request.actionId)==='foreground-browse'
+      const counts = request.lane==='background-shared-counts'&&request.priority==='background'&&actions.get(request.actionId)==='foreground-metrics'
+        &&request.command==='--shared-metadata-overlay-read'&&request.label==='shared-metadata-overlay-read'
+        &&request.bindingSnapshot===true&&request.preflight===false&&request.entryCount===0&&request.verifiedReadOnly===true&&request.write===false
+      assert(history || counts, 'Foreground child was silently moved to another cohort')
+      if (counts) {
+        assert(!request.error || ['cancelled','stopping','query-superseded','stale-generation'].includes(request.error.reason), 'Unexpected detached count failure')
+        assert(Number.isFinite(request.queuedMs)&&request.queuedMs>=0, 'Detached counts lost their queue cost')
+      }
     }
   }
   const select=lane=>work.processRequests.filter(value=>value.lane===lane)
@@ -771,7 +834,19 @@ function semanticQueueCohorts(row) {
     const proofs=children.filter(value=>value.label==='preview-stage-locality')
     assert(proofs.length<=1,'Stage locality probe duplicated')
     const copies=children.filter(value=>value.label==='shared-file-io:copyFile')
-    assert.equal(copies.length,renders[0].sharedReadOnlyPreview?1:0,'Staged preview publication missing/duplicated or unowned')
+    const byteOnly = renders[0].foregroundBytes === true
+    assert.equal(copies.length,renders[0].sharedReadOnlyPreview && !byteOnly ? 1 : 0,'Staged preview publication missing/duplicated or unowned')
+    if (byteOnly) {
+      const action = foreground.previewReceipts.find(value => value.index === index), pixels = renders[0].nativePreviewBytes
+      assert(fullIpc && renders[0].label === 'preview-render-owned-stage' && renders[0].sharedReadOnlyPreview, 'Byte return lacks native owned-stage authority')
+      assert(pixels?.valid && pixels.png && pixels.bytes > 0 && pixels.bytes <= 2 * 1024 * 1024, 'Native byte receipt is absent or invalid')
+      assert.equal(action.receipt?.transient, true, 'Byte route was falsely reported as persisted output')
+      assert.deepEqual([pixels.bytes,pixels.sha256,pixels.width,pixels.height], [action.bytes,action.sha256,action.width,action.height], 'IPC bytes differ from actual native bytes')
+      assert.deepEqual([action.receipt.bytes?.diagnosticByteLength,action.receipt.bytes?.diagnosticSha256], [pixels.bytes,pixels.sha256], 'Validated client bytes were not observed')
+    } else {
+      assert(!renders[0].nativePreviewBytes, 'Persisted route unexpectedly contains a byte-only receipt')
+      assert(!foreground.previewReceipts.find(value => value.index === index).receipt?.transient, 'Transient success omitted native byte-route ownership')
+    }
     assert(copies.every(value=>value.operation==='copyFile'),'Preview copy operation mislabeled')
     if(renders[0].label==='preview-render-owned-stage') {
       const render=renders[0],input=render.nativeStageInput,receipt=render.nativeStageReceipt
@@ -793,7 +868,15 @@ function semanticQueueCohorts(row) {
       assert(Number.isFinite(witness.joinedAt)&&witness.joinedAt>=proof.previewStageProof.openedAt&&witness.joinedAt<=proof.closedAt,'Proof reused after settlement or before ownership')
       usedProofs.add(witness.id)
     }
-    assert.equal(children.length,1+copies.length+proofs.length,'Unknown preview child hidden from fixed cohort')
+    const prerequisites = children.filter(value => !renders.includes(value) && !copies.includes(value) && !proofs.includes(value))
+    if (fullIpc) {
+      const source = foreground.previewReceipts.find(value => value.index === index).sourcePath
+      assert(typeof source === 'string' && path.win32.isAbsolute(source), 'Missing full-preview source identity')
+      assert(prerequisites.some(value => value.label === 'shared-file-io:stat' && value.operation === 'stat' && pathKey(value.path) === pathKey(source)), 'Full preview invocation bypassed real source stat')
+      const fileOperations = new Set(['stat', 'lstat', 'access', 'readFile', 'realpath', 'mkdir', 'openFile', 'writeFile', 'writeOwnedFile', 'renameOwnedFile', 'removeOwnedFile', 'unlink', 'removeStaleLock', 'rename', 'rm', 'appendFile', 'syncFile'])
+      const cacheCommands = new Set(['--preview-cache-read-status', '--preview-cache-query', '--preview-cache-batch', '--preview-cache-touch', '--preview-cache-apply'])
+      assert(prerequisites.every(value => fileOperations.has(value.operation) && value.label === `shared-file-io:${value.operation}` || cacheCommands.has(value.command) && value.label === value.command.slice(2) || value.processLane === 'root-probe' && value.command === '-e' && value.proofDirectory === true && typeof value.proofPhysicalPath === 'string'), 'Unknown full-preview prerequisite child')
+    } else assert.equal(prerequisites.length, 0, 'Unknown preview child hidden from fixed cohort')
     // Same ten user actions: count every physical proof/render/publication queue cost.
     previewCost.push(children.reduce((total,value)=>total+value.queuedMs,0))
   }
@@ -803,10 +886,14 @@ function semanticQueueCohorts(row) {
     const owner=users.find(row=>row.actionId===proof.actionId)
     assert(owner&&owner.previewStageProof.joinedAt===Math.min(...users.map(row=>row.previewStageProof.joinedAt)),'Locality cost moved away from its initiating preview')
   }
-  assert.equal(preview.length,previewCost.length+preview.filter(value=>['shared-file-io:copyFile','preview-stage-locality'].includes(value.label)).length,'Unattributed preview child')
+  if (!fullIpc) assert.equal(preview.length,previewCost.length+preview.filter(value=>['shared-file-io:copyFile','preview-stage-locality'].includes(value.label)).length,'Unattributed preview child')
   return { preview:summarize(previewCost),enumeration:summarize(enumeration.map(value=>value.queuedMs)),
+    backgroundSharedCounts: { requests: select('background-shared-counts').length,
+      totalQueuedMs: select('background-shared-counts').reduce((total, value) => total + value.queuedMs, 0),
+      cancelled: select('background-shared-counts').filter(value => value.error).map(value => ({ actionId: value.actionId, reason: value.error.reason, queuedMs: value.queuedMs, executionMs: value.executionMs })) },
+    metrics: { requests: fullIpc ? WORKLOAD.foregroundMetrics : 0, totalQueuedMs: select('foreground-metrics').reduce((total, value) => total + value.queuedMs, 0) },
     browse:{requests:WORKLOAD.foregroundQueries,childRequests:browse.length,totalQueuedMs:browse.reduce((total,value)=>total+value.queuedMs,0)},
-    scope:'Fixed semantic cohorts; each preview sums all proof/render/publication child queue costs. Browse total is initiated child queue cost, not per-consumer latency; E2E separately gates all16 requests. queuedMs includes synchronous spawn overhead.' }
+    scope:'Fixed semantic cohorts; each preview sums all storage/stat/proof/render/publication child queue costs; full IPC metrics is separately gated. Browse total is initiated child queue cost, not per-consumer latency; E2E separately gates all16 requests. queuedMs includes synchronous spawn overhead.' }
 }
 
 function compareRuns(runs) {
@@ -824,8 +911,12 @@ function compareRuns(runs) {
   try {
     assert.deepEqual(runs.map(row=>row.caseId),['A1','B1','B2','A2'],'Missing/reordered ABBA run')
     assert.equal(baseline.length,2);assert.equal(changed.length,2)
+    assert(runs.every(row => row.foreground.invocationBoundary === runs[0].foreground.invocationBoundary), 'Foreground invocation boundary differs across ABBA')
     for(const row of runs) row.semanticQueue=semanticQueueCohorts(row)
   } catch(error) { return {comparable:false,passed:false,rawMixedQueue,populationFailure:errorInfo(error)} }
+  const fullIpc = runs[0].foreground.invocationBoundary === 'production-ipc-preview-composition'
+  const metricsP95Envelope = fullIpc ? upper(row => row.metricsEndToEnd.p95Ms) : 0, metricsMaxEnvelope = fullIpc ? upper(row => row.metricsEndToEnd.maxMs) : 0
+  const metricsQueueEnvelope = fullIpc ? upper(row => row.semanticQueue.metrics.totalQueuedMs) : 0
   const endToEndEnvelope = upper(row => row.fullRefreshMs)
   const foregroundP95Envelope=upper(row=>row.work.foregroundEndToEnd.p95Ms),foregroundMaxEnvelope=upper(row=>row.work.foregroundEndToEnd.maxMs)
   const previewP95Envelope=upper(row=>row.previewEndToEnd.p95Ms),previewMaxEnvelope=upper(row=>row.previewEndToEnd.maxMs)
@@ -833,6 +924,9 @@ function compareRuns(runs) {
   const enumerationQueueP95=upper(row=>row.semanticQueue.enumeration.p95Ms),enumerationQueueMax=upper(row=>row.semanticQueue.enumeration.maxMs)
   const browseQueueTotal=upper(row=>row.semanticQueue.browse.totalQueuedMs)
   const results = changed.map(row => ({ caseId: row.caseId,
+    ...(fullIpc ? { metricsEndToEndP95NoRegression: row.metricsEndToEnd.p95Ms <= metricsP95Envelope,
+      metricsEndToEndMaxNoRegression: row.metricsEndToEnd.maxMs <= metricsMaxEnvelope,
+      metricsQueueCostNoRegression: row.semanticQueue.metrics.totalQueuedMs <= metricsQueueEnvelope } : {}),
     foregroundMaxNoRegression: row.work.foregroundQueue.maxMs <= queueMaxEnvelope,
     previewQueueP95NoRegression:row.semanticQueue.preview.p95Ms<=previewQueueP95,
     previewQueueMaxNoRegression:row.semanticQueue.preview.maxMs<=previewQueueMax,
@@ -846,7 +940,8 @@ function compareRuns(runs) {
     previewEndToEndMaxNoRegression:row.previewEndToEnd.maxMs<=previewMaxEnvelope }))
   return { comparable: true, sameWorker: false, nativeBinaryMatchesEachSourceVersion: true, sameFileManifest: true, syntheticLatency: false,rawMixedQueue,
     timingEnvelopeSource: 'Actual same-job A1 and A2 observations, without fabricated machine-specific millisecond targets',
-    baselineEnvelope: { queueMaxMs:queueMaxEnvelope,previewQueueP95,previewQueueMax,enumerationQueueP95,enumerationQueueMax,browseQueueTotal,
+    invocationBoundary: fullIpc ? 'production-ipc-preview-composition' : 'legacy-rust-client-only',
+    baselineEnvelope: { metricsP95Ms: metricsP95Envelope, metricsMaxMs: metricsMaxEnvelope, metricsQueueMs: metricsQueueEnvelope, queueMaxMs:queueMaxEnvelope,previewQueueP95,previewQueueMax,enumerationQueueP95,enumerationQueueMax,browseQueueTotal,
       fullRefreshMs:endToEndEnvelope,foregroundP95Ms:foregroundP95Envelope,foregroundMaxMs:foregroundMaxEnvelope,previewP95Ms:previewP95Envelope,previewMaxMs:previewMaxEnvelope },
     candidates: results, passed: results.every(row => Object.entries(row).filter(([key])=>key!=='caseId').every(([,value])=>value===true)) }
 }
@@ -884,11 +979,12 @@ async function main() {
   fixture = { ...fixture, ...await makeItems(currentRoot, fixture, config.hostModule) }
   save(path.join(output, 'run-manifest.json'), { baselineSha: BASELINE, currentSha, workerSha256: config.workerSha256,
     baselineWorkerSha256: config.baselineWorkerSha256, hostSha256: config.hostSha256, runtime: process.versions, logDetail: process.env.HFM_LOG_DETAIL || 'normal', workload: WORKLOAD, sourceManifestSha256: sha256(fs.readFileSync(path.join(fixtureDirectory, 'immutable-fixture-manifest.json'))),
+    foregroundBoundary: 'Actual registerIpcHandlers/admission, query/metrics and createPreviewRuntime including storage/source stat; synthetic trusted renderer boundary',
     sourceVersionsSharePhysicalFiles: true, nativeBinaryShared: false, nativeBinaryMatchesEachSourceVersion: true, timedLanePopulation: WORKLOAD.validIndexed,
     correctnessAttemptedPopulation: WORKLOAD.attemptedCorrectness, actualInstalledTargetsArePrivateCopies: true,
     operatingSystemRegistryWrites: 0, realFontSystemChanges: 0, baselineInvalidRowExcludedFromBothTimedRuns: true,
     order: ['A1','B1','B2','A2'], timingMethod: 'ABBA same job, no injected latency, no clearing OS disk cache; cold/warm ordering reported',
-    exclusions: ['real NAS/network timing', 'real Windows registry/installation', 'full Electron renderer paint/decode',
+    exclusions: ['real NAS/network timing', 'real Windows registry/installation', 'full Electron renderer paint/decode and real cross-process IPC serialization',
       'complete watcher event lifecycle (directory metadata/identity correctness has its own case)',
       'query lifecycle supplementary gate uses controlled promises and is never counted as a SQL/performance result'] })
   const report = { passed: false, baselineSha: BASELINE, currentSha, workerSha256: config.workerSha256, baselineWorkerSha256: config.baselineWorkerSha256,

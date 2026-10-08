@@ -32,6 +32,8 @@ pub struct PreviewRenderRequest {
     pub height: u32,
     pub output_path: String,
     #[serde(default)]
+    pub foreground_bytes: bool,
+    #[serde(default)]
     pub owned_stage: Option<OwnedPreviewStageRequest>,
     #[serde(default, deserialize_with = "deserialize_layout")]
     pub layout: Option<NativePreviewLayout>,

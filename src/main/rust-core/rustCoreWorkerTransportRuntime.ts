@@ -1,3 +1,4 @@
+import { isCompletePreviewPng } from '../preview/runtime/previewImageValidationRuntime'
 import { assertLocalShutdownWorkAllowed } from '../app/shutdownCoordinatorRuntime'
 import type { ChildProcess } from 'node:child_process'
 import { getStartupPathRootState } from '../path/startupPathAvailabilityRuntime'
@@ -28,13 +29,42 @@ const execFileAsync = promisify(execFile)
 // stages, two 500ms stat stages and one 2000ms content read. This is one task,
 // not five new queue allowances, and does not change ordinary read deadlines.
 export const FONT_CONTENT_IDENTITY_TIMEOUT_MS = 2 * 500 + 2 * 500 + 2000
+export const FONT_SCAN_LISTING_MAX_TIMEOUT_MS = 10 * 60 * 1000
+export const FONT_SCAN_LISTING_STDOUT_MAX_BYTES = 32 * 1024 * 1024
+export function sharedCommandExecutionTimeoutMs(command: string, requested: number | undefined, verifiedListing = false): number {
+  const maximum = command === '--list-font-files' && verifiedListing ? FONT_SCAN_LISTING_MAX_TIMEOUT_MS : 30000
+  const value = Number.isFinite(requested) && requested! > 0 ? requested! : maximum
+  return Math.min(maximum, Math.max(100, value))
+}
 
+
+// Match only the audited read-only CLI shape; the native dispatcher examines
+// all flags, so a first-argument label alone is not an effect proof.
+export function isStdoutFontListingArgs(args: string[]): boolean {
+  if (args[0] !== '--list-font-files') return false
+  const values = new Set(['--root', '--extensions', '--max'])
+  const flags = new Set(['--probe-names', '--probe-scripts', '--probe-style', '--probe-family', '--full-hash'])
+  const seen = new Set<string>()
+  for (let index = 1; index < args.length; index++) {
+    const option = args[index]
+    if (seen.has(option)) return false
+    seen.add(option)
+    if (values.has(option)) {
+      const value = args[++index]
+      if (!value || value.startsWith('--')) return false
+      if (option === '--max' && !/^[1-9][0-9]*$/.test(value)) return false
+    } else if (!flags.has(option)) return false
+  }
+  return [...values].every(option => seen.has(option))
+}
 
 export type RustCoreExecOptions = {
   timeout?: number
   windowsHide?: boolean
   maxBuffer?: number
   signal?: AbortSignal
+  onStderrLine?: (line: string) => void
+  foregroundPreviewBytes?: boolean
   sharedIo?: RustSharedIoTarget
 }
 
@@ -74,7 +104,7 @@ function mergeAbortSignals(primary: AbortSignal, secondary?: AbortSignal): { sig
 }
 
 function execOptionsWithoutExternalSignal(options: RustCoreExecOptions): Omit<RustCoreExecOptions, 'signal'> {
-  const { signal: _signal, ...rest } = options
+  const { signal: _signal, onStderrLine: _onStderrLine, foregroundPreviewBytes: _foregroundPreviewBytes, ...rest } = options
   return rest
 }
 
@@ -181,7 +211,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     return `shared-file-io:${operation}`
   }
 
-  async function runRustCoreScheduledCommandDirect(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
+  async function runRustCoreScheduledCommandDirect(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean; previewBytes?: Buffer }> {
     execOptions = { ...execOptions, signal: execOptions.signal || currentSharedIoSignal() }
     assertLocalShutdownWorkAllowed()
     if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
@@ -201,12 +231,37 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       throw new SharedIoProcessError('Native preview stage reservation is not authorized', 'not-started', 'invalid-stage-reservation')
     const sharedReadOnlyPreview = target?.write === true && (Boolean(ownedNativeStage) || (args[0] === '--preview-render-image'
       && previewStages.provesReadOnly(temporaryFiles.get(inputPath)?.input, target.accesses)))
+    // Read footprints alone do not prove that SQLite avoids WAL sidecar writes.
+    const completeReadFootprint = target?.write === false && !!target.accesses?.length
+      && target.accesses.every(access => access.mode === 'read')
+      && target.paths.filter(Boolean).every(path => target!.accesses!.some(access => access.path === path))
+    const listingRoot = args[args.indexOf('--root') + 1]
+    const verifiedListing = completeReadFootprint && cachedStatus?.path === workerPath
+      && hasCapability(cachedStatus, 'list-font-files-stdout-v1') && isStdoutFontListingArgs(args)
+      && target!.paths.length === 1 && target!.paths[0] === listingRoot
+      && target!.accesses!.every(access => access.path === listingRoot && access.scope === 'tree')
+    const conservativeListing = args[0] === '--list-font-files' && !verifiedListing
+    // TEMP may itself be UNC/mapped/reparse-backed, and old or malformed CLI
+    // forms do not prove read-only effects. Every unproven listing keeps a
+    // global write barrier with no narrowed access footprint.
+    if (conservativeListing) {
+      const outputs = args.flatMap((arg, index) => arg === '--output' ? [args[index + 1]] : arg.startsWith('--output=') ? [arg.slice('--output='.length)] : [])
+      target = { paths: [...new Set([...(target?.paths || []), ...inferredPaths, ...outputs].filter((value): value is string => !!value))], write: true }
+    }
+    const effectInput = temporaryFiles.get(inputPath)?.input as { operation?: string; bindingSnapshot?: boolean; preflight?: unknown; entries?: unknown[] } | undefined
+    const pureFileRead = args[0] === '--shared-file-io' && !!effectInput
+      && ['stat', 'lstat', 'access', 'readdir', 'treeSnapshot', 'directoryMetadata', 'directoryMetadataBatch'].includes(effectInput.operation || '')
+    const pinnedBindingRead = args[0] === '--shared-metadata-overlay-read' && cachedStatus?.path === workerPath
+      && hasCapability(cachedStatus, 'shared-metadata-bindings-read-v1') && effectInput?.bindingSnapshot === true
+      && !effectInput.preflight && Array.isArray(effectInput.entries) && effectInput.entries.length === 0
+    const verifiedReadOnly = completeReadFootprint && (verifiedListing || pureFileRead || pinnedBindingRead)
     let accesses = target?.accesses ? await sharedIoAccesses(target.accesses) : undefined
-    if (target && accesses?.length && !sharedReadOnlyPreview) target = { ...target, write: accesses.some(access => access.mode === 'write') }
+    if (target?.accesses?.length && !sharedReadOnlyPreview) target = { ...target, write: target.accesses.some(access => access.mode === 'write') }
     const previewRead = sharedReadOnlyPreview || (target?.write === false && (target.preview || (args[0] === '--shared-file-io' && isSharedPreviewReadScope())))
     execOptions = { ...execOptions, sharedIo: target }
     args = [...args]
     const roots = target ? await sharedIoResourceKeys(target.paths) : []
+    if (conservativeListing) { roots.push('configured-root:listing-output'); accesses = undefined }
     // A folded proof starts with unknown physical aliases: this global read
     // barrier must not be narrowed away by a verified font-source footprint.
     if (ownedNativeStage) { roots.push('configured-root:owned-preview-stage'); accesses = undefined }
@@ -232,17 +287,18 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
-      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, sharedReadOnlyPreview, previewStageProof: ownedNativeStage?.proof || (sharedReadOnlyPreview ? previewStages.proofForInput(temporaryFiles.get(inputPath)?.input) : undefined), initialPhase: ownedNativeStage ? { timeoutMs: 500, acceptLine: ownedNativeStage.acceptLine } : undefined, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
-        timeoutMs: Math.min(30000, Math.max(100, execOptions.timeout || 30000)),
+      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, verifiedReadOnly, sharedReadOnlyPreview, previewStageProof: ownedNativeStage?.proof || (sharedReadOnlyPreview ? previewStages.proofForInput(temporaryFiles.get(inputPath)?.input) : undefined), initialPhase: ownedNativeStage ? { timeoutMs: 500, acceptLine: ownedNativeStage.acceptLine } : undefined, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
+        timeoutMs: sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing),
+        onStderrLine: execOptions.onStderrLine,
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
-          if (!target!.write || previewRead || accesses?.length) await error.closed
+          if (!target!.write || previewRead || accesses?.length || args[0] === '--list-font-files') await error.closed
           throw error
         })
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
         try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Preserve the worker result. */ }
       }
-      if ((!target!.write || sharedReadOnlyPreview) && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
+      if ((!target!.write || sharedReadOnlyPreview || args[0] === '--list-font-files') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
       // A malformed success envelope can follow a commit. It must never trigger a fallback write.
       try {
         const payload = parseJsonLine<{ ok?: boolean }>(result.stdout)
@@ -301,12 +357,12 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     return { ...result, daemon: false }
   }
 
-  async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean }> {
+  async function runRustCoreScheduledCommand(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean; previewBytes?: Buffer }> {
     const inputIndex = args.indexOf('--input')
     const original = inputIndex >= 0 ? temporaryFiles.get(args[inputIndex + 1])?.input : undefined
     if (args[0] !== '--preview-render-image' || !original || typeof original !== 'object')
       return runRustCoreScheduledCommandDirect(workerPath, args, execOptions)
-    const input = original as { fontPath?: string; outputPath?: string }
+    const input = original as { fontPath?: string; outputPath?: string; width?: number; height?: number }
     if (typeof input.fontPath !== 'string' || typeof input.outputPath !== 'string')
       return runRustCoreScheduledCommandDirect(workerPath, args, execOptions)
     assertLocalShutdownWorkAllowed()
@@ -318,6 +374,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     const deadline = Date.now() + 3000 + Math.min(30000, Math.max(100, execOptions.timeout || 30000))
     const nativeStage = cachedStatus?.path === workerPath && hasCapability(cachedStatus, 'preview-owned-stage-v1')
       ? await nativePreviewStages.reserve(input.fontPath, workerPath) : null
+    const bytesOnly = !!execOptions.foregroundPreviewBytes && !!nativeStage && !!cachedStatus && hasCapability(cachedStatus, 'preview-owned-stage-bytes-v1')
     const stage = nativeStage || await previewStages.allocate(input.fontPath, signal)
     if (!stage) return runRustCoreScheduledCommandDirect(workerPath, args, execOptions)
     const logCleanup = (error: unknown) => { try { options.appendStartupLog(`preview stage cleanup deferred: ${String(error)}`) } catch { /* Cleanup diagnostics cannot trigger replay. */ } }
@@ -329,18 +386,28 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     previewAdmissions.set(renderInput.path, admit)
     previewAdmissions.set(publishInput.path, admit)
     try {
-      await renderInput.writeJson({ ...original, outputPath: stage.path, ownedStage: nativeStage?.request })
+      await renderInput.writeJson({ ...original, outputPath: stage.path, ownedStage: nativeStage?.request, foregroundBytes: bytesOnly })
       const result = await runRustCoreScheduledCommandDirect(workerPath, [nativeStage ? '--preview-render-owned-stage' : '--preview-render-image', '--input', renderInput.path], {
         ...execOptions, signal: lifetime.signal, timeout: Math.max(100, Math.min(execOptions.timeout || 30000, deadline - Date.now())), sharedIo: { paths: [input.fontPath, stage.path], write: true, preview: true,
           accesses: [{ path: input.fontPath, mode: 'read', scope: 'file' }, { path: stage.path, mode: 'write', scope: 'file' }] },
       })
-      const receipt = parseJsonLine<{ ok?: boolean; outputPath?: string; ownedStage?: unknown }>(result.stdout)
+      const receipt = parseJsonLine<{ ok?: boolean; outputPath?: string; ownedStage?: unknown; imageHex?: unknown }>(result.stdout)
       if (nativeStage) nativeStage.acceptFinal(receipt.ownedStage, receipt.outputPath)
       if (receipt.ok !== true || receipt.outputPath !== stage.path)
         throw new SharedIoProcessError('预览暂存回执无效。', 'unknown', 'invalid-receipt')
       assertLocalShutdownWorkAllowed()
       if (lifetime.signal.aborted || transportStopped) throw new SharedIoProcessError('预览发布已经取消。', 'not-started', 'cancelled')
       if (!admit()) throw new SharedIoProcessError('共享根状态已变化，旧预览已经丢弃。', 'not-started', 'stale-generation')
+      if (bytesOnly) {
+        const hex = receipt.imageHex
+        if (typeof hex !== 'string' || hex.length > 4 * 1024 * 1024 || hex.length % 2 || !/^[0-9a-f]+$/.test(hex))
+          throw new SharedIoProcessError('Owned preview pixels receipt invalid', 'unknown', 'invalid-receipt')
+        const bytes = Buffer.from(hex, 'hex')
+        if (!isCompletePreviewPng(bytes) || bytes.readUInt32BE(16) !== input.width || bytes.readUInt32BE(20) !== input.height)
+          throw new SharedIoProcessError('Owned preview PNG receipt invalid', 'unknown', 'invalid-receipt')
+        const { imageHex: _imageHex, ...metadata } = receipt
+        return { ...result, previewBytes: bytes, stdout: JSON.stringify({ ...metadata, outputPath: input.outputPath }) + '\n' }
+      }
       await publishInput.writeJson({ operation: 'copyFile', path: stage.path, dest: input.outputPath })
       previewPublications.set(publishInput.path, input.outputPath)
       // Keep the original source/output conservative write barrier and the caller's

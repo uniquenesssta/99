@@ -3,6 +3,7 @@ export type PreviewNativeRenderEngine = 'rust-directwrite' | 'directwrite' | 'po
 
 export interface PreviewNativeRenderRequest {
   layout?: NativePreviewLayout
+  foregroundBytes?: boolean
   fontPath: string
   preferSystemFont?: boolean
   systemFontFamilyCandidates?: string[]
@@ -15,6 +16,8 @@ export interface PreviewNativeRenderRequest {
 
 export interface PreviewNativeRenderResult {
   ok: boolean
+  bytes?: Buffer
+  transient?: boolean
   engine: PreviewNativeRenderEngine
   nativeBackend?: string
   provenance?: Record<string, string | number>

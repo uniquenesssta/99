@@ -13,7 +13,7 @@ const compiled = new Map()
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
 function createHarness(settings = {}, overrides = new Map()) {
-  const trace = [], files = new Map(), modules = new Map()
+  const trace = [], files = new Map(), modules = new Map(), sharedRequests = []
   let clock = 1000, serial = 0, builds = 0, handshakeCount = 0
   let mode = settings.mode || 'oneshot'
   const external = new AbortController(), scheduler = new AbortController()
@@ -81,7 +81,7 @@ function createHarness(settings = {}, overrides = new Map()) {
   const stubs = {
     'node:child_process': { execFile },
     'node:crypto': { randomUUID: () => { record('uuid', ++serial); return 'id-' + serial } },
-    'node:os': { tmpdir: () => '/fixture-tmp' },
+    'node:os': { tmpdir: () => settings.tempDir || '/fixture-tmp' },
     'node:path': { ...path.posix, win32: path.win32 },
     'node:fs': { promises: {
       writeFile: async (file, contents, encoding) => { record('write', file, contents, encoding); if (mode === 'write-fail') throw failure('Error', 'write failed'); files.set(file, contents) },
@@ -120,10 +120,47 @@ function createHarness(settings = {}, overrides = new Map()) {
       },
     },
   }
+  // Opt-in only for the explicit listing contract migration. Other AT-5.1
+  // scenarios still load the original process owner and retain their exact trace.
+  class SharedIoProcessError extends Error {
+    constructor(message, outcome, reason) {
+      super(message); this.name = 'SharedIoProcessError'; this.sharedIo = true;
+      this.outcome = outcome; this.reason = reason; this.closed = Promise.resolve();
+    }
+  }
+  const listingProcessPort = {
+    SharedIoProcessError,
+    rethrowSharedIoProcessError: error => { if (error?.sharedIo) throw error; },
+    applicationSharedIoProcessRuntime: () => ({
+      stop() {},
+      run: async request => {
+        assert.equal(request.args[0], '--list-font-files', 'listing-only port received an unrelated command');
+        const view = JSON.parse(JSON.stringify({ file: request.file, args: request.args, roots: request.roots,
+          accesses: request.accesses, write: request.write, verifiedReadOnly: !!request.verifiedReadOnly,
+          sharedReadOnlyPreview: !!request.sharedReadOnlyPreview, label: request.label, lane: request.lane,
+          priority: request.priority, timeoutMs: request.timeoutMs, queueTimeoutMs: request.queueTimeoutMs,
+          maxBuffer: request.maxBuffer, signalAborted: !!request.signal?.aborted, hasClose: typeof request.onClose === 'function',
+          admitted: request.admit ? request.admit() : true }));
+        sharedRequests.push(view); record('shared', view);
+        try {
+          if (mode === 'external-abort') external.abort(failure('Error', 'external cancelled'));
+          if (request.signal?.aborted) throw new SharedIoProcessError('fixture shared cancelled', 'not-started', 'cancelled');
+          if (settings.sharedFailure) throw new SharedIoProcessError('fixture shared ' + settings.sharedFailure, 'unknown', settings.sharedFailure);
+          if (settings.sharedHook) await settings.sharedHook({ request, files });
+          for (const line of settings.stderrLines || []) request.onStderrLine?.(line);
+          const result = await commandResult(request.args);
+          if (Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) > request.maxBuffer)
+            throw new SharedIoProcessError('fixture shared max-buffer', 'unknown', 'max-buffer');
+          return { ...result, queuedMs: 0, executionMs: 0 };
+        } finally { request.onClose?.(); record('shared.close'); }
+      },
+    }),
+  };
   // Keep malformed JSON fault text independent of the host V8 version.
   const json = { stringify: JSON.stringify, parse: text => { try { return JSON.parse(text) } catch { throw new SyntaxError('fixture invalid JSON') } } }
   const context = vm.createContext({ Error, TypeError, RangeError, SyntaxError, JSON: json, AbortController, Buffer, console, process: { pid: 1, env: settings.env || {} }, Date: class extends Date { static now() { return clock } } })
   function load(rel) {
+    if (settings.listTransport && rel === 'src/main/path/sharedIoProcessRuntime.ts') return listingProcessPort
     if (modules.has(rel)) return modules.get(rel).exports
     const text = overrides.get(rel) ?? fs.readFileSync(path.join(root, rel), 'utf8')
     const cacheKey = rel + '\n' + text
@@ -147,13 +184,13 @@ function createHarness(settings = {}, overrides = new Map()) {
   const module = load(core + 'rustCoreWorkerRuntime.ts')
   assert.equal(trace.length, 0, 'importing worker created runtime state')
   const runtime = module.createRustCoreWorkerRuntime({ enabled: settings.enabled !== false, required: !!settings.required, appendStartupLog: message => record('log', message), onDaemonDomainEvent: event => record('event', event) })
-  return { runtime, trace, files, external, scheduler, load, setMode: value => { mode = value }, setClock: value => { clock = value }, settings }
+  return { runtime, trace, files, sharedRequests, external, scheduler, load, setMode: value => { mode = value }, setClock: value => { clock = value }, settings }
 }
 
 function argsFor(method, h) {
   const row = { id: 'f', fontId: 'f', itemId: 'f', key: 'k', path: 'C:/fonts/a.ttf', fontPath: 'C:/fonts/a.ttf', relativePath: 'a.ttf', pathKey: 'a', aliases: [], tagNames: ['tag'] }
   const input = { appName: 'HFM', rootPath: 'C:/fonts', dbPath: 'C:/index.db', storage: 'root', schemaVersion: 1, cacheVersion: 1, scriptDetectionVersion: 1, roots: ['C:/fonts'], sources: [{ root: 'C:/fonts' }], source: { root: 'C:/fonts' }, rows: [row], items: [row], entries: [row], installed: [], upserts: [['a.ttf', {}]], deletes: [], folders: ['C:/fonts'], extensions: ['.ttf'], windowsFontsDir: 'C:/Windows/Fonts', currentUserFontsDir: 'C:/user/Fonts', includeNameCandidates: true, copies: [], paths: ['C:/fonts/a.ttf'], queryKey: 'q', request: {}, limit: 20, offset: 0, sql: {}, fontPath: 'C:/fonts/a.ttf', text: 'A', fontSize: 24, width: 200, height: 60, outputPath: 'C:/preview.png', tagName: 'tag' }
-  if (method === 'runRustFontIndexListWorker') return [['C:/fonts'], ['.ttf'], p => h.trace.push(['progress', p]), h.external.signal]
+  if (method === 'runRustFontIndexListWorker') return [h.settings.listFolders || ['C:/fonts'], ['.ttf'], p => h.trace.push(['progress', p]), h.external.signal]
   if (method === 'runRustFontParseBatch') return [[{ jobId: 'j', rootPath: 'C:/fonts', filePath: 'C:/fonts/a.ttf', cacheKey: 'k', signature: 's' }], h.external.signal]
   if (method === 'runRustInstallStatusRead' || method === 'runRustInstallStatusSave') return [[{ rootPath: 'C:/fonts', items: [row] }]]
   if (method === 'runRustFontResourceAdd' || method === 'runRustFontResourceRemove') return [['C:/fonts/a.ttf', 'C:/fonts/a.ttf'], { notify: true, strong: true, reason: 'fixture' }]

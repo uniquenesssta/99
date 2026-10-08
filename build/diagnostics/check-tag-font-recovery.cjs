@@ -92,7 +92,7 @@ function harness() {
   const put = font => { files.set(key(font.path), true); parsed.set(key(font.path), font) }
   let live = []
   const queryDeps = { canReadDetached: async () => true, openLibraryDb: async () => adapter, roots: async () => roots,
-    readShared: async () => ({ preflight: { snapshot: { rows: sharedRows } } }),
+    readShared: async input => input.bindingSnapshot ? {bindingSnapshot:{version:1,rows:sharedRows}} : {preflight:{snapshot:{rows:sharedRows}}},
     queryLive: async (_request, limit, offset) => { counts.live++; return { items: live.slice(offset, offset + limit), total: live.length, offset, limit, queryKey: 'tags', engine: 'sql', truncated: false, elapsedMs: 0 } },
     hydrate: async items => { counts.hydrate++; assert(items.every(item => !item.recoveryPlaceholder), 'display-only rows reached install hydration'); return items },
     matches: (font, request) => (!request.keyword || font.fileName.includes(request.keyword)) && (!request.selectedTagName || (request.sidebarPage === 'sharedTags' ? font.tagNames : font.localTagNames || []).includes(request.selectedTagName)),
@@ -393,14 +393,14 @@ async function f08QueryCases() {
     const retained = await h.query.query(request, 10, 0)
     assert.equal(retained.total, 1); assert.equal(retained.items[0].tagBindingReadOnly, true)
     assert.equal(retained.items[0].fileAvailability, 'unavailable')
-    assert.equal((await h.query.sharedTagCounts()).Shared, 1)
+    await assert.rejects(h.query.sharedTagCounts(), /metadata busy/, 'offline cache cannot certify fresh counts')
     const display = load('src/renderer/src/fontDisplay.ts', { './fontUserIntentRuntime': { getUninstallIssue: () => undefined } })
     assert.equal(display.installLabel(retained.items[0]), '共享标签暂不可读取')
     await assert.rejects(h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => { throw Error('must not open') })
       .recover({ mode: 'relink', scope: 'shared', fontPath: retained.items[0].path }), /此字体已恢复/)
     // A successful authoritative empty snapshot removes the old binding.
     h.sharedRows.length = 0
-    h.queryDeps.readShared = async () => ({ preflight: { snapshot: { rows: h.sharedRows } } })
+    h.queryDeps.readShared = async input => input.bindingSnapshot ? {bindingSnapshot:{version:1,rows:h.sharedRows}} : {preflight:{snapshot:{rows:h.sharedRows}}}
     h.queryDeps.queryLive = async () => ({ items: [], total: 0 })
     h.query.invalidate(); assert.equal((await h.query.query(request, 10, 0)).total, 0)
     assert.deepEqual(plain(await h.query.sharedTagCounts()), {})
@@ -431,16 +431,17 @@ async function f08QueryCases() {
   const mixed = harness(), blocked = '\\\\server\\blocked'
   try {
     mixed.roots.push(blocked)
-    mixed.queryDeps.readShared = async ({rootPath}) => {
+    mixed.queryDeps.readShared = async ({rootPath,bindingSnapshot}) => {
       if (rootPath===blocked) throw Error('offline without historical metadata')
-      return { preflight:{ snapshot:{ rows:[{font_id:'healthy',relative_path:'old/A.ttf',tag_names_json:'["Shared"]'}] } } }
+      const rows=[{font_id:'healthy',relative_path:'old/A.ttf',tag_names_json:'["Shared"]'}]
+      return bindingSnapshot ? {bindingSnapshot:{version:1,rows}} : {preflight:{snapshot:{rows}}}
     }
     mixed.queryDeps.queryLive = async request => {
       assert.deepEqual(plain(request.selectedWatchedFolders), [root], 'failed shared root must be excluded from the live page range')
       return {items:[],total:0}
     }
     assert.equal((await mixed.query.query({sidebarPage:'sharedTags',selectedTagName:'Shared',selectedWatchedFolders:[root,blocked]},10,0)).total,1)
-    assert.equal(await mixed.query.sharedTagCounts(),undefined,'unknown membership on an unreadable root must not be reported as zero')
+    await assert.rejects(mixed.query.sharedTagCounts(), /offline/, 'unknown membership must not become zero')
   } finally { mixed.close() }
   const p = harness()
   try {
@@ -794,6 +795,23 @@ async function missingHistoricalCardsRemainVisible() {
 }
 
 
+async function sharedCountsRequireCompleteReadonlyEvidence() {
+  const h=harness()
+  try {
+    const read=h.queryDeps.readShared
+    h.queryDeps.readShared=async input=>{assert.equal(input.bindingSnapshot,true);assert.equal(input.preflight,undefined);assert.deepEqual(plain(input.entries),[]);return read(input)}
+    h.sharedRows.push({font_id:'valid',relative_path:'one.ttf',tag_names_json:'["Shared"]'})
+    assert.equal((await h.query.sharedTagCounts()).Shared,1)
+    assert.equal(h.db.prepare("SELECT 1 FROM sqlite_master WHERE name='tag_shared_binding_snapshots'").get(),undefined)
+    for(const invalid of [
+      {relative_path:'one.ttf',tag_names_json:'invalid'},
+      {relative_path:'one.ttf',tag_names_json:'{"tag":"Shared"}'},
+      {relative_path:null,tag_names_json:'["Shared"]'},
+      {relative_path:'..\\outside.ttf',tag_names_json:'["Shared"]'},
+    ]){h.sharedRows.splice(0,h.sharedRows.length,invalid);await assert.rejects(h.query.sharedTagCounts(),/JSON|Unexpected|共享标签/)}
+  }finally{h.close()}
+}
+
 async function extendedTagWriteCompatibility() {
   const h=harness()
   try {
@@ -913,7 +931,7 @@ async function main() {
   assert.equal(display.installLabel({ ...make('A'), systemInstalled: true, fileAvailability: 'missing' }), '文件丢失')
   const failures = []
   // Each group owns and closes its fixtures; collect errors without hiding later groups.
-  for (const run of [extendedTagWriteCompatibility, legacyUncStorageRecoveryChain, missingHistoricalCardsRemainVisible, queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
+  for (const run of [sharedCountsRequireCompleteReadonlyEvidence, extendedTagWriteCompatibility, legacyUncStorageRecoveryChain, missingHistoricalCardsRemainVisible, queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
     sharedRecoveryCases, detachedAuthorizationCase, backgroundWaitCase, f08QueryCases, f08RecoveryCases, f08RefreshCases,
     f09MatchCases, f09AliasCase, f09CommitCases, f09SharedCases, f09EvidenceCases, f13ScopedWorkCases]) {
     try { await run() } catch (error) { failures.push(`${run.name}: ${error?.stack || String(error)}`) }

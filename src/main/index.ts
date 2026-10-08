@@ -18,6 +18,8 @@ const tags = createMainTagCompositionRuntime({
 feedback.bindTags(tags);
 
 const dataComposition = createMainDataCompositionRuntime({
+  onSharedTagCountsChanged: revision => feedback.sendFontIndexChanged({ source: 'metrics', metricsRevision: revision,
+    folder: '', at: new Date().toISOString(), upserts: [], deletes: [] }),
   onProjectionCommitted: revision => feedback.sendFontIndexChanged({ source: 'projection', projectionRevision: revision,
     folder: '', at: new Date().toISOString(), upserts: [], deletes: [] }),
   host: { execFileAsync: coreComposition.execFileAsync, delayToEventLoop: coreComposition.delayToEventLoop, nodeRequire },

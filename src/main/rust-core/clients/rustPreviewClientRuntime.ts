@@ -268,13 +268,17 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
     const inputFile = createTemporaryJsonFile(`hfm-rust-preview-render`)
     const inputPath = inputFile.path
     try {
-      await inputFile.writeJson(input)
+      // This intent is a transport option, not permission for arbitrary native
+      // commands to return bytes. The transport gates and constructs that input.
+      const { foregroundBytes, ...nativeInput } = input
+      await inputFile.writeJson(nativeInput)
       const commandOutput = await runRustCoreScheduledCommand(status.path, ['--preview-render-image', '--input', inputPath], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_PREVIEW_RENDER_TIMEOUT_MS || 30 * 1000) || 30 * 1000),
         sharedIo: { paths: [input.fontPath, input.outputPath], write: true, preview: true,
           accesses: [{ path: input.fontPath, mode: 'read', scope: 'file' }, { path: input.outputPath, mode: 'write', scope: 'file' }] },
         windowsHide: true,
-        maxBuffer: 1024 * 1024,
+        foregroundPreviewBytes: foregroundBytes === true,
+        maxBuffer: (foregroundBytes ? 5 : 1) * 1024 * 1024,
       })
       const payload = parseJsonLine<RustPreviewRenderImagePayload>(commandOutput.stdout)
       if (!payload.ok || !payload.outputPath || (input.layout && payload.layoutVersion !== input.layout.version)) {
@@ -289,6 +293,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         outputPath: payload.outputPath || input.outputPath,
         elapsedMs: Number(payload.elapsedMs || Date.now() - startedAt),
         workerMode: 'rust-preview-render-image',
+        ...(commandOutput.previewBytes ? { bytes: commandOutput.previewBytes, transient: true } : {}),
       }
       const provenanceDetail = result.provenance && detailedStartupLogsEnabled() && provenanceSamples++ < 32 ? `, provenance=${JSON.stringify(result.provenance)}` : ''
       options.appendStartupLog(`rust preview render finished: output=${result.outputPath}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms${result.nativeBackend ? `, engine=${result.engine}, nativeBackend=${result.nativeBackend}${provenanceDetail}` : ''}`)

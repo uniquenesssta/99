@@ -583,6 +583,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
   async function runRustSharedMetadataOverlayRead(input: RustSharedMetadataOverlayReadInput): Promise<RustSharedMetadataOverlayReadResult | null> {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'shared-metadata-overlay-read')) return null
+    if (input.bindingSnapshot && !hasCapability(status, 'shared-metadata-bindings-read-v1')) throw new SharedIoProcessError('原生 worker 不支持只读共享标签快照。', 'not-started', 'capability-unavailable')
+    if (input.bindingSnapshot && (input.preflight || input.entries?.length)) throw new SharedIoProcessError('只读共享标签快照不能附带写入预检或覆盖条目。', 'not-started', 'invalid-input')
     if (input.preflight && !hasCapability(status, 'shared-metadata-preflight-v1')) throw new SharedIoProcessError('原生 worker 不支持安全共享迁移，请更新。', 'not-started', 'capability-unavailable')
 
     const cleanEntries = Array.isArray(input.entries)
@@ -593,7 +595,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         pathKey: String(entry?.pathKey || ''),
       })).filter((entry) => entry.key)
       : []
-    if (!cleanEntries.length && !input.preflight) {
+    if (!cleanEntries.length && !input.preflight && !input.bindingSnapshot) {
       return {
         rootPath: input.rootPath,
         dbPath: input.dbPath,
@@ -615,6 +617,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         rootPath: input.rootPath,
         dbPath: input.dbPath,
         entries: cleanEntries,
+        bindingSnapshot: input.bindingSnapshot,
         preflight: input.preflight,
       })
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
@@ -622,7 +625,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         '--input', inputPath,
       ], {
         timeout: Math.max(3000, Number(process.env.HFM_RUST_SHARED_METADATA_OVERLAY_READ_TIMEOUT_MS || 45 * 1000) || 45 * 1000),
-        sharedIo: { ...sharedDatabaseTarget(input.dbPath, true, [input.rootPath]), write: !!input.preflight },
+        sharedIo: input.bindingSnapshot ? sharedDatabaseTarget(input.dbPath, false, [input.rootPath])
+          : { ...sharedDatabaseTarget(input.dbPath, true, [input.rootPath]), write: !!input.preflight },
         windowsHide: true,
         maxBuffer: 16 * 1024 * 1024,
       })
@@ -633,7 +637,13 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       if (!payload.ok || !Array.isArray(payload.matched)) throw new Error(payload.message || 'rust shared metadata overlay read returned ok=false')
       if (input.preflight && (payload.preflight?.version !== 1 || payload.preflight.phase !== input.preflight.phase)) throw new Error('原生共享迁移能力未确认，请更新 worker。')
       if (input.preflight?.phase === 'snapshot' && !payload.preflight?.snapshot?.token) throw new Error('原生共享迁移快照缺失。')
+      if (input.bindingSnapshot && (payload.bindingSnapshot?.version !== 1 || !Array.isArray(payload.bindingSnapshot.rows)
+        || payload.bindingSnapshot.rows.some(row => !row || typeof row !== 'object'
+          || ['font_id', 'relative_path', 'path_key', 'tag_names_json'].some(key => row[key as keyof typeof row] != null && typeof row[key as keyof typeof row] !== 'string')
+          || ['favorite', 'delete_protected', 'revision'].some(key => row[key as keyof typeof row] != null && !Number.isSafeInteger(row[key as keyof typeof row])))))
+        throw new Error('原生只读共享标签快照回执无效。')
       const result: RustSharedMetadataOverlayReadResult = {
+        bindingSnapshot: input.bindingSnapshot ? payload.bindingSnapshot : undefined,
         preflight: payload.preflight,
         rootPath: String(payload.rootPath || input.rootPath || ''),
         dbPath: String(payload.dbPath || input.dbPath || ''),

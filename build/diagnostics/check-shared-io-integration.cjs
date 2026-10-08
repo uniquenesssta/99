@@ -37,9 +37,16 @@ async function main() {
    }
    const child = cp.spawn(process.execPath,runArgs,options);children.add(child);child.once('close',()=>children.delete(child));return child
  }
- const load = loader({ electron:{app:{}}, 'node:child_process':{...cp,spawn},
+ const execFile=(...args)=>{
+   const callback=args.at(-1),command=args[1][0],protocol=load(core+'rustCoreProtocolRuntime.ts')
+   const value=command==='--handshake'?{ok:true,version:'0.42.0',protocolVersion:42,capabilities:[...protocol.REQUIRED_RUST_CORE_CAPABILITIES,'shared-metadata-bindings-read-v1','list-font-files-stdout-v1']}:{ok:true,profiles:[]}
+   callback(null,JSON.stringify(value),'');return {}
+ }
+ execFile[require('node:util').promisify.custom]=(...args)=>new Promise((resolve,reject)=>execFile(...args,(error,stdout,stderr)=>error?reject(error):resolve({stdout,stderr})))
+ const load = loader({ electron:{app:{}}, 'node:child_process':{...cp,spawn,execFile},
+   [path.join(root,core+'rustCoreWorkerPathRuntime.ts')]:{resolveRustCoreWorkerPathWithDiagnostics:()=>({path:process.execPath,candidates:[process.execPath]})},
    [path.join(root,core+'rustCoreDaemonRuntime.ts')]:mockDaemon }, {AbortController}, transforms)
- const transport = load(core+'rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({appendStartupLog:s=>logs.push(s),enabled:false,required:false})
+ const transport = load(core+'rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({appendStartupLog:s=>logs.push(s),enabled:true,required:true})
  const globals = {process:{...process,platform:'win32'}}
  const mapped = loader({[path.join(root,'src/main/path/pathCanonicalizer.ts')]:{
    normalizeNativePathText:load('src/main/path/pathCanonicalizer.ts').normalizeNativePathText,
@@ -103,6 +110,59 @@ async function main() {
    }
    assert.equal(daemonCalls.length,localBefore+1)
    cases.push('invalid JSON / failed envelope / invalid business receipt cannot trigger fallback')
+
+   mode='success';payload={ok:true,matched:[]}
+   const policy=load(core+'rustCoreWorkerTransportRuntime.ts').sharedCommandExecutionTimeoutMs
+   assert.equal(policy('--list-font-files',600000,true),600000);assert.equal(policy('--list-font-files',Infinity,true),600000)
+   assert.equal(policy('--list-font-files',600000,false),30000);assert.equal(policy('--shared-file-io',600000,true),30000)
+   const capturePool=load('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime(),captureRun=capturePool.run,requests=[]
+   const output=transport.createTemporaryJsonFile('hfm-listing-budget');capturePool.run=request=>{requests.push(request);return captureRun(request)}
+   try{
+     const source="\\\\nas\\budget\\fonts",args=['--list-font-files','--root',source,'--extensions','ttf','--max','300000']
+     const target={paths:[source],write:false,accesses:[{path:source,mode:'read',scope:'tree'}]}
+     const unverified=transport.createTemporaryJsonFile('hfm-unverified-binding-proof');await unverified.writeJson({bindingSnapshot:true,entries:[]})
+     try{await transport.runRustCoreScheduledCommand(process.execPath,['--shared-metadata-overlay-read','--input',unverified.path],{timeout:1000,sharedIo:target});assert.equal(requests.at(-1).verifiedReadOnly,false)}finally{await unverified.dispose()}
+     await transport.runRustCoreScheduledCommand(process.execPath,args,{timeout:600000,sharedIo:target})
+     assert.equal(requests.at(-1).timeoutMs,30000);assert.equal(requests.at(-1).verifiedReadOnly,false,'stdout flag without compatible cached worker granted proof')
+     assert.equal(requests.at(-1).write,true);assert.equal(requests.at(-1).accesses,undefined);assert(requests.at(-1).roots.includes('configured-root:listing-output'))
+     assert.equal((await transport.diagnoseRustCoreWorker()).available,true)
+     const shape=load(core+'rustCoreWorkerTransportRuntime.ts').isStdoutFontListingArgs
+     assert(shape(args));assert(shape([...args,'--probe-names','--full-hash']))
+     for(const extra of [['--root',source],['--output',output.path],['--output='+output.path],['--shared-metadata-apply'],['--probe-names','--probe-names']]){
+       assert.equal(shape([...args,...extra]),false,'unsafe CLI shape passed proof')
+       await transport.runRustCoreScheduledCommand(process.execPath,[...args,...extra],{timeout:600000,sharedIo:target})
+       const request=requests.at(-1);assert.equal(request.write,true);assert.equal(request.verifiedReadOnly,false);assert.equal(request.accesses,undefined);assert(request.roots.includes('configured-root:listing-output'));assert.equal(request.timeoutMs,30000)
+     }
+     await transport.runRustCoreScheduledCommand(process.execPath,args,{timeout:600000,sharedIo:target})
+     assert.equal(requests.at(-1).timeoutMs,600000);assert.equal(requests.at(-1).queueTimeoutMs,3000);assert.equal(requests.at(-1).verifiedReadOnly,true)
+     await transport.runRustCoreScheduledCommand(process.execPath+'.different-worker',args,{timeout:600000,sharedIo:target})
+     assert.equal(requests.at(-1).timeoutMs,30000);assert.equal(requests.at(-1).verifiedReadOnly,false);assert.equal(requests.at(-1).write,true);assert.equal(requests.at(-1).accesses,undefined)
+     for(const legacyOutput of [output.path,source+'/redirected-temp.json','O:/Temp/list.json','C:/reparse-temp/list.json']) {
+       await transport.runRustCoreScheduledCommand(process.execPath,[...args,'--output',legacyOutput],{timeout:600000,sharedIo:target})
+       const request=requests.at(-1);assert.equal(request.write,true);assert.equal(request.verifiedReadOnly,false);assert.equal(request.accesses,undefined);assert(request.roots.includes('configured-root:listing-output'));assert.equal(request.timeoutMs,30000)
+     }
+     const statInput=transport.createTemporaryJsonFile('hfm-preview-stat-proof');await statInput.writeJson({operation:'stat',path:source})
+     try{await transport.runRustCoreScheduledCommand(process.execPath,['--shared-file-io','--input',statInput.path],{timeout:500,sharedIo:{paths:[source,'',''],write:false,preview:true,accesses:[{path:source,mode:'read',scope:'file'}]}});assert.equal(requests.at(-1).verifiedReadOnly,true);assert.equal(requests.at(-1).timeoutMs,500)}finally{await statInput.dispose()}
+     await transport.runRustCoreScheduledCommand(process.execPath,args,{timeout:600000,sharedIo:{...target,paths:[source,path.win32.join(source, "uncovered")]}})
+     assert.equal(requests.at(-1).timeoutMs,30000);assert.equal(requests.at(-1).verifiedReadOnly,false)
+     const conservative=transport.createTemporaryJsonFile('hfm-unproven-read');
+     try{for(const command of ['--install-status-read','--merged-index-query-page','--merged-index-query-metrics','--shared-metadata-known-tags','--preview-cache-read-status','--shared-file-io']){
+       await conservative.writeJson({operation:'sqliteSnapshot',path:source});await transport.runRustCoreScheduledCommand(process.execPath,[command,'--input',conservative.path],{timeout:1000,sharedIo:target});assert.equal(requests.at(-1).verifiedReadOnly,false,command)
+     }}finally{await conservative.dispose()}
+     const previous=requests.length;await client.runRustSharedMetadataOverlayRead({rootPath:source,dbPath:path.win32.join(source, "metadata.sqlite"),entries:[{key:'one',fontId:'one'}]});assert.equal(requests.length,previous+1)
+     assert.equal(requests.at(-1).verifiedReadOnly,false);assert.equal(requests.at(-1).write,true)
+     const oldCount=requests.length
+     await assert.rejects(client.runRustSharedMetadataOverlayRead({rootPath:source,dbPath:path.win32.join(source, "metadata.sqlite"),entries:[],bindingSnapshot:true}),e=>e.reason==='capability-unavailable');assert.equal(requests.length,oldCount)
+     const readonlyClient=load(core+'clients/rustMetadataClientRuntime.ts').createRustMetadataClientRuntime({...transport,appendStartupLog:s=>logs.push(s)})
+     payload={ok:true,matched:[],bindingSnapshot:{version:1,rows:[{font_id:'one',relative_path:'one.ttf',tag_names_json:'["A"]',revision:1}]}}
+     const currentCount=requests.length,read=await readonlyClient.runRustSharedMetadataOverlayRead({rootPath:source,dbPath:path.win32.join(source, "metadata.sqlite"),entries:[],bindingSnapshot:true})
+     assert.equal(requests.length,currentCount+1);assert.equal(read.bindingSnapshot.rows.length,1);assert.equal(requests.at(-1).write,false);assert.equal(requests.at(-1).verifiedReadOnly,true)
+     const wrong=transport.createTemporaryJsonFile('hfm-binding-wrong-worker');await wrong.writeJson({bindingSnapshot:true,entries:[]})
+     try{await transport.runRustCoreScheduledCommand(process.execPath+'.different-worker',['--shared-metadata-overlay-read','--input',wrong.path],{timeout:1000,sharedIo:target});assert.equal(requests.at(-1).verifiedReadOnly,false)}finally{await wrong.dispose()}
+     payload={ok:true,matched:[]};await assert.rejects(readonlyClient.runRustSharedMetadataOverlayRead({rootPath:source,dbPath:path.win32.join(source, "metadata.sqlite"),entries:[],bindingSnapshot:true}),e=>e.sharedIo&&e.reason==='invalid-receipt')
+   }finally{capturePool.run=captureRun;await output.dispose()}
+   cases.push('bounded listing deadline and narrow capability-owned read effects; legacy/malformed receipt cannot authorize a read bypass')
+
    mode='hang';nextReady=path.join(dir,'ready');const file=transport.createTemporaryJsonFile('hfm-integration-lease');await file.writeJson({test:true})
    let hungSettled=false
    const hung=run(['\\\\nas\\bad'],{input:file.path,timeout:2000}).catch(e=>e).finally(()=>{hungSettled=true})
@@ -123,6 +183,21 @@ async function main() {
    await until(()=>fs.existsSync(nextReady));controller.abort()
    assert.equal((await aborting).reason,'cancelled');await until(()=>children.size===0)
    cases.push('external abort reaches actual child and is reaped')
+   for (const cancelled of [false,true]) {
+     mode='hang';nextReady=path.join(dir,'legacy-close-'+cancelled)
+     const output=transport.createTemporaryJsonFile('hfm-legacy-list-close'),aborter=new AbortController()
+     await output.writeJson({held:true})
+     const source='//nas/legacy-close-'+cancelled
+     const pending=transport.runRustCoreScheduledCommand(process.execPath,['--list-font-files','--root',source,'--extensions','ttf','--max','300000','--output',output.path],{timeout:cancelled?5000:1000,signal:aborter.signal,sharedIo:{paths:[source,output.path],write:true}}).catch(e=>e)
+     await until(()=>fs.existsSync(nextReady));await output.dispose()
+     assert(fs.existsSync(output.path),'legacy output lease released before physical close')
+     if(cancelled)aborter.abort()
+     const failure=await pending
+     assert.equal(failure.reason,cancelled?'cancelled':'timeout');assert.equal(failure.outcome,'unknown')
+     assert.equal(children.size,0,'legacy listing caller settled before its child physically closed')
+     await until(()=>!fs.existsSync(output.path))
+   }
+   cases.push('legacy listing timeout/cancel waits through true child close and keeps its temporary lease')
    // Exercise outer consumers with compatibility explicitly on: no second SQLite attempt.
    const terminalError=new (load('src/main/path/sharedIoProcessRuntime.ts').SharedIoProcessError)('fault','unknown','timeout')
    const fallbackLoad=loader({}, {process:{...process,env:{...process.env,HFM_NODE_STATE_FALLBACK:'1'}}},transforms)
@@ -179,8 +254,23 @@ async function main() {
    assert.equal(availability.getStartupPathRootState(staleRoot).state,'offline')
    assert(availability.getStartupPathRootState(staleRoot).generation>beforeProbe.generation)
    assert.equal((await stale).reason,'stale-generation')
-   await until(()=>children.size===0);healthTransport.stopRustCoreDaemon()
+   await until(()=>children.size===0)
    cases.push('failed dedicated root probe still offlines root and rejects in-flight old-generation result')
+   const staleListingRoot='//nas/stale-legacy-listing',staleOutput=healthTransport.createTemporaryJsonFile('hfm-stale-legacy-listing')
+   nextReady=path.join(dir,'stale-listing-ready');payload={ok:true,written:true}
+   const listingBefore=availability.getStartupPathRootState(staleListingRoot),listingSubmissions=submissions.length
+   try {
+     const pending=healthTransport.runRustCoreScheduledCommand(process.execPath,['--list-font-files','--root',staleListingRoot,'--extensions','ttf','--max','300000','--output',staleOutput.path],{timeout:3000,sharedIo:{paths:[staleListingRoot,staleOutput.path],write:true}}).catch(e=>e)
+     await until(()=>fs.existsSync(nextReady))
+     assert.equal(await availability.ensureStartupPathRootAvailable(staleListingRoot),false)
+     assert(availability.getStartupPathRootState(staleListingRoot).generation>listingBefore.generation)
+     const failure=await pending
+     assert.equal(failure.reason,'stale-generation');assert.equal(failure.outcome,'unknown')
+     assert.equal(submissions.length,listingSubmissions+1,'stale legacy listing was replayed after possible output side effects')
+     await until(()=>children.size===0)
+   } finally { await staleOutput.dispose() }
+   healthTransport.stopRustCoreDaemon()
+   cases.push('legacy listing writer admission still rejects changed source generation without replaying possible output writes')
    mode='hang';nextReady=path.join(dir,'stop-ready')
    const stopping=run(['\\\\nas\\stop'],{timeout:5000}).catch(e=>e);await until(()=>fs.existsSync(nextReady))
    transport.stopRustCoreDaemon();assert.equal((await stopping).reason,'stopping')

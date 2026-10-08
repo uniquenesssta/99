@@ -543,6 +543,7 @@ export type RustSharedMetadataPreflight = {
 }
 
 export type RustSharedMetadataOverlayReadInput = {
+  bindingSnapshot?: boolean
   preflight?: RustSharedMetadataPreflight
   rootPath: string
   dbPath: string
@@ -558,6 +559,7 @@ export type RustSharedMetadataOverlayMatchedEntry = {
 }
 
 export type RustSharedMetadataOverlayReadResult = {
+  bindingSnapshot?: { version: 1; rows: import('../indexing/shared-metadata/sharedMetadataStateRuntime').SharedMetadataRow[] }
   preflight?: { version: 1; phase: 'snapshot' | 'commit' | 'maintenance-snapshot' | 'maintenance-commit'; snapshot?: RustSharedMetadataPreflightSnapshot; maintenance?: RustSharedMetadataMaintenanceSnapshot }
   rootPath: string
   dbPath: string
@@ -811,6 +813,7 @@ export type RustFontNotifyResult = {
 }
 
 export type RustPreviewRenderImageInput = {
+  foregroundBytes?: boolean
   layout?: NativePreviewLayout
   fontPath: string
   preferSystemFont?: boolean
@@ -823,6 +826,8 @@ export type RustPreviewRenderImageInput = {
 }
 
 export type RustPreviewRenderImageResult = {
+  bytes?: Buffer
+  transient?: boolean
   ok: boolean
   engine: 'rust-directwrite'
   nativeBackend?: string

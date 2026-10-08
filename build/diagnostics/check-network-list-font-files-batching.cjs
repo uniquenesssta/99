@@ -216,7 +216,6 @@ async function checkManualNetworkRefreshUsesRustBatch() {
 }
 
 async function checkListCommandIsReadOnlySharedIo() {
-  const calls = []
   const mocks = {
     [abs(sharedIoProcessPath)]: {
       rethrowSharedIoProcessError(error) {
@@ -224,6 +223,8 @@ async function checkListCommandIsReadOnlySharedIo() {
       },
     },
     [abs(transportPath)]: {
+      FONT_SCAN_LISTING_MAX_TIMEOUT_MS: 600000,
+      FONT_SCAN_LISTING_STDOUT_MAX_BYTES: 32 * 1024 * 1024,
       parseJsonLine(value) {
         return JSON.parse(String(value).trim().split(/\r?\n/).filter(Boolean).at(-1) || '{}')
       },
@@ -241,35 +242,61 @@ async function checkListCommandIsReadOnlySharedIo() {
       ...process,
       env: {
         ...process.env,
-        HFM_RUST_NAME_PROBE: '0',
-        HFM_RUST_SCRIPT_PROBE: '0',
-        HFM_RUST_STYLE_PROBE: '0',
-        HFM_RUST_FAMILY_PROBE: '0',
-        HFM_RUST_FULL_HASH: '0',
+        HFM_RUST_SCAN_LISTING_TIMEOUT_MS: '600000',
+        HFM_RUST_SCAN_LISTING_MAX: '300000',
+        HFM_RUST_NAME_PROBE: '0', HFM_RUST_SCRIPT_PROBE: '0',
+        HFM_RUST_STYLE_PROBE: '0', HFM_RUST_FAMILY_PROBE: '0', HFM_RUST_FULL_HASH: '0',
       },
     },
   })(rustClientPath)
-  const client = runtime.createRustIndexingClientRuntime({
-    diagnoseRustCoreWorker: async () => ({ available: true, path: 'worker.exe', capabilities: ['list-font-files'] }),
-    runRustCoreScheduledCommand: async (_worker, _args, options) => {
-      calls.push(options)
-      return { stdout: JSON.stringify({ ok: true }), stderr: '' }
-    },
-    createTemporaryJsonFile: () => ({
-      path: 'C:\\Temp\\hfm-rust-list.json',
-      readText: async () => JSON.stringify({ ok: true, files: [], directories: [], errors: [], foldersScanned: 1, truncated: false }),
-      writeJson: async () => {},
-      dispose: async () => {},
-    }),
-    appendStartupLog: () => {},
-  })
-
-  await client.runRustFontIndexListWorker([sharedRoot], ['ttf'])
-  assert.equal(calls.length, 1)
-  assert.deepEqual(plain(calls[0].sharedIo), { paths: [sharedRoot], write: false, accesses: [{path: sharedRoot, mode: 'read', scope: 'tree'}] })
+  const receipt = { ok: true, files: [{ path: path.win32.join(sharedRoot, 'one.ttf'), size: 123, modifiedMs: 456, signatureValid: true, contentHash: 'identity', hashKind: 'full-fnv1a64' }], directories: [{ path: sharedRoot, modifiedMs: 456, fileCount: 1, dirCount: 0 }], errors: [{ path: path.win32.join(sharedRoot, 'denied'), message: 'denied' }], foldersScanned: 1, truncated: true }
+  for (const stdoutMode of [true, false]) {
+    const calls = [], effects = []
+    let stdout = JSON.stringify(stdoutMode ? receipt : { ok: true }), rejected
+    const outputPath = 'C:\\Temp\\hfm-rust-list.json'
+    const client = runtime.createRustIndexingClientRuntime({
+      diagnoseRustCoreWorker: async () => ({ available: true, path: 'worker.exe', capabilities: ['list-font-files', ...(stdoutMode ? ['list-font-files-stdout-v1'] : [])] }),
+      runRustCoreScheduledCommand: async (_worker, args, options) => {
+        calls.push({ args, options })
+        if (rejected) throw rejected
+        return { stdout, stderr: '' }
+      },
+      createTemporaryJsonFile: () => {
+        assert.equal(stdoutMode, false, 'audited stdout listing allocated a temporary output')
+        effects.push('allocate')
+        return { path: outputPath, readText: async () => { effects.push('read'); return JSON.stringify(receipt) }, writeJson: async () => { throw Error('listing must not write an input') }, dispose: async () => { effects.push('dispose') } }
+      },
+      appendStartupLog: () => {},
+    })
+    const result = await client.runRustFontIndexListWorker([sharedRoot], ['ttf'])
+    assert.equal(calls.length, 1)
+    assert.equal(result.files[0].file, receipt.files[0].path)
+    assert.equal(result.files[0].contentHash, 'identity')
+    assert.deepEqual(plain(result.directories), receipt.directories)
+    assert.deepEqual(plain(result.errors), receipt.errors)
+    assert.equal(result.truncated, true)
+    assert.equal(result.foldersScanned, 1)
+    assert.equal(calls[0].options.timeout, 600000)
+    assert.equal(calls[0].options.maxBuffer, stdoutMode ? 32 * 1024 * 1024 + 256 * 1024 : 256 * 1024)
+    assert.deepEqual(plain(calls[0].options.sharedIo), stdoutMode
+      ? { paths: [sharedRoot], write: false, accesses: [{path: sharedRoot, mode: 'read', scope: 'tree'}] }
+      : { paths: [sharedRoot, outputPath], write: true })
+    assert.equal(calls[0].args.includes('--output'), !stdoutMode)
+    assert.deepEqual(effects, stdoutMode ? [] : ['allocate', 'read', 'dispose'])
+    if (stdoutMode) {
+      await client.runRustFontIndexListWorker([sharedRoot], ['ttf'])
+      assert.equal(calls.length, 2, 'a repeated manual listing reused a stale client result')
+      assert.deepEqual(plain(calls[1].args), plain(calls[0].args), 'stdout listings need no unique temporary-file cache buster')
+      stdout = JSON.stringify({ ok: true })
+      await assert.rejects(client.runRustFontIndexListWorker([sharedRoot], ['ttf']), /receipt incomplete/)
+      rejected = new TestSharedIoProcessError('font listing stdout exceeds 32 MiB')
+      await assert.rejects(client.runRustFontIndexListWorker([sharedRoot], ['ttf']), error => error === rejected)
+      assert.deepEqual(effects, [], 'stdout receipt failure fell back to file output')
+    }
+  }
   const transport = fs.readFileSync(abs(transportPath), 'utf8').replace(/\r\n/g, '\n')
   assert(
-    transport.includes("if ((!target!.write || sharedReadOnlyPreview) && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"),
+    transport.includes("if ((!target!.write || sharedReadOnlyPreview || args[0] === '--list-font-files') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"),
     'transport read-only generation gate changed',
   )
 }

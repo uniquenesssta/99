@@ -53,6 +53,8 @@ async function main() {
     assert.equal(host.readerProvenance.mode, 'production-extracted-reader', 'Projection correctness gate requires candidate production reader')
     const { load, status, query, indexing, nativeReceipts, queue, readBoundary, projectionEvents,
       rendererState, openDb, config, fontIdentity, rootStorage } = host
+    const committedProjections = () => projectionEvents.filter(event => event.source === 'projection')
+    const metricsEvents = () => projectionEvents.filter(event => event.source === 'metrics')
     const { mergedPath, libraryPath, installPath } = host.paths
     const fonts = load('src/main/fonts/fontRuntime.ts')
     const manifests = selectFonts(path.join(directory, 'manifest')).slice(0, 3)
@@ -94,31 +96,32 @@ async function main() {
       assert(lastNativeMetrics, `${label}: missing real native metrics receipt`)
       assert.deepEqual([lastNativeMetrics.result.installedCount, lastNativeMetrics.result.notInstalledCount, lastNativeMetrics.result.installStatusMissingCount],
         [expected.installed, expected.notInstalled, expected.unknown], `${label}: native and delivered metrics differ`)
-      stages.push({ label, ...expected, total: metrics.total, revisions: projectionEvents.length })
+      stages.push({ label, ...expected, total: metrics.total, revisions: committedProjections().length, metricsRevisions: metricsEvents().length })
       return { page, metrics }
     }
     await checkState('offline startup withdraws old authority and preserves population', { installed: 0, notInstalled: 0, unknown: 3 })
-    assert.equal(projectionEvents.length, 0, 'Opening/migrating a local snapshot fabricated a merged commit')
+    assert.equal(committedProjections().length, 0, 'Opening/migrating a local snapshot fabricated a merged commit')
 
     host.setRootOnline(true)
     const refreshed = await query.checkMergedIndexExternalChanges('diagnostic-real-bootstrap')
     assert.equal(refreshed.changed, true)
     await tick()
-    assert(projectionEvents.length > 0, 'Real native rebuild did not notify the renderer')
-    assert(projectionEvents.every(event => event.source === 'projection' && event.upserts.length === 0 && event.deletes.length === 0))
+    assert(committedProjections().length > 0, 'Real native rebuild did not notify the renderer')
+    assert(projectionEvents.every(event => ['projection', 'metrics'].includes(event.source) && event.upserts.length === 0 && event.deletes.length === 0))
+    assert(metricsEvents().every(event => Number.isSafeInteger(event.metricsRevision) && event.metricsRevision > 0), 'Invalid count notification was broadcast')
     assert.equal(rendererState.pageSeq.current, rendererState.refreshes)
     assert.equal(rendererState.metricsSeq.current, rendererState.refreshes)
     assert.equal(rendererState.token, rendererState.refreshes)
 
     const result = (known, installed) => ({ known, installed, by: installed ? 'user' : 'none', matches: [] })
     async function persist(label, results) {
-      const before = projectionEvents.length
+      const before = committedProjections().length
       queue.scheduleActivationInstallStatusSave(Object.fromEntries(items.map((item, index) => [item.id, results[index]])),
         new Map(items.map(item => [item.id, item])), label)
       await queue.flushActivationInstallStatusSave(label)
       await tick()
       assert(!queue.hasPendingActivationInstallStatusSave() && !queue.hasInFlightActivationInstallStatusSave(), `${label}: save queue not drained`)
-      assert(projectionEvents.length > before, `${label}: persistence did not commit a real merged projection`)
+      assert(committedProjections().length > before, `${label}: persistence did not commit a real merged projection`)
       const rebuilds = nativeReceipts.filter(row => row.method === 'runRustMergedIndexRebuild').length
       // Expire the external-check reuse window without wall-clock sleeps by
       // checking the actual persistent key through the production owner.
@@ -171,14 +174,20 @@ async function main() {
     await persist('all unknown', items.map(() => result(false, false)))
     await checkState('unknown is neither installed nor uninstalled', { installed: 0, notInstalled: 0, unknown: 3 })
 
+    // Count notifications have their own owner/revision and cannot manufacture
+    // a projection commit or race this projection-only duplicate check.
+    await query.disposeSharedTagMetrics?.()
+    await tick()
     const refreshCount = rendererState.refreshes
-    const lastEvent = projectionEvents.at(-1)
+    const lastEvent = committedProjections().at(-1)
+    assert(lastEvent, 'No actual projection revision available for the duplicate gate')
     host.deliverRendererEvent(lastEvent)
     host.deliverRendererEvent({ ...lastEvent, projectionRevision: Math.max(0, lastEvent.projectionRevision - 1) })
     await tick()
     assert.equal(rendererState.refreshes, refreshCount, 'Duplicate/older projection revision restarted queries')
-    assert(projectionEvents.every((event, index) => !index || event.projectionRevision > projectionEvents[index - 1].projectionRevision),
+    assert(committedProjections().every((event, index, events) => !index || event.projectionRevision > events[index - 1].projectionRevision),
       'Committed revisions are not monotonic')
+    assert(metricsEvents().every((event, index, events) => !index || event.metricsRevision > events[index - 1].metricsRevision), 'Metrics revisions are not monotonic within their own stream')
 
     for (const source of originalSources) {
       assert.equal(sha256(fs.readFileSync(source.path)), source.bytes, 'Original fixture font bytes changed')
@@ -191,7 +200,7 @@ async function main() {
     assert(nativeReceipts.some(row => row.method === 'runRustInstallStatusSave'))
     success = true
     finishedReport = { ok: true, platform: process.platform, workerSha256: sha256(fs.readFileSync(workerPath)), stages,
-      projectionEvents, rendererRefreshes: rendererState.refreshes,
+      projectionEvents: committedProjections(), metricsEvents: metricsEvents(), indexEvents: projectionEvents, rendererRefreshes: rendererState.refreshes,
       nativeCounts: Object.fromEntries([...new Set(nativeReceipts.map(row => row.method))].map(method => [method, nativeReceipts.filter(row => row.method === method).length])),
       scope: 'production storage read boundary + data query composition + native SQLite pages/metrics + activation projection + renderer revision hook',
       exclusions: ['real system installation', 'NAS performance', 'full App/Electron UI', 'preload transport', 'query cancellation stress'],
@@ -199,7 +208,8 @@ async function main() {
   } catch (error) {
     primaryFailure=error
     finishedReport={ok:false,platform:process.platform,stages,lastCompletedStage:stages.at(-1),error:{name:error.name,message:error.message,stack:error.stack},
-      projectionEvents:host?.projectionEvents||[],nativeCounts:Object.fromEntries([...new Set((host?.nativeReceipts||[]).map(row=>row.method))].map(method=>[method,host.nativeReceipts.filter(row=>row.method===method).length]))}
+      projectionEvents:(host?.projectionEvents||[]).filter(event=>event.source==='projection'),
+      metricsEvents:(host?.projectionEvents||[]).filter(event=>event.source==='metrics'),indexEvents:host?.projectionEvents||[],nativeCounts:Object.fromEntries([...new Set((host?.nativeReceipts||[]).map(row=>row.method))].map(method=>[method,host.nativeReceipts.filter(row=>row.method===method).length]))}
   } finally {
     try{await host?.close()}catch(error){primaryFailure ||= error;finishedReport={...(finishedReport||{}),ok:false,cleanupFailure:String(error)}}
     if (!success || primaryFailure || process.argv.includes('--keep-fixture')) {

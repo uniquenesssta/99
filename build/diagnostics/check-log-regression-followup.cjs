@@ -192,7 +192,11 @@ async function preview() {
       const item = { id: 'a', path: fontPath, fileName: 'font.ttf', family: 'Family', active: !scenario.startsWith('system'), systemInstalled: scenario.startsWith('system'), fileSize: 100, modifiedAt: 1 }
       if (scenario === 'render-failed') {
         await assert.rejects(runtime.ensureFontPreviewImageFile(item, scenario), /HFM_PREVIEW:failed/)
-        assert.equal(writes.at(-1).status, 'failed')
+        assert.equal(writes.length, 0, 'foreground failure must not persist a cache failure row')
+        const foregroundCalls = calls.length
+        await assert.rejects(runtime.ensureFontPreviewImageFile(item, scenario, 44, 720, 260, false, false, false), /HFM_PREVIEW:failed/)
+        assert.equal(calls.length, foregroundCalls + 1, 'foreground cooldown must not suppress explicit background work')
+        assert.equal(writes.at(-1).status, 'failed', 'explicit background failure must retain its persisted failure contract')
       } else {
         const result = await runtime.ensureFontPreviewImageFile(item, scenario)
         assert.equal(result.cached, false)

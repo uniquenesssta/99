@@ -1,3 +1,5 @@
+import { createSharedTagMetricsSnapshotRuntime } from '../library/sharedTagMetricsSnapshotRuntime';
+import { rethrowFontQuerySuperseded } from '../library/fontQueryTaskRuntime';
 import { openFontUninstallReceipts } from '../install/fontUninstallReceiptRuntime';
 import { createTagRelinkAuthorizationRuntime } from '../library/tagRelinkAuthorizationRuntime';
 import { createTagFontQueryRuntime, tagQueryScope } from '../library/tagFontQueryRuntime';
@@ -39,6 +41,7 @@ type Storage = ReturnType<typeof createMainDataStorageCompositionRuntime>;
 
 export interface MainDataQueryOptions {
   onProjectionCommitted?: (revision: number) => void;
+  onSharedTagCountsChanged?: (revision: number) => void;
   applyPendingActivationState: (items: FontItem[]) => FontItem[];
   hasPendingActivationState?: () => boolean;
   appWatchedFolders: Storage['appWatchedFolders'];
@@ -122,6 +125,10 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   } = options;
   let fontQueryFacadeRuntimeRef: FontQueryFacadeRuntime | null = null;
   let tagFonts: ReturnType<typeof createTagFontQueryRuntime> | undefined;
+  const sharedTagMetrics = createSharedTagMetricsSnapshotRuntime({
+    roots: appWatchedFolders, revision: () => tagMetadataRevisionBarrier.snapshot().sharedRevision,
+    read: () => tagFonts!.sharedTagCounts(), changed: options.onSharedTagCountsChanged, appendLog: appendStartupLog,
+  });
 
   function requireFontQueryFacadeRuntime(): FontQueryFacadeRuntime {
     if (!fontQueryFacadeRuntimeRef)
@@ -187,6 +194,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
 
   function clearFontQueryCaches(cancelInFlight = true): void {
     tagFonts?.invalidate(cancelInFlight);
+    if (cancelInFlight) sharedTagMetrics.invalidate();
     invalidateFontQueryResultCache();
     invalidateFontQueryPageCache(cancelInFlight);
     rustCoreWorkerRuntime.invalidateRustCoreSchedulerCaches([
@@ -385,7 +393,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
           librarySqlitePath, closeSqliteDb, applyPendingActivationState: options.applyPendingActivationState,
         });
         if (counts) return { ...metrics, ...counts };
-      } catch (error) { appendStartupLog(`local user metrics snapshot fallback: ${String(error)}`); }
+      } catch (error) { rethrowFontQuerySuperseded(error); appendStartupLog(`local user metrics snapshot fallback: ${String(error)}`); }
       const fonts = await hydrateInstallStatusForFonts(await loadSharedFontsForFolders(await appWatchedFolders()));
       return { ...metrics, favoriteCount: fonts.filter(font => font.favorite).length, activeCount: fonts.filter(font => font.active).length };
     },
@@ -412,18 +420,12 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
   async function getFontMetricsFromLibrary(): Promise<FontMetricsResult> {
     await openLibraryDb();
     const metrics = await requireFontQueryFacadeRuntime().getFontMetricsFromLibrary();
-    try {
-      const counts = await tagFonts!.sharedTagCounts();
-      if (counts) {
-        const sharedTagCounts = { ...Object.fromEntries(Object.keys(metrics.sharedTagCounts || {}).map(tag => [tag, 0])), ...counts };
-        return { ...metrics, sharedTagCounts, tagCounts: { ...sharedTagCounts, ...metrics.localTagCounts } };
-      }
-    } catch (error) { appendStartupLog(`shared tag counts retained: ${String(error)}`); }
-    return metrics;
+    return sharedTagMetrics.apply(metrics);
   }
   return {
 
     hydrateInstallStatusForFonts,
+    disposeSharedTagMetrics: sharedTagMetrics.dispose,
 
     queryFontPageInLibrary,
 

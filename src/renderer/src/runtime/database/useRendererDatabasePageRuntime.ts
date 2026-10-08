@@ -1,3 +1,4 @@
+import { isFontQuerySuperseded } from '../../../../shared/fontQueryFailure'
 import { noteFontQueryScope, bindFontRefreshQuery, dispatchFontRefreshQuery, finishFontRefreshQuery } from '../../fontOperationTrace'
 import { databaseQueryScopeKey, assertDatabasePageResponseMatchesRequest } from '../../constants/queryCacheRuntime'
 import { SHARED_UNAVAILABLE_MESSAGE } from '../../../../shared/sharedAvailability'
@@ -156,6 +157,10 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
         .catch((error) => {
           settled = true
           const durationMs = Math.round(performance.now() - startedAt)
+          if (disposed || requestSeq !== options.fontMetricsRequestSeqRef.current || isFontQuerySuperseded(error)) {
+            options.reportTrace({ kind: 'db-metrics-cancelled', label: 'query-superseded', page: options.sidebarPage, severity: 'info', durationMs, details: { requestSeq } })
+            return
+          }
           options.reportTrace({ kind: 'db-metrics-error', label: 'getFontMetrics', page: options.sidebarPage, severity: 'error', durationMs, details: { requestSeq, queueMs, totalMs: Math.round(performance.now() - scheduledAt), error: error instanceof Error ? error.message : String(error) } })
           if (disposed || requestSeq !== options.fontMetricsRequestSeqRef.current) return
           if (pendingFavorite || intentRevision !== fontUserIntentRevision()) {
@@ -353,6 +358,11 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
         options.setDatabaseQueryFailedKey('')
       }).catch((error) => {
         const durationMs = Math.round(performance.now() - startedAt)
+        if (disposed || requestSeq !== options.databasePageRequestSeqRef.current || isFontQuerySuperseded(error)) {
+          finishFontRefreshQuery(observation, undefined, 'query-superseded')
+          options.reportTrace({ kind: 'db-query-cancelled', label: 'query-superseded', page: options.sidebarPage, severity: 'info', durationMs, details: { requestSeq } })
+          return
+        }
         finishFontRefreshQuery(observation, undefined, 'query-failed')
         options.reportTrace({ kind: 'db-query-error', label: 'queryFontPage', page: options.sidebarPage, severity: 'error', durationMs, details: { requestSeq, error: error instanceof Error ? error.message : String(error), queryKey: databaseQueryKey } })
         if (disposed || requestSeq !== options.databasePageRequestSeqRef.current) { finishFontRefreshQuery(observation); return }

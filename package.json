@@ -46,6 +46,7 @@
     "diagnostics:shared-offline-baseline": "node build/diagnostics/check-shared-offline-baseline.cjs",
     "diagnostics:tag-commit-query": "node build/diagnostics/check-tag-commit-query.cjs",
     "diagnostics:tag-font-recovery": "node --experimental-sqlite build/diagnostics/check-tag-font-recovery.cjs",
+    "diagnostics:foreground-ipc-latency": "node --experimental-sqlite build/diagnostics/check-foreground-ipc-latency.cjs",
     "diagnostics:tag-consistency": "node build/diagnostics/check-tag-consistency.cjs",
     "diagnostics:query-protocol": "node build/diagnostics/check-query-protocol.cjs",
     "diagnostics:state-fallback": "node build/diagnostics/check-state-fallback-policy.cjs",

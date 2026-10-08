@@ -16,6 +16,7 @@ export async function readTagFontBindings(options: {
   paths: TagRecoveryPaths
   scope: 'local' | 'shared'
   folders?: string[]
+  readOnlyShared?: boolean
   readShared: (input: RustSharedMetadataOverlayReadInput) => Promise<RustSharedMetadataOverlayReadResult | null>
 }) {
   const { db, paths, scope } = options
@@ -61,16 +62,20 @@ export async function readTagFontBindings(options: {
       bindings.set(identity, binding)
     }
   } else {
-    db.exec('CREATE TABLE IF NOT EXISTS tag_shared_binding_snapshots (root_path TEXT PRIMARY KEY, rows_json TEXT NOT NULL)')
+    if (!options.readOnlyShared) db.exec('CREATE TABLE IF NOT EXISTS tag_shared_binding_snapshots (root_path TEXT PRIMARY KEY, rows_json TEXT NOT NULL)')
     for (const root of paths.roots.filter(root => !options.folders?.length || options.folders.some(folder => paths.inside(folder, root) || paths.inside(root, folder)))) {
       let rows: import('../indexing/shared-metadata/sharedMetadataStateRuntime').SharedMetadataRow[]
       try {
         const result = await options.readShared({ rootPath: root, dbPath: sharedMetadataDbPathForRoot(root), entries: [],
-          preflight: { phase: 'snapshot', updatedAt: new Date().toISOString(), updatedBy: os.hostname(), writerPid: process.pid } })
-        if (!result?.preflight?.snapshot?.rows) throw new Error('共享标签快照未确认。')
-        rows = result.preflight.snapshot.rows
-        db.prepare('INSERT OR REPLACE INTO tag_shared_binding_snapshots (root_path, rows_json) VALUES (?, ?)').run(paths.compare(root), JSON.stringify(rows))
+          ...(options.readOnlyShared ? { bindingSnapshot: true }
+            : { preflight: { phase: 'snapshot', updatedAt: new Date().toISOString(), updatedBy: os.hostname(), writerPid: process.pid } }) })
+        const snapshot = options.readOnlyShared ? result?.bindingSnapshot?.version === 1 ? result.bindingSnapshot : undefined : result?.preflight?.snapshot
+        if (!Array.isArray(snapshot?.rows)) throw new Error('共享标签快照未确认。')
+        rows = snapshot.rows
+        // Statistics never create or certify the mutation-preflight cache.
+        if (!options.readOnlyShared) db.prepare('INSERT OR REPLACE INTO tag_shared_binding_snapshots (root_path, rows_json) VALUES (?, ?)').run(paths.compare(root), JSON.stringify(rows))
       } catch (error) {
+        if (options.readOnlyShared) throw error
         const cached = db.prepare('SELECT rows_json FROM tag_shared_binding_snapshots WHERE root_path = ?').get(paths.compare(root))
           || (db.prepare('SELECT root_path, rows_json FROM tag_shared_binding_snapshots').all() as Array<{ root_path: string; rows_json: string }>)
             .find(row => paths.compare(row.root_path) === paths.compare(root))
@@ -80,10 +85,22 @@ export async function readTagFontBindings(options: {
         unavailableRoots.push(root)
       }
       for (const row of rows) {
+        if (options.readOnlyShared && row.tag_names_json != null) {
+          const tags: unknown = JSON.parse(row.tag_names_json)
+          if (!Array.isArray(tags) || tags.some(tag => typeof tag !== 'string')) throw new Error('共享标签数据无法确认，未覆盖已有统计。')
+        }
         const state = stateFromRow(row)
-        if (!state?.tagNames.length || !row.relative_path) continue
+        if (!state?.tagNames.length) continue
+        if (!row.relative_path) {
+          if (options.readOnlyShared) throw new Error('共享标签缺少可确认的相对路径，未覆盖已有统计。')
+          continue
+        }
         const path = resolve(root, row.relative_path)
-        if (!paths.inside(path, root) || !inScope(path)) continue
+        if (!paths.inside(path, root)) {
+          if (options.readOnlyShared) throw new Error('共享标签路径超出监听范围，未覆盖已有统计。')
+          continue
+        }
+        if (!inScope(path)) continue
         bindings.set(key(path), { path, id: String(row.font_id || ''), tags: state.tagNames })
       }
     }

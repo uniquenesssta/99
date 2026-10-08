@@ -228,8 +228,8 @@ export function createTagFontQueryRuntime(deps: {
   }
   async function sharedTagCounts(): Promise<Record<string, number> | undefined> {
     const paths = await createTagRecoveryPaths(await deps.roots())
-    const { bindings, complete } = await readTagFontBindings({ db: await deps.openLibraryDb(), paths, scope: 'shared', readShared: deps.readShared })
-    if (!complete) return undefined
+    const { bindings, complete, unavailableRoots } = await readTagFontBindings({ db: await deps.openLibraryDb(), paths, scope: 'shared', readOnlyShared: true, readShared: deps.readShared })
+    if (!complete || unavailableRoots.length) return undefined
     const counts: Record<string, number> = {}
     for (const binding of bindings.values()) for (const tag of binding.tags) counts[tag] = (counts[tag] || 0) + 1
     return counts

@@ -1,15 +1,18 @@
+import { FONT_QUERY_SUPERSEDED, isFontQuerySuperseded } from '../../shared/fontQueryFailure'
 import { currentSharedIoSignal, withSharedIoSignal } from '../path/sharedFileSystemRuntime'
 import { SharedIoProcessError } from '../path/sharedIoProcessRuntime'
 
 export function assertFontQueryActive(signal = currentSharedIoSignal()): void {
-  if (signal?.aborted) throw new SharedIoProcessError('字体查询已由当前视图替换。', 'not-started', 'query-superseded')
+  if (signal?.aborted) throw new SharedIoProcessError(`${FONT_QUERY_SUPERSEDED} 字体查询已由当前视图替换。`, 'not-started', 'query-superseded')
 }
 export function rethrowFontQuerySuperseded(error: unknown): void {
   assertFontQueryActive()
-  if ((error as SharedIoProcessError)?.reason === 'query-superseded') throw error
+  if (isFontQuerySuperseded(error)) throw error
+  const value = error as { name?: string; code?: string; reason?: string }
+  if (value?.name === 'AbortError' || value?.code === 'ABORT_ERR' || ['cancelled', 'stopping'].includes(value?.reason || '')) fontQuerySuperseded()
 }
 export function fontQuerySuperseded(): never {
-  throw new SharedIoProcessError('字体查询修订已变化。', 'not-started', 'query-superseded')
+  throw new SharedIoProcessError(`${FONT_QUERY_SUPERSEDED} 字体查询修订已变化。`, 'not-started', 'query-superseded')
 }
 export type FontQueryTask<T> = { controller: AbortController; pending: Promise<T>; subscribers: number; settled: boolean }
 
@@ -20,7 +23,7 @@ export function createFontQueryTask<T>(run: () => Promise<T>): FontQueryTask<T> 
   const task: FontQueryTask<T> = { controller, pending: undefined!, subscribers: 0, settled: false }
   task.pending = withSharedIoSignal(controller.signal, async () => {
     try { assertFontQueryActive(); return await run() }
-    catch (error) { await (error as SharedIoProcessError)?.closed; throw error }
+    catch (error) { await (error as SharedIoProcessError)?.closed; assertFontQueryActive(controller.signal); throw error }
     finally { task.settled = true }
   })
   return task
@@ -32,7 +35,7 @@ export async function joinFontQueryTask<T>(task: FontQueryTask<T>, signal = curr
   try {
     if (!signal) return await task.pending
     const cancelled = new Promise<never>((_, reject) => {
-      const abort = () => reject(new SharedIoProcessError('字体查询视图已关闭。', 'not-started', 'query-superseded'))
+      const abort = () => reject(new SharedIoProcessError(`${FONT_QUERY_SUPERSEDED} 字体查询视图已关闭。`, 'not-started', 'query-superseded'))
       signal.addEventListener('abort', abort, { once: true })
       release = () => signal.removeEventListener('abort', abort)
       if (signal.aborted) abort()
@@ -68,6 +71,7 @@ export function createFontQueryConsumers() {
     const entry = { token, controller: new AbortController() }
     current.set(key, entry); watch(sender)
     try { return await withSharedIoSignal(entry.controller.signal, async () => { assertFontQueryActive(); return read() }) }
+    catch (error) { assertFontQueryActive(entry.controller.signal); throw error }
     finally {
       if (current.get(key) === entry) current.delete(key)
       if (![...current.keys()].some(key => key.startsWith(`${sender.id}:`))) senders.get(sender.id)?.()

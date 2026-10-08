@@ -100,7 +100,8 @@ async function composition(native = false) {
   const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'hfm-stage-test-'))
   const jobs = [], children = new Set(), requests = [], logs = [], failedCleanups = new Set()
   let generation = 1, changeBeforeCopy = false, badCopy = false, daemonCalls = 0, cleanupFailure = false, shortenDeadline = false
-  let missingReady = false
+  let missingReady = false, pixelsMode = '', stalePixels = false
+  const png = require('./fixtures/preview-png.cjs')
   let fireDeadline, holdProof = false, allocationStarts = 0, proofStarts = 0
   const proofRelease = path.join(directory, 'proof-release')
   const source = 'Z:\\unverified-fonts\\a.ttf', other = 'Y:\\unverified-fonts\\b.ttf'
@@ -116,12 +117,12 @@ async function composition(native = false) {
     const isOwned = args[0] === '--preview-render-owned-stage'
     const isRender = isOwned || args[0] === '--preview-render-image', isCopy = input.operation === 'copyFile'
     const proof = isOwned ? { version: 1, token: input.ownedStage.token, basePath: input.ownedStage.basePath, directoryPath: path.dirname(input.outputPath), outputPath: input.outputPath } : undefined
-    const receipt = isRender ? { ok: true, outputPath: input.outputPath, ...(proof ? { ownedStage: proof } : {}) } : { ok: !(isCopy && badCopy), operation: input.operation, value: {}, message: 'controlled copy failure' }
+    const receipt = isRender ? { ok: true, outputPath: input.outputPath, ...(proof ? { ownedStage: proof } : {}), ...(input.foregroundBytes ? { imageHex: pixelsMode === 'malformed' ? 'x0' : pixelsMode === 'crc' ? png.subarray(0,png.length-1).toString('hex') : png.toString('hex') } : {}) } : { ok: !(isCopy && badCopy), operation: input.operation, value: {}, message: 'controlled copy failure' }
     const mutation = isRender ? `fs.writeFileSync(${JSON.stringify(input.outputPath)},'png-stage');` : isCopy ? `fs.copyFileSync(${JSON.stringify(input.path)},${JSON.stringify(input.dest)});` : ''
     const prepare = isOwned ? `fs.mkdirSync(${JSON.stringify(proof.directoryPath)});${missingReady ? '' : `process.stderr.write(${JSON.stringify('hfm-owned-preview-ready: ' + JSON.stringify(proof) + '\n')});`}` : ''
     const script = `const fs=require('node:fs');${prepare}const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(job.release)})){clearInterval(timer);${mutation}process.stdout.write(${JSON.stringify(JSON.stringify(receipt))})}},5)`
     const child = cp.spawn(process.execPath, ['-e', script], options); children.add(child)
-    child.once('close', () => { children.delete(child); job.closed = true })
+    child.once('close', () => { children.delete(child); job.closed = true; if (stalePixels && input.foregroundBytes) generation++ })
     return child
   }
   const files = { ...fsp, rm: async (file, ...args) => {
@@ -134,7 +135,7 @@ async function composition(native = false) {
   const execFile = (...args) => {
     const callback = args.at(-1), command = args[1][0]
     const protocol = load('src/main/rust-core/rustCoreProtocolRuntime.ts')
-    const payload = command === '--handshake' ? { ok: true, version: '0.42.0', protocolVersion: 42, capabilities: [...protocol.REQUIRED_RUST_CORE_CAPABILITIES, 'preview-owned-stage-v1'] } : { ok: true, profiles: [] }
+    const payload = command === '--handshake' ? { ok: true, version: '0.42.0', protocolVersion: 42, capabilities: [...protocol.REQUIRED_RUST_CORE_CAPABILITIES, 'preview-owned-stage-v1', 'preview-owned-stage-bytes-v1'] } : { ok: true, profiles: [] }
     callback(null, JSON.stringify(payload), ''); return {}
   }
   execFile[require('node:util').promisify.custom] = (...args) => new Promise((resolve, reject) => execFile(...args, (error, stdout, stderr) => error ? reject(error) : resolve({ stdout, stderr })))
@@ -159,9 +160,9 @@ async function composition(native = false) {
     } } : undefined })
   }
   const release = job => fsp.writeFile(job.release, 'release')
-  const submit = async (command, input, sharedIo, signal) => {
+  const submit = async (command, input, sharedIo, signal, execution = {}) => {
     const file = transport.createTemporaryJsonFile('hfm-stage-regression'); await file.writeJson(input)
-    try { return await transport.runRustCoreScheduledCommand(process.execPath, [command, '--input', file.path], { timeout: 5000, sharedIo, signal }) }
+    try { return await transport.runRustCoreScheduledCommand(process.execPath, [command, '--input', file.path], { timeout: 5000, sharedIo, signal, ...execution }) }
     finally { await file.dispose() }
   }
   const render = (outputPath, signal, fontPath = source) => submit('--preview-render-image', { fontPath, outputPath }, {
@@ -284,6 +285,21 @@ async function composition(native = false) {
     assert((await Promise.all(allCancelled)).every(error=>error.reason==='cancelled'))
     assert.equal(jobs.length,start);assert.equal(pool.status().activeRootProbe,1)
     await fsp.writeFile(proofRelease,'go');await pool.whenIdle();assert.equal(jobs.length,start);holdProof=false
+    }
+    if (native) {
+      const pixelRender = (signal, width=1) => submit('--preview-render-image', {fontPath:source,outputPath:output,width,height:1}, {
+        paths:[source,output],write:true,preview:true,accesses:[{path:source,mode:'read',scope:'file'},{path:output,mode:'write',scope:'file'}]
+      },signal,{foregroundPreviewBytes:true,maxBuffer:5*1024*1024})
+      let at=jobs.length
+      const bytesOnly=pixelRender();await until(()=>jobs.length===at+1);await release(jobs[at]);const response=await bytesOnly
+      assert(response.previewBytes.equals(png));assert.equal(jobs.length,at+1,'bytes-only spawned publication');assert.equal(fs.existsSync(jobs[at].input.outputPath),false)
+      assert.equal(JSON.parse(response.stdout).imageHex,undefined,'pixel receipt leaked downstream')
+      for(const mode of ['malformed','crc','dimensions','stale']) {
+        at=jobs.length;pixelsMode=mode;stalePixels=mode==='stale'
+        const rejected=pixelRender(undefined,mode==='dimensions'?2:1).catch(e=>e);await until(()=>jobs.length===at+1);await release(jobs[at])
+        const error=await rejected;assert.equal(error.reason,mode==='stale'?'stale-generation':'invalid-receipt');assert.equal(jobs.length,at+1,'bad pixels fell through to publication')
+        stalePixels=false;pixelsMode=''
+      }
     }
     const contradictory = await pool.run({ file: process.execPath, args: [], roots: ['r'], accesses: [{ root: 'r', path: 'x', mode: 'write', scope: 'file' }], timeoutMs: 100, write: false }).catch(e => e)
     assert.equal(contradictory.reason, 'invalid-access')

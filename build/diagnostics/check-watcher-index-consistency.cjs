@@ -72,6 +72,39 @@ async function deletionCheck(transform = s => s) {
   const r=await indexCase('changed',transform);assert.equal(r.payload.source,'watcher');assert.equal(r.payload.upserts.length,1);assert.equal(r.writes.length,1)
 }
 const watcherFile = 'src/main/watcher/folderWatcherRuntime.ts'
+function broadcastRevisionCheck(transform = s => s) {
+  const delivered = []
+  const r = load(watcherFile, {
+    electron: { BrowserWindow: { getAllWindows: () => [
+      { isDestroyed: () => false, webContents: { send(channel, payload) { assert.equal(channel, 'font-index:changed'); delivered.push(plain(payload)) } } },
+      { isDestroyed: () => true, webContents: { send() { throw Error('Destroyed window received a broadcast') } } },
+    ] } },
+    'node:fs': { promises: {}, watch() { throw Error('Broadcast diagnostic must not start watching') } },
+    '../path/cachePath': { normalizePathForCacheCompare: value => value.toLowerCase() },
+    '../path/startupPathAvailabilityRuntime': { ensureStartupPathRootAvailable: async () => true },
+  }, { setTimeout, clearTimeout }, transform).createFolderWatcherRuntime({
+    startupGraceMs: 0, flushDebounceMs: 10, closeRuntimeDatabases() {}, isIgnoredWatcherPath: () => false, appendStartupLog() {},
+    watcherChangeBatchLooksUnchanged: async () => false,
+    applyWatchedFolderChangesToIndex: async () => { throw Error('Broadcast diagnostic must not mutate the index') },
+  })
+  const empty = { folder: '', at: '2026-10-07T00:00:00Z', upserts: [], deletes: [] }
+  try {
+    for (const source of [undefined, 'watcher', 'manual', 'shared-metadata']) r.sendFontIndexChanged({ ...empty, source, metricsRevision: 1 })
+    assert.equal(delivered.length, 0, 'An empty ordinary payload bypassed the broadcast filter')
+    r.sendFontIndexChanged({ ...empty, source: 'projection', projectionRevision: 1 })
+    assert.equal(delivered.length, 1, 'Existing empty projection invalidation was lost')
+    for (const metricsRevision of [undefined, null, 0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '1']) {
+      r.sendFontIndexChanged({ ...empty, source: 'metrics', metricsRevision })
+      r.sendFontIndexChanged({ ...empty, source: 'metrics', metricsRevision, upserts: [{ id: 'untrusted-revision', path: '/a.ttf' }] })
+    }
+    assert.equal(delivered.length, 1, 'Invalid metrics revision was broadcast')
+    for (const metricsRevision of [1, Number.MAX_SAFE_INTEGER]) r.sendFontIndexChanged({ ...empty, source: 'metrics', metricsRevision })
+    assert.deepEqual(delivered.slice(1).map(event => [event.source, event.metricsRevision, event.upserts.length, event.deletes.length]),
+      [['metrics', 1, 0, 0], ['metrics', Number.MAX_SAFE_INTEGER, 0, 0]], 'Valid metrics-only invalidation was dropped')
+    r.sendFontIndexChanged({ ...empty, source: 'watcher', upserts: [{ id: 'actual-change', path: '/a.ttf' }] })
+    assert.equal(delivered.at(-1).upserts[0].id, 'actual-change', 'Ordinary nonempty index broadcasts were lost')
+  } finally { r.stopFolderWatchers() }
+}
 async function recoveryCheck(transform=s=>s) {
   for(const mode of ['apply','sync','send','errors','permanent','grace','restart','persistence']) {
     let apply=0,sync=0,snapshot=0,sends=0,now=0,scanning=false
@@ -236,7 +269,15 @@ async function freshDirectoryListingCheck() {
   const errors=[];let rows=await instance.listFontFilesWithDirectoryCache(context(),errors);assert.deepEqual(plain(rows.map(row=>row.file)),[actual]);assert.equal(rows[0].freshStat,true);assert.equal(errors.length,0);assert(!rows.some(row=>row.file===stale));
   denied=true;const failures=[];rows=await instance.listFontFilesWithDirectoryCache(context(),failures);assert.equal(rows.length,0);assert.equal(failures.length,1,'fresh listing reused inaccessible cached stat without error');
 }
-async function main(){ await semanticDiffCheck(); await freshDirectoryListingCheck(); authorityCheck();
+async function main(){
+  broadcastRevisionCheck(); broadcastRevisionCheck(s => s.replace(/\r?\n/g, '\r\n'));
+  const metricsAdmission = "const metricsOnly = payload.source === 'metrics' && Number.isSafeInteger(payload.metricsRevision) && Number(payload.metricsRevision) > 0;";
+  const invalidMetricsGuard = "if (payload.source === 'metrics' && !metricsOnly) return;";
+  assert(read(watcherFile).includes(metricsAdmission), 'Metrics admission mutation anchor missing');
+  assert(read(watcherFile).includes(invalidMetricsGuard), 'Invalid metrics mutation anchor missing');
+  assert.throws(() => broadcastRevisionCheck(s => s.replace(metricsAdmission, 'const metricsOnly = false;')), assert.AssertionError);
+  assert.throws(() => broadcastRevisionCheck(s => s.replace(invalidMetricsGuard, '')), assert.AssertionError);
+  await semanticDiffCheck(); await freshDirectoryListingCheck(); authorityCheck();
   assert.throws(()=>authorityCheck(s=>s.replace("source === 'watcher'", "source === 'never'")),assert.AssertionError); await manualIncompleteCheck();
   await assert.rejects(()=>manualIncompleteCheck(s=>s.replace('if (payload.errors?.length) break;','')),assert.AssertionError)
  await recoveryCheck(); await structuralRecoveryConvergenceCheck(); await multiRootIsolationCheck();
@@ -250,5 +291,5 @@ async function main(){ await semanticDiffCheck(); await freshDirectoryListingChe
   await assert.rejects(()=>deletionCheck(s=>s.replace('if (!confirmedMissing) {','if (false) {')),assert.AssertionError)
   await assert.rejects(()=>deletionCheck(s=>s.replace('if (errors.length > errorCount) return false','')),assert.AssertionError)
   await assert.rejects(()=>deletionCheck(s=>s.replace("watcherRecoveryDisposition: 'defer' as const,","")),assert.AssertionError)
-console.log('[diagnostics:watcher-index-consistency] deletion evidence, deferred persistence recovery, 4096-row convergence, multi-root isolation, grace/restart and safe manual fallback; source-scoped field authority; eleven mutations rejected') }
+console.log('[diagnostics:watcher-index-consistency] deletion evidence, deferred persistence recovery, 4096-row convergence, multi-root isolation, grace/restart and safe manual fallback; source-scoped field authority; metrics-only broadcasts and invalid-revision filtering; thirteen mutations rejected') }
 main().catch(e=>{console.error(e);process.exitCode=1})

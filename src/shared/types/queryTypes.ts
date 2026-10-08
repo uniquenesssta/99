@@ -89,6 +89,7 @@ export interface FontMetricsResult {
   tagCounts: Record<string, number>
   localTagCounts?: Record<string, number>
   sharedTagCounts?: Record<string, number>
+  sharedTagCountsStatus?: 'current' | 'refreshing' | 'unavailable'
   folderCounts: Record<string, number>
   elapsedMs: number
   tagRevision?: FontTagRevisionMetadata

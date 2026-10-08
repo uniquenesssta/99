@@ -22,6 +22,7 @@ export interface PreviewCacheStorage {
 
 export interface PreviewImageFileResult {
   bytes?: Buffer
+  transient?: boolean
   outputPath: string
   cached: boolean
   storage: 'root' | 'fallback' | 'local'
@@ -68,5 +69,5 @@ export interface PreviewRuntimeOptions {
   runRustPreviewCacheQuery?: (input: { readOnly?: boolean; dbPath: string; schemaVersion: number; rows: Array<{ id: string; previewKey: string; outputPath: string }>; acceptedStatuses: PreviewCacheIndexStatus[]; touchMatched: boolean; now: string }) => Promise<{ rows: Array<{ id: string; previewKey: string; outputPath: string; status: PreviewCacheIndexStatus | null; matched: boolean }>; matched: number; touched: number } | null>
   runRustPreviewCacheBatch?: (input: { readOnly?: boolean; dbPath: string; schemaVersion: number; rows: Array<{ id: string; previewKey: string; outputPath: string }>; acceptedStatuses: PreviewCacheIndexStatus[]; touchMatched: boolean; checkFiles?: boolean; now: string }) => Promise<{ rows: Array<{ id: string; previewKey: string; outputPath: string; status: PreviewCacheIndexStatus | null; matched: boolean; fileExists?: boolean }>; matched: number; touched: number; missingIds: string[] } | null>
   runRustPreviewCacheTouch?: (input: { dbPath: string; schemaVersion: number; keys: string[]; now: string }) => Promise<{ touched: number } | null>
-  runRustPreviewRenderImage?: (input: { layout?: NativePreviewLayout; fontPath: string; text: string; fontSize: number; width: number; height: number; outputPath: string; preferSystemFont?: boolean; systemFontFamilyCandidates?: string[] }) => Promise<{ ok: boolean; engine: 'rust-directwrite'; outputPath: string } | null>
+  runRustPreviewRenderImage?: (input: { foregroundBytes?: boolean; layout?: NativePreviewLayout; fontPath: string; text: string; fontSize: number; width: number; height: number; outputPath: string; preferSystemFont?: boolean; systemFontFamilyCandidates?: string[] }) => Promise<{ ok: boolean; engine: 'rust-directwrite'; outputPath: string; bytes?: Buffer; transient?: boolean } | null>
 }

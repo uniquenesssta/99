@@ -180,3 +180,26 @@ pub fn result_to_json(root: &str, result: &ListFontFilesResult) -> String {
     output.push_str("]}");
     output
 }
+
+
+pub const LISTING_STDOUT_MAX_BYTES: usize = 32 * 1024 * 1024;
+
+// Oversize is an explicit failure, never a shortened successful listing.
+pub fn bounded_stdout_listing(json: String) -> Result<String, String> {
+    if json.len() > LISTING_STDOUT_MAX_BYTES {
+        return Err("font listing stdout exceeds 32 MiB; narrow the requested root or entry limit".into());
+    }
+    Ok(json)
+}
+
+#[cfg(test)]
+mod stdout_listing_tests {
+    use super::*;
+    #[test]
+    fn stdout_listing_preserves_receipt_and_rejects_overflow() {
+        let receipt = r#"{"ok":true,"files":[],"directories":[],"errors":[{"path":"missing","message":"denied"}],"truncated":true}"#.to_string();
+        assert_eq!(bounded_stdout_listing(receipt.clone()).unwrap(), receipt);
+        assert!(bounded_stdout_listing(" ".repeat(LISTING_STDOUT_MAX_BYTES)).is_ok());
+        assert!(bounded_stdout_listing(" ".repeat(LISTING_STDOUT_MAX_BYTES + 1)).unwrap_err().contains("32 MiB"));
+    }
+}
