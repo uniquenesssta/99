@@ -12,10 +12,14 @@ const { createRequire } = require('node:module')
 const { pathToFileURL } = require('node:url')
 const { EventEmitter } = require('node:events')
 const { AsyncLocalStorage } = require('node:async_hooks')
+const { createQueryRetirementObserver } = require('./full-refresh-query-retirement.cjs')
 const plain = value => JSON.parse(JSON.stringify(value))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex')
 const forbidden = name => (..._args) => { throw new Error(`Forbidden diagnostic port: ${name}`) }
+// Explicit Error construction must share the application's module realm. This
+// deliberately makes no claim about VM-intrinsic errors such as implicit TypeError.
+const productionHostGlobals = () => ({ setImmediate, clearImmediate, Error })
 
 // Constructor-only engine adapter. Configuration belongs to the selected source
 // SQLite runtime, not every fixture seed or independent audit connection.
@@ -126,7 +130,7 @@ function assertProductionReadOwnerPorts(ports, expectedOwnerPorts) {
 
 // Match the selected production hydration owner, against an already prepared
 // fixture DB. This is not a replacement for the application's startup migration.
-function createProductionLocalTagHydration({ load, openLibraryDb, librarySqlitePath, runRustLocalTagsRead, appendStartupLog, getObservationContext }) {
+function createProductionLocalTagHydration({ load, openLibraryDb, librarySqlitePath, runRustLocalTagsRead, appendStartupLog, getObservationContext, queryRetirement }) {
   const scope = new AsyncLocalStorage(), receipts = []
   const stats = { started: 0, completed: 0, failed: 0, receiptOverflow: 0 }
   const fallback = load('src/main/rust-core/nodeStateFallbackCompatibilityRuntime.ts')
@@ -145,6 +149,7 @@ function createProductionLocalTagHydration({ load, openLibraryDb, librarySqliteP
         for (let index = 0; index < current.ids.length; index++) assert.equal(input.rows[index].itemId, current.ids[index], 'Native tag request identity/order changed')
         current.receipt.nativeRequestedCount = input.rows.length
         current.receipt.nativeUniqueIds = new Set(input.rows.map(row => row.itemId)).size
+        queryRetirement?.recordHydrationInput(current.receipt,input)
         current.receipt.nativeStartedAt = performance.now()
         const result = await runRustLocalTagsRead(input)
         current.receipt.nativeFinishedAt = performance.now()
@@ -172,7 +177,7 @@ function createProductionLocalTagHydration({ load, openLibraryDb, librarySqliteP
     if (receipts.length < 256) receipts.push(receipt)
     else stats.receiptOverflow++
     const current = { ids, receipt }
-    return scope.run(current, async () => {
+    const run = () => scope.run(current, async () => {
       try {
         const result = await owner.hydrateLocalTagsForFonts(items)
         // The production adapter intentionally catches read failures. A benchmark
@@ -191,12 +196,15 @@ function createProductionLocalTagHydration({ load, openLibraryDb, librarySqliteP
         Object.assign(receipt, { returnedCount: result.length, returnedUniqueIds: new Set(result.map(item => item.id)).size,
           populationValidated: true, ok: true })
         stats.completed++
+        queryRetirement?.finishHydration(receipt,result,undefined,false)
         return result
       } catch (error) {
         receipt.ok = false; receipt.error = { name: error?.name, message: String(error?.message || error).slice(0,512) }; stats.failed++
+        queryRetirement?.finishHydration(receipt,undefined,error,true)
         throw error
       } finally { receipt.finishedAt = performance.now() }
     })
+    return queryRetirement ? queryRetirement.runHydration(receipt,run) : run()
   }
   return { hydrateLocalTagsForFonts, receipts, stats, provenance: {
     owner: 'src/main/library/runtime/localFontTagsRuntime.ts', nativeOwner: 'src/main/rust-core/clients/rustMetadataClientRuntime.ts',
@@ -502,6 +510,7 @@ async function createHost(options) {
     } }] },
   }
   const helper = path.join(sourceRoot, 'src/main/preview/native-renderer/directwrite/directWritePreviewHelperPathRuntime.ts')
+  const queryRetirement = createQueryRetirementObserver({getContext:observationContext})
   const load = loader({
     electron,
     fontkit: requireProject('fontkit'),
@@ -510,11 +519,12 @@ async function createHost(options) {
     [path.join(sourceRoot, 'src/main/install/fontMutationProcessRuntime.ts')]: {
       createFontMutationSession: forbidden('real Windows font/registry mutation'),
     },
-  }, { setImmediate, clearImmediate }, {
+  }, productionHostGlobals(), {
     [helper]: source => source.replaceAll('import.meta.url', JSON.stringify(pathToFileURL(helper).href)),
   }, sourceRoot)
 
   try {
+    queryRetirement.installSelectedSource(load,{supportsQueryTasks:fs.existsSync(path.join(sourceRoot,'src/main/library/fontQueryTaskRuntime.ts'))})
     try { options.onLoaderReady?.(load) } catch { observationSetupErrors++ }
     const sqlite = load('src/main/db/sqliteHelpers.ts')
     const config = load('src/main/app/appRuntimeConfig.ts')
@@ -565,7 +575,8 @@ async function createHost(options) {
     const diagnosis = await transport.diagnoseRustCoreWorker()
     assert.equal(path.resolve(diagnosis.path), workerPath, 'Unexpected worker binary selected')
     const indexing = load('src/main/rust-core/clients/rustIndexingClientRuntime.ts').createRustIndexingClientRuntime({ ...transport, appendStartupLog })
-    const metadata = load('src/main/rust-core/clients/rustMetadataClientRuntime.ts').createRustMetadataClientRuntime({ ...transport, appendStartupLog })
+    const metadata = load('src/main/rust-core/clients/rustMetadataClientRuntime.ts').createRustMetadataClientRuntime({ ...transport,
+      runRustCoreScheduledCommand:queryRetirement.wrapTransport(transport.runRustCoreScheduledCommand), appendStartupLog })
     const previewClient = load('src/main/rust-core/clients/rustPreviewClientRuntime.ts').createRustPreviewClientRuntime({ ...transport, appendStartupLog })
     const native = {
       invalidateRustCoreSchedulerCaches: transport.invalidateRustCoreSchedulerCaches,
@@ -666,7 +677,7 @@ async function createHost(options) {
     statusDb.close()
 
     const localTags = createProductionLocalTagHydration({ load, openLibraryDb:openLibraryDbBase, librarySqlitePath: () => libraryPath,
-      runRustLocalTagsRead: metadata.runRustLocalTagsRead, appendStartupLog, getObservationContext: observationContext })
+      runRustLocalTagsRead: metadata.runRustLocalTagsRead, appendStartupLog, getObservationContext: observationContext, queryRetirement })
     localTags.provenance.selectedSourceWiring = assertProductionLocalTagHydrationWiring(sourceRoot, requireProject)
     const hydrateLocalTagsForFonts = async value => protection.hydrate(await favorites.hydrate(await localTags.hydrateLocalTagsForFonts(value)))
     const rendererState = { pageSeq: { current: 0 }, metricsSeq: { current: 0 }, token: 0, refreshes: 0, metrics: null }
@@ -898,7 +909,7 @@ async function createHost(options) {
         assert.equal(typeof handler, 'function', `Production IPC missing: ${channel}`)
         const row = { channel, actionId, sender: event.sender.id, startedAt: performance.now() }
         invocations.push(row)
-        try { const value = await handler(event, ...args); row.ok = true; return value }
+        try { const value = await queryRetirement.runIpc({channel,args,actionId},()=>handler(event,...args)); row.ok = true; return value }
         catch (error) { row.ok = false; row.error = { name: error?.name, message: String(error?.message || error), reason: error?.reason }; throw error }
         finally { row.finishedAt = performance.now(); row.elapsedMs = row.finishedAt - row.startedAt }
       }
@@ -910,6 +921,7 @@ async function createHost(options) {
       })
       foreground = { preview, previewDb, tasksDb, previewReceipts, invocations, createRenderer, invoke,
         provenance: { mode: 'production-ipc-preview-composition', renderer: 'synthetic trusted Electron sender; no renderer paint or Electron serialization',
+          errorRealm: 'Host Error shared for explicit Error/AbortError construction; implicit VM intrinsic errors retain their own realm',
           preview: 'createPreviewRuntime: storage, source stat, local SQLite, native render and image commit',
           caches: 'Case-private initialized preview/task/shared-cache SQLite; isolated shared backing paths avoid cross-run image reuse; no injected latency',
           responseBoundary: 'Full production IPC response; deferred shared-cache publication is not forced into foreground response time' } }
@@ -984,7 +996,7 @@ async function createHost(options) {
       libraryDb, openDb, openStableSqliteDb, sqlitePolicyEvidence, closeSqliteDb, readBoundary, readerProvenance,
       loadSharedFontsForFolders, loadSharedFontsForFoldersFresh, rootStorage, folderCache, sharedMetadata, rootManifest,
       migrationDiagnostics, readPortsProvenance, observer, logs, appendLog: appendStartupLog, appendStartupLog,
-      localTagHydration: localTags,
+      localTagHydration: localTags, queryRetirement,
       receipts: nativeReceipts, nativeReceipts, queue, projectionEvents, rendererState,
       get observationContextErrors() { return observationContextErrors },
       get observationSetupErrors() { return observationSetupErrors },
@@ -1009,6 +1021,7 @@ async function createHost(options) {
   async function closeHost() {
     if (closed) return
     closed = true
+    try {
     await query?.disposeSharedTagMetrics?.()
     if (foregroundShutdown) await foregroundShutdown.request()
     cleanupRenderer?.()
@@ -1033,8 +1046,9 @@ async function createHost(options) {
     assert.equal(observer.children.size, 0, 'Native children remained after host cleanup')
     if (captureCleanupError) throw captureCleanupError
     closeCompleted = true
+    } finally { queryRetirement.restore() }
   }
 }
 
 module.exports = { createHost, exactLegacyReadBoundary, assertProductionWriterWiring, createProductionLocalTagHydration, assertProductionLocalTagHydrationWiring,
-  createDiagnosticSqliteDatabase, createProductionSqlitePorts, assertProductionSqliteWiring, exactSelectedStorageReadPorts, assertProductionReadOwnerPorts }
+  createDiagnosticSqliteDatabase, createProductionSqlitePorts, assertProductionSqliteWiring, exactSelectedStorageReadPorts, assertProductionReadOwnerPorts, productionHostGlobals }

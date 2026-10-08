@@ -1,9 +1,35 @@
 import { resolve } from 'node:path'
+import { setImmediate as yieldImmediate } from 'node:timers/promises'
 import { mergedIndexLocalFavoriteExpr, rootIndexRuntimeFontIdExpr, sqliteLiteral } from '../indexing/root-query/rootIndexQuerySharedSql'
 import type { FontItem,FontMetricsResult,InstallCompareResult,LibraryShell } from '../../shared/types'
 import { normalizePathForCacheCompare } from '../path/cachePath'
 import type { FontSearchCategory } from './fontSearchRuntime'
 import { normalizeFontFormat } from './fontSqliteMapper'
+import { assertFontQueryActive, rethrowFontQuerySuperseded } from './fontQueryTaskRuntime'
+
+const FONT_METRICS_CHUNK_SIZE = 128
+
+async function yieldFontMetricsTurn(): Promise<void> {
+  assertFontQueryActive()
+  await yieldImmediate()
+  assertFontQueryActive()
+}
+
+async function forEachFontMetricsChunk<T>(items: T[], visit: (item: T) => void): Promise<void> {
+  assertFontQueryActive()
+  for (let offset = 0; offset < items.length; offset += FONT_METRICS_CHUNK_SIZE) {
+    const end = Math.min(offset + FONT_METRICS_CHUNK_SIZE, items.length)
+    for (let index = offset; index < end; index += 1) visit(items[index])
+    assertFontQueryActive()
+    if (end < items.length) await yieldFontMetricsTurn()
+  }
+}
+
+async function countKnownInstallStatus(fonts: FontItem[]): Promise<number> {
+  let count = 0
+  await forEachFontMetricsChunk(fonts, font => { if (font.installStatusKnown) count += 1 })
+  return count
+}
 
 export type FontMetricsRuntimeOptions = {
   appWatchedFolders: () => Promise<string[]>
@@ -65,63 +91,74 @@ export function createFontMetricsRuntime(options: FontMetricsRuntimeOptions): {
   getFontMetricsFromLibrary: () => Promise<FontMetricsResult>
 } {
   async function getFontMetricsFromLibrary(): Promise<FontMetricsResult> {
+    assertFontQueryActive()
     const startedAt = Date.now()
     const metrics = defaultFontMetricsResult()
     const folders = await options.appWatchedFolders()
+    assertFontQueryActive()
     const rawFonts = await options.loadSharedFontsForFolders(folders)
+    await yieldFontMetricsTurn()
     let hydrated = rawFonts
     let installStatusKnownCount = 0
     let installStatusMissingCount = 0
     if (options.getInstallStatusIndexSnapshot) {
       try {
         const snapshot = await options.getInstallStatusIndexSnapshot(rawFonts)
+        await yieldFontMetricsTurn()
         const missingIds = new Set(snapshot.missingIds || [])
         const results = snapshot.results || {}
-        installStatusKnownCount = Object.values(results).filter(result => result.known !== false).length
+        await forEachFontMetricsChunk(Object.values(results), result => { if (result.known !== false) installStatusKnownCount += 1 })
         installStatusMissingCount = missingIds.size
-        hydrated = rawFonts.map((item) => {
+        hydrated = []
+        await forEachFontMetricsChunk(rawFonts, (item) => {
           const result = results[item.id]
-          if (!result) return { ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] }
-          return {
+          hydrated.push(!result ? { ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] } : {
             ...item,
             installStatusKnown: result.known !== false,
             systemInstalled: result.known !== false && result.installed && result.by !== 'managed',
             systemInstallMatches: result.known === false ? [] : result.matches || [],
             active: result.known !== false && (result.by === 'managed' || result.by === 'both')
-          }
+          })
         })
-      } catch {
+      } catch (error) {
+        rethrowFontQuerySuperseded(error)
         hydrated = await options.hydrateInstallStatusForFonts(rawFonts)
-        installStatusKnownCount = hydrated.filter((font) => font.installStatusKnown).length
+        await yieldFontMetricsTurn()
+        installStatusKnownCount = await countKnownInstallStatus(hydrated)
         installStatusMissingCount = Math.max(0, rawFonts.length - installStatusKnownCount)
       }
     } else {
       hydrated = await options.hydrateInstallStatusForFonts(rawFonts)
-      installStatusKnownCount = hydrated.filter((font) => font.installStatusKnown).length
+      await yieldFontMetricsTurn()
+      installStatusKnownCount = await countKnownInstallStatus(hydrated)
       installStatusMissingCount = Math.max(0, rawFonts.length - installStatusKnownCount)
     }
+    await yieldFontMetricsTurn()
     hydrated = await options.hydrateLocalTagsForFonts(hydrated)
-    const shell = options.loadLibraryShellFromSqlite(await options.openLibraryDb())
+    await yieldFontMetricsTurn()
+    const libraryDb = await options.openLibraryDb()
+    assertFontQueryActive()
+    const shell = options.loadLibraryShellFromSqlite(libraryDb)
 
     metrics.total = hydrated.length
     metrics.categoryCounts.all = hydrated.length
-    for (const collection of shell.collections || []) metrics.collectionCounts[collection.id] = 0
-    for (const tag of shell.localTags || []) metrics.localTagCounts![tag] = 0
-    for (const tag of shell.tags || []) metrics.sharedTagCounts![tag] = 0
+    await forEachFontMetricsChunk(shell.collections || [], collection => { metrics.collectionCounts[collection.id] = 0 })
+    await forEachFontMetricsChunk(shell.localTags || [], tag => { metrics.localTagCounts![tag] = 0 })
+    await forEachFontMetricsChunk(shell.tags || [], tag => { metrics.sharedTagCounts![tag] = 0 })
 
     const folderIdByKey = new Map<string, string>()
-    for (const folder of shell.folders || []) {
+    await forEachFontMetricsChunk(shell.folders || [], folder => {
       metrics.folderCounts[folder] = 0
       folderIdByKey.set(normalizePathForCacheCompare(folder), folder)
-    }
-    for (const node of shell.folderNodes || []) {
-      if (!node?.id) continue
+    })
+    await forEachFontMetricsChunk(shell.folderNodes || [], node => {
+      if (!node?.id) return
       metrics.folderCounts[node.id] = 0
       folderIdByKey.set(normalizePathForCacheCompare(node.id), node.id)
-    }
+    })
 
     let matchedInstalledCount = 0
-    for (const font of hydrated) {
+    await forEachFontMetricsChunk(hydrated, font => {
       const format = normalizeFontFormat(font.format)
       metrics.formatCounts[format] = (metrics.formatCounts[format] || 0) + 1
       const category = options.inferFontSearchCategory(font)
@@ -152,7 +189,7 @@ export function createFontMetricsRuntime(options: FontMetricsRuntimeOptions): {
         metrics.folderCounts[folder] = (metrics.folderCounts[folder] || 0) + 1
         countedFolders.add(folder)
       }
-    }
+    })
 
     metrics.tagCounts = {
       ...(metrics.sharedTagCounts || {}),
@@ -169,7 +206,9 @@ export function createFontMetricsRuntime(options: FontMetricsRuntimeOptions): {
     metrics.notInstalledCount = Math.max(0, installStatusKnownCount - matchedInstalledCount)
     metrics.systemDefaultCount = 0
     metrics.elapsedMs = Date.now() - startedAt
+    assertFontQueryActive()
     await options.saveMetricsSnapshot('font_metrics', metrics)
+    assertFontQueryActive()
     return metrics
   }
 
@@ -188,21 +227,42 @@ export async function readLocalUserMetricsFromMergedIndex(options: {
   closeSqliteDb: (db: any) => void
   applyPendingActivationState: (items: FontItem[]) => FontItem[]
 }): Promise<Pick<FontMetricsResult, 'favoriteCount' | 'activeCount'> | null> {
+  assertFontQueryActive()
   if (!options.roots.length) return { favoriteCount: 0, activeCount: 0 }
+  // Let queued I/O callbacks settle before the synchronous local SQL stage.
+  await yieldFontMetricsTurn()
   await options.openLibraryDb()
+  await yieldFontMetricsTurn()
   const db = await options.openMergedIndexDb()
+  let rows: Array<{ id: string; installed_by: string; favorite: number }>
   try {
+    assertFontQueryActive()
     db.exec(`ATTACH DATABASE ${sqliteLiteral(options.librarySqlitePath())} AS local_db`)
     const roots = [...new Set(options.roots.map(root => resolve(root)))]
-    const rows = db.prepare(`SELECT ${rootIndexRuntimeFontIdExpr()} AS id,
+    rows = db.prepare(`SELECT ${rootIndexRuntimeFontIdExpr()} AS id,
       entries.installed_by, ${mergedIndexLocalFavoriteExpr()} AS favorite
       FROM entries WHERE COALESCE(entries.is_deleted, 0) = 0 AND entries.status = 'ok'
       AND entries.font_json IS NOT NULL AND json_valid(entries.font_json)
       AND entries.root_path IN (${roots.map(() => '?').join(',')})`).all(...roots) as Array<{ id: string; installed_by: string; favorite: number }>
-    if (rows.length !== options.expectedTotal) return null
-    const fonts = options.applyPendingActivationState(rows.map(row => ({
-      id: row.id, favorite: !!row.favorite, active: row.installed_by === 'managed' || row.installed_by === 'both',
-    } as FontItem)))
-    return { favoriteCount: fonts.filter(font => font.favorite).length, activeCount: fonts.filter(font => font.active).length }
   } finally { options.closeSqliteDb(db) }
+  assertFontQueryActive()
+  if (rows.length !== options.expectedTotal) return null
+  // Rows are fully materialized and the handle is closed before any memory yield.
+  await yieldFontMetricsTurn()
+  const items: FontItem[] = []
+  await forEachFontMetricsChunk(rows, row => {
+    items.push({ id: row.id, favorite: !!row.favorite, active: row.installed_by === 'managed' || row.installed_by === 'both' } as FontItem)
+  })
+  assertFontQueryActive()
+  // Apply the pending queue once so all rows observe the same overlay turn.
+  const fonts = options.applyPendingActivationState(items)
+  await yieldFontMetricsTurn()
+  let favoriteCount = 0
+  let activeCount = 0
+  await forEachFontMetricsChunk(fonts, font => {
+    if (font.favorite) favoriteCount += 1
+    if (font.active) activeCount += 1
+  })
+  assertFontQueryActive()
+  return { favoriteCount, activeCount }
 }

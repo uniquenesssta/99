@@ -31,6 +31,7 @@ const { AsyncLocalStorage } = require('node:async_hooks')
 const { performance } = require('node:perf_hooks')
 const { createFullRefreshObservation } = require('./lib/full-refresh-observation.cjs')
 const { captureFixtureRoots, createFixtureCacheLifecycle } = require('./lib/full-refresh-fixture-lifecycle.cjs')
+const { validateQueryRetirements } = require('./lib/full-refresh-query-retirement.cjs')
 
 const liveHosts = new Set()
 const BASELINE = '6620b3bafd5b3d894987585dd06c5d5eabc54933'
@@ -187,6 +188,7 @@ function instrument(host, fixture, scope, observation) {
       requestOrdinal: counters.tasks + 1, roots: [...request.roots], accesses: request.accesses ? plain(request.accesses) : null,
       previewStageProof: request.previewStageProof ? plain(request.previewStageProof) : undefined,
       write: request.write, verifiedReadOnly: request.verifiedReadOnly === true, sharedReadOnlyPreview: request.sharedReadOnlyPreview === true, priority: request.priority, processLane: request.lane || 'default' }
+    host.queryRetirement.observePoolRequest(request, row)
     let input
     const inputAt = request.args?.indexOf('--input')
     if (inputAt >= 0) {
@@ -248,6 +250,7 @@ function instrument(host, fixture, scope, observation) {
         // any job. Distinguish observed non-admission from an unknown wait.
         row.notAdmitted = true; row.queuedMs = 0; row.executionMs = 0
       }
+      if (lane.startsWith('foreground') && Number.isFinite(row.queuedMs) && row.queuedMs >= 0) counters.foregroundQueueMs.push(row.queuedMs)
       throw error
     }).finally(() => {
       row.elapsedMs = performance.now()-row.startedAt; counters.processes.push(row)
@@ -376,9 +379,20 @@ function localTagHydrationReport(host) {
   assert(owner, 'Actual selected-source local-tag hydration owner missing')
   return { provenance: plain(owner.provenance), stats: plain(owner.stats), receipts: plain(owner.receipts) }
 }
-function assertLocalTagHydrationEvidence(evidence, expectedIds, population) {
+function queryRetirementProof(row) {
+  if (!row.localTagHydration) {
+    assert(!row.queryRetirementObservation, 'Query retirement observation lost its native hydration receipts')
+    return { retiredHydrationIds: [], retiredRequestOrdinals: [], certificates: [] }
+  }
+  return validateQueryRetirements({ observation: row.queryRetirementObservation,
+    hydrationReceipts: row.localTagHydration.receipts, processRequests: row.work?.processRequests || [] })
+}
+function assertLocalTagHydrationEvidence(evidence, expectedIds, population, retiredHydrationIds = []) {
   assert.equal(evidence.provenance.mode, 'selected-source-rust-first-local-tag-hydration')
-  assert.equal(evidence.stats.failed, 0, 'Native local-tag hydration failed')
+  const failed = evidence.receipts.filter(row => row.ok === false)
+  assert.equal(evidence.stats.failed, failed.length, 'Native local-tag failure receipts missing')
+  assert.equal(new Set(retiredHydrationIds).size, retiredHydrationIds.length, 'Duplicate native retirement certificate')
+  assert.deepEqual(failed.map(row => row.id).sort((a,b) => a-b), [...retiredHydrationIds].sort((a,b) => a-b), 'Native local-tag hydration failed without an exact query retirement certificate')
   assert.equal(evidence.stats.receiptOverflow, 0, 'Native local-tag receipt population overflowed')
   const full = evidence.receipts.filter(row => row.context?.stage === 'timed' && row.context?.lane === 'foreground-metrics' && row.requestedCount === population)
   assert(full.length > 0, 'Timed metrics bypassed full-population native local-tag hydration')
@@ -392,7 +406,8 @@ function assertLocalTagHydrationEvidence(evidence, expectedIds, population) {
     for (const item of row.taggedRows) assert.deepEqual(item.tagNames, ['FixtureTag'], 'Hydrated item lost exact native tag names')
     assert.equal(row.untaggedCount, population - expectedIds.length)
   }
-  return { fullPopulationReceipts: full.length, taggedItems: expectedIds.length, population }
+  return { fullPopulationReceipts: full.length, taggedItems: expectedIds.length, population,
+    failedAttempts: evidence.stats.failed, retiredHydrationIds: [...retiredHydrationIds] }
 }
 
 async function interleave(host, meter, fixture, caseDirectory) {
@@ -664,7 +679,9 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     assert.equal(report.summary.notInstalledCount, WORKLOAD.metadataOnly)
     assert.equal(report.summary.missingCount, 0)
     report.localTagHydration = localTagHydrationReport(host)
-    report.localTagHydrationProof = assertLocalTagHydrationEvidence(report.localTagHydration, fixture.sourceItems.slice(0,26).map(item => item.id), WORKLOAD.validIndexed)
+    report.queryRetirementObservation = host.queryRetirement.snapshot()
+    report.queryRetirementProof = queryRetirementProof({ ...report, work: meter.snapshot() })
+    report.localTagHydrationProof = assertLocalTagHydrationEvidence(report.localTagHydration, fixture.sourceItems.slice(0,26).map(item => item.id), WORKLOAD.validIndexed, report.queryRetirementProof.retiredHydrationIds)
     report.finalProjection = await readProjection(host, { installedCount: WORKLOAD.sourceFiles,
       notInstalledCount: WORKLOAD.metadataOnly, installStatusMissingCount: 0 }, 'complete-refresh')
     await meter.pool.whenIdle()
@@ -706,6 +723,9 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
         resource.meter.restore()
         resource.setObservationStage('cleanup')
         try { await resource.host.close(); liveHosts.delete(resource.host) } catch (error) { report.cleanupFailure = errorInfo(error); report.passed = false; report.comparable = false }
+        report.queryRetirementObservation = resource.host.queryRetirement.snapshot()
+        try { report.queryRetirementProof = queryRetirementProof(report) }
+        catch (error) { report.queryRetirementFailure = errorInfo(error); report.passed = false; report.comparable = false }
         report.childrenAfterClose = resource.host.observer.children.size
         if (report.childrenAfterClose !== 0) { report.passed = false; report.comparable = false }
         const log = (resource.host.logs || []).join('\n')
@@ -970,6 +990,19 @@ function semanticQueueCohorts(row) {
   assert.equal(work.foregroundEndToEnd.values.length,WORKLOAD.foregroundQueries,'Missing browse E2E values')
   assert.equal(row.previewEndToEnd.count,WORKLOAD.nativePreviews,'Missing preview E2E samples')
   assert.equal(row.previewEndToEnd.values.length,WORKLOAD.nativePreviews,'Missing preview E2E values')
+  // Recompute from raw signal/native/IPC evidence. A saved certificate is only
+  // a report aid; it cannot waive a failed physical request at comparison time.
+  const retirement = queryRetirementProof(row)
+  const retiredRequests = new Set(retirement.retiredRequestOrdinals)
+  if (retiredRequests.size) {
+    const observed = work.processRequests.filter(request => request.lane.startsWith('foreground')).map(request => request.queuedMs)
+    assert(observed.every(value => Number.isFinite(value) && value >= 0), 'Retired query lost observed foreground queue costs')
+    assert.equal(work.foregroundQueue.count, observed.length, 'Retired query queue samples were omitted')
+    assert.deepEqual([...work.foregroundQueue.values].sort((a,b) => a-b), [...observed].sort((a,b) => a-b), 'Retired query queue costs were omitted')
+    const actual = summarize(observed)
+    assert.equal(work.foregroundQueue.maxMs, actual.maxMs, 'Retired query changed the raw queue maximum')
+    assert.equal(work.foregroundQueue.p95Ms, actual.p95Ms, 'Retired query changed the raw queue quantile')
+  }
   const groups = [
     ['foreground-browse', foreground.queries, Array.from({length:WORKLOAD.foregroundQueries},(_,i)=>i)],
     ['foreground-preview', foreground.previewReceipts, Array.from({length:WORKLOAD.nativePreviews},(_,i)=>i)],
@@ -1009,7 +1042,7 @@ function semanticQueueCohorts(row) {
   for(const request of work.processRequests) {
     if(request.lane.startsWith('foreground')) {
       assert.equal(actions.get(request.actionId),request.lane,'Misclassified/unattributed foreground process')
-      assert(!request.error,'Failed foreground physical request')
+      assert(!request.error || retiredRequests.has(request.requestOrdinal),'Failed foreground physical request')
       assert(Number.isFinite(request.queuedMs)&&request.queuedMs>=0,'Missing queue cost')
     } else if(actions.has(request.actionId) || request.lane === 'background-shared-counts') {
       const history = request.lane==='background-history-capture'&&request.priority==='background'&&actions.get(request.actionId)==='foreground-browse'
@@ -1118,7 +1151,7 @@ function compareRuns(runs) {
     interpretation:'Original mixed-child p95 retained, but different child populations cannot decide acceptance. Fixed10 preview/4 enumeration and16 browse cohort cost plus E2E are hard gates.'}
   if (runs.some(row => !row.passed || !row.comparable)) return { comparable: false,rawMixedQueue,
     reason: 'One or more source versions failed the full real workload; no speedup claim is valid',
-    failedCases: runs.filter(row => !row.passed || !row.comparable).map(row => ({ caseId: row.caseId, failure: row.failure || row.foregroundFailure })) }
+    failedCases: runs.filter(row => !row.passed || !row.comparable).map(row => ({ caseId: row.caseId, failure: row.failure || row.foregroundFailure || row.queryRetirementFailure })) }
   try {
     assert.deepEqual(runs.map(row=>row.caseId),['A1','B1','B2','A2'],'Missing/reordered ABBA run')
     assert.equal(baseline.length,2);assert.equal(changed.length,2)

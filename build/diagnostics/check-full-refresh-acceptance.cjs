@@ -346,7 +346,67 @@ async function observationRegressions() {
  }
  console.log('[diagnostics:full-refresh-acceptance] observer identity, deadline/physical completion, admission, bounds, errors and restoration counterexamples passed')
 }
-observationRegressions().then(localTagHydrationRegressions).then(taggedPageRealmRegressions).then(sqlitePolicyRegressions).then(()=>require('./check-full-refresh-fixture-lifecycle.cjs').runFixtureLifecycleRegressions()).then(timedOwnerRegressions).catch(error=>{console.error(error);process.exitCode=1})
+observationRegressions().then(localTagHydrationRegressions).then(taggedPageRealmRegressions).then(sqlitePolicyRegressions)
+ .then(()=>require('./check-full-refresh-fixture-lifecycle.cjs').runFixtureLifecycleRegressions()).then(timedOwnerRegressions)
+ .then(()=>require('./check-font-metrics-fairness.cjs').runFontMetricsFairnessRegressions())
+ .then(()=>require('./check-full-refresh-query-retirement.cjs').runQueryRetirementRegressions())
+ .then(queryRetirementAcceptanceRegressions)
+ .catch(error=>{console.error(error);process.exitCode=1})
+
+function queryRetirementAcceptanceRegressions(input) {
+ const {validateQueryRetirements}=require('./lib/full-refresh-query-retirement.cjs')
+ const {assertLocalTagHydrationEvidence}=require('./check-full-refresh-work.cjs')
+ const certificate=validateQueryRetirements(input)
+ const runs=fullIpcSamples(),candidate=runs[1]
+ candidate.queryRetirementObservation=clone(input.observation)
+ candidate.localTagHydration={provenance:{mode:'selected-source-rust-first-local-tag-hydration'},
+  stats:{failed:input.hydrationReceipts.filter(row=>row.ok===false).length,receiptOverflow:0},receipts:clone(input.hydrationReceipts)}
+ candidate.work.processRequests.push(...clone(input.processRequests));candidate.work.tasks+=input.processRequests.length
+ candidate.work.foregroundQueue=stats(candidate.work.processRequests.filter(row=>row.lane.startsWith('foreground')).map(row=>row.queuedMs))
+ assert.equal(compareRuns(clone(runs)).passed,true,'Exact query retirement was rejected by the physical cohort gate')
+ assert.equal(candidate.localTagHydration.stats.failed,1,'Retirement erased the failed native attempt')
+ const retained=candidate.work.processRequests.filter(row=>certificate.retiredRequestOrdinals.includes(row.requestOrdinal))
+ assert.equal(retained.length,1);assert.equal(retained[0].queuedMs,2);assert.equal(retained[0].executionMs,3)
+ for(const mutate of [
+  row=>{delete row.queryRetirementObservation},
+  row=>{row.queryRetirementObservation.transports[0].error={name:'AbortError',reason:'timeout'}},
+  row=>{row.queryRetirementObservation.hydrations[1].inputSha256='0'.repeat(64)},
+  row=>{row.work.processRequests.at(-1).querySignalId=999},
+  row=>{row.work.processRequests.at(-1).error.reason='stale-generation'},
+  row=>{row.work.processRequests.at(-1).closedAt=Infinity},
+  row=>{row.work.foregroundQueue.values.pop();row.work.foregroundQueue.count--},
+  row=>{row.work.foregroundQueue.values[row.work.foregroundQueue.values.length-1]=0},
+  row=>{row.work.foregroundQueue.maxMs=0},
+  row=>{row.work.processRequests.push({...row.work.processRequests.at(-1),querySignalId:999,requestOrdinal:999});row.work.tasks++},
+ ]) {
+  const altered=clone(runs);mutate(altered[1])
+  altered[1].queryRetirementProof={...certificate,retiredRequestOrdinals:[1,999]}
+  assert(compareRuns(altered).populationFailure,'Saved or unrelated cancellation certificate waived a physical failure')
+ }
+ const slower=clone(runs),slowerCandidate=slower[1]
+ slowerCandidate.work.processRequests.at(-1).queuedMs=10000
+ slowerCandidate.work.foregroundQueue=stats(slowerCandidate.work.processRequests.filter(row=>row.lane.startsWith('foreground')).map(row=>row.queuedMs))
+ const slowerResult=compareRuns(slower)
+ assert.equal(slowerResult.passed,false,'A retired query queue regression escaped')
+ assert.equal(slowerResult.candidates[0].foregroundMaxNoRegression,false,'Retirement removed the raw maximum gate')
+ assert.equal(slowerResult.candidates[0].browseQueueCostNoRegression,false,'Retirement removed the browse queue total gate')
+ // A successful full-population hydration remains independently mandatory.
+ // This is synthetic acceptance evidence, not another timed/native workload.
+ const hydration=clone(candidate.localTagHydration),replacement=hydration.receipts.find(row=>row.ok===true)
+ const full={...clone(replacement),id:999,context:{stage:'timed',lane:'foreground-metrics'}}
+ hydration.receipts.push(full)
+ const expected=full.taggedRows.map(row=>row.id)
+ assert.equal(assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount,certificate.retiredHydrationIds).failedAttempts,1)
+ assert.throws(()=>assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount),/without an exact query retirement certificate/)
+ for(const mutate of [
+  row=>{row.stats.failed=0},row=>{row.receipts.find(item=>item.id===999).workerMode='node-fallback'},
+  row=>{row.receipts.find(item=>item.id===999).nativePopulationValidated=false},
+ ]) {
+  const altered=clone(hydration);mutate(altered)
+  assert.throws(()=>assertLocalTagHydrationEvidence(altered,expected,full.requestedCount,certificate.retiredHydrationIds),'Retirement waived native count or population proof')
+ }
+ console.log('[diagnostics:full-refresh-acceptance] query retirement is recomputed, failed attempts/costs retained, unrelated physical failures and incomplete native populations rejected')
+}
 
 // These mechanics fixtures exercise the actual source hydration owner with a
 // controlled native port. Real A/B workers additionally prove alias parity in
@@ -530,10 +590,16 @@ async function sqlitePolicyRegressions() {
   assert.equal(matches.length,1)
   const helper=matches[0].getText(tree),anchor='openStableSqliteDb:runtime.openStableSqliteDb'
   assert.equal(helper.split(anchor).length,2,'Raw SQLite bypass mutation anchor changed')
-  const mutated=new Function('assert','assertProductionSqliteWiring','forbidden',helper.replace(anchor,'openStableSqliteDb:openRawDb')+';return createProductionSqlitePorts')(
+  // The old raw opener accepted only a filename and ignored the source label;
+  // a direct alias would instead misread that label as constructor options.
+  const mutated=new Function('assert','assertProductionSqliteWiring','forbidden',helper.replace(anchor,'openStableSqliteDb:(file,_label)=>openRawDb(file)')+';return createProductionSqlitePorts')(
    assert,assertProductionSqliteWiring,name=>()=>{throw Error(name)})
   const bypass=mutated(options),bypassed=bypass.openStableSqliteDb(dataPath('raw-bypass.sqlite'),'install-identity-items')
-  try{assert.throws(()=>assertPolicy(bypass,bypassed),/Selected SQLite journal mode missing/)}finally{close(bypassed)}
+  try{
+   const policy=bypass.inspectPolicy(bypassed)
+   assert.equal(policy.journal_mode,'delete');assert.equal(policy.busy_timeout,5000)
+   assert.throws(()=>assertPolicy(bypass,bypassed),/Selected SQLite journal mode missing/)
+  }finally{close(bypassed)}
  }finally{
   for(const db of opened)try{db.close()}catch{}
   fs.rmSync(directory,{recursive:true,force:true})
