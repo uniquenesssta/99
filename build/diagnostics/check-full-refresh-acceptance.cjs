@@ -199,3 +199,151 @@ for(const mutate of [
 const failedBaseline=clone(original);failedBaseline[0].passed=false;failedBaseline[0].comparable=false
 assert.equal(compareRuns(failedBaseline).comparable,false,'Failed full baseline was made comparable')
 console.log('[diagnostics:full-refresh-acceptance] fixed-cohort equality, observed +18ms regression, missing/misclassified/duplicate samples copy-only cost/ownership and failed baseline rejection passed')
+
+// Observer mechanics only. These deterministic fixtures are never timing evidence.
+// Exercise the actual bounded helper, not a replacement deadline/acceptance path.
+function observationFixture(factory, options = {}) {
+ const pending = () => { let resolve, reject; const promise = new Promise((yes,no) => { resolve=yes;reject=no });return {promise,resolve,reject} }
+ const state={clock:0,scope:{lane:'foreground-preview',actionId:'preview:0'},enabled:0,disabled:0,resets:0,rootReads:0,calls:[],fault:false}
+ const perfHooks={performance:{now:()=>{if(state.fault)throw Error('observer clock failure');return ++state.clock},
+  eventLoopUtilization:()=>({idle:1,active:2,utilization:2/3})},monitorEventLoopDelay:()=>({count:2,max:2000000,mean:1000000,
+   percentile:()=>2000000,enable(){state.enabled++},disable(){state.disabled++},reset(){state.resets++}})}
+ const processInfo={memoryUsage:()=>({rss:4096,heapUsed:1024,heapTotal:2048}),cpuUsage:()=>({user:1000,system:100})}
+ const root={rootId:'fixture-root',state:'online',generation:1,lastProbeQueuedMs:2,lastProbeExecutionMs:3}
+ const deadline={withIoDeadlineResult:function(label,operation,timeout){state.calls.push({thisValue:this,args:[label,operation,timeout]});return operation}}
+ const preview={tracePreviewPhase:function(label,operation){state.calls.push({thisValue:this,args:[label,operation]});return operation()}}
+ const availability={ensureStartupPathRootAvailable:function(rootId,probe,reason){return probe},getStartupPathRootState:function(){state.rootReads++;return root}}
+ const modules={'src/main/path/ioDeadlineRuntime.ts':deadline,'src/main/preview/runtime/previewTraceRuntime.ts':preview,'src/main/path/startupPathAvailabilityRuntime.ts':availability}
+ const originals=Object.fromEntries(Object.entries(modules).map(([file,value])=>[file,{...value}]))
+ const observer=factory({getScope:()=>state.scope,perfHooks,processInfo,...options})
+ observer.installSelectedSource(file=>{assert(Object.hasOwn(modules,file),'Unexpected observer dependency');return modules[file]})
+ return {observer,state,deadline,preview,availability,modules,originals,root,pending}
+}
+async function assertObservationContract(factory) {
+ const f=observationFixture(factory),{observer,state,deadline,preview,availability,pending}=f
+ try {
+  assert.equal(state.enabled,1,'Observer needs one histogram per case')
+  observer.installSelectedSource(file=>f.modules[file])
+  assert.equal(observer.snapshot().hooks.length,4,'Observation install must be idempotent')
+  const receiver={},operation=pending(),deadlineResult=Object.freeze({ok:false,timedOut:true,error:Object.freeze(Error('controlled timeout'))})
+  const returned=deadline.withIoDeadlineResult.call(receiver,'preview-cache-validate',operation.promise,500)
+  assert.equal(returned,operation.promise,'Observer changed original Promise identity')
+  assert.equal(state.calls[0].thisValue,receiver);assert.equal(state.calls[0].args[1],operation.promise);assert.equal(state.calls[0].args[2],500)
+  operation.resolve(deadlineResult);assert.equal(await returned,deadlineResult)
+  const deadlineRow=observer.snapshot().rows.deadlines[0]
+  assert.equal(deadlineRow.requestedTimeoutMs,500);assert.equal(deadlineRow.timedOut,true);assert.equal(deadlineRow.ok,false)
+  assert.equal(deadlineRow.systemAtFinish.rssBytes,4096);assert.equal(deadlineRow.systemAtFinish.eventLoopDelay.maxMs,2)
+  const vmPromise=require('node:vm').runInNewContext('Promise.resolve(17)')
+  assert.equal(deadline.withIoDeadlineResult('vm',vmPromise,500),vmPromise,'Cross-realm Promise identity changed');await vmPromise
+  const thenable=Object.defineProperty({},'then',{get(){throw Error('Observer assimilated a thenable')}})
+  assert.equal(preview.tracePreviewPhase('thenable',()=>thenable),thenable)
+  for(const thrown of [Object.freeze(Error('frozen original')),'primitive original',null]) {
+   let caught;try{preview.tracePreviewPhase('throws',()=>{throw thrown})}catch(error){caught=error}
+   assert.equal(caught,thrown,'Observer changed synchronous throw identity')
+   const failure=pending(),receipt=deadline.withIoDeadlineResult('reject',failure.promise,500)
+   assert.equal(receipt,failure.promise,'Observer changed rejected Promise identity')
+   failure.reject(thrown);let rejected;try{await receipt}catch(error){rejected=error}
+   assert.equal(rejected,thrown,'Observer changed rejection identity')
+  }
+  const rootResult=availability.getStartupPathRootState('fixture-root')
+  assert.equal(rootResult,f.root);assert.equal(state.rootReads,1,'Observer added a root-state read')
+  f.root.state='offline';f.root.generation++;availability.getStartupPathRootState('fixture-root')
+  assert.equal(observer.snapshot().rows.roots.length,2)
+  let admissionCalls=0;const admissionThis={},admissionArg={}
+  const originalAdmission=function(arg){admissionCalls++;assert.equal(this,admissionThis);assert.equal(arg,admissionArg);return false}
+  const admit=observer.wrapAdmission(originalAdmission,{command:'--read',requestOrdinal:7})
+  assert.equal(admit.call(admissionThis,admissionArg),false);assert.equal(admissionCalls,1,'Admission callback invoked more than once')
+  const admissionError=Object.freeze(Error('same admission error'))
+  let admissionCaught;try{observer.wrapAdmission(()=>{throw admissionError})()}catch(error){admissionCaught=error}
+  assert.equal(admissionCaught,admissionError);assert.equal(observer.wrapAdmission(undefined),undefined)
+  const admissionRow=observer.snapshot().rows.admissions[0]
+  assert.equal(admissionRow.rootRevisionBefore,2);assert.equal(admissionRow.rootRevisionAfter,2);assert.equal(admissionRow.result,false)
+  observer.setStage('timed');state.scope={stage:'validation',lane:'foreground-browse',actionId:'page:1'}
+  preview.tracePreviewPhase('scope',()=>19)
+  assert.equal(observer.snapshot().rows.phases.at(-1).stage,'validation','Validation attribution leaked into timed scope')
+  state.scope={lane:'foreground-preview',actionId:'preview:1'}
+  const physical=pending()
+  const physicalReceipt=preview.tracePreviewPhase('outer',()=>preview.tracePreviewPhase('image-read',()=>physical.promise))
+  assert.equal(physicalReceipt,physical.promise,'Physical completion promise changed')
+  const lastRows=observer.snapshot().rows.phases.slice(-2)
+  assert.equal(lastRows[1].parentId,lastRows[0].id,'Nested physical read lost selected-source parent')
+  const payload=Object.defineProperty({total:3},'fontBytes',{get(){throw Error('Payload copied')}})
+  observer.recordProjection(()=>({label:'failed-acceptance-snapshot',rawSql:payload,pages:{installed:1},metrics:{installed:2},native:[{total:3,inputCategory:{rootCount:2},context:{stage:'validation'}}]}))
+  const projection=observer.snapshot().rows.projections[0]
+  assert.equal(projection.rawSql.total,3);assert.equal(projection.pages.installed,1);assert.equal(projection.metrics.installed,2)
+  assert(!Object.hasOwn(projection.rawSql,'fontBytes'),'Observer copied payload')
+  observer.recordProjection(()=>{throw Error('observer summary failure')})
+  assert(observer.snapshot().observerErrors>0,'Observer errors were hidden')
+  observer.restore();observer.restore()
+  for(const [file,originals] of Object.entries(f.originals))for(const [key,original]of Object.entries(originals))assert.equal(f.modules[file][key],original,'Patched export was not restored')
+  assert.equal(state.disabled,1,'Histogram must stop exactly once')
+  assert.equal(observer.snapshot().histogramDisabled,true)
+  const bytes=Buffer.from([1,2,3]);physical.resolve(bytes);assert.equal(await physicalReceipt,bytes)
+  assert.equal(observer.snapshot().lateCompletions,2,'Late physical completion was lost after restore')
+  assert.equal(lastRows[1].returnedBytes,3);assert.equal(lastRows[1].completedAfterRestore,true)
+  const before=observer.snapshot().rows.admissions.length;admit.call(admissionThis,admissionArg)
+  assert.equal(admissionCalls,2);assert.equal(observer.snapshot().rows.admissions.length,before,'Restored admission still observed')
+ }finally{observer.restore()}
+}
+async function observationRegressions() {
+ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm')
+ const file=path.join(__dirname,'lib/full-refresh-observation.cjs'),source=fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n')
+ const factory=require(file).createFullRefreshObservation
+ await assertObservationContract(factory)
+ const bounded=observationFixture(factory,{limits:{phases:1,projections:1,admissions:1,roots:1}})
+ try {
+  for(let index=0;index<3;index++){bounded.preview.tracePreviewPhase('bounded',()=>index);bounded.observer.recordProjection({label:'bounded'});bounded.observer.wrapAdmission(()=>true)()}
+  const value=bounded.observer.snapshot()
+  for(const key of ['phases','projections','admissions']){assert.equal(value.rows[key].length,1);assert.equal(value.dropped[key],2,'Bounded overflow must be explicit')}
+ }finally{bounded.observer.restore()}
+ const failed=observationFixture(factory)
+ failed.state.fault=true
+ assert.equal(failed.preview.tracePreviewPhase('clock-failed',()=>42),42,'Observer clock fault blocked business call')
+ failed.observer.restore()
+ for(const [file,originals]of Object.entries(failed.originals))for(const [key,original]of Object.entries(originals))assert.equal(failed.modules[file][key],original,'Observer fault prevented restoration')
+ assert.equal(failed.state.disabled,1,'Observer fault prevented histogram shutdown')
+ failed.state.fault=false;assert(failed.observer.snapshot().observerErrors>0)
+ const badScope=observationFixture(factory,{getScope:()=>{throw Error('observer context failure')}})
+ try{assert.equal(badScope.preview.tracePreviewPhase('context-failed',()=>23),23);assert(badScope.observer.snapshot().observerErrors>0)}finally{badScope.observer.restore()}
+ const partial=observationFixture(factory)
+ partial.observer.restore()
+ const partialObserver=factory({perfHooks:{performance:{now:()=>0,eventLoopUtilization:()=>({})},monitorEventLoopDelay:()=>({enable(){},disable(){},reset(){},count:0})},processInfo:{memoryUsage:()=>({}),cpuUsage:()=>({})}})
+ try {
+  partialObserver.installSelectedSource(file=>{if(file.includes('startupPathAvailability'))throw Error('missing optional observation hook');return partial.modules[file]})
+  assert(partialObserver.snapshot().observerErrors>0,'Unavailable observation hook was hidden')
+ }finally{partialObserver.restore()}
+ for(const [file,originals]of Object.entries(partial.originals))for(const [key,original]of Object.entries(originals))assert.equal(partial.modules[file][key],original,'Partial installation was not restored')
+ // Exercise the actual stage adapter without constructing a host or running I/O.
+ const workSource=fs.readFileSync(path.join(__dirname,'check-full-refresh-work.cjs'),'utf8').replace(/\r\n/g,'\n')
+ const stageAssignments=[...workSource.matchAll(/host\.withObservationStage = ([^\n]+)/g)]
+ assert.equal(stageAssignments.length,1,'Observation stage adapter must have one owner')
+ async function assertStageLifetime(expression) {
+  const {AsyncLocalStorage}=require('node:async_hooks'),scope=new AsyncLocalStorage(),observationStageScope=new AsyncLocalStorage()
+  const runStage=new Function('observationStageScope','scope',`return (${expression})`)(observationStageScope,scope)
+  const owner={active:true,lane:'foreground-browse',actionId:'held-query'},held={}
+  held.promise=new Promise(resolve=>{held.resolve=resolve})
+  let original
+  const returned=scope.run(owner,()=>runStage('validation',()=>{
+   original=held.promise.then(()=>({active:scope.getStore().active,stage:observationStageScope.getStore()}));return original
+  }))
+  assert.equal(returned,original,'Observation stage changed Promise identity')
+  owner.active=false;held.resolve();const result=await returned
+  assert.equal(result.active,false,'Validation detached the original meter lifetime')
+  assert.equal(result.stage,'validation','Validation lost its separate observation stage')
+ }
+ await assertStageLifetime(stageAssignments[0][1])
+ await assert.rejects(()=>assertStageLifetime('(stage, run) => scope.run({ ...scope.getStore(), stage }, run)'),/Validation detached the original meter lifetime/)
+ // Exact, causally checked mutations. These do not update any acceptance gate.
+ for(const [before,after,expected]of [
+  ['      return result\n    }\n    guard(() => Object.defineProperty', '      return isPromise(result) ? result.then(value => value) : result\n    }\n    guard(() => Object.defineProperty', /Observer changed original Promise identity/],
+  ['try { result = Reflect.apply(original, this, args) }','try { Reflect.apply(original, this, args); result = Reflect.apply(original, this, args) }',/Admission callback invoked more than once/],
+  ['saved.module[saved.key] = saved.original','saved.module[saved.key] = saved.wrapped',/Patched export was not restored/],
+ ]) {
+  assert.equal(source.split(before).length,2,'Observer mutation anchor must be unique')
+  const box={module:{exports:{}},exports:{},Buffer,require:name=>{assert(['node:async_hooks','node:util','node:perf_hooks'].includes(name));return require(name)}}
+  vm.runInNewContext(source.replace(before,after),box,{filename:file})
+  await assert.rejects(()=>assertObservationContract(box.module.exports.createFullRefreshObservation),expected)
+ }
+ console.log('[diagnostics:full-refresh-acceptance] observer identity, deadline/physical completion, admission, bounds, errors and restoration counterexamples passed')
+}
+observationRegressions().catch(error=>{console.error(error);process.exitCode=1})

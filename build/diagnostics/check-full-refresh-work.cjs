@@ -29,6 +29,7 @@ const cp = require('node:child_process')
 const { createRequire } = require('node:module')
 const { AsyncLocalStorage } = require('node:async_hooks')
 const { performance } = require('node:perf_hooks')
+const { createFullRefreshObservation } = require('./lib/full-refresh-observation.cjs')
 
 const liveHosts = new Set()
 const BASELINE = '6620b3bafd5b3d894987585dd06c5d5eabc54933'
@@ -136,8 +137,8 @@ async function makeItems(currentRoot, fixture, hostModule) {
 
 // Observers wrap real owners and return their original values. They never decide
 // business state, replace SQL, insert latency or replace native transport results.
-function instrument(host, fixture) {
-  const scope = new AsyncLocalStorage(), scopeSequences = new Map()
+function instrument(host, fixture, scope, observation) {
+  const scopeSequences = new Map()
   const ioScope = host.load('src/main/path/sharedFileSystemRuntime.ts')
   const content = host.load('src/main/fonts/fontContentIdentityRuntime.ts')
   const originalRead = content.readFontContentIdentity
@@ -207,7 +208,9 @@ function instrument(host, fixture) {
       backgroundAdmissions++
       for(let i=backgroundWaiters.length-1;i>=0;i--)if(backgroundAdmissions>=backgroundWaiters[i].count)backgroundWaiters.splice(i,1)[0].resolve()
     }
-    return originalRun.call(pool, { ...request, initialPhase: request.initialPhase ? { ...request.initialPhase, acceptLine: line => {
+    return originalRun.call(pool, { ...request, admit: observation.wrapAdmission(request.admit, {
+      requestOrdinal: row.requestOrdinal, label: row.label, command: row.command, roots: row.roots,
+    }), initialPhase: request.initialPhase ? { ...request.initialPhase, acceptLine: line => {
       const accepted=request.initialPhase.acceptLine(line)
       if(accepted){row.stageReadyAt=performance.now();row.stageReadyReceipt=JSON.parse(line.slice('hfm-owned-preview-ready: '.length))}
       return accepted
@@ -307,21 +310,52 @@ function pageRequest(kind, sequence) {
     activeFilter: { kind: kind === 'tags' ? 'all' : kind }, installStatus: 'all', sortMode: 'nameAsc', offset: 0, limit: 100,
     diagnosticRequestSequence: sequence }
 }
-async function readProjection(host, expected, label) {
-  const [all, installed, notInstalled, metrics] = await Promise.all([
-    host.query.queryFontPageInLibrary(pageRequest('all', -1)), host.query.queryFontPageInLibrary(pageRequest('installed', -1)),
-    host.query.queryFontPageInLibrary(pageRequest('notInstalled', -1)), host.query.getFontMetricsFromLibrary(),
-  ])
-  assert.equal(all.workerMode, 'rust-merged-index-page', `${label}: fallback/fake page`)
-  assert.equal(metrics.workerMode, 'rust-merged-index-metrics', `${label}: fallback/fake metrics`)
-  assert.equal(all.total, WORKLOAD.validIndexed)
-  assert.equal(metrics.total, WORKLOAD.validIndexed)
-  assert.equal(installed.total, metrics.installedCount)
-  assert.equal(notInstalled.total, metrics.notInstalledCount)
-  assert.equal(metrics.installedCount + metrics.notInstalledCount + metrics.installStatusMissingCount, metrics.total)
-  if (expected) for (const [key, value] of Object.entries(expected)) assert.equal(metrics[key], value, `${label}: ${key}`)
-  return { all: all.total, installed: installed.total, notInstalled: notInstalled.total,
-    unknown: metrics.installStatusMissingCount, metrics: plain(metrics), revisions: plain(host.projectionEvents || []) }
+async function readProjection(host, expected, label, independentSql) {
+  return host.withObservationStage('validation', async () => {
+    const startedAt = performance.now(), nativeStart = host.nativeReceipts.length
+    const record = (values, error) => host.diagnosticObservation.recordProjection(() => {
+      const [all, installed, notInstalled, metrics] = values || []
+      const nativeInterval = []
+      let nativeIntervalCount = 0
+      for (let index = nativeStart; index < host.nativeReceipts.length; index++) {
+        const row = host.nativeReceipts[index]
+        if (!['runRustMergedIndexPageQuery', 'runRustMergedIndexMetricsQuery'].includes(row.method)) continue
+        nativeIntervalCount++
+        if (nativeInterval.length < 32) nativeInterval.push({ method: row.method, startedAt: row.startedAt, finishedAt: row.finishedAt,
+          inputCategory: row.inputCategory, context: row.context, total: row.result.total, installed: row.result.installedCount,
+          notInstalled: row.result.notInstalledCount, unknown: row.result.installStatusMissingCount,
+          workerMode: row.result.workerMode, elapsedMs: row.result.elapsedMs })
+      }
+      return { label, startedAt, finishedAt: performance.now(), expected,
+        independentSql, independentSqlScope: independentSql ? 'existing batch snapshot before these reads' : undefined,
+        pages: values ? { all: all.total, installed: installed.total, notInstalled: notInstalled.total,
+          allWorkerMode: all.workerMode, installedWorkerMode: installed.workerMode, notInstalledWorkerMode: notInstalled.workerMode } : undefined,
+        metrics: values ? { total: metrics.total, installed: metrics.installedCount, notInstalled: metrics.notInstalledCount,
+          unknown: metrics.installStatusMissingCount, workerMode: metrics.workerMode } : undefined,
+        error: error ? errorInfo(error) : undefined,
+        nativeIntervalScope: 'existing receipts completed during these reads; concurrent work may be included',
+        nativeIntervalCount, nativeIntervalOverflow: Math.max(0, nativeIntervalCount - 32), nativeInterval }
+    })
+    let values
+    try {
+      values = await Promise.all([
+        host.query.queryFontPageInLibrary(pageRequest('all', -1)), host.query.queryFontPageInLibrary(pageRequest('installed', -1)),
+        host.query.queryFontPageInLibrary(pageRequest('notInstalled', -1)), host.query.getFontMetricsFromLibrary(),
+      ])
+    } catch (error) { record(undefined, error); throw error }
+    const [all, installed, notInstalled, metrics] = values
+    record(values)
+    assert.equal(all.workerMode, 'rust-merged-index-page', `${label}: fallback/fake page`)
+    assert.equal(metrics.workerMode, 'rust-merged-index-metrics', `${label}: fallback/fake metrics`)
+    assert.equal(all.total, WORKLOAD.validIndexed)
+    assert.equal(metrics.total, WORKLOAD.validIndexed)
+    assert.equal(installed.total, metrics.installedCount)
+    assert.equal(notInstalled.total, metrics.notInstalledCount)
+    assert.equal(metrics.installedCount + metrics.notInstalledCount + metrics.installStatusMissingCount, metrics.total)
+    if (expected) for (const [key, value] of Object.entries(expected)) assert.equal(metrics[key], value, `${label}: ${key}`)
+    return { all: all.total, installed: installed.total, notInstalled: notInstalled.total,
+      unknown: metrics.installStatusMissingCount, metrics: plain(metrics), revisions: plain(host.projectionEvents || []) }
+  })
 }
 
 async function interleave(host, meter, fixture, caseDirectory) {
@@ -410,31 +444,75 @@ async function openCase(config, fixture, caseId, sourceRoot, options = {}) {
   } })
   observer.fs = new Proxy(observedFs, { get(target, key) { return key === 'promises' ? recordedPromises : Reflect.get(target, key) } })
   const selectedWorker = sourceRoot === config.baselineRoot ? config.baselineWorkerPath : config.workerPath
-  const host = await config.hostModule.createHost({ sourceRoot, workerPath: selectedWorker, directory, observe: observer,
-    fixtureDirectory: fixture.directory, fixture: { rootPaths: fixture.manifest.roots, roots: fixture.manifest.roots, items: fixture.items },
-    onProjectionCommitted: options.onProjectionCommitted })
-  liveHosts.add(host)
-  host.inputMetadata = inputMetadata
+  const scope = new AsyncLocalStorage()
+  const observationStageScope = new AsyncLocalStorage()
+  let observationStage = 'setup'
+  const getObservationContext = () => ({ stage: observationStageScope.getStore() || observationStage,
+    lane: scope.getStore()?.lane, actionId: scope.getStore()?.actionId })
+  const observation = createFullRefreshObservation({ getScope: getObservationContext })
+  const setObservationStage = stage => { observationStage = stage; observation.setStage(stage) }
+  let host, meter
   try {
-  host.interaction = host.load('src/main/performance/rendererInteractionRuntime.ts').createRendererInteractionRuntime({ appendLog: host.appendStartupLog, onActivity: () => { host.globalIo?.recheckGlobalIoQueues(); host.transport.noteRustCoreSchedulerInteractiveActivity('benchmark-foreground') } })
-  host.globalIo = host.load('src/main/performance/globalIoRuntime.ts').createGlobalIoRuntime({ env: process.env, localScanWorkers: 2, appendLog: host.appendStartupLog, isIndexingActive: () => false, isUserActive: host.interaction.isRendererUserActive, storageProfileForPath: file => ({ rootPath: path.parse(file).root, type: 'ssd', reason: 'isolated-real-local-fixture', isNetwork: false }) })
-  host.withGlobalIo = host.observer.global(host.globalIo)
-  for (const field of ['load', 'status', 'query', 'metadata', 'transport', 'observer', 'loadSharedFontsForFolders', 'withGlobalIo', 'appendStartupLog', 'close']) assert(host[field], `missing production host: ${field}`)
-  host.rootPaths ||= fixture.manifest.roots
-  await host.initialize(fixture.items, { legacyRows: WORKLOAD.legacyRows, oldProjection: true })
-  const routing = host.load('src/main/rust-core/rustSharedIoCommandRuntime.ts')
-  for (const root of [...host.rootPaths, fixture.manifest.targetRoot]) routing.registerIsolatedRoot(root)
-  const writer = await host.load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts').createLocalFontTagNodePersistenceRuntime(host.openLibraryDb).openWriter()
-  const tags = writer.setLocalFontTagsBatch(fixture.sourceItems.slice(0,26).map(item => ({ item, tagNames: ['FixtureTag'] })), new Date().toISOString())
-  assert.equal(tags.failed.length, 0, 'setup tag assignment failed')
-  await host.query.checkMergedIndexExternalChanges('benchmark-production-bootstrap')
-  host.foreground = await host.createForegroundRuntime({ withGlobalIo: host.withGlobalIo, interaction: host.interaction })
-  const meter = instrument(host, fixture)
-  return { host, meter, directory }
+    host = await config.hostModule.createHost({ sourceRoot, workerPath: selectedWorker, directory, observe: observer,
+      fixtureDirectory: fixture.directory, fixture: { rootPaths: fixture.manifest.roots, roots: fixture.manifest.roots, items: fixture.items },
+      getObservationContext,
+      onLoaderReady: load => observation.installSelectedSource(load),
+      onProjectionCommitted: options.onProjectionCommitted })
+    liveHosts.add(host)
+    host.inputMetadata = inputMetadata
+    host.diagnosticObservation = observation
+    host.withObservationStage = (stage, run) => observationStageScope.run(stage, run)
+    host.interaction = host.load('src/main/performance/rendererInteractionRuntime.ts').createRendererInteractionRuntime({ appendLog: host.appendStartupLog, onActivity: () => { host.globalIo?.recheckGlobalIoQueues(); host.transport.noteRustCoreSchedulerInteractiveActivity('benchmark-foreground') } })
+    host.globalIo = host.load('src/main/performance/globalIoRuntime.ts').createGlobalIoRuntime({ env: process.env, localScanWorkers: 2, appendLog: host.appendStartupLog, isIndexingActive: () => false, isUserActive: host.interaction.isRendererUserActive, storageProfileForPath: file => ({ rootPath: path.parse(file).root, type: 'ssd', reason: 'isolated-real-local-fixture', isNetwork: false }) })
+    host.withGlobalIo = host.observer.global(host.globalIo)
+    for (const field of ['load', 'status', 'query', 'metadata', 'transport', 'observer', 'loadSharedFontsForFolders', 'withGlobalIo', 'appendStartupLog', 'close']) assert(host[field], `missing production host: ${field}`)
+    host.rootPaths ||= fixture.manifest.roots
+    await host.initialize(fixture.items, { legacyRows: WORKLOAD.legacyRows, oldProjection: true })
+    const routing = host.load('src/main/rust-core/rustSharedIoCommandRuntime.ts')
+    for (const root of [...host.rootPaths, fixture.manifest.targetRoot]) routing.registerIsolatedRoot(root)
+    const writer = await host.load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts').createLocalFontTagNodePersistenceRuntime(host.openLibraryDb).openWriter()
+    const tags = writer.setLocalFontTagsBatch(fixture.sourceItems.slice(0,26).map(item => ({ item, tagNames: ['FixtureTag'] })), new Date().toISOString())
+    assert.equal(tags.failed.length, 0, 'setup tag assignment failed')
+    await host.query.checkMergedIndexExternalChanges('benchmark-production-bootstrap')
+    host.foreground = await host.createForegroundRuntime({ withGlobalIo: host.withGlobalIo, interaction: host.interaction })
+    meter = instrument(host, fixture, scope, observation)
+    return { host, meter, observation, setObservationStage, directory }
   } catch (error) {
-    try { await host.close() } finally { liveHosts.delete(host) }
+    try {
+      setObservationStage('cleanup')
+      meter?.restore()
+      try { if (host) await host.close() } finally { liveHosts.delete(host) }
+    } finally {
+      const snapshot = finalizeObservation({ host, observation })
+      try { if (options.observationState) options.observationState.snapshot = snapshot }
+      catch { try { observation.noteError('setup-report') } catch {} }
+    }
     throw error
   }
+}
+
+function observationSnapshot({ host, observation }) {
+  try {
+    const receipts = host?.foreground?.previewReceipts || []
+    return { ...observation.snapshot(), nativeContextErrors: host?.observationContextErrors, nativeSetupErrors: host?.observationSetupErrors,
+      nativeReceiptErrors: host?.observationReceiptErrors, nativePreviewCount: receipts.length,
+      nativePreviewOverflow: Math.max(0, receipts.length - 64),
+      nativePreviews: receipts.slice(0,64).map(row => ({ startedAt: row.startedAt, finishedAt: row.finishedAt,
+        inputCategory: row.inputCategory, context: row.context, sourcePath: row.input?.fontPath, ok: row.result?.ok,
+        workerMode: row.result?.workerMode, nativeElapsedMs: row.result?.elapsedMs, transient: row.result?.transient,
+        bytes: row.result?.bytes?.diagnosticByteLength, error: row.error })) }
+  } catch {
+    try { observation.noteError('native-snapshot') } catch {}
+    return { snapshotFailed: true, snapshotErrors: 1 }
+  }
+}
+
+function finalizeObservation(resource) {
+  let restoreFailed = false
+  try { resource.observation.restore() } catch { restoreFailed = true; try { resource.observation.noteError('restore') } catch {} }
+  const snapshot = observationSnapshot(resource)
+  if (restoreFailed) snapshot.restoreFailed = true
+  return snapshot
 }
 
 function counterDelta(before, after) {
@@ -458,7 +536,7 @@ async function verifyCommittedBatch(host, batch, strict) {
   const evidence = { requested: Object.keys(batch.results).length, persistedIds: batch.persistedIds,
     independentSql: raw, work: counterDelta(batch.sqlBefore, batch.sqlAfter), converged: false }
   try {
-    evidence.observed = await readProjection(host, null, 'committed-batch')
+    evidence.observed = await readProjection(host, null, 'committed-batch', { ...raw, capturedAt: performance.now() })
     assert.equal(raw.total, WORKLOAD.validIndexed)
     assert.equal(raw.installed + raw.notInstalled + raw.unknown, raw.total)
     assert.deepEqual([evidence.observed.all, evidence.observed.installed, evidence.observed.notInstalled, evidence.observed.unknown],
@@ -484,15 +562,17 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     lane: 'real-performance-valid-population', injectedLatency: false, attemptedPopulation: WORKLOAD.validIndexed, indexedPopulation: WORKLOAD.validIndexed,
     failure: null, foreground: null, summary: null, fullRefreshMs: null, work: null }
   let resource, finished = false
+  const observationState = {}
   const progress = [], committedBatches = []
   try {
-    resource = await openCase(config, fixture, caseId, sourceRoot)
+    resource = await openCase(config, fixture, caseId, sourceRoot, { observationState })
     const { host, meter, directory } = resource
     report.readerProvenance = host.readerProvenance
     report.foregroundProvenance = host.foreground.provenance
     report.initialization = 'Unversioned legacy state seeded, then actual production external-change rebuild before timed comparable lane; raw-old snapshot refusal is a separate correctness diagnostic.'
     const runner = createRunner(host, { ...fixture, includeInvalid: false, targetRoot: fixture.manifest.targetRoot }, {
       onProgress: value => progress.push(value), afterSave: async batch => { committedBatches.push(await verifyCommittedBatch(host, batch, changed)) } })
+    resource.setObservationStage('timed')
     const start = performance.now()
     const refresh = meter.runScope('background-refresh', () => runner.refreshInstallStatusIndex({ force: true }, { jobId: caseId, emitProgress: true }))
       .then(value => { report.summary = plain(value); report.fullRefreshMs = performance.now()-start; finished = true; meter.finishBackground(); return value },
@@ -500,6 +580,7 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     refresh.catch(() => undefined)
     const foreground = interleave(host, meter, fixture, directory)
     const outcomes = await Promise.allSettled([refresh, foreground])
+    resource.setObservationStage('validation')
     if (outcomes[1].status === 'fulfilled') report.foreground = outcomes[1].value
     else report.foregroundFailure = errorInfo(outcomes[1].reason)
     if (outcomes[0].status === 'rejected') throw outcomes[0].reason
@@ -535,21 +616,25 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     assert.equal(report.foreground.failures.length, 0, 'foreground workload failed; timings are not comparable')
     report.comparable = true
     report.passed = true
-  } catch (error) { report.failure = errorInfo(error); report.passed = false; report.comparable = false }
+  } catch (error) { report.failure = errorInfo(error); report.diagnosticObservation = observationState.snapshot; report.passed = false; report.comparable = false }
   finally {
     report.progress = progress
     report.committedBatches = committedBatches
     report.batchVerificationElapsedMs = committedBatches.reduce((n,row) => n+(row.verificationElapsedMs || 0),0)
     report.timingIncludesSameAuditReadsInBothVersions = true
     if (resource) {
-      report.work ||= resource.meter.snapshot()
-      resource.meter.restore()
-      try { await resource.host.close(); liveHosts.delete(resource.host) } catch (error) { report.cleanupFailure = errorInfo(error); report.passed = false; report.comparable = false }
-      report.childrenAfterClose = resource.host.observer.children.size
-      if (report.childrenAfterClose !== 0) { report.passed = false; report.comparable = false }
-      const log = (resource.host.logs || []).join('\n')
-      report.logLines = resource.host.logs?.length || 0; report.logBytes = Buffer.byteLength(log)
-      fs.writeFileSync(path.join(resource.directory, 'operation.log'), log)
+      try {
+        report.work ||= resource.meter.snapshot()
+        report.diagnosticObservation = observationSnapshot(resource)
+        resource.meter.restore()
+        resource.setObservationStage('cleanup')
+        try { await resource.host.close(); liveHosts.delete(resource.host) } catch (error) { report.cleanupFailure = errorInfo(error); report.passed = false; report.comparable = false }
+        report.childrenAfterClose = resource.host.observer.children.size
+        if (report.childrenAfterClose !== 0) { report.passed = false; report.comparable = false }
+        const log = (resource.host.logs || []).join('\n')
+        report.logLines = resource.host.logs?.length || 0; report.logBytes = Buffer.byteLength(log)
+        fs.writeFileSync(path.join(resource.directory, 'operation.log'), log)
+      } finally { report.diagnosticObservation = finalizeObservation(resource) }
     }
     verifyFiles([fixture.manifest.original, ...fixture.manifest.sources, ...fixture.manifest.targets])
     save(path.join(config.output, 'cases', caseId, 'report.json'), report)
@@ -561,22 +646,28 @@ async function runCorrectness(config, fixture, caseId, sourceRoot, test) {
   const report = { caseId, sourceSha: git(sourceRoot, 'rev-parse', 'HEAD'), lane: 'correctness-only-fault-injection',
     excludedFromTimingComparison: true, indexedPopulation: WORKLOAD.validIndexed, attemptedPopulation: WORKLOAD.validIndexed, passed: false }
   let resource
+  const observationState = {}
   try {
-    resource = await openCase(config, fixture, caseId, sourceRoot)
+    resource = await openCase(config, fixture, caseId, sourceRoot, { observationState })
+    resource.setObservationStage('validation')
     report.readerProvenance = resource.host.readerProvenance
     if (sourceRoot === config.currentRoot) resource.host.verifyCommittedBatches = []
     await test(resource, report)
     report.committedBatches = resource.host.verifyCommittedBatches || []
     await resource.meter.pool.whenIdle()
     report.passed = true
-  } catch (error) { report.failure = errorInfo(error) }
+  } catch (error) { report.failure = errorInfo(error); report.diagnosticObservation = observationState.snapshot }
   finally {
     if (resource) {
-      report.work = resource.meter.snapshot()
-      resource.meter.restore()
-      try { await resource.host.close(); liveHosts.delete(resource.host) } catch (error) { report.cleanupFailure = errorInfo(error); report.passed = false }
-      report.childrenAfterClose = resource.host.observer.children.size
-      if (report.childrenAfterClose) report.passed = false
+      try {
+        report.work = resource.meter.snapshot()
+        report.diagnosticObservation = observationSnapshot(resource)
+        resource.meter.restore()
+        resource.setObservationStage('cleanup')
+        try { await resource.host.close(); liveHosts.delete(resource.host) } catch (error) { report.cleanupFailure = errorInfo(error); report.passed = false }
+        report.childrenAfterClose = resource.host.observer.children.size
+        if (report.childrenAfterClose) report.passed = false
+      } finally { report.diagnosticObservation = finalizeObservation(resource) }
     }
     verifyFiles([fixture.manifest.original, ...fixture.manifest.sources, ...fixture.manifest.targets])
     save(path.join(config.output, 'cases', caseId, 'report.json'), report)

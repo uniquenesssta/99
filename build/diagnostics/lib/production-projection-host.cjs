@@ -148,6 +148,17 @@ async function createHost(options) {
   const appendStartupLog = message => { logs.push(String(message)); options.appendLog?.(String(message)) }
   const opened = new Set()
   const nativeReceipts = []
+  let observationContextErrors = 0
+  let observationSetupErrors = 0
+  let observationReceiptErrors = 0
+  const receiptDetail = read => { try { return read() } catch { observationReceiptErrors++; return undefined } }
+  const observationContext = () => {
+    try {
+      const value = options.getObservationContext?.()
+      return value ? { stage: String(value.stage || '').slice(0,32), lane: String(value.lane || '').slice(0,80),
+        actionId: String(value.actionId || '').slice(0,160) } : undefined
+    } catch { observationContextErrors++; return undefined }
+  }
   const projectionEvents = []
   const sqlCounters = {
     projectionSelectCalls: 0, projectionExaminedRows: 0,
@@ -264,6 +275,7 @@ async function createHost(options) {
   }, sourceRoot)
 
   try {
+    try { options.onLoaderReady?.(load) } catch { observationSetupErrors++ }
     const sqlite = load('src/main/db/sqliteHelpers.ts')
     const config = load('src/main/app/appRuntimeConfig.ts')
     const fonts = load('src/main/fonts/fontRuntime.ts')
@@ -298,9 +310,12 @@ async function createHost(options) {
       'runRustMergedIndexRebuild', 'runRustMergedIndexSync',
     ]], [metadata, ['runRustInstallStatusRead', 'runRustInstallStatusSave', 'runRustSharedMetadataOverlayRead', 'runRustInstallStatusCompare']]]) {
       for (const method of methods) native[method] = async input => {
+        const startedAt = receiptDetail(() => performance.now()), context = observationContext()
+        const inputCategory = receiptDetail(() => ({ sidebarPage: input.request?.sidebarPage, activeFilter: input.request?.activeFilter?.kind,
+          requestSequence: input.request?.diagnosticRequestSequence, rootCount: input.roots?.length ?? input.sources?.length }))
         const result = await owner[method](input)
         assert(result, `Mandatory real native receipt missing: ${method}`)
-        nativeReceipts.push({ method, result: plain(result) })
+        nativeReceipts.push({ method, startedAt, finishedAt: receiptDetail(() => performance.now()), context, inputCategory, result: plain(result) })
         return result
       }
     }
@@ -526,11 +541,19 @@ async function createHost(options) {
         missingFontPreviewDataUri: forbidden('missing preview substitution'),
         previewSqliteSchemaVersion: constants.PREVIEW_SQLITE_SCHEMA_VERSION,
         runRustPreviewRenderImage: async input => {
-          const result = await previewClient.runRustPreviewRenderImage(input)
-          const observed = result && Object.fromEntries(Object.entries(result).map(([key, value]) => [key, Buffer.isBuffer(value)
-            ? { diagnosticByteLength: value.length, diagnosticSha256: sha256(value) } : value]))
-          previewReceipts.push({ input: plain(input), result: plain(observed) })
-          return result
+          const startedAt = receiptDetail(() => performance.now()), context = observationContext()
+          const inputCategory = receiptDetail(() => ({ foregroundBytes: input.foregroundBytes === true, systemFont: input.preferSystemFont === true }))
+          try {
+            const result = await previewClient.runRustPreviewRenderImage(input)
+            const observed = result && Object.fromEntries(Object.entries(result).map(([key, value]) => [key, Buffer.isBuffer(value)
+              ? { diagnosticByteLength: value.length, diagnosticSha256: sha256(value) } : value]))
+            previewReceipts.push({ input: plain(input), result: plain(observed), startedAt, finishedAt: receiptDetail(() => performance.now()), context, inputCategory })
+            return result
+          } catch (error) {
+            receiptDetail(() => previewReceipts.push({ input: { fontPath: input.fontPath }, startedAt, finishedAt: performance.now(), context, inputCategory,
+              error: { name: error?.name, code: error?.code, reason: error?.reason, message: String(error?.message || error).slice(0,512) } }))
+            throw error
+          }
         },
       })
       const runtime = {
@@ -642,6 +665,9 @@ async function createHost(options) {
       libraryDb, openDb, closeSqliteDb, readBoundary, readerProvenance,
       loadSharedFontsForFolders, rootStorage, observer, logs, appendLog: appendStartupLog, appendStartupLog,
       receipts: nativeReceipts, nativeReceipts, queue, projectionEvents, rendererState,
+      get observationContextErrors() { return observationContextErrors },
+      get observationSetupErrors() { return observationSetupErrors },
+      get observationReceiptErrors() { return observationReceiptErrors },
       initialize, createForegroundRuntime, rootPaths: roots, roots, setRootOnline: value => { rootOnline = !!value },
       paths: { sourceRoot, workerPath, directory, fixtureDirectory, dataDirectory, libraryPath, mergedPath, installPath, rootDbForRoot, rootCacheForRoot },
       openLibraryDb, appWatchedFolders, exists, dataPath,
