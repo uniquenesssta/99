@@ -9,6 +9,31 @@ use super::types::{LocalTagsCommandConfig, LocalTagsReadPayload, LocalTagsReadRe
 
 const SQLITE_IN_CHUNK_SIZE: usize = 500;
 
+// Persisted local-tag keys are not filesystem paths; match Node's exact format.
+pub(crate) fn local_tag_font_storage_path(value: &str) -> String {
+    let mut stored = String::new();
+    for ch in value.trim().to_lowercase().chars() {
+        if ch == '\\' || ch == '/' {
+            if !stored.ends_with('\\') { stored.push('\\'); }
+        } else { stored.push(ch); }
+    }
+    stored.trim_end_matches('\\').to_string()
+}
+
+pub(crate) fn local_tag_font_read_paths(value: &str) -> Vec<String> {
+    let stored = local_tag_font_storage_path(value);
+    let base = if let Some(tail) = stored.strip_prefix(r"\?\unc\") { format!(r"\{tail}") }
+        else if stored.starts_with(r"\?\") && stored.as_bytes().get(4) == Some(&b':') { stored[3..].to_string() }
+        else { stored.clone() };
+    let mut keys = vec![stored, base.clone()];
+    if base.starts_with('\\') && !base.starts_with(r"\?") && base[1..].split('\\').count() >= 3 {
+        keys.push(format!(r"\?\unc{base}"));
+    } else if base.as_bytes().get(1) == Some(&b':') && base.as_bytes().get(2) == Some(&b'\\') {
+        keys.push(format!(r"\?\{base}"));
+    }
+    keys.retain(|key| !key.is_empty()); keys.sort(); keys.dedup(); keys
+}
+
 pub fn read_local_tags_state_machine(config: &LocalTagsCommandConfig) -> Result<String, String> {
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path).map_err(|error| error.to_string())?;
@@ -64,12 +89,11 @@ fn read_local_tags(payload: &LocalTagsReadPayload, started_at: Instant) -> Resul
             }
             alias_to_item.entry(alias).or_default().insert(item_id.clone());
         }
-        let font_path = clean_value(&row.font_path);
-        if !font_path.is_empty() {
+        for font_path in local_tag_font_read_paths(&row.font_path) {
             if !path_to_item.contains_key(&font_path) {
                 paths.push(font_path.clone());
             }
-            path_to_item.entry(font_path).or_default().insert(item_id);
+            path_to_item.entry(font_path).or_default().insert(item_id.clone());
         }
     }
 
@@ -210,6 +234,21 @@ mod tests {
     }
     fn row(id: &str, aliases: &[&str], path: &str) -> LocalTagsReadRow {
         LocalTagsReadRow { item_id: id.into(), aliases: aliases.iter().map(|x| x.to_string()).collect(), font_path: path.into() }
+    }
+    #[test]
+    fn legacy_unc_storage_vectors_hydrate_without_rewriting_identity() {
+        let vectors: serde_json::Value=serde_json::from_str(include_str!("../../../../build/diagnostics/fixtures/tag-font-path-identity.json")).unwrap();
+        for vector in vectors.as_array().unwrap() {
+            let path=vector["path"].as_str().unwrap(); let stored=vector["stored"].as_str().unwrap(); let canonical=vector["canonical"].as_str().unwrap();
+            assert_eq!(local_tag_font_storage_path(path),stored);
+            assert!(local_tag_font_read_paths(path).contains(&stored.to_string()));
+            assert!(local_tag_font_read_paths(canonical).contains(&stored.to_string()));
+            let (file,conn)=fixture();
+            conn.execute("INSERT INTO local_font_tags VALUES ('stored',?,'private','unchanged')",[stored]).unwrap();
+            let payload=LocalTagsReadPayload {db_path:file.0.to_string_lossy().into_owned(),rows:vec![row("actual",&["actual"],canonical)]};
+            assert_eq!(read_local_tags(&payload,Instant::now()).unwrap().tag_map["actual"],vec!["private"]);
+            assert_eq!(conn.query_row("SELECT font_path FROM local_font_tags",[],|r|r.get::<_,String>(0)).unwrap(),stored);
+        }
     }
     #[test]
     fn failed_reservation_never_removes_another_fixture() {

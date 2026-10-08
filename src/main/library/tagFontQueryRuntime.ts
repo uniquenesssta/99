@@ -1,4 +1,4 @@
-import { createFontQueryTask, joinFontQueryTask, assertFontQueryActive, type FontQueryTask } from './fontQueryTaskRuntime'
+import { createFontQueryTask, joinFontQueryTask, assertFontQueryActive, rethrowFontQuerySuperseded, type FontQueryTask } from './fontQueryTaskRuntime'
 import { basename, dirname, parse } from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { FontItem, FontQueryPageResult, FontQueryRequest } from '../../shared/types'
@@ -121,7 +121,7 @@ export function createTagFontQueryRuntime(deps: {
       first ||= page
       const previousSize = seenLive.size
       for (const item of page.items) {
-        const id = key(item.path)
+        const id = scope === 'local' ? paths.compare(item.path) || key(item.path) : key(item.path)
         seenLive.add(id)
         const tags = bindings.get(id)?.tags || legacyTags.get(item.id) || legacyTags.get(item.sourceId || '')
         if (tags?.length && (!name || tags.includes(name))) live.set(id, item)
@@ -136,14 +136,17 @@ export function createTagFontQueryRuntime(deps: {
     async function resolveBinding([pathKey, binding]: [string, TagFontBinding]): Promise<void> {
       assertFontQueryActive()
       if (name && !binding.tags.includes(name)) return
-      const old = live.get(pathKey) || snapshots.read(binding.path) || await deps.findPrevious?.(binding.path).catch(() => null)
-      if (old) snapshots.remember([old])
+      const resolved = binding.pathResolved !== false
+      const old = live.get(pathKey) || snapshots.read(binding.path) || (resolved ? await deps.findPrevious?.(binding.path).catch(error => { rethrowFontQuerySuperseded(error); return null }) : undefined)
+      if (resolved && old) snapshots.remember([{ ...old, path: binding.path }])
       const fileName = basename(binding.path)
       let font: FontItem = old || { id: `missing:${pathKey}`, sourceId: binding.id, path: binding.path, fileName,
         family: fileName, fullName: fileName, postscriptName: '', style: '', format: asFormat(binding.path),
         fileSize: 0, modifiedAt: 0, recoveryPlaceholder: true, installStatusKnown: false, addedAt: '', favorite: false, collectionIds: [], tagNames: [],
         systemInstalled: false, systemInstallMatches: [], active: false }
-      const tagBindingReadOnly = unavailableRoots.some(root => paths.inside(binding.path, root))
+      // History supplies display metadata, never an I/O path or its authority.
+      font = { ...font, path: binding.path, ...(!resolved ? { recoveryPlaceholder: true } : {}) }
+      const tagBindingReadOnly = !resolved || unavailableRoots.some(root => paths.inside(binding.path, root))
       let availability: NonNullable<FontItem['fileAvailability']> = tagBindingReadOnly ? 'unavailable' : await availabilityFor(binding.path)
       let fileRelinkRequired = false
       if (availability === 'available' && scope === 'local' && !paths.contains(binding.path)) {
@@ -156,13 +159,14 @@ export function createTagFontQueryRuntime(deps: {
         try {
           font = await fontItemFromPath(binding.path)
           snapshots.schedule([font])
-        } catch { availability = 'unavailable' }
+        } catch (error) { rethrowFontQuerySuperseded(error); availability = 'unavailable' }
       }
       if (availability !== 'available' && (font.id.startsWith('missing:') || font.fileSize < 64)) font = { ...font, recoveryPlaceholder: true }
-      items.set(pathKey, { ...font, recoveryContentHash: snapshots.read(binding.path)?.recoveryContentHash, fileAvailability: availability, fileRelinkRequired, tagBindingReadOnly,
+      items.set(pathKey, { ...font, recoveryContentHash: resolved ? snapshots.read(binding.path)?.recoveryContentHash : undefined, fileAvailability: availability, fileRelinkRequired, tagBindingReadOnly,
+        tagBindingReadOnlyReason: !resolved ? 'path-unresolved' : tagBindingReadOnly ? 'shared-unavailable' : undefined,
         ...(font.recoveryPlaceholder ? { installStatusKnown: false, systemInstalled: false, systemInstallMatches: [], active: false } : {}),
         ...(scope === 'local' ? { localTagNames: binding.tags } : { tagNames: binding.tags, sourceId: binding.id }),
-        ...(availability !== 'available' ? { previewDisabled: true, previewError: tagBindingReadOnly ? '共享标签暂不可读取' : fileRelinkRequired ? '文件已变化，请右键重新链接确认' : availability === 'missing' ? '文件丢失' : '文件暂不可访问' } : font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable' ? { previewDisabled: false, previewError: undefined } : {}),
+        ...(availability !== 'available' ? { previewDisabled: true, previewError: !resolved ? '历史路径无法唯一确认，原标签已保留' : tagBindingReadOnly ? '共享标签暂不可读取' : fileRelinkRequired ? '文件已变化，请右键重新链接确认' : availability === 'missing' ? '文件丢失' : '文件暂不可访问' } : font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable' ? { previewDisabled: false, previewError: undefined } : {}),
       })
     }
     const entries = [...bindings.entries()]
@@ -173,7 +177,10 @@ export function createTagFontQueryRuntime(deps: {
       items.set(pathKey, { ...item, fileAvailability: availability, ...(availability === 'available' ? {} : { previewDisabled: true }) })
     }
     const scoped = [...items.values()].filter(font => inScope(font.path))
-    const sorted = (request.tagBindingsOnly ? scoped : await deps.hydrate(scoped)).map(font => font.recoveryPlaceholder
+    const real = scoped.filter(font => !font.recoveryPlaceholder)
+    // Display-only identities must be excluded BEFORE installation hydration.
+    const hydrated = request.tagBindingsOnly ? scoped : [...(real.length ? await deps.hydrate(real) : []), ...scoped.filter(font => font.recoveryPlaceholder)]
+    const sorted = hydrated.map(font => font.recoveryPlaceholder
       ? { ...font, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [], active: false } : font).filter(font => deps.matches(font, request)).sort((a, b) => deps.compare(a, b, request))
     return { queryKey: JSON.stringify(request), ...first, tagRevision: { source: 'tag-bindings', localTagsSignature: JSON.stringify({ bindings: [...bindings].map(([path, binding]) => [path, binding.id, [...binding.tags].sort()]).sort(), legacy: [...legacyTags].map(([id, names]) => [id, [...names].sort()]).sort() }), sharedMetadataSignatures: { unavailableRoots: JSON.stringify(unavailableRoots) } }, engine: 'mixed', items: sorted.slice(offset, offset + limit), total: sorted.length, offset, limit,
       truncated: offset + limit < sorted.length, elapsedMs: Date.now() - start }

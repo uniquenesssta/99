@@ -5,8 +5,9 @@ import { normalizePathForCacheCompare as key } from '../path/cachePath'
 import { sharedMetadataDbPathForRoot } from '../indexing/shared-metadata/sharedMetadataPathsRuntime'
 import { stateFromRow } from '../indexing/shared-metadata/sharedMetadataStateRuntime'
 import type { TagRecoveryPaths } from './tagRecoveryPathRuntime'
+import { normalizeLocalTagFontPath, localTagFontReadPaths } from './runtime/localFontTagIdentityRuntime'
 
-export type TagFontBinding = { path: string; id: string; tags: string[] }
+export type TagFontBinding = { path: string; id: string; tags: string[]; pathResolved?: boolean; storageKey?: string }
 
 // Tag membership is authoritative here; font snapshots only supply display data.
 // A failed shared read may use a prior snapshot for display, never for a write.
@@ -24,7 +25,8 @@ export async function readTagFontBindings(options: {
   const unavailableRoots: string[] = []
   let complete = true
   if (scope === 'local') {
-    const prefixes = [...new Set((options.folders || []).flatMap(folder => paths.aliases(folder)).map(folder => folder.replace(/\\+$/, '')))]
+    const prefixes = [...new Set((options.folders || []).flatMap(folder => paths.aliases(folder))
+      .flatMap(folder => [folder.replace(/\\+$/, ''), normalizeLocalTagFontPath(folder)]))]
     const normalized = "lower(replace(trim(font_path), '/', char(92)))"
     const escape = (value: string) => value.replace(/[!%_]/g, character => '!' + character)
     // Legacy noncanonical paths may contain Unicode case folds, dot segments or
@@ -45,10 +47,18 @@ export async function readTagFontBindings(options: {
         legacyTags.set(row.font_id, tags)
         continue
       }
-      if (!inScope(row.font_path)) continue
-      const binding = bindings.get(key(row.font_path)) || { path: row.font_path, id: row.font_id, tags: [] }
+      const resolved = paths.resolveStoredPath(row.font_path)
+      if (resolved && !inScope(resolved)) continue
+      // Unknown keys remain visible unscoped, but never become scoped I/O input.
+      if (!resolved && options.folders?.length) continue
+      const path = resolved || row.font_path
+      const identity = resolved ? paths.compare(path) : `unresolved:${normalizeLocalTagFontPath(path)}`
+      const storageKey = normalizeLocalTagFontPath(row.font_path)
+      const binding = bindings.get(identity) || { path, id: row.font_id, tags: [], pathResolved: !!resolved, storageKey }
+      // A mapped/UNC storage collision cannot authorize clearing only one row.
+      if (binding.storageKey !== storageKey && !localTagFontReadPaths(binding.storageKey).includes(storageKey)) binding.pathResolved = false
       if (!binding.tags.includes(row.tag_name)) binding.tags.push(row.tag_name)
-      bindings.set(key(row.font_path), binding)
+      bindings.set(identity, binding)
     }
   } else {
     db.exec('CREATE TABLE IF NOT EXISTS tag_shared_binding_snapshots (root_path TEXT PRIMARY KEY, rows_json TEXT NOT NULL)')

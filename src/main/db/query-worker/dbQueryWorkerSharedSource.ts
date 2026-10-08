@@ -185,7 +185,15 @@ function rootsSnapshotUsable(db, roots, schemaVersion) {
   }
 }
 function normalizeLocalTagFontPath(value) {
-  return normalizePathForCompare(value).replace(/\\+/g, '\\')
+  return String(value || '').trim().replace(/[\\/]+/g, '\\').replace(/\\+$/g, '').toLowerCase()
+}
+function localTagFontReadPaths(value) {
+  const stored = normalizeLocalTagFontPath(value)
+  const base = stored.replace(/^\\\?\\unc\\/, '\\').replace(/^\\\?\\(?=[a-z]:\\)/, '')
+  const keys = new Set([stored, base])
+  if (/^\\[^\\?]+\\[^\\]+\\/.test(base)) keys.add('\\?\\unc' + base)
+  else if (/^[a-z]:\\/.test(base)) keys.add('\\?\\' + base)
+  return [...keys].filter(Boolean)
 }
 function localDbTableColumns(db, tableName) {
   try { return new Set(db.prepare('PRAGMA local_db.table_info(' + tableName + ')').all().map((column) => column.name)) } catch { return new Set() }
@@ -205,8 +213,7 @@ function hydrateLocalTags(db, items) {
       if (!aliasToRuntimeId[id]) ids.push(id)
       aliasToRuntimeId[id] = runtimeId
     }
-    const fontPath = normalizeLocalTagFontPath(item.path)
-    if (fontPath) {
+    for (const fontPath of localTagFontReadPaths(item.path)) {
       if (!pathToRuntimeId[fontPath]) paths.push(fontPath)
       pathToRuntimeId[fontPath] = runtimeId
     }

@@ -2,13 +2,17 @@ use rusqlite::{params, Connection};
 use super::catalog::clean_tag_names;
 use super::types::{LocalTagsSetPayload, LocalRecoveryMove};
 use super::state_machine::normalize_font_path;
+use super::local_tag_font_read_paths;
 
 pub fn validate_recovery_rows(conn: &Connection, payload: &LocalTagsSetPayload) -> Result<(), String> {
     for row in &payload.rows {
         if let Some(expected) = &row.expected_tag_names {
             let mut stmt = conn.prepare("SELECT DISTINCT tag_name FROM local_font_tags WHERE font_path = ?").map_err(|e| e.to_string())?;
-            let tags = stmt.query_map([normalize_font_path(&row.font_path)], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+            let mut tags = Vec::new();
+            for key in local_tag_font_read_paths(&row.font_path) {
+                tags.extend(stmt.query_map([key], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?);
+            }
             if clean_tag_names(&tags) != clean_tag_names(expected) {
                 return Err("恢复期间本地标签已变化，原关联已保留，请重试。".to_string());
             }

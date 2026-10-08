@@ -12,6 +12,7 @@ use super::catalog::{
     remove_known_tag, retained_empty_tags, save_known_tags,
 };
 use super::schema::{initialize_local_tags_db, set_meta};
+use super::{local_tag_font_read_paths, local_tag_font_storage_path};
 use super::types::{
     LocalTagsCommandConfig, LocalTagsDeletePayload, LocalTagsDeleteResult,
     LocalTagsMutationStateSignal, LocalTagsSetPayload, LocalTagsSetResult, LocalTagsTimings,
@@ -48,9 +49,11 @@ fn set_on_connection(
     );
 
     for row in &payload.rows {
-        let path = normalize_font_path(&row.font_path);
+        let path = local_tag_font_storage_path(&row.font_path);
         if !path.is_empty() && !clean_aliases(&row.aliases).is_empty() {
-            tx.execute("INSERT OR IGNORE INTO local_font_tag_decisions(font_path) VALUES (?)", params![path]).map_err(|error| error.to_string())?;
+            for key in local_tag_font_read_paths(&path) {
+                tx.execute("INSERT OR IGNORE INTO local_font_tag_decisions(font_path) VALUES (?)", params![key]).map_err(|error| error.to_string())?;
+            }
         }
     }
     let mut updated_ids: Vec<String> = Vec::new();
@@ -134,12 +137,14 @@ fn apply_set_rows(
         if aliases.is_empty() {
             continue;
         }
-        let font_path = normalize_font_path(&row.font_path);
+        let font_path = local_tag_font_storage_path(&row.font_path);
         for alias in &aliases {
             delete_by_id.execute(params![alias]).map_err(|error| error.to_string())?;
         }
         if !font_path.is_empty() {
-            delete_by_path.execute(params![&font_path]).map_err(|error| error.to_string())?;
+            for key in local_tag_font_read_paths(&font_path) {
+                delete_by_path.execute(params![key]).map_err(|error| error.to_string())?;
+            }
         }
         let tag_names = clean_tag_names(&row.tag_names);
         let storage_ids = if font_path.is_empty() { aliases.clone() } else { vec![format!("local-path:{font_path}")] };

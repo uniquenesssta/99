@@ -3,12 +3,13 @@ import { createHash } from 'node:crypto'
 import * as fs from 'node:fs'
 import { normalizePathForCacheCompare as key } from '../../path/cachePath'
 import type { FontTagBatchItem, FontRecoveryStateMove, FontTagRecoveryFile, FontTagRecoveryMissing } from '../../../shared/types'
-import { localTagFontPath } from './localFontTagIdentityRuntime'
+import { localTagFontReadPaths } from './localFontTagIdentityRuntime'
 
 export function validateRecoveryTagWrites(db: any, items: FontTagBatchItem[]): void {
   for (const entry of items) {
     if (!entry.expectedTagNames) continue
-    const current = db.prepare('SELECT DISTINCT tag_name FROM local_font_tags WHERE font_path = ?').all(localTagFontPath(entry.item)) as Array<{ tag_name: string }>
+    const paths = localTagFontReadPaths(entry.item.path)
+    const current = paths.length ? db.prepare(`SELECT DISTINCT tag_name FROM local_font_tags WHERE font_path IN (${paths.map(() => '?').join(',')})`).all(...paths) as Array<{ tag_name: string }> : []
     const clean = (tags: string[]) => JSON.stringify([...new Set(tags.map(tag => tag.trim()).filter(Boolean))].sort())
     if (clean(current.map(row => row.tag_name)) !== clean(entry.expectedTagNames)) throw new Error('恢复期间本地标签已变化，原关联已保留，请重试。')
   }

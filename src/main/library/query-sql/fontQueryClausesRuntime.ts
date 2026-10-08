@@ -2,9 +2,10 @@ import type { FontQueryRequest } from '@shared/types';
 import { cleanSystemSqlExpression, systemMatchSqlExpression } from '../../install/windowsDefaultFonts';
 import { addLegacyCollectionAnyClause,addLegacyCollectionContainsClause,isLegacyCollectionColumn } from '../legacy/legacyCollectionQueryRuntime';
 import { escapeSqlLike, sanitizeStringArray, type FontQuerySqlParts } from './fontQuerySqlTypes';
+import { localTagPathCompareSql } from '../runtime/localFontTagIdentityRuntime';
 
 function localFontTagMatchSql(alias = "lft"): string {
-  return `(LOWER(${alias}.font_id) = LOWER(fonts.id) OR (COALESCE(${alias}.font_path, '') <> '' AND LOWER(${alias}.font_path) = LOWER(REPLACE(COALESCE(fonts.path, ''), '/', '\\'))))`;
+  return `((COALESCE(${alias}.font_path, '') = '' AND LOWER(${alias}.font_id) = LOWER(fonts.id)) OR (COALESCE(${alias}.font_path, '') <> '' AND ${localTagPathCompareSql(`${alias}.font_path`)} = ${localTagPathCompareSql('fonts.path')}))`;
 }
 
 function addJsonArrayContainsClause(

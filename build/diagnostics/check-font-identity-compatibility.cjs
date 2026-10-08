@@ -90,6 +90,22 @@ const unc={...fonts[0],path:'\\\\server\\share\\same.ttf'}
 const tagPath=load('src/main/library/runtime/localFontTagIdentityRuntime.ts').localTagFontPath(unc)
 db.prepare('INSERT INTO local_db.local_font_tags VALUES (?,?,?)').run('historical',tagPath,'private')
 assert.deepEqual(plain(nodeWorker.hydrateLocalTags(db,[unc])[0].localTagNames),['private'])
+// Actual production storage keys must hydrate through generated worker and SQL.
+const localIdentity=load('src/main/library/runtime/localFontTagIdentityRuntime.ts')
+for (const vector of require('./fixtures/tag-font-path-identity.json')) {
+  assert.equal(localIdentity.normalizeLocalTagFontPath(vector.path),vector.stored)
+  assert.equal(localIdentity.localTagFontStorageId({id:'irrelevant',path:vector.path}),'local-path:'+vector.stored)
+  db.exec('DELETE FROM local_db.local_font_tags; DELETE FROM entries')
+  db.prepare('INSERT INTO local_db.local_font_tags VALUES (?,?,?)').run('historical',vector.stored,'private')
+  for (const candidate of [vector.path,vector.canonical]) {
+    assert.deepEqual(plain(nodeWorker.hydrateLocalTags(db,[{...unc,path:candidate}])[0].localTagNames),['private'])
+  }
+  db.prepare('INSERT INTO entries VALUES (?,?,?,?,?)').run(path.win32.dirname(vector.canonical),path.win32.basename(vector.canonical),42,100,JSON.stringify(legacy))
+  const predicate=sql.rootIndexLocalTagMatchExpr('lft')
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM entries WHERE EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE '+predicate+')').get().n,1)
+  db.prepare('UPDATE local_db.local_font_tags SET font_path=?').run(vector.stored+'.other')
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM entries WHERE EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE '+predicate+')').get().n,0,'path-bearing metadata ID borrowed another file')
+}
 // Preview cache keys and storage routing do not use the runtime ID.
 const preview=load('src/main/preview/runtime/previewBatchRowsRuntime.ts').createPreviewBatchRowsRuntime({sha1:hash,normalizePathForCacheCompare:p=>p.toLowerCase()},()=>({storage:'local',dir:'C:\\preview',identity:'same.ttf'}))
 const previewRow=font=>[...preview.buildPreviewCacheGroups([font],{},'Text',36,400,80).values()][0].rows[0]

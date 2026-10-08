@@ -9,7 +9,9 @@ const bytesFor = font => { const bytes = Buffer.alloc(font.fileSize || 100); if 
 const hashFor = font => crypto.createHash('sha256').update(bytesFor(font)).digest('hex')
 const { load } = require('./check-decomposition-baseline.cjs')
 const plain = value => JSON.parse(JSON.stringify(value))
-const key = value => String(value).replaceAll('/', '\\').toLowerCase()
+const identity = load('src/main/library/runtime/localFontTagIdentityRuntime.ts')
+const storageKey = value => identity.normalizeLocalTagFontPath(value)
+const key = load('src/main/path/pathCanonicalizer.ts').normalizePathCompareText
 const inside = (file, root) => key(file) === key(root) || key(file).startsWith(key(root) + '\\')
 const root = 'C:\\Fonts'
 const refreshReceipt = (folder, extra = {}) => ({ ok: true, folder, rootPath: folder, mode: 'cache-read', cacheRepairs: [], upserts: 0, deletes: 0, errors: 0, totalFiles: 0, parsed: 0, fromCache: 0, skippedBad: 0, elapsedMs: 0, message: 'done', ...extra })
@@ -19,7 +21,7 @@ const make = (name, folder = 'old') => ({ recoveryContentHash: hashFor({ postscr
 
 function harness() {
   const db = new DatabaseSync(':memory:')
-  db.exec('CREATE TABLE local_font_tags (font_id TEXT, font_path TEXT, tag_name TEXT)')
+  db.exec("CREATE TABLE local_font_tags (font_id TEXT, font_path TEXT, tag_name TEXT, updated_at TEXT DEFAULT 'historical'); CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT)")
   const adapter = { exec: sql => db.exec(sql), prepare: sql => { const statement=db.prepare(sql); if(/^SELECT font_id, font_path, tag_name FROM local_font_tags/.test(sql))return {all:(...args)=>{counts.collections++;const rows=statement.all(...args);counts.bindingRows+=rows.length;return rows}};return statement }, transaction: fn => () => {
     db.exec('BEGIN'); try { const value = fn(); db.exec('COMMIT'); return value } catch (e) { db.exec('ROLLBACK'); throw e }
   } }
@@ -48,6 +50,8 @@ function harness() {
   }
   const mocks = {
     'node:path': path,
+    './runtime/localFontTagIdentityRuntime': identity,
+    './localFontTagIdentityRuntime': identity,
     '../path/pathCanonicalizer': { mappedDriveTableAsync: async () => mappings },
     '../path/pathBoundaryPolicy': load('src/main/path/pathBoundaryPolicy.ts'),
     '../path/cachePath': { normalizePathForCacheCompare: key },
@@ -84,22 +88,26 @@ function harness() {
       if (row) db.prepare('UPDATE tag_font_snapshots SET font_json = ? WHERE font_path = ?').run(JSON.stringify({ ...JSON.parse(row.font_json), recoveryContentHash: font.recoveryContentHash }), key(font.path))
     }
   }
-  const add = (font, tags) => { for (const tag of tags) db.prepare('INSERT INTO local_font_tags VALUES (?, ?, ?)').run(font.id, key(font.path), tag) }
+  const add = (font, tags) => { for (const tag of tags) db.prepare('INSERT INTO local_font_tags(font_id, font_path, tag_name) VALUES (?, ?, ?)').run(identity.localTagFontStorageId(font), storageKey(font.path), tag) }
   const put = font => { files.set(key(font.path), true); parsed.set(key(font.path), font) }
   let live = []
   const queryDeps = { canReadDetached: async () => true, openLibraryDb: async () => adapter, roots: async () => roots,
     readShared: async () => ({ preflight: { snapshot: { rows: sharedRows } } }),
     queryLive: async (_request, limit, offset) => { counts.live++; return { items: live.slice(offset, offset + limit), total: live.length, offset, limit, queryKey: 'tags', engine: 'sql', truncated: false, elapsedMs: 0 } },
-    hydrate: async items => { counts.hydrate++; return items },
+    hydrate: async items => { counts.hydrate++; assert(items.every(item => !item.recoveryPlaceholder), 'display-only rows reached install hydration'); return items },
     matches: (font, request) => (!request.keyword || font.fileName.includes(request.keyword)) && (!request.selectedTagName || (request.sidebarPage === 'sharedTags' ? font.tagNames : font.localTagNames || []).includes(request.selectedTagName)),
     compare: (a, b) => a.fileName.localeCompare(b.fileName),
   }
   const query = queryModule.createTagFontQueryRuntime(queryDeps)
   const transactionModule = load('src/main/library/runtime/localFontRecoveryTransactionRuntime.ts', {
     '../../path/cachePath': { normalizePathForCacheCompare: key },
-    './localFontTagIdentityRuntime': { localTagFontPath: font => key(font.path) },
+    './localFontTagIdentityRuntime': identity,
     'node:fs': { realpathSync: file => file, readFileSync: file => contents.get(key(file)) || bytesFor(parsed.get(key(file))), statSync: file => { if (files.has(key(file))) return { isDirectory: () => files.get(key(file)) === 'directory' }; if (roots.includes(file)) return { isDirectory: () => true }; throw Object.assign(Error('missing'), { code: 'ENOENT' }) } },
   })
+  const persistence = load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts', { ...mocks,
+    './localFontRecoveryTransactionRuntime': transactionModule,
+  }).createLocalFontTagNodePersistenceRuntime(async () => adapter)
+  const persist = async (font, tags) => (await persistence.openWriter()).setLocalFontTags(font, tags, 'historical')
   const events = []
   const runtime = {
     loadLibraryShell: async () => ({ folders: roots }),
@@ -109,13 +117,14 @@ function harness() {
     refreshWatchedFolder: async (_folder, _root, wait) => { assert.equal(wait, true); events.push('scan-complete'); return refreshReceipt(_root) },
     setLocalFontTagsBatch: async (entries, options) => {
       events.push('write')
-      adapter.transaction(() => { transactionModule.validateRecoveryMissingSources(options?.recoveryMissingSources || []); transactionModule.validateRecoveryFiles(options?.recoveryFiles || []); transactionModule.validateRecoveryTagWrites(adapter, entries); transactionModule.preserveLocalRecoveryState(adapter, options?.recoveryMoves || []); for (const { item, tagNames } of entries) { db.prepare('DELETE FROM local_font_tags WHERE font_path = ?').run(key(item.path)); add(item, tagNames) } })()
-      remember(entries.map(entry => entry.item)); query.invalidate()
-      return { ok: true, failed: [], updatedIds: entries.map(entry => entry.item.id) }
+      const result = (await persistence.openWriter()).setLocalFontTagsBatch(entries, 'recovery', options)
+      if (!result.failed.length) remember(entries.map(entry => entry.item))
+      query.invalidate()
+      return { ...result, ok: !result.failed.length }
     },
   }
   return { db, adapter, files, roots, parsed, sharedRows, reads, queryRequests, counts, put, add, remember, query, queryModule, recoveryModule, runtime, events,
-    pathsModule, mappings, queryDeps, snapshots, filesystem, contents, transactionModule, live: fonts => { live = fonts; query.invalidate() }, close: () => { snapshots.disposeTagFontSnapshots(adapter); db.close() } }
+    pathsModule, mappings, queryDeps, snapshots, filesystem, contents, transactionModule, persistence, persist, live: fonts => { live = fonts; query.invalidate() }, close: () => { snapshots.disposeTagFontSnapshots(adapter); db.close() } }
 }
 
 async function queryCases() {
@@ -130,7 +139,7 @@ async function queryCases() {
     assert.deepEqual([...first.items, ...second.items].map(font => font.fileAvailability), ['available', 'missing', 'missing'])
     assert.equal(first.items[1].postscriptName, 'B'); assert.equal(second.items[0].fileName.toLowerCase(), 'c.ttf')
     assert.equal((await h.query.query({ ...request, keyword: 'B' }, 10, 0)).total, 1)
-    h.db.prepare('DELETE FROM local_font_tags WHERE font_path = ?').run(key(b.path)); h.query.invalidate()
+    h.db.prepare('DELETE FROM local_font_tags WHERE font_path = ?').run(storageKey(b.path)); h.query.invalidate()
     assert.equal((await h.query.query(request, 10, 0)).total, 2, 'snapshots cannot resurrect removed bindings')
     h.files.set(key(root), Object.assign(Error('offline'), { code: 'EACCES' })); h.query.invalidate()
     assert.equal((await h.query.query(request, 10, 0)).items.find(font => key(font.path) === key(c.path)).fileAvailability, 'unavailable')
@@ -155,11 +164,11 @@ async function recoveryCases() {
       const result = await service.recover(mode === 'reindex' || mode === 'failure' ? { tagName: 'T', scope: 'local', mode: 'reindex' } : { fontPath: a.path, scope: 'local', mode: 'relink' })
       if (mode === 'cancel' || mode === 'failure') {
         assert.equal(result.linked, 0); assert.equal(result.remaining, 2)
-        assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(key(a.path)).n, 2)
+        assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(storageKey(a.path)).n, 2)
       } else {
         assert.equal(result.linked, 2); assert.equal(result.remaining, 0)
-        assert.deepEqual(h.db.prepare('SELECT tag_name FROM local_font_tags WHERE font_path = ? ORDER BY tag_name').all(key(nextA.path)).map(row => row.tag_name), ['Existing', 'Keep', 'T'])
-        assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(key(a.path)).n, 0)
+        assert.deepEqual(h.db.prepare('SELECT tag_name FROM local_font_tags WHERE font_path = ? ORDER BY tag_name').all(storageKey(nextA.path)).map(row => row.tag_name), ['Existing', 'Keep', 'T'])
+        assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(storageKey(a.path)).n, 0)
         if (mode === 'relink') assert.equal(picks, 1, 'same-directory siblings should be matched without another dialog')
         else assert.equal(h.events[0], 'scan-complete')
       }
@@ -202,7 +211,7 @@ async function targetedRecoveryCases() {
     assert.deepEqual(chosen.map(key), [key(b.path)], 'only the clicked card opens a dialog')
     assert.equal(result.linked, 1); assert.equal(result.remaining, 1, 'unmatched sibling stays without a second picker')
     assert.match(result.message, /未全部完成/, 'unmatched files must not claim complete recovery')
-    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(key(c.path)).n, 1)
+    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(storageKey(c.path)).n, 1)
     await assert.rejects(service.recover({ mode: 'relink', scope: 'local', fontPath: 'C:\\invented.ttf' }), /此字体已恢复/)
     assert.equal(chosen.length, 1, 'unknown renderer path must not open a picker')
   } finally { h.close() }
@@ -249,7 +258,7 @@ async function bulkRecoveryCases() {
       assert.equal(h.counts.parse, 0, 'unchanged indexed candidates must not be reparsed')
       assert.equal(h.counts.live, 0); assert.equal(h.counts.hydrate, 0)
       assert.equal(h.queryRequests.filter(r => r.tagBindingsOnly && r.sidebarPage === 'tags').length, 3, 'source/destination tags must not be reread per file')
-      assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(key(originals[0].path)).n, failWrite ? 2 : 0)
+      assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(storageKey(originals[0].path)).n, failWrite ? 2 : 0)
     } finally { h.close() }
   }
   const h = harness(), old = make('A'), next = make('A', 'new')
@@ -411,10 +420,10 @@ async function f08QueryCases() {
   const stale = harness(), liveFont = make('Stale'), legacy = make('Legacy')
   try {
     stale.add(liveFont, ['T']); stale.remember([liveFont]); stale.put(liveFont)
-    stale.db.prepare('INSERT INTO local_font_tags VALUES (?, NULL, ?)').run(legacy.id, 'T'); stale.put(legacy)
+    stale.db.prepare('INSERT INTO local_font_tags(font_id, font_path, tag_name) VALUES (?, NULL, ?)').run(legacy.id, 'T'); stale.put(legacy)
     stale.live([{ ...liveFont, localTagNames: ['T'] }, { ...legacy, localTagNames: ['T'] }])
     assert.equal((await stale.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)).total, 2)
-    stale.db.prepare('DELETE FROM local_font_tags WHERE font_path = ?').run(key(liveFont.path)); stale.query.invalidate()
+    stale.db.prepare('DELETE FROM local_font_tags WHERE font_path = ?').run(storageKey(liveFont.path)); stale.query.invalidate()
     const page = await stale.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)
     // The query returns a VM array; compare its data in this realm, as above.
     assert.deepEqual(plain(page.items.map(font => font.id)), [legacy.id], 'stale live pages and history must not resurrect a deleted path binding; ID-only legacy membership remains')
@@ -495,7 +504,7 @@ async function f08RecoveryCases() {
     const result = await h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => { picks++; return outside.path })
       .recover({ mode: 'relink', scope: 'local', fontPath: outside.path })
     assert.equal(result.linked, 1); assert.equal(result.remaining, 0); assert.equal(renewals, 1); assert.equal(picks, 1)
-    assert.deepEqual(h.db.prepare('SELECT tag_name FROM local_font_tags WHERE font_path = ? ORDER BY tag_name').all(key(outside.path)).map(row => row.tag_name), ['Keep', 'T'], 'same-path confirmation must not append a clear-old operation')
+    assert.deepEqual(h.db.prepare('SELECT tag_name FROM local_font_tags WHERE font_path = ? ORDER BY tag_name').all(storageKey(outside.path)).map(row => row.tag_name), ['Keep', 'T'], 'same-path confirmation must not append a clear-old operation')
     const page = await h.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)
     assert.equal(page.items[0].fileRelinkRequired, false); assert.equal(page.items[0].fileAvailability, 'available')
   } finally { h.close() }
@@ -578,8 +587,8 @@ async function f09MatchCases() {
     const result = await h.recoveryModule.createTagFontRecoveryRuntime(h.runtime, async () => { picks++; return nextA.path })
       .recover({ mode:'relink',scope:'local',fontPath:a.path })
     assert.equal(result.linked,2); assert.equal(picks,1); assert.equal(writes,1)
-    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(key(nextB.path)).n,1)
-    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(key(make('Unrelated','new').path)).n,0)
+    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(storageKey(nextB.path)).n,1)
+    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ?').get(storageKey(make('Unrelated','new').path)).n,0)
   } finally { h.close() }
 }
 
@@ -621,8 +630,8 @@ async function f09CommitCases() {
       assert.equal(result.linked, success ? 1 : 0, scenario)
       if (!success) {
         assert(result.failures.length,scenario)
-        assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ? AND tag_name = ?').get(key(old.path),'T').n,1)
-        assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ? AND tag_name = ?').get(key(next.path),'T').n,0)
+        assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ? AND tag_name = ?').get(storageKey(old.path),'T').n,1)
+        assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM local_font_tags WHERE font_path = ? AND tag_name = ?').get(storageKey(next.path),'T').n,0)
       }
       const favorite = h.db.prepare('SELECT favorite FROM local_font_favorites WHERE font_path = ?').get(key(next.path))
       const protection = h.db.prepare('SELECT protected FROM local_font_protection WHERE font_path = ?').get(key(next.path))
@@ -741,8 +750,8 @@ async function f13ScopedWorkCases() {
   try {
     scoped.mappings.set('R:','\\\\server\\share')
     const values=['R:\\Fonts%_\\a.ttf','\\\\server\\share\\Fonts%_\\b.ttf','\\\\?\\UNC\\server\\share\\Fonts%_\\c.ttf','R:/Fonts%_/D.ttf','R:\\ignored\\..\\Fonts%_\\e.ttf','R:\\FontsXX\\bad.ttf','R:\\Fonts%_sibling\\bad.ttf']
-    for(const [i,file] of values.entries())scoped.db.prepare('INSERT INTO local_font_tags VALUES(?,?,?)').run('row'+i,file,'P')
-    scoped.db.prepare('INSERT INTO local_font_tags VALUES(?,?,?)').run('legacy',null,'P')
+    for(const [i,file] of values.entries())scoped.db.prepare('INSERT INTO local_font_tags(font_id, font_path, tag_name) VALUES(?,?,?)').run('row'+i,file,'P')
+    scoped.db.prepare('INSERT INTO local_font_tags(font_id, font_path, tag_name) VALUES(?,?,?)').run('legacy',null,'P')
     const result=await scoped.query.query({sidebarPage:'tags',tagBindingsOnly:true,selectedWatchedFolders:['\\\\server\\share\\Fonts%_']},500,0)
     assert.equal(result.total,5,'SQL scoping lost verified alias/device/slash/dot/wildcard paths or admitted sibling')
   } finally {scoped.close()}
@@ -784,12 +793,127 @@ async function missingHistoricalCardsRemainVisible() {
   } finally {h.close()}
 }
 
+
+async function extendedTagWriteCompatibility() {
+  const h=harness()
+  try {
+    for (const [extended,canonical] of [
+      ['\\\\?\\UNC\\server\\share\\one.ttf','\\\\server\\share\\one.ttf'],
+      ['\\\\?\\C:\\Fonts\\one.ttf','C:\\Fonts\\one.ttf'],
+    ]) {
+      const font={...make('Extended'),path:extended}, item={...font,path:canonical}
+      const other={...font,id:'unrelated',path:canonical.replace('one.ttf','other.ttf')}
+      await h.persist(font,['Old']);await h.persist(other,['Unrelated'])
+      assert.deepEqual(plain((await h.persistence.hydrateLocalTagsForFonts([item]))[0].localTagNames),['Old'])
+      const writer=await h.persistence.openWriter()
+      const conflict=writer.setLocalFontTagsBatch([{item,tagNames:['New'],expectedTagNames:['Changed']}],'conflict')
+      assert.equal(conflict.failed.length,1)
+      assert.equal(h.db.prepare('SELECT tag_name FROM local_font_tags WHERE font_path=?').get(storageKey(extended)).tag_name,'Old')
+      const update=writer.setLocalFontTagsBatch([{item,tagNames:['New'],expectedTagNames:['Old']}],'updated')
+      assert.equal(update.failed.length,0)
+      assert.equal(h.db.prepare('SELECT COUNT(*) n FROM local_font_tags WHERE font_path=?').get(storageKey(extended)).n,0)
+      assert.deepEqual(plain((await h.persistence.hydrateLocalTagsForFonts([font]))[0].localTagNames),['New'])
+      writer.setLocalFontTags(item,[],'removed')
+      assert.deepEqual(plain((await h.persistence.hydrateLocalTagsForFonts([font,item])).map(row=>row.localTagNames)),[[],[]])
+      assert.deepEqual(plain((await h.persistence.hydrateLocalTagsForFonts([other]))[0].localTagNames),['Unrelated'])
+    }
+  } finally {h.close()}
+}
+
+async function legacyUncStorageRecoveryChain() {
+  const unc='\\\\nas\\share\\Fonts',variants=[unc,'\\\\?\\UNC\\nas\\share\\Fonts','R:\\Fonts']
+  const render=require('./check-operation-chain.cjs').loader({
+    [require('node:path').resolve(__dirname,'../../src/renderer/src/constants/environmentConstants.ts')]:{RENDERER_ENV:{DEV:false,PROD:true},IS_DEVELOPMENT:false},
+  })
+  const admission=require('./check-operation-chain.cjs').loader()('src/main/ipc/sharedActionAdmissionRuntime.ts').createSharedActionAdmission()
+  const visible=(h,page)=>{
+    const library=render('src/renderer/src/library-normalize/libraryNormalizeBase.ts').createEmptyLibrary()
+    library.folders=h.roots;library.localTags=['模板'];library.fonts=Object.fromEntries(page.items.map(font=>[font.id,font]))
+    return render('src/renderer/src/fontViewRuntime.ts').buildVisibleFonts({databasePageReady:true,databasePageResult:page,
+      allFonts:page.items,fontIndexById:new Map(),deferredSearch:'',activeFilter:{kind:'all'},selectedWatchedFolders:[],selectedFormats:[],selectedScripts:[],
+      selectedCategory:'all',selectedTagName:'模板',selectedSharedTagName:'',selectedFolderId:'',installStatus:'all',timeSortMode:'all',sortMode:'nameAsc',sidebarPage:'tags',library})
+  }
+  for(const base of variants)for(const history of [false,true]){
+    const h=harness()
+    try{
+      h.roots.splice(0,h.roots.length,unc);h.mappings.set('R:','\\\\nas\\share')
+      const old=Array.from({length:8},(_,i)=>({...make('Unc'+i),path:base+'\\old\\Unc'+i+'.ttf'}))
+      const next=old.map(font=>({...font,id:font.id+'-new',path:unc+'\\new\\'+font.fileName}))
+      for(const font of old)await h.persist(font,['模板','Keep'])
+      const original=plain(h.db.prepare('SELECT * FROM local_font_tags ORDER BY font_id,tag_name').all())
+      for(const row of original){
+        assert.equal(row.font_path,storageKey(old.find(font=>identity.localTagFontStorageId(font)===row.font_id).path))
+        if(base!=='R:\\Fonts')assert.equal(row.font_path.startsWith('\\\\'),false,'fixture bypassed production storage key')
+      }
+      h.queryDeps.hydrate=async items=>{h.counts.hydrate++;assert(items.every(font=>!font.recoveryPlaceholder));return h.persistence.hydrateLocalTagsForFonts(items)}
+      if(history){
+        for(const font of old)h.put(font)
+        await h.snapshots.openTagFontSnapshots(h.adapter).capture(old)
+        h.live(old.map(font=>({...font,path:unc+'\\old\\'+font.fileName})))
+        const livePage=await h.query.query({sidebarPage:'tags',selectedTagName:'模板'},100,0)
+        assert.equal(livePage.total,8);assert(livePage.items.every(font=>font.fileAvailability==='available'&&!font.recoveryPlaceholder&&font.localTagNames.includes('模板')))
+        await h.snapshots.openTagFontSnapshots(h.adapter).whenIdle()
+        for(const font of old)h.files.delete(key(font.path))
+        h.parsed.clear();h.live([])
+        const row=h.db.prepare('SELECT font_json FROM tag_font_snapshots WHERE font_path=?').get(key(old[0].path))
+        h.db.prepare('UPDATE tag_font_snapshots SET font_json=? WHERE font_path=?').run(JSON.stringify({...JSON.parse(row.font_json),path:storageKey(old[0].path)}),key(old[0].path))
+      }
+      const page=await h.query.query({sidebarPage:'tags',selectedTagName:'模板'},100,0)
+      assert.equal(page.total,8);assert.equal(visible(h,page).length,8);assert(page.items.every(font=>font.fileAvailability==='missing'))
+      assert(page.items.every(font=>font.path.startsWith('\\\\')||/^[a-z]:\\/i.test(font.path)),'storage key used as I/O path')
+      assert.deepEqual(plain(h.db.prepare('SELECT * FROM local_font_tags ORDER BY font_id,tag_name').all()),original,'query rewrote storage rows')
+      assert.equal((await h.query.query({sidebarPage:'tags',tagBindingsOnly:true,selectedTagName:'模板',selectedWatchedFolders:[unc+'\\old']},100,0)).total,8)
+      if(!history){
+        assert.equal(h.counts.hydrate,0)
+        for(const channel of ['fonts:installSystem','fonts:uninstallSystem','fonts:activateFont','fonts:deleteFiles','fonts:moveFilesToFolder'])await assert.rejects(()=>admission(channel,[[page.items[0]]]),/历史字体记录/)
+      }
+      for(const font of next)h.put(font)
+      let compatibilityPicks=0
+      const cancelled=await h.recoveryModule.createTagFontRecoveryRuntime(h.runtime,async()=>{compatibilityPicks++;return undefined}).recover({mode:'relink',scope:'local',fontPath:storageKey(old[0].path)})
+      assert.equal(cancelled.canceled,true);assert.equal(compatibilityPicks,1)
+      const entry=require('./check-activation-entry.cjs'),ui=entry.harness({runtimePreload:true})
+      const cards=visible(h,page),clicked=cards.find(font=>font.fileName.toLowerCase()==='unc0.ttf')
+      ui.all.splice(0,ui.all.length,...cards);ui.select().setSelectedFontIds(cards.slice(0,2).map(font=>font.id));ui.context().openFontMenu(ui.event(),clicked)
+      let picks=0,pending,dispatched
+      const service=h.recoveryModule.createTagFontRecoveryRuntime(h.runtime,async anchor=>{picks++;assert.equal(key(anchor.path),key(clicked.path));return next[0].path})
+      ui.handlers.set('fonts:recoverTagFiles',(_event,input,envelope)=>{dispatched=plain(input);assert.equal(envelope?.__hfmOperationTrace?.domain,'tag-recovery');pending=service.recover(input);return pending})
+      const actions=ui.load(entry.renderer+'fontDialogContextActionsRuntime.ts').createFontDialogContextActions({contextMenu:ui.menu,sidebarPage:'tags',hfm:ui.window.hfm,setContextMenu:()=>{},setStatus:()=>{},refreshDatabaseDerivedState:()=>{},flushFontWriteQueue:async()=>true})
+      const menu=ui.load(entry.renderer+'components/app/AppOverlays.tsx').AppOverlays({contextMenu:ui.menu,contextSelectedFonts:cards.slice(0,2),contextTargetCount:2,...actions})
+      entry.button(menu,'重新链接文件').props.onClick();await entry.tick()
+      assert.deepEqual(dispatched,{mode:'relink',fontPath:clicked.path,scope:'local'})
+      const result=await pending
+      assert.equal(picks,1);assert.equal(result.linked,history?8:1);assert.equal(result.remaining,history?0:7);assert.equal(result.failures.length,0,JSON.stringify(result))
+      assert.equal(h.events.filter(event=>event==='write').length,1)
+      const after=await h.query.query({sidebarPage:'tags',selectedTagName:'模板'},100,0)
+      assert.equal(after.total,8);assert.equal(visible(h,after).length,8);assert.equal(after.items.filter(font=>font.fileAvailability==='available').length,history?8:1)
+      assert.equal(h.db.prepare('SELECT COUNT(*) n FROM local_font_tags').get().n,16)
+      for(const font of next)assert.deepEqual(await h.filesystem.readFile(font.path),bytesFor(font))
+    }finally{h.close()}
+  }
+  for(const collision of [false,true]){
+    const h=harness()
+    try{
+      h.roots.splice(0,h.roots.length,unc);h.mappings.set('R:','\\\\nas\\share')
+      const one={...make('Unknown'),path:collision?unc+'\\old\\Unknown.ttf':'\\\\outside\\unregistered\\Unknown.ttf'}
+      await h.persist(one,['模板'])
+      if(collision)await h.persist({...one,path:'R:\\Fonts\\old\\Unknown.ttf'},['Other'])
+      const before=plain(h.db.prepare('SELECT * FROM local_font_tags ORDER BY font_id').all())
+      const page=await h.query.query({sidebarPage:'tags',selectedTagName:'模板'},100,0)
+      assert.equal(page.total,1);assert.equal(visible(h,page).length,1);assert.equal(page.items[0].fileAvailability,'unavailable');assert.equal(page.items[0].recoveryPlaceholder,true)
+      assert.equal(page.items[0].tagBindingReadOnly,true);assert.equal(render('src/renderer/src/fontDisplay.ts').installLabel(page.items[0]),'历史路径待确认');assert.equal(h.reads.length,0)
+      let picks=0
+      await assert.rejects(()=>h.recoveryModule.createTagFontRecoveryRuntime(h.runtime,async()=>{picks++;return undefined}).recover({mode:'relink',scope:'local',fontPath:collision?one.path:storageKey(one.path)}),/历史路径无法唯一确认|暂不可访问或标签关联已变化/)
+      assert.equal(picks,0);assert.deepEqual(plain(h.db.prepare('SELECT * FROM local_font_tags ORDER BY font_id').all()),before)
+    }finally{h.close()}
+  }
+}
+
 async function main() {
   const display = load('src/renderer/src/fontDisplay.ts', { './fontUserIntentRuntime': { getUninstallIssue: () => undefined } })
   assert.equal(display.installLabel({ ...make('A'), systemInstalled: true, fileAvailability: 'missing' }), '文件丢失')
   const failures = []
   // Each group owns and closes its fixtures; collect errors without hiding later groups.
-  for (const run of [missingHistoricalCardsRemainVisible, queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
+  for (const run of [extendedTagWriteCompatibility, legacyUncStorageRecoveryChain, missingHistoricalCardsRemainVisible, queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
     sharedRecoveryCases, detachedAuthorizationCase, backgroundWaitCase, f08QueryCases, f08RecoveryCases, f08RefreshCases,
     f09MatchCases, f09AliasCase, f09CommitCases, f09SharedCases, f09EvidenceCases, f13ScopedWorkCases]) {
     try { await run() } catch (error) { failures.push(`${run.name}: ${error?.stack || String(error)}`) }

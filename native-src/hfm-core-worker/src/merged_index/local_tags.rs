@@ -4,13 +4,9 @@ use rusqlite::types::Value as SqlValue;
 use rusqlite::Connection;
 use serde_json::Value;
 
-use super::path_utils::normalize_path_for_compare;
+use crate::local_tags::local_tag_font_read_paths;
 use super::snapshot::local_table_columns;
 use super::sqlite_params::query_string_pairs;
-
-fn normalize_local_tag_font_path(value: &str) -> String {
-    normalize_path_for_compare(value.trim()).replace(r"\\", r"\")
-}
 
 fn text_field(value: &Value, field: &str) -> String {
     value.get(field).and_then(Value::as_str).unwrap_or("").to_string()
@@ -53,12 +49,11 @@ pub fn hydrate_local_tags(conn: &Connection, items: Vec<Value>) -> Vec<Value> {
             }
             alias_to_runtime_id.insert(id, runtime_id.clone());
         }
-        let font_path = normalize_local_tag_font_path(&text_field(item, "path"));
-        if !font_path.is_empty() {
+        for font_path in local_tag_font_read_paths(&text_field(item, "path")) {
             if !path_to_runtime_id.contains_key(&font_path) {
                 paths.push(font_path.clone());
             }
-            path_to_runtime_id.insert(font_path, runtime_id);
+            path_to_runtime_id.insert(font_path, runtime_id.clone());
         }
     }
 
@@ -124,6 +119,21 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn legacy_unc_storage_vectors_match_canonical_index_items() {
+        let vectors: Value=serde_json::from_str(include_str!("../../../../build/diagnostics/fixtures/tag-font-path-identity.json")).unwrap();
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("ATTACH DATABASE ':memory:' AS local_db; CREATE TABLE local_db.local_font_tags(font_id TEXT,font_path TEXT,tag_name TEXT)").unwrap();
+        for vector in vectors.as_array().unwrap() {
+            conn.execute("DELETE FROM local_db.local_font_tags",[]).unwrap();
+            let stored=vector["stored"].as_str().unwrap();
+            conn.execute("INSERT INTO local_db.local_font_tags VALUES ('stored',?,'private')",[stored]).unwrap();
+            for path in [vector["path"].as_str().unwrap(),vector["canonical"].as_str().unwrap()] {
+                assert_eq!(hydrate_local_tags(&conn,vec![json!({"id":"actual","path":path})])[0]["localTagNames"],json!(["private"]));
+            }
+            assert_eq!(conn.query_row("SELECT font_path FROM local_db.local_font_tags",[],|r|r.get::<_,String>(0)).unwrap(),stored);
+        }
+    }
     #[test]
     fn path_bearing_alias_is_not_shared_between_roots() {
         let conn = Connection::open_in_memory().unwrap();

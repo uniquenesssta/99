@@ -3,7 +3,7 @@ import { ensureLocalFontIdentitySchema } from './localFontLegacyIdentityRuntime'
 import { logOperation } from '../../logging/operationTraceContext'
 import type { FontItem, FontTagBatchItem, FontTagRecoveryCommitOptions } from "../../../shared/types";
 import type { SqliteDb } from "./libraryRuntimeTypes";
-import { localTagFontIdAliases, localTagFontPath, localTagFontStorageId } from "./localFontTagIdentityRuntime";
+import { localTagFontIdAliases, localTagFontPath, localTagFontStorageId, localTagFontReadPaths } from "./localFontTagIdentityRuntime";
 
 function deleteLocalTagForFontIdentity(
   db: SqliteDb,
@@ -15,8 +15,10 @@ function deleteLocalTagForFontIdentity(
     db.prepare(`DELETE FROM local_font_tags WHERE COALESCE(font_path, '') = '' AND font_id IN (${aliases.map(() => "?").join(",")})`).run(...aliases);
   }
   if (fontPath) {
-    db.prepare("INSERT OR IGNORE INTO local_font_tag_decisions(font_path) VALUES (?)").run(fontPath);
-    db.prepare("DELETE FROM local_font_tags WHERE font_path = ?").run(fontPath);
+    for (const path of localTagFontReadPaths(fontPath)) {
+      db.prepare("INSERT OR IGNORE INTO local_font_tag_decisions(font_path) VALUES (?)").run(path);
+      db.prepare("DELETE FROM local_font_tags WHERE font_path = ?").run(path);
+    }
   }
 }
 
@@ -132,8 +134,7 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
         }
         aliasToRuntimeIds.get(id)!.add(runtimeId);
       }
-      const fontPath = localTagFontPath(item);
-      if (fontPath) {
+      for (const fontPath of localTagFontReadPaths(item.path)) {
         if (!pathToRuntimeIds.has(fontPath)) {
           paths.push(fontPath);
           pathToRuntimeIds.set(fontPath, new Set());

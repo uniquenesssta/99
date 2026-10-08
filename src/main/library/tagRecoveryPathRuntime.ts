@@ -1,5 +1,6 @@
 import { canonicalizeAbsolutePath, isPathInsideAbsoluteBoundary } from '../path/pathBoundaryPolicy'
 import { mappedDriveTableAsync } from '../path/pathCanonicalizer'
+import { normalizeLocalTagFontPath } from './runtime/localFontTagIdentityRuntime'
 
 // One verified mapping snapshot per query/recovery. Missing files cannot be
 // realpathed, so only established drive aliases participate in ownership.
@@ -28,7 +29,23 @@ export async function createTagRecoveryPaths(roots: string[]) {
     }
     return [...result].filter(Boolean)
   }
-  return { roots: unique, compare, inside, owner, aliases, contains: (path: string) => !!owner(path) }
+  const resolveStoredPath = (stored: string): string | undefined => {
+    // Keep absolute paths' exact spelling for persistence, including device prefixes.
+    if (canonicalizeAbsolutePath(stored)?.flavor === 'windows') return stored
+    const identity = normalizeLocalTagFontPath(stored)
+    if (!identity) return undefined
+    const candidates = new Map<string, string>()
+    for (const root of unique) for (const alias of aliases(root)) {
+      const prefix = normalizeLocalTagFontPath(alias)
+      if (identity !== prefix && !identity.startsWith(prefix + '\\')) continue
+      const candidate = alias.replace(/\\+$/, '') + identity.slice(prefix.length)
+      // Never repair a leading separator without an existing root/alias proof.
+      if (canonicalizeAbsolutePath(candidate)?.flavor === 'windows' && inside(candidate, root)
+        && normalizeLocalTagFontPath(candidate) === identity) candidates.set(compare(candidate), candidate)
+    }
+    return candidates.size === 1 ? candidates.values().next().value : undefined
+  }
+  return { roots: unique, compare, inside, owner, aliases, resolveStoredPath, contains: (path: string) => !!owner(path) }
 }
 
 export type TagRecoveryPaths = Awaited<ReturnType<typeof createTagRecoveryPaths>>

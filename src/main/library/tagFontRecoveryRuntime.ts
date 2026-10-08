@@ -78,12 +78,14 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
       const library = await runtime.loadLibraryShell() as LibraryState
       const paths = await createTagRecoveryPaths(library.folders || [])
       const roots = paths.roots
+      const anchorPath = input.mode === 'relink' ? paths.resolveStoredPath(input.fontPath) : undefined
+      if (input.mode === 'relink' && !anchorPath) throw new Error('历史路径无法唯一确认，原标签已保留；请先检查监听文件夹。')
       const request: FontQueryRequest = { tagBindingsOnly: true, sidebarPage: input.scope === 'local' ? 'tags' : 'sharedTags',
         selectedTagName: input.mode === 'reindex' ? input.tagName : undefined, sortMode: 'nameAsc',
-        selectedWatchedFolders: input.mode === 'relink' ? [dirname(input.fontPath)] : undefined }
+        selectedWatchedFolders: anchorPath ? [dirname(anchorPath)] : undefined }
       const initial = await measureOperationPhase('preparation', () => readAll(request))
       let missing = initial.filter(font => font.fileAvailability === 'missing')
-      const anchor = input.mode === 'relink' ? initial.find(font => key(font.path) === key(input.fontPath) &&
+      const anchor = anchorPath ? initial.find(font => paths.compare(font.path) === paths.compare(anchorPath) &&
         (font.fileAvailability === 'missing' || font.fileRelinkRequired) && !font.tagBindingReadOnly) : undefined
       if (input.mode === 'relink' && !anchor) throw new Error('此字体已恢复、暂不可访问或标签关联已变化，请刷新后重试。')
       if (anchor) missing = [anchor, ...missing.filter(font => key(font.path) !== key(anchor.path) && paths.compare(dirname(font.path)) === paths.compare(dirname(anchor.path)))]

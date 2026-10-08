@@ -19,6 +19,7 @@ export interface FontItem {
   recoveryPlaceholder?: boolean
   fileRelinkRequired?: boolean
   tagBindingReadOnly?: boolean
+  tagBindingReadOnlyReason?: 'path-unresolved' | 'shared-unavailable'
   recoveryContentHash?: string
   recoveryFileStamp?: string
   fileName: string

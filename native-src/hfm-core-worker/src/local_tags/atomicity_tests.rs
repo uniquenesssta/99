@@ -105,3 +105,28 @@ fn recovery_target_is_pinned_and_changed_content_is_rejected() {
     assert!(changed.to_string().contains("content"),"same-size changed bytes must be rejected by content evidence");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+
+#[test]
+fn local_tags_extended_storage_updates_and_removes_only_exact_file() {
+    for (extended,canonical) in [(r"\?\unc\server\share\one.ttf",r"\server\share\one.ttf"),(r"\?\c:\fonts\one.ttf",r"c:\fonts\one.ttf")] {
+        let mut conn=Connection::open_in_memory().unwrap();initialize_local_tags_db(&conn).unwrap();
+        conn.execute("INSERT INTO local_font_tags VALUES ('old',?,'Old','before')",[extended]).unwrap();
+        conn.execute("INSERT INTO local_font_tags VALUES ('other',?,'Unrelated','before')",[format!("{canonical}.other")]).unwrap();
+        for conflict in [true,false] {
+            let payload=serde_json::from_value(json!({"dbPath":"test","updatedAt":"after","rows":[
+                {"itemId":"new","aliases":["new"],"fontPath":canonical,"tagNames":["New"],"expectedTagNames":if conflict {vec!["Changed"]} else {vec!["Old"]}}
+            ]})).unwrap();
+            let mut trace=crate::operation_trace::OperationTrace::from_input("{}");
+            assert_eq!(set_on_connection(&mut conn,&payload,&mut trace,Instant::now()).is_err(),conflict);
+            assert_eq!(conn.query_row("SELECT COUNT(*) FROM local_font_tags WHERE font_path=?",[extended],|r|r.get::<_,i64>(0)).unwrap(),if conflict {1} else {0});
+        }
+        let payload=serde_json::from_value(json!({"dbPath":"test","updatedAt":"removed","rows":[
+            {"itemId":"new","aliases":["new"],"fontPath":extended,"tagNames":[],"expectedTagNames":["New"]}
+        ]})).unwrap();
+        let mut trace=crate::operation_trace::OperationTrace::from_input("{}");
+        set_on_connection(&mut conn,&payload,&mut trace,Instant::now()).unwrap();
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM local_font_tags",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+        assert_eq!(conn.query_row("SELECT tag_name FROM local_font_tags",[],|r|r.get::<_,String>(0)).unwrap(),"Unrelated");
+    }
+}

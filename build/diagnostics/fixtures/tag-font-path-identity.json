@@ -1,0 +1,27 @@
+[
+  {
+    "path": "\\\\Server\\Share\\Fonts\\A.ttf",
+    "stored": "\\server\\share\\fonts\\a.ttf",
+    "canonical": "\\\\server\\share\\fonts\\a.ttf"
+  },
+  {
+    "path": "\\\\?\\UNC\\Server\\Share\\Fonts\\A.ttf",
+    "stored": "\\?\\unc\\server\\share\\fonts\\a.ttf",
+    "canonical": "\\\\server\\share\\fonts\\a.ttf"
+  },
+  {
+    "path": "\\\\?\\C:\\Fonts\\A.ttf",
+    "stored": "\\?\\c:\\fonts\\a.ttf",
+    "canonical": "c:\\fonts\\a.ttf"
+  },
+  {
+    "path": "C:/Fonts//A.ttf",
+    "stored": "c:\\fonts\\a.ttf",
+    "canonical": "c:\\fonts\\a.ttf"
+  },
+  {
+    "path": "\\\\Server\\Share\\Fonts\\\\A.ttf",
+    "stored": "\\server\\share\\fonts\\a.ttf",
+    "canonical": "\\\\server\\share\\fonts\\a.ttf"
+  }
+]

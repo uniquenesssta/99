@@ -44,6 +44,7 @@ export function isCleanWindowsDefaultFont(font: FontItem): boolean {
 }
 
 export function installLabel(font: FontItem): string {
+  if (font.tagBindingReadOnlyReason === 'path-unresolved') return '历史路径待确认'
   if (font.tagBindingReadOnly) return '共享标签暂不可读取'
   if (font.fileRelinkRequired) return '文件已变化，需重新链接'
   if (font.fileAvailability === 'missing') return '文件丢失'
