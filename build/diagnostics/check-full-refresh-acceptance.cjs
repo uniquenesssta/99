@@ -346,4 +346,97 @@ async function observationRegressions() {
  }
  console.log('[diagnostics:full-refresh-acceptance] observer identity, deadline/physical completion, admission, bounds, errors and restoration counterexamples passed')
 }
-observationRegressions().catch(error=>{console.error(error);process.exitCode=1})
+observationRegressions().then(localTagHydrationRegressions).catch(error=>{console.error(error);process.exitCode=1})
+
+// These mechanics fixtures exercise the actual source hydration owner with a
+// controlled native port. Real A/B workers additionally prove alias parity in
+// the correctness lane after the unchanged full-refresh ABBA sequence.
+async function localTagHydrationRegressions() {
+ const fs=require('node:fs'),path=require('node:path'),ts=require('typescript')
+ const {DatabaseSync}=require('node:sqlite'),{AsyncLocalStorage}=require('node:async_hooks')
+ const {loader}=require('./check-operation-chain.cjs')
+ const hostFile=path.join(__dirname,'lib/production-projection-host.cjs')
+ const hostModule=require(hostFile),factory=hostModule.createProductionLocalTagHydration
+ const {assertLocalTagHydrationEvidence}=require('./check-full-refresh-work.cjs')
+ const saved=process.env.HFM_NODE_STATE_FALLBACK
+ process.env.HFM_NODE_STATE_FALLBACK='0'
+ const fixture=selectedFactory=>{
+  const db=new DatabaseSync(':memory:')
+  db.exec('CREATE TABLE local_font_tags(font_id TEXT,font_path TEXT,tag_name TEXT)')
+  db.prepare('INSERT INTO local_font_tags VALUES(?,?,?)').run('local-path:'+String.raw`c:\fixture\tag.ttf`,String.raw`c:\fixture\tag.ttf`,'FixtureTag')
+  const canonical={id:'file-v2:canonical',path:String.raw`C:\fixture\tag.ttf`,sourceId:'historical-tag-id'}
+  const legacy={...canonical,id:'legacy-display-id',sourceId:canonical.id},untagged={id:'file-v2:untagged',path:String.raw`C:\fixture\untagged.ttf`}
+  const state={calls:[],opens:0,read:undefined},items=[canonical,legacy,untagged],load=loader()
+  state.read=async input=>({workerMode:'rust-local-tags-read',tagMap:Object.fromEntries(input.rows.map(row=>[row.itemId,row.fontPath===String.raw`c:\fixture\tag.ttf`?['FixtureTag']:[]]))})
+  const owner=selectedFactory({load,openLibraryDb:async()=>{state.opens++;return db},librarySqlitePath:()=>String.raw`C:\fixture\library.sqlite`,
+   appendStartupLog:()=>{},getObservationContext:()=>({stage:'timed',lane:'foreground-metrics',actionId:'metrics:fixture'}),
+   runRustLocalTagsRead:input=>{state.calls.push(input);return state.read(input)}})
+  return {db,state,items,owner}
+ }
+ try {
+  const f=fixture(factory)
+  try {
+   const value=await f.owner.hydrateLocalTagsForFonts(f.items)
+   assert.deepEqual(value.map(item=>item.id),f.items.map(item=>item.id))
+   assert.deepEqual(value.map(item=>[...item.localTagNames]),[['FixtureTag'],['FixtureTag'],[]])
+   assert.equal(f.state.calls.length,1);assert.equal(f.state.opens,1,'Production read preparation boundary changed')
+   assert(f.state.calls[0].rows[1].aliases.includes('file-v2:canonical'),'Legacy display ID lost canonical alias')
+   assert.equal(f.state.calls[0].rows[0].fontPath,f.state.calls[0].rows[1].fontPath)
+   const evidence={provenance:f.owner.provenance,stats:f.owner.stats,receipts:f.owner.receipts}
+   assert.equal(assertLocalTagHydrationEvidence(evidence,f.items.slice(0,2).map(item=>item.id),3).fullPopulationReceipts,1)
+   for(const mutate of [row=>{row.nativeCalls=0},row=>{row.requestedUniqueIds=2},row=>{row.nativeRequestedCount=2},row=>{row.nativeUniqueIds=2},
+    row=>{row.returnedCount=2},row=>{row.returnedUniqueIds=2},row=>{row.taggedRows[0].tagNames=[]},row=>{row.taggedRows[0].id='wrong-id'},
+    row=>{row.context.stage='setup'},row=>{row.taggedRowsOverflow=1},row=>{row.untaggedCount=0},row=>{row.workerMode='node-fallback'}]) {
+    const changed=clone(evidence);mutate(changed.receipts[0])
+    assert.throws(()=>assertLocalTagHydrationEvidence(changed,f.items.slice(0,2).map(item=>item.id),3),'Invalid native hydration evidence accepted')
+   }
+   const before=f.state.calls.length,empty=[]
+   assert.equal(await f.owner.hydrateLocalTagsForFonts(empty),empty);assert.equal(f.state.calls.length,before)
+  } finally {f.db.close()}
+  for(const result of [null,undefined,{tagMap:{},workerMode:'node-fallback'}, {workerMode:'rust-local-tags-read',tagMap:{unrequested:['FixtureTag']}}]) {
+   const f=fixture(factory)
+   try {f.state.read=async()=>result;await assert.rejects(f.owner.hydrateLocalTagsForFonts(f.items),/actual native local-tag receipt missing|unrequested identity/);assert.equal(f.owner.stats.failed,1)}finally{f.db.close()}
+  }
+  for(const failure of [Object.freeze(Error('native tag failure')),null,0]) {
+   const f=fixture(factory)
+   try {f.state.read=async()=>{throw failure};await assert.rejects(f.owner.hydrateLocalTagsForFonts(f.items),error=>error===failure);assert.equal(f.owner.stats.failed,1)}finally{f.db.close()}
+  }
+  const root=path.resolve(__dirname,'../..'),wiring=hostModule.assertProductionLocalTagHydrationWiring
+  assert.equal(wiring(root,require).length,2,'Local-tag source wiring provenance missing')
+  for(const [relative,before,after]of [
+   ['src/main/bootstrap/mainDataStorageCompositionRuntime.ts','runRustLocalTagsRead: rustCoreWorkerRuntime.runRustLocalTagsRead','runRustLocalTagsRead: undefined'],
+   ['src/main/library/libraryRuntime.ts','runRustLocalTagsRead: options.runRustLocalTagsRead','runRustLocalTagsRead: undefined'],
+   ['src/main/library/libraryRuntime.ts','prepareIdentity: options.prepareLocalFontIdentity ? async () => { await openLibraryDb(); } : undefined','prepareIdentity: undefined'],
+   ['src/main/bootstrap/mainDataStorageCompositionRuntime.ts','return localProtection.hydrate(await localFavorites.hydrate(await hydrateLocalTagsForFontsBase(items)));','return localFavorites.hydrate(await localProtection.hydrate(await hydrateLocalTagsForFontsBase(items)));'],
+  ]) {
+   const original=fs.readFileSync(path.join(root,relative),'utf8')
+   assert.equal(original.split(before).length,2,'Source wiring mutation anchor must be unique')
+   assert.throws(()=>wiring(root,require,{[relative]:original.replace(before,after)}),'Non-production local-tag wiring was accepted')
+  }
+  process.env.HFM_NODE_STATE_FALLBACK='1'
+  assert.throws(()=>factory({load:loader(),openLibraryDb:async()=>{throw Error('Unexpected DB open')},librarySqlitePath:()=>'',appendStartupLog:()=>{}}),/requires Node fallback disabled/)
+  process.env.HFM_NODE_STATE_FALLBACK='0'
+  // Mutate the exact actual owner initializer back to the historical direct
+  // Node path. It can return correct tags but still lacks the required receipt.
+  const source=fs.readFileSync(hostFile,'utf8').replace(/\r\n/g,'\n'),tree=ts.createSourceFile(hostFile,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS)
+  assert.equal(tree.parseDiagnostics.length,0)
+  const helpers=tree.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='createProductionLocalTagHydration')
+  assert.equal(helpers.length,1)
+  const helper=helpers[0],owners=helper.body.statements.filter(ts.isVariableStatement).flatMap(node=>[...node.declarationList.declarations]).filter(node=>node.name.getText(tree)==='owner')
+  assert.equal(owners.length,1)
+  const initializer=owners[0].initializer
+  assert(initializer.getText(tree).includes("load('src/main/library/runtime/localFontTagsRuntime.ts').createLocalFontTagsRuntime"),'Direct-Node mutation owner changed')
+  const text=helper.getText(tree),at=initializer.getStart(tree)-helper.getStart(tree),end=initializer.end-helper.getStart(tree)
+  const mutant=text.slice(0,at)+"load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts').createLocalFontTagNodePersistenceRuntime(openLibraryDb)"+text.slice(end)
+  const mutated=new Function('assert','AsyncLocalStorage','performance',mutant+';return createProductionLocalTagHydration')(assert,AsyncLocalStorage,require('node:perf_hooks').performance)
+  const mutantFixture=fixture(mutated)
+  try {
+   const historicalNode=loader()('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts').createLocalFontTagNodePersistenceRuntime(async()=>mutantFixture.db)
+   const nodeResult=await historicalNode.hydrateLocalTagsForFonts(mutantFixture.items)
+   assert.deepEqual(nodeResult.map(item=>[...item.localTagNames]),[['FixtureTag'],['FixtureTag'],[]],'Direct-Node counterfactual fixture failed before receipt proof')
+   await assert.rejects(mutantFixture.owner.hydrateLocalTagsForFonts(mutantFixture.items),/Hydration bypassed the real Rust local-tag owner/)
+   assert.equal(mutantFixture.state.calls.length,0)
+  }finally{mutantFixture.db.close()}
+ }finally{if(saved===undefined)delete process.env.HFM_NODE_STATE_FALLBACK;else process.env.HFM_NODE_STATE_FALLBACK=saved}
+ console.log('[diagnostics:full-refresh-acceptance] actual Rust-first hydration owner, native population/tags, failure refusal and direct-Node mutant passed')
+}

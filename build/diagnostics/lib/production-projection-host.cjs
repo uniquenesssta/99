@@ -11,10 +11,142 @@ const crypto = require('node:crypto')
 const { createRequire } = require('node:module')
 const { pathToFileURL } = require('node:url')
 const { EventEmitter } = require('node:events')
+const { AsyncLocalStorage } = require('node:async_hooks')
 const plain = value => JSON.parse(JSON.stringify(value))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex')
 const forbidden = name => (..._args) => { throw new Error(`Forbidden diagnostic port: ${name}`) }
+
+// Match the selected production hydration owner, against an already prepared
+// fixture DB. This is not a replacement for the application's startup migration.
+function createProductionLocalTagHydration({ load, openLibraryDb, librarySqlitePath, runRustLocalTagsRead, appendStartupLog, getObservationContext }) {
+  const scope = new AsyncLocalStorage(), receipts = []
+  const stats = { started: 0, completed: 0, failed: 0, receiptOverflow: 0 }
+  const fallback = load('src/main/rust-core/nodeStateFallbackCompatibilityRuntime.ts')
+  assert.equal(fallback.nodeStateFallbackCompatibilityAllowed(), false, 'Tag hydration benchmark requires Node fallback disabled')
+  const owner = load('src/main/library/runtime/localFontTagsRuntime.ts').createLocalFontTagsRuntime({
+    openLibraryDb, librarySqlitePath, appendStartupLog,
+    prepareIdentity: async () => { await openLibraryDb() },
+    runRustLocalTagsRead: async input => {
+      const current = scope.getStore()
+      assert(current, 'Local tag read escaped its hydration owner')
+      current.receipt.nativeCalls++
+      try {
+        assert.equal(current.receipt.nativeCalls, 1, 'Hydration replayed its native tag read')
+        assert.equal(input.dbPath, librarySqlitePath(), 'Hydration read a different library DB')
+        assert.equal(input.rows.length, current.ids.length, 'Native tag request population changed')
+        for (let index = 0; index < current.ids.length; index++) assert.equal(input.rows[index].itemId, current.ids[index], 'Native tag request identity/order changed')
+        current.receipt.nativeRequestedCount = input.rows.length
+        current.receipt.nativeUniqueIds = new Set(input.rows.map(row => row.itemId)).size
+        current.receipt.nativeStartedAt = performance.now()
+        const result = await runRustLocalTagsRead(input)
+        current.receipt.nativeFinishedAt = performance.now()
+        assert.equal(result?.workerMode, 'rust-local-tags-read', 'Mandatory actual native local-tag receipt missing')
+        assert(result.tagMap && typeof result.tagMap === 'object' && !Array.isArray(result.tagMap), 'Native tag map missing')
+        const ids = new Set(current.ids), entries = Object.entries(result.tagMap)
+        for (const [id, tags] of entries) {
+          assert(ids.has(id), 'Native tag receipt contains an unrequested identity')
+          assert(Array.isArray(tags) && tags.every(tag => typeof tag === 'string'), 'Native tag receipt has invalid tag values')
+        }
+        current.result = result
+        Object.assign(current.receipt, { workerMode: result.workerMode, returnedTagKeys: entries.length,
+          nativeElapsedMs: result.timings?.elapsed, nativePopulationValidated: true })
+        return result
+      } catch (error) { current.failed = true; current.error = error; throw error }
+    },
+  })
+  async function hydrateLocalTagsForFonts(items) {
+    assert.equal(fallback.nodeStateFallbackCompatibilityAllowed(), false, 'Tag hydration benchmark enabled Node fallback')
+    const ids = items.map(item => item.id)
+    assert(ids.every(id => typeof id === 'string' && id.trim() === id && id.length > 0), 'Hydration fixture contains an invalid font identity')
+    const receipt = { id: ++stats.started, startedAt: performance.now(), context: getObservationContext?.(),
+      requestedCount: ids.length, requestedUniqueIds: new Set(ids).size, nativeCalls: 0,
+      nativeRequestedCount: 0, nativeUniqueIds: 0, taggedRows: [], taggedRowsOverflow: 0, untaggedCount: 0 }
+    if (receipts.length < 256) receipts.push(receipt)
+    else stats.receiptOverflow++
+    const current = { ids, receipt }
+    return scope.run(current, async () => {
+      try {
+        const result = await owner.hydrateLocalTagsForFonts(items)
+        // The production adapter intentionally catches read failures. A benchmark
+        // must still reject that path rather than treat unchanged items as proof.
+        if (current.failed) throw current.error
+        assert.equal(receipt.nativeCalls, items.length ? 1 : 0, 'Hydration bypassed the real Rust local-tag owner')
+        assert.equal(result.length, ids.length, 'Hydration returned a different font population')
+        for (let index = 0; index < ids.length; index++) {
+          assert.equal(result[index].id, ids[index], 'Hydration changed font identity/order')
+          const tags = current.result.tagMap[ids[index]] || [], actual = result[index].localTagNames
+          assert(Array.isArray(actual) && actual.length === tags.length && actual.every((tag, at) => tag === tags[at]), 'Hydration did not return the actual native tag result')
+          if (!actual.length) receipt.untaggedCount++
+          else if (receipt.taggedRows.length < 256) receipt.taggedRows.push({ id: ids[index], tagNames: [...actual] })
+          else receipt.taggedRowsOverflow++
+        }
+        Object.assign(receipt, { returnedCount: result.length, returnedUniqueIds: new Set(result.map(item => item.id)).size,
+          populationValidated: true, ok: true })
+        stats.completed++
+        return result
+      } catch (error) {
+        receipt.ok = false; receipt.error = { name: error?.name, message: String(error?.message || error).slice(0,512) }; stats.failed++
+        throw error
+      } finally { receipt.finishedAt = performance.now() }
+    })
+  }
+  return { hydrateLocalTagsForFonts, receipts, stats, provenance: {
+    owner: 'src/main/library/runtime/localFontTagsRuntime.ts', nativeOwner: 'src/main/rust-core/clients/rustMetadataClientRuntime.ts',
+    mode: 'selected-source-rust-first-local-tag-hydration', preparation: 'existing openLibraryDb boundary over fixture-prepared identity/schema; full startup migration is not measured',
+    proof: 'one actual native receipt per nonempty hydration, full ordered requested/native/returned ID equality and exact native tags; sparse absent tag keys mean no tags',
+  } }
+}
+
+function assertProductionLocalTagHydrationWiring(sourceRoot, requireProject, sourceOverrides = {}) {
+  const ts = requireProject('typescript'), records = []
+  const compact = (node, tree) => node.getText(tree).replace(/\s+/g, '')
+  function find(tree, predicate) {
+    const matches = []
+    const visit = node => { if (predicate(node)) matches.push(node); ts.forEachChild(node, visit) }
+    visit(tree); return matches
+  }
+  function source(relative) {
+    const source = sourceOverrides[relative] ?? fs.readFileSync(path.join(sourceRoot, relative), 'utf8')
+    const tree = ts.createSourceFile(relative, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    assert.equal(tree.parseDiagnostics.length, 0, `Cannot parse local-tag wiring: ${relative}`)
+    records.push({ path: relative, sha256: sha256(source) }); return tree
+  }
+  function call(tree, name) {
+    const matches = find(tree, node => ts.isCallExpression(node) && compact(node.expression, tree) === name)
+    assert.equal(matches.length, 1, `Expected one selected-source ${name} owner`)
+    assert(ts.isObjectLiteralExpression(matches[0].arguments[0]), `${name} ports are not explicit`)
+    return matches[0].arguments[0]
+  }
+  function port(tree, object, name) {
+    const matches = object.properties.filter(node => node.name && compact(node.name, tree) === name)
+    assert.equal(matches.length, 1, `Missing/duplicate local-tag port: ${name}`)
+    return compact(ts.isShorthandPropertyAssignment(matches[0]) ? matches[0].name : matches[0].initializer, tree)
+  }
+  const storage = source('src/main/bootstrap/mainDataStorageCompositionRuntime.ts')
+  const libraryPort = call(storage, 'createLibraryRuntime')
+  assert.equal(port(storage, libraryPort, 'runRustLocalTagsRead'), 'rustCoreWorkerRuntime.runRustLocalTagsRead')
+  assert.equal(port(storage, libraryPort, 'prepareLocalFontIdentity'), 'prepareFontIdentities')
+  const bindings = find(storage, node => ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name)
+    && node.initializer && compact(node.initializer, storage) === 'libraryRuntime')
+  assert(bindings.some(node => node.name.elements.some(element => element.propertyName?.getText(storage) === 'hydrateLocalTagsForFonts'
+    && element.name.getText(storage) === 'hydrateLocalTagsForFontsBase')), 'Storage lost the production tag hydration export')
+  const hydration = find(storage, node => ts.isFunctionDeclaration(node) && node.name?.text === 'hydrateLocalTagsForFonts')
+  assert.equal(hydration.length, 1)
+  assert.equal(compact(hydration[0].body, storage), '{returnlocalProtection.hydrate(awaitlocalFavorites.hydrate(awaithydrateLocalTagsForFontsBase(items)));}',
+    'Storage hydration no longer follows tag/favorite/protection production order')
+  const library = source('src/main/library/libraryRuntime.ts')
+  const owner = call(library, 'createLocalFontTagsRuntime')
+  for (const [name, expected] of [['openLibraryDb','openLibraryDb'], ['librarySqlitePath','options.librarySqlitePath'], ['runRustLocalTagsRead','options.runRustLocalTagsRead'],
+    ['prepareIdentity','options.prepareLocalFontIdentity?async()=>{awaitopenLibraryDb();}:undefined']]) assert.equal(port(library, owner, name), expected, `Production local-tag ${name} changed`)
+  const exports = find(library, node => ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name)
+    && node.initializer && compact(node.initializer, library) === 'localFontTagsRuntime')
+  assert(exports.some(node => node.name.elements.some(element => compact(element, library) === 'hydrateLocalTagsForFonts')), 'Library did not expose the selected local-tag owner')
+  assert(find(library, node => ts.isReturnStatement(node) && node.expression && ts.isObjectLiteralExpression(node.expression)
+    && node.expression.properties.some(property => ts.isShorthandPropertyAssignment(property) && property.name.text === 'hydrateLocalTagsForFonts')).length === 1,
+    'Library public hydration no longer forwards the selected local-tag owner')
+  return records
+}
 
 // The immutable baseline predates the extracted production reader. Read its
 // exact callback from that checkout, preserving its original all-or-nothing
@@ -365,7 +497,9 @@ async function createHost(options) {
     const installPath = await status.fallbackInstallStatusDbPath()
     statusDb.close()
 
-    const localTags = load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts').createLocalFontTagNodePersistenceRuntime(openLibraryDb)
+    const localTags = createProductionLocalTagHydration({ load, openLibraryDb, librarySqlitePath: () => libraryPath,
+      runRustLocalTagsRead: metadata.runRustLocalTagsRead, appendStartupLog, getObservationContext: observationContext })
+    localTags.provenance.selectedSourceWiring = assertProductionLocalTagHydrationWiring(sourceRoot, requireProject)
     const favorites = load('src/main/library/runtime/localFontFavoritesRuntime.ts').createLocalFontFavoritesRuntime({
       openLibraryDb, loadLegacyLocalSnapshot: forbidden('unrequested historical import'), invalidate: () => query?.clearFontQueryCaches(), appendLog: appendStartupLog,
     })
@@ -664,6 +798,7 @@ async function createHost(options) {
       query, native, indexing, metadata, previewClient, transport, config, fontIdentity,
       libraryDb, openDb, closeSqliteDb, readBoundary, readerProvenance,
       loadSharedFontsForFolders, rootStorage, observer, logs, appendLog: appendStartupLog, appendStartupLog,
+      localTagHydration: localTags,
       receipts: nativeReceipts, nativeReceipts, queue, projectionEvents, rendererState,
       get observationContextErrors() { return observationContextErrors },
       get observationSetupErrors() { return observationSetupErrors },
@@ -712,4 +847,4 @@ async function createHost(options) {
   }
 }
 
-module.exports = { createHost, exactLegacyReadBoundary, assertProductionWriterWiring }
+module.exports = { createHost, exactLegacyReadBoundary, assertProductionWriterWiring, createProductionLocalTagHydration, assertProductionLocalTagHydrationWiring }

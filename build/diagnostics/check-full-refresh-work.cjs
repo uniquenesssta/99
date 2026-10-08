@@ -358,6 +358,30 @@ async function readProjection(host, expected, label, independentSql) {
   })
 }
 
+function localTagHydrationReport(host) {
+  const owner = host.localTagHydration
+  assert(owner, 'Actual selected-source local-tag hydration owner missing')
+  return { provenance: plain(owner.provenance), stats: plain(owner.stats), receipts: plain(owner.receipts) }
+}
+function assertLocalTagHydrationEvidence(evidence, expectedIds, population) {
+  assert.equal(evidence.provenance.mode, 'selected-source-rust-first-local-tag-hydration')
+  assert.equal(evidence.stats.failed, 0, 'Native local-tag hydration failed')
+  assert.equal(evidence.stats.receiptOverflow, 0, 'Native local-tag receipt population overflowed')
+  const full = evidence.receipts.filter(row => row.context?.stage === 'timed' && row.context?.lane === 'foreground-metrics' && row.requestedCount === population)
+  assert(full.length > 0, 'Timed metrics bypassed full-population native local-tag hydration')
+  for (const row of full) {
+    assert.equal(row.workerMode, 'rust-local-tags-read')
+    assert.equal(row.nativeCalls, 1);assert.equal(row.ok, true)
+    for (const key of ['requestedUniqueIds','nativeRequestedCount','nativeUniqueIds','returnedCount','returnedUniqueIds']) assert.equal(row[key], population, `Local-tag hydration population mismatch: ${key}`)
+    assert.equal(row.nativePopulationValidated, true);assert.equal(row.populationValidated, true)
+    assert.equal(row.taggedRowsOverflow, 0)
+    assert.deepEqual(row.taggedRows.map(item => item.id).sort(), [...expectedIds].sort(), 'Native hydrated tagged identities differ from seeded fixture')
+    for (const item of row.taggedRows) assert.deepEqual(item.tagNames, ['FixtureTag'], 'Hydrated item lost exact native tag names')
+    assert.equal(row.untaggedCount, population - expectedIds.length)
+  }
+  return { fullPopulationReceipts: full.length, taggedItems: expectedIds.length, population }
+}
+
 async function interleave(host, meter, fixture, caseDirectory) {
   const results = [], previews = [], queries = [], enumeration = [], metrics = []
   assert(host.foreground, 'Real foreground IPC/preview composition is required')
@@ -372,6 +396,11 @@ async function interleave(host, meter, fixture, caseDirectory) {
       try {
         const value = await host.foreground.invoke('fonts:queryPage', [pageRequest(kinds[index % kinds.length], index), action.actionId], undefined, action.actionId)
         if (kinds[index % kinds.length] !== 'tags') assert.equal(value.workerMode, 'rust-merged-index-page')
+        else {
+          assert.equal(value.total, 26, 'Tagged page lost its seeded population')
+          assert.deepEqual(value.items.map(item => item.id).sort(), fixture.sourceItems.slice(0,26).map(item => item.id).sort(), 'Tagged page changed identities')
+          for (const item of value.items) assert.deepEqual([...item.localTagNames], ['FixtureTag'], 'Tagged page did not hydrate its actual local tag')
+        }
         results.push({ index, actionId: action.actionId, channel: 'fonts:queryPage', kind: kinds[index % kinds.length], total: value.total, workerMode: value.workerMode, startedAt:start,finishedAt:performance.now(),elapsedMs:performance.now()-start })
       } finally { meter.counters.foregroundEndToEndMs.push(performance.now()-start) }
     }))
@@ -403,6 +432,7 @@ async function interleave(host, meter, fixture, caseDirectory) {
       const finishedAt = performance.now()
       assert.equal(value.workerMode, 'rust-merged-index-metrics')
       assert.equal(value.total, WORKLOAD.validIndexed)
+      assert.equal(value.localTagCounts?.FixtureTag, 26, 'Metrics lost actual local tag count')
       return { index, actionId: action.actionId, channel: 'fonts:getMetrics', total: value.total, workerMode: value.workerMode,
         startedAt, finishedAt, elapsedMs: finishedAt-startedAt }
     }))
@@ -590,6 +620,8 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     assert.equal(report.summary.installedCount, WORKLOAD.sourceFiles)
     assert.equal(report.summary.notInstalledCount, WORKLOAD.metadataOnly)
     assert.equal(report.summary.missingCount, 0)
+    report.localTagHydration = localTagHydrationReport(host)
+    report.localTagHydrationProof = assertLocalTagHydrationEvidence(report.localTagHydration, fixture.sourceItems.slice(0,26).map(item => item.id), WORKLOAD.validIndexed)
     report.finalProjection = await readProjection(host, { installedCount: WORKLOAD.sourceFiles,
       notInstalledCount: WORKLOAD.metadataOnly, installStatusMissingCount: 0 }, 'complete-refresh')
     await meter.pool.whenIdle()
@@ -624,6 +656,7 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     report.timingIncludesSameAuditReadsInBothVersions = true
     if (resource) {
       try {
+        report.localTagHydration = localTagHydrationReport(resource.host)
         report.work ||= resource.meter.snapshot()
         report.diagnosticObservation = observationSnapshot(resource)
         resource.meter.restore()
@@ -660,6 +693,7 @@ async function runCorrectness(config, fixture, caseId, sourceRoot, test) {
   finally {
     if (resource) {
       try {
+        report.localTagHydration = localTagHydrationReport(resource.host)
         report.work = resource.meter.snapshot()
         report.diagnosticObservation = observationSnapshot(resource)
         resource.meter.restore()
@@ -673,6 +707,22 @@ async function runCorrectness(config, fixture, caseId, sourceRoot, test) {
     save(path.join(config.output, 'cases', caseId, 'report.json'), report)
   }
   return report
+}
+
+async function localTagReaderParity(resource, report, fixture) {
+  const canonical = fixture.sourceItems[0], legacy = { ...canonical, id: 'fixture-legacy-display-id', sourceId: canonical.id }
+  const untagged = fixture.sourceItems[32], owner = resource.host.localTagHydration
+  const before = owner.receipts.length
+  const hydrated = await owner.hydrateLocalTagsForFonts([canonical, legacy, untagged])
+  assert.deepEqual(hydrated.map(item => item.id), [canonical.id, legacy.id, untagged.id], 'Native tag hydration changed canonical/legacy IDs')
+  assert.deepEqual(hydrated.map(item => [...item.localTagNames]), [['FixtureTag'], ['FixtureTag'], []], 'Canonical/legacy path aliases disagree on actual tag authority')
+  assert.equal(owner.receipts.length, before + 1)
+  const receipt = owner.receipts.at(-1)
+  for (const key of ['requestedCount','requestedUniqueIds','nativeRequestedCount','nativeUniqueIds','returnedCount','returnedUniqueIds']) assert.equal(receipt[key], 3)
+  assert.equal(receipt.workerMode, 'rust-local-tags-read');assert.equal(receipt.nativeCalls, 1)
+  assert.equal(receipt.populationValidated, true);assert.equal(receipt.nativePopulationValidated, true)
+  report.localTagReaderParity = { requestedRows: 3, canonicalId: canonical.id, legacyId: legacy.id,
+    tags: hydrated.map(item => ({ id: item.id, tagNames: [...item.localTagNames] })), receipt: plain(receipt) }
 }
 
 async function originalInvalidFailure(resource, report, fixture) {
@@ -1100,6 +1150,13 @@ async function main() {
       report.performance.push(await runPerformance(config, fixture, caseId, root, changed))
       save(path.join(output, 'report.partial.json'), report)
     }
+    // Real native alias parity is a correctness-only supplement after ABBA;
+    // it never prewarms or changes the timed population/order.
+    for (const [caseId, selectedRoot] of [['baseline-local-tags-reader-parity', baselineRoot], ['current-local-tags-reader-parity', currentRoot]]) {
+      report.correctness.push(await runCorrectness(config, fixture, caseId, selectedRoot,
+        (resource, result) => localTagReaderParity(resource, result, fixture)))
+      save(path.join(output, 'report.partial.json'), report)
+    }
     for (const [caseId, test] of [['current-invalid-complete', invalidComplete], ['current-cas-paused-batch', newerStateDuringBatch],
       ['current-root-offline-mixed', offlineMixed], ['current-child-change-parent-unchanged', unchangedParentChangedChild], ['current-query-consumer-retired', retiredQueryOwnership]]) {
       report.correctness.push(await runCorrectness(config, fixture, caseId, currentRoot,
@@ -1128,4 +1185,4 @@ async function main() {
 
 if (require.main === module) {let completed=false;process.once('beforeExit',()=>{if(!completed){console.error('Full refresh work diagnostic did not complete');process.exitCode=1}});main().then(()=>{completed=true}).catch(error=>{console.error(error);process.exitCode=1})}
 module.exports = { main, WORKLOAD, BASELINE, makeFiles, makeItems, instrument, createRunner, interleave,
-  readProjection, runPerformance, runCorrectness, compareRuns, semanticQueueCohorts }
+  readProjection, runPerformance, runCorrectness, compareRuns, semanticQueueCohorts, assertLocalTagHydrationEvidence }
