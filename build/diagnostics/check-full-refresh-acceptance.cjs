@@ -353,10 +353,20 @@ observationRegressions().then(localTagHydrationRegressions).then(taggedPageRealm
  .then(queryRetirementAcceptanceRegressions)
  .catch(error=>{console.error(error);process.exitCode=1})
 
-function queryRetirementAcceptanceRegressions(input) {
+function queryRetirementAcceptanceRegressions(sample) {
  const {validateQueryRetirements}=require('./lib/full-refresh-query-retirement.cjs')
  const {assertLocalTagHydrationEvidence}=require('./check-full-refresh-work.cjs')
+ for(const [phase,input]of [['late',sample],['early',sample.earlySample]]) {
+ assert(input, `Missing actual ${phase} query retirement fixture`)
+ const expectedFailures=phase==='late'?1:0
  const certificate=validateQueryRetirements(input)
+ assert.equal(certificate.certificates.length,1)
+ assert.equal(certificate.certificates[0].kind,phase==='late'?'retired-before-native-admission':'retired-before-tag-hydration')
+ if(phase==='early') {
+  assert.deepEqual(certificate.retiredHydrationIds,[],'Early retirement fabricated a failed hydration')
+  assert(!Object.hasOwn(certificate.certificates[0],'hydrationId'),'Early retirement fabricated an old hydration identity')
+  assert(!Object.hasOwn(certificate.certificates[0],'inputSha256'),'Early retirement fabricated an old native input')
+ }
  const runs=fullIpcSamples(),candidate=runs[1]
  candidate.queryRetirementObservation=clone(input.observation)
  candidate.localTagHydration={provenance:{mode:'selected-source-rust-first-local-tag-hydration'},
@@ -364,13 +374,13 @@ function queryRetirementAcceptanceRegressions(input) {
  candidate.work.processRequests.push(...clone(input.processRequests));candidate.work.tasks+=input.processRequests.length
  candidate.work.foregroundQueue=stats(candidate.work.processRequests.filter(row=>row.lane.startsWith('foreground')).map(row=>row.queuedMs))
  assert.equal(compareRuns(clone(runs)).passed,true,'Exact query retirement was rejected by the physical cohort gate')
- assert.equal(candidate.localTagHydration.stats.failed,1,'Retirement erased the failed native attempt')
+ assert.equal(candidate.localTagHydration.stats.failed,expectedFailures,'Retirement changed the actual native failure count')
  const retained=candidate.work.processRequests.filter(row=>certificate.retiredRequestOrdinals.includes(row.requestOrdinal))
  assert.equal(retained.length,1);assert.equal(retained[0].queuedMs,2);assert.equal(retained[0].executionMs,3)
  for(const mutate of [
   row=>{delete row.queryRetirementObservation},
-  row=>{row.queryRetirementObservation.transports[0].error={name:'AbortError',reason:'timeout'}},
-  row=>{row.queryRetirementObservation.hydrations[1].inputSha256='0'.repeat(64)},
+  row=>{const transport=row.queryRetirementObservation.transports.at(-1);transport.outcome='rejected';transport.error={name:'AbortError',reason:'timeout'}},
+  row=>{row.queryRetirementObservation.hydrations.at(-1).inputSha256='0'.repeat(64)},
   row=>{row.work.processRequests.at(-1).querySignalId=999},
   row=>{row.work.processRequests.at(-1).error.reason='stale-generation'},
   row=>{row.work.processRequests.at(-1).closedAt=Infinity},
@@ -396,16 +406,18 @@ function queryRetirementAcceptanceRegressions(input) {
  const full={...clone(replacement),id:999,context:{stage:'timed',lane:'foreground-metrics'}}
  hydration.receipts.push(full)
  const expected=full.taggedRows.map(row=>row.id)
- assert.equal(assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount,certificate.retiredHydrationIds).failedAttempts,1)
- assert.throws(()=>assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount),/without an exact query retirement certificate/)
+ assert.equal(assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount,certificate.retiredHydrationIds).failedAttempts,expectedFailures)
+ if(phase==='late')assert.throws(()=>assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount),/without an exact query retirement certificate/)
+ else assert.equal(assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount).failedAttempts,0,'Early retirement fabricated a failed native receipt')
  for(const mutate of [
-  row=>{row.stats.failed=0},row=>{row.receipts.find(item=>item.id===999).workerMode='node-fallback'},
+  row=>{row.stats.failed=expectedFailures+1},row=>{row.receipts.find(item=>item.id===999).workerMode='node-fallback'},
   row=>{row.receipts.find(item=>item.id===999).nativePopulationValidated=false},
  ]) {
   const altered=clone(hydration);mutate(altered)
   assert.throws(()=>assertLocalTagHydrationEvidence(altered,expected,full.requestedCount,certificate.retiredHydrationIds),'Retirement waived native count or population proof')
  }
- console.log('[diagnostics:full-refresh-acceptance] query retirement is recomputed, failed attempts/costs retained, unrelated physical failures and incomplete native populations rejected')
+ }
+ console.log('[diagnostics:full-refresh-acceptance] early and late query retirement are recomputed, actual native failures/costs retained, unrelated physical failures and incomplete native populations rejected')
 }
 
 // These mechanics fixtures exercise the actual source hydration owner with a

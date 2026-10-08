@@ -236,6 +236,60 @@ function validateQueryRetirements({observation,hydrationReceipts,processRequests
       replacementSignalId:replacement.signalId,ipcId:ipc.id,actionId:failed.actionId,intentSha256:failed.intentSha256,inputSha256:failed.inputSha256,
       requestOrdinals:children.map(row=>row.requestOrdinal),queuedMs:children.reduce((n,row)=>n+row.queuedMs,0),executionMs:children.reduce((n,row)=>n+row.executionMs,0)})
   }
+  // An earlier binding batch can retire before it reaches local-tag hydration.
+  // Upstream page/native work may already exist. There is no old local-tag
+  // input to hash, and this branch must never invent a failed hydration receipt.
+  const earlySignals=new Set(processRequests.filter(row=>row.error&&row.lane==='foreground-browse'
+    &&!retiredRequestOrdinals.includes(row.requestOrdinal)).map(row=>row.querySignalId))
+  for(const signalId of earlySignals){
+    assert.equal(o.taskProof,'selected-source-query-tasks','Legacy source has no early query retirement proof')
+    const signal=signals.get(signalId),invalidation=invalidations.get(signal?.invalidationId),ipc=ipcs.get(signal?.ipcId)
+    assert(signal?.firstObservedLive===true&&Number.isSafeInteger(signal.ownerId),'Early retired read lacks a previously live owned signal')
+    assert(invalidation?.ok===true&&invalidation.cancelInFlight===true&&invalidation.ownerId===signal.ownerId
+      &&invalidation.generationBefore===signal.tagGeneration&&invalidation.generationAfter===signal.tagGeneration+1,'Early retired read lacks owned query invalidation')
+    assert(signal.firstObservedAt<=invalidation.startedAt&&invalidation.startedAt<=signal.abortedAt&&signal.abortedAt<=invalidation.finishedAt,'Invalid early query retirement order')
+    assert(signal.outcome==='rejected'&&signal.error?.reason==='query-superseded'&&Number.isFinite(signal.settledAt)&&signal.settledAt>=signal.abortedAt,'Early query task settlement missing')
+    assert(!o.hydrations.some(row=>row.signalId===signal.id)&&!o.transports.some(row=>row.signalId===signal.id)
+      &&!hydrationReceipts.some(row=>row.querySignalId===signal.id),'Early retirement already reached local-tag hydration or transport')
+    assert(ipc?.ok===true&&ipc.tagPage===true&&ipc.channel==='fonts:queryPage'&&ipc.actionId===signal.actionId
+      &&ipc.intentSha256===signal.intentSha256,'Early retired attempt lacks its successful tagged IPC')
+    const matches=o.hydrations.filter(row=>row.ok===true&&row.actionId===signal.actionId&&row.intentSha256===signal.intentSha256
+      &&row.ipcId===ipc.id&&row.signalId!==signal.id&&row.startedAt>=signal.settledAt&&row.finishedAt<=ipc.finishedAt)
+    assert.equal(matches.length,1,'Early retired read lacks one same-intent native hydration replacement')
+    const replacement=matches[0],next=signals.get(replacement.signalId),receipt=receipts.get(replacement.hydrationId)
+    assert(next?.firstObservedLive===true&&next.abortedAt===undefined&&next.ownerId===signal.ownerId&&next.tagGeneration===invalidation.generationAfter
+      &&next.actionId===signal.actionId&&next.intentSha256===signal.intentSha256&&next.ipcId===ipc.id
+      &&next.firstObservedAt>=invalidation.finishedAt&&next.firstObservedAt<=replacement.startedAt&&next.outcome==='returned','Early replacement is not the live next query generation')
+    assert(Number.isFinite(next.settledAt)&&next.settledAt>=replacement.finishedAt&&next.settledAt<=ipc.finishedAt,'Early replacement task did not settle before IPC')
+    assert(/^[a-f0-9]{64}$/.test(replacement.inputSha256||'')&&Number.isSafeInteger(replacement.inputCount)&&replacement.inputCount>0
+      &&replacement.requestedCount===replacement.inputCount,'Early replacement actual native input proof missing')
+    assert(receipt?.ok===true&&receipt.error===undefined&&receipt.querySignalId===next.id&&receipt.queryInputSha256===replacement.inputSha256
+      &&receipt.populationValidated===true&&receipt.nativePopulationValidated===true&&receipt.nativeCalls===1&&receipt.workerMode==='rust-local-tags-read','Early replacement native hydration proof missing')
+    for(const key of ['requestedCount','requestedUniqueIds','nativeRequestedCount','nativeUniqueIds','returnedCount','returnedUniqueIds'])
+      assert.equal(receipt[key],replacement.inputCount,'Early replacement native population changed')
+    const completed=o.transports.filter(row=>row.hydrationId===replacement.hydrationId)
+    assert.equal(completed.length,1,'Early replacement native attempt count changed')
+    const native=completed[0]
+    assert(native.command==='--local-tags-read'&&native.outcome==='returned'&&native.error===undefined&&native.signalAbortedAtStart===false&&native.signalId===next.id
+      &&native.inputSha256===replacement.inputSha256&&native.actionId===signal.actionId&&native.intentSha256===signal.intentSha256&&native.ipcId===ipc.id
+      &&native.startedAt>=replacement.startedAt&&native.finishedAt>=native.startedAt&&native.finishedAt<=replacement.finishedAt,'Early replacement native transport proof missing')
+    assert(replacement.populationValidated===true&&replacement.error===undefined&&replacement.workerMode==='rust-local-tags-read'
+      &&/^[a-f0-9]{64}$/.test(replacement.tagSha256||'')&&replacement.tagSha256===ipc.tagSha256
+      &&replacement.returnedCount===replacement.inputCount&&replacement.returnedCount===ipc.itemCount&&ipc.total===ipc.itemCount,'Early replacement exact tags did not reach the successful IPC')
+    const children=processRequests.filter(row=>row.error&&row.querySignalId===signal.id)
+    for(const row of children){
+      assert(row.lane==='foreground-browse'&&row.actionId===signal.actionId&&row.queryIntentSha256===signal.intentSha256,'Early retired child ownership changed')
+      assert(row.command==='--shared-file-io'&&row.operation==='readdir'&&row.label==='shared-file-io:readdir'
+        &&row.write===false&&row.verifiedReadOnly===true&&row.preflight===false&&row.error.reason==='cancelled','Unapproved early retired physical operation')
+      assert(Number.isFinite(row.queuedMs)&&row.queuedMs>=0&&Number.isFinite(row.executionMs)&&row.executionMs>=0,'Early retired child lost queue/execution cost')
+      assert(Number.isFinite(row.closedAt)&&row.startedAt>=signal.firstObservedAt&&row.startedAt<=signal.abortedAt&&signal.abortedAt<=row.closedAt&&row.closedAt<=signal.settledAt,'Early retired read was not physically closed before task settlement')
+      assert(Number.isSafeInteger(row.requestOrdinal)&&row.requestOrdinal>0&&!retiredRequestOrdinals.includes(row.requestOrdinal),'Early retired physical request identity changed')
+      retiredRequestOrdinals.push(row.requestOrdinal)
+    }
+    certificates.push({kind:'retired-before-tag-hydration',signalId:signal.id,invalidationId:invalidation.id,replacementHydrationId:replacement.hydrationId,
+      replacementSignalId:next.id,ipcId:ipc.id,actionId:signal.actionId,intentSha256:signal.intentSha256,replacementInputSha256:replacement.inputSha256,
+      requestOrdinals:children.map(row=>row.requestOrdinal),queuedMs:children.reduce((n,row)=>n+row.queuedMs,0),executionMs:children.reduce((n,row)=>n+row.executionMs,0)})
+  }
   return {retiredHydrationIds,retiredRequestOrdinals,certificates}
 }
 module.exports={createQueryRetirementObserver,validateQueryRetirements,inputDigest,tagDigest}

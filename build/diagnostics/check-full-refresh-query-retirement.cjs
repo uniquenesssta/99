@@ -9,16 +9,25 @@ const {AsyncResource}=require('node:async_hooks')
 const {createQueryRetirementObserver,validateQueryRetirements,inputDigest}=require('./lib/full-refresh-query-retirement.cjs')
 const clone=value=>JSON.parse(JSON.stringify(value))
 
-async function actualQueryRetirementFixture(observerOptions={}) {
+async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}={}) {
   assert.equal(process.platform,'win32','Query retirement fixture executes only on Windows')
   const {loader}=require('./check-operation-chain.cjs')
   const {createProductionLocalTagHydration,productionHostGlobals}=require('./lib/production-projection-host.cjs')
-  const root=path.resolve(__dirname,'../..'),file='C:\\fixture\\a.ttf',key='c:/fixture/a.ttf'
-  const item={id:'fixture-a',path:file,fileName:'a.ttf',family:'Fixture',fileSize:100,localTagNames:['FixtureTag']}
+  const root=path.resolve(__dirname,'../..'),key=file=>path.win32.normalize(file).replaceAll('\\','/').toLowerCase()
+  const items=Array.from({length:bindingCount},(_,index)=>{
+    const fileName=bindingCount===1?'a.ttf':`source-${index}.ttf`
+    return {id:bindingCount===1?'fixture-a':`fixture-${index}`,path:`C:\\fixture\\${fileName}`,fileName,family:'Fixture',fileSize:100,localTagNames:['FixtureTag']}
+  })
+  const early=bindingCount>8
   const at=relative=>path.join(root,'src/main/library',relative)
   const load=loader({
-    [at('tagRecoveryPathRuntime.ts')]:{createTagRecoveryPaths:async()=>({roots:['C:\\fixture'],compare:()=>key,inside:()=>true,contains:()=>true})},
-    [at('tagFontBindingRuntime.ts')]:{readTagFontBindings:async()=>({bindings:new Map([[key,{id:item.id,path:file,tags:['FixtureTag'],pathResolved:true}]]),legacyTags:new Map(),unavailableRoots:[]})},
+    // The real metadata client imports transport parsing/capability helpers;
+    // transport eagerly imports the Electron-dependent path/build modules.
+    // This fixture supplies their import binding only, never application startup.
+    electron:{app:{get isPackaged(){throw Error('Unexpected Electron app use in query retirement fixture')},
+      getAppPath(){throw Error('Unexpected Electron app use in query retirement fixture')}}},
+    [at('tagRecoveryPathRuntime.ts')]:{createTagRecoveryPaths:async()=>({roots:['C:\\fixture'],compare:key,inside:()=>true,contains:()=>true})},
+    [at('tagFontBindingRuntime.ts')]:{readTagFontBindings:async()=>({bindings:new Map(items.map(item=>[key(item.path),{id:item.id,path:item.path,tags:['FixtureTag'],pathResolved:true}])),legacyTags:new Map(),unavailableRoots:[]})},
     [at('tagFontSnapshotRuntime.ts')]:{openTagFontSnapshots:()=>({schedule(){},remember(){},read(){}})},
     [path.join(root,'src/main/fonts/fontRuntime.ts')]:{asFormat:()=> 'ttf',fontItemFromPath:()=>{throw Error('Unexpected parse')}},
   },productionHostGlobals())
@@ -31,7 +40,7 @@ async function actualQueryRetirementFixture(observerOptions={}) {
   let entered,reads=0
   const pendingRead=new Promise(resolve=>{entered=resolve})
   io.sharedFileSystem.readdir=function(){
-    if(++reads>1)return Promise.resolve([{name:'a.ttf',isFile:()=>true,isSymbolicLink:()=>false}])
+    if(++reads>1)return Promise.resolve(items.map(item=>({name:item.fileName,isFile:()=>true,isSymbolicLink:()=>false})))
     const signal=io.currentSharedIoSignal(),row={requestOrdinal:1,lane:'foreground-browse',actionId:'foreground-browse:3',
       command:'--shared-file-io',operation:'readdir',label:'shared-file-io:readdir',write:false,verifiedReadOnly:true,preflight:false,
       startedAt:performance.now(),queuedMs:2,executionMs:3}
@@ -50,7 +59,7 @@ async function actualQueryRetirementFixture(observerOptions={}) {
     args.forEach((value,index)=>assert.equal(value,nativeArguments[index],'Observed native argument identity changed'))
     nativePromise=io.currentSharedIoSignal()?.aborted
       ?Promise.reject(Object.assign(new Error('Scripted native cancellation'),{name:'AbortError'}))
-      :Promise.resolve({stdout:JSON.stringify({ok:true,tagMap:{[item.id]:['FixtureTag']},knownTags:['FixtureTag'],timings:{elapsed:1}}),stderr:''})
+      :Promise.resolve({stdout:JSON.stringify({ok:true,tagMap:Object.fromEntries(items.map(item=>[item.id,['FixtureTag']])),knownTags:['FixtureTag'],timings:{elapsed:1}}),stderr:''})
     return nativePromise
   })
   const metadata=load('src/main/rust-core/clients/rustMetadataClientRuntime.ts').createRustMetadataClientRuntime({
@@ -61,9 +70,10 @@ async function actualQueryRetirementFixture(observerOptions={}) {
   })
   const tags=createProductionLocalTagHydration({load,openLibraryDb:async()=>({}),librarySqlitePath:()=> 'C:\\fixture\\library.sqlite',
     runRustLocalTagsRead:metadata.runRustLocalTagsRead,appendStartupLog(){},queryRetirement:observer})
+  let liveQueries=0
   const owner=load('src/main/library/tagFontQueryRuntime.ts').createTagFontQueryRuntime({
     roots:async()=>['C:\\fixture'],openLibraryDb:async()=>({}),readShared:async()=>{throw Error('Unexpected shared read')},
-    queryLive:async()=>({items:[item],total:1,workerMode:'rust-merged-index-page'}),hydrate:tags.hydrateLocalTagsForFonts,
+    queryLive:async()=>{liveQueries++;return {items,total:items.length,workerMode:'rust-merged-index-page'}},hydrate:tags.hydrateLocalTagsForFonts,
     matches:()=>true,compare:()=>0,
   })
   const request={sidebarPage:'tags',selectedTagName:'FixtureTag'}
@@ -72,10 +82,12 @@ async function actualQueryRetirementFixture(observerOptions={}) {
     await pendingRead
     owner.invalidate()
     const page=await result
-    assert.equal(page.items.length,1);assert.deepEqual(Array.from(page.items[0].localTagNames),['FixtureTag'])
-    assert.equal(tags.stats.failed,1,'The cancelled native read was erased')
+    assert.equal(page.items.length,bindingCount)
+    for(const item of page.items)assert.deepEqual(Array.from(item.localTagNames),['FixtureTag'])
+    assert.equal(tags.stats.failed,early?0:1,'Cancelled hydration population changed')
     assert.equal(tags.stats.completed,1)
-    assert.equal(nativeCalls,2,'Observed native transport was not delegated exactly once per attempt')
+    assert.equal(liveQueries,2,'Retirement fixture did not retain upstream page work in both attempts')
+    assert.equal(nativeCalls,early?1:2,'Observed native transport was not delegated exactly once per attempt')
     observer.restore()
     assert.equal(taskModule.createFontQueryTask,originalTask);assert.equal(tagModule.createTagFontQueryRuntime,originalFactory)
     const countBefore=observer.snapshot().hydrations.length,lateValue=Promise.resolve('late')
@@ -84,7 +96,14 @@ async function actualQueryRetirementFixture(observerOptions={}) {
     assert.equal(observer.snapshot().hydrations.length,countBefore,'Stopped observer added partial hydration evidence')
     const sample={observation:observer.snapshot(),hydrationReceipts:clone(tags.receipts),processRequests:clone(processRequests)}
     const proof=validateQueryRetirements(sample)
-    assert.deepEqual(proof.retiredHydrationIds,[1]);assert.deepEqual(proof.retiredRequestOrdinals,[1])
+    assert.deepEqual(proof.retiredHydrationIds,early?[]:[1]);assert.deepEqual(proof.retiredRequestOrdinals,[1])
+    assert.equal(proof.certificates[0].kind,early?'retired-before-tag-hydration':'retired-before-native-admission')
+    if(early){
+      const oldSignal=sample.observation.signals[0].id
+      assert.equal(sample.observation.hydrations.filter(row=>row.signalId===oldSignal).length,0)
+      assert.equal(sample.observation.transports.filter(row=>row.signalId===oldSignal).length,0)
+      assert.equal(Object.hasOwn(proof.certificates[0],'inputSha256'),false,'Early retirement fabricated an old native input digest')
+    }
     assert.equal(proof.certificates[0].queuedMs,2);assert.equal(proof.certificates[0].executionMs,3)
     return sample
   } finally {io.sharedFileSystem.readdir=originalRead;observer.restore();lateContext?.emitDestroy()}
@@ -129,6 +148,62 @@ async function runQueryRetirementRegressions() {
   const prior=process.env.HFM_NODE_STATE_FALLBACK;process.env.HFM_NODE_STATE_FALLBACK='0'
   try {
     const sample=await actualQueryRetirementFixture()
+    const earlySample=await actualQueryRetirementFixture({}, {bindingCount:26})
+    for(const mutate of [
+      s=>{s.observation.signals[0].firstObservedLive=false},
+      s=>{s.observation.signals[0].invalidationId=999},
+      s=>{s.observation.invalidations[0].ownerId=999},
+      s=>{s.observation.invalidations[0].cancelInFlight=false},
+      s=>{s.observation.invalidations[0].generationBefore++},
+      s=>{s.observation.signals[0].error.reason='timeout'},
+      s=>{s.observation.signals[0].outcome='returned'},
+      s=>{delete s.observation.signals[0].settledAt},
+      s=>{s.observation.signals[0].settledAt=s.processRequests[0].closedAt-1},
+      s=>{s.observation.signals[0].settledAt=s.observation.hydrations[0].startedAt+1},
+      s=>{s.observation.hydrations.push({...s.observation.hydrations[0],hydrationId:99,signalId:s.observation.signals[0].id})},
+      s=>{s.observation.transports.push({...s.observation.transports[0],signalId:s.observation.signals[0].id})},
+      s=>{s.hydrationReceipts.push({...s.hydrationReceipts[0],id:99,querySignalId:s.observation.signals[0].id})},
+      s=>{s.observation.signals[1].id=999},
+      s=>{s.observation.signals[1].tagGeneration++},
+      s=>{s.observation.signals[1].ownerId=999},
+      s=>{s.observation.signals[1].firstObservedLive=false},
+      s=>{s.observation.signals[1].abortedAt=s.observation.ipcs[0].finishedAt},
+      s=>{delete s.observation.signals[1].settledAt},
+      s=>{s.observation.signals[1].settledAt=s.observation.ipcs[0].finishedAt+1},
+      s=>{s.observation.hydrations[0].actionId='unrelated'},
+      s=>{s.observation.hydrations[0].intentSha256='0'.repeat(64)},
+      s=>{s.observation.hydrations[0].inputSha256='0'.repeat(64)},
+      s=>{s.observation.hydrations[0].inputCount--},
+      s=>{s.observation.hydrations[0].returnedCount--;s.observation.ipcs[0].itemCount--;s.observation.ipcs[0].total--},
+      s=>{s.observation.hydrations[0].tagSha256='0'.repeat(64)},
+      s=>{delete s.observation.hydrations[0].tagSha256;delete s.observation.ipcs[0].tagSha256},
+      s=>{s.observation.transports[0].outcome='rejected'},
+      s=>{s.observation.transports[0].error={name:'AbortError',reason:'timeout'}},
+      s=>{s.observation.transports[0].signalAbortedAtStart=true},
+      s=>{s.observation.transports[0].inputSha256='0'.repeat(64)},
+      s=>{s.observation.transports[0].signalId=999},
+      s=>{s.observation.ipcs[0].ok=false},
+      s=>{s.observation.ipcs[0].tagSha256='0'.repeat(64)},
+      s=>{s.observation.ipcs[0].total++},
+      s=>{s.hydrationReceipts[0].populationValidated=false},
+      s=>{s.hydrationReceipts[0].nativeCalls=0},
+      s=>{s.processRequests[0].write=true},
+      s=>{s.processRequests[0].preflight=true},
+      s=>{s.processRequests[0].verifiedReadOnly=false},
+      s=>{s.processRequests[0].operation='stat'},
+      s=>{s.processRequests[0].error.reason='timeout'},
+      s=>{s.processRequests[0].error.reason='stale-generation'},
+      s=>{s.processRequests[0].querySignalId=999},
+      s=>{s.processRequests[0].queryIntentSha256='0'.repeat(64)},
+      s=>{s.processRequests[0].actionId='unrelated'},
+      s=>{s.processRequests[0].requestOrdinal=0},
+      s=>{delete s.processRequests[0].queuedMs},
+      s=>{delete s.processRequests[0].executionMs},
+      s=>{s.processRequests[0].closedAt=s.observation.signals[0].abortedAt-1},
+      s=>{s.processRequests[0].closedAt=s.observation.signals[0].settledAt+1},
+      s=>{s.observation.observerErrors++},s=>{s.observation.dropped++},s=>{s.observation.restorationConflicts++},
+      s=>{s.observation.taskProof='unsupported-legacy-source'},
+    ]){const changed=clone(earlySample);mutate(changed);assert.throws(()=>validateQueryRetirements(changed),'Invalid early retirement proof accepted')}
     for(const mutate of [
       s=>{s.observation.signals[0].firstObservedLive=false},
       s=>{s.observation.signals[0].invalidationId=999},
@@ -210,7 +285,7 @@ async function runQueryRetirementRegressions() {
     outside.restore()
     await daemonErrorRealmRegression()
     console.log('[diagnostics:full-refresh-query-retirement] actual query invalidation/native cancellation/replacement, strict negative proofs, observer identity and daemon Error realm passed')
-    return sample
+    return {...sample,earlySample}
   }finally{if(prior===undefined)delete process.env.HFM_NODE_STATE_FALLBACK;else process.env.HFM_NODE_STATE_FALLBACK=prior}
 }
 module.exports={runQueryRetirementRegressions,actualQueryRetirementFixture}
