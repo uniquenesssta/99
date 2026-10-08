@@ -30,6 +30,7 @@ const { createRequire } = require('node:module')
 const { AsyncLocalStorage } = require('node:async_hooks')
 const { performance } = require('node:perf_hooks')
 const { createFullRefreshObservation } = require('./lib/full-refresh-observation.cjs')
+const { captureFixtureRoots, createFixtureCacheLifecycle } = require('./lib/full-refresh-fixture-lifecycle.cjs')
 
 const liveHosts = new Set()
 const BASELINE = '6620b3bafd5b3d894987585dd06c5d5eabc54933'
@@ -89,6 +90,7 @@ function makeFiles(directory, arialPath) {
   assert.equal(new Set([...sources, ...targets].map(row => row.physical)).size, WORKLOAD.sourceFiles + WORKLOAD.targetFiles,
     'copies must be independent physical files, never hard links')
   const manifest = { createdAt: new Date().toISOString(), workload: WORKLOAD, original, roots, targetRoot, sources, targets,
+    fixtureRootOwnership: captureFixtureRoots({ fixtureDirectory: directory, roots }),
     actualSourceBytes: sources.reduce((n,row) => n+row.bytes, 0), actualTargetBytes: targets.reduce((n,row) => n+row.bytes, 0),
     expectedUniqueHashFiles: sources.length + targets.length,
     expectedUniqueLogicalHashBytes: [...sources, ...targets].reduce((n,row) => n+row.bytes, 0),
@@ -197,7 +199,7 @@ function instrument(host, fixture, scope, observation) {
         assert(fs.statSync(inputPath).size<=1024*1024,'Observed instrumentation input exceeds bound')
         input=JSON.parse(fs.readFileSync(inputPath,'utf8'))
       }
-      if (input) { row.operation = input.operation; row.path = input.path || input.fontPath; row.dest = input.dest; row.foregroundBytes = input.foregroundBytes === true; row.bindingSnapshot = input.bindingSnapshot === true; row.preflight = !!input.preflight; row.entryCount = input.entries?.length; if(input.ownedStage)row.nativeStageInput=plain(input.ownedStage) }
+      if (input) { row.operation = input.operation; row.path = input.path || input.fontPath; row.dest = input.dest; row.foregroundBytes = input.foregroundBytes === true; row.bindingSnapshot = input.bindingSnapshot === true; row.preflight = !!input.preflight; row.preflightPhase = input.preflight?.phase; row.entryCount = input.entries?.length; if(input.ownedStage)row.nativeStageInput=plain(input.ownedStage) }
     }
     if (lane === 'foreground-metrics' && ioScope.currentSharedIoPriority?.() === 'background' && request.priority === 'background'
       && request.label === 'shared-metadata-overlay-read' && request.args[0] === '--shared-metadata-overlay-read'
@@ -219,6 +221,10 @@ function instrument(host, fixture, scope, observation) {
       if (lane.startsWith('foreground')) counters.foregroundQueueMs.push(Number(receipt.queuedMs || 0))
       try {
         const result = JSON.parse(receipt.stdout.trim().split(/\r?\n/).find(Boolean))
+        if (row.command === '--shared-metadata-overlay-read' || row.command === '--shared-metadata-signature') row.metadataReceipt = {
+          ok: result.ok === true, workerMode: result.workerMode, signature: result.signature, requested: result.requested, rows: result.rows,
+          preflightPhase: result.preflight?.phase, bindingSnapshotVersion: result.bindingSnapshot?.version, bindingRows: result.bindingSnapshot?.rows?.length,
+        }
         if (result.ownedStage) row.nativeStageReceipt = plain(result.ownedStage)
         if (Object.hasOwn(result, 'imageHex')) {
           const valid = typeof result.imageHex === 'string' && result.imageHex.length > 0 && result.imageHex.length <= 4 * 1024 * 1024 && result.imageHex.length % 2 === 0 && /^[0-9a-f]+$/.test(result.imageHex)
@@ -266,7 +272,7 @@ function createRunner(host, population, hooks = {}) {
   const writer = host.statusWriter || { saveInstallStatusIndex: host.status.saveInstallStatusIndex, installStatusProjectionOwnedByWriter: false }
   const deps = {
     ...host.status, installStatusProjectionOwnedByWriter: writer.installStatusProjectionOwnedByWriter,
-    appName: 'HFMFixture', appWatchedFolders: async () => host.rootPaths,
+    appName: 'HFMFixture', appWatchedFolders: host.appWatchedFolders,
     loadSharedFontsForFolders: async roots => {
       const real = await host.loadSharedFontsForFolders(roots)
       assert.equal(real.length, WORKLOAD.validIndexed, 'production root load population differs')
@@ -358,6 +364,13 @@ async function readProjection(host, expected, label, independentSql) {
   })
 }
 
+function assertTaggedPageIdentities(actualItems, expectedItems) {
+  // Source modules run in a VM: normalize array containers, never the IDs.
+  // Keep duplicate multiplicity and strict primitive equality intact.
+  assert(Array.isArray(actualItems) && Array.isArray(expectedItems), 'Tagged page identity collections must be arrays')
+  assert.deepEqual(Array.from(actualItems, item => item.id).sort(), Array.from(expectedItems, item => item.id).sort(), 'Tagged page changed identities')
+}
+
 function localTagHydrationReport(host) {
   const owner = host.localTagHydration
   assert(owner, 'Actual selected-source local-tag hydration owner missing')
@@ -398,7 +411,7 @@ async function interleave(host, meter, fixture, caseDirectory) {
         if (kinds[index % kinds.length] !== 'tags') assert.equal(value.workerMode, 'rust-merged-index-page')
         else {
           assert.equal(value.total, 26, 'Tagged page lost its seeded population')
-          assert.deepEqual(value.items.map(item => item.id).sort(), fixture.sourceItems.slice(0,26).map(item => item.id).sort(), 'Tagged page changed identities')
+          assertTaggedPageIdentities(value.items, fixture.sourceItems.slice(0,26))
           for (const item of value.items) assert.deepEqual([...item.localTagNames], ['FixtureTag'], 'Tagged page did not hydrate its actual local tag')
         }
         results.push({ index, actionId: action.actionId, channel: 'fonts:queryPage', kind: kinds[index % kinds.length], total: value.total, workerMode: value.workerMode, startedAt:start,finishedAt:performance.now(),elapsedMs:performance.now()-start })
@@ -455,9 +468,19 @@ async function interleave(host, meter, fixture, caseDirectory) {
     invocationBoundary: 'production-ipc-preview-composition', invocations: plain(host.foreground.invocations) }
 }
 
+function createFixturePerformanceRuntime(host) {
+  const config = host.load('src/main/app/appRuntimeConfig.ts')
+  return host.load('src/main/performance/mainPerformanceRuntimeBootstrap.ts').createMainPerformanceRuntime({
+    env: process.env, localScanWorkers: config.LOCAL_SCAN_WORKERS, appendStartupLog: host.appendStartupLog,
+    isIndexingActive: () => false, activeScanJobId: () => '', isInstallStatusRefreshActive: () => false, activeBackgroundTaskCount: () => 0,
+    storageProfileForPath: file => ({ rootPath: path.parse(file).root, type: 'ssd', reason: 'isolated-real-local-fixture', isNetwork: false }),
+  })
+}
+
 async function openCase(config, fixture, caseId, sourceRoot, options = {}) {
   const directory = path.join(config.output, 'cases', caseId)
   fs.mkdirSync(directory, { recursive: true })
+  config.fixtureCacheLifecycle.beginCase({ caseId, caseDirectory: directory })
   const { createObserver } = require(path.join(config.currentRoot, 'build/diagnostics/lib/operation-work-performance.cjs'))
   const observer = createObserver(), inputMetadata = new Map()
   const observedFs = observer.fs, observedPromises = observedFs.promises
@@ -492,8 +515,12 @@ async function openCase(config, fixture, caseId, sourceRoot, options = {}) {
     host.inputMetadata = inputMetadata
     host.diagnosticObservation = observation
     host.withObservationStage = (stage, run) => observationStageScope.run(stage, run)
-    host.interaction = host.load('src/main/performance/rendererInteractionRuntime.ts').createRendererInteractionRuntime({ appendLog: host.appendStartupLog, onActivity: () => { host.globalIo?.recheckGlobalIoQueues(); host.transport.noteRustCoreSchedulerInteractiveActivity('benchmark-foreground') } })
-    host.globalIo = host.load('src/main/performance/globalIoRuntime.ts').createGlobalIoRuntime({ env: process.env, localScanWorkers: 2, appendLog: host.appendStartupLog, isIndexingActive: () => false, isUserActive: host.interaction.isRendererUserActive, storageProfileForPath: file => ({ rootPath: path.parse(file).root, type: 'ssd', reason: 'isolated-real-local-fixture', isNetwork: false }) })
+    host.interaction = createFixturePerformanceRuntime(host)
+    host.globalIo = host.interaction
+    host.performanceProvenance = { owner: 'src/main/performance/mainPerformanceRuntimeBootstrap.ts',
+      sha256: sha256(fs.readFileSync(path.join(sourceRoot, 'src/main/performance/mainPerformanceRuntimeBootstrap.ts'))),
+      localScanWorkers: host.load('src/main/app/appRuntimeConfig.ts').LOCAL_SCAN_WORKERS,
+      controls: 'No scan job; case-local SSD profile; sampler is not started. Activity uses the selected production callback without an extra native scheduler nudge.' }
     host.withGlobalIo = host.observer.global(host.globalIo)
     for (const field of ['load', 'status', 'query', 'metadata', 'transport', 'observer', 'loadSharedFontsForFolders', 'withGlobalIo', 'appendStartupLog', 'close']) assert(host[field], `missing production host: ${field}`)
     host.rootPaths ||= fixture.manifest.roots
@@ -516,9 +543,22 @@ async function openCase(config, fixture, caseId, sourceRoot, options = {}) {
       const snapshot = finalizeObservation({ host, observation })
       try { if (options.observationState) options.observationState.snapshot = snapshot }
       catch { try { observation.noteError('setup-report') } catch {} }
+      const cacheClosure = finalizeFixtureCache(config, caseId, host)
+      if (options.observationState) options.observationState.fixtureCacheLifecycle = cacheClosure
     }
     throw error
   }
+}
+
+function finalizeFixtureCache(config, caseId, host) {
+  let closeProof
+  try { closeProof = host?.closeProof?.() } catch { /* Missing proof fails closed below. */ }
+  try { return { ok: true, case: config.fixtureCacheLifecycle.finalizeCase({ caseId, closeProof }) } }
+  catch (error) { return { ok: false, error: errorInfo(error), lifecycle: config.fixtureCacheLifecycle.snapshot() } }
+}
+function assertFixtureCacheCanContinue(config) {
+  const state = config.fixtureCacheLifecycle.snapshot()
+  assert(!state.blocked && state.activeCaseId === null, `Generated shared-root cache lifecycle blocked subsequent cases: ${state.failure?.message || (state.activeCaseId ? 'case owner has not finalized: ' + state.activeCaseId : 'unknown failure')}`)
 }
 
 function observationSnapshot({ host, observation }) {
@@ -598,6 +638,9 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     resource = await openCase(config, fixture, caseId, sourceRoot, { observationState })
     const { host, meter, directory } = resource
     report.readerProvenance = host.readerProvenance
+    report.sqlitePolicy = plain(host.sqlitePolicyEvidence)
+    report.performanceProvenance = plain(host.performanceProvenance)
+    report.readPortsProvenance = plain(host.readPortsProvenance)
     report.foregroundProvenance = host.foreground.provenance
     report.initialization = 'Unversioned legacy state seeded, then actual production external-change rebuild before timed comparable lane; raw-old snapshot refusal is a separate correctness diagnostic.'
     const runner = createRunner(host, { ...fixture, includeInvalid: false, targetRoot: fixture.manifest.targetRoot }, {
@@ -648,7 +691,7 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     assert.equal(report.foreground.failures.length, 0, 'foreground workload failed; timings are not comparable')
     report.comparable = true
     report.passed = true
-  } catch (error) { report.failure = errorInfo(error); report.diagnosticObservation = observationState.snapshot; report.passed = false; report.comparable = false }
+  } catch (error) { report.failure = errorInfo(error); report.diagnosticObservation = observationState.snapshot; report.fixtureCacheLifecycle = observationState.fixtureCacheLifecycle; report.passed = false; report.comparable = false }
   finally {
     report.progress = progress
     report.committedBatches = committedBatches
@@ -657,6 +700,7 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     if (resource) {
       try {
         report.localTagHydration = localTagHydrationReport(resource.host)
+        report.migrationDiagnostics = plain(resource.host.migrationDiagnostics.snapshot())
         report.work ||= resource.meter.snapshot()
         report.diagnosticObservation = observationSnapshot(resource)
         resource.meter.restore()
@@ -667,7 +711,11 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
         const log = (resource.host.logs || []).join('\n')
         report.logLines = resource.host.logs?.length || 0; report.logBytes = Buffer.byteLength(log)
         fs.writeFileSync(path.join(resource.directory, 'operation.log'), log)
-      } finally { report.diagnosticObservation = finalizeObservation(resource) }
+      } finally {
+        report.diagnosticObservation = finalizeObservation(resource)
+        report.fixtureCacheLifecycle = finalizeFixtureCache(config, caseId, resource.host)
+        if (!report.fixtureCacheLifecycle.ok) { report.passed = false; if (Object.hasOwn(report, 'comparable')) report.comparable = false }
+      }
     }
     verifyFiles([fixture.manifest.original, ...fixture.manifest.sources, ...fixture.manifest.targets])
     save(path.join(config.output, 'cases', caseId, 'report.json'), report)
@@ -684,16 +732,20 @@ async function runCorrectness(config, fixture, caseId, sourceRoot, test) {
     resource = await openCase(config, fixture, caseId, sourceRoot, { observationState })
     resource.setObservationStage('validation')
     report.readerProvenance = resource.host.readerProvenance
+    report.sqlitePolicy = plain(resource.host.sqlitePolicyEvidence)
+    report.performanceProvenance = plain(resource.host.performanceProvenance)
+    report.readPortsProvenance = plain(resource.host.readPortsProvenance)
     if (sourceRoot === config.currentRoot) resource.host.verifyCommittedBatches = []
     await test(resource, report)
     report.committedBatches = resource.host.verifyCommittedBatches || []
     await resource.meter.pool.whenIdle()
     report.passed = true
-  } catch (error) { report.failure = errorInfo(error); report.diagnosticObservation = observationState.snapshot }
+  } catch (error) { report.failure = errorInfo(error); report.diagnosticObservation = observationState.snapshot; report.fixtureCacheLifecycle = observationState.fixtureCacheLifecycle }
   finally {
     if (resource) {
       try {
         report.localTagHydration = localTagHydrationReport(resource.host)
+        report.migrationDiagnostics = plain(resource.host.migrationDiagnostics.snapshot())
         report.work = resource.meter.snapshot()
         report.diagnosticObservation = observationSnapshot(resource)
         resource.meter.restore()
@@ -701,7 +753,11 @@ async function runCorrectness(config, fixture, caseId, sourceRoot, test) {
         try { await resource.host.close(); liveHosts.delete(resource.host) } catch (error) { report.cleanupFailure = errorInfo(error); report.passed = false }
         report.childrenAfterClose = resource.host.observer.children.size
         if (report.childrenAfterClose) report.passed = false
-      } finally { report.diagnosticObservation = finalizeObservation(resource) }
+      } finally {
+        report.diagnosticObservation = finalizeObservation(resource)
+        report.fixtureCacheLifecycle = finalizeFixtureCache(config, caseId, resource.host)
+        if (!report.fixtureCacheLifecycle.ok) { report.passed = false; if (Object.hasOwn(report, 'comparable')) report.comparable = false }
+      }
     }
     verifyFiles([fixture.manifest.original, ...fixture.manifest.sources, ...fixture.manifest.targets])
     save(path.join(config.output, 'cases', caseId, 'report.json'), report)
@@ -801,8 +857,15 @@ async function offlineMixed(resource, report, fixture) {
   const { host, meter } = resource
   const availability = host.load('src/main/path/startupPathAvailabilityRuntime.ts')
   const offlineRoot = host.rootPaths[0]
+  // Correctness-only: establish the actual complete cached snapshot before a
+  // root goes offline. The cached and fresh source owners have distinct rules.
+  const warm = await host.loadSharedFontsForFolders(await host.appWatchedFolders())
+  assert.equal(warm.length, WORKLOAD.validIndexed)
   // Explicit unavailable-root injection, not a timed network simulation.
   availability.markStartupPathRootUnavailable(offlineRoot, new Error('controlled correctness-only root offline'), host.appendStartupLog, 'benchmark-fault')
+  const retained = await host.loadSharedFontsForFolders(await host.appWatchedFolders())
+  assertTaggedPageIdentities(retained, warm)
+  report.cachedOfflinePopulation = retained.length
   const runner = createRunner(host, { ...fixture, includeInvalid: false, targetRoot: fixture.manifest.targetRoot })
   report.summary = plain(await meter.runScope('background-refresh', () => runner.refreshInstallStatusIndex({ force: true }, { jobId: report.caseId })))
   const offlineIds = new Set(fixture.items.filter(item => inside(offlineRoot, item.path)).map(item => item.id))
@@ -815,6 +878,13 @@ async function offlineMixed(resource, report, fixture) {
   const installedCount = onlineSources, notInstalledCount = WORKLOAD.validIndexed - offlineIds.size - onlineSources
   report.finalProjection = await readProjection(host, { installedCount, notInstalledCount,
     installStatusMissingCount: offlineIds.size }, 'offline and current online peers remain separate')
+  // A separate fresh-read negative follows all original refresh/projection
+  // assertions. Re-establish its explicit fault; a slow refresh may outlive the
+  // original offline TTL, and moving this earlier would clear the warm cache.
+  availability.markStartupPathRootUnavailable(offlineRoot, new Error('controlled fresh-read-only root offline'), host.appendStartupLog, 'benchmark-fresh-fault')
+  report.freshOfflineFault = 'separate correctness-only phase after complete mixed-refresh assertions'
+  await assert.rejects(host.loadSharedFontsForFoldersFresh(await host.appWatchedFolders()), /字体索引尚未完整读取/, 'Fresh owner certified an incomplete offline population')
+  report.freshOfflineRefused = true
   report.offlinePopulation = offlineIds.size
 }
 
@@ -1118,6 +1188,7 @@ async function main() {
   const manifest = makeFiles(fixtureDirectory, arial)
   let fixture = { directory: fixtureDirectory, manifest, workerPath }
   fixture = { ...fixture, ...await makeItems(currentRoot, fixture, config.hostModule) }
+  config.fixtureCacheLifecycle = createFixtureCacheLifecycle({ ownership: manifest.fixtureRootOwnership, evidenceDirectory: output })
   save(path.join(output, 'run-manifest.json'), { baselineSha: BASELINE, currentSha, workerSha256: config.workerSha256,
     baselineWorkerSha256: config.baselineWorkerSha256, hostSha256: config.hostSha256, runtime: process.versions, logDetail: process.env.HFM_LOG_DETAIL || 'normal', workload: WORKLOAD, sourceManifestSha256: sha256(fs.readFileSync(path.join(fixtureDirectory, 'immutable-fixture-manifest.json'))),
     foregroundBoundary: 'Actual registerIpcHandlers/admission, query/metrics and createPreviewRuntime including storage/source stat; synthetic trusted renderer boundary',
@@ -1146,9 +1217,11 @@ async function main() {
   try {
     report.correctness.push(await runCorrectness(config, fixture, 'legacy-invalid-original', baselineRoot,
       (resource, result) => originalInvalidFailure(resource, result, fixture)))
+    assertFixtureCacheCanContinue(config)
     for (const [caseId, root, changed] of [['A1', baselineRoot, false], ['B1', currentRoot, true], ['B2', currentRoot, true], ['A2', baselineRoot, false]]) {
       report.performance.push(await runPerformance(config, fixture, caseId, root, changed))
       save(path.join(output, 'report.partial.json'), report)
+      assertFixtureCacheCanContinue(config)
     }
     // Real native alias parity is a correctness-only supplement after ABBA;
     // it never prewarms or changes the timed population/order.
@@ -1156,12 +1229,14 @@ async function main() {
       report.correctness.push(await runCorrectness(config, fixture, caseId, selectedRoot,
         (resource, result) => localTagReaderParity(resource, result, fixture)))
       save(path.join(output, 'report.partial.json'), report)
+      assertFixtureCacheCanContinue(config)
     }
     for (const [caseId, test] of [['current-invalid-complete', invalidComplete], ['current-cas-paused-batch', newerStateDuringBatch],
       ['current-root-offline-mixed', offlineMixed], ['current-child-change-parent-unchanged', unchangedParentChangedChild], ['current-query-consumer-retired', retiredQueryOwnership]]) {
       report.correctness.push(await runCorrectness(config, fixture, caseId, currentRoot,
         (resource, result) => test(resource, result, fixture)))
       save(path.join(output, 'report.partial.json'), report)
+      assertFixtureCacheCanContinue(config)
     }
     report.comparison = compareRuns(report.performance)
     report.passed = !report.watchdogExceeded && report.correctness.every(row => row.passed) && report.performance.every(row => row.passed) && report.comparison.passed === true
@@ -1169,6 +1244,7 @@ async function main() {
   finally {
     clearTimeout(watchdog)
     report.finishedAt = new Date().toISOString()
+    report.fixtureCacheLifecycle = config.fixtureCacheLifecycle.snapshot()
     try {
       verifyFiles([manifest.original, ...manifest.sources, ...manifest.targets])
       assert.equal(sha256(fs.readFileSync(workerPath)), config.workerSha256, 'Candidate worker changed during ABBA')
@@ -1185,4 +1261,4 @@ async function main() {
 
 if (require.main === module) {let completed=false;process.once('beforeExit',()=>{if(!completed){console.error('Full refresh work diagnostic did not complete');process.exitCode=1}});main().then(()=>{completed=true}).catch(error=>{console.error(error);process.exitCode=1})}
 module.exports = { main, WORKLOAD, BASELINE, makeFiles, makeItems, instrument, createRunner, interleave,
-  readProjection, runPerformance, runCorrectness, compareRuns, semanticQueueCohorts, assertLocalTagHydrationEvidence }
+  readProjection, runPerformance, runCorrectness, compareRuns, semanticQueueCohorts, assertLocalTagHydrationEvidence, assertTaggedPageIdentities, createFixturePerformanceRuntime, assertFixtureCacheCanContinue }

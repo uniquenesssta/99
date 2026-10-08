@@ -17,6 +17,113 @@ const tick = () => new Promise(resolve => setImmediate(resolve))
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex')
 const forbidden = name => (..._args) => { throw new Error(`Forbidden diagnostic port: ${name}`) }
 
+// Constructor-only engine adapter. Configuration belongs to the selected source
+// SQLite runtime, not every fixture seed or independent audit connection.
+function createDiagnosticSqliteDatabase(DatabaseSync, file, options = {}) {
+  assert(options && typeof options === 'object' && !Array.isArray(options), 'Unsupported SQLite constructor options')
+  for (const key of Object.keys(options)) {
+    assert(['readonly','fileMustExist'].includes(key), `Unsupported SQLite constructor option: ${key}`)
+    assert.equal(typeof options[key], 'boolean', `SQLite constructor option must be boolean: ${key}`)
+  }
+  assert(!options.fileMustExist || options.readonly === true, 'Unsupported writable fileMustExist SQLite mode')
+  if (options.readonly || options.fileMustExist) assert(fs.statSync(file).isFile(), 'Required SQLite file is not a file')
+  else fs.mkdirSync(path.dirname(file), { recursive: true })
+  // Node 24 DatabaseSync uses readOnly, unlike better-sqlite3's readonly.
+  return new DatabaseSync(file, { readOnly: options.readonly === true })
+}
+
+function assertProductionSqliteWiring(sourceRoot, requireProject, sourceOverrides = {}) {
+  const ts = requireProject('typescript')
+  const relative = 'src/main/bootstrap/mainDataStorageCompositionRuntime.ts'
+  const source = sourceOverrides[relative] ?? fs.readFileSync(path.join(sourceRoot, relative), 'utf8')
+  const tree = ts.createSourceFile(relative, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  assert.equal(tree.parseDiagnostics.length, 0, 'Cannot parse production SQLite composition')
+  const calls = []
+  const visit = node => { if (ts.isCallExpression(node) && node.expression.getText(tree) === 'createSqliteRuntime') calls.push(node); ts.forEachChild(node, visit) }
+  visit(tree)
+  assert.equal(calls.length, 1, 'Expected one production SQLite policy owner')
+  const object = calls[0].arguments[0]
+  assert(ts.isObjectLiteralExpression(object), 'Production SQLite ports are not explicit')
+  const expected = { appName:'APP_NAME', nodeRequire:'nodeRequire', normalizePath:'normalizePathForCacheCompare', sqliteSidecarPaths:'sqliteSidecarPaths',
+    appendLog:'appendStartupLog', exists:'exists', backupsRootPath:'backupsRootPath', corruptDatabasesRootPath:'corruptDatabasesRootPath',
+    quickCheckIntervalMs:'SQLITE_QUICK_CHECK_INTERVAL_MS', fastOpenSharedCacheDbs:'FAST_OPEN_SHARED_CACHE_DBS', verboseSqliteLogs:'VERBOSE_SQLITE_LOGS',
+    busyTimeoutMs:'SQLITE_BUSY_TIMEOUT_MS', mmapSizeBytes:'SQLITE_MMAP_SIZE_BYTES', corruptRetentionCount:'DATABASE_CORRUPT_RETENTION_COUNT' }
+  const actual = {}
+  for (const property of object.properties) {
+    assert(ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property), 'Unexpected SQLite option spread')
+    const key = property.name.getText(tree)
+    assert(!Object.hasOwn(actual,key), `Duplicate SQLite option: ${key}`)
+    actual[key] = (ts.isShorthandPropertyAssignment(property) ? property.name : property.initializer).getText(tree).replace(/\s+/g,'')
+  }
+  assert.deepEqual(actual, expected, 'Production SQLite configuration wiring changed')
+  return [relative, 'src/main/db/sqliteRuntime.ts', 'src/main/app/appRuntimeConfig.ts', 'src/main/bootstrap/mainIndexConstants.ts',
+    'src/main/db/appDatabasePaths.ts', 'src/main/cache/cachePaths.ts', 'src/main/path/cachePath.ts'].map(file => ({ path:file,
+      sha256:sha256(sourceOverrides[file] ?? fs.readFileSync(path.join(sourceRoot,file),'utf8')) }))
+}
+
+function createProductionSqlitePorts({ load, sourceRoot, requireProject, openRawDb, dataPath, exists, appendStartupLog }) {
+  const wiring = assertProductionSqliteWiring(sourceRoot, requireProject)
+  const config = load('src/main/app/appRuntimeConfig.ts'), constants = load('src/main/bootstrap/mainIndexConstants.ts')
+  const paths = load('src/main/db/appDatabasePaths.ts').createApplicationDatabasePaths(dataPath)
+  const configuredOptions = { quickCheckIntervalMs:config.SQLITE_QUICK_CHECK_INTERVAL_MS, fastOpenSharedCacheDbs:config.FAST_OPEN_SHARED_CACHE_DBS,
+    verboseSqliteLogs:config.VERBOSE_SQLITE_LOGS, busyTimeoutMs:constants.SQLITE_BUSY_TIMEOUT_MS, mmapSizeBytes:constants.SQLITE_MMAP_SIZE_BYTES,
+    corruptRetentionCount:config.DATABASE_CORRUPT_RETENTION_COUNT }
+  function DiagnosticDatabase(file, options) { return openRawDb(file, options) }
+  const runtime = load('src/main/db/sqliteRuntime.ts').createSqliteRuntime({
+    appName:config.APP_NAME, ...configuredOptions,
+    nodeRequire: id => { assert.equal(id,'better-sqlite3','Unexpected SQLite runtime module request'); return DiagnosticDatabase },
+    normalizePath:load('src/main/path/cachePath.ts').normalizePathForCacheCompare,
+    sqliteSidecarPaths:load('src/main/cache/cachePaths.ts').sqliteSidecarPaths,
+    appendLog:appendStartupLog, exists,
+    // A corrupt benchmark fixture is a failed case, never a fresh replacement.
+    // The baseline still executes its own recoverable opener before this denial.
+    backupsRootPath:forbidden('fixture SQLite backup recovery'),
+    corruptDatabasesRootPath:forbidden('fixture SQLite quarantine recovery'),
+  })
+  const inspectPolicy = db => Object.fromEntries(['journal_mode','synchronous','busy_timeout','temp_store','foreign_keys','mmap_size']
+    .map(name => [name, Object.values(db.prepare(`PRAGMA ${name}`).get() || {})[0]]))
+  return { openStableSqliteDb:runtime.openStableSqliteDb, openRecoverableApplicationSqliteDb:runtime.openRecoverableApplicationSqliteDb,
+    closeSqliteDb:runtime.closeSqliteDb, assertSqliteFileHealthy:runtime.assertSqliteFileHealthy,
+    recoveryMessage:runtime.recoveryMessage, quarantineSqliteFiles:runtime.quarantineSqliteFiles, inspectPolicy,
+    provenance:{ mode:'selected-source-sqlite-open-policy', owner:'src/main/db/sqliteRuntime.ts', engine:'real Node DatabaseSync constructor adapter',
+      configuredOptions, wiring, recovery:'selected recoverable opener for healthy fixture; backup/quarantine side effects forbidden',
+      fixtureBackupRoot:paths.backupsRootPath(), fixtureCorruptRoot:paths.corruptDatabasesRootPath(),
+      scope:'named stable/application open ports only; raw seed/audit connections and native-only opens remain separate' } }
+}
+
+function exactSelectedStorageReadPorts({ sourceRoot, requireProject, dependencies, sourceOverride }) {
+  const ts = requireProject('typescript'), relative = 'src/main/bootstrap/mainDataStorageCompositionRuntime.ts'
+  const source = sourceOverride ?? fs.readFileSync(path.join(sourceRoot,relative),'utf8')
+  const tree = ts.createSourceFile(relative,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
+  assert.equal(tree.parseDiagnostics.length,0,'Cannot parse selected storage read ports')
+  const names = ['openLibraryDb','appWatchedFolders','loadSharedFontsForFolders','loadSharedFontsForFoldersFresh']
+  const declarations = names.map(name => {
+    const matches = []
+    const visit = node => { if (ts.isFunctionDeclaration(node) && node.name?.text === name) matches.push(node); ts.forEachChild(node,visit) }
+    visit(tree); assert.equal(matches.length,1,`Expected one selected storage function: ${name}`)
+    return { name, text:matches[0].getText(tree) }
+  })
+  const output = ts.transpileModule(`${declarations.map(row=>row.text).join('\n')}\nmodule.exports={${names.join(',')}};`,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
+  }).outputText
+  const module = { exports:{} }, dependencyNames = Object.keys(dependencies)
+  new Function('module',...dependencyNames,output)(module,...dependencyNames.map(name=>dependencies[name]))
+  for (const name of names) assert.equal(typeof module.exports[name],'function',`Selected storage port missing: ${name}`)
+  return { ports:module.exports, provenance:{mode:'exact-selected-storage-read-declarations',path:relative,moduleSha256:sha256(source),
+    functions:declarations.map(row=>({name:row.name,sha256:sha256(row.text)})),
+    preparation:'fixture-prepared library base handle; selected favorites/read wrappers retained, full startup migration excluded'} }
+}
+
+function assertProductionReadOwnerPorts(ports, expectedOwnerPorts) {
+  const names = ['appWatchedFolders','loadSharedFontsForFolders','loadSharedFontsForFoldersFresh','exists','resolveActiveRootIndexDbPath',
+    'applySharedMetadataToMergedRows','sharedMetadataSignatureForRoot','saveMetricsSnapshot','migrationDiagnosticsRuntime']
+  for (const name of names) {
+    assert(expectedOwnerPorts[name],`Missing selected read owner: ${name}`)
+    assert.equal(ports[name],expectedOwnerPorts[name],`Production read owner bypassed: ${name}`)
+  }
+  assert.notEqual(ports.loadSharedFontsForFolders,ports.loadSharedFontsForFoldersFresh,'Fresh folder reads aliased to cached reads')
+}
+
 // Match the selected production hydration owner, against an already prepared
 // fixture DB. This is not a replacement for the application's startup migration.
 function createProductionLocalTagHydration({ load, openLibraryDb, librarySqlitePath, runRustLocalTagsRead, appendStartupLog, getObservationContext }) {
@@ -259,13 +366,12 @@ async function createHost(options) {
     assert(fs.statSync(root).isDirectory(), 'Caller must materialize the fixed font roots before creating a host')
   }
   const fontRoot = roots[0]
-  const rootDbByKey = new Map(roots.map(root => [path.resolve(root).toLowerCase(), path.join(directory, 'root-index', sha256(root.toLowerCase()).slice(0, 20) + '.sqlite')]))
+  const rootDbByKey = new Map()
+  const rootCacheByKey = new Map(roots.map(root => [path.resolve(root).toLowerCase(),path.join(directory,'root-index',sha256(root.toLowerCase()).slice(0,20))]))
   const rootDbForRoot = root => { const value = rootDbByKey.get(path.resolve(root).toLowerCase()); assert(value, 'Unknown fixture root'); return value }
-  const rootCacheForRoot = root => path.dirname(rootDbForRoot(root))
-  const rootCache = rootCacheForRoot(fontRoot)
-  const rootDbPath = rootDbForRoot(fontRoot)
+  const rootCacheForRoot = root => { const value = rootCacheByKey.get(path.resolve(root).toLowerCase()); assert(value,'Unknown fixture root'); return value }
   const libraryPath = path.join(dataDirectory, 'library.sqlite')
-  for (const value of [dataDirectory, ...[...rootDbByKey.values()].map(file => path.dirname(file))]) fs.mkdirSync(value, { recursive: true })
+  for (const value of [dataDirectory,...rootCacheByKey.values()]) fs.mkdirSync(value, { recursive: true })
   const envKeys = ['HFM_RUST_CORE_WORKER', 'HFM_RUST_CORE_AUTOBUILD', 'HFM_NODE_DB_QUERY_FALLBACK', 'HFM_NODE_STATE_FALLBACK']
   const savedEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
   Object.assign(process.env, {
@@ -300,6 +406,7 @@ async function createHost(options) {
   let projectionUpdateDepth = 0
   let transport, watcher, queue, query, libraryDb, cleanupRenderer, snapshotRuntime, snapshotOwner, foregroundShutdown
   let closed = false
+  let closeCompleted = false
   let initialized = false
   let rootOnline = true
   let eventListener
@@ -310,10 +417,9 @@ async function createHost(options) {
       'Diagnostic database escaped its private temporary directory')
   }
   // API adapter only: all statements and transactions execute against real SQLite.
-  function openDb(file) {
+  function openDb(file, options) {
     insideTemporary(file)
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    const raw = new DatabaseSync(file)
+    const raw = createDiagnosticSqliteDatabase(DatabaseSync, file, options)
     raw.exec('PRAGMA busy_timeout=5000;')
     let closed = false
     const db = {
@@ -375,9 +481,11 @@ async function createHost(options) {
     opened.add(db)
     return db
   }
+  let sourceExists
   const exists = async file => {
     if (!rootOnline && [...rootDbByKey.values()].some(value => path.resolve(file) === path.resolve(value))) return false
-    return fs.existsSync(file)
+    assert.equal(typeof sourceExists,'function','Selected exists owner is not ready')
+    return sourceExists(file)
   }
   const dataPath = (...parts) => path.join(dataDirectory, ...parts)
   const closeSqliteDb = db => db.close()
@@ -410,19 +518,46 @@ async function createHost(options) {
     try { options.onLoaderReady?.(load) } catch { observationSetupErrors++ }
     const sqlite = load('src/main/db/sqliteHelpers.ts')
     const config = load('src/main/app/appRuntimeConfig.ts')
+    const constants = load('src/main/cache/constants.ts')
+    for (const root of roots) {
+      const file = path.join(rootCacheForRoot(root),constants.ROOT_INDEX_DB_DIR_NAME,constants.ROOT_INDEX_DB_FILE_NAME)
+      rootDbByKey.set(path.resolve(root).toLowerCase(),file)
+      fs.mkdirSync(path.dirname(file),{recursive:true})
+    }
+    sourceExists = load('src/main/app/appDataPaths.ts').createAppDataPaths({ appName:config.APP_NAME,
+      dataDirName:config.DATA_DIR_NAME, dataLayoutVersion:config.DATA_LAYOUT_VERSION,
+      cacheArchitectureVersion:constants.CACHE_ARCHITECTURE_VERSION, appendLog:appendStartupLog }).exists
     const fonts = load('src/main/fonts/fontRuntime.ts')
     const cached = fonts.createCachedFontRuntime({ sharedFontId: forbidden('legacy shared ID authority') })
     const paths = load('src/main/path/cachePath.ts')
     const key = paths.normalizePathForCacheCompare
     const fontIdentity = load('src/main/fonts/fontFileIdentity.ts')
-    libraryDb = openDb(libraryPath)
+    const sqlitePorts = createProductionSqlitePorts({ load, sourceRoot, requireProject, openRawDb:openDb, dataPath, exists, appendStartupLog })
+    const { openStableSqliteDb, openRecoverableApplicationSqliteDb } = sqlitePorts
+    const sqlitePolicyEvidence = { provenance:sqlitePorts.provenance, setupConnections:[] }
+    const recordSqlitePolicy = (label, file, db) => sqlitePolicyEvidence.setupConnections.push({ label, path:file, policy:sqlitePorts.inspectPolicy(db) })
+    libraryDb = await openRecoverableApplicationSqliteDb(libraryPath, 'library')
+    recordSqlitePolicy('library', libraryPath, libraryDb)
     load('src/main/library/runtime/librarySchemaRuntime.ts').initializeLibraryDb(libraryDb)
     snapshotRuntime = load('src/main/library/tagFontSnapshotRuntime.ts')
     snapshotOwner = snapshotRuntime.openTagFontSnapshots(libraryDb)
     for (const [index, root] of roots.entries()) libraryDb.prepare('INSERT INTO folders(path, sort_order) VALUES (?, ?)').run(root, index)
     libraryDb.prepare('INSERT OR REPLACE INTO meta(key,value) VALUES (?,?)').run('localFavoritesMigrated', '1')
-    const openLibraryDb = async () => libraryDb
-    const appWatchedFolders = async () => [...roots]
+    const openLibraryDbBase = async () => libraryDb
+    let folderCache
+    const favorites = load('src/main/library/runtime/localFontFavoritesRuntime.ts').createLocalFontFavoritesRuntime({
+      openLibraryDb:openLibraryDbBase, loadLegacyLocalSnapshot:forbidden('unrequested historical import'),
+      invalidate:() => query?.clearFontQueryCaches(), appendLog:appendStartupLog,
+    })
+    const fontPaths = load('src/main/path/fontPathPolicy.ts')
+    const selectedStorage = exactSelectedStorageReadPorts({ sourceRoot, requireProject, dependencies:{
+      openLibraryDbBase, localFavorites:favorites, normalizeWatchedFontFolders:fontPaths.normalizeWatchedFontFolders, appendStartupLog,
+      requireFolderCacheRuntime:() => { assert(folderCache,'Selected folder owner is not ready'); return folderCache },
+    } })
+    const { openLibraryDb, appWatchedFolders, loadSharedFontsForFolders, loadSharedFontsForFoldersFresh } = selectedStorage.ports
+    const protection = load('src/main/library/runtime/localFontProtectionRuntime.ts').createLocalFontProtectionRuntime({
+      openLibraryDb:openLibraryDbBase, watchedFolders:appWatchedFolders, invalidate:() => query?.clearFontQueryCaches(),
+    })
 
     transport = load('src/main/rust-core/rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({
       enabled: true, required: true, appendStartupLog,
@@ -454,8 +589,40 @@ async function createHost(options) {
 
     let items = []
     const rootStorage = load('src/main/indexing/root-index/rootIndexDatabaseRuntime.ts').createRootIndexDatabaseRuntime({
-      openStableSqliteDb: openDb, closeSqliteDb, exists, appendStartupLog,
+      openStableSqliteDb, closeSqliteDb, exists, appendStartupLog,
       fontScanCacheVersion: config.FONT_SCAN_CACHE_VERSION, scriptDetectionVersion: config.SCRIPT_DETECTION_VERSION,
+    })
+    const rootManifest = load('src/main/indexing/root-index/rootIndexManifestRuntime.ts').createRootIndexManifestRuntime({
+      appName:config.APP_NAME, fontScanCacheVersion:config.FONT_SCAN_CACHE_VERSION,
+      scriptDetectionVersion:config.SCRIPT_DETECTION_VERSION, exists, appendStartupLog, openStableSqliteDb, closeSqliteDb,
+    })
+    const sharedMetadata = load('src/main/indexing/shared-metadata/sharedFontMetadataRuntime.ts').createSharedFontMetadataRuntime({
+      exists, openStableSqliteDb, closeSqliteDb, appendStartupLog,
+      uniqueResolvedFolders:fontPaths.uniqueResolvedFolders, findBestWatchedRootForFile:fontPaths.findBestWatchedRootForFile,
+      cacheKeyForRootFile:paths.relativePathForRoot, cacheEntryRuntimePath:cached.cacheEntryRuntimePath, normalizePathForCacheCompare:key,
+      loadExistingFolderCache:(...args) => { assert(folderCache,'Selected folder owner is not ready'); return folderCache.loadExistingFolderCache(...args) },
+      runRustSharedMetadataSignature:metadata.runRustSharedMetadataSignature,
+      runRustSharedMetadataOverlayRead:metadata.runRustSharedMetadataOverlayRead,
+      runRustSharedMetadataApply:forbidden('explicit shared metadata mutation outside fixture workload'),
+      runRustSharedMetadataRemoveTag:forbidden('explicit shared tag removal outside fixture workload'),
+    })
+    folderCache = load('src/main/folders/folderCacheRuntime.ts').createFolderCacheRuntime({
+      fontScanCacheVersion:config.FONT_SCAN_CACHE_VERSION, sharedFontMemoryCacheTtlMs:config.SHARED_FONT_MEMORY_CACHE_TTL_MS,
+      exists, rootCacheDir:rootCacheForRoot, rootIndexDbPath:rootDbForRoot,
+      fallbackIndexDbPath:root => dataPath('fallback-index',sha256(key(root)).slice(0,20),'index.sqlite'),
+      fallbackCacheRootDir:root => dataPath('fallback-index',sha256(key(root)).slice(0,20)),
+      resolveActiveRootIndexDbPath:rootManifest.resolveActiveRootIndexDbPath,
+      readRootIndexSqliteFile:(...args) => {
+        if (!rootOnline) throw new Error('Controlled root-index access unavailable')
+        return rootStorage.readRootIndexSqliteFile(...args)
+      },
+      saveRootIndexSqliteFile:forbidden('legacy folder-cache migration outside fixture workload'),
+      saveRootIndexSqliteChanges:forbidden('folder-cache removal outside fixture workload'),
+      saveScanCacheFile:forbidden('legacy folder-cache JSON write outside fixture workload'),
+      applySharedMetadataOverlay:sharedMetadata.applySharedMetadataOverlay,
+      cacheEntryRuntimePath:cached.cacheEntryRuntimePath, cachedFontForRuntime:cached.cachedFontForRuntime, sha1:fonts.sha1,
+      recoveryMessage:sqlitePorts.recoveryMessage, quarantineSqliteFiles:sqlitePorts.quarantineSqliteFiles, appendStartupLog,
+      clearExternalFontQueryCaches:() => query?.clearFontQueryCaches(),
     })
     let status, readBoundary, readerProvenance
     status = load('src/main/install/installStatusRuntime.ts').createInstallStatusRuntime({
@@ -465,7 +632,7 @@ async function createHost(options) {
       },
       appWatchedFolders,
       findBestWatchedRootForFile: load('src/main/path/fontPathPolicy.ts').findBestWatchedRootForFile,
-      openStableSqliteDb: openDb, closeSqliteDb, ...sqlite, exists,
+      openStableSqliteDb, closeSqliteDb, ...sqlite, exists,
       sha1: fonts.sha1, normalizePathForCacheCompare: key,
       isCleanWindowsDefaultCompareResult: () => false,
       completeBackgroundTask: async () => {}, appendStartupLog,
@@ -475,7 +642,7 @@ async function createHost(options) {
     const extractedReaderPath = path.join(sourceRoot, 'src/main/install/status/installStatusWorkerReadRuntime.ts')
     if (fs.existsSync(extractedReaderPath)) {
       readBoundary = load('src/main/install/status/installStatusWorkerReadRuntime.ts').createInstallStatusWorkerReadRuntime({
-        openLibraryDb, exists, openStableSqliteDb: openDb, closeSqliteDb,
+        openLibraryDb, exists, openStableSqliteDb, closeSqliteDb,
         initializeMachineInstallDb: status.initializeMachineInstallDb,
         readRust: native.runRustInstallStatusRead,
         readWorker: forbidden('Node installation-read fallback'), appendStartupLog,
@@ -484,7 +651,7 @@ async function createHost(options) {
         moduleSha256: sha256(fs.readFileSync(extractedReaderPath)) }
     } else {
       const baseline = exactLegacyReadBoundary({ sourceRoot, requireProject, dependencies: {
-        openLibraryDb, exists, openStableSqliteDb: openDb, closeSqliteDb, appendStartupLog,
+        openLibraryDb, exists, openStableSqliteDb, closeSqliteDb, appendStartupLog,
         installStatusRuntime: status,
         migrateInstallStatusIdentity: load('src/main/install/status/installStatusIdentityMigration.ts').migrateInstallStatusIdentity,
         rustCoreWorkerRuntime: native,
@@ -495,30 +662,13 @@ async function createHost(options) {
     }
     const statusDb = await status.openFallbackInstallDb()
     const installPath = await status.fallbackInstallStatusDbPath()
+    recordSqlitePolicy('machine-install:fallback', installPath, statusDb)
     statusDb.close()
 
-    const localTags = createProductionLocalTagHydration({ load, openLibraryDb, librarySqlitePath: () => libraryPath,
+    const localTags = createProductionLocalTagHydration({ load, openLibraryDb:openLibraryDbBase, librarySqlitePath: () => libraryPath,
       runRustLocalTagsRead: metadata.runRustLocalTagsRead, appendStartupLog, getObservationContext: observationContext })
     localTags.provenance.selectedSourceWiring = assertProductionLocalTagHydrationWiring(sourceRoot, requireProject)
-    const favorites = load('src/main/library/runtime/localFontFavoritesRuntime.ts').createLocalFontFavoritesRuntime({
-      openLibraryDb, loadLegacyLocalSnapshot: forbidden('unrequested historical import'), invalidate: () => query?.clearFontQueryCaches(), appendLog: appendStartupLog,
-    })
-    const protection = load('src/main/library/runtime/localFontProtectionRuntime.ts').createLocalFontProtectionRuntime({
-      openLibraryDb, watchedFolders: appWatchedFolders, invalidate: () => query?.clearFontQueryCaches(),
-    })
     const hydrateLocalTagsForFonts = async value => protection.hydrate(await favorites.hydrate(await localTags.hydrateLocalTagsForFonts(value)))
-    async function loadSharedFontsForFolders(requestedRoots) {
-      if (!rootOnline) throw new Error('Controlled root offline: persisted merged population must remain available')
-      const result = []
-      for (const root of requestedRoots) {
-        const cache = await rootStorage.readRootIndexSqliteFile(rootDbForRoot(root), root, 'root')
-        for (const [relative, entry] of Object.entries(cache.entries)) if (entry.status === 'ok' && entry.font) {
-          result.push(cached.cachedFontForRuntime(entry.font, cached.cacheEntryRuntimePath(root, relative),
-            { size: entry.fileSize, mtimeMs: entry.modifiedAt, birthtimeMs: entry.createdAt }, relative))
-        }
-      }
-      return result
-    }
     const rendererState = { pageSeq: { current: 0 }, metricsSeq: { current: 0 }, token: 0, refreshes: 0, metrics: null }
     const effects = []
     const rendererEnvironmentPorts = {
@@ -575,21 +725,41 @@ async function createHost(options) {
       syncMergedIndexAfterInstallStatusRefresh: (...args) => query.syncMergedIndexAfterInstallStatusRefresh(...args),
       clearFontQueryCaches: () => query.clearFontQueryCaches(), appendStartupLog, batchDelayMs: 60000,
     })
-    query = load('src/main/bootstrap/mainDataQueryCompositionRuntime.ts').createMainDataQueryCompositionRuntime({
+    const applicationPaths = load('src/main/db/appDatabasePaths.ts').createApplicationDatabasePaths(dataPath)
+    const cacheArchitecture = load('src/main/cache/cacheArchitectureRuntime.ts').createCacheArchitectureRuntime({
+      appName:config.APP_NAME, cacheArchitectureVersion:constants.CACHE_ARCHITECTURE_VERSION,
+      kvsSqliteSchemaVersion:constants.KVS_SQLITE_SCHEMA_VERSION, eventsSqliteSchemaVersion:constants.EVENTS_SQLITE_SCHEMA_VERSION,
+      hashSqliteSchemaVersion:constants.HASH_SQLITE_SCHEMA_VERSION, metricsSqliteSchemaVersion:constants.METRICS_SQLITE_SCHEMA_VERSION,
+      watcherStartupGraceMs:config.WATCHER_STARTUP_GRACE_MS, rootCacheDirName:constants.ROOT_CACHE_DIR_NAME,
+      rootIndexDbDirName:constants.ROOT_INDEX_DB_DIR_NAME, rootIndexDbFileName:constants.ROOT_INDEX_DB_FILE_NAME,
+      rootPreviewCacheDirName:constants.ROOT_PREVIEW_CACHE_DIR_NAME, previewCacheDbDirName:constants.PREVIEW_CACHE_DB_DIR_NAME,
+      previewCacheDbFileName:constants.PREVIEW_CACHE_DB_FILE_NAME, previewCacheImagesDirName:constants.PREVIEW_CACHE_IMAGES_DIR_NAME,
+      ...applicationPaths, appSqlitePath:() => libraryPath, previewSqlitePath:() => dataPath('preview.sqlite'), dataRoot:() => dataDirectory,
+      exists, writeJsonAtomic:load('src/main/cache/jsonAtomic.ts').writeJsonAtomic, openRecoverableApplicationSqliteDb,
+      closeSqliteDb, setSqliteMeta:sqlite.setSqliteMeta, normalizePathForCacheCompare:key,
+      fileCacheSignature:load('src/main/cache/cachePaths.ts').fileCacheSignature, sha1:fonts.sha1, appendStartupLog,
+    })
+    const migrationDiagnostics = load('src/main/diagnostics/migrationDiagnosticsRuntime.ts').createMigrationDiagnosticsRuntime({appendStartupLog})
+    const expectedReadOwnerPorts = { appWatchedFolders, loadSharedFontsForFolders, loadSharedFontsForFoldersFresh, exists,
+      resolveActiveRootIndexDbPath:rootManifest.resolveActiveRootIndexDbPath,
+      applySharedMetadataToMergedRows:sharedMetadata.applySharedMetadataToMergedRows,
+      sharedMetadataSignatureForRoot:sharedMetadata.sharedMetadataSignatureForRoot,
+      saveMetricsSnapshot:cacheArchitecture.saveMetricsSnapshot, migrationDiagnosticsRuntime:migrationDiagnostics }
+    const queryPorts = {
       onSharedTagCountsChanged: revision => { watcher.sendFontIndexChanged({ folder: '', at: new Date().toISOString(),
         source: 'metrics', metricsRevision: revision, upserts: [], deletes: [] }); options.onSharedTagCountsChanged?.(revision) },
       onProjectionCommitted: revision => { watcher.sendFontIndexChanged({ folder: '', at: new Date().toISOString(),
         source: 'projection', projectionRevision: revision, upserts: [], deletes: [] }); options.onProjectionCommitted?.(revision) },
       applyPendingActivationState: queue.applyPendingActivationState,
       hasPendingActivationState: () => queue.hasPendingActivationInstallStatusSave() || queue.hasInFlightActivationInstallStatusSave(),
-      appWatchedFolders, loadSharedFontsForFolders, loadSharedFontsForFoldersFresh: loadSharedFontsForFolders,
+      appWatchedFolders, loadSharedFontsForFolders, loadSharedFontsForFoldersFresh,
       hydrateLocalTagsForFonts,
       hydrateLocalFavoritesForFonts: async value => protection.hydrate(await favorites.hydrate(value)),
       isSystemInstalledRecord: () => false, isPathInWindowsFonts: () => false, appendStartupLog,
       tagMetadataRevisionBarrier: load('src/main/library/tagMetadataRevisionBarrierRuntime.ts').createTagMetadataRevisionBarrierRuntime({ appendStartupLog }),
       rustCoreWorkerRuntime: native,
-      migrationDiagnosticsRuntime: { record: value => appendStartupLog(`diagnostic migration: ${JSON.stringify(value)}`) },
-      dataPath, exists, openStableSqliteDb: openDb,
+      migrationDiagnosticsRuntime:migrationDiagnostics,
+      dataPath, exists, openStableSqliteDb,
       openRootIndexDb: (...args) => {
         if (!rootOnline) throw new Error('Controlled root unavailable')
         return rootStorage.openRootIndexDb(...args)
@@ -598,21 +768,31 @@ async function createHost(options) {
       cacheKeyForRootFile: paths.relativePathForRoot,
       dbQueryWorkerRuntime: new Proxy({}, { get: (_target, property) => forbidden(`Node query fallback: ${String(property)}`) }),
       librarySqlitePath: () => libraryPath, openLibraryDb,
-      applySharedMetadataToMergedRows: forbidden('Node merged-row fallback'),
-      sharedMetadataSignatureForRoot: async () => 'metadata:none',
+      applySharedMetadataToMergedRows:sharedMetadata.applySharedMetadataToMergedRows,
+      sharedMetadataSignatureForRoot:sharedMetadata.sharedMetadataSignatureForRoot,
       delayToEventLoop: tick, rootCacheDir: rootCacheForRoot, rootIndexDbPath: rootDbForRoot,
-      resolveActiveRootIndexDbPath: async (_cache, defaultPath) => defaultPath,
+      resolveActiveRootIndexDbPath:rootManifest.resolveActiveRootIndexDbPath,
       openMachineInstallDbForRoot: status.openMachineInstallDbForRoot,
       sqliteRowToScanEntry: load('src/main/indexing/root-index/rootIndexSqliteRuntime.ts').sqliteRowToScanEntry,
       cachedFontForRuntime: cached.cachedFontForRuntime, cacheEntryRuntimePath: cached.cacheEntryRuntimePath,
       getInstallStatusIndexSnapshot: status.getInstallStatusIndexSnapshot,
       loadLibraryShellFromSqlite: load('src/main/library/runtime/libraryPersistenceRuntime.ts').loadLibraryShellFromSqlite,
-      saveMetricsSnapshot: async (name, value) => {
-        libraryDb.exec('CREATE TABLE IF NOT EXISTS diagnostic_metrics(name TEXT PRIMARY KEY,json TEXT NOT NULL)')
-        libraryDb.prepare('INSERT OR REPLACE INTO diagnostic_metrics VALUES (?,?)').run(name, JSON.stringify(value))
-      },
+      saveMetricsSnapshot:cacheArchitecture.saveMetricsSnapshot,
       readInstallStatusIndex: status.readInstallStatusIndex,
-    })
+    }
+    assertProductionReadOwnerPorts(queryPorts,expectedReadOwnerPorts)
+    query = load('src/main/bootstrap/mainDataQueryCompositionRuntime.ts').createMainDataQueryCompositionRuntime(queryPorts)
+    const ownerFiles = ['src/main/folders/folderCacheRuntime.ts','src/main/indexing/shared-metadata/sharedFontMetadataRuntime.ts',
+      'src/main/indexing/root-index/rootIndexManifestRuntime.ts','src/main/cache/cacheArchitectureRuntime.ts',
+      'src/main/app/appDataPaths.ts','src/main/diagnostics/migrationDiagnosticsRuntime.ts']
+    const readPortsProvenance = { mode:'selected-source-timed-read-owners', storage:selectedStorage.provenance,
+      owners:ownerFiles.map(file=>({path:file,sha256:sha256(fs.readFileSync(path.join(sourceRoot,file)))})),
+      rootLayout:roots.map(root=>({root,cache:rootCacheForRoot(root),database:rootDbForRoot(root)})),
+      rootTrust:'fixture starts without manifest/root identity; actual selected owner must accept legacy-index-compatible state',
+      metadata:'true logical root/.hfm-cache path and actual preflight/signature/overlay owners; generated namespace isolated by runner lifecycle',
+      controls:['fixture-prepared library identities, no startup migration','case-private root-index backing directories',
+        'explicit root-offline correctness fault at underlying root-index access','unused legacy-write/quarantine/user-tag-mutation paths fail closed'],
+      previewShell:'existing selected raw SQL shell callback retained; no live font counting introduced' }
 
 
     let foreground
@@ -623,12 +803,14 @@ async function createHost(options) {
       for (const root of roots) assert(await availability.ensureStartupPathRootAvailable(root, appendStartupLog, 'foreground-fixture-bootstrap'), 'Foreground fixture root is unavailable')
       const constants = load('src/main/cache/constants.ts')
       const previewCache = load('src/main/preview/previewCacheRuntime.ts')
-      const previewDb = openDb(dataPath('preview.sqlite'))
+      const previewDb = await openRecoverableApplicationSqliteDb(dataPath('preview.sqlite'), 'preview')
+      recordSqlitePolicy('preview', dataPath('preview.sqlite'), previewDb)
       const initializePreviewDb = db => previewCache.initializePreviewDbSchema(db, {
         schemaVersion: constants.PREVIEW_SQLITE_SCHEMA_VERSION, ...sqlite,
       })
       initializePreviewDb(previewDb)
-      const tasksDb = openDb(dataPath('tasks.sqlite'))
+      const tasksDb = await openRecoverableApplicationSqliteDb(dataPath('tasks.sqlite'), 'tasks')
+      recordSqlitePolicy('tasks', dataPath('tasks.sqlite'), tasksDb)
       load('src/main/tasks/background-runtime/backgroundTaskSchemaRuntime.ts').initializeTasksDb({
         ...sqlite, taskSqliteSchemaVersion: constants.TASKS_SQLITE_SCHEMA_VERSION,
       }, tasksDb)
@@ -666,7 +848,7 @@ async function createHost(options) {
         legacyRootPreviewCacheDir: rootPreviewCacheDir,
         localPreviewImageDir: () => dataPath('preview-images'), previewSqlitePath: () => dataPath('preview.sqlite'),
         sha1: fonts.sha1, appendStartupLog, openPreviewDb: async () => previewDb,
-        openStableSqliteDb: openDb, initializePreviewDb, closeSqliteDb, normalizePathForCacheCompare: key,
+        openStableSqliteDb, initializePreviewDb, closeSqliteDb, normalizePathForCacheCompare: key,
         normalizePreviewCacheIndexStatus: previewCache.normalizePreviewCacheIndexStatus,
         upsertPreviewCacheRows: previewCache.upsertPreviewCacheRows,
         loadLibraryShell: async () => load('src/main/library/runtime/libraryPersistenceRuntime.ts').loadLibraryShellFromSqlite(await openLibraryDb()),
@@ -748,6 +930,7 @@ async function createHost(options) {
       }
       for (const root of roots) {
         const db = await rootStorage.openRootIndexDb(rootDbForRoot(root), root, 'root')
+        recordSqlitePolicy('root-index:root', rootDbForRoot(root), db)
         const entries = {}
         for (const item of items.filter(item => key(owner(item)) === key(root))) {
           const relative = path.relative(root, item.path).replaceAll('\\', '/')
@@ -767,7 +950,9 @@ async function createHost(options) {
       })()
       db.close()
       if (initialization.oldProjection !== false && initialization.seedOldProjection !== false) {
-        const prepared = await query.openMergedIndexDb(); closeSqliteDb(prepared)
+        const prepared = await query.openMergedIndexDb()
+        recordSqlitePolicy('merged-index', mergedPath, prepared)
+        closeSqliteDb(prepared)
         const old = openDb(mergedPath)
         old.prepare("DELETE FROM meta WHERE key='installEvidenceVersion'").run()
         const sources = roots.map(root => ({ root, indexDbPath: rootDbForRoot(root), installDbPath: installPath,
@@ -796,8 +981,9 @@ async function createHost(options) {
     return {
       load, status, statusWriter, writer: statusWriter, writerWiring, sqlCounters,
       query, native, indexing, metadata, previewClient, transport, config, fontIdentity,
-      libraryDb, openDb, closeSqliteDb, readBoundary, readerProvenance,
-      loadSharedFontsForFolders, rootStorage, observer, logs, appendLog: appendStartupLog, appendStartupLog,
+      libraryDb, openDb, openStableSqliteDb, sqlitePolicyEvidence, closeSqliteDb, readBoundary, readerProvenance,
+      loadSharedFontsForFolders, loadSharedFontsForFoldersFresh, rootStorage, folderCache, sharedMetadata, rootManifest,
+      migrationDiagnostics, readPortsProvenance, observer, logs, appendLog: appendStartupLog, appendStartupLog,
       localTagHydration: localTags,
       receipts: nativeReceipts, nativeReceipts, queue, projectionEvents, rendererState,
       get observationContextErrors() { return observationContextErrors },
@@ -807,6 +993,8 @@ async function createHost(options) {
       paths: { sourceRoot, workerPath, directory, fixtureDirectory, dataDirectory, libraryPath, mergedPath, installPath, rootDbForRoot, rootCacheForRoot },
       openLibraryDb, appWatchedFolders, exists, dataPath,
       close: closeHost, deliverRendererEvent: payload => eventListener?.(payload),
+      closeProof: () => ({ hostClosed:closeCompleted, databaseOwnersClosed:opened.size === 0, childrenReaped:observer.children.size === 0,
+        remainingDatabaseOwners:opened.size, remainingChildren:observer.children.size }),
       get items() { return [...items] },
       // Intentionally injected invalid display metadata belongs in the runner's
       // explicit correctness-only wrapper, never in root SQL or native metrics.
@@ -844,7 +1032,9 @@ async function createHost(options) {
     }
     assert.equal(observer.children.size, 0, 'Native children remained after host cleanup')
     if (captureCleanupError) throw captureCleanupError
+    closeCompleted = true
   }
 }
 
-module.exports = { createHost, exactLegacyReadBoundary, assertProductionWriterWiring, createProductionLocalTagHydration, assertProductionLocalTagHydrationWiring }
+module.exports = { createHost, exactLegacyReadBoundary, assertProductionWriterWiring, createProductionLocalTagHydration, assertProductionLocalTagHydrationWiring,
+  createDiagnosticSqliteDatabase, createProductionSqlitePorts, assertProductionSqliteWiring, exactSelectedStorageReadPorts, assertProductionReadOwnerPorts }

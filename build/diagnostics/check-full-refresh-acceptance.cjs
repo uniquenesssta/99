@@ -346,7 +346,7 @@ async function observationRegressions() {
  }
  console.log('[diagnostics:full-refresh-acceptance] observer identity, deadline/physical completion, admission, bounds, errors and restoration counterexamples passed')
 }
-observationRegressions().then(localTagHydrationRegressions).catch(error=>{console.error(error);process.exitCode=1})
+observationRegressions().then(localTagHydrationRegressions).then(taggedPageRealmRegressions).then(sqlitePolicyRegressions).then(()=>require('./check-full-refresh-fixture-lifecycle.cjs').runFixtureLifecycleRegressions()).then(timedOwnerRegressions).catch(error=>{console.error(error);process.exitCode=1})
 
 // These mechanics fixtures exercise the actual source hydration owner with a
 // controlled native port. Real A/B workers additionally prove alias parity in
@@ -439,4 +439,191 @@ async function localTagHydrationRegressions() {
   }finally{mutantFixture.db.close()}
  }finally{if(saved===undefined)delete process.env.HFM_NODE_STATE_FALLBACK;else process.env.HFM_NODE_STATE_FALLBACK=saved}
  console.log('[diagnostics:full-refresh-acceptance] actual Rust-first hydration owner, native population/tags, failure refusal and direct-Node mutant passed')
+}
+
+
+function taggedPageRealmRegressions() {
+ const vm=require('node:vm'),{assertTaggedPageIdentities}=require('./check-full-refresh-work.cjs')
+ const expected=[{id:'file-v2:first'},{id:'file-v2:second'},{id:'file-v2:third'}]
+ const actual=vm.runInNewContext('[{id:"file-v2:third"},{id:"file-v2:first"},{id:"file-v2:second"}]')
+ assert(Array.isArray(actual));assert.notEqual(Object.getPrototypeOf(actual),Array.prototype)
+ // The exact former comparison rejects identical values solely at the realm
+ // boundary. The actual diagnostic now preserves IDs and normalizes containers.
+ assert.throws(()=>assert.deepEqual(actual.map(item=>item.id).sort(),expected.map(item=>item.id).sort()),{code:'ERR_ASSERTION'})
+ assertTaggedPageIdentities(actual,expected)
+ assertTaggedPageIdentities(expected,actual)
+ for(const expression of [
+  '[{id:"file-v2:first"},{id:"file-v2:second"}]',
+  '[{id:"file-v2:first"},{id:"file-v2:second"},{id:"file-v2:second"}]',
+  '[{id:"file-v2:first"},{id:"file-v2:second"},{id:"file-v2:wrong"}]',
+  '[{id:"file-v2:first"},{id:"file-v2:second"},{id:3}]',
+  '[{id:"file-v2:first"},{id:"file-v2:second"},{id:"FILE-V2:THIRD"}]',
+ ]) assert.throws(()=>assertTaggedPageIdentities(vm.runInNewContext(expression),expected),/Tagged page changed identities/)
+ assert.throws(()=>assertTaggedPageIdentities(vm.runInNewContext('[{id:3}]'),[{id:'3'}]),/Tagged page changed identities/)
+ assert.throws(()=>assertTaggedPageIdentities(vm.runInNewContext('[{id:"a"},{id:"b"},{id:"b"}]'),[{id:'a'},{id:'a'},{id:'b'}]),/Tagged page changed identities/)
+ console.log('[diagnostics:full-refresh-acceptance] cross-realm tagged IDs preserve exact values and duplicate multiplicity')
+}
+
+async function sqlitePolicyRegressions() {
+ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),ts=require('typescript')
+ const {DatabaseSync}=require('node:sqlite'),{loader}=require('./check-operation-chain.cjs')
+ const file=path.join(__dirname,'lib/production-projection-host.cjs'),hostModule=require(file)
+ const {createDiagnosticSqliteDatabase,createProductionSqlitePorts,assertProductionSqliteWiring}=hostModule
+ const sourceRoot=path.resolve(__dirname,'../..'),directory=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-sqlite-policy-')),opened=new Set()
+ const dataPath=(...parts)=>path.join(directory,...parts)
+ const openRawDb=(file,options)=>{const db=createDiagnosticSqliteDatabase(DatabaseSync,file,options);db.exec('PRAGMA busy_timeout=5000;');opened.add(db);return db}
+ const options={load:loader(),sourceRoot,requireProject:require,openRawDb,dataPath,exists:async file=>fs.existsSync(file),appendStartupLog:()=>{}}
+ const close=db=>{db.close();opened.delete(db)}
+ function assertPolicy(ports,db) {
+  const actual=ports.inspectPolicy(db),configured=ports.provenance.configuredOptions
+  assert.equal(actual.journal_mode,'wal','Selected SQLite journal mode missing')
+  assert.equal(actual.synchronous,1,'Selected SQLite synchronous mode missing')
+  assert.equal(actual.busy_timeout,configured.busyTimeoutMs,'Selected SQLite busy timeout missing')
+  assert.equal(actual.temp_store,2,'Selected SQLite temporary-store mode missing')
+  assert.equal(actual.foreign_keys,1,'Selected SQLite foreign-key mode missing')
+  assert.equal(actual.mmap_size,configured.mmapSizeBytes,'Selected SQLite mmap size missing')
+ }
+ try {
+  const ports=createProductionSqlitePorts(options)
+  assert.equal(ports.provenance.mode,'selected-source-sqlite-open-policy')
+  assert.equal(ports.provenance.configuredOptions.busyTimeoutMs,60000,'Production SQLite lock-wait profile changed')
+  assert.equal(ports.provenance.configuredOptions.mmapSizeBytes,268435456)
+  for(const label of ['install-identity-items','machine-install:fallback','root-index:root','merged-index','install-signature','preview:shared']) {
+   const db=ports.openStableSqliteDb(dataPath(label.replaceAll(':','-')+'.sqlite'),label)
+   try{db.exec('CREATE TABLE sample(value TEXT)');assertPolicy(ports,db)}finally{close(db)}
+  }
+  for(const label of ['library','preview','tasks']) {
+   const db=await ports.openRecoverableApplicationSqliteDb(dataPath(label+'.sqlite'),label)
+   try{db.exec('CREATE TABLE sample(value TEXT)');assertPolicy(ports,db)}finally{close(db)}
+  }
+  // Explicit rollback fixtures/audits retain raw constructor semantics; the
+  // selected production policy must not be globally applied to their opens.
+  const rollbackPath=dataPath('rollback.sqlite'),raw=openRawDb(rollbackPath)
+  raw.exec('CREATE TABLE sample(value TEXT)')
+  const rawPolicy=ports.inspectPolicy(raw)
+  assert.equal(rawPolicy.journal_mode,'delete');assert.equal(rawPolicy.synchronous,2);assert.equal(rawPolicy.busy_timeout,5000)
+  close(raw);assert.deepEqual([...fs.readFileSync(rollbackPath).subarray(18,20)],[1,1])
+  const before=fs.readFileSync(rollbackPath)
+  const readOnly=createDiagnosticSqliteDatabase(DatabaseSync,rollbackPath,{readonly:true,fileMustExist:true})
+  try{assert.throws(()=>readOnly.exec("INSERT INTO sample VALUES('blocked')"),/readonly|read-only/i);assert.equal(readOnly.prepare('SELECT COUNT(*) AS n FROM sample').get().n,0)}finally{readOnly.close()}
+  assert.deepEqual(fs.readFileSync(rollbackPath),before,'Readonly health open changed fixture bytes')
+  const missing=dataPath('absent-directory','missing.sqlite')
+  assert.throws(()=>createDiagnosticSqliteDatabase(DatabaseSync,missing,{readonly:true,fileMustExist:true}))
+  assert(!fs.existsSync(path.dirname(missing)),'Readonly/must-exist open created its missing directory')
+  assert.throws(()=>createDiagnosticSqliteDatabase(DatabaseSync,rollbackPath,{fileMustExist:true}),/fileMustExist/)
+  for(const unsupported of [{readOnly:true},{readonly:'true'},{timeout:1}])assert.throws(()=>createDiagnosticSqliteDatabase(DatabaseSync,rollbackPath,unsupported),/Unsupported|boolean/)
+  ports.assertSqliteFileHealthy(rollbackPath,'readonly-health')
+  assert.deepEqual(fs.readFileSync(rollbackPath),before)
+  const corruptPath=dataPath('corrupt.sqlite'),corrupt=Buffer.from('deliberately invalid diagnostic SQLite fixture')
+  fs.writeFileSync(corruptPath,corrupt)
+  await assert.rejects(ports.openRecoverableApplicationSqliteDb(corruptPath,'library'))
+  assert.deepEqual(fs.readFileSync(corruptPath),corrupt,'Corrupt benchmark data was replaced or quarantined')
+  assert(!fs.existsSync(ports.provenance.fixtureBackupRoot));assert(!fs.existsSync(ports.provenance.fixtureCorruptRoot))
+  const storage='src/main/bootstrap/mainDataStorageCompositionRuntime.ts',source=fs.readFileSync(path.join(sourceRoot,storage),'utf8')
+  for(const [before,after]of [['busyTimeoutMs: SQLITE_BUSY_TIMEOUT_MS','busyTimeoutMs: 5000'],['mmapSizeBytes: SQLITE_MMAP_SIZE_BYTES','mmapSizeBytes: 0']]) {
+   assert.equal(source.split(before).length,2)
+   assert.throws(()=>assertProductionSqliteWiring(sourceRoot,require,{[storage]:source.replace(before,after)}),/configuration wiring changed/)
+  }
+  // Exact helper mutation reintroduces the historical raw-open policy bypass.
+  const helperSource=fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n'),tree=ts.createSourceFile(file,helperSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS)
+  const matches=tree.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='createProductionSqlitePorts')
+  assert.equal(matches.length,1)
+  const helper=matches[0].getText(tree),anchor='openStableSqliteDb:runtime.openStableSqliteDb'
+  assert.equal(helper.split(anchor).length,2,'Raw SQLite bypass mutation anchor changed')
+  const mutated=new Function('assert','assertProductionSqliteWiring','forbidden',helper.replace(anchor,'openStableSqliteDb:openRawDb')+';return createProductionSqlitePorts')(
+   assert,assertProductionSqliteWiring,name=>()=>{throw Error(name)})
+  const bypass=mutated(options),bypassed=bypass.openStableSqliteDb(dataPath('raw-bypass.sqlite'),'install-identity-items')
+  try{assert.throws(()=>assertPolicy(bypass,bypassed),/Selected SQLite journal mode missing/)}finally{close(bypassed)}
+ }finally{
+  for(const db of opened)try{db.close()}catch{}
+  fs.rmSync(directory,{recursive:true,force:true})
+ }
+ console.log('[diagnostics:full-refresh-acceptance] selected SQLite policy, readonly/missing safeguards, rollback control and raw-open bypass mutant passed')
+}
+
+async function timedOwnerRegressions() {
+ const fs=require('node:fs'),path=require('node:path'),ts=require('typescript'),{loader}=require('./check-operation-chain.cjs')
+ const sourceRoot=path.resolve(__dirname,'../..'),hostModule=require('./lib/production-projection-host.cjs')
+ const {exactSelectedStorageReadPorts,assertProductionReadOwnerPorts}=hostModule
+ function storage(sourceOverride) {
+  const calls=[],cached=[{id:'cached'}],fresh=[{id:'fresh'}],rows=[{path:'watched-b'},{path:'watched-a'}]
+  const db={prepare(sql){assert.equal(sql,'SELECT path FROM folders ORDER BY sort_order');return {all(){calls.push('folder-sql');return rows}}}}
+  const extracted=exactSelectedStorageReadPorts({sourceRoot,requireProject:require,sourceOverride,dependencies:{
+   openLibraryDbBase:async()=>{calls.push('base-db');return db},
+   localFavorites:{initialize:async()=>{calls.push('favorites-init')},hydrate:async value=>{calls.push('favorites-hydrate');return value.map(item=>({...item,favorite:true}))}},
+   requireFolderCacheRuntime:()=>({loadSharedFontsForFolders:async value=>{calls.push('cached');assert.equal(value,'roots');return cached},
+    loadSharedFontsForFoldersFresh:async value=>{calls.push('fresh');assert.equal(value,'roots');return fresh}}),
+   normalizeWatchedFontFolders:value=>{calls.push('normalize-roots');assert.deepEqual(Array.from(value),rows.map(row=>row.path));return ['normalized-root']},appendStartupLog:()=>{},
+  }})
+  return {...extracted,calls,db}
+ }
+ const selected=storage()
+ assert.equal((await selected.ports.openLibraryDb()),selected.db)
+ assert.deepEqual(selected.calls.splice(0),['base-db','favorites-init'])
+ assert.deepEqual(Array.from(await selected.ports.appWatchedFolders()),['normalized-root'])
+ assert.deepEqual(selected.calls.splice(0),['base-db','folder-sql','normalize-roots'],'Watched roots depended on derived favorite import')
+ assert.deepEqual(await selected.ports.loadSharedFontsForFolders('roots'),[{id:'cached',favorite:true}])
+ assert.deepEqual(selected.calls.splice(0),['favorites-init','cached','favorites-hydrate'])
+ async function checkFresh(value) {
+  assert.deepEqual(await value.ports.loadSharedFontsForFoldersFresh('roots'),[{id:'fresh',favorite:true}],'Fresh owner was bypassed')
+  assert.deepEqual(value.calls.splice(0),['favorites-init','fresh','favorites-hydrate'])
+ }
+ await checkFresh(selected)
+ const storagePath=path.join(sourceRoot,'src/main/bootstrap/mainDataStorageCompositionRuntime.ts'),storageSource=fs.readFileSync(storagePath,'utf8')
+ const freshAnchor='runtime.loadSharedFontsForFoldersFresh(folders)'
+ assert.equal(storageSource.split(freshAnchor).length,2)
+ await assert.rejects(()=>checkFresh(storage(storageSource.replace(freshAnchor,'runtime.loadSharedFontsForFolders(folders)'))),/Fresh owner was bypassed/)
+ const expected={appWatchedFolders:selected.ports.appWatchedFolders,loadSharedFontsForFolders:selected.ports.loadSharedFontsForFolders,
+  loadSharedFontsForFoldersFresh:selected.ports.loadSharedFontsForFoldersFresh,exists:async()=>false,resolveActiveRootIndexDbPath:async()=>'',
+  applySharedMetadataToMergedRows:async()=>[],sharedMetadataSignatureForRoot:async()=>'',saveMetricsSnapshot:async()=>{},migrationDiagnosticsRuntime:{record(){}}}
+ assertProductionReadOwnerPorts({...expected},expected)
+ for(const name of Object.keys(expected)) {
+  const substitute=name==='migrationDiagnosticsRuntime'?{record(){}}:async()=>undefined
+  assert.throws(()=>assertProductionReadOwnerPorts({...expected,[name]:substitute},expected),new RegExp(`Production read owner bypassed: ${name}`))
+ }
+ assert.throws(()=>assertProductionReadOwnerPorts({...expected,loadSharedFontsForFoldersFresh:expected.loadSharedFontsForFolders},
+  {...expected,loadSharedFontsForFoldersFresh:expected.loadSharedFontsForFolders}),/Fresh folder reads aliased/)
+ const load=loader({}, {setImmediate,clearImmediate})
+ const metrics=load('src/main/cache/cacheArchitectureRuntime.ts').createCacheArchitectureRuntime(new Proxy({}, {get(){throw Error('Metrics snapshot introduced persistence work')}}))
+ await metrics.saveMetricsSnapshot('font_metrics',{total:5490})
+ const logs=[],migration=load('src/main/diagnostics/migrationDiagnosticsRuntime.ts').createMigrationDiagnosticsRuntime({appendStartupLog:line=>logs.push(line)})
+ for(let index=0;index<200;index++)migration.record({source:'fixture',kind:'accepted'})
+ assert.equal(logs.length,0,'Migration reporting introduced per-event logging')
+ const snapshot=migration.snapshot();assert.equal(snapshot.summary.accepted,200);assert.equal(snapshot.recentEvents.length,160)
+ // Exercise the actual exists owner with only its filesystem boundary controlled.
+ let accessFailure,accessCalls=0
+ const appLoad=loader({electron:{app:{}},[path.join(sourceRoot,'src/main/path/sharedFileSystemRuntime.ts')]:{
+  sharedFileSystem:{access:async()=>{accessCalls++;if(accessFailure)throw accessFailure}},
+ }},{setImmediate,clearImmediate})
+ const appPaths=appLoad('src/main/app/appDataPaths.ts').createAppDataPaths({appName:'Fixture',dataDirName:'fixture',dataLayoutVersion:1,cacheArchitectureVersion:1,appendLog:()=>{}})
+ assert.equal(await appPaths.exists('fixture-file'),true)
+ accessFailure=Object.assign(Error('missing'),{code:'ENOENT'});assert.equal(await appPaths.exists('fixture-file'),false)
+ const {SharedIoProcessError}=appLoad('src/main/path/sharedIoProcessRuntime.ts')
+ accessFailure=new SharedIoProcessError('controlled unavailable','not-started','stale-generation')
+ await assert.rejects(appPaths.exists('fixture-file'),error=>error===accessFailure);assert.equal(accessCalls,3)
+ // Use the actual selected performance owner with its sampler unstarted.
+ const {createFixturePerformanceRuntime,assertFixtureCacheCanContinue}=require('./check-full-refresh-work.cjs')
+ assertFixtureCacheCanContinue({fixtureCacheLifecycle:{snapshot:()=>({blocked:false,activeCaseId:null})}})
+ for(const state of [{blocked:true,activeCaseId:null,failure:{message:'archive failed'}},{blocked:false,activeCaseId:'setup-failed-before-host'}])
+  assert.throws(()=>assertFixtureCacheCanContinue({fixtureCacheLifecycle:{snapshot:()=>state}}),/blocked subsequent cases/)
+
+ function performanceFixture(factory) {
+  let nativeNudges=0
+  const host={load:loader({}, {setImmediate,clearImmediate,setInterval(){throw Error('Unexpected sampler start')},clearInterval}),appendStartupLog:()=>{},
+   transport:{noteRustCoreSchedulerInteractiveActivity(){nativeNudges++}}}
+  const runtime=factory(host)
+  try{runtime.markRendererUserActivity(undefined,'fixture-activity');assert.equal(nativeNudges,0,'Unexpected native activity nudge')}
+  finally{runtime.stopPerformanceLogSampler();runtime.flushPerformanceLogs('fixture-close')}
+ }
+ performanceFixture(createFixturePerformanceRuntime)
+ const workFile=path.join(__dirname,'check-full-refresh-work.cjs'),workSource=fs.readFileSync(workFile,'utf8').replace(/\r\n/g,'\n')
+ const tree=ts.createSourceFile(workFile,workSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS)
+ const helpers=tree.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='createFixturePerformanceRuntime')
+ assert.equal(helpers.length,1)
+ const helper=helpers[0].getText(tree),ownerAnchor='return host.load',endAnchor='  })\n}'
+ assert.equal(helper.split(ownerAnchor).length,2);assert.equal(helper.split(endAnchor).length,2)
+ const mutated=helper.replace(ownerAnchor,'const owner = host.load').replace(endAnchor,"  })\n  const original = owner.markRendererUserActivity\n  owner.markRendererUserActivity = (...args) => { host.transport.noteRustCoreSchedulerInteractiveActivity('benchmark-foreground'); return original(...args) }\n  return owner\n}")
+ const nudged=new Function('path','process',mutated+';return createFixturePerformanceRuntime')(path,process)
+ assert.throws(()=>performanceFixture(nudged),/Unexpected native activity nudge/)
+ console.log('[diagnostics:full-refresh-acceptance] selected watched/cached/fresh/read/metrics/diagnostic/activity owners and prior-substitute negatives passed')
 }

@@ -52,7 +52,7 @@ async function main() {
     host = await createHost({ sourceRoot, workerPath, directory, fixtureDirectory: directory, roots: [fontRoot] })
     assert.equal(host.readerProvenance.mode, 'production-extracted-reader', 'Projection correctness gate requires candidate production reader')
     const { load, status, query, indexing, nativeReceipts, queue, readBoundary, projectionEvents,
-      rendererState, openDb, config, fontIdentity, rootStorage } = host
+      rendererState, openDb, openStableSqliteDb, config, fontIdentity, rootStorage } = host
     const committedProjections = () => projectionEvents.filter(event => event.source === 'projection')
     const metricsEvents = () => projectionEvents.filter(event => event.source === 'metrics')
     const { mergedPath, libraryPath, installPath } = host.paths
@@ -130,7 +130,7 @@ async function main() {
         const key = JSON.parse(snapshot.prepare("SELECT value FROM meta WHERE key='sourcesKey'").get().value)
         assert(key.length && key.every(source => source.installSignature.startsWith('install-content-v1|')))
         const signature = load('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({
-          dataPath: host.dataPath, exists: host.exists, openStableSqliteDb: openDb, openRootIndexDb: rootStorage.openRootIndexDb,
+          dataPath: host.dataPath, exists: host.exists, openStableSqliteDb, openRootIndexDb: rootStorage.openRootIndexDb,
           closeSqliteDb: db => db.close(), getSqliteMeta: load('src/main/db/sqliteHelpers.ts').getSqliteMeta,
           setSqliteMeta: load('src/main/db/sqliteHelpers.ts').setSqliteMeta, sqliteTableExists: load('src/main/db/sqliteHelpers.ts').sqliteTableExists,
           appendStartupLog() {}, schemaVersion: config.MERGED_INDEX_SCHEMA_VERSION, staleFirstPageEnabled: true,
@@ -199,7 +199,7 @@ async function main() {
     assert(nativeReceipts.some(row => row.method === 'runRustInstallStatusRead'))
     assert(nativeReceipts.some(row => row.method === 'runRustInstallStatusSave'))
     success = true
-    finishedReport = { ok: true, platform: process.platform, workerSha256: sha256(fs.readFileSync(workerPath)), stages,
+    finishedReport = { ok: true, platform: process.platform, workerSha256: sha256(fs.readFileSync(workerPath)), stages, sqlitePolicy: host.sqlitePolicyEvidence,
       projectionEvents: committedProjections(), metricsEvents: metricsEvents(), indexEvents: projectionEvents, rendererRefreshes: rendererState.refreshes,
       nativeCounts: Object.fromEntries([...new Set(nativeReceipts.map(row => row.method))].map(method => [method, nativeReceipts.filter(row => row.method === method).length])),
       scope: 'production storage read boundary + data query composition + native SQLite pages/metrics + activation projection + renderer revision hook',
@@ -207,7 +207,7 @@ async function main() {
     }
   } catch (error) {
     primaryFailure=error
-    finishedReport={ok:false,platform:process.platform,stages,lastCompletedStage:stages.at(-1),error:{name:error.name,message:error.message,stack:error.stack},
+    finishedReport={ok:false,platform:process.platform,stages,sqlitePolicy:host?.sqlitePolicyEvidence,lastCompletedStage:stages.at(-1),error:{name:error.name,message:error.message,stack:error.stack},
       projectionEvents:(host?.projectionEvents||[]).filter(event=>event.source==='projection'),
       metricsEvents:(host?.projectionEvents||[]).filter(event=>event.source==='metrics'),indexEvents:host?.projectionEvents||[],nativeCounts:Object.fromEntries([...new Set((host?.nativeReceipts||[]).map(row=>row.method))].map(method=>[method,host.nativeReceipts.filter(row=>row.method===method).length]))}
   } finally {
