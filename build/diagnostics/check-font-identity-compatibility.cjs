@@ -151,7 +151,7 @@ function localTagMembershipQueries(queryLoad=load) {
     if(selected===tag)assert.deepEqual(expected,[...Array.from({length:64},(_,i)=>`font-${i}.ttf`),'font-200.ttf','font-201.ttf'].sort(),'pathless IDs or path-bearing isolation changed')
     const query=builder.buildMergedIndexQuerySql(request,count,0),ids=builder.buildMergedIndexIdsQuerySql(request,count)
     const plan=work.prepare('EXPLAIN QUERY PLAN '+query.countSql).all(...query.countParams).map(row=>row.detail).join('\n')
-    assert(!/CORRELATED/i.test(plan),'tag membership reverted to per-font binding scans');assert(/LIST SUBQUERY/i.test(plan))
+    assert(!/CORRELATED/i.test(plan) && /LIST SUBQUERY/i.test(plan),'tag membership must use uncorrelated lookup sets: '+plan)
     pathCalls=0
     assert.equal(work.prepare(query.countSql).get(...query.countParams).count,expected.length)
     assert(pathCalls<=count*6,'COUNT repeated path work for each local binding: '+pathCalls)
@@ -180,7 +180,7 @@ const membershipAnchor="const membership = localTagMembershipSql(rootIndexRuntim
 assert(require('node:fs').readFileSync(membershipFile,'utf8').includes(membershipAnchor),'correlated-query mutant anchor missing')
 const correlatedMembership='const membership = { clause: "EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE " + rootIndexLocalTagMatchExpr("lft") + (tagName === undefined ? "" : " AND lft.tag_name = ?") + ")", params: tagName === undefined ? [] : [tagName] }'
 const correlatedLoader=loader({}, {}, {[membershipFile]:source=>source.replace(membershipAnchor,correlatedMembership)})
-assert.throws(()=>localTagMembershipQueries(correlatedLoader),error=>error instanceof assert.AssertionError && /tag membership reverted to per-font binding scans/.test(error.message),'correlated normalization mutant escaped the actual SQL work gate')
+assert.throws(()=>localTagMembershipQueries(correlatedLoader),error=>error instanceof assert.AssertionError && /tag membership must use uncorrelated lookup sets:/.test(error.message),'correlated normalization mutant escaped the actual SQL work gate')
 // Preview cache keys and storage routing do not use the runtime ID.
 const preview=load('src/main/preview/runtime/previewBatchRowsRuntime.ts').createPreviewBatchRowsRuntime({sha1:hash,normalizePathForCacheCompare:p=>p.toLowerCase()},()=>({storage:'local',dir:'C:\\preview',identity:'same.ttf'}))
 const previewRow=font=>[...preview.buildPreviewCacheGroups([font],{},'Text',36,400,80).values()][0].rows[0]

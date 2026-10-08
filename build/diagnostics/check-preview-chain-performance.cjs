@@ -10,7 +10,7 @@ async function checkPreviewTransportLifecycle() {
     return module.exports
   }
   async function exercise(helper) {
-    function fakeFixture({ duplicateDaemon = false, nativeBusy, withholdStatus = false } = {}) {
+    function fakeFixture({ duplicateDaemon = false, nativeBusy, withholdStatus = false, finishingShutdown = false, wrongTerminalError = false } = {}) {
       const daemon = { spawnargs: ['C:/fixture-worker.exe', '--core-daemon'] }, children = new Set([daemon]), tasks = new Set()
       const observer = { children, counts: { processes: 1 } }
       if (duplicateDaemon) children.add({ spawnargs: [...daemon.spawnargs] })
@@ -18,6 +18,7 @@ async function checkPreviewTransportLifecycle() {
       const idleState = () => ({ queued: 0, running: null, queuedJobs: [], lanes: [{ lane: 'preview', queued: 0, running: 0 }], writeBarrier: { queuedWrites: 0, runningWrites: 0 } })
       let releasedNative = false, rustState = idleState()
       const pool = { status: () => ({ closed }), whenIdle: async () => { while (tasks.size) await Promise.allSettled([...tasks]) } }
+      const assertLocalShutdownWorkAllowed = () => { if (finishingShutdown) throw Error('fixture shutdown cleanup finished') }
       const transport = {
         rustCoreWorkerStatus: () => ({ path: 'C:/fixture-worker.exe' }),
         rustCoreDaemonStatus: () => {
@@ -31,7 +32,9 @@ async function checkPreviewTransportLifecycle() {
         },
         stopRustCoreDaemon() { stops++; stopped = true; closed = true; Promise.resolve().then(() => children.delete(daemon)) },
         runRustCoreScheduledCommand: () => {
-          if (stopped) return Promise.reject(Object.assign(Error('fixture transport stopped'), { reason: 'stopping' }))
+          if (stopped && wrongTerminalError) return Promise.reject(Error('unrelated terminal failure'))
+          try { assertLocalShutdownWorkAllowed() } catch (error) { return Promise.reject(error) }
+          if (stopped) return Promise.reject(Object.assign(Error('fixture transport stopped'), { reason: 'stopping', outcome: 'not-started' }))
           assert.equal(closed, false, 'borrowed pool was stopped')
           nativeDispatches++; observer.counts.processes++
           const child = { spawnargs: ['fixture-worker', '--preview-render-image'] }; children.add(child)
@@ -43,6 +46,7 @@ async function checkPreviewTransportLifecycle() {
       const load = name => {
         if (name.endsWith('rustCoreWorkerTransportRuntime.ts')) return { createRustCoreWorkerTransportRuntime: () => transport }
         if (name.endsWith('sharedIoProcessRuntime.ts')) return { applicationSharedIoProcessRuntime: () => pool }
+        if (name.endsWith('shutdownCoordinatorRuntime.ts')) return { assertLocalShutdownWorkAllowed }
         throw Error('unexpected lifecycle dependency: ' + name)
       }
       return { load, observer, pool, stops: () => stops, nativeDispatches: () => nativeDispatches, polls: () => polls, releaseNative: () => { releasedNative = true } }
@@ -65,6 +69,15 @@ async function checkPreviewTransportLifecycle() {
     const single = fakeFixture(), singleOwner = helper.createControlledPreviewTransportOwner({ ...single, appendLog() {} })
     const close = helper.createPreviewPhaseCloser({ transportOwner: singleOwner, borrowed: false, closeDatabases() {} })
     await Promise.all([close(), close()]); assert.equal(single.stops(), 1); assert.equal(single.observer.children.size, 0)
+    const finished = fakeFixture({ finishingShutdown: true }), finishedOwner = helper.createControlledPreviewTransportOwner({ ...finished, appendLog() {} })
+    const closeFinished = helper.createPreviewPhaseCloser({ transportOwner: finishedOwner, borrowed: false, closeDatabases() {} })
+    await assert.doesNotReject(closeFinished(), 'finished shutdown must retain exact terminal refusal proof')
+    assert.equal(finished.stops(), 1); assert.equal(finished.pool.status().closed, true); assert.equal(finished.observer.children.size, 0); assert.equal(finished.nativeDispatches(), 0)
+    for (const finishingShutdown of [false, true]) {
+      const wrong = fakeFixture({ finishingShutdown, wrongTerminalError: true }), wrongOwner = helper.createControlledPreviewTransportOwner({ ...wrong, appendLog() {} })
+      await assert.rejects(wrongOwner.close(), error => error.code === 'ERR_ASSERTION', 'unrelated terminal error was accepted as shutdown proof')
+      assert.equal(wrong.stops(), 1); assert.equal(wrong.observer.children.size, 0); assert.equal(wrong.nativeDispatches(), 0)
+    }
     // JS pending is already zero in these cases. A stale status or any native
     // queue/lane/write-barrier evidence must still prevent phase settlement.
     for (const options of [{ withholdStatus: true },
@@ -88,11 +101,117 @@ async function checkPreviewTransportLifecycle() {
   const anchor = 'if (!borrowed) await transportOwner.close()'
   assert(source.includes(anchor), 'per-phase-stop mutant anchor missing')
   await assert.rejects(exercise(loadHelper(source.replace(anchor, 'if (true) await transportOwner.close()'))), /cache phase terminally stopped/, 'per-phase terminal-stop regression was accepted')
-  console.log('[preview transport lifecycle] borrowed cache resets, fresh grid work, idle daemon ownership, self-owned recovery close, one terminal stop and rejected per-phase-stop mutant')
+  const shutdownAnchor = 'error => shutdownBlocker'
+  assert.equal(source.split(shutdownAnchor).length, 2, 'shutdown-order mutant anchor drifted')
+  await assert.rejects(exercise(loadHelper(source.replace(shutdownAnchor, 'error => false'))), /finished shutdown must retain exact terminal refusal proof/, 'finished-shutdown rejection-order mutant was accepted')
+  console.log('[preview transport lifecycle] borrowed cache resets, fresh grid work, idle daemon ownership, self-owned recovery close, one terminal stop, finished-shutdown refusal, wrong-error negatives and rejected lifecycle mutants')
 }
+async function checkManualPreviewHostIntent() {
+  const filename = path.join(__dirname, 'lib/preview-chain-performance-runtime.cjs')
+  const source = fs.readFileSync(filename, 'utf8').replace(/\r\n/g, '\n'), ts = require('typescript')
+  const parsed = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const callbacks = []
+  function visit(node) {
+    if (ts.isPropertyAssignment(node) && node.name.getText(parsed) === 'runRustPreviewRenderImage') callbacks.push(node.initializer)
+    ts.forEachChild(node, visit)
+  }
+  visit(parsed)
+  assert.equal(callbacks.length, 1, 'manual native adapter callback is missing or ambiguous')
+  assert(ts.isArrowFunction(callbacks[0]), 'manual native adapter shape changed')
+  const callback = callbacks[0].getText(parsed)
+  async function exercise(text) {
+    for (const intent of [true, false, undefined]) for (const nativeFailure of [false, true]) {
+      const request = { fontPath: 'C:/fonts/file.ttf', outputPath: 'C:/preview/image.png', text: 'sample', fontSize: 42, width: 240, height: 84,
+        preferSystemFont: false, systemFontFamilyCandidates: ['Fixture'], layout: { version: 'grid-v1', canvasWidth: 240, canvasHeight: 84 },
+        ...(intent === undefined ? {} : { foregroundBytes: intent }) }
+      const before = JSON.parse(JSON.stringify(request)), expected = { ...before }; delete expected.foregroundBytes
+      const writes = [], removed = [], commands = [], sourceRoot = 'C:/selected-source'
+      const fakeFs = { writeFileSync(file, bytes) { writes.push({ file, input: JSON.parse(bytes) }) }, unlinkSync(file) { removed.push(file) } }
+      const execute = async (file, args, options) => {
+        commands.push({ file, args, options })
+        assert.equal(Object.hasOwn(writes[0].input, 'foregroundBytes'), false, 'transport-only intent leaked to native input')
+        assert.deepEqual(writes[0].input, expected, 'manual adapter changed a native field')
+        if (nativeFailure) throw Error('injected manual native failure')
+        return { stdout: '{"ok":true}', stderr: '' }
+      }
+      // Exercise the actual callback body without invoking SQLite, Electron or
+      // a native process. Only its host ports are controlled by this regression.
+      const adapter = new Function('fs', 'path', 'execFile', 'root', `let native=0; const render=(${text}); return {render,native:()=>native}`)(fakeFs, path, execute, sourceRoot)
+      if (nativeFailure) await assert.rejects(adapter.render(request), /injected manual native failure/)
+      else assert.deepEqual(await adapter.render(request), { ok: true, engine: 'rust-directwrite', outputPath: request.outputPath })
+      assert.deepEqual(request, before, 'manual adapter mutated its caller input')
+      assert.equal(adapter.native(), 1); assert.equal(writes.length, 1)
+      const input = request.outputPath + '.native.json'
+      assert.equal(writes[0].file, input)
+      assert.deepEqual(commands, [{ file: path.join(sourceRoot, 'native-src/hfm-core-worker/target/release/hfm-core-worker.exe'), args: ['--preview-render-image', '--input', input], options: { timeout: 15000 } }])
+      assert.deepEqual(removed, [input], 'manual adapter did not preserve input cleanup')
+    }
+  }
+  await exercise(callback)
+  const anchor = 'JSON.stringify(nativeInput)'
+  assert.equal(callback.split(anchor).length, 2, 'manual intent-stripping mutant anchor drifted')
+  await assert.rejects(exercise(callback.replace(anchor, 'JSON.stringify(request)')), /transport-only intent leaked/, 'serialize-original-request mutant was accepted')
+  console.log('[manual preview adapter] true/false/absent host intent stripped; native fields, file output, cleanup and deadline preserved; original-request mutant rejected')
+}
+
+function checkRecoverySessionOwnership() {
+  const filename = path.join(__dirname, 'lib/recovery-chain-electron.cjs'), source = fs.readFileSync(filename, 'utf8').replace(/\r\n/g, '\n')
+  const loadHelper = text => {
+    const module = { exports: {} }, requireLocal = require('node:module').createRequire(filename)
+    new Function('require', 'module', 'exports', text)(requireLocal, module, module.exports)
+    return module.exports
+  }
+  function exercise(helper) {
+    const target = [], collector = helper.createRecoverySessionLogCollector(target)
+    const make = name => {
+      const logs = [], chain = { runtime: { query: () => name + ':query' }, appendLog: line => logs.push(line) }
+      const preview = { runtime: { render: () => name + ':preview' } }
+      collector.retain(logs)
+      return { chain, preview, logs, ports: helper.createRecoverySessionPorts(chain, preview) }
+    }
+    const event = value => ({ kind: 'operation-chain', details: { event: value } })
+    const old = make('old'); let activeChain = old.chain, activePreview = old.preview
+    assert.deepEqual(old.ports.runtime.reportPerformanceEvent(event('old-before-close')), { ok: true })
+    collector.flush(); assert.deepEqual(target, ['operation-chain: old-before-close'], 'session trace ownership changed')
+    activeChain = undefined; activePreview = undefined
+    old.ports.runtime.reportPerformanceEvent(event('old-no-window'))
+    assert.equal(old.ports.runtime.render(), 'old:preview')
+    const current = make('new'); activeChain = current.chain; activePreview = current.preview
+    current.ports.runtime.reportPerformanceEvent(event('new-active'))
+    old.ports.runtime.reportPerformanceEvent(event('old-after-reopen'))
+    old.ports.appendLog('renderer: old late error')
+    assert.equal(old.ports.runtime.query(), 'old:query'); assert.equal(old.ports.runtime.render(), 'old:preview')
+    assert.equal(current.ports.runtime.query(), 'new:query'); assert.equal(current.ports.runtime.render(), 'new:preview')
+    assert.equal(activeChain, current.chain); assert.equal(activePreview, current.preview)
+    collector.flush(); collector.retain(old.logs); collector.flush()
+    assert.deepEqual(target, ['operation-chain: old-before-close', 'operation-chain: old-no-window', 'operation-chain: old-after-reopen', 'renderer: old late error', 'operation-chain: new-active'], 'retained session traces changed or duplicated')
+    old.ports.appendLog('renderer: old after first teardown flush'); current.ports.appendLog('renderer: new late error')
+    collector.flush(); collector.flush()
+    assert.deepEqual(target.slice(-2), ['renderer: old after first teardown flush', 'renderer: new late error'])
+    assert.equal(target.length, 7, 'late session log collection lost or duplicated entries')
+    const loggerFailure = Error('logger must propagate'), previewFailure = Error('preview must propagate')
+    const broken = helper.createRecoverySessionPorts({ runtime: {}, appendLog() { throw loggerFailure } }, { runtime: { render() { throw previewFailure } } })
+    assert.throws(() => broken.runtime.reportPerformanceEvent(event('failure')), error => error === loggerFailure)
+    assert.throws(() => broken.runtime.render(), error => error === previewFailure)
+    assert.throws(() => old.ports.runtime.missing(), /unexpected production port missing/)
+  }
+  assert(source.includes('createRecoverySessionPorts(sessionChain,sessionPreview)') && source.includes('sessionLogs.retain(sessionChain.logs)'), 'actual recovery session is not wired to captured owners and retained logs')
+  exercise(loadHelper(source))
+  for (const [label, before, after] of [
+    ['dropped late trace', 'const appendLog=value=>sessionChain.appendLog(value)', 'const appendLog=value=>undefined'],
+    ['repeated session copy', 'target.push(...logs.slice(offset))', 'target.push(...logs)'],
+  ]) {
+    assert.equal(source.split(before).length, 2, label + ' mutant anchor drifted')
+    assert.throws(() => exercise(loadHelper(source.replace(before, after))), /session trace ownership changed|retained session traces changed or duplicated/, label + ' mutant was accepted')
+  }
+  console.log('[recovery session ownership] no-window/reopen callbacks retain old owners; late traces/errors collected once; callback errors and causal mutants preserved')
+}
+
 async function run() {
   assert.equal(process.platform, 'win32', 'actual preview chain requires Windows')
   await checkPreviewTransportLifecycle()
+  await checkManualPreviewHostIntent()
+  checkRecoverySessionOwnership()
   if (process.argv.includes('--lifecycle')) return
   if (process.argv.includes('--recovery-chain')) return runRecoveryChain()
   if (process.argv.includes('--work-comparison')) return require('./lib/operation-work-performance-runner.cjs').run()

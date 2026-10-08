@@ -360,8 +360,11 @@ function testRustTypeContract() {
   console.log('[diagnostics:orchestration-contracts] Rust Input/Result assignability locked')
 }
 
-function loadTypeScriptModule(rel, localRequire = require) {
-  const output = ts.transpileModule(read(rel), {
+const previewValidatorModule = 'src/main/preview/runtime/previewImageValidationRuntime.ts'
+
+function loadTypeScriptModule(rel, localRequire = require, sourceOverride) {
+  assert(sourceOverride === undefined || rel === previewValidatorModule, 'Source overrides are limited to the pure preview validator regression')
+  const output = ts.transpileModule(sourceOverride === undefined ? read(rel) : sourceOverride, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2022,
@@ -372,8 +375,12 @@ function loadTypeScriptModule(rel, localRequire = require) {
   new Function('exports', 'require', 'module', '__filename', '__dirname', output)(
     module.exports,
     id => {
+      // This audited leaf has no dependencies. Do not inherit the fallback
+      // harness's require policy if a future validator import is introduced.
+      if (rel === previewValidatorModule) fail(`Unexpected preview validator dependency: ${id}`)
       if (!id.startsWith('.')) return localRequire(id)
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
+      if (target + '.ts' === previewValidatorModule) return loadTypeScriptModule(previewValidatorModule, localRequire)
       if (target === 'src/main/app/shutdownCoordinatorRuntime') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/logging/startupLogPolicy' || target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {}, isSharedPreviewReadScope: () => false, currentSharedIoSignal: () => undefined, currentSharedIoPriority: () => undefined }
@@ -389,6 +396,27 @@ function loadTypeScriptModule(rel, localRequire = require) {
     path.dirname(path.join(root, rel)),
   )
   return module.exports
+}
+
+function testPreviewValidatorLoader() {
+  let delegated = 0
+  const refuseDelegation = id => { delegated++; throw new Error(`Validator escaped its dependency boundary: ${id}`) }
+  const { isCompletePreviewPng } = loadTypeScriptModule(previewValidatorModule, refuseDelegation)
+  assert(typeof isCompletePreviewPng === 'function', 'Production preview validator export is missing')
+  const png = require('./fixtures/preview-png.cjs')
+  assert(isCompletePreviewPng(png), 'Production validator loader rejected the complete PNG fixture')
+  const badCrc = Buffer.from(png); badCrc[badCrc.length - 1] ^= 1
+  assert(!isCompletePreviewPng(badCrc), 'Production validator loader accepted a bad PNG CRC')
+  assert(!isCompletePreviewPng(png.subarray(0, -1)), 'Production validator loader accepted a truncated PNG')
+  for (const dependency of ['node:fs', './unexpectedPreviewDependency']) {
+    let caught = null
+    try {
+      loadTypeScriptModule(previewValidatorModule, refuseDelegation, `import '${dependency}';\n${read(previewValidatorModule)}`)
+    } catch (error) { caught = error }
+    assert(caught?.message === `Unexpected preview validator dependency: ${dependency}`, `Unexpected validator dependency was not refused locally: ${dependency}`)
+  }
+  assert(delegated === 0, 'Pure preview validator delegated a dependency to the broader harness')
+  console.log('[diagnostics:orchestration-contracts] production PNG validator loader and dependency boundary locked')
 }
 
 function createRustBehaviorHarness(mode) {
@@ -581,6 +609,7 @@ async function main() {
   testLifecycleContract()
   testRustStructuralContract()
   testRustTypeContract()
+  testPreviewValidatorLoader()
   await testRustFailureBoundary()
   testAppRootViewContract()
   testPackageRegistration()

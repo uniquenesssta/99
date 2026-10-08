@@ -5,6 +5,22 @@ const {createRuntime}=require('./preview-chain-performance-runtime.cjs')
 const {hash}=require('./operation-work-performance.cjs')
 const {capturePreviewEvidence}=require('./recovery-preview-visual.cjs')
 const plain=value=>JSON.parse(JSON.stringify(value))
+// Registered callbacks can settle after the active window/session pointer is
+// cleared or replaced. Their dependencies belong to the registering session.
+function createRecoverySessionPorts(sessionChain,sessionPreview) {
+  const appendLog=value=>sessionChain.appendLog(value)
+  sessionChain.runtime.reportPerformanceEvent=payload=>{if(payload?.kind==='operation-chain')appendLog('operation-chain: '+payload.details.event);return {ok:true}}
+  const previewRuntime=sessionPreview.runtime
+  const runtime=new Proxy(sessionChain.runtime,{get(target,key){if(key in target)return target[key];if(key in previewRuntime)return previewRuntime[key];return ()=>{throw Error('unexpected production port '+String(key))}}})
+  return {runtime,appendLog}
+}
+function createRecoverySessionLogCollector(target) {
+  const sessions=new Map()
+  return {
+    retain(logs){if(!sessions.has(logs))sessions.set(logs,0)},
+    flush(){for(const [logs,offset] of sessions){target.push(...logs.slice(offset));sessions.set(logs,logs.length)}},
+  }
+}
 async function run({directory,html,preload,config,electron}) {
   const {app,BrowserWindow,ipcMain}=electron
   // Reopen and asynchronous cleanup intentionally have a no-window interval.
@@ -16,7 +32,8 @@ async function run({directory,html,preload,config,electron}) {
     scope:'same persisted tag page/real React cards/menu/actions/preload/IPC/content status Rust DB/private-file PNG/controlled exact OS effects/reopen; remote snapshot and WebFont-failure trigger controlled; no actual registry mutation, NAS or full App startup; merged-index projection not exercised',checkpoints:[],previews:[],cases:[],sessions:[],logs:[]}
   let chain,preview,win,pickerCalls=0,pendingPicker,channels=[]
   const receipts=[];report.receipts=receipts
-  const timer=setTimeout(()=>{report.passed=false;report.error='F14 integration watchdog';report.logs.push(...(chain?.logs||[]));fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'));console.error(report.error);app.exit(1)},180000)
+  const sessionLogs=createRecoverySessionLogCollector(report.logs)
+  const timer=setTimeout(()=>{report.passed=false;report.error='F14 integration watchdog';sessionLogs.flush();fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'));console.error(report.error);app.exit(1)},180000)
   const wait=async(test,label,timeout=15000)=>{const end=Date.now()+timeout;while(Date.now()<end){const value=await test();if(value)return value;await new Promise(resolve=>setTimeout(resolve,15))}throw Error('F14 wait timed out: '+label)}
   const js=code=>win.webContents.executeJavaScript(code)
   const ui=()=>js('window.recoveryChain.snapshot()')
@@ -28,28 +45,31 @@ async function run({directory,html,preload,config,electron}) {
   const useCommand=async(item,label,confirm=true,expectedSuccess=true)=>{const receiptOffset=receipts.length,initial=await ui(),before=initial.refreshToken;await menu(item.id);await click(label);if(label!=='安装'){await wait(()=>js("!!document.querySelector('dialog[open]')"),'real confirmation');await js(`document.querySelector('[data-confirmation="${confirm?'accept':'cancel'}"]').click()`)}await wait(async()=>{const value=await ui();return !value.busy.length&&(confirm?value.refreshToken>before:/已取消/.test(value.status))},label+' settlement');if(confirm){const receipt=receipts.slice(receiptOffset).find(row=>row.channel===(label==='安装'?'fonts:installSystem':'fonts:uninstallSystem'));assert(receipt,'command must return actual main-process receipt');const result=label==='安装'?receipt.result:receipt.result.results?.[item.id];assert(result,'per-item command receipt missing');assert.equal(result.ok,expectedSuccess,JSON.stringify(result));await wait(async()=>{const value=await ready();return value.acceptedRevision>initial.acceptedRevision&&value},label+' authoritative refresh')}else assert.equal(receipts.length,receiptOffset,'cancelled confirmation dispatched IPC')}
   async function start(reopen=false) {
     const controlledElectron={...electron,dialog:{...electron.dialog,showOpenDialog:async()=>{pickerCalls++;return new Promise(resolve=>{pendingPicker=resolve})}}}
-    chain=await createChain({sourceRoot:config.sourceRoot,directory,fixtureDirectory:config.fixtureDirectory,manifest:config.manifest,workerPath:config.workerPath,electron:controlledElectron,reopen})
-    chain.observeNative=(request,result,receipt)=>{assert(receipt,'raw native transport receipt missing');assert.equal(receipt.outputPath,request.outputPath);chain.observed.nativeRequests.push({fontPath:request.fontPath,preferSystemFont:!!request.preferSystemFont,engine:receipt.engine,normalizedClientEngine:result?.engine,ok:receipt.ok,rawReceipt:receipt,width:request.width,height:request.height,sourceSha256:request.fontPath?hash(fs.readFileSync(request.fontPath)):null})}
-    preview=await createRuntime({directory:path.join(directory,'preview'),baseline:false,sourceRoot:config.sourceRoot,controlled:true,observer:chain.observer,fixture:chain,appendLog:chain.appendLog,electron})
-    fs.writeFileSync(preload,chain.load('src/main/preload/runtimePreloadSource.ts').runtimePreloadSource)
-    const traceModule=chain.load('src/main/ipc/ipcTraceRuntime.ts'),traced=traceModule.registerTracedIpcHandler
+    const sessionChain=await createChain({sourceRoot:config.sourceRoot,directory,fixtureDirectory:config.fixtureDirectory,manifest:config.manifest,workerPath:config.workerPath,electron:controlledElectron,reopen})
+    chain=sessionChain;sessionLogs.retain(sessionChain.logs)
+    sessionChain.observeNative=(request,result,receipt)=>{assert(receipt,'raw native transport receipt missing');assert.equal(receipt.outputPath,request.outputPath);sessionChain.observed.nativeRequests.push({fontPath:request.fontPath,preferSystemFont:!!request.preferSystemFont,engine:receipt.engine,normalizedClientEngine:result?.engine,ok:receipt.ok,rawReceipt:receipt,width:request.width,height:request.height,sourceSha256:request.fontPath?hash(fs.readFileSync(request.fontPath)):null})}
+    const sessionPreview=await createRuntime({directory:path.join(directory,'preview'),baseline:false,sourceRoot:config.sourceRoot,controlled:true,observer:sessionChain.observer,fixture:sessionChain,appendLog:sessionChain.appendLog,electron})
+    preview=sessionPreview
+    fs.writeFileSync(preload,sessionChain.load('src/main/preload/runtimePreloadSource.ts').runtimePreloadSource)
+    const traceModule=sessionChain.load('src/main/ipc/ipcTraceRuntime.ts'),traced=traceModule.registerTracedIpcHandler,sessionChannels=[]
+    channels=sessionChannels
     // Observe real root registration/receipts while preserving its admission,
     // shutdown guards, trusted-sender validation and per-domain handlers.
-    traceModule.registerTracedIpcHandler=(runtime,channel,handler)=>{channels.push(channel);traced(runtime,channel,async(event,...args)=>{const result=await handler(event,...args);if(['fonts:recoverTagFiles','fonts:installSystem','fonts:uninstallSystem'].includes(channel))receipts.push({channel,result:plain(result)});return result})}
-    chain.runtime.reportPerformanceEvent=payload=>{if(payload?.kind==='operation-chain')chain.appendLog('operation-chain: '+payload.details.event);return {ok:true}}
-    const runtime=new Proxy(chain.runtime,{get(target,key){if(key in target)return target[key];if(key in preview.runtime)return preview.runtime[key];return ()=>{throw Error('unexpected production port '+String(key))}}})
-    chain.load('src/main/ipc/ipcHandlers.ts').registerIpcHandlers(runtime)
+    traceModule.registerTracedIpcHandler=(runtime,channel,handler)=>{sessionChannels.push(channel);traced(runtime,channel,async(event,...args)=>{const result=await handler(event,...args);if(['fonts:recoverTagFiles','fonts:installSystem','fonts:uninstallSystem'].includes(channel))receipts.push({channel,result:plain(result)});return result})}
+    const {runtime,appendLog}=createRecoverySessionPorts(sessionChain,sessionPreview)
+    sessionChain.load('src/main/ipc/ipcHandlers.ts').registerIpcHandlers(runtime)
     win=new BrowserWindow({show:true,width:1100,height:900,webPreferences:{preload,nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}})
-    win.webContents.on('console-message',event=>{if(event.level==='warning'||event.level==='error')chain.appendLog('renderer: '+event.message)})
-    await win.loadFile(html);await js(`window.startRecoveryChain(${JSON.stringify(await chain.runtime.loadLibraryShell())})`);await ready()
+    win.webContents.on('console-message',event=>{if(event.level==='warning'||event.level==='error')appendLog('renderer: '+event.message)})
+    await win.loadFile(html);await js(`window.startRecoveryChain(${JSON.stringify(await sessionChain.runtime.loadLibraryShell())})`);await ready()
   }
   async function close() {
     if(win){await js('window.recoveryChain.disposePreview()').catch(()=>{});win.destroy();win=undefined}
-    const endingChain=chain,endingPreview=preview;chain=undefined;preview=undefined
+    const endingChain=chain,endingPreview=preview,endingChannels=channels;chain=undefined;preview=undefined;channels=[]
     endingChain?.stopTransport()
     const closed=await Promise.allSettled([endingPreview?.close(),endingChain?.close()])
-    if(endingChain){report.logs.push(...endingChain.logs);report.sessions.push({observed:plain(endingChain.observed),effects:plain(endingChain.effects),work:endingChain.observer.snapshot()});assert.equal(endingChain.observer.children.size,0)}
-    for(const channel of channels)ipcMain.removeHandler(channel);channels=[]
+    sessionLogs.flush()
+    if(endingChain){report.sessions.push({observed:plain(endingChain.observed),effects:plain(endingChain.effects),work:endingChain.observer.snapshot()});assert.equal(endingChain.observer.children.size,0)}
+    for(const channel of endingChannels)ipcMain.removeHandler(channel)
     for(const result of closed)if(result.status==='rejected')throw result.reason
   }
   async function previewSource(item,mode,label) {
@@ -165,7 +185,8 @@ async function run({directory,html,preload,config,electron}) {
     const exitResult=await exitTask;assert.match(exitResult.error,/退出/);assert.equal(chain.observed.transactions,exitTransactions);assert.equal(chain.effects.length,exitEffects)
     assert.deepEqual(plain(chain.raw.prepare('SELECT * FROM local_font_tags ORDER BY font_path,tag_name').all()),exitRows)
     report.cases.push({name:'exit-inflight-picker-old-epoch-zero-commit',passed:true,shutdownScope:'real epoch owner; controlled host shutdown ports; physical child drain checked separately',shutdownOutcome,result:exitResult})
-    const events=chain.logs.concat(report.logs).filter(line=>line.startsWith('operation-chain: ')).map(line=>{try{return JSON.parse(line.slice(17))}catch{return null}}).filter(Boolean)
+    sessionLogs.flush()
+    const events=report.logs.filter(line=>line.startsWith('operation-chain: ')).map(line=>{try{return JSON.parse(line.slice(17))}catch{return null}}).filter(Boolean)
     const observation=events.find(event=>event.stage==='page-view-observed'&&event.trace?.domain==='tag-recovery');assert(observation,'real recovery page postcommit observation missing')
     const operationId=observation.trace.operationId;report.recoveryObservation={operationId,endpoint:'react-commit-observation, not paint',events:events.filter(event=>event.trace?.operationId===operationId)}
     assert(report.recoveryObservation.events.some(event=>event.stage==='page-query-accepted'))
@@ -173,7 +194,7 @@ async function run({directory,html,preload,config,electron}) {
     fs.writeFileSync(path.join(directory,'final.png'),(await win.webContents.capturePage()).toPNG())
     await close();report.remainingChildren=0
     assert(report.cases.every(row=>row.passed),'incomplete integrated case');report.passed=true;console.log('[F14 integrated]',JSON.stringify({sourceSha:report.sourceSha,cases:report.cases.map(row=>row.name),previews:report.previews.length,remainingChildren:0,passed:true}))
-  }catch(error){report.error=error?.stack||String(error);if(win&&!win.isDestroyed()){try{fs.writeFileSync(path.join(directory,'failure.png'),(await win.webContents.capturePage()).toPNG())}catch{}}report.logs.push(...(chain?.logs||[]));fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'));throw error}
-  finally{try{await close()}catch(error){report.cleanupError=String(error);report.passed=false}report.pickerCalls=pickerCalls;clearTimeout(timer);fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'));app.removeListener('window-all-closed',keepAlive)}
+  }catch(error){report.error=error?.stack||String(error);if(win&&!win.isDestroyed()){try{fs.writeFileSync(path.join(directory,'failure.png'),(await win.webContents.capturePage()).toPNG())}catch{}}sessionLogs.flush();fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'));throw error}
+  finally{try{await close()}catch(error){report.cleanupError=String(error);report.passed=false}report.pickerCalls=pickerCalls;clearTimeout(timer);sessionLogs.flush();fs.writeFileSync(path.join(directory,'report.json'),JSON.stringify(report,null,2));fs.writeFileSync(path.join(directory,'operation-chain.log'),report.logs.join('\n'));app.removeListener('window-all-closed',keepAlive)}
 }
-module.exports={run}
+module.exports={run,createRecoverySessionPorts,createRecoverySessionLogCollector}

@@ -55,7 +55,15 @@ function createControlledPreviewTransportOwner({ load, observer, appendLog }) {
       await waitForChildren()
       assert.equal(pool.status().closed, true, 'terminal fixture close did not stop the pool')
       const processes = observer.counts.processes
-      await assert.rejects(transport.runRustCoreScheduledCommand(transport.rustCoreWorkerStatus()?.path || process.execPath, ['--preview-render-image'], { timeout: 1000 }), error => error.reason === 'stopping')
+      // F14 can finish application shutdown before releasing this owner. The
+      // selected source's shutdown guard precedes the transport-stopped guard.
+      // Observe that exact guard; never turn an arbitrary rejection into proof.
+      let shutdownBlocker
+      try { load('src/main/app/shutdownCoordinatorRuntime.ts').assertLocalShutdownWorkAllowed() }
+      catch (error) { shutdownBlocker = error }
+      await assert.rejects(transport.runRustCoreScheduledCommand(transport.rustCoreWorkerStatus()?.path || process.execPath, ['--preview-render-image'], { timeout: 1000 }), error => shutdownBlocker
+        ? error?.name === shutdownBlocker.name && error?.message === shutdownBlocker.message
+        : error?.reason === 'stopping' && error?.outcome === 'not-started')
       assert.equal(observer.counts.processes, processes, 'stopped fixture transport spawned new work')
       assert.equal(observer.children.size, 0)
     })()
@@ -118,7 +126,10 @@ async function createRuntime({ directory, baseline, appendLog, electron, traceCo
     runRustPreviewRenderImage: async request => {
       native++
       const input = request.outputPath + '.native.json'
-      fs.writeFileSync(input, JSON.stringify(request))
+      // This manual adapter returns a file; byte-return intent belongs only to
+      // the production transport's capability-gated owned-stage command.
+      const { foregroundBytes: _foregroundBytes, ...nativeInput } = request
+      fs.writeFileSync(input, JSON.stringify(nativeInput))
       try {
         await execFile(path.join(root, 'native-src/hfm-core-worker/target/release/hfm-core-worker.exe'), ['--preview-render-image', '--input', input], { timeout: 15000 })
         return { ok: true, engine: 'rust-directwrite', outputPath: request.outputPath }
