@@ -51,17 +51,39 @@ function visit(node, callback) {
   ts.forEachChild(node, child => visit(child, callback))
 }
 
+// Type-only additive migration: lock each explicitly reviewed optional field,
+// then check every original token against its unchanged frozen shape hash.
+function originalShapeAfterReviewedAdditions(node, file, additions = {}) {
+  const entries = Object.entries(additions)
+  if (!entries.length) return node.type.getText(file)
+  assert(ts.isTypeLiteralNode(node.type), node.name.text + ' no longer has its reviewed object shape')
+  const ranges = []
+  for (const [name, expected] of entries) {
+    const members = node.type.members.filter(member => member.name?.getText(file) === name)
+    assert.equal(members.length, 1, `${node.name.text}.${name} missing or duplicated`)
+    const member = members[0]
+    assert(ts.isPropertySignature(member) && member.questionToken && member.type, `${node.name.text}.${name} must remain optional`)
+    assert.equal(shapeHash(member.getText(file)), shapeHash(expected), `${node.name.text}.${name} reviewed property changed`)
+    ranges.push([member.getFullStart() - node.type.getStart(file), member.end - node.type.getStart(file)])
+  }
+  let text = node.type.getText(file)
+  for (const [start, end] of ranges.sort((left, right) => right[0] - left[0])) text = text.slice(0, start) + text.slice(end)
+  return text
+}
+
 function checkShapes(current) {
   for (const [rel, expected, dependencies] of [
     [contracts, fixture.publicTypes, fixture.publicDependencies],
     [payloads, fixture.payloadTypes, fixture.payloadDependencies],
   ]) {
     const file = current.file(rel)
+    const additions = rel === contracts ? fixture.reviewedOptionalProperties || {} : {}
+    for (const name of Object.keys(additions)) assert(Object.hasOwn(expected, name), 'Reviewed additions name an unknown public alias: ' + name)
     const declarations = file.statements.filter(ts.isTypeAliasDeclaration)
     exact(declarations.map(node => node.name.text), Object.keys(expected), rel + ' declarations')
     for (const node of declarations) {
       assert(node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword), node.name.text + ' lost its export')
-      assert.equal(shapeHash(node.type.getText(file)), expected[node.name.text], node.name.text + ' shape changed')
+      assert.equal(shapeHash(originalShapeAfterReviewedAdditions(node, file, additions[node.name.text])), expected[node.name.text], node.name.text + ' original shape changed')
     }
     const external = []
     for (const node of file.statements) {
@@ -167,6 +189,24 @@ const invalidRecoveryTags: C.RustLocalTagsSetRow = { ...legacyTagSet.rows[0], ex
 const invalidRecoveryFile: C.RustLocalTagsSetInput = { ...legacyTagSet, recoveryFiles: [{ path: 'C:/new.ttf', sha256: 'proof' }] }
 // @ts-expect-error Missing-source validation must retain its accessible root.
 const invalidRecoverySource: C.RustLocalTagsSetInput = { ...legacyTagSet, recoveryMissingSources: [{ path: 'C:/old.ttf' }] }
+// Legacy callers do not need either optional capability field.
+const legacyOverlay: C.RustSharedMetadataOverlayReadInput = { rootPath: 'C:/fonts', dbPath: 'metadata.sqlite', entries: [] }
+const bindingRead: C.RustSharedMetadataOverlayReadInput = { ...legacyOverlay, bindingSnapshot: true }
+const bindingRows: C.RustSharedMetadataOverlayReadResult['bindingSnapshot'] = { version: 1, rows: [] }
+const legacyPreviewInput: C.RustPreviewRenderImageInput = { fontPath: 'C:/font.ttf', text: 'a', fontSize: 12, width: 100, height: 100, outputPath: 'out.png' }
+const bytePreviewInput: C.RustPreviewRenderImageInput = { ...legacyPreviewInput, foregroundBytes: true }
+const previewBytes: C.RustPreviewRenderImageResult['bytes'] = Buffer.from([137, 80, 78, 71])
+const transientPreview: C.RustPreviewRenderImageResult['transient'] = true
+// @ts-expect-error Snapshot request flag remains boolean.
+const invalidBindingRead: C.RustSharedMetadataOverlayReadInput = { ...legacyOverlay, bindingSnapshot: 'true' }
+// @ts-expect-error Snapshot receipt version is the exact supported protocol.
+const invalidBindingRows: C.RustSharedMetadataOverlayReadResult['bindingSnapshot'] = { version: 2, rows: [] }
+// @ts-expect-error Foreground byte request flag remains boolean.
+const invalidBytePreviewInput: C.RustPreviewRenderImageInput = { ...legacyPreviewInput, foregroundBytes: 'true' }
+// @ts-expect-error Returned bytes are Buffer data, not an unvalidated string.
+const invalidPreviewBytes: C.RustPreviewRenderImageResult['bytes'] = '89504e47'
+// @ts-expect-error Transient state remains boolean.
+const invalidTransientPreview: C.RustPreviewRenderImageResult['transient'] = 1
 // @ts-expect-error Worker availability must be boolean
 const invalidStatus: C.RustCoreWorkerStatus = { available: 'yes' }
 // @ts-expect-error Preview dimensions must be numeric
@@ -208,6 +248,14 @@ function main() {
   checkCompiler(actual)
   const mutated = (rel, change) => view(new Map([[rel, change(actual.read(abs(rel)))]]))
   const rejects = [
+    ['binding request made mandatory', () => checkShapes(mutated(contracts, text => text.replace('bindingSnapshot?: boolean', 'bindingSnapshot: boolean')))],
+    ['binding receipt version widened', () => checkShapes(mutated(contracts, text => text.replace('bindingSnapshot?: { version: 1;', 'bindingSnapshot?: { version: number;')))],
+    ['foreground flag widened', () => checkShapes(mutated(contracts, text => text.replace('foregroundBytes?: boolean', 'foregroundBytes?: string')))],
+    ['returned bytes widened', () => checkShapes(mutated(contracts, text => text.replace('bytes?: Buffer', 'bytes?: string')))],
+    ['transient state made mandatory', () => checkShapes(mutated(contracts, text => text.replace('transient?: boolean', 'transient: boolean')))],
+    ['reviewed addition missing', () => checkShapes(mutated(contracts, text => text.replace('foregroundBytes?: boolean', '')))],
+    ['reviewed addition duplicated', () => checkShapes(mutated(contracts, text => text.replace('foregroundBytes?: boolean', 'foregroundBytes?: boolean\n  foregroundBytes?: boolean')))],
+    ['unreviewed property introduced', () => checkShapes(mutated(contracts, text => text.replace('foregroundBytes?: boolean', 'foregroundBytes?: boolean\n  unreviewedWrite?: boolean')))],
     ['required field widened', () => checkShapes(mutated(contracts, text => text.replace('available: boolean', 'available?: boolean')))],
     ['legacy recovery field made mandatory', () => checkShapes(mutated(contracts, text => text.replace('expectedTagNames?: string[]', 'expectedTagNames: string[]')))],
     ['public export removed', () => checkShapes(mutated(contracts, text => text.replace('export type RustCoreWorkerStatus', 'type RustCoreWorkerStatus')))],
@@ -224,7 +272,7 @@ function main() {
   checkShapes(crlf)
   checkBoundaries(crlf)
   checkErasure(crlf)
-  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 45 compiler rejections, legacy/versioned watcher and recovery tag inputs, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
+  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 50 compiler rejections, legacy/versioned watcher, recovery tags, binding snapshots and transient bytes, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
 }
 
 try { main() } catch (error) {

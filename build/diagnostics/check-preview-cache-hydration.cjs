@@ -49,9 +49,11 @@ function testReadPathHydratesOnlyAfterLocalMiss() {
   assert(text.includes('hydrationRuntime.rememberRenderQueued'), 'read path does not count render-queued misses')
 }
 
-function testRenderPathHydratesBeforeRendering() {
+function testBackgroundCacheHydratesBeforeRendering() {
   const text = readText('src/main/preview/previewRuntime.ts')
-  assert(text.includes('if (!ignorePreviewIndex && previewCache.shared)'), 'render path does not check shared cache before rendering')
+  assert(text.includes('if (!foreground && !ignorePreviewIndex && previewCache.shared)'), 'shared hydration must be restricted to explicit background cache work')
+  assert(!text.includes('schedulePreviewCachePrefetch'), 'foreground render miss must not submit unrelated cache writers')
+  assert(text.indexOf('hydratePreviewCache(previewCache') < text.indexOf('nativePreviewRenderer.renderNativePreview'), 'background cache hydration must precede native fallback')
   assert(text.includes('hydratePreviewCache(previewCache'), 'render path does not hydrate shared cache before render fallback')
   assert(text.includes('预览缓存已从共享缓存拉取到本地'), 'render path missing hydration completion message')
 }
@@ -66,7 +68,7 @@ const tests = [
   testHydrationRuntimeExistsAndIsPolicyDriven,
   testHydrationCoalescesAndNegativeCachesSharedMisses,
   testReadPathHydratesOnlyAfterLocalMiss,
-  testRenderPathHydratesBeforeRendering,
+  testBackgroundCacheHydratesBeforeRendering,
   testPackageScriptAndVersion,
 ]
 

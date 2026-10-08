@@ -137,10 +137,30 @@ async function main() {
      assert.equal(requests.at(-1).timeoutMs,600000);assert.equal(requests.at(-1).queueTimeoutMs,3000);assert.equal(requests.at(-1).verifiedReadOnly,true)
      await transport.runRustCoreScheduledCommand(process.execPath+'.different-worker',args,{timeout:600000,sharedIo:target})
      assert.equal(requests.at(-1).timeoutMs,30000);assert.equal(requests.at(-1).verifiedReadOnly,false);assert.equal(requests.at(-1).write,true);assert.equal(requests.at(-1).accesses,undefined)
-     for(const legacyOutput of [output.path,source+'/redirected-temp.json','O:/Temp/list.json','C:/reparse-temp/list.json']) {
+     for(const legacyOutput of [output.path,source+'/redirected-temp.json']) {
        await transport.runRustCoreScheduledCommand(process.execPath,[...args,'--output',legacyOutput],{timeout:600000,sharedIo:target})
        const request=requests.at(-1);assert.equal(request.write,true);assert.equal(request.verifiedReadOnly,false);assert.equal(request.accesses,undefined);assert(request.roots.includes('configured-root:listing-output'));assert.equal(request.timeoutMs,30000)
      }
+     // This adapter does not supply drive discovery. Unknown non-system drives
+     // must fail before submission, rather than borrowing the source identity.
+     const unknownDrive=(process.env.SystemDrive||'C:').toUpperCase()==='O:'?'P:':'O:'
+     const beforeUnknown=requests.length
+     await assert.rejects(transport.runRustCoreScheduledCommand(process.execPath,[...args,'--output',unknownDrive+'/Temp/list.json'],{timeout:600000,sharedIo:target}),error=>error.reason==='identity-unavailable'&&error.outcome==='not-started')
+     assert.equal(requests.length,beforeUnknown)
+     // A verified drive table identifies O: as mapped and C: as local; neither
+     // establishes that TEMP has no reparse-backed ancestor, so both still write.
+     const canonicalPath=path.join(root,'src/main/path/pathCanonicalizer.ts')
+     const knownLoad=loader({electron:{app:{}},'node:child_process':{...cp,spawn,execFile},[path.join(root,core+'rustCoreDaemonRuntime.ts')]:mockDaemon,
+       [canonicalPath]:{...load('src/main/path/pathCanonicalizer.ts'),mappedDriveTableAsync:async()=>new Map([['O:',String.raw`\\nas\mapped-temp`]])}
+     },{AbortController,process:{...process,platform:'win32',env:{...process.env,SystemDrive:'D:'}}},transforms)
+     const knownTransport=knownLoad(core+'rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({appendStartupLog:s=>logs.push(s),enabled:false,required:false})
+     const knownPool=knownLoad('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime(),knownRun=knownPool.run,knownRequests=[]
+     knownPool.run=request=>{knownRequests.push(request);return knownRun(request)}
+     try { for(const legacyOutput of ['O:/Temp/list.json','C:/reparse-temp/list.json']) {
+       await knownTransport.runRustCoreScheduledCommand(process.execPath,[...args,'--output',legacyOutput],{timeout:600000,sharedIo:target})
+       const request=knownRequests.at(-1);assert.equal(request.write,true);assert.equal(request.verifiedReadOnly,false);assert.equal(request.accesses,undefined);assert(request.roots.includes('configured-root:listing-output'));assert.equal(request.timeoutMs,30000)
+       if(legacyOutput.startsWith('O:'))assert(request.roots.includes(String.raw`\\nas\mapped-temp`),'mapped output share was omitted')
+     }} finally {knownPool.run=knownRun;knownTransport.stopRustCoreDaemon()}
      const statInput=transport.createTemporaryJsonFile('hfm-preview-stat-proof');await statInput.writeJson({operation:'stat',path:source})
      try{await transport.runRustCoreScheduledCommand(process.execPath,['--shared-file-io','--input',statInput.path],{timeout:500,sharedIo:{paths:[source,'',''],write:false,preview:true,accesses:[{path:source,mode:'read',scope:'file'}]}});assert.equal(requests.at(-1).verifiedReadOnly,true);assert.equal(requests.at(-1).timeoutMs,500)}finally{await statInput.dispose()}
      await transport.runRustCoreScheduledCommand(process.execPath,args,{timeout:600000,sharedIo:{...target,paths:[source,path.win32.join(source, "uncovered")]}})

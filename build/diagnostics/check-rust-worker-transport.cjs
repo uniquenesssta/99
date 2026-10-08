@@ -30,6 +30,8 @@ function legacyDiagnosticWording(observed) {
 
 async function checkCase(scenario, overrides) {
   if (scenario.method === 'runRustFontIndexListWorker') return checkListingCase(scenario, overrides)
+  if (scenario.method === 'runRustSharedMetadataOverlayRead') return checkMetadataOverlayCase(scenario, overrides)
+  if (scenario.method === 'runRustPreviewRenderImage') return checkUnprovenPreviewCase(scenario, overrides)
   const observed = await h.observe(scenario.method, scenario.settings, overrides)
   const summary = legacyDiagnosticWording(observed)
   assert.deepEqual({ id: scenario.id, ...summary }, cases.get(scenario.id), scenario.id + ' differs from AT-5.1')
@@ -37,7 +39,7 @@ async function checkCase(scenario, overrides) {
 
 // Explicit AT-5.1 exception: listing now owns an unknown TEMP write effect,
 // even for a lexical C: source. Do not regenerate the frozen hashes. The other
-// commands and lifecycle sequences keep their original exact comparisons.
+// unaffected commands and lifecycle sequences keep their original exact comparisons.
 async function checkListingCase(scenario, overrides) {
   const observed = await h.observe(scenario.method, { ...scenario.settings, listTransport: true }, overrides)
   const { summary, h: env } = observed
@@ -72,6 +74,72 @@ async function checkListingCase(scenario, overrides) {
   }
   const effects = env.trace.filter(row => ['uuid', 'write', 'shared', 'shared.close', 'read', 'progress', 'rm'].includes(row[0])).map(row => row[0])
   assert.deepEqual(effects, preAbort ? [] : ['uuid', 'shared', 'shared.close', ...(!invalid && !cancelled ? ['read', ...(!readFailed ? ['progress'] : [])] : []), 'rm'], scenario.id + ' listing effect order')
+}
+
+// The legacy overlay reader may initialize/migrate its database. Deriving its
+// write effect from the original descriptor now isolates local roots as well.
+// Keep every unrelated frozen trace; assert this intentional route explicitly.
+async function checkMetadataOverlayCase(scenario, overrides) {
+  const observed = await h.observe(scenario.method, { ...scenario.settings, metadataTransport: true }, overrides)
+  const { summary, h: env } = observed
+  const mode = scenario.settings.mode || 'oneshot'
+  const invalid = ['false-oneshot', 'false-daemon', 'bad-json'].includes(mode)
+  const writeFailed = mode === 'write-fail'
+  const input = '/fixture-tmp/hfm-rust-shared-metadata-overlay-read-1-1000-id-1.json'
+  const expected = writeFailed ? { kind: 'null', value: null }
+    : invalid ? { kind: 'error', name: 'SharedIoProcessError', message: 'Shared I/O invalid receipt: ' + (mode === 'bad-json' ? 'SyntaxError: fixture invalid JSON' : 'Error: worker returned ok=false'), submitted: false }
+    : cases.get('runRustSharedMetadataOverlayRead/oneshot').outcome
+  assert.deepEqual(summary.outcome, expected, scenario.id + ' isolated overlay outcome')
+  assert.equal(summary.pendingFiles, mode === 'cleanup-fail' ? 1 : 0, scenario.id + ' isolated input cleanup')
+  assert.equal(env.sharedRequests.length, writeFailed ? 0 : 1, scenario.id + ' shared submissions')
+  assert(!env.trace.some(row => row[0] === 'daemon' || row[0] === 'schedule' || (row[0] === 'exec' && row[2][0] === '--shared-metadata-overlay-read')), scenario.id + ' mutable overlay escaped isolation')
+  assert.deepEqual(plain(env.trace.filter(row => row[0] === 'write')), [['write', input, JSON.stringify({ rootPath: 'C:/fonts', dbPath: 'C:/index.db', entries: [{ key: 'k', fontId: 'f', relativePath: 'a.ttf', pathKey: 'a' }] }), 'utf-8']], scenario.id + ' serialized input')
+  assert.deepEqual(plain(env.trace.filter(row => row[0] === 'rm')), [['rm', input, { force: true }]])
+  if (!writeFailed) assert.deepEqual(env.sharedRequests[0], {
+    file: 'C:/worker.exe', args: ['--shared-metadata-overlay-read', '--input', input],
+    roots: [String.raw`local-metadata:c:/index.db|c:\|c:/fonts`], accesses: [],
+    write: true, verifiedReadOnly: false, sharedReadOnlyPreview: false,
+    label: 'shared-metadata-overlay-read', lane: 'default', priority: 'normal', timeoutMs: 30000, queueTimeoutMs: 3000,
+    maxBuffer: 16 * 1024 * 1024, signalAborted: false, hasClose: true, admitted: true,
+  }, scenario.id + ' complete isolated write effect')
+  const effects = env.trace.filter(row => ['uuid', 'write', 'shared', 'shared.close', 'read', 'rm'].includes(row[0])).map(row => row[0])
+  assert.deepEqual(effects, ['uuid', 'write', ...(!writeFailed ? ['shared', 'shared.close'] : []), 'rm'], scenario.id + ' lease release order')
+}
+
+async function checkUnprovenPreviewCase(scenario, overrides) {
+  const observed = await h.observe(scenario.method, { ...scenario.settings, previewTransport: true }, overrides)
+  const { summary, h: env } = observed
+  const mode = scenario.settings.mode || 'oneshot', writeFailed = mode === 'write-fail'
+  const invalid = ['false-oneshot', 'false-daemon', 'bad-json'].includes(mode)
+  const input = '/fixture-tmp/hfm-rust-preview-render-1-1000-id-1.json'
+  const expected = writeFailed ? { kind: 'null', value: null }
+    : invalid ? { kind: 'error', name: 'SharedIoProcessError', message: 'Shared I/O invalid receipt: ' + (mode === 'bad-json' ? 'SyntaxError: fixture invalid JSON' : 'Error: worker returned ok=false'), submitted: false }
+    : cases.get('runRustPreviewRenderImage/oneshot').outcome
+  assert.deepEqual(summary.outcome, expected, scenario.id + ' isolated preview outcome')
+  assert.equal(summary.pendingFiles, mode === 'cleanup-fail' ? 1 : 0)
+  assert.equal(env.sharedRequests.length, writeFailed ? 0 : 1)
+  assert(!env.trace.some(row => row[0] === 'daemon' || row[0] === 'schedule' || (row[0] === 'exec' && row[2][0] === '--preview-render-image')), 'unproved preview output escaped isolation')
+  assert.deepEqual(plain(env.trace.filter(row => row[0] === 'write')), [['write', input, JSON.stringify(h.argsFor(scenario.method, env)[0]), 'utf-8']])
+  assert.deepEqual(plain(env.trace.filter(row => row[0] === 'rm')), [['rm', input, { force: true }]])
+  if (!writeFailed) assert.deepEqual(env.sharedRequests[0], {
+    file: 'C:/worker.exe', args: ['--preview-render-image', '--input', input], roots: ['configured-root:preview-output-unverified'],
+    write: true, verifiedReadOnly: false, sharedReadOnlyPreview: false,
+    label: 'preview-render-image', lane: 'default', priority: 'normal', timeoutMs: 30000, queueTimeoutMs: 3000,
+    maxBuffer: 1024 * 1024, signalAborted: false, hasClose: true, admitted: true,
+  }, 'complete unproven preview write barrier')
+  assert.deepEqual(env.trace.filter(row => ['uuid', 'write', 'shared', 'shared.close', 'read', 'rm'].includes(row[0])).map(row => row[0]), ['uuid', 'write', ...(!writeFailed ? ['shared', 'shared.close'] : []), 'rm'])
+}
+
+async function checkIsolatedMetadataFailure() {
+  for (const sharedFailure of ['timeout', 'cancelled', 'spawn-failed']) {
+    const observed = await h.observe('runRustSharedMetadataOverlayRead', { metadataTransport: true, sharedFailure })
+    assert.deepEqual(observed.summary.outcome, { kind: 'error', name: 'SharedIoProcessError', message: 'fixture shared ' + sharedFailure, submitted: false })
+    assert.equal(observed.summary.pendingFiles, 0, 'isolated rejection leaked its input lease')
+    assert.equal(observed.h.sharedRequests.length, 1, 'isolated failure retried an overlay write')
+    assert(!observed.h.trace.some(row => row[0] === 'daemon' || row[0] === 'schedule'), 'isolated failure downgraded into fallback')
+    assert.equal(observed.h.trace.filter(row => row[0] === 'shared.close').length, 1)
+    assert.equal(observed.h.trace.filter(row => row[0] === 'rm').length, 1)
+  }
 }
 
 async function checkStdoutListing(overrides) {
@@ -167,6 +235,23 @@ async function checkStdoutListing(overrides) {
 
 async function checkSequence(name, overrides) {
   const observed = await h.observeSequence(name, overrides)
+  if (name === 'concurrent-files') {
+    // Local activation keeps its old transport; unproven preview output now
+    // owns a shared writer. Keep frozen results and assert both file lifetimes.
+    assert.deepEqual(observed.summary.results, sequences.get(name).results)
+    assert.equal(observed.summary.pendingFiles, 0)
+    const trace=observed.h.trace, writes=trace.filter(row=>row[0]==='write'), removals=trace.filter(row=>row[0]==='rm')
+    assert.equal(writes.length,2);assert.equal(new Set(writes.map(row=>row[1])).size,2)
+    assert.deepEqual(removals.map(row=>row[1]).sort(),writes.map(row=>row[1]).sort())
+    assert.equal(observed.h.sharedRequests.length,1)
+    const preview=observed.h.sharedRequests[0]
+    assert.equal(preview.label,'preview-render-image');assert.equal(preview.write,true);assert.equal(preview.accesses,undefined)
+    assert.deepEqual(preview.roots,['configured-root:preview-output-unverified'])
+    const previewInput=preview.args[preview.args.indexOf('--input')+1]
+    assert(trace.findIndex(row=>row[0]==='rm'&&row[1]===previewInput)>trace.findIndex(row=>row[0]==='shared.close'),'preview input removed before isolated close')
+    assert.equal(trace.filter(row=>row[0]==='exec'&&row[2][0]==='--font-activation-files').length,1)
+    return
+  }
   const summary = legacyDiagnosticWording(observed)
   assert.deepEqual({ name, ...summary }, sequences.get(name), name + ' differs from AT-5.1')
 }
@@ -253,6 +338,9 @@ async function checkMutants() {
     ['listing CLI proof', '&& isStdoutFontListingArgs(args)', '', 'stdout-listing'],
     ['listing conservative barrier', "const conservativeListing = args[0] === '--list-font-files' && !verifiedListing", "const conservativeListing = args[0] === '--list-font-files' && args.includes('--output')", 'stdout-listing'],
     ['listing stdout bound', 'FONT_SCAN_LISTING_STDOUT_MAX_BYTES = 32 * 1024 * 1024', 'FONT_SCAN_LISTING_STDOUT_MAX_BYTES = 64 * 1024 * 1024', 'stdout-listing'],
+    ['original metadata write effects', 'if (target?.accesses?.length && !sharedReadOnlyPreview)', 'if (target && accesses?.length && !sharedReadOnlyPreview)', 'runRustSharedMetadataOverlayRead/oneshot'],
+    ['isolated metadata close lease', 'signal: execOptions.signal, onClose, admit', 'signal: execOptions.signal, admit', 'runRustSharedMetadataOverlayRead/oneshot'],
+    ['unproved preview output barrier', "const conservativePreviewOutput = args[0] === '--preview-render-image' && !sharedReadOnlyPreview && !completePreviewWriteFootprint", 'const conservativePreviewOutput = false', 'runRustPreviewRenderImage/oneshot'],
   ]
   for (const [name, before, after, id] of tests) {
     assert(transport.includes(before), 'mutant no longer applies: ' + name)
@@ -271,11 +359,12 @@ async function main() {
   for (const scenario of scenarios) await checkCase(scenario)
   for (const name of h.sequenceNames) await checkSequence(name)
   const listingNegatives = await checkStdoutListing()
+  await checkIsolatedMetadataFailure()
   await checkFileScope()
   await checkRealChildProcess()
   const mutants = await checkMutants()
   const crlf = new Map([[transportPath, transport], [workerPath, worker], ...clients].map(([rel, text]) => [rel, text.replace(/\r?\n/g, '\r\n')]))
   for (const scenario of scenarios.filter(s => ['oneshot', 'submitted'].includes(s.settings.mode))) await checkCase(scenario, crlf)
-  console.log(`[diagnostics:rust-worker-transport] ${scenarios.filter(s => s.method !== 'runRustFontIndexListWorker').length} frozen non-list command cases, ${scenarios.filter(s => s.method === 'runRustFontIndexListWorker').length} explicit migrated list cases, ${listingNegatives} rejected listing read proofs, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
+  console.log(`[diagnostics:rust-worker-transport] ${scenarios.filter(s => !['runRustFontIndexListWorker', 'runRustSharedMetadataOverlayRead', 'runRustPreviewRenderImage'].includes(s.method)).length} frozen unaffected command cases, ${scenarios.filter(s => s.method === 'runRustFontIndexListWorker').length} explicit migrated list cases, ${scenarios.filter(s => s.method === 'runRustSharedMetadataOverlayRead').length} isolated overlay cases, ${scenarios.filter(s => s.method === 'runRustPreviewRenderImage').length} isolated unproven preview cases, ${listingNegatives} rejected listing read proofs, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-transport]', error.stack || error); process.exitCode = 1 })

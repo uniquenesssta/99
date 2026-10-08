@@ -257,5 +257,25 @@
         "new": "2adf07d96d6e94ef0fcdaf1e2944aef160f6e1f34498a3c661541f1af1de1588"
       }
     ]
+  },
+  "reviewedOptionalProperties": {
+    "RustSharedMetadataOverlayReadInput": {
+      "bindingSnapshot": "bindingSnapshot?: boolean"
+    },
+    "RustSharedMetadataOverlayReadResult": {
+      "bindingSnapshot": "bindingSnapshot?: { version: 1; rows: import('../indexing/shared-metadata/sharedMetadataStateRuntime').SharedMetadataRow[] }"
+    },
+    "RustPreviewRenderImageInput": {
+      "foregroundBytes": "foregroundBytes?: boolean"
+    },
+    "RustPreviewRenderImageResult": {
+      "bytes": "bytes?: Buffer",
+      "transient": "transient?: boolean"
+    }
+  },
+  "foregroundContractMigration": {
+    "commit": "e1684ffd962c74b282820a9b32ee699c581a25c6",
+    "windowsRun": "37737695038",
+    "change": "Exact optional properties for capability-gated read-only binding snapshots and transient preview bytes. Original public/private shape hashes are retained; each reviewed addition is checked independently, and the remaining original declaration must still match its frozen hash."
   }
 }

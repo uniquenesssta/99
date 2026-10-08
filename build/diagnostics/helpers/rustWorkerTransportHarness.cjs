@@ -120,7 +120,7 @@ function createHarness(settings = {}, overrides = new Map()) {
       },
     },
   }
-  // Opt-in only for the explicit listing contract migration. Other AT-5.1
+  // Opt-in only for explicit isolated-command contract migrations. Other AT-5.1
   // scenarios still load the original process owner and retain their exact trace.
   class SharedIoProcessError extends Error {
     constructor(message, outcome, reason) {
@@ -128,13 +128,13 @@ function createHarness(settings = {}, overrides = new Map()) {
       this.outcome = outcome; this.reason = reason; this.closed = Promise.resolve();
     }
   }
-  const listingProcessPort = {
+  const isolatedProcessPort = {
     SharedIoProcessError,
     rethrowSharedIoProcessError: error => { if (error?.sharedIo) throw error; },
     applicationSharedIoProcessRuntime: () => ({
       stop() {},
       run: async request => {
-        assert.equal(request.args[0], '--list-font-files', 'listing-only port received an unrelated command');
+        assert.equal(request.args[0], settings.metadataTransport ? '--shared-metadata-overlay-read' : settings.previewTransport ? '--preview-render-image' : '--list-font-files', 'isolated contract port received an unrelated command');
         const view = JSON.parse(JSON.stringify({ file: request.file, args: request.args, roots: request.roots,
           accesses: request.accesses, write: request.write, verifiedReadOnly: !!request.verifiedReadOnly,
           sharedReadOnlyPreview: !!request.sharedReadOnlyPreview, label: request.label, lane: request.lane,
@@ -160,7 +160,7 @@ function createHarness(settings = {}, overrides = new Map()) {
   const json = { stringify: JSON.stringify, parse: text => { try { return JSON.parse(text) } catch { throw new SyntaxError('fixture invalid JSON') } } }
   const context = vm.createContext({ Error, TypeError, RangeError, SyntaxError, JSON: json, AbortController, Buffer, console, process: { pid: 1, env: settings.env || {} }, Date: class extends Date { static now() { return clock } } })
   function load(rel) {
-    if (settings.listTransport && rel === 'src/main/path/sharedIoProcessRuntime.ts') return listingProcessPort
+    if ((settings.listTransport || settings.metadataTransport || settings.previewTransport) && rel === 'src/main/path/sharedIoProcessRuntime.ts') return isolatedProcessPort
     if (modules.has(rel)) return modules.get(rel).exports
     const text = overrides.get(rel) ?? fs.readFileSync(path.join(root, rel), 'utf8')
     const cacheKey = rel + '\n' + text
@@ -223,12 +223,13 @@ function scenarios() {
 const sequenceNames = ['cached-ready', 'cached-required-missing', 'controls-events', 'throttled-preview-daemon', 'concurrent-files', 'serialization-error', 'partial-health-report']
 async function observeSequence(name, overrides) {
   let release, entered, rejectEntry
-  const enteredPromise = new Promise((resolve, reject) => { entered = resolve; rejectEntry = reject })
+  let entries = 0
+  const enteredPromise = new Promise((resolve, reject) => { entered = () => { if (++entries === 2) resolve() }; rejectEntry = reject })
   const pending = new Promise(resolve => { release = resolve })
   const settings = name === 'cached-required-missing' ? { missing: true, required: true }
     : name === 'controls-events' ? { domainEvent: true }
     : name === 'throttled-preview-daemon' ? { mode: 'submitted' }
-    : name === 'concurrent-files' ? { execHook: async () => { entered(); await pending } }
+    : name === 'concurrent-files' ? { previewTransport: true, execHook: async () => { entered(); await pending }, sharedHook: async () => { entered(); await pending } }
     : {}
   const h = createHarness(settings, overrides)
   const results = []

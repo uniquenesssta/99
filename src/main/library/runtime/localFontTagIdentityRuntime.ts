@@ -31,6 +31,17 @@ export function localTagPathCompareSql(expression: string): string {
   return `(CASE WHEN SUBSTR(${path}, 1, 6) = '?\\unc\\' THEN SUBSTR(${path}, 7) WHEN SUBSTR(${path}, 1, 2) = '?\\' THEN SUBSTR(${path}, 3) ELSE ${path} END)`;
 }
 
+// Build uncorrelated membership sets so SQLite normalizes tag paths once per
+// statement, not once for every (font, binding) pair. Paths stay authoritative;
+// only pathless legacy rows may fall back to a font ID.
+export function localTagMembershipSql(pathExpression: string, idExpressions: string[], table: string, tagName?: string): { clause: string; params: string[] } {
+  const tagFilter = tagName === undefined ? '' : ' AND lft.tag_name = ?';
+  const paths = `SELECT ${localTagPathCompareSql('lft.font_path')} FROM ${table} lft WHERE COALESCE(lft.font_path, '') <> ''${tagFilter}`;
+  const ids = `SELECT LOWER(lft.font_id) FROM ${table} lft WHERE COALESCE(lft.font_path, '') = ''${tagFilter}`;
+  const clauses = [`${localTagPathCompareSql(pathExpression)} IN (${paths})`, ...idExpressions.map(id => `${id} IN (${ids})`)];
+  return { clause: `(${clauses.join(' OR ')})`, params: tagName === undefined ? [] : clauses.map(() => tagName) };
+}
+
 export function localTagFontStorageId(item: Pick<FontItem, "id" | "sourceId"> & Partial<Pick<FontItem, "path">> | undefined): string {
   const path = item?.path ? localTagFontPath({ path: item.path }) : "";
   return path ? `local-path:${path}` : String(item?.id || "").trim() || String(item?.sourceId || "").trim();

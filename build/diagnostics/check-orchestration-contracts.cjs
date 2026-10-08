@@ -194,6 +194,30 @@ function rustFacadeKeys() {
   return objectPropertyKeys(facade)
 }
 
+// A transport output-path recognizer inspects caller argv; these literals are
+// not emitted flags. Restrict the exception to the exact args.flatMap callback
+// and its equality / startsWith / slice-length expressions, never arbitrary strings.
+function isListingOutputRecognitionLiteral(node) {
+  if (!ts.isStringLiteral(node) || !['--output', '--output='].includes(node.text)) return false
+  let callback = node.parent
+  while (callback && !ts.isArrowFunction(callback) && !ts.isFunctionDeclaration(callback)) callback = callback.parent
+  if (!callback || !ts.isArrowFunction(callback) || callback.parameters.length !== 2 || !ts.isIdentifier(callback.parameters[0].name)) return false
+  const iteration = callback.parent
+  if (!ts.isCallExpression(iteration) || iteration.arguments[0] !== callback || !ts.isPropertyAccessExpression(iteration.expression)
+    || !ts.isIdentifier(iteration.expression.expression) || iteration.expression.expression.text !== 'args' || iteration.expression.name.text !== 'flatMap') return false
+  const parameter = callback.parameters[0].name.text
+  if (node.text === '--output') return ts.isBinaryExpression(node.parent) && node.parent.right === node
+    && node.parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+    && ts.isIdentifier(node.parent.left) && node.parent.left.text === parameter
+  const ownCall = (call, name) => ts.isCallExpression(call) && ts.isPropertyAccessExpression(call.expression)
+    && ts.isIdentifier(call.expression.expression) && call.expression.expression.text === parameter && call.expression.name.text === name
+    && call.arguments.length === 1
+  if (ownCall(node.parent, 'startsWith') && node.parent.arguments[0] === node) return true
+  const length = node.parent
+  return ts.isPropertyAccessExpression(length) && length.expression === node && length.name.text === 'length'
+    && ownCall(length.parent, 'slice') && length.parent.arguments[0] === length
+}
+
 function collectRustFunctionStrings(functions, name, seen = new Set(), route = name) {
   if (seen.has(name)) return []
   seen.add(name)
@@ -226,8 +250,9 @@ function collectRustFunctionStrings(functions, name, seen = new Set(), route = n
       // These transport selectors inspect an existing request; they do not add
       // flags to any caller's CLI. Keep the emitted command baselines unchanged.
       const selector = ['runRustCoreScheduledCommand','runRustCoreScheduledCommandDirect'].includes(name) && (
-        ['--preview-render-image','--preview-render-owned-stage'].includes(node.text) && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
-        node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf'
+        ['--preview-render-image','--preview-render-owned-stage','--list-font-files'].includes(node.text) && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
+        node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf' ||
+        name === 'runRustCoreScheduledCommandDirect' && isListingOutputRecognitionLiteral(node)
       )
       if (!selector) strings.push(node.text)
     }
@@ -266,6 +291,20 @@ function testRustStructuralContract() {
     let rejected=false
     try { const strings=collectRustFunctionStrings(altered,command.method);assertExactSet(label,strings.filter(value=>value.startsWith('--')),command.flags) } catch { rejected=true }
     assert(rejected,`${label}: non-preview reachability mutant accepted`)
+  }
+  const direct = functions.get('runRustCoreScheduledCommandDirect'), directSource = direct.node.getText(direct.file)
+  const admission = "    const inputIndex = args.indexOf('--input')"
+  assert(directSource.split(admission).length === 2, 'Emitted-CLI mutation anchor drifted')
+  for (const [method, emitted] of [['runRustFontIndexListWorker', '--output='], ['runRustSharedMetadataOverlayRead', '--output'], ['runRustSharedMetadataOverlayRead', '--list-font-files']]) {
+    const source = directSource.replace(admission, `    args.push('${emitted}')\n${admission}`)
+    const file = ts.createSourceFile('emitted-cli-mutant.ts', source, ts.ScriptTarget.Latest, true)
+    const altered = new Map(functions); altered.set('runRustCoreScheduledCommandDirect', { node: file.statements[0], file })
+    let rejected = false
+    try {
+      const flags = collectRustFunctionStrings(altered, method).filter(value => value.startsWith('--'))
+      assertExactSet(`Emitted ${emitted}`, flags, fixture.rustCommands.find(value => value.method === method).flags)
+    } catch { rejected = true }
+    assert(rejected, `Actually emitted ${emitted} was hidden as a selector`)
   }
   console.log(`[diagnostics:orchestration-contracts] Rust facade locked (${fixture.rustFacadeMethods.length} methods, ${fixture.rustCommands.length} command routes)`)
 }

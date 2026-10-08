@@ -14,6 +14,7 @@ rootIndexJsonTextExpr,
 rootIndexJsonBoolExpr,
 rootIndexJsonArrayHasAnyValueExpr,
 rootIndexLocalTagMatchExpr,
+addRootIndexLocalTagClause,
 rootIndexRuntimeFontIdExpr,
 sanitizeStringArray,
 } from './rootIndexQuerySharedSql'
@@ -71,8 +72,7 @@ function addMergedIndexActiveFilterClauses(parts: RootIndexQueryParts, request: 
       break
     case 'tag':
       if (filter.name) {
-        parts.clauses.push(`EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE ${rootIndexLocalTagMatchExpr('lft')} AND lft.tag_name = ?)` )
-        parts.params.push(filter.name)
+        addRootIndexLocalTagClause(parts, filter.name)
       }
       break
     case 'sharedTag':
@@ -103,12 +103,7 @@ function addMergedIndexPageFilterClauses(parts: RootIndexQueryParts, request: Fo
 
   if (sidebarPage === 'tags') {
     const tagName = String(request.selectedTagName || '').trim()
-    if (tagName) {
-      parts.clauses.push(`EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE ${rootIndexLocalTagMatchExpr('lft')} AND lft.tag_name = ?)` )
-      parts.params.push(tagName)
-    } else {
-      parts.clauses.push(`EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE ${rootIndexLocalTagMatchExpr('lft')})`)
-    }
+    addRootIndexLocalTagClause(parts, tagName || undefined)
   }
 
   if (sidebarPage === 'sharedTags') {

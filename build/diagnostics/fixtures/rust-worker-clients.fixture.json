@@ -43,7 +43,7 @@
         "appendStartupLog"
       ],
       "functions": {
-        "runRustPreviewRenderImage": "a4ba56ce5e224e10604d4eaafad4329fab0b14bb84f398a446f2a8e94fa79796",
+        "runRustPreviewRenderImage": "4149a5fc031b004207bb6e9a66fbfffda962bae5efd64db8888b5d9f8c608e19",
         "runRustPreviewCacheInputCommand": "484c07a8a5f50e3e70504c5bf452b04febdcc581ec426aea74d2a4c890da9e35",
         "runRustPreviewCacheMaintenance": "47b12d8cbb1901fece5aaa9d38043eaa8b4a6a32083e10f1f9012f9de5f80371",
         "runRustPreviewCacheBatch": "eea2b11ed1aed52b27b194d86b1d724af66181d3478635f9a0aecff633aeffca",
@@ -114,7 +114,7 @@
       ],
       "functions": {
         "runRustSharedMetadataSignature": "b7a95943ae3ffebb8c34960d0288cb03cee19198dd795461fef4c85dede01805",
-        "runRustSharedMetadataOverlayRead": "40c714df3a240225229889c10f49fbdb3f1d5df2aaad79959b2549ca1a8d5914",
+        "runRustSharedMetadataOverlayRead": "6b3203a10dafd409a41dd1c1ff0eb436607925dad5a27f689e9e4fe7808fc530",
         "runRustSharedMetadataKnownTags": "9cd92a767c5843cc08a501f0b2e50c0451c4563d0f22e32fcff19b8e1fc387d0",
         "runRustSharedMetadataRemoveTag": "068ff943292e7c6cf84a67dc1ac0fd27d23343355588d094fcf5af73b1a697fd",
         "runRustSharedMetadataApply": "8834023697e9fcfe14c9b36ec268cf070d5a97a6dba9aa80d32d4b9ec106ea5e",
@@ -159,7 +159,7 @@
         "runRustMergedIndexPageQuery": "9c46ce653184f3fbd988860c7239a33735cd2813a7417895978a7878ba040dfd",
         "runRustRootIndexApplyChanges": "310336b3aa871719cc16e3ba745f0404ac44f36dba0cf531f0bf8a09742e3843",
         "runRustFontParseBatch": "71a72816176adade0c673c66916c35c0a11595f8a05e60411c54077e0a49428d",
-        "runRustFontIndexListWorker": "caeb9e168cb71620b452763a22d86a785c22d5c82443e62cfb1e88a50063a2dd",
+        "runRustFontIndexListWorker": "bb548724a923bf403b04124b1d93c4c01d610cd9cde52409e95749ab0c891bfc",
         "normalizeRustParseBatchJob": "9d6df67524c061bc5e2723253fe8efd9eb6871b49972918a03cdd8f3a996ee73",
         "statFromRustFile": "35415cd340f9b4be989486e1c4e3bb8e13941a35b99d1b521dd8b9100ffe268b",
         "normalizeFamilyHint": "e659a53fbb5b687c55dfe60709dd5897405a0a9fa833f7d185f9da5ae9d34c96",

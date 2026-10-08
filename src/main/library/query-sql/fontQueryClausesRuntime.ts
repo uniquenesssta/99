@@ -2,10 +2,12 @@ import type { FontQueryRequest } from '@shared/types';
 import { cleanSystemSqlExpression, systemMatchSqlExpression } from '../../install/windowsDefaultFonts';
 import { addLegacyCollectionAnyClause,addLegacyCollectionContainsClause,isLegacyCollectionColumn } from '../legacy/legacyCollectionQueryRuntime';
 import { escapeSqlLike, sanitizeStringArray, type FontQuerySqlParts } from './fontQuerySqlTypes';
-import { localTagPathCompareSql } from '../runtime/localFontTagIdentityRuntime';
+import { localTagMembershipSql } from '../runtime/localFontTagIdentityRuntime';
 
-function localFontTagMatchSql(alias = "lft"): string {
-  return `((COALESCE(${alias}.font_path, '') = '' AND LOWER(${alias}.font_id) = LOWER(fonts.id)) OR (COALESCE(${alias}.font_path, '') <> '' AND ${localTagPathCompareSql(`${alias}.font_path`)} = ${localTagPathCompareSql('fonts.path')}))`;
+function addLocalFontTagClause(parts: FontQuerySqlParts, tagName?: string): void {
+  const membership = localTagMembershipSql('fonts.path', ['LOWER(fonts.id)'], 'local_font_tags', tagName);
+  parts.clauses.push(membership.clause);
+  parts.params.push(...membership.params);
 }
 
 function addJsonArrayContainsClause(
@@ -189,10 +191,7 @@ export function addActiveFilterClauses(
       addLegacyCollectionContainsClause(parts, filter.id || "");
       break;
     case "tag":
-      parts.clauses.push(
-        `EXISTS (SELECT 1 FROM local_font_tags lft WHERE ${localFontTagMatchSql('lft')} AND lft.tag_name = ?)`,
-      );
-      parts.params.push(filter.name || "");
+      addLocalFontTagClause(parts, filter.name || "");
       break;
     case "sharedTag":
       addJsonArrayContainsClause(
@@ -242,16 +241,7 @@ export function addPageFilterClauses(
 
   if (sidebarPage === "tags") {
     const tagName = String(request.selectedTagName || "").trim();
-    if (tagName) {
-      parts.clauses.push(
-        `EXISTS (SELECT 1 FROM local_font_tags lft WHERE ${localFontTagMatchSql('lft')} AND lft.tag_name = ?)`,
-      );
-      parts.params.push(tagName);
-    } else {
-      parts.clauses.push(
-        `EXISTS (SELECT 1 FROM local_font_tags lft WHERE ${localFontTagMatchSql('lft')})`,
-      );
-    }
+    addLocalFontTagClause(parts, tagName || undefined);
   }
 
   if (sidebarPage === "sharedTags") {

@@ -24,7 +24,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "d2a6e8632b9490b3e7ef5ed9923ed295b1a2b074e3bf20f582c1af29fdd1e28a"
+      "sha256": "9b2ae13a49377b04f5bce96fff105f2075b4111156ffb9671a5d9e2dbe842333"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -247,5 +247,12 @@
     "parent": "6620b3bafd5b3d894987585dd06c5d5eabc54933",
     "reason": "Explicit projection-only notifications now pass the existing empty-row sender gate; watcher row, recovery and process-lifecycle assertions retained."
   },
-  "cacheRecoveryMigration": "F14 recovery requires complete successful scan before publishing repaired snapshot and notifying merged projection; prior baseline remains recorded."
+  "cacheRecoveryMigration": "F14 recovery requires complete successful scan before publishing repaired snapshot and notifying merged projection; prior baseline remains recorded.",
+  "metricsBroadcastMigration": {
+    "commit": "e1684ffd962c74b282820a9b32ee699c581a25c6",
+    "windowsRun": "37737695038",
+    "oldSha256": "d2a6e8632b9490b3e7ef5ed9923ed295b1a2b074e3bf20f582c1af29fdd1e28a",
+    "newSha256": "9b2ae13a49377b04f5bce96fff105f2075b4111156ffb9671a5d9e2dbe842333",
+    "change": "Only positive safe-integer metrics revision may broadcast an empty metrics notification; invalid metrics are rejected even with rows. Exports/functions and all watcher lifecycle gates retained."
+  }
 }

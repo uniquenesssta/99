@@ -353,6 +353,10 @@
         1
       ],
       [
+        "createSharedTagMetricsSnapshotRuntime",
+        1
+      ],
+      [
         "createSqliteRuntime",
         1
       ],
@@ -476,6 +480,10 @@
             ]
           ],
           [
+            "createSharedTagMetricsSnapshotRuntime.invalidate",
+            []
+          ],
+          [
             "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
             []
           ],
@@ -545,6 +553,10 @@
             [
               true
             ]
+          ],
+          [
+            "createSharedTagMetricsSnapshotRuntime.invalidate",
+            []
           ],
           [
             "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
@@ -921,5 +933,10 @@
       }
     }
   },
-  "realFeedbackMigration": "F14 feedback adds one worker-read owner, one status/projection writer and commit-only empty-row revision event. All previous calls/results/ownership counts retained; dynamic ISO time separately validated."
+  "realFeedbackMigration": "F14 feedback adds one worker-read owner, one status/projection writer and commit-only empty-row revision event. All previous calls/results/ownership counts retained; dynamic ISO time separately validated.",
+  "foregroundCountsMigration": {
+    "commit": "e1684ffd962c74b282820a9b32ee699c581a25c6",
+    "windowsRun": "37737695038",
+    "change": "One shared-tag metrics snapshot owner; invalidate before existing memory/page caches on cancellable clears. All earlier calls and ownership entries retained."
+  }
 }

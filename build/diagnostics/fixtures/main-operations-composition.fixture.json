@@ -175,6 +175,10 @@
           ]
         ],
         [
+          "createSharedTagMetricsSnapshotRuntime.invalidate",
+          []
+        ],
+        [
           "createFontMemoryQueryRuntime.invalidateFontQueryResultCache",
           []
         ],
@@ -1067,5 +1071,10 @@
       "finished": false,
       "windows": 1
     }
+  },
+  "foregroundCountsMigration": {
+    "commit": "e1684ffd962c74b282820a9b32ee699c581a25c6",
+    "windowsRun": "37737695038",
+    "change": "Cancellable refresh invalidation now includes the single shared-tag metrics owner; existing cache, scheduler, and lifecycle expectations retained."
   }
 }

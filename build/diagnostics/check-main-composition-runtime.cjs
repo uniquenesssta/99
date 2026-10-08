@@ -65,6 +65,48 @@ async function checkImportAndOwnership() {
   ])
 }
 
+async function checkMetricsOwnerWiring(overrides = new Map()) {
+  const h = createHarness(overrides)
+  h.load(entry)
+  const storage = h.compositions.get('createMainDataStorageCompositionRuntime')
+  const query = h.compositions.get('createMainDataQueryCompositionRuntime')
+  const counts = h.options('createSharedTagMetricsSnapshotRuntime')
+  assert.equal(counts.roots, storage.appWatchedFolders, 'counts lost the existing persisted-root owner')
+  assert.equal(typeof counts.revision, 'function', 'counts lost their revision source')
+  assert.equal(typeof counts.changed, 'function', 'counts lost their invalidation callback')
+  h.reset()
+  await counts.read()
+  assert.deepEqual(h.calls, [['createTagFontQueryRuntime.sharedTagCounts', []]], 'counts bypassed the existing binding reader')
+  h.reset()
+  counts.changed(7)
+  assert.equal(h.calls.length, 1, 'count completion did extra query/storage work')
+  assert.equal(h.calls[0][0], 'createFolderWatcherRuntime.sendFontIndexChanged', 'count notification lost the existing broadcast owner')
+  const payload = h.calls[0][1][0]
+  assert.equal(new Date(payload.at).toISOString(), payload.at, 'metrics event timestamp must be an ISO instant')
+  assert.deepEqual({ ...payload, at: '<count-time>' }, { source: 'metrics', metricsRevision: 7, folder: '', at: '<count-time>', upserts: [], deletes: [] })
+  h.reset()
+  query.clearFontQueryCaches(false)
+  assert(!h.calls.some(call => call[0] === 'createSharedTagMetricsSnapshotRuntime.invalidate'), 'non-cancelling projection clear retired the count owner')
+  h.reset()
+  await query.disposeSharedTagMetrics()
+  assert.deepEqual(h.calls, [['createSharedTagMetricsSnapshotRuntime.dispose', []]], 'counts disposal lost its single owner')
+}
+
+async function checkMetricsOwnerMutations() {
+  const mutations = [
+    [compositionFile('Data'), 'onSharedTagCountsChanged: options.onSharedTagCountsChanged,', 'onSharedTagCountsChanged: () => undefined,'],
+    [compositionFile('DataQuery'), 'roots: appWatchedFolders, revision:', 'roots: async () => [], revision:'],
+    [compositionFile('DataQuery'), 'read: () => tagFonts!.sharedTagCounts(),', 'read: () => undefined,'],
+    [compositionFile('DataQuery'), 'if (cancelInFlight) sharedTagMetrics.invalidate();', 'sharedTagMetrics.invalidate();'],
+  ]
+  for (const [file, before, after] of mutations) {
+    const source = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+    assert.equal(source.split(before).length, 2, 'metrics ownership mutation anchor drifted: ' + before)
+    await assert.rejects(() => checkMetricsOwnerWiring(new Map([[file, source.replace(before, after)]])), undefined, 'metrics ownership mutation escaped: ' + before)
+  }
+  return mutations.length
+}
+
 // Use the real preview connection owner, substituting only the driver/schema
 // ports. The existing library-db-handle gate exercises the real library owner.
 async function checkPreviewHandleOwnership() {
@@ -189,10 +231,11 @@ async function checkRejectedMutations() {
 
 async function main() {
   await checkImportAndOwnership()
+  await checkMetricsOwnerWiring()
   await checkPreviewHandleOwnership()
   assert.deepEqual(await observeBootstrap(), fixture.observations, 'AT-4.1 composition behavior changed')
   const operations = checkOutputTypes()
-  const mutations = await checkRejectedMutations()
+  const mutations = await checkRejectedMutations() + await checkMetricsOwnerMutations()
   console.log(`[diagnostics:main-composition-runtime] passed: ${fixture.observations.registrations.length} registrations, ${Object.keys(fixture.observations.flows).length} baseline flows, import/DB ownership, ${operations} typed operations, ${mutations} rejected mutations`)
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

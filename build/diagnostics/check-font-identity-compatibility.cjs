@@ -103,9 +103,79 @@ for (const vector of require('./fixtures/tag-font-path-identity.json')) {
   db.prepare('INSERT INTO entries VALUES (?,?,?,?,?)').run(path.win32.dirname(vector.canonical),path.win32.basename(vector.canonical),42,100,JSON.stringify(legacy))
   const predicate=sql.rootIndexLocalTagMatchExpr('lft')
   assert.equal(db.prepare('SELECT COUNT(*) n FROM entries WHERE EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE '+predicate+')').get().n,1)
+  for (const selected of [undefined,'private','different']) {
+    const parts={clauses:[],params:[],hasInstallJoin:false,usedLike:false}
+    sql.addRootIndexLocalTagClause(parts,selected)
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM entries WHERE '+parts.clauses.join(' AND ')).get(...parts.params).n,selected==='different'?0:1)
+  }
   db.prepare('UPDATE local_db.local_font_tags SET font_path=?').run(vector.stored+'.other')
   assert.equal(db.prepare('SELECT COUNT(*) n FROM entries WHERE EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE '+predicate+')').get().n,0,'path-bearing metadata ID borrowed another file')
+  const parts={clauses:[],params:[],hasInstallJoin:false,usedLike:false};sql.addRootIndexLocalTagClause(parts,'private')
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM entries WHERE '+parts.clauses.join(' AND ')).get(...parts.params).n,0)
 }
+// Execute the actual page/ID builders, preserving their result sets while
+// proving that normalization work is linear, without machine-specific timing.
+function localTagMembershipQueries(queryLoad=load) {
+  const work=database(),count=256,tag="bound'_%",base='\\\\vector-host\\scope';let pathCalls=0
+  try {
+  work.exec("ATTACH DATABASE ':memory:' AS local_db; CREATE TABLE local_db.local_font_tags(font_id TEXT,font_path TEXT,tag_name TEXT); CREATE TABLE fonts(id TEXT,path TEXT); CREATE TABLE entries(root_path TEXT,relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at INTEGER,created_at INTEGER,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,is_deleted INTEGER)")
+  identity.registerFileIdentitySql({function(name,options,fn){work.function(name,options,name==='hfm_file_path'? (...args)=>{pathCalls++;return fn(...args)}:fn)}})
+  const insert=work.prepare('INSERT INTO entries VALUES (?,?,?,42,100,100,?, ?,NULL,NULL,0,?,NULL,0)')
+  const bind=work.prepare('INSERT INTO local_db.local_font_tags VALUES (?,?,?)')
+  for(let i=0;i<count;i++) {
+    const name=`font-${i}.ttf`,file=path.win32.join(base,name),id='meta-'+i
+    insert.run(base,name,name,'ok',JSON.stringify({id,fileName:name}),'none')
+    work.prepare('INSERT INTO fonts VALUES (?,?)').run(id,file)
+    if(i<64) {
+      const spelling=i%2?'\\\\?\\UNC\\vector-host\\scope\\'+name:file
+      bind.run(id,localIdentity.normalizeLocalTagFontPath(spelling),tag)
+      if(i%8===0)bind.run(id,localIdentity.normalizeLocalTagFontPath(file),tag)
+    }
+  }
+  bind.run('meta-200',null,tag)
+  bind.run(identity.runtimeFontIdFromEntry(base,'font-201.ttf',42,100),'',tag)
+  bind.run('meta-202',localIdentity.normalizeLocalTagFontPath(path.win32.join(base,'absent.ttf')),tag)
+  bind.run('meta-203',null,'unselected')
+  const before=plain(work.prepare('SELECT * FROM local_db.local_font_tags ORDER BY rowid').all())
+  const builder=queryLoad('src/main/indexing/root-query/mergedIndexPageQuerySql.ts')
+  const nodeClauses=load('src/main/library/query-sql/fontQueryClausesRuntime.ts')
+  for(const selected of [undefined,tag,'unselected','absent']) {
+    const request={sidebarPage:'tags',selectedTagName:selected,sortMode:'nameAsc'}
+    const oldWhere='EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE '+sql.rootIndexLocalTagMatchExpr()+(selected===undefined?'':' AND lft.tag_name=?')+')'
+    const expected=work.prepare('SELECT relative_path FROM entries WHERE '+oldWhere+' ORDER BY relative_path').all(...(selected===undefined?[]:[selected])).map(row=>row.relative_path)
+    if(selected===tag)assert.deepEqual(expected,[...Array.from({length:64},(_,i)=>`font-${i}.ttf`),'font-200.ttf','font-201.ttf'].sort(),'pathless IDs or path-bearing isolation changed')
+    const query=builder.buildMergedIndexQuerySql(request,count,0),ids=builder.buildMergedIndexIdsQuerySql(request,count)
+    const plan=work.prepare('EXPLAIN QUERY PLAN '+query.countSql).all(...query.countParams).map(row=>row.detail).join('\n')
+    assert(!/CORRELATED/i.test(plan),'tag membership reverted to per-font binding scans');assert(/LIST SUBQUERY/i.test(plan))
+    pathCalls=0
+    assert.equal(work.prepare(query.countSql).get(...query.countParams).count,expected.length)
+    assert(pathCalls<=count*6,'COUNT repeated path work for each local binding: '+pathCalls)
+    pathCalls=0
+    const page=work.prepare(query.sql).all(...query.params)
+    assert.deepEqual(page.map(row=>row.relative_path).sort(),expected)
+    assert(pathCalls<=count*6,'SELECT repeated path work for each local binding: '+pathCalls)
+    assert.deepEqual(work.prepare(ids.sql).all(...ids.params).map(row=>row.id).sort(),expected.map(name=>identity.runtimeFontIdFromEntry(base,name,42,100)).sort())
+    const parts={clauses:[],params:[],joins:[],usedLike:false};nodeClauses.addPageFilterClauses(parts,request)
+    const nodeExpected=expected.filter(name=>name!=='font-201.ttf').map(name=>'meta-'+name.slice(5,-4)).sort()
+    assert.deepEqual(work.prepare('SELECT id FROM fonts WHERE '+parts.clauses.join(' AND ')).all(...parts.params).map(row=>row.id).sort(),nodeExpected,'Node path/legacy-ID semantics changed')
+    if(selected) {
+      const active={sidebarPage:'library',activeFilter:{kind:'tag',name:selected},sortMode:'nameAsc'}
+      const activeQuery=builder.buildMergedIndexQuerySql(active,count,0)
+      assert.equal(work.prepare(activeQuery.countSql).get(...activeQuery.countParams).count,expected.length)
+      const activeParts={clauses:[],params:[],joins:[],usedLike:false};nodeClauses.addActiveFilterClauses(activeParts,active)
+      assert.deepEqual(work.prepare('SELECT id FROM fonts WHERE '+activeParts.clauses.join(' AND ')).all(...activeParts.params).map(row=>row.id).sort(),nodeExpected)
+    }
+  }
+  assert.deepEqual(plain(work.prepare('SELECT * FROM local_db.local_font_tags ORDER BY rowid').all()),before,'read-only tag query changed stored bindings')
+  } finally { work.close() }
+}
+localTagMembershipQueries()
+const membershipFile=path.resolve(__dirname,'../../src/main/indexing/root-query/rootIndexQuerySharedSql.ts')
+const membershipAnchor="const membership = localTagMembershipSql(rootIndexRuntimePathExpr(), [rootIndexJsonTextExpr('id'), rootIndexRuntimeFontIdExpr()], 'local_db.local_font_tags', tagName)"
+assert(require('node:fs').readFileSync(membershipFile,'utf8').includes(membershipAnchor),'correlated-query mutant anchor missing')
+const correlatedMembership='const membership = { clause: "EXISTS (SELECT 1 FROM local_db.local_font_tags lft WHERE " + rootIndexLocalTagMatchExpr("lft") + (tagName === undefined ? "" : " AND lft.tag_name = ?") + ")", params: tagName === undefined ? [] : [tagName] }'
+const correlatedLoader=loader({}, {}, {[membershipFile]:source=>source.replace(membershipAnchor,correlatedMembership)})
+assert.throws(()=>localTagMembershipQueries(correlatedLoader),error=>error instanceof assert.AssertionError && /tag membership reverted to per-font binding scans/.test(error.message),'correlated normalization mutant escaped the actual SQL work gate')
 // Preview cache keys and storage routing do not use the runtime ID.
 const preview=load('src/main/preview/runtime/previewBatchRowsRuntime.ts').createPreviewBatchRowsRuntime({sha1:hash,normalizePathForCacheCompare:p=>p.toLowerCase()},()=>({storage:'local',dir:'C:\\preview',identity:'same.ttf'}))
 const previewRow=font=>[...preview.buildPreviewCacheGroups([font],{},'Text',36,400,80).values()][0].rows[0]

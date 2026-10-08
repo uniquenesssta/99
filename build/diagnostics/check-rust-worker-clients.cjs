@@ -4,6 +4,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
 const h = require('./helpers/rustWorkerTransportHarness.cjs')
+// Only three e1684ffd function bodies were deliberately migrated: foreground
+// preview bytes, stdout listing, and read-only metadata bindings. Their exact
+// new hashes remain frozen; causal port tests below cover the added behavior.
 const fixture = require('./fixtures/rust-worker-clients.fixture.json')
 const root = path.resolve(__dirname, '../..')
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8').replace(/\r\n/g, '\n')
@@ -166,6 +169,104 @@ async function checkRecoveryCapability() {
   assert.deepEqual(JSON.parse(JSON.stringify((await env.runtime.runRustLocalTagsSet(input)).updatedIds)),['f'])
   assert.equal(env.files.size,0)
 }
+function clientFixture(groupName, config, overrides = new Map()) {
+  const group = fixture.groups.find(group => group.name === groupName)
+  const env = h.createHarness({}, overrides)
+  const inputs = [], commands = [], disposed = []
+  let allocated = 0
+  const ports = {
+    appendStartupLog() {}, appendPreviewCacheFailureLog() {},
+    diagnoseRustCoreWorker: async () => ({ available: true, path: 'C:/worker.exe', capabilities: config.capabilities }),
+    createTemporaryJsonFile: () => {
+      const filePath = 'C:/fixture/input-' + (++allocated) + '.json'
+      return { path: filePath, writeJson: async value => inputs.push(JSON.parse(JSON.stringify(value))),
+        readText: async () => JSON.stringify(config.payload), dispose: async () => disposed.push(filePath) }
+    },
+    runRustCoreScheduledCommand: async (worker, args, options) => {
+      commands.push({ worker, args: JSON.parse(JSON.stringify(args)), options })
+      config.onCommand?.(options)
+      if (config.error) throw config.error
+      return { stdout: JSON.stringify(config.payload), stderr: '', ...(config.previewBytes ? { previewBytes: config.previewBytes } : {}),
+        ...(config.sharedIo ? { sharedIo: true } : {}), ...(config.daemon ? { daemon: true } : {}) }
+    },
+  }
+  return { client: env.load(group.path)[group.factory](ports), inputs, commands, disposed, allocated: () => allocated }
+}
+async function checkReviewedClientContracts(overrides = new Map()) {
+  const png = require('./fixtures/preview-png.cjs')
+  const input = { fontPath: 'C:/fonts/a.ttf', outputPath: 'C:/preview.png', text: 'A', fontSize: 24, width: 200, height: 60 }
+  for (const foregroundBytes of [true, false, undefined]) {
+    const config = { capabilities: ['preview-render-image'], payload: { ok: true, outputPath: input.outputPath, imageHex: png.toString('hex') }, ...(foregroundBytes ? { previewBytes: png } : {}) }
+    const f = clientFixture('Preview', config, overrides)
+    const result = await f.client.runRustPreviewRenderImage({ ...input, foregroundBytes })
+    assert.equal(Object.hasOwn(f.inputs[0], 'foregroundBytes'), false, 'UI intent leaked into unproved native JSON')
+    assert.deepEqual(f.inputs[0], input)
+    assert.equal(f.commands[0].options.foregroundPreviewBytes, foregroundBytes === true)
+    assert.equal(f.commands[0].options.maxBuffer, (foregroundBytes ? 5 : 1) * 1024 * 1024)
+    assert.equal(result.bytes, foregroundBytes ? png : undefined, 'client accepted unvalidated receipt hex or lost validated transport bytes')
+    assert.equal(result.transient, foregroundBytes ? true : undefined)
+    assert.equal(f.disposed.length, 1)
+  }
+  const failedPreview = clientFixture('Preview', { capabilities: ['preview-render-image'], payload: { ok: false }, daemon: true }, overrides)
+  await assert.rejects(failedPreview.client.runRustPreviewRenderImage(input), error => error.daemonSubmitted === true)
+  assert.equal(failedPreview.disposed.length, 1)
+
+  const listing = { ok: true, files: [{ path: 'C:/fonts/a.ttf', size: 2, modifiedMs: 1 }], directories: [{ path: 'C:/fonts' }], errors: [{ path: 'C:/fonts/denied', message: 'denied' }], foldersScanned: 1, truncated: true }
+  for (const stdout of [false, true]) {
+    const progress = []
+    const f = clientFixture('Indexing', { capabilities: ['list-font-files', ...(stdout ? ['list-font-files-stdout-v1'] : [])], payload: listing,
+      onCommand: options => { for (const line of ['hfm-scan-progress: {"files":0,"foldersScanned":0}', 'hfm-scan-progress: {"files":-1,"foldersScanned":0}', 'hfm-scan-progress: {broken']) options.onStderrLine(line) } }, overrides)
+    const result = await f.client.runRustFontIndexListWorker(['C:/fonts'], ['.TTF'], value => progress.push(JSON.parse(JSON.stringify(value))))
+    const command = f.commands[0]
+    assert.equal(command.args.includes('--output'), !stdout)
+    assert.equal(f.allocated(), stdout ? 0 : 1); assert.equal(f.disposed.length, stdout ? 0 : 1)
+    assert.equal(command.options.maxBuffer, stdout ? 32 * 1024 * 1024 + 256 * 1024 : 256 * 1024)
+    assert.equal(command.options.sharedIo.write, !stdout)
+    if (stdout) assert(command.options.sharedIo.accesses.every(access => access.mode === 'read' && access.scope === 'tree'))
+    else assert(command.options.sharedIo.paths.includes(command.args[command.args.indexOf('--output') + 1]))
+    assert.equal(result.files.length, 1); assert.equal(result.directories.length, 1); assert.equal(result.errors[0].message, 'denied'); assert.equal(result.truncated, true)
+    assert.deepEqual(progress, [{ files: 0, foldersScanned: 0 }, { files: 1, foldersScanned: 1 }])
+  }
+  const incomplete = clientFixture('Indexing', { capabilities: ['list-font-files', 'list-font-files-stdout-v1'], payload: { ok: true, files: [] } }, overrides)
+  await assert.rejects(incomplete.client.runRustFontIndexListWorker(['C:/fonts'], ['.ttf']), /receipt incomplete/)
+  assert.equal(incomplete.allocated(), 0)
+
+  const snapshotInput = { rootPath: 'C:/fonts', dbPath: 'C:/metadata.db', entries: [], bindingSnapshot: true }
+  const baseCapabilities = ['shared-metadata-overlay-read'], capabilities = [...baseCapabilities, 'shared-metadata-bindings-read-v1']
+  const row = { font_id: 'f', relative_path: 'a.ttf', path_key: 'a.ttf', tag_names_json: '["tag"]', favorite: 1, delete_protected: 0, revision: 2 }
+  const payload = { ok: true, matched: [], bindingSnapshot: { version: 1, rows: [row] } }
+  const snapshot = clientFixture('Metadata', { capabilities, payload, sharedIo: true }, overrides)
+  const result = await snapshot.client.runRustSharedMetadataOverlayRead(snapshotInput)
+  assert.deepEqual(JSON.parse(JSON.stringify(result.bindingSnapshot)), payload.bindingSnapshot)
+  assert.equal(snapshot.inputs[0].bindingSnapshot, true); assert.deepEqual(snapshot.inputs[0].entries, [])
+  assert.equal(snapshot.commands[0].options.sharedIo.write, false)
+  assert(snapshot.commands[0].options.sharedIo.accesses.every(access => access.mode === 'read'))
+  assert.equal(snapshot.disposed.length, 1)
+  for (const [caps, change, reason] of [[baseCapabilities, {}, 'capability-unavailable'], [capabilities, { preflight: { version: 1, phase: 'snapshot' } }, 'invalid-input'], [capabilities, { entries: [{ key: 'k' }] }, 'invalid-input']]) {
+    const denied = clientFixture('Metadata', { capabilities: caps, payload, sharedIo: true }, overrides)
+    await assert.rejects(denied.client.runRustSharedMetadataOverlayRead({ ...snapshotInput, ...change }), error => error.reason === reason)
+    assert.equal(denied.allocated(), 0); assert.equal(denied.commands.length, 0)
+  }
+  for (const bindingSnapshot of [undefined, { version: 2, rows: [] }, { version: 1, rows: {} }, { version: 1, rows: [null] }, { version: 1, rows: [{ ...row, tag_names_json: [] }] }, { version: 1, rows: [{ ...row, favorite: true }] }, { version: 1, rows: [{ ...row, revision: 1.5 }] }]) {
+    const invalid = clientFixture('Metadata', { capabilities, payload: { ok: true, matched: [], bindingSnapshot }, sharedIo: true }, overrides)
+    await assert.rejects(invalid.client.runRustSharedMetadataOverlayRead(snapshotInput), error => error.reason === 'invalid-receipt')
+    assert.equal(invalid.commands.length, 1); assert.equal(invalid.disposed.length, 1)
+  }
+}
+async function checkReviewedClientMutations() {
+  const mutations = [
+    ['Preview', 'foregroundPreviewBytes: foregroundBytes === true', 'foregroundPreviewBytes: false'],
+    ['Preview', '{ bytes: commandOutput.previewBytes, transient: true }', '{ bytes: commandOutput.previewBytes, transient: false }'],
+    ['Indexing', "const stdoutListing = hasCapability(status, 'list-font-files-stdout-v1')", 'const stdoutListing = false'],
+    ['Metadata', "input.bindingSnapshot && !hasCapability(status, 'shared-metadata-bindings-read-v1')", "false && !hasCapability(status, 'shared-metadata-bindings-read-v1')"],
+  ]
+  for (const [groupName, before, after] of mutations) {
+    const group = fixture.groups.find(group => group.name === groupName), original = sources.get(group.path)
+    assert(original.includes(before), 'reviewed client mutant anchor missing: ' + groupName)
+    const changed = new Map([[group.path, original.replace(before, after)]])
+    await assert.rejects(checkReviewedClientContracts(changed), undefined, 'reviewed client behavior mutation accepted: ' + groupName)
+  }
+}
 async function main() {
   checkFunctions()
   checkFacadeClosure()
@@ -174,6 +275,8 @@ async function main() {
   checkComposition()
   await checkMaintenanceFailureReports()
   await checkRecoveryCapability()
+  await checkReviewedClientContracts()
+  await checkReviewedClientMutations()
   for (const group of fixture.groups) {
     const changed = new Map(sources)
     const name = Object.keys(group.functions)[0]
@@ -196,6 +299,6 @@ async function main() {
   checkFacadeClosure(facadeCRLF)
   checkControlIdentities(new Map([[facade, facadeCRLF]]))
   checkComposition(new Map([[facade, facadeCRLF]]))
-  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies, narrow shared ports, partial health report and submitted backup, ${fixture.groups.length * 3 + 5} rejected mutations, facade closure and 7 control identities, CRLF passed`)
+  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies (three reviewed extensions with causal port checks), narrow shared ports, partial health report and submitted backup, ${fixture.groups.length * 3 + 9} rejected mutations, facade closure and 7 control identities, CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-clients]', error.stack || error); process.exitCode = 1 })

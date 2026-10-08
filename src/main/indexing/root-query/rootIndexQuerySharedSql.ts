@@ -2,7 +2,7 @@ import { isAbsolute,relative,resolve } from 'node:path'
 import { normalizePathForCacheCompare } from '../../path/cachePath'
 import type { RootIndexQueryParts } from './rootIndexQueryTypes'
 import { INSTALL_STATUS_EVIDENCE_PREFIX } from '../../install/status/installStatusSignatureRuntime'
-import { localTagPathCompareSql } from '../../library/runtime/localFontTagIdentityRuntime'
+import { localTagPathCompareSql, localTagMembershipSql } from '../../library/runtime/localFontTagIdentityRuntime'
 
 export function sqliteLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
@@ -30,6 +30,12 @@ export function rootIndexRuntimePathExpr(): string {
 
 export function rootIndexLocalTagMatchExpr(alias = 'lft'): string {
   return `((COALESCE(${alias}.font_path, '') = '' AND (LOWER(${alias}.font_id) = ${rootIndexJsonTextExpr('id')} OR LOWER(${alias}.font_id) = ${rootIndexRuntimeFontIdExpr()})) OR (COALESCE(${alias}.font_path, '') <> '' AND ${localTagPathCompareSql(`${alias}.font_path`)} = ${localTagPathCompareSql(rootIndexRuntimePathExpr())}))`
+}
+
+export function addRootIndexLocalTagClause(parts: RootIndexQueryParts, tagName?: string): void {
+  const membership = localTagMembershipSql(rootIndexRuntimePathExpr(), [rootIndexJsonTextExpr('id'), rootIndexRuntimeFontIdExpr()], 'local_db.local_font_tags', tagName)
+  parts.clauses.push(membership.clause)
+  parts.params.push(...membership.params)
 }
 
 export function mergedIndexLocalFavoriteExpr(): string {

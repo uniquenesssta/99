@@ -52,6 +52,21 @@ function watcherHarness({ availability = async () => true, stat = async () => ({
   return { runtime, options, handles, applied, sent, order, probes, logs, timers, closes: () => closes, advance: ms => { now += ms }, scanning: value => { scan = value },
     tick() { const [token, timer] = timers.entries().next().value; timers.delete(token); timer.fn(); return timer.ms }, live: () => handles.filter(h => !h.closed).map(h => h.folder) }
 }
+function metricsBroadcastHealthy(transform = x => x) {
+  const h = watcherHarness({ transform }), empty = { folder: '', at: 'fixture', upserts: [], deletes: [] }
+  h.runtime.sendFontIndexChanged({ ...empty, source: 'metrics', metricsRevision: 3 })
+  assert.equal(h.sent.length, 1, 'valid metrics-only invalidation was dropped')
+  assert.deepEqual(h.sent[0], { channel: 'font-index:changed', payload: { ...empty, source: 'metrics', metricsRevision: 3 } })
+  h.runtime.sendFontIndexChanged({ ...empty, source: 'watcher', metricsRevision: 4 })
+  for (const metricsRevision of [undefined, null, 0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '3']) {
+    h.runtime.sendFontIndexChanged({ ...empty, source: 'metrics', metricsRevision })
+    h.runtime.sendFontIndexChanged({ ...empty, source: 'metrics', metricsRevision, upserts: [{ id: 'invalid-revision' }] })
+  }
+  assert.equal(h.sent.length, 1, 'empty ordinary or invalid metrics event was delivered')
+  h.runtime.sendFontIndexChanged({ ...empty, source: 'projection', projectionRevision: 2 })
+  assert.equal(h.sent.length, 2, 'existing projection-only invalidation was dropped')
+  h.runtime.stopFolderWatchers()
+}
 async function watcherHealthy(transform = x => x) {
   const h = watcherHarness({ transform }), folder = path.resolve('/fonts')
   assert.equal(await h.runtime.startWatchingFolders([folder, folder]), true)
@@ -365,10 +380,16 @@ async function main() {
   await assert.rejects(() => watcherRecovery(s => mutate(s, 'if (nextSignature === currentFolderWatchSignature && folderWatchersHealthy)', 'if (nextSignature === currentFolderWatchSignature)')), assert.AssertionError)
   await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (isApplicationClosing() || generation !== watcherGeneration) return true;', '')), assert.AssertionError)
   await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (generation !== watcherGeneration || !listening) return;', '')), assert.AssertionError)
-  contracts(); await watcherHealthy(); await activationHealthy(); await manualBackgroundHealthy()
+  contracts(); metricsBroadcastHealthy(); metricsBroadcastHealthy(s => s.replace(/\r?\n/g, '\r\n'));
+  const metricsGate = "const metricsOnly = payload.source === 'metrics' && Number.isSafeInteger(payload.metricsRevision) && Number(payload.metricsRevision) > 0;";
+  const invalidMetricsGuard = "if (payload.source === 'metrics' && !metricsOnly) return;";
+  assert(read(watcherFile).includes(metricsGate)); assert(read(watcherFile).includes(invalidMetricsGuard));
+  assert.throws(() => metricsBroadcastHealthy(s => s.replace(metricsGate, 'const metricsOnly = false;')), assert.AssertionError);
+  assert.throws(() => metricsBroadcastHealthy(s => s.replace(invalidMetricsGuard, '')), assert.AssertionError);
+  await watcherHealthy(); await activationHealthy(); await manualBackgroundHealthy()
   await assert.rejects(() => watcherHealthy(s => mutate(s, 'if (options.isScanActive?.()) {', 'if (false) {')), assert.AssertionError)
   await assert.rejects(() => activationHealthy(s => mutate(s, 'stateRuntime.adjustDatabaseActiveCount(1)\n      }\n      options.setStatus(`取消激活失败', 'stateRuntime.adjustDatabaseActiveCount(0)\n      }\n      options.setStatus(`取消激活失败')), assert.AssertionError)
   await assert.rejects(() => manualBackgroundHealthy(s => mutate(s, 'if (active) return active;', 'if (false) return active;')), assert.AssertionError)
-  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 10 mutations rejected; A-01 main/renderer correctness and metrics ordering')
+  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 12 mutations rejected; valid-only metrics broadcast; A-01 main/renderer correctness and metrics ordering')
 }
 main().catch(e => { console.error(e); process.exitCode = 1 })

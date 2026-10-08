@@ -287,10 +287,32 @@ async function composition(native = false) {
     await fsp.writeFile(proofRelease,'go');await pool.whenIdle();assert.equal(jobs.length,start);holdProof=false
     }
     if (native) {
-      const pixelRender = (signal, width=1) => submit('--preview-render-image', {fontPath:source,outputPath:output,width,height:1}, {
+      const pixelRender = (signal, width=1, timeout=5000) => submit('--preview-render-image', {fontPath:source,outputPath:output,width,height:1}, {
         paths:[source,output],write:true,preview:true,accesses:[{path:source,mode:'read',scope:'file'},{path:output,mode:'write',scope:'file'}]
-      },signal,{foregroundPreviewBytes:true,maxBuffer:5*1024*1024})
+      },signal,{foregroundPreviewBytes:true,maxBuffer:5*1024*1024,timeout})
+      // Independently prove native owned stages retain ten active read slots.
+      // Wait for each real child's nonce receipt before starting the next so
+      // this capacity case does not turn ten Node startups into a phase-budget
+      // benchmark; the production 500ms receipt guard remains unchanged.
       let at=jobs.length
+      const nativeTen=[]
+      for(let index=0;index<10;index++) {
+        // This held cohort allows ten 500ms ready phases plus release overhead;
+        // individual proof guards and all other five-second cases are unchanged.
+        const pending=pixelRender(undefined,1,10000);nativeTen.push(pending);void pending.catch(()=>{})
+        await until(()=>jobs.length===at+index+1&&jobs[at+index].ready)
+        assert.equal(pool.status().activePreviewRead,index+1)
+      }
+      const nativeJobs=jobs.slice(at),nativeAdmissions=requests.filter(request=>request.label==='preview-render-owned-stage').slice(-10)
+      assert.equal(nativeJobs.length,10);assert.equal(new Set(nativeJobs.map(job=>job.input.outputPath)).size,10)
+      assert.equal(new Set(nativeJobs.map(job=>job.input.ownedStage.token)).size,10,'native reservations reused a nonce')
+      assert(nativeAdmissions.every(request=>request.write&&request.sharedReadOnlyPreview&&request.lane==='preview-read'&&request.initialPhase&&request.accesses===undefined&&request.roots.includes('configured-root:owned-preview-stage')))
+      await Promise.all(nativeJobs.map(release))
+      assert((await Promise.all(nativeTen)).every(response=>response.previewBytes.equals(png)))
+      assert.equal(jobs.length,at+10,'native display burst spawned publication children')
+      assert(nativeJobs.every(job=>job.closed&&!fs.existsSync(job.input.outputPath)),'native display settled without physical close and stage cleanup')
+      assert.equal(pool.status().activePreviewRead,0)
+      at=jobs.length
       const bytesOnly=pixelRender();await until(()=>jobs.length===at+1);await release(jobs[at]);const response=await bytesOnly
       assert(response.previewBytes.equals(png));assert.equal(jobs.length,at+1,'bytes-only spawned publication');assert.equal(fs.existsSync(jobs[at].input.outputPath),false)
       assert.equal(JSON.parse(response.stdout).imageHex,undefined,'pixel receipt leaked downstream')
@@ -313,5 +335,5 @@ async function composition(native = false) {
     await fsp.rm(directory, { recursive: true, force: true })
   }
 }
-async function main() { await proofCases(); await nativeReservationCases(); await nativeInitialPhaseCases(); await proofLifetimeCases(); await composition(); await composition(true); console.log('owned preview stage: locality/live proof; unverified-alias read overlap; write fairness; same-output serialization; render/copy cancel-close; stale generation; unknown copy no replay passed') }
+async function main() { await proofCases(); await nativeReservationCases(); await nativeInitialPhaseCases(); await proofLifetimeCases(); await composition(); await composition(true); console.log('owned preview stage: locality/live proof; ten proven native byte renders; unverified-alias read overlap; write fairness; same-output serialization; render/copy cancel-close; stale generation; unknown copy no replay passed') }
 main().catch(error => { console.error(error); process.exitCode = 1 })

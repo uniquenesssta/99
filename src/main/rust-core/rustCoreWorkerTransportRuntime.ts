@@ -248,7 +248,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       const outputs = args.flatMap((arg, index) => arg === '--output' ? [args[index + 1]] : arg.startsWith('--output=') ? [arg.slice('--output='.length)] : [])
       target = { paths: [...new Set([...(target?.paths || []), ...inferredPaths, ...outputs].filter((value): value is string => !!value))], write: true }
     }
-    const effectInput = temporaryFiles.get(inputPath)?.input as { operation?: string; bindingSnapshot?: boolean; preflight?: unknown; entries?: unknown[] } | undefined
+    const effectInput = temporaryFiles.get(inputPath)?.input as { operation?: string; outputPath?: string; bindingSnapshot?: boolean; preflight?: unknown; entries?: unknown[] } | undefined
     const pureFileRead = args[0] === '--shared-file-io' && !!effectInput
       && ['stat', 'lstat', 'access', 'readdir', 'treeSnapshot', 'directoryMetadata', 'directoryMetadataBatch'].includes(effectInput.operation || '')
     const pinnedBindingRead = args[0] === '--shared-metadata-overlay-read' && cachedStatus?.path === workerPath
@@ -257,11 +257,26 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     const verifiedReadOnly = completeReadFootprint && (verifiedListing || pureFileRead || pinnedBindingRead)
     let accesses = target?.accesses ? await sharedIoAccesses(target.accesses) : undefined
     if (target?.accesses?.length && !sharedReadOnlyPreview) target = { ...target, write: target.accesses.some(access => access.mode === 'write') }
+    const previewWrites = target?.accesses?.filter(access => access.mode === 'write') || []
+    const previewOutputPath = effectInput?.outputPath
+    // A lexical local output can be reparse-backed. Dropping it from the shared
+    // footprint must not turn a real preview write into source-only read locks.
+    // Mapping preserves at most one result per input access, so equal write
+    // counts plus the exact output declaration prove that no write was omitted.
+    const completePreviewWriteFootprint = typeof previewOutputPath === 'string'
+      && previewWrites.some(access => access.path === previewOutputPath && access.scope === 'file')
+      && accesses?.filter(access => access.mode === 'write').length === previewWrites.length
+    const conservativePreviewOutput = args[0] === '--preview-render-image' && !sharedReadOnlyPreview && !completePreviewWriteFootprint
+    if (conservativePreviewOutput) {
+      target = { paths: [...new Set([...(target?.paths || []), ...inferredPaths])], write: true }
+      accesses = undefined
+    }
     const previewRead = sharedReadOnlyPreview || (target?.write === false && (target.preview || (args[0] === '--shared-file-io' && isSharedPreviewReadScope())))
     execOptions = { ...execOptions, sharedIo: target }
     args = [...args]
     const roots = target ? await sharedIoResourceKeys(target.paths) : []
     if (conservativeListing) { roots.push('configured-root:listing-output'); accesses = undefined }
+    if (conservativePreviewOutput) roots.push('configured-root:preview-output-unverified')
     // A folded proof starts with unknown physical aliases: this global read
     // barrier must not be narrowed away by a verified font-source footprint.
     if (ownedNativeStage) { roots.push('configured-root:owned-preview-stage'); accesses = undefined }
@@ -292,13 +307,13 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         onStderrLine: execOptions.onStderrLine,
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
-          if (!target!.write || previewRead || accesses?.length || args[0] === '--list-font-files') await error.closed
+          if (!target!.write || previewRead || accesses?.length || args[0] === '--list-font-files' || args[0] === '--preview-render-image') await error.closed
           throw error
         })
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
         try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Preserve the worker result. */ }
       }
-      if ((!target!.write || sharedReadOnlyPreview || args[0] === '--list-font-files') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
+      if ((!target!.write || sharedReadOnlyPreview || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
       // A malformed success envelope can follow a commit. It must never trigger a fallback write.
       try {
         const payload = parseJsonLine<{ ok?: boolean }>(result.stdout)
