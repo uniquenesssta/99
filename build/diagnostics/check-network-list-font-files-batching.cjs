@@ -296,7 +296,7 @@ async function checkListCommandIsReadOnlySharedIo() {
   }
   const transport = fs.readFileSync(abs(transportPath), 'utf8').replace(/\r\n/g, '\n')
   assert(
-    transport.includes("if ((!target!.write || sharedReadOnlyPreview || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"),
+    transport.includes("if ((!target!.write || sharedReadOnlyPreview || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"),
     'transport read-only generation gate changed',
   )
 }
