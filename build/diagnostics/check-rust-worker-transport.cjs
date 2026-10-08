@@ -97,7 +97,7 @@ async function checkMetadataOverlayCase(scenario, overrides) {
   assert.deepEqual(plain(env.trace.filter(row => row[0] === 'rm')), [['rm', input, { force: true }]])
   if (!writeFailed) assert.deepEqual(env.sharedRequests[0], {
     file: 'C:/worker.exe', args: ['--shared-metadata-overlay-read', '--input', input],
-    roots: [String.raw`local-metadata:c:/index.db|c:\|c:/fonts`], accesses: [],
+    roots: ['local-metadata:c:/index.db|c:/|c:/fonts'], accesses: [],
     write: true, verifiedReadOnly: false, sharedReadOnlyPreview: false,
     label: 'shared-metadata-overlay-read', lane: 'default', priority: 'normal', timeoutMs: 30000, queueTimeoutMs: 3000,
     maxBuffer: 16 * 1024 * 1024, signalAborted: false, hasClose: true, admitted: true,

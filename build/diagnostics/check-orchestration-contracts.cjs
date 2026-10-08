@@ -218,6 +218,25 @@ function isListingOutputRecognitionLiteral(node) {
     && ownCall(length.parent, 'slice') && length.parent.arguments[0] === length
 }
 
+// Only the listing-root lookup reads this flag from caller argv. A literal in
+// an emitted argument or an array-mutating call must remain in the inventory.
+function isListingRootRecognitionLiteral(node) {
+  if (!ts.isStringLiteral(node) || node.text !== '--root') return false
+  const call = node.parent
+  if (!ts.isCallExpression(call) || call.arguments.length !== 1 || call.arguments[0] !== node
+    || !ts.isPropertyAccessExpression(call.expression) || call.expression.name.text !== 'indexOf'
+    || !ts.isIdentifier(call.expression.expression) || call.expression.expression.text !== 'args') return false
+  const next = call.parent
+  if (!ts.isBinaryExpression(next) || next.left !== call || next.operatorToken.kind !== ts.SyntaxKind.PlusToken
+    || !ts.isNumericLiteral(next.right) || next.right.text !== '1') return false
+  const lookup = next.parent
+  if (!ts.isElementAccessExpression(lookup) || lookup.argumentExpression !== next
+    || !ts.isIdentifier(lookup.expression) || lookup.expression.text !== 'args') return false
+  const declaration = lookup.parent
+  return ts.isVariableDeclaration(declaration) && declaration.initializer === lookup
+    && ts.isIdentifier(declaration.name) && declaration.name.text === 'listingRoot'
+}
+
 function collectRustFunctionStrings(functions, name, seen = new Set(), route = name) {
   if (seen.has(name)) return []
   seen.add(name)
@@ -252,7 +271,7 @@ function collectRustFunctionStrings(functions, name, seen = new Set(), route = n
       const selector = ['runRustCoreScheduledCommand','runRustCoreScheduledCommandDirect'].includes(name) && (
         ['--preview-render-image','--preview-render-owned-stage','--list-font-files'].includes(node.text) && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
         node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf' ||
-        name === 'runRustCoreScheduledCommandDirect' && isListingOutputRecognitionLiteral(node)
+        name === 'runRustCoreScheduledCommandDirect' && (isListingOutputRecognitionLiteral(node) || isListingRootRecognitionLiteral(node))
       )
       if (!selector) strings.push(node.text)
     }
@@ -295,7 +314,7 @@ function testRustStructuralContract() {
   const direct = functions.get('runRustCoreScheduledCommandDirect'), directSource = direct.node.getText(direct.file)
   const admission = "    const inputIndex = args.indexOf('--input')"
   assert(directSource.split(admission).length === 2, 'Emitted-CLI mutation anchor drifted')
-  for (const [method, emitted] of [['runRustFontIndexListWorker', '--output='], ['runRustSharedMetadataOverlayRead', '--output'], ['runRustSharedMetadataOverlayRead', '--list-font-files']]) {
+  for (const [method, emitted] of [['runRustFontIndexListWorker', '--output='], ['runRustSharedMetadataOverlayRead', '--output'], ['runRustSharedMetadataOverlayRead', '--list-font-files'], ['runRustFontParseBatch', '--root']]) {
     const source = directSource.replace(admission, `    args.push('${emitted}')\n${admission}`)
     const file = ts.createSourceFile('emitted-cli-mutant.ts', source, ts.ScriptTarget.Latest, true)
     const altered = new Map(functions); altered.set('runRustCoreScheduledCommandDirect', { node: file.statements[0], file })
@@ -306,6 +325,17 @@ function testRustStructuralContract() {
     } catch { rejected = true }
     assert(rejected, `Actually emitted ${emitted} was hidden as a selector`)
   }
+  const rootLookup = "const listingRoot = args[args.indexOf('--root') + 1]"
+  assert(directSource.split(rootLookup).length === 2, 'Listing-root recognition mutation anchor drifted')
+  const mutatingLookup = directSource.replace(rootLookup, "const listingRoot = args[args.push('--root') + 1]")
+  const mutatingFile = ts.createSourceFile('mutating-root-cli-mutant.ts', mutatingLookup, ts.ScriptTarget.Latest, true)
+  const mutatingFunctions = new Map(functions); mutatingFunctions.set('runRustCoreScheduledCommandDirect', { node: mutatingFile.statements[0], file: mutatingFile })
+  let mutatingRejected = false
+  try {
+    const flags = collectRustFunctionStrings(mutatingFunctions, 'runRustFontParseBatch').filter(value => value.startsWith('--'))
+    assertExactSet('Mutating --root lookup', flags, fixture.rustCommands.find(value => value.method === 'runRustFontParseBatch').flags)
+  } catch { mutatingRejected = true }
+  assert(mutatingRejected, 'Array-mutating --root lookup was hidden as a selector')
   console.log(`[diagnostics:orchestration-contracts] Rust facade locked (${fixture.rustFacadeMethods.length} methods, ${fixture.rustCommands.length} command routes)`)
 }
 

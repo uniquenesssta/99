@@ -18,8 +18,10 @@ async function main() {
  for (const file of [core+'rustCoreWorkerTransportRuntime.ts',core+'rustSharedIoCommandRuntime.ts',core+'clients/rustMetadataClientRuntime.ts','src/main/path/sharedIoProcessRuntime.ts','src/main/path/sharedPathProbeRuntime.ts']) transforms[path.join(root,file)] = source => {
    if(mutant && file.endsWith('rustCoreWorkerTransportRuntime.ts')) source=source.replace('if (roots.length) {','if (false) {')
    if(timeoutMutant && file.endsWith('rustCoreWorkerTransportRuntime.ts')) {
+     // Mutate only the dedicated healthy-root timeout probe. Earlier listing
+     // close/lease cases also time out and must not poison later admission.
      const before=source
-     source=source.replace('getStartupPathRootState }', 'getStartupPathRootState, markStartupPathRootUnavailable }').replace("          logOperation({ stage: 'transport-result'", "          if (error.reason === 'timeout') for (const root of rootGenerations.keys()) markStartupPathRootUnavailable(root,error)\n          logOperation({ stage: 'transport-result'")
+     source=source.replace('getStartupPathRootState }', 'getStartupPathRootState, markStartupPathRootUnavailable }').replace("          logOperation({ stage: 'transport-result'", "          if (error.reason === 'timeout' && args[0] === '--test-root-timeout-health') for (const root of rootGenerations.keys()) markStartupPathRootUnavailable(root,error)\n          logOperation({ stage: 'transport-result'")
      assert.notEqual(source,before,'timeout mutant not applied')
    }
    return crlf ? source.replace(/\r?\n/g,'\r\n') : source
@@ -250,13 +252,14 @@ async function main() {
    probe.stopSharedPathProbes();await assert.rejects(probe.probeStartupDirectory(dir,'stopped',2000),e=>e.outcome==='not-started')
    cases.push('directory/file/missing probe happens outside main with queue/execution evidence; stop closes admission')
    // Keep the real availability owner, transport and killable child together.
-   // Only the external root-health result is controlled.
+   // Only the external root-health result is controlled. The unique command
+   // label pins the offlining mutant to these exact read/write timeout cases.
    for (const write of [false,true]) {
      const rootPath='//nas/timeout-'+String(write)
      assert.equal(await availability.ensureStartupPathRootAvailable(rootPath),true)
      const before=availability.getStartupPathRootState(rootPath)
      mode='hang';nextReady=path.join(dir,'timeout-'+String(write))
-     const failed=healthTransport.runRustCoreScheduledCommand(process.execPath,['--test'],{timeout:1000,sharedIo:{paths:[rootPath],write}}).catch(e=>e)
+     const failed=healthTransport.runRustCoreScheduledCommand(process.execPath,['--test-root-timeout-health'],{timeout:1000,sharedIo:{paths:[rootPath],write}}).catch(e=>e)
      await until(()=>fs.existsSync(nextReady))
      const timeoutError=await failed
      assert.equal(timeoutError.reason,'timeout');assert.equal(timeoutError.outcome,'unknown')

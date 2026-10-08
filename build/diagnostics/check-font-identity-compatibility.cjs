@@ -119,7 +119,12 @@ function localTagMembershipQueries(queryLoad=load) {
   const work=database(),count=256,tag="bound'_%",base='\\\\vector-host\\scope';let pathCalls=0
   try {
   work.exec("ATTACH DATABASE ':memory:' AS local_db; CREATE TABLE local_db.local_font_tags(font_id TEXT,font_path TEXT,tag_name TEXT); CREATE TABLE fonts(id TEXT,path TEXT); CREATE TABLE entries(root_path TEXT,relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at INTEGER,created_at INTEGER,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,is_deleted INTEGER)")
-  identity.registerFileIdentitySql({function(name,options,fn){work.function(name,options,name==='hfm_file_path'? (...args)=>{pathCalls++;return fn(...args)}:fn)}})
+  identity.registerFileIdentitySql({function(name,options,fn){
+    if(name==='hfm_file_path')assert.equal(fn.length,2,'production path function arity changed')
+    const measured=name==='hfm_file_path'? (root,entry)=>{pathCalls++;return fn(root,entry)}:fn
+    assert.equal(measured.length,fn.length,'instrumentation changed SQLite function arity')
+    work.function(name,options,measured)
+  }})
   const insert=work.prepare('INSERT INTO entries VALUES (?,?,?,42,100,100,?, ?,NULL,NULL,0,?,NULL,0)')
   const bind=work.prepare('INSERT INTO local_db.local_font_tags VALUES (?,?,?)')
   for(let i=0;i<count;i++) {
