@@ -237,6 +237,23 @@ function isListingRootRecognitionLiteral(node) {
     && ts.isIdentifier(declaration.name) && declaration.name.text === 'listingRoot'
 }
 
+// The sealed identity proof compares exactly two existing argv positions. Keep
+// this exception inside that proof initializer; emitted/mutating uses still count.
+function isIdentityInputRecognitionLiteral(node) {
+  if (!ts.isStringLiteral(node) || !['--input', '--transfer'].includes(node.text)) return false
+  const comparison = node.parent
+  if (!ts.isBinaryExpression(comparison) || comparison.right !== node
+    || comparison.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken
+    || !ts.isElementAccessExpression(comparison.left) || !ts.isIdentifier(comparison.left.expression)
+    || comparison.left.expression.text !== 'args' || !ts.isNumericLiteral(comparison.left.argumentExpression)
+    || comparison.left.argumentExpression.text !== (node.text === '--input' ? '1' : '3')) return false
+  let expression = comparison
+  while (ts.isBinaryExpression(expression.parent) && expression.parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) expression = expression.parent
+  const declaration = expression.parent
+  return ts.isVariableDeclaration(declaration) && declaration.initializer === expression
+    && ts.isIdentifier(declaration.name) && declaration.name.text === 'verifiedIdentityRead'
+}
+
 function collectRustFunctionStrings(functions, name, seen = new Set(), route = name) {
   if (seen.has(name)) return []
   seen.add(name)
@@ -271,7 +288,7 @@ function collectRustFunctionStrings(functions, name, seen = new Set(), route = n
       const selector = ['runRustCoreScheduledCommand','runRustCoreScheduledCommandDirect'].includes(name) && (
         ['--preview-render-image','--preview-render-owned-stage','--list-font-files'].includes(node.text) && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
         node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf' ||
-        name === 'runRustCoreScheduledCommandDirect' && (isListingOutputRecognitionLiteral(node) || isListingRootRecognitionLiteral(node))
+        name === 'runRustCoreScheduledCommandDirect' && (isListingOutputRecognitionLiteral(node) || isListingRootRecognitionLiteral(node) || isIdentityInputRecognitionLiteral(node))
       )
       if (!selector) strings.push(node.text)
     }
@@ -314,7 +331,7 @@ function testRustStructuralContract() {
   const direct = functions.get('runRustCoreScheduledCommandDirect'), directSource = direct.node.getText(direct.file)
   const admission = "    const inputIndex = args.indexOf('--input')"
   assert(directSource.split(admission).length === 2, 'Emitted-CLI mutation anchor drifted')
-  for (const [method, emitted] of [['runRustFontIndexListWorker', '--output='], ['runRustSharedMetadataOverlayRead', '--output'], ['runRustSharedMetadataOverlayRead', '--list-font-files'], ['runRustFontParseBatch', '--root']]) {
+  for (const [method, emitted] of [['runRustFontIndexListWorker', '--output='], ['runRustSharedMetadataOverlayRead', '--output'], ['runRustSharedMetadataOverlayRead', '--list-font-files'], ['runRustFontParseBatch', '--root'], ['runRustFontIndexListWorker', '--input'], ['runRustFontParseBatch', '--transfer']]) {
     const source = directSource.replace(admission, `    args.push('${emitted}')\n${admission}`)
     const file = ts.createSourceFile('emitted-cli-mutant.ts', source, ts.ScriptTarget.Latest, true)
     const altered = new Map(functions); altered.set('runRustCoreScheduledCommandDirect', { node: file.statements[0], file })
@@ -336,6 +353,22 @@ function testRustStructuralContract() {
     assertExactSet('Mutating --root lookup', flags, fixture.rustCommands.find(value => value.method === 'runRustFontParseBatch').flags)
   } catch { mutatingRejected = true }
   assert(mutatingRejected, 'Array-mutating --root lookup was hidden as a selector')
+  for (const [method, before, after] of [
+    ['runRustFontIndexListWorker', "args[1] === '--input'", "args.push('--input') === 2"],
+    ['runRustFontParseBatch', "args[3] === '--transfer'", "args.push('--transfer') === 4"],
+    ['runRustFontIndexListWorker', "args[1] === '--input'", "args[2] === '--input'"],
+    ['runRustFontParseBatch', "args[3] === '--transfer'", "args[4] === '--transfer'"],
+  ]) {
+    assert(directSource.split(before).length === 2, 'Identity-selector mutation anchor drifted')
+    const file = ts.createSourceFile('identity-selector-mutant.ts', directSource.replace(before, after), ts.ScriptTarget.Latest, true)
+    const altered = new Map(functions); altered.set('runRustCoreScheduledCommandDirect', { node: file.statements[0], file })
+    let rejected = false
+    try {
+      const flags = collectRustFunctionStrings(altered, method).filter(value => value.startsWith('--'))
+      assertExactSet('Mutated identity selector', flags, fixture.rustCommands.find(value => value.method === method).flags)
+    } catch { rejected = true }
+    assert(rejected, 'Mutating or unrecognized identity CLI expression was hidden as a selector')
+  }
   console.log(`[diagnostics:orchestration-contracts] Rust facade locked (${fixture.rustFacadeMethods.length} methods, ${fixture.rustCommands.length} command routes)`)
 }
 

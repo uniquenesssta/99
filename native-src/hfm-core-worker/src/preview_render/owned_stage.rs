@@ -124,13 +124,66 @@ impl PreparedOwnedPreviewStage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Barrier};
+    static FIXTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
     struct Fixture(PathBuf);
-    impl Fixture { fn new() -> Self { let path = std::env::temp_dir().join(format!("hfm-owned-stage-test-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos())); fs::create_dir(&path).unwrap(); Self(path) } }
+    impl Fixture {
+        fn new() -> Self {
+            let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+            Self::with_timestamp(&std::env::temp_dir(), timestamp).unwrap()
+        }
+        fn with_timestamp(base: &Path, timestamp: u128) -> io::Result<Self> {
+            // Windows wall-clock resolution is not unique across parallel tests.
+            let sequence = FIXTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            Self::create(base.join(format!("hfm-owned-stage-test-{}-{timestamp}-{sequence}", std::process::id())))
+        }
+        fn create(path: PathBuf) -> io::Result<Self> {
+            fs::create_dir(&path)?;
+            // Cleanup ownership begins only after successful exclusive creation.
+            Ok(Self(path))
+        }
+    }
     impl Drop for Fixture { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
     fn request(base: &Path) -> (OwnedPreviewStageRequest, String) {
         let token = "00000000-0000-4000-8000-000000000001".to_string();
         let output = base.join(format!(".hfm-preview-stage-{token}")).join("preview.png").to_string_lossy().into_owned();
         (OwnedPreviewStageRequest { base_path: base.to_string_lossy().into_owned(), token, excluded_roots: vec![] }, output)
+    }
+    #[test]
+    fn owned_preview_stage_fixture_names_are_unique_at_one_timestamp() {
+        const WORKERS: usize = 8;
+        const FIXED_TIMESTAMP: u128 = 123456789;
+        // The fixed timestamp is isolated from prior test processes by this owner.
+        let outer = Fixture::new();
+        let barrier = Arc::new(Barrier::new(WORKERS));
+        let workers: Vec<_> = (0..WORKERS).map(|_| {
+            let base = outer.0.clone();
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                Fixture::with_timestamp(&base, FIXED_TIMESTAMP)
+            })
+        }).collect();
+        // Keep every successful fixture alive until every allocation has finished.
+        let results: Vec<_> = workers.into_iter().map(|worker| worker.join()).collect();
+        let fixtures: Vec<_> = results.into_iter().map(|result| result.unwrap().unwrap()).collect();
+        let paths: std::collections::HashSet<_> = fixtures.iter().map(|fixture| &fixture.0).collect();
+        assert_eq!(paths.len(), WORKERS);
+        assert!(fixtures.iter().all(|fixture| fixture.0.is_dir()));
+    }
+    #[test]
+    fn owned_preview_stage_fixture_preserves_preexisting_directory() {
+        let outer = Fixture::new();
+        let existing = outer.0.join("preexisting");
+        fs::create_dir(&existing).unwrap();
+        let sentinel = existing.join("sentinel.txt");
+        fs::write(&sentinel, b"preserve existing fixture").unwrap();
+        let error = Fixture::create(existing.clone()).err().expect("preexisting fixture accepted");
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert!(existing.is_dir());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"preserve existing fixture");
+        assert_eq!(fs::read_dir(&outer.0).unwrap().count(), 1);
     }
     #[test]
     fn owned_preview_stage_pins_real_directories() {

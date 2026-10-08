@@ -309,6 +309,7 @@ async function main() {
    const negative=cp.spawnSync(process.execPath,[__filename,'--without-routing'],{encoding:'utf8',timeout:60000});assert.notEqual(negative.status,0);assert.match(negative.stderr,/production client did not reach isolated process/)
    const timeoutNegative=cp.spawnSync(process.execPath,[__filename,'--timeout-offlines-root'],{encoding:'utf8',timeout:60000});assert.notEqual(timeoutNegative.status,0);assert.match(timeoutNegative.stderr,/operation timeout offlined healthy root/)
    console.log('CRLF passed; removed-routing and timeout-offlining mutants rejected')
+   await require('./check-font-identity-read-admission.cjs').runFontIdentityReadAdmissionRegressions()
  }
 }
 main().catch(error=>{console.error(error);process.exitCode=1})

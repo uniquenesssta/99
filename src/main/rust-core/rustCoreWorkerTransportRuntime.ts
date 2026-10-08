@@ -114,6 +114,11 @@ type RustCoreJsonFile = {
   readText: () => Promise<string>
   dispose: () => Promise<void>
 }
+type RustCoreTemporaryEntry = {
+  holds: number; disposed: boolean; file: RustCoreJsonFile; input?: unknown
+  writeAttempts: number; completedWrites: number; pendingWrites: number
+  identityIntent: boolean; identitySealed: boolean
+}
 
 // The transport owns path allocation, encoding and best-effort deletion.
 // Callers dispose in their original finally block to preserve settlement order.
@@ -136,15 +141,23 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   const nativePreviewStages = createNativeOwnedPreviewStageRuntime(sharedIoResourceKeys, configuredSharedIoRoots)
   const previewPublications = new Map<string, string>()
   const previewAdmissions = new Map<string, () => boolean>()
-  const temporaryFiles = new Map<string, { holds: number; disposed: boolean; file: RustCoreJsonFile; input?: unknown }>()
+  const temporaryFiles = new Map<string, RustCoreTemporaryEntry>()
   function createTemporaryJsonFile(prefix: string): RustCoreJsonFile {
     const file = allocateTemporaryJsonFile(prefix)
-    const entry: { holds: number; disposed: boolean; file: RustCoreJsonFile; input?: unknown } = { holds: 0, disposed: false, file }
+    const entry: RustCoreTemporaryEntry = { holds: 0, disposed: false, file,
+      writeAttempts: 0, completedWrites: 0, pendingWrites: 0, identityIntent: false, identitySealed: false }
     temporaryFiles.set(file.path, entry)
     return { ...file, writeJson: async value => {
-      const snapshot = JSON.parse(JSON.stringify(value))
-      await file.writeJson(snapshot)
-      entry.input = snapshot
+      if (entry.identitySealed) throw new SharedIoProcessError('Font identity input is sealed', 'not-started', 'identity-input-sealed')
+      entry.writeAttempts += 1
+      entry.pendingWrites += 1
+      try {
+        const snapshot = JSON.parse(JSON.stringify(value))
+        if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) && snapshot.operation === 'fontContentIdentity') entry.identityIntent = true
+        await file.writeJson(snapshot)
+        entry.input = snapshot
+        entry.completedWrites += 1
+      } finally { entry.pendingWrites -= 1 }
     }, dispose: async () => {
       entry.disposed = true
       if (entry.holds) return
@@ -212,6 +225,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   }
 
   async function runRustCoreScheduledCommandDirect(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean; previewBytes?: Buffer }> {
+    args = [...args]
     execOptions = { ...execOptions, signal: execOptions.signal || currentSharedIoSignal() }
     assertLocalShutdownWorkAllowed()
     if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
@@ -222,6 +236,9 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       : inferredPaths.length ? { paths: inferredPaths, write: true } : undefined
     const inputIndex = args.indexOf('--input')
     const inputPath = inputIndex >= 0 ? args[inputIndex + 1] : ''
+    const inputEntry = temporaryFiles.get(inputPath)
+    if (args[0] === '--shared-file-io' && (!inputEntry || inputEntry.disposed))
+      throw new SharedIoProcessError('Shared filesystem input is not owned by this transport', 'not-started', 'shared-input-unavailable')
     const ownedNativeStage = args[0] === '--preview-render-owned-stage' && cachedStatus?.path === workerPath && hasCapability(cachedStatus, 'preview-owned-stage-v1')
       ? nativePreviewStages.forInput(temporaryFiles.get(inputPath)?.input, workerPath) : undefined
     if (args[0] === '--preview-render-owned-stage' && (!ownedNativeStage || target?.write !== true || !target.preview
@@ -248,13 +265,39 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       const outputs = args.flatMap((arg, index) => arg === '--output' ? [args[index + 1]] : arg.startsWith('--output=') ? [arg.slice('--output='.length)] : [])
       target = { paths: [...new Set([...(target?.paths || []), ...inferredPaths, ...outputs].filter((value): value is string => !!value))], write: true }
     }
-    const effectInput = temporaryFiles.get(inputPath)?.input as { operation?: string; outputPath?: string; bindingSnapshot?: boolean; preflight?: unknown; entries?: unknown[] } | undefined
+    const effectInput = inputEntry?.input as { operation?: string; path?: string; availabilityRoot?: string; transferPath?: string; outputPath?: string; bindingSnapshot?: boolean; preflight?: unknown; entries?: unknown[] } | undefined
+    const identityRequest = args[0] === '--shared-file-io' && (inputEntry?.identityIntent === true || effectInput?.operation === 'fontContentIdentity')
+    if (identityRequest) {
+      // A failed or overlapping rewrite can leave different bytes from the
+      // registry snapshot. Never dispatch such an identity input at all.
+      if (!inputEntry || inputEntry.disposed || inputEntry.pendingWrites !== 0 || inputEntry.writeAttempts !== 1 || inputEntry.completedWrites !== 1)
+        throw new SharedIoProcessError('Font identity input is not a completed single write', 'not-started', 'identity-input-unstable')
+      // Seal before mapping awaits, including conservative writer admission.
+      inputEntry.identitySealed = true
+    }
+    const identityPaths = target?.paths.filter(Boolean) || []
+    const identityTransfer = args.length === 5 ? temporaryFiles.get(args[4]) : undefined
+    const verifiedIdentityRead = identityRequest && cachedStatus?.available === true && cachedStatus.path === workerPath
+      && hasCapability(cachedStatus, 'shared-file-io-v1') && hasCapability(cachedStatus, 'font-content-identity-v1')
+      && args.length === 5 && args[1] === '--input' && args[2] === inputPath && args[3] === '--transfer'
+      && identityTransfer !== undefined && identityTransfer !== inputEntry && !identityTransfer.disposed
+      && effectInput?.operation === 'fontContentIdentity' && effectInput.transferPath === args[4]
+      && Object.keys(effectInput).every(key => ['operation', 'path', 'availabilityRoot', 'transferPath', 'trace'].includes(key))
+      && typeof effectInput.path === 'string' && win32.isAbsolute(effectInput.path) && !effectInput.path.includes('\0') && /\.(ttf|otf|ttc|otc)$/i.test(effectInput.path)
+      && (effectInput.availabilityRoot === undefined || effectInput.availabilityRoot === sharedIoAvailabilityRoot(effectInput.path))
+      && target?.write === false && !target.preview && target.accesses === undefined
+      && target.paths.every(path => typeof path === 'string') && identityPaths.length === 1 && identityPaths[0] === effectInput.path
     const pureFileRead = args[0] === '--shared-file-io' && !!effectInput
       && ['stat', 'lstat', 'access', 'readdir', 'treeSnapshot', 'directoryMetadata', 'directoryMetadataBatch'].includes(effectInput.operation || '')
     const pinnedBindingRead = args[0] === '--shared-metadata-overlay-read' && cachedStatus?.path === workerPath
       && hasCapability(cachedStatus, 'shared-metadata-bindings-read-v1') && effectInput?.bindingSnapshot === true
       && !effectInput.preflight && Array.isArray(effectInput.entries) && effectInput.entries.length === 0
-    const verifiedReadOnly = completeReadFootprint && (verifiedListing || pureFileRead || pinnedBindingRead)
+    const verifiedReadOnly = verifiedIdentityRead || (completeReadFootprint && (verifiedListing || pureFileRead || pinnedBindingRead))
+    if (identityRequest) {
+      // Canonicalization may leave even a known UNC share. This effect proof
+      // permits read/read overlap; it never supplies a precise alias footprint.
+      target = { paths: [...new Set([...(target?.paths || []), effectInput?.path].filter((path): path is string => typeof path === 'string' && !!path))], write: !verifiedIdentityRead }
+    }
     let accesses = target?.accesses ? await sharedIoAccesses(target.accesses) : undefined
     if (target?.accesses?.length && !sharedReadOnlyPreview) target = { ...target, write: target.accesses.some(access => access.mode === 'write') }
     const previewWrites = target?.accesses?.filter(access => access.mode === 'write') || []
@@ -273,8 +316,8 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     }
     const previewRead = sharedReadOnlyPreview || (target?.write === false && (target.preview || (args[0] === '--shared-file-io' && isSharedPreviewReadScope())))
     execOptions = { ...execOptions, sharedIo: target }
-    args = [...args]
     const roots = target ? await sharedIoResourceKeys(target.paths) : []
+    if (identityRequest) { roots.push('configured-root:font-content-identity-read'); accesses = undefined }
     if (conservativeListing) { roots.push('configured-root:listing-output'); accesses = undefined }
     if (conservativePreviewOutput) roots.push('configured-root:preview-output-unverified')
     // A folded proof starts with unknown physical aliases: this global read
@@ -307,13 +350,13 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         onStderrLine: execOptions.onStderrLine,
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
-          if (!target!.write || previewRead || accesses?.length || args[0] === '--list-font-files' || args[0] === '--preview-render-image') await error.closed
+          if (!target!.write || previewRead || accesses?.length || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') await error.closed
           throw error
         })
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
         try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Preserve the worker result. */ }
       }
-      if ((!target!.write || sharedReadOnlyPreview || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
+      if ((!target!.write || sharedReadOnlyPreview || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
       // A malformed success envelope can follow a commit. It must never trigger a fallback write.
       try {
         const payload = parseJsonLine<{ ok?: boolean }>(result.stdout)
