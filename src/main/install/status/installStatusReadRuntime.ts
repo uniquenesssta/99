@@ -1,4 +1,5 @@
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { assertSharedIoActive, rethrowSharedIoCancellation } from '../../path/sharedIoCancellationRuntime'
 import type { FontItem,InstallCompareResult,SystemInstalledFont } from '../../../shared/types';
 import type {
 InstallStatusDbRuntime,
@@ -19,6 +20,7 @@ export function createInstallStatusReadRuntime(
   helpers: InstallStatusDbRuntime & InstallStatusSignatureRuntime & InstallStatusNormalizeRuntime
 ) {
   async function readInstallStatusIndex(items: FontItem[], options: { enqueueMissTasks?: boolean } = { enqueueMissTasks: false }): Promise<{ results: Record<string, InstallCompareResult>; misses: FontItem[] }> {
+    assertSharedIoActive()
     const results: Record<string, InstallCompareResult> = {}
     const misses: FontItem[] = []
     const uniqueItems = Array.from(new Map((items || []).filter(Boolean).map((item) => [item.id, item])).values())
@@ -35,7 +37,9 @@ export function createInstallStatusReadRuntime(
             items: fallbackItems.map(helpers.installStatusWorkerItem)
           })
         }
+        assertSharedIoActive()
         const workerResult = await deps.readInstallStatusIndexInWorker(workerGroups)
+        assertSharedIoActive()
         Object.assign(results, workerResult.results || {})
         const missingSet = new Set(workerResult.missingIds || [])
         const missesFromWorker = uniqueItems.filter((item) => missingSet.has(item.id))
@@ -45,10 +49,12 @@ export function createInstallStatusReadRuntime(
         return { results, misses: missesFromWorker }
       } catch (error) {
         rethrowSharedIoProcessError(error)
+        rethrowSharedIoCancellation(error)
         deps.appendStartupLog(`machine install status db worker read fallback: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
 
+    assertSharedIoActive()
     if (!nodeStateFallbackCompatibilityAllowed()) {
       logNodeStateFallbackDisabled({
         appendStartupLog: deps.appendStartupLog,
@@ -67,7 +73,9 @@ export function createInstallStatusReadRuntime(
       if (!groupItems.length) return
       let db: SqliteDb | null = null
       try {
+        assertSharedIoActive()
         db = await openDb()
+        assertSharedIoActive()
         const select = db.prepare('SELECT signature, installed, by_type, matches_json FROM install_status WHERE font_id = ?')
         for (const item of groupItems) {
           const signature = helpers.installStatusSignature(item)
@@ -86,6 +94,8 @@ export function createInstallStatusReadRuntime(
           misses.push(item)
         }
       } catch (error) {
+        rethrowSharedIoProcessError(error)
+        rethrowSharedIoCancellation(error)
         deps.appendStartupLog(`machine install status read skipped: ${rootLabel} ${error instanceof Error ? error.message : String(error)}`)
         misses.push(...groupItems)
       } finally {
@@ -94,6 +104,7 @@ export function createInstallStatusReadRuntime(
     }
 
     await readGroup('local-fallback', fallbackItems, () => helpers.openFallbackInstallDb())
+    assertSharedIoActive()
 
     if (options.enqueueMissTasks && misses.length) {
       deps.appendStartupLog(`install status lazy check disabled: ${misses.length} missing cached rows were not queued`)

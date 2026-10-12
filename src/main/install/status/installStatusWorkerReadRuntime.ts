@@ -1,4 +1,6 @@
 import { fileRuntimeFontId } from '../../fonts/fontFileIdentity'
+import { assertSharedIoActive } from '../../path/sharedIoCancellationRuntime'
+import { logNodeStateFallbackDisabled, logNodeStateFallbackUsed, nodeStateFallbackCompatibilityAllowed } from '../../rust-core/nodeStateFallbackCompatibilityRuntime'
 import { migrateInstallStatusIdentity } from './installStatusIdentityMigration'
 import type { InstallStatusRuntimeDeps } from './installStatusTypes'
 
@@ -17,7 +19,9 @@ export function createInstallStatusWorkerReadRuntime(options: {
   appendStartupLog: (message: string) => void
 }): Reader {
   return async groups => {
+    assertSharedIoActive()
     await options.openLibraryDb()
+    assertSharedIoActive()
     const invalidIds = new Set<string>()
     const samples: Array<{ group: number; row: number; reason: string }> = []
     const validGroups = groups.map((group, groupIndex) => ({ ...group, items: group.items.filter((item, row) => {
@@ -30,7 +34,10 @@ export function createInstallStatusWorkerReadRuntime(options: {
     }) })).filter(group => group.items.length > 0)
     if (invalidIds.size) options.appendStartupLog(`install status invalid identity rows isolated: count=${invalidIds.size}, samples=${JSON.stringify(samples)}`)
     for (const group of validGroups) {
-      if (!(await options.exists(group.dbPath))) continue
+      assertSharedIoActive()
+      const exists = await options.exists(group.dbPath)
+      assertSharedIoActive()
+      if (!exists) continue
       const db = options.openStableSqliteDb(group.dbPath, 'install-identity-items')
       try {
         options.initializeMachineInstallDb(db, group.rootPath)
@@ -38,13 +45,28 @@ export function createInstallStatusWorkerReadRuntime(options: {
           file_size: item.fileSize, modified_at: item.modifiedAt, font_json: JSON.stringify(item) })))
       } finally { options.closeSqliteDb(db) }
     }
+    assertSharedIoActive()
     const rust = validGroups.length ? await options.readRust(validGroups) : null
-    const value: Awaited<ReturnType<Reader>> = rust || (validGroups.length ? await options.readWorker(validGroups) : { results: {}, missingIds: [] })
+    assertSharedIoActive()
+    let value: Awaited<ReturnType<Reader>> = rust || { results: {}, missingIds: [] }
+    let readerMode = rust ? 'rust' : validGroups.length ? 'unavailable' : 'none'
+    if (!rust && validGroups.length) {
+      if (nodeStateFallbackCompatibilityAllowed()) {
+        logNodeStateFallbackUsed({ appendStartupLog: options.appendStartupLog, source: 'install-status-read', detail: `groups=${validGroups.length}, worker=db-query` })
+        assertSharedIoActive()
+        readerMode = 'db worker'
+        value = await options.readWorker(validGroups)
+      } else {
+        logNodeStateFallbackDisabled({ appendStartupLog: options.appendStartupLog, source: 'install-status-read', reason: 'rust-read-unavailable' })
+        value = { results: {}, missingIds: validGroups.flatMap(group => group.items.map(item => item.id)) }
+      }
+    }
+    assertSharedIoActive()
     // Duplicate corrupt IDs also remain unknown; an invalid row never borrows a
     // valid row's authority merely because their supplied IDs happen to match.
     const results = { ...value.results }
     for (const id of invalidIds) delete results[id]
-    options.appendStartupLog(`machine install status ${rust ? 'rust' : 'db worker'} read: groups=${validGroups.length}, known=${Object.keys(results).length}, missing=${value.missingIds.length + invalidIds.size}, elapsed=${value.timings?.elapsed || 0}ms`)
+    options.appendStartupLog(`machine install status ${readerMode} read: groups=${validGroups.length}, known=${Object.keys(results).length}, missing=${value.missingIds.length + invalidIds.size}, elapsed=${value.timings?.elapsed || 0}ms`)
     return { ...value, results, missingIds: [...new Set([...value.missingIds, ...invalidIds])] }
   }
 }

@@ -20,6 +20,8 @@ export interface FontScanCacheFile {
   /** In-memory only: full successful enumeration is required before replacement. */
   rebuildRequired?: boolean
   version: number
+  /** In-memory only: directory baselines from the same read transaction as entries. */
+  directorySignatures?: RootIndexDirectorySignatureUpdate[]
   entries: Record<string, FontScanCacheEntry>
 }
 

@@ -71,22 +71,31 @@ pub(crate) fn initialize_root_index_db(conn: &Connection, config: &RootIndexAppl
         let names = statement.query_map([], |row| row.get::<_, String>(1))?.collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
         names
     };
+    let mut metadata_changed = false;
     for (name, definition) in [("created_at", "REAL"), ("message", "TEXT"), ("is_deleted", "INTEGER NOT NULL DEFAULT 0"),
         ("deleted_at", "TEXT"), ("revision", "INTEGER NOT NULL DEFAULT 1"), ("opstamp", "INTEGER NOT NULL DEFAULT 0"),
         ("file_identity", "TEXT"), ("content_hash", "TEXT")] {
-        if !names.contains(name) { conn.execute_batch(&format!("ALTER TABLE entries ADD COLUMN {name} {definition}"))?; }
+        if !names.contains(name) { conn.execute_batch(&format!("ALTER TABLE entries ADD COLUMN {name} {definition}"))?; metadata_changed = true; }
     }
     conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_entries_deleted ON entries(is_deleted); CREATE INDEX IF NOT EXISTS idx_entries_identity ON entries(file_identity);")?;
 
-    let now = sqlite_now(conn)?;
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params!["schema_version", config.schema_version.to_string()])?;
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params!["schemaVersion", config.schema_version.to_string()])?;
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params!["index_version", config.cache_version.to_string()])?;
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params!["cacheVersion", config.cache_version.to_string()])?;
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params!["scriptDetectionVersion", config.script_detection_version.to_string()])?;
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params!["rootPath", &config.root_path])?;
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params!["storage", &config.storage])?;
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params!["updatedAt", now])?;
+    for (key, value) in [
+        ("schema_version", config.schema_version.to_string()), ("schemaVersion", config.schema_version.to_string()),
+        ("index_version", config.cache_version.to_string()), ("cacheVersion", config.cache_version.to_string()),
+        ("scriptDetectionVersion", config.script_detection_version.to_string()),
+        ("rootPath", config.root_path.clone()), ("storage", config.storage.clone()),
+    ] {
+        let previous: Option<String> = conn.query_row("SELECT value FROM meta WHERE key = ?", [key], |row| row.get(0)).optional()?;
+        if previous.as_deref() != Some(value.as_str()) {
+            conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", params![key, value])?;
+            metadata_changed = true;
+        }
+    }
+    let updated_at: Option<String> = conn.query_row("SELECT value FROM meta WHERE key = 'updatedAt'", [], |row| row.get(0)).optional()?;
+    // Preserve the existing content revision during directory-only bookkeeping.
+    if metadata_changed || updated_at.as_deref().unwrap_or("").is_empty() {
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('updatedAt', ?)", [sqlite_now(conn)?])?;
+    }
     Ok(())
 }
 
@@ -166,6 +175,9 @@ fn apply_directory(tx: &Transaction<'_>, item: &RootIndexDirectoryUpdate, now: &
           file_count = excluded.file_count,
           dir_count = excluded.dir_count,
           scanned_at = excluded.scanned_at
+        WHERE directories.modified_at <> excluded.modified_at
+           OR directories.file_count <> excluded.file_count
+           OR directories.dir_count <> excluded.dir_count
         "#,
         params![item.relative_path, item.modified_at, item.file_count, item.dir_count, now],
     )?;
@@ -318,9 +330,11 @@ pub fn apply_root_index_changes(config: &RootIndexApplyConfig) -> Result<RootInd
             [],
             |row| row.get(0),
         )?;
-        set_meta(&tx, "updatedAt", &now)?;
-        set_meta(&tx, "last_update.entry_state_check", &now)?;
-        set_meta(&tx, "fileCount", &count.to_string())?;
+        if !payload.upserts.is_empty() || !payload.deletes.is_empty() {
+            set_meta(&tx, "updatedAt", &now)?;
+            set_meta(&tx, "last_update.entry_state_check", &now)?;
+            set_meta(&tx, "fileCount", &count.to_string())?;
+        }
         Ok(RootIndexApplyResult {
             count,
             upserts: payload.upserts.len(),
@@ -356,5 +370,85 @@ mod legacy_schema {
         assert!(initialize_root_index_db(&conn, &config).is_err());
         let version: String = conn.query_row("SELECT value FROM meta WHERE key='schemaVersion'", [], |row| row.get(0)).unwrap();
         assert_eq!(version, "999");
+    }
+}
+
+#[cfg(test)]
+mod directory_bookkeeping_tests {
+    use super::*;
+
+    struct Fixture { directory: std::path::PathBuf, config: RootIndexApplyConfig }
+    impl Fixture {
+        fn new() -> Self {
+            let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+            let directory = std::env::temp_dir().join(format!("hfm-root-bookkeeping-{}-{unique}", std::process::id()));
+            fs::create_dir_all(&directory).unwrap();
+            let config = RootIndexApplyConfig {
+                db_path: directory.join("index.sqlite").to_string_lossy().into_owned(),
+                input_path: directory.join("input.json").to_string_lossy().into_owned(),
+                root_path: directory.join("fonts").to_string_lossy().into_owned(),
+                storage: "root".into(), schema_version: 4, cache_version: 1, script_detection_version: 2,
+            };
+            Self { directory, config }
+        }
+        fn payload(&self, value: serde_json::Value) { fs::write(&self.config.input_path, value.to_string()).unwrap(); }
+        fn db(&self) -> Connection { Connection::open(&self.config.db_path).unwrap() }
+        fn mark_revision(&self) {
+            self.db().execute_batch("INSERT OR REPLACE INTO meta VALUES('updatedAt','retained-content-revision'); INSERT OR REPLACE INTO meta VALUES('last_update.entry_state_check','retained-entry-check');").unwrap();
+        }
+        fn meta(&self, key: &str) -> String { self.db().query_row("SELECT value FROM meta WHERE key=?", [key], |row| row.get(0)).unwrap() }
+        fn entry() -> serde_json::Value { serde_json::json!({ "relativePath":"font.ttf", "entry":{
+            "cacheKey":"font.ttf|100|1", "fileSize":100, "modifiedAt":1, "status":"ok", "cachedAt":"fixture-time",
+            "font":{"id":"fixture-font", "scripts":["latin"], "scriptVersion":2}
+        }}) }
+    }
+    impl Drop for Fixture { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.directory); } }
+
+    #[test]
+    fn native_directory_only_transactions_preserve_content_revision_and_noop_receipts() {
+        let f = Fixture::new();
+        f.payload(serde_json::json!({"upserts":[Fixture::entry()]}));
+        replace_root_index(&f.config).unwrap();
+        f.mark_revision();
+        let before: (i64, i64) = f.db().query_row("SELECT revision,opstamp FROM entries", [], |row| Ok((row.get(0)?,row.get(1)?))).unwrap();
+        for modified_at in [10, 20] {
+            f.payload(serde_json::json!({"directories":[{"relativePath":"","modifiedAt":modified_at,"fileCount":1,"dirCount":0}]}));
+            let result = apply_root_index_changes(&f.config).unwrap();
+            assert_eq!((result.count,result.upserts,result.deletes), (1,0,0));
+            assert_eq!(f.meta("updatedAt"), "retained-content-revision");
+            assert_eq!(f.meta("last_update.entry_state_check"), "retained-entry-check");
+            let after: (i64, i64) = f.db().query_row("SELECT revision,opstamp FROM entries", [], |row| Ok((row.get(0)?,row.get(1)?))).unwrap();
+            assert_eq!(before,after);
+        }
+        f.db().execute("UPDATE directories SET scanned_at='retained-scan'", []).unwrap();
+        apply_root_index_changes(&f.config).unwrap();
+        let scanned: String = f.db().query_row("SELECT scanned_at FROM directories", [], |row| row.get(0)).unwrap();
+        assert_eq!(scanned,"retained-scan", "Identical directory receipts must not rewrite bookkeeping");
+        let conn = f.db();
+        let before_changes = conn.total_changes();
+        initialize_root_index_db(&conn,&f.config).unwrap();
+        assert_eq!(conn.total_changes(),before_changes,"An equivalent initializer must not rewrite metadata");
+    }
+
+    #[test]
+    fn entries_deletes_full_replacement_and_interpretation_changes_still_advance_revision() {
+        let f = Fixture::new();
+        f.payload(serde_json::json!({"upserts":[Fixture::entry()]}));
+        replace_root_index(&f.config).unwrap();
+        for payload in [serde_json::json!({"upserts":[Fixture::entry()]}), serde_json::json!({"deletes":["font.ttf"]})] {
+            f.mark_revision(); f.payload(payload);
+            apply_root_index_changes(&f.config).unwrap();
+            assert_ne!(f.meta("updatedAt"), "retained-content-revision");
+            assert_ne!(f.meta("last_update.entry_state_check"), "retained-entry-check");
+        }
+        f.mark_revision(); f.payload(serde_json::json!({"upserts":[Fixture::entry()]}));
+        assert_eq!(replace_root_index(&f.config).unwrap().count,1);
+        assert_ne!(f.meta("updatedAt"),"retained-content-revision");
+        f.mark_revision();
+        let conn = f.db();
+        let mut changed = f.config.clone(); changed.script_detection_version += 1;
+        initialize_root_index_db(&conn,&changed).unwrap();
+        assert_ne!(f.meta("updatedAt"),"retained-content-revision");
+        assert_eq!(f.meta("scriptDetectionVersion"),"3");
     }
 }

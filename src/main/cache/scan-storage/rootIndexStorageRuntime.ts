@@ -43,7 +43,7 @@ export function createRootIndexStorageRuntime(
     return deps.readScanCacheFile(options.legacyScanCachePath())
   }
 
-  async function ensureRootScanCacheStorage(rootPath: string): Promise<{
+  async function ensureRootScanCacheStorage(rootPath: string, request: { reuseExisting?: boolean } = {}): Promise<{
     cachePath: string
     cacheDir: string
     storage: RootIndexStorage
@@ -52,6 +52,26 @@ export function createRootIndexStorageRuntime(
     const resolvedRoot = resolve(rootPath)
     const rootDir = options.rootCacheDir(resolvedRoot)
     const rootDefaultDbPath = options.rootIndexDbPath(resolvedRoot)
+
+    // A watcher starts with fresh read evidence from the current active index.
+    // Existing compatible storage needs no manifest publication or unrelated
+    // cache initialization; each eventual writer owns its own schema/lock setup.
+    if (request.reuseExisting) {
+      const activePath = await options.resolveActiveRootIndexDbPath(rootDir, rootDefaultDbPath)
+      if (await options.exists(activePath)) {
+        try {
+          const cache = await options.readRootIndexSqliteFile(activePath, resolvedRoot, 'root')
+          // Only a completed SQLite snapshot includes directorySignatures. The
+          // reader's missing-file sentinel must take the normal recovery path
+          // when the index disappears between the outer and inner probes.
+          if (!cache.rebuildRequired && Array.isArray(cache.directorySignatures)) {
+            return { cachePath: activePath, cacheDir: rootDir, storage: 'root', cache }
+          }
+        } catch (error) {
+          if (!isRecoverableDerivedSqliteError(error)) throw error
+        }
+      }
+    }
 
     await fsp.mkdir(options.rootIndexDbDir(resolvedRoot), { recursive: true })
     await fsp.mkdir(options.rootCacheLockDir(resolvedRoot), { recursive: true })

@@ -30,7 +30,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "27d4514b33552345c96fb0ef8d27cd97b5914656ecf28d344138ea07359a52b4"
+      "tokenHash": "614ddae92e7cbdf2b5b86fe89b9169ee6ff35237b7e1051b7c1eb27bc9262e00"
     },
     "src/main/library/runtime/localFontTagsRuntime.ts": {
       "functions": [
@@ -64,7 +64,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "0c04c2a3c5a73cda66f91ca2692b60a6b32dba6857964c4112d3756a74b41751"
+      "tokenHash": "14cc07de893d2bb85dd40f05590c7a0ce5541df708e87dfe08f94f9890acea4a"
     },
     "src/renderer/src/App.tsx": {
       "functions": [
@@ -1081,7 +1081,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "bb0234e2a5cb7154ca80d7c6a86ab53a33eb0e5afefb0000d043420099abf17f"
+      "tokenHash": "96d6675c0f100f445f44508462aa6b34ed7dce1ce6b7c3fa857250d8b7d47de1"
     },
     "src/main/library/runtime/localFontTagRustAdapterRuntime.ts": {
       "functions": [
@@ -1120,7 +1120,7 @@
       },
       "viewGroups": [],
       "ipcChannels": [],
-      "tokenHash": "c2c3ba6882789f5bdfc470d05ae6c778ad48d9877af6033b7604269b9b89845a"
+      "tokenHash": "c1a3ec6fb518be2f75d3ef23dac00db665c9de740f3d806fca82cc7c7ac2a661"
     },
     "src/main/library/runtime/localFontTagMutationEffectsRuntime.ts": {
       "functions": [
@@ -1220,5 +1220,7 @@
     ],
     "reason": "F09 adds main-process-only recovery CAS/content guards and proven local state retention to the existing local tag batch; unchanged public surfaces/owners remain frozen. Existing rollback, isolation, signal and mutation tests remain."
   },
-  "recoveryMigration": "F14 immediate metrics query failure retains prior authority; actual controller failure regression preserves sequencing and local-intent guards. Token hash observed on exact Windows commit 86ebce1."
+  "recoveryMigration": "F14 immediate metrics query failure retains prior authority; actual controller failure regression preserves sequencing and local-intent guards. Token hash observed on exact Windows commit 86ebce1.",
+  "queryCancellationMigration": "Oct12 retest: local-tag read functions gain cancellation checkpoints around awaited preparation/native/Node reads. Public methods, state owners, write bodies and transaction ownership stay frozen; check-query-read-cancellation.cjs covers the production chain.",
+  "previewAbsenceMigration": "Oct12 retest: successful shared presence invalidates the hydration-owned absent-directory memo. Public facade/state owners remain unchanged; check-preview-directory-absence.cjs covers real stage and invalidation behavior."
 }

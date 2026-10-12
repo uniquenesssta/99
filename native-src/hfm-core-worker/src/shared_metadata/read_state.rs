@@ -171,41 +171,6 @@ fn read_overlay_matches(payload: &SharedMetadataOverlayReadPayload, started_at: 
     })
 }
 
-// READ_ONLY SQLite may create/update WAL sidecars. Pin an existing rollback
-// database and canonical parent against writes/replacement before SQLite opens.
-// WAL is unavailable here, never converted or opened immutable on a live file.
-#[cfg(windows)]
-fn pin_rollback_binding_database(path: &str) -> Result<(fs::File, fs::File, String), String> {
-    use std::{io::Read, os::windows::{fs::{MetadataExt, OpenOptionsExt}, io::AsRawHandle}};
-    #[link(name = "kernel32")]
-    extern "system" { fn GetFinalPathNameByHandleW(file: *mut std::ffi::c_void, path: *mut u16, size: u32, flags: u32) -> u32; }
-    fn physical(file: &fs::File) -> Result<String, String> {
-        let mut buffer = vec![0u16; 32768];
-        let size = unsafe { GetFinalPathNameByHandleW(file.as_raw_handle(), buffer.as_mut_ptr(), buffer.len() as u32, 0) };
-        if size == 0 || size as usize >= buffer.len() { return Err("binding snapshot physical identity unavailable".into()); }
-        Ok(String::from_utf16_lossy(&buffer[..size as usize]))
-    }
-    let mut file = fs::OpenOptions::new().read(true).share_mode(1).custom_flags(0x0020_0000).open(path)
-        .map_err(|error| format!("binding snapshot read-only pin unavailable: {error}"))?;
-    let metadata = file.metadata().map_err(|error| error.to_string())?;
-    if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 { return Err("binding snapshot requires an existing regular database".into()); }
-    let physical_path = physical(&file)?;
-    let parent = Path::new(&physical_path).parent().ok_or("binding snapshot database parent missing")?;
-    let directory = fs::OpenOptions::new().access_mode(0x8000_0000).share_mode(1).custom_flags(0x0200_0000 | 0x0020_0000).open(parent)
-        .map_err(|error| format!("binding snapshot parent pin unavailable: {error}"))?;
-    if directory.metadata().map_err(|error| error.to_string())?.file_attributes() & 0x400 != 0
-        || !physical(&directory)?.eq_ignore_ascii_case(&parent.to_string_lossy()) { return Err("binding snapshot parent identity changed".into()); }
-    let mut header = [0u8; 100];
-    file.read_exact(&mut header).map_err(|error| format!("binding snapshot header unavailable: {error}"))?;
-    if &header[..16] != b"SQLite format 3\0" { return Err("binding snapshot database format unsupported".into()); }
-    if header[18] != 1 || header[19] != 1 { return Err("binding snapshot WAL read deferred: read-only SQLite can write shared-memory sidecars".into()); }
-    Ok((file, directory, physical_path))
-}
-#[cfg(not(windows))]
-fn pin_rollback_binding_database(_path: &str) -> Result<(fs::File, fs::File, String), String> {
-    Err("binding snapshot file pin requires Windows".into())
-}
-
 fn read_binding_snapshot(payload: &SharedMetadataOverlayReadPayload, started_at: Instant) -> Result<SharedMetadataOverlayReadResult, String> {
     if payload.preflight.is_some() || !payload.entries.is_empty() { return Err("binding snapshot cannot carry mutation preflight or overlay entries".into()); }
     let db_path = payload.db_path.trim();
@@ -221,8 +186,7 @@ fn read_binding_snapshot(payload: &SharedMetadataOverlayReadPayload, started_at:
     let (rows, signature) = if missing {
         (Vec::<Value>::new(), "metadata:none".to_string())
     } else {
-        let (_file_pin, _directory_pin, physical_path) = pin_rollback_binding_database(db_path)?;
-        let mut conn = Connection::open_with_flags(&physical_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|error| error.to_string())?;
+        let mut conn = super::binding_snapshot::open(db_path)?;
         conn.execute_batch("PRAGMA temp_store=MEMORY;").map_err(|error| error.to_string())?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred).map_err(|error| error.to_string())?;
         // Incompatible existing schema is unknown, never authoritative emptiness.
@@ -385,19 +349,21 @@ mod binding_snapshot_tests {
         assert!(read_overlay_matches(&fixture.payload("incompatible.sqlite"), Instant::now()).is_err());
     }
     #[test]
-    fn wal_database_is_deferred_without_creating_or_updating_sidecars() {
+    fn wal_binding_snapshot_reads_committed_rows_and_signature_without_sidecars() {
         let fixture = Fixture::new(); let path = fixture.0.join("wal.sqlite");
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE font_metadata(id TEXT); INSERT INTO font_metadata VALUES('one');").unwrap();
-        let files = || fs::read_dir(&fixture.0).unwrap().map(|entry| { let file = entry.unwrap().path(); (file.file_name().unwrap().to_os_string(), fs::read(&file).unwrap()) }).collect::<BTreeMap<_,_>>();
-        let before = files();
-        assert!(read_overlay_matches(&fixture.payload("wal.sqlite"), Instant::now()).is_err());
-        assert_eq!(files(), before);
+        conn.execute_batch("CREATE TABLE font_metadata(font_id TEXT,relative_path TEXT,path_key TEXT,tag_names_json TEXT,favorite INTEGER,delete_protected INTEGER,revision INTEGER,updated_at TEXT); PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; INSERT INTO font_metadata VALUES('one','one.ttf','one.ttf','[\"Committed\"]',1,0,7,'wal');").unwrap();
+        let database = fs::read(&path).unwrap(); let wal_path = fixture.0.join("wal.sqlite-wal"); let wal = fs::read(&wal_path).unwrap();
+        assert!(read_overlay_matches(&fixture.payload("wal.sqlite"), Instant::now()).is_err(), "existing writable connection was admitted");
         drop(conn);
-        assert!(!fixture.0.join("wal.sqlite-shm").exists());
+        fs::write(&path, database).unwrap(); fs::write(&wal_path, wal).unwrap();
+        let files = || fs::read_dir(&fixture.0).unwrap().map(|entry| { let file = entry.unwrap().path(); (file.file_name().unwrap().to_os_string(), (fs::read(&file).unwrap(),fs::metadata(&file).unwrap().modified().unwrap())) }).collect::<BTreeMap<_,_>>();
         let before = files();
-        assert!(read_overlay_matches(&fixture.payload("wal.sqlite"), Instant::now()).unwrap_err().contains("WAL read deferred"));
-        assert_eq!(files(), before);
+        let result = read_overlay_matches(&fixture.payload("wal.sqlite"), Instant::now()).unwrap();
+        assert_eq!(result.binding_snapshot.unwrap()["rows"][0]["tag_names_json"], "[\"Committed\"]");
+        assert_eq!(result.signature, "metadata-v2||1|7|wal|0|0");
+        assert!(result.preflight.is_none()); assert_eq!(files(), before);
+        assert!(!fixture.0.join("wal.sqlite-shm").exists());
     }
     #[test]
     fn readonly_binding_snapshot_rejects_mixed_mutation_request_without_writes() {

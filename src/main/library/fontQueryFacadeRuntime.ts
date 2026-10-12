@@ -248,12 +248,14 @@ export function createFontQueryFacadeRuntime(
   async function hydrateInstallStatusForFonts(
     items: FontItem[],
   ): Promise<FontItem[]> {
+    assertFontQueryActive();
     if (!items.length) return items;
     const overlay = options.applyPendingActivationState || ((fonts: FontItem[]) => fonts);
     try {
       const { results } = await options.readInstallStatusIndex(items, {
         enqueueMissTasks: false,
       });
+      assertFontQueryActive();
       if (!Object.keys(results).length)
         return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] })));
       return overlay(items.map((item) => {

@@ -208,7 +208,10 @@
     "diagnostics:preview-provenance": "node build/diagnostics/check-preview-provenance.cjs",
     "diagnostics:full-refresh-acceptance": "node build/diagnostics/check-full-refresh-acceptance.cjs",
     "diagnostics:recovery-preview-pixels": "node build/diagnostics/check-recovery-preview-pixels.cjs",
-    "diagnostics:cache-recovery-composition": "node --experimental-sqlite build/diagnostics/check-cache-recovery-composition.cjs"
+    "diagnostics:cache-recovery-composition": "node --experimental-sqlite build/diagnostics/check-cache-recovery-composition.cjs",
+    "diagnostics:query-read-cancellation": "node build/diagnostics/check-query-read-cancellation.cjs",
+    "diagnostics:preview-directory-absence": "node build/diagnostics/check-preview-directory-absence.cjs",
+    "diagnostics:watcher-noop-freshness": "node build/diagnostics/check-watcher-noop-freshness.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

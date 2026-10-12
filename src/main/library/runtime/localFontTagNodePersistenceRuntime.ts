@@ -1,3 +1,4 @@
+import { assertSharedIoActive } from '../../path/sharedIoCancellationRuntime'
 import { validateRecoveryTagWrites, preserveLocalRecoveryState, validateRecoveryFiles, validateRecoveryMissingSources } from './localFontRecoveryTransactionRuntime'
 import { ensureLocalFontIdentitySchema } from './localFontLegacyIdentityRuntime'
 import { logOperation } from '../../logging/operationTraceContext'
@@ -101,7 +102,9 @@ function insertLocalTagsForFont(
 
 export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Promise<SqliteDb>) {
   async function localTagsByFontIds(ids: string[]) {
+    assertSharedIoActive();
     const db = await openLibraryDb();
+    assertSharedIoActive();
     const result: Record<string, string[]> = {};
     const chunkSize = 500;
     for (let index = 0; index < ids.length; index += chunkSize) {
@@ -116,6 +119,7 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
         result[row.font_id].push(row.tag_name);
       }
     }
+    assertSharedIoActive();
     return result;
   }
 
@@ -150,7 +154,9 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
       if (!tagMap[runtimeId].includes(tagName)) tagMap[runtimeId].push(tagName);
     };
 
+    assertSharedIoActive();
     const db = await openLibraryDb();
+    assertSharedIoActive();
     const chunkSize = 500;
     for (let index = 0; index < ids.length; index += chunkSize) {
       const chunk = ids.slice(index, index + chunkSize);
@@ -178,6 +184,7 @@ export function createLocalFontTagNodePersistenceRuntime(openLibraryDb: () => Pr
     }
 
     for (const tags of Object.values(tagMap)) tags.sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+    assertSharedIoActive();
     return items.map((item) => ({
       ...item,
       localTagNames: tagMap[item.id] || [],

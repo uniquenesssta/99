@@ -356,13 +356,13 @@ observationRegressions().then(localTagHydrationRegressions).then(taggedPageRealm
 function queryRetirementAcceptanceRegressions(sample) {
  const {validateQueryRetirements}=require('./lib/full-refresh-query-retirement.cjs')
  const {assertLocalTagHydrationEvidence}=require('./check-full-refresh-work.cjs')
- for(const [phase,input]of [['late',sample],['early',sample.earlySample]]) {
- assert(input, `Missing actual ${phase} query retirement fixture`)
- const expectedFailures=phase==='late'?1:0
+ for(const [phase,input]of [['small',sample],['batched',sample.earlySample],['historical-synthetic',sample.historicalSample]]) {
+ assert(input, `Missing ${phase} query retirement fixture`)
+ const expectedFailures=phase==='historical-synthetic'?1:0
  const certificate=validateQueryRetirements(input)
  assert.equal(certificate.certificates.length,1)
- assert.equal(certificate.certificates[0].kind,phase==='late'?'retired-before-native-admission':'retired-before-tag-hydration')
- if(phase==='early') {
+ assert.equal(certificate.certificates[0].kind,phase==='historical-synthetic'?'retired-before-native-admission':'retired-before-tag-hydration')
+ if(phase!=='historical-synthetic') {
   assert.deepEqual(certificate.retiredHydrationIds,[],'Early retirement fabricated a failed hydration')
   assert(!Object.hasOwn(certificate.certificates[0],'hydrationId'),'Early retirement fabricated an old hydration identity')
   assert(!Object.hasOwn(certificate.certificates[0],'inputSha256'),'Early retirement fabricated an old native input')
@@ -407,7 +407,7 @@ function queryRetirementAcceptanceRegressions(sample) {
  hydration.receipts.push(full)
  const expected=full.taggedRows.map(row=>row.id)
  assert.equal(assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount,certificate.retiredHydrationIds).failedAttempts,expectedFailures)
- if(phase==='late')assert.throws(()=>assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount),/without an exact query retirement certificate/)
+ if(phase==='historical-synthetic')assert.throws(()=>assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount),/without an exact query retirement certificate/)
  else assert.equal(assertLocalTagHydrationEvidence(hydration,expected,full.requestedCount).failedAttempts,0,'Early retirement fabricated a failed native receipt')
  for(const mutate of [
   row=>{row.stats.failed=expectedFailures+1},row=>{row.receipts.find(item=>item.id===999).workerMode='node-fallback'},
@@ -417,7 +417,7 @@ function queryRetirementAcceptanceRegressions(sample) {
   assert.throws(()=>assertLocalTagHydrationEvidence(altered,expected,full.requestedCount,certificate.retiredHydrationIds),'Retirement waived native count or population proof')
  }
  }
- console.log('[diagnostics:full-refresh-acceptance] early and late query retirement are recomputed, actual native failures/costs retained, unrelated physical failures and incomplete native populations rejected')
+ console.log('[diagnostics:full-refresh-acceptance] current early retirement and synthetic historical certificates are recomputed, native failure/cost gates retained, unrelated physical failures and incomplete native populations rejected')
 }
 
 // These mechanics fixtures exercise the actual source hydration owner with a

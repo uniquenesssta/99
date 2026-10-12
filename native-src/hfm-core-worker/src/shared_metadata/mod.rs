@@ -1,4 +1,5 @@
 mod apply;
+mod binding_snapshot;
 mod read_state;
 mod preflight;
 mod remove_tag;

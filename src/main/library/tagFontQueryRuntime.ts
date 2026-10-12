@@ -30,20 +30,25 @@ export function tagQueryScope(request: FontQueryRequest): 'local' | 'shared' | u
 type FileAvailability = NonNullable<FontItem['fileAvailability']>
 type FileStat = (path: string) => Promise<Pick<import('node:fs').Stats, 'isFile' | 'isDirectory'>>
 async function missingFileAvailability(path: string, roots: string[], stat: FileStat, paths?: TagRecoveryPaths): Promise<FileAvailability> {
+  assertFontQueryActive()
   const root = (paths || await createTagRecoveryPaths(roots)).owner(path) || parse(path).root
+  assertFontQueryActive()
   try { if (root && (await stat(root)).isDirectory()) return 'missing' }
   catch (rootError) {
+    rethrowFontQuerySuperseded(rootError)
     if ((rootError as NodeJS.ErrnoException).code !== 'ENOENT') return 'unavailable'
     const anchor = parse(path).root
     if (anchor && key(anchor) !== key(root)) {
-      try { if ((await stat(anchor)).isDirectory()) return 'missing' } catch { /* Disconnected volume/share. */ }
+      try { if ((await stat(anchor)).isDirectory()) return 'missing' } catch (error) { rethrowFontQuerySuperseded(error) /* Disconnected volume/share. */ }
     }
   }
   return 'unavailable'
 }
 export async function fontFileAvailability(path: string, roots: string[]): Promise<FileAvailability> {
-  try { return (await fsp.stat(path)).isFile() ? 'available' : 'missing' }
+  assertFontQueryActive()
+  try { const stat = await fsp.stat(path); assertFontQueryActive(); return stat.isFile() ? 'available' : 'missing' }
   catch (error) {
+    rethrowFontQuerySuperseded(error)
     return (error as NodeJS.ErrnoException).code === 'ENOENT' ? missingFileAvailability(path, roots, file => fsp.stat(file)) : 'unavailable'
   }
 }
@@ -60,16 +65,21 @@ function createAvailabilityReader(roots: string[], paths: TagRecoveryPaths) {
   }
   const directories = new Map<string, Promise<Map<string, import('node:fs').Dirent> | FileAvailability>>()
   return async (path: string): Promise<FileAvailability> => {
+    assertFontQueryActive()
     const parent = dirname(path), id = key(parent)
     let pending = directories.get(id)
     if (!pending) {
       pending = fsp.readdir(parent, { withFileTypes: true })
         .then(entries => new Map(entries.map(entry => [entry.name.toLowerCase(), entry])))
-        .catch(error => (error as NodeJS.ErrnoException).code === 'ENOENT'
-          ? missingFileAvailability(path, roots, stat, paths) : 'unavailable' as const)
+        .catch(error => {
+          rethrowFontQuerySuperseded(error)
+          return (error as NodeJS.ErrnoException).code === 'ENOENT'
+            ? missingFileAvailability(path, roots, stat, paths) : 'unavailable' as const
+        })
       directories.set(id, pending)
     }
     const entries = await pending
+    assertFontQueryActive()
     if (typeof entries === 'string') return entries
     const entry = entries.get(basename(path).toLowerCase())
     if (!entry) return 'missing'
@@ -97,13 +107,17 @@ export function createTagFontQueryRuntime(deps: {
     const scope = tagQueryScope(request)!
     const name = String(request.sidebarPage === 'tags' || request.sidebarPage === 'sharedTags' ? request.selectedTagName || '' : request.activeFilter?.name || '').trim()
     const roots = await deps.roots()
+    assertFontQueryActive()
     const paths = await createTagRecoveryPaths(roots)
+    assertFontQueryActive()
     const availabilityFor = createAvailabilityReader(roots, paths)
     const inScope = (path: string) => !request.selectedWatchedFolders?.length || request.selectedWatchedFolders.some(root => paths.inside(path, root))
     const db = await deps.openLibraryDb()
+    assertFontQueryActive()
     const snapshots = openTagFontSnapshots(db)
     const { bindings, legacyTags, unavailableRoots } = await readTagFontBindings({ db, paths, scope,
       folders: request.selectedWatchedFolders, readShared: deps.readShared })
+    assertFontQueryActive()
     const liveRoots = paths.roots.filter(root => !unavailableRoots.includes(root))
     const liveFolders = scope === 'shared' && unavailableRoots.length
       ? request.selectedWatchedFolders?.length ? liveRoots.flatMap(root => request.selectedWatchedFolders!.flatMap(folder =>
@@ -138,6 +152,7 @@ export function createTagFontQueryRuntime(deps: {
       if (name && !binding.tags.includes(name)) return
       const resolved = binding.pathResolved !== false
       const old = live.get(pathKey) || snapshots.read(binding.path) || (resolved ? await deps.findPrevious?.(binding.path).catch(error => { rethrowFontQuerySuperseded(error); return null }) : undefined)
+      assertFontQueryActive()
       if (resolved && old) snapshots.remember([{ ...old, path: binding.path }])
       const fileName = basename(binding.path)
       let font: FontItem = old || { id: `missing:${pathKey}`, sourceId: binding.id, path: binding.path, fileName,
@@ -148,16 +163,19 @@ export function createTagFontQueryRuntime(deps: {
       font = { ...font, path: binding.path, ...(!resolved ? { recoveryPlaceholder: true } : {}) }
       const tagBindingReadOnly = !resolved || unavailableRoots.some(root => paths.inside(binding.path, root))
       let availability: NonNullable<FontItem['fileAvailability']> = tagBindingReadOnly ? 'unavailable' : await availabilityFor(binding.path)
+      assertFontQueryActive()
       let fileRelinkRequired = false
       if (availability === 'available' && scope === 'local' && !paths.contains(binding.path)) {
         const state = deps.readDetachedState ? await deps.readDetachedState(binding.path)
           : await deps.canReadDetached?.(binding.path) ? 'authorized' : 'unknown'
+        assertFontQueryActive()
         fileRelinkRequired = state === 'changed'
         if (state !== 'authorized') availability = 'unavailable'
       }
       if (!request.tagBindingsOnly && !live.has(pathKey) && availability === 'available') {
         try {
           font = await fontItemFromPath(binding.path)
+          assertFontQueryActive()
           snapshots.schedule([font])
         } catch (error) { rethrowFontQuerySuperseded(error); availability = 'unavailable' }
       }
@@ -170,7 +188,15 @@ export function createTagFontQueryRuntime(deps: {
       })
     }
     const entries = [...bindings.entries()]
-    for (let index = 0; index < entries.length; index += 8) await Promise.all(entries.slice(index, index + 8).map(resolveBinding))
+    for (let index = 0; index < entries.length; index += 8) {
+      // A batch can own several directory reads. One rejection must not retire
+      // the query while sibling children still hold their physical read slots.
+      const batch = await Promise.allSettled(entries.slice(index, index + 8).map(async entry => {
+        try { await resolveBinding(entry) }
+        catch (error) { await (error as { closed?: Promise<void> } | undefined)?.closed; throw error }
+      }))
+      for (const result of batch) if (result.status === 'rejected') throw result.reason
+    }
     for (const [pathKey, item] of items) {
       if (item.fileAvailability) continue
       const availability = await availabilityFor(item.path)
@@ -178,8 +204,10 @@ export function createTagFontQueryRuntime(deps: {
     }
     const scoped = [...items.values()].filter(font => inScope(font.path))
     const real = scoped.filter(font => !font.recoveryPlaceholder)
+    assertFontQueryActive()
     // Display-only identities must be excluded BEFORE installation hydration.
     const hydrated = request.tagBindingsOnly ? scoped : [...(real.length ? await deps.hydrate(real) : []), ...scoped.filter(font => font.recoveryPlaceholder)]
+    assertFontQueryActive()
     const sorted = hydrated.map(font => font.recoveryPlaceholder
       ? { ...font, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [], active: false } : font).filter(font => deps.matches(font, request)).sort((a, b) => deps.compare(a, b, request))
     return { queryKey: JSON.stringify(request), ...first, tagRevision: { source: 'tag-bindings', localTagsSignature: JSON.stringify({ bindings: [...bindings].map(([path, binding]) => [path, binding.id, [...binding.tags].sort()]).sort(), legacy: [...legacyTags].map(([id, names]) => [id, [...names].sort()]).sort() }), sharedMetadataSignatures: { unavailableRoots: JSON.stringify(unavailableRoots) } }, engine: 'mixed', items: sorted.slice(offset, offset + limit), total: sorted.length, offset, limit,

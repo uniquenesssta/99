@@ -1,3 +1,4 @@
+import { assertSharedIoActive } from '../../path/sharedIoCancellationRuntime'
 import { localTagFontPath } from './localFontTagIdentityRuntime'
 import { createLocalFontTagRustAdapterRuntime } from "./localFontTagRustAdapterRuntime";
 import { createLocalFontTagMutationEffectsRuntime, logKnownLocalTagLifecycle } from "./localFontTagMutationEffectsRuntime";
@@ -105,20 +106,28 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
   async function localTagsByFontIds(
     fontIds: string[],
   ): Promise<Record<string, string[]>> {
+    assertSharedIoActive();
     const ids = Array.from(new Set((fontIds || []).filter(Boolean)));
     if (!ids.length) return {};
     await deps.prepareIdentity?.();
+    assertSharedIoActive();
     const rustResult = await tryReadLocalTagsWithRust(ids.map((id) => ({ itemId: id, aliases: [id], fontPath: '' })));
+    assertSharedIoActive();
     if (rustResult?.tagMap) return rustResult.tagMap;
     if (nodeFallbackDenial({ source: 'local-tags-read', reason: 'rust-read-returned-empty', detail: `ids=${ids.length}` }) !== null) return {};
 
-    return nodePersistence.localTagsByFontIds(ids);
+    const result = await nodePersistence.localTagsByFontIds(ids);
+    assertSharedIoActive();
+    return result;
   }
 
   async function hydrateLocalTagsForFonts(items: FontItem[]): Promise<FontItem[]> {
+    assertSharedIoActive();
     if (!items.length) return items;
     await deps.prepareIdentity?.();
+    assertSharedIoActive();
     const rustResult = await tryReadLocalTagsWithRust(items.map((item) => rustLocalTagReadRow(item)));
+    assertSharedIoActive();
     if (rustResult?.tagMap) {
       return items.map((item) => ({
         ...item,
@@ -127,7 +136,9 @@ export function createLocalFontTagsRuntime(deps: LocalFontTagsRuntimeDeps) {
     }
     if (nodeFallbackDenial({ source: 'local-tags-read', reason: 'rust-hydrate-returned-empty', detail: `items=${items.length}` }) !== null) return items;
 
-    return nodePersistence.hydrateLocalTagsForFonts(items);
+    const result = await nodePersistence.hydrateLocalTagsForFonts(items);
+    assertSharedIoActive();
+    return result;
   }
 
   async function setLocalFontTags(

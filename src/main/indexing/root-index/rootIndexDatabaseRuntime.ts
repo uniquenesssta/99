@@ -91,15 +91,22 @@ export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
     }
 
     if (touchMeta) {
+      const getMeta = db.prepare('SELECT value FROM meta WHERE key = ?')
       const setMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)')
-      setMeta.run('schema_version', String(ROOT_INDEX_DB_SCHEMA_VERSION))
-      setMeta.run('schemaVersion', String(ROOT_INDEX_DB_SCHEMA_VERSION))
-      setMeta.run('index_version', String(deps.fontScanCacheVersion))
-      setMeta.run('cacheVersion', String(deps.fontScanCacheVersion))
-      setMeta.run('scriptDetectionVersion', String(deps.scriptDetectionVersion))
-      setMeta.run('rootPath', rootPath)
-      setMeta.run('storage', storage)
-      setMeta.run('updatedAt', new Date().toISOString())
+      const values: Array<[string, string]> = [
+        ['schema_version', String(ROOT_INDEX_DB_SCHEMA_VERSION)], ['schemaVersion', String(ROOT_INDEX_DB_SCHEMA_VERSION)],
+        ['index_version', String(deps.fontScanCacheVersion)], ['cacheVersion', String(deps.fontScanCacheVersion)],
+        ['scriptDetectionVersion', String(deps.scriptDetectionVersion)], ['rootPath', rootPath], ['storage', storage],
+      ]
+      let changed = ['created_at', 'message', 'is_deleted', 'deleted_at', 'revision', 'opstamp', 'file_identity', 'content_hash'].some(name => !columns.has(name))
+      for (const [key, value] of values) {
+        if ((getMeta.get(key) as { value?: string } | undefined)?.value === value) continue
+        setMeta.run(key, value)
+        changed = true
+      }
+      // This is the font-content revision used by merged-index freshness. Opening
+      // an equivalent schema or writing only directory bookkeeping must retain it.
+      if (changed || !(getMeta.get('updatedAt') as { value?: string } | undefined)?.value) setMeta.run('updatedAt', new Date().toISOString())
     }
   }
 
@@ -130,6 +137,7 @@ export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
 
     const db = await openRootIndexDb(filePath, rootPath, storage, false)
     try {
+      db.exec('BEGIN')
       const rows = db.prepare(`
         SELECT relative_path, cache_key, file_size, modified_at, created_at, status, font_json, message, content_hash, cached_at
         FROM entries
@@ -139,7 +147,12 @@ export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
       const rebuildRequired = rootIndexCacheNeedsRebuild(db, deps.fontScanCacheVersion)
       const entries: Record<string, FontScanCacheEntry> = {}
       for (const row of rows) entries[row.relative_path] = sqliteRowToScanEntry(row)
-      return { version: deps.fontScanCacheVersion, entries, ...(rebuildRequired ? { rebuildRequired: true } : {}) }
+      const directorySignatures = (db.prepare('SELECT relative_path, modified_at, file_count, dir_count FROM directories').all() as Array<{ relative_path: string; modified_at: number; file_count: number; dir_count: number }>).map(row => ({
+        relativePath: row.relative_path || '', modifiedAt: Number(row.modified_at || 0),
+        fileCount: Number(row.file_count || 0), dirCount: Number(row.dir_count || 0),
+      }))
+      db.exec('COMMIT')
+      return { version: deps.fontScanCacheVersion, entries, directorySignatures, ...(rebuildRequired ? { rebuildRequired: true } : {}) }
     } finally {
       deps.closeSqliteDb(db)
     }

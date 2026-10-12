@@ -146,6 +146,7 @@ export function createPreviewCacheStorageRuntime(
     status: PreviewCacheSharedPresenceStatus,
   ): Promise<void> {
     if (storage.storage !== "root") return;
+    if (status === 'ok') hydrationRuntime.forgetSharedDirectoryMiss(storage);
     sharedPresenceRuntime.rememberSharedPresence(storage, previewKey, status);
     await sharedPresenceIndexRuntime.rememberSharedPresenceIndex(
       storage,

@@ -124,7 +124,7 @@ async function main() {
     assert.equal(seeded?.written, 1, 'Real native metadata fixture initialization failed')
     const metadataHashBeforeCounts = hash(metadataDb), metadataMtimeBeforeCounts = fs.statSync(metadataDb).mtimeMs
     assert.deepEqual([...fs.readFileSync(metadataDb).subarray(18,20)], [1,1], 'Positive count fixture must be rollback-journal SQLite')
-    report.countsStorage = 'Native-created rollback-journal fixture; WAL remains deliberately unavailable to the read-only path'
+    report.countsStorage = 'Native-created rollback fixture plus frozen committed WAL; memory-only binding snapshot and busy-writer retention'
     // Page/metrics retain the real local SQLite route. Registering these DBs as
     // shared pure reads would make unproved WAL sidecars part of the exemption.
     const interaction = host.load('src/main/performance/rendererInteractionRuntime.ts').createRendererInteractionRuntime({ appendLog: host.appendStartupLog })
@@ -226,34 +226,65 @@ async function main() {
     report.cases.push({ name: 'explicit-cache-retains-persisted-publication', passed: true, result: plain(cached) })
     await pool.whenIdle()
 
-    // Fault injection touches only this newly created private fixture, never a
-    // user database. A WAL database must retain prior counts without fallback writes.
-    const filesFor = file => ['', '-wal', '-shm'].map(suffix => {
+    // Only private diagnostic fixture files are rewritten here. Preserve a real
+    // uncheckpointed committed WAL after closing its writer, so success cannot
+    // come from reading the main database and silently ignoring the WAL.
+    const filesFor = file => ['', '-wal', '-shm', '-journal'].map(suffix => {
       const target = file + suffix
-      return fs.existsSync(target) ? { suffix, bytes: fs.statSync(target).size, sha256: hash(target) } : { suffix, absent: true }
+      return fs.existsSync(target) ? { suffix, bytes: fs.statSync(target).size, mtimeMs: fs.statSync(target).mtimeMs, sha256: hash(target) } : { suffix, absent: true }
     })
     const wal = new DatabaseSync(metadataDb)
+    let frozenMain, frozenWal
     try {
-      wal.exec('PRAGMA journal_mode=WAL')
-      wal.prepare('UPDATE font_metadata SET tag_names_json=?').run(JSON.stringify(['UnconfirmedWalTag']))
+      wal.exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0')
+      const mainBeforeCommit = hash(metadataDb)
+      wal.prepare('UPDATE font_metadata SET tag_names_json=?,revision=revision+1').run(JSON.stringify(['CommittedWalTag']))
+      assert.equal(hash(metadataDb), mainBeforeCommit, 'WAL fixture checkpointed the target update into its main file')
+      frozenMain = fs.readFileSync(metadataDb); frozenWal = fs.readFileSync(metadataDb + '-wal')
+      assert(frozenWal.length > 32, 'WAL fixture contains no frames')
     } finally { wal.close() }
+    fs.writeFileSync(metadataDb, frozenMain); fs.writeFileSync(metadataDb + '-wal', frozenWal)
+    assert(!fs.existsSync(metadataDb + '-shm'), 'Fixture close did not remove its shared-memory sidecar')
     try {
-      assert.deepEqual([...fs.readFileSync(metadataDb).subarray(18,20)], [2,2], 'WAL fault injection did not change the fixture journal format')
+      assert.deepEqual([...fs.readFileSync(metadataDb).subarray(18,20)], [2,2], 'WAL fixture did not retain its journal format')
       const before = filesFor(metadataDb), attempts = rows.filter(row => row.bindingSnapshot).length
       host.query.clearFontQueryCaches()
-      await foreground.invoke('fonts:getMetrics', ['wal-unavailable-start'])
+      await foreground.invoke('fonts:getMetrics', ['wal-committed-start'])
       await until(() => rows.filter(row => row.bindingSnapshot).length > attempts && rows.filter(row => row.bindingSnapshot).at(-1).closedAt,
         'WAL read-only count attempt never settled')
       await pause(0)
-      const retained = await foreground.invoke('fonts:getMetrics', ['wal-unavailable-result'])
-      assert.equal(retained.sharedTagCountsStatus, 'unavailable', 'WAL failure claimed authoritative current counts')
-      assert.equal(retained.sharedTagCounts.SimulatedTag, 1, 'WAL refusal discarded the last confirmed counts')
-      assert.equal(retained.sharedTagCounts.UnconfirmedWalTag, undefined, 'WAL refusal read an unconfirmed replacement count')
-      assert.equal(rows.filter(row => row.bindingSnapshot).length, attempts + 1, 'WAL refusal created a same-revision retry loop')
-      assert.equal(rows.filter(row => row.preflight).length, 0, 'WAL count refusal fell back to a writer')
-      assert.deepEqual(filesFor(metadataDb), before, 'WAL count refusal changed or created database sidecars')
-      report.cases.push({ name: 'wal-count-refusal-retains-prior-without-writing', passed: true, status: retained.sharedTagCountsStatus,
-        retainedCount: retained.sharedTagCounts.SimulatedTag, files: before })
+      const current = await foreground.invoke('fonts:getMetrics', ['wal-committed-result'])
+      assert.equal(current.sharedTagCountsStatus, 'current', 'Committed WAL counts were not authoritative')
+      assert.equal(current.sharedTagCounts.CommittedWalTag, 1, 'Snapshot ignored the committed WAL-only update')
+      assert.equal(current.sharedTagCounts.SimulatedTag || 0, 0, 'Snapshot retained superseded main-file counts')
+      assert.equal(rows.filter(row => row.bindingSnapshot).length, attempts + 1, 'Successful WAL snapshot created a same-revision retry loop')
+      assert.equal(rows.filter(row => row.preflight).length, 0, 'WAL count snapshot fell back to a writer')
+      assert.deepEqual(filesFor(metadataDb), before, 'WAL count snapshot changed source bytes, mtimes or sidecars')
+      report.cases.push({ name: 'committed-wal-only-counts-without-source-writes', passed: true, status: current.sharedTagCountsStatus,
+        confirmedCount: current.sharedTagCounts.CommittedWalTag, files: before })
+      await pool.whenIdle()
+
+      // A genuinely active writable handle remains unavailable. Failure must
+      // preserve the last confirmed WAL counts and must never request preflight.
+      const busy = new DatabaseSync(metadataDb)
+      try {
+        busy.prepare('UPDATE font_metadata SET tag_names_json=?,revision=revision+1').run(JSON.stringify(['BusyWriterTag']))
+        const before = filesFor(metadataDb), attempts = rows.filter(row => row.bindingSnapshot).length
+        host.query.clearFontQueryCaches()
+        await foreground.invoke('fonts:getMetrics', ['wal-busy-start'])
+        await until(() => rows.filter(row => row.bindingSnapshot).length > attempts && rows.filter(row => row.bindingSnapshot).at(-1).closedAt,
+          'Busy WAL read-only count attempt never settled')
+        await pause(0)
+        const retained = await foreground.invoke('fonts:getMetrics', ['wal-busy-result'])
+        assert.equal(retained.sharedTagCountsStatus, 'unavailable', 'Busy writer claimed authoritative current counts')
+        assert.equal(retained.sharedTagCounts.CommittedWalTag, 1, 'Busy source discarded the last confirmed WAL counts')
+        assert.equal(retained.sharedTagCounts.BusyWriterTag, undefined, 'Busy-source snapshot claimed an unverified replacement')
+        assert.equal(rows.filter(row => row.bindingSnapshot).length, attempts + 1, 'Busy source created a same-revision retry loop')
+        assert.equal(rows.filter(row => row.preflight).length, 0, 'Busy count read fell back to a writer')
+        assert.deepEqual(filesFor(metadataDb), before, 'Busy count read changed or created source sidecars')
+        report.cases.push({ name: 'busy-wal-counts-retain-confirmed-snapshot-without-writing', passed: true,
+          status: retained.sharedTagCountsStatus, retainedCount: retained.sharedTagCounts.CommittedWalTag, files: before })
+      } finally { busy.close() }
     } finally {
       const restore = new DatabaseSync(metadataDb)
       try {

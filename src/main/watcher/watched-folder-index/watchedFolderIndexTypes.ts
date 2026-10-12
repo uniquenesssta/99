@@ -56,7 +56,7 @@ export interface WatchedFolderIndexRuntimeOptions {
   closeSqliteDb: (db: any) => void
   withGlobalIo: <T>(label: string, task: () => Promise<T>, options?: GlobalIoOptions) => Promise<T>
   makeRootScanCacheContext: (rootPath: string, storage: RootScanCacheStorage) => RootScanCacheContext
-  ensureRootScanCacheStorage: (rootPath: string) => Promise<RootScanCacheStorage>
+  ensureRootScanCacheStorage: (rootPath: string, options?: { reuseExisting?: boolean }) => Promise<RootScanCacheStorage>
   readRootDirectorySignatures: (context: RootScanCacheContext) => Promise<Map<string, RootDirectorySignature>>
   saveRootDirectorySignatures: (context: RootScanCacheContext) => Promise<void>
   relativeDirectoryPathForRoot: (rootPath: string, dirPath: string) => string

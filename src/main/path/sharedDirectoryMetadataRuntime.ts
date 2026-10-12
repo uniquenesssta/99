@@ -29,6 +29,9 @@ export async function readSharedDirectoryMetadata(path: string, signal?: AbortSi
   if (!(await sharedIoResourceKeys([path])).length) return null
   const { result } = await executeSharedFile({ operation: 'directoryMetadata', path }, undefined, signal).catch(error => {
     if (error instanceof SharedIoProcessError) throw error
+    // The isolated executor confirms the root is still reachable before
+    // returning ENOENT. Preserve that evidence for optional-cache callers.
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') throw error
     throw Object.assign(new SharedIoProcessError('共享目录文件状态读取失败。', 'unknown', 'directory-read-failed'), { cause: error })
   })
   return parseDirectoryMetadata(result.value)

@@ -74,6 +74,12 @@ export function createRootDirectoryCacheRuntime(
   ): Promise<Map<string, RootDirectorySignature>> {
     const signatures = new Map<string, RootDirectorySignature>();
     if (context.cache.rebuildRequired || !isRootIndexDbPath(context.cachePath)) return signatures;
+    if (context.cache.directorySignatures) {
+      for (const row of context.cache.directorySignatures) signatures.set(row.relativePath, {
+        modifiedAt: row.modifiedAt, fileCount: row.fileCount, dirCount: row.dirCount,
+      });
+      return signatures;
+    }
     const db = await deps.openRootIndexDb(
       context.cachePath,
       context.rootPath,
@@ -300,12 +306,13 @@ export function createRootDirectoryCacheRuntime(
       }
 
       const previous = signatures.get(relativeDir);
-      const directoryUnchanged = Boolean(
-        !context.requireFreshFileStats && !shared && previous &&
+      const signatureUnchanged = Boolean(
+        previous &&
         Math.round(previous.modifiedAt) === Math.round(stat.mtimeMs) &&
         previous.fileCount === fileCount &&
         previous.dirCount === dirCount,
       );
+      const directoryUnchanged = !context.requireFreshFileStats && !shared && signatureUnchanged;
       const cachedDirect = directoryUnchanged
         ? cachedListedFilesForDirectDirectory(context, relativeDir)
         : [];
@@ -318,7 +325,9 @@ export function createRootDirectoryCacheRuntime(
         context.directorySkipped += 1;
         report(false);
       } else {
-        context.directoryUpdates.push({
+        // Fresh file evidence remains mandatory for watchers/shared walks. The
+        // directory receipt itself only needs persistence when it has changed.
+        if (!signatureUnchanged) context.directoryUpdates.push({
           relativePath: relativeDir,
           modifiedAt: stat.mtimeMs,
           fileCount,

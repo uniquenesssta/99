@@ -73,6 +73,9 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
   ): Promise<boolean> {
     const normalizedChanges = normalizePendingFolderChanges(changes)
     if (!normalizedChanges.length) return true
+    // Rename/rescan signals always require a fresh walk; native preflight cannot
+    // prove them unchanged, so do not open a DB or start a no-work process.
+    if (normalizedChanges.some(change => String(change.eventType || '').toLowerCase() !== 'change')) return false
 
     const dbPath = await activeRootIndexDbPath(rootPath)
     if (!dbPath) return false
@@ -167,7 +170,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
     const normalizedChanges = normalizePendingFolderChanges(changes)
     if (!normalizedChanges.length) return payload
 
-    const storage = await options.ensureRootScanCacheStorage(rootPath)
+    const storage = await options.ensureRootScanCacheStorage(rootPath, { reuseExisting: true })
     const context = options.makeRootScanCacheContext(rootPath, storage)
     const sourceCache = context.cache
     context.cache = { ...sourceCache, entries: { ...sourceCache.entries } }

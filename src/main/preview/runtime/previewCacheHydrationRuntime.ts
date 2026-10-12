@@ -3,7 +3,8 @@ import { previewCacheErrorOutcome, type PreviewCacheHydrationOutcome } from './p
 import { claimPreviewImage } from './previewImageCommitRuntime'
 import { isCompletePreviewPng } from './previewImageValidationRuntime'
 import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
-import { withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
+import { normalizePathForCacheCompare } from '../../path/cachePath'
+import { IoDeadlineTimeoutError, withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
 import { withSharedIoSignal, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname, join } from 'node:path'
 import type { PreviewCacheIndexStatus } from '../previewCacheRuntime'
@@ -58,6 +59,7 @@ export type PreviewCacheHydrationRuntimeOptions = {
 const DEFAULT_HYDRATE_MAX_IN_FLIGHT = 2
 const DEFAULT_HYDRATE_TIMEOUT_MS = 2000
 const DEFAULT_SHARED_NEGATIVE_TTL_MS = 30000
+const DIRECTORY_PROBE_TTL_MS = 5000
 const DEFAULT_STATS_LOG_INTERVAL_MS = 10000
 
 function parseEnvInt(name: string, fallback: number, min: number, max: number): number {
@@ -104,11 +106,50 @@ function errorMessage(error: unknown): string {
 export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydrationRuntimeOptions) {
   const inFlight = new Map<string, Promise<PreviewCacheHydrationOutcome>>()
   const negative = new Map<string, number>()
+  const directories = new Map<string, { missing: boolean; expiresAt: number }>()
   let stats = emptyStats()
   let lastStatsLogAt = 0
 
   function sharedKey(storage: PreviewCacheStorage, previewKey: string): string {
-    return `${storage.rootPath || storage.indexDbPath || storage.dir}:${storage.rootPath ? getStartupPathRootState(storage.rootPath).generation : 0}:${previewKey}`
+    const state = storage.rootPath ? getStartupPathRootState(storage.rootPath) : undefined
+    return JSON.stringify([storage.rootPath || storage.indexDbPath || storage.dir, state?.rootId, state?.generation || 0, previewKey])
+  }
+
+  function forgetSharedDirectoryMiss(storage: PreviewCacheStorage): void {
+    directories.delete(sharedKey(storage, normalizePathForCacheCompare(storage.dir)))
+    if (storage.rootPath && options.legacyRootPreviewCacheDir)
+      directories.delete(sharedKey(storage, normalizePathForCacheCompare(options.legacyRootPreviewCacheDir(storage.rootPath))))
+  }
+
+  function hasDirectoryMiss(storage: PreviewCacheStorage, dir: string): boolean {
+    const entry = directories.get(sharedKey(storage, normalizePathForCacheCompare(dir)))
+    return Boolean(entry?.missing && entry.expiresAt > Date.now()
+      && storage.rootPath && getStartupPathRootState(storage.rootPath).state === 'online')
+  }
+
+  async function inspectMissingImageDirectory(storage: PreviewCacheStorage, dir: string, current: () => boolean): Promise<void> {
+    if (!storage.rootPath || getStartupPathRootState(storage.rootPath).state !== 'online' || !current()) return
+    const key = sharedKey(storage, normalizePathForCacheCompare(dir)), previous = directories.get(key)
+    if (previous && previous.expiresAt > Date.now()) return
+    // Only a failed PNG read triggers this bounded directory probe. A missing
+    // image alone says nothing about its siblings. Never share signalled work.
+    const entry = { missing: false, expiresAt: 0 }
+    directories.set(key, entry)
+    while (directories.size > 256) directories.delete(directories.keys().next().value!)
+    const result = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(
+      `preview-cache-hydrate-directory:${dir}`, () => fsp.stat(dir), hydrateTimeoutMs()))
+    if (!current() || sharedKey(storage, normalizePathForCacheCompare(dir)) !== key || directories.get(key) !== entry) return
+    if (!result.ok) {
+      if (result.timedOut || (result.error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        directories.delete(key)
+        throw result.timedOut ? new IoDeadlineTimeoutError(`preview-cache-hydrate-directory:${dir}`, hydrateTimeoutMs()) : result.error
+      }
+      entry.missing = true
+    } else if (!result.value.isDirectory()) {
+      directories.delete(key)
+      return
+    }
+    entry.expiresAt = Date.now() + DIRECTORY_PROBE_TTL_MS
   }
 
   function rememberSharedMiss(key: string): void {
@@ -157,17 +198,17 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
     // A new successful publication overrides a recent miss. Otherwise a confirmed
     // miss needs no root probe, presence database query or network image read.
     const cachedPresence = options.sharedPresence?.getSharedPresence(sharedStorage, row.previewKey) || null
-    if (cachedPresence === 'ok') negative.delete(key)
+    if (cachedPresence === 'ok') { negative.delete(key); forgetSharedDirectoryMiss(sharedStorage) }
     else if (hasSharedMiss(key)) { stats.sharedNegativeHit += 1; return 'miss' }
     if (!(await options.ensureSharedAvailable(sharedStorage.rootPath))) {
       stats.sharedUnavailable += 1
       return 'unavailable'
     }
     key = sharedKey(sharedStorage, row.previewKey)
-    const generation = getStartupPathRootState(sharedStorage.rootPath).generation
+    const { generation, rootId } = getStartupPathRootState(sharedStorage.rootPath)
     const lease = claimPreviewImage(row.outputPath, 'hydrate', () => {
       const state = getStartupPathRootState(sharedStorage.rootPath!)
-      return state.generation === generation && state.state !== 'offline'
+      return state.generation === generation && state.rootId === rootId && state.state !== 'offline'
     })
     try {
     return await withSharedIoSignal(lease.signal, async () => {
@@ -204,20 +245,34 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
         }
         if (!lease.current()) return 'cancelled'
 
-        if (indexedStatus !== 'ok') {
+        // Current index/presence evidence may follow a different publisher.
+        // It outranks an earlier directory miss even without a local write.
+        if (indexedStatus === 'ok') forgetSharedDirectoryMiss(sharedStorage)
+        else {
           if (!options.legacyRootPreviewCacheDir) { rememberSharedMiss(key); return 'miss' }
           sharedOutputPath = join(options.legacyRootPreviewCacheDir(sharedStorage.rootPath!), `${row.previewKey}.png`)
+        }
+
+        if (!indexUnavailable && hasDirectoryMiss(sharedStorage, dirname(sharedOutputPath))) {
+          stats.sharedNegativeHit += 1
+          return 'miss'
         }
 
         // One network PNG read; validation and the local copy consume exactly these bytes.
         const read = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(`preview-cache-hydrate-read:${sharedOutputPath}`, () => fsp.readFile(sharedOutputPath), hydrateTimeoutMs()))
         if (!lease.current()) return 'cancelled'
         if (!read.ok) {
-          const outcome = read.timedOut ? 'timeout' : previewCacheErrorOutcome(read.error)
+          let outcome: PreviewCacheHydrationOutcome = read.timedOut ? 'timeout' : previewCacheErrorOutcome(read.error)
+          let failure = read.error
+          if (outcome === 'miss' && !indexUnavailable && (read.error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+            try { await inspectMissingImageDirectory(sharedStorage, dirname(sharedOutputPath), lease.current) }
+            catch (error) { outcome = previewCacheErrorOutcome(error); failure = error }
+          }
+          if (!lease.current()) return 'cancelled'
           if (outcome === 'cancelled') return outcome
           if (outcome === 'timeout') stats.deadlineDropped += 1
           else if (outcome !== 'miss') stats.sharedUnavailable += 1
-          options.appendStartupLog(`preview cache hydrate read ${outcome}: ${sharedOutputPath}, ${errorMessage(read.error)}`)
+          options.appendStartupLog(`preview cache hydrate read ${outcome}: ${sharedOutputPath}, ${errorMessage(failure)}`)
           if (outcome === 'miss' && !indexUnavailable) rememberSharedMiss(key)
           options.sharedPresence?.forgetSharedPresence(sharedStorage, row.previewKey)
           await options.sharedPresenceIndex?.forgetSharedPresenceIndex(sharedStorage, row.previewKey)
@@ -349,6 +404,7 @@ export function createPreviewCacheHydrationRuntime(options: PreviewCacheHydratio
   return {
     hydratePreviewCache,
     hydratePreviewCacheRows,
+    forgetSharedDirectoryMiss,
     rememberLocalHit,
     rememberRenderQueued,
     logStats,

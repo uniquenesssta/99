@@ -1,3 +1,4 @@
+import { assertSharedIoActive, rethrowSharedIoCancellation } from '../../path/sharedIoCancellationRuntime'
 import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
@@ -115,7 +116,9 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
   const { diagnoseRustCoreWorker, runRustCoreScheduledCommand, createTemporaryJsonFile } = options
 
   async function runRustInstallStatusRead(groups: InstallStatusReadWorkerGroup[]): Promise<RustInstallStatusReadResult | null> {
+    assertSharedIoActive()
     const status = await diagnoseRustCoreWorker()
+    assertSharedIoActive()
     if (!status.available || !status.path || !hasCapability(status, 'install-status-index-read')) return null
 
     const startedAt = Date.now()
@@ -124,6 +127,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     let sharedReceipt = false
     try {
       await inputFile.writeJson({ groups })
+      assertSharedIoActive()
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--install-status-read',
         '--input', inputPath,
@@ -136,6 +140,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
 
       sharedReceipt = commandOutput.sharedIo === true
 
+      assertSharedIoActive()
       const payload = parseJsonLine<RustInstallStatusReadPayload>(commandOutput.stdout)
       if (!payload.ok || !payload.results || !Array.isArray(payload.missingIds)) throw new Error(payload.message || 'rust install status read returned ok=false')
       const result: RustInstallStatusReadResult = {
@@ -148,6 +153,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       return result
     } catch (error) {
       rethrowSharedIoProcessError(error)
+      rethrowSharedIoCancellation(error)
       if (sharedReceipt) throw new SharedIoProcessError(`Shared I/O receipt rejected: ${String(error)}`, 'unknown', 'invalid-receipt')
       options.appendStartupLog(`rust install status read failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--install-status-read')}`)
       return null
@@ -246,7 +252,9 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
   }
 
   async function runRustLocalTagsRead(input: RustLocalTagsReadInput): Promise<RustLocalTagsReadResult | null> {
+    assertSharedIoActive()
     const status = await diagnoseRustCoreWorker()
+    assertSharedIoActive()
     if (!status.available || !status.path || !hasCapability(status, 'local-tags-read')) return null
 
     const startedAt = Date.now()
@@ -254,6 +262,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     const inputPath = inputFile.path
     try {
       await inputFile.writeJson(input)
+      assertSharedIoActive()
       const { stdout } = await runRustCoreScheduledCommand(status.path, [
         '--local-tags-read',
         '--input', inputPath,
@@ -264,6 +273,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
         maxBuffer: 8 * 1024 * 1024,
       })
 
+      assertSharedIoActive()
       const payload = parseJsonLine<RustLocalTagsReadPayload>(stdout)
       if (!payload.ok || !payload.tagMap || typeof payload.tagMap !== 'object') throw new Error(payload.message || 'rust local tags read returned ok=false')
       const tagMap: Record<string, string[]> = {}
@@ -283,6 +293,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       }
       return result
     } catch (error) {
+      rethrowSharedIoProcessError(error)
+      rethrowSharedIoCancellation(error)
       options.appendStartupLog(`rust local tags read failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--local-tags-read')}`)
       return null
     } finally {

@@ -455,6 +455,9 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
             file_count = excluded.file_count,
             dir_count = excluded.dir_count,
             scanned_at = excluded.scanned_at
+          WHERE directories.modified_at <> excluded.modified_at
+             OR directories.file_count <> excluded.file_count
+             OR directories.dir_count <> excluded.dir_count
         `)
         const tx = db.transaction(() => {
           for (const item of updates) upsert.run(item.relativePath, item.modifiedAt, item.fileCount, item.dirCount, now)

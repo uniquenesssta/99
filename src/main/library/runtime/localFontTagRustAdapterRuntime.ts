@@ -1,3 +1,5 @@
+import { assertSharedIoActive, rethrowSharedIoCancellation } from '../../path/sharedIoCancellationRuntime'
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import type { FontItem } from "../../../shared/types";
 import type { LocalFontTagsRuntimeDeps, RustLocalTagsReadInput, RustLocalTagsReadResult, RustLocalTagsSetInput, RustLocalTagsSetResult, RustLocalTagsDeleteTagResult } from "./localFontTagsRuntime";
 import { localTagFontIdAliases, localTagFontPath, localTagFontStorageId } from "./localFontTagIdentityRuntime";
@@ -28,15 +30,20 @@ function rustLocalTagRow(item: FontItem, tagNames: string[]) {
 
 export function createLocalFontTagRustAdapterRuntime(deps: RustAdapterDeps) {
   async function tryReadLocalTagsWithRust(rows: RustLocalTagsReadInput['rows']): Promise<RustLocalTagsReadResult | null> {
+    assertSharedIoActive();
     if (!deps.runRustLocalTagsRead) return null;
     const usableRows = rows.filter((row) => row.itemId && (row.aliases.length > 0 || row.fontPath));
     if (!usableRows.length) return null;
     try {
-      return await deps.runRustLocalTagsRead({
+      const result = await deps.runRustLocalTagsRead({
         dbPath: deps.librarySqlitePath(),
         rows: usableRows,
       });
+      assertSharedIoActive();
+      return result;
     } catch (error) {
+      rethrowSharedIoProcessError(error);
+      rethrowSharedIoCancellation(error);
       deps.appendStartupLog?.(`rust local tags read blocked fallback: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }

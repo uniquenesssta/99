@@ -18,7 +18,6 @@ async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}
     const fileName=bindingCount===1?'a.ttf':`source-${index}.ttf`
     return {id:bindingCount===1?'fixture-a':`fixture-${index}`,path:`C:\\fixture\\${fileName}`,fileName,family:'Fixture',fileSize:100,localTagNames:['FixtureTag']}
   })
-  const early=bindingCount>8
   const at=relative=>path.join(root,'src/main/library',relative)
   const load=loader({
     // The real metadata client imports transport parsing/capability helpers;
@@ -84,10 +83,10 @@ async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}
     const page=await result
     assert.equal(page.items.length,bindingCount)
     for(const item of page.items)assert.deepEqual(Array.from(item.localTagNames),['FixtureTag'])
-    assert.equal(tags.stats.failed,early?0:1,'Cancelled hydration population changed')
+    assert.equal(tags.stats.failed,0,'Retired query reached local-tag hydration')
     assert.equal(tags.stats.completed,1)
     assert.equal(liveQueries,2,'Retirement fixture did not retain upstream page work in both attempts')
-    assert.equal(nativeCalls,early?1:2,'Observed native transport was not delegated exactly once per attempt')
+    assert.equal(nativeCalls,1,'Retired query admitted native local-tag work')
     observer.restore()
     assert.equal(taskModule.createFontQueryTask,originalTask);assert.equal(tagModule.createTagFontQueryRuntime,originalFactory)
     const countBefore=observer.snapshot().hydrations.length,lateValue=Promise.resolve('late')
@@ -96,9 +95,9 @@ async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}
     assert.equal(observer.snapshot().hydrations.length,countBefore,'Stopped observer added partial hydration evidence')
     const sample={observation:observer.snapshot(),hydrationReceipts:clone(tags.receipts),processRequests:clone(processRequests)}
     const proof=validateQueryRetirements(sample)
-    assert.deepEqual(proof.retiredHydrationIds,early?[]:[1]);assert.deepEqual(proof.retiredRequestOrdinals,[1])
-    assert.equal(proof.certificates[0].kind,early?'retired-before-tag-hydration':'retired-before-native-admission')
-    if(early){
+    assert.deepEqual(proof.retiredHydrationIds,[]);assert.deepEqual(proof.retiredRequestOrdinals,[1])
+    assert.equal(proof.certificates[0].kind,'retired-before-tag-hydration')
+    {
       const oldSignal=sample.observation.signals[0].id
       assert.equal(sample.observation.hydrations.filter(row=>row.signalId===oldSignal).length,0)
       assert.equal(sample.observation.transports.filter(row=>row.signalId===oldSignal).length,0)
@@ -107,6 +106,34 @@ async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}
     assert.equal(proof.certificates[0].queuedMs,2);assert.equal(proof.certificates[0].executionMs,3)
     return sample
   } finally {io.sharedFileSystem.readdir=originalRead;observer.restore();lateContext?.emitDestroy()}
+}
+
+// Synthetic validator-compatibility evidence only, never a workload result.
+// Older selected-source snapshots attempted native admission after cancellation.
+// Keep their strict certificate and negative matrix while current-source fixtures
+// above require that no obsolete hydration/native call is admitted at all.
+function historicalNativeRetirementFixture(current) {
+  const sample=clone(current),o=sample.observation,signal=o.signals[0]
+  assert.equal(o.hydrations.length,1);assert.equal(o.transports.length,1);assert.equal(sample.hydrationReceipts.length,1)
+  const replacement=o.hydrations[0],native=o.transports[0],receipt=sample.hydrationReceipts[0]
+  replacement.hydrationId=2;native.hydrationId=2;receipt.id=2
+  const span=signal.settledAt-signal.abortedAt
+  assert(Number.isFinite(span)&&span>=0)
+  const startedAt=signal.abortedAt+span/4,finishedAt=signal.settledAt
+  const nextRowId=Math.max(...['signals','invalidations','transports','hydrations','ipcs'].flatMap(key=>o[key].map(row=>row.id)))+1
+  const error={name:'AbortError',message:'Synthetic historical pre-admission cancellation'}
+  const failed={id:nextRowId,hydrationId:1,actionId:replacement.actionId,intentSha256:replacement.intentSha256,ipcId:replacement.ipcId,
+    signalId:signal.id,startedAt,finishedAt,requestedCount:replacement.requestedCount,inputSha256:replacement.inputSha256,
+    inputCount:replacement.inputCount,ok:false,error}
+  o.hydrations.unshift(failed)
+  o.transports.unshift({...native,id:nextRowId+1,hydrationId:1,signalId:signal.id,signalAbortedAtStart:true,outcome:'rejected',error,
+    startedAt:signal.abortedAt+span/2,finishedAt:signal.abortedAt+span*3/4})
+  sample.hydrationReceipts.unshift({id:1,startedAt,finishedAt,ok:false,error,querySignalId:signal.id,
+    queryInputSha256:replacement.inputSha256,requestedCount:replacement.inputCount,requestedUniqueIds:replacement.inputCount,
+    nativeRequestedCount:replacement.inputCount,nativeUniqueIds:replacement.inputCount,nativeCalls:1})
+  const proof=validateQueryRetirements(sample)
+  assert.deepEqual(proof.retiredHydrationIds,[1]);assert.equal(proof.certificates[0].kind,'retired-before-native-admission')
+  return sample
 }
 
 async function daemonErrorRealmRegression() {
@@ -147,7 +174,8 @@ async function runQueryRetirementRegressions() {
   assert.equal(process.platform,'win32','Query retirement regression executes only on Windows')
   const prior=process.env.HFM_NODE_STATE_FALLBACK;process.env.HFM_NODE_STATE_FALLBACK='0'
   try {
-    const sample=await actualQueryRetirementFixture()
+    const currentSample=await actualQueryRetirementFixture()
+    const sample=historicalNativeRetirementFixture(currentSample)
     const earlySample=await actualQueryRetirementFixture({}, {bindingCount:26})
     for(const mutate of [
       s=>{s.observation.signals[0].firstObservedLive=false},
@@ -203,7 +231,7 @@ async function runQueryRetirementRegressions() {
       s=>{s.processRequests[0].closedAt=s.observation.signals[0].settledAt+1},
       s=>{s.observation.observerErrors++},s=>{s.observation.dropped++},s=>{s.observation.restorationConflicts++},
       s=>{s.observation.taskProof='unsupported-legacy-source'},
-    ]){const changed=clone(earlySample);mutate(changed);assert.throws(()=>validateQueryRetirements(changed),'Invalid early retirement proof accepted')}
+    ]){for(const actual of [currentSample,earlySample]){const changed=clone(actual);mutate(changed);assert.throws(()=>validateQueryRetirements(changed),'Invalid early retirement proof accepted')}}
     for(const mutate of [
       s=>{s.observation.signals[0].firstObservedLive=false},
       s=>{s.observation.signals[0].invalidationId=999},
@@ -284,8 +312,8 @@ async function runQueryRetirementRegressions() {
     assert.throws(()=>validateQueryRetirements({observation:{...unobserved,taskProof:'selected-source-query-tasks'},hydrationReceipts:[{...ordinaryReceipt,ok:false}]}),/previously live/)
     outside.restore()
     await daemonErrorRealmRegression()
-    console.log('[diagnostics:full-refresh-query-retirement] actual query invalidation/native cancellation/replacement, strict negative proofs, observer identity and daemon Error realm passed')
-    return {...sample,earlySample}
+    console.log('[diagnostics:full-refresh-query-retirement] actual query cancellation before hydration/replacement, historical validator compatibility, strict negative proofs, observer identity and daemon Error realm passed')
+    return {...currentSample,earlySample,historicalSample:sample}
   }finally{if(prior===undefined)delete process.env.HFM_NODE_STATE_FALLBACK;else process.env.HFM_NODE_STATE_FALLBACK=prior}
 }
 module.exports={runQueryRetirementRegressions,actualQueryRetirementFixture}
