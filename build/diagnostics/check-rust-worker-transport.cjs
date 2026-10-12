@@ -28,6 +28,24 @@ function legacyDiagnosticWording(observed) {
   return {...observed.summary,traceHash:h.digest(trace)}
 }
 
+async function checkScenarioHandshakeInputs() {
+  const legacy = sequences.get('cached-ready').results[0].value.capabilities
+  const current = [...new Set(h.commands.flatMap(command => command.capabilities))]
+  const direct = h.createHarness()
+  assert.deepEqual(plain((await direct.runtime.diagnoseRustCoreWorker()).capabilities), current, 'direct harness lost current capabilities')
+  // Only frozen observations pin their input. Explicit current/limited worker
+  // capabilities must reach the real handshake and ready log without filtering.
+  for (const capabilities of [legacy, current, ['font-parse-batch']]) {
+    const observed = await h.observe('runRustFontParseBatch', { capabilities })
+    assert.deepEqual(observed.summary.outcome, cases.get('runRustFontParseBatch/oneshot').outcome)
+    assert.equal(observed.summary.pendingFiles, 0)
+    assert.deepEqual(plain(observed.h.runtime.rustCoreWorkerStatus().capabilities), capabilities, 'explicit scenario handshake was replaced')
+    assert.deepEqual(plain(observed.h.trace.filter(row => row[0] === 'log' && row[1].startsWith('rust core worker ready:'))), [
+      ['log', 'rust core worker ready: version=fixture, protocol=1, expectedProtocol>=1, capabilities=' + capabilities.join(',') + ', path=C:/worker.exe, handshakeMs=0'],
+    ], 'explicit scenario handshake log was filtered')
+  }
+}
+
 async function checkCase(scenario, overrides) {
   if (scenario.method === 'runRustFontIndexListWorker') return checkListingCase(scenario, overrides)
   if (scenario.method === 'runRustSharedMetadataOverlayRead') return checkMetadataOverlayCase(scenario, overrides)
@@ -389,6 +407,7 @@ async function main() {
   assert.deepEqual(h.sequenceNames, fixture.sequences.map(s => s.name))
   checkOwnership()
   checkWorkSnapshot()
+  await checkScenarioHandshakeInputs()
   for (const scenario of scenarios) await checkCase(scenario)
   for (const name of h.sequenceNames) await checkSequence(name)
   const listingNegatives = await checkStdoutListing()

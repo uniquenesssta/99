@@ -9,6 +9,11 @@ const root = path.resolve(__dirname, '../../..')
 const core = 'src/main/rust-core/'
 const commands = require('../fixtures/orchestration-contracts.fixture.json').rustCommands
 const capabilities = [...new Set(commands.flatMap(c => c.capabilities))]
+// Frozen AT-5.1 observations must retain their original handshake inputs. New
+// capability inventory entries still reach direct harness users and explicit
+// scenario settings, but cannot silently rewrite legacy logs/status results.
+const legacyCapabilities = require('../fixtures/rust-worker-transport.fixture.json').sequences
+  .find(sequence => sequence.name === 'cached-ready').results[0].value.capabilities
 const compiled = new Map()
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -208,7 +213,7 @@ async function settle(run) {
 }
 
 async function observe(method, settings = {}, overrides) {
-  const h = createHarness(settings, overrides)
+  const h = createHarness({ capabilities: legacyCapabilities, ...settings }, overrides)
   if (settings.preAbort) h.external.abort(new Error('already cancelled'))
   const outcome = await settle(() => h.runtime[method](...argsFor(method, h)))
   const summary = JSON.parse(JSON.stringify({ outcome, traceHash: digest(h.trace), pendingFiles: h.files.size }))
@@ -234,7 +239,7 @@ async function observeSequence(name, overrides) {
     : name === 'throttled-preview-daemon' ? { mode: 'submitted' }
     : name === 'concurrent-files' ? { previewTransport: true, execHook: async () => { entered(); await pending }, sharedHook: async () => { entered(); await pending } }
     : {}
-  const h = createHarness(settings, overrides)
+  const h = createHarness({ capabilities: legacyCapabilities, ...settings }, overrides)
   const results = []
   if (name.startsWith('cached-')) {
     results.push(await settle(() => h.runtime.diagnoseRustCoreWorker()), await settle(() => h.runtime.diagnoseRustCoreWorker()), h.runtime.rustCoreWorkerStatus())

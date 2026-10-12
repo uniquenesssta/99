@@ -173,7 +173,27 @@ async function sharedProofBudgetCase() {
 }
 
 async function composedTransportCases() {
-  const children = [], requests = []
+  const children = [], requests = [], owned = new Map()
+  const READY_TIMEOUT_MS = 2000, CLEANUP_TIMEOUT_MS = 5000
+  const own = promise => {
+    if (!owned.has(promise)) {
+      const state = { status: 'pending' }; owned.set(promise, state)
+      // Observe immediately, while preserving the original promise/rejection
+      // for causal assertions and final physical-owner retirement.
+      promise.then(value => { state.status = 'fulfilled'; state.value = value }, error => { state.status = 'rejected'; state.error = error })
+    }
+    return promise
+  }
+  const bounded = async (promise, timeoutMs, label) => {
+    let timer
+    try {
+      return await Promise.race([promise, new Promise((_, reject) => {
+        // Deliberately referenced: missing settlement must fail the gate, not
+        // let Node exit successfully with only an unresolved promise.
+        timer = setTimeout(() => reject(Error(label)), timeoutMs)
+      })])
+    } finally { clearTimeout(timer) }
+  }
   const spawn = (_file, args) => {
     const child = new EventEmitter(); child.pid = 100 + children.length
     child.stdin = Object.assign(new EventEmitter(), { end() {} })
@@ -181,30 +201,42 @@ async function composedTransportCases() {
     child.stderr = Object.assign(new EventEmitter(), { setEncoding() {} })
     child.stdio = [child.stdin, child.stdout, child.stderr, new EventEmitter()]
     child.kill = () => { child.killed = true; return true }
-    child.finish = (code = 0) => { child.stdout.emit('data', '{}'); child.emit('close', code, null) }
+    child.once('close', () => { child.closed = true })
+    child.finish = (code = 0, stdout = '{}') => { if (child.closed) return; if (stdout !== null) child.stdout.emit('data', stdout); child.emit('close', code, null) }
     child.args = args; children.push(child); return child
   }
   const h = fixture({ globals: { queueMicrotask }, mocks: { ...transportDiscoveryPorts, 'node:child_process': { ...cp, spawn } } })
   const transport = h.load('src/main/rust-core/rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({ enabled: false, required: false, appendStartupLog() {} })
   const pool = h.load('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime(), run = pool.run
-  pool.run = request => { requests.push(request); return run(request) }
+  pool.run = request => { requests.push(request); return own(run(request)) }
   const global = h.load('src/main/performance/globalIoRuntime.ts').createGlobalIoRuntime({ env: {}, localScanWorkers: 1, appendLog() {}, isIndexingActive: () => false, isUserActive: () => false, storageProfileForPath: () => ({ type: 'unknown' }) })
   h.options.withGlobalIo = global.withGlobalIo
   h.runtime = h.load('src/main/preview/previewRuntime.ts').createPreviewRuntime(h.options)
   const client = h.load('src/main/rust-core/clients/rustPreviewClientRuntime.ts').createRustPreviewClientRuntime({ ...transport, appendStartupLog() {}, diagnoseRustCoreWorker: async () => ({ available: true, path: process.execPath, capabilities: ['preview-render-image'] }) })
   h.state.render = request => client.runRustPreviewRenderImage(request)
-  const until = async condition => { for (let n = 0; n < 200 && !condition(); n++) await tick(); assert(condition(), 'controlled transport did not reach expected state') }
+  const until = async (condition, operation, phase) => {
+    const deadline = Date.now() + READY_TIMEOUT_MS
+    while (!condition()) {
+      const state = owned.get(operation)
+      if (state?.status === 'rejected') throw state.error
+      assert(state?.status !== 'fulfilled', phase + ': operation settled before expected state')
+      const status = pool.status()
+      assert(Date.now() < deadline, `${phase}: readiness expired; requests=${requests.length}, queued=${status.queued}, active=${status.active}, children=${children.length}, operation=${state?.status || 'untracked'}`)
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+  }
   try {
     const blocker = pool.run({ file: process.execPath, args: ['controlled-blocker'], roots: ['configured-root:blocker'], write: true, priority: 'background', timeoutMs: 30000 })
     assert.equal(transport.hasRustCoreInteractiveWork(), false)
     const cancellation = new AbortController()
-    const pending = h.filesystemPort.withSharedIoSignal(cancellation.signal, () => h.runtime.renderFontPreviewImage(installed, 'controlled')).catch(error => error)
-    await until(() => pool.status().queued === 1)
+    const previewWork = own(h.filesystemPort.withSharedIoSignal(cancellation.signal, () => h.runtime.renderFontPreviewImage(installed, 'controlled')))
+    const pending = previewWork.catch(error => error)
+    await until(() => pool.status().queued === 1, previewWork, 'system-preview admission')
     assert.equal(transport.hasRustCoreInteractiveWork(), true, 'real global→system-preview priority was lost while queued')
     const request = requests.find(value => value.label === 'preview-render-image')
     assert.equal(request.priority, 'foreground'); assert.equal(request.lane, 'default')
     assert(request.write && !request.accesses && request.roots.includes('configured-root:preview-output-unverified'), 'unknown alias writer barrier changed')
-    children[0].finish(); await blocker; await until(() => children.length === 2)
+    children[0].finish(); await blocker; await until(() => children.length === 2, previewWork, 'system-preview execution')
     assert.equal(transport.hasRustCoreInteractiveWork(), true)
     cancellation.abort(); await tick()
     assert.equal(transport.hasRustCoreInteractiveWork(), true, 'busy owner released on abort before child close')
@@ -219,14 +251,15 @@ async function composedTransportCases() {
     try {
       await api.withPreviewRenderLifetime(async lifetime => {
         lifetime.recordQueueWait(2400)
-        const attempt = transport.runRustCoreScheduledCommand(process.execPath, ['--preview-render-image', '--input', file.path], { timeout: 30000, sharedIo: { paths: ['', 'C:/controlled/preview.png'], write: true, preview: true } }).catch(error => error)
-        await until(() => requests.length === 3)
+        const work = own(transport.runRustCoreScheduledCommand(process.execPath, ['--preview-render-image', '--input', file.path], { timeout: 30000, sharedIo: { paths: ['', 'C:/controlled/preview.png'], write: true, preview: true } }))
+        const attempt = work.catch(error => error)
+        await until(() => requests.length === 3, work, 'remaining-budget admission')
         assert.equal(requests.at(-1).queueTimeoutMs, 600)
         const child = children.at(-1); child.stdout.emit('data', '{"ok":true}'); child.emit('close', 0, null)
         assert.equal(JSON.parse((await attempt).stdout).ok, true)
       })
-      const outside = transport.runRustCoreScheduledCommand(process.execPath, ['--preview-render-image', '--input', file.path], { timeout: 30000, sharedIo: { paths: ['', 'C:/controlled/preview.png'], write: true, preview: true } })
-      await until(() => requests.length === 4)
+      const outside = own(transport.runRustCoreScheduledCommand(process.execPath, ['--preview-render-image', '--input', file.path], { timeout: 30000, sharedIo: { paths: ['', 'C:/controlled/preview.png'], write: true, preview: true } }))
+      await until(() => requests.length === 4, outside, 'independent-budget admission')
       assert.equal(requests.at(-1).queueTimeoutMs, 3000, 'preview budget leaked into an independent submission')
       children.at(-1).stdout.emit('data', '{"ok":true}'); children.at(-1).emit('close', 0, null)
       assert.equal(JSON.parse((await outside).stdout).ok, true)
@@ -246,10 +279,11 @@ async function composedTransportCases() {
       await input.writeJson({ fontPath: '', preferSystemFont: true, systemFontFamilyCandidates: ['controlled-absent-family'], outputPath: 'C:/controlled/domain.png', ...sample.input })
       try {
         const previous = children.length
-        const attempt = api.withPreviewRenderLifetime(() => transport.runRustCoreScheduledCommand(process.execPath, [sample.command || '--preview-render-image', '--input', input.path], {
+        const work = own(api.withPreviewRenderLifetime(() => transport.runRustCoreScheduledCommand(process.execPath, [sample.command || '--preview-render-image', '--input', input.path], {
           timeout: 30000, signal: abort.signal, sharedIo: { paths: ['\\\\controlled\\share'], write: true },
-        })).catch(error => error)
-        await until(() => children.length === previous + 1)
+        })))
+        const attempt = work.catch(error => error)
+        await until(() => children.length === previous + 1, work, 'domain-receipt execution')
         const child = children.at(-1)
         child.stdout.emit('data', sample.stdout ?? domainReceipt)
         if (sample.cancelled) abort.abort()
@@ -266,7 +300,13 @@ async function composedTransportCases() {
         }
       } finally { await input.dispose() }
     }
-  } finally { transport.stopRustCoreDaemon(); for (const child of children) if (child.killed) child.emit('close', 1, null); await pool.whenIdle() }
+  } finally {
+    transport.stopRustCoreDaemon()
+    for (const child of children) if (!child.closed) child.finish(1, null)
+    await bounded(Promise.allSettled([...owned.keys()]), CLEANUP_TIMEOUT_MS, 'controlled transport cleanup did not settle owned work')
+    await bounded(pool.whenIdle(), CLEANUP_TIMEOUT_MS, 'controlled transport cleanup did not physically close')
+    pool.run = run
+  }
 }
 
 async function main() {
