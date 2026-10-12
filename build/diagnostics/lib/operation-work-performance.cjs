@@ -129,24 +129,31 @@ async function createFixture({sourceRoot,directory,fixtureDirectory,manifest,wor
     return {timings,pagination,recovery:recoveryEvidence,uninstall:observer.snapshot(),linked:linked.length,pickerCalls,effects:effects.length}
   }
 
-  async function watcher() {
+  async function watcher({ transport }) {
     const watch=path.join(fixtureDirectory,'watch');fs.mkdirSync(watch,{recursive:true})
     const cache={version:1,entries:{}},cacheFile=path.join(directory,'watch-cache.json'),shared=load('src/main/path/sharedFileSystemRuntime.ts').sharedFileSystem
     const paths=load('src/main/path/cachePath.ts'),cachePaths=load('src/main/cache/cachePaths.ts'),cached=fontRuntime.createCachedFontRuntime({sharedFontId:()=> 'unused'})
-    const common={fontExtensions:new Set(['.ttf']),scriptDetectionVersion:2,withGlobalIo:observer.global(global),fileCacheSignature:cachePaths.fileCacheSignature,cacheKeyForRootFile:paths.relativePathForRoot,cacheEntryRuntimePath:cached.cacheEntryRuntimePath,hasValidFontSignature:fontRuntime.hasValidFontSignature,fontItemFromPath:fontRuntime.fontItemFromPath,sanitizeCachedFont:cached.sanitizeCachedFont,cachedFontForRuntime:cached.cachedFontForRuntime}
+    // Supply the selected source's real parse port, as mainScan composition
+    // does. A missing port is not permission to enable unsafe parse fallback.
+    const indexing=load('src/main/rust-core/clients/rustIndexingClientRuntime.ts').createRustIndexingClientRuntime({...transport,appendStartupLog:appendLog})
+    let nativeParseJobs=0
+    const runRustFontParseBatch=async(jobs,signal)=>{nativeParseJobs+=jobs.length;const result=await indexing.runRustFontParseBatch(jobs,signal);assert(result,'Actual native watcher parse receipt is required');return result}
+    const common={fontExtensions:new Set(['.ttf']),scriptDetectionVersion:2,runRustFontParseBatch,appendStartupLog:appendLog,withGlobalIo:observer.global(global),fileCacheSignature:cachePaths.fileCacheSignature,cacheKeyForRootFile:paths.relativePathForRoot,cacheEntryRuntimePath:cached.cacheEntryRuntimePath,hasValidFontSignature:fontRuntime.hasValidFontSignature,fontItemFromPath:fontRuntime.fontItemFromPath,sanitizeCachedFont:cached.sanitizeCachedFont,cachedFontForRuntime:cached.cachedFontForRuntime}
     const entry=load('src/main/watcher/manual-refresh/manualFolderIndexEntryRuntime.ts').createManualFolderIndexEntryRuntime(common)
     for(let i=0;i<8;i++){const file=path.join(watch,`font-${i}.ttf`);copy(manifest[i].source,file);await entry.upsertFontIndexEntry(watch,file,cache)}
     const index=load('src/main/watcher/watchedFolderIndexRuntime.ts').createWatchedFolderIndexRuntime({...common,...entry,isIgnoredWatcherPath:()=>false,appendStartupLog:appendLog,fontScanCacheVersion:1,
       ensureRootScanCacheStorage:async()=>({cachePath:cacheFile,cacheDir:directory,storage:'root',cache}),
       saveScanCacheFile:async(file,value)=>shared.writeFile(file,JSON.stringify(value)),writeRootCacheManifest:async()=>{},saveRootDirectorySignatures:async()=>{},readRootDirectorySignatures:async()=>new Map()})
     const events=Array.from({length:16},(_,i)=>({folder:watch,eventType:'change',fileName:`font-${i%8}.ttf`,receivedAt:0,origin:'controlled-replay'}))
-    observer.reset();const unchanged=await index.applyWatchedFolderChangesToIndex(events)
+    nativeParseJobs=0;observer.reset();const unchanged=await index.applyWatchedFolderChangesToIndex(events)
     assert.equal(unchanged.upserts.length,0);assert.equal(unchanged.deletes.length,0);assert.equal(unchanged.errors.length,0)
+    assert.equal(nativeParseJobs,0,'Unchanged watcher parsed font contents')
     const unchangedWork=observer.snapshot();observer.reset()
     copy(manifest[1].source,path.join(watch,'font-0.ttf'));fs.utimesSync(path.join(watch,'font-0.ttf'),new Date('2026-01-01T00:00:01Z'),new Date('2026-01-01T00:00:01Z'))
     const changed=await index.applyWatchedFolderChangesToIndex([events[0]])
     assert.equal(changed.upserts.length,1);assert.equal(changed.errors.length,0);assert.equal(changed.deletes.length,0)
-    return {unchangedUpserts:0,changedUpserts:1,unchanged:unchangedWork,changed:observer.snapshot(),scope:'real targeted watcher/index/cache write; renderer event behavior remains the existing F12 diagnostic'}
+    assert.equal(nativeParseJobs,typeof entry.upsertFontIndexEntries==='function'?1:0,'Selected watcher did not use its actual parsing contract')
+    return {unchangedUpserts:0,changedUpserts:1,unchanged:unchangedWork,changed:observer.snapshot(),nativeParseJobs,readAccounting:'Node read APIs only; native parser font reads are uninstrumented',scope:'real targeted watcher/index/cache write; renderer event behavior remains the existing F12 diagnostic'}
   }
   async function contention() {
     observer.reset()

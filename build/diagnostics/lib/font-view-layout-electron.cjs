@@ -14,6 +14,7 @@ app.whenReady().then(async () => {
       catch (error) {
         return { ok: false, message: String(error), stack: error?.stack,
           overlayEvidence: window.scrollbarOverlayEvidence?.(),
+          sharedWatchStatusEvidence: window.sharedWatchStatusEvidence?.(),
           width: innerWidth, focused: document.hasFocus(), active: document.activeElement?.outerHTML?.slice(0, 300),
           inputs: ['local','shared'].map(scope => {
             const input = document.getElementById('font-' + scope + '-tag-input'), r = input?.getBoundingClientRect();

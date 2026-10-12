@@ -128,7 +128,15 @@ function observeProduction(load, state) {
       if (request.operation === 'stat' && /\.ttf$/i.test(request.path)) stage.fontStats++
       if (['readFile', 'fontContentIdentity'].includes(request.operation) && /\.ttf$/i.test(request.path)) stage.fontReads++
     }
-    const output = await execute(...args)
+    let output
+    try { output = await execute(...args) }
+    catch (error) {
+      // Failed native writes (including exclusive-open EEXIST) are classified
+      // by the transport before a fulfilled executor receipt can reach us.
+      // Observe that actual rejection and preserve its identity/close owner.
+      state.observeNativeFailure?.(request, error)
+      throw error
+    }
     state.observeNative?.(request, output)
     if (request.operation === 'sqliteSnapshot' && output.result.ok) {
       assert.equal(typeof output.snapshotPath, 'string', 'Native SQLite snapshot path is missing')

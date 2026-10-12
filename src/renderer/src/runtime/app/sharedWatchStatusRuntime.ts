@@ -18,6 +18,9 @@ export function createSharedWatchStatusPoller(options: {
   let deadline: Timer | undefined
   let lastKey: string | undefined
 
+  // Cleanup can replace this captured value while a read is awaiting IPC.
+  function hasConsumer(): boolean { return consumer !== undefined }
+
   function publish(value: SharedWatchStatus | null): void {
     const key = JSON.stringify(value)
     if (key === lastKey) return
@@ -27,25 +30,25 @@ export function createSharedWatchStatusPoller(options: {
 
   async function poll(): Promise<void> {
     timer = undefined
-    if (!consumer || active) return
+    if (!hasConsumer() || active) return
     active = true
     const ticket = generation
     let expired = false
     deadline = setTimer(() => {
       expired = true
-      if (ticket === generation && consumer) publish(null)
+      if (ticket === generation && hasConsumer()) publish(null)
     }, 6000)
     try {
       const value = await options.read()
-      if (ticket === generation && consumer && !expired) publish(isSharedWatchStatus(value) ? value : null)
+      if (ticket === generation && hasConsumer() && !expired) publish(isSharedWatchStatus(value) ? value : null)
     } catch {
-      if (ticket === generation && consumer) publish(null)
+      if (ticket === generation && hasConsumer()) publish(null)
     } finally {
       active = false
       if (deadline !== undefined) clearTimer(deadline)
       deadline = undefined
       // Expiry only changes the display. It never abandons an in-flight request.
-      if (consumer) timer = setTimer(() => { void poll() }, 2000)
+      if (hasConsumer()) timer = setTimer(() => { void poll() }, 2000)
     }
   }
 

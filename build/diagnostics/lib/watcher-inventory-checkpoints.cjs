@@ -419,16 +419,20 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
   controls.push('case-only-rename-preserves-normalized-row')
 
   // A stale waiter must be rejected after acquiring the real root lock, before
-  // submitting a native SQLite mutation. Observe the genuine EEXIST receipt.
+  // submitting a native SQLite mutation. The transport rejects the genuine
+  // exclusive-open EEXIST receipt; it is not a fulfilled executor response.
   fs.mkdirSync(path.dirname(lockPath), { recursive: true })
   fs.writeFileSync(lockPath, 'controlled-external-lock-owner')
   const existing = await rootIndex.readRootIndexSqliteFile(dbPath, fontRoot, 'root')
   const first = Object.entries(existing.entries)[0]
   const beforeStale = audit(host)
   let current = true, blocked = false
-  state.observeNative = (request, output) => {
-    if (request.operation === 'openFile' && path.resolve(request.path) === path.resolve(lockPath) && !output.result.ok) {
-      assert.equal(output.result.code, 'EEXIST')
+  state.observeNativeFailure = (request, error) => {
+    if (request.operation === 'openFile' && path.resolve(request.path) === path.resolve(lockPath)) {
+      assert.equal(error.sharedIo, true)
+      assert.equal(error.code, 'EEXIST')
+      assert.equal(error.outcome, 'not-started')
+      assert.equal(error.reason, 'file-write-failed')
       blocked = true; current = false
       fs.unlinkSync(lockPath)
     }
@@ -437,7 +441,7 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
     await assert.rejects(() => rootIndex.saveRootIndexSqliteChanges(dbPath, fontRoot, 'root', [first], [], () => {
       if (!current) throw new Error('controlled-stale-root-owner')
     }), /controlled-stale-root-owner/)
-  } finally { state.observeNative = undefined; if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath) }
+  } finally { state.observeNativeFailure = undefined; if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath) }
   assert(blocked, 'Stale-waiter case did not reach the actual lock contention boundary')
   assert.deepEqual(audit(host), beforeStale, 'Stale lock waiter changed real SQLite state')
   controls.push('actual-root-lock-stale-waiter-rejected-before-native-write')
@@ -446,8 +450,12 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
   fs.writeFileSync(lockPath, 'external-owner-remains')
   const waitingAbort = new AbortController()
   let sawBlocked = false
-  state.observeNative = (request, output) => {
-    if (request.operation === 'openFile' && path.resolve(request.path) === path.resolve(lockPath) && !output.result.ok) {
+  state.observeNativeFailure = (request, error) => {
+    if (request.operation === 'openFile' && path.resolve(request.path) === path.resolve(lockPath)) {
+      assert.equal(error.sharedIo, true)
+      assert.equal(error.code, 'EEXIST')
+      assert.equal(error.outcome, 'not-started')
+      assert.equal(error.reason, 'file-write-failed')
       sawBlocked = true; waitingAbort.abort()
     }
   }
@@ -457,7 +465,7 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
     assert(sawBlocked)
     assert(Date.now() - waitStarted < 3000, 'Cancellation waited for the complete external root-lock timeout')
     assert.equal(fs.readFileSync(lockPath, 'utf8'), 'external-owner-remains', 'Cancelled waiter removed another owner lock')
-  } finally { state.observeNative = undefined; fs.unlinkSync(lockPath) }
+  } finally { state.observeNativeFailure = undefined; fs.unlinkSync(lockPath) }
   controls.push('cancelled-root-lock-waiter-retains-other-owner-and-settles')
   return { noOpFontReads: noOpWork.fontReads, noOpParseJobs: 0, checkpointRows: 32, resumedParseJobs: 33 }
 }

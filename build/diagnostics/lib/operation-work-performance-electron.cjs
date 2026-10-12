@@ -11,7 +11,12 @@ async function run({directory,html,preload,config,electron}) {
  try {
   await app.whenReady()
   fixture=await createFixture({sourceRoot:config.sourceRoot,directory,fixtureDirectory:config.fixtureDirectory,manifest:config.manifest,workerPath:config.workerPath,electron})
-  report.operations=await fixture.operations();report.watcher=await fixture.watcher();report.contention=await fixture.contention()
+  report.operations=await fixture.operations()
+  // The watcher and subsequent preview phases borrow one application lifetime.
+  transportOwner=createControlledPreviewTransportOwner({load:fixture.load,observer:fixture.observer,appendLog:fixture.appendLog})
+  report.watcher=await fixture.watcher({transport:transportOwner.transport})
+  await transportOwner.drain()
+  report.contention=await fixture.contention()
   // Existing image attribution is explicitly opt-in in the actual preload.
   // Work/count reductions above were measured with detailed logging disabled.
   process.env.HFM_LOG_DETAIL='debug'
@@ -29,8 +34,7 @@ async function run({directory,html,preload,config,electron}) {
   const distinctKeys=new Set(fonts.map(font=>route(font).cacheIdentity)).size
   report.previewRoute='installed-family DirectWrite PNG; copied-file font-byte loading not claimed'
   report.visibleFonts=12;report.distinctInstalledPreviewKeys=distinctKeys
-  transportOwner=createControlledPreviewTransportOwner({load:fixture.load,observer:fixture.observer,appendLog:fixture.appendLog})
-  report.previewTransportLifetime='one selected-source fixture owner across cache phases; cached handshake setup is outside visible-demand timing, not render savings'
+  report.previewTransportLifetime='one selected-source fixture owner across watcher and preview cache phases; cached handshake setup is outside visible-demand timing, not render savings'
   for(const mode of ['list','grid']) {
    const cacheDir=path.join(directory,'preview',mode)
    for(const cache of ['cold','disk-hot','memory-hot']) {

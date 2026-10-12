@@ -176,7 +176,7 @@ export interface MainOperationsCompositionOptions {
     | 'storageProfileForPath'
     | 'scanWorkerCount'
   >;
-  rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustSystemInstalledFonts' | 'runRustInstallStatusCompare' | 'runRustSharedMetadataOverlayRead' | 'runRustDatabaseHealthCheck' | 'runRustDatabaseBackup' | 'runRustPreviewCacheMaintenance' | 'runRustFontIndexListWorker' | 'runRustFontParseBatch' | 'runRustWatcherPreflight'>;
+  rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustSystemInstalledFonts' | 'runRustInstallStatusCompare' | 'runRustSharedMetadataOverlayRead' | 'runRustDatabaseHealthCheck' | 'runRustDatabaseBackup' | 'runRustPreviewCacheMaintenance' | 'runRustFontIndexListWorker' | 'runRustFontParseBatch' | 'runRustWatcherPreflight' | 'diagnoseRustCoreWorker'>;
   assertFeedbackReady: () => void;
   refreshKnownSharedTagsFromMetadata: ReturnType<typeof createSharedKnownTagsRuntime>['refreshKnownSharedTagsFromMetadata'];
 }
