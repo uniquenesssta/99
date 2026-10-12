@@ -76,7 +76,7 @@ async function main() {
   let host, pool, originalRun, foreground, nextGate = 0
   const report = { passed: false, nativeWorkerSha256: workerHash, sourceFontSha256: sourceHash, lane: 'deterministic-delayed-NAS-simulation', actualNasMeasurement: false,
     injectedLatency: 'Explicit release gates before real native listing, read-only bindingSnapshot and legacy preflight writer; no fabricated native receipts',
-    actualPorts: ['registerIpcHandlers and sender validation', 'createPreviewRuntime storage/source-stat/cache SQL', 'real native list/stat/render and read-only binding snapshot', 'real legacy preflight writer exclusion', 'real merged-index page/metrics SQL'],
+    actualPorts: ['registerIpcHandlers and sender validation', 'production font-query reply decoder after main-handler return', 'createPreviewRuntime storage/source-stat/cache SQL', 'real native list/stat/render and read-only binding snapshot', 'real legacy preflight writer exclusion', 'real merged-index page/metrics SQL'],
     exclusions: ['real NAS/network latency', 'Electron renderer painting or cross-process serialization'], cases: [], requests: rows }
   function gate(label) {
     const id = nextGate++, ready = path.join(directory, `${id}-${label}-ready`), release = path.join(directory, `${id}-${label}-release`)
@@ -132,9 +132,21 @@ async function main() {
       appendLog: host.appendStartupLog, isIndexingActive: () => false, isUserActive: interaction.isRendererUserActive,
       storageProfileForPath: file => ({ rootPath: path.parse(file).root, type: 'ssd', reason: 'local-real-files-in-labeled-delay-model', isNetwork: false }) })
     foreground = await host.createForegroundRuntime({ withGlobalIo: observer.global(globalIo), interaction })
+    const { decodeFontQueryReply, FONT_QUERY_CANCELLED_REPLY } = host.load('src/shared/fontQueryIpc.ts')
+    const decodedCancellations = []
+    // This host exposes the main-handler port, not a preload. Apply the actual
+    // production reply decoder locally; the shared host/baseline stays intact.
+    const invokeForeground = (channel, args, event) => foreground.invoke(channel, args, event).then(reply => {
+      try { return decodeFontQueryReply(channel, reply) }
+      catch (error) { decodedCancellations.push({ channel, reply: plain(reply) }); throw error }
+    })
+    const successfulLookalike = { ...FONT_QUERY_CANCELLED_REPLY, items: [{ id: 'sentinel' }], total: 1 }
+    assert.equal(decodeFontQueryReply('fonts:queryPage', successfulLookalike), successfulLookalike, 'Reply decoder hid ordinary successful data containing control-like fields')
     const untrusted = foreground.createRenderer(); untrusted.senderFrame.url = 'https://untrusted.invalid/'
-    await assert.rejects(foreground.invoke('fonts:getMetrics', ['untrusted'], untrusted), /Blocked untrusted renderer IPC sender/)
-    report.foregroundProvenance = { ...foreground.provenance, simulatedDelays: report.injectedLatency }
+    await assert.rejects(invokeForeground('fonts:getMetrics', ['untrusted'], untrusted), /Blocked untrusted renderer IPC sender/)
+    report.foregroundProvenance = { ...foreground.provenance, simulatedDelays: report.injectedLatency,
+      responseBoundary: 'Actual main IPC handler followed by selected-source decodeFontQueryReply; renderer-facing rejection assertions, no Electron serialization',
+      invocationOutcomeBoundary: 'Host invocations record main transport outcomes before decoding; ok=true may be an expected cancellation control reply' }
     pool = host.load('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime()
     originalRun = pool.run.bind(pool)
     pool.run = request => {
@@ -170,17 +182,17 @@ async function main() {
     }
 
     const read = await holdListing()
-    const pageValue = await bounded(foreground.invoke('fonts:queryPage', [page(), 'read-held-page']), 'Full page IPC stalled behind the delayed list')
+    const pageValue = await bounded(invokeForeground('fonts:queryPage', [page(), 'read-held-page']), 'Full page IPC stalled behind the delayed list')
     assert.equal(pageValue.total, 1); assert.equal(pageValue.workerMode, 'rust-merged-index-page')
     const counts = gate('counts'); nextCountsGate = counts
-    const metricsValue = await bounded(foreground.invoke('fonts:getMetrics', ['read-held-metrics']), 'Local metrics IPC awaited the delayed shared count read')
+    const metricsValue = await bounded(invokeForeground('fonts:getMetrics', ['read-held-metrics']), 'Local metrics IPC awaited the delayed shared count read')
     assert.equal(metricsValue.total, 1); assert.equal(metricsValue.workerMode, 'rust-merged-index-metrics')
     await until(() => fs.existsSync(counts.ready), 'Production metrics did not start the read-only binding snapshot')
     const countsRow = rows.find(row => row.bindingSnapshot)
     assert(countsRow && !countsRow.write && countsRow.verifiedReadOnly, 'Counts still use the preflight writer')
     assert.equal(metricsValue.sharedTagCountsStatus, 'refreshing')
     const startedAt = performance.now(), previewFrom = rows.length
-    const preview = foreground.invoke('fonts:renderPreviewImage', [item, 'HFM delayed read Aa', 36, 600, 100])
+    const preview = invokeForeground('fonts:renderPreviewImage', [item, 'HFM delayed read Aa', 36, 600, 100])
     preview.catch(() => undefined)
     await until(() => rows.slice(previewFrom).some(row => row.operation === 'stat' && row.path === source && row.closedAt && row.ok), 'Foreground source stat was blocked behind the delayed list/count reads')
     await until(() => rows.slice(previewFrom).some(row => ['preview-render-owned-stage', 'preview-render-image'].includes(row.label) && row.startedAt), 'Real preview render never entered after source stat while list/counts remained active')
@@ -208,7 +220,7 @@ async function main() {
     assert.equal(read.row.listingStdoutOnly, true, 'Listing receipt was not produced by the no-output command form')
     assert.equal(listed.files.length, 1); assert.equal(listed.files[0].file, source); assert.equal(listed.errors.length, 0); assert.equal(listed.truncated, false)
     await until(() => host.projectionEvents.some(event => event.source === 'metrics' && event.metricsRevision > 0), 'Read-only counts never emitted their metrics invalidation')
-    const refreshedMetrics = await foreground.invoke('fonts:getMetrics', ['counts-current'])
+    const refreshedMetrics = await invokeForeground('fonts:getMetrics', ['counts-current'])
     assert.equal(refreshedMetrics.sharedTagCounts.SimulatedTag, 1, 'Actual read-only snapshot did not reach metrics')
     assert.equal(refreshedMetrics.sharedTagCountsStatus, 'current')
     assert.equal(rows.filter(row => row.bindingSnapshot).length, 1, 'Metrics retry duplicated an unchanged count read')
@@ -217,7 +229,7 @@ async function main() {
     report.cases.push({ name: 'actual-source-stat-and-render-overlap-delayed-list-and-counts', passed: true, listHeldMs: releaseAt-read.row.startedAt,
       listingResponse: 'bounded-stdout', fullPreviewIpcMs, sourceStat: plain(stat), fullPageTotal: pageValue.total, fullMetricsTotal: metricsValue.total, counts: plain(countsRow), refreshedSharedCount: refreshedMetrics.sharedTagCounts.SimulatedTag })
     await pool.whenIdle()
-    const cached = await bounded(foreground.invoke('fonts:ensurePreviewCache', [item, 'HFM explicit persistent cache', 36, 600, 100]), 'Explicit cache generation did not persist after read release', 5000)
+    const cached = await bounded(invokeForeground('fonts:ensurePreviewCache', [item, 'HFM explicit persistent cache', 36, 600, 100]), 'Explicit cache generation did not persist after read release', 5000)
     assert.equal(cached.ok, true); assert.equal(cached.cached, false)
     assert.equal(foreground.previewDb.prepare("SELECT COUNT(*) AS n FROM preview_cache WHERE status='ok'").get().n, 1, 'Explicit cache request did not commit real cache SQL')
     assert.equal(foreground.previewReceipts.length, 2, 'Explicit persistence did not perform its own native render')
@@ -249,11 +261,11 @@ async function main() {
       assert.deepEqual([...fs.readFileSync(metadataDb).subarray(18,20)], [2,2], 'WAL fixture did not retain its journal format')
       const before = filesFor(metadataDb), attempts = rows.filter(row => row.bindingSnapshot).length
       host.query.clearFontQueryCaches()
-      await foreground.invoke('fonts:getMetrics', ['wal-committed-start'])
+      await invokeForeground('fonts:getMetrics', ['wal-committed-start'])
       await until(() => rows.filter(row => row.bindingSnapshot).length > attempts && rows.filter(row => row.bindingSnapshot).at(-1).closedAt,
         'WAL read-only count attempt never settled')
       await pause(0)
-      const current = await foreground.invoke('fonts:getMetrics', ['wal-committed-result'])
+      const current = await invokeForeground('fonts:getMetrics', ['wal-committed-result'])
       assert.equal(current.sharedTagCountsStatus, 'current', 'Committed WAL counts were not authoritative')
       assert.equal(current.sharedTagCounts.CommittedWalTag, 1, 'Snapshot ignored the committed WAL-only update')
       assert.equal(current.sharedTagCounts.SimulatedTag || 0, 0, 'Snapshot retained superseded main-file counts')
@@ -271,11 +283,11 @@ async function main() {
         busy.prepare('UPDATE font_metadata SET tag_names_json=?,revision=revision+1').run(JSON.stringify(['BusyWriterTag']))
         const before = filesFor(metadataDb), attempts = rows.filter(row => row.bindingSnapshot).length
         host.query.clearFontQueryCaches()
-        await foreground.invoke('fonts:getMetrics', ['wal-busy-start'])
+        await invokeForeground('fonts:getMetrics', ['wal-busy-start'])
         await until(() => rows.filter(row => row.bindingSnapshot).length > attempts && rows.filter(row => row.bindingSnapshot).at(-1).closedAt,
           'Busy WAL read-only count attempt never settled')
         await pause(0)
-        const retained = await foreground.invoke('fonts:getMetrics', ['wal-busy-result'])
+        const retained = await invokeForeground('fonts:getMetrics', ['wal-busy-result'])
         assert.equal(retained.sharedTagCountsStatus, 'unavailable', 'Busy writer claimed authoritative current counts')
         assert.equal(retained.sharedTagCounts.CommittedWalTag, 1, 'Busy source discarded the last confirmed WAL counts')
         assert.equal(retained.sharedTagCounts.BusyWriterTag, undefined, 'Busy-source snapshot claimed an unverified replacement')
@@ -304,11 +316,11 @@ async function main() {
     writerTask.catch(() => undefined)
     await until(() => rows.some(row => row.preflight === 'snapshot'), 'Legacy preflight never reached the production scheduler')
     assert(!fs.existsSync(writer.ready), 'Preflight writer bypassed an active read')
-    const from = rows.length, previewAbort = new AbortController(), renderer = foreground.createRenderer()
-    const cancelledPreview = io.withSharedIoSignal(previewAbort.signal, () => foreground.invoke('fonts:renderPreviewImage', [item, 'cancelled preview unique key', 37, 600, 100]))
+    const from = rows.length, decodedFrom = decodedCancellations.length, previewAbort = new AbortController(), renderer = foreground.createRenderer()
+    const cancelledPreview = io.withSharedIoSignal(previewAbort.signal, () => invokeForeground('fonts:renderPreviewImage', [item, 'cancelled preview unique key', 37, 600, 100]))
     cancelledPreview.catch(() => undefined)
     host.query.clearFontQueryCaches()
-    const cancelledPage = foreground.invoke('fonts:queryPage', [page(), 'cancel-held-page'], renderer)
+    const cancelledPage = invokeForeground('fonts:queryPage', [page(), 'cancel-held-page'], renderer)
     cancelledPage.catch(() => undefined)
     await until(() => rows.slice(from).some(row => row.operation === 'stat' && row.path === source), 'Full preview never reached source-stat admission')
     const blockedStat = rows.slice(from).find(row => row.operation === 'stat' && row.path === source)
@@ -321,10 +333,11 @@ async function main() {
     assert(!blockedStat.startedAt, 'Source-stat bypassed an active unknown writer')
     const cancelAt = performance.now()
     previewAbort.abort()
-    await foreground.invoke('fonts:cancelQuery', ['cancel-held-page'], renderer)
+    await invokeForeground('fonts:cancelQuery', ['cancel-held-page'], renderer)
     const cancelled = await bounded(Promise.allSettled([cancelledPreview, cancelledPage]), 'Retired full IPC consumers did not settle while writer remained active')
     assert(cancelled.every(value => value.status === 'rejected'), 'Cancelled page or preview returned a stale successful result')
     assert.equal(cancelled[1].reason.reason, 'query-superseded')
+    assert.deepEqual(decodedCancellations.slice(decodedFrom), [{ channel: 'fonts:queryPage', reply: plain(FONT_QUERY_CANCELLED_REPLY) }], 'Page cancellation did not traverse the production typed-reply decoder')
     assert(!blockedStat.startedAt, 'Cancelled pre-stat work executed anyway')
     assert(!fs.existsSync(writer.release), 'Cancellation required releasing the writer')
     const cancellationMs = performance.now()-cancelAt
@@ -334,6 +347,7 @@ async function main() {
     assert.equal(foreground.previewReceipts.length, 2, 'Cancelled preview reached native render')
     report.cases.push({ name: 'pending-and-active-preflight-writer-exclusion-with-full-ipc-cancellation', passed: true, cancellationMs,
       pageCancellationBoundary: 'Only this cancellation phase deliberately isolates the real merged DB; native query queues conservatively behind preflight writer',
+      decodedControlReplies: decodedCancellations.slice(decodedFrom),
       previewFailure: errorInfo(cancelled[0].reason), pageFailure: errorInfo(cancelled[1].reason), sourceStat: plain(blockedStat) })
 
     const cancelledList = await holdListing(); cancelledList.controller.abort()

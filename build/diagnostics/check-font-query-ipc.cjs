@@ -23,10 +23,15 @@ async function main() {
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
   const child = cp.spawnSync(require('electron'), [path.join(__dirname, 'lib/font-query-ipc-electron.cjs'), directory, html, indexPreload, runtimePreload],
     { cwd: root, env, encoding: 'utf8', timeout: 120000, maxBuffer: 1024 * 1024 })
-  assert.equal(child.status, 0, 'Electron font query IPC acceptance failed: ' + String(child.error || child.stderr || child.stdout))
-  const report = JSON.parse(fs.readFileSync(path.join(directory, 'report.json'), 'utf8'))
-  assert.equal(report.passed, true)
-  assert.equal(report.bridges.length, 2)
+  const childOutput = [child.error && String(child.error), child.signal && 'signal=' + child.signal, child.stderr, child.stdout]
+    .filter(Boolean).join('\n').slice(-16000)
+  const reportPath = path.join(directory, 'report.json')
+  const report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, 'utf8')) : undefined
+  const details = [report?.error, childOutput].filter(Boolean).join('\n') || 'No child failure detail was recorded'
+  assert.equal(child.status, 0, 'Electron font query IPC process failed: ' + details)
+  assert(report, 'Electron font query IPC report missing: ' + details)
+  assert.equal(report.passed, true, 'Electron font query IPC acceptance failed: ' + details)
+  assert.equal(report.bridges.length, 2, 'Electron font query IPC did not complete both preloads: ' + details)
   console.log('[diagnostics:font-query-ipc] actual Electron, both preloads, admission/active/navigation cancellation, physical close and genuine errors passed')
 }
 

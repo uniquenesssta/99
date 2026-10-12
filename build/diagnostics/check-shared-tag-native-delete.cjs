@@ -23,7 +23,7 @@ async function main() {
   const traced = action => traceContext.withOperationTrace(trace, appendStartupLog, action)
   const transport = load('src/main/rust-core/rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({enabled:true,required:true,appendStartupLog})
   const shared = load('src/main/path/sharedFileSystemRuntime.ts')
-  const { SharedIoProcessError } = load('src/main/path/sharedIoProcessRuntime.ts')
+  const { SharedIoProcessError, applicationSharedIoProcessRuntime } = load('src/main/path/sharedIoProcessRuntime.ts')
   const paths = load('src/main/app/appDataPaths.ts').createAppDataPaths({appName:'HFM',dataDirName:'HFM',appendLog:appendStartupLog})
   const constants = load('src/main/cache/constants.ts')
   const routing = load('src/main/rust-core/rustSharedIoCommandRuntime.ts')
@@ -120,9 +120,33 @@ async function main() {
       assert(failed.failed.every(f=>f.message.includes(reason)&&!f.message.includes('没有找到共享索引库')))
     }
     console.log('[shared-tag-native-delete] traced/untraced immutable index, production options forwarding, real Rust two-root delete and persistent readback, repeat delete, missing pointer recovery, unknown field and failure classification passed')
+  } catch (error) {
+    // Fixed labels and counters only: distinguish quiet logging from missing routing
+    // without dumping raw diagnostic logs, paths, or fixture contents.
+    const status = applicationSharedIoProcessRuntime().status()
+    const labels = ['shared-file-io:readFile','shared-file-io:sqliteSnapshot','shared-metadata-remove-tag'].map(label => ({
+      label,
+      logCount: logs.filter(line => line.includes(`label=${label},`)).length,
+      metrics: status.metrics.byLabel[label] || null,
+    }))
+    console.error('[shared-tag-native-delete:failure-inventory] ' + JSON.stringify({
+      logDetail: process.env.HFM_LOG_DETAIL, logCount: logs.length,
+      active: status.active, queued: status.queued, labels,
+    }))
+    throw error
   } finally {
     transport.stopRustCoreDaemon()
     await fsp.rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100})
   }
 }
-main().catch(e=>{console.error(e.stack||e);process.exitCode=1})
+async function runWithDetailedLogging() {
+  // Fast successful shared I/O intentionally omits label logs in normal mode.
+  // This gate asserts those logs, so use the same explicit mode as the I/O gates.
+  const previousDetail = process.env.HFM_LOG_DETAIL
+  process.env.HFM_LOG_DETAIL = 'debug'
+  try { await main() } finally {
+    if (previousDetail === undefined) delete process.env.HFM_LOG_DETAIL
+    else process.env.HFM_LOG_DETAIL = previousDetail
+  }
+}
+runWithDetailedLogging().catch(e=>{console.error(e.stack||e);process.exitCode=1})

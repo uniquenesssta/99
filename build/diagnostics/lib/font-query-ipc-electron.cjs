@@ -5,6 +5,10 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const electron = require('electron')
 const { app, BrowserWindow, ipcMain } = electron
+// The fixture owns application lifetime across both sequential preload windows.
+// Without a subscriber Electron quits when the first (sole) window is destroyed.
+const retainFixtureApplication = () => {}
+app.on('window-all-closed', retainFixtureApplication)
 const { loader } = require('../check-operation-chain.cjs')
 const [directory, html, indexPreload, runtimePreload] = process.argv.slice(2)
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
@@ -168,5 +172,6 @@ run().catch(error => { report.error = String(error.message || error); originalCo
   .finally(() => {
     win?.destroy(); console.error = originalConsoleError; clearTimeout(watchdog)
     fs.writeFileSync(path.join(directory, 'report.json'), JSON.stringify(report, null, 2))
+    app.removeListener('window-all-closed', retainFixtureApplication)
     app.exit(report.passed ? 0 : 1)
   })

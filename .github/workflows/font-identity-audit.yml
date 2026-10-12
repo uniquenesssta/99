@@ -85,7 +85,7 @@ jobs:
           New-Item -ItemType Directory -Force artifacts | Out-Null
           $PSNativeCommandUseErrorActionPreference = $false
           $failed = 0
-          foreach ($script in @('check-query-work-lifetime.cjs', 'check-font-query-ipc.cjs', 'check-incremental-metadata-refresh.cjs', 'check-shared-metadata-rust-atomicity.cjs', 'check-shared-tag-native-delete.cjs')) {
+          foreach ($script in @('check-query-work-lifetime.cjs', 'check-font-query-ipc.cjs', 'check-foreground-ipc-latency.cjs', 'check-incremental-metadata-refresh.cjs', 'check-shared-metadata-rust-atomicity.cjs', 'check-shared-tag-native-delete.cjs')) {
             & node "build/diagnostics/$script" *>> artifacts/query-metadata-repair.log
             if ($LASTEXITCODE -ne 0) { $failed++ }
           }
@@ -99,6 +99,7 @@ jobs:
           path: |
             artifacts/query-metadata-repair.log
             artifacts/font-query-ipc/**/report.json
+            artifacts/real-feedback/foreground-ipc-*/report.json
           retention-days: 14
       - name: Verify complete existing Windows diagnostics
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
