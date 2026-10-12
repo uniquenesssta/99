@@ -181,9 +181,10 @@ async function checkFooter() {
 }
 
 async function checkBridge(runtimePreload) {
-  let api, trusted = true, reads = 0, availabilityReads = 0
+  let api, trusted = true, reads = 0, availabilityReads = 0, rootGuardRuns = 0
   const handlers = new Map(), calls = []
   const expected = snapshot(rootStatus({ phase: 'applying', pendingCount: 23 }))
+  const { withStartupPathRootGuard } = loader()('src/main/path/startupPathAvailabilityRuntime.ts')
   const electron = {
     ipcMain: { handle: (channel, fn) => handlers.set(channel, fn) },
     ipcRenderer: { invoke: (channel, ...args) => { calls.push({ channel, args }); return Promise.resolve().then(() => handlers.has(channel) ? handlers.get(channel)({ sender: { id: 1 } }, ...args) : true) } },
@@ -195,7 +196,9 @@ async function checkBridge(runtimePreload) {
     [path.join(root, 'src/main/preview/runtime/previewInputPolicy.ts')]: { PreviewInputError: class PreviewInputError extends Error {} },
     [path.join(root, 'src/main/logging/startupLogPolicy.ts')]: { detailedStartupLogsEnabled: () => false },
     [path.join(root, 'src/main/logging/operationTraceContext.ts')]: { withOperationTrace: (_trace, _log, fn) => fn(), logOperation() {} },
-    [path.join(root, 'src/main/path/startupPathAvailabilityRuntime.ts')]: {},
+    [path.join(root, 'src/main/path/startupPathAvailabilityRuntime.ts')]: {
+      withStartupPathRootGuard: (guard, operation) => withStartupPathRootGuard(() => { rootGuardRuns++; guard() }, operation)
+    },
     [path.join(root, 'src/main/library/fontQueryTaskRuntime.ts')]: { createFontQueryConsumers: () => ({}), assertFontQueryActive() {} },
     [path.join(root, 'src/main/app/shutdownCoordinatorRuntime.ts')]: { assertApplicationOpen() {}, applicationWorkEpoch: () => 0 }
   }
@@ -214,12 +217,14 @@ async function checkBridge(runtimePreload) {
   assert.equal(typeof api.getSharedWatchStatus, 'function')
   assert.deepEqual(plain(await api.getSharedWatchStatus()), expected)
   assert.equal(reads, 1)
+  assert.equal(rootGuardRuns, 1, 'trusted status handler bypassed the production guard scope')
   assert.equal(availabilityReads, 0, 'read-only status queried filesystem availability')
   assert.equal(calls[0].channel, 'folders:getWatchStatus')
   assert.deepEqual(calls[0].args, [])
   trusted = false
   await assert.rejects(() => api.getSharedWatchStatus(), /untrusted sender/)
   assert.equal(reads, 1, 'untrusted sender reached status owner')
+  assert.equal(rootGuardRuns, 1, 'untrusted sender reached the guarded handler')
 }
 
 async function main() {

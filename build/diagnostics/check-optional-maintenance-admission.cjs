@@ -19,9 +19,19 @@ function harness() {
     setTimeout: (fn, ms) => { const id = ++timerId; timers.add(id); Promise.resolve().then(() => { if (!timers.delete(id)) return; if (ms) { waits++; if (waits >= idleAfter) busy = false } fn() }); return id },
     clearTimeout: id => timers.delete(id), setImmediate,
   }
-  const mocks = { '../app/shutdownCoordinatorRuntime': shutdown, '../path/startupPathAvailabilityRuntime': availability, '../path/sharedFileSystemRuntime': shared }
+  // Mock module identities, not one caller's relative import spelling. The
+  // physical-close helper also imports sharedFileSystemRuntime via './...';
+  // loading the real filesystem here would create the application probe pool
+  // and add its lifetime listener to this isolated admission fixture.
+  const mocks = {
+    [path.join(root, 'src/main/app/shutdownCoordinatorRuntime.ts')]: shutdown,
+    [path.join(root, 'src/main/path/startupPathAvailabilityRuntime.ts')]: availability,
+    [path.join(root, 'src/main/path/sharedFileSystemRuntime.ts')]: shared,
+  }
   const load = loader(mocks, globals)
   const admissionModule = load(base + 'optionalMaintenanceAdmissionRuntime.ts')
+  assert.equal(listeners.size, 0, 'loading the admission fixture registered an unrelated application listener')
+  assert.equal(timers.size, 0, 'loading the admission fixture started unrelated background work')
   return { load, mocks, globals, logs, states, scopes, timers, listeners, admissionModule,
     setBusy(value, quietAfter = Infinity) { busy = value; idleAfter = quietAfter; waits = 0 },
     get waits() { return waits }, isForegroundBusy: () => busy,

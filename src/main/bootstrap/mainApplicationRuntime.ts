@@ -6,7 +6,7 @@ import { createMainRuntimeRegistrationPayload } from './mainRuntimeRegistrationP
 
 export interface MainApplicationOptions {
   core: Pick<MainCoreCompositionRuntime, 'capabilities' | 'lifecycle'>;
-  data: Pick<MainDataCompositionRuntime, 'capabilities' | 'lifecycle'>;
+  data: Pick<MainDataCompositionRuntime, 'capabilities' | 'lifecycle' | 'resources'>;
   mutation: Pick<MainMutationCompositionRuntime, 'capabilities' | 'lifecycle'>;
   operations: Pick<MainOperationsCompositionRuntime, 'capabilities' | 'lifecycle'>;
 }

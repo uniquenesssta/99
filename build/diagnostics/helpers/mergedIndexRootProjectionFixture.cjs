@@ -20,7 +20,7 @@ function fixture({ native = false } = {}) {
   const ports = {
     [path.join(root,'src/main/path/startupPathAvailabilityRuntime.ts')]: {
       assertStartupPathRootGuardCurrent() {},
-      getStartupPathRootState: root => states.get(root),
+      getStartupPathRootState: root => Object.freeze({...states.get(root)}),
       ensureStartupPathRootAvailable: async (root,_log,_reason,options) => { probes.push(root); admissions.push({root,background:options?.background===true}); return states.get(root).state === 'online' },
     },
     [path.join(root,'src/main/app/shutdownCoordinatorRuntime.ts')]: { applicationWorkEpoch: () => 1, assertApplicationOpen() {} },
@@ -144,7 +144,8 @@ async function runMergedRootProjectionCases() {
         if(change==='roots')f.setRoots([f.b])
         if(change==='target'){const newer={...f.fresh.get(f.a),sharedMetadataSignature:'metadata-v2|newer'};f.writeSource(null,newer,'newer');f.setMeta(null,'sourcesKey',f.key([newer,f.fresh.get(f.b)]))}
       })
-      await assert.rejects(()=>f.sync.syncMergedIndexForRootSnapshot(f.a,'shared-metadata-poll'),/generation-changed|roots-changed|target-changed-in-queue/)
+      const expected={generation:/generation-changed/,roots:/roots-changed/,target:/target-changed-in-queue/}[change]
+      await assert.rejects(()=>f.sync.syncMergedIndexForRootSnapshot(f.a,'shared-metadata-poll'),expected, `queued ${change} change must reject before projection`)
       assert.equal(f.commits.length,0);assert.equal(f.db.prepare('SELECT font_json FROM entries WHERE root_path=?').get(f.a).font_json,'{"family":"old"}')
     } finally {f.db.close()}
   }

@@ -56,6 +56,13 @@ async function main() {
     const committedProjections = () => projectionEvents.filter(event => event.source === 'projection')
     const metricsEvents = () => projectionEvents.filter(event => event.source === 'metrics')
     const { mergedPath, libraryPath, installPath } = host.paths
+    const sqlite = load('src/main/db/sqliteHelpers.ts')
+    const mergedReceipt = load('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({
+      dataPath: host.dataPath, exists: host.exists, openStableSqliteDb, openRootIndexDb: rootStorage.openRootIndexDb,
+      closeSqliteDb: db => db.close(), getSqliteMeta: sqlite.getSqliteMeta, setSqliteMeta: sqlite.setSqliteMeta,
+      sqliteTableExists: sqlite.sqliteTableExists, appendStartupLog() {}, schemaVersion: config.MERGED_INDEX_SCHEMA_VERSION,
+      staleFirstPageEnabled: true,
+    })
     const fonts = load('src/main/fonts/fontRuntime.ts')
     const manifests = selectFonts(path.join(directory, 'manifest')).slice(0, 3)
     const items = []
@@ -102,9 +109,44 @@ async function main() {
     await checkState('offline startup withdraws old authority and preserves population', { installed: 0, notInstalled: 0, unknown: 3 })
     assert.equal(committedProjections().length, 0, 'Opening/migrating a local snapshot fabricated a merged commit')
 
+    // The seeded legacy source key is deliberately noncanonical. Automatic
+    // validation must retain it as partial, not certify it or discard its rows.
+    const retained = await query.checkMergedIndexExternalChanges('shared-metadata-poll')
+    assert.equal(retained.changed, false)
+    assert.equal(retained.status, 'partial')
+    assert.equal(retained.reconciliationRequired, true)
+    assert.equal(retained.blockers?.['invalid-receipt'], 1)
+    const rebuildsBefore = nativeReceipts.filter(row => row.method === 'runRustMergedIndexRebuild').length
+    assert.equal(rebuildsBefore, 0)
     host.setRootOnline(true)
-    const refreshed = await query.checkMergedIndexExternalChanges('diagnostic-real-bootstrap')
+    // This case requests full repair. Use its explicit production route, which
+    // cannot reuse or join the recent automatic partial receipt as completion.
+    const refreshed = await query.checkMergedIndexExternalChanges('shared-metadata-manual-diagnostic-bootstrap')
     assert.equal(refreshed.changed, true)
+    assert.equal(refreshed.rebuilt, true)
+    assert.equal(refreshed.status, 'complete')
+    assert.deepEqual([refreshed.checkedRoots,refreshed.syncedRoots,refreshed.deferredRoots,refreshed.failedRoots], [1,1,0,0])
+    assert.equal(refreshed.reconciliationRequired, false)
+    const rebuilds = nativeReceipts.filter(row => row.method === 'runRustMergedIndexRebuild')
+    assert.equal(rebuilds.length, rebuildsBefore + 1, 'Explicit repair must return a real native rebuild receipt')
+    assert.equal(rebuilds.at(-1).result.rebuilt, true)
+    assert.equal(rebuilds.at(-1).result.rows, items.length)
+    const repaired = openDb(mergedPath, { readonly: true })
+    try {
+      const applied = load('src/main/indexing/merged-page/mergedIndexSourceRuntime.ts').readMergedIndexAppliedSources({
+        schemaVersion:config.MERGED_INDEX_SCHEMA_VERSION, ...sqlite,
+        normalizePathForCacheCompare:load('src/main/path/cachePath.ts').normalizePathForCacheCompare,
+        mergedIndexSourcesKey:mergedReceipt.mergedIndexSourcesKey, mergedIndexRootsKey:mergedReceipt.mergedIndexRootsKey,
+      }, repaired)
+      assert.equal(sqlite.getSqliteMeta(repaired, 'sourcesKey'), mergedReceipt.mergedIndexSourcesKey(applied), 'Repair retained a noncanonical or pending checkpoint')
+      assert.equal(applied.length, 1)
+      assert.equal(applied[0].root, fontRoot)
+      assert.match(applied[0].indexSignature, /^root-v3\|/)
+      assert.match(applied[0].installSignature, /^install-content-v1\|/)
+      assert.equal(repaired.prepare('SELECT COUNT(*) AS n FROM entries').get().n, items.length)
+      fontIdentity.registerFileIdentitySql(repaired)
+      assert.deepEqual(repaired.prepare('SELECT hfm_file_font_id(root_path,relative_path,file_size,modified_at) AS id FROM entries').all().map(row=>row.id).sort(), items.map(item=>item.id).sort(), 'Repair changed the indexed population identities')
+    } finally { repaired.close() }
     await tick()
     assert(committedProjections().length > 0, 'Real native rebuild did not notify the renderer')
     assert(projectionEvents.every(event => ['projection', 'metrics'].includes(event.source) && event.upserts.length === 0 && event.deletes.length === 0))
@@ -123,19 +165,13 @@ async function main() {
       assert(!queue.hasPendingActivationInstallStatusSave() && !queue.hasInFlightActivationInstallStatusSave(), `${label}: save queue not drained`)
       assert(committedProjections().length > before, `${label}: persistence did not commit a real merged projection`)
       const rebuilds = nativeReceipts.filter(row => row.method === 'runRustMergedIndexRebuild').length
-      // Expire the external-check reuse window without wall-clock sleeps by
-      // checking the actual persistent key through the production owner.
+      // Check the actual persistent key independently of the external-check
+      // reuse window, without changing freshness state or sleeping.
       const snapshot = await query.openMergedIndexDb()
       try {
         const key = JSON.parse(snapshot.prepare("SELECT value FROM meta WHERE key='sourcesKey'").get().value)
         assert(key.length && key.every(source => source.installSignature.startsWith('install-content-v1|')))
-        const signature = load('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({
-          dataPath: host.dataPath, exists: host.exists, openStableSqliteDb, openRootIndexDb: rootStorage.openRootIndexDb,
-          closeSqliteDb: db => db.close(), getSqliteMeta: load('src/main/db/sqliteHelpers.ts').getSqliteMeta,
-          setSqliteMeta: load('src/main/db/sqliteHelpers.ts').setSqliteMeta, sqliteTableExists: load('src/main/db/sqliteHelpers.ts').sqliteTableExists,
-          appendStartupLog() {}, schemaVersion: config.MERGED_INDEX_SCHEMA_VERSION, staleFirstPageEnabled: true,
-        })
-        for (const source of key) assert.equal(source.installSignature, await signature.installStatusContentSignature(source.installDbPath), `${label}: saved source signature lagged its committed projection`)
+        for (const source of key) assert.equal(source.installSignature, await mergedReceipt.installStatusContentSignature(source.installDbPath), `${label}: saved source signature lagged its committed projection`)
       } finally { snapshot.close() }
       await status.saveInstalledTotalSummaryForRoots([fontRoot], 999)
       await query.checkMergedIndexExternalChanges(`batch-coherency:${label}`)

@@ -254,6 +254,23 @@ function isIdentityInputRecognitionLiteral(node) {
     && ts.isIdentifier(declaration.name) && declaration.name.text === 'verifiedIdentityRead'
 }
 
+// This exact allowlist only classifies an existing command's typed domain
+// failure. It neither emits argv nor authorizes an unrecognized command.
+function isPreviewFailureRecognitionLiteral(node) {
+  if (!ts.isStringLiteral(node)) return false
+  const array = node.parent
+  if (!ts.isArrayLiteralExpression(array) || array.elements.length !== 2
+    || !array.elements.every((entry, index) => ts.isStringLiteral(entry)
+      && entry.text === ['--preview-render-image', '--preview-render-owned-stage'][index])) return false
+  const property = array.parent
+  if (!ts.isPropertyAccessExpression(property) || property.expression !== array || property.name.text !== 'includes') return false
+  const call = property.parent
+  if (!ts.isCallExpression(call) || call.expression !== property || call.arguments.length !== 1) return false
+  const argument = call.arguments[0]
+  return ts.isElementAccessExpression(argument) && ts.isIdentifier(argument.expression) && argument.expression.text === 'args'
+    && ts.isNumericLiteral(argument.argumentExpression) && argument.argumentExpression.text === '0'
+}
+
 function collectRustFunctionStrings(functions, name, seen = new Set(), route = name) {
   if (seen.has(name)) return []
   seen.add(name)
@@ -288,7 +305,7 @@ function collectRustFunctionStrings(functions, name, seen = new Set(), route = n
       const selector = ['runRustCoreScheduledCommand','runRustCoreScheduledCommandDirect'].includes(name) && (
         ['--preview-render-image','--preview-render-owned-stage','--list-font-files'].includes(node.text) && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
         node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf' ||
-        name === 'runRustCoreScheduledCommandDirect' && (isListingOutputRecognitionLiteral(node) || isListingRootRecognitionLiteral(node) || isIdentityInputRecognitionLiteral(node))
+        name === 'runRustCoreScheduledCommandDirect' && (isListingOutputRecognitionLiteral(node) || isListingRootRecognitionLiteral(node) || isIdentityInputRecognitionLiteral(node) || isPreviewFailureRecognitionLiteral(node))
       )
       if (!selector) strings.push(node.text)
     }
@@ -331,7 +348,7 @@ function testRustStructuralContract() {
   const direct = functions.get('runRustCoreScheduledCommandDirect'), directSource = direct.node.getText(direct.file)
   const admission = "    const inputIndex = args.indexOf('--input')"
   assert(directSource.split(admission).length === 2, 'Emitted-CLI mutation anchor drifted')
-  for (const [method, emitted] of [['runRustFontIndexListWorker', '--output='], ['runRustSharedMetadataOverlayRead', '--output'], ['runRustSharedMetadataOverlayRead', '--list-font-files'], ['runRustFontParseBatch', '--root'], ['runRustFontIndexListWorker', '--input'], ['runRustFontParseBatch', '--transfer']]) {
+  for (const [method, emitted] of [['runRustFontIndexListWorker', '--output='], ['runRustSharedMetadataOverlayRead', '--output'], ['runRustSharedMetadataOverlayRead', '--list-font-files'], ['runRustFontParseBatch', '--root'], ['runRustFontIndexListWorker', '--input'], ['runRustFontParseBatch', '--transfer'], ['runRustFontIndexListWorker', '--preview-render-image'], ['runRustFontIndexListWorker', '--preview-render-owned-stage']]) {
     const source = directSource.replace(admission, `    args.push('${emitted}')\n${admission}`)
     const file = ts.createSourceFile('emitted-cli-mutant.ts', source, ts.ScriptTarget.Latest, true)
     const altered = new Map(functions); altered.set('runRustCoreScheduledCommandDirect', { node: file.statements[0], file })
@@ -368,6 +385,22 @@ function testRustStructuralContract() {
       assertExactSet('Mutated identity selector', flags, fixture.rustCommands.find(value => value.method === method).flags)
     } catch { rejected = true }
     assert(rejected, 'Mutating or unrecognized identity CLI expression was hidden as a selector')
+  }
+  const previewFailureSelector = "['--preview-render-image', '--preview-render-owned-stage'].includes(args[0])"
+  assert(directSource.split(previewFailureSelector).length === 2, 'Preview failure selector mutation anchor drifted')
+  for (const replacement of [
+    "['--preview-render-image', '--preview-render-owned-stage'].includes(args[1])",
+    "args.push('--preview-render-image', '--preview-render-owned-stage')",
+    "['--preview-render-image', '--preview-render-owned-stage', '--unexpected-preview-command'].includes(args[0])",
+  ]) {
+    const file = ts.createSourceFile('preview-failure-selector-mutant.ts', directSource.replace(previewFailureSelector, replacement), ts.ScriptTarget.Latest, true)
+    const altered = new Map(functions); altered.set('runRustCoreScheduledCommandDirect', { node: file.statements[0], file })
+    let rejected = false
+    try {
+      const flags = collectRustFunctionStrings(altered, 'runRustFontIndexListWorker').filter(value => value.startsWith('--'))
+      assertExactSet('Mutated preview failure selector', flags, fixture.rustCommands.find(value => value.method === 'runRustFontIndexListWorker').flags)
+    } catch { rejected = true }
+    assert(rejected, 'Mutating or expanded preview failure CLI expression was hidden as a selector')
   }
   console.log(`[diagnostics:orchestration-contracts] Rust facade locked (${fixture.rustFacadeMethods.length} methods, ${fixture.rustCommands.length} command routes)`)
 }

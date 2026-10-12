@@ -20,9 +20,12 @@ async function main() {
    if(timeoutMutant && file.endsWith('rustCoreWorkerTransportRuntime.ts')) {
      // Mutate only the dedicated healthy-root timeout probe. Earlier listing
      // close/lease cases also time out and must not poison later admission.
-     const before=source
-     source=source.replace('getStartupPathRootState }', 'getStartupPathRootState, markStartupPathRootUnavailable }').replace("          logOperation({ stage: 'transport-result'", "          if (error.reason === 'timeout' && args[0] === '--test-root-timeout-health') for (const root of rootGenerations.keys()) markStartupPathRootUnavailable(root,error)\n          logOperation({ stage: 'transport-result'")
-     assert.notEqual(source,before,'timeout mutant not applied')
+     const importAnchor="import { getStartupPathRootState, assertStartupPathRootGuardCurrent } from '../path/startupPathAvailabilityRuntime'"
+     const catchAnchor="          logOperation({ stage: 'transport-result'"
+     assert.equal(source.split(importAnchor).length,2,'timeout mutant import anchor must match exactly once')
+     assert.equal(source.split(catchAnchor).length,2,'timeout mutant catch anchor must match exactly once')
+     source=source.replace(importAnchor,importAnchor.replace(' }',', markStartupPathRootUnavailable }'))
+       .replace(catchAnchor,"          if (error.reason === 'timeout' && args[0] === '--test-root-timeout-health') for (const root of rootGenerations.keys()) markStartupPathRootUnavailable(root,error)\n"+catchAnchor)
    }
    return crlf ? source.replace(/\r?\n/g,'\r\n') : source
  }

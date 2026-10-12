@@ -25,7 +25,7 @@ function redactDiagnostic(value, roots = []) {
 }
 
 function failureDiagnostics(host, state, error, roots) {
-  const relevant = /^(?:local merged index (?:background validation|root signature|rebuilt)|merged index worker readiness|rust merged index (?:rebuild|page query)|root index (?:read failed|latest pointer resolve skipped|rust directory)|shared snapshot disposal failed)/
+  const relevant = /^(?:local merged index (?:background validation|root signature|rebuilt)|merged index worker readiness|merged (?:background validation|metadata poll|root projection)|rust merged index (?:rebuild|sync|page query)|root index (?:read failed|latest pointer resolve skipped|rust directory)|shared snapshot disposal failed)/
   const location = String(error?.stack || '').match(/check-watcher-noop-freshness\.cjs:(\d+):(\d+)/)
   return { phase: state.phase || 'fixture-setup', ownedSqliteSnapshots: state.ownedSqliteSnapshots || 0,
     assertionLocation: location ? { file: 'check-watcher-noop-freshness.cjs', line: Number(location[1]), column: Number(location[2]) } : undefined,
@@ -178,7 +178,14 @@ function observeProduction(load, state) {
   const syncModule = load('src/main/indexing/merged-page/mergedIndexSyncRuntime.ts')
   const createSync = syncModule.createMergedIndexSyncRuntime
   syncModule.createMergedIndexSyncRuntime = (...args) => {
-    assert(!state.sync, 'Unexpected duplicate merged sync owner')
+    if (args[3]?.background === true) {
+      assert(state.sync, 'Background projection preceded the foreground owner')
+      assert.equal(args[0], state.syncContext, 'Background projection escaped the shared mutation context')
+      state.backgroundSyncOwners = (state.backgroundSyncOwners || 0) + 1
+      return createSync(...args)
+    }
+    assert(!state.sync, 'Unexpected duplicate foreground merged sync owner')
+    state.syncContext = args[0]
     state.sync = createSync(...args)
     return state.sync
   }
@@ -421,12 +428,13 @@ async function main() {
     }
     const summarize = stage => ({ ...stage, directories: stage.directories.size })
     async function signature() { return state.context.rootIndexContentSignature(dbPath, fontRoot) }
-    async function validate(label, expectedRebuilds, expectedTotal) {
+    async function validate(label, expectedRootSnapshots, expectedTotal) {
       state.phase = `validation:${label}`
       const ctx = state.context, key = ctx.mergedIndexRootsKey([fontRoot])
       await Promise.all([...ctx.mergedIndexValidateInFlight.values()])
-      // Make the next normal timer window due. Do not alter source signatures,
-      // readiness/cache keys, rows, query results, or validation/build decisions.
+      // Let the real 1.5-second external-check reuse window expire, then make
+      // the normal validation timer due. Never change source receipts or rows.
+      await new Promise(resolve => setTimeout(resolve, 1600))
       ctx.mergedIndexLastValidateAt.set(key, Date.now() - ctx.backgroundValidateIntervalMs - 1)
       const start = host.receipts.length, logStart = host.logs.length
       const request = { sidebarPage: 'library', activeFilter: { kind: 'all' }, installStatus: 'all', sortMode: 'nameAsc' }
@@ -434,13 +442,17 @@ async function main() {
       await Promise.all([...ctx.mergedIndexValidateInFlight.values()])
       await ctx.waitForMergedIndexMutations()
       const logs = host.logs.slice(logStart)
-      assert(logs.some(line => line.includes('background validation finished: reason=worker-ready-validation')), `${label}: next worker-ready validation did not finish`)
-      assert(!logs.some(line => /background validation skipped|signature fallback|rebuild fallback to node/.test(line)), `${label}: production validation degraded`)
+      assert(logs.some(line => line.includes(`merged background validation: caller=automatic, phase=complete, checked=1, synced=${expectedRootSnapshots}, deferred=0, failed=0`)), `${label}: next root-local worker-ready validation did not finish`)
+      assert(!logs.some(line => /background validation skipped|phase=partial|phase=deferred|signature fallback|rebuild fallback to node/.test(line)), `${label}: production validation degraded`)
+      assert(state.backgroundSyncOwners > 0, `${label}: automatic validation did not use the prepared root projection owner`)
       const page = await state.page.queryFontPageFromMergedIndexWorker(request, 1000, 0)
       assert(page, `${label}: actual native worker page unavailable`)
       assert.equal(page.total, expectedTotal, `${label}: rebuilt worker population is stale`)
       const receipts = host.receipts.slice(start)
-      assert.equal(receipts.filter(row => row.method === 'runRustMergedIndexRebuild').length, expectedRebuilds, `${label}: unexpected merged rebuild count`)
+      assert.equal(receipts.filter(row => row.method === 'runRustMergedIndexRebuild').length, 0, `${label}: routine usable-snapshot validation rebuilt unrelated roots`)
+      const snapshots = receipts.filter(row => row.method === 'runRustMergedIndexSync')
+      assert.equal(snapshots.length, expectedRootSnapshots, `${label}: unexpected native root-snapshot count`)
+      assert(snapshots.every(row => row.result.synced === true && row.result.fullSnapshot === true), `${label}: validation lacked an acknowledged full-root native snapshot`)
       assert(receipts.some(row => row.method === 'runRustMergedIndexPageQuery'), `${label}: native page receipt missing`)
       const merged = host.openDb(host.paths.mergedPath, { readonly: true })
       let source
@@ -695,8 +707,8 @@ async function main() {
       remainingDatabaseOwners: 0, remainingChildren: 0 })
     const report = { ok: true, platform: 'win32', scope: 'private local fixture, actual isolated native I/O; no NAS or renderer latency claim',
       directories: DIRECTORIES, initialFiles: FILES, stages, controls, inventoryProof,
-      validation: 'Actual worker-ready page + background validation + native rebuild receipts + persisted source signature',
-      schedulingControl: 'Only validation throttle age is made due; production freshness and build decisions are unchanged',
+      validation: 'Actual worker-ready page + root-local background validation + native root-snapshot receipts + persisted source signature',
+      schedulingControl: 'External-check reuse expires naturally; only validation throttle age is made due; source receipts and validation decisions are unchanged',
       snapshotOwnership: { casePrivateTemporaryDirectory: true, verifiedNativeSnapshots: state.ownedSqliteSnapshots },
       cleanup: host.closeProof() }
     const reportPath = arg('--report')

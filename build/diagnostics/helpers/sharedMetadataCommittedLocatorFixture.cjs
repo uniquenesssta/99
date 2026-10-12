@@ -10,15 +10,29 @@ const plain = value => JSON.parse(JSON.stringify(value))
 
 async function runCommittedLocatorCases({ rustClient, transforms = {} } = {}) {
   assert.equal(process.platform, 'win32', 'shared metadata acceptance runs only on Windows')
-  const load = loader({}, {}, transforms)
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-committed-locators-'))
   const roots = ['one', 'two'].map(name => path.join(dir, name))
   const normalize = value => path.resolve(value).replaceAll('\\', '/').toLowerCase()
+  const sourceRoot = path.resolve(__dirname, '../../..')
+  const load = loader({[path.join(sourceRoot,'src/main/path/startupPathAvailabilityRuntime.ts')]: {
+    assertStartupPathRootGuardCurrent() {},
+    ensureStartupPathRootAvailable: async root => roots.includes(root),
+    getStartupPathRootState: root => Object.freeze({rootId:normalize(root),state:'online',generation:1}),
+  }}, {}, transforms)
   const dbPathForRoot = load('src/main/indexing/shared-metadata/sharedMetadataPathsRuntime.ts').sharedMetadataDbPathForRoot
   const { initializeSharedMetadataDb } = load('src/main/indexing/shared-metadata/sharedMetadataDbRuntime.ts').createSharedMetadataDbRuntime({})
   const databases = new Map(), caches = new Map(), receipts = [], located = [], snapshots = [], reads = [], logs = []
   const merged = new DatabaseSync(':memory:')
-  merged.exec('CREATE TABLE entries(root_path TEXT, relative_path TEXT, source_id TEXT, tag_names_json TEXT, PRIMARY KEY(root_path,relative_path))')
+  merged.exec(`CREATE TABLE entries(root_path TEXT, relative_path TEXT, source_id TEXT, tag_names_json TEXT, PRIMARY KEY(root_path,relative_path));
+    CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+    CREATE TABLE sources(root_path TEXT PRIMARY KEY,index_db_path TEXT,install_db_path TEXT,index_signature TEXT,install_signature TEXT,shared_metadata_signature TEXT,synced_at TEXT);`)
+  const projection = load('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({dataPath:(...parts)=>path.join(dir,...parts)})
+  const sourceRevisions = new Map(roots.map(root=>[root,1])), resolvedSources = []
+  const currentSource = root => ({root,indexDbPath:dbPathForRoot(root),indexSignature:'root-v3|fixture',installSignature:'none',sharedMetadataSignature:`metadata-v2|${sourceRevisions.get(root)}`})
+  const getMeta = (_,key) => merged.prepare('SELECT value FROM meta WHERE key=?').get(key)?.value || ''
+  const setMeta = (_,key,value) => merged.prepare('INSERT OR REPLACE INTO meta VALUES(?,?)').run(key,value)
+  for(const root of roots){const source=currentSource(root);merged.prepare('INSERT INTO sources VALUES(?,?,NULL,?,?,?,?)').run(root,source.indexDbPath,source.indexSignature,source.installSignature,source.sharedMetadataSignature,'before')}
+  setMeta(null,'schemaVersion','7');setMeta(null,'sourcesKey',projection.mergedIndexSourcesKey(roots.map(currentSource)))
   let failRoot, unavailableRoot, failAfterCommit = false, catalogFailure = false, applyCalls = 0
   const oldFallback = process.env.HFM_NODE_STATE_FALLBACK
   const oldMigration = process.env.HFM_RUST_FULL_MIGRATION
@@ -61,7 +75,7 @@ async function runCommittedLocatorCases({ rustClient, transforms = {} } = {}) {
       writeMeta: (db,key,value) => {if(key==='writerHost'&&db===databases.get(failRoot))throw Error('controlled metadata failure');db.prepare('INSERT OR REPLACE INTO meta VALUES(?,?)').run(key,value)},
     })
     const sourceRuntime = {
-      mergedIndexSourcesForRoots: async()=>roots.map(root=>({root,indexDbPath:dbPathForRoot(root)})),
+      mergedIndexSourcesForRoots: async requested=>{resolvedSources.push([...requested]);assert(requested.length===1&&roots.includes(requested[0]),'committed projection resolved an unrelated source');return requested.map(currentSource)},
       relativePathsFromFontIndexPayload: (root,payload)=>payload.upserts.map(item=>path.relative(root,item.path).replaceAll('\\','/')),
       readMergedRowsForSource: async(source,relativePaths)=> {
         assert(relativePaths?.length, 'normal committed refresh must never read the whole source')
@@ -71,13 +85,14 @@ async function runCommittedLocatorCases({ rustClient, transforms = {} } = {}) {
     }
     const mergedAdapter = {prepare:sql=>merged.prepare(sql),transaction:fn=>()=>{merged.exec('BEGIN');try{fn();merged.exec('COMMIT')}catch(error){merged.exec('ROLLBACK');throw error}}}
     const mergedOwner = load('src/main/indexing/merged-page/mergedIndexSyncRuntime.ts').createMergedIndexSyncRuntime({
-      runMergedIndexMutation:async(_label,fn)=>fn({commit(){}}),normalizePathForCacheCompare:normalize,
-      appWatchedFolders:async()=>roots,mergedIndexSourcesKey:()=> 'fixture-stable-sources',getSqliteMeta:()=> 'fixture-stable-sources',
+      runMergedIndexMutation:async(_label,fn)=>fn({commit(){}}),normalizePathForCacheCompare:load('src/main/path/cachePath.ts').normalizePathForCacheCompare,
+      appWatchedFolders:async()=>roots,schemaVersion:7,mergedIndexSourcesKey:projection.mergedIndexSourcesKey,mergedIndexRootsKey:projection.mergedIndexRootsKey,getSqliteMeta:getMeta,
+      sqliteTableExists:(_,table)=>!!merged.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table),
       mergedIndexSourcesMatchRoots:()=>true,openMergedIndexDb:async()=>mergedAdapter,closeSqliteDb(){},
       rustCoreWorkerRuntime:{runRustMergedIndexSync:async()=>null},mergedIndexDbPath:()=>path.join(dir,'unused-merged.sqlite'),
       mergedIndexInsertStatement:()=>merged.prepare('INSERT OR REPLACE INTO entries VALUES(@root_path,@relative_path,@source_id,@tag_names_json)'),
       bindMergedIndexRow:(row,root)=>({root_path:root,relative_path:row.relative_path,source_id:row.font_id,tag_names_json:row.tag_names_json}),
-      writeMergedIndexSourceRow(){},setSqliteMeta(){},mergedIndexReadyProcessKeys:new Set(),appendStartupLog:message=>logs.push(message),
+      writeMergedIndexSourceRow(){throw Error('partial committed locator advanced a whole-root receipt')},setSqliteMeta:setMeta,mergedIndexReadyProcessKeys:new Set(),appendStartupLog:message=>logs.push(message),
     },sourceRuntime,{rebuildMergedIndexDb:async()=>{throw Error('unexpected whole-index rebuild')}})
     const sync = load('src/main/library/sharedMetadataMergedIndexSyncRuntime.ts').createSharedMetadataMergedIndexSyncRuntime({
       uniqueResolvedFolders:values=>[...new Set(values.map(value=>path.resolve(value)))],normalizePathForCacheCompare:normalize,appendLog:message=>logs.push(message),
@@ -85,7 +100,9 @@ async function runCommittedLocatorCases({ rustClient, transforms = {} } = {}) {
       syncMergedIndexForRootIncremental:mergedOwner.syncMergedIndexForRootIncremental,
       syncMergedIndexForRootSnapshot:async root=>snapshots.push(root),
     })
-    const capture = method => async(...args)=>{const result=await writer[method](...args);receipts.push(plain(result));return result}
+    // Model each durable writer receipt as a changed source generation. The
+    // locator and projection are real; this fixture does not measure signature I/O.
+    const capture = method => async(...args)=>{const result=await writer[method](...args);receipts.push(plain(result));for(const root of new Set((result.committedLocators||[]).map(locator=>locator.rootPath)))sourceRevisions.set(root,sourceRevisions.get(root)+1);return result}
     const mutation = load('src/main/library/sharedFontMetadataMutations.ts').createSharedFontMetadataMutations({
       ...sync,uniqueResolvedFolders:values=>values,appendLog:message=>logs.push(message),invalidateSharedFontRuntimeCaches(){},
       updateSharedFontMetadataEntries:capture('updateSharedFontMetadataEntries'),renameSharedTagInMetadataIndexes:capture('renameSharedTagInMetadataIndexes'),removeSharedTagFromMetadataIndexes:capture('removeSharedTagFromMetadataIndexes'),
@@ -100,7 +117,8 @@ async function runCommittedLocatorCases({ rustClient, transforms = {} } = {}) {
     assert.equal((await set(ui)).ok,true)
     assert.deepEqual(last().updatedIds,[ui.id]);assert.deepEqual(last().committedLocators,[{rootPath:roots[0],sourceFontId:existing.id}])
     assert.equal(snapshots.length,0,'one source row must not fall back to a root snapshot for a differing UI ID')
-    assertScope(start,[[roots[0],['a.ttf']]]);assert.deepEqual(located,[roots[0]])
+    assertScope(start,[[roots[0],['a.ttf']]]);assert.deepEqual(located,[roots[0]]);assert(resolvedSources.every(requested=>requested.length===1&&requested[0]===roots[0]))
+    assert.equal(merged.prepare('SELECT shared_metadata_signature FROM sources WHERE root_path=?').get(roots[0]).shared_metadata_signature,'metadata-v2|1','partial locator marked the whole root current')
     assert.equal(databases.get(roots[0]).prepare('SELECT COUNT(*) AS n FROM font_metadata').get().n,1499)
     assert.deepEqual(JSON.parse(merged.prepare('SELECT tag_names_json FROM entries WHERE root_path=? AND relative_path=?').get(roots[0],'a.ttf').tag_names_json).sort(),['added','base','concurrent'])
     const committed=databases.get(roots[0]).prepare('SELECT favorite,delete_protected FROM font_metadata WHERE font_id=?').get(existing.id)

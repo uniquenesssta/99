@@ -10,6 +10,9 @@ const { createHash, randomUUID } = require('node:crypto')
 const { fixture, font } = require('./check-preview-optional-cache.cjs')
 const png = require('./fixtures/preview-png.cjs')
 const lifetimePath = 'src/main/preview/runtime/previewRenderLifetimeRuntime.ts'
+// Discovery is imported from both the renderer and its request module using
+// different relative spellings. Mock the one module, not one import spelling.
+const helperPathModule = path.resolve(__dirname, '../../src/main/preview/native-renderer/directwrite/directWritePreviewHelperPathRuntime.ts')
 const installed = { ...font, systemInstalled: true, family: 'CONTROLLED_PRIVATE_FAMILY' }
 const gate = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -95,7 +98,7 @@ async function compatibleChildCases() {
     const failure = Object.assign(Error('controlled output admission failure'), { sharedIo: true, reason, closed: Promise.resolve() })
     const h = fixture({ mocks: {
       '../../path/sharedFileSystemRuntime': { sharedFileSystem: { writeFile: async () => {}, access: async () => { throw failure } } },
-      './directwrite/directWritePreviewHelperPathRuntime': { findDirectWritePreviewHelperPath: () => null },
+      [helperPathModule]: { findDirectWritePreviewHelperPath: () => null },
       './powershell/powerShellPreviewRendererRuntime': { renderWithPowerShellPreview: async () => { fallbacks++; return { ok: false } } },
     } })
     const renderer = h.load('src/main/preview/native-renderer/previewNativeRendererRuntime.ts').createPreviewNativeRenderer({ appendStartupLog() {}, execFileAsync: async () => { fallbacks++; throw Error('unexpected fallback') }, runRustPreviewRenderImage: async request => ({ ok: true, engine: 'rust-directwrite', outputPath: request.outputPath }) })
@@ -109,7 +112,7 @@ async function compatibleChildCases() {
       'node:perf_hooks': { performance: { now: () => now } },
       '../../path/sharedFileSystemRuntime': { sharedFileSystem: { writeFile: async () => {}, access: async () => {} }, currentSharedIoSignal: () => undefined, withSharedIoSignal: (_signal, run) => run(), withoutSharedIoSignal: run => run() },
       '../../rust-core/rustSharedIoCommandRuntime': { sharedIoResourceKeys: async () => [] },
-      './directwrite/directWritePreviewHelperPathRuntime': { findDirectWritePreviewHelperPath: () => 'controlled-helper' },
+      [helperPathModule]: { findDirectWritePreviewHelperPath: () => 'controlled-helper' },
       './directwrite/directWritePreviewRequestRuntime': { renderWithDirectWritePreviewHelper: async (_request, _input, exec) => { await exec('controlled-helper') } },
       './powershell/powerShellPreviewRendererRuntime': { renderWithPowerShellPreview: async (request, _input, exec) => { await exec('controlled-fallback'); return { ok: true, engine: 'powershell-gdi', outputPath: request.outputPath } } },
       '../../rust-core/nodeBridgeFallbackCompatibilityRuntime': { nodeBridgeFallbackCompatibilityAllowed: () => true, logNodeBridgeFallbackUsed() {} },
@@ -287,7 +290,7 @@ async function nativeMissingFamilyCase() {
         child.once('close', code => { job.closed = true; job.code = code; live.delete(child) })
         return child
       } },
-      './directwrite/directWritePreviewHelperPathRuntime': { findDirectWritePreviewHelperPath: () => null },
+      [helperPathModule]: { findDirectWritePreviewHelperPath: () => null },
     } })
     // Only this fixture's source/output files use real filesystem ports.
     Object.assign(h.filesystemPort.sharedFileSystem, fsp)

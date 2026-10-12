@@ -25,7 +25,7 @@ export function registerIpcHandlers(runtime: IpcHandlerRuntime): void {
       const rootGuard = await admit(channel, args);
       assertFontQueryActive();
       if (!closeSafe) assertApplicationOpen(ticket);
-      const result = await withStartupPathRootGuard(rootGuard, () => handler(event, ...args));
+      const result = await withStartupPathRootGuard(rootGuard, async () => handler(event, ...args));
       assertFontQueryActive();
       if (channel === 'fonts:query' || channel === 'fonts:queryPage') await admit(channel, args);
       assertFontQueryActive();
