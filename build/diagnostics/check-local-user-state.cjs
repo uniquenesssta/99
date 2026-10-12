@@ -453,7 +453,11 @@ async function tags() {
   db.close()
 }
 async function activation() {
-  const load=loader({[path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:{realpath:async p=>p,stat:async()=>({isFile:()=>true,size:8,mtimeMs:1,ctimeMs:1,dev:1,ino:1}),readFile:async()=>Buffer.from('0001000000000000','hex')}}})
+  const sharedIo=loader()('src/main/path/sharedFileSystemRuntime.ts')
+  const load=loader({[path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{
+    currentSharedIoSignal:sharedIo.currentSharedIoSignal,withSharedIoSignal:sharedIo.withSharedIoSignal,withoutSharedIoSignal:sharedIo.withoutSharedIoSignal,
+    sharedFileSystem:{realpath:async p=>p,stat:async()=>({isFile:()=>true,size:8,mtimeMs:1,ctimeMs:1,dev:1,ino:1}),readFile:async()=>Buffer.from('0001000000000000','hex')},
+  }})
   const f=font('a',{active:true,installStatusKnown:true,managedInstallPath:'C:\\temp\\a.ttf'})
   let updates={},readFails=false,permanent=false,reads=0,osWrites=0
   const deps={ensureWindows(){},loadTemporaryActiveFonts:async()=>({records:[]}),saveTemporaryActiveFonts:async()=>{osWrites++},removeFontResourceSessionBatch:async()=>{osWrites++;return{}},deleteFontRegistryValuesHKCUBatch:async()=>{osWrites++},scheduleBackgroundFontRefreshTail(){},appendStartupLog(){},normalizePathForCacheCompare:x=>x.toLowerCase(),clearInstalledFontsMemoryCache(){},getSystemInstalledFontsCached:async force=>{assert.equal(force,true);reads++;if(readFails)throw Error('registry unavailable');return permanent?[{source:'HKLM',path:'C:\\Windows\\Fonts\\a.ttf'}]:[]},isTemporaryActiveInstalledRecord:()=>false,compareFontInstalledWithList:(_font,records)=>({installed:records.length>0,by:records.length?'system':'none',matches:records}),scheduleActivationInstallStatusSave:rows=>{updates={...updates,...rows}}}
@@ -462,6 +466,8 @@ async function activation() {
   assert.equal(osWrites,0,'no-record branch removed permanent/system resource')
   const facade=load('src/main/library/fontQueryFacadeRuntime.ts').createFontQueryFacadeRuntime({readInstallStatusIndex:async()=>({results:updates}),appendLog(){}})
   assert.equal((await facade.hydrateInstallStatusForFonts([f]))[0].active,false)
+  const cancelled=new AbortController();cancelled.abort()
+  await assert.rejects(sharedIo.withSharedIoSignal(cancelled.signal,()=>facade.hydrateInstallStatusForFonts([f])),error=>error.reason==='query-superseded','Controlled filesystem lost the actual query signal scope')
   permanent=true;result=await batch.deactivateFontSessionsBatch([f]);assert.equal(result.ok,true);assert.equal(updates.a.by,'system');assert.equal(updates.a.installed,true)
   readFails=true;result=await batch.deactivateFontSessionsBatch([f]);assert.equal(result.ok,false,'read failure reported success');assert.equal(updates.a.by,'system','read failure erased installation')
   readFails=false;permanent=false

@@ -35,6 +35,27 @@ jobs:
           name: font-recovery-native-stage-log
           path: artifacts/native-owned-stage.log
           retention-days: 14
+      - name: Verify targeted retest regression composition
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          $failed = 0
+          foreach ($script in @('check-local-user-state.cjs', 'check-orchestration-contracts.cjs', 'check-query-read-cancellation.cjs', 'check-preview-directory-absence.cjs', 'check-watcher-noop-freshness.cjs')) {
+            & node "build/diagnostics/$script" *>> artifacts/targeted-retest.log
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          Get-Content -LiteralPath artifacts/targeted-retest.log -Encoding utf8
+          if ($failed -gt 0) { exit 1 }
+      - name: Retain targeted regression log before complete gates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-recovery-targeted-retest-log
+          path: artifacts/targeted-retest.log
+          retention-days: 14
       - name: Verify complete existing Windows diagnostics
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         shell: pwsh

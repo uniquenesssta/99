@@ -419,7 +419,7 @@ function loadTypeScriptModule(rel, localRequire = require, sourceOverride) {
       if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {}, isSharedPreviewReadScope: () => false, currentSharedIoSignal: () => undefined, currentSharedIoPriority: () => undefined }
       if (target === 'src/main/path/startupPathAvailabilityRuntime') return { getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }
       const core = 'src/main/rust-core/'
-      if (target === core + 'nativeOwnedPreviewStageRuntime' || target === core + 'ownedPreviewStageRuntime' || target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/path/sharedIoAccessRuntime', 'src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/ioDeadlineRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
+      if (target === core + 'nativeOwnedPreviewStageRuntime' || target === core + 'ownedPreviewStageRuntime' || target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/path/sharedIoAccessRuntime', 'src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedIoCancellationRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/ioDeadlineRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
         return loadTypeScriptModule(target + '.ts', localRequire)
       }
       return localRequire(target.startsWith(core) ? './' + target.slice(core.length) : id)
@@ -450,6 +450,17 @@ function testPreviewValidatorLoader() {
   }
   assert(delegated === 0, 'Pure preview validator delegated a dependency to the broader harness')
   console.log('[diagnostics:orchestration-contracts] production PNG validator loader and dependency boundary locked')
+}
+
+function testReadCancellationLoader() {
+  const cancellation = loadTypeScriptModule('src/main/path/sharedIoCancellationRuntime.ts')
+  const error = Object.assign(new Error('fixture read cancelled'), { name: 'AbortError', closed: Promise.resolve() })
+  assert(cancellation.isSharedIoCancellationError(error), 'Production read cancellation helper was not loaded')
+  assert(!cancellation.isSharedIoCancellationError(new Error('ordinary failure')), 'Ordinary failure became cancellation')
+  let caught
+  try { cancellation.rethrowSharedIoCancellation(error) } catch (value) { caught = value }
+  assert(caught === error && caught.closed === error.closed, 'Loaded cancellation helper lost error or physical-close ownership')
+  console.log('[diagnostics:orchestration-contracts] production read cancellation loader and terminal error identity locked')
 }
 
 function createRustBehaviorHarness(mode) {
@@ -643,6 +654,7 @@ async function main() {
   testRustStructuralContract()
   testRustTypeContract()
   testPreviewValidatorLoader()
+  testReadCancellationLoader()
   await testRustFailureBoundary()
   testAppRootViewContract()
   testPackageRegistration()

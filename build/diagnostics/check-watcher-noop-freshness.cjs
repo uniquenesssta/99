@@ -4,7 +4,7 @@
 // Windows integration regression: real files, isolated native directory receipts,
 // SQLite snapshots/writes and the selected production worker-ready validation.
 // This is bounded-work evidence on a private local fixture, not a NAS latency or
-// Electron/UI benchmark. No font bytes, source names, host paths or logs are saved.
+// Electron/UI benchmark. No font bytes, source names, host paths or raw logs are saved.
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -14,6 +14,25 @@ const { createHost, productionHostGlobals } = require('./lib/production-projecti
 const plain = value => JSON.parse(JSON.stringify(value))
 const arg = (name, fallback) => { const at = process.argv.indexOf(name); return at < 0 ? fallback : process.argv[at + 1] }
 const FILES = 169, DIRECTORIES = 169, METADATA_REQUESTS = 22
+
+function redactDiagnostic(value, roots = []) {
+  let text = String(value)
+  for (const [root, label] of roots.filter(([root]) => typeof root === 'string' && root).sort((a, b) => b[0].length - a[0].length)) {
+    for (const spelling of new Set([root, root.replaceAll('\\', '/')])) text = text.split(spelling).join(label)
+  }
+  return text.replace(/[A-Za-z]:[\\/][^\r\n,"'<>]*/g, '<redacted-path>')
+    .replace(/\\\\[^\r\n,"'<>]+/g, '<redacted-path>').slice(0, 800)
+}
+
+function failureDiagnostics(host, state, error, roots) {
+  const relevant = /^(?:local merged index (?:background validation|root signature|rebuilt)|merged index worker readiness|rust merged index (?:rebuild|page query)|root index (?:read failed|latest pointer resolve skipped|rust directory)|shared snapshot disposal failed)/
+  return { phase: state.phase || 'fixture-setup', ownedSqliteSnapshots: state.ownedSqliteSnapshots || 0,
+    nativeReceipts: (host?.receipts || []).map(row => row.method).slice(-12),
+    // Exact selected failure messages, with case/source/system paths removed.
+    // Never emit the complete host log, SQL payloads, rows or child stdout.
+    events: (host?.logs || error?.diagnosticLogs || []).filter(line => relevant.test(line)).slice(-12)
+      .map(line => redactDiagnostic(line, roots)) }
+}
 
 // Fresh VM only for a selected owner or a fault control. Its imports are the
 // already selected production host modules, never alternate filesystem/storage.
@@ -58,6 +77,13 @@ function observeProduction(load, state) {
       if (['readFile', 'fontContentIdentity'].includes(request.operation) && /\.ttf$/i.test(request.path)) stage.fontReads++
     }
     const output = await execute(...args)
+    if (request.operation === 'sqliteSnapshot' && output.result.ok) {
+      assert.equal(typeof output.snapshotPath, 'string', 'Native SQLite snapshot path is missing')
+      const relative = path.relative(state.nativeTempDirectory, output.snapshotPath)
+      assert(relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative),
+        'Native SQLite snapshot escaped the case-owned temporary directory')
+      state.ownedSqliteSnapshots = (state.ownedSqliteSnapshots || 0) + 1
+    }
     if (stage && ['directoryMetadata', 'directoryMetadataBatch'].includes(request.operation)) {
       assert.equal(output.result.ok, true, 'Actual native enumeration failed')
       const rows = request.operation === 'directoryMetadataBatch'
@@ -163,9 +189,19 @@ async function main() {
   fs.mkdirSync(fontRoot)
   const dirs = [fontRoot, ...Array.from({ length: DIRECTORIES - 1 }, (_, index) => path.join(fontRoot, `child-${String(index).padStart(3, '0')}`))]
   for (const dir of dirs.slice(1)) fs.mkdirSync(dir)
-  const state = {}, stages = [], controls = []
+  const nativeTempDirectory = path.join(directory, 'native-temp')
+  const savedTemp = Object.fromEntries(['TEMP', 'TMP'].map(key => [key, process.env[key]]))
+  const redactions = [[directory, '<fixture>'], [sourceRoot, '<source-root>'], [os.tmpdir(), '<system-temp>'],
+    [process.env.USERPROFILE, '<user-profile>'], [process.env.WINDIR, '<windows>']]
+  const state = { nativeTempDirectory, ownedSqliteSnapshots: 0, phase: 'fixture-setup' }, stages = [], controls = []
   let host, failure
   try {
+    fs.mkdirSync(nativeTempDirectory)
+    // The transport allocates snapshots with node:os.tmpdir(), not Electron's
+    // app.getPath('temp'). Keep real allocations inside the host's existing
+    // SQLite ownership boundary; never relax that host guard or copy snapshots.
+    Object.assign(process.env, { TEMP: nativeTempDirectory, TMP: nativeTempDirectory })
+    assert.equal(path.resolve(os.tmpdir()), path.resolve(nativeTempDirectory), 'Native temporary directory ownership was not configured')
     host = await createHost({ sourceRoot, workerPath, directory, fixtureDirectory: directory, roots: [fontRoot], isolateRoots: true,
       onLoaderReady: load => observeProduction(load, state) })
     assert.equal(host.observationSetupErrors, 0, 'Observation setup must not fail silently')
@@ -290,6 +326,7 @@ async function main() {
     const change = type => [{ folder: fontRoot, fileName: '.', eventType: type, receivedAt: Date.now(), origin: 'controlled-full-root' }]
     function startStage(label) {
       host.observer.reset()
+      state.phase = label
       return state.stage = { label, operations: {}, directories: new Set(), batchSizes: [], nativeFileEvidence: 0,
         freshRows: 0, fontStats: 0, fontReads: 0, initializers: 0, manifestWrites: 0, nativeApplies: [] }
     }
@@ -302,6 +339,7 @@ async function main() {
     const summarize = stage => ({ ...stage, directories: stage.directories.size })
     async function signature() { return state.context.rootIndexContentSignature(dbPath, fontRoot) }
     async function validate(label, expectedRebuilds, expectedTotal) {
+      state.phase = `validation:${label}`
       const ctx = state.context, key = ctx.mergedIndexRootsKey([fontRoot])
       await Promise.all([...ctx.mergedIndexValidateInFlight.values()])
       // Make the next normal timer window due. Do not alter source signatures,
@@ -330,7 +368,12 @@ async function main() {
     }
     // First native query owns initial build; subsequent checks specifically take
     // the already-usable worker-ready branch, rather than an explicit rebuild.
-    assert(await state.page.queryFontPageFromMergedIndexWorker({ sidebarPage: 'library', activeFilter: { kind: 'all' } }, 1000, 0))
+    state.phase = 'initial-root-signature'
+    assert.match(await signature(), /^root-v3\|/, 'Initial root signature must come from an owned real SQLite snapshot')
+    assert(state.ownedSqliteSnapshots > 0, 'Initial signature bypassed the real native SQLite snapshot')
+    state.phase = 'initial-worker-page'
+    assert(await state.page.queryFontPageFromMergedIndexWorker({ sidebarPage: 'library', activeFilter: { kind: 'all' } }, 1000, 0),
+      'Initial production worker page did not become ready')
     await Promise.all([...state.context.mergedIndexValidateInFlight.values()])
     await state.context.waitForMergedIndexMutations()
     assert(host.receipts.some(row => row.method === 'runRustMergedIndexRebuild'), 'Fixture never established an actual native merged index')
@@ -556,15 +599,27 @@ async function main() {
       directories: DIRECTORIES, initialFiles: FILES, stages, controls,
       validation: 'Actual worker-ready page + background validation + native rebuild receipts + persisted source signature',
       schedulingControl: 'Only validation throttle age is made due; production freshness and build decisions are unchanged',
+      snapshotOwnership: { casePrivateTemporaryDirectory: true, verifiedNativeSnapshots: state.ownedSqliteSnapshots },
       cleanup: host.closeProof() }
     const reportPath = arg('--report')
     if (reportPath) { fs.mkdirSync(path.dirname(path.resolve(reportPath)), { recursive: true }); fs.writeFileSync(reportPath, JSON.stringify(report, null, 2)) }
     console.log(`[diagnostics:watcher-noop-freshness] ${JSON.stringify(report)}`)
-  } catch (error) { failure = error; throw error }
+  } catch (error) {
+    failure = error
+    error.watcherDiagnostics = failureDiagnostics(host, state, error, redactions)
+    throw error
+  }
   finally {
     state.stage = undefined
-    try { await host?.close() } catch (error) { if (!failure) throw error }
-    fs.rmSync(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 })
+    try {
+      try { await host?.close() } catch (error) { if (!failure) throw error }
+    } finally {
+      for (const key of ['TEMP', 'TMP']) {
+        if (savedTemp[key] === undefined) delete process.env[key]
+        else process.env[key] = savedTemp[key]
+      }
+      fs.rmSync(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 })
+    }
   }
 }
 let completed = false
@@ -573,8 +628,8 @@ main().then(() => { completed = true }).catch(error => {
   completed = true
   // Native failures can contain private paths/logs. Publish only a bounded,
   // redacted diagnostic message; fixtures are always removed in finally.
-  const text = String(error?.message || error).replace(/[A-Za-z]:[\\/][^\s\"'<>]*/g, '<fixture-path>')
-    .replace(/\\\\[^\s\"'<>]+/g, '<fixture-path>').slice(0, 1000)
+  const text = redactDiagnostic(error?.message || error)
   console.error(`[diagnostics:watcher-noop-freshness] ${error?.name || 'Error'}: ${text}`)
+  if (error?.watcherDiagnostics) console.error(`[diagnostics:watcher-noop-freshness] context=${JSON.stringify(error.watcherDiagnostics)}`)
   process.exitCode = 1
 })
