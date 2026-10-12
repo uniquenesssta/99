@@ -764,7 +764,7 @@ async function refreshCompletionRegressions() {
  }
  await cases()
  await cases(value=>value.replace(/\n/g,'\r\n'))
- const anchor='message: summary.missingCount > 0'
+ const anchor='message: (summary.missingCount || 0) > 0'
  assert.equal(source.split(anchor).length,2,'Partial completion mutation anchor must be unique')
  await assert.rejects(()=>cases(value=>value.replace(anchor,'message: false')),/Partial completion must disclose/)
  console.log('[diagnostics:full-refresh-acceptance] full/incremental complete/partial persisted-summary messages, LF/CRLF and misleading-completion mutant passed')

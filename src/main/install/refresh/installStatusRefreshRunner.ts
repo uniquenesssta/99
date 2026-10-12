@@ -276,7 +276,7 @@ export function createInstallStatusRefreshRunner(
 
     progress({
       stage: 'done',
-      message: summary.missingCount > 0
+      message: (summary.missingCount || 0) > 0
         ? `已安装状态${forceFullRefresh ? '全量' : '增量'}刷新结束（部分未确认）：字体库内已安装 ${summary.installedCount} 个，未安装 ${summary.notInstalledCount} 个，未确认 ${summary.missingCount} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`
         : forceFullRefresh
           ? `已安装状态全量刷新完成：字体库内已安装 ${summary.installedCount} 个，未安装 ${summary.notInstalledCount} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`
