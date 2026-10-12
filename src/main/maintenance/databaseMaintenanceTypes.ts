@@ -1,3 +1,4 @@
+import type { MaintenanceDeferral } from './optionalMaintenanceAdmissionRuntime'
 import type { ApplicationDatabaseLabel } from '../db/sqliteRuntime'
 import type { TaskMaintenanceReport } from '../tasks/backgroundTasks'
 import type { SharedIndexSnapshotAutoMaintenanceReport } from './sharedIndexSnapshotAutoMaintenanceRuntime'
@@ -35,6 +36,8 @@ export type DatabaseRestoreReport = {
 }
 
 export type PreviewMaintenanceReport = {
+  complete?: boolean
+  deferred?: MaintenanceDeferral[]
   checkedRows: number
   staleRows: number
   removedFiles: number
@@ -44,6 +47,7 @@ export type PreviewMaintenanceReport = {
 
 export type DatabaseMaintenanceReport = {
   ok: boolean
+  complete?: boolean
   startedAt: string
   finishedAt: string
   health: DatabaseHealthItem[]
@@ -61,6 +65,7 @@ export type DatabaseFileSpec = {
 }
 
 export type DatabaseMaintenanceRuntimeOptions = {
+  isForegroundBusy?: () => boolean
   appName: string
   maintenanceSqliteSchemaVersion: number
   databaseBackupRetentionCount: number
@@ -81,7 +86,7 @@ export type DatabaseMaintenanceRuntimeOptions = {
   openPreviewDb: () => Promise<any>
   previewSqlitePath: () => string
   previewSqliteSchemaVersion: number
-  collectPreviewMaintenanceDirs: () => Promise<Array<{ dirPath: string; referenceDbPath: string }>>
+  collectPreviewMaintenanceDirs: () => Promise<Array<{ dirPath: string; referenceDbPath: string; rootPath?: string }>>
   normalizePathForCacheCompare: (value: string) => string
   runTaskMaintenance: () => Promise<TaskMaintenanceReport>
   runSharedIndexSnapshotAutoMaintenance?: () => Promise<SharedIndexSnapshotAutoMaintenanceReport>

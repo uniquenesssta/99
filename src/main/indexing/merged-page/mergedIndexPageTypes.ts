@@ -37,6 +37,7 @@ export type RustMergedIndexPageQueryRuntimeLike = {
     | null
   >;
   runRustMergedIndexRebuild: (request: {
+    requireAuthoritativeSources?: boolean;
     mergedIndexDbPath: string;
     schemaVersion: number;
     sourcesKey: string;
@@ -69,6 +70,10 @@ export type RustMergedIndexPageQueryRuntimeLike = {
       installSignature: string;
       sharedMetadataSignature?: string;
     };
+    preparedRows?: Record<string, unknown>[];
+    preserveSourceCheckpoint?: boolean;
+    expectedSourcesKey?: string;
+    assertCurrent?: () => void;
     relativePaths?: string[];
     fullSnapshot?: boolean;
     reason?: string;
@@ -149,6 +154,7 @@ export type CreateMergedIndexPageRuntimeOptions = {
   applySharedMetadataToMergedRows: (
     rootPath: string,
     rows: MergedIndexPageRow[],
+    requireAuthoritative?: boolean,
   ) => Promise<MergedIndexPageRow[]>;
   sharedMetadataSignatureForRoot: (rootPath: string) => Promise<string>;
   delayToEventLoop: () => Promise<void>;

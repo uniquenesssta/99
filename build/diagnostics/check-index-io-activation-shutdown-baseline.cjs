@@ -127,7 +127,7 @@ async function observeWatcherRecovery(dir) {
       sharedFileSystem: fsp, currentSharedIoSignal: () => undefined,
       executeSharedFile: async () => never,
     },
-    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: {
+    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { assertStartupPathRootGuardCurrent() {},
       ensureStartupPathRootAvailable: async () => true,
       markStartupPathRootUnavailable() {},
     },
@@ -168,7 +168,7 @@ async function observeTimeoutOffline() {
   let rootState = { state: 'online', generation: 1 }
   const rootPath = '\\\\nas\\share\\fonts'
   const mocks = {
-    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: {
+    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { assertStartupPathRootGuardCurrent() {},
       getStartupPathRootState: () => ({ rootId: rootPath, ...rootState }),
       markStartupPathRootUnavailable: () => { rootState = { state: 'offline', generation: rootState.generation + 1 } },
     },

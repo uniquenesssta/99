@@ -39,19 +39,10 @@ fn clean_tag_names(input: Vec<String>) -> Vec<String> {
     tags
 }
 
-fn parse_tag_names(value: Option<String>) -> Vec<String> {
-    let Some(text) = value else {
-        return Vec::new();
-    };
-    let Ok(Value::Array(items)) = serde_json::from_str::<Value>(&text) else {
-        return Vec::new();
-    };
-    clean_tag_names(
-        items
-            .into_iter()
-            .filter_map(|item| item.as_str().map(|text| text.to_string()))
-            .collect(),
-    )
+fn parse_tag_names(value: Option<String>) -> Result<Vec<String>, String> {
+    let text = value.ok_or_else(|| "shared metadata tags are null".to_string())?;
+    let tags: Vec<String> = serde_json::from_str(&text).map_err(|_| "shared metadata tags are malformed".to_string())?;
+    Ok(clean_tag_names(tags))
 }
 
 fn normalize_relative_path(value: &str) -> String {
@@ -63,48 +54,36 @@ fn normalize_path_key(value: &str) -> String {
 }
 
 impl SharedMetadataOverlay {
-    pub fn load_for_root(root_path: &str) -> Self {
+    pub fn load_for_root(root_path: &str, expected_signature: Option<&str>) -> Result<Self, String> {
         let db_path = shared_metadata_db_path(root_path);
-        if !db_path.exists() {
-            return Self::default();
+        match std::fs::metadata(&db_path) {
+            Ok(_) => {},
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if expected_signature.is_none() || expected_signature == Some("metadata:none") {
+                    return Ok(Self::default());
+                }
+                return Err("expected shared metadata disappeared".to_string());
+            },
+            Err(error) => return Err(error.to_string()),
         }
-        let Ok(conn) = Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else {
-            return Self::default();
-        };
-        let table_exists = conn
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'font_metadata' LIMIT 1",
-                [],
-                |_| Ok(()),
-            )
-            .optional()
-            .ok()
-            .flatten()
-            .is_some();
-        if !table_exists {
-            return Self::default();
-        }
-
-        let Ok(mut stmt) = conn.prepare("SELECT font_id, relative_path, path_key, tag_names_json, favorite, delete_protected FROM font_metadata") else {
-            return Self::default();
-        };
-        let Ok(rows) = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, Option<String>>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<i64>>(4)?,
-                row.get::<_, Option<i64>>(5)?,
-            ))
-        }) else {
-            return Self::default();
-        };
+        let conn = Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| error.to_string())?;
+        let table_exists = conn.query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='font_metadata' LIMIT 1", [], |_| Ok(())
+        ).optional().map_err(|error| error.to_string())?.is_some();
+        if !table_exists { return Err("shared metadata schema is unavailable".to_string()); }
+        let mut stmt = conn.prepare("SELECT font_id, relative_path, path_key, tag_names_json, favorite, delete_protected FROM font_metadata")
+            .map_err(|error| error.to_string())?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?, row.get::<_, Option<i64>>(4)?, row.get::<_, Option<i64>>(5)?))
+        }).map_err(|error| error.to_string())?;
 
         let mut overlay = Self::default();
-        for row in rows.filter_map(Result::ok) {
+        for row in rows {
+            let row = row.map_err(|error| error.to_string())?;
             let state = SharedMetadataState {
-                tag_names: parse_tag_names(row.3),
+                tag_names: parse_tag_names(row.3)?,
                 favorite: row.4.unwrap_or(0) != 0,
                 delete_protected: row.5.unwrap_or(0) != 0,
             };
@@ -118,7 +97,7 @@ impl SharedMetadataOverlay {
                 overlay.by_path_key.insert(path_key, state);
             }
         }
-        overlay
+        Ok(overlay)
     }
 
     pub fn is_empty(&self) -> bool {

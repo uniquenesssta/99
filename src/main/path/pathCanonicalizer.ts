@@ -57,6 +57,14 @@ function parseMappedDriveTable(stdout: string): Map<string, string> {
 let mappedDriveFailureUntil = 0
 let mappedDriveTableInFlight: Promise<Map<string, string> | null> | null = null
 
+// A status read must not refresh the table or start the native discovery worker.
+// Missing/expired identity is unknown, never a proof that a drive is local.
+export function mappedDriveTableSnapshot(): Map<string, string> | null {
+  if (process.platform !== 'win32') return new Map()
+  if (!mappedDriveTableCache || mappedDriveTableCache.expiresAt <= Date.now()) return null
+  return new Map(mappedDriveTableCache.drives)
+}
+
 // The availability owner must never perform the synchronous legacy mapping lookup.
 export async function mappedDriveTableAsync(): Promise<Map<string, string> | null> {
   if (process.platform !== 'win32') return new Map()

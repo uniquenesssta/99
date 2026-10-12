@@ -26,7 +26,7 @@ async function main() {
    }
    return crlf ? source.replace(/\r?\n/g,'\r\n') : source
  }
- const mockDaemon = { createRustCoreDaemonRuntime: () => ({ tryRun:async(_,args)=>{daemonCalls.push(args);return{stdout:JSON.stringify(payload),stderr:''}}, stop(){}, stopImmediately(){}, status(){return{}}, pollStatus(){} }), isRustCoreDaemonSubmittedError:e=>!!e?.daemonSubmitted }
+ const mockDaemon = { createRustCoreDaemonRuntime: () => ({ hasSubmittedWork:()=>false, tryRun:async(_,args)=>{daemonCalls.push(args);return{stdout:JSON.stringify(payload),stderr:''}}, stop(){}, stopImmediately(){}, status(){return{}}, pollStatus(){} }), isRustCoreDaemonSubmittedError:e=>!!e?.daemonSubmitted }
  const spawn = (file,args,options) => {
    submissions.push({file,args:plain(args),options})
    let runArgs = args
@@ -90,6 +90,54 @@ async function main() {
      assert.deepEqual(priorities,['foreground'],'global priority did not reach the real transport/shared queue')
    }finally{priorityPool.run=originalRun}
    cases.push('actual global queue context -> transport -> shared process priority propagation')
+
+   // Exercise the real admission owner with explicitly held close receipts. The
+   // child adapter makes the logical-cancel/physical-close gap deterministic.
+   {
+     const { EventEmitter } = require('node:events'), { PassThrough } = require('node:stream')
+     const owned = [], fakeLoad = loader({ 'node:child_process': { spawn: () => {
+       const child = new EventEmitter()
+       child.pid = 50000 + owned.length
+       child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough()
+       child.stdio = [child.stdin, child.stdout, child.stderr, new PassThrough()]
+       child.kill = () => true
+       owned.push(child)
+       return child
+     } } }, { AbortController, setInterval, clearInterval })
+     const pool = fakeLoad('src/main/path/sharedIoProcessRuntime.ts').createSharedIoProcessRuntime(() => {})
+     const request = { file: process.execPath, args: ['--test'], roots: ['root:maintenance-admission'], write: true, timeoutMs: 5000, queueTimeoutMs: 5000 }
+     const background = pool.run({ ...request, priority: 'background' })
+     assert.equal(pool.hasForegroundWork(), false, 'background work was mistaken for foreground activity')
+     const queuedAbort = new AbortController()
+     const pending = pool.run({ ...request, priority: 'foreground', signal: queuedAbort.signal }).catch(e => e)
+     for (let sample = 0; sample < 100; sample += 1) assert.equal(pool.hasForegroundWork(), true)
+     assert.equal(owned.length, 1, 'pure foreground observer launched a child')
+     queuedAbort.abort()
+     const queuedFailure = await pending
+     assert.equal(queuedFailure.reason, 'cancelled'); assert.equal(queuedFailure.outcome, 'not-started')
+     assert.equal(queuedFailure.phase, 'queued'); assert.equal(queuedFailure.requestId, 2)
+     assert.equal(queuedFailure.blockedBy, 1); assert.equal(queuedFailure.blocker, 'resource-conflict')
+     assert.equal(pool.hasForegroundWork(), false, 'cancelled queued request kept foreground activity')
+     owned[0].emit('close', 0, null); await background
+     const activeAbort = new AbortController()
+     const active = pool.run({ ...request, priority: 'foreground', signal: activeAbort.signal }).catch(e => e)
+     assert.equal(pool.hasForegroundWork(), true)
+     activeAbort.abort()
+     const activeFailure = await active
+     assert.equal(activeFailure.outcome, 'unknown')
+     assert.equal(activeFailure.phase, 'executing'); assert.equal(activeFailure.requestId, 3)
+     assert.equal(activeFailure.blockedBy, undefined, 'executing I/O failure invented an admission blocker')
+     let closeObserved = false; activeFailure.closed.then(() => { closeObserved = true })
+     await Promise.resolve()
+     assert.equal(closeObserved, false)
+     assert.equal(pool.hasForegroundWork(), true, 'logical cancellation hid a physically owned foreground child')
+     owned[1].emit('close', null, 'SIGTERM'); await activeFailure.closed; await pool.whenIdle()
+     assert.equal(pool.hasForegroundWork(), false)
+     assert.equal(pool.status().active, 0); assert.equal(pool.status().queued, 0)
+     assert.equal(pool.status().metrics.started, pool.status().metrics.closed)
+     pool.stop()
+   }
+   cases.push('pure foreground admission snapshot includes queued and logically cancelled physical owners')
 
    const seven=[
      ['runRustInstallStatusRead', [{rootPath:'\\\\nas\\a',dbPath:'\\\\nas\\a\\install.sqlite',items:[]}], {ok:true,results:{},missingIds:[]}],

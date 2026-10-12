@@ -70,7 +70,7 @@ export async function refreshDeveloperStatusDetailsRuntime(options: {
   if (shouldStop()) return
   try {
     if (typeof options.hfm.getSharedMetadataDiagnostics === 'function') {
-      const value = await options.hfm.getSharedMetadataDiagnostics({ includeRepairDryRun: true })
+      const value = await options.hfm.getSharedMetadataDiagnostics({ automatic: true, includeRepairDryRun: true })
       if (shouldStop()) return
       options.setSharedMetadataDiagnostics(value)
     }

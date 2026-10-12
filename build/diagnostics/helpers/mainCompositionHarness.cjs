@@ -15,7 +15,7 @@ const bootstrap = path.join(root, 'src/main/bootstrap')
 function createHarness(overrides = new Map(), sourceRoot = root) {
   const root = path.resolve(sourceRoot), entry = path.join(root, 'src/main/index.ts'), bootstrap = path.join(root, 'src/main/bootstrap')
   const calls = [], constructors = new Map(), modules = new Map()
-  const state = { calls, constructors, compositions: new Map(), timers: [], payload: null, saveSucceeds: true, failOperations: new Set() }
+  const state = { calls, constructors, compositions: new Map(), timers: [], payload: null, saveSucceeds: true, failOperations: new Set(), closingListeners: [], resumedListeners: [] }
   const clean = value => {
     if (typeof value === 'function') return value.fixtureOperation || '<function>'
     if (value === undefined) return '<undefined>'
@@ -59,13 +59,15 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
     })
     if (name === 'createMainBackgroundRuntime') specific.schedulerRuntime = { activeCount: () => 2 }
     if (name === 'createScanOrchestrator') Object.assign(specific, {
-      isActive: () => true, activeJobId: () => 'scan-job',
+      isActive: () => state.scanActive !== false, activeJobId: () => 'scan-job',
       scanFolders: operation(`${name}.scanFolders`, async () => ({ folders: ['/fonts/a', '/fonts/b'], fonts: [] })),
       scanFoldersManaged: operation(`${name}.scanFoldersManaged`, async () => ({ folders: ['/fonts/a', '/fonts/b'], fonts: [] })),
       cancelActiveFontScan: operation(`${name}.cancelActiveFontScan`, () => true),
     })
     if (name === 'createManualFolderRefreshRuntime') specific.refreshWatchedFolder = operation(`${name}.refreshWatchedFolder`, async () => ({ ok: true }))
-    if (name === 'createInstallStatusRefreshStarterRuntime') specific.activeInstallStatusRefreshJob = () => 'refresh-job'
+    if (name === 'createInstallStatusRefreshStarterRuntime') specific.activeInstallStatusRefreshJob = () => state.installRefreshActive === false ? null : 'refresh-job'
+    if (name === 'createSharedAvailabilityProbeScheduler') specific.stop = operation(`${name}.stop`, () => state.availabilityCloseGate || Promise.resolve())
+    if (name === 'createRustCoreWorkerRuntime') specific.hasRustCoreInteractiveWork = operation(`${name}.hasRustCoreInteractiveWork`, () => !!state.rustInteractive)
     if (name === 'createStorageProfileRuntime') specific.storageProfileForPath = file => ({ type: 'ssd', path: file })
     if (name === 'createLibraryRuntime') Object.assign(specific, {
       loadLibrary: operation('createLibraryRuntime.loadLibrary', async () => state.librarySnapshot || { fonts: {} }),
@@ -79,7 +81,11 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
     if (name === 'createMainWindowAndFontRuntime') Object.assign(specific, {
       windowsFontsDir: () => '/windows/fonts', currentUserFontsDir: () => '/user/fonts',
     })
-    if (name === 'createMainPerformanceRuntime') specific.withGlobalIo = (_label, fn) => fn()
+    if (name === 'createMainPerformanceRuntime') Object.assign(specific, {
+      withGlobalIo: (_label, fn) => fn(),
+      isRendererUserActive: operation(`${name}.isRendererUserActive`, () => !!state.rendererUserActive),
+      globalIoSnapshot: operation(`${name}.globalIoSnapshot`, () => ({ lanes: { preview: { active: state.previewActive || 0, pending: state.previewPending || 0 } } })),
+    })
     return new Proxy(specific, { get(target, key) {
       if (typeof key !== 'string' || key === 'then') return undefined
       if (!(key in target)) target[key] = operation(`${name}.${key}`)
@@ -93,6 +99,12 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
       if (typeof key !== 'string') return undefined
       if (key in target) return target[key]
       if (key === 'registerMainProcessRuntime') return options => { assert.equal(state.payload, null, 'application registered twice'); state.payload = options }
+      if (key === 'onApplicationClosing' || key === 'onApplicationResumed') return listener => {
+        record(key, [listener])
+        const listeners = key === 'onApplicationClosing' ? state.closingListeners : state.resumedListeners
+        listeners.push(listener)
+        return () => { const index = listeners.indexOf(listener); if (index >= 0) listeners.splice(index, 1) }
+      }
       if (key === 'normalizeWatchedFontFolders') return folders => folders
       if (key === 'normalizePathForCacheCompare') return value => value
       if (key === 'openFontUninstallReceipts') return () => ({ hydrate: items => items.map(item => ({ ...item, pendingUninstall: state.pendingUninstall })) })

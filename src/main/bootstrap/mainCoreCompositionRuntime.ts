@@ -309,6 +309,7 @@ export function createMainCoreCompositionRuntime(options: MainCoreCompositionOpt
       runRustPhysicalFolderTree: rustCoreWorkerRuntime.runRustPhysicalFolderTree,
       runRustWatcherPreflight: rustCoreWorkerRuntime.runRustWatcherPreflight,
       diagnoseRustCoreWorker: rustCoreWorkerRuntime.diagnoseRustCoreWorker,
+      hasRustCoreInteractiveWork: rustCoreWorkerRuntime.hasRustCoreInteractiveWork,
       stopRustCoreDaemon: rustCoreWorkerRuntime.stopRustCoreDaemon
     },
 

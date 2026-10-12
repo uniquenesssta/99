@@ -1,3 +1,4 @@
+import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { prepareSharedMetadataInWorker } from './sharedMetadataPreflightRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import type { FontItem } from '../../../shared/types'
@@ -252,10 +253,15 @@ export function createSharedMetadataOverlayRuntime(deps: SharedMetadataOverlayRu
     return nextRows
   }
 
-  async function applySharedMetadataToMergedRows(rootPath: string, rows: MergedIndexPageRow[]): Promise<MergedIndexPageRow[]> {
+  async function applySharedMetadataToMergedRows(rootPath: string, rows: MergedIndexPageRow[], requireAuthoritative = false): Promise<MergedIndexPageRow[]> {
     const dbPath = sharedMetadataDbPathForRoot(rootPath)
     if (!rows.length) return rows
-    if (!deps.runRustSharedMetadataOverlayRead && !(await deps.exists(dbPath).catch(() => false))) return rows
+    if (!deps.runRustSharedMetadataOverlayRead) {
+      if (requireAuthoritative) {
+        try { await fsp.stat(dbPath) }
+        catch (error) { if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return rows; throw error }
+      } else if (!(await deps.exists(dbPath).catch(() => false))) return rows
+    }
 
     if (deps.runRustSharedMetadataOverlayRead) {
       await prepareSharedMetadataInWorker(deps.runRustSharedMetadataOverlayRead, rootPath, deps.cacheEntryRuntimePath)
@@ -263,6 +269,7 @@ export function createSharedMetadataOverlayRuntime(deps: SharedMetadataOverlayRu
 
     const rustRows = await applySharedMetadataToMergedRowsWithRust(rootPath, dbPath, rows)
     if (rustRows) return rustRows
+    if (requireAuthoritative && !nodeStateFallbackCompatibilityAllowed()) throw new Error('merged-metadata-overlay-unavailable')
     if (!nodeStateFallbackCompatibilityAllowed()) {
       logNodeStateFallbackDisabled({
         appendStartupLog: deps.appendStartupLog,

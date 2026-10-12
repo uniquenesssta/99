@@ -2,6 +2,7 @@ import { withOperationWork, measureOperationPhase } from '../logging/operationTr
 import { withSharedIoPriority } from '../path/sharedFileSystemRuntime'
 import { detailedStartupLogsEnabled } from '../logging/startupLogPolicy'
 import { createSharedActionAdmission } from '../ipc/sharedActionAdmissionRuntime'
+import { assertStartupPathRootGuardCurrent, withStartupPathRootGuard } from '../path/startupPathAvailabilityRuntime'
 import { assertApplicationOpen, applicationWorkEpoch } from '../app/shutdownCoordinatorRuntime'
 import { dirname, join, parse } from 'node:path'
 import type { FontItem, FontQueryPageResult, FontQueryRequest, FontTagUpdateResult, FontTagBatchItem, LibraryState } from '../../shared/types'
@@ -179,28 +180,35 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
           for (const { old, next, combined, verified } of prepared) {
             try {
               assertApplicationOpen(ticket)
-              await admit('fonts:setSharedTagsBatch', [[{ item: old }, { item: next }], roots])
-              const target = byPath.get(key(next.path))
-              const previous = { ...next, tagNames: target?.tagNames || next.tagNames, sourceId: target?.sourceId || next.sourceId }
-              // Confirm every destination addition before removing any source binding.
-              for (const tag of tags(old)) {
+              const rootGuard = await admit('fonts:setSharedTagsBatch', [[{ item: old }, { item: next }], roots])
+              await withStartupPathRootGuard(rootGuard, async () => {
+                const target = byPath.get(key(next.path))
+                const previous = { ...next, tagNames: target?.tagNames || next.tagNames, sourceId: target?.sourceId || next.sourceId }
+                // Confirm every destination addition before removing any source binding.
+                for (const tag of tags(old)) {
+                  assertApplicationOpen(ticket)
+                  assertStartupPathRootGuardCurrent()
+                  check(await runtime.setSharedFontTagsBatchInIndex([{ item: Object.assign({}, previous, { __sharedTagWriteMode: 'add', __sharedTagWriteTag: tag }), tagNames: combined }], roots))
+                }
+                const refreshed = await readAll({ tagBindingsOnly: true, sidebarPage: request.sidebarPage, selectedWatchedFolders: folders })
+                const liveSource = refreshed.find(font => key(font.path) === key(old.path))
+                const liveTarget = refreshed.find(font => key(font.path) === key(next.path))
+                if (!liveSource || liveSource.tagBindingReadOnly || liveTarget?.tagBindingReadOnly || signature(tags(liveSource)) !== signature(tags(old)) || !tags(old).every(tag => liveTarget && tags(liveTarget).includes(tag))) throw new Error('共享关联在恢复期间变化，目标未全部确认，原关联已保留，请重试。')
+                const identity = await readFontContentIdentity(next.path)
+                if (identity.sha256 !== next.recoveryContentHash || paths.compare(identity.path) !== compare(next.path)) throw new Error('共享目标已被替换，原关联已保留。')
+                if (await fontFileAvailability(old.path, roots) !== 'missing') throw new Error('原字体已恢复或暂不可访问，未解除共享关联。')
+                if (verified) {
+                  assertStartupPathRootGuardCurrent()
+                  check(await runtime.setLocalFontTagsBatch([], { recoveryMoves: [{ from: key(old.path), to: key(next.path) }], recoveryFiles: [{ path: next.path, physicalPath: identity.path, sha256: next.recoveryContentHash! }] }))
+                }
                 assertApplicationOpen(ticket)
-                check(await runtime.setSharedFontTagsBatchInIndex([{ item: Object.assign({}, previous, { __sharedTagWriteMode: 'add', __sharedTagWriteTag: tag }), tagNames: combined }], roots))
-              }
-              const refreshed = await readAll({ tagBindingsOnly: true, sidebarPage: request.sidebarPage, selectedWatchedFolders: folders })
-              const liveSource = refreshed.find(font => key(font.path) === key(old.path))
-              const liveTarget = refreshed.find(font => key(font.path) === key(next.path))
-              if (!liveSource || liveSource.tagBindingReadOnly || liveTarget?.tagBindingReadOnly || signature(tags(liveSource)) !== signature(tags(old)) || !tags(old).every(tag => liveTarget && tags(liveTarget).includes(tag))) throw new Error('共享关联在恢复期间变化，目标未全部确认，原关联已保留，请重试。')
-              const identity = await readFontContentIdentity(next.path)
-              if (identity.sha256 !== next.recoveryContentHash || paths.compare(identity.path) !== compare(next.path)) throw new Error('共享目标已被替换，原关联已保留。')
-              if (await fontFileAvailability(old.path, roots) !== 'missing') throw new Error('原字体已恢复或暂不可访问，未解除共享关联。')
-              if (verified) check(await runtime.setLocalFontTagsBatch([], { recoveryMoves: [{ from: key(old.path), to: key(next.path) }], recoveryFiles: [{ path: next.path, physicalPath: identity.path, sha256: next.recoveryContentHash! }] }))
-              assertApplicationOpen(ticket)
-              for (const tag of tags(old)) {
-                assertApplicationOpen(ticket)
-                check(await runtime.setSharedFontTagsBatchInIndex([{ item: Object.assign({}, old, { __sharedTagWriteMode: 'remove', __sharedTagWriteTag: tag }), tagNames: tags(old).filter(name => name !== tag) }], roots))
-              }
-              completed(old, next)
+                for (const tag of tags(old)) {
+                  assertApplicationOpen(ticket)
+                  assertStartupPathRootGuardCurrent()
+                  check(await runtime.setSharedFontTagsBatchInIndex([{ item: Object.assign({}, old, { __sharedTagWriteMode: 'remove', __sharedTagWriteTag: tag }), tagNames: tags(old).filter(name => name !== tag) }], roots))
+                }
+                completed(old, next)
+              })
             } catch (error) { failures.push(`${old.fileName}：${String(error)}`) }
           }
         }
@@ -217,8 +225,8 @@ export function createTagFontRecoveryRuntime(runtime: IpcHandlerRuntime, pick: (
           try {
             assertApplicationOpen(ticket)
             report(`scan: root=${root}, reason=${preferred.includes(root) ? 'longest-owner' : preferred.length ? 'unmatched-after-preferred' : 'no-confirmed-owner'}, remaining=${missing.length}`)
-            await admit('folders:refreshWatched', [root, root])
-            const result = await runtime.refreshWatchedFolder(root, root, true)
+            const rootGuard = await admit('folders:refreshWatched', [root, root])
+            const result = await withStartupPathRootGuard(rootGuard, () => runtime.refreshWatchedFolder(root, root, true))
             report(`scan result: root=${root}, mode=${result.mode}, errors=${result.errors}, canceled=${!!result.cancelled}, files=${result.totalFiles}`)
             if (result.cancelled) { canceled = true; break }
             if (!result.ok || result.errors) failures.push(`${root}：${result.message}`)

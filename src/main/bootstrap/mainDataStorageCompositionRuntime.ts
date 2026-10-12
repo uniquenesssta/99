@@ -740,6 +740,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     openSharedMetadataDb: (...args: Parameters<typeof openSharedMetadataDb>) => Promise<unknown>;
     openPreviewDb: (...args: Parameters<typeof openPreviewDb>) => Promise<unknown>;
     openLibraryDb: (...args: Parameters<typeof openLibraryDb>) => Promise<unknown>;
+    openLibraryDbLocal: (...args: Parameters<typeof openLibraryDbBase>) => Promise<unknown>;
     openKvsDb: (...args: Parameters<typeof openKvsDb>) => Promise<unknown>;
     openEventsDb: (...args: Parameters<typeof openEventsDb>) => Promise<unknown>;
     openHashDb: (...args: Parameters<typeof openHashDb>) => Promise<unknown>;
@@ -767,6 +768,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     openSharedMetadataDb,
     openPreviewDb,
     openLibraryDb,
+    openLibraryDbLocal: openLibraryDbBase,
     openKvsDb,
     openEventsDb,
     openHashDb,

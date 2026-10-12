@@ -220,7 +220,10 @@
     "diagnostics:shared-watcher-reconciliation": "node build/diagnostics/check-shared-watcher-reconciliation.cjs",
     "diagnostics:font-view-membership": "node --experimental-sqlite build/diagnostics/check-font-view-membership.cjs",
     "diagnostics:shared-watch-status": "node build/diagnostics/check-shared-watch-status.cjs",
-    "diagnostics:font-parse-stability-capability": "node build/diagnostics/check-font-parse-stability-capability.cjs"
+    "diagnostics:font-parse-stability-capability": "node build/diagnostics/check-font-parse-stability-capability.cjs",
+    "diagnostics:shared-availability-probe-ownership": "node build/diagnostics/check-shared-availability-probe-ownership.cjs",
+    "diagnostics:optional-maintenance-admission": "node build/diagnostics/check-optional-maintenance-admission.cjs",
+    "diagnostics:preview-fallback-lifetime": "node build/diagnostics/check-preview-fallback-lifetime.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

@@ -141,8 +141,8 @@ async function composition(native = false) {
   execFile[require('node:util').promisify.custom] = (...args) => new Promise((resolve, reject) => execFile(...args, (error, stdout, stderr) => error ? reject(error) : resolve({ stdout, stderr })))
   const load = loader({ electron: { app: {} }, 'node:child_process': { ...cp, spawn, ...(native ? { execFile } : {}) },
     [abs('src/main/rust-core/rustCoreWorkerPathRuntime.ts')]: { resolveRustCoreWorkerPathWithDiagnostics: () => ({ path: process.execPath, candidates: [process.execPath] }) }, 'node:fs': { ...fs, promises: files },
-    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { getStartupPathRootState: () => ({ state: 'online', generation }) },
-    [abs('src/main/rust-core/rustCoreDaemonRuntime.ts')]: { createRustCoreDaemonRuntime: () => ({ tryRun: async () => { daemonCalls++; throw Error('shared preview entered daemon') }, stopImmediately() {}, status() {}, pollStatus() {} }), isRustCoreDaemonSubmittedError: () => false },
+    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: () => ({ state: 'online', generation }) },
+    [abs('src/main/rust-core/rustCoreDaemonRuntime.ts')]: { createRustCoreDaemonRuntime: () => ({ tryRun: async () => { daemonCalls++; throw Error('shared preview entered daemon') }, stopImmediately() {}, status() {}, pollStatus() {}, hasSubmittedWork: () => false }), isRustCoreDaemonSubmittedError: () => false },
   }, { setTimeout: (fn, ms) => { if (shortenDeadline && ms > 7000) { fireDeadline = fn; return setTimeout(fn, 10000) } return setTimeout(fn, ms) } })
   const routing = load('src/main/rust-core/rustSharedIoCommandRuntime.ts')
   routing.registerIsolatedRoot('Z:\\unverified-fonts'); routing.registerIsolatedRoot('Y:\\unverified-fonts')

@@ -417,9 +417,9 @@ function loadTypeScriptModule(rel, localRequire = require, sourceOverride) {
       if (target === 'src/main/app/shutdownCoordinatorRuntime') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/logging/startupLogPolicy' || target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {}, isSharedPreviewReadScope: () => false, currentSharedIoSignal: () => undefined, currentSharedIoPriority: () => undefined }
-      if (target === 'src/main/path/startupPathAvailabilityRuntime') return { getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }
+      if (target === 'src/main/path/startupPathAvailabilityRuntime') return { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }
       const core = 'src/main/rust-core/'
-      if (target === core + 'nativeOwnedPreviewStageRuntime' || target === core + 'ownedPreviewStageRuntime' || target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/performance/ioQueue', 'src/main/indexing/shared-metadata/sharedMetadataSnapshotFailureRuntime', 'src/main/path/sharedIoAccessRuntime', 'src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedIoCancellationRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/ioDeadlineRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
+      if (target === core + 'nativeOwnedPreviewStageRuntime' || target === core + 'ownedPreviewStageRuntime' || target === core + 'rustCoreWorkerTransportRuntime' || target.startsWith(core + 'clients/') || target === core + 'rustCoreDaemonWriteBoundaryRuntime' || target === core + 'rustSharedIoCommandRuntime' || ['src/main/preview/runtime/previewRenderLifetimeRuntime', 'src/shared/previewFailure', 'src/main/performance/ioQueue', 'src/main/indexing/shared-metadata/sharedMetadataSnapshotFailureRuntime', 'src/main/path/sharedIoAccessRuntime', 'src/main/path/sharedIoProcessRuntime', 'src/main/path/sharedIoCancellationRuntime', 'src/main/path/sharedPathProbeRuntime', 'src/main/path/ioDeadlineRuntime', 'src/main/path/pathCanonicalizer'].includes(target)) {
         return loadTypeScriptModule(target + '.ts', localRequire)
       }
       return localRequire(target.startsWith(core) ? './' + target.slice(core.length) : id)
@@ -526,6 +526,7 @@ function createRustBehaviorHarness(mode) {
             },
             pollStatus: () => undefined,
             status: () => ({ running: false }),
+            hasSubmittedWork: () => false,
             stop: () => undefined, stopImmediately: () => undefined,
           }),
           isRustCoreDaemonSubmittedError: (error) => Boolean(error?.daemonSubmitted),

@@ -122,6 +122,29 @@ jobs:
             artifacts/font-query-ipc/**/report.json
             artifacts/real-feedback/foreground-ipc-*/report.json
           retention-days: 14
+      - name: Verify offline-root isolation and one-budget preview fallback
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          $focusedExit = 0
+          foreach ($script in @('check-shared-availability-probe-ownership.cjs', 'check-optional-maintenance-admission.cjs', 'check-preview-fallback-lifetime.cjs', 'check-main-composition-runtime.cjs', 'check-rust-scheduler-cache-generation.cjs', 'check-shared-io-integration.cjs')) {
+            & node --experimental-sqlite "build/diagnostics/$script" *>> artifacts/offline-root-isolation.log
+            if ($LASTEXITCODE -ne 0) { $focusedExit = 1 }
+          }
+          & node --experimental-sqlite build/diagnostics/check-merged-index-mutation-serialization.cjs --native-worker build/native/hfm-core-worker.exe *>> artifacts/offline-root-isolation.log
+          if ($LASTEXITCODE -ne 0) { $focusedExit = 1 }
+          Get-Content -LiteralPath artifacts/offline-root-isolation.log -Encoding utf8
+          exit $focusedExit
+      - name: Retain offline-root isolation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-root-isolation
+          path: artifacts/offline-root-isolation.log
+          retention-days: 14
       - name: Verify complete existing Windows diagnostics
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         shell: pwsh
@@ -186,6 +209,12 @@ jobs:
       - name: Verify Rust identity contract vectors
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::path_utils::tests
+      - name: Verify prepared root projection transaction guards
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_index::sync::prepared_sync_tests
+      - name: Native strict full-rebuild overlay preservation
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml merged_strict_rebuild
       - name: Verify Unicode registry decoding
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml font_registry::'

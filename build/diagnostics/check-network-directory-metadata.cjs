@@ -17,7 +17,7 @@ const load = loader({
     sharedIoResourceKeys: async paths => paths[0].startsWith(networkRoot) ? ['network'] : [],
     sharedIoAvailabilityRoot: p => p.startsWith(networkRoot) ? networkRoot : '',
   },
-  [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: {
+  [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { assertStartupPathRootGuardCurrent() {},
     getStartupPathRootState: () => ({ state: 'online', generation }),
     markStartupPathRootUnavailable: () => { throw Error('ordinary failure must not mark root offline') },
   },

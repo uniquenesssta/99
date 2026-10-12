@@ -17,9 +17,75 @@ function reviewedBootstrapObservations() {
   // The default publication path is unchanged; its previously implicit true
   // is now explicitly forwarded beside the new source-only checkpoint path.
   calls[0][1] = [true]
+  // Reviewed lifecycle addition: a local configuration/probe owner starts only
+  // after cache initialization and is awaited beside the existing watcher.
+  assert(!expected.owners.some(([name]) => name === 'createSharedAvailabilityProbeScheduler'))
+  expected.owners.push(['createSharedAvailabilityProbeScheduler', 1]); expected.owners.sort()
+  assert.equal(expected.construction[0][0], 'createMigrationDiagnosticsRuntime.logStartupPolicy')
+  expected.construction.splice(1, 0, ['onApplicationClosing', ['<function>']], ['onApplicationResumed', ['<function>']])
+  const lifecycle = expected.flows.lifecycle.calls
+  const initialized = lifecycle.findIndex(call => call[0] === 'createCacheArchitectureRuntime.initializeCacheArchitectureV2')
+  assert.deepEqual(lifecycle[initialized][1], ['fixture'])
+  lifecycle[initialized][1] = []
+  lifecycle.splice(initialized + 1, 0, ['createSharedAvailabilityProbeScheduler.start', []])
+  const watcherClose = lifecycle.find(call => call[0] === 'createFolderWatcherRuntime.awaitFolderWatchersClosed')
+  assert.deepEqual(watcherClose[1], ['fixture']); watcherClose[1] = []
   return expected
 }
 const expectedObservations = reviewedBootstrapObservations()
+
+async function checkAvailabilityAndMaintenanceWiring(overrides = new Map()) {
+  const h = createHarness(overrides); h.load(entry)
+  const data = h.compositions.get('createMainDataCompositionRuntime')
+  const storage = h.compositions.get('createMainDataStorageCompositionRuntime')
+  const statusOpen = h.options('createSharedAvailabilityReader')
+  assert.equal(statusOpen, storage.openLibraryDbLocal, 'status reader reaches the migration-capable DB wrapper')
+  assert.equal(statusOpen.fixtureOperation, 'library.open')
+  h.failOperations.add('createLocalFontFavoritesRuntime.initialize')
+  h.reset(); await statusOpen()
+  assert.deepEqual(h.calls, [['library.open', []]], 'status DB accessor performs nonlocal migration work')
+  h.reset()
+  assert.deepEqual(h.clean(await h.options('createSharedAvailabilityProbeScheduler').readRoots()), ['/fonts'])
+  assert.deepEqual(h.calls, [['library.open', []]], 'probe configuration read canonicalizes or migrates configured roots')
+  h.scanActive = false; h.installRefreshActive = false
+  const maintenance = h.options('createApplicationDatabaseMaintenanceRuntime').isForegroundBusy
+  assert.equal(h.options('createSharedMetadataFrontendDiagnosticsRuntime').isForegroundBusy, maintenance)
+  assert.equal(maintenance(), false, 'idle composition prevents optional work')
+  for (const key of ['rendererUserActive', 'scanActive', 'installRefreshActive', 'previewActive', 'previewPending', 'rustInteractive']) {
+    h[key] = true; assert.equal(maintenance(), true, `maintenance misses ${key}`); h[key] = false
+  }
+  assert.equal(maintenance(), false)
+  h.reset(); h.resumedListeners.forEach(listener => listener())
+  assert(!h.calls.some(call => call[0] === 'createSharedAvailabilityProbeScheduler.start'), 'resume bypassed cache initialization')
+  await data.lifecycle.initializeCacheArchitecture()
+  assert(h.calls.some(call => call[0] === 'createSharedAvailabilityProbeScheduler.start'))
+  let close; h.availabilityCloseGate = new Promise(resolve => { close = resolve })
+  h.closingListeners.forEach(listener => listener())
+  let settled = false
+  const pending = h.payload.awaitFolderWatchersClosed().then(() => { settled = true })
+  try {
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(settled, false, 'shutdown stopped waiting before availability probe physical close')
+    h.resumedListeners.forEach(listener => listener())
+  } finally { close(); await pending }
+  assert.equal(settled, true)
+}
+
+async function checkAvailabilityAndMaintenanceMutations() {
+  const mutations = [
+    [compositionFile('Data'), 'createSharedAvailabilityReader(storage.openLibraryDbLocal)', 'createSharedAvailabilityReader(openLibraryDb)'],
+    [compositionFile('Data'), 'const db = await storage.openLibraryDbLocal() as', 'const db = await storage.openLibraryDb() as'],
+    [path.join(bootstrap, 'mainApplicationRuntime.ts'), 'await data.resources.awaitSharedAvailabilityProbesClosed();', 'void data.resources.awaitSharedAvailabilityProbesClosed();'],
+    [compositionFile('Operations'), '|| (preview?.active || 0) > 0 || (preview?.pending || 0) > 0', ''],
+    [compositionFile('Operations'), '|| rustCoreWorkerRuntime.hasRustCoreInteractiveWork()', ''],
+  ]
+  for (const [file, before, after] of mutations) {
+    const source = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+    assert.equal(source.split(before).length, 2, 'availability/maintenance mutation anchor drifted: ' + before)
+    await assert.rejects(() => checkAvailabilityAndMaintenanceWiring(new Map([[file, source.replace(before, after)]])), undefined, 'availability/maintenance mutation escaped: ' + before)
+  }
+  return mutations.length
+}
 
 async function checkCheckpointCacheWiring(overrides = new Map()) {
   const h = createHarness(overrides)
@@ -275,10 +341,11 @@ async function main() {
   await checkImportAndOwnership()
   await checkMetricsOwnerWiring()
   await checkCheckpointCacheWiring()
+  await checkAvailabilityAndMaintenanceWiring()
   await checkPreviewHandleOwnership()
   assert.deepEqual(await observeBootstrap(), expectedObservations, 'AT-4.1 composition behavior changed')
   const operations = checkOutputTypes()
-  const mutations = await checkRejectedMutations() + await checkMetricsOwnerMutations() + await checkCheckpointCacheMutations()
+  const mutations = await checkRejectedMutations() + await checkMetricsOwnerMutations() + await checkCheckpointCacheMutations() + await checkAvailabilityAndMaintenanceMutations()
   console.log(`[diagnostics:main-composition-runtime] passed: ${fixture.observations.registrations.length} registrations, ${Object.keys(fixture.observations.flows).length} baseline flows, import/DB ownership, ${operations} typed operations, ${mutations} rejected mutations`)
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

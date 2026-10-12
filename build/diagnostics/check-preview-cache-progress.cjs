@@ -10,7 +10,7 @@ async function storage() {
  const fs={mkdir:async p=>{calls.push(p);if(p==='/shared/images'&&gate)await gate.promise;if(fail&&p.startsWith('/shared'))throw Error('denied');}};
  const load=loader({
   '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs},
-  '../../path/startupPathAvailabilityRuntime':{getStartupPathRootState:rootState},
+  '../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},getStartupPathRootState:rootState},
   '../../app/shutdownCoordinatorRuntime':{applicationWorkEpoch:()=>epoch,isApplicationClosing:()=>closing},
   '../../path/fontPathPolicy':{findBestWatchedRootForFile:()=>'/watched'},
  });
@@ -71,7 +71,7 @@ async function queue(mode) {
 }
 async function availability() {
  let generation=1, probes=0, online=true;
- const load=loader({'../../path/startupPathAvailabilityRuntime':{getStartupPathRootState:()=>({rootId:'root',generation,state:online?'online':'offline'}),ensureStartupPathRootAvailable:async()=>{probes++;return online}}});
+ const load=loader({'../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},getStartupPathRootState:()=>({rootId:'root',generation,state:online?'online':'offline'}),ensureStartupPathRootAvailable:async()=>{probes++;return online}}});
  const owner=load('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts').createPreviewCacheRootAvailabilityRuntime();
  assert.equal(await owner.ensureRootPreviewCacheAvailable('/root'),true);
  assert.equal(await owner.ensureRootPreviewCacheAvailable('/root'),true);assert.equal(probes,1);
@@ -86,7 +86,7 @@ async function publication() {
   'node:fs':{promises:{readFile:async file=>{assert.equal(file,'/local/a.png');calls.push('read');return png}}},
   '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs},
   '../../rust-core/rustSharedIoCommandRuntime':{sharedIoResourceKeys:async()=>[]},
-  '../../path/startupPathAvailabilityRuntime':{getStartupPathRootState:()=>({generation:1,state:'online'})},
+  '../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},getStartupPathRootState:()=>({generation:1,state:'online'})},
   '../../app/shutdownCoordinatorRuntime':{applicationWorkEpoch:()=>1,isApplicationClosing:()=>false,onApplicationClosing(){}},
  },{setTimeout:f=>{timer=f;return 1}});
  const publish=load('src/main/preview/runtime/previewCachePublishRuntime.ts').createPreviewCachePublishRuntime({appendStartupLog:line=>logs.push(line),ensureSharedAvailable:async()=>{calls.push('prepare');return ready},previewCacheStorageToShared:s=>s,withIoDeadlineResult:async(_l,f)=>({ok:true,value:await f()}),writeSharedPreviewCacheMeta:async(_path,_row,bytes)=>{assert.equal(bytes,png);calls.push('meta')},validateSharedPreviewCacheMeta:async(_path,_row,bytes)=>{assert.equal(bytes,png);return {status:'ok'}},appendSharedPreviewCacheManifest:async()=>{calls.push('manifest')},writePreviewCacheIndex:async()=>{calls.push('index')}});
@@ -100,9 +100,9 @@ async function classification() {
  let mapping = new Map([['Z:', '\\\\nas\\share']]);
  const paths = ['Z:/fonts', '//nas/share/fonts', 'C:/fonts'];
  const load = loader({
-  '../path/pathCanonicalizer': {mappedDriveTableAsync:async()=>mapping,normalizeNativePathText:p=>p.replaceAll('/', '\\')},
+  '../path/pathCanonicalizer': {mappedDriveTableAsync:async()=>{throw Error('status reader started drive discovery')},mappedDriveTableSnapshot:()=>mapping,normalizeNativePathText:p=>p.replaceAll('/', '\\')},
   '../path/sharedIoProcessRuntime': {SharedIoProcessError:class extends Error{}},
-  './startupPathAvailabilityRuntime': {ensureStartupPathRootAvailable:async()=>true,getStartupPathRootState:p=>({rootId:p,state:'online',generation:1})},
+  './startupPathAvailabilityRuntime': {assertStartupPathRootGuardCurrent(){},ensureStartupPathRootAvailable:async()=>{throw Error('status reader started a root probe')},getStartupPathRootState:p=>({rootId:p,state:'online',generation:1})},
   '../library/runtime/sharedRootCatalogRuntime': {readSharedRootCatalog:()=>({roots:[],unattributedTags:[]}),sharedCatalogRootId:p=>p},
  },{process:{...process,platform:'win32',env:{SystemDrive:'C:'}}});
  const read=load('src/main/path/sharedAvailabilityRuntime.ts').createSharedAvailabilityReader(async()=>({prepare:sql=>({all:()=>sql.includes('FROM folders')?paths.map(path=>({path})):[]})}));

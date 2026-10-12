@@ -1,5 +1,5 @@
 import { dirname, win32 } from 'node:path'
-import { mappedDriveTableAsync, normalizeNativePathText } from '../path/pathCanonicalizer'
+import { mappedDriveTableAsync, mappedDriveTableSnapshot, normalizeNativePathText } from '../path/pathCanonicalizer'
 import { SharedIoProcessError } from '../path/sharedIoProcessRuntime'
 
 import type { SharedIoAccess, SharedIoAccessPath } from '../path/sharedIoAccessRuntime'
@@ -35,8 +35,34 @@ export function configuredSharedIoRoots(): string[] {
 
 export function sharedIoAvailabilityRoot(path: string): string | undefined {
   const normalized = win32.normalize(normalizeNativePathText(path))
-  const match = [...configuredRoots.keys()].filter(root => normalized.toLowerCase() === root || normalized.toLowerCase().startsWith(root + '\\')).sort((a,b) => b.length-a.length)[0]
-  return match || normalized.match(/^\\\\[^\\]+\\[^\\]+/)?.[0] || (/^[a-z]:\\/i.test(normalized) ? normalized.slice(0,3) : undefined)
+  const canonical = normalized.toLowerCase().replace(/\\+$/, '')
+  const match = [...configuredRoots].flatMap(([root, value]) => [root, value.physical].filter((prefix): prefix is string => !!prefix)
+    .filter(prefix => canonical === prefix || canonical.startsWith(prefix + '\\')).map(prefix => ({ root, length: prefix.length })))
+    .sort((a, b) => b.length - a.length)[0]
+  return match?.root || normalized.match(/^\\\\[^\\]+\\[^\\]+/)?.[0] || (/^[a-z]:\\/i.test(normalized) ? normalized.slice(0,3) : undefined)
+}
+
+// Read-only UI classification. Do not call the async identity owner from here:
+// even a status-only request must never start mapped-drive discovery.
+export function sharedIoResourceKeysSnapshot(paths: string[]): string[] | undefined {
+  const mapping = mappedDriveTableSnapshot()
+  const systemDrive = String(process.env.SystemDrive || '').toUpperCase()
+  const keys = new Set<string>()
+  for (const raw of paths.filter(Boolean)) {
+    let path = normalizeNativePathText(raw)
+    const drive = path.match(/^([a-z]:)(\\.*)?$/i)
+    if (drive && drive[1].toUpperCase() !== systemDrive && mapping === null) return undefined
+    const canonical = win32.normalize(path).toLowerCase()
+    const configured = [...configuredRoots].filter(([root]) => canonical === root || canonical.startsWith(root + '\\')).sort((a, b) => b[0].length - a[0].length)[0]
+    if (configured) { keys.add(configured[1].resource); continue }
+    if (drive) {
+      const remote = mapping?.get(drive[1].toUpperCase())
+      if (remote) path = remote + (drive[2] || '')
+    }
+    const share = win32.normalize(path).toLowerCase().match(/^\\\\[^\\]+\\[^\\]+/)
+    if (share) keys.add(share[0])
+  }
+  return [...keys].sort()
 }
 
 // Identity is lexical. Never stat/realpath a network path on the main thread.

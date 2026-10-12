@@ -14,7 +14,27 @@ use crate::json::escape_json;
 
 pub use types::{PreviewRenderCommandConfig, PreviewRenderRequest};
 
-pub fn render_preview_image(config: &PreviewRenderCommandConfig) -> Result<String, String> {
+#[derive(Debug)]
+pub enum PreviewRenderError {
+    Failure(String),
+    SystemFamilyUnavailable(String),
+}
+
+impl From<String> for PreviewRenderError {
+    fn from(message: String) -> Self { Self::Failure(message) }
+}
+
+impl From<&str> for PreviewRenderError {
+    fn from(message: &str) -> Self { Self::Failure(message.to_string()) }
+}
+
+impl std::fmt::Display for PreviewRenderError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self { Self::Failure(message) | Self::SystemFamilyUnavailable(message) => formatter.write_str(message) }
+    }
+}
+
+pub fn render_preview_image(config: &PreviewRenderCommandConfig) -> Result<String, PreviewRenderError> {
     let started_at = Instant::now();
     let input = fs::read_to_string(&config.input_path)
         .map_err(|error| format!("failed to read preview render input: {}", error))?;
@@ -77,11 +97,11 @@ fn validate_request(request: &PreviewRenderRequest) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn platform_render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, String> {
+fn platform_render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, PreviewRenderError> {
     windows::render_preview_image(request)
 }
 
 #[cfg(not(windows))]
-fn platform_render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, String> {
-    non_windows::render_preview_image(request)
+fn platform_render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, PreviewRenderError> {
+    non_windows::render_preview_image(request).map_err(PreviewRenderError::from)
 }

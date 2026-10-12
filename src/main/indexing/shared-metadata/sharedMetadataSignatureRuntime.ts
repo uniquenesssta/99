@@ -20,8 +20,9 @@ async function statPath(filePath: string): Promise<DbFileState> {
   try {
     const stat = await fsp.stat(filePath)
     return { size: stat.size, mtimeMs: Math.floor(stat.mtimeMs) }
-  } catch {
-    return { size: -1, mtimeMs: 0 }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return { size: -1, mtimeMs: 0 }
+    throw error
   }
 }
 
@@ -108,7 +109,11 @@ export function createSharedMetadataSignatureRuntime(deps: SharedMetadataSignatu
       signatureInFlight.set(dbPath, task)
       return task
     }
-    if (!(await deps.runtimeDeps.exists(dbPath).catch(() => false))) return 'metadata:none'
+    try { await fsp.stat(dbPath) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return 'metadata:none'
+      throw error
+    }
 
     const state = await sharedMetadataDbFileState(dbPath)
     const now = Date.now()

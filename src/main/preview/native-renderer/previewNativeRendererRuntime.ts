@@ -1,4 +1,7 @@
+import { awaitPhysicalIoClose } from '../../path/ioDeadlineRuntime'
 import { recordOperationWork } from '../../logging/operationTraceContext'
+import type { ChildProcess } from 'node:child_process'
+import { allowPreviewRenderFallback, currentPreviewRenderLifetime, PreviewRenderDomainError } from '../runtime/previewRenderLifetimeRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
@@ -18,6 +21,28 @@ import {
 let helperAvailabilityLogged = false
 
 export function createPreviewNativeRenderer(options: PreviewNativeRendererOptions) {
+  async function execPreviewFile(file: string, args?: readonly string[], execOptions?: any): Promise<{ stdout: string; stderr: string }> {
+    const lifetime = currentPreviewRenderLifetime()
+    lifetime?.assertCurrent()
+    const execution = options.execFileAsync(file, args, {
+      ...execOptions,
+      ...(lifetime ? { signal: lifetime.signal, timeout: lifetime.remainingMs() } : {}),
+    }) as Promise<{ stdout: string; stderr: string }> & { child?: ChildProcess }
+    const closed = execution.child ? new Promise<void>(resolve => execution.child!.once('close', () => resolve())) : undefined
+    try { return await execution }
+    catch (error) { await awaitPhysicalIoClose(error); throw error }
+    finally { await closed }
+  }
+  async function outputAvailable(outputPath: string): Promise<boolean> {
+    try {
+      await fsp.access(outputPath)
+      currentPreviewRenderLifetime()?.assertCurrent()
+      return true
+    } catch (error) {
+      await allowPreviewRenderFallback(error)
+      return false
+    }
+  }
   function activeEngineLabel(): 'rust-directwrite' | 'directwrite' | 'powershell-gdi' {
     if (options.runRustPreviewRenderImage) return 'rust-directwrite'
     return findDirectWritePreviewHelperPath() ? 'directwrite' : 'powershell-gdi'
@@ -39,6 +64,7 @@ export function createPreviewNativeRenderer(options: PreviewNativeRendererOption
   async function renderNativePreview(request: PreviewNativeRenderRequest, inputPath: string): Promise<PreviewNativeRenderResult> {
     // Validate before helper discovery, Rust invocation, or fallback selection.
     request = { ...request, ...validatePreviewInput(request, options.appendStartupLog) }
+    currentPreviewRenderLifetime()?.assertCurrent()
     // All file-based backends consume the exact same validated payload as Rust.
     await fsp.writeFile(inputPath, JSON.stringify(request, null, 2), 'utf-8')
     logHelperAvailabilityOnce()
@@ -48,9 +74,13 @@ export function createPreviewNativeRenderer(options: PreviewNativeRendererOption
         recordOperationWork({ renders: 1 })
         const result = await options.runRustPreviewRenderImage(request)
         if (request.foregroundBytes && result?.ok && result.transient && Buffer.isBuffer(result.bytes)) return result
-        if (result?.ok && !result.transient && result.outputPath && await fsp.access(result.outputPath).then(()=>true,()=>false)) return result
+        if (result?.ok && !result.transient && result.outputPath && await outputAvailable(result.outputPath)) return result
       } catch (error) {
+        // The native system selection is definitively exhausted. Let the
+        // dispatcher choose its source-file route, without another system backend.
+        if (error instanceof PreviewRenderDomainError) throw error
         rethrowSharedIoProcessError(error)
+        await allowPreviewRenderFallback(error)
         const message = error instanceof Error ? error.message : String(error)
         options.appendStartupLog(`preview rust renderer failed before fallback: ${message}`)
       }
@@ -76,17 +106,19 @@ export function createPreviewNativeRenderer(options: PreviewNativeRendererOption
     const helperPath = systemOnlyRequest ? null : findDirectWritePreviewHelperPath()
     if (helperPath) {
       try {
-        const result = await renderWithDirectWritePreviewHelper(request, inputPath, options.execFileAsync)
-        if (result.ok && result.outputPath && await fsp.access(result.outputPath).then(()=>true,()=>false)) return result
+        const result = await renderWithDirectWritePreviewHelper(request, inputPath, execPreviewFile)
+        if (result.ok && result.outputPath && await outputAvailable(result.outputPath)) return result
         options.appendStartupLog(`preview directwrite renderer returned empty result: ${result.message || 'unknown'}`)
       } catch (error) {
         rethrowSharedIoProcessError(error)
+        await allowPreviewRenderFallback(error)
         const message = error instanceof Error ? error.message : String(error)
         options.appendStartupLog(`preview directwrite renderer failed; fallback to powershell-gdi: ${message}`)
       }
     }
 
-    return await renderWithPowerShellPreview(request, inputPath, options.execFileAsync)
+    currentPreviewRenderLifetime()?.assertCurrent()
+    return await renderWithPowerShellPreview(request, inputPath, execPreviewFile)
   }
 
   return {

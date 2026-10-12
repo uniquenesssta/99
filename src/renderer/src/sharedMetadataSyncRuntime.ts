@@ -7,6 +7,13 @@ export type SharedMetadataSyncCheckResult = {
   roots?: number
   elapsedMs?: number
   reason?: string
+  status?: 'complete' | 'partial'
+  checkedRoots?: number
+  syncedRoots?: number
+  deferredRoots?: number
+  failedRoots?: number
+  reconciliationRequired?: boolean
+  blockers?: Record<string, number>
 }
 
 export type SharedMetadataSyncRuntimeOptions = {
@@ -38,13 +45,19 @@ export function runSharedMetadataSyncCheckRuntime(options: SharedMetadataSyncRun
   const task = (async () => {
     const result = await options.hfm.checkSharedMetadataUpdates(options.reason) as SharedMetadataSyncCheckResult
     if (options.isClosing?.()) return
-    if (!result?.changed) return
+    const partial = result?.status === 'partial' || Number(result?.deferredRoots || 0) > 0
+      || Number(result?.failedRoots || 0) > 0 || result?.reconciliationRequired === true
+    if (!result?.changed && !partial) return
 
-    options.refreshDatabaseDerivedState()
-    const roots = Number(result.roots || 0)
+    if (result?.changed) options.refreshDatabaseDerivedState()
+    const roots = Number(result?.syncedRoots ?? result?.roots ?? 0)
     const elapsedMs = Number(result.elapsedMs || 0)
-    const message = `检测到共享标签 / 保护变化，已同步 ${roots} 个共享索引。`
-    options.setStatus(message)
+    const message = partial
+      ? `共享元数据仅完成部分检查：已同步 ${roots} 个索引，暂缓 ${Number(result.deferredRoots || 0)} 个，失败 ${Number(result.failedRoots || 0)} 个${result.reconciliationRequired ? '，仍需完整校验' : ''}。`
+      : `检测到共享标签 / 保护变化，已同步 ${roots} 个共享索引。`
+    // A quiet background deferral belongs in diagnostics; it must not replace
+    // the current user action's status, nor claim every configured root synced.
+    if (result.changed || /(?:manual|repair|reconcile)/i.test(options.reason)) options.setStatus(message)
     options.appendDeveloperStatus?.('shared-metadata-sync', message, { ...result, elapsedMs })
   })().catch((error) => {
     if (options.isClosing?.()) return

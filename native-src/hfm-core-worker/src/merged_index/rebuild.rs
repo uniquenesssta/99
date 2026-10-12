@@ -37,7 +37,7 @@ pub(super) struct MergedIndexRebuildSource {
     pub shared_metadata_signature: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub(super) struct MergedIndexWriteRow {
     pub root_path: String,
     pub relative_path: String,
@@ -193,10 +193,11 @@ pub(super) fn read_rows_for_source(
     )
     .map_err(|error| error.to_string())?;
     if !table_exists(&conn, "entries") {
-        return Ok(Vec::new());
+        return Err("root index entries schema is unavailable".to_string());
     }
     super::snapshot::register_shared_font_id(&conn).map_err(|error| error.to_string())?;
     let has_install_join = attach_install_status_if_available(&conn, source);
+    if !has_install_join && source.install_signature != "none" { return Err("expected install projection is unavailable".to_string()); }
     let install_columns = if has_install_join {
         ", install_status.installed AS installed, install_status.by_type AS installed_by, install_status.matches_json AS matches_json"
     } else {
@@ -215,7 +216,7 @@ pub(super) fn read_rows_for_source(
          WHERE COALESCE(entries.is_deleted, 0) = 0 AND entries.status = 'ok' AND entries.font_json IS NOT NULL AND json_valid(entries.font_json)",
         install_columns, join_sql
     );
-    let overlay = SharedMetadataOverlay::load_for_root(&source.root);
+    let overlay = SharedMetadataOverlay::load_for_root(&source.root, source.shared_metadata_signature.as_deref())?;
     let mut rows = Vec::new();
 
     match relative_paths {
@@ -232,7 +233,7 @@ pub(super) fn read_rows_for_source(
                 let mapped = stmt
                     .query_map(values.as_slice(), |row| row_to_write_row(row, source, &overlay))
                     .map_err(|error| error.to_string())?;
-                rows.extend(mapped.filter_map(Result::ok));
+                rows.extend(mapped.collect::<rusqlite::Result<Vec<_>>>().map_err(|error| error.to_string())?);
             }
         }
         _ => {
@@ -240,7 +241,7 @@ pub(super) fn read_rows_for_source(
             let mapped = stmt
                 .query_map(params![&source.root], |row| row_to_write_row(row, source, &overlay))
                 .map_err(|error| error.to_string())?;
-            rows.extend(mapped.filter_map(Result::ok));
+            rows.extend(mapped.collect::<rusqlite::Result<Vec<_>>>().map_err(|error| error.to_string())?);
         }
     }
     Ok(rows)
@@ -385,11 +386,6 @@ pub fn rebuild_merged_index(config: &MergedIndexRebuildConfig) -> Result<MergedI
     }
     let mut timings: BTreeMap<&str, u128> = BTreeMap::new();
 
-    let open_started_at = Instant::now();
-    let conn = Connection::open(&payload.merged_index_db_path).map_err(|error| error.to_string())?;
-    initialize_merged_index_db(&conn, payload.schema_version).map_err(|error| error.to_string())?;
-    timings.insert("open", elapsed_since(open_started_at));
-
     let read_started_at = Instant::now();
     let mut rows_by_source = Vec::new();
     let mut total_rows = 0_i64;
@@ -400,6 +396,13 @@ pub fn rebuild_merged_index(config: &MergedIndexRebuildConfig) -> Result<MergedI
     }
     timings.insert("readSources", elapsed_since(read_started_at));
 
+    // Failed source/overlay reads must not modify even destination metadata.
+    let open_started_at = Instant::now();
+    let conn = Connection::open(&payload.merged_index_db_path).map_err(|error| error.to_string())?;
+    initialize_merged_index_db(&conn, payload.schema_version).map_err(|error| error.to_string())?;
+    timings.insert("open", elapsed_since(open_started_at));
+
+
     let write_started_at = Instant::now();
     write_rebuild(&conn, &payload, &rows_by_source)?;
     timings.insert("write", elapsed_since(write_started_at));
@@ -407,4 +410,66 @@ pub fn rebuild_merged_index(config: &MergedIndexRebuildConfig) -> Result<MergedI
     Ok(MergedIndexRebuildResult {
         json: json_output(&payload, total_rows, timings, &started_at)?,
     })
+}
+
+#[cfg(test)]
+mod strict_overlay_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn merged_strict_rebuild_rejects_overlay_failures_before_destination_write() {
+        let dir = std::env::temp_dir().join(format!("hfm-merged-overlay-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::SeqCst)));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let root = dir.join("root");
+        let metadata_dir = root.join(".hfm-cache").join("database");
+        fs::create_dir_all(&metadata_dir).unwrap();
+        let index = root.join("index.sqlite");
+        let db = Connection::open(&index).unwrap();
+        db.execute_batch("CREATE TABLE entries(relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at REAL,created_at REAL,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,is_deleted INTEGER);").unwrap();
+        drop(db);
+        let destination = dir.join("merged.sqlite");
+        let input_path = dir.join("input.json");
+        let metadata = metadata_dir.join("shared-metadata.sqlite");
+        let mut input = json!({"mergedIndexDbPath": destination, "schemaVersion":7,"sourcesKey":"baseline","syncedAt":"now",
+            "sources":[{"root":root,"indexDbPath":index,"indexSignature":"root-v3|1","installSignature":"none","sharedMetadataSignature":"metadata:none"}]});
+        fs::write(&input_path, input.to_string()).unwrap();
+        let config = MergedIndexRebuildConfig { input_path: input_path.to_string_lossy().into_owned() };
+        // Genuine absent metadata is compatible, including an empty new index.
+        assert!(rebuild_merged_index(&config).is_ok());
+        let baseline = fs::read(&destination).unwrap();
+        input["sourcesKey"] = json!("must-not-be-published");
+        input["sources"][0]["sharedMetadataSignature"] = json!("metadata-v2|expected");
+        fs::write(&input_path, input.to_string()).unwrap();
+        assert!(rebuild_merged_index(&config).is_err(), "disappeared expected metadata was silently empty");
+        assert_eq!(fs::read(&destination).unwrap(), baseline);
+        fs::write(&metadata, b"not a sqlite database").unwrap();
+        assert!(rebuild_merged_index(&config).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), baseline);
+        fs::remove_file(&metadata).unwrap();
+        // A directory in place of the DB is unreadable as SQLite on Windows.
+        fs::create_dir(&metadata).unwrap();
+        assert!(rebuild_merged_index(&config).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), baseline);
+        fs::remove_dir(&metadata).unwrap();
+        let db = Connection::open(&metadata).unwrap();
+        db.execute_batch("CREATE TABLE unrelated(value TEXT)").unwrap();
+        drop(db);
+        assert!(rebuild_merged_index(&config).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), baseline);
+        let db = Connection::open(&metadata).unwrap();
+        db.execute_batch("CREATE TABLE font_metadata(font_id TEXT,relative_path TEXT,path_key TEXT,tag_names_json TEXT,favorite INTEGER,delete_protected INTEGER);
+            INSERT INTO font_metadata VALUES('a','a.ttf','a.ttf','{broken',0,0);").unwrap();
+        drop(db);
+        assert!(rebuild_merged_index(&config).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), baseline);
+        let db = Connection::open(&metadata).unwrap();
+        db.execute("UPDATE font_metadata SET tag_names_json='[]',favorite='not-an-integer'", []).unwrap();
+        drop(db);
+        assert!(rebuild_merged_index(&config).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), baseline);
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

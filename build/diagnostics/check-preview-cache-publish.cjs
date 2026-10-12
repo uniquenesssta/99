@@ -74,7 +74,7 @@ async function testOwnedPublicationCoalescesAndReusesExactBytes() {
     '../../path/sharedFileSystemRuntime': { sharedFileSystem: fsp },
     '../native-renderer/directwrite/directWritePreviewHelperPathRuntime': { hasDirectWritePreviewHelper: () => false },
     '../../rust-core/rustSharedIoCommandRuntime': { sharedIoResourceKeys: async () => [] },
-    '../../path/startupPathAvailabilityRuntime': { getStartupPathRootState: () => ({ generation: 1, state: 'online' }) },
+    '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: () => ({ generation: 1, state: 'online' }) },
     '../../app/shutdownCoordinatorRuntime': { isApplicationClosing: () => closing, applicationWorkEpoch: () => 1, onApplicationClosing: fn => { closeListener = fn } },
   }, { setTimeout: fn => { const id = {}; timers.set(id, fn); return id }, clearTimeout: id => timers.delete(id) })
   const meta = load('src/main/preview/runtime/previewCacheMetaRuntime.ts').createPreviewCacheMetaRuntime({ appendStartupLog: line => logs.push(line) })

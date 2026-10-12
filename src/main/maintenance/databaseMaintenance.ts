@@ -1,3 +1,6 @@
+import { awaitPhysicalIoClose } from '../path/ioDeadlineRuntime'
+import { applicationWorkEpoch, assertApplicationOpen } from '../app/shutdownCoordinatorRuntime'
+import { createOptionalMaintenanceAdmission, OptionalMaintenanceDeferred } from './optionalMaintenanceAdmissionRuntime'
 import type { ApplicationDatabaseLabel } from '../db/sqliteRuntime'
 import { readSqliteQuickCheckMessage, isoBefore, optionalDatabaseAbsent, databaseFileAbsent } from './databaseMaintenanceHelpers'
 import { createDatabaseBackupRuntime } from './databaseBackupRuntime'
@@ -27,8 +30,9 @@ export function summarizeMaintenanceFailures(report: DatabaseMaintenanceReport, 
     if (report.preview.errors.length) groups.preview = report.preview.errors
     const shared = report.sharedIndexSnapshots
     if (shared && !shared.ok) {
-      groups.sharedIndex = [...shared.warnings, ...shared.roots.filter(item => !item.ok && !(item.staleSnapshotCount === 0 && item.orphanSidecarCount === 0 && item.tmpFileCount > 0)).flatMap(item => item.warnings)]
-      if (!groups.sharedIndex.length) groups.sharedIndex = ['report ok=false without failed-root detail']
+      const failures = [...shared.warnings, ...shared.roots.filter(item => !item.ok && !(item.staleSnapshotCount === 0 && item.orphanSidecarCount === 0 && item.tmpFileCount > 0)).flatMap(item => item.warnings)]
+      if (failures.length) groups.sharedIndex = failures
+      else if (!shared.deferred?.length) groups.sharedIndex = ['report ok=false without failed-root detail']
     }
   }
   if (report.backup && !report.backup.ok) {
@@ -91,6 +95,8 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
 
   const { runPreviewCacheMaintenance: runPreviewCacheMaintenanceRaw } = createPreviewCacheMaintenanceRuntime({
     previewOkRetentionMs,
+    isForegroundBusy: options.isForegroundBusy,
+    appendStartupLog,
     openPreviewDb,
     previewSqlitePath,
     previewSqliteSchemaVersion,
@@ -198,29 +204,41 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
   }
 
   async function runDatabaseMaintenanceRaw(options: { createBackup?: boolean; backupReason?: string } = {}): Promise<DatabaseMaintenanceReport> {
+    const workEpoch = applicationWorkEpoch()
+    assertApplicationOpen(workEpoch)
     const startedAt = new Date().toISOString()
     let backup: DatabaseBackupReport | undefined
     if (options.createBackup) {
       backup = await createDatabaseBackupRaw(options.backupReason || 'maintenance')
     }
 
+    assertApplicationOpen(workEpoch)
     const health = await runDatabaseHealthCheckRaw()
+    assertApplicationOpen(workEpoch)
     const preview = await runPreviewCacheMaintenanceRaw()
+    assertApplicationOpen(workEpoch)
     const tasks = await runTaskMaintenance()
+    assertApplicationOpen(workEpoch)
     const sharedIndexSnapshots = await runSharedIndexSnapshotAutoMaintenance?.().catch((error) => ({
       ok: false,
       enabled: true,
+      complete: false,
+      deferred: [],
       checkedRoots: 0,
       cleanedRoots: 0,
       deletedFiles: 0,
       warnings: [error instanceof Error ? error.message : String(error)],
       roots: [],
     }))
+    assertApplicationOpen(workEpoch)
     await checkpointApplicationDatabases()
 
-    const ok = health.every((item) => item.ok) && preview.errors.length === 0 && (!backup || backup.ok) && (!sharedIndexSnapshots || sharedIndexSnapshots.ok)
+    const complete = preview.complete !== false && sharedIndexSnapshots?.complete !== false
+    const deferred = !!preview.deferred?.length || !!sharedIndexSnapshots?.deferred?.length
+    const ok = complete && health.every((item) => item.ok) && preview.errors.length === 0 && (!backup || backup.ok) && (!sharedIndexSnapshots || sharedIndexSnapshots.ok)
     const report: DatabaseMaintenanceReport = {
       ok,
+      complete,
       startedAt,
       finishedAt: new Date().toISOString(),
       health,
@@ -228,15 +246,18 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
       preview,
       tasks,
       sharedIndexSnapshots,
-      message: ok ? '数据库维护完成。' : '数据库维护完成，但存在需要查看的警告。'
+      message: deferred ? '数据库维护部分完成；离线目录或前台繁忙的可选维护已延后。' : ok ? '数据库维护完成。' : '数据库维护完成，但存在需要查看的警告。'
     }
 
     appendStartupLog(`database maintenance finished: ok=${report.ok}, previewStale=${preview.staleRows}, previewRemoved=${preview.removedFiles + preview.removedOrphanFiles}, tasksRemoved=${tasks.removedCompleted + tasks.removedFailed}, sharedIndexChecked=${sharedIndexSnapshots?.checkedRoots ?? 0}, sharedIndexDeleted=${sharedIndexSnapshots?.deletedFiles ?? 0}${report.ok ? '' : `, failures=${summarizeMaintenanceFailures(report)}`}`)
     return report
   }
 
-  async function runStartupDatabaseMaintenanceRaw(): Promise<void> {
+  async function runStartupDatabaseMaintenanceRaw() {
+    const admission = createOptionalMaintenanceAdmission({ caller: 'startup-maintenance', isForegroundBusy: options.isForegroundBusy, appendStartupLog })
+    return admission.run(async () => {
     try {
+      await admission.checkpoint('startup')
       // Timers/UI requests do not establish initialization order. Let the existing
       // owners create genuinely missing required databases before the first read.
       for (const spec of dbFileSpecs()) {
@@ -245,23 +266,31 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
           appendStartupLog(`startup required database initialized: label=${spec.label}`)
         }
       }
+      await admission.checkpoint('health-check')
       const initialHealth = await runDatabaseHealthCheckRaw()
       const healthOk = initialHealth.every((item) => item.ok)
       if (!healthOk) {
         appendStartupLog(`startup database health warning before maintenance: ${initialHealth.filter((item) => !item.ok).map((item) => `${item.label}:${item.message}`).join('; ')}`)
       }
 
+      await admission.checkpoint('automatic-backup')
       const backup = healthOk ? await createAutomaticDatabaseBackupIfNeededRaw() : undefined
+      await admission.checkpoint('maintenance')
       const report = await runDatabaseMaintenanceRaw({ createBackup: false })
       if (backup) {
         report.backup = backup
         report.ok = report.ok && backup.ok
-        if (!report.ok) report.message = '数据库维护完成，但存在需要查看的警告。'
+        if (!backup.ok) report.message = '数据库维护完成，但存在需要查看的警告。'
       }
-      appendStartupLog(`startup database maintenance finished: ok=${report.ok}${backup && !backup.ok ? `, failures=${summarizeMaintenanceFailures(report, true)}` : ''}`)
+      appendStartupLog(`startup database maintenance finished: ok=${report.ok}${report.complete === false ? ", complete=false" : ""}${backup && !backup.ok ? `, failures=${summarizeMaintenanceFailures(report, true)}` : ''}`)
+      return report
     } catch (error) {
-      appendStartupLog(`startup database maintenance skipped: ${error instanceof Error ? error.message : String(error)}`)
+      await awaitPhysicalIoClose(error)
+      if (error instanceof OptionalMaintenanceDeferred) return { ok: false, complete: false, deferred: [error.detail] }
+      appendStartupLog(`startup database maintenance failed: ${error instanceof Error ? error.message : String(error)}`)
+      throw error
     }
+    })
   }
 
   return {

@@ -59,6 +59,7 @@ async function runBehaviorCheck() {
   )
 
   const runtime = createRustCoreSchedulerRuntime({ appendStartupLog() {} })
+  assert(runtime.hasInteractiveWork() === false, 'idle scheduler reports interactive work')
   runtime.applyProfiles([{
     command: '--test-cache-generation',
     lane: 'foreground',
@@ -79,8 +80,13 @@ async function runBehaviorCheck() {
   }
 
   const oldRequest = runtime.run(args, execute)
+  assert(runtime.hasInteractiveWork() === true, 'queued interactive work is hidden from maintenance admission')
   await immediate()
   assert(executions === 1, 'the initial scheduler request did not start')
+  for (let sample = 0; sample < 100; sample += 1) {
+    assert(runtime.hasInteractiveWork() === true, 'active interactive work is hidden from maintenance admission')
+  }
+  assert(executions === 1, 'pure interactive status reads started extra work')
 
   runtime.invalidate(['--test-cache-generation'])
   const newRequest = runtime.run(args, execute)
@@ -89,8 +95,11 @@ async function runBehaviorCheck() {
 
   newGate.resolve('new')
   assert(await newRequest === 'new', 'the current-generation scheduler request returned the wrong result')
+  assert(runtime.hasInteractiveWork() === true, 'superseded but unsettled active work was treated as idle')
   oldGate.resolve('old')
   assert(await oldRequest === 'old', 'the original caller should still receive its own completed result')
+  await immediate()
+  assert(runtime.hasInteractiveWork() === false, 'settled interactive work keeps maintenance blocked')
 
   const cached = await runtime.run(args, () => {
     executions += 1
@@ -98,6 +107,7 @@ async function runBehaviorCheck() {
   })
   assert(cached === 'new', 'a late old completion repopulated or overwrote the scheduler result cache')
   assert(executions === 2, 'the current-generation scheduler result was not cached')
+  assert(runtime.hasInteractiveWork() === false, 'cache-only read creates phantom interactive work')
 }
 
 runBehaviorCheck()

@@ -61,6 +61,15 @@ async function runBehaviorChecks() {
   const { createDatabaseMaintenanceRuntime } = loadTypeScriptModule(
     'src/main/maintenance/databaseMaintenance.ts',
     (id) => {
+      if (id === '../path/ioDeadlineRuntime') {
+        return require('./check-operation-chain.cjs').loader()('src/main/path/ioDeadlineRuntime.ts')
+      }
+      if (id === '../app/shutdownCoordinatorRuntime') {
+        return require('./check-operation-chain.cjs').loader()('src/main/app/shutdownCoordinatorRuntime.ts')
+      }
+      if (id === './optionalMaintenanceAdmissionRuntime') {
+        return require('./check-operation-chain.cjs').loader()('src/main/maintenance/optionalMaintenanceAdmissionRuntime.ts')
+      }
       if (id === './databaseMaintenanceHelpers') {
         return loadTypeScriptModule('src/main/maintenance/databaseMaintenanceHelpers.ts', require)
       }

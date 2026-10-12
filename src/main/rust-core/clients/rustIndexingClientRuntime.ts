@@ -544,12 +544,15 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
   async function runRustMergedIndexRebuild(input: RustMergedIndexRebuildInput): Promise<RustMergedIndexRebuildResult | null> {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'merged-index-rebuild')) return null
+    if (input.requireAuthoritativeSources && !hasCapability(status, 'merged-index-strict-rebuild-v1')) return null
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-merged-rebuild`)
     const inputPath = inputFile.path
+    let strictSubmitted = false
     try {
       await inputFile.writeJson(input)
+      strictSubmitted = input.requireAuthoritativeSources === true
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--merged-index-rebuild',
         '--input', inputPath,
@@ -560,9 +563,9 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       })
 
       const payload = parseJsonLine<RustMergedIndexRebuildPayload>(commandOutput.stdout)
-      if (!payload.ok || !payload.rebuilt) {
+      if (!payload.ok || !payload.rebuilt || (input.requireAuthoritativeSources && (payload.ok !== true || payload.rebuilt !== true || !Number.isInteger(payload.rows) || Number(payload.rows) < 0))) {
         const error = new Error(payload.message || 'rust merged index rebuild returned ok=false')
-        throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, '--merged-index-rebuild') : error
+        throw commandOutput.daemon || strictSubmitted ? markRustCoreDaemonSubmittedError(error, '--merged-index-rebuild') : error
       }
       const result: RustMergedIndexRebuildResult = {
         rebuilt: true,
@@ -576,8 +579,9 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       return result
     } catch (error) {
       rethrowSharedIoProcessError(error)
+      if (strictSubmitted && !isRustCoreDaemonSubmittedError(error)) throw markRustCoreDaemonSubmittedError(error instanceof Error ? error : new Error('Strict merged rebuild outcome unknown'), '--merged-index-rebuild')
       if (isRustCoreDaemonSubmittedError(error)) {
-        options.appendStartupLog(`rust merged index rebuild failed after daemon submit: ${error.message}; Node fallback blocked`)
+        options.appendStartupLog(`rust merged index rebuild failed after ${input.requireAuthoritativeSources ? 'strict submission' : 'daemon submit'}: ${error.message}; Node fallback blocked`)
         throw error
       }
       options.appendStartupLog(`rust merged index rebuild failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)
@@ -590,12 +594,15 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
   async function runRustMergedIndexSync(input: RustMergedIndexSyncInput): Promise<RustMergedIndexSyncResult | null> {
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'merged-index-sync')) return null
+    if (input.preparedRows && !hasCapability(status, 'merged-index-prepared-sync-v1')) return null
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-merged-sync`)
     const inputPath = inputFile.path
+    let preparedSubmitted = false
     try {
       await inputFile.writeJson(input)
+      preparedSubmitted = Array.isArray(input.preparedRows)
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         '--merged-index-sync',
         '--input', inputPath,
@@ -603,12 +610,20 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
         timeout: Math.max(5000, Number(process.env.HFM_RUST_MERGED_SYNC_TIMEOUT_MS || 5 * 60 * 1000) || 5 * 60 * 1000),
         windowsHide: true,
         maxBuffer: 32 * 1024 * 1024,
+        assertCurrent: input.assertCurrent,
+        // Prepared mode reads only its owned local JSON and local destination.
+        sharedIo: input.preparedRows ? sharedDatabaseTarget(input.mergedIndexDbPath, true) : undefined,
       })
 
       const payload = parseJsonLine<RustMergedIndexSyncPayload>(commandOutput.stdout)
-      if (!payload.ok || !payload.synced) {
+      const invalidPreparedReceipt = input.preparedRows !== undefined && (
+        payload.ok !== true || payload.synced !== true || payload.fullSnapshot !== (input.fullSnapshot === true)
+        || !Number.isInteger(payload.rows) || payload.rows !== input.preparedRows.length
+        || !Number.isInteger(payload.changed) || payload.changed !== new Set((input.relativePaths || []).map(path => path.replaceAll('\\', '/')).filter(Boolean)).size
+      )
+      if (!payload.ok || !payload.synced || invalidPreparedReceipt) {
         const error = new Error(payload.message || 'rust merged index sync returned ok=false')
-        throw commandOutput.daemon ? markRustCoreDaemonSubmittedError(error, '--merged-index-sync') : error
+        throw commandOutput.daemon || preparedSubmitted ? markRustCoreDaemonSubmittedError(error, '--merged-index-sync') : error
       }
       const result: RustMergedIndexSyncResult = {
         synced: true,
@@ -624,8 +639,11 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       return result
     } catch (error) {
       rethrowSharedIoProcessError(error)
+      if (preparedSubmitted && !isRustCoreDaemonSubmittedError(error)) {
+        throw markRustCoreDaemonSubmittedError(error instanceof Error ? error : new Error('Prepared merged sync outcome unknown'), '--merged-index-sync')
+      }
       if (isRustCoreDaemonSubmittedError(error)) {
-        options.appendStartupLog(`rust merged index sync failed after daemon submit: ${error.message}; Node fallback blocked`)
+        options.appendStartupLog(`rust merged index sync failed after ${input.preparedRows ? 'prepared submission' : 'daemon submit'}: ${error.message}; Node fallback blocked`)
         throw error
       }
       options.appendStartupLog(`rust merged index sync failed: ${error instanceof Error ? error.message : String(error)}; Node fallback remains active`)

@@ -5,6 +5,37 @@ import type { MergedIndexSourceInfo } from "../mergedIndexRuntime";
 import { type MergedIndexPageRow } from "../rootIndexQuerySql";
 import type { MergedIndexPageContext } from "./mergedIndexPageTypes";
 
+export function readMergedIndexAppliedSources(ctx: MergedIndexPageContext, db: any): MergedIndexSourceInfo[] {
+  if (ctx.getSqliteMeta(db, 'schemaVersion') !== String(ctx.schemaVersion)
+    || !ctx.sqliteTableExists(db, 'sources') || !ctx.sqliteTableExists(db, 'entries')) {
+    throw new Error('merged-projection-schema-unavailable')
+  }
+  const rows = db.prepare('SELECT * FROM sources ORDER BY root_path').all() as Array<Record<string, unknown>>
+  const sources = rows.map(row => ({
+    root: String(row.root_path || ''), indexDbPath: String(row.index_db_path || ''),
+    installDbPath: row.install_db_path ? String(row.install_db_path) : undefined,
+    indexSignature: String(row.index_signature || ''), installSignature: String(row.install_signature || ''),
+    sharedMetadataSignature: String(row.shared_metadata_signature || ''),
+  }))
+  const roots = new Set(sources.map(source => ctx.normalizePathForCacheCompare(source.root)))
+  if (roots.size !== sources.length || sources.some(source => !source.root || !source.indexSignature
+    || !source.installSignature || !source.sharedMetadataSignature)) throw new Error('merged-projection-receipt-invalid')
+  const key = ctx.getSqliteMeta(db, 'sourcesKey')
+  const pendingKey = `pending:${ctx.mergedIndexRootsKey(sources.map(source => source.root))}`
+  if (key !== ctx.mergedIndexSourcesKey(sources) && key !== pendingKey && (sources.length || key)) {
+    throw new Error('merged-projection-receipt-mismatch')
+  }
+  return sources
+}
+
+export function assertFreshMergedIndexSource(source: MergedIndexSourceInfo): void {
+  if (!source.indexDbPath || !source.indexSignature || /^(missing|stat:|pending)/.test(source.indexSignature)
+    || !source.installSignature || /^(missing-table|stat:|pending)/.test(source.installSignature)
+    || !source.sharedMetadataSignature || /^metadata:(error|stat:|pending)/.test(source.sharedMetadataSignature)) {
+    throw new Error('merged-source-receipt-unavailable')
+  }
+}
+
 export function createMergedIndexSourceRuntime(ctx: MergedIndexPageContext) {
   async function mergedIndexSourcesForRoots(
     roots: string[],
@@ -13,10 +44,8 @@ export function createMergedIndexSourceRuntime(ctx: MergedIndexPageContext) {
     for (const rawRoot of roots) {
       const root = resolve(rawRoot);
       const indexDbPath = await ctx.activeRootIndexDbPathForRoot(root);
-      if (!(await ctx.exists(indexDbPath))) continue;
-      const installDbPath = await ctx.installStatusDbPathForRoot(root).catch(
-        () => undefined,
-      );
+      if (!(await ctx.exists(indexDbPath))) throw new Error('merged-source-index-unavailable');
+      const installDbPath = await ctx.installStatusDbPathForRoot(root);
       sources.push({
         root,
         indexDbPath,
@@ -26,6 +55,7 @@ export function createMergedIndexSourceRuntime(ctx: MergedIndexPageContext) {
         sharedMetadataSignature: await ctx.sharedMetadataSignatureForRoot(root),
       });
     }
+    for (const source of sources) assertFreshMergedIndexSource(source);
     return sources;
   }
 
@@ -44,6 +74,7 @@ export function createMergedIndexSourceRuntime(ctx: MergedIndexPageContext) {
         sourceDb,
         source.root,
       );
+      if (!hasInstallJoin && source.installSignature !== 'none') throw new Error('merged-install-projection-unavailable');
       const installColumns = hasInstallJoin
         ? ", install_status.installed AS installed, install_status.by_type AS installed_by, install_status.matches_json AS matches_json"
         : ", NULL AS installed, NULL AS installed_by, NULL AS matches_json";
@@ -67,7 +98,7 @@ export function createMergedIndexSourceRuntime(ctx: MergedIndexPageContext) {
       );
       if (!cleanRelativePaths.length) {
         const rows = sourceDb.prepare(baseSql).all(source.root) as MergedIndexPageRow[];
-        return ctx.applySharedMetadataToMergedRows(source.root, rows);
+        return ctx.applySharedMetadataToMergedRows(source.root, rows, true);
       }
 
       const rows: MergedIndexPageRow[] = [];
@@ -80,7 +111,7 @@ export function createMergedIndexSourceRuntime(ctx: MergedIndexPageContext) {
             .all(source.root, ...chunk) as MergedIndexPageRow[]),
         );
       }
-      return ctx.applySharedMetadataToMergedRows(source.root, rows);
+      return ctx.applySharedMetadataToMergedRows(source.root, rows, true);
     } finally {
       ctx.closeSqliteDb(sourceDb);
     }

@@ -9,11 +9,11 @@ async function within(pending, label) {
   try { return await Promise.race([pending, new Promise((_, reject) => { timer = setTimeout(() => reject(Error(label)), 700); })]); }
   finally { clearTimeout(timer); }
 }
-function fixture() {
-  const state = { files: new Map(), index: new Map(), rows: [], tasks: [], requests: [], publications: [], renames: [], reads: [], prefetches: 0, hydrates: 0, queued: 0 };
+function fixture(configuration = {}) {
+  const state = { logs: [], stats: 0, unlinks: [], cleanupSignals: [], files: new Map(), index: new Map(), rows: [], tasks: [], requests: [], publications: [], renames: [], reads: [], prefetches: 0, hydrates: 0, queued: 0 };
   const missing = () => Object.assign(Error('missing'), { code: 'ENOENT' });
   const fakefs = {
-    stat: async () => ({ size: 100, mtimeMs: 1 }), access: async () => {}, mkdir: async () => {},
+    stat: async () => { state.stats++; return { size: 100, mtimeMs: 1 }; }, access: async () => {}, mkdir: async () => {},
     readFile: async p => { state.reads.push(p); if (!state.files.has(p)) throw missing(); return state.files.get(p); },
     rename: async (a, b) => {
       state.renames.push([a, b]);
@@ -21,17 +21,17 @@ function fixture() {
       if (!state.files.has(a)) throw missing();
       state.files.set(b, state.files.get(a)); state.files.delete(a);
     },
-    unlink: async p => { state.files.delete(p); },
+    unlink: async p => { state.unlinks.push(p); state.cleanupSignals.push(filesystemPort.currentSharedIoSignal()?.aborted); state.files.delete(p); },
   };
   const storage = {
-    previewCacheStorageForFont: async () => ({ identity: 'font', dir: '/cache', storage: 'local', shared: { rootPath: '\\\\nas\\fonts' } }),
+    previewCacheStorageForFont: async () => ({ identity: 'font', dir: configuration.cacheDirectory || '/cache', storage: 'local', shared: { rootPath: '\\\\nas\\fonts' } }),
     readPreviewCacheIndexStatus: async (_storage, _key, output) => state.index.get(output)?.status || null,
     writePreviewCacheIndex: async (_storage, key, row) => { state.rows.push({ key, ...row }); state.index.set(row.outputPath, row); },
     deletePreviewCacheIndex: async () => {}, rememberPreviewCacheRenderQueued: () => { state.queued++; },
     schedulePreviewCachePrefetch: () => { state.prefetches++; },
     hydratePreviewCache: async () => { state.hydrates++; return state.hydrate ? state.hydrate() : false; },
   };
-  const deadline = {
+  const deadline = {awaitPhysicalIoClose: async error => { if (error?.sharedIo === true) { try { await error.closed; } catch {} } },
     withPhysicalIoCompletion: fn => fn(), fileExistsTimeoutMs: () => 500, previewCacheQueryTimeoutMs: () => 2000,
     fileExistsWithDeadline: async () => false,
     withIoDeadlineResult: async (_label, fn) => { try { return { ok: true, value: await fn() }; } catch (error) { return { ok: false, error }; } },
@@ -41,23 +41,26 @@ function fixture() {
     state.files.set(request.outputPath, png);
     return { ok: true, outputPath: request.outputPath, engine: 'test' };
   };
+  const signals = new (require('node:async_hooks').AsyncLocalStorage)(), priorities = new (require('node:async_hooks').AsyncLocalStorage)();
+  const filesystemPort = { configureSharedFileExecutor: executor => { state.executor = executor; }, sharedFileAccesses: () => undefined, isSharedPreviewReadScope: () => false, currentSharedIoPriority: () => priorities.getStore(), withSharedIoPriority: (priority, fn) => priorities.run(priority, fn), sharedFileSystem: fakefs, withSharedPreviewReads: fn => fn(), currentSharedIoSignal: () => signals.getStore(), withSharedIoSignal: (signal, fn) => signals.run(signal, fn), withoutSharedIoSignal: fn => signals.run(undefined, fn) };
   const load = loader({
     '../native-renderer/directwrite/directWritePreviewHelperPathRuntime': { hasDirectWritePreviewHelper: () => false },
-    '../path/sharedFileSystemRuntime': { sharedFileSystem: fakefs, withSharedPreviewReads: fn => fn() },
-    '../../path/sharedFileSystemRuntime': { sharedFileSystem: fakefs, withSharedPreviewReads: fn => fn() },
+    '../path/sharedFileSystemRuntime': filesystemPort,
+    '../../path/sharedFileSystemRuntime': filesystemPort,
     '../path/ioDeadlineRuntime': deadline, '../../path/ioDeadlineRuntime': deadline,
     './runtime/previewCacheStorageRuntime': { createPreviewCacheStorageRuntime: () => storage },
     './runtime/previewCachePublishRuntime': { createPreviewCachePublishRuntime: () => ({ enqueuePreviewCachePublish: (_storage, row) => state.publications.push(row) }) },
     './native-renderer/previewNativeRendererRuntime': { createPreviewNativeRenderer: () => ({ activeEngineLabel: () => 'test', renderNativePreview: async request => { state.requests.push(request); return state.render(request); } }) },
-  });
+    ...configuration.mocks,
+  }, configuration.globals || {});
   const options = {
-    ensureWindows() {}, appendStartupLog() {}, sha1: () => 'key', resolveExistingFontFilePath: async () => '/font.ttf',
+    ensureWindows() {}, appendStartupLog: line => state.logs.push(line), sha1: () => 'key', resolveExistingFontFilePath: async () => '/font.ttf',
     withGlobalIo: (_label, fn) => fn(), previewTaskKey: key => key, legacyRootPreviewCacheDir: () => '/legacy',
   };
   for (const method of ['completeBackgroundTask', 'upsertBackgroundTask', 'startBackgroundTask', 'heartbeatBackgroundTask', 'failBackgroundTask', 'skipBackgroundTask']) {
     options[method] = async (...args) => { state.tasks.push({ method, args }); };
   }
-  return { state, load, runtime: load('src/main/preview/previewRuntime.ts').createPreviewRuntime(options) };
+  return { state, load, filesystemPort, options, runtime: load('src/main/preview/previewRuntime.ts').createPreviewRuntime(options) };
 }
 const render = runtime => runtime.ensureFontPreviewImageFile(font, 'text', 44, 720, 260, false, false, true);
 const cache = runtime => runtime.ensureFontPreviewImageFile(font, 'text', 44, 720, 260, false, false, false);
@@ -199,4 +202,5 @@ async function recovery() {
   assert.deepEqual(remembered, []); assert.equal(calls, 2);
   console.log('PASS transient failure stays unknown; old persistent missing is rechecked');
 }
-main().then(nativeByteResult).then(recovery).catch(error => { console.error(error); process.exitCode = 1; });
+module.exports = { fixture, font };
+if (require.main === module) main().then(nativeByteResult).then(recovery).catch(error => { console.error(error); process.exitCode = 1; });

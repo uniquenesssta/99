@@ -25,7 +25,7 @@ async function main(){
   db.exec("UPDATE preview_cache SET status='ok'")
   const first=path.join(images,'000.png');fs.unlinkSync(first)
   const original=fs.promises.lstat
-  const fallbackLoad=loader({...mocks,'../path/sharedFileSystemRuntime':{sharedFileSystem:{...fs.promises,lstat:async p=>{if(p.endsWith('001.png'))throw Object.assign(Error('denied'),{code:'EACCES'});return original(p)}}}},{setImmediate})
+  const fallbackLoad=loader({...mocks,'../path/sharedFileSystemRuntime':{withSharedIoPriority:(_priority,run)=>run(),withSharedIoSignal:(_signal,run)=>run(),sharedFileSystem:{...fs.promises,lstat:async p=>{if(p.endsWith('001.png'))throw Object.assign(Error('denied'),{code:'EACCES'});return original(p)}}}},{setImmediate})
   const fallback=await fallbackLoad(base+'previewCacheMaintenanceRuntime.ts').createPreviewCacheMaintenanceRuntime(deps).runPreviewCacheMaintenance()
   assert.equal(db.prepare("SELECT status FROM preview_cache WHERE preview_key='000'").get().status,'stale')
   assert.equal(db.prepare("SELECT status FROM preview_cache WHERE preview_key='001'").get().status,'ok','permission error was mislabeled missing')
@@ -43,7 +43,7 @@ async function main(){
   assert(!accesses.some(a=>a.scope==='tree'));assert(accesses.some(a=>a.path===input.batch.rows[0].outputPath&&a.mode==='write'))
   assert(accesses.some(a=>a.path===input.batch.referenceDbPath&&a.scope==='database'&&a.mode==='read'))
   fail=true;await assert.rejects(client.runRustPreviewCacheMaintenance(input),/uncertain worker/)
-  const availabilityLoad=loader({'../../path/startupPathAvailabilityRuntime':{getStartupPathRootState:()=>({state:'online',generation:1,rootId:'root'}),ensureStartupPathRootAvailable:async()=>true}})
+  const availabilityLoad=loader({'../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},getStartupPathRootState:()=>({state:'online',generation:1,rootId:'root'}),ensureStartupPathRootAvailable:async()=>true}})
   const availability=availabilityLoad('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts').createPreviewCacheRootAvailabilityRuntime()
   const Deadline=availabilityLoad('src/main/path/ioDeadlineRuntime.ts').IoDeadlineTimeoutError
   for(let i=0;i<12;i++)availability.markRootPreviewCacheUnavailable(dir,new Deadline('queue-inclusive-response',2000))

@@ -78,12 +78,13 @@ function harness() {
     } },
     '../indexing/shared-metadata/sharedMetadataPathsRuntime': { sharedMetadataDbPathForRoot: root => root + '\\metadata.sqlite' },
     '../indexing/shared-metadata/sharedMetadataStateRuntime': { stateFromRow: row => ({ tagNames: JSON.parse(row.tag_names_json) }) },
-    '../ipc/sharedActionAdmissionRuntime': { createSharedActionAdmission: () => async () => {} },
+    '../ipc/sharedActionAdmissionRuntime': { createSharedActionAdmission: () => async () => () => undefined },
     '../app/shutdownCoordinatorRuntime': { applicationWorkEpoch: () => 0, assertApplicationOpen() {} },
   }
   const sharedOwners = require('./check-operation-chain.cjs').loader()
   const sharedIo = sharedOwners('src/main/path/sharedFileSystemRuntime.ts')
   mocks['../path/sharedFileSystemRuntime'] = { ...sharedIo, sharedFileSystem: filesystem }
+  mocks['../path/startupPathAvailabilityRuntime'] = sharedOwners('src/main/path/startupPathAvailabilityRuntime.ts')
   const shutdown = sharedOwners('src/main/app/shutdownCoordinatorRuntime.ts')
   mocks['../app/shutdownCoordinatorRuntime'] = shutdown
   mocks['./fontQueryTaskRuntime'] = sharedOwners('src/main/library/fontQueryTaskRuntime.ts')

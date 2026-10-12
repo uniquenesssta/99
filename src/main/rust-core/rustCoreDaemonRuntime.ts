@@ -147,6 +147,7 @@ type PendingDaemonJob = {
 }
 
 const DAEMON_SAFE_COMMANDS = new Set<string>(RUST_CORE_DAEMON_SAFE_COMMANDS)
+const MAX_OBSERVED_DAEMON_JOBS = 512
 
 function daemonEnabled(): boolean {
   const mode = String(process.env.HFM_RUST_CORE_DAEMON || '1').trim().toLowerCase()
@@ -164,6 +165,9 @@ function safeMessage(error: unknown): string {
 export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOptions) {
   const enabled = daemonEnabled()
   const pending = new Map<string, PendingDaemonJob>()
+  // Caller settlement is not a native terminal receipt. In particular, local
+  // abort/timeout and stop may remove pending while that generation still runs.
+  const submittedByChild = new Map<ChildProcessWithoutNullStreams, { ids: Set<string>; overflow: boolean }>()
   let child: ChildProcessWithoutNullStreams | null = null
   let lineReader: Interface | null = null
   const stoppingChildren = new Map<ChildProcessWithoutNullStreams, () => void>()
@@ -312,7 +316,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
     }
   }
 
-  function handleLine(line: string): void {
+  function handleLine(line: string, active: ChildProcessWithoutNullStreams): void {
     const trimmed = line.trim()
     if (!trimmed) return
     let event: RustCoreDaemonEvent
@@ -361,6 +365,9 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
     }
 
     if (!event.id) return
+    if (event.type === 'job_finished' || event.type === 'job_failed' || event.type === 'job_cancelled') {
+      submittedByChild.get(active)?.ids.delete(event.id)
+    }
     const job = pending.get(event.id)
     if (!job) return
 
@@ -424,9 +431,11 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
       recordOperationWork({ processStarts: 1 })
       child.once('close', () => recordOperationWork({ processCloses: 1 }))
       const active = child
+      submittedByChild.set(active, { ids: new Set(), overflow: false })
+      active.once('close', () => submittedByChild.delete(active))
       childPath = workerPath
       lineReader = createInterface({ input: child.stdout })
-      lineReader.on('line', line => { if (child === active) handleLine(line) })
+      lineReader.on('line', line => { if (child === active) handleLine(line, active) })
       child.stderr.on('data', (chunk: Buffer) => {
         if (child !== active) return
         stderrTail = `${stderrTail}${chunk.toString('utf-8')}`.slice(-4096)
@@ -479,6 +488,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
   async function tryRun(workerPath: string, args: string[], execOptions: RustCoreDaemonExecOptions): Promise<{ stdout: string; stderr: string } | null> {
     if (!canRun(args)) return null
     if (!ensureStarted(workerPath) || !child || child.killed) return null
+    const active = child
 
     const id = randomUUID()
     const trace = currentOperationTrace()
@@ -538,6 +548,16 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
       pending.set(id, job)
       try {
         logOperation({ trace, stage: 'daemon-submit', backend: 'rust', transport: 'daemon', jobId: id }, options.appendStartupLog)
+        if (child !== active || active.killed || active.stdin.destroyed || !active.stdin.writable) throw new Error('rust core daemon stdin unavailable')
+        // Mark before write: a thrown/callback write error cannot prove that no
+        // bytes reached the native process. Only its receipt or close can.
+        const observed = submittedByChild.get(active)
+        if (observed) {
+          if (observed.ids.size < MAX_OBSERVED_DAEMON_JOBS) observed.ids.add(id)
+          // Saturation is conservatively busy until this generation closes;
+          // never trade bounded evidence for an invented idle observation.
+          else observed.overflow = true
+        }
         if (!writeDaemonLine(JSON.stringify({ id, type: 'submit', args }))) throw new Error('rust core daemon stdin unavailable')
       } catch (error) {
         pending.delete(id)
@@ -573,6 +593,7 @@ export function createRustCoreDaemonRuntime(options: RustCoreDaemonRuntimeOption
     stop,
     stopImmediately,
     pollStatus,
+    hasSubmittedWork: (): boolean => [...submittedByChild.values()].some(state => state.overflow || state.ids.size > 0),
     status: (): RustCoreDaemonStatus => ({
       enabled,
       running: Boolean(child && !child.killed),

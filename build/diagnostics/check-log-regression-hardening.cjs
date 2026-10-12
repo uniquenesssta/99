@@ -22,7 +22,9 @@ const systemAction = read('src/renderer/src/runtime/library/actions/fontLibraryS
 assert(systemAction.includes('if (scanAllFontsTask) return scanAllFontsTask'), 'scan-all must be single-flight while its folder dialog or scan is active')
 
 const preview = read('src/main/preview/previewRuntime.ts')
-assert(preview.includes('trying rust file-path fallback'), 'installed-font family render failure must continue to the Rust file-path renderer')
+const fallbackGate = preview.indexOf('await lifetime.allowFallback(error)')
+const fileFallback = preview.indexOf('return await renderRequest({ fontPath: source.path')
+assert(fallbackGate >= 0 && fileFallback > fallbackGate, 'compatible installed-font failures must reach file rendering only after the terminal/lifetime gate')
 assert(!preview.includes('; no file fallback'), 'installed-font preview must not terminate before trying an existing font file')
 
 const earlyVisible = read('src/main/indexing/scan-orchestrator/fontScanEarlyVisibleRuntime.ts')

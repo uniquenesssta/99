@@ -139,7 +139,7 @@ async function admissionAndBatch(){
  const handlers=new Map(),admission=deferred(),render=deferred();let calls=0,admissions=0;
  const mocks={
   './ipcTraceRuntime':{registerTracedIpcHandler:(_runtime,name,fn)=>handlers.set(name,fn)},
-  './sharedActionAdmissionRuntime':{createSharedActionAdmission:()=>async channel=>{admissions++;if(channel==='fonts:query')await admission.promise}},
+  './sharedActionAdmissionRuntime':{createSharedActionAdmission:()=>async channel=>{admissions++;if(channel==='fonts:query')await admission.promise;return()=>undefined}},
  };
  const registrations={fontSystem:'registerFontSystemIpcHandlers',fontTag:'registerFontTagIpcHandlers',library:'registerLibraryIpcHandlers',maintenance:'registerMaintenanceIpcHandlers',previewAndFolder:'registerPreviewAndFolderIpcHandlers',security:'registerSecurityIpcHandlers'};
  for(const [name,method] of Object.entries(registrations))mocks['./handlers/'+name+'IpcHandlers']={[method]:handle=>{if(name==='library')for(const ch of ['library:save','fonts:setLocalTagsBatch','fonts:query','fonts:activate'])handle(ch,async()=>{calls++;return true})}};

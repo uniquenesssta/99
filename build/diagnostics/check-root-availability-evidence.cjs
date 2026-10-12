@@ -3,11 +3,12 @@ process.env.HFM_LOG_DETAIL = 'debug'
 const assert=require('node:assert/strict'),fs=require('node:fs'),fsp=fs.promises,path=require('node:path'),os=require('node:os')
 const {loader}=require('./check-operation-chain.cjs')
 const root=path.resolve(__dirname,'../..'),abs=p=>path.join(root,p),tick=ms=>new Promise(r=>setTimeout(r,ms))
+const {awaitPhysicalIoClose}=loader({[abs('src/main/path/sharedFileSystemRuntime.ts')]:{sharedFileSystem:{}}})('src/main/path/ioDeadlineRuntime.ts')
 async function until(test){const end=Date.now()+5000;while(!test()){assert(Date.now()<end,'condition timed out');await tick(10)}}
 async function requestTimeoutDoesNotOffline(){
  let state={state:'online',generation:7},marks=0
  const l=loader({
-  [abs('src/main/path/startupPathAvailabilityRuntime.ts')]:{getStartupPathRootState:()=>({rootId:'r',...state}),markStartupPathRootUnavailable:()=>{marks++;state={state:'offline',generation:state.generation+1}}},
+  [abs('src/main/path/startupPathAvailabilityRuntime.ts')]:{ assertStartupPathRootGuardCurrent() {},getStartupPathRootState:()=>({rootId:'r',...state}),markStartupPathRootUnavailable:()=>{marks++;state={state:'offline',generation:state.generation+1}}},
   [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoAvailabilityRoot:()=> 'r',sharedIoResourceKeys:async()=>['r']}
  })
  const {SharedIoProcessError}=l('src/main/path/sharedIoProcessRuntime.ts'),io=l('src/main/path/sharedFileSystemRuntime.ts')
@@ -51,7 +52,7 @@ async function availabilityEpochs(){
   [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{registerIsolatedRoot(){},sharedIoResourceKeys:async()=>['r']},
   [abs('src/main/path/pathCanonicalizer.ts')]:{normalizeNativePathText:x=>x,mappedDriveTableAsync:async()=>new Map()},
   [abs('src/main/path/cachePath.ts')]:{normalizePathForCacheCompare:x=>String(x).toLowerCase()},
-  [abs('src/main/path/ioDeadlineRuntime.ts')]:{unavailableRootTtlMs:()=>1000,uncRootProbeTimeoutMs:()=>500},
+  [abs('src/main/path/ioDeadlineRuntime.ts')]:{awaitPhysicalIoClose,unavailableRootTtlMs:()=>1000,uncRootProbeTimeoutMs:()=>500},
   [abs('src/main/path/sharedPathProbeRuntime.ts')]:{probeStartupDirectory:async()=>{calls++;if(mode==='queue')throw Object.assign(Error('busy'),{reason:'queue-timeout',queuedMs:3000,executionMs:0});if(mode==='timeout')throw Object.assign(Error('root timeout'),{reason:'timeout',queuedMs:0,executionMs:500});if(mode==='identity')throw Object.assign(Error('identity changed'),{reason:'identity-changed',queuedMs:0,executionMs:20});return{directory:true,physicalPath:'\\\\nas\\share',queuedMs:5,executionMs:25}}}
  }
  const l=loader(mocks,{Date:class extends Date{static now(){return now}},process:{...process,platform:'linux'}}),a=l('src/main/path/startupPathAvailabilityRuntime.ts'),rootPath='//nas/share/fonts'
@@ -70,7 +71,7 @@ async function localFixedDriveIsNotIsolated(){
   [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{registerIsolatedRoot(){registrations++}},
   [abs('src/main/path/pathCanonicalizer.ts')]:{normalizeNativePathText:x=>x,mappedDriveTableAsync:async()=>new Map()},
   [abs('src/main/path/cachePath.ts')]:{normalizePathForCacheCompare:x=>String(x).toLowerCase()},
-  [abs('src/main/path/ioDeadlineRuntime.ts')]:{unavailableRootTtlMs:()=>1000,uncRootProbeTimeoutMs:()=>500},
+  [abs('src/main/path/ioDeadlineRuntime.ts')]:{awaitPhysicalIoClose,unavailableRootTtlMs:()=>1000,uncRootProbeTimeoutMs:()=>500},
   [abs('src/main/path/sharedPathProbeRuntime.ts')]:{probeStartupDirectory:async()=>({directory:true,queuedMs:0,executionMs:1})}
  }
  const l=loader(mocks,{process:{...process,platform:'win32'}}),a=l('src/main/path/startupPathAvailabilityRuntime.ts')
@@ -80,7 +81,7 @@ async function localFixedDriveIsNotIsolated(){
 async function previewConsumesCentralOwner(){
  let rootState={state:'checking',generation:1},ensures=0
  const l=loader({
-  [abs('src/main/path/startupPathAvailabilityRuntime.ts')]:{ensureStartupPathRootAvailable:async()=>{ensures++;return rootState.state==='online'},getStartupPathRootState:()=>({rootId:'r',...rootState})},
+  [abs('src/main/path/startupPathAvailabilityRuntime.ts')]:{ assertStartupPathRootGuardCurrent() {},ensureStartupPathRootAvailable:async()=>{ensures++;return rootState.state==='online'},getStartupPathRootState:()=>({rootId:'r',...rootState})},
   [abs('src/main/path/cachePath.ts')]:{normalizePathForCacheCompare:x=>x},
   [abs('src/main/path/ioDeadlineRuntime.ts')]:{...loader()('src/main/path/ioDeadlineRuntime.ts'),unavailableRootTtlMs:()=>30000},
   [abs('src/main/preview/runtime/previewSharedStorageCircuitBreakerRuntime.ts')]:{createPreviewSharedStorageCircuitBreakerRuntime:()=>({canUseSharedStorage:()=>true,recordSharedStorageSuccess(){},recordSharedStorageFailure:()=>0})}

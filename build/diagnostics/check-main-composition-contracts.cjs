@@ -19,7 +19,7 @@ assert.equal(parsed.errors.length, 0)
 
 const owners = ['Core', 'Data', 'Mutation', 'Operations']
 const resourceKeys = {
-  MainDataResourceLifecycle: ['closeLibraryDb', 'closePreviewDb', 'clearLocalPreviewDbHandle', 'checkpointOpenCacheDbs', 'closeCacheDb'],
+  MainDataResourceLifecycle: ['awaitSharedAvailabilityProbesClosed', 'closeLibraryDb', 'closePreviewDb', 'clearLocalPreviewDbHandle', 'checkpointOpenCacheDbs', 'closeCacheDb'],
   MainOperationsResourceLifecycle: ['closeTasksDb', 'checkpointTasksDb'],
 }
 const positive = `
@@ -30,6 +30,7 @@ import type { createLibraryDbConnectionRuntime } from '../../../src/main/library
 import type { createPreviewDbRuntime } from '../../../src/main/preview/previewDbRuntime'
 import type { createCacheArchitectureRuntime } from '../../../src/main/cache/cacheArchitectureRuntime'
 import type { createBackgroundTaskRuntime } from '../../../src/main/tasks/backgroundTasks'
+import type { createSharedAvailabilityProbeScheduler } from '../../../src/main/path/sharedAvailabilityProbeSchedulerRuntime'
 ${owners.map(owner => `declare const ${owner.toLowerCase()}: C.Main${owner}CompositionRuntime`).join('\n')}
 const registration = createMainApplicationRuntime({ core, data, mutation, operations }).registration
 const application: C.MainApplicationRuntime = { registration }
@@ -37,7 +38,9 @@ declare const library: ReturnType<typeof createLibraryDbConnectionRuntime>
 declare const preview: ReturnType<typeof createPreviewDbRuntime>
 declare const cache: ReturnType<typeof createCacheArchitectureRuntime>
 declare const tasks: ReturnType<typeof createBackgroundTaskRuntime>
+declare const availability: ReturnType<typeof createSharedAvailabilityProbeScheduler>
 const dataResources: C.MainDataResourceLifecycle = {
+  awaitSharedAvailabilityProbesClosed: availability.stop,
   closeLibraryDb: library.closeLibraryDb, closePreviewDb: preview.closePreviewDb,
   clearLocalPreviewDbHandle: preview.clearLocalPreviewDbHandle,
   checkpointOpenCacheDbs: cache.checkpointOpenCacheDbs, closeCacheDb: cache.closeCacheDb

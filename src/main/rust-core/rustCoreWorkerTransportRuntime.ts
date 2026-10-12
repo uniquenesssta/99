@@ -1,7 +1,9 @@
+import { awaitPhysicalIoClose } from '../path/ioDeadlineRuntime'
+import { currentPreviewRenderLifetime, PreviewRenderDomainError } from '../preview/runtime/previewRenderLifetimeRuntime'
 import { isCompletePreviewPng } from '../preview/runtime/previewImageValidationRuntime'
 import { assertLocalShutdownWorkAllowed } from '../app/shutdownCoordinatorRuntime'
 import type { ChildProcess } from 'node:child_process'
-import { getStartupPathRootState } from '../path/startupPathAvailabilityRuntime'
+import { getStartupPathRootState, assertStartupPathRootGuardCurrent } from '../path/startupPathAvailabilityRuntime'
 import { sharedIoAvailabilityRoot } from './rustSharedIoCommandRuntime'
 import { configureSharedFileExecutor, currentSharedIoSignal, sharedFileAccesses, isSharedPreviewReadScope, currentSharedIoPriority } from '../path/sharedFileSystemRuntime'
 import { traceRustInput, logOperation, recordOperationWork } from '../logging/operationTraceContext'
@@ -227,9 +229,12 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   }
 
   async function runRustCoreScheduledCommandDirect(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean; previewBytes?: Buffer }> {
+    const previewLifetime = currentPreviewRenderLifetime()
+    previewLifetime?.assertCurrent()
     args = [...args]
     execOptions = { ...execOptions, signal: execOptions.signal || currentSharedIoSignal() }
     execOptions.assertCurrent?.()
+    assertStartupPathRootGuardCurrent()
     assertLocalShutdownWorkAllowed()
     if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
     // Copy caller-owned identities before awaiting mapping discovery.
@@ -268,7 +273,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       const outputs = args.flatMap((arg, index) => arg === '--output' ? [args[index + 1]] : arg.startsWith('--output=') ? [arg.slice('--output='.length)] : [])
       target = { paths: [...new Set([...(target?.paths || []), ...inferredPaths, ...outputs].filter((value): value is string => !!value))], write: true }
     }
-    const effectInput = inputEntry?.input as { operation?: string; path?: string; availabilityRoot?: string; transferPath?: string; outputPath?: string; bindingSnapshot?: boolean; preflight?: unknown; entries?: unknown[] } | undefined
+    const effectInput = inputEntry?.input as { operation?: string; path?: string; availabilityRoot?: string; transferPath?: string; outputPath?: string; bindingSnapshot?: boolean; preflight?: unknown; entries?: unknown[]; preferSystemFont?: unknown; fontPath?: unknown; systemFontFamilyCandidates?: unknown } | undefined
     const identityRequest = args[0] === '--shared-file-io' && (inputEntry?.identityIntent === true || effectInput?.operation === 'fontContentIdentity')
     if (identityRequest) {
       // A failed or overlapping rewrite can leave different bytes from the
@@ -340,12 +345,14 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     if (roots.length) {
       const rootGenerations = new Map(target!.paths.map(sharedIoAvailabilityRoot).filter((root): root is string => !!root).map(root => [root,getStartupPathRootState(root).generation]));
       const admit = () => {
-        try { execOptions.assertCurrent?.() } catch { return false }
+        try { execOptions.assertCurrent?.(); assertStartupPathRootGuardCurrent(); previewLifetime?.assertCurrent() } catch { return false }
         return (previewAdmissions.get(inputPath)?.() ?? true) && [...rootGenerations].every(([root,generation]) => {
         const current = getStartupPathRootState(root);
         return current.generation === generation && current.state !== 'offline';
         });
       };
+      assertStartupPathRootGuardCurrent()
+      const queueTimeoutMs = previewLifetime?.queueTimeoutMs() ?? 3000
       const leased = [...new Set(args)].map(path => temporaryFiles.get(path)).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
       for (const entry of leased) entry.holds += 1
       const onClose = () => {
@@ -359,13 +366,29 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
       const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, verifiedReadOnly, sharedReadOnlyPreview, previewStageProof: ownedNativeStage?.proof || (sharedReadOnlyPreview ? previewStages.proofForInput(temporaryFiles.get(inputPath)?.input) : undefined), initialPhase: ownedNativeStage ? { timeoutMs: 500, acceptLine: ownedNativeStage.acceptLine } : undefined, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
-        timeoutMs: sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing),
+        timeoutMs: Math.min(sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing), previewLifetime?.remainingMs() ?? Infinity),
         onStderrLine: execOptions.onStderrLine,
-        queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
+        queueTimeoutMs, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).then(result => {
+          previewLifetime?.recordQueueWait(result.queuedMs)
+          return result
+        }).catch(async error => {
+          previewLifetime?.recordQueueWait(error.queuedMs)
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
-          if (execOptions.assertCurrent || !target!.write || previewRead || accesses?.length || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') await error.closed
+          if (execOptions.assertCurrent || !target!.write || previewRead || accesses?.length || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') await awaitPhysicalIoClose(error)
+          if (error.sharedIo === true && error.reason === 'process-exit' && error.previewRenderFailure === 'system-family-unavailable'
+            && ['--preview-render-image', '--preview-render-owned-stage'].includes(args[0]) && effectInput?.preferSystemFont === true
+            && typeof effectInput.fontPath === 'string' && !effectInput.fontPath.trim()
+            && Array.isArray(effectInput.systemFontFamilyCandidates) && effectInput.systemFontFamilyCandidates.length > 0) {
+            await awaitPhysicalIoClose(error)
+            assertLocalShutdownWorkAllowed()
+            if (execOptions.signal?.aborted || transportStopped) throw new SharedIoProcessError('Preview owner retired after domain failure', 'not-started', 'cancelled')
+            previewLifetime?.assertCurrent()
+            if (!admit()) throw new SharedIoProcessError('Preview owner changed after domain failure', 'not-started', 'stale-generation')
+            throw new PreviewRenderDomainError(error)
+          }
           throw error
         })
+      previewLifetime?.assertCurrent()
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
         try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Preserve the worker result. */ }
       }
@@ -381,6 +404,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     }
     assertLocalShutdownWorkAllowed()
     if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
+    assertStartupPathRootGuardCurrent()
     logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'daemon-probe' }, options.appendStartupLog)
     const daemonResult = await rustCoreDaemon.tryRun(workerPath, args, execOptions).catch((error) => {
       if (error instanceof Error && error.name === 'AbortError') throw error
@@ -391,23 +415,27 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       appendDaemonCommandFailureLog(error instanceof Error ? error.message : String(error), false)
       return null
     })
-    if (daemonResult) return { ...daemonResult, daemon: true }
+    if (daemonResult) { previewLifetime?.assertCurrent(); return { ...daemonResult, daemon: true } }
     logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'one-shot' }, options.appendStartupLog)
     const result = await rustCoreScheduler.run(args, async (schedulerSignal) => {
       const mergedSignal = mergeAbortSignals(schedulerSignal, execOptions.signal)
       try {
         execOptions.assertCurrent?.()
+        assertStartupPathRootGuardCurrent()
         assertLocalShutdownWorkAllowed()
         if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
-        const execution = execFileAsync(workerPath, args, { ...execOptionsWithoutExternalSignal(execOptions), signal: mergedSignal.signal,
+        previewLifetime?.assertCurrent()
+        const execution = execFileAsync(workerPath, args, { ...execOptionsWithoutExternalSignal(execOptions), ...(previewLifetime ? { timeout: Math.min(execOptions.timeout || 30000, previewLifetime.remainingMs()) } : {}), signal: mergedSignal.signal,
           env: { ...process.env, HFM_PARENT_PID: String(process.pid) }, killSignal: 'SIGKILL' })
+        const physicallyClosed = previewLifetime && execution.child ? new Promise<void>(resolve => execution.child.once('close', () => resolve())) : undefined
         if (execution.child) {
           recordOperationWork({ processStarts: 1 });
           execution.child.once('close', () => recordOperationWork({ processCloses: 1 }));
           localChildren.add(execution.child)
           execution.child.once('close', () => localChildren.delete(execution.child))
         }
-        return await execution as { stdout: string; stderr: string }
+        try { return await execution as { stdout: string; stderr: string } }
+        finally { await physicallyClosed }
       } catch (error) {
         const stderr = error && typeof error === 'object' ? (error as { stderr?: unknown }).stderr : undefined
         if (typeof stderr === 'string') {
@@ -426,6 +454,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Best effort diagnostic. */ }
       }
     }
+    previewLifetime?.assertCurrent()
     return { ...result, daemon: false }
   }
 
@@ -443,7 +472,9 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     const root = sharedIoAvailabilityRoot(input.fontPath)
     const generation = root ? getStartupPathRootState(root).generation : undefined
     const admit = () => !root || (getStartupPathRootState(root).generation === generation && getStartupPathRootState(root).state !== 'offline')
-    const deadline = Date.now() + 3000 + Math.min(30000, Math.max(100, execOptions.timeout || 30000))
+    const previewLifetime = currentPreviewRenderLifetime()
+    previewLifetime?.assertCurrent()
+    const deadline = Date.now() + Math.min(3000 + Math.min(30000, Math.max(100, execOptions.timeout || 30000)), previewLifetime?.remainingMs() ?? Infinity)
     const nativeStage = cachedStatus?.path === workerPath && hasCapability(cachedStatus, 'preview-owned-stage-v1')
       ? await nativePreviewStages.reserve(input.fontPath, workerPath) : null
     const bytesOnly = !!execOptions.foregroundPreviewBytes && !!nativeStage && !!cachedStatus && hasCapability(cachedStatus, 'preview-owned-stage-bytes-v1')
@@ -494,10 +525,11 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     } catch (error) {
       // A cancelled write keeps ownership of its stage until the child really closes.
       if (error instanceof SharedIoProcessError) {
-        await error.closed
+        await awaitPhysicalIoClose(error)
         if (deadlineController.signal.aborted && !signal?.aborted && error.reason === 'cancelled') {
           const timeout = new SharedIoProcessError('Shared preview timeout', error.outcome, 'timeout')
           timeout.closed = error.closed; timeout.queuedMs = error.queuedMs; timeout.executionMs = error.executionMs
+          timeout.requestId = error.requestId; timeout.blockedBy = error.blockedBy; timeout.phase = error.phase; timeout.blocker = error.blocker
           throw timeout
         }
       }
@@ -660,6 +692,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     }
   })
   return {
+    hasRustCoreInteractiveWork: () => rustCoreScheduler.hasInteractiveWork() || sharedIo.hasForegroundWork() || rustCoreDaemon.hasSubmittedWork(),
     diagnoseRustCoreWorker,
     rustCoreWorkerStatus: () => cachedStatus,
     invalidateRustCoreSchedulerCaches,

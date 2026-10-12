@@ -176,6 +176,7 @@
   "rustFacadeMethods": [
     "cancelRustCoreSchedulerScopes",
     "diagnoseRustCoreWorker",
+    "hasRustCoreInteractiveWork",
     "invalidateRustCoreSchedulerCaches",
     "noteRustCoreSchedulerInteractiveActivity",
     "runRustDatabaseBackup",
@@ -317,7 +318,8 @@
     {
       "method": "runRustMergedIndexRebuild",
       "capabilities": [
-        "merged-index-rebuild"
+        "merged-index-rebuild",
+        "merged-index-strict-rebuild-v1"
       ],
       "flags": [
         "--input",
@@ -329,6 +331,7 @@
     {
       "method": "runRustMergedIndexSync",
       "capabilities": [
+        "merged-index-prepared-sync-v1",
         "merged-index-sync"
       ],
       "flags": [

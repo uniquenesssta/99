@@ -230,6 +230,7 @@ export type RustMergedIndexRebuildSource = {
 }
 
 export type RustMergedIndexRebuildInput = {
+  requireAuthoritativeSources?: boolean
   mergedIndexDbPath: string
   schemaVersion: number
   sourcesKey: string
@@ -252,6 +253,10 @@ export type RustMergedIndexSyncInput = {
   sourcesKey: string
   syncedAt: string
   source: RustMergedIndexRebuildSource
+  preparedRows?: Record<string, unknown>[]
+  preserveSourceCheckpoint?: boolean
+  expectedSourcesKey?: string
+  assertCurrent?: () => void
   relativePaths?: string[]
   fullSnapshot?: boolean
   reason?: string

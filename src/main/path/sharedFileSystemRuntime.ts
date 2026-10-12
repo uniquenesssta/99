@@ -2,7 +2,7 @@ import type { SharedIoAccessPath } from './sharedIoAccessRuntime'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { recordOperationWork } from '../logging/operationTraceContext'
 import type { IoTaskPriority } from '../performance/ioQueue'
-import { getStartupPathRootState, markStartupPathRootUnavailable } from './startupPathAvailabilityRuntime'
+import { assertStartupPathRootGuardCurrent, getStartupPathRootState, markStartupPathRootUnavailable } from './startupPathAvailabilityRuntime'
 import { promises as localFs } from 'node:fs'
 import { sharedDatabaseTarget, sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
 import { SharedIoProcessError } from './sharedIoProcessRuntime'
@@ -59,6 +59,7 @@ const readsInFlight = new Map<string, ReturnType<SharedFileExecutor>>()
 const shareableReads = new Set(['stat','lstat','access','realpath','readdir','readFile','treeSnapshot','directoryMetadata','directoryMetadataBatch','fontContentIdentity'])
 export function configureSharedFileExecutor(value: SharedFileExecutor): void { executor = value }
 export async function executeSharedFile(request: SharedFileRequest, bytes?: Buffer, signal?: AbortSignal) {
+  assertStartupPathRootGuardCurrent()
   signal ||= currentSharedIoSignal()
   if (!executor) throw new SharedIoProcessError('共享文件隔离执行器尚未就绪。', 'not-started', 'executor-unavailable')
   request = { ...request, availabilityRoot: sharedIoAvailabilityRoot(request.path) }
@@ -118,8 +119,11 @@ export const sharedFileSystem: typeof localFs = new Proxy(localFs, { get(target,
   const original = Reflect.get(target, property)
   if (typeof original !== 'function') return original
   return async (...args: any[]) => {
+    assertStartupPathRootGuardCurrent()
     const paths = [args[0], ...(['copyFile','rename','link','symlink'].includes(String(property)) ? [args[1]] : [])].filter(value => typeof value === 'string')
-    if (!(await sharedIoResourceKeys(paths)).length) {
+    const resourceKeys = await sharedIoResourceKeys(paths)
+    assertStartupPathRootGuardCurrent()
+    if (!resourceKeys.length) {
       const result = await original.apply(target, args)
       if (property === 'readFile' && (Buffer.isBuffer(result) || typeof result === 'string')) {
         const bytes = Buffer.isBuffer(result) ? result.length : Buffer.byteLength(result, encoding(args[1]) || 'utf8')

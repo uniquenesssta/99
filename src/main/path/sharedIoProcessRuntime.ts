@@ -35,6 +35,11 @@ export class SharedIoProcessError extends Error {
   closed?: Promise<void>
   queuedMs?: number
   executionMs?: number
+  requestId?: number
+  blockedBy?: number
+  phase?: 'queued' | 'executing'
+  blocker?: 'resource-conflict' | 'prior-conflicting-request' | 'lane-capacity'
+  previewRenderFailure?: 'system-family-unavailable'
   constructor(message: string, readonly outcome: 'not-started' | 'unknown', readonly reason: string) {
     super(message)
     this.name = 'SharedIoProcessError'
@@ -52,6 +57,19 @@ function workerFailureDetail(stdout: string): string {
     }
   } catch { /* A malformed envelope still retains its process-exit classification. */ }
   return ''
+}
+function previewRenderFailureReceipt(request: SharedIoProcessRequest, stdout: string, code: number | null, signal: NodeJS.Signals | null): 'system-family-unavailable' | undefined {
+  if (code !== 2 || signal !== null || !['--preview-render-image', '--preview-render-owned-stage'].includes(request.args[0]) || stdout.length > 512) return
+  // One exact envelope only. Partial, extra/multiple, unknown and ordinary
+  // process errors are never compatible renderer failures.
+  const lines = stdout.split(/\r?\n/).filter(line => line.trim())
+  if (lines.length !== 1) return
+  if (lines[0].trim() !== '{"ok":false,"failureKind":"system-family-unavailable","message":"installed font family unavailable"}') return
+  try {
+    const value = JSON.parse(lines[0])
+    if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'failureKind,message,ok') return
+    if (value.ok === false && value.failureKind === 'system-family-unavailable' && value.message === 'installed font family unavailable') return value.failureKind
+  } catch { /* A malformed receipt remains process-exit. */ }
 }
 type Result = { stdout: string; stderr: string; queuedMs: number; executionMs: number }
 export type SharedIoProcessMetricRow = {
@@ -187,7 +205,23 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     const blocker = [...active, ...queue].find(other => other !== job && conflicts(job, other))
     traceJob(job, 'shared-cancelled', reason, blocker?.id)
     const started = Boolean(job.child?.pid)
-    settle(job, undefined, new SharedIoProcessError(`Shared I/O ${reason}: request=${job.id}`, started ? 'unknown' : 'not-started', reason))
+    const error = new SharedIoProcessError(`Shared I/O ${reason}: request=${job.id}`, started ? 'unknown' : 'not-started', reason)
+    error.requestId = job.id
+    error.phase = started ? 'executing' : 'queued'
+    if (!started) {
+      // Report only observed admission blockers, never infer a lock owner or
+      // attach a competing job to an already executing I/O timeout.
+      const activeConflict = [...active].find(other => other !== job && conflicts(job, other))
+      const queuedConflict = queue.find(other => other.id < job.id && conflicts(job, other) && !canOvertake(job, other))
+      const lane = laneOf(job), limit = lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2
+      const sameLane = [...active].filter(other => laneOf(other) === lane)
+      const observedBlocker = activeConflict || queuedConflict || (sameLane.length >= limit ? sameLane[0] : undefined)
+      if (observedBlocker) {
+        error.blockedBy = observedBlocker.id
+        error.blocker = activeConflict ? 'resource-conflict' : queuedConflict ? 'prior-conflicting-request' : 'lane-capacity'
+      }
+    }
+    settle(job, undefined, error)
     if (!job.child) {
       const index = queue.indexOf(job)
       if (index >= 0) queue.splice(index, 1)
@@ -284,6 +318,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
           else {
             const detail = workerFailureDetail(stdout)
             const error = new SharedIoProcessError(`Shared I/O process failed: code=${code}, signal=${signal}${detail ? `, message=${detail}` : ''}`, 'unknown', 'process-exit')
+            error.previewRenderFailure = previewRenderFailureReceipt(request, stdout, code, signal)
             log(`shared io failed: request=${job.id}, label=${requestLabel(request)}, ${error.message}`)
             settle(job, undefined, error)
           }
@@ -348,6 +383,9 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   }
   return {
     run, stop, cancelAll,
+    // Admission observers must keep cancelled foreground work busy until its
+    // physical child closes; active retains that ownership after rejection.
+    hasForegroundWork: () => [...active, ...queue].some(job => priorityOf(job) >= 20),
     whenIdle: () => active.size || queue.length ? new Promise<void>(resolve => idleWaiters.push(resolve)) : Promise.resolve(),
     status: () => ({
       closed,

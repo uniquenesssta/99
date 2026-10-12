@@ -488,17 +488,19 @@ fn print_preview_cache_result(result: Result<String, String>) -> i32 {
 }
 
 
-fn print_preview_render_result(result: Result<String, String>) -> i32 {
+fn print_preview_render_result(result: Result<String, crate::preview_render::PreviewRenderError>) -> i32 {
     match result {
         Ok(json) => {
             println!("{}", json);
             0
         }
         Err(message) => {
-            println!(
-                "{{\"ok\":false,\"message\":\"{}\"}}",
-                escape_json(&message)
-            );
+            if matches!(&message, crate::preview_render::PreviewRenderError::SystemFamilyUnavailable(_)) {
+                // A bounded domain receipt, not an arbitrary process failure.
+                println!("{{\"ok\":false,\"failureKind\":\"system-family-unavailable\",\"message\":\"installed font family unavailable\"}}");
+            } else {
+                println!("{{\"ok\":false,\"message\":\"{}\"}}", escape_json(&message.to_string()));
+            }
             2
         }
     }

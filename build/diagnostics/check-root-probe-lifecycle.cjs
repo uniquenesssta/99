@@ -6,6 +6,7 @@ const path = require('node:path'), vm = require('node:vm')
 const { EventEmitter } = require('node:events')
 const { loader } = require('./check-operation-chain.cjs')
 const root = path.resolve(__dirname, '../..'), abs = file => path.join(root, file)
+const { awaitPhysicalIoClose } = loader({ [abs('src/main/path/sharedFileSystemRuntime.ts')]: { sharedFileSystem: {} } })('src/main/path/ioDeadlineRuntime.ts')
 const plain = value => JSON.parse(JSON.stringify(value))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -18,7 +19,7 @@ function controlledPorts(extra = {}) {
       sharedIoResourceKeys: async () => ['root'], sharedIoAccesses: async () => [{ root: 'root', path: sourcePath, mode: 'read', scope: 'file' }], registerIsolatedRoot() {},
     },
     [abs('src/main/path/pathCanonicalizer.ts')]: { normalizeNativePathText: value => value, normalizePathCompareText: value => String(value).toLowerCase(), mappedDriveTableAsync: async () => new Map() },
-    [abs('src/main/path/ioDeadlineRuntime.ts')]: { rootProbeQueueTimeoutMs: () => 3000, uncRootProbeTimeoutMs: () => 500, unavailableRootTtlMs: () => 30000 },
+    [abs('src/main/path/ioDeadlineRuntime.ts')]: { awaitPhysicalIoClose, rootProbeQueueTimeoutMs: () => 3000, uncRootProbeTimeoutMs: () => 500, unavailableRootTtlMs: () => 30000 },
     ...extra,
   }
 }

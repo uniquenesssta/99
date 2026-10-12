@@ -34,8 +34,10 @@ function harness(mode = 'normal') {
         }
         const child = new EventEmitter()
         Object.assign(child, { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), killed: false, writes: [], kills: 0, exitCode: null, signalCode: null })
+        if (mode === 'unwritable') Object.defineProperty(child.stdin, 'writable', { value: false })
         child.stdin.write = (line, callback) => {
           child.writes.push(JSON.parse(line))
+          if (mode === 'submit-throw' && child.writes.at(-1).type === 'submit') throw new Error('uncertain submit failure')
           if (child.writes.at(-1).type === 'shutdown') {
             if (mode === 'throw') throw new Error('write failed')
             if (mode === 'callback-error') callback(new Error('write failed'))
@@ -57,6 +59,69 @@ function harness(mode = 'normal') {
   return { api, children, timers, processStub, finish }
 }
 async function main() {
+  {
+    const h = harness('unwritable')
+    await h.api.tryRun('worker', ['--local-tags-set'], {}).catch(error => error)
+    assert.equal(h.api.hasSubmittedWork(), false, 'definitively pre-write rejection invented submitted work')
+    assert.equal(h.children[0].writes.length, 0)
+    h.api.stopImmediately(); h.children[0].emit('close', 0, null)
+  }
+  {
+    const h = harness('submit-throw')
+    for (let index = 0; index < 513; index++) await h.api.tryRun('worker', ['--local-tags-set'], {}).catch(error => error)
+    const child = h.children[0]
+    assert.equal(h.api.status().pending, 0); assert.equal(h.api.hasSubmittedWork(), true)
+    for (const { id } of child.writes.filter(value => value.type === 'submit')) child.stdout.emit('data', Buffer.from(JSON.stringify({ id, type: 'job_failed' }) + '\n'))
+    assert.equal(h.api.hasSubmittedWork(), true, 'bounded observer overflow must remain busy until physical close')
+    h.api.stopImmediately(); child.emit('close', 0, null)
+    assert.equal(h.api.hasSubmittedWork(), false)
+  }
+  for (const settlement of ['cancel', 'timeout', 'stop', 'terminal']) {
+    const h = harness(), controller = new AbortController()
+    assert.equal(h.api.hasSubmittedWork(), false)
+    const result = h.api.tryRun('worker', ['--local-tags-set'], { signal: controller.signal, timeout: 5000 }).catch(error => error)
+    const child = h.children[0], id = child.writes.find(w => w.type === 'submit').id
+    assert.equal(h.api.hasSubmittedWork(), true)
+    // Status/progress/cancel acknowledgement cannot prove native retirement.
+    for (const type of ['daemon_status', 'job_started', 'job_cancel_requested']) child.stdout.emit('data', Buffer.from(JSON.stringify({ id, type, pending: 0, queued: 0 }) + '\n'))
+    assert.equal(h.api.hasSubmittedWork(), true)
+    if (settlement === 'cancel') controller.abort()
+    else if (settlement === 'timeout') [...h.timers.values()].find(timer => timer.ms === 5000).fn()
+    else if (settlement === 'stop') h.api.stop()
+    if (settlement !== 'terminal') {
+      await result
+      assert.equal(h.api.status().pending, 0)
+      assert.equal(h.api.hasSubmittedWork(), true, settlement + ' released physical daemon work with only local settlement')
+    }
+    if (settlement === 'stop') {
+      child.emit('exit', 0, null)
+      assert.equal(h.api.hasSubmittedWork(), true, 'exit is not physical close')
+      child.emit('close', 0, null)
+    } else {
+      child.stdout.emit('data', Buffer.from(JSON.stringify({ id, type: settlement === 'terminal' ? 'job_finished' : 'job_cancelled', stdout: 'ok' }) + '\n'))
+      await result
+    }
+    assert.equal(h.api.hasSubmittedWork(), false, 'native terminal receipt did not retire locally settled job')
+    h.api.stopImmediately(); child.emit('close', 0, null)
+  }
+  {
+    const h = harness()
+    const oldResult = h.api.tryRun('old', ['--local-tags-set'], {}).catch(error => error), old = h.children[0]
+    const nextResult = h.api.tryRun('new', ['--local-tags-set'], {}), next = h.children[1]
+    await oldResult
+    h.finish(next); await nextResult
+    assert.equal(h.api.hasSubmittedWork(), true, 'replacement receipt cleared retiring child work')
+    old.emit('exit', 0, null)
+    assert.equal(h.api.hasSubmittedWork(), true)
+    old.emit('close', 0, null)
+    assert.equal(h.api.hasSubmittedWork(), false)
+    const again = h.api.tryRun('new', ['--local-tags-set'], {})
+    old.emit('close', 0, null)
+    assert.equal(h.api.hasSubmittedWork(), true, 'late old close cleared replacement work')
+    const id = next.writes.filter(w => w.type === 'submit').at(-1).id
+    next.stdout.emit('data', Buffer.from(JSON.stringify({ id, type: 'job_finished', stdout: 'ok' }) + '\n'))
+    await again; h.api.stopImmediately(); next.emit('close', 0, null)
+  }
   const h = harness()
   const first = h.api.tryRun('worker', ['--local-tags-set'], { timeout: 5000 })
   const c = h.children[0]

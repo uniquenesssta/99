@@ -32,6 +32,7 @@ export type MainDataLifecycle = Pick<RegistrationSurface,
 // Close/checkpoint remain owned by the runtime that created the handle. Watcher
 // and maintenance receive these operations, never a duplicate handle owner.
 export interface MainDataResourceLifecycle {
+  readonly awaitSharedAvailabilityProbesClosed: () => Promise<void>
   readonly closeLibraryDb: () => void
   readonly closePreviewDb: () => void
   readonly clearLocalPreviewDbHandle: () => void

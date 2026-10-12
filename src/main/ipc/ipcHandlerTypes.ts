@@ -68,7 +68,7 @@ export interface IpcHandlerRuntime {
   cacheArchitectureInfo: () => unknown | Promise<unknown>;
   getMigrationDiagnostics?: () => unknown | Promise<unknown>;
   clearMigrationDiagnostics?: () => unknown | Promise<unknown>;
-  readSharedMetadataFrontendDiagnostics?: (options?: { roots?: string[]; synchronize?: boolean; includeRepairDryRun?: boolean }) => unknown | Promise<unknown>;
+  readSharedMetadataFrontendDiagnostics?: (options?: { roots?: string[]; automatic?: boolean; synchronize?: boolean; includeRepairDryRun?: boolean }) => unknown | Promise<unknown>;
   repairSharedMetadataFromFrontend?: (options?: { roots?: string[]; apply?: boolean; synchronizeAfterRepair?: boolean; repairInvalidTagJson?: boolean; purgeInvalidTagOps?: boolean; archiveOrphanTagOps?: boolean; purgeArchivedOrphanTagOps?: boolean; orphanArchiveReason?: string }) => unknown | Promise<unknown>;
   readSharedIndexSnapshotFrontendDiagnostics?: () => unknown | Promise<unknown>;
   repairSharedIndexSnapshotFromFrontend?: (options?: { apply?: boolean }) => unknown | Promise<unknown>;

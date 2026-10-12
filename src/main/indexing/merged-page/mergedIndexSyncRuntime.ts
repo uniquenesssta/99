@@ -1,311 +1,194 @@
+import { mergedSyncBlocker, settleMergedSyncError } from './mergedIndexProjectionFailureRuntime'
+import { createHash } from 'node:crypto'
+import { isAbsolute, win32 } from 'node:path'
+import { applicationWorkEpoch, assertApplicationOpen } from '../../app/shutdownCoordinatorRuntime'
+import { ensureStartupPathRootAvailable, getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
-import type { FontIndexChangePayload } from "../../../shared/types";
-import { rethrowRustCoreDaemonSubmittedWrite } from "../../rust-core/rustCoreDaemonWriteBoundaryRuntime";
+import { rethrowRustCoreDaemonSubmittedWrite } from '../../rust-core/rustCoreDaemonWriteBoundaryRuntime'
+import type { FontIndexChangePayload } from '../../../shared/types'
+import type { MergedIndexSourceInfo } from '../mergedIndexRuntime'
+import { assertFreshMergedIndexSource, readMergedIndexAppliedSources } from './mergedIndexSourceRuntime'
 import {
-  isInstallStatusIncrementalSyncReason,
-  isRootIndexIncrementalSyncReason,
-  isSharedMetadataIncrementalSyncReason,
-  sourceKeyChangedOnlyByInstallStatus,
-  sourceKeyChangedOnlyByRootIndex,
-  sourceKeyChangedOnlyBySharedMetadata,
-} from "./mergedIndexSourceChangeRuntime";
-import type {
-  MergedIndexBuildRuntime,
-  MergedIndexPageContext,
-  MergedIndexSourceRuntime,
-} from "./mergedIndexPageTypes";
+  isInstallStatusIncrementalSyncReason, isRootIndexIncrementalSyncReason, isSharedMetadataIncrementalSyncReason,
+  sourceKeyChangedOnlyByInstallStatus, sourceKeyChangedOnlyByRootIndex, sourceKeyChangedOnlyBySharedMetadata,
+} from './mergedIndexSourceChangeRuntime'
+import type { MergedIndexBuildRuntime, MergedIndexPageContext, MergedIndexSourceRuntime } from './mergedIndexPageTypes'
 
-export function createMergedIndexSyncRuntime(
-  ctx: MergedIndexPageContext,
-  sourceRuntime: MergedIndexSourceRuntime,
-  buildRuntime: MergedIndexBuildRuntime,
-) {
-  async function syncMergedIndexForRootIncremental(
-    rootPath: string,
-    payload: FontIndexChangePayload,
-    reason: string,
-  ): Promise<void> {
-    return ctx.runMergedIndexMutation(
-      `incremental:${ctx.normalizePathForCacheCompare(rootPath)}:${reason}`,
-      async ({ commit }) => {
-        const startedAt = Date.now();
-        const roots = await ctx.appWatchedFolders();
-        const sources = await sourceRuntime.mergedIndexSourcesForRoots(roots);
-        const source = sources.find(
-          (item) =>
-            ctx.normalizePathForCacheCompare(item.root) ===
-            ctx.normalizePathForCacheCompare(rootPath),
-        );
-        if (!source || !sources.length) return;
+export function mergedSyncRootHash(root: string): string {
+  return createHash('sha256').update(root).digest('hex').slice(0, 12)
+}
 
-        const relativePaths = sourceRuntime.relativePathsFromFontIndexPayload(
-          source.root,
-          payload,
-        );
-        if (!relativePaths.length) {
-          ctx.appendStartupLog(
-            `local merged index incremental sync skipped: reason=${reason}, root=${source.root}, no changes`,
-          );
-          return;
-        }
+// Both writers receive the same normalized rows. No renderer font metadata is
+// trusted here: these rows were read from the authoritative target index/overlay.
+export function normalizeMergedSyncRows(ctx: MergedIndexPageContext, rows: Parameters<MergedIndexPageContext['bindMergedIndexRow']>[0][], root: string, now: string): Record<string, unknown>[] {
+  const seen = new Set<string>()
+  return rows.map(row => {
+    const relative = String(row.relative_path || '').replaceAll('\\', '/')
+    if (!relative || relative.includes('\0') || isAbsolute(relative) || win32.isAbsolute(relative)
+      || /^[a-z]:/i.test(relative) || relative.split('/').includes('..') || seen.has(relative)
+      || (row.root_path && ctx.normalizePathForCacheCompare(row.root_path) !== ctx.normalizePathForCacheCompare(root))) {
+      throw new Error('merged-projection-row-invalid')
+    }
+    seen.add(relative)
+    return ctx.bindMergedIndexRow({ ...row, root_path: root, relative_path: relative }, root, now)
+  })
+}
 
-        const sourcesKey = ctx.mergedIndexSourcesKey(sources);
-        const db = await ctx.openMergedIndexDb();
-        try {
-          const currentSourcesKey = ctx.getSqliteMeta(db, "sourcesKey");
-          const rootsChanged = !ctx.mergedIndexSourcesMatchRoots(db, roots);
-          const sourcesChanged = currentSourcesKey !== sourcesKey;
-          const metadataOnlySourceChange =
-            sourcesChanged &&
-            isSharedMetadataIncrementalSyncReason(reason) &&
-            sourceKeyChangedOnlyBySharedMetadata(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
-          const installStatusOnlySourceChange =
-            sourcesChanged && isInstallStatusIncrementalSyncReason(reason) &&
-            sourceKeyChangedOnlyByInstallStatus(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
-          const rootIndexOnlySourceChange =
-            sourcesChanged &&
-            isRootIndexIncrementalSyncReason(reason) &&
-            sourceKeyChangedOnlyByRootIndex(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
-          if (
-            rootsChanged ||
-            (sourcesChanged &&
-              !metadataOnlySourceChange &&
-              !rootIndexOnlySourceChange &&
-              !installStatusOnlySourceChange)
-          ) {
-            await buildRuntime.rebuildMergedIndexDb(db, sources, sourcesKey);
-            commit(`incremental-rebuild:${reason}`);
-            ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
-            ctx.appendStartupLog(
-              `local merged index incremental sync fell back to rebuild: reason=${reason}, rootsChanged=${rootsChanged}, sourcesChanged=${sourcesChanged}, elapsed=${Date.now() - startedAt}ms`,
-            );
-            return;
-          }
-          if (metadataOnlySourceChange) {
-            ctx.appendStartupLog(
-              `local merged index incremental sync accepted shared metadata source change: reason=${reason}, root=${source.root}`,
-            );
-          } else if (rootIndexOnlySourceChange) {
-            ctx.appendStartupLog(
-              `local merged index incremental sync accepted root index source change: reason=${reason}, root=${source.root}`,
-            );
-          }
-
-          const now = new Date().toISOString();
-          try {
-            const rustResult =
-              await ctx.rustCoreWorkerRuntime.runRustMergedIndexSync({
-                mergedIndexDbPath: ctx.mergedIndexDbPath(),
-                schemaVersion: ctx.schemaVersion,
-                sourcesKey,
-                syncedAt: now,
-                source: {
-                  root: source.root,
-                  indexDbPath: source.indexDbPath,
-                  installDbPath: source.installDbPath,
-                  indexSignature: source.indexSignature,
-                  installSignature: source.installSignature,
-                  sharedMetadataSignature:
-                    source.sharedMetadataSignature || "metadata:none",
-                },
-                relativePaths,
-                fullSnapshot: false,
-                reason,
-              });
-            if (rustResult?.synced) {
-              commit(`incremental-rust:${reason}`);
-              ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
-              ctx.appendStartupLog(
-                `local merged index incrementally synced by rust: reason=${reason}, root=${source.root}, changed=${relativePaths.length}, rows=${rustResult.rows}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${rustResult.elapsedMs || 0}ms`,
-              );
-              return;
-            }
-          } catch (error) {
-      rethrowSharedIoProcessError(error)
-            rethrowRustCoreDaemonSubmittedWrite(
-              error,
-              ctx.appendStartupLog,
-              "local merged index rust incremental sync",
-            );
-            ctx.appendStartupLog(
-              `local merged index rust incremental sync fallback to node: reason=${reason}, root=${source.root}, ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-
-          const rows = await sourceRuntime.readMergedRowsForSource(
-            source,
-            relativePaths,
-          );
-          const deleteEntry = db.prepare(
-            "DELETE FROM entries WHERE root_path = ? AND relative_path = ?",
-          );
-          const insertEntry = ctx.mergedIndexInsertStatement(db);
-          const sync = db.transaction(() => {
-            for (const relativePath of relativePaths)
-              deleteEntry.run(source.root, relativePath);
-            for (const row of rows)
-              insertEntry.run(ctx.bindMergedIndexRow(row, source.root, now));
-            ctx.writeMergedIndexSourceRow(db, source, now);
-            ctx.setSqliteMeta(db, "sourcesKey", sourcesKey);
-            ctx.setSqliteMeta(db, "updatedAt", now);
-            ctx.setSqliteMeta(db, "lastIncrementalSyncReason", reason);
-          });
-          sync();
-          commit(`incremental-node:${reason}`);
-          ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
-          ctx.appendStartupLog(
-            `local merged index incrementally synced: reason=${reason}, root=${source.root}, changed=${relativePaths.length}, rows=${rows.length}, elapsed=${Date.now() - startedAt}ms`,
-          );
-        } catch (error) {
-      rethrowSharedIoProcessError(error)
-          rethrowRustCoreDaemonSubmittedWrite(
-            error,
-            ctx.appendStartupLog,
-            "local merged index incremental sync",
-          );
-          ctx.appendStartupLog(
-            `local merged index incremental sync failed: reason=${reason}, root=${source.root}, ${error instanceof Error ? error.message : String(error)}`,
-          );
-          await buildRuntime.rebuildMergedIndexDb(db, sources, sourcesKey);
-          commit(`incremental-recovery-rebuild:${reason}`);
-          ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
-        } finally {
-          ctx.closeSqliteDb(db);
-        }
-      },
-    );
+export function createMergedIndexSyncRuntime(ctx: MergedIndexPageContext, sourceRuntime: MergedIndexSourceRuntime, _buildRuntime: MergedIndexBuildRuntime, options: { background?: boolean } = {}) {
+  function targetKey(sources: MergedIndexSourceInfo[], rootKey: string): string {
+    return ctx.mergedIndexSourcesKey(sources.filter(source => ctx.normalizePathForCacheCompare(source.root) === rootKey))
   }
 
-  async function syncMergedIndexForRootSnapshot(
-    rootPath: string,
-    reason: string,
-  ): Promise<void> {
-    return ctx.runMergedIndexMutation(
-      `snapshot:${ctx.normalizePathForCacheCompare(rootPath)}:${reason}`,
-      async ({ commit }) => {
-        const startedAt = Date.now();
-        const roots = await ctx.appWatchedFolders();
-        const sources = await sourceRuntime.mergedIndexSourcesForRoots(roots);
-        const source = sources.find(
-          (item) =>
-            ctx.normalizePathForCacheCompare(item.root) ===
-            ctx.normalizePathForCacheCompare(rootPath),
-        );
-        if (!source || !sources.length) return;
-
-        const sourcesKey = ctx.mergedIndexSourcesKey(sources);
-        const db = await ctx.openMergedIndexDb();
-        try {
-          const currentSourcesKey = ctx.getSqliteMeta(db, "sourcesKey");
-          const rootsChanged = !ctx.mergedIndexSourcesMatchRoots(db, roots);
-          const sourcesChanged = currentSourcesKey !== sourcesKey;
-          const installStatusOnlySourceChange =
-            sourcesChanged &&
-            isInstallStatusIncrementalSyncReason(reason) &&
-            sourceKeyChangedOnlyByInstallStatus(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
-          const metadataOnlySourceChange =
-            sourcesChanged &&
-            isSharedMetadataIncrementalSyncReason(reason) &&
-            sourceKeyChangedOnlyBySharedMetadata(currentSourcesKey, sourcesKey, ctx.normalizePathForCacheCompare(source.root));
-          if (
-            rootsChanged ||
-            (sourcesChanged && !installStatusOnlySourceChange && !metadataOnlySourceChange)
-          ) {
-            await buildRuntime.rebuildMergedIndexDb(db, sources, sourcesKey);
-            commit(`snapshot-rebuild:${reason}`);
-            ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
-            ctx.appendStartupLog(
-              `local merged index root snapshot sync fell back to rebuild: reason=${reason}, rootsChanged=${rootsChanged}, sourcesChanged=${sourcesChanged}, elapsed=${Date.now() - startedAt}ms`,
-            );
-            return;
-          }
-          if (installStatusOnlySourceChange) {
-            ctx.appendStartupLog(
-              `local merged index root snapshot sync accepted install status source change: reason=${reason}, root=${source.root}`,
-            );
-          }
-
-          const now = new Date().toISOString();
-          try {
-            const rustResult =
-              await ctx.rustCoreWorkerRuntime.runRustMergedIndexSync({
-                mergedIndexDbPath: ctx.mergedIndexDbPath(),
-                schemaVersion: ctx.schemaVersion,
-                sourcesKey,
-                syncedAt: now,
-                source: {
-                  root: source.root,
-                  indexDbPath: source.indexDbPath,
-                  installDbPath: source.installDbPath,
-                  indexSignature: source.indexSignature,
-                  installSignature: source.installSignature,
-                  sharedMetadataSignature:
-                    source.sharedMetadataSignature || "metadata:none",
-                },
-                fullSnapshot: true,
-                reason,
-              });
-            if (rustResult?.synced) {
-              commit(`snapshot-rust:${reason}`);
-              ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
-              ctx.appendStartupLog(
-                `local merged index root snapshot synced by rust: reason=${reason}, root=${source.root}, rows=${rustResult.rows}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${rustResult.elapsedMs || 0}ms`,
-              );
-              return;
-            }
-          } catch (error) {
-      rethrowSharedIoProcessError(error)
-            rethrowRustCoreDaemonSubmittedWrite(
-              error,
-              ctx.appendStartupLog,
-              "local merged index rust root snapshot sync",
-            );
-            ctx.appendStartupLog(
-              `local merged index rust root snapshot sync fallback to node: reason=${reason}, root=${source.root}, ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-
-          const rows = await sourceRuntime.readMergedRowsForSource(source);
-          const insertEntry = ctx.mergedIndexInsertStatement(db);
-          const sync = db.transaction(() => {
-            db.prepare("DELETE FROM entries WHERE root_path = ?").run(
-              source.root,
-            );
-            for (const row of rows)
-              insertEntry.run(ctx.bindMergedIndexRow(row, source.root, now));
-            ctx.writeMergedIndexSourceRow(db, source, now);
-            ctx.setSqliteMeta(db, "sourcesKey", sourcesKey);
-            ctx.setSqliteMeta(db, "updatedAt", now);
-            ctx.setSqliteMeta(db, "lastRootSnapshotSyncReason", reason);
-          });
-          sync();
-          commit(`snapshot-node:${reason}`);
-          ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
-          ctx.appendStartupLog(
-            `local merged index root snapshot synced: reason=${reason}, root=${source.root}, rows=${rows.length}, elapsed=${Date.now() - startedAt}ms`,
-          );
-        } catch (error) {
-      rethrowSharedIoProcessError(error)
-          rethrowRustCoreDaemonSubmittedWrite(
-            error,
-            ctx.appendStartupLog,
-            "local merged index root snapshot sync",
-          );
-          ctx.appendStartupLog(
-            `local merged index root snapshot sync failed: reason=${reason}, root=${source.root}, ${error instanceof Error ? error.message : String(error)}`,
-          );
-          await buildRuntime.rebuildMergedIndexDb(db, sources, sourcesKey);
-          commit(`snapshot-recovery-rebuild:${reason}`);
-          ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
-        } finally {
-          ctx.closeSqliteDb(db);
-        }
-      },
-    );
+  async function prepare(rootPath: string, reason: string, payload?: FontIndexChangePayload) {
+    const epoch = applicationWorkEpoch()
+    const roots = await ctx.appWatchedFolders()
+    const rootKey = ctx.normalizePathForCacheCompare(rootPath)
+    const configured = roots.find(root => ctx.normalizePathForCacheCompare(root) === rootKey)
+    if (!configured) throw new Error('merged-projection-root-removed')
+    const db = await ctx.openMergedIndexDb()
+    let previous: MergedIndexSourceInfo[]
+    try { previous = readMergedIndexAppliedSources(ctx, db) }
+    finally { ctx.closeSqliteDb(db) }
+    const expectedTarget = targetKey(previous, rootKey)
+    if (!(await ensureStartupPathRootAvailable(configured, undefined, 'merged-projection', { background: options.background === true }))) throw new Error('merged-projection-root-unavailable')
+    const availability = getStartupPathRootState(configured)
+    const sources = await sourceRuntime.mergedIndexSourcesForRoots([configured])
+    const source = sources[0]
+    if (sources.length !== 1 || !source || ctx.normalizePathForCacheCompare(source.root) !== rootKey) throw new Error('merged-source-receipt-unavailable')
+    assertFreshMergedIndexSource(source)
+    const nextTarget = ctx.mergedIndexSourcesKey([source])
+    const incrementalAllowed = expectedTarget === nextTarget
+      || (isSharedMetadataIncrementalSyncReason(reason) && sourceKeyChangedOnlyBySharedMetadata(expectedTarget, nextTarget, rootKey))
+      || (isRootIndexIncrementalSyncReason(reason) && sourceKeyChangedOnlyByRootIndex(expectedTarget, nextTarget, rootKey))
+      || (isInstallStatusIncrementalSyncReason(reason) && sourceKeyChangedOnlyByInstallStatus(expectedTarget, nextTarget, rootKey))
+    const relativePaths = payload ? sourceRuntime.relativePathsFromFontIndexPayload(source.root, payload) : []
+    // A changed path/index/install source, a missing checkpoint, or explicit
+    // reconciliation needs a complete target snapshot, never a global rebuild.
+    const fullSnapshot = !payload || !incrementalAllowed || !relativePaths.length
+    const now = new Date().toISOString()
+    const rows = normalizeMergedSyncRows(ctx, await sourceRuntime.readMergedRowsForSource(source, fullSnapshot ? undefined : relativePaths), source.root, now)
+    const verified = await sourceRuntime.mergedIndexSourcesForRoots([configured])
+    if (ctx.mergedIndexSourcesKey(verified) !== nextTarget) throw new Error('merged-source-changed-during-read')
+    assertApplicationOpen(epoch)
+    const assertGeneration = () => {
+      assertApplicationOpen(epoch)
+      const current = getStartupPathRootState(configured)
+      if (current.state !== 'online' || current.generation !== availability.generation || current.rootId !== availability.rootId) throw new Error('merged-projection-generation-changed')
+    }
+    assertGeneration()
+    return { source, expectedTarget, rootKey, fullSnapshot, relativePaths, rows, now, assertGeneration, rootsKey: ctx.mergedIndexRootsKey(roots) }
   }
 
-  return {
-    syncMergedIndexForRootIncremental,
-    syncMergedIndexForRootSnapshot,
-  };
+  async function apply(prepared: Awaited<ReturnType<typeof prepare>>, reason: string, commit: (reason?: string) => void) {
+    const { source, rootKey, fullSnapshot, relativePaths, rows, now, assertGeneration } = prepared
+    // This callback has no remote reads. Slow/offline source preparation never
+    // occupies the global local-write lane used by another root's foreground ACK.
+    if (ctx.mergedIndexRootsKey(await ctx.appWatchedFolders()) !== prepared.rootsKey) throw new Error('merged-projection-roots-changed')
+    assertGeneration()
+    const db = await ctx.openMergedIndexDb()
+    try {
+      const previous = readMergedIndexAppliedSources(ctx, db)
+      if (targetKey(previous, rootKey) !== prepared.expectedTarget) throw new Error('merged-projection-target-changed-in-queue')
+      const sources = previous.filter(item => ctx.normalizePathForCacheCompare(item.root) !== rootKey)
+      sources.push(source)
+      const expectedSourcesKey = ctx.getSqliteMeta(db, 'sourcesKey')
+      // A partial payload is not a revision-bound delta for the entire root.
+      // Keep its prior applied certificate until a complete snapshot covers any
+      // concurrent source writes, including recovery after a process restart.
+      const sourcesKey = fullSnapshot ? ctx.mergedIndexSourcesKey(sources) : expectedSourcesKey
+      // A persisted source row is an applied checkpoint, not proof that an
+      // untouched peer is fresh. Never promote this composite key to ready.
+      let nativeBytes = 0
+      for (const row of rows) { nativeBytes += Buffer.byteLength(JSON.stringify(row), 'utf8'); if (nativeBytes > 32 * 1024 * 1024) break }
+      if (nativeBytes <= 32 * 1024 * 1024) {
+        let nativeCommitted = false
+        try {
+          assertGeneration()
+          const result = await ctx.rustCoreWorkerRuntime.runRustMergedIndexSync({
+            mergedIndexDbPath: ctx.mergedIndexDbPath(), schemaVersion: ctx.schemaVersion,
+            sourcesKey, expectedSourcesKey, syncedAt: now, source, relativePaths, fullSnapshot, reason, preparedRows: rows, preserveSourceCheckpoint: !fullSnapshot, assertCurrent: assertGeneration,
+          })
+          if (result?.synced) {
+            nativeCommitted = true
+            // Durable writes always invalidate readers, even if delivery became
+            // stale while the isolated native transaction was committing.
+            commit(fullSnapshot ? `snapshot-rust:${reason}` : `incremental-rust:${reason}`)
+            assertGeneration()
+            if (ctx.getSqliteMeta(db, 'sourcesKey') !== sourcesKey) throw new Error('merged-projection-native-receipt-mismatch')
+            return
+          }
+        } catch (error) {
+          await settleMergedSyncError(error)
+          if (nativeCommitted) throw Object.assign(error instanceof Error ? error : new Error('merged-projection-postcommit-invalid'), { mergedProjectionCommitted: true })
+          rethrowSharedIoProcessError(error)
+          rethrowRustCoreDaemonSubmittedWrite(error)
+          // Native success with a rejected postcondition must never replay a write.
+          if (ctx.getSqliteMeta(db, 'sourcesKey') !== expectedSourcesKey) throw error
+          assertGeneration()
+        }
+      }
+      const insert = ctx.mergedIndexInsertStatement(db)
+      const sync = db.transaction(() => {
+        assertGeneration()
+        if (ctx.getSqliteMeta(db, 'sourcesKey') !== expectedSourcesKey) throw new Error('merged-projection-checkpoint-changed')
+        if (fullSnapshot) db.prepare('DELETE FROM entries WHERE root_path = ?').run(source.root)
+        else {
+          const remove = db.prepare('DELETE FROM entries WHERE root_path = ? AND relative_path = ?')
+          for (const relative of relativePaths) remove.run(source.root, relative)
+        }
+        for (const row of rows) insert.run(row)
+        if (fullSnapshot) ctx.writeMergedIndexSourceRow(db, source, now)
+        ctx.setSqliteMeta(db, 'sourcesKey', sourcesKey)
+        ctx.setSqliteMeta(db, 'updatedAt', now)
+        ctx.setSqliteMeta(db, fullSnapshot ? 'lastRootSnapshotSyncReason' : 'lastIncrementalSyncReason', reason)
+      })
+      sync()
+      commit(fullSnapshot ? `snapshot-node:${reason}` : `incremental-node:${reason}`)
+    } finally { ctx.closeSqliteDb(db) }
+  }
+
+  async function verifyCommittedSource(prepared: Awaited<ReturnType<typeof prepare>>): Promise<void> {
+    try {
+      // Source revisions can advance independently of this local writer. Check
+      // the target again after releasing the global lane before current ACK.
+      prepared.assertGeneration()
+      const current = await sourceRuntime.mergedIndexSourcesForRoots([prepared.source.root])
+      if (ctx.mergedIndexSourcesKey(current) !== ctx.mergedIndexSourcesKey([prepared.source])) throw new Error('merged-source-changed-after-commit')
+      if (ctx.mergedIndexRootsKey(await ctx.appWatchedFolders()) !== prepared.rootsKey) throw new Error('merged-projection-roots-changed')
+      prepared.assertGeneration()
+    } catch (error) {
+      await settleMergedSyncError(error)
+      throw Object.assign(error instanceof Error ? error : new Error('merged-projection-postcommit-unavailable'), { mergedProjectionCommitted: true })
+    }
+  }
+
+  async function syncMergedIndexForRootIncremental(rootPath: string, payload: FontIndexChangePayload, reason: string): Promise<void> {
+    const rootHash = mergedSyncRootHash(ctx.normalizePathForCacheCompare(rootPath))
+    try {
+      const prepared = await prepare(rootPath, reason, payload)
+      await ctx.runMergedIndexMutation(`root-incremental:${rootHash}`, async ({ commit }) => apply(prepared, reason, commit))
+      await verifyCommittedSource(prepared)
+      ctx.appendStartupLog(`merged root projection: caller=incremental, rootHash=${rootHash}, phase=committed, blocker=none, rows=${prepared.rows.length}, fullSnapshot=${prepared.fullSnapshot}`)
+    } catch (error) {
+      await settleMergedSyncError(error)
+      ctx.appendStartupLog(`merged root projection: caller=incremental, rootHash=${rootHash}, phase=deferred, blocker=${mergedSyncBlocker(error)}`)
+      throw error
+    }
+  }
+
+  async function syncMergedIndexForRootSnapshot(rootPath: string, reason: string): Promise<void> {
+    const rootHash = mergedSyncRootHash(ctx.normalizePathForCacheCompare(rootPath))
+    try {
+      const prepared = await prepare(rootPath, reason)
+      await ctx.runMergedIndexMutation(`root-snapshot:${rootHash}`, async ({ commit }) => apply(prepared, reason, commit))
+      await verifyCommittedSource(prepared)
+      ctx.appendStartupLog(`merged root projection: caller=snapshot, rootHash=${rootHash}, phase=committed, blocker=none, rows=${prepared.rows.length}`)
+    } catch (error) {
+      await settleMergedSyncError(error)
+      ctx.appendStartupLog(`merged root projection: caller=snapshot, rootHash=${rootHash}, phase=deferred, blocker=${mergedSyncBlocker(error)}`)
+      throw error
+    }
+  }
+
+  return { syncMergedIndexForRootIncremental, syncMergedIndexForRootSnapshot }
 }

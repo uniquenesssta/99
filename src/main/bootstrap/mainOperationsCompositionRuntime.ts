@@ -176,7 +176,7 @@ export interface MainOperationsCompositionOptions {
     | 'storageProfileForPath'
     | 'scanWorkerCount'
   >;
-  rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustSystemInstalledFonts' | 'runRustInstallStatusCompare' | 'runRustSharedMetadataOverlayRead' | 'runRustDatabaseHealthCheck' | 'runRustDatabaseBackup' | 'runRustPreviewCacheMaintenance' | 'runRustFontIndexListWorker' | 'runRustFontParseBatch' | 'runRustWatcherPreflight' | 'diagnoseRustCoreWorker'>;
+  rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustSystemInstalledFonts' | 'runRustInstallStatusCompare' | 'runRustSharedMetadataOverlayRead' | 'runRustDatabaseHealthCheck' | 'runRustDatabaseBackup' | 'runRustPreviewCacheMaintenance' | 'runRustFontIndexListWorker' | 'runRustFontParseBatch' | 'runRustWatcherPreflight' | 'diagnoseRustCoreWorker' | 'hasRustCoreInteractiveWork'>;
   assertFeedbackReady: () => void;
   refreshKnownSharedTagsFromMetadata: ReturnType<typeof createSharedKnownTagsRuntime>['refreshKnownSharedTagsFromMetadata'];
 }
@@ -407,6 +407,15 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     readSharedIndexSnapshotFrontendDiagnostics,
     repairSharedIndexSnapshotFromFrontend
   } = createMainMaintenanceCompositionRuntime({
+    isForegroundBusy: () => {
+      // The visible-preview lane owns requests even before their native submit;
+      // background preview-cache work uses a different lane.
+      const preview = globalIoSnapshot().lanes.preview;
+      return isRendererUserActive() || isIndexingActive()
+        || Boolean(installStatusRefreshStarterRuntime.activeInstallStatusRefreshJob())
+        || (preview?.active || 0) > 0 || (preview?.pending || 0) > 0
+        || rustCoreWorkerRuntime.hasRustCoreInteractiveWork();
+    },
     appWatchedFolders,
     exists,
     sharedMetadataDbPathForRoot,

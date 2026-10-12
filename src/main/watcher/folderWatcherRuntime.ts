@@ -464,7 +464,7 @@ export function createFolderWatcherRuntime(
       log: options.appendStartupLog,
       collect: signal => withSharedIoSignal(signal, async () => {
         try {
-          if (!await ensureStartupPathRootAvailable(folder, options.appendStartupLog, 'shared-watcher-poll')) throw new Error('root-offline');
+          if (!await ensureStartupPathRootAvailable(folder, options.appendStartupLog, 'shared-watcher-poll', { background: true })) throw new Error('root-offline');
           // Arm the OS monitor before the first inventory. Its bounded startup failure falls back to polling.
           await notifier.ensureStarted();
           if (signal.aborted) throw new Error('watcher-generation-cancelled');

@@ -56,7 +56,7 @@ async function mainQueue() {
  time.fire(32);await flush();c.abort();gate.resolve({same:'image'});assert.deepEqual({...await one},{});assert.equal((await two).same,'image');assert.equal(sharedCalls,1);shared.cancelPending();
  // Shared I/O transport can reject before its child exits. closed owns the slot.
  const closed=deferred();let done=false;
- const scoped=deadlines.withPhysicalIoCompletion(()=>deadlines.withIoDeadlineResult('closed',()=>Promise.reject({closed:closed.promise}),100)).then(()=>done=true);
+ const scoped=deadlines.withPhysicalIoCompletion(()=>deadlines.withIoDeadlineResult('closed',()=>Promise.reject({sharedIo:true,closed:closed.promise}),100)).then(()=>done=true);
  await flush();assert.equal(done,false);closed.resolve();await scoped;assert.equal(done,true);
  console.log('main: 12 expired generations keep one physical batch; nested deadline/child close retained; one shared caller cancels independently');
 }

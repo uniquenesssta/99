@@ -82,7 +82,7 @@ function broadcastRevisionCheck(transform = s => s) {
     ] } },
     'node:fs': { promises: {}, watch() { throw Error('Broadcast diagnostic must not start watching') } },
     '../path/cachePath': { normalizePathForCacheCompare: value => value.toLowerCase() },
-    '../path/startupPathAvailabilityRuntime': { ensureStartupPathRootAvailable: async () => true },
+    '../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, ensureStartupPathRootAvailable: async () => true },
   }, { setTimeout, clearTimeout }, transform).createFolderWatcherRuntime({
     startupGraceMs: 0, flushDebounceMs: 10, closeRuntimeDatabases() {}, isIgnoredWatcherPath: () => false, appendStartupLog() {},
     watcherChangeBatchLooksUnchanged: async () => false,
@@ -114,7 +114,7 @@ async function recoveryCheck(transform=s=>s) {
       electron:{BrowserWindow:{getAllWindows:()=>[{isDestroyed:()=>false,webContents:{send(_channel,payload){sends++;if(mode==='send'&&sends===1)throw Error('notify');delivered.push(plain(payload))}}}]}},
       'node:fs':{promises:{stat:async()=>({isDirectory:()=>true})},watch:()=>({on(){},close(){}})},
       '../path/cachePath':{normalizePathForCacheCompare:x=>x.toLowerCase()},
-      '../path/startupPathAvailabilityRuntime':{ensureStartupPathRootAvailable:async()=>true}
+      '../path/startupPathAvailabilityRuntime':{ assertStartupPathRootGuardCurrent() {},ensureStartupPathRootAvailable:async()=>true}
     },{Date:class extends Date{static now(){return now}},setTimeout(fn,ms){const token={unref(){}};timers.set(token,{fn,ms});return token},clearTimeout:token=>timers.delete(token)},transform).createFolderWatcherRuntime({
       startupGraceMs:100,flushDebounceMs:10,closeRuntimeDatabases(){},isIgnoredWatcherPath:()=>false,appendStartupLog:x=>logs.push(x),isScanActive:()=>scanning,
       watcherChangeBatchLooksUnchanged:async()=>false,
@@ -152,7 +152,7 @@ async function structuralRecoveryConvergenceCheck(transform=s=>s) {
     electron:{BrowserWindow:{getAllWindows:()=>[]}},
     'node:fs':{promises:{stat:async()=>({isDirectory:()=>true})},watch:()=>({on(){},close(){}})},
     '../path/cachePath':{normalizePathForCacheCompare:x=>x.toLowerCase()},
-    '../path/startupPathAvailabilityRuntime':{ensureStartupPathRootAvailable:async()=>true}
+    '../path/startupPathAvailabilityRuntime':{ assertStartupPathRootGuardCurrent() {},ensureStartupPathRootAvailable:async()=>true}
   },{Date:class extends Date{static now(){return now}},setTimeout(fn,ms){const token={unref(){}};timers.set(token,{fn,ms});return token},clearTimeout:token=>timers.delete(token)},transform).createFolderWatcherRuntime({
     startupGraceMs:0,flushDebounceMs:10,closeRuntimeDatabases(){},isIgnoredWatcherPath:()=>false,appendStartupLog:x=>logs.push(x),isScanActive:()=>false,
     watcherChangeBatchLooksUnchanged:async()=>false,
@@ -175,7 +175,7 @@ async function multiRootIsolationCheck(transform=s=>s){
     electron:{BrowserWindow:{getAllWindows:()=>[{isDestroyed:()=>false,webContents:{send(_c,p){delivered.push(plain(p))}}}]}},
     'node:fs':{promises:{stat:async()=>({isDirectory:()=>true})},watch:()=>({on(){},close(){}})},
     '../path/cachePath':{normalizePathForCacheCompare:x=>x.toLowerCase()},
-    '../path/startupPathAvailabilityRuntime':{ensureStartupPathRootAvailable:async()=>true}
+    '../path/startupPathAvailabilityRuntime':{ assertStartupPathRootGuardCurrent() {},ensureStartupPathRootAvailable:async()=>true}
   },{Date:class extends Date{static now(){return now}},setTimeout,clearTimeout},transform).createFolderWatcherRuntime({
     startupGraceMs:0,flushDebounceMs:60000,closeRuntimeDatabases(){},isIgnoredWatcherPath:()=>false,appendStartupLog:x=>logs.push(x),isScanActive:()=>false,
     watcherChangeBatchLooksUnchanged:async()=>false,

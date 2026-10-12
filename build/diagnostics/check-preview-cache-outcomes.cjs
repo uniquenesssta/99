@@ -97,7 +97,7 @@ async function main() {
     const share = { storage: 'root', rootPath: negativeDir, dir: negativeDir }
     const row = { id: 'miss', previewKey: 'absent', outputPath: path.join(negativeDir, 'local', 'absent.png') }
     const negativeLoad = loader({
-      '../../path/startupPathAvailabilityRuntime': { getStartupPathRootState: () => ({ generation, state: 'online' }) },
+      '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: () => ({ generation, state: 'online' }) },
       '../../path/sharedFileSystemRuntime': { withSharedIoSignal: (_signal, fn) => fn(), sharedFileSystem: { ...fs.promises, readFile: async (...args) => { reads++; return fs.promises.readFile(...args) } } },
     }, { Date: class extends Date { static now() { return clock } } })
     const opts = { appendStartupLog() {}, withIoDeadlineResult: load('src/main/path/ioDeadlineRuntime.ts').withIoDeadlineResult,

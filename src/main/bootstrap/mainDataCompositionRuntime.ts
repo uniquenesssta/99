@@ -1,5 +1,7 @@
 import { createInstallStatusProjectionWriteRuntime } from '../install/status/installStatusProjectionWriteRuntime';
 import { createSharedAvailabilityReader } from '../path/sharedAvailabilityRuntime';
+import { createSharedAvailabilityProbeScheduler } from '../path/sharedAvailabilityProbeSchedulerRuntime';
+import { onApplicationClosing, onApplicationResumed } from '../app/shutdownCoordinatorRuntime';
 import { cacheKeyForPath } from "../cache/cachePaths";
 import { PREVIEW_SQLITE_SCHEMA_VERSION } from "../cache/constants";
 import { getSqliteMeta } from "../db/sqliteHelpers";
@@ -302,8 +304,23 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
     }
     return result;
   };
+  const sharedAvailabilityProbes = createSharedAvailabilityProbeScheduler({
+    readRoots: async () => {
+      const db = await storage.openLibraryDbLocal() as { prepare: (sql: string) => { all: () => Array<{ path: string }> } };
+      return db.prepare('SELECT path FROM folders ORDER BY sort_order').all().map(row => row.path);
+    },
+    appendLog: appendStartupLog,
+  });
+  let availabilityProbesInitialized = false;
+  let availabilityProbeClose = Promise.resolve();
+  onApplicationClosing(() => { availabilityProbeClose = sharedAvailabilityProbes.stop(); });
+  onApplicationResumed(() => { if (availabilityProbesInitialized) sharedAvailabilityProbes.start(); });
   const lifecycle: MainDataCompositionRuntime['lifecycle'] = {
-    initializeCacheArchitecture: initializeCacheArchitectureV2,
+    initializeCacheArchitecture: async () => {
+      await initializeCacheArchitectureV2();
+      availabilityProbesInitialized = true;
+      sharedAvailabilityProbes.start();
+    },
     runStartupCriticalSchemaAudit: () =>
       runStartupCriticalSchemaAudit({
         openMergedIndexDb,
@@ -319,6 +336,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
   };
   const resources: MainDataCompositionRuntime['resources'] = {
     closeLibraryDb, closePreviewDb, clearLocalPreviewDbHandle, checkpointOpenCacheDbs, closeCacheDb,
+    awaitSharedAvailabilityProbesClosed: () => availabilityProbeClose,
   };
   const installStatusWriter = createInstallStatusProjectionWriteRuntime({
     saveInstallStatusIndex: storage.saveInstallStatusIndex,
@@ -326,7 +344,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
   });
   const capabilities: MainDataCompositionRuntime['capabilities'] = {
     rememberRelinkedFontFile: query.rememberRelinkedFontFile,
-    getSharedAvailability: createSharedAvailabilityReader(openLibraryDb),
+    getSharedAvailability: createSharedAvailabilityReader(storage.openLibraryDbLocal),
     loadLibrary, loadLibraryShell, loadFolderCache, searchFontsInLibrary, queryFontsInLibrary,
     queryFontPageInLibrary, checkSharedMetadataUpdates, getFontMetricsFromLibrary,
     getCacheStats, cacheArchitectureInfo, clearScanCache, clearPreviewCache, setCacheKvs,

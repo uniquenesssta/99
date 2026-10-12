@@ -567,41 +567,40 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
     };
   }
 
-  function ensureMergedIndexPendingSnapshotForRoots(
-    db: any,
-    roots: string[],
-  ): void {
-    const normalizedRoots = Array.from(
-      new Set((roots || []).map((root) => resolve(root)).filter(Boolean)),
-    ).sort();
+  function ensureMergedIndexPendingSnapshotForRoots(db: any, roots: string[]): void {
+    const normalizedRoots = Array.from(new Set((roots || []).map(root => resolve(root)).filter(Boolean))).sort();
     if (!normalizedRoots.length) return;
     const now = new Date().toISOString();
     const tx = db.transaction(() => {
-      db.prepare("DELETE FROM entries").run();
-      db.prepare("DELETE FROM sources").run();
-      const insertSource = db.prepare(`
-        INSERT OR REPLACE INTO sources (root_path, index_db_path, install_db_path, index_signature, install_signature, shared_metadata_signature, synced_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      for (const root of normalizedRoots) {
-        insertSource.run(
-          root,
-          "",
-          null,
-          "pending-snapshot",
-          "pending-snapshot",
-          "metadata:pending-snapshot",
-          now,
-        );
+      const existing = db.prepare('SELECT * FROM sources ORDER BY root_path').all() as Array<{
+        root_path: string; index_db_path: string; install_db_path?: string;
+        index_signature: string; install_signature: string; shared_metadata_signature: string;
+      }>;
+      const existingRoots = new Set(existing.map(row => normalizePathForCacheCompare(row.root_path)));
+      const insert = db.prepare(`INSERT INTO sources
+        (root_path,index_db_path,install_db_path,index_signature,install_signature,shared_metadata_signature,synced_at)
+        VALUES (?, '', NULL, 'pending-snapshot', 'pending-snapshot', 'metadata:pending-snapshot', ?)`);
+      const sources: MergedIndexSourceInfo[] = existing.map(row => ({ root: row.root_path, indexDbPath: row.index_db_path,
+        installDbPath: row.install_db_path || undefined, indexSignature: row.index_signature,
+        installSignature: row.install_signature, sharedMetadataSignature: row.shared_metadata_signature }));
+      const previousKey = deps.getSqliteMeta(db, 'sourcesKey');
+      if ((sources.length > 0 && !previousKey) || (previousKey && previousKey !== mergedIndexSourcesKey(sources)
+        && previousKey !== `pending:${mergedIndexRootsKey(sources.map(source => source.root))}`)) {
+        throw new Error('merged-projection-receipt-mismatch');
       }
+      for (const root of normalizedRoots) {
+        const key = normalizePathForCacheCompare(root);
+        if (existingRoots.has(key)) continue;
+        insert.run(root, now);
+        sources.push({root, indexDbPath: '', indexSignature: 'pending-snapshot', installSignature: 'pending-snapshot', sharedMetadataSignature: 'metadata:pending-snapshot'});
+        existingRoots.add(key);
+      }
+      // A missing/offline new root must not destroy any prior applied snapshot.
+      // Configured removals belong to complete, explicit/full reconciliation.
+      deps.setSqliteMeta(db, 'sourcesKey', mergedIndexSourcesKey(sources));
+      deps.setSqliteMeta(db, 'pendingSnapshotAt', now);
     });
     tx();
-    deps.setSqliteMeta(
-      db,
-      "sourcesKey",
-      `pending:${mergedIndexRootsKey(normalizedRoots)}`,
-    );
-    deps.setSqliteMeta(db, "pendingSnapshotAt", now);
   }
 
   function mergedIndexSourcesMatchRoots(db: any, roots: string[]): boolean {

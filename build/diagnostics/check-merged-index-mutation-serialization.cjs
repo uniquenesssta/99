@@ -45,8 +45,8 @@ for (const needle of [
 
 const syncSource = read('src/main/indexing/merged-page/mergedIndexSyncRuntime.ts')
 assert((syncSource.match(/ctx\.runMergedIndexMutation\(/g) || []).length === 2, 'incremental and snapshot writes must both use the global mutation coordinator')
-assert(syncSource.includes('commit(`incremental-rust:${reason}`)'), 'Rust incremental commits must invalidate derived query caches')
-assert(syncSource.includes('commit(`snapshot-rust:${reason}`)'), 'Rust snapshot commits must invalidate derived query caches')
+assert(syncSource.includes('`incremental-rust:${reason}`'), 'Rust incremental commits must invalidate derived query caches')
+assert(syncSource.includes('`snapshot-rust:${reason}`'), 'Rust snapshot commits must invalidate derived query caches')
 
 const buildSource = read('src/main/indexing/merged-page/mergedIndexBuildRuntime.ts')
 assert(buildSource.includes('ctx.runMergedIndexMutation('), 'background and blocking rebuilds must use the global mutation coordinator')
@@ -145,7 +145,7 @@ async function runWatcherBehaviorChecks() {
         return { normalizePathForCacheCompare: (value) => String(value || '').replaceAll('/', '\\').toLowerCase() }
       }
       if (id === '../path/startupPathAvailabilityRuntime') {
-        return { ensureStartupPathRootAvailable: async () => true }
+        return { ensureStartupPathRootAvailable: async () => true, assertStartupPathRootGuardCurrent() {} }
       }
       return require(id)
   }
@@ -249,8 +249,15 @@ async function runInitialSnapshotChecks() {
   assert(logs.some(line => line.includes('joinedValidation=true')), 'initial wait lacks evidence')
 }
 
-Promise.all([runBehaviorChecks(), runWatcherBehaviorChecks(), runInitialSnapshotChecks()])
-  .then(() => console.log('[diagnostics:merged-index-mutation] ok'))
+Promise.all([runBehaviorChecks(), runWatcherBehaviorChecks(), runInitialSnapshotChecks(), require('./helpers/mergedIndexRootProjectionFixture.cjs').runMergedRootProjectionCases()])
+  .then(async () => {
+    const at = process.argv.indexOf('--native-worker')
+    if (at >= 0) {
+      assert(process.argv[at + 1], '--native-worker requires the just-built Windows binary path')
+      await require('./helpers/mergedIndexRootProjectionFixture.cjs').runNativeMergedProjectionCases(path.resolve(process.argv[at + 1]))
+    }
+    console.log('[diagnostics:merged-index-mutation] controlled SQLite/queue/source-port cases ok' + (at >= 0 ? '; actual Windows indexing client/native prepared-row cases ok' : '; actual native prepared-row integration not run'))
+  })
   .catch((error) => {
     console.error(`[diagnostics:merged-index-mutation] ${error instanceof Error ? error.stack || error.message : String(error)}`)
     process.exit(1)

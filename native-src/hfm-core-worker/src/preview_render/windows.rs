@@ -4,7 +4,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::{ffi::OsStr, ptr};
 
-use super::PreviewRenderRequest;
+use super::{PreviewRenderError, PreviewRenderRequest};
 
 type GpStatus = i32;
 type ARGB = u32;
@@ -192,7 +192,7 @@ impl Drop for Brush {
     }
 }
 
-pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, String> {
+pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json::Value, PreviewRenderError> {
     let _token = start_gdiplus()?;
     if request.owned_stage.is_none() { ensure_parent_dir(&request.output_path)?; }
 
@@ -229,7 +229,7 @@ pub fn render_preview_image(request: &PreviewRenderRequest) -> Result<serde_json
         status(unsafe { GdipGetEmHeight(family.0, 0, &mut em) }, "font em failed")?;
         status(unsafe { GdipGetCellAscent(family.0, 0, &mut ascent) }, "font ascent failed")?;
         status(unsafe { GdipGetCellDescent(family.0, 0, &mut descent) }, "font descent failed")?;
-        if em == 0 { return Err("invalid font em height".to_string()); }
+        if em == 0 { return Err("invalid font em height".into()); }
         let cell_height = (ascent as f64 + descent as f64) * request.font_size / em as f64;
         let line_height = request.font_size * layout.line_height;
         for (index, line) in request.text.split('\n').enumerate() {
@@ -276,7 +276,7 @@ fn start_gdiplus() -> Result<GdiplusToken, String> {
     Ok(GdiplusToken(token))
 }
 
-fn create_preview_font(request: &PreviewRenderRequest) -> Result<PreviewFont, String> {
+fn create_preview_font(request: &PreviewRenderRequest) -> Result<PreviewFont, PreviewRenderError> {
     let mut last_system_error: Option<String> = None;
 
     if request.prefer_system_font {
@@ -306,7 +306,12 @@ fn create_preview_font(request: &PreviewRenderRequest) -> Result<PreviewFont, St
         });
     }
 
-    Err(last_system_error.unwrap_or_else(|| "fontPath is empty".to_string()))
+    // This variant proves system-only selection exhaustion. Input validation,
+    // private-file parsing and output I/O retain the ordinary failure variant.
+    match last_system_error {
+        Some(message) => Err(PreviewRenderError::SystemFamilyUnavailable(message)),
+        None => Err("fontPath is empty".into()),
+    }
 }
 
 fn create_system_font_family(family_name: &str) -> Result<FontFamily, String> {

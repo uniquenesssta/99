@@ -59,6 +59,13 @@ export function isIoDeadlineTimeout(error: unknown): error is IoDeadlineTimeoutE
   return error instanceof IoDeadlineTimeoutError || (error instanceof Error && error.name === 'IoDeadlineTimeoutError')
 }
 
+/** Only the isolated transport's branded receipt carries physical ownership. */
+export async function awaitPhysicalIoClose(error: unknown): Promise<void> {
+  const value = error as { sharedIo?: boolean; closed?: Promise<unknown> } | null
+  if (value?.sharedIo !== true || !value.closed) return
+  try { await value.closed } catch { /* A cleanup receipt must not replace the operation failure. */ }
+}
+
 export async function withIoDeadlineResult<T>(label: string, operation: () => Promise<T>, timeoutMs: number): Promise<IoDeadlineResult<T>> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const boundedTimeoutMs = Math.max(100, Math.min(30000, Math.floor(Number(timeoutMs) || DEFAULT_UNC_ROOT_PROBE_TIMEOUT_MS)))
@@ -69,7 +76,7 @@ export async function withIoDeadlineResult<T>(label: string, operation: () => Pr
     const physical = operationPromise.then(() => undefined, async error => {
       // Isolated shared I/O can reject before its child exits. The existing
       // transport's closed promise is the physical ownership boundary.
-      await error?.closed
+      await awaitPhysicalIoClose(error)
     })
     pending.add(physical)
     void physical.then(() => pending.delete(physical), () => pending.delete(physical))
@@ -104,7 +111,7 @@ export async function withPhysicalIoCompletion<T>(operation: () => Promise<T>): 
   const pending = new Set<Promise<unknown>>()
   return physicalIoScope.run(pending, async () => {
     try { return await operation() }
-    catch (error) { await (error as { closed?: Promise<unknown> } | null)?.closed; throw error }
+    catch (error) { await awaitPhysicalIoClose(error); throw error }
     finally { while (pending.size) await Promise.allSettled([...pending]) }
   })
 }

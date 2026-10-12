@@ -5,6 +5,13 @@ const path = require('node:path')
 const { createHarness, entry, root, bootstrap } = require('./helpers/mainCompositionHarness.cjs')
 const { observeOperations, observeLifecycle } = require('./helpers/mainOperationsHarness.cjs')
 const fixture = require('./fixtures/main-operations-composition.fixture.json')
+// The new probe owner starts after the existing cache initialization. Preserve
+// every historical operation/shutdown receipt and migrate only this addition.
+const expectedStartup = structuredClone(fixture.startup)
+const cacheInit = expectedStartup.calls.findIndex(call => call[0] === 'createCacheArchitectureRuntime.initializeCacheArchitectureV2')
+assert(cacheInit >= 0)
+assert(!expectedStartup.calls.some(call => call[0] === 'createSharedAvailabilityProbeScheduler.start'))
+expectedStartup.calls.splice(cacheInit + 1, 0, ['createSharedAvailabilityProbeScheduler.start', []])
 const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
 const compositionFile = owner => path.join(bootstrap, `main${owner}CompositionRuntime.ts`)
 
@@ -66,7 +73,7 @@ async function checkBaseline(overrides = new Map()) {
   assert.deepEqual(await observeOperations(overrides), fixture.operations)
   for (const scenario of Object.keys(fixture.shutdown)) {
     const actual = await observeLifecycle(scenario, overrides)
-    assert.deepEqual(actual.startup, fixture.startup, `${scenario}: startup order changed`)
+    assert.deepEqual(actual.startup, expectedStartup, `${scenario}: startup order changed`)
     assert.deepEqual(actual.shutdown, fixture.shutdown[scenario], `${scenario}: shutdown behavior changed`)
     assert.deepEqual(actual.events, fixture.events)
     assert.deepEqual(actual.processEvents, fixture.processEvents)

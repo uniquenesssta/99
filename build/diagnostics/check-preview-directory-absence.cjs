@@ -10,8 +10,8 @@ const metadata = { size: 0, mtimeMs: 1, birthtimeMs: 1, isDirectory: true }
 async function maintenanceCases() {
   let failure = 'ENOENT', malformed = false, thrown, reads = 0, marks = 0
   const load = loader({
-    [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => ['fixture-root'], sharedIoAvailabilityRoot: () => '/share' },
-    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { getStartupPathRootState: () => ({ rootId: 'fixture-root', generation: 1, state: 'online' }), markStartupPathRootUnavailable: () => { marks++ } },
+    [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => ['fixture-root'], sharedIoResourceKeysSnapshot: () => ['fixture-root'], sharedIoAvailabilityRoot: () => '/share' },
+    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: () => ({ rootId: 'fixture-root', generation: 1, state: 'online' }), markStartupPathRootUnavailable: () => { marks++ } },
   }, { setImmediate })
   load('src/main/path/sharedFileSystemRuntime.ts').configureSharedFileExecutor(async request => {
     reads++
@@ -56,7 +56,7 @@ function hydrationFixture() {
   const load = loader({
     'node:fs': { ...fs, promises: localFs },
     [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async paths => paths.some(file => file.replaceAll('\\', '/').startsWith('/share/')) ? ['fixture-root'] : [], sharedIoAvailabilityRoot: () => '/share' },
-    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { getStartupPathRootState: () => ({ rootId: state.rootId, generation: state.generation, state: state.rootState }), markStartupPathRootUnavailable: () => { state.rootState = 'offline'; state.generation++ } },
+    [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: () => ({ rootId: state.rootId, generation: state.generation, state: state.rootState }), markStartupPathRootUnavailable: () => { state.rootState = 'offline'; state.generation++ } },
   }, { Date: class extends Date { static now() { return state.clock } } })
   load('src/main/path/sharedFileSystemRuntime.ts').configureSharedFileExecutor(async (request, _bytes, signal) => {
     state.signals.push(signal)

@@ -99,6 +99,7 @@ function createHarness(settings = {}, overrides = new Map()) {
         invalidate: commands => { record('invalidate', commands); return 2 },
         cancelScopes: scopes => { record('cancelScopes', scopes); return 3 },
         markInteractiveActivity: reason => record('interactive', reason),
+        hasInteractiveWork: () => false,
       }
     } },
     './rustCoreDaemonRuntime': {
@@ -106,6 +107,7 @@ function createHarness(settings = {}, overrides = new Map()) {
       createRustCoreDaemonRuntime: options => {
         record('create.daemon')
         return {
+          hasSubmittedWork: () => false,
           tryRun: async (worker, args, execOptions) => {
             record('daemon', worker, args, optionsView(execOptions))
             if (settings.domainEvent) options.onDomainEvent?.({ domain: 'tags', event: 'changed' })

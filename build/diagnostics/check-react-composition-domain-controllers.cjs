@@ -180,13 +180,13 @@ function createHookHarness() {
   }
 }
 
-function createLoader({ hooks, mocks = {}, globals = {} }) {
+function createLoader({ hooks, mocks = {}, globals = {}, overrides = new Map() }) {
   const modules = new Map()
   function load(relativePath) {
     if (modules.has(relativePath)) return modules.get(relativePath)
     const exports = {}
     modules.set(relativePath, exports)
-    const code = ts.transpileModule(read(relativePath), {
+    const code = ts.transpileModule(overrides.get(relativePath) ?? read(relativePath), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
     }).outputText
     const localRequire = (id) => {
@@ -548,6 +548,67 @@ async function checkDeveloperLazyBehavior() {
   assert.equal(closingHarness.slots[0].length, 0, 'closing developer controller appended status')
 }
 
+async function checkSharedMetadataPartialReceipts(overrides = new Map()) {
+  const target = 'src/renderer/src/sharedMetadataSyncRuntime.ts'
+  const run = createLoader({ hooks: {}, overrides })(target).runSharedMetadataSyncCheckRuntime
+  async function scenario(result, { reason = 'foreground-shared-metadata-sync', closing = false, held = false } = {}) {
+    const calls = { refresh: 0, status: [], developer: [], checks: 0 }
+    let release
+    const gate = new Promise(resolve => { release = resolve })
+    let isClosing = false
+    const options = {
+      hfm: { checkSharedMetadataUpdates: async () => { calls.checks++; if (held) await gate; return result } },
+      reason, foldersLength: 2, indexingActive: false,
+      libraryLoadedRef: { current: true }, inFlightRef: { current: null }, lastCheckedAtRef: { current: 0 },
+      refreshDatabaseDerivedState: () => { calls.refresh++ }, setStatus: text => calls.status.push(text),
+      appendDeveloperStatus: (...args) => calls.developer.push(args), isClosing: () => isClosing
+    }
+    const pending = run(options)
+    assert(pending && options.inFlightRef.current === pending)
+    if (held) { assert.equal(run({ ...options, lastCheckedAtRef: { current: 0 } }), pending); assert.equal(calls.checks, 1) }
+    isClosing = closing; release(); await pending
+    assert.equal(options.inFlightRef.current, null)
+    return calls
+  }
+  const base = { changed: true, rebuilt: false, roots: 2, elapsedMs: 10, reason: 'controlled', checkedRoots: 1, syncedRoots: 1 }
+  let calls = await scenario({ ...base, status: 'partial', deferredRoots: 1, failedRoots: 0 })
+  assert.equal(calls.refresh, 1)
+  assert.match(calls.status[0], /仅完成部分检查.*已同步 1 个索引，暂缓 1 个，失败 0 个/)
+  assert(!calls.status[0].includes('已同步 2 个'))
+  assert.equal(calls.developer[0][2].status, 'partial')
+  calls = await scenario({ ...base, changed: false, syncedRoots: 0, status: 'partial', deferredRoots: 2 })
+  assert.equal(calls.refresh, 0); assert.equal(calls.status.length, 0); assert.equal(calls.developer.length, 1)
+  calls = await scenario({ ...base, changed: false, syncedRoots: 0, status: 'partial', failedRoots: 1, reconciliationRequired: true }, { reason: 'manual-shared-metadata-reconcile' })
+  assert.match(calls.status[0], /仅完成部分检查.*失败 1 个，仍需完整校验/)
+  assert.equal(calls.refresh, 0)
+  for (const partial of [{ failedRoots: 1 }, { deferredRoots: 1 }, { reconciliationRequired: true }]) {
+    calls = await scenario({ ...base, ...partial })
+    assert.match(calls.status[0], /仅完成部分检查/, 'partial evidence was rendered as full sync')
+  }
+  calls = await scenario({ ...base, status: 'complete', checkedRoots: 2, syncedRoots: 1 })
+  assert.match(calls.status[0], /已同步 1 个共享索引/)
+  calls = await scenario({ changed: true, rebuilt: true, roots: 2 })
+  assert.match(calls.status[0], /已同步 2 个共享索引/, 'legacy full reconciliation receipt lost compatibility')
+  calls = await scenario({ ...base, changed: false, status: 'complete' })
+  assert.equal(calls.refresh + calls.status.length + calls.developer.length, 0)
+  calls = await scenario({ ...base, status: 'partial', deferredRoots: 1 }, { closing: true, held: true })
+  assert.equal(calls.refresh + calls.status.length + calls.developer.length, 0, 'closing view published late partial receipt')
+}
+
+async function checkSharedMetadataReceiptMutants() {
+  const target = 'src/renderer/src/sharedMetadataSyncRuntime.ts', source = read(target)
+  const mutations = [
+    ["const message = partial", "const message = false"],
+    ['result?.syncedRoots ?? result?.roots ?? 0', 'result?.roots ?? 0'],
+    ['if (result?.changed) options.refreshDatabaseDerivedState()', 'options.refreshDatabaseDerivedState()'],
+    ['if (options.isClosing?.()) return\n    const partial', 'const partial'],
+  ]
+  for (const [before, after] of mutations) {
+    assert.equal(source.split(before).length, 2, 'partial receipt mutation anchor drifted: ' + before)
+    await assert.rejects(() => checkSharedMetadataPartialReceipts(new Map([[target, source.replace(before, after)]])), undefined, 'partial receipt mutation escaped: ' + before)
+  }
+}
+
 async function main() {
   checkBaseline()
   checkStructure()
@@ -555,6 +616,8 @@ async function main() {
   await checkOperationsBehavior()
   await checkCloseFlushBehavior()
   await checkDeveloperLazyBehavior()
+  await checkSharedMetadataPartialReceipts()
+  await checkSharedMetadataReceiptMutants()
 
   const operations = read(operationsControllerPath)
   assert.throws(() => checkStructure(new Map([[

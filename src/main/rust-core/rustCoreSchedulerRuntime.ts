@@ -735,6 +735,7 @@ export function createRustCoreSchedulerRuntime(options: RustCoreSchedulerRuntime
     invalidate,
     cancelScopes,
     markInteractiveActivity,
+    hasInteractiveWork: () => hasInteractiveActive() || hasInteractiveQueued(),
     status: () => ({ enabled, profiles: profiles.size, source: profileSource, cacheEntries: resultCacheByKey.size, active: totalActiveCount(), queued: queuedTaskCount(), activeTasks: activeTasks.size, generations: generationByScope.size, queuePolicy, lastInteractiveAt, interactiveQuietRemainingMs: interactiveQuietRemainingMs(), adaptiveBackoffRemainingMs: adaptiveBackoffRemainingMs(), adaptiveBackoffReason, lanes: Array.from(new Set(Array.from(profiles.values()).map((profile) => profile.lane))) }),
   }
 }

@@ -1,16 +1,18 @@
 import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
+import { currentPreviewRenderLifetime, isTerminalPreviewRenderFailure, withPreviewRenderLifetime, withoutPreviewRenderLifetime } from './runtime/previewRenderLifetimeRuntime'
+import { sharedIoAvailabilityRoot } from '../rust-core/rustSharedIoCommandRuntime'
 import { claimPreviewImage } from './runtime/previewImageCommitRuntime'
 import { isCompletePreviewPng } from './runtime/previewImageValidationRuntime'
 import { previewFailure, previewFailureKind, previewFailureMessage, hasLegacyMissingPreviewFlag, type PreviewFailureKind } from '../../shared/previewFailure'
 import { resolvePreviewSource } from './runtime/previewSourceRuntime'
 import { tracePreviewPhase, createPreviewReuseObserver } from './runtime/previewTraceRuntime'
 import { logOperation, currentOperationTrace } from '../logging/operationTraceContext'
-import { sharedFileSystem as fsp, withSharedPreviewReads } from '../path/sharedFileSystemRuntime'
+import { sharedFileSystem as fsp, withSharedPreviewReads, currentSharedIoSignal } from '../path/sharedFileSystemRuntime'
 import { validatePreviewInput } from './runtime/previewInputPolicy'
 import { join,resolve } from 'node:path'
 import type { FontItem } from '../../shared/types'
 import { findBestWatchedRootForFile } from '../path/fontPathPolicy'
-import { withIoDeadlineResult,withPhysicalIoCompletion,fileExistsTimeoutMs } from '../path/ioDeadlineRuntime'
+import { withIoDeadlineResult,withPhysicalIoCompletion,fileExistsTimeoutMs,awaitPhysicalIoClose } from '../path/ioDeadlineRuntime'
 import { createCachedPreviewReadRuntime } from './runtime/cachedPreviewReadRuntime'
 import { createPreviewFontDataRuntime } from './runtime/previewFontDataRuntime'
 import { createPreviewImageMemoryRuntime } from './runtime/previewImageMemoryRuntime'
@@ -106,7 +108,11 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
 
   async function readValidCachedImage(path: string, required = false): Promise<Buffer | undefined> {
     const result = await withIoDeadlineResult('preview-cache-validate', () => tracePreviewPhase('image-read', () => fsp.readFile(path)), fileExistsTimeoutMs())
-    if (!result.ok && required) throw previewFailure(result.timedOut ? 'timeout' : previewFailureKind(result.error))
+    if (!result.ok && required) {
+      await awaitPhysicalIoClose(result.error)
+      if (isTerminalPreviewRenderFailure(result.error)) throw result.error
+      throw previewFailure(result.timedOut ? 'timeout' : previewFailureKind(result.error))
+    }
     return result.ok && isCompletePreviewPng(result.value) ? result.value : undefined
   }
 
@@ -229,94 +235,100 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       outputPath: string
       preferSystemFont?: boolean
       systemFontFamilyCandidates?: string[]
-    }): Promise<void> {
+    }): Promise<{ bytes: Buffer; message: string; transient: boolean }> {
+      const lifetime = currentPreviewRenderLifetime()!
+      lifetime.assertCurrent()
+      const lease = claimPreviewImage(outputPath, foreground ? 'display' : 'render', () => {
+        try { lifetime.assertCurrent(); return true } catch { return false }
+      })
+      const inputPath = `${lease.temporaryPath}.json`
+      try {
+        const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview({ ...request, layout, ...(foreground ? { foregroundBytes: true } : {}), outputPath: lease.temporaryPath }, inputPath))
+        lifetime.assertCurrent()
+        if (!renderResult.ok) throw new Error(renderResult.message || `${renderResult.engine} preview renderer did not create output.`)
+        const message = request.preferSystemFont
+          ? `${renderResult.engine}:system-installed:${installedRoute?.reason || 'matched'}`
+          : renderResult.engine
+        if (renderResult.transient) {
+          if (!foreground || !Buffer.isBuffer(renderResult.bytes) || !isCompletePreviewPng(renderResult.bytes)) throw previewFailure('failed')
+          if (!lease.current()) throw previewFailure('cancelled')
+          return { bytes: renderResult.bytes, message, transient: true }
+        }
+        const bytes = await withPhysicalIoCompletion(() => readValidCachedImage(renderResult.outputPath || lease.temporaryPath, true))
+        lifetime.assertCurrent()
+        if (!bytes) throw previewFailure('failed')
+        if (!(await lease.commit())) { lifetime.assertCurrent(); throw previewFailure('cancelled') }
+        lifetime.assertCurrent()
+        return { bytes, message, transient: false }
+      } catch (error) {
+        // The native child may reject before close. Do not release its lease yet.
+        await awaitPhysicalIoClose(error)
+        throw error
+      } finally {
+        await withoutPreviewRenderLifetime(async () => {
+          await lease.release()
+          await fsp.unlink(inputPath).catch(() => undefined)
+        })
+      }
+    }
+
+    try {
       const renderKey = `${foreground ? 'visible' : 'cache'}:${outputPath}`
       let task = nativeRenderInFlight.get(renderKey)
-      reuseObserver.native(renderKey, key, request.preferSystemFont ? 'system' : 'file', task)
+      reuseObserver.native(renderKey, key, installedRoute ? 'system' : 'file', task)
       if (!task) {
-        task = withPhysicalIoCompletion(async () => {
-          const lease = claimPreviewImage(outputPath, foreground ? 'display' : 'render')
-          const inputPath = `${lease.temporaryPath}.json`
+        // The entire route sequence owns one deadline and queue ledger. Joiners
+        // cannot restart the failed fast route or mint a fresh fallback budget.
+        task = withPreviewRenderLifetime(lifetime => withPhysicalIoCompletion(async () => {
+          let phase: 'system' | 'native' = 'native'
           try {
-            const renderResult = await tracePreviewPhase('native-render', () => nativePreviewRenderer.renderNativePreview({ ...request, layout, ...(foreground ? { foregroundBytes: true } : {}), outputPath: lease.temporaryPath }, inputPath))
-            if (!renderResult.ok) throw new Error(renderResult.message || `${renderResult.engine} preview renderer did not create output.`)
-            const message = request.preferSystemFont
-              ? `${renderResult.engine}:system-installed:${installedRoute?.reason || 'matched'}`
-              : renderResult.engine
-            if (renderResult.transient) {
-              if (!foreground || !Buffer.isBuffer(renderResult.bytes) || !isCompletePreviewPng(renderResult.bytes)) throw previewFailure('failed')
-              if (!lease.current()) throw previewFailure('cancelled')
-              return { bytes: renderResult.bytes, message, transient: true }
+            const activeFontPath = installedRoute?.reason === 'active'
+              ? await tracePreviewPhase('font-resolve', () => resolveExistingFontFilePath(item.path))
+              : null
+            lifetime.assertCurrent()
+            if (activeFontPath) {
+              await fsp.access(activeFontPath)
+              if (!foreground) await heartbeatBackgroundTask(taskKey, 0.35, '正在使用字体文件生成已激活字体预览').catch(() => undefined)
+              const result = await renderRequest({ fontPath: activeFontPath, text: normalizedText, fontSize, width, height, outputPath })
+              appendStartupLog(`active font preview file route: fontId=${item.id}, engine=${result.message}`)
+              return result
             }
-            const bytes = await readValidCachedImage(renderResult.outputPath || lease.temporaryPath, true)
-            if (!bytes) throw previewFailure('failed')
-            if (!(await lease.commit())) throw previewFailure('cancelled')
-            return { bytes, message, transient: false }
-          } finally {
-            await lease.release()
-            await fsp.unlink(inputPath).catch(() => undefined)
+            if (installedRoute) {
+              phase = 'system'
+              try {
+                if (!foreground) await heartbeatBackgroundTask(taskKey, 0.35, '正在使用系统已安装字体快速生成预览').catch(() => undefined)
+                return await renderRequest({
+                  fontPath: '', preferSystemFont: true,
+                  systemFontFamilyCandidates: installedRoute.systemFontFamilyCandidates,
+                  text: normalizedText, fontSize, width, height, outputPath
+                })
+              } catch (error) {
+                await lifetime.allowFallback(error)
+                lifetime.traceDecision('system', 'fallback', error, sharedIoAvailabilityRoot(item.path) || '', appendStartupLog)
+              }
+            }
+            phase = 'native'
+            lifetime.assertCurrent()
+            const source = verifiedSource || await tracePreviewPhase('font-resolve', () => resolvePreviewSource(item.path, resolveExistingFontFilePath))
+            lifetime.assertCurrent()
+            if (!foreground) await heartbeatBackgroundTask(taskKey, 0.4, `正在生成字体预览图片（${nativePreviewRenderer.activeEngineLabel()}）`).catch(() => undefined)
+            return await renderRequest({ fontPath: source.path, text: normalizedText, fontSize, width, height, outputPath })
+          } catch (error) {
+            const failure = lifetime.failure(error)
+            lifetime.traceDecision(phase, 'stop', failure, sharedIoAvailabilityRoot(item.path) || '', appendStartupLog)
+            throw failure
           }
-        })
+        }))
         nativeRenderInFlight.set(renderKey, task)
         reuseObserver.track(task)
         const ownedTask = task
         void task.finally(() => { if (nativeRenderInFlight.get(renderKey) === ownedTask) nativeRenderInFlight.delete(renderKey) }).catch(() => undefined)
       }
       const result = await task
+      if (currentSharedIoSignal()?.aborted) throw previewFailure('cancelled')
       imageBytes = result.bytes
       transient = result.transient
       renderMessage = result.message
-
-    }
-
-    try {
-      let rendered = false
-      // Temporary activation does not guarantee family-name lookup is available.
-      // Use the existing font file directly while keeping the same cache identity.
-      const activeFontPath = installedRoute?.reason === 'active'
-        ? await tracePreviewPhase('font-resolve', () => resolveExistingFontFilePath(item.path))
-        : null
-      if (activeFontPath) {
-        await fsp.access(activeFontPath)
-        if (!foreground) await heartbeatBackgroundTask(taskKey, 0.35, '正在使用字体文件生成已激活字体预览').catch(() => undefined)
-        await renderRequest({ fontPath: activeFontPath, text: normalizedText, fontSize, width, height, outputPath })
-        rendered = true
-        appendStartupLog(`active font preview file route: fontId=${item.id}, engine=${renderMessage}`)
-      }
-      if (!rendered && installedRoute) {
-        try {
-          if (!foreground) await heartbeatBackgroundTask(taskKey, 0.35, '正在使用系统已安装字体快速生成预览').catch(() => undefined)
-          await renderRequest({
-            fontPath: '',
-            preferSystemFont: true,
-            systemFontFamilyCandidates: installedRoute.systemFontFamilyCandidates,
-            text: normalizedText,
-            fontSize,
-            width,
-            height,
-            outputPath
-          })
-          rendered = true
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          appendStartupLog(`installed font preview fast path failed: fontId=${item.id}, reason=${installedRoute.reason}, message=${message}; trying rust file-path fallback`)
-        }
-      }
-
-      if (!rendered) {
-        const source = verifiedSource || await tracePreviewPhase('font-resolve', () => resolvePreviewSource(item.path, resolveExistingFontFilePath))
-        const fontPath = source.path
-
-        if (!foreground) await heartbeatBackgroundTask(taskKey, 0.4, `正在生成字体预览图片（${nativePreviewRenderer.activeEngineLabel()}）`).catch(() => undefined)
-        await renderRequest({
-          fontPath,
-          text: normalizedText,
-          fontSize,
-          width,
-          height,
-          outputPath
-        })
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const kind = previewFailureKind(error)
@@ -334,7 +346,14 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       }).catch(() => undefined)
       if (!foreground) await failBackgroundTask(taskKey, message, error instanceof Error ? error.stack : undefined).catch(() => undefined)
       appendStartupLog(`native preview failed: ${item.path} ${message}`)
-      const failure = previewFailure(previewFailureKind(error))
+      const failure = Object.assign(previewFailure(kind), {
+        cause: error,
+        ...((error && typeof error === 'object') ? {
+          reason: (error as { reason?: string }).reason,
+          sharedIo: (error as { sharedIo?: boolean }).sharedIo,
+          closed: (error as { closed?: Promise<void> }).closed,
+        } : {}),
+      })
       if (kind !== 'cancelled') failedUntil.set(laneKey, { until: Date.now() + 30000, error: failure })
       while (failedUntil.size > 512) failedUntil.delete(failedUntil.keys().next().value!)
       throw failure
@@ -392,7 +411,14 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     const observation = reuseObserver.admit({ requestKey, item, text, fontSize, width, height, layout, memory: !!cachedDataUri, legacyMissing, existing })
     if (cachedDataUri && !legacyMissing) { logOperation({ stage: 'image-memory-hit' }); return cachedDataUri }
 
-    if (existing) { logOperation({ stage: 'render-coalesced', jobId: renderTraceOwners.get(requestKey) }); return existing }
+    if (existing) {
+      const subscriberSignal = currentSharedIoSignal()
+      logOperation({ stage: 'render-coalesced', jobId: renderTraceOwners.get(requestKey) })
+      return existing.then(value => {
+        if (subscriberSignal?.aborted) throw previewFailure('cancelled')
+        return value
+      })
+    }
 
     const owner = currentOperationTrace()?.operationId
     if (owner) {
@@ -414,7 +440,8 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
         reuseObserver.remember(!!previewFile.transient)
         return image
       } catch (error) {
-        if (previewFile.cached) {
+        await awaitPhysicalIoClose(error)
+        if (previewFile.cached && !isTerminalPreviewRenderFailure(error)) {
           const storage = await previewCacheStorageForFont(resolve(item.path))
           const normalizedText = text || DEFAULT_PREVIEW_TEXT
           const installedRoute = resolveInstalledFontPreviewRoute(item)

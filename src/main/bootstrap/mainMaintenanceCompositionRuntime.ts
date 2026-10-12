@@ -18,6 +18,7 @@ type Core = ReturnType<typeof createMainCoreCompositionRuntime>;
 type Data = ReturnType<typeof createMainDataCompositionRuntime>;
 
 export interface MainMaintenanceCompositionOptions {
+  isForegroundBusy: () => boolean;
   appWatchedFolders: Data['storage']['appWatchedFolders'];
   exists: Core['paths']['exists'];
   sharedMetadataDbPathForRoot: Data['storage']['sharedMetadataDbPathForRoot'];
@@ -132,6 +133,7 @@ export function createMainMaintenanceCompositionRuntime(options: MainMaintenance
 
   const sharedMetadataFrontendDiagnosticsRuntime =
     createSharedMetadataFrontendDiagnosticsRuntime({
+      isForegroundBusy: options.isForegroundBusy,
       openIsolatedSnapshot: createSharedMetadataMaintenanceSnapshotRuntime(rustCoreWorkerRuntime.runRustSharedMetadataOverlayRead).openIsolatedSnapshot,
       appWatchedFolders,
       uniqueResolvedFolders,
@@ -154,6 +156,7 @@ export function createMainMaintenanceCompositionRuntime(options: MainMaintenance
   } = sharedMetadataFrontendDiagnosticsRuntime;
 
   const databaseMaintenanceRuntime = createApplicationDatabaseMaintenanceRuntime({
+    isForegroundBusy: options.isForegroundBusy,
     appWatchedFolders,
     appName: APP_NAME,
     maintenanceSqliteSchemaVersion: MAINTENANCE_SQLITE_SCHEMA_VERSION,

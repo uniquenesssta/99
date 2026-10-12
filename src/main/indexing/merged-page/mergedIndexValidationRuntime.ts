@@ -1,3 +1,4 @@
+import { settleMergedSyncError } from './mergedIndexProjectionFailureRuntime'
 import type { MergedIndexSourceInfo } from '../mergedIndexRuntime';
 import { withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime';
 import { runtimeFontIdFromEntry } from '../../fonts/fontFileIdentity';
@@ -11,6 +12,7 @@ MergedIndexSourceRuntime,
 import {
   checkMergedIndexSharedMetadataExternalChanges,
   isSharedMetadataExternalCheckReason,
+  isExplicitMergedIndexReconciliation,
   type MergedIndexExternalCheckResult,
 } from "./mergedIndexSharedMetadataExternalCheckRuntime";
 
@@ -21,6 +23,7 @@ export function createMergedIndexValidationRuntime(
 ) {
   type ExternalCheckResult = MergedIndexExternalCheckResult
   let externalCheckInFlight: Promise<ExternalCheckResult> | null = null
+  let externalCheckExplicit = false
   let lastExternalCheckResult: ExternalCheckResult | null = null
   let lastExternalCheckAt = 0
   const externalCheckReuseMs = 1_500
@@ -41,6 +44,18 @@ export function createMergedIndexValidationRuntime(
     const task = withoutSharedIoSignal(async () => {
       const startedAt = Date.now();
       try {
+        const snapshotDb = await ctx.openMergedIndexDb();
+        let localSnapshotUsable: boolean;
+        try { localSnapshotUsable = ctx.mergedIndexLocalSnapshotUsable(snapshotDb, roots); }
+        finally { ctx.closeSqliteDb(snapshotDb); }
+        if (localSnapshotUsable) {
+          // Routine stale-snapshot validation shares the root-local preparation
+          // and retry owner. It must not hold the global lane across peer I/O.
+          const result = await checkMergedIndexExternalChanges('shared-metadata-background-validation');
+          ctx.appendStartupLog(`merged background validation: caller=automatic, phase=${result.status || 'complete'}, checked=${result.checkedRoots || 0}, synced=${result.syncedRoots || 0}, deferred=${result.deferredRoots || 0}, failed=${result.failedRoots || 0}`);
+          return;
+        }
+        // Bootstrap/schema replacement has no usable local snapshot to retain.
         const sources = await sourceRuntime.mergedIndexSourcesForRoots(roots);
         if (!sources.length) return;
         const sourcesKey = ctx.mergedIndexSourcesKey(sources);
@@ -54,6 +69,7 @@ export function createMergedIndexValidationRuntime(
           `local merged index background validation finished: reason=${reason}, roots=${roots.length}, elapsed=${Date.now() - startedAt}ms`,
         );
       } catch (error) {
+        await settleMergedSyncError(error);
         ctx.appendStartupLog(
           `local merged index background validation skipped: reason=${reason}, ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -71,20 +87,26 @@ export function createMergedIndexValidationRuntime(
     reason = "shared-metadata-poll",
   ): Promise<ExternalCheckResult> {
     const now = Date.now();
-    if (lastExternalCheckResult && now - lastExternalCheckAt < externalCheckReuseMs) {
+    if (!isExplicitMergedIndexReconciliation(reason) && lastExternalCheckResult && now - lastExternalCheckAt < externalCheckReuseMs) {
       return { ...lastExternalCheckResult, elapsedMs: 0, reason };
     }
-    if (externalCheckInFlight) return externalCheckInFlight;
+    if (externalCheckInFlight) {
+      if (isExplicitMergedIndexReconciliation(reason) && !externalCheckExplicit) {
+        try { await externalCheckInFlight } catch { /* Explicit repair still gets its own attempt. */ }
+        return checkMergedIndexExternalChanges(reason);
+      }
+      return externalCheckInFlight;
+    }
+    externalCheckExplicit = isExplicitMergedIndexReconciliation(reason);
 
     externalCheckInFlight = (async () => {
       if (isSharedMetadataExternalCheckReason(reason)) {
-        const lightweightResult = await checkMergedIndexSharedMetadataExternalChanges({
+        return checkMergedIndexSharedMetadataExternalChanges({
           ctx,
           sourceRuntime,
           buildRuntime,
           reason,
         });
-        if (lightweightResult) return lightweightResult;
       }
       const startedAt = Date.now();
       const roots = Array.from(
@@ -130,6 +152,7 @@ export function createMergedIndexValidationRuntime(
       return result;
     } finally {
       externalCheckInFlight = null;
+      externalCheckExplicit = false;
     }
   }
 

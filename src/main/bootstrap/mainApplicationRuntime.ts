@@ -58,7 +58,10 @@ export function createMainApplicationRuntime({ core, data, mutation, operations 
       startBackgroundTaskScheduler: operations.lifecycle.startBackgroundTaskScheduler,
       stopBackgroundTaskScheduler: operations.lifecycle.stopBackgroundTaskScheduler,
       stopFolderWatchers: operations.lifecycle.stopFolderWatchers,
-      awaitFolderWatchersClosed: operations.lifecycle.awaitFolderWatchersClosed,
+      awaitFolderWatchersClosed: async () => {
+        await operations.lifecycle.awaitFolderWatchersClosed();
+        await data.resources.awaitSharedAvailabilityProbesClosed();
+      },
     },
     query: {
       reportPerformanceEvent: core.capabilities.reportPerformanceEvent,

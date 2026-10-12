@@ -16,7 +16,7 @@ async function run(){
   const held=gate(),state={generation:1,state:'online'};
   const shared=path.join(dir,'shared');fs.mkdirSync(shared);fs.writeFileSync(path.join(shared,'key.png'),png);
   const fsp={...fs.promises,readFile:async p=>{if(p===path.join(shared,'key.png'))reads++;return fs.promises.readFile(p)}};
-  const hydrateLoad=loader({'../../path/sharedFileSystemRuntime':{sharedFileSystem:fsp,withSharedIoSignal:(_signal,fn)=>fn()},'../../path/startupPathAvailabilityRuntime':{getStartupPathRootState:()=>state}});
+  const hydrateLoad=loader({'../../path/sharedFileSystemRuntime':{sharedFileSystem:fsp,withSharedIoSignal:(_signal,fn)=>fn()},'../../path/startupPathAvailabilityRuntime':{ assertStartupPathRootGuardCurrent() {},getStartupPathRootState:()=>state}});
   const io=load('src/main/path/ioDeadlineRuntime.ts');
   const hydration=hydrateLoad('src/main/preview/runtime/previewCacheHydrationRuntime.ts').createPreviewCacheHydrationRuntime({appendStartupLog(){},withIoDeadlineResult:io.withIoDeadlineResult,previewCacheStorageToShared:()=>({rootPath:shared,dir:shared,storage:'root'}),ensureSharedAvailable:async()=>true,readPreviewCacheIndexStatus:async()=> 'ok',writePreviewCacheIndex:async()=>{},validateSharedPreviewCacheMeta:async(_path,_row,bytes)=>{receivedBytes=bytes;await held.promise;return{status:'ok'}}});
   const local=path.join(dir,'hydrated.png'),row={id:'a',previewKey:'key',outputPath:local,fontSignature:'s',textHash:'t',fontSize:12,width:1,height:1};
@@ -40,7 +40,7 @@ async function compatibility(){
 }
 async function rootRecovery(){
  let generation=1, probes=0;
- const load=loader({'../../path/startupPathAvailabilityRuntime':{getStartupPathRootState:()=>({rootId:'root',generation,state:'online'}),ensureStartupPathRootAvailable:async()=>{probes++;return true}}});
+ const load=loader({'../../path/startupPathAvailabilityRuntime':{ assertStartupPathRootGuardCurrent() {},getStartupPathRootState:()=>({rootId:'root',generation,state:'online'}),ensureStartupPathRootAvailable:async()=>{probes++;return true}}});
  const root=load('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts').createPreviewCacheRootAvailabilityRuntime();
  root.markRootPreviewCacheUnavailable('/root',{reason:'cancelled'});assert.equal(root.isRootPreviewCacheUnavailable('/root'),false);
  root.markRootPreviewCacheUnavailable('/root',Error('temporary network failure'));assert.equal(root.isRootPreviewCacheUnavailable('/root'),true);

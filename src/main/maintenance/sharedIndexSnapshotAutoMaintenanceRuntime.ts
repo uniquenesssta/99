@@ -1,3 +1,5 @@
+import { awaitPhysicalIoClose } from '../path/ioDeadlineRuntime'
+import { createOptionalMaintenanceAdmission, OptionalMaintenanceDeferred, type MaintenanceDeferral } from './optionalMaintenanceAdmissionRuntime';
 import { resolve } from "node:path";
 import type { LibraryShell } from "../../shared/types";
 import type { RootIndexSnapshotMaintenanceReport } from "../indexing/root-index/rootIndexSnapshotRuntime";
@@ -14,6 +16,8 @@ export type SharedIndexSnapshotAutoMaintenanceRootReport =
 
 export type SharedIndexSnapshotAutoMaintenanceReport = {
   ok: boolean;
+  complete?: boolean;
+  deferred?: MaintenanceDeferral[];
   enabled: boolean;
   checkedRoots: number;
   cleanedRoots: number;
@@ -23,6 +27,7 @@ export type SharedIndexSnapshotAutoMaintenanceReport = {
 };
 
 export type SharedIndexSnapshotAutoMaintenanceRuntimeDeps = {
+  isForegroundBusy?: () => boolean;
   loadLibraryShell: () => Promise<LibraryShell>;
   rootCacheDir: (rootPath: string) => string;
   rootIndexDbPath: (rootPath: string) => string;
@@ -96,16 +101,22 @@ export function createSharedIndexSnapshotAutoMaintenanceRuntime(
       deps.appendStartupLog(message);
     }
 
+    const deferred: MaintenanceDeferral[] = [];
+    const admission = createOptionalMaintenanceAdmission({ caller: 'snapshot-maintenance', isForegroundBusy: deps.isForegroundBusy, appendStartupLog: deps.appendStartupLog });
+    await admission.run(async () => {
     for (const rootPath of watchedRoots) {
       const cacheDir = deps.rootCacheDir(rootPath);
       const defaultDbPath = deps.rootIndexDbPath(rootPath);
       try {
+        await admission.checkpoint('inspect', rootPath);
         const inspected = await deps.inspectRootIndexSnapshotMaintenance(cacheDir, defaultDbPath);
+        admission.assertCurrent('inspect-result', rootPath);
         if (!shouldCleanupSnapshotReport(inspected)) {
           roots.push({ ...inspected, rootPath, cleaned: false });
           continue;
         }
 
+        await admission.checkpoint('cleanup', rootPath);
         const cleaned = await deps.cleanupRootIndexSnapshotMaintenance(cacheDir, defaultDbPath);
         roots.push({
           ...cleaned,
@@ -117,21 +128,30 @@ export function createSharedIndexSnapshotAutoMaintenanceRuntime(
             tmpFileCount: inspected.tmpFileCount,
           },
         });
+        admission.assertCurrent('cleanup-result', rootPath);
         deps.appendStartupLog(
           `shared index snapshot auto maintenance cleaned: root=${rootPath}, before=${summarizeSnapshotReport(inspected)}, after=${summarizeSnapshotReport(cleaned)}`,
         );
       } catch (error) {
+        await awaitPhysicalIoClose(error);
+        if (error instanceof OptionalMaintenanceDeferred) {
+          if (deferred.length < 32) deferred.push(error.detail);
+          continue;
+        }
         const message = `shared index snapshot auto maintenance failed: root=${rootPath}, ${error instanceof Error ? error.message : String(error)}`;
         warnings.push(message);
         deps.appendStartupLog(message);
       }
     }
 
+    });
     const deletedFiles = roots.reduce((sum, item) => sum + item.deletedFiles.length, 0);
     const cleanedRoots = roots.filter((item) => item.cleaned).length;
-    const ok = warnings.length === 0 && roots.every((item) => item.ok || (item.staleSnapshotCount === 0 && item.orphanSidecarCount === 0 && item.tmpFileCount > 0));
+    const ok = deferred.length === 0 && warnings.length === 0 && roots.every((item) => item.ok || (item.staleSnapshotCount === 0 && item.orphanSidecarCount === 0 && item.tmpFileCount > 0));
     return {
       ok,
+      complete: deferred.length === 0 && warnings.length === 0,
+      deferred,
       enabled: true,
       checkedRoots: roots.length,
       cleanedRoots,

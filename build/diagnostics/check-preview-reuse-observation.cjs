@@ -27,8 +27,8 @@ function fixture() {
   }
   const load = loader({
     'node:crypto': { ...crypto, createHash: (...args) => { state.hashes++; return crypto.createHash(...args) } },
-    [abs('src/main/path/sharedFileSystemRuntime.ts')]: { sharedFileSystem: fakefs, withSharedPreviewReads: run => run() },
-    [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [] },
+    [abs('src/main/path/sharedFileSystemRuntime.ts')]: { sharedFileSystem: fakefs, withSharedPreviewReads: run => run(), currentSharedIoSignal: () => undefined, withSharedIoSignal: (_signal, run) => run(), withoutSharedIoSignal: run => run() },
+    [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [], sharedIoAvailabilityRoot: () => 'C:' },
     [abs('src/main/app/shutdownCoordinatorRuntime.ts')]: { applicationWorkEpoch: () => 1, isApplicationClosing: () => false },
     '../native-renderer/directwrite/directWritePreviewHelperPathRuntime': { hasDirectWritePreviewHelper: () => false },
     './runtime/previewCacheStorageRuntime': { createPreviewCacheStorageRuntime: () => storage },
@@ -117,7 +117,7 @@ async function main() {
   }
   {
     const h = fixture(), entered = gate(), closed = gate()
-    h.state.render = async () => { entered.resolve(); throw Object.assign(Error(secret + '-cancelled'), { reason: 'cancelled', closed: closed.promise }) }
+    h.state.render = async () => { entered.resolve(); throw Object.assign(Error(secret + '-cancelled'), { sharedIo: true, reason: 'cancelled', closed: closed.promise }) }
     const pending = render(h.runtime).then(() => assert.fail('Cancelled render returned'), error => error)
     await entered.promise; await tick()
     assert.equal(h.events().filter(row => row.event === 'memory-stored' || row.event === 'settled').length, 0)
@@ -141,7 +141,7 @@ async function main() {
     assert.equal(h.state.native.length, 1)
     assert((await render(h.runtime, { ...font, id: secret + '-new', recoveryContentHash: { toJSON() { throw Error(secret + '-serialize') } } })).startsWith('data:image/png;base64,'))
     assert.equal(h.state.native.length, 2, 'Observation serialization retried or suppressed the operation')
-    const closed = gate(), cancellation = Object.assign(Error(), { reason: 'cancelled', closed: closed.promise })
+    const closed = gate(), cancellation = Object.assign(Error(), { sharedIo: true, reason: 'cancelled', closed: closed.promise })
     Object.defineProperty(cancellation, 'message', { get() { throw Error(secret + '-classification') } })
     h.state.queueError = cancellation
     const actual = await render(h.runtime, { ...font, id: secret + '-cancelled-owner' }).then(() => assert.fail('Cancelled queue returned'), error => error)

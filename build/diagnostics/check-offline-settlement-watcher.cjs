@@ -59,7 +59,7 @@ async function watcher() {
   'node:child_process':{spawn(){throw Error('notification capability was not supplied')}},
   [path.join(root,'src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>['nas']},
   [path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{withSharedIoSignal:(_signal,work)=>work(),executeSharedFile:async(request,_options,signal)=>{assert.equal(request.operation,'treeSnapshot');assert.equal(request.path,folder);assert.equal(signal.aborted,false);collections++;collectionSignal=signal;if(held)return held;if(failure)throw Error('network timeout');return {result:{value:snapshot}}}},
-  [path.join(root,'src/main/path/startupPathAvailabilityRuntime.ts')]:{ensureStartupPathRootAvailable:async()=>true,markStartupPathRootUnavailable(){offline++}},
+  [path.join(root,'src/main/path/startupPathAvailabilityRuntime.ts')]:{ assertStartupPathRootGuardCurrent() {},ensureStartupPathRootAvailable:async()=>true,markStartupPathRootUnavailable(){offline++}},
  },{Date:Clock,setTimeout(fn,ms){const token={id:++timerId,unref(){}};timers.set(token,{fn,at:now+ms});return token},clearTimeout(token){timers.delete(token)}})(watchFile).createFolderWatcherRuntime({
   appendStartupLog(){},isIgnoredWatcherPath:()=>false,verboseLogs:false,startupGraceMs:0,flushDebounceMs:10,closeRuntimeDatabases(){},watcherChangeBatchLooksUnchanged:async()=>{throw Error('complete inventory must not trigger a second preflight')},
   applyWatchedFolderChangesToIndex:async(changes,_replay,context)=>{context.assertCurrent();assert.equal(context.inventory.rootPath,folder);assert.equal(context.inventory.complete,true);batches.push({changes:plain(changes),files:plain([...context.inventory.files])});return {upserts:[],deletes:[]}},

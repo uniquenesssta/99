@@ -10,6 +10,7 @@ type DatabaseFileSpec,
 import { createSharedIndexSnapshotAutoMaintenanceRuntime } from "./sharedIndexSnapshotAutoMaintenanceRuntime";
 
 export type ApplicationDatabaseMaintenanceRuntimeOptions = {
+  isForegroundBusy?: () => boolean;
   appName: string;
   maintenanceSqliteSchemaVersion: number;
   databaseBackupRetentionCount: number;
@@ -173,25 +174,27 @@ export function createApplicationDatabaseMaintenanceRuntime(
     return metricsSqlitePath();
   }
 
-  async function collectPreviewMaintenanceDirs(): Promise<Array<{ dirPath: string; referenceDbPath: string }>> {
-    const dirs = new Map<string, string>([[localPreviewImageDir(), previewSqlitePath()]]);
+  async function collectPreviewMaintenanceDirs(): Promise<Array<{ dirPath: string; referenceDbPath: string; rootPath?: string }>> {
+    const dirs = new Map<string, { referenceDbPath: string; rootPath?: string }>([[localPreviewImageDir(), { referenceDbPath: previewSqlitePath() }]]);
     try {
       for (const rawFolder of await appWatchedFolders()) {
         if (!rawFolder) continue;
         const folder = resolve(rawFolder);
-        dirs.set(rootPreviewImageDir(folder), rootPreviewDbPath(folder));
-        dirs.set(legacyRootPreviewCacheDir(folder), rootPreviewDbPath(folder));
-        dirs.set(fallbackPreviewImageDir(folder), fallbackPreviewDbPath(folder));
+        dirs.set(rootPreviewImageDir(folder), { referenceDbPath: rootPreviewDbPath(folder), rootPath: folder });
+        dirs.set(legacyRootPreviewCacheDir(folder), { referenceDbPath: rootPreviewDbPath(folder), rootPath: folder });
+        dirs.set(fallbackPreviewImageDir(folder), { referenceDbPath: fallbackPreviewDbPath(folder) });
       }
     } catch (error) {
       appendStartupLog(
-        `preview maintenance folder lookup skipped: ${error instanceof Error ? error.message : String(error)}`,
+        `preview maintenance folder lookup failed: ${error instanceof Error ? error.message : String(error)}`,
       );
+      throw error;
     }
-    return Array.from(dirs, ([dirPath, referenceDbPath]) => ({ dirPath, referenceDbPath }));
+    return Array.from(dirs, ([dirPath, location]) => ({ dirPath, ...location }));
   }
 
   const { runSharedIndexSnapshotAutoMaintenance } = createSharedIndexSnapshotAutoMaintenanceRuntime({
+    isForegroundBusy: options.isForegroundBusy,
     loadLibraryShell,
     rootCacheDir,
     rootIndexDbPath,
@@ -214,6 +217,7 @@ export function createApplicationDatabaseMaintenanceRuntime(
   }
 
   return createDatabaseMaintenanceRuntime({
+    isForegroundBusy: options.isForegroundBusy,
     appName,
     maintenanceSqliteSchemaVersion,
     databaseBackupRetentionCount,

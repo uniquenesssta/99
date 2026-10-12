@@ -1,3 +1,5 @@
+import { awaitPhysicalIoClose } from '../../path/ioDeadlineRuntime'
+import { createOptionalMaintenanceAdmission, OptionalMaintenanceDeferred, type MaintenanceDeferral } from '../../maintenance/optionalMaintenanceAdmissionRuntime'
 import type { SharedMetadataMaintenanceSnapshotOwner } from './sharedMetadataMaintenanceSnapshotRuntime'
 import type { SharedMetadataRepairOptions, SharedMetadataRepairReport } from './sharedMetadataRepairRuntime'
 import type { SharedMetadataMigrationDiagnosticsReport } from './sharedMetadataMigrationDiagnosticsRuntime'
@@ -5,6 +7,7 @@ import type { SharedTagOpsConflictReport, SharedTagOpsDiagnosticsReport, SharedT
 
 export type SharedMetadataFrontendDiagnosticsOptions = {
   roots?: string[]
+  automatic?: boolean
   synchronize?: boolean
   includeRepairDryRun?: boolean
 }
@@ -17,6 +20,7 @@ export type SharedMetadataFrontendRepairOptions = SharedMetadataRepairOptions & 
 
 export type SharedMetadataRootFrontendDiagnostics = {
   ok: boolean
+  deferred?: MaintenanceDeferral
   rootPath: string
   dbPath: string
   exists: boolean
@@ -34,6 +38,8 @@ export type SharedMetadataRootFrontendDiagnostics = {
 export type SharedMetadataFrontendDiagnosticsReport = {
   ok: boolean
   checkedAt: string
+  complete: boolean
+  deferredRoots: number
   roots: number
   existingRoots: number
   synchronizedRoots: number
@@ -72,6 +78,7 @@ export type SharedMetadataFrontendRepairReport = {
 }
 
 export interface SharedMetadataFrontendDiagnosticsRuntimeDeps {
+  isForegroundBusy?: () => boolean
   openIsolatedSnapshot?: (root: string) => Promise<SharedMetadataMaintenanceSnapshotOwner | undefined>
   appWatchedFolders: () => Promise<string[]>
   uniqueResolvedFolders: (folders: string[]) => string[]
@@ -127,12 +134,19 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
     let existingRoots = 0
     let synchronizedRoots = 0
 
+    const admission = options.automatic === true ? createOptionalMaintenanceAdmission({ caller: 'startup-diagnostics', isForegroundBusy: deps.isForegroundBusy, appendStartupLog: deps.appendStartupLog }) : undefined
+    const readRoots = async () => {
     for (const rootPath of roots) {
       const dbPath = deps.sharedMetadataDbPathForRoot(rootPath)
+      let databaseExists = false
       try {
+        await admission?.checkpoint('snapshot', rootPath)
         const snapshot = await deps.openIsolatedSnapshot?.(rootPath)
+        if (!snapshot) await admission?.checkpoint('database-presence', rootPath)
         const hasDb = snapshot ? snapshot.exists : await deps.exists(dbPath)
         if (!hasDb) {
+          snapshot?.close()
+          admission?.assertCurrent('snapshot-result', rootPath)
           reports.push({
             ok: true,
             rootPath,
@@ -146,12 +160,14 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
         }
 
         existingRoots += 1
+        databaseExists = true
+        if (!snapshot) await admission?.checkpoint('open-database', rootPath)
         const db = snapshot ? snapshot.db : await deps.openSharedMetadataDb(rootPath, false)
         try {
+          admission?.assertCurrent('diagnostics', rootPath)
           let replay: SharedTagOpsReplayReport | undefined
           if (options.synchronize === true) {
             replay = deps.ensureSharedTagOpsReplayedInOpenDb(db, rootPath, 'frontend-diagnostics')
-            synchronizedRoots += 1
           } else {
             deps.ensureSharedTagOpsBackfilledInOpenDb(db, rootPath, 'frontend-diagnostics-readonly')
           }
@@ -171,7 +187,12 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
             ...conflicts.suggestedActions,
             ...(repairDryRun?.suggestedActions || []),
           ])
-          if (snapshot) await snapshot.commit()
+          if (snapshot) {
+            await admission?.checkpoint('commit', rootPath)
+            await snapshot.commit()
+          }
+          admission?.assertCurrent('diagnostics-result', rootPath)
+          if (options.synchronize === true) synchronizedRoots += 1
           reports.push({
             ok: severity !== 'critical',
             rootPath,
@@ -191,6 +212,11 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
           else deps.closeSqliteDb(db)
         }
       } catch (error) {
+        await awaitPhysicalIoClose(error)
+        if (error instanceof OptionalMaintenanceDeferred) {
+          reports.push({ ok: false, rootPath, dbPath, exists: databaseExists, synchronized: false, deferred: error.detail, severity: 'info', suggestedActions: ['optional diagnostics deferred; refresh after the root is online and foreground work is idle'] })
+          continue
+        }
         reports.push({
           ok: false,
           rootPath,
@@ -204,6 +230,11 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
       }
     }
 
+    }
+    if (admission) await admission.run(readRoots)
+    else await readRoots()
+
+    const deferredRoots = reports.filter(report => report.deferred).length
     const severity = maxSeverity(reports.map((report) => report.severity))
     const suggestedActions = uniqueStrings(reports.flatMap((report) => report.suggestedActions))
     const summary = reports.reduce<SharedMetadataFrontendDiagnosticsReport['summary']>((acc, report) => {
@@ -230,8 +261,10 @@ export function createSharedMetadataFrontendDiagnosticsRuntime(deps: SharedMetad
     })
 
     return {
-      ok: severity !== 'critical',
+      ok: severity !== 'critical' && deferredRoots === 0,
       checkedAt,
+      complete: deferredRoots === 0 && reports.every(report => !report.error),
+      deferredRoots,
       roots: roots.length,
       existingRoots,
       synchronizedRoots,

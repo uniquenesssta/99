@@ -1,3 +1,4 @@
+import { awaitPhysicalIoClose } from '../path/ioDeadlineRuntime'
 import { promises as fsp } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { performance } from 'node:perf_hooks'
@@ -6,6 +7,7 @@ import { probeStartupDirectory } from '../path/sharedPathProbeRuntime'
 import { tmpdir } from 'node:os'
 import { win32 } from 'node:path'
 import type { SharedIoAccessPath } from '../path/sharedIoAccessRuntime'
+import { currentPreviewRenderLifetime } from '../preview/runtime/previewRenderLifetimeRuntime'
 
 /** Only this owner may prove that a render's sole write is an unshared local stage. */
 export function createOwnedPreviewStageRuntime(resourceKeys: (paths: string[]) => Promise<string[]>) {
@@ -13,13 +15,22 @@ export function createOwnedPreviewStageRuntime(resourceKeys: (paths: string[]) =
   const live = new Map<string, Proof>()
   const pending = new Map<string, { proof: Proof; promise: ReturnType<typeof probeStartupDirectory> }>()
   const checkSignal = (signal?: AbortSignal) => { if (signal?.aborted) throw new SharedIoProcessError('Preview staging cancelled', 'not-started', 'cancelled') }
-  async function waitForProof(promise: ReturnType<typeof probeStartupDirectory>, signal?: AbortSignal) {
+  async function waitForProof(promise: ReturnType<typeof probeStartupDirectory>, signal?: AbortSignal, joinTimeoutMs?: number) {
     checkSignal(signal)
-    if (!signal) return promise
+    if (!signal && joinTimeoutMs === undefined) return promise
     return new Promise<Awaited<typeof promise>>((resolve, reject) => {
-      const abort = () => reject(new SharedIoProcessError('Preview staging cancelled', 'not-started', 'cancelled'))
-      signal.addEventListener('abort', abort, { once: true })
-      promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+      let settled = false, timer: ReturnType<typeof setTimeout> | undefined
+      const finish = (action: () => void) => {
+        if (settled) return
+        settled = true
+        if (timer) clearTimeout(timer)
+        signal?.removeEventListener('abort', abort)
+        action()
+      }
+      const abort = () => finish(() => reject(new SharedIoProcessError('Preview staging cancelled', 'not-started', 'cancelled')))
+      signal?.addEventListener('abort', abort, { once: true })
+      if (joinTimeoutMs !== undefined) timer = setTimeout(() => finish(() => reject(new SharedIoProcessError('Preview staging join queue budget exhausted', 'not-started', 'queue-timeout'))), joinTimeoutMs)
+      promise.then(value => finish(() => resolve(value)), error => finish(() => reject(error)))
     })
   }
   const localSystemPath = (path: string) => {
@@ -28,6 +39,8 @@ export function createOwnedPreviewStageRuntime(resourceKeys: (paths: string[]) =
       && path.slice(0, 2).toLowerCase() === drive!.toLowerCase()
   }
   async function allocate(fontPath: string, signal?: AbortSignal) {
+    const lifetime = currentPreviewRenderLifetime()
+    lifetime?.assertCurrent()
     checkSignal(signal)
     if (!(await resourceKeys([fontPath])).length) return null
     const base = tmpdir()
@@ -36,26 +49,36 @@ export function createOwnedPreviewStageRuntime(resourceKeys: (paths: string[]) =
     checkSignal(signal)
     const key = `${win32.normalize(base).toLowerCase()}|${String(process.env.SystemDrive).toUpperCase()}`
     let entry = pending.get(key)
+    // For an existing proof we cannot infer whether its child has left the
+    // queue. Conservatively cap this subscriber's wait, never its shared owner.
+    const joinTimeoutMs = entry ? lifetime?.queueTimeoutMs() : undefined
     if (!entry) {
       const proof: Proof = { id: randomUUID(), base, openedAt: performance.now() }
-      const promise = probeStartupDirectory(base, 'preview-stage-locality', 500, { registerRoot: false, label: 'preview-stage-locality', previewStageProof: proof })
-        .catch(async error => { if (error instanceof SharedIoProcessError) await error.closed; throw error })
+      // Proof is independently owned until physical close. A subscriber's
+      // cancellation must never kill a proof that another subscriber still uses.
+      const promise = probeStartupDirectory(base, 'preview-stage-locality', 500, { registerRoot: false, label: 'preview-stage-locality', previewStageProof: proof, queueTimeoutMs: lifetime?.queueTimeoutMs() })
+        .catch(async error => { await awaitPhysicalIoClose(error); throw error })
       entry = { proof, promise }; pending.set(key, entry)
       const owner = entry
       void promise.finally(() => { if (pending.get(key) === owner) pending.delete(key) }).catch(() => undefined)
     }
     const joinedAt = performance.now()
-    const probe = await waitForProof(entry.promise, signal)
+    const chargeQueue = (timing: { queuedMs?: number; executionMs?: number }) => lifetime?.recordQueueWait(
+      Math.max(0, Math.min(timing.queuedMs || 0, performance.now() - joinedAt - (timing.executionMs || 0))))
+    const probe = await waitForProof(entry.promise, signal, joinTimeoutMs).then(result => { chargeQueue(result); return result }, error => { chargeQueue(error || {}); throw error })
+    lifetime?.assertCurrent()
     checkSignal(signal)
     const canonical = probe.physicalPath
     if (!probe.directory || !canonical || !localSystemPath(canonical) || (await resourceKeys([canonical])).length) return null
     checkSignal(signal)
+    lifetime?.assertCurrent()
     const directory = await fsp.mkdtemp(win32.join(canonical, 'hfm-preview-stage-'))
     try {
       const resolved = await fsp.realpath(directory)
       if (!localSystemPath(resolved) || win32.dirname(resolved).toLowerCase() !== canonical.replace(/\\+$/, '').toLowerCase()
         || (await resourceKeys([resolved])).length) throw new Error('Preview stage locality could not be verified')
       const path = win32.join(resolved, 'preview.png')
+      lifetime?.assertCurrent()
       live.set(path, { ...entry.proof, base: canonical, joinedAt })
       return { path, dispose: async () => { live.delete(path); await fsp.rm(directory, { recursive: true, force: true }) } }
     } catch (error) {

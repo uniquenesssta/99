@@ -1,3 +1,6 @@
+import { settleMergedSyncError } from './mergedIndexProjectionFailureRuntime'
+import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { assertFreshMergedIndexSource } from './mergedIndexSourceRuntime'
 import { rootIndexInstallJoinExpr } from '../root-query/rootIndexQuerySharedSql'
 import { rethrowRustCoreDaemonSubmittedWrite } from "../../rust-core/rustCoreDaemonWriteBoundaryRuntime";
 import type { MergedIndexSourceInfo } from "../mergedIndexRuntime";
@@ -16,10 +19,16 @@ export function createMergedIndexBuildRuntime(
     sourcesKey: string,
     targetPath = ctx.mergedIndexDbPath(),
   ): Promise<void> {
+    const configuredRoots = await ctx.appWatchedFolders();
+    if (ctx.mergedIndexRootsKey(sources.map(source => source.root)) !== ctx.mergedIndexRootsKey(configuredRoots)) {
+      throw new Error('merged-full-rebuild-sources-incomplete');
+    }
+    for (const source of sources) assertFreshMergedIndexSource(source);
     const startedAt = Date.now();
     const now = new Date().toISOString();
     try {
       const rustResult = await ctx.rustCoreWorkerRuntime.runRustMergedIndexRebuild({
+        requireAuthoritativeSources: true,
         mergedIndexDbPath: targetPath,
         schemaVersion: ctx.schemaVersion,
         sourcesKey,
@@ -40,7 +49,9 @@ export function createMergedIndexBuildRuntime(
         return;
       }
     } catch (error) {
-      rethrowRustCoreDaemonSubmittedWrite(error, ctx.appendStartupLog, "local merged index rust rebuild");
+      await settleMergedSyncError(error);
+      rethrowSharedIoProcessError(error);
+      rethrowRustCoreDaemonSubmittedWrite(error);
       ctx.appendStartupLog(
         `local merged index rust rebuild fallback to node: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -77,6 +88,7 @@ export function createMergedIndexBuildRuntime(
           sourceDb,
           source.root,
         );
+        if (!hasInstallJoin && source.installSignature !== 'none') throw new Error('merged-install-projection-unavailable');
         const installColumns = hasInstallJoin
           ? ", install_status.installed AS installed, install_status.by_type AS installed_by, install_status.matches_json AS matches_json"
           : ", NULL AS installed, NULL AS installed_by, NULL AS matches_json";
@@ -94,7 +106,7 @@ export function createMergedIndexBuildRuntime(
         `,
           )
           .all(source.root) as MergedIndexPageRow[];
-        const rows = await ctx.applySharedMetadataToMergedRows(source.root, rawRows);
+        const rows = await ctx.applySharedMetadataToMergedRows(source.root, rawRows, true);
         collectedSources.push({ source, rows });
         totalRows += rows.length;
       } finally {
@@ -144,6 +156,7 @@ export function createMergedIndexBuildRuntime(
     const rebuildPromise = ctx.runMergedIndexMutation(
       `ensure:${sourcesKey.slice(0, 48)}`,
       async ({ commit }) => {
+        if (ctx.mergedIndexRootsKey(sources.map(source => source.root)) !== ctx.mergedIndexRootsKey(await ctx.appWatchedFolders())) throw new Error('merged-validation-roots-changed');
         const currentKey = ctx.getSqliteMeta(db, "sourcesKey");
         if (currentKey === sourcesKey) {
           ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
@@ -165,6 +178,7 @@ export function createMergedIndexBuildRuntime(
               await ctx.sharedMetadataSignatureForRoot(source.root),
           });
         }
+        for (const source of recheckedSources) assertFreshMergedIndexSource(source);
         const stableSourcesKey = ctx.mergedIndexSourcesKey(recheckedSources);
         const stableCurrentKey = ctx.getSqliteMeta(db, "sourcesKey");
         if (stableCurrentKey !== stableSourcesKey) {
@@ -172,8 +186,6 @@ export function createMergedIndexBuildRuntime(
           commit("ensure-rebuild");
         }
         ctx.mergedIndexReadyProcessKeys.add(stableSourcesKey);
-        if (stableSourcesKey !== sourcesKey)
-          ctx.mergedIndexReadyProcessKeys.add(sourcesKey);
       },
     );
     ctx.mergedIndexRebuildInFlight.set(sourcesKey, rebuildPromise);

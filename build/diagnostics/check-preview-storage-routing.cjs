@@ -49,7 +49,7 @@ function structure() {
 }
 function harness(transform = x => x) {
   const events = [], state = { available: true, loads: 0, library: { folders: [fontRoot] }, failure: '', manifestHold: null, loadHold: null }
-  const mocks = { 'node:path': routePath, '../../path/startupPathAvailabilityRuntime': { getStartupPathRootState: root => ({rootId: root, generation: 1, state: 'online'}) }, '../../app/shutdownCoordinatorRuntime': {isApplicationClosing:()=>false,applicationWorkEpoch:()=>1} }
+  const mocks = { 'node:path': routePath, '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: root => ({rootId: root, generation: 1, state: 'online'}) }, '../../app/shutdownCoordinatorRuntime': {isApplicationClosing:()=>false,applicationWorkEpoch:()=>1} }
   const factories = { previewCacheSharedPresenceRuntime: 'createPreviewCacheSharedPresenceRuntime', previewCachePresenceIndexRuntime: 'createPreviewCacheSharedPresenceIndexRuntime', previewCacheMetaRuntime: 'createPreviewCacheMetaRuntime', previewCacheHydrationRuntime: 'createPreviewCacheHydrationRuntime', previewCachePrefetchRuntime: 'createPreviewCachePrefetchRuntime', previewLocalCacheEvictionRuntime: 'createPreviewLocalCacheEvictionRuntime' }
   for (const [file, name] of Object.entries(factories)) mocks[`./${file}`] = { [name]: () => ({}) }
   mocks['./previewCacheRootAvailabilityRuntime'] = { createPreviewCacheRootAvailabilityRuntime: () => ({

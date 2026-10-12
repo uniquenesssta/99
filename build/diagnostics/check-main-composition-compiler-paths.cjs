@@ -53,9 +53,9 @@ function run(style, eol, mutation) {
     assert.match(output, mutation[3], `${mutation[0]} failed for an unrelated reason`)
   } else {
     assert.equal(diagnosticProcess.exitCode, 0, output)
-    // 121 registered capabilities, seven private resource owners and three
+    // 121 registered capabilities, eight private resource owners and three
     // incompatible signatures, including both additive watcher capabilities.
-    assert(output.includes('131 compiler rejections; legacy omission reproduced; runtime unchanged'), output)
+    assert(output.includes('132 compiler rejections; legacy omission reproduced; runtime unchanged'), output)
   }
 }
 
@@ -73,5 +73,5 @@ if (caseIndex !== -1) {
     assert.ifError(result.error)
     assert.equal(result.status, 0, `compiler path case ${index}: ${result.stderr || result.stdout}`)
   }
-  console.log('[diagnostics:main-composition-compiler-paths] forward/backslash/mixed paths with LF/CRLF passed; 131 compiler rejections retained; 3 regressions rejected')
+  console.log('[diagnostics:main-composition-compiler-paths] forward/backslash/mixed paths with LF/CRLF passed; 132 compiler rejections retained; 3 regressions rejected')
 }

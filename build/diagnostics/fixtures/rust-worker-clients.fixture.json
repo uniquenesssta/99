@@ -43,7 +43,7 @@
         "appendStartupLog"
       ],
       "functions": {
-        "runRustPreviewRenderImage": "4149a5fc031b004207bb6e9a66fbfffda962bae5efd64db8888b5d9f8c608e19",
+        "runRustPreviewRenderImage": "d5185b236c386d451162eaac0ac9b290faf215e831ec9e1b2cfef7e5eef2ef36",
         "runRustPreviewCacheInputCommand": "484c07a8a5f50e3e70504c5bf452b04febdcc581ec426aea74d2a4c890da9e35",
         "runRustPreviewCacheMaintenance": "47b12d8cbb1901fece5aaa9d38043eaa8b4a6a32083e10f1f9012f9de5f80371",
         "runRustPreviewCacheBatch": "eea2b11ed1aed52b27b194d86b1d724af66181d3478635f9a0aecff633aeffca",
@@ -152,8 +152,8 @@
       ],
       "functions": {
         "runRustWatcherPreflight": "c36ee19818f88fc07d08bb9d78503e3745e854faa6c51c9f12e60ffd21254f1b",
-        "runRustMergedIndexSync": "466a39deae25e27c29cff64fd2337e0687d962305cc296061717eb84360b8361",
-        "runRustMergedIndexRebuild": "825298f2f3a2b46cd32bdfae01277899d5bf0e3f3f639c7cdcea7d58420cdceb",
+        "runRustMergedIndexSync": "9ef6ea8a3797bcf8ba9460508efd17bd2cd85eb7006a27808ba3259cd1cd7f34",
+        "runRustMergedIndexRebuild": "49432bad6ce54c73bf166c3c7321aba743fe22a3343bb54e4cf248f172e7bfa6",
         "runRustMergedIndexMetricsQuery": "56510fd497445df64579c4210e081c5358d727482f0de52a6b8e756ae2091a5f",
         "runRustMergedIndexIdsQuery": "17f9f1481f59607734b2e839ac2cba81c7a6939bba8971f573ac49442dd9cfd9",
         "runRustMergedIndexPageQuery": "9c46ce653184f3fbd988860c7239a33735cd2813a7417895978a7878ba040dfd",

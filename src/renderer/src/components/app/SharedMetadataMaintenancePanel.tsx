@@ -64,6 +64,8 @@ export function SharedMetadataMaintenancePanel({
   const summary = asRecord(report?.summary)
   const reports = asArray(report?.reports)
   const severity = asString(report?.severity, 'unknown')
+  const deferredRoots = asNumber(report?.deferredRoots)
+  const maintenanceState = hasProblems(summary) || severity === 'critical' ? '需要处理' : deferredRoots > 0 || report?.complete === false ? '诊断未完成' : report ? '正常' : '尚未诊断'
   const busy = !!busyAction
 
   async function runPanelAction(label: string, action: () => Promise<unknown>, updateDiagnostics: boolean): Promise<void> {
@@ -142,8 +144,10 @@ export function SharedMetadataMaintenancePanel({
         <div><strong>{diagnosticsValue(report, 'roots')}</strong><span>监听根目录</span></div>
         <div><strong>{diagnosticsValue(report, 'existingRoots')}</strong><span>已有元数据库</span></div>
         <div><strong>{diagnosticsValue(report, 'synchronizedRoots')}</strong><span>本次同步根</span></div>
-        <div><strong>{hasProblems(summary) ? '需要处理' : '正常'}</strong><span>维护状态</span></div>
+        <div><strong>{maintenanceState}</strong><span>维护状态</span></div>
       </div>
+
+      {deferredRoots > 0 && <p className="shared-metadata-action-status">{deferredRoots} 个根目录的可选诊断已延后。目录恢复且前台空闲后，可点击“刷新诊断”；当前结果不代表这些目录已检查通过。</p>}
 
       <div className="shared-metadata-summary-grid compact">
         <div><strong>{diagnosticsValue(summary, 'invalidTagJsonRows')}</strong><span>非法标签 JSON</span></div>
@@ -174,7 +178,7 @@ export function SharedMetadataMaintenancePanel({
                   <strong>{rootDisplayName(root?.rootPath)}</strong>
                   <span>{asString(root?.dbPath, '无数据库路径')}</span>
                 </div>
-                <span className={`shared-metadata-severity severity-${rootSeverity}`}>{rootSeverity}</span>
+                <span className={`shared-metadata-severity severity-${rootSeverity}`}>{root?.deferred ? '已延后' : rootSeverity}</span>
               </div>
             )
           })}

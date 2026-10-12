@@ -1,8 +1,9 @@
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { tracePreviewPhase } from './previewTraceRuntime'
 import { sharedFileSystem as fsp, withSharedPreviewReads } from '../../path/sharedFileSystemRuntime'
-import { withIoDeadlineResult, fileExistsTimeoutMs } from '../../path/ioDeadlineRuntime'
+import { withIoDeadlineResult, fileExistsTimeoutMs, awaitPhysicalIoClose } from '../../path/ioDeadlineRuntime'
 import { previewFailure, previewFailureKind } from '../../../shared/previewFailure'
+import { isTerminalPreviewRenderFailure } from './previewRenderLifetimeRuntime'
 
 export async function resolvePreviewSource(path: string, resolver: (path: string) => Promise<string | undefined>) {
   if ((await sharedIoResourceKeys([path])).length) {
@@ -13,18 +14,25 @@ export async function resolvePreviewSource(path: string, resolver: (path: string
       const stat = await withSharedPreviewReads(() => tracePreviewPhase('font-stat', () => fsp.stat(path)))
       return { path, stat }
     } catch (error) {
-      await (error as { closed?: Promise<void> })?.closed
+      await awaitPhysicalIoClose(error)
+      if (isTerminalPreviewRenderFailure(error)) throw error
       const code = (error as { code?: string })?.code
       throw previewFailure(code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : previewFailureKind(error))
     }
   }
   const resolved = await withIoDeadlineResult('preview-font-resolve', () => resolver(path), fileExistsTimeoutMs())
-  if (!resolved.ok) throw previewFailure(resolved.timedOut ? 'timeout' : previewFailureKind(resolved.error))
+  if (!resolved.ok) {
+    await awaitPhysicalIoClose(resolved.error)
+    if (isTerminalPreviewRenderFailure(resolved.error)) throw resolved.error
+    throw previewFailure(resolved.timedOut ? 'timeout' : previewFailureKind(resolved.error))
+  }
   // The legacy resolver also returns undefined on timeout/permission errors and caches misses.
   // Only an authoritative stat of the source can establish absence.
   const sourcePath = resolved.value || path
   const stat = await withIoDeadlineResult('preview-font-stat', () => tracePreviewPhase('font-stat', () => fsp.stat(sourcePath)), fileExistsTimeoutMs())
   if (!stat.ok) {
+    await awaitPhysicalIoClose(stat.error)
+    if (isTerminalPreviewRenderFailure(stat.error)) throw stat.error
     const code = (stat.error as { code?: string })?.code
     throw previewFailure(stat.timedOut ? 'timeout' : code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : previewFailureKind(stat.error))
   }

@@ -146,6 +146,7 @@ export function createRustCoreWorkerRuntime(options: RustCoreWorkerRuntimeOption
     cancelRustCoreSchedulerScopes: transport.cancelRustCoreSchedulerScopes,
     noteRustCoreSchedulerInteractiveActivity: transport.noteRustCoreSchedulerInteractiveActivity,
     rustCoreDaemonStatus: transport.rustCoreDaemonStatus,
+    hasRustCoreInteractiveWork: transport.hasRustCoreInteractiveWork,
     stopRustCoreDaemon: transport.stopRustCoreDaemon,
     runRustFontIndexListWorker: indexingClient.runRustFontIndexListWorker,
     runRustFontParseBatch: indexingClient.runRustFontParseBatch,

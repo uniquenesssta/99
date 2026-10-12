@@ -1,4 +1,5 @@
 import { detailedStartupLogsEnabled } from '../../logging/startupLogPolicy'
+import { allowPreviewRenderFallback, currentPreviewRenderLifetime, PreviewRenderDomainError } from '../../preview/runtime/previewRenderLifetimeRuntime'
 import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import type { SharedIoAccessPath } from '../../path/sharedIoAccessRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
@@ -256,6 +257,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
   }
 
   async function runRustPreviewRenderImage(input: RustPreviewRenderImageInput): Promise<RustPreviewRenderImageResult | null> {
+    currentPreviewRenderLifetime()?.assertCurrent()
     const status = await diagnoseRustCoreWorker()
     if (!status.available || !status.path || !hasCapability(status, 'preview-render-image')) return null
     const layoutCapability = input.layout ? `preview-layout-${input.layout.version}` : ''
@@ -280,6 +282,7 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         foregroundPreviewBytes: foregroundBytes === true,
         maxBuffer: (foregroundBytes ? 5 : 1) * 1024 * 1024,
       })
+      currentPreviewRenderLifetime()?.assertCurrent()
       const payload = parseJsonLine<RustPreviewRenderImagePayload>(commandOutput.stdout)
       if (!payload.ok || !payload.outputPath || (input.layout && payload.layoutVersion !== input.layout.version)) {
         const error = new Error(payload.message || 'rust preview render returned ok=false')
@@ -299,8 +302,10 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
       options.appendStartupLog(`rust preview render finished: output=${result.outputPath}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms${result.nativeBackend ? `, engine=${result.engine}, nativeBackend=${result.nativeBackend}${provenanceDetail}` : ''}`)
       return result
     } catch (error) {
+      if (error instanceof PreviewRenderDomainError) throw error
       rethrowSharedIoProcessError(error)
       rethrowRustCoreDaemonSubmittedJob(error, options.appendStartupLog, 'rust preview render')
+      await allowPreviewRenderFallback(error)
       options.appendStartupLog(`rust preview render failed: ${error instanceof Error ? error.message : String(error)}; fallback decision deferred to preview dispatcher`)
       return null
     } finally {

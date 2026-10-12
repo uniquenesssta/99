@@ -718,7 +718,7 @@ async function refreshCompletionRegressions() {
   const load=loader({
    [at('path/sharedFileSystemRuntime.ts')]:{withSharedIoPriority:(_priority,fn)=>fn()},
    [at('app/shutdownCoordinatorRuntime.ts')]:{applicationWorkEpoch:()=>1,assertApplicationOpen(){}},
-   [at('path/startupPathAvailabilityRuntime.ts')]:{getStartupPathRootState:()=>({state:'online',generation:1})},
+   [at('path/startupPathAvailabilityRuntime.ts')]:{ assertStartupPathRootGuardCurrent() {},getStartupPathRootState:()=>({state:'online',generation:1})},
    [at('install/fontInstallEvidenceRuntime.ts')]:{createFontInstallEvidenceSession:()=>({confirm:async(_item,candidate)=>candidate})},
   },{}, {[absolute]:()=>transform(source)})
   const identity=load('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId

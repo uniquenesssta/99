@@ -17,6 +17,13 @@ const fixture = require('./fixtures/rust-worker-contracts.fixture.json')
 const reviewedOptionalProperties = {
   ...fixture.reviewedOptionalProperties,
   RustRootIndexApplyChangesInput: { assertCurrent: 'assertCurrent?: () => void' },
+  RustMergedIndexRebuildInput: { requireAuthoritativeSources: 'requireAuthoritativeSources?: boolean' },
+  RustMergedIndexSyncInput: {
+    preparedRows: 'preparedRows?: Record<string, unknown>[]',
+    expectedSourcesKey: 'expectedSourcesKey?: string',
+    preserveSourceCheckpoint: 'preserveSourceCheckpoint?: boolean',
+    assertCurrent: 'assertCurrent?: () => void',
+  },
 }
 const publicNames = Object.keys(fixture.publicTypes)
 const payloadNames = Object.keys(fixture.payloadTypes)
@@ -203,6 +210,20 @@ const legacyPreviewInput: C.RustPreviewRenderImageInput = { fontPath: 'C:/font.t
 const bytePreviewInput: C.RustPreviewRenderImageInput = { ...legacyPreviewInput, foregroundBytes: true }
 const previewBytes: C.RustPreviewRenderImageResult['bytes'] = Buffer.from([137, 80, 78, 71])
 const transientPreview: C.RustPreviewRenderImageResult['transient'] = true
+const legacyRebuild: C.RustMergedIndexRebuildInput = { mergedIndexDbPath: 'local.sqlite', schemaVersion: 7, sourcesKey: 'key', syncedAt: 'now', sources: [] }
+const strictRebuild: C.RustMergedIndexRebuildInput = { ...legacyRebuild, requireAuthoritativeSources: true }
+const legacySync: C.RustMergedIndexSyncInput = { mergedIndexDbPath: 'local.sqlite', schemaVersion: 7, sourcesKey: 'next', syncedAt: 'now', source: { root: 'C:/fonts', indexDbPath: 'index.sqlite', indexSignature: 'root-v3', installSignature: 'none' } }
+const preparedSync: C.RustMergedIndexSyncInput = { ...legacySync, preparedRows: [{ relative_path: 'font.ttf', font_json: '{}' }], expectedSourcesKey: 'previous', preserveSourceCheckpoint: true, assertCurrent: () => {} }
+// @ts-expect-error A partial root receipt must use the explicit boolean mode.
+const invalidPreserveCheckpoint: C.RustMergedIndexSyncInput = { ...legacySync, preserveSourceCheckpoint: 'yes' }
+// @ts-expect-error Strict source admission flag remains boolean.
+const invalidStrictRebuild: C.RustMergedIndexRebuildInput = { ...legacyRebuild, requireAuthoritativeSources: 'yes' }
+// @ts-expect-error Prepared rows are named scalar-record payloads, not strings.
+const invalidPreparedRows: C.RustMergedIndexSyncInput = { ...legacySync, preparedRows: ['font'] }
+// @ts-expect-error Expected source checkpoint is an exact string receipt.
+const invalidSourceReceipt: C.RustMergedIndexSyncInput = { ...legacySync, expectedSourcesKey: 2 }
+// @ts-expect-error In-memory guard must be callable.
+const invalidPreparedGuard: C.RustMergedIndexSyncInput = { ...legacySync, assertCurrent: true }
 // @ts-expect-error Snapshot request flag remains boolean.
 const invalidBindingRead: C.RustSharedMetadataOverlayReadInput = { ...legacyOverlay, bindingSnapshot: 'true' }
 // @ts-expect-error Snapshot receipt version is the exact supported protocol.
@@ -253,7 +274,14 @@ function main() {
   checkErasure(actual)
   checkCompiler(actual)
   const mutated = (rel, change) => view(new Map([[rel, change(actual.read(abs(rel)))]]))
+  const preparedGuardAnchor = 'preserveSourceCheckpoint?: boolean\n  expectedSourcesKey?: string\n  assertCurrent?: () => void'
+  assert.equal(actual.read(abs(contracts)).replace(/\r\n/g, '\n').split(preparedGuardAnchor).length, 2, 'prepared guard mutation anchor drifted')
   const rejects = [
+    ['strict rebuild flag missing', () => checkShapes(mutated(contracts, text => text.replace('requireAuthoritativeSources?: boolean', '')))],
+    ['prepared rows widened', () => checkShapes(mutated(contracts, text => text.replace('preparedRows?: Record<string, unknown>[]', 'preparedRows?: unknown[]')))],
+    ['expected checkpoint missing', () => checkShapes(mutated(contracts, text => text.replace('expectedSourcesKey?: string', '')))],
+    ['partial checkpoint flag missing', () => checkShapes(mutated(contracts, text => text.replace('preserveSourceCheckpoint?: boolean', '')))],
+    ['prepared guard async', () => checkShapes(mutated(contracts, text => text.replace(/\r\n/g, '\n').replace(preparedGuardAnchor, preparedGuardAnchor.replace('() => void', '() => Promise<void>'))))],
     ['write admission missing', () => checkShapes(mutated(contracts, text => text.replace('assertCurrent?: () => void', '')))],
     ['write admission made mandatory', () => checkShapes(mutated(contracts, text => text.replace('assertCurrent?: () => void', 'assertCurrent: () => void')))],
     ['write admission made asynchronous', () => checkShapes(mutated(contracts, text => text.replace('assertCurrent?: () => void', 'assertCurrent?: () => Promise<void>')))],
@@ -281,7 +309,7 @@ function main() {
   checkShapes(crlf)
   checkBoundaries(crlf)
   checkErasure(crlf)
-  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 50 compiler rejections, legacy/versioned watcher, recovery tags, binding snapshots and transient bytes, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
+  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 55 compiler rejections, legacy/versioned watcher, recovery tags, binding snapshots, transient bytes and prepared projection guards, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
 }
 
 try { main() } catch (error) {

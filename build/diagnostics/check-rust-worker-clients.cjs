@@ -231,6 +231,29 @@ async function checkReviewedClientContracts(overrides = new Map()) {
   await assert.rejects(incomplete.client.runRustFontIndexListWorker(['C:/fonts'], ['.ttf']), /receipt incomplete/)
   assert.equal(incomplete.allocated(), 0)
 
+  const strictRebuildInput={mergedIndexDbPath:'C:/local/merged.sqlite',schemaVersion:7,sourcesKey:'same',syncedAt:'now',sources:[],requireAuthoritativeSources:true}
+  const oldRebuild=clientFixture('Indexing',{capabilities:['merged-index-rebuild'],payload:{ok:true,rebuilt:true,rows:0}},overrides)
+  assert.equal(await oldRebuild.client.runRustMergedIndexRebuild(strictRebuildInput),null);assert.equal(oldRebuild.commands.length,0)
+  const badRebuild=clientFixture('Indexing',{capabilities:['merged-index-rebuild','merged-index-strict-rebuild-v1'],payload:{ok:true}},overrides)
+  await assert.rejects(()=>badRebuild.client.runRustMergedIndexRebuild(strictRebuildInput),error=>error.daemonSubmitted===true)
+  assert.equal(badRebuild.commands.length,1)
+
+  const prepared = { mergedIndexDbPath:'C:/local/merged.sqlite',schemaVersion:7,sourcesKey:'same',expectedSourcesKey:'same',syncedAt:'now',
+    source:{root:'Z:/fonts',indexDbPath:'Z:/offline.sqlite',indexSignature:'root-v3|1',installSignature:'none',sharedMetadataSignature:'metadata:none'},preparedRows:[],fullSnapshot:true }
+  const oldMerged = clientFixture('Indexing',{capabilities:['merged-index-sync'],payload:{ok:true,synced:true}},overrides)
+  assert.equal(await oldMerged.client.runRustMergedIndexSync(prepared),null);assert.equal(oldMerged.commands.length,0);assert.equal(oldMerged.allocated(),0)
+  for(const payload of [{ok:true},{ok:false},{ok:true,synced:false},{ok:'yes',synced:true,rows:0,changed:0,fullSnapshot:true},{ok:true,synced:true,rows:1,changed:0,fullSnapshot:true},{ok:true,synced:true,rows:0,changed:0,fullSnapshot:false},{ok:true,synced:true,rows:0,changed:0.5,fullSnapshot:true}]) {
+    let writes=0
+    const malformed = clientFixture('Indexing',{capabilities:['merged-index-sync','merged-index-prepared-sync-v1'],payload,onCommand:()=>writes++},overrides)
+    await assert.rejects(()=>malformed.client.runRustMergedIndexSync(prepared),error=>error.daemonSubmitted===true)
+    assert.equal(writes,1,'malformed post-commit receipt replayed an identical-key write');assert.equal(malformed.disposed.length,1)
+  }
+  const guarded = clientFixture('Indexing',{capabilities:['merged-index-sync','merged-index-prepared-sync-v1'],payload:{ok:true,synced:true,rows:0,changed:0,fullSnapshot:true}},overrides)
+  const assertCurrent=()=>{}
+  assert.equal((await guarded.client.runRustMergedIndexSync({...prepared,assertCurrent})).synced,true)
+  assert.equal(guarded.commands[0].options.assertCurrent,assertCurrent)
+  assert(!guarded.commands[0].options.sharedIo.paths.includes(prepared.source.root),'prepared commit inferred a remote read footprint')
+
   const snapshotInput = { rootPath: 'C:/fonts', dbPath: 'C:/metadata.db', entries: [], bindingSnapshot: true }
   const baseCapabilities = ['shared-metadata-overlay-read'], capabilities = [...baseCapabilities, 'shared-metadata-bindings-read-v1']
   const row = { font_id: 'f', relative_path: 'a.ttf', path_key: 'a.ttf', tag_names_json: '["tag"]', favorite: 1, delete_protected: 0, revision: 2 }
