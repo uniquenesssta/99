@@ -77,7 +77,7 @@ function testSharedTagNoopDeleteDoesNotDirtyFreshQueries() {
   assert(writeProtocol.includes('if (!ids.length) return'), 'tag mutation barrier should not start without affected font ids')
 
   const mutations = readText('src/main/library/sharedFontMetadataMutations.ts')
-  assert(mutations.includes('if (!ids.length) return;'), 'shared tag delete should not resync all roots when no rows changed')
+  assert(mutations.includes('if (!ids.length && !committedRefreshRoots?.length) return;'), 'shared tag refresh must distinguish true no-op from committed unknown scope')
 
   const mutationRuntime = readText('src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts')
   assert(mutationRuntime.includes('loadExistingFolderCache(root, { applySharedMetadataOverlay: false })'), 'shared tag delete should not apply overlay while only locating metadata roots')

@@ -1,8 +1,21 @@
 import { FONT_QUERY_SUPERSEDED } from '../../shared/fontQueryFailure'
+import { FONT_QUERY_CANCELLED_REPLY, FONT_QUERY_IPC_CHANNELS } from '../../shared/fontQueryIpc'
 
 export const runtimePreloadSource = `
 const { contextBridge, ipcRenderer } = require('electron');
 const FONT_QUERY_SUPERSEDED = ${JSON.stringify(FONT_QUERY_SUPERSEDED)};
+const FONT_QUERY_IPC_CHANNELS = ${JSON.stringify(FONT_QUERY_IPC_CHANNELS)};
+const FONT_QUERY_CANCELLED_REPLY = ${JSON.stringify(FONT_QUERY_CANCELLED_REPLY)};
+
+function decodeFontQueryReply(channel, result) {
+  if (FONT_QUERY_IPC_CHANNELS.includes(channel) && result && typeof result === 'object' && !Array.isArray(result)) {
+    const keys = Object.keys(FONT_QUERY_CANCELLED_REPLY);
+    if (Object.keys(result).length === keys.length && keys.every(key => Object.hasOwn(result, key) && result[key] === FONT_QUERY_CANCELLED_REPLY[key])) {
+      throw Object.assign(new Error(FONT_QUERY_SUPERSEDED + ' 字体查询已由当前视图替换。'), { reason: 'query-superseded' });
+    }
+  }
+  return result;
+}
 
 const PRELOAD_TRACE_ALWAYS = new Set([
   'library:load', 'library:loadShell', 'fonts:scanFolders', 'fonts:loadFolderCache',
@@ -34,6 +47,7 @@ function fontPathToProtocolUrl(filePath) {
 function invoke(channel, ...args) {
   const startedAt = Date.now();
   return ipcRenderer.invoke(channel, ...args).then((result) => {
+    decodeFontQueryReply(channel, result);
     const durationMs = Date.now() - startedAt;
     if (!channel.startsWith('performance:') && ((PRELOAD_TRACE_ALWAYS.has(channel) && durationMs >= PRELOAD_TRACE_ALWAYS_MIN_MS) || durationMs >= PRELOAD_TRACE_SLOW_MS)) {
       reportPreloadTrace({ source: 'preload', kind: 'ipc-renderer', label: channel, severity: durationMs >= 350 ? 'warn' : durationMs >= PRELOAD_TRACE_SLOW_MS ? 'slow' : 'info', durationMs, timestamp: Date.now(), details: { args: args.map(summarizePreloadValue), result: summarizePreloadValue(result) } });

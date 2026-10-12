@@ -24,7 +24,7 @@ async function metadata(transform=x=>x) {
     syncMergedIndexForRootIncremental:async(_root,p)=>{if(failSync)throw Error('sync-failed');rows+=p.upserts.length},
     syncMergedIndexForRootSnapshot:async()=>{snapshots++;rows+=1499},sendFontIndexChanged:()=>notifications++
   })
-  const write=async ids=>{writes+=ids.length;return {updatedIds:ids,failed:[]}}
+  const write=async ids=>{writes+=ids.length;return {updatedIds:ids,failed:[],committedLocators:ids.map(sourceFontId=>({rootPath:fontsRoot,sourceFontId}))}}
   const mutation=createSharedFontMetadataMutations({uniqueResolvedFolders:x=>x,appendLog:x=>logs.push(x),...sync,
     updateSharedFontMetadataEntries:async o=>write(o.items.map(x=>x.id)),
     removeSharedTagFromMetadataIndexes:async()=>write(['f1','f2','f3']),
@@ -93,14 +93,14 @@ async function multipleRoots() {
     uniqueResolvedFolders:x=>x,normalizePathForCacheCompare:x=>x,appendLog:x=>logs.push(x),openMetadataDb:async r=>databases.get(r),closeMetadataDb(){},
     syncMergedIndexForRootIncremental:async(r,p)=>synced.push([r,p.upserts.map(f=>f.id)]),syncMergedIndexForRootSnapshot:async r=>fallback.push(r)
   })
-  await runtime.syncSharedMetadataChangedIdsToMergedIndex(['a','b','a'],[fontsRoot,otherRoot],'shared-tags-batch-authority-refresh')
+  await runtime.syncSharedMetadataChangedIdsToMergedIndex([{rootPath:fontsRoot,sourceFontId:'a'},{rootPath:otherRoot,sourceFontId:'b'},{rootPath:fontsRoot,sourceFontId:'a'}],[fontsRoot,otherRoot],'shared-tags-batch-authority-refresh')
   assert.deepEqual(plain(synced),[[fontsRoot,['a']],[otherRoot,['b']]]);assert.equal(fallback.length,0);cases++
   await runtime.syncSharedMetadataChangedIdsToMergedIndex([],[fontsRoot,otherRoot],'shared-tag-delete:empty')
   assert.equal(synced.length,2);cases++
-  await runtime.syncSharedMetadataChangedIdsToMergedIndex(['missing'],[fontsRoot,otherRoot],'shared-tag-delete:unknown')
+  await runtime.syncSharedMetadataChangedIdsToMergedIndex([{rootPath:fontsRoot,sourceFontId:'missing'},{rootPath:otherRoot,sourceFontId:'missing'}],[fontsRoot,otherRoot],'shared-tag-delete:unknown')
   assert.equal(fallback.length,2);assert(logs.some(x=>x.includes('changed-id-locator-incomplete')));cases++
   databases.get(fontsRoot).prepare('UPDATE font_metadata SET relative_path=?').run('../outside.ttf')
-  await runtime.syncSharedMetadataChangedIdsToMergedIndex(['a'],[fontsRoot],'shared-tags-set-authority-refresh')
+  await runtime.syncSharedMetadataChangedIdsToMergedIndex([{rootPath:fontsRoot,sourceFontId:'a'}],[fontsRoot],'shared-tags-set-authority-refresh')
   assert.equal(fallback.length,3);assert(logs.some(x=>x.includes('changed-id-path-outside-root')));cases++
   for(const db of databases.values())db.close()
 }
@@ -188,5 +188,18 @@ async function cacheStatsConvergence() {
   calls[0]({version:1});for(let i=0;i<10;i++)await Promise.resolve();assert.equal(calls.length,2);assert.equal(applied.length,0,'superseded stats reply applied');calls[1]({version:2});await first;assert.equal(applied[0].version,2);cases++;
   const old=make(options).loadCacheStats();closing=true;for(const fn of subscribers)fn(true);closing=false;for(const fn of subscribers)fn(false);const resumed=make({...options}).loadCacheStats();calls[2]({version:3});for(let i=0;i<10;i++)await Promise.resolve();assert.equal(calls.length,4,'cancelled-close new intent was lost');assert.equal(applied.length,1);calls[3]({version:4});await Promise.all([old,resumed]);assert.equal(applied.at(-1).version,4);assert.equal(subscribers.size,0);cases++;
 }
-async function main(){await indexEventConvergence();await cacheStatsConvergence();await metadata();await queueScopes();await multipleRoots();renderer();await metadata(s=>s.replace(/\r?\n/g,'\r\n'));await assert.rejects(()=>metadata(s=>s.replace('if (deps.syncSharedMetadataChangedIdsToMergedIndex)', 'if (false)')),/one committed shared tag/);console.log(`[diagnostics:incremental-metadata-refresh] ${cases} SQLite 1499-row/commit/fallback/catalog, actual controller/event/preview isolation cases; original root snapshot mutant rejected`)}
+async function main(){
+  const {runCommittedLocatorCases,runUnconfirmedReceiptCases}=require('./helpers/sharedMetadataCommittedLocatorFixture.cjs')
+  await runCommittedLocatorCases()
+  await runUnconfirmedReceiptCases()
+  await assert.rejects(()=>runCommittedLocatorCases({transforms:{[path.join(root,'src/main/library/sharedFontMetadataMutations.ts')]:s=>{
+    const before='deps.syncSharedMetadataChangedIdsToMergedIndex!(preciseLocators, folders, reason)'
+    assert(s.includes(before),'public-ID regression mutation anchor missing')
+    return s.replace(before,'deps.syncSharedMetadataChangedIdsToMergedIndex!(ids.map(sourceFontId => ({rootPath: folders[0], sourceFontId})), folders, reason)')
+  }}}),/one source row must not fall back/)
+  await indexEventConvergence();await cacheStatsConvergence();await metadata();await queueScopes();await multipleRoots();renderer()
+  await metadata(s=>s.replace(/\r?\n/g,'\r\n'))
+  await assert.rejects(()=>metadata(s=>s.replace('if (deps.syncSharedMetadataChangedIdsToMergedIndex && preciseLocators?.length)', 'if (false)')),/one committed shared tag/)
+  console.log(`[diagnostics:incremental-metadata-refresh] ${cases} SQLite 1499-row/commit/fallback/catalog, actual controller/event/preview isolation cases; original root snapshot and public-ID mutants rejected`)
+}
 main().catch(e=>{console.error(e);process.exitCode=1})

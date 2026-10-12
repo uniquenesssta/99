@@ -77,6 +77,29 @@ jobs:
           name: font-recovery-tag-preview-optimization-log
           path: artifacts/tag-preview-optimization.log
           retention-days: 14
+      - name: Verify query cancellation transport and committed metadata locators
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          $failed = 0
+          foreach ($script in @('check-query-work-lifetime.cjs', 'check-font-query-ipc.cjs', 'check-incremental-metadata-refresh.cjs', 'check-shared-metadata-rust-atomicity.cjs', 'check-shared-tag-native-delete.cjs')) {
+            & node "build/diagnostics/$script" *>> artifacts/query-metadata-repair.log
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          Get-Content -LiteralPath artifacts/query-metadata-repair.log -Encoding utf8
+          if ($failed -gt 0) { exit 1 }
+      - name: Retain cancellation and metadata repair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-query-metadata-repair
+          path: |
+            artifacts/query-metadata-repair.log
+            artifacts/font-query-ipc/**/report.json
+          retention-days: 14
       - name: Verify complete existing Windows diagnostics
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         shell: pwsh
@@ -177,6 +200,7 @@ jobs:
             artifacts/font-identity-f04
             artifacts/list-preview
             artifacts/real-feedback
+            artifacts/font-query-ipc/**/report.json
             !artifacts/**/*.ttf
             !artifacts/**/*.otf
             !artifacts/**/*.ttc

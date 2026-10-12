@@ -5,6 +5,7 @@ FontTagBatchItem,
 FontTagMutationProtocolResult,
 FontTagUpdateResult,
 } from "../../shared/types";
+import type { SharedMetadataCommittedLocator, SharedMetadataMutationResult } from '../indexing/shared-metadata/sharedFontMetadataRuntime';
 import type { SharedIndexMutationFailure } from "../indexing/sharedIndexMutations";
 import type { SharedMetadataMergePolicy } from "../indexing/shared-metadata/sharedMetadataFieldMergeRuntime";
 import { applySharedTagWriteIntent, cleanGuardTagNames, readSharedTagWriteIntent, type SharedTagWriteIntent } from "../tags/tagDomainGuardRuntime";
@@ -13,7 +14,7 @@ import type { SharedKnownTagDeleteIfUnboundResult, SharedKnownTagRenameIfUnbound
 
 export interface SharedFontMetadataMutationDeps {
   appendLog?: (message: string) => void;
-  syncSharedMetadataChangedIdsToMergedIndex?: (ids: string[], folders: string[], reason: string) => Promise<void>;
+  syncSharedMetadataChangedIdsToMergedIndex?: (locators: SharedMetadataCommittedLocator[], folders: string[], reason: string) => Promise<void>;
   uniqueResolvedFolders: (folders: string[]) => string[];
   updateSharedFontMetadataEntries: (options: {
     items: FontItem[];
@@ -24,16 +25,16 @@ export interface SharedFontMetadataMutationDeps {
     missingEntryMessage: string;
     mutateFont: (font: FontItem, item: FontItem) => FontItem;
     mergePolicy?: SharedMetadataMergePolicy;
-  }) => Promise<{ updatedIds: string[]; failed: SharedIndexMutationFailure[]; mutationProtocols?: FontTagMutationProtocolResult[] }>;
+  }) => Promise<SharedMetadataMutationResult>;
   removeSharedTagFromMetadataIndexes: (
     tagName: string,
     watchedFolders: string[],
-  ) => Promise<{ updatedIds: string[]; failed: SharedIndexMutationFailure[]; mutationProtocols?: FontTagMutationProtocolResult[] }>;
+  ) => Promise<SharedMetadataMutationResult>;
   renameSharedTagInMetadataIndexes: (
     oldTagName: string,
     newTagName: string,
     watchedFolders: string[],
-  ) => Promise<{ updatedIds: string[]; failed: SharedIndexMutationFailure[]; mutationProtocols?: FontTagMutationProtocolResult[] }>;
+  ) => Promise<SharedMetadataMutationResult>;
   invalidateSharedFontRuntimeCaches: () => void;
   syncSharedMetadataItemsToMergedIndex: (
     items: FontItem[],
@@ -54,6 +55,10 @@ function cleanTagNames(tagNamesInput: string[]): string[] {
   return cleanGuardTagNames(tagNamesInput);
 }
 
+function appendAfterCommit(deps: SharedFontMetadataMutationDeps, message: string): void {
+  try { deps.appendLog?.(message); } catch { /* Logging cannot make a committed write retryable. */ }
+}
+
 async function refreshKnownSharedTags(
   deps: SharedFontMetadataMutationDeps,
   folders: string[],
@@ -62,7 +67,7 @@ async function refreshKnownSharedTags(
   try {
     return await deps.refreshKnownSharedTagsFromMetadata?.(folders, options);
   } catch (error) {
-    deps.appendLog?.(`shared catalog read deferred after commit: cause=${String(error)}, requireFresh=${!!options?.requireFresh}; do not retry committed write`);
+    appendAfterCommit(deps, `shared catalog read deferred after commit: cause=${String(error)}, requireFresh=${!!options?.requireFresh}; do not retry committed write`);
     // Never manufacture an empty catalog when a committed write cannot be read back.
     return undefined;
   }
@@ -72,9 +77,10 @@ function protectionResult(
   updatedIds: string[],
   failed: SharedIndexMutationFailure[],
   action: string,
+  scopeUnconfirmed = false,
 ): FontProtectionResult {
   const parts = [
-    `${action} ${updatedIds.length} 个`,
+    scopeUnconfirmed ? `${action}已提交，更新数量尚未完全确认；已请求重新读取受影响文件夹` : `${action} ${updatedIds.length} 个`,
     failed.length ? `失败 ${failed.length} 个` : "",
   ].filter(Boolean);
 
@@ -127,9 +133,10 @@ function tagResult(
   action: string,
   mutationProtocols: FontTagMutationProtocolResult[] = [],
   knownTags?: string[],
+  scopeUnconfirmed = false,
 ): FontTagUpdateResult {
   const parts = [
-    `${action} ${updatedIds.length} 个`,
+    scopeUnconfirmed ? `${action}已提交，更新数量尚未完全确认；已请求重新读取受影响文件夹` : `${action} ${updatedIds.length} 个`,
     failed.length ? `失败 ${failed.length} 个` : "",
   ].filter(Boolean);
   const message = (parts.join("，") || "没有可更新的字体。") + (knownTags === undefined ? "；共享标签目录尚未确认，请稍后重新读取。" : "");
@@ -150,17 +157,37 @@ function tagResult(
 export function createSharedFontMetadataMutations(
   deps: SharedFontMetadataMutationDeps,
 ) {
-  async function syncCommittedTags(ids: string[], folders: string[], reason: string): Promise<void> {
-    if (!ids.length) return;
-    try {
-      if (deps.syncSharedMetadataChangedIdsToMergedIndex) {
-        await deps.syncSharedMetadataChangedIdsToMergedIndex(ids, folders, reason);
-      } else {
-        deps.appendLog?.(`shared metadata sync fallback: reason=${reason}, cause=changed-id-reader-unavailable`);
-        await deps.syncSharedMetadataRootsToMergedIndex(folders, reason);
+  async function syncCommittedTags(
+    ids: string[],
+    committedLocators: SharedMetadataCommittedLocator[] | undefined,
+    committedRefreshRoots: string[] | undefined,
+    folders: string[],
+    reason: string,
+  ): Promise<void> {
+    if (!ids.length && !committedRefreshRoots?.length) return;
+    const refresh = async (action: () => Promise<void>): Promise<void> => {
+      try { await action(); } catch (error) {
+        appendAfterCommit(deps, `shared metadata sync deferred after commit: reason=${reason}, cause=${String(error)}; do not retry committed write`);
       }
-    } catch (error) {
-      deps.appendLog?.(`shared metadata sync deferred after commit: reason=${reason}, cause=${String(error)}; do not retry committed write`);
+    };
+    const hintedRoots = deps.uniqueResolvedFolders(committedRefreshRoots || []);
+    const fallbackRoots = hintedRoots.some((root) => !folders.includes(root)) ? folders : hintedRoots;
+    if (fallbackRoots.length) {
+      await refresh(() => deps.syncSharedMetadataRootsToMergedIndex(fallbackRoots, `${reason}:committed-scope-unconfirmed`));
+    }
+    const preciseLocators = committedLocators?.filter((locator) => !fallbackRoots.includes(locator.rootPath));
+    if (deps.syncSharedMetadataChangedIdsToMergedIndex && preciseLocators?.length) {
+      await refresh(() => deps.syncSharedMetadataChangedIdsToMergedIndex!(preciseLocators, folders, reason));
+    } else if (ids.length || preciseLocators?.length) {
+      const remainingRoots = preciseLocators?.length
+        ? deps.uniqueResolvedFolders(preciseLocators.map((locator) => locator.rootPath))
+        : (!committedLocators || !fallbackRoots.length) ? folders : [];
+      const safeRoots = remainingRoots.some((root) => !folders.includes(root)) ? folders : remainingRoots;
+      const unreadRoots = safeRoots.filter((root) => !fallbackRoots.includes(root));
+      if (unreadRoots.length) {
+        appendAfterCommit(deps, `shared metadata sync fallback: reason=${reason}, cause=committed-locator-contract-unavailable`);
+        await refresh(() => deps.syncSharedMetadataRootsToMergedIndex(unreadRoots, reason));
+      }
     }
   }
 
@@ -171,7 +198,7 @@ export function createSharedFontMetadataMutations(
   ): Promise<FontProtectionResult> {
     const resolvedFolders = deps.uniqueResolvedFolders(watchedFolders || []);
     const nextItems = (items || []).map((item) => ({ ...item, deleteProtected: protect }));
-    const { updatedIds, failed } = await deps.updateSharedFontMetadataEntries({
+    const { updatedIds, failed, committedLocators, committedRefreshRoots } = await deps.updateSharedFontMetadataEntries({
       items,
       watchedFolders: resolvedFolders,
       emptyPathMessage: "字体路径为空。",
@@ -182,7 +209,9 @@ export function createSharedFontMetadataMutations(
       mergePolicy: 'deleteProtected',
     });
 
-    if (updatedIds.length) {
+    if (committedRefreshRoots?.length) {
+      await syncCommittedTags(updatedIds, committedLocators, committedRefreshRoots, resolvedFolders, protect ? "shared-delete-protection-set" : "shared-delete-protection-clear");
+    } else if (updatedIds.length) {
       await deps.syncSharedMetadataItemsToMergedIndex(
         nextItems.filter((item) => updatedIds.includes(item.id)),
         resolvedFolders,
@@ -191,7 +220,7 @@ export function createSharedFontMetadataMutations(
       );
     }
     deps.invalidateSharedFontRuntimeCaches();
-    return protectionResult(updatedIds, failed, protect ? "加入保护" : "取消保护");
+    return protectionResult(updatedIds, failed, protect ? "加入保护" : "取消保护", !!committedRefreshRoots?.length);
   }
 
   async function setSharedFontTagsInIndex(
@@ -203,7 +232,7 @@ export function createSharedFontMetadataMutations(
     const resolvedFolders = deps.uniqueResolvedFolders(watchedFolders || []);
     const nextItems = (items || []).map((item) => ({ ...item, tagNames }));
     const intentById = new Map((items || []).map((item) => [item?.id, readSharedTagWriteIntent(item)] as const));
-    const { updatedIds, failed, mutationProtocols } = await deps.updateSharedFontMetadataEntries({
+    const { updatedIds, failed, mutationProtocols, committedLocators, committedRefreshRoots } = await deps.updateSharedFontMetadataEntries({
       items: nextItems,
       watchedFolders: resolvedFolders,
       emptyPathMessage: "字体路径为空。",
@@ -220,15 +249,15 @@ export function createSharedFontMetadataMutations(
       mergePolicy: 'tags',
     });
 
-    if (updatedIds.length) {
+    if (updatedIds.length || committedRefreshRoots?.length) {
       await syncCommittedTags(
-        updatedIds, resolvedFolders,
+        updatedIds, committedLocators, committedRefreshRoots, resolvedFolders,
         "shared-tags-set-authority-refresh",
       );
     }
     const knownTags = await refreshKnownSharedTags(deps, resolvedFolders, { allowEmptyOverwrite: false, preserveTags: updatedIds.length ? tagNames : [] });
     deps.invalidateSharedFontRuntimeCaches();
-    return tagResult(updatedIds, failed, "共享标签更新", mutationProtocols, knownTags);
+    return tagResult(updatedIds, failed, "共享标签更新", mutationProtocols, knownTags, !!committedRefreshRoots?.length);
   }
 
   async function setSharedFontTagsBatchInIndex(
@@ -252,7 +281,7 @@ export function createSharedFontMetadataMutations(
     );
     const resolvedFolders = deps.uniqueResolvedFolders(watchedFolders || []);
 
-    const { updatedIds, failed, mutationProtocols } = await deps.updateSharedFontMetadataEntries({
+    const { updatedIds, failed, mutationProtocols, committedLocators, committedRefreshRoots } = await deps.updateSharedFontMetadataEntries({
       items,
       watchedFolders: resolvedFolders,
       emptyPathMessage: "字体路径为空。",
@@ -275,9 +304,9 @@ export function createSharedFontMetadataMutations(
       mergePolicy: 'tags',
     });
 
-    if (updatedIds.length) {
+    if (updatedIds.length || committedRefreshRoots?.length) {
       await syncCommittedTags(
-        updatedIds, resolvedFolders,
+        updatedIds, committedLocators, committedRefreshRoots, resolvedFolders,
         "shared-tags-batch-authority-refresh",
       );
     }
@@ -286,7 +315,7 @@ export function createSharedFontMetadataMutations(
       preserveTags: Array.from(new Set(items.filter((item) => updatedIds.includes(item.id)).flatMap((item) => tagById.get(item.id) || []))),
     });
     deps.invalidateSharedFontRuntimeCaches();
-    return tagResult(updatedIds, failed, "共享标签批量更新", mutationProtocols, knownTags);
+    return tagResult(updatedIds, failed, "共享标签批量更新", mutationProtocols, knownTags, !!committedRefreshRoots?.length);
   }
 
 
@@ -322,15 +351,15 @@ export function createSharedFontMetadataMutations(
       })], knownOnlyRename.nextTags);
     }
 
-    const { updatedIds, failed, mutationProtocols } = await deps.renameSharedTagInMetadataIndexes(
+    const { updatedIds, failed, mutationProtocols, committedLocators, committedRefreshRoots } = await deps.renameSharedTagInMetadataIndexes(
       oldTagName,
       newTagName,
       resolvedFolders,
     );
 
-    if (updatedIds.length) {
+    if (updatedIds.length || committedRefreshRoots?.length) {
       await syncCommittedTags(
-        updatedIds, resolvedFolders,
+        updatedIds, committedLocators, committedRefreshRoots, resolvedFolders,
         `shared-tag-rename:${oldTagName}->${newTagName}`,
       );
     }
@@ -341,7 +370,7 @@ export function createSharedFontMetadataMutations(
       requireFresh: !failed.length,
     });
     deps.invalidateSharedFontRuntimeCaches();
-    return tagResult(updatedIds, failed, `重命名共享标签“${oldTagName}”为“${newTagName}”`, mutationProtocols, knownTags);
+    return tagResult(updatedIds, failed, `重命名共享标签“${oldTagName}”为“${newTagName}”`, mutationProtocols, knownTags, !!committedRefreshRoots?.length);
   }
 
   async function deleteSharedFontTagInIndex(
@@ -373,20 +402,20 @@ export function createSharedFontMetadataMutations(
       })], knownOnlyDelete.nextTags);
     }
 
-    const { updatedIds, failed, mutationProtocols } = await deps.removeSharedTagFromMetadataIndexes(
+    const { updatedIds, failed, mutationProtocols, committedLocators, committedRefreshRoots } = await deps.removeSharedTagFromMetadataIndexes(
       tagName,
       resolvedFolders,
     );
 
-    if (updatedIds.length) {
+    if (updatedIds.length || committedRefreshRoots?.length) {
       await syncCommittedTags(
-        updatedIds, resolvedFolders,
+        updatedIds, committedLocators, committedRefreshRoots, resolvedFolders,
         `shared-tag-delete:${tagName}`,
       );
     }
     const knownTags = await refreshKnownSharedTags(deps, resolvedFolders, { allowEmptyOverwrite: false, dropTags: failed.length ? [] : [tagName], requireFresh: !failed.length });
     deps.invalidateSharedFontRuntimeCaches();
-    return tagResult(updatedIds, failed, `删除共享标签“${tagName}”`, mutationProtocols, knownTags);
+    return tagResult(updatedIds, failed, `删除共享标签“${tagName}”`, mutationProtocols, knownTags, !!committedRefreshRoots?.length);
   }
 
   return {

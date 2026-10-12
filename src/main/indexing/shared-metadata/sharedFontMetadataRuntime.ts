@@ -1,4 +1,5 @@
-import type { FontItem } from '../../../shared/types'
+import type { FontItem, FontTagMutationProtocolResult } from '../../../shared/types'
+import type { SharedIndexMutationFailure } from '../sharedIndexMutations'
 import type { SharedMetadataMergePolicy } from './sharedMetadataFieldMergeRuntime'
 import type { RustSharedMetadataApplyInput, RustSharedMetadataApplyResult, RustSharedMetadataMutationStateSignal, RustSharedMetadataRemoveTagInput, RustSharedMetadataRemoveTagResult, RustSharedMetadataSignatureInput, RustSharedMetadataOverlayReadInput, RustSharedMetadataOverlayReadResult, RustSharedMetadataSignatureResult } from '../../rust-core/rustCoreWorkerContracts'
 import type { FontScanCacheFile } from '../rootIndexRuntime'
@@ -38,6 +39,22 @@ export interface SharedFontMetadataRuntimeDeps {
   runRustSharedMetadataSignature?: (input: RustSharedMetadataSignatureInput) => Promise<RustSharedMetadataSignatureResult | null>
   runRustSharedMetadataOverlayRead?: (input: RustSharedMetadataOverlayReadInput) => Promise<RustSharedMetadataOverlayReadResult | null>
   onSharedMetadataMutationStateSignal?: (signal: RustSharedMetadataMutationStateSignal) => void
+}
+
+// Internal source identity, separate from the existing public acknowledgement IDs.
+export interface SharedMetadataCommittedLocator {
+  rootPath: string
+  sourceFontId: string
+}
+
+export interface SharedMetadataMutationResult {
+  updatedIds: string[]
+  failed: SharedIndexMutationFailure[]
+  mutationProtocols?: FontTagMutationProtocolResult[]
+  // Older adapters may omit this; callers must then use conservative refresh.
+  committedLocators?: SharedMetadataCommittedLocator[]
+  // A commit was acknowledged, but its receipt cannot prove the complete row scope.
+  committedRefreshRoots?: string[]
 }
 
 export interface SharedMetadataMutationOptions {

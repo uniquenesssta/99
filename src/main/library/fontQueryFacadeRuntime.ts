@@ -1,4 +1,5 @@
 import { assertFontQueryActive, fontQuerySuperseded, rethrowFontQuerySuperseded } from './fontQueryTaskRuntime';
+import { isSharedIoCancellationError } from '../path/sharedIoCancellationRuntime';
 import { resolve } from "node:path";
 import type {
 FontItem,
@@ -697,6 +698,9 @@ export function createFontQueryFacadeRuntime(
           const result = options.reconcileLocalUserMetrics ? await options.reconcileLocalUserMetrics(metrics) : metrics;
           outcome = 'ok';
           return result;
+        } catch (error) {
+          if (isSharedIoCancellationError(error)) outcome = 'cancelled';
+          throw error;
         } finally {
           const finishedAt = Date.now();
           try {

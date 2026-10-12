@@ -33,9 +33,16 @@ const fixtures = [
   {
     script: 'check-shared-tag-conflicts.cjs',
     source: 'src/main/library/sharedFontMetadataMutations.ts',
-    before: 'if (!ids.length) return;',
+    before: 'if (!ids.length && !committedRefreshRoots?.length) return;',
     after: 'if (false) return;',
-    error: 'shared tag delete should not resync all roots when no rows changed'
+    error: 'shared tag refresh must distinguish true no-op from committed unknown scope'
+  },
+  {
+    script: 'check-shared-tag-conflicts.cjs',
+    source: 'src/main/library/sharedFontMetadataMutations.ts',
+    before: 'if (!ids.length && !committedRefreshRoots?.length) return;',
+    after: 'if (!ids.length) return;',
+    error: 'shared tag refresh must distinguish true no-op from committed unknown scope'
   },
   {
     script: 'check-folder-cache-availability.cjs',

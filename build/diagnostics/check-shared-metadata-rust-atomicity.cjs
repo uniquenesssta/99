@@ -47,7 +47,7 @@ async function main() {
     assert.throws(() => check(source.replace(/\n/g, eol), badSignature), assert.AssertionError)
   }
   await postCommit()
-  await assert.rejects(()=>postCommit({[path.join(root,'src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts')]:s=>s.replaceAll('appendAfterCommit(`','runtimeDeps.appendStartupLog(`')}),/committed result/)
+  await assert.rejects(()=>postCommit({[path.join(root,'src/main/indexing/shared-metadata/sharedMetadataMutationRuntime.ts')]:s=>s.replaceAll('appendAfterCommit(`','runtimeDeps.appendStartupLog(`').replaceAll('if (committed) {','if (false) {')}),/committed result/)
   console.log('[diagnostics:shared-metadata-rust-atomicity] structure/algorithm freeze, LF/CRLF, 12 real TS scenarios and 8 mutations passed; native tests require --native')
 }
 async function postCommit(transforms={}) {
@@ -78,6 +78,7 @@ async function postCommit(transforms={}) {
       assert.equal(writes,typeof fail==='string'?0:1);assert.equal(nodeWrites,0)
       assert.equal(result.failed.length,fail?1:0,`${method}: committed result must survive logging failure`)
       assert.deepEqual(Array.from(result.updatedIds),fail?[]:['a']);assert.equal(signals,fail?0:1)
+      assert.deepEqual(JSON.parse(JSON.stringify(result.committedLocators)),fail?[]:[{rootPath:'/root',sourceFontId:'a'}],`${method}: only confirmed source rows may be located`)
       assert.equal(closed,method==='renameSharedTagInMetadataIndexes'&&typeof fail!=='string'?1:0)
     }
   }

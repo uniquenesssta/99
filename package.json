@@ -214,7 +214,8 @@
     "diagnostics:watcher-noop-freshness": "node build/diagnostics/check-watcher-noop-freshness.cjs",
     "diagnostics:root-probe-lifecycle": "node build/diagnostics/check-root-probe-lifecycle.cjs",
     "diagnostics:preview-reuse-observation": "node build/diagnostics/check-preview-reuse-observation.cjs",
-    "diagnostics:baseline-contention-contract": "node build/diagnostics/check-baseline-contention-contract.cjs"
+    "diagnostics:baseline-contention-contract": "node build/diagnostics/check-baseline-contention-contract.cjs",
+    "diagnostics:font-query-ipc": "node build/diagnostics/check-font-query-ipc.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

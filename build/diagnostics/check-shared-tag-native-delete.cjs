@@ -61,6 +61,7 @@ async function main() {
     refreshKnownSharedTagsFromMetadata:async roots=>(await client.runRustSharedMetadataKnownTags({roots:roots.map(rootPath=>({rootPath,dbPath:metadataPath(rootPath)}))})).knownTags,
   })
   try {
+    await require('./helpers/sharedMetadataCommittedLocatorFixture.cjs').runCommittedLocatorCases({ rustClient: client })
     const status = await transport.diagnoseRustCoreWorker()
     assert(status.capabilities.includes('shared-file-trace-v1'))
     const compatibility = load('src/main/rust-core/rustCoreProtocolRuntime.ts').rustCoreWorkerIsCompatible

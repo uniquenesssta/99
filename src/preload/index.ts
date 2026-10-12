@@ -1,4 +1,5 @@
 import { isFontQuerySuperseded } from '../shared/fontQueryFailure'
+import { decodeFontQueryReply } from '../shared/fontQueryIpc'
 import type { TagFontRecoveryRequest, TagFontRecoveryResult } from '../shared/tagFontRecovery'
 import type { NativePreviewLayout } from '../shared/preview-layout/nativePreviewLayout'
 import type { OperationTrace } from '../shared/operationTrace'
@@ -97,6 +98,7 @@ function invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T> {
   const startedAt = Date.now()
   return ipcRenderer.invoke(channel, ...args)
     .then((result: T) => {
+      decodeFontQueryReply(channel, result)
       const durationMs = Date.now() - startedAt
       if (!channel.startsWith('performance:') && (PRELOAD_TRACE_ALWAYS.has(channel) || durationMs >= 80)) {
         reportPreloadTrace({

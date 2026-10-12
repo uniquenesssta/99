@@ -4,7 +4,8 @@ import os from 'node:os'
 import { basename } from 'node:path'
 import type { FontItem, FontTagMutationProtocolResult } from '../../../shared/types'
 import type { SharedIndexMutationFailure } from '../sharedIndexMutations'
-import type { SharedFontMetadataRuntimeDeps, SharedMetadataCacheSource, SharedMetadataMutationOptions } from './sharedFontMetadataRuntime'
+import type { RustSharedMetadataMutationStateSignal } from '../../rust-core/rustCoreWorkerContracts'
+import type { SharedFontMetadataRuntimeDeps, SharedMetadataCacheSource, SharedMetadataMutationOptions, SharedMetadataMutationResult, SharedMetadataCommittedLocator } from './sharedFontMetadataRuntime'
 import { applyStateToFont, cleanTagNames, fontPathKey, stateFromFont, stateFromRow, uniqueFontItems, type SharedMetadataRow } from './sharedMetadataStateRuntime'
 import { findSharedMetadataMatchedEntry } from './sharedMetadataEntryMatchRuntime'
 import { sharedMetadataDbPathForRoot } from './sharedMetadataPathsRuntime'
@@ -86,6 +87,69 @@ function nodeSharedMetadataMutationProtocol(options: {
   })
 }
 
+function inspectCommittedSourceIds(
+  receiptIds: unknown,
+  changedCount: number,
+  preparedSourceIds?: string[],
+): { sourceIds: string[]; scopeUnconfirmed: boolean } {
+  const rawIds = Array.isArray(receiptIds) ? receiptIds : []
+  const validIds = rawIds.filter((id): id is string => typeof id === 'string' && !!id.trim())
+  const distinctIds = [...new Set(validIds)]
+  const multiplicities = new Map<string, number>()
+  for (const id of preparedSourceIds || []) multiplicities.set(id, (multiplicities.get(id) || 0) + 1)
+  const matchingIds = preparedSourceIds ? distinctIds.filter((id) => multiplicities.has(id)) : distinctIds
+  // Native apply deduplicates IDs after counting changed payload rows. A repeated
+  // source key may therefore account for more than one committed row operation.
+  const maximumChanges = preparedSourceIds
+    ? matchingIds.reduce((total, id) => total + (multiplicities.get(id) || 0), 0)
+    : matchingIds.length
+  const validCount = Number.isInteger(changedCount) && changedCount >= 0
+  const trueNoOp = changedCount === 0 && (receiptIds === undefined || (Array.isArray(receiptIds) && rawIds.length === 0))
+  const scopeUnconfirmed = !trueNoOp && (
+    !validCount || (receiptIds !== undefined && !Array.isArray(receiptIds))
+    || changedCount < distinctIds.length || changedCount > maximumChanges
+    || validIds.length !== rawIds.length || distinctIds.length !== rawIds.length
+    || matchingIds.length !== distinctIds.length
+  )
+  // Contradictory zero/low counts cannot acknowledge particular input items.
+  const sourceIds = validCount && changedCount >= distinctIds.length && changedCount > 0 ? matchingIds : []
+  return { sourceIds, scopeUnconfirmed }
+}
+
+function confirmedMutationSignal(
+  signal: RustSharedMetadataMutationStateSignal | undefined,
+  scope: ReturnType<typeof inspectCommittedSourceIds>,
+): RustSharedMetadataMutationStateSignal | undefined {
+  if (!scope.scopeUnconfirmed) return { ...signal, changedIds: scope.sourceIds }
+  return {
+    ...signal,
+    changedIds: scope.sourceIds,
+    sharedMetadataChanged: true,
+    cacheInvalidated: true,
+    mergedIndexDirty: true,
+    pageQueryDirty: true,
+    metricsDirty: true,
+  }
+}
+
+function confirmedMutationProtocol(
+  protocol: FontTagMutationProtocolResult,
+  scope: ReturnType<typeof inspectCommittedSourceIds>,
+  stateSignal: RustSharedMetadataMutationStateSignal,
+): FontTagMutationProtocolResult {
+  if (!scope.scopeUnconfirmed) return { ...protocol, changedIds: scope.sourceIds, stateSignal: stateSignal as Record<string, unknown> }
+  return {
+    ...protocol,
+    changedIds: scope.sourceIds,
+    message: '共享写入已提交，但影响范围尚未完全确认，请重新读取受影响文件夹。',
+    cacheInvalidated: true,
+    mergedIndexDirty: true,
+    pageQueryDirty: true,
+    metricsDirty: true,
+    stateSignal: stateSignal as Record<string, unknown>,
+  }
+}
+
 export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutationRuntimeDeps) {
   const runtimeDeps = deps.runtimeDeps
   const appendAfterCommit = (message: string): void => {
@@ -94,10 +158,12 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
 
   async function updateSharedFontMetadataEntries(
     options: SharedMetadataMutationOptions,
-  ): Promise<{ updatedIds: string[]; failed: SharedIndexMutationFailure[]; mutationProtocols?: FontTagMutationProtocolResult[] }> {
+  ): Promise<SharedMetadataMutationResult> {
     const updatedIds: string[] = []
     const failed: SharedIndexMutationFailure[] = []
     const mutationProtocols: FontTagMutationProtocolResult[] = []
+    const committedLocators: SharedMetadataCommittedLocator[] = []
+    const committedRefreshRoots: string[] = []
     const watchedFolders = options.watchedFolders || []
     const groups = new Map<string, FontItem[]>()
 
@@ -122,6 +188,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
     for (const [root, items] of groups) {
       let cacheSource: SharedMetadataCacheSource | null = null
       let syntheticMatches = 0
+      let committed = false
       try {
         cacheSource = await runtimeDeps.loadExistingFolderCache(root)
         if (!cacheSource) throw new Error(options.missingIndexMessage)
@@ -217,13 +284,22 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               rows: preparedRows.map((entry) => entry.row),
             })
             if (rustResult) {
-              const changedIdSet = new Set((rustResult.changedIds || []).map((id) => String(id || '').trim()).filter(Boolean))
-              const changedIds = preparedRows
-                .filter((entry) => changedIdSet.has(String(entry.row.fontId || '').trim()))
-                .map((entry) => entry.itemId)
+              committed = true
+              const scope = inspectCommittedSourceIds(rustResult.changedIds, rustResult.written, preparedRows.map((entry) => entry.row.fontId.trim()))
+              if (scope.scopeUnconfirmed) {
+                committedRefreshRoots.push(root)
+                appendAfterCommit(`shared metadata committed scope unconfirmed: root=${root}, kind=apply, written=${rustResult.written}; root refresh required, do not retry committed write`)
+              }
+              const changedIdSet = new Set(scope.sourceIds)
+              // Rust persists trimmed source IDs; Node compatibility keeps its exact key.
+              const changedRows = preparedRows
+                .map((entry) => ({ entry, sourceFontId: entry.row.fontId.trim() }))
+                .filter(({ sourceFontId }) => changedIdSet.has(sourceFontId))
+              const changedIds = changedRows.map(({ entry }) => entry.itemId)
               updatedIds.push(...changedIds)
-              const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, rustResult.stateSignal, root, 'apply', changedIds, 'rust-worker')
-              if (rustResult.mutationProtocol) mutationProtocols.push(rustResult.mutationProtocol)
+              committedLocators.push(...changedRows.map(({ sourceFontId }) => ({ rootPath: root, sourceFontId })))
+              const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, confirmedMutationSignal(rustResult.stateSignal, scope), root, 'apply', changedIds, 'rust-worker')
+              if (rustResult.mutationProtocol) mutationProtocols.push(confirmedMutationProtocol(rustResult.mutationProtocol, scope, stateSignal))
               appendAfterCommit(`shared metadata mutation wrote by rust: root=${root}, rows=${rustResult.written}, requested=${preparedRows.length}, ${sharedMetadataMutationSignalSummary(stateSignal, root)}`)
               return
             }
@@ -271,6 +347,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
                 WHERE font_id = ?
               `)
               const changedIds: string[] = []
+              const changedSourceIds: string[] = []
               for (const entry of preparedRows) {
                 const existingRow = selectExisting.get(entry.row.fontId) as SharedMetadataRow | undefined
                 const requestedState = {
@@ -316,11 +393,14 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
                 })
                 eventInsert.run(entry.row.eventType, entry.row.fontId, entry.row.relativePath, JSON.stringify(mergeResult.state), now, writerHost, process.pid)
                 changedIds.push(entry.itemId)
-                updatedIds.push(entry.itemId)
+                changedSourceIds.push(entry.row.fontId)
               }
               deps.writeMeta(db, 'updatedAt', now)
               deps.writeMeta(db, 'writerHost', writerHost)
               db.exec('COMMIT')
+              committed = true
+              updatedIds.push(...changedIds)
+              committedLocators.push(...changedSourceIds.map((sourceFontId) => ({ rootPath: root, sourceFontId })))
               logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'shared-metadata-transaction' })
               const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, undefined, root, 'apply', changedIds, 'node-fallback')
               mutationProtocols.push(nodeSharedMetadataMutationProtocol({
@@ -335,7 +415,9 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               }))
               try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);') } catch { /* ignore */ }
             } catch (error) {
-              try { db.exec('ROLLBACK') } catch { /* ignore */ }
+              if (!committed) {
+                try { db.exec('ROLLBACK') } catch { /* ignore */ }
+              }
               throw error
             }
           } finally {
@@ -346,6 +428,10 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
           runtimeDeps.appendStartupLog(`shared metadata mutation used path fallback: root=${root}, rows=${syntheticMatches}`)
         }
       } catch (error) {
+        if (committed) {
+          appendAfterCommit(`shared metadata post-commit work deferred: root=${root}, cause=${String(error)}; do not retry committed write`)
+          continue
+        }
         const message = error instanceof Error ? error.message : String(error)
         for (const item of items) {
           if (updatedIds.includes(item.id)) continue
@@ -358,24 +444,27 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
       }
     }
 
-    return { updatedIds, failed, mutationProtocols }
+    return { updatedIds, failed, mutationProtocols, committedLocators, committedRefreshRoots }
   }
 
   async function renameSharedTagInMetadataIndexes(
     oldTagNameInput: string,
     newTagNameInput: string,
     watchedFoldersInput: string[],
-  ): Promise<{ updatedIds: string[]; failed: SharedIndexMutationFailure[]; mutationProtocols?: FontTagMutationProtocolResult[] }> {
+  ): Promise<SharedMetadataMutationResult> {
     const oldTagName = String(oldTagNameInput || '').trim()
     const newTagName = String(newTagNameInput || '').trim()
     const watchedFolders = runtimeDeps.uniqueResolvedFolders(watchedFoldersInput || [])
     const updatedIds: string[] = []
     const failed: SharedIndexMutationFailure[] = []
     const mutationProtocols: FontTagMutationProtocolResult[] = []
-    if (!oldTagName || !newTagName) return { updatedIds, failed, mutationProtocols }
-    if (oldTagName === newTagName) return { updatedIds, failed, mutationProtocols }
+    const committedLocators: SharedMetadataCommittedLocator[] = []
+    const committedRefreshRoots: string[] = []
+    if (!oldTagName || !newTagName) return { updatedIds, failed, mutationProtocols, committedLocators, committedRefreshRoots }
+    if (oldTagName === newTagName) return { updatedIds, failed, mutationProtocols, committedLocators, committedRefreshRoots }
 
     for (const root of watchedFolders) {
+      let committed = false
       try {
         const cacheSource = await runtimeDeps.loadExistingFolderCache(root, { applySharedMetadataOverlay: false })
         if (!cacheSource) throw new Error('没有找到共享索引库，请先更新索引。')
@@ -437,12 +526,20 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               })),
             })
             if (rustResult) {
-              updatedIds.push(...(rustResult.changedIds?.length ? rustResult.changedIds : changedIds))
-              const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, rustResult.stateSignal, root, 'renameTag', rustResult.changedIds?.length ? rustResult.changedIds : changedIds, 'rust-worker')
-              if (rustResult.mutationProtocol) mutationProtocols.push({
+              committed = true
+              const scope = inspectCommittedSourceIds(rustResult.changedIds, rustResult.written, changedIds.map((id) => id.trim()))
+              if (scope.scopeUnconfirmed) {
+                committedRefreshRoots.push(root)
+                appendAfterCommit(`shared metadata committed scope unconfirmed: root=${root}, kind=renameTag, written=${rustResult.written}; root refresh required, do not retry committed write`)
+              }
+              const committedIds = scope.sourceIds
+              updatedIds.push(...committedIds)
+              committedLocators.push(...committedIds.map((sourceFontId) => ({ rootPath: root, sourceFontId })))
+              const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, confirmedMutationSignal(rustResult.stateSignal, scope), root, 'renameTag', committedIds, 'rust-worker')
+              if (rustResult.mutationProtocol) mutationProtocols.push(confirmedMutationProtocol({
                 ...rustResult.mutationProtocol,
                 mutationKind: rustResult.mutationProtocol.mutationKind || 'renameTag',
-              })
+              }, scope, stateSignal))
               appendAfterCommit(`shared metadata tag renamed by rust: root=${root}, from=${oldTagName}, to=${newTagName}, rows=${rustResult.written}, ${sharedMetadataMutationSignalSummary(stateSignal, root)}`)
               return
             }
@@ -495,11 +592,13 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
                   writerPid: process.pid,
                 })
                 eventInsert.run('rename_tag', row.font_id, row.relative_path, JSON.stringify({ oldTagName, newTagName, previousTags: target.previousTags, nextTags: target.nextTags, baseRevision, nextRevision }), now, writerHost, process.pid)
-                if (row.font_id) updatedIds.push(String(row.font_id))
               }
               deps.writeMeta(db, 'updatedAt', now)
               deps.writeMeta(db, 'writerHost', writerHost)
               db.exec('COMMIT')
+              committed = true
+              updatedIds.push(...changedIds)
+              committedLocators.push(...changedIds.map((sourceFontId) => ({ rootPath: root, sourceFontId })))
               logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'shared-metadata-transaction' })
               const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, undefined, root, 'renameTag', changedIds, 'node-fallback')
               mutationProtocols.push(nodeSharedMetadataMutationProtocol({
@@ -514,7 +613,9 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               }))
               try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);') } catch { /* ignore */ }
             } catch (error) {
-              try { db.exec('ROLLBACK') } catch { /* ignore */ }
+              if (!committed) {
+                try { db.exec('ROLLBACK') } catch { /* ignore */ }
+              }
               throw error
             }
           } finally {
@@ -522,6 +623,10 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
           }
         })
       } catch (error) {
+        if (committed) {
+          appendAfterCommit(`shared metadata post-commit work deferred: root=${root}, cause=${String(error)}; do not retry committed write`)
+          continue
+        }
         failed.push({
           id: root,
           fileName: basename(root),
@@ -530,21 +635,24 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
       }
     }
 
-    return { updatedIds: Array.from(new Set(updatedIds)), failed, mutationProtocols }
+    return { updatedIds: Array.from(new Set(updatedIds)), failed, mutationProtocols, committedLocators, committedRefreshRoots }
   }
 
   async function removeSharedTagFromMetadataIndexes(
     tagNameInput: string,
     watchedFoldersInput: string[],
-  ): Promise<{ updatedIds: string[]; failed: SharedIndexMutationFailure[]; mutationProtocols?: FontTagMutationProtocolResult[] }> {
+  ): Promise<SharedMetadataMutationResult> {
     const tagName = String(tagNameInput || '').trim()
     const watchedFolders = runtimeDeps.uniqueResolvedFolders(watchedFoldersInput || [])
     const updatedIds: string[] = []
     const failed: SharedIndexMutationFailure[] = []
     const mutationProtocols: FontTagMutationProtocolResult[] = []
-    if (!tagName) return { updatedIds, failed, mutationProtocols }
+    const committedLocators: SharedMetadataCommittedLocator[] = []
+    const committedRefreshRoots: string[] = []
+    if (!tagName) return { updatedIds, failed, mutationProtocols, committedLocators, committedRefreshRoots }
 
     for (const root of watchedFolders) {
+      let committed = false
       try {
         const cacheSource = await runtimeDeps.loadExistingFolderCache(root, { applySharedMetadataOverlay: false })
         if (!cacheSource) throw new Error('没有找到共享索引库，请先更新索引。')
@@ -561,9 +669,16 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               writerPid: process.pid,
             })
             if (rustResult) {
-              updatedIds.push(...rustResult.updatedIds)
-              const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, rustResult.stateSignal, root, 'removeTag', rustResult.updatedIds, 'rust-worker')
-              if (rustResult.mutationProtocol) mutationProtocols.push(rustResult.mutationProtocol)
+              committed = true
+              const scope = inspectCommittedSourceIds(rustResult.updatedIds, rustResult.updated)
+              if (scope.scopeUnconfirmed) {
+                committedRefreshRoots.push(root)
+                appendAfterCommit(`shared metadata committed scope unconfirmed: root=${root}, kind=removeTag, written=${rustResult.updated}; root refresh required, do not retry committed write`)
+              }
+              updatedIds.push(...scope.sourceIds)
+              committedLocators.push(...scope.sourceIds.map((sourceFontId) => ({ rootPath: root, sourceFontId })))
+              const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, confirmedMutationSignal(rustResult.stateSignal, scope), root, 'removeTag', scope.sourceIds, 'rust-worker')
+              if (rustResult.mutationProtocol) mutationProtocols.push(confirmedMutationProtocol(rustResult.mutationProtocol, scope, stateSignal))
               appendAfterCommit(`shared metadata tag removed by rust: root=${root}, tag=${tagName}, rows=${rustResult.updated}, ${sharedMetadataMutationSignalSummary(stateSignal, root)}`)
               return
             }
@@ -628,11 +743,13 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
                   writerPid: process.pid,
                 })
                 eventInsert.run('delete_tag', row.font_id, row.relative_path, JSON.stringify({ tagName, previousTags, nextTags, baseRevision, nextRevision }), now, os.hostname(), process.pid)
-                if (row.font_id) updatedIds.push(String(row.font_id))
               }
               deps.writeMeta(db, 'updatedAt', now)
               deps.writeMeta(db, 'writerHost', os.hostname())
               db.exec('COMMIT')
+              committed = true
+              updatedIds.push(...changedIds)
+              committedLocators.push(...changedIds.map((sourceFontId) => ({ rootPath: root, sourceFontId })))
               logOperation({ stage: 'commit', outcome: 'committed', backend: 'node', reason: 'shared-metadata-transaction' })
               const stateSignal = emitSharedMetadataMutationStateSignal(runtimeDeps.onSharedMetadataMutationStateSignal, undefined, root, 'removeTag', changedIds, 'node-fallback')
               mutationProtocols.push(nodeSharedMetadataMutationProtocol({
@@ -647,7 +764,9 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
               }))
               try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);') } catch { /* ignore */ }
             } catch (error) {
-              try { db.exec('ROLLBACK') } catch { /* ignore */ }
+              if (!committed) {
+                try { db.exec('ROLLBACK') } catch { /* ignore */ }
+              }
               throw error
             }
           } finally {
@@ -655,6 +774,10 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
           }
         })
       } catch (error) {
+        if (committed) {
+          appendAfterCommit(`shared metadata post-commit work deferred: root=${root}, cause=${String(error)}; do not retry committed write`)
+          continue
+        }
         failed.push({
           id: root,
           fileName: basename(root),
@@ -663,7 +786,7 @@ export function createSharedMetadataMutationRuntime(deps: SharedMetadataMutation
       }
     }
 
-    return { updatedIds: Array.from(new Set(updatedIds)), failed, mutationProtocols }
+    return { updatedIds: Array.from(new Set(updatedIds)), failed, mutationProtocols, committedLocators, committedRefreshRoots }
   }
 
   return {

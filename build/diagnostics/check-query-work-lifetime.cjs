@@ -43,7 +43,8 @@ async function ipcOwnership(){
  const reads=[]
  const runtime=new Proxy({getSharedAvailability:()=>availability(),appendLog(){},assertFeatureForChannel(){},reportPerformanceEvent(){},queryFontPageInLibrary:async request=>{reads.push(request.name);return read(request)},getFontMetricsFromLibrary:()=>read({name:'metrics'})},{get:(value,key)=>value[key]||(()=>undefined)})
  load('src/main/ipc/ipcHandlers.ts').registerIpcHandlers(runtime)
- const invoke=(name,...args)=>handlers.get(name)({sender},...args)
+ const transport=load('src/shared/fontQueryIpc.ts')
+ const invoke=(name,...args)=>Promise.resolve(handlers.get(name)({sender},...args)).then(value=>transport.decodeFontQueryReply(name,structuredClone(value)))
  const gate=deferred(),entered=deferred();let admissions=0
  availability=()=>{if(++admissions===1){entered.resolve();return gate.promise}return Promise.resolve({roots:[],tags:[],unattributedTags:[]})}
  const old=invoke('fonts:queryPage',{name:'A'},'A').then(()=>({ok:true}),error=>({error}))
@@ -152,20 +153,85 @@ async function sharedTagMetricsLifetime(){
 async function preloadCancellationClassification(){
  const vm=require('node:vm')
  for(const runtime of [false,true]){
-  let api,error;const traces=[]
-  const electron={contextBridge:{exposeInMainWorld:(_name,value)=>{api=value}},ipcRenderer:{on(){},removeListener(){},invoke:async(channel,...args)=>{if(channel==='performance:rendererTrace'){traces.push(args[0]);return true}throw error}}}
-  const load=loader({electron}),failure=load('src/shared/fontQueryFailure.ts')
+  let api,error,result;const traces=[]
+  const electron={contextBridge:{exposeInMainWorld:(_name,value)=>{api=value}},ipcRenderer:{on(){},removeListener(){},invoke:async(channel,...args)=>{if(channel==='performance:rendererTrace'){traces.push(args[0]);return true}if(error)throw error;return structuredClone(result)}}}
+  const load=loader({electron}),failure=load('src/shared/fontQueryFailure.ts'),transport=load('src/shared/fontQueryIpc.ts')
   if(runtime)vm.runInNewContext(load('src/main/preload/runtimePreloadSource.ts').runtimePreloadSource,{require:id=>id==='electron'?electron:require(id),process,Buffer,Date,console})
   else load('src/preload/index.ts')
-  for(const method of ['queryFontPage','getFontMetrics']){
+  const call=(method,token)=>method==='getFontMetrics'?api[method](token):api[method]({},token)
+  for(const method of ['queryFonts','queryFontPage','getFontMetrics']){
    error=Error('Error invoking remote method: '+failure.FONT_QUERY_SUPERSEDED+' retired')
-   await assert.rejects(api[method]({},'retired'));assert.equal(traces.at(-1).kind,'ipc-renderer-cancelled');assert.equal(traces.at(-1).severity,'info')
-   error=Error('ordinary database failure');await assert.rejects(api[method]({},'current'));assert.equal(traces.at(-1).kind,'ipc-renderer-error');assert.equal(traces.at(-1).severity,'error')
+   await assert.rejects(call(method,'retired'));assert.equal(traces.at(-1).kind,'ipc-renderer-cancelled');assert.equal(traces.at(-1).severity,'info')
+   error=Error('ordinary database failure');await assert.rejects(call(method,'current'));assert.equal(traces.at(-1).kind,'ipc-renderer-error');assert.equal(traces.at(-1).severity,'error')
+   error=Error('database query cancelled while parsing a stored value');await assert.rejects(call(method,'current'));assert.equal(traces.at(-1).kind,'ipc-renderer-error')
+   error=undefined;result=transport.FONT_QUERY_CANCELLED_REPLY;traces.length=0
+   await assert.rejects(call(method,'retired'),failure.isFontQuerySuperseded)
+   assert.equal(traces.length,1);assert.equal(traces[0].kind,'ipc-renderer-cancelled');assert.equal(traces[0].severity,'info')
+   for(const ordinary of [{...result,total:3},{...result,status:'failed'},{...result,__hfmFontQueryReply:2},{reason:'query-superseded'},{total:3,items:[]},[result]]){
+    result=ordinary;assert.deepEqual(await call(method,'current'),structuredClone(ordinary),'lookalike reply consumed as cancellation')
+   }
+  }
+  result=transport.FONT_QUERY_CANCELLED_REPLY;error=undefined
+  assert.deepEqual(await api.loadLibrary(),structuredClone(result),'unrelated channel decoded query control reply')
+ }
+}
+
+async function mainCancellationTransport(){
+ const handlers=new Map(),logs=[]
+ const load=loader({electron:{ipcMain:{handle:(channel,fn)=>handlers.set(channel,fn)}},'../security/ipcSenderValidation':{assertTrustedIpcSender(){}}})
+ const transport=load('src/shared/fontQueryIpc.ts'),failure=load('src/shared/fontQueryFailure.ts'),register=load('src/main/ipc/ipcTraceRuntime.ts').registerTracedIpcHandler
+ for(const channel of ['fonts:query','fonts:queryPage','fonts:getMetrics','library:load']){
+  let error
+  register({appendLog:line=>logs.push(line)},channel,async()=>{throw error})
+  for(const current of [Object.assign(Error('retired'),{reason:'query-superseded'}),Error('database value includes '+failure.FONT_QUERY_SUPERSEDED),Error('ordinary database failure')]){
+   logs.length=0;error=current
+   const pending=handlers.get(channel)({sender:{id:1}})
+   if(channel!=='library:load'&&current.reason==='query-superseded'){
+    assert.deepEqual(JSON.parse(JSON.stringify(await pending)),JSON.parse(JSON.stringify(transport.FONT_QUERY_CANCELLED_REPLY)))
+    assert(logs.some(line=>line.includes('severity=info, status=cancelled')))
+    assert(!logs.some(line=>line.includes('status=ok')||line.includes('status=failed')))
+   }else{
+    await assert.rejects(pending,error=>error===current)
+    assert(logs.some(line=>line.includes('severity=error, status=failed')),'genuine or unrelated failure lost main error log')
+    assert(!logs.some(line=>line.includes('status=cancelled')))
+   }
   }
  }
 }
 
-async function main(){await physicalOwnership();await publicationOwnership();await ipcOwnership();await cacheCancellation();await tagCancellation();await sharedAuthorityLifetime();await sharedTagMetricsLifetime();await preloadCancellationClassification();console.log('[diagnostics:query-work-lifetime] physical subscribers, admission cancellation, renderer lifecycle and close ownership passed')}
+async function metricsOutcomeClassification(){
+ for(const kind of ['ok','cancelled','abort','shared-cancelled','error','marker-only']){
+  const logs=[],load=loader(),failure=load('src/shared/fontQueryFailure.ts')
+  const expected=kind==='cancelled'?Object.assign(Error('retired'),{reason:'query-superseded'}):kind==='abort'?Object.assign(Error('aborted'),{name:'AbortError'}):kind==='shared-cancelled'?Object.assign(Error('child stopped'),{reason:'cancelled'}):Error(kind==='marker-only'?'invalid database value '+failure.FONT_QUERY_SUPERSEDED:'ordinary reconcile failure')
+  const facade=load('src/main/library/fontQueryFacadeRuntime.ts').createFontQueryFacadeRuntime({
+   appendLog:line=>logs.push(line),appWatchedFolders:async()=>[],
+   reconcileLocalUserMetrics:async value=>{if(kind!=='ok')throw expected;return value},
+  })
+  if(kind==='ok')assert.equal((await facade.getFontMetricsFromLibrary()).total,0)
+  else await assert.rejects(facade.getFontMetricsFromLibrary())
+  const outcome=['cancelled','abort','shared-cancelled'].includes(kind)?'cancelled':kind==='ok'?'ok':'error'
+  assert(logs.some(line=>line.startsWith('font metrics stages: outcome='+outcome+',')))
+ }
+}
+
+async function queryGenerationCancellation(){
+ const load=loader(),entered=deferred(),complete=deferred(),logs=[]
+ const failure=load('src/shared/fontQueryFailure.ts')
+ const facade=load('src/main/library/fontQueryFacadeRuntime.ts').createFontQueryFacadeRuntime({
+  appendLog:line=>logs.push(line),appWatchedFolders:async()=>['C:/fonts'],scheduleMergedIndexBackgroundValidation(){},
+  mergedIndexDbPath:()=>'',librarySqlitePath:()=>'',mergedIndexSchemaVersion:1,
+  rustCoreWorkerRuntime:{runRustMergedIndexIdsQuery:async()=>{entered.resolve();return complete.promise}},
+  cleanSharedFontsForQuery:async()=>{throw Error('Retired ID query entered fallback')},
+ })
+ const pending=facade.queryFontsInLibrary({sidebarPage:'library',activeFilter:{kind:'all'},sortMode:'nameAsc',limit:1})
+ pending.catch(()=>undefined)
+ await entered.promise;facade.clearFontMetricsQueryCache()
+ complete.resolve({ids:['obsolete'],total:1,truncated:false,engine:'sql'})
+ await assert.rejects(pending,error=>failure.hasFontQuerySupersededReason(error))
+ assert(!logs.some(line=>line.includes('query fallback:')),'Retired ID query entered fallback')
+}
+
+async function main(){await physicalOwnership();await publicationOwnership();await ipcOwnership();await cacheCancellation();await tagCancellation();await sharedAuthorityLifetime();await sharedTagMetricsLifetime();await preloadCancellationClassification();await mainCancellationTransport();await metricsOutcomeClassification();await queryGenerationCancellation();console.log('[diagnostics:query-work-lifetime] physical subscribers, admission cancellation, renderer lifecycle, typed transport and close ownership passed')}
 let completed=false
 process.once('beforeExit',()=>{if(!completed){console.error('Query lifetime diagnostic did not complete');process.exitCode=1}})
 main().then(()=>{completed=true}).catch(error=>{console.error(error);process.exitCode=1})
