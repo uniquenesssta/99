@@ -12,6 +12,12 @@ const contracts = core + 'rustCoreWorkerContracts.ts'
 const payloads = core + 'rustCoreWorkerPayloadTypes.ts'
 const facade = core + 'rustCoreWorkerRuntime.ts'
 const fixture = require('./fixtures/rust-worker-contracts.fixture.json')
+// This callback belongs to the in-memory write owner. Preserve every frozen
+// native input token while locking the one reviewed optional admission hook.
+const reviewedOptionalProperties = {
+  ...fixture.reviewedOptionalProperties,
+  RustRootIndexApplyChangesInput: { assertCurrent: 'assertCurrent?: () => void' },
+}
 const publicNames = Object.keys(fixture.publicTypes)
 const payloadNames = Object.keys(fixture.payloadTypes)
 const config = ts.readConfigFile(path.join(root, 'tsconfig.json'), ts.sys.readFile)
@@ -77,7 +83,7 @@ function checkShapes(current) {
     [payloads, fixture.payloadTypes, fixture.payloadDependencies],
   ]) {
     const file = current.file(rel)
-    const additions = rel === contracts ? fixture.reviewedOptionalProperties || {} : {}
+    const additions = rel === contracts ? reviewedOptionalProperties : {}
     for (const name of Object.keys(additions)) assert(Object.hasOwn(expected, name), 'Reviewed additions name an unknown public alias: ' + name)
     const declarations = file.statements.filter(ts.isTypeAliasDeclaration)
     exact(declarations.map(node => node.name.text), Object.keys(expected), rel + ' declarations')
@@ -248,6 +254,9 @@ function main() {
   checkCompiler(actual)
   const mutated = (rel, change) => view(new Map([[rel, change(actual.read(abs(rel)))]]))
   const rejects = [
+    ['write admission missing', () => checkShapes(mutated(contracts, text => text.replace('assertCurrent?: () => void', '')))],
+    ['write admission made mandatory', () => checkShapes(mutated(contracts, text => text.replace('assertCurrent?: () => void', 'assertCurrent: () => void')))],
+    ['write admission made asynchronous', () => checkShapes(mutated(contracts, text => text.replace('assertCurrent?: () => void', 'assertCurrent?: () => Promise<void>')))],
     ['binding request made mandatory', () => checkShapes(mutated(contracts, text => text.replace('bindingSnapshot?: boolean', 'bindingSnapshot: boolean')))],
     ['binding receipt version widened', () => checkShapes(mutated(contracts, text => text.replace('bindingSnapshot?: { version: 1;', 'bindingSnapshot?: { version: number;')))],
     ['foreground flag widened', () => checkShapes(mutated(contracts, text => text.replace('foregroundBytes?: boolean', 'foregroundBytes?: string')))],

@@ -21,9 +21,9 @@ function hookPort() {
     useEffect(fn,deps) { const i=index++,old=slots[i]; if(!old || !deps || deps.some((d,n)=>!Object.is(d,old.deps[n])))effects.push(()=>{old?.cleanup?.();slots[i]={deps,cleanup:fn()}}) }
   }
 }
-function setup({source,globals={}}={}) {
+function setup({source,globals={},transforms:extraTransforms={}}={}) {
   const hook=hookPort(), app={}, mocks={react:hook,[path.join(root,r+'appRuntime.ts')]:app}
-  const transforms=source ? {[path.join(root,browseFile)]:()=>source} : {}
+  const transforms={...extraTransforms,...(source ? {[path.join(root,browseFile)]:()=>source} : {})}
   const load=loadModules({window:{},...globals},mocks,transforms)
   Object.assign(app,load(r+'appConstants.ts'),load(r+'fontFilteringMetrics.ts'),load(r+'libraryNormalize.ts'),{traceRendererSyncComputation:(_label,_details,fn)=>fn(),rendererFontQueryCacheKey:JSON.stringify})
   const fonts=Array.from({length:1499},(_,i)=>({...font(String(i)),family:`Family ${i}`,fullName:`Family ${i} Regular`,fileSize:100000+i,modifiedAt:1710000000000+i,favorite:false}))
@@ -69,7 +69,16 @@ function browse() {
     same(last.visibleFonts[0].id,changed.id,'active overlay omitted')
     apply({activeFilter:{kind:'all'},sidebarPage:'tags',selectedTagName:'changed'})
     same(last.visibleFonts.length,1,'tag membership stale')
-    apply({sidebarPage:'library',selectedTagName:'',library:{...options.library,tags:[],localTags:[],__sharedTagAuthorityKnown:true,__localTagAuthorityKnown:true}})
+    // This section checks settled catalog membership. A queued edit is not an
+    // external deletion: first acknowledge its write and a matching fresh read.
+    tagIntent.beginFontTagWrite(changed,'local')
+    tagIntent.settleFontTagWrite(changed,'local',true)
+    const confirmRead=tagIntent.captureFontTagReadConfirmation(options.library)
+    const committedRows=options.databasePageResult.items.map(font=>font.id===changed.id?{...font,localTagNames:['changed']}:font)
+    const confirmedLibrary=confirmRead(options.library,committedRows)
+    same(tagIntent.isFontTagStateDirty(confirmedLibrary.fonts[changed.id],'local'),false,'matching post-ack read did not settle tag intent')
+    apply({library:confirmedLibrary,databasePageResult:{...options.databasePageResult,items:committedRows}})
+    apply({sidebarPage:'library',selectedTagName:'',library:tagIntent.applyFontTagMutationSignalToLibrary({...options.library,tags:[],__sharedTagAuthorityKnown:true},{scope:'local',localRevision:1,knownTags:[]})})
     if(databasePageReady) {same(last.visibleFonts[0].tagNames.length,0,'deleted shared tags survived');same(last.visibleFonts[0].localTagNames.length,0,'deleted local tags survived')}
     if(databasePageReady) {
       apply({library:{...options.library,__sharedTagAuthorityKnown:false,__localTagAuthorityKnown:false}})
@@ -99,6 +108,49 @@ function browse() {
   }
   console.log('U-08 controlled 1499-font / 40-update counts:',JSON.stringify(counts))
 }
+function tagCatalogLifecycle(transforms={}) {
+  for(const scope of ['local','shared']) {
+    const h=setup({transforms}), tags=h.load(r+'fontTagStateAuthorityRuntime.ts'), field=scope==='local'?'localTagNames':'tagNames'
+    const row={...h.opts.allFonts[0],[field]:['pending']}
+    let edited=tags.markFontTagsOptimistic(row,scope,['pending'])
+    let options={...h.opts,allFonts:[edited],databasePageResult:{...h.opts.databasePageResult,items:[row],total:1},
+      sidebarPage:scope==='local'?'tags':'sharedTags',selectedTagName:'pending',selectedSharedTagName:'pending',
+      library:{...h.opts.library,fonts:{[row.id]:edited},tags:[],localTags:[],__localTagAuthorityKnown:true,__sharedTagAuthorityKnown:true}}
+    const render=()=>h.render(options)
+    for(const phase of ['queued','sending','retry','committed']) {
+      if(phase==='sending')tags.beginFontTagWrite(edited,scope)
+      if(phase==='retry')tags.settleFontTagWrite(edited,scope,false)
+      if(phase==='committed')tags.settleFontTagWrite(edited,scope,true)
+      edited={...edited};options={...options,allFonts:[edited],library:{...options.library,fonts:{[row.id]:edited}}}
+      const output=render()
+      same(output.visibleFonts.length,1,scope+'/'+phase+' pending catalog membership lost')
+      eq(output.visibleFonts[0][field],['pending'],scope+'/'+phase+' tag value changed')
+      same(tags.isSameFontTagIntent(output.visibleFonts[0],edited,scope),true,scope+'/'+phase+' edit identity lost')
+    }
+    const confirm=tags.captureFontTagReadConfirmation(options.library)
+    options={...options,library:confirm(options.library,[row])}
+    same(tags.isFontTagStateDirty(options.library.fonts[row.id],scope),false,'post-ack read did not confirm '+scope)
+    same(render().visibleFonts.length,1,'matching committed read lost '+scope)
+    options={...options,library:tags.applyFontTagMutationSignalToLibrary(options.library,{scope,localRevision:2,sharedRevision:2,knownTags:[]})}
+    same(render().visibleFonts.length,0,scope+' settled external deletion survived')
+    // A subsequent fresh read without the deleted tag must stay empty too.
+    options={...options,databasePageResult:{...options.databasePageResult,items:[{...row,[field]:[]}]}}
+    same(render().visibleFonts.length,0,scope+' fresh deleted row resurrected')
+  }
+}
+function tagCatalogMutations() {
+  const cases=[
+    [r+'fontViewRuntime.ts','current = applyFontTagEdit(current, cached, scope)',"current = { ...current, ...(scope === 'local' ? { localTagNames: cached.localTagNames } : { tagNames: cached.tagNames }) }",'pending catalog membership lost'],
+    [r+'fontTagStateAuthorityRuntime.ts',"if (!isLibraryTagAuthorityKnown(library, scope) || isFontTagStateDirty(font, scope)) continue",'if (true) continue','settled external deletion survived']
+  ]
+  for(const [file,from,to,message] of cases) {
+    const absolute=path.join(root,file)
+    same(fs.readFileSync(absolute,'utf8').split(from).length,2,'tag lifecycle mutation anchor ambiguous')
+    assert.throws(()=>tagCatalogLifecycle({[absolute]:source=>source.replace(from,to)}),error=>error instanceof assert.AssertionError&&error.message.includes(message),'tag lifecycle mutation missed its causal assertion')
+    checks++
+  }
+}
+
 async function coalescer() {
   let now=1000; class Clock extends Date {static now(){return now}}
   const h=setup({globals:{Date:Clock}}),logs=[]
@@ -153,6 +205,6 @@ async function rendererMetrics() {
   dispatch();pending[2].reject(Error('retryable'));await tick();same(writes.length,1,'failure replaced existing counts')
   hook.cleanup()
 }
-async function run(){browse();await coalescer();await facadeTiming();await rendererMetrics();console.log(`[diagnostics:browse-metrics-reuse] ${checks} checks passed (controlled ports; browser timings separate)`)}
+async function run(){browse();tagCatalogLifecycle();tagCatalogMutations();await coalescer();await facadeTiming();await rendererMetrics();console.log(`[diagnostics:browse-metrics-reuse] ${checks} checks passed (controlled ports; browser timings separate)`)}
 if(require.main===module)run().catch(error=>{console.error(error);process.exitCode=1})
 module.exports={setup,hookPort,browse,coalescer,rendererMetrics}

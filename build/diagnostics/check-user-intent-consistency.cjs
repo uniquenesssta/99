@@ -2,18 +2,26 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript')
 const timers=[]
 const root = path.resolve(__dirname, '../..'), cache = new Map()
+const mutationCases={
+  active:{file:'fontUserIntentRuntime.ts',from:'...intent.active,',to:'',message:'old page must not reactivate a stopped font'},
+  favorite:{file:'fontUserIntentRuntime.ts',from:'favorite && (!favorite.settled || incoming.favorite !== favorite.value)',to:'false',message:'uncommitted favorite must survive old query'},
+  query:{file:'runtime/database/useRendererDatabasePageRuntime.ts',from:'intentRevision !== fontUserIntentRevision()',to:'false',all:true,message:'intent response admission'},
+  installation:{file:'fontViewRuntime.ts',from:'deleteProtected: cached.deleteProtected',to:'deleteProtected: cached.deleteProtected, systemInstalled: cached.systemInstalled',message:'database installation truth overridden'},
+  scope:{file:'runtime/database/useRendererDatabasePageRuntime.ts',from:'assertDatabasePageResponseMatchesRequest(result, databaseQueryRequest)',to:'void 0',message:'wrong-scope response admission'},
+  membership:{file:'fontViewRuntime.ts',from:'const pending = complete ? options.allFonts.filter((font) => !seen.has(font.id) && pendingFont(font)) : []',to:'const pending: FontItem[] = []',message:'pending favorite must appear even with empty page'}
+}
 function load(file, mocks = {}) {
   file = file.replace(/\\/g, '/')
   if (cache.has(file)) return cache.get(file)
   const exports = {}; cache.set(file,exports)
   let source = fs.readFileSync(path.join(root,file),'utf8')
   const mutation=process.argv[2]
-  if(mutation==='active') source=source.replace('...intent.active,','')
-  if(mutation==='favorite') source=source.replace('favorite && (!favorite.settled || incoming.favorite !== favorite.value)','false')
-  if(mutation==='query') source=source.replaceAll('intentRevision !== fontUserIntentRevision()', 'false')
-  if(mutation==='installation') source=source.replace('deleteProtected: cached.deleteProtected,', 'deleteProtected: cached.deleteProtected, systemInstalled: cached.systemInstalled,')
-  if(mutation==='scope') source=source.replace('assertDatabasePageResponseMatchesRequest(result, databaseQueryRequest)', 'void 0')
-  if(mutation==='membership') source=source.replace('const candidates = [...items, ...pending]','const candidates = items')
+  const defect=mutationCases[mutation]
+  if(defect&&file==='src/renderer/src/'+defect.file){
+    assert(source.includes(defect.from),mutation+' mutation anchor missing')
+    if(!defect.all)assert.equal(source.split(defect.from).length,2,mutation+' mutation anchor is ambiguous')
+    source=defect.all?source.replaceAll(defect.from,defect.to):source.replace(defect.from,defect.to)
+  }
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,console,performance,window:{setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout(){}},require(id){
     if (id in mocks) return mocks[id]
     if (id.startsWith('.')) return load(path.relative(root,path.resolve(root,path.dirname(file),id+'.ts')),mocks)
@@ -83,7 +91,7 @@ const cached=intent.markFavoriteIntent({...fresh,systemInstalled:true,deleteProt
 const pageOptions={...options,activeFilter:{kind:'notInstalled'},allFonts:[],library:{...library,fonts:{a:cached}},databasePageResult:{items:[fresh],total:1,offset:0}}
 let visible=view.buildVisibleFonts(pageOptions)
 assert.equal(visible.length,1)
-assert.equal(visible[0].systemInstalled,false)
+assert.equal(visible[0].systemInstalled,false,'database installation truth overridden')
 assert.equal(visible[0].deleteProtected,true)
 assert.equal(visible[0].favorite,true)
 visible=view.buildVisibleFonts({...pageOptions,databasePageResult:{items:[{...fresh,installStatusKnown:false}],total:1,offset:0}})
@@ -108,7 +116,7 @@ async function queueSettlementCheck() {
   if(!process.argv[2]) {
     for(const mutant of ['active','favorite','membership','query','installation','scope']) {
       const r=require('node:child_process').spawnSync(process.execPath,[__filename,mutant],{encoding:'utf8'})
-      assert.notEqual(r.status,0,mutant+' escaped');assert(r.stderr.includes('AssertionError'),r.stderr)
+      assert.notEqual(r.status,0,mutant+' escaped');assert(r.stderr.includes('AssertionError')&&r.stderr.includes(mutationCases[mutant].message),mutant+' did not fail its business assertion: '+r.stderr)
     }
   }
   console.log('real write queue success/failure settlement; six regression mutations rejected')

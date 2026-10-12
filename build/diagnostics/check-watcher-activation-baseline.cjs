@@ -70,6 +70,7 @@ function metricsBroadcastHealthy(transform = x => x) {
 async function watcherHealthy(transform = x => x) {
   const h = watcherHarness({ transform }), folder = path.resolve('/fonts')
   assert.equal(await h.runtime.startWatchingFolders([folder, folder]), true)
+  assert.deepEqual(plain(h.runtime.getSharedWatchStatus()), { roots: [] }, 'local fs.watch roots must not report shared reconciliation status')
   assert.equal(h.handles.length, 1)
   assert.equal(h.handles[0].config.recursive, process.platform === 'win32')
   h.handles[0].callback('rename', 'startup.ttf'); assert.equal(h.timers.size, 1)
@@ -88,6 +89,7 @@ async function watcherHealthy(transform = x => x) {
   assert.equal(h.applied[0][0].origin,'fs-watch'); assert.equal(h.applied[0][2].triggerEventType,'change')
   await h.runtime.startWatchingFolders([folder]); assert.equal(h.handles.length, 1)
   h.handles[0].callback('change', 'b.otf'); h.runtime.stopFolderWatchers()
+  await h.runtime.awaitFolderWatchersClosed()
   assert.equal(h.timers.size, 0); assert.equal(h.handles[0].closed, 1)
   await h.runtime.flushPendingFolderChanges(); assert.equal(h.applied.length, 1)
   await h.runtime.startWatchingFolders([folder]); assert.equal(h.handles.length, 2)

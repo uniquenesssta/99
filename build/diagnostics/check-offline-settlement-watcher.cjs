@@ -4,11 +4,12 @@ const {DatabaseSync}=require('node:sqlite'),{spawnSync}=require('node:child_proc
 const {loader:baseLoader}=require('./check-operation-chain.cjs')
 const root=path.resolve(__dirname,'../..'),crlf=process.argv.includes('--crlf'),mutant=process.argv.find(x=>x.startsWith('--mutant='))?.split('=')[1]
 const queueFile='src/main/activation/activationInstallStatusSaveQueue.ts',watchFile='src/main/watcher/folderWatcherRuntime.ts',mergeFile='src/main/indexing/merged-page/mergedIndexValidationRuntime.ts'
+const reconciliationFile='src/main/watcher/sharedFolderReconciliationRuntime.ts'
 function load(mocks={},globals={}) {
  const transforms={}
- for(const file of [queueFile,watchFile,mergeFile])transforms[path.join(root,file)]=s=>{
+ for(const file of [queueFile,watchFile,mergeFile,reconciliationFile])transforms[path.join(root,file)]=s=>{
   if(mutant==='projection'&&file===queueFile){assert(s.includes('!projectionPending.has(id) &&'));s=s.replace('!projectionPending.has(id) &&','')}
-  if(mutant==='baseline'&&file===watchFile){const anchor='options.appendStartupLog(`shared watcher snapshot retained: ${folder}, ${String(error)}`);';assert(s.includes(anchor));s=s.replace(anchor,'baseline = {}; '+anchor)}
+  if(mutant==='baseline'&&file===reconciliationFile){const anchor='failures = Math.min(failures + 1, 5)';assert(s.includes(anchor),'baseline mutation target missing');s=s.replace(anchor,'committed = undefined; '+anchor)}
   return crlf?s.replace(/\r?\n/g,'\r\n'):s
  }
  return baseLoader(mocks,globals,transforms)
@@ -45,24 +46,45 @@ async function settlement() {
  } finally {db.close()}
 }
 async function watcher() {
- let timerId=0,snapshot={'a.ttf':{size:1}},failure=false,held=null,offline=0
- const timers=new Map(),batches=[]
+ let now=10000,timerId=0,snapshot={'a.ttf':[1,'1000000123']},failure=false,held=null,releaseHeld,offline=0,collections=0,projectionRepairs=0,collectionSignal
+ const timers=new Map(),batches=[],folder=path.resolve('/test/shared')
+ class Clock extends Date { static now(){return now} }
+ async function advance(ms){
+  const target=now+ms
+  for(;;){const row=[...timers].sort((a,b)=>a[1].at-b[1].at)[0];if(!row||row[1].at>target)break;now=row[1].at;timers.delete(row[0]);row[1].fn();await tick()}
+  now=target;await tick()
+ }
+ function nextDelay(){assert.equal(timers.size,1,'exactly one root reconciliation timer must remain');return [...timers.values()][0].at-now}
  const runtime=load({electron:{BrowserWindow:{getAllWindows:()=>[]}},'node:fs':{...fs,watch(){throw Error('main fs.watch must not receive isolated root')}},
+  'node:child_process':{spawn(){throw Error('notification capability was not supplied')}},
   [path.join(root,'src/main/rust-core/rustSharedIoCommandRuntime.ts')]:{sharedIoResourceKeys:async()=>['nas']},
-  [path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{executeSharedFile:async()=>{if(held)return held;if(failure)throw Error('network timeout');return {result:{value:snapshot}}}},
+  [path.join(root,'src/main/path/sharedFileSystemRuntime.ts')]:{withSharedIoSignal:(_signal,work)=>work(),executeSharedFile:async(request,_options,signal)=>{assert.equal(request.operation,'treeSnapshot');assert.equal(request.path,folder);assert.equal(signal.aborted,false);collections++;collectionSignal=signal;if(held)return held;if(failure)throw Error('network timeout');return {result:{value:snapshot}}}},
   [path.join(root,'src/main/path/startupPathAvailabilityRuntime.ts')]:{ensureStartupPathRootAvailable:async()=>true,markStartupPathRootUnavailable(){offline++}},
- },{setTimeout(fn,ms){const token={id:++timerId,unref(){}};timers.set(token,{fn,ms});return token},clearTimeout(token){timers.delete(token)}})(watchFile).createFolderWatcherRuntime({
-  appendStartupLog(){},isIgnoredWatcherPath:()=>false,verboseLogs:false,startupGraceMs:0,flushDebounceMs:10,closeRuntimeDatabases(){},watcherChangeBatchLooksUnchanged:async()=>false,
-  applyWatchedFolderChangesToIndex:async changes=>{batches.push(plain(changes));return {upserts:[],deletes:[]}}
+ },{Date:Clock,setTimeout(fn,ms){const token={id:++timerId,unref(){}};timers.set(token,{fn,at:now+ms});return token},clearTimeout(token){timers.delete(token)}})(watchFile).createFolderWatcherRuntime({
+  appendStartupLog(){},isIgnoredWatcherPath:()=>false,verboseLogs:false,startupGraceMs:0,flushDebounceMs:10,closeRuntimeDatabases(){},watcherChangeBatchLooksUnchanged:async()=>{throw Error('complete inventory must not trigger a second preflight')},
+  applyWatchedFolderChangesToIndex:async(changes,_replay,context)=>{context.assertCurrent();assert.equal(context.inventory.rootPath,folder);assert.equal(context.inventory.complete,true);batches.push({changes:plain(changes),files:plain([...context.inventory.files])});return {upserts:[],deletes:[]}},
+  syncMergedIndexForRootSnapshot:async()=>{projectionRepairs++}
  })
- async function poll(){const row=[...timers].find(([,t])=>t.ms===30000);assert(row,'next poll absent');timers.delete(row[0]);row[1].fn();await tick()}
+ const status=()=>runtime.getSharedWatchStatus().roots[0]
+ async function poll(expectedDelay){assert.equal(nextDelay(),expectedDelay);await advance(expectedDelay);if(status().phase==='applying')await advance(10)}
  try {
-  await runtime.startWatchingFolders(['/test/shared']);await tick();await runtime.flushPendingFolderChanges();assert.equal(batches.length,1)
-  failure=true;await poll();await runtime.flushPendingFolderChanges();assert.equal(batches.length,1);assert.equal(offline,0,'shared watcher request failure must not directly own root offline state')
-  failure=false;await poll();await runtime.flushPendingFolderChanges();assert.equal(batches.length,1,'failed poll must retain old baseline')
-  snapshot={};await poll();await runtime.flushPendingFolderChanges();assert.equal(batches.length,2);assert.equal(batches[1][0].fileName,'a.ttf')
-  let resolve;held=new Promise(r=>resolve=r);await poll();runtime.stopFolderWatchers();resolve({result:{value:{'late.ttf':{size:3}}}});await tick();await runtime.flushPendingFolderChanges();assert.equal(batches.length,2);assert.equal(timers.size,0)
- } finally {runtime.stopFolderWatchers()}
+  await runtime.startWatchingFolders([folder]);assert.equal(collections,0,'initial collection belongs to the scheduled owner');assert.equal(status().lastCheckedAt,null)
+  await advance(0);assert.equal(collections,1);assert.equal(batches.length,0);assert.equal(status().phase,'applying');assert.equal(status().lastCheckedAt,null,'collection alone is not an ACK')
+  await advance(10);assert.equal(batches.length,1);assert.deepEqual(batches[0].files,[['a.ttf',{size:1,mtimeMs:1000.000123}]]);assert.equal(projectionRepairs,1)
+  const firstAck=status().lastCheckedAt;assert.equal(firstAck,now);assert.equal(status().pendingCount,0)
+  failure=true;await poll(30000);assert.equal(batches.length,1);assert.equal(status().lastCheckedAt,firstAck);assert.equal(status().pendingCount,null)
+  assert.equal(offline,0,'shared watcher request failure must not directly own root offline state')
+  failure=false;await poll(30000);assert.equal(batches.length,1,'failed poll must retain old baseline');assert.equal(projectionRepairs,1,'unchanged recovery must not rewrite projection')
+  snapshot={};await poll(60000);assert.equal(batches.length,2)
+  assert.deepEqual(batches[1].files,[],'complete empty inventory must reach apply so the previously indexed font can be deleted')
+  assert.deepEqual(batches[1].changes.map(x=>[x.eventType,x.fileName,x.origin]),[['rescan','.','shared-poll-diff']])
+  held=new Promise(r=>releaseHeld=r);await poll(30000);assert.equal(collections,5)
+  runtime.stopFolderWatchers();assert.equal(collectionSignal.aborted,true)
+  let closed=false;const closing=runtime.awaitFolderWatchersClosed().then(()=>{closed=true});await tick();assert.equal(closed,false,'stop must retain ownership of an unfinished collection')
+  releaseHeld({result:{value:{'late.ttf':[3,'3000000']}}});await closing;await runtime.flushPendingFolderChanges()
+  assert.equal(batches.length,2,'late collection must not publish after stop');assert.equal(timers.size,0);assert.deepEqual(plain(runtime.getSharedWatchStatus()),{roots:[]})
+ } finally {runtime.stopFolderWatchers();releaseHeld?.({result:{value:{}}});await runtime.awaitFolderWatchersClosed()}
 }
-async function main(){await settlement();await watcher();if(!crlf&&!mutant){for(const arg of ['--crlf','--mutant=projection','--mutant=baseline']){const r=spawnSync(process.execPath,[__filename,arg],{encoding:'utf8',timeout:30000});assert.equal(r.status===0,arg==='--crlf',arg+'\n'+r.stdout+r.stderr)}}console.log('offline settlement/watcher: actual local SQLite, failed projection retry, unrelated fields, retained snapshot, late stop, CRLF and two causal mutants passed')}
-main().catch(e=>{console.error(e);process.exitCode=1})
+async function main(){await settlement();await watcher();if(!crlf&&!mutant){for(const [arg,cause] of [['--crlf',null],['--mutant=projection','persisted install facts must not suppress failed local projection'],['--mutant=baseline','failed poll must retain old baseline']]){const r=spawnSync(process.execPath,[__filename,arg],{encoding:'utf8',timeout:30000});assert.equal(r.error,undefined,arg+' process failed');assert.equal(r.signal,null,arg+' was terminated');assert.equal(r.status===0,!cause,arg+'\n'+r.stdout+r.stderr);if(cause)assert(r.stderr.includes(cause),arg+' failed for an unrelated reason:\n'+r.stderr)}}console.log('offline settlement/watcher: actual local SQLite, failed projection retry, unrelated fields, complete inventory/retained baseline, ACK status, adaptive polling, awaited late stop, CRLF and two causal mutants passed')}
+const watchdog=setTimeout(()=>{console.error('offline settlement/watcher did not settle');process.exitCode=1},60000)
+main().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>clearTimeout(watchdog))

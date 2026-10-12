@@ -10,6 +10,8 @@
       "functions": [
         "createFolderWatcherRuntime",
         "stopFolderWatchers",
+        "awaitFolderWatchersClosed",
+        "getSharedWatchStatus",
         "sendFontIndexChanged",
         "recoveryRootKey",
         "recoveryItems",
@@ -24,7 +26,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "9b2ae13a49377b04f5bce96fff105f2075b4111156ffb9671a5d9e2dbe842333"
+      "sha256": "b142357141878ff73f97a3a9450b0d9960c78cc6ca8bed2648d9c6ff751d131c"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -254,5 +256,18 @@
     "oldSha256": "d2a6e8632b9490b3e7ef5ed9923ed295b1a2b074e3bf20f582c1af29fdd1e28a",
     "newSha256": "9b2ae13a49377b04f5bce96fff105f2075b4111156ffb9671a5d9e2dbe842333",
     "change": "Only positive safe-integer metrics revision may broadcast an empty metrics notification; invalid metrics are rejected even with rows. Exports/functions and all watcher lifecycle gates retained."
+  },
+  "sharedWatcherReconciliationMigration": {
+    "commit": "b2a39a5372506ea704c63476b5513e0f4592d5e8",
+    "file": "src/main/watcher/folderWatcherRuntime.ts",
+    "oldSha256": "9b2ae13a49377b04f5bce96fff105f2075b4111156ffb9671a5d9e2dbe842333",
+    "newSha256": "b142357141878ff73f97a3a9450b0d9960c78cc6ca8bed2648d9c6ff751d131c",
+    "addedFunctions": ["awaitFolderWatchersClosed", "getSharedWatchStatus"],
+    "change": "Shared roots reuse complete fresh inventories through a single reconciliation/ACK owner, retain failed baselines, and expose physical-close awaiting and truthful ACK status. Startup repairs the local projection once; unchanged subsequent polls do no index work. Existing exports, local watcher lifecycle, metrics sender, activation and manual-refresh assertions remain required.",
+    "windowsEvidence": {
+      "shared-watcher-reconciliation": "19 controlled scheduling, inventory, notification, cancellation and physical-close cases passed at this commit in the 186-check aggregate.",
+      "shared-watch-status": "Validated counts/ACK labels, offline/unknown, bounded polling/restart/cleanup, footer and both trusted IPC bridges passed at this commit."
+    },
+    "remainingVerification": "The aggregate still failed, including the old W-01 fixture and offline-settlement watcher harness. Their explicit migrations and causal assertions require a fresh Windows run; existing passing focused evidence is not an aggregate pass."
   }
 }

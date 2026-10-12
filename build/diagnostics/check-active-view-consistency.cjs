@@ -21,6 +21,9 @@ function loader(mocks={},globals={},transforms={}){
    const before='if (!queued?.ok) {'
    assert(source.includes(before),'startup queue mutant anchor missing');source=source.replace(before,'if (false) {')
   }
+  if(file===base+'fontViewRuntime.ts'&&process.argv[2]==='row-validity'){
+   const before='if (index.bad)';assert(source.includes(before),'row validity mutant anchor missing');source=source.replace(before,'if (false)')
+  }
   if(transforms[file])source=transforms[file](source)
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,console,performance,...globals,require(id){if(id in mocks)return mocks[id];if(id.startsWith('node:'))return require(id);if(id.startsWith('.'))return load(path.relative(root,path.resolve(root,path.dirname(file),id+'.ts')));throw Error(id)}})
   return exports
@@ -59,9 +62,10 @@ async function batchSettlement(){
   assert.equal(busy.size,0)
  }
 }
-async function main(){await feedbackLatency();await batchSettlement();await singleAndActivateBatch();await metricsRace();await restartPolicy();viewScopeMatrix();if(!process.argv[2])for(const mutant of ['favorite','idle','batch','metrics','startup-registry','startup-queue']){
+async function main(){await feedbackLatency();await batchSettlement();await singleAndActivateBatch();await metricsRace();await restartPolicy();viewScopeMatrix();if(!process.argv[2])for(const mutant of ['favorite','idle','batch','metrics','startup-registry','startup-queue','row-validity']){
  const r=require('node:child_process').spawnSync(process.execPath,[__filename,mutant],{encoding:'utf8'});assert.notEqual(r.status,0,mutant+' escaped');assert(r.stderr.includes('AssertionError'),r.stderr)
- }console.log('A-02 immediate favorite/no idle starvation, single/batch settlement, stale metrics, startup cleanup with production ownership and durable retry; six mutations rejected')}
+ if(mutant==='row-validity')assert(r.stderr.includes('active view admitted an invalid database row'),'row validity mutation did not fail its business assertion: '+r.stderr)
+ }console.log('A-02 immediate favorite/no idle starvation, single/batch settlement, stale metrics, startup cleanup with production ownership and durable retry; seven mutations rejected')}
 main().catch(e=>{console.error(e);process.exitCode=1})
 
 async function singleAndActivateBatch(){
@@ -220,6 +224,7 @@ function viewScopeMatrix(){
  const load=loader({
  './appConstants':{FONT_CATEGORY_FILTERS:[],FONT_CATEGORY_LABELS:{},SCRIPT_LANGUAGE_LABELS:{},SCRIPT_LANGUAGE_ORDER:['latin']},
  './libraryNormalize':normalize,
+ './library-normalize/libraryNormalizeBase':normalize,
  '@shared/legacy/legacyCollectionCompatibility':{legacyCollectionIdsForFont:f=>f.collectionIds||[]}
  })
  const filter=load(base+'fontFilteringMetrics.ts'),view=load(base+'fontViewRuntime.ts'),install=load(base+'fontInstallStateRuntime.ts')
@@ -234,6 +239,8 @@ function viewScopeMatrix(){
  fonts=Object.values(library.fonts)
  const common={...options,allFonts:fonts,deferredSearch:'',databasePageReady:true,databasePageResult:{items:fonts,total:fonts.length,offset:0,limit:fonts.length}}
  assert.deepEqual(plain(view.buildVisibleFonts(common).map(f=>f.id)),['beta'])
+ const invalid={...fonts[1],fileSize:1}
+ assert.equal(view.buildVisibleFonts({...common,databasePageResult:{...common.databasePageResult,items:[invalid]}}).length,0,'active view admitted an invalid database row')
  const favorites=view.buildVisibleFonts({...common,activeFilter:{kind:'favorites'}})
  assert.equal(favorites.find(f=>f.id==='alpha').active,false)
  assert.equal(favorites.find(f=>f.id==='system').active,false)

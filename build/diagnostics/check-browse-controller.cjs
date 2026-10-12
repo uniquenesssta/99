@@ -6,13 +6,23 @@ function hash(s){const scanner=ts.createScanner(ts.ScriptTarget.Latest,true,ts.L
 function declarations(text){const file=ts.createSourceFile('source.tsx',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),result={};function walk(n){if(ts.isVariableStatement(n))for(const d of n.declarationList.declarations){if(d.initializer&&ts.isCallExpression(d.initializer)&&['useState','useRef'].includes(d.initializer.expression.getText(file)))result[d.name.getText(file)]=hash(d.getText(file))}ts.forEachChild(n,walk)}walk(file);return result}
 const calls=['useDeferredValue','useRendererDatabasePageRuntime','useFontFamilyGroupsRuntime','useFontFilterScrollResetRuntime','useFontViewportResizeObserverRuntime','createAppFontScrollRestoreRuntime','useAppFontShellDerivedRuntime']
 function callHashes(text){const file=ts.createSourceFile('source.tsx',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),result=[];function walk(n){if(ts.isCallExpression(n)&&calls.includes(n.expression.getText(file)))result.push([n.expression.getText(file),hash(n.getText(file))]);ts.forEachChild(n,walk)}walk(file);return result}
+// The row-membership repair changes only the memo's result carrier and callee.
+// Reverse those exact reviewed tokens for the original frozen calculation hash;
+// do not refresh the baseline or normalize dependency lists/other calculations.
+function reviewedDerivedCalculations(text){
+ const changes=[['const visibleResult = useMemo(', 'const visibleFonts = useMemo('],['() => buildVisibleFontResult({','() => buildVisibleFonts({']]
+ for(const [current,previous] of changes){assert.equal(text.split(current).length,2,'reviewed derivation extension missing or ambiguous');text=text.replace(current,previous)}
+ return text
+}
 function checkSource(fixture,overrides=new Map()){
  const get=p=>overrides.get(p)??read(p),c=get(controller),d=get(derived),w=get(wrapper),app=get(prefix+'App.tsx')
  assert.deepEqual(declarations(c),fixture.states,'state/ref initialization changed')
  for(const key of Object.keys(fixture.states))assert(!Object.hasOwn(declarations(app),key),'duplicate state owner '+key)
  assert.deepEqual(callHashes(app),fixture.calls,'deferred/query/family/scroll call or order changed')
  const start=d.indexOf('  const fontIndexById ='),end=d.indexOf('  return {',start)
- assert.equal(hash(d.slice(start,end)),fixture.derived,'read-only calculations or memo dependencies changed')
+ assert.equal(hash(reviewedDerivedCalculations(d.slice(start,end))),fixture.derived,'read-only calculations or memo dependencies changed')
+ assert(d.includes("import { buildVisibleFontResult } from '../../fontViewRuntime'"),'membership result owner import changed')
+ assert.equal(d.slice(end).replace(/\s+/g,''),'return{fontIndexById,fontMetrics,localTagCounts,sharedTagCounts,localTagList,sharedTagList,flatFolderNodes,advancedFilterCount,visibleFonts:visibleResult.fonts,membershipDiagnostics:visibleResult.diagnostics}}','membership result projection changed')
  assert.equal(hash(w.slice(w.indexOf('  useLayoutEffect(() =>'))),fixture.remainder,'preview/selection/layout effects changed')
  const delegation=w.match(/= useBrowseDerivedRuntime\(\{([\s\S]*?)\n  \}\)/);assert(delegation)
  for(const line of delegation[1].trim().split('\n')){const match=line.trim().match(/^(\w+): args\.(\w+),$/);assert(match,'broad or computed derived port');assert.equal(match[1],match[2],'derived port miswired')}
@@ -37,6 +47,10 @@ function behavior(){
  ref.current=9;scroller.current={scrollTop:55};c.setVirtualViewport(prev=>({...prev,scrollTop:55}));c=render();assert.equal(c.databasePageRequestSeqRef,ref);assert.equal(c.databasePageRequestSeqRef.current,9);assert.equal(c.fontScrollerRef,scroller);assert.equal(c.virtualViewport.scrollTop,55)
  const page={items:[],total:5};c.setDatabasePageResult(page);c.setDatabaseQueryFailedKey('failed');c=render();assert.equal(c.databasePageResult,page);assert.equal(c.databaseQueryFailedKey,'failed');assert.equal(events.length,4)
 }
-function main(){const fixture=require('./fixtures/browse-controller.fixture.json');checkSource(fixture);behavior();const c=read(controller);assert.throws(()=>checkSource(fixture,new Map([[controller,c.replace('height: 640','height: 641')]])));const app=read(prefix+'App.tsx');assert.throws(()=>checkSource(fixture,new Map([[prefix+'App.tsx',app.replace('useDeferredValue(search)','useDeferredValue(status)')]])));checkSource(fixture,new Map([[controller,c.replace(/\n/g,'\r\n')],[derived,read(derived).replace(/\n/g,'\r\n')]]));console.log('[diagnostics:browse-controller] 16 states/7 refs, per-page toolbar and filters, query/scroll/deferred call baselines, frozen derived/preview/selection bodies, two mutations and CRLF passed')}
+function main(){const fixture=require('./fixtures/browse-controller.fixture.json');checkSource(fixture);behavior();const c=read(controller);assert.throws(()=>checkSource(fixture,new Map([[controller,c.replace('height: 640','height: 641')]])));const app=read(prefix+'App.tsx');assert.throws(()=>checkSource(fixture,new Map([[prefix+'App.tsx',app.replace('useDeferredValue(search)','useDeferredValue(status)')]])));const d=read(derived)
+ for(const [before,after] of [['library.__localTagAuthorityKnown, library.__sharedTagAuthorityKnown','library.__sharedTagAuthorityKnown'],['visibleFonts: visibleResult.fonts','visibleFonts: allFonts'],['membershipDiagnostics: visibleResult.diagnostics','membershipDiagnostics: undefined']]){
+  assert(d.includes(before),'derived negative anchor missing');assert.throws(()=>checkSource(fixture,new Map([[derived,d.replace(before,after)]])),assert.AssertionError)
+ }
+ checkSource(fixture,new Map([[controller,c.replace(/\n/g,'\r\n')],[derived,d.replace(/\n/g,'\r\n')]]));console.log('[diagnostics:browse-controller] 16 states/7 refs, per-page toolbar and filters, query/scroll/deferred call baselines, original derived hash retained through exact reviewed result-carrier inverse; frozen preview/selection, five mutations and CRLF passed')}
 module.exports={hash,declarations,callHashes}
 if(require.main===module)main()

@@ -9,6 +9,48 @@ const { createHarness, observeBootstrap, root, entry, bootstrap } = require('./h
 const fixture = require('./fixtures/main-composition-runtime.fixture.json')
 const compositionFile = owner => path.join(bootstrap, `main${owner}CompositionRuntime.ts`)
 
+function reviewedBootstrapObservations() {
+  const expected = structuredClone(fixture.observations)
+  const calls = expected.flows.externalChange.calls.filter(call => call[0] === 'createFolderCacheRuntime.invalidateSharedFontRuntimeCaches')
+  assert.equal(calls.length, 1, 'reviewed source-cache forwarding fixture drifted')
+  assert.deepEqual(calls[0][1], [], 'historical source-cache default contract changed')
+  // The default publication path is unchanged; its previously implicit true
+  // is now explicitly forwarded beside the new source-only checkpoint path.
+  calls[0][1] = [true]
+  return expected
+}
+const expectedObservations = reviewedBootstrapObservations()
+
+async function checkCheckpointCacheWiring(overrides = new Map()) {
+  const h = createHarness(overrides)
+  h.load(entry)
+  const storage = h.compositions.get('createMainDataStorageCompositionRuntime')
+  h.reset()
+  storage.invalidateSharedFontRuntimeCaches(false)
+  assert.deepEqual(h.calls, [['createFolderCacheRuntime.invalidateSharedFontRuntimeCaches', [false]]], 'checkpoint advanced a query generation or lost source-cache eviction')
+  const fullPublication = expectedObservations.flows.externalChange.calls.slice(1, -1)
+  for (const args of [[], [true]]) {
+    h.reset()
+    storage.invalidateSharedFontRuntimeCaches(...args)
+    assert.deepEqual(h.calls, fullPublication, 'default or explicit publication lost the original full invalidation')
+  }
+}
+
+async function checkCheckpointCacheMutations() {
+  const file = compositionFile('DataStorage')
+  const source = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+  const mutations = [
+    ['if (invalidateQueries) clearFontQueryCaches();', 'clearFontQueryCaches();'],
+    ['invalidateSharedFontRuntimeCaches(invalidateQueries);', 'invalidateSharedFontRuntimeCaches(true);'],
+    ['function invalidateSharedFontRuntimeCaches(invalidateQueries = true)', 'function invalidateSharedFontRuntimeCaches(invalidateQueries = false)'],
+  ]
+  for (const [before, after] of mutations) {
+    assert.equal(source.split(before).length, 2, 'checkpoint wiring mutation anchor drifted')
+    await assert.rejects(() => checkCheckpointCacheWiring(new Map([[file, source.replace(before, after)]])), undefined, 'checkpoint wiring mutation escaped: ' + before)
+  }
+  return mutations.length
+}
+
 async function checkImportAndOwnership() {
   const h = createHarness()
   for (const owner of ['Core', 'Data', 'DataStorage', 'DataQuery', 'Mutation', 'Operations', 'Maintenance', 'Scan']) h.load(compositionFile(owner))
@@ -223,7 +265,7 @@ async function checkRejectedMutations() {
     assert.equal(source.split(before).length, 2, `${name}: mutation anchor drifted`)
     await assert.rejects(async () => {
       const observations = await observeBootstrap(new Map([[file, source.replace(before, after)]]))
-      assert.deepEqual(observations, fixture.observations)
+      assert.deepEqual(observations, expectedObservations)
     }, undefined, `${name} was not detected`)
   }
   return mutations.length
@@ -232,10 +274,11 @@ async function checkRejectedMutations() {
 async function main() {
   await checkImportAndOwnership()
   await checkMetricsOwnerWiring()
+  await checkCheckpointCacheWiring()
   await checkPreviewHandleOwnership()
-  assert.deepEqual(await observeBootstrap(), fixture.observations, 'AT-4.1 composition behavior changed')
+  assert.deepEqual(await observeBootstrap(), expectedObservations, 'AT-4.1 composition behavior changed')
   const operations = checkOutputTypes()
-  const mutations = await checkRejectedMutations() + await checkMetricsOwnerMutations()
+  const mutations = await checkRejectedMutations() + await checkMetricsOwnerMutations() + await checkCheckpointCacheMutations()
   console.log(`[diagnostics:main-composition-runtime] passed: ${fixture.observations.registrations.length} registrations, ${Object.keys(fixture.observations.flows).length} baseline flows, import/DB ownership, ${operations} typed operations, ${mutations} rejected mutations`)
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

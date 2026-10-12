@@ -117,9 +117,20 @@ async function runBehaviorChecks() {
 
 async function runWatcherBehaviorChecks() {
   let sends = 0
-  const watcherModule = loadTypeScriptModule(
-    'src/main/watcher/folderWatcherRuntime.ts',
-    (id) => {
+  const watcherSiblings = new Map([
+    ['./sharedFolderReconciliationRuntime', 'src/main/watcher/sharedFolderReconciliationRuntime.ts'],
+    ['./sharedFolderNotificationRuntime', 'src/main/watcher/sharedFolderNotificationRuntime.ts'],
+    ['./sharedWatcherInventoryRuntime', 'src/main/watcher/sharedWatcherInventoryRuntime.ts'],
+  ])
+  const loadedSiblings = new Map()
+  function requireWatcherDependency(id) {
+      if (watcherSiblings.has(id)) {
+        if (!loadedSiblings.has(id)) loadedSiblings.set(id, loadTypeScriptModule(watcherSiblings.get(id), requireWatcherDependency))
+        return loadedSiblings.get(id)
+      }
+      if (id === 'node:child_process') {
+        return { spawn() { throw new Error('Native notification process forbidden in controlled mutation diagnostic') } }
+      }
       if (id === 'electron') {
         return {
           BrowserWindow: {
@@ -137,8 +148,12 @@ async function runWatcherBehaviorChecks() {
         return { ensureStartupPathRootAvailable: async () => true }
       }
       return require(id)
-    }
+  }
+  const watcherModule = loadTypeScriptModule(
+    'src/main/watcher/folderWatcherRuntime.ts',
+    requireWatcherDependency
   )
+  assert(loadedSiblings.size === watcherSiblings.size, 'watcher sibling owners were not loaded from their actual production sources')
 
   const restartGate = deferred()
   let restartSyncs = 0

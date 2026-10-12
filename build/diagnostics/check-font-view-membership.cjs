@@ -159,6 +159,78 @@ function traceEvidence() {
   equal(mainTrace.isRendererUserActive(), false, 'diagnostic logging changed user activity and postponed background reconciliation')
   const before = sent.length; effects[0](); equal(sent.length, before, 'unchanged view floods diagnostics')
 }
+async function rendererRawCursor(transforms={}) {
+  const { setup: browseSetup } = require('./check-browse-metrics-reuse.cjs')
+  const timers=new Map(), requests=[], pending=[];let timerId=0
+  const window={setTimeout:fn=>{timers.set(++timerId,fn);return timerId},clearTimeout:id=>timers.delete(id)}
+  const h=browseSetup({globals:{window},transforms})
+  const view=h.load(renderer+'fontViewRuntime.ts'), queryKey=h.load(renderer+'constants/queryCacheRuntime.ts').rendererFontQueryCacheKey
+  h.app.rendererFontQueryCacheKey=queryKey
+  const items=h.opts.allFonts.slice(0,102).map((font,index)=>index===0?{...font,fileSize:1}:font)
+  let options={...h.opts,library:{...h.opts.library,folders:['C:\\fixture'],fonts:Object.fromEntries(items.map(font=>[font.id,font]))},
+    allFonts:items,hfm:{queryFontPage:request=>{requests.push(request);return new Promise(resolve=>pending.push({request,resolve}))}},
+    libraryLoadedRef:{current:true},databaseRefreshToken:0,databaseQueryFailedKey:'',allFontsLength:items.length,indexingActive:false,
+    selectedFontId:'',selectedFontIds:[],virtualViewport:{width:400,height:300,scrollTop:9700},viewLayout:{rowHeight:100,minCardWidth:100,columns:1},
+    fontListScrollingRef:{current:false},fontMetricsRequestSeqRef:{current:0},databasePageRequestSeqRef:{current:0},rendererUserActive:()=>false,
+    reportTrace(){},setDatabaseFontMetrics(){},setDatabaseQueryResult(){},setDatabaseQueryFailedKey(){},setStatus(){},
+    setLibrary:fn=>{options.library=fn(options.library)},setDatabasePageResult:page=>{options.databasePageResult=page}}
+  const request=view.createRendererFontQueryRequest({...options,databasePageLimit:100,databasePageOffset:0})
+  options.databasePageResult={queryKey:queryKey(request),items:items.slice(0,100),total:102,offset:0,limit:100,truncated:true}
+  const initial=view.buildVisibleFontResult({...options,fontIndexById:new Map()})
+  equal(initial.fonts.length,99,'cursor fixture must retain the actual raw100/visible99 exclusion')
+  equal(options.databasePageResult.items.length,100)
+  const hook=h.load(renderer+'runtime/database/useRendererDatabasePageRuntime.ts').useRendererDatabasePageRuntime
+  const render=()=>{h.hook.begin();const result=hook({...options});h.hook.flush();return result}
+  try {
+  render()
+  const next=render()
+  for(const [id,fn] of [...timers]){timers.delete(id);fn()}
+  equal(requests.map(request=>request.offset),[100],'renderer next request used visible count instead of raw page count')
+  equal(next.databaseQueryRequest.offset,100,'page request builder drifted from dispatched raw cursor')
+  const response=pending[0]
+  response.resolve({queryKey:queryKey(response.request),items:items.slice(100),total:102,offset:100,limit:100,truncated:false,engine:'sql'})
+  await require('./check-activation-entry.cjs').tick()
+  equal(options.databasePageResult.offset,0,'production merge shifted the raw origin')
+  equal(options.databasePageResult.total,102)
+  equal(ids(options.databasePageResult.items),ids(items),'production merge skipped/duplicated an identity after local exclusion')
+  equal(view.buildVisibleFontResult({...options,fontIndexById:new Map()}).fonts.length,101)
+  render()
+  equal(requests.map(request=>request.offset),[100],'complete raw population re-requested a filtered gap')
+  // Returning to the earlier viewport keeps the existing complete raw window.
+  options={...options,virtualViewport:{...options.virtualViewport,scrollTop:0}}
+  render()
+  equal(requests.map(request=>request.offset),[100],'back-navigation lost the retained first raw page')
+  // A new generation replaces its raw range; it must not retain the rejected
+  // old row or infer a 101-row query from the previous visible window.
+  options={...options,databaseRefreshToken:1}
+  render();render()
+  for(const [id,fn] of [...timers]){timers.delete(id);fn()}
+  equal(requests.map(request=>request.offset),[100,0],'refresh did not reset its actual raw request to zero')
+  const refreshed=items.slice(0,100).map((font,index)=>index===0?{...font,fileSize:100000}:font)
+  const refresh=pending.at(-1)
+  refresh.resolve({queryKey:queryKey(refresh.request),items:refreshed,total:102,offset:0,limit:100,truncated:true,engine:'sql'})
+  await require('./check-activation-entry.cjs').tick()
+  equal(options.databasePageResult.offset,0)
+  equal(ids(options.databasePageResult.items),ids(refreshed),'new raw page retained obsolete members')
+  equal(options.databasePageResult.items[0].fileSize,100000,'refresh retained the stale rejected row')
+  const refreshedVisible=view.buildVisibleFontResult({...options,fontIndexById:new Map()})
+  equal(refreshedVisible.fonts.length,100)
+  equal(view.visibleFontResultTotal(options.databasePageResult,refreshedVisible.fonts),102,'partial refresh changed the authoritative query total')
+  } finally { h.hook.cleanup() }
+}
+async function rendererRawCursorMutation() {
+  const file=path.join(root,renderer+'runtime/database/useRendererDatabasePageRuntime.ts')
+  const source=fs.readFileSync(file,'utf8'),from='const loadedItems = options.databasePageResult.items.length'
+  equal(source.split(from).length,2,'raw cursor mutation anchor changed')
+  const importFrom='import { createRendererFontQueryRequest }'
+  equal(source.split(importFrom).length,2,'raw cursor mutation import anchor changed')
+  await assert.rejects(()=>rendererRawCursor({[file]:text=>text.replace(importFrom,'import { buildVisibleFonts, createRendererFontQueryRequest }')
+    .replace(from,'const loadedItems = buildVisibleFonts({ ...options, databasePageReady: true, allFonts: options.databasePageResult.items, fontIndexById: new Map() }).length')}),
+    error=>error instanceof assert.AssertionError&&error.message.includes('renderer next request used visible count instead of raw page count'),
+    'visible-count cursor mutant did not fail the real next-request assertion')
+  assertions++
+}
+
 async function nativePopulation() {
   const { createHost } = require('./lib/production-projection-host.cjs')
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-view-membership-')), fontRoot = path.join(directory, 'fonts')
@@ -238,8 +310,8 @@ function mutations() {
 }
 async function main() {
   assert.equal(process.platform, 'win32', 'HFM verification is Windows-only')
-  paginationAndDuplicateRows(); intentAndFilterDecisions(); traceEvidence(); mutations(); await nativePopulation()
-  console.log(`[diagnostics:font-view-membership] ${assertions} assertions: row-level filtering, exact/partial totals, opaque bounded trace through production sanitizer, raced tag edits/catalogs, duplicate IDs, preserved safety/recovery/search/category filters; real native SQLite pages/metrics/install projection and four rejected mutations. Metadata fixtures; actual user omission and GUI acceptance remain separate.`)
+  paginationAndDuplicateRows(); intentAndFilterDecisions(); traceEvidence(); mutations(); await rendererRawCursor(); await rendererRawCursorMutation(); await nativePopulation()
+  console.log(`[diagnostics:font-view-membership] ${assertions} assertions: row-level filtering, exact/partial totals, opaque bounded trace through production sanitizer, raced tag edits/catalogs, duplicate IDs, preserved safety/recovery/search/category filters; real native SQLite pages/metrics/install projection raw cursor/navigation through actual page-window and merge owners, and five rejected mutations. Metadata fixtures; actual user omission and GUI acceptance remain separate.`)
 }
 if (require.main === module) {
   let complete = false

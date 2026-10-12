@@ -252,10 +252,19 @@ async function semanticDiffCheck() {
   const instance=load(indexFile,{'node:fs':{promises:{stat:async file=>({isDirectory:()=>file===folder,isFile:()=>file!==folder,mtimeMs:1,size:10}),readdir:async()=>[]}},'../cache/cachePaths':{fileCacheSignature:()=>'',isIgnoredInternalDirectoryName:()=>false,isRootIndexDbPath:()=>true}}).createWatchedFolderIndexRuntime(options);
   const events=[{folder,fileName:'.',eventType:'change',origin:'shared-poll-initial',triggerEventType:'rename',receivedAt:1},{folder,fileName:'f0.ttf',eventType:'change',receivedAt:1},{folder,fileName:'f0.ttf',eventType:'rename',receivedAt:1}];
   assert.equal(instance.normalizePendingFolderChanges([{...events[1],eventType:'rename'},events[1]])[0].eventType,'rename','later change erased stronger rename evidence');
+  const normalized = instance.normalizePendingFolderChanges(events), rootEvent = normalized.find(event => event.fileName === '.');
+  assert.equal(normalized.length,2,'duplicate file events were not coalesced');
+  assert.equal(rootEvent.origin,'shared-poll-initial','normalization discarded event origin');
+  assert.equal(rootEvent.triggerEventType,'rename','normalization discarded the original trigger');
   assert.equal(await instance.watcherChangeBatchLooksUnchanged(folder,[events[0]]),false,'unchanged directory parent suppressed child enumeration');
   let result=await instance.applyWatchedFolderChangesToIndex(events);
   assert.equal(visits,394,'overlapping root/file events repeated work');assert.equal(result.upserts.length,0);assert.equal(writes.length,0);
-  let summary=JSON.parse(logs.at(-1).split('font index watcher diff: ')[1]);assert.equal(summary.unchanged,394);assert.equal(summary.examined,394);assert.equal(summary.expansion,'root-enumeration');assert.equal(summary.samples[0].origin,'shared-poll-initial');assert.equal(summary.samples[0].trigger,'rename');
+  const summaryText=logs.at(-1).split('font index watcher diff: ')[1], summary=JSON.parse(summaryText);
+  assert.deepEqual(summary,{recovery:false,events:3,targets:2,deduplicated:1,expansion:'directory-enumeration',
+    examined:394,added:0,changed:0,unchanged:394,replayed:0,directories:1,invalidated:0,parsed:0,checkpoints:0,checkpointRows:0,
+    cacheMissReasons:{},deleted:0,upserts:0,errors:0},'watcher summary must retain exact bounded workload counters');
+  assert.equal(Object.hasOwn(summary,'samples'),false,'watcher summary exposed raw event samples');
+  for (const privateText of [JSON.stringify(folder).slice(1,-1),'f12-fonts','f0.ttf']) assert(!summaryText.includes(privateText),'watcher summary leaked a raw root or file name');
   changed='f0.ttf';visits=0;result=await instance.applyWatchedFolderChangesToIndex(events);assert.equal(result.upserts.length,1);assert.equal(visits,394);assert.equal(writes.at(-1).upserts,1);
   changed='';result=await instance.applyWatchedFolderChangesToIndex(events,true);assert.equal(result.upserts.length,394,'recovery replay was lost');
   changed='f1.ttf';invalid=true;result=await instance.applyWatchedFolderChangesToIndex([{...events[1],fileName:changed}]);assert.equal(result.deletes.length,1);assert.equal(cache.entries[changed].status,'bad','invalid entry evidence was deleted');assert.equal(writes.at(-1).deletes,0);

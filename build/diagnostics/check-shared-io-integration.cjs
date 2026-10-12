@@ -47,7 +47,7 @@ async function main() {
  execFile[require('node:util').promisify.custom]=(...args)=>new Promise((resolve,reject)=>execFile(...args,(error,stdout,stderr)=>error?reject(error):resolve({stdout,stderr})))
  const load = loader({ electron:{app:{}}, 'node:child_process':{...cp,spawn,execFile},
    [path.join(root,core+'rustCoreWorkerPathRuntime.ts')]:{resolveRustCoreWorkerPathWithDiagnostics:()=>({path:process.execPath,candidates:[process.execPath]})},
-   [path.join(root,core+'rustCoreDaemonRuntime.ts')]:mockDaemon }, {AbortController}, transforms)
+   [path.join(root,core+'rustCoreDaemonRuntime.ts')]:mockDaemon }, {AbortController,setInterval,clearInterval}, transforms)
  const transport = load(core+'rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({appendStartupLog:s=>logs.push(s),enabled:true,required:true})
  const globals = {process:{...process,platform:'win32'}}
  const mapped = loader({[path.join(root,'src/main/path/pathCanonicalizer.ts')]:{
@@ -302,7 +302,12 @@ async function main() {
    const guardedAbort=new AbortController(),guardedDaemonBefore=daemonCalls.length
    mode='hang';nextReady=path.join(dir,'guarded-local-ready');payload={ok:true,applied:true}
    const locked=mutex.withRootCacheWriteLock(localWriteDb,()=>nativeWrite(guardedAbort.signal)).catch(error=>error)
-   await until(()=>fs.existsSync(nextReady))
+   // A missing VM port must surface as its real acquisition failure rather than
+   // being hidden behind a readiness timeout for a child that never started.
+   await Promise.race([until(()=>fs.existsSync(nextReady)),locked.then(result=>{
+     if(result?.message)throw result
+     throw Error('guarded root writer settled before its child became ready')
+   })])
    const firstWriterChild=[...children][0]
    let secondEntered=false
    mode='success';nextReady=path.join(dir,'guarded-second-ready')
