@@ -56,6 +56,27 @@ jobs:
           name: font-recovery-targeted-retest-log
           path: artifacts/targeted-retest.log
           retention-days: 14
+      - name: Verify tag foreground ownership and observation transparency
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          $failed = 0
+          foreach ($script in @('check-tag-font-recovery.cjs', 'check-preview-reuse-observation.cjs', 'check-baseline-contention-contract.cjs')) {
+            & node "build/diagnostics/$script" *>> artifacts/tag-preview-optimization.log
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          Get-Content -LiteralPath artifacts/tag-preview-optimization.log -Encoding utf8
+          if ($failed -gt 0) { exit 1 }
+      - name: Retain tag and preview optimization regression log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-recovery-tag-preview-optimization-log
+          path: artifacts/tag-preview-optimization.log
+          retention-days: 14
       - name: Verify complete existing Windows diagnostics
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         shell: pwsh
@@ -156,6 +177,44 @@ jobs:
             artifacts/font-identity-f04
             artifacts/list-preview
             artifacts/real-feedback
+            !artifacts/**/*.ttf
+            !artifacts/**/*.otf
+            !artifacts/**/*.ttc
+            !artifacts/**/*.otc
+            !artifacts/**/*.woff
+            !artifacts/**/*.woff2
+          retention-days: 14
+
+  baseline-observation:
+    name: Frozen baseline contention investigation (not acceptance)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - name: Build fixture preparation worker
+        run: node build/rust/build-core-worker.cjs --required
+      - name: Observe each frozen baseline condition once
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          cmd /d /c "node build/diagnostics/run-baseline-contention.cjs > artifacts\baseline-contention.log 2>&1"
+          $diagnosticExit = $LASTEXITCODE
+          Get-Content -LiteralPath artifacts/baseline-contention.log -Encoding utf8
+          exit $diagnosticExit
+      - name: Retain separate baseline diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frozen-baseline-contention-investigation
+          path: |
+            artifacts/baseline-contention.log
+            artifacts/real-feedback/baseline-contention
+            artifacts/real-feedback/baseline-contention-orchestration.json
             !artifacts/**/*.ttf
             !artifacts/**/*.otf
             !artifacts/**/*.ttc

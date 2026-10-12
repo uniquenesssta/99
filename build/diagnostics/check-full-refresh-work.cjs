@@ -521,11 +521,15 @@ async function openCase(config, fixture, caseId, sourceRoot, options = {}) {
   const setObservationStage = stage => { observationStage = stage; observation.setStage(stage) }
   let host, meter
   try {
-    host = await config.hostModule.createHost({ sourceRoot, workerPath: selectedWorker, directory, observe: observer,
+    const hostOptions = { sourceRoot, workerPath: selectedWorker, directory, observe: observer,
       fixtureDirectory: fixture.directory, fixture: { rootPaths: fixture.manifest.roots, roots: fixture.manifest.roots, items: fixture.items },
       getObservationContext,
       onLoaderReady: load => observation.installSelectedSource(load),
-      onProjectionCommitted: options.onProjectionCommitted })
+      onProjectionCommitted: options.onProjectionCommitted }
+    // Used only by the separately invoked diagnostic-only baseline investigation.
+    // Ordinary ABBA passes the original options without installing extra hooks.
+    config.decorateDiagnosticHostOptions?.(hostOptions)
+    host = await config.hostModule.createHost(hostOptions)
     liveHosts.add(host)
     host.inputMetadata = inputMetadata
     host.diagnosticObservation = observation
@@ -1304,4 +1308,5 @@ async function main() {
 
 if (require.main === module) {let completed=false;process.once('beforeExit',()=>{if(!completed){console.error('Full refresh work diagnostic did not complete');process.exitCode=1}});main().then(()=>{completed=true}).catch(error=>{console.error(error);process.exitCode=1})}
 module.exports = { main, WORKLOAD, BASELINE, makeFiles, makeItems, instrument, createRunner, interleave,
-  readProjection, runPerformance, runCorrectness, compareRuns, semanticQueueCohorts, assertLocalTagHydrationEvidence, assertTaggedPageIdentities, createFixturePerformanceRuntime, assertFixtureCacheCanContinue }
+  readProjection, runPerformance, runCorrectness, compareRuns, semanticQueueCohorts, assertLocalTagHydrationEvidence, assertTaggedPageIdentities, createFixturePerformanceRuntime, assertFixtureCacheCanContinue,
+  openCase, verifyCommittedBatch, finalizeObservation, finalizeFixtureCache, verifyFiles, originalInvalidFailure }

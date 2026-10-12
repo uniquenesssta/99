@@ -268,7 +268,7 @@ async function bindingCloseOwnership() {
     'node:path': path.win32,
     [at('tagRecoveryPathRuntime.ts')]: { createTagRecoveryPaths: async () => ({ roots: ['C:\\fonts'], compare: key, inside: () => true, contains: () => true }) },
     [at('tagFontBindingRuntime.ts')]: { readTagFontBindings: async () => ({ bindings: new Map(items.map(item => [key(item.path), { id: item.id, path: item.path, tags: ['tag'], pathResolved: true }])), legacyTags: new Map(), unavailableRoots: [] }) },
-    [at('tagFontSnapshotRuntime.ts')]: { openTagFontSnapshots: () => ({ schedule() {}, remember() {}, read() {} }) },
+    [at('tagFontSnapshotRuntime.ts')]: { openTagFontSnapshots: () => ({ schedule() { return { queued: 0, coalesced: 0, historyWrites: 0 } }, remember() { return { examined: 0, written: 0 } }, holdBackgroundCapture() { return () => {} }, read() {} }) },
     [path.join(root, 'src/main/fonts/fontRuntime.ts')]: { asFormat: () => 'ttf', fontItemFromPath: () => { throw Error('unexpected parse') } },
   })
   const io = load('src/main/path/sharedFileSystemRuntime.ts'), { SharedIoProcessError } = load('src/main/path/sharedIoProcessRuntime.ts')

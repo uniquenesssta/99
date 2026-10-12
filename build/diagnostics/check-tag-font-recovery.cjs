@@ -22,17 +22,31 @@ const make = (name, folder = 'old') => ({ recoveryContentHash: hashFor({ postscr
 function harness() {
   const db = new DatabaseSync(':memory:')
   db.exec("CREATE TABLE local_font_tags (font_id TEXT, font_path TEXT, tag_name TEXT, updated_at TEXT DEFAULT 'historical'); CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT)")
-  const adapter = { exec: sql => db.exec(sql), prepare: sql => { const statement=db.prepare(sql); if(/^SELECT font_id, font_path, tag_name FROM local_font_tags/.test(sql))return {all:(...args)=>{counts.collections++;const rows=statement.all(...args);counts.bindingRows+=rows.length;return rows}};return statement }, transaction: fn => () => {
+  const counts = { live: 0, hydrate: 0, parse: 0, contentReads: 0, collections: 0, bindingRows: 0,
+    snapshotReads: 0, snapshotWrites: 0, stats: 0, realpaths: 0, backgroundStats: 0, backgroundRealpaths: 0, backgroundContentReads: 0 }
+  const faults = { snapshotReadError: undefined }
+  const adapter = { exec: sql => db.exec(sql), prepare: sql => {
+    const statement = db.prepare(sql)
+    if (/^SELECT font_id, font_path, tag_name FROM local_font_tags/.test(sql)) return { all: (...args) => {
+      counts.collections++; const rows = statement.all(...args); counts.bindingRows += rows.length; return rows
+    } }
+    if (/^SELECT font_json FROM tag_font_snapshots WHERE font_path/.test(sql)) return { get: (...args) => {
+      counts.snapshotReads++; if (faults.snapshotReadError) throw faults.snapshotReadError
+      return statement.get(...args)
+    } }
+    if (/^(INSERT|REPLACE|UPDATE)\b.*\btag_font_snapshots\b/i.test(sql)) return { run: (...args) => { counts.snapshotWrites++; return statement.run(...args) } }
+    return statement
+  }, transaction: fn => () => {
     db.exec('BEGIN'); try { const value = fn(); db.exec('COMMIT'); return value } catch (e) { db.exec('ROLLBACK'); throw e }
   } }
   const files = new Map(), parsed = new Map(), roots = [root], sharedRows = []
-  const reads = [], queryRequests = [], mappings = new Map()
-  const counts = { live: 0, hydrate: 0, parse: 0, contentReads: 0, collections: 0, bindingRows: 0 }
+  const reads = [], queryRequests = [], mappings = new Map(), logs = []
   const contents = new Map()
   const filesystem = {
-    realpath: async file => { await filesystem.stat(file); return file },
-    readFile: async file => { counts.contentReads++; return contents.get(key(file)) || bytesFor(parsed.get(key(file))) },
+    realpath: async file => { counts.realpaths++; if (sharedIo.currentSharedIoPriority() === 'background') counts.backgroundRealpaths++; await filesystem.stat(file); return file },
+    readFile: async file => { counts.contentReads++; if (sharedIo.currentSharedIoPriority() === 'background') counts.backgroundContentReads++; return contents.get(key(file)) || bytesFor(parsed.get(key(file))) },
     async stat(file) {
+      counts.stats++; if (sharedIo.currentSharedIoPriority() === 'background') counts.backgroundStats++
       if (files.get(key(file)) instanceof Error) throw files.get(key(file))
       if (files.has(key(file))) return { size: parsed.get(key(file))?.fileSize, mtimeMs: parsed.get(key(file))?.modifiedAt,
         isDirectory: () => files.get(key(file)) === 'directory', isFile: () => files.get(key(file)) !== 'directory' }
@@ -70,7 +84,8 @@ function harness() {
   const sharedOwners = require('./check-operation-chain.cjs').loader()
   const sharedIo = sharedOwners('src/main/path/sharedFileSystemRuntime.ts')
   mocks['../path/sharedFileSystemRuntime'] = { ...sharedIo, sharedFileSystem: filesystem }
-  mocks['../app/shutdownCoordinatorRuntime'] = sharedOwners('src/main/app/shutdownCoordinatorRuntime.ts')
+  const shutdown = sharedOwners('src/main/app/shutdownCoordinatorRuntime.ts')
+  mocks['../app/shutdownCoordinatorRuntime'] = shutdown
   mocks['./fontQueryTaskRuntime'] = sharedOwners('src/main/library/fontQueryTaskRuntime.ts')
   const pathsModule = load('src/main/library/tagRecoveryPathRuntime.ts', mocks)
   mocks['./tagRecoveryPathRuntime'] = pathsModule
@@ -91,7 +106,7 @@ function harness() {
   const add = (font, tags) => { for (const tag of tags) db.prepare('INSERT INTO local_font_tags(font_id, font_path, tag_name) VALUES (?, ?, ?)').run(identity.localTagFontStorageId(font), storageKey(font.path), tag) }
   const put = font => { files.set(key(font.path), true); parsed.set(key(font.path), font) }
   let live = []
-  const queryDeps = { canReadDetached: async () => true, openLibraryDb: async () => adapter, roots: async () => roots,
+  const queryDeps = { appendLog: message => logs.push(message), canReadDetached: async () => true, openLibraryDb: async () => adapter, roots: async () => roots,
     readShared: async input => input.bindingSnapshot ? {bindingSnapshot:{version:1,rows:sharedRows}} : {preflight:{snapshot:{rows:sharedRows}}},
     queryLive: async (_request, limit, offset) => { counts.live++; return { items: live.slice(offset, offset + limit), total: live.length, offset, limit, queryKey: 'tags', engine: 'sql', truncated: false, elapsedMs: 0 } },
     hydrate: async items => { counts.hydrate++; assert(items.every(item => !item.recoveryPlaceholder), 'display-only rows reached install hydration'); return items },
@@ -123,8 +138,9 @@ function harness() {
       return { ...result, ok: !result.failed.length }
     },
   }
-  return { db, adapter, files, roots, parsed, sharedRows, reads, queryRequests, counts, put, add, remember, query, queryModule, recoveryModule, runtime, events,
-    pathsModule, mappings, queryDeps, snapshots, filesystem, contents, transactionModule, persistence, persist, live: fonts => { live = fonts; query.invalidate() }, close: () => { snapshots.disposeTagFontSnapshots(adapter); db.close() } }
+  return { db, adapter, files, roots, parsed, sharedRows, reads, queryRequests, counts, faults, put, add, remember, query, queryModule, recoveryModule, runtime, events,
+    pathsModule, mappings, queryDeps, snapshots, filesystem, contents, transactionModule, persistence, persist, sharedIo, shutdown, logs,
+    live: fonts => { live = fonts; query.invalidate() }, close: () => { snapshots.disposeTagFontSnapshots(adapter); db.close() } }
 }
 
 async function queryCases() {
@@ -731,6 +747,505 @@ async function f09EvidenceCases() {
   } finally { h.close() }
 }
 
+const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
+const timerTurn = () => new Promise(resolve => setTimeout(resolve, 0))
+const backgroundWork = h => h.counts.backgroundStats + h.counts.backgroundRealpaths + h.counts.backgroundContentReads
+const queryWorkFont = name => { const font = make(name); return { ...font, path: key(font.path) } }
+const queryStageRecords = h => h.logs.filter(message => message.startsWith('tag query stages: ')).map(message => {
+  assert(message.length <= 2048, 'per-query stage summary is not bounded')
+  const record = JSON.parse(message.slice('tag query stages: '.length))
+  assert.deepEqual(Object.keys(record).sort(), ['bindingsOnly', 'counts', 'outcome', 'scope', 'stages', 'totalMs'])
+  assert(['local', 'shared'].includes(record.scope)); assert(['ok', 'failed', 'cancelled', 'superseded'].includes(record.outcome))
+  assert.equal(typeof record.bindingsOnly, 'boolean')
+  assert.deepEqual(Object.keys(record.stages).sort(), ['bindings', 'filterSort', 'history', 'hydrate', 'liveQuery', 'prepare', 'queueCapture', 'remainingAvailability', 'resolveBindings'])
+  assert.deepEqual(Object.keys(record.counts).sort(), ['bindings', 'captureCandidates', 'captureCoalesced', 'captureQueued', 'directoryJoins', 'directoryReads', 'fileStats', 'livePages', 'liveRows', 'resultRows', 'snapshotRememberMs', 'snapshotWrites'])
+  for (const value of [record.totalMs, ...Object.values(record.stages), ...Object.values(record.counts)]) assert(Number.isFinite(value) && value >= 0, 'stage summary must contain finite nonnegative counters only')
+  return record
+})
+
+async function snapshotRememberWorkCases() {
+  const h = harness(), font = queryWorkFont('RememberWork')
+  try {
+    h.put(font)
+    const owner = h.snapshots.openTagFontSnapshots(h.adapter)
+    const persisted = () => h.db.prepare('SELECT font_json FROM tag_font_snapshots WHERE font_path = ?').get(key(font.path)).font_json
+    assert.deepEqual(plain(owner.remember([font])), { examined: 1, written: 1 })
+    const coldJson = persisted()
+    const untrusted = { ...font, recoveryContentHash: 'f'.repeat(64), recoveryFileStamp: 'renderer-stamp', tagNames: ['Renderer'], localTagNames: ['Renderer'] }
+    assert.deepEqual(plain(owner.remember([untrusted, untrusted])), { examined: 2, written: 0 })
+    assert.equal(persisted(), coldJson, 'identical normalized history must remain byte-identical')
+    assert.equal(h.counts.snapshotWrites, 1, 'identical history must not execute INSERT/REPLACE')
+    assert.equal(owner.read(font.path).recoveryContentHash, undefined, 'renderer hash was accepted as proof')
+    assert.equal(owner.read(font.path).recoveryFileStamp, undefined, 'renderer stamp was accepted as proof')
+    assert.equal(h.counts.contentReads, 0, 'remember must not read font bytes')
+
+    await owner.capture([font])
+    const proven = owner.read(font.path), provenJson = persisted(), coldStats = h.counts.stats
+    assert.equal(proven.recoveryContentHash, hashFor(font)); assert.equal(typeof proven.recoveryFileStamp, 'string')
+    assert.equal(h.counts.contentReads, 1, 'cold capture must establish whole-file proof exactly once')
+    assert.equal(h.counts.snapshotWrites, 2, 'cold capture must persist its new proof')
+    assert(coldStats > 0, 'cold capture skipped metadata verification')
+    assert.deepEqual(plain(owner.remember([untrusted])), { examined: 1, written: 0 })
+    await owner.capture([untrusted])
+    assert.equal(h.counts.contentReads, 1, 'unchanged proof should avoid another whole-file read')
+    assert(h.counts.stats > coldStats, 'warm capture must still verify the current file stamp')
+    assert.equal(h.counts.snapshotWrites, 2, 'warm remember/capture dirtied identical history')
+    assert.equal(persisted(), provenJson, 'valid stored proof was changed by renderer metadata')
+
+    const edited = { ...untrusted, fullName: 'Updated display metadata', favorite: true }
+    assert.deepEqual(plain(owner.remember([edited])), { examined: 1, written: 1 })
+    assert.equal(owner.read(font.path).fullName, edited.fullName)
+    assert.equal(owner.read(font.path).recoveryContentHash, proven.recoveryContentHash)
+    assert.equal(owner.read(font.path).recoveryFileStamp, proven.recoveryFileStamp)
+    assert.deepEqual(plain(owner.remember([edited])), { examined: 1, written: 0 })
+    const changed = { ...edited, id: 'new-font-identity', modifiedAt: font.modifiedAt + 1 }
+    assert.deepEqual(plain(owner.remember([changed])), { examined: 1, written: 1 })
+    assert.equal(owner.read(font.path).recoveryContentHash, undefined, 'new identity inherited old proof')
+    assert.equal(owner.read(font.path).recoveryFileStamp, undefined)
+    assert.equal(h.counts.snapshotWrites, 4, 'only initial history, proof, metadata and identity changes should write')
+    assert.deepEqual(plain(owner.remember([{ ...changed, fileAvailability: 'missing' }, { ...changed, fileAvailability: 'unavailable' }])), { examined: 0, written: 0 })
+
+    h.db.prepare('UPDATE tag_font_snapshots SET font_json = ? WHERE font_path = ?').run('{"truncated":', key(font.path))
+    assert.deepEqual(plain(owner.remember([changed])), { examined: 1, written: 1 }, 'malformed history must be repaired rather than treated as an identical row')
+    const repaired = owner.read(font.path), repairedJson = persisted()
+    assert.equal(repaired.id, changed.id); assert.equal(repaired.fullName, changed.fullName)
+    assert.equal(repaired.recoveryContentHash, undefined, 'malformed history repair accepted renderer proof')
+    assert.equal(repaired.recoveryFileStamp, undefined, 'malformed history repair accepted renderer stamp')
+    assert.equal(h.counts.snapshotWrites, 5, 'malformed history repair must perform one real write')
+    assert.deepEqual(plain(owner.remember([changed])), { examined: 1, written: 0 })
+    assert.equal(persisted(), repairedJson); assert.equal(h.counts.snapshotWrites, 5)
+
+    const readFailure = Error('snapshot SELECT unavailable'), readsBeforeFailure = h.counts.snapshotReads
+    h.faults.snapshotReadError = readFailure
+    try {
+      assert.throws(() => owner.remember([{ ...changed, fullName: 'Unconfirmed display edit' }]), error => error === readFailure,
+        'unreadable history must propagate the original SELECT error')
+      assert.equal(h.counts.snapshotReads, readsBeforeFailure + 1)
+      assert.equal(h.counts.snapshotWrites, 5, 'failed history read must not execute INSERT/REPLACE')
+      assert.equal(persisted(), repairedJson, 'failed history read changed durable history')
+    } finally { h.faults.snapshotReadError = undefined }
+    assert.deepEqual(plain(owner.remember([changed])), { examined: 1, written: 0 }, 'failed SELECT did not roll back its transaction')
+  } finally { h.close() }
+}
+
+async function delayedQueryCaptureWorkCases() {
+  const h = harness(), fonts = [queryWorkFont('WorkB'), queryWorkFont('WorkA')]
+  const availability = deferred(), availabilityEntered = deferred(), hydration = deferred(), hydrationEntered = deferred()
+  const owner = h.snapshots.openTagFontSnapshots(h.adapter)
+  let pending, comparisons = 0
+  try {
+    for (const font of fonts) { h.add(font, ['PrivateQueryTag']); h.put(font) }
+    h.live(fonts)
+    const readdir = h.filesystem.readdir, hydrate = h.queryDeps.hydrate, compare = h.queryDeps.compare
+    h.filesystem.readdir = async folder => { availabilityEntered.resolve(); await availability.promise; return readdir(folder) }
+    h.queryDeps.hydrate = async items => { hydrationEntered.resolve(); await hydration.promise; return hydrate(items) }
+    h.queryDeps.compare = (a, b) => { comparisons++; assert.equal(backgroundWork(h), 0, 'capture started before sorting completed'); return compare(a, b) }
+    const request = { sidebarPage: 'tags', selectedTagName: 'PrivateQueryTag' }
+    pending = h.query.query(request, 10, 0)
+    await availabilityEntered.promise; await timerTurn()
+    assert.equal(backgroundWork(h), 0, 'capture ran while fresh availability was blocked')
+    assert.equal(h.counts.contentReads, 0)
+    assert.equal(owner.read(fonts[0].path).id, fonts[0].id, 'display history should be remembered before blocked availability')
+    availability.resolve(); await hydrationEntered.promise; await timerTurn()
+    assert.equal(backgroundWork(h), 0, 'capture ran while install hydration was blocked')
+    assert.equal(h.counts.contentReads, 0)
+    hydration.resolve()
+    const first = await pending
+    assert(comparisons > 0); assert.equal(first.total, fonts.length)
+    assert.deepEqual(plain(first.items.map(font => font.fileName)), ['WorkA.ttf', 'WorkB.ttf'])
+    assert.equal(backgroundWork(h), 0, 'background work must start after the query settles')
+    await owner.whenIdle()
+    assert.equal(h.counts.backgroundContentReads, fonts.length, 'settled query did not capture each fresh available font')
+    for (const font of fonts) assert.equal(owner.read(font.path).recoveryContentHash, hashFor(font))
+    const cold = { ...h.counts }, coldDirectories = h.reads.length
+    assert.equal(coldDirectories, 1, 'siblings should share one fresh parent listing')
+
+    h.queryDeps.compare = compare
+    h.query.invalidate()
+    const second = await h.query.query(request, 10, 0)
+    await owner.whenIdle()
+    assert.equal(second.total, first.total)
+    assert.equal(h.reads.length, coldDirectories + 1, 'a fresh query must list the parent again')
+    assert.equal(h.counts.live, cold.live + 1); assert.equal(h.counts.hydrate, cold.hydrate + 1)
+    assert.equal(h.counts.snapshotWrites, cold.snapshotWrites, 'a repeated identical query rewrote durable history')
+    assert.equal(h.counts.contentReads, cold.contentReads, 'warm proof caused redundant whole-file reads')
+    assert(h.counts.backgroundStats > cold.backgroundStats, 'warm query skipped required stamp verification')
+    assert(h.counts.snapshotReads > cold.snapshotReads, 'repeated query must still read authoritative stored history')
+    const records = queryStageRecords(h)
+    assert.equal(records.length, 2, 'one bounded stage summary should be emitted per physical collection')
+    for (const record of records) {
+      assert.equal(record.outcome, 'ok'); assert.equal(record.bindingsOnly, false)
+      for (const [name, expected] of Object.entries({ livePages: 1, liveRows: 2, bindings: 2, directoryReads: 1, directoryJoins: 1, fileStats: 0, captureCandidates: 2, captureQueued: 2, captureCoalesced: 0, resultRows: 2 })) assert.equal(record.counts[name], expected, name)
+    }
+    assert.equal(records[0].counts.snapshotWrites, 2); assert.equal(records[1].counts.snapshotWrites, 0)
+    assert(h.logs.every(message => !/PrivateQueryTag|WorkA|WorkB|[a-z]:\\/i.test(message)), 'stage logging leaked a tag name or font path')
+  } finally {
+    availability.resolve(); hydration.resolve(); await pending?.catch(() => undefined); await owner.whenIdle(); h.close()
+  }
+}
+
+async function cancelledQueryCaptureWorkCases() {
+  for (const stage of ['availability', 'hydrate', 'sort']) {
+    const h = harness(), font = queryWorkFont('CancelWork'), sibling = queryWorkFont('CancelSibling')
+    const entered = deferred(), release = deferred(), controller = new AbortController()
+    const owner = h.snapshots.openTagFontSnapshots(h.adapter)
+    let pending
+    try {
+      for (const item of [font, sibling]) { h.add(item, ['T']); h.put(item) }
+      h.live([font, sibling])
+      if (stage === 'availability') {
+        const read = h.filesystem.readdir
+        h.filesystem.readdir = async folder => { entered.resolve(); await release.promise; return read(folder) }
+      } else if (stage === 'hydrate') {
+        const hydrate = h.queryDeps.hydrate
+        h.queryDeps.hydrate = async items => { entered.resolve(); await release.promise; return hydrate(items) }
+      } else h.queryDeps.compare = () => { h.query.invalidate(); controller.abort(); entered.resolve(); return 0 }
+      pending = h.sharedIo.withSharedIoSignal(controller.signal, () => h.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0))
+        .then(value => ({ value }), error => ({ error }))
+      await entered.promise; await timerTurn()
+      assert.equal(backgroundWork(h), 0, `${stage}: pre-cancel query queued capture`)
+      controller.abort(); release.resolve()
+      const result = await pending
+      assert(result.error, `${stage}: cancelled query published a result`)
+      assert.match(String(result.error), /替换|关闭|修订/)
+      await timerTurn(); await owner.whenIdle()
+      assert.equal(backgroundWork(h), 0, `${stage}: cancelled query created background identity work`)
+      assert.equal(owner.read(font.path).recoveryContentHash, undefined)
+      const record = queryStageRecords(h).at(-1)
+      assert.equal(record?.outcome, 'cancelled')
+      for (const name of ['captureCandidates', 'captureQueued', 'captureCoalesced']) assert.equal(record.counts[name], 0, name)
+    } finally { release.resolve(); await pending; await owner.whenIdle(); h.close() }
+  }
+}
+
+async function supersededQueryCaptureWorkCase() {
+  const h = harness(), font = queryWorkFont('SupersededWork'), owner = h.snapshots.openTagFontSnapshots(h.adapter)
+  const entered = [deferred(), deferred()], release = [deferred(), deferred()]
+  let pending, hydrations = 0
+  try {
+    h.add(font, ['T']); h.put(font); h.live([font])
+    const hydrate = h.queryDeps.hydrate
+    h.queryDeps.hydrate = async items => {
+      const index = hydrations++
+      assert(index < 2, 'superseded query restarted more than once')
+      entered[index].resolve(); await release[index].promise; return hydrate(items)
+    }
+    pending = h.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0)
+    await entered[0].promise
+    h.query.invalidate(false); release[0].resolve()
+    await entered[1].promise; await timerTurn()
+    assert.equal(backgroundWork(h), 0, 'superseded generation queued evidence before replacement query settled')
+    const old = queryStageRecords(h)
+    assert.equal(old.length, 1); assert.equal(old[0].outcome, 'superseded')
+    for (const name of ['captureCandidates', 'captureQueued', 'captureCoalesced']) assert.equal(old[0].counts[name], 0, name)
+    release[1].resolve(); assert.equal((await pending).total, 1); await owner.whenIdle()
+    assert.equal(h.counts.backgroundContentReads, 1)
+    assert.equal(queryStageRecords(h).at(-1).outcome, 'ok')
+  } finally { release.forEach(gate => gate.resolve()); await pending?.catch(() => undefined); await owner.whenIdle(); h.close() }
+}
+
+async function queryStageLoggingIsolationCase() {
+  const h = harness(), font = queryWorkFont('LoggingWork'), owner = h.snapshots.openTagFontSnapshots(h.adapter)
+  try {
+    h.add(font, ['PrivateLoggingTag']); h.put(font); h.live([font])
+    const request = { sidebarPage: 'tags', selectedTagName: 'PrivateLoggingTag' }
+    h.queryDeps.appendLog = () => { throw Error('log sink unavailable') }
+    assert.equal((await h.query.query(request, 10, 0)).total, 1); await owner.whenIdle()
+    assert.equal(owner.read(font.path).recoveryContentHash, hashFor(font), 'throwing logger prevented capture')
+    const failure = Error('private hydration failure'), hydrate = h.queryDeps.hydrate
+    h.queryDeps.hydrate = async () => { throw failure }; h.query.invalidate()
+    await assert.rejects(h.query.query(request, 10, 0), error => error === failure, 'logger changed business error identity')
+    h.queryDeps.hydrate = hydrate; delete h.queryDeps.appendLog; h.query.invalidate()
+    assert.equal((await h.query.query(request, 10, 0)).total, 1); await owner.whenIdle()
+    const captures = backgroundWork(h)
+    assert.equal((await h.query.query({ ...request, tagBindingsOnly: true }, 10, 0)).total, 1); await timerTurn(); await owner.whenIdle()
+    assert.equal(backgroundWork(h), captures, 'binding-only authority query scheduled ordinary recovery capture')
+  } finally { await owner.whenIdle(); h.close() }
+}
+
+async function backgroundCaptureLeaseWorkCases() {
+  const h = harness(), fonts = [queryWorkFont('HeldA'), queryWorkFont('HeldB')], explicit = queryWorkFont('ExplicitCapture')
+  const owner = h.snapshots.openTagFontSnapshots(h.adapter), releaseA = owner.holdBackgroundCapture(), releaseB = owner.holdBackgroundCapture()
+  let idle = false
+  try {
+    for (const font of [...fonts, explicit]) h.put(font)
+    assert.deepEqual(plain(owner.schedule(fonts)), { queued: 2, coalesced: 0, historyWrites: 2 })
+    assert.deepEqual(plain(owner.schedule(fonts)), { queued: 0, coalesced: 2, historyWrites: 0 }, 'held queue should report actual coalescing, not new work')
+    const waiting = owner.whenIdle().then(() => { idle = true })
+    await timerTurn(); assert.equal(backgroundWork(h), 0); assert.equal(idle, false, 'paused pending work was reported idle')
+    releaseA(); releaseA(); await timerTurn()
+    assert.equal(backgroundWork(h), 0, 'one reader or a duplicate release resumed another reader\'s capture queue')
+    await owner.capture([explicit])
+    assert.equal(owner.read(explicit.path).recoveryContentHash, hashFor(explicit), 'foreground lease blocked explicit mutation capture')
+    assert.equal(backgroundWork(h), 0); assert.equal(idle, false)
+    releaseB(); await waiting
+    assert.equal(h.counts.backgroundContentReads, 2)
+    for (const font of fonts) assert.equal(owner.read(font.path).recoveryContentHash, hashFor(font))
+  } finally { releaseA(); releaseB(); h.snapshots.disposeTagFontSnapshots(h.adapter); await owner.whenIdle(); h.close() }
+
+  const replacement = harness(), old = queryWorkFont('QueuedOld'), next = { ...old, id: 'queued-new', fileSize: 101, modifiedAt: 2, postscriptName: 'QueuedNew' }
+  const snapshots = replacement.snapshots.openTagFontSnapshots(replacement.adapter), release = snapshots.holdBackgroundCapture()
+  try {
+    replacement.put(old)
+    assert.deepEqual(plain(snapshots.schedule([old])), { queued: 1, coalesced: 0, historyWrites: 1 })
+    replacement.put(next)
+    assert.deepEqual(plain(snapshots.schedule([next])), { queued: 0, coalesced: 1, historyWrites: 1 }, 'queued replacement must report its history write and existing queue slot')
+    assert.equal(snapshots.read(old.path).id, next.id)
+    await timerTurn(); assert.equal(backgroundWork(replacement), 0)
+    release(); await snapshots.whenIdle()
+    assert.equal(replacement.counts.backgroundContentReads, 1, 'queued replacement did not coalesce by current identity')
+    assert.equal(snapshots.read(old.path).recoveryContentHash, hashFor(next))
+  } finally { release(); replacement.snapshots.disposeTagFontSnapshots(replacement.adapter); await snapshots.whenIdle(); replacement.close() }
+
+  const disposed = harness(), item = queryWorkFont('DisposeHeld'), stopped = disposed.snapshots.openTagFontSnapshots(disposed.adapter)
+  const releaseStopped = stopped.holdBackgroundCapture()
+  try {
+    disposed.put(item); stopped.schedule([item]); const waiting = stopped.whenIdle()
+    disposed.snapshots.disposeTagFontSnapshots(disposed.adapter); await waiting
+    releaseStopped(); releaseStopped(); await timerTurn()
+    assert.deepEqual(plain(stopped.schedule([item])), { queued: 0, coalesced: 0, historyWrites: 0 })
+    assert.equal(backgroundWork(disposed), 0, 'releasing a disposed owner restarted queued work')
+  } finally { releaseStopped(); disposed.snapshots.disposeTagFontSnapshots(disposed.adapter); await stopped.whenIdle(); disposed.close() }
+}
+
+async function overlappingQueryCaptureLeaseCase() {
+  const h = harness(), prior = queryWorkFont('PriorActive'), queued = queryWorkFont('PriorQueued'), font = queryWorkFont('CurrentView')
+  const owner = h.snapshots.openTagFontSnapshots(h.adapter), readEntered = deferred(), readRelease = deferred()
+  const entered = [deferred(), deferred()], release = [deferred(), deferred()], controller = new AbortController(), reads = []
+  let first, second, hydrations = 0, idle = false
+  try {
+    for (const item of [prior, queued, font]) h.put(item)
+    h.add(font, ['T', 'U']); h.live([font])
+    const read = h.filesystem.readFile, hydrate = h.queryDeps.hydrate
+    h.filesystem.readFile = async file => {
+      reads.push(key(file))
+      if (key(file) === key(prior.path)) { readEntered.resolve(h.sharedIo.currentSharedIoSignal()); await readRelease.promise }
+      return read(file)
+    }
+    h.queryDeps.hydrate = async items => {
+      const index = hydrations++; assert(index < 2)
+      entered[index].resolve(); await release[index].promise; return hydrate(items)
+    }
+    assert.deepEqual(plain(owner.schedule([prior, queued, font])), { queued: 3, coalesced: 0, historyWrites: 3 })
+    const activeSignal = await readEntered.promise
+    assert.deepEqual(plain(owner.schedule([prior])), { queued: 0, coalesced: 1, historyWrites: 0 }, 'active identity should coalesce without a new queue slot')
+    const waiting = owner.whenIdle().then(() => { idle = true })
+    first = h.sharedIo.withSharedIoSignal(controller.signal, () => h.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0))
+      .then(value => ({ value }), error => ({ error }))
+    await entered[0].promise
+    second = h.query.query({ sidebarPage: 'tags', selectedTagName: 'U' }, 10, 0)
+    await entered[1].promise
+    assert.equal(activeSignal.aborted, false, 'foreground query aborted an already-owned background child')
+    readRelease.resolve(); await timerTurn()
+    assert.deepEqual(reads, [key(prior.path)], 'old queue started its next item during foreground hydration')
+    assert.equal(idle, false, 'paused old queue lost its idle waiter')
+    controller.abort(); release[0].resolve(); assert((await first).error); await timerTurn()
+    assert.deepEqual(reads, [key(prior.path)], 'cancelling one view released another view\'s capture lease')
+    assert.equal(activeSignal.aborted, false)
+    release[1].resolve(); assert.equal((await second).total, 1)
+    assert.deepEqual(reads, [key(prior.path)], 'queued work resumed before the surviving query settled')
+    await waiting
+    assert.deepEqual(reads, [key(prior.path), key(queued.path), key(font.path)])
+    assert.equal(h.counts.backgroundContentReads, 3)
+    const records = queryStageRecords(h), cancelled = records.filter(record => record.outcome === 'cancelled'), completed = records.filter(record => record.outcome === 'ok')
+    assert.equal(cancelled.length, 1); assert.equal(completed.length, 1)
+    for (const name of ['captureCandidates', 'captureQueued', 'captureCoalesced']) assert.equal(cancelled[0].counts[name], 0, name)
+    assert.equal(completed[0].counts.captureCandidates, 1)
+    assert.equal(completed[0].counts.captureQueued, 0, 'overlapping query reported an existing pending item as newly queued')
+    assert.equal(completed[0].counts.captureCoalesced, 1)
+    assert.equal(completed[0].counts.snapshotWrites, 0, 'coalescing an unchanged pending item wrote history')
+  } finally {
+    controller.abort(); readRelease.resolve(); release.forEach(gate => gate.resolve())
+    await first; await second?.catch(() => undefined); h.snapshots.disposeTagFontSnapshots(h.adapter); await owner.whenIdle(); h.close()
+  }
+}
+
+async function queryCaptureLeasePhysicalCloseCases() {
+  for (const mode of ['failed', 'cancelled']) {
+    const h = harness(), queued = [queryWorkFont('CloseQueuedA'), queryWorkFont('CloseQueuedB')], font = queryWorkFont('ClosingView')
+    const owner = h.snapshots.openTagFontSnapshots(h.adapter), releaseSetup = owner.holdBackgroundCapture()
+    const entered = deferred(), failNow = deferred(), portRejected = deferred(), physicallyClosed = deferred(), controller = new AbortController()
+    const failure = Object.assign(Error('foreground hydration stopped'), { closed: physicallyClosed.promise, ...(mode === 'cancelled' ? { name: 'AbortError' } : {}) })
+    let pending, settled = false, idle = false
+    try {
+      for (const item of [...queued, font]) h.put(item)
+      h.add(font, ['T']); h.live([font]); owner.schedule(queued)
+      const waiting = owner.whenIdle().then(() => { idle = true }), hydrate = h.queryDeps.hydrate
+      h.queryDeps.hydrate = async items => {
+        await hydrate(items)
+        const signal = h.sharedIo.currentSharedIoSignal(); assert(signal)
+        entered.resolve()
+        if (mode === 'cancelled') {
+          await new Promise((resolve, reject) => {
+            const abort = () => { portRejected.resolve(); reject(failure) }
+            signal.addEventListener('abort', abort, { once: true }); if (signal.aborted) abort()
+          })
+        } else { await failNow.promise; portRejected.resolve(); throw failure }
+        throw Error('failed hydration published items')
+      }
+      pending = h.sharedIo.withSharedIoSignal(controller.signal, () => h.query.query({ sidebarPage: 'tags', selectedTagName: 'T' }, 10, 0))
+        .then(value => { settled = true; return { value } }, error => { settled = true; return { error } })
+      await entered.promise; releaseSetup()
+      let cancelledResult
+      if (mode === 'cancelled') {
+        controller.abort(); cancelledResult = await pending
+        assert.equal(cancelledResult.error?.reason, 'query-superseded', 'subscriber cancellation lost its terminal query classification')
+        assert.match(String(cancelledResult.error), /替换|关闭|修订/)
+      } else failNow.resolve()
+      await portRejected.promise; await timerTurn()
+      assert.equal(settled, mode === 'cancelled', 'non-cancelled subscriber retired before the hydration child closed')
+      assert.equal(backgroundWork(h), 0, `${mode}: foreground logical rejection released queued capture before physical close`)
+      assert.equal(idle, false, `${mode}: paused background owner reported idle while foreground child was closing`)
+      assert.equal(queryStageRecords(h).length, 0, 'foreground collection finalized before its physical-close receipt')
+      physicallyClosed.resolve()
+      const terminal = await pending; await waiting
+      if (mode === 'failed') {
+        assert.equal(terminal.error, failure, 'physical-close wait changed the original hydration failure')
+        assert.equal(terminal.error.closed, physicallyClosed.promise)
+      } else assert.equal(terminal, cancelledResult, 'closed child replaced the already-terminal subscriber cancellation')
+      assert.equal(h.counts.live, 1); assert.equal(h.counts.hydrate, 1, 'terminal foreground work restarted after physical close')
+      assert.equal(h.counts.backgroundContentReads, queued.length, 'physical close did not resume exactly the prior queued captures')
+      for (const item of queued) assert.equal(owner.read(item.path).recoveryContentHash, hashFor(item))
+      assert.equal(owner.read(font.path).recoveryContentHash, undefined, 'failed foreground query queued its own new evidence')
+      const records = queryStageRecords(h)
+      assert.equal(records.length, 1); assert.equal(records[0].outcome, mode)
+      for (const name of ['captureCandidates', 'captureQueued', 'captureCoalesced']) assert.equal(records[0].counts[name], 0, name)
+    } finally {
+      controller.abort(); failNow.resolve(); physicallyClosed.resolve(); releaseSetup(); await pending
+      h.snapshots.disposeTagFontSnapshots(h.adapter); await owner.whenIdle(); h.close()
+    }
+  }
+}
+
+async function captureLeaseGenerationRaceCase() {
+  const h = harness(), old = queryWorkFont('ActiveOld'), next = { ...old, id: 'active-new', postscriptName: 'ActiveNew' }
+  const owner = h.snapshots.openTagFontSnapshots(h.adapter), entered = deferred(), finishRead = deferred(), paused = deferred()
+  let release
+  try {
+    h.put(old)
+    const read = h.filesystem.readFile
+    let reads = 0
+    h.filesystem.readFile = async file => {
+      const bytes = await read(file)
+      if (++reads === 1) { entered.resolve(h.sharedIo.currentSharedIoSignal()); await finishRead.promise }
+      return bytes
+    }
+    owner.schedule([old], message => { if (message.startsWith('tag recovery evidence background settled:')) paused.resolve() })
+    const activeSignal = await entered.promise
+    release = owner.holdBackgroundCapture(); h.put(next)
+    assert.deepEqual(plain(owner.schedule([next])), { queued: 1, coalesced: 0, historyWrites: 1 }, 'replacement of an active identity needs a new pending slot')
+    finishRead.resolve(); await paused.promise
+    assert.equal(activeSignal.aborted, false); assert.equal(reads, 1)
+    assert.equal(owner.read(old.path).id, next.id)
+    assert.equal(owner.read(old.path).recoveryContentHash, undefined, 'late old capture overwrote a newer remembered identity')
+    release(); await owner.whenIdle()
+    assert.equal(reads, 2); assert.equal(owner.read(old.path).recoveryContentHash, hashFor(next))
+  } finally { finishRead.resolve(); release?.(); h.snapshots.disposeTagFontSnapshots(h.adapter); await owner.whenIdle(); h.close() }
+
+  const r = harness(), fonts = [queryWorkFont('FinallyA'), queryWorkFont('FinallyB'), queryWorkFont('FinallyC')]
+  const snapshots = r.snapshots.openTagFontSnapshots(r.adapter), started = deferred(), done = deferred()
+  let resume, settlements = 0, active = 0, maxActive = 0
+  const reads = []
+  try {
+    for (const font of fonts) r.put(font)
+    const read = r.filesystem.readFile
+    r.filesystem.readFile = async file => {
+      reads.push(key(file)); maxActive = Math.max(maxActive, ++active)
+      try {
+        if (reads.length === 1) { started.resolve(); await done.promise } else await timerTurn()
+        return await read(file)
+      } finally { active-- }
+    }
+    snapshots.schedule(fonts, message => {
+      if (message.startsWith('tag recovery evidence background settled:') && ++settlements === 1) resume()
+    })
+    await started.promise; resume = snapshots.holdBackgroundCapture(); done.resolve()
+    await snapshots.whenIdle()
+    assert.deepEqual(reads, fonts.map(font => key(font.path)), 'release during drain finalization lost or duplicated a queued item')
+    assert.equal(maxActive, 1, 'release/finally race created overlapping background drain owners')
+    assert.equal(settlements, 2)
+  } finally { done.resolve(); resume?.(); r.snapshots.disposeTagFontSnapshots(r.adapter); await snapshots.whenIdle(); r.close() }
+}
+
+async function shutdownCaptureWorkCase() {
+  const h = harness(), fonts = [queryWorkFont('ClosingA'), queryWorkFont('ClosingB')]
+  const owner = h.snapshots.openTagFontSnapshots(h.adapter), entered = deferred(), aborted = deferred(), closed = deferred()
+  const reads = []
+  let stopping, idle = false, outcome
+  try {
+    for (const font of fonts) h.put(font)
+    h.filesystem.readFile = async file => {
+      reads.push(key(file))
+      assert.equal(h.sharedIo.currentSharedIoPriority(), 'background')
+      const signal = h.sharedIo.currentSharedIoSignal(); assert(signal)
+      entered.resolve(signal)
+      await new Promise((resolve, reject) => signal.addEventListener('abort', () => {
+        aborted.resolve(); reject(Object.assign(Error('capture closed'), { name: 'AbortError', closed: closed.promise }))
+      }, { once: true }))
+      throw Error('cancelled capture returned font bytes')
+    }
+    owner.schedule(fonts)
+    const signal = await entered.promise
+    const drained = owner.whenIdle().then(() => { idle = true })
+    const shutdown = h.shutdown.createShutdownCoordinator({ log() {}, freeze() {}, restore() { throw Error('shutdown unexpectedly restored') },
+      closeRenderers: async () => { await drained; return true }, cleanup: async () => ({ remaining: 0 }), save: async () => {},
+      confirmLoss: async () => false, drainLogs: async () => {}, terminate: result => { outcome = result } })
+    stopping = shutdown.request(); await aborted.promise; await timerTurn()
+    assert.equal(signal.aborted, true); assert.equal(idle, false, 'capture owner retired before its physical read closed')
+    closed.resolve(); await stopping; await drained
+    assert.deepEqual(reads, [key(fonts[0].path)], 'shutdown started another queued capture')
+    assert.equal(outcome.reason, 'complete'); assert.equal(outcome.processExitClean, true)
+    for (const font of fonts) assert.equal(owner.read(font.path).recoveryContentHash, undefined, 'aborted capture persisted unconfirmed proof')
+    owner.schedule(fonts); await owner.whenIdle()
+    assert.equal(reads.length, 1, 'closing application admitted new background capture')
+  } finally { closed.resolve(); h.snapshots.disposeTagFontSnapshots(h.adapter); await stopping; await owner.whenIdle(); h.close() }
+}
+
+async function freshQueryAvailabilityWorkCases() {
+  const h = harness(), font = queryWorkFont('FreshAvailability'), owner = h.snapshots.openTagFontSnapshots(h.adapter)
+  try {
+    h.add(font, ['T']); h.put(font); h.live([font])
+    const request = { sidebarPage: 'tags', selectedTagName: 'T' }
+    const fresh = async () => { h.query.invalidate(); const page = await h.query.query(request, 10, 0); await owner.whenIdle(); return page.items[0] }
+    assert.equal((await fresh()).fileAvailability, 'available')
+    const captured = h.counts.backgroundStats
+    h.files.delete(key(font.path))
+    assert.equal((await fresh()).fileAvailability, 'missing', 'fresh query reused a stale live available row')
+    assert.equal(h.counts.backgroundStats, captured, 'freshly missing file was still queued for capture')
+    h.files.set(key(root), Object.assign(Error('offline'), { code: 'EACCES' }))
+    assert.equal((await fresh()).fileAvailability, 'unavailable', 'offline must not become missing')
+    assert.equal(h.counts.backgroundStats, captured, 'freshly unavailable file was still queued for capture')
+    h.files.delete(key(root)); h.files.set(key(font.path), 'directory')
+    assert.equal((await fresh()).fileAvailability, 'missing', 'directory replacement was accepted as a font')
+    h.put(font)
+    assert.equal((await fresh()).fileAvailability, 'available', 'restored file was not rechecked')
+    assert.equal(h.reads.length, 5, 'each fresh query needs one parent listing')
+  } finally { await owner.whenIdle(); h.close() }
+
+  const d = harness(), detached = { ...queryWorkFont('Replaced'), path: 'd:\\outside\\replaced.ttf' }
+  const snapshots = d.snapshots.openTagFontSnapshots(d.adapter)
+  try {
+    d.add(detached, ['T']); d.put(detached); d.live([detached])
+    const authorization = load('src/main/library/tagRelinkAuthorizationRuntime.ts', {
+      'node:path': path, '../path/cachePath': { normalizePathForCacheCompare: key },
+      '../path/pathBoundaryPolicy': load('src/main/path/pathBoundaryPolicy.ts'),
+      '../path/sharedFileSystemRuntime': { ...d.sharedIo, sharedFileSystem: d.filesystem },
+    }).createTagRelinkAuthorizationRuntime(async () => d.adapter)
+    await authorization.rememberRelinkedFontFile(detached)
+    d.queryDeps.readDetachedState = authorization.readDetachedState
+    const request = { sidebarPage: 'tags', selectedTagName: 'T' }
+    assert.equal((await d.query.query(request, 10, 0)).items[0].fileAvailability, 'available'); await snapshots.whenIdle()
+    const bytes = bytesFor(detached); bytes[bytes.length - 1] = 1; d.contents.set(key(detached.path), bytes)
+    const contentReads = d.counts.contentReads, captures = d.counts.backgroundStats
+    d.query.invalidate()
+    const changed = (await d.query.query(request, 10, 0)).items[0]; await snapshots.whenIdle()
+    assert.equal(changed.fileAvailability, 'unavailable'); assert.equal(changed.fileRelinkRequired, true)
+    assert(d.counts.contentReads > contentReads, 'same-size/same-time replacement was not freshly hashed for authorization')
+    assert.equal(d.counts.backgroundStats, captures, 'unconfirmed replacement was queued for ordinary background capture')
+    assert.equal(snapshots.read(detached.path).recoveryContentHash, hashFor(detached), 'unconfirmed replacement overwrote historical proof')
+  } finally { await snapshots.whenIdle(); d.close() }
+}
+
 
 async function f13ScopedWorkCases() {
   const h=harness()
@@ -933,7 +1448,10 @@ async function main() {
   // Each group owns and closes its fixtures; collect errors without hiding later groups.
   for (const run of [sharedCountsRequireCompleteReadonlyEvidence, extendedTagWriteCompatibility, legacyUncStorageRecoveryChain, missingHistoricalCardsRemainVisible, queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
     sharedRecoveryCases, detachedAuthorizationCase, backgroundWaitCase, f08QueryCases, f08RecoveryCases, f08RefreshCases,
-    f09MatchCases, f09AliasCase, f09CommitCases, f09SharedCases, f09EvidenceCases, f13ScopedWorkCases]) {
+    f09MatchCases, f09AliasCase, f09CommitCases, f09SharedCases, f09EvidenceCases, snapshotRememberWorkCases,
+    delayedQueryCaptureWorkCases, cancelledQueryCaptureWorkCases, supersededQueryCaptureWorkCase, queryStageLoggingIsolationCase,
+    backgroundCaptureLeaseWorkCases, overlappingQueryCaptureLeaseCase, queryCaptureLeasePhysicalCloseCases, captureLeaseGenerationRaceCase,
+    shutdownCaptureWorkCase, freshQueryAvailabilityWorkCases, f13ScopedWorkCases]) {
     try { await run() } catch (error) { failures.push(`${run.name}: ${error?.stack || String(error)}`) }
   }
   assert.equal(failures.length, 0, failures.join('\n\n'))

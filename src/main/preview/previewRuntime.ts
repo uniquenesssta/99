@@ -1,9 +1,9 @@
 import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 import { claimPreviewImage } from './runtime/previewImageCommitRuntime'
 import { isCompletePreviewPng } from './runtime/previewImageValidationRuntime'
-import { previewFailure, previewFailureKind, previewFailureMessage, hasLegacyMissingPreviewFlag } from '../../shared/previewFailure'
+import { previewFailure, previewFailureKind, previewFailureMessage, hasLegacyMissingPreviewFlag, type PreviewFailureKind } from '../../shared/previewFailure'
 import { resolvePreviewSource } from './runtime/previewSourceRuntime'
-import { tracePreviewPhase } from './runtime/previewTraceRuntime'
+import { tracePreviewPhase, createPreviewReuseObserver } from './runtime/previewTraceRuntime'
 import { logOperation, currentOperationTrace } from '../logging/operationTraceContext'
 import { sharedFileSystem as fsp, withSharedPreviewReads } from '../path/sharedFileSystemRuntime'
 import { validatePreviewInput } from './runtime/previewInputPolicy'
@@ -26,6 +26,7 @@ import type { PreviewImageFileResult,PreviewRuntimeOptions } from './runtime/pre
 export type { PreviewCacheStorage,PreviewImageFileResult,PreviewRuntimeOptions } from './runtime/previewRuntimeTypes'
 
 export function createPreviewRuntime(options: PreviewRuntimeOptions) {
+  const reuseObserver = createPreviewReuseObserver(options.appendStartupLog)
   const previewImageMemoryRuntime = createPreviewImageMemoryRuntime()
   const nativeRenderInFlight = new Map<string, Promise<{ bytes: Buffer; message: string; transient: boolean }>>()
   const failedUntil = new Map<string, { until: number; error: Error }>()
@@ -231,6 +232,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     }): Promise<void> {
       const renderKey = `${foreground ? 'visible' : 'cache'}:${outputPath}`
       let task = nativeRenderInFlight.get(renderKey)
+      reuseObserver.native(renderKey, key, request.preferSystemFont ? 'system' : 'file', task)
       if (!task) {
         task = withPhysicalIoCompletion(async () => {
           const lease = claimPreviewImage(outputPath, foreground ? 'display' : 'render')
@@ -256,6 +258,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
           }
         })
         nativeRenderInFlight.set(renderKey, task)
+        reuseObserver.track(task)
         const ownedTask = task
         void task.finally(() => { if (nativeRenderInFlight.get(renderKey) === ownedTask) nativeRenderInFlight.delete(renderKey) }).catch(() => undefined)
       }
@@ -384,9 +387,11 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     text = validatePreviewInput({ text, fontSize, width, height, layout }, appendStartupLog).text
     const requestKey = previewImageMemoryRuntime.requestKey(item, text, fontSize, width, height, layout)
     const cachedDataUri = previewImageMemoryRuntime.get(requestKey)
-    if (cachedDataUri && !hasLegacyMissingPreviewFlag(item)) { logOperation({ stage: 'image-memory-hit' }); return cachedDataUri }
-
     const existing = previewImageMemoryRuntime.inflight.get(requestKey)
+    const legacyMissing = hasLegacyMissingPreviewFlag(item)
+    const observation = reuseObserver.admit({ requestKey, item, text, fontSize, width, height, layout, memory: !!cachedDataUri, legacyMissing, existing })
+    if (cachedDataUri && !legacyMissing) { logOperation({ stage: 'image-memory-hit' }); return cachedDataUri }
+
     if (existing) { logOperation({ stage: 'render-coalesced', jobId: renderTraceOwners.get(requestKey) }); return existing }
 
     const owner = currentOperationTrace()?.operationId
@@ -396,7 +401,8 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
     }
     const queuedAt = performance.now()
     logOperation({ stage: 'render-queued' })
-    const task = withGlobalIo('preview:render', () => withSharedPreviewReads(() => withPhysicalIoCompletion(async () => {
+    let outcome: 'fulfilled' | 'rejected' = 'rejected', failure: PreviewFailureKind | undefined
+    const task = reuseObserver.run(observation, () => withGlobalIo('preview:render', () => withSharedPreviewReads(() => withPhysicalIoCompletion(async () => {
       logOperation({ stage: 'render-start', elapsedMs: performance.now() - queuedAt })
       let previewFile = await ensureFontPreviewImageFile(item, text, fontSize, width, height, false, false, true, layout)
       if (!previewFile) throw previewFailure('missing')
@@ -404,7 +410,9 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
       try {
         const bytes = previewFile.bytes || await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
         if (!isCompletePreviewPng(bytes)) throw previewFailure('failed')
-        return previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
+        const image = previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
+        reuseObserver.remember(!!previewFile.transient)
+        return image
       } catch (error) {
         if (previewFile.cached) {
           const storage = await previewCacheStorageForFont(resolve(item.path))
@@ -418,18 +426,26 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
           if (previewFile) {
             const bytes = previewFile.bytes || await tracePreviewPhase('image-read', () => fsp.readFile(previewFile!.outputPath))
             if (!isCompletePreviewPng(bytes)) throw previewFailure('failed')
-        return previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
+            const image = previewImageMemoryRuntime.remember(requestKey, `data:image/png;base64,${bytes.toString('base64')}`)
+            reuseObserver.remember(!!previewFile.transient)
+            return image
           }
         }
         throw error
       }
-    })), { priority: 'foreground', storagePath: item.path })
+    })), { priority: 'foreground', storagePath: item.path }))
+      .then(value => { outcome = 'fulfilled'; return value }, error => {
+        try { failure = previewFailureKind(error) } catch { /* Diagnostic classification never replaces the original error. */ }
+        throw error
+      })
       .finally(() => {
         renderTraceOwners.delete(requestKey)
         previewImageMemoryRuntime.inflight.delete(requestKey)
+        reuseObserver.settled(observation, outcome, failure)
       })
 
     previewImageMemoryRuntime.inflight.set(requestKey, task)
+    reuseObserver.track(task, observation)
     return task
   }
 

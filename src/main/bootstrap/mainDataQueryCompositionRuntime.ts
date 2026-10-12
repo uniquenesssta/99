@@ -343,7 +343,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     readShared: rustCoreWorkerRuntime.runRustSharedMetadataOverlayRead,
     queryLive: (request, limit, offset) => requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(request, limit, offset),
     hydrate: async items => options.hydrateLocalFavoritesForFonts(await hydrateInstallStatusForFonts(await hydrateLocalTagsForFonts(items))),
-    matches: sharedFontMatchesRequest, compare: compareSharedFonts,
+    matches: sharedFontMatchesRequest, compare: compareSharedFonts, appendLog: appendStartupLog,
   });
 
   async function queryFontPageInLibraryUncached(

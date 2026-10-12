@@ -27,7 +27,7 @@ async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}
       getAppPath(){throw Error('Unexpected Electron app use in query retirement fixture')}}},
     [at('tagRecoveryPathRuntime.ts')]:{createTagRecoveryPaths:async()=>({roots:['C:\\fixture'],compare:key,inside:()=>true,contains:()=>true})},
     [at('tagFontBindingRuntime.ts')]:{readTagFontBindings:async()=>({bindings:new Map(items.map(item=>[key(item.path),{id:item.id,path:item.path,tags:['FixtureTag'],pathResolved:true}])),legacyTags:new Map(),unavailableRoots:[]})},
-    [at('tagFontSnapshotRuntime.ts')]:{openTagFontSnapshots:()=>({schedule(){},remember(){},read(){}})},
+    [at('tagFontSnapshotRuntime.ts')]:{openTagFontSnapshots:()=>({schedule() { return { queued: 0, coalesced: 0, historyWrites: 0 } },remember() { return { examined: 0, written: 0 } }, holdBackgroundCapture() { return () => {} },read(){}})},
     [path.join(root,'src/main/fonts/fontRuntime.ts')]:{asFormat:()=> 'ttf',fontItemFromPath:()=>{throw Error('Unexpected parse')}},
   },productionHostGlobals())
   const observer=createQueryRetirementObserver({getContext:()=>({actionId:'foreground-browse:3'}),...observerOptions})

@@ -19,7 +19,21 @@ const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex')
 const forbidden = name => (..._args) => { throw new Error(`Forbidden diagnostic port: ${name}`) }
 // Explicit Error construction must share the application's module realm. This
 // deliberately makes no claim about VM-intrinsic errors such as implicit TypeError.
-const productionHostGlobals = () => ({ setImmediate, clearImmediate, Error })
+const productionHostGlobals = diagnosticHooks => ({ setImmediate, clearImmediate, Error,
+  ...(diagnosticHooks?.timerGlobals || {}) })
+
+// Opt-in diagnostic events. A callback cannot replace a SQLite result/error or
+// alter its transaction, receiver, arguments or number of invocations.
+function observeDiagnosticSqliteCall(callback, operation, category, run) {
+  if (typeof callback !== 'function') return run()
+  const startedAt = performance.now()
+  let failed = true
+  try { const result = run(); failed = false; return result }
+  finally {
+    const finishedAt = performance.now()
+    try { callback({ operation, category, startedAt, finishedAt, elapsedMs: finishedAt - startedAt, failed }) } catch { /* Observation is not an execution gate. */ }
+  }
+}
 
 // Constructor-only engine adapter. Configuration belongs to the selected source
 // SQLite runtime, not every fixture seed or independent audit connection.
@@ -425,15 +439,20 @@ async function createHost(options) {
       'Diagnostic database escaped its private temporary directory')
   }
   // API adapter only: all statements and transactions execute against real SQLite.
+  const onSqlitePort = options.diagnosticHooks?.onSqlitePort
+  const sqliteCall = (operation, category, run) => observeDiagnosticSqliteCall(onSqlitePort, operation, category, run)
+  const sqliteCategory = sql => onSqlitePort ? String(sql).trim().split(/\s+/, 1)[0].toUpperCase().slice(0, 24) : undefined
   function openDb(file, options) {
     insideTemporary(file)
-    const raw = createDiagnosticSqliteDatabase(DatabaseSync, file, options)
-    raw.exec('PRAGMA busy_timeout=5000;')
+    const raw = onSqlitePort ? sqliteCall('open', 'connection', () => createDiagnosticSqliteDatabase(DatabaseSync, file, options)) : createDiagnosticSqliteDatabase(DatabaseSync, file, options)
+    if (onSqlitePort) sqliteCall('exec', 'PRAGMA', () => raw.exec('PRAGMA busy_timeout=5000;'))
+    else raw.exec('PRAGMA busy_timeout=5000;')
     let closed = false
     const db = {
-      exec: sql => raw.exec(sql),
+      exec: sql => onSqlitePort ? sqliteCall('exec', sqliteCategory(sql), () => raw.exec(sql)) : raw.exec(sql),
       prepare: sql => {
-        const statement = raw.prepare(sql)
+        const statement = onSqlitePort ? sqliteCall('prepare', sqliteCategory(sql), () => raw.prepare(sql)) : raw.prepare(sql)
+        const category = sqliteCategory(sql)
         const normalized = String(sql).replace(/\s+/g, ' ').trim()
         const mapping = /^SELECT root_path\s*,\s*relative_path\s*,\s*file_size\s*,\s*modified_at FROM entries\b/i.test(normalized)
         const projectionUpdate = /^UPDATE entries SET installed\s*=/i.test(normalized)
@@ -444,7 +463,7 @@ async function createHost(options) {
           if (typeof member !== 'function') return member
           if (mapping && (name === 'all' || name === 'get')) return (...args) => {
             sqlCounters.projectionSelectCalls++
-            const value = member.apply(target, args)
+            const value = onSqlitePort ? sqliteCall(name, category, () => member.apply(target, args)) : member.apply(target, args)
             sqlCounters.projectionExaminedRows += Array.isArray(value) ? value.length : value ? 1 : 0
             return value
           }
@@ -453,11 +472,12 @@ async function createHost(options) {
             if (indexed) sqlCounters.projectionIndexedUpdateCalls++
             projectionUpdateDepth++
             try {
-              const result = member.apply(target, args)
+              const result = onSqlitePort ? sqliteCall(name, category, () => member.apply(target, args)) : member.apply(target, args)
               sqlCounters.projectionUpdatedRows += Number(result.changes || 0)
               return result
             } finally { projectionUpdateDepth-- }
           }
+          if (onSqlitePort && ['all', 'get', 'run', 'iterate'].includes(name)) return (...args) => sqliteCall(name, category, () => member.apply(target, args))
           return member.bind(target)
         } })
       },
@@ -475,14 +495,14 @@ async function createHost(options) {
           Object.defineProperty(counted, 'length', { value: original.length })
           args[at] = counted
         }
-        return raw.function(...args)
+        return onSqlitePort ? sqliteCall('function', 'registration', () => raw.function(...args)) : raw.function(...args)
       },
       transaction: fn => (...args) => {
-        raw.exec('BEGIN IMMEDIATE')
-        try { const result = fn(...args); raw.exec('COMMIT'); return result }
-        catch (error) { raw.exec('ROLLBACK'); throw error }
+        if (onSqlitePort) sqliteCall('exec', 'BEGIN', () => raw.exec('BEGIN IMMEDIATE')); else raw.exec('BEGIN IMMEDIATE')
+        try { const result = fn(...args); if (onSqlitePort) sqliteCall('exec', 'COMMIT', () => raw.exec('COMMIT')); else raw.exec('COMMIT'); return result }
+        catch (error) { if (onSqlitePort) sqliteCall('exec', 'ROLLBACK', () => raw.exec('ROLLBACK')); else raw.exec('ROLLBACK'); throw error }
       },
-      close: () => { if (!closed) { closed = true; raw.close(); opened.delete(db) } },
+      close: () => { if (!closed) { closed = true; if (onSqlitePort) sqliteCall('close', 'connection', () => raw.close()); else raw.close(); opened.delete(db) } },
       get open() { return !closed },
       get isOpen() { return !closed },
     }
@@ -519,7 +539,7 @@ async function createHost(options) {
     [path.join(sourceRoot, 'src/main/install/fontMutationProcessRuntime.ts')]: {
       createFontMutationSession: forbidden('real Windows font/registry mutation'),
     },
-  }, productionHostGlobals(), {
+  }, productionHostGlobals(options.diagnosticHooks), {
     [helper]: source => source.replaceAll('import.meta.url', JSON.stringify(pathToFileURL(helper).href)),
   }, sourceRoot)
 
@@ -1051,4 +1071,4 @@ async function createHost(options) {
 }
 
 module.exports = { createHost, exactLegacyReadBoundary, assertProductionWriterWiring, createProductionLocalTagHydration, assertProductionLocalTagHydrationWiring,
-  createDiagnosticSqliteDatabase, createProductionSqlitePorts, assertProductionSqliteWiring, exactSelectedStorageReadPorts, assertProductionReadOwnerPorts, productionHostGlobals }
+  createDiagnosticSqliteDatabase, createProductionSqlitePorts, assertProductionSqliteWiring, exactSelectedStorageReadPorts, assertProductionReadOwnerPorts, productionHostGlobals, observeDiagnosticSqliteCall }
