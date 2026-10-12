@@ -7,7 +7,7 @@ const fs = require('node:fs'), path = require('node:path'), crypto = require('no
 const { performance } = require('node:perf_hooks')
 const work = require('./check-full-refresh-work.cjs')
 const { createFixtureCacheLifecycle } = require('./lib/full-refresh-fixture-lifecycle.cjs')
-const { createBaselineContentionObservation } = require('./lib/baseline-contention-observation.cjs')
+const { createBaselineContentionObservation, SQLITE_POLICY } = require('./lib/baseline-contention-observation.cjs')
 const CONDITIONS = Object.freeze([
   Object.freeze({ id: 'baseline-with-foreground', foreground: true }),
   Object.freeze({ id: 'baseline-without-foreground', foreground: false }),
@@ -191,6 +191,7 @@ async function runCase(manifest, caseId) {
     report.collectionIntegrity = !report.fatal && !report.watchdogExceeded && !report.cleanupFailure && report.postVerification === true &&
       positiveClose(report.ownersAfterCleanup) && report.fixtureCacheLifecycle?.ok === true &&
       report.timing.observerErrors === 0 && report.timing.restorationConflicts === 0 && report.timing.remainingPatches === 0 &&
+      report.timing.sqliteCoverage.requiredRepresentationComplete === true &&
       Object.values(report.timing.dropped).every(value => value === 0)
     report.finishedAt = new Date().toISOString()
     save(path.join(directory, 'report.json'), report)
@@ -242,6 +243,7 @@ async function main() {
     baselineSha: work.BASELINE, currentRoot, currentSha: git(currentRoot, 'rev-parse', 'HEAD'), baselineRoot,
     baselineWorkerPath, baselineWorkerSha256: sha(baselineWorkerPath), workerPath, workerSha256: sha(workerPath), hostPath,
     output, conditions: CONDITIONS, caseWatchdogMs: WATCHDOG_MS, attemptsPerCondition: 1, workload: work.WORKLOAD,
+    sqliteObservationPolicy: SQLITE_POLICY,
     originalBudgetsRequired: true, processRuntime: process.versions, sourceFiles: [__filename, path.join(__dirname, 'check-full-refresh-work.cjs'),
       hostPath, path.join(__dirname, 'lib/baseline-contention-observation.cjs'), path.join(__dirname, 'lib/full-refresh-fixture-lifecycle.cjs')]
       .map(file => ({ path: file, sha256: sha(file) })),

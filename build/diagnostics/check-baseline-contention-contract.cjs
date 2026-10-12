@@ -5,7 +5,7 @@
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
 const { observeDiagnosticSqliteCall, productionHostGlobals } = require('./lib/production-projection-host.cjs')
-const { createBaselineContentionObservation, LIMITS } = require('./lib/baseline-contention-observation.cjs')
+const { createBaselineContentionObservation, LIMITS, SQLITE_POLICY } = require('./lib/baseline-contention-observation.cjs')
 const { CONDITIONS, WATCHDOG_MS, positiveClose, baselineOutcome } = require('./check-baseline-contention.cjs')
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -97,10 +97,88 @@ async function observerContracts() {
   assert.equal(brokenClockTimers.calls.at(-1).callback(), originalResult)
   brokenClock.restore(); assert(brokenClock.snapshot().observerErrors > 0)
 }
+function sqliteRepresentationContracts() {
+  const make = getContext => createBaselineContentionObservation({ timers: fakeTimers(), clock: { now: () => 20 }, getContext })
+  const detail = (startedAt, elapsedMs = 0.01, failed = false, category = 'SELECT') =>
+    ({ operation: 'get', category, startedAt, finishedAt: startedAt + elapsedMs, elapsedMs, failed })
+  let ordinal = 0
+  const observation = make(() => ({ stage: 'host-stage', lane: ordinal % 2 ? 'browse' : 'metrics', actionId: String(ordinal) }))
+  observation.setStage('timed')
+  // Exceed the old all-call cap, then force one bounded sample compaction.
+  // No database/child/fixture is involved in this synthetic Windows contract.
+  const fastCount = SQLITE_POLICY.initialFastStride * (SQLITE_POLICY.fastSampleLimit + 1)
+  for (ordinal = 1; ordinal <= fastCount; ordinal++) observation.onSqlitePort(detail(ordinal / 1000))
+  observation.runOwner('verifyCommittedBatch-audit', () => observation.onSqlitePort(detail(1249, 301)))
+  observation.onSqlitePort(detail(1600, 0.01, true))
+  observation.restore()
+  const snapshot = observation.snapshot(), coverage = snapshot.sqliteCoverage
+  assert.equal(snapshot.version, 2); assert.equal(snapshot.counters.sqliteCalls, fastCount + 2)
+  assert.equal(coverage.requiredRepresentationComplete, true); assert(Object.values(coverage.conservation).every(Boolean))
+  assert.equal(coverage.allIndividualCallsRetained, false, 'Sampled fast calls were claimed as a complete individual timeline')
+  assert.equal(coverage.requiredCalls, 2); assert.equal(coverage.requiredDetailsRetained, 2); assert.equal(coverage.requiredDetailsMissing, 0)
+  assert.equal(coverage.fastSampling.compactions, 1); assert.equal(coverage.fastSampling.finalStride, SQLITE_POLICY.initialFastStride * 2)
+  assert.equal(coverage.fastSampling.compacted, SQLITE_POLICY.fastSampleLimit / 2)
+  assert.equal(coverage.fastSampling.retained, SQLITE_POLICY.fastSampleLimit / 2)
+  assert.equal(coverage.fastSampling.omitted, fastCount - coverage.fastSampling.retained)
+  assert.equal(coverage.fastSampling.calls, coverage.fastSampling.retained + coverage.fastSampling.neverRetained + coverage.fastSampling.compacted)
+  assert(snapshot.rows.sqlite.length <= LIMITS.sqlite); assert(Object.values(snapshot.dropped).every(value => value === 0))
+  const sampled = snapshot.rows.sqlite.filter(row => row.retention === 'systematic-fast-sample')
+  assert(sampled.every(row => row.fastOrdinal % coverage.fastSampling.finalStride === 0))
+  assert(sampled.every(row => row.startedAt === row.fastOrdinal / 1000 && row.actionId === String(row.fastOrdinal) && row.elapsedMs === 0.01),
+    'Compaction changed surviving timing/context values')
+  assert(sampled[0].fastOrdinal < fastCount / 4 && sampled.at(-1).fastOrdinal > fastCount * 3 / 4, 'Sample retained only the initial prefix')
+  assert(snapshot.rows.sqlite.some(row => row.retention === 'failed' && row.startedAt === 1600), 'Late failed call lost behind fast-call flood')
+  const slow = snapshot.rows.sqlite.find(row => row.retention === 'slow')
+  assert.equal(slow.owner, 'verifyCommittedBatch-audit'); assert.equal(slow.startedAt, 1249); assert.equal(slow.finishedAt, 1550)
+  assert.equal(slow.conditionPhase, 'timed'); assert.equal(slow.actionId, String(ordinal))
+  const window = snapshot.rows.sqliteWindows.find(row => row.owner === 'verifyCommittedBatch-audit')
+  assert.equal(window.windowStartAt, 1000); assert.equal(window.windowEndAt, 1250)
+  assert.equal(window.firstStartedAt, 1249); assert.equal(window.lastFinishedAt, 1550); assert.equal(window.elapsedMs, 301)
+  for (const group of [...snapshot.sqliteTotals, ...snapshot.rows.sqliteWindows]) {
+    assert(!Object.hasOwn(group, 'lane') && !Object.hasOwn(group, 'actionId') && !Object.hasOwn(group, 'stage'), 'First-event context mislabeled a whole aggregate')
+  }
+  const totals = snapshot.sqliteTotals
+  assert.equal(totals.reduce((sum, row) => sum + row.calls, 0), fastCount + 2)
+  assert.equal(totals.reduce((sum, row) => sum + row.fastDetailsOmitted, 0), coverage.fastSampling.omitted)
+
+  const overflow = make()
+  for (let index = 0; index <= SQLITE_POLICY.requiredDetailLimit; index++) overflow.onSqlitePort(detail(1, 1))
+  overflow.restore()
+  const lost = overflow.snapshot()
+  assert.equal(lost.dropped.sqlite, 1); assert.equal(lost.sqliteCoverage.requiredDetailsMissing, 1)
+  assert.equal(lost.sqliteCoverage.requiredRepresentationComplete, false, 'Missing required slow details were treated as planned fast sampling')
+  assert.equal(lost.sqliteCoverage.conservation.aggregateCalls, true); assert.equal(lost.sqliteCoverage.conservation.windowCalls, true)
+
+  const windowOverflow = make()
+  for (let index = 0; index <= SQLITE_POLICY.windowLimit; index++) windowOverflow.onSqlitePort(detail(index * SQLITE_POLICY.windowMs))
+  windowOverflow.restore()
+  const lostWindow = windowOverflow.snapshot()
+  assert.equal(lostWindow.dropped.sqliteWindows, 1); assert.equal(lostWindow.rows.sqliteWindows.length, SQLITE_POLICY.windowLimit)
+  assert.equal(lostWindow.sqliteCoverage.requiredRepresentationComplete, false)
+  assert.equal(lostWindow.sqliteCoverage.conservation.aggregateCalls, true); assert.equal(lostWindow.sqliteCoverage.conservation.windowCalls, false)
+
+  const aggregateOverflow = make()
+  for (let index = 0; index <= SQLITE_POLICY.aggregateLimit; index++) aggregateOverflow.onSqlitePort(detail(1, 0.01, false, 'category-' + index))
+  aggregateOverflow.restore()
+  const lostAggregate = aggregateOverflow.snapshot()
+  assert.equal(lostAggregate.dropped.sqliteAggregates, 1); assert.equal(lostAggregate.sqliteTotals.length, SQLITE_POLICY.aggregateLimit)
+  assert.equal(lostAggregate.sqliteCoverage.requiredRepresentationComplete, false)
+  assert.equal(lostAggregate.sqliteCoverage.conservation.aggregateCalls, false)
+
+  const malformed = make()
+  for (const input of [detail(1, -1), detail(NaN), { ...detail(1), elapsedMs: Infinity }, { ...detail(1), finishedAt: 0 },
+    { ...detail(1), elapsedMs: 20 }, { ...detail(1), failed: undefined }]) malformed.onSqlitePort(input)
+  malformed.restore()
+  const invalid = malformed.snapshot()
+  assert.equal(invalid.counters.sqliteCalls, 6); assert.equal(invalid.observerErrors, 6)
+  assert.equal(invalid.sqliteCoverage.requiredRepresentationComplete, false, 'Malformed timing data was declared complete')
+}
 function declarationContracts() {
   assert.deepEqual(CONDITIONS, [{ id: 'baseline-with-foreground', foreground: true }, { id: 'baseline-without-foreground', foreground: false }])
   assert(Object.isFrozen(CONDITIONS)); assert(CONDITIONS.every(Object.isFrozen))
   assert.equal(WATCHDOG_MS, 900000); assert(Object.values(LIMITS).every(value => Number.isInteger(value) && value > 0 && value <= 32768))
+  assert(Object.isFrozen(SQLITE_POLICY)); assert.equal(SQLITE_POLICY.requiredDetailLimit + SQLITE_POLICY.fastSampleLimit, LIMITS.sqlite)
+  assert.equal(SQLITE_POLICY.windowMs, 250); assert.equal(SQLITE_POLICY.slowThresholdMs, 1)
   assert.equal(positiveClose({ hostClosed: true, databaseOwnersClosed: true, childrenReaped: true, remainingDatabaseOwners: 0, remainingChildren: 0 }), true)
   assert.equal(positiveClose({ hostClosed: true, databaseOwnersClosed: true, childrenReaped: false, remainingDatabaseOwners: 0, remainingChildren: 1 }), false)
   const outcome = baselineOutcome({ condition: CONDITIONS[1], progress: [{ stage: 'done' }], independentSql: { unknown: 3 },
@@ -114,8 +192,8 @@ function declarationContracts() {
 }
 async function main() {
   assert.equal(process.platform, 'win32', 'Diagnostic transparency contracts execute only on Windows')
-  sqliteContracts(); declarationContracts(); await observerContracts()
-  console.log('baseline contention diagnostic: inert defaults, observer exception isolation, exact timer/Promise/child semantics, no pipe consumption, physical close and separate outcomes passed')
+  sqliteContracts(); declarationContracts(); await observerContracts(); sqliteRepresentationContracts()
+  console.log('baseline contention diagnostic: inert defaults, observer isolation, timer/Promise/child identity, physical close, conserved bounded SQL windows and explicit fast sampling passed')
 }
 if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })
 module.exports = { main }
