@@ -27,9 +27,29 @@ function redactDiagnostic(value, roots = []) {
 function failureDiagnostics(host, state, error, roots) {
   const relevant = /^(?:local merged index (?:background validation|root signature|rebuilt)|merged index worker readiness|merged (?:background validation|metadata poll|root projection)|rust merged index (?:rebuild|sync|page query)|root index (?:read failed|latest pointer resolve skipped|rust directory)|shared snapshot disposal failed)/
   const location = String(error?.stack || '').match(/check-watcher-noop-freshness\.cjs:(\d+):(\d+)/)
+  const failure = value => value ? {
+    name: ['Error', 'AssertionError', 'SharedIoProcessError', 'OperationCancelledError', 'AbortError', 'TypeError'].includes(value.name) ? value.name : 'other',
+    message: redactDiagnostic(value.message || value, roots),
+    code: /^[A-Z_]{2,32}$/.test(value.code || '') ? value.code : undefined,
+    reason: ['cancelled', 'stale-generation', 'root-offline', 'queue-timeout', 'queue-full', 'timeout', 'process-exit', 'spawn-failed', 'invalid-receipt', 'output-limit', 'executor-unavailable', 'directory-read-failed', 'stopping', 'closing', 'ENETUNREACH', 'EACCES', 'EPERM', 'EIO', 'EBUSY', 'ENOENT', 'ENOTDIR'].includes(value.reason) ? value.reason : value.reason ? 'other' : undefined,
+    sharedIo: value.sharedIo === true, ownsClose: value.sharedIo === true && typeof value.closed?.then === 'function',
+    outcome: ['not-started', 'unknown'].includes(value.outcome) ? value.outcome : undefined,
+    phase: ['queued', 'executing'].includes(value.phase) ? value.phase : undefined,
+    queuedMs: Number.isFinite(value.queuedMs) && value.queuedMs >= 0 ? value.queuedMs : undefined,
+    executionMs: Number.isFinite(value.executionMs) && value.executionMs >= 0 ? value.executionMs : undefined,
+  } : undefined
+  const boundary = state.readCloseBoundary
   return { phase: state.phase || 'fixture-setup', ownedSqliteSnapshots: state.ownedSqliteSnapshots || 0,
     assertionLocation: location ? { file: 'check-watcher-noop-freshness.cjs', line: Number(location[1]), column: Number(location[2]) } : undefined,
     watcherResult: state.lastWatcherResult,
+    readCloseBoundary: boundary ? {
+      mode: boundary.mode, outcome: boundary.outcome, injected: boundary.injected, closeReleased: boundary.closeReleased,
+      availabilityBefore: boundary.availabilityBefore, availabilityAfter: boundary.availabilityAfter,
+      counts: boundary.counts, error: failure(boundary.error), closeState: boundary.closeState,
+      result: boundary.result ? { upserts: boundary.result.upserts.length, deletes: boundary.result.deletes.length,
+        errorCount: boundary.result.errors.length, errors: boundary.result.errors.slice(0, 8).map(row => redactDiagnostic(row.message, roots)) } : undefined,
+      events: boundary.events.map(({ error, ...event }) => ({ ...event, error: failure(error) })),
+    } : undefined,
     nativeReceipts: (host?.receipts || []).map(row => row.method).slice(-12),
     // Exact selected failure messages, with case/source/system paths removed.
     // Never emit the complete host log, SQL payloads, rows or child stdout.
@@ -122,7 +142,8 @@ function observeProduction(load, state) {
   })
   const configure = shared.configureSharedFileExecutor
   shared.configureSharedFileExecutor = execute => configure(async (...args) => {
-    const request = args[0], stage = state.stage
+    const request = args[0], stage = state.stage, boundary = state.observeReadCloseBoundary
+    boundary?.('native', request.operation, 'started', args[2])
     if (stage) {
       stage.operations[request.operation] = (stage.operations[request.operation] || 0) + 1
       if (request.operation === 'stat' && /\.ttf$/i.test(request.path)) stage.fontStats++
@@ -134,9 +155,11 @@ function observeProduction(load, state) {
       // Failed native writes (including exclusive-open EEXIST) are classified
       // by the transport before a fulfilled executor receipt can reach us.
       // Observe that actual rejection and preserve its identity/close owner.
+      boundary?.('native', request.operation, 'rejected', args[2], error)
       state.observeNativeFailure?.(request, error)
       throw error
     }
+    boundary?.('native', request.operation, output.result.ok ? 'fulfilled' : 'failed-receipt', args[2], output.result.ok ? undefined : output.result)
     state.observeNative?.(request, output)
     if (request.operation === 'sqliteSnapshot' && output.result.ok) {
       assert.equal(typeof output.snapshotPath, 'string', 'Native SQLite snapshot path is missing')
@@ -333,7 +356,18 @@ async function main() {
       appendLog: host.appendLog, isIndexingActive: () => false, isUserActive: () => false,
       storageProfileForPath: value => ({ rootPath: path.parse(value).root, type: 'ssd', reason: 'controlled-local-fixture', isNetwork: false }) })
     const observedGlobalIo = host.observer.global(global)
-    const withGlobalIo = async (...args) => { const result = await observedGlobalIo(...args); await state.afterGlobalIo?.(args[0], result); return result }
+    const { currentSharedIoSignal } = host.load('src/main/path/sharedFileSystemRuntime.ts')
+    const withGlobalIo = async (...args) => {
+      const boundary = state.observeReadCloseBoundary
+      const signal = boundary ? currentSharedIoSignal() : undefined
+      boundary?.('global', args[0], 'started', signal)
+      let result
+      try { result = await observedGlobalIo(...args) }
+      catch (error) { boundary?.('global', args[0], 'rejected', signal, error); throw error }
+      boundary?.('global', args[0], 'fulfilled', signal)
+      await state.afterGlobalIo?.(args[0], result)
+      return result
+    }
     const rootLoad = selectedOwners(host, ['src/main/indexing/rootIndexRuntime.ts', 'src/main/indexing/root-index/rootIndexLockRuntime.ts'])
     const rootIndex = rootLoad('src/main/indexing/rootIndexRuntime.ts').createRootIndexRuntime({
       appName: host.config.APP_NAME, fontScanCacheVersion: host.config.FONT_SCAN_CACHE_VERSION,

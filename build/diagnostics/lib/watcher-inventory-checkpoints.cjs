@@ -11,6 +11,24 @@ const deadline = async (pending, label) => {
   try { return await Promise.race([pending, new Promise((_, reject) => { timer = setTimeout(() => reject(Error(label)), 30000) })]) }
   finally { clearTimeout(timer) }
 }
+// The original apply may reject or return row errors before the selected read.
+// Retain that outcome immediately rather than relabel it as a readiness timeout.
+// After entry wins, Promise.race still owns the eventual pending rejection.
+async function awaitReadCloseBoundary(entered, pending, mode) {
+  const earlySettlement = pending.then(result => {
+    throw Object.assign(Error('Actual watcher apply fulfilled before controlled close boundary: ' + mode), { watcherEarlyResult: result })
+  }, error => { throw error })
+  await deadline(Promise.race([entered, earlySettlement]), 'Actual watcher read did not reach controlled close boundary: ' + mode)
+}
+
+function observeErrorClose(error, evidence) {
+  if (error?.sharedIo !== true || typeof error.closed?.then !== 'function') return
+  evidence.closeState = 'pending'
+  // Observation only: never wait, suppress the original error, or substitute a
+  // new lifetime. Both handlers keep a rejected close from becoming unhandled.
+  Promise.resolve(error.closed).then(() => { evidence.closeState = 'fulfilled' }, () => { evidence.closeState = 'rejected' })
+}
+
 function heldForegroundRead() {
   const entered = deferred(), release = deferred()
   let reads = 0, cancellations = 0, activeSignal
@@ -109,6 +127,15 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
   } finally { if (oldCompatibility === undefined) delete process.env.HFM_NODE_FONTKIT_SCAN_FALLBACK; else process.env.HFM_NODE_FONTKIT_SCAN_FALLBACK = oldCompatibility }
   controls.push('old-worker-capability-blocks-selective-watcher-without-changing-manual-contract')
 
+  // Lock the observer's failure identity and early-return behavior separately
+  // from native timing. These controls must never count as native read proof.
+  const neverEntered = deferred(), originalFailure = Error('controlled pre-boundary rejection')
+  await assert.rejects(() => awaitReadCloseBoundary(neverEntered.promise, Promise.reject(originalFailure), 'observer-rejection'), error => error === originalFailure)
+  const earlyResult = { upserts: [], deletes: [], errors: [{ message: 'controlled pre-boundary row error' }] }
+  await assert.rejects(() => awaitReadCloseBoundary(neverEntered.promise, Promise.resolve(earlyResult), 'observer-return'),
+    error => error.watcherEarlyResult === earlyResult && /fulfilled before controlled close boundary/.test(error.message))
+  controls.push('close-boundary-observer-preserves-early-apply-outcome')
+
   // Each real owner must retain a failed native read's close receipt before
   // converting it to cancellation or a normal row error. Faults follow genuine
   // read receipts; the close barrier itself is deliberately held by this test.
@@ -118,8 +145,29 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
     const { SharedIoProcessError } = host.load('src/main/path/sharedIoProcessRuntime.ts')
     const failure = new SharedIoProcessError('controlled watcher read failure', 'unknown', 'cancelled')
     failure.closed = failedClose.promise
+    const availability = host.load('src/main/path/startupPathAvailabilityRuntime.ts')
+    const snapshot = () => Object.fromEntries([['font', fontRoot], ['cache', cacheDir]].map(([name, root]) => {
+      const value = availability.getStartupPathRootState(root)
+      return [name, { state: value.state, generation: value.generation }]
+    }))
+    const evidence = state.readCloseBoundary = { mode, outcome: 'pending', injected: false, closeReleased: false,
+      availabilityBefore: snapshot(), counts: {}, events: [] }
+    state.phase = 'read-close-boundary:' + mode
+    // Capture bounded operation labels and signal identity, never inputs, paths,
+    // native rows or stdout. Observe without changing admission or settlement.
+    state.observeReadCloseBoundary = (owner, label, phase, signal, error) => {
+      const allowed = owner === 'native'
+        ? ['stat', 'lstat', 'access', 'realpath', 'readFile', 'sqliteSnapshot', 'directoryMetadata', 'directoryMetadataBatch']
+        : ['watch:stat-target', 'scan:directory-metadata', 'scan:directory-metadata-batch', 'scan:stat-dir', 'scan:read-dir']
+      const operation = allowed.includes(label) ? label : 'other'
+      const key = owner + ':' + operation + ':' + phase
+      evidence.counts[key] = (evidence.counts[key] || 0) + 1
+      const event = { owner, operation, phase, signalPresent: !!signal, expectedSignal: signal === abort.signal, aborted: !!signal?.aborted, error }
+      observeErrorClose(error, event); evidence.events.push(event)
+      if (evidence.events.length > 24) evidence.events.shift()
+    }
     let settled = false, writes = 0, injected = false
-    const fail = () => { if (injected) return; injected = true; abort.abort(); failureEntered.resolve(); throw failure }
+    const fail = () => { if (injected) return; injected = true; evidence.injected = true; abort.abort(); failureEntered.resolve(); throw failure }
     state.afterRootApply = () => { writes++ }
     if (mode === 'outer-directory') state.afterDirectoryRows = fail
     else if (mode === 'compatibility-entry') state.afterSingleEntry = fail
@@ -130,21 +178,25 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
     const target = ['target-stat', 'compatibility-entry'].includes(mode) ? cacheKey(fontRoot, files[0]) : '.'
     const instance = makeWatcher({ compatibilityEntry: mode === 'compatibility-entry' })
     const pending = instance.applyWatchedFolderChangesToIndex([{ folder: fontRoot, fileName: target, eventType: 'rescan', receivedAt: Date.now() }], false, { signal: abort.signal })
-    pending.then(() => { settled = true }, () => { settled = true })
+    pending.then(result => { settled = true; evidence.outcome = 'fulfilled'; evidence.result = result },
+      error => { settled = true; evidence.outcome = 'rejected'; evidence.error = error; observeErrorClose(error, evidence) })
     try {
-      await deadline(failureEntered.promise, 'Actual watcher read did not reach controlled close boundary: ' + mode)
+      await awaitReadCloseBoundary(failureEntered.promise, pending, mode)
       await new Promise(resolve => setImmediate(resolve))
       assert.equal(settled, false, 'Watcher apply settled before physical close: ' + mode)
       assert.equal(writes, 0, 'Watcher wrote while failed read still owned its physical close')
       assert.deepEqual(audit(host), beforeFailure)
-      failedClose.resolve()
+      evidence.closeReleased = true; failedClose.resolve()
       await assert.rejects(pending)
       assert.equal(writes, 0)
     } finally {
       state.afterRootApply = undefined; state.afterGlobalIo = undefined; state.afterDirectoryRows = undefined; state.afterSingleEntry = undefined
-      failedClose.resolve(); await Promise.allSettled([pending])
+      evidence.closeReleased = true; failedClose.resolve(); await Promise.allSettled([pending])
+      evidence.availabilityAfter = snapshot(); state.observeReadCloseBoundary = undefined
     }
   }
+  state.readCloseBoundary = undefined
+  state.phase = 'inventory-signature-close-boundary'
   const signatureClose = deferred(), signatureEntered = deferred(), signatureAbort = new AbortController()
   const directoryOwner = makeWatcher({ exposeEntry: true })
   const currentCache = await rootIndex.readRootIndexSqliteFile(dbPath, fontRoot, 'root')
