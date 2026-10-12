@@ -157,6 +157,7 @@ const api = {
   getFontMetrics: (token?: string): Promise<FontMetricsResult> => invoke('fonts:getMetrics', token),
   cancelFontQuery: (token: string): Promise<void> => invoke('fonts:cancelQuery', token),
   watchFolders: (folders: string[]): Promise<boolean> => invoke('folders:watch', folders),
+  getSharedWatchStatus: (): Promise<import('../shared/sharedWatchStatus').SharedWatchStatus> => invoke('folders:getWatchStatus'),
   refreshWatchedFolder: (folderPath: string, rootPath?: string): Promise<WatchedFolderRefreshResult> => invoke('folders:refreshWatched', folderPath, rootPath),
   createPhysicalFolder: (parentPath: string, name: string): Promise<string> => invoke('folders:createPhysical', parentPath, name),
   renamePhysicalFolder: (folderPath: string, name: string): Promise<RenameFolderResult> => invoke('folders:renamePhysical', folderPath, name),

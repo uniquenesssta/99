@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import type { FontFormat, FontItem, FontQueryPageResult, FontScript, LibraryState } from '@shared/types'
 import type { ActiveFilter, FontCategory, FontComputedIndex, FontMetrics, SidebarPage, InstallStatusFilter, TimeSortMode, SortMode } from '../../appRuntime'
 import { buildFontComputedIndex, buildFontMetrics, flattenFolderNodes, traceRendererSyncComputation } from '../../appRuntime'
-import { buildVisibleFonts } from '../../fontViewRuntime'
+import { buildVisibleFontResult } from '../../fontViewRuntime'
 import { isFontTagStateDirty, isLibraryTagAuthorityKnown } from '../../fontTagStateAuthorityRuntime'
 
 export type BrowseDerivedOptions = {
@@ -116,7 +116,7 @@ export function useBrowseDerivedRuntime(args: BrowseDerivedOptions) {
 
   // Match buildVisibleFonts + tag authority + folder membership inputs. Preview
   // text/mode and unrelated library preferences must not invalidate the list.
-  const visibleFonts = useMemo(() => traceRendererSyncComputation('visible-fonts-filter-sort', { mode: databasePageReady ? 'database-page' : 'frontend-fallback', fonts: allFonts.length, page: sidebarPage, searchLength: deferredSearch.length, installStatus, sortMode, timeSortMode, selectedFolderId, selectedTagName, selectedSharedTagName }, () => buildVisibleFonts({
+  const visibleResult = useMemo(() => traceRendererSyncComputation('visible-fonts-filter-sort', { mode: databasePageReady ? 'database-page' : 'frontend-fallback', fonts: allFonts.length, page: sidebarPage, searchLength: deferredSearch.length, installStatus, sortMode, timeSortMode, selectedFolderId, selectedTagName, selectedSharedTagName }, () => buildVisibleFontResult({
     databasePageReady,
     databasePageResult,
     allFonts,
@@ -137,5 +137,5 @@ export function useBrowseDerivedRuntime(args: BrowseDerivedOptions) {
     library
   }), sidebarPage), [databasePageReady, databasePageResult, allFonts, fontIndexById, deferredSearch, activeFilter, selectedWatchedFolders, selectedFormats, selectedScripts, selectedCategory, selectedTagName, selectedSharedTagName, selectedFolderId, installStatus, timeSortMode, sortMode, sidebarPage, library.fonts, library.tags, library.localTags, library.__localTagAuthorityKnown, library.__sharedTagAuthorityKnown, library.folders, library.folderNodes, library.fontFolderIds])
 
-  return { fontIndexById, fontMetrics, localTagCounts, sharedTagCounts, localTagList, sharedTagList, flatFolderNodes, advancedFilterCount, visibleFonts }
+  return { fontIndexById, fontMetrics, localTagCounts, sharedTagCounts, localTagList, sharedTagList, flatFolderNodes, advancedFilterCount, visibleFonts: visibleResult.fonts, membershipDiagnostics: visibleResult.diagnostics }
 }

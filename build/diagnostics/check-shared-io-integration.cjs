@@ -294,6 +294,69 @@ async function main() {
    } finally { await staleOutput.dispose() }
    healthTransport.stopRustCoreDaemon()
    cases.push('legacy listing writer admission still rejects changed source generation without replaying possible output writes')
+   // A guarded local writer must retain the real root lock until its actual
+   // child closes, including AbortError/unknown-commit settlement.
+   const localWriteDb=path.join(dir,'guarded-write','index.sqlite')
+   const mutex=load('src/main/indexing/root-index/rootIndexLockRuntime.ts').createRootIndexLockRuntime({appendStartupLog:s=>logs.push(s),withGlobalIo:(_label,action)=>action()})
+   const nativeWrite=signal=>transport.runRustCoreScheduledCommand(process.execPath,['--root-index-apply-changes'],{timeout:5000,signal,assertCurrent:()=>{},sharedIo:{paths:[localWriteDb],write:true}})
+   const guardedAbort=new AbortController(),guardedDaemonBefore=daemonCalls.length
+   mode='hang';nextReady=path.join(dir,'guarded-local-ready');payload={ok:true,applied:true}
+   const locked=mutex.withRootCacheWriteLock(localWriteDb,()=>nativeWrite(guardedAbort.signal)).catch(error=>error)
+   await until(()=>fs.existsSync(nextReady))
+   const firstWriterChild=[...children][0]
+   let secondEntered=false
+   mode='success';nextReady=path.join(dir,'guarded-second-ready')
+   const secondWriter=mutex.withRootCacheWriteLock(localWriteDb,async()=>{
+     assert.equal(children.size,0,'second root writer entered before cancelled child physically closed')
+     secondEntered=true
+     return nativeWrite()
+   })
+   guardedAbort.abort()
+   const guardedFailure=await locked
+   assert.equal(guardedFailure.outcome,'unknown');assert.equal(guardedFailure.reason,'cancelled')
+   assert(!children.has(firstWriterChild),'guarded local writer settled before actual close')
+   await secondWriter
+   assert(secondEntered);assert.equal(daemonCalls.length,guardedDaemonBefore,'guarded root write entered unguarded daemon queue')
+   cases.push('guarded local unknown write waits for real close before releasing actual root lock to second writer')
+
+   mode='hang';nextReady=path.join(dir,'guarded-queue-ready')
+   const queueAbort=new AbortController()
+   const held=nativeWrite(queueAbort.signal).catch(error=>error)
+   await until(()=>fs.existsSync(nextReady))
+   let queuedCurrent=true
+   const beforeQueued=submissions.length
+   mode='success';nextReady=path.join(dir,'guarded-must-not-start')
+   const staleQueued=transport.runRustCoreScheduledCommand(process.execPath,['--root-index-apply-changes'],{timeout:5000,
+     assertCurrent:()=>{if(!queuedCurrent)throw Error('stale queued owner')},sharedIo:{paths:[localWriteDb],write:true}}).catch(error=>error)
+   await until(()=>load('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime().status().queued>0)
+   queuedCurrent=false;queueAbort.abort();await held
+   const staleQueuedError=await staleQueued
+   assert.equal(staleQueuedError.outcome,'not-started');assert.equal(staleQueuedError.reason,'stale-generation')
+   assert.equal(submissions.length,beforeQueued,'stale queued writer spawned a process')
+   assert(!fs.existsSync(nextReady))
+   cases.push('actual queued guarded local write rejects stale owner before native start')
+
+   mode='delayed';nextReady=path.join(dir,'guarded-committed-ready');payload={ok:true,applied:true}
+   let commitCurrent=true
+   const committed=transport.runRustCoreScheduledCommand(process.execPath,['--root-index-apply-changes'],{timeout:3000,
+     assertCurrent:()=>{if(!commitCurrent)throw Error('stale after submit')},sharedIo:{paths:[localWriteDb],write:true}})
+   await until(()=>fs.existsSync(nextReady));commitCurrent=false
+   assert.equal(JSON.parse((await committed).stdout).applied,true,'late acknowledged write was converted into replayable failure')
+   assert.equal(children.size,0)
+   cases.push('late acknowledged guarded write preserves committed receipt after generation change')
+   // Clearing a consumer signal never grants network work during application
+   // closing. A token-owned lock may remain for the existing stale-lock path.
+   const closingLock=path.join(dir,'closing-retained-lock')
+   await fsp.writeFile(closingLock,'owned-lock-token')
+   let cleanupSpawned=false
+   const closingLoad=loader({
+     [path.join(root,'src/main/app/shutdownCoordinatorRuntime.ts')]:{isApplicationClosing:()=>true,onApplicationClosing(){}},
+     'node:child_process':{...cp,spawn(){cleanupSpawned=true;throw Error('closing cleanup must not spawn')}}
+   })
+   const closingPool=closingLoad('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime()
+   await assert.rejects(closingPool.run({file:process.execPath,args:['--shared-file-io'],roots:['closing-owned-lock'],write:true,timeoutMs:1000}),error=>error.reason==='closing'&&error.outcome==='not-started')
+   assert.equal(cleanupSpawned,false);assert.equal(await fsp.readFile(closingLock,'utf8'),'owned-lock-token')
+   cases.push('application closing still rejects new owned-cleanup process and retains lock for existing recovery')
    mode='hang';nextReady=path.join(dir,'stop-ready')
    const stopping=run(['\\\\nas\\stop'],{timeout:5000}).catch(e=>e);await until(()=>fs.existsSync(nextReady))
    transport.stopRustCoreDaemon();assert.equal((await stopping).reason,'stopping')

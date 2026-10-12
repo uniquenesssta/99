@@ -203,7 +203,7 @@ async function observeBootstrap(overrides = new Map()) {
     },
     schemaAudit: () => p.runStartupCriticalSchemaAudit(),
     lifecycle: async () => {
-      for (const key of ['ensureDataRootSync', 'beginStartupSessionSync', 'migrateLegacyUserDataIfNeeded', 'initializeCacheArchitecture', 'diagnoseRustCoreWorker', 'registerFontProtocol', 'startPerformanceLogSampler', 'createWindow', 'stopBackgroundTaskScheduler', 'flushActivationInstallStatusSave', 'stopFolderWatchers', 'stopPerformanceLogSampler', 'flushPerformanceLogs', 'flushStartupLogAsync', 'stopRustCoreDaemon', 'dbQueryWorkerShutdown', 'markCleanShutdownSync', 'flushStartupLogSync']) await p[key]('fixture')
+      for (const key of ['ensureDataRootSync', 'beginStartupSessionSync', 'migrateLegacyUserDataIfNeeded', 'initializeCacheArchitecture', 'diagnoseRustCoreWorker', 'registerFontProtocol', 'startPerformanceLogSampler', 'createWindow', 'stopBackgroundTaskScheduler', 'flushActivationInstallStatusSave', 'stopFolderWatchers', 'awaitFolderWatchersClosed', 'stopPerformanceLogSampler', 'flushPerformanceLogs', 'flushStartupLogAsync', 'stopRustCoreDaemon', 'dbQueryWorkerShutdown', 'markCleanShutdownSync', 'flushStartupLogSync']) await p[key]('fixture')
     },
     closeDatabases: () => h.options('createFolderWatcherRuntime').closeRuntimeDatabases(),
     closeAfterPreviewFailure: () => {

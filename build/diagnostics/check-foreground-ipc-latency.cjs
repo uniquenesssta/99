@@ -279,9 +279,11 @@ async function main() {
       // A genuinely active writable handle remains unavailable. Failure must
       // preserve the last confirmed WAL counts and must never request preflight.
       const busy = new DatabaseSync(metadataDb)
+      let busyAttemptCount = 0, busyAttemptStart = 0
       try {
         busy.prepare('UPDATE font_metadata SET tag_names_json=?,revision=revision+1').run(JSON.stringify(['BusyWriterTag']))
         const before = filesFor(metadataDb), attempts = rows.filter(row => row.bindingSnapshot).length
+        busyAttemptStart = attempts
         host.query.clearFontQueryCaches()
         await invokeForeground('fonts:getMetrics', ['wal-busy-start'])
         await until(() => rows.filter(row => row.bindingSnapshot).length > attempts && rows.filter(row => row.bindingSnapshot).at(-1).closedAt,
@@ -291,12 +293,29 @@ async function main() {
         assert.equal(retained.sharedTagCountsStatus, 'unavailable', 'Busy writer claimed authoritative current counts')
         assert.equal(retained.sharedTagCounts.CommittedWalTag, 1, 'Busy source discarded the last confirmed WAL counts')
         assert.equal(retained.sharedTagCounts.BusyWriterTag, undefined, 'Busy-source snapshot claimed an unverified replacement')
-        assert.equal(rows.filter(row => row.bindingSnapshot).length, attempts + 1, 'Busy source created a same-revision retry loop')
+        busyAttemptCount = rows.filter(row => row.bindingSnapshot).length
+        assert(busyAttemptCount >= attempts + 1 && busyAttemptCount <= attempts + 4, 'Busy source exceeded initial plus three bounded attempts')
         assert.equal(rows.filter(row => row.preflight).length, 0, 'Busy count read fell back to a writer')
         assert.deepEqual(filesFor(metadataDb), before, 'Busy count read changed or created source sidecars')
         report.cases.push({ name: 'busy-wal-counts-retain-confirmed-snapshot-without-writing', passed: true,
           status: retained.sharedTagCountsStatus, retainedCount: retained.sharedTagCounts.CommittedWalTag, files: before })
       } finally { busy.close() }
+      const releasedSource = filesFor(metadataDb)
+      await until(() => rows.filter(row => row.bindingSnapshot).slice(busyAttemptStart).some(row => row.ok && row.closedAt),
+        'Released writer never recovered its same-revision read-only counts', 8000)
+      const recovered = await invokeForeground('fonts:getMetrics', ['wal-busy-recovered'])
+      assert.equal(recovered.sharedTagCountsStatus, 'current', 'Recovered count status remained unavailable')
+      assert.equal(recovered.sharedTagCounts.BusyWriterTag, 1, 'Retry lost the committed writer tag')
+      assert.equal(recovered.sharedTagCounts.CommittedWalTag || 0, 0)
+      const recoveredAttempts = rows.filter(row => row.bindingSnapshot).length
+      assert(recoveredAttempts > busyAttemptStart && recoveredAttempts <= busyAttemptStart + 4)
+      assert.equal(rows.filter(row => row.preflight).length, 0, 'Recovery retry performed a writer preflight')
+      assert.deepEqual(filesFor(metadataDb), releasedSource, 'Recovery retry changed source files after writer release')
+      await invokeForeground('fonts:getMetrics', ['wal-busy-stable'])
+      await pause(300)
+      assert.equal(rows.filter(row => row.bindingSnapshot).length, recoveredAttempts, 'Successful recovery kept retrying')
+      report.cases.push({ name: 'native-busy-release-recovers-same-revision-without-source-writes', passed: true,
+        attempts: recoveredAttempts-busyAttemptStart, status: recovered.sharedTagCountsStatus, confirmedCount: recovered.sharedTagCounts.BusyWriterTag, files: releasedSource })
     } finally {
       const restore = new DatabaseSync(metadataDb)
       try {

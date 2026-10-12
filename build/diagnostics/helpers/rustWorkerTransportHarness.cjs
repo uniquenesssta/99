@@ -80,7 +80,7 @@ function createHarness(settings = {}, overrides = new Map()) {
   }
   const stubs = {
     'node:child_process': { execFile },
-    'node:crypto': { randomUUID: () => { record('uuid', ++serial); return 'id-' + serial } },
+    'node:crypto': { createHash, randomUUID: () => { record('uuid', ++serial); return 'id-' + serial } },
     'node:os': { tmpdir: () => settings.tempDir || '/fixture-tmp' },
     'node:path': { ...path.posix, win32: path.win32 },
     'node:fs': { promises: {

@@ -16,6 +16,7 @@ import { sharedFontsFoldersKey } from "./sharedFontsFoldersKeyRuntime";
 export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
   let sharedFontsMemoryCache: SharedFontsMemoryCache | null = null;
   let sharedFontsGeneration = 0;
+  let sharedFontsQueryGeneration = 0;
   const { readExistingScanCacheFile } = createFolderCacheJsonRuntime(deps);
   const sharedIndexTrustRuntime = createSharedIndexTrustRuntime({
     fontScanCacheVersion: deps.fontScanCacheVersion,
@@ -232,10 +233,13 @@ export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
     };
   }
 
-  function invalidateSharedFontRuntimeCaches(): void {
+  function invalidateSharedFontRuntimeCaches(publishQueryChanges = true): void {
     sharedFontsGeneration += 1;
     sharedFontsMemoryCache = null;
-    deps.clearExternalFontQueryCaches();
+    if (publishQueryChanges) {
+      sharedFontsQueryGeneration += 1;
+      deps.clearExternalFontQueryCaches();
+    }
   }
 
   async function loadSharedFontsForFoldersUncached(folders: string[]): Promise<FontItem[]> {
@@ -302,10 +306,13 @@ export function createFolderCacheRuntime(deps: FolderCacheRuntimeDeps) {
       return sharedFontsMemoryCache.fonts;
     }
     const generation = sharedFontsGeneration;
+    const queryGeneration = sharedFontsQueryGeneration;
     const fonts = await loadSharedFontsForFoldersUncached(folders);
     assertFontQueryActive();
-    if (generation !== sharedFontsGeneration) return fontQuerySuperseded();
-    sharedFontsMemoryCache = { foldersKey, loadedAt: Date.now(), fonts };
+    if (queryGeneration !== sharedFontsQueryGeneration) return fontQuerySuperseded();
+    // A durable checkpoint evicts source caches without retiring the currently
+    // displayed projection. Its older reader may finish, but cannot repopulate.
+    if (generation === sharedFontsGeneration) sharedFontsMemoryCache = { foldersKey, loadedAt: Date.now(), fonts };
     return fonts;
   }
 

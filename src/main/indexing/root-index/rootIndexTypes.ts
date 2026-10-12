@@ -55,6 +55,8 @@ export type RootIndexDirectorySignatureUpdate = {
 }
 
 export type RustRootIndexApplyChangesRequest = {
+  /** In-memory owner admission, never serialized into native input. */
+  assertCurrent?: () => void
   dbPath: string
   rootPath: string
   storage: RootIndexStorage
@@ -82,6 +84,11 @@ export class RootCacheLockTimeoutError extends Error {
   }
 }
 
+export type RootIndexChangeWriteOptions = {
+  /** Defer query invalidation/publication until the merged projection commit. */
+  deferQueryPublication?: boolean
+}
+
 export type RootIndexRuntimeDeps = {
   appName: string
   fontScanCacheVersion: number
@@ -91,7 +98,7 @@ export type RootIndexRuntimeDeps = {
   closeSqliteDb: (db: any) => void
   appendStartupLog: (line: string) => void
   withGlobalIo: <T>(label: string, fn: () => Promise<T>, options?: any) => Promise<T>
-  invalidateSharedFontRuntimeCaches: () => void
+  invalidateSharedFontRuntimeCaches: (publishQueryChanges?: boolean) => void
   recordCacheEvent: (source: string, eventType: string, payload?: Record<string, unknown>) => Promise<void>
   runRustRootIndexApplyChanges?: (input: RustRootIndexApplyChangesRequest) => Promise<RustRootIndexApplyChangesResult | null>
 }

@@ -82,6 +82,7 @@ const api = {
   getFontMetrics: (token) => invoke('fonts:getMetrics', token),
   cancelFontQuery: (token) => invoke('fonts:cancelQuery', token),
   watchFolders: (folders) => invoke('folders:watch', folders),
+  getSharedWatchStatus: () => invoke('folders:getWatchStatus'),
   refreshWatchedFolder: (folderPath, rootPath) => invoke('folders:refreshWatched', folderPath, rootPath),
   createPhysicalFolder: (parentPath, name) => invoke('folders:createPhysical', parentPath, name),
   renamePhysicalFolder: (folderPath, name) => invoke('folders:renamePhysical', folderPath, name),

@@ -484,6 +484,10 @@
           []
         ],
         [
+          "createFolderWatcherRuntime.awaitFolderWatchersClosed",
+          []
+        ],
+        [
           "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
           [
             "quit",
@@ -696,6 +700,10 @@
           []
         ],
         [
+          "createFolderWatcherRuntime.awaitFolderWatchersClosed",
+          []
+        ],
+        [
           "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
           [
             "quit",
@@ -818,6 +826,10 @@
           []
         ],
         [
+          "createFolderWatcherRuntime.awaitFolderWatchersClosed",
+          []
+        ],
+        [
           "createFontActivationRuntime.cleanupTemporaryActiveFontsUntilEmpty",
           [
             "quit",
@@ -885,6 +897,10 @@
         ],
         [
           "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createFolderWatcherRuntime.awaitFolderWatchersClosed",
           []
         ],
         [
@@ -971,6 +987,10 @@
         ],
         [
           "createFolderWatcherRuntime.stopFolderWatchers",
+          []
+        ],
+        [
+          "createFolderWatcherRuntime.awaitFolderWatchersClosed",
           []
         ],
         [
@@ -1076,5 +1096,8 @@
     "commit": "e1684ffd962c74b282820a9b32ee699c581a25c6",
     "windowsRun": "37737695038",
     "change": "Cancellable refresh invalidation now includes the single shared-tag metrics owner; existing cache, scheduler, and lifecycle expectations retained."
+  },
+  "sharedWatcherLifecycleMigration": {
+    "change": "Await new independent notification child close immediately after stopping watchers; final emergency stop remains synchronous."
   }
 }

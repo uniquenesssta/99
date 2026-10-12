@@ -77,6 +77,27 @@ jobs:
           name: font-recovery-tag-preview-optimization-log
           path: artifacts/tag-preview-optimization.log
           retention-days: 14
+      - name: Verify selective NAS reconciliation, snapshot retry and visible status
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          $failed = 0
+          foreach ($script in @('check-font-parse-stability-capability.cjs', 'check-shared-tag-count-retry.cjs', 'check-shared-watcher-reconciliation.cjs', 'check-font-view-membership.cjs', 'check-shared-watch-status.cjs')) {
+            & node --experimental-sqlite "build/diagnostics/$script" *>> artifacts/nas-reconciliation.log
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          Get-Content -LiteralPath artifacts/nas-reconciliation.log -Encoding utf8
+          if ($failed -gt 0) { exit 1 }
+      - name: Retain NAS reconciliation regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-nas-reconciliation
+          path: artifacts/nas-reconciliation.log
+          retention-days: 14
       - name: Verify query cancellation transport and committed metadata locators
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         timeout-minutes: 6
@@ -174,6 +195,12 @@ jobs:
       - name: Verify shared file identity evidence
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml shared_file_io::'
+      - name: Verify selective native parse admission and identity guards
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml scanner::parse_batch::tests'
+      - name: Verify isolated native parent lifetime
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml isolated_lifetime::tests'
       - name: Verify watcher diff evidence
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml watcher::'

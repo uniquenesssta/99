@@ -1,3 +1,4 @@
+import { createFontIndexEntryBatchRuntime, fontIndexCacheMissReason } from "./fontIndexEntryBatchRuntime";
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import type { CachedFontStatLike } from "../../fonts/fontRuntime";
 import { extname } from "node:path";
@@ -28,6 +29,8 @@ export function createManualFolderIndexEntryRuntime(deps: ManualFolderRefreshDep
     cachedFontForRuntime,
     scanFoldersRuntime,
   } = deps;
+
+  const upsertFontIndexEntries = createFontIndexEntryBatchRuntime(deps);
 
   function fontIndexDeleteRecord(
     rootPath: string,
@@ -60,23 +63,15 @@ export function createManualFolderIndexEntryRuntime(deps: ManualFolderRefreshDep
     const createdAt = stat.birthtimeMs || stat.ctimeMs || stat.mtimeMs;
     const existing = cache.entries[cacheKey];
 
-    if (
-      existing &&
-      existing.cacheKey === signature &&
-      existing.status === "ok" &&
-      existing.font &&
-      Array.isArray(existing.font.scripts) &&
-      existing.font.scripts.length &&
-      existing.font.scriptVersion === SCRIPT_DETECTION_VERSION
-    ) {
-      return cachedFontForRuntime(existing.font, filePath, stat, cacheKey);
+    if (!fontIndexCacheMissReason(existing, signature, stat, SCRIPT_DETECTION_VERSION)) {
+      return existing?.status === "ok" && existing.font
+        ? cachedFontForRuntime(existing.font, filePath, stat, cacheKey) : null;
     }
-    if (
-      existing &&
-      existing.cacheKey === signature &&
-      existing.status === "bad"
-    ) {
-      return null;
+    if (deps.runRustFontParseBatch) {
+      const batch = await upsertFontIndexEntries(rootPath, [{ file: filePath, freshStat: stat }], cache);
+      const result = batch.results[0];
+      if (result?.error) throw new Error(result.error);
+      return result?.font || null;
     }
 
     if (!(await hasValidFontSignature(filePath))) {
@@ -222,6 +217,7 @@ export function createManualFolderIndexEntryRuntime(deps: ManualFolderRefreshDep
   return {
     fontIndexDeleteRecord,
     upsertFontIndexEntry,
+    upsertFontIndexEntries,
     removeFontIndexEntriesForPath,
     makeRootScanCacheContext,
     fontIndexEntryChanged,

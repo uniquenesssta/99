@@ -42,7 +42,8 @@
     "runStartupDatabaseMaintenance",
     "startBackgroundTaskScheduler",
     "stopBackgroundTaskScheduler",
-    "stopFolderWatchers"
+    "stopFolderWatchers",
+    "awaitFolderWatchersClosed"
   ],
   "query": [
     "reportPerformanceEvent",
@@ -53,6 +54,7 @@
     "loadLibrary",
     "loadLibraryShell",
     "getSharedAvailability",
+    "getSharedWatchStatus",
     "loadFolderCache",
     "searchFontsInLibrary",
     "queryFontsInLibrary",

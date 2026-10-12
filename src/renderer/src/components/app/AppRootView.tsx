@@ -4,6 +4,7 @@ import { AppSidebar } from './AppSidebar'
 import { AppTopbar } from './AppTopbar'
 import { FontDetailPanel } from './FontDetailPanel'
 import { FontListPanel } from './FontListPanel'
+import { SharedWatchStatusBar } from './SharedWatchStatusBar'
 
 import type { ComponentProps } from 'react'
 
@@ -216,7 +217,7 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
         setLeaseLockConflictNotice={overlays.setLeaseLockConflictNotice}
       />
 
-      {developer.IS_DEVELOPMENT && <footer className="statusbar">{developer.status}</footer>}
+      <SharedWatchStatusBar developerStatus={developer.IS_DEVELOPMENT ? developer.status : undefined} />
     </div>
   )
 }

@@ -472,7 +472,9 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     refreshWatchedFolder,
     sendFontIndexChanged,
     startWatchingFolders,
-    stopFolderWatchers
+    getSharedWatchStatus,
+    stopFolderWatchers,
+    awaitFolderWatchersClosed
   } = createMainScanCompositionRuntime({
     dataPath,
     nodeRequire,
@@ -616,6 +618,7 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     cancelActiveFontScan,
     activeFontScanStatus,
     startWatchingFolders,
+    getSharedWatchStatus,
     refreshWatchedFolder: (...args) => { assertFeedbackReady(); return refreshWatchedFolder(...args); },
     readSharedMetadataFrontendDiagnostics,
     repairSharedMetadataFromFrontend,
@@ -638,7 +641,8 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     runStartupDatabaseMaintenance: () => { assertFeedbackReady(); return runStartupDatabaseMaintenance(); },
     startBackgroundTaskScheduler: () => { assertFeedbackReady(); startBackgroundTaskScheduler(); },
     stopBackgroundTaskScheduler,
-    stopFolderWatchers
+    stopFolderWatchers,
+    awaitFolderWatchersClosed
   };
   const resources: MainOperationsCompositionRuntime['resources'] = { closeTasksDb, checkpointTasksDb };
   const feedback: MainOperationsFeedback = {

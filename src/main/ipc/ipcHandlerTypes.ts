@@ -58,6 +58,7 @@ export interface IpcHandlerRuntime {
   ) => unknown | Promise<unknown>;
   getFontMetricsFromLibrary: () => unknown | Promise<unknown>;
   startWatchingFolders: (folders: string[]) => unknown | Promise<unknown>;
+  getSharedWatchStatus: () => import('../../shared/sharedWatchStatus').SharedWatchStatus;
   refreshWatchedFolder: (
     folderPath: string,
     rootPath?: string,

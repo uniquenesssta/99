@@ -1,6 +1,8 @@
+import type { FontIndexBatchResult, FontIndexFileInput } from '../manual-refresh/fontIndexEntryBatchRuntime'
+import type { WatchedFolderApplyContext } from './watchedFolderInventoryRuntime'
 import type { FontIndexChangePayload, ScanResult } from '../../../shared/types'
 import type { CachedFontStatLike } from '../../fonts/fontRuntime'
-import type { FontScanCacheEntry, FontScanCacheFile } from '../../indexing/rootIndexRuntime'
+import type { FontScanCacheEntry, FontScanCacheFile, RootIndexChangeWriteOptions } from '../../indexing/rootIndexRuntime'
 import type { GlobalIoOptions } from '../../performance/ioScheduler'
 import type { PendingFolderChange } from '../folderWatcherRuntime'
 import type { RustWatcherPreflightInput, RustWatcherPreflightResult } from '../../rust-core/rustCoreWorkerContracts'
@@ -28,6 +30,8 @@ export interface RootScanCacheContext {
   directorySkipped: number
   /** Watcher evidence must enumerate current names and may not reuse stale file attributes. */
   requireFreshFileStats?: boolean
+  /** Owner guard forwarded into the directory-write lock. */
+  assertCurrent?: () => void
 }
 
 export interface RootScanCacheStorage {
@@ -67,6 +71,7 @@ export interface WatchedFolderIndexRuntimeOptions {
     signal?: AbortSignal,
     startDir?: string,
   ) => Promise<Array<{ file: string; rootPath: string; stat: CachedFontStatLike | null; freshStat?: boolean; error: string }>>
+  upsertFontIndexEntries?: (rootPath: string, rows: FontIndexFileInput[], cache: FontScanCacheFile, signal?: AbortSignal, assertCurrent?: () => void) => Promise<FontIndexBatchResult>
   upsertFontIndexEntry: (rootPath: string, filePath: string, cache: FontScanCacheFile, freshStat?: CachedFontStatLike) => Promise<import('../../../shared/types').FontItem | null>
   fontIndexEntryChanged: (oldEntry: FontScanCacheEntry | undefined, newEntry: FontScanCacheEntry | undefined) => boolean
   cacheKeyInsideDirectory: (cacheKey: string, relativeDir: string) => boolean
@@ -78,6 +83,8 @@ export interface WatchedFolderIndexRuntimeOptions {
     storage: 'root' | 'fallback',
     changedEntries: Array<[string, FontScanCacheEntry]>,
     deletedKeys: string[],
+    assertCurrent?: () => void,
+    writeOptions?: RootIndexChangeWriteOptions,
   ) => Promise<void>
   saveScanCacheFile: (
     filePath: string,
@@ -99,7 +106,7 @@ export interface WatchedFolderIndexRuntimeOptions {
 
 export interface WatchedFolderIndexRuntime {
   watcherChangeBatchLooksUnchanged: (rootPath: string, changes: PendingFolderChange[]) => Promise<boolean>
-  applyWatchedFolderChangesToIndex: (changes: PendingFolderChange[], replayUnchanged?: boolean) => Promise<FontIndexChangePayload>
+  applyWatchedFolderChangesToIndex: (changes: PendingFolderChange[], replayUnchanged?: boolean, context?: WatchedFolderApplyContext) => Promise<FontIndexChangePayload>
   computeWatchedDirectorySignature: (dirPath: string) => Promise<RootDirectorySignature | null>
   normalizePendingFolderChanges: (changes: PendingFolderChange[]) => PendingFolderChange[]
 }

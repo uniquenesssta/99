@@ -69,7 +69,7 @@ const runtime = load('src/main/performance/rendererInteractionRuntime.ts')
 const shouldAppend = load('src/main/logging/startupLogPolicy.ts').createStartupLogPolicy().shouldAppend
 const events = []
 const interaction = runtime.createRendererInteractionRuntime({ appendLog: line => { if (shouldAppend(line)) events.push(line) } })
-for (const kind of ['db-query-start','db-query-end','db-query-rejected','font-query-view']) {
+for (const kind of ['db-query-start','db-query-end','db-query-rejected','font-query-view','font-query-rejections']) {
   interaction.reportPerformanceEvent({kind,label:'acceptance',severity:'info',durationMs:1,page:'tags',details:{keyword:'私有标签',visible:0}})
   strictAssert(events.some(line => line.includes('kind='+kind+',') && line.includes('私有标签')), 'fast evidence suppressed: '+kind)
 }

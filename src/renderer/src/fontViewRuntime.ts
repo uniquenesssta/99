@@ -1,4 +1,6 @@
 import { isInstalled } from './fontDisplay'
+import { badFontRecordReason } from './library-normalize/libraryNormalizeBase'
+import { createFontViewMembershipDiagnostics, recordFontViewRejection, type FontViewMembershipDiagnostics, type FontViewRejectionReason } from './fontViewDiagnostics'
 import { hasFontUserIntent, mergeFontUserIntent } from './fontUserIntentRuntime'
 import type { FontFormat,FontItem,FontQueryPageResult,FontQueryRequest,FontScript,LibraryState } from '@shared/types'
 import { VIRTUAL_OVERSCAN_ROWS,VIRTUAL_PANEL_PADDING,getVirtualGridColumns } from './appConstants'
@@ -6,7 +8,7 @@ import type { ActiveFilter,FontCategory,FontComputedIndex,InstallStatusFilter,Si
 import { buildFontComputedIndex,filterMatchesFontIndex,inTimeSortRangeIndex } from './fontFilteringMetrics'
 import { compareFontsForSort,compareFontsForTimeSort } from './fontSort'
 import { fontBelongsToAnyFolder,fontBelongsToFolder,fontInsideRootFolder,normalizeFontPathForCompare } from './libraryNormalize'
-import { filterFontByLibraryTagAuthority, isFontTagStateDirty } from './fontTagStateAuthorityRuntime'
+import { applyFontTagEdit, filterFontByLibraryTagAuthority, isFontTagStateDirty } from './fontTagStateAuthorityRuntime'
 
 export interface RendererFontQueryRequestOptions {
   deferredSearch: string
@@ -75,87 +77,112 @@ function matchesInstallStatus(font: FontItem, status: InstallStatusFilter): bool
   return true
 }
 
-// Raw database offsets always remain untouched. Only a complete result can
-// accept unseen optimistic members without guessing their pagination position.
+function isCompleteFontPage(result: FontQueryPageResult): boolean {
+  return result.offset === 0 && result.items.length >= result.total
+}
+
+// A partial page cannot establish the globally filtered population. Its query
+// total and raw offsets remain authoritative; exclusions are reported separately.
+// Only a complete result may count local filtering and unseen pending members.
 export function visibleFontResultTotal(result: FontQueryPageResult | null, fonts: FontItem[]): number {
-  return result ? Math.max(0, result.total + fonts.length - result.items.length) : fonts.length
+  return result && !isCompleteFontPage(result) ? Math.max(0, result.total) : fonts.length
 }
 
 function pendingFont(font: FontItem): boolean {
   return hasFontUserIntent(font) || isFontTagStateDirty(font, 'local') || isFontTagStateDirty(font, 'shared')
 }
 
-export function buildVisibleFonts(options: VisibleFontsOptions): FontItem[] {
+function fontRejectionReason(options: VisibleFontsOptions, font: FontItem, index: FontComputedIndex | undefined): FontViewRejectionReason | null {
+  if (!index) return 'missing-index'
+  if (index.bad) return badFontRecordReason(font) || 'invalid-record'
+  if (!inTimeSortRangeIndex(index, options.timeSortMode)) return 'time-range'
+  if (!matchesInstallStatus(font, options.installStatus)) return font.installStatusKnown !== true && !isInstalled(font) ? 'install-status-unknown' : 'install-status-mismatch'
+
+  if (options.sidebarPage === 'library' && !filterMatchesFontIndex(options.activeFilter, font, index)) return 'active-filter'
+  if (options.sidebarPage === 'filters') {
+    if (options.selectedWatchedFolders.length && !options.selectedWatchedFolders.some((folder) => fontInsideRootFolder(font, folder))) return 'watched-folder'
+    if (options.selectedFormats.length && !options.selectedFormats.includes(font.format || 'unknown')) return 'format'
+    if (options.selectedScripts.length && !options.selectedScripts.some((script) => index.scripts.includes(script))) return 'script'
+    if (options.selectedCategory !== 'all' && index.category !== options.selectedCategory) return 'category'
+  }
+  if (options.sidebarPage === 'tags') {
+    if (options.selectedTagName ? !font.localTagNames?.includes(options.selectedTagName) : !font.localTagNames?.length) return 'local-tag'
+  }
+  if (options.sidebarPage === 'sharedTags') {
+    if (options.selectedSharedTagName ? !font.tagNames?.includes(options.selectedSharedTagName) : !font.tagNames?.length) return 'shared-tag'
+  }
+  if (options.sidebarPage === 'folders') {
+    if (options.selectedFolderId ? !fontBelongsToFolder(options.library, font, options.selectedFolderId) : !fontBelongsToAnyFolder(options.library, font)) return 'folder'
+  }
+  const keyword = options.deferredSearch.trim().toLowerCase()
+  return keyword && !index.searchText.includes(keyword) ? 'search' : null
+}
+
+function sortVisibleFonts(options: VisibleFontsOptions, fonts: FontItem[]): FontItem[] {
+  return fonts.sort((a, b) => options.sortMode === 'smart'
+    ? compareFontsForTimeSort(a, b, options.timeSortMode)
+    : compareFontsForSort(a, b, options.sortMode))
+}
+
+export interface VisibleFontResult {
+  fonts: FontItem[]
+  diagnostics: FontViewMembershipDiagnostics
+}
+
+export function buildVisibleFontResult(options: VisibleFontsOptions): VisibleFontResult {
   if (options.databasePageReady && options.databasePageResult) {
     const page = options.databasePageResult
-    const items = page.items.map((font) => {
-      const cached = options.library.fonts[font.id]
-      const sameFile = cached && normalizeFontPathForCompare(cached.path) === normalizeFontPathForCompare(font.path)
-      const current = sameFile ? mergeFontUserIntent(cached, {
-        ...font,
-        deleteProtected: cached.deleteProtected,
-        ...(isFontTagStateDirty(cached, 'local') ? { localTagNames: cached.localTagNames } : {}),
-        ...(isFontTagStateDirty(cached, 'shared') ? { tagNames: cached.tagNames } : {})
-      }) : font
-      return filterFontByLibraryTagAuthority(options.library, current)
-    })
-    const complete = page.offset === 0 && page.items.length >= page.total
-    const seen = new Set(items.map((font) => font.id))
+    const complete = isCompleteFontPage(page)
+    const seen = new Set(page.items.map((font) => font.id))
+    const diagnostics = createFontViewMembershipDiagnostics(true, complete, page.items.length - seen.size)
     const pending = complete ? options.allFonts.filter((font) => !seen.has(font.id) && pendingFont(font)) : []
-    const candidates = [...items, ...pending]
-    const fontIndexById = new Map(candidates.map((font) => [font.id, buildFontComputedIndex(font)]))
-    const filtered = buildVisibleFonts({ ...options, databasePageReady: false, allFonts: candidates, fontIndexById })
-    if (complete && candidates.some(pendingFont)) return filtered
-    // Preserve the server's order for a partial page; pending sort changes are
-    // resolved by the mutation-triggered query, never by reordering one window.
-    const accepted = new Set(filtered.map(font => font.id))
-    return items.filter(font => accepted.has(font.id))
+    const fonts: FontItem[] = []
+    let hasPending = pending.length > 0
+    for (const [ordinal, raw] of page.items.entries()) {
+      const cached = options.library.fonts[raw.id]
+      const sameFile = cached && normalizeFontPathForCompare(cached.path) === normalizeFontPathForCompare(raw.path)
+      let current = sameFile ? mergeFontUserIntent(cached, {
+        ...raw,
+        deleteProtected: cached.deleteProtected
+      }) : raw
+      if (sameFile) for (const scope of ['local', 'shared'] as const) {
+        // Copy the edit identity with its value. Catalog reconciliation must not
+        // mistake a still-pending edit for a settled database tag array.
+        if (isFontTagStateDirty(cached, scope)) current = applyFontTagEdit(current, cached, scope)
+      }
+      const font = filterFontByLibraryTagAuthority(options.library, current)
+      hasPending ||= pendingFont(font)
+      // Decide for this row, never for another row sharing its ID. An accepted
+      // sibling must not reintroduce a rejected row via an accepted-ID set.
+      const reason = fontRejectionReason(options, font, buildFontComputedIndex(font))
+      if (!reason) { fonts.push(font); continue }
+      const rawReason = fontRejectionReason(options, raw, buildFontComputedIndex(raw))
+      const intentReason = current === raw ? rawReason : fontRejectionReason(options, current, buildFontComputedIndex(current))
+      recordFontViewRejection(diagnostics, raw, page.offset + ordinal,
+        rawReason ? 'database-row' : intentReason ? 'user-intent' : 'tag-authority', rawReason, intentReason, reason)
+    }
+    for (const [ordinal, font] of pending.entries()) {
+      const reason = fontRejectionReason(options, font, buildFontComputedIndex(font))
+      if (reason) recordFontViewRejection(diagnostics, font, ordinal, 'pending-row', reason, reason, reason)
+      else fonts.push(font)
+    }
+    // Preserve server ordering on partial pages. Only a complete population can
+    // be sorted after optimistic edits without inventing pagination positions.
+    return { fonts: complete && hasPending ? sortVisibleFonts(options, fonts) : fonts, diagnostics }
   }
 
-  const keyword = options.deferredSearch.trim().toLowerCase()
-  return options.allFonts
-    .filter((font) => {
-      const index = options.fontIndexById.get(font.id)
-      if (!index || index.bad) return false
-      if (!inTimeSortRangeIndex(index, options.timeSortMode)) return false
-      if (!matchesInstallStatus(font, options.installStatus)) return false
+  const diagnostics = createFontViewMembershipDiagnostics(false, true)
+  const fonts = options.allFonts.filter((font, ordinal) => {
+    const reason = fontRejectionReason(options, font, options.fontIndexById.get(font.id))
+    if (!reason) return true
+    recordFontViewRejection(diagnostics, font, ordinal, 'frontend-row', reason, reason, reason)
+    return false
+  })
+  return { fonts: sortVisibleFonts(options, fonts), diagnostics }
+}
 
-      if (options.sidebarPage === 'library' && !filterMatchesFontIndex(options.activeFilter, font, index)) return false
-      if (options.sidebarPage === 'filters') {
-        if (options.selectedWatchedFolders.length && !options.selectedWatchedFolders.some((folder) => fontInsideRootFolder(font, folder))) return false
-        if (options.selectedFormats.length && !options.selectedFormats.includes(font.format || 'unknown')) return false
-        if (options.selectedScripts.length && !options.selectedScripts.some((script) => index.scripts.includes(script))) return false
-        if (options.selectedCategory !== 'all' && index.category !== options.selectedCategory) return false
-      }
-      if (options.sidebarPage === 'tags') {
-        if (options.selectedTagName) {
-          if (!font.localTagNames?.includes(options.selectedTagName)) return false
-        } else if (!font.localTagNames?.length) {
-          return false
-        }
-      }
-      if (options.sidebarPage === 'sharedTags') {
-        if (options.selectedSharedTagName) {
-          if (!font.tagNames?.includes(options.selectedSharedTagName)) return false
-        } else if (!font.tagNames?.length) {
-          return false
-        }
-      }
-      if (options.sidebarPage === 'folders') {
-        if (options.selectedFolderId) {
-          if (!fontBelongsToFolder(options.library, font, options.selectedFolderId)) return false
-        } else if (!fontBelongsToAnyFolder(options.library, font)) {
-          return false
-        }
-      }
-
-      if (!keyword) return true
-      return index.searchText.includes(keyword)
-    })
-    .sort((a, b) => {
-      if (options.sortMode === 'smart') return compareFontsForTimeSort(a, b, options.timeSortMode)
-      return compareFontsForSort(a, b, options.sortMode)
-    })
+export function buildVisibleFonts(options: VisibleFontsOptions): FontItem[] {
+  return buildVisibleFontResult(options).fonts
 }
 
 export interface VirtualLayoutOptions {

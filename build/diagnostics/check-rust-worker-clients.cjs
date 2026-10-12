@@ -4,9 +4,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
 const h = require('./helpers/rustWorkerTransportHarness.cjs')
-// Only three e1684ffd function bodies were deliberately migrated: foreground
-// preview bytes, stdout listing, and read-only metadata bindings. Their exact
-// new hashes remain frozen; causal port tests below cover the added behavior.
+// Reviewed transport-boundary migrations retain exact body hashes. Foreground
+// bytes, stdout listing, binding snapshots and guarded root writes have causal
+// port/lifetime tests; all other domain functions remain frozen.
 const fixture = require('./fixtures/rust-worker-clients.fixture.json')
 const root = path.resolve(__dirname, '../..')
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8').replace(/\r\n/g, '\n')
@@ -252,6 +252,34 @@ async function checkReviewedClientContracts(overrides = new Map()) {
     await assert.rejects(invalid.client.runRustSharedMetadataOverlayRead(snapshotInput), error => error.reason === 'invalid-receipt')
     assert.equal(invalid.commands.length, 1); assert.equal(invalid.disposed.length, 1)
   }
+  const closed = Promise.resolve()
+  for (const pin of ['database','parent','wal','journal']) for (const code of [32,33]) {
+    const error = { sharedIo:true, reason:'process-exit', outcome:'unknown', closed, queuedMs:7, executionMs:11,
+      message:`Shared I/O process failed: code=2, signal=null, message=[HFM_BINDING_SNAPSHOT_BUSY:${pin}:${code}] binding snapshot ${pin} pin unavailable` }
+    const busy = clientFixture('Metadata', { capabilities, error }, overrides)
+    await assert.rejects(busy.client.runRustSharedMetadataOverlayRead(snapshotInput), value => {
+      assert.equal(value.reason,'snapshot-busy');assert.equal(value.pinTarget,pin);assert.match(value.rootToken,/^[a-f0-9]{16}$/)
+      assert.equal(value.closed,closed);assert.equal(value.queuedMs,7);assert.equal(value.executionMs,11);return true
+    })
+    assert.equal(busy.commands.length,1,'client replayed read internally');assert.equal(busy.disposed.length,1)
+    const ordinary = clientFixture('Metadata', { capabilities, error }, overrides)
+    await assert.rejects(ordinary.client.runRustSharedMetadataOverlayRead({...snapshotInput,bindingSnapshot:false,entries:[{key:'one'}]}), value=>value===error)
+  }
+  for (const change of [
+    { reason:'timeout' }, { sharedIo:false },
+    { message:'binding snapshot sidecar pin unavailable (os error 32)' },
+    { message:'Shared I/O process failed: code=2, signal=null, message=[HFM_BINDING_SNAPSHOT_BUSY:wal:5] denied' },
+    { message:'Shared I/O process failed: code=2, signal=null, message=prefix [HFM_BINDING_SNAPSHOT_BUSY:wal:32] denied' },
+    { message:'Shared I/O process failed: code=2, signal=null, message=[HFM_BINDING_SNAPSHOT_BUSY:shm:32] denied' },
+  ]) {
+    const error = { sharedIo:true, reason:'process-exit', outcome:'unknown',
+      message:'Shared I/O process failed: code=2, signal=null, message=[HFM_BINDING_SNAPSHOT_BUSY:wal:32] busy',...change }
+    const denied = clientFixture('Metadata', { capabilities, error }, overrides)
+    if(error.sharedIo)await assert.rejects(denied.client.runRustSharedMetadataOverlayRead(snapshotInput),value=>value===error)
+    else assert.equal(await denied.client.runRustSharedMetadataOverlayRead(snapshotInput),null)
+    assert.equal(denied.commands.length,1)
+  }
+
 }
 async function checkReviewedClientMutations() {
   const mutations = [
@@ -259,6 +287,8 @@ async function checkReviewedClientMutations() {
     ['Preview', '{ bytes: commandOutput.previewBytes, transient: true }', '{ bytes: commandOutput.previewBytes, transient: false }'],
     ['Indexing', "const stdoutListing = hasCapability(status, 'list-font-files-stdout-v1')", 'const stdoutListing = false'],
     ['Metadata', "input.bindingSnapshot && !hasCapability(status, 'shared-metadata-bindings-read-v1')", "false && !hasCapability(status, 'shared-metadata-bindings-read-v1')"],
+    ['Metadata', 'if (input.bindingSnapshot) rethrowSharedMetadataSnapshotBusy(error, input.rootPath)', 'rethrowSharedMetadataSnapshotBusy(error, input.rootPath)'],
+    ['Metadata', 'if (input.bindingSnapshot) rethrowSharedMetadataSnapshotBusy(error, input.rootPath)', '/* missing positive busy classification */'],
   ]
   for (const [groupName, before, after] of mutations) {
     const group = fixture.groups.find(group => group.name === groupName), original = sources.get(group.path)

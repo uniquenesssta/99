@@ -1,6 +1,6 @@
 import type fs from "node:fs";
 import { readSharedDirectoryMetadata, readSharedDirectoryMetadataBatch, type SharedDirectoryEntry } from "../../path/sharedDirectoryMetadataRuntime";
-import { rethrowSharedIoProcessError } from "../../path/sharedIoProcessRuntime";
+import { rethrowSharedIoProcessError, type SharedIoProcessError } from "../../path/sharedIoProcessRuntime";
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { extname, join } from "node:path";
 import type { ScanResult } from "../../../shared/types";
@@ -66,6 +66,14 @@ export interface RootDirectoryCacheRuntime {
   >;
 }
 
+// Keep the physical owner until native close even if a later guard supersedes it.
+async function awaitFailedSharedIoClose(error: unknown): Promise<void> {
+  const failure = error as SharedIoProcessError | undefined;
+  if (failure?.sharedIo === true) {
+    try { await failure.closed; } catch { /* Preserve the original failure. */ }
+  }
+}
+
 export function createRootDirectoryCacheRuntime(
   deps: ScanOrchestratorDeps,
 ): RootDirectoryCacheRuntime {
@@ -104,6 +112,7 @@ export function createRootDirectoryCacheRuntime(
         });
       }
     } catch (error) {
+      await awaitFailedSharedIoClose(error);
       deps.appendStartupLog(
         `directory signature read skipped: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -118,8 +127,10 @@ export function createRootDirectoryCacheRuntime(
   ): Promise<void> {
     if (!context.directoryUpdates.length || !isRootIndexDbPath(context.cachePath)) return
     try {
-      await deps.saveRootIndexDirectorySignatures(context.cachePath, context.rootPath, context.storage, context.directoryUpdates)
+      await deps.saveRootIndexDirectorySignatures(context.cachePath, context.rootPath, context.storage, context.directoryUpdates, context.assertCurrent)
     } catch (error) {
+      await awaitFailedSharedIoClose(error);
+      context.assertCurrent?.()
       deps.appendStartupLog(`directory signature write skipped: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -266,6 +277,7 @@ export function createRootDirectoryCacheRuntime(
           );
         }
       } catch (error) {
+        await awaitFailedSharedIoClose(error);
         throwIfAborted(signal);
         rethrowSharedIoProcessError(error);
         if (isOperationCancelledError(error)) throw error;
@@ -397,6 +409,7 @@ export function createRootDirectoryCacheRuntime(
             listedBatch?.([row]);
             report(false);
           } catch (error) {
+            await awaitFailedSharedIoClose(error);
             if (isOperationCancelledError(error)) throw error;
             errors.push({
               path: full,
@@ -420,6 +433,7 @@ export function createRootDirectoryCacheRuntime(
             priority: 'normal', signal, storagePath: context.rootPath,
           });
         } catch (error) {
+          await awaitFailedSharedIoClose(error);
           throwIfAborted(signal);
           const failure = error as import('../../path/sharedIoProcessRuntime').SharedIoProcessError;
           if (batch.length > 1 && ['timeout', 'output-limit'].includes(failure.reason)) {

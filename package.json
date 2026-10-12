@@ -215,7 +215,12 @@
     "diagnostics:root-probe-lifecycle": "node build/diagnostics/check-root-probe-lifecycle.cjs",
     "diagnostics:preview-reuse-observation": "node build/diagnostics/check-preview-reuse-observation.cjs",
     "diagnostics:baseline-contention-contract": "node build/diagnostics/check-baseline-contention-contract.cjs",
-    "diagnostics:font-query-ipc": "node build/diagnostics/check-font-query-ipc.cjs"
+    "diagnostics:font-query-ipc": "node build/diagnostics/check-font-query-ipc.cjs",
+    "diagnostics:shared-tag-count-retry": "node build/diagnostics/check-shared-tag-count-retry.cjs",
+    "diagnostics:shared-watcher-reconciliation": "node build/diagnostics/check-shared-watcher-reconciliation.cjs",
+    "diagnostics:font-view-membership": "node --experimental-sqlite build/diagnostics/check-font-view-membership.cjs",
+    "diagnostics:shared-watch-status": "node build/diagnostics/check-shared-watch-status.cjs",
+    "diagnostics:font-parse-stability-capability": "node build/diagnostics/check-font-parse-stability-capability.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

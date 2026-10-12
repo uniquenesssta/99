@@ -17,12 +17,23 @@ export function createEmptyLibrary(): LibraryState {
   }
 }
 
-export function isDefinitelyBadFontRecord(font: FontItem): boolean {
+export type BadFontRecordReason = 'resource-fork-name' | 'resource-fork-path' | 'undersized-font' | 'missing-source-preview-error' | 'invalid-source-preview-error'
+
+export function badFontRecordReason(font: FontItem): BadFontRecordReason | null {
   // Missing historical bindings must remain visible for relinking. This flag
   // does not supply an identity and never makes a live malformed font valid.
   if (font.recoveryPlaceholder === true && (font.fileAvailability === 'missing' || font.fileAvailability === 'unavailable')
-    && !!font.path && !!font.id && !!(font.localTagNames?.length || font.tagNames?.length)) return false
-  return font.fileName.startsWith('._') || font.path.includes('\\._') || font.path.includes('/._') || font.fileSize < 64 || !!font.previewError?.includes('字体文件不存在') || !!font.previewError?.includes('路径已失效')
+    && !!font.path && !!font.id && !!(font.localTagNames?.length || font.tagNames?.length)) return null
+  if (font.fileName.startsWith('._')) return 'resource-fork-name'
+  if (font.path.includes('\\._') || font.path.includes('/._')) return 'resource-fork-path'
+  if (font.fileSize < 64) return 'undersized-font'
+  if (font.previewError?.includes('字体文件不存在')) return 'missing-source-preview-error'
+  if (font.previewError?.includes('路径已失效')) return 'invalid-source-preview-error'
+  return null
+}
+
+export function isDefinitelyBadFontRecord(font: FontItem): boolean {
+  return badFontRecordReason(font) !== null
 }
 
 export function normalizePhysicalPathText(value: string): string {

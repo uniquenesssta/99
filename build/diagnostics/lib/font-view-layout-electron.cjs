@@ -51,6 +51,7 @@ app.whenReady().then(async () => {
     console.log('[grid-postprocess:electron]', JSON.stringify(postprocess))
     }
     console.log('[view-feedback:electron]', JSON.stringify(await evaluate('window.checkViewFeedback()')))
+    console.log('[shared-watch-status:electron]', JSON.stringify(await evaluate('window.checkSharedWatchStatus()')))
     const drag = await evaluate('window.prepareScrollbarDrag()')
     win.webContents.sendInputEvent({ type: 'mouseMove', x: drag.x, y: drag.y })
     win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', modifiers: ['leftbuttondown'], x: drag.x, y: drag.y, clickCount: 1 })

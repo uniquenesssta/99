@@ -24,6 +24,9 @@ use crate::folders::list_physical_folder_tree;
 
 pub fn run_from_env() -> i32 {
     let args: Vec<String> = env::args().collect();
+    if args.get(1).is_some_and(|arg| arg == "--watch-shared-root") {
+        return if args.len() == 3 { crate::watcher::notifications::run(&args[2]) } else { 2 };
+    }
     if args.len() == 2 && args[1] == "--mapped-drive-table" {
         return match crate::mapped_drives::query() {
             Ok(rows) => { println!("{}", rows); 0 },

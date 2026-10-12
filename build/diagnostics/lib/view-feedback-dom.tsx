@@ -6,10 +6,59 @@ import { buildVirtualLayout } from '../../../src/renderer/src/fontViewRuntime'
 import { useRendererDatabasePageRuntime } from '../../../src/renderer/src/runtime/database/useRendererDatabasePageRuntime'
 import { rendererFontQueryCacheKey } from '../../../src/renderer/src/appRuntime'
 import { setupFloatingScrollbars } from '../../../src/renderer/src/utils/floatingScrollbars'
+import { SharedWatchStatusBar } from '../../../src/renderer/src/components/app/SharedWatchStatusBar'
+import type { SharedWatchStatus } from '../../../src/shared/sharedWatchStatus'
 const frame=()=>new Promise<void>(r=>requestAnimationFrame(()=>r()))
 const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms))
 const check=(ok:unknown,message:string)=>{if(!ok)throw Error('[view-feedback] '+message)}
 const empty:any[]=[],noop=()=>{},filter={kind:'all'},allFonts=Array.from({length:10000},(_,i)=>({id:'p'+i,path:'C:/fonts/'+i+'.ttf',fileName:'Font '+i,tagNames:[],scripts:[]}))
+
+;(window as any).checkSharedWatchStatus=async()=>{
+ const host=document.getElementById('fixture')!,previous=window.hfm
+ const ack=Date.UTC(2026,9,12,8,0),entry={rootPath:'\\\\server\\fonts',phase:'applying' as const,lastCheckedAt:ack,pendingCount:12}
+ let response:unknown={roots:[entry]},reads=0,activeRoot:ReturnType<typeof createRoot>|undefined
+ ;(window as any).hfm={getSharedWatchStatus:async()=>{reads++;return response}}
+ const mount=async(developerStatus?:string)=>{
+  if(activeRoot)flushSync(()=>activeRoot!.unmount())
+  activeRoot=createRoot(host)
+  flushSync(()=>activeRoot!.render(<div className="app"><header className="topbar"/><main className="layout"/><SharedWatchStatusBar developerStatus={developerStatus}/></div>))
+  await frame();await frame()
+ }
+ const footer=()=>host.querySelector<HTMLElement>('.statusbar')
+ try{
+  await mount()
+  const busy=footer()!
+  check(busy?.textContent?.includes('正在处理：12 项'),'validated processing count missing from real footer')
+  check(busy.textContent?.includes('上次检查时间：'),'last-check label missing')
+  const box=busy.getBoundingClientRect()
+  check(Math.abs(box.height-30)<=1&&box.bottom<=innerHeight+1&&box.top>=0,'footer left existing30px visible row')
+  check(box.left>=-1&&box.right<=innerWidth+1&&busy.scrollWidth<=busy.clientWidth+1,'status footer overflowed viewport')
+  check(busy.querySelector('[role="status"]')?.getAttribute('title')?.includes('目录检查和索引应用全部确认后更新'),'ACK semantics missing from accessible detail')
+  response={roots:[{...entry,phase:'idle',lastCheckedAt:ack+10000,pendingCount:0}]} satisfies SharedWatchStatus
+  for(let n=0;n<150&&!footer()?.textContent?.includes('正在处理：0 项');n++)await wait(20)
+  check(footer()?.textContent?.includes('正在处理：0 项'),'real poll did not replace settled count')
+  check(reads===2,'real footer issued overlapping or excessive polls')
+  response={roots:[{...entry,phase:'offline',pendingCount:null}]} satisfies SharedWatchStatus
+  await mount()
+  check(footer()?.textContent?.includes('离线')&&footer()?.textContent?.includes('数量待确认'),'offline displayed zero/success')
+  response={roots:'invalid'}
+  await mount()
+  check(footer()?.textContent?.includes('状态待确认'),'invalid receipt was not unknown')
+  response={roots:[]}
+  await mount()
+  check(!footer(),'local-only production gained a permanent NAS footer')
+  await mount('开发状态保留')
+  check(footer()?.textContent==='开发状态保留','development-only text was lost')
+  flushSync(()=>activeRoot!.unmount());activeRoot=undefined
+  const settledReads=reads
+  await wait(2050)
+  check(reads===settledReads&&!host.querySelector('.statusbar'),'unmounted footer retained polling or DOM')
+  return {viewport:innerWidth,processing:true,ack:true,offline:true,unknown:true,noRoot:true,cleanup:true}
+ }finally{
+  if(activeRoot)flushSync(()=>activeRoot!.unmount())
+  window.hfm=previous
+ }
+}
 let current:any,calls:number[]=[]
 const hfm={queryFontPage:async(request:any)=>{
  calls.push(request.offset);await wait(request.offset===0?15:35)

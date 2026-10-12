@@ -9,6 +9,7 @@
     "appName",
     "appendStartupLog",
     "assertFeatureForChannel",
+    "awaitFolderWatchersClosed",
     "backgroundTaskSchedulerStatus",
     "beginStartupSessionSync",
     "buildMarker",
@@ -49,6 +50,7 @@
     "getMigrationDiagnostics",
     "getPreviewCacheStatus",
     "getSharedAvailability",
+    "getSharedWatchStatus",
     "getSystemInstalledFonts",
     "hasInFlightActivationInstallStatusSave",
     "hasPendingActivationInstallStatusSave",
@@ -153,6 +155,7 @@
       "startPerformanceLogSampler"
     ],
     "beforeQuitRequiredCalls": [
+      "awaitFolderWatchersClosed",
       "cleanupTemporaryActiveFontsUntilEmpty",
       "flushActivationInstallStatusSave",
       "flushPendingTemporaryFontDeletes",

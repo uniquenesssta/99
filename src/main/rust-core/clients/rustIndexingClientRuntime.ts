@@ -1,5 +1,6 @@
 import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
-import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { rethrowSharedIoProcessError, SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
+import { isOperationCancelledError, throwIfAborted } from '../../performance/ioQueue'
 import { parseJsonLine, hasCapability, FONT_SCAN_LISTING_MAX_TIMEOUT_MS, FONT_SCAN_LISTING_STDOUT_MAX_BYTES } from '../rustCoreWorkerTransportRuntime'
 import type { CachedFontStatLike } from '../../fonts/fontRuntime'
 import type { FontParseJob } from '../../indexing/fontScanWorkers'
@@ -266,7 +267,14 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
   }
 
   async function runRustFontParseBatch(jobs: FontParseJob[], signal?: AbortSignal): Promise<RustFontParseBatchResult | null> {
+    const requiresSourceStability = jobs.some(job => job.requireSourceStability === true)
     const status = await diagnoseRustCoreWorker()
+    if (requiresSourceStability) {
+      throwIfAborted(signal)
+      if (!status.available || !status.path || !hasCapability(status, 'font-parse-batch') || !hasCapability(status, 'font-parse-batch-source-stability-v1')) {
+        throw new SharedIoProcessError('Font parse source stability capability is unavailable; previous index rows must be retained.', 'not-started', 'font-parse-source-stability-unavailable')
+      }
+    }
     if (!status.available || !status.path || !hasCapability(status, 'font-parse-batch')) return null
     if (signal?.aborted) throw new Error('Rust parse batch cancelled')
 
@@ -305,6 +313,11 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       return result
     } catch (error) {
       rethrowSharedIoProcessError(error)
+      if (requiresSourceStability) {
+        throwIfAborted(signal)
+        if (isOperationCancelledError(error)) throw error
+        throw new SharedIoProcessError('Stable font parse batch failed; previous index rows must be retained.', 'unknown', 'font-parse-source-stability-failed')
+      }
       options.appendStartupLog(`rust font parse batch failed: ${error instanceof Error ? error.message : String(error)}; ${nodeFontkitScanFallbackFailureLogSuffix()}`)
       return null
     } finally {
@@ -317,7 +330,9 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       mode?: 'incremental' | 'replace'
       directories?: Array<{ relativePath: string; modifiedAt: number; fileCount: number; dirCount: number }>
     }
+    input.assertCurrent?.()
     const status = await diagnoseRustCoreWorker()
+    input.assertCurrent?.()
     const replace = mutationInput.mode === 'replace'
     const capability = replace ? 'root-index-sqlite-replace-v1' : 'root-index-sqlite-apply-changes'
     if (!status.available || !status.path || !hasCapability(status, capability)) return null
@@ -338,6 +353,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       if (mutationInput.directories?.length) requestPayload.directories = mutationInput.directories
       await inputFile.writeJson(requestPayload)
 
+      input.assertCurrent?.()
       const commandOutput = await runRustCoreScheduledCommand(status.path, [
         command,
         '--db', mutationInput.dbPath,
@@ -349,6 +365,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
         '--script-detection-version', String(mutationInput.scriptDetectionVersion),
       ], {
         timeout: Math.max(5000, Number(process.env.HFM_RUST_ROOT_INDEX_WRITE_TIMEOUT_MS || 10 * 60 * 1000) || 10 * 60 * 1000),
+        assertCurrent: input.assertCurrent,
         sharedIo: sharedDatabaseTarget(mutationInput.dbPath, true),
         windowsHide: true,
         maxBuffer: 256 * 1024,
@@ -380,6 +397,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
           : `rust root index apply failed after daemon submit: ${error.message}; Node fallback blocked`)
         throw error
       }
+      input.assertCurrent?.()
       options.appendStartupLog(replace
         ? `rust root index replace failed: ${error instanceof Error ? error.message : String(error)}; Node fallback blocked for shared root full replace`
         : `rust root index apply failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--root-index-apply-changes')}`)

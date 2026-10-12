@@ -78,7 +78,7 @@ export interface MainMutationCompositionRuntime {
 
 export type MainOperationsLifecycle = Pick<RegistrationSurface,
   | 'runStartupDatabaseMaintenance' | 'startBackgroundTaskScheduler'
-  | 'stopBackgroundTaskScheduler' | 'stopFolderWatchers'
+  | 'stopBackgroundTaskScheduler' | 'stopFolderWatchers' | 'awaitFolderWatchersClosed'
 >
 
 export interface MainOperationsResourceLifecycle {
@@ -89,7 +89,7 @@ export interface MainOperationsResourceLifecycle {
 export interface MainOperationsCompositionRuntime {
   readonly capabilities: Pick<RegistrationSurface,
     | 'scanFoldersManaged' | 'cancelActiveFontScan' | 'activeFontScanStatus'
-    | 'startWatchingFolders' | 'refreshWatchedFolder'
+    | 'startWatchingFolders' | 'refreshWatchedFolder' | 'getSharedWatchStatus'
     | 'readSharedMetadataFrontendDiagnostics' | 'repairSharedMetadataFromFrontend'
     | 'readSharedIndexSnapshotFrontendDiagnostics' | 'repairSharedIndexSnapshotFromFrontend'
     | 'runDatabaseHealthCheck' | 'createDatabaseBackup' | 'runDatabaseMaintenance' | 'restoreLatestApplicationDatabase'
@@ -162,6 +162,7 @@ export interface MainApplicationRegistrationGroups {
     | 'startBackgroundTaskScheduler'
     | 'stopBackgroundTaskScheduler'
     | 'stopFolderWatchers'
+    | 'awaitFolderWatchersClosed'
   >
   readonly query: Pick<MainApplicationRegistration,
     | 'reportPerformanceEvent'
@@ -172,6 +173,7 @@ export interface MainApplicationRegistrationGroups {
     | 'loadLibrary'
     | 'loadLibraryShell'
     | 'getSharedAvailability'
+    | 'getSharedWatchStatus'
     | 'loadFolderCache'
     | 'searchFontsInLibrary'
     | 'queryFontsInLibrary'

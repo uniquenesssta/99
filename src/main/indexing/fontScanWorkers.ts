@@ -64,6 +64,8 @@ export interface FontParseJob {
   createdAt: number
   cacheKey: string
   signature: string
+  /** Requires native pinned-source admission and post-read stability checks. */
+  requireSourceStability?: boolean
   signatureValid?: boolean
   formatHint?: string
   quickHash?: string

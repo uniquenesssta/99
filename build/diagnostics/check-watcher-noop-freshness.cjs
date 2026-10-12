@@ -69,8 +69,57 @@ function selectedOwners(host, relatives, replacements = {}) {
   return loader(mocks, { ...productionHostGlobals(), setInterval, clearInterval }, transforms, sourceRoot)
 }
 
+// Execute the selected composition declaration, with actual folder/query
+// owners. A fixture approximation here would hide publication-generation bugs.
+function selectedStorageInvalidator(host, state) {
+  const ts = createRequire(path.join(host.paths.sourceRoot, 'package.json'))('typescript')
+  const relative = 'src/main/bootstrap/mainDataStorageCompositionRuntime.ts'
+  const source = fs.readFileSync(path.join(host.paths.sourceRoot, relative), 'utf8')
+  const tree = ts.createSourceFile(relative, source, ts.ScriptTarget.Latest, true)
+  assert.equal(tree.parseDiagnostics.length, 0)
+  const matches = []
+  const visit = node => { if (ts.isFunctionDeclaration(node) && node.name?.text === 'invalidateSharedFontRuntimeCaches') matches.push(node); ts.forEachChild(node, visit) }
+  visit(tree); assert.equal(matches.length, 1)
+  const output = ts.transpileModule(`${matches[0].getText(tree)}\nreturn invalidateSharedFontRuntimeCaches;`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const invalidate = new Function('folderCacheRuntimeRef', 'clearFontQueryCaches', output)({
+    invalidateSharedFontRuntimeCaches: (...args) => { state.sourceInvalidations++; host.folderCache.invalidateSharedFontRuntimeCaches(...args) },
+  }, (...args) => { state.queryInvalidations++; return host.query.clearFontQueryCaches(...args) })
+  return (...args) => { state.sourcePublicationModes.push(args[0] !== false); return invalidate(...args) }
+}
+
 function observeProduction(load, state) {
   const shared = load('src/main/path/sharedFileSystemRuntime.ts')
+  const folderModule = load('src/main/folders/folderCacheRuntime.ts')
+  const createFolder = folderModule.createFolderCacheRuntime
+  folderModule.createFolderCacheRuntime = options => createFolder({ ...options,
+    readRootIndexSqliteFile: async (...args) => {
+      const observation = state.sourceRead, signal = shared.currentSharedIoSignal()
+      const result = await options.readRootIndexSqliteFile(...args)
+      return observation ? observation(result, signal) : result
+    },
+  })
+  const pageCacheModule = load('src/main/library/fontPageQueryCacheRuntime.ts')
+  const createPageCache = pageCacheModule.createFontPageQueryCacheRuntime
+  pageCacheModule.createFontPageQueryCacheRuntime = options => createPageCache({ ...options,
+    queryUncached: async (...args) => {
+      const observation = state.foreground, signal = shared.currentSharedIoSignal()
+      const result = await options.queryUncached(...args)
+      return observation ? observation.page(result, signal) : result
+    },
+  })
+  const facadeModule = load('src/main/library/fontQueryFacadeRuntime.ts')
+  const createFacade = facadeModule.createFontQueryFacadeRuntime
+  facadeModule.createFontQueryFacadeRuntime = options => createFacade({ ...options,
+    rustCoreWorkerRuntime: { ...options.rustCoreWorkerRuntime,
+      runRustMergedIndexIdsQuery: async (...args) => {
+        const observation = state.foreground, signal = shared.currentSharedIoSignal()
+        const result = await options.rustCoreWorkerRuntime.runRustMergedIndexIdsQuery(...args)
+        return observation ? observation.ids(result, signal) : result
+      },
+    },
+  })
   const configure = shared.configureSharedFileExecutor
   shared.configureSharedFileExecutor = execute => configure(async (...args) => {
     const request = args[0], stage = state.stage
@@ -80,6 +129,7 @@ function observeProduction(load, state) {
       if (['readFile', 'fontContentIdentity'].includes(request.operation) && /\.ttf$/i.test(request.path)) stage.fontReads++
     }
     const output = await execute(...args)
+    state.observeNative?.(request, output)
     if (request.operation === 'sqliteSnapshot' && output.result.ok) {
       assert.equal(typeof output.snapshotPath, 'string', 'Native SQLite snapshot path is missing')
       const relative = path.relative(state.nativeTempDirectory, output.snapshotPath)
@@ -117,6 +167,13 @@ function observeProduction(load, state) {
     }
     return output
   })
+  const syncModule = load('src/main/indexing/merged-page/mergedIndexSyncRuntime.ts')
+  const createSync = syncModule.createMergedIndexSyncRuntime
+  syncModule.createMergedIndexSyncRuntime = (...args) => {
+    assert(!state.sync, 'Unexpected duplicate merged sync owner')
+    state.sync = createSync(...args)
+    return state.sync
+  }
   const pageModule = load('src/main/indexing/merged-page/mergedIndexPageQueryRuntime.ts')
   const createPage = pageModule.createMergedIndexPageQueryRuntime
   pageModule.createMergedIndexPageQueryRuntime = (...args) => {
@@ -196,7 +253,7 @@ async function main() {
   const savedTemp = Object.fromEntries(['TEMP', 'TMP'].map(key => [key, process.env[key]]))
   const redactions = [[directory, '<fixture>'], [sourceRoot, '<source-root>'], [os.tmpdir(), '<system-temp>'],
     [process.env.USERPROFILE, '<user-profile>'], [process.env.WINDIR, '<windows>']]
-  const state = { nativeTempDirectory, ownedSqliteSnapshots: 0, phase: 'fixture-setup' }, stages = [], controls = []
+  const state = { nativeTempDirectory, ownedSqliteSnapshots: 0, phase: 'fixture-setup', sourceInvalidations: 0, queryInvalidations: 0, sourcePublicationModes: [] }, stages = [], controls = []
   let host, failure
   try {
     fs.mkdirSync(nativeTempDirectory)
@@ -260,13 +317,14 @@ async function main() {
     const global = host.load('src/main/performance/globalIoRuntime.ts').createGlobalIoRuntime({ env: process.env, localScanWorkers: 2,
       appendLog: host.appendLog, isIndexingActive: () => false, isUserActive: () => false,
       storageProfileForPath: value => ({ rootPath: path.parse(value).root, type: 'ssd', reason: 'controlled-local-fixture', isNetwork: false }) })
-    const withGlobalIo = host.observer.global(global)
+    const observedGlobalIo = host.observer.global(global)
+    const withGlobalIo = async (...args) => { const result = await observedGlobalIo(...args); await state.afterGlobalIo?.(args[0], result); return result }
     const rootLoad = selectedOwners(host, ['src/main/indexing/rootIndexRuntime.ts', 'src/main/indexing/root-index/rootIndexLockRuntime.ts'])
     const rootIndex = rootLoad('src/main/indexing/rootIndexRuntime.ts').createRootIndexRuntime({
       appName: host.config.APP_NAME, fontScanCacheVersion: host.config.FONT_SCAN_CACHE_VERSION,
       scriptDetectionVersion: host.config.SCRIPT_DETECTION_VERSION, exists: host.exists,
       openStableSqliteDb: host.openStableSqliteDb, closeSqliteDb: host.closeSqliteDb, appendStartupLog: host.appendLog, withGlobalIo,
-      invalidateSharedFontRuntimeCaches: () => host.query.clearFontQueryCaches(), recordCacheEvent: async () => {},
+      invalidateSharedFontRuntimeCaches: selectedStorageInvalidator(host, state), recordCacheEvent: async () => {},
       runRustRootIndexApplyChanges: async input => {
         const result = await host.indexing.runRustRootIndexApplyChanges(input)
         assert.equal(result?.applied, true, 'Actual native root write is required')
@@ -274,6 +332,7 @@ async function main() {
         assert.equal(result.deletes, input.deletes.length)
         state.stage?.nativeApplies.push({ upserts: input.upserts.length, deletes: input.deletes.length,
           directories: input.directories?.length || 0, applied: result.applied })
+        state.afterRootApply?.(input, result)
         return result
       },
     })
@@ -283,14 +342,15 @@ async function main() {
       hasValidFontSignature: fonts.hasValidFontSignature, fontItemFromPath: fonts.fontItemFromPath,
       sanitizeCachedFont: cached.sanitizeCachedFont, cachedFontForRuntime: cached.cachedFontForRuntime,
       openRootIndexDb: rootIndex.openRootIndexDb, closeSqliteDb: host.closeSqliteDb,
-      saveRootIndexDirectorySignatures: rootIndex.saveRootIndexDirectorySignatures }
+      saveRootIndexDirectorySignatures: async (...args) => { const result = await rootIndex.saveRootIndexDirectorySignatures(...args); await state.afterDirectorySave?.(); return result } }
     const directoryFile = 'src/main/indexing/scan-orchestrator/rootDirectoryCacheRuntime.ts'
     const storageFile = 'src/main/cache/scan-storage/rootIndexStorageRuntime.ts'
     const watcherFile = 'src/main/watcher/watchedFolderIndexRuntime.ts'
-    function makeWatcher({ directoryModule = host.load(directoryFile), storageModule = host.load(storageFile), watcherModule = host.load(watcherFile) } = {}) {
+    function makeWatcher({ directoryModule = host.load(directoryFile), storageModule = host.load(storageFile), watcherModule = host.load(watcherFile), runRustFontParseBatch = host.indexing.runRustFontParseBatch, saveRootIndexSqliteChanges = rootIndex.saveRootIndexSqliteChanges, exposeEntry = false, compatibilityEntry = false } = {}) {
       const directoryRuntime = directoryModule.createRootDirectoryCacheRuntime(common)
       const entry = host.load('src/main/watcher/manual-refresh/manualFolderIndexEntryRuntime.ts').createManualFolderIndexEntryRuntime({
-        ...common, scanFoldersRuntime: () => directoryRuntime })
+        ...common, runRustFontParseBatch, runFontParseWorkerPool: async () => { throw Error('Watcher must use actual selective native parsing') }, scanFoldersRuntime: () => directoryRuntime })
+      if (exposeEntry) return entry
       const unexpectedInitialization = async () => { if (state.stage) state.stage.initializers++; throw Error('Compatible storage attempted initialization') }
       const storage = storageModule.createRootIndexStorageRuntime({
         fontScanCacheVersion: host.config.FONT_SCAN_CACHE_VERSION, rootCacheDir: host.paths.rootCacheForRoot,
@@ -304,6 +364,8 @@ async function main() {
         },
       }, { readScanCacheFile: async () => { throw Error('Legacy cache is outside this fixture') }, hideDirectoryOnWindows: unexpectedInitialization })
       return watcherModule.createWatchedFolderIndexRuntime({ ...common, ...entry,
+        ...(compatibilityEntry ? { upsertFontIndexEntries: undefined } : {}),
+        upsertFontIndexEntry: async (...args) => { const result = await entry.upsertFontIndexEntry(...args); await state.afterSingleEntry?.(); return result },
         fontScanCacheVersion: host.config.FONT_SCAN_CACHE_VERSION, isIgnoredWatcherPath: () => false,
         rootIndexDbPath: host.paths.rootDbForRoot, rootCacheDir: host.paths.rootCacheForRoot, exists: host.exists,
         resolveActiveRootIndexDbPath: rootIndex.resolveActiveRootIndexDbPath,
@@ -321,9 +383,10 @@ async function main() {
             assert(Math.abs(row.stat.mtimeMs - current.mtimeMs) < 1)
           }
           if (state.stage) state.stage.freshRows += rows.length
+          await state.afterDirectoryRows?.()
           return rows
         },
-        saveRootIndexSqliteChanges: rootIndex.saveRootIndexSqliteChanges,
+        saveRootIndexSqliteChanges,
         saveScanCacheFile: async () => { throw Error('Watcher fell back to a JSON cache') },
         writeRootCacheManifest: rootIndex.writeRootCacheManifest,
         runRustWatcherPreflight: input => host.indexing.runRustWatcherPreflight(input),
@@ -616,11 +679,14 @@ async function main() {
     await validate('freshness-control-recovery', 1, currentTotal)
     controls.push('rejects-parent-signature-child-reuse')
 
+    const inventoryProof = await require('./lib/watcher-inventory-checkpoints.cjs').checkWatcherInventoryCheckpoints({
+      host, rootIndex, makeWatcher, fontRoot, cacheDir, dbPath, files, manifest, copy, state, startStage, finishStage, audit, controls })
+
     await host.close()
     assert.deepEqual(host.closeProof(), { hostClosed: true, databaseOwnersClosed: true, childrenReaped: true,
       remainingDatabaseOwners: 0, remainingChildren: 0 })
     const report = { ok: true, platform: 'win32', scope: 'private local fixture, actual isolated native I/O; no NAS or renderer latency claim',
-      directories: DIRECTORIES, initialFiles: FILES, stages, controls,
+      directories: DIRECTORIES, initialFiles: FILES, stages, controls, inventoryProof,
       validation: 'Actual worker-ready page + background validation + native rebuild receipts + persisted source signature',
       schedulingControl: 'Only validation throttle age is made due; production freshness and build decisions are unchanged',
       snapshotOwnership: { casePrivateTemporaryDirectory: true, verifiedNativeSnapshots: state.ownedSqliteSnapshots },

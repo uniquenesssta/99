@@ -35,10 +35,7 @@ struct Request {
 fn destination(request: &Request) -> io::Result<&str> { request.dest.as_deref().filter(|v|!v.is_empty()).ok_or_else(||io::Error::other("missing destination")) }
 fn transfer(request: &Request) -> io::Result<&str> { request.transfer_path.as_deref().filter(|v|!v.is_empty()).ok_or_else(||io::Error::other("missing local transfer file")) }
 fn unix_millis(time: SystemTime) -> f64 {
-    match time.duration_since(UNIX_EPOCH) {
-        Ok(duration) => duration.as_secs_f64() * 1000.0,
-        Err(error) => -(error.duration().as_secs_f64() * 1000.0),
-    }
+    crate::scanner::metadata::timestamp_millis(time)
 }
 fn unix_nanos_text(time: SystemTime) -> String {
     match time.duration_since(UNIX_EPOCH) {
@@ -159,13 +156,21 @@ fn execute(request: &Request) -> io::Result<Value> {
                     let kind = entry.file_type()?;
                     let full = entry.path();
                     // Cache writes must not generate another root refresh.
-                    let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                    let raw_name = entry.file_name();
+                    let raw_name = raw_name.to_string_lossy();
+                    let name = raw_name.to_ascii_lowercase();
                     if [".hfm", ".hfm-cache", ".hfm-preview-cache", ".hanfontmanager", ".hfm-locks"].contains(&name.as_str()) { continue; }
+                    // Match the font inventory's directory exclusions before walking the NAS.
+                    // A similarly named regular file is not a directory exclusion.
+                    if kind.is_dir() && (raw_name.starts_with('.') || raw_name == "node_modules") { continue; }
                     if kind.is_dir() && !kind.is_symlink() { pending.push(full); }
                     else if kind.is_file() {
                         let info = entry.metadata()?;
-                        let name = full.strip_prefix(path).map_err(io::Error::other)?.to_string_lossy().into_owned();
-                        rows.insert(name, json!([info.len(), unix_nanos_text(info.modified()?)]));
+                        let name = full.strip_prefix(path).map_err(io::Error::other)?.to_str()
+                            .ok_or_else(|| io::Error::other("directory snapshot path is not valid Unicode"))?.to_owned();
+                        if rows.insert(name, json!([info.len(), unix_nanos_text(info.modified()?)])).is_some() {
+                            return Err(io::Error::other("duplicate directory snapshot path"));
+                        }
                     }
                     if rows.len() + pending.len() > 200_000 { return Err(io::Error::other("directory snapshot limit exceeded")); }
                 }
@@ -473,5 +478,21 @@ mod tests {
         fs::remove_file(dir.0.join("nested/font.ttf")).unwrap();
         assert_eq!(execute(&dir.request("treeSnapshot","",json!({}))).unwrap(),json!({}));
         assert!(execute(&dir.request("treeSnapshot","absent",json!({}))).is_err());
+    }
+    #[test]
+    fn snapshot_does_not_walk_excluded_directories_or_exclude_similar_files() {
+        let dir = Directory::new();
+        for name in [".git", ".history", "node_modules"] {
+            fs::create_dir(dir.0.join(name)).unwrap();
+            fs::write(dir.0.join(name).join("ignored.ttf"), b"not inventory input").unwrap();
+        }
+        for name in [".visible-font.ttf", "node_modules.ttf"] { fs::write(dir.0.join(name), b"inventory input").unwrap(); }
+        let before = execute(&dir.request("treeSnapshot", "", json!({}))).unwrap();
+        assert_eq!(before.as_object().unwrap().len(), 2);
+        assert!(before.get(".visible-font.ttf").is_some());
+        for name in [".git", ".history", "node_modules"] { fs::write(dir.0.join(name).join("another.ttf"), b"ignored mutation").unwrap(); }
+        assert_eq!(execute(&dir.request("treeSnapshot", "", json!({}))).unwrap(), before);
+        let file_root = Directory::new(); fs::write(file_root.0.join("node_modules"), b"regular file").unwrap();
+        assert!(execute(&file_root.request("treeSnapshot", "", json!({}))).unwrap().get("node_modules").is_some());
     }
 }

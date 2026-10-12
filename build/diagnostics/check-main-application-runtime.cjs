@@ -58,6 +58,7 @@ async function main() {
     ['duplicate registration', entry, 'registerMainProcessRuntime(application.registration);', 'registerMainProcessRuntime(application.registration);\nregisterMainProcessRuntime(application.registration);'],
     ['duplicate startup timer', entry, 'operationsComposition.startStartupTasks();', 'operationsComposition.startStartupTasks();\noperationsComposition.startStartupTasks();'],
     ['duplicate scheduler start', lifecycle, '      startBackgroundTaskScheduler();', '      startBackgroundTaskScheduler();\n      startBackgroundTaskScheduler();'],
+    ['missing watcher physical-close wait', lifecycle, '      await awaitFolderWatchersClosed();', ''],
     ['duplicate watcher stop', lifecycle, '      stopFolderWatchers();', '      stopFolderWatchers();\n      stopFolderWatchers();'],
   ]
   for (const [name, file, before, after] of mutants) {
@@ -76,6 +77,6 @@ async function main() {
   const crlf = new Map([entry, application, adapter, path.join(bootstrap, 'mainTagCompositionRuntime.ts')]
     .map(file => [file, read(file).replace(/\n/g, '\r\n')]))
   checkApplication(crlf)
-  console.log('[diagnostics:main-application-runtime] passed: 5 groups, 116 capability identities, side-effect-free imports, 8 rejected wiring/duplicate start-stop mutations, CRLF')
+  console.log('[diagnostics:main-application-runtime] passed: 5 groups, 118 capability identities, side-effect-free imports, 9 rejected wiring/duplicate start-stop mutations, CRLF')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

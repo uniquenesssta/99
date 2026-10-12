@@ -58,6 +58,7 @@ export function createMainApplicationRuntime({ core, data, mutation, operations 
       startBackgroundTaskScheduler: operations.lifecycle.startBackgroundTaskScheduler,
       stopBackgroundTaskScheduler: operations.lifecycle.stopBackgroundTaskScheduler,
       stopFolderWatchers: operations.lifecycle.stopFolderWatchers,
+      awaitFolderWatchersClosed: operations.lifecycle.awaitFolderWatchersClosed,
     },
     query: {
       reportPerformanceEvent: core.capabilities.reportPerformanceEvent,
@@ -68,6 +69,7 @@ export function createMainApplicationRuntime({ core, data, mutation, operations 
       loadLibrary: data.capabilities.loadLibrary,
       loadLibraryShell: data.capabilities.loadLibraryShell,
       getSharedAvailability: data.capabilities.getSharedAvailability,
+      getSharedWatchStatus: operations.capabilities.getSharedWatchStatus,
       loadFolderCache: data.capabilities.loadFolderCache,
       searchFontsInLibrary: data.capabilities.searchFontsInLibrary,
       queryFontsInLibrary: data.capabilities.queryFontsInLibrary,

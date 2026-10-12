@@ -215,7 +215,7 @@ export function createRendererInteractionRuntime(
     ).slice(0, 24);
     const page = String(payload?.page || "").slice(0, 60);
     const immediateThreshold = rendererImmediateEventThreshold(kind, label);
-    const queryEvidence = ['db-query-start', 'db-query-end', 'db-query-rejected', 'font-query-view'].includes(kind);
+    const queryEvidence = ['db-query-start', 'db-query-end', 'db-query-rejected', 'font-query-view', 'font-query-rejections'].includes(kind);
     const shouldLogImmediate = queryEvidence || detailedPerfLogs || severity === "error" || (immediateThreshold !== null ? durationMs >= immediateThreshold : severity === "warn" || durationMs >= 300);
     if (shouldLogImmediate) {
       options.appendLog(

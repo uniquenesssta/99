@@ -59,6 +59,8 @@ export function isStdoutFontListingArgs(args: string[]): boolean {
 }
 
 export type RustCoreExecOptions = {
+  /** Owner guard checked at dispatch, never after an acknowledged write. */
+  assertCurrent?: () => void
   timeout?: number
   windowsHide?: boolean
   maxBuffer?: number
@@ -104,7 +106,7 @@ function mergeAbortSignals(primary: AbortSignal, secondary?: AbortSignal): { sig
 }
 
 function execOptionsWithoutExternalSignal(options: RustCoreExecOptions): Omit<RustCoreExecOptions, 'signal'> {
-  const { signal: _signal, onStderrLine: _onStderrLine, foregroundPreviewBytes: _foregroundPreviewBytes, ...rest } = options
+  const { assertCurrent: _assertCurrent, signal: _signal, onStderrLine: _onStderrLine, foregroundPreviewBytes: _foregroundPreviewBytes, ...rest } = options
   return rest
 }
 
@@ -227,6 +229,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   async function runRustCoreScheduledCommandDirect(workerPath: string, args: string[], execOptions: RustCoreExecOptions): Promise<{ stdout: string; stderr: string; daemon?: boolean; sharedIo?: boolean; previewBytes?: Buffer }> {
     args = [...args]
     execOptions = { ...execOptions, signal: execOptions.signal || currentSharedIoSignal() }
+    execOptions.assertCurrent?.()
     assertLocalShutdownWorkAllowed()
     if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
     // Copy caller-owned identities before awaiting mapping discovery.
@@ -325,14 +328,24 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     if (ownedNativeStage) { roots.push('configured-root:owned-preview-stage'); accesses = undefined }
     const publicationOutput = previewPublications.get(inputPath)
     if (publicationOutput) roots.push(`preview-output:${win32.normalize(publicationOutput).toLowerCase()}`)
+    // Guarded root-index writes need admission AND physical-close ownership even
+    // on local disks. Reuse the isolated process owner instead of execFile's
+    // early AbortError or a daemon queue that cannot carry the owner guard.
+    if (!roots.length && execOptions.assertCurrent && target?.write) {
+      roots.push(`guarded-local-write:${target.paths.filter(Boolean).map(path => win32.normalize(path).toLowerCase()).sort().join('|')}`)
+      accesses = undefined
+    }
     // Preflight writes must never enter a replaceable/cached daemon read lane.
     if (!roots.length && target?.write && args[0] === '--shared-metadata-overlay-read') roots.push(`local-metadata:${target.paths.join('|').toLowerCase()}`)
     if (roots.length) {
       const rootGenerations = new Map(target!.paths.map(sharedIoAvailabilityRoot).filter((root): root is string => !!root).map(root => [root,getStartupPathRootState(root).generation]));
-      const admit = () => (previewAdmissions.get(inputPath)?.() ?? true) && [...rootGenerations].every(([root,generation]) => {
+      const admit = () => {
+        try { execOptions.assertCurrent?.() } catch { return false }
+        return (previewAdmissions.get(inputPath)?.() ?? true) && [...rootGenerations].every(([root,generation]) => {
         const current = getStartupPathRootState(root);
         return current.generation === generation && current.state !== 'offline';
-      });
+        });
+      };
       const leased = [...new Set(args)].map(path => temporaryFiles.get(path)).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
       for (const entry of leased) entry.holds += 1
       const onClose = () => {
@@ -350,7 +363,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         onStderrLine: execOptions.onStderrLine,
         queueTimeoutMs: 3000, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).catch(async error => {
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
-          if (!target!.write || previewRead || accesses?.length || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') await error.closed
+          if (execOptions.assertCurrent || !target!.write || previewRead || accesses?.length || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') await error.closed
           throw error
         })
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
@@ -383,6 +396,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     const result = await rustCoreScheduler.run(args, async (schedulerSignal) => {
       const mergedSignal = mergeAbortSignals(schedulerSignal, execOptions.signal)
       try {
+        execOptions.assertCurrent?.()
         assertLocalShutdownWorkAllowed()
         if (transportStopped) throw new SharedIoProcessError('原生执行器已经停止。', 'not-started', 'stopping')
         const execution = execFileAsync(workerPath, args, { ...execOptionsWithoutExternalSignal(execOptions), signal: mergedSignal.signal,

@@ -42,6 +42,7 @@ export function registerLibraryIpcHandlers(handle: IpcHandleRegistrar, runtime: 
   handle("fonts:checkSharedMetadataUpdates", (_event, reason?: string) => runtime.checkSharedMetadataUpdates(reason));
   handle("fonts:getMetrics", () => runtime.getFontMetricsFromLibrary());
   handle("folders:watch", (_event, folders: string[]) => runtime.startWatchingFolders(folders));
+  handle("folders:getWatchStatus", () => runtime.getSharedWatchStatus());
   handle("folders:refreshWatched", (_event, folderPath: string, rootPath?: string) =>
     runtime.refreshWatchedFolder(folderPath, rootPath),
   );

@@ -10,6 +10,7 @@
       "appName",
       "appendStartupLog",
       "assertFeatureForChannel",
+      "awaitFolderWatchersClosed",
       "backgroundTaskSchedulerStatus",
       "beginStartupSessionSync",
       "buildMarker",
@@ -50,6 +51,7 @@
       "getMigrationDiagnostics",
       "getPreviewCacheStatus",
       "getSharedAvailability",
+      "getSharedWatchStatus",
       "getSystemInstalledFonts",
       "hasInFlightActivationInstallStatusSave",
       "hasPendingActivationInstallStatusSave",
@@ -864,6 +866,12 @@
             ]
           ],
           [
+            "createFolderWatcherRuntime.awaitFolderWatchersClosed",
+            [
+              "fixture"
+            ]
+          ],
+          [
             "createMainPerformanceRuntime.stopPerformanceLogSampler",
             [
               "fixture"
@@ -938,5 +946,8 @@
     "commit": "e1684ffd962c74b282820a9b32ee699c581a25c6",
     "windowsRun": "37737695038",
     "change": "One shared-tag metrics snapshot owner; invalidate before existing memory/page caches on cancellable clears. All earlier calls and ownership entries retained."
+  },
+  "sharedWatcherLifecycleMigration": {
+    "change": "Add read-only shared watcher status capability and await physical notification-owner close in normal shutdown; retain all prior operation expectations."
   }
 }

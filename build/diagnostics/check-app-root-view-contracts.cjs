@@ -82,7 +82,13 @@ function checkLifecycle(app, view) {
   assert(ts.isReturnStatement(tail[6]))
   const hash = text => crypto.createHash('sha256').update(text).digest('hex')
   assert.equal(hash(normalized.slice(0, marker)), fixture.lifecyclePrefixSha256, 'App hooks/effects/commands changed')
-  assert.equal(hash(view.replace(/\r\n/g, '\n')), fixture.rootViewSha256, 'root view lifecycle/dev switch changed')
+  const statusImport = "import { SharedWatchStatusBar } from './SharedWatchStatusBar'\n"
+  const statusFooter = '      <SharedWatchStatusBar developerStatus={developer.IS_DEVELOPMENT ? developer.status : undefined} />'
+  const normalizedView = view.replace(/\r\n/g, '\n')
+  assert.equal(normalizedView.split(statusImport).length - 1, 1, 'shared watch status owner must be imported exactly once')
+  assert.equal(normalizedView.split(statusFooter).length - 1, 1, 'shared watch status owner must preserve the development-only status prop')
+  const legacyView = normalizedView.replace(statusImport, '').replace(statusFooter, '      {developer.IS_DEVELOPMENT && <footer className="statusbar">{developer.status}</footer>}')
+  assert.equal(hash(legacyView), fixture.rootViewSha256, 'root view lifecycle/dev switch changed')
 }
 function snapshot(app, view, bindings, development, collapsed, hasFolders = false) {
   const runtime = { jsx: (type, props) => typeof type === 'function' ? type(props) : ({type, props}), jsxs: (type, props) => runtime.jsx(type, props) }
@@ -103,6 +109,11 @@ function snapshot(app, view, bindings, development, collapsed, hasFolders = fals
   const tree=caller.render(values)
   function normalize(value) {
     if(Array.isArray(value))return value.map(normalize)
+    if(value?.type==='SharedWatchStatusBar') {
+      assert.deepEqual(Object.keys(value.props), ['developerStatus'], 'status footer gained unrelated props')
+      assert.equal(value.props.developerStatus, development ? values.status : undefined, 'developer status escaped its development-only boundary')
+      return development ? { type: 'footer', props: { className: 'statusbar', children: values.status } } : false
+    }
     if(value?.type==='FontListPanel') {
       assert.equal(value.props.hasWatchedFolders, hasFolders, 'list lost watched-root readiness')
       assert.equal(value.props.installStatusReady, values.installStatusReady, 'list lost status readiness')
@@ -146,6 +157,11 @@ function main() {
   const app=read(appPath),view=read(viewPath)
   checkLifecycle(app, view)
   checkLifecycle(app.replace(/\r?\n/g,'\r\n'), view.replace(/\r?\n/g,'\r\n'))
+  const statusFooter = '<SharedWatchStatusBar developerStatus={developer.IS_DEVELOPMENT ? developer.status : undefined} />'
+  assert(view.includes(statusFooter), 'shared watch status footer mutation anchor drifted')
+  assert.throws(() => checkLifecycle(app, view.replace(statusFooter, '')), /shared watch status owner/, 'status owner removal escaped the gate')
+  assert.throws(() => checkLifecycle(app, view.replace(statusFooter, statusFooter + '\n      ' + statusFooter)), /shared watch status owner/, 'duplicate status owner escaped the gate')
+  assert.throws(() => checkLifecycle(app, view.replace(statusFooter, '<SharedWatchStatusBar developerStatus={developer.status} />')), /development-only/, 'production developer status leak escaped the gate')
   const missingClosingOwner = app.replace(/  const rendererClosingLifecycle = useRendererClosingLifecycleRuntime\(\)\r?\n/, '')
   assert.notEqual(missingClosingOwner, app, 'closing lifecycle owner mutant did not match source')
   assert.throws(() => checkLifecycle(missingClosingOwner, view), /closing lifecycle owner/, 'closing lifecycle owner removal escaped the gate')

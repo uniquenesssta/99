@@ -5,9 +5,9 @@ use crate::font_parser::{FontNameInfo, FontScriptInfo, FontStyleInfo};
 pub struct FontFileEntry {
     pub path: String,
     pub size: u64,
-    pub modified_ms: u128,
-    pub created_ms: u128,
-    pub changed_ms: u128,
+    pub modified_ms: i128,
+    pub created_ms: i128,
+    pub changed_ms: i128,
     pub signature_valid: bool,
     pub format: String,
     pub quick_hash: String,
@@ -22,7 +22,7 @@ pub struct FontFileEntry {
 #[derive(Clone, Debug)]
 pub struct DirectoryEntry {
     pub path: String,
-    pub modified_ms: u128,
+    pub modified_ms: i128,
     pub file_count: usize,
     pub dir_count: usize,
 }

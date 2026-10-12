@@ -28,7 +28,7 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
   contextFontTargets: (available?: FontItem[]) => FontItem[]
 }) {
   const { cardPoolViewLayout, virtualViewport, selectedFontId, selectedFontIds, contextMenu, previewFamilies, nativePreviewImages, failedPreviewFontIds, assignTagName, assignSharedTagName, latestVisibleFontsRef, latestViewLayoutRef, contextFontTargets, library, sidebarPage, databasePageReady, databasePageResult } = args
-  const { fontIndexById, fontMetrics, localTagCounts, sharedTagCounts, localTagList, sharedTagList, flatFolderNodes, advancedFilterCount, visibleFonts } = useBrowseDerivedRuntime({
+  const { fontIndexById, fontMetrics, localTagCounts, sharedTagCounts, localTagList, sharedTagList, flatFolderNodes, advancedFilterCount, visibleFonts, membershipDiagnostics } = useBrowseDerivedRuntime({
     library: args.library,
     sidebarPage: args.sidebarPage,
     databasePageReady: args.databasePageReady,
@@ -55,7 +55,7 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
     observeFontRefreshPage(databasePageResult, databasePageReady)
     const ids = visibleFonts.map(font => font.id)
     const signature = JSON.stringify([databasePageReady, databasePageResult?.queryKey, databasePageResult?.total, ids,
-      args.deferredSearch, sidebarPage, args.selectedTagName, args.selectedSharedTagName, args.selectedFolderId, cardPoolViewLayout.listLayout])
+      args.deferredSearch, sidebarPage, args.selectedTagName, args.selectedSharedTagName, args.selectedFolderId, cardPoolViewLayout.listLayout, membershipDiagnostics])
     if (lastQueryView.current === signature) return
     lastQueryView.current = signature
     const visibleIds = new Set(ids)
@@ -71,12 +71,31 @@ export function useAppFontDerivedRuntime(args: BrowseDerivedOptions & {
       visible: visibleFonts.length,
       displayTotal: databasePageReady ? visibleFontResultTotal(databasePageResult, visibleFonts) : visibleFonts.length,
       added: databasePageReady ? ids.filter(id => !indexed.has(id)).length : 0,
-      removed: databasePageReady ? (databasePageResult?.items || []).filter(font => !visibleIds.has(font.id)).length : 0,
+      removed: databasePageReady ? membershipDiagnostics?.rejectedDatabaseRows ?? (databasePageResult?.items || []).filter(font => !visibleIds.has(font.id)).length : 0,
       duplicateIds: ids.length - new Set(ids).size,
-      sampleIds: ids.slice(0, 3).join(',')
+      membership: membershipDiagnostics && {
+        source: membershipDiagnostics.source, totalSource: membershipDiagnostics.totalSource,
+        rejected: membershipDiagnostics.rejected, rejectedDatabaseRows: membershipDiagnostics.rejectedDatabaseRows,
+        duplicateDatabaseIds: membershipDiagnostics.duplicateDatabaseIds
+      }
     } })
+    if (membershipDiagnostics?.source === 'database-page' && membershipDiagnostics.rejected) {
+      // The trace sanitizer deliberately summarizes arrays/deep objects. Emit
+      // bounded scalar samples, so the actual rejection evidence survives it.
+      const { reasons, stages } = membershipDiagnostics
+      reportRendererTrace({ kind: 'font-query-rejections', label: 'reason-counts', page: sidebarPage, severity: 'info', details: {
+        source: membershipDiagnostics.source, totalSource: membershipDiagnostics.totalSource,
+        rejected: membershipDiagnostics.rejected, rejectedDatabaseRows: membershipDiagnostics.rejectedDatabaseRows,
+        validity: Object.fromEntries(Object.entries(reasons).filter(([reason]) => ['resource-fork-name', 'resource-fork-path', 'undersized-font', 'missing-source-preview-error', 'invalid-source-preview-error', 'invalid-record', 'missing-index'].includes(reason))),
+        filters: Object.fromEntries(Object.entries(reasons).filter(([reason]) => !['resource-fork-name', 'resource-fork-path', 'undersized-font', 'missing-source-preview-error', 'invalid-source-preview-error', 'invalid-record', 'missing-index'].includes(reason))),
+        stages, sampled: membershipDiagnostics.samples.length
+      } })
+      for (const sample of membershipDiagnostics.samples) {
+        reportRendererTrace({ kind: 'font-query-rejections', label: 'row-decision', page: sidebarPage, severity: 'info', details: { ...sample } })
+      }
+    }
   }, [cardPoolViewLayout.listLayout, visibleFonts, databasePageReady, databasePageResult, args.deferredSearch, sidebarPage,
-    args.activeFilter, args.selectedTagName, args.selectedSharedTagName, args.selectedFolderId, args.installStatus, args.timeSortMode, args.sortMode])
+    args.activeFilter, args.selectedTagName, args.selectedSharedTagName, args.selectedFolderId, args.installStatus, args.timeSortMode, args.sortMode, membershipDiagnostics])
 
   useLayoutEffect(() => {
     latestVisibleFontsRef.current = visibleFonts

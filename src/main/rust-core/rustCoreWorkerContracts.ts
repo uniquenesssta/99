@@ -115,6 +115,8 @@ export type RustFontParseBatchResult = {
 }
 
 export type RustRootIndexApplyChangesInput = {
+  /** In-memory owner admission, never serialized into native input. */
+  assertCurrent?: () => void
   dbPath: string
   rootPath: string
   storage: 'root' | 'fallback'

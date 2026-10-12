@@ -58,7 +58,7 @@ export interface MainScanCompositionOptions {
   saveRootIndexDirectorySignatures: Data['storage']['saveRootIndexDirectorySignatures'];
   upsertFontHashIndex: Data['storage']['upsertFontHashIndex'];
   recordCacheEvent: Data['storage']['recordCacheEvent'];
-  rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustFontIndexListWorker' | 'runRustFontParseBatch' | 'runRustWatcherPreflight'>;
+  rustCoreWorkerRuntime: Pick<Core['rustCoreWorkerRuntime'], 'runRustFontIndexListWorker' | 'runRustFontParseBatch' | 'runRustWatcherPreflight' | 'diagnoseRustCoreWorker'>;
   invalidateSharedFontRuntimeCaches: Data['storage']['invalidateSharedFontRuntimeCaches'];
   createFontScanJobId: Core['windows']['createFontScanJobId'];
   delayToEventLoop: Core['delayToEventLoop'];
@@ -272,6 +272,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
   const {
     fontIndexDeleteRecord,
     upsertFontIndexEntry,
+    upsertFontIndexEntries,
     removeFontIndexEntriesForPath,
     makeRootScanCacheContext,
     fontIndexEntryChanged,
@@ -302,6 +303,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     relativeDirectoryPathForRoot,
     listFontFilesWithDirectoryCache,
     upsertFontIndexEntry,
+    upsertFontIndexEntries,
     fontIndexEntryChanged,
     cacheKeyInsideDirectory,
     fontIndexDeleteRecord,
@@ -341,9 +343,15 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     syncMergedIndexForRootIncremental,
     syncMergedIndexForRootSnapshot,
     isScanActive: () => scanFoldersRuntime().isActive(),
+    getSharedWatchWorkerPath: async () => {
+      const worker = await rustCoreWorkerRuntime.diagnoseRustCoreWorker();
+      return worker.available && worker.capabilities?.includes('shared-root-notifications-v1') ? worker.path : undefined;
+    },
   });
 
   const stopFolderWatchers = folderWatcherRuntime.stopFolderWatchers;
+  const awaitFolderWatchersClosed = folderWatcherRuntime.awaitFolderWatchersClosed;
+  const getSharedWatchStatus = folderWatcherRuntime.getSharedWatchStatus;
 
   const startWatchingFoldersUnsafe = folderWatcherRuntime.startWatchingFolders;
 
@@ -416,6 +424,8 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     refreshWatchedFolder,
     sendFontIndexChanged,
     startWatchingFolders,
-    stopFolderWatchers
+    getSharedWatchStatus,
+    stopFolderWatchers,
+    awaitFolderWatchersClosed
   };
 }

@@ -60,6 +60,7 @@ export type MainProcessLifecycleRuntimeOptions = {
   startBackgroundTaskScheduler: () => void;
   stopBackgroundTaskScheduler: () => void;
   stopFolderWatchers: () => void;
+  awaitFolderWatchersClosed: () => Promise<void>;
   flushActivationInstallStatusSave: (reason: string) => Promise<void>;
   hasPendingActivationInstallStatusSave: () => boolean;
   hasInFlightActivationInstallStatusSave: () => boolean;
@@ -119,6 +120,7 @@ export function registerMainProcessLifecycleRuntime(
     startBackgroundTaskScheduler,
     stopBackgroundTaskScheduler,
     stopFolderWatchers,
+    awaitFolderWatchersClosed,
     flushActivationInstallStatusSave,
     hasPendingActivationInstallStatusSave,
     hasInFlightActivationInstallStatusSave,
@@ -359,6 +361,7 @@ export function registerMainProcessLifecycleRuntime(
     },
     cleanup: async () => {
       stopFolderWatchers();
+      await awaitFolderWatchersClosed();
       if (process.platform !== "win32") return { remaining: 0 };
       const active = await cleanupTemporaryActiveFontsUntilEmpty("quit", 1);
       const pending = await flushPendingTemporaryFontDeletes("quit");

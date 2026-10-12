@@ -678,9 +678,11 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     return requireFolderCacheRuntime().loadFolderCache(folders);
   }
 
-  function invalidateSharedFontRuntimeCaches(): void {
-    folderCacheRuntimeRef?.invalidateSharedFontRuntimeCaches();
-    clearFontQueryCaches();
+  function invalidateSharedFontRuntimeCaches(invalidateQueries = true): void {
+    folderCacheRuntimeRef?.invalidateSharedFontRuntimeCaches(invalidateQueries);
+    // Checkpoints only retire source caches. Even a non-aborting query-cache
+    // clear advances generations, so merged publication owns that boundary.
+    if (invalidateQueries) clearFontQueryCaches();
   }
 
   async function loadSharedFontsForFolders(

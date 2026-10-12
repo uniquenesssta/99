@@ -13,11 +13,12 @@ const drain = async () => { for (let i=0;i<30;i++) await Promise.resolve() }
 function load(file, mocks = {}, globals = {}, transform = s => s) {
   const exports = {}
   const code = ts.transpileModule(transform(read(file)), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
-  vm.runInNewContext(code, { exports, console, process, performance, ...globals, require(id) {
+  vm.runInNewContext(code, { exports, console, process, performance, AbortController, AbortSignal, Buffer, ...globals, require(id) {
     if (Object.hasOwn(mocks,id)) return mocks[id]
-    if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises }
+    if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises, withSharedIoSignal: (_signal, work) => work() }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id==='node:path') return path
+    if (id==='node:child_process') return { spawn() { throw Error('Native notification process forbidden in controlled watcher consistency diagnostic') } }
     if (['node:async_hooks', 'node:perf_hooks', 'node:crypto'].includes(id)) return require(id)
     if (id.startsWith('.')) return load(path.relative(root,path.resolve(root,path.dirname(file),id+'.ts')),mocks,globals)
     throw Error(`Unmocked dependency ${file} -> ${id}`)
@@ -282,14 +283,14 @@ async function main(){
   await assert.rejects(()=>manualIncompleteCheck(s=>s.replace('if (payload.errors?.length) break;','')),assert.AssertionError)
  await recoveryCheck(); await structuralRecoveryConvergenceCheck(); await multiRootIsolationCheck();
   await assert.rejects(()=>recoveryCheck(s=>s.replaceAll('if (!recovery)', 'if (false)')),assert.AssertionError)
-  await assert.rejects(()=>recoveryCheck(s=>s.replace('if (recovery && options.syncMergedIndexForRootSnapshot)', 'if (false && options.syncMergedIndexForRootSnapshot)')),assert.AssertionError)
+  await assert.rejects(()=>recoveryCheck(s=>s.replace('if ((recovery || inventoryJob?.recoverProjection) && options.syncMergedIndexForRootSnapshot)', 'if (false && options.syncMergedIndexForRootSnapshot)')),assert.AssertionError)
   await assert.rejects(()=>recoveryCheck(s=>s.replace('if (recoveryError?.watcherRecoveryDisposition === "defer")', 'if (false)')),assert.AssertionError)
   await assert.rejects(()=>structuralRecoveryConvergenceCheck(s=>s.replace('if (deferredRecoveryBatches.has(rootKey)) {', 'if (false) {')),assert.AssertionError)
  await deletionCheck();
   await assert.rejects(()=>deletionCheck(s=>s.replace('replayUnchanged && font','font')),/unchanged broadcasts/)
   await assert.rejects(()=>deletionCheck(s=>s.replace('replayUnchanged && font','false && font')),/unchanged broadcasts/)
   await assert.rejects(()=>deletionCheck(s=>s.replace('if (!confirmedMissing) {','if (false) {')),assert.AssertionError)
-  await assert.rejects(()=>deletionCheck(s=>s.replace('if (errors.length > errorCount) return false','')),assert.AssertionError)
+  await assert.rejects(()=>deletionCheck(s=>s.replace('if (payload.errors!.length !== errorsBefore) continue','').replace('if (payload.errors!.length) { deletedKeys.clear(); deletes.clear() }','')),assert.AssertionError)
   await assert.rejects(()=>deletionCheck(s=>s.replace("watcherRecoveryDisposition: 'defer' as const,","")),assert.AssertionError)
 console.log('[diagnostics:watcher-index-consistency] deletion evidence, deferred persistence recovery, 4096-row convergence, multi-root isolation, grace/restart and safe manual fallback; source-scoped field authority; metrics-only broadcasts and invalid-revision filtering; thirteen mutations rejected') }
 main().catch(e=>{console.error(e);process.exitCode=1})

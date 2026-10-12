@@ -1,6 +1,7 @@
 import fs from 'node:fs'
+import { throwIfAborted } from '../../performance/ioQueue'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
-import { executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { executeSharedFile, sharedFileSystem as fsp, withoutSharedIoSignal, currentSharedIoSignal } from '../../path/sharedFileSystemRuntime'
 import os from 'node:os'
 import { basename,dirname,join } from 'node:path'
 import { isRootIndexDbPath } from '../../cache/cachePaths'
@@ -69,6 +70,7 @@ export function createRootIndexLockRuntime(deps: RootIndexLockRuntimeDeps): {
     }, null, 2)
 
     while (!handle) {
+      throwIfAborted(currentSharedIoSignal())
       try {
         await fsp.mkdir(dirname(lockPath), { recursive: true })
         handle = await fsp.open(lockPath, 'wx')
@@ -80,7 +82,15 @@ export function createRootIndexLockRuntime(deps: RootIndexLockRuntimeDeps): {
         }, Math.max(1000, Math.floor(ROOT_SCAN_CACHE_LOCK_STALE_MS / 4)))
         break
       } catch (error) {
-        if (handle) { await handle.close().catch(() => undefined); handle = null }
+        if (handle) {
+          const acquired = handle
+          await withoutSharedIoSignal(async () => {
+            if (isolated) await (acquired as unknown as { removeOwned: () => Promise<void> }).removeOwned().catch(() => undefined)
+            await acquired.close().catch(() => undefined)
+            if (!isolated) await fsp.rm(lockPath, { force: true }).catch(() => undefined)
+          })
+          handle = null
+        }
         const code = error && typeof error === 'object' && 'code' in error ? String((error as NodeJS.ErrnoException).code) : ''
         if (code !== 'EEXIST') throw error
         await removeStaleLockIfNeeded(lockPath)
@@ -90,6 +100,7 @@ export function createRootIndexLockRuntime(deps: RootIndexLockRuntimeDeps): {
         }
         const retryDelayMs = 140 + Math.floor(Math.random() * 180)
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
+        throwIfAborted(currentSharedIoSignal())
       }
     }
 
@@ -97,14 +108,18 @@ export function createRootIndexLockRuntime(deps: RootIndexLockRuntimeDeps): {
       return await action()
     } finally {
       if (heartbeatTimer) clearInterval(heartbeatTimer)
-      await heartbeatInFlight
-      if (handle && isolated) {
-        await (handle as unknown as {removeOwned:()=>Promise<void>}).removeOwned().catch(() => undefined)
-        await handle.close().catch(() => undefined)
-      } else {
-        if (handle) await handle.close().catch(() => undefined)
-        await fsp.rm(lockPath, { force: true }).catch(() => undefined)
-      }
+      // Cancellation retires work, but must not strand this owner's lock.
+      // removeOwned verifies the exact lock identity before cleanup.
+      await withoutSharedIoSignal(async () => {
+        await heartbeatInFlight
+        if (handle && isolated) {
+          await (handle as unknown as {removeOwned:()=>Promise<void>}).removeOwned().catch(() => undefined)
+          await handle.close().catch(() => undefined)
+        } else {
+          if (handle) await handle.close().catch(() => undefined)
+          await fsp.rm(lockPath, { force: true }).catch(() => undefined)
+        }
+      })
     }
   }
 

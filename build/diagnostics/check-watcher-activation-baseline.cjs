@@ -19,9 +19,9 @@ const drain = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 function load(file, mocks = {}, globals = {}, transform = x => x) {
   const output = ts.transpileModule(transform(read(file)), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
   const exports = {}
-  vm.runInNewContext(output, { exports, console, process, performance, ...globals, require(id) {
+  vm.runInNewContext(output, { exports, console, process, performance, AbortController, AbortSignal, Buffer, ...globals, require(id) {
     if (Object.hasOwn(mocks, id)) return mocks[id]
-    if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises }
+    if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises, withSharedIoSignal: (_signal, work) => work() }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id === 'node:path') return path
     if (['node:async_hooks', 'node:perf_hooks', 'node:crypto'].includes(id)) return require(id)
@@ -30,7 +30,7 @@ function load(file, mocks = {}, globals = {}, transform = x => x) {
   } }, { filename: file })
   return exports
 }
-const noProcess = { execFileSync() { throw Error('Native process forbidden in baseline') } }
+const noProcess = { execFileSync() { throw Error('Native process forbidden in baseline') }, spawn() { throw Error('Native notification process forbidden in baseline') } }
 function watcherHarness({ availability = async () => true, stat = async () => ({ isDirectory: () => true }), watchError = () => null, onWatch = () => {}, transform = x => x } = {}) {
   let now = 10000, scan = false, closes = 0
   const timers = new Map(), handles = [], applied = [], sent = [], order = [], probes = [], logs = []

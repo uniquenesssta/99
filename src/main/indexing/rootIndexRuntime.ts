@@ -22,9 +22,9 @@ import { mergeSharedFontMetadataFromExistingIndex } from './root-index/rootIndex
 import { createRootIndexSnapshotRuntime } from './root-index/rootIndexSnapshotRuntime'
 import { sqliteEntryFileIdentity, sqliteInsertIndexEvent, sqliteNextOpstamp, sqliteRowToScanEntry } from './root-index/rootIndexSqliteRuntime'
 import { assertRootIndexCandidateDbValid, assertRootIndexSwitchAllowed, countRootIndexEntries, readRootIndexCandidateDbCounts } from './root-index/sharedIndexAtomicWriter'
-import type { FontScanCacheEntry, FontScanCacheFile, RootIndexDirectorySignatureUpdate, RootIndexRuntimeDeps, RootIndexStorage } from './root-index/rootIndexTypes'
+import type { FontScanCacheEntry, FontScanCacheFile, RootIndexDirectorySignatureUpdate, RootIndexChangeWriteOptions, RootIndexRuntimeDeps, RootIndexStorage } from './root-index/rootIndexTypes'
 
-export type { FontScanCacheEntry, FontScanCacheFile, RootIndexStorage } from './root-index/rootIndexTypes'
+export type { FontScanCacheEntry, FontScanCacheFile, RootIndexChangeWriteOptions, RootIndexStorage } from './root-index/rootIndexTypes'
 
 export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
   const {
@@ -96,8 +96,8 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
     }
   }
 
-  async function settleCommittedSharedRootIndexWrite(eventType: string, payload: Record<string, unknown>): Promise<void> {
-    try { deps.invalidateSharedFontRuntimeCaches() }
+  async function settleCommittedSharedRootIndexWrite(eventType: string, payload: Record<string, unknown>, publishQueryChanges = true): Promise<void> {
+    try { deps.invalidateSharedFontRuntimeCaches(publishQueryChanges) }
     catch (error) { deps.appendStartupLog(`root index committed cache invalidation skipped: ${error instanceof Error ? error.message : String(error)}`) }
     await deps.recordCacheEvent('root-index', eventType, payload).catch((error) => {
       deps.appendStartupLog(`root index committed cache event skipped: ${error instanceof Error ? error.message : String(error)}`)
@@ -121,7 +121,8 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
     for (const sidecar of sqliteSidecarPaths(filePath)) await fsp.rm(sidecar, { force: true }).catch(() => undefined)
   }
 
-  async function saveRootIndexSqliteFileAtomicSnapshot(filePath: string, rootPath: string, storage: RootIndexStorage, cache: FontScanCacheFile, mode: 'full' | 'incremental' = 'full', changeCounts?: { upserts: number; deletes: number }): Promise<string> {
+  async function saveRootIndexSqliteFileAtomicSnapshot(filePath: string, rootPath: string, storage: RootIndexStorage, cache: FontScanCacheFile, mode: 'full' | 'incremental' = 'full', changeCounts?: { upserts: number; deletes: number }, assertCurrent?: () => void): Promise<string> {
+    assertCurrent?.()
     const epoch = applicationWorkEpoch()
     const cacheDir = rootCacheDirForIndexPath(filePath)
     const snapshotPath = rootIndexSnapshotDbPath(cacheDir)
@@ -141,15 +142,17 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
     })
 
     const accessKind = await resolveRootIndexAccessKind(filePath, storage)
+    assertCurrent?.()
     if (accessKind === 'shared') {
       if (!deps.runRustRootIndexApplyChanges) throw new SharedIoProcessError('共享根索引完整写入需要隔离原生事务。', 'not-started', 'shared-root-index-native-write-unavailable')
       const result = await deps.runRustRootIndexApplyChanges({ dbPath: tempPath, rootPath, storage, mode: 'replace',
         schemaVersion: ROOT_INDEX_DB_SCHEMA_VERSION, cacheVersion: deps.fontScanCacheVersion,
-        scriptDetectionVersion: deps.scriptDetectionVersion, upserts: Object.entries(cache.entries), deletes: [], directories: [] })
+        scriptDetectionVersion: deps.scriptDetectionVersion, upserts: Object.entries(cache.entries), deletes: [], directories: [], assertCurrent })
       if (!result?.applied || result.count !== nextCounts.total) throw new Error('根索引候选写入回执不完整，已保留旧索引。')
     } else {
       const candidate = await openRootIndexDb(tempPath, rootPath, storage)
       try {
+        assertCurrent?.()
         writeFullRootIndexToOpenDb(candidate, cache)
         candidate.exec('PRAGMA wal_checkpoint(TRUNCATE);')
       } finally { deps.closeSqliteDb(candidate) }
@@ -170,6 +173,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
       deps.closeSqliteDb(db)
     }
 
+    assertCurrent?.()
     assertApplicationOpen(epoch)
     throwIfAborted(currentSharedIoSignal())
     try {
@@ -179,6 +183,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
       throw error
     }
 
+    assertCurrent?.()
     assertApplicationOpen(epoch)
     throwIfAborted(currentSharedIoSignal())
     await writeRootCacheManifest(cacheDir, rootPath, storage, nextCounts.total, snapshotPath)
@@ -188,7 +193,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
   }
 
 
-  async function saveRootIndexSqliteChangesAtomicSnapshot(filePath: string, rootPath: string, storage: RootIndexStorage, upserts: Array<[string, FontScanCacheEntry]>, deletes: string[]): Promise<string> {
+  async function saveRootIndexSqliteChangesAtomicSnapshot(filePath: string, rootPath: string, storage: RootIndexStorage, upserts: Array<[string, FontScanCacheEntry]>, deletes: string[], assertCurrent?: () => void): Promise<string> {
     const cacheDir = rootCacheDirForIndexPath(filePath)
     const activePath = await resolveActiveRootIndexDbPath(cacheDir, filePath).catch(() => filePath)
     const base = await readRootIndexSqliteFile(activePath, rootPath, storage)
@@ -200,7 +205,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
     const snapshotPath = await saveRootIndexSqliteFileAtomicSnapshot(filePath, rootPath, storage, {
       version: deps.fontScanCacheVersion,
       entries: nextEntries,
-    }, 'incremental', { upserts: upserts.length, deletes: deletes.length })
+    }, 'incremental', { upserts: upserts.length, deletes: deletes.length }, assertCurrent)
     deps.appendStartupLog(`root index incremental snapshot switched: root=${rootPath}, storage=${storage}, upserts=${upserts.length}, deletes=${deletes.length}, count=${Object.keys(nextEntries).length}, snapshot=${snapshotPath}`)
     return snapshotPath
   }
@@ -238,18 +243,20 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
     }
   }
 
-  async function saveRootIndexSqliteChanges(filePath: string, rootPath: string, storage: RootIndexStorage, upserts: Array<[string, FontScanCacheEntry]>, deletes: string[]): Promise<void> {
+  async function saveRootIndexSqliteChanges(filePath: string, rootPath: string, storage: RootIndexStorage, upserts: Array<[string, FontScanCacheEntry]>, deletes: string[], assertCurrent?: () => void, writeOptions: RootIndexChangeWriteOptions = {}): Promise<void> {
     if (!upserts.length && !deletes.length) return
 
+    assertCurrent?.()
     const accessKind = await resolveRootIndexAccessKind(filePath, storage)
     let writtenDatabase = filePath
     let committedShared = false
     let committedSharedCount = 0
     try {
       await withRootCacheWriteLock(filePath, async () => {
+        assertCurrent?.()
         const nativeDatabase = accessKind === 'shared' ? await activeRootIndexWritePath(filePath) : filePath
         if (storage === 'root' && accessKind === 'local' && process.env.HFM_ROOT_INDEX_INCREMENTAL_SNAPSHOT !== '0') {
-          const snapshotPath = await saveRootIndexSqliteChangesAtomicSnapshot(filePath, rootPath, storage, upserts, deletes)
+          const snapshotPath = await saveRootIndexSqliteChangesAtomicSnapshot(filePath, rootPath, storage, upserts, deletes, assertCurrent)
           writtenDatabase = snapshotPath
           await deps.recordCacheEvent('root-index', 'incremental_snapshot_switch', {
             rootPath,
@@ -261,6 +268,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
           return
         }
 
+        assertCurrent?.()
         if (deps.runRustRootIndexApplyChanges) {
           try {
             const rustResult = await deps.runRustRootIndexApplyChanges({
@@ -274,6 +282,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
               upserts,
               deletes,
               directories: [],
+              assertCurrent,
             })
             if (rustResult?.applied) {
               const resultCount = Number(rustResult.count || 0)
@@ -291,6 +300,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
           } catch (error) {
             rethrowSharedIoProcessError(error)
             rethrowRustCoreDaemonSubmittedWrite(error, deps.appendStartupLog, 'root index rust incremental write')
+            assertCurrent?.()
             deps.appendStartupLog(`root index rust incremental write fallback: ${error instanceof Error ? error.message : String(error)}`)
           }
         }
@@ -317,6 +327,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
 
         const db = await openRootIndexDb(filePath, rootPath, storage)
         try {
+          assertCurrent?.()
           db.exec('BEGIN IMMEDIATE')
           try {
             const markDeleted = db.prepare(`
@@ -374,6 +385,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
             setMeta.run('updatedAt', new Date().toISOString())
             setMeta.run('last_update.entry_state_check', new Date().toISOString())
             setMeta.run('fileCount', String(count?.count || 0))
+            assertCurrent?.()
             db.exec('COMMIT')
             try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);') } catch { /* ignore */ }
             await writeRootCacheManifest(rootCacheDirForIndexPath(filePath), rootPath, storage, Number(count?.count || 0), filePath)
@@ -390,9 +402,9 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
         await settleCommittedSharedRootIndexWrite('incremental_write', {
           rootPath, storage, upserts: upserts.length, deletes: deletes.length,
           count: committedSharedCount, database: writtenDatabase
-        })
+        }, writeOptions.deferQueryPublication !== true)
       } else {
-        deps.invalidateSharedFontRuntimeCaches()
+        deps.invalidateSharedFontRuntimeCaches(writeOptions.deferQueryPublication !== true)
         await deps.recordCacheEvent('root-index', 'incremental_write', {
           rootPath, storage, upserts: upserts.length, deletes: deletes.length,
           database: writtenDatabase
@@ -411,11 +423,15 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
     rootPath: string,
     storage: RootIndexStorage,
     updates: RootIndexDirectorySignatureUpdate[],
+    assertCurrent?: () => void,
   ): Promise<void> {
     if (!updates.length) return
+    assertCurrent?.()
     const accessKind = await resolveRootIndexAccessKind(filePath, storage)
     await withRootCacheWriteLock(filePath, async () => {
+      assertCurrent?.()
       const activePath = accessKind === 'shared' ? await activeRootIndexWritePath(filePath) : filePath
+      assertCurrent?.()
       if (accessKind === 'shared') {
         if (!deps.runRustRootIndexApplyChanges) {
           throw new SharedIoProcessError('共享根目录签名写入需要隔离原生事务。','not-started','shared-root-index-native-write-unavailable')
@@ -432,6 +448,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
             upserts: [],
             deletes: [],
             directories: updates,
+            assertCurrent,
           })
           if (rustResult?.applied) {
             deps.appendStartupLog(`root index rust directory signature write used: root=${rootPath}, rows=${updates.length}, database=${activePath}`)
@@ -440,6 +457,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
         } catch (error) {
           rethrowSharedIoProcessError(error)
           rethrowRustCoreDaemonSubmittedWrite(error, deps.appendStartupLog, 'root index rust directory signature write')
+          assertCurrent?.()
         }
         throw new SharedIoProcessError('共享根目录签名原生事务未能提交。','not-started','shared-root-index-native-write-unavailable')
       }
@@ -460,6 +478,7 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
              OR directories.dir_count <> excluded.dir_count
         `)
         const tx = db.transaction(() => {
+          assertCurrent?.()
           for (const item of updates) upsert.run(item.relativePath, item.modifiedAt, item.fileCount, item.dirCount, now)
         })
         tx()

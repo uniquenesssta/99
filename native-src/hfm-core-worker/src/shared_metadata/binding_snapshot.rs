@@ -163,7 +163,14 @@ mod capture {
         }
         Ok(())
     }
-    fn optional(path: &str) -> Result<Option<File>, String> {
+    pub(super) fn pin_error(target: &str, error: std::io::Error) -> String {
+        let marker = match error.raw_os_error() {
+            Some(code @ (32 | 33)) => format!("[HFM_BINDING_SNAPSHOT_BUSY:{target}:{code}] "),
+            _ => String::new(),
+        };
+        format!("{marker}binding snapshot {target} pin unavailable: {error}")
+    }
+    fn optional(path: &str, target: &str) -> Result<Option<File>, String> {
         match OpenOptions::new().read(true).share_mode(1).custom_flags(0x0020_0000).open(path) {
             Ok(file) => {
                 regular(&file)?;
@@ -171,7 +178,7 @@ mod capture {
                 Ok(Some(file))
             },
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(format!("binding snapshot sidecar pin unavailable: {error}")),
+            Err(error) => Err(pin_error(target, error)),
         }
     }
     fn bytes(file: &mut File, budget: usize) -> Result<Vec<u8>, String> {
@@ -203,20 +210,20 @@ mod capture {
         // handles. In particular an already-open SQLite writer fails admission;
         // a new one cannot create/reset/checkpoint WAL while the DB pin is held.
         let database = OpenOptions::new().read(true).share_mode(1).custom_flags(0x0020_0000).open(path)
-            .map_err(|error| format!("binding snapshot read-only pin unavailable: {error}"))?;
+            .map_err(|error| pin_error("database", error))?;
         regular(&database)?;
         let canonical = physical(&database)?;
         let parent = Path::new(&canonical).parent().ok_or("binding snapshot database parent missing")?;
         let directory = OpenOptions::new().access_mode(0x8000_0000).share_mode(1).custom_flags(0x0200_0000 | 0x0020_0000).open(parent)
-            .map_err(|error| format!("binding snapshot parent pin unavailable: {error}"))?;
+            .map_err(|error| pin_error("parent", error))?;
         let metadata = directory.metadata().map_err(|error| error.to_string())?;
         if !metadata.is_dir() || metadata.file_attributes() & 0x400 != 0
             || !physical(&directory)?.eq_ignore_ascii_case(&parent.to_string_lossy())
             || !physical(&database)?.eq_ignore_ascii_case(&canonical) {
             return Err("binding snapshot parent identity changed".into());
         }
-        let wal = optional(&format!("{canonical}-wal"))?;
-        let mut journal = optional(&format!("{canonical}-journal"))?;
+        let wal = optional(&format!("{canonical}-wal"), "wal")?;
+        let mut journal = optional(&format!("{canonical}-journal"), "journal")?;
         if let Some(journal) = journal.as_mut() {
             let mut header = [0u8; 8];
             let count = journal.read(&mut header).map_err(|error| error.to_string())?;
@@ -414,6 +421,36 @@ mod tests {
         let journal = PathBuf::from(format!("{}-journal", fixture.path().display()));
         fs::write(&journal, [0xd9,0xd5,0x05,0xf9,0x20,0xa1,0x63,0xd7]).unwrap(); let before = fixture.files();
         assert!(fixture.open().unwrap_err().contains("rollback recovery required")); assert_eq!(fixture.files(), before);
+    }
+    #[test]
+    fn busy_marker_is_limited_to_sharing_and_lock_violations() {
+        for target in ["database", "parent", "wal", "journal"] {
+            for code in [32, 33] {
+                assert!(capture::pin_error(target, std::io::Error::from_raw_os_error(code))
+                    .starts_with(&format!("[HFM_BINDING_SNAPSHOT_BUSY:{target}:{code}] ")));
+            }
+            for code in [2, 5, 13, 53, 121] {
+                assert!(!capture::pin_error(target, std::io::Error::from_raw_os_error(code)).contains("HFM_BINDING_SNAPSHOT_BUSY"));
+            }
+        }
+    }
+    #[test]
+    fn sidecar_busy_release_recovers_without_modifying_source() {
+        let fixture = Fixture::new(); let conn = fixture.seed(4096);
+        conn.execute_batch("UPDATE font_metadata SET revision=19").unwrap();
+        fixture.freeze(conn, true);
+        let journal = PathBuf::from(format!("{}-journal", fixture.path().display()));
+        fs::write(&journal, [0u8; 8]).unwrap();
+        for (target, path) in [("wal", wal_path(&fixture.path())), ("journal", journal)] {
+            let before = fixture.files();
+            let writer = fs::OpenOptions::new().write(true).open(path).unwrap();
+            let error = fixture.open().unwrap_err();
+            assert!(error.starts_with(&format!("[HFM_BINDING_SNAPSHOT_BUSY:{target}:32] ")), "{error}");
+            assert_eq!(fixture.files(), before);
+            drop(writer);
+            assert_eq!(rows(&fixture.open().unwrap())[0].2, 19);
+            assert_eq!(fixture.files(), before, "busy/recovered snapshot changed DB/WAL/SHM/journal");
+        }
     }
     #[test]
     fn ancestor_move_cannot_detach_a_pinned_wal_from_its_main_database() {

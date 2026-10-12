@@ -1,4 +1,5 @@
 import { assertSharedIoActive, rethrowSharedIoCancellation } from '../../path/sharedIoCancellationRuntime'
+import { rethrowSharedMetadataSnapshotBusy } from '../../indexing/shared-metadata/sharedMetadataSnapshotFailureRuntime'
 import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import { SharedIoProcessError, rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { parseJsonLine, hasCapability } from '../rustCoreWorkerTransportRuntime'
@@ -678,6 +679,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       }
       return result
     } catch (error) {
+      if (input.bindingSnapshot) rethrowSharedMetadataSnapshotBusy(error, input.rootPath)
       rethrowSharedIoProcessError(error)
       if (sharedReceipt) throw new SharedIoProcessError(`Shared I/O receipt rejected: ${String(error)}`, 'unknown', 'invalid-receipt')
       options.appendStartupLog(`rust shared metadata overlay read failed: ${error instanceof Error ? error.message : String(error)}; ${rustStateFallbackFailureLogSuffix('--shared-metadata-overlay-read')}`)
