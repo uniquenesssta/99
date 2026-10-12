@@ -11,8 +11,14 @@ const application = path.join(bootstrap, 'mainApplicationRuntime.ts')
 const adapter = path.join(bootstrap, 'mainRuntimeRegistrationPayload.ts')
 const lifecycle = path.join(root, 'src/main/app/mainProcessLifecycleRuntime.ts')
 const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+function boundedClose(pending) {
+  let timer
+  return Promise.race([pending, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('physical-close wrapper did not settle after released owners')), 5000)
+  })]).finally(() => clearTimeout(timer))
+}
 
-function checkApplication(overrides = new Map()) {
+async function checkApplication(overrides = new Map()) {
   const h = createHarness(overrides)
   for (const file of [application, adapter, path.join(bootstrap, 'mainTagCompositionRuntime.ts')]) h.load(file)
   assert.equal(h.constructors.size, 0, 'import created a domain owner')
@@ -38,18 +44,43 @@ function checkApplication(overrides = new Map()) {
     for (const key of keys) {
       assert(!seen.has(key), `${key} registered in two groups`)
       seen.add(key)
-      assert.equal(h.registrationGroups[name][key], expected[key], `${key} wired to the wrong owner`)
+      if (key !== 'awaitFolderWatchersClosed') assert.equal(h.registrationGroups[name][key], expected[key], `${key} wired to the wrong owner`)
+      else assert.equal(typeof h.registrationGroups[name][key], 'function', 'physical-close composition is missing')
     }
   }
   const app = h.compositions.get('createMainApplicationRuntime')
   assert.deepEqual(Object.keys(app), ['registration'], 'Application leaked internal owners/resources')
   assert.equal(app.registration, h.payload, 'registration output was copied or replaced')
   assert.deepEqual(Object.keys(h.payload).sort(), Object.keys(expected).sort())
-  for (const key of Object.keys(expected)) assert.equal(h.payload[key], expected[key], `${key} was wrapped or replaced`)
+  for (const key of Object.keys(expected)) {
+    if (key !== 'awaitFolderWatchersClosed') assert.equal(h.payload[key], expected[key], `${key} was wrapped or replaced`)
+    else assert.equal(h.payload[key], h.registrationGroups.lifecycle[key], 'physical-close wrapper identity was replaced')
+  }
+  // This sole reviewed wrapper joins two actual lifecycle owners without
+  // publishing either private resource. Verify order and both held lifetimes.
+  const operations = h.compositions.get('createMainOperationsCompositionRuntime')
+  const data = h.compositions.get('createMainDataCompositionRuntime')
+  const events = []; let releaseWatcher, releaseProbe, settled = false
+  const watcherClosed = new Promise(resolve => { releaseWatcher = resolve })
+  const probeClosed = new Promise(resolve => { releaseProbe = resolve })
+  operations.lifecycle.awaitFolderWatchersClosed = async () => { events.push('watcher-start'); await watcherClosed; events.push('watcher-closed') }
+  data.resources.awaitSharedAvailabilityProbesClosed = async () => { events.push('probe-start'); await probeClosed; events.push('probe-closed') }
+  const pending = boundedClose(Promise.resolve().then(() => h.payload.awaitFolderWatchersClosed()).then(() => { settled = true }))
+  try {
+    await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(events, ['watcher-start'], 'probe owner started before watcher physical close')
+    assert.equal(settled, false, 'shutdown wrapper skipped watcher physical close')
+    releaseWatcher()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(events, ['watcher-start', 'watcher-closed', 'probe-start'], 'availability owner was omitted or reordered')
+    assert.equal(settled, false, 'shutdown wrapper skipped availability physical close')
+    releaseProbe(); await pending
+    assert.deepEqual(events, ['watcher-start', 'watcher-closed', 'probe-start', 'probe-closed'])
+  } finally { releaseWatcher(); releaseProbe(); await pending }
 }
 
 async function main() {
-  checkApplication()
+  await checkApplication()
   const mutants = [
     ['missing capability', application, '      moveFontFilesToFolder: mutation.capabilities.moveFontFilesToFolder,', ''],
     ['wrong activation route', application, 'activateFontSession: mutation.capabilities.activateFontSession', 'activateFontSession: mutation.capabilities.deactivateFontSession'],
@@ -60,23 +91,26 @@ async function main() {
     ['duplicate scheduler start', lifecycle, '      startBackgroundTaskScheduler();', '      startBackgroundTaskScheduler();\n      startBackgroundTaskScheduler();'],
     ['missing watcher physical-close wait', lifecycle, '      await awaitFolderWatchersClosed();', ''],
     ['duplicate watcher stop', lifecycle, '      stopFolderWatchers();', '      stopFolderWatchers();\n      stopFolderWatchers();'],
+    ['unawaited watcher owner', application, 'await operations.lifecycle.awaitFolderWatchersClosed();', 'void operations.lifecycle.awaitFolderWatchersClosed();', /probe owner started before watcher physical close/],
+    ['unawaited probe owner', application, 'await data.resources.awaitSharedAvailabilityProbesClosed();', 'void data.resources.awaitSharedAvailabilityProbesClosed();', /shutdown wrapper skipped availability physical close/],
+    ['omitted probe owner', application, 'await data.resources.awaitSharedAvailabilityProbesClosed();', '', /availability owner was omitted or reordered/],
   ]
-  for (const [name, file, before, after] of mutants) {
+  for (const [name, file, before, after, expectedFailure] of mutants) {
     const source = read(file)
     assert.equal(source.split(before).length, 2, `${name}: mutation anchor drifted`)
     const overrides = new Map([[file, source.replace(before, after)]])
     await assert.rejects(async () => {
-      if (file !== lifecycle) checkApplication(overrides)
+      if (file !== lifecycle) await checkApplication(overrides)
       else {
         const actual = await observeLifecycle('normal', overrides)
         assert.deepEqual(actual.startup, lifecycleFixture.startup)
         assert.deepEqual(actual.shutdown, lifecycleFixture.shutdown.normal)
       }
-    }, undefined, `${name} escaped the behavior checks`)
+    }, expectedFailure, `${name} escaped the behavior checks`)
   }
   const crlf = new Map([entry, application, adapter, path.join(bootstrap, 'mainTagCompositionRuntime.ts')]
     .map(file => [file, read(file).replace(/\n/g, '\r\n')]))
-  checkApplication(crlf)
-  console.log('[diagnostics:main-application-runtime] passed: 5 groups, 118 capability identities, side-effect-free imports, 9 rejected wiring/duplicate start-stop mutations, CRLF')
+  await checkApplication(crlf)
+  console.log(`[diagnostics:main-application-runtime] passed: ${Object.keys(groups).length} groups, ${legacy.mainRegistrationKeys.length - 1} direct capability identities, one ordered physical-close wrapper, side-effect-free imports, ${mutants.length} rejected wiring/duplicate start-stop mutations, CRLF`)
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

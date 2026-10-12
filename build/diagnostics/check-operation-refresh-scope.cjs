@@ -18,29 +18,63 @@ function refreshCheck(transform = x => x) {
   assert.equal(page,previousPage,'refresh must retain same-scope page'); assert.equal(query,previousQuery)
   assert.equal(pageSeq.current, 4); assert.equal(metricsSeq.current, 6); assert.equal(token, 1); assert.equal(cancelled, 1); assert.equal(timer.current, null)
 }
-async function syncCheck(transform = x => x) {
-  const load = loader({electron:{app:{}}}, {}, {[path.join(root,policyFile)]:transform})
-  const {createMergedIndexSyncRuntime} = load(syncFile)
-  const a = {root:'/fonts',indexDbPath:'/a.db',installDbPath:'/ai.db',indexSignature:'i1',installSignature:'s1',sharedMetadataSignature:'m1'}
-  const b = {...a,root:'/other',indexDbPath:'/b.db'}
+async function syncCheck(transform = x => x, syncTransform = x => x) {
+  const {createMergedRootProjectionFixture}=require('./helpers/mergedIndexRootProjectionFixture.cjs')
+  const f=createMergedRootProjectionFixture({native:true,transforms:{[path.join(root,policyFile)]:transform,[path.join(root,syncFile)]:syncTransform}})
+  const a={...f.fresh.get(f.a)},b={...f.fresh.get(f.b)},before=f.key([a,b])
+  const originalRows=f.db.prepare('SELECT * FROM entries').all(),read=f.source.readMergedRowsForSource,readScopes=[]
+  f.source.readMergedRowsForSource=async(source,paths)=>{readScopes.push({root:source.root,paths});return read(source,paths)}
+  f.build.rebuildMergedIndexDb=async()=>assert.fail('root operation escaped to a whole-library rebuild')
+  let opened=0,closed=0;const open=f.ctx.openMergedIndexDb
+  f.ctx.openMergedIndexDb=async()=>{opened++;return open()};f.ctx.closeSqliteDb=()=>closed++
   const reasons = ['shared-favorite-set','shared-favorite-clear','shared-delete-protection-set','shared-delete-protection-clear','shared-tags-batch-authority-refresh','shared-tag-delete:test']
-  for (const snapshot of [false,true]) for (const reason of reasons) for (const mode of ['metadata','index-changed','install-changed','other-root','roots-changed']) {
-    const next = {...a, sharedMetadataSignature:'m2', ...(mode==='index-changed'?{indexSignature:'i2'}:mode==='install-changed'?{installSignature:'s2'}:{})}
-    const sources=[next,{...b,...(mode==='other-root'?{sharedMetadataSignature:'m2'}:{})}]
-    let rebuild=0, sync=0, closed=0; const commits=[]
-    const runtime=createMergedIndexSyncRuntime({
-      normalizePathForCacheCompare:x=>x, appWatchedFolders:async()=>sources.map(x=>x.root),
-      runMergedIndexMutation:async(_label,fn)=>fn({commit:r=>commits.push(r)}),
-      mergedIndexSourcesKey:JSON.stringify,openMergedIndexDb:async()=>({}),getSqliteMeta:()=>JSON.stringify([a,b]),mergedIndexSourcesMatchRoots:()=>mode!=='roots-changed',
-      appendStartupLog(){},mergedIndexReadyProcessKeys:new Set(),mergedIndexDbPath:()=>'/merged.db',schemaVersion:6,closeSqliteDb:()=>closed++,
-      rustCoreWorkerRuntime:{runRustMergedIndexSync:async input=>{sync++;assert.equal(input.fullSnapshot,snapshot);assert.equal(input.source.root,a.root);return {synced:true,rows:1}}}
-    },{mergedIndexSourcesForRoots:async()=>sources,relativePathsFromFontIndexPayload:()=>['a.ttf']},{rebuildMergedIndexDb:async()=>rebuild++})
-    if(snapshot) await runtime.syncMergedIndexForRootSnapshot(a.root,reason)
-    else await runtime.syncMergedIndexForRootIncremental(a.root,{upserts:[{id:'a'}],deletes:[]},reason)
-    assert.equal(sync,mode==='metadata'?1:0,`${reason}/${snapshot}/${mode}: only affected root may take narrow sync`)
-    assert.equal(rebuild,mode==='metadata'?0:1);assert.equal(closed,1);assert.equal(commits.length,1)
-  }
+  try {
+    for (const snapshot of [false,true]) for (const reason of reasons) for (const mode of ['metadata','index-changed','install-changed','other-root','roots-changed']) {
+      f.setRoots([f.a,f.b]);f.setBeforeQueue(null)
+      f.fresh.set(f.a,{...a,sharedMetadataSignature:'metadata-v2|2',...(mode==='index-changed'?{indexSignature:'root-v3|2'}:mode==='install-changed'?{installSignature:'install-content-v1|2'}:{})})
+      f.fresh.set(f.b,{...b,...(mode==='other-root'?{sharedMetadataSignature:'metadata-v2|peer-new'}:{})})
+      f.writeSource(null,a,'before');f.writeSource(null,b,'before');f.setMeta(null,'sourcesKey',before)
+      f.db.exec('DELETE FROM entries');for(const row of originalRows)f.ctx.mergedIndexInsertStatement().run(row)
+      for(const list of [f.nativeInputs,f.commits,f.resolves,readScopes])list.length=0
+      opened=closed=0
+      const retainedPeer=JSON.stringify(f.db.prepare('SELECT * FROM sources WHERE root_path=?').get(f.b))
+      const retainedTarget=JSON.stringify(f.db.prepare('SELECT * FROM sources WHERE root_path=?').get(f.a))
+      if(mode==='roots-changed')f.setBeforeQueue(async()=>f.setRoots([f.b]))
+      const operation=()=>snapshot?f.sync.syncMergedIndexForRootSnapshot(f.a,reason):f.sync.syncMergedIndexForRootIncremental(f.a,{upserts:[{id:'a',path:path.join(f.a,'a.ttf')}],deletes:[]},reason)
+      if(mode==='roots-changed') {
+        await assert.rejects(operation,/roots-changed/,'changed root configuration was acknowledged')
+        assert.equal(f.nativeInputs.length,0);assert.equal(f.commits.length,0)
+        assert.equal(f.ctx.getSqliteMeta(null,'sourcesKey'),before)
+        assert.deepEqual(f.db.prepare('SELECT * FROM entries').all(),originalRows)
+      } else {
+        await operation()
+        const fullSnapshot=snapshot||['index-changed','install-changed'].includes(mode)
+        assert.equal(f.nativeInputs.length,1,`${reason}/${snapshot}/${mode}: only affected root may be projected`)
+        const input=f.nativeInputs[0]
+        assert.equal(input.source.root,f.a);assert.equal(input.fullSnapshot,fullSnapshot,`${reason}/${snapshot}/${mode}: only affected root must use its compatible projection`)
+        assert.equal(input.preserveSourceCheckpoint,!fullSnapshot,'partial metadata projection must preserve whole-root checkpoint')
+        assert.equal(readScopes.length,1);assert.equal(readScopes[0].root,f.a)
+        assert.deepEqual(readScopes[0].paths,fullSnapshot?undefined:['a.ttf'])
+        assert.equal(f.commits.length,1)
+        if(fullSnapshot)assert.equal(f.ctx.getSqliteMeta(null,'sourcesKey'),f.key([f.fresh.get(f.a),b]),'target snapshot certified an unverified peer')
+        else {
+          assert.equal(f.ctx.getSqliteMeta(null,'sourcesKey'),before,'partial metadata rows advanced whole-root certificate')
+          assert.equal(JSON.stringify(f.db.prepare('SELECT * FROM sources WHERE root_path=?').get(f.a)),retainedTarget)
+        }
+      }
+      assert(f.resolves.every(roots=>roots.length===1&&roots[0]===f.a),'only affected root may be resolved')
+      assert.equal(JSON.stringify(f.db.prepare('SELECT * FROM sources WHERE root_path=?').get(f.b)),retainedPeer,'unrelated peer receipt was changed')
+      assert.equal(f.ctx.mergedIndexReadyProcessKeys.size,0);assert.equal(closed,opened,'projection leaked a local handle')
+    }
+    // Root-local application no longer feeds peer receipts into its eligibility
+    // check; retain the multi-source policy's independent scope boundary too.
+    const policy=f.load(policyFile)
+    const target=f.ctx.normalizePathForCacheCompare(f.a)
+    assert.equal(policy.sourceKeyChangedOnlyBySharedMetadata(f.key([a,b]),f.key([{...a,sharedMetadataSignature:'metadata-v2|target-new'},b]),target),true,'only affected root must retain its metadata policy')
+    assert.equal(policy.sourceKeyChangedOnlyBySharedMetadata(f.key([a,b]),f.key([a,{...b,sharedMetadataSignature:'metadata-v2|peer-new'}]),target),false,'only affected root may qualify a multi-source metadata change')
+  } finally {f.db.close()}
 }
+
 async function metricsFailureCheck() {
   const effects=[],timers=[],stop={};let writes=0;const traces=[]
   const load=loader({react:{useState:()=>[0,()=>{}],useEffect:fn=>effects.push(fn),useMemo:()=>{throw stop}},'../../appRuntime':{normalizeFontMetricsResult:x=>x},'../../fontViewRuntime':{},'./rendererDatabasePageWindowRuntime':{}},{window:{setTimeout:fn=>{timers.push(fn);return 1},clearTimeout(){}}})
@@ -103,7 +137,8 @@ async function main() {
     assert.throws(()=>refreshCheck(s=>s.replace('options.setDatabaseRefreshToken((value) => value + 1)','options.setDatabasePageResult(null)\n  options.setDatabaseRefreshToken((value) => value + 1)')),/retain same-scope/)
     await assert.rejects(()=>syncCheck(s=>s.replace("value.startsWith('shared-favorite-')","false")),/only affected root/)
     await assert.rejects(()=>syncCheck(s=>s.replace('changedRoot !== undefined && nextEntry.root !== changedRoot','false')),/only affected root/)
+    await assert.rejects(()=>syncCheck(s=>s,s=>{const before='preserveSourceCheckpoint: !fullSnapshot';assert(s.includes(before),'partial checkpoint mutation anchor missing');return s.replace(before,'preserveSourceCheckpoint: false')}),/partial metadata projection must preserve whole-root checkpoint/)
   }
-  console.log('[diagnostics:operation-refresh-scope] retained metrics/request invalidation, 60 real sync routing cases, LF/CRLF and four mutants passed')
+  console.log('[diagnostics:operation-refresh-scope] retained metrics/request invalidation, 60 real SQLite target-scope routing cases, partial checkpoint/peer preservation, LF/CRLF and five mutants passed')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

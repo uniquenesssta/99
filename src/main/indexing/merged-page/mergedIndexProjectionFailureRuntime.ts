@@ -19,3 +19,21 @@ export function mergedSyncBlocker(error: unknown): string {
   return 'source-or-projection-failed'
 }
 
+
+// Only fixed internal identifiers may reach diagnostic evidence, never raw
+// exception text, paths, source signatures, or metadata values.
+export function mergedSyncCause(error: unknown): string {
+  const message = String((error as { message?: string })?.message || '')
+  const causes: Record<string, string> = {
+    'merged-source-changed-during-read': 'source-changed-during-read',
+    'merged-source-changed-after-commit': 'source-changed-after-commit',
+    'merged-projection-generation-changed': 'availability-generation-changed',
+    'merged-projection-roots-changed': 'configured-roots-changed',
+    'merged-projection-target-changed-in-queue': 'target-checkpoint-changed',
+    'merged-projection-checkpoint-changed': 'composite-checkpoint-changed',
+    'merged-projection-root-removed': 'configured-root-removed',
+    'merged-source-receipt-unavailable': 'source-receipt-unavailable',
+    'merged-projection-native-receipt-mismatch': 'native-receipt-mismatch',
+  }
+  return Object.prototype.hasOwnProperty.call(causes, message) ? causes[message] : mergedSyncBlocker(error)
+}

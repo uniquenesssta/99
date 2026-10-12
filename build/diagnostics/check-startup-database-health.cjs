@@ -156,11 +156,65 @@ async function requiredStartup(transforms={}) {
   for(const reason of ['EACCES','SQLITE_READONLY']) {
     const h=fixture({missingRequired:true,statError:reason==='EACCES'?p=>p.endsWith('library.sqlite')?'EACCES':null:undefined})
     try {
-      h.options.openLibraryDb=async()=>{throw Error(reason)}
+      let attemptedOpens=0
+      const failure=Object.assign(Error(reason),{code:reason})
+      h.options.openLibraryDb=async()=>{attemptedOpens++;throw failure}
       const runtime=h.load(base+'applicationDatabaseMaintenanceRuntime.ts').createApplicationDatabaseMaintenanceRuntime(h.options)
-      await runtime.runStartupDatabaseMaintenance()
-      check(()=>{assert(h.logs.some(x=>x.includes('startup database maintenance skipped:')&&x.includes(reason)));assert(!h.logs.includes('startup database maintenance finished: ok=true'));assert(!fs.existsSync(h.file('tasks')))})
+      // Denial is a failed startup operation, never optional absence or a
+      // successful skip. The application lifecycle is responsible for showing it.
+      await assert.rejects(runtime.runStartupDatabaseMaintenance(),error=>{
+        assert.equal(error.code,reason)
+        if(reason==='SQLITE_READONLY')assert.equal(error,failure,'startup replaced the original open failure')
+        else assert.match(error.message,/EACCES stat rejected/)
+        return true
+      });checks++
+      check(()=>{
+        assert(h.logs.some(x=>x.includes('startup database maintenance failed:')&&x.includes(reason)))
+        assert(!h.logs.some(x=>x.includes('startup database maintenance skipped:')||x.includes('startup database maintenance finished: ok=true')))
+        assert.equal(attemptedOpens,reason==='EACCES'?0:1,'denied stat must not initialize; failed open must not retry')
+        assert.equal(h.opens.length,0);assert.equal(h.requests.length,0,'health work ran after failed initialization')
+        for(const label of labels)assert(!fs.existsSync(h.file(label)),`failed startup created ${label}`)
+        assert(!fs.existsSync(path.join(h.dir,'backups')));assert(!fs.existsSync(path.join(h.dir,'maintenance.json')))
+      })
     }finally{h.close()}
+  }
+}
+async function failedStartupPhysicalClose() {
+  for(const closeRejects of [false,true]) {
+  const h=fixture({rust:true,missingRequired:true})
+  let release,entered,attemptedOpens=0,settled=false
+  const closed=new Promise((resolve,reject)=>{release=()=>closeRejects?reject(Error('close notification failed')):resolve()}),started=new Promise(resolve=>{entered=resolve})
+  void closed.catch(()=>undefined) // Keep fixture cleanup safe even if an earlier assertion fails.
+  const failure=Object.assign(Error('initialization write outcome unknown'),{sharedIo:true,outcome:'unknown',reason:'timeout',closed})
+  let pending,queued,watchdog
+  const deadline=new Promise((_,reject)=>{watchdog=setTimeout(()=>reject(Error('startup physical-close fixture timed out')),5000)})
+  void deadline.catch(()=>undefined)
+  try {
+    h.options.openLibraryDb=async()=>{attemptedOpens++;entered();throw failure}
+    const runtime=h.load(base+'applicationDatabaseMaintenanceRuntime.ts').createApplicationDatabaseMaintenanceRuntime(h.options)
+    pending=runtime.runStartupDatabaseMaintenance().then(()=>{settled=true;return {fulfilled:true}},error=>{settled=true;return {error}})
+    // An early rejection must fail this test, not leave an unreferenced wait
+    // that lets Node exit successfully before the close assertions execute.
+    await Promise.race([started,pending.then(()=>{throw Error('startup settled before initialization open was reached')}),deadline])
+    queued=runtime.runDatabaseHealthCheck()
+    await new Promise(resolve=>setImmediate(resolve))
+    check(()=>{assert.equal(settled,false,'startup rejected before physical writer close');assert.equal(h.requests.length,0,'queued health work bypassed physical-close ownership');assert.equal(attemptedOpens,1)})
+    release()
+    const result=await Promise.race([pending,deadline])
+    await Promise.race([queued,deadline])
+    check(()=>{
+      assert.equal(result.error,failure,'startup changed the original unknown-write error')
+      assert.equal(attemptedOpens,1,'startup replayed an unconfirmed initialization write')
+      assert.equal(h.requests.length,1,'queued health work did not resume after physical close')
+      assert(h.logs.some(line=>line.includes('startup database maintenance failed:')&&line.includes(failure.message)))
+      for(const label of labels)assert(!fs.existsSync(h.file(label)),`failed startup created ${label}`)
+      assert(!fs.existsSync(path.join(h.dir,'backups')));assert(!fs.existsSync(path.join(h.dir,'maintenance.json')))
+    })
+  }finally{
+    release()
+    try{await Promise.race([Promise.all([pending,queued]),deadline])}
+    finally{clearTimeout(watchdog);h.close()}
+  }
   }
 }
 async function backupAbsenceError() {
@@ -178,7 +232,7 @@ function failureDetails(){
 }
 async function main() {
   failureDetails()
-  await absence();await failures();await racesAndProtocol();await writers();await failedBackup();await requiredStartup();await backupAbsenceError()
+  await absence();await failures();await racesAndProtocol();await writers();await failedBackup();await requiredStartup();await failedStartupPhysicalClose();await backupAbsenceError()
   const helper=path.join(root,base+'databaseMaintenanceHelpers.ts'),coordinator=path.join(root,base+'databaseMaintenance.ts')
   function mutation(file, before, after, eol) {
     const source = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
@@ -193,6 +247,6 @@ async function main() {
     await assert.rejects(requiredStartup(mutation(coordinator, 'await spec.open()\n          appendStartupLog', '/* initialization removed */\n          appendStartupLog', eol)), /required owners must initialize/);checks++
   }
   await absence({[helper]:s=>s.replace(/\r?\n/g,'\r\n'),[coordinator]:s=>s.replace(/\r?\n/g,'\r\n')})
-  console.log(`[diagnostics:startup-database-health] ${checks} checks passed: fresh/existing directories, real SQLite health/backup/cache writers, Rust/Node classification, controlled permission/lock/IO errors, late removal, incomplete worker results, backup failure/retry, three mutants and CRLF`)
+  console.log(`[diagnostics:startup-database-health] ${checks} checks passed: fresh/existing directories, real SQLite health/backup/cache writers, Rust/Node classification, controlled permission/lock/IO errors, late removal, incomplete worker results, backup failure/retry, denied startup and unknown-write physical close, three mutants and CRLF`)
 }
 main().catch(error=>{console.error(error);process.exitCode=1})

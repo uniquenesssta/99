@@ -99,7 +99,7 @@ function createHarness(settings = {}, overrides = new Map()) {
         invalidate: commands => { record('invalidate', commands); return 2 },
         cancelScopes: scopes => { record('cancelScopes', scopes); return 3 },
         markInteractiveActivity: reason => record('interactive', reason),
-        hasInteractiveWork: () => false,
+        hasInteractiveWork: () => settings.workSnapshot?.scheduler === true,
       }
     } },
     './rustCoreDaemonRuntime': {
@@ -107,7 +107,7 @@ function createHarness(settings = {}, overrides = new Map()) {
       createRustCoreDaemonRuntime: options => {
         record('create.daemon')
         return {
-          hasSubmittedWork: () => false,
+          hasSubmittedWork: () => settings.workSnapshot?.daemon === true,
           tryRun: async (worker, args, execOptions) => {
             record('daemon', worker, args, optionsView(execOptions))
             if (settings.domainEvent) options.onDomainEvent?.({ domain: 'tags', event: 'changed' })
@@ -135,6 +135,7 @@ function createHarness(settings = {}, overrides = new Map()) {
     rethrowSharedIoProcessError: error => { if (error?.sharedIo) throw error; },
     applicationSharedIoProcessRuntime: () => ({
       stop() {},
+      hasForegroundWork: () => settings.workSnapshot?.shared === true,
       run: async request => {
         assert.equal(request.args[0], settings.metadataTransport ? '--shared-metadata-overlay-read' : settings.previewTransport ? '--preview-render-image' : '--list-font-files', 'isolated contract port received an unrelated command');
         const view = JSON.parse(JSON.stringify({ file: request.file, args: request.args, roots: request.roots,

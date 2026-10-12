@@ -431,6 +431,7 @@ async function main() {
     async function validate(label, expectedRootSnapshots, expectedTotal) {
       state.phase = `validation:${label}`
       const ctx = state.context, key = ctx.mergedIndexRootsKey([fontRoot])
+      if(label==='changed')assert.equal(await ctx.sharedMetadataSignatureForRoot(fontRoot),'metadata:none','First-use projection metadata was already initialized')
       await Promise.all([...ctx.mergedIndexValidateInFlight.values()])
       // Let the real 1.5-second external-check reuse window expire, then make
       // the normal validation timer due. Never change source receipts or rows.
@@ -445,6 +446,12 @@ async function main() {
       assert(logs.some(line => line.includes(`merged background validation: caller=automatic, phase=complete, checked=1, synced=${expectedRootSnapshots}, deferred=0, failed=0`)), `${label}: next root-local worker-ready validation did not finish`)
       assert(!logs.some(line => /background validation skipped|phase=partial|phase=deferred|signature fallback|rebuild fallback to node/.test(line)), `${label}: production validation degraded`)
       assert(state.backgroundSyncOwners > 0, `${label}: automatic validation did not use the prepared root projection owner`)
+      if(label==='changed'){
+        const rechecks=logs.filter(line=>line.includes('phase=source-recheck'))
+        assert.equal(rechecks.length,1,'First-use overlay initialization did not use exactly one fresh preparation')
+        assert(rechecks[0].includes('attempt=1')&&rechecks[0].includes('metadataChanged=true'),'Preparation evidence omitted the metadata initialization change')
+        assert.match(await ctx.sharedMetadataSignatureForRoot(fontRoot),/^metadata-v2\|/,'Actual worker overlay did not initialize metadata')
+      }
       const page = await state.page.queryFontPageFromMergedIndexWorker(request, 1000, 0)
       assert(page, `${label}: actual native worker page unavailable`)
       assert.equal(page.total, expectedTotal, `${label}: rebuilt worker population is stale`)

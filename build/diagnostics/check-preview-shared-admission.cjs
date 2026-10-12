@@ -152,8 +152,33 @@ async function main() {
       assert.equal(error.reason, 'stale-generation'); assert(jobs[at].closed); assert(!fs.existsSync(jobs[at].inputPath)); assert.equal(jobs.length, at + 1, 'stale result triggered a replay')
     }
     for (const [code, expected] of [['ENOENT', 'missing'], ['EACCES', 'unavailable']]) {
-      files.configureSharedFileExecutor(async request => ({ result: { ok: false, operation: request.operation, code, message: code } }))
-      await assert.rejects(load('src/main/preview/runtime/previewSourceRuntime.ts').resolvePreviewSource(shared, async () => { throw Error('legacy bypass') }), error => error.message.includes('[HFM_PREVIEW:' + expected + ']'))
+      let executions = 0, legacy = 0
+      const beforeJobs = jobs.length
+      files.configureSharedFileExecutor(async request => { executions++; return { result: { ok: false, operation: request.operation, code, message: code } } })
+      const error = await load('src/main/preview/runtime/previewSourceRuntime.ts').resolvePreviewSource(shared, async () => { legacy++; throw Error('legacy bypass') }).catch(error => error)
+      assert.equal(kind(error), expected)
+      if (code === 'ENOENT') assert(error.message.includes('[HFM_PREVIEW:missing]'))
+      else {
+        assert.equal(error.sharedIo, true, 'access denial lost its terminal transport identity')
+        assert.equal(error.reason, 'EACCES'); assert.equal(error.outcome, 'unknown')
+      }
+      assert.equal(executions, 1); assert.equal(legacy, 0, 'shared source failure entered legacy resolver')
+      assert.equal(jobs.length, beforeJobs, 'source failure started another process')
+    }
+    for (const rejectClose of [false, true]) {
+      let close, reject, settled = false, legacy = 0
+      const failure = new (load('src/main/path/sharedIoProcessRuntime.ts').SharedIoProcessError)('controlled access denial', 'unknown', 'EACCES')
+      failure.closed = new Promise((resolve, fail) => { close = resolve; reject = fail })
+      files.configureSharedFileExecutor(async () => { throw failure })
+      const source = load('src/main/preview/runtime/previewSourceRuntime.ts').resolvePreviewSource(shared, async () => { legacy++; throw Error('legacy bypass') })
+        .catch(error => error).then(error => { settled = true; return error })
+      try {
+        await tick(10); assert.equal(settled, false, 'source retired before physical close')
+        if (rejectClose) reject(Error('controlled close receipt rejection')); else close()
+        await until(() => settled)
+        assert.equal(await source, failure, 'normalization or failed close replaced the access-denial owner')
+        assert.equal(kind(failure), 'unavailable'); assert.equal(legacy, 0)
+      } finally { close() }
     }
     const invalid = await pool.run({ file: process.execPath, args: [], roots: ['a'], timeoutMs: 500, write: true, lane: 'preview-read' }).catch(error => error)
     assert.equal(invalid.reason, 'invalid-lane'); assert.equal(daemonCalls, 0)

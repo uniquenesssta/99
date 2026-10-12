@@ -26,7 +26,7 @@ function loadFor(mocks = {}, globals = {}) {
     if (mutant === key) {
       const [from,to] = {
         activation: ['pendingResults[item.id] || inFlightResults[item.id]', 'inFlightResults[item.id] || pendingResults[item.id]'],
-        incremental: ['!rootIndexOnlySourceChange &&\n              !installStatusOnlySourceChange', '!rootIndexOnlySourceChange'],
+        incremental: ['(isInstallStatusIncrementalSyncReason(reason) && sourceKeyChangedOnlyByInstallStatus(expectedTarget, nextTarget, rootKey))', 'false'],
         storage: ["if (base.reason === 'env-override' || base.isNetwork", "if (base.reason === 'env-override' || false"],
         preview: ['if (!queueRuntimeRef.current) queueRuntimeRef.current =', 'queueRuntimeRef.current ='],
       }[key]
@@ -82,26 +82,58 @@ async function activation() {
   console.log('W-01 warm/cold, newest intent, failed save/recovery, late read, unrelated fields: passed')
 }
 async function incremental() {
-  const auditRoot=path.resolve('/audit'), otherRoot=path.resolve('/other')
-  const load=loadFor(), a={root:auditRoot,indexDbPath:'/i',installDbPath:'/s',indexSignature:'i1',installSignature:'s1',sharedMetadataSignature:'m1'}
-  for(const mode of ['install','unchanged','index','other-root','roots']) {
-    const b={...a,root:otherRoot}, before=[a,b], after=[{...a,installSignature:mode==='unchanged'?'s1':'s2',...(mode==='index'?{indexSignature:'i2'}:{})},{...b,...(mode==='other-root'?{installSignature:'s2'}:{})}]
-    const calls=[];const ctx={normalizePathForCacheCompare:x=>x,runMergedIndexMutation:async(_,fn)=>fn({commit(){}}),appWatchedFolders:async()=>[auditRoot,otherRoot],mergedIndexSourcesKey:()=>JSON.stringify(after),openMergedIndexDb:async()=>({}),getSqliteMeta:()=>JSON.stringify(before),mergedIndexSourcesMatchRoots:()=>mode!=='roots',mergedIndexReadyProcessKeys:new Set(),appendStartupLog(){},closeSqliteDb(){},mergedIndexDbPath:()=>'/merged',schemaVersion:1,rustCoreWorkerRuntime:{runRustMergedIndexSync:async x=>{calls.push(x);return{synced:true,rows:1}}}}
-    const runtime=load(files.incremental).createMergedIndexSyncRuntime(ctx,{mergedIndexSourcesForRoots:async()=>after,relativePathsFromFontIndexPayload:(_,p)=>p.upserts.map(x=>path.basename(x.path))},{rebuildMergedIndexDb:async()=>calls.push('rebuild')})
-    // Exercise the existing root incremental responsibility directly. Targeted
-    // status writes now use local SQL projection, covered by production-projection
-    // and offline-settlement fixtures, rather than fetching these source roots.
-    await runtime.syncMergedIndexForRootIncremental(auditRoot,{folder:auditRoot,at:new Date().toISOString(),upserts:[{id:'a',path:path.join(auditRoot,'a.ttf')}],deletes:[]},'install-status-refresh')
-    assert.equal(calls.length,1)
-    if(['install','unchanged'].includes(mode)){assert.equal(calls[0].fullSnapshot,false,'single font became full rebuild');assert.deepEqual(plain(calls[0].relativePaths),['a.ttf']);assert.equal(calls[0].source.installDbPath,'/s')}
-    else assert.equal(calls[0],'rebuild',mode+' must remain conservative')
-  }
-  const snapshots=[]
-  const validation=load('src/main/indexing/merged-page/mergedIndexValidationRuntime.ts').createMergedIndexValidationRuntime({appendStartupLog(){},delayToEventLoop:async()=>{}},{},{})
-  await validation.syncMergedIndexAfterInstallStatusRefresh([auditRoot,auditRoot],async root=>snapshots.push(root))
-  assert.deepEqual(snapshots,[auditRoot],'root snapshot path must still deduplicate roots')
-  console.log('W-02 one-row root incremental sync, index/other-root/root-set conservative fallback: passed')
+  const {createMergedRootProjectionFixture}=require('./helpers/mergedIndexRootProjectionFixture.cjs')
+  const f=createMergedRootProjectionFixture({native:true,createLoader:loadFor})
+  const a={...f.fresh.get(f.a),installDbPath:path.join(f.a,'install.sqlite')},b={...f.fresh.get(f.b),installDbPath:path.join(f.b,'install.sqlite')},before=f.key([a,b])
+  const originalRows=f.db.prepare('SELECT * FROM entries').all(),read=f.source.readMergedRowsForSource,readScopes=[]
+  f.source.readMergedRowsForSource=async(source,paths)=>{readScopes.push({root:source.root,paths});return read(source,paths)}
+  f.build.rebuildMergedIndexDb=async()=>assert.fail('one-row operation rebuilt unrelated roots')
+  try {
+    for(const mode of ['install','unchanged','index','other-root','roots']) {
+      f.setRoots([f.a,f.b]);f.setBeforeQueue(null)
+      f.fresh.set(f.a,{...a,installSignature:mode==='unchanged'?a.installSignature:'install-content-v1|2',...(mode==='index'?{indexSignature:'root-v3|2'}:{})})
+      f.fresh.set(f.b,{...b,...(mode==='other-root'?{installSignature:'install-content-v1|peer-new'}:{})})
+      f.writeSource(null,a,'before');f.writeSource(null,b,'before');f.setMeta(null,'sourcesKey',before)
+      f.db.exec('DELETE FROM entries');for(const row of originalRows)f.ctx.mergedIndexInsertStatement().run(row)
+      for(const list of [f.nativeInputs,f.commits,f.resolves,readScopes])list.length=0
+      const target=JSON.stringify(f.db.prepare('SELECT * FROM sources WHERE root_path=?').get(f.a))
+      const peer=JSON.stringify(f.db.prepare('SELECT * FROM sources WHERE root_path=?').get(f.b))
+      if(mode==='roots')f.setBeforeQueue(async()=>f.setRoots([f.b]))
+      // The source-root incremental owner is distinct from the serialized local
+      // installation batch writer covered by production-projection diagnostics.
+      const operation=()=>f.sync.syncMergedIndexForRootIncremental(f.a,{folder:f.a,at:new Date().toISOString(),upserts:[{id:'a',path:path.join(f.a,'a.ttf')}],deletes:[]},'install-status-refresh')
+      if(mode==='roots') {
+        await assert.rejects(operation,/roots-changed/,'changed root configuration was acknowledged')
+        assert.equal(f.nativeInputs.length,0);assert.equal(f.commits.length,0)
+        assert.equal(f.ctx.getSqliteMeta(null,'sourcesKey'),before)
+        assert.deepEqual(f.db.prepare('SELECT * FROM entries').all(),originalRows)
+      } else {
+        await operation()
+        assert.equal(f.nativeInputs.length,1);assert.equal(f.commits.length,1)
+        const input=f.nativeInputs[0],fullSnapshot=mode==='index'
+        assert.equal(input.fullSnapshot,fullSnapshot,fullSnapshot?'incompatible index change skipped target snapshot':'single font became full rebuild')
+        assert.equal(input.source.root,f.a);assert.equal(input.source.installDbPath,a.installDbPath)
+        assert.deepEqual(plain(input.relativePaths),['a.ttf']);assert.equal(input.preserveSourceCheckpoint,!fullSnapshot)
+        assert.equal(readScopes.length,1);assert.equal(readScopes[0].root,f.a)
+        assert.deepEqual(plain(readScopes[0].paths===undefined?null:readScopes[0].paths),fullSnapshot?null:['a.ttf'])
+        if(fullSnapshot)assert.equal(f.ctx.getSqliteMeta(null,'sourcesKey'),f.key([f.fresh.get(f.a),b]),'root snapshot certified an unverified peer')
+        else {
+          assert.equal(f.ctx.getSqliteMeta(null,'sourcesKey'),before,'partial install rows advanced whole-root certificate')
+          assert.equal(JSON.stringify(f.db.prepare('SELECT * FROM sources WHERE root_path=?').get(f.a)),target)
+        }
+      }
+      assert(f.resolves.every(roots=>roots.length===1&&roots[0]===f.a),'one-row sync resolved an unrelated root')
+      assert.equal(JSON.stringify(f.db.prepare('SELECT * FROM sources WHERE root_path=?').get(f.b)),peer)
+      assert.equal(f.ctx.mergedIndexReadyProcessKeys.size,0)
+    }
+    const snapshots=[]
+    const validation=f.load('src/main/indexing/merged-page/mergedIndexValidationRuntime.ts').createMergedIndexValidationRuntime({appendStartupLog(){},delayToEventLoop:async()=>{}},{},{})
+    await validation.syncMergedIndexAfterInstallStatusRefresh([f.a,f.a],async root=>snapshots.push(root))
+    assert.deepEqual(snapshots,[f.a],'root snapshot path must still deduplicate roots')
+  } finally {f.db.close()}
+  console.log('W-02 one-row root scope, partial checkpoint retention, target snapshot, peer preservation and queued root-set rejection: passed')
 }
+
 async function storage() {
   let clock=10000,sync=0;const commands=[]
   class Clock extends Date { static now(){return clock} }

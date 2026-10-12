@@ -284,7 +284,26 @@ function checkOwnership() {
   assert.deepEqual(env.trace.map(e => e[0]), ['create.scheduler', 'create.daemon'])
   const factory = env.load(transportPath).createRustCoreWorkerTransportRuntime
   const runtime = factory({ enabled: false, required: false, appendStartupLog: () => {} })
-  assert.deepEqual(Object.keys(runtime).sort(), ['diagnoseRustCoreWorker', 'rustCoreWorkerStatus', 'invalidateRustCoreSchedulerCaches', 'cancelRustCoreSchedulerScopes', 'noteRustCoreSchedulerInteractiveActivity', 'rustCoreDaemonStatus', 'stopRustCoreDaemon', 'runRustCoreScheduledCommand', 'appendPreviewCacheFailureLog', 'createTemporaryJsonFile'].sort())
+  assert.deepEqual(Object.keys(runtime).sort(), ['diagnoseRustCoreWorker', 'rustCoreWorkerStatus', 'invalidateRustCoreSchedulerCaches', 'cancelRustCoreSchedulerScopes', 'noteRustCoreSchedulerInteractiveActivity', 'hasRustCoreInteractiveWork', 'rustCoreDaemonStatus', 'stopRustCoreDaemon', 'runRustCoreScheduledCommand', 'appendPreviewCacheFailureLog', 'createTemporaryJsonFile'].sort())
+}
+
+function checkWorkSnapshot(overrides = new Map()) {
+  const state = { scheduler: false, shared: false, daemon: false }
+  const env = h.createHarness({ previewTransport: true, workSnapshot: state }, overrides)
+  const owner = env.load(transportPath).createRustCoreWorkerTransportRuntime({ enabled: false, required: false, appendStartupLog: () => {} })
+  const before = h.digest(env.trace), files = h.digest([...env.files]), requests = h.digest(env.sharedRequests)
+  // Execute the production method and facade forwarding against each existing
+  // owner's pure snapshot port. Physical queue/close behavior has separate gates.
+  for (const mask of [0, 1, 2, 4, 3, 5, 6, 7, 0]) {
+    Object.assign(state, { scheduler: !!(mask & 1), shared: !!(mask & 2), daemon: !!(mask & 4) })
+    for (let repeat = 0; repeat < 8; repeat++) {
+      assert.equal(owner.hasRustCoreInteractiveWork(), mask !== 0, 'work snapshot lost an owner or invented busy state: ' + mask)
+      assert.equal(env.runtime.hasRustCoreInteractiveWork(), mask !== 0, 'work snapshot facade diverged: ' + mask)
+    }
+    assert.equal(h.digest(env.trace), before, 'work snapshot polled, submitted, or changed transport state')
+    assert.equal(h.digest([...env.files]), files, 'work snapshot performed file work')
+    assert.equal(h.digest(env.sharedRequests), requests, 'work snapshot submitted shared work')
+  }
 }
 
 async function checkFileScope() {
@@ -348,7 +367,20 @@ async function checkMutants() {
     const scenario = h.scenarios().find(s => s.id === id)
     await assert.rejects(() => id === 'stdout-listing' ? checkStdoutListing(overrides) : scenario ? checkCase(scenario, overrides) : checkSequence(id, overrides), 'mutant was accepted: ' + name)
   }
-  return tests.length
+  const snapshotAnchor = 'hasRustCoreInteractiveWork: () => rustCoreScheduler.hasInteractiveWork() || sharedIo.hasForegroundWork() || rustCoreDaemon.hasSubmittedWork(),'
+  const snapshots = [
+    ['scheduler omitted', 'sharedIo.hasForegroundWork() || rustCoreDaemon.hasSubmittedWork()'],
+    ['shared owner omitted', 'rustCoreScheduler.hasInteractiveWork() || rustCoreDaemon.hasSubmittedWork()'],
+    ['daemon owner omitted', 'rustCoreScheduler.hasInteractiveWork() || sharedIo.hasForegroundWork()'],
+    ['always idle', 'false'], ['always busy', 'true'],
+    ['status polling', '(rustCoreDaemon.pollStatus(), rustCoreScheduler.hasInteractiveWork() || sharedIo.hasForegroundWork() || rustCoreDaemon.hasSubmittedWork())'],
+  ]
+  assert.equal(transport.split(snapshotAnchor).length, 2, 'work snapshot mutant anchor must match exactly once')
+  for (const [name, expression] of snapshots) {
+    const overrides = new Map([[transportPath, transport.replace(snapshotAnchor, 'hasRustCoreInteractiveWork: () => ' + expression + ',')]])
+    assert.throws(() => checkWorkSnapshot(overrides), /work snapshot/, 'work snapshot causal mutant accepted: ' + name)
+  }
+  return tests.length + snapshots.length
 }
 
 async function main() {
@@ -356,6 +388,7 @@ async function main() {
   assert.deepEqual(scenarios.map(s => s.id), fixture.cases.map(s => s.id), 'baseline scenario set changed')
   assert.deepEqual(h.sequenceNames, fixture.sequences.map(s => s.name))
   checkOwnership()
+  checkWorkSnapshot()
   for (const scenario of scenarios) await checkCase(scenario)
   for (const name of h.sequenceNames) await checkSequence(name)
   const listingNegatives = await checkStdoutListing()
@@ -364,6 +397,7 @@ async function main() {
   await checkRealChildProcess()
   const mutants = await checkMutants()
   const crlf = new Map([[transportPath, transport], [workerPath, worker], ...clients].map(([rel, text]) => [rel, text.replace(/\r?\n/g, '\r\n')]))
+  checkWorkSnapshot(crlf)
   for (const scenario of scenarios.filter(s => ['oneshot', 'submitted'].includes(s.settings.mode))) await checkCase(scenario, crlf)
   console.log(`[diagnostics:rust-worker-transport] ${scenarios.filter(s => !['runRustFontIndexListWorker', 'runRustSharedMetadataOverlayRead', 'runRustPreviewRenderImage'].includes(s.method)).length} frozen unaffected command cases, ${scenarios.filter(s => s.method === 'runRustFontIndexListWorker').length} explicit migrated list cases, ${scenarios.filter(s => s.method === 'runRustSharedMetadataOverlayRead').length} isolated overlay cases, ${scenarios.filter(s => s.method === 'runRustPreviewRenderImage').length} isolated unproven preview cases, ${listingNegatives} rejected listing read proofs, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
 }

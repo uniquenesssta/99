@@ -96,7 +96,24 @@ async function catalogCases(dir) {
   const adapter={exec:sql=>db.exec(sql),prepare:sql=>db.prepare(sql),transaction:fn=>()=>{db.exec('BEGIN');try{const v=fn();if(failTransaction)throw Error('injected disk commit failure');db.exec('COMMIT');return v}catch(e){db.exec('ROLLBACK');throw e}}}
   let values=[['A','both'],['B','both']], broken=new Set(), aggregate=false, blocked=null, unavailable=new Set(), requests=0
   const tags=()=>db.prepare('SELECT name FROM tags ORDER BY sort_order').all().map(r=>r.name)
-  const load=stateLoader({'node:fs':fs}, {}, transforms)
+  let mappingRequests=0
+  const probedPaths=[]
+  // These are real local temp directories. Prove their drive is unmapped through
+  // the controlled native boundary; unknown identity must still fail admission.
+  const catalogLoader=(globals={},mappingFailure=false)=>stateLoader({
+    'node:fs':{...fs,promises:{...fsp,stat:async value=>{probedPaths.push(value);return fsp.stat(value)}}},
+    [path.join(root,'src/main/rust-core/rustCoreWorkerPathRuntime.ts')]:{resolveRustCoreWorkerPath:()=> 'catalog-mapping-worker.exe'},
+    'node:child_process':{
+      execFile(file,args,options,done){
+        mappingRequests++;assert.equal(file,'catalog-mapping-worker.exe')
+        assert.deepEqual(plain(args),['--mapped-drive-table']);assert.equal(options.shell,false)
+        setImmediate(()=>mappingFailure?done(Error('mapping discovery unavailable')):done(null,'[]'))
+      },
+      execFileSync(){throw Error('unexpected synchronous catalog process')},
+      spawn(){throw Error('unexpected catalog process')},
+    },
+  },globals,transforms)
+  const load=catalogLoader()
   load('src/main/library/runtime/librarySchemaRuntime.ts').initializeLibraryDb(adapter)
   db.prepare('INSERT INTO folders VALUES (?,?)').run(roots[0],0)
   db.prepare('INSERT INTO folders VALUES (?,?)').run(roots[1],1)
@@ -115,10 +132,30 @@ async function catalogCases(dir) {
   state.markStartupPathRootUnavailable(roots[1],Error('offline'))
   await expect(['legacy','A','both'])
   if(old)return // The old owner must fail the assertion above.
+  assert.equal(state.getStartupPathRootState(roots[0]).state,'online')
+  assert.equal(state.getStartupPathRootState(roots[1]).state,'offline')
+  assert.equal(requests,1,'partial retention must read the available root')
+  assert.deepEqual(probedPaths,[roots[0]],'offline root must not be probed')
+  assert.equal(mappingRequests,process.platform==='win32'?1:0,'local drive identity must be explicitly confirmed')
   assert(tags().includes('legacy'))
   passed('legacy partial read preserves unattributed tags (old implementation rejected)')
+  if(process.platform==='win32'){
+    const failedLoad=catalogLoader({},true),failedState=failedLoad(stateFile)
+    const failedRuntime=failedLoad(tagsFile).createSharedKnownTagsRuntime(deps)
+    const retainedTags=tags(),retainedCatalog=db.prepare('SELECT value FROM meta WHERE key=?').get('sharedRootCatalog').value
+    const beforeRequests=requests,beforeMappingRequests=mappingRequests,beforeProbes=probedPaths.length
+    assert.deepEqual(plain(await failedRuntime.refreshKnownSharedTagsFromMetadata(roots)),retainedTags)
+    await assert.rejects(failedRuntime.refreshKnownSharedTagsFromMetadata(roots,{requireFresh:true}),/暂时不可用/)
+    assert.equal(requests,beforeRequests,'unknown mapping must not read metadata')
+    assert.equal(probedPaths.length,beforeProbes,'unknown mapping must not probe a drive path')
+    assert.equal(mappingRequests,beforeMappingRequests+1,'failed mapping discovery must be coalesced/cached')
+    for(const r of roots){assert.equal(failedState.getStartupPathRootState(r).state,'offline');assert.match(failedState.getStartupPathRootState(r).lastError,/identity unavailable/)}
+    assert.deepEqual(tags(),retainedTags)
+    assert.equal(db.prepare('SELECT value FROM meta WHERE key=?').get('sharedRootCatalog').value,retainedCatalog)
+    passed('unverified drive identity retains catalog with zero directory probes or metadata reads')
+  }
   // A new owner models app restart; online state is never persisted.
-  const reload=()=>{const l=stateLoader({'node:fs':fs}, {}, transforms);state=l(stateFile);runtime=l(tagsFile).createSharedKnownTagsRuntime(deps)}
+  const reload=()=>{const l=catalogLoader();state=l(stateFile);runtime=l(tagsFile).createSharedKnownTagsRuntime(deps)}
   reload();await expect(['A','B','both'])
   let row=JSON.parse(db.prepare('SELECT value FROM meta WHERE key=?').get('sharedRootCatalog').value)
   assert.equal(row.roots.length,2);assert.equal(row.unattributedTags.length,0)
@@ -127,7 +164,9 @@ async function catalogCases(dir) {
   passed('confirmed online empty replaces only that root; shared tag survives offline root')
   const reader=new DatabaseSync(dbPath);assert.deepEqual(reader.prepare('SELECT name FROM tags ORDER BY sort_order').all().map(r=>r.name),tags());reader.close()
   reload();for(const r of roots)state.markStartupPathRootUnavailable(r,Error('startup offline'))
-  const beforeRequests=requests;await expect(['B','both']);assert.equal(requests,beforeRequests)
+  const beforeRequests=requests,beforeMappingRequests=mappingRequests,beforeProbes=probedPaths.length
+  await expect(['B','both']);assert.equal(requests,beforeRequests)
+  assert.equal(mappingRequests,beforeMappingRequests);assert.equal(probedPaths.length,beforeProbes)
   await assert.rejects(runtime.refreshKnownSharedTagsFromMetadata(roots,{requireFresh:true}),/暂时不可用/)
   const folders=await loader({'../path/startupPathAvailabilityRuntime':{filterStartupAvailableRoots:async()=>({availableRoots:[],skippedRoots:roots})}}, {},transforms)('src/main/folders/folderCacheRootAvailabilityRuntime.ts').filterFolderCacheAvailableRoots(roots)
   assert.deepEqual(plain(folders.configuredFolders),roots);assert.deepEqual(plain(folders.folders),[])
@@ -173,7 +212,7 @@ async function catalogCases(dir) {
   let opened=0,closed=0
   deps.openSharedMetadataDb=async r=>{opened++;return new DatabaseSync(path.join(r,'metadata.sqlite'))}
   deps.closeSqliteDb=m=>{closed++;m.close()}
-  const compatLoad=stateLoader({'node:fs':fs}, {process:{...process,env:{...process.env,HFM_NODE_STATE_FALLBACK:'1'}}},transforms)
+  const compatLoad=catalogLoader({process:{...process,env:{...process.env,HFM_NODE_STATE_FALLBACK:'1'}}})
   runtime=compatLoad(tagsFile).createSharedKnownTagsRuntime(deps);state=compatLoad(stateFile)
   await expect(['keep-on-error']);assert.equal(opened,0)
   passed('explicit compatibility cannot reopen SQLite after failed Rust read')

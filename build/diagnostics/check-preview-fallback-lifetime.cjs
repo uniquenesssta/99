@@ -13,6 +13,16 @@ const lifetimePath = 'src/main/preview/runtime/previewRenderLifetimeRuntime.ts'
 // Discovery is imported from both the renderer and its request module using
 // different relative spellings. Mock the one module, not one import spelling.
 const helperPathModule = path.resolve(__dirname, '../../src/main/preview/native-renderer/directwrite/directWritePreviewHelperPathRuntime.ts')
+// Both transport fixtures supply the worker explicitly. Eager Electron imports
+// for discovery/autobuild are peripheral here; invoking either is a test error.
+const transportDiscoveryPorts = {
+  [path.resolve(__dirname, '../../src/main/rust-core/rustCoreWorkerAutoBuildRuntime.ts')]: {
+    tryBuildRustCoreWorkerForDevelopment: () => { throw Error('preview fixture must not auto-build a worker') },
+  },
+  [path.resolve(__dirname, '../../src/main/rust-core/rustCoreWorkerPathRuntime.ts')]: {
+    resolveRustCoreWorkerPathWithDiagnostics: () => { throw Error('preview fixture must use its explicit worker path') },
+  },
+}
 const installed = { ...font, systemInstalled: true, family: 'CONTROLLED_PRIVATE_FAMILY' }
 const gate = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -174,7 +184,7 @@ async function composedTransportCases() {
     child.finish = (code = 0) => { child.stdout.emit('data', '{}'); child.emit('close', code, null) }
     child.args = args; children.push(child); return child
   }
-  const h = fixture({ mocks: { 'node:child_process': { ...cp, spawn } } })
+  const h = fixture({ globals: { queueMicrotask }, mocks: { ...transportDiscoveryPorts, 'node:child_process': { ...cp, spawn } } })
   const transport = h.load('src/main/rust-core/rustCoreWorkerTransportRuntime.ts').createRustCoreWorkerTransportRuntime({ enabled: false, required: false, appendStartupLog() {} })
   const pool = h.load('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime(), run = pool.run
   pool.run = request => { requests.push(request); return run(request) }
@@ -279,7 +289,8 @@ async function nativeMissingFamilyCase() {
   try {
     await fsp.copyFile(original, privateFont); await fsp.mkdir(cacheDirectory)
     assert.equal(digest(privateFont), before)
-    const h = fixture({ cacheDirectory, mocks: {
+    const h = fixture({ cacheDirectory, globals: { queueMicrotask }, mocks: {
+      ...transportDiscoveryPorts,
       'node:child_process': { ...cp, spawn: (file, args, options) => {
         const render = args[0] === '--preview-render-image'
         const prior = jobs.at(-1)

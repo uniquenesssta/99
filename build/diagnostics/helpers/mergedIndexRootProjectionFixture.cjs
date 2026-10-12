@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '../../..')
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const gate = () => { let release; const promise = new Promise(resolve => { release = resolve }); return { promise, release } }
 
-function fixture({ native = false } = {}) {
+function fixture({ native = false, transforms = {}, createLoader = loader } = {}) {
   const a = path.join(root, '.diagnostic-virtual', 'healthy'), b = path.join(root, '.diagnostic-virtual', 'offline')
   const db = new DatabaseSync(':memory:')
   db.exec(`CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -15,7 +15,7 @@ function fixture({ native = false } = {}) {
     CREATE TABLE entries(root_path TEXT,relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at REAL,created_at REAL,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,is_deleted INTEGER,installed INTEGER,installed_by TEXT,matches_json TEXT,category_index TEXT,search_text TEXT,PRIMARY KEY(root_path,relative_path));`)
   const adapter = { prepare: sql => db.prepare(sql), transaction: fn => () => { db.exec('BEGIN IMMEDIATE'); try { const result = fn(); db.exec('COMMIT'); return result } catch (error) { db.exec('ROLLBACK'); throw error } } }
   const states = new Map([a,b].map(root => [root, { rootId: root, state: 'online', generation: 1 }]))
-  const probes = [], admissions = [], resolves = [], commits = [], logs = [], reads = []
+  const probes = [], admissions = [], resolves = [], commits = [], logs = [], reads = [], nativeInputs = []
   let readGate, beforeQueue, afterNative, nativeFailure, configured = [a,b], nativeCalls = 0
   const ports = {
     [path.join(root,'src/main/path/startupPathAvailabilityRuntime.ts')]: {
@@ -29,7 +29,7 @@ function fixture({ native = false } = {}) {
   }
   let clock = 1000
   class ControlledClock extends Date { static now() { return clock } }
-  const load = loader(ports, {Date:ControlledClock})
+  const load = createLoader(ports, {Date:ControlledClock}, transforms)
   const normalize = value => value.toLowerCase().replaceAll('\\','/')
   const key = sources => JSON.stringify(sources.map(s => ({ ...s, root: normalize(s.root), indexDbPath: normalize(s.indexDbPath), installDbPath: s.installDbPath ? normalize(s.installDbPath) : '' })).sort((a,b) => a.root.localeCompare(b.root)))
   const fresh = new Map([a,b].map(root => [root,{root,indexDbPath:path.join(root,'index.sqlite'),installDbPath:undefined,indexSignature:'root-v3|1',installSignature:'none',sharedMetadataSignature:'metadata-v2|1'}]))
@@ -52,7 +52,7 @@ function fixture({ native = false } = {}) {
     runMergedIndexMutation:async(label,fn)=>{if(beforeQueue)await beforeQueue(label);return queue.runMergedIndexMutation(label,fn)},
     rustCoreWorkerRuntime:{runRustMergedIndexSync:async input=>{
       if(!native)return null
-      nativeCalls++;input.assertCurrent();if(nativeFailure)throw nativeFailure
+      nativeCalls++;nativeInputs.push(input);input.assertCurrent();if(nativeFailure)throw nativeFailure
       assert(Array.isArray(input.preparedRows),'native writer was asked to reopen remote sources')
       assert.equal(getMeta(null,'sourcesKey'),input.expectedSourcesKey)
       adapter.transaction(()=>{if(input.fullSnapshot)db.prepare('DELETE FROM entries WHERE root_path=?').run(input.source.root);else for(const relative of input.relativePaths)db.prepare('DELETE FROM entries WHERE root_path=? AND relative_path=?').run(input.source.root,relative);for(const row of input.preparedRows)insert.run(row);if(!input.preserveSourceCheckpoint)writeSource(null,input.source,input.syncedAt);setMeta(null,'sourcesKey',input.sourcesKey)})()
@@ -67,7 +67,7 @@ function fixture({ native = false } = {}) {
   const build = { rebuildMergedIndexDb:async(_,sources,sourcesKey)=>{assert.equal(sources.length,configured.length);db.exec('DELETE FROM entries;DELETE FROM sources');for(const source of sources){writeSource(null,source,'repair');insert.run(row(source.root,'fresh'))}setMeta(null,'sourcesKey',sourcesKey)}, ensureMergedIndexBuilt:async()=>{throw Error('unexpected all-root ensure')} }
   const sync = load('src/main/indexing/merged-page/mergedIndexSyncRuntime.ts').createMergedIndexSyncRuntime(ctx,source,build)
   const poll = reason => load('src/main/indexing/merged-page/mergedIndexSharedMetadataExternalCheckRuntime.ts').checkMergedIndexSharedMetadataExternalChanges({ctx,sourceRuntime:source,buildRuntime:build,reason:reason || 'shared-metadata-poll'})
-  return {a,b,db,adapter,ctx,source,build,load,states,probes,admissions,resolves,commits,logs,reads,fresh,sync,poll,key,writeSource,setMeta,
+  return {a,b,db,adapter,ctx,source,build,load,states,probes,admissions,resolves,commits,logs,reads,nativeInputs,fresh,sync,poll,key,writeSource,setMeta,
     count:root=>db.prepare('SELECT COUNT(*) AS n FROM entries WHERE root_path=?').get(root).n,
     advanceTime:ms=>{clock+=ms},setRoots:roots=>{configured=roots},setReadGate:value=>{readGate=value},setBeforeQueue:value=>{beforeQueue=value},setNativeFailure:error=>{nativeFailure=error},setAfterNative:fn=>{afterNative=fn},nativeCalls:()=>nativeCalls,
   }
@@ -134,6 +134,67 @@ async function runMergedRootProjectionCases() {
       blocked.release();await pending
       assert.equal(f.db.prepare('SELECT index_signature FROM sources WHERE root_path=?').get(f.b).index_signature,'root-v3|automatic-next','automatic checkpoint refresh was dropped')
       assert.equal(f.ctx.mergedIndexReadyProcessKeys.size,0,'automatic partial validation claimed global freshness')
+    } finally {f.db.close()}
+  }
+  for(const native of [false,true]) {
+    const f=fixture({native})
+    try {
+      f.fresh.get(f.a).sharedMetadataSignature='metadata:none'
+      const read=f.source.readMergedRowsForSource;let attempts=0
+      f.source.readMergedRowsForSource=async(...args)=>{
+        const rows=await read(...args);attempts++
+        if(attempts===1)f.fresh.get(f.a).sharedMetadataSignature='metadata-v2|initialized'
+        return rows.map(row=>({...row,font_json:JSON.stringify({family:`attempt-${attempts}`})}))
+      }
+      await f.sync.syncMergedIndexForRootSnapshot(f.a,'shared-metadata-poll')
+      assert.equal(attempts,2,'first-use metadata initialization was not freshly re-prepared')
+      assert.equal(f.commits.length,1);assert.equal(f.nativeCalls(),Number(native))
+      assert.equal(f.db.prepare('SELECT font_json FROM entries WHERE root_path=?').get(f.a).font_json,'{"family":"attempt-2"}','first unstable rows were committed')
+      assert.equal(f.db.prepare('SELECT shared_metadata_signature FROM sources WHERE root_path=?').get(f.a).shared_metadata_signature,'metadata-v2|initialized')
+      assert(f.resolves.every(roots=>roots.length===1&&roots[0]===f.a),'preparation retry reopened a peer')
+      assert.equal(f.logs.filter(line=>line.includes('phase=source-recheck')).length,1)
+    } finally {f.db.close()}
+  }
+  {
+    const f=fixture({native:true})
+    try {
+      const read=f.source.readMergedRowsForSource;let attempts=0
+      f.source.readMergedRowsForSource=async(...args)=>{const rows=await read(...args);f.fresh.get(f.a).sharedMetadataSignature=`metadata-v2|changing-${++attempts}`;return rows}
+      await assert.rejects(()=>f.sync.syncMergedIndexForRootSnapshot(f.a,'shared-metadata-poll'),/source-changed-during-read/)
+      assert.equal(attempts,2,'unstable source preparation was retried without a bound')
+      assert.equal(f.commits.length,0);assert.equal(f.nativeCalls(),0)
+      assert.equal(f.db.prepare('SELECT font_json FROM entries WHERE root_path=?').get(f.a).font_json,'{"family":"old"}')
+      assert(f.logs.some(line=>line.includes('cause=source-changed-during-read, attempt=2')&&line.includes('metadataChanged=true')))
+    } finally {f.db.close()}
+  }
+  {
+    const f=fixture({native:true})
+    try {
+      const failure=Object.assign(Error('controlled source read denied'),{code:'EACCES'});let attempts=0
+      f.source.readMergedRowsForSource=async()=>{attempts++;throw failure}
+      await assert.rejects(()=>f.sync.syncMergedIndexForRootSnapshot(f.a,'shared-metadata-poll'),error=>error===failure)
+      assert.equal(attempts,1,'a failed source read was retried as initialization')
+      assert.equal(f.commits.length,0);assert.equal(f.nativeCalls(),0)
+    } finally {f.db.close()}
+  }
+  for(const change of ['generation','roots','target']) {
+    const f=fixture({native:true})
+    try {
+      const read=f.source.readMergedRowsForSource;let attempts=0
+      f.source.readMergedRowsForSource=async(...args)=>{
+        const rows=await read(...args)
+        if(++attempts===1){
+          f.fresh.get(f.a).sharedMetadataSignature='metadata-v2|initialized'
+          if(change==='generation')f.states.get(f.a).generation++
+          if(change==='roots')f.setRoots([f.b])
+          if(change==='target'){const newer={...f.fresh.get(f.a),indexSignature:'root-v3|other-projection'};f.writeSource(null,newer,'newer');f.setMeta(null,'sourcesKey',f.key([newer,f.fresh.get(f.b)]))}
+        }
+        return rows
+      }
+      const expected={generation:/generation-changed/,roots:/roots-changed/,target:/target-changed-in-queue/}[change]
+      await assert.rejects(()=>f.sync.syncMergedIndexForRootSnapshot(f.a,'shared-metadata-poll'),expected,`re-preparation recaptured changed ${change}`)
+      assert.equal(f.commits.length,0);assert.equal(f.nativeCalls(),0)
+      assert.equal(attempts,change==='target'?2:1,'invalid request identity reached another source read')
     } finally {f.db.close()}
   }
   for(const change of ['generation','target','roots']) {
@@ -273,7 +334,7 @@ async function runMergedRootProjectionCases() {
   }
 
 }
-module.exports={runMergedRootProjectionCases}
+module.exports={runMergedRootProjectionCases,createMergedRootProjectionFixture:fixture}
 
 // Opt-in Windows integration through the actual indexing client and worker.
 // The caller supplies the just-built binary; this fixture never builds or installs it.
@@ -282,6 +343,13 @@ async function runNativeMergedProjectionCases(workerPath) {
   const fs=require('node:fs'),os=require('node:os'),{execFile}=require('node:child_process'),{promisify}=require('node:util')
   const run=promisify(execFile),dir=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-merged-prepared-'))
   let db,allocated=0,commands=0
+  // Binary selection is supplied by the Windows caller. These peripheral
+  // owners must never auto-build or discover Electron application paths here.
+  const unusedPeripheral=()=>{throw Error('Native projection fixture entered an unused worker discovery/build boundary')}
+  const loadNative=loader({
+    [path.join(root,'src/main/rust-core/rustCoreWorkerAutoBuildRuntime.ts')]:{tryBuildRustCoreWorkerForDevelopment:unusedPeripheral},
+    [path.join(root,'src/main/rust-core/rustCoreWorkerPathRuntime.ts')]:{resolveRustCoreWorkerPathWithDiagnostics:unusedPeripheral},
+  },{queueMicrotask})
   try {
     const handshake=JSON.parse((await run(workerPath,['--handshake'],{windowsHide:true})).stdout.trim())
     assert(handshake.capabilities.includes('merged-index-prepared-sync-v1'),'selected worker lacks the reviewed prepared-row protocol')
@@ -291,13 +359,13 @@ async function runNativeMergedProjectionCases(workerPath) {
       CREATE TABLE entries(root_path TEXT,relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at REAL,created_at REAL,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,is_deleted INTEGER,installed INTEGER,installed_by TEXT,matches_json TEXT,category_index TEXT,search_text TEXT,PRIMARY KEY(root_path,relative_path));
       INSERT INTO meta VALUES('schemaVersion','7'),('sourcesKey','before');
       INSERT INTO sources VALUES('peer','offline',NULL,'old-index','old-install','old-metadata','old-time');`)
-    const make=loader()('src/main/rust-core/clients/rustIndexingClientRuntime.ts').createRustIndexingClientRuntime
+    const make=loadNative('src/main/rust-core/clients/rustIndexingClientRuntime.ts').createRustIndexingClientRuntime
     const ports={appendStartupLog(){},diagnoseRustCoreWorker:async()=>({available:true,path:workerPath,capabilities:handshake.capabilities}),
       createTemporaryJsonFile:()=>{const file=path.join(dir,`input-${++allocated}.json`);return{path:file,writeJson:async value=>fs.writeFileSync(file,JSON.stringify(value)),dispose:async()=>fs.rmSync(file,{force:true})}},
       runRustCoreScheduledCommand:async(worker,args,options)=>{commands++;options.assertCurrent?.();return run(worker,args,{windowsHide:true,maxBuffer:1024*1024})}}
     const client=make(ports),owner='Z:/healthy'
-    const production=loader()('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({dataPath:(...parts)=>path.join(dir,...parts)})
-    const normalizeRows=loader()('src/main/indexing/merged-page/mergedIndexSyncRuntime.ts').normalizeMergedSyncRows
+    const production=loadNative('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({dataPath:(...parts)=>path.join(dir,...parts)})
+    const normalizeRows=loadNative('src/main/indexing/merged-page/mergedIndexSyncRuntime.ts').normalizeMergedSyncRows
     const row={root_path:owner,relative_path:'a.ttf',cache_key:'a.ttf',file_size:1,modified_at:1,created_at:null,status:'ok',font_json:'{}',message:null,cached_at:'now',installed:null,installed_by:null,matches_json:null,category_index:'sansSerif',search_text:'a'}
     const input={mergedIndexDbPath:dbPath,schemaVersion:7,sourcesKey:'after',expectedSourcesKey:'before',syncedAt:'now',source:{root:owner,indexDbPath:'\\\\offline\\must-not-open\\index.sqlite',indexSignature:'root-v3|1',installSignature:'none',sharedMetadataSignature:'metadata:none'},preparedRows:normalizeRows({normalizePathForCacheCompare:value=>value.toLowerCase(),bindMergedIndexRow:production.bindMergedIndexRow},[row],owner,'now'),fullSnapshot:true}
     assert.equal((await client.runRustMergedIndexSync(input)).synced,true)

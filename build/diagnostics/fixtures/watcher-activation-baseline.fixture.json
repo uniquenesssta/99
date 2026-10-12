@@ -26,7 +26,7 @@
         "startSharedPolling",
         "startWatchingFolders"
       ],
-      "sha256": "b142357141878ff73f97a3a9450b0d9960c78cc6ca8bed2648d9c6ff751d131c"
+      "sha256": "c81e2494e5a067375b81832bb853c8e7a1bafdfce5f3487c037abf05374bd94e"
     },
     "src/main/cache/cachePaths.ts": {
       "exports": [
@@ -269,5 +269,14 @@
       "shared-watch-status": "Validated counts/ACK labels, offline/unknown, bounded polling/restart/cleanup, footer and both trusted IPC bridges passed at this commit."
     },
     "remainingVerification": "The aggregate still failed, including the old W-01 fixture and offline-settlement watcher harness. Their explicit migrations and causal assertions require a fresh Windows run; existing passing focused evidence is not an aggregate pass."
+  },
+  "sharedAvailabilityProbeOwnershipMigration": {
+    "parent": "b6c83848b615234bcddbd39d390466beac6ea838",
+    "file": "src/main/watcher/folderWatcherRuntime.ts",
+    "oldSha256": "b142357141878ff73f97a3a9450b0d9960c78cc6ca8bed2648d9c6ff751d131c",
+    "newSha256": "c81e2494e5a067375b81832bb853c8e7a1bafdfce5f3487c037abf05374bd94e",
+    "change": "Only the shared-watcher-poll availability call adds the fourth argument { background: true }, so ordinary watcher polls observe the central adaptive probe deadline. Foreground admission keeps its freshness policy. Removing that exact argument reproduces the prior LF-normalized hash; exports and functions are unchanged.",
+    "retainedVerification": "All W-01 watcher lifecycle, recovery, stale callback, metrics, activation, manual refresh and mutation assertions remain unchanged. Central probe ownership and shared watcher reconciliation diagnostics remain required.",
+    "remainingVerification": "Static hash, structure and syntax checks only; this explicit migration still requires the next Windows aggregate run."
   }
 }

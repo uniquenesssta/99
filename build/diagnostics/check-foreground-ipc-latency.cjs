@@ -245,6 +245,8 @@ async function main() {
       const target = file + suffix
       return fs.existsSync(target) ? { suffix, bytes: fs.statSync(target).size, mtimeMs: fs.statSync(target).mtimeMs, sha256: hash(target) } : { suffix, absent: true }
     })
+    const countNotificationRevision = () => Math.max(0, ...host.projectionEvents
+      .filter(event => event.source === 'metrics').map(event => event.metricsRevision || 0))
     const wal = new DatabaseSync(metadataDb)
     let frozenMain, frozenWal
     try {
@@ -260,11 +262,11 @@ async function main() {
     try {
       assert.deepEqual([...fs.readFileSync(metadataDb).subarray(18,20)], [2,2], 'WAL fixture did not retain its journal format')
       const before = filesFor(metadataDb), attempts = rows.filter(row => row.bindingSnapshot).length
+      const previousNotification = countNotificationRevision()
       host.query.clearFontQueryCaches()
       await invokeForeground('fonts:getMetrics', ['wal-committed-start'])
-      await until(() => rows.filter(row => row.bindingSnapshot).length > attempts && rows.filter(row => row.bindingSnapshot).at(-1).closedAt,
-        'WAL read-only count attempt never settled')
-      await pause(0)
+      await until(() => rows.filter(row => row.bindingSnapshot).length > attempts && rows.filter(row => row.bindingSnapshot).at(-1).closedAt
+        && countNotificationRevision() > previousNotification, 'WAL read-only count attempt never published its settled snapshot')
       const current = await invokeForeground('fonts:getMetrics', ['wal-committed-result'])
       assert.equal(current.sharedTagCountsStatus, 'current', 'Committed WAL counts were not authoritative')
       assert.equal(current.sharedTagCounts.CommittedWalTag, 1, 'Snapshot ignored the committed WAL-only update')
@@ -279,16 +281,16 @@ async function main() {
       // A genuinely active writable handle remains unavailable. Failure must
       // preserve the last confirmed WAL counts and must never request preflight.
       const busy = new DatabaseSync(metadataDb)
-      let busyAttemptCount = 0, busyAttemptStart = 0
+      let busyAttemptCount = 0, busyAttemptStart = 0, previousRecoveryNotification = 0
       try {
         busy.prepare('UPDATE font_metadata SET tag_names_json=?,revision=revision+1').run(JSON.stringify(['BusyWriterTag']))
         const before = filesFor(metadataDb), attempts = rows.filter(row => row.bindingSnapshot).length
+        const previousNotification = countNotificationRevision()
         busyAttemptStart = attempts
         host.query.clearFontQueryCaches()
         await invokeForeground('fonts:getMetrics', ['wal-busy-start'])
-        await until(() => rows.filter(row => row.bindingSnapshot).length > attempts && rows.filter(row => row.bindingSnapshot).at(-1).closedAt,
-          'Busy WAL read-only count attempt never settled')
-        await pause(0)
+        await until(() => rows.filter(row => row.bindingSnapshot).length > attempts && rows.filter(row => row.bindingSnapshot).at(-1).closedAt
+          && countNotificationRevision() > previousNotification, 'Busy WAL read-only count attempt never published unavailable status')
         const retained = await invokeForeground('fonts:getMetrics', ['wal-busy-result'])
         assert.equal(retained.sharedTagCountsStatus, 'unavailable', 'Busy writer claimed authoritative current counts')
         assert.equal(retained.sharedTagCounts.CommittedWalTag, 1, 'Busy source discarded the last confirmed WAL counts')
@@ -299,10 +301,14 @@ async function main() {
         assert.deepEqual(filesFor(metadataDb), before, 'Busy count read changed or created source sidecars')
         report.cases.push({ name: 'busy-wal-counts-retain-confirmed-snapshot-without-writing', passed: true,
           status: retained.sharedTagCountsStatus, retainedCount: retained.sharedTagCounts.CommittedWalTag, files: before })
+        previousRecoveryNotification = countNotificationRevision()
       } finally { busy.close() }
       const releasedSource = filesFor(metadataDb)
-      await until(() => rows.filter(row => row.bindingSnapshot).slice(busyAttemptStart).some(row => row.ok && row.closedAt),
-        'Released writer never recovered its same-revision read-only counts', 8000)
+      // A successful child's close precedes input cleanup, receipt validation
+      // and snapshot publication. Wait for the real owner notification too;
+      // querying at physical close alone can legitimately return retained counts.
+      await until(() => rows.filter(row => row.bindingSnapshot).slice(busyAttemptStart).some(row => row.ok && row.closedAt)
+        && countNotificationRevision() > previousRecoveryNotification, 'Released writer never published its recovered same-revision read-only counts', 8000)
       const recovered = await invokeForeground('fonts:getMetrics', ['wal-busy-recovered'])
       assert.equal(recovered.sharedTagCountsStatus, 'current', 'Recovered count status remained unavailable')
       assert.equal(recovered.sharedTagCounts.BusyWriterTag, 1, 'Retry lost the committed writer tag')

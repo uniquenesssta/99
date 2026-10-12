@@ -6,6 +6,7 @@
  */
 const fs = require('node:fs')
 const path = require('node:path')
+const ts = require('typescript')
 
 const repoRoot = path.resolve(__dirname, '..', '..')
 
@@ -24,6 +25,28 @@ function assert(condition, message) {
 function assertIncludes(relativePath, needle) {
   const content = read(relativePath)
   assert(content.includes(needle), `${relativePath} missing ${needle}`)
+}
+
+function assertSharedAdmissionDeadline(source) {
+  const file = ts.createSourceFile('transport.ts', source, ts.ScriptTarget.Latest, true)
+  const admissions = [], queueDeclarations = []
+  const visit = node => {
+    if (ts.isCallExpression(node) && node.expression.getText(file) === 'sharedIo.run') admissions.push(node)
+    if (ts.isVariableDeclaration(node) && node.name.getText(file) === 'queueTimeoutMs') queueDeclarations.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  assert(admissions.length === 1 && ts.isObjectLiteralExpression(admissions[0].arguments[0]), 'Shared I/O admission must have one explicit request')
+  const properties = admissions[0].arguments[0].properties
+  const timeout = properties.find(node => node.name?.getText(file) === 'timeoutMs')
+  const compact = node => node?.getText(file).replace(/\s/g, '')
+  assert(timeout && ts.isPropertyAssignment(timeout)
+    && compact(timeout.initializer) === 'Math.min(sharedCommandExecutionTimeoutMs(args[0],execOptions.timeout,verifiedListing),previewLifetime?.remainingMs()??Infinity)',
+  'Shared I/O admission must retain both its operation cap and remaining logical preview budget')
+  assert(queueDeclarations.length === 1 && compact(queueDeclarations[0].initializer) === 'previewLifetime?.queueTimeoutMs()??3000',
+    'Shared I/O queue must retain cumulative preview budget and ordinary 3000ms default')
+  assert(properties.some(node => ts.isShorthandPropertyAssignment(node) && node.name.text === 'queueTimeoutMs'),
+    'Shared I/O request must use the bounded queue admission value')
 }
 
 function fixture() {
@@ -106,7 +129,7 @@ function testC08NetworkListingBatchRouting() {
   assert(transport.includes("if ((!target!.write || sharedReadOnlyPreview || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"), 'read-only Shared I/O receipts must retain the root-generation gate')
   assert(transport.includes('FONT_SCAN_LISTING_MAX_TIMEOUT_MS = 10 * 60 * 1000'), 'listing maximum lifetime changed')
   assert(transport.includes("command === '--list-font-files' && verifiedListing ? FONT_SCAN_LISTING_MAX_TIMEOUT_MS : 30000"), 'only proven stdout listings may exceed the ordinary shared 30-second cap')
-  assert(transport.includes('timeoutMs: sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing)'), 'Shared I/O must apply the operation-specific cap at admission')
+  assertSharedAdmissionDeadline(transport)
   assert(transport.includes("hasCapability(cachedStatus, 'list-font-files-stdout-v1') && isStdoutFontListingArgs(args)"), 'stdout effect proof must bind capability and exact approved CLI shape')
   assert(transport.includes("const conservativeListing = args[0] === '--list-font-files' && !verifiedListing"), 'every unproven listing must retain conservative write admission')
   assert(transport.includes("if (conservativeListing) { roots.push('configured-root:listing-output'); accesses = undefined }"), 'legacy/malformed listing output needs a global unknown-alias write barrier')
@@ -117,7 +140,18 @@ function testC08NetworkListingBatchRouting() {
   assert(listingJson.includes('if json.len() > LISTING_STDOUT_MAX_BYTES'), 'native listing may not return partial overflow success')
   assert(read('native-src/hfm-core-worker/src/commands.rs').includes('bounded_stdout_listing(json)'), 'one-shot stdout listing must enforce receipt bound')
   assert(read('native-src/hfm-core-worker/src/core_daemon/scan_commands.rs').includes('bounded_stdout_listing(payload)'), 'daemon stdout listing must enforce receipt bound')
-  assert(transport.includes('queueTimeoutMs: 3000'), 'Shared I/O queue timeout changed')
+  for (const [before, after] of [
+    ['Math.min(sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing), previewLifetime?.remainingMs() ?? Infinity)', 'previewLifetime?.remainingMs() ?? Infinity'],
+    ['Math.min(sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing), previewLifetime?.remainingMs() ?? Infinity)', 'sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing)'],
+    ['previewLifetime?.queueTimeoutMs() ?? 3000', '3000'],
+    ['previewLifetime?.queueTimeoutMs() ?? 3000', 'previewLifetime?.queueTimeoutMs() ?? 6000'],
+    ['queueTimeoutMs, maxBuffer:', 'queueTimeoutMs: 6000, maxBuffer:'],
+  ]) {
+    assert(transport.split(before).length === 2, 'Deadline mutation anchor drifted: ' + before)
+    let rejected = false
+    try { assertSharedAdmissionDeadline(transport.replace(before, after)) } catch { rejected = true }
+    assert(rejected, 'Removed or expanded admission deadline escaped: ' + after)
+  }
 
   const sharedProcess = read('src/main/path/sharedIoProcessRuntime.ts')
   assert(sharedProcess.includes("lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2"), 'Shared I/O default concurrency changed')

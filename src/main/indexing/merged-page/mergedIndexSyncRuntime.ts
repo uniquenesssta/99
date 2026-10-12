@@ -1,4 +1,4 @@
-import { mergedSyncBlocker, settleMergedSyncError } from './mergedIndexProjectionFailureRuntime'
+import { mergedSyncBlocker, mergedSyncCause, settleMergedSyncError } from './mergedIndexProjectionFailureRuntime'
 import { createHash } from 'node:crypto'
 import { isAbsolute, win32 } from 'node:path'
 import { applicationWorkEpoch, assertApplicationOpen } from '../../app/shutdownCoordinatorRuntime'
@@ -42,6 +42,7 @@ export function createMergedIndexSyncRuntime(ctx: MergedIndexPageContext, source
   async function prepare(rootPath: string, reason: string, payload?: FontIndexChangePayload) {
     const epoch = applicationWorkEpoch()
     const roots = await ctx.appWatchedFolders()
+    const rootsKey = ctx.mergedIndexRootsKey(roots)
     const rootKey = ctx.normalizePathForCacheCompare(rootPath)
     const configured = roots.find(root => ctx.normalizePathForCacheCompare(root) === rootKey)
     if (!configured) throw new Error('merged-projection-root-removed')
@@ -52,31 +53,49 @@ export function createMergedIndexSyncRuntime(ctx: MergedIndexPageContext, source
     const expectedTarget = targetKey(previous, rootKey)
     if (!(await ensureStartupPathRootAvailable(configured, undefined, 'merged-projection', { background: options.background === true }))) throw new Error('merged-projection-root-unavailable')
     const availability = getStartupPathRootState(configured)
-    const sources = await sourceRuntime.mergedIndexSourcesForRoots([configured])
-    const source = sources[0]
-    if (sources.length !== 1 || !source || ctx.normalizePathForCacheCompare(source.root) !== rootKey) throw new Error('merged-source-receipt-unavailable')
-    assertFreshMergedIndexSource(source)
-    const nextTarget = ctx.mergedIndexSourcesKey([source])
-    const incrementalAllowed = expectedTarget === nextTarget
-      || (isSharedMetadataIncrementalSyncReason(reason) && sourceKeyChangedOnlyBySharedMetadata(expectedTarget, nextTarget, rootKey))
-      || (isRootIndexIncrementalSyncReason(reason) && sourceKeyChangedOnlyByRootIndex(expectedTarget, nextTarget, rootKey))
-      || (isInstallStatusIncrementalSyncReason(reason) && sourceKeyChangedOnlyByInstallStatus(expectedTarget, nextTarget, rootKey))
-    const relativePaths = payload ? sourceRuntime.relativePathsFromFontIndexPayload(source.root, payload) : []
-    // A changed path/index/install source, a missing checkpoint, or explicit
-    // reconciliation needs a complete target snapshot, never a global rebuild.
-    const fullSnapshot = !payload || !incrementalAllowed || !relativePaths.length
-    const now = new Date().toISOString()
-    const rows = normalizeMergedSyncRows(ctx, await sourceRuntime.readMergedRowsForSource(source, fullSnapshot ? undefined : relativePaths), source.root, now)
-    const verified = await sourceRuntime.mergedIndexSourcesForRoots([configured])
-    if (ctx.mergedIndexSourcesKey(verified) !== nextTarget) throw new Error('merged-source-changed-during-read')
-    assertApplicationOpen(epoch)
     const assertGeneration = () => {
       assertApplicationOpen(epoch)
       const current = getStartupPathRootState(configured)
       if (current.state !== 'online' || current.generation !== availability.generation || current.rootId !== availability.rootId) throw new Error('merged-projection-generation-changed')
     }
-    assertGeneration()
-    return { source, expectedTarget, rootKey, fullSnapshot, relativePaths, rows, now, assertGeneration, rootsKey: ctx.mergedIndexRootsKey(roots) }
+    const assertPreparationCurrent = async () => {
+      assertGeneration()
+      if (ctx.mergedIndexRootsKey(await ctx.appWatchedFolders()) !== rootsKey) throw new Error('merged-projection-roots-changed')
+      assertGeneration()
+    }
+    const readTargetSource = async () => {
+      const sources = await sourceRuntime.mergedIndexSourcesForRoots([configured])
+      const source = sources[0]
+      if (sources.length !== 1 || !source || ctx.normalizePathForCacheCompare(source.root) !== rootKey) throw new Error('merged-source-receipt-unavailable')
+      assertFreshMergedIndexSource(source)
+      return source
+    }
+    let source = await readTargetSource()
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      await assertPreparationCurrent()
+      const nextTarget = ctx.mergedIndexSourcesKey([source])
+      const incrementalAllowed = expectedTarget === nextTarget
+        || (isSharedMetadataIncrementalSyncReason(reason) && sourceKeyChangedOnlyBySharedMetadata(expectedTarget, nextTarget, rootKey))
+        || (isRootIndexIncrementalSyncReason(reason) && sourceKeyChangedOnlyByRootIndex(expectedTarget, nextTarget, rootKey))
+        || (isInstallStatusIncrementalSyncReason(reason) && sourceKeyChangedOnlyByInstallStatus(expectedTarget, nextTarget, rootKey))
+      const relativePaths = payload ? sourceRuntime.relativePathsFromFontIndexPayload(source.root, payload) : []
+      // Recompute compatibility against the original applied target, including
+      // when a first-use overlay/install migration changes the source receipt.
+      const fullSnapshot = !payload || !incrementalAllowed || !relativePaths.length
+      const now = new Date().toISOString()
+      const rows = normalizeMergedSyncRows(ctx, await sourceRuntime.readMergedRowsForSource(source, fullSnapshot ? undefined : relativePaths), source.root, now)
+      const verified = await readTargetSource()
+      await assertPreparationCurrent()
+      if (ctx.mergedIndexSourcesKey([verified]) === nextTarget) {
+        return { source, expectedTarget, rootKey, fullSnapshot, relativePaths, rows, now, assertGeneration, rootsKey }
+      }
+      ctx.appendStartupLog(`merged root projection: caller=prepare, rootHash=${mergedSyncRootHash(rootKey)}, phase=source-recheck, blocker=superseded, cause=source-changed-during-read, attempt=${attempt}, indexChanged=${source.indexDbPath !== verified.indexDbPath || source.indexSignature !== verified.indexSignature}, installChanged=${source.installDbPath !== verified.installDbPath || source.installSignature !== verified.installSignature}, metadataChanged=${source.sharedMetadataSignature !== verified.sharedMetadataSignature}`)
+      // Initialization/replay is part of the authoritative read path. Reread
+      // once against its new receipt, outside the write lane. Never recapture
+      // request identity or retry a failed read, admission, or submitted write.
+      source = verified
+    }
+    throw new Error('merged-source-changed-during-read')
   }
 
   async function apply(prepared: Awaited<ReturnType<typeof prepare>>, reason: string, commit: (reason?: string) => void) {
@@ -171,7 +190,7 @@ export function createMergedIndexSyncRuntime(ctx: MergedIndexPageContext, source
       ctx.appendStartupLog(`merged root projection: caller=incremental, rootHash=${rootHash}, phase=committed, blocker=none, rows=${prepared.rows.length}, fullSnapshot=${prepared.fullSnapshot}`)
     } catch (error) {
       await settleMergedSyncError(error)
-      ctx.appendStartupLog(`merged root projection: caller=incremental, rootHash=${rootHash}, phase=deferred, blocker=${mergedSyncBlocker(error)}`)
+      ctx.appendStartupLog(`merged root projection: caller=incremental, rootHash=${rootHash}, phase=deferred, blocker=${mergedSyncBlocker(error)}, cause=${mergedSyncCause(error)}`)
       throw error
     }
   }
@@ -185,7 +204,7 @@ export function createMergedIndexSyncRuntime(ctx: MergedIndexPageContext, source
       ctx.appendStartupLog(`merged root projection: caller=snapshot, rootHash=${rootHash}, phase=committed, blocker=none, rows=${prepared.rows.length}`)
     } catch (error) {
       await settleMergedSyncError(error)
-      ctx.appendStartupLog(`merged root projection: caller=snapshot, rootHash=${rootHash}, phase=deferred, blocker=${mergedSyncBlocker(error)}`)
+      ctx.appendStartupLog(`merged root projection: caller=snapshot, rootHash=${rootHash}, phase=deferred, blocker=${mergedSyncBlocker(error)}, cause=${mergedSyncCause(error)}`)
       throw error
     }
   }
