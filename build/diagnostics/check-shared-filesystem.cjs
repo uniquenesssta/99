@@ -74,7 +74,28 @@ async function main() {
     admitted=false;await firstJob;assert.equal((await staleWrite).outcome,'not-started');assert.equal(fs.existsSync(marker),false);pool.stop()
     const probeText=fs.readFileSync(path.join(root,'src/main/path/sharedPathProbeRuntime.ts'),'utf8')
     let source=probeText.match(/const probeSource = `([\s\S]*?)`/)[1]
-    source=source.replace('const stat = fs.statSync(path);',"fs.writeFileSync(process.argv[2],JSON.stringify({pid:process.pid,procPid:process.platform==='linux'?fs.readlinkSync('/proc/self'):undefined})); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0); const stat = fs.statSync(path);")
+    const originalProbeSource=source
+    // The production probe awaits asynchronous filesystem I/O. Keep a live
+    // handle while that port is pending, so only parent loss can end this child.
+    source=source.replace('const stat = await fs.promises.stat(path);',"fs.writeFileSync(process.argv[2],JSON.stringify({pid:process.pid,procPid:process.platform==='linux'?fs.readlinkSync('/proc/self'):undefined})); setInterval(()=>{},1000); const stat = await new Promise(()=>{});")
+    assert.notEqual(source,originalProbeSource,'pending asynchronous probe port was not installed')
+    for (const reason of ['cancelled','timeout']) {
+      const probePool=load('src/main/path/sharedIoProcessRuntime.ts').createSharedIoProcessRuntime(()=>{})
+      const controller=new AbortController(),pendingMarker=path.join(dir,'pending-probe-'+reason)
+      try {
+        const pending=probePool.run({file:process.execPath,args:['-e',source,dir,pendingMarker],roots:['pending-probe'],lane:'root-probe',
+          timeoutMs:reason==='cancelled'?5000:500,queueTimeoutMs:3000,write:false,signal:controller.signal}).catch(error=>error)
+        // Cancellation waits for the pending filesystem port; timeout keeps the
+        // production 500ms deadline and must not be turned into successful EOF.
+        if(reason==='cancelled'){await waitUntil(()=>fs.existsSync(pendingMarker));controller.abort()}
+        const failure=await pending
+        assert.equal(failure.reason,reason);assert.equal(failure.outcome,'unknown')
+        await failure.closed;await probePool.whenIdle()
+        assert(fs.existsSync(pendingMarker),'Probe did not reach the controlled pending asynchronous filesystem port')
+        assert.equal(probePool.status().activeRootProbe,0);assert.equal(probePool.status().metrics.started,1)
+        assert.equal(probePool.status().metrics.completed,0);assert.equal(probePool.status().metrics.closed,1)
+      } finally {probePool.stop();await probePool.whenIdle()}
+    }
     const ready=path.join(dir,'blocked-probe'),pidFile=path.join(dir,'probe-pid')
     const script=`const cp=require('node:child_process'),fs=require('node:fs');const child=cp.spawn(process.execPath,['-e',${JSON.stringify(source)},${JSON.stringify(dir)},${JSON.stringify(ready)}],{stdio:['ignore','ignore','ignore','pipe']});fs.writeFileSync(${JSON.stringify(pidFile)},String(child.pid));setInterval(()=>{},1000);`
     const parent=cp.spawn(process.execPath,['-e',script],{stdio:'ignore'});let childPid,probeIdentity
@@ -89,7 +110,7 @@ async function main() {
       assert(running(),'blocked child exited before parent crash')
       parent.kill('SIGKILL');await new Promise(resolve=>parent.once('close',resolve));await waitUntil(()=>!running())
     } finally {parent.kill('SIGKILL');if(childPid&&running())process.kill(childPid,'SIGKILL')}
-    console.log('shared filesystem: local real files, binary transfer, owned handles, unknown reads, unsupported operations, snapshot lifetime, junction identity, stale queued write and blocked child after parent crash passed')
+    console.log('shared filesystem: local real files, binary transfer, owned handles, unknown reads, unsupported operations, snapshot lifetime, junction identity, stale queued write, pending async probe cancellation/timeout and child after parent crash passed')
   } finally {await fsp.rm(dir,{recursive:true,force:true})}
 }
 main().catch(error=>{console.error(error);process.exitCode=1})

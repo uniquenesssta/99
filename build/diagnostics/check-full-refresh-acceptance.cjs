@@ -351,6 +351,7 @@ observationRegressions().then(localTagHydrationRegressions).then(taggedPageRealm
  .then(()=>require('./check-font-metrics-fairness.cjs').runFontMetricsFairnessRegressions())
  .then(()=>require('./check-full-refresh-query-retirement.cjs').runQueryRetirementRegressions())
  .then(queryRetirementAcceptanceRegressions)
+ .then(refreshCompletionRegressions)
  .catch(error=>{console.error(error);process.exitCode=1})
 
 function queryRetirementAcceptanceRegressions(sample) {
@@ -704,4 +705,67 @@ async function timedOwnerRegressions() {
  const nudged=new Function('path','process',mutated+';return createFixturePerformanceRuntime')(path,process)
  assert.throws(()=>performanceFixture(nudged),/Unexpected native activity nudge/)
  console.log('[diagnostics:full-refresh-acceptance] selected watched/cached/fresh/read/metrics/diagnostic/activity owners and prior-substitute negatives passed')
+}
+
+// Execute the real runner against controlled persistence/evidence ports. These
+// are message/summary contracts, not timing or real-font workload evidence.
+async function refreshCompletionRegressions() {
+ const fs=require('node:fs'),path=require('node:path'),{loader}=require('./check-operation-chain.cjs')
+ const root=path.resolve(__dirname,'../..'),file='src/main/install/refresh/installStatusRefreshRunner.ts'
+ const absolute=path.join(root,file),source=fs.readFileSync(absolute,'utf8').replace(/\r\n/g,'\n')
+ const at=relative=>path.join(root,'src/main',relative)
+ async function cases(transform=value=>value) {
+  const load=loader({
+   [at('path/sharedFileSystemRuntime.ts')]:{withSharedIoPriority:(_priority,fn)=>fn()},
+   [at('app/shutdownCoordinatorRuntime.ts')]:{applicationWorkEpoch:()=>1,assertApplicationOpen(){}},
+   [at('path/startupPathAvailabilityRuntime.ts')]:{getStartupPathRootState:()=>({state:'online',generation:1})},
+   [at('install/fontInstallEvidenceRuntime.ts')]:{createFontInstallEvidenceSession:()=>({confirm:async(_item,candidate)=>candidate})},
+  },{}, {[absolute]:()=>transform(source)})
+  const identity=load('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId
+  const items=[0,1].map(index=>{const filePath=`C:\\fixture\\summary-${index}.ttf`;return {id:identity(filePath,100,1),path:filePath,fileSize:100,modifiedAt:1}})
+  for(const force of [true,false]) for(const missing of [0,1,2]) {
+   const persisted={},progress=[];let finalRead=false,writes=0
+   const unknown=new Set(items.slice(0,missing).map(item=>item.id))
+   const runner=load(file).createInstallStatusRefreshRunner({
+    appWatchedFolders:async()=>['C:\\fixture'],loadSharedFontsForFolders:async()=>items,
+    readInstallStatusIndex:async queried=>{
+     const results={},misses=[]
+     for(const item of queried) {
+      if(persisted[item.id]&&!(finalRead&&unknown.has(item.id)))results[item.id]=persisted[item.id]
+      else misses.push(item)
+     }
+     return {results,misses}
+    },
+    emitInstallStatusProgress:event=>progress.push(event),appendStartupLog(){},
+    waitForRendererIdle:async()=>{},delayToEventLoop:async()=>{},withGlobalIo:(_label,fn)=>fn(),
+    getSystemInstalledFontsCached:async()=>[],buildInstalledFontLookupIndex:()=>({}),
+    compareFontInstalledWithLookupIndex:item=>({known:true,installed:item.id===items[0].id,by:item.id===items[0].id?'system':'none',matches:[]}),
+    rootForFontPath:async()=>null,readTemporaryActiveFonts:async()=>({records:[]}),
+    installStatusProjectionOwnedByWriter:true,
+    saveInstallStatusIndex:async(results,_items,options)=>{writes++;Object.assign(persisted,results);options.onPersisted(Object.keys(results))},
+    saveInstalledTotalSummaryForRoots:async()=>{finalRead=true},
+   },{installStatusRefreshBatchSize:2,lightweightMissingThreshold:32,readSystemInstalledFontsLightweight:async()=>[]})
+   const result=await runner.refreshInstallStatusIndex({force,incremental:!force},{emitProgress:true})
+   const done=progress.filter(row=>row.stage==='done').at(-1)
+   assert.equal(result.missingCount,missing,'Final persisted unknown rows were not counted')
+   assert.equal(result.installedCount,missing?0:1,'Unknown evidence became confirmed installed')
+   assert.equal(result.notInstalledCount,missing<2?1:0,'Unknown evidence became confirmed uninstalled')
+   assert.equal(done.missingCount,missing,'Completion progress hid unknown rows')
+   assert.equal(done.total,2);assert.equal(done.updatedCount,2);assert.equal(writes,1)
+   assert(done.message.includes(force?'全量':'增量'),'Completion named the wrong refresh mode')
+   if(missing) {
+    assert(done.message.includes('部分未确认')&&done.message.includes(`未确认 ${missing} 个`),'Partial completion must disclose the persisted unknown count')
+    assert(!done.message.includes('刷新完成'),'Partial completion claimed full verification')
+   } else {
+    assert(done.message.includes('刷新完成'),'Complete refresh lost its successful completion message')
+    assert(!done.message.includes('部分未确认'))
+   }
+  }
+ }
+ await cases()
+ await cases(value=>value.replace(/\n/g,'\r\n'))
+ const anchor='message: summary.missingCount > 0'
+ assert.equal(source.split(anchor).length,2,'Partial completion mutation anchor must be unique')
+ await assert.rejects(()=>cases(value=>value.replace(anchor,'message: false')),/Partial completion must disclose/)
+ console.log('[diagnostics:full-refresh-acceptance] full/incremental complete/partial persisted-summary messages, LF/CRLF and misleading-completion mutant passed')
 }

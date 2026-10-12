@@ -678,6 +678,10 @@ async function runPerformance(config, fixture, caseId, sourceRoot, changed) {
     assert.equal(report.summary.installedCount, WORKLOAD.sourceFiles)
     assert.equal(report.summary.notInstalledCount, WORKLOAD.metadataOnly)
     assert.equal(report.summary.missingCount, 0)
+    const completion = progress.filter(row => row.stage === 'done').at(-1)
+    assert.equal(completion.missingCount, 0, 'Complete refresh progress disagrees with its persisted summary')
+    assert.match(completion.message, /刷新完成/)
+    assert(!completion.message.includes('部分未确认'), 'Complete population was reported as partial')
     report.localTagHydration = localTagHydrationReport(host)
     report.queryRetirementObservation = host.queryRetirement.snapshot()
     report.queryRetirementProof = queryRetirementProof({ ...report, work: meter.snapshot() })
@@ -886,7 +890,8 @@ async function offlineMixed(resource, report, fixture) {
   const retained = await host.loadSharedFontsForFolders(await host.appWatchedFolders())
   assertTaggedPageIdentities(retained, warm)
   report.cachedOfflinePopulation = retained.length
-  const runner = createRunner(host, { ...fixture, includeInvalid: false, targetRoot: fixture.manifest.targetRoot })
+  const progress = []
+  const runner = createRunner(host, { ...fixture, includeInvalid: false, targetRoot: fixture.manifest.targetRoot }, { onProgress: value => progress.push(value) })
   report.summary = plain(await meter.runScope('background-refresh', () => runner.refreshInstallStatusIndex({ force: true }, { jobId: report.caseId })))
   const offlineIds = new Set(fixture.items.filter(item => inside(offlineRoot, item.path)).map(item => item.id))
   const onlineSources = fixture.sourceItems.filter(item => !offlineIds.has(item.id)).length
@@ -894,6 +899,11 @@ async function offlineMixed(resource, report, fixture) {
   for (const id of offlineIds) assert.equal(snapshot.results[id], undefined, 'Offline no-candidate item was classified definitely uninstalled')
   assert.equal(report.summary.total, WORKLOAD.validIndexed)
   assert.equal(report.summary.missingCount, offlineIds.size)
+  const completion = progress.filter(row => row.stage === 'done').at(-1)
+  assert.equal(completion?.missingCount, offlineIds.size, 'Partial progress hid the persisted unknown population')
+  assert(completion.message.includes(`未确认 ${offlineIds.size} 个`) && completion.message.includes('部分未确认'), 'Offline completion text must disclose unconfirmed rows')
+  assert(!completion.message.includes('刷新完成'), 'Partial refresh claimed complete verification')
+  report.completionProgress = plain(completion)
   assert.equal(report.summary.installedCount, onlineSources)
   const installedCount = onlineSources, notInstalledCount = WORKLOAD.validIndexed - offlineIds.size - onlineSources
   report.finalProjection = await readProjection(host, { installedCount, notInstalledCount,

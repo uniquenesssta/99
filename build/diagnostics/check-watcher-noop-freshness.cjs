@@ -26,7 +26,10 @@ function redactDiagnostic(value, roots = []) {
 
 function failureDiagnostics(host, state, error, roots) {
   const relevant = /^(?:local merged index (?:background validation|root signature|rebuilt)|merged index worker readiness|rust merged index (?:rebuild|page query)|root index (?:read failed|latest pointer resolve skipped|rust directory)|shared snapshot disposal failed)/
+  const location = String(error?.stack || '').match(/check-watcher-noop-freshness\.cjs:(\d+):(\d+)/)
   return { phase: state.phase || 'fixture-setup', ownedSqliteSnapshots: state.ownedSqliteSnapshots || 0,
+    assertionLocation: location ? { file: 'check-watcher-noop-freshness.cjs', line: Number(location[1]), column: Number(location[2]) } : undefined,
+    watcherResult: state.lastWatcherResult,
     nativeReceipts: (host?.receipts || []).map(row => row.method).slice(-12),
     // Exact selected failure messages, with case/source/system paths removed.
     // Never emit the complete host log, SQL payloads, rows or child stdout.
@@ -209,8 +212,12 @@ async function main() {
     const { selectFonts } = require(path.join(sourceRoot, 'build/diagnostics/lib/operation-work-performance.cjs'))
     const manifest = selectFonts(path.join(directory, 'private-font-manifest'))
     const fonts = host.load('src/main/fonts/fontRuntime.ts')
-    const cached = fonts.createCachedFontRuntime({ sharedFontId: () => { throw Error('Legacy fixture identity requested') } })
     const cachePaths = host.load('src/main/cache/cachePaths.ts')
+    // Match mainDataStorageCompositionRuntime: persisted cache IDs use this
+    // production helper; cachedFontForRuntime restores canonical file-v2 IDs.
+    // Unlike the read-only host, this fixture also exercises the sanitizer.
+    const { sharedFontId } = cachePaths.createCachePathHelpers({ dataPath: host.dataPath, sha1: fonts.sha1, fontExtensions: new Set(['.ttf']) })
+    const cached = fonts.createCachedFontRuntime({ sharedFontId })
     const paths = host.load('src/main/path/cachePath.ts')
     const constants = host.load('src/main/cache/constants.ts')
     const files = dirs.map(dir => path.join(dir, 'fixture.ttf'))
@@ -324,6 +331,11 @@ async function main() {
     }
     const watcher = makeWatcher()
     const change = type => [{ folder: fontRoot, fileName: '.', eventType: type, receivedAt: Date.now(), origin: 'controlled-full-root' }]
+    function recordWatcherResult(label, result) {
+      state.lastWatcherResult = { label, upserts: result.upserts.length, deletes: result.deletes.length,
+        errorCount: result.errors.length, errors: result.errors.slice(0, 8).map(error => redactDiagnostic(error.message, redactions)) }
+      return result
+    }
     function startStage(label) {
       host.observer.reset()
       state.phase = label
@@ -387,7 +399,7 @@ async function main() {
       assert.deepEqual(stage.operations, {}, 'Rename/rescan preflight touched storage')
     }
     startStage('cold-full-root')
-    const coldPayload = await watcher.applyWatchedFolderChangesToIndex(change('rescan'))
+    const coldPayload = recordWatcherResult('cold-full-root', await watcher.applyWatchedFolderChangesToIndex(change('rescan')))
     const cold = finishStage(), afterCold = audit(host)
     assert.deepEqual([coldPayload.upserts.length, coldPayload.deletes.length, coldPayload.errors.length], [0,0,0])
     assertBoundedWalk(cold, FILES, true)
@@ -399,7 +411,7 @@ async function main() {
     stages.push(summarize(cold))
 
     startStage('warm-full-root')
-    const warmPayload = await watcher.applyWatchedFolderChangesToIndex(change('rescan'))
+    const warmPayload = recordWatcherResult('warm-full-root', await watcher.applyWatchedFolderChangesToIndex(change('rescan')))
     const warm = finishStage(), afterWarm = audit(host)
     assert.deepEqual([warmPayload.upserts.length, warmPayload.deletes.length, warmPayload.errors.length], [0,0,0])
     assertBoundedWalk(warm, FILES, false)
@@ -412,6 +424,7 @@ async function main() {
     // the measured native walks. Only the outer probe and denied read are
     // controlled; the missing-file sentinel comes from the real SQLite reader.
     async function checkStorageBoundary(kind, module = host.load(storageFile), label = kind) {
+      state.phase = `storage-boundary:${label}`
       const root = kind === 'compatible' ? fontRoot : path.join(directory, `storage-${label}`)
       const cache = kind === 'compatible' ? cacheDir : path.join(root, '.hfm-cache')
       const defaultPath = kind === 'compatible' ? defaultDbPath : path.join(cache, constants.ROOT_INDEX_DB_DIR_NAME, constants.ROOT_INDEX_DB_FILE_NAME)
@@ -440,23 +453,23 @@ async function main() {
         hideDirectoryOnWindows: async () => { counts.hidden++ } })
       if (kind === 'inaccessible') {
         await assert.rejects(() => storage.ensureRootScanCacheStorage(root, { reuseExisting: true }), error => error === denied)
-        assert.equal(counts.reads, 1)
+        assert.equal(counts.reads, 1, 'Inaccessible storage must attempt exactly one read')
         assert(!fs.existsSync(cache), 'Inaccessible read created cache directories')
       } else {
         const result = await storage.ensureRootScanCacheStorage(root, { reuseExisting: true })
         if (kind === 'missing') {
           assert.equal(result.cache.rebuildRequired, true, 'Missing sentinel skipped recovery')
           assert.equal(counts.reads, 2, 'Missing sentinel must re-enter the normal storage path')
-          assert.equal(counts.hidden, 1)
-          assert.equal(counts.architecture, 1)
+          assert.equal(counts.hidden, 1, 'Missing storage must enter the normal directory setup once')
+          assert.equal(counts.architecture, 1, 'Missing storage must enter architecture recovery once')
           assert.equal(counts.manifests, 0, 'Missing index must not be published')
-          assert.deepEqual(plain(result.cache.entries), {})
+          assert.deepEqual(plain(result.cache.entries), {}, 'Missing storage returned nonexistent entries')
           return
         }
-        assert.equal(path.resolve(result.cachePath), path.resolve(dbPath))
-        assert(Array.isArray(result.cache.directorySignatures))
-        assert.equal(result.cache.directorySignatures.length, DIRECTORIES)
-        assert.equal(counts.reads, 1)
+        assert.equal(path.resolve(result.cachePath), path.resolve(dbPath), 'Compatible storage selected the wrong database')
+        assert(Array.isArray(result.cache.directorySignatures), 'Compatible storage did not return a completed snapshot')
+        assert.equal(result.cache.directorySignatures.length, DIRECTORIES, 'Compatible storage lost directory baselines')
+        assert.equal(counts.reads, 1, 'Compatible storage repeated its index read')
       }
       assert.deepEqual([counts.hidden, counts.architecture, counts.manifests], [0,0,0], 'Storage success/error path performed setup or writes')
     }
@@ -470,6 +483,7 @@ async function main() {
     controls.push('rejects-missing-sentinel-reuse')
 
     // Reopening an equivalent Node schema is a distinct writer-init regression.
+    state.phase = 'equivalent-node-schema-initializer'
     const local = host.openDb(dbPath)
     try { host.rootStorage.initializeRootIndexDb(local, fontRoot, 'root') } finally { local.close() }
     assertContentUntouched(afterWarm, audit(host))
@@ -479,17 +493,22 @@ async function main() {
     let currentTotal = FILES, priorSignature = originalSignature
     const added = path.join(dirs[5], 'added.ttf')
     for (const kind of ['changed', 'added', 'deleted']) {
+      state.phase = `font-mutation:${kind}`
       if (kind === 'changed') {
         const parentStat = fs.statSync(dirs[3])
         copy(manifest[4].source, files[3], '2026-01-01T00:00:05.000Z')
         fs.utimesSync(dirs[3], parentStat.atimeMs / 1000, parentStat.mtimeMs / 1000)
-        assert.equal(Math.round(fs.statSync(dirs[3]).mtimeMs), Math.round(parentStat.mtimeMs))
+        assert.equal(Math.round(fs.statSync(dirs[3]).mtimeMs), Math.round(parentStat.mtimeMs), 'Changed-child control did not preserve the parent directory timestamp')
       } else if (kind === 'added') { copy(manifest[1].source, added); currentTotal++ }
       else { fs.unlinkSync(added); currentTotal-- }
-      const result = await watcher.applyWatchedFolderChangesToIndex(change('rescan'))
-      assert.equal(result.errors.length, 0)
-      assert.equal(result.upserts.length, kind === 'deleted' ? 0 : 1)
-      assert.equal(result.deletes.length, kind === 'deleted' ? 1 : 0)
+      const result = recordWatcherResult(`font-mutation:${kind}`, await watcher.applyWatchedFolderChangesToIndex(change('rescan')))
+      assert.equal(result.errors.length, 0, `${kind}: full-root watcher returned an error`)
+      assert.equal(result.upserts.length, kind === 'deleted' ? 0 : 1, `${kind}: wrong watcher upsert count`)
+      assert.equal(result.deletes.length, kind === 'deleted' ? 1 : 0, `${kind}: wrong watcher delete count`)
+      for (const item of result.upserts) {
+        const stat = fs.statSync(item.path)
+        assert.equal(item.id, host.fontIdentity.fileRuntimeFontId(item.path, stat.size, stat.mtimeMs), `${kind}: watcher published a noncanonical runtime identity`)
+      }
       const next = await signature()
       assert.notEqual(next, priorSignature, `${kind}: actual font mutation failed to invalidate root-v3`)
       const page = await validate(kind, 1, currentTotal)
@@ -499,6 +518,7 @@ async function main() {
     }
 
     // Simulate a pre-fix writer whose only freshness evidence is updatedAt.
+    state.phase = 'old-writer-updatedAt-control'
     const oldWriter = host.openDb(dbPath)
     try { oldWriter.prepare("UPDATE meta SET value=? WHERE key='updatedAt'").run('2026-02-02T00:00:00.000Z') }
     finally { oldWriter.close() }
@@ -506,17 +526,19 @@ async function main() {
     await validate('old-writer-updatedAt', 1, currentTotal)
     controls.push('old-writer-updatedAt-invalidates')
     priorSignature = await signature()
+    state.phase = 'schema-version-control'
     const schema = host.openDb(dbPath)
     try { schema.prepare("UPDATE meta SET value=? WHERE key IN ('schemaVersion','schema_version')").run(String(constants.ROOT_INDEX_DB_SCHEMA_VERSION - 1)) }
     finally { schema.close() }
     assert.notEqual(await signature(), priorSignature, 'Schema compatibility evidence was ignored')
     await validate('schema-version', 1, currentTotal)
     // Real native zero-entry apply repairs the old version, which must invalidate.
+    state.phase = 'native-schema-migration-control'
     priorSignature = await signature()
     const migrated = await host.indexing.runRustRootIndexApplyChanges({ dbPath, rootPath: fontRoot, storage: 'root', mode: 'incremental',
       schemaVersion: constants.ROOT_INDEX_DB_SCHEMA_VERSION, cacheVersion: host.config.FONT_SCAN_CACHE_VERSION,
       scriptDetectionVersion: host.config.SCRIPT_DETECTION_VERSION, upserts: [], deletes: [], directories: [] })
-    assert.equal(migrated?.applied, true)
+    assert.equal(migrated?.applied, true, 'Native schema migration did not return an applied receipt')
     assert.notEqual(await signature(), priorSignature, 'Actual schema migration failed to invalidate')
     await validate('schema-migration', 1, currentTotal)
     controls.push('schema-and-migration-invalidate')
@@ -529,7 +551,7 @@ async function main() {
     state.incompleteReceipt = true
     startStage('incomplete-enumeration')
     try {
-      const incomplete = await watcher.applyWatchedFolderChangesToIndex(change('rescan'))
+      const incomplete = recordWatcherResult('incomplete-enumeration', await watcher.applyWatchedFolderChangesToIndex(change('rescan')))
       assert(incomplete.errors.length > 0, 'Incomplete native receipt was accepted')
       assert.equal(incomplete.upserts.length, 0)
       assert.equal(incomplete.deletes.length, 0)
@@ -574,21 +596,23 @@ async function main() {
     assert.throws(() => assert.equal(preflightWork.processes, 0, 'Rename/rescan preflight started a pointless process'), /pointless process/)
     controls.push('rejects-redundant-native-preflight')
     const beforeFreshness = audit(host), parentTime = fs.statSync(dirs[7])
+    state.phase = 'fresh-child-regression-control'
     copy(manifest[0].source, files[7], '2026-01-01T00:00:09.000Z')
     fs.utimesSync(dirs[7], parentTime.atimeMs / 1000, parentTime.mtimeMs / 1000)
     assert.equal(Math.round(fs.statSync(dirs[7]).mtimeMs), Math.round(parentTime.mtimeMs))
     const staleLoad = selectedOwners(host, [directoryFile], { [directoryFile]: [
       'const directoryUnchanged = !context.requireFreshFileStats && !shared && signatureUnchanged;',
       'const directoryUnchanged = signatureUnchanged;' ] })
-    const stale = await makeWatcher({ directoryModule: staleLoad(directoryFile) }).applyWatchedFolderChangesToIndex(change('rescan'))
+    const stale = recordWatcherResult('historical-child-mutant', await makeWatcher({ directoryModule: staleLoad(directoryFile) }).applyWatchedFolderChangesToIndex(change('rescan')))
     assert(stale.errors.some(error => /historical child attributes/.test(error.message)), 'Historical child evidence escaped the freshness oracle')
     assert.equal(stale.upserts.length, 0)
     assert.equal(stale.deletes.length, 0)
     assert.deepEqual(audit(host), beforeFreshness)
-    const recovered = await watcher.applyWatchedFolderChangesToIndex(change('rescan'))
-    assert.equal(recovered.upserts.length, 1)
-    assert.equal(recovered.deletes.length, 0)
-    assert.equal(recovered.errors.length, 0)
+    state.phase = 'fresh-child-control-recovery'
+    const recovered = recordWatcherResult('fresh-child-control-recovery', await watcher.applyWatchedFolderChangesToIndex(change('rescan')))
+    assert.equal(recovered.upserts.length, 1, 'Freshness control recovery did not upsert the changed child')
+    assert.equal(recovered.deletes.length, 0, 'Freshness control recovery deleted an existing child')
+    assert.equal(recovered.errors.length, 0, 'Freshness control recovery returned an error')
     await validate('freshness-control-recovery', 1, currentTotal)
     controls.push('rejects-parent-signature-child-reuse')
 

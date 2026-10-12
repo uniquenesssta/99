@@ -4,17 +4,21 @@ import { rootProbeQueueTimeoutMs } from './ioDeadlineRuntime'
 import { registerIsolatedRoot, sharedIoResourceKeys, sharedIoAccesses } from '../rust-core/rustSharedIoCommandRuntime'
 
 const probes = applicationSharedIoProcessRuntime(() => undefined)
-// A separate JS worker watches the parent pipe even while stat/realpath blocks.
+// Keep filesystem waits off this child's event loop so the parent-pipe guard
+// stays responsive without starting a second JS runtime inside the 500ms budget.
 // Only a fixed script is evaluated; paths are passed through argv.
 const probeSource = `
-const { Worker } = require('node:worker_threads');
-const guard = new Worker("const net = require('node:net'); const p = new net.Socket({fd:3,readable:true,writable:false}); p.on('end',()=>process.kill(process.pid)); p.on('error',()=>process.kill(process.pid)); p.resume();", {eval:true});
-guard.once('online', () => {
-  guard.unref();
-  try { const fs = require('node:fs'); const path = process.argv[1]; const stat = fs.statSync(path);
-    process.stdout.write(JSON.stringify({directory:stat.isDirectory(),physicalPath:fs.realpathSync.native(path)}));
+const fs = require('node:fs');
+const guard = new (require('node:net').Socket)({fd:3,readable:true,writable:false});
+guard.on('end',()=>process.kill(process.pid));
+guard.on('error',()=>process.kill(process.pid));
+guard.resume(); guard.unref();
+(async () => {
+  try { const path = process.argv[1]; const stat = await fs.promises.stat(path);
+    const physicalPath = await new Promise((resolve,reject)=>fs.realpath.native(path,(error,value)=>error?reject(error):resolve(value)));
+    process.stdout.write(JSON.stringify({directory:stat.isDirectory(),physicalPath}));
   } catch { process.exitCode = 1; }
-});`
+})();`
 
 export type StartupDirectoryProbeResult = {
   directory: boolean

@@ -43,7 +43,7 @@ jobs:
           New-Item -ItemType Directory -Force artifacts | Out-Null
           $PSNativeCommandUseErrorActionPreference = $false
           $failed = 0
-          foreach ($script in @('check-local-user-state.cjs', 'check-orchestration-contracts.cjs', 'check-query-read-cancellation.cjs', 'check-preview-directory-absence.cjs', 'check-watcher-noop-freshness.cjs')) {
+          foreach ($script in @('check-local-user-state.cjs', 'check-orchestration-contracts.cjs', 'check-query-read-cancellation.cjs', 'check-preview-directory-absence.cjs', 'check-watcher-noop-freshness.cjs', 'check-root-probe-lifecycle.cjs', 'check-shared-filesystem.cjs')) {
             & node "build/diagnostics/$script" *>> artifacts/targeted-retest.log
             if ($LASTEXITCODE -ne 0) { $failed++ }
           }
