@@ -12,6 +12,7 @@ const path = require('node:path')
 const { createRequire } = require('node:module')
 const { isPromise } = require('node:util').types
 const { createHost, productionHostGlobals } = require('./lib/production-projection-host.cjs')
+const { createSnapshotPhaseObservation, observationControls: snapshotObservationControls, nativeControls: snapshotNativeControls } = require('./lib/sqlite-snapshot-phase-observation.cjs')
 const plain = value => JSON.parse(JSON.stringify(value))
 const arg = (name, fallback) => { const at = process.argv.indexOf(name); return at < 0 ? fallback : process.argv[at + 1] }
 const FILES = 169, DIRECTORIES = 169, METADATA_REQUESTS = 22
@@ -340,6 +341,7 @@ function failureDiagnostics(host, state, error, roots) {
     watcherResult: state.lastWatcherResult,
     projection: state.projectionObservation?.snapshot(),
     preparation: state.preparationObservation?.snapshot(),
+    sqliteSnapshots: state.snapshotObservation?.snapshot(error),
     readCloseBoundary: boundary ? {
       mode: boundary.mode, outcome: boundary.outcome, injected: boundary.injected, closeReleased: boundary.closeReleased,
       observerErrors: boundary.observerErrors,
@@ -409,6 +411,7 @@ function selectedStorageInvalidator(host, state) {
 }
 
 function observeProduction(load, state) {
+  const { withOperationTrace } = load('src/main/logging/operationTraceContext.ts')
   const projection = state.projectionObservation = createProjectionObservation(() => state.phase)
   const preparation = state.preparationObservation = createProjectionObservation(() => state.phase)
   const failureModule = load('src/main/indexing/merged-page/mergedIndexProjectionFailureRuntime.ts')
@@ -468,7 +471,7 @@ function observeProduction(load, state) {
       if (['readFile', 'fontContentIdentity'].includes(request.operation) && /\.ttf$/i.test(request.path)) stage.fontReads++
     }
     let output
-    try { output = await execute(...args) }
+    try { output = await state.snapshotObservation.run(execute, undefined, args, withOperationTrace) }
     catch (error) {
       // Failed native writes (including exclusive-open EEXIST) are classified
       // by the transport before a fulfilled executor receipt can reach us.
@@ -616,13 +619,21 @@ async function main() {
   try {
     await projectionObservationControls()
     controls.push('projection-observation-preserves-promise-error-close-and-bounded-attribution')
+    await snapshotObservationControls()
+    controls.push('sqlite-snapshot-phase-observation-preserves-result-error-close-and-redaction')
+    state.snapshotNativeControls = await snapshotNativeControls({ workerPath, directory })
+    controls.push('sqlite-snapshot-native-phase-result-error-and-source-immutability')
     fs.mkdirSync(nativeTempDirectory)
     // The transport allocates snapshots with node:os.tmpdir(), not Electron's
     // app.getPath('temp'). Keep real allocations inside the host's existing
     // SQLite ownership boundary; never relax that host guard or copy snapshots.
     Object.assign(process.env, { TEMP: nativeTempDirectory, TMP: nativeTempDirectory })
     assert.equal(path.resolve(os.tmpdir()), path.resolve(nativeTempDirectory), 'Native temporary directory ownership was not configured')
-    host = await createHost({ sourceRoot, workerPath, directory, fixtureDirectory: directory, roots: [fontRoot], isolateRoots: true,
+    const { createObserver } = require(path.join(sourceRoot, 'build/diagnostics/lib/operation-work-performance.cjs'))
+    const observer = createObserver()
+    state.snapshotObservation = createSnapshotPhaseObservation(() => state.phase)
+    state.snapshotObservation.wrapChildProcess(observer.childProcess)
+    host = await createHost({ sourceRoot, workerPath, directory, fixtureDirectory: directory, roots: [fontRoot], isolateRoots: true, observer,
       onLoaderReady: load => observeProduction(load, state) })
     assert.equal(host.observationSetupErrors, 0, 'Observation setup must not fail silently')
     assert(state.page && state.context, 'Missing actual merged-page owner')
@@ -1080,11 +1091,17 @@ async function main() {
     await host.close()
     assert.deepEqual(host.closeProof(), { hostClosed: true, databaseOwnersClosed: true, childrenReaped: true,
       remainingDatabaseOwners: 0, remainingChildren: 0 })
+    const snapshotEvidence = state.snapshotObservation.snapshot()
+    assert.equal(snapshotEvidence.observerErrors, 0, 'SQLITE_PHASE_OBSERVER_ERRORS')
+    assert.equal(snapshotEvidence.incompleteSuccessfulTraces, 0, 'SQLITE_PHASE_TRACE_MISSING')
+    assert.equal(snapshotEvidence.successfulTraces, state.ownedSqliteSnapshots, 'SQLITE_PHASE_TRACE_CENSUS')
     const report = { ok: true, platform: 'win32', scope: 'private local fixture, actual isolated native I/O; no NAS or renderer latency claim',
       directories: DIRECTORIES, initialFiles: FILES, stages, controls, inventoryProof, manualInventoryProof,
       validation: 'Actual worker-ready page + root-local background validation + native root-snapshot receipts + persisted source signature',
       schedulingControl: 'External-check reuse expires naturally; only validation throttle age is made due; source receipts and validation decisions are unchanged',
       snapshotOwnership: { casePrivateTemporaryDirectory: true, verifiedNativeSnapshots: state.ownedSqliteSnapshots },
+      sqliteSnapshots: snapshotEvidence,
+      sqliteSnapshotControls: state.snapshotNativeControls,
       cleanup: host.closeProof() }
     const reportPath = arg('--report')
     if (reportPath) { fs.mkdirSync(path.dirname(path.resolve(reportPath)), { recursive: true }); fs.writeFileSync(reportPath, JSON.stringify(report, null, 2)) }
@@ -1099,6 +1116,11 @@ async function main() {
     try {
       try { await host?.close() } catch (error) { if (!failure) throw error }
     } finally {
+      // Refresh only observation after the existing close barrier; this adds no
+      // wait and retains the original failure even if evidence cannot be read.
+      if (failure?.watcherDiagnostics && state.snapshotObservation) {
+        try { failure.watcherDiagnostics.sqliteSnapshots = state.snapshotObservation.snapshot(failure) } catch { /* diagnostic only */ }
+      }
       for (const key of ['TEMP', 'TMP']) {
         if (savedTemp[key] === undefined) delete process.env[key]
         else process.env[key] = savedTemp[key]

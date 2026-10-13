@@ -87,7 +87,9 @@ fn font_content_identity_checked(path: &Path, after_read: impl FnOnce()) -> io::
     Ok(json!({"path":physical.to_string_lossy(),"sha256":digest,"size":before.len(),"modified":unix_millis(before.modified()?),
         "dev":identity.0,"ino":identity.1,"readBytes":bytes}))
 }
-fn execute(request: &Request) -> io::Result<Value> {
+#[cfg(test)]
+fn execute(request: &Request) -> io::Result<Value> { execute_observed(request, None) }
+fn execute_observed(request: &Request, trace: Option<&crate::operation_trace::OperationTrace>) -> io::Result<Value> {
     if request.path.is_empty() || request.path.contains('\0') { return Err(io::Error::other("invalid shared path")); }
     let path = Path::new(&request.path);
     match request.operation.as_str() {
@@ -306,20 +308,37 @@ fn execute(request: &Request) -> io::Result<Value> {
             Ok(Value::Null)
         },
         "sqliteSnapshot" => {
+            use crate::operation_trace::SnapshotPhase;
+            let phase = |value| { if let Some(trace) = trace { trace.snapshot_phase(value); } };
+            phase(SnapshotPhase::TargetCheck);
             let target = transfer(request)?;
             if Path::new(target).exists() { return Err(io::Error::other("snapshot destination already exists")); }
+            phase(SnapshotPhase::OpenStart);
             let conn = Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(io::Error::other)?;
-            conn.execute("VACUUM INTO ?",[target]).map_err(io::Error::other)?;
+            phase(SnapshotPhase::Opened);
+            phase(SnapshotPhase::VacuumStart);
+            let result = conn.execute("VACUUM INTO ?",[target]);
+            phase(SnapshotPhase::VacuumReturned);
+            drop(conn);
+            phase(SnapshotPhase::ConnectionDropReturned);
+            result.map_err(io::Error::other)?;
             Ok(Value::Null)
         },
         _ => Err(io::Error::other("unsupported shared filesystem operation")),
     }
 }
 pub fn run(input_path: &str) -> Result<String,String> {
-    let request: Request = serde_json::from_str(&fs::read_to_string(input_path).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
-    let value = match execute(&request) {
+    let input = fs::read_to_string(input_path).map_err(|e|e.to_string())?;
+    let request: Request = serde_json::from_str(&input).map_err(|e|e.to_string())?;
+    // Reuse the existing opt-in stderr trace. Untraced application requests do
+    // not create a trace owner or emit output; filesystem/result semantics stay
+    // identical. The first receipt is after input read + strict deserialization.
+    let mut trace = (request.operation == "sqliteSnapshot" && request._trace.is_some())
+        .then(|| crate::operation_trace::OperationTrace::from_input(&input));
+    let value = match execute_observed(&request, trace.as_ref()) {
         Ok(value) => json!({"ok":true,"operation":request.operation,"value":value}),
         Err(error) => {
+            if let Some(trace) = &trace { trace.snapshot_phase(crate::operation_trace::SnapshotPhase::ErrorMapStart); }
             let root_unavailable = error.kind() == io::ErrorKind::NotFound && request.availability_root.as_deref().is_some_and(|root| fs::metadata(root).is_err());
             let kind = if root_unavailable { io::ErrorKind::Other } else { error.kind() };
             let cross_device = error.raw_os_error() == Some(if cfg!(windows) {17} else {18});
@@ -332,10 +351,13 @@ pub fn run(input_path: &str) -> Result<String,String> {
                 }, _ => None,
             });
             let code = if let Some(code) = sqlite_code { code } else if root_unavailable || network_error {"ENETUNREACH"} else if cross_device {"EXDEV"} else { match kind { io::ErrorKind::NotFound=>"ENOENT",io::ErrorKind::AlreadyExists=>"EEXIST",io::ErrorKind::PermissionDenied=>"EACCES",io::ErrorKind::NotADirectory=>"ENOTDIR",io::ErrorKind::IsADirectory=>"EISDIR",_=>"EIO" } };
-            json!({"ok":false,"operation":request.operation,"code":code,"message":error.to_string()})
+            let value = json!({"ok":false,"operation":request.operation,"code":code,"message":error.to_string()});
+            if let Some(trace) = &trace { trace.snapshot_phase(crate::operation_trace::SnapshotPhase::ErrorMapReturned); }
+            value
         },
     };
-    serde_json::to_string(&value).map_err(|e|e.to_string())
+    let result = serde_json::to_string(&value).map_err(|e|e.to_string());
+    match trace.as_mut() { Some(trace) => trace.finish(result), None => result }
 }
 
 #[cfg(test)]

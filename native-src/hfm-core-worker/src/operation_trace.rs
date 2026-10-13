@@ -34,6 +34,8 @@ pub struct OperationTrace {
     sequence: Cell<u64>,
     started: Instant,
 }
+// Fixed diagnostic vocabulary only. No input path, SQL or error text is emitted.
+pub enum SnapshotPhase { TargetCheck, OpenStart, Opened, VacuumStart, VacuumReturned, ConnectionDropReturned, ErrorMapStart, ErrorMapReturned }
 impl OperationTrace {
     pub fn from_input(input: &str) -> Self {
         let context = serde_json::from_str::<TraceInput>(input).ok().and_then(|v| v.trace.as_ref().and_then(clean));
@@ -57,6 +59,19 @@ impl OperationTrace {
         self.committed = true;
         if let Some(context) = &mut self.context { context["commitSequence"] = json!(self.sequence.get() + 1); }
         self.emit("commit", "committed", "transaction-only-metadata-may-follow");
+    }
+    pub fn snapshot_phase(&self, phase: SnapshotPhase) {
+        let reason = match phase {
+            SnapshotPhase::TargetCheck => "snapshot-target-check",
+            SnapshotPhase::OpenStart => "snapshot-open-start",
+            SnapshotPhase::Opened => "snapshot-opened",
+            SnapshotPhase::VacuumStart => "snapshot-vacuum-start",
+            SnapshotPhase::VacuumReturned => "snapshot-vacuum-returned",
+            SnapshotPhase::ConnectionDropReturned => "snapshot-connection-drop-returned",
+            SnapshotPhase::ErrorMapStart => "snapshot-error-map-start",
+            SnapshotPhase::ErrorMapReturned => "snapshot-error-map-returned",
+        };
+        self.emit("backend-phase", "running", reason);
     }
     pub fn finish(&mut self, result: Result<String, String>) -> Result<String, String> {
         self.returned = true;
