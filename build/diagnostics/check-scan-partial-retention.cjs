@@ -29,11 +29,11 @@ async function fixture(transforms = {}) {
   // Keep all actual owners/signal scopes; only the filesystem's readdir fault
   // is injected. No parser or writer runs until its actual production call.
   const mocks = { [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [] } }
-  const shared = loader(mocks, { setInterval, clearInterval })('src/main/path/sharedFileSystemRuntime.ts')
+  const shared = loader(mocks, { setInterval, clearInterval, setImmediate, clearImmediate })('src/main/path/sharedFileSystemRuntime.ts')
   mocks[abs('src/main/path/sharedFileSystemRuntime.ts')] = { ...shared, sharedFileSystem: { ...fsp,
     readdir: async (file, ...args) => { if (file === state.denied) throw Object.assign(Error('controlled unreadable subtree'), { code: 'EACCES' }); return fsp.readdir(file, ...args) },
   } }
-  const load = loader(mocks, { setInterval, clearInterval }, transforms)
+  const load = loader(mocks, { setInterval, clearInterval, setImmediate, clearImmediate }, transforms)
   const constants = load('src/main/cache/cachePaths.ts')
   const index = load('src/main/indexing/rootIndexRuntime.ts').createRootIndexRuntime({
     appName: 'HFM', fontScanCacheVersion: 1, scriptDetectionVersion: 1, exists,

@@ -559,6 +559,16 @@ async function sqlitePolicyRegressions() {
  try {
   const ports=createProductionSqlitePorts(options)
   assert.equal(ports.provenance.mode,'selected-source-sqlite-open-policy')
+  assert.deepEqual(ports.provenance.restoreIntent,{enabled:true,applicationPathCount:7})
+  const applicationPaths=options.load('src/main/db/appDatabasePaths.ts').createApplicationDatabasePaths(dataPath)
+  const guarded=applicationPaths.librarySqlitePath(),marker=guarded+'.hfm-restore.json'
+  fs.writeFileSync(marker,'incomplete controlled restore marker')
+  const beforeOpen=opened.size
+  try {
+   assert.throws(()=>ports.openStableSqliteDb(guarded,'alias-reader'),/未完成的数据库恢复事务/)
+   assert.equal(opened.size,beforeOpen,'RESTORE_POLICY_OWNER: marker reached SQLite construction')
+   assert(!fs.existsSync(guarded),'RESTORE_POLICY_OWNER: marker caused empty target creation')
+  } finally {fs.unlinkSync(marker)}
   assert.equal(ports.provenance.configuredOptions.busyTimeoutMs,60000,'Production SQLite lock-wait profile changed')
   assert.equal(ports.provenance.configuredOptions.mmapSizeBytes,268435456)
   for(const label of ['install-identity-items','machine-install:fallback','root-index:root','merged-index','install-signature','preview:shared']) {
@@ -597,6 +607,14 @@ async function sqlitePolicyRegressions() {
    assert.equal(source.split(before).length,2)
    assert.throws(()=>assertProductionSqliteWiring(sourceRoot,require,{[storage]:source.replace(before,after)}),/configuration wiring changed/)
   }
+  const restoreField='applicationDatabasePaths: () => [librarySqlitePath(), tasksSqlitePath(), previewSqlitePath(), kvsSqlitePath(), eventsSqlitePath(), hashSqlitePath(), metricsSqlitePath()],'
+  assert.equal(source.split(restoreField).length,2)
+  assert.throws(()=>assertProductionSqliteWiring(sourceRoot,require,{[storage]:source.replace(restoreField,'')}),/configuration wiring changed/)
+  assert.throws(()=>assertProductionSqliteWiring(sourceRoot,require,{[storage]:source.replace(restoreField,'applicationDatabasePaths: () => [],')}),/configuration wiring changed/)
+  const ownerPath='src/main/db/sqliteRuntime.ts',ownerSource=fs.readFileSync(path.join(sourceRoot,ownerPath),'utf8'),ownerField='  applicationDatabasePaths: () => string[]'
+  assert.equal(ownerSource.split(ownerField).length,2)
+  const legacyWiring=assertProductionSqliteWiring(sourceRoot,require,{[storage]:source.replace(restoreField,''),[ownerPath]:ownerSource.replace(ownerField,'')})
+  assert(!legacyWiring.some(row=>row.path==='src/main/db/sqliteRestorePreservationRuntime.ts'),'Legacy selected policy gained a current-only restore owner')
   // Exact helper mutation reintroduces the historical raw-open policy bypass.
   const helperSource=fs.readFileSync(file,'utf8').replace(/\r\n/g,'\n'),tree=ts.createSourceFile(file,helperSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS)
   const matches=tree.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='createProductionSqlitePorts')
@@ -607,6 +625,15 @@ async function sqlitePolicyRegressions() {
   // a direct alias would instead misread that label as constructor options.
   const mutated=new Function('assert','assertProductionSqliteWiring','forbidden',helper.replace(anchor,'openStableSqliteDb:(file,_label)=>openRawDb(file)')+';return createProductionSqlitePorts')(
    assert,assertProductionSqliteWiring,name=>()=>{throw Error(name)})
+  const restoreAnchor='...configuredOptions, ...restorePolicy,'
+  assert.equal(helper.split(restoreAnchor).length,2)
+  const noRestore=new Function('assert','assertProductionSqliteWiring','forbidden',helper.replace(restoreAnchor,'...configuredOptions,')+';return createProductionSqlitePorts')(assert,assertProductionSqliteWiring,name=>()=>{throw Error(name)})(options)
+  fs.writeFileSync(marker,'incomplete controlled restore marker')
+  try {
+   const bad=noRestore.openStableSqliteDb(guarded,'alias-reader')
+   close(bad)
+   assert(fs.existsSync(guarded),'Missing restore adapter negative did not reach the actual constructor')
+  } finally {fs.unlinkSync(marker)}
   const bypass=mutated(options),bypassed=bypass.openStableSqliteDb(dataPath('raw-bypass.sqlite'),'install-identity-items')
   try{
    const policy=bypass.inspectPolicy(bypassed)

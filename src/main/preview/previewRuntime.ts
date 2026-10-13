@@ -300,7 +300,7 @@ export function createPreviewRuntime(options: PreviewRuntimeOptions) {
             let activeFontPath: string | undefined
             if (installedRoute?.reason === 'active') {
               try {
-                activeFontPath = (await tracePreviewPhase('font-resolve', () => resolvePreviewSource(item.path, resolveExistingFontFilePath))).path
+                activeFontPath = (await tracePreviewPhase('font-resolve', () => resolvePreviewSource(item.path, resolveExistingFontFilePath, lifetime))).path
               } catch (error) {
                 await awaitPhysicalIoClose(error)
                 const code = (error as { code?: string; reason?: string })?.code || (error as { reason?: string })?.reason

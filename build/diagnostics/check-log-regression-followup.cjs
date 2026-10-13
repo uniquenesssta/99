@@ -163,9 +163,19 @@ async function preview() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-preview-route-'))
   try {
     const fontPath = path.join(dir, 'font.ttf'); fs.writeFileSync(fontPath, 'font fixture')
-    for (const scenario of ['active', 'system', 'active-offline', 'system-fallback', 'render-failed']) {
+    for (const scenario of ['active', 'system', 'active-offline', 'active-not-directory', 'active-denied', 'active-timeout', 'system-fallback', 'render-failed']) {
       const calls = [], writes = [], logs = []
+      const sourceCode = { 'active-offline': 'ENOENT', 'active-not-directory': 'ENOTDIR', 'active-denied': 'EACCES', 'active-timeout': 'ETIMEDOUT' }[scenario]
+      let sourceStats = 0
       const load = loader({
+        // Resolver misses are uncertain until the real source route stats the font.
+        'node:fs': { ...fs, promises: { ...fs.promises, stat: async (file, ...options) => {
+          if (file === fontPath) {
+            sourceStats++
+            if (sourceCode) throw Object.assign(Error(`controlled source stat ${sourceCode}`), { code: sourceCode })
+          }
+          return fs.promises.stat(file, ...options)
+        } } },
         'src/main/preview/native-renderer/directwrite/directWritePreviewHelperPathRuntime.ts': { hasDirectWritePreviewHelper: () => false },
         'src/main/preview/runtime/previewCacheStorageRuntime.ts': { createPreviewCacheStorageRuntime: () => ({
           previewCacheStorageForFont: async () => ({ dir, identity: 'original', storage: 'local' }),
@@ -185,12 +195,16 @@ async function preview() {
       })
       const runtime = load(files.preview).createPreviewRuntime({
         appendStartupLog: (v) => logs.push(v), sha1: (v) => require('node:crypto').createHash('sha1').update(v).digest('hex'), ensureWindows() {},
-        resolveExistingFontFilePath: async () => scenario === 'active-offline' ? null : fontPath,
+        resolveExistingFontFilePath: async () => sourceCode ? null : fontPath,
         previewTaskKey: (v) => v, completeBackgroundTask: async () => {}, skipBackgroundTask: async () => {},
         upsertBackgroundTask: async () => {}, startBackgroundTask: async () => {}, heartbeatBackgroundTask: async () => {}, failBackgroundTask: async () => {},
       })
       const item = { id: 'a', path: fontPath, fileName: 'font.ttf', family: 'Family', active: !scenario.startsWith('system'), systemInstalled: scenario.startsWith('system'), fileSize: 100, modifiedAt: 1 }
-      if (scenario === 'render-failed') {
+      if (sourceCode && !['ENOENT', 'ENOTDIR'].includes(sourceCode)) {
+        await assert.rejects(runtime.ensureFontPreviewImageFile(item, scenario), sourceCode === 'EACCES' ? /HFM_PREVIEW:unavailable/ : /HFM_PREVIEW:timeout/)
+        assert.equal(calls.length, 0, `${scenario}: uncertain source stat must not fall back to system or file rendering`)
+        assert.equal(writes.length, 0, `${scenario}: foreground source failure must not persist a cache row`)
+      } else if (scenario === 'render-failed') {
         await assert.rejects(runtime.ensureFontPreviewImageFile(item, scenario), /HFM_PREVIEW:failed/)
         assert.equal(writes.length, 0, 'foreground failure must not persist a cache failure row')
         const foregroundCalls = calls.length
@@ -210,6 +224,7 @@ async function preview() {
           assert.equal(calls.length, scenario === 'system-fallback' ? 2 : 1)
         }
       }
+      if (sourceCode) assert.equal(sourceStats, 1, `${scenario}: authoritative source stat must classify the legacy resolver miss`)
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 }

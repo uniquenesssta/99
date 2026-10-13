@@ -73,9 +73,24 @@ function assertProductionSqliteWiring(sourceRoot, requireProject, sourceOverride
     assert(!Object.hasOwn(actual,key), `Duplicate SQLite option: ${key}`)
     actual[key] = (ts.isShorthandPropertyAssignment(property) ? property.name : property.initializer).getText(tree).replace(/\s+/g,'')
   }
+  // Select the policy from that version's actual SQLite interface. A current
+  // composition cannot drop the restore guard merely to resemble the baseline.
+  const runtimePath = 'src/main/db/sqliteRuntime.ts'
+  const runtimeSource = sourceOverrides[runtimePath] ?? fs.readFileSync(path.join(sourceRoot,runtimePath),'utf8')
+  const runtimeTree = ts.createSourceFile(runtimePath,runtimeSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
+  assert.equal(runtimeTree.parseDiagnostics.length,0,'Cannot parse selected SQLite owner')
+  const interfaces = runtimeTree.statements.filter(node=>ts.isInterfaceDeclaration(node)&&node.name.text==='SqliteRuntimeOptions')
+  assert.equal(interfaces.length,1,'Expected one selected SQLite options contract')
+  const restore = interfaces[0].members.filter(node=>node.name?.getText(runtimeTree)==='applicationDatabasePaths')
+  assert(restore.length<=1,'Duplicate selected restore policy')
+  if (restore.length) {
+    assert.equal(restore[0].getText(runtimeTree).replace(/[\s;]/g,''),'applicationDatabasePaths:()=>string[]','Selected restore policy shape changed')
+    expected.applicationDatabasePaths='()=>[librarySqlitePath(),tasksSqlitePath(),previewSqlitePath(),kvsSqlitePath(),eventsSqlitePath(),hashSqlitePath(),metricsSqlitePath()]'
+  }
   assert.deepEqual(actual, expected, 'Production SQLite configuration wiring changed')
-  return [relative, 'src/main/db/sqliteRuntime.ts', 'src/main/app/appRuntimeConfig.ts', 'src/main/bootstrap/mainIndexConstants.ts',
-    'src/main/db/appDatabasePaths.ts', 'src/main/cache/cachePaths.ts', 'src/main/path/cachePath.ts'].map(file => ({ path:file,
+  return [relative, runtimePath, 'src/main/app/appRuntimeConfig.ts', 'src/main/bootstrap/mainIndexConstants.ts',
+    'src/main/db/appDatabasePaths.ts', 'src/main/cache/cachePaths.ts', 'src/main/path/cachePath.ts',
+    ...(restore.length ? ['src/main/db/sqliteRestorePreservationRuntime.ts'] : [])].map(file => ({ path:file,
       sha256:sha256(sourceOverrides[file] ?? fs.readFileSync(path.join(sourceRoot,file),'utf8')) }))
 }
 
@@ -83,12 +98,14 @@ function createProductionSqlitePorts({ load, sourceRoot, requireProject, openRaw
   const wiring = assertProductionSqliteWiring(sourceRoot, requireProject)
   const config = load('src/main/app/appRuntimeConfig.ts'), constants = load('src/main/bootstrap/mainIndexConstants.ts')
   const paths = load('src/main/db/appDatabasePaths.ts').createApplicationDatabasePaths(dataPath)
+  const restoreIntentEnabled = wiring.some(row=>row.path==='src/main/db/sqliteRestorePreservationRuntime.ts')
+  const restorePolicy = restoreIntentEnabled ? { applicationDatabasePaths: () => [paths.librarySqlitePath(),paths.tasksSqlitePath(),paths.previewSqlitePath(),paths.kvsSqlitePath(),paths.eventsSqlitePath(),paths.hashSqlitePath(),paths.metricsSqlitePath()] } : {}
   const configuredOptions = { quickCheckIntervalMs:config.SQLITE_QUICK_CHECK_INTERVAL_MS, fastOpenSharedCacheDbs:config.FAST_OPEN_SHARED_CACHE_DBS,
     verboseSqliteLogs:config.VERBOSE_SQLITE_LOGS, busyTimeoutMs:constants.SQLITE_BUSY_TIMEOUT_MS, mmapSizeBytes:constants.SQLITE_MMAP_SIZE_BYTES,
     corruptRetentionCount:config.DATABASE_CORRUPT_RETENTION_COUNT }
   function DiagnosticDatabase(file, options) { return openRawDb(file, options) }
   const runtime = load('src/main/db/sqliteRuntime.ts').createSqliteRuntime({
-    appName:config.APP_NAME, ...configuredOptions,
+    appName:config.APP_NAME, ...configuredOptions, ...restorePolicy,
     nodeRequire: id => { assert.equal(id,'better-sqlite3','Unexpected SQLite runtime module request'); return DiagnosticDatabase },
     normalizePath:load('src/main/path/cachePath.ts').normalizePathForCacheCompare,
     sqliteSidecarPaths:load('src/main/cache/cachePaths.ts').sqliteSidecarPaths,
@@ -104,7 +121,7 @@ function createProductionSqlitePorts({ load, sourceRoot, requireProject, openRaw
     closeSqliteDb:runtime.closeSqliteDb, assertSqliteFileHealthy:runtime.assertSqliteFileHealthy,
     recoveryMessage:runtime.recoveryMessage, quarantineSqliteFiles:runtime.quarantineSqliteFiles, inspectPolicy,
     provenance:{ mode:'selected-source-sqlite-open-policy', owner:'src/main/db/sqliteRuntime.ts', engine:'real Node DatabaseSync constructor adapter',
-      configuredOptions, wiring, recovery:'selected recoverable opener for healthy fixture; backup/quarantine side effects forbidden',
+      configuredOptions, wiring, restoreIntent:{enabled:restoreIntentEnabled,applicationPathCount:restoreIntentEnabled?7:0}, recovery:'selected recoverable opener for healthy fixture; backup/quarantine side effects forbidden',
       fixtureBackupRoot:paths.backupsRootPath(), fixtureCorruptRoot:paths.corruptDatabasesRootPath(),
       scope:'named stable/application open ports only; raw seed/audit connections and native-only opens remain separate' } }
 }

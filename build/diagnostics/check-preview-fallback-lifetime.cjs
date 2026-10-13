@@ -404,7 +404,10 @@ async function composedTransportCases() {
       assert.equal(h.state.unlinks.length, firstCleanup, label + ': old lease released before close')
       assert.equal(globalAdmissions, firstGlobal + (entry === 'memory' ? 1 : 0), label + ': successor consumed a global slot before old physical close')
       assert.equal(pool.status().active, 1); assert.equal(pool.status().queued, 0)
-      assert.equal(transport.hasRustCoreInteractiveWork(), true)
+      // Direct native admission retains its physical owner at normal priority.
+      const expectedPriority = entry === 'memory' ? 'foreground' : 'normal'
+      assert.equal(requests.at(-1).priority, expectedPriority, label + ': held child must retain ' + expectedPriority + ' priority from ' + entry + ' entry')
+      assert.equal(transport.hasRustCoreInteractiveWork(), expectedPriority === 'foreground', label + ': interactive busy state differs from held child priority')
       assert.equal(owned.get(idle).status, 'pending', label + ': owner idle ignored a held child')
       assert(successors.every(work => owned.get(work).status === 'pending'), label + ': successor inherited old cancellation')
       assert.equal(h.state.rows.length, 0); assert.equal(h.state.publications.length, 0)
@@ -531,6 +534,155 @@ async function composedTransportCases() {
   }
 }
 
+async function localActiveSourceBudgetCases() {
+  function make(dropBudget = false) {
+    let now = 0, classifications = 0, resolutions = 0, stats = 0
+    const sourcePath = 'C:/controlled-active.ttf', classification = gate(), resolution = gate(), stat = gate()
+    const timers = new Map(), deadlines = {}, sourceDeadlines = [], budgets = []
+    const h = fixture({ globals: {
+      process: { ...process, env: { ...process.env, HFM_RUST_PREVIEW_RENDER_TIMEOUT_MS: '30000', HFM_FILE_EXISTS_TIMEOUT_MS: '500' } },
+      setTimeout: (fn, ms) => { const id = { unref() {} }; timers.set(id, { fn, ms, due: now + ms }); return id },
+      clearTimeout: id => timers.delete(id),
+    }, mocks: {
+      'node:perf_hooks': { performance: { now: () => now } },
+      '../path/ioDeadlineRuntime': deadlines, '../../path/ioDeadlineRuntime': deadlines,
+      '../../rust-core/rustSharedIoCommandRuntime': {
+        sharedIoResourceKeys: async paths => { assert.deepEqual(Array.from(paths), [sourcePath]); classifications++; await classification.promise; return [] },
+        sharedIoAvailabilityRoot: () => 'C:',
+      },
+    } })
+    // Exercise the real deadline/physical-completion implementation, not the
+    // optional-cache fixture's passthrough deadline port.
+    const actualDeadline = h.load('src/main/path/ioDeadlineRuntime.ts')
+    Object.assign(deadlines, actualDeadline, { withIoDeadlineResult: (label, run, timeoutMs) => {
+      if (label === 'preview-font-resolve' || label === 'preview-font-stat') sourceDeadlines.push({ label, timeoutMs, at: now })
+      return actualDeadline.withIoDeadlineResult(label, run, timeoutMs)
+    } })
+    h.options.resolveExistingFontFilePath = async file => { assert.equal(file, sourcePath); resolutions++; await resolution.promise; return sourcePath }
+    const cacheStat = h.filesystemPort.sharedFileSystem.stat
+    h.filesystemPort.sharedFileSystem.stat = async file => {
+      if (file !== sourcePath) return cacheStat(file)
+      stats++; await stat.promise; return { size: 100, mtimeMs: 1 }
+    }
+    const source = h.load('src/main/preview/runtime/previewSourceRuntime.ts'), resolveSource = source.resolvePreviewSource
+    // Causal negative control removes only the new argument at the real helper
+    // boundary. The helper, deadline timers and task-owner algorithms stay real.
+    source.resolvePreviewSource = (file, resolver, budget) => { budgets.push(budget); return resolveSource(file, resolver, dropBudget ? undefined : budget) }
+    const owners = observeTaskOwners(h)
+    h.runtime = h.load('src/main/preview/previewRuntime.ts').createPreviewRuntime(h.options)
+    const item = { ...installed, path: sourcePath, active: true, systemInstalled: false }
+    return { h, owners, timers, sourceDeadlines, budgets, classification, resolution, stat, source, sourcePath,
+      counts: () => ({ classifications, resolutions, stats }),
+      invoke: () => h.runtime.ensureFontPreviewImageFile(item, 'local-active-budget', 44, 720, 260, false, false, true),
+      advance: value => {
+        assert(value >= now); now = value
+        for (const [id, timer] of [...timers].sort((a, b) => a[1].due - b[1].due)) {
+          if (timers.has(id) && timer.due <= now) { timers.delete(id); timer.fn() }
+        }
+      },
+      release: () => { classification.resolve(); resolution.resolve(); stat.resolve() },
+    }
+  }
+  const noPublication = (f, label) => {
+    assert.equal(f.h.state.rows.length, 0, label + ': source work wrote a cache row')
+    assert.equal(f.h.state.publications.length, 0, label + ': source work published a cache image')
+    assert.equal(f.h.state.files.size, 0, label + ': source work wrote a cache file')
+  }
+  const assertLocalBudget = (actual, expected, label) => assert.equal(actual, expected, 'LOCAL_ACTIVE_SOURCE_BUDGET: ' + label)
+  for (const resolveMs of [800, 28400]) {
+    const f = make(), label = `local active resolve ${resolveMs}ms`, work = f.invoke(), state = observe(work)
+    try {
+      await readyWhen(() => f.counts().classifications === 1, state, label + ': classification')
+      f.advance(600); f.classification.resolve()
+      await readyWhen(() => f.counts().resolutions === 1, state, label + ': resolver')
+      assertLocalBudget(f.sourceDeadlines[0].timeoutMs, 32400, label + ': classification time was not charged to the active owner')
+      assert([...f.timers.values()].some(timer => timer.ms === 30000), label + ': existing per-hop 30s clamp changed')
+      f.advance(600 + resolveMs); f.resolution.resolve()
+      await readyWhen(() => f.counts().stats === 1, state, label + ': stat')
+      assertLocalBudget(f.sourceDeadlines[1].timeoutMs, 32400 - resolveMs, label + ': stat reset the local source budget')
+      assert.equal(f.h.state.requests.length, 0)
+      f.advance(600 + resolveMs + 800); f.stat.resolve()
+      assert((await boundedWork(work, label + ': delayed local source failed')).transient)
+      assert.equal(f.h.state.requests.length, 1); assert.equal(f.h.state.requests[0].fontPath, f.sourcePath)
+      assert.equal(f.budgets.length, 1); assert(f.budgets[0], label + ': active route omitted its lifetime')
+      noPublication(f, label)
+    } finally {
+      f.release(); await boundedWork(Promise.allSettled([work]), label + ': cleanup')
+      await boundedWork(ownersIdle(f.owners), label + ': physical retirement'); assert.equal(f.timers.size, 0)
+    }
+  }
+  for (const phase of ['classification', 'resolve', 'stat']) for (const fault of ['timeout', 'cancelled']) {
+    const f = make(), label = `local active ${phase} ${fault}`, subscriber = new AbortController()
+    const work = f.h.filesystemPort.withSharedIoSignal(subscriber.signal, f.invoke), result = work.catch(error => error), state = observe(work)
+    try {
+      await readyWhen(() => f.counts().classifications === 1, state, label + ': classification')
+      if (phase !== 'classification') {
+        f.advance(600); f.classification.resolve()
+        await readyWhen(() => f.counts().resolutions === 1, state, label + ': resolver')
+      }
+      if (phase === 'stat') {
+        f.advance(29000); f.resolution.resolve()
+        await readyWhen(() => f.counts().stats === 1, state, label + ': stat')
+        assert.equal(f.sourceDeadlines[1].timeoutMs, 4000)
+      }
+      const idle = ownersIdle(f.owners), idleState = observe(idle)
+      if (fault === 'timeout') f.advance(33000); else subscriber.abort()
+      await tick()
+      assert.equal(f.budgets[0].signal.aborted, true, label + ': retired budget did not abort its logical owner')
+      assert.equal(idleState.status, 'pending', label + ': physical source operation released early')
+      assert.equal(f.h.state.requests.length, 0); noPublication(f, label)
+      if (fault === 'cancelled') {
+        const error = await boundedWork(result, label + ': subscriber cancellation')
+        assert.match(error.message, /HFM_PREVIEW:cancelled/); assert(error.closed)
+        const closed = observe(error.closed); await tick(); assert.equal(closed.status, 'pending', label + ': cancellation lost the physical receipt')
+      } else assert.equal(state.status, 'pending', label + ': timeout dropped its outstanding local read')
+      f.release()
+      assert.match((await boundedWork(result, label + ': source completion')).message, new RegExp('HFM_PREVIEW:' + fault))
+      await boundedWork(idle, label + ': owner did not retire after source completion')
+      assert.equal(f.h.state.requests.length, 0); noPublication(f, label)
+      assert.equal(f.counts().stats, phase === 'stat' ? 1 : 0, label + ': retired resolver started another source read')
+      if (phase === 'classification') assert.equal(f.counts().resolutions, 0, label + ': expired classification started the resolver')
+    } finally {
+      f.release(); await boundedWork(Promise.allSettled([work]), label + ': cleanup')
+      await boundedWork(ownersIdle(f.owners), label + ': physical retirement'); assert.equal(f.timers.size, 0)
+    }
+  }
+  {
+    const f = make(true), label = 'negative control: omitted active budget', work = f.invoke(), state = observe(work)
+    try {
+      f.classification.resolve()
+      await readyWhen(() => f.counts().resolutions === 1, state, label + ': resolver')
+      assert(f.budgets[0], label + ': production active route did not provide the argument being removed')
+      assert.equal(f.sourceDeadlines[0].timeoutMs, 500, label + ': ordinary local source deadline changed')
+      await assert.rejects(async () => assertLocalBudget(f.sourceDeadlines[0].timeoutMs, 33000, label + ': active resolver must receive its remaining owner budget'), /LOCAL_ACTIVE_SOURCE_BUDGET/)
+      f.advance(800); await tick()
+      const idle = ownersIdle(f.owners), idleState = observe(idle)
+      assert.equal(state.status, 'pending'); assert.equal(idleState.status, 'pending')
+      f.resolution.resolve()
+      await assert.rejects(boundedWork(work, label + ': missing argument did not fail'), /HFM_PREVIEW:timeout/)
+      await boundedWork(idle, label + ': physical retirement')
+      assert.equal(f.counts().stats, 0); assert.equal(f.h.state.requests.length, 0); noPublication(f, label)
+    } finally {
+      f.release(); await boundedWork(Promise.allSettled([work]), label + ': cleanup')
+      await boundedWork(ownersIdle(f.owners), label + ': cleanup owners'); assert.equal(f.timers.size, 0)
+    }
+  }
+  {
+    const f = make(), lifetime = new (f.h.load(lifetimePath).PreviewRenderLifetime)()
+    let work
+    try {
+      f.advance(33000)
+      work = f.source.resolvePreviewSource(f.sourcePath, f.h.options.resolveExistingFontFilePath, lifetime)
+      await assert.rejects(boundedWork(work, 'expired active source attempted classification'), /HFM_PREVIEW:timeout/)
+      assert.deepEqual(f.counts(), { classifications: 0, resolutions: 0, stats: 0 }, 'expired active source started path classification')
+      assert.equal(f.h.state.requests.length, 0); noPublication(f, 'expired entry')
+    } finally {
+      f.release(); await boundedWork(Promise.allSettled([work]), 'expired entry cleanup')
+      lifetime.dispose(); assert.equal(f.timers.size, 0)
+    }
+  }
+}
+
 async function activeSourceCases() {
   for (const sourcePath of ['\\\\controlled-nas\\fonts\\active.ttf', 'Z:\\active.ttf']) {
     for (const fault of ['success', 'ENOENT', 'ENOTDIR', 'EACCES', 'stale-generation', 'timeout', 'cancelled', ...(sourcePath.startsWith('Z:') ? ['identity-unavailable'] : [])]) {
@@ -583,6 +735,11 @@ async function activeSourceCases() {
       paths.mappedDriveTableSnapshot = () => fault === 'identity-unavailable' ? null : new Map([['Z:', '\\\\controlled-nas\\fonts']])
       protocol = h.load('src/main/rust-core/rustCoreProtocolRuntime.ts')
       h.options.resolveExistingFontFilePath = async () => { raw.push('resolver'); throw Error('active network source entered legacy resolver') }
+      const source = h.load('src/main/preview/runtime/previewSourceRuntime.ts'), resolveSource = source.resolvePreviewSource
+      source.resolvePreviewSource = (file, resolver, budget) => {
+        assert(budget, label + ': active source omitted its owner')
+        return resolveSource(file, resolver, { assertCurrent: () => budget.assertCurrent(), remainingMs: () => { throw Error(label + ': shared source entered the extended local budget branch') } })
+      }
       const taskOwners = observeTaskOwners(h)
       h.runtime = h.load('src/main/preview/previewRuntime.ts').createPreviewRuntime(h.options)
       const controller = new AbortController()
@@ -888,7 +1045,7 @@ async function epochBoundaryCases() {
 
 async function main() {
   assert.equal(process.platform, 'win32', 'Preview fallback acceptance is Windows-only')
-  await routeCases(); await compatibleChildCases(); await sharedProofBudgetCase(); await composedTransportCases(); await activeSourceCases(); await globalQueueCases(); await backgroundQueueCases(); await epochBoundaryCases(); await nativeMissingFamilyCase()
+  await routeCases(); await compatibleChildCases(); await sharedProofBudgetCase(); await composedTransportCases(); await localActiveSourceBudgetCases(); await activeSourceCases(); await globalQueueCases(); await backgroundQueueCases(); await epochBoundaryCases(); await nativeMissingFamilyCase()
   console.log('PASS bounded preview fallback, shared owner retirement, closed-receipt rejection, reduced queue admission, alias barrier, composed foreground busy lifetime, isolated active sources and cancelled-quit epoch successors')
 }
 

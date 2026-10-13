@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs')
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs'),os=require('node:os')
 const {DatabaseSync}=require('node:sqlite'),{spawnSync}=require('node:child_process')
 const {loader:baseLoader}=require('./check-operation-chain.cjs')
 const root=path.resolve(__dirname,'../..'),crlf=process.argv.includes('--crlf'),mutant=process.argv.find(x=>x.startsWith('--mutant='))?.split('=')[1]
@@ -17,49 +17,91 @@ function load(mocks={},globals={}) {
 }
 const tick=()=>new Promise(r=>setImmediate(r)),plain=x=>JSON.parse(JSON.stringify(x))
 async function settlement() {
- const db=new DatabaseSync(':memory:');db.function('hfm_shared_font_id',(relative,_size,_mtime)=>String(relative).replace('.ttf',''))
-  require('./check-operation-chain.cjs').loader()('src/main/fonts/fontFileIdentity.ts').registerFileIdentitySql(db)
- db.exec("CREATE TABLE entries(relative_path TEXT,file_size INTEGER,modified_at INTEGER,font_json TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,root_path TEXT,is_deleted INTEGER DEFAULT 0,status TEXT DEFAULT 'ok')")
- const insert=db.prepare('INSERT INTO entries(relative_path,file_size,modified_at,font_json,installed,installed_by,matches_json,root_path) VALUES (?,1,?, ?,0,?,?,?)')
- for(const id of ['a','b'])insert.run(id+'.ttf',1,JSON.stringify({id,path:'\\\\nas\\fonts\\'+id+'.ttf',localTagNames:['keep']}),'none','[]','\\\\nas\\fonts')
- db.exec('CREATE TABLE sources(root_path TEXT PRIMARY KEY,index_db_path TEXT,install_db_path TEXT,index_signature TEXT,install_signature TEXT,shared_metadata_signature TEXT); CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT)')
- let committed=0,failProjection=true,projectionCalls=0,saves=0,persisted={},nasAccesses=0
- const deny=()=>{nasAccesses++;throw Error('NAS must not be queried')}
- const runtime=load()(mergeFile).createMergedIndexValidationRuntime({
-  mergedIndexSourcesKey:JSON.stringify,getSqliteMeta:()=>'',setSqliteMeta:deny,writeMergedIndexSourceRow:deny,installStatusContentSignature:deny,
-  runMergedIndexMutation:async(_,fn)=>fn({commit(){committed++}}),openMergedIndexDb:async()=>db,closeSqliteDb(){},appendStartupLog(){},appWatchedFolders:deny,
- },{mergedIndexSourcesForRoots:deny},{ensureMergedIndexBuilt:deny})
- const queue=load()(queueFile).createActivationInstallStatusSaveQueue({
-  readInstallStatusIndex:async()=>({results:persisted,misses:[]}),saveInstallStatusIndex:async results=>{saves++;persisted={...persisted,...results}},
-  appWatchedFolders:deny,rootForFontPath:deny,clearFontQueryCaches(){},appendStartupLog(){},batchDelayMs:60000,
-  syncMergedIndexAfterInstallStatusRefresh:async(roots,items)=>{projectionCalls++;assert.equal(roots.length,0);if(failProjection){failProjection=false;throw Error('local busy')}await runtime.syncMergedIndexAfterInstallStatusRefresh(roots,deny,items,deny)}
- })
- const item={id:load()('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId('\\\\nas\\fonts\\a.ttf',1,1),path:'\\\\nas\\fonts\\a.ttf',fileName:'a.ttf',fileSize:1,modifiedAt:1}
- const signature=load()('src/main/install/status/installStatusSignatureRuntime.ts')
- const sourceRow=db.prepare('SELECT * FROM entries WHERE relative_path=?').get('a.ttf')
- const sourceSignature=signature.rootInstallStatusSignature(sourceRow.root_path,sourceRow.relative_path,sourceRow.file_size,sourceRow.modified_at,sourceRow.font_json)
- assert.equal(signature.installStatusSignatureValue(item),sourceSignature,'positive fixture must carry the exact indexed filename and stat')
- const incomplete={id:item.id,path:item.path,installStatusKnown:true,active:true,systemInstalled:false,systemInstallMatches:[]}
- assert.notEqual(signature.installStatusSignatureValue(incomplete),sourceSignature,'original incomplete fixture must not become authoritative')
+ assert.equal(process.platform,'win32','HFM verification is Windows-only')
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-offline-settlement-')),machineDirectory=path.join(directory,'machines')
+ const readers=new Set()
+ let db,authority,failed=false
  try {
+ fs.mkdirSync(machineDirectory)
+ const installPath=path.join(machineDirectory,'install.sqlite')
+ db=new DatabaseSync(path.join(directory,'merged.sqlite'));authority=new DatabaseSync(installPath)
+ const production=load(),identity=production('src/main/fonts/fontFileIdentity.ts'),signature=production('src/main/install/status/installStatusSignatureRuntime.ts')
+ const metadata=production('src/main/db/sqliteHelpers.ts'),contentSignature=production('src/main/install/status/installStatusContentSignatureRuntime.ts').installStatusContentSignatureFromDb
+ const folder='\\\\nas\\fonts'
+ let committed=0,failProjection=true,projectionCalls=0,saves=0,nasAccesses=0,authorityOpens=0
+ const deny=()=>{nasAccesses++;throw Error('NAS must not be queried')}
+ const localPath=file=>{if(file!==installPath)return deny();return file}
+ const closeSqliteDb=handle=>{if(handle===db)return;assert(readers.has(handle),'unknown authority handle');handle.close();readers.delete(handle)}
+ const dataPath=(...parts)=>path.join(directory,...parts)
+  identity.registerFileIdentitySql(db)
+  db.exec("CREATE TABLE entries(relative_path TEXT,file_size INTEGER,modified_at INTEGER,font_json TEXT,installed INTEGER,installed_by TEXT,matches_json TEXT,root_path TEXT,is_deleted INTEGER DEFAULT 0,status TEXT DEFAULT 'ok'); CREATE TABLE sources(root_path TEXT PRIMARY KEY,index_db_path TEXT,install_db_path TEXT,index_signature TEXT,install_signature TEXT,shared_metadata_signature TEXT,synced_at TEXT); CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT)")
+  authority.exec('PRAGMA journal_mode=WAL; CREATE TABLE install_status(font_id TEXT PRIMARY KEY,signature TEXT,installed INTEGER,by_type TEXT,matches_json TEXT,checked_at TEXT)')
+  const fonts=['a','b'].map(name=>{const file=folder+'\\'+name+'.ttf';return{id:identity.fileRuntimeFontId(file,1,1),path:file,fileName:name+'.ttf',fileSize:1,modifiedAt:1,localTagNames:['keep']}})
+  const insert=db.prepare('INSERT INTO entries(relative_path,file_size,modified_at,font_json,installed,installed_by,matches_json,root_path) VALUES (?,1,1,?,0,?,?,?)')
+  const write=authority.prepare('INSERT OR REPLACE INTO install_status VALUES (?,?,?,?,?,?)')
+  for(const font of fonts){insert.run(font.fileName,JSON.stringify(font),'none','[]',folder);write.run(font.id,signature.installStatusSignatureValue(font),0,'none','[]','initial')}
+  const localPorts={dataPath,...metadata,exists:async file=>fs.existsSync(localPath(file)),openStableSqliteDb:file=>{localPath(file);const reader=new DatabaseSync(file);readers.add(reader);authorityOpens++;return reader},closeSqliteDb,appendStartupLog(){}}
+  const sourceRuntime=production('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({...localPorts,openRootIndexDb:deny,schemaVersion:1,staleFirstPageEnabled:true})
+  const sourceShape=row=>({root:row.root_path,indexDbPath:row.index_db_path,installDbPath:row.install_db_path,indexSignature:row.index_signature,installSignature:row.install_signature,sharedMetadataSignature:row.shared_metadata_signature})
+  db.prepare('INSERT INTO sources VALUES (?,?,?,?,?,?,?)').run(folder,folder+'\\.hfm-cache\\database\\index.sqlite',installPath,'retained-index',contentSignature(authority),'retained-tags','retained-sync')
+  const sourceReceipt=()=>plain(db.prepare('SELECT * FROM sources').get())
+  const sourceKey=()=>sourceRuntime.mergedIndexSourcesKey([sourceShape(sourceReceipt())])
+  metadata.setSqliteMeta(db,'sourcesKey',sourceKey())
+  const initialReceipt=sourceReceipt(),initialKey=metadata.getSqliteMeta(db,'sourcesKey')
+  const runtime=production(mergeFile).createMergedIndexValidationRuntime({
+   ...localPorts,mergedIndexSourcesKey:sourceRuntime.mergedIndexSourcesKey,writeMergedIndexSourceRow:deny,installStatusContentSignature:deny,
+   runMergedIndexMutation:async(_,fn)=>fn({commit(){committed++}}),openMergedIndexDb:async()=>db,appWatchedFolders:deny,
+  },{mergedIndexSourcesForRoots:deny},{ensureMergedIndexBuilt:deny})
+  // The save boundary commits real local SQLite rows before projection. This is
+  // deliberately not a page repair: the queue must reconcile complete authority.
+  const queue=production(queueFile).createActivationInstallStatusSaveQueue({
+   readInstallStatusIndex:async items=>{const results={},misses=[];for(const item of items){const row=authority.prepare('SELECT * FROM install_status WHERE font_id=?').get(item.id);if(!row||row.signature!==signature.installStatusSignatureValue(item)){misses.push(item);continue}results[item.id]={installed:row.installed===1,by:row.by_type,matches:JSON.parse(row.matches_json)}}return{results,misses}},
+   saveInstallStatusIndex:async(results,items)=>{saves++;authority.exec('BEGIN IMMEDIATE');try{for(const[id,result]of Object.entries(results))write.run(id,signature.installStatusSignatureValue(items.get(id)),result.installed?1:0,result.by,JSON.stringify(result.matches||[]),'save-'+saves);authority.exec('COMMIT')}catch(error){authority.exec('ROLLBACK');throw error}},
+   appWatchedFolders:deny,rootForFontPath:deny,clearFontQueryCaches(){},appendStartupLog(){},batchDelayMs:60000,
+   syncMergedIndexAfterInstallStatusRefresh:async(roots,items)=>{projectionCalls++;assert.equal(roots.length,0);if(failProjection){failProjection=false;throw Error('local busy')}await runtime.syncMergedIndexAfterInstallStatusRefresh(roots,deny,items,deny)}
+  })
+  const item=fonts[0],sourceRow=db.prepare('SELECT * FROM entries WHERE relative_path=?').get('a.ttf')
+  const sourceSignature=signature.rootInstallStatusSignature(sourceRow.root_path,sourceRow.relative_path,sourceRow.file_size,sourceRow.modified_at,sourceRow.font_json)
+  assert.equal(signature.installStatusSignatureValue(item),sourceSignature,'positive fixture must carry the exact indexed filename and stat')
+  const incomplete={id:item.id,path:item.path,installStatusKnown:true,active:true,systemInstalled:false,systemInstallMatches:[]}
+  assert.notEqual(signature.installStatusSignatureValue(incomplete),sourceSignature,'original incomplete fixture must not become authoritative')
+  const peerInitial=plain(db.prepare('SELECT * FROM entries WHERE relative_path=?').get('b.ttf'))
   queue.schedule({[item.id]:{installed:true,by:'managed',matches:[]}},new Map([[item.id,item]]),'activate')
   await queue.flush('first');assert.equal(queue.hasPending(),true);assert.equal(db.prepare('SELECT installed FROM entries WHERE relative_path=?').get('a.ttf').installed,0)
+  assert.equal(authority.prepare('SELECT installed FROM install_status WHERE font_id=?').get(item.id).installed,1,'first failure must follow the actual durable authority commit')
+  assert.deepEqual(sourceReceipt(),initialReceipt,'failed projection advanced the source receipt');assert.equal(metadata.getSqliteMeta(db,'sourcesKey'),initialKey)
   await queue.flush('retry');assert.equal(projectionCalls,2,'persisted install facts must not suppress failed local projection');assert.equal(queue.hasPending(),false)
+  assert.equal(authorityOpens,1,'successful retry must read the actual local authority')
   assert.equal(db.prepare('SELECT installed_by FROM entries WHERE relative_path=?').get('a.ttf').installed_by,'managed')
   assert.equal(db.prepare('SELECT installed_by FROM entries WHERE relative_path=?').get('b.ttf').installed_by,'none')
+  assert.deepEqual(plain(db.prepare('SELECT * FROM entries WHERE relative_path=?').get('b.ttf')),peerInitial,'full authority repair changed an unrelated valid peer')
+  assert.equal(sourceReceipt().install_signature,contentSignature(authority));assert.equal(metadata.getSqliteMeta(db,'sourcesKey'),sourceKey())
+  for(const field of ['root_path','index_db_path','install_db_path','index_signature','shared_metadata_signature','synced_at'])assert.equal(sourceReceipt()[field],initialReceipt[field],'local settlement changed root receipt '+field)
   queue.schedule({[item.id]:{installed:false,by:'none',matches:[]}},new Map([[item.id,item]]),'deactivate');await queue.flush('deactivate')
   assert.equal(db.prepare('SELECT installed FROM entries WHERE relative_path=?').get('a.ttf').installed,0)
   assert.deepEqual(JSON.parse(db.prepare('SELECT font_json FROM entries WHERE relative_path=?').get('a.ttf').font_json).localTagNames,['keep']);assert.equal(committed,2);assert.equal(saves,3);assert.equal(nasAccesses,0)
+  assert.equal(authorityOpens,2);assert.equal(readers.size,0,'local authority reader leaked after settlement')
+  assert.equal(sourceReceipt().install_signature,contentSignature(authority));assert.equal(metadata.getSqliteMeta(db,'sourcesKey'),sourceKey())
   const peerBefore=plain(db.prepare('SELECT * FROM entries WHERE relative_path=?').get('b.ttf'))
-  // The old id/path-only fixture is a real signature mismatch, not managed evidence.
-  await runtime.syncMergedIndexAfterInstallStatusRefresh([],deny,[incomplete],deny)
+  const receiptBeforePage=sourceReceipt(),keyBeforePage=metadata.getSqliteMeta(db,'sourcesKey')
+  // Unlike committed queue writes, this explicit partial page must withdraw its
+  // mismatched row without acknowledging whole-source authority.
+  await runtime.syncMergedIndexAfterInstallStatusRefresh([],deny,[incomplete],deny,{preserveSourceCheckpoint:true})
   const withdrawn=db.prepare('SELECT installed,installed_by,matches_json,font_json FROM entries WHERE relative_path=?').get('a.ttf')
   assert.deepEqual([withdrawn.installed,withdrawn.installed_by,withdrawn.matches_json],[null,null,null],'incomplete signature must withdraw projected status')
   assert.deepEqual(JSON.parse(withdrawn.font_json).localTagNames,['keep'])
   assert.equal(db.prepare('SELECT installed_by FROM entries WHERE relative_path=?').get('b.ttf').installed_by,'none')
   assert.deepEqual(plain(db.prepare('SELECT * FROM entries WHERE relative_path=?').get('b.ttf')),peerBefore,'signature withdrawal must leave the peer row unchanged')
   assert.equal(committed,3,'only the explicit withdrawal adds one local projection commit');assert.equal(saves,3,'withdrawal must not resave install evidence');assert.equal(nasAccesses,0,'signature withdrawal must remain local')
- } finally {db.close()}
+  assert.equal(authorityOpens,2,'partial page should not reopen whole authority');assert.deepEqual(sourceReceipt(),receiptBeforePage);assert.equal(metadata.getSqliteMeta(db,'sourcesKey'),keyBeforePage)
+ } catch(error) {failed=true;throw error}
+ finally {
+  let cleanupError
+  const cleanup=action=>{try{action()}catch(error){cleanupError??=error}}
+  for(const reader of readers)cleanup(()=>reader.close())
+  cleanup(()=>authority?.close());cleanup(()=>db?.close());cleanup(()=>fs.rmSync(directory,{recursive:true,force:true}))
+  if(cleanupError){if(failed)console.error('offline settlement fixture cleanup also failed:',cleanupError);else throw cleanupError}
+ }
 }
 async function watcher() {
  let now=10000,timerId=0,snapshot={'a.ttf':[1,'1000000123']},failure=false,held=null,releaseHeld,offline=0,collections=0,projectionRepairs=0,collectionSignal
