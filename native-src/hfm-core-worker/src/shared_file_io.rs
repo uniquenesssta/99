@@ -87,7 +87,6 @@ fn font_content_identity_checked(path: &Path, after_read: impl FnOnce()) -> io::
     Ok(json!({"path":physical.to_string_lossy(),"sha256":digest,"size":before.len(),"modified":unix_millis(before.modified()?),
         "dev":identity.0,"ino":identity.1,"readBytes":bytes}))
 }
-#[cfg(test)]
 fn execute(request: &Request) -> io::Result<Value> { execute_observed(request, None) }
 fn execute_observed(request: &Request, trace: Option<&crate::operation_trace::OperationTrace>) -> io::Result<Value> {
     if request.path.is_empty() || request.path.contains('\0') { return Err(io::Error::other("invalid shared path")); }
