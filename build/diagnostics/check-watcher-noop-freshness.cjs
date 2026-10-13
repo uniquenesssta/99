@@ -16,6 +16,7 @@ const plain = value => JSON.parse(JSON.stringify(value))
 const arg = (name, fallback) => { const at = process.argv.indexOf(name); return at < 0 ? fallback : process.argv[at + 1] }
 const FILES = 169, DIRECTORIES = 169, METADATA_REQUESTS = 22
 const MERGED_FAILURE_REASONS = new Set([
+  'root-unavailable', 'source-unavailable', 'reconciliation-sources-incomplete', 'reconciliation-roots-changed',
   'merged-full-rebuild-sources-incomplete', 'merged-install-projection-unavailable', 'merged-validation-roots-changed',
   'merged-projection-generation-changed', 'merged-projection-receipt-invalid', 'merged-projection-receipt-mismatch',
   'merged-projection-schema-unavailable', 'merged-source-index-unavailable', 'merged-source-receipt-unavailable',
@@ -30,6 +31,7 @@ const MERGED_FAILURE_MODULES = new Set([
   'src/main/indexing/merged-page/mergedIndexValidationRuntime.ts',
   'src/main/indexing/merged-page/mergedIndexMutationCoordinatorRuntime.ts',
   'src/main/indexing/merged-page/mergedIndexProjectionFailureRuntime.ts',
+  'src/main/indexing/merged-page/mergedIndexSharedMetadataExternalCheckRuntime.ts',
 ])
 
 function redactDiagnostic(value, roots = []) {
@@ -79,6 +81,8 @@ function projectionFailureView(error) {
 // The observed rejection remains owned by the production external-check caller.
 function createProjectionObservation(phase, failureView = projectionFailureView) {
   const calls = [], nativeErrors = new WeakMap()
+  const nativeFailures = [], caughtFailures = []
+  let nativeFailureTotal = 0, caughtFailureTotal = 0
   let total = 0, observerErrors = 0
   const guard = run => { try { return run() } catch { observerErrors++; return undefined } }
   const operations = new Set(['stat', 'lstat', 'access', 'realpath', 'readFile', 'sqliteSnapshot', 'directoryMetadata', 'directoryMetadataBatch'])
@@ -87,15 +91,44 @@ function createProjectionObservation(phase, failureView = projectionFailureView)
       if (!error || typeof error !== 'object') return
       const operation = operations.has(request.operation) ? request.operation : 'other'
       nativeErrors.set(error, { operation, label: 'shared-file-io:' + operation })
+      const row = failureRecord(error, 'native-failure', ++nativeFailureTotal)
+      row.native = { operation, label: 'shared-file-io:' + operation }
+      nativeFailures.push(row); if (nativeFailures.length > 8) nativeFailures.shift()
     })
   }
-  function wrap(runtime, background) {
-    for (const [method, kind] of [['syncMergedIndexForRootSnapshot', 'snapshot'], ['syncMergedIndexForRootIncremental', 'incremental']]) {
+  function failureRecord(error, kind, ordinal) {
+    const currentPhase = phase()
+    const row = { ordinal, kind, phase: /^[a-z0-9:-]{1,96}$/i.test(currentPhase || '') ? currentPhase : 'other', error: failureView(error) }
+    const native = error && typeof error === 'object' ? nativeErrors.get(error) : undefined
+    row.nativeCorrelation = native ? 'same-error-shared-file' : 'uncorrelated'
+    if (native) row.native = { ...native }
+    if (error?.sharedIo === true && isPromise(error.closed)) {
+      row.closeState = 'pending'
+      Promise.prototype.then.call(error.closed,
+        () => guard(() => { row.closeState = 'fulfilled' }),
+        () => guard(() => { row.closeState = 'rejected' }))
+    }
+    return row
+  }
+  function caughtFailure(error) {
+    guard(() => {
+      const row = failureRecord(error, 'caught-failure', ++caughtFailureTotal)
+      // The shared catch owner can consume the error before any sync call.
+      // Retain only whitelisted VM coordinates, never the raw caller stack.
+      const origin = projectionFailureView({ stack: new Error().stack })
+      row.catchOrigin = { state: origin.originState, module: origin.originModule, line: origin.originLine,
+        column: origin.originColumn, coordinates: origin.originCoordinates }
+      caughtFailures.push(row); if (caughtFailures.length > 8) caughtFailures.shift()
+    })
+  }
+  function wrap(runtime, background, methods = [['syncMergedIndexForRootSnapshot', 'snapshot'], ['syncMergedIndexForRootIncremental', 'incremental']]) {
+    for (const [method, kind] of methods) {
       const original = runtime[method]
+      assert.equal(typeof original, 'function', `Missing observed production method: ${method}`)
       runtime[method] = function(...args) {
         const row = guard(() => {
           const currentPhase = phase()
-          const record = { ordinal: ++total, kind, background: background === true,
+          const record = { ordinal: ++total, kind, background: typeof background === 'boolean' ? background : undefined,
             phase: /^[a-z0-9:-]{1,96}$/i.test(currentPhase || '') ? currentPhase : 'other', outcome: 'pending' }
           calls.push(record); if (calls.length > 8) calls.shift()
           return record
@@ -126,9 +159,19 @@ function createProjectionObservation(phase, failureView = projectionFailureView)
     }
     return runtime
   }
-  return { wrap, nativeFailure, snapshot: () => ({ total, retained: calls.length, omitted: total - calls.length, observerErrors,
-    scope: 'sync result plus identical-error shared-file attribution; uncorrelated does not prove no native dispatch',
-    calls: calls.map(row => ({ ...row, ...(row.error ? { error: { ...row.error } } : {}), ...(row.native ? { native: { ...row.native } } : {}) })) }) }
+  const copy = row => ({ ...row, ...(row.error ? { error: { ...row.error } } : {}), ...(row.native ? { native: { ...row.native } } : {}), ...(row.catchOrigin ? { catchOrigin: { ...row.catchOrigin } } : {}) })
+  return { wrap, nativeFailure, caughtFailure, snapshot: () => ({ total, retained: calls.length, omitted: total - calls.length, observerErrors,
+    scope: 'owned boundaries and identical-error shared-file correlation; nearby native failures alone do not establish causality',
+    calls: calls.map(copy), nativeFailureTotal, nativeFailures: nativeFailures.map(copy), caughtFailureTotal, caughtFailures: caughtFailures.map(copy) }) }
+}
+
+function observeMergedFailureSettlement(module, observer) {
+  const settle = module.settleMergedSyncError
+  assert.equal(typeof settle, 'function', 'Missing common merged failure settlement owner')
+  module.settleMergedSyncError = function(...args) {
+    observer.caughtFailure(args[0])
+    return Reflect.apply(settle, this, args)
+  }
 }
 
 async function projectionObservationControls() {
@@ -225,6 +268,65 @@ async function projectionObservationControls() {
   await assert.rejects(rejected, error => error === differentError)
   assert.equal(broken.snapshot().observerErrors, 1, 'Observer failure was not reported')
   assert.equal(brokenRuntime.syncMergedIndexForRootIncremental(), token, 'Observer changed a synchronous result')
+
+  // Exercise every newly observed preparation boundary with the same original
+  // Promise/error. The diagnostic must not turn a consumed preparation error
+  // into a successful sync, nor infer causality from a nearby native failure.
+  const prep = createProjectionObservation(() => 'validation:preparation-control')
+  const methods = [['activeRootIndexDbPathForRoot', 'active-index-path'], ['exists', 'source-exists'],
+    ['installStatusDbPathForRoot', 'install-path'], ['rootIndexContentSignature', 'root-signature'],
+    ['installStatusContentSignature', 'install-signature'], ['sharedMetadataSignatureForRoot', 'metadata-signature'],
+    ['mergedIndexSourcesForRoots', 'source-receipts'], ['readMergedRowsForSource', 'source-rows']]
+  let completion, failure
+  const owner = Object.fromEntries(methods.map(([method]) => [method, function(...args) {
+    assert.equal(this, owner); assert.equal(args[0], input); return completion
+  }]))
+  prep.wrap(owner, undefined, methods)
+  for (const [method, kind] of methods) {
+    completion = Promise.resolve(token)
+    assert.equal(owner[method](input), completion); assert.equal(await completion, token)
+    assert.equal(prep.snapshot().calls.at(-1).kind, kind)
+    assert.equal(prep.snapshot().calls.at(-1).background, undefined, 'Unknown admission scope was reported as foreground')
+    failure = Object.assign(Error('private preparation source'), { name: 'SharedIoProcessError', sharedIo: true,
+      closed: Promise.resolve(), reason: 'timeout', phase: 'executing', executionMs: 500, requestId: 91 })
+    completion = Promise.reject(failure)
+    prep.nativeFailure({ operation: 'stat', path: 'C:\\private-fixture\\source' }, failure)
+    assert.equal(owner[method](input), completion)
+    await assert.rejects(completion, error => error === failure)
+    prep.caughtFailure(failure)
+    const view = prep.snapshot()
+    assert.equal(view.calls.at(-1).outcome, 'rejected')
+    assert.equal(view.calls.at(-1).nativeCorrelation, 'same-error-shared-file')
+    assert.equal(view.nativeFailures.at(-1).native.operation, 'stat')
+    assert.equal(view.caughtFailures.at(-1).nativeCorrelation, 'same-error-shared-file')
+  }
+  const converted = Error('merged-source-receipt-unavailable')
+  prep.caughtFailure(converted)
+  assert.equal(prep.snapshot().caughtFailures.at(-1).nativeCorrelation, 'uncorrelated', 'Converted source error was falsely tied to a nearby native request')
+  assert.equal(prep.snapshot().caughtFailures.at(-1).error.internalReason, 'merged-source-receipt-unavailable')
+  assert(prep.snapshot().nativeFailures.some(row => row.error.requestId === 91), 'Converted source failure erased the bounded native failure evidence')
+  const unavailable = Object.assign(Error('root-unavailable'), { code: 'EACCES' })
+  prep.caughtFailure(unavailable)
+  assert.equal(prep.snapshot().caughtFailures.at(-1).error.code, 'EACCES', 'Admission failure before source factory was not retained')
+  assert.equal(prep.snapshot().caughtFailures.at(-1).error.internalReason, 'root-unavailable')
+  assert.equal(prep.snapshot().caughtFailures.length, 8); assert.equal(prep.snapshot().nativeFailures.length, 8)
+  assert.equal(prep.snapshot().observerErrors, 0)
+  assert(!JSON.stringify(prep.snapshot()).includes('private'), 'Preparation evidence leaked private source text')
+  const brokenCatch = createProjectionObservation(() => { throw Error('controlled phase observer failure') })
+  assert.doesNotThrow(() => brokenCatch.caughtFailure(failure))
+  assert.doesNotThrow(() => brokenCatch.nativeFailure({ operation: 'stat' }, failure))
+  assert.equal(brokenCatch.snapshot().observerErrors, 2)
+  let releaseSettlement
+  const physicalClose = new Promise(resolve => { releaseSettlement = resolve })
+  const caughtError = Object.freeze(Object.assign(Error('private consumed failure'), { sharedIo: true, closed: physicalClose, reason: 'timeout' }))
+  const settlementOwner = { settleMergedSyncError(error) { assert.equal(this, settlementOwner); assert.equal(error, caughtError); return physicalClose } }
+  observeMergedFailureSettlement(settlementOwner, prep)
+  try {
+    assert.equal(settlementOwner.settleMergedSyncError(caughtError), physicalClose, 'Common catch observation replaced the physical-settlement Promise')
+    assert.equal(prep.snapshot().caughtFailures.at(-1).closeState, 'pending')
+    assert.equal(caughtError.closed, physicalClose)
+  } finally { releaseSettlement(); await physicalClose }
+  assert.equal(prep.snapshot().caughtFailures.at(-1).closeState, 'fulfilled')
 }
 
 function failureDiagnostics(host, state, error, roots) {
@@ -237,6 +339,7 @@ function failureDiagnostics(host, state, error, roots) {
     assertionLocation: location ? { file: 'check-watcher-noop-freshness.cjs', line: Number(location[1]), column: Number(location[2]) } : undefined,
     watcherResult: state.lastWatcherResult,
     projection: state.projectionObservation?.snapshot(),
+    preparation: state.preparationObservation?.snapshot(),
     readCloseBoundary: boundary ? {
       mode: boundary.mode, outcome: boundary.outcome, injected: boundary.injected, closeReleased: boundary.closeReleased,
       observerErrors: boundary.observerErrors,
@@ -307,6 +410,24 @@ function selectedStorageInvalidator(host, state) {
 
 function observeProduction(load, state) {
   const projection = state.projectionObservation = createProjectionObservation(() => state.phase)
+  const preparation = state.preparationObservation = createProjectionObservation(() => state.phase)
+  const failureModule = load('src/main/indexing/merged-page/mergedIndexProjectionFailureRuntime.ts')
+  observeMergedFailureSettlement(failureModule, projection)
+  const sourceModule = load('src/main/indexing/merged-page/mergedIndexSourceRuntime.ts')
+  const createSource = sourceModule.createMergedIndexSourceRuntime, observedContexts = new WeakSet()
+  sourceModule.createMergedIndexSourceRuntime = function(...args) {
+    const ctx = args[0]
+    if (!observedContexts.has(ctx)) {
+      observedContexts.add(ctx)
+      preparation.wrap(ctx, undefined, [
+        ['activeRootIndexDbPathForRoot', 'active-index-path'], ['exists', 'source-exists'],
+        ['installStatusDbPathForRoot', 'install-path'], ['rootIndexContentSignature', 'root-signature'],
+        ['installStatusContentSignature', 'install-signature'], ['sharedMetadataSignatureForRoot', 'metadata-signature'],
+      ])
+    }
+    return preparation.wrap(Reflect.apply(createSource, this, args), undefined,
+      [['mergedIndexSourcesForRoots', 'source-receipts'], ['readMergedRowsForSource', 'source-rows']])
+  }
   const shared = load('src/main/path/sharedFileSystemRuntime.ts')
   const folderModule = load('src/main/folders/folderCacheRuntime.ts')
   const createFolder = folderModule.createFolderCacheRuntime
@@ -354,6 +475,7 @@ function observeProduction(load, state) {
       // Observe that actual rejection and preserve its identity/close owner.
       boundary?.('native', request.operation, 'rejected', args[2], error)
       projection.nativeFailure(request, error)
+      preparation.nativeFailure(request, error)
       state.observeNativeFailure?.(request, error)
       throw error
     }
