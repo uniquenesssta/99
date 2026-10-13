@@ -6,7 +6,7 @@ import type { FontLibraryIndexActionRuntimeOptions,FontLibraryIndexSharedRuntime
 
 export function createFontLibraryFolderCacheActionRuntime(
   options: FontLibraryIndexActionRuntimeOptions,
-  sharedRuntime: Pick<FontLibraryIndexSharedRuntime, 'invalidateDatabasePages' | 'loadCacheStats' | 'readPhysicalFolderTree'>
+  sharedRuntime: Pick<FontLibraryIndexSharedRuntime, 'invalidateDatabasePages' | 'readPhysicalFolderTree'>
 ): {
   loadSharedCacheForFolders: (folders: string[], keepScroll?: boolean) => Promise<ScanResult | null>
   addFolder: () => Promise<void>
@@ -59,7 +59,6 @@ export function createFontLibraryFolderCacheActionRuntime(
       options.setSelectedFolderId('')
     }
 
-    await sharedRuntime.loadCacheStats()
     const statusText = `${cacheLoadStatus(result)}${physicalTreeWarning}`
     if (result.fonts.length && typeof options.hfm.startInstallStatusRefreshIndex === 'function') {
       options.autoInstallStatusRefreshStartedRef.current = true
@@ -139,7 +138,6 @@ export function createFontLibraryFolderCacheActionRuntime(
 
       options.setSelectedFolderId(target.id)
       sharedRuntime.invalidateDatabasePages()
-      await sharedRuntime.loadCacheStats()
       options.setStatus(`刷新“${target.name}”完成：${folderRefreshStatusText(result)}`)
     } catch (error) {
       options.setStatus(`刷新文件夹失败：${error instanceof Error ? error.message : String(error)}`)

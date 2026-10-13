@@ -1,6 +1,6 @@
 import type { FontRefreshField } from '../../databaseDerivedStateRuntime'
 import { missingFontCommandTargetsMessage, resolveFontCommandTargets } from '../../fontCommandTargetsRuntime'
-import type { CacheStats,FontItem,FontQueryPageResult,FontQueryResult,LibraryState } from '@shared/types'
+import type { FontItem,FontQueryPageResult,FontQueryResult,LibraryState } from '@shared/types'
 import { useRef,useState } from 'react'
 import type { Dispatch,SetStateAction } from 'react'
 import type { ContextMenuState,FontMetrics,FontScrollRestoreSnapshot,QueuedFontWriteState,SidebarPage } from '../../appRuntime'
@@ -18,7 +18,6 @@ import {
   isRendererUserActive,
   reportRendererUserActivity
 } from '../../rendererActivityRuntime'
-import type { CacheStatsRequestState } from '../library/actions/fontLibraryIndexActionTypes'
 import { createFontLibraryIndexActionRuntime } from '../library/fontLibraryIndexActionRuntime'
 import { createFontInstallStatusRuntime } from '../system/fontInstallStatusRuntime'
 import { createFontSystemActionRuntime } from '../system/fontSystemActionRuntime'
@@ -41,7 +40,6 @@ type FontOperationsLibraryPort = {
   setSelectedFolderId: Dispatch<SetStateAction<string>>
   indexingActive: boolean
   setIndexingActive: Dispatch<SetStateAction<boolean>>
-  setCacheStats: Dispatch<SetStateAction<CacheStats | null>>
   clearDatabaseRefreshTimer: () => void
   refreshDatabaseDerivedState: (fields?: FontRefreshField[]) => void
   scheduleDatabaseDerivedStateRefresh: (delay?: number, fields?: FontRefreshField[]) => void
@@ -180,10 +178,7 @@ export function useFontOperationsController(options: {
   })
 
   const { nextIndexOperationRunId, isCurrentIndexOperation } = useIndexOperationRunRuntime(indexOperationRunIdRef)
-  const cacheStatsRequestState = useRef<CacheStatsRequestState>({ active: null, requested: 0 })
   const libraryIndexActionRuntime = createFontLibraryIndexActionRuntime({
-    cacheStatsRequestState,
-    closingLifecycle: options.closingLifecycle,
     hfm: options.hfm,
     library: options.library.library,
     selectedFolderId: options.library.selectedFolderId,
@@ -193,7 +188,6 @@ export function useFontOperationsController(options: {
     getCurrentLibrary: options.library.getCurrentLibrary,
     commitLibraryUpdate: options.library.commitLibraryUpdate,
     setStatus: options.library.setStatus,
-    setCacheStats: options.library.setCacheStats,
     setContextMenu: (value) => options.selection.setContextMenu(value),
     setSelectedFolderId: options.library.setSelectedFolderId,
     setDatabasePageResult: options.database.setDatabasePageResult,
@@ -309,7 +303,6 @@ export function useFontOperationsController(options: {
     refreshInstallStatus: installStatusRuntime.refreshInstallStatus,
     startBackgroundInstallStatusRefresh: installStatusRuntime.startBackgroundInstallStatusRefresh,
     stopLazyInstallStatusDetect: installStatusRuntime.stopLazyInstallStatusDetect,
-    loadCacheStats: libraryIndexActionRuntime.loadCacheStats,
     readPhysicalFolderTree: libraryIndexActionRuntime.readPhysicalFolderTree,
     clearAllCacheAction: libraryIndexActionRuntime.clearAllCacheAction,
     addFolder: libraryIndexActionRuntime.addFolder,

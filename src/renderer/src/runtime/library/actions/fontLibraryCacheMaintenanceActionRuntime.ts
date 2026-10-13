@@ -11,8 +11,7 @@ export function createFontLibraryCacheMaintenanceActionRuntime(options: FontLibr
     try {
       options.setStatus('正在清理缓存：索引缓存和预览缓存都会删除，字体库记录保留……')
       await options.hfm.clearScanCache()
-      const stats = await options.hfm.clearPreviewCache()
-      options.setCacheStats(stats)
+      await options.hfm.clearPreviewCache()
       options.resetPreviewRuntimeState()
       options.setLibrary((prev) => ({
         ...prev,
@@ -67,8 +66,7 @@ export function createFontLibraryCacheMaintenanceActionRuntime(options: FontLibr
     options.resetPreviewRuntimeState()
 
     try {
-      const stats = await options.hfm.clearPreviewCache()
-      options.setCacheStats(stats)
+      await options.hfm.clearPreviewCache()
       options.setStatus(`已清理预览缓存、${previewCount} 个预览失败标记，并清理 ${invalidCount} 条无效记录。字体索引未删除；新预览会在字体卡进入可见区域时按需生成。`)
     } catch (error) {
       options.setStatus(`清理预览缓存失败：${error instanceof Error ? error.message : String(error)}`)

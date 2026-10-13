@@ -5,7 +5,7 @@ import type { FontLibraryIndexActionRuntimeOptions,FontLibraryIndexSharedRuntime
 
 export function createFontLibrarySystemScanActionRuntime(
   options: FontLibraryIndexActionRuntimeOptions,
-  sharedRuntime: Pick<FontLibraryIndexSharedRuntime, 'finishIndexingWithoutFullInstallRefresh' | 'invalidateDatabasePages' | 'isCancelledScanResult' | 'loadCacheStats' | 'readPhysicalFolderTree'>
+  sharedRuntime: Pick<FontLibraryIndexSharedRuntime, 'finishIndexingWithoutFullInstallRefresh' | 'invalidateDatabasePages' | 'isCancelledScanResult' | 'readPhysicalFolderTree'>
 ): {
   scanInstalledFontsIntoLibrary: () => Promise<void>
   scanAllFonts: () => Promise<void>
@@ -82,7 +82,6 @@ export function createFontLibrarySystemScanActionRuntime(
           options.setStatus('扫描完成，但库状态保存失败；本次未刷新文件夹统计。')
           return
         }
-        await sharedRuntime.loadCacheStats()
         await sharedRuntime.finishIndexingWithoutFullInstallRefresh(`扫描完成：${folderStatsText}；系统字体 ${systemResult.fonts.length} 个。`)
 
         options.setStatus(

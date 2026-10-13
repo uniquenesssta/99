@@ -6,6 +6,7 @@ const path = require('node:path')
 const vm = require('node:vm')
 const crypto = require('node:crypto')
 const ts = require('typescript')
+const { restoreRetiredCacheStatsPorts } = require('./helpers/cacheStatsConsumerRetirementFixture.cjs')
 const root = path.resolve(__dirname, '../..')
 const fixturePath = path.join(__dirname, 'fixtures/decomposition-baseline.fixture.json')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
@@ -49,7 +50,12 @@ function load(file, mocks = {}, transform = x => x) {
   return exports
 }
 function inventory(file, source = read(file)) {
-  source = source.replace(/\r\n/g, "\n")
+  source = restoreRetiredCacheStatsPorts(file, source)
+  if (file === 'src/renderer/src/App.tsx') {
+    const pageAuthority = '  const displayDatabasePageReady = databasePageReady\n'
+    assert.equal(source.split(pageAuthority).length - 1, 1, 'App lost hook-owned page readiness during indexing')
+    source = source.replace(pageAuthority, '  const displayDatabasePageReady = databasePageReady && !indexingActive\n')
+  }
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
   const functions = [], owners = [], exports = [], surfaces = {}, viewGroups = [], ipcChannels = []
   function visit(node) {

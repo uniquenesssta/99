@@ -1,6 +1,6 @@
 import { noteFontRefreshRequest, cancelFontRefreshObservation } from '../../fontOperationTrace'
 import { fontUserIntentRevision,hasUnsettledFavoriteIntent } from '../../fontUserIntentRuntime'
-import type { CacheStats,FontQueryPageResult,FontQueryResult,LibraryState } from '@shared/types'
+import type { FontQueryPageResult,FontQueryResult,LibraryState } from '@shared/types'
 import { useEffect,useMemo,useRef,useState } from 'react'
 import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
 import type { FontMetrics } from '../../appRuntime'
@@ -44,7 +44,6 @@ export function useLibraryController(options: {
   const pendingRefreshScope = useRef({ page: false, metrics: false })
   const activeFilterKindRef = useRef({ kind: options.activeFilterKind || 'all', hasPage: options.hasDatabasePageSnapshot !== false })
   activeFilterKindRef.current = { kind: options.activeFilterKind || 'all', hasPage: options.hasDatabasePageSnapshot !== false }
-  const [, setCacheStats] = useState<CacheStats | null>(null)
   const databaseRefreshTimerRef = useRef<number | null>(null)
   const libraryLoadedRef = useRef(false)
   const initialLibraryLoadStartedRef = useRef(false)
@@ -210,7 +209,6 @@ export function useLibraryController(options: {
       setDatabaseRefreshToken(update)
       setDatabaseMetricsRefreshToken(value => value + 1)
     },
-    setCacheStats,
     libraryLoadedRef: libraryLoadedRef as Readonly<{ current: boolean }>,
     refreshDatabaseDerivedState,
     scheduleDatabaseDerivedStateRefresh,

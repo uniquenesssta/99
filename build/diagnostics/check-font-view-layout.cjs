@@ -120,6 +120,23 @@ function makeDomFile() {
   const gridNativeSamples = process.env.HFM_GRID_NATIVE_SAMPLES ? JSON.parse(fs.readFileSync(path.resolve(root, process.env.HFM_GRID_NATIVE_SAMPLES), 'utf8')) : []
   fs.appendFileSync(file, '<script>window.gridNativeSamples=' + JSON.stringify(gridNativeSamples).replace(/</g, '\\u003c') + ';window.gridWebFontData=' + JSON.stringify(webFontData) + '</script>')
   const detailBundle = require('esbuild').buildSync({ entryPoints: [path.join(__dirname, 'lib/font-detail-transition-dom.tsx')], bundle: true, write: false, format: 'iife', platform: 'browser', alias: { '@shared': path.join(root, 'src/shared') }, define: { 'process.env.NODE_ENV': '"development"', 'import.meta.env': '{}' } }).outputFiles[0].text
+  // Restore the actual pre-fix stylesheet sources, rather than simulating an
+  // unrelated overflow. The DOM gate must attribute failure to shell sizing.
+  const shellOriginalCss = css(undefined, file => {
+    const source = read(file).replace(/\r\n/g, '\n')
+    if (file === prefix + 'styles/02-shell-sidebar.css') {
+      const fixed = '.app {\n  height: 100vh;\n  display: grid;\n  grid-template-columns: minmax(0, 1fr);'
+      assert.ok(source.includes(fixed), 'app shell mutation anchor missing')
+      return source.replace(fixed, '.app {\n  height: 100vh;\n  display: grid;')
+    }
+    if (file === prefix + 'styles/font-list-card-detail/font-list-card-detail-03.css') {
+      const fixed = '.statusbar {\n  height: 30px;\n  min-width: 0;'
+      assert.ok(source.includes(fixed), 'status footer mutation anchor missing')
+      return source.replace(fixed, '.statusbar {\n  height: 30px;')
+    }
+    return source
+  })
+  fs.appendFileSync(file, '<script>window.appShellOriginalCss=' + JSON.stringify(shellOriginalCss).replace(/</g, '\\u003c') + '</script>')
   fs.appendFileSync(file, '<script>' + detailBundle.replace(/<\/script/gi, '<\\/script') + '</script>')
   return { file, temp, count: cases.length }
 }
@@ -129,17 +146,17 @@ assert.throws(() => behavior({ [geometryFile]: read(geometryFile).replace('rowHe
 const virtualFile = prefix + 'fontViewRuntime.ts'
 assert.throws(() => behavior({ [virtualFile]: read(virtualFile).replace('Math.max(0, Math.ceil(options.visibleFonts.length / columns) - visibleRows) * columns', 'Math.max(0, options.visibleFonts.length - visibleRows * columns)') }), /alignment/)
 console.log('[font-view-layout] geometry matrix, paging, anchors, resize rebind/breakpoints, fallback and two regression mutants passed')
-if (process.argv.includes('--dom') || process.argv.includes('--dom-feedback') || process.argv.includes('--emit-dom')) {
+if (process.argv.includes('--dom') || process.argv.includes('--dom-feedback') || process.argv.includes('--dom-shell-only') || process.argv.includes('--emit-dom')) {
   const { file, temp, count } = makeDomFile()
   if (process.argv.includes('--emit-dom')) console.log(file)
   else {
     try {
       const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
-      const result = cp.spawnSync(require('electron'), [path.join(__dirname, 'lib/font-view-layout-electron.cjs'), file, ...(process.argv.includes('--dom-feedback') ? ['--dom-feedback'] : [])], { cwd: root, env, encoding: 'utf8', timeout: 210000 })
+      const result = cp.spawnSync(require('electron'), [path.join(__dirname, 'lib/font-view-layout-electron.cjs'), file, ...process.argv.filter(arg => ['--dom-feedback', '--dom-shell-only'].includes(arg))], { cwd: root, env, encoding: 'utf8', timeout: 210000 })
       process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || '')
       if (result.error) throw result.error
       assert.equal(result.status, 0, 'real Electron DOM geometry gate failed')
-      console.log(process.argv.includes('--dom-feedback') ? '[font-view-layout] real DOM paging and scrollbar feedback passed' : `[font-view-layout] ${count} real DOM scenarios and legacy-gap mutant passed`)
+      console.log(process.argv.includes('--dom-shell-only') ? '[font-view-layout] real app shell, original-source mutant and native right-edge controls passed' : process.argv.includes('--dom-feedback') ? '[font-view-layout] real DOM paging and scrollbar feedback passed' : `[font-view-layout] ${count} real DOM scenarios and legacy-gap mutant passed`)
     } finally { fs.rmSync(temp, { recursive: true, force: true }) }
   }
 }

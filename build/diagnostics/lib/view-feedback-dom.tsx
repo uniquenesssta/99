@@ -59,8 +59,9 @@ const empty:any[]=[],noop=()=>{},filter={kind:'all'},allFonts=Array.from({length
    const layout=host.querySelector<HTMLElement>('.layout')!,classes=layout.className
    try{
     layout.className='layout'
-    const legacyBox=busy.getBoundingClientRect()
-    bareLayoutRejected=legacyBox.right>innerWidth+1||busy.scrollWidth>busy.clientWidth+1
+    // The shell now contains the footer independently of inner track minima.
+    // A bare legacy layout still overflows its own child tracks at 720px.
+    bareLayoutRejected=layout.scrollWidth>layout.clientWidth+1
     check(bareLayoutRejected,'bare-layout regression no longer reproduces: '+JSON.stringify(geometry()))
    }finally{layout.className=classes}
    await settleLayout()

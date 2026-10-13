@@ -40,6 +40,7 @@
 
 .statusbar {
   height: 30px;
+  min-width: 0;
   display: flex;
   align-items: center;
   padding: 0 14px;

@@ -310,7 +310,7 @@ function mutations() {
 }
 async function main() {
   assert.equal(process.platform, 'win32', 'HFM verification is Windows-only')
-  paginationAndDuplicateRows(); intentAndFilterDecisions(); traceEvidence(); mutations(); await rendererRawCursor(); await rendererRawCursorMutation(); await nativePopulation()
+  paginationAndDuplicateRows(); intentAndFilterDecisions(); traceEvidence(); mutations(); await rendererRawCursor(); await rendererRawCursorMutation(); await require('./check-manual-refresh-page-authority.cjs').run(); await nativePopulation()
   console.log(`[diagnostics:font-view-membership] ${assertions} assertions: row-level filtering, exact/partial totals, opaque bounded trace through production sanitizer, raced tag edits/catalogs, duplicate IDs, preserved safety/recovery/search/category filters; real native SQLite pages/metrics/install projection raw cursor/navigation through actual page-window and merge owners, and five rejected mutations. Metadata fixtures; actual user omission and GUI acceptance remain separate.`)
 }
 if (require.main === module) {

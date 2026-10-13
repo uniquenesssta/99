@@ -18,6 +18,32 @@ jobs:
       - name: Build real Windows Rust worker
         id: worker
         run: node build/rust/build-core-worker.cjs --required
+      - name: Verify shell containment, refresh page authority and optional work
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          & node build/diagnostics/check-font-view-membership.cjs *>> artifacts/ui-refresh-regression.log
+          $membershipExit = $LASTEXITCODE
+          & node build/diagnostics/check-preview-closing-stats.cjs *>> artifacts/ui-refresh-regression.log
+          $statsExit = $LASTEXITCODE
+          & node build/diagnostics/check-font-view-layout.cjs --dom-shell-only *>> artifacts/ui-refresh-regression.log
+          $shellExit = $LASTEXITCODE
+          "membershipExit=$membershipExit statsExit=$statsExit shellExit=$shellExit" | Add-Content artifacts/ui-refresh-regression.log
+          Get-Content -LiteralPath artifacts/ui-refresh-regression.log -Encoding utf8
+          if ($membershipExit -ne 0 -or $statsExit -ne 0 -or $shellExit -ne 0) { exit 1 }
+      - name: Retain shell geometry and refresh regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-recovery-ui-refresh-regression
+          path: |
+            artifacts/ui-refresh-regression.log
+            artifacts/font-identity-f04/*app-shell*.json
+            artifacts/font-identity-f04/*app-shell*.png
+          retention-days: 14
       - name: Verify native owned preview directory boundary
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         shell: pwsh

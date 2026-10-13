@@ -70,9 +70,15 @@ function checkStructure(overrides = new Map()) {
   const app = get(appPath)
   const seen = new Set()
 
-  for (const [relativePath, expectedNames] of Object.entries(fixture.owners)) {
+  // Keep the historical 42-slot fixture immutable, but retire the one state
+  // whose value had no reader, plus its newer single-flight request owner.
+  const retiredState = '[, setCacheStats]'
+  assert(Object.hasOwn(fixture.states, retiredState), 'retired owner missing from historical baseline')
+  for (const [relativePath, frozenNames] of Object.entries(fixture.owners)) {
+    const expectedNames = frozenNames.filter(name => name !== retiredState)
     const owned = declarations(get(relativePath))
-    const extra = fixture.additionalOwners?.[relativePath] || {}
+    const extra = Object.fromEntries(Object.entries(fixture.additionalOwners?.[relativePath] || {}).filter(([name]) => name !== 'cacheStatsRequestState'))
+    assert(!Object.hasOwn(owned, retiredState) && !Object.hasOwn(owned, 'cacheStatsRequestState'), 'unread cache statistics owner returned')
     assert.deepEqual(Object.fromEntries(Object.entries(owned).filter(([name]) => Object.hasOwn(extra, name))), extra, `${relativePath} U-05 owner initialization changed`)
     assert.deepEqual(Object.keys(owned).filter(name => !Object.hasOwn(extra, name)), expectedNames, `${relativePath} state/ref ownership order changed`)
     for (const name of expectedNames) {
@@ -81,7 +87,7 @@ function checkStructure(overrides = new Map()) {
       seen.add(name)
     }
   }
-  assert.equal(seen.size, 42, 'not all 42 AT-6.4 state/ref slots have one controller owner')
+  assert.equal(seen.size, 41, 'the remaining 41 AT-6.4 state/ref slots must have one controller owner')
 
   const appDeclarations = declarations(app)
   for (const name of stateNames) assert(!Object.hasOwn(appDeclarations, name), `App retained duplicate AT-6.4 owner ${name}`)
@@ -255,7 +261,8 @@ async function checkLibraryBehavior() {
   const closingLifecycle = { isClosing: () => libraryClosing, beginClosing() { libraryClosing = true }, resume() { libraryClosing = false }, subscribe: () => () => {} }
   const options = { hfm: {}, database, rendererUserActive: () => false, appendDeveloperStatus() {}, closingLifecycle }
   let controller = harness.render(useLibraryController, options)
-  assert.equal(harness.slots.length, 14)
+  assert.equal(harness.slots.length, 13)
+  assert(!Object.hasOwn(controller, 'setCacheStats'), 'library re-exposed unread state setter')
   controller.refreshDatabaseDerivedState()
   assert.equal(calls.refresh.databasePageRequestSeqRef, database.databasePageRequestSeqRef)
   assert.equal(calls.refresh.fontMetricsRequestSeqRef, database.fontMetricsRequestSeqRef)
@@ -336,7 +343,6 @@ async function checkOperationsBehavior() {
     stopLazyInstallStatusDetect: noOp
   }
   const indexRuntime = {
-    loadCacheStats: asyncNoOp,
     readPhysicalFolderTree: async () => ({}),
     clearAllCacheAction: asyncNoOp,
     addFolder: asyncNoOp,
@@ -383,7 +389,6 @@ async function checkOperationsBehavior() {
       setSelectedFolderId: noOp,
       indexingActive: false,
       setIndexingActive: noOp,
-      setCacheStats: noOp,
       clearDatabaseRefreshTimer: noOp,
       refreshDatabaseDerivedState: noOp,
       scheduleDatabaseDerivedStateRefresh: noOp,
@@ -415,15 +420,16 @@ async function checkOperationsBehavior() {
     appendDeveloperStatus: noOp,
     closingLifecycle: { isClosing: () => false, beginClosing: noOp, resume: noOp, subscribe: () => () => {} }
   })
-  assert.equal(harness.slots.length, 23)
-  assert.deepEqual(Object.keys(calls.index.cacheStatsRequestState.current), ['active', 'requested'])
+  assert.equal(harness.slots.length, 22)
+  assert(!Object.hasOwn(calls.index, 'cacheStatsRequestState'))
+  assert(!Object.hasOwn(calls.index, 'setCacheStats'))
+  assert(!Object.hasOwn(controller, 'loadCacheStats'))
   assert.equal(calls.queue.scheduleDatabaseDerivedStateRefresh, noOp)
   assert.equal(calls.install.knownInstallStatusIds, calls.index.knownInstallStatusIds)
   assert.equal(calls.index.autoInstallStatusRefreshStartedRef, calls.progress.autoInstallStatusRefreshStartedRef)
   assert.equal(calls.index.autoInstallStatusRefreshStartedRef, calls.auto.startedRef)
   assert.equal(calls.close.flushFontWriteQueue, queueRuntime.flush)
   assert.equal(calls.close.flushLibraryPersistence instanceof Function, true)
-  assert.equal(calls.index.closingLifecycle, calls.close.closingLifecycle)
   assert.equal(calls.close.closingLifecycle, calls.progress.closingLifecycle)
   assert.equal(calls.auto.isClosing, calls.close.closingLifecycle.isClosing)
   await controller.toggleFontDeleteProtection(['a'], true)
@@ -624,6 +630,15 @@ async function main() {
     operationsControllerPath,
     operations.replace('const [cacheMenuOpen, setCacheMenuOpen] = useState(false)', 'const [cacheMenuOpen, setCacheMenuOpen] = useState(true)')
   ]])), 'changed Operations default escaped ownership gate')
+  const library = read(libraryControllerPath)
+  assert.throws(() => checkStructure(new Map([[
+    libraryControllerPath,
+    library.replace('  const databaseRefreshTimerRef =', '  const [, setCacheStats] = useState<CacheStats | null>(null)\n  const databaseRefreshTimerRef =')
+  ]])), /unread cache statistics owner returned/, 'retired unread state escaped ownership gate')
+  assert.throws(() => checkStructure(new Map([[
+    operationsControllerPath,
+    operations.replace('  const libraryIndexActionRuntime =', '  const cacheStatsRequestState = useRef({ active: null, requested: 0 })\n  const libraryIndexActionRuntime =')
+  ]])), /unread cache statistics owner returned/, 'retired statistics request owner escaped ownership gate')
   const app = read(appPath)
   assert.throws(() => checkStructure(new Map([[appPath, `${app}\nfontWriteQueue.current = null\n`]])), 'raw write queue leak escaped port gate')
   const developer = read(developerControllerPath)
@@ -632,7 +647,7 @@ async function main() {
     developer.replace('if (!options.enabled || options.closingLifecycle.isClosing()) return\n', 'if (!options.enabled) return\n')
   ]])), 'production developer closing guard escaped structure gate')
   checkStructure(new Map(controllerPaths.map((relativePath) => [relativePath, read(relativePath).replace(/\n/g, '\r\n')])))
-  console.log('[diagnostics:react-composition-domain-controllers] 42 state/ref owners, write refresh, explicit closing admission/resume, close flush, protection/lazy cleanup, developer laziness, narrow ports, mutations and CRLF passed')
+  console.log('[diagnostics:react-composition-domain-controllers] 41 live state/ref owners (one unread cache statistics owner retired), write refresh, explicit closing admission/resume, close flush, protection/lazy cleanup, developer laziness, narrow ports, mutations and CRLF passed')
 }
 
 main().catch((error) => {

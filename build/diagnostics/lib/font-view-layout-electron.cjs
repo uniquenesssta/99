@@ -2,10 +2,12 @@ const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs'), path = require('node:path')
 const file = process.argv[2]
 const feedbackOnly = process.argv.includes('--dom-feedback')
+const shellOnly = process.argv.includes('--dom-shell-only')
 let lastNativeCase = null
+let win
 const watchdog = setTimeout(() => { console.error('DOM layout gate timed out', JSON.stringify(lastNativeCase)); app.exit(1) }, 180000)
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: true, width: 1600, height: 900, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false } })
+  win = new BrowserWindow({ show: true, width: 1600, height: 900, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false } })
   // Electron may replace a rejected renderer exception with a generic error.
   // Return plain failure data across the boundary, then still fail the gate.
   const evaluate = async code => {
@@ -15,6 +17,7 @@ app.whenReady().then(async () => {
         return { ok: false, message: String(error), stack: error?.stack,
           overlayEvidence: window.scrollbarOverlayEvidence?.(),
           sharedWatchStatusEvidence: window.sharedWatchStatusEvidence?.(),
+          appShellContainmentEvidence: window.appShellContainmentEvidence?.(),
           width: innerWidth, focused: document.hasFocus(), active: document.activeElement?.outerHTML?.slice(0, 300),
           inputs: ['local','shared'].map(scope => {
             const input = document.getElementById('font-' + scope + '-tag-input'), r = input?.getBoundingClientRect();
@@ -24,7 +27,7 @@ app.whenReady().then(async () => {
       }
     })()`)
     if (!result.ok) {
-      const evidence = path.resolve('artifacts/font-identity-f04'), prefix = `${feedbackOnly ? 'feedback' : 'full'}-${result.width}-dom-failure`
+      const evidence = path.resolve('artifacts/font-identity-f04'), prefix = `${shellOnly ? 'app-shell' : feedbackOnly ? 'feedback' : 'full'}-${result.width}-dom-failure`
       fs.mkdirSync(evidence, { recursive: true })
       fs.writeFileSync(path.join(evidence, prefix + '.json'), JSON.stringify({ code, ...result }, null, 2))
       console.error('[font-view-layout:renderer-failure]', JSON.stringify({ code, ...result }))
@@ -38,6 +41,50 @@ app.whenReady().then(async () => {
   await win.loadFile(file)
   win.focus()
   console.log('[font-view-layout:electron] fixture loaded')
+  // Always cover the reported 1320x820 *content* viewport as well as the
+  // existing narrow/wide gates. No mock header or CSS reset masks the shell.
+  for (const [width, height] of [[720, 900], [1320, 820], [1600, 900]]) {
+    win.setContentSize(width, height)
+    const result = await evaluate('window.checkAppShellContainment()')
+    const evidence = path.resolve('artifacts/font-identity-f04'), prefix = `app-shell-${width}x${height}`
+    fs.mkdirSync(evidence, { recursive: true })
+    fs.writeFileSync(path.join(evidence, prefix + '.json'), JSON.stringify(result, null, 2))
+    fs.writeFileSync(path.join(evidence, prefix + '.png'), (await win.webContents.capturePage()).toPNG())
+    const original = await evaluate('window.appShellOriginalPixels(true)')
+    fs.writeFileSync(path.join(evidence, prefix + '-original.json'), JSON.stringify(original, null, 2))
+    fs.writeFileSync(path.join(evidence, prefix + '-original.png'), (await win.webContents.capturePage()).toPNG())
+    await evaluate('window.appShellOriginalPixels(false)')
+    const click = point => {
+      win.webContents.sendInputEvent({ type: 'mouseMove', ...point })
+      win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', modifiers: ['leftbuttondown'], ...point, clickCount: 1 })
+      win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', ...point, clickCount: 1 })
+    }
+    if (width >= 980) {
+      const cancel = await evaluate('window.prepareAppShellBusyCancel()')
+      fs.writeFileSync(path.join(evidence, prefix + '-busy.png'), (await win.webContents.capturePage()).toPNG())
+      click(cancel)
+      const busy = await evaluate('window.finishAppShellBusyCancel()')
+      fs.writeFileSync(path.join(evidence, prefix + '-busy-native.json'), JSON.stringify(busy, null, 2))
+    }
+    const targets = await evaluate('window.appShellNativeTargets()')
+    for (const action of ['minimize', 'maximize', 'close']) {
+      click(targets[action])
+      await evaluate(`window.checkAppShellNativeAction(${JSON.stringify(action)})`)
+    }
+    click(targets.search)
+    for (const character of 'Edge') win.webContents.sendInputEvent({ type: 'char', keyCode: character })
+    const hover = await evaluate('window.checkAppShellSearch("Edge")')
+    win.webContents.sendInputEvent({ type: 'mouseMove', ...hover })
+    const drag = await evaluate('window.appShellScrollbarTarget()')
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: drag.x, y: drag.y })
+    win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', modifiers: ['leftbuttondown'], x: drag.x, y: drag.y, clickCount: 1 })
+    win.webContents.sendInputEvent({ type: 'mouseMove', button: 'left', modifiers: ['leftbuttondown'], x: drag.x, y: drag.endY, movementY: drag.endY - drag.y })
+    win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', x: drag.x, y: drag.endY, clickCount: 1 })
+    const native = await evaluate('window.finishAppShellContainment()')
+    fs.writeFileSync(path.join(evidence, prefix + '-native.json'), JSON.stringify(native, null, 2))
+    console.log('[app-shell:electron]', JSON.stringify({ width, height, cases: result.cases.length, busyTransitions: result.busyTransitions.length, exactOriginalReproduced: result.exactOriginalReproduced, originalSourceRejected: result.originalSourceRejected, nativeControls: native.nativeControls, nativeSearch: native.nativeSearch, nativeScrollbar: native.nativeScrollbar }))
+  }
+  if (shellOnly) { clearTimeout(watchdog); app.exit(0); return }
   for (const width of [720, 1600]) {
     win.setContentSize(width, 900)
     console.log('[font-view-layout:electron] checking viewport', width)
@@ -157,4 +204,10 @@ app.whenReady().then(async () => {
     console.log('[confirmation-focus:electron]',JSON.stringify(await evaluate('window.checkConfirmationLifecycle()')))
   }
   clearTimeout(watchdog); app.exit(0)
-}).catch(error => { console.error(error); clearTimeout(watchdog); app.exit(1) })
+}).catch(error => {
+  console.error(error); clearTimeout(watchdog)
+  // Failure evidence is captured above before disposing the isolated renderer
+  // and all React pollers / scrollbar observers owned by the failed fixture.
+  if (win && !win.isDestroyed()) win.destroy()
+  app.exit(1)
+})

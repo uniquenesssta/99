@@ -13,7 +13,6 @@ export function useFontIndexChangedEventRuntime(args: {
   getCurrentLibrary: () => LibraryState
   commitLibraryUpdate: (update: SetStateAction<LibraryState>) => LibraryState
   saveLibraryImmediately: (nextLibrary: LibraryState) => Promise<boolean>
-  loadCacheStats: () => Promise<void> | void
   refreshDatabaseDerivedState: () => void
   setStatus: Dispatch<SetStateAction<string>>
 }): void {
@@ -29,7 +28,6 @@ export function useFontIndexChangedEventRuntime(args: {
     let scheduled = false
     let saveInFlight = false
     let pendingSave = false
-    let pendingStats = false
     let pendingRefresh = false
 
     const flush = async (): Promise<void> => {
@@ -41,21 +39,14 @@ export function useFontIndexChangedEventRuntime(args: {
         current.refreshDatabaseDerivedState()
       }
       if (saveInFlight) return
-      if (!pendingSave) {
-        if (pendingStats) { pendingStats = false; await current.loadCacheStats() }
-        return
-      }
+      if (!pendingSave) return
       saveInFlight = true
       try {
         while (!disposed && pendingSave) {
           pendingSave = false
-          const statsRequested = pendingStats
-          pendingStats = false
           // Autosave owns write ordering and persistence retries. Always hand it
           // the latest committed shell, never an earlier event's snapshot.
           if (!await argsRef.current.saveLibraryImmediately(argsRef.current.getCurrentLibrary())) continue
-          if (!disposed && statsRequested && !pendingSave) await argsRef.current.loadCacheStats()
-          else if (statsRequested && pendingSave) pendingStats = true
         }
       } finally {
         saveInFlight = false
@@ -101,7 +92,6 @@ export function useFontIndexChangedEventRuntime(args: {
         // changed totals/pages, and recovery replay may repair a merged snapshot.
         if (payload.source !== 'scan-stream' && !metadataOnly) {
           pendingRefresh = true
-          pendingStats = true
           scheduleFlush()
         }
         if (payload.errors?.length) current.setStatus(fontIndexChangeStatusText({ upserted: 0, removed: 0, errors: payload.errors.length }))
@@ -121,7 +111,6 @@ export function useFontIndexChangedEventRuntime(args: {
       if (!metadataOnly) {
         pendingRefresh ||= payload.source !== 'scan-stream'
         pendingSave ||= !earlyVisibleOnly
-        pendingStats ||= payload.source !== 'scan-stream'
         scheduleFlush()
       }
       current.setStatus(payload.source === 'scan-stream'

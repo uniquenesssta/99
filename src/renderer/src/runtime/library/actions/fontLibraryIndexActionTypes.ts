@@ -1,14 +1,8 @@
-import type { CacheStats,FontItem,FontQueryPageResult,FontQueryResult,LibraryState,PhysicalFolderTreeResult,ScanResult } from '@shared/types'
+import type { FontItem,FontQueryPageResult,FontQueryResult,LibraryState,PhysicalFolderTreeResult,ScanResult } from '@shared/types'
 import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
 import type { FontMetrics,FontScrollRestoreSnapshot,MenuTarget } from '../../../appRuntime'
 
-import type { RendererClosingLifecycleRuntime } from '../../app/rendererClosingLifecycleRuntime'
-
-export type CacheStatsRequestState = { active: Promise<void> | null; requested: number }
-
 export type FontLibraryIndexActionRuntimeOptions = {
-  cacheStatsRequestState?: MutableRefObject<CacheStatsRequestState>
-  closingLifecycle: RendererClosingLifecycleRuntime
   hfm: typeof window.hfm
   library: LibraryState
   selectedFolderId: string
@@ -18,7 +12,6 @@ export type FontLibraryIndexActionRuntimeOptions = {
   getCurrentLibrary: () => LibraryState
   commitLibraryUpdate: (update: SetStateAction<LibraryState>) => LibraryState
   setStatus: Dispatch<SetStateAction<string>>
-  setCacheStats: Dispatch<SetStateAction<CacheStats | null>>
   setContextMenu: (value: null) => void
   setSelectedFolderId: Dispatch<SetStateAction<string>>
   setDatabasePageResult: Dispatch<SetStateAction<FontQueryPageResult | null>>
@@ -39,7 +32,6 @@ export type FontLibraryIndexActionRuntimeOptions = {
 
 export type FontLibraryIndexSharedRuntime = {
   invalidateDatabasePages: () => void
-  loadCacheStats: () => Promise<void>
   readPhysicalFolderTree: (folders: string[]) => Promise<PhysicalFolderTreeResult>
   finishIndexingWithoutFullInstallRefresh: (statusText: string) => Promise<void>
   isCancelledScanResult: (result: ScanResult) => boolean

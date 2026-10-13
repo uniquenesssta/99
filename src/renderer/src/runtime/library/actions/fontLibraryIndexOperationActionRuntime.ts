@@ -3,7 +3,7 @@ import type { FontLibraryIndexActionRuntimeOptions,FontLibraryIndexSharedRuntime
 
 export function createFontLibraryIndexOperationActionRuntime(
   options: FontLibraryIndexActionRuntimeOptions,
-  sharedRuntime: Pick<FontLibraryIndexSharedRuntime, 'finishIndexingWithoutFullInstallRefresh' | 'isCancelledScanResult' | 'loadCacheStats' | 'readPhysicalFolderTree'>
+  sharedRuntime: Pick<FontLibraryIndexSharedRuntime, 'finishIndexingWithoutFullInstallRefresh' | 'isCancelledScanResult' | 'readPhysicalFolderTree'>
 ): {
   cancelIndexing: () => Promise<void>
   rescan: () => Promise<void>
@@ -51,7 +51,6 @@ export function createFontLibraryIndexOperationActionRuntime(
         return
       }
 
-      await sharedRuntime.loadCacheStats()
       const indexedCount = result.stats?.totalFiles ?? 0
       const statusText = result.stats ? `更新索引完成：索引 ${indexedCount} 个字体文件，复用索引 ${result.stats.fromCache} 个，新解析 ${result.stats.parsed} 个，跳过 ${result.stats.skippedBad} 个，用时 ${Math.round(result.stats.durationMs / 1000)} 秒${scanWorkerStatsText(result.stats)}。` : `更新索引完成：索引 ${indexedCount} 个字体文件，跳过/错误 ${result.errors.length} 个`
       await sharedRuntime.finishIndexingWithoutFullInstallRefresh(statusText)
@@ -87,7 +86,6 @@ export function createFontLibraryIndexOperationActionRuntime(
         return
       }
 
-      await sharedRuntime.loadCacheStats()
       const indexedCount = result.stats?.totalFiles ?? 0
       const statusText = result.stats ? `完全重建索引完成：索引 ${indexedCount} 个字体文件，新解析 ${result.stats.parsed} 个，跳过 ${result.stats.skippedBad} 个，用时 ${Math.round(result.stats.durationMs / 1000)} 秒${scanWorkerStatsText(result.stats)}。` : `完全重建索引完成：索引 ${indexedCount} 个字体文件，跳过/错误 ${result.errors.length} 个`
       await sharedRuntime.finishIndexingWithoutFullInstallRefresh(statusText)

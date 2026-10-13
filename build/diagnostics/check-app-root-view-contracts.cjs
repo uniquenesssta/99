@@ -5,6 +5,7 @@ const path = require('node:path')
 const vm = require('node:vm')
 const ts = require('typescript')
 const crypto = require('node:crypto')
+const { restoreRetiredCacheStatsPorts } = require('./helpers/cacheStatsConsumerRetirementFixture.cjs')
 const root = path.resolve(__dirname, '../..')
 const appPath = 'src/renderer/src/App.tsx', viewPath = 'src/renderer/src/components/app/AppRootView.tsx'
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8')
@@ -56,7 +57,10 @@ function checkLifecycle(app, view) {
   assert.equal((normalizedApp.match(/^\s+previewStateForFont,$/gm) || []).length, 4, 'read-only preview owner must wire selected/card/detail views')
   const indexEvent = normalizedApp.slice(normalizedApp.indexOf('  useFontIndexChangedEventRuntime({'), normalizedApp.indexOf('  useFontTagStateSignalEventRuntime({'))
   assert(!indexEvent.includes('requestPreviewFont'), 'index notification regained invisible foreground demand')
-  const normalized = normalizedApp
+  const pageAuthority = '  const displayDatabasePageReady = databasePageReady\n'
+  assert.equal(normalizedApp.split(pageAuthority).length - 1, 1, 'App must retain hook-owned page authority during indexing')
+  const normalized = restoreRetiredCacheStatsPorts(appPath, normalizedApp)
+    .replace(pageAuthority, '  const displayDatabasePageReady = databasePageReady && !indexingActive\n')
     .replace('usePreviewController({\n    closingLifecycle: rendererClosingLifecycle,', 'usePreviewController({')
     .replace('    previewConsumerEnabled: false, // FontDetailPanel currently consumes no preview image.\n', '')
     .replace('useFontCardRenderer({\n    closingLifecycle: rendererClosingLifecycle,', 'useFontCardRenderer({')

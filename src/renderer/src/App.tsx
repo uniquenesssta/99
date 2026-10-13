@@ -207,7 +207,6 @@ export default function App(): JSX.Element {
     databaseRefreshToken,
     databaseMetricsRefreshToken,
     setDatabaseRefreshToken,
-    setCacheStats,
     libraryLoadedRef,
     refreshDatabaseDerivedState,
     scheduleDatabaseDerivedStateRefresh,
@@ -320,7 +319,6 @@ export default function App(): JSX.Element {
       setSelectedFolderId,
       indexingActive,
       setIndexingActive,
-      setCacheStats,
       clearDatabaseRefreshTimer,
       refreshDatabaseDerivedState,
       scheduleDatabaseDerivedStateRefresh,
@@ -376,7 +374,6 @@ export default function App(): JSX.Element {
     activateFontsBatch,
     deactivateFontByCard,
     deactivateFontsBatch,
-    loadCacheStats,
     readPhysicalFolderTree,
     clearAllCacheAction,
     addFolder,
@@ -536,7 +533,6 @@ export default function App(): JSX.Element {
     getCurrentLibrary,
     commitLibraryUpdate,
     saveLibraryImmediately,
-    loadCacheStats,
     refreshDatabaseDerivedState,
     setStatus
   })
@@ -633,7 +629,7 @@ export default function App(): JSX.Element {
     setStatus
   })
   const databasePageReady = databaseRuntime.databasePageReady
-  const displayDatabasePageReady = databasePageReady && !indexingActive
+  const displayDatabasePageReady = databasePageReady
   const {
     fontFamilyGroupResult,
     fontFamilyGroupLoading,
