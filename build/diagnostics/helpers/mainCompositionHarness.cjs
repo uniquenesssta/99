@@ -60,8 +60,8 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
     if (name === 'createMainBackgroundRuntime') specific.schedulerRuntime = { activeCount: () => 2 }
     if (name === 'createScanOrchestrator') Object.assign(specific, {
       isActive: () => state.scanActive !== false, activeJobId: () => 'scan-job',
-      scanFolders: operation(`${name}.scanFolders`, async () => ({ folders: ['/fonts/a', '/fonts/b'], fonts: [] })),
-      scanFoldersManaged: operation(`${name}.scanFoldersManaged`, async () => ({ folders: ['/fonts/a', '/fonts/b'], fonts: [] })),
+      scanFolders: operation(`${name}.scanFolders`, async () => state.scanResult || ({ folders: ['/fonts/a', '/fonts/b'], committedFolders: ['/fonts/a', '/fonts/b'], fonts: [] })),
+      scanFoldersManaged: operation(`${name}.scanFoldersManaged`, async () => state.scanResult || ({ folders: ['/fonts/a', '/fonts/b'], committedFolders: ['/fonts/a', '/fonts/b'], fonts: [] })),
       cancelActiveFontScan: operation(`${name}.cancelActiveFontScan`, () => true),
     })
     if (name === 'createManualFolderRefreshRuntime') specific.refreshWatchedFolder = operation(`${name}.refreshWatchedFolder`, async () => ({ ok: true }))
@@ -106,6 +106,7 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
         return () => { const index = listeners.indexOf(listener); if (index >= 0) listeners.splice(index, 1) }
       }
       if (key === 'normalizeWatchedFontFolders') return folders => folders
+      if (key === 'isApplicationClosing') return () => !!state.closing
       if (key === 'normalizePathForCacheCompare') return value => value
       if (key === 'openFontUninstallReceipts') return () => ({ hydrate: items => items.map(item => ({ ...item, pendingUninstall: state.pendingUninstall })) })
       if (key === 'sha1') return value => require('node:crypto').createHash('sha1').update(value).digest('hex')

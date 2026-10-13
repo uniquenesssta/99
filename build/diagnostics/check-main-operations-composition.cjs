@@ -5,6 +5,8 @@ const path = require('node:path')
 const { createHarness, entry, root, bootstrap } = require('./helpers/mainCompositionHarness.cjs')
 const { observeOperations, observeLifecycle } = require('./helpers/mainOperationsHarness.cjs')
 const fixture = require('./fixtures/main-operations-composition.fixture.json')
+const expectedOperations = structuredClone(fixture.operations)
+for (const name of ['managedScan','backgroundScan']) expectedOperations[name].result.committedFolders = [...expectedOperations[name].result.folders]
 // The new probe owner starts after the existing cache initialization. Preserve
 // every historical operation/shutdown receipt and migrate only this addition.
 const expectedStartup = structuredClone(fixture.startup)
@@ -70,7 +72,7 @@ async function checkBindings() {
 }
 
 async function checkBaseline(overrides = new Map()) {
-  assert.deepEqual(await observeOperations(overrides), fixture.operations)
+  assert.deepEqual(await observeOperations(overrides), expectedOperations)
   for (const scenario of Object.keys(fixture.shutdown)) {
     const actual = await observeLifecycle(scenario, overrides)
     assert.deepEqual(actual.startup, expectedStartup, `${scenario}: startup order changed`)
@@ -102,19 +104,36 @@ async function checkMutations() {
         const scenario = name === 'lost quit-abort resume' ? 'flush-return' : 'normal'
         const actual = await observeLifecycle(scenario, overrides)
         assert.deepEqual(actual.shutdown, fixture.shutdown[scenario])
-      } else assert.deepEqual(await observeOperations(overrides), fixture.operations)
+      } else assert.deepEqual(await observeOperations(overrides), expectedOperations)
     }, undefined, `${name} was not detected`)
   }
   return mutants.length
+}
+async function checkCommittedScanPublication(overrides = new Map()) {
+  const h=createHarness(overrides);h.load(entry)
+  const calls=[folders=>h.payload.scanFoldersManaged(folders,[]),folders=>h.options('createMainBackgroundRuntime').scanFolders(folders,[])]
+  for (const call of calls) for (const mode of ['cancelled','busy','partial','closing']) {
+    h.scanResult={folders:['/fonts/a','/fonts/b'],fonts:[],errors:[],committedFolders:mode==='busy'?[]:mode==='partial'?['/fonts/a']:['/fonts/a','/fonts/b'],stats:{cancelled:mode==='cancelled'}}
+    h.closing=mode==='closing';h.reset();await call(['/fonts'])
+    const published=h.calls.filter(row=>row[0]==='createMergedIndexPageRuntime.syncMergedIndexForRootSnapshot').map(row=>row[1][0])
+    assert.deepEqual(published,mode==='partial'?['/fonts/a']:[],'COMMITTED_SCAN_PUBLICATION: retired/uncommitted root projected')
+  }
 }
 
 async function main() {
   await checkBindings()
   await checkBaseline()
+  await checkCommittedScanPublication()
+  for (const owner of ['Scan','Operations']) {
+    const file=compositionFile(owner),source=read(file),guard='if (result.stats?.cancelled || isApplicationClosing()) return result;'
+    assert.equal(source.split(guard).length-1,1)
+    await assert.rejects(()=>checkCommittedScanPublication(new Map([[file,source.replace(guard,'')]])),error=>error instanceof assert.AssertionError && /COMMITTED_SCAN_PUBLICATION/.test(error.message))
+    await assert.rejects(()=>checkCommittedScanPublication(new Map([[file,source.replace('for (const root of result.committedFolders || []) {','for (const root of result.folders || []) {')]])),error=>error instanceof assert.AssertionError && /COMMITTED_SCAN_PUBLICATION/.test(error.message))
+  }
   const mutants = await checkMutations()
   const crlf = new Map([entry, ...['Mutation', 'Operations', 'Maintenance', 'Scan'].map(compositionFile)]
     .map(file => [file, read(file).replace(/\n/g, '\r\n')]))
-  assert.deepEqual(await observeOperations(crlf), fixture.operations)
+  assert.deepEqual(await observeOperations(crlf), expectedOperations)
   console.log(`[diagnostics:main-operations-composition] passed: 12 pre-bind gates, one-time binding/scheduling, ${Object.keys(fixture.operations).length} operation flows, ${Object.keys(fixture.shutdown).length} real lifecycle scenarios, ${mutants} rejected mutations, CRLF`)
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

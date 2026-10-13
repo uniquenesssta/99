@@ -32,7 +32,7 @@ impl FontFileScanOptions {
 
 pub fn scan_font_file(path: &Path, metadata: &Metadata, options: &FontFileScanOptions) -> io::Result<FontFileEntry> {
     let mut file = File::open(path)?;
-    scan_font_file_handle(path, &mut file, metadata, options, false)
+    scan_font_file_handle(path, &mut file, metadata, options, true)
 }
 
 // The batch owner supplies and retains the pinned source handle. Read failures

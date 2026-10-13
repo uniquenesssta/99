@@ -60,8 +60,6 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
     closeApplicationDatabaseHandle,
     checkpointApplicationDatabases,
     restoreLatestDatabaseBackupForLabel,
-    quarantineSqliteFiles,
-    recoveryMessage,
     exists,
     appendStartupLog,
     openPreviewDb,
@@ -186,21 +184,14 @@ export function createDatabaseMaintenanceRuntime(options: DatabaseMaintenanceRun
 
   async function restoreLatestApplicationDatabaseRaw(label: ApplicationDatabaseLabel): Promise<DatabaseRestoreReport> {
     const targetPath = databasePathForLabel(label)
-    closeApplicationDatabaseHandle(label)
-    const currentExists = await exists(targetPath)
-    const restored = await restoreLatestDatabaseBackupForLabel(label, targetPath, currentExists ? {
+    const restored = await restoreLatestDatabaseBackupForLabel(label, targetPath, {
       beforeReplace: async () => {
-        await quarantineSqliteFiles(
-          targetPath,
-          `${label}-before-manual-restore`,
-          'manual restore requested after a valid backup was confirmed',
-        )
+        // The SQLite runtime holds its open-admission gate and owns complete,
+        // verified preservation. This hook only closes the owning store.
+        closeApplicationDatabaseHandle(label)
       },
-    } : undefined)
-    if (!restored.ok) {
-      return { ok: false, label, targetPath, backupPath: restored.backupPath, message: restored.message }
-    }
-    return { ok: true, label, targetPath, backupPath: restored.backupPath, message: restored.message }
+    })
+    return { ...restored, label, targetPath }
   }
 
   async function runDatabaseMaintenanceRaw(options: { createBackup?: boolean; backupReason?: string } = {}): Promise<DatabaseMaintenanceReport> {

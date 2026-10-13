@@ -188,7 +188,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
     signal?: AbortSignal,
   ): Promise<RustFontIndexListResult | null> {
     const status = await diagnoseRustCoreWorker()
-    if (!status.available || !status.path || !hasCapability(status, 'list-font-files')) return null
+    if (!status.available || !status.path || !hasCapability(status, 'list-font-files') || !hasCapability(status, 'list-font-files-complete-v1')) return null
 
     const stdoutListing = hasCapability(status, 'list-font-files-stdout-v1')
     const startedAt = Date.now()

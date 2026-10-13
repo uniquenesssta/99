@@ -28,6 +28,8 @@ export type SharedFileRequest = {
   schemaVersion?: number; cacheVersion?: number; scriptDetectionVersion?: number; repairCorrupt?: boolean
   identity?: unknown
   paths?: string[]
+  previewKeys?: string[]
+  guards?: Array<{ path: string; identity: unknown }>
 }
 /** Actual effects of the native filesystem command, excluding local transfer files. */
 export function sharedFileAccesses(request: SharedFileRequest): SharedIoAccessPath[] | undefined {
@@ -40,11 +42,15 @@ export function sharedFileAccesses(request: SharedFileRequest): SharedIoAccessPa
     case 'directoryMetadataBatch': return request.paths?.map(path => read(path, 'tree'))
     case 'readdir': case 'directoryMetadata': case 'treeSnapshot': return [read(request.path, 'tree')]
     case 'sqliteSnapshot': return [read(request.path, 'database')]
+    // SQLite OPEN_READ_ONLY may still maintain a WAL shared-memory sidecar.
+    case 'previewCleanupRows': return [write(request.path, 'database')]
+    case 'previewCleanupEntries': return [write(request.path, 'database'), ...(request.rootPath ? [read(request.rootPath)] : []), ...(request.dest ? [write(request.dest, 'tree')] : [])]
     case 'copyFile': case 'link': return request.dest ? [read(request.path), write(request.dest)] : undefined
     case 'renameOwnedFile': return request.source && request.dest ? [write(request.path), write(request.source), write(request.dest)] : undefined
     case 'initializeRootCache': return sharedDatabaseTarget(request.path, true).accesses
     case 'repairRootDatabase': return [...(sharedDatabaseTarget(request.path, true).accesses || []), ...(request.dest ? [write(request.dest, 'tree')] : [])]
     case 'rename': return request.dest ? [write(request.path, 'tree'), write(request.dest, 'tree')] : undefined
+    case 'removeWithOwnedLocks': return [...(request.rootPath ? [read(request.rootPath)] : []), ...(request.guards || []).map(guard => write(guard.path)), ...(request.paths || []).map(path => write(path))]
     case 'rm': return [write(request.path, request.recursive ? 'tree' : 'file')]
     case 'mkdir': return [write(request.path)]
     case 'writeFile': case 'appendFile': case 'openFile': case 'writeOwnedFile':

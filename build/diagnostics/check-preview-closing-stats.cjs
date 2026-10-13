@@ -145,28 +145,73 @@ async function explicitApi() {
 
 async function cleanupContracts() {
   const removals = [], order = []
-  let fail = false
-  const load = loader({ '../../path/sharedFileSystemRuntime': { sharedFileSystem: { rm: async target => { removals.push(target); order.push('remove') } } } })
+  const owned = new Map(), previewKey = 'a'.repeat(40)
+  let fail = false, releaseScope = false
+  const sharedPort = {
+    sharedFileSystem: {
+      stat: async () => ({ size: 1 }), mkdir: async () => {}, readdir: async () => [previewKey + '.png'],
+      rm: async () => assert.fail('cleanup bypassed guarded native deletion')
+    },
+    withoutSharedIoSignal: async action => {
+      releaseScope = true
+      try { return await action() } finally { releaseScope = false }
+    },
+    executeSharedFile: async request => {
+      let value
+      if (request.operation === 'openFile') {
+        assert.equal(request.exclusive, true)
+        assert(!owned.has(request.path), 'cleanup reused a busy lease')
+        value = { owner: request.path }; owned.set(request.path, value)
+      } else if (request.operation === 'writeOwnedFile') {
+        assert.equal(owned.get(request.path), request.identity)
+        value = request.identity
+      } else if (request.operation === 'removeOwnedFile') {
+        assert(releaseScope, 'cleanup lease release retained its shared I/O signal')
+        assert.equal(owned.get(request.path), request.identity)
+        owned.delete(request.path); order.push('release'); value = true
+      } else if (request.operation === 'removeWithOwnedLocks') {
+        assert(request.rootPath && request.guards.length)
+        for (const guard of request.guards) assert.equal(owned.get(guard.path), guard.identity)
+        value = request.paths.map(target => { removals.push(target); order.push('remove'); return { path: target, status: 'removed' } })
+      } else if (request.operation === 'previewCleanupRows') {
+        assert.equal(request.schemaVersion, 1); value = [previewKey]
+      } else if (request.operation === 'previewCleanupEntries') {
+        assert(request.rootPath); assert.equal(request.schemaVersion, 1)
+        value = request.previewKeys.map(key => { removals.push(path.join(request.dest, key + '.png')); order.push('remove'); return { key, status: 'removed', rowsCommitted: true } })
+      } else assert.fail('unexpected cleanup native operation: ' + request.operation)
+      return { result: { value } }
+    }
+  }
+  const load = loader({ '../../path/sharedFileSystemRuntime': sharedPort, './sharedFileSystemRuntime': sharedPort })
   const options = {
     legacyScanCachePath: () => 'D:/cache/scan.json', loadLibraryShell: async () => ({ folders: [] }),
-    localPreviewImageDir: () => 'D:/cache/images', clearLocalPreviewDbHandle: () => order.push('close-db'), previewSqlitePath: () => 'D:/cache/preview.sqlite'
+    localPreviewImageDir: () => 'D:/cache/images', clearLocalPreviewDbHandle: () => order.push('close-db'), previewSqlitePath: () => 'D:/cache/preview.sqlite',
+    previewSqliteSchemaVersion: 1, appendStartupLog() {}
   }
   const cleanup = load('src/main/cache/scan-storage/cacheCleanupRuntime.ts').createCacheCleanupRuntime(options, {
+    invalidateCacheStats: () => order.push('invalidate'),
     getCacheStats: async () => { order.push('stats'); if (fail) throw Error('cleanup statistics failed'); return stats }
   })
   for (const name of ['clearScanCache', 'clearPreviewCache']) {
     order.length = 0
     assert.equal(await cleanup[name](), stats, name + ': real result lost')
     assert(order.indexOf('remove') >= 0 && order.at(-1) === 'stats', name + ': stats were not read after cleanup')
+    assert.equal(order[0], 'invalidate', name + ': cleanup started before stats invalidation')
+    assert.equal(order.at(-2), 'invalidate', name + ': cleanup result preceded final invalidation')
+    assert.equal(order.filter(step => step === 'invalidate').length, 2)
+    assert.equal(owned.size, 0, name + ': stats returned before leases were released')
     fail = true
+    order.length = 0
     await assert.rejects(cleanup[name](), /cleanup statistics failed/)
+    assert.equal(order.filter(step => step === 'invalidate').length, 2, name + ': statistics failure skipped invalidation')
+    assert.equal(owned.size, 0, name + ': statistics failure leaked cleanup lease')
     fail = false
   }
   assert(removals.length > 0, 'cleanup became a no-op')
   let library = { fonts: { a: { id: 'a', previewDisabled: true } } }, confirm = true, failAt = ''
   const statuses = [], calls = []
   const renderer = loader({ '../../../confirmationDialogRuntime': { confirmUserAction: async () => confirm } })(actions + 'fontLibraryCacheMaintenanceActionRuntime.ts').createFontLibraryCacheMaintenanceActionRuntime({
-    hfm: Object.fromEntries(['clearScanCache', 'clearPreviewCache'].map(name => [name, async () => { calls.push(name); if (name === failAt) throw Error(name + ' failure'); return stats }])),
+    hfm: Object.fromEntries(['clearScanCache', 'clearPreviewCache'].map(name => [name, async () => { calls.push(name); if (name === failAt || failAt === 'both') throw Error(name + ' failure'); return stats }])),
     setLibrary: update => { library = typeof update === 'function' ? update(library) : update }, setStatus: status => statuses.push(status),
     resetPreviewRuntimeState: () => calls.push('reset-preview'), isBadFontRecord: () => false
   })
@@ -175,13 +220,24 @@ async function cleanupContracts() {
   assert.equal(library.fonts.a.previewDisabled, false)
   calls.length = 0; await renderer.clearPreviewCacheAction()
   assert.deepEqual(calls, ['reset-preview', 'clearPreviewCache'])
-  assert(statuses.at(-1).includes('已清理预览缓存') && !statuses.at(-1).includes('失败：'), 'manual preview cleanup did not complete')
+  assert(statuses.at(-1).startsWith('已清理') && statuses.at(-1).includes('预览缓存') && !statuses.at(-1).includes('失败：'), 'manual preview cleanup did not complete')
   for (const action of ['clearAllCacheAction', 'clearPreviewCacheAction']) {
+    calls.length = 0
+    library.fonts.a.previewDisabled = true; library.fonts.a.previewError = 'retired-preview-error'
     failAt = 'clearPreviewCache'; await renderer[action]()
     assert(statuses.at(-1).includes('clearPreviewCache failure'), action + ': actual cleanup failure was hidden')
+    assert(statuses.at(-1).includes('失败：') && !statuses.at(-1).startsWith('已清理'), action + ': partial failure was reported as successful cleanup')
+    assert(calls.includes('reset-preview'), action + ': partial cleanup retained old in-memory previews')
+    assert.equal(library.fonts.a.previewDisabled, false)
+    assert.equal(library.fonts.a.previewError, undefined)
   }
   calls.length = 0; failAt = 'clearScanCache'; await renderer.clearAllCacheAction()
-  assert.deepEqual(calls, ['clearScanCache']); assert(statuses.at(-1).includes('clearScanCache failure'))
+  assert.deepEqual(calls, ['clearScanCache', 'clearPreviewCache', 'reset-preview'], 'failed scan cleanup prevented independent preview cleanup or retained stale memory')
+  assert(statuses.at(-1).includes('clearScanCache failure'))
+  assert(statuses.at(-1).includes('失败：') && !statuses.at(-1).startsWith('已清理'))
+  calls.length = 0; failAt = 'both'; await renderer.clearAllCacheAction()
+  assert.deepEqual(calls, ['clearScanCache', 'clearPreviewCache', 'reset-preview'])
+  assert(statuses.at(-1).includes('clearScanCache failure') && statuses.at(-1).includes('clearPreviewCache failure'), 'clear-all lost one of the two cleanup failures')
   calls.length = 0; confirm = false; await renderer.clearAllCacheAction()
   assert.deepEqual(calls, [], 'cancelled cleanup touched storage')
 }

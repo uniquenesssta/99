@@ -7,12 +7,18 @@ const png = require('./fixtures/preview-png.cjs')
 const root = path.resolve(__dirname, '../..'), abs = file => path.join(root, file)
 const gate = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 const tick = () => new Promise(resolve => setImmediate(resolve))
+async function bounded(pending, label) {
+  let timer
+  try { return await Promise.race([pending, new Promise((_, reject) => { timer = setTimeout(() => reject(Error(label)), 5000) })]) }
+  finally { clearTimeout(timer) }
+}
 const secret = 'PRIVATE_PREVIEW_SENTINEL'
 const font = { id: secret + '-id', path: 'C:/private/' + secret + '.ttf', fileSize: 100, modifiedAt: 1, family: secret + '-family' }
 const text = secret + '-text'
 
 function fixture() {
   const state = { now: 1000, logs: [], native: [], stats: 0, publications: 0, writes: 0, hashes: 0 }
+  const closingListeners = new Set(); let closing = false, epoch = 1
   class Clock extends Date { static now() { return state.now } }
   const fakefs = {
     stat: async () => { state.stats++; if (state.sourceError) throw state.sourceError; return { size: 100, mtimeMs: 1 } },
@@ -29,7 +35,7 @@ function fixture() {
     'node:crypto': { ...crypto, createHash: (...args) => { state.hashes++; return crypto.createHash(...args) } },
     [abs('src/main/path/sharedFileSystemRuntime.ts')]: { sharedFileSystem: fakefs, withSharedPreviewReads: run => run(), currentSharedIoSignal: () => undefined, withSharedIoSignal: (_signal, run) => run(), withoutSharedIoSignal: run => run() },
     [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [], sharedIoAvailabilityRoot: () => 'C:' },
-    [abs('src/main/app/shutdownCoordinatorRuntime.ts')]: { applicationWorkEpoch: () => 1, isApplicationClosing: () => false },
+    [abs('src/main/app/shutdownCoordinatorRuntime.ts')]: { applicationWorkEpoch: () => epoch, isApplicationClosing: () => closing, onApplicationClosing: listener => { closingListeners.add(listener); return () => closingListeners.delete(listener) } },
     '../native-renderer/directwrite/directWritePreviewHelperPathRuntime': { hasDirectWritePreviewHelper: () => false },
     './runtime/previewCacheStorageRuntime': { createPreviewCacheStorageRuntime: () => storage },
     './runtime/previewCachePublishRuntime': { createPreviewCachePublishRuntime: () => ({ enqueuePreviewCachePublish: () => { state.publications++ } }) },
@@ -46,7 +52,10 @@ function fixture() {
   for (const name of ['completeBackgroundTask', 'upsertBackgroundTask', 'startBackgroundTask', 'heartbeatBackgroundTask', 'failBackgroundTask']) options[name] = async () => { state.writes++ }
   const create = () => load('src/main/preview/previewRuntime.ts').createPreviewRuntime(options)
   const events = () => state.logs.filter(row => row.line.startsWith('preview reuse: ')).map(row => ({ ...JSON.parse(row.line.slice('preview reuse: '.length)), at: row.at }))
-  return { state, runtime: create(), create, events }
+  return { state, runtime: create(), create, events, close: () => {
+    assert(closingListeners.size > 0, 'preview owner did not subscribe to application closing')
+    closing = true; epoch++; for (const listener of closingListeners) listener()
+  } }
 }
 const render = (runtime, item = font, input = text) => runtime.renderFontPreviewImage(item, input, 44, 720, 260)
 const requestEvents = h => h.events().filter(row => row.event === 'request')
@@ -121,6 +130,7 @@ async function main() {
     const pending = render(h.runtime).then(() => assert.fail('Cancelled render returned'), error => error)
     await entered.promise; await tick()
     assert.equal(h.events().filter(row => row.event === 'memory-stored' || row.event === 'settled').length, 0)
+    h.close()
     closed.resolve(); assert.match((await pending).message, /HFM_PREVIEW:cancelled/)
     assert.equal(h.events().at(-1).failure, 'cancelled'); assert.equal(h.events().at(-1).retired, true)
     assert.equal(h.events().filter(row => row.event === 'memory-stored').length, 0)
@@ -144,10 +154,13 @@ async function main() {
     const closed = gate(), cancellation = Object.assign(Error(), { sharedIo: true, reason: 'cancelled', closed: closed.promise })
     Object.defineProperty(cancellation, 'message', { get() { throw Error(secret + '-classification') } })
     h.state.queueError = cancellation
-    const actual = await render(h.runtime, { ...font, id: secret + '-cancelled-owner' }).then(() => assert.fail('Cancelled queue returned'), error => error)
+    let settled = false
+    const pending = render(h.runtime, { ...font, id: secret + '-cancelled-owner' }).then(() => { settled = true; assert.fail('Cancelled queue returned') }, error => { settled = true; return error })
+    await tick(); assert.equal(settled, false, 'Queued failure dropped its physical-close owner')
+    closed.resolve()
+    const actual = await bounded(pending, 'Queued physical-close receipt did not retire')
     assert.equal(actual, cancellation); assert.equal(actual.closed, closed.promise, 'Observation replaced physical-close ownership')
     assert.equal(h.state.native.length, 2); assert.equal(h.events().at(-1).outcome, 'rejected')
-    closed.resolve()
   }
   {
     const h = fixture(), first = await render(h.runtime); let reads = 0
@@ -196,4 +209,6 @@ async function main() {
   }
   console.log('[diagnostics:preview-reuse-observation] production settled/overlapping transient reuse, cleanup, legacy/source/key/owner distinctions, cancellation, redaction and finite log caps passed')
 }
-main().catch(error => { console.error(error); process.exitCode = 1 })
+// This referenced guard covers all controlled waits, including readiness gates.
+const watchdog = setTimeout(() => { console.error('Preview reuse diagnostic did not settle within 120s'); process.exit(1) }, 120000)
+main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => clearTimeout(watchdog))

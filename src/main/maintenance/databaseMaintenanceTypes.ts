@@ -1,5 +1,5 @@
 import type { MaintenanceDeferral } from './optionalMaintenanceAdmissionRuntime'
-import type { ApplicationDatabaseLabel } from '../db/sqliteRuntime'
+import type { ApplicationDatabaseLabel, SqliteRestoreResult } from '../db/sqliteRuntime'
 import type { TaskMaintenanceReport } from '../tasks/backgroundTasks'
 import type { SharedIndexSnapshotAutoMaintenanceReport } from './sharedIndexSnapshotAutoMaintenanceRuntime'
 
@@ -27,12 +27,9 @@ export type DatabaseBackupReport = {
   createdAt: string
 }
 
-export type DatabaseRestoreReport = {
-  ok: boolean
+export type DatabaseRestoreReport = SqliteRestoreResult & {
   label: string
   targetPath: string
-  backupPath?: string
-  message: string
 }
 
 export type PreviewMaintenanceReport = {
@@ -78,7 +75,7 @@ export type DatabaseMaintenanceRuntimeOptions = {
   databasePathForLabel: (label: ApplicationDatabaseLabel) => string
   closeApplicationDatabaseHandle: (label: ApplicationDatabaseLabel) => void
   checkpointApplicationDatabases: () => Promise<void>
-  restoreLatestDatabaseBackupForLabel: (label: ApplicationDatabaseLabel, targetPath: string, options?: { beforeReplace?: (backupPath: string) => Promise<void> }) => Promise<{ ok: boolean; backupPath?: string; message: string }>
+  restoreLatestDatabaseBackupForLabel: (label: ApplicationDatabaseLabel, targetPath: string, options?: { beforeReplace?: (backupPath: string) => Promise<void> }) => Promise<SqliteRestoreResult>
   quarantineSqliteFiles: (targetPath: string, reason: string, message: string) => Promise<unknown>
   recoveryMessage: (error: unknown) => string
   exists: (filePath: string) => Promise<boolean>

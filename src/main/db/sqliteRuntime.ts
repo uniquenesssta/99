@@ -1,12 +1,14 @@
 import { SqliteIntegrityError } from './sqliteRecoveryPolicy'
+import { assertNoSqliteRestoreIntent, restoreSqliteWithPreservation, SqliteRestoreFailure } from './sqliteRestorePreservationRuntime'
 import { rethrowSharedIoProcessError } from '../path/sharedIoProcessRuntime'
 import { sharedFileSystem as fsp } from '../path/sharedFileSystemRuntime'
 import type { createRequire } from 'node:module'
-import { basename,dirname,join } from 'node:path'
+import { basename,join } from 'node:path'
 
 type NodeRequire = ReturnType<typeof createRequire>
 
 export type ApplicationDatabaseLabel = 'library' | 'tasks' | 'preview' | 'kvs' | 'events' | 'hash' | 'metrics'
+export type SqliteRestoreResult = { ok: boolean; backupPath?: string; preservationPath?: string; message: string }
 
 interface SqliteRuntimeOptions {
   appName: string
@@ -17,6 +19,7 @@ interface SqliteRuntimeOptions {
   exists: (filePath: string) => Promise<boolean>
   backupsRootPath: () => string
   corruptDatabasesRootPath: () => string
+  applicationDatabasePaths: () => string[]
   quickCheckIntervalMs: number
   fastOpenSharedCacheDbs: boolean
   verboseSqliteLogs: boolean
@@ -48,13 +51,16 @@ export function createSqliteRuntime(options: SqliteRuntimeOptions): {
   openStableSqliteDb: (filePath: string, label: string) => any
   quarantineSqliteFiles: (filePath: string, label: string, reason: string, quarantineRoot?: string) => Promise<string | undefined>
   assertSqliteFileHealthy: (filePath: string, label: string) => void
-  restoreLatestDatabaseBackupForLabel: (label: string, targetPath: string, restoreOptions?: { beforeReplace?: (backupPath: string) => Promise<void> }) => Promise<{ ok: boolean; backupPath?: string; message: string }>
+  restoreLatestDatabaseBackupForLabel: (label: string, targetPath: string, restoreOptions?: { beforeReplace?: (backupPath: string) => Promise<void> }) => Promise<SqliteRestoreResult>
   openRecoverableApplicationSqliteDb: (filePath: string, label: ApplicationDatabaseLabel) => Promise<any>
 } {
   let betterSqlite3Factory: any | null = null
   const sqliteQuickCheckAt = new Map<string, number>()
   const sqliteOpenedLogKeys = new Set<string>()
   const sqliteQuickCheckFastOpenSkippedKeys = new Set<string>()
+  const openHandles = new Map<string, Set<any>>()
+  const restorePaths = new Set<string>()
+  const manualRestoreTargets = new Set<string>()
 
   const sqliteLogKey = (filePath: string): string => options.normalizePath(filePath || '')
 
@@ -71,7 +77,24 @@ export function createSqliteRuntime(options: SqliteRuntimeOptions): {
   }
 
   const closeSqliteDb = (db: any): void => {
-    try { db.close?.() } catch { /* ignore */ }
+    if (!db) return
+    try {
+      db.close?.()
+      for (const [key, handles] of openHandles) {
+        handles.delete(db)
+        if (!handles.size) openHandles.delete(key)
+      }
+    } catch { /* A failed close remains tracked and blocks destructive restore. */ }
+  }
+
+  const assertSqliteHandlesClosed = (filePath: string): void => {
+    const handles = openHandles.get(sqliteLogKey(filePath))
+    if (!handles) return
+    for (const db of handles) {
+      if (db.open === false) handles.delete(db)
+      else throw new Error(`数据库连接尚未关闭，无法安全恢复：${filePath}`)
+    }
+    if (!handles.size) openHandles.delete(sqliteLogKey(filePath))
   }
 
   const recoveryMessage = (error: unknown): string => error instanceof Error ? error.message : String(error)
@@ -141,11 +164,31 @@ export function createSqliteRuntime(options: SqliteRuntimeOptions): {
   }
 
   const openStableSqliteDb = (filePath: string, label: string): any => {
+    const key = sqliteLogKey(filePath)
+    if (restorePaths.has(key)) throw new Error(`数据库正在恢复或等待人工恢复，暂不能打开：${filePath}`)
+    if (manualRestoreTargets.has(key) || options.applicationDatabasePaths?.().some(path => sqliteLogKey(path) === key)) {
+      assertNoSqliteRestoreIntent(filePath)
+    }
     const Database = loadBetterSqlite3Factory()
     const db = new Database(filePath)
+    const handles = openHandles.get(key) || new Set<any>()
+    handles.add(db)
+    openHandles.set(key, handles)
     try {
+      // Labels describe callers, not ownership. Every handle for this normalized
+      // path blocks replacement, including readers opened under an alias label.
+      // Hook direct close() as well as closeSqliteDb(), so closed derived-store
+      // handles cannot accumulate in the registry. A thrown close stays tracked.
+      const close = db.close
+      db.close = function (this: any, ...args: any[]) {
+        const result = close.apply(this, args)
+        if (this === db) {
+          handles.delete(db)
+          if (!handles.size && openHandles.get(key) === handles) openHandles.delete(key)
+        }
+        return result
+      }
       configureStableSqliteDb(db, label, filePath)
-      const key = sqliteLogKey(filePath)
       if (options.verboseSqliteLogs || !key || !sqliteOpenedLogKeys.has(`open:${key}`)) {
         options.appendLog(`sqlite opened with better-sqlite3: ${label}, ${filePath}`)
         if (key) sqliteOpenedLogKeys.add(`open:${key}`)
@@ -239,10 +282,15 @@ export function createSqliteRuntime(options: SqliteRuntimeOptions): {
   const assertSqliteFileHealthy = (filePath: string, label: string): void => {
     const Database = loadBetterSqlite3Factory()
     const db = new Database(filePath, { readonly: true, fileMustExist: true })
+    let failed = false
     try {
       sqliteQuickCheck(db, label, filePath, true)
+    } catch (error) {
+      failed = true
+      throw error
     } finally {
-      closeSqliteDb(db)
+      // A leaked validation handle is not a successful validation receipt.
+      try { db.close() } catch (error) { if (!failed) throw error }
     }
   }
 
@@ -250,35 +298,45 @@ export function createSqliteRuntime(options: SqliteRuntimeOptions): {
     label: string,
     targetPath: string,
     restoreOptions: { beforeReplace?: (backupPath: string) => Promise<void> } = {},
-  ): Promise<{ ok: boolean; backupPath?: string; message: string }> => {
-    const backupPath = await findLatestDatabaseBackupFile(label)
-    if (!backupPath) return { ok: false, message: '没有可用备份。' }
-
+  ): Promise<SqliteRestoreResult> => {
+    const key = sqliteLogKey(targetPath)
+    if (restorePaths.has(key)) return { ok: false, message: '数据库正在恢复或等待人工恢复，不能重复替换。' }
+    manualRestoreTargets.add(key)
+    try { assertNoSqliteRestoreIntent(targetPath) }
+    catch (error) { return { ok: false, message: recoveryMessage(error) } }
+    restorePaths.add(key)
+    let releaseGate = true
     try {
-      assertSqliteFileHealthy(backupPath, `${label}:backup-source`)
-    } catch (error) {
-      return {
-        ok: false,
-        backupPath,
-        message: `最近备份无法通过健康检查：${recoveryMessage(error)}`,
+      const backupPath = await findLatestDatabaseBackupFile(label)
+      if (!backupPath) return { ok: false, message: '没有可用备份。' }
+
+      try {
+        assertSqliteFileHealthy(backupPath, `${label}:backup-source`)
+      } catch (error) {
+        return {
+          ok: false,
+          backupPath,
+          message: `最近备份无法通过健康检查：${recoveryMessage(error)}`,
+        }
       }
-    }
 
-    await restoreOptions.beforeReplace?.(backupPath)
-    await fsp.mkdir(dirname(targetPath), { recursive: true })
-    for (const sidecar of options.sqliteSidecarPaths(targetPath)) {
-      await fsp.rm(sidecar, { force: true }).catch(() => undefined)
-    }
-    await fsp.copyFile(backupPath, targetPath)
-
-    try {
-      assertSqliteFileHealthy(targetPath, `${label}:restored`)
-      options.appendLog(`sqlite restored from backup: ${label}, ${backupPath} -> ${targetPath}`)
-      return { ok: true, backupPath, message: '已从最近备份恢复。' }
-    } catch (error) {
-      await quarantineSqliteFiles(targetPath, `${label}-restored-bad`, `restored backup failed quick_check: ${recoveryMessage(error)}`)
-      return { ok: false, backupPath, message: `备份文件也无法通过健康检查：${recoveryMessage(error)}` }
-    }
+      try {
+        const receipt = await restoreSqliteWithPreservation({ targetPath, backupPath,
+          preservationRoot: options.corruptDatabasesRootPath(),
+          beforePreserve: async () => { await restoreOptions.beforeReplace?.(backupPath) },
+          assertClosed: () => assertSqliteHandlesClosed(targetPath),
+          assertHealthy: path => assertSqliteFileHealthy(path, `${label}:restore-candidate`),
+          log: options.appendLog,
+        })
+        clearSqliteOpenCaches(targetPath)
+        try { options.appendLog(`sqlite restored from backup: ${label}, ${backupPath} -> ${targetPath}, preserved=${receipt.directory}`) } catch { /* storage result is authoritative */ }
+        return { ok: true, backupPath, preservationPath: receipt.directory, message: `已从最近备份恢复。原数据库完整保全于：${receipt.directory}` }
+      } catch (error) {
+        if (error instanceof SqliteRestoreFailure && !error.rollbackComplete) releaseGate = false
+        return { ok: false, backupPath, preservationPath: error instanceof SqliteRestoreFailure ? error.preservationPath : undefined,
+          message: recoveryMessage(error) }
+      }
+    } finally { if (releaseGate) restorePaths.delete(key) }
   }
 
   const openRecoverableApplicationSqliteDb = async (filePath: string, label: ApplicationDatabaseLabel): Promise<any> => {

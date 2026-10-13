@@ -202,6 +202,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
     exists,
     backupsRootPath,
     corruptDatabasesRootPath,
+    applicationDatabasePaths: () => [librarySqlitePath(), tasksSqlitePath(), previewSqlitePath(), kvsSqlitePath(), eventsSqlitePath(), hashSqlitePath(), metricsSqlitePath()],
     quickCheckIntervalMs: SQLITE_QUICK_CHECK_INTERVAL_MS,
     fastOpenSharedCacheDbs: FAST_OPEN_SHARED_CACHE_DBS,
     verboseSqliteLogs: VERBOSE_SQLITE_LOGS,

@@ -6,11 +6,12 @@ import { applicationWorkEpoch, isApplicationClosing } from '../../app/shutdownCo
 import { currentSharedIoSignal, withSharedIoSignal, withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime'
 import { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { currentOperationTrace, logOperation } from '../../logging/operationTraceContext'
-import { previewFailureKind } from '../../../shared/previewFailure'
+import { previewFailure, previewFailureKind } from '../../../shared/previewFailure'
 
 const scope = new AsyncLocalStorage<PreviewRenderLifetime | undefined>()
 const QUEUE_BUDGET_MS = 3000
 let decisionSamples = 0
+type PreviewRenderBudget = { startedAt: number; deadline: number; queuedMs: number }
 
 /** Constructed only after a typed native domain receipt and physical close. */
 export class PreviewRenderDomainError extends Error {
@@ -23,21 +24,24 @@ export class PreviewRenderDomainError extends Error {
 
 /** One native owner, including its compatible routes, owns both budgets. */
 export class PreviewRenderLifetime {
-  private readonly startedAt = performance.now()
-  private readonly deadline: number
+  private readonly budget: PreviewRenderBudget
+  private get startedAt(): number { return this.budget.startedAt }
+  private get deadline(): number { return this.budget.deadline }
+  private get queuedMs(): number { return this.budget.queuedMs }
   private readonly epoch = applicationWorkEpoch()
   private readonly controller = new AbortController()
   private readonly timer: ReturnType<typeof setTimeout>
   private readonly parent = currentSharedIoSignal()
   private readonly abort = () => this.controller.abort()
-  private queuedMs = 0
   private expired = false
   readonly signal = this.controller.signal
 
   constructor() {
     const configured = Number(process.env.HFM_RUST_PREVIEW_RENDER_TIMEOUT_MS || 30000) || 30000
     const executionMs = Math.min(30000, Math.max(5000, Number.isFinite(configured) ? configured : 30000))
-    this.deadline = this.startedAt + QUEUE_BUDGET_MS + executionMs
+    const parentBudget = scope.getStore()?.budget
+    const startedAt = performance.now()
+    this.budget = parentBudget || { startedAt, deadline: startedAt + QUEUE_BUDGET_MS + executionMs, queuedMs: 0 }
     if (this.parent?.aborted) this.abort()
     else this.parent?.addEventListener('abort', this.abort, { once: true })
     this.timer = setTimeout(() => { this.expired = true; this.abort() }, this.remainingMs())
@@ -45,9 +49,9 @@ export class PreviewRenderLifetime {
 
   assertCurrent(): void {
     if (this.parent?.aborted || isApplicationClosing() || applicationWorkEpoch() !== this.epoch)
-      throw new SharedIoProcessError('Preview owner retired', 'not-started', 'cancelled')
+      throw new SharedIoProcessError(previewFailure('cancelled').message, 'not-started', 'cancelled')
     if (this.expired || performance.now() >= this.deadline)
-      throw new SharedIoProcessError('Preview logical deadline expired', 'not-started', 'timeout')
+      throw new SharedIoProcessError(previewFailure('timeout').message, 'not-started', 'timeout')
   }
 
   remainingMs(): number { return Math.max(1, Math.ceil(this.deadline - performance.now())) }
@@ -55,19 +59,26 @@ export class PreviewRenderLifetime {
   queueTimeoutMs(): number {
     this.assertCurrent()
     const remaining = QUEUE_BUDGET_MS - this.queuedMs
-    if (remaining <= 0) throw new SharedIoProcessError('Preview queue budget exhausted', 'not-started', 'queue-timeout')
+    if (remaining <= 0) throw new SharedIoProcessError(previewFailure('timeout').message, 'not-started', 'queue-timeout')
     return Math.max(1, Math.min(remaining, this.remainingMs()))
   }
 
   // Called exactly once per physical submission, never by its outer wrappers.
   recordQueueWait(queuedMs: unknown): void {
-    if (typeof queuedMs === 'number' && Number.isFinite(queuedMs) && queuedMs > 0) this.queuedMs += queuedMs
+    if (typeof queuedMs === 'number' && Number.isFinite(queuedMs) && queuedMs > 0) this.budget.queuedMs += queuedMs
   }
 
   failure(error: unknown): unknown {
     const value = error as Partial<SharedIoProcessError> | null
+    // The global I/O queue uses the existing local cancellation type rather
+    // than a shared-process receipt. Keep its cause, but serialize a stable
+    // preview code when our own signal retired queued work before admission.
+    if (value?.name === 'OperationCancelledError' && this.signal.aborted) {
+      const timeout = !this.parent?.aborted && (this.expired || performance.now() >= this.deadline)
+      return Object.assign(new SharedIoProcessError(previewFailure(timeout ? 'timeout' : 'cancelled').message, 'not-started', timeout ? 'timeout' : 'cancelled'), { cause: error })
+    }
     if (!this.parent?.aborted && (this.expired || performance.now() >= this.deadline) && value?.reason === 'cancelled') {
-      const timeout = new SharedIoProcessError('Preview logical deadline expired', value.outcome || 'unknown', 'timeout')
+      const timeout = new SharedIoProcessError(previewFailure('timeout').message, value.outcome || 'unknown', 'timeout')
       timeout.closed = value.closed; timeout.queuedMs = value.queuedMs; timeout.executionMs = value.executionMs
       timeout.requestId = value.requestId; timeout.blockedBy = value.blockedBy; timeout.phase = value.phase; timeout.blocker = value.blocker
       return timeout

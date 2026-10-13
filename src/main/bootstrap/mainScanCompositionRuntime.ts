@@ -388,7 +388,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
         startupRecoveryAttempted.add(root);
         try {
           const result = await scanFoldersRuntime().scanFoldersWhenIdle([root]);
-          if (result.stats?.cancelled || result.errors.length || isApplicationClosing()) continue;
+          if (result.stats?.cancelled || result.errors.length || isApplicationClosing() || !(result.committedFolders || []).includes(root)) continue;
           await syncMergedIndexForRootSnapshot(root, 'startup-cache-recovery');
           appendStartupLog(`root index automatic recovery complete: root=${root}, fonts=${result.fonts.length}`);
         } catch (error) { appendStartupLog(`root index automatic recovery retained old snapshot: root=${root}, ${recoveryMessage(error)}`); }
@@ -402,7 +402,9 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
       folders,
       knownFonts,
     );
-    for (const root of result.folders || []) {
+    if (result.stats?.cancelled || isApplicationClosing()) return result;
+    for (const root of result.committedFolders || []) {
+      if (isApplicationClosing()) break;
       await syncMergedIndexForRootSnapshot(root, "scan-finished");
       await delayToEventLoop();
     }

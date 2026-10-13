@@ -192,6 +192,27 @@ jobs:
           name: font-manual-page-preview
           path: artifacts/manual-page-preview.log
           retention-days: 14
+      - name: Verify scan, restore, cleanup and projection failure recovery
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          $failed = 0
+          foreach ($script in @('check-scan-partial-retention.cjs', 'check-install-projection-recovery.cjs', 'check-sqlite-manual-restore.cjs', 'check-cache-cleanup-safety.cjs')) {
+            & node --experimental-sqlite "build/diagnostics/$script" *>> artifacts/failure-recovery.log
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          Get-Content -LiteralPath artifacts/failure-recovery.log -Encoding utf8
+          if ($failed -gt 0) { exit 1 }
+      - name: Retain failure recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-recovery
+          path: artifacts/failure-recovery.log
+          retention-days: 14
       - name: Verify complete existing Windows diagnostics
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         shell: pwsh
@@ -277,6 +298,9 @@ jobs:
       - name: Verify selective native parse admission and identity guards
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml scanner::parse_batch::tests'
+      - name: Verify complete native listing and unreadable source retention
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml scanner::list_files::scan_completeness_tests'
       - name: Verify isolated native parent lifetime
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: 'cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml isolated_lifetime::tests'

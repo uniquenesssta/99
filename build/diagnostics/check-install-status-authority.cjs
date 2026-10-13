@@ -221,7 +221,7 @@ async function migrationCases() {
   setMeta(null, 'sourcesKey', sourcesKey(sources)); setMeta(null, 'installEvidenceVersion', 'content-v1')
   const probed = [], opened = [], migrationLogs = []
   const options = { machineDirectory: 'C:\\data\\machines', exists: async file => { probed.push(file); return file === machine },
-    open: file => { opened.push(file); return adapter(authority) }, close: value => value.exec('ROLLBACK'), getMeta, setMeta, sourcesKey, appendLog(line) { migrationLogs.push(line); throw Error('controlled log delivery failure after commit') } }
+    open: file => { opened.push(file); return adapter(authority) }, close() {}, getMeta, setMeta, sourcesKey, appendLog(line) { migrationLogs.push(line); throw Error('controlled log delivery failure after commit') } }
   try {
     await load('src/main/indexing/merged-page/mergedIndexInstallAuthorityRuntime.ts').migrateMergedInstallAuthority(adapter(db), options)
     assert.deepEqual(probed, [machine]); assert.deepEqual(opened, [machine], 'migration touched a remote or unrelated authority')

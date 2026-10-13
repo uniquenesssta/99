@@ -60,6 +60,9 @@ for (const needle of [
 
 async function runManagedScanBehavior() {
   const cancellationModule = {
+    throwIfAborted(signal) {
+      if (signal?.aborted) throw Object.assign(new Error('Operation cancelled'), { name: 'OperationCancelledError' })
+    },
     isOperationCancelledError(error) {
       return error && (error.name === 'OperationCancelledError' || error.name === 'AbortError')
     }

@@ -203,6 +203,7 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
 
             if (!item.stat) {
               errors.push({ path: item.file, message: item.error || '读取文件状态失败。' })
+              ;(await ensureRootContext(item.rootPath)).scanReadIncomplete = true
               continue
             }
 
@@ -291,18 +292,13 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
 
             if (result.status === 'error' || !result.font) {
               const message = result.message || 'Worker 解析失败。'
-              skippedBad += 1
               errors.push({ path: result.filePath, message })
-              rememberEntry(context, result.cacheKey, withScanContentHash({
-                path: result.cacheKey,
-                cacheKey: result.signature,
-                fileSize: result.fileSize,
-                modifiedAt: result.modifiedAt,
-                createdAt: result.createdAt,
-                status: 'bad',
-                message,
-                cachedAt: new Date().toISOString(),
-              }, normalizeScanContentHash(result.contentHash || result.quickHash)))
+              context.scanReadIncomplete = true
+              // A failed read or unstable source is not evidence of an invalid
+              // font. Keep the last committed row, including its old identity,
+              // so a later complete scan still sees and retries this change.
+              const previous = context.cache.entries[result.cacheKey]
+              if (previous) rememberEntry(context, result.cacheKey, previous)
               return
             }
 
@@ -439,13 +435,12 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
 
           throwIfAborted(signal)
           const persist = () => writeRootScanCacheContexts(deps, directoryCacheRuntime, writableRootCacheContexts(), errors)
-          if (signal) await withSharedIoSignal(signal, persist)
-          else await persist()
+          const committedFolders = signal ? await withSharedIoSignal(signal, persist) : await persist()
 
           const durationMs = Date.now() - startedAt
           reportProgress({
             stage: 'done',
-            message: `索引更新完成：${totalFiles} 个字体，复用 ${fromCache + reusedKnown} 个，新解析 ${parsed} 个，用时 ${Math.round(durationMs / 1000)} 秒。`,
+            message: `${errors.length ? '索引部分更新，未确认的旧条目已保留' : '索引更新完成'}：${totalFiles} 个字体，复用 ${fromCache + reusedKnown} 个，新解析 ${parsed} 个，用时 ${Math.round(durationMs / 1000)} 秒。`,
             totalFiles,
             parsedFiles: parsed,
             fromCache,
@@ -472,6 +467,7 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
 
           return {
             folders: scanFoldersForWork,
+            committedFolders,
             fonts: [],
             errors,
             stats: {

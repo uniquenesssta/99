@@ -9,8 +9,9 @@ export function createInstallStatusProjectionWriteRuntime(options: {
 }) {
   let tail: Promise<void> = Promise.resolve()
   function saveInstallStatusIndex(...args: Parameters<InstallStatusRuntime['saveInstallStatusIndex']>): Promise<void> {
-    // Persist + projection + signature acknowledgement share the same lane.
-    // A following writer must not change the source while this batch advances it.
+    // Persist + complete local authority reconciliation share one lane. A failed
+    // projection leaves the source durable; the next reconciliation covers it as
+    // well, and process startup rechecks local authority before exposing rows.
     const task = tail.catch(() => undefined).then(async () => {
       await options.saveInstallStatusIndex(...args)
       const [results, itemsById] = args

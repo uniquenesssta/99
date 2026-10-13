@@ -1,4 +1,5 @@
 import { migrateMergedInstallAuthority } from './merged-page/mergedIndexInstallAuthorityRuntime'
+import { installStatusContentSignatureFromDb } from '../install/status/installStatusContentSignatureRuntime'
 import { INSTALL_STATUS_PROJECTION_VERSION } from '../install/status/installStatusSignatureRuntime'
 import { registerInstallStatusSql } from '../install/status/installStatusSignatureRuntime'
 import { assertOwnedSqliteTables, assertSupportedSqliteVersion, DerivedSqliteIncompatibleError } from '../db/sqliteRecoveryPolicy';
@@ -144,26 +145,7 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
     const db = deps.openStableSqliteDb(installDbPath, "install-signature");
     try {
       if (!deps.sqliteTableExists(db, "install_status")) return "missing-table";
-      const row = db
-        .prepare(
-          `
-        SELECT COUNT(*) AS count,
-               COALESCE(SUM(CASE WHEN installed = 1 AND by_type <> 'managed' THEN 1 ELSE 0 END), 0) AS installed_count,
-               COALESCE(SUM(CASE WHEN by_type IN ('managed', 'both') THEN 1 ELSE 0 END), 0) AS active_count,
-               COALESCE(MAX(checked_at), '') AS max_checked_at
-        FROM install_status
-      `,
-        )
-        .get() as
-        | { count?: number; installed_count?: number; max_checked_at?: string }
-        | undefined;
-      return [
-        "install-content-v1",
-        Number(row?.count || 0),
-        Number(row?.installed_count || 0),
-        Number((row as any)?.active_count || 0),
-        String(row?.max_checked_at || ""),
-      ].join("|");
+      return installStatusContentSignatureFromDb(db);
     } catch (error) {
       deps.appendStartupLog(
         `local merged index install signature fallback: ${installDbPath}, ${error instanceof Error ? error.message : String(error)}`,
@@ -430,9 +412,26 @@ export function createMergedIndexRuntime(deps: MergedIndexRuntimeDeps) {
     );
   }
 
+  const startupAuthorityChecks = new Map<string, Promise<void>>();
   async function openMergedIndexDb(): Promise<any> {
     const db = await recovery.open();
     try {
+      const key = mergedIndexDbPath();
+      let checking = startupAuthorityChecks.get(key);
+      if (!checking) {
+        // Version equality cannot prove that the last process projected every
+        // committed install row. Reconcile local authority once after restart,
+        // including roots currently offline, before exposing this snapshot.
+        checking = migrateMergedInstallAuthority(db, { machineDirectory: deps.dataPath('machines'), exists: deps.exists,
+          open: deps.openStableSqliteDb, close: deps.closeSqliteDb, getMeta: deps.getSqliteMeta,
+          setMeta: deps.setSqliteMeta, sourcesKey: mergedIndexSourcesKey, appendLog: deps.appendStartupLog,
+          force: true, acknowledgeSources: true }).then(() => undefined);
+        startupAuthorityChecks.set(key, checking);
+        void checking.catch(() => { if (startupAuthorityChecks.get(key) === checking) startupAuthorityChecks.delete(key); });
+      }
+      await checking;
+      // Recovery/schema replacement can remove the version on this path after
+      // its initial open. Keep the existing version migration gate as well.
       await migrateMergedInstallAuthority(db, { machineDirectory: deps.dataPath('machines'), exists: deps.exists,
         open: deps.openStableSqliteDb, close: deps.closeSqliteDb, getMeta: deps.getSqliteMeta,
         setMeta: deps.setSqliteMeta, sourcesKey: mergedIndexSourcesKey, appendLog: deps.appendStartupLog });

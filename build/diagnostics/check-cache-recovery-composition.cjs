@@ -125,7 +125,7 @@ async function main() {
     const cacheDir = path.join(roots[0], '.hfm-cache'), dbPath = path.join(cacheDir, 'database', 'index.sqlite')
     await fsp.mkdir(path.dirname(dbPath), { recursive: true }); fs.writeFileSync(dbPath, 'old-corrupt-index')
     const context = { rootPath: roots[0], cacheDir, cachePath: dbPath, storage: 'root', cache: { version: 1, entries: {}, rebuildRequired: true },
-      nextEntries: caches[0].entries, seenKeys: new Set(['font.ttf']), directoryUpdates: [], directorySkipped: 0 }
+      nextEntries: caches[0].entries, seenKeys: new Set(['font.ttf']), directoryUpdates: [], directorySkipped: 0, scanListingComplete: true }
     const write = rootLoad('src/main/indexing/scan-orchestrator/scanRootCacheWriteRuntime.ts').writeRootScanCacheContexts
     const deps = { fontScanCacheVersion: 1, appendStartupLog() {}, saveScanCacheFile: (file, cache, folder, storage) => rootRuntime.saveRootIndexSqliteFile(file, folder, storage, cache) }
     await write(deps, {}, [context], [{ path: roots[0], message: 'denied subtree' }])

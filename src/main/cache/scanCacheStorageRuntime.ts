@@ -20,7 +20,8 @@ export function createScanCacheStorageRuntime(options: ScanCacheStorageRuntimeOp
     readScanCacheFile: jsonRuntime.readScanCacheFile
   })
   const cleanupRuntime = createCacheCleanupRuntime(options, {
-    getCacheStats: statsRuntime.getCacheStats
+    getCacheStats: statsRuntime.getCacheStats,
+    invalidateCacheStats: statsRuntime.invalidateCacheStats
   })
 
   return {

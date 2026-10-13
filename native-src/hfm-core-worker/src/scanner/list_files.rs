@@ -8,6 +8,13 @@ use super::font_file::{scan_font_file, FontFileScanOptions};
 use super::metadata::timestamp_ms;
 use super::types::{DirectoryEntry, ListFontFilesResult};
 
+fn completed_entry<T>(entry: std::io::Result<T>, directory: &Path, errors: &mut Vec<(String, String)>) -> Option<T> {
+    match entry {
+        Ok(entry) => Some(entry),
+        Err(error) => { errors.push((directory.to_string_lossy().to_string(), error.to_string())); None }
+    }
+}
+
 pub fn list_font_files(root: &Path, extensions: &[String], max_entries: usize, probe_names: bool, probe_scripts: bool, probe_style: bool, probe_family: bool, full_hash: bool) -> ListFontFilesResult {
     let mut stack = vec![root.to_path_buf()];
     let mut files = Vec::new();
@@ -49,9 +56,7 @@ pub fn list_font_files(root: &Path, extensions: &[String], max_entries: usize, p
         let mut font_files: Vec<PathBuf> = Vec::new();
 
         for entry in entries {
-            let Ok(entry) = entry else {
-                continue;
-            };
+            let Some(entry) = completed_entry(entry, &dir, &mut errors) else { continue; };
             let path = entry.path();
             let file_type = match entry.file_type() {
                 Ok(file_type) => file_type,
@@ -129,5 +134,45 @@ pub fn list_font_files(root: &Path, extensions: &[String], max_entries: usize, p
         directories,
         errors,
         truncated,
+    }
+}
+
+#[cfg(all(test, windows))]
+mod scan_completeness_tests {
+    use super::*;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::io::{Seek, SeekFrom, Write};
+
+    #[test]
+    fn iterator_failure_is_incomplete_not_silent_end() {
+        let mut errors = Vec::new();
+        assert_eq!(completed_entry(Ok(7), Path::new("C:\\private"), &mut errors), Some(7));
+        assert_eq!(completed_entry::<u8>(Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)), Path::new("C:\\private"), &mut errors), None);
+        assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn inaccessible_font_is_error_but_confirmed_bad_header_is_bad() {
+        let dir = std::env::temp_dir().join(format!("hfm-scan-complete-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&dir).unwrap();
+        let file = dir.join("private.ttf"); fs::write(&file, b"not-a-font").unwrap();
+        let pin = fs::OpenOptions::new().read(true).write(true).share_mode(0).open(&file).unwrap();
+        let blocked = list_font_files(&dir, &["ttf".into()], 100, false, false, false, false, false);
+        assert!(blocked.files.is_empty()); assert_eq!(blocked.errors.len(), 1);
+        drop(pin);
+        let complete = list_font_files(&dir, &["ttf".into()], 100, false, false, false, false, false);
+        assert!(complete.errors.is_empty()); assert_eq!(complete.files.len(), 1); assert!(!complete.files[0].signature_valid);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn truncated_source_read_does_not_become_bad_or_empty_hash() {
+        let file = std::env::temp_dir().join(format!("hfm-scan-short-{}-{}.ttf", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let mut handle = fs::OpenOptions::new().read(true).write(true).create_new(true).open(&file).unwrap();
+        handle.write_all(b"\0\x01\0\0payload").unwrap(); let metadata = handle.metadata().unwrap();
+        handle.set_len(0).unwrap(); handle.seek(SeekFrom::Start(0)).unwrap();
+        let options = FontFileScanOptions { probe_names:false, probe_scripts:false, probe_style:false, probe_family:false, full_hash:false };
+        assert!(super::super::font_file::scan_font_file_from_handle(&file, &mut handle, &metadata, &options).is_err());
+        drop(handle); fs::remove_file(&file).unwrap();
     }
 }

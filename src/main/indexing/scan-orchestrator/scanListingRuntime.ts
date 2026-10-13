@@ -198,16 +198,19 @@ export async function listScanStatJobs(args: {
   }
   for (const folder of [...fallbackFolders, ...networkFolders]) {
     throwIfAborted(signal)
+    const context = await ensureRootContext(folder)
+    const errorsBefore = errors.length
+    context.scanListingComplete = false
     if (!network.has(folder)) {
       const rustListed = await tryListScanStatJobsWithRust({ deps, folders: [folder], signal, errors, ensureRootContext, reportProgress, onListedBatch })
       if (rustListed) {
         allListed.push(...rustListed)
         publish(rustListed)
+        context.scanListingComplete = errors.length === errorsBefore && !context.scanReadIncomplete
         continue
       }
     }
     try {
-      const context = await ensureRootContext(folder)
       const listed = await directoryCacheRuntime.listFontFilesWithDirectoryCache(
         context, errors,
         (payload) => reportProgress({
@@ -235,6 +238,7 @@ export async function listScanStatJobs(args: {
       allListed.push(...rows)
       publish(rows)
     }
+    context.scanListingComplete = errors.length === errorsBefore && !context.scanReadIncomplete
     await delayToEventLoop()
   }
   return dedupeScanStatJobs(allListed)

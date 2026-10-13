@@ -800,7 +800,7 @@ async function f09EvidenceCases() {
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 const timerTurn = () => new Promise(resolve => setTimeout(resolve, 0))
 const backgroundWork = h => h.counts.backgroundStats + h.counts.backgroundRealpaths + h.counts.backgroundContentReads
-const queryWorkFont = name => { const font = make(name); return { ...font, path: key(font.path) } }
+const queryWorkFont = name => make(name)
 const queryStageRecords = h => h.logs.filter(message => message.startsWith('tag query stages: ')).map(message => {
   assert(message.length <= 2048, 'per-query stage summary is not bounded')
   const record = JSON.parse(message.slice('tag query stages: '.length))
@@ -876,6 +876,95 @@ async function snapshotRememberWorkCases() {
     } finally { h.faults.snapshotReadError = undefined }
     assert.deepEqual(plain(owner.remember([changed])), { examined: 1, written: 0 }, 'failed SELECT did not roll back its transaction')
   } finally { h.close() }
+}
+
+async function mixedCaseQueryHistoryCases() {
+  for (const scope of ['local', 'shared']) {
+    const h = harness(), font = queryWorkFont('MixedCaseHistory'), owner = h.snapshots.openTagFontSnapshots(h.adapter)
+    const bindingPath = scope === 'local' ? storageKey(font.path) : path.resolve(root, path.relative(root, font.path).toLowerCase())
+    const request = { sidebarPage: scope === 'local' ? 'tags' : 'sharedTags', selectedTagName: 'T' }
+    const persisted = () => h.db.prepare('SELECT font_json FROM tag_font_snapshots WHERE font_path = ?').get(key(font.path)).font_json
+    try {
+      assert.notEqual(font.path, bindingPath, 'fixture must retain production path casing')
+      assert.equal(key(font.path), key(bindingPath))
+      if (scope === 'local') h.add(font, ['T'])
+      else h.sharedRows.push({ font_id: 'shared-binding', relative_path: path.relative(root, bindingPath), tag_names_json: '["T"]' })
+      h.put(font); h.live([font])
+      const first = await h.query.query(request, 10, 0)
+      assert.equal(first.items[0].path, bindingPath, 'display history replaced the authoritative binding path')
+      assert.equal(first.items[0].id, font.id)
+      await owner.whenIdle()
+      const proven = owner.read(font.path), provenJson = persisted(), cold = { ...h.counts }
+      assert.equal(proven.path, font.path, 'query rewrote the remembered live path spelling')
+      assert.equal(proven.recoveryContentHash, hashFor(font)); assert.equal(typeof proven.recoveryFileStamp, 'string')
+      assert.equal(queryStageRecords(h).at(-1).counts.snapshotWrites, 1, 'cold query should remember one history row')
+
+      for (const bindingsOnly of [false, true, false]) {
+        h.query.invalidate()
+        const page = await h.query.query({ ...request, ...(bindingsOnly ? { tagBindingsOnly: true } : {}) }, 10, 0)
+        await owner.whenIdle()
+        assert.equal(page.items[0].path, bindingPath); assert.equal(page.items[0].id, font.id)
+        assert.equal(page.items[0].recoveryContentHash, proven.recoveryContentHash)
+        assert.equal(queryStageRecords(h).at(-1).counts.snapshotWrites, 0, 'same-key binding projection rewrote history')
+        assert.equal(h.counts.snapshotWrites, cold.snapshotWrites)
+        assert.equal(persisted(), provenJson, 'fresh or binding-only query toggled persisted path spelling')
+      }
+      assert.equal(h.counts.live, cold.live + 2, 'warm check must run fresh collections rather than cached pages')
+      assert.equal(h.counts.contentReads, cold.contentReads, 'warm unchanged proof was rehashed')
+      assert(h.counts.backgroundStats > cold.backgroundStats, 'fresh queries skipped file-stamp verification')
+
+      const edited = { ...font, fullName: 'Updated mixed-case display', favorite: true }
+      h.put(edited); h.live([edited])
+      const changed = await h.query.query(request, 10, 0); await owner.whenIdle()
+      assert.equal(changed.items[0].fullName, edited.fullName); assert.equal(changed.items[0].path, bindingPath)
+      assert.equal(queryStageRecords(h).at(-1).counts.snapshotWrites, 1, 'real metadata edit must persist exactly once')
+      assert.equal(h.counts.snapshotWrites, cold.snapshotWrites + 1)
+      const saved = owner.read(font.path)
+      assert.equal(saved.fullName, edited.fullName); assert.equal(saved.favorite, true); assert.equal(saved.path, font.path)
+      assert.equal(saved.recoveryContentHash, proven.recoveryContentHash); assert.equal(saved.recoveryFileStamp, proven.recoveryFileStamp)
+      h.query.invalidate(); await h.query.query(request, 10, 0); await owner.whenIdle()
+      assert.equal(queryStageRecords(h).at(-1).counts.snapshotWrites, 0)
+      assert.equal(h.counts.snapshotWrites, cold.snapshotWrites + 1)
+    } finally { await owner.whenIdle(); h.close() }
+  }
+}
+
+async function queryHistoryFallbackAndAliasCases() {
+  const h = harness(), font = queryWorkFont('PreviousHistory'), owner = h.snapshots.openTagFontSnapshots(h.adapter)
+  let previousReads = 0
+  try {
+    h.add(font, ['T'])
+    h.queryDeps.findPrevious = async file => { previousReads++; assert.equal(key(file), key(font.path)); return font }
+    const request = { sidebarPage: 'tags', selectedTagName: 'T', tagBindingsOnly: true }
+    const first = await h.query.query(request, 10, 0)
+    assert.equal(first.items[0].fileAvailability, 'missing'); assert.equal(first.items[0].fullName, font.fullName)
+    assert.equal(owner.read(font.path).fullName, font.fullName, 'first same-key historical index result was never remembered')
+    assert.equal(owner.read(font.path).path, storageKey(font.path)); assert.equal(owner.read(font.path).recoveryContentHash, undefined)
+    assert.equal(h.counts.snapshotWrites, 1)
+    await h.query.query(request, 10, 0)
+    assert.equal(previousReads, 1, 'remembered fallback history was not reused')
+    assert.equal(h.counts.snapshotWrites, 1); assert.equal(backgroundWork(h), 0)
+  } finally { await owner.whenIdle(); h.close() }
+
+  const aliases = harness(), source = { ...queryWorkFont('AliasHistory'), path: '\\\\Server\\Share\\Fonts\\AliasHistory.ttf' }
+  const binding = { ...source, path: 'R:\\Fonts\\AliasHistory.ttf' }, snapshots = aliases.snapshots.openTagFontSnapshots(aliases.adapter)
+  try {
+    aliases.roots.splice(0, aliases.roots.length, '\\\\Server\\Share\\Fonts'); aliases.mappings.set('R:', '\\\\Server\\Share')
+    aliases.add(binding, ['T']); aliases.put(source); aliases.put(binding); aliases.live([source])
+    assert.notEqual(key(source.path), key(binding.path), 'mapped/UNC fixture must use distinct snapshot keys')
+    const paths = await aliases.pathsModule.createTagRecoveryPaths(aliases.roots)
+    assert.equal(paths.compare(source.path), paths.compare(binding.path), 'fixture must still identify the same physical binding')
+    const request = { sidebarPage: 'tags', selectedTagName: 'T' }, page = await aliases.query.query(request, 10, 0)
+    assert.equal(page.items[0].path, storageKey(binding.path)); assert.equal(page.items[0].id, source.id)
+    assert.equal(queryStageRecords(aliases).at(-1).counts.snapshotWrites, 2, 'distinct mapped/UNC history key was skipped')
+    assert.equal(snapshots.read(source.path).path, source.path)
+    assert.equal(snapshots.read(binding.path).path, storageKey(binding.path))
+    await snapshots.whenIdle()
+    const writes = aliases.counts.snapshotWrites
+    aliases.query.invalidate(); await aliases.query.query(request, 10, 0); await snapshots.whenIdle()
+    assert.equal(aliases.counts.snapshotWrites, writes, 'unchanged distinct-key history should remain stable')
+    assert.equal(snapshots.read(source.path).recoveryContentHash, hashFor(source))
+  } finally { await snapshots.whenIdle(); aliases.close() }
 }
 
 async function delayedQueryCaptureWorkCases() {
@@ -1498,7 +1587,7 @@ async function main() {
   // Each group owns and closes its fixtures; collect errors without hiding later groups.
   for (const run of [sharedCountsRequireCompleteReadonlyEvidence, extendedTagWriteCompatibility, legacyUncStorageRecoveryChain, missingHistoricalCardsRemainVisible, queryCases, recoveryCases, targetedRecoveryCases, batchedAvailabilityCase, bulkRecoveryCases,
     sharedRecoveryCases, detachedAuthorizationCase, backgroundWaitCase, f08QueryCases, f08RecoveryCases, f08RefreshCases,
-    f09MatchCases, f09AliasCase, f09CommitCases, f09SharedCases, f09EvidenceCases, snapshotRememberWorkCases,
+    f09MatchCases, f09AliasCase, f09CommitCases, f09SharedCases, f09EvidenceCases, snapshotRememberWorkCases, mixedCaseQueryHistoryCases, queryHistoryFallbackAndAliasCases,
     delayedQueryCaptureWorkCases, cancelledQueryCaptureWorkCases, supersededQueryCaptureWorkCase, queryStageLoggingIsolationCase,
     backgroundCaptureLeaseWorkCases, overlappingQueryCaptureLeaseCase, queryCaptureLeasePhysicalCloseCases, captureLeaseGenerationRaceCase,
     shutdownCaptureWorkCase, freshQueryAvailabilityWorkCases, f13ScopedWorkCases]) {

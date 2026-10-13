@@ -23,6 +23,7 @@ export function createCacheStatsRuntime(
     readScanCacheFile: (filePath: string) => Promise<FontScanCacheFile>;
   },
 ) {
+  let statsGeneration = 0;
   let cachedStats: { value: CacheStats; expiresAt: number } | null = null;
   let statsInFlight: Promise<CacheStats> | null = null;
   const directorySizeCache = new Map<
@@ -35,6 +36,20 @@ export function createCacheStatsRuntime(
     { value: CacheStats; expiresAt: number }
   >();
   const fileStatsInFlight = new Map<string, Promise<CacheStats>>();
+
+  function invalidateCacheStats(): void {
+    statsGeneration += 1;
+    cachedStats = null;
+    statsInFlight = null;
+    fileStatsCache.clear();
+    fileStatsInFlight.clear();
+    directorySizeCache.clear();
+    directorySizeInFlight.clear();
+  }
+
+  function assertStatsGeneration(generation: number): void {
+    if (generation !== statsGeneration) throw new Error('缓存统计已失效，正在重新读取。');
+  }
 
   async function readCacheStatsForFile(
     filePath: string,
@@ -80,7 +95,8 @@ export function createCacheStatsRuntime(
     };
   }
 
-  function rememberFileStats(filePath: string, value: CacheStats): CacheStats {
+  function rememberFileStats(filePath: string, value: CacheStats, generation: number): CacheStats {
+    if (generation !== statsGeneration) return value;
     const key = normalizePathForCacheCompare(filePath);
     fileStatsCache.set(key, {
       value: { ...value },
@@ -101,10 +117,11 @@ export function createCacheStatsRuntime(
   ): void {
     const key = normalizePathForCacheCompare(filePath);
     if (fileStatsInFlight.has(key)) return;
+    const generation = statsGeneration;
     const task = readCacheStatsForFile(filePath, rootPath, storage)
       .then((value) => {
-        rememberFileStats(filePath, value);
-        cachedStats = null;
+        rememberFileStats(filePath, value, generation);
+        if (generation === statsGeneration) cachedStats = null;
         return value;
       })
       .catch(() => ({
@@ -114,7 +131,7 @@ export function createCacheStatsRuntime(
         sizeBytes: 0,
       }))
       .finally(() => {
-        fileStatsInFlight.delete(key);
+        if (fileStatsInFlight.get(key) === task) fileStatsInFlight.delete(key);
       });
     fileStatsInFlight.set(key, task);
   }
@@ -123,7 +140,9 @@ export function createCacheStatsRuntime(
     filePath: string,
     rootPath?: string,
     storage: RootIndexStorage = "root",
+    generation = statsGeneration,
   ): Promise<CacheStats> {
+    assertStatsGeneration(generation);
     const key = normalizePathForCacheCompare(filePath);
     const now = Date.now();
     const cached = fileStatsCache.get(key);
@@ -135,8 +154,8 @@ export function createCacheStatsRuntime(
     const inFlight = fileStatsInFlight.get(key);
     if (inFlight) return { ...(await inFlight) };
     const task = readCacheStatsForFile(filePath, rootPath, storage)
-      .then(value => rememberFileStats(filePath, value))
-      .finally(() => fileStatsInFlight.delete(key));
+      .then(value => rememberFileStats(filePath, value, generation))
+      .finally(() => { if (fileStatsInFlight.get(key) === task) fileStatsInFlight.delete(key); });
     fileStatsInFlight.set(key, task);
     return { ...(await task) };
   }
@@ -176,7 +195,8 @@ export function createCacheStatsRuntime(
     return total;
   }
 
-  function rememberDirectorySize(dirPath: string, value: number): number {
+  function rememberDirectorySize(dirPath: string, value: number, generation: number): number {
+    if (generation !== statsGeneration) return value;
     directorySizeCache.set(dirPath, {
       value,
       expiresAt: Date.now() + DEFAULT_DIRECTORY_SIZE_TTL_MS,
@@ -191,20 +211,22 @@ export function createCacheStatsRuntime(
 
   function scheduleDirectorySizeRefresh(dirPath: string): void {
     if (directorySizeInFlight.has(dirPath)) return;
+    const generation = statsGeneration;
     const task = directorySizeBytes(dirPath)
       .then((value) => {
-        rememberDirectorySize(dirPath, value);
-        cachedStats = null;
+        rememberDirectorySize(dirPath, value, generation);
+        if (generation === statsGeneration) cachedStats = null;
         return value;
       })
       .catch(() => 0)
       .finally(() => {
-        directorySizeInFlight.delete(dirPath);
+        if (directorySizeInFlight.get(dirPath) === task) directorySizeInFlight.delete(dirPath);
       });
     directorySizeInFlight.set(dirPath, task);
   }
 
-  function cachedDirectorySizeBytes(dirPath: string): number {
+  function cachedDirectorySizeBytes(dirPath: string, generation: number): number {
+    assertStatsGeneration(generation);
     const now = Date.now();
     const cached = directorySizeCache.get(dirPath);
     if (cached && cached.expiresAt > now) return cached.value;
@@ -261,7 +283,8 @@ export function createCacheStatsRuntime(
     }
   }
 
-  async function readCacheStats(): Promise<CacheStats> {
+  async function readCacheStats(generation: number): Promise<CacheStats> {
+    assertStatsGeneration(generation);
     const now = Date.now();
     if (cachedStats && cachedStats.expiresAt > now)
       return { ...cachedStats.value };
@@ -277,7 +300,8 @@ export function createCacheStatsRuntime(
       const key = normalizePathForCacheCompare(filePath);
       if (seenFiles.has(key)) return;
       seenFiles.add(key);
-      stats = addCacheStats(stats, await getCacheStatsForFile(filePath));
+      stats = addCacheStats(stats, await getCacheStatsForFile(filePath, undefined, "root", generation));
+      assertStatsGeneration(generation);
     }
 
     await include(options.legacyScanCachePath());
@@ -288,7 +312,7 @@ export function createCacheStatsRuntime(
         await getPreviewIndexStats(options.previewSqlitePath()),
       );
       stats.sizeBytes += cachedDirectorySizeBytes(
-        options.localPreviewImageDir(),
+        options.localPreviewImageDir(), generation,
       );
     } catch {
       // ignore local preview cache stats
@@ -310,10 +334,10 @@ export function createCacheStatsRuntime(
           await getPreviewIndexStats(options.rootPreviewDbPath(folder)),
         );
         stats.sizeBytes += cachedDirectorySizeBytes(
-          options.rootPreviewImageDir(folder),
+          options.rootPreviewImageDir(folder), generation,
         );
         stats.sizeBytes += cachedDirectorySizeBytes(
-          options.legacyRootPreviewCacheDir(folder),
+          options.legacyRootPreviewCacheDir(folder), generation,
         );
         for (const dbPath of await options.listRootIndexDatabaseFiles(
           options.fallbackCacheRootDir(folder),
@@ -327,13 +351,14 @@ export function createCacheStatsRuntime(
           await getPreviewIndexStats(options.fallbackPreviewDbPath(folder)),
         );
         stats.sizeBytes += cachedDirectorySizeBytes(
-          options.fallbackPreviewImageDir(folder),
+          options.fallbackPreviewImageDir(folder), generation,
         );
       }
     } catch {
       // ignore
     }
 
+    assertStatsGeneration(generation);
     cachedStats = {
       value: { ...stats },
       expiresAt: Date.now() + DEFAULT_CACHE_STATS_TTL_MS,
@@ -342,12 +367,25 @@ export function createCacheStatsRuntime(
   }
 
   async function getCacheStats(): Promise<CacheStats> {
-    if (cachedStats && cachedStats.expiresAt > Date.now()) return { ...cachedStats.value };
-    if (!statsInFlight) statsInFlight = readCacheStats().finally(() => { statsInFlight = null; });
-    return { ...(await statsInFlight) };
+    for (;;) {
+      const generation = statsGeneration;
+      if (cachedStats && cachedStats.expiresAt > Date.now()) return { ...cachedStats.value };
+      if (!statsInFlight) {
+        const task = readCacheStats(generation).finally(() => { if (statsInFlight === task) statsInFlight = null; });
+        statsInFlight = task;
+      }
+      try {
+        const value = await statsInFlight;
+        if (generation === statsGeneration) return { ...value };
+      } catch (error) {
+        if (generation === statsGeneration) throw error;
+      }
+      // A pre-clear caller joins the current generation, never a retired receipt.
+    }
   }
 
   return {
+    invalidateCacheStats,
     getCacheStats,
     getPreviewIndexStats,
     directorySizeBytes,

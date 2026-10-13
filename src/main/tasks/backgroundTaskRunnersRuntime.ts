@@ -1,3 +1,5 @@
+import { createPreviewRenderTaskRuntime } from '../preview/runtime/previewRenderTaskRuntime'
+import { awaitPhysicalIoClose } from '../path/ioDeadlineRuntime'
 import { validatePreviewInput } from '../preview/runtime/previewInputPolicy'
 import { createFontInstallEvidenceSession } from '../install/fontInstallEvidenceRuntime'
 import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
@@ -51,7 +53,7 @@ export interface BackgroundTaskRunnersRuntimeOptions {
   withGlobalIo: <T>(
     label: string,
     fn: () => Promise<T>,
-    options?: { priority?: "foreground" | "background"; storagePath?: string },
+    options?: { priority?: "foreground" | "background"; storagePath?: string; signal?: AbortSignal },
   ) => Promise<T>;
   scanFolders: (folders: string[], knownFonts: FontItem[]) => Promise<ScanResult>;
   runDatabaseMaintenance: (options: {
@@ -70,6 +72,8 @@ export interface BackgroundTaskRunnersRuntime {
 export function createBackgroundTaskRunnersRuntime(
   options: BackgroundTaskRunnersRuntimeOptions,
 ): BackgroundTaskRunnersRuntime {
+  const previewTasks = createPreviewRenderTaskRuntime()
+
   async function findFontItemForTask(
     payload: Record<string, unknown>,
   ): Promise<FontItem | null> {
@@ -115,48 +119,62 @@ export function createBackgroundTaskRunnersRuntime(
   async function runPreviewCacheTask(
     task: BackgroundTaskRecord,
   ): Promise<void> {
-    const payload = parseBackgroundTaskPayload(task);
-    const item = await findFontItemForTask(payload);
-    if (!item) {
-      await options.skipBackgroundTask(
-        task.task_key,
-        "字体已不存在，跳过预览缓存。",
+    // A persisted job may wait outside previewRuntime's public cache entry.
+    // Capture its epoch and budget before lookup/queueing, not at admission.
+    const owned = previewTasks.create(async lifetime => {
+      const payload = parseBackgroundTaskPayload(task);
+      const item = await findFontItemForTask(payload);
+      lifetime.assertCurrent()
+      if (!item) {
+        await options.skipBackgroundTask(
+          task.task_key,
+          "字体已不存在，跳过预览缓存。",
+        );
+        return;
+      }
+      const text =
+        typeof payload.text === "string" && payload.text
+          ? payload.text
+          : "字体预览 AaBb 123";
+      const fontSize = Math.max(
+        8,
+        Math.min(240, Number(payload.fontSize || 44) || 44),
       );
-      return;
+      const width = Math.max(
+        160,
+        Math.min(4096, Number(payload.width || 720) || 720),
+      );
+      const height = Math.max(
+        80,
+        Math.min(2048, Number(payload.height || 260) || 260),
+      );
+      const input = validatePreviewInput(payload.layout === undefined ? { text, fontSize, width, height } : { text: payload.text, fontSize: payload.fontSize, width: payload.width, height: payload.height, layout: payload.layout })
+      await options.withGlobalIo(
+        "preview:background-task",
+        () => {
+          lifetime.assertCurrent()
+          return options.ensureFontPreviewImageFile(
+            item,
+            input.text,
+            input.fontSize,
+            input.width,
+            input.height,
+            true,
+            false,
+            false,
+            input.layout,
+          )
+        },
+        { priority: "background", storagePath: item.path, signal: lifetime.signal },
+      );
+    })
+    try { await previewTasks.join(owned) }
+    catch (error) {
+      // The scheduler converts failures to a plain task record. Retain the
+      // physical owner here before that error receipt loses its close promise.
+      await awaitPhysicalIoClose(error)
+      throw error
     }
-    const text =
-      typeof payload.text === "string" && payload.text
-        ? payload.text
-        : "字体预览 AaBb 123";
-    const fontSize = Math.max(
-      8,
-      Math.min(240, Number(payload.fontSize || 44) || 44),
-    );
-    const width = Math.max(
-      160,
-      Math.min(4096, Number(payload.width || 720) || 720),
-    );
-    const height = Math.max(
-      80,
-      Math.min(2048, Number(payload.height || 260) || 260),
-    );
-    const input = validatePreviewInput(payload.layout === undefined ? { text, fontSize, width, height } : { text: payload.text, fontSize: payload.fontSize, width: payload.width, height: payload.height, layout: payload.layout })
-    await options.withGlobalIo(
-      "preview:background-task",
-      () =>
-        options.ensureFontPreviewImageFile(
-          item,
-          input.text,
-          input.fontSize,
-          input.width,
-          input.height,
-          true,
-          false,
-          false,
-          input.layout,
-        ),
-      { priority: "background", storagePath: item.path },
-    );
   }
 
   async function runScanRootTask(task: BackgroundTaskRecord): Promise<void> {

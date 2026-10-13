@@ -39,8 +39,8 @@ const maintenanceSource = read('src/main/maintenance/databaseMaintenance.ts')
 for (const needle of [
   'let operationTail: Promise<void> = Promise.resolve()',
   'enqueueMaintenanceOperation',
-  "restoreLatestDatabaseBackupForLabel(label, targetPath, currentExists ? {",
-  'manual restore requested after a valid backup was confirmed'
+  'restoreLatestDatabaseBackupForLabel(label, targetPath, {',
+  'closeApplicationDatabaseHandle(label)'
 ]) assert(maintenanceSource.includes(needle), `maintenance coordinator missing ${needle}`)
 
 const backupSource = read('src/main/maintenance/databaseBackupRuntime.ts')
@@ -57,6 +57,7 @@ async function runBehaviorChecks() {
   const backupOrder = []
   let restoreMode = 'missing'
   let quarantineCalls = 0
+  let closeCalls = 0
 
   const { createDatabaseMaintenanceRuntime } = loadTypeScriptModule(
     'src/main/maintenance/databaseMaintenance.ts',
@@ -111,7 +112,7 @@ async function runBehaviorChecks() {
     dataRoot: () => '/data',
     dbFileSpecs: () => [],
     databasePathForLabel: (label) => `/data/${label}.sqlite`,
-    closeApplicationDatabaseHandle: () => undefined,
+    closeApplicationDatabaseHandle: () => { closeCalls += 1 },
     checkpointApplicationDatabases: async () => undefined,
     restoreLatestDatabaseBackupForLabel: async (_label, _target, options) => {
       if (restoreMode === 'missing') return { ok: false, message: '没有可用备份。' }
@@ -140,11 +141,13 @@ async function runBehaviorChecks() {
   const missing = await runtime.restoreLatestApplicationDatabase('library')
   assert(missing.ok === false, 'missing-backup restore should fail')
   assert(quarantineCalls === 0, 'the current database was moved before a valid backup was confirmed')
+  assert(closeCalls === 0, 'missing backup must not interrupt the current database handle')
 
   restoreMode = 'valid'
   const restored = await runtime.restoreLatestApplicationDatabase('library')
   assert(restored.ok === true, 'valid restore should succeed')
-  assert(quarantineCalls === 1, 'the current database should be quarantined only after backup validation')
+  assert(closeCalls === 1, 'the owning store must close only inside the validated restore gate')
+  assert(quarantineCalls === 0, 'manual restore must not call the lossy quarantine helper')
 }
 
 runBehaviorChecks()

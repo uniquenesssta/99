@@ -230,7 +230,8 @@
         "font-name-table-probe",
         "font-script-table-probe",
         "font-style-table-probe",
-        "list-font-files"
+        "list-font-files",
+        "list-font-files-complete-v1"
       ],
       "flags": [
         "--extensions",

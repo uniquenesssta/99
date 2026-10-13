@@ -1,4 +1,5 @@
 import { installStatusSignatureValue, rootInstallStatusSignature } from '../../install/status/installStatusSignatureRuntime'
+import { migrateMergedInstallAuthority } from './mergedIndexInstallAuthorityRuntime'
 import { assertFontQueryActive } from '../../library/fontQueryTaskRuntime'
 import { settleMergedSyncError } from './mergedIndexProjectionFailureRuntime'
 import type { MergedIndexSourceInfo } from '../mergedIndexRuntime';
@@ -165,6 +166,33 @@ export function createMergedIndexValidationRuntime(
     syncIncremental?: (root: string, payload: FontIndexChangePayload, reason: string) => Promise<void>,
     projectionOptions: { preserveSourceCheckpoint?: boolean } = {},
   ): Promise<void> {
+    if (items && !projectionOptions.preserveSourceCheckpoint) {
+      if (!items.length) return;
+      await ctx.runMergedIndexMutation('local-install-status', async ({ commit }) => {
+        assertFontQueryActive();
+        const db = await ctx.openMergedIndexDb();
+        try {
+          // A previous save may have committed even when its projection failed.
+          // Serializing the next batch does not erase that durable gap. Reconcile
+          // all existing rows from pinned LOCAL authority before acknowledging a
+          // whole-source signature; no font or watched-root reads are required.
+          const result = await migrateMergedInstallAuthority(db, {
+            machineDirectory: ctx.dataPath('machines'), exists: ctx.exists,
+            open: ctx.openStableSqliteDb, close: ctx.closeSqliteDb,
+            getMeta: ctx.getSqliteMeta, setMeta: ctx.setSqliteMeta,
+            sourcesKey: ctx.mergedIndexSourcesKey, appendLog: ctx.appendStartupLog,
+            force: true, acknowledgeSources: true, assertCurrent: assertFontQueryActive,
+          });
+          if (result.changed) commit('local-install-status');
+          if (result.unavailable) {
+            const error = new Error('本机安装状态源暂不可读，已保留未完成投影标记。');
+            Object.assign(error, { mergedProjectionCommitted: true });
+            throw error;
+          }
+        } finally { ctx.closeSqliteDb(db); }
+      });
+      return;
+    }
     if (items) {
       await ctx.runMergedIndexMutation('local-install-status', async ({ commit }) => {
         assertFontQueryActive();
@@ -185,21 +213,6 @@ export function createMergedIndexValidationRuntime(
               if (wanted.has(id)) targets.set(id, [...(targets.get(id) || []), row]);
             } catch { invalidRows++; }
           }
-          const sourceRows = db.prepare('SELECT * FROM sources').all() as Array<{
-            root_path: string; index_db_path: string; install_db_path?: string; index_signature: string;
-            install_signature: string; shared_metadata_signature: string;
-          }>;
-          const sources: MergedIndexSourceInfo[] = sourceRows.map(row => ({ root: row.root_path,
-            indexDbPath: row.index_db_path, installDbPath: row.install_db_path || undefined,
-            indexSignature: row.index_signature, installSignature: row.install_signature,
-            sharedMetadataSignature: row.shared_metadata_signature }));
-          const previousSourcesKey = ctx.mergedIndexSourcesKey(sources);
-          const signatures = new Map<string, string>();
-          for (const source of projectionOptions.preserveSourceCheckpoint ? [] : sources) {
-            const path = source.installDbPath || '';
-            if (!signatures.has(path)) signatures.set(path, await ctx.installStatusContentSignature(source.installDbPath));
-          }
-          const nextSources = sources.map(source => ({ ...source, installSignature: signatures.get(source.installDbPath || '')! }));
           const update = db.prepare(`UPDATE entries SET installed = ?, installed_by = ?, matches_json = ?
             WHERE root_path=? AND relative_path=? AND file_size=? AND modified_at=?
               AND (installed IS NOT ? OR installed_by IS NOT ? OR matches_json IS NOT ?)`);
@@ -219,16 +232,9 @@ export function createMergedIndexValidationRuntime(
                 changed += Number(update.run(...values, row.root_path, row.relative_path, row.file_size, row.modified_at, ...values).changes || 0);
               }
             }
-            // Acknowledge exactly the install source projected by this writer.
-            // Never bless an unrelated pending root/metadata change.
-            if (!projectionOptions.preserveSourceCheckpoint && sources.length && ctx.getSqliteMeta(db, 'sourcesKey') === previousSourcesKey) {
-              const now = new Date().toISOString();
-              for (const source of nextSources) ctx.writeMergedIndexSourceRow(db, source, now);
-              ctx.setSqliteMeta(db, 'sourcesKey', ctx.mergedIndexSourcesKey(nextSources));
-              ctx.setSqliteMeta(db, 'updatedAt', now);
-            }
+            // A page repair has only partial coverage and never advances a whole-source receipt.
             db.exec('COMMIT');
-            if (changed) commit(projectionOptions.preserveSourceCheckpoint ? 'install-status-page-repair' : 'local-install-status');
+            if (changed) commit('install-status-page-repair');
             ctx.appendStartupLog(`local install projection batch: examined=${rows.length}, requested=${currentItems.length}, targets=${targets.size}, changed=${changed}, invalidRows=${invalidRows}`);
           } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
         } finally { ctx.closeSqliteDb(db); }

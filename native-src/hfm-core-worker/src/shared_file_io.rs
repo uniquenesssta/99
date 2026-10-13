@@ -1,8 +1,15 @@
 mod trash;
+mod cleanup;
+#[cfg(all(test, windows))]
+mod cleanup_tests;
 use std::{fs, io::{self, Read, Seek, SeekFrom}, path::Path, time::{SystemTime, UNIX_EPOCH}};
 use rusqlite::{Connection, OpenFlags};
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+struct OwnedCleanupGuard { path: String, identity: crate::font_resource::activation_identity::Identity }
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all="camelCase", deny_unknown_fields)]
@@ -14,6 +21,8 @@ struct Request {
     operation: String,
     path: String,
     paths: Option<Vec<String>>,
+    guards: Option<Vec<OwnedCleanupGuard>>,
+    preview_keys: Option<Vec<String>>,
     availability_root: Option<String>,
     limit_bytes: Option<u64>,
     older_than_ms: Option<f64>,
@@ -89,6 +98,9 @@ fn execute(request: &Request) -> io::Result<Value> {
             file.sync_all()?;
             Ok(json!(crate::font_resource::activation_identity::identify(&mut file)?))
         },
+        "removeWithOwnedLocks" => cleanup::remove_with_owned_locks(request, || {}),
+        "previewCleanupRows" => cleanup::preview_rows(request),
+        "previewCleanupEntries" => cleanup::preview_entries(request),
         "removeOwnedFile" => {
             let expected=request.identity.as_ref().ok_or_else(||io::Error::other("missing owned file identity"))?;
             match crate::font_resource::activation_identity::remove_owned(path,expected) { Ok(_)=>{},Err(error) if error.kind()==io::ErrorKind::NotFound=>{},Err(error)=>return Err(error) }

@@ -9,6 +9,8 @@ export interface ScanResult {
   cacheOnly?: boolean
   cacheFolders?: string[]
   missingCacheFolders?: string[]
+  /** Source roots whose durable scan state may safely be projected. */
+  committedFolders?: string[]
 }
 
 export interface ScanStats {

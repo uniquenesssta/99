@@ -184,9 +184,14 @@ export function createTagFontQueryRuntime(deps: {
         if (name && !binding.tags.includes(name)) return
         counts.bindings++
         const resolved = binding.pathResolved !== false
-        const old = live.get(pathKey) || snapshots.read(binding.path) || (resolved ? await deps.findPrevious?.(binding.path).catch(error => { rethrowFontQuerySuperseded(error); return null }) : undefined)
+        const indexed = live.get(pathKey)
+        const stored = indexed ? undefined : snapshots.read(binding.path)
+        const old = indexed || stored || (resolved ? await deps.findPrevious?.(binding.path).catch(error => { rethrowFontQuerySuperseded(error); return null }) : undefined)
         assertFontQueryActive()
-        if (resolved && old) remember([{ ...old, path: binding.path }])
+        // Same-key live rows were just remembered; stored rows already own their
+        // history. Project the binding's I/O path below without rewriting only
+        // its spelling. New history and distinct mapped/UNC keys still persist.
+        if (resolved && old && ((!indexed && !stored) || key(old.path) !== key(binding.path))) remember([{ ...old, path: binding.path }])
         const fileName = basename(binding.path)
         let font: FontItem = old || { id: `missing:${pathKey}`, sourceId: binding.id, path: binding.path, fileName,
           family: fileName, fullName: fileName, postscriptName: '', style: '', format: asFormat(binding.path),

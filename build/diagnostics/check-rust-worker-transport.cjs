@@ -76,7 +76,7 @@ async function checkCase(scenario, overrides) {
 // even for a lexical C: source. Do not regenerate the frozen hashes. The other
 // unaffected commands and lifecycle sequences keep their original exact comparisons.
 async function checkListingCase(scenario, overrides) {
-  const observed = await h.observe(scenario.method, { ...scenario.settings, listTransport: true }, overrides)
+  const observed = await h.observe(scenario.method, { ...scenario.settings, listTransport: true, capabilities: [...sequences.get('cached-ready').results[0].value.capabilities, 'list-font-files-complete-v1'] }, overrides)
   const { summary, h: env } = observed
   const mode = scenario.settings.mode || 'oneshot'
   const preAbort = !!scenario.settings.preAbort
@@ -178,7 +178,7 @@ async function checkIsolatedMetadataFailure() {
 }
 
 async function checkStdoutListing(overrides) {
-  const capabilities = ['list-font-files', 'list-font-files-stdout-v1']
+  const capabilities = ['list-font-files', 'list-font-files-complete-v1', 'list-font-files-stdout-v1']
   const rootPath = '\\\\server\\share\\fonts'
   const args = ['--list-font-files', '--root', rootPath, '--extensions', 'ttf', '--max', '300000']
   const expectedResult = JSON.parse(JSON.stringify(cases.get('runRustFontIndexListWorker/oneshot').outcome))

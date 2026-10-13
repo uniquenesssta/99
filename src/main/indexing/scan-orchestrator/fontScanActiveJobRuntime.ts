@@ -1,7 +1,7 @@
 import { isApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import type { FontItem,ScanResult } from '../../../shared/types'
 import { normalizeWatchedFontFolders } from '../../path/fontPathPolicy'
-import { isOperationCancelledError } from '../../performance/ioQueue'
+import { isOperationCancelledError, throwIfAborted } from '../../performance/ioQueue'
 import type { ActiveFontScanJob,ActiveFontScanStatus,ScanOrchestratorDeps } from './scanOrchestratorTypes'
 import { createFontScanJobId } from './scanOrchestratorUtils'
 
@@ -104,7 +104,11 @@ export function createFontScanActiveJobRuntime(
       deps.recheckGlobalIoQueues()
 
       try {
-        return await completion
+        const result = await completion
+        // Persistence/event/lease cleanup can finish after the last scanner
+        // signal check. A retired job must not publish a fresh completion then.
+        throwIfAborted(controller.signal)
+        return result
       } catch (error) {
         if (!isOperationCancelledError(error)) throw error
         const durationMs = Date.now() - startedAt

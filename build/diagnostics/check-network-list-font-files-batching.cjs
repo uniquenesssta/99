@@ -245,7 +245,7 @@ async function checkListCommandIsReadOnlySharedIo() {
     let stdout = JSON.stringify(stdoutMode ? receipt : { ok: true }), rejected
     const outputPath = 'C:\\Temp\\hfm-rust-list.json'
     const client = runtime.createRustIndexingClientRuntime({
-      diagnoseRustCoreWorker: async () => ({ available: true, path: 'worker.exe', capabilities: ['list-font-files', ...(stdoutMode ? ['list-font-files-stdout-v1'] : [])] }),
+      diagnoseRustCoreWorker: async () => ({ available: true, path: 'worker.exe', capabilities: ['list-font-files', 'list-font-files-complete-v1', ...(stdoutMode ? ['list-font-files-stdout-v1'] : [])] }),
       runRustCoreScheduledCommand: async (_worker, args, options) => {
         calls.push({ args, options })
         if (rejected) throw rejected

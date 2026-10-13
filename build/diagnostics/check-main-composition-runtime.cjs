@@ -117,8 +117,8 @@ async function checkCheckpointCacheMutations() {
   return mutations.length
 }
 
-async function checkImportAndOwnership() {
-  const h = createHarness()
+async function checkImportAndOwnership(overrides = new Map()) {
+  const h = createHarness(overrides)
   for (const owner of ['Core', 'Data', 'DataStorage', 'DataQuery', 'Mutation', 'Operations', 'Maintenance', 'Scan']) h.load(compositionFile(owner))
   assert.equal(h.constructors.size, 0, 'import constructed a domain runtime')
   assert.equal(h.compositions.size, 0, 'import constructed a composition')
@@ -127,6 +127,9 @@ async function checkImportAndOwnership() {
   const data = h.compositions.get('createMainDataCompositionRuntime')
   const storage = h.compositions.get('createMainDataStorageCompositionRuntime')
   const query = h.compositions.get('createMainDataQueryCompositionRuntime')
+  const restorePaths=h.options('createSqliteRuntime').applicationDatabasePaths
+  assert.equal(typeof restorePaths,'function','RESTORE_PATH_GATE: persistent restore admission paths were not wired')
+  assert.deepEqual(h.clean(restorePaths()), ['librarySqlitePath','tasksSqlitePath','previewSqlitePath','kvsSqlitePath','eventsSqlitePath','hashSqlitePath','metricsSqlitePath'].map(key=>storage[key]()), 'RESTORE_PATH_GATE: application database restore coverage drifted')
   for (const key of ['closeLibraryDb', 'closePreviewDb', 'clearLocalPreviewDbHandle', 'checkpointOpenCacheDbs', 'closeCacheDb']) {
     assert.equal(data.resources[key], storage[key], `${key} lost its single storage owner`)
   }
@@ -339,6 +342,12 @@ async function checkRejectedMutations() {
 
 async function main() {
   await checkImportAndOwnership()
+  const restoreFile=compositionFile('DataStorage'), restoreSource=fs.readFileSync(restoreFile,'utf8').replace(/\r\n/g,'\n')
+  const restoreWiring='applicationDatabasePaths: () => [librarySqlitePath(), tasksSqlitePath(), previewSqlitePath(), kvsSqlitePath(), eventsSqlitePath(), hashSqlitePath(), metricsSqlitePath()],'
+  assert.equal(restoreSource.split(restoreWiring).length-1,1)
+  await assert.rejects(()=>checkImportAndOwnership(new Map([[restoreFile,restoreSource.replace(restoreWiring,'applicationDatabasePaths: () => [],')]])),error=>error instanceof assert.AssertionError && /RESTORE_PATH_GATE/.test(error.message))
+  // The direct composition is observed below; the dedicated restore diagnostic
+  // exercises actual marker/SQLite admission and crash windows.
   await checkMetricsOwnerWiring()
   await checkCheckpointCacheWiring()
   await checkAvailabilityAndMaintenanceWiring()

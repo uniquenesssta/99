@@ -663,6 +663,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     if (!status.available || !status.path || !hasCapability(status, 'shared-file-io-v1')) throw new SharedIoProcessError('原生 worker 不支持共享文件隔离。', 'not-started', 'capability-unavailable')
     if (request.operation === 'fontContentIdentity' && !hasCapability(status, 'font-content-identity-v1')) throw new SharedIoProcessError('字体内容确认需要新版原生执行器。', 'not-started', 'capability-missing')
     if (request.operation === 'renameOwnedFile' && !hasCapability(status, 'shared-owned-rename-v1')) throw new SharedIoProcessError('共享发布需要新版原生执行器。', 'not-started', 'capability-missing')
+    if (['removeWithOwnedLocks', 'previewCleanupRows', 'previewCleanupEntries'].includes(request.operation) && !hasCapability(status, 'shared-owned-cleanup-v1')) throw new SharedIoProcessError('安全清理缓存需要新版原生执行器，已保留缓存。', 'not-started', 'capability-missing')
     const inputFile = createTemporaryJsonFile('hfm-shared-file-input')
     const transferFile = createTemporaryJsonFile('hfm-shared-file-transfer')
     let retainSnapshot = false
@@ -674,7 +675,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       await inputFile.writeJson(input)
       const output = await runRustCoreScheduledCommand(status.path, ['--shared-file-io','--input',inputFile.path,'--transfer',transferFile.path], {
         timeout: request.operation === 'fontContentIdentity' ? FONT_CONTENT_IDENTITY_TIMEOUT_MS : ['stat','lstat','access','realpath','openFile'].includes(request.operation) ? 500 : write ? 5000 : 2000,
-        windowsHide: true, maxBuffer: 32*1024*1024, signal, sharedIo: { paths: [request.path, request.dest || '', request.source || '', ...(request.paths || [])], write, accesses: sharedFileAccesses(request) },
+        windowsHide: true, maxBuffer: 32*1024*1024, signal, sharedIo: { paths: [request.path, request.dest || '', request.source || '', ...(request.paths || []), ...(request.guards || []).map(guard => guard.path)], write, accesses: sharedFileAccesses(request) },
       })
       const result = parseJsonLine<import('../path/sharedFileSystemRuntime').SharedFileResult>(output.stdout)
       if (typeof result.ok !== 'boolean' || result.operation !== request.operation) throw new SharedIoProcessError('共享文件隔离回执无效。','unknown','invalid-receipt')

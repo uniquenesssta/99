@@ -33,7 +33,13 @@ function checkFunctions(overrides = sources) {
     })
     for (const [name, hash] of Object.entries(group.functions)) {
       assert(found.has(name), 'lost domain/helper function: ' + name)
-      assert.equal(h.digest(tokens(found.get(name).getText(file))), hash, name + ' changed from pre-extraction baseline')
+      let text = found.get(name).getText(file)
+      if (name === 'runRustFontIndexListWorker') {
+        const extension = " || !hasCapability(status, 'list-font-files-complete-v1')"
+        assert.equal(text.split(extension).length - 1, 1, 'complete listing capability guard missing')
+        text = text.replace(extension, '') // only this independently tested guard extends the frozen client
+      }
+      assert.equal(h.digest(tokens(text)), hash, name + ' changed from pre-extraction baseline')
     }
     assert.equal(found.size, Object.keys(group.functions).length + 1, 'unexpected client function owner')
     const clientFactory = found.get(group.factory)
@@ -214,7 +220,7 @@ async function checkReviewedClientContracts(overrides = new Map()) {
   const listing = { ok: true, files: [{ path: 'C:/fonts/a.ttf', size: 2, modifiedMs: 1 }], directories: [{ path: 'C:/fonts' }], errors: [{ path: 'C:/fonts/denied', message: 'denied' }], foldersScanned: 1, truncated: true }
   for (const stdout of [false, true]) {
     const progress = []
-    const f = clientFixture('Indexing', { capabilities: ['list-font-files', ...(stdout ? ['list-font-files-stdout-v1'] : [])], payload: listing,
+    const f = clientFixture('Indexing', { capabilities: ['list-font-files', 'list-font-files-complete-v1', ...(stdout ? ['list-font-files-stdout-v1'] : [])], payload: listing,
       onCommand: options => { for (const line of ['hfm-scan-progress: {"files":0,"foldersScanned":0}', 'hfm-scan-progress: {"files":-1,"foldersScanned":0}', 'hfm-scan-progress: {broken']) options.onStderrLine(line) } }, overrides)
     const result = await f.client.runRustFontIndexListWorker(['C:/fonts'], ['.TTF'], value => progress.push(JSON.parse(JSON.stringify(value))))
     const command = f.commands[0]
@@ -227,7 +233,7 @@ async function checkReviewedClientContracts(overrides = new Map()) {
     assert.equal(result.files.length, 1); assert.equal(result.directories.length, 1); assert.equal(result.errors[0].message, 'denied'); assert.equal(result.truncated, true)
     assert.deepEqual(progress, [{ files: 0, foldersScanned: 0 }, { files: 1, foldersScanned: 1 }])
   }
-  const incomplete = clientFixture('Indexing', { capabilities: ['list-font-files', 'list-font-files-stdout-v1'], payload: { ok: true, files: [] } }, overrides)
+  const incomplete = clientFixture('Indexing', { capabilities: ['list-font-files', 'list-font-files-complete-v1', 'list-font-files-stdout-v1'], payload: { ok: true, files: [] } }, overrides)
   await assert.rejects(incomplete.client.runRustFontIndexListWorker(['C:/fonts'], ['.ttf']), /receipt incomplete/)
   assert.equal(incomplete.allocated(), 0)
 
@@ -360,6 +366,11 @@ async function checkReviewedClientMutations() {
     await assert.rejects(checkReviewedClientContracts(changed), undefined, 'reviewed client behavior mutation accepted: ' + groupName)
   }
 }
+async function checkCompleteListingCapability(overrides = new Map()) {
+  const old = clientFixture('Indexing',{capabilities:['list-font-files'],payload:{ok:true,files:[],directories:[],errors:[],truncated:false}},overrides)
+  assert.equal(await old.client.runRustFontIndexListWorker(['C:/fonts'],['.ttf']),null,'COMPLETE_LISTING_GATE: old iterator semantics accepted')
+  assert.equal(old.commands.length,0);assert.equal(old.allocated(),0)
+}
 async function main() {
   checkFunctions()
   checkFacadeClosure()
@@ -369,6 +380,9 @@ async function main() {
   await checkMaintenanceFailureReports()
   await checkRecoveryCapability()
   await checkReviewedClientContracts()
+  await checkCompleteListingCapability()
+  const listingGroup=fixture.groups.find(group=>group.name==='Indexing'), listingGuard=" || !hasCapability(status, 'list-font-files-complete-v1')"
+  await assert.rejects(()=>checkCompleteListingCapability(new Map([[listingGroup.path,sources.get(listingGroup.path).replace(listingGuard,'')]])),error=>error instanceof assert.AssertionError && /COMPLETE_LISTING_GATE/.test(error.message))
   await checkInstallAuthorityCapabilities()
   await checkInstallAuthorityMutations()
   await checkReviewedClientMutations()

@@ -374,6 +374,7 @@ export function createRootDirectoryCacheRuntime(
               },
             );
             if (!fileStatResult.ok) {
+              context.scanReadIncomplete = true;
               const cached = cachedListedFileForPath(context, full);
               if (cached && !context.requireFreshFileStats) {
                 files.push(cached);

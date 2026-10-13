@@ -28,6 +28,10 @@ export interface RootScanCacheContext {
     dirCount: number
   }>
   directorySkipped: number
+  /** Full-scan deletion authority is granted only by a complete current walk. */
+  scanListingComplete?: boolean
+  /** Read/parse uncertainty preserves previous rows and directory receipts. */
+  scanReadIncomplete?: boolean
   /** Watcher evidence must enumerate current names and may not reuse stale file attributes. */
   requireFreshFileStats?: boolean
   /** Owner guard forwarded into the directory-write lock. */

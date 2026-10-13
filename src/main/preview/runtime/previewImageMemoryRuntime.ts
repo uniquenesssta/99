@@ -1,9 +1,10 @@
+import type { PreviewRenderTask } from './previewRenderTaskRuntime'
 import { nativePreviewLayoutKey, type NativePreviewLayout } from '../../../shared/preview-layout/nativePreviewLayout'
 import type { FontItem } from '../../../shared/types'
 import { DEFAULT_PREVIEW_TEXT } from './previewCacheKeyRuntime'
 
 export function createPreviewImageMemoryRuntime(limit = 160) {
-  const inflight = new Map<string, Promise<string>>()
+  const inflight = new Map<string, PreviewRenderTask<string>>()
   const dataUriCache = new Map<string, string>()
 
   function requestKey(item: FontItem, text: string, fontSize: number, width: number, height: number, layout?: NativePreviewLayout): string {

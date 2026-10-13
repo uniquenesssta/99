@@ -1,4 +1,5 @@
 import { nativePreviewLayoutKey, type NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
+import { isApplicationClosing } from '../app/shutdownCoordinatorRuntime'
 import type { FontItem, InstallCompareResult } from '../../shared/types';
 import {
   APP_NAME,
@@ -359,7 +360,9 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     withGlobalIo,
     scanFolders: async (folders: string[], knownFonts: FontItem[]) => {
       const result = await scanFolders(folders, knownFonts);
-      for (const root of result.folders || []) {
+      if (result.stats?.cancelled || isApplicationClosing()) return result;
+      for (const root of result.committedFolders || []) {
+        if (isApplicationClosing()) break;
         await syncMergedIndexForRootSnapshot(root, "scan-finished");
         await delayToEventLoop();
       }

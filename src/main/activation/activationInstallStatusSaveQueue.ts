@@ -169,6 +169,10 @@ export function createActivationInstallStatusSaveQueue(
       }
 
       if (!saved) {
+        // The central writer can reject after the status DB committed but before
+        // projection completed. Do not let the next comparison erase that retry
+        // merely because its durable status now matches the requested value.
+        for (const item of affectedItems) projectionPending.add(item.id)
         mergeFailedBatch(results, itemsById)
         deps.appendStartupLog(
           `activation install status async save failed: reason=${reason}, rows=${writeCount}, pending=${pendingCount()}, ${lastError instanceof Error ? lastError.message : String(lastError)}`,

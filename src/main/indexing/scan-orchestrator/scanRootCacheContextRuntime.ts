@@ -32,6 +32,7 @@ export function createScanRootCacheContextRuntime(deps: ScanOrchestratorDeps): S
       seenKeys: new Set<string>(),
       directoryUpdates: [],
       directorySkipped: 0,
+      scanListingComplete: false,
     }
     rootCacheContexts.set(rootKey, context)
     return context
