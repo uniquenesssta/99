@@ -73,7 +73,9 @@ async function fixture(transforms = {}) {
     saveRootIndexDirectorySignatures: async (...args) => { state.signatures.push(args[1]); await index.saveRootIndexDirectorySignatures(...args) },
     upsertFontHashIndex: async () => {}, recordCacheEvent: async (_scope, kind) => { if (kind === 'scan_finished' && state.tailGate) { state.tailEntered.resolve(); await state.tailGate.promise } },
     runFontIndexListWorker: async () => { throw Error('unexpected fallback after partial directory return') },
-    runFontParseWorkerPool: async () => { throw Error('unexpected Node parser fallback') }, scanWorkerCount: () => 0,
+    // Production invokes this port even for an empty native remainder. Its
+    // actual empty-work contract returns zero without launching a parser.
+    runFontParseWorkerPool: async (jobs, _progress, signal) => { load('src/main/performance/ioQueue.ts').throwIfAborted(signal); if (jobs.length) throw Error('unexpected Node parser fallback'); return { workerCount: 0 } }, scanWorkerCount: () => 0,
     runRustFontParseBatch: async jobs => {
       state.parseEntered.resolve(); if (state.parseGate) await state.parseGate.promise
       return state.parseError ? { results: [], errors: jobs.map(job => ({ jobId: job.jobId, message: 'controlled source read failure' })) }

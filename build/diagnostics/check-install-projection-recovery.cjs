@@ -51,7 +51,14 @@ async function productionRecoveryCases() {
     assert.deepEqual(snapshot(), initial, 'A failed projection changed its receipt or rows')
     const persisted=await host.status.readInstallStatusIndex([items[0]])
     assert.equal(persisted.results[items[0].id].installed,true,'fault did not occur after actual durable source commit')
+    const beforeDebtRepair={...host.sqlCounters}
     await host.writer.saveInstallStatusIndex({[items[1].id]:status(true)},new Map([[items[1].id,items[1]]]))
+    assert.equal(host.sqlCounters.projectionSelectCalls-beforeDebtRepair.projectionSelectCalls,1,'complete debt repair omitted its full population pass')
+    assert.equal(host.sqlCounters.projectionExaminedRows-beforeDebtRepair.projectionExaminedRows,3)
+    assert.equal(host.sqlCounters.projectionUpdateCalls-beforeDebtRepair.projectionUpdateCalls,2,'DEBT_REPAIR_WRITES: one-row B must also repair durable A, without touching stable C')
+    assert.equal(host.sqlCounters.projectionUpdatedRows-beforeDebtRepair.projectionUpdatedRows,2)
+    assert.equal(host.sqlCounters.projectionIndexedUpdateCalls-beforeDebtRepair.projectionIndexedUpdateCalls,2)
+    assert.equal(host.sqlCounters.projectionIdentityUdfCalls-beforeDebtRepair.projectionIdentityUdfCalls,0)
     const repaired=snapshot()
     assert.deepEqual(repaired.rows.map(row=>row.installed),[1,1,0],'COMPLETE_INSTALL_REPAIR: B falsely acknowledged only its own row')
     for(const source of repaired.sources) {
@@ -62,7 +69,9 @@ async function productionRecoveryCases() {
     const metrics=await host.query.getFontMetricsFromLibrary(), page=await host.query.queryFontPageInLibrary(request(true))
     assert.deepEqual([metrics.total,metrics.installedCount,metrics.notInstalledCount,metrics.installStatusMissingCount],[3,2,1,0])
     assert.equal(page.workerMode,'rust-merged-index-page');assert.equal(page.total,2)
-    assert.deepEqual(page.items.map(item=>item.id).sort(),items.slice(0,2).map(item=>item.id).sort())
+    // The production loader returns a VM-realm array; compare the exact IDs in
+    // this realm without treating its Array prototype as projection state.
+    assert.deepEqual(Array.from(page.items,item=>item.id).sort(),items.slice(0,2).map(item=>item.id).sort())
     assert(!host.nativeReceipts.some(row=>row.method==='runRustMergedIndexRebuild'),'local recovery touched offline root rebuild')
 
     // Real SQLite abort after the durable machine write rolls back all derived
@@ -105,8 +114,8 @@ async function productionRecoveryCases() {
     for(const item of items)assert.equal(fs.readFileSync(item.path,'utf8'),'unchanged fixture bytes')
   } finally { if(host){await host.close();const proof=host.closeProof();assert.equal(proof.remainingChildren,0);assert.equal(proof.remainingDatabaseOwners,0)} fs.rmSync(directory,{recursive:true,force:true}) }
 }
-async function pinnedAuthorityCases() {
-  const load=loader(), directory=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-pinned-authority-')), machines=path.join(directory,'machines')
+async function pinnedAuthorityCases(transforms={}) {
+  const load=loader({}, {}, transforms), directory=fs.mkdtempSync(path.join(os.tmpdir(),'hfm-pinned-authority-')), machines=path.join(directory,'machines')
   fs.mkdirSync(machines);const source=path.join(machines,'install.sqlite'), merged=new DatabaseSync(':memory:'), writer=new DatabaseSync(source)
   const item={path:'C:\\fonts\\a.ttf',fileName:'a.ttf',fileSize:1,modifiedAt:100}
   item.id=load('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId(item.path,1,100)
@@ -119,7 +128,10 @@ async function pinnedAuthorityCases() {
   const getMeta=(_db,key)=>merged.prepare('SELECT value FROM meta WHERE key=?').get(key)?.value||'',setMeta=(_db,key,value)=>merged.prepare('INSERT OR REPLACE INTO meta VALUES (?,?)').run(key,value)
   const shape=row=>({root:row.root_path,indexDbPath:row.index_db_path,installDbPath:row.install_db_path,indexSignature:row.index_signature,installSignature:row.install_signature,sharedMetadataSignature:row.shared_metadata_signature}), key=rows=>JSON.stringify(rows)
   setMeta(null,'sourcesKey',key(merged.prepare('SELECT * FROM sources').all().map(shape)))
-  let changedDuringRead=false, unavailable=false, opens=0
+  let changedDuringRead=false, unavailable=false, opens=0, updateCalls=0
+  const prepareMerged=merged.prepare.bind(merged)
+  merged.prepare=sql=>{const statement=prepareMerged(sql);if(/^UPDATE entries SET installed=/i.test(sql)){const run=statement.run.bind(statement);statement.run=(...args)=>{updateCalls++;return run(...args)}}return statement}
+  const expectWrites=async(expectedWrites,label)=>{const before=updateCalls;const result=await migrate(merged,options);assert.equal(updateCalls-before,expectedWrites,label);return result}
   const options={machineDirectory:machines,exists:async file=>{assert.equal(file,source);return true},open:file=>{
     opens++;if(unavailable)throw Error('controlled unreadable local authority')
     const db=new DatabaseSync(file),prepare=db.prepare.bind(db)
@@ -127,18 +139,36 @@ async function pinnedAuthorityCases() {
   },close:db=>db.close(),getMeta,setMeta,sourcesKey:key,appendLog(){},force:true,acknowledgeSources:true}
   const migrate=load('src/main/indexing/merged-page/mergedIndexInstallAuthorityRuntime.ts').migrateMergedInstallAuthority
   try {
-    await migrate(merged,options)
+    await expectWrites(1,'first authority correction must change its row')
     assert.equal(merged.prepare('SELECT installed FROM entries').get().installed,0,'PINNED_INSTALL_SNAPSHOT: rows drifted past receipt snapshot')
     assert.equal(merged.prepare('SELECT install_signature FROM sources').get().install_signature,'install-content-v1|1|0|0|a')
-    await migrate(merged,options);assert.equal(merged.prepare('SELECT installed FROM entries').get().installed,1)
+    await expectWrites(1,'new pinned authority must change its row');assert.equal(merged.prepare('SELECT installed FROM entries').get().installed,1)
+    await expectWrites(0,'UNCHANGED_AUTHORITY_NO_UPDATE: stable exact status performed a redundant SQLite update')
+    writer.exec("UPDATE install_status SET by_type='managed',matches_json='[\"managed-copy\"]',checked_at='c'")
+    await expectWrites(1,'SAME_BOOLEAN_METADATA_REPAIR: same installed flag hid changed authority fields')
+    assert.deepEqual(plain(merged.prepare('SELECT installed,installed_by,matches_json FROM entries').get()),{installed:1,installed_by:'managed',matches_json:'["managed-copy"]'})
+    await expectWrites(0,'UNCHANGED_AUTHORITY_NO_UPDATE: stable managed status performed a redundant SQLite update')
     unavailable=true
-    const first=await migrate(merged,options)
+    const first=await expectWrites(1,'unavailable authority must withdraw known state')
     assert.equal(first.unavailable,1);assert.equal(first.changed,1)
     assert.equal(merged.prepare('SELECT installed FROM entries').get().installed,null)
     const retained=plain(merged.prepare('SELECT * FROM sources').get())
     assert.equal(retained.install_signature,'pending:install-signature-authority');assert.equal(retained.index_signature,'index-kept');assert.equal(retained.shared_metadata_signature,'metadata-kept');assert.equal(retained.synced_at,'unchanged')
-    const second=await migrate(merged,options);assert.equal(second.unavailable,1);assert.equal(second.changed,0);assert.deepEqual(plain(merged.prepare('SELECT * FROM sources').get()),retained)
-    assert.equal(opens,4)
+    const second=await expectWrites(0,'UNCHANGED_AUTHORITY_NO_UPDATE: retained NULL state performed a redundant SQLite update');assert.equal(second.unavailable,1);assert.equal(second.changed,0);assert.deepEqual(plain(merged.prepare('SELECT * FROM sources').get()),retained)
+    assert.equal(opens,7)
+    unavailable=false;writer.exec('DELETE FROM install_status')
+    await expectWrites(0,'UNCHANGED_AUTHORITY_NO_UPDATE: missing evidence rewrote already unknown state')
+    writer.prepare("INSERT INTO install_status VALUES (?,?,0,'none','[]','d')").run(item.id,'unknown:'+expected)
+    await expectWrites(0,'UNCHANGED_AUTHORITY_NO_UPDATE: explicit unknown rewrote already unknown state')
+    writer.prepare('UPDATE install_status SET signature=?').run(expected)
+    // Keep the auxiliary fields equal so this control isolates NULL versus 0,
+    // rather than succeeding only because by/matches also need repair.
+    merged.exec("UPDATE entries SET installed_by='none',matches_json='[]'")
+    await expectWrites(1,'NULL_AUTHORITY_REPAIR: exact known false must replace NULL')
+    assert.deepEqual(plain(merged.prepare('SELECT installed,installed_by,matches_json FROM entries').get()),{installed:0,installed_by:'none',matches_json:'[]'})
+    writer.exec("UPDATE install_status SET checked_at='e'")
+    await expectWrites(0,'UNCHANGED_AUTHORITY_NO_UPDATE: receipt-only change rewrote unchanged flags')
+    assert.equal(merged.prepare('SELECT install_signature FROM sources').get().install_signature,'install-content-v1|1|0|0|e')
   } finally {merged.close();writer.close();fs.rmSync(directory,{recursive:true,force:true})}
 }
 async function committedRetryCase(transforms={}) {
@@ -160,10 +190,16 @@ async function committedRetryCase(transforms={}) {
 async function main(){
   assert.equal(process.platform,'win32','HFM project verification is Windows-only')
   await productionRecoveryCases();await pinnedAuthorityCases();await committedRetryCase()
+  const authorityFile=path.join(root,'src/main/indexing/merged-page/mergedIndexInstallAuthorityRuntime.ts')
+  const unchangedGuard='if (row.installed === values[0] && row.installed_by === values[1] && row.matches_json === values[2]) continue'
+  assert.equal(fs.readFileSync(authorityFile,'utf8').split(unchangedGuard).length-1,1)
+  await assert.rejects(()=>pinnedAuthorityCases({[authorityFile]:text=>text.replace(unchangedGuard,'')}),/UNCHANGED_AUTHORITY_NO_UPDATE/)
+  await assert.rejects(()=>pinnedAuthorityCases({[authorityFile]:text=>text.replace(unchangedGuard,'if (row.installed === values[0]) continue')}),/SAME_BOOLEAN_METADATA_REPAIR/)
+  await assert.rejects(()=>pinnedAuthorityCases({[authorityFile]:text=>text.replace(unchangedGuard,'if ((row.installed ?? 0) === (values[0] ?? 0) && row.installed_by === values[1] && row.matches_json === values[2]) continue')}),/NULL_AUTHORITY_REPAIR/)
   const file=path.join(root,'src/main/activation/activationInstallStatusSaveQueue.ts')
   const anchor='for (const item of affectedItems) projectionPending.add(item.id)\n        mergeFailedBatch(results, itemsById)'
   assert.equal(fs.readFileSync(file,'utf8').replaceAll('\r\n','\n').split(anchor).length-1,1)
   await assert.rejects(()=>committedRetryCase({[file]:text=>text.replaceAll('\r\n','\n').replace(anchor,'mergeFailedBatch(results, itemsById)')}),/COMMITTED_RETRY_PROJECTION/)
-  console.log('[diagnostics:install-projection-recovery] durable A/failed projection -> B complete repair; SQLite rollback; restart/current-version false ACK; offline roots retained; actual native pages/metrics; failed-write retry debt; source unchanged and zero owners')
+  console.log('[diagnostics:install-projection-recovery] durable A/failed projection -> B complete repair with both debt writes counted; SQLite rollback; restart/current-version false ACK; offline roots retained; actual native pages/metrics; same-snapshot changed-row-only calls, NULL/known and metadata-only controls; four causal mutants; failed-write retry debt; source unchanged and zero owners')
 }
 if(require.main===module){const watchdog=setTimeout(()=>{console.error('install projection diagnostic did not settle within 120s');process.exit(1)},120000);main().catch(error=>{console.error(error);process.exitCode=1}).finally(()=>clearTimeout(watchdog))}

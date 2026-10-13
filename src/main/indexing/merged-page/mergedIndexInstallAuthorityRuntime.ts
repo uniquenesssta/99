@@ -62,7 +62,7 @@ export async function migrateMergedInstallAuthority(db: any, options: {
         indexSignature: row.index_signature, installSignature: row.install_signature,
         sharedMetadataSignature: row.shared_metadata_signature })
       const previousKey = options.sourcesKey(sourceRows.map(toSource))
-      const rows = db.prepare("SELECT root_path,relative_path,file_size,modified_at,font_json FROM entries WHERE COALESCE(is_deleted,0)=0 AND status='ok' AND json_valid(font_json)").all()
+      const rows = db.prepare("SELECT root_path,relative_path,file_size,modified_at,font_json,installed,installed_by,matches_json FROM entries WHERE COALESCE(is_deleted,0)=0 AND status='ok' AND json_valid(font_json)").all()
       const sourcesByRoot = new Map(sourceRows.map(source => [source.root_path, source]))
       const prepared = rows.map((row: any) => {
         const source = sourcesByRoot.get(row.root_path)
@@ -98,6 +98,10 @@ export async function migrateMergedInstallAuthority(db: any, options: {
         causes[cause] = (causes[cause] || 0) + 1
         if (id && cause !== 'exact-known' && examples.length < 3) examples.push({ idHash: createHash('sha256').update(id).digest('hex').slice(0, 12), cause })
         const values = [status?.installed ?? null, status?.by_type ?? null, status?.matches_json ?? null]
+        // The complete authority read still repairs debt outside this writer's
+        // batch. Avoid a keyed SQLite call only when all projected values from
+        // this same write transaction are already exact, including NULL.
+        if (row.installed === values[0] && row.installed_by === values[1] && row.matches_json === values[2]) continue
         changed += Number(update.run(...values, row.root_path, row.relative_path, ...values).changes || 0)
       }
       // A failed authority cannot keep an apparently fresh install receipt.
