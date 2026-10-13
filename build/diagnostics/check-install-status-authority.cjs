@@ -386,17 +386,37 @@ async function pageCacheOwnershipCases(transforms = {}) {
 }
 async function legacyCapabilityCases() {
   const capabilities = ['merged-index-page-query', 'merged-index-ids-query', 'merged-index-metrics-query', 'merged-index-rebuild', 'merged-index-sync', 'install-status-index-read']
-  const ports = { diagnoseRustCoreWorker: async () => ({ available: true, path: 'old-worker.exe', capabilities }), appendStartupLog() {},
-    createTemporaryJsonFile() { throw Error('old worker reached payload creation') }, runRustCoreScheduledCommand() { throw Error('old worker submitted a command') } }
-  const indexing = load('src/main/rust-core/clients/rustIndexingClientRuntime.ts').createRustIndexingClientRuntime(ports)
-  const metadata = load('src/main/rust-core/clients/rustMetadataClientRuntime.ts').createRustMetadataClientRuntime(ports)
+  let diagnoses = 0, forbiddenCalls = 0
+  const forbidden = name => () => { forbiddenCalls++; throw Error(`legacy capability check reached ${name}`) }
+  // These checks inject the handshake, so discovery/autobuild must never run.
+  // Keep the actual clients, transport, parser and hasCapability implementation.
+  const clients = loader({
+    [path.join(root, 'src/main/rust-core/rustCoreWorkerAutoBuildRuntime.ts')]: {
+      tryBuildRustCoreWorkerForDevelopment: forbidden('automatic native build'),
+    },
+    [path.join(root, 'src/main/rust-core/rustCoreWorkerPathRuntime.ts')]: {
+      RUST_CORE_WORKER_FILE_NAME: 'hfm-core-worker.exe',
+      rustCoreWorkerCandidates: forbidden('native path candidates'),
+      resolveRustCoreWorkerPath: forbidden('native path discovery'),
+      resolveRustCoreWorkerPathWithDiagnostics: forbidden('native path diagnostics'),
+    },
+  })
+  const ports = { diagnoseRustCoreWorker: async () => { diagnoses++; return { available: true, path: 'old-worker.exe', capabilities } }, appendStartupLog() {},
+    createTemporaryJsonFile: forbidden('payload creation'), runRustCoreScheduledCommand: forbidden('native submission') }
+  const indexing = clients('src/main/rust-core/clients/rustIndexingClientRuntime.ts').createRustIndexingClientRuntime(ports)
+  const metadata = clients('src/main/rust-core/clients/rustMetadataClientRuntime.ts').createRustMetadataClientRuntime(ports)
   for (const method of ['runRustMergedIndexPageQuery', 'runRustMergedIndexIdsQuery', 'runRustMergedIndexMetricsQuery', 'runRustMergedIndexRebuild', 'runRustMergedIndexSync']) assert.equal(await indexing[method]({}), null)
   assert.equal(await metadata.runRustInstallStatusRead([]), null)
+  assert.equal(diagnoses, 6); assert.equal(forbiddenCalls, 0, 'legacy capability checks escaped their handshake boundary')
   assertions += 6
 }
 async function main() {
   assert.equal(process.platform, 'win32', 'Installation authority verification runs only on Windows')
-  vectorAndSqlCases(); await readCases(); await facadeOwnershipCases(); await tagCandidateRouteCases(); await legacyCapabilityCases(); await pageCacheOwnershipCases(); await migrationCases(); await productionCompositionCase()
+  for (const stage of [vectorAndSqlCases, readCases, facadeOwnershipCases, tagCandidateRouteCases, legacyCapabilityCases, pageCacheOwnershipCases, migrationCases, productionCompositionCase]) {
+    console.log(`[diagnostics:install-status-authority] stage=${stage.name}`)
+    await stage()
+  }
+  console.log('[diagnostics:install-status-authority] stage=causalMutants')
   const facadeFile = path.join(root, 'src/main/library/fontQueryFacadeRuntime.ts')
   const candidateGuard = 'if (tagCandidates) return page;'
   assert.equal(fs.readFileSync(facadeFile, 'utf8').split(candidateGuard).length - 1, 1, 'candidate read-budget mutant anchor changed')

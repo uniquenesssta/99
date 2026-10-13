@@ -29,6 +29,16 @@ function observeErrorClose(error, evidence) {
   Promise.resolve(error.closed).then(() => { evidence.closeState = 'fulfilled' }, () => { evidence.closeState = 'rejected' })
 }
 
+// Observe setup separately from the later injected write. Return the exact
+// Promise and retain its original result/error; observation never waits for close.
+function observeSetupRead(pending, evidence) {
+  const record = work => { try { work() } catch { evidence.observerErrors = (evidence.observerErrors || 0) + 1 } }
+  pending.then(() => record(() => { evidence.outcome = 'fulfilled' }), error => record(() => {
+    evidence.outcome = 'rejected'; evidence.error = error; observeErrorClose(error, evidence)
+  }))
+  return pending
+}
+
 function heldForegroundRead() {
   const entered = deferred(), release = deferred()
   let reads = 0, cancellations = 0, activeSignal
@@ -136,6 +146,27 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
     error => error.watcherEarlyResult === earlyResult && /fulfilled before controlled close boundary/.test(error.message))
   controls.push('close-boundary-observer-preserves-early-apply-outcome')
 
+  // Scripted attribution control only: a preparatory timeout must retain its
+  // exact Promise/error and pending close, without entering the injection hook.
+  const { SharedIoProcessError: SetupError } = host.load('src/main/path/sharedIoProcessRuntime.ts')
+  const setupClose = deferred(), setupFailure = new SetupError('controlled setup timeout', 'unknown', 'timeout')
+  Object.assign(setupFailure, { requestId: 1, phase: 'executing', queuedMs: 2, executionMs: 3, closed: setupClose.promise })
+  const setupEvidence = { mode: 'signature-setup-read', outcome: 'pending', injected: false, observerErrors: 0 }
+  const setupPending = Promise.reject(setupFailure)
+  assert.equal(observeSetupRead(setupPending, setupEvidence), setupPending, 'Setup observation replaced the original Promise')
+  await assert.rejects(setupPending, error => error === setupFailure)
+  assert.equal(setupEvidence.error, setupFailure, 'Setup observation replaced the original error')
+  assert.equal(setupEvidence.outcome, 'rejected'); assert.equal(setupEvidence.injected, false)
+  assert.equal(setupEvidence.closeState, 'pending', 'Setup observation waited for or discarded the physical close')
+  assert.equal(setupFailure.closed, setupClose.promise)
+  assert.deepEqual([setupFailure.requestId, setupFailure.phase, setupFailure.queuedMs, setupFailure.executionMs], [1, 'executing', 2, 3])
+  setupClose.resolve(); await setupClose.promise
+  assert.equal(setupEvidence.closeState, 'fulfilled'); assert.equal(setupEvidence.observerErrors, 0)
+  const setupValue = {}, successfulSetup = Promise.resolve(setupValue), successfulEvidence = { outcome: 'pending' }
+  assert.equal(observeSetupRead(successfulSetup, successfulEvidence), successfulSetup)
+  assert.equal(await successfulSetup, setupValue); assert.equal(successfulEvidence.outcome, 'fulfilled')
+  controls.push('signature-setup-observer-preserves-original-timeout-and-close')
+
   // Each real owner must retain a failed native read's close receipt before
   // converting it to cancellation or a normal row error. Faults follow genuine
   // read receipts; the close barrier itself is deliberately held by this test.
@@ -196,10 +227,36 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
     }
   }
   state.readCloseBoundary = undefined
-  state.phase = 'inventory-signature-close-boundary'
+  state.phase = 'inventory-signature-setup-read'
   const signatureClose = deferred(), signatureEntered = deferred(), signatureAbort = new AbortController()
   const directoryOwner = makeWatcher({ exposeEntry: true })
-  const currentCache = await rootIndex.readRootIndexSqliteFile(dbPath, fontRoot, 'root')
+  const availability = host.load('src/main/path/startupPathAvailabilityRuntime.ts')
+  const availabilitySnapshot = () => Object.fromEntries([['font', fontRoot], ['cache', cacheDir]].map(([name, root]) => {
+    const value = availability.getStartupPathRootState(root)
+    return [name, { state: value.state, generation: value.generation }]
+  }))
+  const setup = state.readCloseBoundary = { mode: 'signature-setup-read', outcome: 'pending', injected: false,
+    closeReleased: false, observerErrors: 0, availabilityBefore: availabilitySnapshot(), counts: {}, events: [] }
+  state.observeReadCloseBoundary = (owner, label, phase, signal, error) => {
+    try {
+      const allowed = ['stat', 'lstat', 'access', 'realpath', 'readFile', 'sqliteSnapshot', 'directoryMetadata', 'directoryMetadataBatch']
+      const operation = owner === 'native' && allowed.includes(label) ? label : 'other'
+      const key = owner + ':' + operation + ':' + phase
+      setup.counts[key] = (setup.counts[key] || 0) + 1
+      const event = { owner, operation, label: owner === 'native' ? 'shared-file-io:' + operation : 'other', phase,
+        signalPresent: !!signal, expectedSignal: signal === undefined, aborted: !!signal?.aborted, error }
+      observeErrorClose(error, event); setup.events.push(event)
+      if (setup.events.length > 16) setup.events.shift()
+    } catch { setup.observerErrors++ }
+  }
+  let currentCache
+  try { currentCache = await observeSetupRead(rootIndex.readRootIndexSqliteFile(dbPath, fontRoot, 'root'), setup) }
+  finally {
+    state.observeReadCloseBoundary = undefined
+    try { setup.availabilityAfter = availabilitySnapshot() } catch { setup.observerErrors++ }
+  }
+  state.readCloseBoundary = undefined
+  state.phase = 'inventory-signature-write-close-boundary'
   const signatureContext = directoryOwner.makeRootScanCacheContext(fontRoot, { cachePath: dbPath, cacheDir, storage: 'root', cache: currentCache })
   signatureContext.directoryUpdates.push({ relativePath: '', modifiedAt: fs.statSync(fontRoot).mtimeMs, fileCount: 1, dirCount: files.length - 1 })
   signatureContext.assertCurrent = () => { if (signatureAbort.signal.aborted) throw Error('controlled-signature-owner-cancelled') }
@@ -212,7 +269,7 @@ exports.checkWatcherInventoryCheckpoints = async function checkWatcherInventoryC
   const pendingSignature = directoryOwner.saveRootDirectorySignatures(signatureContext)
   pendingSignature.then(() => { signatureSettled = true }, () => { signatureSettled = true })
   try {
-    await deadline(signatureEntered.promise, 'Actual signature writer did not reach its close boundary')
+    await awaitReadCloseBoundary(signatureEntered.promise, pendingSignature, 'directory-signature')
     await new Promise(resolve => setImmediate(resolve))
     assert.equal(signatureSettled, false, 'Directory signature guard discarded the physical close owner')
     signatureClose.resolve(); await assert.rejects(pendingSignature, /controlled-signature-owner-cancelled/)

@@ -33,6 +33,7 @@ function failureDiagnostics(host, state, error, roots) {
     code: /^[A-Z_]{2,32}$/.test(value.code || '') ? value.code : undefined,
     reason: ['cancelled', 'stale-generation', 'root-offline', 'queue-timeout', 'queue-full', 'timeout', 'process-exit', 'spawn-failed', 'invalid-receipt', 'output-limit', 'executor-unavailable', 'directory-read-failed', 'stopping', 'closing', 'ENETUNREACH', 'EACCES', 'EPERM', 'EIO', 'EBUSY', 'ENOENT', 'ENOTDIR'].includes(value.reason) ? value.reason : value.reason ? 'other' : undefined,
     sharedIo: value.sharedIo === true, ownsClose: value.sharedIo === true && typeof value.closed?.then === 'function',
+    requestId: Number.isSafeInteger(value.requestId) && value.requestId > 0 ? value.requestId : undefined,
     outcome: ['not-started', 'unknown'].includes(value.outcome) ? value.outcome : undefined,
     phase: ['queued', 'executing'].includes(value.phase) ? value.phase : undefined,
     queuedMs: Number.isFinite(value.queuedMs) && value.queuedMs >= 0 ? value.queuedMs : undefined,
@@ -40,10 +41,12 @@ function failureDiagnostics(host, state, error, roots) {
   } : undefined
   const boundary = state.readCloseBoundary
   return { phase: state.phase || 'fixture-setup', ownedSqliteSnapshots: state.ownedSqliteSnapshots || 0,
+    failure: failure(error),
     assertionLocation: location ? { file: 'check-watcher-noop-freshness.cjs', line: Number(location[1]), column: Number(location[2]) } : undefined,
     watcherResult: state.lastWatcherResult,
     readCloseBoundary: boundary ? {
       mode: boundary.mode, outcome: boundary.outcome, injected: boundary.injected, closeReleased: boundary.closeReleased,
+      observerErrors: boundary.observerErrors,
       availabilityBefore: boundary.availabilityBefore, availabilityAfter: boundary.availabilityAfter,
       counts: boundary.counts, error: failure(boundary.error), closeState: boundary.closeState,
       result: boundary.result ? { upserts: boundary.result.upserts.length, deletes: boundary.result.deletes.length,
