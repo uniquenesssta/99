@@ -69,7 +69,7 @@
         "runWatchedFolderRefreshJob",
         "refreshWatchedFolder"
       ],
-      "sha256": "5c1fcc5c3ecaf65b53608a32920f6c5326960dc200f0035eafe07207c1e7759c"
+      "sha256": "cec10ecf00863acee47a370ea80a20139ac9db8ae5f55400e5fe1a0db0631e72"
     },
     "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts": {
       "exports": [
@@ -83,7 +83,7 @@
         "scheduleRefresh",
         "backgroundResult"
       ],
-      "sha256": "8ebc84c79b85139528716f01a05aef6559dd95be418a991910eb49ecc5ff32d9"
+      "sha256": "0afd3a92718e4d59eeaca7060d3ad8820692b21f7ad239c0a3ae68ec3e65be6e"
     },
     "src/main/activation/runtime/fontActivationSessionRuntime.ts": {
       "exports": [
@@ -278,5 +278,32 @@
     "change": "Only the shared-watcher-poll availability call adds the fourth argument { background: true }, so ordinary watcher polls observe the central adaptive probe deadline. Foreground admission keeps its freshness policy. Removing that exact argument reproduces the prior LF-normalized hash; exports and functions are unchanged.",
     "retainedVerification": "All W-01 watcher lifecycle, recovery, stale callback, metrics, activation, manual refresh and mutation assertions remain unchanged. Central probe ownership and shared watcher reconciliation diagnostics remain required.",
     "remainingVerification": "Static hash, structure and syntax checks only; this explicit migration still requires the next Windows aggregate run."
+  },
+  "manualRefreshInventoryLifecycleMigration": {
+    "commit": "ac94a1c3a1384d4a1d6cbfd813959bb751ba265f",
+    "reviewedFunctions": {
+      "src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts": [
+        "runWatchedFolderRefreshJob",
+        "refreshWatchedFolder"
+      ],
+      "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts": [
+        "scheduleRefresh"
+      ]
+    },
+    "hashes": [
+      {
+        "file": "src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts",
+        "oldSha256": "5c1fcc5c3ecaf65b53608a32920f6c5326960dc200f0035eafe07207c1e7759c",
+        "newSha256": "cec10ecf00863acee47a370ea80a20139ac9db8ae5f55400e5fe1a0db0631e72"
+      },
+      {
+        "file": "src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts",
+        "oldSha256": "8ebc84c79b85139528716f01a05aef6559dd95be418a991910eb49ecc5ff32d9",
+        "newSha256": "0afd3a92718e4d59eeaca7060d3ad8820692b21f7ad239c0a3ae68ec3e65be6e"
+      }
+    ],
+    "change": "Explicit manual refresh forwards the existing job signal/currentness guard, reports source deletions separately from bad-row projection cleanup, and repairs the target-root projection only after a complete error-free pass. Background refresh owns the actual shutdown signal and epoch, carries them in the shared I/O scope, and awaits a branded physical-close receipt before retirement. Export and function-name inventories are unchanged.",
+    "causalVerification": "check-watcher-activation-baseline.cjs retains all previous controls and adds actual shutdown/resume signal/currentness checks plus complete-only zero-delta target snapshot recovery, each with a causally attributed removal mutant and LF/CRLF healthy cases. check-manual-refresh-inventory.cjs covers selective metadata inventory, parse/cancel/write ordering and physical close; check-tag-font-recovery.cjs retains typed completion/failure/coalescing coverage through the actual signal owner.",
+    "remainingVerification": "This migration follows the W-01 fingerprint failure in Windows run 38351130706. Only static AST/surface/hash/syntax review was performed for these corrections; a fresh Windows aggregate must verify them. The original baseline and all previous migration records are retained."
   }
 }

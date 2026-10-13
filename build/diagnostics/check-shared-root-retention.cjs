@@ -93,7 +93,7 @@ async function catalogCases(dir) {
   const dbPath=path.join(dir,'library.sqlite'), db=new DatabaseSync(dbPath)
   try {
   let failTransaction=false
-  const adapter={exec:sql=>db.exec(sql),prepare:sql=>db.prepare(sql),transaction:fn=>()=>{db.exec('BEGIN');try{const v=fn();if(failTransaction)throw Error('injected disk commit failure');db.exec('COMMIT');return v}catch(e){db.exec('ROLLBACK');throw e}}}
+  const adapter={exec:sql=>db.exec(sql),prepare:sql=>db.prepare(sql),function:(...args)=>db.function(...args),transaction:fn=>()=>{db.exec('BEGIN');try{const v=fn();if(failTransaction)throw Error('injected disk commit failure');db.exec('COMMIT');return v}catch(e){db.exec('ROLLBACK');throw e}}}
   let values=[['A','both'],['B','both']], broken=new Set(), aggregate=false, blocked=null, unavailable=new Set(), requests=0
   const tags=()=>db.prepare('SELECT name FROM tags ORDER BY sort_order').all().map(r=>r.name)
   let mappingRequests=0

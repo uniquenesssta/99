@@ -342,7 +342,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     findPrevious: path => findFontItemInRootIndexes("", normalizePathForCacheCompare(path), true),
     openLibraryDb, roots: appWatchedFolders,
     readShared: rustCoreWorkerRuntime.runRustSharedMetadataOverlayRead,
-    queryLive: (request, limit, offset) => requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(request, limit, offset),
+    queryLive: (request, limit, offset) => requireFontQueryFacadeRuntime().queryTagFontCandidatePage(request, limit, offset),
     hydrate: async items => options.hydrateLocalFavoritesForFonts(await hydrateInstallStatusForFonts(await hydrateLocalTagsForFonts(items))),
     matches: sharedFontMatchesRequest, compare: compareSharedFonts, appendLog: appendStartupLog,
   });

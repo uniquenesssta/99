@@ -6,7 +6,7 @@ const path=require('node:path')
 const {EventEmitter}=require('node:events')
 const {PassThrough}=require('node:stream')
 const {AsyncResource}=require('node:async_hooks')
-const {createQueryRetirementObserver,validateQueryRetirements,inputDigest}=require('./lib/full-refresh-query-retirement.cjs')
+const {createQueryRetirementObserver,validateQueryRetirements,inputDigest,tagDigest}=require('./lib/full-refresh-query-retirement.cjs')
 const clone=value=>JSON.parse(JSON.stringify(value))
 
 async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}={}) {
@@ -136,6 +136,95 @@ function historicalNativeRetirementFixture(current) {
   return sample
 }
 
+// Minimal invented validator evidence. No CI report, host paths or workload
+// timing is embedded here, and this is never performance evidence.
+function syntheticChainedRetirementFixture({middleChild=true}={}) {
+  const identity={actionId:'fixture-query',intentSha256:'1'.repeat(64),ipcId:1}
+  const inputSha256=inputDigest({dbPath:'fixture-db',rows:[{itemId:'fixture-font',fontPath:'fixture-font.ttf',aliases:['fixture-font']}]})
+  const tagSha256=tagDigest([{id:'fixture-font',localTagNames:['FixtureTag']}])
+  const cancelled={name:'SharedIoProcessError',reason:'query-superseded',outcome:'not-started'}
+  const observation={version:1,taskProof:'selected-source-query-tasks',observerErrors:0,dropped:0,restorationConflicts:0,
+    signals:[
+      {id:2,...identity,ownerId:1,tagGeneration:0,firstObservedAt:110,firstObservedLive:true,abortedAt:200,invalidationId:3,settledAt:260,outcome:'rejected',error:{...cancelled}},
+      {id:4,...identity,ownerId:1,tagGeneration:1,firstObservedAt:220,firstObservedLive:true,abortedAt:300,invalidationId:5,settledAt:360,outcome:'rejected',error:{...cancelled}},
+      {id:6,...identity,ownerId:1,tagGeneration:2,firstObservedAt:320,firstObservedLive:true,settledAt:800,outcome:'returned'},
+    ],
+    invalidations:[
+      {id:3,ownerId:1,generationBefore:0,generationAfter:1,cancelInFlight:true,startedAt:190,finishedAt:210,ok:true},
+      {id:5,ownerId:1,generationBefore:1,generationAfter:2,cancelInFlight:true,startedAt:290,finishedAt:310,ok:true},
+    ],
+    ipcs:[{id:1,...identity,channel:'fonts:queryPage',tagPage:true,startedAt:100,finishedAt:900,ok:true,total:1,itemCount:1,tagSha256}],
+    hydrations:[{id:7,...identity,hydrationId:1,signalId:6,startedAt:500,finishedAt:600,requestedCount:1,inputCount:1,inputSha256,
+      ok:true,returnedCount:1,tagSha256,populationValidated:true,workerMode:'rust-local-tags-read'}],
+    transports:[{id:8,...identity,hydrationId:1,signalId:6,inputSha256,command:'--local-tags-read',startedAt:510,finishedAt:590,
+      signalAbortedAtStart:false,outcome:'returned'}],
+  }
+  const hydrationReceipts=[{id:1,ok:true,querySignalId:6,queryInputSha256:inputSha256,populationValidated:true,nativePopulationValidated:true,
+    nativeCalls:1,workerMode:'rust-local-tags-read',requestedCount:1,requestedUniqueIds:1,nativeRequestedCount:1,nativeUniqueIds:1,returnedCount:1,returnedUniqueIds:1}]
+  const child=(requestOrdinal,querySignalId,startedAt,closedAt,error)=>({requestOrdinal,querySignalId,startedAt,closedAt,error,
+    lane:'foreground-browse',actionId:identity.actionId,queryIntentSha256:identity.intentSha256,command:'--shared-file-io',operation:'readdir',
+    label:'shared-file-io:readdir',write:false,verifiedReadOnly:true,preflight:false,queuedMs:2,executionMs:3})
+  const processRequests=[child(1,2,120,250,{reason:'cancelled'}),child(3,2,130,180)]
+  if(middleChild)processRequests.push(child(2,4,230,350,{reason:'cancelled'}))
+  return {observation,hydrationReceipts,processRequests}
+}
+
+function chainedRetirementRegressions() {
+  for(const middleChild of [false,true]){
+    const sample=syntheticChainedRetirementFixture({middleChild}),proof=validateQueryRetirements(sample)
+    assert.equal(proof.certificates.length,1,'A chained attempt must have one final certificate')
+    assert.deepEqual(proof.retiredHydrationIds,[])
+    assert.deepEqual(proof.retiredRequestOrdinals,middleChild?[1,2]:[1],'Only failed physical reads may receive retirement exclusion')
+    const certificate=proof.certificates[0]
+    assert.deepEqual(certificate.retiredSignalIds,[2,4]);assert.deepEqual(certificate.invalidationIds,[3,5])
+    assert.equal(certificate.replacementSignalId,6)
+    assert.equal(certificate.queuedMs,middleChild?4:2);assert.equal(certificate.executionMs,middleChild?6:3)
+  }
+  const sample=syntheticChainedRetirementFixture()
+  const negatives=[
+    ['missing generation',s=>s.observation.signals.splice(1,1),/generation span is invalid/],
+    ['skipped generation',s=>s.observation.signals[1].tagGeneration++,/generation gap or branch/],
+    ['branch',s=>s.observation.signals.push({...s.observation.signals[1],id:99}),/generation gap or branch/],
+    ['cycle',s=>s.observation.signals[1].id=2,/Invalid\/duplicate/],
+    ['wrong owner',s=>s.observation.signals[1].ownerId=9,/chain identity changed/],
+    ['wrong IPC',s=>s.observation.signals[1].ipcId=9,/generation gap or branch/],
+    ['wrong action',s=>s.observation.signals[1].actionId='unrelated',/chain identity changed/],
+    ['wrong intent',s=>s.observation.signals[1].intentSha256='0'.repeat(64),/chain identity changed/],
+    ['not initially live',s=>s.observation.signals[1].firstObservedLive=false,/not originally live/],
+    ['missing invalidation',s=>s.observation.signals[1].invalidationId=99,/exact owned invalidation/],
+    ['wrong invalidation owner',s=>s.observation.invalidations[1].ownerId=9,/exact owned invalidation/],
+    ['skipped invalidation',s=>s.observation.invalidations[1].generationAfter++,/exact owned invalidation/],
+    ['non-cancelling invalidation',s=>s.observation.invalidations[1].cancelInFlight=false,/exact owned invalidation/],
+    ['ambiguous invalidation',s=>s.observation.invalidations.push({...s.observation.invalidations[1],id:99}),/invalidation is ambiguous/],
+    ['skipped intervening invalidation',s=>s.observation.invalidations.push({id:99,ownerId:1,generationBefore:2,generationAfter:3,cancelInFlight:true,ok:true,startedAt:315,finishedAt:316}),/skipped an owned invalidation/],
+    ['pre-invalidation replacement',s=>s.observation.signals[1].firstObservedAt=205,/invalidation order changed/],
+    ['revived intermediate',s=>s.observation.signals[1].outcome='returned',/not superseded and settled/],
+    ['unowned failure',s=>s.observation.signals[1].error.reason='timeout',/not superseded and settled/],
+    ['missing settlement',s=>delete s.observation.signals[1].settledAt,/not superseded and settled/],
+    ['late settlement',s=>s.observation.signals[1].settledAt=501,/not superseded and settled/],
+    ['stale hydration',s=>s.observation.hydrations.push({...s.observation.hydrations[0],id:99,hydrationId:99,signalId:4,ok:false}),/obsolete hydration or transport/],
+    ['stale transport',s=>s.observation.transports.push({...s.observation.transports[0],id:99,signalId:4}),/obsolete hydration or transport/],
+    ['stale native receipt',s=>s.hydrationReceipts.push({...s.hydrationReceipts[0],id:99,querySignalId:4}),/obsolete hydration or transport/],
+    ['missing child close',s=>delete s.processRequests[2].closedAt,/physically closed before task settlement/],
+    ['late child close',s=>s.processRequests[2].closedAt=361,/physically closed before task settlement/],
+    ['unknown failed operation',s=>s.processRequests[2].operation='stat',/Unapproved early retired physical operation/],
+    ['unknown successful operation',s=>s.processRequests[1].operation='stat',/Unapproved early retired physical operation/],
+    ['unclosed successful read',s=>delete s.processRequests[1].closedAt,/physically closed before task settlement/],
+    ['unknown failure',s=>s.processRequests[2].error.reason='timeout',/Unapproved early retired physical operation/],
+    ['write',s=>s.processRequests[2].write=true,/Unapproved early retired physical operation/],
+    ['preflight',s=>s.processRequests[2].preflight=true,/Unapproved early retired physical operation/],
+    ['unverified read',s=>s.processRequests[2].verifiedReadOnly=false,/Unapproved early retired physical operation/],
+    ['duplicate physical identity',s=>s.processRequests[2].requestOrdinal=1,/physical request identity changed/],
+    ['current generation changed',s=>s.observation.invalidations.push({id:99,ownerId:1,generationBefore:2,generationAfter:3,cancelInFlight:false,ok:true,startedAt:700,finishedAt:710}),/current generation through IPC/],
+    ['multiple final hydrations',s=>s.observation.hydrations.push({...s.observation.hydrations[0],id:99,hydrationId:99}),/one same-intent native hydration replacement/],
+    ['out-of-window extra hydration',s=>s.observation.hydrations.push({...s.observation.hydrations[0],id:99,hydrationId:99,startedAt:101,finishedAt:109}),/one same-intent native hydration replacement/],
+    ['unbounded generation jump',s=>s.observation.signals[2].tagGeneration=Number.MAX_SAFE_INTEGER,/generation span is invalid/],
+    ['retired final',s=>s.observation.signals[2].abortedAt=850,/live next query generation/],
+    ['unsuccessful consumer',s=>s.observation.ipcs[0].ok=false,/successful tagged IPC/],
+  ]
+  for(const [name,mutate,cause]of negatives){const changed=clone(sample);mutate(changed);assert.throws(()=>validateQueryRetirements(changed),cause,`Invalid chained retirement accepted: ${name}`)}
+}
+
 async function daemonErrorRealmRegression() {
   const {loader}=require('./check-operation-chain.cjs'),{productionHostGlobals}=require('./lib/production-projection-host.cjs')
   const root=path.resolve(__dirname,'../..'),core=relative=>path.join(root,'src/main/rust-core',relative)
@@ -174,6 +263,7 @@ async function runQueryRetirementRegressions() {
   assert.equal(process.platform,'win32','Query retirement regression executes only on Windows')
   const prior=process.env.HFM_NODE_STATE_FALLBACK;process.env.HFM_NODE_STATE_FALLBACK='0'
   try {
+    chainedRetirementRegressions()
     const currentSample=await actualQueryRetirementFixture()
     const sample=historicalNativeRetirementFixture(currentSample)
     const earlySample=await actualQueryRetirementFixture({}, {bindingCount:26})
@@ -312,7 +402,7 @@ async function runQueryRetirementRegressions() {
     assert.throws(()=>validateQueryRetirements({observation:{...unobserved,taskProof:'selected-source-query-tasks'},hydrationReceipts:[{...ordinaryReceipt,ok:false}]}),/previously live/)
     outside.restore()
     await daemonErrorRealmRegression()
-    console.log('[diagnostics:full-refresh-query-retirement] actual query cancellation before hydration/replacement, historical validator compatibility, strict negative proofs, observer identity and daemon Error realm passed')
+    console.log('[diagnostics:full-refresh-query-retirement] actual query cancellation before hydration/replacement, historical validator compatibility, bounded synthetic generation chains and causal negatives, strict negative proofs, observer identity and daemon Error realm passed')
     return {...currentSample,earlySample,historicalSample:sample}
   }finally{if(prior===undefined)delete process.env.HFM_NODE_STATE_FALLBACK;else process.env.HFM_NODE_STATE_FALLBACK=prior}
 }

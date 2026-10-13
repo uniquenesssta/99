@@ -9,6 +9,7 @@ function load(mocks={},globals={}) {
  const transforms={}
  for(const file of [queueFile,watchFile,mergeFile,reconciliationFile])transforms[path.join(root,file)]=s=>{
   if(mutant==='projection'&&file===queueFile){assert(s.includes('!projectionPending.has(id) &&'));s=s.replace('!projectionPending.has(id) &&','')}
+  if(mutant==='signature'&&file===mergeFile){const anchor='const values = sameSignature ? [installed, knownBy, matches] : [null, null, null];';assert(s.includes(anchor),'signature mutation target missing');s=s.replace(anchor,'const values = [installed, knownBy, matches];')}
   if(mutant==='baseline'&&file===reconciliationFile){const anchor='failures = Math.min(failures + 1, 5)';assert(s.includes(anchor),'baseline mutation target missing');s=s.replace(anchor,'committed = undefined; '+anchor)}
   return crlf?s.replace(/\r?\n/g,'\r\n'):s
  }
@@ -22,8 +23,8 @@ async function settlement() {
  const insert=db.prepare('INSERT INTO entries(relative_path,file_size,modified_at,font_json,installed,installed_by,matches_json,root_path) VALUES (?,1,?, ?,0,?,?,?)')
  for(const id of ['a','b'])insert.run(id+'.ttf',1,JSON.stringify({id,path:'\\\\nas\\fonts\\'+id+'.ttf',localTagNames:['keep']}),'none','[]','\\\\nas\\fonts')
  db.exec('CREATE TABLE sources(root_path TEXT PRIMARY KEY,index_db_path TEXT,install_db_path TEXT,index_signature TEXT,install_signature TEXT,shared_metadata_signature TEXT); CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT)')
- let committed=0,failProjection=true,projectionCalls=0,saves=0,persisted={}
- const deny=()=>{throw Error('NAS must not be queried')}
+ let committed=0,failProjection=true,projectionCalls=0,saves=0,persisted={},nasAccesses=0
+ const deny=()=>{nasAccesses++;throw Error('NAS must not be queried')}
  const runtime=load()(mergeFile).createMergedIndexValidationRuntime({
   mergedIndexSourcesKey:JSON.stringify,getSqliteMeta:()=>'',setSqliteMeta:deny,writeMergedIndexSourceRow:deny,installStatusContentSignature:deny,
   runMergedIndexMutation:async(_,fn)=>fn({commit(){committed++}}),openMergedIndexDb:async()=>db,closeSqliteDb(){},appendStartupLog(){},appWatchedFolders:deny,
@@ -33,7 +34,13 @@ async function settlement() {
   appWatchedFolders:deny,rootForFontPath:deny,clearFontQueryCaches(){},appendStartupLog(){},batchDelayMs:60000,
   syncMergedIndexAfterInstallStatusRefresh:async(roots,items)=>{projectionCalls++;assert.equal(roots.length,0);if(failProjection){failProjection=false;throw Error('local busy')}await runtime.syncMergedIndexAfterInstallStatusRefresh(roots,deny,items,deny)}
  })
- const item={id:load()('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId('\\\\nas\\fonts\\a.ttf',1,1),path:'\\\\nas\\fonts\\a.ttf'}
+ const item={id:load()('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId('\\\\nas\\fonts\\a.ttf',1,1),path:'\\\\nas\\fonts\\a.ttf',fileName:'a.ttf',fileSize:1,modifiedAt:1}
+ const signature=load()('src/main/install/status/installStatusSignatureRuntime.ts')
+ const sourceRow=db.prepare('SELECT * FROM entries WHERE relative_path=?').get('a.ttf')
+ const sourceSignature=signature.rootInstallStatusSignature(sourceRow.root_path,sourceRow.relative_path,sourceRow.file_size,sourceRow.modified_at,sourceRow.font_json)
+ assert.equal(signature.installStatusSignatureValue(item),sourceSignature,'positive fixture must carry the exact indexed filename and stat')
+ const incomplete={id:item.id,path:item.path,installStatusKnown:true,active:true,systemInstalled:false,systemInstallMatches:[]}
+ assert.notEqual(signature.installStatusSignatureValue(incomplete),sourceSignature,'original incomplete fixture must not become authoritative')
  try {
   queue.schedule({[item.id]:{installed:true,by:'managed',matches:[]}},new Map([[item.id,item]]),'activate')
   await queue.flush('first');assert.equal(queue.hasPending(),true);assert.equal(db.prepare('SELECT installed FROM entries WHERE relative_path=?').get('a.ttf').installed,0)
@@ -42,7 +49,16 @@ async function settlement() {
   assert.equal(db.prepare('SELECT installed_by FROM entries WHERE relative_path=?').get('b.ttf').installed_by,'none')
   queue.schedule({[item.id]:{installed:false,by:'none',matches:[]}},new Map([[item.id,item]]),'deactivate');await queue.flush('deactivate')
   assert.equal(db.prepare('SELECT installed FROM entries WHERE relative_path=?').get('a.ttf').installed,0)
-  assert.deepEqual(JSON.parse(db.prepare('SELECT font_json FROM entries WHERE relative_path=?').get('a.ttf').font_json).localTagNames,['keep']);assert.equal(committed,2);assert.equal(saves,3)
+  assert.deepEqual(JSON.parse(db.prepare('SELECT font_json FROM entries WHERE relative_path=?').get('a.ttf').font_json).localTagNames,['keep']);assert.equal(committed,2);assert.equal(saves,3);assert.equal(nasAccesses,0)
+  const peerBefore=plain(db.prepare('SELECT * FROM entries WHERE relative_path=?').get('b.ttf'))
+  // The old id/path-only fixture is a real signature mismatch, not managed evidence.
+  await runtime.syncMergedIndexAfterInstallStatusRefresh([],deny,[incomplete],deny)
+  const withdrawn=db.prepare('SELECT installed,installed_by,matches_json,font_json FROM entries WHERE relative_path=?').get('a.ttf')
+  assert.deepEqual([withdrawn.installed,withdrawn.installed_by,withdrawn.matches_json],[null,null,null],'incomplete signature must withdraw projected status')
+  assert.deepEqual(JSON.parse(withdrawn.font_json).localTagNames,['keep'])
+  assert.equal(db.prepare('SELECT installed_by FROM entries WHERE relative_path=?').get('b.ttf').installed_by,'none')
+  assert.deepEqual(plain(db.prepare('SELECT * FROM entries WHERE relative_path=?').get('b.ttf')),peerBefore,'signature withdrawal must leave the peer row unchanged')
+  assert.equal(committed,3,'only the explicit withdrawal adds one local projection commit');assert.equal(saves,3,'withdrawal must not resave install evidence');assert.equal(nasAccesses,0,'signature withdrawal must remain local')
  } finally {db.close()}
 }
 async function watcher() {
@@ -85,6 +101,6 @@ async function watcher() {
   assert.equal(batches.length,2,'late collection must not publish after stop');assert.equal(timers.size,0);assert.deepEqual(plain(runtime.getSharedWatchStatus()),{roots:[]})
  } finally {runtime.stopFolderWatchers();releaseHeld?.({result:{value:{}}});await runtime.awaitFolderWatchersClosed()}
 }
-async function main(){await settlement();await watcher();if(!crlf&&!mutant){for(const [arg,cause] of [['--crlf',null],['--mutant=projection','persisted install facts must not suppress failed local projection'],['--mutant=baseline','failed poll must retain old baseline']]){const r=spawnSync(process.execPath,[__filename,arg],{encoding:'utf8',timeout:30000});assert.equal(r.error,undefined,arg+' process failed');assert.equal(r.signal,null,arg+' was terminated');assert.equal(r.status===0,!cause,arg+'\n'+r.stdout+r.stderr);if(cause)assert(r.stderr.includes(cause),arg+' failed for an unrelated reason:\n'+r.stderr)}}console.log('offline settlement/watcher: actual local SQLite, failed projection retry, unrelated fields, complete inventory/retained baseline, ACK status, adaptive polling, awaited late stop, CRLF and two causal mutants passed')}
+async function main(){await settlement();await watcher();if(!crlf&&!mutant){for(const [arg,cause] of [['--crlf',null],['--mutant=projection','persisted install facts must not suppress failed local projection'],['--mutant=baseline','failed poll must retain old baseline'],['--mutant=signature','incomplete signature must withdraw projected status']]){const r=spawnSync(process.execPath,[__filename,arg],{encoding:'utf8',timeout:30000});assert.equal(r.error,undefined,arg+' process failed');assert.equal(r.signal,null,arg+' was terminated');assert.equal(r.status===0,!cause,arg+'\n'+r.stdout+r.stderr);if(cause)assert(r.stderr.includes(cause),arg+' failed for an unrelated reason:\n'+r.stderr)}}console.log('offline settlement/watcher: actual local SQLite, failed projection retry, unrelated fields, complete inventory/retained baseline, ACK status, adaptive polling, awaited late stop, CRLF, exact-signature withdrawal and three causal mutants passed')}
 const watchdog=setTimeout(()=>{console.error('offline settlement/watcher did not settle');process.exitCode=1},60000)
 main().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>clearTimeout(watchdog))

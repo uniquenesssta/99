@@ -11,6 +11,7 @@ const watcherFile = 'src/main/watcher/folderWatcherRuntime.ts'
 const actionFile = 'src/renderer/src/runtime/system/actions/fontActivationActionRuntime.ts'
 const sessionFile = 'src/main/activation/runtime/fontActivationSessionRuntime.ts'
 const backgroundFile = 'src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts'
+const manualRefreshFile = 'src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts'
 const fixtureFile = path.join(__dirname, 'fixtures/watcher-activation-baseline.fixture.json')
 const plain = x => JSON.parse(JSON.stringify(x))
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
@@ -322,16 +323,92 @@ async function metricsResponseOrderCheck(transform = x => x) {
   }
 }
 async function manualBackgroundHealthy(transform = x => x) {
-  const logs = [], r = load(backgroundFile, {}, {}, transform).createManualFolderRefreshBackgroundRuntime({ appendStartupLog: s => logs.push(s) })
+  const production = require('./check-operation-chain.cjs').loader({}, { Error }, { [path.join(root, backgroundFile)]: transform })
+  const scope = production('src/main/path/sharedFileSystemRuntime.ts')
+  const logs = [], r = production(backgroundFile).createManualFolderRefreshBackgroundRuntime({ appendStartupLog: s => logs.push(s) })
   const gate = deferred(); let runs = 0
   const receipt = r.backgroundResult({ folder: 'C:\\Fonts', rootPath: 'C:\\Fonts', jobId: 'job1', elapsedMs: 0, message: 'pending' })
-  const first = r.scheduleRefresh('root', 'job1', async () => { runs++; await gate.promise; return receipt })
+  const first = r.scheduleRefresh('root', 'job1', async lifetime => {
+    assert.equal(scope.currentSharedIoSignal(), lifetime.signal, 'manual coalescing lost the production signal scope')
+    lifetime.assertCurrent(); runs++; await gate.promise; return receipt
+  })
   const second = r.scheduleRefresh('root', 'job2', async () => { runs++; return receipt })
   await drain(); assert.equal(runs, 1); assert.equal(first.scheduled, true); assert.equal(second.scheduled, false)
   assert.equal(second.jobId, 'job1')
   assert.equal(r.backgroundResult({ folder: '/fonts', rootPath: '/fonts', jobId: 'job1', elapsedMs: 0, message: 'pending' }).mode, 'background')
   gate.reject(Error('injected')); await drain(); assert.equal(r.activeRefresh('root'), null); assert.equal(logs.length, 1)
   r.scheduleRefresh('root', 'job3', async () => { runs++; return receipt }); await drain(); assert.equal(runs, 2)
+}
+async function manualBackgroundLifetimeHealthy(transform = x => x) {
+  const production = require('./check-operation-chain.cjs').loader({}, { Error }, { [path.join(root, backgroundFile)]: transform })
+  const background = production(backgroundFile).createManualFolderRefreshBackgroundRuntime({ appendStartupLog() {} })
+  const shared = production('src/main/path/sharedFileSystemRuntime.ts')
+  const shutdownOwner = production('src/main/app/shutdownCoordinatorRuntime.ts')
+  const cancellation = production('src/main/performance/ioQueue.ts')
+  const entered = deferred(), release = deferred()
+  let writes = 0, restored = 0, entryTimer, lifecycleTimer
+  const deadline = new Promise((_, reject) => { lifecycleTimer = setTimeout(() => reject(Error('manual lifecycle/cleanup did not settle')), 10000) })
+  void deadline.catch(() => {})
+  background.scheduleRefresh('root', 'closing', async lifetime => {
+    assert.equal(shared.currentSharedIoSignal(), lifetime.signal)
+    entered.resolve(lifetime.signal)
+    await release.promise
+    lifetime.assertCurrent()
+    writes++
+    return background.backgroundResult({ folder: 'C:\\Fonts', rootPath: 'C:\\Fonts', jobId: 'closing', elapsedMs: 0, message: 'done' })
+  })
+  const completion = background.waitForRefresh('root'); void completion.catch(() => {})
+  try {
+    const signal = await Promise.race([entered.promise, deadline,
+      completion.then(() => { throw Error('manual lifetime job settled before entry') }),
+      new Promise((_, reject) => { entryTimer = setTimeout(() => reject(Error('manual lifetime job did not enter')), 5000) })])
+    clearTimeout(entryTimer)
+    const shutdown = shutdownOwner.createShutdownCoordinator({
+      log() {}, freeze() {}, restore() { restored++ }, closeRenderers: async () => false,
+      cleanup: async () => ({ remaining: 0 }), save: async () => {}, confirmLoss: async () => false,
+      drainLogs: async () => {}, terminate() { throw Error('cancelled quit must restore') },
+    })
+    await Promise.race([shutdown.request(), deadline])
+    assert.equal(restored, 1); assert.equal(shutdownOwner.isApplicationClosing(), false)
+    assert.equal(signal.aborted, true, 'manual job signal remained live after shutdown')
+    release.resolve()
+    const [settled] = await Promise.race([Promise.allSettled([completion]), deadline])
+    assert.equal(writes, 0, 'cancelled manual owner wrote after application resumed')
+    assert.equal(settled.status, 'rejected')
+    assert(cancellation.isOperationCancelledError(settled.reason), 'manual owner bypassed the actual cancellation helper')
+  } finally {
+    clearTimeout(entryTimer); release.resolve()
+    try { await Promise.race([completion.catch(() => {}), deadline]) }
+    finally { clearTimeout(lifecycleTimer) }
+  }
+}
+async function manualProjectionHealthy(transform = x => x) {
+  for (const incomplete of [false, true]) {
+    const production = require('./check-operation-chain.cjs').loader({}, { Error })
+    const background = production(backgroundFile)
+    const folder = path.resolve('/manual-projection'), events = []
+    const runtime = load(manualRefreshFile, {
+      '../../path/sharedFileSystemRuntime': { sharedFileSystem: { stat: async () => ({ isDirectory: () => true }) } },
+      '../../folders/physicalFolders': { pathInsideFolder: (file, root) => file === root },
+    }, {}, transform)
+    const deps = { appendStartupLog() {}, withGlobalIo: (_label, work) => work(), emitFontIndexProgress() {},
+      appWatchedFolders: async () => [folder], findBestWatchedRootForFile: () => folder, createFontScanJobId: () => 'manual',
+      sendFontIndexChanged: () => events.push('notify'),
+      syncMergedIndexForRootSnapshot: async root => { assert.equal(root, folder); events.push('snapshot') },
+      syncMergedIndexForRootIncremental: async () => { throw Error('no-delta case must not take incremental projection') } }
+    const apply = { applyManualFolderRefreshToIndex: async (_root, _target, _job, lifetime) => {
+      lifetime.assertCurrent()
+      return { payload: { folder, upserts: [], deletes: [], errors: incomplete ? [{ path: folder, message: 'incomplete' }] : [] },
+        totalFiles: 1, parsed: 0, fromCache: 1, skippedBad: 0, workerCount: 0, sourceDeletes: 0, projectionDeletes: 0, metadataRepairs: 0 }
+    } }
+    const refresh = runtime.createManualWatchedFolderRefreshRuntime(deps, {
+      repairRootIndexCacheIfNeeded: async () => ({ rebuildRequired: false }), repairRootPreviewCacheIfNeeded: async () => ({}),
+    }, apply, background.createManualFolderRefreshBackgroundRuntime(deps))
+    const result = await refresh.refreshWatchedFolder(folder, folder, true)
+    assert.equal(result.ok, !incomplete)
+    assert.deepEqual(events, incomplete ? ['notify'] : ['snapshot', 'notify'], incomplete
+      ? 'partial manual refresh certified an incomplete inventory' : 'complete manual refresh skipped target projection recovery')
+  }
 }
 function snapshot(file, source = read(file)) {
   source = source.replace(/\r\n/g, '\n')
@@ -389,9 +466,15 @@ async function main() {
   assert.throws(() => metricsBroadcastHealthy(s => s.replace(metricsGate, 'const metricsOnly = false;')), assert.AssertionError);
   assert.throws(() => metricsBroadcastHealthy(s => s.replace(invalidMetricsGuard, '')), assert.AssertionError);
   await watcherHealthy(); await activationHealthy(); await manualBackgroundHealthy()
+  await manualBackgroundLifetimeHealthy(); await manualBackgroundLifetimeHealthy(s => s.replace(/\r?\n/g, '\r\n'))
+  await manualProjectionHealthy(); await manualProjectionHealthy(s => s.replace(/\r?\n/g, '\r\n'))
+  await assert.rejects(() => manualBackgroundLifetimeHealthy(s => mutate(s, 'onApplicationClosing(() => controller.abort())', 'onApplicationClosing(() => undefined)')), /manual job signal remained live/)
+  await assert.rejects(() => manualBackgroundLifetimeHealthy(s => mutate(s, 'throwIfAborted(controller.signal); assertApplicationOpen(epoch);', '')), /cancelled manual owner wrote/)
+  await assert.rejects(() => manualProjectionHealthy(s => mutate(s, 'mergedIndexRefreshPayload && !errors && !cancelled', 'mergedIndexRefreshPayload && false')), /complete manual refresh skipped/)
+  await assert.rejects(() => manualProjectionHealthy(s => mutate(s, 'mergedIndexRefreshPayload && !errors && !cancelled', 'mergedIndexRefreshPayload && !cancelled')), /partial manual refresh certified/)
   await assert.rejects(() => watcherHealthy(s => mutate(s, 'if (options.isScanActive?.()) {', 'if (false) {')), assert.AssertionError)
   await assert.rejects(() => activationHealthy(s => mutate(s, 'stateRuntime.adjustDatabaseActiveCount(1)\n      }\n      options.setStatus(`取消激活失败', 'stateRuntime.adjustDatabaseActiveCount(0)\n      }\n      options.setStatus(`取消激活失败')), assert.AssertionError)
   await assert.rejects(() => manualBackgroundHealthy(s => mutate(s, 'if (active) return active;', 'if (false) return active;')), assert.AssertionError)
-  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 12 mutations rejected; valid-only metrics broadcast; A-01 main/renderer correctness and metrics ordering')
+  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 16 mutations rejected; actual manual shutdown/resume lifetime and complete-only target snapshot recovery; valid-only metrics broadcast; A-01 main/renderer correctness and metrics ordering')
 }
 main().catch(e => { console.error(e); process.exitCode = 1 })

@@ -239,9 +239,12 @@ function validateQueryRetirements({observation,hydrationReceipts,processRequests
   // An earlier binding batch can retire before it reaches local-tag hydration.
   // Upstream page/native work may already exist. There is no old local-tag
   // input to hash, and this branch must never invent a failed hydration receipt.
-  const earlySignals=new Set(processRequests.filter(row=>row.error&&row.lane==='foreground-browse'
-    &&!retiredRequestOrdinals.includes(row.requestOrdinal)).map(row=>row.querySignalId))
+  const earlySignals=[...new Set(processRequests.filter(row=>row.error&&row.lane==='foreground-browse'
+    &&!retiredRequestOrdinals.includes(row.requestOrdinal)).map(row=>row.querySignalId))]
+    .sort((a,b)=>(signals.get(a)?.firstObservedAt??Infinity)-(signals.get(b)?.firstObservedAt??Infinity))
+  const certifiedEarlySignals=new Set()
   for(const signalId of earlySignals){
+    if(certifiedEarlySignals.has(signalId))continue
     assert.equal(o.taskProof,'selected-source-query-tasks','Legacy source has no early query retirement proof')
     const signal=signals.get(signalId),invalidation=invalidations.get(signal?.invalidationId),ipc=ipcs.get(signal?.ipcId)
     assert(signal?.firstObservedLive===true&&Number.isSafeInteger(signal.ownerId),'Early retired read lacks a previously live owned signal')
@@ -254,12 +257,50 @@ function validateQueryRetirements({observation,hydrationReceipts,processRequests
     assert(ipc?.ok===true&&ipc.tagPage===true&&ipc.channel==='fonts:queryPage'&&ipc.actionId===signal.actionId
       &&ipc.intentSha256===signal.intentSha256,'Early retired attempt lacks its successful tagged IPC')
     const matches=o.hydrations.filter(row=>row.ok===true&&row.actionId===signal.actionId&&row.intentSha256===signal.intentSha256
-      &&row.ipcId===ipc.id&&row.signalId!==signal.id&&row.startedAt>=signal.settledAt&&row.finishedAt<=ipc.finishedAt)
+      &&row.ipcId===ipc.id&&row.signalId!==signal.id)
     assert.equal(matches.length,1,'Early retired read lacks one same-intent native hydration replacement')
     const replacement=matches[0],next=signals.get(replacement.signalId),receipt=receipts.get(replacement.hydrationId)
-    assert(next?.firstObservedLive===true&&next.abortedAt===undefined&&next.ownerId===signal.ownerId&&next.tagGeneration===invalidation.generationAfter
+    assert(replacement.startedAt>=signal.settledAt&&replacement.finishedAt>=replacement.startedAt&&replacement.finishedAt<=ipc.finishedAt,
+      'Early replacement hydration lifetime changed')
+    assert(next?.firstObservedLive===true&&next.abortedAt===undefined&&next.error===undefined&&next.ownerId===signal.ownerId
       &&next.actionId===signal.actionId&&next.intentSha256===signal.intentSha256&&next.ipcId===ipc.id
       &&next.firstObservedAt>=invalidation.finishedAt&&next.firstObservedAt<=replacement.startedAt&&next.outcome==='returned','Early replacement is not the live next query generation')
+    // A second committed projection can retire the immediate replacement before
+    // it reaches hydration. Prove every link instead of treating any later
+    // successful generation as a substitute for the missing next generation.
+    assert(Number.isSafeInteger(signal.tagGeneration)&&signal.tagGeneration>=0&&Number.isSafeInteger(next.tagGeneration)
+      &&next.tagGeneration>signal.tagGeneration&&next.tagGeneration-signal.tagGeneration<o.signals.length,'Early retirement generation span is invalid')
+    const chain=o.signals.filter(row=>row.ipcId===ipc.id&&row.tagGeneration>=signal.tagGeneration&&row.tagGeneration<=next.tagGeneration)
+      .sort((a,b)=>a.tagGeneration-b.tagGeneration)
+    assert.equal(chain.length,next.tagGeneration-signal.tagGeneration+1,'Early retirement chain has a generation gap or branch')
+    assert(chain[0].id===signal.id&&chain.at(-1).id===next.id,'Early retirement chain endpoints changed')
+    const retired=chain.slice(0,-1),chainInvalidations=[]
+    for(let index=0;index<chain.length;index++){
+      const current=chain[index]
+      assert(current.tagGeneration===signal.tagGeneration+index,'Early retirement chain has a generation gap or branch')
+      assert(current.ownerId===signal.ownerId&&current.ipcId===ipc.id&&current.actionId===signal.actionId&&current.intentSha256===signal.intentSha256,
+        'Early retirement chain identity changed')
+      assert(current.firstObservedLive===true&&Number.isFinite(current.firstObservedAt)&&current.firstObservedAt>=ipc.startedAt,
+        'Early retirement chain signal was not originally live')
+      if(current===next)break
+      const edge=invalidations.get(current.invalidationId),following=chain[index+1]
+      assert(edge?.ok===true&&edge.cancelInFlight===true&&edge.ownerId===current.ownerId
+        &&edge.generationBefore===current.tagGeneration&&edge.generationAfter===current.tagGeneration+1,
+        'Early retirement chain lacks an exact owned invalidation')
+      assert.equal(o.invalidations.filter(row=>row.ownerId===current.ownerId&&row.generationBefore===current.tagGeneration).length,1,
+        'Early retirement chain invalidation is ambiguous')
+      assert(current.firstObservedAt<=edge.startedAt&&edge.startedAt<=current.abortedAt&&current.abortedAt<=edge.finishedAt
+        &&edge.finishedAt<=following.firstObservedAt,'Early retirement chain invalidation order changed')
+      assert(!o.invalidations.some(row=>row.ownerId===current.ownerId&&row.id!==edge.id
+        &&row.startedAt>=edge.startedAt&&row.startedAt<=following.firstObservedAt),'Early retirement chain skipped an owned invalidation')
+      assert(current.outcome==='rejected'&&current.error?.reason==='query-superseded'&&Number.isFinite(current.settledAt)
+        &&current.settledAt>=current.abortedAt&&current.settledAt<=replacement.startedAt,'Early retirement chain task was not superseded and settled before final hydration')
+      assert(!o.hydrations.some(row=>row.signalId===current.id)&&!o.transports.some(row=>row.signalId===current.id)
+        &&!hydrationReceipts.some(row=>row.querySignalId===current.id),'Early retirement chain admitted obsolete hydration or transport')
+      chainInvalidations.push(edge.id)
+    }
+    assert(!o.invalidations.some(row=>row.ownerId===next.ownerId&&row.startedAt>=next.firstObservedAt&&row.startedAt<=ipc.finishedAt),
+      'Early replacement was not the current generation through IPC completion')
     assert(Number.isFinite(next.settledAt)&&next.settledAt>=replacement.finishedAt&&next.settledAt<=ipc.finishedAt,'Early replacement task did not settle before IPC')
     assert(/^[a-f0-9]{64}$/.test(replacement.inputSha256||'')&&Number.isSafeInteger(replacement.inputCount)&&replacement.inputCount>0
       &&replacement.requestedCount===replacement.inputCount,'Early replacement actual native input proof missing')
@@ -276,18 +317,26 @@ function validateQueryRetirements({observation,hydrationReceipts,processRequests
     assert(replacement.populationValidated===true&&replacement.error===undefined&&replacement.workerMode==='rust-local-tags-read'
       &&/^[a-f0-9]{64}$/.test(replacement.tagSha256||'')&&replacement.tagSha256===ipc.tagSha256
       &&replacement.returnedCount===replacement.inputCount&&replacement.returnedCount===ipc.itemCount&&ipc.total===ipc.itemCount,'Early replacement exact tags did not reach the successful IPC')
-    const children=processRequests.filter(row=>row.error&&row.querySignalId===signal.id)
-    for(const row of children){
+    const retiredIds=new Set(retired.map(row=>row.id)),childOrdinals=new Set()
+    const allChildren=processRequests.filter(row=>retiredIds.has(row.querySignalId))
+    const children=allChildren.filter(row=>row.error)
+    for(const row of allChildren){
+      const parent=signals.get(row.querySignalId)
       assert(row.lane==='foreground-browse'&&row.actionId===signal.actionId&&row.queryIntentSha256===signal.intentSha256,'Early retired child ownership changed')
       assert(row.command==='--shared-file-io'&&row.operation==='readdir'&&row.label==='shared-file-io:readdir'
-        &&row.write===false&&row.verifiedReadOnly===true&&row.preflight===false&&row.error.reason==='cancelled','Unapproved early retired physical operation')
+        &&row.write===false&&row.verifiedReadOnly===true&&row.preflight===false&&(!row.error||row.error.reason==='cancelled'),'Unapproved early retired physical operation')
       assert(Number.isFinite(row.queuedMs)&&row.queuedMs>=0&&Number.isFinite(row.executionMs)&&row.executionMs>=0,'Early retired child lost queue/execution cost')
-      assert(Number.isFinite(row.closedAt)&&row.startedAt>=signal.firstObservedAt&&row.startedAt<=signal.abortedAt&&signal.abortedAt<=row.closedAt&&row.closedAt<=signal.settledAt,'Early retired read was not physically closed before task settlement')
-      assert(Number.isSafeInteger(row.requestOrdinal)&&row.requestOrdinal>0&&!retiredRequestOrdinals.includes(row.requestOrdinal),'Early retired physical request identity changed')
-      retiredRequestOrdinals.push(row.requestOrdinal)
+      assert(Number.isFinite(row.closedAt)&&row.startedAt>=parent.firstObservedAt&&row.startedAt<=parent.abortedAt&&row.startedAt<=row.closedAt
+        &&(!row.error||parent.abortedAt<=row.closedAt)&&row.closedAt<=parent.settledAt,'Early retired read was not physically closed before task settlement')
+      assert(Number.isSafeInteger(row.requestOrdinal)&&row.requestOrdinal>0&&!childOrdinals.has(row.requestOrdinal)
+        &&!retiredRequestOrdinals.includes(row.requestOrdinal),'Early retired physical request identity changed')
+      childOrdinals.add(row.requestOrdinal)
+      if(row.error)retiredRequestOrdinals.push(row.requestOrdinal)
     }
+    for(const current of retired)certifiedEarlySignals.add(current.id)
     certificates.push({kind:'retired-before-tag-hydration',signalId:signal.id,invalidationId:invalidation.id,replacementHydrationId:replacement.hydrationId,
       replacementSignalId:next.id,ipcId:ipc.id,actionId:signal.actionId,intentSha256:signal.intentSha256,replacementInputSha256:replacement.inputSha256,
+      ...(retired.length>1?{retiredSignalIds:retired.map(row=>row.id),invalidationIds:chainInvalidations}:{}),
       requestOrdinals:children.map(row=>row.requestOrdinal),queuedMs:children.reduce((n,row)=>n+row.queuedMs,0),executionMs:children.reduce((n,row)=>n+row.executionMs,0)})
   }
   return {retiredHydrationIds,retiredRequestOrdinals,certificates}

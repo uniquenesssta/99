@@ -384,16 +384,61 @@ async function detachedAuthorizationCase() {
 }
 
 async function backgroundWaitCase() {
-  const { createManualFolderRefreshBackgroundRuntime } = load('src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts')
+  // This owner depends on real cancellation and AsyncLocalStorage lifetimes.
+  // Keep its full dependency graph in one cached production-loader instance.
+  const backgroundLoad = require('./check-operation-chain.cjs').loader({}, { Error })
+  const { createManualFolderRefreshBackgroundRuntime } = backgroundLoad('src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts')
+  const sharedIo = backgroundLoad('src/main/path/sharedFileSystemRuntime.ts')
+  const cancellation = backgroundLoad('src/main/performance/ioQueue.ts')
   const runtime = createManualFolderRefreshBackgroundRuntime({ appendStartupLog() {} })
   let finish, done = false
-  runtime.scheduleRefresh('root', 'job', () => new Promise(resolve => { finish = resolve }))
+  runtime.scheduleRefresh('root', 'job', lifetime => {
+    assert.equal(sharedIo.currentSharedIoSignal(), lifetime.signal, 'background job lost its real shared-I/O signal scope')
+    lifetime.assertCurrent()
+    return new Promise(resolve => { finish = resolve })
+  })
   const waiting = runtime.waitForRefresh('root').then(result => { done = true; return result })
   const receipt = refreshReceipt('root', { ok: false, errors: 2 })
   await Promise.resolve(); assert.equal(done, false); finish(receipt); assert.equal(await waiting, receipt); assert.equal(done, true)
   const error = Error('failed scan')
   runtime.scheduleRefresh('other', 'failed', async () => { throw error })
   await assert.rejects(runtime.waitForRefresh('other'), value => value === error)
+
+  // Exercise the same production shutdown and cancellation owners loaded above;
+  // a no-op cancellation mock would incorrectly permit this deferred write.
+  const entered = deferred(), release = deferred()
+  let writes = 0, shutdownOutcome, enteredTimer
+  runtime.scheduleRefresh('closing', 'cancelled', async lifetime => {
+    assert.equal(sharedIo.currentSharedIoSignal(), lifetime.signal)
+    entered.resolve(lifetime.signal)
+    await release.promise
+    lifetime.assertCurrent()
+    writes++
+    return refreshReceipt('closing')
+  })
+  const cancelled = runtime.waitForRefresh('closing')
+  void cancelled.catch(() => {})
+  try {
+    const signal = await Promise.race([entered.promise, new Promise((_, reject) => {
+      enteredTimer = setTimeout(() => reject(Error('background cancellation job did not enter')), 5000)
+    })])
+    clearTimeout(enteredTimer)
+    const shutdown = backgroundLoad('src/main/app/shutdownCoordinatorRuntime.ts').createShutdownCoordinator({
+      log() {}, freeze() {}, restore() { throw Error('background cancellation unexpectedly restored') },
+      closeRenderers: async () => {
+        assert.equal(signal.aborted, true, 'real application shutdown did not abort the manual job')
+        release.resolve()
+        await assert.rejects(cancelled, cancellation.isOperationCancelledError)
+        return true
+      },
+      cleanup: async () => ({ remaining: 0 }), save: async () => {}, confirmLoss: async () => false,
+      drainLogs: async () => {}, terminate: outcome => { shutdownOutcome = outcome },
+    })
+    await shutdown.request()
+    assert.equal(writes, 0, 'cancelled background owner wrote after its lifetime expired')
+    assert.equal(shutdownOutcome.reason, 'complete')
+    assert.equal(shutdownOutcome.processExitClean, true)
+  } finally { clearTimeout(enteredTimer); release.resolve(); await cancelled.catch(() => {}) }
 }
 
 async function f08QueryCases() {
@@ -529,7 +574,9 @@ async function f08RecoveryCases() {
 }
 
 async function f08RefreshCases() {
-  const backgroundModule = load('src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts')
+  const backgroundLoad = require('./check-operation-chain.cjs').loader({}, { Error })
+  const backgroundModule = backgroundLoad('src/main/watcher/manual-refresh/manualFolderRefreshBackgroundRuntime.ts')
+  const sharedIo = backgroundLoad('src/main/path/sharedFileSystemRuntime.ts')
   const module = load('src/main/watcher/manual-refresh/manualWatchedFolderRefreshRuntime.ts', {
     'node:path': path,
     '../../path/sharedFileSystemRuntime': { sharedFileSystem: { stat: async () => ({ isDirectory: () => true }) } },
@@ -545,8 +592,10 @@ async function f08RefreshCases() {
       sendFontIndexChanged() {}, syncMergedIndexForRootSnapshot: async () => { snapshots++ }, syncMergedIndexForRootIncremental: async () => {} }
     const runtime = module.createManualWatchedFolderRefreshRuntime(deps,
       { repairRootIndexCacheIfNeeded: async () => ({ rebuildRequired: scenario === 'cancelled' }), repairRootPreviewCacheIfNeeded: async () => ({}) },
-      { applyManualFolderRefreshToIndex: async () => { runs++; await gate; if (scenario === 'failed') throw Error('injected scan failure')
-        return { payload: { upserts: [], deletes: [], errors: scenario==='partial'?[{ path: 'bad', message: 'denied' }]:[] }, totalFiles: 12, parsed: 2, fromCache: 10, skippedBad: 0, workerCount: 1 } } },
+      { applyManualFolderRefreshToIndex: async (_root, _folder, _job, lifetime) => {
+        assert.equal(sharedIo.currentSharedIoSignal(), lifetime.signal); lifetime.assertCurrent()
+        runs++; await gate; lifetime.assertCurrent(); if (scenario === 'failed') throw Error('injected scan failure')
+        return { payload: { upserts: [], deletes: [], errors: scenario==='partial'?[{ path: 'bad', message: 'denied' }]:[] }, totalFiles: 12, parsed: 2, fromCache: 10, skippedBad: 0, workerCount: 1, sourceDeletes: 0, projectionDeletes: 0, metadataRepairs: 0 } } },
       backgroundModule.createManualFolderRefreshBackgroundRuntime(deps))
     const first = runtime.refreshWatchedFolder(root, root, true)
     // Wait for scheduling without completing the controlled scan.
@@ -555,13 +604,13 @@ async function f08RefreshCases() {
     for (let i = 0; i < 12; i++) await Promise.resolve()
     release()
     if (scenario === 'failed') {
-      const settled = await Promise.allSettled([first, second]); assert(settled.every(item => item.status === 'rejected')); assert.equal(runs, 1)
+      const settled = await Promise.allSettled([first, second]); assert(settled.every(item => item.status === 'rejected')); assert.equal(runs, 1); assert.equal(snapshots, 0, 'failed scan published a merged snapshot')
     } else {
       const [a, b] = await Promise.all([first, second]); assert.equal(runs, 1); assert.equal(a, b)
       assert.notEqual(a.mode, 'background'); assert.equal(a.ok, scenario==='complete')
       assert.equal(a.errors, scenario === 'partial' ? 1 : 0); assert.equal(!!a.cancelled, scenario === 'cancelled')
       assert.equal(a.totalFiles, scenario === 'cancelled' ? 0 : 12)
-      assert.equal(snapshots,0,'cancelled rebuild must not publish a complete merged snapshot')
+      assert.equal(snapshots, scenario === 'complete' ? 1 : 0, 'only a complete explicit refresh may recover the target merged snapshot')
       assert(progress.some(p => p.stage === (scenario === 'cancelled' ? 'cancelled' : 'done')))
     }
   }

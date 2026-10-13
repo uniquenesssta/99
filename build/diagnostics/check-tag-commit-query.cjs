@@ -40,7 +40,10 @@ async function exercise(transforms = {}) {
     signal[scope==='local'?'handleLocalTagsMutationStateSignal':'handleSharedMetadataMutationStateSignal']({mutationId:scope,mutationKind:'deleteTag',dbPath:'/db',rootPath:'/root',changedIds:[],knownTags:[]})
     assert.equal(barrier.indexedQueryDelayMsForRequest(request),0,'receipt with no font IDs must be immediate')
     assert.equal(broadcasts.at(-1).knownTags.length,0)
-    let queryCount=0, changeInQuery=false, omitRevision=false
+    let queryCount=0, changeInQuery=false, omitRevision=false, authorityReads=0
+    const knownStatus={known:true,installed:false,by:'none',matches:[]}
+    const authority=new Map([['a',knownStatus]])
+    const indexedItem={id:'a',installStatusKnown:true,systemInstalled:false,active:false}
     const facade=load('src/main/library/fontQueryFacadeRuntime.ts').createFontQueryFacadeRuntime({
       appendLog(){},tagMetadataRevisionBarrier:barrier,fontSearchResultLimitDefault:100,
       appWatchedFolders:async()=>['/fonts'],scheduleMergedIndexBackgroundValidation(){},
@@ -49,7 +52,14 @@ async function exercise(transforms = {}) {
         queryCount++
         const requested=barrier.snapshotForRequest(request)
         if(changeInQuery){changeInQuery=false;barrier.noteMutation({scope,reason:'another-commit',committed:true})}
-        return {items:[{id:'a'}],total:1,engine:'sql',tagRevision:omitRevision?undefined:{requested}}
+        return {items:[{...indexedItem}],total:1,engine:'sql',tagRevision:omitRevision?undefined:{requested}}
+      },
+      // Status evidence is independent of the SQL row; a missing source row
+      // must remain unknown and trigger the facade's real mismatch guard.
+      readInstallStatusIndex:async(items,options)=>{
+        authorityReads++;assert.equal(options.enqueueMissTasks,false)
+        return {results:Object.fromEntries(items.filter(item=>authority.has(item.id)).map(item=>[item.id,authority.get(item.id)])),
+          missingReasons:Object.fromEntries(items.filter(item=>!authority.has(item.id)).map(item=>[item.id,'missing-row']))}
       },
       cleanSharedFontsForQuery:async()=>[{id:'fresh-memory'}],hydrateLocalTagsForFonts:async x=>x,
       rustCoreWorkerRuntime:{runRustMergedIndexIdsQuery:async args=>({ids:['a'],total:1,truncated:false,engine:'sql',tagRevision:{requested:args.tagRevision}})}
@@ -57,12 +67,19 @@ async function exercise(transforms = {}) {
     timers.length=0
     assert.equal((await facade.queryFontPageInLibraryUncached(request,100,0)).items[0].id,'a')
     assert.equal(timers.length,0,'page query must execute without grace after commit')
+    assert.equal(authorityReads,1,'accepted indexed page requires one authoritative read')
     assert.equal((await facade.queryFontsInLibrary(request)).ids[0],'a')
     assert.equal(timers.length,0,'ID query must execute without grace after commit')
+    assert.equal(authorityReads,1,'ID query must not masquerade as page hydration')
     changeInQuery=true
     const previous=queryCount
     await facade.queryFontPageInLibraryUncached(request,100,0)
     assert.equal(queryCount-previous,2,'concurrent commit still forces retry')
+    assert.equal(authorityReads,2,'tag-stale page must be rejected before status hydration')
+    authority.delete('a')
+    await assert.rejects(facade.queryFontPageInLibraryUncached(request,100,0),error=>
+      /query-superseded/.test(String(error))&&error.requiresPageWindowRestart===true,'authority withdrawal must retire a known SQL page')
+    authority.set('a',knownStatus)
     omitRevision=true
     assert.equal((await facade.queryFontPageInLibraryUncached(request,100,0)).items[0].id,'fresh-memory','unproven version falls back')
     await assert.rejects(protocol.run({scope,mutationKind:'set',inputIds:['a'],action:async()=>{throw Error('write failed')}}),/write failed/)

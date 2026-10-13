@@ -46,8 +46,11 @@ function vectorAndSqlCases() {
       CREATE TABLE install_db.install_status(font_id TEXT PRIMARY KEY,signature TEXT,installed INTEGER,by_type TEXT,matches_json TEXT,system_default INTEGER);
       CREATE TABLE install_status(font_id TEXT PRIMARY KEY,signature TEXT,installed INTEGER,by_type TEXT,matches_json TEXT,system_default INTEGER);
       CREATE TABLE entries(root_path TEXT,relative_path TEXT,cache_key TEXT,file_size INTEGER,modified_at REAL,created_at REAL,status TEXT,font_json TEXT,message TEXT,cached_at TEXT,is_deleted INTEGER);
-      CREATE TABLE fonts(id TEXT PRIMARY KEY); CREATE TABLE font_details(font_id TEXT,json TEXT); CREATE TABLE font_search(font_id TEXT,search_text TEXT);`)
-    identity.registerFileIdentitySql(db); signature.registerInstallStatusSql(db)
+      CREATE TABLE fonts(id TEXT PRIMARY KEY); CREATE TABLE font_details(font_id TEXT,json TEXT); CREATE TABLE font_search(font_id TEXT,search_text TEXT);
+      CREATE TABLE font_folder_ids(font_id TEXT,folder_id TEXT); CREATE TABLE font_scripts(font_id TEXT,script TEXT);
+      CREATE TABLE font_collections(font_id TEXT,collection_id TEXT); CREATE TABLE font_tags(font_id TEXT,tag_name TEXT);`)
+    const observedDb = require('./lib/operation-work-performance.cjs').createObserver().database(db)
+    identity.registerFileIdentitySql(observedDb); signature.registerInstallStatusSql(observedDb)
     load('src/main/library/runtime/librarySchemaRuntime.ts').ensureStructuredFontsSchema(db, (_db,_table,column,type) => db.exec(`ALTER TABLE fonts ADD COLUMN ${column} ${type}`))
     const fonts = Array.from({ length: 7 }, (_, i) => makeFont(i))
     const mapper = load('src/main/library/fontSqliteMapper.ts')
@@ -155,6 +158,49 @@ async function facadeOwnershipCases() {
   assert.equal(closed, false); gate.release(); await assert.rejects(physical.pending, /query-superseded/); assert.equal(closed, true)
   assertions++
 }
+async function tagCandidateRouteCases(transforms = {}) {
+  const scoped = loader({}, {}, transforms)
+  const barrier = scoped('src/main/library/tagMetadataRevisionBarrierRuntime.ts').createTagMetadataRevisionBarrierRuntime({ appendStartupLog() {} })
+  const io = scoped('src/main/path/sharedFileSystemRuntime.ts')
+  let queries = 0, reads = 0, stale = false, cancelled, omitRevision = false
+  const item = makeFont(0)
+  const facade = scoped('src/main/library/fontQueryFacadeRuntime.ts').createFontQueryFacadeRuntime({
+    appendLog() {}, tagMetadataRevisionBarrier: barrier,
+    queryFontPageFromMergedIndexWorker: async request => {
+      queries++
+      const requested = barrier.snapshotForRequest(request)
+      if (stale) { stale = false; barrier.noteMutation({ scope: 'local', reason: 'candidate-race', committed: true }) }
+      cancelled?.abort()
+      return { items: [{ ...item }], total: 1, engine: 'sql', tagRevision: omitRevision ? undefined : { requested } }
+    },
+    readInstallStatusIndex: async () => { reads++; return { results: { [item.id]: { known: true, installed: false, by: 'none', matches: [] } } } },
+    cleanSharedFontsForQuery: async () => [{ id: 'fresh-memory' }], hydrateLocalTagsForFonts: async items => items,
+  })
+  const broad = { sidebarPage: 'tags', selectedTagName: 'Authority', selectedWatchedFolders: undefined, sortMode: 'nameAsc' }
+  for (const patch of [{ sidebarPage: 'library' }, { selectedTagName: undefined }, { keyword: 'installed' }, { installStatus: 'notInstalled' },
+    { activeFilter: { kind: 'active' } }, { sortMode: 'smart' }, { selectedFormats: ['ttf'] }, { limit: 500 }, { selectedWatchedFolders: [1] }]) {
+    await assert.rejects(facade.queryTagFontCandidatePage({ ...broad, ...patch }, 500, 0), /invalid-tag-candidate-query/)
+  }
+  assert.equal(queries, 0, 'invalid candidate shape dispatched SQL')
+  for (const sidebarPage of ['tags', 'sharedTags']) assert.equal((await facade.queryTagFontCandidatePage({ ...broad, sidebarPage }, 500, 0)).total, 1)
+  assert.equal(reads, 0, 'TAG_CANDIDATE_READ_BUDGET: intermediate indexed candidates read status authority')
+  assert.equal((await facade.queryFontPageInLibraryUncached(broad, 500, 0)).items[0].installStatusKnown, true)
+  assert.equal(reads, 1, 'ordinary indexed tag page lost strict authority hydration')
+  stale = true
+  const previous = queries
+  await facade.queryTagFontCandidatePage(broad, 500, 500)
+  assert.equal(queries - previous, 2, 'late candidate page accepted a stale tag revision')
+  assert.equal(reads, 1)
+  cancelled = new AbortController()
+  await assert.rejects(io.withSharedIoSignal(cancelled.signal, () => facade.queryTagFontCandidatePage(broad, 500, 500)), /query-superseded/)
+  const afterCancel = queries
+  await assert.rejects(io.withSharedIoSignal(cancelled.signal, () => facade.queryTagFontCandidatePage(broad, 500, 500)), /query-superseded/)
+  assert.equal(queries, afterCancel, 'retired candidate query reached SQL')
+  cancelled = undefined; omitRevision = true
+  assert.equal((await facade.queryTagFontCandidatePage(broad, 500, 0)).items[0].id, 'fresh-memory', 'candidate route accepted unproven tag revision')
+  assert.equal(reads, 1)
+  assertions += 10
+}
 async function migrationCases() {
   const db = new DatabaseSync(':memory:'), authority = new DatabaseSync(':memory:')
   const rootA = 'C:\\authority', rootB = '\\\\offline\\fonts', machine = 'C:\\data\\machines\\fixture\\install.sqlite'
@@ -251,7 +297,55 @@ async function productionCompositionCase() {
     const finalMetrics = await host.query.getFontMetricsFromLibrary()
     assert.deepEqual([finalMetrics.notInstalledCount, finalMetrics.installStatusMissingCount], [99, 2])
     assert(!host.nativeReceipts.some(row => row.method === 'runRustMergedIndexRebuild'), 'offline authority repair forced a global root rebuild')
-    assertions += 15
+    // The tag collector owns its combined live + recovered population. Its
+    // broad indexed pages cannot perform another status hydration first.
+    // Root-index access stays unavailable; metadata and file/directory reads
+    // are local. This is not a fully offline tag test. Live candidates plus
+    // the persisted recovered snapshot resolve all bindings before findPrevious.
+    const tag = 'Authority', recovered = { ...makeFont(900, folder), fileSize: 128 }
+    recovered.id = identity.fileRuntimeFontId(recovered.path, recovered.fileSize, recovered.modifiedAt)
+    const tagged = [items[0], items[1], items[17], recovered]
+    const localIdentity = host.load('src/main/library/runtime/localFontTagIdentityRuntime.ts')
+    for (const item of tagged) host.libraryDb.prepare('INSERT INTO local_font_tags(font_id,font_path,tag_name,updated_at) VALUES (?,?,?,?)')
+      .run(localIdentity.localTagFontStorageId(item), localIdentity.normalizeLocalTagFontPath(item.path), tag, 'fixture')
+    const tagSnapshots = host.load('src/main/library/tagFontSnapshotRuntime.ts').openTagFontSnapshots(host.libraryDb)
+    tagSnapshots.remember([recovered])
+    assert.equal(tagSnapshots.read(recovered.path)?.id, recovered.id, 'recovered binding would require an unavailable root-index lookup')
+    const metadataPath = host.load('src/main/indexing/shared-metadata/sharedMetadataPathsRuntime.ts').sharedMetadataDbPathForRoot(folder)
+    const shared = host.openDb(metadataPath)
+    try {
+      host.load('src/main/indexing/shared-metadata/sharedMetadataDbRuntime.ts').createSharedMetadataDbRuntime({}).initializeSharedMetadataDb(shared)
+      for (const item of tagged) shared.prepare('INSERT INTO font_metadata(font_id,relative_path,path_key,tag_names_json,updated_at) VALUES (?,?,?,?,?)')
+        .run(item.id, item.fileName, item.path.replaceAll('\\', '/').toLowerCase(), JSON.stringify([tag]), 'fixture')
+    } finally { shared.close() }
+    const projection = host.openDb(host.paths.mergedPath)
+    try {
+      for (const item of tagged.slice(0, 3)) projection.prepare('UPDATE entries SET font_json=? WHERE root_path=? AND relative_path=?')
+        .run(JSON.stringify({ ...item, tagNames: [tag] }), folder, item.fileName)
+    } finally { projection.close() }
+    await host.status.saveInstallStatusIndex({
+      [items[1].id]: { known: true, installed: true, by: 'user', matches: [] },
+      [recovered.id]: { known: true, installed: false, by: 'none', matches: [] },
+    }, new Map([[items[1].id, items[1]], [recovered.id, recovered]]))
+    for (const sidebarPage of ['tags', 'sharedTags']) {
+      host.query.clearFontQueryCaches()
+      const beforeReads = host.nativeReceipts.filter(row => row.method === 'runRustInstallStatusRead').length
+      const beforePages = host.nativeReceipts.filter(row => row.method === 'runRustMergedIndexPageQuery').length
+      const tagRequest = { sidebarPage, selectedTagName: tag, installStatus: 'notInstalled', sortMode: 'nameAsc', limit: 1, offset: 0 }
+      const firstTag = await host.query.queryFontPageInLibrary(tagRequest)
+      const nextTag = await host.query.queryFontPageInLibrary({ ...tagRequest, offset: 1 })
+      assert.equal(firstTag.total, 2); assert.equal(nextTag.total, 2)
+      assert.deepEqual([...firstTag.items, ...nextTag.items].map(item => item.id), [items[0].id, recovered.id])
+      assert.equal(nextTag.items[0].fileAvailability, 'missing'); assert(!nextTag.items[0].recoveryPlaceholder)
+      const statusReads = host.nativeReceipts.filter(row => row.method === 'runRustInstallStatusRead').slice(beforeReads)
+      assert.equal(statusReads.length, 1, `${sidebarPage}: composed tag owner repeated authority hydration`)
+      assert.deepEqual([...Object.keys(statusReads[0].result.results), ...statusReads[0].result.missingIds].sort(), tagged.map(item => item.id).sort())
+      const candidatePages = host.nativeReceipts.filter(row => row.method === 'runRustMergedIndexPageQuery').slice(beforePages)
+      assert.equal(candidatePages.length, 1, `${sidebarPage}: fixture did not use indexed candidates`)
+      assert.equal(candidatePages[0].result.total, 3)
+      assert.deepEqual(candidatePages[0].result.items.map(item => item.id).sort(), tagged.slice(0, 3).map(item => item.id).sort())
+    }
+    assertions += 25
   } finally { if (host) await host.close(); fs.rmSync(directory, { recursive: true, force: true }) }
 }
 async function pageCacheOwnershipCases(transforms = {}) {
@@ -302,7 +396,11 @@ async function legacyCapabilityCases() {
 }
 async function main() {
   assert.equal(process.platform, 'win32', 'Installation authority verification runs only on Windows')
-  vectorAndSqlCases(); await readCases(); await facadeOwnershipCases(); await legacyCapabilityCases(); await pageCacheOwnershipCases(); await migrationCases(); await productionCompositionCase()
+  vectorAndSqlCases(); await readCases(); await facadeOwnershipCases(); await tagCandidateRouteCases(); await legacyCapabilityCases(); await pageCacheOwnershipCases(); await migrationCases(); await productionCompositionCase()
+  const facadeFile = path.join(root, 'src/main/library/fontQueryFacadeRuntime.ts')
+  const candidateGuard = 'if (tagCandidates) return page;'
+  assert.equal(fs.readFileSync(facadeFile, 'utf8').split(candidateGuard).length - 1, 1, 'candidate read-budget mutant anchor changed')
+  await assert.rejects(() => tagCandidateRouteCases({ [facadeFile]: text => text.replace(candidateGuard, '') }), error => error instanceof assert.AssertionError && /TAG_CANDIDATE_READ_BUDGET/.test(error.message))
   const cacheFile = path.join(root, 'src/main/library/fontPageQueryCacheRuntime.ts')
   const restartGuard = 'if ((error as { requiresPageWindowRestart?: boolean })?.requiresPageWindowRestart) throw error;'
   assert.equal(fs.readFileSync(cacheFile, 'utf8').split(restartGuard).length - 1, 2, 'exact creator/waiter mutant anchors changed')

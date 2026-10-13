@@ -47,6 +47,7 @@ export type FontQueryFacadeRuntime = {
     limit: number,
     offset: number,
   ) => Promise<FontQueryPageResult>;
+  queryTagFontCandidatePage: (request: FontQueryRequest, limit: number, offset: number) => Promise<FontQueryPageResult>;
   queryFontsInLibrary: (requestInput: FontQueryRequest) => Promise<FontQueryResult>;
   getFontMetricsFromLibrary: () => Promise<FontMetricsResult>;
   clearFontMetricsQueryCache: (cancelInFlight?: boolean) => void;
@@ -290,11 +291,29 @@ export function createFontQueryFacadeRuntime(
     }
   }
 
-  async function queryFontPageInLibraryUncached(
+  async function queryFontPageInLibraryUncached(request: FontQueryRequest, limit: number, offset: number): Promise<FontQueryPageResult> {
+    return queryFontPage(request, limit, offset);
+  }
+
+  // Main-only candidates for tagFontQueryRuntime.collect. That owner hydrates
+  // the complete live + recovered population before its own filter/count.
+  // Never accept status-dependent membership/order or an IPC request flag here.
+  async function queryTagFontCandidatePage(request: FontQueryRequest, limit: number, offset: number): Promise<FontQueryPageResult> {
+    assertFontQueryActive();
+    const allowed = new Set(['sidebarPage', 'selectedTagName', 'selectedWatchedFolders', 'sortMode']);
+    if (!request || !['tags', 'sharedTags'].includes(request.sidebarPage || '') || request.sortMode !== 'nameAsc'
+      || typeof request.selectedTagName !== 'string'
+      || request.selectedWatchedFolders !== undefined && (!Array.isArray(request.selectedWatchedFolders) || request.selectedWatchedFolders.some(folder => typeof folder !== 'string'))
+      || Object.keys(request).some(key => !allowed.has(key))) throw new Error('invalid-tag-candidate-query');
+    return queryFontPage(request, limit, offset, 0, true);
+  }
+
+  async function queryFontPage(
     request: FontQueryRequest,
     limit: number,
     offset: number,
     authorityAttempt = 0,
+    tagCandidates = false,
   ): Promise<FontQueryPageResult> {
     const startedAt = Date.now();
     const restartPageWindow = (cause?: unknown): never => {
@@ -306,6 +325,8 @@ export function createFontQueryFacadeRuntime(
       }
     };
     const acceptPage = async (page: FontQueryPageResult): Promise<FontQueryPageResult> => {
+      assertFontQueryActive();
+      if (tagCandidates) return page;
       const hydrated = await hydrateInstallStatusForFonts(page.items, true, false);
       assertFontQueryActive();
       const changed = hydrated.filter((item, index) => {
@@ -328,7 +349,7 @@ export function createFontQueryFacadeRuntime(
           try { rethrowFontQuerySuperseded(error); } catch (superseded) { return restartPageWindow(superseded); }
           throw error;
         }
-        return queryFontPageInLibraryUncached(request, limit, offset, authorityAttempt + 1);
+        return queryFontPage(request, limit, offset, authorityAttempt + 1);
       }
       return { ...page, items: options.applyPendingActivationState?.(hydrated) || hydrated };
     };
@@ -767,6 +788,7 @@ export function createFontQueryFacadeRuntime(
     searchFontsInLibrary,
     hydrateInstallStatusForFonts,
     queryFontPageInLibraryUncached,
+    queryTagFontCandidatePage,
     queryFontsInLibrary,
     getFontMetricsFromLibrary,
     clearFontMetricsQueryCache,
