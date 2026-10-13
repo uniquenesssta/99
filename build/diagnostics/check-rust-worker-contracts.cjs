@@ -16,6 +16,10 @@ const fixture = require('./fixtures/rust-worker-contracts.fixture.json')
 // native input token while locking the one reviewed optional admission hook.
 const reviewedOptionalProperties = {
   ...fixture.reviewedOptionalProperties,
+  RustInstallStatusReadResult: {
+    missingReasons: "missingReasons?: Record<string, import('../install/status/installStatusTypes').InstallStatusMissReason>",
+    readError: 'readError?: boolean',
+  },
   RustRootIndexApplyChangesInput: { assertCurrent: 'assertCurrent?: () => void' },
   RustMergedIndexRebuildInput: { requireAuthoritativeSources: 'requireAuthoritativeSources?: boolean' },
   RustMergedIndexSyncInput: {
@@ -184,6 +188,12 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
 type Assert<T extends true> = T
 ${publicNames.map((name, i) => `type Public${i} = Assert<Equal<C.${name}, L.${name}>>`).join('\n')}
 ${payloadNames.map((name, i) => `// @ts-expect-error Internal payload is not part of the public facade\ntype Private${i} = L.${name}`).join('\n')}
+const legacyInstallRead: C.RustInstallStatusReadResult = { results: {}, missingIds: [], workerMode: 'rust-install-status-read' }
+const unavailableInstallRead: C.RustInstallStatusReadResult = { ...legacyInstallRead, missingReasons: { font: 'signature-mismatch' }, readError: true }
+// @ts-expect-error Unknown authority reasons cannot silently acquire trusted meaning.
+const invalidInstallReason: C.RustInstallStatusReadResult = { ...legacyInstallRead, missingReasons: { font: 'anything' } }
+// @ts-expect-error Read failure remains boolean and distinct from a missing row.
+const invalidInstallReadError: C.RustInstallStatusReadResult = { ...legacyInstallRead, readError: 'missing' }
 const legacyWatcher: C.RustWatcherPreflightInput = { rootPath: 'C:/fonts', dbPath: 'index.sqlite', extensions: ['ttf'], changes: [] }
 const versionedWatcher: C.RustWatcherPreflightInput = { ...legacyWatcher, scriptDetectionVersion: 2 }
 // @ts-expect-error Watcher script version remains numeric.
@@ -277,6 +287,8 @@ function main() {
   const preparedGuardAnchor = 'preserveSourceCheckpoint?: boolean\n  expectedSourcesKey?: string\n  assertCurrent?: () => void'
   assert.equal(actual.read(abs(contracts)).replace(/\r\n/g, '\n').split(preparedGuardAnchor).length, 2, 'prepared guard mutation anchor drifted')
   const rejects = [
+    ['authority reason made mandatory', () => checkShapes(mutated(contracts, text => text.replace('missingReasons?: Record', 'missingReasons: Record')))],
+    ['authority read error widened', () => checkShapes(mutated(contracts, text => text.replace('readError?: boolean', 'readError?: string')))],
     ['strict rebuild flag missing', () => checkShapes(mutated(contracts, text => text.replace('requireAuthoritativeSources?: boolean', '')))],
     ['prepared rows widened', () => checkShapes(mutated(contracts, text => text.replace('preparedRows?: Record<string, unknown>[]', 'preparedRows?: unknown[]')))],
     ['expected checkpoint missing', () => checkShapes(mutated(contracts, text => text.replace('expectedSourcesKey?: string', '')))],
@@ -309,7 +321,7 @@ function main() {
   checkShapes(crlf)
   checkBoundaries(crlf)
   checkErasure(crlf)
-  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 55 compiler rejections, legacy/versioned watcher, recovery tags, binding snapshots, transient bytes and prepared projection guards, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
+  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 57 compiler rejections, legacy/versioned watcher, recovery tags, binding snapshots, transient bytes and prepared projection guards, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
 }
 
 try { main() } catch (error) {

@@ -1,3 +1,5 @@
+import { installStatusSignatureValue, rootInstallStatusSignature } from '../../install/status/installStatusSignatureRuntime'
+import { assertFontQueryActive } from '../../library/fontQueryTaskRuntime'
 import { settleMergedSyncError } from './mergedIndexProjectionFailureRuntime'
 import type { MergedIndexSourceInfo } from '../mergedIndexRuntime';
 import { withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime';
@@ -161,15 +163,18 @@ export function createMergedIndexValidationRuntime(
     syncMergedIndexForRootSnapshot: (rootPath: string, reason: string) => Promise<void>,
     items?: FontItem[],
     syncIncremental?: (root: string, payload: FontIndexChangePayload, reason: string) => Promise<void>,
+    projectionOptions: { preserveSourceCheckpoint?: boolean } = {},
   ): Promise<void> {
     if (items) {
       await ctx.runMergedIndexMutation('local-install-status', async ({ commit }) => {
+        assertFontQueryActive();
         const currentItems = ctx.readInstallStatusForProjection ? await ctx.readInstallStatusForProjection(items) : items;
+        assertFontQueryActive();
         const db = await ctx.openMergedIndexDb();
         try {
-          type Row = { root_path: string; relative_path: string; file_size: number; modified_at: number };
+          type Row = { root_path: string; relative_path: string; file_size: number; modified_at: number; font_json: string };
           const wanted = new Set(currentItems.map(item => item.id));
-          const rows = db.prepare("SELECT root_path, relative_path, file_size, modified_at FROM entries WHERE COALESCE(is_deleted,0)=0 AND status='ok' AND json_valid(font_json)").all() as Row[];
+          const rows = db.prepare("SELECT root_path, relative_path, file_size, modified_at, font_json FROM entries WHERE COALESCE(is_deleted,0)=0 AND status='ok' AND json_valid(font_json)").all() as Row[];
           const targets = new Map<string, Row[]>();
           let invalidRows = 0;
           // One bounded population pass per committed batch, then primary-key
@@ -190,7 +195,7 @@ export function createMergedIndexValidationRuntime(
             sharedMetadataSignature: row.shared_metadata_signature }));
           const previousSourcesKey = ctx.mergedIndexSourcesKey(sources);
           const signatures = new Map<string, string>();
-          for (const source of sources) {
+          for (const source of projectionOptions.preserveSourceCheckpoint ? [] : sources) {
             const path = source.installDbPath || '';
             if (!signatures.has(path)) signatures.set(path, await ctx.installStatusContentSignature(source.installDbPath));
           }
@@ -198,6 +203,7 @@ export function createMergedIndexValidationRuntime(
           const update = db.prepare(`UPDATE entries SET installed = ?, installed_by = ?, matches_json = ?
             WHERE root_path=? AND relative_path=? AND file_size=? AND modified_at=?
               AND (installed IS NOT ? OR installed_by IS NOT ? OR matches_json IS NOT ?)`);
+          assertFontQueryActive();
           db.exec('BEGIN IMMEDIATE');
           try {
             let changed = 0;
@@ -207,19 +213,22 @@ export function createMergedIndexValidationRuntime(
               const installed = item.installStatusKnown === true ? item.active || item.systemInstalled ? 1 : 0 : null;
               const knownBy = item.installStatusKnown === true ? by : null;
               const matches = item.installStatusKnown === true ? JSON.stringify(item.systemInstallMatches || []) : null;
-              for (const row of targets.get(item.id) || []) changed += Number(update.run(installed, knownBy, matches,
-                row.root_path, row.relative_path, row.file_size, row.modified_at, installed, knownBy, matches).changes || 0);
+              for (const row of targets.get(item.id) || []) {
+                const sameSignature = rootInstallStatusSignature(row.root_path, row.relative_path, row.file_size, row.modified_at, row.font_json) === installStatusSignatureValue(item);
+                const values = sameSignature ? [installed, knownBy, matches] : [null, null, null];
+                changed += Number(update.run(...values, row.root_path, row.relative_path, row.file_size, row.modified_at, ...values).changes || 0);
+              }
             }
             // Acknowledge exactly the install source projected by this writer.
             // Never bless an unrelated pending root/metadata change.
-            if (sources.length && ctx.getSqliteMeta(db, 'sourcesKey') === previousSourcesKey) {
+            if (!projectionOptions.preserveSourceCheckpoint && sources.length && ctx.getSqliteMeta(db, 'sourcesKey') === previousSourcesKey) {
               const now = new Date().toISOString();
               for (const source of nextSources) ctx.writeMergedIndexSourceRow(db, source, now);
               ctx.setSqliteMeta(db, 'sourcesKey', ctx.mergedIndexSourcesKey(nextSources));
               ctx.setSqliteMeta(db, 'updatedAt', now);
             }
             db.exec('COMMIT');
-            if (changed) commit('local-install-status');
+            if (changed) commit(projectionOptions.preserveSourceCheckpoint ? 'install-status-page-repair' : 'local-install-status');
             ctx.appendStartupLog(`local install projection batch: examined=${rows.length}, requested=${currentItems.length}, targets=${targets.size}, changed=${changed}, invalidRows=${invalidRows}`);
           } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
         } finally { ctx.closeSqliteDb(db); }

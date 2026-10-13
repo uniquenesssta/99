@@ -25,7 +25,10 @@ export function createInstallStatusWorkerReadRuntime(options: {
     const invalidIds = new Set<string>()
     const samples: Array<{ group: number; row: number; reason: string }> = []
     const validGroups = groups.map((group, groupIndex) => ({ ...group, items: group.items.filter((item, row) => {
-      try { fileRuntimeFontId(item.path, item.fileSize, item.modifiedAt); return true }
+      try {
+        if ([item.managedInstallPath, item.managedRegistryName].some(value => value != null && typeof value !== 'string')) throw new Error('invalid-install-status-signature-field')
+        fileRuntimeFontId(item.path, item.fileSize, item.modifiedAt); return true
+      }
       catch (error) {
         invalidIds.add(item.id)
         if (samples.length < 3) samples.push({ group: groupIndex, row, reason: (error instanceof Error ? error.message : String(error)).slice(0, 160) })
@@ -58,7 +61,8 @@ export function createInstallStatusWorkerReadRuntime(options: {
         value = await options.readWorker(validGroups)
       } else {
         logNodeStateFallbackDisabled({ appendStartupLog: options.appendStartupLog, source: 'install-status-read', reason: 'rust-read-unavailable' })
-        value = { results: {}, missingIds: validGroups.flatMap(group => group.items.map(item => item.id)) }
+        value = { results: {}, missingIds: validGroups.flatMap(group => group.items.map(item => item.id)), readError: true,
+          missingReasons: Object.fromEntries(validGroups.flatMap(group => group.items.map(item => [item.id, 'reader-unavailable' as const]))) }
       }
     }
     assertSharedIoActive()
@@ -67,6 +71,6 @@ export function createInstallStatusWorkerReadRuntime(options: {
     const results = { ...value.results }
     for (const id of invalidIds) delete results[id]
     options.appendStartupLog(`machine install status ${readerMode} read: groups=${validGroups.length}, known=${Object.keys(results).length}, missing=${value.missingIds.length + invalidIds.size}, elapsed=${value.timings?.elapsed || 0}ms`)
-    return { ...value, results, missingIds: [...new Set([...value.missingIds, ...invalidIds])] }
+    return { ...value, results, missingReasons: { ...value.missingReasons, ...Object.fromEntries([...invalidIds].map(id => [id, 'invalid-identity' as const])) }, missingIds: [...new Set([...value.missingIds, ...invalidIds])] }
   }
 }

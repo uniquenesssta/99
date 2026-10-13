@@ -1,6 +1,8 @@
 import type { FontItem,InstallCompareResult,SystemInstalledFont } from '../../../shared/types'
 
 export type SqliteDb = any
+export type InstallStatusMissReason = 'missing-db' | 'missing-row' | 'signature-mismatch' | 'explicit-unknown' | 'legacy-evidence' | 'invalid-row' | 'invalid-identity' | 'reader-unavailable' | 'read-error' | 'worker-omission'
+export type InstallStatusReadEvidence = { missingReasons?: Record<string, InstallStatusMissReason>; readError?: boolean }
 
 export type InstallStatusWorkerItem = Pick<FontItem, 'id' | 'sourceId' | 'path' | 'fileName' | 'fileSize' | 'modifiedAt' | 'managedInstallPath' | 'managedRegistryName'> & { signature: string }
 
@@ -43,7 +45,7 @@ export type InstallStatusRuntimeDeps = {
   isCleanWindowsDefaultCompareResult: (item: FontItem, result: InstallCompareResult) => boolean
   completeBackgroundTask: (taskKey: string, summary?: string) => Promise<void>
   appendStartupLog: (message: string) => void
-  readInstallStatusIndexInWorker?: (groups: InstallStatusReadWorkerGroup[]) => Promise<{ results: Record<string, InstallCompareResult>; missingIds: string[]; timings?: Record<string, number> }>
+  readInstallStatusIndexInWorker?: (groups: InstallStatusReadWorkerGroup[]) => Promise<{ results: Record<string, InstallCompareResult>; missingIds: string[]; timings?: Record<string, number> } & InstallStatusReadEvidence>
   saveInstallStatusIndexInWorker?: (groups: InstallStatusSaveWorkerGroup[]) => Promise<{ written: number; groups: number; timings?: Record<string, number> }>
 }
 

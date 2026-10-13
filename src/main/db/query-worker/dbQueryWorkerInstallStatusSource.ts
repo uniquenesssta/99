@@ -36,13 +36,17 @@ function readInstallStatusIndex(payload) {
   const startedAt = nowMs()
   const results = Object.create(null)
   const missingIds = []
+  const missingReasons = Object.create(null)
   const timings = { groups: 0, rows: 0 }
   for (const group of payload.groups || []) {
     const items = group.items || []
     if (!items.length) continue
     timings.groups += 1
-    if (!fs.existsSync(group.dbPath)) {
-      for (const item of items) missingIds.push(item.id)
+    let exists = true
+    try { fs.statSync(group.dbPath) }
+    catch (error) { if (error && error.code === 'ENOENT') exists = false; else throw error }
+    if (!exists) {
+      for (const item of items) { missingIds.push(item.id); missingReasons[item.id] = 'missing-db' }
       continue
     }
     const db = new Database(group.dbPath, { readonly: true, fileMustExist: true })
@@ -52,13 +56,14 @@ function readInstallStatusIndex(payload) {
       for (const item of items) {
         const row = select.get(item.id)
         timings.rows += 1
-        if (row && row.signature === item.signature) {
+        if (row && row.signature === item.signature && (row.installed === 0 || row.installed === 1)) {
           const result = normalizeInstallCompareResult({ installed: !!row.installed, by: row.by_type, matches: parseJson(row.matches_json, []) })
           if (result) {
             results[item.id] = result
             continue
           }
         }
+        missingReasons[item.id] = !row ? 'missing-row' : String(row.signature).startsWith('unknown:') ? 'explicit-unknown' : !String(row.signature).startsWith('content-v1:') ? 'legacy-evidence' : row.signature !== item.signature ? 'signature-mismatch' : 'invalid-row'
         missingIds.push(item.id)
       }
     } finally {
@@ -66,7 +71,7 @@ function readInstallStatusIndex(payload) {
     }
   }
   timings.elapsed = nowMs() - startedAt
-  return { results, missingIds, timings }
+  return { results, missingIds, missingReasons, timings }
 }
 function saveInstallStatusIndex(payload) {
   const startedAt = nowMs()

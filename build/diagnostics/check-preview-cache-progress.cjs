@@ -9,9 +9,10 @@ async function storage() {
  const rootState=()=>({rootId:'//nas/fonts',generation,state:online?'online':'offline'});
  const fs={mkdir:async p=>{calls.push(p);if(p==='/shared/images'&&gate)await gate.promise;if(fail&&p.startsWith('/shared'))throw Error('denied');}};
  const load=loader({
-  '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs},
-  '../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},getStartupPathRootState:rootState},
-  '../../app/shutdownCoordinatorRuntime':{applicationWorkEpoch:()=>epoch,isApplicationClosing:()=>closing},
+  '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs,withSharedIoPriority:(_p,f)=>f(),withSharedIoSignal:(_s,f)=>f(),withoutSharedIoSignal:f=>f()},
+  '../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},withStartupPathRootGuard:(guard,f)=>{guard();return f()},getStartupPathRootState:rootState},
+  '../../app/shutdownCoordinatorRuntime':{applicationWorkEpoch:()=>epoch,isApplicationClosing:()=>closing,onApplicationClosing(){}},
+  '../../rust-core/rustSharedIoCommandRuntime':{sharedIoResourceKeys:async()=>[]},
   '../../path/fontPathPolicy':{findBestWatchedRootForFile:()=>'/watched'},
  });
  const runtime=load('src/main/preview/runtime/previewStorageRoutingRuntime.ts').createPreviewStorageRoutingRuntime({
@@ -23,15 +24,15 @@ async function storage() {
  for(let i=0;i<24;i++)assert.equal((await runtime.previewCacheStorageForFont('/watched/a.ttf')).storage,'local');
  assert.equal(calls.filter(x=>x.startsWith('/shared')).length,1,'hot local reads waited for or repeated shared preparation');
  gate.resolve();assert.equal(await first,true);assert.equal(await duplicate,true);assert.deepEqual(calls.filter(x=>x!='/local'),['/shared/images','/shared/db','hide','manifest']);
- // No permanent ready flag: next publication recreates directories, even if removed between calls.
- calls=[];gate=null;assert.equal(await runtime.ensureSharedPreviewCachePrepared('/watched'),true);assert.equal(calls.at(-1),'manifest');
- calls=[];gate=deferred();const stale=runtime.ensureSharedPreviewCachePrepared('/watched');await flush();generation++;gate.resolve();assert.equal(await stale,false);assert(!calls.includes('manifest'));
+ // Ready reuse is finite; a confirmed missing parent forces full preparation.
+ calls=[];gate=null;assert.equal(await runtime.ensureSharedPreviewCachePrepared('/watched'),true);assert.equal(calls.length,0);assert.equal(await runtime.ensureSharedPreviewCachePrepared('/watched',true),true);assert.equal(calls.at(-1),'manifest');
+ calls=[];gate=deferred();const stale=runtime.ensureSharedPreviewCachePrepared('/watched',true);await flush();generation++;gate.resolve();assert.equal(await stale,false);assert(!calls.includes('manifest'));
  gate=null;assert.equal(await runtime.ensureSharedPreviewCachePrepared('/watched'),true);
- calls=[];fail=true;assert.equal(await runtime.ensureSharedPreviewCachePrepared('/watched'),false);assert(!calls.includes('manifest'));assert.equal(online,false);
+ calls=[];fail=true;assert.equal(await runtime.ensureSharedPreviewCachePrepared('/watched',true),false);assert(!calls.includes('manifest'));assert.equal(online,true,'optional cache failure marked the source root offline');
  assert.equal((await runtime.previewCacheStorageForFont('/watched/a.ttf')).storage,'local');
  fail=false;online=true;generation++;assert.equal(await runtime.ensureSharedPreviewCachePrepared('/watched'),true);
  calls=[];closing=true;assert.equal(await runtime.ensureSharedPreviewCachePrepared('/watched'),false);assert.equal(calls.length,0);
- closing=false;gate=deferred();const invalidated=runtime.ensureSharedPreviewCachePrepared('/watched');await flush();runtime.invalidateLibraryShellCache();gate.resolve();assert.equal(await invalidated,false);
+ closing=false;gate=deferred();const invalidated=runtime.ensureSharedPreviewCachePrepared('/watched',true);await flush();runtime.invalidateLibraryShellCache();gate.resolve();assert.equal(await invalidated,false);
  console.log('storage: 24 local routes add zero shared preparation operations; concurrent aliases share 4 preparation operations; deletion/failure/generation/invalidation/closing covered');
 }
 async function queue(mode) {
@@ -79,16 +80,16 @@ async function availability() {
  online=false;generation++;assert.equal(await owner.ensureRootPreviewCacheAvailable('/root'),false);
 }
 async function publication() {
- let ready=false, calls=[], timer;
+ let ready=false, calls=[], timer, now=1000;class Clock extends Date{static now(){return now}}
  const png=require('./fixtures/preview-png.cjs'),logs=[];
- const fs={lstat:async()=>({dev:1,ino:1}),mkdir:async()=>calls.push('mkdir'),open:async()=>{calls.push('lock');return{stat:async()=>({dev:1,ino:1}),writeFile:async()=>{},close:async()=>{}}},access:async()=>{throw Error('missing')},writeFile:async(_path,bytes)=>{assert.equal(bytes,png);calls.push('write')},rename:async()=>calls.push('rename'),unlink:async()=>{}};
+ const fs={lstat:async()=>({dev:1,ino:1}),mkdir:async()=>calls.push('mkdir'),open:async()=>{calls.push('lock');return{stat:async()=>({dev:1,ino:1}),writeFile:async()=>{},close:async()=>{}}},access:async()=>{throw Object.assign(Error('missing'),{code:'ENOENT'})},writeFile:async(_path,bytes)=>{assert.equal(bytes,png);calls.push('write')},rename:async()=>calls.push('rename'),unlink:async()=>{}};
  const load=loader({
   'node:fs':{promises:{readFile:async file=>{assert.equal(file,'/local/a.png');calls.push('read');return png}}},
-  '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs},
+  '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs,withSharedIoPriority:(_p,f)=>f(),withSharedIoSignal:(_s,f)=>f(),withoutSharedIoSignal:f=>f()},
   '../../rust-core/rustSharedIoCommandRuntime':{sharedIoResourceKeys:async()=>[]},
-  '../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},getStartupPathRootState:()=>({generation:1,state:'online'})},
+  '../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},withStartupPathRootGuard:(guard,f)=>{guard();return f()},getStartupPathRootState:()=>({rootId:'root',generation:1,state:'online'})},
   '../../app/shutdownCoordinatorRuntime':{applicationWorkEpoch:()=>1,isApplicationClosing:()=>false,onApplicationClosing(){}},
- },{setTimeout:f=>{timer=f;return 1}});
+ },{Date:Clock,setTimeout:(f,ms)=>{timer=()=>{now+=ms;f()};return 1},clearTimeout(){}});
  const publish=load('src/main/preview/runtime/previewCachePublishRuntime.ts').createPreviewCachePublishRuntime({appendStartupLog:line=>logs.push(line),ensureSharedAvailable:async()=>{calls.push('prepare');return ready},previewCacheStorageToShared:s=>s,withIoDeadlineResult:async(_l,f)=>({ok:true,value:await f()}),writeSharedPreviewCacheMeta:async(_path,_row,bytes)=>{assert.equal(bytes,png);calls.push('meta')},validateSharedPreviewCacheMeta:async(_path,_row,bytes)=>{assert.equal(bytes,png);return {status:'ok'}},appendSharedPreviewCacheManifest:async()=>{calls.push('manifest')},writePreviewCacheIndex:async()=>{calls.push('index')}});
  const storage={rootPath:'/root',dir:'/shared',storage:'root'}, row={previewKey:'a',localOutputPath:'/local/a.png',fontSignature:'font',textHash:'text',fontSize:44,width:1,height:1};
  publish.enqueuePreviewCachePublish(storage,row);timer();await flush();assert.deepEqual(calls,['prepare'],'failed preparation still wrote shared files');

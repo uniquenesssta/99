@@ -15,7 +15,7 @@ function load(file, mocks = {}, globals = {}, transform = s => s) {
   const code = ts.transpileModule(transform(read(file)), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
   vm.runInNewContext(code, { exports, console, process, performance, AbortController, AbortSignal, Buffer, ...globals, require(id) {
     if (Object.hasOwn(mocks,id)) return mocks[id]
-    if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises, withSharedIoSignal: (_signal, work) => work() }
+    if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises, withSharedIoSignal: (_signal, work) => work(), currentSharedIoSignal: () => undefined }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id==='node:path') return path
     if (id==='node:child_process') return { spawn() { throw Error('Native notification process forbidden in controlled watcher consistency diagnostic') } }

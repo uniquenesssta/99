@@ -395,7 +395,7 @@ async function main() {
     const directoryFile = 'src/main/indexing/scan-orchestrator/rootDirectoryCacheRuntime.ts'
     const storageFile = 'src/main/cache/scan-storage/rootIndexStorageRuntime.ts'
     const watcherFile = 'src/main/watcher/watchedFolderIndexRuntime.ts'
-    function makeWatcher({ directoryModule = host.load(directoryFile), storageModule = host.load(storageFile), watcherModule = host.load(watcherFile), runRustFontParseBatch = host.indexing.runRustFontParseBatch, saveRootIndexSqliteChanges = rootIndex.saveRootIndexSqliteChanges, exposeEntry = false, compatibilityEntry = false } = {}) {
+    function makeWatcher({ directoryModule = host.load(directoryFile), storageModule = host.load(storageFile), watcherModule = host.load(watcherFile), runRustFontParseBatch = host.indexing.runRustFontParseBatch, saveRootIndexSqliteChanges = rootIndex.saveRootIndexSqliteChanges, exposeEntry = false, compatibilityEntry = false, exposeManual = false } = {}) {
       const directoryRuntime = directoryModule.createRootDirectoryCacheRuntime(common)
       const entry = host.load('src/main/watcher/manual-refresh/manualFolderIndexEntryRuntime.ts').createManualFolderIndexEntryRuntime({
         ...common, runRustFontParseBatch, runFontParseWorkerPool: async () => { throw Error('Watcher must use actual selective native parsing') }, scanFoldersRuntime: () => directoryRuntime })
@@ -412,6 +412,15 @@ async function main() {
           return rootIndex.writeRootCacheManifest(...args)
         },
       }, { readScanCacheFile: async () => { throw Error('Legacy cache is outside this fixture') }, hideDirectoryOnWindows: unexpectedInitialization })
+      if (exposeManual) return host.load('src/main/watcher/manual-refresh/manualFolderIndexApplyRuntime.ts').createManualFolderIndexApplyRuntime({
+        ...common, fontScanCacheVersion: host.config.FONT_SCAN_CACHE_VERSION,
+        ensureRootScanCacheStorage: (...args) => storage.ensureRootScanCacheStorage(...args),
+        saveRootIndexSqliteChanges, isRootIndexDbPath: cachePaths.isRootIndexDbPath,
+        invalidateSharedFontRuntimeCaches: selectedStorageInvalidator(host, state),
+        emitFontIndexProgress() {}, delayToEventLoop: async () => {},
+        scanFoldersRuntime: () => directoryRuntime,
+        runRustFontParseBatch, runFontParseWorkerPool: async () => { throw Error('Manual refresh must use selective stable native parsing') },
+      }, entry)
       return watcherModule.createWatchedFolderIndexRuntime({ ...common, ...entry,
         ...(compatibilityEntry ? { upsertFontIndexEntries: undefined } : {}),
         upsertFontIndexEntry: async (...args) => { const result = await entry.upsertFontIndexEntry(...args); await state.afterSingleEntry?.(); return result },
@@ -743,11 +752,14 @@ async function main() {
     const inventoryProof = await require('./lib/watcher-inventory-checkpoints.cjs').checkWatcherInventoryCheckpoints({
       host, rootIndex, makeWatcher, fontRoot, cacheDir, dbPath, files, manifest, copy, state, startStage, finishStage, audit, controls })
 
+    const manualInventoryProof = await require('./check-manual-refresh-inventory.cjs').checkNativeManualInventory({
+      host, makeManual: options => makeWatcher({ ...options, exposeManual: true }), fontRoot, files, state })
+
     await host.close()
     assert.deepEqual(host.closeProof(), { hostClosed: true, databaseOwnersClosed: true, childrenReaped: true,
       remainingDatabaseOwners: 0, remainingChildren: 0 })
     const report = { ok: true, platform: 'win32', scope: 'private local fixture, actual isolated native I/O; no NAS or renderer latency claim',
-      directories: DIRECTORIES, initialFiles: FILES, stages, controls, inventoryProof,
+      directories: DIRECTORIES, initialFiles: FILES, stages, controls, inventoryProof, manualInventoryProof,
       validation: 'Actual worker-ready page + root-local background validation + native root-snapshot receipts + persisted source signature',
       schedulingControl: 'External-check reuse expires naturally; only validation throttle age is made due; source receipts and validation decisions are unchanged',
       snapshotOwnership: { casePrivateTemporaryDirectory: true, verifiedNativeSnapshots: state.ownedSqliteSnapshots },

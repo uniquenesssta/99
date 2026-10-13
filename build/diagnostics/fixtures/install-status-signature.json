@@ -1,0 +1,68 @@
+[
+  {
+    "item": {
+      "id": "file-v2:vector",
+      "path": "C:\\Fonts\\Example.TTF",
+      "fileName": "Example.TTF",
+      "fileSize": 17,
+      "modifiedAt": 100.5
+    },
+    "expected": "content-v1:b534e1a00f004e19a4b51380dea99bdf42096816"
+  },
+  {
+    "item": {
+      "id": "file-v2:vector",
+      "path": "\\\\?\\UNC\\SERVER\\Share\\字体.TTF",
+      "fileName": "字体.TTF",
+      "fileSize": 17,
+      "modifiedAt": -1.5
+    },
+    "expected": "content-v1:817139d05756cb36cf5488981e9179290661ad6b"
+  },
+  {
+    "item": {
+      "id": "file-v2:vector",
+      "path": "\\\\?\\C:/FONTS//İΣ.TTF",
+      "fileName": "İΣ.TTF",
+      "fileSize": 17,
+      "modifiedAt": 100.49,
+      "managedInstallPath": "C:/Managed/İΣ.TTF",
+      "managedRegistryName": "Aa Mixed Registry"
+    },
+    "expected": "content-v1:00deb3c8ecd208342977e252445392163570ddcc"
+  },
+  {
+    "item": {
+      "id": "file-v2:vector",
+      "path": " C:\\Fonts\\same.ttf\\ ",
+      "fileName": "",
+      "fileSize": 0,
+      "modifiedAt": 0,
+      "managedInstallPath": "",
+      "managedRegistryName": ""
+    },
+    "expected": "content-v1:95cfee700b6ef393c01a7496952585303f51f37e"
+  },
+  {
+    "item": {
+      "id": "file-v2:vector",
+      "path": "C:\\Fonts\\Example.TTF",
+      "fileName": "Historical Display.ttf",
+      "fileSize": 17,
+      "modifiedAt": 100.5
+    },
+    "expected": "content-v1:771214c7d7c58a9e0af4c795a41240dca2ec41a6"
+  },
+  {
+    "item": {
+      "id": "file-v2:vector",
+      "path": "C:\\Fonts\\Example.TTF",
+      "fileName": "Example.TTF",
+      "fileSize": 17,
+      "modifiedAt": 100.5,
+      "managedInstallPath": "c:\\managed\\example.ttf",
+      "managedRegistryName": "Managed Font"
+    },
+    "expected": "content-v1:494aeb56afb21d30b2e9bdad27f58f68c93c079e"
+  }
+]

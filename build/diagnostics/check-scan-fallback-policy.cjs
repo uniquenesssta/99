@@ -119,7 +119,9 @@ function testC08NetworkListingBatchRouting() {
   assert(indexingClient.includes('FONT_SCAN_LISTING_STDOUT_MAX_BYTES + 256 * 1024'), 'stdout receipt buffer must remain bounded')
 
   const manualListing = read('src/main/watcher/manual-refresh/manualFolderRustListingRuntime.ts')
-  assert(!manualListing.includes('profile?.isNetwork !== true'), 'manual network refresh must not skip the existing Rust list-font-files batch in auto mode')
+  assert(manualListing.includes('operation: \"treeSnapshot\"'), 'manual refresh must use the complete metadata inventory')
+  assert(!manualListing.includes('deps.runRustFontIndexListWorker('), 'manual refresh must not open every font through list-font-files')
+  assert(manualListing.includes('validatedWatcherInventoryRows(args.targetFolder'), 'inventory must validate the exact selected folder')
 
   const watcher = read('src/main/watcher/watchedFolderIndexRuntime.ts')
   assert(watcher.includes('options.runRustWatcherPreflight({'), 'watcher batch must continue to use the existing Rust preflight command')

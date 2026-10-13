@@ -8,6 +8,7 @@ const { load } = require('./check-decomposition-baseline.cjs')
 const root = path.resolve(__dirname, '../..')
 const storageFile = 'src/main/preview/runtime/previewCacheStorageRuntime.ts'
 const routeFile = 'src/main/preview/runtime/previewStorageRoutingRuntime.ts'
+const preparationFile = 'src/main/preview/runtime/previewSharedPreparationRuntime.ts'
 const routePath = process.argv.includes('--win-paths') ? path.win32 : path
 const fontRoot = routePath.resolve('routing-fonts'), fontPath = routePath.join(fontRoot, 'a.ttf')
 const cacheDir = routePath.join(fontRoot, 'cache'), imagesDir = routePath.join(cacheDir, 'images'), dbPath = routePath.join(cacheDir, 'index.db')
@@ -45,11 +46,13 @@ function structure() {
   assert.equal((facade.match(/const rootAvailability = createPreviewCacheRootAvailabilityRuntime\(/g) || []).length, 1)
   assert(!route.includes('= createPreviewCacheRootAvailabilityRuntime('))
   assert(!facade.includes('let libraryShellCache'))
+  assert(route.includes('const ensureSharedPreviewCachePrepared = preparation.ensurePrepared'))
+  assert(!route.includes('const preparations = new Map'))
   for (const name of ['readStatusCache', 'readStatusInFlight', 'readStatusGeneration']) assert(!route.includes(name))
 }
 function harness(transform = x => x) {
   const events = [], state = { available: true, loads: 0, library: { folders: [fontRoot] }, failure: '', manifestHold: null, loadHold: null }
-  const mocks = { 'node:path': routePath, '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: root => ({rootId: root, generation: 1, state: 'online'}) }, '../../app/shutdownCoordinatorRuntime': {isApplicationClosing:()=>false,applicationWorkEpoch:()=>1} }
+  const mocks = { 'node:path': routePath, '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, withStartupPathRootGuard: (guard, fn) => { guard(); return fn() }, getStartupPathRootState: root => ({rootId: root, generation: 1, state: 'online'}) }, '../../app/shutdownCoordinatorRuntime': {isApplicationClosing:()=>false,applicationWorkEpoch:()=>1,onApplicationClosing(){}} }
   const factories = { previewCacheSharedPresenceRuntime: 'createPreviewCacheSharedPresenceRuntime', previewCachePresenceIndexRuntime: 'createPreviewCacheSharedPresenceIndexRuntime', previewCacheMetaRuntime: 'createPreviewCacheMetaRuntime', previewCacheHydrationRuntime: 'createPreviewCacheHydrationRuntime', previewCachePrefetchRuntime: 'createPreviewCachePrefetchRuntime', previewLocalCacheEvictionRuntime: 'createPreviewLocalCacheEvictionRuntime' }
   for (const [file, name] of Object.entries(factories)) mocks[`./${file}`] = { [name]: () => ({}) }
   mocks['./previewCacheRootAvailabilityRuntime'] = { createPreviewCacheRootAvailabilityRuntime: () => ({
@@ -61,6 +64,9 @@ function harness(transform = x => x) {
   mocks['../../path/fontPathPolicy'] = { findBestWatchedRootForFile: (_path, folders) => folders[0] || null }
   mocks['../../path/ioDeadlineRuntime'] = { ...load('src/main/path/ioDeadlineRuntime.ts'), previewCacheQueryTimeoutMs: () => 100 }
   mocks['node:fs'] = { promises: { async mkdir(dir) { events.push(['mkdir', dir]); if (state.failure === dir) throw Error('mkdir') } } }
+  mocks['../../path/sharedFileSystemRuntime'] = { sharedFileSystem: mocks['node:fs'].promises,
+    withSharedIoPriority: (_priority, fn) => fn(), withSharedIoSignal: (_signal, fn) => fn() }
+  mocks['./previewSharedPreparationRuntime'] = load(preparationFile, mocks, transform)
   let route
   mocks['./previewStorageRoutingRuntime'] = { createPreviewStorageRoutingRuntime(options, ports) {
     route = load(routeFile, mocks, transform).createPreviewStorageRoutingRuntime(options, ports); return route
@@ -93,10 +99,17 @@ async function routingCases(transform) {
     if (failure === 'deadline') f.state.manifestHold = gate()
     assert.deepEqual(plain(await f.facade.previewCacheStorageForFont(fontPath, f.state.library)), expected)
     assert.deepEqual(f.events, [['mkdir', rootLocalDir]], 'local route entered shared preparation')
-    assert.equal(await f.facade.ensureSharedPreviewCacheAvailable(fontRoot), false)
-    if (failure !== 'unavailable') assert(f.events.some(x => x[0] === 'unavailable'))
+    if (failure === 'deadline') {
+      const result = f.facade.ensureSharedPreviewCacheAvailable(fontRoot)
+      // The response budget expires first, but ownership remains until the
+      // unresolved phase really settles. Do not await before releasing it.
+      await new Promise(resolve => setTimeout(resolve, 130))
+      f.state.manifestHold.reject(Error('late'))
+      await assert.rejects(result, error => error.name === 'PreviewSharedPreparationDeferred')
+    } else if (failure === 'unavailable') await assert.rejects(f.facade.ensureSharedPreviewCacheAvailable(fontRoot), error => error.name === 'PreviewSharedPreparationDeferred')
+    else assert.equal(await f.facade.ensureSharedPreviewCacheAvailable(fontRoot), false)
+    assert(!f.events.some(x => x[0] === 'unavailable'), 'optional preparation poisoned source-root availability')
     if (failure === 'unavailable') assert(!f.events.some(x => x[0] === 'manifest'))
-    if (failure === 'deadline') { f.state.manifestHold.reject(Error('late')); await Promise.resolve() }
   }
   const outside = harness(transform)
   assert.deepEqual(plain(await outside.facade.previewCacheStorageForFont(outsidePath, { folders: [] })), { dir: localDir, identity: `file:${outsidePath}`, storage: 'local' })

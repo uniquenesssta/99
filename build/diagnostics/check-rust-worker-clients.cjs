@@ -234,7 +234,7 @@ async function checkReviewedClientContracts(overrides = new Map()) {
   const strictRebuildInput={mergedIndexDbPath:'C:/local/merged.sqlite',schemaVersion:7,sourcesKey:'same',syncedAt:'now',sources:[],requireAuthoritativeSources:true}
   const oldRebuild=clientFixture('Indexing',{capabilities:['merged-index-rebuild'],payload:{ok:true,rebuilt:true,rows:0}},overrides)
   assert.equal(await oldRebuild.client.runRustMergedIndexRebuild(strictRebuildInput),null);assert.equal(oldRebuild.commands.length,0)
-  const badRebuild=clientFixture('Indexing',{capabilities:['merged-index-rebuild','merged-index-strict-rebuild-v1'],payload:{ok:true}},overrides)
+  const badRebuild=clientFixture('Indexing',{capabilities:['merged-index-rebuild','merged-index-strict-rebuild-v1','install-status-signature-authority-v1'],payload:{ok:true}},overrides)
   await assert.rejects(()=>badRebuild.client.runRustMergedIndexRebuild(strictRebuildInput),error=>error.daemonSubmitted===true)
   assert.equal(badRebuild.commands.length,1)
 
@@ -244,11 +244,11 @@ async function checkReviewedClientContracts(overrides = new Map()) {
   assert.equal(await oldMerged.client.runRustMergedIndexSync(prepared),null);assert.equal(oldMerged.commands.length,0);assert.equal(oldMerged.allocated(),0)
   for(const payload of [{ok:true},{ok:false},{ok:true,synced:false},{ok:'yes',synced:true,rows:0,changed:0,fullSnapshot:true},{ok:true,synced:true,rows:1,changed:0,fullSnapshot:true},{ok:true,synced:true,rows:0,changed:0,fullSnapshot:false},{ok:true,synced:true,rows:0,changed:0.5,fullSnapshot:true}]) {
     let writes=0
-    const malformed = clientFixture('Indexing',{capabilities:['merged-index-sync','merged-index-prepared-sync-v1'],payload,onCommand:()=>writes++},overrides)
+    const malformed = clientFixture('Indexing',{capabilities:['merged-index-sync','merged-index-prepared-sync-v1','install-status-signature-authority-v1'],payload,onCommand:()=>writes++},overrides)
     await assert.rejects(()=>malformed.client.runRustMergedIndexSync(prepared),error=>error.daemonSubmitted===true)
     assert.equal(writes,1,'malformed post-commit receipt replayed an identical-key write');assert.equal(malformed.disposed.length,1)
   }
-  const guarded = clientFixture('Indexing',{capabilities:['merged-index-sync','merged-index-prepared-sync-v1'],payload:{ok:true,synced:true,rows:0,changed:0,fullSnapshot:true}},overrides)
+  const guarded = clientFixture('Indexing',{capabilities:['merged-index-sync','merged-index-prepared-sync-v1','install-status-signature-authority-v1'],payload:{ok:true,synced:true,rows:0,changed:0,fullSnapshot:true}},overrides)
   const assertCurrent=()=>{}
   assert.equal((await guarded.client.runRustMergedIndexSync({...prepared,assertCurrent})).synced,true)
   assert.equal(guarded.commands[0].options.assertCurrent,assertCurrent)
@@ -304,6 +304,46 @@ async function checkReviewedClientContracts(overrides = new Map()) {
   }
 
 }
+const installAuthorityCapability = 'install-status-signature-authority-v1'
+const installAuthorityMethods = [
+  ['Metadata', 'runRustInstallStatusRead', 'install-status-index-read'],
+  ['Indexing', 'runRustMergedIndexPageQuery', 'merged-index-page-query'],
+  ['Indexing', 'runRustMergedIndexIdsQuery', 'merged-index-ids-query'],
+  ['Indexing', 'runRustMergedIndexMetricsQuery', 'merged-index-metrics-query'],
+  ['Indexing', 'runRustMergedIndexRebuild', 'merged-index-rebuild'],
+  ['Indexing', 'runRustMergedIndexSync', 'merged-index-sync'],
+]
+async function checkInstallAuthorityCapabilities(overrides = new Map()) {
+  const input = { mergedIndexDbPath:'C:/local/merged.sqlite', libraryDbPath:'C:/local/library.sqlite', roots:['C:/fonts'],
+    queryKey:'authority', offset:0, limit:20, sources:[], source:{root:'C:/fonts'}, rows:[] }
+  const payload = { ok:true, results:{}, missingIds:['missing'], missingReasons:{missing:'signature-mismatch'}, readError:true,
+    items:[], ids:[], total:0, metrics:{}, rebuilt:true, synced:true, rows:0, changed:0 }
+  for (const [group, method, capability] of installAuthorityMethods) {
+    const args = method === 'runRustInstallStatusRead' ? [[{rootPath:'C:/fonts',dbPath:'C:/local/install.sqlite',items:[]}]] : [input]
+    const old = clientFixture(group,{capabilities:[capability],payload},overrides)
+    assert.equal(await old.client[method](...args),null,'authority capability gate: '+method)
+    assert.equal(old.allocated(),0,'old authority worker allocated temporary input: '+method)
+    assert.equal(old.commands.length,0,'old authority worker submitted command: '+method)
+    const current = clientFixture(group,{capabilities:[capability,installAuthorityCapability],payload},overrides)
+    const result = await current.client[method](...args)
+    assert(result,'current authority worker was refused: '+method)
+    assert.equal(current.commands.length,1,'authority command duplicated: '+method)
+    assert.equal(current.disposed.length,1,'authority input lifetime: '+method)
+    if (method === 'runRustInstallStatusRead') {
+      assert.equal(result.readError,true,'unavailable authority was converted to missing')
+      assert.deepEqual(JSON.parse(JSON.stringify(result.missingReasons)),payload.missingReasons,'authority miss reasons lost')
+    }
+  }
+}
+async function checkInstallAuthorityMutations() {
+  for (const [groupName,method,capability] of installAuthorityMethods) {
+    const group=fixture.groups.find(group=>group.name===groupName), original=sources.get(group.path)
+    const before=`!hasCapability(status, '${capability}') || !hasCapability(status, '${installAuthorityCapability}')`
+    assert.equal(original.split(before).length-1,1,'authority mutant anchor count: '+method)
+    const changed=new Map([[group.path,original.replace(before,`!hasCapability(status, '${capability}')`)]])
+    await assert.rejects(checkInstallAuthorityCapabilities(changed),error=>error instanceof assert.AssertionError && error.message.includes('authority capability gate: '+method),'authority gate mutant was not causally rejected: '+method)
+  }
+}
 async function checkReviewedClientMutations() {
   const mutations = [
     ['Preview', 'foregroundPreviewBytes: foregroundBytes === true', 'foregroundPreviewBytes: false'],
@@ -329,6 +369,8 @@ async function main() {
   await checkMaintenanceFailureReports()
   await checkRecoveryCapability()
   await checkReviewedClientContracts()
+  await checkInstallAuthorityCapabilities()
+  await checkInstallAuthorityMutations()
   await checkReviewedClientMutations()
   for (const group of fixture.groups) {
     const changed = new Map(sources)
@@ -352,6 +394,6 @@ async function main() {
   checkFacadeClosure(facadeCRLF)
   checkControlIdentities(new Map([[facade, facadeCRLF]]))
   checkComposition(new Map([[facade, facadeCRLF]]))
-  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies (three reviewed extensions with causal port checks), narrow shared ports, partial health report and submitted backup, ${fixture.groups.length * 3 + 9} rejected mutations, facade closure and 7 control identities, CRLF passed`)
+  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies with reviewed causal port checks and six authority capability gates, narrow shared ports, partial health report and submitted backup, ${fixture.groups.length * 3 + 15} rejected mutations, facade closure and 7 control identities, CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-clients]', error.stack || error); process.exitCode = 1 })

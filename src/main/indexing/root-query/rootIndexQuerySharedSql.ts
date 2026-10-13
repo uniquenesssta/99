@@ -1,7 +1,6 @@
 import { isAbsolute,relative,resolve } from 'node:path'
 import { normalizePathForCacheCompare } from '../../path/cachePath'
 import type { RootIndexQueryParts } from './rootIndexQueryTypes'
-import { INSTALL_STATUS_EVIDENCE_PREFIX } from '../../install/status/installStatusSignatureRuntime'
 import { localTagPathCompareSql, localTagMembershipSql } from '../../library/runtime/localFontTagIdentityRuntime'
 
 export function sqliteLiteral(value: string): string {
@@ -208,5 +207,5 @@ export function rootIndexInstallIdExpr(root: string): string {
 }
 
 export function rootIndexInstallJoinExpr(root: string): string {
-  return `install_status.font_id = ${rootIndexInstallIdExpr(root)} AND install_status.signature LIKE '${INSTALL_STATUS_EVIDENCE_PREFIX}%'`
+  return `install_status.font_id = ${rootIndexInstallIdExpr(root)} AND install_status.installed IN (0, 1) AND install_status.signature = hfm_root_install_status_signature(${sqliteLiteral(root)}, entries.relative_path, entries.file_size, entries.modified_at, entries.font_json)`
 }

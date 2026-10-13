@@ -46,7 +46,24 @@ async function checkScenarioHandshakeInputs() {
   }
 }
 
+const authorityMethods = new Set(['runRustInstallStatusRead','runRustMergedIndexPageQuery','runRustMergedIndexIdsQuery','runRustMergedIndexMetricsQuery','runRustMergedIndexRebuild','runRustMergedIndexSync'])
+async function checkAuthorityCase(scenario, overrides) {
+  const legacy=sequences.get('cached-ready').results[0].value.capabilities
+  const capabilities=[...legacy,'install-status-signature-authority-v1']
+  const observed=await h.observe(scenario.method,{...scenario.settings,capabilities},overrides)
+  assert.deepEqual(plain(observed.h.runtime.rustCoreWorkerStatus().capabilities),capabilities,'authority scenario handshake changed')
+  const ready='rust core worker ready: version=fixture, protocol=1, expectedProtocol>=1, capabilities='+capabilities.join(',')+', path=C:/worker.exe, handshakeMs=0'
+  const oldReady='rust core worker ready: version=fixture, protocol=1, expectedProtocol>=1, capabilities='+legacy.join(',')+', path=C:/worker.exe, handshakeMs=0'
+  assert.deepEqual(plain(observed.h.trace.filter(row=>row[0]==='log'&&row[1].startsWith('rust core worker ready:'))),[['log',ready]],'authority handshake transcript was filtered')
+  // This declared input extension is the only normalized field. The complete
+  // old command outcome, arguments, effects, cleanup and ordering stay frozen.
+  const trace=observed.h.trace.map(row=>row[0]==='log'&&row[1]===ready?['log',oldReady]:row)
+  const summary=legacyDiagnosticWording({...observed,h:{...observed.h,trace}})
+  assert.deepEqual({id:scenario.id,...summary},cases.get(scenario.id),scenario.id+' authority extension changed frozen transport effects')
+}
+
 async function checkCase(scenario, overrides) {
+  if (authorityMethods.has(scenario.method)) return checkAuthorityCase(scenario, overrides)
   if (scenario.method === 'runRustFontIndexListWorker') return checkListingCase(scenario, overrides)
   if (scenario.method === 'runRustSharedMetadataOverlayRead') return checkMetadataOverlayCase(scenario, overrides)
   if (scenario.method === 'runRustPreviewRenderImage') return checkUnprovenPreviewCase(scenario, overrides)
@@ -418,6 +435,6 @@ async function main() {
   const crlf = new Map([[transportPath, transport], [workerPath, worker], ...clients].map(([rel, text]) => [rel, text.replace(/\r?\n/g, '\r\n')]))
   checkWorkSnapshot(crlf)
   for (const scenario of scenarios.filter(s => ['oneshot', 'submitted'].includes(s.settings.mode))) await checkCase(scenario, crlf)
-  console.log(`[diagnostics:rust-worker-transport] ${scenarios.filter(s => !['runRustFontIndexListWorker', 'runRustSharedMetadataOverlayRead', 'runRustPreviewRenderImage'].includes(s.method)).length} frozen unaffected command cases, ${scenarios.filter(s => s.method === 'runRustFontIndexListWorker').length} explicit migrated list cases, ${scenarios.filter(s => s.method === 'runRustSharedMetadataOverlayRead').length} isolated overlay cases, ${scenarios.filter(s => s.method === 'runRustPreviewRenderImage').length} isolated unproven preview cases, ${listingNegatives} rejected listing read proofs, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
+  console.log(`[diagnostics:rust-worker-transport] ${scenarios.filter(s => !authorityMethods.has(s.method) && !['runRustFontIndexListWorker', 'runRustSharedMetadataOverlayRead', 'runRustPreviewRenderImage'].includes(s.method)).length} frozen unaffected command cases, ${scenarios.filter(s => authorityMethods.has(s.method)).length} exact authority-input extensions, ${scenarios.filter(s => s.method === 'runRustFontIndexListWorker').length} explicit migrated list cases, ${scenarios.filter(s => s.method === 'runRustSharedMetadataOverlayRead').length} isolated overlay cases, ${scenarios.filter(s => s.method === 'runRustPreviewRenderImage').length} isolated unproven preview cases, ${listingNegatives} rejected listing read proofs, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-transport]', error.stack || error); process.exitCode = 1 })

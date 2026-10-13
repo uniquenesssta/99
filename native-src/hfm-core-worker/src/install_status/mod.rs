@@ -1,3 +1,4 @@
+pub(crate) mod signature;
 mod compare;
 mod read;
 mod save;

@@ -26,7 +26,7 @@ export type ManualFolderRefreshDeps = {
   fontItemFromPath: (filePath: string) => Promise<FontItem>;
   sanitizeCachedFont: (font: FontItem, cacheKey: string, filePath: string, stat: any) => FontItem;
   cachedFontForRuntime: (font: FontItem, filePath: string, stat: any, cacheKey: string) => FontItem;
-  ensureRootScanCacheStorage: (rootPath: string) => Promise<{
+  ensureRootScanCacheStorage: (rootPath: string, options?: { reuseExisting?: boolean }) => Promise<{
     cachePath: string;
     cacheDir: string;
     storage: "root" | "fallback";
@@ -38,6 +38,7 @@ export type ManualFolderRefreshDeps = {
     storage: "root" | "fallback",
     changedEntries: Array<[string, FontScanCacheEntry]>,
     deletedKeys: string[],
+    assertCurrent?: () => void,
   ) => Promise<void>;
   saveScanCacheFile: (
     cachePath: string,

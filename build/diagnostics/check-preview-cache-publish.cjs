@@ -67,16 +67,17 @@ async function testOwnedPublicationCoalescesAndReusesExactBytes() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-publish-'))
   const sharedDir = path.join(dir, 'shared'), localPath = path.join(dir, 'local.png'), output = path.join(sharedDir, 'one.png')
   fs.writeFileSync(localPath, png)
+  let now = 1000; class Clock extends Date { static now() { return now } }
   let networkPngReads = 0, startMeta = false, releaseMeta, writes = 0, closing = false, closeListener
   const metaGate = new Promise(resolve => { releaseMeta = resolve }), timers = new Map(), logs = []
   const fsp = { ...fs.promises, readFile: async (...args) => { if (String(args[0]).startsWith(sharedDir) && String(args[0]).endsWith('.png')) networkPngReads++; return fs.promises.readFile(...args) } }
   const load = loader({
-    '../../path/sharedFileSystemRuntime': { sharedFileSystem: fsp },
+    '../../path/sharedFileSystemRuntime': { sharedFileSystem: fsp, withSharedIoPriority: (_p, fn) => fn(), withSharedIoSignal: (_s, fn) => fn(), withoutSharedIoSignal: fn => fn() },
     '../native-renderer/directwrite/directWritePreviewHelperPathRuntime': { hasDirectWritePreviewHelper: () => false },
     '../../rust-core/rustSharedIoCommandRuntime': { sharedIoResourceKeys: async () => [] },
-    '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: () => ({ generation: 1, state: 'online' }) },
+    '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, withStartupPathRootGuard: (guard, fn) => { guard(); return fn() }, getStartupPathRootState: () => ({ rootId: 'root', generation: 1, state: 'online' }) },
     '../../app/shutdownCoordinatorRuntime': { isApplicationClosing: () => closing, applicationWorkEpoch: () => 1, onApplicationClosing: fn => { closeListener = fn } },
-  }, { setTimeout: fn => { const id = {}; timers.set(id, fn); return id }, clearTimeout: id => timers.delete(id) })
+  }, { Date: Clock, setTimeout: (fn, ms) => { const id = {}; timers.set(id, () => { now += ms; fn() }); return id }, clearTimeout: id => timers.delete(id) })
   const meta = load('src/main/preview/runtime/previewCacheMetaRuntime.ts').createPreviewCacheMetaRuntime({ appendStartupLog: line => logs.push(line) })
   const shared = { storage: 'root', rootPath: sharedDir, dir: sharedDir }
   const runtime = load('src/main/preview/runtime/previewCachePublishRuntime.ts').createPreviewCachePublishRuntime({
@@ -135,6 +136,7 @@ async function main() {
   for (const test of tests) test()
   await testOwnedPublicationCoalescesAndReusesExactBytes()
   await testRootManifestReusesOnlyMatchingMetadata()
+  await require('./check-preview-shared-preparation.cjs').run()
   console.log(`preview cache publish checks passed (${tests.length} structural checks; real PNG/checksum/coalescing/invalid-byte cleanup and manifest repair scenarios)`)
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

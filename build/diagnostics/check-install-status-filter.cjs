@@ -26,10 +26,11 @@ function fixture(load){
  load('src/main/library/runtime/librarySchemaRuntime.ts').ensureStructuredFontsSchema(db,(db,table,col,type)=>db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`))
  db.function('hfm_shared_font_id',(relative,_size,_mtime)=>String(relative).split(/[\\/]/).at(-1).replace('.ttf',''))
   require('./check-operation-chain.cjs').loader()('src/main/fonts/fontFileIdentity.ts').registerFileIdentitySql(db)
+ const signature=load('src/main/install/status/installStatusSignatureRuntime.ts');signature.registerInstallStatusSql(db)
  const mapper=load('src/main/library/fontSqliteMapper.ts')
  for(const f of records){const raw=f.kind==='u'?null:f.kind==='n'?0:1,by=f.kind==='t'?'managed':f.kind==='b'?'both':f.kind==='i'?'system':'none',relative=f.path.slice('C:\\fonts\\'.length).replaceAll('\\','/')
   db.prepare("INSERT INTO entries VALUES ('C:\\fonts',?,'',1,1,1,'ok',?,'','',?,?,'[]',0,?,'serif')").run(relative,JSON.stringify(f),raw,by,f.fileName)
-  for(const table of ['install_status','install_db.install_status'])if(raw!==null)db.prepare(`INSERT INTO ${table} VALUES (?,'content-v1:controlled',?,?,'[]',0)`).run(table.startsWith('install_db.')?load('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId(f.path,1,1):f.id,raw,by)
+  for(const table of ['install_status','install_db.install_status'])if(raw!==null){const item=table.startsWith('install_db.')?{...f,id:load('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId(f.path,1,1),fileSize:1,modifiedAt:1,fileName:path.win32.basename(f.path)}:f;db.prepare(`INSERT INTO ${table} VALUES (?,?,?,?,'[]',0)`).run(item.id,signature.installStatusSignatureValue(item),raw,by)}
   db.prepare("INSERT INTO local_db.local_font_favorites VALUES (?,'',?)").run(f.id,Number(f.favorite))
   for(const table of ['local_font_tags','local_db.local_font_tags'])if(f.group==='a')db.prepare(`INSERT INTO ${table} VALUES (?,'','L')`).run(f.id)
   if(f.group==='a')db.prepare("INSERT INTO font_tags VALUES (?,'S')").run(f.id)
@@ -194,6 +195,7 @@ async function activeFacade(){
  const facade=load('src/main/library/fontQueryFacadeRuntime.ts').createFontQueryFacadeRuntime({
   fontSearchResultLimitDefault:100,mergedIndexSchemaVersion:8,appendLog:line=>logs.push(line),appWatchedFolders:async()=>library.folders,
   tagMetadataRevisionBarrier:barrier,hydrateLocalTagsForFonts:async fonts=>fonts,
+  readInstallStatusIndex:async fonts=>({results:Object.fromEntries(fonts.map(f=>{const row=db.prepare("SELECT installed,installed_by FROM entries WHERE json_extract(font_json,'$.id')=?").get(f.id);return [f.id,{known:row.installed!==null,installed:Boolean(row.installed),by:row.installed_by,matches:[]}]})),misses:[]}),
   hasPendingActivationState:()=>queue.hasPending()||queue.hasInFlight(),applyPendingActivationState:queue.applyPendingState,
   cleanSharedFontsForQuery:async request=>{memoryCalls++;return memory.cleanSharedFontsForQuery(request)},
   queryFontPageFromMergedIndexWorker:async(request,limit,offset)=>{
@@ -281,7 +283,7 @@ async function evidenceProjection(){
   assert(!db.prepare(none.sql).all(...none.params).some(row=>JSON.parse(row.font_json).id===target.id),'unknown was silently uninstalled')
   const uncached=rootSql.buildRootIndexQuerySql('C:\\fonts',request,false,100,0)
   assert.equal(db.prepare(uncached.countSql).get(...uncached.countParams).count,0,'no authoritative DB fell back to stale JSON installation')
-  db.prepare('UPDATE install_db.install_status SET signature=? WHERE font_id=?').run('content-v1:confirmed',runtimeId)
+  db.prepare('UPDATE install_db.install_status SET signature=? WHERE font_id=?').run(load('src/main/install/status/installStatusSignatureRuntime.ts').installStatusSignatureValue({...target,id:runtimeId,fileSize:1,modifiedAt:1,fileName:path.win32.basename(target.path)}),runtimeId)
   assert.equal(db.prepare(beforeRoot.countSql).get(...beforeRoot.countParams).count,before,'confirmed state did not rejoin')
   cases+=20
  }finally{db.close()}

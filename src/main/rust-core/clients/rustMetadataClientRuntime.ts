@@ -120,7 +120,7 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
     assertSharedIoActive()
     const status = await diagnoseRustCoreWorker()
     assertSharedIoActive()
-    if (!status.available || !status.path || !hasCapability(status, 'install-status-index-read')) return null
+    if (!status.available || !status.path || (!hasCapability(status, 'install-status-index-read') || !hasCapability(status, 'install-status-signature-authority-v1'))) return null
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-install-status-read`)
@@ -147,6 +147,8 @@ export function createRustMetadataClientRuntime(options: RustMetadataClientOptio
       const result: RustInstallStatusReadResult = {
         results: payload.results || {},
         missingIds: payload.missingIds || [],
+        missingReasons: payload.missingReasons,
+        readError: payload.readError,
         timings: payload.timings || {},
         workerMode: 'rust-install-status-read',
       }

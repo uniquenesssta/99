@@ -409,7 +409,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
 
   async function runRustMergedIndexPageQuery(input: RustMergedIndexPageQueryInput): Promise<RustMergedIndexPageQueryResult | null> {
     const status = await diagnoseRustCoreWorker()
-    if (!status.available || !status.path || !hasCapability(status, 'merged-index-page-query')) return null
+    if (!status.available || !status.path || (!hasCapability(status, 'merged-index-page-query') || !hasCapability(status, 'install-status-signature-authority-v1'))) return null
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-merged-page`)
@@ -450,7 +450,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
 
   async function runRustMergedIndexIdsQuery(input: RustMergedIndexIdsQueryInput): Promise<RustMergedIndexIdsQueryResult | null> {
     const status = await diagnoseRustCoreWorker()
-    if (!status.available || !status.path || !hasCapability(status, 'merged-index-ids-query')) return null
+    if (!status.available || !status.path || (!hasCapability(status, 'merged-index-ids-query') || !hasCapability(status, 'install-status-signature-authority-v1'))) return null
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-merged-ids`)
@@ -490,7 +490,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
 
   async function runRustMergedIndexMetricsQuery(input: RustMergedIndexMetricsQueryInput): Promise<RustMergedIndexMetricsQueryResult | null> {
     const status = await diagnoseRustCoreWorker()
-    if (!status.available || !status.path || !hasCapability(status, 'merged-index-metrics-query')) return null
+    if (!status.available || !status.path || (!hasCapability(status, 'merged-index-metrics-query') || !hasCapability(status, 'install-status-signature-authority-v1'))) return null
 
     const startedAt = Date.now()
     const inputFile = createTemporaryJsonFile(`hfm-rust-merged-metrics`)
@@ -543,7 +543,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
 
   async function runRustMergedIndexRebuild(input: RustMergedIndexRebuildInput): Promise<RustMergedIndexRebuildResult | null> {
     const status = await diagnoseRustCoreWorker()
-    if (!status.available || !status.path || !hasCapability(status, 'merged-index-rebuild')) return null
+    if (!status.available || !status.path || (!hasCapability(status, 'merged-index-rebuild') || !hasCapability(status, 'install-status-signature-authority-v1'))) return null
     if (input.requireAuthoritativeSources && !hasCapability(status, 'merged-index-strict-rebuild-v1')) return null
 
     const startedAt = Date.now()
@@ -593,7 +593,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
 
   async function runRustMergedIndexSync(input: RustMergedIndexSyncInput): Promise<RustMergedIndexSyncResult | null> {
     const status = await diagnoseRustCoreWorker()
-    if (!status.available || !status.path || !hasCapability(status, 'merged-index-sync')) return null
+    if (!status.available || !status.path || (!hasCapability(status, 'merged-index-sync') || !hasCapability(status, 'install-status-signature-authority-v1'))) return null
     if (input.preparedRows && !hasCapability(status, 'merged-index-prepared-sync-v1')) return null
 
     const startedAt = Date.now()

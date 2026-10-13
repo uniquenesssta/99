@@ -95,6 +95,7 @@ pub fn query_merged_index_page(config: &MergedIndexPageQueryConfig) -> Result<Me
     }
     let _ = conn.execute_batch("PRAGMA query_only = true");
 
+    conn.execute_batch("BEGIN").map_err(|error| error.to_string())?;
     let count_started_at = Instant::now();
     let count_params = payload.sql.count_params.iter().map(json_to_sql_value).collect::<Vec<_>>();
     let total_row: i64 = conn
@@ -110,6 +111,8 @@ pub fn query_merged_index_page(config: &MergedIndexPageQueryConfig) -> Result<Me
         .map_err(|error| error.to_string())?;
     let merged_rows = rows.filter_map(Result::ok).collect::<Vec<_>>();
     timings.insert("select", elapsed_since(select_started_at));
+    drop(stmt);
+    conn.execute_batch("COMMIT").map_err(|error| error.to_string())?;
 
     let mut total = total_row;
     if total == 0 && !merged_rows.is_empty() {

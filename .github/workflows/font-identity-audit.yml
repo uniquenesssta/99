@@ -145,6 +145,27 @@ jobs:
           name: offline-root-isolation
           path: artifacts/offline-root-isolation.log
           retention-days: 14
+      - name: Verify manual inventory, exact page authority and optional publication
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          $failed = 0
+          foreach ($script in @('check-manual-refresh-inventory.cjs', 'check-install-status-authority.cjs', 'check-preview-cache-publish.cjs', 'check-preview-storage-routing.cjs')) {
+            & node --experimental-sqlite "build/diagnostics/$script" *>> artifacts/manual-page-preview.log
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          Get-Content -LiteralPath artifacts/manual-page-preview.log -Encoding utf8
+          if ($failed -gt 0) { exit 1 }
+      - name: Retain manual inventory and page authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: font-manual-page-preview
+          path: artifacts/manual-page-preview.log
+          retention-days: 14
       - name: Verify complete existing Windows diagnostics
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         shell: pwsh
@@ -194,6 +215,9 @@ jobs:
       - name: Verify Rust local tag reads and writes
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml local_tags
+      - name: Verify exact install-status authority and unavailable reads
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml install_authority
       - name: Verify bounded stdout listing without output writes
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         run: cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml stdout_listing_tests

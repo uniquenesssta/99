@@ -5,9 +5,9 @@
   },
   "requiredIoBody": "26196e6b26544bb563f9d952c3190f4fde3b4d157b5420cd61306910f0d001f5",
   "changedBodies": {
-    "invalidateLibraryShellCache": "df6269c1f291146d1f05fd63023f887a806b8c345203069a419aa26cd38207d6",
+    "invalidateLibraryShellCache": "90c6970d3090f649f81eeb5ee0d7699f50c6ee805ce2bf2d053152e97835bd1e",
     "previewCacheStorageForFont": "93af3435929be8ca045fcfd536105e27f75b54fcdf710c72cef76f7e67e62a5d",
-    "ensureSharedPreviewCachePrepared": "f628644d577051855084d1b71d2043a52a348775b6e0e280a4e7feae6b12fc2b",
     "loadLibraryShellCached": "99fde1fe1b9827a928aebf260a6b04ac3775f8afdca0e4fd11e83fb46c174457"
-  }
+  },
+  "preparationOwner": "src/main/preview/runtime/previewSharedPreparationRuntime.ts"
 }

@@ -1,3 +1,7 @@
+import { applicationWorkEpoch, assertApplicationOpen, onApplicationClosing } from "../../app/shutdownCoordinatorRuntime";
+import { withSharedIoSignal } from "../../path/sharedFileSystemRuntime";
+import type { SharedIoProcessError } from "../../path/sharedIoProcessRuntime";
+import { throwIfAborted } from "../../performance/ioQueue";
 import type { WatchedFolderRefreshResult } from "../../../shared/types";
 import type { ManualFolderRefreshDeps } from "./manualFolderRefreshTypes";
 
@@ -22,13 +26,26 @@ export function createManualFolderRefreshBackgroundRuntime(
   function scheduleRefresh(
     key: string,
     jobId: string,
-    run: () => Promise<WatchedFolderRefreshResult>,
+    run: (lifetime: { signal: AbortSignal; assertCurrent: () => void }) => Promise<WatchedFolderRefreshResult>,
   ): ManualFolderRefreshBackgroundStart {
     const active = activeRefresh(key);
     if (active) return active;
 
     const startedAt = Date.now();
-    const completion = Promise.resolve().then(run);
+    const epoch = applicationWorkEpoch();
+    const controller = new AbortController();
+    const removeClosingListener = onApplicationClosing(() => controller.abort());
+    const assertCurrent = () => { throwIfAborted(controller.signal); assertApplicationOpen(epoch); };
+    const completion = Promise.resolve().then(async () => {
+      try {
+        assertCurrent();
+        return await withSharedIoSignal(controller.signal, () => run({ signal: controller.signal, assertCurrent }));
+      } catch (error) {
+        const failure = error as SharedIoProcessError | undefined;
+        if (failure?.sharedIo === true && failure.closed) { try { await failure.closed; } catch { /* Preserve the original failure. */ } }
+        throw error;
+      } finally { removeClosingListener(); }
+    });
     activeRefreshes.set(key, { jobId, startedAt, completion });
     void completion
       .catch((error) => {

@@ -9,7 +9,7 @@ mod search_text;
 pub(crate) mod path_utils;
 mod query_ids;
 mod query_page;
-mod snapshot;
+pub(crate) mod snapshot;
 mod sqlite_params;
 mod sync;
 mod tag_revision;

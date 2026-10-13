@@ -1,11 +1,12 @@
+import { PreviewSharedPreparationDeferred, createPreviewPreparationEvidenceLogger, previewPreparationRetryable } from './previewSharedPreparationRuntime'
 import { randomUUID } from 'node:crypto'
 import { promises as localFs } from 'node:fs'
 import { isCompletePreviewPng } from './previewImageValidationRuntime'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import { applicationWorkEpoch, isApplicationClosing, onApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
-import { getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
-import { withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
-import { executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { getStartupPathRootState, withStartupPathRootGuard } from '../../path/startupPathAvailabilityRuntime'
+import { awaitPhysicalIoClose, withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
+import { executeSharedFile, sharedFileSystem as fsp, withSharedIoPriority, withSharedIoSignal, withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime'
 import { dirname, join } from 'node:path'
 import { hostname } from 'node:os'
 import type { PreviewCacheIndexStatus } from '../previewCacheRuntime'
@@ -31,7 +32,7 @@ export type PreviewCachePublishRuntimeOptions = {
   withIoDeadlineResult: <T>(label: string, operation: () => Promise<T>, timeoutMs: number) => Promise<{ ok: true; value: T; timedOut?: boolean } | { ok: false; error: unknown; timedOut?: boolean }>
   writePreviewCacheIndex: (storage: PreviewCacheStorage, previewKey: string, data: { outputPath: string; fontSignature: string; textHash: string; fontSize: number; width: number; height: number; status: PreviewCacheIndexStatus; message?: string; fontId?: string; sourcePath?: string }) => Promise<void>
   previewCacheStorageToShared: (storage: PreviewCacheStorage) => PreviewCacheStorage | null
-  ensureSharedAvailable: (rootPath: string) => Promise<boolean>
+  ensureSharedAvailable: (rootPath: string, force?: boolean) => Promise<boolean>
   writeSharedPreviewCacheMeta?: (outputPath: string, row: PreviewCachePublishRow, bytes?: Buffer) => Promise<void>
   validateSharedPreviewCacheMeta?: (outputPath: string, row: PreviewCachePublishRow, bytes?: Buffer) => Promise<PreviewCacheMetaValidationResult>
   appendSharedPreviewCacheManifest?: (storage: PreviewCacheStorage, row: PreviewCachePublishRow, outputPath: string, event: PreviewCacheManifestEvent, metaValidation?: PreviewCacheMetaValidationResult | null) => Promise<void>
@@ -42,6 +43,19 @@ const DEFAULT_PUBLISH_TIMEOUT_MS = 2000
 const DEFAULT_PUBLISH_MAX_IN_FLIGHT = 1
 const DEFAULT_PUBLISH_LOCK_TTL_MS = 30000
 const DEFAULT_STATS_LOG_INTERVAL_MS = 10000
+const MAX_PENDING_MS = 5 * 60 * 1000
+const MAX_PENDING_ROWS = 2000
+type PublishTask = {
+  storage: PreviewCacheStorage
+  row: PreviewCachePublishRow
+  rootId: string
+  generation: number
+  epoch: number
+  expiresAt: number
+  notBefore: number
+  forcePreparation: boolean
+  controller: AbortController
+}
 
 function parseEnvInt(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name]
@@ -79,8 +93,10 @@ async function pathExists(filePath: string): Promise<boolean> {
   try {
     await fsp.access(filePath)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    const code = (error as { code?: string; reason?: string })?.code || (error as { reason?: string })?.reason
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false
+    throw error
   }
 }
 
@@ -90,10 +106,12 @@ async function acquirePublishLock(lockPath: string) {
   let handle: Awaited<ReturnType<typeof open>>
   try { handle = await open() }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !isolated) return null
+    await awaitPhysicalIoClose(error)
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    if (!isolated) return null
     // Native removal compares the exact object, never a read-then-blind-unlink.
-    await executeSharedFile({operation: 'removeStaleLock', path: lockPath, olderThanMs: Date.now() - lockTtlMs()}).catch(() => undefined)
-    try { handle = await open() } catch { return null }
+    await executeSharedFile({operation: 'removeStaleLock', path: lockPath, olderThanMs: Date.now() - lockTtlMs()}).catch(async error => { await awaitPhysicalIoClose(error) })
+    try { handle = await open() } catch (error) { await awaitPhysicalIoClose(error); if ((error as NodeJS.ErrnoException).code === 'EEXIST') return null; throw error }
   }
   type Owned = { removeOwned: () => Promise<void>; renameOwned: (source: string, dest: string) => Promise<void> }
   const owned = handle as unknown as Owned
@@ -103,7 +121,7 @@ async function acquirePublishLock(lockPath: string) {
     return current.dev === identity?.dev && current.ino === identity?.ino
   }
   try { await handle.writeFile(JSON.stringify({ machineId: machineId(), operation: 'preview-cache-publish', createdAt: Date.now(), token: randomUUID() }), 'utf-8') }
-  catch { await handle.close().catch(() => undefined); return null }
+  catch (error) { await awaitPhysicalIoClose(error); await handle.close().catch(async error => { await awaitPhysicalIoClose(error) }); return null }
   return {
     rename: async (source: string, dest: string) => {
       if (isolated) await owned.renameOwned(source, dest)
@@ -116,15 +134,19 @@ async function acquirePublishLock(lockPath: string) {
       try {
         if (isolated) await owned.removeOwned()
         else if (await localCurrent()) await fsp.unlink(lockPath)
-      } catch { /* A later owner is authoritative; never remove it by pathname. */ }
-      finally { await handle.close().catch(() => undefined) }
+      } catch (error) { await awaitPhysicalIoClose(error) /* A later owner is authoritative; never remove it by pathname. */ }
+      finally { await handle.close().catch(async error => { await awaitPhysicalIoClose(error) }) }
     },
   }
 }
 
 export function createPreviewCachePublishRuntime(options: PreviewCachePublishRuntimeOptions) {
-  const queue = new Map<string, { storage: PreviewCacheStorage; row: PreviewCachePublishRow }>()
-  const inFlight = new Set<string>()
+  const queue = new Map<string, PublishTask>()
+  const inFlight = new Map<string, PublishTask>()
+  const rootRetryAt = new Map<string, number>()
+  const evidence = createPreviewPreparationEvidenceLogger(options.appendStartupLog)
+  const idleWaiters: Array<() => void> = []
+  const resolveIdle = () => { if (!active && !queue.size) for (const done of idleWaiters.splice(0)) done() }
   let timer: ReturnType<typeof setTimeout> | null = null
   let active = 0
   let lastStatsLogAt = 0
@@ -162,38 +184,52 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
     stats.indexSkipped = 0
   }
 
+  function rootKey(task: PublishTask): string { return `${task.rootId}:${task.generation}` }
+  function current(task: PublishTask): boolean {
+    const state = getStartupPathRootState(task.storage.rootPath!)
+    return !isApplicationClosing() && !task.controller.signal.aborted && applicationWorkEpoch() === task.epoch
+      && state.rootId === task.rootId && state.generation === task.generation && state.state !== 'offline'
+  }
   function schedulePump(): void {
-    if (timer || isApplicationClosing()) return
-    timer = setTimeout(() => {
-      timer = null
-      pump()
-    }, publishDelayMs())
+    if (timer || isApplicationClosing() || !queue.size) return
+    const runningRoots = new Set([...inFlight.values()].map(rootKey))
+    const pending = [...queue.values()].filter(task => !runningRoots.has(rootKey(task)))
+    if (!pending.length) return
+    const next = Math.min(...pending.map(task => Math.max(task.notBefore, rootRetryAt.get(rootKey(task)) || 0)))
+    timer = setTimeout(() => { timer = null; pump() }, Math.max(0, next - Date.now()))
   }
 
-  function publishKey(storage: PreviewCacheStorage, previewKey: string): string {
-    return `${storage.rootPath || storage.indexDbPath || storage.dir}:${storage.rootPath ? getStartupPathRootState(storage.rootPath).generation : 0}:${previewKey}`
-  }
-
-  async function publishOne(storage: PreviewCacheStorage, row: PreviewCachePublishRow): Promise<void> {
-    if (!storage.rootPath || isApplicationClosing()) return
-    const epoch = applicationWorkEpoch(), generation = getStartupPathRootState(storage.rootPath).generation
-    const current = () => !isApplicationClosing() && applicationWorkEpoch() === epoch && getStartupPathRootState(storage.rootPath!).generation === generation && getStartupPathRootState(storage.rootPath!).state !== 'offline'
-    if (!(await options.ensureSharedAvailable(storage.rootPath))) {
+  async function publishOne(task: PublishTask): Promise<void> {
+    const { storage, row } = task
+    const guarded = <T>(operation: () => Promise<T>) => withStartupPathRootGuard(() => {
+      if (!current(task)) throw Object.assign(new Error('Preview publication owner retired'), { reason: 'stale-generation' })
+    }, operation)
+    if (!current(task)) return
+    if (!(await options.ensureSharedAvailable(storage.rootPath!, task.forcePreparation))) {
       stats.sharedUnavailable += 1
       return
     }
+    task.forcePreparation = false
+    if (!current(task)) return
 
     const sharedOutputPath = join(storage.dir, `${row.previewKey}.png`)
     const lockPath = `${sharedOutputPath}.publish.lock`
     const tmpPath = `${sharedOutputPath}.tmp.${randomUUID()}`
-    const mkdirResult = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(`preview-cache-publish-mkdir:${dirname(sharedOutputPath)}`, () => fsp.mkdir(dirname(sharedOutputPath), { recursive: true }), publishTimeoutMs()))
+    const mkdirResult = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(`preview-cache-publish-mkdir:${dirname(sharedOutputPath)}`, () => guarded(() => fsp.mkdir(dirname(sharedOutputPath), { recursive: true })), publishTimeoutMs()))
     if (!mkdirResult.ok) {
       if (mkdirResult.timedOut) stats.deadlineDropped += 1
+      const code = (mkdirResult.error as { code?: string; reason?: string })?.code || (mkdirResult.error as { reason?: string })?.reason
+      if (previewPreparationRetryable(mkdirResult.error)) {
+        task.forcePreparation = code === 'ENOENT' || code === 'ENOTDIR'
+        const cause = mkdirResult.error as { phase?: 'queued' | 'executing'; blocker?: string; requestId?: number; blockedBy?: number }
+        throw new PreviewSharedPreparationDeferred(Date.now() + 1000, { phase: 'publish-mkdir', blocker: task.forcePreparation ? 'missing' : cause.blocker || 'response-timeout',
+          processPhase: cause.phase, requestId: cause.requestId, blockedBy: cause.blockedBy })
+      }
       options.appendStartupLog(`preview cache publish mkdir dropped: ${dirname(sharedOutputPath)}, ${errorMessage(mkdirResult.error)}`)
       return
     }
-    if (!current()) return
-    const lock = await acquirePublishLock(lockPath)
+    if (!current(task)) return
+    const lock = await guarded(() => acquirePublishLock(lockPath))
     if (!lock) {
       stats.lockBusy += 1
       return
@@ -202,8 +238,8 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
     try {
       let expired = false
       let publishedBytes: Buffer | undefined
-      const result = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(`preview-cache-publish:${sharedOutputPath}`, async () => {
-        if (!current()) throw new Error('preview publish cancelled')
+      const result = await withPhysicalIoCompletion(() => options.withIoDeadlineResult(`preview-cache-publish:${sharedOutputPath}`, () => guarded(async () => {
+        if (!current(task)) throw new Error('preview publish cancelled')
         if (await pathExists(sharedOutputPath)) return 'exists' as const
         // Publish a stable local byte snapshot. The image and its checksum use
         // these exact bytes, avoiding two additional reads of the shared PNG.
@@ -212,13 +248,13 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
         await fsp.writeFile(tmpPath, bytes)
         publishedBytes = bytes
         if (await pathExists(sharedOutputPath)) return 'exists-after-copy' as const
-        if (expired || !current()) throw new Error('preview publish expired')
+        if (expired || !current(task)) throw new Error('preview publish expired')
         await lock.rename(tmpPath, sharedOutputPath)
         return 'published' as const
-      }, publishTimeoutMs()).then(result => { expired = !result.ok; return result }))
+      }), publishTimeoutMs()).then(result => { expired = !result.ok; return result }))
 
-      await fsp.unlink(tmpPath).catch(() => undefined)
-      if (!current()) return
+      await withoutSharedIoSignal(() => fsp.unlink(tmpPath)).catch(async error => { await awaitPhysicalIoClose(error) })
+      if (!current(task)) return
       if (!result.ok) {
         if (result.timedOut) stats.deadlineDropped += 1
         options.appendStartupLog(`preview cache publish dropped: ${sharedOutputPath}, ${errorMessage(result.error)}`)
@@ -232,15 +268,17 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
       if (result.value === 'published') {
         stats.published += 1
         manifestEvent = 'published'
-        await options.writeSharedPreviewCacheMeta?.(sharedOutputPath, row, publishedBytes)
+        if (options.writeSharedPreviewCacheMeta) await guarded(async () => options.writeSharedPreviewCacheMeta?.(sharedOutputPath, row, publishedBytes))
           .then(() => {
             stats.metaWritten += 1
           })
-          .catch((error) => {
+          .catch(async (error) => {
+            await awaitPhysicalIoClose(error)
             stats.checksumMismatch += 1
             options.appendStartupLog(`preview cache publish meta failed: ${sharedOutputPath}, ${errorMessage(error)}`)
           })
-        metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row, publishedBytes).catch((error): PreviewCacheMetaValidationResult => ({ status: 'invalid', message: errorMessage(error) })) || null
+        if (!current(task)) return
+        metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row, publishedBytes).catch(async (error): Promise<PreviewCacheMetaValidationResult> => { await awaitPhysicalIoClose(error); return { status: 'invalid', message: errorMessage(error) } }) || null
         if (metaValidation && metaValidation.status !== 'ok') {
           shouldWriteSharedIndex = false
           manifestEvent = 'meta-mismatch'
@@ -249,7 +287,8 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
         }
       } else {
         stats.skippedExisting += 1
-        metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row).catch((error): PreviewCacheMetaValidationResult => ({ status: 'invalid', message: errorMessage(error) })) || null
+        if (!current(task)) return
+        metaValidation = await options.validateSharedPreviewCacheMeta?.(sharedOutputPath, row).catch(async (error): Promise<PreviewCacheMetaValidationResult> => { await awaitPhysicalIoClose(error); return { status: 'invalid', message: errorMessage(error) } }) || null
         if (metaValidation && (metaValidation.status === 'invalid' || metaValidation.status === 'mismatch')) {
           manifestEvent = 'meta-mismatch'
           shouldWriteSharedIndex = false
@@ -259,17 +298,18 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
         }
       }
 
-      if (!current()) return
-      await options.appendSharedPreviewCacheManifest?.(storage, row, sharedOutputPath, manifestEvent, metaValidation)
+      if (!current(task)) return
+      if (options.appendSharedPreviewCacheManifest) await guarded(async () => options.appendSharedPreviewCacheManifest?.(storage, row, sharedOutputPath, manifestEvent, metaValidation))
         .then(() => {
           stats.manifestWritten += 1
         })
-        .catch((error) => {
+        .catch(async (error) => {
+          await awaitPhysicalIoClose(error)
           options.appendStartupLog(`preview cache publish manifest failed: ${sharedOutputPath}, ${errorMessage(error)}`)
         })
 
-      if (shouldWriteSharedIndex && current()) {
-        await options.writePreviewCacheIndex(storage, row.previewKey, {
+      if (shouldWriteSharedIndex && current(task)) {
+        await guarded(() => options.writePreviewCacheIndex(storage, row.previewKey, {
           outputPath: sharedOutputPath,
           fontSignature: row.fontSignature,
           textHash: row.textHash,
@@ -280,55 +320,96 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
           message: row.message || 'published-from-local-preview-cache',
           fontId: row.fontId,
           sourcePath: row.sourcePath,
-        }).catch((error) => {
+        })).catch(async (error) => {
+          await awaitPhysicalIoClose(error)
+          if (['ENOENT', 'ENOTDIR'].includes((error as { code?: string })?.code || (error as { reason?: string })?.reason || '')) throw error
           options.appendStartupLog(`preview cache publish index failed: ${sharedOutputPath}, ${errorMessage(error)}`)
         })
       }
     } finally {
-      await lock.release()
-      await fsp.unlink(tmpPath).catch(() => undefined)
+      await withoutSharedIoSignal(() => lock.release())
+      await withoutSharedIoSignal(() => fsp.unlink(tmpPath)).catch(async error => { await awaitPhysicalIoClose(error) })
       logStats()
     }
   }
 
   function pump(): void {
+    if (timer) clearTimeout(timer)
+    timer = null
+    for (const [key, task] of queue) {
+      if (!current(task) || task.expiresAt <= Date.now()) {
+        queue.delete(key)
+        evidence(task.rootId, { phase: 'publication', blocker: current(task) ? 'optional-publication-expired' : 'generation-changed' })
+      }
+    }
     while (!isApplicationClosing() && active < publishMaxInFlight() && queue.size) {
-      const first = queue.entries().next().value as [string, { storage: PreviewCacheStorage; row: PreviewCachePublishRow }] | undefined
+      const runningRoots = new Set([...inFlight.values()].map(rootKey))
+      const first = [...queue].find(([, task]) => !runningRoots.has(rootKey(task)) && Math.max(task.notBefore, rootRetryAt.get(rootKey(task)) || 0) <= Date.now())
       if (!first) break
       const [key, task] = first
       queue.delete(key)
-      inFlight.add(key)
+      inFlight.set(key, task)
       active += 1
-      withPhysicalIoCompletion(() => publishOne(task.storage, task.row))
-        .catch((error) => options.appendStartupLog(`preview cache publish failed: ${errorMessage(error)}`))
+      withPhysicalIoCompletion(() => withSharedIoPriority('background', () => withSharedIoSignal(task.controller.signal, () => publishOne(task))))
+        .catch((error) => {
+          const code = (error as { code?: string; reason?: string })?.code || (error as { reason?: string })?.reason
+          // A missing cache parent can be recreated safely before a new lock.
+          // An existing image is never rewritten on a retry.
+          if ((code === 'ENOENT' || code === 'ENOTDIR') && !task.forcePreparation) task.forcePreparation = true
+          const deferred = error instanceof PreviewSharedPreparationDeferred ? error : task.forcePreparation && (code === 'ENOENT' || code === 'ENOTDIR')
+            ? new PreviewSharedPreparationDeferred(Date.now() + 1000, { phase: 'publish-lock', blocker: 'missing' }) : null
+          if (deferred && current(task) && task.expiresAt > Date.now()) {
+            task.notBefore = deferred.retryAt
+            rootRetryAt.set(rootKey(task), deferred.retryAt)
+            queue.set(key, task)
+            evidence(task.rootId, deferred.detail)
+          } else if (deferred) evidence(task.rootId, { phase: 'publication', blocker: 'optional-publication-expired' })
+          else options.appendStartupLog(`preview cache publish failed: ${errorMessage(error)}`)
+        })
         .finally(() => {
+          // The outer physical scope finishes before either ownership is freed.
           inFlight.delete(key)
           active = Math.max(0, active - 1)
-          if (queue.size) schedulePump()
+          for (const root of rootRetryAt.keys()) if (![...queue.values(), ...inFlight.values()].some(value => rootKey(value) === root)) rootRetryAt.delete(root)
+          pump()
         })
     }
+    if (active < publishMaxInFlight()) schedulePump()
+    resolveIdle()
   }
 
   function enqueuePreviewCachePublish(localStorage: PreviewCacheStorage, row: PreviewCachePublishRow): void {
     if (isApplicationClosing()) return
     const sharedStorage = options.previewCacheStorageToShared(localStorage)
     if (!sharedStorage?.rootPath) return
-    const key = publishKey(sharedStorage, row.previewKey)
+    const state = getStartupPathRootState(sharedStorage.rootPath)
+    const key = `${state.rootId}:${state.generation}:${row.previewKey}`
     if (queue.has(key) || inFlight.has(key)) {
       stats.coalesced += 1
       logStats()
       return
     }
-    queue.set(key, { storage: sharedStorage, row })
-    while (queue.size > 2000) queue.delete(queue.keys().next().value!)
+    queue.set(key, { storage: { ...sharedStorage }, row: { ...row }, rootId: state.rootId, generation: state.generation,
+      epoch: applicationWorkEpoch(), expiresAt: Date.now() + MAX_PENDING_MS, notBefore: Date.now() + publishDelayMs(), forcePreparation: false, controller: new AbortController() })
+    while (queue.size > MAX_PENDING_ROWS) {
+      const oldest = queue.entries().next().value!
+      queue.delete(oldest[0]); evidence(oldest[1].rootId, { phase: 'publication', blocker: 'queue-capacity' })
+    }
     stats.queued += 1
     schedulePump()
     logStats()
   }
 
-  onApplicationClosing(() => { if (timer) clearTimeout(timer); timer = null; queue.clear() })
+  onApplicationClosing(() => {
+    if (timer) clearTimeout(timer)
+    timer = null
+    queue.clear(); rootRetryAt.clear()
+    for (const task of inFlight.values()) task.controller.abort()
+    resolveIdle()
+  })
   return {
     enqueuePreviewCachePublish,
     logStats,
+    whenIdle: () => active || queue.size ? new Promise<void>(resolve => idleWaiters.push(resolve)) : Promise.resolve(),
   }
 }

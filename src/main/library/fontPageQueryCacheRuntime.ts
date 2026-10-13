@@ -68,7 +68,7 @@ export function createFontPageQueryCacheRuntime(
         `font page query joined in-flight: offset=${offset}, limit=${limit}, page=${request.sidebarPage || "library"}, activeFilter=${request.activeFilter?.kind || "all"}`,
       );
       try { const result = await joinFontQueryTask(existing); assertFontQueryActive(); return joinedGeneration === cacheGeneration ? result : queryFontPageInLibrary(request); }
-      catch (error) { assertFontQueryActive(); if (existing.controller.signal.aborted) return queryFontPageInLibrary(request); throw error; }
+      catch (error) { assertFontQueryActive(); if ((error as { requiresPageWindowRestart?: boolean })?.requiresPageWindowRestart) throw error; if (existing.controller.signal.aborted) return queryFontPageInLibrary(request); throw error; }
     }
 
     const requestGeneration = cacheGeneration;
@@ -88,6 +88,7 @@ export function createFontPageQueryCacheRuntime(
       return result;
     } catch (error) {
       assertFontQueryActive();
+      if ((error as { requiresPageWindowRestart?: boolean })?.requiresPageWindowRestart) throw error;
       if (requestGeneration !== cacheGeneration) return queryFontPageInLibrary(request);
       throw error;
     }

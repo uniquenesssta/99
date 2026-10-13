@@ -221,13 +221,16 @@ export function createRootIndexCoordinator(deps: RootIndexCoordinatorDeps) {
           return null
         }
         usedLike = usedLike || built.usedLike
+        db.exec('BEGIN');
         const totalRow = db.prepare(built.countSql).get(...built.countParams) as { count?: number } | undefined
         const total = Number(totalRow?.count || 0)
         if (total <= 0) {
+          db.exec('COMMIT')
           rootResults.push({ root, total: 0, rows: [] })
           continue
         }
         const rows = db.prepare(built.sql).all(...built.params) as RootIndexPageRow[]
+        db.exec('COMMIT')
         rootResults.push({ root, total, rows })
       } finally {
         deps.closeSqliteDb(db)

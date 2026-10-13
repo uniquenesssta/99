@@ -58,7 +58,7 @@ async function main() {
    mappedDriveTableAsync:async()=>new Map([['O:','\\\\NAS\\share']])
  }},globals,transforms)(core+'rustSharedIoCommandRuntime.ts')
  const client = load(core+'clients/rustMetadataClientRuntime.ts').createRustMetadataClientRuntime({...transport,
-   diagnoseRustCoreWorker:async()=>({available:true,path:process.execPath,capabilities:['install-status-index-read','install-status-index-save','shared-metadata-apply','shared-metadata-remove-tag','shared-metadata-known-tags','shared-metadata-overlay-read','shared-metadata-signature']}),
+   diagnoseRustCoreWorker:async()=>({available:true,path:process.execPath,capabilities:['install-status-index-read','install-status-signature-authority-v1','install-status-index-save','shared-metadata-apply','shared-metadata-remove-tag','shared-metadata-known-tags','shared-metadata-overlay-read','shared-metadata-signature']}),
    appendStartupLog:s=>logs.push(s)})
  const run = (roots,extras={}) => transport.runRustCoreScheduledCommand(process.execPath,['--shared-metadata-signature','--input',extras.input || ''],{timeout:250,sharedIo:{paths:roots,write:false},...extras})
  let healthyProbe=true
@@ -141,6 +141,63 @@ async function main() {
      pool.stop()
    }
    cases.push('pure foreground admission snapshot includes queued and logically cancelled physical owners')
+
+   // Optional work may inspect the same admission rules without creating jobs,
+   // reserving a slot, consuming fairness credit or forgetting physical owners.
+   {
+     const { EventEmitter } = require('node:events'), { PassThrough } = require('node:stream')
+     const owned = [], observeLoad = loader({ 'node:child_process': { spawn: () => {
+       const child = new EventEmitter()
+       child.pid = 60000 + owned.length
+       child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough()
+       child.stdio = [child.stdin, child.stdout, child.stderr, new PassThrough()]
+       child.kill = () => true; owned.push(child); return child
+     } } }, { AbortController, setInterval, clearInterval })
+     const pool = observeLoad('src/main/path/sharedIoProcessRuntime.ts').createSharedIoProcessRuntime(() => {})
+     const rootA = '\\\\nas\\share', rootB = '\\\\other\\share'
+     const read = { roots: [rootA], write: false, verifiedReadOnly: true, priority: 'background',
+       accesses: [{ root: rootA, path: rootA + '\\fonts', scope: 'tree', mode: 'read' }] }
+     const write = { roots: [rootA], write: true, priority: 'background',
+       accesses: [{ root: rootA, path: rootA + '\\fonts\\.hfm-preview-cache', scope: 'tree', mode: 'write' }] }
+     const other = { ...write, roots: [rootB], accesses: [{ root: rootB, path: rootB + '\\fonts\\.hfm-preview-cache', scope: 'tree', mode: 'write' }] }
+     const runOwned = (scope, extras = {}) => pool.run({ file: process.execPath, args: ['--admission-observation'], timeoutMs: 5000, queueTimeoutMs: 5000, ...scope, ...extras }).catch(error => error)
+     const abort = new AbortController(), active = runOwned(read, { signal: abort.signal })
+     const before = plain(pool.status())
+     for (let sample = 0; sample < 1000; sample++) {
+       assert.deepEqual(plain(pool.inspectAdmission(write)), { ready: false, phase: 'queued', blocker: 'resource-conflict', blockedBy: 1 })
+       assert.equal(pool.inspectAdmission(other).ready, true, 'independent root was blocked by optional inspection')
+     }
+     assert.deepEqual(plain(pool.status()), before, 'admission inspection mutated pool state or metrics')
+     assert.equal(owned.length, 1, 'admission inspection launched a child')
+     const queuedAbort = new AbortController(), queued = runOwned(write, { signal: queuedAbort.signal })
+     assert.deepEqual(plain(pool.inspectAdmission(write)), { ready: false, phase: 'queued', blocker: 'prior-conflicting-request', blockedBy: 2 })
+     queuedAbort.abort(); const queuedError = await queued
+     assert.equal(queuedError.requestId, 2, 'inspection consumed request identities')
+     assert.equal(queuedError.outcome, 'not-started'); await queuedError.closed
+     abort.abort(); const cancelled = await active
+     assert.equal(cancelled.outcome, 'unknown')
+     assert.equal(pool.inspectAdmission(write).ready, false, 'logical cancellation hid the physical read blocker')
+     owned[0].emit('close', null, 'SIGTERM'); await cancelled.closed
+     assert.equal(pool.inspectAdmission(write).ready, true, 'closed read kept an obsolete preparation blocker')
+     // A ready snapshot is not a reservation: a subsequent real reader still
+     // excludes the real write using the unchanged admission path.
+     const secondRead = runOwned(read), pendingWrite = runOwned(write)
+     assert.equal(owned.length, 2, 'ready observation bypassed a later conflicting reader')
+     owned[1].emit('close', 0, null); await secondRead
+     assert.equal(owned.length, 3, 'queued preparation did not enter after its blocker closed')
+     owned[2].emit('close', 0, null); await pendingWrite
+     const barrier = runOwned({ roots: ['configured-root:unknown-alias'], write: true })
+     assert.equal(pool.inspectAdmission(other).ready, false, 'unknown alias inspection narrowed the conservative barrier')
+     const pending = Array.from({ length: 128 }, () => runOwned(write))
+     assert.equal(pool.inspectAdmission(write).blocker, 'queue-capacity')
+     pool.cancelAll(); await Promise.all(pending)
+     assert.equal(pool.inspectAdmission(other).ready, false, 'cancelAll released an active physical barrier early')
+     owned[3].emit('close', null, 'SIGTERM'); const barrierError = await barrier; await barrierError.closed
+     await pool.whenIdle(); assert.equal(pool.status().active, 0); assert.equal(pool.status().queued, 0)
+     assert.equal(pool.status().metrics.started, pool.status().metrics.closed)
+     pool.stop(); assert.deepEqual(plain(pool.inspectAdmission(write)), { ready: false, phase: 'queued', blocker: 'closed' })
+   }
+   cases.push('pure optional-write admission hint preserves conflicts, queue fairness, capacity and physical owners')
 
    const seven=[
      ['runRustInstallStatusRead', [{rootPath:'\\\\nas\\a',dbPath:'\\\\nas\\a\\install.sqlite',items:[]}], {ok:true,results:{},missingIds:[]}],
@@ -410,6 +467,8 @@ async function main() {
      'node:child_process':{...cp,spawn(){cleanupSpawned=true;throw Error('closing cleanup must not spawn')}}
    })
    const closingPool=closingLoad('src/main/path/sharedIoProcessRuntime.ts').applicationSharedIoProcessRuntime()
+   assert.deepEqual(plain(closingPool.inspectAdmission({ roots: ['closing-owned-lock'], write: true })),
+     { ready: false, phase: 'queued', blocker: 'closed' }, 'application closing inspection admitted optional work')
    await assert.rejects(closingPool.run({file:process.execPath,args:['--shared-file-io'],roots:['closing-owned-lock'],write:true,timeoutMs:1000}),error=>error.reason==='closing'&&error.outcome==='not-started')
    assert.equal(cleanupSpawned,false);assert.equal(await fsp.readFile(closingLock,'utf8'),'owned-lock-token')
    cases.push('application closing still rejects new owned-cleanup process and retains lock for existing recovery')

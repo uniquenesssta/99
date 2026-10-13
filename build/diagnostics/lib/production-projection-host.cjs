@@ -454,7 +454,7 @@ async function createHost(options) {
         const statement = onSqlitePort ? sqliteCall('prepare', sqliteCategory(sql), () => raw.prepare(sql)) : raw.prepare(sql)
         const category = sqliteCategory(sql)
         const normalized = String(sql).replace(/\s+/g, ' ').trim()
-        const mapping = /^SELECT root_path\s*,\s*relative_path\s*,\s*file_size\s*,\s*modified_at FROM entries\b/i.test(normalized)
+        const mapping = /^SELECT root_path\s*,\s*relative_path\s*,\s*file_size\s*,\s*modified_at(?:\s*,\s*font_json)? FROM entries\b/i.test(normalized)
         const projectionUpdate = /^UPDATE entries SET installed\s*=/i.test(normalized)
         const where = normalized.match(/\bWHERE\b(.*)$/i)?.[1] || ''
         const indexed = /\broot_path\s*=\s*\?/i.test(where) && /\brelative_path\s*=\s*\?/i.test(where)

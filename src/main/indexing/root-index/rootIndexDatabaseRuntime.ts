@@ -1,3 +1,4 @@
+import { registerInstallStatusSql } from '../../install/status/installStatusSignatureRuntime'
 import { assertOwnedSqliteTables, assertSupportedSqliteVersion, DerivedSqliteIncompatibleError } from '../../db/sqliteRecoveryPolicy'
 import { registerFileIdentitySql } from '../../fonts/fontFileIdentity'
 import { sharedSqliteReadSnapshot } from '../../path/sharedFileSystemRuntime'
@@ -24,6 +25,7 @@ export function createRootIndexDatabaseRuntime(deps: RootIndexRuntimeDeps) {
     const existingMeta = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='meta'").get()
     if ((columns.size || existingMeta) && !base.every(name => columns.has(name))) throw new DerivedSqliteIncompatibleError('已识别的根索引缺少必要字段，需要完整重建。')
     registerFileIdentitySql(db);
+    registerInstallStatusSql(db);
     db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;

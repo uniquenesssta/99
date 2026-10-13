@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import type { InstallStatusReadEvidence } from '../install/status/installStatusTypes';
 import { assertFontQueryActive, fontQuerySuperseded, rethrowFontQuerySuperseded } from './fontQueryTaskRuntime';
 import { isSharedIoCancellationError } from '../path/sharedIoCancellationRuntime';
 import { resolve } from "node:path";
@@ -61,13 +63,14 @@ export type FontQueryFacadeRuntimeOptions = {
   applyPendingActivationState?: (items: FontItem[]) => FontItem[];
   hasPendingActivationState?: () => boolean;
   ensureMergedIndexReadyForWorker?: (roots: string[]) => Promise<boolean>;
+  reconcileInstallStatusPage?: (items: FontItem[]) => Promise<void>;
   readInstallStatusIndex: (
     items: FontItem[],
     options?: { enqueueMissTasks?: boolean },
   ) => Promise<{
     results: Record<string, InstallCompareResult>;
     missingIds?: string[];
-  }>;
+  } & InstallStatusReadEvidence>;
   queryFontPageFromMergedIndexWorker: (
     request: FontQueryRequest,
     limit: number,
@@ -248,15 +251,20 @@ export function createFontQueryFacadeRuntime(
 
   async function hydrateInstallStatusForFonts(
     items: FontItem[],
+    strict = false,
+    applyOverlay = true,
   ): Promise<FontItem[]> {
     assertFontQueryActive();
     if (!items.length) return items;
-    const overlay = options.applyPendingActivationState || ((fonts: FontItem[]) => fonts);
+    const overlay = applyOverlay && options.applyPendingActivationState || ((fonts: FontItem[]) => fonts);
     try {
-      const { results } = await options.readInstallStatusIndex(items, {
+      const { results, missingReasons, readError } = await options.readInstallStatusIndex(items, {
         enqueueMissTasks: false,
       });
       assertFontQueryActive();
+      if (strict && readError) throw new Error('install-status-authority-unavailable');
+      const withdrawn = items.filter(item => item.installStatusKnown === true && (!results[item.id] || results[item.id].known === false));
+      if (withdrawn.length) options.appendLog(`install status authority withdrawn: count=${withdrawn.length}, examples=${JSON.stringify(withdrawn.slice(0, 3).map(item => ({ idHash: createHash('sha256').update(item.id).digest('hex').slice(0, 12), cause: missingReasons?.[item.id] || (results[item.id]?.known === false ? 'explicit-unknown' : 'worker-omission') })))}`);
       if (!Object.keys(results).length)
         return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] })));
       return overlay(items.map((item) => {
@@ -277,6 +285,7 @@ export function createFontQueryFacadeRuntime(
       options.appendLog(
         `hydrateInstallStatusForFonts failed: ${error instanceof Error ? error.message : String(error)}`,
       );
+      if (strict) throw error;
       return overlay(items.map((item) => ({ ...item, active: false, installStatusKnown: false, systemInstalled: false, systemInstallMatches: [] })));
     }
   }
@@ -285,8 +294,44 @@ export function createFontQueryFacadeRuntime(
     request: FontQueryRequest,
     limit: number,
     offset: number,
+    authorityAttempt = 0,
   ): Promise<FontQueryPageResult> {
     const startedAt = Date.now();
+    const restartPageWindow = (cause?: unknown): never => {
+      try { return fontQuerySuperseded(cause); }
+      catch (error) {
+        // Brand only a fresh superseded error owned here. The original failure
+        // may be frozen; its physical-close promise survives in the new error.
+        throw Object.assign(error as object, { requiresPageWindowRestart: true });
+      }
+    };
+    const acceptPage = async (page: FontQueryPageResult): Promise<FontQueryPageResult> => {
+      const hydrated = await hydrateInstallStatusForFonts(page.items, true, false);
+      assertFontQueryActive();
+      const changed = hydrated.filter((item, index) => {
+        const previous = page.items[index];
+        return (previous.installStatusKnown === true) !== (item.installStatusKnown === true)
+          || !!previous.systemInstalled !== !!item.systemInstalled || !!previous.active !== !!item.active;
+      });
+      if (changed.length) {
+        options.appendLog(`indexed page install authority changed: rows=${changed.length}, offset=${offset}, attempt=${authorityAttempt}, action=local-projection-requery`);
+        if (authorityAttempt || !options.reconcileInstallStatusPage) return restartPageWindow();
+        // Repair uses original identities and re-reads inside the local mutation
+        // lane. Its invalidation may retire this consumer; never recapture it.
+        try {
+          await options.reconcileInstallStatusPage(page.items);
+          assertFontQueryActive();
+        } catch (error) {
+          // A repaired later offset belongs to a different population. The
+          // cache must hand retirement to the renderer, not retry that offset
+          // against an already-loaded earlier window from another revision.
+          try { rethrowFontQuerySuperseded(error); } catch (superseded) { return restartPageWindow(superseded); }
+          throw error;
+        }
+        return queryFontPageInLibraryUncached(request, limit, offset, authorityAttempt + 1);
+      }
+      return { ...page, items: options.applyPendingActivationState?.(hydrated) || hydrated };
+    };
     await waitForTagIndexedQueryGrace(request, 'page');
     let tagBarrierSnapshot = options.tagMetadataRevisionBarrier?.snapshotForRequest(request);
     const allowNodeIndexedFallback = nodeIndexedQueryFallbackAllowed();
@@ -302,7 +347,7 @@ export function createFontQueryFacadeRuntime(
             return null;
           })
       : null;
-    if (shouldAcceptIndexedPageResult('rust-worker', request, workerMergedPage, tagBarrierSnapshot)) return workerMergedPage as FontQueryPageResult;
+    if (shouldAcceptIndexedPageResult('rust-worker', request, workerMergedPage, tagBarrierSnapshot)) return acceptPage(workerMergedPage as FontQueryPageResult);
     if (workerMergedPage && options.tagMetadataRevisionBarrier?.resultBecameStaleForRequest(request, tagBarrierSnapshot as any)) {
       await waitForTagIndexedQueryGrace(request, 'page');
       tagBarrierSnapshot = options.tagMetadataRevisionBarrier?.snapshotForRequest(request);
@@ -315,7 +360,7 @@ export function createFontQueryFacadeRuntime(
             return null;
           })
         : null;
-      if (shouldAcceptIndexedPageResult('rust-worker-retry', request, workerMergedPage, tagBarrierSnapshot)) return workerMergedPage as FontQueryPageResult;
+      if (shouldAcceptIndexedPageResult('rust-worker-retry', request, workerMergedPage, tagBarrierSnapshot)) return acceptPage(workerMergedPage as FontQueryPageResult);
     }
 
     const mergedPage = !allowNodeIndexedFallback ? null : await options
@@ -343,7 +388,7 @@ export function createFontQueryFacadeRuntime(
         tagRevisionToken: tagRevisionCacheToken(tagBarrierSnapshot),
       });
     }
-    if (shouldAcceptIndexedPageResult('local-merged-index', request, mergedPage, tagBarrierSnapshot)) return mergedPage as FontQueryPageResult;
+    if (shouldAcceptIndexedPageResult('local-merged-index', request, mergedPage, tagBarrierSnapshot)) return acceptPage(mergedPage as FontQueryPageResult);
 
     const sqlPage = !allowNodeIndexedFallback ? null : await options
       .queryFontPageFromRootIndexes(request, limit, offset)
@@ -354,7 +399,7 @@ export function createFontQueryFacadeRuntime(
         );
         return null;
       });
-    if (shouldAcceptIndexedPageResult('root-index', request, sqlPage, tagBarrierSnapshot)) return sqlPage as FontQueryPageResult;
+    if (shouldAcceptIndexedPageResult('root-index', request, sqlPage, tagBarrierSnapshot)) return acceptPage(sqlPage as FontQueryPageResult);
 
     assertFontQueryActive();
     const items = await options.cleanSharedFontsForQuery(request);

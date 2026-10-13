@@ -223,7 +223,9 @@
     "diagnostics:font-parse-stability-capability": "node build/diagnostics/check-font-parse-stability-capability.cjs",
     "diagnostics:shared-availability-probe-ownership": "node build/diagnostics/check-shared-availability-probe-ownership.cjs",
     "diagnostics:optional-maintenance-admission": "node build/diagnostics/check-optional-maintenance-admission.cjs",
-    "diagnostics:preview-fallback-lifetime": "node build/diagnostics/check-preview-fallback-lifetime.cjs"
+    "diagnostics:preview-fallback-lifetime": "node build/diagnostics/check-preview-fallback-lifetime.cjs",
+    "diagnostics:manual-refresh-inventory": "node build/diagnostics/check-manual-refresh-inventory.cjs",
+    "diagnostics:install-status-authority": "node --experimental-sqlite build/diagnostics/check-install-status-authority.cjs"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",

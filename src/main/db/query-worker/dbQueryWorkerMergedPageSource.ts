@@ -23,6 +23,7 @@ function queryMergedIndexPage(payload) {
       if (needsLocalDb) throw error
     }
     db.pragma('query_only = ON')
+    db.exec('BEGIN')
     const countStartedAt = nowMs()
     const totalRow = db.prepare(payload.sql.countSql).get(...(payload.sql.countParams || []))
     timings.count = nowMs() - countStartedAt
@@ -30,6 +31,7 @@ function queryMergedIndexPage(payload) {
     const selectStartedAt = nowMs()
     const rows = db.prepare(payload.sql.sql).all(...(payload.sql.params || []))
     timings.select = nowMs() - selectStartedAt
+    db.exec('COMMIT')
     if (total === 0 && rows.length > 0) total = rows.length
     const parseStartedAt = nowMs()
     let items = rows.map(fontFromMergedRow).filter(Boolean)

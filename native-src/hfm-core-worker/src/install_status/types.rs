@@ -74,6 +74,8 @@ pub struct InstallStatusReadResult {
     pub ok: bool,
     pub results: std::collections::BTreeMap<String, InstallStatusCompareResult>,
     pub missing_ids: Vec<String>,
+    pub missing_reasons: std::collections::BTreeMap<String, String>,
+    pub read_error: bool,
     pub timings: InstallStatusTimings,
     pub worker_mode: String,
 }

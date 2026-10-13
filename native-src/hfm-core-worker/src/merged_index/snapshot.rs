@@ -1,3 +1,4 @@
+use crate::install_status::signature::{register_install_status_sql, INSTALL_STATUS_PROJECTION_VERSION};
 use std::collections::BTreeSet;
 
 use rusqlite::functions::FunctionFlags;
@@ -78,7 +79,7 @@ pub fn roots_snapshot_usable(conn: &Connection, roots: &[String], schema_version
         if key.unwrap_or_default().is_empty() { return Ok(false); }
     }
     let evidence: Option<String> = conn.query_row("SELECT value FROM meta WHERE key='installEvidenceVersion'", [], |row| row.get(0)).optional()?;
-    if evidence.as_deref() != Some("content-v1") { return Ok(false); }
+    if evidence.as_deref() != Some(INSTALL_STATUS_PROJECTION_VERSION) { return Ok(false); }
     if !merged_index_required_schema_usable(conn) {
         return Ok(false);
     }
@@ -103,6 +104,7 @@ pub fn roots_snapshot_usable(conn: &Connection, roots: &[String], schema_version
 }
 
 pub fn register_shared_font_id(conn: &Connection) -> rusqlite::Result<()> {
+    register_install_status_sql(conn)?;
     conn.create_scalar_function("hfm_file_path", 2, FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
         let root: String = ctx.get(0)?;
         let entry: String = ctx.get(1)?;

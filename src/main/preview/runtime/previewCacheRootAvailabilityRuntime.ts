@@ -70,7 +70,10 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
     // A caller's response budget includes scheduler wait; it is not evidence
     // that the device/root is offline. Physical I/O remains owned until closed.
     if (isIoDeadlineTimeout(error)) return
-    const failure = error as { reason?: string; name?: string } | null
+    const failure = error as { reason?: string; code?: string; name?: string } | null
+    // An absent optional cache directory is recoverable preparation work, not
+    // evidence that the readable font root or its other cache files are offline.
+    if (['ENOENT', 'ENOTDIR'].includes(failure?.code || failure?.reason || '')) return
     if (failure?.name === 'AbortError' || ['cancelled', 'stopping', 'closing', 'stale-generation', 'timeout', 'queue-timeout', 'queue-full', 'capability-missing', 'capability-unavailable'].includes(failure?.reason || '')) return
     const rootState = getStartupPathRootState(rootPath)
     const key = rootKey(rootPath)

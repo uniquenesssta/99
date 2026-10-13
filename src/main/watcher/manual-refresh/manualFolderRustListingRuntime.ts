@@ -1,13 +1,9 @@
-import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
-import type { ScanResult } from "../../../shared/types";
 import type { CachedFontStatLike } from "../../fonts/fontRuntime";
-import type {
-  RustFontFamilyHint,
-  RustFontNameHint,
-  RustFontScriptHint,
-  RustFontStyleHint,
-} from "../../indexing/fontScanWorkers";
-import type { RootScanCacheContext } from "../watchedFolderIndexRuntime";
+import { executeSharedFile } from "../../path/sharedFileSystemRuntime";
+import { sharedIoResourceKeys } from "../../rust-core/rustSharedIoCommandRuntime";
+import { throwIfAborted } from "../../performance/ioQueue";
+import { sharedWatcherInventory } from "../sharedWatcherInventoryRuntime";
+import { validatedWatcherInventoryRows } from "../watched-folder-index/watchedFolderInventoryRuntime";
 import type { ManualFolderRefreshDeps } from "./manualFolderRefreshTypes";
 
 export type ManualRefreshListedFont = {
@@ -15,117 +11,38 @@ export type ManualRefreshListedFont = {
   rootPath: string;
   stat: CachedFontStatLike | null;
   error: string;
-  signatureValid?: boolean;
-  formatHint?: string;
-  quickHash?: string;
-  contentHash?: string;
-  hashKind?: string;
-  nameHint?: RustFontNameHint;
-  scriptHint?: RustFontScriptHint;
-  styleHint?: RustFontStyleHint;
-  familyHint?: RustFontFamilyHint;
 };
 
 export type ManualRustListingResult = {
   rows: ManualRefreshListedFont[];
-  foldersScanned: number;
+  complete: true;
   durationMs: number;
 };
 
-function rustManualRefreshListingMode(): "auto" | "force" | "off" {
-  const mode = String(process.env.HFM_RUST_MANUAL_REFRESH_LISTING || "auto")
-    .trim()
-    .toLowerCase();
-  if (mode === "1" || mode === "true" || mode === "on" || mode === "force") return "force";
-  if (mode === "0" || mode === "false" || mode === "off") return "off";
-  return "auto";
-}
-
-function shouldUseRustManualRefreshListing(): boolean {
-  return rustManualRefreshListingMode() !== "off";
-}
-
-export function createManualFolderRustListingRuntime(
-  deps: ManualFolderRefreshDeps,
-  relativeDirectoryPathForRoot: (rootPath: string, dirPath: string) => string,
-) {
+export function createManualFolderRustListingRuntime(deps: ManualFolderRefreshDeps) {
   async function tryListManualRefreshWithRust(args: {
     rootPath: string;
     targetFolder: string;
-    context: RootScanCacheContext;
-    errors: ScanResult["errors"];
+    signal?: AbortSignal;
     progress?: (payload: { files: number; foldersScanned: number; skippedDirs: number }) => void;
   }): Promise<ManualRustListingResult | null> {
-    if (!deps.runRustFontIndexListWorker) return null;
-    if (!shouldUseRustManualRefreshListing()) {
-      deps.appendStartupLog(
-        `manual folder rust listing skipped: folder=${args.targetFolder}, reason=disabled; directory signature cache preferred`,
-      );
-      return null;
-    }
-
+    throwIfAborted(args.signal);
+    const mode = String(process.env.HFM_RUST_MANUAL_REFRESH_LISTING || "auto").trim().toLowerCase();
+    if (["0", "false", "off"].includes(mode)) return null;
+    if (!(await sharedIoResourceKeys([args.targetFolder])).length) return null;
+    throwIfAborted(args.signal);
     const startedAt = Date.now();
-    try {
-      const listed = await deps.runRustFontIndexListWorker(
-        [args.targetFolder],
-        Array.from(deps.fontExtensions).map((value) => value.replace(/^\./, "")),
-        (payload) =>
-          args.progress?.({
-            files: payload.files,
-            foldersScanned: payload.foldersScanned,
-            skippedDirs: 0,
-          }),
-      );
-      if (!listed || listed.truncated) {
-        if (listed?.truncated) {
-          deps.appendStartupLog(
-            `manual folder rust listing skipped: result truncated, folder=${args.targetFolder}`,
-          );
-        }
-        return null;
-      }
-
-      for (const item of listed.directories || []) {
-        args.context.directoryUpdates.push({
-          relativePath: relativeDirectoryPathForRoot(args.rootPath, item.path),
-          modifiedAt: Number(item.modifiedMs || 0),
-          fileCount: Number(item.fileCount || 0),
-          dirCount: Number(item.dirCount || 0),
-        });
-      }
-
-      args.errors.push(...(listed.errors || []));
-      const rows: ManualRefreshListedFont[] = (listed.files || []).map((item) => ({
-        file: item.file,
-        rootPath: args.rootPath,
-        stat: item.stat,
-        error: "",
-        signatureValid: item.signatureValid,
-        formatHint: item.format,
-        quickHash: item.quickHash,
-        contentHash: item.contentHash,
-        hashKind: item.hashKind,
-        nameHint: item.nameHint,
-        scriptHint: item.scriptHint,
-        styleHint: item.styleHint,
-        familyHint: item.familyHint,
-      }));
-
-      deps.appendStartupLog(
-        `manual folder refresh listing source=rust root=${args.rootPath}, folder=${args.targetFolder}, files=${rows.length}, folders=${listed.foldersScanned || 0}, errors=${listed.errors.length}, nameHints=${rows.filter((item) => item.nameHint).length}, scriptHints=${rows.filter((item) => item.scriptHint).length}, styleHints=${rows.filter((item) => item.styleHint).length}, familyHints=${rows.filter((item) => item.familyHint).length}, durationMs=${Date.now() - startedAt}`,
-      );
-      return {
-        rows,
-        foldersScanned: Number(listed.foldersScanned || 0),
-        durationMs: Date.now() - startedAt,
-      };
-    } catch (error) {
-      rethrowSharedIoProcessError(error)
-      deps.appendStartupLog(
-        `manual folder rust listing failed, fallback to Node directory cache listing: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return null;
-    }
+    // treeSnapshot propagates every iterator/metadata error and publishes only a
+    // complete inventory. list-font-files opens contents and skips iterator errors;
+    // it must never be the deletion authority for this metadata comparison.
+    const { result } = await executeSharedFile({ operation: "treeSnapshot", path: args.targetFolder }, undefined, args.signal);
+    throwIfAborted(args.signal);
+    const inventory = sharedWatcherInventory(args.targetFolder, result.value);
+    const rows = validatedWatcherInventoryRows(args.targetFolder, inventory, deps.fontExtensions)
+      .map(({ file, freshStat }) => ({ file, rootPath: args.rootPath, stat: freshStat, error: "" }));
+    args.progress?.({ files: rows.length, foldersScanned: 0, skippedDirs: 0 });
+    deps.appendStartupLog(`manual folder refresh listing source=metadata-inventory files=${rows.length}, complete=true, contentReads=0, durationMs=${Date.now() - startedAt}`);
+    return { rows, complete: true, durationMs: Date.now() - startedAt };
   }
 
   return { tryListManualRefreshWithRust };

@@ -53,6 +53,8 @@ export type ReadInstallStatusWorkerRequest = {
 }
 
 export type ReadInstallStatusWorkerResult = {
+  missingReasons?: Record<string, import('../../install/status/installStatusTypes').InstallStatusMissReason>
+  readError?: boolean
   results: Record<string, InstallCompareResult>
   missingIds: string[]
   timings?: Record<string, number>

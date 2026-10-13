@@ -173,46 +173,36 @@ async function checkIdentityFailureDoesNotDowngradeToNetworkNodeWalk() {
   )
 }
 
-async function checkManualNetworkRefreshUsesRustBatch() {
-  let rustCalls = 0
+async function checkManualNetworkRefreshUsesCompleteMetadataBatch() {
+  let metadataCalls = 0, contentCalls = 0, rejected
   const runtime = loader({
-    [abs(sharedIoProcessPath)]: {
-      rethrowSharedIoProcessError(error) {
-        if (error && error.sharedIo === true) throw error
-      },
-    },
+    [abs(sharedIoCommandPath)]: { sharedIoResourceKeys: async () => [sharedResource] },
+    [abs(sharedFsPath)]: { executeSharedFile: async request => {
+      metadataCalls++
+      assert.equal(request.operation, 'treeSnapshot')
+      assert.equal(request.path, sharedRoot)
+      if (rejected) throw rejected
+      return { result: { value: { 'manual.ttf': [123, '456000000'] } } }
+    } },
   }, {
     process: { ...process, env: { ...process.env, HFM_RUST_MANUAL_REFRESH_LISTING: 'auto' } },
   })(manualListingPath)
-
-  const listing = runtime.createManualFolderRustListingRuntime(
-    {
-      fontExtensions: new Set(['.ttf']),
-      storageProfileForPath: () => ({ isNetwork: true, type: 'network', reason: 'diagnostic' }),
-      appendStartupLog: () => {},
-      runRustFontIndexListWorker: async (folders) => {
-        rustCalls += 1
-        assert.deepEqual(plain(folders), [sharedRoot])
-        return {
-          files: [{ file: sharedRoot + '\\manual.ttf', rootPath: sharedRoot, stat: stat(), signatureValid: true }],
-          directories: [{ path: sharedRoot, modifiedMs: 222, fileCount: 1, dirCount: 0 }],
-          errors: [],
-          foldersScanned: 1,
-          truncated: false,
-        }
-      },
-    },
-    () => '',
-  )
-
-  const result = await listing.tryListManualRefreshWithRust({
-    rootPath: sharedRoot,
-    targetFolder: sharedRoot,
-    context: { rootPath: sharedRoot, directoryUpdates: [] },
-    errors: [],
+  const listing = runtime.createManualFolderRustListingRuntime({
+    fontExtensions: new Set(['.ttf']), appendStartupLog() {},
+    runRustFontIndexListWorker: async () => { contentCalls++; throw Error('manual inventory opened font contents') },
   })
-  assert.equal(rustCalls, 1)
-  assert.equal(result && result.rows.length, 1)
+  const args = { rootPath: sharedRoot, targetFolder: sharedRoot }
+  const result = await listing.tryListManualRefreshWithRust(args)
+  assert.equal(metadataCalls, 1)
+  assert.equal(contentCalls, 0)
+  assert.equal(result.complete, true)
+  assert.equal(result.rows.length, 1)
+  assert.equal(result.rows[0].stat.size, 123)
+  assert.equal(result.rows[0].stat.mtimeMs, 456)
+  assert.equal(result.rows[0].signatureValid, undefined, 'metadata inventory acquired a font-content signature')
+  rejected = new TestSharedIoProcessError('incomplete inventory', 'unknown', 'directory-read-failed')
+  await assert.rejects(listing.tryListManualRefreshWithRust(args), error => error === rejected)
+  assert.equal(contentCalls, 0, 'incomplete metadata inventory fell back to a content listing')
 }
 
 async function checkListCommandIsReadOnlySharedIo() {
@@ -306,7 +296,7 @@ async function main() {
   await checkMixedRootBatchingAndEarlyVisible(false)
   await checkIdentityFailureDoesNotDowngradeToNetworkNodeWalk()
   await checkFallbackIsolationAndDedupe()
-  await checkManualNetworkRefreshUsesRustBatch()
+  await checkManualNetworkRefreshUsesCompleteMetadataBatch()
   await checkListCommandIsReadOnlySharedIo()
   console.log('[diagnostics:network-list-font-files-batching] mixed roots, early-visible, fail-closed identity, manual network refresh and read-only generation routing passed')
 }

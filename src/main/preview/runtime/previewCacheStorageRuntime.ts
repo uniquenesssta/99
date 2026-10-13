@@ -90,7 +90,7 @@ export function createPreviewCacheStorageRuntime(
   previewCacheStorageToShared: (
     storage: PreviewCacheStorage,
   ) => PreviewCacheStorage | null;
-  ensureSharedPreviewCacheAvailable: (rootPath: string) => Promise<boolean>;
+  ensureSharedPreviewCacheAvailable: (rootPath: string, force?: boolean) => Promise<boolean>;
   invalidateLibraryShellCache: () => void;
 } {
   const rootAvailability = createPreviewCacheRootAvailabilityRuntime({
@@ -138,7 +138,7 @@ export function createPreviewCacheStorageRuntime(
     hideDirectoryOnWindows: options.hideDirectoryOnWindows,
     writeRootPreviewCacheManifest: options.writeRootPreviewCacheManifest,
     appendStartupLog: options.appendStartupLog,
-  }, { rootAvailability, tierRuntime, runRequiredRootPreviewCacheIo });
+  }, { rootAvailability, tierRuntime });
 
   async function rememberSharedPresence(
     storage: PreviewCacheStorage,

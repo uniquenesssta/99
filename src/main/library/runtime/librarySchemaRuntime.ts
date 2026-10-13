@@ -1,3 +1,4 @@
+import { registerInstallStatusSql } from '../../install/status/installStatusSignatureRuntime'
 import { assertSupportedSqliteVersion } from '../../db/sqliteRecoveryPolicy';
 import { ensureSqliteColumn } from '../../db/sqliteHelpers';
 import type { FontItem } from "../../../shared/types";
@@ -152,6 +153,7 @@ export function migrateLegacyFontJsonRows(
 }
 
 export function initializeLibraryDb(db: SqliteDb): void {
+  registerInstallStatusSql(db);
   assertSupportedSqliteVersion(db, ['schemaVersion', 'schema_version'], 100, 'app');
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
   const migrate = db.transaction(() => {

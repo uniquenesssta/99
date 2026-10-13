@@ -38,7 +38,7 @@ function harness(settings = {}, transforms = {}) {
     },
   }
   const metadata = load('src/main/rust-core/clients/rustMetadataClientRuntime.ts').createRustMetadataClientRuntime({
-    diagnoseRustCoreWorker: async () => { await event('diagnose'); return { available: !settings.unavailable, path: 'C:\\worker.exe', capabilities: ['local-tags-read', 'install-status-index-read'] } },
+    diagnoseRustCoreWorker: async () => { await event('diagnose'); return { available: !settings.unavailable, path: 'C:\\worker.exe', capabilities: ['local-tags-read', 'install-status-index-read','install-status-signature-authority-v1'] } },
     createTemporaryJsonFile: () => {
       events.push('input-created')
       return { path: 'C:\\input.json', writeJson: () => event('input-written'), dispose: () => event('input-disposed') }

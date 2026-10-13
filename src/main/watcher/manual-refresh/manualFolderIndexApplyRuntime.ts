@@ -1,466 +1,160 @@
-import { resolve } from "node:path";
-import type { FontIndexChangePayload,FontIndexProgressPayload } from "../../../shared/types";
-import type { FontParseJob,FontParseWorkerResult } from "../../indexing/fontScanWorkers";
-import { nodeFontkitScanFallbackEnabled,rustFullMigrationEnabled } from "../../rust-core/rustFullMigrationPolicyRuntime";
+import { isAbsolute, relative, resolve } from "node:path";
+import type { FontIndexChangePayload, FontIndexProgressPayload } from "../../../shared/types";
 import type { FontScanCacheEntry } from "../../indexing/rootIndexRuntime";
-import { buildFontParseResultFromRustMetadata } from "../../indexing/scan-orchestrator/rustMetadataFastPathRuntime";
-import { consumeRustFontParseBatchFastPath } from "../../indexing/scan-orchestrator/rustParseBatchFastPathRuntime";
+import { currentSharedIoSignal } from "../../path/sharedFileSystemRuntime";
+import type { SharedIoProcessError } from "../../path/sharedIoProcessRuntime";
+import { throwIfAborted } from "../../performance/ioQueue";
+import { normalizePathForCacheCompare } from "../../path/cachePath";
+import { fontIndexCacheMissReason, type FontIndexBatchResult, type FontIndexFileInput } from "./fontIndexEntryBatchRuntime";
 import type { ManualFolderIndexEntryRuntime } from "./manualFolderIndexEntryRuntime";
 import type { ManualFolderRefreshDeps } from "./manualFolderRefreshTypes";
-import { createManualFolderRustListingRuntime,type ManualRefreshListedFont } from "./manualFolderRustListingRuntime";
+import { createManualFolderRustListingRuntime, type ManualRefreshListedFont } from "./manualFolderRustListingRuntime";
 
-export function createManualFolderIndexApplyRuntime(
-  deps: ManualFolderRefreshDeps,
-  indexRuntime: ManualFolderIndexEntryRuntime,
-) {
-  const {
-    scriptDetectionVersion: SCRIPT_DETECTION_VERSION,
-    fontScanCacheVersion: FONT_SCAN_CACHE_VERSION,
-    appendStartupLog,
-    fileCacheSignature,
-    cacheKeyForRootFile,
-    sanitizeCachedFont,
-    cachedFontForRuntime,
-    ensureRootScanCacheStorage,
-    saveRootIndexSqliteChanges,
-    saveScanCacheFile,
-    writeRootCacheManifest,
-    runFontParseWorkerPool,
-    scanWorkerCount,
-    invalidateSharedFontRuntimeCaches,
-    emitFontIndexProgress,
-    delayToEventLoop,
-    isRootIndexDbPath,
-  } = deps;
-
-  const {
-    fontIndexDeleteRecord,
-    makeRootScanCacheContext,
-    fontIndexEntryChanged,
-    relativeDirectoryPathForRoot,
-    cacheKeyInsideDirectory,
-    saveRootDirectorySignatures,
-    listFontFilesWithDirectoryCache,
-  } = indexRuntime;
-  const { tryListManualRefreshWithRust } = createManualFolderRustListingRuntime(
-    deps,
-    relativeDirectoryPathForRoot,
-  );
+export function createManualFolderIndexApplyRuntime(deps: ManualFolderRefreshDeps, indexRuntime: ManualFolderIndexEntryRuntime) {
+  const { tryListManualRefreshWithRust } = createManualFolderRustListingRuntime(deps);
 
   async function applyManualFolderRefreshToIndex(
     rootPath: string,
     targetFolder: string,
     jobId?: string,
-  ): Promise<{
-    payload: FontIndexChangePayload;
-    totalFiles: number;
-    parsed: number;
-    fromCache: number;
-    skippedBad: number;
-    durationMs: number;
-    workerCount: number;
-  }> {
+    lifetime: { signal?: AbortSignal; assertCurrent?: () => void } = {},
+  ) {
     const startedAt = Date.now();
-    const resolvedRoot = resolve(rootPath);
-    const resolvedTarget = resolve(targetFolder);
-    const payload: FontIndexChangePayload = {
-      folder: resolvedRoot,
-      at: new Date().toISOString(),
-      upserts: [],
-      deletes: [],
-      errors: [],
-    };
-
-    const storage = await ensureRootScanCacheStorage(resolvedRoot);
-    const context = makeRootScanCacheContext(resolvedRoot, storage);
-    const changedEntryMap = new Map<string, FontScanCacheEntry>();
-    const deletedKeySet = new Set<string>();
-    let parsed = 0;
-    let fromCache = 0;
-    let skippedBad = 0;
-    let workerCount = 0;
-
-    const emitManualRefreshProgress = (
-      stage: FontIndexProgressPayload["stage"],
-      message: string,
-      extra: Partial<FontIndexProgressPayload> = {},
-    ): void => {
-      if (!jobId) return;
-      emitFontIndexProgress({
-        jobId,
-        stage,
-        message,
-        at: new Date().toISOString(),
-        folders: [resolvedTarget],
-        ...extra,
-      });
-    };
-
-    const reportListingProgress = (progress: {
-      files: number;
-      foldersScanned: number;
-      skippedDirs: number;
-    }): void => {
-      emitManualRefreshProgress(
-        "listing",
-        `正在列出该文件夹字体：已发现 ${progress.files} 个，扫描目录 ${progress.foldersScanned} 个，跳过未变化目录 ${progress.skippedDirs} 个。`,
-        { listedFiles: progress.files },
-      );
-    };
-
-    const rustListed = await tryListManualRefreshWithRust({
-      rootPath: resolvedRoot,
-      targetFolder: resolvedTarget,
-      context,
-      errors: payload.errors || [],
-      progress: reportListingProgress,
-    });
-
-    const rows: ManualRefreshListedFont[] =
-      rustListed?.rows ||
-      (await listFontFilesWithDirectoryCache(
-        context,
-        payload.errors || [],
-        reportListingProgress,
-        undefined,
-        resolvedTarget,
-      ));
-
-    const totalFiles = rows.length;
-    const seenKeysInTarget = new Set<string>();
-    const relativeTargetDir = relativeDirectoryPathForRoot(
-      resolvedRoot,
-      resolvedTarget,
-    );
-    const parseJobs: FontParseJob[] = [];
-
-    emitManualRefreshProgress(
-      "evaluating",
-      `正在对比该文件夹索引：${totalFiles} 个字体文件。`,
-      { totalFiles, listedFiles: totalFiles },
-    );
-
-    let evaluated = 0;
-    for (const row of rows) {
-      evaluated += 1;
-      if (evaluated % 500 === 0) {
-        emitManualRefreshProgress(
-          "evaluating",
-          `正在对比该文件夹索引：${evaluated}/${totalFiles}，复用 ${fromCache}，待解析 ${parseJobs.length}。`,
-          { totalFiles, stattedFiles: evaluated, fromCache, skippedBad },
-        );
-        await delayToEventLoop();
+    const signal = lifetime.signal || currentSharedIoSignal();
+    const guard = () => { throwIfAborted(signal); lifetime.assertCurrent?.(); };
+    try {
+      guard();
+      const resolvedRoot = resolve(rootPath), resolvedTarget = resolve(targetFolder);
+      const targetRelative = relative(resolvedRoot, resolvedTarget);
+      if (targetRelative === ".." || targetRelative.startsWith(`..\\`) || targetRelative.startsWith("../") || isAbsolute(targetRelative)) {
+        throw new Error("刷新目标超出监听根目录。");
       }
-
-      if (!row.stat) {
-        payload.errors?.push({
-          path: row.file,
-          message: row.error || "读取文件状态失败。",
-        });
-        continue;
-      }
-
-      const file = row.file;
-      const stat = row.stat;
-      const key = cacheKeyForRootFile(resolvedRoot, file);
-      const signature = fileCacheSignature(key, stat.size, stat.mtimeMs);
-      const createdAt = stat.birthtimeMs || stat.ctimeMs || stat.mtimeMs;
-      const existing = context.cache.entries[key];
-      seenKeysInTarget.add(key);
-      context.seenKeys.add(key);
-
-      if (existing && existing.cacheKey === signature) {
-        if (
-          existing.status === "ok" &&
-          existing.font &&
-          Array.isArray(existing.font.scripts) &&
-          existing.font.scripts.length &&
-          existing.font.scriptVersion === SCRIPT_DETECTION_VERSION
-        ) {
-          fromCache += 1;
+      const payload: FontIndexChangePayload = { folder: resolvedRoot, at: new Date().toISOString(), upserts: [], deletes: [], errors: [] };
+      const storage = await deps.ensureRootScanCacheStorage(resolvedRoot, { reuseExisting: true });
+      guard();
+      const context = indexRuntime.makeRootScanCacheContext(resolvedRoot, storage);
+      // A cancelled/failed write must not publish speculative rows into the shared cache.
+      const sourceCache = context.cache;
+      context.cache = { ...sourceCache, entries: { ...sourceCache.entries } };
+      context.requireFreshFileStats = true;
+      context.assertCurrent = guard;
+      const progress = (stage: FontIndexProgressPayload["stage"], message: string, extra: Partial<FontIndexProgressPayload> = {}) => {
+        guard();
+        if (jobId) deps.emitFontIndexProgress({ jobId, stage, message, at: new Date().toISOString(), folders: [resolvedTarget], ...extra });
+      };
+      const reportListing = (value: { files: number; foldersScanned: number; skippedDirs: number }) => progress("listing", `正在核对该文件夹文件属性：已发现 ${value.files} 个字体。`, { listedFiles: value.files });
+      const native = await tryListManualRefreshWithRust({ rootPath: resolvedRoot, targetFolder: resolvedTarget, signal, progress: reportListing });
+      guard();
+      const rows: ManualRefreshListedFont[] = native?.rows || await indexRuntime.listFontFilesWithDirectoryCache(context, payload.errors!, reportListing, signal, resolvedTarget);
+      guard();
+      const seen = new Set<string>(), identities = new Set<string>();
+      const inputs: FontIndexFileInput[] = [];
+      const reasons: Record<string, number> = {};
+      let fromCache = 0, addedFiles = 0, changedFiles = 0, metadataRepairs = 0, skippedBad = 0, repairDeletes = 0;
+      const relativeTargetDir = indexRuntime.relativeDirectoryPathForRoot(resolvedRoot, resolvedTarget);
+      progress("evaluating", `正在对比该文件夹索引：${rows.length} 个字体文件。`, { totalFiles: rows.length });
+      // Validate every name before parsing or authorizing any missing-row delete.
+      for (const row of rows) {
+        guard();
+        const rel = relative(resolvedTarget, row.file);
+        const identity = normalizePathForCacheCompare(row.file);
+        if (!rel || rel === ".." || rel.startsWith("../") || rel.startsWith(`..\\`) || isAbsolute(rel) || identities.has(identity)) {
+          throw new Error("刷新目录快照包含越界或重复文件身份，已保留原索引。");
+        }
+        identities.add(identity);
+        const key = deps.cacheKeyForRootFile(resolvedRoot, row.file);
+        if (!key || !indexRuntime.cacheKeyInsideDirectory(key, relativeTargetDir) || seen.has(key)) throw new Error("刷新目录快照包含无效索引路径。");
+        seen.add(key);
+        context.seenKeys.add(key);
+        if (!row.stat || row.error || !Number.isSafeInteger(row.stat.size) || row.stat.size < 0 || !Number.isFinite(row.stat.mtimeMs)) {
+          payload.errors!.push({ path: row.file, message: row.error || "读取文件状态失败。" });
           continue;
         }
-        if (existing.status === "bad") {
-          fromCache += 1;
-          // Explicit refresh also repairs an earlier persisted-but-unnotified invalidation.
-          payload.deletes.push(fontIndexDeleteRecord(resolvedRoot, key, existing));
+        const existing = context.cache.entries[key];
+        const signature = deps.fileCacheSignature(key, row.stat.size, row.stat.mtimeMs);
+        const reason = fontIndexCacheMissReason(existing, signature, row.stat, deps.scriptDetectionVersion);
+        if (!reason) {
+          fromCache++;
+          if (existing?.status === "bad") {
+            // This is projection repair, never evidence that a source file disappeared.
+            payload.deletes.push(indexRuntime.fontIndexDeleteRecord(resolvedRoot, key, existing));
+            repairDeletes++;
+          }
           continue;
         }
+        reasons[reason] = (reasons[reason] || 0) + 1;
+        if (reason === "new-file") addedFiles++;
+        else if (["size-changed", "modified-time-changed"].includes(reason)) changedFiles++;
+        else metadataRepairs++;
+        // Equal metadata permits reuse only. Concrete change notifications use the
+        // watcher's forceVerify path; no metadata comparison proves byte equality.
+        inputs.push({ file: row.file, freshStat: row.stat, requireSourceStability: true });
+        if (inputs.length % 500 === 0) { await deps.delayToEventLoop(); guard(); }
       }
-
-      parseJobs.push({
-        jobId: `manual-${parseJobs.length}`,
-        rootPath: resolvedRoot,
-        filePath: file,
-        fileSize: stat.size,
-        modifiedAt: stat.mtimeMs,
-        createdAt,
-        cacheKey: key,
-        signature,
-        signatureValid: row.signatureValid === undefined ? undefined : row.signatureValid === true,
-        formatHint: row.formatHint,
-        quickHash: row.quickHash,
-        contentHash: row.contentHash || row.quickHash,
-        hashKind: row.hashKind,
-        nameHint: row.nameHint,
-        scriptHint: row.scriptHint,
-        styleHint: row.styleHint,
-        familyHint: row.familyHint,
-      });
-    }
-
-    emitManualRefreshProgress(
-      "parsing",
-      parseJobs.length
-        ? `后台 Worker 正在解析该文件夹新增/变更字体：0/${parseJobs.length}。`
-        : "没有新增或变更字体需要解析。",
-      {
-        totalFiles,
-        parsedFiles: 0,
-        fromCache,
-        skippedBad,
-        workerCount: scanWorkerCount(parseJobs.length, [resolvedRoot]),
-      },
-    );
-
-    let processedWorkerResults = 0;
-    const processWorkerResult = async (
-      result: FontParseWorkerResult,
-    ): Promise<void> => {
-      processedWorkerResults += 1;
-      if (processedWorkerResults % 500 === 0) await delayToEventLoop();
-
-      const oldEntry = context.cache.entries[result.cacheKey];
-
-      if (result.status === "bad") {
-        const nextEntry: FontScanCacheEntry = {
-          path: result.cacheKey,
-          cacheKey: result.signature,
-          fileSize: result.fileSize,
-          modifiedAt: result.modifiedAt,
-          createdAt: result.createdAt,
-          status: "bad",
-          message: result.message || "不是有效字体签名，已跳过。",
-          contentHash: result.contentHash || result.quickHash,
-          cachedAt: new Date().toISOString(),
-        };
-        context.cache.entries[result.cacheKey] = nextEntry;
-        if (fontIndexEntryChanged(oldEntry, nextEntry)) {
-          changedEntryMap.set(result.cacheKey, nextEntry);
-          deletedKeySet.delete(result.cacheKey);
-          skippedBad += 1;
-          if (oldEntry?.status === "ok" && oldEntry.font) {
-            payload.deletes.push(fontIndexDeleteRecord(resolvedRoot, result.cacheKey, oldEntry));
+      progress("parsing", inputs.length ? `正在解析新增/变更及需修复的字体：${inputs.length} 个。` : "没有字体需要重新解析。", { totalFiles: rows.length, fromCache });
+      const before = { ...context.cache.entries };
+      const parsedResult: FontIndexBatchResult = { results: [], parsed: 0, misses: {} };
+      // Match the watcher's bounded native parse batches; a large import must
+      // not become one uninterruptible root-wide content-read request.
+      for (let start = 0; start < inputs.length; start += 32) {
+        guard();
+        const batch = await indexRuntime.upsertFontIndexEntries(resolvedRoot, inputs.slice(start, start + 32), context.cache, signal, guard);
+        guard();
+        parsedResult.results.push(...batch.results);
+        parsedResult.parsed += batch.parsed;
+        progress("parsing", `正在整理该文件夹字体：${Math.min(start + 32, inputs.length)}/${inputs.length}。`, { totalFiles: rows.length, parsedFiles: parsedResult.parsed, fromCache });
+        await deps.delayToEventLoop();
+      }
+      guard();
+      const changedEntryMap = new Map<string, FontScanCacheEntry>();
+      for (const result of parsedResult.results) {
+        if (result.error) { payload.errors!.push({ path: result.file, message: result.error }); continue; }
+        const entry = context.cache.entries[result.key];
+        if (!entry || !indexRuntime.fontIndexEntryChanged(before[result.key], entry)) continue;
+        changedEntryMap.set(result.key, entry);
+        if (result.font) payload.upserts.push(result.font);
+        else {
+          skippedBad++;
+          if (before[result.key]?.status === "ok") {
+            payload.deletes.push(indexRuntime.fontIndexDeleteRecord(resolvedRoot, result.key, before[result.key]));
+            repairDeletes++;
           }
         }
-        return;
       }
-
-      if (result.status === "error" || !result.font) {
-        payload.errors?.push({
-          path: result.filePath,
-          message: result.message || "Worker 解析失败。",
-        });
-        return;
+      const deletedKeys: string[] = [];
+      for (const [key, entry] of Object.entries(context.cache.entries)) {
+        if (payload.errors?.length) break;
+        if (!indexRuntime.cacheKeyInsideDirectory(key, relativeTargetDir) || seen.has(key)) continue;
+        deletedKeys.push(key);
+        payload.deletes.push(indexRuntime.fontIndexDeleteRecord(resolvedRoot, key, entry));
+        delete context.cache.entries[key];
       }
-
-      const stat = {
-        size: result.fileSize,
-        mtimeMs: result.modifiedAt,
-        birthtimeMs: result.createdAt,
-        ctimeMs: result.createdAt,
-      };
-      const cachedFont = sanitizeCachedFont(
-        result.font,
-        result.cacheKey,
-        result.filePath,
-        stat,
-      );
-      const nextEntry: FontScanCacheEntry = {
-        path: result.cacheKey,
-        cacheKey: result.signature,
-        fileSize: result.fileSize,
-        modifiedAt: result.modifiedAt,
-        createdAt: result.createdAt,
-        status: "ok",
-        font: cachedFont,
-        contentHash: result.contentHash || result.quickHash,
-        cachedAt: new Date().toISOString(),
-      };
-      context.cache.entries[result.cacheKey] = nextEntry;
-
-      if (fontIndexEntryChanged(oldEntry, nextEntry)) {
-        changedEntryMap.set(result.cacheKey, nextEntry);
-        deletedKeySet.delete(result.cacheKey);
-        payload.upserts.push(
-          cachedFontForRuntime(
-            cachedFont,
-            result.filePath,
-            stat,
-            result.cacheKey,
-          ),
-        );
-      }
-      parsed += 1;
-    };
-
-    const workerParseJobs: FontParseJob[] = [];
-    let rustFastPathParsed = 0;
-    for (const job of parseJobs) {
-      const fastResult = buildFontParseResultFromRustMetadata(
-        job,
-        SCRIPT_DETECTION_VERSION,
-      );
-      if (fastResult) {
-        rustFastPathParsed += 1;
-        await processWorkerResult(fastResult);
-        if (rustFastPathParsed % 200 === 0) {
-          emitManualRefreshProgress(
-            "parsing",
-            `Rust 元数据快速整理该文件夹：${processedWorkerResults}/${parseJobs.length}。`,
-            {
-              totalFiles,
-              parsedFiles: processedWorkerResults,
-              fromCache,
-              skippedBad,
-              workerCount: 0,
-            },
-          );
-          await delayToEventLoop();
+      const changedEntries = [...changedEntryMap.entries()];
+      progress("writing", `正在写入索引变更：新增/更新 ${changedEntries.length} 个，文件缺失 ${deletedKeys.length} 个。`, { totalFiles: rows.length, parsedFiles: parsedResult.parsed, fromCache, skippedBad, workerCount: 0 });
+      if (changedEntries.length || deletedKeys.length) {
+        guard();
+        if (deps.isRootIndexDbPath(storage.cachePath)) {
+          await deps.saveRootIndexSqliteChanges(storage.cachePath, resolvedRoot, storage.storage, changedEntries, deletedKeys, guard);
+        } else {
+          await deps.saveScanCacheFile(storage.cachePath, { version: deps.fontScanCacheVersion, entries: context.cache.entries }, resolvedRoot, storage.storage);
+          guard();
+          await deps.writeRootCacheManifest(storage.cacheDir, resolvedRoot, storage.storage, Object.keys(context.cache.entries).length, storage.cachePath);
         }
-        continue;
+        // A successful source receipt remains committed even if cancellation now
+        // prevents projection. The next explicit refresh repairs that projection.
+        for (const [key, entry] of changedEntries) sourceCache.entries[key] = entry;
+        for (const key of deletedKeys) delete sourceCache.entries[key];
+        guard();
       }
-      workerParseJobs.push(job);
+      if (!payload.errors?.length) { await indexRuntime.saveRootDirectorySignatures(context); guard(); }
+      deps.invalidateSharedFontRuntimeCaches();
+      deps.appendStartupLog(`manual folder refresh index applied: total=${rows.length}, parsed=${parsedResult.parsed}, cache=${fromCache}, addedFiles=${addedFiles}, changedFiles=${changedFiles}, metadataRepairs=${metadataRepairs}, sourceDeletes=${deletedKeys.length}, projectionDeletes=${repairDeletes}, cacheMissReasons=${JSON.stringify(reasons)}, upserts=${payload.upserts.length}, deletes=${payload.deletes.length}, durationMs=${Date.now() - startedAt}`);
+      return { payload, totalFiles: rows.length, parsed: parsedResult.parsed, fromCache, skippedBad, durationMs: Date.now() - startedAt, workerCount: 0, sourceDeletes: deletedKeys.length, projectionDeletes: repairDeletes, addedFiles, changedFiles, metadataRepairs };
+    } catch (error) {
+      const failure = error as SharedIoProcessError | undefined;
+      if (failure?.sharedIo === true && failure.closed) { try { await failure.closed; } catch { /* Preserve the operation failure. */ } }
+      throw error;
     }
-
-    if (rustFastPathParsed > 0) {
-      appendStartupLog(
-        `manual folder rust metadata fast path used: fast=${rustFastPathParsed}, fallbackWorker=${workerParseJobs.length}`,
-      );
-    }
-
-    const rustBatch = await consumeRustFontParseBatchFastPath({
-      jobs: workerParseJobs,
-      scriptDetectionVersion: SCRIPT_DETECTION_VERSION,
-      runRustFontParseBatch: deps.runRustFontParseBatch,
-      processResult: processWorkerResult,
-      appendStartupLog,
-      logPrefix: "manual folder rust parse batch fast path",
-      progress: () => {
-        emitManualRefreshProgress(
-          "parsing",
-          `Rust 批量解析该文件夹新增/变更字体：${processedWorkerResults}/${parseJobs.length}。`,
-          {
-            totalFiles,
-            parsedFiles: processedWorkerResults,
-            fromCache,
-            skippedBad,
-            workerCount: 0,
-          },
-        );
-      },
-      delayToEventLoop,
-    });
-
-    if (rustFullMigrationEnabled() && !nodeFontkitScanFallbackEnabled() && rustBatch.remainingJobs.length && (rustBatch.consumed > 0 || rustBatch.errors > 0)) {
-      appendStartupLog(`manual folder rust full migration: node fontkit fallback disabled, unresolved=${rustBatch.remainingJobs.length}`);
-      for (const job of rustBatch.remainingJobs) {
-        await processWorkerResult({
-          ...job,
-          status: "error",
-          message: "Rust 扫描解析未能完整识别；Node/fontkit 兜底已按 Rust 全量迁移策略禁用。",
-        });
-      }
-      workerCount = 0;
-    } else {
-      const workerResult = await runFontParseWorkerPool(
-        rustBatch.remainingJobs,
-        (progress) => {
-          emitManualRefreshProgress(
-            "parsing",
-            `后台 Worker 正在解析该文件夹新增/变更字体：${processedWorkerResults}/${parseJobs.length}。`,
-            {
-              totalFiles,
-              parsedFiles: processedWorkerResults,
-              fromCache,
-              skippedBad,
-              workerCount: progress.workerCount,
-            },
-          );
-        },
-        undefined,
-        processWorkerResult,
-      );
-      workerCount = workerResult.workerCount;
-    }
-
-    for (const [key, entry] of Object.entries(context.cache.entries || {})) {
-      if (payload.errors?.length) break;
-      if (!cacheKeyInsideDirectory(key, relativeTargetDir)) continue;
-      if (seenKeysInTarget.has(key)) continue;
-      changedEntryMap.delete(key);
-      deletedKeySet.add(key);
-      payload.deletes.push(fontIndexDeleteRecord(resolvedRoot, key, entry));
-      delete context.cache.entries[key];
-    }
-
-    const changedEntries = Array.from(changedEntryMap.entries());
-    const deletedKeys = Array.from(deletedKeySet);
-    emitManualRefreshProgress(
-      "writing",
-      `正在写入该文件夹索引变更：新增/更新 ${changedEntries.length} 个，删除 ${deletedKeys.length} 个。`,
-      {
-        totalFiles,
-        parsedFiles: parsed,
-        fromCache,
-        skippedBad,
-        workerCount,
-      },
-    );
-
-    if (changedEntries.length || deletedKeys.length) {
-      if (isRootIndexDbPath(storage.cachePath)) {
-        await saveRootIndexSqliteChanges(
-          storage.cachePath,
-          resolvedRoot,
-          storage.storage,
-          changedEntries,
-          deletedKeys,
-        );
-      } else {
-        await saveScanCacheFile(
-          storage.cachePath,
-          {
-            version: FONT_SCAN_CACHE_VERSION,
-            entries: context.cache.entries || {},
-          },
-          resolvedRoot,
-          storage.storage,
-        );
-        await writeRootCacheManifest(
-          storage.cacheDir,
-          resolvedRoot,
-          storage.storage,
-          Object.keys(context.cache.entries || {}).length,
-          storage.cachePath,
-        );
-      }
-    }
-    if (!payload.errors?.length) await saveRootDirectorySignatures(context);
-
-    invalidateSharedFontRuntimeCaches();
-    appendStartupLog(
-      `manual folder refresh index applied: root=${resolvedRoot}, folder=${resolvedTarget}, total=${totalFiles}, parsed=${parsed}, cache=${fromCache}, skipped=${skippedBad}, upserts=${payload.upserts.length}, deletes=${payload.deletes.length}, workers=${workerCount}, durationMs=${Date.now() - startedAt}`,
-    );
-    return {
-      payload,
-      totalFiles,
-      parsed,
-      fromCache,
-      skippedBad,
-      durationMs: Date.now() - startedAt,
-      workerCount,
-    };
   }
 
   return { applyManualFolderRefreshToIndex };

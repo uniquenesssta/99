@@ -346,6 +346,7 @@ export function createMergedIndexPageQueryRuntime(
         );
         return null;
       }
+      db.exec('BEGIN');
       const countStartedAt = Date.now();
       const totalRow = db.prepare(built.countSql).get(...built.countParams) as
         { count?: number } | undefined;
@@ -356,6 +357,7 @@ export function createMergedIndexPageQueryRuntime(
         .prepare(built.sql)
         .all(...built.params) as MergedIndexPageRow[];
       const selectMs = Date.now() - selectStartedAt;
+      db.exec('COMMIT');
       if (total === 0 && rows.length > 0) total = rows.length;
       const hydrateStartedAt = Date.now();
       const fonts = rows

@@ -282,6 +282,7 @@
     {
       "method": "runRustMergedIndexPageQuery",
       "capabilities": [
+        "install-status-signature-authority-v1",
         "merged-index-page-query"
       ],
       "flags": [
@@ -294,6 +295,7 @@
     {
       "method": "runRustMergedIndexIdsQuery",
       "capabilities": [
+        "install-status-signature-authority-v1",
         "merged-index-ids-query"
       ],
       "flags": [
@@ -306,6 +308,7 @@
     {
       "method": "runRustMergedIndexMetricsQuery",
       "capabilities": [
+        "install-status-signature-authority-v1",
         "merged-index-metrics-query"
       ],
       "flags": [
@@ -318,6 +321,7 @@
     {
       "method": "runRustMergedIndexRebuild",
       "capabilities": [
+        "install-status-signature-authority-v1",
         "merged-index-rebuild",
         "merged-index-strict-rebuild-v1"
       ],
@@ -331,6 +335,7 @@
     {
       "method": "runRustMergedIndexSync",
       "capabilities": [
+        "install-status-signature-authority-v1",
         "merged-index-prepared-sync-v1",
         "merged-index-sync"
       ],
@@ -356,7 +361,8 @@
     {
       "method": "runRustInstallStatusRead",
       "capabilities": [
-        "install-status-index-read"
+        "install-status-index-read",
+        "install-status-signature-authority-v1"
       ],
       "flags": [
         "--input",

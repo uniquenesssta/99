@@ -295,7 +295,7 @@ async function runMergedRootProjectionCases() {
     const f=fixture()
     try {
       const runtime=f.load('src/main/indexing/mergedIndexRuntime.ts').createMergedIndexRuntime({...f.ctx,dataPath:(...parts)=>path.join(root,'.diagnostic-virtual',...parts),exists:async()=>true,openStableSqliteDb:()=>f.adapter,staleFirstPageEnabled:true})
-      f.setMeta(null,'installEvidenceVersion','content-v1')
+      f.setMeta(null,'installEvidenceVersion','content-signature-v1')
       assert.equal(runtime.mergedIndexLocalSnapshotUsable(f.adapter,[f.a,f.b]),true)
       // Switch to the production key/binder for the pending initialization check.
       const persisted=[...f.fresh.values()];f.setMeta(null,'sourcesKey',runtime.mergedIndexSourcesKey(persisted))

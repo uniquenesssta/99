@@ -33,10 +33,15 @@ export function createManualWatchedFolderRefreshRuntime(
     resolvedFolder: string;
     bestRoot: string;
     jobId: string;
+    signal: AbortSignal;
+    assertCurrent: () => void;
   }): Promise<WatchedFolderRefreshResult> {
-    const { startedAt, resolvedFolder, bestRoot, jobId } = args;
+    const { startedAt, resolvedFolder, bestRoot, jobId, signal, assertCurrent } = args;
+    assertCurrent();
     const indexRepair = await repairRootIndexCacheIfNeeded(bestRoot);
+    assertCurrent();
     const previewRepair = await repairRootPreviewCacheIfNeeded(bestRoot);
+    assertCurrent();
     const cacheRepairs: FolderCacheRepairStatus[] = [indexRepair, previewRepair];
 
     let mode: WatchedFolderRefreshResult["mode"] = "cache-read";
@@ -48,8 +53,10 @@ export function createManualWatchedFolderRefreshRuntime(
     let fromCache = 0;
     let skippedBad = 0;
     let workerCount = 0;
+    let sourceDeletes = 0, projectionDeletes = 0, metadataRepairs = 0;
     let cancelled = false;
     let mergedIndexRefreshPayload: FontIndexChangePayload | null = null;
+    let projectionRecovered = false;
 
     try {
       if (indexRepair.rebuildRequired) {
@@ -92,6 +99,7 @@ export function createManualWatchedFolderRefreshRuntime(
           bestRoot,
           resolvedFolder,
           jobId,
+          { signal, assertCurrent },
         );
         upserts = refreshed.payload.upserts.length;
         deletes = refreshed.payload.deletes.length;
@@ -101,16 +109,27 @@ export function createManualWatchedFolderRefreshRuntime(
         fromCache = refreshed.fromCache;
         skippedBad = refreshed.skippedBad;
         workerCount = refreshed.workerCount;
+        sourceDeletes = refreshed.sourceDeletes;
+        projectionDeletes = refreshed.projectionDeletes;
+        metadataRepairs = refreshed.metadataRepairs;
         mode = upserts || deletes || errors ? "incremental" : "cache-read";
         mergedIndexRefreshPayload = refreshed.payload;
       }
 
+      assertCurrent();
       if (mode === "repair-rebuild" && (cancelled || errors)) mergedIndexRefreshPayload = null;
       if (mode === "repair-rebuild" && !cancelled && !errors) {
         await syncMergedIndexForRootSnapshot(
           bestRoot,
           `manual-folder-refresh-repair:${bestRoot}`,
         );
+        projectionRecovered = true;
+      } else if (mergedIndexRefreshPayload && !errors && !cancelled) {
+        // An interrupted prior source commit may have no delta on this pass.
+        // Without a persisted projection ACK, a complete explicit refresh must
+        // recover this root's local projection before reporting completion.
+        await syncMergedIndexForRootSnapshot(bestRoot, `manual-folder-refresh-projection-recovery:${bestRoot}`);
+        projectionRecovered = true;
       } else if (mergedIndexRefreshPayload && (upserts || deletes)) {
         await syncMergedIndexForRootIncremental(
           bestRoot,
@@ -119,6 +138,7 @@ export function createManualWatchedFolderRefreshRuntime(
         );
       }
 
+      assertCurrent();
       // The renderer must not query the previous merged snapshot after this event.
       if (mergedIndexRefreshPayload) sendFontIndexChanged({ ...mergedIndexRefreshPayload, source: "watcher" });
 
@@ -128,7 +148,7 @@ export function createManualWatchedFolderRefreshRuntime(
         mode === "repair-rebuild"
           ? `文件夹刷新完成：已修复 ${repairedCount} 个缓存文件并覆盖重建索引，索引 ${totalFiles} 个字体，跳过 ${skippedBad} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`
           : mode === "incremental"
-            ? `文件夹刷新完成：缓存正常，检测到新增/更新 ${upserts} 个、删除 ${deletes} 个，重新解析 ${parsed} 个，复用 ${fromCache} 个${workerCount ? `，Worker ${workerCount} 个` : ""}，用时 ${Math.round(elapsedMs / 1000)} 秒。`
+            ? `文件夹刷新完成：缓存正常，索引新增/更新 ${upserts} 个、确认文件缺失 ${sourceDeletes} 个、无效索引清理 ${projectionDeletes} 个，重新解析 ${parsed} 个（元数据修复 ${metadataRepairs} 个），复用 ${fromCache} 个${workerCount ? `，Worker ${workerCount} 个` : ""}，用时 ${Math.round(elapsedMs / 1000)} 秒。`
             : `文件夹刷新完成：缓存正常，没有发现新增或删除字体，已重新读取缓存，复用 ${fromCache} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`;
 
       const message = cancelled ? `文件夹刷新已取消：本次已返回 ${upserts} 个字体，索引结果尚未完整确认，用时 ${Math.round(elapsedMs / 1000)} 秒。`
@@ -147,7 +167,7 @@ export function createManualWatchedFolderRefreshRuntime(
         errors,
       });
       appendStartupLog(
-        `manual watched folder refresh finished: root=${bestRoot}, folder=${resolvedFolder}, mode=${mode}, repairs=${repairedCount}, upserts=${upserts}, deletes=${deletes}, files=${totalFiles}, errors=${errors}, cancelled=${cancelled}, elapsed=${elapsedMs}ms`,
+        `manual watched folder refresh finished: root=${bestRoot}, folder=${resolvedFolder}, mode=${mode}, repairs=${repairedCount}, upserts=${upserts}, deletes=${deletes}, files=${totalFiles}, errors=${errors}, cancelled=${cancelled}, projectionSnapshots=${projectionRecovered ? 1 : 0}, elapsed=${elapsedMs}ms`,
       );
 
       return {
@@ -236,12 +256,14 @@ export function createManualWatchedFolderRefreshRuntime(
       folders: [resolvedFolder],
     });
 
-    const scheduled = backgroundRuntime.scheduleRefresh(activeKey, jobId, async () => {
+    const scheduled = backgroundRuntime.scheduleRefresh(activeKey, jobId, async ({ signal, assertCurrent }) => {
       return runWatchedFolderRefreshJob({
         startedAt: Date.now(),
         resolvedFolder,
         bestRoot,
         jobId,
+        signal,
+        assertCurrent,
       });
     });
     appendStartupLog(

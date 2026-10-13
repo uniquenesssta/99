@@ -30,6 +30,15 @@ export type SharedIoProcessRequest = {
   onClose?: () => void
   admit?: () => boolean
 }
+/** Advisory footprint inspection only; this never reserves or authorizes work. */
+export type SharedIoAdmissionRequest = Pick<SharedIoProcessRequest,
+  'roots' | 'accesses' | 'write' | 'lane' | 'priority' | 'verifiedReadOnly' | 'sharedReadOnlyPreview'>
+export type SharedIoAdmissionSnapshot = {
+  ready: boolean
+  phase: 'queued'
+  blocker?: 'closed' | 'queue-capacity' | 'lane-capacity' | 'prior-lane-request' | 'prior-conflicting-request' | 'resource-conflict'
+  blockedBy?: number
+}
 export class SharedIoProcessError extends Error {
   readonly sharedIo = true
   closed?: Promise<void>
@@ -104,6 +113,7 @@ type Job = {
   whenClosed: Promise<void>
   close: () => void
 }
+type AdmissionJob = { id: number; request: SharedIoAdmissionRequest; bypassedReads?: number }
 
 // A slot and its root locks belong to the process until close, not to its caller's Promise.
 export function createSharedIoProcessRuntime(appendLog: (message: string) => void) {
@@ -131,7 +141,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     ...metricTotals,
     byLabel: Object.fromEntries([...metricByLabel].sort(([a], [b]) => a.localeCompare(b)).map(([label, row]) => [label, { ...row }])),
   })
-  const laneOf = (job: Job) => job.request.lane || 'default'
+  const laneOf = (job: AdmissionJob) => job.request.lane || 'default'
   const timingOf = (job: Job) => {
     const current = Date.now()
     return {
@@ -139,30 +149,49 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       executionMs: job.startedAt ? Math.max(0, current - job.startedAt) : 0,
     }
   }
-  const rootsOverlap = (a: Job, b: Job) => [...a.request.roots, ...b.request.roots].some(root => root.startsWith('configured-root:')) || a.request.roots.some(root => b.request.roots.includes(root))
-  const conflicts = (a: Job, b: Job) => {
+  const rootsOverlap = (a: AdmissionJob, b: AdmissionJob) => [...a.request.roots, ...b.request.roots].some(root => root.startsWith('configured-root:')) || a.request.roots.some(root => b.request.roots.includes(root))
+  const conflicts = (a: AdmissionJob, b: AdmissionJob) => {
     if (!rootsOverlap(a, b)) return false
     if (a.request.accesses?.length && b.request.accesses?.length)
       return a.request.accesses.some(left => b.request.accesses!.some(right => sharedIoAccessConflict(left, right)))
     if ((laneOf(a) === 'root-probe' || laneOf(b) === 'root-probe') && !a.request.write && !b.request.write) return false
-    const sharedReadOnly = (job: Job) => job.request.sharedReadOnlyPreview || !job.request.write
+    const sharedReadOnly = (job: AdmissionJob) => job.request.sharedReadOnlyPreview || !job.request.write
     if ((a.request.sharedReadOnlyPreview || b.request.sharedReadOnlyPreview) && sharedReadOnly(a) && sharedReadOnly(b)) return false
     if (a.request.verifiedReadOnly && b.request.verifiedReadOnly && !a.request.write && !b.request.write) return false
     // Legacy callers remain conservative. Preserve the two explicitly read-only lanes.
     if (laneOf(a) !== 'default' && laneOf(b) !== 'default' && !a.request.write && !b.request.write) return false
     return true
   }
-  const priorityOf = (job: Job) => typeof job.request.priority === 'number' ? job.request.priority
+  const priorityOf = (job: AdmissionJob) => typeof job.request.priority === 'number' ? job.request.priority
     : job.request.priority === 'foreground' ? 20 : job.request.priority === 'background' ? 0 : 10
-  const canOvertake = (job: Job, other: Job) => !job.request.write && !other.request.write
+  const canOvertake = (job: AdmissionJob, other: AdmissionJob) => !job.request.write && !other.request.write
     && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) < 4
-  const canStart = (job: Job) => {
+  const canStart = (job: AdmissionJob) => {
     const lane = laneOf(job)
     const limit = lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2
     if ([...active].filter(other => laneOf(other) === lane).length >= limit) return false
     if (!job.request.write && queue.some(other => other.id < job.id && !other.request.write && laneOf(other) === lane && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) >= 4)) return false
     if (queue.some(other => other.id < job.id && conflicts(job, other) && !canOvertake(job, other))) return false
     return ![...active].some(other => conflicts(job, other))
+  }
+  const inspectAdmission = (request: SharedIoAdmissionRequest): SharedIoAdmissionSnapshot => {
+    if (closed) return { ready: false, phase: 'queued', blocker: 'closed' }
+    const job: AdmissionJob = { id: nextId + 1, request }
+    const lane = laneOf(job), queued = queue.filter(other => laneOf(other) === lane)
+    if (queued.length >= (lane === 'root-probe' ? 8 : 128))
+      return { ready: false, phase: 'queued', blocker: 'queue-capacity' }
+    if (canStart(job)) return { ready: true, phase: 'queued' }
+    // Match admission order without consuming IDs, bypass allowances or slots.
+    // Cancelled active jobs remain blockers until their actual child closes.
+    const activeLane = [...active].filter(other => laneOf(other) === lane)
+    if (activeLane.length >= (lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2))
+      return { ready: false, phase: 'queued', blocker: 'lane-capacity', blockedBy: activeLane[0].id }
+    const priorLane = !request.write && queued.find(other => !other.request.write && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) >= 4)
+    if (priorLane) return { ready: false, phase: 'queued', blocker: 'prior-lane-request', blockedBy: priorLane.id }
+    const priorConflict = queue.find(other => conflicts(job, other) && !canOvertake(job, other))
+    if (priorConflict) return { ready: false, phase: 'queued', blocker: 'prior-conflicting-request', blockedBy: priorConflict.id }
+    const activeConflict = [...active].find(other => conflicts(job, other))
+    return { ready: false, phase: 'queued', blocker: 'resource-conflict', blockedBy: activeConflict?.id }
   }
   const traceJob = (job: Job, stage: string, reason?: string, blockedBy?: number) => {
     if (!detailedStartupLogsEnabled()) return
@@ -382,7 +411,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     for (const job of active) { try { job.child?.kill('SIGKILL') } catch { /* Parent guard remains active. */ } }
   }
   return {
-    run, stop, cancelAll,
+    run, stop, cancelAll, inspectAdmission,
     // Admission observers must keep cancelled foreground work busy until its
     // physical child closes; active retains that ownership after rejection.
     hasForegroundWork: () => [...active, ...queue].some(job => priorityOf(job) >= 20),
@@ -407,7 +436,9 @@ export function applicationSharedIoProcessRuntime(appendLog?: (message: string) 
   if (!applicationPool) {
     const pool = createSharedIoProcessRuntime(message => applicationLog(message))
     onApplicationClosing(() => pool.cancelAll())
-    applicationPool = { ...pool, run: request => {
+    applicationPool = { ...pool,
+      inspectAdmission: request => isApplicationClosing() ? { ready: false, phase: 'queued', blocker: 'closed' } : pool.inspectAdmission(request),
+      run: request => {
       if (!isApplicationClosing()) return pool.run(request)
       try { request.onClose?.() } catch { /* No executor owns this input. */ }
       return Promise.reject(new SharedIoProcessError('应用退出中，网络操作未提交。', 'not-started', 'closing'))

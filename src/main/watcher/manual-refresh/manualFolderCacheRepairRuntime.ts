@@ -1,8 +1,10 @@
+import type { SharedIoProcessError } from "../../path/sharedIoProcessRuntime";
+import { throwIfAborted } from "../../performance/ioQueue";
 import { rootIndexCacheNeedsRebuild } from '../../indexing/root-index/rootIndexDatabaseRuntime'
 import { isRecoverableDerivedSqliteError } from '../../db/sqliteRecoveryPolicy'
 import { ROOT_INDEX_DB_SCHEMA_VERSION, PREVIEW_SQLITE_SCHEMA_VERSION } from '../../cache/constants'
 import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
-import { executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
+import { currentSharedIoSignal, executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { dirname,join,resolve } from "node:path";
 import type { FolderCacheRepairStatus } from "../../../shared/types";
 import type { ManualFolderRefreshDeps } from "./manualFolderRefreshTypes";
@@ -204,6 +206,9 @@ export function createManualFolderCacheRepairRuntime(deps: ManualFolderRefreshDe
           : "预览缓存缺失，已创建新的 preview.sqlite。",
       );
     } catch (error) {
+      const failure = error as SharedIoProcessError | undefined;
+      if (failure?.sharedIo === true && failure.closed) { try { await failure.closed; } catch { /* Preserve the operation failure. */ } }
+      throwIfAborted(currentSharedIoSignal());
       const message = recoveryMessage(error);
       appendStartupLog(`manual refresh optional preview cache unavailable; original retained: ${previewDbPath} ${message}`);
       return cacheRepairStatus('preview', previewDbPath, false, false, `预览索引暂不可用，已保留原文件：${message}`);

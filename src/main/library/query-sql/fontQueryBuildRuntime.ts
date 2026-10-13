@@ -3,7 +3,6 @@ import { fontListSelectColumns } from '../fontSqliteMapper';
 import { addActiveFilterClauses, addKeywordClause, addPageFilterClauses, addTimeRangeClause, timeRangeStartForSql } from './fontQueryClausesRuntime';
 import { fontQueryOrderBy } from './fontQueryOrderRuntime';
 import { normalizeQueryLimit, type FontQuerySqlParts } from './fontQuerySqlTypes';
-import { INSTALL_STATUS_EVIDENCE_PREFIX } from '../../install/status/installStatusSignatureRuntime';
 
 function createBaseFontQuerySqlParts(): FontQuerySqlParts {
   return {
@@ -11,7 +10,7 @@ function createBaseFontQuerySqlParts(): FontQuerySqlParts {
     params: [],
     joins: [
       "LEFT JOIN font_search ON font_search.font_id = fonts.id",
-      `LEFT JOIN install_status ON install_status.font_id = fonts.id AND install_status.signature LIKE '${INSTALL_STATUS_EVIDENCE_PREFIX}%'`,
+      `LEFT JOIN install_status ON install_status.font_id = fonts.id AND install_status.installed IN (0, 1) AND install_status.signature = hfm_install_status_signature(fonts.id, fonts.path, fonts.file_name, fonts.file_size, fonts.modified_at, COALESCE(fonts.managed_install_path, ''), COALESCE(fonts.managed_registry_name, ''))`,
     ],
     usedLike: false,
   };

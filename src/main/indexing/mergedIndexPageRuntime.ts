@@ -106,12 +106,13 @@ export function createMergedIndexPageRuntime(
       validationRuntime.scheduleMergedIndexBackgroundValidation,
     checkMergedIndexExternalChanges:
       validationRuntime.checkMergedIndexExternalChanges,
-    syncMergedIndexAfterInstallStatusRefresh: (folders: string[], items?: FontItem[]) =>
+    syncMergedIndexAfterInstallStatusRefresh: (folders: string[], items?: FontItem[], projectionOptions?: { preserveSourceCheckpoint?: boolean }) =>
       validationRuntime.syncMergedIndexAfterInstallStatusRefresh(
         folders,
         syncRuntime.syncMergedIndexForRootSnapshot,
         items,
         syncRuntime.syncMergedIndexForRootIncremental,
+        projectionOptions,
       ),
     syncMergedIndexForRootIncremental:
       syncRuntime.syncMergedIndexForRootIncremental,

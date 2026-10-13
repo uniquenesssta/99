@@ -276,7 +276,8 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     tagRevisionSnapshotForRequest: (request) =>
       tagMetadataRevisionBarrier.snapshotForRequest(request),
     readInstallStatusForProjection: async items => {
-      const { results } = await readInstallStatusIndex(items, { enqueueMissTasks: false });
+      const { results, readError } = await readInstallStatusIndex(items, { enqueueMissTasks: false });
+      if (readError) throw new Error('install-status-authority-unavailable');
       return items.map(item => {
         const result = results[item.id];
         const known = !!result && result.known !== false;
@@ -355,7 +356,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     if (tagQueryScope(request)) return tagFonts!.query(request, limit, offset);
     const result = await requireFontQueryFacadeRuntime().queryFontPageInLibraryUncached(request, limit, offset);
     openTagFontSnapshots(db).schedule(result.items.filter(item => item.tagNames?.length || item.localTagNames?.length), appendStartupLog);
-    return { ...result, items: await options.hydrateLocalFavoritesForFonts(await hydrateInstallStatusForFonts(result.items)) };
+    return { ...result, items: await options.hydrateLocalFavoritesForFonts(openFontUninstallReceipts(db).hydrate(result.items)) };
   }
 
   async function queryFontsInLibrary(
@@ -404,6 +405,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     cleanSharedFontsForQuery,
     hydrateLocalTagsForFonts,
     readInstallStatusIndex,
+    reconcileInstallStatusPage: items => syncMergedIndexAfterInstallStatusRefresh([], items, { preserveSourceCheckpoint: true }),
     queryFontPageFromMergedIndexWorker,
     queryFontPageFromMergedIndex,
     queryFontPageFromRootIndexes,

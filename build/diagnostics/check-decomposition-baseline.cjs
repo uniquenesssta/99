@@ -31,6 +31,7 @@ function load(file, mocks = {}, transform = x => x) {
     if (id === './localFontTagNodePersistenceRuntime') return load('src/main/library/runtime/localFontTagNodePersistenceRuntime.ts', mocks)
     if (id === './previewIndexAccessRuntime') return load('src/main/preview/runtime/previewIndexAccessRuntime.ts', mocks)
     if (id === './previewStorageRoutingRuntime') return load('src/main/preview/runtime/previewStorageRoutingRuntime.ts', mocks)
+    if (id === './previewSharedPreparationRuntime') return load('src/main/preview/runtime/previewSharedPreparationRuntime.ts', mocks)
     if (/\/(operationTraceContext|fontOperationTrace|operationTrace|startupPathAvailabilityRuntime|shutdownCoordinatorRuntime|startupLogPolicy)$/.test(id)) {
       const target = path.resolve(path.dirname(path.join(root, file)), id + '.ts')
       return require('./check-operation-chain.cjs').loader()(target)
