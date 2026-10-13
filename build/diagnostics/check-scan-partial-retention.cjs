@@ -111,7 +111,9 @@ async function partialAndParseCases(transforms = {}) {
     f.state.denied = path.join(a, 'child')
     const partial = await f.scan.scanFolders(f.folders)
     assert.equal(partial.errors.length, 1)
-    assert.deepEqual(plain((await f.read(a)).entries['child/retained.ttf']), original, 'PARTIAL_SCAN_RETAIN: unreadable subtree lost its committed row')
+    const retained = (await f.read(a)).entries['child/retained.ttf']
+    assert(retained, 'PARTIAL_SCAN_RETAIN: unreadable subtree lost its committed row')
+    assert.deepEqual(plain(retained), original, 'PARTIAL_SCAN_RETAIN: unreadable subtree changed its committed row')
     assert((await f.read(a)).entries['removed.ttf'], 'PARTIAL_SCAN_RETAIN: incomplete root certified missing-file deletion')
     assert(!(await f.read(b)).entries['removed.ttf'], 'complete peer root did not reconcile a real deletion')
     assert(!f.state.signatures.includes(a), 'incomplete walk advanced directory receipts')
@@ -202,8 +204,10 @@ async function main() {
     assert.equal(fs.readFileSync(scanFile,'utf8').split(nullGuard).length-1,1)
     await assert.rejects(()=>nullStatCase({[scanFile]:text=>text.replace(nullGuard,'')}),/NULL_STAT_RETAIN/)
     const guard2 = 'if (result.stats?.cancelled || isApplicationClosing()) return result;'
+    const committedLoop = 'for (const root of result.committedFolders || []) {'
     assert.equal(fs.readFileSync(abs('src/main/bootstrap/mainScanCompositionRuntime.ts'), 'utf8').split(guard2).length - 1, 1)
-    await assert.rejects(() => cancelledWrapperCases(text => text.replace(guard2, '').replace('result.committedFolders || []', 'result.folders || []')), /CANCELLED_SCAN_NO_PROJECTION/)
+    assert.equal(fs.readFileSync(abs('src/main/bootstrap/mainScanCompositionRuntime.ts'), 'utf8').split(committedLoop).length - 1, 1)
+    await assert.rejects(() => cancelledWrapperCases(text => text.replace(guard2, '').replace(committedLoop, 'for (const root of result.folders || []) {')), /CANCELLED_SCAN_NO_PROJECTION/)
     console.log('[diagnostics:scan-partial-retention] real SQLite partial directory/peer completion, transient parse retention/retry/genuine bad, original sources intact, actual managed cancellation including committed tail and four causal mutants passed')
   } finally { for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value } }
 }

@@ -197,9 +197,9 @@ async function main(){
   await assert.rejects(()=>pinnedAuthorityCases({[authorityFile]:text=>text.replace(unchangedGuard,'if (row.installed === values[0]) continue')}),/SAME_BOOLEAN_METADATA_REPAIR/)
   await assert.rejects(()=>pinnedAuthorityCases({[authorityFile]:text=>text.replace(unchangedGuard,'if ((row.installed ?? 0) === (values[0] ?? 0) && row.installed_by === values[1] && row.matches_json === values[2]) continue')}),/NULL_AUTHORITY_REPAIR/)
   const file=path.join(root,'src/main/activation/activationInstallStatusSaveQueue.ts')
-  const anchor='for (const item of affectedItems) projectionPending.add(item.id)\n        mergeFailedBatch(results, itemsById)'
+  const anchor='for (const item of affectedItems) projectionPending.add(item.id)\n        mergeFailedBatch(results, itemsById)\n        deps.appendStartupLog('
   assert.equal(fs.readFileSync(file,'utf8').replaceAll('\r\n','\n').split(anchor).length-1,1)
-  await assert.rejects(()=>committedRetryCase({[file]:text=>text.replaceAll('\r\n','\n').replace(anchor,'mergeFailedBatch(results, itemsById)')}),/COMMITTED_RETRY_PROJECTION/)
+  await assert.rejects(()=>committedRetryCase({[file]:text=>text.replaceAll('\r\n','\n').replace(anchor,'mergeFailedBatch(results, itemsById)\n        deps.appendStartupLog(')}),/COMMITTED_RETRY_PROJECTION/)
   console.log('[diagnostics:install-projection-recovery] durable A/failed projection -> B complete repair with both debt writes counted; SQLite rollback; restart/current-version false ACK; offline roots retained; actual native pages/metrics; same-snapshot changed-row-only calls, NULL/known and metadata-only controls; four causal mutants; failed-write retry debt; source unchanged and zero owners')
 }
 if(require.main===module){const watchdog=setTimeout(()=>{console.error('install projection diagnostic did not settle within 120s');process.exit(1)},120000);main().catch(error=>{console.error(error);process.exitCode=1}).finally(()=>clearTimeout(watchdog))}
