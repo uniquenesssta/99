@@ -25,7 +25,7 @@ const empty:any[]=[],noop=()=>{},filter={kind:'all'},allFonts=Array.from({length
    const style=getComputedStyle(node)
    return {className:node.className,rect:node.getBoundingClientRect().toJSON(),clientWidth:node.clientWidth,scrollWidth:node.scrollWidth,width:style.width,minWidth:style.minWidth,overflowX:style.overflowX,gridTemplateColumns:style.gridTemplateColumns,gridAutoColumns:style.gridAutoColumns}
   }
-  return {viewport:{width:innerWidth,height:innerHeight},app:measure(host.querySelector<HTMLElement>('.app')),layout:measure(host.querySelector<HTMLElement>('.layout')),footer:measure(host.querySelector<HTMLElement>('.statusbar')),status:measure(host.querySelector<HTMLElement>('[role="status"]')),text:host.querySelector('.statusbar')?.textContent?.slice(0,1024)}
+  return {viewport:{width:innerWidth,height:innerHeight},app:measure(host.querySelector<HTMLElement>('.app')),layout:measure(host.querySelector<HTMLElement>('.layout')),detail:measure(host.querySelector<HTMLElement>('.detail-dock-panel')),footer:measure(host.querySelector<HTMLElement>('.statusbar')),status:measure(host.querySelector<HTMLElement>('[role="status"]')),text:host.querySelector('.statusbar')?.textContent?.slice(0,1024)}
  }
  ;(window as any).sharedWatchStatusEvidence=()=>lastGeometry
  ;(window as any).hfm={getSharedWatchStatus:async()=>{reads++;return response}}
@@ -33,11 +33,17 @@ const empty:any[]=[],noop=()=>{},filter={kind:'all'},allFonts=Array.from({length
   if(activeRoot)flushSync(()=>activeRoot!.unmount())
   activeRoot=createRoot(host)
   // A bare .layout has legacy >=1000px minimum tracks at this viewport.
-  // Exercise the actual responsive owner, exactly as AppRootView does.
-  flushSync(()=>activeRoot!.render(<div className="app"><header className="topbar"/><AppLayout detailVisible={false} renderSidebar={collapsed=><aside className={collapsed?'sidebar collapsed':'sidebar'}/>}><section className="font-list-panel"/></AppLayout><SharedWatchStatusBar developerStatus={developerStatus}/></div>))
+  // Exercise the actual responsive owner and occupy the third (detail) track.
+  // An unoccupied legacy track has no box to contribute scrollable overflow.
+  flushSync(()=>activeRoot!.render(<div className="app"><header className="topbar"/><AppLayout detailVisible={true} renderSidebar={collapsed=><aside className={collapsed?'sidebar collapsed':'sidebar'}/>}><section className="font-list-panel"/><section className="detail-panel detail-dock-panel"/></AppLayout><SharedWatchStatusBar developerStatus={developerStatus}/></div>))
   await frame();await frame()
  }
  const footer=()=>host.querySelector<HTMLElement>('.statusbar')
+ const checkResponsiveDetail=()=>{
+  const layout=host.querySelector<HTMLElement>('.layout')!,detail=host.querySelector<HTMLElement>('.detail-dock-panel')!
+  const bounds=layout.getBoundingClientRect(),dock=detail.getBoundingClientRect()
+  check(dock.width>0&&dock.height>0&&bounds.left>=-1&&bounds.right<=innerWidth+1&&layout.scrollWidth<=layout.clientWidth+1&&dock.left>=bounds.left-1&&dock.right<=bounds.right+1,'responsive detail layout hidden or overflowed viewport: '+JSON.stringify(geometry()))
+ }
  const settleLayout=async()=>{
   const started=performance.now()
   while(document.documentElement.hasAttribute('data-hfm-layout-transitioning')&&performance.now()-started<1000)await wait(20)
@@ -53,18 +59,23 @@ const empty:any[]=[],noop=()=>{},filter={kind:'all'},allFonts=Array.from({length
   const box=busy.getBoundingClientRect()
   check(Math.abs(box.height-30)<=1&&box.bottom<=innerHeight+1&&box.top>=0,'footer left existing30px visible row')
   check(box.left>=-1&&box.right<=innerWidth+1&&busy.scrollWidth<=busy.clientWidth+1,'status footer overflowed viewport')
+  checkResponsiveDetail()
   const productionGeometry=geometry()
-  let bareLayoutRejected=false
+  let bareLayoutRejected=false,bareLayoutGeometry:unknown
   if(innerWidth<1000){
    const layout=host.querySelector<HTMLElement>('.layout')!,classes=layout.className
    try{
     layout.className='layout'
     // The shell now contains the footer independently of inner track minima.
-    // A bare legacy layout still overflows its own child tracks at 720px.
-    bareLayoutRejected=layout.scrollWidth>layout.clientWidth+1
+    // Require a real occupied detail box outside the main viewport, rather
+    // than inferring visible overflow from an unused computed grid track.
+    const detail=host.querySelector<HTMLElement>('.detail-dock-panel')!
+    bareLayoutGeometry=geometry()
+    bareLayoutRejected=layout.scrollWidth>layout.clientWidth+1&&detail.getBoundingClientRect().right>layout.getBoundingClientRect().right+1
     check(bareLayoutRejected,'bare-layout regression no longer reproduces: '+JSON.stringify(geometry()))
    }finally{layout.className=classes}
    await settleLayout()
+   checkResponsiveDetail()
    const restored=busy.getBoundingClientRect()
    check(restored.left>=-1&&restored.right<=innerWidth+1&&busy.scrollWidth<=busy.clientWidth+1,'production layout failed to restore footer bounds')
   }
@@ -95,7 +106,7 @@ const empty:any[]=[],noop=()=>{},filter={kind:'all'},allFonts=Array.from({length
   await frame();await frame()
   check(!document.documentElement.hasAttribute('data-hfm-sidebar-auto-collapsed'),'unmounted layout resumed on resize')
   check(window.localStorage.getItem('hfm.sidebarCollapsed')===sidebarPreference,'status fixture changed persisted sidebar preference')
-  return {viewport:innerWidth,processing:true,ack:true,offline:true,unknown:true,noRoot:true,cleanup:true,bareLayoutRejected,productionGeometry}
+  return {viewport:innerWidth,processing:true,ack:true,offline:true,unknown:true,noRoot:true,cleanup:true,bareLayoutRejected,productionGeometry,bareLayoutGeometry}
  }catch(error){
   lastGeometry=geometry()
   // Stop React and its polls, but retain the failed pixels for Electron's
