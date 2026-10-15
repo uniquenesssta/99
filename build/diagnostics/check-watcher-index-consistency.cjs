@@ -42,7 +42,7 @@ async function indexCase(mode, transform = s => s, replayUnchanged = false) {
     '../cache/cachePaths':{fileCacheSignature:()=>'',isIgnoredInternalDirectoryName:()=>false,isRootIndexDbPath:()=>true}
   },{},transform).createWatchedFolderIndexRuntime({
     isIgnoredWatcherPath:()=>false, fontExtensions:new Set(['.ttf']), withGlobalIo:(_label,fn)=>fn(),
-    ensureRootScanCacheStorage:async()=>({cachePath:'/index.db',storage:'root'}),makeRootScanCacheContext:()=>context,
+    ensureRootScanCacheStorage:async()=>({cachePath:'/index.db',storage:'root',cache}),makeRootScanCacheContext:()=>context,
     readRootDirectorySignatures:async()=>new Map(),relativeDirectoryPathForRoot:()=>'',
     cacheKeyForRootFile:()=> 'a.ttf',cacheKeyInsideDirectory:()=>true,
     listFontFilesWithDirectoryCache:async (_ctx,errors)=>{ context.directoryUpdates.push({relativePath:''}); if(mode==='partial-list')errors.push({path:folder,message:'EACCES'});return mode.startsWith('unchanged') && mode.includes('list') ? [{file, stat:freshStat, freshStat:mode==='unchanged-fresh-list'}] : [] },
@@ -197,7 +197,7 @@ async function manualIncompleteCheck(transform=s=>s) {
     '../../indexing/scan-orchestrator/rustParseBatchFastPathRuntime':{consumeRustFontParseBatchFastPath:async()=>({remainingJobs:[],consumed:0,errors:0})},
     './manualFolderRustListingRuntime':{createManualFolderRustListingRuntime:()=>({tryListManualRefreshWithRust:async()=>null})}
   },{},transform).createManualFolderIndexApplyRuntime({
-    ensureRootScanCacheStorage:async()=>({cachePath:'/index.db',storage:'root'}),
+    ensureRootScanCacheStorage:async()=>({cachePath:'/index.db',storage:'root',cache}),
     appendStartupLog(){},scanWorkerCount:()=>1,runFontParseWorkerPool:async jobs=>{assert.equal(jobs.length,0);return {workerCount:0}},invalidateSharedFontRuntimeCaches(){},isRootIndexDbPath:()=>true,
     saveRootIndexSqliteChanges:async()=>{writes++}
   },{

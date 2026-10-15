@@ -7,6 +7,21 @@ const { observeOperations, observeLifecycle } = require('./helpers/mainOperation
 const fixture = require('./fixtures/main-operations-composition.fixture.json')
 const expectedOperations = structuredClone(fixture.operations)
 for (const name of ['managedScan','backgroundScan']) expectedOperations[name].result.committedFolders = [...expectedOperations[name].result.folders]
+// Reviewed recovery wiring adds explicit resume before user scans, and captures
+// the active roots before cancellation so automatic recovery stays paused.
+// Keep all historical operation calls and their order; only insert these ports.
+for (const name of ['managedScan', 'failedScan']) {
+  assert.equal(expectedOperations[name].calls[0][0], 'createScanOrchestrator.scanFoldersManaged')
+  expectedOperations[name].calls.unshift(['createRootIndexSourceRecoveryRuntime.resume', [['/fonts']]])
+}
+assert.equal(expectedOperations.cancelScan.result, true, 'historical cancel fixture changed')
+// The old mock returned a boolean despite the domain's {cancelled,message} contract.
+expectedOperations.cancelScan.result = { cancelled: true, message: 'user cancelled' }
+expectedOperations.cancelScan.calls.unshift(['createScanOrchestrator.activeFontScanStatus', []])
+expectedOperations.cancelScan.calls.push(
+  ['createRootIndexSourceRecoveryRuntime.pause', [['/fonts']]],
+  ['createRootIndexSourceRecoveryRuntime.pauseActive', []],
+)
 // The new probe owner starts after the existing cache initialization. Preserve
 // every historical operation/shutdown receipt and migrate only this addition.
 const expectedStartup = structuredClone(fixture.startup)
@@ -109,6 +124,39 @@ async function checkMutations() {
   }
   return mutants.length
 }
+async function checkRecoveryWiringMutations() {
+  const file = compositionFile('Scan'), source = read(file)
+  for (const [anchor, operation, flows] of [
+    ['sourceRecovery.resume(folders);', 'resume', ['managedScan', 'failedScan']],
+    ['sourceRecovery.pause(folders);', 'pause', ['cancelScan']],
+    ['sourceRecovery.pauseActive();', 'pauseActive', ['cancelScan']],
+  ]) {
+    const name = `createRootIndexSourceRecoveryRuntime.${operation}`
+    assert.equal(source.split(anchor).length - 1, 1, `${name}: mutation anchor drifted`)
+    // Let loader/runtime failures escape. The mutant must complete and differ
+    // only by the intended private call, never count a TypeError as detection.
+    const actual = await observeOperations(new Map([[file, source.replace(anchor, '')]]))
+    const withoutPort = structuredClone(expectedOperations)
+    for (const flow of flows) {
+      assert.equal(withoutPort[flow].calls.filter(call => call[0] === name).length, 1, `${name}: reviewed receipt missing`)
+      withoutPort[flow].calls = withoutPort[flow].calls.filter(call => call[0] !== name)
+    }
+    assert.deepEqual(actual, withoutPort, `${name}: mutation affected unrelated behavior`)
+    const label = `RECOVERY_WIRING_MISSING_${operation}`
+    assert.throws(() => assert.deepEqual(actual, expectedOperations, label),
+      error => error instanceof assert.AssertionError && error.message.includes(label),
+      `${name}: missing private call was not detected`)
+  }
+}
+function checkIdleCancellation() {
+  const h = createHarness(); h.load(entry); h.scanActive = false; h.reset()
+  const result = h.payload.cancelActiveFontScan('nothing active')
+  assert.deepEqual(h.clean(result), { cancelled: false, message: 'nothing active' })
+  assert.deepEqual(h.calls, [
+    ['createScanOrchestrator.activeFontScanStatus', []],
+    ['createScanOrchestrator.cancelActiveFontScan', ['nothing active']],
+  ], 'idle cancellation must not pause recovery roots')
+}
 async function checkCommittedScanPublication(overrides = new Map()) {
   const h=createHarness(overrides);h.load(entry)
   const calls=[folders=>h.payload.scanFoldersManaged(folders,[]),folders=>h.options('createMainBackgroundRuntime').scanFolders(folders,[])]
@@ -123,6 +171,8 @@ async function checkCommittedScanPublication(overrides = new Map()) {
 async function main() {
   await checkBindings()
   await checkBaseline()
+  checkIdleCancellation()
+  await checkRecoveryWiringMutations()
   await checkCommittedScanPublication()
   for (const owner of ['Scan','Operations']) {
     const file=compositionFile(owner),source=read(file),guard='if (result.stats?.cancelled || isApplicationClosing()) return result;'

@@ -207,6 +207,8 @@ async function checkManualNetworkRefreshUsesCompleteMetadataBatch() {
 
 async function checkListCommandIsReadOnlySharedIo() {
   const mocks = {
+    // Listing does not use the parse-only ambient signal; keep this import at its port.
+    [abs(sharedFsPath)]: { currentSharedIoSignal: () => { throw Error('listing accessed parse-only signal') } },
     [abs(sharedIoProcessPath)]: {
       rethrowSharedIoProcessError(error) {
         if (error && error.sharedIo === true) throw error
@@ -285,10 +287,15 @@ async function checkListCommandIsReadOnlySharedIo() {
     }
   }
   const transport = fs.readFileSync(abs(transportPath), 'utf8').replace(/\r\n/g, '\n')
-  assert(
-    transport.includes("if ((!target!.write || sharedReadOnlyPreview || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"),
-    'transport read-only generation gate changed',
-  )
+  const assertGenerationGate = source => assert(source.includes("if ((!target!.write || sharedReadOnlyPreview || identityRequest || parseRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"), 'READ_GENERATION_GATE: transport read-only generation gate changed')
+  assertGenerationGate(transport)
+  for (const guard of ['!target!.write || ', 'sharedReadOnlyPreview || ', 'identityRequest || ', 'parseRequest || ', "args[0] === '--list-font-files' || ", " || args[0] === '--preview-render-image'"]) {
+    const gate = "if ((!target!.write || sharedReadOnlyPreview || identityRequest || parseRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"
+    assert.equal(gate.split(guard).length, 2, 'generation mutant anchor must be unique')
+    assert.equal(transport.split(gate).length, 2, 'generation statement must be unique')
+    const changed = transport.replace(gate, gate.replace(guard, ''))
+    assert.throws(() => assertGenerationGate(changed), error => error instanceof assert.AssertionError && /READ_GENERATION_GATE/.test(error.message))
+  }
 }
 
 async function main() {

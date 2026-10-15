@@ -18,6 +18,19 @@ function tokens(text) {
   while (scanner.scan() !== ts.SyntaxKind.EndOfFileToken) result.push(scanner.getTokenText())
   return result
 }
+// Explicit migration of ONLY the reviewed parse invocation. The historical fixture
+// remains frozen; all other domain/helper fingerprints are checked unchanged.
+// Causal budget, slicing, cleanup and physical-close checks live in
+// check-font-parse-stability-capability and check-preview-owned-stage.
+const parseClientPath = h.core + 'clients/rustIndexingClientRuntime.ts'
+const reviewedParseHash = '6f6ed1d9fe8184a201fefdd0cab52d7a444e95d5de91169e2c2ec67bb31e1c07'
+function ownsParseInvocation(node, group) {
+  if (group.path !== parseClientPath) return false
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (ts.isFunctionDeclaration(parent)) return parent.name?.text === 'runRustFontParseBatch'
+  }
+  return false
+}
 function checkFunctions(overrides = sources) {
   for (const group of fixture.groups) {
     const file = ts.createSourceFile(group.path, overrides.get(group.path), ts.ScriptTarget.Latest, true)
@@ -29,7 +42,11 @@ function checkFunctions(overrides = sources) {
         assert(!target.startsWith('node:'), 'client owns native I/O: ' + target)
         assert(!/rustCoreWorkerRuntime|rustCoreSchedulerRuntime|rustCoreWorkerAutoBuildRuntime|rustCoreWorkerPathRuntime|ClientRuntime/.test(target), 'client dependency direction reversed: ' + target)
       }
-      if (ts.isCallExpression(node)) assert(!/^(createRustCore|execFile|setInterval|setTimeout)/.test(node.expression.getText(file)), 'client constructs transport or background state')
+      if (ts.isCallExpression(node)) {
+        const call = node.expression.getText(file)
+        const invocationTimer = call === 'setTimeout' && ownsParseInvocation(node, group)
+        assert(invocationTimer || !/^(createRustCore|execFile|setInterval|setTimeout)/.test(call), 'client constructs transport or background state')
+      }
     })
     for (const [name, hash] of Object.entries(group.functions)) {
       assert(found.has(name), 'lost domain/helper function: ' + name)
@@ -39,7 +56,9 @@ function checkFunctions(overrides = sources) {
         assert.equal(text.split(extension).length - 1, 1, 'complete listing capability guard missing')
         text = text.replace(extension, '') // only this independently tested guard extends the frozen client
       }
-      assert.equal(h.digest(tokens(text)), hash, name + ' changed from pre-extraction baseline')
+      const migratedParse = group.path === parseClientPath && name === 'runRustFontParseBatch'
+      if (migratedParse) assert.equal(hash, 'cdd22806d7cc007546391607289b1e525a2892013ce30ee9f524562a3cbcba26', 'historical parse fixture changed')
+      assert.equal(h.digest(tokens(text)), migratedParse ? reviewedParseHash : hash, name + ' changed from pre-extraction baseline')
     }
     assert.equal(found.size, Object.keys(group.functions).length + 1, 'unexpected client function owner')
     const clientFactory = found.get(group.factory)
@@ -371,8 +390,24 @@ async function checkCompleteListingCapability(overrides = new Map()) {
   assert.equal(await old.client.runRustFontIndexListWorker(['C:/fonts'],['.ttf']),null,'COMPLETE_LISTING_GATE: old iterator semantics accepted')
   assert.equal(old.commands.length,0);assert.equal(old.allocated(),0)
 }
+function checkParseInvocationBoundaryMutations() {
+  const original = sources.get(parseClientPath)
+  const mutants = [
+    ['module timer', null, '\nsetTimeout(() => {}, 0)\n', /client constructs transport or background state/],
+    ['missing timer cleanup', 'clearTimeout(timer)', 'void timer', /runRustFontParseBatch changed from pre-extraction baseline/],
+    ['missing caller abort forwarding', 'controller.abort(signal?.reason)', 'void signal?.reason', /runRustFontParseBatch changed from pre-extraction baseline/],
+    ['persistent interval', 'setTimeout(resolve, 0)', 'setInterval(resolve, 0)', /client constructs transport or background state/],
+  ]
+  for (const [label, before, after, cause] of mutants) {
+    if (before) assert.equal(original.split(before).length, 2, 'parse boundary mutant anchor: ' + label)
+    const changed = before ? original.replace(before, after) : original + after
+    assert.throws(() => checkFunctions(new Map(sources).set(parseClientPath, changed)),
+      error => error instanceof assert.AssertionError && cause.test(error.message), 'parse boundary mutant accepted: ' + label)
+  }
+}
 async function main() {
   checkFunctions()
+  checkParseInvocationBoundaryMutations()
   checkFacadeClosure()
   checkControlIdentities()
   checkClosureMutations()

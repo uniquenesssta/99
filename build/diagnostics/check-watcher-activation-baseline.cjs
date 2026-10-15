@@ -422,10 +422,26 @@ function snapshot(file, source = read(file)) {
   visit(ast)
   return { exports, functions, sha256: crypto.createHash('sha256').update(source).digest('hex') }
 }
+function reviewedContractSource(file, source) {
+  source = source.replace(/\r\n/g, '\n')
+  if (file !== watcherFile) return source
+  // Reversible W-01 migration: only the optional private readiness port and
+  // its signal-preserving shared-poll binding were added by b518. Removing
+  // exactly these additions must reproduce the original full-source SHA,
+  // exports and functions. No historical behavior/hash fixture is replaced.
+  for (const addition of [
+    '  ensureSourceReady?: (rootPath: string, signal: AbortSignal) => Promise<void>;\n',
+    '      ensureSourceReady: signal => withSharedIoSignal(signal, () => options.ensureSourceReady?.(folder, signal) || Promise.resolve()),\n',
+  ]) {
+    assert.equal(source.split(addition).length - 1, 1, 'W-01 reviewed readiness addition missing or duplicated')
+    source = source.replace(addition, '')
+  }
+  return source
+}
 function contracts() {
   for (const [file, expected] of Object.entries(JSON.parse(fs.readFileSync(fixtureFile)).files)) {
-    assert.deepEqual(snapshot(file), expected, `W-01 baseline drift: ${file}; migrate evidence explicitly`)
-    assert.deepEqual(snapshot(file, read(file).replace(/\r?\n/g, '\r\n')), expected)
+    assert.deepEqual(snapshot(file, reviewedContractSource(file, read(file))), expected, `W-01 baseline drift: ${file}; migrate evidence explicitly`)
+    assert.deepEqual(snapshot(file, reviewedContractSource(file, read(file).replace(/\r?\n/g, '\r\n'))), expected)
   }
 }
 function mutate(source, before, after) { assert(source.includes(before), `mutation target missing: ${before}`); return source.replace(before, after) }

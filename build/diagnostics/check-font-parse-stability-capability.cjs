@@ -124,6 +124,9 @@ async function checkParseReadProof() {
       assert(request.roots.includes('configured-root:font-parse'))
       await assert.rejects(() => input.writeJson({ jobs: [] }), error => error.reason === 'font-parse-input-sealed')
     }
+    assert.equal(env.files.size, 1, String(negative) + ': unexpected worker filesystem effect')
+    assert(env.files.has(input.path), String(negative) + ': owned input disappeared before disposal')
+    assert(!env.files.has('C:/unknown.json'), 'parse CLI recognizer invented an output write')
     await input.dispose(); assert.equal(env.files.size, 0)
   }
 }

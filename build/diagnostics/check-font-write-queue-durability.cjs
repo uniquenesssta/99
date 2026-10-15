@@ -114,7 +114,7 @@ async function runBehaviorChecks() {
 }
 
 
-async function feedbackCases(transform = source => source) {
+async function feedbackCases(transform = source => source, targetFullRefreshWindow = false) {
   const strict = require('node:assert/strict')
   const file = 'src/renderer/src/fontWriteQueueRuntime.ts'
   const load = require('./check-operation-chain.cjs').loader({}, {}, { [path.join(root, file)]: transform })
@@ -153,9 +153,14 @@ async function feedbackCases(transform = source => source) {
     strict.equal(await runtime.flush('empty', 'local'), true)
     strict.equal(recoveries, 1, 'EMPTY_WRITE_RECOVERY')
 
-    queueRef.current.protection.set(item.id, { font: item, protect: true })
-    await runtime.flush('successful-full-drain')
-    strict.equal(recoveries, 2, 'FULL_WRITE_RECOVERY')
+    // The full-refresh mutant must reach the failed-refresh window. Its removed
+    // guard also doubles the earlier healthy-drain notification; that separate
+    // positive remains mandatory in the unmutated run and all other mutants.
+    if (!targetFullRefreshWindow) {
+      queueRef.current.protection.set(item.id, { font: item, protect: true })
+      await runtime.flush('successful-full-drain')
+      strict.equal(recoveries, 2, 'FULL_WRITE_RECOVERY')
+    }
     failWrites = true; queueRef.current.localTags.set(item.id, { item, tagNames: ['full-failure'] })
     strict.equal(await runtime.flush('failed-full-drain'), false)
     const beforeFull = recoveries, errorCount = errors.length
@@ -194,14 +199,14 @@ async function feedbackCases(transform = source => source) {
 
 async function feedbackMutants() {
   const strict = require('node:assert/strict')
-  for (const [before, after, reason] of [
+  for (const [before, after, reason, targetFullRefreshWindow = false] of [
     ['confirmedWrites > 0 && !feedbackFailures.size && !fieldTasks.size', '!feedbackFailures.size && !fieldTasks.size', /EMPTY_WRITE_RECOVERY/],
-    ['flushField(field, reason, collectRefresh, false)', 'flushField(field, reason, collectRefresh)', /FULL_REFRESH_RECOVERY/],
+    ['flushField(field, reason, collectRefresh, false)', 'flushField(field, reason, collectRefresh)', /FULL_REFRESH_RECOVERY/, true],
     ["      feedbackFailures.set(field, 'uncertain')", '', /UNCERTAIN_FAILED_RECOVERY/],
     ["feedbackFailures.get(field) === 'retry'", 'feedbackFailures.has(field)', /UNCERTAIN_SAME_FIELD_RECOVERY/]
   ]) {
     strict.equal(runtime.split(before).length, 2, 'feedback mutation anchor must be unique')
-    await strict.rejects(() => feedbackCases(source => source.replace(before, after)), reason)
+    await strict.rejects(() => feedbackCases(source => source.replace(before, after), targetFullRefreshWindow), reason)
   }
 }
 

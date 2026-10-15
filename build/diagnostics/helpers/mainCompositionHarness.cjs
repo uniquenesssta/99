@@ -62,7 +62,8 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
       isActive: () => state.scanActive !== false, activeJobId: () => 'scan-job',
       scanFolders: operation(`${name}.scanFolders`, async () => state.scanResult || ({ folders: ['/fonts/a', '/fonts/b'], committedFolders: ['/fonts/a', '/fonts/b'], fonts: [] })),
       scanFoldersManaged: operation(`${name}.scanFoldersManaged`, async () => state.scanResult || ({ folders: ['/fonts/a', '/fonts/b'], committedFolders: ['/fonts/a', '/fonts/b'], fonts: [] })),
-      cancelActiveFontScan: operation(`${name}.cancelActiveFontScan`, () => true),
+      activeFontScanStatus: operation(`${name}.activeFontScanStatus`, () => ({ running: state.scanActive !== false, folders: state.scanActive === false ? undefined : ['/fonts'] })),
+      cancelActiveFontScan: operation(`${name}.cancelActiveFontScan`, reason => ({ cancelled: state.scanActive !== false, message: reason })),
     })
     if (name === 'createManualFolderRefreshRuntime') specific.refreshWatchedFolder = operation(`${name}.refreshWatchedFolder`, async () => ({ ok: true }))
     if (name === 'createInstallStatusRefreshStarterRuntime') specific.activeInstallStatusRefreshJob = () => state.installRefreshActive === false ? null : 'refresh-job'

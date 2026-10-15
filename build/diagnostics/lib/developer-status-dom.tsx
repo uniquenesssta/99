@@ -13,6 +13,7 @@ const normalPages = ['library', 'tags', 'sharedTags', 'folders', 'filters']
 const diagnosticText = '文件夹刷新完成：缓存正常，索引新增/更新 0 个、确认文件缺失 0 个、无效索引清理 55 个，复用 4122 个。' + '0123456789abcdef'.repeat(45)
 const operationText = '字体操作失败：文件不可用，请检查路径后重试。' + '错误详情与路径0123456789abcdef'.repeat(40)
 let current: any, lastEvidence: unknown
+let finishActiveCapture: (() => Promise<unknown>) | undefined
 
 function Fixture() {
   const [page, setPage] = useState('library'), [notice, setNotice] = useState<string | null>(null)
@@ -57,13 +58,14 @@ function Fixture() {
 }
 
 async function checkDeveloperStatus() {
+  check(!finishActiveCapture, 'previous live capture has not been cleaned up')
   const host = document.getElementById('fixture')!, previousBridge = window.hfm
   const previousSidebar = localStorage.getItem('hfm.sidebarCollapsed')
   const nativeSet = window.setTimeout.bind(window), nativeClear = window.clearTimeout.bind(window)
   const timers = new Map<number, { at: number; callback: () => void }>()
   let now = 0, nextTimer = -1, reads = 0, inFlight = 0, maximumInFlight = 0
   const requests: { resolve: (value: unknown) => void; reject: (error: Error) => void }[] = []
-  let root: ReturnType<typeof createRoot> | undefined, failedView: Node[] | undefined
+  let root: ReturnType<typeof createRoot> | undefined, captureReady = false
   const base = { rootPath: '\\\\server\\fonts', phase: 'idle', lastCheckedAt: Date.UTC(2026, 9, 12, 8), pendingCount: 0 }
   const card = () => host.querySelector<HTMLElement>('[data-shared-watch-status]')
   const geometry = () => ({ development: IS_DEVELOPMENT, viewport: { width: innerWidth, height: innerHeight }, page: current?.page, reads, inFlight, maximumInFlight,
@@ -109,6 +111,46 @@ async function checkDeveloperStatus() {
     check(button, 'real sidebar page control missing: ' + page)
     flushSync(() => button!.click()); await settle()
     check(current.page === page, 'sidebar navigation did not reach ' + page)
+  }
+  // Ownership spans the renderer checks and Electron's actual screenshot.
+  // The runner calls this from finally, including capture/assertion failures.
+  finishActiveCapture = async () => {
+    let lateIpcReleased = false
+    try {
+      try {
+        if (captureReady) {
+          await advance(2000)
+          check(requests.length === 1 && inFlight === 1, 'cleanup did not hold one late status IPC')
+          lateIpcReleased = true
+        }
+      } finally {
+        try {
+          if (root) flushSync(() => root!.unmount())
+        } finally {
+          root = undefined
+          const settledReads = reads
+          for (const request of requests.splice(0)) request.resolve({ roots: [base] })
+          await advance(600000)
+          check(reads === settledReads && timers.size === 0 && inFlight === 0, 'unmounted App retained polling or late IPC')
+          check(maximumInFlight === 1, 'status owner exceeded one in-flight IPC during cleanup')
+          check(!host.querySelector('.app'), 'unmounted App retained rendered content')
+          check(localStorage.getItem('hfm.sidebarCollapsed') === '0', 'status navigation mutated persisted sidebar preference')
+        }
+      }
+      return { cleanup: true, lateIpcReleased, reads, inFlight, maximumInFlight, pendingTimers: timers.size, mounted: false }
+    } catch (error) {
+      lastEvidence = geometry(); throw error
+    } finally {
+      window.setTimeout = nativeSet; window.clearTimeout = nativeClear
+      // Also release requests created by a failing cleanup implementation;
+      // assertions above still fail, but no held fixture IPC survives them.
+      for (const request of requests.splice(0)) request.resolve({ roots: [] })
+      await settle()
+      timers.clear()
+      window.hfm = previousBridge
+      if (previousSidebar === null) localStorage.removeItem('hfm.sidebarCollapsed'); else localStorage.setItem('hfm.sidebarCollapsed', previousSidebar)
+      finishActiveCapture = undefined
+    }
   }
   try {
     localStorage.setItem('hfm.sidebarCollapsed', '0')
@@ -188,26 +230,31 @@ async function checkDeveloperStatus() {
       flushSync(() => current.setPage('developer')); await settle(); assertNormal()
     }
     check(maximumInFlight === 1, 'status owner exceeded one in-flight IPC')
-    const evidence = geometry(), settledReads = reads
-    const screenshotView = Array.from(host.childNodes, node => node.cloneNode(true))
-    flushSync(() => root!.unmount()); root = undefined
-    await advance(600000)
-    check(reads === settledReads && timers.size === 0 && inFlight === 0, 'unmounted App retained polling')
-    check(localStorage.getItem('hfm.sidebarCollapsed') === '0', 'status navigation mutated persisted sidebar preference')
-    // Retain only static pixels after verifying React/poller cleanup.
-    host.replaceChildren(...screenshotView)
-    return { ...evidence, heldIpc: true, phases: receipts.length, allOrdinaryPages: normalPages, operationNotice: true, dismissed: true, cleanup: true }
+    // Paint the real, still-mounted AppRoot. Never substitute cloned DOM for
+    // visual evidence; cleanup is a separate receipt after capturePage.
+    await settle()
+    check(root && host.querySelector('.app'), 'live AppRoot missing before capture')
+    for (const selector of ['.app', '.layout', '.font-list-panel']) {
+      const bounds = host.querySelector<HTMLElement>(selector)!.getBoundingClientRect()
+      check(bounds.width > 0 && bounds.height > 0, 'live capture has empty geometry: ' + selector)
+    }
+    if (IS_DEVELOPMENT) {
+      assertShell()
+      const bounds = card()?.getBoundingClientRect()
+      check(bounds && bounds.width > 0 && bounds.height > 0 && bounds.top < innerHeight && bounds.bottom > 0, 'live developer card is not visible for capture')
+      check(card()?.querySelector('pre')?.textContent?.includes('目录检查和索引应用全部确认后更新'), 'live capture lost NAS details')
+      check(host.querySelector('.developer-status-page')?.textContent?.includes(diagnosticText), 'live capture lost full current status')
+    } else assertNormal()
+    captureReady = true
+    lastEvidence = geometry()
+    return { ...geometry(), heldIpc: true, phases: receipts.length, allOrdinaryPages: normalPages, operationNotice: true, dismissed: true, captureReady: true, mounted: true }
   } catch (error) {
-    lastEvidence = geometry(); failedView = Array.from(host.childNodes, node => node.cloneNode(true)); throw error
-  } finally {
-    window.setTimeout = nativeSet; window.clearTimeout = nativeClear
-    if (root) flushSync(() => root!.unmount())
-    for (const request of requests) request.resolve({ roots: [] })
-    await Promise.resolve()
-    window.hfm = previousBridge
-    if (previousSidebar === null) localStorage.removeItem('hfm.sidebarCollapsed'); else localStorage.setItem('hfm.sidebarCollapsed', previousSidebar)
-    if (failedView) host.replaceChildren(...failedView)
+    lastEvidence = geometry(); throw error
   }
 }
 ;(window as any)[IS_DEVELOPMENT ? 'checkDeveloperStatusDevelopment' : 'checkDeveloperStatusProduction'] = checkDeveloperStatus
+;(window as any)[IS_DEVELOPMENT ? 'finishDeveloperStatusDevelopment' : 'finishDeveloperStatusProduction'] = async () => {
+  check(finishActiveCapture, 'no live developer-status capture to clean up')
+  return finishActiveCapture!()
+}
 ;(window as any)[IS_DEVELOPMENT ? 'developerStatusDevelopmentEvidence' : 'developerStatusProductionEvidence'] = () => lastEvidence

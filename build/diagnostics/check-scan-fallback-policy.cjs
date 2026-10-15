@@ -128,7 +128,7 @@ function testC08NetworkListingBatchRouting() {
   assert(watcher.includes('if (rustResult) return rustResult.unchanged'), 'watcher preflight result must remain authoritative when available')
 
   const transport = read('src/main/rust-core/rustCoreWorkerTransportRuntime.ts')
-  assert(transport.includes("if ((!target!.write || sharedReadOnlyPreview || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"), 'read-only Shared I/O receipts must retain the root-generation gate')
+  assert(transport.includes("if ((!target!.write || sharedReadOnlyPreview || identityRequest || parseRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')"), 'read-only Shared I/O receipts must retain the root-generation gate')
   assert(transport.includes('FONT_SCAN_LISTING_MAX_TIMEOUT_MS = 10 * 60 * 1000'), 'listing maximum lifetime changed')
   assert(transport.includes("command === '--list-font-files' && verifiedListing ? FONT_SCAN_LISTING_MAX_TIMEOUT_MS : 30000"), 'only proven stdout listings may exceed the ordinary shared 30-second cap')
   assertSharedAdmissionDeadline(transport)

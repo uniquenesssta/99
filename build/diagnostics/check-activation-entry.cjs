@@ -192,7 +192,18 @@ async function run() {
   for (const entry of ['detail','font']) {
     const missing=harness({cache:['a']});missing.select().setSelectedFontIds(['a','absent','c']);await missing.click(entry)
     assert.equal(missing.requests.length,0);assert(missing.events.some(e=>e.stage==='preflight'&&e.outcome==='missing-records'));assert.match(missing.status.at(-1),/1 个.*未执行.*absent/)
-    assert.equal(treeNodes(missing.panel()).find(n=>n.props?.role==='status').props.children,missing.status.at(-1));cases++
+    assert(!treeNodes(missing.panel()).some(n=>n.props?.role==='status'), 'ordinary panel retained the retired diagnostic row')
+    // This action harness controls the setter port. Render its actual failure
+    // through the production notice; App/controller routing is covered by the
+    // real-hook and AppRoot DOM gates, rather than recreating that wiring here.
+    const Notice=missing.load(renderer+'components/app/OperationStatusNotice.tsx').OperationStatusNotice
+    let message=missing.status.at(-1)
+    const notice=Notice({message,onDismiss:()=>{message=null}}), receipt=treeNodes(notice).find(n=>n.props?.role==='status')
+    assert(receipt, 'ACTIVATION_FAILURE_FEEDBACK: operation notice omitted the failure')
+    assert.equal(receipt.props.children,message,'ACTIVATION_FAILURE_FEEDBACK')
+    const dismiss=treeNodes(notice).find(n=>n.props?.['aria-label']==='关闭操作反馈')
+    assert(dismiss, 'ACTIVATION_FAILURE_FEEDBACK: dismissal missing')
+    dismiss.props.onClick();assert.equal(Notice({message,onDismiss:noop}),null);cases++
   }
   const deleted=harness({partial:false,cache:['a','b']});deleted.select().setSelectedFontIds(['a','b','c']);deleted.prune();assert.deepEqual(plain(deleted.select().selectedFontIds),['a','b']);assert(!deleted.library.fonts.c);cases++
   const removed=harness();removed.marquee();removed.select().removeFontIds(new Set(['b']));assert.deepEqual(plain(removed.select().selectedFontIds),['a','c']);removed.setScope('tags:test');assert.deepEqual(plain(removed.select().selectedFontIds),[]);cases++

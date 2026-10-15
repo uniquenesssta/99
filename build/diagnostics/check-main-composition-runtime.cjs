@@ -21,6 +21,10 @@ function reviewedBootstrapObservations() {
   // after cache initialization and is awaited beside the existing watcher.
   assert(!expected.owners.some(([name]) => name === 'createSharedAvailabilityProbeScheduler'))
   expected.owners.push(['createSharedAvailabilityProbeScheduler', 1]); expected.owners.sort()
+  // Reviewed private source-recovery owner: no new IPC registration or change
+  // to historical flow observations; the watcher receives its readiness port.
+  assert(!expected.owners.some(([name]) => name === 'createRootIndexSourceRecoveryRuntime'))
+  expected.owners.push(['createRootIndexSourceRecoveryRuntime', 1]); expected.owners.sort()
   assert.equal(expected.construction[0][0], 'createMigrationDiagnosticsRuntime.logStartupPolicy')
   expected.construction.splice(1, 0, ['onApplicationClosing', ['<function>']], ['onApplicationResumed', ['<function>']])
   const lifecycle = expected.flows.lifecycle.calls
@@ -342,6 +346,11 @@ async function checkRejectedMutations() {
 
 async function main() {
   await checkImportAndOwnership()
+  const recoveryWiring = createHarness(); recoveryWiring.load(entry)
+  const readiness = recoveryWiring.options('createFolderWatcherRuntime').ensureSourceReady
+  assert.equal(typeof readiness, 'function', 'private watcher source readiness port is missing')
+  assert.equal(readiness.fixtureOperation,
+    'createRootIndexSourceRecoveryRuntime.ensureReady', 'source recovery must remain owned by its private watcher readiness port')
   const restoreFile=compositionFile('DataStorage'), restoreSource=fs.readFileSync(restoreFile,'utf8').replace(/\r\n/g,'\n')
   const restoreWiring='applicationDatabasePaths: () => [librarySqlitePath(), tasksSqlitePath(), previewSqlitePath(), kvsSqlitePath(), eventsSqlitePath(), hashSqlitePath(), metricsSqlitePath()],'
   assert.equal(restoreSource.split(restoreWiring).length-1,1)

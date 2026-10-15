@@ -272,6 +272,35 @@ function isPreviewFailureRecognitionLiteral(node) {
     && ts.isNumericLiteral(argument.argumentExpression) && argument.argumentExpression.text === '0'
 }
 
+// Shared transport effect checks are not capability requirements of unrelated
+// callers. Exclude only the parse-specific probe behind its exact CLI predicate;
+// a widened/removed guard or a domain capability check remains inventoried.
+function isParseEffectCapabilityLiteral(node, record) {
+  if (!ts.isStringLiteral(node) || !['font-parse-batch', 'font-parse-batch-source-stability-v1'].includes(node.text)) return false
+  const call = node.parent
+  if (!ts.isCallExpression(call) || !ts.isIdentifier(call.expression) || call.expression.text !== 'hasCapability'
+    || call.arguments.length !== 2 || call.arguments[1] !== node
+    || !ts.isIdentifier(call.arguments[0]) || call.arguments[0].text !== 'cachedStatus') return false
+  let expression = call
+  while (ts.isBinaryExpression(expression.parent) && expression.parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) expression = expression.parent
+  const declaration = expression.parent
+  if (!ts.isVariableDeclaration(declaration) || declaration.initializer !== expression
+    || !ts.isIdentifier(declaration.name) || declaration.name.text !== 'verifiedParseRead') return false
+  let first = expression
+  while (ts.isBinaryExpression(first) && first.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) first = first.left
+  if (!ts.isIdentifier(first) || first.text !== 'parseRequest') return false
+  const predicates = []
+  visit(record.node, value => {
+    if (ts.isVariableDeclaration(value) && ts.isIdentifier(value.name) && value.name.text === 'parseRequest') predicates.push(value.initializer)
+  })
+  if (predicates.length !== 1) return false
+  const predicate = predicates[0]
+  return predicate && ts.isBinaryExpression(predicate) && predicate.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+    && ts.isElementAccessExpression(predicate.left) && ts.isIdentifier(predicate.left.expression) && predicate.left.expression.text === 'args'
+    && ts.isNumericLiteral(predicate.left.argumentExpression) && predicate.left.argumentExpression.text === '0'
+    && ts.isStringLiteral(predicate.right) && predicate.right.text === '--font-parse-batch'
+}
+
 function collectRustFunctionStrings(functions, name, seen = new Set(), route = name) {
   if (seen.has(name)) return []
   seen.add(name)
@@ -306,7 +335,7 @@ function collectRustFunctionStrings(functions, name, seen = new Set(), route = n
       const selector = ['runRustCoreScheduledCommand','runRustCoreScheduledCommandDirect'].includes(name) && (
         ['--preview-render-image','--preview-render-owned-stage','--list-font-files','--font-parse-batch'].includes(node.text) && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
         node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf' ||
-        name === 'runRustCoreScheduledCommandDirect' && (isListingOutputRecognitionLiteral(node) || isListingRootRecognitionLiteral(node) || isIdentityInputRecognitionLiteral(node) || isPreviewFailureRecognitionLiteral(node))
+        name === 'runRustCoreScheduledCommandDirect' && (isListingOutputRecognitionLiteral(node) || isListingRootRecognitionLiteral(node) || isIdentityInputRecognitionLiteral(node) || isPreviewFailureRecognitionLiteral(node) || isParseEffectCapabilityLiteral(node, record))
       )
       if (!selector) strings.push(node.text)
     }
@@ -360,6 +389,26 @@ function testRustStructuralContract() {
     } catch { rejected = true }
     assert(rejected, `Actually emitted ${emitted} was hidden as a selector`)
   }
+  for (const [label, before, after] of [
+    ['unguarded parse probe', 'const verifiedParseRead = parseRequest &&', 'const verifiedParseRead ='],
+    ['wrong parse route', "const parseRequest = args[0] === '--font-parse-batch'", "const parseRequest = args[0] === '--list-font-files'"],
+    ['domain capability probe', "hasCapability(cachedStatus, 'font-parse-batch')", "hasCapability(status, 'font-parse-batch')"],
+    ['extra caller capability', admission, "    hasCapability(cachedStatus, 'font-parse-batch')\n" + admission],
+  ]) {
+    assert(directSource.split(before).length === 2, `${label}: parse effect capability anchor drifted`)
+    const file = ts.createSourceFile('parse-effect-capability-mutant.ts', directSource.replace(before, after), ts.ScriptTarget.Latest, true)
+    const altered = new Map(functions); altered.set('runRustCoreScheduledCommandDirect', { node: file.statements[0], file })
+    let rejected = false
+    try {
+      const capabilities = collectRustFunctionStrings(altered, command.method).filter(value => knownCapabilities.has(value))
+      assertExactSet(label, capabilities, command.capabilities)
+    } catch (error) {
+      const expected = `${label} changed; missing=[], extra=[font-parse-batch]`
+      if (!(error instanceof Error) || error.message !== expected) throw error
+      rejected = true
+    }
+    assert(rejected, `${label}: unrelated caller capability was hidden as a parse effect check`)
+  }
   const rootLookup = "const listingRoot = args[args.indexOf('--root') + 1]"
   assert(directSource.split(rootLookup).length === 2, 'Listing-root recognition mutation anchor drifted')
   const mutatingLookup = directSource.replace(rootLookup, "const listingRoot = args[args.push('--root') + 1]")
@@ -377,7 +426,7 @@ function testRustStructuralContract() {
     ['runRustFontIndexListWorker', "args[1] === '--input'", "args[2] === '--input'"],
     ['runRustFontParseBatch', "args[3] === '--transfer'", "args[4] === '--transfer'"],
   ]) {
-    assert.equal(directSource.split(before).length, before.includes('--input') ? 3 : 2, 'Sealed-input selector mutation anchor drifted')
+    assert(directSource.split(before).length === (before.includes('--input') ? 3 : 2), 'Sealed-input selector mutation anchor drifted')
     const file = ts.createSourceFile('identity-selector-mutant.ts', directSource.replaceAll(before, after), ts.ScriptTarget.Latest, true)
     const altered = new Map(functions); altered.set('runRustCoreScheduledCommandDirect', { node: file.statements[0], file })
     let rejected = false

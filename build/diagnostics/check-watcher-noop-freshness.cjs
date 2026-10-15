@@ -1035,7 +1035,7 @@ async function main() {
     const mutations = [
       ['duplicate-directory-writes', directoryFile, 'if (!signatureUnchanged) context.directoryUpdates.push({', 'context.directoryUpdates.push({', 'directoryModule'],
       ['second-directory-snapshot', directoryFile, 'if (context.cache.directorySignatures) {', 'if (false) {', 'directoryModule'],
-      ['storage-initialization', storageFile, 'if (request.reuseExisting) {', 'if (false) {', 'storageModule'],
+      ['storage-initialization', storageFile, 'if (request.reuseExisting && !rebuildRequestId) {', 'if (false) {', 'storageModule'],
     ]
     for (const [name, relative, before, after, option] of mutations) {
       const mutantLoad = selectedOwners(host, [relative], { [relative]: [before, after] })

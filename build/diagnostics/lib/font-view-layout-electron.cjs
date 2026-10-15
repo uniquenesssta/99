@@ -5,8 +5,26 @@ const feedbackOnly = process.argv.includes('--dom-feedback')
 const shellOnly = process.argv.includes('--dom-shell-only')
 let lastNativeCase = null
 let win
+// Inspect packed pixels without assuming RGB/BGRA channel ordering. A capture
+// needs actual UI variation, not just an opaque blank window or a stray pixel.
+function capturePixelEvidence(bitmap) {
+  const pixelCount = bitmap.length / 4, colors = new Set()
+  if (!Number.isInteger(pixelCount) || pixelCount === 0) return { pixelCount, nonBlank: false }
+  const first = bitmap.readUInt32LE(0)
+  let pixelsDifferentFromFirst = 0
+  for (let offset = 0; offset < bitmap.length; offset += 4) {
+    const pixel = bitmap.readUInt32LE(offset)
+    if (pixel !== first) pixelsDifferentFromFirst++
+    if (colors.size < 64) colors.add(pixel)
+  }
+  return { pixelCount, distinctPixelValues: colors.size, pixelsDifferentFromFirst,
+    nonBlank: colors.size >= 8 && pixelsDifferentFromFirst >= Math.max(64, pixelCount / 1000) }
+}
 const watchdog = setTimeout(() => { console.error('DOM layout gate timed out', JSON.stringify(lastNativeCase)); app.exit(1) }, 180000)
 app.whenReady().then(async () => {
+  for (const blank of [Buffer.alloc(0), Buffer.alloc(64 * 64 * 4), Buffer.alloc(64 * 64 * 4, 255)]) {
+    if (capturePixelEvidence(blank).nonBlank) throw Error('blank capture negative control was accepted')
+  }
   win = new BrowserWindow({ show: true, width: 1600, height: 900, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false } })
   // Electron may replace a rejected renderer exception with a generic error.
   // Return plain failure data across the boundary, then still fail the gate.
@@ -88,12 +106,34 @@ app.whenReady().then(async () => {
   for (const [width, height] of [[720, 900], [1320, 820], [1600, 900]]) {
     win.setContentSize(width, height)
     for (const mode of ['Development', 'Production']) {
-      const result = await evaluate(`window.checkDeveloperStatus${mode}()`)
       const evidence = path.resolve('artifacts/font-identity-f04'), prefix = `developer-status-${mode.toLowerCase()}-${width}x${height}`
       fs.mkdirSync(evidence, { recursive: true })
-      fs.writeFileSync(path.join(evidence, prefix + '.json'), JSON.stringify(result, null, 2))
-      fs.writeFileSync(path.join(evidence, prefix + '.png'), (await win.webContents.capturePage()).toPNG())
-      console.log('[developer-status:electron]', JSON.stringify(result))
+      let captureError
+      try {
+        const result = await evaluate(`window.checkDeveloperStatus${mode}()`)
+        if (!result.captureReady || !result.mounted) throw Error(prefix + ': renderer did not retain the live AppRoot')
+        // The real React tree remains mounted until capturePage completes.
+        await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        const screenshot = await win.webContents.capturePage()
+        const capture = { ...capturePixelEvidence(screenshot.toBitmap()), size: screenshot.getSize(), empty: screenshot.isEmpty(), paintFrames: 2, liveAppRoot: true }
+        fs.writeFileSync(path.join(evidence, prefix + '.json'), JSON.stringify({ ...result, capture }, null, 2))
+        fs.writeFileSync(path.join(evidence, prefix + '.png'), screenshot.toPNG())
+        if (capture.empty || !capture.nonBlank) throw Error(prefix + ': blank live screenshot: ' + JSON.stringify(capture))
+        console.log('[developer-status:electron]', JSON.stringify({ ...result, capture }))
+      } catch (error) {
+        captureError = error
+        throw error
+      } finally {
+        // Release the same owner even if renderer checks or pixel capture fail.
+        try {
+          const cleanup = await evaluate(`window.finishDeveloperStatus${mode}()`)
+          fs.writeFileSync(path.join(evidence, prefix + '-cleanup.json'), JSON.stringify(cleanup, null, 2))
+          console.log('[developer-status:cleanup]', JSON.stringify({ mode, width, height, ...cleanup }))
+        } catch (error) {
+          if (captureError) throw new AggregateError([captureError, error], prefix + ': capture and cleanup both failed')
+          throw error
+        }
+      }
     }
   }
   if (shellOnly) { clearTimeout(watchdog); app.exit(0); return }

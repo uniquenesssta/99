@@ -50,7 +50,9 @@ function createHarness(settings = {}, overrides = new Map()) {
     if (mode === 'bad-json') return { stdout: '{broken', stderr: '' }
     if (mode === 'empty-json') return { stdout: '\r\n', stderr: '' }
     const output = args.indexOf('--output')
-    if (output >= 0) files.set(args[output + 1], JSON.stringify(payload(command)))
+    // Only the listing command implements a CLI output file. Parse proof
+    // counterexamples may contain --output without creating a native write.
+    if (command === '--list-font-files' && output >= 0) files.set(args[output + 1], JSON.stringify(payload(command)))
     const result = payload(command)
     if (command === '--font-activation-files' && result.ok) {
       const input = JSON.parse(files.get(args[args.indexOf('--input') + 1]) || '{}')
