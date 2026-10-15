@@ -6,10 +6,10 @@ export function createFontLibraryCacheMaintenanceActionRuntime(options: FontLibr
   clearPreviewCacheAction: () => Promise<void>
 } {
   async function clearAllCacheAction(): Promise<void> {
-    if (!await confirmUserAction('清理索引缓存和预览缓存？字体库记录、标签、共享标签和文件本身不会删除。')) return
+    if (!await confirmUserAction('重置扫描缓存并清理预览缓存？现有索引保留至重建完成；标签、共享标签和字体文件不会删除。')) return
 
     try {
-      options.setStatus('正在清理缓存：索引缓存和预览缓存都会删除，字体库记录保留……')
+      options.setStatus('正在重置扫描缓存并清理预览缓存，现有索引保留至重建完成……')
       const results = await Promise.allSettled([options.hfm.clearScanCache(), options.hfm.clearPreviewCache()])
       const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason instanceof Error ? result.reason.message : String(result.reason)] : [])
       options.resetPreviewRuntimeState()
@@ -27,7 +27,7 @@ export function createFontLibraryCacheMaintenanceActionRuntime(options: FontLibr
         )
       }))
       if (failures.length) throw new Error(failures.join('；'))
-      options.setStatus('已清理本次索引和预览缓存；字体库记录保留，预览数据库容器及同时新生成的预览不会强制删除。需要重新生成时请点击“重建索引”或“更新索引”。')
+      options.setStatus('已重置扫描缓存并清理本次预览缓存；旧索引保留至重建完成，预览数据库容器及同时新生成的预览不会强制删除。请点击“重建索引”或“更新索引”重新生成。')
     } catch (error) {
       options.setStatus(`清理缓存失败：${error instanceof Error ? error.message : String(error)}`)
     }

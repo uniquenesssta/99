@@ -4,7 +4,8 @@ import { AppSidebar } from './AppSidebar'
 import { AppTopbar } from './AppTopbar'
 import { FontDetailPanel } from './FontDetailPanel'
 import { FontListPanel } from './FontListPanel'
-import { SharedWatchStatusBar } from './SharedWatchStatusBar'
+import { useSharedWatchStatus } from './SharedWatchStatusCard'
+import { OperationStatusNotice, type OperationStatusNoticeProps } from './OperationStatusNotice'
 
 import type { ComponentProps } from 'react'
 
@@ -13,14 +14,16 @@ type DeveloperPanelKeys = 'developerArchitecture' | 'developerMigrationDiagnosti
 export type AppRootViewProps = {
   topbar: ComponentProps<typeof AppTopbar>
   sidebar: Omit<ComponentProps<typeof AppSidebar>, 'sidebarCollapsed' | 'setSidebarCollapsed'>
-  content: Omit<ComponentProps<typeof FontListPanel>, DeveloperPanelKeys>
+  content: Omit<ComponentProps<typeof FontListPanel>, DeveloperPanelKeys | 'sharedWatchStatus'>
   detail: ComponentProps<typeof FontDetailPanel>
   overlays: ComponentProps<typeof AppOverlays>
   developer: Pick<ComponentProps<typeof FontListPanel>, DeveloperPanelKeys> & { IS_DEVELOPMENT: boolean }
+  operationNotice?: OperationStatusNoticeProps
 }
 
 export function AppRootView(props: AppRootViewProps): JSX.Element {
-  const { topbar, sidebar, content, detail, overlays, developer } = props
+  const { topbar, sidebar, content, detail, overlays, developer, operationNotice } = props
+  const sharedWatchStatus = useSharedWatchStatus()
 
   return (
     <div className="app">
@@ -115,6 +118,7 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
           sidebarPage={content.sidebarPage}
           refreshDeveloperStatusDetails={developer.refreshDeveloperStatusDetails}
           status={developer.status}
+          sharedWatchStatus={sharedWatchStatus}
           latestIndexProgress={developer.latestIndexProgress}
           developerArchitecture={developer.developerArchitecture}
           developerSchedulerStatus={developer.developerSchedulerStatus}
@@ -217,7 +221,7 @@ export function AppRootView(props: AppRootViewProps): JSX.Element {
         setLeaseLockConflictNotice={overlays.setLeaseLockConflictNotice}
       />
 
-      <SharedWatchStatusBar developerStatus={developer.IS_DEVELOPMENT ? developer.status : undefined} />
+      {operationNotice && <OperationStatusNotice {...operationNotice} />}
     </div>
   )
 }

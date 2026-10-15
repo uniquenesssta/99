@@ -36,6 +36,9 @@ type FontOperationsLibraryPort = {
   saveLibraryImmediately: (nextLibrary: LibraryState) => Promise<boolean>
   flushLibraryPersistence: () => Promise<boolean>
   setStatus: Dispatch<SetStateAction<string>>
+  reportActionStatus: Dispatch<SetStateAction<string>>
+  reportWriteError: (message: string) => void
+  clearWriteError: () => void
   selectedFolderId: string
   setSelectedFolderId: Dispatch<SetStateAction<string>>
   indexingActive: boolean
@@ -135,6 +138,8 @@ export function useFontOperationsController(options: {
     setTimeout: window.setTimeout.bind(window),
     clearTimeout: window.clearTimeout.bind(window),
     setStatus: options.library.setStatus,
+    reportError: options.library.reportWriteError,
+    onRecovered: options.library.clearWriteError,
     scheduleDatabaseDerivedStateRefresh: options.library.scheduleDatabaseDerivedStateRefresh
   })
 
@@ -146,7 +151,7 @@ export function useFontOperationsController(options: {
     selectedFontId: options.selection.selectedFontId,
     activeOperationFontIds,
     setLibrary: options.library.setLibrary,
-    setStatus: options.library.setStatus,
+    setStatus: options.library.reportActionStatus,
     setSelectedFontIds: options.selection.setSelectedFontIds,
     setSelectedFontId: options.selection.setSelectedFontId,
     setDetailVisible: options.selection.setDetailVisible,
@@ -187,7 +192,7 @@ export function useFontOperationsController(options: {
     setLibrary: options.library.setLibrary,
     getCurrentLibrary: options.library.getCurrentLibrary,
     commitLibraryUpdate: options.library.commitLibraryUpdate,
-    setStatus: options.library.setStatus,
+    setStatus: options.library.reportActionStatus,
     setContextMenu: (value) => options.selection.setContextMenu(value),
     setSelectedFolderId: options.library.setSelectedFolderId,
     setDatabasePageResult: options.database.setDatabasePageResult,
@@ -210,7 +215,7 @@ export function useFontOperationsController(options: {
     options.selection.setContextMenu(null)
     const resolved = resolveFontCommandTargets(fontIds, options.library.getCurrentLibrary(), available)
     if (resolved.missingIds.length) {
-      options.library.setStatus(missingFontCommandTargetsMessage(resolved.missingIds))
+      options.library.reportActionStatus(missingFontCommandTargetsMessage(resolved.missingIds))
       return
     }
     const ids = resolved.selectedIds, targetFonts = resolved.fonts
@@ -228,7 +233,7 @@ export function useFontOperationsController(options: {
     })
 
     for (const font of changedFonts) fontWriteQueueRuntime.queueProtectionWrite(font, nextValue)
-    options.library.setStatus(`${nextValue ? '加入保护' : '取消保护'}已在界面生效，后台队列写入 ${changedFonts.length} 个，跳过未变化 ${targetFonts.length - changedFonts.length} 个。`)
+    options.library.reportActionStatus(`${nextValue ? '加入保护' : '取消保护'}已在界面生效，后台队列写入 ${changedFonts.length} 个，跳过未变化 ${targetFonts.length - changedFonts.length} 个。`)
   }
 
   function removeFontIds(removedFontIds: ReadonlySet<string>): void {

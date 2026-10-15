@@ -63,6 +63,7 @@ async function checkAuthorityCase(scenario, overrides) {
 }
 
 async function checkCase(scenario, overrides) {
+  if (scenario.method === 'runRustFontParseBatch') return checkParseCase(scenario, overrides)
   if (authorityMethods.has(scenario.method)) return checkAuthorityCase(scenario, overrides)
   if (scenario.method === 'runRustFontIndexListWorker') return checkListingCase(scenario, overrides)
   if (scenario.method === 'runRustSharedMetadataOverlayRead') return checkMetadataOverlayCase(scenario, overrides)
@@ -70,6 +71,36 @@ async function checkCase(scenario, overrides) {
   const observed = await h.observe(scenario.method, scenario.settings, overrides)
   const summary = legacyDiagnosticWording(observed)
   assert.deepEqual({ id: scenario.id, ...summary }, cases.get(scenario.id), scenario.id + ' differs from AT-5.1')
+}
+
+// Intentional migration: bounded parse slices now use the physical-close owner,
+// including local sources. Keep all unrelated frozen command hashes unchanged.
+async function checkParseCase(scenario, overrides) {
+  const { summary, h: env } = await h.observe(scenario.method, scenario.settings, overrides)
+  const mode = scenario.settings.mode || 'oneshot'
+  const preAbort = !!scenario.settings.preAbort, writeFailed = mode === 'write-fail'
+  const invalid = ['false-oneshot', 'false-daemon', 'bad-json'].includes(mode)
+  let expected = cases.get('runRustFontParseBatch/oneshot').outcome
+  if (preAbort) expected = { kind: 'error', name: 'OperationCancelledError', message: 'already cancelled', submitted: false }
+  else if (mode === 'external-abort') expected = { kind: 'error', name: 'SharedIoProcessError', message: 'fixture shared cancelled', submitted: false }
+  else if (writeFailed) expected = { kind: 'null', value: null }
+  else if (invalid) expected = { kind: 'error', name: 'SharedIoProcessError', message: 'Shared I/O invalid receipt: ' + (mode === 'bad-json' ? 'SyntaxError: fixture invalid JSON' : 'Error: worker returned ok=false'), submitted: false }
+  assert.deepEqual(summary.outcome, expected, scenario.id + ' bounded parse outcome')
+  assert.equal(summary.pendingFiles, mode === 'cleanup-fail' ? 1 : 0)
+  assert.equal(env.sharedRequests.length, preAbort || writeFailed ? 0 : 1)
+  assert(!env.trace.some(row => row[0] === 'daemon' || row[0] === 'schedule' || (row[0] === 'exec' && row[2][0] === '--font-parse-batch')))
+  if (env.sharedRequests.length) {
+    const request = env.sharedRequests[0]
+    assert.equal(request.timeoutMs, 30000); assert.equal(request.queueTimeoutMs, 3000)
+    assert.equal(request.priority, 'background'); assert.equal(request.lane, 'default')
+    assert.deepEqual(request.roots, ['configured-root:font-parse'])
+    assert.equal(request.write, true, 'legacy capability must retain conservative effect')
+    assert.equal(request.verifiedReadOnly, false); assert.equal(request.accesses, undefined)
+    assert.equal(request.hasClose, true)
+  }
+  assert.equal(env.trace.filter(row => row[0] === 'external.addEventListener').length, env.trace.filter(row => row[0] === 'external.removeEventListener').length, 'parse abort listener leaked')
+  const effects = env.trace.filter(row => ['write', 'shared', 'shared.close', 'rm'].includes(row[0])).map(row => row[0])
+  assert.deepEqual(effects, preAbort ? [] : ['write', ...(!writeFailed ? ['shared', 'shared.close'] : []), 'rm'])
 }
 
 // Explicit AT-5.1 exception: listing now owns an unknown TEMP write effect,
@@ -379,7 +410,6 @@ async function checkMutants() {
   const tests = [
     ['submitted fallback', 'appendDaemonCommandFailureLog(error.message, true)\n        throw error', 'appendDaemonCommandFailureLog(error.message, true)\n        return null', 'runRustFontActivationFiles/submitted'],
     ['abort fallback', "if (error instanceof Error && error.name === 'AbortError') throw error", '', 'activation/{"mode":"daemon-abort"}'],
-    ['listener cleanup', 'mergedSignal.cleanup()', 'void mergedSignal', 'runRustFontParseBatch/oneshot'],
     ['cached status', 'if (cachedStatus) return cachedStatus', '', 'cached-ready'],
     ['duplicate scheduler', 'const rustCoreScheduler = createRustCoreSchedulerRuntime', 'createRustCoreSchedulerRuntime({ appendStartupLog: options.appendStartupLog });\n  const rustCoreScheduler = createRustCoreSchedulerRuntime', 'runRustFontActivationFiles/oneshot'],
     ['early file cleanup', "writeJson: value => fsp.writeFile(filePath, JSON.stringify(traceRustInput(value)), 'utf-8')", "writeJson: value => fsp.writeFile(filePath, JSON.stringify(traceRustInput(value)), 'utf-8').then(() => fsp.rm(filePath, { force: true }))", 'concurrent-files'],
@@ -402,6 +432,12 @@ async function checkMutants() {
     const scenario = h.scenarios().find(s => s.id === id)
     await assert.rejects(() => id === 'stdout-listing' ? checkStdoutListing(overrides) : scenario ? checkCase(scenario, overrides) : checkSequence(id, overrides), 'mutant was accepted: ' + name)
   }
+  const parseClientPath = h.core + 'clients/rustIndexingClientRuntime.ts'
+  const parseClient = clients.find(([rel]) => rel === parseClientPath)[1]
+  const cleanup = "signal?.removeEventListener('abort', abort)"
+  assert(parseClient.includes(cleanup), 'parse listener cleanup mutant anchor missing')
+  await assert.rejects(() => checkCase(h.scenarios().find(s => s.id === 'runRustFontParseBatch/oneshot'),
+    new Map([[parseClientPath, parseClient.replace(cleanup, 'void abort')]])), 'parse listener cleanup mutant accepted')
   const snapshotAnchor = 'hasRustCoreInteractiveWork: () => rustCoreScheduler.hasInteractiveWork() || sharedIo.hasForegroundWork() || rustCoreDaemon.hasSubmittedWork(),'
   const snapshots = [
     ['scheduler omitted', 'sharedIo.hasForegroundWork() || rustCoreDaemon.hasSubmittedWork()'],
@@ -415,7 +451,7 @@ async function checkMutants() {
     const overrides = new Map([[transportPath, transport.replace(snapshotAnchor, 'hasRustCoreInteractiveWork: () => ' + expression + ',')]])
     assert.throws(() => checkWorkSnapshot(overrides), /work snapshot/, 'work snapshot causal mutant accepted: ' + name)
   }
-  return tests.length + snapshots.length
+  return tests.length + snapshots.length + 1
 }
 
 async function main() {
@@ -435,6 +471,6 @@ async function main() {
   const crlf = new Map([[transportPath, transport], [workerPath, worker], ...clients].map(([rel, text]) => [rel, text.replace(/\r?\n/g, '\r\n')]))
   checkWorkSnapshot(crlf)
   for (const scenario of scenarios.filter(s => ['oneshot', 'submitted'].includes(s.settings.mode))) await checkCase(scenario, crlf)
-  console.log(`[diagnostics:rust-worker-transport] ${scenarios.filter(s => !authorityMethods.has(s.method) && !['runRustFontIndexListWorker', 'runRustSharedMetadataOverlayRead', 'runRustPreviewRenderImage'].includes(s.method)).length} frozen unaffected command cases, ${scenarios.filter(s => authorityMethods.has(s.method)).length} exact authority-input extensions, ${scenarios.filter(s => s.method === 'runRustFontIndexListWorker').length} explicit migrated list cases, ${scenarios.filter(s => s.method === 'runRustSharedMetadataOverlayRead').length} isolated overlay cases, ${scenarios.filter(s => s.method === 'runRustPreviewRenderImage').length} isolated unproven preview cases, ${listingNegatives} rejected listing read proofs, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
+  console.log(`[diagnostics:rust-worker-transport] ${scenarios.filter(s => !authorityMethods.has(s.method) && !['runRustFontParseBatch', 'runRustFontIndexListWorker', 'runRustSharedMetadataOverlayRead', 'runRustPreviewRenderImage'].includes(s.method)).length} frozen unaffected command cases, ${scenarios.filter(s => authorityMethods.has(s.method)).length} exact authority-input extensions, ${scenarios.filter(s => s.method === 'runRustFontIndexListWorker').length} explicit migrated list cases, ${scenarios.filter(s => s.method === 'runRustFontParseBatch').length} bounded parse cases, ${scenarios.filter(s => s.method === 'runRustSharedMetadataOverlayRead').length} isolated overlay cases, ${scenarios.filter(s => s.method === 'runRustPreviewRenderImage').length} isolated unproven preview cases, ${listingNegatives} rejected listing read proofs, ${h.sequenceNames.length} state/lifecycle sequences, 28 file scopes, real Node success/timeout/maxBuffer/abort, ${mutants} rejected mutants and CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-transport]', error.stack || error); process.exitCode = 1 })

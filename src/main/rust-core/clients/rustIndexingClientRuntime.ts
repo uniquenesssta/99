@@ -1,3 +1,4 @@
+import { currentSharedIoSignal } from '../../path/sharedFileSystemRuntime'
 import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import { rethrowSharedIoProcessError, SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { isOperationCancelledError, throwIfAborted } from '../../performance/ioQueue'
@@ -45,6 +46,10 @@ import type {
 } from '../rustCoreWorkerPayloadTypes'
 import type { RustCoreWorkerRuntimeOptions } from '../rustCoreWorkerContracts'
 import type { RustCoreWorkerTransportRuntime } from '../rustCoreWorkerTransportRuntime'
+
+// Conservative work quantum, not a claim about per-font execution latency.
+export const FONT_PARSE_BATCH_MAX_JOBS = 32
+export const FONT_PARSE_BATCH_MAX_TIMEOUT_MS = 30000
 
 export type RustIndexingClientOptions = Pick<RustCoreWorkerTransportRuntime,
   'diagnoseRustCoreWorker' | 'runRustCoreScheduledCommand' | 'createTemporaryJsonFile'> & Pick<RustCoreWorkerRuntimeOptions, 'appendStartupLog'>
@@ -267,6 +272,8 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
   }
 
   async function runRustFontParseBatch(jobs: FontParseJob[], signal?: AbortSignal): Promise<RustFontParseBatchResult | null> {
+    signal = signal || currentSharedIoSignal()
+    jobs = jobs.map(job => ({ ...job }))
     const requiresSourceStability = jobs.some(job => job.requireSourceStability === true)
     const status = await diagnoseRustCoreWorker()
     if (requiresSourceStability) {
@@ -276,52 +283,77 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
       }
     }
     if (!status.available || !status.path || !hasCapability(status, 'font-parse-batch')) return null
-    if (signal?.aborted) throw new Error('Rust parse batch cancelled')
+    throwIfAborted(signal)
 
     const startedAt = Date.now()
-    const inputFile = createTemporaryJsonFile(`hfm-rust-parse-batch`)
-    const inputPath = inputFile.path
+    const requestedBudget = Number(process.env.HFM_RUST_PARSE_BATCH_TIMEOUT_MS)
+    const budgetMs = Number.isFinite(requestedBudget) && requestedBudget > 0 ? Math.min(5 * 60 * 1000, Math.max(5000, requestedBudget)) : 5 * 60 * 1000
+    const deadline = startedAt + budgetMs
+    const controller = new AbortController()
+    const abort = () => controller.abort(signal?.reason)
+    signal?.addEventListener('abort', abort, { once: true })
+    const budgetError = () => new SharedIoProcessError('Font parse batch total budget exhausted; previous index rows must be retained.', 'unknown', 'font-parse-total-timeout')
+    let expired = false
+    const timer = setTimeout(() => { expired = true; controller.abort(budgetError()) }, budgetMs)
+    const assertActive = () => {
+      throwIfAborted(signal)
+      if (expired || Date.now() >= deadline) throw budgetError()
+    }
+    const results: FontParseJob[] = []
+    const errors: RustFontParseBatchResult['errors'] = []
+    let workerElapsedMs = 0
+    const fullHash = rustFullHashEnabled()
     try {
-      await inputFile.writeJson({
-        jobs,
-        fullHash: rustFullHashEnabled(),
-      })
-      const { stdout } = await runRustCoreScheduledCommand(status.path, [
-        '--font-parse-batch',
-        '--input', inputPath,
-      ], {
-        timeout: Math.max(5000, Number(process.env.HFM_RUST_PARSE_BATCH_TIMEOUT_MS || 5 * 60 * 1000) || 5 * 60 * 1000),
-        windowsHide: true,
-        maxBuffer: 32 * 1024 * 1024,
-        signal,
-      })
-      if (signal?.aborted) throw new Error('Rust parse batch cancelled')
-
-      const payload = parseJsonLine<RustFontParseBatchPayload>(stdout)
-      if (!payload.ok || !Array.isArray(payload.results)) throw new Error(payload.message || 'rust font parse batch returned ok=false')
-      const results = payload.results
-        .map((item) => normalizeRustParseBatchJob(item))
-        .filter((item): item is FontParseJob => Boolean(item))
+      for (let offset = 0; offset < jobs.length; offset += FONT_PARSE_BATCH_MAX_JOBS) {
+        // A settled slice has physically closed before the next one is admitted.
+        // Yield the main event loop so foreground requests can reach the queue.
+        if (offset) await new Promise<void>(resolve => setTimeout(resolve, 0))
+        assertActive()
+        const slice = jobs.slice(offset, offset + FONT_PARSE_BATCH_MAX_JOBS)
+        const inputFile = createTemporaryJsonFile(`hfm-rust-parse-batch`)
+        const sliceStartedAt = Date.now()
+        try {
+          await inputFile.writeJson({ jobs: slice, fullHash })
+          assertActive()
+          options.appendStartupLog(`rust font parse slice started: offset=${offset}, jobs=${slice.length}, total=${jobs.length}, remainingBudgetMs=${Math.max(0, deadline - Date.now())}`)
+          const { stdout } = await runRustCoreScheduledCommand(status.path, [
+            '--font-parse-batch', '--input', inputFile.path,
+          ], {
+            timeout: Math.min(FONT_PARSE_BATCH_MAX_TIMEOUT_MS, deadline - Date.now()),
+            windowsHide: true,
+            maxBuffer: 32 * 1024 * 1024,
+            signal: controller.signal,
+          })
+          assertActive()
+          const payload = parseJsonLine<RustFontParseBatchPayload>(stdout)
+          if (!payload.ok || !Array.isArray(payload.results)) throw new Error(payload.message || 'rust font parse batch returned ok=false')
+          results.push(...payload.results.map(item => normalizeRustParseBatchJob(item)).filter((item): item is FontParseJob => Boolean(item)))
+          if (Array.isArray(payload.errors)) errors.push(...payload.errors)
+          workerElapsedMs += Number(payload.elapsedMs || Date.now() - sliceStartedAt)
+          options.appendStartupLog(`rust font parse slice finished: offset=${offset}, jobs=${slice.length}, completed=${offset + slice.length}, total=${jobs.length}, results=${results.length}, errors=${errors.length}, elapsed=${Date.now() - sliceStartedAt}ms`)
+        } finally {
+          await inputFile.dispose()
+        }
+      }
+      assertActive()
       const result: RustFontParseBatchResult = {
-        results,
-        errors: Array.isArray(payload.errors) ? payload.errors : [],
-        count: Number(payload.count ?? results.length),
-        elapsedMs: Number(payload.elapsedMs || Date.now() - startedAt),
-        workerMode: 'rust-font-parse-batch',
+        results, errors, count: results.length, elapsedMs: workerElapsedMs, workerMode: 'rust-font-parse-batch',
       }
       options.appendStartupLog(`rust font parse batch finished: jobs=${jobs.length}, results=${result.results.length}, errors=${result.errors.length}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${result.elapsedMs}ms`)
       return result
     } catch (error) {
+      if (expired && !signal?.aborted) throw budgetError()
       rethrowSharedIoProcessError(error)
+      throwIfAborted(signal)
+      if (isOperationCancelledError(error)) throw error
       if (requiresSourceStability) {
-        throwIfAborted(signal)
-        if (isOperationCancelledError(error)) throw error
         throw new SharedIoProcessError('Stable font parse batch failed; previous index rows must be retained.', 'unknown', 'font-parse-source-stability-failed')
       }
       options.appendStartupLog(`rust font parse batch failed: ${error instanceof Error ? error.message : String(error)}; ${nodeFontkitScanFallbackFailureLogSuffix()}`)
       return null
     } finally {
-      await inputFile.dispose()
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', abort)
     }
   }
 
@@ -704,3 +736,4 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
     runRustWatcherPreflight,
   }
 }
+

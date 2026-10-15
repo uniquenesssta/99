@@ -2,17 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import type { SharedWatchStatus } from '../../../../shared/sharedWatchStatus'
 import { createSharedWatchStatusPoller, sharedWatchStatusPresentation } from '../../runtime/app/sharedWatchStatusRuntime'
 
-export function SharedWatchStatusBar({ developerStatus }: { developerStatus?: string }): JSX.Element | null {
+/** The App owns polling; switching the developer page only changes presentation. */
+export function useSharedWatchStatus(): SharedWatchStatus | null {
   const [status, setStatus] = useState<SharedWatchStatus | null>(null)
   const poller = useRef<ReturnType<typeof createSharedWatchStatusPoller> | null>(null)
   if (!poller.current) poller.current = createSharedWatchStatusPoller({ read: () => window.hfm.getSharedWatchStatus() })
   useEffect(() => poller.current!.start(setStatus), [])
+  return status
+}
+
+export function SharedWatchStatusCard({ status }: { status: SharedWatchStatus | null }): JSX.Element {
   const presentation = sharedWatchStatusPresentation(status)
-  if (!presentation && developerStatus === undefined) return null
   return (
-    <footer className="statusbar">
-      {presentation && <span role="status" title={presentation.detail} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{presentation.text}</span>}
-      {developerStatus !== undefined && <span title={developerStatus} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{presentation ? ' · ' : ''}{developerStatus}</span>}
-    </footer>
+    <div className="developer-card wide" data-shared-watch-status>
+      <h3>NAS 监听</h3>
+      <p role="status">{presentation?.text || '当前没有共享监听位置。'}</p>
+      {presentation && <pre>{presentation.detail}</pre>}
+    </div>
   )
 }

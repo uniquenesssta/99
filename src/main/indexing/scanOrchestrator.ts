@@ -227,6 +227,7 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
               signature,
               contentHash,
               cached: context.cache.entries[rootCacheKey],
+              forceParse: !!context.cache.rebuildRequestId,
             })
 
             if (decision.action === 'skip-bad') {

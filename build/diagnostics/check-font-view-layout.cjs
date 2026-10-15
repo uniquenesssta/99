@@ -120,23 +120,20 @@ function makeDomFile() {
   const gridNativeSamples = process.env.HFM_GRID_NATIVE_SAMPLES ? JSON.parse(fs.readFileSync(path.resolve(root, process.env.HFM_GRID_NATIVE_SAMPLES), 'utf8')) : []
   fs.appendFileSync(file, '<script>window.gridNativeSamples=' + JSON.stringify(gridNativeSamples).replace(/</g, '\\u003c') + ';window.gridWebFontData=' + JSON.stringify(webFontData) + '</script>')
   const detailBundle = require('esbuild').buildSync({ entryPoints: [path.join(__dirname, 'lib/font-detail-transition-dom.tsx')], bundle: true, write: false, format: 'iife', platform: 'browser', alias: { '@shared': path.join(root, 'src/shared') }, define: { 'process.env.NODE_ENV': '"development"', 'import.meta.env': '{}' } }).outputFiles[0].text
-  // Restore the actual pre-fix stylesheet sources, rather than simulating an
-  // unrelated overflow. The DOM gate must attribute failure to shell sizing.
-  const shellOriginalCss = css(undefined, file => {
+  const shellFooterGapCss = css(undefined, file => {
     const source = read(file).replace(/\r\n/g, '\n')
-    if (file === prefix + 'styles/02-shell-sidebar.css') {
-      const fixed = '.app {\n  height: 100vh;\n  display: grid;\n  grid-template-columns: minmax(0, 1fr);'
-      assert.ok(source.includes(fixed), 'app shell mutation anchor missing')
-      return source.replace(fixed, '.app {\n  height: 100vh;\n  display: grid;')
-    }
-    if (file === prefix + 'styles/font-list-card-detail/font-list-card-detail-03.css') {
-      const fixed = '.statusbar {\n  height: 30px;\n  min-width: 0;'
-      assert.ok(source.includes(fixed), 'status footer mutation anchor missing')
-      return source.replace(fixed, '.statusbar {\n  height: 30px;')
-    }
-    return source
+    if (file !== prefix + 'styles/02-shell-sidebar.css') return source
+    const fixed = 'grid-template-rows: auto minmax(0, 1fr);'
+    assert.equal(source.split(fixed).length - 1, 1, 'two-row app shell mutation anchor missing')
+    return source.replace(fixed, 'grid-template-rows: auto minmax(0, 1fr) 30px;')
   })
-  fs.appendFileSync(file, '<script>window.appShellOriginalCss=' + JSON.stringify(shellOriginalCss).replace(/</g, '\\u003c') + '</script>')
+  fs.appendFileSync(file, '<script>window.appShellFooterGapCss=' + JSON.stringify(shellFooterGapCss).replace(/</g, '\\u003c') + '</script>')
+  // A separate production build proves the actual compile-time boundary,
+  // rather than toggling a prop while all components remain a dev build.
+  for (const development of [false, true]) {
+    const statusBundle = require('esbuild').buildSync({ entryPoints: [path.join(__dirname, 'lib/developer-status-dom.tsx')], bundle: true, write: false, format: 'iife', platform: 'browser', alias: { '@shared': path.join(root, 'src/shared') }, define: { 'process.env.NODE_ENV': JSON.stringify(development ? 'development' : 'production'), 'import.meta.env': JSON.stringify({ DEV: development, PROD: !development }) } }).outputFiles[0].text
+    fs.appendFileSync(file, '<script>' + statusBundle.replace(/<\/script/gi, '<\\/script') + '</script>')
+  }
   fs.appendFileSync(file, '<script>' + detailBundle.replace(/<\/script/gi, '<\\/script') + '</script>')
   return { file, temp, count: cases.length }
 }
@@ -156,7 +153,7 @@ if (process.argv.includes('--dom') || process.argv.includes('--dom-feedback') ||
       process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || '')
       if (result.error) throw result.error
       assert.equal(result.status, 0, 'real Electron DOM geometry gate failed')
-      console.log(process.argv.includes('--dom-shell-only') ? '[font-view-layout] real app shell, original-source mutant and native right-edge controls passed' : process.argv.includes('--dom-feedback') ? '[font-view-layout] real DOM paging and scrollbar feedback passed' : `[font-view-layout] ${count} real DOM scenarios and legacy-gap mutant passed`)
+      console.log(process.argv.includes('--dom-shell-only') ? '[font-view-layout] real app shell, obsolete-footer-row mutant and native right-edge controls passed' : process.argv.includes('--dom-feedback') ? '[font-view-layout] real DOM paging and scrollbar feedback passed' : `[font-view-layout] ${count} real DOM scenarios and legacy-gap mutant passed`)
     } finally { fs.rmSync(temp, { recursive: true, force: true }) }
   }
 }

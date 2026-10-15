@@ -1,4 +1,4 @@
-// Real shell, toolbar, cards and footer. Only backend receipts and sidebar /
+// Real shell, toolbar and cards after developer-status migration. Only backend receipts and sidebar /
 // detail contents are fixtures; the production layout owns every measured box.
 import React, { useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -7,7 +7,6 @@ import { AppTopbar } from '../../../src/renderer/src/components/app/AppTopbar'
 import { AppLayout } from '../../../src/renderer/src/components/app/AppLayout'
 import { FontListPanel } from '../../../src/renderer/src/components/app/FontListPanel'
 import { FontCard } from '../../../src/renderer/src/components/FontCard'
-import { SharedWatchStatusBar } from '../../../src/renderer/src/components/app/SharedWatchStatusBar'
 import { buildFontViewLayout } from '../../../src/renderer/src/runtime/app/fontViewLayoutRuntime'
 import { buildVirtualLayout } from '../../../src/renderer/src/fontViewRuntime'
 import { useFontViewportResizeObserverRuntime } from '../../../src/renderer/src/runtime/app/effects/useFontViewportResizeObserverRuntime'
@@ -18,7 +17,7 @@ const fonts = Array.from({ length: 100 }, (_, i) => ({ id: `shell-${i}`, path: `
 const noop = () => {}, frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const check = (ok: unknown, message: string) => { if (!ok) throw Error('[app-shell] ' + message) }
-type Scenario = { mode: 'list' | 'grid'; detail: boolean; developer: boolean; stress?: boolean; indexing?: boolean }
+type Scenario = { mode: 'list' | 'grid'; detail: boolean; stress?: boolean; indexing?: boolean }
 let root: ReturnType<typeof createRoot> | undefined, current: any, scenario: Scenario
 let previousBridge: typeof window.hfm, sidebarPreference: string | null
 let cleanupScrollbars: (() => void) | undefined, originalCss: string, style: HTMLStyleElement
@@ -48,18 +47,17 @@ function Fixture(props: Scenario) {
       } as any)} />
       {props.detail && <section className="detail-panel detail-dock-panel"><div className="detail-header">字体详情</div><button>关闭详情</button></section>}
     </AppLayout>
-    <SharedWatchStatusBar developerStatus={props.developer ? status : undefined} />
   </div>
 }
 
 function geometry() {
-  const selectors = ['.app', '.topbar', '.topbar-right', '.window-controls', '.window-close', '.cache-split', '.layout', '.font-list-panel', '.font-command-header', '.list-toolbar', '.search-input', '.font-virtual-scroller', '.font-card', '.detail-dock-panel', '.statusbar']
+  const selectors = ['.app', '.topbar', '.topbar-right', '.window-controls', '.window-close', '.cache-split', '.layout', '.font-list-panel', '.font-command-header', '.list-toolbar', '.search-input', '.font-virtual-scroller', '.font-card', '.detail-dock-panel']
   return { viewport: { width: innerWidth, height: innerHeight }, scenario: { ...scenario, indexing: current?.indexingActive }, nodes: Object.fromEntries(selectors.map(selector => {
     const node = select(selector)
     if (!node) return [selector, null]
     const computed = getComputedStyle(node)
     return [selector, { rect: node.getBoundingClientRect().toJSON(), clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, minWidth: computed.minWidth, gridTemplateColumns: computed.gridTemplateColumns, overflowX: computed.overflowX }]
-  })), footer: select('.statusbar')?.textContent, search: current?.search, actions: actions.slice(), trustedClicks: trustedClicks.slice() }
+  })), search: current?.search, actions: actions.slice(), trustedClicks: trustedClicks.slice() }
 }
 ;(window as any).appShellContainmentEvidence = () => lastEvidence || geometry()
 
@@ -79,16 +77,15 @@ async function mount(next: Scenario) {
   await settle()
 }
 function assertBounds() {
-  for (const selector of ['.app', '.topbar', '.topbar-right', '.window-controls', '.cache-split', '.layout', '.font-list-panel', '.font-command-header', '.list-toolbar', '.search-input', '.font-virtual-scroller', '.statusbar']) {
+  for (const selector of ['.app', '.topbar', '.topbar-right', '.window-controls', '.cache-split', '.layout', '.font-list-panel', '.font-command-header', '.list-toolbar', '.search-input', '.font-virtual-scroller']) {
     const node = select(selector), box = node.getBoundingClientRect()
     check(box.left >= -1 && box.right <= innerWidth + 1, selector + ' outside viewport: ' + JSON.stringify(geometry()))
     check(node.scrollWidth <= node.clientWidth + 1, selector + ' has concealed horizontal overflow: ' + JSON.stringify(geometry()))
   }
-  const footer = select('.statusbar'), box = footer.getBoundingClientRect()
-  check(Math.abs(box.height - 30) <= 1 && Math.abs(box.bottom - innerHeight) <= 1, 'footer changed its existing visible row')
-  check(footer.textContent?.includes('正在处理：0 项'), 'fixture omitted simultaneous NAS status')
-  if (scenario.developer) check(footer.lastElementChild?.getAttribute('title') === current.status, 'truncated developer text lost full title')
-  else check(footer.children.length === 1, 'production footer exposed developer text')
+  check(!host().querySelector('footer, .statusbar, .selection-command-status'), 'ordinary shell regained status/footer DOM')
+  check(!host().textContent?.includes(current.status), 'ordinary shell exposed diagnostic text')
+  const layoutBox = select('.layout').getBoundingClientRect(), appBox = select('.app').getBoundingClientRect()
+  check(Math.abs(layoutBox.bottom - appBox.bottom) <= 1, 'removed footer left a bottom layout gap')
   for (const selector of ['.window-minimize', '.window-maximize', '.window-close', '.search-input']) {
     const node = select(selector), p = point(node)
     check(node.contains(document.elementFromPoint(p.x, p.y)), selector + ' is unreachable at its actual location')
@@ -118,14 +115,14 @@ function assertBounds() {
   }
   const cases = [], busyTransitions = []
   try {
-    for (const mode of ['list', 'grid'] as const) for (const detail of [false, true]) for (const developer of [false, true]) {
-      await mount({ mode, detail, developer }); assertBounds(); cases.push(geometry())
+    for (const mode of ['list', 'grid'] as const) for (const detail of [false, true]) {
+      await mount({ mode, detail }); assertBounds(); cases.push(geometry())
     }
     // The real BrowserWindow minimum is 980px (windowRuntime.ts). Keep 720px
     // as the existing defensive gate; cover the added cancel button and the
     // busy-to-completed status transition at supported screenshot/wide sizes.
     if (innerWidth >= 980) for (const detail of [false, true]) {
-      await mount({ mode: 'list', detail, developer: true, indexing: true }); assertBounds()
+      await mount({ mode: 'list', detail, indexing: true }); assertBounds()
       check(host().querySelectorAll('.cache-primary-button').length === 2, 'busy header omitted cancel-index control')
       const busy = geometry()
       flushSync(() => current.setIndexingActive(false))
@@ -133,35 +130,29 @@ function assertBounds() {
       check(host().querySelectorAll('.cache-primary-button').length === 1 && current.status === refreshStatus, 'same-mounted refresh completion did not restore long status')
       busyTransitions.push({ busy, completed: geometry() })
     }
-    // Record the reported text separately from the adversarial long receipt.
-    // Font metrics can differ between Windows installations, so expose the
-    // exact-case result instead of substituting a stress-only causal claim.
-    await mount({ mode: 'list', detail: false, developer: true })
-    style.textContent = (window as any).appShellOriginalCss
-    await settle()
-    const exactOriginal = geometry(), exactFooter = select('.statusbar').getBoundingClientRect(), exactTopbar = select('.topbar').getBoundingClientRect()
-    const exactOriginalReproduced = exactFooter.right > innerWidth + 1 && exactTopbar.right > innerWidth + 1 && Math.abs(exactFooter.width - exactTopbar.width) < 2
-    style.textContent = originalCss
-    await settle(); assertBounds()
-    await mount({ mode: 'list', detail: false, developer: true, stress: true }); assertBounds()
+    // Long completed/busy diagnostic text must no longer size ordinary pages.
+    await mount({ mode: 'list', detail: false, stress: true }); assertBounds()
     const stress = geometry()
-    // Same mounted production tree and receipts, with only the two repaired
-    // source declarations removed. A specific joint header/footer expansion
-    // proves this gate rejects the original cause, not an incidental exception.
-    style.textContent = (window as any).appShellOriginalCss
+    // Restore only the obsolete 30px shell row. No fake footer node or
+    // unrelated overflow is needed to prove the empty-gap regression gate.
+    style.textContent = (window as any).appShellFooterGapCss
     await settle()
-    const mutant = geometry(), footer = select('.statusbar').getBoundingClientRect(), topbar = select('.topbar').getBoundingClientRect()
-    check(footer.right > innerWidth + 20 && topbar.right > innerWidth + 20 && Math.abs(footer.width - topbar.width) < 2, 'original CSS failed to reproduce shared shell-track expansion: ' + JSON.stringify(mutant))
+    const mutant = geometry(), gap = select('.app').getBoundingClientRect().bottom - select('.layout').getBoundingClientRect().bottom
+    check(Math.abs(gap - 30) <= 1, 'footer-gap CSS mutant did not reproduce the removed row: ' + JSON.stringify(mutant))
+    let footerGapRejected = false
+    try { assertBounds() } catch (error) { footerGapRejected = String(error).includes('bottom layout gap') }
+    check(footerGapRejected, 'obsolete footer grid row escaped the geometry gate')
     style.textContent = originalCss
     await settle(); assertBounds()
-    await mount({ mode: 'list', detail: false, developer: true }); assertBounds()
+    await mount({ mode: 'list', detail: false }); assertBounds()
     cleanupScrollbars = setupFloatingScrollbars()
-    return { cases, busyTransitions, exactOriginal, exactOriginalReproduced, stress, mutant, originalSourceRejected: true, screenshot: geometry() }
+    return { cases, busyTransitions, stress, mutant, footerGapRejected, screenshot: geometry() }
+
   } catch (error) { lastEvidence = geometry(); throw error }
 }
-;(window as any).appShellOriginalPixels = async (enabled: boolean) => {
-  // Keep the same exact-text tree mounted for an honest before/after capture.
-  style.textContent = enabled ? (window as any).appShellOriginalCss : originalCss
+;(window as any).appShellFooterGapPixels = async (enabled: boolean) => {
+  // Keep the same mounted tree for the obsolete-row regression capture.
+  style.textContent = enabled ? (window as any).appShellFooterGapCss : originalCss
   await settle()
   if (!enabled) assertBounds()
   return geometry()

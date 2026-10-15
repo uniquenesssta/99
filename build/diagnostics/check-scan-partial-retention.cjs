@@ -146,8 +146,8 @@ function managedWrapper(runtime, effects, transform = value => value) {
   visit(tree); assert(expression, 'actual managed scan wrapper missing')
   const js = ts.transpileModule(`export const run = ${expression}`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const exports = {}
-  new Function('exports', 'assertFeedbackReady', 'scanFoldersRuntime', 'syncMergedIndexForRootSnapshot', 'delayToEventLoop', 'isApplicationClosing', js)(
-    exports, () => {}, () => runtime, async folder => effects.push(folder), async () => {}, () => false)
+  new Function('exports', 'assertFeedbackReady', 'scanFoldersRuntime', 'syncMergedIndexForRootSnapshot', 'delayToEventLoop', 'isApplicationClosing', 'sourceRecovery', js)(
+    exports, () => {}, () => runtime, async folder => effects.push(folder), async () => {}, () => false, { resume() {}, pause() {} })
   return exports.run
 }
 async function cancelledWrapperCases(transform) {

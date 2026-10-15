@@ -2,10 +2,10 @@ import { executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFil
 import { awaitPhysicalIoClose } from '../../path/ioDeadlineRuntime'
 import { dirname, join, resolve } from 'node:path'
 import type { CacheStats } from '../../../shared/types'
-import { sqliteSidecarPaths } from '../cachePaths'
+import { requestRootIndexRebuild } from '../../indexing/root-index/rootIndexRebuildRequestRuntime'
 import {
-  LEGACY_ROOT_SCAN_CACHE_LOCK_FILE_NAME, ROOT_CACHE_LOCK_DIR_NAME, ROOT_CACHE_MANIFEST_FILE_NAME,
-  ROOT_INDEX_DB_FILE_NAME, ROOT_INDEX_LATEST_FILE_NAME, ROOT_INDEX_LOCK_FILE_NAME,
+  LEGACY_ROOT_SCAN_CACHE_LOCK_FILE_NAME, ROOT_CACHE_LOCK_DIR_NAME,
+  ROOT_INDEX_LOCK_FILE_NAME,
   ROOT_INDEX_BUILD_LOCK_FILE_NAME, ROOT_SCAN_CACHE_LOCK_FILE_NAME,
 } from '../constants'
 import { withCacheCleanupLocks, type CacheCleanupOutcome } from './cacheCleanupLeaseRuntime'
@@ -62,15 +62,11 @@ export function createCacheCleanupRuntime(options: ScanCacheStorageRuntimeOption
       join(cacheDir, ROOT_CACHE_LOCK_DIR_NAME, ROOT_INDEX_LOCK_FILE_NAME), join(cacheDir, ROOT_SCAN_CACHE_LOCK_FILE_NAME),
       join(dbDir, ROOT_SCAN_CACHE_LOCK_FILE_NAME), join(cacheDir, LEGACY_ROOT_SCAN_CACHE_LOCK_FILE_NAME)]
     await withCacheCleanupLocks(lockPaths, async remove => {
-      // The general stats/list helper tolerates inaccessible directories. Cleanup
-      // must distinguish a confirmed absent directory from incomplete enumeration.
-      let names: string[]
-      try { names = await fsp.readdir(dbDir) }
-      catch (error) { if (!missing(error)) throw error; names = [] }
-      const dbFiles = new Set([dbPath, ...names.filter(name => name.toLowerCase() === ROOT_INDEX_DB_FILE_NAME || /^index\..+\.sqlite$/i.test(name)).map(name => join(dbDir, name))])
-      const targets = [...dbFiles].flatMap(sqliteSidecarPaths)
-      targets.push(...jsonPaths, join(cacheDir, ROOT_CACHE_MANIFEST_FILE_NAME), join(dbDir, ROOT_INDEX_LATEST_FILE_NAME))
-      consume(report, await remove(targets))
+      // Invalidate parse reuse, not the last usable source. The request survives
+      // cancellation/restart; the complete replacement writer acknowledges it.
+      const requestId = await requestRootIndexRebuild(cacheDir)
+      consume(report, await remove(jsonPaths))
+      log(`scan cache rebuild requested: cacheDir=${cacheDir}, requestId=${requestId}; active index retained until replacement commits`)
     }, log)
   }
 

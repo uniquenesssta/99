@@ -27,7 +27,7 @@ function appStatements(source) {
 
 function fixture({ appSource = fs.readFileSync(appFile, 'utf8'), transforms = {} } = {}) {
   const timers = new Map(), requests = [], cancelled = [], traces = [], status = []
-  let timerId = 0, indexChanged
+  let timerId = 0, indexChanged, queryRecovered = 0
   const window = { setTimeout: fn => { timers.set(++timerId, fn); return timerId }, clearTimeout: id => timers.delete(id) }
   const h = setup({ globals: { window }, transforms })
   h.hook.useLayoutEffect = h.hook.useEffect
@@ -63,6 +63,8 @@ function fixture({ appSource = fs.readFileSync(appFile, 'utf8'), transforms = {}
     requests.push({ request, token, resolve, reject }); return promise
   }, cancelFontQuery: async token => { cancelled.push(token) },
   onFontIndexChanged: handler => { indexChanged = handler; return () => { indexChanged = undefined } } }
+  options.reportQueryError = options.setStatus
+  options.clearQueryError = () => { queryRecovered++ }
   const context = { window, ...options,
     useRendererDatabasePageRuntime: h.load(renderer + 'runtime/database/useRendererDatabasePageRuntime.ts').useRendererDatabasePageRuntime,
     useAppFontDerivedRuntime: h.load(renderer + 'runtime/app/useAppFontDerivedRuntime.ts').useAppFontDerivedRuntime,
@@ -85,6 +87,7 @@ function fixture({ appSource = fs.readFileSync(appFile, 'utf8'), transforms = {}
     setStatus: options.setStatus, refreshDatabaseDerivedState: () => refresh({ ...options, timerRef: { current: null }, clearTimeout: window.clearTimeout }) })
   events.flush()
   return { options, requests, cancelled, traces, status, fonts, render, dispatch, settle, resultFor, key,
+    get queryRecovered() { return queryRecovered },
     async commit(revision) { indexChanged({ source: 'projection', projectionRevision: revision, upserts: [], deletes: [], errors: [] }); await tick() },
     close() { h.hook.cleanup(); events.cleanup() } }
 }
@@ -109,6 +112,7 @@ async function refreshCases(settings = {}) {
     f.options.indexingActive = false; f.render()
     f.dispatch(); output = await f.settle()
     authoritative(output, 5491, ids(f.fonts.slice(0, 100)))
+    assert.equal(f.queryRecovered, 1, 'QUERY_RECOVERY: accepted first page did not retire its error notice')
     const accepted = f.options.databasePageResult, count = f.requests.length
     f.options.indexingActive = true; output = f.render()
     authoritative(output, 5491, ids(accepted.items))
@@ -173,12 +177,15 @@ async function refreshCases(settings = {}) {
     assert.equal(f.options.databasePageResult, null)
     assert(f.options.databaseQueryFailedKey, 'real query failure lost fallback key')
     assert(f.status.some(value => value.includes('已回退前端筛选')), 'real failure lost memory fallback status')
+    const recoveryBeforeRetired = f.queryRecovered
     retired.resolve(f.resultFor(retired, 4783)); await tick()
+    assert.equal(f.queryRecovered, recoveryBeforeRetired, 'late old scope cleared the current failure notice')
     assert.equal(f.options.databasePageResult, null, 'late old-scope result revived a failed current page')
     await f.commit(5); f.render(); f.render(); f.dispatch()
     const recovered = f.fonts.filter(font => !font.systemInstalled).slice(0, 100)
     output = await f.settle(f.requests.at(-1), 4783, recovered)
     authoritative(output, 4783, ids(recovered))
+    assert.equal(f.queryRecovered, recoveryBeforeRetired + 1, 'QUERY_RECOVERY: accepted recovery did not retire its notice')
     for (const [revision, error] of [[6, Object.assign(Error('retired query'), { reason: 'query-superseded' })], [7, Error('temporary same-scope read failure')]]) {
       await f.commit(revision); f.render(); f.render(); f.dispatch()
       f.requests.at(-1).reject(error); await tick(); output = f.render()
@@ -203,6 +210,9 @@ async function run() {
   const current = fs.readFileSync(pageFile, 'utf8'), scope = 'databaseResultScope === databaseQueryScope'
   assert.equal(current.split(scope).length, 2, 'page scope mutation anchor changed')
   await assert.rejects(() => refreshCases({ transforms: { [pageFile]: text => text.replace(scope, 'true') } }), /wrong-scope page revived/)
+  const recovered = '        options.onReadRecovered?.()'
+  assert.equal(current.split(recovered).length, 2, 'query recovery mutation anchor')
+  await assert.rejects(() => refreshCases({ transforms: { [pageFile]: text => text.replace(recovered, '') } }), /QUERY_RECOVERY/)
   console.log('[diagnostics:manual-refresh-page-authority] production App/page/derived wiring retains current-scope pages and totals during refresh; real commit invalidation, late-response rejection, navigation/raw offsets, first-load/failure/disabled guards; LF/CRLF and masking/scope mutants passed (controlled ports).')
 }
 module.exports = { run, refreshCases }

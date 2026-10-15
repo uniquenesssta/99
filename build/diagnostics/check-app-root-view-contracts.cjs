@@ -6,6 +6,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 const crypto = require('node:crypto')
 const { restoreRetiredCacheStatsPorts } = require('./helpers/cacheStatsConsumerRetirementFixture.cjs')
+const { normalizeOperationStatusWiring } = require('./helpers/developerStatusMigrationFixture.cjs')
 const root = path.resolve(__dirname, '../..')
 const appPath = 'src/renderer/src/App.tsx', viewPath = 'src/renderer/src/components/app/AppRootView.tsx'
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8')
@@ -20,6 +21,7 @@ function viewDeclarations(app) {
   const declarations = []
   for (const attribute of found.attributes.properties) {
     const group = attribute.name.text
+    if (group === 'operationNotice') continue
     const name = attribute.initializer.expression.getText(file)
     assert.equal(name, `${group}ViewProps`, 'view must use its typed local group')
     let declaration
@@ -59,7 +61,7 @@ function checkLifecycle(app, view) {
   assert(!indexEvent.includes('requestPreviewFont'), 'index notification regained invisible foreground demand')
   const pageAuthority = '  const displayDatabasePageReady = databasePageReady\n'
   assert.equal(normalizedApp.split(pageAuthority).length - 1, 1, 'App must retain hook-owned page authority during indexing')
-  const normalized = restoreRetiredCacheStatsPorts(appPath, normalizedApp)
+  const normalized = restoreRetiredCacheStatsPorts(appPath, normalizeOperationStatusWiring(normalizedApp))
     .replace(pageAuthority, '  const displayDatabasePageReady = databasePageReady && !indexingActive\n')
     .replace('usePreviewController({\n    closingLifecycle: rendererClosingLifecycle,', 'usePreviewController({')
     .replace('    previewConsumerEnabled: false, // FontDetailPanel currently consumes no preview image.\n', '')
@@ -86,13 +88,24 @@ function checkLifecycle(app, view) {
   assert(ts.isReturnStatement(tail[6]))
   const hash = text => crypto.createHash('sha256').update(text).digest('hex')
   assert.equal(hash(normalized.slice(0, marker)), fixture.lifecyclePrefixSha256, 'App hooks/effects/commands changed')
-  const statusImport = "import { SharedWatchStatusBar } from './SharedWatchStatusBar'\n"
-  const statusFooter = '      <SharedWatchStatusBar developerStatus={developer.IS_DEVELOPMENT ? developer.status : undefined} />'
+  const statusImport = "import { useSharedWatchStatus } from './SharedWatchStatusCard'\n"
+  const statusOwner = '  const sharedWatchStatus = useSharedWatchStatus()\n'
+  const statusProp = '          sharedWatchStatus={sharedWatchStatus}\n'
+  const noticeImport = "import { OperationStatusNotice, type OperationStatusNoticeProps } from './OperationStatusNotice'\n"
+  const notice = '      {operationNotice && <OperationStatusNotice {...operationNotice} />}'
   const normalizedView = view.replace(/\r\n/g, '\n')
   assert.equal(normalizedView.split(statusImport).length - 1, 1, 'shared watch status owner must be imported exactly once')
-  assert.equal(normalizedView.split(statusFooter).length - 1, 1, 'shared watch status owner must preserve the development-only status prop')
-  const legacyView = normalizedView.replace(statusImport, '').replace(statusFooter, '      {developer.IS_DEVELOPMENT && <footer className="statusbar">{developer.status}</footer>}')
+  assert.equal(normalizedView.split(statusOwner).length - 1, 1, 'shared watch status owner must remain unconditional and unique at App root')
+  assert.equal(normalizedView.split(statusProp).length - 1, 1, 'shared watch status owner must pass its snapshot to developer content')
+  assert(!normalizedView.includes('SharedWatchStatusBar') && !normalizedView.includes('<footer'), 'App regained the removed status footer')
+  assert.equal(normalizedView.split(notice).length - 1, 1, 'operation notice must render independently of development/page visibility')
+  const legacyView = normalizedView.replace(statusImport, '').replace(statusOwner, '').replace(statusProp, '')
+    .replace(noticeImport, '').replace('  operationNotice?: OperationStatusNoticeProps\n', '')
+    .replace("DeveloperPanelKeys | 'sharedWatchStatus'", 'DeveloperPanelKeys')
+    .replace('developer, operationNotice } = props', 'developer } = props')
+    .replace(notice, '      {developer.IS_DEVELOPMENT && <footer className="statusbar">{developer.status}</footer>}')
   assert.equal(hash(legacyView), fixture.rootViewSha256, 'root view lifecycle/dev switch changed')
+
 }
 function snapshot(app, view, bindings, development, collapsed, hasFolders = false) {
   const runtime = { jsx: (type, props) => typeof type === 'function' ? type(props) : ({type, props}), jsxs: (type, props) => runtime.jsx(type, props) }
@@ -102,27 +115,33 @@ function snapshot(app, view, bindings, development, collapsed, hasFolders = fals
     vm.runInNewContext('(function(require,exports){'+code+'\n})')((id) => id==='react/jsx-runtime' ? runtime : imports(id), module.exports)
     return module.exports
   }
-  const actual = compile(view, id => { const name=path.posix.basename(id); return {[name]:name} }).AppRootView
+  const sharedStatus = { roots: [] }
+  const actual = compile(view, id => { const name=path.posix.basename(id); return name === 'SharedWatchStatusCard' ? { useSharedWatchStatus: () => sharedStatus } : {[name]:name} }).AppRootView
   const {file,found} = jsx(app)
   // The extracted caller uses the actual AppRootView function, not an emulated prop mapping.
-  const source='import { AppRootView } from "./root"; export function render({'+bindings.join(',')+'}: any) { '+viewDeclarations(app)+' return '+found.getText(file)+' }'
+  const source='import { AppRootView } from "./root"; export function render({'+[...bindings,'actionStatus','dismissActionStatus'].join(',')+'}: any) { '+viewDeclarations(app)+' return '+found.getText(file)+' }'
   const caller=compile(source,()=>({AppRootView:actual}))
   const values=Object.fromEntries(bindings.map(name=>[name,'binding:'+name]))
+  values.actionStatus='binding:actionStatus'; values.dismissActionStatus='binding:dismissActionStatus';
   values.IS_DEVELOPMENT=development; values.library={previewText:'binding:library.previewText'}
   Object.defineProperty(values.library, 'folders', { value: hasFolders ? ['fixture-root'] : [], enumerable: false })
   const tree=caller.render(values)
   function normalize(value) {
     if(Array.isArray(value))return value.map(normalize)
-    if(value?.type==='SharedWatchStatusBar') {
-      assert.deepEqual(Object.keys(value.props), ['developerStatus'], 'status footer gained unrelated props')
-      assert.equal(value.props.developerStatus, development ? values.status : undefined, 'developer status escaped its development-only boundary')
+    if(value?.type==='OperationStatusNotice') {
+      assert.deepEqual(Object.keys(value.props), ['message', 'onDismiss'], 'operation notice gained unrelated props')
+      assert.equal(value.props.message, values.actionStatus, 'operation notice lost its independent action message')
+      assert.equal(value.props.onDismiss, values.dismissActionStatus, 'operation notice dismissal disconnected')
+      // Keep the historical snapshot frozen after separately checking the
+      // intentional replacement; other view bindings must remain identical.
       return development ? { type: 'footer', props: { className: 'statusbar', children: values.status } } : false
     }
     if(value?.type==='FontListPanel') {
       assert.equal(value.props.hasWatchedFolders, hasFolders, 'list lost watched-root readiness')
       assert.equal(value.props.installStatusReady, values.installStatusReady, 'list lost status readiness')
       assert.equal(value.props.installStatusMissingCount, values.installStatusMissingCount, 'list lost unknown count')
-      const { hasWatchedFolders, installStatusReady, installStatusMissingCount, ...legacy } = value.props
+      assert.equal(value.props.sharedWatchStatus, sharedStatus, 'list lost the App-owned status snapshot')
+      const { hasWatchedFolders, installStatusReady, installStatusMissingCount, sharedWatchStatus, ...legacy } = value.props
       value = { ...value, props: legacy }
     }
     if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,v])=>[key,normalize(key==='renderSidebar'?v(collapsed,'collapse-callback'):v)]))
@@ -161,11 +180,13 @@ function main() {
   const app=read(appPath),view=read(viewPath)
   checkLifecycle(app, view)
   checkLifecycle(app.replace(/\r?\n/g,'\r\n'), view.replace(/\r?\n/g,'\r\n'))
-  const statusFooter = '<SharedWatchStatusBar developerStatus={developer.IS_DEVELOPMENT ? developer.status : undefined} />'
-  assert(view.includes(statusFooter), 'shared watch status footer mutation anchor drifted')
-  assert.throws(() => checkLifecycle(app, view.replace(statusFooter, '')), /shared watch status owner/, 'status owner removal escaped the gate')
-  assert.throws(() => checkLifecycle(app, view.replace(statusFooter, statusFooter + '\n      ' + statusFooter)), /shared watch status owner/, 'duplicate status owner escaped the gate')
-  assert.throws(() => checkLifecycle(app, view.replace(statusFooter, '<SharedWatchStatusBar developerStatus={developer.status} />')), /development-only/, 'production developer status leak escaped the gate')
+  const statusOwner = '  const sharedWatchStatus = useSharedWatchStatus()'
+  assert(view.includes(statusOwner), 'shared watch status owner mutation anchor drifted')
+  assert.throws(() => checkLifecycle(app, view.replace(statusOwner, '')), /shared watch status owner/, 'status owner removal escaped the gate')
+  assert.throws(() => checkLifecycle(app, view.replace(statusOwner, statusOwner + '\n' + statusOwner)), /shared watch status owner/, 'duplicate status owner escaped the gate')
+  assert.throws(() => checkLifecycle(app, view.replace('sharedWatchStatus={sharedWatchStatus}', 'sharedWatchStatus={null}')), /shared watch status owner/, 'disconnected developer status escaped the gate')
+  assert.throws(() => checkLifecycle(app, view.replace('{operationNotice && <OperationStatusNotice', '{developer.IS_DEVELOPMENT && operationNotice && <OperationStatusNotice')), /operation notice/, 'production operation feedback loss escaped the gate')
+  assert.throws(() => checkLifecycle(app.replace('onReadRecovered: clearQueryError', 'onReadRecovered: dismissActionStatus'), view), /failure\/recovery/, 'unrelated query success clearing action feedback escaped the gate')
   const missingClosingOwner = app.replace(/  const rendererClosingLifecycle = useRendererClosingLifecycleRuntime\(\)\r?\n/, '')
   assert.notEqual(missingClosingOwner, app, 'closing lifecycle owner mutant did not match source')
   assert.throws(() => checkLifecycle(missingClosingOwner, view), /closing lifecycle owner/, 'closing lifecycle owner removal escaped the gate')
@@ -179,7 +200,7 @@ function main() {
   assert.throws(() => viewDeclarations(app.replace("AppRootViewProps['topbar']", 'any')), /group type/, 'untyped view input escaped the gate')
   assert.throws(() => viewDeclarations(app.replace('themeMode: themeMode,', '...operationsController,')), /controller spread/, 'controller forwarding escaped the gate')
   const groupNames=jsx(app).found.attributes.properties.map(p=>p.name?.text)
-  assert.deepEqual(groupNames,['topbar','sidebar','content','detail','overlays','developer'])
+  assert.deepEqual(groupNames,['topbar','sidebar','content','detail','overlays','developer','operationNotice'])
   for(const entry of fixture.cases) {
     assert.equal(snapshot(app,view,fixture.bindings,entry.development,entry.collapsed),entry.hash,'UI wiring changed')
     assert.equal(snapshot(app,view,fixture.bindings,entry.development,entry.collapsed,true),entry.hash,'watched-root readiness changed legacy wiring')
@@ -194,7 +215,7 @@ function main() {
     assert.notEqual(snapshot(disconnected,view,fixture.bindings,false,false),fixture.cases.find(c=>!c.development&&!c.collapsed).hash,`${callback}: wrong recovery action escaped the wiring gate`)
   }
   compilerGate()
-  console.log('[diagnostics:app-root-view-contracts] six typed local groups; explicit renderer-closing owner/wiring plus frozen legacy lifecycle; 18 compiler negatives; frozen UI in four modes; wiring/type/spread/lifecycle mutations and CRLF passed')
+  console.log('[diagnostics:app-root-view-contracts] six typed local groups; App-owned NAS snapshot and independent dismissible feedback; explicit renderer-closing owner/wiring plus frozen legacy lifecycle; 18 compiler negatives; frozen UI in four modes; wiring/type/spread/lifecycle mutations and CRLF passed')
 }
 module.exports={snapshot,jsx}
 if(require.main===module)main()

@@ -1,3 +1,4 @@
+import type { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { isApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import type { FontItem,ScanResult } from '../../../shared/types'
 import { normalizeWatchedFontFolders } from '../../path/fontPathPolicy'
@@ -30,7 +31,7 @@ export function createFontScanActiveJobRuntime(
   scanFolders: (folders: string[], knownFonts?: FontItem[], options?: { jobId?: string; signal?: AbortSignal }) => Promise<ScanResult>,
 ): {
   scanFoldersManaged: (folders: string[], knownFonts?: FontItem[]) => Promise<ScanResult>
-  scanFoldersWhenIdle: (folders: string[]) => Promise<ScanResult>
+  scanFoldersWhenIdle: (folders: string[], signal?: AbortSignal) => Promise<ScanResult>
   cancelActiveFontScan: (reason?: string) => { cancelled: boolean; jobId?: string; message: string }
   activeFontScanStatus: () => ActiveFontScanStatus
   isActive: () => boolean
@@ -84,6 +85,7 @@ export function createFontScanActiveJobRuntime(
   function scanFoldersManaged(
     folders: string[],
     knownFonts: FontItem[] = [],
+    ownerSignal?: AbortSignal,
   ): Promise<ScanResult> {
     const normalizedFolders = normalizeWatchedFontFolders(folders, deps.appendStartupLog)
     const requestId = latestManagedRequestId += 1
@@ -91,13 +93,16 @@ export function createFontScanActiveJobRuntime(
     abortActiveFontScan('新的索引扫描已开始，旧扫描已自动取消。')
 
     const request = managedScanTail.then(async () => {
-      if (requestId !== latestManagedRequestId) {
+      if (requestId !== latestManagedRequestId || ownerSignal?.aborted) {
         deps.appendStartupLog(`font scan queued request superseded before start: request=${requestId}, latest=${latestManagedRequestId}`)
         return cancelledScanResult(normalizedFolders)
       }
 
       const jobId = createFontScanJobId()
       const controller = new AbortController()
+      const abortOwner = () => controller.abort(ownerSignal?.reason)
+      ownerSignal?.addEventListener('abort', abortOwner, { once: true })
+      if (ownerSignal?.aborted) abortOwner()
       const startedAt = Date.now()
       const completion = scanFolders(normalizedFolders, knownFonts, { jobId, signal: controller.signal })
       activeFontScanJob = { jobId, folders: normalizedFolders, controller, startedAt, completion }
@@ -110,7 +115,13 @@ export function createFontScanActiveJobRuntime(
         throwIfAborted(controller.signal)
         return result
       } catch (error) {
-        if (!isOperationCancelledError(error)) throw error
+        const sharedError = error && typeof error === 'object' ? error as SharedIoProcessError : undefined
+        const ownedSharedCancellation = controller.signal.aborted && sharedError?.sharedIo === true && sharedError.reason === 'cancelled'
+        if (!isOperationCancelledError(error) && !ownedSharedCancellation) throw error
+        // Keep the real process-close boundary before retiring this scan owner.
+        if (ownedSharedCancellation && sharedError?.closed) {
+          try { await sharedError.closed } catch { /* The confirmed cancellation remains the outcome. */ }
+        }
         const durationMs = Date.now() - startedAt
         deps.emitFontIndexProgress({
           jobId,
@@ -123,6 +134,7 @@ export function createFontScanActiveJobRuntime(
         deps.appendStartupLog(`font scan cancelled: job=${jobId}, durationMs=${durationMs}`)
         return cancelledScanResult(normalizedFolders, durationMs)
       } finally {
+        ownerSignal?.removeEventListener('abort', abortOwner)
         if (activeFontScanJob?.jobId === jobId) activeFontScanJob = null
         deps.recheckGlobalIoQueues()
       }
@@ -138,12 +150,19 @@ export function createFontScanActiveJobRuntime(
     })
   }
 
-  async function scanFoldersWhenIdle(folders: string[]): Promise<ScanResult> {
+  async function scanFoldersWhenIdle(folders: string[], signal?: AbortSignal): Promise<ScanResult> {
     const foregroundRevision = latestManagedRequestId
     await managedScanTail
     // A newer user request wins. Do not cancel it or revive a cancelled repair.
-    if (isApplicationClosing() || foregroundRevision !== latestManagedRequestId || activeFontScanJob) return cancelledScanResult(folders)
-    return scanFoldersManaged(folders, [])
+    if (signal?.aborted || isApplicationClosing()) return cancelledScanResult(folders)
+    if (foregroundRevision !== latestManagedRequestId || activeFontScanJob) throw new Error('source-recovery-deferred')
+    const completion = scanFoldersManaged(folders, [], signal)
+    const recoveryRevision = latestManagedRequestId
+    const result = await completion
+    // A replaced background request is deferred, not a user cancellation of
+    // the newer foreground request. Its result must not pause that newer root.
+    if (result.stats?.cancelled && recoveryRevision !== latestManagedRequestId) throw new Error('source-recovery-deferred')
+    return result
   }
 
   return {

@@ -6,119 +6,11 @@ import { buildVirtualLayout } from '../../../src/renderer/src/fontViewRuntime'
 import { useRendererDatabasePageRuntime } from '../../../src/renderer/src/runtime/database/useRendererDatabasePageRuntime'
 import { rendererFontQueryCacheKey } from '../../../src/renderer/src/appRuntime'
 import { setupFloatingScrollbars } from '../../../src/renderer/src/utils/floatingScrollbars'
-import { SharedWatchStatusBar } from '../../../src/renderer/src/components/app/SharedWatchStatusBar'
-import { AppLayout } from '../../../src/renderer/src/components/app/AppLayout'
-import type { SharedWatchStatus } from '../../../src/shared/sharedWatchStatus'
 const frame=()=>new Promise<void>(r=>requestAnimationFrame(()=>r()))
 const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms))
 const check=(ok:unknown,message:string)=>{if(!ok)throw Error('[view-feedback] '+message)}
 const empty:any[]=[],noop=()=>{},filter={kind:'all'},allFonts=Array.from({length:10000},(_,i)=>({id:'p'+i,path:'C:/fonts/'+i+'.ttf',fileName:'Font '+i,tagNames:[],scripts:[]}))
 
-;(window as any).checkSharedWatchStatus=async()=>{
- const host=document.getElementById('fixture')!,previous=window.hfm,sidebarPreference=window.localStorage.getItem('hfm.sidebarCollapsed')
- const ack=Date.UTC(2026,9,12,8,0),entry={rootPath:'\\\\server\\fonts',phase:'applying' as const,lastCheckedAt:ack,pendingCount:12}
- let response:unknown={roots:[entry]},reads=0,activeRoot:ReturnType<typeof createRoot>|undefined
- let failedView:Node[]|undefined,lastGeometry:unknown
- const geometry=()=>{
-  const measure=(node:HTMLElement|null)=>{
-   if(!node)return null
-   const style=getComputedStyle(node)
-   return {className:node.className,rect:node.getBoundingClientRect().toJSON(),clientWidth:node.clientWidth,scrollWidth:node.scrollWidth,width:style.width,minWidth:style.minWidth,overflowX:style.overflowX,gridTemplateColumns:style.gridTemplateColumns,gridAutoColumns:style.gridAutoColumns}
-  }
-  return {viewport:{width:innerWidth,height:innerHeight},app:measure(host.querySelector<HTMLElement>('.app')),layout:measure(host.querySelector<HTMLElement>('.layout')),detail:measure(host.querySelector<HTMLElement>('.detail-dock-panel')),footer:measure(host.querySelector<HTMLElement>('.statusbar')),status:measure(host.querySelector<HTMLElement>('[role="status"]')),text:host.querySelector('.statusbar')?.textContent?.slice(0,1024)}
- }
- ;(window as any).sharedWatchStatusEvidence=()=>lastGeometry
- ;(window as any).hfm={getSharedWatchStatus:async()=>{reads++;return response}}
- const mount=async(developerStatus?:string)=>{
-  if(activeRoot)flushSync(()=>activeRoot!.unmount())
-  activeRoot=createRoot(host)
-  // A bare .layout has legacy >=1000px minimum tracks at this viewport.
-  // Exercise the actual responsive owner and occupy the third (detail) track.
-  // An unoccupied legacy track has no box to contribute scrollable overflow.
-  flushSync(()=>activeRoot!.render(<div className="app"><header className="topbar"/><AppLayout detailVisible={true} renderSidebar={collapsed=><aside className={collapsed?'sidebar collapsed':'sidebar'}/>}><section className="font-list-panel"/><section className="detail-panel detail-dock-panel"/></AppLayout><SharedWatchStatusBar developerStatus={developerStatus}/></div>))
-  await frame();await frame()
- }
- const footer=()=>host.querySelector<HTMLElement>('.statusbar')
- const checkResponsiveDetail=()=>{
-  const layout=host.querySelector<HTMLElement>('.layout')!,detail=host.querySelector<HTMLElement>('.detail-dock-panel')!
-  const bounds=layout.getBoundingClientRect(),dock=detail.getBoundingClientRect()
-  check(dock.width>0&&dock.height>0&&bounds.left>=-1&&bounds.right<=innerWidth+1&&layout.scrollWidth<=layout.clientWidth+1&&dock.left>=bounds.left-1&&dock.right<=bounds.right+1,'responsive detail layout hidden or overflowed viewport: '+JSON.stringify(geometry()))
- }
- const settleLayout=async()=>{
-  const started=performance.now()
-  while(document.documentElement.hasAttribute('data-hfm-layout-transitioning')&&performance.now()-started<1000)await wait(20)
-  check(!document.documentElement.hasAttribute('data-hfm-layout-transitioning'),'layout transition owner did not settle within its bounded window')
-  await frame();await frame()
- }
- try{
-  await mount()
-  await settleLayout()
-  const busy=footer()!
-  check(busy?.textContent?.includes('正在处理：12 项'),'validated processing count missing from real footer')
-  check(busy.textContent?.includes('上次检查时间：'),'last-check label missing')
-  const box=busy.getBoundingClientRect()
-  check(Math.abs(box.height-30)<=1&&box.bottom<=innerHeight+1&&box.top>=0,'footer left existing30px visible row')
-  check(box.left>=-1&&box.right<=innerWidth+1&&busy.scrollWidth<=busy.clientWidth+1,'status footer overflowed viewport')
-  checkResponsiveDetail()
-  const productionGeometry=geometry()
-  let bareLayoutRejected=false,bareLayoutGeometry:unknown
-  if(innerWidth<1000){
-   const layout=host.querySelector<HTMLElement>('.layout')!,classes=layout.className
-   try{
-    layout.className='layout'
-    // The shell now contains the footer independently of inner track minima.
-    // Require a real occupied detail box outside the main viewport, rather
-    // than inferring visible overflow from an unused computed grid track.
-    const detail=host.querySelector<HTMLElement>('.detail-dock-panel')!
-    bareLayoutGeometry=geometry()
-    bareLayoutRejected=layout.scrollWidth>layout.clientWidth+1&&detail.getBoundingClientRect().right>layout.getBoundingClientRect().right+1
-    check(bareLayoutRejected,'bare-layout regression no longer reproduces: '+JSON.stringify(geometry()))
-   }finally{layout.className=classes}
-   await settleLayout()
-   checkResponsiveDetail()
-   const restored=busy.getBoundingClientRect()
-   check(restored.left>=-1&&restored.right<=innerWidth+1&&busy.scrollWidth<=busy.clientWidth+1,'production layout failed to restore footer bounds')
-  }
-  check(busy.querySelector('[role="status"]')?.getAttribute('title')?.includes('目录检查和索引应用全部确认后更新'),'ACK semantics missing from accessible detail')
-  response={roots:[{...entry,phase:'idle',lastCheckedAt:ack+10000,pendingCount:0}]} satisfies SharedWatchStatus
-  for(let n=0;n<150&&!footer()?.textContent?.includes('正在处理：0 项');n++)await wait(20)
-  check(footer()?.textContent?.includes('正在处理：0 项'),'real poll did not replace settled count')
-  check(reads===2,'real footer issued overlapping or excessive polls')
-  response={roots:[{...entry,phase:'offline',pendingCount:null}]} satisfies SharedWatchStatus
-  await mount()
-  check(footer()?.textContent?.includes('离线')&&footer()?.textContent?.includes('数量待确认'),'offline displayed zero/success')
-  response={roots:'invalid'}
-  await mount()
-  check(footer()?.textContent?.includes('状态待确认'),'invalid receipt was not unknown')
-  response={roots:[]}
-  await mount()
-  check(!footer(),'local-only production gained a permanent NAS footer')
-  await mount('开发状态保留')
-  check(footer()?.textContent==='开发状态保留','development-only text was lost')
-  flushSync(()=>activeRoot!.unmount());activeRoot=undefined
-  check(!document.documentElement.hasAttribute('data-hfm-sidebar-auto-collapsed'),'unmounted layout retained its root attribute')
-  const settledReads=reads
-  await wait(2050)
-  check(reads===settledReads&&!host.querySelector('.statusbar'),'unmounted footer retained polling or DOM')
-  check(!document.documentElement.hasAttribute('data-hfm-layout-transitioning'),'unmounted layout transition did not settle')
-  window.dispatchEvent(new Event('resize'))
-  check(!document.documentElement.hasAttribute('data-hfm-window-resizing'),'unmounted layout retained its resize listener')
-  await frame();await frame()
-  check(!document.documentElement.hasAttribute('data-hfm-sidebar-auto-collapsed'),'unmounted layout resumed on resize')
-  check(window.localStorage.getItem('hfm.sidebarCollapsed')===sidebarPreference,'status fixture changed persisted sidebar preference')
-  return {viewport:innerWidth,processing:true,ack:true,offline:true,unknown:true,noRoot:true,cleanup:true,bareLayoutRejected,productionGeometry,bareLayoutGeometry}
- }catch(error){
-  lastGeometry=geometry()
-  // Stop React and its polls, but retain the failed pixels for Electron's
-  // existing screenshot path; previously finally left only a blank page.
-  failedView=Array.from(host.childNodes,node=>node.cloneNode(true))
-  throw error
- }finally{
-  if(activeRoot)flushSync(()=>activeRoot!.unmount())
-  window.hfm=previous
-  if(failedView)host.replaceChildren(...failedView)
- }
-}
 let current:any,calls:number[]=[]
 const hfm={queryFontPage:async(request:any)=>{
  calls.push(request.offset);await wait(request.offset===0?15:35)

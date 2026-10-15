@@ -1,3 +1,4 @@
+import { acknowledgeRootIndexRebuild } from './root-index/rootIndexRebuildRequestRuntime'
 import { assertApplicationOpen, applicationWorkEpoch } from '../app/shutdownCoordinatorRuntime'
 import { throwIfAborted } from '../performance/ioQueue'
 import { currentSharedIoSignal } from '../path/sharedFileSystemRuntime'
@@ -187,6 +188,9 @@ export function createRootIndexRuntime(deps: RootIndexRuntimeDeps) {
     assertApplicationOpen(epoch)
     throwIfAborted(currentSharedIoSignal())
     await writeRootCacheManifest(cacheDir, rootPath, storage, nextCounts.total, snapshotPath)
+    await acknowledgeRootIndexRebuild(cacheDir, cache.rebuildRequestId).catch(error => {
+      deps.appendStartupLog(`root index rebuild acknowledgement pending: root=${rootPath}, ${String(error)}`)
+    })
     await cleanupOldRootIndexSnapshots(cacheDir, snapshotPath, previousActivePath)
     deps.appendStartupLog(`root index atomic snapshot switched: root=${rootPath}, storage=${storage}, previousUsable=${previousCounts.usable}, nextUsable=${nextCounts.usable}, total=${nextCounts.total}, snapshot=${snapshotPath}`)
     return snapshotPath

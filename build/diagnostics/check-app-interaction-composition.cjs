@@ -18,12 +18,20 @@ function loader(transforms = {}) {
     vm.runInNewContext(code,{exports:out,require(id){if(id==='react-dom')return {flushSync:fn=>fn()};if(id.startsWith('@shared/'))return load('src/shared/'+id.slice(8)+'.ts');if(id.startsWith('.'))return load(path.posix.normalize(path.posix.join(path.posix.dirname(f),id))+'.ts');throw Error('unmocked '+f+':'+id)},console,Date,Set,Map,Symbol,Promise,setTimeout,clearTimeout});return out
   }return load
 }
+function checkFeedbackRoutes(calls) {
+  for (const name of ['createAppMenuDialogRuntime:0', 'contextActionRuntime.createDialogs:0', 'createFolderRuntime:0']) {
+    assert.equal(calls[name]?.setStatus, 'reportActionStatus', name + ' lost visible user-operation feedback')
+  }
+  assert.equal(calls['useRendererDatabasePageRuntime:0']?.setStatus, 'reportQueryError', 'database read failure lost its separate notification source')
+  assert.equal(calls['useRendererDatabasePageRuntime:0']?.onReadRecovered, 'clearQueryError', 'database recovery can clear unrelated operation feedback')
+  assert.equal(calls['detailPanelRuntime.createSelection:1']?.setStatus, 'setStatus', 'selection diagnostic began triggering operation notifications')
+}
 function structure(){
   const fixture=JSON.parse(read('build/diagnostics/fixtures/app-interaction-composition.fixture.json'))
   for(const source of [read(app),read(app).replace(/\r?\n/g,'\r\n')]){
-    const current=callMap(source);assert.deepEqual(current.hooks,fixture.hooks,'Hook order')
-    const context=current.calls['createAppMenuDialogRuntime:0'];assert.deepEqual(context,fixture.calls['createFontContextActionRuntime:0'])
-    const dialog={...current.calls['contextActionRuntime.createDialogs:0']};for(const k of ['library','contextMenu','setContextMenu','activateFontsBatch','deactivateFontsBatch'])dialog[k]=context[k]
+    const current=callMap(source);assert.deepEqual(current.hooks,fixture.hooks,'Hook order');checkFeedbackRoutes(current.calls)
+    const context={...current.calls['createAppMenuDialogRuntime:0'],setStatus:'setStatus'};assert.deepEqual(context,fixture.calls['createFontContextActionRuntime:0'])
+    const dialog={...current.calls['contextActionRuntime.createDialogs:0'],setStatus:'setStatus'};for(const k of ['library','contextMenu','setContextMenu','activateFontsBatch','deactivateFontsBatch'])dialog[k]=context[k]
     assert.deepEqual(dialog,fixture.calls['createFontDialogRuntime:0'],'effective dialog inputs')
     assert.deepEqual(current.calls['createAppDetailSelectionRuntime:0'],fixture.calls['createFontDetailPanelRuntime:0'])
     const selection={...current.calls['detailPanelRuntime.createSelection:1'],toggleFontDetail:'toggleFontDetail',hydrateFont:'(font, keepFontIds) => hydrateFontForSelectionDetail(font, setLibrary, keepFontIds)'}
@@ -70,8 +78,13 @@ async function interactions(transforms){
   detail.closeDetail();assert.deepEqual(detailEvents.slice(-2),[['id',''],['visible',false]])
 }
 async function main(){structure();portCases();await interactions();
+  const source=read(app)
+  for(const [before,after] of [['setStatus: reportActionStatus','setStatus'],['setStatus: reportQueryError','setStatus'],['onReadRecovered: clearQueryError','onReadRecovered: dismissActionStatus']]) {
+    const mutated=source.replace(before,after);assert.notEqual(mutated,source,'feedback route mutation anchor drifted')
+    assert.throws(()=>checkFeedbackRoutes(callMap(mutated).calls),assert.AssertionError,'wrong notification source escaped the composition gate')
+  }
   assert.throws(()=>portCases(s=>s.replace("if (!operations) throw new Error('App Operations commands used before initialization')",'')),assert.AssertionError)
   await assert.rejects(()=>interactions({[dir+'createAppDetailSelectionRuntime.ts']:s=>s.replace('toggleFontDetail: detail.toggleFontDetail','toggleFontDetail: () => {}')}),assert.AssertionError)
-  console.log('[diagnostics:app-interaction-composition] effective inputs/hook order, early callback guard, real menu/dialog rename/delete, tag IME/local/shared, detail-selection hydration wiring; two mutants; existing controller gates cover click/marquee/races')}
+  console.log('[diagnostics:app-interaction-composition] effective inputs/hook order, separate operation/query/selection feedback routes, early callback guard, real menu/dialog rename/delete, tag IME/local/shared, detail-selection hydration wiring; feedback-route and behavior mutants; existing controller gates cover click/marquee/races')}
 module.exports={callMap,digest}
 if(require.main===module)main().catch(e=>{console.error(e);process.exitCode=1})

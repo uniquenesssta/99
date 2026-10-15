@@ -16,7 +16,8 @@ app.whenReady().then(async () => {
       catch (error) {
         return { ok: false, message: String(error), stack: error?.stack,
           overlayEvidence: window.scrollbarOverlayEvidence?.(),
-          sharedWatchStatusEvidence: window.sharedWatchStatusEvidence?.(),
+          developerStatusDevelopmentEvidence: window.developerStatusDevelopmentEvidence?.(),
+          developerStatusProductionEvidence: window.developerStatusProductionEvidence?.(),
           appShellContainmentEvidence: window.appShellContainmentEvidence?.(),
           width: innerWidth, focused: document.hasFocus(), active: document.activeElement?.outerHTML?.slice(0, 300),
           inputs: ['local','shared'].map(scope => {
@@ -50,10 +51,10 @@ app.whenReady().then(async () => {
     fs.mkdirSync(evidence, { recursive: true })
     fs.writeFileSync(path.join(evidence, prefix + '.json'), JSON.stringify(result, null, 2))
     fs.writeFileSync(path.join(evidence, prefix + '.png'), (await win.webContents.capturePage()).toPNG())
-    const original = await evaluate('window.appShellOriginalPixels(true)')
-    fs.writeFileSync(path.join(evidence, prefix + '-original.json'), JSON.stringify(original, null, 2))
-    fs.writeFileSync(path.join(evidence, prefix + '-original.png'), (await win.webContents.capturePage()).toPNG())
-    await evaluate('window.appShellOriginalPixels(false)')
+    const original = await evaluate('window.appShellFooterGapPixels(true)')
+    fs.writeFileSync(path.join(evidence, prefix + '-footer-gap.json'), JSON.stringify(original, null, 2))
+    fs.writeFileSync(path.join(evidence, prefix + '-footer-gap.png'), (await win.webContents.capturePage()).toPNG())
+    await evaluate('window.appShellFooterGapPixels(false)')
     const click = point => {
       win.webContents.sendInputEvent({ type: 'mouseMove', ...point })
       win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', modifiers: ['leftbuttondown'], ...point, clickCount: 1 })
@@ -82,7 +83,18 @@ app.whenReady().then(async () => {
     win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', x: drag.x, y: drag.endY, clickCount: 1 })
     const native = await evaluate('window.finishAppShellContainment()')
     fs.writeFileSync(path.join(evidence, prefix + '-native.json'), JSON.stringify(native, null, 2))
-    console.log('[app-shell:electron]', JSON.stringify({ width, height, cases: result.cases.length, busyTransitions: result.busyTransitions.length, exactOriginalReproduced: result.exactOriginalReproduced, originalSourceRejected: result.originalSourceRejected, nativeControls: native.nativeControls, nativeSearch: native.nativeSearch, nativeScrollbar: native.nativeScrollbar }))
+    console.log('[app-shell:electron]', JSON.stringify({ width, height, cases: result.cases.length, busyTransitions: result.busyTransitions.length, footerGapRejected: result.footerGapRejected, nativeControls: native.nativeControls, nativeSearch: native.nativeSearch, nativeScrollbar: native.nativeScrollbar }))
+  }
+  for (const [width, height] of [[720, 900], [1320, 820], [1600, 900]]) {
+    win.setContentSize(width, height)
+    for (const mode of ['Development', 'Production']) {
+      const result = await evaluate(`window.checkDeveloperStatus${mode}()`)
+      const evidence = path.resolve('artifacts/font-identity-f04'), prefix = `developer-status-${mode.toLowerCase()}-${width}x${height}`
+      fs.mkdirSync(evidence, { recursive: true })
+      fs.writeFileSync(path.join(evidence, prefix + '.json'), JSON.stringify(result, null, 2))
+      fs.writeFileSync(path.join(evidence, prefix + '.png'), (await win.webContents.capturePage()).toPNG())
+      console.log('[developer-status:electron]', JSON.stringify(result))
+    }
   }
   if (shellOnly) { clearTimeout(watchdog); app.exit(0); return }
   for (const width of [720, 1600]) {
@@ -99,7 +111,6 @@ app.whenReady().then(async () => {
     console.log('[grid-postprocess:electron]', JSON.stringify(postprocess))
     }
     console.log('[view-feedback:electron]', JSON.stringify(await evaluate('window.checkViewFeedback()')))
-    console.log('[shared-watch-status:electron]', JSON.stringify(await evaluate('window.checkSharedWatchStatus()')))
     const drag = await evaluate('window.prepareScrollbarDrag()')
     win.webContents.sendInputEvent({ type: 'mouseMove', x: drag.x, y: drag.y })
     win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', modifiers: ['leftbuttondown'], x: drag.x, y: drag.y, clickCount: 1 })

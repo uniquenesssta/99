@@ -251,7 +251,8 @@ function isIdentityInputRecognitionLiteral(node) {
   while (ts.isBinaryExpression(expression.parent) && expression.parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) expression = expression.parent
   const declaration = expression.parent
   return ts.isVariableDeclaration(declaration) && declaration.initializer === expression
-    && ts.isIdentifier(declaration.name) && declaration.name.text === 'verifiedIdentityRead'
+    && ts.isIdentifier(declaration.name) && (declaration.name.text === 'verifiedIdentityRead'
+      || (declaration.name.text === 'verifiedParseRead' && node.text === '--input'))
 }
 
 // This exact allowlist only classifies an existing command's typed domain
@@ -303,7 +304,7 @@ function collectRustFunctionStrings(functions, name, seen = new Set(), route = n
       // These transport selectors inspect an existing request; they do not add
       // flags to any caller's CLI. Keep the emitted command baselines unchanged.
       const selector = ['runRustCoreScheduledCommand','runRustCoreScheduledCommandDirect'].includes(name) && (
-        ['--preview-render-image','--preview-render-owned-stage','--list-font-files'].includes(node.text) && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
+        ['--preview-render-image','--preview-render-owned-stage','--list-font-files','--font-parse-batch'].includes(node.text) && ts.isBinaryExpression(node.parent) && node.parent.left.getText(record.file) === 'args[0]' ||
         node.text === '--input' && ts.isCallExpression(node.parent) && node.parent.expression.getText(record.file) === 'args.indexOf' ||
         name === 'runRustCoreScheduledCommandDirect' && (isListingOutputRecognitionLiteral(node) || isListingRootRecognitionLiteral(node) || isIdentityInputRecognitionLiteral(node) || isPreviewFailureRecognitionLiteral(node))
       )
@@ -376,8 +377,8 @@ function testRustStructuralContract() {
     ['runRustFontIndexListWorker', "args[1] === '--input'", "args[2] === '--input'"],
     ['runRustFontParseBatch', "args[3] === '--transfer'", "args[4] === '--transfer'"],
   ]) {
-    assert(directSource.split(before).length === 2, 'Identity-selector mutation anchor drifted')
-    const file = ts.createSourceFile('identity-selector-mutant.ts', directSource.replace(before, after), ts.ScriptTarget.Latest, true)
+    assert.equal(directSource.split(before).length, before.includes('--input') ? 3 : 2, 'Sealed-input selector mutation anchor drifted')
+    const file = ts.createSourceFile('identity-selector-mutant.ts', directSource.replaceAll(before, after), ts.ScriptTarget.Latest, true)
     const altered = new Map(functions); altered.set('runRustCoreScheduledCommandDirect', { node: file.statements[0], file })
     let rejected = false
     try {
@@ -699,3 +700,4 @@ main().catch((error) => {
   console.error(`[diagnostics:orchestration-contracts] ${error instanceof Error ? error.stack || error.message : String(error)}`)
   process.exit(1)
 })
+

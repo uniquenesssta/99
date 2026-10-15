@@ -17,6 +17,7 @@ export type ScanIncrementalDecision =
   | { action: 'parse'; reason: 'missing-manifest' | 'changed-file' | 'missing-script-metadata' | 'bad-cache-untrusted'; job: FontParseJob }
 
 export interface ScanIncrementalDecisionInput {
+  forceParse?: boolean
   item: ScanStatJob
   file: string
   rootPath: string
@@ -146,6 +147,8 @@ export function createScanIncrementalDecisionRuntime(options: {
         }),
       }
     }
+
+    if (input.forceParse) return { action: 'parse', reason: 'missing-manifest', job: buildParseJob(input) }
 
     const known = knownByPath.get(normalizePathForCacheCompare(file))
     if (

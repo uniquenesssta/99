@@ -25,7 +25,7 @@
 
 .developer-status-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 14px;
 }
 
@@ -50,6 +50,34 @@
   margin: 0;
   color: var(--muted);
   word-break: break-word;
+}
+
+.operation-status-notice {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 70;
+  width: min(440px, calc(100vw - 36px));
+  max-height: min(240px, calc(100vh - 100px));
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow-menu);
+}
+
+.operation-status-notice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operation-status-notice p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .developer-card pre,

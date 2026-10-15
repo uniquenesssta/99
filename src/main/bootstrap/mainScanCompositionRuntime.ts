@@ -1,3 +1,5 @@
+import { readRootIndexRebuildRequest } from '../indexing/root-index/rootIndexRebuildRequestRuntime';
+import { createRootIndexSourceRecoveryRuntime } from '../indexing/root-index/rootIndexSourceRecoveryRuntime';
 import { ensureStartupPathRootAvailable } from '../path/startupPathAvailabilityRuntime';
 import { isApplicationClosing } from '../app/shutdownCoordinatorRuntime';
 import { withoutSharedIoSignal } from '../path/sharedFileSystemRuntime';
@@ -316,6 +318,18 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     runRustWatcherPreflight: rustCoreWorkerRuntime.runRustWatcherPreflight,
   });
 
+  const sourceRecovery = createRootIndexSourceRecoveryRuntime({
+    cacheDir: rootCacheDir, defaultDbPath: rootIndexDbPath,
+    resolveActiveDbPath: resolveActiveRootIndexDbPath,
+    isClosing: isApplicationClosing,
+    isScanActive: () => scanFoldersRuntime().isActive(),
+    isWatched: async root => (await appWatchedFolders()).includes(root),
+    isRootAvailable: root => ensureStartupPathRootAvailable(root, appendStartupLog, 'watcher-source-recovery', { background: true }),
+    scanWhenIdle: (root, signal) => scanFoldersRuntime().scanFoldersWhenIdle([root], signal),
+    syncProjection: root => syncMergedIndexForRootSnapshot(root, 'watcher-source-recovery'),
+    log: appendStartupLog,
+  });
+
   const folderWatcherRuntime = createFolderWatcherRuntime({
     appendStartupLog,
     isIgnoredWatcherPath,
@@ -342,6 +356,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
       watchedFolderIndexRuntime.applyWatchedFolderChangesToIndex,
     syncMergedIndexForRootIncremental,
     syncMergedIndexForRootSnapshot,
+    ensureSourceReady: sourceRecovery.ensureReady,
     isScanActive: () => scanFoldersRuntime().isActive(),
     getSharedWatchWorkerPath: async () => {
       const worker = await rustCoreWorkerRuntime.diagnoseRustCoreWorker();
@@ -371,7 +386,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
         let required = false;
         try {
           const active = await resolveActiveRootIndexDbPath(rootCacheDir(root), rootIndexDbPath(root));
-          required = !await exists(active);
+          required = !!await readRootIndexRebuildRequest(rootCacheDir(root)) || !await exists(active);
           if (!required) {
             const db = await openRootIndexDb(active, root, 'root', false);
             try {
@@ -398,6 +413,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
   }
   const scanFoldersManaged: MainOperationsCompositionRuntime['capabilities']['scanFoldersManaged'] = async (folders, knownFonts) => {
     assertFeedbackReady();
+    sourceRecovery.resume(folders);
     const result = await scanFoldersRuntime().scanFoldersManaged(
       folders,
       knownFonts,
@@ -411,7 +427,12 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     return result;
   };
   const scanFolders = (...args: Parameters<typeof scanOrchestratorRuntime.scanFolders>) => { assertFeedbackReady(); return scanOrchestratorRuntime.scanFolders(...args); };
-  const cancelActiveFontScan = (...args: Parameters<typeof scanOrchestratorRuntime.cancelActiveFontScan>) => scanOrchestratorRuntime.cancelActiveFontScan(...args);
+  const cancelActiveFontScan = (...args: Parameters<typeof scanOrchestratorRuntime.cancelActiveFontScan>) => {
+    const folders = scanOrchestratorRuntime.activeFontScanStatus().folders || [];
+    const result = scanOrchestratorRuntime.cancelActiveFontScan(...args);
+    if (result.cancelled) { sourceRecovery.pause(folders); sourceRecovery.pauseActive(); }
+    return result;
+  };
   const activeFontScanStatus = () => scanOrchestratorRuntime.activeFontScanStatus();
   const isIndexingActive = () => scanOrchestratorRuntime.isActive();
   const activeScanJobId = () => scanOrchestratorRuntime.activeJobId();

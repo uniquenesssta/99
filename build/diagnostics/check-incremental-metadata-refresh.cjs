@@ -106,7 +106,7 @@ async function multipleRoots() {
 }
 function renderer() {
   const effects=[],timers=new Map();let cursor=0,slots=[],timerId=0,library,tagListener,indexListener
-  const hooks={useState:init=>{const i=cursor++;if(!(i in slots))slots[i]=typeof init==='function'?init():init;return[slots[i],v=>slots[i]=typeof v==='function'?v(slots[i]):v]},useRef:init=>{const i=cursor++;if(!(i in slots))slots[i]={current:init};return slots[i]},useMemo:fn=>fn(),useEffect:fn=>effects.push(fn)}
+  const hooks={useState:init=>{const i=cursor++;if(!(i in slots))slots[i]=typeof init==='function'?init():init;return[slots[i],v=>slots[i]=typeof v==='function'?v(slots[i]):v]},useRef:init=>{const i=cursor++;if(!(i in slots))slots[i]={current:init};return slots[i]},useMemo:fn=>fn(),useCallback:fn=>fn,useEffect:fn=>effects.push(fn)}
   const window={setTimeout:fn=>{timers.set(++timerId,fn);return timerId},clearTimeout:id=>timers.delete(id)}
   const load=loadModules({window},{react:hooks,
     [path.join(root,'src/renderer/src/runtime/app/effects/useLibraryAutosaveRuntime.ts')]:{libraryShellPersistenceKey:()=>'',useLibraryAutosaveRuntime:o=>({getCurrentLibrary:()=>library,commitLibraryUpdate:n=>library=typeof n==='function'?n(library):n,setLibrary:o.setLibrary,saveLibraryImmediately:async()=>true})},

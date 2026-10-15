@@ -22,6 +22,9 @@ const WRITE_FIELDS: WriteField[] = ['localTags', 'sharedTags', 'favorite', 'prot
 // Runtime factories are recreated by React. Ownership follows the stable queue ref,
 // not a render closure; the maps in queueRef remain the only pending-write store.
 const activeFieldsByQueue = new WeakMap<QueueRef, Map<WriteField, Promise<boolean>>>()
+// Feedback recovery follows the same queue across renders. Unexpected exceptions
+// have no confirmed pending-write receipt and remain visible until dismissed.
+const failedFieldsByQueue = new WeakMap<QueueRef, Map<WriteField, 'retry' | 'uncertain'>>()
 
 function takeQueuedField<K extends WriteField>(queueRef: QueueRef, field: K): QueuedFontWriteState {
   const snapshot = createEmptyQueuedFontWriteState()
@@ -51,6 +54,8 @@ export interface RendererFontWriteQueueRuntimeOptions {
   setTimeout: Window['setTimeout']
   clearTimeout: Window['clearTimeout']
   setStatus: (status: string) => void
+  reportError?: (status: string) => void
+  onRecovered?: () => void
   scheduleDatabaseDerivedStateRefresh: (delay?: number, fields?: FontRefreshField[]) => void
 }
 
@@ -78,6 +83,12 @@ export function createRendererFontWriteQueueRuntime(
     activeFields = new Map()
     activeFieldsByQueue.set(options.queueRef, activeFields)
   }
+  let failedFields = failedFieldsByQueue.get(options.queueRef)
+  if (!failedFields) {
+    failedFields = new Map()
+    failedFieldsByQueue.set(options.queueRef, failedFields)
+  }
+  const feedbackFailures = failedFields
   const fieldTasks = activeFields
   const clearWriteTimer = (): void => {
     if (options.timerRef.current === null) return
@@ -107,13 +118,14 @@ export function createRendererFontWriteQueueRuntime(
     }, delayMs)
   }
 
-  const flushField = async (field: WriteField, reason: string, refresh: RendererFontWriteQueueRuntimeOptions['scheduleDatabaseDerivedStateRefresh'] = options.scheduleDatabaseDerivedStateRefresh): Promise<boolean> => {
+  const flushField = async (field: WriteField, reason: string, refresh: RendererFontWriteQueueRuntimeOptions['scheduleDatabaseDerivedStateRefresh'] = options.scheduleDatabaseDerivedStateRefresh, reportRecovery = true): Promise<boolean> => {
     const active = fieldTasks.get(field)
     if (active) {
       if (!await active) return false
-      return options.queueRef.current[field].size ? flushField(field, reason, refresh) : true
+      return options.queueRef.current[field].size ? flushField(field, reason, refresh, reportRecovery) : true
     }
 
+    let confirmedWrites = 0
     const task = (async (): Promise<boolean> => {
       let foregroundRetryIndex = 0
       let totalWroteCount = 0
@@ -128,6 +140,7 @@ export function createRendererFontWriteQueueRuntime(
           folders
         })
         totalWroteCount += result.wroteCount
+        confirmedWrites += result.wroteCount
 
         if (result.wroteCount) {
           const includesTagWrites = queue.localTags.size > 0 || queue.sharedTags.size > 0
@@ -149,7 +162,8 @@ export function createRendererFontWriteQueueRuntime(
             continue
           }
 
-          options.setStatus(`后台写入仍有 ${retryCount} 项未保存：${result.failures.slice(0, 2).join('；')}${result.failures.length > 2 ? '……' : ''}；将继续重试。`)
+          if (feedbackFailures.get(field) !== 'uncertain') feedbackFailures.set(field, 'retry')
+          ;(options.reportError || options.setStatus)(`后台写入仍有 ${retryCount} 项未保存：${result.failures.slice(0, 2).join('；')}${result.failures.length > 2 ? '……' : ''}；将继续重试。`)
           scheduleBackgroundRetry()
           return false
         }
@@ -161,13 +175,16 @@ export function createRendererFontWriteQueueRuntime(
       if (totalWroteCount > 0 && (totalWroteCount >= 20 || reason !== 'delay')) {
         options.setStatus(`后台写入队列已落库：${totalWroteCount} 项。`)
       }
+      if (confirmedWrites > 0 && feedbackFailures.get(field) === 'retry') feedbackFailures.delete(field)
       return true
     })().catch((error) => {
-      options.setStatus(`后台写入队列异常：${error instanceof Error ? error.message : String(error)}；将继续重试。`)
+      feedbackFailures.set(field, 'uncertain')
+      ;(options.reportError || options.setStatus)(`后台写入队列异常：${error instanceof Error ? error.message : String(error)}；将继续重试。`)
       scheduleBackgroundRetry()
       return false
     }).finally(() => {
       if (fieldTasks.get(field) === task) fieldTasks.delete(field)
+      if (reportRecovery && confirmedWrites > 0 && !feedbackFailures.size && !fieldTasks.size && !queuedFontWriteCount(options.queueRef.current)) options.onRecovered?.()
     })
 
     fieldTasks.set(field, task)
@@ -196,14 +213,21 @@ export function createRendererFontWriteQueueRuntime(
         }
         // Full drains (including window close) still join every field, even
         // when an in-flight snapshot has already left the pending maps.
-        for (const field of WRITE_FIELDS) if (!await flushField(field, reason, collectRefresh)) saved = false
+        for (const field of WRITE_FIELDS) if (!await flushField(field, reason, collectRefresh, false)) saved = false
         // Preserve one merged refresh for a full pass; scoped foreground drains
         // retain their own refresh and do not wait for unrelated fields.
         if (changedFields.size) options.scheduleDatabaseDerivedStateRefresh(refreshDelay, (['favorite', 'localTags', 'sharedTags', 'protection'] as FontRefreshField[]).filter(field => changedFields.has(field)))
         if (!saved) return false
+        if (changedFields.size && !feedbackFailures.size && !queuedFontWriteCount(options.queueRef.current) && !fieldTasks.size) options.onRecovered?.()
       } while (queuedFontWriteCount(options.queueRef.current) || fieldTasks.size)
       return true
-    })().finally(() => {
+    })().catch((error) => {
+      // The merged refresh follows all field writes; only its success can
+      // retire earlier failure feedback for this complete drain.
+      for (const field of WRITE_FIELDS) feedbackFailures.set(field, 'uncertain')
+      ;(options.reportError || options.setStatus)(`后台写入队列异常：${error instanceof Error ? error.message : String(error)}；将继续重试。`)
+      throw error
+    }).finally(() => {
       options.activeRef.current = false
       if (options.activePromiseRef.current === task) options.activePromiseRef.current = null
     })

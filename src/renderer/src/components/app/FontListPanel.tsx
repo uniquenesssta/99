@@ -1,4 +1,5 @@
 import { FontCleanupPanel } from './FontCleanupPanel'
+import { SharedWatchStatusCard } from './SharedWatchStatusCard'
 import type { FontItem } from '@shared/types'
 import type { CSSProperties,MouseEvent } from 'react'
 import {
@@ -16,6 +17,7 @@ export function FontListPanel({
   sidebarPage,
   refreshDeveloperStatusDetails,
   status,
+  sharedWatchStatus = null,
   latestIndexProgress,
   developerArchitecture,
   developerSchedulerStatus,
@@ -74,12 +76,13 @@ export function FontListPanel({
           <div className="developer-status-header">
             <div>
               <h2>开发者状态</h2>
-              <p>底部状态栏迁移到这里；生产封包不会显示。</p>
+              <p>运行状态、NAS 监听和后台诊断集中显示在这里；生产封包不会显示。</p>
             </div>
             <button onClick={() => void refreshDeveloperStatusDetails()}>刷新</button>
           </div>
 
           <div className="developer-status-grid">
+            <SharedWatchStatusCard status={sharedWatchStatus} />
             <div className="developer-card">
               <h3>当前状态</h3>
               <p>{status}</p>
@@ -136,7 +139,6 @@ export function FontListPanel({
       ) : (
         <>
           <div className="font-command-header">
-          <div role="status" aria-live="polite" className="selection-command-status">{status}</div>
           <div className="list-toolbar">
             <div className="toolbar-left toolbar-icon-controls" data-no-marquee>
               <InstallStatusControl value={installStatus} onChange={value => updatePageToolbar('installStatus', value)} />

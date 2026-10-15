@@ -46,6 +46,7 @@ interface FolderWatcherRuntimeOptions {
     reason: string,
   ) => Promise<void>;
   syncMergedIndexForRootSnapshot?: (rootPath: string, reason: string) => Promise<void>;
+  ensureSourceReady?: (rootPath: string, signal: AbortSignal) => Promise<void>;
   isScanActive?: () => boolean;
   getSharedWatchWorkerPath?: () => Promise<string | undefined>;
 }
@@ -461,6 +462,7 @@ export function createFolderWatcherRuntime(
     const reconciler = createSharedFolderReconciliationRuntime({
       isCurrent: () => !isApplicationClosing() && generation === watcherGeneration,
       isBusy: options.isScanActive,
+      ensureSourceReady: signal => withSharedIoSignal(signal, () => options.ensureSourceReady?.(folder, signal) || Promise.resolve()),
       log: options.appendStartupLog,
       collect: signal => withSharedIoSignal(signal, async () => {
         try {

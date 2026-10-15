@@ -189,6 +189,7 @@ export function createWatchedFolderIndexRuntime(options: WatchedFolderIndexRunti
       }
       const storage = await options.ensureRootScanCacheStorage(rootPath, { reuseExisting: true })
       guard()
+      if (storage.cache.rebuildRequired) throw new Error('根索引需要完整重建，已保留当前索引；请等待恢复或重新扫描。')
       const context = options.makeRootScanCacheContext(rootPath, storage)
       const sourceCache = context.cache
       context.cache = { ...sourceCache, entries: { ...sourceCache.entries } }

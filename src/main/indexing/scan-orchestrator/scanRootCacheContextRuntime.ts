@@ -21,7 +21,7 @@ export function createScanRootCacheContextRuntime(deps: ScanOrchestratorDeps): S
     const existing = rootCacheContexts.get(rootKey)
     if (existing) return existing
 
-    const storage = await deps.ensureRootScanCacheStorage(resolvedRoot)
+    const storage = await deps.ensureRootScanCacheStorage(resolvedRoot, { rebuildRequested: true })
     const context: RootScanCacheContext = {
       rootPath: resolvedRoot,
       cachePath: storage.cachePath,

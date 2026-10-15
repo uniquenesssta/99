@@ -38,7 +38,7 @@ const libraryController = read('src/renderer/src/runtime/app/useLibraryControlle
 assert(app.includes('useLibraryController({'), 'App must compose the library owner once')
 assert(libraryController.includes('useLibraryAutosaveRuntime({'), 'Library controller must use the shared persistence runtime')
 assert(libraryController.includes('const [library, setLibraryState] = useState<LibraryState>'), 'Library controller must keep the raw React setter private to the persistence runtime')
-assert(libraryController.includes('onPersistenceRecovered: refreshDatabaseDerivedState'), 'Library controller must refresh database-derived state after persistence recovery')
+assert(libraryController.includes("onPersistenceRecovered: () => { clearFeedback('save'); refreshDatabaseDerivedState() }"), 'Library controller must refresh database-derived state after persistence recovery')
 assert(libraryController.includes('flushLibraryPersistence'), 'Library controller must expose the persistence flush to the close lifecycle')
 assert(!app.includes('window.hfm.saveLibrary(library).catch'), 'App must not keep a duplicate inline autosave implementation')
 

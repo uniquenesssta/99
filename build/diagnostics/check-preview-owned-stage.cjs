@@ -101,6 +101,7 @@ async function composition(native = false) {
   const jobs = [], children = new Set(), requests = [], logs = [], failedCleanups = new Set()
   let generation = 1, changeBeforeCopy = false, badCopy = false, daemonCalls = 0, cleanupFailure = false, shortenDeadline = false
   let missingReady = false, pixelsMode = '', stalePixels = false
+  let captureParseBudget = false, parseBudgetCallback
   const png = require('./fixtures/preview-png.cjs')
   let fireDeadline, holdProof = false, allocationStarts = 0, proofStarts = 0
   const proofRelease = path.join(directory, 'proof-release')
@@ -135,7 +136,7 @@ async function composition(native = false) {
   const execFile = (...args) => {
     const callback = args.at(-1), command = args[1][0]
     const protocol = load('src/main/rust-core/rustCoreProtocolRuntime.ts')
-    const payload = command === '--handshake' ? { ok: true, version: '0.42.0', protocolVersion: 42, capabilities: [...protocol.REQUIRED_RUST_CORE_CAPABILITIES, 'preview-owned-stage-v1', 'preview-owned-stage-bytes-v1'] } : { ok: true, profiles: [] }
+    const payload = command === '--handshake' ? { ok: true, version: '0.42.0', protocolVersion: 42, capabilities: [...protocol.REQUIRED_RUST_CORE_CAPABILITIES, 'preview-owned-stage-v1', 'preview-owned-stage-bytes-v1', 'font-parse-batch', 'font-parse-batch-source-stability-v1'] } : { ok: true, profiles: [] }
     callback(null, JSON.stringify(payload), ''); return {}
   }
   execFile[require('node:util').promisify.custom] = (...args) => new Promise((resolve, reject) => execFile(...args, (error, stdout, stderr) => error ? reject(error) : resolve({ stdout, stderr })))
@@ -143,7 +144,7 @@ async function composition(native = false) {
     [abs('src/main/rust-core/rustCoreWorkerPathRuntime.ts')]: { resolveRustCoreWorkerPathWithDiagnostics: () => ({ path: process.execPath, candidates: [process.execPath] }) }, 'node:fs': { ...fs, promises: files },
     [abs('src/main/path/startupPathAvailabilityRuntime.ts')]: { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: () => ({ state: 'online', generation }) },
     [abs('src/main/rust-core/rustCoreDaemonRuntime.ts')]: { createRustCoreDaemonRuntime: () => ({ tryRun: async () => { daemonCalls++; throw Error('shared preview entered daemon') }, stopImmediately() {}, status() {}, pollStatus() {}, hasSubmittedWork: () => false }), isRustCoreDaemonSubmittedError: () => false },
-  }, { setTimeout: (fn, ms) => { if (shortenDeadline && ms > 7000) { fireDeadline = fn; return setTimeout(fn, 10000) } return setTimeout(fn, ms) } })
+  }, { setTimeout: (fn, ms) => { if (captureParseBudget && ms === 5 * 60 * 1000) { parseBudgetCallback = fn; return setTimeout(fn, 10000) } if (shortenDeadline && ms > 7000) { fireDeadline = fn; return setTimeout(fn, 10000) } return setTimeout(fn, ms) } })
   const routing = load('src/main/rust-core/rustSharedIoCommandRuntime.ts')
   routing.registerIsolatedRoot('Z:\\unverified-fonts'); routing.registerIsolatedRoot('Y:\\unverified-fonts')
   const stageModule = load('src/main/rust-core/ownedPreviewStageRuntime.ts'), createStage = stageModule.createOwnedPreviewStageRuntime
@@ -290,6 +291,84 @@ async function composition(native = false) {
       const pixelRender = (signal, width=1, timeout=5000) => submit('--preview-render-image', {fontPath:source,outputPath:output,width,height:1}, {
         paths:[source,output],write:true,preview:true,accesses:[{path:source,mode:'read',scope:'file'},{path:output,mode:'write',scope:'file'}]
       },signal,{foregroundPreviewBytes:true,maxBuffer:5*1024*1024,timeout})
+      // Parse's production effect proof must coexist with an actual owned
+      // foreground render, but neither may let a root writer through early.
+      const parseInput = { jobs: [{ jobId: 'parse', rootPath: 'Z:\\unverified-fonts', filePath: source,
+        cacheKey: 'a', signature: 'fixture', fileSize: 12, modifiedAt: 1 }], fullHash: false }
+      let parseAt = jobs.length
+      const parseController = new AbortController()
+      const parsing = submit('--font-parse-batch', parseInput, undefined, parseController.signal).catch(error => error)
+      await until(() => jobs.length === parseAt + 1)
+      const parseRequest = requests.at(-1)
+      assert.equal(parseRequest.write, false); assert.equal(parseRequest.verifiedReadOnly, true)
+      assert.equal(parseRequest.accesses, undefined); assert(parseRequest.roots.includes('configured-root:font-parse'))
+      const duringParse = pixelRender(); void duringParse.catch(() => {})
+      await until(() => jobs.length === parseAt + 2 && jobs[parseAt + 1].ready)
+      assert.equal(pool.status().activeDefault, 1); assert.equal(pool.status().activePreviewRead, 1)
+      const parseWriter = submit('--unknown-writer', { path: other }, { paths: [other], write: true }); void parseWriter.catch(() => {})
+      await until(() => pool.status().queued === 1)
+      parseController.abort()
+      const parseError = await parsing
+      assert.equal(parseError.reason, 'cancelled'); assert(jobs[parseAt].closed, 'parse returned before physical close')
+      assert(!fs.existsSync(jobs[parseAt].args[2]), 'parse input survived physical close and disposal')
+      assert.equal(jobs.length, parseAt + 2, 'root writer bypassed active preview')
+      await release(jobs[parseAt + 1]); assert((await duringParse).previewBytes.equals(png))
+      await until(() => jobs.length === parseAt + 3)
+      assert.equal(jobs[parseAt + 2].args[0], '--unknown-writer')
+      await release(jobs[parseAt + 2]); await parseWriter; await pool.whenIdle()
+      assert.equal(children.size, 0)
+      parseAt = jobs.length
+      const parseTimeout = submit('--font-parse-batch', parseInput, undefined, undefined, { timeout: 150 }).catch(error => error)
+      await until(() => jobs.length === parseAt + 1)
+      assert.equal((await parseTimeout).reason, 'timeout')
+      assert(jobs[parseAt].closed); assert(!fs.existsSync(jobs[parseAt].args[2]))
+      await pool.whenIdle(); assert.equal(children.size, 0)
+      // Exercise the aggregate timer while a slice is queued and while its
+      // actual child is executing. Date is not advanced: only the production
+      // timer callback can set expired and abort this invocation's controller.
+      const indexing = load('src/main/rust-core/clients/rustIndexingClientRuntime.ts').createRustIndexingClientRuntime({ ...transport, appendStartupLog: value => logs.push(value) })
+      const budgetJobs = Array.from({ length: 65 }, (_, index) => ({ ...parseInput.jobs[0], jobId: 'budget-' + index, requireSourceStability: true }))
+      for (const phase of ['queued', 'executing', 'user-cancel']) {
+        const beforeJobs = jobs.length
+        let blocker
+        if (phase === 'queued') {
+          blocker = submit('--unknown-writer', { path: other }, { paths: [other], write: true })
+          void blocker.catch(() => {})
+          await until(() => jobs.length === beforeJobs + 1)
+        }
+        const requestStart = requests.length, childStart = jobs.length
+        parseBudgetCallback = undefined; captureParseBudget = true
+        const userCancel = new AbortController(), userReason = new Error('controlled user cancellation')
+        const budgetFailure = indexing.runRustFontParseBatch(budgetJobs, userCancel.signal).catch(error => error)
+        await until(() => requests.length === requestStart + 1 && (phase === 'queued' ? pool.status().queued === 1 : jobs.length === childStart + 1))
+        captureParseBudget = false
+        assert.equal(typeof parseBudgetCallback, 'function', 'aggregate timeout was not armed')
+        const request = requests[requestStart], inputPath = request.args[2]
+        assert.equal(request.timeoutMs, 30000); assert.equal(request.queueTimeoutMs, 3000)
+        assert.equal(request.signal.aborted, false); assert(fs.existsSync(inputPath))
+        const expire = parseBudgetCallback
+        if (phase === 'user-cancel') userCancel.abort(userReason)
+        else setTimeout(expire, 10)
+        const budgetError = await budgetFailure
+        assert.equal(budgetError.reason, phase === 'user-cancel' ? 'cancelled' : 'font-parse-total-timeout')
+        assert.equal(request.signal.aborted, true)
+        if (phase === 'user-cancel') {
+          assert.equal(request.signal.reason, userReason)
+          assert.equal(typeof budgetError.requestId, 'number', 'user cancellation lost the physical owner error')
+          assert.equal(budgetError.sharedIo, true); assert(budgetError.closed)
+        } else assert.equal(request.signal.reason.reason, 'font-parse-total-timeout', 'aggregate error did not cause cancellation')
+        assert.equal(requests.length, requestStart + 1, 'aggregate timeout submitted a later slice')
+        assert(!fs.existsSync(inputPath), 'timed-out aggregate retained its input')
+        if (phase === 'queued') {
+          assert.equal(jobs.length, childStart, 'queued aggregate timeout spawned a parse child')
+          assert.equal(jobs[beforeJobs].closed, false, 'aggregate cancellation killed the unrelated writer')
+          await release(jobs[beforeJobs]); await blocker
+        } else {
+          assert.equal(jobs.length, childStart + 1)
+          assert(jobs[childStart].closed, 'aggregate timeout returned before parse physical close')
+        }
+        await pool.whenIdle(); assert.equal(children.size, 0)
+      }
       // Independently prove native owned stages retain ten active read slots.
       // Wait for each real child's nonce receipt before starting the next so
       // this capacity case does not turn ten Node startups into a phase-budget
@@ -337,3 +416,4 @@ async function composition(native = false) {
 }
 async function main() { await proofCases(); await nativeReservationCases(); await nativeInitialPhaseCases(); await proofLifetimeCases(); await composition(); await composition(true); console.log('owned preview stage: locality/live proof; ten proven native byte renders; unverified-alias read overlap; write fairness; same-output serialization; render/copy cancel-close; stale generation; unknown copy no replay passed') }
 main().catch(error => { console.error(error); process.exitCode = 1 })
+

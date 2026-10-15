@@ -1,4 +1,5 @@
 import type { FontItem } from '@shared/types'
+import type { SharedWatchStatus } from '../../../../shared/sharedWatchStatus'
 import type { RefObject, UIEvent, MouseEvent } from 'react'
 import type { CardPoolViewMode, SortMode, SidebarPage, ActiveFilter, PageToolbarState, DeveloperStatusEntry, VirtualLayout } from '../../appRuntime'
 import type { FontViewLayout } from '../../runtime/app/fontViewLayoutRuntime'
@@ -8,6 +9,7 @@ export type FontListPanelProps = {
   sidebarPage: SidebarPage
   refreshDeveloperStatusDetails: () => Promise<void>
   status: string
+  sharedWatchStatus?: SharedWatchStatus | null
   latestIndexProgress: unknown
   developerArchitecture: unknown
   developerSchedulerStatus: unknown

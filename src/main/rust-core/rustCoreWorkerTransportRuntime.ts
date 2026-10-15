@@ -121,7 +121,7 @@ type RustCoreJsonFile = {
 type RustCoreTemporaryEntry = {
   holds: number; disposed: boolean; file: RustCoreJsonFile; input?: unknown
   writeAttempts: number; completedWrites: number; pendingWrites: number
-  identityIntent: boolean; identitySealed: boolean
+  identityIntent: boolean; identitySealed: boolean; parseSealed?: boolean
 }
 
 // The transport owns path allocation, encoding and best-effort deletion.
@@ -152,6 +152,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       writeAttempts: 0, completedWrites: 0, pendingWrites: 0, identityIntent: false, identitySealed: false }
     temporaryFiles.set(file.path, entry)
     return { ...file, writeJson: async value => {
+      if (entry.parseSealed) throw new SharedIoProcessError('Font parse input is sealed', 'not-started', 'font-parse-input-sealed')
       if (entry.identitySealed) throw new SharedIoProcessError('Font identity input is sealed', 'not-started', 'identity-input-sealed')
       entry.writeAttempts += 1
       entry.pendingWrites += 1
@@ -247,6 +248,23 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     const inputEntry = temporaryFiles.get(inputPath)
     if (args[0] === '--shared-file-io' && (!inputEntry || inputEntry.disposed))
       throw new SharedIoProcessError('Shared filesystem input is not owned by this transport', 'not-started', 'shared-input-unavailable')
+    const parseRequest = args[0] === '--font-parse-batch'
+    const parseInput = inputEntry?.input as { jobs?: unknown[] } | undefined
+    // The audited parser only reads its JSON and source handles. Admit that
+    // effect only for the exact CLI and a completed, transport-owned snapshot.
+    // Never narrow the footprint: a source/input path may cross a junction.
+    const verifiedParseRead = parseRequest && args.length === 3 && args[1] === '--input'
+      && cachedStatus?.available === true && cachedStatus.path === workerPath
+      && hasCapability(cachedStatus, 'font-parse-batch') && hasCapability(cachedStatus, 'font-parse-batch-source-stability-v1')
+      && !!inputEntry && !inputEntry.disposed && inputEntry.pendingWrites === 0
+      && inputEntry.writeAttempts === 1 && inputEntry.completedWrites === 1
+      && Array.isArray(parseInput?.jobs)
+    if (parseRequest) {
+      if (!inputEntry || inputEntry.disposed || inputEntry.pendingWrites !== 0 || inputEntry.writeAttempts !== 1 || inputEntry.completedWrites !== 1)
+        throw new SharedIoProcessError('Font parse input is not a completed single write', 'not-started', 'font-parse-input-unstable')
+      inputEntry.parseSealed = true
+      target = { paths: inferredPaths, write: !verifiedParseRead }
+    }
     const ownedNativeStage = args[0] === '--preview-render-owned-stage' && cachedStatus?.path === workerPath && hasCapability(cachedStatus, 'preview-owned-stage-v1')
       ? nativePreviewStages.forInput(temporaryFiles.get(inputPath)?.input, workerPath) : undefined
     if (args[0] === '--preview-render-owned-stage' && (!ownedNativeStage || target?.write !== true || !target.preview
@@ -300,7 +318,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     const pinnedBindingRead = args[0] === '--shared-metadata-overlay-read' && cachedStatus?.path === workerPath
       && hasCapability(cachedStatus, 'shared-metadata-bindings-read-v1') && effectInput?.bindingSnapshot === true
       && !effectInput.preflight && Array.isArray(effectInput.entries) && effectInput.entries.length === 0
-    const verifiedReadOnly = verifiedIdentityRead || (completeReadFootprint && (verifiedListing || pureFileRead || pinnedBindingRead))
+    const verifiedReadOnly = verifiedParseRead || verifiedIdentityRead || (completeReadFootprint && (verifiedListing || pureFileRead || pinnedBindingRead))
     if (identityRequest) {
       // Canonicalization may leave even a known UNC share. This effect proof
       // permits read/read overlap; it never supplies a precise alias footprint.
@@ -325,6 +343,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     const previewRead = sharedReadOnlyPreview || (target?.write === false && (target.preview || (args[0] === '--shared-file-io' && isSharedPreviewReadScope())))
     execOptions = { ...execOptions, sharedIo: target }
     const roots = target ? await sharedIoResourceKeys(target.paths) : []
+    if (parseRequest) { roots.push('configured-root:font-parse'); accesses = undefined }
     if (identityRequest) { roots.push('configured-root:font-content-identity-read'); accesses = undefined }
     if (conservativeListing) { roots.push('configured-root:listing-output'); accesses = undefined }
     if (conservativePreviewOutput) roots.push('configured-root:preview-output-unverified')
@@ -365,7 +384,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }
       }
       logOperation({ stage: 'backend-submit', backend: 'rust', transport: 'shared-one-shot' }, options.appendStartupLog)
-      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, verifiedReadOnly, sharedReadOnlyPreview, previewStageProof: ownedNativeStage?.proof || (sharedReadOnlyPreview ? previewStages.proofForInput(temporaryFiles.get(inputPath)?.input) : undefined), initialPhase: ownedNativeStage ? { timeoutMs: 500, acceptLine: ownedNativeStage.acceptLine } : undefined, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : 'normal'),
+      const result = await sharedIo.run({ file: workerPath, args, roots, accesses, write: target!.write, verifiedReadOnly, sharedReadOnlyPreview, previewStageProof: ownedNativeStage?.proof || (sharedReadOnlyPreview ? previewStages.proofForInput(temporaryFiles.get(inputPath)?.input) : undefined), initialPhase: ownedNativeStage ? { timeoutMs: 500, acceptLine: ownedNativeStage.acceptLine } : undefined, label: sharedIoRequestLabel(args), lane: previewRead ? 'preview-read' : 'default', priority: currentSharedIoPriority() ?? (previewRead ? 'foreground' : parseRequest ? 'background' : 'normal'),
         timeoutMs: Math.min(sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing), previewLifetime?.remainingMs() ?? Infinity),
         onStderrLine: execOptions.onStderrLine,
         queueTimeoutMs, maxBuffer: execOptions.maxBuffer, signal: execOptions.signal, onClose, admit }).then(result => {
@@ -374,7 +393,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         }).catch(async error => {
           previewLifetime?.recordQueueWait(error.queuedMs)
           logOperation({ stage: 'transport-result', outcome: error.outcome || 'unknown', reason: error.reason || 'worker-rejected', transport: 'shared-one-shot' }, options.appendStartupLog)
-          if (execOptions.assertCurrent || !target!.write || previewRead || accesses?.length || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') await awaitPhysicalIoClose(error)
+          if (execOptions.assertCurrent || !target!.write || previewRead || accesses?.length || identityRequest || parseRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') await awaitPhysicalIoClose(error)
           if (error.sharedIo === true && error.reason === 'process-exit' && error.previewRenderFailure === 'system-family-unavailable'
             && ['--preview-render-image', '--preview-render-owned-stage'].includes(args[0]) && effectInput?.preferSystemFont === true
             && typeof effectInput.fontPath === 'string' && !effectInput.fontPath.trim()
@@ -392,7 +411,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       for (const line of result.stderr.split(/\r?\n/)) if (line.startsWith('operation-chain: ')) {
         try { logOperation(JSON.parse(line.slice(17)), options.appendStartupLog) } catch { /* Preserve the worker result. */ }
       }
-      if ((!target!.write || sharedReadOnlyPreview || identityRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
+      if ((!target!.write || sharedReadOnlyPreview || identityRequest || parseRequest || args[0] === '--list-font-files' || args[0] === '--preview-render-image') && !admit()) throw new SharedIoProcessError('共享根状态已变化，旧读取结果已丢弃。','unknown','stale-generation')
       // A malformed success envelope can follow a commit. It must never trigger a fallback write.
       try {
         const payload = parseJsonLine<{ ok?: boolean }>(result.stdout)
@@ -717,3 +736,4 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
 }
 
 export type RustCoreWorkerTransportRuntime = ReturnType<typeof createRustCoreWorkerTransportRuntime>
+

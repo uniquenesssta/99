@@ -1,3 +1,4 @@
+import { isAbsolute, relative } from 'node:path'
 import { isRootIndexDbPath } from '../../cache/cachePaths'
 import type { RootScanCacheContext } from '../../watcher/watchedFolderIndexRuntime'
 import type { FontScanCacheEntry } from '../rootIndexRuntime'
@@ -16,13 +17,18 @@ export async function writeRootScanCacheContexts(
     const complete = context.scanListingComplete === true && !context.scanReadIncomplete
     if (context.cache.rebuildRequired) {
       // Any incomplete recovery scan retains the prior database and pointer.
-      if (!complete || errors.length) {
+      const rootErrors = errors.some(error => {
+        if (!error.path) return true
+        const path = relative(context.rootPath, error.path)
+        return !path || (!isAbsolute(path) && path !== '..' && !path.startsWith('..\\') && !path.startsWith('../'))
+      })
+      if (!complete || rootErrors) {
         deps.appendStartupLog(`root index recovery publication deferred: root=${context.rootPath}, errors=${errors.length}`)
         continue
       }
       const entries = Object.fromEntries([...context.seenKeys].flatMap(key => context.nextEntries[key] ? [[key, context.nextEntries[key]]] : []))
       if (Object.keys(entries).length !== context.seenKeys.size) throw new Error('恢复索引条目不完整，已保留旧索引。')
-      await deps.saveScanCacheFile(context.cachePath, { version: deps.fontScanCacheVersion, entries }, context.rootPath, context.storage)
+      await deps.saveScanCacheFile(context.cachePath, { version: deps.fontScanCacheVersion, entries, rebuildRequestId: context.cache.rebuildRequestId }, context.rootPath, context.storage)
       committedFolders.push(context.rootPath)
       continue
     }

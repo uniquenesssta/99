@@ -9,6 +9,8 @@ export function useInitialLibraryShellRuntime(args: {
   libraryLoadedRef: MutableRefObject<boolean>
   setLibrary: Dispatch<SetStateAction<LibraryState>>
   setStatus: Dispatch<SetStateAction<string>>
+  reportError?: (message: string) => void
+  onRecovered?: () => void
   setDatabasePageResult: Dispatch<SetStateAction<FontQueryPageResult | null>>
   setDatabaseQueryResult: Dispatch<SetStateAction<FontQueryResult | null>>
   setDatabaseRefreshToken: Dispatch<SetStateAction<number>>
@@ -43,11 +45,12 @@ export function useInitialLibraryShellRuntime(args: {
         setLibrary(normalized)
         const loadStatus = `已载入库配置，数据库中共有 ${shell?.totalFonts || 0} 个共享索引字体；列表按需分页加载。`
         setStatus(loadStatus)
+        args.onRecovered?.()
         setDatabasePageResult(null)
         setDatabaseQueryResult(null)
         setDatabaseRefreshToken((value) => value + 1)
       } catch (error) {
-        setStatus(`库配置加载失败：${error instanceof Error ? error.message : String(error)}`)
+        ;(args.reportError || setStatus)(`库配置加载失败：${error instanceof Error ? error.message : String(error)}`)
         libraryLoadedRef.current = false
         initialLibraryLoadStartedRef.current = false
       }

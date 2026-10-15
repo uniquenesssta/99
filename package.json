@@ -227,6 +227,7 @@
     "diagnostics:manual-refresh-inventory": "node build/diagnostics/check-manual-refresh-inventory.cjs",
     "diagnostics:install-status-authority": "node --experimental-sqlite build/diagnostics/check-install-status-authority.cjs",
     "diagnostics:scan-partial-retention": "node --experimental-sqlite build/diagnostics/check-scan-partial-retention.cjs",
+    "diagnostics:scan-rebuild-recovery": "node --experimental-sqlite build/diagnostics/check-scan-rebuild-recovery.cjs",
     "diagnostics:install-projection-recovery": "node --experimental-sqlite build/diagnostics/check-install-projection-recovery.cjs",
     "diagnostics:sqlite-manual-restore": "node --experimental-sqlite build/diagnostics/check-sqlite-manual-restore.cjs",
     "diagnostics:cache-cleanup-safety": "node build/diagnostics/check-cache-cleanup-safety.cjs"

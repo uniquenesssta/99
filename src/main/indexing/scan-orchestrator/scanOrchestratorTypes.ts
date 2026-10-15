@@ -21,7 +21,7 @@ export interface ScanOrchestratorDeps {
   cacheEntryRuntimePath: (rootPath: string, cacheKey: string) => string
   sanitizeCachedFont: (font: FontItem, cacheKey: string, filePath: string, stat: CachedFontStatLike) => FontItem
   cachedFontForRuntime: (font: FontItem, filePath: string, stat: CachedFontStatLike, cacheKey: string) => FontItem
-  ensureRootScanCacheStorage: (rootPath: string) => Promise<{
+  ensureRootScanCacheStorage: (rootPath: string, request?: { rebuildRequested?: boolean }) => Promise<{
     cachePath: string
     cacheDir: string
     storage: 'root' | 'fallback'
@@ -100,7 +100,7 @@ export interface ActiveFontScanStatus {
 export interface ScanOrchestratorRuntime {
   scanFolders: (folders: string[], knownFonts?: FontItem[], options?: { jobId?: string; signal?: AbortSignal }) => Promise<ScanResult>
   scanFoldersManaged: (folders: string[], knownFonts?: FontItem[]) => Promise<ScanResult>
-  scanFoldersWhenIdle: (folders: string[]) => Promise<ScanResult>
+  scanFoldersWhenIdle: (folders: string[], signal?: AbortSignal) => Promise<ScanResult>
   cancelActiveFontScan: (reason?: string) => { cancelled: boolean; jobId?: string; message: string }
   activeFontScanStatus: () => ActiveFontScanStatus
   isActive: () => boolean

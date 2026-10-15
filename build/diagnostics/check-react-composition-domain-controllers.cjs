@@ -65,6 +65,47 @@ function checkBaseline() {
   assert.deepEqual(declarations(baselineApp), fixture.states, 'AT-6.4 immutable App state/ref baseline changed')
 }
 
+
+function replaceOnce(text, current, previous, label) {
+  assert.equal(text.split(current).length, 2, `status migration anchor ${label}`)
+  return text.replace(current, previous)
+}
+
+function legacyStatusOwners(text) {
+  const added = [
+    '  const statusRef = useRef(status)\n',
+    '  const [actionStatus, setActionStatus] = useState<string | null>(null)\n',
+    "  const actionStatusSourceRef = useRef<'operation' | 'load' | 'save' | 'write' | 'query' | null>(null)\n"
+  ]
+  for (const declaration of added) text = replaceOnce(text, declaration, '', declaration)
+  return replaceOnce(text, "const [status, setStatusState] = useState('准备就绪')", "const [status, setStatus] = useState('准备就绪')", 'status setter')
+}
+
+// Only the explicit feedback extension is reversed. The original queue algorithm,
+// retry order, persistence receipt and every historical token hash stay frozen.
+function legacyWriteFeedback(text) {
+  const additions = [
+    "// Feedback recovery follows the same queue across renders. Unexpected exceptions\n// have no confirmed pending-write receipt and remain visible until dismissed.\nconst failedFieldsByQueue = new WeakMap<QueueRef, Map<WriteField, 'retry' | 'uncertain'>>()\n",
+    '  reportError?: (status: string) => void\n  onRecovered?: () => void\n',
+    "  let failedFields = failedFieldsByQueue.get(options.queueRef)\n  if (!failedFields) {\n    failedFields = new Map()\n    failedFieldsByQueue.set(options.queueRef, failedFields)\n  }\n  const feedbackFailures = failedFields\n",
+    '    let confirmedWrites = 0\n',
+    '        confirmedWrites += result.wroteCount\n',
+    "          if (feedbackFailures.get(field) !== 'uncertain') feedbackFailures.set(field, 'retry')\n",
+    "      if (confirmedWrites > 0 && feedbackFailures.get(field) === 'retry') feedbackFailures.delete(field)\n",
+    "      feedbackFailures.set(field, 'uncertain')\n",
+    '      if (reportRecovery && confirmedWrites > 0 && !feedbackFailures.size && !fieldTasks.size && !queuedFontWriteCount(options.queueRef.current)) options.onRecovered?.()\n',
+    '        if (changedFields.size && !feedbackFailures.size && !queuedFontWriteCount(options.queueRef.current) && !fieldTasks.size) options.onRecovered?.()\n'
+  ]
+  for (const addition of additions) text = replaceOnce(text, addition, '', addition)
+  text = replaceOnce(text, "refresh: RendererFontWriteQueueRuntimeOptions['scheduleDatabaseDerivedStateRefresh'] = options.scheduleDatabaseDerivedStateRefresh, reportRecovery = true", "refresh: RendererFontWriteQueueRuntimeOptions['scheduleDatabaseDerivedStateRefresh'] = options.scheduleDatabaseDerivedStateRefresh", 'field recovery owner')
+  text = replaceOnce(text, 'flushField(field, reason, refresh, reportRecovery)', 'flushField(field, reason, refresh)', 'recursive field recovery')
+  text = replaceOnce(text, 'flushField(field, reason, collectRefresh, false)', 'flushField(field, reason, collectRefresh)', 'full drain recovery')
+  const fullError = "    })().catch((error) => {\n      // The merged refresh follows all field writes; only its success can\n      // retire earlier failure feedback for this complete drain.\n      for (const field of WRITE_FIELDS) feedbackFailures.set(field, 'uncertain')\n      ;(options.reportError || options.setStatus)(`后台写入队列异常：${error instanceof Error ? error.message : String(error)}；将继续重试。`)\n      throw error\n    }).finally(() => {\n      options.activeRef.current = false"
+  text = replaceOnce(text, fullError, '    })().finally(() => {\n      options.activeRef.current = false', 'full drain failure feedback')
+  assert.equal(text.split(';(options.reportError || options.setStatus)').length, 3, 'two field write-error feedback sites')
+  return text.replaceAll(';(options.reportError || options.setStatus)', 'options.setStatus')
+}
+
 function checkStructure(overrides = new Map()) {
   const get = (relativePath) => String(overrides.get(relativePath) ?? read(relativePath)).replace(/\r\n/g, '\n')
   const app = get(appPath)
@@ -76,7 +117,7 @@ function checkStructure(overrides = new Map()) {
   assert(Object.hasOwn(fixture.states, retiredState), 'retired owner missing from historical baseline')
   for (const [relativePath, frozenNames] of Object.entries(fixture.owners)) {
     const expectedNames = frozenNames.filter(name => name !== retiredState)
-    const owned = declarations(get(relativePath))
+    const owned = declarations(relativePath === libraryControllerPath ? legacyStatusOwners(get(relativePath)) : get(relativePath))
     const extra = Object.fromEntries(Object.entries(fixture.additionalOwners?.[relativePath] || {}).filter(([name]) => name !== 'cacheStatsRequestState'))
     assert(!Object.hasOwn(owned, retiredState) && !Object.hasOwn(owned, 'cacheStatsRequestState'), 'unread cache statistics owner returned')
     assert.deepEqual(Object.fromEntries(Object.entries(owned).filter(([name]) => Object.hasOwn(extra, name))), extra, `${relativePath} U-05 owner initialization changed`)
@@ -102,7 +143,7 @@ function checkStructure(overrides = new Map()) {
   )
 
   for (const [relativePath, expectedHash] of Object.entries(fixture.sourceHashes)) {
-    assert.equal(hash(get(relativePath)), expectedHash, `frozen AT-6.4 lifecycle behavior changed: ${relativePath}`)
+    assert.equal(hash(relativePath === 'src/renderer/src/fontWriteQueueRuntime.ts' ? legacyWriteFeedback(get(relativePath)) : get(relativePath)), expectedHash, `frozen AT-6.4 lifecycle behavior changed: ${relativePath}`)
   }
 
   for (const forbidden of [
@@ -125,7 +166,7 @@ function checkStructure(overrides = new Map()) {
   const libraryReturns = returnedKeys(libraryControllerPath, library, 'useLibraryController')
   const operationsReturns = returnedKeys(operationsControllerPath, operations, 'useFontOperationsController')
   const developerReturns = returnedKeys(developerControllerPath, developer, 'useDeveloperController')
-  for (const name of ['databaseRefreshTimerRef', 'initialLibraryLoadStartedRef', 'sharedMetadataSyncInFlightRef', 'lastSharedMetadataSyncCheckAtRef', 'pendingRefreshScope', 'activeFilterKindRef']) {
+  for (const name of ['databaseRefreshTimerRef', 'initialLibraryLoadStartedRef', 'sharedMetadataSyncInFlightRef', 'lastSharedMetadataSyncCheckAtRef', 'pendingRefreshScope', 'activeFilterKindRef', 'statusRef', 'actionStatusSourceRef']) {
     assert(!libraryReturns.has(name), `Library controller exposed mutable owner ${name}`)
   }
   for (const name of fixture.owners[operationsControllerPath].filter((entry) => !entry.startsWith('['))) {
@@ -143,7 +184,7 @@ function checkStructure(overrides = new Map()) {
     'refreshDeveloperStatusDetailsRuntime'
   ]) assert(!new RegExp(`\\b${forbidden}\\b`).test(app), `App retained ${forbidden} implementation ownership`)
 
-  assert(library.includes('onPersistenceRecovered: refreshDatabaseDerivedState'), 'autosave recovery lost database invalidation')
+  assert(library.includes("onPersistenceRecovered: () => { clearFeedback('save'); refreshDatabaseDerivedState() }"), 'autosave recovery lost database invalidation')
   assert(library.includes('useSharedMetadataSyncForegroundRuntime({'), 'Library controller lost foreground shared metadata lifecycle')
   assert(operations.includes('scheduleDatabaseDerivedStateRefresh: options.library.scheduleDatabaseDerivedStateRefresh'), 'font writes lost the Library refresh command')
   assert(operations.indexOf('createRendererFontWriteQueueRuntime({') < operations.indexOf('useAppFlushOnUnloadRuntime({'), 'close lifecycle must bind after the write queue exists')
@@ -157,13 +198,17 @@ function checkStructure(overrides = new Map()) {
 
 function createHookHarness() {
   let cursor = 0
+  let callbackCursor = 0
+  const callbacks = []
+  const setters = []
   const slots = []
   const effects = []
   const hooks = {
     useState(initial) {
       const index = cursor++
       if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial
-      return [slots[index], (value) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value }]
+      if (!setters[index]) setters[index] = (value) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value }
+      return [slots[index], setters[index]]
     },
     useRef(initial) {
       const index = cursor++
@@ -171,7 +216,11 @@ function createHookHarness() {
       return slots[index]
     },
     useMemo(factory) { return factory() },
-    useCallback(callback) { return callback },
+    useCallback(callback, dependencies) {
+      const index = callbackCursor++, previous = callbacks[index]
+      if (!previous || dependencies.length !== previous.dependencies.length || dependencies.some((value, i) => !Object.is(value, previous.dependencies[i]))) callbacks[index] = { callback, dependencies }
+      return callbacks[index].callback
+    },
     useEffect(effect) { effects.push(effect); effect() },
     useLayoutEffect(effect) { effects.push(effect); effect() }
   }
@@ -181,6 +230,7 @@ function createHookHarness() {
     effects,
     render(hook, options) {
       cursor = 0
+      callbackCursor = 0
       return hook(options)
     }
   }
@@ -213,7 +263,7 @@ function createLoader({ hooks, mocks = {}, globals = {}, overrides = new Map() }
   return load
 }
 
-async function checkLibraryBehavior() {
+async function checkLibraryBehavior(overrides = new Map()) {
   const harness = createHookHarness()
   const calls = {}
   const cleared = []
@@ -241,7 +291,7 @@ async function checkLibraryBehavior() {
     './effects/useInitialLibraryShellRuntime': { useInitialLibraryShellRuntime: (options) => { calls.initial = options } },
     './effects/useLibraryAutosaveRuntime': {
       libraryShellPersistenceKey: () => 'shell-key',
-      useLibraryAutosaveRuntime: (options) => ({
+      useLibraryAutosaveRuntime: (options) => (calls.autosave = options, {
         setLibrary: options.setLibrary,
         getCurrentLibrary: () => options.library,
         commitLibraryUpdate: (update) => typeof update === 'function' ? update(options.library) : update,
@@ -253,7 +303,7 @@ async function checkLibraryBehavior() {
   }
   const load = createLoader({
     hooks: harness.hooks,
-    mocks,
+    mocks, overrides,
     globals: { window: { clearTimeout: (id) => cleared.push(id), setTimeout: () => 1 } }
   })
   const useLibraryController = load(libraryControllerPath).useLibraryController
@@ -261,8 +311,38 @@ async function checkLibraryBehavior() {
   const closingLifecycle = { isClosing: () => libraryClosing, beginClosing() { libraryClosing = true }, resume() { libraryClosing = false }, subscribe: () => () => {} }
   const options = { hfm: {}, database, rendererUserActive: () => false, appendDeveloperStatus() {}, closingLifecycle }
   let controller = harness.render(useLibraryController, options)
-  assert.equal(harness.slots.length, 13)
+  assert.equal(harness.slots.length, 16)
   assert(!Object.hasOwn(controller, 'setCacheStats'), 'library re-exposed unread state setter')
+  const render = () => (controller = harness.render(useLibraryController, options))
+  const stable = ['setStatus', 'reportActionStatus', 'reportWriteError', 'clearWriteError', 'reportQueryError', 'clearQueryError', 'dismissActionStatus']
+  const initialCallbacks = Object.fromEntries(stable.map(key => [key, controller[key]]))
+  for (let i = 0; i < 100; i++) controller.setStatus(`background ${i}`)
+  render(); assert.equal(controller.actionStatus, null, 'DIAGNOSTIC_NOTICE: background status became an operation notice')
+  controller.reportActionStatus('manual failure'); render()
+  assert.equal(controller.actionStatus, 'manual failure', 'ACTION_NOTICE: operation failure was hidden')
+  controller.setStatus('background progressing'); render()
+  assert.equal(controller.actionStatus, 'manual failure', 'DIAGNOSTIC_REPLACED_NOTICE')
+  controller.reportActionStatus(previous => previous + ': operation complete'); render()
+  assert.equal(controller.actionStatus, 'background progressing: operation complete')
+  controller.dismissActionStatus(); render(); assert.equal(controller.actionStatus, null)
+  for (const [fail, recover, label] of [
+    [() => calls.initial.reportError('load failed'), () => calls.initial.onRecovered(), 'load'],
+    [() => calls.autosave.setStatus('save failed'), () => calls.autosave.onPersistenceRecovered(), 'save'],
+    [() => controller.reportWriteError('write failed'), () => controller.clearWriteError(), 'write'],
+    [() => controller.reportQueryError('query failed'), () => controller.clearQueryError(), 'query']
+  ]) {
+    fail(); render(); assert.equal(controller.actionStatus, `${label} failed`, 'ERROR_NOTICE: ' + label)
+    recover(); render(); assert.equal(controller.actionStatus, null, 'RECOVERED_NOTICE: ' + label)
+    if (label === 'save') assert(calls.refresh, 'save recovery lost original database invalidation')
+    fail(); render(); controller.reportActionStatus('new manual result'); render()
+    recover(); render(); assert.equal(controller.actionStatus, 'new manual result', 'SCOPED_RECOVERY: ' + label)
+    controller.dismissActionStatus(); render()
+  }
+  for (const key of stable) assert.equal(controller[key], initialCallbacks[key], 'STABLE_STATUS_CALLBACK: ' + key)
+  libraryClosing = true; controller.reportActionStatus('late'); render()
+  assert.equal(controller.actionStatus, null, 'CLOSING_NOTICE')
+  libraryClosing = false
+
   controller.refreshDatabaseDerivedState()
   assert.equal(calls.refresh.databasePageRequestSeqRef, database.databasePageRequestSeqRef)
   assert.equal(calls.refresh.fontMetricsRequestSeqRef, database.fontMetricsRequestSeqRef)
@@ -314,6 +394,7 @@ async function checkOperationsBehavior() {
   const protectionWrites = []
   let liveLibrary = { folders: ['root'], fonts: { a: { id: 'a', deleteProtected: false } } }
   const noOp = () => {}
+  const action = () => {}, writeError = () => {}, writeRecovered = () => {}
   const asyncNoOp = async () => {}
   const queueRuntime = {
     clearTimer: noOp,
@@ -384,7 +465,7 @@ async function checkOperationsBehavior() {
       commitLibraryUpdate: (update) => { setLibrary(update); return liveLibrary },
       saveLibraryImmediately: async () => true,
       flushLibraryPersistence: async () => true,
-      setStatus: noOp,
+      setStatus: noOp, reportActionStatus: action, reportWriteError: writeError, clearWriteError: writeRecovered,
       selectedFolderId: '',
       setSelectedFolderId: noOp,
       indexingActive: false,
@@ -425,6 +506,9 @@ async function checkOperationsBehavior() {
   assert(!Object.hasOwn(calls.index, 'setCacheStats'))
   assert(!Object.hasOwn(controller, 'loadCacheStats'))
   assert.equal(calls.queue.scheduleDatabaseDerivedStateRefresh, noOp)
+  assert.equal(calls.queue.setStatus, noOp); assert.equal(calls.queue.reportError, writeError); assert.equal(calls.queue.onRecovered, writeRecovered)
+  assert.equal(calls.system.setStatus, action); assert.equal(calls.index.setStatus, action)
+  assert.equal(calls.install.setStatus, noOp); assert.equal(calls.progress.setStatus, noOp)
   assert.equal(calls.install.knownInstallStatusIds, calls.index.knownInstallStatusIds)
   assert.equal(calls.index.autoInstallStatusRefreshStartedRef, calls.progress.autoInstallStatusRefreshStartedRef)
   assert.equal(calls.index.autoInstallStatusRefreshStartedRef, calls.auto.startedRef)
@@ -619,6 +703,15 @@ async function main() {
   checkBaseline()
   checkStructure()
   await checkLibraryBehavior()
+  for (const [before, after, reason] of [
+    ['    setActionStatus(statusRef.current)', '    setActionStatus(null)', /ACTION_NOTICE/],
+    ['    if (actionStatusSourceRef.current !== source) return', '', /SCOPED_RECOVERY/],
+    ["useCallback((message: SetStateAction<string>): void => reportFeedback('operation', message), [reportFeedback])", "((message: SetStateAction<string>): void => reportFeedback('operation', message))", /STABLE_STATUS_CALLBACK/]
+  ]) {
+    const original = read(libraryControllerPath)
+    assert.equal(original.split(before).length, 2, 'feedback mutation anchor')
+    await assert.rejects(() => checkLibraryBehavior(new Map([[libraryControllerPath, original.replace(before, after)]])), reason)
+  }
   await checkOperationsBehavior()
   await checkCloseFlushBehavior()
   await checkDeveloperLazyBehavior()
@@ -647,7 +740,7 @@ async function main() {
     developer.replace('if (!options.enabled || options.closingLifecycle.isClosing()) return\n', 'if (!options.enabled) return\n')
   ]])), 'production developer closing guard escaped structure gate')
   checkStructure(new Map(controllerPaths.map((relativePath) => [relativePath, read(relativePath).replace(/\n/g, '\r\n')])))
-  console.log('[diagnostics:react-composition-domain-controllers] 41 live state/ref owners (one unread cache statistics owner retired), write refresh, explicit closing admission/resume, close flush, protection/lazy cleanup, developer laziness, narrow ports, mutations and CRLF passed')
+  console.log('[diagnostics:react-composition-domain-controllers] 41 historical live owners plus three explicit feedback owners; stable callbacks and scoped recovery, write refresh, explicit closing admission/resume, close flush, protection/lazy cleanup, developer laziness, narrow ports, mutations and CRLF passed')
 }
 
 main().catch((error) => {

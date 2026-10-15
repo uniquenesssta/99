@@ -254,6 +254,10 @@ function harness() {
     }
   }
   const ports = {
+    './rootIndexFileRuntime': { writeJsonAtomic: async (target, value) => {
+      await checkFault('writeRebuildRequest', path.dirname(target))
+      file(target, JSON.stringify(value))
+    } },
     '../../path/sharedFileSystemRuntime': { sharedFileSystem: fsp, executeSharedFile,
       sharedSqliteReadSnapshot: async () => null,
       withoutSharedIoSignal: async action => {
@@ -436,22 +440,25 @@ async function directoryCompletionCannotRepublishOrDeleteNewOwner() {
 }
 
 async function scanPartialFailuresStillVisitOtherRoots() {
-  for (const mode of ['busy', 'denied', 'offline', 'enumeration']) {
+  for (const mode of ['busy', 'denied', 'offline', 'request-publication']) {
     const h = harness(), badRoot = path.resolve('D:/fonts-one'), goodRoot = path.resolve('E:/fonts-two')
     h.folders.push(badRoot, goodRoot)
     const bad = h.seedScan(badRoot), fallback = h.seedScan(badRoot, true), good = h.seedScan(goodRoot)
     const busyPath = path.join(bad.cacheDir, h.constants.ROOT_CACHE_LOCK_DIR_NAME, h.constants.ROOT_INDEX_LOCK_FILE_NAME)
     let busyOwner
     if (mode === 'busy') busyOwner = h.file(busyPath, 'original-writer-lock')
-    else if (mode === 'enumeration') h.faults.set('readdir:' + h.key(path.dirname(bad.db)), error('EACCES', 'root database enumeration denied'))
+    else if (mode === 'request-publication') h.faults.set('writeRebuildRequest:' + h.key(bad.cacheDir), error('EACCES', 'rebuild request publication denied'))
     else h.faults.set('stat:' + h.key(bad.cacheDir), error(mode === 'denied' ? 'EACCES' : 'ENETUNREACH', mode + '-root'))
     const cleanup = h.cleanup()
     await assert.rejects(cleanup.runtime.clearScanCache(), /缓存清理未全部完成/, mode + ' was reported as successful cleanup')
     assert.equal(h.nodes.has(h.key(bad.db)), true, mode + ': failed root database was deleted')
     assert.equal(h.nativeCalls.filter(call => call.operation === 'removeWithOwnedLocks' && call.paths.includes(bad.db)).length, 0, mode + ': incomplete acquisition/enumeration authorized guarded deletion')
-    assert.equal(h.nodes.has(h.key(good.db)), false, mode + ': later healthy root was skipped')
-    assert.equal(h.nodes.has(h.key(good.snapshot + '-wal')), false, mode + ': enumerated snapshot sidecar was omitted')
-    assert.equal(h.nodes.has(h.key(fallback.db)), false, mode + ': failed root prevented fallback cleanup')
+    assert.equal(h.nodes.has(h.key(good.db)), true, mode + ': last-good source database was removed')
+    assert.equal(h.nodes.has(h.key(path.join(good.cacheDir, 'index-rebuild-request.json'))), true, mode + ': later healthy root reset was skipped')
+    assert.equal(h.nodes.has(h.key(good.json)), false, mode + ': reusable legacy JSON survived reset')
+    assert.equal(h.nodes.has(h.key(good.snapshot + '-wal')), true, mode + ': retained source sidecar was removed')
+    assert.equal(h.nodes.has(h.key(fallback.db)), true, mode + ': fallback source was removed')
+    assert.equal(h.nodes.has(h.key(path.join(fallback.cacheDir, 'index-rebuild-request.json'))), true, mode + ': failed root prevented fallback reset')
     assert.equal(cleanup.invalidations, 2, mode + ': partial clear skipped finally invalidation')
     assert.equal(cleanup.statsReads, 0, mode + ': failure fabricated successful stats')
     assert.equal(h.events[0][0], 'invalidate', mode + ': deletion started before invalidation')

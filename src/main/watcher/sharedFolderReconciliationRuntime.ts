@@ -3,6 +3,7 @@ import type { SharedWatchRootStatus } from '../../shared/sharedWatchStatus'
 import type { SharedIoProcessError } from '../path/sharedIoProcessRuntime'
 
 export interface SharedFolderReconciliationOptions {
+  ensureSourceReady?: (signal: AbortSignal) => Promise<void>
   collect: (signal: AbortSignal) => Promise<WatcherMetadataInventory>
   apply: (inventory: WatcherMetadataInventory, signal: AbortSignal, forceVerifyPaths: ReadonlySet<string>, onProgress: (pendingCount: number) => void) => Promise<boolean>
   isCurrent: () => boolean
@@ -79,6 +80,8 @@ export function createSharedFolderReconciliationRuntime(options: SharedFolderRec
     try {
       phase = 'checking'
       pendingCount = null
+      await options.ensureSourceReady?.(controller.signal)
+      if (!current()) return
       const observed = await options.collect(controller.signal)
       if (!current()) return
       const changed = forceVerifyPaths.size > 0 || applyUnconfirmed || !committed || !sameInventory(committed, observed)

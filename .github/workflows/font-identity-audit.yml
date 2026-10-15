@@ -43,6 +43,8 @@ jobs:
             artifacts/ui-refresh-regression.log
             artifacts/font-identity-f04/*app-shell*.json
             artifacts/font-identity-f04/*app-shell*.png
+            artifacts/font-identity-f04/developer-status-*.json
+            artifacts/font-identity-f04/developer-status-*.png
           retention-days: 14
       - name: Verify native owned preview directory boundary
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
@@ -200,7 +202,7 @@ jobs:
           New-Item -ItemType Directory -Force artifacts | Out-Null
           $PSNativeCommandUseErrorActionPreference = $false
           $failed = 0
-          foreach ($script in @('check-scan-partial-retention.cjs', 'check-install-projection-recovery.cjs', 'check-sqlite-manual-restore.cjs', 'check-cache-cleanup-safety.cjs')) {
+          foreach ($script in @('check-scan-partial-retention.cjs', 'check-scan-rebuild-recovery.cjs', 'check-cache-recovery-composition.cjs', 'check-install-projection-recovery.cjs', 'check-sqlite-manual-restore.cjs', 'check-cache-cleanup-safety.cjs')) {
             & node --experimental-sqlite "build/diagnostics/$script" *>> artifacts/failure-recovery.log
             if ($LASTEXITCODE -ne 0) { $failed++ }
           }

@@ -12,7 +12,7 @@ export function AppSidebarDeveloperPage({ refreshDeveloperStatusDetails, setDeve
       <div className="section-title">开发者状态</div>
       <button className="clear-filter-button" onClick={() => void refreshDeveloperStatusDetails()}>刷新详细信息</button>
       <button className="clear-filter-button" onClick={() => setDeveloperStatusLog([])}>清空本页日志</button>
-      <div className="filter-note">仅开发环境显示。封包生产版会自动隐藏这个页面和底部状态栏。</div>
+      <div className="filter-note">运行状态与 NAS 监听集中在本页，仅开发环境显示。操作反馈仍会单独提示。</div>
     </div>
   )
 }

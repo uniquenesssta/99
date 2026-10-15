@@ -157,6 +157,70 @@ async function main() {
     }
     stages.push('cancellation and denied atomic rename retain the last-good active pointer')
 
+    // Real temporary SQLite + persisted request + candidate activation. These
+    // bytes are isolated fixtures, never installed fonts or a shared NAS root.
+    const resetRoot = path.join(directory, 'reset-root'), resetDir = path.join(resetRoot, '.hfm-cache')
+    const resetDb = path.join(resetDir, 'database', 'index.sqlite')
+    await fsp.mkdir(resetRoot, { recursive: true })
+    const sourceFile = path.join(resetRoot, 'font.ttf'); await fsp.writeFile(sourceFile, 'unchanged-source-font-fixture')
+    const digest = file => require('node:crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+    const sourceDigest = digest(sourceFile), resetCache = fixtureCache(resetRoot)
+    const runtimeDeps = { appName: 'HFM', fontScanCacheVersion: 1, scriptDetectionVersion: 1,
+      exists, openStableSqliteDb: openDb, closeSqliteDb: db => db.close(), appendStartupLog() {}, withGlobalIo: async (_label, run) => run(),
+      invalidateSharedFontRuntimeCaches() {}, recordCacheEvent: async () => {} }
+    await rootRuntime.saveRootIndexSqliteFile(resetDb, resetRoot, 'root', resetCache)
+    const oldActive = await rootRuntime.resolveActiveRootIndexDbPath(resetDir, resetDb)
+    const requestOwner = rootLoad('src/main/indexing/root-index/rootIndexRebuildRequestRuntime.ts')
+    const requestId = await requestOwner.requestRootIndexRebuild(resetDir)
+    const latest = path.join(resetDir, 'database', 'index.latest.json'), latestBefore = fs.readFileSync(latest, 'utf8')
+    const deniedLoad = loader({
+      [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [] },
+      [abs('src/main/path/sharedFileSystemRuntime.ts')]: { ...scope, sharedFileSystem: { ...fsp,
+        rename: async (from, to) => { if (to === latest) throw Object.assign(Error('activation denied'), { code: 'EACCES' }); return fsp.rename(from, to) },
+      } },
+    }, { setInterval, clearInterval })
+    const deniedOwner = deniedLoad('src/main/indexing/rootIndexRuntime.ts').createRootIndexRuntime(runtimeDeps)
+    await assert.rejects(deniedOwner.saveRootIndexSqliteFile(resetDb, resetRoot, 'root', { ...fixtureCache(resetRoot), rebuildRequestId: requestId }), /activation denied/)
+    assert.equal(fs.readFileSync(latest, 'utf8'), latestBefore)
+    assert.equal(await rootRuntime.resolveActiveRootIndexDbPath(resetDir, resetDb), oldActive)
+    assert.equal(Object.keys((await rootRuntime.readRootIndexSqliteFile(oldActive, resetRoot, 'root')).entries).length, 1)
+    assert.equal(await requestOwner.readRootIndexRebuildRequest(resetDir), requestId)
+    assert.equal(digest(sourceFile), sourceDigest)
+    const freshLoad = loader({ [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [] } }, { setInterval, clearInterval })
+    const freshRequests = freshLoad('src/main/indexing/root-index/rootIndexRebuildRequestRuntime.ts')
+    assert.equal(await freshRequests.readRootIndexRebuildRequest(resetDir), requestId, 'fresh runtime lost persisted rebuild request')
+    const freshOwner = freshLoad('src/main/indexing/rootIndexRuntime.ts').createRootIndexRuntime(runtimeDeps)
+    await freshOwner.saveRootIndexSqliteFile(resetDb, resetRoot, 'root', { ...fixtureCache(resetRoot), rebuildRequestId: requestId })
+    const newActive = await freshOwner.resolveActiveRootIndexDbPath(resetDir, resetDb)
+    assert.notEqual(newActive, oldActive)
+    assert.equal(Object.keys((await freshOwner.readRootIndexSqliteFile(newActive, resetRoot, 'root')).entries).length, 1)
+    assert.equal(await freshRequests.readRootIndexRebuildRequest(resetDir), undefined)
+    assert.equal(digest(sourceFile), sourceDigest)
+    stages.push('real reset request survives denied source activation; fresh runtime commits replacement then ACKs; source digest unchanged')
+    const ackId = await freshRequests.requestRootIndexRebuild(resetDir)
+    const requestFile = path.join(resetDir, 'index-rebuild-request.json')
+    const ackDeniedLoad = loader({
+      [abs('src/main/rust-core/rustSharedIoCommandRuntime.ts')]: { sharedIoResourceKeys: async () => [] },
+      [abs('src/main/path/sharedFileSystemRuntime.ts')]: { ...scope, sharedFileSystem: { ...fsp,
+        rm: async (file, options) => { if (file === requestFile) throw Object.assign(Error('ACK removal denied'), { code: 'EACCES' }); return fsp.rm(file, options) },
+      } },
+    }, { setInterval, clearInterval })
+    const ackDeniedOwner = ackDeniedLoad('src/main/indexing/rootIndexRuntime.ts').createRootIndexRuntime(runtimeDeps)
+    await ackDeniedOwner.saveRootIndexSqliteFile(resetDb, resetRoot, 'root', { ...fixtureCache(resetRoot), rebuildRequestId: ackId })
+    const ackPendingActive = await freshOwner.resolveActiveRootIndexDbPath(resetDir, resetDb)
+    assert.notEqual(ackPendingActive, newActive, 'ACK failure rolled back a committed replacement')
+    assert.equal(Object.keys((await freshOwner.readRootIndexSqliteFile(ackPendingActive, resetRoot, 'root')).entries).length, 1)
+    assert.equal(await freshRequests.readRootIndexRebuildRequest(resetDir), ackId)
+    const newerId = await freshRequests.requestRootIndexRebuild(resetDir)
+    await freshOwner.saveRootIndexSqliteFile(resetDb, resetRoot, 'root', { ...fixtureCache(resetRoot), rebuildRequestId: ackId })
+    assert.equal(await freshRequests.readRootIndexRebuildRequest(resetDir), newerId, 'old writer ACK removed a newer client reset request')
+    await freshOwner.saveRootIndexSqliteFile(resetDb, resetRoot, 'root', { ...fixtureCache(resetRoot), rebuildRequestId: newerId })
+    assert.equal(await freshRequests.readRootIndexRebuildRequest(resetDir), undefined)
+    assert.equal(digest(sourceFile), sourceDigest)
+    stages.push('real activation survives denied ACK; older completed generation cannot erase newer request')
+
+
+
 
     const mergedMissingDir = path.join(directory,'merged-missing-table');await fsp.mkdir(path.join(mergedMissingDir,'db'),{recursive:true})
     const mergedMissingPath = path.join(mergedMissingDir,'db','merged-index.sqlite'), incompleteMerged = openDb(mergedMissingPath)
@@ -252,4 +316,5 @@ async function main() {
     await fsp.rm(directory, { recursive: true, force: true })
   }
 }
-main().catch(error => { console.error(error); process.exitCode = 1 })
+const watchdog = setTimeout(() => { console.error('cache recovery composition did not settle'); process.exit(1) }, 120000)
+main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => clearTimeout(watchdog))

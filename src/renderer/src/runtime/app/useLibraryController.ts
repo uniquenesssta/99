@@ -1,7 +1,7 @@
 import { noteFontRefreshRequest, cancelFontRefreshObservation } from '../../fontOperationTrace'
 import { fontUserIntentRevision,hasUnsettledFavoriteIntent } from '../../fontUserIntentRuntime'
 import type { FontQueryPageResult,FontQueryResult,LibraryState } from '@shared/types'
-import { useEffect,useMemo,useRef,useState } from 'react'
+import { useCallback,useEffect,useMemo,useRef,useState } from 'react'
 import type { Dispatch,MutableRefObject,SetStateAction } from 'react'
 import type { FontMetrics } from '../../appRuntime'
 import {
@@ -36,7 +36,10 @@ export function useLibraryController(options: {
   closingLifecycle: RendererClosingLifecycleRuntime
 }) {
   const [library, setLibraryState] = useState<LibraryState>(createEmptyLibrary())
-  const [status, setStatus] = useState('准备就绪')
+  const [status, setStatusState] = useState('准备就绪')
+  const statusRef = useRef(status)
+  const [actionStatus, setActionStatus] = useState<string | null>(null)
+  const actionStatusSourceRef = useRef<'operation' | 'load' | 'save' | 'write' | 'query' | null>(null)
   const [leaseLockConflictNotice, setLeaseLockConflictNotice] = useState<LeaseLockConflictNotice | null>(null)
   const [indexingActive, setIndexingActive] = useState(false)
   const [databaseRefreshToken, setDatabaseRefreshToken] = useState(0)
@@ -55,6 +58,38 @@ export function useLibraryController(options: {
     [library.folders, library.folderAliases, library.folderNodes, library.collections, library.tags, library.localCollections, library.localTags, library.previewText, library.previewMode]
   )
 
+  const setStatus = useCallback((update: SetStateAction<string>): void => {
+    const message = typeof update === 'function' ? update(statusRef.current) : update
+    statusRef.current = message
+    setStatusState(message)
+  }, [])
+
+  // Diagnostic updates never replace a pending user-operation receipt.
+  const reportFeedback = useCallback((source: NonNullable<typeof actionStatusSourceRef.current>, update: SetStateAction<string>): void => {
+    if (options.closingLifecycle.isClosing()) return
+    setStatus(update)
+    actionStatusSourceRef.current = source
+    setActionStatus(statusRef.current)
+  }, [options.closingLifecycle, setStatus])
+
+  const clearFeedback = useCallback((source: typeof actionStatusSourceRef.current): void => {
+    if (actionStatusSourceRef.current !== source) return
+    actionStatusSourceRef.current = null
+    setActionStatus(null)
+  }, [])
+  const reportActionStatus = useCallback((message: SetStateAction<string>): void => reportFeedback('operation', message), [reportFeedback])
+  const reportLoadError = useCallback((message: string): void => reportFeedback('load', message), [reportFeedback])
+  const clearLoadError = useCallback((): void => clearFeedback('load'), [clearFeedback])
+  const reportSaveError = useCallback((message: SetStateAction<string>): void => reportFeedback('save', message), [reportFeedback])
+  const reportWriteError = useCallback((message: string): void => reportFeedback('write', message), [reportFeedback])
+  const clearWriteError = useCallback((): void => clearFeedback('write'), [clearFeedback])
+  const reportQueryError = useCallback((message: SetStateAction<string>): void => reportFeedback('query', message), [reportFeedback])
+  const clearQueryError = useCallback((): void => clearFeedback('query'), [clearFeedback])
+  const dismissActionStatus = useCallback((): void => {
+    actionStatusSourceRef.current = null
+    setActionStatus(null)
+  }, [])
+
   const {
     setLibrary,
     getCurrentLibrary,
@@ -67,8 +102,8 @@ export function useLibraryController(options: {
     libraryShellSaveKey,
     libraryLoadedRef,
     setLibrary: setLibraryState,
-    setStatus,
-    onPersistenceRecovered: refreshDatabaseDerivedState
+    setStatus: reportSaveError,
+    onPersistenceRecovered: () => { clearFeedback('save'); refreshDatabaseDerivedState() }
   })
 
   function refreshDatabaseDerivedState(fields?: FontRefreshField[]): void {
@@ -176,6 +211,8 @@ export function useLibraryController(options: {
     libraryLoadedRef,
     setLibrary,
     setStatus,
+    reportError: reportLoadError,
+    onRecovered: clearLoadError,
     setDatabasePageResult: options.database.setDatabasePageResult,
     setDatabaseQueryResult: options.database.setDatabaseQueryResult,
     setDatabaseRefreshToken
@@ -198,6 +235,13 @@ export function useLibraryController(options: {
     flushLibraryPersistence,
     status,
     setStatus,
+    actionStatus,
+    reportActionStatus,
+    dismissActionStatus,
+    reportWriteError,
+    clearWriteError,
+    reportQueryError,
+    clearQueryError,
     leaseLockConflictNotice,
     setLeaseLockConflictNotice,
     indexingActive,

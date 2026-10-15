@@ -1,3 +1,4 @@
+import { readRootIndexRebuildRequest } from '../../indexing/root-index/rootIndexRebuildRequestRuntime'
 import { isRecoverableDerivedSqliteError } from '../../db/sqliteRecoveryPolicy'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { resolve } from 'node:path'
@@ -43,7 +44,7 @@ export function createRootIndexStorageRuntime(
     return deps.readScanCacheFile(options.legacyScanCachePath())
   }
 
-  async function ensureRootScanCacheStorage(rootPath: string, request: { reuseExisting?: boolean } = {}): Promise<{
+  async function ensureRootScanCacheStorage(rootPath: string, request: { reuseExisting?: boolean; rebuildRequested?: boolean } = {}): Promise<{
     cachePath: string
     cacheDir: string
     storage: RootIndexStorage
@@ -53,10 +54,12 @@ export function createRootIndexStorageRuntime(
     const rootDir = options.rootCacheDir(resolvedRoot)
     const rootDefaultDbPath = options.rootIndexDbPath(resolvedRoot)
 
+    const rebuildRequestId = request.rebuildRequested ? await readRootIndexRebuildRequest(rootDir) : undefined
+
     // A watcher starts with fresh read evidence from the current active index.
     // Existing compatible storage needs no manifest publication or unrelated
     // cache initialization; each eventual writer owns its own schema/lock setup.
-    if (request.reuseExisting) {
+    if (request.reuseExisting && !rebuildRequestId) {
       const activePath = await options.resolveActiveRootIndexDbPath(rootDir, rootDefaultDbPath)
       if (await options.exists(activePath)) {
         try {
@@ -78,6 +81,10 @@ export function createRootIndexStorageRuntime(
     await deps.hideDirectoryOnWindows(rootDir)
     await options.ensureRootArchitectureDatabases(resolvedRoot)
     const activeRootDbPath = await options.resolveActiveRootIndexDbPath(rootDir, rootDefaultDbPath)
+    if (rebuildRequestId) return {
+      cachePath: activeRootDbPath, cacheDir: rootDir, storage: 'root',
+      cache: { version: options.fontScanCacheVersion, entries: {}, rebuildRequired: true, rebuildRequestId },
+    }
     let cache: FontScanCacheFile
     try {
       cache = await options.readRootIndexSqliteFile(activeRootDbPath, resolvedRoot, 'root')

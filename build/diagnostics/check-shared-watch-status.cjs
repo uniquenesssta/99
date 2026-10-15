@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Windows regression: real DTO, polling owner, footer, IPC registrar and both preloads.
+// Windows regression: real DTO, polling owner, developer card, IPC registrar and both preloads.
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -8,7 +8,7 @@ const ts = require('typescript')
 const root = path.resolve(__dirname, '../..')
 const modelFile = 'src/shared/sharedWatchStatus.ts'
 const runtimeFile = 'src/renderer/src/runtime/app/sharedWatchStatusRuntime.ts'
-const componentFile = 'src/renderer/src/components/app/SharedWatchStatusBar.tsx'
+const componentFile = 'src/renderer/src/components/app/SharedWatchStatusCard.tsx'
 const plain = value => JSON.parse(JSON.stringify(value))
 const settle = async () => { for (let n = 0; n < 12; n++) await Promise.resolve() }
 const deferred = () => {
@@ -111,7 +111,7 @@ async function checkPolling() {
   assert.equal(requests.length, 2)
   requests[1].resolve(snapshot(rootStatus()))
   await settle()
-  assert.equal(seen.length, 2, 'unchanged memory snapshot rerendered footer')
+  assert.equal(seen.length, 2, 'unchanged memory snapshot rerendered status owner')
   time.advance(2000)
   assert.equal(requests.length, 3)
   time.advance(6000)
@@ -149,35 +149,60 @@ async function checkPolling() {
   assert.equal(time.timers.size, 0)
 }
 
-async function checkFooter() {
-  const time = clock(), hooks = [], effects = []
-  let cursor = 0, current = snapshot(rootStatus({ phase: 'applying', pendingCount: 12 })), cleanup
+async function checkStatusOwnerAndCard() {
+  const time = clock(), hooks = [], effects = [], requests = []
+  let cursor = 0, active = 0, maximumActive = 0
   const react = {
     useState(initial) { const i = cursor++; if (!(i in hooks)) hooks[i] = initial; return [hooks[i], value => { hooks[i] = value }] },
     useRef(initial) { const i = cursor++; if (!(i in hooks)) hooks[i] = { current: initial }; return hooks[i] },
     useEffect(effect) { const i = cursor++; if (!(i in hooks)) { hooks[i] = true; effects.push(effect) } }
   }
-  const jsx = (type, props) => ({ type, props })
-  const load = loader({ react, 'react/jsx-runtime': { jsx, jsxs: jsx } }, { window: { hfm: { getSharedWatchStatus: async () => current } }, setTimeout: time.setTimer, clearTimeout: time.clearTimer })
-  const { SharedWatchStatusBar } = load(componentFile)
-  const render = props => { cursor = 0; return SharedWatchStatusBar(props) }
+  const jsx = (type, props) => typeof type === 'function' ? type(props) : ({ type, props })
+  const load = loader({ react, 'react/jsx-runtime': { jsx, jsxs: jsx } }, {
+    window: { hfm: { getSharedWatchStatus: () => {
+      active++; maximumActive = Math.max(maximumActive, active)
+      const request = deferred(); requests.push(request)
+      return request.promise.finally(() => { active-- })
+    } } }, setTimeout: time.setTimer, clearTimeout: time.clearTimer
+  })
+  const { useSharedWatchStatus, SharedWatchStatusCard } = load(componentFile)
+  const renderOwner = () => { cursor = 0; return useSharedWatchStatus() }
   const text = node => node == null || node === false ? '' : typeof node !== 'object' ? String(node) : Array.isArray(node) ? node.map(text).join('') : text(node.props.children)
-  assert.match(text(render({})), /状态待确认/)
-  cleanup = effects[0]()
+  const card = status => SharedWatchStatusCard({ status })
+  assert.equal(renderOwner(), null)
+  const cleanup = effects[0]()
+  assert.equal(requests.length, 1)
+  requests[0].resolve(snapshot(rootStatus({ phase: 'applying', pendingCount: 12 })))
   await settle()
-  const busy = render({ developerStatus: '开发状态保留' })
-  assert.equal(busy.type, 'footer')
-  assert.equal(busy.props.className, 'statusbar')
+  const busy = card(renderOwner())
+  assert.equal(busy.type, 'div')
+  assert.equal(busy.props.className, 'developer-card wide')
+  assert(Object.hasOwn(busy.props, 'data-shared-watch-status'))
   assert.match(text(busy), /正在处理：12 项/)
-  assert.match(text(busy), /开发状态保留/)
-  assert.equal(busy.props.children[0].props.role, 'status')
-  current = snapshot()
+  assert.match(text(busy), /目录检查和索引应用全部确认后更新/)
+  assert.match(text(busy), /server/)
+  assert.equal(effects.length, 1, 'rendering status owner restarted polling')
   time.advance(2000)
+  assert.equal(requests.length, 2)
+  for (let n = 0; n < 20; n++) { const value = renderOwner(); if (n % 2) card(value) }
+  time.advance(600000)
+  assert.equal(requests.length, 2, 'switching card visibility overlapped held IPC')
+  assert.equal(maximumActive, 1)
+  assert.equal(renderOwner(), null, 'held IPC retained stale success')
+  requests[1].resolve(snapshot(rootStatus({ phase: 'offline', pendingCount: null })))
   await settle()
-  assert.equal(render({}), null)
-  assert.equal(text(render({ developerStatus: '开发状态保留' })), '开发状态保留')
+  time.advance(2000)
+  requests[2].resolve(snapshot())
+  await settle()
+  assert.match(text(card(renderOwner())), /当前没有共享监听位置/)
+  for (const [phase, label] of Object.entries({ checking: '正在检查', applying: '正在处理', idle: '正在处理', offline: '离线', error: '检查异常', stopped: '已暂停' })) {
+    const value = rootStatus({ phase, pendingCount: phase === 'idle' ? 0 : null })
+    assert(text(card(snapshot(value))).includes(label), `developer card lost ${phase}`)
+  }
+  assert.match(text(card(null)), /状态待确认/)
   cleanup()
-  assert.equal(time.timers.size, 0, 'footer cleanup retained status timer')
+  assert.equal(time.timers.size, 0, 'App status owner cleanup retained timer')
+  assert.equal(active, 0)
 }
 
 async function checkBridge(runtimePreload) {
@@ -231,9 +256,9 @@ async function main() {
   assert.equal(process.platform, 'win32', 'HFM diagnostics execute only on Windows')
   checkPresentation()
   await checkPolling()
-  await checkFooter()
+  await checkStatusOwnerAndCard()
   await checkBridge(false)
   await checkBridge(true)
-  console.log('[diagnostics:shared-watch-status] validated counts/ACK labels, offline/unknown, bounded polling/restart/cleanup, footer and both trusted IPC bridges passed')
+  console.log('[diagnostics:shared-watch-status] validated counts/ACK labels, offline/unknown, bounded polling/restart/cleanup, App status owner, developer card and both trusted IPC bridges passed')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

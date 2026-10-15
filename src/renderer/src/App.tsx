@@ -200,6 +200,13 @@ export default function App(): JSX.Element {
     flushLibraryPersistence,
     status,
     setStatus,
+    actionStatus,
+    reportActionStatus,
+    dismissActionStatus,
+    reportWriteError,
+    clearWriteError,
+    reportQueryError,
+    clearQueryError,
     leaseLockConflictNotice,
     setLeaseLockConflictNotice,
     indexingActive,
@@ -315,6 +322,9 @@ export default function App(): JSX.Element {
       saveLibraryImmediately,
       flushLibraryPersistence,
       setStatus,
+      reportActionStatus,
+      reportWriteError,
+      clearWriteError,
       selectedFolderId,
       setSelectedFolderId,
       indexingActive,
@@ -424,7 +434,7 @@ export default function App(): JSX.Element {
       document.getElementById(scope === 'local' ? 'font-local-tag-input' : 'font-shared-tag-input')?.focus()
     },
     getVisibleFonts: () => latestVisibleFontsRef.current,
-    setStatus,
+    setStatus: reportActionStatus,
     library,
     contextMenu,
     selectedFontIds,
@@ -459,7 +469,7 @@ export default function App(): JSX.Element {
     setDatabaseQueryResult,
     setDatabaseFontMetrics,
     setDatabaseRefreshToken,
-    setStatus
+    setStatus: reportActionStatus
   })
   const selectFolderFilter = folderTreeRuntime.selectFolderFilter
   const toggleFolderExpanded = folderTreeRuntime.toggleFolderExpanded
@@ -626,7 +636,8 @@ export default function App(): JSX.Element {
     setDatabaseQueryResult,
     setDatabaseQueryFailedKey,
     setLibrary,
-    setStatus
+    setStatus: reportQueryError,
+    onReadRecovered: clearQueryError
   })
   const databasePageReady = databaseRuntime.databasePageReady
   const displayDatabasePageReady = databasePageReady
@@ -771,7 +782,7 @@ export default function App(): JSX.Element {
     setAssignTagName,
     setAssignSharedTagName,
     setSidebarPage,
-    setStatus,
+    setStatus: reportActionStatus,
     refreshDatabaseDerivedState,
     flushFontWriteQueue
   }, newTagName, newSharedTagName)
@@ -1086,6 +1097,7 @@ export default function App(): JSX.Element {
       detail={detailViewProps}
       overlays={overlaysViewProps}
       developer={developerViewProps}
+      operationNotice={{ message: actionStatus, onDismiss: dismissActionStatus }}
     />
   )
 }

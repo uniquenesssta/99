@@ -60,6 +60,7 @@ export function mergeIncrementalDatabasePage(previous: FontQueryPageResult | nul
 
 
 export type RendererDatabasePageRuntimeOptions = {
+  onReadRecovered?: () => void
   hfm: typeof window.hfm
   library: LibraryState
   libraryLoadedRef: Readonly<{ current: boolean }>
@@ -356,6 +357,7 @@ export function useRendererDatabasePageRuntime(options: RendererDatabasePageRunt
           return libraryWithMergedFonts(confirmed, result.items, [options.selectedFontId, ...options.selectedFontIds])
         })
         options.setDatabaseQueryFailedKey('')
+        options.onReadRecovered?.()
       }).catch((error) => {
         const durationMs = Math.round(performance.now() - startedAt)
         if (disposed || requestSeq !== options.databasePageRequestSeqRef.current || isFontQuerySuperseded(error)) {

@@ -142,7 +142,7 @@ function createHarness(settings = {}, overrides = new Map()) {
       stop() {},
       hasForegroundWork: () => settings.workSnapshot?.shared === true,
       run: async request => {
-        assert.equal(request.args[0], settings.metadataTransport ? '--shared-metadata-overlay-read' : settings.previewTransport ? '--preview-render-image' : '--list-font-files', 'isolated contract port received an unrelated command');
+        assert.equal(request.args[0], settings.parseTransport ? '--font-parse-batch' : settings.metadataTransport ? '--shared-metadata-overlay-read' : settings.previewTransport ? '--preview-render-image' : '--list-font-files', 'isolated contract port received an unrelated command');
         const view = JSON.parse(JSON.stringify({ file: request.file, args: request.args, roots: request.roots,
           accesses: request.accesses, write: request.write, verifiedReadOnly: !!request.verifiedReadOnly,
           sharedReadOnlyPreview: !!request.sharedReadOnlyPreview, label: request.label, lane: request.lane,
@@ -154,6 +154,8 @@ function createHarness(settings = {}, overrides = new Map()) {
           if (mode === 'external-abort') external.abort(failure('Error', 'external cancelled'));
           if (request.signal?.aborted) throw new SharedIoProcessError('fixture shared cancelled', 'not-started', 'cancelled');
           if (settings.sharedFailure) throw new SharedIoProcessError('fixture shared ' + settings.sharedFailure, 'unknown', settings.sharedFailure);
+          if (settings.parseTransport && mode === 'exec-fail') throw failure('Error', 'injected failure');
+          if (settings.parseTransport && settings.execHook) await settings.execHook({ args: request.args, options: request, files });
           if (settings.sharedHook) await settings.sharedHook({ request, files });
           for (const line of settings.stderrLines || []) request.onStderrLine?.(line);
           const result = await commandResult(request.args);
@@ -166,9 +168,9 @@ function createHarness(settings = {}, overrides = new Map()) {
   };
   // Keep malformed JSON fault text independent of the host V8 version.
   const json = { stringify: JSON.stringify, parse: text => { try { return JSON.parse(text) } catch { throw new SyntaxError('fixture invalid JSON') } } }
-  const context = vm.createContext({ Error, TypeError, RangeError, SyntaxError, JSON: json, AbortController, Buffer, console, process: { pid: 1, env: settings.env || {} }, Date: class extends Date { static now() { return clock } } })
+  const context = vm.createContext({ Error, TypeError, RangeError, SyntaxError, JSON: json, AbortController, Buffer, console, setTimeout, clearTimeout, process: { pid: 1, env: settings.env || {} }, Date: class extends Date { static now() { return clock } } })
   function load(rel) {
-    if ((settings.listTransport || settings.metadataTransport || settings.previewTransport) && rel === 'src/main/path/sharedIoProcessRuntime.ts') return isolatedProcessPort
+    if ((settings.parseTransport || settings.listTransport || settings.metadataTransport || settings.previewTransport) && rel === 'src/main/path/sharedIoProcessRuntime.ts') return isolatedProcessPort
     if (modules.has(rel)) return modules.get(rel).exports
     const text = overrides.get(rel) ?? fs.readFileSync(path.join(root, rel), 'utf8')
     const cacheKey = rel + '\n' + text
@@ -213,7 +215,7 @@ async function settle(run) {
 }
 
 async function observe(method, settings = {}, overrides) {
-  const h = createHarness({ capabilities: legacyCapabilities, ...settings }, overrides)
+  const h = createHarness({ capabilities: legacyCapabilities, ...settings, ...(method === 'runRustFontParseBatch' ? { parseTransport: true } : {}) }, overrides)
   if (settings.preAbort) h.external.abort(new Error('already cancelled'))
   const outcome = await settle(() => h.runtime[method](...argsFor(method, h)))
   const summary = JSON.parse(JSON.stringify({ outcome, traceHash: digest(h.trace), pendingFiles: h.files.size }))
@@ -282,3 +284,4 @@ async function observeSequence(name, overrides) {
 }
 
 module.exports = { core, commands, createHarness, argsFor, settle, observe, scenarios, digest, sequenceNames, observeSequence }
+

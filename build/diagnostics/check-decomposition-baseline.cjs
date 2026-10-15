@@ -7,6 +7,7 @@ const vm = require('node:vm')
 const crypto = require('node:crypto')
 const ts = require('typescript')
 const { restoreRetiredCacheStatsPorts } = require('./helpers/cacheStatsConsumerRetirementFixture.cjs')
+const { restoreDeveloperStatusMigration } = require('./helpers/developerStatusMigrationFixture.cjs')
 const root = path.resolve(__dirname, '../..')
 const fixturePath = path.join(__dirname, 'fixtures/decomposition-baseline.fixture.json')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
@@ -50,7 +51,7 @@ function load(file, mocks = {}, transform = x => x) {
   return exports
 }
 function inventory(file, source = read(file)) {
-  source = restoreRetiredCacheStatsPorts(file, source)
+  source = restoreRetiredCacheStatsPorts(file, restoreDeveloperStatusMigration(file, source))
   if (file === 'src/renderer/src/App.tsx') {
     const pageAuthority = '  const displayDatabasePageReady = databasePageReady\n'
     assert.equal(source.split(pageAuthority).length - 1, 1, 'App lost hook-owned page readiness during indexing')
@@ -89,6 +90,17 @@ function checkInventory() {
   // A real ownership mutation must be rejected, independent of line endings.
   const app = 'src/renderer/src/App.tsx'
   assert.notDeepEqual(inventory(app, read(app) + '\nconst [mirror, setMirror] = useState(null)\n'), fixture.files[app])
+  for (const [file, before, after] of [
+    [app, 'onReadRecovered: clearQueryError', 'onReadRecovered: dismissActionStatus'],
+    ['src/renderer/src/runtime/app/useLibraryController.ts', 'if (actionStatusSourceRef.current !== source) return', 'if (false) return'],
+    ['src/renderer/src/runtime/app/useLibraryController.ts', 'if (options.closingLifecycle.isClosing()) return', 'if (false) return'],
+    ['src/renderer/src/runtime/app/useFontOperationsController.ts', 'onRecovered: options.library.clearWriteError', 'onRecovered: options.library.reportWriteError']
+  ]) {
+    const source = read(file)
+    assert(source.includes(before), 'developer status ownership mutant anchor drifted')
+    assert.throws(() => inventory(file, source.replace(before, after)), assert.AssertionError, 'unreviewed feedback mutation escaped the frozen inventory')
+  }
+
 }
 const queueFile = 'src/renderer/src/fontWriteQueue.ts'
 async function queueCheck(transform = x => x) {
