@@ -118,6 +118,7 @@ async function runBehaviorChecks() {
 async function runWatcherBehaviorChecks() {
   let sends = 0
   const watcherSiblings = new Map([
+    ['./folderWatcherRegistrationRuntime', 'src/main/watcher/folderWatcherRegistrationRuntime.ts'],
     ['./sharedFolderReconciliationRuntime', 'src/main/watcher/sharedFolderReconciliationRuntime.ts'],
     ['./sharedFolderNotificationRuntime', 'src/main/watcher/sharedFolderNotificationRuntime.ts'],
     ['./sharedWatcherInventoryRuntime', 'src/main/watcher/sharedWatcherInventoryRuntime.ts'],
@@ -155,6 +156,8 @@ async function runWatcherBehaviorChecks() {
   )
   assert(loadedSiblings.size === watcherSiblings.size, 'watcher sibling owners were not loaded from their actual production sources')
 
+  const registration = loadedSiblings.get('./folderWatcherRegistrationRuntime')
+  const registrationBeforeStop = registration.currentFolderWatcherRegistrationGeneration()
   const restartGate = deferred()
   let restartSyncs = 0
   const restartRuntime = watcherModule.createFolderWatcherRuntime({
@@ -175,6 +178,7 @@ async function runWatcherBehaviorChecks() {
   const restartFlush = restartRuntime.flushPendingFolderChanges()
   await new Promise((resolve) => setImmediate(resolve))
   restartRuntime.stopFolderWatchers()
+  assert(registration.currentFolderWatcherRegistrationGeneration() === registrationBeforeStop + 1, 'watcher stop did not retire the actual shared registration epoch')
   restartGate.resolve()
   await restartFlush
   assert(restartSyncs === 0 && sends === 0, 'a watcher task completed after restart and still updated the merged index or renderer')

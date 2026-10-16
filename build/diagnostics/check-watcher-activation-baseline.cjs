@@ -425,6 +425,18 @@ function snapshot(file, source = read(file)) {
 function reviewedContractSource(file, source) {
   source = source.replace(/\r\n/g, '\n')
   if (file !== watcherFile) return source
+  // Recovery memo retirement is one reviewed epoch-owner binding. Pin both
+  // top-level placement and stop ordering before reversing this additive change.
+  const epochBinding = "import { retireFolderWatcherRegistration } from './folderWatcherRegistrationRuntime';\n"
+    + "export { currentFolderWatcherRegistrationGeneration } from './folderWatcherRegistrationRuntime';\n\n"
+  const epochCall = '    retireFolderWatcherRegistration();\n'
+  assert.equal(source.split(epochBinding).length - 1, 1, 'W-01 reviewed epoch binding missing or duplicated')
+  assert.equal(source.split(epochCall).length - 1, 1, 'W-01 reviewed epoch retirement missing or duplicated')
+  assert(source.includes("import type { SharedIoProcessError } from '../path/sharedIoProcessRuntime'\n\n"
+    + epochBinding + 'export interface PendingFolderChange {'), 'W-01 reviewed epoch binding placement changed')
+  assert(source.includes('  function stopFolderWatchers(): void {\n    watcherGeneration += 1;\n'
+    + epochCall + '    generationController.abort();\n'), 'W-01 reviewed epoch stop ordering changed')
+  source = source.replace(epochBinding, '').replace(epochCall, '')
   // Reversible W-01 migration: only the optional private readiness port and
   // its signal-preserving shared-poll binding were added by b518. Removing
   // exactly these additions must reproduce the original full-source SHA,
@@ -443,6 +455,34 @@ function contracts() {
     assert.deepEqual(snapshot(file, reviewedContractSource(file, read(file))), expected, `W-01 baseline drift: ${file}; migrate evidence explicitly`)
     assert.deepEqual(snapshot(file, reviewedContractSource(file, read(file).replace(/\r?\n/g, '\r\n'))), expected)
   }
+}
+function checkReviewedWatcherEpochMutations() {
+  const source = read(watcherFile).replace(/\r\n/g, '\n')
+  const binding = "import { retireFolderWatcherRegistration } from './folderWatcherRegistrationRuntime';\n"
+  const published = "export { currentFolderWatcherRegistrationGeneration } from './folderWatcherRegistrationRuntime';\n"
+  const call = '    retireFolderWatcherRegistration();\n'
+  const beforeStop = '    watcherGeneration += 1;\n' + call
+  for (const [label, before, after] of [
+    ['missing import', binding, ''], ['duplicate import', binding, binding + binding],
+    ['missing generation export', published, ''], ['duplicate generation export', published, published + published],
+    ['missing retirement', call, ''], ['duplicate retirement', call, call + call],
+    ['retirement before local generation', beforeStop, call + '    watcherGeneration += 1;\n'],
+    ['retirement after abort', call + '    generationController.abort();\n', '    generationController.abort();\n' + call],
+  ]) {
+    assert.equal(source.split(before).length - 1, 1, 'W-01 epoch mutation anchor: ' + label)
+    assert.throws(() => reviewedContractSource(watcherFile, source.replace(before, after)),
+      error => error instanceof assert.AssertionError && /reviewed epoch/.test(error.message), 'W-01 epoch mutation accepted: ' + label)
+  }
+  const misplaced = source.replace(binding + published + '\n', '') + '\n' + binding + published + '\n'
+  assert.throws(() => reviewedContractSource(watcherFile, misplaced),
+    error => error instanceof assert.AssertionError && /epoch binding placement/.test(error.message), 'W-01 misplaced epoch binding accepted')
+  // The inverse must not mask drift in any historical watcher operation.
+  const expected = JSON.parse(fs.readFileSync(fixtureFile)).files[watcherFile]
+  // Keep the exact reviewed ordering present so this control reaches the old hash.
+  const oldDrift = source.replace('    folderWatchersHealthy = false;', '    folderWatchersHealthy = true;')
+  assert.notEqual(oldDrift, source, 'W-01 historical health mutation anchor missing')
+  assert.throws(() => assert.deepEqual(snapshot(watcherFile, reviewedContractSource(watcherFile, oldDrift)), expected, 'W-01 baseline drift'),
+    error => error instanceof assert.AssertionError && /baseline drift/.test(error.message), 'W-01 inverse masked historical behavior drift')
 }
 function mutate(source, before, after) { assert(source.includes(before), `mutation target missing: ${before}`); return source.replace(before, after) }
 async function main() {
@@ -475,7 +515,7 @@ async function main() {
   await assert.rejects(() => watcherRecovery(s => mutate(s, 'if (nextSignature === currentFolderWatchSignature && folderWatchersHealthy)', 'if (nextSignature === currentFolderWatchSignature)')), assert.AssertionError)
   await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (isApplicationClosing() || generation !== watcherGeneration) return true;', '')), assert.AssertionError)
   await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (generation !== watcherGeneration || !listening) return;', '')), assert.AssertionError)
-  contracts(); metricsBroadcastHealthy(); metricsBroadcastHealthy(s => s.replace(/\r?\n/g, '\r\n'));
+  contracts(); checkReviewedWatcherEpochMutations(); metricsBroadcastHealthy(); metricsBroadcastHealthy(s => s.replace(/\r?\n/g, '\r\n'));
   const metricsGate = "const metricsOnly = payload.source === 'metrics' && Number.isSafeInteger(payload.metricsRevision) && Number(payload.metricsRevision) > 0;";
   const invalidMetricsGuard = "if (payload.source === 'metrics' && !metricsOnly) return;";
   assert(read(watcherFile).includes(metricsGate)); assert(read(watcherFile).includes(invalidMetricsGuard));
@@ -491,6 +531,6 @@ async function main() {
   await assert.rejects(() => watcherHealthy(s => mutate(s, 'if (options.isScanActive?.()) {', 'if (false) {')), assert.AssertionError)
   await assert.rejects(() => activationHealthy(s => mutate(s, 'stateRuntime.adjustDatabaseActiveCount(1)\n      }\n      options.setStatus(`取消激活失败', 'stateRuntime.adjustDatabaseActiveCount(0)\n      }\n      options.setStatus(`取消激活失败')), assert.AssertionError)
   await assert.rejects(() => manualBackgroundHealthy(s => mutate(s, 'if (active) return active;', 'if (false) return active;')), assert.AssertionError)
-  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; 16 mutations rejected; actual manual shutdown/resume lifetime and complete-only target snapshot recovery; valid-only metrics broadcast; A-01 main/renderer correctness and metrics ordering')
+  console.log('[diagnostics:watcher-activation-baseline] LF/CRLF contracts, watcher filtering/grace/dedup/scan pause/resume/stop, activation success/reject rollback, manual refresh coalescing/recovery; W-02 startup generations, same-root recovery, stale callbacks; reviewed epoch inverse and historical-behavior mutations rejected; actual manual shutdown/resume lifetime and complete-only target snapshot recovery; valid-only metrics broadcast; A-01 main/renderer correctness and metrics ordering')
 }
 main().catch(e => { console.error(e); process.exitCode = 1 })
