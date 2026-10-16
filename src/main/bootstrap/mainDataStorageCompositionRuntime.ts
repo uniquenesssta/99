@@ -518,7 +518,8 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
       readRust: groups => rustCoreWorkerRuntime.runRustInstallStatusRead(groups),
       readWorker: groups => dbQueryWorkerRuntime.readInstallStatusIndex({ groups }),
     }),
-    saveInstallStatusIndexInWorker: async (groups) => {
+    saveInstallStatusIndexInWorker: async (groups, assertCurrent) => {
+      assertCurrent?.();
       const rustResult =
         await rustCoreWorkerRuntime.runRustInstallStatusSave(groups);
       if (rustResult) {
@@ -527,6 +528,7 @@ export function createMainDataStorageCompositionRuntime(options: MainDataStorage
         );
         return rustResult;
       }
+      assertCurrent?.();
       return dbQueryWorkerRuntime.saveInstallStatusIndex({ groups });
     },
   });

@@ -736,7 +736,7 @@ export default function App(): JSX.Element {
     scopeKey: `${fontBrowseScopeKey}:${sortMode}:${effectiveCardPoolMode}`,
     fontOffset: displayDatabasePageReady ? databasePageResult?.offset || 0 : 0
   })
-  const installStatusSyncSuffix = installStatusReady ? '' : ' · 同步中'
+  const installStatusSyncSuffix = installStatusReady ? '' : ' · 待确认'
 
   useTagSuggestionResetRuntime({
     assignTagName,

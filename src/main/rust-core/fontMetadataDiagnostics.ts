@@ -24,3 +24,18 @@ export function normalizeRustMetadataDiagnostics(input: unknown): RustMetadataDi
   return result.length ? result : undefined
 }
 
+
+// Complete native disposition is independent of the bounded diagnostic samples.
+export interface RustParseDisposition {
+  scripts: 'complete' | 'missing' | 'empty' | 'unsupported' | 'malformed' | 'resource-limit' | 'io-error' | 'not-requested'
+}
+export type RustSourceStability = 'stable' | 'changed' | 'unknown'
+const scriptDispositions = new Set(['complete', 'missing', 'empty', 'unsupported', 'malformed', 'resource-limit', 'io-error', 'not-requested'])
+export function normalizeRustParseDisposition(input: unknown): RustParseDisposition | undefined {
+  if (!input || typeof input !== 'object') return undefined
+  const scripts = (input as { scripts?: unknown }).scripts
+  return typeof scripts === 'string' && scriptDispositions.has(scripts) ? { scripts: scripts as RustParseDisposition['scripts'] } : undefined
+}
+export function normalizeRustSourceStability(input: unknown): RustSourceStability | undefined {
+  return input === 'stable' || input === 'changed' || input === 'unknown' ? input : undefined
+}

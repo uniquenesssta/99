@@ -17,14 +17,15 @@ let finishActiveCapture: (() => Promise<unknown>) | undefined
 
 function Fixture() {
   const [page, setPage] = useState('library'), [notice, setNotice] = useState<string | null>(null)
+  const [missingCount, setMissingCount] = useState(0)
   const [search, setSearch] = useState(''), node = useRef<HTMLDivElement>(null)
   const library = { fonts: {}, folders: [], folderNodes: [], collections: [], tags: [], localTags: [] }
   const layout = buildFontViewLayout('list', 'comfortable', Math.max(300, innerWidth - 240), 44, 1)
   const sidebar = {
     sidebarPage: page, setSidebarPage: setPage, activeFilter: { kind: 'all' }, setActiveFilter: noop,
-    advancedFilterCount: 0, refreshDeveloperStatusDetails: async () => {}, categoryCounts: { all: 0 }, allFonts: [],
-    favoriteCount: 0, installedCount: 0, notInstalledCount: 0, activeCount: 0, previewText: 'Aa', setPreviewText: noop,
-    installStatusReady: true, installStatusMissingCount: 0, installStatusSyncSuffix: '',
+    advancedFilterCount: 0, refreshDeveloperStatusDetails: async () => {}, categoryCounts: { all: 5502 }, allFonts: [],
+    favoriteCount: 0, installedCount: 708, notInstalledCount: 4794 - missingCount, activeCount: 0, previewText: 'Aa', setPreviewText: noop,
+    installStatusReady: missingCount === 0, installStatusMissingCount: missingCount, installStatusSyncSuffix: missingCount === 0 ? '' : ' · 待确认',
     expandedFilterGroups: {}, setFilterGroupExpanded: noop, selectedWatchedFolders: [], setSelectedWatchedFolders: noop,
     library, folderCounts: {}, selectedFormats: [], setSelectedFormats: noop, formatCounts: {}, selectedScripts: [], setSelectedScripts: noop,
     scriptCounts: {}, selectedCategory: 'all', setSelectedCategory: noop, clearAdvancedFilters: noop,
@@ -49,7 +50,7 @@ function Fixture() {
     developerSharedMetadataDiagnostics: null, setDeveloperSharedMetadataDiagnostics: noop,
     latestBackgroundTaskEvent: null, developerTasks: [], developerStatusLog: []
   }
-  current = { page, setPage, setNotice }
+  current = { page, setPage, setNotice, setMissingCount }
   return <AppRootView {...({
     topbar: { themeMode: 'light', setThemeMode: noop, indexingActive: false, cacheMenuOpen: false, setCacheMenuOpen: noop, rescan: async () => {}, cancelIndexing: async () => {}, rebuildScanCache: async () => {}, clearAllCacheAction: async () => {} },
     sidebar, content, developer, detail: { visible: false }, overlays: {},
@@ -169,6 +170,40 @@ async function checkDeveloperStatus() {
     flushSync(() => root!.render(<Fixture />))
     window.setTimeout = nativeSet; window.clearTimeout = nativeClear
     await settle()
+    // Exercise the real mounted AppRoot -> sidebar -> library page. Updating
+    // the same root catches stale suffixes/titles/hints after both transitions.
+    const sidebarPendingReceipts: unknown[] = []
+    for (const missing of [13, 0, 13]) {
+      flushSync(() => current.setMissingCount(missing)); await settle()
+      const suffix = missing ? ' · 待确认' : ''
+      const rail = host.querySelector<HTMLElement>('.sidebar-collapsed-rail')
+      if (rail) {
+        const installed = rail.querySelector<HTMLButtonElement>('[aria-label="已安装"]')!
+        const notInstalled = rail.querySelector<HTMLButtonElement>('[aria-label="未安装"]')!
+        check(installed?.title === `已安装 · 708${suffix}`, 'collapsed installed count/suffix is stale')
+        check(notInstalled?.title === `未安装 · ${4794 - missing}${suffix}`, 'collapsed uninstalled count/suffix is stale')
+        for (const button of [installed, notInstalled]) check(button.getAttribute('data-tooltip') === button.title, 'collapsed tooltip disagrees with pending title')
+        sidebarPendingReceipts.push({ missing, collapsed: true, installed: installed.title, notInstalled: notInstalled.title })
+        continue
+      }
+      const libraryPage = host.querySelector<HTMLElement>('.sidebar-page')!
+      check(libraryPage, 'real sidebar library page is missing')
+      const installed = libraryPage.querySelector<HTMLButtonElement>('[data-compact-label="安装"]')!
+      const notInstalled = libraryPage.querySelector<HTMLButtonElement>('[data-compact-label="未装"]')!
+      check(installed && notInstalled, 'real installed/not-installed controls are missing')
+      const title = `还有 ${missing} 个字体安装状态待确认，当前数量仅包含已确认结果。`
+      check(installed.lastElementChild?.textContent === `708${suffix}`, 'confirmed installed count or pending suffix changed')
+      check(notInstalled.lastElementChild?.textContent === `${4794 - missing}${suffix}`, 'unknown fonts leaked into uninstalled count or stale suffix remained')
+      for (const button of [installed, notInstalled]) {
+        check(missing ? button.title === title : !button.hasAttribute('title'), 'pending title failed missing 13 -> 0 -> 13 transition')
+      }
+      const hints = [...libraryPage.querySelectorAll('.sidebar-preview-hint')]
+        .map(node => node.textContent?.replace(/\s+/g, ' ').trim() || '')
+      check(missing ? hints.includes(`安装状态待确认：还有 ${missing} 个字体未确认。`) : hints.length === 0, 'pending hint failed missing 13 -> 0 -> 13 transition')
+      check(!libraryPage.textContent?.includes('同步中') && !libraryPage.textContent?.includes('正在同步'), 'sidebar claimed pending status was active synchronization')
+      sidebarPendingReceipts.push({ missing, installed: installed.lastElementChild?.textContent, notInstalled: notInstalled.lastElementChild?.textContent, title: installed.getAttribute('title'), hints })
+    }
+    flushSync(() => current.setMissingCount(0)); await settle()
     check(reads === 1 && inFlight === 1, 'App did not start exactly one shared status owner')
     assertNormal()
     // Held read must survive both ordinary and developer navigation; the App
@@ -247,7 +282,7 @@ async function checkDeveloperStatus() {
     } else assertNormal()
     captureReady = true
     lastEvidence = geometry()
-    return { ...geometry(), heldIpc: true, phases: receipts.length, allOrdinaryPages: normalPages, operationNotice: true, dismissed: true, captureReady: true, mounted: true }
+    return { ...geometry(), sidebarPendingReceipts, heldIpc: true, phases: receipts.length, allOrdinaryPages: normalPages, operationNotice: true, dismissed: true, captureReady: true, mounted: true }
   } catch (error) {
     lastEvidence = geometry(); throw error
   }

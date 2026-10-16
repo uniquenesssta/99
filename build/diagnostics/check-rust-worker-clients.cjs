@@ -32,14 +32,24 @@ function ownsParseInvocation(node, group) {
   return false
 }
 const metadataReceiptAdditions = {
-  normalizeRustParseBatchJob: '    metadataDiagnostics: normalizeRustMetadataDiagnostics(input.metadataDiagnostics),\n',
-  runRustFontIndexListWorker: 'metadataDiagnostics: normalizeRustMetadataDiagnostics(item.metadataDiagnostics), ',
+  normalizeRustParseBatchJob: [
+    '    metadataDiagnostics: normalizeRustMetadataDiagnostics(input.metadataDiagnostics),\n',
+    '    parseDisposition: normalizeRustParseDisposition(input.parseDisposition),\n',
+    '    sourceStability: normalizeRustSourceStability(input.sourceStability),\n',
+  ],
+  runRustFontIndexListWorker: [
+    'metadataDiagnostics: normalizeRustMetadataDiagnostics(item.metadataDiagnostics), ',
+    'parseDisposition: normalizeRustParseDisposition(item.parseDisposition), ',
+    'sourceStability: normalizeRustSourceStability(item.sourceStability), ',
+  ],
 }
 function originalMetadataReceiptFunction(text, name, group) {
   if (group.path !== parseClientPath || !Object.hasOwn(metadataReceiptAdditions, name)) return text
-  const addition = metadataReceiptAdditions[name]
-  assert.equal(text.split(addition).length, 2, name + ' metadata receipt normalization missing or changed')
-  return text.replace(addition, '')
+  for (const addition of metadataReceiptAdditions[name]) {
+    assert.equal(text.split(addition).length, 2, name + ' metadata receipt normalization missing or changed')
+    text = text.replace(addition, '')
+  }
+  return text
 }
 function checkFunctions(overrides = sources) {
   for (const group of fixture.groups) {
@@ -47,12 +57,14 @@ function checkFunctions(overrides = sources) {
     if (group.path === parseClientPath) {
       const imports = file.statements.filter(node => ts.isImportDeclaration(node)
         && node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)
-        && node.importClause.namedBindings.elements.some(binding => binding.name.text === 'normalizeRustMetadataDiagnostics'))
+        && node.importClause.namedBindings.elements.some(binding => ['normalizeRustMetadataDiagnostics', 'normalizeRustParseDisposition', 'normalizeRustSourceStability'].includes(binding.name.text)))
       assert.equal(imports.length, 1, 'metadata normalizer import missing or duplicated')
       const imported = imports[0]
       assert(imported.moduleSpecifier.text === '../fontMetadataDiagnostics' && !imported.importClause.isTypeOnly
-        && imported.importClause.namedBindings.elements.length === 1
-        && !imported.importClause.namedBindings.elements[0].propertyName, 'metadata normalizer dependency changed')
+        && imported.importClause.namedBindings.elements.length === 3
+        && imported.importClause.namedBindings.elements.every(binding => !binding.propertyName && !binding.isTypeOnly), 'metadata normalizer dependency changed')
+      assert.deepEqual(imported.importClause.namedBindings.elements.map(binding => binding.name.text).sort(),
+        ['normalizeRustMetadataDiagnostics', 'normalizeRustParseDisposition', 'normalizeRustSourceStability'].sort(), 'metadata normalizer dependency changed')
     }
     const found = new Map()
     walk(file, node => {
@@ -428,10 +440,17 @@ function checkParseInvocationBoundaryMutations() {
 function checkMetadataReceiptMutations() {
   const original = sources.get(parseClientPath)
   const mutations = [
-    ['parse receipt omitted', metadataReceiptAdditions.normalizeRustParseBatchJob, ''],
+    ['parse receipt omitted', metadataReceiptAdditions.normalizeRustParseBatchJob[0], ''],
     ['parse receipt unnormalized', 'normalizeRustMetadataDiagnostics(input.metadataDiagnostics)', 'input.metadataDiagnostics'],
-    ['listing receipt omitted', metadataReceiptAdditions.runRustFontIndexListWorker, ''],
+    ['listing receipt omitted', metadataReceiptAdditions.runRustFontIndexListWorker[0], ''],
     ['listing receipt unnormalized', 'normalizeRustMetadataDiagnostics(item.metadataDiagnostics)', 'item.metadataDiagnostics'],
+    ...['normalizeRustParseBatchJob', 'runRustFontIndexListWorker'].flatMap(name => metadataReceiptAdditions[name].slice(1).flatMap(addition => [
+      [name + ' evidence omitted', addition, ''],
+      [name + ' evidence duplicate', addition, addition + addition],
+      [name + ' evidence bypassed', addition, addition.replace(/normalizeRust(?:ParseDisposition|SourceStability)\(([^)]+)\)/, '$1')],
+    ])),
+    ['parse normalizer import missing', 'normalizeRustMetadataDiagnostics, normalizeRustParseDisposition, normalizeRustSourceStability', 'normalizeRustMetadataDiagnostics, normalizeRustSourceStability'],
+    ['stability normalizer import missing', 'normalizeRustMetadataDiagnostics, normalizeRustParseDisposition, normalizeRustSourceStability', 'normalizeRustMetadataDiagnostics, normalizeRustParseDisposition'],
     ['normalizer dependency changed', "'../fontMetadataDiagnostics'", "'../../indexing/fontScanWorkers'"],
   ]
   for (const [label, before, after] of mutations) {
@@ -441,9 +460,53 @@ function checkMetadataReceiptMutations() {
       'metadata receipt mutation accepted: ' + label)
   }
 }
+async function checkMetadataEvidenceNormalization(overrides = new Map()) {
+  // The same hand-written loader used by every client must expose both new exports.
+  const env = h.createHarness({}, overrides)
+  const normalizers = env.load(h.core + 'fontMetadataDiagnostics.ts')
+  assert.equal(typeof normalizers.normalizeRustParseDisposition, 'function')
+  assert.equal(typeof normalizers.normalizeRustSourceStability, 'function')
+  const dispositions = ['complete', 'missing', 'empty', 'unsupported', 'malformed', 'resource-limit', 'io-error', 'not-requested']
+  for (const scripts of dispositions) assert.deepEqual(JSON.parse(JSON.stringify(normalizers.normalizeRustParseDisposition({ scripts }))), { scripts }, 'evidence normalization valid disposition')
+  for (const input of [undefined, null, false, 'complete', {}, { scripts: 1 }, { scripts: 'anything' }])
+    assert.equal(normalizers.normalizeRustParseDisposition(input), undefined, 'evidence normalization invalid disposition')
+  for (const value of ['stable', 'changed', 'unknown']) assert.equal(normalizers.normalizeRustSourceStability(value), value, 'evidence normalization valid stability')
+  for (const value of [undefined, null, true, {}, 'anything']) assert.equal(normalizers.normalizeRustSourceStability(value), undefined, 'evidence normalization invalid stability')
+  const job = { jobId: 'evidence', rootPath: 'C:/fonts', filePath: 'C:/fonts/evidence.ttf', cacheKey: 'evidence.ttf', signature: 'stable', fileSize: 1, modifiedAt: 1, createdAt: 1 }
+  for (const evidence of [{}, { parseDisposition: { scripts: 'unsupported' }, sourceStability: 'stable' },
+    { parseDisposition: { scripts: 'io-error' }, sourceStability: 'unknown' },
+    { parseDisposition: {}, sourceStability: true }, { parseDisposition: { scripts: 'anything' }, sourceStability: 'anything' }]) {
+    const expectedDisposition = normalizers.normalizeRustParseDisposition(evidence.parseDisposition)
+    const expectedStability = normalizers.normalizeRustSourceStability(evidence.sourceStability)
+    const parse = clientFixture('Indexing', { capabilities: ['font-parse-batch'], payload: { ok: true, results: [{ ...job, ...evidence }], errors: [] } }, overrides)
+    const parsed = (await parse.client.runRustFontParseBatch([job])).results[0]
+    const listing = clientFixture('Indexing', { capabilities: ['list-font-files', 'list-font-files-complete-v1', 'list-font-files-stdout-v1'],
+      payload: { ok: true, files: [{ path: job.filePath, size: 1, modifiedMs: 1, ...evidence }], directories: [], errors: [], truncated: false } }, overrides)
+    const listed = (await listing.client.runRustFontIndexListWorker(['C:/fonts'], ['.ttf'])).files[0]
+    for (const row of [parsed, listed]) {
+      assert.equal(JSON.stringify(row.parseDisposition), JSON.stringify(expectedDisposition), 'evidence normalization client disposition')
+      assert.equal(row.sourceStability, expectedStability, 'evidence normalization client stability')
+    }
+  }
+}
+async function checkMetadataEvidenceNormalizerMutations() {
+  const rel = h.core + 'fontMetadataDiagnostics.ts', original = read(rel)
+  for (const [before, after] of [
+    ['scriptDispositions.has(scripts)', 'true'],
+    ["input === 'stable' || input === 'changed' || input === 'unknown'", 'true'],
+    ["if (!input || typeof input !== 'object') return undefined", "if (!input || typeof input !== 'object') return { scripts: 'unsupported' }"],
+    ["? { scripts: scripts as RustParseDisposition['scripts'] } : undefined", "? { scripts: 'unsupported' } : undefined"],
+  ]) {
+    assert.equal(original.split(before).length, 2, 'evidence normalizer mutation anchor drifted')
+    await assert.rejects(checkMetadataEvidenceNormalization(new Map([[rel, original.replace(before, after)]])),
+      error => error instanceof assert.AssertionError && /evidence normalization/.test(error.message), 'evidence normalizer mutant accepted')
+  }
+}
 async function main() {
   checkFunctions()
   checkMetadataReceiptMutations()
+  await checkMetadataEvidenceNormalization()
+  await checkMetadataEvidenceNormalizerMutations()
   checkParseInvocationBoundaryMutations()
   checkFacadeClosure()
   checkControlIdentities()
@@ -480,6 +543,6 @@ async function main() {
   checkFacadeClosure(facadeCRLF)
   checkControlIdentities(new Map([[facade, facadeCRLF]]))
   checkComposition(new Map([[facade, facadeCRLF]]))
-  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies with reviewed causal port checks and six authority capability gates, narrow shared ports, typed metadata receipt inverse and five causal mutations, partial health report and submitted backup, ${fixture.groups.length * 3 + 15} rejected mutations, facade closure and 7 control identities, CRLF passed`)
+  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies with reviewed causal port checks and six authority capability gates, narrow shared ports, typed metadata/evidence receipt inverse, optional old-worker compatibility and causal normalizer mutations, partial health report and submitted backup, domain and evidence mutations rejected, facade closure and 7 control identities, CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-clients]', error.stack || error); process.exitCode = 1 })

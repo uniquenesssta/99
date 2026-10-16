@@ -59,6 +59,7 @@ export function createInstallStatusRuntime(deps: InstallStatusRuntimeDeps) {
     const revision = ++writeRevision
     if (options.expectedRevision === undefined) mark(Object.keys(results), revision)
     return serialize(async () => {
+      options.assertCurrent?.()
       const accepted = Object.fromEntries(Object.entries(results).filter(([id]) => options.expectedRevision === undefined || (itemWriteRevisions.get(id) || 0) <= options.expectedRevision))
       if (Object.keys(accepted).length !== Object.keys(results).length) deps.appendStartupLog(`install status stale refresh rows skipped: rows=${Object.keys(results).length - Object.keys(accepted).length}, expectedRevision=${options.expectedRevision}, revision=${writeRevision}`)
       if (!Object.keys(accepted).length) return

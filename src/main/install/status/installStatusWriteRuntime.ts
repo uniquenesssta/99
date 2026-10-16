@@ -1,3 +1,4 @@
+import { withStartupPathRootGuard } from '../../path/startupPathAvailabilityRuntime'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import type { FontItem,InstallCompareResult } from '../../../shared/types'
 import type {
@@ -18,7 +19,7 @@ export function createInstallStatusWriteRuntime(
   deps: InstallStatusRuntimeDeps,
   helpers: InstallStatusDbRuntime & InstallStatusSignatureRuntime
 ) {
-  async function saveInstallStatusIndex(results: Record<string, InstallCompareResult>, itemsById: Map<string, FontItem>, options: { completeTasks?: boolean; expectedRevision?: number; onPersisted?: (ids: string[]) => void } = {}): Promise<void> {
+  async function saveInstallStatusIndex(results: Record<string, InstallCompareResult>, itemsById: Map<string, FontItem>, options: { completeTasks?: boolean; preserveSourceCheckpoint?: boolean; assertCurrent?: () => void; expectedRevision?: number; onPersisted?: (ids: string[]) => void } = {}): Promise<void> {
     if (!Object.keys(results).length) return
     const unconfirmed = Object.entries(results).filter(([, result]) => result.known === false)
     if (unconfirmed.length) deps.appendStartupLog(`install status unconfirmed: ${JSON.stringify({ count: unconfirmed.length, examples: unconfirmed.slice(0, 8).map(([fontId, result]) => ({ fontId, path: itemsById.get(fontId)?.path, reason: result.reason })) })}`)
@@ -47,7 +48,9 @@ export function createInstallStatusWriteRuntime(
             rows: toWorkerRows(fallbackRows)
           })
         }
-        const workerResult = await deps.saveInstallStatusIndexInWorker(workerGroups)
+        options.assertCurrent?.()
+        const save = () => deps.saveInstallStatusIndexInWorker!(workerGroups, options.assertCurrent)
+        const workerResult = await (options.assertCurrent ? withStartupPathRootGuard(options.assertCurrent, save) : save())
         deps.appendStartupLog(`machine install status db worker write: groups=${workerResult.groups}, rows=${workerResult.written}, elapsed=${workerResult.timings?.elapsed || 0}ms`)
         if (options.completeTasks !== false) {
           for (const [fontId, result] of Object.entries(results)) await deps.completeBackgroundTask(helpers.installStatusTaskKey(fontId), result.known === false ? '安装状态未知' : result.installed && result.by !== 'managed' ? '已安装' : '未安装').catch(() => undefined)
@@ -82,6 +85,7 @@ export function createInstallStatusWriteRuntime(
           INSERT OR REPLACE INTO install_status (font_id, signature, installed, by_type, matches_json, checked_at, system_default)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `)
+        options.assertCurrent?.()
         const checkedAt = new Date().toISOString()
         db.exec('BEGIN IMMEDIATE')
         try {

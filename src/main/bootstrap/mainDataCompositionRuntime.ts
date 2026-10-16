@@ -474,6 +474,7 @@ export function createMainDataCompositionRuntime(options: MainDataCompositionOpt
       queryFontPageInLibrary: query.queryFontPageInLibrary,
       clearFontQueryCaches: query.clearFontQueryCaches,
       searchFontsInLibrary: query.searchFontsInLibrary,
+      readInstallRefreshSnapshot: query.readInstallRefreshSnapshot,
       syncMergedIndexAfterInstallStatusRefresh: query.syncMergedIndexAfterInstallStatusRefresh,
       syncMergedIndexForRootIncremental: query.syncMergedIndexForRootIncremental,
       syncMergedIndexForRootSnapshot: query.syncMergedIndexForRootSnapshot,

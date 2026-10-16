@@ -8,6 +8,7 @@ const crypto = require('node:crypto')
 const ts = require('typescript')
 const { restoreRetiredCacheStatsPorts } = require('./helpers/cacheStatsConsumerRetirementFixture.cjs')
 const { restoreDeveloperStatusMigration } = require('./helpers/developerStatusMigrationFixture.cjs')
+const { restoreInstallStatusPendingCopy, pendingSuffix, legacySuffix } = require('./helpers/installStatusPendingFixture.cjs')
 const root = path.resolve(__dirname, '../..')
 const fixturePath = path.join(__dirname, 'fixtures/decomposition-baseline.fixture.json')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
@@ -53,6 +54,7 @@ function load(file, mocks = {}, transform = x => x) {
 function inventory(file, source = read(file)) {
   source = restoreRetiredCacheStatsPorts(file, restoreDeveloperStatusMigration(file, source))
   if (file === 'src/renderer/src/App.tsx') {
+    source = restoreInstallStatusPendingCopy(source)
     const pageAuthority = '  const displayDatabasePageReady = databasePageReady\n'
     assert.equal(source.split(pageAuthority).length - 1, 1, 'App lost hook-owned page readiness during indexing')
     source = source.replace(pageAuthority, '  const displayDatabasePageReady = databasePageReady && !indexingActive\n')
@@ -89,6 +91,7 @@ function checkInventory() {
   }
   // A real ownership mutation must be rejected, independent of line endings.
   const app = 'src/renderer/src/App.tsx'
+  assert.throws(() => inventory(app, read(app).replace(/\r\n/g, '\n').replace(pendingSuffix, legacySuffix)), /install-status pending suffix/, 'old syncing wording escaped frozen token gate')
   assert.notDeepEqual(inventory(app, read(app) + '\nconst [mirror, setMirror] = useState(null)\n'), fixture.files[app])
   for (const [file, before, after] of [
     [app, 'onReadRecovered: clearQueryError', 'onReadRecovered: dismissActionStatus'],

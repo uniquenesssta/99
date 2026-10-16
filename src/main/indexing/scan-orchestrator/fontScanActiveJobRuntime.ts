@@ -28,7 +28,7 @@ function cancelledScanResult(folders: string[], durationMs = 0): ScanResult {
 
 export function createFontScanActiveJobRuntime(
   deps: Pick<ScanOrchestratorDeps, 'appendStartupLog' | 'emitFontIndexProgress' | 'recheckGlobalIoQueues' | 'globalIoSnapshot'>,
-  scanFolders: (folders: string[], knownFonts?: FontItem[], options?: { jobId?: string; signal?: AbortSignal }) => Promise<ScanResult>,
+  scanFolders: (folders: string[], knownFonts?: FontItem[], options?: { jobId?: string; signal?: AbortSignal; reuseRecoveryMetadata?: boolean }) => Promise<ScanResult>,
 ): {
   scanFoldersManaged: (folders: string[], knownFonts?: FontItem[]) => Promise<ScanResult>
   scanFoldersWhenIdle: (folders: string[], signal?: AbortSignal) => Promise<ScanResult>
@@ -86,6 +86,7 @@ export function createFontScanActiveJobRuntime(
     folders: string[],
     knownFonts: FontItem[] = [],
     ownerSignal?: AbortSignal,
+    reuseRecoveryMetadata = false,
   ): Promise<ScanResult> {
     const normalizedFolders = normalizeWatchedFontFolders(folders, deps.appendStartupLog)
     const requestId = latestManagedRequestId += 1
@@ -104,7 +105,7 @@ export function createFontScanActiveJobRuntime(
       ownerSignal?.addEventListener('abort', abortOwner, { once: true })
       if (ownerSignal?.aborted) abortOwner()
       const startedAt = Date.now()
-      const completion = scanFolders(normalizedFolders, knownFonts, { jobId, signal: controller.signal })
+      const completion = scanFolders(normalizedFolders, knownFonts, { jobId, signal: controller.signal, reuseRecoveryMetadata })
       activeFontScanJob = { jobId, folders: normalizedFolders, controller, startedAt, completion }
       deps.recheckGlobalIoQueues()
 
@@ -156,7 +157,7 @@ export function createFontScanActiveJobRuntime(
     // A newer user request wins. Do not cancel it or revive a cancelled repair.
     if (signal?.aborted || isApplicationClosing()) return cancelledScanResult(folders)
     if (foregroundRevision !== latestManagedRequestId || activeFontScanJob) throw new Error('source-recovery-deferred')
-    const completion = scanFoldersManaged(folders, [], signal)
+    const completion = scanFoldersManaged(folders, [], signal, true)
     const recoveryRevision = latestManagedRequestId
     const result = await completion
     // A replaced background request is deferred, not a user cancellation of

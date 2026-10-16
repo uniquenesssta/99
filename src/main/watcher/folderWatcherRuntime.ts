@@ -15,6 +15,9 @@ import type { WatchedFolderApplyContext, WatcherMetadataInventory } from './watc
 import type { SharedWatchStatus } from '../../shared/sharedWatchStatus'
 import type { SharedIoProcessError } from '../path/sharedIoProcessRuntime'
 
+import { retireFolderWatcherRegistration } from './folderWatcherRegistrationRuntime';
+export { currentFolderWatcherRegistrationGeneration } from './folderWatcherRegistrationRuntime';
+
 export interface PendingFolderChange {
   folder: string;
   eventType: string;
@@ -91,6 +94,7 @@ export function createFolderWatcherRuntime(
 
   function stopFolderWatchers(): void {
     watcherGeneration += 1;
+    retireFolderWatcherRegistration();
     generationController.abort();
     generationController = new AbortController();
     folderWatchersHealthy = false;

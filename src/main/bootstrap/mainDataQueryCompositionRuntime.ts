@@ -300,6 +300,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
     openMergedIndexDb,
     scheduleMergedIndexBackgroundValidation,
     checkMergedIndexExternalChanges,
+    readInstallRefreshSnapshot,
     syncMergedIndexAfterInstallStatusRefresh,
     syncMergedIndexForRootIncremental,
     syncMergedIndexForRootSnapshot,
@@ -439,6 +440,7 @@ export function createMainDataQueryCompositionRuntime(options: MainDataQueryOpti
 
     checkMergedIndexExternalChanges,
 
+    readInstallRefreshSnapshot,
     syncMergedIndexAfterInstallStatusRefresh,
 
     syncMergedIndexForRootIncremental,

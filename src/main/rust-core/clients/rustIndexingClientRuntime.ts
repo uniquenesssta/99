@@ -1,4 +1,4 @@
-import { normalizeRustMetadataDiagnostics } from '../fontMetadataDiagnostics'
+import { normalizeRustMetadataDiagnostics, normalizeRustParseDisposition, normalizeRustSourceStability } from '../fontMetadataDiagnostics'
 import { currentSharedIoSignal } from '../../path/sharedFileSystemRuntime'
 import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import { rethrowSharedIoProcessError, SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
@@ -178,6 +178,8 @@ function normalizeRustParseBatchJob(input: Partial<FontParseJob>): FontParseJob 
     contentHash: typeof input.contentHash === 'string' ? input.contentHash : undefined,
     hashKind: typeof input.hashKind === 'string' ? input.hashKind : undefined,
     metadataDiagnostics: normalizeRustMetadataDiagnostics(input.metadataDiagnostics),
+    parseDisposition: normalizeRustParseDisposition(input.parseDisposition),
+    sourceStability: normalizeRustSourceStability(input.sourceStability),
     nameHint: normalizeNameHint(input.nameHint),
     scriptHint: normalizeScriptHint(input.scriptHint),
     styleHint: normalizeStyleHint(input.styleHint),
@@ -253,7 +255,7 @@ export function createRustIndexingClientRuntime(options: RustIndexingClientOptio
 
         for (const item of payload.files || []) {
           if (!item.path) continue
-          files.push({ file: item.path, rootPath, stat: statFromRustFile(item), signatureValid: item.signatureValid, format: item.format || undefined, quickHash: item.quickHash || undefined, contentHash: item.contentHash || item.quickHash || undefined, hashKind: item.hashKind || (item.contentHash ? 'quick-fnv1a64' : undefined), metadataDiagnostics: normalizeRustMetadataDiagnostics(item.metadataDiagnostics), nameHint: normalizeNameHint(item.nameHint), scriptHint: normalizeScriptHint(item.scriptHint), styleHint: normalizeStyleHint(item.styleHint), familyHint: normalizeFamilyHint(item.familyHint) })
+          files.push({ file: item.path, rootPath, stat: statFromRustFile(item), signatureValid: item.signatureValid, format: item.format || undefined, quickHash: item.quickHash || undefined, contentHash: item.contentHash || item.quickHash || undefined, hashKind: item.hashKind || (item.contentHash ? 'quick-fnv1a64' : undefined), metadataDiagnostics: normalizeRustMetadataDiagnostics(item.metadataDiagnostics), parseDisposition: normalizeRustParseDisposition(item.parseDisposition), sourceStability: normalizeRustSourceStability(item.sourceStability), nameHint: normalizeNameHint(item.nameHint), scriptHint: normalizeScriptHint(item.scriptHint), styleHint: normalizeStyleHint(item.styleHint), familyHint: normalizeFamilyHint(item.familyHint) })
         }
         directories.push(...((payload.directories || []).filter((item) => item?.path) as RustListedDirectory[]))
         for (const error of payload.errors || []) {

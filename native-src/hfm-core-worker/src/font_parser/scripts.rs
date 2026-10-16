@@ -2,15 +2,11 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use super::diagnostics::{record, MetadataDiagnostic, MetadataDiagnosticKind as Kind};
 use std::io;
-use super::sfnt::{find_table_record, read_u16_be, read_u32_be};
+use super::sfnt::{find_table_record, read_u16_be};
 use super::ttc::read_exact_at;
 use super::types::FontScriptInfo;
 
 const MAX_CMAP_TABLE_BYTES: usize = 2 * 1024 * 1024;
-const MAX_CMAP_ENCODINGS: usize = 64;
-const MAX_CMAP_SEGMENTS: usize = 8192;
-const MAX_CMAP_GROUPS: usize = 65536;
-
 #[derive(Clone, Copy)]
 struct ScriptRange {
     script: &'static str,
@@ -156,135 +152,67 @@ impl ScriptAccumulator {
     }
 }
 
-fn parse_format_4(data: &[u8], subtable_offset: usize, acc: &mut ScriptAccumulator) -> bool {
-    if subtable_offset + 16 > data.len() {
-        return false;
-    }
-    let length = usize::from(read_u16_be(data, subtable_offset + 2).unwrap_or(0));
-    let end = subtable_offset.saturating_add(length);
-    if length < 16 || end > data.len() {
-        return false;
-    }
-    let seg_count = usize::from(read_u16_be(data, subtable_offset + 6).unwrap_or(0) / 2).min(MAX_CMAP_SEGMENTS);
-    if seg_count == 0 {
-        return false;
-    }
-    let end_codes = subtable_offset + 14;
-    let start_codes = end_codes + seg_count * 2 + 2;
-    if start_codes + seg_count * 2 > end {
-        return false;
-    }
-    for index in 0..seg_count {
-        let range_end = u32::from(read_u16_be(data, end_codes + index * 2).unwrap_or(0));
-        let range_start = u32::from(read_u16_be(data, start_codes + index * 2).unwrap_or(0));
-        if range_start == 0xffff && range_end == 0xffff {
-            continue;
-        }
-        acc.add_range(range_start, range_end);
-    }
-    true
-}
-
-fn parse_format_12(data: &[u8], subtable_offset: usize, acc: &mut ScriptAccumulator) -> bool {
-    if subtable_offset + 16 > data.len() {
-        return false;
-    }
-    let length = usize::try_from(read_u32_be(data, subtable_offset + 4).unwrap_or(0)).unwrap_or(0);
-    let end = subtable_offset.saturating_add(length);
-    if length < 16 || end > data.len() {
-        return false;
-    }
-    let groups = usize::try_from(read_u32_be(data, subtable_offset + 12).unwrap_or(0)).unwrap_or(0).min(MAX_CMAP_GROUPS);
-    let group_start = subtable_offset + 16;
-    if group_start + groups * 12 > end {
-        return false;
-    }
-    for index in 0..groups {
-        let offset = group_start + index * 12;
-        let start_char = read_u32_be(data, offset).unwrap_or(0);
-        let end_char = read_u32_be(data, offset + 4).unwrap_or(0);
-        acc.add_range(start_char, end_char);
-    }
-    true
-}
-
-fn parse_cmap(data: &[u8], source_index: usize, diagnostics: &mut Vec<MetadataDiagnostic>) -> Option<FontScriptInfo> {
-    if data.len() < 4 {
-        record(diagnostics, "cmap", Kind::InvalidStructure, Some(source_index), "cmap-header-bounds");
-        return None;
-    }
-    let count = usize::from(read_u16_be(data, 2)?).min(MAX_CMAP_ENCODINGS);
-    if usize::from(read_u16_be(data, 2)?) > MAX_CMAP_ENCODINGS { record(diagnostics, "cmap", Kind::ResourceLimit, Some(source_index), "encoding-limit"); }
-    if 4 + count * 8 > data.len() {
-        record(diagnostics, "cmap", Kind::InvalidStructure, Some(source_index), "encoding-record-bounds");
-        return None;
-    }
-
-    let mut offsets: Vec<usize> = Vec::new();
-    let mut invalid_offset = false;
-    for index in 0..count {
-        let record_offset = 4 + index * 8;
-        let subtable_offset = usize::try_from(read_u32_be(data, record_offset + 4)?).ok()?;
-        if subtable_offset + 2 > data.len() { invalid_offset = true; }
-        else if !offsets.contains(&subtable_offset) { offsets.push(subtable_offset); }
-    }
-
-    if invalid_offset { record(diagnostics, "cmap", Kind::InvalidStructure, Some(source_index), "subtable-offset-bounds"); }
+fn parse_cmap(data: &[u8], source_index: usize, diagnostics: &mut Vec<MetadataDiagnostic>) -> Result<Option<FontScriptInfo>, super::cmap::ParseDisposition> {
+    let coverage = super::cmap::parse(data, source_index, diagnostics)?;
     let mut acc = ScriptAccumulator::default();
-    let mut parsed_any = false;
-
-    for subtable_offset in offsets.iter().copied() {
-        let format = read_u16_be(data, subtable_offset).unwrap_or(0);
-        if format == 12 && usize::try_from(read_u32_be(data, subtable_offset + 12).unwrap_or(0)).unwrap_or(0) > MAX_CMAP_GROUPS {
-            record(diagnostics, "cmap", Kind::ResourceLimit, Some(source_index), "group-limit");
+    for (start, end) in &coverage.ranges { acc.add_range(*start, *end); }
+    let scripts = if coverage.ranges.is_empty() { Vec::new() } else {
+        match coverage.kind {
+            super::cmap::CoverageKind::Unicode => acc.scripts(),
+            super::cmap::CoverageKind::Symbol => vec!["symbol".to_string()],
+            super::cmap::CoverageKind::Other => vec!["other".to_string()],
         }
-        if format == 12 && parse_format_12(data, subtable_offset, &mut acc) {
-            parsed_any = true;
-        }
-    }
-    for subtable_offset in offsets.iter().copied() {
-        let format = read_u16_be(data, subtable_offset).unwrap_or(0);
-        if format == 4 && usize::from(read_u16_be(data, subtable_offset + 6).unwrap_or(0) / 2) > MAX_CMAP_SEGMENTS {
-            record(diagnostics, "cmap", Kind::ResourceLimit, Some(source_index), "segment-limit");
-        }
-        if format == 4 && parse_format_4(data, subtable_offset, &mut acc) {
-            parsed_any = true;
-        }
-    }
-
-    if !parsed_any {
-        let supported = offsets.iter().any(|offset| matches!(read_u16_be(data, *offset), Some(4 | 12)));
-        record(diagnostics, "cmap", if supported || invalid_offset { Kind::InvalidStructure } else if count == 0 { Kind::EmptyMetadata } else { Kind::UnsupportedFormat }, Some(source_index), "no-readable-supported-subtable");
-        return None;
-    }
-    let scripts = acc.scripts();
+    };
     if scripts.is_empty() {
-        record(diagnostics, "cmap", Kind::EmptyMetadata, Some(source_index), "no-character-ranges");
-        return None;
+        record(diagnostics, "cmap", Kind::EmptyMetadata, Some(source_index), "no-mapped-characters");
+        return Ok(None);
     }
-    Some(FontScriptInfo {
-        scripts,
-        range_count: acc.range_count,
-        source_index,
-    })
+    Ok(Some(FontScriptInfo { scripts, range_count: coverage.ranges.len(), source_index }))
 }
 
-pub fn probe_font_scripts_from_directory(file: &mut File, table_directory: &[u8], source_index: usize, diagnostics: &mut Vec<MetadataDiagnostic>) -> io::Result<Option<FontScriptInfo>> {
+pub fn probe_font_scripts_from_directory(file: &mut File, table_directory: &[u8], source_index: usize, diagnostics: &mut Vec<MetadataDiagnostic>) -> io::Result<(Option<FontScriptInfo>, super::cmap::ParseDisposition)> {
     let Some((cmap_offset, cmap_length)) = find_table_record(table_directory, b"cmap") else {
         let directory_complete = table_directory.len() >= 12
             && super::sfnt::is_supported_sfnt_tag(table_directory, 0)
             && 12 + usize::from(read_u16_be(table_directory, 4).unwrap_or(0)) * 16 <= table_directory.len();
         record(diagnostics, "cmap", if directory_complete { Kind::MissingTable } else { Kind::InvalidStructure },
             Some(source_index), if directory_complete { "cmap-table-not-found" } else { "table-lookup-unavailable" });
-        return Ok(None);
+        return Ok((None, if directory_complete { super::cmap::ParseDisposition::Missing } else { super::cmap::ParseDisposition::Malformed }));
     };
 
     if cmap_length == 0 || cmap_length > MAX_CMAP_TABLE_BYTES {
         record(diagnostics, "cmap", if cmap_length == 0 { Kind::EmptyMetadata } else { Kind::ResourceLimit }, Some(source_index), "cmap-table-length");
-        return Ok(None);
+        return Ok((None, if cmap_length == 0 { super::cmap::ParseDisposition::Empty } else { super::cmap::ParseDisposition::ResourceLimit }));
     }
 
     let cmap_table = read_exact_at(file, cmap_offset, cmap_length)?;
-    Ok(parse_cmap(&cmap_table, source_index, diagnostics))
+    Ok(match parse_cmap(&cmap_table, source_index, diagnostics) {
+        Ok(Some(hint)) => (Some(hint), super::cmap::ParseDisposition::Complete),
+        Ok(None) => (None, super::cmap::ParseDisposition::Empty),
+        Err(reason) => (None, reason),
+    })
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn byte_cmap(platform: u16, encoding: u16, mapped: bool) -> Vec<u8> {
+        let mut d = vec![0; 12 + 262];
+        d[2..4].copy_from_slice(&1u16.to_be_bytes());
+        d[4..6].copy_from_slice(&platform.to_be_bytes());
+        d[6..8].copy_from_slice(&encoding.to_be_bytes());
+        d[8..12].copy_from_slice(&12u32.to_be_bytes());
+        d[14..16].copy_from_slice(&262u16.to_be_bytes());
+        if mapped { for code in 0x20..=0x7e { d[18 + code] = 1; } }
+        d
+    }
+    #[test]
+    fn script_hints_require_real_glyphs_and_respect_encoding() {
+        assert!(parse_cmap(&byte_cmap(0, 0, false), 0, &mut Vec::new()).unwrap().is_none());
+        for (platform, encoding, expected) in [(0, 0, "latin"), (3, 0, "symbol"), (1, 0, "other")] {
+            let hint = parse_cmap(&byte_cmap(platform, encoding, true), 0, &mut Vec::new()).unwrap().unwrap();
+            assert_eq!(hint.scripts, vec![expected.to_string()]);
+        }
+    }
+}

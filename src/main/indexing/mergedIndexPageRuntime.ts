@@ -1,3 +1,4 @@
+import { createMergedIndexInstallCandidateRuntime } from './merged-page/mergedIndexInstallCandidateRuntime';
 import type { FontItem } from "../../shared/types";
 import { createMergedIndexBuildRuntime } from "./merged-page/mergedIndexBuildRuntime";
 import { createMergedIndexMutationCoordinatorRuntime } from "./merged-page/mergedIndexMutationCoordinatorRuntime";
@@ -99,6 +100,7 @@ export function createMergedIndexPageRuntime(
   );
 
   return {
+    readInstallRefreshSnapshot: createMergedIndexInstallCandidateRuntime(context).readInstallRefreshSnapshot,
     ensureMergedIndexReadyForWorker: queryRuntime.ensureMergedIndexReadyForWorker,
     mergedIndexDbPath,
     openMergedIndexDb,
@@ -106,7 +108,7 @@ export function createMergedIndexPageRuntime(
       validationRuntime.scheduleMergedIndexBackgroundValidation,
     checkMergedIndexExternalChanges:
       validationRuntime.checkMergedIndexExternalChanges,
-    syncMergedIndexAfterInstallStatusRefresh: (folders: string[], items?: FontItem[], projectionOptions?: { preserveSourceCheckpoint?: boolean }) =>
+    syncMergedIndexAfterInstallStatusRefresh: (folders: string[], items?: FontItem[], projectionOptions?: { preserveSourceCheckpoint?: boolean; assertCurrent?: () => void }) =>
       validationRuntime.syncMergedIndexAfterInstallStatusRefresh(
         folders,
         syncRuntime.syncMergedIndexForRootSnapshot,

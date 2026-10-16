@@ -164,11 +164,12 @@ export function createMergedIndexValidationRuntime(
     syncMergedIndexForRootSnapshot: (rootPath: string, reason: string) => Promise<void>,
     items?: FontItem[],
     syncIncremental?: (root: string, payload: FontIndexChangePayload, reason: string) => Promise<void>,
-    projectionOptions: { preserveSourceCheckpoint?: boolean } = {},
+    projectionOptions: { preserveSourceCheckpoint?: boolean; assertCurrent?: () => void } = {},
   ): Promise<void> {
     if (items && !projectionOptions.preserveSourceCheckpoint) {
       if (!items.length) return;
       await ctx.runMergedIndexMutation('local-install-status', async ({ commit }) => {
+        projectionOptions.assertCurrent?.();
         assertFontQueryActive();
         const db = await ctx.openMergedIndexDb();
         try {
@@ -181,7 +182,7 @@ export function createMergedIndexValidationRuntime(
             open: ctx.openStableSqliteDb, close: ctx.closeSqliteDb,
             getMeta: ctx.getSqliteMeta, setMeta: ctx.setSqliteMeta,
             sourcesKey: ctx.mergedIndexSourcesKey, appendLog: ctx.appendStartupLog,
-            force: true, acknowledgeSources: true, assertCurrent: assertFontQueryActive,
+            force: true, acknowledgeSources: true, assertCurrent: () => { assertFontQueryActive(); projectionOptions.assertCurrent?.(); },
           });
           if (result.changed) commit('local-install-status');
           if (result.unavailable) {
@@ -195,6 +196,7 @@ export function createMergedIndexValidationRuntime(
     }
     if (items) {
       await ctx.runMergedIndexMutation('local-install-status', async ({ commit }) => {
+        projectionOptions.assertCurrent?.();
         assertFontQueryActive();
         const currentItems = ctx.readInstallStatusForProjection ? await ctx.readInstallStatusForProjection(items) : items;
         assertFontQueryActive();
@@ -217,6 +219,7 @@ export function createMergedIndexValidationRuntime(
             WHERE root_path=? AND relative_path=? AND file_size=? AND modified_at=?
               AND (installed IS NOT ? OR installed_by IS NOT ? OR matches_json IS NOT ?)`);
           assertFontQueryActive();
+          projectionOptions.assertCurrent?.();
           db.exec('BEGIN IMMEDIATE');
           try {
             let changed = 0;
@@ -233,6 +236,7 @@ export function createMergedIndexValidationRuntime(
               }
             }
             // A page repair has only partial coverage and never advances a whole-source receipt.
+            projectionOptions.assertCurrent?.();
             db.exec('COMMIT');
             if (changed) commit('install-status-page-repair');
             ctx.appendStartupLog(`local install projection batch: examined=${rows.length}, requested=${currentItems.length}, targets=${targets.size}, changed=${changed}, invalidRows=${invalidRows}`);

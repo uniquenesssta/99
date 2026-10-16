@@ -742,11 +742,12 @@ async function refreshCompletionRegressions() {
  const absolute=path.join(root,file),source=fs.readFileSync(absolute,'utf8').replace(/\r\n/g,'\n')
  const at=relative=>path.join(root,'src/main',relative)
  async function cases(transform=value=>value) {
+  let forcedSourceReads=0
   const load=loader({
    [at('path/sharedFileSystemRuntime.ts')]:{withSharedIoPriority:(_priority,fn)=>fn()},
    [at('app/shutdownCoordinatorRuntime.ts')]:{applicationWorkEpoch:()=>1,assertApplicationOpen(){}},
    [at('path/startupPathAvailabilityRuntime.ts')]:{ assertStartupPathRootGuardCurrent() {},getStartupPathRootState:()=>({state:'online',generation:1})},
-   [at('install/fontInstallEvidenceRuntime.ts')]:{createFontInstallEvidenceSession:()=>({confirm:async(_item,candidate)=>candidate})},
+   [at('install/fontInstallEvidenceRuntime.ts')]:{createFontInstallEvidenceSession:()=>({confirm:async(_item,candidate)=>candidate,read:async()=>{forcedSourceReads++;throw Error('Healthy metadata-only fixture must not force source reads')}})},
   },{}, {[absolute]:()=>transform(source)})
   const identity=load('src/main/fonts/fontFileIdentity.ts').fileRuntimeFontId
   const items=[0,1].map(index=>{const filePath=`C:\\fixture\\summary-${index}.ttf`;return {id:identity(filePath,100,1),path:filePath,fileSize:100,modifiedAt:1}})
@@ -779,6 +780,7 @@ async function refreshCompletionRegressions() {
    assert.equal(result.notInstalledCount,missing<2?1:0,'Unknown evidence became confirmed uninstalled')
    assert.equal(done.missingCount,missing,'Completion progress hid unknown rows')
    assert.equal(done.total,2);assert.equal(done.updatedCount,2);assert.equal(writes,1)
+   assert.equal(forcedSourceReads,0,'Healthy-root refresh exceeded candidate-driven evidence read budget')
    assert(done.message.includes(force?'全量':'增量'),'Completion named the wrong refresh mode')
    if(missing) {
     assert(done.message.includes('部分未确认')&&done.message.includes(`未确认 ${missing} 个`),'Partial completion must disclose the persisted unknown count')
@@ -791,8 +793,8 @@ async function refreshCompletionRegressions() {
  }
  await cases()
  await cases(value=>value.replace(/\n/g,'\r\n'))
- const anchor='message: (summary.missingCount || 0) > 0'
+ const anchor='(summary.missingCount || 0) > 0'
  assert.equal(source.split(anchor).length,2,'Partial completion mutation anchor must be unique')
- await assert.rejects(()=>cases(value=>value.replace(anchor,'message: false')),/Partial completion must disclose/)
+ await assert.rejects(()=>cases(value=>value.replace(anchor,'false')),/Partial completion must disclose/)
  console.log('[diagnostics:full-refresh-acceptance] full/incremental complete/partial persisted-summary messages, LF/CRLF and misleading-completion mutant passed')
 }

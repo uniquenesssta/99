@@ -1,3 +1,4 @@
+use crate::font_parser::metadata::{MetadataParseDisposition, SourceStability};
 use std::fs::{self, File, Metadata};
 use std::io;
 use std::path::Path;
@@ -72,6 +73,10 @@ struct FontParseBatchResult {
     name_hint: Option<FontNameInfo>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     metadata_diagnostics: Vec<MetadataDiagnostic>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parse_disposition: Option<MetadataParseDisposition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_stability: Option<SourceStability>,
     #[serde(skip_serializing_if = "Option::is_none")]
     script_hint: Option<FontScriptInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -151,9 +156,10 @@ fn parse_font_job(
     let before = file.metadata()?;
     validate_expected_metadata(job, &before)?;
     let identity = file_id(&file)?;
-    let entry = scan_font_file_from_handle(path, &mut file, &before, options)?;
+    let mut entry = scan_font_file_from_handle(path, &mut file, &before, options)?;
     after_read();
     validate_unchanged_source(path, &file, &before, &identity)?;
+    entry.source_stability = Some(SourceStability::Stable);
     Ok(entry)
 }
 
@@ -190,6 +196,8 @@ pub fn parse_font_batch(config: &FontParseBatchCommandConfig) -> Result<String, 
                     content_hash: if entry.content_hash.is_empty() { entry.quick_hash.clone() } else { entry.content_hash },
                     hash_kind: entry.hash_kind,
                     name_hint: entry.name_hint,
+                    parse_disposition: entry.parse_disposition,
+                    source_stability: entry.source_stability,
                     metadata_diagnostics: entry.metadata_diagnostics,
                     script_hint: entry.script_hint,
                     style_hint: entry.style_hint,
@@ -277,6 +285,25 @@ mod tests {
         // why the production batch also compares exact post-read timestamps.
         let file = fs::OpenOptions::new().access_mode(0x100).share_mode(7).open(path).unwrap();
         file.set_times(fs::FileTimes::new().set_modified(time)).unwrap();
+    }
+
+    #[test]
+    fn dispositions_are_serialized_only_with_verified_source_stability() {
+        let fixture = Fixture::new();
+        let path = fixture.font("empty.ttf", FONT_HEADER);
+        let options = FontFileScanOptions { probe_scripts: true, ..Default::default() };
+        let metadata = fs::metadata(&path).unwrap();
+        let unverified = super::super::font_file::scan_font_file(&path, &metadata, &options).unwrap();
+        assert_eq!(serde_json::to_value(unverified.source_stability).unwrap(), json!("unknown"));
+        let verified = parse_font_job(&job(&path), &options, || {}).unwrap();
+        assert_eq!(serde_json::to_value(verified.source_stability).unwrap(), json!("stable"));
+        assert_eq!(serde_json::to_value(verified.parse_disposition).unwrap(), json!({"scripts": "empty"}));
+        let mut bytes = FONT_HEADER.to_vec();
+        bytes[5] = 1;
+        bytes.extend_from_slice(b"cmap\0\0\0\0\0\0\x10\0\0\0\0\x10");
+        let path = fixture.font("unreadable-cmap.ttf", &bytes);
+        let verified = parse_font_job(&job(&path), &options, || {}).unwrap();
+        assert_eq!(serde_json::to_value(verified.parse_disposition).unwrap(), json!({"scripts": "io-error"}));
     }
 
     #[test]

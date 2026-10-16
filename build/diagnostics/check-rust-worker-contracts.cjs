@@ -16,7 +16,8 @@ const fixture = require('./fixtures/rust-worker-contracts.fixture.json')
 // native input token while locking the one reviewed optional admission hook.
 const reviewedOptionalProperties = {
   ...fixture.reviewedOptionalProperties,
-  RustListedFontFile: { metadataDiagnostics: 'metadataDiagnostics?: RustMetadataDiagnostic[]' },
+  RustListedFontFile: { metadataDiagnostics: 'metadataDiagnostics?: RustMetadataDiagnostic[]',
+    parseDisposition: 'parseDisposition?: RustParseDisposition', sourceStability: 'sourceStability?: RustSourceStability' },
   RustInstallStatusReadResult: {
     missingReasons: "missingReasons?: Record<string, import('../install/status/installStatusTypes').InstallStatusMissReason>",
     readError: 'readError?: boolean',
@@ -99,16 +100,34 @@ function originalMetadataPayloadShape(node, file) {
   const list = files[0].type
   assert(ts.isTypeReferenceNode(list) && list.typeName.getText(file) === 'Array' && list.typeArguments?.length === 1
     && ts.isTypeLiteralNode(list.typeArguments[0]), 'metadata listing files shape changed')
-  const members = list.typeArguments[0].members.filter(member => member.name?.getText(file) === 'metadataDiagnostics')
-  assert.equal(members.length, 1, 'metadata listing diagnostics missing or duplicated')
-  const member = members[0]
-  assert(ts.isPropertySignature(member) && member.questionToken
-    && shapeHash(member.getText(file)) === shapeHash('metadataDiagnostics?: RustMetadataDiagnostic[]'), 'metadata listing diagnostic type changed')
-  const text = node.type.getText(file), start = node.type.getStart(file)
-  return text.slice(0, member.getFullStart() - start) + text.slice(member.end - start)
+  let text = node.type.getText(file)
+  const start = node.type.getStart(file), ranges = []
+  for (const [name, expected] of Object.entries(reviewedOptionalProperties.RustListedFontFile)) {
+    const members = list.typeArguments[0].members.filter(member => member.name?.getText(file) === name)
+    assert.equal(members.length, 1, `metadata listing ${name} missing or duplicated`)
+    const member = members[0]
+    assert(ts.isPropertySignature(member) && member.questionToken
+      && shapeHash(member.getText(file)) === shapeHash(expected), `metadata listing ${name} type changed`)
+    ranges.push([member.getFullStart() - start, member.end - start])
+  }
+  for (const [from, to] of ranges.sort((a, b) => b[0] - a[0])) text = text.slice(0, from) + text.slice(to)
+  return text
 }
 
+function checkMetadataEvidenceTypes(current) {
+  const file = current.file(core + 'fontMetadataDiagnostics.ts')
+  const expected = {
+    RustParseDisposition: "export interface RustParseDisposition { scripts: 'complete' | 'missing' | 'empty' | 'unsupported' | 'malformed' | 'resource-limit' | 'io-error' | 'not-requested' }",
+    RustSourceStability: "export type RustSourceStability = 'stable' | 'changed' | 'unknown'",
+  }
+  for (const [name, declaration] of Object.entries(expected)) {
+    const nodes = file.statements.filter(node => node.name?.text === name)
+    assert.equal(nodes.length, 1, name + ' evidence declaration missing or duplicated')
+    assert.equal(shapeHash(nodes[0].getText(file)), shapeHash(declaration), name + ' evidence vocabulary changed')
+  }
+}
 function checkShapes(current) {
+  checkMetadataEvidenceTypes(current)
   for (const [rel, expected, dependencies] of [
     [contracts, fixture.publicTypes, fixture.publicDependencies],
     [payloads, fixture.payloadTypes, fixture.payloadDependencies],
@@ -135,7 +154,7 @@ function checkShapes(current) {
         } else external.push(record)
       }
     }
-    const reviewedDependencies = [...dependencies, { name: 'RustMetadataDiagnostic', imported: 'RustMetadataDiagnostic', module: './fontMetadataDiagnostics' }]
+    const reviewedDependencies = [...dependencies, ...['RustMetadataDiagnostic', 'RustParseDisposition', 'RustSourceStability'].map(name => ({ name, imported: name, module: './fontMetadataDiagnostics' }))]
     exact(external.map(value => JSON.stringify(value)), reviewedDependencies.map(value => JSON.stringify(value)), rel + ' dependency identities')
   }
 }
@@ -210,13 +229,28 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
 type Assert<T extends true> = T
 ${publicNames.map((name, i) => `type Public${i} = Assert<Equal<C.${name}, L.${name}>>`).join('\n')}
 ${payloadNames.map((name, i) => `// @ts-expect-error Internal payload is not part of the public facade\ntype Private${i} = L.${name}`).join('\n')}
-declare const oldListedFile: Omit<C.RustListedFontFile, 'metadataDiagnostics'>
+declare const oldListedFile: Omit<C.RustListedFontFile, 'metadataDiagnostics' | 'parseDisposition' | 'sourceStability'>
 const legacyListedFile: C.RustListedFontFile = oldListedFile
 const legacyListedPayload: P.RustListFontFilesPayload = { files: [{ path: 'fixture.ttf' }] }
 type MetadataDiagnostic = NonNullable<C.RustListedFontFile['metadataDiagnostics']>[number]
 const metadataDiagnostic: MetadataDiagnostic = { stage: 'name', kind: 'missing-table', detail: 'name-table-absent' }
 const typedListedFile: C.RustListedFontFile = { ...legacyListedFile, metadataDiagnostics: [metadataDiagnostic] }
 const typedListedPayload: P.RustListFontFilesPayload = { files: [{ metadataDiagnostics: [metadataDiagnostic] }] }
+const evidenceListedFile: C.RustListedFontFile = { ...legacyListedFile, parseDisposition: { scripts: 'unsupported' }, sourceStability: 'stable' }
+const evidenceListedPayload: P.RustListFontFilesPayload = { files: [{ parseDisposition: { scripts: 'io-error' }, sourceStability: 'unknown' }] }
+// @ts-expect-error Disposition vocabulary is closed.
+const invalidParseDisposition: C.RustListedFontFile = { ...legacyListedFile, parseDisposition: { scripts: 'anything' } }
+// @ts-expect-error Present disposition must identify scripts.
+const missingScriptDisposition: C.RustListedFontFile = { ...legacyListedFile, parseDisposition: {} }
+// @ts-expect-error Source stability is not a boolean.
+const invalidSourceStability: C.RustListedFontFile = { ...legacyListedFile, sourceStability: true }
+// @ts-expect-error Nested receipt retains the same closed vocabulary.
+const invalidNestedDisposition: P.RustListFontFilesPayload = { files: [{ parseDisposition: { scripts: 'bad-font' } }] }
+// @ts-expect-error Nested receipt must carry scripts when disposition exists.
+const missingNestedDisposition: P.RustListFontFilesPayload = { files: [{ parseDisposition: {} }] }
+// @ts-expect-error Changed source is explicit, arbitrary states are not accepted.
+const invalidNestedStability: P.RustListFontFilesPayload = { files: [{ sourceStability: 'anything' }] }
+
 // @ts-expect-error Native stage is a closed vocabulary.
 const badMetadataStage: MetadataDiagnostic = { ...metadataDiagnostic, stage: 'anything' }
 // @ts-expect-error Unsupported metadata never becomes a bad-font disposition.
@@ -362,12 +396,25 @@ function main() {
     }
     rejects.push([`${rel} metadata dependency changed`, () => checkShapes(mutated(rel, text => text.replace("'./fontMetadataDiagnostics'", "'../indexing/fontScanWorkers'")))])
   }
+  for (const rel of [contracts, payloads]) for (const field of ['parseDisposition?: RustParseDisposition', 'sourceStability?: RustSourceStability']) {
+    assert.equal(actual.read(abs(rel)).split(field).length, 2, 'evidence field mutation anchor drifted')
+    for (const [label, replacement] of [['missing', ''], ['mandatory', field.replace('?:', ':')],
+      ['widened', field.replace(/: .+$/, ': string')], ['duplicate', field + '\n  ' + field]]) {
+      rejects.push([`${rel} ${field} ${label}`, () => checkShapes(mutated(rel, text => text.replace(field, replacement)))])
+    }
+  }
+  for (const [label, before, after] of [
+    ['script enum widened', "scripts: 'complete'", "scripts: string | 'complete'"],
+    ['script discriminator optional', "scripts: 'complete'", "scripts?: 'complete'"],
+    ['stability enum widened', "= 'stable' | 'changed' | 'unknown'", "= string"],
+    ['script enum missing', "'unsupported' | ", ''],
+  ]) rejects.push([label, () => checkShapes(mutated(core + 'fontMetadataDiagnostics.ts', text => text.replace(before, after)))])
   for (const [label, run] of rejects) assert.throws(run, undefined, 'negative control did not fail: ' + label)
   const crlf = view(new Map([contracts, payloads, facade].map(rel => [rel, actual.read(abs(rel)).replace(/\r?\n/g, '\r\n')])))
   checkShapes(crlf)
   checkBoundaries(crlf)
   checkErasure(crlf)
-  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, 61 compiler rejections, legacy/versioned watcher, recovery tags, binding snapshots, transient bytes and prepared projection guards, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
+  console.log(`[diagnostics:rust-worker-contracts] ${publicNames.length} public aliases, ${payloadNames.length} private shapes, compiler rejection controls including closed parse evidence, legacy/versioned watcher, recovery tags, binding snapshots, transient bytes and prepared projection guards, import erasure, dependency boundaries and cycles passed; ${rejects.length} mutants rejected; CRLF passed`)
 }
 
 try { main() } catch (error) {

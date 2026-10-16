@@ -46,7 +46,7 @@ export type InstallStatusRuntimeDeps = {
   completeBackgroundTask: (taskKey: string, summary?: string) => Promise<void>
   appendStartupLog: (message: string) => void
   readInstallStatusIndexInWorker?: (groups: InstallStatusReadWorkerGroup[]) => Promise<{ results: Record<string, InstallCompareResult>; missingIds: string[]; timings?: Record<string, number> } & InstallStatusReadEvidence>
-  saveInstallStatusIndexInWorker?: (groups: InstallStatusSaveWorkerGroup[]) => Promise<{ written: number; groups: number; timings?: Record<string, number> }>
+  saveInstallStatusIndexInWorker?: (groups: InstallStatusSaveWorkerGroup[], assertCurrent?: () => void) => Promise<{ written: number; groups: number; timings?: Record<string, number> }>
 }
 
 export type InstallStatusDbRuntime = {

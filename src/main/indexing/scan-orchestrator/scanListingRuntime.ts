@@ -1,4 +1,4 @@
-import type { RustMetadataDiagnostic } from '../../rust-core/fontMetadataDiagnostics'
+import type { RustMetadataDiagnostic, RustParseDisposition, RustSourceStability } from '../../rust-core/fontMetadataDiagnostics'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { resolve } from 'node:path'
@@ -25,6 +25,8 @@ export interface ScanStatJob {
   contentHash?: string
   hashKind?: string
   metadataDiagnostics?: RustMetadataDiagnostic[]
+  parseDisposition?: RustParseDisposition
+  sourceStability?: RustSourceStability
   nameHint?: RustFontNameHint
   scriptHint?: RustFontScriptHint
   styleHint?: RustFontStyleHint

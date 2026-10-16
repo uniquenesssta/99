@@ -112,6 +112,8 @@ function buildParseJob(input: ScanIncrementalDecisionInput): FontParseJob {
     contentHash: input.contentHash,
     hashKind: input.item.hashKind,
     metadataDiagnostics: input.item.metadataDiagnostics,
+    parseDisposition: input.item.parseDisposition,
+    sourceStability: input.item.sourceStability,
     nameHint: input.item.nameHint,
     scriptHint: input.item.scriptHint,
     styleHint: input.item.styleHint,

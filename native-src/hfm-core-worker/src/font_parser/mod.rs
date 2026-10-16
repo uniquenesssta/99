@@ -1,3 +1,4 @@
+pub mod cmap;
 pub mod diagnostics;
 pub mod encoding;
 pub mod metadata;

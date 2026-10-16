@@ -132,6 +132,7 @@ export interface MainOperationsCompositionOptions {
   query: Pick<Data['query'],
     | 'findFontItemInRootIndexes'
     | 'syncMergedIndexForRootSnapshot'
+    | 'readInstallRefreshSnapshot'
     | 'syncMergedIndexAfterInstallStatusRefresh'
     | 'clearFontQueryCaches'
     | 'syncMergedIndexForRootIncremental'
@@ -276,6 +277,7 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
   const {
     findFontItemInRootIndexes,
     syncMergedIndexForRootSnapshot,
+    readInstallRefreshSnapshot,
     syncMergedIndexAfterInstallStatusRefresh,
     clearFontQueryCaches,
     syncMergedIndexForRootIncremental,
@@ -549,6 +551,7 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
   });
 
   const installStatusRefreshRuntime = createInstallStatusRefreshRuntime({
+    readInstallSnapshotNames: jobs => rustCoreWorkerRuntime.runRustFontParseBatch(jobs),
     readTemporaryActiveFonts: options.windows.loadTemporaryActiveFonts,
     readHistoricalFont: async path => openTagFontSnapshots(await openLibraryDb()).read(path),
     appWatchedFolders,
@@ -568,6 +571,7 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     buildInstalledFontLookupIndex,
     compareFontInstalledWithLookupIndex,
     rootForFontPath,
+    readInstallRefreshSnapshot,
     syncMergedIndexAfterInstallStatusRefresh,
     clearFontQueryCaches: () => {
       clearFontQueryCaches();

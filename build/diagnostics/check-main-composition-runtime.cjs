@@ -324,6 +324,32 @@ function checkOutputTypes() {
   return operations
 }
 
+async function checkInstallCandidateWiring(overrides = new Map()) {
+  const h = createHarness(overrides); h.load(entry)
+  const query = h.compositions.get('createMainDataQueryCompositionRuntime')
+  const refresh = h.options('createInstallStatusRefreshRuntime')
+  assert.equal(refresh.readInstallRefreshSnapshot, query.readInstallRefreshSnapshot, 'INSTALL_CANDIDATE_WIRING: snapshot must belong to local query owner')
+  assert.equal(refresh.readInstallRefreshSnapshot.fixtureOperation, 'createMergedIndexPageRuntime.readInstallRefreshSnapshot')
+  h.reset()
+  await refresh.readInstallSnapshotNames([{ jobId: 'fresh-name' }])
+  assert.deepEqual(h.calls, [['createRustCoreWorkerRuntime.runRustFontParseBatch', [[{ jobId: 'fresh-name' }]]]], 'INSTALL_CANDIDATE_WIRING: fresh names must use native parse authority')
+}
+async function checkInstallCandidateMutations() {
+  const file = compositionFile('Operations'), text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+  const changes = [
+    ['    readInstallSnapshotNames: jobs => rustCoreWorkerRuntime.runRustFontParseBatch(jobs),', '    readInstallSnapshotNames: async () => null,'],
+    ['    readInstallRefreshSnapshot,\n    syncMergedIndexAfterInstallStatusRefresh,\n', '    readInstallRefreshSnapshot: async () => null,\n    syncMergedIndexAfterInstallStatusRefresh,\n'],
+  ]
+  // The second anchor occurs once in the owner options, apart from destructuring;
+  // target its last occurrence so the mutant remains valid TypeScript.
+  for (const [before, after] of changes) {
+    const position = text.lastIndexOf(before); assert(position >= 0, 'install wiring mutation anchor missing')
+    const mutated = text.slice(0, position) + after + text.slice(position + before.length)
+    await assert.rejects(() => checkInstallCandidateWiring(new Map([[file, mutated]])), /INSTALL_CANDIDATE_WIRING/)
+  }
+  return changes.length
+}
+
 async function checkRejectedMutations() {
   const mutations = [
     ['eager DB open', compositionFile('Data'), '  const query = createMainDataQueryCompositionRuntime({', '  void storage.openLibraryDb();\n  const query = createMainDataQueryCompositionRuntime({'],
@@ -361,9 +387,10 @@ async function main() {
   await checkCheckpointCacheWiring()
   await checkAvailabilityAndMaintenanceWiring()
   await checkPreviewHandleOwnership()
+  await checkInstallCandidateWiring()
   assert.deepEqual(await observeBootstrap(), expectedObservations, 'AT-4.1 composition behavior changed')
   const operations = checkOutputTypes()
-  const mutations = await checkRejectedMutations() + await checkMetricsOwnerMutations() + await checkCheckpointCacheMutations() + await checkAvailabilityAndMaintenanceMutations()
+  const mutations = await checkRejectedMutations() + await checkMetricsOwnerMutations() + await checkCheckpointCacheMutations() + await checkAvailabilityAndMaintenanceMutations() + await checkInstallCandidateMutations()
   console.log(`[diagnostics:main-composition-runtime] passed: ${fixture.observations.registrations.length} registrations, ${Object.keys(fixture.observations.flows).length} baseline flows, import/DB ownership, ${operations} typed operations, ${mutations} rejected mutations`)
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

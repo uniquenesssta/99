@@ -36,6 +36,8 @@ export interface InstallStatusProgressPayload {
 }
 
 export interface InstallStatusRefreshResult {
+  scope?: 'all-roots' | 'snapshot' | 'available-roots'
+  unavailableRoots?: string[]
   mode?: 'full' | 'incremental' | 'skipped'
   total: number
   installedCount: number

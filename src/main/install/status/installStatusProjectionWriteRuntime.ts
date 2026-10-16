@@ -5,7 +5,7 @@ import type { InstallStatusRuntime } from '../installStatusRuntime'
 // settle their durable state and current merged projection through this owner.
 export function createInstallStatusProjectionWriteRuntime(options: {
   saveInstallStatusIndex: InstallStatusRuntime['saveInstallStatusIndex']
-  syncMergedIndexAfterInstallStatusRefresh: (roots: string[], items?: FontItem[]) => Promise<void>
+  syncMergedIndexAfterInstallStatusRefresh: (roots: string[], items?: FontItem[], options?: { preserveSourceCheckpoint?: boolean; assertCurrent?: () => void }) => Promise<void>
 }) {
   let tail: Promise<void> = Promise.resolve()
   function saveInstallStatusIndex(...args: Parameters<InstallStatusRuntime['saveInstallStatusIndex']>): Promise<void> {
@@ -13,10 +13,11 @@ export function createInstallStatusProjectionWriteRuntime(options: {
     // projection leaves the source durable; the next reconciliation covers it as
     // well, and process startup rechecks local authority before exposing rows.
     const task = tail.catch(() => undefined).then(async () => {
+      args[2]?.assertCurrent?.()
       await options.saveInstallStatusIndex(...args)
       const [results, itemsById] = args
       const items = [...itemsById.values()].filter(item => Object.hasOwn(results, item.id))
-      if (items.length) await options.syncMergedIndexAfterInstallStatusRefresh([], items)
+      if (items.length) await options.syncMergedIndexAfterInstallStatusRefresh([], items, { preserveSourceCheckpoint: args[2]?.preserveSourceCheckpoint, assertCurrent: args[2]?.assertCurrent })
     })
     tail = task.catch(() => undefined)
     return task

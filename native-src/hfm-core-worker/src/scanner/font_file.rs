@@ -102,6 +102,8 @@ fn scan_font_file_handle(
         quick_hash,
         content_hash,
         hash_kind,
+        parse_disposition: metadata_hint.parse_disposition,
+        source_stability: Some(crate::font_parser::metadata::SourceStability::Unknown),
         metadata_diagnostics: metadata_hint.diagnostics,
         name_hint: metadata_hint.name_hint,
         script_hint: metadata_hint.script_hint,

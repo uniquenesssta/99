@@ -21,6 +21,7 @@ export async function consumeRustFontParseBatchFastPath(args: {
   scriptDetectionVersion: number
   runRustFontParseBatch?: RustFontParseBatchRuntime
   processResult: (result: FontParseWorkerResult) => Promise<void>
+  observeMetadata?: (job: FontParseJob, identityJob: FontParseJob) => void
   appendStartupLog: (message: string) => void
   logPrefix: string
   progress?: (payload: { processed: number; total: number }) => void
@@ -78,10 +79,11 @@ export async function consumeRustFontParseBatchFastPath(args: {
         continue
       }
 
+      args.observeMetadata?.(rustJob, job)
       const fastResult = buildFontParseResultFromRustMetadata(rustJob, scriptDetectionVersion)
       if (!fastResult) {
         rejectionReporter.reject(job, rustMetadataFastPathRejectionReason(rustJob) || 'unusable-metadata', rustJob.metadataDiagnostics)
-        remainingJobs.push(job)
+        remainingJobs.push({ ...job, ...rustJob })
         continue
       }
 

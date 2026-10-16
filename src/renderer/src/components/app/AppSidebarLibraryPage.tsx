@@ -44,10 +44,10 @@ export function AppSidebarLibraryPage({
       <button data-compact-label="收藏" className={activeFilter.kind === 'favorites' ? 'nav active' : 'nav'} onClick={() => setActiveFilter({ kind: 'favorites', name: '收藏' })}>
         <span className="nav-label"><AppSidebarIcon name="favorites" /><span>收藏</span></span><span>{favoriteCount}</span>
       </button>
-      <button data-compact-label="安装" className={activeFilter.kind === 'installed' ? 'nav active' : 'nav'} onClick={() => setActiveFilter({ kind: 'installed', name: '已安装' })} title={!installStatusReady ? `还有 ${installStatusMissingCount} 个字体安装状态正在同步，当前数量是已知快照。` : undefined}>
+      <button data-compact-label="安装" className={activeFilter.kind === 'installed' ? 'nav active' : 'nav'} onClick={() => setActiveFilter({ kind: 'installed', name: '已安装' })} title={!installStatusReady ? `还有 ${installStatusMissingCount} 个字体安装状态待确认，当前数量仅包含已确认结果。` : undefined}>
         <span className="nav-label"><AppSidebarIcon name="installed" /><span>已安装</span></span><span>{installedCount}{installStatusSyncSuffix}</span>
       </button>
-      <button data-compact-label="未装" className={activeFilter.kind === 'notInstalled' ? 'nav active' : 'nav'} onClick={() => setActiveFilter({ kind: 'notInstalled', name: '未安装' })} title={!installStatusReady ? `还有 ${installStatusMissingCount} 个字体安装状态正在同步，当前数量是已知快照。` : undefined}>
+      <button data-compact-label="未装" className={activeFilter.kind === 'notInstalled' ? 'nav active' : 'nav'} onClick={() => setActiveFilter({ kind: 'notInstalled', name: '未安装' })} title={!installStatusReady ? `还有 ${installStatusMissingCount} 个字体安装状态待确认，当前数量仅包含已确认结果。` : undefined}>
         <span className="nav-label"><AppSidebarIcon name="notInstalled" /><span>未安装</span></span><span>{notInstalledCount}{installStatusSyncSuffix}</span>
       </button>
       <button data-compact-label="激活" className={activeFilter.kind === 'active' ? 'nav active' : 'nav'} onClick={() => setActiveFilter({ kind: 'active', name: '已激活' })}>
@@ -73,7 +73,7 @@ export function AppSidebarLibraryPage({
         )}
         {!installStatusReady && (
           <div className="sidebar-preview-hint">
-            已安装状态正在同步：还有 {installStatusMissingCount} 个字体未确认。
+            安装状态待确认：还有 {installStatusMissingCount} 个字体未确认。
           </div>
         )}
       </div>

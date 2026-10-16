@@ -1,3 +1,6 @@
+import { currentFolderWatcherRegistrationGeneration } from '../watcher/folderWatcherRegistrationRuntime'
+import { getStartupPathRootState } from '../path/startupPathAvailabilityRuntime'
+import { createScanMetadataMemoRuntime, SCAN_METADATA_PARSER_VERSION } from './scan-orchestrator/scanMetadataMemoRuntime'
 import { withSharedIoSignal } from '../path/sharedFileSystemRuntime'
 import type { FontItem,ScanResult } from '../../shared/types'
 import { fileCacheSignature } from '../cache/cachePaths'
@@ -30,13 +33,14 @@ import { createSharedIndexLeaseRuntime } from './root-index/sharedIndexLeaseRunt
 export type { ActiveFontScanStatus,ScanOrchestratorDeps,ScanOrchestratorRuntime } from './scan-orchestrator/scanOrchestratorTypes'
 
 export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestratorRuntime {
+  const metadataMemo = createScanMetadataMemoRuntime()
   const directoryCacheRuntime = createRootDirectoryCacheRuntime(deps)
   const sharedIndexLeaseRuntime = createSharedIndexLeaseRuntime({ appendStartupLog: deps.appendStartupLog })
 
   async function scanFolders(
     folders: string[],
     knownFonts: FontItem[] = [],
-    options: { jobId?: string; signal?: AbortSignal } = {},
+    options: { jobId?: string; signal?: AbortSignal; reuseRecoveryMetadata?: boolean } = {},
   ): Promise<ScanResult> {
     const startedAt = Date.now()
     const errors: ScanResult['errors'] = []
@@ -55,6 +59,27 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
     const normalizedFolders = normalizeScanFolders(folders)
     const jobId = options.jobId || createFontScanJobId()
     const signal = options.signal
+    const registrationGeneration = currentFolderWatcherRegistrationGeneration()
+    const rootMemoScopes = new Map<string, string>()
+    const rootKey = (root: string) => normalizePathForCacheCompare(root)
+    // Explicit/manual scans invalidate even an unchanged deterministic failure.
+    if (!options.reuseRecoveryMetadata) for (const root of normalizedFolders) metadataMemo.clearRoot(rootKey(root))
+    const scopeFor = (root: string): string | undefined => rootMemoScopes.get(rootKey(root))
+    const memoCurrent = () => {
+      if (signal?.aborted || registrationGeneration !== currentFolderWatcherRegistrationGeneration()) return false
+      for (const context of rootCacheContexts.values()) {
+        const scope = scopeFor(context.rootPath)
+        if (!scope) continue
+        const state = getStartupPathRootState(context.rootPath)
+        if (scope !== JSON.stringify([registrationGeneration, state.rootId, state.generation,
+          context.cache.rebuildRequestId || '', SCAN_METADATA_PARSER_VERSION, deps.scriptDetectionVersion])) return false
+      }
+      return true
+    }
+    const observeMetadata = (job: FontParseJob, identityJob = job): void => {
+      const scope = scopeFor(job.rootPath)
+      if (scope && memoCurrent()) metadataMemo.remember(rootKey(job.rootPath), scope, job, deps.scriptDetectionVersion, identityJob)
+    }
     const reportProgress = createFontIndexProgressReporter(deps, jobId, normalizedFolders)
     const incrementalChanges = createFontScanIncrementalChangeRuntime({
       jobId,
@@ -84,6 +109,12 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
       errors,
       ensureRootContext,
     })
+
+    for (const context of rootCacheContexts.values()) {
+      const state = getStartupPathRootState(context.rootPath)
+      rootMemoScopes.set(rootKey(context.rootPath), JSON.stringify([registrationGeneration, state.rootId, state.generation,
+        context.cache.rebuildRequestId || '', SCAN_METADATA_PARSER_VERSION, deps.scriptDetectionVersion]))
+    }
 
     const leaseResult = await sharedIndexLeaseRuntime.acquireForContexts(rootCacheContexts.values(), jobId)
     const scanFoldersForWork = normalizedFolders.filter((folder) => !leaseResult.busyRootKeys.has(normalizePathForCacheCompare(folder)))
@@ -154,6 +185,7 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
           reportProgress({ stage: 'evaluating', message: `正在对比索引：${totalFiles} 个字体文件。`, totalFiles, listedFiles: totalFiles }, true)
 
           const parseJobs: FontParseJob[] = []
+          const memoResults: Array<{ job: FontParseJob; negative: boolean }> = []
           const manifestDecisions = createScanIncrementalDecisionRuntime({
             deps,
             knownFonts,
@@ -247,11 +279,16 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
               continue
             }
 
-            bumpCounter(parseDecisionReasons, decision.reason)
-            parseJobs.push({
-              ...decision.job,
-              jobId: `${parseJobs.length}`,
-            })
+            const job = { ...decision.job, requireSourceStability: true, jobId: `${parseJobs.length}` }
+            const scope = scopeFor(rootPath)
+            const memo = options.reuseRecoveryMetadata && scope && memoCurrent() ? metadataMemo.read(rootKey(rootPath), scope, job) : undefined
+            if (memo) {
+              memoResults.push({ job: memo, negative: !buildFontParseResultFromRustMetadata(memo, deps.scriptDetectionVersion) })
+              bumpCounter(manifestReuseSources, 'process-metadata')
+            } else {
+              bumpCounter(parseDecisionReasons, decision.reason)
+              parseJobs.push(job)
+            }
 
           }
 
@@ -323,12 +360,26 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
             }, normalizeScanContentHash(result.contentHash || result.quickHash)))
           }
 
+          for (const { job, negative } of memoResults) {
+            throwIfAborted(signal)
+            if (!memoCurrent()) throw new Error('scan registration changed')
+            if (negative) await processWorkerResult({ ...job, status: 'error', message: '本轮源文件元数据仍待确认；已复用同一身份的解析结果。' })
+            else {
+              const result = buildFontParseResultFromRustMetadata(job, deps.scriptDetectionVersion)!
+              await processWorkerResult(result)
+              parsed -= 1
+              fromCache += 1
+            }
+          }
+          for (const context of writableRootCacheContexts()) metadataMemo.prune(rootKey(context.rootPath), context.seenKeys, context.scanListingComplete === true)
+
           const workerParseJobs: FontParseJob[] = []
           let rustFastPathParsed = 0
           for (const job of parseJobs) {
             throwIfAborted(signal)
             const fastResult = buildFontParseResultFromRustMetadata(job, deps.scriptDetectionVersion)
             if (fastResult) {
+              observeMetadata(job)
               rustFastPathParsed += 1
               await processWorkerResult(fastResult)
               if (rustFastPathParsed % 200 === 0) {
@@ -359,6 +410,7 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
             scriptDetectionVersion: deps.scriptDetectionVersion,
             runRustFontParseBatch: deps.runRustFontParseBatch,
             processResult: processWorkerResult,
+            observeMetadata,
             appendStartupLog: deps.appendStartupLog,
             logPrefix: 'scan rust parse batch fast path',
             progress: () => {
@@ -435,9 +487,11 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
           }, true)
 
           throwIfAborted(signal)
+          if (!memoCurrent()) throw new Error('scan registration changed')
           const persist = () => writeRootScanCacheContexts(deps, directoryCacheRuntime, writableRootCacheContexts(), errors)
           const committedFolders = signal ? await withSharedIoSignal(signal, persist) : await persist()
 
+          for (const root of committedFolders) metadataMemo.clearRoot(rootKey(root))
           const durationMs = Date.now() - startedAt
           reportProgress({
             stage: 'done',
@@ -483,7 +537,12 @@ export function createScanOrchestrator(deps: ScanOrchestratorDeps): ScanOrchestr
               queuedForWorkers: parseJobs.length,
             },
           }
+    } catch (error) {
+      // Cancelled/retired or exceptional rounds cannot retain their partial work.
+      for (const root of normalizedFolders) metadataMemo.clearRoot(rootKey(root))
+      throw error
     } finally {
+      if (!memoCurrent()) for (const root of normalizedFolders) metadataMemo.clearRoot(rootKey(root))
       incrementalChanges.dispose()
       await sharedIndexLeaseRuntime.releaseAll(leaseResult.acquired)
     }

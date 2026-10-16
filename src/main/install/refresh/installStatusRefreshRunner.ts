@@ -1,3 +1,7 @@
+import { assertInstallSnapshotNamesCurrent } from './installRefreshSnapshotEvidenceRuntime'
+import { currentFolderWatcherRegistrationGeneration } from '../../watcher/folderWatcherRegistrationRuntime'
+import { loadInstallRefreshCandidates } from './installRefreshCandidatesRuntime'
+import { normalizePathForCacheCompare } from '../../path/cachePath'
 import { withSharedIoPriority } from '../../path/sharedFileSystemRuntime'
 import { fileRuntimeFontId } from '../../fonts/fontFileIdentity'
 import { assertApplicationOpen, applicationWorkEpoch } from '../../app/shutdownCoordinatorRuntime'
@@ -46,10 +50,24 @@ export function createInstallStatusRefreshRunner(
       updatedCount: 0
     })
 
-    const folders = await deps.appWatchedFolders().catch(() => [])
-    const items = await deps.loadSharedFontsForFolders(folders)
+    const folders = await deps.appWatchedFolders()
+    const registrationGeneration = currentFolderWatcherRegistrationGeneration()
+    const rootIds = folders.map(root => getStartupPathRootState(root).rootId)
+    const assertRegistrationCurrent = () => {
+      assertApplicationOpen(epoch)
+      if (currentFolderWatcherRegistrationGeneration() !== registrationGeneration || folders.some((root, index) => getStartupPathRootState(root).rootId !== rootIds[index])) throw new Error('install-refresh-root-registration-changed')
+    }
+    const assertRootsCurrent = async () => {
+      assertRegistrationCurrent()
+      const key = (roots: string[]) => JSON.stringify(roots.map(normalizePathForCacheCompare).sort())
+      if (key(await deps.appWatchedFolders()) !== key(folders) || currentFolderWatcherRegistrationGeneration() !== registrationGeneration) throw new Error('install-refresh-roots-changed')
+    }
+    const population = await loadInstallRefreshCandidates(folders, deps.loadSharedFontsForFolders, deps.readInstallRefreshSnapshot)
+    const { items, scope, unavailableRoots } = population
+    await assertRootsCurrent()
     if (!items.length) {
       const empty: InstallStatusRefreshResult = {
+        scope, unavailableRoots,
         mode: 'skipped',
         total: 0,
         installedCount: 0,
@@ -64,7 +82,7 @@ export function createInstallStatusRefreshRunner(
       }
       progress({
         stage: 'done',
-        message: '已安装状态刷新完成：字体库为空。',
+        message: unavailableRoots.length ? '已安装状态刷新未取得可用字体候选，部分来源不可用。' : '已安装状态刷新完成：字体库为空。',
         total: 0,
         processed: 0,
         installedCount: 0,
@@ -91,16 +109,17 @@ export function createInstallStatusRefreshRunner(
       })
       const snapshotStartedAt = Date.now()
       const snapshot = await deps.readInstallStatusIndex(items, { enqueueMissTasks: false })
-      existingResults = snapshot.results || {}
+      existingResults = { ...(snapshot.results || {}) }
       const missingIds = new Set(snapshot.misses.map((item) => item.id))
       targetItems = items.filter((item) => missingIds.has(item.id))
       existingInstalledCount = Object.values(existingResults).filter((result) => result.known !== false && result.installed && result.by !== 'managed').length
       missingCount = targetItems.length
 
       if (!targetItems.length) {
-        const installedTotalCount = await deps.readInstalledTotalSummaryForRoots(folders).catch(() => null)
+        const installedTotalCount = scope === 'all-roots' ? await deps.readInstalledTotalSummaryForRoots(folders).catch(() => null) : null
         const elapsedMs = Date.now() - startedAt
         const summary: InstallStatusRefreshResult = {
+          scope, unavailableRoots,
           mode: 'skipped',
           total: items.length,
           installedCount: existingInstalledCount,
@@ -115,7 +134,7 @@ export function createInstallStatusRefreshRunner(
         }
         progress({
           stage: 'done',
-          message: `已安装状态快照已是最新：已安装 ${summary.installedCount} 个，未安装 ${summary.notInstalledCount} 个，无需全量刷新。`,
+          message: `${scope === 'snapshot' ? '本地候选快照范围内' : scope === 'available-roots' ? '可读来源范围内' : ''}已安装状态快照已是最新：已安装 ${summary.installedCount} 个，未安装 ${summary.notInstalledCount} 个，无需全量刷新。`,
           total: summary.total,
           processed: summary.total,
           installedCount: summary.installedCount,
@@ -199,13 +218,14 @@ export function createInstallStatusRefreshRunner(
         missingCount: Math.max(0, missingCount - processed)
       })
       assertApplicationOpen(epoch)
+      await assertRootsCurrent()
       let persistedIds: string[] | undefined
       await deps.saveInstallStatusIndex(batchResults, batchItemsById, {
-        completeTasks: false, expectedRevision, onPersisted: ids => { persistedIds = ids }
+        completeTasks: false, preserveSourceCheckpoint: scope !== 'all-roots', assertCurrent: assertRegistrationCurrent, expectedRevision, onPersisted: ids => { persistedIds = ids }
       })
       updatedCount += persistedIds?.length ?? (expectedRevision === undefined ? batchSize : 0)
       assertApplicationOpen(epoch)
-      if (!deps.installStatusProjectionOwnedByWriter) await deps.syncMergedIndexAfterInstallStatusRefresh([], Array.from(batchItemsById.values()))
+      if (!deps.installStatusProjectionOwnedByWriter) await deps.syncMergedIndexAfterInstallStatusRefresh([], Array.from(batchItemsById.values()), { preserveSourceCheckpoint: scope !== 'all-roots', assertCurrent: assertRegistrationCurrent })
       const persisted = await deps.readInstallStatusIndex(Array.from(batchItemsById.values()), { enqueueMissTasks: false })
       for (const item of batchItemsById.values()) refreshedResults[item.id] = persisted.results[item.id] || { installed: false, by: 'none', matches: [], known: false }
       batchResults = {}
@@ -232,7 +252,21 @@ export function createInstallStatusRefreshRunner(
           fileRuntimeFontId(item.path, item.fileSize, item.modifiedAt)
           if (root && getStartupPathRootState(root).state === 'offline') throw new Error('source root is offline')
           const candidates = rustCompareResults?.[item.id] || deps.compareFontInstalledWithLookupIndex(item, installedLookup)
-          result = await evidence.confirm(item, candidates)
+          if (population.snapshotIds.has(item.id)) {
+            // A historical population needs fresh source/name evidence before
+            // even a negative comparison. Healthy-root refreshes retain their
+            // existing candidate-driven evidence reads and I/O budget.
+            if (!root) throw new Error('source is outside registered roots')
+            if (fileRuntimeFontId(item.path, item.fileSize, item.modifiedAt) !== item.id) throw new Error('candidate runtime identity mismatch')
+            const source = await evidence.read(item.path)
+            if (normalizePathForCacheCompare(source.path) !== normalizePathForCacheCompare(item.path)
+              || source.size !== item.fileSize || source.modified !== item.modifiedAt
+              || fileRuntimeFontId(source.path, source.size, source.modified) !== item.id) throw new Error('source identity changed')
+            await assertInstallSnapshotNamesCurrent(item, source, deps.readInstallSnapshotNames)
+            result = await evidence.confirm(item, candidates, source)
+          } else {
+            result = await evidence.confirm(item, candidates)
+          }
           if (root && getStartupPathRootState(root).state === 'offline') throw new Error('source root became offline')
         } catch (error) { result = { installed: false, by: 'none', matches: [], known: false, reason: `identity-unavailable: ${error instanceof Error ? error.message : String(error)}` } }
         return { item, result, root }
@@ -253,7 +287,8 @@ export function createInstallStatusRefreshRunner(
 
     await deps.waitForRendererIdle(900)
     await flushBatch(targetItems.length)
-    await deps.saveInstalledTotalSummaryForRoots(folders, installed.length)
+    await assertRootsCurrent()
+    if (scope === 'all-roots') await deps.saveInstalledTotalSummaryForRoots(folders, installed.length)
     assertApplicationOpen(epoch)
     const finalSnapshot = await deps.readInstallStatusIndex(items, { enqueueMissTasks: false })
     const finalResults: Record<string, InstallCompareResult> = { ...finalSnapshot.results }
@@ -261,6 +296,7 @@ export function createInstallStatusRefreshRunner(
     const matchedInstalledCount = Object.values(finalResults).filter((result) => result.known !== false && result.installed && result.by !== 'managed').length
     const elapsedMs = Date.now() - startedAt
     const summary: InstallStatusRefreshResult = {
+      scope, unavailableRoots,
       mode: forceFullRefresh ? 'full' : 'incremental',
       total: items.length,
       installedCount: matchedInstalledCount,
@@ -276,11 +312,11 @@ export function createInstallStatusRefreshRunner(
 
     progress({
       stage: 'done',
-      message: (summary.missingCount || 0) > 0
+      message: (scope === 'snapshot' ? '本次基于本地候选快照，部分来源索引不可用。' : scope === 'available-roots' ? '本次仅覆盖可读来源，部分来源索引不可用。' : '') + ((summary.missingCount || 0) > 0
         ? `已安装状态${forceFullRefresh ? '全量' : '增量'}刷新结束（部分未确认）：字体库内已安装 ${summary.installedCount} 个，未安装 ${summary.notInstalledCount} 个，未确认 ${summary.missingCount} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`
         : forceFullRefresh
           ? `已安装状态全量刷新完成：字体库内已安装 ${summary.installedCount} 个，未安装 ${summary.notInstalledCount} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`
-          : `已安装状态增量刷新完成：更新 ${summary.updatedCount} 个，字体库内已安装 ${summary.installedCount} 个，未安装 ${summary.notInstalledCount} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`,
+          : `已安装状态增量刷新完成：更新 ${summary.updatedCount} 个，字体库内已安装 ${summary.installedCount} 个，未安装 ${summary.notInstalledCount} 个，用时 ${Math.round(elapsedMs / 1000)} 秒。`),
       total: summary.total,
       processed: summary.total,
       installedCount: summary.installedCount,

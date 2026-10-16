@@ -1,3 +1,4 @@
+import { assertStartupPathRootGuardCurrent } from '../../path/startupPathAvailabilityRuntime';
 import { promises as fsp } from "node:fs";
 import { dirname } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -156,6 +157,9 @@ export function createDbQueryWorkerClientRuntime(deps: DbQueryWorkerRuntimeDeps)
     message: Omit<DbWorkerRequestMessage, "id">,
   ): Promise<T> {
     const activeWorker = await ensureWorker();
+    // Initialization can yield while the watched-root registration is retired.
+    // Check the caller's admission lease immediately before posting a write.
+    if (message.type === 'saveInstallStatusIndex') assertStartupPathRootGuardCurrent();
     const id = nextRequestId++;
     return await new Promise<T>((resolve, reject) => {
       pending.set(id, {

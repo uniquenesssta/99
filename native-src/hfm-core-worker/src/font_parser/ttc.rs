@@ -13,15 +13,15 @@ pub fn read_exact_at(file: &mut File, offset: u64, length: usize) -> io::Result<
     Ok(buffer)
 }
 
-pub fn font_offsets(file: &mut File, diagnostics: &mut Vec<MetadataDiagnostic>) -> io::Result<Vec<u64>> {
+pub fn font_offsets(file: &mut File, diagnostics: &mut Vec<MetadataDiagnostic>) -> io::Result<(Vec<u64>, bool)> {
     let header = read_exact_at(file, 0, 12)?;
     if &header[0..4] != b"ttcf" {
-        return Ok(vec![0]);
+        return Ok((vec![0], true));
     }
 
     let count = read_u32_be(&header, 8).unwrap_or(0) as usize;
     if count == 0 {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), true));
     }
 
     if count > MAX_TTC_FONTS_TO_PROBE { record(diagnostics, "collection", Kind::ResourceLimit, None, "face-probe-limit"); }
@@ -33,5 +33,5 @@ pub fn font_offsets(file: &mut File, diagnostics: &mut Vec<MetadataDiagnostic>) 
             offsets.push(u64::from(offset));
         }
     }
-    Ok(offsets)
+    Ok((offsets, count <= MAX_TTC_FONTS_TO_PROBE))
 }

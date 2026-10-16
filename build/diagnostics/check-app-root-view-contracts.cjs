@@ -7,6 +7,7 @@ const ts = require('typescript')
 const crypto = require('node:crypto')
 const { restoreRetiredCacheStatsPorts } = require('./helpers/cacheStatsConsumerRetirementFixture.cjs')
 const { normalizeOperationStatusWiring } = require('./helpers/developerStatusMigrationFixture.cjs')
+const { restoreInstallStatusPendingCopy, pendingSuffix, legacySuffix } = require('./helpers/installStatusPendingFixture.cjs')
 const root = path.resolve(__dirname, '../..')
 const appPath = 'src/renderer/src/App.tsx', viewPath = 'src/renderer/src/components/app/AppRootView.tsx'
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8')
@@ -61,7 +62,7 @@ function checkLifecycle(app, view) {
   assert(!indexEvent.includes('requestPreviewFont'), 'index notification regained invisible foreground demand')
   const pageAuthority = '  const displayDatabasePageReady = databasePageReady\n'
   assert.equal(normalizedApp.split(pageAuthority).length - 1, 1, 'App must retain hook-owned page authority during indexing')
-  const normalized = restoreRetiredCacheStatsPorts(appPath, normalizeOperationStatusWiring(normalizedApp))
+  const normalized = restoreRetiredCacheStatsPorts(appPath, normalizeOperationStatusWiring(restoreInstallStatusPendingCopy(normalizedApp)))
     .replace(pageAuthority, '  const displayDatabasePageReady = databasePageReady && !indexingActive\n')
     .replace('usePreviewController({\n    closingLifecycle: rendererClosingLifecycle,', 'usePreviewController({')
     .replace('    previewConsumerEnabled: false, // FontDetailPanel currently consumes no preview image.\n', '')
@@ -191,10 +192,28 @@ const wrongNotice: AppRootViewProps['operationNotice'] = 42;
     assert.equal(any,0,rel+' reintroduced any')
   }
 }
+function checkSidebarPendingCopy(source) {
+  const title = 'title={!installStatusReady ? `还有 ${installStatusMissingCount} 个字体安装状态待确认，当前数量仅包含已确认结果。` : undefined}'
+  const hint = '            安装状态待确认：还有 {installStatusMissingCount} 个字体未确认。'
+  assert.equal(source.split(title).length, 3, 'both sidebar pending titles must describe confirmed results only')
+  assert.equal(source.split(hint).length, 2, 'sidebar pending hint must describe unconfirmed status')
+  assert(!source.includes('正在同步') && !source.includes('同步中'), 'sidebar pending status must not claim active synchronization')
+}
 function main() {
   const fixture=require('./fixtures/app-root-view-wiring.fixture.json')
   const app=read(appPath),view=read(viewPath)
+  const sidebar = read('src/renderer/src/components/app/AppSidebarLibraryPage.tsx')
+  checkSidebarPendingCopy(sidebar)
+  checkSidebarPendingCopy(sidebar.replace(/\r?\n/g, '\r\n'))
+  const title = '个字体安装状态待确认，当前数量仅包含已确认结果。'
+  for (const at of [sidebar.indexOf(title), sidebar.lastIndexOf(title)]) {
+    const reverted = sidebar.slice(0, at) + sidebar.slice(at).replace(title, '个字体安装状态正在同步，当前数量是已知快照。')
+    assert.notEqual(reverted, sidebar, 'sidebar title mutant anchor drifted')
+    assert.throws(() => checkSidebarPendingCopy(reverted), /sidebar pending/, 'old title wording escaped the gate')
+  }
+  assert.throws(() => checkSidebarPendingCopy(sidebar.replace('安装状态待确认：', '已安装状态正在同步：')), /sidebar pending/, 'old hint wording escaped the gate')
   checkLifecycle(app, view)
+  assert.throws(() => checkLifecycle(app.replace(/\r\n/g, '\n').replace(pendingSuffix, legacySuffix), view), /install-status pending suffix/, 'old syncing wording escaped frozen lifecycle gate')
   checkLifecycle(app.replace(/\r?\n/g,'\r\n'), view.replace(/\r?\n/g,'\r\n'))
   const statusOwner = '  const sharedWatchStatus = useSharedWatchStatus()'
   assert(view.includes(statusOwner), 'shared watch status owner mutation anchor drifted')
