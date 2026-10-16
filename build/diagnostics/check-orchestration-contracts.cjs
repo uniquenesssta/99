@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const strictAssert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { promisify } = require('node:util')
@@ -477,9 +478,10 @@ function testRustTypeContract() {
 }
 
 const previewValidatorModule = 'src/main/preview/runtime/previewImageValidationRuntime.ts'
+const metadataDiagnosticsModule = 'src/main/rust-core/fontMetadataDiagnostics.ts'
 
 function loadTypeScriptModule(rel, localRequire = require, sourceOverride) {
-  assert(sourceOverride === undefined || rel === previewValidatorModule, 'Source overrides are limited to the pure preview validator regression')
+  assert(sourceOverride === undefined || rel === previewValidatorModule || rel === metadataDiagnosticsModule, 'Source overrides are limited to the two pure leaf loader regressions')
   const output = ts.transpileModule(sourceOverride === undefined ? read(rel) : sourceOverride, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -494,9 +496,11 @@ function loadTypeScriptModule(rel, localRequire = require, sourceOverride) {
       // This audited leaf has no dependencies. Do not inherit the fallback
       // harness's require policy if a future validator import is introduced.
       if (rel === previewValidatorModule) fail(`Unexpected preview validator dependency: ${id}`)
+      if (rel === metadataDiagnosticsModule) fail(`Unexpected metadata diagnostics dependency: ${id}`)
       if (!id.startsWith('.')) return localRequire(id)
       const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), id))
       if (target + '.ts' === previewValidatorModule) return loadTypeScriptModule(previewValidatorModule, localRequire)
+      if (target + '.ts' === metadataDiagnosticsModule) return loadTypeScriptModule(metadataDiagnosticsModule, localRequire)
       if (target === 'src/main/app/shutdownCoordinatorRuntime') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/logging/startupLogPolicy' || target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {}, isSharedPreviewReadScope: () => false, currentSharedIoSignal: () => undefined, currentSharedIoPriority: () => undefined }
@@ -533,6 +537,23 @@ function testPreviewValidatorLoader() {
   }
   assert(delegated === 0, 'Pure preview validator delegated a dependency to the broader harness')
   console.log('[diagnostics:orchestration-contracts] production PNG validator loader and dependency boundary locked')
+}
+
+function testMetadataDiagnosticsLoader() {
+  let delegated = 0
+  const refuseDelegation = id => { delegated++; throw new Error(`Metadata schema escaped its dependency boundary: ${id}`) }
+  const { normalizeRustMetadataDiagnostics } = loadTypeScriptModule(metadataDiagnosticsModule, refuseDelegation)
+  assert(typeof normalizeRustMetadataDiagnostics === 'function', 'Production metadata normalizer export is missing')
+  const diagnostic = { stage: 'name', kind: 'io-error', detail: 'fixture', sourceIndex: 0, ioKind: 'UnexpectedEof' }
+  strictAssert.deepStrictEqual(normalizeRustMetadataDiagnostics([diagnostic]), [diagnostic], 'Production metadata loader lost typed native provenance')
+  strictAssert.strictEqual(normalizeRustMetadataDiagnostics(undefined), undefined, 'Legacy missing metadata diagnostics gained a fabricated reason')
+  for (const dependency of ['node:fs', './unexpectedMetadataDependency']) {
+    let caught
+    try { loadTypeScriptModule(metadataDiagnosticsModule, refuseDelegation, `import '${dependency}';\n${read(metadataDiagnosticsModule)}`) } catch (error) { caught = error }
+    assert(caught?.message === `Unexpected metadata diagnostics dependency: ${dependency}`, `Unexpected metadata dependency was not refused locally: ${dependency}`)
+  }
+  assert(delegated === 0, 'Pure metadata schema delegated a dependency to the broader harness')
+  console.log('[diagnostics:orchestration-contracts] production metadata normalizer loader and dependency boundary locked')
 }
 
 function testReadCancellationLoader() {
@@ -816,6 +837,7 @@ async function main() {
   testRustStructuralContract()
   testRustTypeContract()
   testPreviewValidatorLoader()
+  testMetadataDiagnosticsLoader()
   testReadCancellationLoader()
   await testRustFailureBoundary()
   testAppRootViewMigration()
