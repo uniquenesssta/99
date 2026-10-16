@@ -13,15 +13,22 @@ const SUCCESS = ['command-entered', 'snapshot-target-check', 'snapshot-open-star
 const traceFor = ordinal => ({ version: 1, sessionId: 'private-snapshot-ci', operationId: `snapshot-${ordinal}`,
   attemptId: 'one', batchId: 'one', domain: 'sqliteSnapshot', members: [], omitted: 0 })
 
-function createSnapshotPhaseObservation(phase) {
+function createSnapshotPhaseObservation(phase, diagnostics = {}) {
   const scope = new AsyncLocalStorage(), failures = new WeakMap(), recent = [], failed = [], counts = new Map()
   let total = 0, observerErrors = 0, unscopedSharedChildren = 0, successfulTraces = 0, incompleteSuccessfulTraces = 0
   const guard = fn => { try { return fn() } catch { observerErrors++ } }
   const elapsed = row => Math.max(0, performance.now() - row.started)
+  const boundary = (row, name) => guard(() => {
+    if (typeof diagnostics.owners === 'function') {
+      row.ownerBoundaries ||= []
+      if (row.ownerBoundaries.length < 4) row.ownerBoundaries.push({ boundary: name, receivedMs: elapsed(row), owners: diagnostics.owners() })
+    }
+  })
   const retainFailure = row => { failed.push(row); if (failed.length > 8) failed.shift() }
   function reject(row, error) {
     guard(() => {
       row.outcome = 'rejected'; row.settledMs = elapsed(row)
+      boundary(row, 'rejected')
       retainFailure(row)
       if (error && (typeof error === 'object' || typeof error === 'function')) failures.set(error, row)
       if (error?.sharedIo === true) {
@@ -38,6 +45,8 @@ function createSnapshotPhaseObservation(phase) {
     if (args[0]?.operation !== 'sqliteSnapshot') return Reflect.apply(execute, receiver, args)
     const row = { ordinal: ++total, phase: guard(() => String(phase()).replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 96)) || 'unknown',
       started: performance.now(), outcome: 'pending', events: [], children: [] }
+    boundary(row, 'executor-start')
+    guard(() => { row.sourceFileId = diagnostics.rememberFile?.(args[0].path, 'snapshot-source') })
     recent.push(row); if (recent.length > 8) recent.shift()
     if (counts.has(row.phase) || counts.size < 64) counts.set(row.phase, (counts.get(row.phase) || 0) + 1)
     const trace = traceFor(row.ordinal)
@@ -49,6 +58,7 @@ function createSnapshotPhaseObservation(phase) {
     // Observe the original promise. Neither settlement nor physical cleanup is
     // awaited, retried, extended, or substituted by the observer.
     pending.then(output => guard(() => {
+      guard(() => { row.targetFileId = diagnostics.rememberFile?.(output?.snapshotPath, 'snapshot-target') })
       row.outcome = output?.result?.ok === false ? 'failed-receipt' : 'fulfilled'; row.settledMs = elapsed(row)
       if (row.outcome === 'failed-receipt') retainFailure(row)
       if (row.outcome === 'fulfilled') {
@@ -80,6 +90,7 @@ function createSnapshotPhaseObservation(phase) {
             || !Number.isSafeInteger(event.backendSequence) || event.backendSequence < 1
             || !Number.isFinite(event.elapsedMs) || event.elapsedMs < 0) { evidence.rejectedLines++; return }
           if (row.events.length >= 16) { evidence.droppedEvents++; return }
+          if (event.reason === 'snapshot-vacuum-start') boundary(row, 'vacuum-start-received')
           row.events.push({ reason: event.reason, sequence: event.backendSequence, nativeElapsedMs: event.elapsedMs,
             receivedMs: elapsed(row) })
         }
@@ -100,6 +111,7 @@ function createSnapshotPhaseObservation(phase) {
         child.once('close', (code, signal) => guard(() => {
           evidence.closedMs = elapsed(row); evidence.exitCode = Number.isInteger(code) ? code : null
           evidence.signalled = Boolean(signal)
+          boundary(row, 'physical-close')
           buffer = ''
         }))
       })
@@ -119,7 +131,7 @@ function createSnapshotPhaseObservation(phase) {
 }
 
 async function observationControls() {
-  const observer = createSnapshotPhaseObservation(() => 'control'), child = new EventEmitter()
+  const observer = createSnapshotPhaseObservation(() => 'control', { owners: () => ({ scope: 'control', owners: [] }) }), child = new EventEmitter()
   child.stdout = new EventEmitter(); child.stderr = new EventEmitter()
   const port = observer.wrapChildProcess({ spawn: () => child }), receiver = {}, request = { operation: 'sqliteSnapshot', path: 'private-source' }
   let reject, close
@@ -145,6 +157,7 @@ async function observationControls() {
   child.stdout.emit('data', Buffer.from('private-output'))
   child.emit('close', null, 'SIGTERM'); close(); await closed
   const view = observer.snapshot(error)
+  assert.deepEqual(view.exactFailure.ownerBoundaries.map(row => row.boundary), ['executor-start', 'rejected', 'physical-close'])
   assert.equal(view.exactFailure.errorClose, 'fulfilled')
   assert.equal(view.exactFailure.children[0].signalled, true)
   assert.equal(view.exactFailure.events.length, 2, 'SNAPSHOT_OBSERVER_LATE_PHASE')
@@ -157,6 +170,11 @@ async function observationControls() {
   assert.equal(observer.snapshot(error).exactFailure.ordinal, 1, 'SNAPSHOT_OBSERVER_FAILURE_RETENTION')
   assert.equal(observer.snapshot().failed[0].ordinal, 1, 'SNAPSHOT_OBSERVER_HANDLED_FAILURE_RETENTION')
   assert.equal(observer.snapshot().observerErrors, 0)
+  const throwing = createSnapshotPhaseObservation(() => 'control', { owners: () => { throw error }, rememberFile: () => { throw error } })
+  const originalValue = { result: { ok: true } }, original = Promise.resolve(originalValue)
+  assert.equal(throwing.run(() => original, null, [request], withTrace), original)
+  assert.equal(await original, originalValue)
+  assert(throwing.snapshot().observerErrors > 0)
 }
 
 async function nativeControls({ workerPath, directory }) {

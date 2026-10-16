@@ -11,7 +11,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { createRequire } = require('node:module')
 const { isPromise } = require('node:util').types
-const { createHost, productionHostGlobals } = require('./lib/production-projection-host.cjs')
+const { createHost, productionHostGlobals, createSqliteConnectionObservation } = require('./lib/production-projection-host.cjs')
 const { createSnapshotPhaseObservation, observationControls: snapshotObservationControls, nativeControls: snapshotNativeControls } = require('./lib/sqlite-snapshot-phase-observation.cjs')
 const plain = value => JSON.parse(JSON.stringify(value))
 const arg = (name, fallback) => { const at = process.argv.indexOf(name); return at < 0 ? fallback : process.argv[at + 1] }
@@ -330,6 +330,91 @@ async function projectionObservationControls() {
   assert.equal(prep.snapshot().caughtFailures.at(-1).closeState, 'fulfilled')
 }
 
+// Bounded opt-in evidence for this fixture only. Paths stay private in the map.
+function createConnectionEvidence(directory) {
+  const owners = new Map(), files = new Map(), events = []
+  let droppedOwners = 0, omittedClosedOwners = 0, droppedEvents = 0, droppedFiles = 0
+  const rememberFile = (file, role) => {
+    if (typeof file !== 'string') return
+    const resolved = path.resolve(file), relative = path.relative(directory, resolved)
+    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) return
+    if (!files.has(resolved)) {
+      if (files.size >= 128) { droppedFiles++; return }
+      files.set(resolved, { fileId: files.size + 1, role })
+    } else if (role === 'root-source' || role === 'snapshot-source') files.get(resolved).role = role
+    return files.get(resolved).fileId
+  }
+  const sqliteConnectionIdentity = file => {
+    const relative = path.relative(directory, path.resolve(file))
+    const role = relative.split(path.sep).includes('native-temp') ? 'local-snapshot'
+      : /index.*\.sqlite$/i.test(path.basename(file)) ? 'root-or-merged-index' : 'fixture-database'
+    rememberFile(file, role); return { role, fileId: files.get(path.resolve(file))?.fileId }
+  }
+  const onSqliteConnection = event => {
+    if (!owners.has(event.connectionId) && owners.size >= 128) {
+      const closed = [...owners].find(([, row]) => ['closed', 'open-failed'].includes(row.lifecycle))
+      if (closed) { owners.delete(closed[0]); omittedClosedOwners++ }
+      else droppedOwners++
+    }
+    if (owners.has(event.connectionId) || owners.size < 128) owners.set(event.connectionId, { ...event })
+    if (events.length >= 64) { events.shift(); droppedEvents++ }
+    events.push({ ...event })
+  }
+  const snapshot = () => ({ scope: 'fixture-wrapper-only', completeness: droppedOwners ? 'unknown' : 'observed-owners-only',
+    droppedOwners, omittedClosedOwners, droppedEvents, droppedFiles, owners: [...owners.values()].map(row => ({ ...row })), events: events.map(row => ({ ...row })) })
+  // Called only at setup or after the existing physical cleanup barrier, never
+  // during a native request. ENOENT cannot distinguish disposal from no output.
+  const fileStats = boundary => ({ boundary, sampledAt: performance.now(), droppedFiles,
+    targetAttribution: 'only returned targets or wrapper-opened files; failed unreturned target is unknown',
+    files: [...files].flatMap(([file, identity]) => ['', '-journal', '-wal', '-shm'].map(suffix => {
+      try { const stat = fs.statSync(file + suffix); return { ...identity, suffix, state: 'present', size: stat.size, mtimeMs: stat.mtimeMs } }
+      catch (error) { return { ...identity, suffix, state: error?.code === 'ENOENT' ? 'absent-or-disposed' : 'unreadable' } }
+    })) })
+  const ownerSummary = () => {
+    const unresolved = [...owners.values()].filter(row => !['closed', 'open-failed'].includes(row.lifecycle))
+    return { scope: 'fixture-wrapper-only', completeness: droppedOwners || unresolved.length > 16 ? 'unknown' : 'observed-owners-only',
+      droppedOwners, omittedOwners: Math.max(0, unresolved.length - 16),
+      owners: unresolved.slice(-16).map(row => ({ ...row })) }
+  }
+  return { sqliteConnectionIdentity, onSqliteConnection, rememberFile, snapshot, ownerSummary, fileStats }
+}
+
+function connectionEvidenceControls(directory) {
+  const evidence = createConnectionEvidence(directory), error = Object.freeze(Error('control'))
+  const events = [], call = createSqliteConnectionObservation(event => { events.push(event); evidence.onSqliteConnection(event) }, { connectionId: 1, role: 'control' })
+  const privateSource = path.join(directory, 'private-owner-source.sqlite')
+  const sameId = evidence.rememberFile(privateSource, 'snapshot-source')
+  assert.equal(evidence.rememberFile(path.join(directory, '.', 'private-owner-source.sqlite'), 'snapshot-source'), sameId)
+  assert.equal(evidence.sqliteConnectionIdentity(privateSource).fileId, sameId)
+  assert.notEqual(evidence.rememberFile(path.join(directory, 'private-other-source.sqlite'), 'snapshot-source'), sameId)
+  const value = {}, succeed = () => value, fail = () => { throw error }
+  assert.equal(call('open', 'connection', succeed), value)
+  call('prepare', 'BEGIN', succeed, 'BEGIN IMMEDIATE')
+  assert.equal(events.at(-1).transaction, 'not-observed')
+  assert.throws(() => call('run', 'BEGIN', fail, 'BEGIN IMMEDIATE'), caught => caught === error)
+  assert.equal(events.at(-1).transaction, 'not-observed')
+  call('run', 'BEGIN', succeed, 'BEGIN IMMEDIATE')
+  assert.equal(events.at(-1).transaction, 'active-observed')
+  assert.throws(() => call('exec', 'COMMIT', fail), caught => caught === error)
+  assert.equal(events.at(-1).transaction, 'unknown')
+  call('exec', 'ROLLBACK', succeed)
+  assert.equal(events.at(-1).transaction, 'ended-observed')
+  call('exec', 'SELECT', succeed, 'SELECT 1; BEGIN IMMEDIATE;')
+  assert.equal(events.at(-1).transaction, 'unknown')
+  assert.throws(() => call('close', 'connection', fail), caught => caught === error)
+  assert.equal(events.at(-1).lifecycle, 'close-failed-unresolved')
+  const throwing = createSqliteConnectionObservation(() => { throw error }, { connectionId: 2, role: 'control' })
+  assert.equal(throwing('open', 'connection', succeed), value)
+  assert.throws(() => throwing('close', 'connection', fail), caught => caught === error)
+  for (let id = 2; id <= 130; id++) evidence.onSqliteConnection({ connectionId: id, lifecycle: 'open' })
+  assert.equal(evidence.snapshot().completeness, 'unknown')
+  assert(evidence.snapshot().droppedEvents > 0)
+  evidence.rememberFile(path.join(directory, 'never-created-diagnostic-target'), 'snapshot-target')
+  assert.equal(evidence.fileStats('control').files[0].state, 'absent-or-disposed')
+  const serialized = JSON.stringify({ owners: evidence.snapshot(), files: evidence.fileStats('control') })
+  assert(!serialized.includes(directory) && !serialized.includes('private-owner-source') && !serialized.includes('private-other-source'))
+}
+
 function failureDiagnostics(host, state, error, roots) {
   const relevant = /^(?:local merged index (?:background validation|root signature|rebuilt)|merged index worker readiness|merged (?:background validation|metadata poll|root projection)|rust merged index (?:rebuild|sync|page query)|root index (?:read failed|latest pointer resolve skipped|rust directory)|shared snapshot disposal failed)/
   const location = String(error?.stack || '').match(/check-watcher-noop-freshness\.cjs:(\d+):(\d+)/)
@@ -342,6 +427,8 @@ function failureDiagnostics(host, state, error, roots) {
     projection: state.projectionObservation?.snapshot(),
     preparation: state.preparationObservation?.snapshot(),
     sqliteSnapshots: state.snapshotObservation?.snapshot(error),
+    sqliteConnections: state.connectionEvidence?.snapshot(),
+    sqliteFilesBefore: state.sqliteFilesBefore,
     readCloseBoundary: boundary ? {
       mode: boundary.mode, outcome: boundary.outcome, injected: boundary.injected, closeReleased: boundary.closeReleased,
       observerErrors: boundary.observerErrors,
@@ -617,6 +704,8 @@ async function main() {
   const state = { nativeTempDirectory, ownedSqliteSnapshots: 0, phase: 'fixture-setup', sourceInvalidations: 0, queryInvalidations: 0, sourcePublicationModes: [] }, stages = [], controls = []
   let host, failure
   try {
+    connectionEvidenceControls(directory)
+    controls.push('sqlite-connection-observation-preserves-errors-and-unknown-states')
     await projectionObservationControls()
     controls.push('projection-observation-preserves-promise-error-close-and-bounded-attribution')
     await snapshotObservationControls()
@@ -631,9 +720,13 @@ async function main() {
     assert.equal(path.resolve(os.tmpdir()), path.resolve(nativeTempDirectory), 'Native temporary directory ownership was not configured')
     const { createObserver } = require(path.join(sourceRoot, 'build/diagnostics/lib/operation-work-performance.cjs'))
     const observer = createObserver()
-    state.snapshotObservation = createSnapshotPhaseObservation(() => state.phase)
+    state.connectionEvidence = createConnectionEvidence(directory)
+    state.snapshotObservation = createSnapshotPhaseObservation(() => state.phase, {
+      owners: () => state.connectionEvidence.ownerSummary(), rememberFile: state.connectionEvidence.rememberFile })
     state.snapshotObservation.wrapChildProcess(observer.childProcess)
     host = await createHost({ sourceRoot, workerPath, directory, fixtureDirectory: directory, roots: [fontRoot], isolateRoots: true, observer,
+      diagnosticHooks: { onSqliteConnection: event => state.connectionEvidence.onSqliteConnection({ ...event, fixturePhase: state.phase }),
+        sqliteConnectionIdentity: state.connectionEvidence.sqliteConnectionIdentity },
       onLoaderReady: load => observeProduction(load, state) })
     assert.equal(host.observationSetupErrors, 0, 'Observation setup must not fail silently')
     assert(state.page && state.context, 'Missing actual merged-page owner')
@@ -679,6 +772,8 @@ async function main() {
       // follows the selected database rather than trusting the default path.
       seed.prepare('VACUUM INTO ?').run(dbPath)
     } finally { seed.close() }
+    state.connectionEvidence.rememberFile(dbPath, 'root-source')
+    state.sqliteFilesBefore = state.connectionEvidence.fileStats('seed-closed-before-workload')
     host.paths.watcherActiveDb = dbPath
     await host.rootManifest.writeRootCacheManifest(cacheDir, fontRoot, 'root', FILES, dbPath)
     // The host's backing DB is intentionally outside its font root. Register it
@@ -1113,13 +1208,20 @@ async function main() {
   }
   finally {
     state.stage = undefined
+    let hostCloseCompleted = false
     try {
-      try { await host?.close() } catch (error) { if (!failure) throw error }
+      try { await host?.close(); hostCloseCompleted = Boolean(host) } catch (error) { if (!failure) throw error }
     } finally {
       // Refresh only observation after the existing close barrier; this adds no
       // wait and retains the original failure even if evidence cannot be read.
       if (failure?.watcherDiagnostics && state.snapshotObservation) {
-        try { failure.watcherDiagnostics.sqliteSnapshots = state.snapshotObservation.snapshot(failure) } catch { /* diagnostic only */ }
+        try {
+          failure.watcherDiagnostics.sqliteSnapshots = state.snapshotObservation.snapshot(failure)
+          failure.watcherDiagnostics.sqliteConnections = state.connectionEvidence?.snapshot()
+          failure.watcherDiagnostics.sqliteFilesAfter = hostCloseCompleted
+            ? state.connectionEvidence?.fileStats('after-existing-host-close')
+            : { boundary: 'close-not-confirmed', state: 'not-sampled' }
+        } catch { /* diagnostic only */ }
       }
       for (const key of ['TEMP', 'TMP']) {
         if (savedTemp[key] === undefined) delete process.env[key]

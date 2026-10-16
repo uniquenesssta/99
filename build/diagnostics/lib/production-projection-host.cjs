@@ -35,6 +35,44 @@ function observeDiagnosticSqliteCall(callback, operation, category, run) {
   }
 }
 
+// Optional fixture-only lifecycle observation. No SQL or paths leave this helper.
+// Transaction state is observed syntax, not a claim about SQLite/OS lock ownership.
+function createSqliteConnectionObservation(callback, identity) {
+  let lifecycle = 'unopened', transaction = 'not-observed', sequence = 0
+  const emit = (phase, operation, category, failed) => {
+    try { callback({ ...identity, sequence: ++sequence, at: performance.now(), phase, operation, category,
+      failed, lifecycle, transaction }) } catch { /* Never an execution gate. */ }
+  }
+  return (operation, category, run, sql) => {
+    const text = typeof sql === 'string' ? sql.trim().replace(/;\s*$/, '').trim() : category
+    const command = /^(?:BEGIN(?: (?:DEFERRED|IMMEDIATE|EXCLUSIVE))?(?: TRANSACTION)?|COMMIT(?: TRANSACTION)?|END(?: TRANSACTION)?|ROLLBACK(?: TRANSACTION)?)$/i.test(text)
+      ? text.split(/\s+/)[0].toUpperCase() : undefined
+    const ambiguous = typeof sql === 'string' && (text.includes(';') || /--|\/\*|\b(?:SAVEPOINT|RELEASE|ROLLBACK|BEGIN|COMMIT|END)\b/i.test(text)) && !command
+    emit('started', operation, category, undefined)
+    let failed = true
+    try {
+      const result = run(); failed = false
+      if (operation === 'open') lifecycle = 'open'
+      if (operation === 'close') { lifecycle = 'closed'; transaction = 'released-by-close' }
+      if (['exec', 'run', 'get', 'all'].includes(operation)) {
+        if (command === 'BEGIN') transaction = 'active-observed'
+        else if (command) transaction = 'ended-observed'
+        else if (ambiguous) transaction = 'unknown'
+      }
+      // iterate can defer execution beyond the return of this wrapper.
+      if (operation === 'iterate') transaction = 'unknown'
+      return result
+    } finally {
+      if (failed) {
+        if (operation === 'open') lifecycle = 'open-failed'
+        if (operation === 'close') lifecycle = 'close-failed-unresolved'
+        if (operation !== 'prepare' && (ambiguous || (command && command !== 'BEGIN'))) transaction = 'unknown'
+      }
+      emit('settled', operation, category, failed)
+    }
+  }
+}
+
 // Constructor-only engine adapter. Configuration belongs to the selected source
 // SQLite runtime, not every fixture seed or independent audit connection.
 function createDiagnosticSqliteDatabase(DatabaseSync, file, options = {}) {
@@ -457,18 +495,30 @@ async function createHost(options) {
   }
   // API adapter only: all statements and transactions execute against real SQLite.
   const onSqlitePort = options.diagnosticHooks?.onSqlitePort
-  const sqliteCall = (operation, category, run) => observeDiagnosticSqliteCall(onSqlitePort, operation, category, run)
-  const sqliteCategory = sql => onSqlitePort ? String(sql).trim().split(/\s+/, 1)[0].toUpperCase().slice(0, 24) : undefined
+  const onSqliteConnection = options.diagnosticHooks?.onSqliteConnection
+  const connectionIdentity = options.diagnosticHooks?.sqliteConnectionIdentity
+  let connectionOrdinal = 0
   function openDb(file, options) {
     insideTemporary(file)
-    const raw = onSqlitePort ? sqliteCall('open', 'connection', () => createDiagnosticSqliteDatabase(DatabaseSync, file, options)) : createDiagnosticSqliteDatabase(DatabaseSync, file, options)
-    if (onSqlitePort) sqliteCall('exec', 'PRAGMA', () => raw.exec('PRAGMA busy_timeout=5000;'))
+    let identity = { role: 'unknown' }
+    if (typeof onSqliteConnection === 'function') {
+      try { identity = connectionIdentity?.(file) || identity } catch { /* attribution only */ }
+    }
+    const observeConnection = typeof onSqliteConnection === 'function'
+      ? createSqliteConnectionObservation(onSqliteConnection, { ...identity, connectionId: ++connectionOrdinal }) : undefined
+    const sqliteCall = (operation, category, run, sql) => observeConnection
+      ? observeConnection(operation, category, () => observeDiagnosticSqliteCall(onSqlitePort, operation, category, run), sql)
+      : observeDiagnosticSqliteCall(onSqlitePort, operation, category, run)
+    const observed = Boolean(onSqlitePort || observeConnection)
+    const sqliteCategory = sql => observed ? String(sql).trim().split(/\s+/, 1)[0].toUpperCase().slice(0, 24) : undefined
+    const raw = observed ? sqliteCall('open', 'connection', () => createDiagnosticSqliteDatabase(DatabaseSync, file, options)) : createDiagnosticSqliteDatabase(DatabaseSync, file, options)
+    if (observed) sqliteCall('exec', 'PRAGMA', () => raw.exec('PRAGMA busy_timeout=5000;'))
     else raw.exec('PRAGMA busy_timeout=5000;')
     let closed = false
     const db = {
-      exec: sql => onSqlitePort ? sqliteCall('exec', sqliteCategory(sql), () => raw.exec(sql)) : raw.exec(sql),
+      exec: sql => observed ? sqliteCall('exec', sqliteCategory(sql), () => raw.exec(sql), sql) : raw.exec(sql),
       prepare: sql => {
-        const statement = onSqlitePort ? sqliteCall('prepare', sqliteCategory(sql), () => raw.prepare(sql)) : raw.prepare(sql)
+        const statement = observed ? sqliteCall('prepare', sqliteCategory(sql), () => raw.prepare(sql), sql) : raw.prepare(sql)
         const category = sqliteCategory(sql)
         const normalized = String(sql).replace(/\s+/g, ' ').trim()
         const mapping = /^SELECT root_path\s*,\s*relative_path\s*,\s*file_size\s*,\s*modified_at(?:\s*,\s*font_json(?:\s*,\s*installed\s*,\s*installed_by\s*,\s*matches_json)?)? FROM entries\b/i.test(normalized)
@@ -480,7 +530,7 @@ async function createHost(options) {
           if (typeof member !== 'function') return member
           if (mapping && (name === 'all' || name === 'get')) return (...args) => {
             sqlCounters.projectionSelectCalls++
-            const value = onSqlitePort ? sqliteCall(name, category, () => member.apply(target, args)) : member.apply(target, args)
+            const value = observed ? sqliteCall(name, category, () => member.apply(target, args), sql) : member.apply(target, args)
             sqlCounters.projectionExaminedRows += Array.isArray(value) ? value.length : value ? 1 : 0
             return value
           }
@@ -489,12 +539,12 @@ async function createHost(options) {
             if (indexed) sqlCounters.projectionIndexedUpdateCalls++
             projectionUpdateDepth++
             try {
-              const result = onSqlitePort ? sqliteCall(name, category, () => member.apply(target, args)) : member.apply(target, args)
+              const result = observed ? sqliteCall(name, category, () => member.apply(target, args), sql) : member.apply(target, args)
               sqlCounters.projectionUpdatedRows += Number(result.changes || 0)
               return result
             } finally { projectionUpdateDepth-- }
           }
-          if (onSqlitePort && ['all', 'get', 'run', 'iterate'].includes(name)) return (...args) => sqliteCall(name, category, () => member.apply(target, args))
+          if (observed && ['all', 'get', 'run', 'iterate'].includes(name)) return (...args) => sqliteCall(name, category, () => member.apply(target, args), sql)
           return member.bind(target)
         } })
       },
@@ -512,14 +562,14 @@ async function createHost(options) {
           Object.defineProperty(counted, 'length', { value: original.length })
           args[at] = counted
         }
-        return onSqlitePort ? sqliteCall('function', 'registration', () => raw.function(...args)) : raw.function(...args)
+        return observed ? sqliteCall('function', 'registration', () => raw.function(...args)) : raw.function(...args)
       },
       transaction: fn => (...args) => {
-        if (onSqlitePort) sqliteCall('exec', 'BEGIN', () => raw.exec('BEGIN IMMEDIATE')); else raw.exec('BEGIN IMMEDIATE')
-        try { const result = fn(...args); if (onSqlitePort) sqliteCall('exec', 'COMMIT', () => raw.exec('COMMIT')); else raw.exec('COMMIT'); return result }
-        catch (error) { if (onSqlitePort) sqliteCall('exec', 'ROLLBACK', () => raw.exec('ROLLBACK')); else raw.exec('ROLLBACK'); throw error }
+        if (observed) sqliteCall('exec', 'BEGIN', () => raw.exec('BEGIN IMMEDIATE')); else raw.exec('BEGIN IMMEDIATE')
+        try { const result = fn(...args); if (observed) sqliteCall('exec', 'COMMIT', () => raw.exec('COMMIT')); else raw.exec('COMMIT'); return result }
+        catch (error) { if (observed) sqliteCall('exec', 'ROLLBACK', () => raw.exec('ROLLBACK')); else raw.exec('ROLLBACK'); throw error }
       },
-      close: () => { if (!closed) { closed = true; if (onSqlitePort) sqliteCall('close', 'connection', () => raw.close()); else raw.close(); opened.delete(db) } },
+      close: () => { if (!closed) { closed = true; if (observed) sqliteCall('close', 'connection', () => raw.close()); else raw.close(); opened.delete(db) } },
       get open() { return !closed },
       get isOpen() { return !closed },
     }
@@ -1088,4 +1138,4 @@ async function createHost(options) {
 }
 
 module.exports = { createHost, exactLegacyReadBoundary, assertProductionWriterWiring, createProductionLocalTagHydration, assertProductionLocalTagHydrationWiring,
-  createDiagnosticSqliteDatabase, createProductionSqlitePorts, assertProductionSqliteWiring, exactSelectedStorageReadPorts, assertProductionReadOwnerPorts, productionHostGlobals, observeDiagnosticSqliteCall }
+  createDiagnosticSqliteDatabase, createProductionSqlitePorts, assertProductionSqliteWiring, exactSelectedStorageReadPorts, assertProductionReadOwnerPorts, productionHostGlobals, observeDiagnosticSqliteCall, createSqliteConnectionObservation }
