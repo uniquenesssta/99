@@ -9,7 +9,7 @@ const {AsyncResource}=require('node:async_hooks')
 const {createQueryRetirementObserver,validateQueryRetirements,inputDigest,tagDigest}=require('./lib/full-refresh-query-retirement.cjs')
 const clone=value=>JSON.parse(JSON.stringify(value))
 
-async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}={}) {
+async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1,priorHydration=false}={}) {
   assert.equal(process.platform,'win32','Query retirement fixture executes only on Windows')
   const {loader}=require('./check-operation-chain.cjs')
   const {createProductionLocalTagHydration,productionHostGlobals}=require('./lib/production-projection-host.cjs')
@@ -39,7 +39,7 @@ async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}
   let entered,reads=0
   const pendingRead=new Promise(resolve=>{entered=resolve})
   io.sharedFileSystem.readdir=function(){
-    if(++reads>1)return Promise.resolve(items.map(item=>({name:item.fileName,isFile:()=>true,isSymbolicLink:()=>false})))
+    if(++reads!==(priorHydration?2:1))return Promise.resolve(items.map(item=>({name:item.fileName,isFile:()=>true,isSymbolicLink:()=>false})))
     const signal=io.currentSharedIoSignal(),row={requestOrdinal:1,lane:'foreground-browse',actionId:'foreground-browse:3',
       command:'--shared-file-io',operation:'readdir',label:'shared-file-io:readdir',write:false,verifiedReadOnly:true,preflight:false,
       startedAt:performance.now(),queuedMs:2,executionMs:3}
@@ -69,10 +69,16 @@ async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}
   })
   const tags=createProductionLocalTagHydration({load,openLibraryDb:async()=>({}),librarySqlitePath:()=> 'C:\\fixture\\library.sqlite',
     runRustLocalTagsRead:metadata.runRustLocalTagsRead,appendStartupLog(){},queryRetirement:observer})
-  let liveQueries=0
+  let liveQueries=0,hydrationRuns=0
   const owner=load('src/main/library/tagFontQueryRuntime.ts').createTagFontQueryRuntime({
     roots:async()=>['C:\\fixture'],openLibraryDb:async()=>({}),readShared:async()=>{throw Error('Unexpected shared read')},
-    queryLive:async()=>{liveQueries++;return {items,total:items.length,workerMode:'rust-merged-index-page'}},hydrate:tags.hydrateLocalTagsForFonts,
+    queryLive:async()=>{liveQueries++;return {items,total:items.length,workerMode:'rust-merged-index-page'}},hydrate:priorHydration?async fonts=>{
+      // Complete real selected-source hydration, then retire that still-running
+      // query. Its next generation will retire in readdir before any hydration.
+      const result=await tags.hydrateLocalTagsForFonts(fonts)
+      if(++hydrationRuns===1)owner.invalidate()
+      return result
+    }:tags.hydrateLocalTagsForFonts,
     matches:()=>true,compare:()=>0,
   })
   const request={sidebarPage:'tags',selectedTagName:'FixtureTag'}
@@ -84,9 +90,9 @@ async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}
     assert.equal(page.items.length,bindingCount)
     for(const item of page.items)assert.deepEqual(Array.from(item.localTagNames),['FixtureTag'])
     assert.equal(tags.stats.failed,0,'Retired query reached local-tag hydration')
-    assert.equal(tags.stats.completed,1)
-    assert.equal(liveQueries,2,'Retirement fixture did not retain upstream page work in both attempts')
-    assert.equal(nativeCalls,1,'Retired query admitted native local-tag work')
+    assert.equal(tags.stats.completed,priorHydration?2:1)
+    assert.equal(liveQueries,priorHydration?3:2,'Retirement fixture did not retain upstream page work in both attempts')
+    assert.equal(nativeCalls,priorHydration?2:1,'Retired query admitted native local-tag work')
     observer.restore()
     assert.equal(taskModule.createFontQueryTask,originalTask);assert.equal(tagModule.createTagFontQueryRuntime,originalFactory)
     const countBefore=observer.snapshot().hydrations.length,lateValue=Promise.resolve('late')
@@ -98,7 +104,7 @@ async function actualQueryRetirementFixture(observerOptions={}, {bindingCount=1}
     assert.deepEqual(proof.retiredHydrationIds,[]);assert.deepEqual(proof.retiredRequestOrdinals,[1])
     assert.equal(proof.certificates[0].kind,'retired-before-tag-hydration')
     {
-      const oldSignal=sample.observation.signals[0].id
+      const oldSignal=sample.observation.signals[priorHydration?1:0].id
       assert.equal(sample.observation.hydrations.filter(row=>row.signalId===oldSignal).length,0)
       assert.equal(sample.observation.transports.filter(row=>row.signalId===oldSignal).length,0)
       assert.equal(Object.hasOwn(proof.certificates[0],'inputSha256'),false,'Early retirement fabricated an old native input digest')
@@ -225,6 +231,86 @@ function chainedRetirementRegressions() {
   for(const [name,mutate,cause]of negatives){const changed=clone(sample);mutate(changed);assert.throws(()=>validateQueryRetirements(changed),cause,`Invalid chained retirement accepted: ${name}`)}
 }
 
+
+// Invented history, not a captured CI report: successful generation 0 hydration,
+// generation 1 cancelled before hydration, then one live generation 2 result.
+function syntheticPriorHydrationFixture() {
+  const sample=syntheticChainedRetirementFixture(),o=sample.observation
+  const prior={...o.hydrations[0],id:9,hydrationId:2,signalId:2,startedAt:140,finishedAt:170}
+  o.hydrations.unshift(prior)
+  o.transports.unshift({...o.transports[0],id:10,hydrationId:2,signalId:2,startedAt:145,finishedAt:165})
+  sample.hydrationReceipts.unshift({...sample.hydrationReceipts[0],id:2,querySignalId:2,startedAt:140,finishedAt:175})
+  delete sample.processRequests[0].error;sample.processRequests[0].closedAt=180
+  return sample
+}
+
+function priorHydrationRegressions(sample) {
+  const before=JSON.stringify(sample),proof=validateQueryRetirements(sample),o=sample.observation
+  assert.equal(JSON.stringify(sample),before,'History classification changed raw native receipts or paid work')
+  assert.equal(proof.certificates.length,1)
+  assert.deepEqual(proof.retiredHydrationIds,[],'Successful historical native work was excluded')
+  assert.deepEqual(proof.retiredRequestOrdinals,sample.processRequests.filter(row=>row.error).map(row=>row.requestOrdinal))
+  assert.equal(proof.certificates[0].signalId,o.signals[1].id)
+  assert.equal(proof.certificates[0].replacementHydrationId,o.hydrations[1].hydrationId)
+  assert.equal(Object.hasOwn(proof.certificates[0],'inputSha256'),false,'Early retirement invented an unobserved native input')
+  assert.equal(o.hydrations.length,2);assert.equal(sample.hydrationReceipts.length,2)
+  assert(sample.hydrationReceipts.every(row=>row.ok&&row.nativeCalls===1))
+  const negatives=[
+    ['forged prior owner',s=>s.observation.signals[0].ownerId=99],
+    ['forged prior IPC',s=>s.observation.signals[0].ipcId=99],
+    ['forged prior action',s=>s.observation.signals[0].actionId='unrelated'],
+    ['forged prior intent',s=>s.observation.signals[0].intentSha256='0'.repeat(64)],
+    ['non-live prior signal',s=>s.observation.signals[0].firstObservedLive=false],
+    ['negative prior generation',s=>s.observation.signals[0].tagGeneration=-1],
+    ['prior generation gap',s=>{s.observation.signals[1].tagGeneration++;s.observation.signals[2].tagGeneration++
+      s.observation.invalidations[1].generationBefore++;s.observation.invalidations[1].generationAfter++}],
+    ['prior generation branch',s=>s.observation.signals.push({...s.observation.signals[0],id:99})],
+    ['prior signal missing',s=>s.observation.signals.shift()],
+    ['prior invalidation missing',s=>s.observation.signals[0].invalidationId=99],
+    ['prior invalidation wrong owner',s=>s.observation.invalidations[0].ownerId=99],
+    ['prior invalidation wrong generation',s=>s.observation.invalidations[0].generationAfter++],
+    ['prior invalidation not cancelling',s=>s.observation.invalidations[0].cancelInFlight=false],
+    ['prior invalidation duplicate',s=>s.observation.invalidations.push({...s.observation.invalidations[0],id:99})],
+    ['prior invalidation not successful',s=>s.observation.invalidations[0].ok=false],
+    ['prior invalidation after following generation',s=>s.observation.invalidations[0].finishedAt=s.observation.signals[1].firstObservedAt+1],
+    ['prior signal not superseded',s=>s.observation.signals[0].outcome='returned'],
+    ['prior unrelated failure',s=>s.observation.signals[0].error.reason='timeout'],
+    ['prior missing settlement',s=>delete s.observation.signals[0].settledAt],
+    ['prior late settlement',s=>s.observation.signals[0].settledAt=s.observation.signals[1].settledAt+1],
+    ['prior hydration before owner',s=>s.observation.hydrations[0].startedAt=s.observation.signals[0].firstObservedAt-1],
+    ['prior hydration after invalidation',s=>s.observation.hydrations[0].finishedAt=s.observation.invalidations[0].startedAt+1],
+    ['prior hydration wrong IPC',s=>s.observation.hydrations[0].ipcId=99],
+    ['prior hydration wrong intent',s=>s.observation.hydrations[0].intentSha256='0'.repeat(64)],
+    ['prior hydration duplicate',s=>s.observation.hydrations.push({...s.observation.hydrations[0],id:99,hydrationId:99})],
+    ['prior native receipt missing',s=>s.hydrationReceipts.shift()],
+    ['prior native receipt duplicate',s=>s.hydrationReceipts.push({...s.hydrationReceipts[0],id:99})],
+    ['prior native receipt wrong owner',s=>s.hydrationReceipts[0].querySignalId=99],
+    ['prior native receipt wrong input',s=>s.hydrationReceipts[0].queryInputSha256='0'.repeat(64)],
+    ['prior native receipt wrong population',s=>s.hydrationReceipts[0].nativeRequestedCount++],
+    ['prior native receipt unvalidated',s=>s.hydrationReceipts[0].nativePopulationValidated=false],
+    ['prior native receipt duplicate calls',s=>s.hydrationReceipts[0].nativeCalls++],
+    ['prior native receipt late finish',s=>s.hydrationReceipts[0].finishedAt=s.observation.invalidations[0].startedAt+1],
+    ['prior native transport missing',s=>s.observation.transports.shift()],
+    ['prior native transport duplicate',s=>s.observation.transports.push({...s.observation.transports[0],id:99})],
+    ['prior native transport wrong owner',s=>s.observation.transports[0].signalId=99],
+    ['prior native transport wrong intent',s=>s.observation.transports[0].intentSha256='0'.repeat(64)],
+    ['prior native transport wrong input',s=>s.observation.transports[0].inputSha256='0'.repeat(64)],
+    ['prior native transport cancelled',s=>s.observation.transports[0].signalAbortedAtStart=true],
+    ['prior native transport failed',s=>s.observation.transports[0].outcome='rejected'],
+    ['prior native transport late finish',s=>s.observation.transports[0].finishedAt=s.observation.hydrations[0].finishedAt+1],
+    ['prior forged consistent input',s=>{s.observation.hydrations[0].inputSha256='0'.repeat(64)
+      s.observation.transports[0].inputSha256='0'.repeat(64);s.hydrationReceipts[0].queryInputSha256='0'.repeat(64)}],
+    ['prior returned tags changed',s=>s.observation.hydrations[0].tagSha256='0'.repeat(64)],
+    ['replacement before early task settlement',s=>s.observation.hydrations[1].startedAt=s.observation.signals[1].settledAt-1],
+    ['duplicate current replacement',s=>s.observation.hydrations.push({...s.observation.hydrations[1],id:99,hydrationId:99})],
+    ['out-of-window extra replacement',s=>s.observation.hydrations.push({...s.observation.hydrations[1],id:99,hydrationId:99,
+      startedAt:s.observation.ipcs[0].startedAt-2,finishedAt:s.observation.ipcs[0].startedAt-1})],
+    ['replacement wrong intent',s=>s.observation.hydrations[1].intentSha256='0'.repeat(64)],
+  ]
+  for(const [name,mutate]of negatives){const changed=clone(sample);mutate(changed)
+    assert.throws(()=>validateQueryRetirements(changed),`Invalid prior hydration history accepted: ${name}`)}
+}
+
 async function daemonErrorRealmRegression() {
   const {loader}=require('./check-operation-chain.cjs'),{productionHostGlobals}=require('./lib/production-projection-host.cjs')
   const root=path.resolve(__dirname,'../..'),core=relative=>path.join(root,'src/main/rust-core',relative)
@@ -264,9 +350,12 @@ async function runQueryRetirementRegressions() {
   const prior=process.env.HFM_NODE_STATE_FALLBACK;process.env.HFM_NODE_STATE_FALLBACK='0'
   try {
     chainedRetirementRegressions()
+    priorHydrationRegressions(syntheticPriorHydrationFixture())
     const currentSample=await actualQueryRetirementFixture()
     const sample=historicalNativeRetirementFixture(currentSample)
     const earlySample=await actualQueryRetirementFixture({}, {bindingCount:26})
+    const historySample=await actualQueryRetirementFixture({}, {bindingCount:26,priorHydration:true})
+    priorHydrationRegressions(historySample)
     for(const mutate of [
       s=>{s.observation.signals[0].firstObservedLive=false},
       s=>{s.observation.signals[0].invalidationId=999},
@@ -402,8 +491,8 @@ async function runQueryRetirementRegressions() {
     assert.throws(()=>validateQueryRetirements({observation:{...unobserved,taskProof:'selected-source-query-tasks'},hydrationReceipts:[{...ordinaryReceipt,ok:false}]}),/previously live/)
     outside.restore()
     await daemonErrorRealmRegression()
-    console.log('[diagnostics:full-refresh-query-retirement] actual query cancellation before hydration/replacement, historical validator compatibility, bounded synthetic generation chains and causal negatives, strict negative proofs, observer identity and daemon Error realm passed')
-    return {...currentSample,earlySample,historicalSample:sample}
+    console.log('[diagnostics:full-refresh-query-retirement] actual query cancellation before hydration/replacement, historical validator compatibility, successful prior hydration history, bounded synthetic generation chains and causal negatives, strict negative proofs, observer identity and daemon Error realm passed')
+    return {...currentSample,earlySample,historySample,historicalSample:sample}
   }finally{if(prior===undefined)delete process.env.HFM_NODE_STATE_FALLBACK;else process.env.HFM_NODE_STATE_FALLBACK=prior}
 }
 module.exports={runQueryRetirementRegressions,actualQueryRetirementFixture}

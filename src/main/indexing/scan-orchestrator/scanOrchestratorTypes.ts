@@ -1,3 +1,4 @@
+import type { RustMetadataDiagnostic } from '../../rust-core/fontMetadataDiagnostics'
 import type { FontIndexChangePayload,FontIndexProgressPayload,FontItem,ScanResult } from '../../../shared/types'
 import type { CachedFontStatLike } from '../../fonts/fontRuntime'
 import type { GlobalIoOptions,IoQueueSnapshot } from '../../performance/ioScheduler'
@@ -55,7 +56,7 @@ export interface ScanOrchestratorDeps {
     progress: (payload: { files: number; foldersScanned: number }) => void,
     signal?: AbortSignal,
   ) => Promise<{
-    files: Array<{ file: string; rootPath: string; stat: CachedFontStatLike; signatureValid?: boolean; format?: string; quickHash?: string; contentHash?: string; hashKind?: string; nameHint?: RustFontNameHint; scriptHint?: RustFontScriptHint; styleHint?: RustFontStyleHint; familyHint?: RustFontFamilyHint }>
+    files: Array<{ file: string; rootPath: string; stat: CachedFontStatLike; signatureValid?: boolean; format?: string; quickHash?: string; contentHash?: string; hashKind?: string; metadataDiagnostics?: RustMetadataDiagnostic[]; nameHint?: RustFontNameHint; scriptHint?: RustFontScriptHint; styleHint?: RustFontStyleHint; familyHint?: RustFontFamilyHint }>
     directories?: Array<{ path: string; modifiedMs: number; fileCount: number; dirCount: number }>
     errors: Array<{ path: string; message: string }>
     foldersScanned?: number
@@ -67,7 +68,7 @@ export interface ScanOrchestratorDeps {
     progress: (payload: { files: number; foldersScanned: number; batch?: Array<{ file: string; rootPath: string; stat: CachedFontStatLike }> }) => void,
     signal?: AbortSignal,
   ) => Promise<{
-    files: Array<{ file: string; rootPath: string; stat: CachedFontStatLike; signatureValid?: boolean; format?: string; quickHash?: string; contentHash?: string; hashKind?: string; nameHint?: RustFontNameHint; scriptHint?: RustFontScriptHint; styleHint?: RustFontStyleHint; familyHint?: RustFontFamilyHint }>
+    files: Array<{ file: string; rootPath: string; stat: CachedFontStatLike; signatureValid?: boolean; format?: string; quickHash?: string; contentHash?: string; hashKind?: string; metadataDiagnostics?: RustMetadataDiagnostic[]; nameHint?: RustFontNameHint; scriptHint?: RustFontScriptHint; styleHint?: RustFontStyleHint; familyHint?: RustFontFamilyHint }>
     errors: Array<{ path: string; message: string }>
   }>
   runFontParseWorkerPool: (

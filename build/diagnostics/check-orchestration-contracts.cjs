@@ -679,9 +679,54 @@ function allIdentifiers(file) {
   return new Set(names)
 }
 
-function testAppRootViewContract() {
-  const rootView = sourceFile('src/renderer/src/components/app/AppRootView.tsx', ts.ScriptKind.TSX)
-  const app = sourceFile('src/renderer/src/App.tsx', ts.ScriptKind.TSX)
+function testAppRootViewContract(rootText = read('src/renderer/src/components/app/AppRootView.tsx'), appText = read('src/renderer/src/App.tsx'), noticeText = read('src/renderer/src/components/app/OperationStatusNotice.tsx')) {
+  const parse = (name, text) => {
+    const file = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    assert(file.parseDiagnostics.length === 0, `UI_PARSE: ${name}`)
+    return file
+  }
+  const rootView = parse('AppRootView.tsx', rootText)
+  const app = parse('App.tsx', appText)
+  const notice = parse('OperationStatusNotice.tsx', noticeText)
+  // The six historical groups remain frozen. This migration adds precisely one
+  // independently visible operation receipt; it does not allow arbitrary props.
+  const historicalGroups = Object.keys(fixture.appRootView.targetGroups)
+  assertExactSet('AppRootView target groups', historicalGroups, ['topbar', 'sidebar', 'content', 'detail', 'overlays', 'developer'])
+  const currentGroups = [...historicalGroups, 'operationNotice']
+  const tokenShape = (text) => {
+    const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.JSX, text)
+    const tokens = []
+    for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) tokens.push([kind, scanner.getTokenText()])
+    return JSON.stringify(tokens)
+  }
+  const declaration = rootView.statements.filter(node => ts.isTypeAliasDeclaration(node) && node.name.text === 'AppRootViewProps')
+  assert(declaration.length === 1 && ts.isTypeLiteralNode(declaration[0].type), 'UI_GROUP_TYPES: one explicit props type required')
+  const expectedTypes = {
+    topbar: 'topbar: ComponentProps<typeof AppTopbar>',
+    sidebar: "sidebar: Omit<ComponentProps<typeof AppSidebar>, 'sidebarCollapsed' | 'setSidebarCollapsed'>",
+    content: "content: Omit<ComponentProps<typeof FontListPanel>, DeveloperPanelKeys | 'sharedWatchStatus'>",
+    detail: 'detail: ComponentProps<typeof FontDetailPanel>',
+    overlays: 'overlays: ComponentProps<typeof AppOverlays>',
+    developer: 'developer: Pick<ComponentProps<typeof FontListPanel>, DeveloperPanelKeys> & { IS_DEVELOPMENT: boolean }',
+    operationNotice: 'operationNotice?: OperationStatusNoticeProps',
+  }
+  assertExactSet('UI_GROUP_TYPE_KEYS', declaration[0].type.members.map(node => nodeName(node.name)), currentGroups)
+  assert(declaration[0].type.members.length === currentGroups.length, 'UI_GROUP_TYPES: duplicate type member')
+  for (const member of declaration[0].type.members) {
+    const name = nodeName(member.name)
+    assert(tokenShape(member.getText(rootView)) === tokenShape(expectedTypes[name]), `UI_GROUP_TYPES:${name}`)
+  }
+  const noticeTypes = notice.statements.filter(node => ts.isTypeAliasDeclaration(node) && node.name.text === 'OperationStatusNoticeProps')
+  assert(noticeTypes.length === 1 && tokenShape(noticeTypes[0].type.getText(notice)) === tokenShape('{ message: string | null; onDismiss: () => void }'), 'UI_NOTICE_TYPE: exact nullable message and dismissal callback required')
+  const once = (text, value, label) => assert(text.replace(/\r\n/g, '\n').split(value).length - 1 === 1, label)
+  once(rootText, '  const sharedWatchStatus = useSharedWatchStatus()', 'UI_STATUS_OWNER: unconditional root owner required')
+  once(rootText, '          sharedWatchStatus={sharedWatchStatus}', 'UI_STATUS_SNAPSHOT: developer snapshot disconnected')
+  once(rootText, '      {operationNotice && <OperationStatusNotice {...operationNotice} />}', 'UI_NOTICE_RENDER: notice must be independent of developer/page visibility')
+  assert(!rootText.includes('SharedWatchStatusBar') && !rootText.includes('<footer'), 'UI_RETIRED_STATUS: ordinary status footer returned')
+  once(appText, '      operationNotice={{ message: actionStatus, onDismiss: dismissActionStatus }}', 'UI_NOTICE_WIRING: action receipt or dismissal disconnected')
+  // This shared strict inverse checks every current action/write/query setter
+  // route before normalization; its frozen lifecycle owner is tested separately.
+  require('./helpers/developerStatusMigrationFixture.cjs').normalizeOperationStatusWiring(appText)
   let propsType = null
   let destructuredProps = []
   let callerProps = []
@@ -702,13 +747,13 @@ function testAppRootViewContract() {
   })
 
   assert(propsType === 'AppRootViewProps', `AppRootView must close the Stage 0 any gap: ${propsType}`)
-  assertExactSet('AppRootView grouped boundary', destructuredProps, Object.keys(fixture.appRootView.targetGroups))
+  assertExactSet('UI_GROUP_BOUNDARY', destructuredProps, currentGroups)
   assertExactSet('AppRootView caller/callee prop keys', callerProps, destructuredProps)
 
-  const targetGroupNames = Object.keys(fixture.appRootView.targetGroups)
-  assertExactSet('AppRootView target groups', targetGroupNames, ['topbar', 'sidebar', 'content', 'detail', 'overlays', 'developer'])
+  const targetGroupNames = currentGroups
   const tags = jsxTagNames(rootView)
   const rootIdentifiers = allIdentifiers(rootView)
+  assert(tags.includes('OperationStatusNotice'), 'UI_NOTICE_COMPONENT: operation receipt missing')
   for (const [groupName, group] of Object.entries(fixture.appRootView.targetGroups)) {
     if (group.component) assert(tags.includes(group.component), `${groupName} target component is missing: ${group.component}`)
     for (const prop of group.requiredProps) {
@@ -721,7 +766,40 @@ function testAppRootViewContract() {
     const missing = flow.identifiers.filter((identifier) => !flowIdentifiers.has(identifier))
     assert(!missing.length, `UI flow ${flow.name} lost identifiers: ${missing.join(', ')}`)
   }
-  console.log(`[diagnostics:orchestration-contracts] UI flows locked (${fixture.appRootView.flows.length}); AppRootView props:AppRootViewProps, groups=${destructuredProps.length}, targetGroups=${targetGroupNames.join('/')}`)
+  return { groups: destructuredProps.length, targetGroups: targetGroupNames }
+}
+
+function testAppRootViewMigration() {
+  const rootText = read('src/renderer/src/components/app/AppRootView.tsx')
+  const appText = read('src/renderer/src/App.tsx')
+  const noticeText = read('src/renderer/src/components/app/OperationStatusNotice.tsx')
+  const result = testAppRootViewContract(rootText, appText, noticeText)
+  testAppRootViewContract(rootText.replace(/\r?\n/g, '\r\n'), appText.replace(/\r?\n/g, '\r\n'), noticeText.replace(/\r?\n/g, '\r\n'))
+  const mutate = (source, before, after) => {
+    assert(source.split(before).length - 1 === 1, `UI_MUTATION_ANCHOR: ${before}`)
+    return source.replace(before, after)
+  }
+  const cases = [
+    ['root', 'developer, operationNotice } = props', 'developer } = props', 'UI_GROUP_BOUNDARY changed; missing=[operationNotice], extra=[]'],
+    ['root', 'developer, operationNotice } = props', 'developer, operationNotice, unrelated } = props', 'UI_GROUP_BOUNDARY changed; missing=[], extra=[unrelated]'],
+    ['root', 'operationNotice?: OperationStatusNoticeProps', 'operationNotice?: any', 'UI_GROUP_TYPES:operationNotice'],
+    ['root', "content: Omit<ComponentProps<typeof FontListPanel>, DeveloperPanelKeys | 'sharedWatchStatus'>", 'content: any' , 'UI_GROUP_TYPES:content'],
+    ['notice', 'message: string | null', 'message: any', 'UI_NOTICE_TYPE: exact nullable message and dismissal callback required'],
+    ['notice', 'onDismiss: () => void', 'onDismiss: (message: string) => void', 'UI_NOTICE_TYPE: exact nullable message and dismissal callback required'],
+    ['app', 'operationNotice={{ message: actionStatus, onDismiss: dismissActionStatus }}', 'operationNotice={{ message: status, onDismiss: dismissActionStatus }}', 'UI_NOTICE_WIRING: action receipt or dismissal disconnected'],
+    ['app', 'operationNotice={{ message: actionStatus, onDismiss: dismissActionStatus }}', 'operationNotice={{ message: actionStatus, onDismiss: clearQueryError }}', 'UI_NOTICE_WIRING: action receipt or dismissal disconnected'],
+    ['root', '{operationNotice && <OperationStatusNotice', '{developer.IS_DEVELOPMENT && operationNotice && <OperationStatusNotice', 'UI_NOTICE_RENDER: notice must be independent of developer/page visibility'],
+    ['root', '  const sharedWatchStatus = useSharedWatchStatus()', '  const sharedWatchStatus = null', 'UI_STATUS_OWNER: unconditional root owner required'],
+    ['root', 'sharedWatchStatus={sharedWatchStatus}', 'sharedWatchStatus={null}', 'UI_STATUS_SNAPSHOT: developer snapshot disconnected'],
+  ]
+  for (const [target, before, after, expected] of cases) {
+    const source = { root: rootText, app: appText, notice: noticeText }
+    source[target] = mutate(source[target], before, after)
+    let caught
+    try { testAppRootViewContract(source.root, source.app, source.notice) } catch (error) { caught = error }
+    assert(caught && caught.constructor === Error && caught.message === expected, `UI_CAUSAL_MUTANT: expected ${expected}; actual ${caught?.stack || 'accepted'}`)
+  }
+  console.log(`[diagnostics:orchestration-contracts] UI flows locked (${fixture.appRootView.flows.length}); frozen six groups plus explicit operationNotice, exact seven type shapes, source-aware setter wiring, ${cases.length} causal mutants and CRLF; groups=${result.groups}`)
 }
 
 function testPackageRegistration() {
@@ -740,7 +818,7 @@ async function main() {
   testPreviewValidatorLoader()
   testReadCancellationLoader()
   await testRustFailureBoundary()
-  testAppRootViewContract()
+  testAppRootViewMigration()
   testPackageRegistration()
   console.log('[diagnostics:orchestration-contracts] ok')
 }

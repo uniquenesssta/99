@@ -1,3 +1,4 @@
+import type { RustMetadataDiagnostic } from '../../rust-core/fontMetadataDiagnostics'
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { resolve } from 'node:path'
@@ -23,6 +24,7 @@ export interface ScanStatJob {
   quickHash?: string
   contentHash?: string
   hashKind?: string
+  metadataDiagnostics?: RustMetadataDiagnostic[]
   nameHint?: RustFontNameHint
   scriptHint?: RustFontScriptHint
   styleHint?: RustFontStyleHint

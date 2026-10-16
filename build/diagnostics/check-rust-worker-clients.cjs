@@ -31,9 +31,29 @@ function ownsParseInvocation(node, group) {
   }
   return false
 }
+const metadataReceiptAdditions = {
+  normalizeRustParseBatchJob: '    metadataDiagnostics: normalizeRustMetadataDiagnostics(input.metadataDiagnostics),\n',
+  runRustFontIndexListWorker: 'metadataDiagnostics: normalizeRustMetadataDiagnostics(item.metadataDiagnostics), ',
+}
+function originalMetadataReceiptFunction(text, name, group) {
+  if (group.path !== parseClientPath || !Object.hasOwn(metadataReceiptAdditions, name)) return text
+  const addition = metadataReceiptAdditions[name]
+  assert.equal(text.split(addition).length, 2, name + ' metadata receipt normalization missing or changed')
+  return text.replace(addition, '')
+}
 function checkFunctions(overrides = sources) {
   for (const group of fixture.groups) {
     const file = ts.createSourceFile(group.path, overrides.get(group.path), ts.ScriptTarget.Latest, true)
+    if (group.path === parseClientPath) {
+      const imports = file.statements.filter(node => ts.isImportDeclaration(node)
+        && node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)
+        && node.importClause.namedBindings.elements.some(binding => binding.name.text === 'normalizeRustMetadataDiagnostics'))
+      assert.equal(imports.length, 1, 'metadata normalizer import missing or duplicated')
+      const imported = imports[0]
+      assert(imported.moduleSpecifier.text === '../fontMetadataDiagnostics' && !imported.importClause.isTypeOnly
+        && imported.importClause.namedBindings.elements.length === 1
+        && !imported.importClause.namedBindings.elements[0].propertyName, 'metadata normalizer dependency changed')
+    }
     const found = new Map()
     walk(file, node => {
       if (ts.isFunctionDeclaration(node) && node.name) found.set(node.name.text, node)
@@ -50,7 +70,7 @@ function checkFunctions(overrides = sources) {
     })
     for (const [name, hash] of Object.entries(group.functions)) {
       assert(found.has(name), 'lost domain/helper function: ' + name)
-      let text = found.get(name).getText(file)
+      let text = originalMetadataReceiptFunction(found.get(name).getText(file).replace(/\r\n/g, '\n'), name, group)
       if (name === 'runRustFontIndexListWorker') {
         const extension = " || !hasCapability(status, 'list-font-files-complete-v1')"
         assert.equal(text.split(extension).length - 1, 1, 'complete listing capability guard missing')
@@ -405,8 +425,25 @@ function checkParseInvocationBoundaryMutations() {
       error => error instanceof assert.AssertionError && cause.test(error.message), 'parse boundary mutant accepted: ' + label)
   }
 }
+function checkMetadataReceiptMutations() {
+  const original = sources.get(parseClientPath)
+  const mutations = [
+    ['parse receipt omitted', metadataReceiptAdditions.normalizeRustParseBatchJob, ''],
+    ['parse receipt unnormalized', 'normalizeRustMetadataDiagnostics(input.metadataDiagnostics)', 'input.metadataDiagnostics'],
+    ['listing receipt omitted', metadataReceiptAdditions.runRustFontIndexListWorker, ''],
+    ['listing receipt unnormalized', 'normalizeRustMetadataDiagnostics(item.metadataDiagnostics)', 'item.metadataDiagnostics'],
+    ['normalizer dependency changed', "'../fontMetadataDiagnostics'", "'../../indexing/fontScanWorkers'"],
+  ]
+  for (const [label, before, after] of mutations) {
+    assert.equal(original.split(before).length, 2, 'metadata receipt mutation anchor: ' + label)
+    assert.throws(() => checkFunctions(new Map(sources).set(parseClientPath, original.replace(before, after))),
+      error => error instanceof assert.AssertionError && /metadata receipt normalization|metadata normalizer dependency/.test(error.message),
+      'metadata receipt mutation accepted: ' + label)
+  }
+}
 async function main() {
   checkFunctions()
+  checkMetadataReceiptMutations()
   checkParseInvocationBoundaryMutations()
   checkFacadeClosure()
   checkControlIdentities()
@@ -443,6 +480,6 @@ async function main() {
   checkFacadeClosure(facadeCRLF)
   checkControlIdentities(new Map([[facade, facadeCRLF]]))
   checkComposition(new Map([[facade, facadeCRLF]]))
-  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies with reviewed causal port checks and six authority capability gates, narrow shared ports, partial health report and submitted backup, ${fixture.groups.length * 3 + 15} rejected mutations, facade closure and 7 control identities, CRLF passed`)
+  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies with reviewed causal port checks and six authority capability gates, narrow shared ports, typed metadata receipt inverse and five causal mutations, partial health report and submitted backup, ${fixture.groups.length * 3 + 15} rejected mutations, facade closure and 7 control identities, CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-clients]', error.stack || error); process.exitCode = 1 })

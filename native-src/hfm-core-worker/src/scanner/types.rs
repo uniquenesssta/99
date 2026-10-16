@@ -1,3 +1,4 @@
+use crate::font_parser::diagnostics::MetadataDiagnostic;
 use crate::family::FontFamilyHint;
 use crate::font_parser::{FontNameInfo, FontScriptInfo, FontStyleInfo};
 
@@ -13,6 +14,7 @@ pub struct FontFileEntry {
     pub quick_hash: String,
     pub content_hash: String,
     pub hash_kind: String,
+    pub metadata_diagnostics: Vec<MetadataDiagnostic>,
     pub name_hint: Option<FontNameInfo>,
     pub script_hint: Option<FontScriptInfo>,
     pub style_hint: Option<FontStyleInfo>,

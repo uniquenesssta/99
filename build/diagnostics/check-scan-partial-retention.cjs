@@ -211,5 +211,8 @@ async function main() {
     console.log('[diagnostics:scan-partial-retention] real SQLite partial directory/peer completion, transient parse retention/retry/genuine bad, original sources intact, actual managed cancellation including committed tail and four causal mutants passed')
   } finally { for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value } }
 }
+module.exports = { fixture }
+if (require.main === module) {
 const watchdog=setTimeout(()=>{console.error('scan retention diagnostic did not settle within 120s');process.exit(1)},120000)
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(()=>clearTimeout(watchdog))
+}

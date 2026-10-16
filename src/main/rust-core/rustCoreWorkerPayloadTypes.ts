@@ -1,3 +1,4 @@
+import type { RustMetadataDiagnostic } from './fontMetadataDiagnostics'
 // Internal Rust stdout/handshake shapes; consume only inside rust-core.
 import type { FontTagRevisionMetadata } from '../../shared/types'
 import type { FontParseJob } from '../indexing/fontScanWorkers'
@@ -76,6 +77,7 @@ export type RustListFontFilesPayload = {
     quickHash?: string
     contentHash?: string
     hashKind?: string
+    metadataDiagnostics?: RustMetadataDiagnostic[]
     nameHint?: RustFontNameHint
     scriptHint?: RustFontScriptHint
     styleHint?: RustFontStyleHint

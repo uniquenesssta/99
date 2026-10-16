@@ -102,6 +102,7 @@ fn scan_font_file_handle(
         quick_hash,
         content_hash,
         hash_kind,
+        metadata_diagnostics: metadata_hint.diagnostics,
         name_hint: metadata_hint.name_hint,
         script_hint: metadata_hint.script_hint,
         style_hint: metadata_hint.style_hint,

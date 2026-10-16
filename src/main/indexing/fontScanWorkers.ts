@@ -1,3 +1,4 @@
+import type { RustMetadataDiagnostic } from '../rust-core/fontMetadataDiagnostics'
 import { sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
 import { SharedIoProcessError } from '../path/sharedIoProcessRuntime'
 import fs from 'node:fs'
@@ -71,6 +72,7 @@ export interface FontParseJob {
   quickHash?: string
   contentHash?: string
   hashKind?: string
+  metadataDiagnostics?: RustMetadataDiagnostic[]
   nameHint?: RustFontNameHint
   scriptHint?: RustFontScriptHint
   styleHint?: RustFontStyleHint

@@ -1,4 +1,5 @@
 use std::fs::File;
+use super::diagnostics::{record, record_io, MetadataDiagnostic, MetadataDiagnosticKind as Kind};
 use crate::family::{derive_family_hint, FontFamilyHint};
 
 use super::name_table::probe_font_names_from_directory;
@@ -18,6 +19,7 @@ pub struct FontMetadataProbeOptions {
 
 #[derive(Clone, Debug, Default)]
 pub struct FontMetadataInfo {
+    pub diagnostics: Vec<MetadataDiagnostic>,
     pub name_hint: Option<FontNameInfo>,
     pub script_hint: Option<FontScriptInfo>,
     pub style_hint: Option<FontStyleInfo>,
@@ -41,31 +43,36 @@ pub fn probe_font_metadata_from_file(file: &mut File, options: &FontMetadataProb
         return FontMetadataInfo::default();
     }
 
-    let offsets = match font_offsets(file) {
+    let mut info = FontMetadataInfo::default();
+    let offsets = match font_offsets(file, &mut info.diagnostics) {
         Ok(offsets) => offsets,
-        Err(_) => return FontMetadataInfo::default(),
+        Err(error) => { record_io(&mut info.diagnostics, "collection", None, &error); return info; },
     };
 
-    let mut info = FontMetadataInfo::default();
+    if offsets.is_empty() { record(&mut info.diagnostics, "collection", Kind::EmptyMetadata, None, "no-faces"); }
     for (index, offset) in offsets.into_iter().enumerate() {
-        let table_directory = match read_font_table_directory(file, offset) {
+        let table_directory = match read_font_table_directory(file, offset, index, &mut info.diagnostics) {
             Ok(Some(table_directory)) => table_directory,
-            _ => continue,
+            Ok(None) => continue,
+            Err(error) => { record_io(&mut info.diagnostics, "table-directory", Some(index), &error); continue; },
         };
 
         if wants_name && info.name_hint.is_none() {
-            if let Ok(Some(name_hint)) = probe_font_names_from_directory(file, &table_directory, index) {
-                info.name_hint = Some(name_hint);
+            match probe_font_names_from_directory(file, &table_directory, index, &mut info.diagnostics) {
+                Ok(hint) => info.name_hint = hint,
+                Err(error) => record_io(&mut info.diagnostics, "name", Some(index), &error),
             }
         }
         if options.probe_scripts && info.script_hint.is_none() {
-            if let Ok(Some(script_hint)) = probe_font_scripts_from_directory(file, &table_directory, index) {
-                info.script_hint = Some(script_hint);
+            match probe_font_scripts_from_directory(file, &table_directory, index, &mut info.diagnostics) {
+                Ok(hint) => info.script_hint = hint,
+                Err(error) => record_io(&mut info.diagnostics, "cmap", Some(index), &error),
             }
         }
         if wants_style && info.style_hint.is_none() {
-            if let Ok(Some(style_hint)) = probe_font_style_from_directory(file, &table_directory, index) {
-                info.style_hint = Some(style_hint);
+            match probe_font_style_from_directory(file, &table_directory, index) {
+                Ok(hint) => info.style_hint = hint,
+                Err(error) => record_io(&mut info.diagnostics, "style", Some(index), &error),
             }
         }
         if info.has_all_requested(options) {

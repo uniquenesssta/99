@@ -76,6 +76,16 @@ function styleNameFromHint(styleHint: RustFontStyleHint | undefined, fallbackSty
   return parts.join(' ') || base
 }
 
+export function rustMetadataFastPathRejectionReason(job: FontParseJob): string | null {
+  if (job.signatureValid === false) return null
+  if (job.signatureValid !== true) return 'signature-unconfirmed'
+  if (!job.nameHint) return 'missing-name-hint'
+  if (!job.scriptHint) return 'missing-script-hint'
+  if (!normalizeNameHint(job.nameHint)) return 'unusable-display-name'
+  if (!normalizeScriptHint(job.scriptHint).length) return 'unusable-script-hint'
+  return null
+}
+
 export function buildFontParseResultFromRustMetadata(
   job: FontParseJob,
   scriptDetectionVersion: number,
@@ -88,7 +98,7 @@ export function buildFontParseResultFromRustMetadata(
     }
   }
 
-  if (job.signatureValid !== true || !job.nameHint || !job.scriptHint) return null
+  if (rustMetadataFastPathRejectionReason(job)) return null
 
   const names = normalizeNameHint(job.nameHint)
   const scripts = normalizeScriptHint(job.scriptHint)

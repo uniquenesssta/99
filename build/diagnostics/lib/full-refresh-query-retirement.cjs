@@ -180,6 +180,70 @@ function validateQueryRetirements({observation,hydrationReceipts,processRequests
   const certificates=[],retiredHydrationIds=[],retiredRequestOrdinals=[]
   const cancelled=error=>error&&(!error.reason||['cancelled','query-superseded'].includes(error.reason))
     &&(!error.code||error.code==='ABORT_ERR')&&(error.name==='AbortError'||error.code==='ABORT_ERR'||['cancelled','query-superseded'].includes(error.reason))
+  function priorHydrationHistory(candidates,signal,ipc) {
+    // Older successful work is still raw paid work, never a retirement exclusion.
+    // Generation is only a proposed classification: prove every owner, edge,
+    // native receipt and lifetime before removing a row from replacement matching.
+    const history=candidates.filter(row=>signals.get(row.signalId)?.tagGeneration<signal.tagGeneration)
+    if(!history.length)return history
+    const first=Math.min(...history.map(row=>signals.get(row.signalId).tagGeneration))
+    assert(Number.isSafeInteger(first)&&first>=0&&Number.isSafeInteger(signal.tagGeneration)
+      &&signal.tagGeneration-first<o.signals.length,'Prior hydration generation span is invalid')
+    const chain=o.signals.filter(row=>row.ipcId===ipc.id&&row.tagGeneration>=first&&row.tagGeneration<=signal.tagGeneration)
+      .sort((a,b)=>a.tagGeneration-b.tagGeneration)
+    assert(chain.length===signal.tagGeneration-first+1&&chain.at(-1).id===signal.id,'Prior hydration chain has a generation gap or branch')
+    for(let index=0;index<chain.length-1;index++){
+      const current=chain[index],following=chain[index+1],edge=invalidations.get(current.invalidationId)
+      assert(current.tagGeneration===first+index&&current.ownerId===signal.ownerId&&current.actionId===signal.actionId
+        &&current.intentSha256===signal.intentSha256&&current.firstObservedLive===true
+        &&Number.isFinite(current.firstObservedAt)&&current.firstObservedAt>=ipc.startedAt,'Prior hydration query ownership changed')
+      assert(edge?.ok===true&&edge.cancelInFlight===true&&edge.ownerId===current.ownerId
+        &&edge.generationBefore===current.tagGeneration&&edge.generationAfter===following.tagGeneration
+        &&following.tagGeneration===current.tagGeneration+1,'Prior hydration lacks an exact owned invalidation')
+      assert.equal(o.invalidations.filter(row=>row.ownerId===current.ownerId&&row.generationBefore===current.tagGeneration).length,1,
+        'Prior hydration invalidation is ambiguous')
+      assert(current.firstObservedAt<=edge.startedAt&&edge.startedAt<=current.abortedAt&&current.abortedAt<=edge.finishedAt
+        &&edge.finishedAt<=following.firstObservedAt,'Prior hydration invalidation order changed')
+      assert(!o.invalidations.some(row=>row.ownerId===current.ownerId&&row.id!==edge.id
+        &&row.startedAt>=edge.startedAt&&row.startedAt<=following.firstObservedAt),'Prior hydration skipped an owned invalidation')
+      assert(current.outcome==='rejected'&&current.error?.reason==='query-superseded'&&Number.isFinite(current.settledAt)
+        &&current.settledAt>=current.abortedAt&&current.settledAt<=signal.settledAt,'Prior hydration task settlement changed')
+      const owned=o.hydrations.filter(row=>row.signalId===current.id)
+      assert(owned.length<=1,'Prior hydration is duplicated')
+      if(!owned.length){
+        assert(!o.transports.some(row=>row.signalId===current.id)&&!hydrationReceipts.some(row=>row.querySignalId===current.id),
+          'Prior hydration chain has unowned native evidence')
+        continue
+      }
+      const hydration=owned[0],receipt=receipts.get(hydration.hydrationId)
+      assert(history.includes(hydration)&&hydration.ok===true&&hydration.error===undefined
+        &&hydration.ipcId===ipc.id&&hydration.actionId===signal.actionId&&hydration.intentSha256===signal.intentSha256,
+        'Prior hydration identity changed')
+      assert(hydration.startedAt>=current.firstObservedAt&&hydration.finishedAt>=hydration.startedAt
+        &&hydration.finishedAt<=edge.startedAt,'Prior hydration was not completed before invalidation')
+      assert(/^[a-f0-9]{64}$/.test(hydration.inputSha256||'')&&Number.isSafeInteger(hydration.inputCount)&&hydration.inputCount>0
+        &&hydration.requestedCount===hydration.inputCount,'Prior hydration native input proof missing')
+      assert(receipt?.ok===true&&receipt.error===undefined&&receipt.querySignalId===current.id&&receipt.queryInputSha256===hydration.inputSha256
+        &&receipt.populationValidated===true&&receipt.nativePopulationValidated===true&&receipt.nativeCalls===1&&receipt.workerMode==='rust-local-tags-read'
+        &&receipt.startedAt===hydration.startedAt&&receipt.finishedAt>=hydration.finishedAt&&receipt.finishedAt<=edge.startedAt,
+        'Prior hydration native receipt proof missing')
+      assert.equal(hydrationReceipts.filter(row=>row.querySignalId===current.id).length,1,'Prior hydration native receipt is duplicated')
+      for(const key of ['requestedCount','requestedUniqueIds','nativeRequestedCount','nativeUniqueIds','returnedCount','returnedUniqueIds'])
+        assert.equal(receipt[key],hydration.inputCount,'Prior hydration native population changed')
+      const completed=o.transports.filter(row=>row.hydrationId===hydration.hydrationId||row.signalId===current.id)
+      assert.equal(completed.length,1,'Prior hydration native attempt count changed')
+      const native=completed[0]
+      assert(native.command==='--local-tags-read'&&native.hydrationId===hydration.hydrationId&&native.signalId===current.id
+        &&native.outcome==='returned'&&native.error===undefined&&native.signalAbortedAtStart===false
+        &&native.inputSha256===hydration.inputSha256&&native.actionId===signal.actionId&&native.intentSha256===signal.intentSha256&&native.ipcId===ipc.id
+        &&native.startedAt>=hydration.startedAt&&native.finishedAt>=native.startedAt&&native.finishedAt<=hydration.finishedAt,
+        'Prior hydration native transport proof missing')
+      assert(hydration.populationValidated===true&&hydration.workerMode==='rust-local-tags-read'
+        &&hydration.returnedCount===hydration.inputCount&&/^[a-f0-9]{64}$/.test(hydration.tagSha256||''),'Prior hydration returned tags proof missing')
+    }
+    assert(history.every(row=>chain.slice(0,-1).some(owner=>owner.id===row.signalId)),'Prior hydration owner is outside its generation chain')
+    return history
+  }
   for(const receipt of hydrationReceipts.filter(row=>row.ok===false)) {
     assert.equal(o.taskProof,'selected-source-query-tasks','Legacy source has no query retirement proof')
     const failed=hydrations.get(receipt.id),signal=signals.get(failed?.signalId),invalidation=invalidations.get(signal?.invalidationId),ipc=ipcs.get(failed?.ipcId)
@@ -256,10 +320,16 @@ function validateQueryRetirements({observation,hydrationReceipts,processRequests
       &&!hydrationReceipts.some(row=>row.querySignalId===signal.id),'Early retirement already reached local-tag hydration or transport')
     assert(ipc?.ok===true&&ipc.tagPage===true&&ipc.channel==='fonts:queryPage'&&ipc.actionId===signal.actionId
       &&ipc.intentSha256===signal.intentSha256,'Early retired attempt lacks its successful tagged IPC')
-    const matches=o.hydrations.filter(row=>row.ok===true&&row.actionId===signal.actionId&&row.intentSha256===signal.intentSha256
-      &&row.ipcId===ipc.id&&row.signalId!==signal.id)
+    const candidates=o.hydrations.filter(row=>row.ok===true&&(row.ipcId===ipc.id||signals.get(row.signalId)?.ipcId===ipc.id))
+    for(const row of candidates)assert(row.ipcId===ipc.id&&row.actionId===signal.actionId&&row.intentSha256===signal.intentSha256,
+      'Early hydration IPC or intent changed')
+    const history=priorHydrationHistory(candidates,signal,ipc)
+    const matches=candidates.filter(row=>!history.includes(row))
     assert.equal(matches.length,1,'Early retired read lacks one same-intent native hydration replacement')
     const replacement=matches[0],next=signals.get(replacement.signalId),receipt=receipts.get(replacement.hydrationId)
+    for(const prior of history)assert(prior.inputSha256===replacement.inputSha256&&prior.inputCount===replacement.inputCount
+      &&prior.tagSha256===replacement.tagSha256&&prior.returnedCount===replacement.returnedCount,
+      'Prior hydration and replacement native input or returned tags changed')
     assert(replacement.startedAt>=signal.settledAt&&replacement.finishedAt>=replacement.startedAt&&replacement.finishedAt<=ipc.finishedAt,
       'Early replacement hydration lifetime changed')
     assert(next?.firstObservedLive===true&&next.abortedAt===undefined&&next.error===undefined&&next.ownerId===signal.ownerId

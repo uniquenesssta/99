@@ -1,3 +1,4 @@
+import type { RustMetadataDiagnostic } from './fontMetadataDiagnostics'
 import type { NativePreviewLayout } from '../../shared/preview-layout/nativePreviewLayout'
 // Stable public worker types. Runtime consumers use the facade; type consumers use this module.
 import type { CachedFontStatLike } from '../fonts/fontRuntime'
@@ -84,6 +85,7 @@ export type RustListedFontFile = {
   quickHash?: string
   contentHash?: string
   hashKind?: string
+  metadataDiagnostics?: RustMetadataDiagnostic[]
   nameHint?: RustFontNameHint
   scriptHint?: RustFontScriptHint
   styleHint?: RustFontStyleHint

@@ -1,7 +1,8 @@
 import { rethrowSharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import type { FontParseJob,FontParseWorkerResult } from '../fontScanWorkers'
 import { isOperationCancelledError,throwIfAborted } from '../../performance/ioQueue'
-import { buildFontParseResultFromRustMetadata } from './rustMetadataFastPathRuntime'
+import { createRustMetadataRejectionReporter } from './rustMetadataDiagnosticsRuntime'
+import { buildFontParseResultFromRustMetadata, rustMetadataFastPathRejectionReason } from './rustMetadataFastPathRuntime'
 import { nodeFontkitScanFallbackFailureLogSuffix } from '../../rust-core/nodeFontkitScanFallbackCompatibilityRuntime'
 
 export type RustFontParseBatchRuntime = (
@@ -37,7 +38,13 @@ export async function consumeRustFontParseBatchFastPath(args: {
     delayToEventLoop,
   } = args
 
-  if (!jobs.length || !runRustFontParseBatch) return { remainingJobs: jobs, consumed: 0, errors: 0 }
+  if (!jobs.length) return { remainingJobs: jobs, consumed: 0, errors: 0 }
+  if (!runRustFontParseBatch) {
+    const reporter = createRustMetadataRejectionReporter(appendStartupLog, logPrefix)
+    for (const job of jobs) reporter.reject(job, rustMetadataFastPathRejectionReason(job) || 'no-native-batch-runtime', job.metadataDiagnostics)
+    reporter.flush()
+    return { remainingJobs: jobs, consumed: 0, errors: 0 }
+  }
 
   try {
     throwIfAborted(signal)
@@ -45,6 +52,10 @@ export async function consumeRustFontParseBatchFastPath(args: {
     const rustResult = await runRustFontParseBatch(jobs, signal)
     throwIfAborted(signal)
     if (!rustResult || !Array.isArray(rustResult.results) || !rustResult.results.length) {
+      const reporter = createRustMetadataRejectionReporter(appendStartupLog, logPrefix)
+      const errorsById = new Map((rustResult?.errors || []).map(error => [error.jobId, error.message]))
+      for (const job of jobs) reporter.reject(job, errorsById.has(job.jobId) ? 'native-job-error' : 'missing-native-result', undefined, errorsById.get(job.jobId))
+      reporter.flush()
       appendStartupLog(`${logPrefix} skipped: no rust parse batch results; ${nodeFontkitScanFallbackFailureLogSuffix()}, fallbackWorker=${jobs.length}`)
       return { remainingJobs: jobs, consumed: 0, errors: rustResult?.errors?.length || 0 }
     }
@@ -54,18 +65,22 @@ export async function consumeRustFontParseBatchFastPath(args: {
       if (result?.jobId) resultByJobId.set(String(result.jobId), result)
     }
 
+    const rejectionReporter = createRustMetadataRejectionReporter(appendStartupLog, logPrefix)
+    const errorByJobId = new Map((rustResult.errors || []).map(error => [error.jobId, error.message]))
     const remainingJobs: FontParseJob[] = []
     let consumed = 0
     for (const job of jobs) {
       throwIfAborted(signal)
       const rustJob = resultByJobId.get(job.jobId)
       if (!rustJob) {
+        rejectionReporter.reject(job, errorByJobId.has(job.jobId) ? 'native-job-error' : 'missing-native-result', undefined, errorByJobId.get(job.jobId))
         remainingJobs.push(job)
         continue
       }
 
       const fastResult = buildFontParseResultFromRustMetadata(rustJob, scriptDetectionVersion)
       if (!fastResult) {
+        rejectionReporter.reject(job, rustMetadataFastPathRejectionReason(rustJob) || 'unusable-metadata', rustJob.metadataDiagnostics)
         remainingJobs.push(job)
         continue
       }
@@ -78,6 +93,7 @@ export async function consumeRustFontParseBatchFastPath(args: {
       }
     }
 
+    rejectionReporter.flush()
     appendStartupLog(`${logPrefix} used: rustBatch=${consumed}, fallbackWorker=${remainingJobs.length}, rustErrors=${rustResult.errors?.length || 0}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${rustResult.elapsedMs || 0}ms`)
     return { remainingJobs, consumed, errors: rustResult.errors?.length || 0 }
   } catch (error) {

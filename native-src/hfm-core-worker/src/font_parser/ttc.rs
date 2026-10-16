@@ -1,4 +1,5 @@
 use std::fs::File;
+use super::diagnostics::{record, MetadataDiagnostic, MetadataDiagnosticKind as Kind};
 use std::io::{self, Read, Seek, SeekFrom};
 
 use super::sfnt::read_u32_be;
@@ -12,7 +13,7 @@ pub fn read_exact_at(file: &mut File, offset: u64, length: usize) -> io::Result<
     Ok(buffer)
 }
 
-pub fn font_offsets(file: &mut File) -> io::Result<Vec<u64>> {
+pub fn font_offsets(file: &mut File, diagnostics: &mut Vec<MetadataDiagnostic>) -> io::Result<Vec<u64>> {
     let header = read_exact_at(file, 0, 12)?;
     if &header[0..4] != b"ttcf" {
         return Ok(vec![0]);
@@ -23,6 +24,7 @@ pub fn font_offsets(file: &mut File) -> io::Result<Vec<u64>> {
         return Ok(Vec::new());
     }
 
+    if count > MAX_TTC_FONTS_TO_PROBE { record(diagnostics, "collection", Kind::ResourceLimit, None, "face-probe-limit"); }
     let safe_count = count.min(MAX_TTC_FONTS_TO_PROBE);
     let offset_bytes = read_exact_at(file, 12, safe_count * 4)?;
     let mut offsets = Vec::with_capacity(safe_count);

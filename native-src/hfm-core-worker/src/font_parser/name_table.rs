@@ -1,4 +1,5 @@
 use std::fs::File;
+use super::diagnostics::{record, MetadataDiagnostic, MetadataDiagnosticKind as Kind};
 use std::io;
 use super::encoding::decode_name_string;
 use super::sfnt::{find_table_record, read_u16_be};
@@ -124,16 +125,30 @@ fn parse_name_table(data: &[u8], source_index: usize) -> Option<FontNameInfo> {
     }
 }
 
-pub fn probe_font_names_from_directory(file: &mut File, table_directory: &[u8], source_index: usize) -> io::Result<Option<FontNameInfo>> {
+pub fn probe_font_names_from_directory(file: &mut File, table_directory: &[u8], source_index: usize, diagnostics: &mut Vec<MetadataDiagnostic>) -> io::Result<Option<FontNameInfo>> {
     let Some((name_offset, name_length)) = find_table_record(table_directory, b"name") else {
+        let directory_complete = table_directory.len() >= 12
+            && super::sfnt::is_supported_sfnt_tag(table_directory, 0)
+            && 12 + usize::from(read_u16_be(table_directory, 4).unwrap_or(0)) * 16 <= table_directory.len();
+        record(diagnostics, "name", if directory_complete { Kind::MissingTable } else { Kind::InvalidStructure },
+            Some(source_index), if directory_complete { "name-table-not-found" } else { "table-lookup-unavailable" });
         return Ok(None);
     };
 
     if name_length == 0 || name_length > MAX_NAME_TABLE_BYTES {
+        record(diagnostics, "name", if name_length == 0 { Kind::EmptyMetadata } else { Kind::ResourceLimit }, Some(source_index), "name-table-length");
         return Ok(None);
     }
 
     let name_table = read_exact_at(file, name_offset, name_length)?;
-    Ok(parse_name_table(&name_table, source_index))
+    if name_table.len() < 6 || 6 + usize::from(read_u16_be(&name_table, 2).unwrap_or(0)).min(MAX_NAME_RECORDS) * 12 > name_table.len()
+        || usize::from(read_u16_be(&name_table, 4).unwrap_or(0)) > name_table.len() {
+        record(diagnostics, "name", Kind::InvalidStructure, Some(source_index), "name-header-bounds");
+    } else if usize::from(read_u16_be(&name_table, 2).unwrap_or(0)) > MAX_NAME_RECORDS {
+        record(diagnostics, "name", Kind::ResourceLimit, Some(source_index), "name-record-limit");
+    }
+    let result = parse_name_table(&name_table, source_index);
+    if result.is_none() { record(diagnostics, "name", Kind::EmptyMetadata, Some(source_index), "no-decoded-name"); }
+    Ok(result)
 }
 

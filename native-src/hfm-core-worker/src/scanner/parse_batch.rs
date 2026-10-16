@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
+use crate::font_parser::diagnostics::MetadataDiagnostic;
 use crate::family::FontFamilyHint;
 use crate::font_parser::{FontNameInfo, FontScriptInfo, FontStyleInfo};
 use crate::font_resource::activation_identity::file_id;
@@ -69,6 +70,8 @@ struct FontParseBatchResult {
     hash_kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     name_hint: Option<FontNameInfo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    metadata_diagnostics: Vec<MetadataDiagnostic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     script_hint: Option<FontScriptInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -187,6 +190,7 @@ pub fn parse_font_batch(config: &FontParseBatchCommandConfig) -> Result<String, 
                     content_hash: if entry.content_hash.is_empty() { entry.quick_hash.clone() } else { entry.content_hash },
                     hash_kind: entry.hash_kind,
                     name_hint: entry.name_hint,
+                    metadata_diagnostics: entry.metadata_diagnostics,
                     script_hint: entry.script_hint,
                     style_hint: entry.style_hint,
                     family_hint: entry.family_hint,

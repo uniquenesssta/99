@@ -163,6 +163,22 @@ function compilerGate() {
     source+=`// @ts-expect-error wrong value must not be accepted\nconst bad${count}: AppRootViewProps['${group}'] = { ...p.${group}, ${field}: 42 };\n`
     count++
   }
+  source += `type Notice = NonNullable<AppRootViewProps['operationNotice']>; declare const notice: Notice;
+const nullableNotice: Notice = { message: null, onDismiss: () => {} };
+const ordinaryNotice: Notice = { message: 'operation result', onDismiss: () => {} };
+// @ts-expect-error message remains required
+const missingMessage: Notice = { onDismiss: notice.onDismiss };
+// @ts-expect-error dismissal remains required
+const missingDismiss: Notice = { message: notice.message };
+// @ts-expect-error message cannot accept a number or arbitrary payload
+const wrongMessage: Notice = { ...notice, message: 42 };
+// @ts-expect-error dismissal cannot require a new caller argument
+const wrongDismiss: Notice = { ...notice, onDismiss: (required: string) => {} };
+// @ts-expect-error notification port cannot grow unrelated fields
+const extraNotice: Notice = { ...notice, unrelated: true };
+// @ts-expect-error optional notice does not authorize an untyped scalar
+const wrongNotice: AppRootViewProps['operationNotice'] = 42;
+`
   const host=ts.createCompilerHost(parsed.options), originalRead=host.readFile, originalExists=host.fileExists
   const same = file => path.resolve(file).replace(/\\/g,'/')===filename.replace(/\\/g,'/')
   host.readFile=file=>same(file)?source:originalRead(file);host.fileExists=file=>same(file)||originalExists(file)
@@ -215,7 +231,7 @@ function main() {
     assert.notEqual(snapshot(disconnected,view,fixture.bindings,false,false),fixture.cases.find(c=>!c.development&&!c.collapsed).hash,`${callback}: wrong recovery action escaped the wiring gate`)
   }
   compilerGate()
-  console.log('[diagnostics:app-root-view-contracts] six typed local groups; App-owned NAS snapshot and independent dismissible feedback; explicit renderer-closing owner/wiring plus frozen legacy lifecycle; 18 compiler negatives; frozen UI in four modes; wiring/type/spread/lifecycle mutations and CRLF passed')
+  console.log('[diagnostics:app-root-view-contracts] six typed local groups; App-owned NAS snapshot and independent dismissible feedback; explicit renderer-closing owner/wiring plus frozen legacy lifecycle; 24 compiler negatives; frozen UI in four modes; wiring/type/spread/lifecycle mutations and CRLF passed')
 }
 module.exports={snapshot,jsx}
 if(require.main===module)main()

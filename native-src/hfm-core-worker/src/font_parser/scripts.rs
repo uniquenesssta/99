@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs::File;
+use super::diagnostics::{record, MetadataDiagnostic, MetadataDiagnosticKind as Kind};
 use std::io;
 use super::sfnt::{find_table_record, read_u16_be, read_u32_be};
 use super::ttc::read_exact_at;
@@ -207,45 +208,58 @@ fn parse_format_12(data: &[u8], subtable_offset: usize, acc: &mut ScriptAccumula
     true
 }
 
-fn parse_cmap(data: &[u8], source_index: usize) -> Option<FontScriptInfo> {
+fn parse_cmap(data: &[u8], source_index: usize, diagnostics: &mut Vec<MetadataDiagnostic>) -> Option<FontScriptInfo> {
     if data.len() < 4 {
+        record(diagnostics, "cmap", Kind::InvalidStructure, Some(source_index), "cmap-header-bounds");
         return None;
     }
     let count = usize::from(read_u16_be(data, 2)?).min(MAX_CMAP_ENCODINGS);
+    if usize::from(read_u16_be(data, 2)?) > MAX_CMAP_ENCODINGS { record(diagnostics, "cmap", Kind::ResourceLimit, Some(source_index), "encoding-limit"); }
     if 4 + count * 8 > data.len() {
+        record(diagnostics, "cmap", Kind::InvalidStructure, Some(source_index), "encoding-record-bounds");
         return None;
     }
 
     let mut offsets: Vec<usize> = Vec::new();
+    let mut invalid_offset = false;
     for index in 0..count {
         let record_offset = 4 + index * 8;
         let subtable_offset = usize::try_from(read_u32_be(data, record_offset + 4)?).ok()?;
-        if subtable_offset + 2 <= data.len() && !offsets.contains(&subtable_offset) {
-            offsets.push(subtable_offset);
-        }
+        if subtable_offset + 2 > data.len() { invalid_offset = true; }
+        else if !offsets.contains(&subtable_offset) { offsets.push(subtable_offset); }
     }
 
+    if invalid_offset { record(diagnostics, "cmap", Kind::InvalidStructure, Some(source_index), "subtable-offset-bounds"); }
     let mut acc = ScriptAccumulator::default();
     let mut parsed_any = false;
 
     for subtable_offset in offsets.iter().copied() {
         let format = read_u16_be(data, subtable_offset).unwrap_or(0);
+        if format == 12 && usize::try_from(read_u32_be(data, subtable_offset + 12).unwrap_or(0)).unwrap_or(0) > MAX_CMAP_GROUPS {
+            record(diagnostics, "cmap", Kind::ResourceLimit, Some(source_index), "group-limit");
+        }
         if format == 12 && parse_format_12(data, subtable_offset, &mut acc) {
             parsed_any = true;
         }
     }
     for subtable_offset in offsets.iter().copied() {
         let format = read_u16_be(data, subtable_offset).unwrap_or(0);
+        if format == 4 && usize::from(read_u16_be(data, subtable_offset + 6).unwrap_or(0) / 2) > MAX_CMAP_SEGMENTS {
+            record(diagnostics, "cmap", Kind::ResourceLimit, Some(source_index), "segment-limit");
+        }
         if format == 4 && parse_format_4(data, subtable_offset, &mut acc) {
             parsed_any = true;
         }
     }
 
     if !parsed_any {
+        let supported = offsets.iter().any(|offset| matches!(read_u16_be(data, *offset), Some(4 | 12)));
+        record(diagnostics, "cmap", if supported || invalid_offset { Kind::InvalidStructure } else if count == 0 { Kind::EmptyMetadata } else { Kind::UnsupportedFormat }, Some(source_index), "no-readable-supported-subtable");
         return None;
     }
     let scripts = acc.scripts();
     if scripts.is_empty() {
+        record(diagnostics, "cmap", Kind::EmptyMetadata, Some(source_index), "no-character-ranges");
         return None;
     }
     Some(FontScriptInfo {
@@ -255,16 +269,22 @@ fn parse_cmap(data: &[u8], source_index: usize) -> Option<FontScriptInfo> {
     })
 }
 
-pub fn probe_font_scripts_from_directory(file: &mut File, table_directory: &[u8], source_index: usize) -> io::Result<Option<FontScriptInfo>> {
+pub fn probe_font_scripts_from_directory(file: &mut File, table_directory: &[u8], source_index: usize, diagnostics: &mut Vec<MetadataDiagnostic>) -> io::Result<Option<FontScriptInfo>> {
     let Some((cmap_offset, cmap_length)) = find_table_record(table_directory, b"cmap") else {
+        let directory_complete = table_directory.len() >= 12
+            && super::sfnt::is_supported_sfnt_tag(table_directory, 0)
+            && 12 + usize::from(read_u16_be(table_directory, 4).unwrap_or(0)) * 16 <= table_directory.len();
+        record(diagnostics, "cmap", if directory_complete { Kind::MissingTable } else { Kind::InvalidStructure },
+            Some(source_index), if directory_complete { "cmap-table-not-found" } else { "table-lookup-unavailable" });
         return Ok(None);
     };
 
     if cmap_length == 0 || cmap_length > MAX_CMAP_TABLE_BYTES {
+        record(diagnostics, "cmap", if cmap_length == 0 { Kind::EmptyMetadata } else { Kind::ResourceLimit }, Some(source_index), "cmap-table-length");
         return Ok(None);
     }
 
     let cmap_table = read_exact_at(file, cmap_offset, cmap_length)?;
-    Ok(parse_cmap(&cmap_table, source_index))
+    Ok(parse_cmap(&cmap_table, source_index, diagnostics))
 }
 

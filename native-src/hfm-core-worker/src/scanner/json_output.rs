@@ -137,6 +137,10 @@ pub fn result_to_json(root: &str, result: &ListFontFilesResult) -> String {
             escape_json(&entry.content_hash),
             escape_json(&entry.hash_kind)
         ));
+        if !entry.metadata_diagnostics.is_empty() {
+            output.push_str(",\"metadataDiagnostics\":");
+            output.push_str(&serde_json::to_string(&entry.metadata_diagnostics).expect("fixed metadata diagnostic fields serialize"));
+        }
         if let Some(name_hint) = &entry.name_hint {
             output.push_str(&name_hint_to_json(name_hint));
         }
