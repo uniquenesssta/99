@@ -1,0 +1,39 @@
+name: SQLite snapshot busy investigation (not acceptance)
+on:
+  workflow_dispatch:
+  push:
+    branches: ['stage/12-font-recovery-f14']
+    paths:
+      - '.github/workflows/snapshot-busy-diagnostic.yml'
+      - 'build/diagnostics/check-snapshot-busy-diagnostic.cjs'
+      - 'native-src/hfm-core-worker/src/shared_file_io/snapshot_busy_diagnostic.rs'
+permissions:
+  contents: read
+jobs:
+  investigate:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - name: Build separate fail-fast diagnostic worker
+        shell: pwsh
+        run: |
+          cargo build --locked --release --manifest-path native-src/hfm-core-worker/Cargo.toml --features snapshot-busy-diagnostic --target-dir target/snapshot-busy-diagnostic
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check lock controls and observe original fixture once
+        shell: pwsh
+        timeout-minutes: 6
+        run: |
+          node --experimental-sqlite build/diagnostics/check-snapshot-busy-diagnostic.cjs --worker target/snapshot-busy-diagnostic/release/hfm-core-worker.exe --report artifacts/snapshot-busy-diagnostic.json
+          exit $LASTEXITCODE
+      - name: Retain only fixed-field diagnostic summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-busy-diagnostic-not-acceptance
+          path: artifacts/snapshot-busy-diagnostic.json
+          if-no-files-found: error
+          retention-days: 14

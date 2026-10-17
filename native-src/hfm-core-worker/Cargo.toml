@@ -10,6 +10,10 @@ codegen-units = 1
 strip = true
 panic = "abort"
 
+[features]
+# Separate investigation binary only; normal builds retain SQLite's busy timeout.
+snapshot-busy-diagnostic = []
+
 [dependencies]
 rusqlite = { version = "0.32.1", features = ["bundled", "functions", "serialize", "backup"] }
 serde = { version = "1.0", features = ["derive"] }

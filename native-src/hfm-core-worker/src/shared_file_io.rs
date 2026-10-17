@@ -1,6 +1,8 @@
 mod trash;
 mod cleanup;
 mod sqlite_snapshot;
+#[cfg(feature = "snapshot-busy-diagnostic")]
+mod snapshot_busy_diagnostic;
 #[cfg(all(test, windows))]
 mod snapshot_tests;
 #[cfg(all(test, windows))]
