@@ -27,6 +27,39 @@ fn clean(value: &Value) -> Option<Value> {
     Some(out)
 }
 
+#[cfg(windows)]
+mod process_identity {
+    use crate::windows_ffi::{FileTime, Handle};
+    use serde_json::{json, Value};
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentProcess() -> Handle;
+        fn GetProcessTimes(process: Handle, created: *mut FileTime, exited: *mut FileTime,
+            kernel: *mut FileTime, user: *mut FileTime) -> i32;
+    }
+
+    pub(super) fn current() -> Value {
+        let mut created = FileTime::default();
+        let mut exited = FileTime::default();
+        let mut kernel = FileTime::default();
+        let mut user = FileTime::default();
+        // The pseudo handle refers to this process and needs no CloseHandle.
+        // All output pointers refer to distinct, live FILETIME-sized values.
+        let succeeded = unsafe {
+            GetProcessTimes(GetCurrentProcess(), &mut created, &mut exited, &mut kernel, &mut user)
+        };
+        let creation_file_time = if succeeded != 0 {
+            // Preserve all 64 bits for the observer's retained-handle match.
+            // Never serialize this identity as a JSON/JavaScript number.
+            (((created.high as u64) << 32) | created.low as u64).to_string()
+        } else {
+            "unknown".to_owned()
+        };
+        json!({"pid": std::process::id(), "creationFileTime": creation_file_time})
+    }
+}
+
 pub struct OperationTrace {
     pub context: Option<Value>,
     committed: bool,
@@ -46,7 +79,15 @@ impl OperationTrace {
     fn emit(&self, stage: &str, outcome: &str, reason: &str) {
         self.sequence.set(self.sequence.get() + 1);
         if let Some(context) = &self.context {
-            let event = json!({"trace": context, "stage": stage, "outcome": outcome, "reason": reason, "backend": "rust", "backendSequence": self.sequence.get(), "elapsedMs": self.started.elapsed().as_millis()});
+            let mut event = json!({"trace": context, "stage": stage, "outcome": outcome, "reason": reason, "backend": "rust", "backendSequence": self.sequence.get(), "elapsedMs": self.started.elapsed().as_millis()});
+            #[cfg(windows)]
+            if reason == "command-entered"
+                && context["sessionId"].as_str() == Some("private-snapshot-ci")
+                && context["domain"].as_str() == Some("sqliteSnapshot")
+                && std::env::var("HFM_SNAPSHOT_PROCESS_COUNTERS").ok().as_deref() == Some("1")
+            {
+                event["processIdentity"] = process_identity::current();
+            }
             if let Ok(encoded) = serde_json::to_string(&event) {
                 if encoded.len() <= 8192 {
                     // Ignore stderr errors; logging can never change a transaction result.

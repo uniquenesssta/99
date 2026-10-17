@@ -1,12 +1,6 @@
 name: SQLite snapshot busy investigation (not acceptance)
 on:
   workflow_dispatch:
-  push:
-    branches: ['stage/12-font-recovery-f14']
-    paths:
-      - '.github/workflows/snapshot-busy-diagnostic.yml'
-      - 'build/diagnostics/check-snapshot-busy-diagnostic.cjs'
-      - 'native-src/hfm-core-worker/src/shared_file_io/snapshot_busy_diagnostic.rs'
 permissions:
   contents: read
 jobs:

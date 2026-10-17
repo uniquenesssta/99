@@ -86,6 +86,18 @@ jobs:
           name: font-recovery-native-stage-log
           path: artifacts/native-owned-stage.log
           retention-days: 14
+      - name: Verify optional snapshot observer controls
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          & pwsh -NoLogo -NoProfile -NonInteractive -File build/diagnostics/lib/snapshot-process-counters.ps1 -SelfTest > artifacts/snapshot-process-native-controls.json
+          $nativeControlsExit = $LASTEXITCODE
+          & node build/diagnostics/lib/snapshot-process-counters.cjs --self-test > artifacts/snapshot-process-node-controls.json
+          $nodeControlsExit = $LASTEXITCODE
+          if ($nativeControlsExit -ne 0 -or $nodeControlsExit -ne 0) { exit 1 }
       - name: Verify targeted retest regression composition
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         timeout-minutes: 6
@@ -95,8 +107,23 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $false
           $failed = 0
           foreach ($script in @('check-local-user-state.cjs', 'check-orchestration-contracts.cjs', 'check-query-read-cancellation.cjs', 'check-preview-directory-absence.cjs', 'check-watcher-noop-freshness.cjs', 'check-root-probe-lifecycle.cjs', 'check-shared-filesystem.cjs')) {
-            & node "build/diagnostics/$script" *>> artifacts/targeted-retest.log
-            if ($LASTEXITCODE -ne 0) { $failed++ }
+            if ($script -eq 'check-watcher-noop-freshness.cjs') {
+              $savedCounters = $env:HFM_SNAPSHOT_PROCESS_COUNTERS
+              $savedReport = $env:HFM_SNAPSHOT_PROCESS_COUNTERS_REPORT
+              try {
+                $env:HFM_SNAPSHOT_PROCESS_COUNTERS = '1'
+                $env:HFM_SNAPSHOT_PROCESS_COUNTERS_REPORT = Join-Path $PWD 'artifacts/snapshot-process-counters.json'
+                & node --require ./build/diagnostics/lib/snapshot-process-counters.cjs "build/diagnostics/$script" *>> artifacts/targeted-retest.log
+                $scriptExit = $LASTEXITCODE
+              } finally {
+                $env:HFM_SNAPSHOT_PROCESS_COUNTERS = $savedCounters
+                $env:HFM_SNAPSHOT_PROCESS_COUNTERS_REPORT = $savedReport
+              }
+            } else {
+              & node "build/diagnostics/$script" *>> artifacts/targeted-retest.log
+              $scriptExit = $LASTEXITCODE
+            }
+            if ($scriptExit -ne 0) { $failed++ }
           }
           Get-Content -LiteralPath artifacts/targeted-retest.log -Encoding utf8
           if ($failed -gt 0) { exit 1 }
@@ -106,6 +133,24 @@ jobs:
         with:
           name: font-recovery-targeted-retest-log
           path: artifacts/targeted-retest.log
+          retention-days: 14
+      - name: Check optional snapshot evidence files are present
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($file in @('artifacts/snapshot-process-counters.json', 'artifacts/snapshot-process-native-controls.json', 'artifacts/snapshot-process-node-controls.json')) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw 'Snapshot process evidence is incomplete' }
+          }
+      - name: Retain optional snapshot process counters (not timing acceptance)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-process-counters-not-acceptance
+          path: |
+            artifacts/snapshot-process-counters.json
+            artifacts/snapshot-process-native-controls.json
+            artifacts/snapshot-process-node-controls.json
+          if-no-files-found: error
           retention-days: 14
       - name: Verify tag foreground ownership and observation transparency
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
