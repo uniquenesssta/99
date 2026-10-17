@@ -6,10 +6,12 @@ const assert = require('node:assert/strict')
 const { AsyncLocalStorage } = require('node:async_hooks')
 const { EventEmitter } = require('node:events')
 const REASONS = new Set(['command-entered', 'snapshot-target-check', 'snapshot-open-start', 'snapshot-opened',
-  'snapshot-vacuum-start', 'snapshot-vacuum-returned', 'snapshot-connection-drop-returned',
+  'snapshot-target-open-start', 'snapshot-target-opened', 'snapshot-backup-start', 'snapshot-backup-returned',
+  'snapshot-integrity-start', 'snapshot-integrity-returned', 'snapshot-target-close-returned', 'snapshot-connection-drop-returned',
   'snapshot-error-map-start', 'snapshot-error-map-returned', 'command-result', 'early-return-no-rollback-claim'])
 const SUCCESS = ['command-entered', 'snapshot-target-check', 'snapshot-open-start', 'snapshot-opened',
-  'snapshot-vacuum-start', 'snapshot-vacuum-returned', 'snapshot-connection-drop-returned', 'command-result']
+  'snapshot-target-open-start', 'snapshot-target-opened', 'snapshot-backup-start', 'snapshot-backup-returned',
+  'snapshot-integrity-start', 'snapshot-integrity-returned', 'snapshot-target-close-returned', 'snapshot-connection-drop-returned', 'command-result']
 const traceFor = ordinal => ({ version: 1, sessionId: 'private-snapshot-ci', operationId: `snapshot-${ordinal}`,
   attemptId: 'one', batchId: 'one', domain: 'sqliteSnapshot', members: [], omitted: 0 })
 
@@ -90,7 +92,7 @@ function createSnapshotPhaseObservation(phase, diagnostics = {}) {
             || !Number.isSafeInteger(event.backendSequence) || event.backendSequence < 1
             || !Number.isFinite(event.elapsedMs) || event.elapsedMs < 0) { evidence.rejectedLines++; return }
           if (row.events.length >= 16) { evidence.droppedEvents++; return }
-          if (event.reason === 'snapshot-vacuum-start') boundary(row, 'vacuum-start-received')
+          if (event.reason === 'snapshot-backup-start') boundary(row, 'backup-start-received')
           row.events.push({ reason: event.reason, sequence: event.backendSequence, nativeElapsedMs: event.elapsedMs,
             receivedMs: elapsed(row) })
         }
@@ -235,8 +237,9 @@ async function nativeControls({ workerPath, directory }) {
     assert.equal(reasons.at(-1), 'command-result')
     assert.deepEqual(reasons.slice(-3), ['snapshot-error-map-start', 'snapshot-error-map-returned', 'command-result'], 'SQLITE_PHASE_ERROR_MAPPING')
     assert.equal(reasons.includes('snapshot-open-start'), kind !== 'existing-target')
-    assert.equal(reasons.includes('snapshot-vacuum-start'), kind === 'invalid-database')
-    assert.equal(reasons.includes('snapshot-vacuum-returned'), kind === 'invalid-database')
+    assert.equal(reasons.includes('snapshot-backup-start'), kind === 'invalid-database')
+    assert.equal(reasons.includes('snapshot-backup-returned'), kind === 'invalid-database')
+    assert.equal(reasons.includes('snapshot-target-close-returned'), kind === 'invalid-database')
     assert.equal(reasons.includes('snapshot-connection-drop-returned'), kind === 'invalid-database')
     if (kind === 'existing-target') {
       assert.equal(fs.readFileSync(target, 'utf8'), 'retain-target')

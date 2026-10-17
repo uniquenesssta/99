@@ -110,7 +110,8 @@ async function main() {
       assert(running(),'blocked child exited before parent crash')
       parent.kill('SIGKILL');await new Promise(resolve=>parent.once('close',resolve));await waitUntil(()=>!running())
     } finally {parent.kill('SIGKILL');if(childPid&&running())process.kill(childPid,'SIGKILL')}
-    console.log('shared filesystem: local real files, binary transfer, owned handles, unknown reads, unsupported operations, snapshot lifetime, junction identity, stale queued write, pending async probe cancellation/timeout and child after parent crash passed')
+    await require('./lib/shared-snapshot-transfer-cleanup.cjs')({ loader, root, dir })
+    console.log('shared filesystem: local real files, binary transfer, owned handles, unknown reads, unsupported operations, snapshot lifetime and real transport-owned cleanup after success/native failure/cancel/2000ms timeout, junction identity, stale queued write, pending async probe cancellation/timeout and child after parent crash passed')
   } finally {await fsp.rm(dir,{recursive:true,force:true})}
 }
 main().catch(error=>{console.error(error);process.exitCode=1})

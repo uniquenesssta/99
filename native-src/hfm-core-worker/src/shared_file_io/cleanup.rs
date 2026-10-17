@@ -61,7 +61,7 @@ fn is_reparse(metadata: &fs::Metadata) -> bool {
     #[cfg(not(windows))] { metadata.file_type().is_symlink() }
 }
 
-fn pin_cache_directories(directory: &Path, root: &Path) -> io::Result<Vec<fs::File>> {
+pub(super) fn pin_cache_directories(directory: &Path, root: &Path) -> io::Result<Vec<fs::File>> {
     let relative = directory.strip_prefix(root).map_err(|_| io::Error::other("preview directory escapes cache root"))?;
     let mut current = root.to_path_buf();
     let mut paths = vec![current.clone()];

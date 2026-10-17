@@ -35,7 +35,7 @@ pub struct OperationTrace {
     started: Instant,
 }
 // Fixed diagnostic vocabulary only. No input path, SQL or error text is emitted.
-pub enum SnapshotPhase { TargetCheck, OpenStart, Opened, VacuumStart, VacuumReturned, ConnectionDropReturned, ErrorMapStart, ErrorMapReturned }
+pub enum SnapshotPhase { TargetCheck, OpenStart, Opened, TargetOpenStart, TargetOpened, BackupStart, BackupReturned, IntegrityStart, IntegrityReturned, TargetCloseReturned, ConnectionDropReturned, ErrorMapStart, ErrorMapReturned }
 impl OperationTrace {
     pub fn from_input(input: &str) -> Self {
         let context = serde_json::from_str::<TraceInput>(input).ok().and_then(|v| v.trace.as_ref().and_then(clean));
@@ -65,8 +65,13 @@ impl OperationTrace {
             SnapshotPhase::TargetCheck => "snapshot-target-check",
             SnapshotPhase::OpenStart => "snapshot-open-start",
             SnapshotPhase::Opened => "snapshot-opened",
-            SnapshotPhase::VacuumStart => "snapshot-vacuum-start",
-            SnapshotPhase::VacuumReturned => "snapshot-vacuum-returned",
+            SnapshotPhase::TargetOpenStart => "snapshot-target-open-start",
+            SnapshotPhase::TargetOpened => "snapshot-target-opened",
+            SnapshotPhase::BackupStart => "snapshot-backup-start",
+            SnapshotPhase::BackupReturned => "snapshot-backup-returned",
+            SnapshotPhase::IntegrityStart => "snapshot-integrity-start",
+            SnapshotPhase::IntegrityReturned => "snapshot-integrity-returned",
+            SnapshotPhase::TargetCloseReturned => "snapshot-target-close-returned",
             SnapshotPhase::ConnectionDropReturned => "snapshot-connection-drop-returned",
             SnapshotPhase::ErrorMapStart => "snapshot-error-map-start",
             SnapshotPhase::ErrorMapReturned => "snapshot-error-map-returned",

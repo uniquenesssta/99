@@ -1,5 +1,8 @@
 mod trash;
 mod cleanup;
+mod sqlite_snapshot;
+#[cfg(all(test, windows))]
+mod snapshot_tests;
 #[cfg(all(test, windows))]
 mod cleanup_tests;
 use std::{fs, io::{self, Read, Seek, SeekFrom}, path::Path, time::{SystemTime, UNIX_EPOCH}};
@@ -315,12 +318,11 @@ fn execute_observed(request: &Request, trace: Option<&crate::operation_trace::Op
             phase(SnapshotPhase::OpenStart);
             let conn = Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(io::Error::other)?;
             phase(SnapshotPhase::Opened);
-            phase(SnapshotPhase::VacuumStart);
-            let result = conn.execute("VACUUM INTO ?",[target]);
-            phase(SnapshotPhase::VacuumReturned);
-            drop(conn);
+            let result = sqlite_snapshot::copy(&conn, Path::new(target), trace);
+            let closed = conn.close().map_err(|(_, error)| io::Error::other(error));
             phase(SnapshotPhase::ConnectionDropReturned);
-            result.map_err(io::Error::other)?;
+            result?;
+            closed?;
             Ok(Value::Null)
         },
         _ => Err(io::Error::other("unsupported shared filesystem operation")),

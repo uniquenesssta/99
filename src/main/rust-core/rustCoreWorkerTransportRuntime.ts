@@ -123,16 +123,44 @@ type RustCoreTemporaryEntry = {
   writeAttempts: number; completedWrites: number; pendingWrites: number
   identityIntent: boolean; identitySealed: boolean; parseSealed?: boolean
 }
+type OwnedSnapshotDirectory = {
+  path: string; dev: bigint; ino: bigint; birthtimeNs: bigint
+  reportCleanupFailure: () => void
+}
+async function assertOwnedSnapshotDirectory(directory: OwnedSnapshotDirectory): Promise<void> {
+  const current = await fsp.lstat(directory.path, { bigint: true })
+  if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== directory.dev
+    || current.ino !== directory.ino || current.birthtimeNs !== directory.birthtimeNs)
+    throw new Error('snapshot directory ownership changed')
+}
 
 // The transport owns path allocation, encoding and best-effort deletion.
 // Callers dispose in their original finally block to preserve settlement order.
-function allocateTemporaryJsonFile(prefix: string): RustCoreJsonFile {
-  const filePath = join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+function allocateTemporaryJsonFile(prefix: string, snapshotDirectory?: OwnedSnapshotDirectory): RustCoreJsonFile {
+  const filePath = snapshotDirectory ? join(snapshotDirectory.path, 'snapshot.sqlite') : join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${randomUUID()}.json`)
+  let snapshotCleaned = false
   return {
     path: filePath,
     writeJson: value => fsp.writeFile(filePath, JSON.stringify(traceRustInput(value)), 'utf-8'),
     readText: () => fsp.readFile(filePath, 'utf-8'),
-    dispose: () => fsp.rm(filePath, { force: true }).catch(() => undefined),
+    dispose: async () => {
+      if (!snapshotDirectory) { await fsp.rm(filePath, { force: true }).catch(() => undefined); return }
+      if (snapshotCleaned) return
+      // Only the exclusive snapshot directory and SQLite's exact owned files.
+      // Do not recursively delete unexpected contents. The temporary-entry
+      // lease below defers this cleanup until the physical child has closed.
+      try {
+        for (const suffix of ['', '-journal', '-wal', '-shm']) {
+          await assertOwnedSnapshotDirectory(snapshotDirectory)
+          await fsp.rm(filePath + suffix, { force: true })
+        }
+        await assertOwnedSnapshotDirectory(snapshotDirectory)
+        await fsp.rmdir(snapshotDirectory.path)
+        snapshotCleaned = true
+      } catch {
+        try { snapshotDirectory.reportCleanupFailure() } catch { /* Preserve the original operation result. */ }
+      }
+    },
   }
 }
 
@@ -146,8 +174,8 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
   const previewPublications = new Map<string, string>()
   const previewAdmissions = new Map<string, () => boolean>()
   const temporaryFiles = new Map<string, RustCoreTemporaryEntry>()
-  function createTemporaryJsonFile(prefix: string): RustCoreJsonFile {
-    const file = allocateTemporaryJsonFile(prefix)
+  function createTemporaryJsonFile(prefix: string, snapshotDirectory?: OwnedSnapshotDirectory): RustCoreJsonFile {
+    const file = allocateTemporaryJsonFile(prefix, snapshotDirectory)
     const entry: RustCoreTemporaryEntry = { holds: 0, disposed: false, file,
       writeAttempts: 0, completedWrites: 0, pendingWrites: 0, identityIntent: false, identitySealed: false }
     temporaryFiles.set(file.path, entry)
@@ -683,8 +711,16 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
     if (request.operation === 'fontContentIdentity' && !hasCapability(status, 'font-content-identity-v1')) throw new SharedIoProcessError('字体内容确认需要新版原生执行器。', 'not-started', 'capability-missing')
     if (request.operation === 'renameOwnedFile' && !hasCapability(status, 'shared-owned-rename-v1')) throw new SharedIoProcessError('共享发布需要新版原生执行器。', 'not-started', 'capability-missing')
     if (['removeWithOwnedLocks', 'previewCleanupRows', 'previewCleanupEntries'].includes(request.operation) && !hasCapability(status, 'shared-owned-cleanup-v1')) throw new SharedIoProcessError('安全清理缓存需要新版原生执行器，已保留缓存。', 'not-started', 'capability-missing')
+    let snapshotDirectory: OwnedSnapshotDirectory | undefined
+    if (request.operation === 'sqliteSnapshot') {
+      const path = await fsp.mkdtemp(join(tmpdir(), 'hfm-shared-snapshot-'))
+      const identity = await fsp.lstat(path, { bigint: true })
+      if (!identity.isDirectory() || identity.isSymbolicLink()) throw new Error('Snapshot directory ownership unavailable')
+      snapshotDirectory = { path, dev: identity.dev, ino: identity.ino, birthtimeNs: identity.birthtimeNs,
+        reportCleanupFailure: () => options.appendStartupLog('shared snapshot disposal incomplete: owned directory changed or unavailable') }
+    }
     const inputFile = createTemporaryJsonFile('hfm-shared-file-input')
-    const transferFile = createTemporaryJsonFile('hfm-shared-file-transfer')
+    const transferFile = createTemporaryJsonFile('hfm-shared-file-transfer', snapshotDirectory)
     let retainSnapshot = false
     const write = !['stat','lstat','access','realpath','readdir','readFile','sqliteSnapshot','treeSnapshot','directoryMetadata','directoryMetadataBatch','fontContentIdentity'].includes(request.operation)
     try {
@@ -692,6 +728,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       else if (request.operation === 'readFile') await transferFile.writeJson(null)
       const input = { ...request, transferPath: transferFile.path }
       await inputFile.writeJson(input)
+      if (snapshotDirectory) await assertOwnedSnapshotDirectory(snapshotDirectory)
       const output = await runRustCoreScheduledCommand(status.path, ['--shared-file-io','--input',inputFile.path,'--transfer',transferFile.path], {
         timeout: request.operation === 'fontContentIdentity' ? FONT_CONTENT_IDENTITY_TIMEOUT_MS : ['stat','lstat','access','realpath','openFile'].includes(request.operation) ? 500 : write ? 5000 : 2000,
         windowsHide: true, maxBuffer: 32*1024*1024, signal, sharedIo: { paths: [request.path, request.dest || '', request.source || '', ...(request.paths || []), ...(request.guards || []).map(guard => guard.path)], write, accesses: sharedFileAccesses(request) },
@@ -700,6 +737,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
       if (typeof result.ok !== 'boolean' || result.operation !== request.operation) throw new SharedIoProcessError('共享文件隔离回执无效。','unknown','invalid-receipt')
       if (!result.ok && write) throw Object.assign(new SharedIoProcessError(result.message || '共享文件写入结果未确认。', result.code === 'EEXIST' ? 'not-started' : 'unknown', 'file-write-failed'), {code:result.code})
       if (result.ok && request.operation === 'sqliteSnapshot') {
+        await assertOwnedSnapshotDirectory(snapshotDirectory!)
         retainSnapshot = true
         return { result, snapshotPath: transferFile.path, dispose: transferFile.dispose }
       }
