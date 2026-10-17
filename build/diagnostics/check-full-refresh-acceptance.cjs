@@ -355,8 +355,47 @@ observationRegressions().then(localTagHydrationRegressions).then(taggedPageRealm
  .catch(error=>{console.error(error);process.exitCode=1})
 
 function queryRetirementAcceptanceRegressions(sample) {
- const {validateQueryRetirements}=require('./lib/full-refresh-query-retirement.cjs')
+ const {createQueryRetirementObserver,validateQueryRetirements}=require('./lib/full-refresh-query-retirement.cjs')
  const {assertLocalTagHydrationEvidence}=require('./check-full-refresh-work.cjs')
+ const legacy=createQueryRetirementObserver()
+ legacy.installSelectedSource(()=>{throw Error('Legacy query task module must not load')},{supportsQueryTasks:false})
+ legacy.restore()
+ for(const taskProof of ['unsupported-legacy-source','selected-source-query-tasks']) {
+  const runs=fullIpcSamples(),baseline=runs[3]
+  baseline.queryRetirementObservation={...legacy.snapshot(),taskProof}
+  baseline.localTagHydration={receipts:[]}
+  assert.equal(compareRuns(clone(runs)).passed,true,'Complete control cohort rejected before the physical failure')
+  // The recorded A2 failure shape, in a synthetic complete cohort. These values
+  // are only classification controls, never new native/performance evidence.
+  const timeout={requestOrdinal:1840,lane:'foreground-browse',actionId:'foreground-browse:13',
+   label:'shared-file-io:stat',command:'--shared-file-io',operation:'stat',priority:'normal',
+   write:false,verifiedReadOnly:false,preflight:false,signalAbortedAtAdmission:false,
+   queuedMs:73,executionMs:569,startedAt:252500.1129,closedAt:253143.8415,
+   error:{name:'SharedIoProcessError',reason:'timeout',outcome:'unknown',queuedMs:73,executionMs:569}}
+  baseline.work.processRequests.push(timeout);baseline.work.tasks++
+  baseline.work.foregroundQueue=stats(baseline.work.processRequests.map(row=>row.queuedMs))
+  const input=row=>({observation:row.queryRetirementObservation,hydrationReceipts:row.localTagHydration.receipts,
+   processRequests:row.work.processRequests})
+  const raw=JSON.stringify(baseline.work.processRequests),proof=validateQueryRetirements(input(baseline))
+  assert.deepEqual(proof,{retiredHydrationIds:[],retiredRequestOrdinals:[],certificates:[]},'Ordinary timeout was misclassified as query retirement')
+  assert.equal(JSON.stringify(baseline.work.processRequests),raw,'Retirement classification changed the failed raw request or costs')
+  const rejected=compareRuns(runs)
+  assert.equal(rejected.comparable,false);assert.equal(rejected.passed,false)
+  assert.equal(rejected.populationFailure?.message,'Failed foreground physical request','Ordinary timeout did not reach the unchanged physical gate')
+  assert.equal(JSON.stringify(baseline.work.processRequests),raw,'Acceptance dropped the ordinary timeout or its cost')
+  for(const [name,mutate]of [
+   ['undefined owner',row=>{row.querySignalId=undefined}],['null owner',row=>{row.querySignalId=null}],
+   ['unknown owner',row=>{row.querySignalId=999}],['cancelled claim',row=>{row.error.reason='cancelled'}],
+   ['superseded claim',row=>{row.error.reason='query-superseded'}],['AbortError claim',row=>{row.error.name='AbortError'}],
+   ['ABORT_ERR claim',row=>{row.error.code='ABORT_ERR'}],['unknown reason',row=>{delete row.error.reason}],
+  ]) {
+   const altered=clone(baseline);mutate(altered.work.processRequests.at(-1))
+   assert.throws(()=>validateQueryRetirements(input(altered)),/Legacy source has no early query retirement proof|Early retired read lacks a previously live owned signal/,
+    `Unproved retirement claim escaped strict validation: ${name}`)
+   const invalid=clone(runs);invalid[3]=altered
+   assert(compareRuns(invalid).populationFailure,`Unproved retirement claim escaped the full cohort: ${name}`)
+  }
+ }
  for(const [phase,input]of [['small',sample],['batched',sample.earlySample],['historical-synthetic',sample.historicalSample]]) {
  assert(input, `Missing ${phase} query retirement fixture`)
  const expectedFailures=phase==='historical-synthetic'?1:0
@@ -418,7 +457,7 @@ function queryRetirementAcceptanceRegressions(sample) {
   assert.throws(()=>assertLocalTagHydrationEvidence(altered,expected,full.requestedCount,certificate.retiredHydrationIds),'Retirement waived native count or population proof')
  }
  }
- console.log('[diagnostics:full-refresh-acceptance] current early retirement and synthetic historical certificates are recomputed, native failure/cost gates retained, unrelated physical failures and incomplete native populations rejected')
+ console.log('[diagnostics:full-refresh-acceptance] current early retirement and synthetic historical certificates are recomputed, ordinary timeouts retain physical failure/cost gates, unproved cancellation claims and incomplete native populations rejected')
 }
 
 // These mechanics fixtures exercise the actual source hydration owner with a

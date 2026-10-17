@@ -303,8 +303,13 @@ function validateQueryRetirements({observation,hydrationReceipts,processRequests
   // An earlier binding batch can retire before it reaches local-tag hydration.
   // Upstream page/native work may already exist. There is no old local-tag
   // input to hash, and this branch must never invent a failed hydration receipt.
+  // An unowned ordinary timeout is not a query-retirement claim. Keep its raw
+  // failure for the physical foreground gate; never exclude claimed ownership
+  // (even malformed) or an AbortError/cancellation disguised as a timeout.
+  const ordinaryTimeout=row=>!Object.hasOwn(row,'querySignalId')&&row.error.reason==='timeout'
+    &&row.error.name!=='AbortError'&&row.error.code!=='ABORT_ERR'
   const earlySignals=[...new Set(processRequests.filter(row=>row.error&&row.lane==='foreground-browse'
-    &&!retiredRequestOrdinals.includes(row.requestOrdinal)).map(row=>row.querySignalId))]
+    &&!ordinaryTimeout(row)&&!retiredRequestOrdinals.includes(row.requestOrdinal)).map(row=>row.querySignalId))]
     .sort((a,b)=>(signals.get(a)?.firstObservedAt??Infinity)-(signals.get(b)?.firstObservedAt??Infinity))
   const certifiedEarlySignals=new Set()
   for(const signalId of earlySignals){
