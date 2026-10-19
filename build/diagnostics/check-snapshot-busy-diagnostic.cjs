@@ -11,7 +11,7 @@ const BUSY_PREFIX = 'hfm-snapshot-busy: ', PHASE_PREFIX = 'operation-chain: '
 const BUSY_KEYS = ['attempt', 'event', 'extendedCode', 'feature', 'outcome', 'phase', 'primaryCode', 'role', 'version'].sort().join(',')
 const EVENTS = new Set(['begin', 'phase', 'busy-handler', 'backup-step', 'result'])
 const ROLES = new Set(['source', 'destination', 'unknown'])
-const PHASES = new Set(['copy', 'before-new', 'before-step', 'after-step', 'after-finish'])
+const PHASES = new Set(['copy', 'source-preflight-start', 'source-preflight-returned', 'before-new', 'before-step', 'after-step', 'after-finish'])
 const OUTCOMES = new Set(['done', 'busy', 'locked', 'more', 'sqlite-error', 'other-error', 'ok'])
 const TRACE_REASONS = new Set(['command-entered', 'snapshot-target-check', 'snapshot-open-start', 'snapshot-opened',
   'snapshot-target-open-start', 'snapshot-target-opened', 'snapshot-backup-start', 'snapshot-backup-returned',
@@ -342,8 +342,17 @@ async function main() {
     try { positive = await runControl(worker, directory, source, 'exclusive-source-positive', 2); report.controls.push(positive.record) }
     finally { db.exec('ROLLBACK'); locked = false }
     positive.record.writer = { journalMode: 'delete', transaction: 'exclusive', releaseAfterChildClose: positive.record.execution.closed }
+    const positiveEvents = positive.record.observation.children.flatMap(row => row.events.filter(event => event.kind === 'busy'))
+    const positiveResults = positiveEvents.filter(event => event.event === 'result')
+    // The source-size read now encounters EXCLUSIVE before Backup is created.
+    // Require that exact boundary and the original SQLite BUSY code; do not
+    // manufacture a backup-step receipt or infer lock ownership from text.
     positive.record.passed = positive.record.complete && positive.record.featureProven && positive.record.output.receipt?.ok === false
-      && positive.record.steps.length === 1 && positive.record.steps[0] === 'busy' && positive.record.callbacks.source > 0
+      && positive.record.steps.length === 0 && positive.record.callbacks.source > 0 && positive.record.callbacks.destination === 0
+      && positiveEvents.filter(event => event.event === 'phase').map(event => event.phase).join(',') === 'source-preflight-start'
+      && positiveResults.length === 1 && positiveResults[0].outcome === 'sqlite-error'
+      && positiveResults[0].primaryCode === 5 && Number.isInteger(positiveResults[0].extendedCode)
+      && (positiveResults[0].extendedCode & 255) === 5
     report.sourceUnchanged = digest(source) === sourceHash
     if (!positive.record.passed || !report.sourceUnchanged) throw fixedFailure('POSITIVE_CONTROL_FAILED')
     db.close(); db = undefined

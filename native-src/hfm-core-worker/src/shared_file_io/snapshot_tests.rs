@@ -1,15 +1,17 @@
 #![cfg(windows)]
 
 use super::{execute, Request};
+use super::sqlite_snapshot::{copy_with_image_limit, SnapshotBudgetOwner, SnapshotRoute};
 use rusqlite::{Connection, ErrorCode, OpenFlags};
 use serde_json::{json, Value};
 use std::{
     fs, io,
     os::windows::fs::OpenOptionsExt,
     path::{Path, PathBuf},
+    process::{Command, Stdio},
     sync::{atomic::{AtomicU64, Ordering}, mpsc},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 struct Directory(PathBuf);
@@ -166,7 +168,13 @@ fn sqlite_snapshot_reads_uncheckpointed_wal_but_excludes_uncommitted_rows() {
     let result = dir.snapshot("source.sqlite", "snapshot.sqlite");
     source.execute_batch("ROLLBACK;").unwrap();
     result.unwrap();
+    let snapshot_bytes = fs::read(dir.path("snapshot.sqlite")).unwrap();
+    assert_eq!(&snapshot_bytes[18..20], &[1, 1]);
+    for suffix in ["-wal", "-shm", "-journal"] {
+        assert!(!dir.path(&format!("snapshot.sqlite{suffix}")).exists());
+    }
     let snapshot = read_only(&dir.path("snapshot.sqlite"));
+    assert_eq!(text(&snapshot, "PRAGMA journal_mode"), "delete");
     assert_eq!(integer(&snapshot, "SELECT count(*) FROM entries"), 1);
     assert_eq!(text(&snapshot, "SELECT value FROM entries"), "committed-in-wal");
     assert_integrity(&snapshot);
@@ -174,6 +182,177 @@ fn sqlite_snapshot_reads_uncheckpointed_wal_but_excludes_uncommitted_rows() {
     assert_eq!(fs::read(dir.path("source.sqlite-wal")).unwrap(), wal_before);
     assert_eq!(text(&source, "PRAGMA journal_mode"), "wal");
     assert_eq!(integer(&source, "PRAGMA wal_autocheckpoint"), 0);
+}
+
+#[test]
+fn sqlite_snapshot_memory_route_preserves_nondefault_page_sizes_and_exact_boundary() {
+    for page_size in [512, 1024, 4096, 8192, 65536] {
+        let dir = Directory::new();
+        let source = Connection::open(dir.path("source.sqlite")).unwrap();
+        source.execute_batch(&format!(
+            "PRAGMA page_size={page_size}; CREATE TABLE entries(value BLOB); INSERT INTO entries VALUES (zeroblob(17000));",
+        )).unwrap();
+        let pages = integer(&source, "PRAGMA page_count") as u64;
+        let bytes = pages.checked_mul(page_size as u64).unwrap();
+        source.close().unwrap();
+        let before = fs::read(dir.path("source.sqlite")).unwrap();
+        let source = read_only(&dir.path("source.sqlite"));
+        assert_eq!(copy_with_image_limit(&source, &dir.path("at-limit.sqlite"), None, None, bytes).unwrap(), SnapshotRoute::Memory);
+        assert!(source.is_autocommit(), "source read transaction leaked after memory copy");
+        assert_eq!(copy_with_image_limit(&source, &dir.path("above-limit.sqlite"), None, None, bytes - 1).unwrap(), SnapshotRoute::Disk);
+        assert!(source.is_autocommit(), "source read transaction leaked after disk copy");
+        for name in ["at-limit.sqlite", "above-limit.sqlite"] {
+            let snapshot = read_only(&dir.path(name));
+            assert_eq!(integer(&snapshot, "PRAGMA page_size"), page_size);
+            assert_eq!(integer(&snapshot, "SELECT length(value) FROM entries"), 17000);
+            assert_integrity(&snapshot);
+            snapshot.close().unwrap();
+        }
+        assert_eq!(fs::read(dir.path("source.sqlite")).unwrap(), before);
+    }
+}
+
+#[test]
+fn sqlite_snapshot_zero_page_and_initialized_empty_sources_remain_usable() {
+    let dir = Directory::new();
+    fs::write(dir.path("zero.sqlite"), []).unwrap();
+    let source = read_only(&dir.path("zero.sqlite"));
+    assert_eq!(integer(&source, "PRAGMA page_count"), 0);
+    assert_eq!(copy_with_image_limit(&source, &dir.path("zero-snapshot.sqlite"), None, None, 16 * 1024 * 1024).unwrap(), SnapshotRoute::Disk);
+    assert!(source.is_autocommit());
+    assert_eq!(fs::metadata(dir.path("zero.sqlite")).unwrap().len(), 0);
+    let snapshot = read_only(&dir.path("zero-snapshot.sqlite"));
+    assert_eq!(integer(&snapshot, "SELECT count(*) FROM sqlite_schema"), 0);
+    assert_integrity(&snapshot);
+    snapshot.close().unwrap();
+    source.close().unwrap();
+
+    let source = Connection::open(dir.path("initialized-empty.sqlite")).unwrap();
+    source.execute_batch("PRAGMA page_size=8192; PRAGMA user_version=23;").unwrap();
+    assert!(integer(&source, "PRAGMA page_count") > 0);
+    source.close().unwrap();
+    dir.snapshot("initialized-empty.sqlite", "initialized-snapshot.sqlite").unwrap();
+    let snapshot = read_only(&dir.path("initialized-snapshot.sqlite"));
+    assert_eq!(integer(&snapshot, "SELECT count(*) FROM sqlite_schema"), 0);
+    assert_eq!(integer(&snapshot, "PRAGMA page_size"), 8192);
+    assert_eq!(integer(&snapshot, "PRAGMA user_version"), 23);
+    assert_integrity(&snapshot);
+}
+
+#[test]
+fn sqlite_snapshot_budget_entry_is_verified_in_an_isolated_process() {
+    let dir = Directory::new();
+    let source = Connection::open(dir.path("source.sqlite")).unwrap();
+    // Fixed SQL payload; do not build a multi-megabyte SQL string or Rust blob.
+    source.execute_batch("CREATE TABLE entries(value BLOB); INSERT INTO entries VALUES (zeroblob(4194304));").unwrap();
+    source.close().unwrap();
+    let before = fs::read(dir.path("source.sqlite")).unwrap();
+    for (input, target) in [("default.json", "default.sqlite"), ("limited.json", "limited.sqlite")] {
+        fs::write(dir.path(input), serde_json::to_vec(&json!({
+            "operation": "sqliteSnapshot", "path": dir.path("source.sqlite"),
+            "transferPath": dir.path(target),
+        })).unwrap()).unwrap();
+    }
+    // Only this exact helper runs in the child. No concurrent Cargo test can
+    // observe its process-global limits, and no production CLI switch is added.
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "shared_file_io::snapshot_tests::sqlite_snapshot_isolated_budget_child", "--nocapture", "--test-threads=1"])
+        .env("HFM_SNAPSHOT_BUDGET_TEST_DIRECTORY", &dir.0)
+        .env("HFM_SNAPSHOT_BUDGET_TEST_PARENT", std::process::id().to_string())
+        .stdout(Stdio::piped()).stderr(Stdio::piped())
+        .spawn().unwrap();
+    // Test-process liveness only. This does not change any production deadline,
+    // sleep policy or Backup retry, and timed-out children are physically reaped.
+    let started = Instant::now();
+    let timed_out = loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break false,
+            Ok(None) => {},
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("could not observe isolated budget child: {error}");
+            },
+        }
+        if started.elapsed() >= Duration::from_secs(30) { break true; }
+        thread::sleep(Duration::from_millis(10));
+    };
+    let killed = if timed_out { Some(child.kill()) } else { None };
+    let output = child.wait_with_output().unwrap();
+    assert!(!timed_out, "isolated budget child exceeded its test-only liveness bound; kill={killed:?}:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "isolated budget test failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("snapshot-budget-child-verified"), "exact helper did not execute");
+    assert_eq!(fs::read(dir.path("source.sqlite")).unwrap(), before);
+    assert_eq!(fs::metadata(dir.path("limited.sqlite")).unwrap().len(), 0,
+        "failed memory Backup must not retry on disk or write a partial image");
+    let snapshot = read_only(&dir.path("default.sqlite"));
+    assert_eq!(integer(&snapshot, "SELECT length(value) FROM entries"), 4194304);
+    assert_integrity(&snapshot);
+}
+
+// The normal test pass has no child directory and does not touch global state.
+// The parent test above executes this same compiled entry in a separate process.
+#[test]
+fn sqlite_snapshot_isolated_budget_child() {
+    let Some(directory) = std::env::var_os("HFM_SNAPSHOT_BUDGET_TEST_DIRECTORY") else { return; };
+    let parent: u32 = std::env::var("HFM_SNAPSHOT_BUDGET_TEST_PARENT").unwrap().parse().unwrap();
+    assert_ne!(std::process::id(), parent);
+    let directory = PathBuf::from(directory);
+    let limits = || unsafe {
+        (rusqlite::ffi::sqlite3_hard_heap_limit64(-1), rusqlite::ffi::sqlite3_soft_heap_limit64(-1))
+    };
+    let original = limits();
+    assert!(original.0 >= 0 && original.1 >= 0);
+    unsafe { rusqlite::ffi::sqlite3_memory_highwater(1); }
+    let default_input = directory.join("default.json");
+    let success: Value = serde_json::from_str(&super::run(default_input.to_str().unwrap()).unwrap()).unwrap();
+    assert_eq!(success["ok"], true);
+    let default_peak = unsafe { rusqlite::ffi::sqlite3_memory_highwater(0) };
+    assert!(default_peak > 4194304 && default_peak <= super::sqlite_snapshot::SQLITE_HEAP_LIMIT,
+        "default SQLite heap high-water is outside the bounded memory-copy contract: {default_peak}");
+    assert_eq!(limits(), original, "default owner did not restore limits");
+
+    unsafe { rusqlite::ffi::sqlite3_memory_highwater(1); }
+    let limited_input = directory.join("limited.json");
+    let failed: Value = serde_json::from_str(&super::run_with_snapshot_budget(limited_input.to_str().unwrap(), 1024 * 1024).unwrap()).unwrap();
+    assert_eq!(failed["ok"], false, "low heap budget did not fail closed");
+    // The public mapper groups NOMEM under EIO; EIO alone is not the oracle.
+    assert_eq!(failed["code"], "EIO");
+    assert!(failed["message"].as_str().unwrap().contains("out of memory"), "expected SQLite NOMEM, got {failed}");
+    let failed_peak = unsafe { rusqlite::ffi::sqlite3_memory_highwater(0) };
+    assert!(failed_peak <= 1024 * 1024, "low SQLite heap limit was exceeded: {failed_peak}");
+    assert_eq!(limits(), original, "failed owner did not restore limits");
+    assert_eq!(fs::metadata(directory.join("limited.sqlite")).unwrap().len(), 0);
+
+    let source = read_only(&directory.join("source.sqlite"));
+    let mut inactive = SnapshotBudgetOwner::new(1);
+    assert_eq!(copy_with_image_limit(&source, &directory.join("preselected-disk.sqlite"), None, Some(&mut inactive), 16 * 1024 * 1024).unwrap(), SnapshotRoute::Disk);
+    assert_eq!(limits(), original, "existing-allocation route choice changed global limits");
+    source.close().unwrap();
+    drop(inactive);
+    assert_eq!(limits(), original);
+
+    // Check the exact route and active limit while the isolated owner is alive.
+    // A stricter existing hard/soft pair must not be relaxed by the default cap.
+    unsafe {
+        rusqlite::ffi::sqlite3_hard_heap_limit64(32 * 1024 * 1024);
+        rusqlite::ffi::sqlite3_soft_heap_limit64(256 * 1024);
+    }
+    let strict = limits();
+    let source = read_only(&directory.join("source.sqlite"));
+    let mut owner = SnapshotBudgetOwner::new(super::sqlite_snapshot::SQLITE_HEAP_LIMIT);
+    assert_eq!(copy_with_image_limit(&source, &directory.join("strict.sqlite"), None, Some(&mut owner), 16 * 1024 * 1024).unwrap(), SnapshotRoute::Memory);
+    assert_eq!(limits(), strict, "memory copy relaxed an existing limit");
+    source.close().unwrap();
+    drop(owner);
+    assert_eq!(limits(), strict);
+    unsafe {
+        rusqlite::ffi::sqlite3_hard_heap_limit64(original.0);
+        rusqlite::ffi::sqlite3_soft_heap_limit64(original.1);
+    }
+    println!("snapshot-budget-child-verified");
 }
 
 #[test]

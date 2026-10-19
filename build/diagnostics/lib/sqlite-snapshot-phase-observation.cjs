@@ -226,6 +226,42 @@ async function nativeControls({ workerPath, directory }) {
     }
     results.push(index === 2 ? 'traced-copy' : index === 1 ? 'invalid-trace-silent' : 'untraced-copy')
   }
+  // Exercise the actual release CLI entry and its memory-budget owner, not only
+  // the copy helper used by Rust unit tests. Keep a WAL writer open so committed
+  // data cannot be obtained by copying the main database file alone.
+  const walSource = path.join(root, 'wal-source.sqlite'), walTarget = path.join(root, 'wal-copy.sqlite')
+  const writer = new DatabaseSync(walSource)
+  try {
+    writer.exec("PRAGMA page_size=8192; PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE proof(value TEXT); INSERT INTO proof VALUES ('committed-in-wal')")
+    assert.equal(writer.prepare('PRAGMA page_size').get().page_size, 8192)
+    assert.equal(writer.prepare('PRAGMA journal_mode').get().journal_mode, 'wal')
+    const hashes = () => [walSource, walSource + '-wal'].map(file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'))
+    const sourceBefore = hashes()
+    const copied = await run({ operation: 'sqliteSnapshot', path: walSource, transferPath: walTarget }, 'wal-memory-cli')
+    assert.deepEqual(copied.receipt, { ok: true, operation: 'sqliteSnapshot', value: null }, 'SQLITE_SNAPSHOT_WAL_CLI_RESULT')
+    assert.deepEqual(copied.events.map(event => event.reason), [], 'SQLITE_SNAPSHOT_WAL_CLI_UNTRACED')
+    assert.deepEqual(hashes(), sourceBefore, 'SQLITE_SNAPSHOT_WAL_SOURCE_UNCHANGED')
+    const header = fs.readFileSync(walTarget).subarray(0, 100)
+    assert.equal(header[18], 1, 'SQLITE_SNAPSHOT_STANDALONE_WRITE_VERSION')
+    assert.equal(header[19], 1, 'SQLITE_SNAPSHOT_STANDALONE_READ_VERSION')
+    writer.exec("UPDATE proof SET value='later-source-change'")
+    const read = new DatabaseSync(walTarget, { readOnly: true })
+    try {
+      assert.equal(read.prepare('SELECT value FROM proof').get().value, 'committed-in-wal')
+      assert.equal(read.prepare('PRAGMA page_size').get().page_size, 8192)
+      assert.deepEqual(read.prepare('PRAGMA integrity_check').all().map(row => row.integrity_check), ['ok'])
+    } finally { read.close() }
+    for (const suffix of ['-wal', '-shm', '-journal']) assert.equal(fs.existsSync(walTarget + suffix), false, 'SQLITE_SNAPSHOT_STANDALONE_NO_SIDECAR')
+    results.push('release-cli-wal-nondefault-page-standalone')
+  } finally { writer.close() }
+  const emptySource = path.join(root, 'empty-source.sqlite'), emptyTarget = path.join(root, 'empty-copy.sqlite')
+  fs.writeFileSync(emptySource, Buffer.alloc(0))
+  const empty = await run({ operation: 'sqliteSnapshot', path: emptySource, transferPath: emptyTarget }, 'empty-cli')
+  assert.equal(empty.receipt.ok, true, 'SQLITE_SNAPSHOT_EMPTY_SOURCE_COMPATIBILITY')
+  const emptyRead = new DatabaseSync(emptyTarget, { readOnly: true })
+  try { assert.deepEqual(emptyRead.prepare('PRAGMA integrity_check').all().map(row => row.integrity_check), ['ok']) } finally { emptyRead.close() }
+  assert.equal(fs.statSync(emptySource).size, 0, 'SQLITE_SNAPSHOT_EMPTY_SOURCE_UNCHANGED')
+  results.push('release-cli-empty-source-disk-compatibility')
   for (const kind of ['existing-target', 'missing-source', 'invalid-database']) {
     const target = path.join(root, `${kind}.sqlite`), badSource = path.join(root, 'invalid.sqlite')
     if (kind === 'existing-target') fs.writeFileSync(target, 'retain-target')
@@ -237,10 +273,17 @@ async function nativeControls({ workerPath, directory }) {
     assert.equal(reasons.at(-1), 'command-result')
     assert.deepEqual(reasons.slice(-3), ['snapshot-error-map-start', 'snapshot-error-map-returned', 'command-result'], 'SQLITE_PHASE_ERROR_MAPPING')
     assert.equal(reasons.includes('snapshot-open-start'), kind !== 'existing-target')
-    assert.equal(reasons.includes('snapshot-backup-start'), kind === 'invalid-database')
-    assert.equal(reasons.includes('snapshot-backup-returned'), kind === 'invalid-database')
-    assert.equal(reasons.includes('snapshot-target-close-returned'), kind === 'invalid-database')
+    assert.equal(reasons.includes('snapshot-backup-start'), false)
+    assert.equal(reasons.includes('snapshot-backup-returned'), false)
+    assert.equal(reasons.includes('snapshot-target-close-returned'), false)
     assert.equal(reasons.includes('snapshot-connection-drop-returned'), kind === 'invalid-database')
+    if (kind === 'invalid-database') {
+      assert.equal(receipt.code, 'SQLITE_NOTADB', 'SQLITE_PHASE_PREFLIGHT_NOTADB_PRESERVED')
+      assert.deepEqual(reasons, ['command-entered', 'snapshot-target-check', 'snapshot-open-start', 'snapshot-opened',
+        'snapshot-connection-drop-returned', 'snapshot-error-map-start', 'snapshot-error-map-returned', 'command-result'],
+      'SQLITE_PHASE_PREFLIGHT_ERROR_BOUNDARIES')
+      assert.equal(fs.existsSync(target), false, 'SQLITE_PHASE_PREFLIGHT_NO_TARGET')
+    }
     if (kind === 'existing-target') {
       assert.equal(fs.readFileSync(target, 'utf8'), 'retain-target')
       const untraced = await run({ operation: 'sqliteSnapshot', path: source, transferPath: target }, 'existing-target-untraced')

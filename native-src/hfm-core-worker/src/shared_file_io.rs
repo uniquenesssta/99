@@ -92,8 +92,9 @@ fn font_content_identity_checked(path: &Path, after_read: impl FnOnce()) -> io::
     Ok(json!({"path":physical.to_string_lossy(),"sha256":digest,"size":before.len(),"modified":unix_millis(before.modified()?),
         "dev":identity.0,"ino":identity.1,"readBytes":bytes}))
 }
-fn execute(request: &Request) -> io::Result<Value> { execute_observed(request, None) }
-fn execute_observed(request: &Request, trace: Option<&crate::operation_trace::OperationTrace>) -> io::Result<Value> {
+fn execute(request: &Request) -> io::Result<Value> { execute_observed(request, None, None) }
+fn execute_observed(request: &Request, trace: Option<&crate::operation_trace::OperationTrace>,
+                    snapshot_budget: Option<&mut sqlite_snapshot::SnapshotBudgetOwner>) -> io::Result<Value> {
     if request.path.is_empty() || request.path.contains('\0') { return Err(io::Error::other("invalid shared path")); }
     let path = Path::new(&request.path);
     match request.operation.as_str() {
@@ -320,7 +321,7 @@ fn execute_observed(request: &Request, trace: Option<&crate::operation_trace::Op
             phase(SnapshotPhase::OpenStart);
             let conn = Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(io::Error::other)?;
             phase(SnapshotPhase::Opened);
-            let result = sqlite_snapshot::copy(&conn, Path::new(target), trace);
+            let result = sqlite_snapshot::copy(&conn, Path::new(target), trace, snapshot_budget);
             let closed = conn.close().map_err(|(_, error)| io::Error::other(error));
             phase(SnapshotPhase::ConnectionDropReturned);
             result?;
@@ -331,6 +332,9 @@ fn execute_observed(request: &Request, trace: Option<&crate::operation_trace::Op
     }
 }
 pub fn run(input_path: &str) -> Result<String,String> {
+    run_with_snapshot_budget(input_path, sqlite_snapshot::SQLITE_HEAP_LIMIT)
+}
+fn run_with_snapshot_budget(input_path: &str, sqlite_heap_limit: i64) -> Result<String,String> {
     let input = fs::read_to_string(input_path).map_err(|e|e.to_string())?;
     let request: Request = serde_json::from_str(&input).map_err(|e|e.to_string())?;
     // Reuse the existing opt-in stderr trace. Untraced application requests do
@@ -338,7 +342,12 @@ pub fn run(input_path: &str) -> Result<String,String> {
     // identical. The first receipt is after input read + strict deserialization.
     let mut trace = (request.operation == "sqliteSnapshot" && request._trace.is_some())
         .then(|| crate::operation_trace::OperationTrace::from_input(&input));
-    let value = match execute_observed(&request, trace.as_ref()) {
+    // This inactive owner only activates for a small snapshot in this isolated
+    // single-command worker. It outlives every connection and serialized Data.
+    let mut snapshot_budget = sqlite_snapshot::SnapshotBudgetOwner::new(sqlite_heap_limit);
+    let executed = execute_observed(&request, trace.as_ref(), Some(&mut snapshot_budget));
+    drop(snapshot_budget);
+    let value = match executed {
         Ok(value) => json!({"ok":true,"operation":request.operation,"value":value}),
         Err(error) => {
             if let Some(trace) = &trace { trace.snapshot_phase(crate::operation_trace::SnapshotPhase::ErrorMapStart); }

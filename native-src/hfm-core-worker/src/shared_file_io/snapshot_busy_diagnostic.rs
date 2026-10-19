@@ -68,9 +68,9 @@ pub(super) fn step(result: &rusqlite::Result<StepResult>) {
     emit("backup-step", "unknown", "after-step", None, Some(outcome), codes);
 }
 
-pub(super) fn result(result: &io::Result<()>, synthetic: Option<SyntheticOutcome>) {
+pub(super) fn result<T>(result: &io::Result<T>, synthetic: Option<SyntheticOutcome>) {
     let (outcome, codes) = match result {
-        Ok(()) => ("ok", None),
+        Ok(_) => ("ok", None),
         Err(error) => match synthetic {
             Some(SyntheticOutcome::Busy) => ("busy", None),
             Some(SyntheticOutcome::Locked) => ("locked", None),
