@@ -73,6 +73,19 @@ fn sqlite_error(code: i32, message: &'static str) -> io::Error {
     io::Error::other(rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), Some(message.to_owned())))
 }
 
+pub(super) fn normalize_memory_error(mut error: io::Error) -> io::Error {
+    // rusqlite 0.32.1 keeps the returned SQLite code, but Backup::step and
+    // serialize can attach a stale connection errmsg (even "not an error").
+    // Change only a typed NOMEM's text, preserving its original error/code.
+    if let Some(rusqlite::Error::SqliteFailure(code, message)) = error.get_mut()
+        .and_then(|inner| inner.downcast_mut::<rusqlite::Error>()) {
+        if code.code == rusqlite::ErrorCode::OutOfMemory {
+            *message = Some("SQLite memory allocation failed".to_owned());
+        }
+    }
+    error
+}
+
 fn phase(trace: Option<&OperationTrace>, value: SnapshotPhase) {
     if let Some(trace) = trace { trace.snapshot_phase(value); }
 }
@@ -297,5 +310,5 @@ pub(super) fn copy_with_image_limit(source: &Connection, target: &Path, trace: O
         });
         diagnostic::result(&copy_result, outcome);
     }
-    copy_result
+    copy_result.map_err(normalize_memory_error)
 }

@@ -1,7 +1,7 @@
 #![cfg(windows)]
 
 use super::{execute, Request};
-use super::sqlite_snapshot::{copy_with_image_limit, SnapshotBudgetOwner, SnapshotRoute};
+use super::sqlite_snapshot::{copy_with_image_limit, normalize_memory_error, SnapshotBudgetOwner, SnapshotRoute};
 use rusqlite::{Connection, ErrorCode, OpenFlags};
 use serde_json::{json, Value};
 use std::{
@@ -73,6 +73,47 @@ fn sqlite_error_code(error: &io::Error) -> Option<ErrorCode> {
         Some(rusqlite::Error::SqliteFailure(code, _)) => Some(code.code),
         _ => None,
     }
+}
+
+#[test]
+fn sqlite_snapshot_memory_error_text_uses_only_the_typed_code() {
+    let error = io::Error::other(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_NOMEM), Some("not an error".to_owned()),
+    ));
+    let original = error.get_ref().unwrap().downcast_ref::<rusqlite::Error>().unwrap() as *const rusqlite::Error;
+    let normalized = normalize_memory_error(error);
+    assert_eq!(normalized.kind(), io::ErrorKind::Other);
+    let inner = normalized.get_ref().unwrap().downcast_ref::<rusqlite::Error>().unwrap();
+    assert_eq!(inner as *const rusqlite::Error, original, "normalization replaced the typed error");
+    let rusqlite::Error::SqliteFailure(code, message) = inner else { panic!("lost typed error"); };
+    assert_eq!(code.code, ErrorCode::OutOfMemory);
+    assert_eq!(code.extended_code, rusqlite::ffi::SQLITE_NOMEM);
+    assert_eq!(message.as_deref(), Some("SQLite memory allocation failed"));
+
+    // Neither misleading text nor an IOERR_NOMEM extended code is primary
+    // SQLITE_NOMEM. All unrelated SQLite errors retain their exact code/text.
+    for raw_code in [rusqlite::ffi::SQLITE_IOERR, rusqlite::ffi::SQLITE_IOERR_NOMEM,
+        rusqlite::ffi::SQLITE_BUSY, rusqlite::ffi::SQLITE_CORRUPT, rusqlite::ffi::SQLITE_NOTADB] {
+        let expected = rusqlite::ffi::Error::new(raw_code);
+        let error = io::Error::other(rusqlite::Error::SqliteFailure(expected, Some("out of memory".to_owned())));
+        let normalized = normalize_memory_error(error);
+        let inner = normalized.get_ref().unwrap().downcast_ref::<rusqlite::Error>().unwrap();
+        let rusqlite::Error::SqliteFailure(code, message) = inner else { panic!("lost typed error"); };
+        assert_eq!(code.code, expected.code);
+        assert_eq!(code.extended_code, raw_code);
+        assert_eq!(message.as_deref(), Some("out of memory"));
+    }
+    let ordinary = normalize_memory_error(io::Error::other("out of memory"));
+    assert_eq!(ordinary.kind(), io::ErrorKind::Other);
+    assert_eq!(ordinary.to_string(), "out of memory");
+    assert_eq!(sqlite_error_code(&ordinary), None);
+    let os_error = io::Error::from_raw_os_error(5);
+    let os_kind = os_error.kind();
+    let os_message = os_error.to_string();
+    let normalized = normalize_memory_error(os_error);
+    assert_eq!(normalized.raw_os_error(), Some(5));
+    assert_eq!(normalized.kind(), os_kind);
+    assert_eq!(normalized.to_string(), os_message);
 }
 
 type SchemaRow = (String, String, String, i64, Option<String>);
@@ -287,6 +328,7 @@ fn sqlite_snapshot_budget_entry_is_verified_in_an_isolated_process() {
     assert_eq!(fs::read(dir.path("source.sqlite")).unwrap(), before);
     assert_eq!(fs::metadata(dir.path("limited.sqlite")).unwrap().len(), 0,
         "failed memory Backup must not retry on disk or write a partial image");
+    assert_eq!(fs::metadata(dir.path("typed-limited.sqlite")).unwrap().len(), 0);
     let snapshot = read_only(&dir.path("default.sqlite"));
     assert_eq!(integer(&snapshot, "SELECT length(value) FROM entries"), 4194304);
     assert_integrity(&snapshot);
@@ -314,13 +356,33 @@ fn sqlite_snapshot_isolated_budget_child() {
         "default SQLite heap high-water is outside the bounded memory-copy contract: {default_peak}");
     assert_eq!(limits(), original, "default owner did not restore limits");
 
+    // Separate one-shot request/target, not a retry of the entry test below.
+    // Verify the actual SQLite type before the public mapper reduces it to EIO.
+    let typed_request: Request = serde_json::from_value(json!({
+        "operation": "sqliteSnapshot", "path": directory.join("source.sqlite"),
+        "transferPath": directory.join("typed-limited.sqlite"),
+    })).unwrap();
+    let mut typed_owner = SnapshotBudgetOwner::new(1024 * 1024);
+    unsafe { rusqlite::ffi::sqlite3_memory_highwater(1); }
+    let typed_error = super::execute_observed(&typed_request, None, Some(&mut typed_owner)).unwrap_err();
+    let inner = typed_error.get_ref().unwrap().downcast_ref::<rusqlite::Error>().unwrap();
+    let rusqlite::Error::SqliteFailure(code, _) = inner else { panic!("expected typed SQLite error: {typed_error:?}"); };
+    assert_eq!(code.code, ErrorCode::OutOfMemory, "expected actual NOMEM: {typed_error:?}");
+    assert_eq!(code.extended_code, rusqlite::ffi::SQLITE_NOMEM);
+    assert_eq!(typed_error.to_string(), "SQLite memory allocation failed");
+    let typed_peak = unsafe { rusqlite::ffi::sqlite3_memory_highwater(0) };
+    assert!(typed_peak <= 1024 * 1024, "typed failure exceeded low heap limit: {typed_peak}");
+    drop(typed_owner);
+    assert_eq!(limits(), original, "typed failure owner did not restore limits");
+    assert_eq!(fs::metadata(directory.join("typed-limited.sqlite")).unwrap().len(), 0);
+
     unsafe { rusqlite::ffi::sqlite3_memory_highwater(1); }
     let limited_input = directory.join("limited.json");
     let failed: Value = serde_json::from_str(&super::run_with_snapshot_budget(limited_input.to_str().unwrap(), 1024 * 1024).unwrap()).unwrap();
     assert_eq!(failed["ok"], false, "low heap budget did not fail closed");
     // The public mapper groups NOMEM under EIO; EIO alone is not the oracle.
     assert_eq!(failed["code"], "EIO");
-    assert!(failed["message"].as_str().unwrap().contains("out of memory"), "expected SQLite NOMEM, got {failed}");
+    assert_eq!(failed["message"], "SQLite memory allocation failed", "expected typed NOMEM presentation, got {failed}");
     let failed_peak = unsafe { rusqlite::ffi::sqlite3_memory_highwater(0) };
     assert!(failed_peak <= 1024 * 1024, "low SQLite heap limit was exceeded: {failed_peak}");
     assert_eq!(limits(), original, "failed owner did not restore limits");
