@@ -1,4 +1,5 @@
 import { detailedStartupLogsEnabled } from '../../logging/startupLogPolicy'
+import { previewCacheFailureKind } from '../../../shared/previewCacheFailure'
 import { allowPreviewRenderFallback, currentPreviewRenderLifetime, PreviewRenderDomainError } from '../../preview/runtime/previewRenderLifetimeRuntime'
 import { sharedDatabaseTarget } from '../rustSharedIoCommandRuntime'
 import type { SharedIoAccessPath } from '../../path/sharedIoAccessRuntime'
@@ -239,6 +240,9 @@ export function createRustPreviewClientRuntime(options: RustPreviewClientOptions
         }
         return payload
       } catch (error) {
+        // Keep native cache categories visible on both isolated and local-daemon
+        // reads. Returning null here would turn a denied/corrupt cache into a miss.
+        if (query && previewCacheFailureKind(error)) throw error
       rethrowSharedIoProcessError(error)
         if ((mutation || boundedMaintenance) && submitted) {
           try { appendPreviewCacheFailureLog(label, error instanceof Error ? error.message : String(error)) } catch { /* Preserve the original uncertainty. */ }

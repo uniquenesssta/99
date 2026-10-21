@@ -8,11 +8,12 @@ import { sharedFileSystem as fsp, withSharedIoPriority, withSharedIoQueueTimeout
 import { applicationSharedIoProcessRuntime } from '../../path/sharedIoProcessRuntime'
 import { sharedIoAccesses, sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import type { PreviewRuntimeOptions } from './previewRuntimeTypes'
+import { withSharedIoObservation, type SharedIoObservation } from '../../path/sharedIoSchedulingScope'
 
 export type PreviewPreparationEvidence = {
   phase: string
   blocker: string
-  processPhase?: 'queued' | 'executing'
+  processPhase?: 'preparing' | 'queued' | 'executing'
   requestId?: number
   blockedBy?: number
 }
@@ -45,7 +46,7 @@ export function createPreviewPreparationEvidenceLogger(append: (message: string)
     const rootHash = createHash('sha256').update(rootId.toLowerCase()).digest('hex').slice(0, 20)
     const category = (value: string) => /^[a-zA-Z-]{1,48}$/.test(value) ? value : 'unknown'
     const phase = category(detail.phase), blocker = category(detail.blocker)
-    const processPhase = detail.processPhase === 'queued' || detail.processPhase === 'executing' ? detail.processPhase : 'unknown'
+    const processPhase = ['preparing', 'queued', 'executing'].includes(detail.processPhase || '') ? detail.processPhase : 'unknown'
     const key = `${rootHash}:${phase}:${blocker}`
     if (reported.has(key) || samples >= 128) return
     samples++; reported.add(key)
@@ -127,6 +128,7 @@ export function createPreviewSharedPreparationRuntime(options: Options) {
     const assertCurrent = () => { if (!current()) throw Object.assign(new Error('Preview preparation owner retired'), { reason: 'stale-generation' }) }
     const cacheDir = options.rootPreviewCacheDir(root), imageDir = options.rootPreviewImageDir(root), dbPath = options.rootPreviewDbPath(root)
     let phase = 'admission', observed: unknown
+    let observation: SharedIoObservation = { phase: 'preparing' }
     const task = withPhysicalIoCompletion(() => withSharedIoPriority('background', () => withSharedIoQueueTimeout(250, () => withSharedIoSignal(owner.controller.signal, async () => {
       assertCurrent()
       // The snapshot is only a hint. Every actual filesystem admission retains
@@ -159,7 +161,9 @@ export function createPreviewSharedPreparationRuntime(options: Options) {
           ['write-manifest', () => options.writeRootPreviewCacheManifest(cacheDir, root, 'root', dbPath, imageDir)],
         ] as Array<[string, () => Promise<unknown>]>) {
           assertCurrent(); phase = label
-          const result = await withIoDeadlineResult(`preview-cache-${label}`, () => operation().catch(error => { observed = error; throw error }), Math.max(6000, previewCacheQueryTimeoutMs()))
+          observation = { phase: 'preparing' }
+          const result = await withIoDeadlineResult(`preview-cache-${label}`, () => withSharedIoObservation(value => { observation = value },
+            () => operation().catch(error => { observed = error; throw error })), Math.max(6000, previewCacheQueryTimeoutMs()))
           if (!result.ok) {
             if (result.timedOut) owner.controller.abort()
             throw result.error
@@ -176,10 +180,11 @@ export function createPreviewSharedPreparationRuntime(options: Options) {
     }, error => {
       owner.readyUntil = 0
       const cause = (observed || error) as { phase?: 'queued' | 'executing'; blocker?: string; requestId?: number; blockedBy?: number }
+      const processPhase = cause.phase || observation.phase
       const detail: PreviewPreparationEvidence = error instanceof PreviewSharedPreparationDeferred ? error.detail : {
         phase, blocker: previewPreparationRetryable(error) ? (cause.blocker || (isIoDeadlineTimeout(error) ? 'response-timeout' : failureCode(error))) :
           ['EACCES', 'EPERM'].includes(failureCode(error)) ? 'access-denied' : failureCode(error) === 'stale-generation' ? 'generation-changed' : 'operation-failed',
-        processPhase: cause.phase, requestId: boundedId(cause.requestId), blockedBy: boundedId(cause.blockedBy),
+        processPhase, requestId: boundedId(cause.requestId ?? observation.requestId), blockedBy: processPhase === 'queued' ? boundedId(cause.blockedBy ?? observation.blockedBy) : undefined,
       }
       evidence(owner.rootId, detail)
       if (error instanceof PreviewSharedPreparationDeferred || previewPreparationRetryable(error)) {

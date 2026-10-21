@@ -10,6 +10,12 @@ async function main() {
   const logs = [], marks = [], shared = { storage: 'root', rootPath: dir, dir }, local = { storage: 'local', dir, shared }
   const errors = { cancelled: Object.assign(Error('cancel'), { name: 'AbortError' }), timeout: Object.assign(Error('timeout'), { name: 'IoDeadlineTimeoutError' }),
     unavailable: Object.assign(Error('denied'), { code: 'EACCES' }), miss: Object.assign(Error('absent'), { code: 'ENOENT' }), error: Error('real failure') }
+  const classify = load(base + 'previewCacheOutcomeRuntime.ts').previewCacheErrorOutcome
+  for (const [kind, outcome] of [['missing','miss'],['busy','unavailable'],['denied','unavailable'],['corrupt','error'],['incompatible','error'],['unavailable','unavailable']]) {
+    const error = Error(`Shared I/O process failed: code=2, signal=null, message=[HFM_PREVIEW_CACHE:${kind}] native detail`)
+    assert.equal(classify(error), outcome, 'native cache category lost through transport')
+  }
+  assert.equal(classify(Error('unable to open database file')), 'error', 'ambiguous SQLite failure was relabelled missing')
   const io = load(base + 'previewStorageIoRuntime.ts').createPreviewStorageIoRuntime({ appendStartupLog: line => logs.push(line) }, { markRootPreviewCacheUnavailable: (_root, error) => marks.push(error) })
   try {
     for (const [outcome, error] of Object.entries(errors)) {

@@ -28,10 +28,14 @@ jobs:
           $failed = 0
           & npm run typecheck *>> artifacts/cache-maintenance.log
           if ($LASTEXITCODE -ne 0) { $failed++ }
-          foreach ($script in @('check-cache-maintenance-priority.cjs', 'check-cache-cleanup-safety.cjs', 'check-preview-shared-preparation.cjs', 'check-preview-cache-publish.cjs', 'check-preview-cache-progress.cjs', 'check-scan-partial-retention.cjs', 'check-scan-rebuild-recovery.cjs', 'check-scan-lifecycle-durability.cjs', 'check-main-application-runtime.cjs', 'check-merged-index-mutation-serialization.cjs', 'check-preview-storage-routing.cjs', 'check-scan-fallback-policy.cjs', 'check-watcher-activation-baseline.cjs')) {
+          foreach ($script in @('check-cache-maintenance-priority.cjs', 'check-cache-cleanup-safety.cjs', 'check-preview-shared-preparation.cjs', 'check-preview-cache-publish.cjs', 'check-preview-cache-progress.cjs', 'check-scan-partial-retention.cjs', 'check-scan-rebuild-recovery.cjs', 'check-scan-lifecycle-durability.cjs', 'check-main-application-runtime.cjs', 'check-merged-index-mutation-serialization.cjs', 'check-preview-storage-routing.cjs', 'check-scan-fallback-policy.cjs', 'check-watcher-activation-baseline.cjs', 'check-preview-cache-outcomes.cjs', 'check-preview-image-ownership.cjs', 'check-incremental-metadata-refresh.cjs')) {
             & node --experimental-sqlite "build/diagnostics/$script" *>> artifacts/cache-maintenance.log
             if ($LASTEXITCODE -ne 0) { $failed++ }
           }
+          & node --experimental-sqlite build/diagnostics/check-local-user-state.cjs --case=tags *>> artifacts/cache-maintenance.log
+          if ($LASTEXITCODE -ne 0) { $failed++ }
+          & cargo test --locked --manifest-path native-src/hfm-core-worker/Cargo.toml preview_cache::readonly_tests *>> artifacts/cache-maintenance.log
+          if ($LASTEXITCODE -ne 0) { $failed++ }
           Get-Content -LiteralPath artifacts/cache-maintenance.log -Encoding utf8
           if ($failed -gt 0) { exit 1 }
       - name: Retain cache maintenance evidence

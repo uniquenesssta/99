@@ -1,4 +1,5 @@
 import { CACHE_MAINTENANCE_PRIORITY } from '../performance/ioQueue'
+import { currentSharedIoObserver, reportSharedIoObservation, type SharedIoObserver } from './sharedIoSchedulingScope'
 import { AsyncResource } from 'node:async_hooks'
 import { detailedStartupLogsEnabled } from '../logging/startupLogPolicy'
 import { createHash } from 'node:crypto'
@@ -94,6 +95,7 @@ export type SharedIoProcessMetrics = SharedIoProcessMetricRow & {
   byLabel: Record<string, SharedIoProcessMetricRow>
 }
 type Job = {
+  observer?: SharedIoObserver
   trace?: ReturnType<typeof currentOperationTrace>
   id: number
   request: SharedIoProcessRequest
@@ -219,6 +221,8 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       count(job.request, 'failed')
       if (error instanceof SharedIoProcessError) {
         error.closed = job.whenClosed
+        error.requestId ??= job.id
+        error.phase ??= job.startedAt ? 'executing' : 'queued'
         const timing = timingOf(job)
         error.queuedMs ??= timing.queuedMs
         error.executionMs ??= timing.executionMs
@@ -298,6 +302,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
       child.stdio[3]?.on('error', () => undefined)
       job.child = child as ChildProcessWithoutNullStreams
       job.startedAt = Date.now()
+      if (job.observer) reportSharedIoObservation({ phase: 'executing', requestId: job.id }, job.observer)
       active.add(job)
       count(request, 'started')
       recordOperationWork({ processStarts: 1, queuedMs: job.startedAt - job.enqueuedAt })
@@ -393,12 +398,16 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     return new Promise((resolve, reject) => {
       let close!: () => void
       const whenClosed = new Promise<void>(resolve => { close = resolve })
-      const job: Job = { trace: currentOperationTrace(), whenClosed, close, id: ++nextId, request, resolve, reject, settled: false, enqueuedAt: Date.now() }
+      const job: Job = { observer: currentSharedIoObserver(), trace: currentOperationTrace(), whenClosed, close, id: ++nextId, request, resolve, reject, settled: false, enqueuedAt: Date.now() }
       job.start = AsyncResource.bind(() => start(job))
       job.abort = () => cancel(job, 'cancelled')
       request.signal?.addEventListener('abort', job.abort, { once: true })
       job.timer = setTimeout(() => cancel(job, 'queue-timeout'), request.queueTimeoutMs ?? 3000)
       const blocker = [...active, ...queue].find(other => conflicts(job, other))
+      if (job.observer) {
+        const admission = inspectAdmission(request)
+        reportSharedIoObservation({ phase: 'queued', requestId: job.id, blocker: admission.blocker, blockedBy: admission.blockedBy }, job.observer)
+      }
       queue.push(job)
       traceJob(job, 'shared-admission', !request.accesses ? 'conservative-scope' : blocker ? 'resource-conflict' : canStart(job) ? 'ready' : 'capacity', blocker?.id)
       drain()

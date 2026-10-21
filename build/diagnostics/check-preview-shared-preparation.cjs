@@ -13,6 +13,31 @@ const base = 'src/main/preview/runtime/'
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const gate = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
 async function flush() { for (let i = 0; i < 12; i++) await tick() }
+async function observedAdmissionAndExecution() {
+  const h = harness(), observations = []
+  try {
+    const scope = h.load('src/main/path/sharedIoSchedulingScope.ts')
+    const reader = h.read(h.roots.a)
+    const writer = scope.withSharedIoObservation(value => observations.push(value), () => h.pool.run({
+      file: 'fake-worker', args: ['owned-write'], roots: [h.roots.a], write: true, timeoutMs: 5000,
+      accesses: [{ root: h.roots.a, path: h.roots.a.toLowerCase().replaceAll('/', '\\'), mode: 'write', scope: 'tree' }],
+    }))
+    writer.catch(() => {})
+    assert.equal(observations.length, 1)
+    assert.equal(observations[0].phase, 'queued')
+    assert.equal(observations[0].blocker, 'resource-conflict')
+    assert(Number.isSafeInteger(observations[0].blockedBy))
+    h.children[0].emit('close', 0, null); await reader; await flush()
+    assert.equal(observations[1].phase, 'executing')
+    assert.equal(observations[1].requestId, observations[0].requestId)
+    assert.equal(observations[1].blockedBy, undefined, 'executing evidence retained a former queue blocker')
+    h.children[1].stdout.emit('data', JSON.stringify({ ok: false, message: '[HFM_PREVIEW_CACHE:missing] absent database' }))
+    h.children[1].emit('close', 2, null)
+    await assert.rejects(writer, error => error.phase === 'executing' && error.requestId === observations[0].requestId && !!error.closed)
+    const unaffected = scope.withSharedIoObservation(() => { throw Error('observer only') }, () => h.read(h.roots.b))
+    h.children[2].emit('close', 0, null); await unaffected
+  } finally { await h.dispose() }
+}
 async function watched(promise, label) {
   let timer
   try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Unsettled ownership: ' + label)), 10000) })]) }
@@ -202,6 +227,7 @@ async function preparationBoundaries() {
     held.resolve(); h.setHold(undefined)
     await assert.rejects(first, error => error.name === 'PreviewSharedPreparationDeferred')
     await assert.rejects(joined, error => error.name === 'PreviewSharedPreparationDeferred')
+    assert(h.logs.some(line => line.includes('blocker=response-timeout') && line.includes('processPhase=preparing')), 'setup timeout lost its observed phase')
     await h.advance(1000); assert.equal(await h.prepare.ensurePrepared(h.roots.a), true)
     const count = h.events.filter(event => event[0] === 'manifest').length
     const reader = h.read(h.roots.a)
@@ -302,7 +328,7 @@ async function registeredIdentityFootprints() {
   assert.equal(mappings, 1); assert.equal(filesystem, 0); assert.equal(hints.length, 3)
 }
 async function run() {
-  await registeredIdentityFootprints(); await noFalseOfflineAndQueuedCancellation(); await blockedReadersAndRecovery(); await physicalCloseAndGeneration(); await overlappingGenerationsAndMkdirRace(); await preparationBoundaries(); await missingParentAndExpiry(); await shutdownAndMissingLocal()
+  await observedAdmissionAndExecution(); await registeredIdentityFootprints(); await noFalseOfflineAndQueuedCancellation(); await blockedReadersAndRecovery(); await physicalCloseAndGeneration(); await overlappingGenerationsAndMkdirRace(); await preparationBoundaries(); await missingParentAndExpiry(); await shutdownAndMissingLocal()
   console.log('PASS optional shared preparation: real admission conflict, 16-key coalescing, healthy-root progress, retained publication recovery, physical close, generation, finite ready reuse, missing/denied, expiry and shutdown')
 }
 module.exports = { run }

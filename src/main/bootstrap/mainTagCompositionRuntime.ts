@@ -17,8 +17,12 @@ export function createMainTagCompositionRuntime(options: TagOptions) {
   const tagMutationWriteProtocolRuntime = createTagMutationWriteProtocolRuntime({
     tagMetadataRevisionBarrier, ...options,
     onSharedCatalogCommitted: (result) => tagMutationStateSignalRuntime.handleSharedMetadataMutationStateSignal({
-      mutationKind: 'catalogCommit', changedIds: result.updatedIds || [],
+      // The write protocol already owns row invalidation and post-commit reads.
+      // This receipt supplies the final catalog without replaying those effects.
+      mutationKind: 'catalogCommit', changedIds: [],
       knownTags: result.mutationProtocol!.knownTags, mergedIndexDirty: false,
+      sharedMetadataChanged: false, cacheInvalidated: false,
+      pageQueryDirty: false, metricsDirty: false,
     }, 'node-fallback'),
   });
   return {

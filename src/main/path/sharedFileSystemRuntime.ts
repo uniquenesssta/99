@@ -5,6 +5,7 @@ import { assertStartupPathRootGuardCurrent, getStartupPathRootState, markStartup
 import { promises as localFs } from 'node:fs'
 import { sharedDatabaseTarget, sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
 import { SharedIoProcessError } from './sharedIoProcessRuntime'
+import { reportSharedIoObservation } from './sharedIoSchedulingScope'
 
 const sharedIoSignalScope = new AsyncLocalStorage<AbortSignal | undefined>()
 export function withSharedIoSignal<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> { return sharedIoSignalScope.run(signal, operation) }
@@ -127,6 +128,7 @@ export const sharedFileSystem: typeof localFs = new Proxy(localFs, { get(target,
     const resourceKeys = await sharedIoResourceKeys(paths)
     assertStartupPathRootGuardCurrent()
     if (!resourceKeys.length) {
+      reportSharedIoObservation({ phase: 'executing' })
       const result = await original.apply(target, args)
       if (property === 'readFile' && (Buffer.isBuffer(result) || typeof result === 'string')) {
         const bytes = Buffer.isBuffer(result) ? result.length : Buffer.byteLength(result, encoding(args[1]) || 'utf8')

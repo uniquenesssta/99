@@ -5,7 +5,7 @@ use std::time::Instant;
 use rusqlite::{params, OptionalExtension};
 
 use super::path::normalize_path_for_cache_compare;
-use super::schema::open_preview_cache_query;
+use super::schema::{cache_sqlite_failure, open_preview_cache_query};
 use super::status::{accepted_status_set, normalize_status};
 use super::types::{
     PreviewCacheBatchMatch, PreviewCacheBatchPayload, PreviewCacheBatchResult,
@@ -18,7 +18,7 @@ pub fn query_preview_cache_batch(config: &PreviewCacheCommandConfig) -> Result<S
     let payload: PreviewCacheBatchPayload = serde_json::from_str(&input).map_err(|error| error.to_string())?;
     let mut conn = open_preview_cache_query(&payload.db_path, payload.schema_version, payload.read_only)?;
     let accepted = accepted_status_set(&payload.accepted_statuses);
-    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    let tx = conn.transaction().map_err(cache_sqlite_failure)?;
     let mut rows = Vec::with_capacity(payload.rows.len());
     let mut matched_count = 0usize;
     let mut missing_ids = Vec::new();
@@ -27,11 +27,11 @@ pub fn query_preview_cache_batch(config: &PreviewCacheCommandConfig) -> Result<S
     let mut missing_file_cache: HashSet<String> = HashSet::new();
 
     {
-        let mut select = tx.prepare("SELECT output_path, status FROM preview_cache WHERE preview_key = ?").map_err(|error| error.to_string())?;
+        let mut select = tx.prepare("SELECT output_path, status FROM preview_cache WHERE preview_key = ?").map_err(cache_sqlite_failure)?;
         for row in &payload.rows {
             let selected = select.query_row(params![&row.preview_key], |db_row| {
                 Ok((db_row.get::<_, String>(0)?, db_row.get::<_, Option<String>>(1)?))
-            }).optional().map_err(|error| error.to_string())?;
+            }).optional().map_err(cache_sqlite_failure)?;
 
             let mut status = None;
             let mut matched = false;
@@ -73,12 +73,12 @@ pub fn query_preview_cache_batch(config: &PreviewCacheCommandConfig) -> Result<S
 
     let touched = touch_keys.len();
     if !payload.read_only && payload.touch_matched && !touch_keys.is_empty() {
-        let mut touch = tx.prepare("UPDATE preview_cache SET accessed_at = ?, updated_at = ? WHERE preview_key = ?").map_err(|error| error.to_string())?;
+        let mut touch = tx.prepare("UPDATE preview_cache SET accessed_at = ?, updated_at = ? WHERE preview_key = ?").map_err(cache_sqlite_failure)?;
         for key in &touch_keys {
-            touch.execute(params![&payload.now, &payload.now, key]).map_err(|error| error.to_string())?;
+            touch.execute(params![&payload.now, &payload.now, key]).map_err(cache_sqlite_failure)?;
         }
     }
-    tx.commit().map_err(|error| error.to_string())?;
+    tx.commit().map_err(cache_sqlite_failure)?;
 
     let result = PreviewCacheBatchResult {
         ok: true,

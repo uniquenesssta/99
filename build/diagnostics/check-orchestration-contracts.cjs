@@ -502,6 +502,7 @@ function loadTypeScriptModule(rel, localRequire = require, sourceOverride) {
       if (target + '.ts' === previewValidatorModule) return loadTypeScriptModule(previewValidatorModule, localRequire)
       if (target + '.ts' === metadataDiagnosticsModule) return loadTypeScriptModule(metadataDiagnosticsModule, localRequire)
       if (target === 'src/main/app/shutdownCoordinatorRuntime') return require('./check-operation-chain.cjs').loader()(target + '.ts')
+      if (target === 'src/shared/previewCacheFailure' || target === 'src/main/path/sharedIoSchedulingScope') return loadTypeScriptModule(target + '.ts', localRequire)
       if (target === 'src/main/logging/startupLogPolicy' || target === 'src/main/logging/operationTraceContext' || target === 'src/main/logging/previewCacheMutationTrace') return require('./check-operation-chain.cjs').loader()(target + '.ts')
       if (target === 'src/main/path/sharedFileSystemRuntime') return { configureSharedFileExecutor() {}, isSharedPreviewReadScope: () => false, currentSharedIoSignal: () => undefined, currentSharedIoQueueTimeout: () => undefined, currentSharedIoPriority: () => undefined }
       if (target === 'src/main/path/startupPathAvailabilityRuntime') return { assertStartupPathRootGuardCurrent() {}, getStartupPathRootState: () => ({ generation: 1, state: 'online' }), markStartupPathRootUnavailable() {} }

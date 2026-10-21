@@ -402,11 +402,11 @@ async function localIdentityPaths() {
 async function tags() {
   const db=database();db.exec('CREATE TABLE bindings(root TEXT, id TEXT, tags TEXT)')
   let view={fonts:{a:font('a',{tagNames:['11']})},tags:['11','empty'],localTags:['private'],folders:[],__sharedTagAuthorityKnown:true}
-  let catalog=['11','empty'], saved=0, signalListener
+  let catalog=['11','empty'], saved=0, signalListener, refreshes=0
   const load=loader({electron:{BrowserWindow:{getAllWindows:()=>[{isDestroyed:()=>false,webContents:{send:(_ch,payload)=>signalListener?.(payload)}}]}},'react':{useRef:value=>({current:value}),useEffect:fn=>fn()},'../../../fontOperationTrace':{reportFontOperation(){}},'./fontOperationTrace':{reportFontOperation(){}},'../../../rendererPerformance':{reportRendererTrace(){}}})
   load('src/renderer/src/runtime/app/effects/useFontTagStateSignalEventRuntime.ts').useFontTagStateSignalEventRuntime({
     hfm:{onFontTagStateSignal:fn=>{signalListener=fn;return()=>{}}},getCurrentLibrary:()=>view,
-    commitLibraryUpdate:next=>{view=next;return next},saveLibraryImmediately:async()=>{saved++;return true},refreshDatabaseDerivedState(){},setStatus(){},
+    commitLibraryUpdate:next=>{view=next;return next},saveLibraryImmediately:async()=>{saved++;return true},refreshDatabaseDerivedState(){refreshes++},setStatus(){},
   })
   const composition=load('src/main/bootstrap/mainTagCompositionRuntime.ts').createMainTagCompositionRuntime({clearFontQueryCaches(){},appendStartupLog(){}})
   db.prepare('INSERT INTO bindings VALUES (?,?,?)').run('r1','a','["11"]')
@@ -440,6 +440,10 @@ async function tags() {
     },
   })
   const remove=tag=>composition.tagMutationWriteProtocolRuntime.run({scope:'shared',mutationKind:'deleteTag',action:()=>mutation.deleteSharedFontTagInIndex(tag,['r1','r2'])})
+  const beforeCatalogRefreshes=refreshes
+  await composition.tagMutationWriteProtocolRuntime.run({scope:'shared',mutationKind:'catalogFixture',action:async()=>({ok:true,updatedIds:['a'],failed:[],message:'committed',mutationProtocol:{knownTags:['11','empty','new-catalog']}})})
+  assert.deepEqual(plain(view.tags),['11','empty','new-catalog'],'final catalog did not reach the renderer')
+  assert.equal(refreshes,beforeCatalogRefreshes,'final catalog replayed per-font query invalidation')
   if(!baseline&&!mutant){
     await composition.tagMutationWriteProtocolRuntime.run({scope:'shared',mutationKind:'renameTag',action:()=>mutation.renameSharedFontTagInIndex('11','22',['r1','r2'])})
     assert.deepEqual(plain(view.tags),['22','empty'],'rename did not publish new catalog')

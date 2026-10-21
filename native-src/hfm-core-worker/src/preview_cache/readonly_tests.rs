@@ -25,6 +25,20 @@ impl Fixture {
 impl Drop for Fixture { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
 
 #[test]
+fn missing_read_does_not_create_then_explicit_publisher_initializes() {
+    let fixture = Fixture::new();
+    let db = "publication/cache.sqlite";
+    assert!(fixture.call(read_preview_cache_status, db, true).unwrap_err().contains("[HFM_PREVIEW_CACHE:missing]"));
+    assert!(!fixture.0.join("publication").exists());
+    let input = fixture.0.join("input.json");
+    fs::write(&input, json!({"dbPath":fixture.0.join(db),"schemaVersion":1,"rows":[]}).to_string()).unwrap();
+    let published: Value = serde_json::from_str(&apply_preview_cache_rows(&PreviewCacheCommandConfig { input_path: input.to_string_lossy().into_owned() }).unwrap()).unwrap();
+    assert_eq!(published["ok"], true);
+    assert!(fixture.0.join(db).is_file());
+    assert_eq!(fixture.call(read_preview_cache_status, db, true).unwrap()["matched"], false);
+}
+
+#[test]
 fn readonly_commands_preserve_database_bytes_schema_meta_rows_and_directory() {
     let fixture = Fixture::new(); fixture.seed();
     let before = fs::read(fixture.0.join("cache.sqlite")).unwrap();
@@ -42,23 +56,23 @@ fn readonly_commands_preserve_database_bytes_schema_meta_rows_and_directory() {
 }
 
 #[test]
-fn readonly_unavailable_is_not_a_miss_and_never_creates_or_repairs() {
+fn readonly_absence_busy_and_invalid_cache_stay_distinct_without_writes() {
     let fixture=Fixture::new();
     for command in [read_preview_cache_status,query_preview_cache_status,query_preview_cache_batch] {
-        assert!(fixture.call(command,"absent/cache.sqlite",true).unwrap_err().contains("unavailable"));
+        assert!(fixture.call(command,"absent/cache.sqlite",true).unwrap_err().contains("[HFM_PREVIEW_CACHE:missing]"));
         assert!(!fixture.0.join("absent").exists());
     }
     let old=fixture.0.join("old.sqlite");
     Connection::open(&old).unwrap().execute_batch("CREATE TABLE preview_cache (preview_key TEXT)").unwrap();
     let before=fs::read(&old).unwrap();
-    assert!(fixture.call(read_preview_cache_status,"old.sqlite",true).unwrap_err().contains("incompatible"));
+    assert!(fixture.call(read_preview_cache_status,"old.sqlite",true).unwrap_err().contains("[HFM_PREVIEW_CACHE:incompatible]"));
     assert_eq!(fs::read(&old).unwrap(),before);
     fs::write(fixture.0.join("corrupt.sqlite"),b"not sqlite").unwrap();
-    assert!(fixture.call(query_preview_cache_batch,"corrupt.sqlite",true).is_err());
+    assert!(fixture.call(query_preview_cache_batch,"corrupt.sqlite",true).unwrap_err().contains("[HFM_PREVIEW_CACHE:corrupt]"));
     assert_eq!(fs::read(fixture.0.join("corrupt.sqlite")).unwrap(),b"not sqlite");
     fixture.seed();
     let writer=Connection::open(fixture.0.join("cache.sqlite")).unwrap();writer.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    assert!(fixture.call(query_preview_cache_status,"cache.sqlite",true).is_err());
+    assert!(fixture.call(query_preview_cache_status,"cache.sqlite",true).unwrap_err().contains("[HFM_PREVIEW_CACHE:busy]"));
     writer.execute_batch("ROLLBACK").unwrap();
     assert_eq!(fixture.call(query_preview_cache_status,"cache.sqlite",true).unwrap()["matched"],1);
 }

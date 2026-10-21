@@ -76,8 +76,26 @@ pub fn set_meta(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<(
 }
 
 
-/// An optional cache is not initialized by a reader. Errors stay unavailable,
-/// including missing/old schema, permission, busy and corruption.
+fn cache_failure(kind: &str, detail: impl std::fmt::Display) -> String {
+    format!("[HFM_PREVIEW_CACHE:{}] preview-cache-{}: {}", kind, kind, detail)
+}
+
+pub(super) fn cache_sqlite_failure(error: rusqlite::Error) -> String {
+    let kind = match &error {
+        rusqlite::Error::SqliteFailure(code, _) => match code.code {
+            rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked => "busy",
+            rusqlite::ErrorCode::PermissionDenied | rusqlite::ErrorCode::ReadOnly
+                | rusqlite::ErrorCode::AuthorizationForStatementDenied => "denied",
+            rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase => "corrupt",
+            _ => "unavailable",
+        },
+        _ => "unavailable",
+    };
+    cache_failure(kind, error)
+}
+
+/// Readers never create, migrate or repair optional caches. An absent database
+/// is distinct from an existing database that SQLite cannot open.
 pub fn open_preview_cache_query(path: &str, version: i64, read_only: bool) -> Result<Connection, String> {
     if !read_only {
         if let Some(parent) = std::path::Path::new(path).parent() {
@@ -87,19 +105,30 @@ pub fn open_preview_cache_query(path: &str, version: i64, read_only: bool) -> Re
         initialize_preview_cache_db(&conn, version).map_err(|error| error.to_string())?;
         return Ok(conn);
     }
+    match std::fs::metadata(path) {
+        Ok(_) => {},
+        Err(error) => return Err(cache_failure(match error.kind() {
+            std::io::ErrorKind::NotFound => "missing",
+            std::io::ErrorKind::PermissionDenied => "denied",
+            _ => "unavailable",
+        }, error)),
+    }
     let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|error| format!("preview-cache-unavailable: {}", error))?;
+        .map_err(cache_sqlite_failure)?;
     let tables: i64 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','preview_cache')", [], |row| row.get(0))
-        .map_err(|error| format!("preview-cache-unavailable: {}", error))?;
-    if tables != 2 { return Err("preview-cache-incompatible: missing tables".into()); }
-    let mut columns = conn.prepare("PRAGMA table_info(preview_cache)").map_err(|error| format!("preview-cache-unavailable: {}",error))?;
-    let names = columns.query_map([], |row| row.get::<_,String>(1)).map_err(|error|error.to_string())?
-        .collect::<rusqlite::Result<HashSet<_>>>().map_err(|error|error.to_string())?;
-    if !["preview_key","output_path","status"].iter().all(|name|names.contains(*name)) { return Err("preview-cache-incompatible: missing columns".into()); }
+        .map_err(cache_sqlite_failure)?;
+    if tables != 2 { return Err(cache_failure("incompatible", "missing tables")); }
+    let mut columns = conn.prepare("PRAGMA table_info(preview_cache)").map_err(cache_sqlite_failure)?;
+    let names = columns.query_map([], |row| row.get::<_,String>(1)).map_err(cache_sqlite_failure)?
+        .collect::<rusqlite::Result<HashSet<_>>>().map_err(cache_sqlite_failure)?;
+    if !["preview_key","output_path","status"].iter().all(|name|names.contains(*name)) { return Err(cache_failure("incompatible", "missing columns")); }
     drop(columns);
     let schema: String = conn.query_row("SELECT value FROM meta WHERE key = 'schemaVersion'", [], |row| row.get(0))
-        .map_err(|error| format!("preview-cache-incompatible: {}", error))?;
-    if schema != version.to_string() { return Err("preview-cache-incompatible: schemaVersion".to_string()); }
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => cache_failure("incompatible", "schemaVersion missing"),
+            other => cache_sqlite_failure(other),
+        })?;
+    if schema != version.to_string() { return Err(cache_failure("incompatible", "schemaVersion")); }
     Ok(conn)
 }
 

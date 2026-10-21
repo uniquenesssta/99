@@ -28,6 +28,8 @@ function load(file, mocks = {}, transform = x => x) {
     if (id === '../../../shared/preview-layout/nativePreviewLayout') return load('src/shared/preview-layout/nativePreviewLayout.ts', mocks)
     if (id === '../../../shared/preview-layout/previewLayoutConfig') return load('src/shared/preview-layout/previewLayoutConfig.ts', mocks)
     if (id === '../../../shared/previewFailure') return load('src/shared/previewFailure.ts', mocks)
+    if (id === '../../../shared/previewCacheFailure') return load('src/shared/previewCacheFailure.ts', mocks)
+    if (id.endsWith('/sharedIoSchedulingScope')) return require('./check-operation-chain.cjs').loader()('src/main/path/sharedIoSchedulingScope.ts')
     if (['./previewBatchRowsRuntime', './previewBatchReadRuntime', './previewStorageIoRuntime', './previewCacheOutcomeRuntime'].includes(id)) return load('src/main/preview/runtime/' + id.slice(2) + '.ts', mocks)
     if (['./localFontTagRustAdapterRuntime', './localFontTagMutationEffectsRuntime'].includes(id)) return load('src/main/library/runtime/' + id.slice(2) + '.ts', mocks)
     if (id === './localFontLegacyIdentityRuntime') return require('./check-operation-chain.cjs').loader()('src/main/library/runtime/localFontLegacyIdentityRuntime.ts')

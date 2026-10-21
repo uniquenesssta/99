@@ -115,8 +115,11 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
     const effectiveSource = signal.source || source
     const trace = cleanOperationTrace(signal.trace) || (effectiveSource === 'rust-daemon' ? undefined : currentOperationTrace())
     const changedIds = cleanSignalIds(signal.changedIds)
+    const catalogOnly = signal.mutationKind === 'catalogCommit' && Array.isArray(signal.knownTags) && changedIds.length === 0
+      && signal.sharedMetadataChanged === false && signal.cacheInvalidated === false && signal.pageQueryDirty === false
+      && signal.metricsDirty === false && signal.mergedIndexDirty === false
     const dirty = signal.sharedMetadataChanged !== false || signal.cacheInvalidated !== false || signal.pageQueryDirty !== false || signal.metricsDirty !== false || signal.mergedIndexDirty === true
-    if (!dirty && !changedIds.length) {
+    if (!dirty && !changedIds.length && !catalogOnly) {
       logOperation({ trace, stage: 'signal-reject', reason: 'no-change' }, options.appendStartupLog)
       append(`shared metadata mutation signal ignored: source=${effectiveSource}, root=${signal.rootPath || 'unknown'}, kind=${signal.mutationKind || 'unknown'}, changed=0, dirty=false`)
       return
@@ -132,7 +135,7 @@ export function createTagMutationStateSignalRuntime(options: TagMutationStateSig
       changedIds,
       true,
     )
-    options.clearFontQueryCaches()
+    if (!catalogOnly) options.clearFontQueryCaches()
     logOperation({ trace, stage: 'signal', reason: `${decision.reason}:${decision.identity}`, backend: effectiveSource, localRevision: snapshot.localRevision, sharedRevision: snapshot.sharedRevision }, options.appendStartupLog)
     broadcastFontTagMutationStateSignal({
       trace,

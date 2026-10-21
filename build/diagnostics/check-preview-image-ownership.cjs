@@ -29,13 +29,17 @@ async function run(){
  console.log('PASS temporary/final image ownership, late hydration, abort, cleanup and single PNG read');
 }
 async function compatibility(){
- const load=loader({'../rustCoreWorkerTransportRuntime':{parseJsonLine:JSON.parse,hasCapability:(status,cap)=>status.capabilities.includes(cap)}}), calls=[], inputs=[];let caps=['preview-cache-index-read'];
- const client=load('src/main/rust-core/clients/rustPreviewClientRuntime.ts').createRustPreviewClientRuntime({diagnoseRustCoreWorker:async()=>({available:true,path:'/worker',capabilities:caps}),appendStartupLog(){},appendPreviewCacheFailureLog(){},createTemporaryJsonFile:()=>({path:'/input',writeJson:async data=>inputs.push(data),dispose:async()=>{}}),runRustCoreScheduledCommand:async(_worker,_args,options)=>{calls.push(options);return{stdout:JSON.stringify({ok:true,status:'ok',matched:true,touched:false})}}});
+ const load=loader({'../rustCoreWorkerTransportRuntime':{parseJsonLine:JSON.parse,hasCapability:(status,cap)=>status.capabilities.includes(cap)}}), calls=[], inputs=[];let caps=['preview-cache-index-read'], failure;
+ const client=load('src/main/rust-core/clients/rustPreviewClientRuntime.ts').createRustPreviewClientRuntime({diagnoseRustCoreWorker:async()=>({available:true,path:'/worker',capabilities:caps}),appendStartupLog(){},appendPreviewCacheFailureLog(){},createTemporaryJsonFile:()=>({path:'/input',writeJson:async data=>inputs.push(data),dispose:async()=>{}}),runRustCoreScheduledCommand:async(_worker,_args,options)=>{calls.push(options);if(failure)throw failure;return{stdout:JSON.stringify({ok:true,status:'ok',matched:true,touched:false})}}});
  const input={dbPath:'\\\\nas\\fonts\\preview.sqlite',previewKey:'a',outputPath:'\\\\nas\\fonts\\a.png',schemaVersion:1,now:'now'};
  assert.equal(await client.runRustPreviewCacheReadStatus({...input,readOnly:true}),null);assert.equal(calls.length,0);
  await client.runRustPreviewCacheReadStatus(input);assert.equal(calls.at(-1).sharedIo.write,true);
  caps.push('preview-cache-read-only-v1');await client.runRustPreviewCacheReadStatus({...input,readOnly:true});assert.equal(calls.at(-1).sharedIo.write,false);
  assert.equal(calls.at(-1).sharedIo.accesses.length,1);assert.equal(calls.at(-1).sharedIo.accesses[0].scope,'database');assert.equal(inputs.at(-1).readOnly,true);
+ for(const kind of ['missing','busy','denied','corrupt','incompatible']){
+  failure=Error(`[HFM_PREVIEW_CACHE:${kind}] native read failure`);
+  await assert.rejects(client.runRustPreviewCacheReadStatus({...input,readOnly:true}),error=>error===failure,'local daemon category was swallowed as a null/miss');
+ }
  console.log('PASS old-worker safety and capability-gated read-only resource declaration');
 }
 async function rootRecovery(){
@@ -43,6 +47,11 @@ async function rootRecovery(){
  const load=loader({'../../path/startupPathAvailabilityRuntime':{ assertStartupPathRootGuardCurrent() {},getStartupPathRootState:()=>({rootId:'root',generation,state:'online'}),ensureStartupPathRootAvailable:async()=>{probes++;return true}}});
  const root=load('src/main/preview/runtime/previewCacheRootAvailabilityRuntime.ts').createPreviewCacheRootAvailabilityRuntime();
  root.markRootPreviewCacheUnavailable('/root',{reason:'cancelled'});assert.equal(root.isRootPreviewCacheUnavailable('/root'),false);
+ for (const kind of ['missing','busy']) {
+  root.markRootPreviewCacheUnavailable('/root',Error(`[HFM_PREVIEW_CACHE:${kind}] native cache failure`));
+  assert.equal(root.isRootPreviewCacheUnavailable('/root'),false,'optional cache state blocked its publisher');
+ }
+ root.markRootPreviewCacheUnavailable('/denied',Error('[HFM_PREVIEW_CACHE:denied] access denied'));assert.equal(root.isRootPreviewCacheUnavailable('/denied'),true);
  root.markRootPreviewCacheUnavailable('/root',Error('temporary network failure'));assert.equal(root.isRootPreviewCacheUnavailable('/root'),true);
  generation++;assert.equal(await root.ensureRootPreviewCacheAvailable('/root'),true);assert.equal(probes,1);assert.equal(root.isRootPreviewCacheUnavailable('/root'),false);
  console.log('PASS cancellation is not an outage; root recovery invalidates old cache circuit');

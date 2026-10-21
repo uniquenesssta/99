@@ -3,6 +3,7 @@ import { normalizePathForCacheCompare } from '../../path/cachePath'
 import { isIoDeadlineTimeout, unavailableRootTtlMs } from '../../path/ioDeadlineRuntime'
 import { ensureStartupPathRootAvailable, getStartupPathRootState } from '../../path/startupPathAvailabilityRuntime'
 import { createPreviewSharedStorageCircuitBreakerRuntime } from './previewSharedStorageCircuitBreakerRuntime'
+import { previewCacheFailureKind } from '../../../shared/previewCacheFailure'
 
 export type PreviewCacheRootAvailabilityLogger = (message: string) => void
 
@@ -67,6 +68,8 @@ export function createPreviewCacheRootAvailabilityRuntime(options: {
 
   function markRootPreviewCacheUnavailable(rootPath: string, error: unknown): void {
     if (!rootPath) return
+    // Missing optional data and a busy database do not make its root offline.
+    if (['missing', 'busy'].includes(previewCacheFailureKind(error) || '')) return
     // A caller's response budget includes scheduler wait; it is not evidence
     // that the device/root is offline. Physical I/O remains owned until closed.
     if (isIoDeadlineTimeout(error)) return

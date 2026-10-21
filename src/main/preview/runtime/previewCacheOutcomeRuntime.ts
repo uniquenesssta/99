@@ -1,8 +1,13 @@
 import { previewFailureKind } from '../../../shared/previewFailure'
+import { previewCacheFailureKind } from '../../../shared/previewCacheFailure'
 
 export type PreviewCacheHydrationOutcome = 'hydrated' | 'local-hit' | 'miss' | 'unavailable' | 'timeout' | 'cancelled' | 'error'
 
 export function previewCacheErrorOutcome(error: unknown): Exclude<PreviewCacheHydrationOutcome, 'hydrated' | 'local-hit'> {
+  const cacheFailure = previewCacheFailureKind(error)
+  if (cacheFailure === 'missing') return 'miss'
+  if (cacheFailure === 'corrupt' || cacheFailure === 'incompatible') return 'error'
+  if (cacheFailure) return 'unavailable'
   const code = (error as { code?: string })?.code
   if (code === 'ENOENT' || code === 'ENOTDIR') return 'miss'
   const kind = previewFailureKind(error)
