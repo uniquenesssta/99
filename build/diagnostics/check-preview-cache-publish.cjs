@@ -70,9 +70,18 @@ async function testOwnedPublicationCoalescesAndReusesExactBytes() {
   let now = 1000; class Clock extends Date { static now() { return now } }
   let networkPngReads = 0, startMeta = false, releaseMeta, writes = 0, closing = false, closeListener
   const metaGate = new Promise(resolve => { releaseMeta = resolve }), timers = new Map(), logs = []
-  const fsp = { ...fs.promises, readFile: async (...args) => { if (String(args[0]).startsWith(sharedDir) && String(args[0]).endsWith('.png')) networkPngReads++; return fs.promises.readFile(...args) } }
+  const scope = loader()('src/main/path/sharedIoSchedulingScope.ts'), cleanupBudgets = [], publicationBudgets = []
+  const fsp = { ...fs.promises,
+    mkdir: async (...args) => { publicationBudgets.push(scope.currentSharedIoQueueTimeout()); return fs.promises.mkdir(...args) },
+    unlink: async (...args) => {
+      if (String(args[0]).endsWith('.publish.lock') || String(args[0]).includes('.tmp.')) {
+        cleanupBudgets.push({ queue: scope.currentSharedIoQueueTimeout(), priority: scope.currentSharedIoPriority() })
+      }
+      return fs.promises.unlink(...args)
+    },
+    readFile: async (...args) => { if (String(args[0]).startsWith(sharedDir) && String(args[0]).endsWith('.png')) networkPngReads++; return fs.promises.readFile(...args) } }
   const load = loader({
-    '../../path/sharedFileSystemRuntime': { sharedFileSystem: fsp, withSharedIoQueueTimeout: (_ms, fn) => fn(), withSharedIoPriority: (_p, fn) => fn(), withSharedIoSignal: (_s, fn) => fn(), withoutSharedIoSignal: fn => fn() },
+    '../../path/sharedFileSystemRuntime': { sharedFileSystem: fsp, ...scope, withSharedIoSignal: (_s, fn) => fn(), withoutSharedIoSignal: fn => fn() },
     '../native-renderer/directwrite/directWritePreviewHelperPathRuntime': { hasDirectWritePreviewHelper: () => false },
     '../../rust-core/rustSharedIoCommandRuntime': { sharedIoResourceKeys: async () => [] },
     '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, withStartupPathRootGuard: (guard, fn) => { guard(); return fn() }, getStartupPathRootState: () => ({ rootId: 'root', generation: 1, state: 'online' }) },
@@ -107,6 +116,8 @@ async function testOwnedPublicationCoalescesAndReusesExactBytes() {
     check.equal(writes, 1); check(!fs.existsSync(path.join(sharedDir, 'invalid.png')), 'corrupt local bytes were published')
     await new Promise(resolve => setTimeout(resolve, 20))
     check(!fs.readdirSync(sharedDir).some(name => name.includes('.lock') || name.includes('.tmp.')), 'publication left temporary files or a lock')
+    check(publicationBudgets.length > 0 && publicationBudgets.every(value => value === 250), 'optional publication lost its short queue budget')
+    check(cleanupBudgets.length > 0 && cleanupBudgets.every(value => value.queue === 3000 && value.priority === 'foreground'), 'owned cleanup inherited optional publication admission')
   } finally { closing = true; closeListener(); fs.rmSync(dir, { recursive: true, force: true }) }
 }
 

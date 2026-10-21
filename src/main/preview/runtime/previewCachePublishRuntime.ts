@@ -1,4 +1,4 @@
-import { cacheMaintenancePending, registerCacheMaintenanceParticipant } from '../../maintenance/cacheMaintenanceCoordinator'
+import { CACHE_MAINTENANCE_PRIORITY, cacheMaintenancePending, registerCacheMaintenanceParticipant } from '../../maintenance/cacheMaintenanceCoordinator'
 import { PreviewSharedPreparationDeferred, createPreviewPreparationEvidenceLogger, previewPreparationRetryable } from './previewSharedPreparationRuntime'
 import { randomUUID } from 'node:crypto'
 import { promises as localFs } from 'node:fs'
@@ -141,6 +141,13 @@ async function acquirePublishLock(lockPath: string) {
   }
 }
 
+// Owned cleanup is mandatory even when optional publication is deferred. Keep
+// its original queue budget; a maintenance drain gives it first queued access.
+function withPublicationCleanup<T>(operation: () => Promise<T>): Promise<T> {
+  return withSharedIoPriority(cacheMaintenancePending() ? CACHE_MAINTENANCE_PRIORITY : 'foreground', () =>
+    withSharedIoQueueTimeout(3000, () => withoutSharedIoSignal(operation)))
+}
+
 export function createPreviewCachePublishRuntime(options: PreviewCachePublishRuntimeOptions) {
   const queue = new Map<string, PublishTask>()
   const inFlight = new Map<string, PublishTask>()
@@ -254,7 +261,7 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
         return 'published' as const
       }), publishTimeoutMs()).then(result => { expired = !result.ok; return result }))
 
-      await withoutSharedIoSignal(() => fsp.unlink(tmpPath)).catch(async error => { await awaitPhysicalIoClose(error) })
+      await withPublicationCleanup(() => fsp.unlink(tmpPath)).catch(async error => { await awaitPhysicalIoClose(error) })
       if (!current(task)) return
       if (!result.ok) {
         if (result.timedOut) stats.deadlineDropped += 1
@@ -328,8 +335,8 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
         })
       }
     } finally {
-      await withoutSharedIoSignal(() => lock.release())
-      await withoutSharedIoSignal(() => fsp.unlink(tmpPath)).catch(async error => { await awaitPhysicalIoClose(error) })
+      await withPublicationCleanup(() => lock.release())
+      await withPublicationCleanup(() => fsp.unlink(tmpPath)).catch(async error => { await awaitPhysicalIoClose(error) })
       logStats()
     }
   }
