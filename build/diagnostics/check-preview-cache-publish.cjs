@@ -72,7 +72,7 @@ async function testOwnedPublicationCoalescesAndReusesExactBytes() {
   const metaGate = new Promise(resolve => { releaseMeta = resolve }), timers = new Map(), logs = []
   const fsp = { ...fs.promises, readFile: async (...args) => { if (String(args[0]).startsWith(sharedDir) && String(args[0]).endsWith('.png')) networkPngReads++; return fs.promises.readFile(...args) } }
   const load = loader({
-    '../../path/sharedFileSystemRuntime': { sharedFileSystem: fsp, withSharedIoPriority: (_p, fn) => fn(), withSharedIoSignal: (_s, fn) => fn(), withoutSharedIoSignal: fn => fn() },
+    '../../path/sharedFileSystemRuntime': { sharedFileSystem: fsp, withSharedIoQueueTimeout: (_ms, fn) => fn(), withSharedIoPriority: (_p, fn) => fn(), withSharedIoSignal: (_s, fn) => fn(), withoutSharedIoSignal: fn => fn() },
     '../native-renderer/directwrite/directWritePreviewHelperPathRuntime': { hasDirectWritePreviewHelper: () => false },
     '../../rust-core/rustSharedIoCommandRuntime': { sharedIoResourceKeys: async () => [] },
     '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, withStartupPathRootGuard: (guard, fn) => { guard(); return fn() }, getStartupPathRootState: () => ({ rootId: 'root', generation: 1, state: 'online' }) },

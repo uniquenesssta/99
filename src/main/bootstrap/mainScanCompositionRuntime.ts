@@ -405,7 +405,7 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
           const result = await scanFoldersRuntime().scanFoldersWhenIdle([root]);
           if (result.stats?.cancelled || result.errors.length || isApplicationClosing() || !(result.committedFolders || []).includes(root)) continue;
           await syncMergedIndexForRootSnapshot(root, 'startup-cache-recovery');
-          appendStartupLog(`root index automatic recovery complete: root=${root}, fonts=${result.fonts.length}`);
+          appendStartupLog(`root index automatic recovery complete: root=${root}, fonts=${result.stats?.totalFiles ?? 0}`);
         } catch (error) { appendStartupLog(`root index automatic recovery retained old snapshot: root=${root}, ${recoveryMessage(error)}`); }
       }
     })).catch(error => { appendStartupLog(`root index startup recovery deferred: ${recoveryMessage(error)}`); });

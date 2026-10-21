@@ -26,8 +26,8 @@ export function registerLibraryIpcHandlers(handle: IpcHandleRegistrar, runtime: 
 
   handle("dialog:selectFontFolders", () => selectFontFoldersOnce());
 
-  handle("fonts:scanFolders", (_event, folders: string[], knownFonts?: FontItem[]) =>
-    runtime.scanFoldersManaged(folders, knownFonts),
+  handle("fonts:scanFolders", (_event, folders: string[], knownFonts?: FontItem[], options?: { rebuild?: boolean }) =>
+    runtime.scanFoldersManaged(folders, knownFonts, { rebuild: options?.rebuild === true }),
   );
   handle("fonts:cancelScan", (_event, reason?: string) =>
     runtime.cancelActiveFontScan(reason || "用户取消了索引扫描。"),

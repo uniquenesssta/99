@@ -13,8 +13,12 @@ export function withoutSharedIoSignal<T>(operation: () => Promise<T>): Promise<T
 export function currentSharedIoSignal(): AbortSignal | undefined { return sharedIoSignalScope.getStore() }
 
 const priorityScope = new AsyncLocalStorage<IoTaskPriority | number>()
-export function withSharedIoPriority<T>(priority: IoTaskPriority | number, operation: () => Promise<T>): Promise<T> { return priorityScope.run(priority, operation) }
+export function withSharedIoPriority<T>(priority: IoTaskPriority | number, operation: () => Promise<T>): Promise<T> { return priorityScope.run(priorityScope.getStore() === 1000 ? 1000 : priority, operation) }
 export function currentSharedIoPriority(): IoTaskPriority | number | undefined { return priorityScope.getStore() }
+
+const queueTimeoutScope = new AsyncLocalStorage<number>()
+export function withSharedIoQueueTimeout<T>(timeoutMs: number, operation: () => Promise<T>): Promise<T> { return queueTimeoutScope.run(timeoutMs, operation) }
+export function currentSharedIoQueueTimeout(): number | undefined { return queueTimeoutScope.getStore() }
 
 const previewReadScope = new AsyncLocalStorage<boolean>()
 export function withSharedPreviewReads<T>(operation: () => Promise<T>): Promise<T> { return previewReadScope.run(true, operation) }

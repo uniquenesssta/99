@@ -234,6 +234,8 @@
     "diagnostics:scan-rebuild-recovery": "node --experimental-sqlite build/diagnostics/check-scan-rebuild-recovery.cjs",
     "diagnostics:install-projection-recovery": "node --experimental-sqlite build/diagnostics/check-install-projection-recovery.cjs",
     "diagnostics:sqlite-manual-restore": "node --experimental-sqlite build/diagnostics/check-sqlite-manual-restore.cjs",
+    "diagnostics:cache-maintenance-priority": "node --experimental-sqlite build/diagnostics/check-cache-maintenance-priority.cjs",
+    "diagnostics:preview-shared-preparation": "node --experimental-sqlite build/diagnostics/check-preview-shared-preparation.cjs",
     "diagnostics:cache-cleanup-safety": "node build/diagnostics/check-cache-cleanup-safety.cjs"
   },
   "dependencies": {

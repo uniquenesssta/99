@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { canClassifyUnknownScriptAsOther } from './rustScriptClassification'
 import { basename,extname,parse } from 'node:path'
 import type { FontScript } from '../../../shared/types/fontTypes'
 import type { FontParseJob,FontParseWorkerResult,RustFontNameHint,RustFontScriptHint,RustFontStyleHint } from '../fontScanWorkers'
@@ -80,9 +81,9 @@ export function rustMetadataFastPathRejectionReason(job: FontParseJob): string |
   if (job.signatureValid === false) return null
   if (job.signatureValid !== true) return 'signature-unconfirmed'
   if (!job.nameHint) return 'missing-name-hint'
-  if (!job.scriptHint) return 'missing-script-hint'
+  if (!job.scriptHint && !canClassifyUnknownScriptAsOther(job)) return 'missing-script-hint'
   if (!normalizeNameHint(job.nameHint)) return 'unusable-display-name'
-  if (!normalizeScriptHint(job.scriptHint).length) return 'unusable-script-hint'
+  if (!normalizeScriptHint(job.scriptHint).length && !canClassifyUnknownScriptAsOther(job)) return 'unusable-script-hint'
   return null
 }
 
@@ -101,7 +102,8 @@ export function buildFontParseResultFromRustMetadata(
   if (rustMetadataFastPathRejectionReason(job)) return null
 
   const names = normalizeNameHint(job.nameHint)
-  const scripts = normalizeScriptHint(job.scriptHint)
+  const recognizedScripts = normalizeScriptHint(job.scriptHint)
+  const scripts: FontScript[] = recognizedScripts.length ? recognizedScripts : ['other']
   if (!names || !scripts.length) return null
 
   const id = sha1(`${(job.cacheKey || job.filePath).toLowerCase()}|${job.fileSize}|${Math.round(job.modifiedAt)}`)

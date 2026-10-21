@@ -5,7 +5,7 @@ import { assertLocalShutdownWorkAllowed } from '../app/shutdownCoordinatorRuntim
 import type { ChildProcess } from 'node:child_process'
 import { getStartupPathRootState, assertStartupPathRootGuardCurrent } from '../path/startupPathAvailabilityRuntime'
 import { sharedIoAvailabilityRoot } from './rustSharedIoCommandRuntime'
-import { configureSharedFileExecutor, currentSharedIoSignal, sharedFileAccesses, isSharedPreviewReadScope, currentSharedIoPriority } from '../path/sharedFileSystemRuntime'
+import { configureSharedFileExecutor, currentSharedIoSignal, sharedFileAccesses, isSharedPreviewReadScope, currentSharedIoPriority, currentSharedIoQueueTimeout } from '../path/sharedFileSystemRuntime'
 import { traceRustInput, logOperation, recordOperationWork } from '../logging/operationTraceContext'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -399,7 +399,7 @@ export function createRustCoreWorkerTransportRuntime(options: RustCoreWorkerRunt
         });
       };
       assertStartupPathRootGuardCurrent()
-      const queueTimeoutMs = previewLifetime?.queueTimeoutMs() ?? 3000
+      const queueTimeoutMs = previewLifetime?.queueTimeoutMs() ?? currentSharedIoQueueTimeout() ?? 3000
       const leased = [...new Set(args)].map(path => temporaryFiles.get(path)).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
       for (const entry of leased) entry.holds += 1
       const onClose = () => {

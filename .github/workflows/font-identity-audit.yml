@@ -18,6 +18,29 @@ jobs:
       - name: Build real Windows Rust worker
         id: worker
         run: node build/rust/build-core-worker.cjs --required
+      - name: Verify cache maintenance priority and shared preview preparation
+        if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $PSNativeCommandUseErrorActionPreference = $false
+          $failed = 0
+          & npm run typecheck *>> artifacts/cache-maintenance.log
+          if ($LASTEXITCODE -ne 0) { $failed++ }
+          foreach ($script in @('check-cache-maintenance-priority.cjs', 'check-cache-cleanup-safety.cjs', 'check-preview-shared-preparation.cjs', 'check-preview-cache-publish.cjs', 'check-preview-cache-progress.cjs', 'check-scan-partial-retention.cjs', 'check-scan-rebuild-recovery.cjs')) {
+            & node --experimental-sqlite "build/diagnostics/$script" *>> artifacts/cache-maintenance.log
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          Get-Content -LiteralPath artifacts/cache-maintenance.log -Encoding utf8
+          if ($failed -gt 0) { exit 1 }
+      - name: Retain cache maintenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-maintenance
+          path: artifacts/cache-maintenance.log
+          retention-days: 14
       - name: Verify cmap compatibility and isolated recovery retries
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
         timeout-minutes: 8

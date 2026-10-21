@@ -140,7 +140,10 @@ async function nativeAndCompatibility(directory) {
   const accepted = [], logs = []
   const consumed = await fast.consumeRustFontParseBatchFastPath({ jobs, scriptDetectionVersion: 1, runRustFontParseBatch: async () => result,
     processResult: async value => accepted.push(value), appendStartupLog: text => logs.push(text), logPrefix: 'metadata-fixture' })
-  assert.deepEqual(accepted.map(row => row.jobId), supported); assert.equal(consumed.remainingJobs.length, modes.length - supported.length)
+  const classifiedOther = ['unsupported', 'unsupported8', 'overlapping-segments', 'glyph0', 'bad-offset', 'empty', 'resource-limit', 'group-limit']
+  const expected = modes.filter(mode => supported.includes(mode) || classifiedOther.includes(mode))
+  assert.deepEqual(accepted.map(row => row.jobId), expected); assert.equal(consumed.remainingJobs.length, modes.length - expected.length)
+  for (const mode of classifiedOther) assert.deepEqual(plain(accepted.find(row => row.jobId === mode).font.scripts), ['other'])
   assert(logs.some(line => line.includes('unusable-display-name'))); assert(logs.some(line => line.includes('io-error')))
   const legacy = { ...byId.get('unsupported') }; delete legacy.metadataDiagnostics; delete legacy.parseDisposition; delete legacy.sourceStability
   const legacyLogs = []
@@ -191,7 +194,15 @@ async function recovery(mode) {
     }
     f.deps.runRustFontParseBatch = client.run
     const result = await f.scan.scanFolders(f.folders)
-    assert(result.errors.length > 0); assert.equal(result.stats.skippedBad, 0)
+    assert.equal(result.stats.skippedBad, 0)
+    if (['unsupported', 'bad-offset', 'empty', 'resource-limit'].includes(mode)) {
+      assert.equal(result.errors.length, 0)
+      assert.deepEqual(plain(result.committedFolders), [a, b])
+      assert.deepEqual(plain((await f.read(a)).entries['change.ttf'].font.scripts), ['other'])
+      assert.deepEqual(await fs.readFile(path.join(a, 'change.ttf')), sourceBefore)
+      return
+    }
+    assert(result.errors.length > 0)
     assert.deepEqual(plain(result.committedFolders), [b], 'incomplete recovery root published or complete peer blocked')
     assert.deepEqual(plain((await f.read(a)).entries), before, 'incomplete metadata changed previous rows/tags')
     assert.deepEqual(await fs.readFile(path.join(a, 'change.ttf')), sourceBefore, 'diagnostic changed source bytes')
@@ -208,7 +219,7 @@ async function main() {
   process.env.HFM_RUST_SCAN_LISTING = '0'; process.env.HFM_NODE_STATE_FALLBACK = '1'; process.env.HFM_NODE_FONTKIT_SCAN_FALLBACK = '0'
   try {
     await nativeAndCompatibility(directory)
-    for (const mode of ['unsupported', 'io-eof', 'version-only']) await recovery(mode)
+    for (const mode of ['unsupported', 'bad-offset', 'empty', 'resource-limit', 'io-eof', 'version-only']) await recovery(mode)
     console.log('[diagnostics:rust-metadata-diagnostics] native JSON/client/fastpath, typed reasons, old worker, bounded logging, source provenance and real SQLite recovery/peer preservation passed')
   } finally {
     await fs.rm(directory, { recursive: true, force: true })

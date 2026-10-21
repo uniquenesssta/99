@@ -39,6 +39,7 @@ export interface IpcHandlerRuntime {
   scanFoldersManaged: (
     folders: string[],
     knownFonts?: FontItem[],
+    options?: { rebuild?: boolean },
   ) => unknown | Promise<unknown>;
   cancelActiveFontScan: (reason?: string) => unknown;
   activeFontScanStatus: () => unknown;

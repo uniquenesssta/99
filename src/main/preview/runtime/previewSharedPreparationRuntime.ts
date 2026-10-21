@@ -1,9 +1,10 @@
+import { cacheMaintenancePending, registerCacheMaintenanceParticipant } from '../../maintenance/cacheMaintenanceCoordinator'
 import { createHash } from 'node:crypto'
 import { dirname } from 'node:path'
 import { applicationWorkEpoch, isApplicationClosing, onApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import { getStartupPathRootState, withStartupPathRootGuard } from '../../path/startupPathAvailabilityRuntime'
 import { isIoDeadlineTimeout, previewCacheQueryTimeoutMs, withIoDeadlineResult, withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
-import { sharedFileSystem as fsp, withSharedIoPriority, withSharedIoSignal } from '../../path/sharedFileSystemRuntime'
+import { sharedFileSystem as fsp, withSharedIoPriority, withSharedIoQueueTimeout, withSharedIoSignal } from '../../path/sharedFileSystemRuntime'
 import { applicationSharedIoProcessRuntime } from '../../path/sharedIoProcessRuntime'
 import { sharedIoAccesses, sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime'
 import type { PreviewRuntimeOptions } from './previewRuntimeTypes'
@@ -16,6 +17,7 @@ export type PreviewPreparationEvidence = {
   blockedBy?: number
 }
 export class PreviewSharedPreparationDeferred extends Error {
+  reported = false
   constructor(readonly retryAt: number, readonly detail: PreviewPreparationEvidence) {
     super(`Optional preview preparation deferred: ${detail.blocker}`)
     this.name = 'PreviewSharedPreparationDeferred'
@@ -80,22 +82,28 @@ export function createPreviewSharedPreparationRuntime(options: Options) {
     }
   }
   onApplicationClosing(invalidate)
+  registerCacheMaintenanceParticipant({ pause: async () => {
+    invalidate()
+    await Promise.allSettled([...entries.values()].flatMap(entry => entry.task ? [entry.task] : []))
+  } })
 
   async function ensurePrepared(root: string, force = false): Promise<boolean> {
-    if (isApplicationClosing()) return false
+    if (cacheMaintenancePending() || isApplicationClosing()) return false
     const state = getStartupPathRootState(root), now = Date.now()
     let entry = entries.get(state.rootId)
     if (entry?.task) {
       if (entry.generation === state.generation && entry.revision === revision) return entry.task
       entry.controller.abort()
       await entry.task.catch(() => false)
-      if (isApplicationClosing()) return false
+      if (cacheMaintenancePending() || isApplicationClosing()) return false
       return ensurePrepared(root, force)
     }
     if (entry && (entry.generation !== state.generation || entry.revision !== revision || entry.epoch !== applicationWorkEpoch())) {
       entries.delete(state.rootId); entry = undefined
     }
-    if (entry?.retryAt && entry.retryAt > now) throw new PreviewSharedPreparationDeferred(entry.retryAt, entry.failure!)
+    if (entry?.retryAt && entry.retryAt > now) throw Object.assign(new PreviewSharedPreparationDeferred(entry.retryAt, entry.failure!), { reported: true })
+    // Reusing a prepared directory performs no writes and needs no write admission.
+    if (!force && entry && entry.readyUntil > now && state.state === 'online') return true
     if (entry?.unavailableUntil && entry.unavailableUntil > now) return false
     if (!entry) {
       for (const [key, old] of entries) if (!old.task && Math.max(old.readyUntil, old.retryAt, old.unavailableUntil) <= now) entries.delete(key)
@@ -119,7 +127,7 @@ export function createPreviewSharedPreparationRuntime(options: Options) {
     const assertCurrent = () => { if (!current()) throw Object.assign(new Error('Preview preparation owner retired'), { reason: 'stale-generation' }) }
     const cacheDir = options.rootPreviewCacheDir(root), imageDir = options.rootPreviewImageDir(root), dbPath = options.rootPreviewDbPath(root)
     let phase = 'admission', observed: unknown
-    const task = withPhysicalIoCompletion(() => withSharedIoPriority('background', () => withSharedIoSignal(owner.controller.signal, async () => {
+    const task = withPhysicalIoCompletion(() => withSharedIoPriority('background', () => withSharedIoQueueTimeout(250, () => withSharedIoSignal(owner.controller.signal, async () => {
       assertCurrent()
       // The snapshot is only a hint. Every actual filesystem admission retains
       // the scheduler's unmodified tree, alias, fairness and close barriers.
@@ -127,7 +135,7 @@ export function createPreviewSharedPreparationRuntime(options: Options) {
       const roots = await sharedIoResourceKeys(paths)
       assertCurrent()
       if (roots.length) {
-        const accesses = await sharedIoAccesses(paths.map(path => ({ path, scope: 'tree' as const, mode: 'write' as const })))
+        const accesses = await sharedIoAccesses(paths.map(path => ({ path, scope: 'file' as const, mode: 'write' as const })))
         assertCurrent()
         const admission = applicationSharedIoProcessRuntime().inspectAdmission({ roots, accesses, write: true, priority: 'background' })
         if (!admission.ready) {
@@ -151,7 +159,7 @@ export function createPreviewSharedPreparationRuntime(options: Options) {
           ['write-manifest', () => options.writeRootPreviewCacheManifest(cacheDir, root, 'root', dbPath, imageDir)],
         ] as Array<[string, () => Promise<unknown>]>) {
           assertCurrent(); phase = label
-          const result = await withIoDeadlineResult(`preview-cache-${label}`, () => operation().catch(error => { observed = error; throw error }), previewCacheQueryTimeoutMs())
+          const result = await withIoDeadlineResult(`preview-cache-${label}`, () => operation().catch(error => { observed = error; throw error }), Math.max(6000, previewCacheQueryTimeoutMs()))
           if (!result.ok) {
             if (result.timedOut) owner.controller.abort()
             throw result.error
@@ -161,7 +169,7 @@ export function createPreviewSharedPreparationRuntime(options: Options) {
       assertCurrent()
       owner.readyUntil = Date.now() + READY_TTL_MS
       return true
-    })))
+    }))))
     owner.task = task.then(value => {
       if (!value) { owner.readyUntil = 0; owner.unavailableUntil = Date.now() + READY_TTL_MS }
       return value
@@ -176,7 +184,7 @@ export function createPreviewSharedPreparationRuntime(options: Options) {
       evidence(owner.rootId, detail)
       if (error instanceof PreviewSharedPreparationDeferred || previewPreparationRetryable(error)) {
         owner.retryAt = Date.now() + RETRY_MS; owner.failure = detail
-        throw new PreviewSharedPreparationDeferred(owner.retryAt, detail)
+        throw Object.assign(new PreviewSharedPreparationDeferred(owner.retryAt, detail), { reported: true })
       }
       owner.unavailableUntil = Date.now() + READY_TTL_MS
       return false

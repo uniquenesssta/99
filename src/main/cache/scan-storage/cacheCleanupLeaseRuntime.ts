@@ -30,7 +30,12 @@ export async function withCacheCleanupLocks<T>(
   try {
     for (const path of [...new Set(lockPaths)]) {
       await fsp.mkdir(dirname(path), { recursive: true })
-      const opened = await executeSharedFile({ operation: 'openFile', path, exclusive: true })
+      const open = () => executeSharedFile({ operation: 'openFile', path, exclusive: true })
+      const opened = await open().catch(async error => {
+        if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') throw error
+        await executeSharedFile({ operation: 'removeStaleLock', path, olderThanMs: Date.now() - ROOT_SCAN_CACHE_LOCK_STALE_MS })
+        return open()
+      })
       const guard: CleanupGuard = { path, identity: opened.result.value,
         payload: Buffer.from(JSON.stringify({ purpose: 'cache-cleanup', pid: process.pid, token: randomUUID(), createdAt: new Date().toISOString() })) }
       guards.push(guard)

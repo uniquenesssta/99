@@ -1,3 +1,4 @@
+import { cacheMaintenancePending, registerCacheMaintenanceParticipant } from '../../maintenance/cacheMaintenanceCoordinator'
 import { applicationWorkEpoch, isApplicationClosing, onApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import { currentSharedIoSignal, withSharedIoSignal } from '../../path/sharedFileSystemRuntime'
 import { withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
@@ -23,7 +24,7 @@ function cancelled(owner?: PreviewRenderTask<unknown>): SharedIoProcessError {
 }
 
 export function assertPreviewRequestCurrent(epoch: number, signal = currentSharedIoSignal()): void {
-  if (signal?.aborted || isApplicationClosing() || applicationWorkEpoch() !== epoch) throw cancelled()
+  if (cacheMaintenancePending() || signal?.aborted || isApplicationClosing() || applicationWorkEpoch() !== epoch) throw cancelled()
 }
 
 // The map indexes the latest logical owner. This separate set retains every
@@ -32,12 +33,18 @@ export function createPreviewRenderTaskRuntime() {
   const active = new Set<PreviewRenderTask<unknown>>()
   onApplicationClosing(() => { for (const owner of active) owner.controller.abort() })
 
+  registerCacheMaintenanceParticipant({ pause: async () => {
+    for (const owner of active) owner.controller.abort()
+    await Promise.allSettled([...active].map(owner => owner.physicalCompletion))
+  } })
+
   function reusable<T>(owner: PreviewRenderTask<T> | undefined): owner is PreviewRenderTask<T> {
     return !!owner && owner.epoch === applicationWorkEpoch() && !owner.signal.aborted && !owner.controller.signal.aborted
   }
 
   function create<T>(run: (lifetime: PreviewRenderLifetime) => Promise<T>, previous?: PreviewRenderTask<T>): PreviewRenderTask<T> {
     const controller = new AbortController()
+    if (cacheMaintenancePending()) controller.abort()
     const owner: PreviewRenderTask<T> = { epoch: applicationWorkEpoch(), controller, signal: controller.signal, pending: undefined!, physicalCompletion: undefined!, subscribers: 0, settled: false, physicallySettled: false }
     active.add(owner)
     // A consumer's signal never owns shared work. Nested native owners inherit

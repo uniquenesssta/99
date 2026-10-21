@@ -1,3 +1,4 @@
+import { cacheMaintenancePending, ownsCacheMaintenance, registerCacheMaintenanceParticipant } from '../../maintenance/cacheMaintenanceCoordinator'
 import type { SharedIoProcessError } from '../../path/sharedIoProcessRuntime'
 import { isApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import type { FontItem,ScanResult } from '../../../shared/types'
@@ -41,6 +42,11 @@ export function createFontScanActiveJobRuntime(
   let latestManagedRequestId = 0
   let pendingManagedRequests = 0
   let managedScanTail: Promise<void> = Promise.resolve()
+
+  registerCacheMaintenanceParticipant({ pause: async () => {
+    cancelActiveFontScan('缓存维护优先，现有扫描已取消。')
+    await managedScanTail
+  } })
 
   function abortActiveFontScan(reason: string): {
     cancelled: boolean
@@ -88,13 +94,14 @@ export function createFontScanActiveJobRuntime(
     ownerSignal?: AbortSignal,
     reuseRecoveryMetadata = false,
   ): Promise<ScanResult> {
+    if (cacheMaintenancePending() && !ownsCacheMaintenance()) return Promise.resolve(cancelledScanResult(folders))
     const normalizedFolders = normalizeWatchedFontFolders(folders, deps.appendStartupLog)
     const requestId = latestManagedRequestId += 1
     pendingManagedRequests += 1
     abortActiveFontScan('新的索引扫描已开始，旧扫描已自动取消。')
 
     const request = managedScanTail.then(async () => {
-      if (requestId !== latestManagedRequestId || ownerSignal?.aborted) {
+      if (requestId !== latestManagedRequestId || ownerSignal?.aborted || (cacheMaintenancePending() && !ownsCacheMaintenance())) {
         deps.appendStartupLog(`font scan queued request superseded before start: request=${requestId}, latest=${latestManagedRequestId}`)
         return cancelledScanResult(normalizedFolders)
       }
@@ -152,6 +159,7 @@ export function createFontScanActiveJobRuntime(
   }
 
   async function scanFoldersWhenIdle(folders: string[], signal?: AbortSignal): Promise<ScanResult> {
+    if (cacheMaintenancePending()) throw new Error('source-recovery-deferred')
     const foregroundRevision = latestManagedRequestId
     await managedScanTail
     // A newer user request wins. Do not cancel it or revive a cancelled repair.
@@ -171,7 +179,7 @@ export function createFontScanActiveJobRuntime(
     scanFoldersWhenIdle,
     cancelActiveFontScan,
     activeFontScanStatus,
-    isActive: () => Boolean(activeFontScanJob),
+    isActive: () => Boolean(activeFontScanJob) || cacheMaintenancePending(),
     activeJobId: () => activeFontScanJob?.jobId || '',
   }
 }

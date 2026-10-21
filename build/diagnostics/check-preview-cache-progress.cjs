@@ -9,7 +9,7 @@ async function storage() {
  const rootState=()=>({rootId:'//nas/fonts',generation,state:online?'online':'offline'});
  const fs={mkdir:async p=>{calls.push(p);if(p==='/shared/images'&&gate)await gate.promise;if(fail&&p.startsWith('/shared'))throw Error('denied');}};
  const load=loader({
-  '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs,withSharedIoPriority:(_p,f)=>f(),withSharedIoSignal:(_s,f)=>f(),withoutSharedIoSignal:f=>f()},
+  '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs,withSharedIoQueueTimeout: (_ms, fn) => fn(), withSharedIoPriority:(_p,f)=>f(),withSharedIoSignal:(_s,f)=>f(),withoutSharedIoSignal:f=>f()},
   '../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},withStartupPathRootGuard:(guard,f)=>{guard();return f()},getStartupPathRootState:rootState},
   '../../app/shutdownCoordinatorRuntime':{applicationWorkEpoch:()=>epoch,isApplicationClosing:()=>closing,onApplicationClosing(){}},
   '../../rust-core/rustSharedIoCommandRuntime':{sharedIoResourceKeys:async()=>[]},
@@ -85,7 +85,7 @@ async function publication() {
  const fs={lstat:async()=>({dev:1,ino:1}),mkdir:async()=>calls.push('mkdir'),open:async()=>{calls.push('lock');return{stat:async()=>({dev:1,ino:1}),writeFile:async()=>{},close:async()=>{}}},access:async()=>{throw Object.assign(Error('missing'),{code:'ENOENT'})},writeFile:async(_path,bytes)=>{assert.equal(bytes,png);calls.push('write')},rename:async()=>calls.push('rename'),unlink:async()=>{}};
  const load=loader({
   'node:fs':{promises:{readFile:async file=>{assert.equal(file,'/local/a.png');calls.push('read');return png}}},
-  '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs,withSharedIoPriority:(_p,f)=>f(),withSharedIoSignal:(_s,f)=>f(),withoutSharedIoSignal:f=>f()},
+  '../../path/sharedFileSystemRuntime':{sharedFileSystem:fs,withSharedIoQueueTimeout: (_ms, fn) => fn(), withSharedIoPriority:(_p,f)=>f(),withSharedIoSignal:(_s,f)=>f(),withoutSharedIoSignal:f=>f()},
   '../../rust-core/rustSharedIoCommandRuntime':{sharedIoResourceKeys:async()=>[]},
   '../../path/startupPathAvailabilityRuntime':{assertStartupPathRootGuardCurrent(){},withStartupPathRootGuard:(guard,f)=>{guard();return f()},getStartupPathRootState:()=>({rootId:'root',generation:1,state:'online'})},
   '../../app/shutdownCoordinatorRuntime':{applicationWorkEpoch:()=>1,isApplicationClosing:()=>false,onApplicationClosing(){}},

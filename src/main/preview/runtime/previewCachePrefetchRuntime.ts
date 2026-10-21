@@ -1,3 +1,4 @@
+import { cacheMaintenancePending, registerCacheMaintenanceParticipant } from '../../maintenance/cacheMaintenanceCoordinator'
 import { previewCacheErrorOutcome, type PreviewCacheHydrationOutcome } from './previewCacheOutcomeRuntime'
 import { isApplicationClosing, onApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import { withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
@@ -64,6 +65,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchRuntimeOptions) {
+  const physicalTasks = new Set<Promise<void>>()
   const queue = new Map<string, { storage: PreviewCacheStorage; row: PreviewCacheHydrationRow; generation: number }>()
   const generationRuntime = createPreviewTaskGenerationRuntime({
     appendStartupLog: options.appendStartupLog,
@@ -120,7 +122,7 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
   }
 
   function schedulePump(immediate = false): void {
-    if (isApplicationClosing() || !prefetchEnabled()) return
+    if (cacheMaintenancePending() || isApplicationClosing() || !prefetchEnabled()) return
     if (timer && !immediate) return
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
@@ -162,7 +164,7 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
   }
 
   function pump(): void {
-    if (isApplicationClosing() || !prefetchEnabled()) {
+    if (cacheMaintenancePending() || isApplicationClosing() || !prefetchEnabled()) {
       stats.cancelled += queue.size
       queue.clear()
       return
@@ -187,7 +189,7 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
           }
         }
       }
-      withPhysicalIoCompletion(() => options.hydratePreviewCacheRows(batch.storage, batch.rows, current, (row, outcome) => outcomes.set(row, outcome)))
+      const task = withPhysicalIoCompletion(() => options.hydratePreviewCacheRows(batch.storage, batch.rows, current, (row, outcome) => outcomes.set(row, outcome)))
         .then((hydratedIds) => record(hydratedIds))
         .catch((error) => {
           const outcome = previewCacheErrorOutcome(error)
@@ -195,15 +197,17 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
           if (current() && outcome !== 'cancelled') options.appendStartupLog(`preview cache prefetch ${outcome}: ${errorMessage(error)}`)
         })
         .finally(() => {
+          physicalTasks.delete(task)
           active = Math.max(0, active - 1)
           logStats()
           if (queue.size) schedulePump()
         })
+      physicalTasks.add(task)
     }
   }
 
   function schedulePreviewCachePrefetch(storage: PreviewCacheStorage, rows: PreviewCacheHydrationRow[], immediate = false): void {
-    if (isApplicationClosing() || !prefetchEnabled() || !storage.shared || !rows.length) return
+    if (cacheMaintenancePending() || isApplicationClosing() || !prefetchEnabled() || !storage.shared || !rows.length) return
     for (const row of rows) {
       if (!row?.id || !row.previewKey || !row.outputPath) continue
       queue.set(taskKey(storage, row), { storage, row, generation: generationRuntime.currentGeneration() })
@@ -220,6 +224,12 @@ export function createPreviewCachePrefetchRuntime(options: PreviewCachePrefetchR
     return generationRuntime.beginGeneration(reason)
   }
 
+  registerCacheMaintenanceParticipant({ pause: async () => {
+    if (timer) clearTimeout(timer)
+    timer = null
+    beginPreviewCachePrefetchGeneration('cache-maintenance')
+    await Promise.allSettled([...physicalTasks])
+  } })
   onApplicationClosing(() => {
     if (timer) clearTimeout(timer)
     timer = null

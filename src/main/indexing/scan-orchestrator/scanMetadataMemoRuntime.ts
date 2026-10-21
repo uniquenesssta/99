@@ -2,9 +2,9 @@ import type { FontParseJob } from '../fontScanWorkers'
 import { buildFontParseResultFromRustMetadata } from './rustMetadataFastPathRuntime'
 
 // Pure parse hints only: never retain mutable tags, install state, or root rows.
-type Metadata = Pick<FontParseJob, 'signatureValid' | 'formatHint' | 'quickHash' | 'contentHash' | 'hashKind' | 'nameHint' | 'scriptHint' | 'styleHint' | 'familyHint' | 'parseDisposition' | 'sourceStability'>
+type Metadata = Pick<FontParseJob, 'signatureValid' | 'formatHint' | 'quickHash' | 'contentHash' | 'hashKind' | 'nameHint' | 'scriptHint' | 'styleHint' | 'familyHint' | 'parseDisposition' | 'sourceStability' | 'metadataDiagnostics'>
 type Entry = { root: string; scope: string; identity: string; metadata: Metadata; bytes: number }
-export const SCAN_METADATA_PARSER_VERSION = 1
+export const SCAN_METADATA_PARSER_VERSION = 2
 export function createScanMetadataMemoRuntime(limits = { entries: 10000, bytes: 32 * 1024 * 1024 }) {
   const entries = new Map<string, Entry>()
   let bytes = 0
@@ -27,6 +27,7 @@ export function createScanMetadataMemoRuntime(limits = { entries: 10000, bytes: 
   }
   function remember(root: string, scope: string, job: FontParseJob, scriptVersion: number, identityJob = job) {
     if (job.sourceStability !== 'stable' || job.signatureValid !== true) return
+    if (job.metadataDiagnostics?.some(item => item.kind === 'io-error')) return
     const disposition = job.parseDisposition?.scripts
     if (!disposition || disposition === 'io-error' || disposition === 'resource-limit' || disposition === 'not-requested') return
     const success = buildFontParseResultFromRustMetadata(job, scriptVersion)?.status === 'ok'
@@ -37,6 +38,7 @@ export function createScanMetadataMemoRuntime(limits = { entries: 10000, bytes: 
       quickHash: job.quickHash, contentHash: job.contentHash, hashKind: job.hashKind,
       nameHint: job.nameHint, scriptHint: job.scriptHint, styleHint: job.styleHint, familyHint: job.familyHint,
       parseDisposition: job.parseDisposition, sourceStability: job.sourceStability,
+      metadataDiagnostics: job.metadataDiagnostics?.slice(0, 16),
     }
     const encoded = JSON.stringify(metadata), id = key(root, job.cacheKey)
     const size = Buffer.byteLength(encoded + id + scope + identity(identityJob), 'utf8')

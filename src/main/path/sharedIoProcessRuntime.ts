@@ -164,8 +164,9 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   }
   const priorityOf = (job: AdmissionJob) => typeof job.request.priority === 'number' ? job.request.priority
     : job.request.priority === 'foreground' ? 20 : job.request.priority === 'background' ? 0 : 10
-  const canOvertake = (job: AdmissionJob, other: AdmissionJob) => !job.request.write && !other.request.write
-    && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) < 4
+  const canOvertake = (job: AdmissionJob, other: AdmissionJob) =>
+    (priorityOf(job) === 1000 && priorityOf(other) < 1000) || (!job.request.write && !other.request.write
+    && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) < 4)
   const canStart = (job: AdmissionJob) => {
     const lane = laneOf(job)
     const limit = lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2

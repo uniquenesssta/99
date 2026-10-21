@@ -61,6 +61,7 @@ function harness({ concurrency = 1 } = {}) {
     '../../path/sharedFileSystemRuntime': {
       sharedFileSystem: sharedFs,
       withSharedIoPriority: (priority, fn) => { assert.equal(priority, 'background'); return fn() },
+      withSharedIoQueueTimeout: (_ms, fn) => fn(),
       withSharedIoSignal: (signal, fn) => signals.run(signal, fn),
       withoutSharedIoSignal: fn => signals.run(undefined, fn),
     },
@@ -196,12 +197,15 @@ async function preparationBoundaries() {
     const joined = h.prepare.ensurePrepared(h.roots.a)
     first.catch(() => {}); joined.catch(() => {})
     await flush(); assert.equal(h.events.filter(event => event[0] === 'mkdir').length, 1)
-    await h.advance(2000); assert.equal(settled, false, 'outer response timeout freed physical preparation')
+    await h.advance(6000); assert.equal(settled, false, 'outer response timeout freed physical preparation')
     held.resolve(); h.setHold(undefined)
     await assert.rejects(first, error => error.name === 'PreviewSharedPreparationDeferred')
     await assert.rejects(joined, error => error.name === 'PreviewSharedPreparationDeferred')
     await h.advance(1000); assert.equal(await h.prepare.ensurePrepared(h.roots.a), true)
     const count = h.events.filter(event => event[0] === 'manifest').length
+    const reader = h.read(h.roots.a)
+    assert.equal(await h.prepare.ensurePrepared(h.roots.a), true, 'ready preparation requested write admission behind a reader')
+    h.children[0].emit('close', 0, null); await reader
     assert.equal(await h.prepare.ensurePrepared(h.roots.a), true)
     assert.equal(h.events.filter(event => event[0] === 'manifest').length, count)
     await h.advance(30001); assert.equal(await h.prepare.ensurePrepared(h.roots.a), true)
@@ -222,6 +226,7 @@ async function missingParentAndExpiry() {
     h.failIndexOnce(); h.enqueue(h.roots.a, 'repair'); await h.advance(7000); await waitFor(() => h.logs.some(line => line.includes('phase=publish-lock')), 'missing parent deferral'); await h.advance(1000); await watched(h.publish.whenIdle(), 'missing parent recovery')
     assert.equal(h.events.filter(event => event[0] === 'index' && event[2] === 'repair').length, 1)
     assert.equal(h.events.filter(event => event[0] === 'manifest').length, 2, 'missing index parent did not invalidate ready preparation')
+    h.prepare.invalidate()
     const read = h.read(h.roots.a); h.enqueue(h.roots.a, 'expires'); await h.advance(7000)
     await h.advance(5 * 60 * 1000)
     assert(h.logs.some(line => line.includes('optional-publication-expired')))
@@ -272,7 +277,7 @@ async function registeredIdentityFootprints() {
       mappedDriveTableSnapshot: () => null,
       mappedDriveTableAsync: async () => { mappings++; return null },
     },
-    '../../path/sharedFileSystemRuntime': { sharedFileSystem: { mkdir: async () => { filesystem++ } }, withSharedIoPriority: (_p, fn) => fn(), withSharedIoSignal: (_s, fn) => fn() },
+    '../../path/sharedFileSystemRuntime': { sharedFileSystem: { mkdir: async () => { filesystem++ } }, withSharedIoPriority: (_p, fn) => fn(), withSharedIoQueueTimeout: (_ms, fn) => fn(), withSharedIoSignal: (_s, fn) => fn() },
     '../../path/startupPathAvailabilityRuntime': { getStartupPathRootState: root => ({ rootId: root, generation: 1, state: 'online' }), withStartupPathRootGuard: (guard, fn) => { guard(); return fn() } },
     '../../app/shutdownCoordinatorRuntime': { applicationWorkEpoch: () => 1, isApplicationClosing: () => false, onApplicationClosing() {} },
     '../../path/sharedIoProcessRuntime': { applicationSharedIoProcessRuntime: () => ({ inspectAdmission: target => { hints.push(target); return { ready: false, phase: 'queued', blocker: 'resource-conflict', blockedBy: 1 } } }) },

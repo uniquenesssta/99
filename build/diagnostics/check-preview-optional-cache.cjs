@@ -42,7 +42,7 @@ function fixture(configuration = {}) {
     return { ok: true, outputPath: request.outputPath, engine: 'test' };
   };
   const signals = new (require('node:async_hooks').AsyncLocalStorage)(), priorities = new (require('node:async_hooks').AsyncLocalStorage)();
-  const filesystemPort = { configureSharedFileExecutor: executor => { state.executor = executor; }, sharedFileAccesses: () => undefined, isSharedPreviewReadScope: () => false, currentSharedIoPriority: () => priorities.getStore(), withSharedIoPriority: (priority, fn) => priorities.run(priority, fn), sharedFileSystem: fakefs, withSharedPreviewReads: fn => fn(), currentSharedIoSignal: () => signals.getStore(), withSharedIoSignal: (signal, fn) => signals.run(signal, fn), withoutSharedIoSignal: fn => signals.run(undefined, fn) };
+  const filesystemPort = { configureSharedFileExecutor: executor => { state.executor = executor; }, sharedFileAccesses: () => undefined, isSharedPreviewReadScope: () => false, currentSharedIoQueueTimeout: () => undefined, currentSharedIoPriority: () => priorities.getStore(), withSharedIoPriority: (priority, fn) => priorities.run(priority, fn), sharedFileSystem: fakefs, withSharedPreviewReads: fn => fn(), currentSharedIoSignal: () => signals.getStore(), withSharedIoSignal: (signal, fn) => signals.run(signal, fn), withoutSharedIoSignal: fn => signals.run(undefined, fn) };
   const load = loader({
     '../native-renderer/directwrite/directWritePreviewHelperPathRuntime': { hasDirectWritePreviewHelper: () => false },
     '../path/sharedFileSystemRuntime': filesystemPort,

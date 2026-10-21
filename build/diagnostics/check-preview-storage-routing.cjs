@@ -65,7 +65,7 @@ function harness(transform = x => x) {
   mocks['../../path/ioDeadlineRuntime'] = { ...load('src/main/path/ioDeadlineRuntime.ts'), previewCacheQueryTimeoutMs: () => 100 }
   mocks['node:fs'] = { promises: { async mkdir(dir) { events.push(['mkdir', dir]); if (state.failure === dir) throw Error('mkdir') } } }
   mocks['../../path/sharedFileSystemRuntime'] = { sharedFileSystem: mocks['node:fs'].promises,
-    withSharedIoPriority: (_priority, fn) => fn(), withSharedIoSignal: (_signal, fn) => fn() }
+    withSharedIoQueueTimeout: (_ms, fn) => fn(), withSharedIoPriority: (_priority, fn) => fn(), withSharedIoSignal: (_signal, fn) => fn() }
   mocks['./previewSharedPreparationRuntime'] = load(preparationFile, mocks, transform)
   let route
   mocks['./previewStorageRoutingRuntime'] = { createPreviewStorageRoutingRuntime(options, ports) {

@@ -1,12 +1,11 @@
+import { runCacheMaintenance } from '../../maintenance/cacheMaintenanceCoordinator'
 import { executeSharedFile, sharedFileSystem as fsp } from '../../path/sharedFileSystemRuntime'
 import { awaitPhysicalIoClose } from '../../path/ioDeadlineRuntime'
 import { dirname, join, resolve } from 'node:path'
 import type { CacheStats } from '../../../shared/types'
 import { requestRootIndexRebuild } from '../../indexing/root-index/rootIndexRebuildRequestRuntime'
 import {
-  LEGACY_ROOT_SCAN_CACHE_LOCK_FILE_NAME, ROOT_CACHE_LOCK_DIR_NAME,
-  ROOT_INDEX_LOCK_FILE_NAME,
-  ROOT_INDEX_BUILD_LOCK_FILE_NAME, ROOT_SCAN_CACHE_LOCK_FILE_NAME,
+  ROOT_CACHE_LOCK_DIR_NAME,
 } from '../constants'
 import { withCacheCleanupLocks, type CacheCleanupOutcome } from './cacheCleanupLeaseRuntime'
 import type { ScanCacheStatsReader, ScanCacheStorageRuntimeOptions } from './scanCacheStorageTypes'
@@ -16,7 +15,6 @@ function missing(error: unknown): boolean { return (error as NodeJS.ErrnoExcepti
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error) }
 
 export function createCacheCleanupRuntime(options: ScanCacheStorageRuntimeOptions, deps: { getCacheStats: ScanCacheStatsReader; invalidateCacheStats: () => void }) {
-  let cleanupTail: Promise<unknown> = Promise.resolve()
   const log = (value: string): void => { try { options.appendStartupLog(value) } catch { /* A logging failure cannot rewrite cleanup outcomes. */ } }
   function consume(report: CleanupReport, outcomes: CacheCleanupOutcome[]): void {
     for (const row of outcomes) {
@@ -43,7 +41,7 @@ export function createCacheCleanupRuntime(options: ScanCacheStorageRuntimeOption
     return deps.getCacheStats()
   }
   function enqueue(action: (report: CleanupReport) => Promise<void>): Promise<CacheStats> {
-    const task = cleanupTail.catch(() => undefined).then(async () => {
+    return runCacheMaintenance(async () => {
       const report: CleanupReport = { removed: 0, missing: 0, failures: [] }
       deps.invalidateCacheStats()
       try { await action(report) }
@@ -51,16 +49,11 @@ export function createCacheCleanupRuntime(options: ScanCacheStorageRuntimeOption
       for (const failure of report.failures) log(`cache cleanup retained: ${failure}`)
       return finish(report)
     })
-    cleanupTail = task.then(() => undefined, () => undefined)
-    return task
   }
 
-  async function clearIndexGroup(report: CleanupReport, cacheDir: string, dbPath: string, jsonPaths: string[]): Promise<void> {
+  async function clearIndexGroup(report: CleanupReport, cacheDir: string, jsonPaths: string[]): Promise<void> {
     if (!await present(cacheDir)) { report.missing += 1; return }
-    const dbDir = dirname(dbPath)
-    const lockPaths = [join(cacheDir, ROOT_CACHE_LOCK_DIR_NAME, ROOT_INDEX_BUILD_LOCK_FILE_NAME),
-      join(cacheDir, ROOT_CACHE_LOCK_DIR_NAME, ROOT_INDEX_LOCK_FILE_NAME), join(cacheDir, ROOT_SCAN_CACHE_LOCK_FILE_NAME),
-      join(dbDir, ROOT_SCAN_CACHE_LOCK_FILE_NAME), join(cacheDir, LEGACY_ROOT_SCAN_CACHE_LOCK_FILE_NAME)]
+    const lockPaths = [join(cacheDir, ROOT_CACHE_LOCK_DIR_NAME, 'cache-cleanup.lock')]
     await withCacheCleanupLocks(lockPaths, async remove => {
       // Invalidate parse reuse, not the last usable source. The request survives
       // cancellation/restart; the complete replacement writer acknowledges it.
@@ -75,13 +68,13 @@ export function createCacheCleanupRuntime(options: ScanCacheStorageRuntimeOption
       const legacy = options.legacyScanCachePath()
       await attempt(report, legacy, async () => {
         if (!await present(legacy)) { report.missing += 1; return }
-        await withCacheCleanupLocks([join(dirname(legacy), ROOT_SCAN_CACHE_LOCK_FILE_NAME)], async remove => {
+        await withCacheCleanupLocks([join(dirname(legacy), 'cache-cleanup.lock')], async remove => {
           consume(report, await remove([legacy]))
         }, log)
       })
       for (const folder of await watchedFolders(report)) {
-        await attempt(report, folder, () => clearIndexGroup(report, options.rootCacheDir(folder), options.rootIndexDbPath(folder), [options.rootScanCachePath(folder), options.rootLegacyScanCachePath(folder)]))
-        await attempt(report, options.fallbackCacheRootDir(folder), () => clearIndexGroup(report, options.fallbackCacheRootDir(folder), options.fallbackIndexDbPath(folder), [options.fallbackScanCachePath(folder), options.fallbackLegacyScanCachePath(folder)]))
+        await attempt(report, folder, () => clearIndexGroup(report, options.rootCacheDir(folder), [options.rootScanCachePath(folder), options.rootLegacyScanCachePath(folder)]))
+        await attempt(report, options.fallbackCacheRootDir(folder), () => clearIndexGroup(report, options.fallbackCacheRootDir(folder), [options.fallbackScanCachePath(folder), options.fallbackLegacyScanCachePath(folder)]))
       }
     })
   }

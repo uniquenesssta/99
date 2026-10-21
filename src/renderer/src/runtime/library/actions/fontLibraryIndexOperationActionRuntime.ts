@@ -71,12 +71,10 @@ export function createFontLibraryIndexOperationActionRuntime(
     const runId = options.nextIndexOperationRunId()
     options.setStatus('正在完全重建索引：先清理旧索引，再重新解析字体文件夹……')
     try {
-      await options.hfm.clearScanCache()
-      if (!options.isCurrentIndexOperation(runId)) return
       const tree = await sharedRuntime.readPhysicalFolderTree(currentLibrary.folders)
       if (!options.isCurrentIndexOperation(runId)) return
       const scrollSnapshot = options.captureFontScrollSnapshot()
-      const result = await options.hfm.scanFolders(tree.folders, [])
+      const result = await options.hfm.scanFolders(tree.folders, [], { rebuild: true })
       if (sharedRuntime.isCancelledScanResult(result)) return
       if (!options.isCurrentIndexOperation(runId)) return
       const nextLibrary = options.commitLibraryUpdate((prev) => applyFolderTreeToLibrary(prev, tree))

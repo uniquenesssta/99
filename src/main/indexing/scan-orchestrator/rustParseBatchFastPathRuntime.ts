@@ -70,6 +70,7 @@ export async function consumeRustFontParseBatchFastPath(args: {
     const errorByJobId = new Map((rustResult.errors || []).map(error => [error.jobId, error.message]))
     const remainingJobs: FontParseJob[] = []
     let consumed = 0
+    let unclassifiedAsOther = 0
     for (const job of jobs) {
       throwIfAborted(signal)
       const rustJob = resultByJobId.get(job.jobId)
@@ -87,6 +88,7 @@ export async function consumeRustFontParseBatchFastPath(args: {
         continue
       }
 
+      if (!rustJob.scriptHint && fastResult.font?.scripts.includes('other')) unclassifiedAsOther++
       consumed += 1
       await processResult(fastResult)
       if (consumed % 200 === 0) {
@@ -96,7 +98,7 @@ export async function consumeRustFontParseBatchFastPath(args: {
     }
 
     rejectionReporter.flush()
-    appendStartupLog(`${logPrefix} used: rustBatch=${consumed}, fallbackWorker=${remainingJobs.length}, rustErrors=${rustResult.errors?.length || 0}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${rustResult.elapsedMs || 0}ms`)
+    appendStartupLog(`${logPrefix} used: rustBatch=${consumed}, unclassifiedAsOther=${unclassifiedAsOther}, fallbackWorker=${remainingJobs.length}, rustErrors=${rustResult.errors?.length || 0}, elapsed=${Date.now() - startedAt}ms, workerElapsed=${rustResult.elapsedMs || 0}ms`)
     return { remainingJobs, consumed, errors: rustResult.errors?.length || 0 }
   } catch (error) {
       rethrowSharedIoProcessError(error)

@@ -47,6 +47,8 @@ async function recoveryRounds() {
   const f = await fixture()
   try {
     const [a, b] = f.folders
+    // A missing display name remains a real parse failure; unknown scripts now
+    // belong to other (covered by native metadata recovery diagnostics).
     // 4122 entries in failed root, 1435 in independent healthy root.
     for (const [folder, count] of [[a, 4119], [b, 1432]]) {
       for (let start = 0; start < count; start += 100) await Promise.all(Array.from({ length: Math.min(100, count - start) }, (_, n) => fs.writeFile(path.join(folder, `fixture-${start + n}.ttf`), 'synthetic-font')))
@@ -70,7 +72,7 @@ async function recoveryRounds() {
         const failed = input.rootPath === a && match && Number(match[1]) < 55
         if (failed) failingPath ||= input.filePath
         return { ...input, signatureValid: true, sourceStability: 'stable', parseDisposition: { scripts: failed ? Number(match[1]) === 54 ? 'malformed' : failureMode : 'complete' },
-          nameHint: { familyName: 'Synthetic' }, scriptHint: failed ? undefined : { scripts: ['latin'] } }
+          nameHint: failed ? undefined : { familyName: 'Synthetic' }, scriptHint: failed ? undefined : { scripts: ['latin'] } }
       }) }
     }
     const first = await f.scan.scanFoldersWhenIdle(f.folders)

@@ -1,3 +1,4 @@
+import { cacheMaintenancePending, registerCacheMaintenanceParticipant } from '../../maintenance/cacheMaintenanceCoordinator'
 import { PreviewSharedPreparationDeferred, createPreviewPreparationEvidenceLogger, previewPreparationRetryable } from './previewSharedPreparationRuntime'
 import { randomUUID } from 'node:crypto'
 import { promises as localFs } from 'node:fs'
@@ -6,7 +7,7 @@ import { sharedIoResourceKeys } from '../../rust-core/rustSharedIoCommandRuntime
 import { applicationWorkEpoch, isApplicationClosing, onApplicationClosing } from '../../app/shutdownCoordinatorRuntime'
 import { getStartupPathRootState, withStartupPathRootGuard } from '../../path/startupPathAvailabilityRuntime'
 import { awaitPhysicalIoClose, withPhysicalIoCompletion } from '../../path/ioDeadlineRuntime'
-import { executeSharedFile, sharedFileSystem as fsp, withSharedIoPriority, withSharedIoSignal, withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime'
+import { executeSharedFile, sharedFileSystem as fsp, withSharedIoPriority, withSharedIoQueueTimeout, withSharedIoSignal, withoutSharedIoSignal } from '../../path/sharedFileSystemRuntime'
 import { dirname, join } from 'node:path'
 import { hostname } from 'node:os'
 import type { PreviewCacheIndexStatus } from '../previewCacheRuntime'
@@ -39,7 +40,7 @@ export type PreviewCachePublishRuntimeOptions = {
 }
 
 const DEFAULT_PUBLISH_DELAY_MS = 7000
-const DEFAULT_PUBLISH_TIMEOUT_MS = 2000
+const DEFAULT_PUBLISH_TIMEOUT_MS = 6000
 const DEFAULT_PUBLISH_MAX_IN_FLIGHT = 1
 const DEFAULT_PUBLISH_LOCK_TTL_MS = 30000
 const DEFAULT_STATS_LOG_INTERVAL_MS = 10000
@@ -350,7 +351,7 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
       queue.delete(key)
       inFlight.set(key, task)
       active += 1
-      withPhysicalIoCompletion(() => withSharedIoPriority('background', () => withSharedIoSignal(task.controller.signal, () => publishOne(task))))
+      withPhysicalIoCompletion(() => withSharedIoPriority('background', () => withSharedIoQueueTimeout(250, () => withSharedIoSignal(task.controller.signal, () => publishOne(task)))))
         .catch((error) => {
           const code = (error as { code?: string; reason?: string })?.code || (error as { reason?: string })?.reason
           // A missing cache parent can be recreated safely before a new lock.
@@ -362,7 +363,7 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
             task.notBefore = deferred.retryAt
             rootRetryAt.set(rootKey(task), deferred.retryAt)
             queue.set(key, task)
-            evidence(task.rootId, deferred.detail)
+            if (!deferred.reported) evidence(task.rootId, deferred.detail)
           } else if (deferred) evidence(task.rootId, { phase: 'publication', blocker: 'optional-publication-expired' })
           else options.appendStartupLog(`preview cache publish failed: ${errorMessage(error)}`)
         })
@@ -379,7 +380,7 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
   }
 
   function enqueuePreviewCachePublish(localStorage: PreviewCacheStorage, row: PreviewCachePublishRow): void {
-    if (isApplicationClosing()) return
+    if (cacheMaintenancePending() || isApplicationClosing()) return
     const sharedStorage = options.previewCacheStorageToShared(localStorage)
     if (!sharedStorage?.rootPath) return
     const state = getStartupPathRootState(sharedStorage.rootPath)
@@ -400,13 +401,18 @@ export function createPreviewCachePublishRuntime(options: PreviewCachePublishRun
     logStats()
   }
 
-  onApplicationClosing(() => {
+  function retire(): void {
     if (timer) clearTimeout(timer)
     timer = null
     queue.clear(); rootRetryAt.clear()
     for (const task of inFlight.values()) task.controller.abort()
     resolveIdle()
-  })
+  }
+  onApplicationClosing(retire)
+  registerCacheMaintenanceParticipant({ pause: async () => {
+    retire()
+    if (active) await new Promise<void>(resolve => idleWaiters.push(resolve))
+  } })
   return {
     enqueuePreviewCachePublish,
     logStats,

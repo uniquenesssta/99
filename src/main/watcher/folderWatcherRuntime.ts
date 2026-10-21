@@ -1,3 +1,4 @@
+import { cacheMaintenancePending, registerCacheMaintenanceParticipant } from '../maintenance/cacheMaintenanceCoordinator'
 import { withOperationWork } from '../logging/operationTraceContext'
 import { isApplicationClosing, onApplicationResumed } from '../app/shutdownCoordinatorRuntime';
 import { BrowserWindow } from "electron";
@@ -91,6 +92,11 @@ export function createFolderWatcherRuntime(
   const closingWatchers = new Set<Promise<void>>();
   const notifications = createSharedFolderNotificationRuntime({ getWorkerPath: options.getSharedWatchWorkerPath, log: options.appendStartupLog });
   onApplicationResumed(() => { void startWatchingFolders(requestedFolders).catch(error => options.appendStartupLog(`watcher resume failed: ${String(error)}`)); });
+
+  registerCacheMaintenanceParticipant({
+    pause: async () => { stopFolderWatchers(); await awaitFolderWatchersClosed(); },
+    resume: async () => { if (!cacheMaintenancePending() && !isApplicationClosing()) await startWatchingFolders(requestedFolders); },
+  });
 
   function stopFolderWatchers(): void {
     watcherGeneration += 1;
@@ -507,6 +513,7 @@ export function createFolderWatcherRuntime(
   async function startWatchingFolders(folders: string[]): Promise<boolean> {
     if (isApplicationClosing()) return false;
     requestedFolders = [...folders];
+    if (cacheMaintenancePending()) return false;
     const uniqueFolders = Array.from(
       new Set((folders || []).filter(Boolean).map((folder) => resolve(folder))),
     );
