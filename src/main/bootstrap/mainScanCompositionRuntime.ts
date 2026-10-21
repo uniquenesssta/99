@@ -1,3 +1,4 @@
+import { runCacheMaintenance } from '../maintenance/cacheMaintenanceCoordinator';
 import { readRootIndexRebuildRequest } from '../indexing/root-index/rootIndexRebuildRequestRuntime';
 import { createRootIndexSourceRecoveryRuntime } from '../indexing/root-index/rootIndexSourceRecoveryRuntime';
 import { ensureStartupPathRootAvailable } from '../path/startupPathAvailabilityRuntime';
@@ -36,6 +37,7 @@ type Core = ReturnType<typeof createMainCoreCompositionRuntime>;
 type Data = ReturnType<typeof createMainDataCompositionRuntime>;
 
 export interface MainScanCompositionOptions {
+  clearScanCache: Data['storage']['clearScanCache'];
   dataPath: Core['paths']['dataPath'];
   nodeRequire: NodeRequire;
   storageProfileForPath: Core['storage']['storageProfileForPath'];
@@ -411,7 +413,11 @@ export function createMainScanCompositionRuntime(options: MainScanCompositionOpt
     })).catch(error => { appendStartupLog(`root index startup recovery deferred: ${recoveryMessage(error)}`); });
     return started;
   }
-  const scanFoldersManaged: MainOperationsCompositionRuntime['capabilities']['scanFoldersManaged'] = async (folders, knownFonts) => {
+  const scanFoldersManaged: MainOperationsCompositionRuntime['capabilities']['scanFoldersManaged'] = async (folders, knownFonts, scanOptions) => {
+    if (scanOptions?.rebuild) return runCacheMaintenance(async () => {
+      await options.clearScanCache();
+      return scanFoldersManaged(folders, []);
+    });
     assertFeedbackReady();
     sourceRecovery.resume(folders);
     const result = await scanFoldersRuntime().scanFoldersManaged(

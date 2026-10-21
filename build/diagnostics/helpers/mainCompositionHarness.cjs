@@ -106,6 +106,7 @@ function createHarness(overrides = new Map(), sourceRoot = root) {
         listeners.push(listener)
         return () => { const index = listeners.indexOf(listener); if (index >= 0) listeners.splice(index, 1) }
       }
+      if (key === 'runCacheMaintenance') return action => { record('runCacheMaintenance', []); return action() }
       if (key === 'normalizeWatchedFontFolders') return folders => folders
       if (key === 'isApplicationClosing') return () => !!state.closing
       if (key === 'normalizePathForCacheCompare') return value => value

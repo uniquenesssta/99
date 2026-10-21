@@ -60,6 +60,22 @@ async function checkApplication(overrides = new Map()) {
   // publishing either private resource. Verify order and both held lifetimes.
   const operations = h.compositions.get('createMainOperationsCompositionRuntime')
   const data = h.compositions.get('createMainDataCompositionRuntime')
+  // The scan owner composes clear + replacement under one maintenance request.
+  // Exercise the registered entry; maintenance drain/admission is tested separately.
+  const clearName = data.capabilities.clearScanCache.fixtureOperation
+  h.reset()
+  await h.payload.scanFoldersManaged(['/fonts'], [], { rebuild: true })
+  const clearAt = h.calls.findIndex(call => call[0] === clearName)
+  const scanAt = h.calls.findIndex(call => call[0] === 'createScanOrchestrator.scanFoldersManaged')
+  assert.equal(h.calls.filter(call => call[0] === 'runCacheMaintenance').length, 1)
+  assert(clearAt >= 0 && scanAt > clearAt, 'rebuild did not clear before replacement scan')
+  h.reset()
+  await h.payload.scanFoldersManaged(['/fonts'], [])
+  assert(!h.calls.some(call => call[0] === clearName || call[0] === 'runCacheMaintenance'), 'ordinary scan cleared the cache')
+  h.reset(); h.failOperations.add(clearName)
+  try { await assert.rejects(h.payload.scanFoldersManaged(['/fonts'], [], { rebuild: true }), /fixture failure/) }
+  finally { h.failOperations.delete(clearName) }
+  assert(!h.calls.some(call => call[0] === 'createScanOrchestrator.scanFoldersManaged'), 'failed clear still started replacement')
   const events = []; let releaseWatcher, releaseProbe, settled = false
   const watcherClosed = new Promise(resolve => { releaseWatcher = resolve })
   const probeClosed = new Promise(resolve => { releaseProbe = resolve })

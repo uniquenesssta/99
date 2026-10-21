@@ -1,4 +1,3 @@
-import { runCacheMaintenance } from '../maintenance/cacheMaintenanceCoordinator';
 import type {
   MainApplicationRuntime, MainCoreCompositionRuntime, MainDataCompositionRuntime,
   MainMutationCompositionRuntime, MainOperationsCompositionRuntime, MainApplicationRegistrationGroups,
@@ -115,12 +114,7 @@ export function createMainApplicationRuntime({ core, data, mutation, operations 
       renamePhysicalFolder: mutation.capabilities.renamePhysicalFolder,
       moveFontFileToFolder: mutation.capabilities.moveFontFileToFolder,
       moveFontFilesToFolder: mutation.capabilities.moveFontFilesToFolder,
-      scanFoldersManaged: (folders, knownFonts, options) => options?.rebuild
-        ? runCacheMaintenance(async () => {
-          await data.capabilities.clearScanCache();
-          return operations.capabilities.scanFoldersManaged(folders, []);
-        })
-        : operations.capabilities.scanFoldersManaged(folders, knownFonts),
+      scanFoldersManaged: operations.capabilities.scanFoldersManaged,
       cancelActiveFontScan: operations.capabilities.cancelActiveFontScan,
       startWatchingFolders: operations.capabilities.startWatchingFolders,
       refreshWatchedFolder: operations.capabilities.refreshWatchedFolder,

@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { withSharedIoPriority } from '../path/sharedFileSystemRuntime'
+import { withSharedIoPriority } from '../path/sharedIoSchedulingScope'
 import { CACHE_MAINTENANCE_PRIORITY } from '../performance/ioQueue'
 export { CACHE_MAINTENANCE_PRIORITY }
 type Participant = { pause: () => Promise<void>; resume?: () => void | Promise<void> }

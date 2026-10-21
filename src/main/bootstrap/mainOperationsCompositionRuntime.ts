@@ -38,6 +38,7 @@ type Data = ReturnType<typeof createMainDataCompositionRuntime>;
 
 export interface MainOperationsCompositionOptions {
   storage: Pick<Data['storage'],
+    | 'clearScanCache'
     | 'tasksSqlitePath'
     | 'openRecoverableApplicationSqliteDb'
     | 'closeSqliteDb'
@@ -490,6 +491,7 @@ export function createMainOperationsCompositionRuntime(options: MainOperationsCo
     stopFolderWatchers,
     awaitFolderWatchersClosed
   } = createMainScanCompositionRuntime({
+    clearScanCache: options.storage.clearScanCache,
     dataPath,
     nodeRequire,
     storageProfileForPath,

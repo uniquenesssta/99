@@ -67,10 +67,12 @@ async function runManagedScanBehavior() {
       return error && (error.name === 'OperationCancelledError' || error.name === 'AbortError')
     }
   }
+  const maintenance = require('./check-operation-chain.cjs').loader()('src/main/maintenance/cacheMaintenanceCoordinator.ts')
   let nextJob = 0
   const { createFontScanActiveJobRuntime } = loadTypeScriptModule(
     'src/main/indexing/scan-orchestrator/fontScanActiveJobRuntime.ts',
     (id) => {
+      if (id === '../../maintenance/cacheMaintenanceCoordinator') return maintenance
       if (id === '../../path/fontPathPolicy') return { normalizeWatchedFontFolders: (folders) => folders.slice() }
       if (id === '../../performance/ioQueue') return cancellationModule
       if (id === './scanOrchestratorUtils') return { createFontScanJobId: () => `job-${++nextJob}` }
