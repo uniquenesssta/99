@@ -43,7 +43,7 @@ function assertSharedAdmissionDeadline(source) {
   assert(timeout && ts.isPropertyAssignment(timeout)
     && compact(timeout.initializer) === 'Math.min(sharedCommandExecutionTimeoutMs(args[0],execOptions.timeout,verifiedListing),previewLifetime?.remainingMs()??Infinity)',
   'Shared I/O admission must retain both its operation cap and remaining logical preview budget')
-  assert(queueDeclarations.length === 1 && compact(queueDeclarations[0].initializer) === 'previewLifetime?.queueTimeoutMs()??3000',
+  assert(queueDeclarations.length === 1 && compact(queueDeclarations[0].initializer) === 'previewLifetime?.queueTimeoutMs()??currentSharedIoQueueTimeout()??3000',
     'Shared I/O queue must retain cumulative preview budget and ordinary 3000ms default')
   assert(properties.some(node => ts.isShorthandPropertyAssignment(node) && node.name.text === 'queueTimeoutMs'),
     'Shared I/O request must use the bounded queue admission value')
@@ -145,8 +145,9 @@ function testC08NetworkListingBatchRouting() {
   for (const [before, after] of [
     ['Math.min(sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing), previewLifetime?.remainingMs() ?? Infinity)', 'previewLifetime?.remainingMs() ?? Infinity'],
     ['Math.min(sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing), previewLifetime?.remainingMs() ?? Infinity)', 'sharedCommandExecutionTimeoutMs(args[0], execOptions.timeout, verifiedListing)'],
-    ['previewLifetime?.queueTimeoutMs() ?? 3000', '3000'],
-    ['previewLifetime?.queueTimeoutMs() ?? 3000', 'previewLifetime?.queueTimeoutMs() ?? 6000'],
+    ['previewLifetime?.queueTimeoutMs() ?? currentSharedIoQueueTimeout() ?? 3000', '3000'],
+    ['previewLifetime?.queueTimeoutMs() ?? currentSharedIoQueueTimeout() ?? 3000', 'previewLifetime?.queueTimeoutMs() ?? currentSharedIoQueueTimeout() ?? 6000'],
+    ['previewLifetime?.queueTimeoutMs() ?? currentSharedIoQueueTimeout() ?? 3000', 'previewLifetime?.queueTimeoutMs() ?? 3000'],
     ['queueTimeoutMs, maxBuffer:', 'queueTimeoutMs: 6000, maxBuffer:'],
   ]) {
     assert(transport.split(before).length === 2, 'Deadline mutation anchor drifted: ' + before)

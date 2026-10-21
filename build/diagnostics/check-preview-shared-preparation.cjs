@@ -26,6 +26,7 @@ async function waitFor(predicate, label) {
   }
 }
 function harness({ concurrency = 1 } = {}) {
+  const scheduling = loader()('src/main/path/sharedIoSchedulingScope.ts')
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hfm-shared-preparation-'))
   const roots = { a: path.join(dir, 'root-a'), b: path.join(dir, 'root-b') }
   const local = path.join(dir, 'local.png'); fs.writeFileSync(local, png)
@@ -60,8 +61,8 @@ function harness({ concurrency = 1 } = {}) {
     'node:child_process': { spawn: child },
     '../../path/sharedFileSystemRuntime': {
       sharedFileSystem: sharedFs,
-      withSharedIoPriority: (priority, fn) => { assert.equal(priority, 'background'); return fn() },
-      withSharedIoQueueTimeout: (_ms, fn) => fn(),
+      withSharedIoPriority: scheduling.withSharedIoPriority,
+      withSharedIoQueueTimeout: scheduling.withSharedIoQueueTimeout,
       withSharedIoSignal: (signal, fn) => signals.run(signal, fn),
       withoutSharedIoSignal: fn => signals.run(undefined, fn),
     },

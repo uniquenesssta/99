@@ -425,6 +425,21 @@ function snapshot(file, source = read(file)) {
 function reviewedContractSource(file, source) {
   source = source.replace(/\r\n/g, '\n')
   if (file !== watcherFile) return source
+  // Pin the reviewed maintenance wiring, then reverse only these additions so
+  // the frozen historical watcher contract still detects unrelated drift.
+  const maintenanceBinding = "import { cacheMaintenancePending, registerCacheMaintenanceParticipant } from '../maintenance/cacheMaintenanceCoordinator'\n"
+  const maintenanceRegistration = '  registerCacheMaintenanceParticipant({\n'
+    + '    pause: async () => { stopFolderWatchers(); await awaitFolderWatchersClosed(); },\n'
+    + '    resume: async () => { if (!cacheMaintenancePending() && !isApplicationClosing()) await startWatchingFolders(requestedFolders); },\n'
+    + '  });\n\n'
+  const maintenanceAdmission = '    if (cacheMaintenancePending()) return false;\n'
+  assert(source.startsWith(maintenanceBinding), 'W-01 reviewed maintenance import placement changed')
+  assert(source.includes(maintenanceRegistration + '  function stopFolderWatchers(): void {'), 'W-01 reviewed maintenance registration placement changed')
+  assert(source.includes('    requestedFolders = [...folders];\n' + maintenanceAdmission), 'W-01 reviewed maintenance admission placement changed')
+  for (const addition of [maintenanceBinding, maintenanceRegistration, maintenanceAdmission]) {
+    assert.equal(source.split(addition).length - 1, 1, 'W-01 reviewed maintenance addition missing or duplicated')
+    source = source.replace(addition, '')
+  }
   // Recovery memo retirement is one reviewed epoch-owner binding. Pin both
   // top-level placement and stop ordering before reversing this additive change.
   const epochBinding = "import { retireFolderWatcherRegistration } from './folderWatcherRegistrationRuntime';\n"
@@ -484,6 +499,20 @@ function checkReviewedWatcherEpochMutations() {
   assert.throws(() => assert.deepEqual(snapshot(watcherFile, reviewedContractSource(watcherFile, oldDrift)), expected, 'W-01 baseline drift'),
     error => error instanceof assert.AssertionError && /baseline drift/.test(error.message), 'W-01 inverse masked historical behavior drift')
 }
+function checkReviewedMaintenanceMutations() {
+  const source = read(watcherFile).replace(/\r\n/g, '\n')
+  for (const before of [
+    '    pause: async () => { stopFolderWatchers(); await awaitFolderWatchersClosed(); },',
+    '    resume: async () => { if (!cacheMaintenancePending() && !isApplicationClosing()) await startWatchingFolders(requestedFolders); },',
+    '    if (cacheMaintenancePending()) return false;',
+  ]) {
+    assert.equal(source.split(before).length - 1, 1, 'W-01 maintenance mutation anchor missing')
+    for (const after of ['', before + '\n' + before]) assert.throws(
+      () => reviewedContractSource(watcherFile, source.replace(before, after)),
+      error => error instanceof assert.AssertionError && /reviewed maintenance/.test(error.message),
+      'W-01 maintenance wiring mutation accepted')
+  }
+}
 function mutate(source, before, after) { assert(source.includes(before), `mutation target missing: ${before}`); return source.replace(before, after) }
 async function main() {
   if (process.argv.includes('--observe') || process.argv.includes('--probe')) {
@@ -515,7 +544,7 @@ async function main() {
   await assert.rejects(() => watcherRecovery(s => mutate(s, 'if (nextSignature === currentFolderWatchSignature && folderWatchersHealthy)', 'if (nextSignature === currentFolderWatchSignature)')), assert.AssertionError)
   await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (isApplicationClosing() || generation !== watcherGeneration) return true;', '')), assert.AssertionError)
   await assert.rejects(() => watcherRecovery(s => s.replaceAll('if (generation !== watcherGeneration || !listening) return;', '')), assert.AssertionError)
-  contracts(); checkReviewedWatcherEpochMutations(); metricsBroadcastHealthy(); metricsBroadcastHealthy(s => s.replace(/\r?\n/g, '\r\n'));
+  contracts(); checkReviewedWatcherEpochMutations(); checkReviewedMaintenanceMutations(); metricsBroadcastHealthy(); metricsBroadcastHealthy(s => s.replace(/\r?\n/g, '\r\n'));
   const metricsGate = "const metricsOnly = payload.source === 'metrics' && Number.isSafeInteger(payload.metricsRevision) && Number(payload.metricsRevision) > 0;";
   const invalidMetricsGuard = "if (payload.source === 'metrics' && !metricsOnly) return;";
   assert(read(watcherFile).includes(metricsGate)); assert(read(watcherFile).includes(invalidMetricsGuard));
