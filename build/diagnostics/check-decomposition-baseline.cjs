@@ -23,6 +23,7 @@ function load(file, mocks = {}, transform = x => x) {
     if (id.endsWith('/sharedFileSystemRuntime')) return { sharedFileSystem: (mocks['node:fs'] || fs).promises, sharedSqliteReadSnapshot: async () => undefined }
     if (id.endsWith('/rustSharedIoCommandRuntime')) return { sharedIoResourceKeys: async () => [] }
     if (id.endsWith('/sharedIoProcessRuntime')) return require('./check-operation-chain.cjs').loader()('src/main/path/sharedIoProcessRuntime.ts')
+    if (id.endsWith('/cacheMaintenanceCoordinator')) return require('./check-operation-chain.cjs').loader()('src/main/maintenance/cacheMaintenanceCoordinator.ts')
     if (id.endsWith('/sharedIoCancellationRuntime')) return require('./check-operation-chain.cjs').loader()('src/main/path/sharedIoCancellationRuntime.ts')
     if (id === '../../../shared/preview-layout/nativePreviewLayout') return load('src/shared/preview-layout/nativePreviewLayout.ts', mocks)
     if (id === '../../../shared/preview-layout/previewLayoutConfig') return load('src/shared/preview-layout/previewLayoutConfig.ts', mocks)

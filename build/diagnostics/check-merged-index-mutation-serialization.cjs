@@ -124,7 +124,9 @@ async function runWatcherBehaviorChecks() {
     ['./sharedWatcherInventoryRuntime', 'src/main/watcher/sharedWatcherInventoryRuntime.ts'],
   ])
   const loadedSiblings = new Map()
+  const maintenance = require('./check-operation-chain.cjs').loader()('src/main/maintenance/cacheMaintenanceCoordinator.ts')
   function requireWatcherDependency(id) {
+      if (id.endsWith('/cacheMaintenanceCoordinator')) return maintenance
       if (watcherSiblings.has(id)) {
         if (!loadedSiblings.has(id)) loadedSiblings.set(id, loadTypeScriptModule(watcherSiblings.get(id), requireWatcherDependency))
         return loadedSiblings.get(id)

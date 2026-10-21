@@ -28,7 +28,7 @@ jobs:
           $failed = 0
           & npm run typecheck *>> artifacts/cache-maintenance.log
           if ($LASTEXITCODE -ne 0) { $failed++ }
-          foreach ($script in @('check-cache-maintenance-priority.cjs', 'check-cache-cleanup-safety.cjs', 'check-preview-shared-preparation.cjs', 'check-preview-cache-publish.cjs', 'check-preview-cache-progress.cjs', 'check-scan-partial-retention.cjs', 'check-scan-rebuild-recovery.cjs', 'check-scan-lifecycle-durability.cjs', 'check-main-application-runtime.cjs')) {
+          foreach ($script in @('check-cache-maintenance-priority.cjs', 'check-cache-cleanup-safety.cjs', 'check-preview-shared-preparation.cjs', 'check-preview-cache-publish.cjs', 'check-preview-cache-progress.cjs', 'check-scan-partial-retention.cjs', 'check-scan-rebuild-recovery.cjs', 'check-scan-lifecycle-durability.cjs', 'check-main-application-runtime.cjs', 'check-merged-index-mutation-serialization.cjs', 'check-preview-storage-routing.cjs')) {
             & node --experimental-sqlite "build/diagnostics/$script" *>> artifacts/cache-maintenance.log
             if ($LASTEXITCODE -ne 0) { $failed++ }
           }
