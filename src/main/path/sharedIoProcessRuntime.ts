@@ -1,3 +1,4 @@
+import { CACHE_MAINTENANCE_PRIORITY } from '../performance/ioQueue'
 import { AsyncResource } from 'node:async_hooks'
 import { detailedStartupLogsEnabled } from '../logging/startupLogPolicy'
 import { createHash } from 'node:crypto'
@@ -165,13 +166,13 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
   const priorityOf = (job: AdmissionJob) => typeof job.request.priority === 'number' ? job.request.priority
     : job.request.priority === 'foreground' ? 20 : job.request.priority === 'background' ? 0 : 10
   const canOvertake = (job: AdmissionJob, other: AdmissionJob) =>
-    (priorityOf(job) === 1000 && priorityOf(other) < 1000) || (!job.request.write && !other.request.write
+    (priorityOf(job) === CACHE_MAINTENANCE_PRIORITY && priorityOf(other) < CACHE_MAINTENANCE_PRIORITY) || (!job.request.write && !other.request.write
     && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) < 4)
   const canStart = (job: AdmissionJob) => {
     const lane = laneOf(job)
     const limit = lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2
     if ([...active].filter(other => laneOf(other) === lane).length >= limit) return false
-    if (!job.request.write && queue.some(other => other.id < job.id && !other.request.write && laneOf(other) === lane && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) >= 4)) return false
+    if (priorityOf(job) !== CACHE_MAINTENANCE_PRIORITY && !job.request.write && queue.some(other => other.id < job.id && !other.request.write && laneOf(other) === lane && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) >= 4)) return false
     if (queue.some(other => other.id < job.id && conflicts(job, other) && !canOvertake(job, other))) return false
     return ![...active].some(other => conflicts(job, other))
   }
@@ -187,7 +188,7 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     const activeLane = [...active].filter(other => laneOf(other) === lane)
     if (activeLane.length >= (lane === 'preview-read' ? 10 : lane === 'root-probe' ? 1 : 2))
       return { ready: false, phase: 'queued', blocker: 'lane-capacity', blockedBy: activeLane[0].id }
-    const priorLane = !request.write && queued.find(other => !other.request.write && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) >= 4)
+    const priorLane = priorityOf(job) !== CACHE_MAINTENANCE_PRIORITY && !request.write && queued.find(other => !other.request.write && priorityOf(job) > priorityOf(other) && (other.bypassedReads || 0) >= 4)
     if (priorLane) return { ready: false, phase: 'queued', blocker: 'prior-lane-request', blockedBy: priorLane.id }
     const priorConflict = queue.find(other => conflicts(job, other) && !canOvertake(job, other))
     if (priorConflict) return { ready: false, phase: 'queued', blocker: 'prior-conflicting-request', blockedBy: priorConflict.id }
@@ -271,7 +272,8 @@ export function createSharedIoProcessRuntime(appendLog: (message: string) => voi
     if (!closed) {
       while (true) {
         const ordered = [...queue].sort((a, b) => priorityOf(b) - priorityOf(a) || a.id - b.id)
-        let next = ordered.find(job => laneOf(job) === 'root-probe' && canStart(job))
+        let next = ordered.find(job => priorityOf(job) === CACHE_MAINTENANCE_PRIORITY && canStart(job))
+        next ||= ordered.find(job => laneOf(job) === 'root-probe' && canStart(job))
         next ||= ordered.find(canStart)
         const index = next ? queue.indexOf(next) : -1
         if (index < 0) break

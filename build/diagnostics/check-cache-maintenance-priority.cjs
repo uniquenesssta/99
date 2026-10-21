@@ -2,6 +2,7 @@
 'use strict'
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
+const path = require('node:path')
 const { loader } = require('./check-operation-chain.cjs')
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const gate = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
@@ -59,6 +60,8 @@ async function schedulerPriority() {
   const load = loader({ 'node:child_process': { spawn: () => {
     const child = new EventEmitter(); child.pid = children.length + 1
     child.stdout = new EventEmitter(); child.stderr = new EventEmitter()
+    child.stdin = new EventEmitter(); child.stdin.end = () => {}
+    child.stdio = [child.stdin, child.stdout, child.stderr, new EventEmitter()]
     child.stdout.setEncoding = child.stderr.setEncoding = () => {}
     child.kill = () => true
     children.push(child); return child
@@ -77,9 +80,40 @@ async function schedulerPriority() {
   } finally { pool.stop(); for (const child of children) child.emit('close', 0, null); await pool.whenIdle() }
 }
 
+async function buildLeaseCancellation() {
+  const io = loader()('src/main/path/sharedFileSystemRuntime.ts')
+  const events = []
+  let rejectSecond = false
+  const load = loader({ [path.resolve(__dirname, '../../src/main/path/sharedFileSystemRuntime.ts')]: {
+    ...io, sharedFileSystem: {
+      mkdir: async () => {},
+      open: async file => {
+        if (rejectSecond && file.includes('second')) throw Error('controlled acquisition cancellation')
+        return {
+          writeFile: async () => {}, close: async () => { events.push('close') },
+          removeOwned: async () => { assert(!io.currentSharedIoSignal(), 'lease release inherited cancellation'); events.push('remove-owned') },
+        }
+      },
+    },
+  } }, { setInterval, clearInterval })
+  const leases = load('src/main/indexing/root-index/sharedIndexLeaseRuntime.ts').createSharedIndexLeaseRuntime({ appendStartupLog() {} })
+  const context = name => ({ storage: 'root', rootPath: `C:\\${name}`, cacheDir: `C:\\${name}\\cache` })
+  const owned = await leases.acquireForContexts([context('first')], 'job')
+  const controller = new AbortController(); controller.abort()
+  await io.withSharedIoSignal(controller.signal, () => leases.releaseAll(owned.acquired))
+  assert.deepEqual(events, ['remove-owned', 'close'])
+  events.length = 0; rejectSecond = true
+  await assert.rejects(leases.acquireForContexts([context('first'), context('second')], 'job'), /controlled acquisition/)
+  assert.deepEqual(events, ['remove-owned', 'close'], 'failed later root stranded an earlier build lease')
+  events.length = 0
+  const maintenance = load('src/main/maintenance/cacheMaintenanceCoordinator.ts')
+  const bypass = await maintenance.runCacheMaintenance(() => leases.acquireForContexts([context('second')], 'manual-rebuild'))
+  assert.equal(bypass.busyRoots.length, 0); assert.equal(bypass.acquired.length, 0)
+}
+
 async function main() {
   assert.equal(process.platform, 'win32', 'HFM verification is Windows-only')
-  await maintenanceOwnership(); await scanRetirement(); await schedulerPriority()
+  await maintenanceOwnership(); await scanRetirement(); await schedulerPriority(); await buildLeaseCancellation()
   console.log('PASS cache maintenance: physical drain, atomic nested rebuild, scan exclusion, failure recovery, queued priority and active write barrier')
 }
 const watchdog = setTimeout(() => { console.error('cache maintenance diagnostic timed out'); process.exit(1) }, 20000)

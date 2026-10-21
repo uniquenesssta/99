@@ -88,7 +88,7 @@ export async function consumeRustFontParseBatchFastPath(args: {
         continue
       }
 
-      if (!rustJob.scriptHint && fastResult.font?.scripts.includes('other')) unclassifiedAsOther++
+      if (!rustJob.scriptHint && fastResult.font?.scripts?.includes('other')) unclassifiedAsOther++
       consumed += 1
       await processResult(fastResult)
       if (consumed % 200 === 0) {

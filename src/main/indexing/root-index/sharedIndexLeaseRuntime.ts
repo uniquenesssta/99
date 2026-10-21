@@ -113,7 +113,9 @@ async function acquireOneSharedIndexBuildLease(args: {
       return { rootPath: context.rootPath, rootKey, cacheDir: context.cacheDir, lockPath, handle, heartbeatTimer, settleHeartbeat: async () => { await heartbeatInFlight }, release }
     } catch (error) {
       await awaitPhysicalIoClose(error)
-      if (release) { await release().catch(async error => { await awaitPhysicalIoClose(error) }); release = undefined; handle = null }
+      if (release) await release().catch(async error => { await awaitPhysicalIoClose(error) })
+      else if (handle) await handle.close().catch(() => undefined)
+      release = undefined; handle = null
       if (!isErrno(error, 'EEXIST')) throw error
       if (await removeStaleBuildLock(lockPath, appendStartupLog)) continue
       const owner = await readExistingLockOwner(lockPath)
@@ -134,21 +136,26 @@ export function createSharedIndexLeaseRuntime(deps: SharedIndexBuildLeaseRuntime
     const busyRootKeys = new Set<string>()
     const busyRoots: string[] = []
 
-    for (const context of contexts) {
-      if (context.storage !== 'root') continue
-      if (ownsCacheMaintenance()) {
-        // This advisory lease suppresses duplicate builds only. Maintenance uses
-        // its own candidate; the final write lock still serializes activation.
-        deps.appendStartupLog(`shared index maintenance bypasses build lease: root=${context.rootPath}, jobId=${jobId}`)
-        continue
+    try {
+      for (const context of contexts) {
+        if (context.storage !== 'root') continue
+        if (ownsCacheMaintenance()) {
+          // This advisory lease suppresses duplicate builds only. Maintenance uses
+          // its own candidate; the final write lock still serializes activation.
+          deps.appendStartupLog(`shared index maintenance bypasses build lease: root=${context.rootPath}, jobId=${jobId}`)
+          continue
+        }
+        const lease = await acquireOneSharedIndexBuildLease({ context, jobId, appendStartupLog: deps.appendStartupLog })
+        if (lease) {
+          acquired.push(lease)
+        } else {
+          busyRootKeys.add(normalizePathForCacheCompare(context.rootPath))
+          busyRoots.push(context.rootPath)
+        }
       }
-      const lease = await acquireOneSharedIndexBuildLease({ context, jobId, appendStartupLog: deps.appendStartupLog })
-      if (lease) {
-        acquired.push(lease)
-      } else {
-        busyRootKeys.add(normalizePathForCacheCompare(context.rootPath))
-        busyRoots.push(context.rootPath)
-      }
+    } catch (error) {
+      await releaseAll(acquired)
+      throw error
     }
 
     return { acquired, busyRootKeys, busyRoots }

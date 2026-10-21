@@ -1,7 +1,7 @@
 import type { SharedIoAccessPath } from './sharedIoAccessRuntime'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { recordOperationWork } from '../logging/operationTraceContext'
-import type { IoTaskPriority } from '../performance/ioQueue'
+import { CACHE_MAINTENANCE_PRIORITY, type IoTaskPriority } from '../performance/ioQueue'
 import { assertStartupPathRootGuardCurrent, getStartupPathRootState, markStartupPathRootUnavailable } from './startupPathAvailabilityRuntime'
 import { promises as localFs } from 'node:fs'
 import { sharedDatabaseTarget, sharedIoAvailabilityRoot, sharedIoResourceKeys } from '../rust-core/rustSharedIoCommandRuntime'
@@ -13,7 +13,7 @@ export function withoutSharedIoSignal<T>(operation: () => Promise<T>): Promise<T
 export function currentSharedIoSignal(): AbortSignal | undefined { return sharedIoSignalScope.getStore() }
 
 const priorityScope = new AsyncLocalStorage<IoTaskPriority | number>()
-export function withSharedIoPriority<T>(priority: IoTaskPriority | number, operation: () => Promise<T>): Promise<T> { return priorityScope.run(priorityScope.getStore() === 1000 ? 1000 : priority, operation) }
+export function withSharedIoPriority<T>(priority: IoTaskPriority | number, operation: () => Promise<T>): Promise<T> { return priorityScope.run(priorityScope.getStore() === CACHE_MAINTENANCE_PRIORITY ? CACHE_MAINTENANCE_PRIORITY : priority, operation) }
 export function currentSharedIoPriority(): IoTaskPriority | number | undefined { return priorityScope.getStore() }
 
 const queueTimeoutScope = new AsyncLocalStorage<number>()

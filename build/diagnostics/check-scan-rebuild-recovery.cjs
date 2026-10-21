@@ -20,7 +20,7 @@ async function requestsAndCleanup() {
     rm: async name => { if (denyRemove) throw Error('ACK denied'); removed.push(name); files.delete(name) },
   }
   const mocks = {
-    [at('path/sharedFileSystemRuntime.ts')]: { sharedFileSystem: fsp },
+    [at('path/sharedFileSystemRuntime.ts')]: { sharedFileSystem: fsp, withSharedIoPriority: (_priority, run) => run() },
     [at('path/ioDeadlineRuntime.ts')]: { awaitPhysicalIoClose: async () => {} },
     [at('indexing/root-index/rootIndexFileRuntime.ts')]: { writeJsonAtomic: async (name, value) => { if (denyWrite) throw Error('rename denied'); files.set(name, JSON.stringify(value)) } },
     [at('cache/scan-storage/cacheCleanupLeaseRuntime.ts')]: { withCacheCleanupLocks: async (locks, action) => { assert(locks.length); return action(async targets => targets.map(name => { removed.push(name); files.delete(name); return { path: name, status: 'removed' } })) } },

@@ -4,9 +4,6 @@ import { awaitPhysicalIoClose } from '../../path/ioDeadlineRuntime'
 import { dirname, join, resolve } from 'node:path'
 import type { CacheStats } from '../../../shared/types'
 import { requestRootIndexRebuild } from '../../indexing/root-index/rootIndexRebuildRequestRuntime'
-import {
-  ROOT_CACHE_LOCK_DIR_NAME,
-} from '../constants'
 import { withCacheCleanupLocks, type CacheCleanupOutcome } from './cacheCleanupLeaseRuntime'
 import type { ScanCacheStatsReader, ScanCacheStorageRuntimeOptions } from './scanCacheStorageTypes'
 
@@ -53,7 +50,7 @@ export function createCacheCleanupRuntime(options: ScanCacheStorageRuntimeOption
 
   async function clearIndexGroup(report: CleanupReport, cacheDir: string, jsonPaths: string[]): Promise<void> {
     if (!await present(cacheDir)) { report.missing += 1; return }
-    const lockPaths = [join(cacheDir, ROOT_CACHE_LOCK_DIR_NAME, 'cache-cleanup.lock')]
+    const lockPaths = [join(cacheDir, 'cache-cleanup.lock')]
     await withCacheCleanupLocks(lockPaths, async remove => {
       // Invalidate parse reuse, not the last usable source. The request survives
       // cancellation/restart; the complete replacement writer acknowledges it.

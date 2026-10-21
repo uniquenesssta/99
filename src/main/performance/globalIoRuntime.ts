@@ -1,3 +1,4 @@
+import { CACHE_MAINTENANCE_PRIORITY } from './ioQueue';
 import {
 createIoScheduler,
 type GlobalIoOptions,
@@ -5,7 +6,7 @@ type IoQueueSnapshot,
 } from "./ioScheduler";
 import type { StorageProfile } from "./storageProfile";
 import { recordOperationWork } from '../logging/operationTraceContext';
-import { withSharedIoPriority } from '../path/sharedFileSystemRuntime';
+import { currentSharedIoPriority, withSharedIoPriority } from '../path/sharedFileSystemRuntime';
 import { shouldLogSuccessfulGlobalIo } from './globalIoLogPolicyRuntime';
 
 export interface GlobalIoRuntimeOptions {
@@ -127,6 +128,7 @@ export function createGlobalIoRuntime(
     fn: () => Promise<T>,
     taskOptions: GlobalIoOptions = {},
   ): Promise<T> {
+    if (currentSharedIoPriority() === CACHE_MAINTENANCE_PRIORITY) taskOptions = { ...taskOptions, priority: CACHE_MAINTENANCE_PRIORITY };
     const startedAt = Date.now();
     let admittedAt: number | undefined;
     recordOperationWork({ tasks: 1 });

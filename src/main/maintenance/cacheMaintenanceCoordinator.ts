@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { withSharedIoPriority } from '../path/sharedFileSystemRuntime'
-
-export const CACHE_MAINTENANCE_PRIORITY = 1000
+import { CACHE_MAINTENANCE_PRIORITY } from '../performance/ioQueue'
+export { CACHE_MAINTENANCE_PRIORITY }
 type Participant = { pause: () => Promise<void>; resume?: () => void | Promise<void> }
 const participants = new Set<Participant>()
 const ownership = new AsyncLocalStorage<{ active: boolean }>()

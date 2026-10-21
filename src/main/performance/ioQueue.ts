@@ -1,4 +1,5 @@
 import { AsyncResource } from 'node:async_hooks'
+export const CACHE_MAINTENANCE_PRIORITY = 1000
 export type IoTaskPriority = 'background' | 'normal' | 'foreground'
 
 export class OperationCancelledError extends Error {
