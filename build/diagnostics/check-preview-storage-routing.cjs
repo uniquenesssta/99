@@ -51,7 +51,7 @@ function structure() {
   for (const name of ['readStatusCache', 'readStatusInFlight', 'readStatusGeneration']) assert(!route.includes(name))
 }
 function harness(transform = x => x) {
-  const events = [], state = { available: true, loads: 0, library: { folders: [fontRoot] }, failure: '', manifestHold: null, loadHold: null }
+  const events = [], state = { available: true, loads: 0, library: { folders: [fontRoot] }, failure: '', manifestHold: null, loadHold: null, deadlineExpired: gate() }
   const mocks = { 'node:path': routePath, '../../path/startupPathAvailabilityRuntime': { assertStartupPathRootGuardCurrent() {}, withStartupPathRootGuard: (guard, fn) => { guard(); return fn() }, getStartupPathRootState: root => ({rootId: root, generation: 1, state: 'online'}) }, '../../app/shutdownCoordinatorRuntime': {isApplicationClosing:()=>false,applicationWorkEpoch:()=>1,onApplicationClosing(){}} }
   const factories = { previewCacheSharedPresenceRuntime: 'createPreviewCacheSharedPresenceRuntime', previewCachePresenceIndexRuntime: 'createPreviewCacheSharedPresenceIndexRuntime', previewCacheMetaRuntime: 'createPreviewCacheMetaRuntime', previewCacheHydrationRuntime: 'createPreviewCacheHydrationRuntime', previewCachePrefetchRuntime: 'createPreviewCachePrefetchRuntime', previewLocalCacheEvictionRuntime: 'createPreviewLocalCacheEvictionRuntime' }
   for (const [file, name] of Object.entries(factories)) mocks[`./${file}`] = { [name]: () => ({}) }
@@ -62,7 +62,13 @@ function harness(transform = x => x) {
   mocks['./previewCacheTierRuntime'] = load('src/main/preview/runtime/previewCacheTierRuntime.ts', { 'node:path': routePath })
   for (const id of ['./previewInputPolicy', './previewCacheKeyRuntime', './previewCachedImageReadBatchRuntime', './previewInstalledFontRouteRuntime']) mocks[id] = {}
   mocks['../../path/fontPathPolicy'] = { findBestWatchedRootForFile: (_path, folders) => folders[0] || null }
-  mocks['../../path/ioDeadlineRuntime'] = { ...load('src/main/path/ioDeadlineRuntime.ts'), previewCacheQueryTimeoutMs: () => 100 }
+  const deadlineRuntime = load('src/main/path/ioDeadlineRuntime.ts')
+  mocks['../../path/ioDeadlineRuntime'] = { ...deadlineRuntime, previewCacheQueryTimeoutMs: () => 100,
+    async withIoDeadlineResult(label, operation, timeoutMs) {
+      const result = await deadlineRuntime.withIoDeadlineResult(label, operation, timeoutMs)
+      if (result.timedOut) state.deadlineExpired.resolve({ label, timeoutMs })
+      return result
+    } }
   mocks['node:fs'] = { promises: { async mkdir(dir) { events.push(['mkdir', dir]); if (state.failure === dir) throw Error('mkdir') } } }
   mocks['../../path/sharedFileSystemRuntime'] = { sharedFileSystem: mocks['node:fs'].promises,
     withSharedIoQueueTimeout: (_ms, fn) => fn(), withSharedIoPriority: (_priority, fn) => fn(), withSharedIoSignal: (_signal, fn) => fn() }
@@ -103,8 +109,15 @@ async function routingCases(transform) {
       const result = f.facade.ensureSharedPreviewCacheAvailable(fontRoot)
       // The response budget expires first, but ownership remains until the
       // unresolved phase really settles. Do not await before releasing it.
-      await new Promise(resolve => setTimeout(resolve, 130))
-      f.state.manifestHold.reject(Error('late'))
+      let settled = false, timer
+      result.then(() => { settled = true }, () => { settled = true })
+      try {
+        const expired = await Promise.race([f.state.deadlineExpired.promise, new Promise((_, reject) => {
+          timer = setTimeout(() => reject(Error('Shared preparation deadline did not expire')), 10000)
+        })])
+        assert.deepEqual(expired, { label: 'preview-cache-write-manifest', timeoutMs: 6000 })
+        assert.equal(settled, false, 'Response timeout released physical preparation ownership')
+      } finally { clearTimeout(timer); f.state.manifestHold.reject(Error('late')) }
       await assert.rejects(result, error => error.name === 'PreviewSharedPreparationDeferred')
     } else if (failure === 'unavailable') await assert.rejects(f.facade.ensureSharedPreviewCacheAvailable(fontRoot), error => error.name === 'PreviewSharedPreparationDeferred')
     else assert.equal(await f.facade.ensureSharedPreviewCacheAvailable(fontRoot), false)
