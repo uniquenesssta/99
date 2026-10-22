@@ -23,6 +23,8 @@ function tokens(text) {
 // Causal budget, slicing, cleanup and physical-close checks live in
 // check-font-parse-stability-capability and check-preview-owned-stage.
 const parseClientPath = h.core + 'clients/rustIndexingClientRuntime.ts'
+const previewClientPath = h.core + 'clients/rustPreviewClientRuntime.ts'
+const previewCacheFailureGuard = '        if (query && previewCacheFailureKind(error)) throw error\n'
 const reviewedParseHash = '6f6ed1d9fe8184a201fefdd0cab52d7a444e95d5de91169e2c2ec67bb31e1c07'
 function ownsParseInvocation(node, group) {
   if (group.path !== parseClientPath) return false
@@ -54,6 +56,16 @@ function originalMetadataReceiptFunction(text, name, group) {
 function checkFunctions(overrides = sources) {
   for (const group of fixture.groups) {
     const file = ts.createSourceFile(group.path, overrides.get(group.path), ts.ScriptTarget.Latest, true)
+    if (group.path === previewClientPath) {
+      const imports = file.statements.filter(node => ts.isImportDeclaration(node)
+        && node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)
+        && node.importClause.namedBindings.elements.some(binding => binding.name.text === 'previewCacheFailureKind'))
+      assert.equal(imports.length, 1, 'preview cache failure import missing or duplicated')
+      const imported = imports[0], bindings = imported.importClause.namedBindings.elements
+      assert(imported.moduleSpecifier.text === '../../../shared/previewCacheFailure' && !imported.importClause.isTypeOnly
+        && bindings.length === 1 && !bindings[0].propertyName && !bindings[0].isTypeOnly,
+      'preview cache failure dependency changed')
+    }
     if (group.path === parseClientPath) {
       const imports = file.statements.filter(node => ts.isImportDeclaration(node)
         && node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)
@@ -83,6 +95,12 @@ function checkFunctions(overrides = sources) {
     for (const [name, hash] of Object.entries(group.functions)) {
       assert(found.has(name), 'lost domain/helper function: ' + name)
       let text = originalMetadataReceiptFunction(found.get(name).getText(file).replace(/\r\n/g, '\n'), name, group)
+      if (group.path === previewClientPath && name === 'runRustPreviewCacheInputCommand') {
+        // Remove only the reviewed read-error propagation. Keep the historical
+        // fixture and every other token, write guard and lifetime check frozen.
+        assert.equal(text.split(previewCacheFailureGuard).length, 2, 'preview cache failure guard missing or duplicated')
+        text = text.replace(previewCacheFailureGuard, '')
+      }
       if (name === 'runRustFontIndexListWorker') {
         const extension = " || !hasCapability(status, 'list-font-files-complete-v1')"
         assert.equal(text.split(extension).length - 1, 1, 'complete listing capability guard missing')
@@ -248,6 +266,73 @@ function clientFixture(groupName, config, overrides = new Map()) {
     },
   }
   return { client: env.load(group.path)[group.factory](ports), inputs, commands, disposed, allocated: () => allocated }
+}
+async function checkPreviewCacheFailureContracts(overrides = new Map()) {
+  const methods = [
+    ['runRustPreviewCacheReadStatus', 'preview-cache-index-read'],
+    ['runRustPreviewCacheQuery', 'preview-cache-index-query'],
+    ['runRustPreviewCacheBatch', 'preview-cache-batch'],
+  ]
+  const input = { dbPath: 'C:/preview.sqlite', readOnly: true, rows: [], previewKey: 'key', outputPath: 'C:/preview.png', schemaVersion: 1, now: 'now' }
+  for (const [method, capability] of methods) {
+    const capabilities = [capability, 'preview-cache-read-only-v1']
+    for (const kind of ['missing', 'busy', 'denied', 'corrupt', 'incompatible', 'unavailable']) {
+      const error = Object.assign(new Error(`[HFM_PREVIEW_CACHE:${kind}] native read failed`), { closed: Promise.resolve(), queuedMs: 7, executionMs: 11 })
+      const failed = clientFixture('Preview', { capabilities, error }, overrides)
+      await assert.rejects(failed.client[method](input), value => value === error,
+        'preview cache failure contract: original error/lifetime lost: ' + method)
+      assert.equal(failed.commands.length, 1, 'preview cache failure contract: read replayed')
+      assert.equal(failed.disposed.length, 1, 'preview cache failure contract: temporary input leaked')
+      assert.equal(failed.commands[0].options.sharedIo.write, false, 'preview cache failure contract: read became writable')
+      const receipt = clientFixture('Preview', { capabilities, payload: { ok: false, message: error.message } }, overrides)
+      await assert.rejects(receipt.client[method](input), value => value.message === error.message,
+        'preview cache failure contract: daemon receipt category swallowed')
+      assert.equal(receipt.commands.length, 1, 'preview cache failure contract: failed receipt replayed')
+      assert.equal(receipt.disposed.length, 1, 'preview cache failure contract: failed receipt input leaked')
+    }
+    for (const message of ['unable to open database file', '[HFM_PREVIEW_CACHE:unknown] unavailable']) {
+      const failed = clientFixture('Preview', { capabilities, error: new Error(message) }, overrides)
+      assert.equal(await failed.client[method](input), null, 'preview cache failure contract: unclassified local error changed')
+    }
+    const error = Object.assign(new Error('shared process failed'), { sharedIo: true, closed: Promise.resolve() })
+    const shared = clientFixture('Preview', { capabilities, error }, overrides)
+    await assert.rejects(shared.client[method](input), value => value === error,
+      'preview cache failure contract: shared process ownership lost')
+  }
+  // The migration applies to reads; existing mutation/optional-touch behavior stays intact.
+  for (const [method, capability] of [['runRustPreviewCacheTouch', 'preview-cache-index-touch'],
+    ['runRustPreviewCacheApply', 'preview-cache-index-apply'], ['runRustPreviewCacheDelete', 'preview-cache-index-delete']]) {
+    const error = new Error('[HFM_PREVIEW_CACHE:denied] denied')
+    const failed = clientFixture('Preview', { capabilities: [capability], error }, overrides)
+    if (method === 'runRustPreviewCacheTouch') {
+      let result
+      await assert.doesNotReject(async () => { result = await failed.client[method](input) },
+        'preview cache failure contract: read-only migration changed touch')
+      assert.equal(result, null, 'preview cache failure contract: optional touch result changed')
+    } else await assert.rejects(failed.client[method](input), value => value === error,
+      'preview cache failure contract: submitted write failure swallowed')
+    assert.equal(failed.commands.length, 1, 'preview cache failure contract: mutation replayed')
+    assert.equal(failed.disposed.length, 1, 'preview cache failure contract: mutation input leaked')
+  }
+}
+async function checkPreviewCacheFailureMutations() {
+  const original = sources.get(previewClientPath)
+  for (const replacement of ['', previewCacheFailureGuard + previewCacheFailureGuard,
+    previewCacheFailureGuard.replace('query && ', ''), previewCacheFailureGuard.replace('throw error', 'throw new Error(String(error))')]) {
+    assert.throws(() => checkFunctions(new Map(sources).set(previewClientPath, original.replace(previewCacheFailureGuard, replacement))),
+      error => error instanceof assert.AssertionError && /preview cache failure guard|runRustPreviewCacheInputCommand changed/.test(error.message),
+      'preview cache failure structural mutation accepted')
+  }
+  const dependency = "'../../../shared/previewCacheFailure'"
+  assert.equal(original.split(dependency).length, 2)
+  assert.throws(() => checkFunctions(new Map(sources).set(previewClientPath, original.replace(dependency, "'../../../shared/wrongFailure'"))),
+    /preview cache failure dependency changed/)
+  for (const replacement of ['', previewCacheFailureGuard.replace('query && ', ''),
+    previewCacheFailureGuard.replace('throw error', 'throw new Error(String(error))')]) {
+    await assert.rejects(checkPreviewCacheFailureContracts(new Map([[previewClientPath, original.replace(previewCacheFailureGuard, replacement)]])),
+      error => error instanceof assert.AssertionError && /preview cache failure contract/.test(error.message),
+      'preview cache failure causal mutation accepted')
+  }
 }
 async function checkReviewedClientContracts(overrides = new Map()) {
   const png = require('./fixtures/preview-png.cjs')
@@ -514,6 +599,8 @@ async function main() {
   checkComposition()
   await checkMaintenanceFailureReports()
   await checkRecoveryCapability()
+  await checkPreviewCacheFailureContracts()
+  await checkPreviewCacheFailureMutations()
   await checkReviewedClientContracts()
   await checkCompleteListingCapability()
   const listingGroup=fixture.groups.find(group=>group.name==='Indexing'), listingGuard=" || !hasCapability(status, 'list-font-files-complete-v1')"
@@ -543,6 +630,6 @@ async function main() {
   checkFacadeClosure(facadeCRLF)
   checkControlIdentities(new Map([[facade, facadeCRLF]]))
   checkComposition(new Map([[facade, facadeCRLF]]))
-  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies with reviewed causal port checks and six authority capability gates, narrow shared ports, typed metadata/evidence receipt inverse, optional old-worker compatibility and causal normalizer mutations, partial health report and submitted backup, domain and evidence mutations rejected, facade closure and 7 control identities, CRLF passed`)
+  console.log(`[diagnostics:rust-worker-clients] ${fixture.groups.length} clients, ${fixture.groups.reduce((n,g)=>n+g.methods.length,0)} method identities, frozen function bodies with reviewed causal port checks and six authority capability gates, narrow shared ports, typed metadata/evidence receipt inverse, explicit preview cache read failures and causal mutations, optional old-worker compatibility and causal normalizer mutations, partial health report and submitted backup, domain and evidence mutations rejected, facade closure and 7 control identities, CRLF passed`)
 }
 main().catch(error => { console.error('[diagnostics:rust-worker-clients]', error.stack || error); process.exitCode = 1 })

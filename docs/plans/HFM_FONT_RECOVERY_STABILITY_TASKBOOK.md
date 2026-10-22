@@ -1352,3 +1352,11 @@ Linux 仅源码编辑、差异与 CJS 语法检查；按 lockfile SHA-512 核验
 Windows workflow提前执行缓存分类、只读初始化、请求阶段、标签通知与既有受影响检查，保留完整原有门。此非Windows工作区只做源码编辑、静态差异和CJS语法检查，不运行项目测试/typecheck/build，也不执行原生测试。真实NAS耗时与权限表现、用户profile实际显示仍待实机复测；无UI布局和依赖版本变化。
 
 已通过Context7核对rusqlite错误码区分，并用Mermaid Chart展示实际读取/发布/通知链路。Create State现有两个模型均非本项目，新建HFM模型返回2/2容量已满，未向其他模型写入；本节保存续接状态。下一步依据该提交CI回执处理具体失败，不轮询；CI通过后复测共享预览库从缺失到后台初始化、目录超时阶段和连续共享标签操作的重复查询数。
+
+本轮首个 Windows 回执及诊断补修（2026-10-22）：
+
+- 受测生产提交 `7433121cbeb6662d35b32f8ba169446cba4d6598`，[Windows CI 39644121267](https://github.com/uniquenesssta/99/actions/runs/39644121267)，job `119375073958` 最终失败。类型检查、缓存维护/共享预览新增专项、原生只读/初始化、其他专项、完整刷新、F14、真实 Electron DOM、F13 和应用 bundle 步骤成功；完整既有诊断执行202项，201通过、1失败、0未运行。基线争用调查 job 成功，但不作为验收。
+- 唯一失败为 `check-rust-worker-clients.cjs` 中 `runRustPreviewCacheInputCommand changed from pre-extraction baseline`，实际 token hash `16e829d0769509fd004a8b68717e5101e88c9de3e7bef5abc6a31a68918c8ccc`，历史 `484c07a8a5f50e3e70504c5bf452b04febdcc581ec426aea74d2a4c890da9e35`。逐字 diff 确认生产函数仅增加显式查询错误透传及说明，另新增分类器导入；此前只补部分自定义加载器，遗漏此历史指纹迁移。原失败保留，不能将专项通过称为全量通过。完整诊断日志 artifact `12368358622`，服务端 ZIP SHA-256 `06060eecb4dd7bbdf9753798f082df4aba222da1a169ac4dde7d70b14bcd102e`。
+- 补修仅修改诊断、Windows workflow 与现有说明。历史 fixture/hash 不变：核对分类器真实依赖和唯一精确新增分支，移除此已审阅分支后仍比较原函数全部 token。新增真实客户端端口测试覆盖 read-status/query/batch 六种分类的直接错误和失败回执、原错误及关闭所有权、一次提交/输入清理和只读声明；歧义打不开与未知标记继续沿用原可选失败行为，共享 I/O 错误及已提交写入继续透传。加入分支缺失/重复/范围扩大/包装错误/依赖改向的结构或行为反例；非查询 touch 不受这次透传扩展影响。
+- 将此客户端诊断加入提前的缓存维护步骤，保留完整202项与后续所有门。没有改生产实现、依赖、数据或性能阈值。非 Windows 环境只进行源码审阅、差异检查和 CJS 语法检查；新增诊断及精确提交的完整运行结果等待 Windows CI，真实 NAS 仍待复测。提交后结束，不查询新 CI 状态。
+- 收尾再次查询 Create State，现有两个模型仍属其他项目，创建 HFM 模型仍返回2/2容量已满；未写入其他模型。本节为续接记录。下一步仅在用户提供结果或要求检查后读取该提交回执，不轮询。
