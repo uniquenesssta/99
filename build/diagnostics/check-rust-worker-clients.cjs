@@ -25,6 +25,9 @@ function tokens(text) {
 const parseClientPath = h.core + 'clients/rustIndexingClientRuntime.ts'
 const previewClientPath = h.core + 'clients/rustPreviewClientRuntime.ts'
 const previewCacheFailureGuard = '        if (query && previewCacheFailureKind(error)) throw error\n'
+const previewCacheFailureAddition = '        // Keep native cache categories visible on both isolated and local-daemon\n'
+  + '        // reads. Returning null here would turn a denied/corrupt cache into a miss.\n'
+  + previewCacheFailureGuard
 const reviewedParseHash = '6f6ed1d9fe8184a201fefdd0cab52d7a444e95d5de91169e2c2ec67bb31e1c07'
 function ownsParseInvocation(node, group) {
   if (group.path !== parseClientPath) return false
@@ -96,10 +99,12 @@ function checkFunctions(overrides = sources) {
       assert(found.has(name), 'lost domain/helper function: ' + name)
       let text = originalMetadataReceiptFunction(found.get(name).getText(file).replace(/\r\n/g, '\n'), name, group)
       if (group.path === previewClientPath && name === 'runRustPreviewCacheInputCommand') {
-        // Remove only the reviewed read-error propagation. Keep the historical
-        // fixture and every other token, write guard and lifetime check frozen.
+        // Invert the complete reviewed addition, including its comments. This
+        // historical scanner does not rescan template spans, so these comments
+        // are part of a template token. Keep its original fingerprints intact.
         assert.equal(text.split(previewCacheFailureGuard).length, 2, 'preview cache failure guard missing or duplicated')
-        text = text.replace(previewCacheFailureGuard, '')
+        assert.equal(text.split(previewCacheFailureAddition).length, 2, 'preview cache failure addition missing or duplicated')
+        text = text.replace(previewCacheFailureAddition, '')
       }
       if (name === 'runRustFontIndexListWorker') {
         const extension = " || !hasCapability(status, 'list-font-files-complete-v1')"
@@ -322,6 +327,11 @@ async function checkPreviewCacheFailureMutations() {
     assert.throws(() => checkFunctions(new Map(sources).set(previewClientPath, original.replace(previewCacheFailureGuard, replacement))),
       error => error instanceof assert.AssertionError && /preview cache failure guard|runRustPreviewCacheInputCommand changed/.test(error.message),
       'preview cache failure structural mutation accepted')
+  }
+  for (const replacement of [previewCacheFailureGuard, previewCacheFailureAddition.replace('Keep native', 'Keep changed')]) {
+    assert.throws(() => checkFunctions(new Map(sources).set(previewClientPath, original.replace(previewCacheFailureAddition, replacement))),
+      error => error instanceof assert.AssertionError && /preview cache failure addition missing or duplicated/.test(error.message),
+      'preview cache failure incomplete inverse accepted')
   }
   const dependency = "'../../../shared/previewCacheFailure'"
   assert.equal(original.split(dependency).length, 2)
